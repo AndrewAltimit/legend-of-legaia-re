@@ -1,5 +1,5 @@
 <header class="page-header">
-  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; battle action FSM</div>
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; battle action state machine</div>
   <h1>Battle action state machine</h1>
   <p class="lede">The layer between &ldquo;the player picked Attack&rdquo; and &ldquo;the sword has landed and HP has been deducted&rdquo;. An action takes many frames - turn, run in, swing, damage pop, walk back - so the game tracks it as one state byte advanced once per frame, with a band of states per command category. A Tactical Art is not a band of its own: its arrows and art bytes ride in the same action queue as a plain Attack and play out through the attack states, each swing staging its own power byte.</p>
 </header>

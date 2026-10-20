@@ -25,7 +25,11 @@ hiding one and keeping the other is not a safe simplification on its own.
 `NAV` in `layout.js` is the single source of truth for page order, the docs
 sidebar, prev / next and the explore sidebar's groups. A page exists for the
 shell only when it has a `NAV` entry, and exists at all only when `_gen.py`
-writes it - a new page needs both.
+writes it - a new page needs both. `check-site-links.py` holds the two tables
+to each other: a `PAGES` row with no `NAV` key is an orphan (the sidebar,
+prev / next and search never list it), and a `NAV` href the generator never
+writes is a dead sidebar row. Neither appears as an href in the generated
+HTML, so the page-link scan alone cannot see them.
 
 Three fields shape what a reader sees:
 

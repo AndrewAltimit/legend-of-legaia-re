@@ -135,49 +135,49 @@
   </figure>
 </section>
 
-<section class="doc-section" id="bootstrap">
-  <h2>Boot, loading, drawing, sound</h2>
-  <p>The plumbing every other subsystem stands on.</p>
+
+<section class="doc-section" id="organisation">
+  <h2>How this section is organised</h2>
+  <p>The pages follow a player's path through the game: power on, walk a town, the interpreters that script it, a fight, the overworld, the menus and the side games, then the picture and sound under all of it. Pages about the Rust port and the site's own viewers sit apart in the last group, so every group before it describes only the shipped game. The sidebar uses the same groups in the same order.</p>
+  <ol class="steps">
+    <li><b><a href="#startup">Startup and loading</a></b><span>disc to title screen; door to loaded room</span></li>
+    <li><b><a href="#field">Field</a></b><span>walking, ambient motion, grid mode</span></li>
+    <li><b><a href="#script-engines">Script engines</a></b><span>the bytecode interpreters</span></li>
+    <li><b><a href="#battle">Battle: rules</a></b><span>encounter to level-up</span></li>
+    <li><b><a href="#battle-screen">Battle: on screen</a></b><span>stage, actors, HUD</span></li>
+    <li><b><a href="#world-map">World map and cutscenes</a></b><span>the overworld, movies, the opening</span></li>
+    <li><b><a href="#menus">Menus and town services</a></b><span>pause menu, bag, save, shop, inn</span></li>
+    <li><b><a href="#minigames">Minigames</a></b><span>fishing, casino, dance, dome</span></li>
+    <li><b><a href="#picture-and-sound">Sound and picture</a></b><span>renderer, shading, audio</span></li>
+    <li><b><a href="#port">The port</a></b><span>the Rust engine and the site's hosts</span></li>
+  </ol>
+  <p>A large subsystem has a readable tour page plus <strong>companion pages</strong>: <em>internals</em> for the reference tables a tour leaves out, and <em>capture notes</em> for the measurements behind its claims. Companions are indented under their tour in the sidebar and marked below; read the tour first.</p>
+</section>
+
+<section class="doc-section" id="startup">
+  <h2>Startup and loading</h2>
+  <p>From the disc spinning up to the title screen, and what every later mode leans on to get its assets into memory.</p>
   <div class="card-grid">
     <a class="card" href="boot.html">
       <div class="card-title">Boot path</div>
       <div class="card-body">From disc spin-up to NEW GAME: the archive directory into RAM, the 14-mode state machine, the title screen, and the scripted opening it launches.</div>
     </a>
+    <a class="card" href="boot-internals.html">
+      <span class="card-kicker">Companion to Boot path</span>
+      <div class="card-title">Boot path: internals</div>
+      <div class="card-body">The init sequence stage by stage, the full mode table, the CD-read stack, the title overlay's state and pad masks, the name-entry grid and the boot-screen textures.</div>
+    </a>
     <a class="card" href="asset-loader.html">
       <div class="card-title">Asset loader</div>
       <div class="card-body">What "walk through a door" loads: scene name &rarr; PROT entries &rarr; LZS &rarr; typed handlers, and why palettes come from other entries than their meshes.</div>
-    </a>
-    <a class="card" href="renderer.html">
-      <div class="card-title">Renderer</div>
-      <div class="card-body">How a TMD mesh becomes pixels: the GTE geometry pass, the ordering table, VRAM texture pages and palettes.</div>
-    </a>
-    <a class="card" href="shading.html">
-      <div class="card-title">Shading and palettes</div>
-      <div class="card-body">How a texel becomes a screen colour: palettes read from video memory, the baked mesh colour, depth cue, blending, dither.</div>
-    </a>
-    <a class="card" href="audio.html">
-      <div class="card-title">Audio</div>
-      <div class="card-body">Three roads to the speaker: sequenced music through Sony's sequencer, one-shot effects keyed from a descriptor table, and voices streamed off the CD.</div>
-    </a>
-    <a class="card" href="cutscene.html">
-      <div class="card-title">Cutscenes + movies</div>
-      <div class="card-body">The STR movies (MDEC video + XA audio) and the scripted in-engine scenes like the opening narration crawl.</div>
     </a>
   </div>
 </section>
 
 <section class="doc-section" id="field">
-  <h2>Field, towns + the world map</h2>
-  <p>Walking around, talking to people, triggering events, and crossing the overworld.</p>
+  <h2>Field: towns and dungeons</h2>
+  <p>Almost all of the game is spent here: walking a map that moves around you. The scripts that drive NPCs, doors and story beats are in the next group.</p>
   <div class="card-grid">
-    <a class="card" href="script-vm.html">
-      <div class="card-title">Field / event script VM</div>
-      <div class="card-body">The interpreter behind every NPC line, cutscene beat, door and story flag: 43 opcodes, plus the sub-dispatchers that open shops and menus.</div>
-    </a>
-    <a class="card" href="script-vm-menuctrl.html">
-      <div class="card-title">Field VM op 0x4C</div>
-      <div class="card-body">The grab-bag opcode: sixteen sub-dispatchers that paint walls, steer the camera, heal the party, wobble the floor and schedule escape timers.</div>
-    </a>
     <a class="card" href="field-locomotion.html">
       <div class="card-title">Field locomotion</div>
       <div class="card-body">From "push the stick" to "Vahn moves": camera-relative direction, per-frame speed, 2-unit steps and per-axis collision against the scene's walkability grid.</div>
@@ -187,39 +187,87 @@
       <div class="card-body">Why a &ldquo;static&rdquo; map moves: palette walkers, the scene-entry effect tree, texel scrollers, vertex morphs and the fog pool.</div>
     </a>
     <a class="card" href="tile-board.html">
-      <div class="card-title">Tile board</div>
+      <div class="card-title">Tile-board grid mode</div>
       <div class="card-body">A step-per-press grid mode inside the field overlay, with procedural boards built from actors - that no shipped scene installs.</div>
     </a>
+  </div>
+</section>
+
+<section class="doc-section" id="script-engines">
+  <h2>Script engines</h2>
+  <p>Most in-game behaviour is authored as data - scripts the designers could change without recompiling - and run by a handful of small interpreters. Four are clean opcode dispatchers; the effect VM is a per-slot state machine with the same role. The <a href="vm-inventory.html">VM inventory</a> lists every interpreter-shaped subsystem, including the ones too small for a page of their own.</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>VM</th><th>Drives</th><th>Lives in</th><th>Ops</th></tr></thead>
+    <tbody>
+      <tr><td><a href="script-vm.html">Field / event VM</a></td><td>NPC lines, cutscenes, doors, story flags</td><td>Field overlay 0897</td><td>43 (+ <code>0x4C</code> sub-dispatch)</td></tr>
+      <tr><td><a href="motion-vm.html">Motion VMs</a></td><td>Pursue / patrol / face-target; scripted motion + flag writes</td><td>SCUS</td><td>two small dispatchers</td></tr>
+      <tr><td><a href="move-vm.html">Move-table VM</a></td><td>Per-actor animation, motion and Tactical Arts</td><td>SCUS + an overlay extension</td><td>71 + 61</td></tr>
+      <tr><td><a href="actor-vm.html">Window-widget VM</a></td><td>Menu window choreography</td><td>Menu overlay 0899</td><td>13</td></tr>
+      <tr><td><a href="effect-vm.html">Effect VM</a></td><td>Battle effect spawns</td><td>Battle overlay 0898</td><td>state machine</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="card-grid">
+    <a class="card" href="vm-inventory.html">
+      <div class="card-title">VM inventory</div>
+      <div class="card-body">Every interpreter-shaped subsystem in the game, with its dispatcher, its op space and whether the port runs it.</div>
+    </a>
+    <a class="card" href="script-vm.html">
+      <div class="card-title">Field / event VM</div>
+      <div class="card-body">The interpreter behind every NPC line, cutscene beat, door and story flag: 43 opcodes, plus the sub-dispatchers that open shops and menus.</div>
+    </a>
+    <a class="card" href="script-vm-internals.html">
+      <span class="card-kicker">Companion to Field / event VM</span>
+      <div class="card-title">Field VM: internals</div>
+      <div class="card-body">The context record, every opcode with its byte width, the sub-op tables, and the traps that catch anyone reading the dump.</div>
+    </a>
+    <a class="card" href="script-vm-menuctrl.html">
+      <span class="card-kicker">Companion to Field / event VM</span>
+      <div class="card-title">Field VM: op 0x4C</div>
+      <div class="card-body">The grab-bag opcode: sixteen sub-dispatchers that paint walls, steer the camera, heal the party, wobble the floor and schedule escape timers.</div>
+    </a>
     <a class="card" href="motion-vm.html">
-      <div class="card-title">Motion VM</div>
+      <div class="card-title">Motion VMs</div>
       <div class="card-body">How NPCs wander, follow and turn to face you, and how scripted walks write story flags.</div>
     </a>
-    <a class="card" href="world-map.html">
-      <div class="card-title">World map</div>
-      <div class="card-body">The overworld: the walk controller, encounters and location entry, the terrain renderer, the fog, and the palette-walk table behind the shimmering ocean.</div>
+    <a class="card" href="move-vm.html">
+      <div class="card-title">Move-table VM</div>
+      <div class="card-body">A tiny per-actor animation engine: party members mid-art, summon parts, doors and torch flames each run a move buffer a few opcodes per frame.</div>
     </a>
-    <a class="card" href="world-overview-viewer.html">
-      <div class="card-title">World-overview viewer</div>
-      <div class="card-body">How the site's 3D world overview assembles each kingdom into one browsable scene: terrain layout, distance fog, animated ocean, camera anchors.</div>
+    <a class="card" href="move-vm-overlay-ext.html">
+      <span class="card-kicker">Companion to Move-table VM</span>
+      <div class="card-title">Move VM: op 0x2F extension</div>
+      <div class="card-body">The 61 field-only sub-opcodes behind every ambient effect tree: player tests, flag branches, self-modifying bytecode.</div>
     </a>
-    <a class="card" href="vr-mode.html">
-      <div class="card-title">VR mode (WebXR)</div>
-      <div class="card-body">Stand in Rim Elm with a headset: stereo rendering and head tracking over the world overview, the field viewer and the play page.</div>
+    <a class="card" href="actor-vm.html">
+      <div class="card-title">Window-widget VM</div>
+      <div class="card-body">The small interpreter that slides the UI's windows in and out - the shop's entrance is one of its programs.</div>
+    </a>
+    <a class="card" href="effect-vm.html">
+      <div class="card-title">Effect VM</div>
+      <div class="card-body">Spell flashes, hit sparks and item-use animations: a slot pool fed by the effect-script bundle.</div>
     </a>
   </div>
 </section>
 
 <section class="doc-section" id="battle">
-  <h2>Battle</h2>
-  <p>From the encounter flash to the damage number.</p>
+  <h2>Battle: rules</h2>
+  <p>From the encounter flash to the level-up window, in the order a fight runs: the overview, one round end to end, the command menu, the action machine and its byte queue, the summon modules, the arithmetic, and the spoils.</p>
   <div class="card-grid">
     <a class="card" href="battle.html">
-      <div class="card-title">Battle</div>
+      <div class="card-title">Battle overview</div>
       <div class="card-body">The guided tour: loading a fight, the roster, the round loop, the command ring, and how a battle ends.</div>
     </a>
-    <a class="card" href="battle-action.html">
-      <div class="card-title">Battle action FSM</div>
-      <div class="card-body">The state machine between &ldquo;picked Attack&rdquo; and &ldquo;HP deducted&rdquo; - swing timing, Arts chains, Magic, Summons, Spirit, Run and capture.</div>
+    <a class="card" href="battle-internals.html">
+      <span class="card-kicker">Companion to Battle overview</span>
+      <div class="card-title">Battle: internals</div>
+      <div class="card-body">The roster table and actor struct, the battle context, the records the loader reads, the heap ledger that bounds a formation, and the status bits.</div>
+    </a>
+    <a class="card" href="history-battle.html">
+      <span class="card-kicker">Companion to Battle overview</span>
+      <div class="card-title">Battle: capture notes</div>
+      <div class="card-body">The save-state diffs and watchpoint captures behind the battle pages' claims, kept for anyone re-deriving one.</div>
     </a>
     <a class="card" href="battle-round-loop.html">
       <div class="card-title">Battle round loop</div>
@@ -229,60 +277,100 @@
       <div class="card-title">Battle command flow</div>
       <div class="card-body">The menu half of a battle: Begin / Run, the D-pad command ring, the commit log and confirm, plus the tutorial and Cort stage overlays that hook it.</div>
     </a>
-    <a class="card" href="battle-action-queue.html">
-      <div class="card-title">Battle action queue</div>
-      <div class="card-body">The byte string every action is: swing bytes, art starters and art constants, how the builder rewrites combos, and how hit events turn it into damage.</div>
+    <a class="card" href="arts-command-gauge.html">
+      <span class="card-kicker">Companion to Battle command flow</span>
+      <div class="card-title">Arts command gauge</div>
+      <div class="card-body">Why one Arts-bar button is wider than the others: the weapon-hand command's AP cost is also its pennant width.</div>
+    </a>
+    <a class="card" href="battle-action.html">
+      <div class="card-title">Battle action state machine</div>
+      <div class="card-body">The state machine between &ldquo;picked Attack&rdquo; and &ldquo;HP deducted&rdquo; - swing timing, Arts chains, Magic, Summons, Spirit, Run and capture.</div>
     </a>
     <a class="card" href="battle-action-helpers.html">
-      <div class="card-title">Battle action helpers</div>
+      <span class="card-kicker">Companion to Battle action state machine</span>
+      <div class="card-title">Battle action: helpers</div>
       <div class="card-body">Where a turn&rsquo;s arithmetic lives: the range metric, damage wrappers, escape roll, AI picks, effect spawns, pose driver and voice cues.</div>
     </a>
     <a class="card" href="battle-action-exit-gates.html">
-      <div class="card-title">Exit gates and softlocks</div>
+      <span class="card-kicker">Companion to Battle action state machine</span>
+      <div class="card-title">Battle action: exit gates</div>
       <div class="card-body">The two states that wait with no timeout - the HP-readout settle and the attack approach - and exactly how each one parks.</div>
+    </a>
+    <a class="card" href="battle-action-queue.html">
+      <div class="card-title">Battle action queue</div>
+      <div class="card-body">The byte string every action is: swing bytes, art starters and art constants, how the builder rewrites combos, and how hit events turn it into damage.</div>
     </a>
     <a class="card" href="cast-module.html">
       <div class="card-title">Cast modules</div>
       <div class="card-body">The 64 small overlay programs behind every summon and capture-class special: how an action reaches one, its phase machine, damage shapes and camera.</div>
     </a>
+    <a class="card" href="battle-formulas.html">
+      <div class="card-title">Battle formulas</div>
+      <div class="card-body">Damage, MP cost, accuracy, escape and the RNG - the exact arithmetic.</div>
+    </a>
+    <a class="card" href="level-up.html">
+      <div class="card-title">Level-up</div>
+      <div class="card-body">EXP split among survivors, a closed-form XP curve, and growth curves that land every stat on its level-99 ceiling.</div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section" id="battle-screen">
+  <h2>Battle: on screen</h2>
+  <p>How the same fight is drawn: the arena and its camera, the combatants, and the chrome around them.</p>
+  <div class="card-grid">
     <a class="card" href="battle-stage-camera.html">
       <div class="card-title">Battle stage and camera</div>
       <div class="card-body">A procedural ground grid, a half-bowl backdrop drawn twice, ten camera framings and the field-to-battle transition.</div>
-    </a>
-    <a class="card" href="battle-hud.html">
-      <div class="card-title">Battle HUD</div>
-      <div class="card-body">Plaques, panels, chips and banners: two static tables and a per-phase script derive every seat, plate and palette on the battle screen.</div>
     </a>
     <a class="card" href="battle-actor-rendering.html">
       <div class="card-title">Battle actor rendering</div>
       <div class="card-body">Assembled party meshes, one staged clip byte, the clip-tag ladder, slow motion, tint through the depth cue, and the trails behind a swing.</div>
     </a>
-    <a class="card" href="battle-formulas.html">
-      <div class="card-title">Battle formulas</div>
-      <div class="card-body">Damage, MP cost, accuracy, escape and the RNG - the exact arithmetic.</div>
+    <a class="card" href="battle-hud.html">
+      <div class="card-title">Battle HUD</div>
+      <div class="card-body">Plaques, panels, chips and banners: two static tables and a per-phase script derive every seat, plate and palette on the battle screen.</div>
     </a>
-    <a class="card" href="arts-command-gauge.html">
-      <div class="card-title">Arts command gauge</div>
-      <div class="card-body">Why one Arts-bar button is wider than the others: the weapon-hand command's AP cost is also its pennant width.</div>
+  </div>
+</section>
+
+<section class="doc-section" id="world-map">
+  <h2>World map and cutscenes</h2>
+  <p>The two places the field hands you to between towns: the overworld you walk, and the movies and scripted scenes you watch.</p>
+  <div class="card-grid">
+    <a class="card" href="world-map.html">
+      <div class="card-title">World map</div>
+      <div class="card-body">The overworld: the walk controller, encounters and location entry, the terrain renderer, the fog, and the palette-walk table behind the shimmering ocean.</div>
     </a>
-    <a class="card" href="effect-vm.html">
-      <div class="card-title">Effect VM</div>
-      <div class="card-body">Spell flashes, hit sparks and item-use animations: a slot pool fed by the effect-script bundle.</div>
+    <a class="card" href="world-map-internals.html">
+      <span class="card-kicker">Companion to World map</span>
+      <div class="card-title">World map: internals</div>
+      <div class="card-body">How the carrier installs a formation, the camera's globals, how portals and gates are seeded from the disc, the overlay terrain renderers and the debug tooling.</div>
+    </a>
+    <a class="card" href="history-world-map.html">
+      <span class="card-kicker">Companion to World map</span>
+      <div class="card-title">World map: chapter-1 sweep</div>
+      <div class="card-body">Every overworld leg reachable from Drake Kingdom in chapter 1: which tile enters which scene, which record carries the entrance, and which flags gate it.</div>
+    </a>
+    <a class="card" href="cutscene.html">
+      <div class="card-title">Cutscenes and movies</div>
+      <div class="card-body">The STR movies (MDEC video + XA audio) and the scripted in-engine scenes like the opening narration crawl.</div>
+    </a>
+    <a class="card" href="cutscene-internals.html">
+      <span class="card-kicker">Companion to Cutscenes and movies</span>
+      <div class="card-title">Cutscenes: internals</div>
+      <div class="card-body">The movie overlay's sector ring and MDEC feed, one frame's decode step by step, and the opening's timeline, narration roller, camera mover and actor channels.</div>
     </a>
   </div>
 </section>
 
 <section class="doc-section" id="menus">
-  <h2>Menus, shops + progression</h2>
-  <p>Everything that happens in a window. Almost all of it lives in the menu overlay.</p>
+  <h2>Menus and town services</h2>
+  <p>Everything that happens in a window. Almost all of it lives in the menu overlay; the inn is the exception.</p>
   <div class="card-grid">
     <a class="card" href="field-menu.html">
       <div class="card-title">Pause menu</div>
       <div class="card-body">Items, Magic, Equip, Status, Options: the 52-record window table every screen is built from, and what each screen draws.</div>
-    </a>
-    <a class="card" href="actor-vm.html">
-      <div class="card-title">Window-widget VM</div>
-      <div class="card-body">The small interpreter that slides the UI's windows in and out - the shop's entrance is one of its programs.</div>
     </a>
     <a class="card" href="inventory.html">
       <div class="card-title">Inventory</div>
@@ -300,27 +388,6 @@
       <div class="card-title">Inn</div>
       <div class="card-body">No inn system at all: each inn is a scripted conversation and the price is a number typed into it.</div>
     </a>
-    <a class="card" href="level-up.html">
-      <div class="card-title">Level-up</div>
-      <div class="card-body">EXP split among survivors, a closed-form XP curve, and growth curves that land every stat on its level-99 ceiling.</div>
-    </a>
-  </div>
-</section>
-
-<section class="doc-section" id="vms">
-  <h2>The bytecode VMs</h2>
-  <p>Most in-game behaviour is authored as data - scripts the designers could change without recompiling - and run by a handful of small interpreters. Four are clean opcode dispatchers; the effect VM is a per-slot state machine with the same role.</p>
-  <div class="table-wrap">
-  <table class="data-table">
-    <thead><tr><th>VM</th><th>Drives</th><th>Lives in</th><th>Ops</th></tr></thead>
-    <tbody>
-      <tr><td><a href="script-vm.html">Field / event VM</a></td><td>NPC lines, cutscenes, doors, story flags</td><td>Field overlay 0897</td><td>43 (+ <code>0x4C</code> sub-dispatch)</td></tr>
-      <tr><td><a href="move-vm.html">Move-table VM</a></td><td>Per-actor animation, motion and Tactical Arts</td><td>SCUS + an overlay extension</td><td>71 + 61</td></tr>
-      <tr><td><a href="motion-vm.html">Motion VMs</a></td><td>Pursue / patrol / face-target; scripted motion + flag writes</td><td>SCUS</td><td>two small dispatchers</td></tr>
-      <tr><td><a href="actor-vm.html">Window-widget VM</a></td><td>Menu window choreography</td><td>Menu overlay 0899</td><td>13</td></tr>
-      <tr><td><a href="effect-vm.html">Effect VM</a></td><td>Battle effect spawns</td><td>Battle overlay 0898</td><td>state machine</td></tr>
-    </tbody>
-  </table>
   </div>
 </section>
 
@@ -351,35 +418,58 @@
   </div>
 </section>
 
-<section class="doc-section" id="engines-and-hosts">
-  <h2>Interpreters + the port&rsquo;s hosts</h2>
+<section class="doc-section" id="picture-and-sound">
+  <h2>Sound and picture</h2>
+  <p>The two services every mode draws on, as the retail game runs them.</p>
   <div class="card-grid">
-    <a class="card" href="vm-inventory.html">
-      <div class="card-title">VM inventory</div>
-      <div class="card-body">Every interpreter-shaped subsystem in the game, with its dispatcher, its op space and whether the port runs it.</div>
+    <a class="card" href="renderer.html">
+      <div class="card-title">Renderer</div>
+      <div class="card-body">How a TMD mesh becomes pixels: the GTE geometry pass, the ordering table, VRAM texture pages and palettes.</div>
     </a>
-    <a class="card" href="move-vm-overlay-ext.html">
-      <div class="card-title">Move VM: 0x2F extension</div>
-      <div class="card-body">The 61 field-only sub-opcodes behind every ambient effect tree: player tests, flag branches, self-modifying bytecode.</div>
+    <a class="card" href="renderer-internals.html">
+      <span class="card-kicker">Companion to Renderer</span>
+      <div class="card-title">Renderer: internals</div>
+      <div class="card-body">Which mesh leaf a retail frame really enters, the light-source formula, the per-primitive dispatch table and the routine-by-routine provenance.</div>
+    </a>
+    <a class="card" href="shading.html">
+      <div class="card-title">Shading and palettes</div>
+      <div class="card-body">How a texel becomes a screen colour: palettes read from video memory, the baked mesh colour, depth cue, blending, dither.</div>
+    </a>
+    <a class="card" href="audio.html">
+      <div class="card-title">Audio</div>
+      <div class="card-body">Three roads to the speaker: sequenced music through Sony's sequencer, one-shot effects keyed from a descriptor table, and voices streamed off the CD.</div>
+    </a>
+    <a class="card" href="audio-internals.html">
+      <span class="card-kicker">Companion to Audio</span>
+      <div class="card-title">Audio: internals</div>
+      <div class="card-body">How the sound files are found, the track-swap handshake bit by bit, Sony's sequencer and SPU libraries function by function, and how the port's sound is measured.</div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section" id="port">
+  <h2>The port</h2>
+  <p>The from-scratch Rust engine and the site's own viewers. These pages describe this project's code, not the retail game; each links back to the retail page it reimplements.</p>
+  <div class="card-grid">
+    <a class="card card-primary" href="engine.html">
+      <div class="card-title">Engine reimplementation</div>
+      <div class="card-body">Bring your own disc, ScummVM-style. Retail is the measured ground truth; enhancements are toggles that leave it bit-identical when off.</div>
     </a>
     <a class="card" href="renderer-port.html">
-      <div class="card-title">Port renderer</div>
+      <div class="card-title">Port renderer (wgpu)</div>
       <div class="card-body">How the port draws a frame: the PlayStation traits that are always on, two-pass semi-transparency, enhancement passes, the screen overlay.</div>
     </a>
     <a class="card" href="browser-host.html">
       <div class="card-title">Browser host</div>
       <div class="card-body">What the WebAssembly bundle exports: the play runtime over the native session, the viewer pages, and how two hosts are kept in step.</div>
     </a>
-  </div>
-</section>
-
-<section class="doc-section" id="port">
-  <h2>The from-scratch port</h2>
-  <p>The Rust port has its own page: goals, the fidelity / enhancement split, how the crates stack, and the legal posture.</p>
-  <div class="card-grid">
-    <a class="card" href="engine.html">
-      <div class="card-title">Engine reimplementation</div>
-      <div class="card-body">Bring your own disc, ScummVM-style. Retail is the measured ground truth; enhancements are toggles that leave it bit-identical when off. Playable in the browser on the play page.</div>
+    <a class="card" href="vr-mode.html">
+      <div class="card-title">VR mode (WebXR)</div>
+      <div class="card-body">Stand in Rim Elm with a headset: stereo rendering and head tracking over the world overview, the field viewer and the play page.</div>
+    </a>
+    <a class="card" href="world-overview-viewer.html">
+      <div class="card-title">World-overview viewer</div>
+      <div class="card-body">How the site's 3D world overview assembles each kingdom into one browsable scene: terrain layout, distance fog, animated ocean, camera anchors.</div>
     </a>
   </div>
 </section>

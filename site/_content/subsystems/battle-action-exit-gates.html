@@ -1,5 +1,5 @@
 <header class="page-header">
-  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; battle exit gates</div>
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; <a href="battle-action.html">battle action</a> &middot; exit gates</div>
   <h1>Battle action exit gates and softlock classes</h1>
   <p class="lede">The <a href="battle-action.html">action state machine</a> has two states that wait on a condition with <strong>no timeout</strong>. State <code>0x51</code> waits for the party's HP readouts to finish counting; state <code>0x19</code> waits for the attacker to come within reach. When the thing each waits on can no longer happen, the battle never advances - and because the camera's idle sweep runs regardless, both look the same on screen: the camera orbits the acting actor forever.</p>
 </header>
