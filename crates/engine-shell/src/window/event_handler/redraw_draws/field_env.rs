@@ -195,9 +195,11 @@ impl<'m> DrawCtx<'_, 'm> {
         // Retail's placed-object near reject
         // (`field_env::placed_origin_near_culled`): an object
         // whose origin sits within 160 units of the eye, or
-        // behind it, is not drawn. Judged under the retail
-        // camera only - the `F3` debug orbit frames from a
-        // vantage retail never had.
+        // behind it, is not drawn. Judged from retail's vantage
+        // only (`field_view_window::retail_vantage`): under a
+        // swung / tilted / zoomed follow camera, a wider distance
+        // preset or the `F3` debug orbit, a ground slab's origin
+        // can sit behind the lens while the slab is in shot.
         // A placed object a script has moved (`A3` seat, `4C 42`
         // lift under the actor's `0x20000000` height law) draws at
         // its actor's live position: retail's case-5 draw reads
@@ -253,8 +255,9 @@ impl<'m> DrawCtx<'_, 'm> {
             let &(colour, blend) = object_tints.get(&record?)?;
             tint_draw_cue((colour, blend))
         };
+        let retail_vantage = app.retail_vantage();
         let place_near_culled = |mvp: &Mat4| {
-            !app.field_debug_camera
+            retail_vantage
                 && legaia_engine_scene::field_env::placed_origin_near_culled(mvp.w_axis.w)
         };
         if layer_on("place") {

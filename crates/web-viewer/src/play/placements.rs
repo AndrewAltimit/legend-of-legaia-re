@@ -303,9 +303,18 @@ impl LegaiaRuntime {
     /// Whether retail's placed-object near reject drops a placed draw whose
     /// origin sits at clip `w` = `origin_view_depth` under this frame's
     /// retail camera - the same `field_env::placed_origin_near_culled` kernel
-    /// the native play-window's placed-object pass asks per draw.
+    /// the native play-window's placed-object pass asks per draw. It runs
+    /// only from retail's vantage (`field_view_window::retail_vantage`, the
+    /// predicate the native pass asks); the page skips the call under its
+    /// own `F3` camera.
     pub fn field_placed_near_culled(&self, origin_view_depth: f32) -> bool {
-        field_env::placed_origin_near_culled(origin_view_depth)
+        self.scene_host.host().is_some_and(|h| {
+            legaia_engine_world_views::field_view_window::retail_vantage(
+                &h.world,
+                self.scene_host.camera(),
+                false,
+            )
+        }) && field_env::placed_origin_near_culled(origin_view_depth)
     }
 
     /// A stamp that changes whenever [`Self::field_placement_live`] can: the

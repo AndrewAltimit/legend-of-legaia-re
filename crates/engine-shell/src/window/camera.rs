@@ -60,6 +60,17 @@ pub(super) mod debug_orbit {
 }
 
 impl PlayWindowApp {
+    /// Whether this frame's camera stands where retail's would
+    /// (`field_view_window::retail_vantage`, the kernel the browser play
+    /// page asks too): the placed-object near reject runs only there.
+    pub(super) fn retail_vantage(&self) -> bool {
+        legaia_engine_world_views::field_view_window::retail_vantage(
+            &self.session.host.world,
+            &self.session.camera,
+            self.field_debug_camera,
+        )
+    }
+
     pub(super) fn camera_mvp(&self, aspect: f32) -> Mat4 {
         // Frame the player's vicinity, not the whole scene. Loading the full
         // town environment-geometry pack makes `scene_aabb` (the union of every

@@ -264,6 +264,22 @@ impl PlayWindowApp {
     pub(super) fn sync_field_view(
         &mut self,
     ) -> Option<legaia_engine_scene::field_view_window::ViewCells> {
+        // Diag: `LEGAIA_DIAG_FOLLOW_KNOBS=orbit,tilt,zoom` pins the user's
+        // follow knobs (radians, radians, factor) every frame - the mouse
+        // drag / wheel a screenshot run cannot send.
+        if let Some([orbit, tilt, zoom]) =
+            std::env::var("LEGAIA_DIAG_FOLLOW_KNOBS")
+                .ok()
+                .and_then(|s| {
+                    let v: Vec<f32> = s.split(',').filter_map(|t| t.trim().parse().ok()).collect();
+                    <[f32; 3]>::try_from(v).ok()
+                })
+        {
+            let cam = &mut self.session.camera;
+            cam.manual_orbit = orbit.rem_euclid(std::f32::consts::TAU);
+            cam.manual_tilt = tilt;
+            cam.manual_zoom = zoom;
+        }
         // Retail's visible-tile crop: the cell rectangle the field render
         // library walks this frame (`field_view_window`, the shared kernel the
         // browser play page asks too). The terrain draws are gated per draw
