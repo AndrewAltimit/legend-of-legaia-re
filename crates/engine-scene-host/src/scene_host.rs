@@ -253,6 +253,18 @@ pub struct SceneHost {
     /// [`SceneHost::set_entry_seat`]; consumed (and cleared) by the next
     /// [`SceneHost::enter_field_scene`].
     pub(crate) pending_entry_seat: Option<(i16, i16)>,
+    /// The disc's inbound door / warp arrivals keyed by destination
+    /// ([`legaia_engine_scene::scene_arrivals::ArrivalCatalog`]), built on the
+    /// first scene-picker entry that asks for it and kept for the session.
+    arrival_catalog: Option<Arc<legaia_engine_scene::scene_arrivals::ArrivalCatalog>>,
+    /// Ranked door arrivals into the scene a picker entry is about to enter,
+    /// armed by [`SceneHost::arm_picker_entry_seat`] and consumed (and
+    /// cleared) by the next [`SceneHost::enter_field_scene`].
+    pub(crate) pending_picker_arrivals:
+        Option<Vec<legaia_engine_scene::scene_arrivals::SceneArrival>>,
+    /// Where the last scene-picker entry seated the party (see
+    /// [`SceneHost::picker_seat`]).
+    pub(crate) picker_seat: Option<PickerSeat>,
     /// The current scene's disc-sourced **named scene-change destinations**
     /// (`0x3F` ops), decoded from its MAN on entry via
     /// [`legaia_engine_field::man_field_scripts::scene_destinations`]. Empty for scenes with
@@ -341,7 +353,7 @@ pub use minigame_warp::{
     DOME_FAVORED_COST, DOME_STANDIN_BUDGET, DOME_STANDIN_COMBATANT, DOME_STANDIN_HP,
     DomeLeadFighter, MinigameWarpOutcome,
 };
-pub use scene_entry::FmvHandoffOutcome;
+pub use scene_entry::{FmvHandoffOutcome, PickerSeat};
 
 #[cfg(test)]
 mod tests;

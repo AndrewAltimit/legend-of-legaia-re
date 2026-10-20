@@ -172,10 +172,14 @@ Two things the browser host has to do that the native one gets for free:
 - **Seating.** Scene entry puts the player at the retail *cold-boot spawn*,
   which is only meaningful for `town01` - every other scene is normally entered
   through a door that supplies the arrival tile. Picking a scene from a list has
-  no door, so `LegaiaRuntime::seat_player` keeps the cold spawn when it has floor
-  under it and otherwise seats the player on the walk-ground heightfield, never
-  on a walk-on trigger tile (which would fire on the first tick and warp the
-  scene out from under them).
+  no door, so `enter_field` arms the engine's picker seat
+  (`SceneHost::arm_picker_entry_seat`, shared with the native `--scene` entry):
+  the party lands where another scene's door or the overworld entrance would
+  put it ([picker door arrivals](engine.md#picker-door-arrivals)). Only when no
+  arrival qualifies does `LegaiaRuntime::seat_player` relocate the cold spawn:
+  it keeps it when it has floor under it and otherwise seats the player on the
+  walk-ground heightfield, never on a walk-on trigger tile (which would fire on
+  the first tick and warp the scene out from under them).
 - **Framing.** The page frames every field / overworld / cutscene shot with the
   ENGINE camera (`play_camera`, below), so the vantage is retail's rather than
   the page's own. The camera-occlusion fade dissolves whatever geometry sits

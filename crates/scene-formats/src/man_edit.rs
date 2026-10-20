@@ -456,6 +456,51 @@ pub fn scene_change_sites(man: &[u8]) -> Vec<SceneChangeSite> {
     out
 }
 
+/// The partition-2 record slot carrying each of `sites` (in order), or `None`
+/// when a site is not inside a partition-2 record or its containing record
+/// cannot be attributed unambiguously (another record or section starts
+/// between the record and the op). The slot is the index a `.MAP` kind-1
+/// tile trigger references, so this is the join between a door site and the
+/// walk-on tile that runs it.
+pub fn site_p2_slots(man: &[u8], sites: &[SceneChangeSite]) -> Vec<Option<usize>> {
+    let Ok(mf) = man_section::parse(man) else {
+        return vec![None; sites.len()];
+    };
+    let dro = mf.data_region_offset;
+    // Every record start (all partitions) + section starts bound a record.
+    let mut bounds: Vec<usize> = Vec::new();
+    for part in &mf.partitions {
+        for &off in part {
+            bounds.push(dro + off as usize);
+        }
+    }
+    for s in &mf.sections {
+        bounds.push(s.offset);
+    }
+    bounds.sort_unstable();
+    bounds.dedup();
+    sites
+        .iter()
+        .map(|site| {
+            if site.partition != 2 {
+                return None;
+            }
+            // Containing P2 record: greatest P2 start <= op_pc, with no
+            // other record/section start between it and the op.
+            let (slot, start) = mf.partitions[2]
+                .iter()
+                .enumerate()
+                .map(|(ri, &off)| (ri, dro + off as usize))
+                .filter(|&(_, st)| st <= site.op_pc)
+                .max_by_key(|&(_, st)| st)?;
+            let intruded = bounds
+                .iter()
+                .any(|&b| b > start && b <= site.op_pc && b != start);
+            (!intruded).then_some(slot)
+        })
+        .collect()
+}
+
 /// One inline scene destination decoded from a `0x3F` named-scene-change op:
 /// the disc-sourced answer to "which scenes can this scene warp to". Deduped
 /// by `(scene_name, index)`. Field-for-field the same shape as the engine's

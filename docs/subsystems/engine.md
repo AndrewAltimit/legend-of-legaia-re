@@ -312,12 +312,36 @@ It reaches field and town scenes (map, player, NPCs, doors, dialogue), live batt
 
 Two responsibilities fall to any host that enters a scene without a door to arrive through - the browser's scene picker is the case that exists:
 
-- **Seating.** `enter_field_scene` seeds the player at the retail cold-boot spawn (`FIELD_COLD_SPAWN_XZ`), which is authored for `town01`, the one scene retail cold-boots into. Every other scene expects a door warp to override X/Z. `World::resolve_cold_field_spawn` then resolves a cold entry:
+- **Seating.** A picker entry seats the party where the disc's doors land them. Both hosts call `SceneHost::arm_picker_entry_seat` before entering a picked scene (the page's `enter_field`, the native `--scene` entry); the entry then takes the first ranked door arrival the scene's walkability grid accepts. See [Picker door arrivals](#picker-door-arrivals) for the rule. A scene no door leads into, or whose every arrival is rejected, falls back to the cold seat below.
+- **The cold seat.** `enter_field_scene` seeds the player at the retail cold-boot spawn (`FIELD_COLD_SPAWN_XZ`), which is authored for `town01`, the one scene retail cold-boots into. Every other scene expects a door warp to override X/Z. `World::resolve_cold_field_spawn` then resolves a cold entry:
   - the retail seat is kept only when it is standable, inside the scene's **largest** connected walkable component (4-connected flood fill over the 64-unit sub-cell lattice: walk-visible floor, clear of the wall bits), and not a `.MAP` kind-0 teleport tile;
   - otherwise the spawn relocates to a kind-0 door-arrival destination inside that component, or to the component's centroid. A warp arrival still overrides X/Z afterwards.
   - Hosts seating a player by hand should also avoid gate-1 walk-on trigger tiles (`SceneHost::tile_has_walk_on_trigger`): the first tick would fire it and warp the scene away.
   - If an entry-spawned record ends with the player parked inside a wall (a first-visit record's `MoveTo` choreography, e.g. izumi's spring), the helper-context teardown re-seats them at the resolved spawn (`World::step_helper_contexts`).
 - **Framing.** Both hosts run the engine's retail follow camera ([`camera_view`](../../crates/engine-core/src/camera_view.rs)) and neither culls geometry. A wall or roof between the lens and the player is handled by the camera-occlusion fade, which the browser stages through `play_occlusion_fade`.
+
+### Picker door arrivals
+
+Every retail scene change carries its arrival: the field VM's `0x3F` op names the destination scene, the entry tile and a facing sector. `legaia_engine_scene::scene_arrivals::ArrivalCatalog` walks every scene's MAN for those ops (`man_edit::scene_change_sites`, the enumeration the door randomizer edits) and keys them by destination. The catalog is built once per `SceneHost`, on the first picker entry. Each arrival is classed:
+
+- **Entrance** - an overworld (`map01..03`) walk-on entrance into the scene, the town or dungeon gate;
+- **Walk door** - a field-scene door whose carrying partition-2 record a `.MAP` gate-1 walk-on trigger spawns (`man_edit::site_p2_slots` joined to the source scene's trigger table);
+- **Scripted** - any other `0x3F`, a scene change a script or cutscene runs.
+
+`ArrivalCatalog::ranked` orders one scene's arrivals:
+
+1. Class first: entrance, then walk door, then scripted.
+2. Then the arrival tile more inbound sites share.
+3. Then disc order: source scene in CDNAME order, then the op's offset. Arrivals that share a tile collapse onto the first.
+
+The entry seat is the first ranked arrival that `World::picker_arrival_seat` accepts once the scene's grids are loaded. A seat must be clear of the wall bits, off a kind-0 teleport pad, and one the player can walk off. It must also stand in a room: an open region reaching fewer than three map edges, of at least `PICKER_ARRIVAL_MIN_REGION_SUBCELLS`. That rejects the open space around a map, where cutscene hops park the party at tile `(0x7F, 0x7F)`, and sealed pockets. Each arrival is tried two ways:
+
+1. By retail's standing rule, the collision grid's wall bits alone (`World::field_wall_region`). A door tile is often a wall cell (a door is a gap in a wall), so the arrival is first nudged to the nearest wall-free sub-cell, within the seat-rescue radius. This seats the arrivals the port's walk-visible floor filter leaves off its authored area, Rim Elm's gate among them.
+2. By the authored-floor rule the cold seat uses (`field_spawn_is_valid` after `nearest_standable_seat`). This covers the towns whose wall grid leaves the land beyond their gates open to the map edges.
+
+Unlike the cold seat, an arrival need not be in the scene's largest region: a dungeon whose floors are disconnected rooms is entered through a door into one of them. The party faces along the arrival's sector, as through the door itself.
+
+Rim Elm (`town01`) is the exception: it is the one scene retail enters without a door, at the New Game seat in Vahn's yard, so a picked Rim Elm keeps the cold seat. The arm stands down when an entry operand is already armed (a door, a card load's saved seat), and while the opening chain or a cutscene timeline owns the entry. `SceneHost::picker_seat` reports the outcome: the arrival used, or the cold fallback. The browser's page-side relocation (`LegaiaRuntime::seat_player`) runs only on a fallback. The disc-gated sweep `crates/engine-scene-host/tests/picker_door_arrival_disc.rs` enters every scene the play page lists and prints the scenes that fall back.
 
 ## Fidelity and enhancements
 

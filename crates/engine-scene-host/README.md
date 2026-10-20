@@ -12,6 +12,9 @@ scene, tick it, drain what the tick queued.
   - enters field, world-map and battle scenes (`scene_entry`): resources,
     placed objects, walk-on triggers, the entry seat, the battle inputs the
     loader reads off the disc, the FMV hand-off;
+  - seats a scene-picker entry on a door arrival into the picked scene
+    (`arm_picker_entry_seat`, both hosts' picker), falling back to the
+    cold-entry seat when no door leads in;
   - ticks a loaded scene and routes what the tick raised: door warps and
     minigame warps, dialog, BGM through the host's `BgmDirector`, sustained
     SFX, the battle stage and intro inputs;

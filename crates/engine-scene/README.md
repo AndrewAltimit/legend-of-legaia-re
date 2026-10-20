@@ -23,6 +23,7 @@ depends on it. Hosts, tools and tests name its modules directly
 | `field_view_window` | The camera's visible-tile crop: the cell rectangle one frame of `FUN_801F7088` walks (`view_cells`) and the per-cell decoration / ground gates. Whether a host crops this frame is `engine-world-views::field_view_window`. |
 | `field_ground` | The walk-ground heightfield as a render mesh: positions (static and live-wave), indices, flat refs, the visible-tile crop of the index list. |
 | `field_occlusion` | The camera-occlusion fade's visibility gate: a per-triangle eye-to-player ray-cast over the assembled static scene (`FieldOccluders`), and the strength ramp. Its arming terms over a `World` are `engine-screens::field_occlusion`. |
+| `scene_arrivals` | `ArrivalCatalog`: every scene's inbound door / warp arrivals (`0x3F` sites keyed by destination), ranked for the scene picker's default seat. |
 | `scene_assembly` | The full static scene assembly kernel (`AssembledScene`, `assemble_field_scene_with`) and the hybrid textured / vertex-colour mesh builders. |
 | `man_census` | A scene's MAN carriers and the scene-name entry points of the censuses whose decoders are `legaia_engine_field::man_field_scripts`. |
 | `clut_walk_anim` | The CLUT-walk shimmer: installs a scene's walker table and steps it over a VRAM. |

@@ -30,6 +30,15 @@ impl World {
     /// surrounding space rather than an enclosed area of the map, which is
     /// the discriminator [`Self::resolve_cold_field_spawn`] uses.
     fn field_walk_components_edged(&self) -> (Vec<u16>, Vec<u32>, Vec<[bool; 4]>) {
+        self.subcell_components_edged(&|sx, sz| self.field_subcell_open(sx, sz))
+    }
+
+    /// The component labelling behind [`Self::field_walk_components_edged`]
+    /// over any per-sub-cell `open` predicate.
+    fn subcell_components_edged(
+        &self,
+        open: &dyn Fn(i32, i32) -> bool,
+    ) -> (Vec<u16>, Vec<u32>, Vec<[bool; 4]>) {
         let stride = FIELD_GRID_STRIDE * 2;
         let last = stride as i32 - 1;
         let mut labels = vec![0u16; stride * stride];
@@ -39,7 +48,7 @@ impl World {
         for sz in 0..stride as i32 {
             for sx in 0..stride as i32 {
                 let idx = sz as usize * stride + sx as usize;
-                if labels[idx] != 0 || !self.field_subcell_open(sx, sz) {
+                if labels[idx] != 0 || !open(sx, sz) {
                     continue;
                 }
                 let label = (sizes.len() + 1) as u16;
@@ -59,7 +68,7 @@ impl World {
                             continue;
                         }
                         let nidx = nz as usize * stride + nx as usize;
-                        if labels[nidx] == 0 && self.field_subcell_open(nx, nz) {
+                        if labels[nidx] == 0 && open(nx, nz) {
                             labels[nidx] = label;
                             queue.push_back((nx, nz));
                         }
@@ -230,6 +239,150 @@ impl World {
             .into_iter()
             .max()
             .unwrap_or(0) as usize
+    }
+
+    /// The first of `arrivals` (world `(x, z)` door-arrival spots, best
+    /// first) that makes a **scene-picker seat**: `(index, seat)`, or `None`
+    /// when none qualifies.
+    ///
+    /// Every seat must be clear of the wall bits, off every `avoid_tiles`
+    /// tile (the host passes the kind-0 teleport pads and the gate-1 walk-on
+    /// trigger tiles: the first tick's stale-tile compare would fire either,
+    /// warping the party out or starting the arrival's cutscene beat) and one
+    /// the player can walk off (a leading-edge probe clear), and must stand
+    /// in a **room**: an open region that
+    /// reaches fewer than three map edges (never the open space around a
+    /// map, where the cutscene arrivals parked at tile `(0x7F, 0x7F)` stand)
+    /// and spans at least [`PICKER_ARRIVAL_MIN_REGION_SUBCELLS`] sub-cells
+    /// (never a sealed pocket). A door tile is routinely a wall cell (a door
+    /// is a gap in a wall) or a trigger tile, so an arrival that fails is
+    /// replaced by the nearest sub-cell centre that passes, within
+    /// [`SEAT_RESCUE_RADIUS_SUBCELLS`]. An arrival is tried two ways:
+    ///
+    /// 1. By retail's own standing rule, the collision grid's wall bits
+    ///    ([`Self::field_tile_is_wall`], regions per
+    ///    [`Self::field_wall_region`]). This is what seats arrivals the
+    ///    port's walk-visible floor filter leaves off its authored area
+    ///    (Rim Elm's gate among them).
+    /// 2. By the port's authored-floor rule, the one
+    ///    [`Self::resolve_cold_field_spawn`] uses
+    ///    ([`Self::field_spawn_is_valid`]). This covers the towns whose wall
+    ///    grid leaves the land beyond their gates open to the map edges, so
+    ///    no wall-bit region there is a room.
+    ///
+    /// Unlike the cold resolver it does not demand the scene's *largest*
+    /// region: a dungeon whose floors are disconnected rooms is entered
+    /// through a door into one of them.
+    ///
+    /// Requires the collision grid (and, for the second rule, the object
+    /// cells) to be loaded.
+    pub fn picker_arrival_seat(
+        &self,
+        arrivals: &[(i16, i16)],
+        avoid_tiles: &[(u8, u8)],
+    ) -> Option<(usize, (i16, i16))> {
+        if self.terrain.collision_grid.len() < FIELD_GRID_LEN {
+            return None;
+        }
+        let stride = FIELD_GRID_STRIDE * 2;
+        let wall_free = |sx: i32, sz: i32| self.field_subcell_wall_free(sx, sz);
+        let wall_regions = self.subcell_components_edged(&wall_free);
+        let floor_regions = self.field_walk_components_edged();
+        // The tile quantisation the trigger dispatchers use (`world >> 7`).
+        let on_avoided_tile = |x: i16, z: i16| -> bool {
+            let (tx, tz) = ((x as u16 >> 7) as u8, (z as u16 >> 7) as u8);
+            avoid_tiles.iter().any(|&(kx, kz)| (kx, kz) == (tx, tz))
+        };
+        // Inside an enclosed region of `regions` big enough to be a room.
+        let in_room = |(labels, sizes, edges): &(Vec<u16>, Vec<u32>, Vec<[bool; 4]>),
+                       x: i16,
+                       z: i16|
+         -> bool {
+            let (sx, sz) = ((x as usize) >> 6, (z as usize) >> 6);
+            let Some(i) = labels
+                .get(sz * stride + sx)
+                .and_then(|&l| usize::from(l).checked_sub(1))
+            else {
+                return false;
+            };
+            edges[i].iter().filter(|t| **t).count() < 3
+                && sizes[i] as usize >= PICKER_ARRIVAL_MIN_REGION_SUBCELLS
+        };
+        let usable = |x: i16, z: i16| -> bool {
+            x >= 0
+                && z >= 0
+                && !self.field_tile_is_wall(x, z)
+                && !on_avoided_tile(x, z)
+                && (0..4).any(|d| !self.field_dir_blocked(x, z, d))
+        };
+        // Retail's rule (wall bits) first; then the port's authored-floor
+        // rule, for the towns whose wall grid leaves the land beyond their
+        // gates open to the map edges.
+        let good_by_walls = |x: i16, z: i16| usable(x, z) && in_room(&wall_regions, x, z);
+        let good_by_floor = |x: i16, z: i16| {
+            usable(x, z) && self.field_spawn_is_valid(x, z) && in_room(&floor_regions, x, z)
+        };
+        // The arrival itself when it qualifies, else the nearest sub-cell
+        // centre that does, ring by ring (row-major within a ring) out to the
+        // seat-rescue radius.
+        let nearest = |x: i16, z: i16, good: &dyn Fn(i16, i16) -> bool| -> Option<(i16, i16)> {
+            if good(x, z) {
+                return Some((x, z));
+            }
+            let (sx0, sz0) = ((x as i32) >> 6, (z as i32) >> 6);
+            for r in 1..=SEAT_RESCUE_RADIUS_SUBCELLS {
+                for dz in -r..=r {
+                    for dx in -r..=r {
+                        if dx.abs().max(dz.abs()) != r {
+                            continue;
+                        }
+                        let (sx, sz) = (sx0 + dx, sz0 + dz);
+                        if !(0..stride as i32).contains(&sx) || !(0..stride as i32).contains(&sz) {
+                            continue;
+                        }
+                        let c = ((sx * 64 + 32) as i16, (sz * 64 + 32) as i16);
+                        if good(c.0, c.1) {
+                            return Some(c);
+                        }
+                    }
+                }
+            }
+            None
+        };
+        arrivals.iter().enumerate().find_map(|(i, &(x, z))| {
+            nearest(x, z, &good_by_walls)
+                .or_else(|| nearest(x, z, &good_by_floor))
+                .map(|seat| (i, seat))
+        })
+    }
+
+    /// The wall-bounded region world `(x, z)` stands in, by the collision
+    /// grid's wall bits alone (retail's standing rule): `(sub-cells, map
+    /// edges reached)`, or `None` when the point sits on a wall bit or no
+    /// grid is loaded. The measure [`Self::picker_arrival_seat`] judges a
+    /// door arrival by.
+    pub fn field_wall_region(&self, x: i16, z: i16) -> Option<(usize, usize)> {
+        if self.terrain.collision_grid.len() < FIELD_GRID_LEN || x < 0 || z < 0 {
+            return None;
+        }
+        let (sx, sz) = ((x as i32) >> 6, (z as i32) >> 6);
+        if !self.field_subcell_wall_free(sx, sz) {
+            return None;
+        }
+        let (labels, sizes, edges) =
+            self.subcell_components_edged(&|a, b| self.field_subcell_wall_free(a, b));
+        let label = labels[sz as usize * FIELD_GRID_STRIDE * 2 + sx as usize];
+        let i = usize::from(label).checked_sub(1)?;
+        Some((sizes[i] as usize, edges[i].iter().filter(|t| **t).count()))
+    }
+
+    /// Is the 64-unit sub-cell `(sx, sz)` clear of the collision grid's wall
+    /// bits at its centre? Out-of-range sub-cells read closed.
+    fn field_subcell_wall_free(&self, sx: i32, sz: i32) -> bool {
+        let stride = (FIELD_GRID_STRIDE * 2) as i32;
+        (0..stride).contains(&sx)
+            && (0..stride).contains(&sz)
+            && !self.field_tile_is_wall((sx * 64 + 32) as i16, (sz * 64 + 32) as i16)
     }
 
     /// Resolve a cold field-entry player spawn to an in-bounds, standable,

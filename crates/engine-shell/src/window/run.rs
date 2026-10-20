@@ -256,6 +256,9 @@ fn enter_launch_scene(
         // onto the overworld, install the player, and enter world-map mode
         // (camera controller included). World::tick drives locomotion + the
         // per-tile encounter roll from the pad routed via world.set_pad.
+        // A picked overworld seats the party where a town exit lands them
+        // (`SceneHost::arm_picker_entry_seat`, the page picker's rule too).
+        session.host.arm_picker_entry_seat(scene);
         match session.enter_world_map_live(scene, field_live_opts) {
             Ok(mode) => {
                 log::info!("play-window: entered world-map scene '{scene}' (mode={mode:?})")
@@ -276,6 +279,9 @@ fn enter_launch_scene(
         // The engine's one picker rule (`World::stage_picker_entry`), which
         // the browser page's `enter_field` asks too.
         session.host.world.stage_picker_entry(scene, false);
+        // ...and seats the party where the disc's doors land them in it
+        // (`SceneHost::arm_picker_entry_seat`), as the page picker does.
+        session.host.arm_picker_entry_seat(scene);
         // Drop into the live field scene (run record 0, install the encounter
         // table, arm the live loop). Shared with the v0.1 oracle + headless
         // drivers via `NativeSession::enter_field_live`.

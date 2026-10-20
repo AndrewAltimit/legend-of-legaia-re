@@ -42,6 +42,11 @@ pub(crate) const FIELD_GRID_LEN: usize = FIELD_GRID_STRIDE * 0x80;
 /// reach this path; the bound keeps a *derived* seat's correction local
 /// enough to still be the spot the caller named.
 pub(crate) const SEAT_RESCUE_RADIUS_SUBCELLS: i32 = 8;
+/// Smallest enclosed open-floor region, in 64-unit sub-cells (32 = eight
+/// 128-unit tiles), a door arrival must stand in to seat a scene-picker entry
+/// ([`crate::world::World::picker_arrival_seat`]); anything smaller is a
+/// sealed pocket the grid leaves open, not a room.
+pub const PICKER_ARRIVAL_MIN_REGION_SUBCELLS: usize = 32;
 /// Retail's field **run-button mask**, in this crate's `PadButton` bit
 /// layout: `Cross | R1`. Hold either to invert the Field Move option (the
 /// XOR in [`crate::world::World::field_run_active`]).
