@@ -250,6 +250,10 @@ pub struct ScreenshotConfig {
     /// beside the bars as the headless seed raises it
     /// (`World::raise_mystic_shield`). Cleared once raised.
     pub mystic_shield: std::cell::Cell<bool>,
+    /// `LEGAIA_SEAT_CAST_PARTS`: a captured cast's live slot-B parts, seated
+    /// over the replay's parts of the same records on the frame the capture
+    /// is taken (`SummonScene::install_part_snapshot`); taken once.
+    pub seat_cast_parts: std::cell::Cell<Option<Vec<legaia_engine_effects::summon::CastPartSeed>>>,
     /// `LEGAIA_SEAT_BATTLE_CLIPS=slot:clip:cursor,...`: each body's playing
     /// clip cursor as the capture held it, landed on the capture frame
     /// ([`legaia_engine_capture::clip_cursors`]).
@@ -595,6 +599,11 @@ impl ScreenshotConfig {
                 .unwrap_or_default(),
             mystic_shield: std::cell::Cell::new(
                 std::env::var("LEGAIA_BATTLE_MYSTIC_SHIELD").is_ok_and(|v| v.trim() == "1"),
+            ),
+            seat_cast_parts: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_CAST_PARTS")
+                    .ok()
+                    .map(|v| legaia_engine_capture::cast_parts::cast_parts_from_env(&v)),
             ),
         }))
     }

@@ -756,6 +756,7 @@ for a reason that is not a port defect:
 | [Take back double pushes](#a-push-the-capture-already-holds) | - (measured from the engine's own replay) | `RetailBattle::undrift`, `ground_residual` |
 | [Sit out spent turns](#combatants-that-had-already-acted) | initiative keys `+0x16C` | `RetailBattle::engine_spent_keys`, the `:k` tail of `LEGAIA_BATTLE_BARS` |
 | [Raise the Mystic Shield](#the-mystic-shield-a-capture-already-holds) | the shield word `_DAT_8007BD84` | `World::raise_mystic_shield`, `LEGAIA_BATTLE_MYSTIC_SHIELD=1` |
+| [Seat the per-pass parts](#parts-a-module-seats-on-every-pass) | the live parts of every record a module seats on every pass | `SummonScene::install_part_snapshot`, `LEGAIA_SEAT_CAST_PARTS` |
 | [Land each body's clip](#the-keyframe-each-body-stands-on) | anim node cursor `*(+0x22C) + 0x68`, clip `+0x1D9`, rates `+0x21D` / entry `+0x78` | `World::seat_battle_clip_cursor`, `LEGAIA_SEAT_BATTLE_CLIPS` |
 | [Take back rewards](#rewards-already-granted) | EXP share `gp+0xA04`, stat window, banner element `ctx[+0x26]` | `ungrant_results_rewards`, `ungrant_magic_level_up` |
 | [Place the phase](#placing-the-phase) | command-flow byte `ctx[+0x06]`, cursor `ctx[+0x07]`, seat `ctx[+0x13]` | `SeedPlan` |
@@ -1047,6 +1048,32 @@ battle VRAM pass's own rotations (`World::apply_battle_vram_moves`). The two
 shield frames read `.772` and `.986` seated so, `.387` and `.630` without;
 `gimard_burning_attack`'s fire tunnel, a scroller of PROT 0903's, rose from
 `.569` to `.786` on the same seed.
+
+### Parts a module seats on every pass
+
+Some module arms seat a record on every pass they run, held or not
+(`cast_module_camera::per_pass_spawn_records`: PROT 0962's rays, the
+every-pass spawns of 0915, 0931 and 0934). How many of those parts are
+live and how old each is follows the frame driver's cadence, and PROT
+0962's arm 1 also rolls each ray `rand() % 0x1000` about Z. Neither is a
+thing the replay reproduces: `cort_evolved_ultra_charge_mid_cast` holds 33
+rays, `128` units of age apart (four vsyncs a pass, an overrun of its
+step-`3` history), where the engine's step-`2` cadence holds 47 at `64`, every
+one at another angle. The image child therefore takes the state's live parts
+of those records (`RetailBattle::cast_parts`: `FUN_80021DF4` nodes, kill bit
+`+0x10 & 8` clear, record `+0x48` one of them) as `LEGAIA_SEAT_CAST_PARTS`
+and seats each over the replay's part of the same record on the capture
+frame (`SummonScene::install_part_snapshot`): position, rotation banks, wait
+`+0x54` and the `+0x9C..+0xCC` channel block. A record's surplus parts are
+retired and a shortfall clones a live one; no record is invented. The
+frame rose from `.580` to `.809`.
+
+The snapshot is kept to those records. A part seated once runs on a clock
+the replay already aligns, and the RAM is one frame-pair ahead of the
+displayed frame: seated from the RAM, Ultra Charge's camera-locked discs
+(`0x801F87F4` / `0x801F884C` / `0x801F88A4`, `992` against the engine's
+`972` on their growth channel) drew larger than retail's frame and took the
+score back down to `.736`.
 
 ### The keyframe each body stands on
 

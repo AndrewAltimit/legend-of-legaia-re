@@ -709,6 +709,10 @@ pub fn capture_arm_spawns_every(prot_entry: u32, phase: u8) -> &'static [ModuleS
     }
 }
 
+/// Every record a capture-class module seats on **every** pass of an arm
+/// ([`capture_arm_spawns_every`]'s tables).
+pub const CAPTURE_PER_PASS_SPAWNS: &[&[ModuleSpawn]] = &[&E962_1_EVERY];
+
 /// [`capture_arm_spawns`] for the action the cast runs: PROT 0946's arm 0
 /// seats its stager caller on Call Wave's branch only (Big Wave's,
 /// `0x801F6B08..0x801F6C34`, seats nothing), the branch

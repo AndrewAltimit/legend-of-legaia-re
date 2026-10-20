@@ -23,6 +23,48 @@ pub(super) fn combatant(ram: &[u8], slot: u32) -> Option<Combatant> {
     })
 }
 
+/// The slot-B module image's span: a cast module links at `0x801F69D8` and
+/// its records sit inside it (`docs/subsystems/cast-module.md`).
+const SLOT_B: std::ops::Range<u32> = 0x801F_69D8..0x8020_0000;
+
+/// `FUN_80021DF4`, the part tick a move-VM node carries at `+0x0C`.
+const PART_TICK: u32 = 0x8002_1DF4;
+
+/// Every live part of a record a slot-B cast module seats on every pass
+/// ([`per_pass_spawn_records`](legaia_engine_cast::cast_module_camera::per_pass_spawn_records)),
+/// in actor-list order, as a
+/// [`CastPartSeed`](legaia_engine_effects::summon::CastPartSeed): its record
+/// `+0x48` and the halfwords at
+/// [`CAST_PART_SEED_OFFSETS`](legaia_engine_effects::summon::CAST_PART_SEED_OFFSETS).
+/// A node whose kill bit (`+0x10 & 8`) is up is left out.
+///
+/// Those parts are the passes' history: their count and ages follow the
+/// frame driver's cadence and PROT 0962's rays each carry a `rand()` roll.
+/// A part seated once is left to the replay, whose own state is aligned to
+/// the displayed frame - the RAM runs one frame-pair ahead of it, and a
+/// growing channel seated from the RAM overshoots the frame on screen.
+pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon::CastPartSeed> {
+    let per_pass: Vec<u32> =
+        legaia_engine_cast::cast_module_camera::per_pass_spawn_records().collect();
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| {
+            let rec = game_anchors::u32_at(ram, n + 0x48);
+            game_anchors::u32_at(ram, n + 0x0C) == PART_TICK
+                && game_anchors::u32_at(ram, n + 0x10) & 0x8 == 0
+                && SLOT_B.contains(&rec)
+                && per_pass.contains(&rec)
+        })
+        .map(|n| legaia_engine_effects::summon::CastPartSeed {
+            tag: game_anchors::u32_at(ram, n + 0x48),
+            pokes: legaia_engine_effects::summon::CAST_PART_SEED_OFFSETS
+                .iter()
+                .map(|&o| (o, game_anchors::u16_at(ram, n + u32::from(o))))
+                .collect(),
+        })
+        .collect()
+}
+
 impl RetailBattle {
     /// Read the battle observables; `Err` names why the state is not a
     /// seedable battle.
@@ -70,6 +112,7 @@ impl RetailBattle {
             stage_variant: game_anchors::u8_at(ram, PER_BATTLE_FLAGS) & 0x1F,
             keep_backdrop_object_1: game_anchors::u8_at(ram, KEEP_BACKDROP_OBJECT_1) != 0,
             mystic_shield: game_anchors::u32_at(ram, MYSTIC_SHIELD_HANDLE) != 0,
+            cast_parts: retail_cast_parts(ram),
             backdrop_slot_1_yaw: game_anchors::u16_at(ram, BACKDROP_SLOT_1_YAW),
             monster_ids,
             seat_chars: (0..u32::from(party_count))

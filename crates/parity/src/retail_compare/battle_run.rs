@@ -392,6 +392,15 @@ pub(super) fn battle_image(
     if battle.mystic_shield {
         env.push(("LEGAIA_BATTLE_MYSTIC_SHIELD", "1".to_string()));
     }
+    // The cast's live parts where retail's passes had put them: a part
+    // rolled off `rand()` or aged by the frame-skip history stands where no
+    // replay reproduces.
+    if !battle.cast_parts.is_empty() {
+        env.push((
+            "LEGAIA_SEAT_CAST_PARTS",
+            legaia_engine_capture::cast_parts::cast_parts_env(&battle.cast_parts),
+        ));
+    }
     // The live effect scrollers' rects as the displayed frame held them: a
     // scroller's rotation count is time since its effect was seated.
     if let Some(kv) = retail.vram_rects_env(opts.out_dir, &entry.label) {

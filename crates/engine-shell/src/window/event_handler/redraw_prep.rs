@@ -58,6 +58,14 @@ impl PlayWindowApp {
             if due && let Some(arms) = sc.seat_sprite_arms.take() {
                 self.session.host.world.install_sprite_arm_snapshot(&arms);
             }
+            // ... and a captured cast's parts where retail's passes had put
+            // them (`LEGAIA_SEAT_CAST_PARTS`).
+            if due
+                && let Some(parts) = sc.seat_cast_parts.take()
+                && let Some(scene) = self.session.host.world.casting.active_summon.as_mut()
+            {
+                scene.install_part_snapshot(&parts);
+            }
             // A capture taken mid-glide shows the shot as far along as
             // retail's mover had come (its frame-skip history, which no
             // replay reproduces): the gate carries the frames it had left on

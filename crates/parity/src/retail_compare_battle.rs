@@ -304,6 +304,11 @@ pub struct RetailBattle {
     /// replayed fight casts it again before the captured phase, so the seed
     /// raises it on the first battle tick (`World::raise_mystic_shield`).
     pub mystic_shield: bool,
+    /// The state's live slot-B cast parts (`FUN_80021DF4` nodes whose
+    /// record `+0x48` lies in the module image), each as the halfwords the
+    /// image child seats over the replay's part of the same record on the
+    /// capture frame (`LEGAIA_SEAT_CAST_PARTS`).
+    pub cast_parts: Vec<legaia_engine_effects::summon::CastPartSeed>,
     /// `0x800891D2` - the Y angle the backdrop draw turns its slot 1 by, in
     /// 4096ths of a turn. Time spent in keeping fights since boot, so a
     /// replay carries it over rather than winding its own.

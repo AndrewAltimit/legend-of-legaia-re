@@ -293,6 +293,59 @@ impl SummonScene {
         }
     }
 
+    /// Seat the live parts of a captured cast over this scene's parts of the
+    /// same record ([`CastPartSeed`]): the capture harness's twin of the
+    /// ambient pool's sprite-arm snapshot, for parts whose draw state is
+    /// history a replay cannot reproduce (a ray rolled `rand() % 0x1000`
+    /// about Z on every pass of PROT 0962's arm 1, its age the frame-skip
+    /// history of the passes since).
+    ///
+    /// Each seed's pokes go onto the next live part with its tag, in order;
+    /// a tag with more seeds than live parts clones its first live part for
+    /// the rest, and a tag's live parts past its seed count are retired. A
+    /// tag no seed names is left alone, and a seed whose tag has no live
+    /// part here is skipped - the snapshot re-seats parts the replay
+    /// already spawned, it never invents a record.
+    pub fn install_part_snapshot(&mut self, seeds: &[CastPartSeed]) {
+        let live = |p: &SummonPartRuntime, tag: u32| !p.finished && p.tag == Some(tag);
+        let mut used: std::collections::BTreeMap<u32, usize> = Default::default();
+        for seed in seeds {
+            let n = used.entry(seed.tag).or_insert(0);
+            let of_tag: Vec<usize> = (0..self.parts.len())
+                .filter(|&i| live(&self.parts[i], seed.tag))
+                .collect();
+            let idx = match of_tag.get(*n) {
+                Some(&i) => i,
+                None => {
+                    let Some(&first) = of_tag.first() else {
+                        continue;
+                    };
+                    let clone = self.parts[first].clone();
+                    self.parts.push(clone);
+                    self.parts.len() - 1
+                }
+            };
+            *n += 1;
+            let part = &mut self.parts[idx];
+            for &(off, value) in &seed.pokes {
+                part.poke(off, value);
+            }
+            part.state.world_y_mirror = part.state.world_y;
+        }
+        let mut kept: std::collections::BTreeMap<u32, usize> = Default::default();
+        for p in self.parts.iter_mut().filter(|p| !p.finished) {
+            let Some(tag) = p.tag else { continue };
+            let Some(&want) = used.get(&tag) else {
+                continue;
+            };
+            let k = kept.entry(tag).or_insert(0);
+            *k += 1;
+            if *k > want {
+                p.finished = true;
+            }
+        }
+    }
+
     /// `true` once every part has halted / ended.
     pub fn finished(&self) -> bool {
         self.parts.iter().all(|p| p.finished)

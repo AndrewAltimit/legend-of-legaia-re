@@ -142,6 +142,23 @@ impl SummonPartRuntime {
     }
 }
 
+/// One live cast part as a retail state holds it: the record it runs
+/// (`+0x48`, the slot-B VA the engine keeps as [`SummonPartRuntime::tag`])
+/// and the halfwords [`SummonPartRuntime::poke`] seats - position, rotation
+/// banks, wait and the `+0x9C..+0xCC` channel block. Installed by
+/// [`crate::summon::SummonScene::install_part_snapshot`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CastPartSeed {
+    pub tag: u32,
+    pub pokes: Vec<(u16, u16)>,
+}
+
+/// The actor offsets a [`CastPartSeed`] carries.
+pub const CAST_PART_SEED_OFFSETS: [u16; 31] = [
+    0x14, 0x16, 0x18, 0x24, 0x26, 0x28, 0x54, 0x9C, 0x9E, 0xA0, 0xA2, 0xA4, 0xA6, 0xA8, 0xAA, 0xAC,
+    0xAE, 0xB0, 0xB2, 0xB4, 0xB6, 0xB8, 0xBA, 0xBC, 0xBE, 0xC0, 0xC2, 0xC4, 0xC6, 0xC8, 0xCA,
+];
+
 /// `DAT_1F800393 * DAT_1F80037D` at one vsync per frame and the rate byte's
 /// boot value `8` (planted at `0x80055FB4` / `0x80055FBC`).
 pub const RETAIL_CHANNEL_DELTA: u16 = 8;
