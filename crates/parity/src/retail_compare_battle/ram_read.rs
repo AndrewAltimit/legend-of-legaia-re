@@ -225,11 +225,25 @@ impl RetailBattle {
                     } else {
                         0
                     };
-                    let slowed = game_anchors::u16_at(ram, p + 0x16E) & 0x1000 != 0 && clip == 0;
+                    let status = game_anchors::u16_at(ram, p + 0x16E);
+                    let slowed = status & 0x1000 != 0 && clip == 0;
+                    // A Stone or Numb body on its idle takes no advance at
+                    // all (`andi v0,a0,0x404` at `0x80047640`), so the frame
+                    // on screen shows the RAM's cursor.
+                    let frozen = status
+                        & legaia_engine_battle_vm::battle_anim_rate::FROZEN_IDLE_STATUS_BITS
+                        != 0
+                        && clip == 0;
                     let prod = i32::from(frame_step(ram))
                         * i32::from(game_anchors::u8_at(ram, p + 0x21D))
                         * entry_rate;
-                    let advance = if slowed { prod >> 2 } else { prod >> 1 };
+                    let advance = if frozen {
+                        0
+                    } else if slowed {
+                        prod >> 2
+                    } else {
+                        prod >> 1
+                    };
                     let frames_back =
                         i32::from(display_lag_vsyncs(ram) / u16::from(frame_step(ram).max(1)));
                     Some((slot as u8, clip, cursor - frames_back * advance))

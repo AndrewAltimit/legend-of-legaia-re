@@ -257,6 +257,7 @@ Two channels make a retail art read as an event: the battle clock slowing while 
 
 - `4` is half speed, `2` quarter speed, `0` a freeze. Every animation-driven edge (swing pacing, root motion, the strike loop's per-clip gate) stretches with it.
 - The shift is `>> 2` only for a **Slowed** actor on idle: status `+0x16E & 0x1000` at `0x800476E0`, then `+0x1D9 == 0` at `0x800476EC` (`0x800476D8..0x80047764`). An ordinary idle loop advances as fast as any clip.
+- A **Stone** or **Numb** actor on idle takes no advance at all: `andi v0,a0,0x404` on `+0x16E` at `0x80047640` and `+0x1D9 == 0` at `0x8004764C` refresh the node's position and rotation, run the tint pass (`jal 0x8004A908`) and jump to the epilogue (`j 0x800480B0`), past the advance, the commits and the history push. The draw still decodes the node every frame, so the body holds the keyframe its cursor stands on (`zora_glare_petrify_post`: Vahn's idle cursor `0`). Port: `battle_anim_rate::FROZEN_IDLE_STATUS_BITS`, tested at the head of each actor's step in `World::tick_battle_animations`.
 - Battle seating (`FUN_800513F0`, `0x80051608` / `0x80051888`) seeds the byte from the scratchpad speed scalar `0x1F80037D`.
 - The strike loop also multiplies the byte into its per-frame impact drift; that is one consumer, not the field's meaning.
 

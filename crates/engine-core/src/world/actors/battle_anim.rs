@@ -229,6 +229,18 @@ impl World {
             if restore_idle {
                 self.apply_battle_pose(i, legaia_engine_battle_vm::battle_action::Pose::Idle as u8);
             }
+            // A Stone or Numb body on its idle stands frozen: the tick skips
+            // the whole advance (`0x80047638..0x800476D4`, jumping to the
+            // epilogue at `0x800480B0`).
+            // PORT: FUN_80047430 (`0x80047638..0x800476D4`, the frozen idle)
+            let frozen_idle = self.raw_status_word(i as u8)
+                & legaia_engine_battle_vm::battle_anim_rate::FROZEN_IDLE_STATUS_BITS
+                != 0
+                && self.actors[i].battle.current_anim == 0
+                && self.actors[i].battle_reaction.is_none();
+            if frozen_idle {
+                continue;
+            }
             // The decoder's last-frame tween reads the clip queued behind
             // this one; recompute it before the step, like the draw that
             // follows the tick in retail.
