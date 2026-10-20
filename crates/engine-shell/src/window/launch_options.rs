@@ -138,6 +138,16 @@ pub struct ScreenshotConfig {
         legaia_engine_camera::projection::BattleCamPose,
         legaia_engine_camera::projection::BattleCamPose,
     )>,
+    /// `LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED=<16 numbers>`: the displayed
+    /// frame's live pose and the same endpoints, taken over
+    /// [`Self::battle_cam_align`]'s live pose when the engine's glide heads
+    /// for those endpoints on every component
+    /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::glide_endpoint_matches`]).
+    /// Set by the retail-compare image channel on a Done-band capture.
+    pub battle_cam_align_displayed: Option<(
+        legaia_engine_camera::projection::BattleCamPose,
+        legaia_engine_camera::projection::BattleCamPose,
+    )>,
     /// `LEGAIA_SEAT_HUD_GLIDES_LANDED=1`: the retail capture's HUD widget
     /// glides had all landed, so the captured frame lands the engine's too
     /// (`World::land_battle_hud_glides`). Set by the retail-compare image
@@ -521,6 +531,9 @@ impl ScreenshotConfig {
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
             battle_cam_align: std::env::var("LEGAIA_BATTLE_CAM_ALIGN")
+                .ok()
+                .and_then(|v| legaia_engine_capture::camera_align::cam_align_from_env(&v)),
+            battle_cam_align_displayed: std::env::var("LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED")
                 .ok()
                 .and_then(|v| legaia_engine_capture::camera_align::cam_align_from_env(&v)),
             seat_hud_glides_landed: std::env::var_os("LEGAIA_SEAT_HUD_GLIDES_LANDED").is_some(),

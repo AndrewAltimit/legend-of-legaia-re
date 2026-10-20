@@ -79,9 +79,27 @@ impl RetailBattle {
     /// off retail's. Elsewhere it rose wherever it moved - with the frame
     /// itself left at the RAM's instant too (`battle_gimard_tail_fire_b`
     /// `0.745` to `0.772`).
+    ///
+    /// A Done-band capture takes the displayed pose only where the engine's
+    /// glide heads for retail's framing on every component
+    /// ([`Self::displayed_camera_on_agreement`]): it then walks retail's own
+    /// step table, and the displayed pose is one it passes through.
     pub fn displayed_camera(&self) -> bool {
         matches!(self.seed_plan(), SeedPlan::Action { .. })
             && !matches!(self.span_gate, SpanGate::DoneHold { .. })
+    }
+
+    /// The Done band's conditional twin of [`Self::displayed_camera`]: the
+    /// image child takes the displayed pose when its glide's endpoint
+    /// agrees with retail's on every component
+    /// (`BattleCamera::glide_endpoint_matches`), and the RAM's otherwise.
+    /// `zora_glare_petrify_post` (the caster's case 6, every endpoint
+    /// exact) reads `0.862` on the RAM's pose and `0.996` on the displayed
+    /// one; `noa_levelup_fight_pre`'s case 8 lands on a target pushed
+    /// elsewhere and keeps the RAM's.
+    pub fn displayed_camera_on_agreement(&self) -> bool {
+        matches!(self.seed_plan(), SeedPlan::Action { .. })
+            && matches!(self.span_gate, SpanGate::DoneHold { .. })
     }
 
     /// [`Self::clip_cursors`] on engine slots: the party's pool slots

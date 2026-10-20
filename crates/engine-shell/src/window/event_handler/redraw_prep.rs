@@ -185,6 +185,16 @@ impl PlayWindowApp {
             && self.capture_phase_met()
             && let Some(cam) = self.session.host.world.battle.camera.as_mut()
         {
+            // A Done-band capture's displayed pose, where the glide walks
+            // retail's own table (`LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED`).
+            let live = match self
+                .screenshot
+                .as_ref()
+                .and_then(|sc| sc.battle_cam_align_displayed)
+            {
+                Some((shown, _)) if cam.glide_endpoint_matches(end) => shown,
+                _ => live,
+            };
             cam.align_glide_origin(live, end);
             // The near-camera ghost bits are derived from the pose; the tick
             // computed them on the unaligned one.

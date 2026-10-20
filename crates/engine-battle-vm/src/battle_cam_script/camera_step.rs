@@ -572,6 +572,27 @@ impl BattleCamera {
         true
     }
 
+    /// Whether the glide in flight heads for retail's framing on every
+    /// component: its endpoint agrees with `end` (retail's tween-table
+    /// endpoints) within [`Self::align_glide_origin`]'s per-component
+    /// tolerances. A glide that does walks retail's own step table, so a pose
+    /// read off that table at another instant (the frame the display showed)
+    /// is one the engine's glide passes through too. Never in the far
+    /// framing's [`BattleCamPhase::Menu`] phase. Nothing in play calls it.
+    pub fn glide_endpoint_matches(&self, end: BattleCamPose) -> bool {
+        if self.phase == BattleCamPhase::Menu {
+            return false;
+        }
+        let target = self.glides.front().map_or(self.pose, |g| g.target);
+        let ang = |a: f32, b: f32| ((a - b).rem_euclid(4096.0)).min((b - a).rem_euclid(4096.0));
+        ang(target.pitch, end.pitch) <= ALIGN_ANGLE_TOLERANCE
+            && ang(target.yaw, end.yaw) <= ALIGN_ANGLE_TOLERANCE
+            && (0..3).all(|k| {
+                (target.tr[k] - end.tr[k]).abs() <= ALIGN_TR_TOLERANCE
+                    && (target.focus[k] - end.focus[k]).abs() <= ALIGN_FOCUS_TOLERANCE
+            })
+    }
+
     /// Phase-align the glide's **origin** to a retail instant: every driven
     /// component whose framing endpoint agrees with retail's (`end`, the
     /// endpoints of retail's tween table `ctx[+0x118C]`) takes retail's live

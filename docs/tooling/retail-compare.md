@@ -2113,6 +2113,18 @@ duellists hold still, and the frame read `0.611` against retail's with the
 crystals `70` to `90` px off. Every action drive but a `DoneHold` takes the
 displayed pose, also where its frame stays at the RAM's instant.
 
+A `DoneHold` takes it only where the engine's glide heads for retail's
+framing on every component (`BattleCamera::glide_endpoint_matches`,
+`LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED`): the glide then walks retail's own step
+table, so the displayed pose is one it passes through. Where a pushed target
+moves the endpoint, the walk back mixes the displayed instant in the agreeing
+components with the engine's own in the rest, and the RAM's pose stays.
+`zora_glare_petrify_post` (case 6 on the caster, every endpoint exact) reads
+`.862` on the RAM's pose and `.996` on the displayed one: the near
+petrified Vahn swings across the frame's edge between the two.
+`noa_levelup_fight_pre`'s case 8 frames a target the replay pushed elsewhere
+and keeps the RAM's pose.
+
 The walk back stops at the pass that armed the table: before it the camera
 walked the previous framing's table, which the RAM no longer holds
 (`tween_passes_back`). The action seed `0x0C` arms case 6 on the yaw

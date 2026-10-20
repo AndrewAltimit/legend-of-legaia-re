@@ -437,6 +437,15 @@ pub(super) fn battle_image(
                 battle.cam_tween
             }),
         ));
+        if battle.displayed_camera_on_agreement() {
+            env.push((
+                "LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED",
+                legaia_engine_capture::camera_align::cam_align_to_env(&(
+                    battle.displayed_cam_live,
+                    battle.cam_tween.1,
+                )),
+            ));
+        }
     }
     env.push((
         "LEGAIA_BATTLE_CAMERA_OPTION",
