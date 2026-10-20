@@ -343,10 +343,27 @@ await ctx.addInitScript(() => {
 
 ## Script cache-busting is content-addressed
 
-`site/_gen.py` rewrites every `js/*.js` reference in every generated page to
-carry `?v=<content hash>`, discarding whatever marker the `_content` source
-had. Do not hand-write a version marker in `_content` - it is overwritten, and
-maintaining one is maintaining a lie.
+`site/_gen.py` rewrites every `js/*.js` reference and every linked `css/*.css`
+stylesheet in every generated page to carry `?v=<content hash>`, discarding
+whatever marker the `_content` source had. Do not hand-write a version marker
+in `_content` - it is overwritten, and maintaining one is maintaining a lie.
+
+The stylesheet was the last unstamped file, and it shows what an unstamped
+asset beside stamped ones does. `python3 -m http.server` sends `Last-Modified`
+and no `Cache-Control`, so Firefox treats a cached `styles.css` as
+heuristically fresh for a tenth of its age and reuses it after it has changed,
+while the `layout.js` beside it is current. New chrome then renders against old
+rules: a page served over the LAN came up partly styled. GitHub Pages sends
+`max-age=600` and never showed it.
+
+The web fonts are linked from the page head (`FONT_LINKS` in `_gen.py`), not
+`@import`ed from `styles.css`. An `@import` holds the stylesheet's load until a
+second, third-party fetch completes, and a parser-blocking stylesheet holds the
+page's scripts with it - so a client with a slow route to the font origin got a
+blank or half-built page for as long as that request took. The font sheet loads
+as `media="print"` and switches itself to `all` on load, which keeps it off
+the render-blocking path; text paints on the fallback stack until it arrives,
+as `display=swap` already does.
 
 Hand-written markers were the previous scheme and they fail silently: they only
 bust when someone remembers to bump them, and a forgotten bump is
