@@ -1448,13 +1448,15 @@ frames further into the wait than the accumulator shows, a fifth of a turn of
 yaw. Held so, the engine lands where every such capture is framed - pitch `0`,
 `TR y = 0x500`, focus on the caster's seat.
 
-A caster standing on its idle loop (`+0x1D9 == 0`) drops the accumulator
-from the hold. The loop's natural end re-commits it and zeroes the word
-([above](#the-keyframe-each-body-stands-on)), so the reading is a phase of the
-idle, not of the cast, and the engine's idle wraps on its own clock: held on
-both, `zora_glare_petrify_pre`'s `0x6E` waited out the engine's next wrap and
-reached the capture fourteen counter units past retail's `0x848`, the yaw
-fourteen units round. The yaw counter alone places it to the unit.
+The engine's side of the accumulator test is its clip age
+(`BattleCamera::clip_age`): the accumulator with a looping clip's natural-end
+re-commits left out, as the action gates read it
+([above](#placing-the-phase)). A caster that idles through the band restarts
+the accumulator at every wrap of its idle, on the engine's own clock, so read
+raw the engine's could wrap just as its yaw counter came due:
+`zora_glare_petrify_pre`'s `0x6E` waited out a whole idle cycle and reached the
+capture fourteen counter units past retail's `0x848`, the yaw fourteen units
+round. On the clip age the yaw counter places it to the unit.
 
 What a `0x70` capture still reads is the cast module's own shot (Cort's Ultra
 Charge pulls out to `TR (0, 3072, 7315)`), which the body's camera director
@@ -3117,8 +3119,9 @@ every pass, so it moves with the phase of both clips):
   view axis, on the radius `dist / 4` itself. The pass reads the camera the
   frame draws, and the image child aligns the glide onto retail's live pose
   after the tick has run the pass on the engine's own, so it re-runs the pass
-  on the aligned pose (`World::refresh_battle_camera_ghost`); run on the
-  unaligned glide the skeleton stood solid (`image` `.929` to `.978`).
+  on the aligned pose when every component took retail's value
+  (`World::refresh_battle_camera_ghost`); run on the unaligned glide the
+  skeleton stood solid (`image` `.929` to `.978`).
 - **A pose two frames on.** `battle_noa_miracle_art_combo`'s case-7 focus
   is the midpoint of two body pairs, and at the capture's accumulator
   (`72`, nine vsyncs after the swing clip's commit) retail's Noa reads body

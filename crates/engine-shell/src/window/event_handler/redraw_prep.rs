@@ -195,10 +195,13 @@ impl PlayWindowApp {
                 Some((shown, _)) if cam.glide_endpoint_matches(end) => shown,
                 _ => live,
             };
-            cam.align_glide_origin(live, end);
-            // The near-camera ghost bits are derived from the pose; the tick
-            // computed them on the unaligned one.
-            self.session.host.world.refresh_battle_camera_ghost();
+            // The near-camera ghost bits are derived from the pose, and the
+            // tick computed them on the unaligned one. Re-derive them only
+            // when every component took retail's value: a partly aligned
+            // pose is neither retail's camera nor the engine's own.
+            if cam.align_glide_origin(live, end) == 0xFF {
+                self.session.host.world.refresh_battle_camera_ghost();
+            }
         }
     }
 

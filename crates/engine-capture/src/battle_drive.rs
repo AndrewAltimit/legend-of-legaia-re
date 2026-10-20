@@ -342,17 +342,21 @@ pub fn active_clip_age(world: &legaia_engine_core::world::World) -> u32 {
 /// as retail's `accum` (`ctx[+0x87C]`) says retail's did: the capture's
 /// value less what the `0x6F` frames still to come will add (half the depth
 /// ramp left, `8` against `16` per frame step).
+///
+/// The engine's side is the clip age ([`active_clip_age`]), the accumulator
+/// with a looping clip's natural-end re-commits left out, as the action
+/// gates read it. A caster that idles through the band restarts the
+/// accumulator at every wrap of its idle, on its own clock: read raw, the
+/// engine's could wrap just as the yaw counter came due and hold the band
+/// a whole idle cycle more (`zora_glare_petrify_pre`, fourteen counter units
+/// past retail's `0x848`).
 pub(crate) fn capture_accum_done(
     world: &legaia_engine_core::world::World,
     height: u16,
     accum: u16,
 ) -> bool {
     let want = accum.saturating_sub(capture_ramp_left(world, height) / 2);
-    world
-        .battle
-        .camera
-        .as_ref()
-        .is_none_or(|c| c.close_up_accum() >= u32::from(want))
+    active_clip_age(world) >= u32::from(want)
 }
 
 /// How far apart the engine's yaw counter `ctx[+0x6DA]` and a capture's may

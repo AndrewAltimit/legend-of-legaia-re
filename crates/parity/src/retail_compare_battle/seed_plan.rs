@@ -161,27 +161,9 @@ pub(super) fn span_gate(ram: &[u8], ctx: u32) -> SpanGate {
             // (any Battle Camera option but Far, `0x801E29D4`).
             let yaw = (game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION) != 2)
                 .then(|| game_anchors::u16_at(ram, ctx + 0x6DA));
-            // A caster standing on its idle loop (`+0x1D9 == 0`) restarts
-            // the accumulator at every natural end of the loop, so the
-            // reading counts from the idle's last wrap - a phase of the
-            // loop, not of the cast. With the yaw counter running, that
-            // clock alone places the capture; gating on the accumulator as
-            // well held the engine's `0x6E` until its own idle wrapped and
-            // re-climbed (`zora_glare_petrify_pre`: fourteen counter units
-            // past retail's).
-            let caster = game_anchors::u32_at(
-                ram,
-                ACTOR_TABLE + u32::from(game_anchors::u8_at(ram, ctx + 0x13).min(7)) * 4,
-            );
-            let idle_caster = in_ram(caster) && game_anchors::u8_at(ram, caster + 0x1D9) == 0;
-            let accum = if yaw.is_some() && idle_caster {
-                0
-            } else {
-                game_anchors::u32_at(ram, ctx + 0x87C).min(u32::from(u16::MAX)) as u16
-            };
             return SpanGate::CaptureFade {
                 height: game_anchors::u16_at(ram, ctx + 0x6D0),
-                accum,
+                accum: game_anchors::u32_at(ram, ctx + 0x87C).min(u32::from(u16::MAX)) as u16,
                 arm,
                 yaw,
             };
@@ -197,53 +179,5 @@ pub(super) fn span_gate(ram: &[u8], ctx: u32) -> SpanGate {
             hold: game_anchors::u32_at(ram, END_RESULTS_HOLD) as u16,
         },
         _ => SpanGate::Loading,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// A `0x6E` capture with the caster on clip `clip`, accumulator `216`
-    /// and yaw counter `0x848`.
-    fn capture_fade_ram(clip: u8) -> (Vec<u8>, u32) {
-        let mut ram = vec![0u8; 0x20_0000];
-        let ctx = 0x800E_B654u32;
-        let caster = 0x800E_D264u32;
-        let put = |ram: &mut Vec<u8>, va: u32, bytes: &[u8]| {
-            let o = (va - 0x8000_0000) as usize;
-            ram[o..o + bytes.len()].copy_from_slice(bytes);
-        };
-        put(&mut ram, END_SIGNAL, &[0xFF]);
-        put(&mut ram, ctx + 7, &[0x6E]);
-        put(&mut ram, ctx + 0x13, &[3]);
-        put(&mut ram, ctx + 0x6D0, &0x0C00u16.to_le_bytes());
-        put(&mut ram, ctx + 0x6DA, &0x0848u16.to_le_bytes());
-        put(&mut ram, ctx + 0x87C, &216u32.to_le_bytes());
-        put(&mut ram, ACTOR_TABLE + 3 * 4, &caster.to_le_bytes());
-        put(&mut ram, caster + 0x1D9, &[clip]);
-        (ram, ctx)
-    }
-
-    /// The accumulator restarts at each wrap of a looping clip, so on an
-    /// idle caster only the yaw counter - a clock from the seed - places a
-    /// capture-band hold.
-    #[test]
-    fn an_idle_casters_capture_hold_gates_on_the_yaw_counter_alone() {
-        let (ram, ctx) = capture_fade_ram(0);
-        assert_eq!(
-            span_gate(&ram, ctx),
-            SpanGate::CaptureFade {
-                height: 0x0C00,
-                accum: 0,
-                arm: None,
-                yaw: Some(0x0848),
-            }
-        );
-        let (ram, ctx) = capture_fade_ram(0x0B);
-        assert!(matches!(
-            span_gate(&ram, ctx),
-            SpanGate::CaptureFade { accum: 216, .. }
-        ));
     }
 }
