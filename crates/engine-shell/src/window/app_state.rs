@@ -208,6 +208,24 @@ pub(super) type ResolvedChromeDraw = (
     Option<(u8, u8, u8, u8)>,
 );
 
+/// How long after a first `Escape` a second one quits. One press only
+/// arms the prompt: a player reaching for a pause key must not lose an
+/// unsaved game to it.
+pub(in crate::window) const QUIT_CONFIRM_WINDOW: std::time::Duration =
+    std::time::Duration::from_secs(3);
+
+/// How long a hotkey's notice line ("Ground fog: off") stays up.
+pub(in crate::window) const NOTICE_DURATION: std::time::Duration =
+    std::time::Duration::from_millis(2500);
+
+/// What an `Escape` press does, given when the last unconfirmed one was.
+pub(in crate::window) fn escape_quits(
+    armed: Option<std::time::Instant>,
+    now: std::time::Instant,
+) -> bool {
+    armed.is_some_and(|t| now.saturating_duration_since(t) <= QUIT_CONFIRM_WINDOW)
+}
+
 pub(super) struct PlayWindowApp {
     pub(super) session: NativeSession,
     pub(super) font: Font,
@@ -922,6 +940,17 @@ pub(super) struct PlayWindowApp {
     /// draws no such text); `F1` toggles, and `LEGAIA_DIAG_HUD` starts it on
     /// so the existing diagnostic env var reaches this surface too.
     pub(super) diag_rows: bool,
+    /// When `Escape` was last pressed without quitting: a second press
+    /// within [`QUIT_CONFIRM_WINDOW`] quits, and the HUD shows the prompt
+    /// meanwhile.
+    pub(super) quit_prompt: Option<std::time::Instant>,
+    /// The last hotkey's notice line and when it went up; drawn under the
+    /// quit prompt for [`NOTICE_DURATION`].
+    pub(super) notice: Option<(String, std::time::Instant)>,
+    /// The hotkey help panel (`F12` / `?`) is up.
+    pub(super) hotkey_help: bool,
+    /// The help key held down, so its auto-repeat does not flip the panel.
+    pub(super) help_key_held: Option<KeyCode>,
     /// The title bar text last written (`sync_minigame_caption_title`): the
     /// window's name, plus the live minigame's status caption.
     pub(super) caption_title: String,

@@ -3,6 +3,7 @@
 use super::*;
 use legaia_actor_formats::battle_char_assembly as bca;
 use legaia_actor_formats::monster_archive;
+use legaia_engine_menus::muscle_dome_session::choreo;
 use legaia_scene_formats::scene_tmd_stream;
 use legaia_tmd::mesh::VramMesh;
 use std::sync::Arc;
@@ -58,21 +59,10 @@ impl MuscleDomeAssets {
         )?;
         let raw = player_file.as_slice();
         let (asm, fmesh, foids) = fighter_build(raw)?;
-        let clip = |slot: u32| fighter_clip(raw, &asm, slot).and_then(|a| DomeClip::from_anim(&a));
-        let p_idle = clip(P_IDLE)?;
-        let p_hit = clip(P_HIT).unwrap_or_else(|| p_idle.clone());
-        let p_ko = clip(P_KO).unwrap_or_else(|| p_hit.clone());
-        let p_walk = clip(u32::from(WALK_TAG)).unwrap_or_else(|| p_idle.clone());
         let fighter = DomeBody {
             mesh: fmesh,
             oids: foids,
-            clips: BodyClips {
-                walk: p_walk,
-                idle: p_idle,
-                hit: p_hit,
-                ko: p_ko,
-                swings: P_SWINGS.map(clip),
-            },
+            idle: choreo::fighter_clip(raw, &asm, 0).and_then(|a| DomeClip::from_anim(&a))?,
         };
 
         let archive = read_prot(MONSTER_ARCHIVE_PROT_INDEX)?;
@@ -131,15 +121,11 @@ impl MuscleDomeAssets {
         let mtmd = legaia_tmd::parse(monster_mesh.tmd_bytes()).ok()?;
         let moids =
             legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&mtmd, monster_mesh.tmd_bytes()).1;
-        let anims = monster_archive::animations(&archive, monster_id).ok()??;
-        let [mi, ma, mh, mk] = pick_monster_clips(&anims);
-        let mclip = |i: usize| anims.get(i).and_then(DomeClip::from_anim);
-        let m_idle = mclip(mi)?;
-        let m_walk = anims
-            .iter()
-            .find(|a| a.action_id == WALK_TAG)
-            .and_then(DomeClip::from_anim)
-            .unwrap_or_else(|| m_idle.clone());
+        // Entry 0 is the idle loop.
+        let m_idle = monster_archive::idle_animation(&archive, monster_id)
+            .ok()
+            .flatten()
+            .and_then(|a| DomeClip::from_anim(&a))?;
         let size_class = monster_archive::record(&archive, monster_id)
             .ok()
             .flatten()
@@ -147,13 +133,7 @@ impl MuscleDomeAssets {
         let monster = DomeBody {
             mesh: mmesh,
             oids: moids,
-            clips: BodyClips {
-                walk: m_walk,
-                hit: mclip(mh).unwrap_or_else(|| m_idle.clone()),
-                ko: mclip(mk).unwrap_or_else(|| m_idle.clone()),
-                swings: [mclip(ma), None, None, None],
-                idle: m_idle,
-            },
+            idle: m_idle,
         };
 
         let mut statics = empty_mesh();
@@ -213,8 +193,7 @@ impl MuscleDomeAssets {
             &mut out,
             &b.mesh.positions,
             &b.oids,
-            &b.clips.idle,
-            0,
+            &b.idle.frames[0],
             [0.0; 3],
         );
         let (mut lo, mut hi, mut top) = (f32::INFINITY, f32::NEG_INFINITY, 0.0f32);
@@ -234,9 +213,8 @@ impl MuscleDomeAssets {
         )
     }
 
-    /// The distance a closing approach stops at between the two bodies'
-    /// origins: both rest half-widths with a margin, which puts a swing's
-    /// reach on the defender.
+    /// The fallback floor's half-extent: both rest half-widths with a
+    /// margin.
     pub(super) fn reach(&self) -> f32 {
         let (hp, _) = self.extent(0);
         let (hm, _) = self.extent(1);
@@ -244,20 +222,17 @@ impl MuscleDomeAssets {
     }
 }
 
-/// Pose `base` into `out` from `clip` frame `frame`: per object `Rz Ry Rx v
-/// + T`, then the world yaw about Y and the `(dx, dz)` floor offset
-/// (`place = [dx, yaw, dz]`).
+/// Pose `base` into `out` from one keyframe (per part `[tx, ty, tz, rx, ry,
+/// rz]`): per object `Rz Ry Rx v + T`, then the world yaw about Y and the
+/// `(dx, dz)` floor offset (`place = [dx, yaw, dz]`).
 pub(super) fn pose_into(
     out: &mut [[f32; 3]],
     base: &[[f32; 3]],
     oids: &[u32],
-    clip: &DomeClip,
-    frame: usize,
+    keys: &[[i32; 6]],
     place: [f32; 3],
 ) {
     let a2r = std::f32::consts::TAU / 4096.0;
-    let n = clip.frames.len().max(1);
-    let keys = &clip.frames[frame % n];
     let rots: Vec<([f32; 3], [f32; 3], [f32; 3])> = keys
         .iter()
         .map(|k| {

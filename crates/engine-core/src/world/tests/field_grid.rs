@@ -181,6 +181,28 @@ fn leading_edge_wall_probes_rest_at_retail_standoff() {
 }
 
 #[test]
+fn walk_through_walls_cheat_crosses_a_wall_column() {
+    // The same full-height wall column the standoff test presses against:
+    // with the cheat on, an X- walk carries straight through it.
+    let walk = |noclip: bool| {
+        let mut world = World::new();
+        world.install_field_player(0);
+        for row in 0..0x80usize {
+            world.terrain.collision_grid[13 + row * FIELD_GRID_STRIDE] = 0xF0;
+        }
+        world.locomotion.walk_through_walls = noclip;
+        world.actors[0].move_state.world_x = 1900;
+        world.actors[0].move_state.world_z = 2526;
+        for _ in 0..60 {
+            world.advance_with_collision(0, 0x8000, 8);
+        }
+        world.actors[0].move_state.world_x
+    };
+    assert!(walk(false) > 1793, "the wall stops the walk");
+    assert!(walk(true) < 1665, "the cheat walks through it");
+}
+
+#[test]
 fn solid_field_npcs_block_at_retail_actor_standoff() {
     // The actor-collision probes (`FIELD_ACTOR_PROBES`, retail
     // `DAT_801f21b4` through `FUN_801cfc40`'s moving-actor box test - the

@@ -27,6 +27,135 @@ use super::*;
 /// count, so this only ever stops a ring that refuses.
 const MAGIC_RING_TRIES: u32 = 120;
 
+/// Calls of [`fight_pad`] the hand spends stepping one target cursor toward
+/// its aim before it confirms wherever the cursor stands: about a dozen
+/// presses, past any ring of five foes.
+const AIM_TRIES: u32 = 24;
+
+thread_local! {
+    /// [`fight_pad`] calls spent on the open target cursor ([`aim_press`]).
+    static AIM_SPENT: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    /// Over a run: the frames [`aim_press`] asked for a cursor step (half of
+    /// them land: the loop alternates each press with neutral), and the confirms
+    /// it made on a foe other than the one the cursor opened on.
+    pub(super) static AIM_TALLY: std::cell::Cell<(u32, u32)> = const { std::cell::Cell::new((0, 0)) };
+    /// Per member: the foe row its last strike confirm stood on, and whether
+    /// its commit has been seen in the round's pending list
+    /// ([`check_aimed_dispatch`]).
+    static AIM_EXPECT: std::cell::Cell<[Option<(u8, bool)>; 3]> = const { std::cell::Cell::new([None; 3]) };
+    /// Over a run: strikes dispatched ([`check_aimed_dispatch`]) and those
+    /// whose target was not the foe the cursor confirmed, that foe standing.
+    pub(super) static AIM_DISPATCH: std::cell::Cell<(u32, u32)> = const { std::cell::Cell::new((0, 0)) };
+}
+
+/// The engine-side check behind the aim: a strike confirmed on foe row `s`
+/// must dispatch (`World::dispatch_pending_party_action`) against actor
+/// `party_count + s` while that foe stands - the picker's cursor, the
+/// commit's target and the dispatch's `+0x1DD` are three writes of one
+/// byte. A foe that fell before the member's turn is the dead-target
+/// redirect's (`FUN_801DB124`) and is not counted.
+fn check_aimed_dispatch(w: &legaia_engine_core::world::World) {
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    let mut e = AIM_EXPECT.with(std::cell::Cell::get);
+    for (m, slot) in e.iter_mut().enumerate().take(n) {
+        let Some((row, seen)) = *slot else { continue };
+        let pending = w.battle.round_flow.pending[m].is_some();
+        if pending {
+            *slot = Some((row, true));
+            continue;
+        }
+        // A step back or a Reselect clears the commit too; the member is
+        // then back at its ring, not dispatched.
+        let choosing = w.battle.command.is_some() || w.battle.arts_input.is_some();
+        if !seen || choosing || usize::from(w.battle_ctx.active_actor) != m {
+            continue;
+        }
+        *slot = None;
+        let foe = n + usize::from(row);
+        if !w.actors.get(foe).is_some_and(|a| a.battle.hp > 0) {
+            continue;
+        }
+        // A confused member's strike is retargeted at the dispatch
+        // (`FUN_801E7320` rewrites `+0x1DD`; `World::maybe_confuse_retarget`).
+        let statuses: Vec<_> = w
+            .battle
+            .status_effects
+            .statuses(m as u8)
+            .iter()
+            .map(|s| s.kind)
+            .collect();
+        if statuses.contains(&legaia_engine_battle_vm::status_effects::StatusKind::Confuse) {
+            continue;
+        }
+        let got = w.actors[m].battle.active_target;
+        let miss = usize::from(got) != foe;
+        AIM_DISPATCH.with(|t| {
+            let (a, b) = t.get();
+            t.set((a + 1, b + u32::from(miss)));
+        });
+        if miss {
+            eprintln!(
+                "    [aim] member {m} confirmed foe row {row} (actor {foe}), dispatched at actor {got}; statuses {statuses:?}"
+            );
+        }
+    }
+    AIM_EXPECT.with(|c| c.set(e));
+}
+
+/// The press for an open single-foe target cursor: Right while it stands
+/// off `aim` ([`aimed_foe`]), Cross once it is on it, when there is no aim,
+/// or when [`AIM_TRIES`] steps have not brought it there (the ring covers
+/// four seats, so a fifth foe may be one it never visits).
+fn aim_press(
+    picker: &legaia_engine_battle::target_picker::TargetPickerSession,
+    aim: Option<u8>,
+    striker: Option<u8>,
+) -> u16 {
+    use legaia_engine_battle::target_picker::{CursorRow, PickerState, TargetKind};
+    let off_aim = match (picker.state(), aim) {
+        (
+            PickerState::Cursor {
+                row: CursorRow::Enemy,
+                slot,
+            },
+            Some(want),
+        ) => picker.kind() == TargetKind::SingleEnemy && slot != want,
+        _ => false,
+    };
+    if off_aim && AIM_SPENT.with(|c| c.replace(c.get() + 1)) < AIM_TRIES {
+        AIM_TALLY.with(|t| t.set((t.get().0 + 1, t.get().1)));
+        return PadButton::Right.mask();
+    }
+    let spent = AIM_SPENT.with(|c| c.replace(0));
+    if spent > 0 && !off_aim {
+        AIM_TALLY.with(|t| t.set((t.get().0, t.get().1 + 1)));
+    }
+    if off_aim && std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+        eprintln!(
+            "    [aim] cursor never reached foe row {aim:?} in {AIM_TRIES} asks; confirming {:?}",
+            picker.state()
+        );
+    }
+    if let (
+        Some(m),
+        PickerState::Cursor {
+            row: CursorRow::Enemy,
+            slot,
+        },
+    ) = (striker, picker.state())
+        && continuous::PLAYS_ON.with(std::cell::Cell::get)
+    {
+        AIM_EXPECT.with(|c| {
+            let mut e = c.get();
+            if let Some(x) = e.get_mut(usize::from(m)) {
+                *x = Some((slot, false));
+            }
+            c.set(e);
+        });
+    }
+    PadButton::Cross.mask()
+}
+
 pub(super) fn fight_pad(session: &NativeSession) -> u16 {
     use legaia_engine_battle::arts_command_input::ArtsInputPhase;
     use legaia_engine_battle::battle_magic::SpellPhase;
@@ -34,6 +163,7 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
     use legaia_engine_menus::battle_input::CommandPhase;
     use legaia_engine_menus::inventory_use::InventoryUseState;
     let w = &session.host.world;
+    check_aimed_dispatch(w);
     if !w.battle.tutorial_boxes.is_empty() {
         return PadButton::Cross.mask();
     }
@@ -136,6 +266,9 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
                     PadButton::Circle.mask()
                 }
             },
+            SpellPhase::Targeting { spell_id, picker } => {
+                aim_press(picker, aimed_foe(w, Some(*spell_id)), None)
+            }
             _ => PadButton::Cross.mask(),
         };
     }
@@ -158,6 +291,9 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
                 } else {
                     PadButton::Cross.mask()
                 }
+            }
+            ArtsInputPhase::Targeting { picker } => {
+                aim_press(picker, aimed_foe(w, None), Some(arts.actor))
             }
             _ => PadButton::Cross.mask(),
         };
@@ -335,7 +471,9 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
             | CommandPhase::Menu { .. }
             | CommandPhase::AttackMode { .. }
             | CommandPhase::CommitConfirm { .. } => PadButton::Left.mask(),
-            CommandPhase::Targeting { .. } => PadButton::Cross.mask(),
+            CommandPhase::Targeting { picker, .. } => {
+                aim_press(picker, aimed_foe(w, None), Some(cmd.actor))
+            }
             _ => 0,
         };
     }
@@ -485,6 +623,8 @@ pub(super) fn drain_battle(session: &mut NativeSession) -> Option<Run> {
 
 pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
     NO_ITEM.with(|n| n.borrow_mut().clear());
+    AIM_SPENT.with(|c| c.set(0));
+    AIM_EXPECT.with(|c| c.set([None; 3]));
     NO_MAGIC.with(|n| n.borrow_mut().clear());
     NO_HEAL_SPELL.with(|n| n.borrow_mut().clear());
     MAGIC_REFUSED.with(|n| n.borrow_mut().clear());

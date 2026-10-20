@@ -29,9 +29,70 @@ pub struct Settings {
     /// (`overview`, `textures`, ...) open when the app last closed.
     pub mode: Option<String>,
     pub tab: Option<String>,
+    /// Disc images and extracted folders opened recently, newest first, at
+    /// most [`RECENT_MAX`] ([`Settings::remember_recent`]).
+    pub recent: Vec<PathBuf>,
+    /// The colour theme.
+    pub theme: Theme,
+    /// The UI zoom factor (`Ctrl+=` / `Ctrl+-` / `Ctrl+0`); `None` is 1.0.
+    pub zoom: Option<f32>,
+}
+
+/// How many recent sources the open menu keeps.
+pub const RECENT_MAX: usize = 8;
+
+/// The colour theme choice.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Theme {
+    /// Follow the desktop's light / dark preference.
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+impl Theme {
+    pub const ALL: [Theme; 3] = [Theme::System, Theme::Light, Theme::Dark];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Theme::System => "Follow system",
+            Theme::Light => "Light",
+            Theme::Dark => "Dark",
+        }
+    }
+}
+
+/// The zoom range the settings file accepts; anything else (a hand edit, a
+/// corrupt file) falls back to 1.0.
+pub fn sane_zoom(z: Option<f32>) -> f32 {
+    z.filter(|z| z.is_finite() && (0.5..=3.0).contains(z))
+        .unwrap_or(1.0)
 }
 
 impl Settings {
+    /// Put `path` at the top of the recent list (moving it if already
+    /// there), keeping at most [`RECENT_MAX`].
+    pub fn remember_recent(&mut self, path: &Path) {
+        self.recent.retain(|p| p != path);
+        self.recent.insert(0, path.to_path_buf());
+        self.recent.truncate(RECENT_MAX);
+    }
+
+    /// Drop recent entries whose file or folder no longer exists. `true`
+    /// when the list changed.
+    pub fn prune_recent(&mut self) -> bool {
+        let before = self.recent.len();
+        self.recent.retain(|p| p.exists());
+        self.recent.len() != before
+    }
+
+    /// Remove `path` from the recent list.
+    pub fn forget_recent(&mut self, path: &Path) {
+        self.recent.retain(|p| p != path);
+    }
+
     /// The default settings file, or `None` when the platform has no config
     /// folder.
     pub fn default_path() -> Option<PathBuf> {
@@ -82,5 +143,51 @@ mod tests {
             Settings::default()
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn recent_list_is_most_recent_first_capped_and_pruned() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = Settings::default();
+        let paths: Vec<PathBuf> = (0..RECENT_MAX + 2)
+            .map(|i| dir.path().join(format!("d{i}.bin")))
+            .collect();
+        for p in &paths {
+            std::fs::write(p, b"").unwrap();
+            s.remember_recent(p);
+        }
+        assert_eq!(s.recent.len(), RECENT_MAX);
+        assert_eq!(s.recent[0], paths[RECENT_MAX + 1]);
+        // Re-opening moves an entry to the top instead of duplicating it.
+        s.remember_recent(&paths[5]);
+        assert_eq!(s.recent[0], paths[5]);
+        assert_eq!(s.recent.iter().filter(|p| **p == paths[5]).count(), 1);
+        // A file that has gone is dropped; a removed entry stays removed.
+        std::fs::remove_file(&paths[5]).unwrap();
+        assert!(s.prune_recent());
+        assert!(!s.recent.contains(&paths[5]));
+        assert!(!s.prune_recent());
+        let gone = s.recent[0].clone();
+        s.forget_recent(&gone);
+        assert!(!s.recent.contains(&gone));
+    }
+
+    #[test]
+    fn theme_and_zoom_round_trip_and_bad_zoom_falls_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let s = Settings {
+            theme: Theme::Light,
+            zoom: Some(1.3),
+            ..Default::default()
+        };
+        s.save(&path).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("\"light\""), "{text}");
+        assert_eq!(Settings::load(&path), s);
+        assert_eq!(sane_zoom(Some(1.3)), 1.3);
+        assert_eq!(sane_zoom(Some(f32::NAN)), 1.0);
+        assert_eq!(sane_zoom(Some(40.0)), 1.0);
+        assert_eq!(sane_zoom(None), 1.0);
     }
 }

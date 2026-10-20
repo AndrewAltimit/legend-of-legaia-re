@@ -10,6 +10,12 @@ autotests = false
 name = "legaia_engine_core"
 path = "src/lib.rs"
 
+[features]
+# Re-exposes the battle loop's internal glide and command steps
+# (`world::test_drivers`) for the battle-HUD crate's tests. Off in every
+# library build.
+test-drivers = []
+
 [dependencies]
 legaia-engine-camera.workspace = true
 legaia-engine-mode.workspace = true
@@ -17,7 +23,6 @@ legaia-engine-scene.workspace = true
 legaia-render-kernels.workspace = true
 legaia-engine-battle-vm.workspace = true
 legaia-engine-cast.workspace = true
-anyhow.workspace = true
 glam.workspace = true
 log.workspace = true
 legaia-engine-effects.workspace = true
@@ -28,7 +33,6 @@ legaia-engine-vm.workspace = true
 legaia-engine-battle.workspace = true
 legaia-engine-minigames.workspace = true
 legaia-engine-minigame-scenes.workspace = true
-legaia-font.workspace = true
 legaia-mes.workspace = true
 legaia-prot.workspace = true
 legaia-tim.workspace = true
@@ -36,7 +40,6 @@ legaia-tmd.workspace = true
 legaia-anm.workspace = true
 legaia-art.workspace = true
 legaia-save.workspace = true
-legaia-cheats.workspace = true
 legaia-actor-formats.workspace = true
 legaia-engine-dialog.workspace = true
 legaia-engine-motion-vm.workspace = true
@@ -48,6 +51,8 @@ legaia-ui-formats.workspace = true
 legaia-engine-fishing.workspace = true
 
 [dev-dependencies]
+# Named only by the examples' error plumbing.
+anyhow.workspace = true
 # Named only by tests: format crates the disc-gated chains walk directly.
 legaia-container-formats.workspace = true
 legaia-lzs.workspace = true

@@ -34,25 +34,22 @@
 //! case 1 on the attack cursor, case 6 on the approach, case 7 on the
 //! strikes, case 8 on the done tail and the battle-over arm on a win.
 //!
-//! The choreography is the battle's shape on the port's clock: a leg's first
-//! acting play walks its attacker in from the seat ([`APPROACH_TICKS`],
-//! there is no walk home), each play swings for [`PLAY_CADENCE_TICKS`] (the
-//! defender flinching [`FLINCH_DELAY_TICKS`] into a connecting one, falling
-//! on the knockout), and each attacker's string closes on the done band's
-//! [`DONE_TAIL_TICKS`]. [`turn_timeline`] is that schedule, shared by the
-//! surface, the world's playback hold and its tally readout.
+//! The bodies move on the session's play-out choreography
+//! (`legaia_engine_menus::muscle_dome_session::choreo`): the battle's clip
+//! rate, the range-law approach, root motion, the end steps and the
+//! reaction pick, stepped once a world tick by the host that owns the
+//! session. The surface reads the poses, positions and facings off it and
+//! films them.
 
 mod arena_mesh;
 mod assets;
 mod clips;
 mod surface;
-mod timeline;
 
 pub use arena_mesh::*;
 pub use assets::*;
 pub use clips::*;
 pub use surface::*;
-pub use timeline::*;
 
 /// The monster archive (PROT 867).
 pub const MONSTER_ARCHIVE_PROT_INDEX: usize = 867;
@@ -65,43 +62,24 @@ pub const ARENA_BACKDROP_PROT_INDEX: usize = 1225;
 /// table `0x801F4D2C` the close-ups read.
 pub const BATTLE_ACTION_PROT_INDEX: usize = 898;
 
-/// Ticks one swing of a resolved turn plays for.
-pub const PLAY_CADENCE_TICKS: u32 = 34;
-/// Ticks into a connecting swing at which the defender flinches.
-pub const FLINCH_DELAY_TICKS: u32 = 12;
-/// Ticks the leg's first acting play walks its attacker in from the seat.
-/// Retail's approach is walk-clip root motion at about twenty raw units a
-/// vsync (`engine-core::world::battle::locomotion`); the seats stand 1600
-/// apart, so the walk closes in a little under fifty frames.
-pub const APPROACH_TICKS: u32 = 48;
-/// Ticks the done band holds after an attacker's string: the action SM's
-/// `0x50` arm seeds the tail timer `ctx[+0x6D8] = 0x3C` and `0x51` counts it
-/// down under case 8 for an attack.
-pub const DONE_TAIL_TICKS: u32 = 0x3C;
 /// Retail's battle world scale (base matrix `0x8007BF10 = 16384*I`): every
 /// battle draw class - bodies, backdrop and ground - carries it, and the
 /// camera's translation trio is authored against it.
 pub const BATTLE_WORLD_SCALE: f32 = 4.0;
+
 /// The seat body `i` stands on at leg open, `(x, z)`: the lone party seat
-/// and the lone monster seat (`0x800775C8` / `0x80077608` row 0).
+/// and the lone monster seat
+/// (`legaia_engine_menus::muscle_dome_session::choreo::seat_xz`).
 pub fn seat_xz(i: usize) -> [f32; 2] {
-    let s = if i == 0 {
-        legaia_engine_battle::battle_seats::party_seat(1, 0)
-    } else {
-        legaia_engine_battle::battle_seats::monster_seat(1, 0, false)
-    };
-    [f32::from(s.x), f32::from(s.z)]
+    let [x, z] = legaia_engine_menus::muscle_dome_session::choreo::seat_xz(i);
+    [x as f32, z as f32]
 }
-/// Battle headings `+0x46`: the fighter faces `+Z`, the monster `-Z`.
-pub const FACINGS: [i32; 2] = [0, 0x800];
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_actor_formats::monster_archive::MonsterAnimation;
     use legaia_engine_battle_vm::battle_cam_script as cam;
     use legaia_engine_camera::projection;
-    use legaia_engine_minigames::muscle_dome::DomePlay;
 
     fn clip(frames: usize, rate: u32) -> DomeClip {
         DomeClip {
@@ -111,43 +89,31 @@ mod tests {
     }
 
     #[test]
-    fn monster_clip_pick_prefers_the_close_in_attack() {
-        let mk = |t: u8| MonsterAnimation {
-            variant_track: Default::default(),
-            action_id: t,
-            rate: 1,
-            attach_key: 0,
-            solo_flag: 0,
-            impact_class: 0,
-            part_count: 1,
-            frame_count: 1,
-            frames: vec![vec![]],
-            effect_script: Vec::new(),
-        };
-        let anims = vec![mk(0), mk(0x20), mk(3), mk(0x21), mk(4)];
-        assert_eq!(pick_monster_clips(&anims), [0, 3, 2, 4]);
-        let bare = vec![mk(0), mk(7)];
-        assert_eq!(pick_monster_clips(&bare), [0, 1, 0, 0]);
-    }
-
-    #[test]
     fn pose_applies_the_part_translation_then_the_world_place() {
         let mut c = clip(1, 2);
         c.frames[0][0] = [10, 20, 30, 0, 0, 0];
         let base = [[1.0, 2.0, 3.0]];
         let mut out = [[0.0; 3]];
-        pose_into(&mut out, &base, &[0], &c, 0, [100.0, 0.0, -5.0]);
+        pose_into(&mut out, &base, &[0], &c.frames[0], [100.0, 0.0, -5.0]);
         assert_eq!(out[0], [111.0, 22.0, 28.0]);
         // A half-turn world yaw mirrors X and Z about the body's origin.
         pose_into(
             &mut out,
             &base,
             &[0],
-            &c,
-            0,
+            &c.frames[0],
             [0.0, std::f32::consts::PI, 0.0],
         );
         assert!((out[0][0] + 11.0).abs() < 1e-3 && (out[0][2] + 33.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn the_idle_loop_advances_at_the_battle_rate() {
+        // `FUN_80047430`: `rate / 4` keyframes a vsync at the normal rate.
+        let c = clip(8, 2);
+        assert_eq!(c.frame_at(0), 0);
+        assert_eq!(c.frame_at(2), 1);
+        assert_eq!(c.frame_at(16), 0, "eight keyframes loop in sixteen ticks");
     }
 
     #[test]
@@ -173,49 +139,6 @@ mod tests {
         );
         let z = clip[2] / clip[3];
         assert!((0.0..=1.0).contains(&z), "depth {z} in [0, 1]");
-    }
-
-    fn play(attacker: usize) -> DomePlay {
-        DomePlay {
-            attacker,
-            cmd: 0xC,
-            power: 1,
-            damage: 1,
-            hp_after: [10, 10],
-        }
-    }
-
-    #[test]
-    fn a_turn_walks_in_once_swings_each_play_and_closes_each_string() {
-        let plays = [play(0), play(0), play(1)];
-        let beats = turn_timeline(&plays, true);
-        let kinds: Vec<_> = beats.iter().map(|b| (b.kind, b.attacker)).collect();
-        use BeatKind::*;
-        assert_eq!(
-            kinds,
-            [
-                (Approach, 0),
-                (Swing, 0),
-                (Swing, 0),
-                (Done, 0),
-                (Swing, 1),
-                (Done, 1)
-            ]
-        );
-        let total = APPROACH_TICKS + 3 * PLAY_CADENCE_TICKS + 2 * DONE_TAIL_TICKS;
-        assert_eq!(turn_playback_ticks(&plays, true), total);
-        assert_eq!(
-            turn_playback_ticks(&plays, false),
-            total - APPROACH_TICKS,
-            "a later turn swings from where the pair stands"
-        );
-        assert_eq!(turn_playback_ticks(&[], true), 0);
-        // Beats tile the span with no gap.
-        for w in beats.windows(2) {
-            assert_eq!(w[0].start + w[0].len, w[1].start);
-        }
-        assert_eq!(beat_at(&plays, true, 0).map(|b| b.kind), Some(Approach));
-        assert_eq!(beat_at(&plays, true, total), None);
     }
 
     #[test]
@@ -244,18 +167,5 @@ mod tests {
             assert!((0.0..=1.0).contains(&p[2]), "depth in [0, 1]: {p:?}");
         }
         assert!((f[0] - g[0]).abs() > 0.1, "apart: {f:?} {g:?}");
-    }
-
-    #[test]
-    fn a_swing_plays_out_then_idles() {
-        let clips = BodyClips {
-            idle: clip(4, 2),
-            walk: clip(5, 2),
-            hit: clip(3, 2),
-            ko: clip(3, 2),
-            swings: [Some(clip(2, 16)), None, None, None],
-        };
-        assert_eq!(clips.swing(0xD).frame_count(), 2, "missing swing -> slot 0");
-        assert_eq!(clip_for(&clips, ClipKind::Ko).frame_count(), 3);
     }
 }

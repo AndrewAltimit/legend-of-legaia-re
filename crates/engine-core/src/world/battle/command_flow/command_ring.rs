@@ -115,6 +115,13 @@ impl World {
         let was_round_prompt = matches!(session.phase, CommandPhase::RoundPrompt { .. });
         let phase_before = session.phase.clone();
         session.input(ev, party, monsters);
+        // A target cursor this press opened starts on the member's current
+        // target, as retail's does ([`World::seat_attack_cursor`]).
+        if !matches!(phase_before, CommandPhase::Targeting { .. })
+            && let CommandPhase::Targeting { picker, .. } = &mut session.phase
+        {
+            self.seat_attack_cursor(session.actor, picker);
+        }
         // Leaving the ring for a sub-screen launches the commit log off the
         // left edge; cancelling back onto it slides the log home
         // (`FUN_801D388C`'s launch tail, `super::super::commit_log_launch`).
@@ -241,7 +248,7 @@ impl World {
                 // REF: FUN_801D0748 (states 0x28 / 0x78 into 0x3C / 0x46 / 0x50)
                 self.sync_battle_flow(None);
             }
-            Some(Resolution::OpenSpellMenu) if crate::battle_hud::battle_raseru_forbidden(self) => {
+            Some(Resolution::OpenSpellMenu) if self.battle.raseru_forbidden() => {
                 // The special word forbids the Ra-Seru chip: retail's arm
                 // returns without committing (`0x801D1448..0x801D1454`), so
                 // the ring stays up.
@@ -464,6 +471,43 @@ impl World {
     /// is ever tinted. Same law, engine seat numbering.
     ///
     /// REF: FUN_801DA6B4
+    /// Seat a just-opened attack-target cursor on `actor`'s current target
+    /// (`+0x1DD`, the actor's `battle.active_target`) when that is a
+    /// standing monster.
+    ///
+    /// Retail never resets the byte when the cursor opens: the ring's
+    /// Attack confirm keeps any monster-slot target (`+0x1DD - 3 < 5`) and
+    /// re-picks anything else through `FUN_801DB8B4`
+    /// (`0x801D1574..0x801D15AC`), and the round boundary re-picks only a
+    /// dead or past-slot-6 one (`FUN_801D88CC`); the ring builder
+    /// `FUN_801D8A88` then takes that byte as the cursor's start. A member
+    /// who struck a monster last round therefore opens on it again while it
+    /// stands, and a bare confirm strikes it. Anything else leaves the
+    /// picker's first-live-slot opening, which is `FUN_801DB8B4`'s pick.
+    ///
+    /// REF: FUN_801D0748 (0x801D1574..0x801D15AC), FUN_801D8A88
+    pub(in crate::world) fn seat_attack_cursor(
+        &self,
+        actor: u8,
+        picker: &mut legaia_engine_battle::target_picker::TargetPickerSession,
+    ) {
+        use legaia_engine_battle::target_picker::{CursorRow, TargetKind};
+        if picker.kind() != TargetKind::SingleEnemy {
+            return;
+        }
+        let n = self.party.party_count.clamp(1, 3);
+        let Some(t) = self
+            .actors
+            .get(usize::from(actor))
+            .map(|a| a.battle.active_target)
+        else {
+            return;
+        };
+        if t >= n && t < n + 5 {
+            picker.seat_cursor(CursorRow::Enemy, t - n);
+        }
+    }
+
     fn apply_target_cursor_tint(
         &mut self,
         session: &legaia_engine_menus::battle_input::BattleCommandSession,

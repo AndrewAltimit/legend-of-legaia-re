@@ -4,12 +4,19 @@
   <p class="lede">The disc is a sealed box of textures, meshes, music, voice lines and movies, each in a PlayStation-era format no modern program opens. This page turns each of them into something you can look at or listen to - PNG, OBJ, Blender-ready glTF, WAV, frame sequences - one scenario at a time, with the exact commands. Everything runs against your own disc image or the <code>extracted/</code> tree it produces.</p>
 </header>
 
+<section class="doc-section" id="studio">
+  <h2>Without a terminal: Legaia Studio</h2>
+  <p>The release archive's <code>legaia-studio</code> (<code>legaia-studio.exe</code> on Windows, <code>Legaia Studio.app</code> on macOS) does the common cases of this page with buttons: open your disc image, browse and search the archive by place name, preview textures, 3D models, audio and dialog, export PNG, OBJ, textured <code>.glb</code> or WAV, view the party and every monster with their animations, play the movies and voice audio, and run the whole-disc extraction from its <em>Extract</em> tab - which writes exactly what the <code>legaia-extract</code> command below produces. Its <em>Play</em> button starts the game on the disc it has open.</p>
+  <p><a href="desktop-apps.html#studio">Desktop apps: Legaia Studio</a> walks through it with screenshots, including the download and the first start on each system. Studio ships no game data and uploads nothing: it reads the disc you choose and writes only where you tell it. The rest of this page is the command-line route, one scenario per asset type.</p>
+</section>
+
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <p>Pick the scenario that matches what you want out of the disc. Each is two or three commands.</p>
   <table>
     <thead><tr><th>I want...</th><th>Tool</th><th>Scenario</th></tr></thead>
     <tbody>
+      <tr><td>Browse, preview and export with buttons</td><td><code>legaia-studio</code></td><td><a href="#studio">Legaia Studio</a></td></tr>
       <tr><td>Textures as PNG</td><td><code>asset tim-scan</code> + <code>tim convert-dir</code></td><td><a href="#textures">Textures</a></td></tr>
       <tr><td>Field / battle meshes as OBJ</td><td><code>asset tmd-scan</code> + <code>tmd dump-obj</code></td><td><a href="#models">3D models</a></td></tr>
       <tr><td>A monster with its animations, in Blender</td><td><code>asset monster-archive --glb</code></td><td><a href="#monsters-gltf">Monsters</a></td></tr>

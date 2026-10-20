@@ -249,8 +249,10 @@ impl PlayWindowApp {
         }
         for (i, a) in w.actors.iter().enumerate().take(8) {
             eprintln!(
-                "capture actor {i}: clip {:#04x} cursor {:?} body {:?} pose {}",
+                "capture actor {i}: clip {:#04x} reaction {:?} entry {:?} cursor {:?} body {:?} pose {}",
                 a.battle.current_anim,
+                a.battle_reaction,
+                a.battle_reaction_entry,
                 a.battle_animation.as_ref().map(|p| p.cursor_sixteenths()),
                 a.battle.seat,
                 a.pose_frame.is_some(),
@@ -504,83 +506,22 @@ impl PlayWindowApp {
     }
 
     /// The readout's **layout**, shared by the retail-art emit above and the
-    /// font fallback above it: the combo cluster and one run of digit
-    /// cells per struck actor, seated through this host's camera.
+    /// font fallback above it, seated through this host's camera
+    /// (`legaia_engine_screens::battle_value_readout`, the layout the browser
+    /// play page runs too).
     ///
-    /// `None` outside battle and with nothing to say. Splitting it out is
-    /// what lets the window fall back the way the browser play page already
-    /// did - the page had a font path for the frames before its VRAM existed
-    /// and this host drew nothing at all, so the same fight opened with
-    /// numbers in the tab and none in the window.
+    /// `cam` is the battle camera without the world scale the actor stage is
+    /// drawn at; the layout scales the anchor itself.
     pub(super) fn battle_value_readout_layout(
         &self,
         cam: Mat4,
-    ) -> Option<(
-        Option<legaia_engine_battle_vm::battle_value_readout::ComboCluster>,
-        Vec<Vec<legaia_engine_battle_vm::battle_value_readout::ValueCell>>,
-    )> {
-        use legaia_engine_battle_vm::battle_value_readout as vr;
-        if self.session.host.world.mode != SceneMode::Battle {
-            return None;
-        }
-        if self.battle_hud.popups.is_empty() && self.battle_hud.combo.is_none() {
-            return None;
-        }
-        // The combo counter cluster: the `HIT` / `TOTAL` / `DAMAGE` word
-        // cells and the value digits, off the same sheet, on the seats the
-        // steal-banner and tail-fire display lists pin, sliding in with
-        // placement record 80's glide (`vr::combo_slide`).
-        let cluster = self
-            .battle_hud
-            .combo
-            .as_ref()
-            .map(|c| vr::combo_cluster(c.style, c.hits, c.total, c.slide()));
-        // One numeral per actor, the newest. Retail's readout is a per-slot
-        // **value window** (`_DAT_801F6980`, four halfwords, one per slot), so
-        // a second hit on the same actor replaces the figure rather than
-        // stacking beside it - and stacking is not cosmetic here: two runs
-        // centred on the same point interleave into an unreadable third
-        // number (a 9 landing inside a 10 reads as "190").
-        let mut newest: Vec<&legaia_engine_battle::battle_hud_state::DamagePopup> = Vec::new();
-        for p in &self.battle_hud.popups {
-            if p.status.is_some() {
-                // Status applications have no numeral on the sheet.
-                continue;
-            }
-            match newest.iter_mut().find(|q| q.slot == p.slot) {
-                Some(q) if q.frames_remaining >= p.frames_remaining => {}
-                Some(q) => *q = p,
-                None => newest.push(p),
-            }
-        }
-        // Seated the way retail's renderer `FUN_801DF6B8` seats them: a
-        // view-space square over the struck actor's display trio, rising and
-        // growing with the ring timer (`battle_numerals::popup_value_cells`,
-        // the kernel the browser play page seats through too).
-        // `cam` is the battle camera without the world scale the actor
-        // stage is drawn at; the kernel scales the anchor and keeps the
-        // square's half-extent in view units, as retail's projection does.
-        let vp = cam.to_cols_array();
-        let world = &self.session.host.world;
-        let world_scale = self.battle_stage_scale();
-        let mut runs = Vec::new();
-        for p in newest {
-            let Some(trio) = world.battle_display_trio(usize::from(p.slot)) else {
-                continue;
-            };
-            let age = p.frames_total.saturating_sub(p.frames_remaining);
-            let cells = legaia_engine_ui::battle_numerals::popup_value_cells(
-                &vp,
-                world_scale,
-                trio,
-                p.amount,
-                age,
-            );
-            if !cells.is_empty() {
-                runs.push(cells);
-            }
-        }
-        Some((cluster, runs))
+    ) -> Option<legaia_engine_screens::battle_value_readout::ValueReadoutLayout> {
+        legaia_engine_screens::battle_value_readout::battle_value_readout_layout(
+            &self.session.host.world,
+            &self.battle_hud,
+            &cam.to_cols_array(),
+            self.battle_stage_scale(),
+        )
     }
 }
 

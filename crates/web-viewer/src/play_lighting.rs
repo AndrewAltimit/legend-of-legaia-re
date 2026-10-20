@@ -173,6 +173,45 @@ impl LegaiaRuntime {
         self.options_state.occlusion_fade
     }
 
+    // --- lane L ---
+    /// Turn bloom on / off (the page's "Bloom" box, `F10` on both hosts),
+    /// persisted with the other options (`OptionsState::bloom`).
+    pub fn set_bloom(&mut self, on: bool) {
+        if self.options_state.bloom != on {
+            self.options_state.bloom = on;
+            self.persist_and_apply_options();
+        }
+    }
+
+    /// Whether bloom is on - the persisted option the page's box reflects.
+    pub fn bloom(&self) -> bool {
+        self.options_state.bloom
+    }
+
+    // --- lane Q ---
+    /// The Visual enhancements panel's **Reset to defaults**: every
+    /// presentation knob back at its shipped default
+    /// (`OptionsState::reset_visual_enhancements`), persisted. The page
+    /// releases Retail-faithful first, so the reset lands on the player's
+    /// own settings rather than under a session pin.
+    pub fn reset_visual_options(&mut self) {
+        self.options_state.reset_visual_enhancements();
+        self.persist_and_apply_options();
+    }
+
+    /// This frame's bloom response `[threshold, knee, intensity]`
+    /// (`legaia_render_kernels::bloom::BloomParams::for_frame`): enhanced
+    /// lighting's mood while it is on, daylight's otherwise - the value the
+    /// native renderer derives from its staged mood.
+    pub fn play_bloom_params(&self) -> Vec<f32> {
+        legaia_render_kernels::bloom::BloomParams::for_frame(
+            &self.lighting_mood(),
+            self.options_state.enhanced_lighting,
+        )
+        .page_triple()
+        .to_vec()
+    }
+
     /// Set the time of day (`auto` / `day` / `dusk` / `night` - the native
     /// window's `F8` cycle), persisted. Returns the name now in effect (an
     /// unknown name reads as `auto`).

@@ -61,7 +61,7 @@ pub struct FieldTerrain {
     /// The scratchpad region-attribute block (`0x1F800384..87` +
     /// `0x1F80037C`) latched by the per-tile refresh; read by the zone
     /// query's kind-0 arm.
-    pub(crate) region_attributes: legaia_engine_field::field_regions::RegionAttributes,
+    pub region_attributes: legaia_engine_field::field_regions::RegionAttributes,
     /// The 18-byte zone record the player currently stands in (the camera-
     /// region payload `FUN_801DBC20` consumes), refreshed on tile crossing.
     /// `None` when no zone record matches (retail loads the default camera

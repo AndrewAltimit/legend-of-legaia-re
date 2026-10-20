@@ -81,39 +81,14 @@ impl PlayWindowApp {
         if self.field_party_hud_suppressed() {
             return Vec::new();
         }
-        let world = &self.session.host.world;
-        if !world.passive_hud_active() {
-            return Vec::new();
-        }
-        let Some(points) = world.passive_hud_points() else {
-            return Vec::new();
-        };
-        let project = |p: [f32; 3]| -> Option<(i32, i32)> {
-            let clip = cam * glam::Vec4::new(p[0], p[1], p[2], 1.0);
-            if clip.w <= 0.01 {
-                return None;
-            }
-            let ndc = clip.truncate() / clip.w;
-            Some((
-                ((ndc.x * 0.5 + 0.5) * 320.0) as i32,
-                ((0.5 - ndc.y * 0.5) * 240.0) as i32,
-            ))
-        };
-        let (Some(first), Some(third)) = (project(points[0]), project(points[2])) else {
-            return Vec::new();
-        };
+        let icons = legaia_engine_screens::field_screens::passive_hud_icons(
+            &self.session.host.world,
+            &cam.to_cols_array(),
+        );
         let (origin, scale) = self.save_select_stage(surface_w, surface_h);
-        let mut out = Vec::new();
-        for i in world.passive_hud_icons((first.0, third.1)) {
-            let mut draws = text_draws_for(
-                &self.font.layout_ascii("*"),
-                (i.x, i.y),
-                legaia_engine_ui::MENU_TEXT_GOLD,
-            );
-            legaia_engine_ui::scale_stage_text_draws(&mut draws, origin, scale);
-            out.extend(draws);
-        }
-        out
+        legaia_engine_screens::field_screens::passive_hud_text_draws(
+            &self.font, &icons, origin, scale,
+        )
     }
 
     pub(in crate::window) fn encounter_hint_draws(&self, _w: u32, surface_h: u32) -> Vec<TextDraw> {

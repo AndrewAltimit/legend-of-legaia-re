@@ -852,7 +852,9 @@ pub(crate) enum Cmd {
     /// persisted); `F3` toggles the wide debug orbit vantage; `I` toggles
     /// dynamic lighting; `F4` toggles the camera-occlusion fade; `F2` mutes
     /// audio; `F6` fills the party's AP gauge and `F7` toggles random
-    /// encounters (cheats). The shell's own toggles sit on function keys because every
+    /// encounters (cheats). Each toggle shows its new state at the bottom
+    /// left for a moment ("Ground fog: off"); `F12` (or `?`) opens a panel
+    /// listing every toggle key and its state. The shell's own toggles sit on function keys because every
     /// letter is bindable to a pad button - a toggle on a bound letter
     /// consumes the event and deletes that button from the keyboard.
     ///
@@ -915,7 +917,7 @@ pub(crate) enum Cmd {
         cutscene_map: Option<PathBuf>,
         /// Optional GameShark `.gs.txt` or Mednafen `.cht` cheat file.
         /// Each entry is parsed and applied once at boot through the
-        /// `legaia_engine_core::cheat_applier` registry. Per-entry
+        /// `legaia_engine_cheats::cheat_applier` registry. Per-entry
         /// status is logged to stderr. Conditional codes (`D0`/`E0`)
         /// are treated as always-true unless `--cheat-strict` is set.
         #[arg(long)]
@@ -1049,7 +1051,7 @@ pub(crate) enum Cmd {
         /// e.g. `--key-script "40:L,120:P,140:Down,160:Enter"`. Each entry
         /// presses KEY and releases it on that same world tick, in the order
         /// listed. KEY is a physical key name (letters `A`-`Z`, `Up`/`Down`/
-        /// `Left`/`Right`, `Enter`, `Space`, digits, `F1`-`F9`).
+        /// `Left`/`Right`, `Enter`, `Space`, digits, `F1`-`F10`, `F12`, `/`).
         ///
         /// This reaches what `--pad-script` cannot: `--pad-script` writes the
         /// pad word and the keyboard handler never runs, but every minigame
@@ -1146,7 +1148,7 @@ pub(crate) enum Cmd {
         /// Cheat: set every present party member to this level (1..=99)
         /// once the scene is entered, through the level-up tracker so the
         /// gains are the retail per-character stat growth
-        /// (`legaia_engine_core::cheats`, the same mutation the browser play
+        /// (`legaia_engine_cheats::cheats`, the same mutation the browser play
         /// page's Cheats panel makes). Raising grants the XP; lowering
         /// rebuilds each character from the executable's New Game template
         /// plus the growth for the levels it keeps.
@@ -1183,6 +1185,10 @@ pub(crate) enum Cmd {
         /// (key items and equipment are left alone).
         #[arg(long)]
         cheat_max_items: bool,
+        /// Cheat: walk through walls - the field and overworld walk ignores
+        /// walls, bodies and props (doors still trigger when walked into).
+        #[arg(long)]
+        cheat_noclip: bool,
         /// Disable the camera-occlusion fade ENHANCEMENT (see-through
         /// walls). By default, field scene geometry between the camera and
         /// the player dissolves to a screen-door dither in a circle around
@@ -1193,14 +1199,15 @@ pub(crate) enum Cmd {
         /// the `F4` key.
         #[arg(long, default_value_t = false)]
         no_occlusion_fade: bool,
-        /// Disable the volumetric ground-fog ENHANCEMENT for this session.
-        /// By default, scenes that read as misty or night (Rim Elm under
-        /// the Mist, Drake Castle, the Voz forests, the Ravine, and any field
-        /// scene whose retail fog pool is live) carry a low drifting mist
-        /// bank that the characters part as they walk through it, and a
-        /// battle inherits its field scene's bank. Pure presentation - the
-        /// bank reads the actors and never writes back. Toggle (and persist)
-        /// at runtime with the `F9` key.
+        /// Disable the volumetric ground-fog ENHANCEMENT for this session,
+        /// whatever the options file says. Off by default; with it on,
+        /// scenes that read as misty or night (Rim Elm under the Mist, Drake
+        /// Castle, the Voz forests, the Ravine, and any field scene whose
+        /// retail fog pool is live) carry a low drifting mist bank that the
+        /// characters part as they walk through it, and a battle inherits
+        /// its field scene's bank. Pure presentation - the bank reads the
+        /// actors and never writes back. Toggle (and persist) at runtime
+        /// with the `F9` key.
         #[arg(long, default_value_t = false)]
         no_volumetric_fog: bool,
         /// Start in PSX-faithful rasterisation: sub-pixel vertex jitter and

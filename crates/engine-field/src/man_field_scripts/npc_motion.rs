@@ -1086,6 +1086,35 @@ pub fn object_script_bind_rots(
     out
 }
 
+/// The bind-time **height** of each object-bind script context, keyed by
+/// flat record: the seat Y of the **first** object that binds the record
+/// ([`crate::field_regions::MapObject::seat_y`], `ladder[nibble] + y_off`),
+/// the same object [`object_script_bind_seats`] and
+/// [`object_script_bind_rots`] seat the context from. `FUN_8003A55C` stores it
+/// in the actor's `+0x16`, so the actor's Y is absolute from the start: a
+/// script that later writes `+0x16` (op `4C 42`'s `world_y = -value` mirror,
+/// the actor tick's `-(+0x8E)` law) sets where the mesh is drawn, not how far
+/// it moves. `runtime_ladder` is the negated ladder at `0x1F80035C`
+/// (`World::terrain.floor_height_lut`).
+// REF: FUN_8003A55C
+pub fn object_script_bind_heights(
+    map: &[u8],
+    triggers: &[crate::field_regions::TileTrigger],
+    runtime_ladder: &[i16; 16],
+) -> std::collections::HashMap<usize, i16> {
+    let mut out = std::collections::HashMap::new();
+    for obj in crate::field_regions::parse_map_objects(map) {
+        if let Some(t) = triggers
+            .iter()
+            .find(|t| (t.tile_x, t.tile_z) == obj.key_tile)
+        {
+            out.entry(usize::from(t.record))
+                .or_insert(obj.seat_y(runtime_ladder));
+        }
+    }
+    out
+}
+
 /// The walk-touch effect of the MAN record at **flat** index `flat`: its first
 /// player-channel teleport (either op form - see [`PlayerMoveKind`]), or
 /// `None` when the record repositions nobody (a plain scenery / chest / sign

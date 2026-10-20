@@ -68,6 +68,17 @@ Readings a re-audit against the disassembly or a capture overturned. They are
 listed here as well as in the registers, because a claim that was wrong once is
 the cheapest place to look for a claim that is still wrong.
 
+- **The prologue's gold CLUTs are effect-script cyclers, and the law bends at
+  the top.** Four mode-3 CLUT-cell cyclers grey and re-tint the CLUT rects
+  `(0, 473, 320, 2)` / `(0, 476, 320, 34)`; green is `(L * 247) >> 8`, not
+  `L - 1`, which parts company for `L >= 29`, and rows outside the rects stay
+  ungraded ([settled](re-settled-threads/rendering-camera.md)).
+- **A plain monster swing is elemental, and Astral Slash is one.** The
+  melee kernel's guard ladder keys on the attacking monster's record element
+  `+0x1D`, so a matching jewel halves an ordinary monster strike; the port had
+  passed "non-elemental" for every swing. Astral Slash's module rolls no
+  wrapper: its damage is Gaza's staged clip `0x0A`, four melee beats, which is
+  why a Luminous Jewel halves it ([settled](re-settled-threads/battle.md)).
 - **The "pre-`init_data` gap" is `init_data`, and only half of it boots.**
   Raw TOC entries 0 and 1 are CDNAME's `init_data` and `gameover_data`.
   `init.pak`'s `FUN_801CECD0` reads raw 0 and uploads it; raw 1 is the GAME
@@ -149,9 +160,7 @@ Answered questions: [settled field / locomotion](re-settled-threads/field.md), [
 
 | Thread | Status | What would close it |
 |---|---|---|
-| Which call applies Astral Slash's damage? | open | PROT 952's Astral Slash tick (`0x801F6A0C`) calls no damage wrapper and writes no HP; it stages clips (`+0x1DA` / `+0x1DC`) and drives the camera. Play shows the damage respects jewels (a Luminous Jewel halves 1570 to 781). Following the staged clip to the hit event that rolls it - or a write watch on the target's `+0x14C` during the cast - names the site. The module's other respect call (`+0x15B0`, power `0x80`, no reachable in-module entry) is part of the same read ([battle-formulas.md](../subsystems/battle-formulas.md#capture-class-wrappers---fun_801dd4b0--fun_801dd6b4)). |
-| What is left of the juggle window? | partial (the per-frame law is pinned) | Three residuals ([battle-formulas.md](../subsystems/battle-formulas.md#the-juggle-window---what-makes-a-monster-juggleable)): `FUN_80050E00`'s all-non-zero fall-through hands back a load-address-dependent index, reachable only from an attack-band entry's own `+0x1F7` (no reaction entry has such a list); the measured window runs 1-2 ticks past `32 * beat / (speed * rate)` because the cursor's sub-frame carry at the commit is unmodelled; and whether the counter / guard window at `0x8004AFC0..` uses the same beat for a parry is untraced. A capture of an attack-band window, and the disassembly of the commit's carry, close the first two. |
-| What rewrites the prologue's CLUT rows to gold? | open | The CLUT law `L = max(r,g,b) -> (L, max(L-1,0), L>>1)` is capture-pinned over every graded row, but no CPU loop in 0970, 0897 or `SCUS_942.54` matches it, which points at a table or a DMA upload ([cutscene.md](../subsystems/cutscene.md#full-scene-sepia-grade-the-gold-prologue-look)). A VRAM write watch on a graded CLUT row during the `opdeene` load names the writer. |
+| What is left of the juggle window? | partial (the per-frame law is pinned; the four-slot read is narrowed) | Three residuals ([battle-formulas.md](../subsystems/battle-formulas.md#the-juggle-window---what-makes-a-monster-juggleable)): a four-slot list reads `entry[0x23 + 4k]` with `k` set by the monster block's heap address: both measured fights read `0` (the port's value); a `0xFF` slot would hold the window open ([monster-animation.md](../formats/monster-animation.md#event-frame-list-entry-0x100x13)); the measured window runs 1-2 ticks past `32 * beat / (speed * rate)` because the cursor's sub-frame carry at the commit is unmodelled; and whether the counter / guard window at `0x8004AFC0..` uses the same beat for a parry is untraced. A capture of the commit's carry closes the second. |
 
 Answered questions: [settled battle / arts / level-up](re-settled-threads/battle.md), [settled rendering / camera](re-settled-threads/rendering-camera.md), [settled world map](re-settled-threads/world-map.md); falsified readings: [battle](re-do-not-re-walk.md#battle--arts--level-up), [rendering / camera](re-do-not-re-walk.md#rendering--camera).
 

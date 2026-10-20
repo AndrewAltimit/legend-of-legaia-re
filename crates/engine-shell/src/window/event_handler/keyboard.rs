@@ -3,6 +3,7 @@
 //! mapping.
 
 use super::super::*;
+use crate::window::app_state::escape_quits;
 
 #[path = "keyboard/debug_spawn_keys.rs"]
 mod debug_spawn_keys;
@@ -18,13 +19,29 @@ impl PlayWindowApp {
         code: KeyCode,
         state: ElementState,
     ) {
-        if matches!(code, KeyCode::Escape) && state == ElementState::Pressed {
-            if let Some(log) = self.record_log.as_mut()
-                && let Err(e) = log.flush()
-            {
-                log::error!("record: flush on Escape failed: {e:#}");
+        if matches!(code, KeyCode::Escape) {
+            // Held keys repeat as a stream of `Pressed` events; only the
+            // leading edge counts, or holding Escape would confirm itself.
+            match state {
+                ElementState::Released => {
+                    self.keys_down.remove(&code);
+                }
+                ElementState::Pressed if self.keys_down.insert(code) => {
+                    let now = std::time::Instant::now();
+                    if escape_quits(self.quit_prompt, now) {
+                        if let Some(log) = self.record_log.as_mut()
+                            && let Err(e) = log.flush()
+                        {
+                            log::error!("record: flush on Escape failed: {e:#}");
+                        }
+                        evl.exit();
+                    } else {
+                        log::info!("Escape: press it again to quit");
+                        self.quit_prompt = Some(now);
+                    }
+                }
+                ElementState::Pressed => {}
             }
-            evl.exit();
             return;
         }
         self.handle_key(code, state);
@@ -46,10 +63,14 @@ impl PlayWindowApp {
     /// sitting on a bound key deletes that button from the keyboard (see
     /// `keycode_to_name`).
     pub(in crate::window) fn handle_key(&mut self, code: KeyCode, state: ElementState) {
+        // Read before the latch records this press: a press of a key that
+        // is already down is the OS auto-repeat, not a new press.
+        let repeat = state == ElementState::Pressed && self.keys_down.contains(&code);
         self.latch_key_name(code, state);
         if self.debug_spawn_key(code, state)
             || self.minigame_key(code, state)
-            || self.option_key(code, state)
+            || self.option_key(code, state, repeat)
+            || self.help_key(code, state)
             || self.key_name_entry(code, state)
         {
             return;
@@ -116,5 +137,40 @@ impl PlayWindowApp {
                 log.record_transition(self.session.frames, self.pad | self.gamepad_held);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::window::app_state::QUIT_CONFIRM_WINDOW;
+    use std::time::{Duration, Instant};
+
+    /// The help keys take no pad button off the keyboard: neither is a
+    /// bindable key name, on this host or the page.
+    #[test]
+    fn help_keys_are_not_bindable() {
+        for code in [KeyCode::F12, KeyCode::Slash] {
+            assert_eq!(keycode_to_name(code), "");
+            assert!(
+                legaia_engine_system::input::key_name_for_dom_code(&format!("{code:?}")).is_none()
+            );
+            assert!(
+                legaia_engine_session::hotkeys::HostHotkey::from_dom_code(&format!("{code:?}"))
+                    .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn escape_quits_only_on_a_second_press_inside_the_window() {
+        let t0 = Instant::now();
+        assert!(!escape_quits(None, t0));
+        assert!(escape_quits(Some(t0), t0 + Duration::from_secs(1)));
+        assert!(escape_quits(Some(t0), t0 + QUIT_CONFIRM_WINDOW));
+        assert!(!escape_quits(
+            Some(t0),
+            t0 + QUIT_CONFIRM_WINDOW + Duration::from_millis(1)
+        ));
     }
 }

@@ -1,0 +1,24 @@
+[package]
+name = "legaia-engine-cheats"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_engine_cheats"
+path = "src/lib.rs"
+
+[dependencies]
+legaia-engine-core.workspace = true
+legaia-engine-battle.workspace = true
+legaia-engine-battle-vm.workspace = true
+legaia-engine-menus.workspace = true
+legaia-engine-system.workspace = true
+legaia-cheats.workspace = true
+legaia-game-tables.workspace = true
+legaia-save.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+legaia-art.workspace = true
+legaia-engine-fishing.workspace = true

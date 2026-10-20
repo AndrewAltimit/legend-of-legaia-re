@@ -151,3 +151,20 @@ changes = [
   ["states/delilas_gi_spirit_streaks_v2/image", 0.861, 0.859],
   ["states/noa_levelup_banner/image", 0.962, 0.961],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The arts after-image ghosts now stand at retail's ring depth (slot depth * frame_step on the per-vsync cadence, slot 0 the live frame; FUN_80049348 0x80049454..0x800494A0) and turn by the body's live facing in the native host. Both Tail Fire captures draw Gimard's two ghosts in retail too (FT4 packets at (79, 79, 47) and (63, 63, 31) on CLUT 0x7900/0x7901, ring ids 0x11), but the engine's Gimard stands off retail's body (the hit rays run on the engine's own clock), so the ghosts that now trail at retail's depth land a few blocks off retail's. The two delilas rows are patched-disc party-swap states with a cast effect behind the ghosts. The same run raised cort_guilty_cross_mid_cast 0.772 -> 0.838 and battle_melee_hit_spark 0.713 -> 0.720."
+changes = [
+  ["states/battle_gimard_tail_fire_a/image", 0.804, 0.801],
+  ["states/battle_gimard_tail_fire_b/image", 0.805, 0.804],
+  ["states/delilas_gi_spirit_distortion_v3/image", 0.723, 0.718],
+  ["states/delilas_gi_spirit_streaks_v2/image", 0.859, 0.856],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "A monster cast's homing hit now turns its victim onto the caster (FUN_801E09F8, 0x801E1A10..0x801E1A54). Both Tail Fire captures hold the struck Vahn at heading 4068; the engine's read 0 and now reads 4068, with his body pair within six units of retail's. battle_gimard_tail_fire_a rises 0.801 -> 0.808, past its pre-ghost 0.804. In _b the turned body is Vahn on his knockdown (entry 4 from +0x1F1, cursor 68 against retail's 72), and the frame keeps a pose difference the heading does not cause: retail's Vahn stands upright mid-fall where the engine's lies sprawled, so the turn moves which of the fire blob's blocks that body covers. The rest of the full battle set did not move."
+changes = [
+  ["states/battle_gimard_tail_fire_b/image", 0.805, 0.782],
+]

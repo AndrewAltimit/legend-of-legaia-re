@@ -91,7 +91,7 @@
 //! `x` in `320..640`, exactly the installed draw area, with the offset at
 //! `(0, 0)` so primitive coordinates are absolute VRAM.
 //!
-//! So the capture goes into [`FIELD_CAPTURE_COLS`] **only**, and
+//! So the capture goes into [`FIELD_CAPTURE_COLS`](crate::vram_capture::FIELD_CAPTURE_COLS) **only**, and
 //! [`BattleIntro::refresh_captured_page`] re-composes the intermediate every
 //! frame. The port rasterises the column pass on the CPU
 //! ([`compose_curtain_intermediate`]) because a screen-space quad list has no
@@ -133,7 +133,7 @@
 //! (hypothesis, graded inference).
 
 use crate::battle_intro_styles::IntroStyle;
-use crate::vram_capture::{FIELD_CAPTURE_COLS, VramRect};
+use crate::vram_capture::{FIELD_CAPTURE_LAND, VramRect};
 
 mod curtain;
 mod particles;
@@ -186,7 +186,12 @@ pub const TILE_SHADE_PAGE: VramRect = VramRect::new(448, 0, 16, 64);
 /// rows would destroy an input it depends on while gaining it nothing. The
 /// particle and swirl pages are likewise wholly inside the column rect (every
 /// page they name carries the `y = 256` bit).
+///
+/// Inside the column page the frame lands at [`FIELD_CAPTURE_LAND`] - four
+/// rows down, retail's drawn-row-to-`v` offset
+/// ([`crate::vram_capture::FIELD_CAPTURE_V_OFFSET`]) - so a style's texel
+/// coordinates name the drawn pixel they name on the console.
 pub fn capture_rects_for(_style: IntroStyle) -> &'static [VramRect] {
-    const COLS_ONLY: [VramRect; 1] = [FIELD_CAPTURE_COLS];
+    const COLS_ONLY: [VramRect; 1] = [FIELD_CAPTURE_LAND];
     &COLS_ONLY
 }

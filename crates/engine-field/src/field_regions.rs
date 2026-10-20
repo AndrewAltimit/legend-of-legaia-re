@@ -289,6 +289,24 @@ pub struct MapObject {
     /// can turn the actor afterwards (op `0x38`, op `4C 48`), so this is the
     /// bind-time seed, not the live heading.
     pub rot: [u16; 3],
+    /// The descriptor's `+0x02` height offset, the `y_off` the bind seats the
+    /// actor's `+0x16` with on top of the floor term.
+    pub y_off: i16,
+    /// The floor-tier nibble of the object's **own** tile (`.MAP` `+0x4000`,
+    /// `& 0xF`) - the ladder rung `FUN_8003A55C` reads for the seat
+    /// (`0x8003A620..0x8003A648`).
+    pub floor_nibble: u8,
+}
+
+impl MapObject {
+    /// The Y `FUN_8003A55C` seats the object's actor at:
+    /// `ladder[floor_nibble] + y_off` (`0x8003A62C..0x8003A64C`), with
+    /// `ladder` the **runtime** (negated) floor ladder at `0x1F80035C` -
+    /// `World::terrain.floor_height_lut`'s frame. Retail Y-down.
+    // REF: FUN_8003A55C
+    pub fn seat_y(&self, runtime_ladder: &[i16; 16]) -> i16 {
+        runtime_ladder[usize::from(self.floor_nibble & 0x0F)].wrapping_add(self.y_off)
+    }
 }
 
 /// Half-extent of the static-object contact box on each axis
@@ -343,6 +361,10 @@ pub fn parse_map_objects(map: &[u8]) -> Vec<MapObject> {
                 contact: (clamp(cx), clamp(cz)),
                 key_tile: (kx as u8, kz as u8),
                 rot: [0x08, 0x0A, 0x0C].map(|o| u16::from_le_bytes([d[o], d[o + 1]])),
+                y_off: i16::from_le_bytes([d[2], d[3]]),
+                floor_nibble: map
+                    .get(MAP_WALK_GRID_OFFSET + tz * 0x80 + tx)
+                    .map_or(0, |b| b & 0x0F),
             });
         }
     }

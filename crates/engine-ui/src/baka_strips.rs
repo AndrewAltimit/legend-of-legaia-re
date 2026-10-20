@@ -1,18 +1,21 @@
-//! The Baka Fighter HUD's **digit strips**, as a draw both hosts make.
+//! The Baka Fighter HUD's draws both play hosts make: the font digit strips,
+//! the widget quads and the duel HUD's VITAL bars.
 //!
-//! The duel's three number drawers - the one-glyph round digit
-//! (`FUN_801d69e4`), the 8 px right-aligned score field (`FUN_801d6ef4`) and
-//! the `0x10` px "GET COIN" numeral strip (`FUN_801d6f44`) - each patch a HUD
-//! widget descriptor's `u` column and draw the widget. No host uploads the
-//! PROT 1203 sprite page those descriptors index, so both draw the digit as a
-//! font glyph at the ported cell x instead: the layout is retail's, the glyph
-//! source is not.
+//! The tally's number drawers - the 8 px right-aligned score field
+//! (`FUN_801d6ef4`) and the `0x10` px "GET COIN" numeral strip
+//! (`FUN_801d6f44`), plus the one-glyph round digit (`FUN_801d69e4`) on a
+//! frame without the HUD art - draw as font glyphs at the ported cell x
+//! ([`baka_digit_strip_draws_for`]): the layout is retail's, the glyph source
+//! is not. The layout lives in
+//! `legaia_engine_minigames::baka_fighter_chrome::hud_digit_placements`; this
+//! module is the other half, the glyph quads. A shared *layout* is not a
+//! shared draw, and the two hosts drew different things off one layout until
+//! the quad emitter sat under both as well.
 //!
-//! The layout lives in `legaia_engine_minigames::baka_fighter_chrome::hud_digit_placements`,
-//! which decides which strips draw and at which pen. This module is the other
-//! half: the glyph quads. Splitting them is deliberate; a shared *layout* is
-//! not a shared draw, and the two hosts drew different things off one layout
-//! until the quad emitter sat under both as well.
+//! The widget quads ([`baka_hud_prims`], [`baka_hud_prims_at`]) and the VITAL
+//! bars ([`baka_bar_prim`]) are screen primitives against the duel VRAM,
+//! which carries the PROT 1203 pages; `engine-screens::minigame_hud` composes
+//! them into the frame's layer.
 
 use crate::*;
 
@@ -101,6 +104,72 @@ pub fn baka_hud_prims(
     crate::dance::dance_hud_prims(quads, BAKA_HUD_OT)
 }
 
+/// [`baka_hud_prims`] at an explicit ordering-table bucket: the duel HUD
+/// renderer (`FUN_801d2afc`) links its own cells - bar frames, pips, combo
+/// digits, attack icons - one bucket farther than the widget emitter.
+pub fn baka_hud_prims_at(
+    quads: &[crate::dance::DanceHudQuadView],
+    ot_index: u32,
+) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
+    crate::dance::dance_hud_prims(quads, ot_index)
+}
+
+/// One VITAL fill bar of the Baka Fighter duel HUD: packet corners and the
+/// colour at each end (`FUN_801d2afc`, `0x801D2B44..0x801D2C38`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BakaBarView {
+    /// Corners, `x0 .. x1` by `y0 .. y1`, stage pixels.
+    pub rect: (i16, i16, i16, i16),
+    /// Gouraud colour of the left edge (vertices 0 and 2).
+    pub rgb_left: [u8; 3],
+    /// Gouraud colour of the right edge (vertices 1 and 3).
+    pub rgb_right: [u8; 3],
+}
+
+/// The 5-bit grey every channel of the bars' texel holds: the bar packet is
+/// a `POLY_GT4` sampling texpage `0x1F` `uv (0, 0xF0)..(2, 0xF2)` through
+/// CLUT `0x7F84`, the resident system patch whose texel is BGR555 grey `14`
+/// (`112` in 8-bit; `legaia_ui_formats::title_pak::OVERLAY_SAVE_UI_PROGRESS_TEXEL_GREY`).
+/// The duel VRAM does not carry that page, so the bar draws untextured with
+/// each vertex colour pre-modulated the way the GPU modulates the texel:
+/// `(14 * c) >> 7` in 5 bits. Retail's full bar end `0xBC` comes out `160`,
+/// the red a retail duel capture measures.
+pub const BAKA_BAR_TEXEL_5BIT: u32 = 14;
+
+/// Modulate an 8-bit vertex channel by the bars' grey texel, as the GPU does.
+pub fn baka_bar_channel(c: u8) -> u8 {
+    (((BAKA_BAR_TEXEL_5BIT * u32::from(c)) >> 7).min(31) << 3) as u8
+}
+
+/// The VITAL bar as a screen primitive: an untextured gouraud quad carrying
+/// the texel-modulated colours ([`BAKA_BAR_TEXEL_5BIT`]), at `ot_index`.
+pub fn baka_bar_prim(
+    bar: &BakaBarView,
+    ot_index: u32,
+) -> legaia_render_kernels::screen_prim::ScreenPrim {
+    let (x0, y0, x1, y1) = bar.rect;
+    let m = |c: [u8; 3]| {
+        [
+            baka_bar_channel(c[0]),
+            baka_bar_channel(c[1]),
+            baka_bar_channel(c[2]),
+            0xFF,
+        ]
+    };
+    let (l, r) = (m(bar.rgb_left), m(bar.rgb_right));
+    legaia_render_kernels::screen_prim::ScreenPrim::Flat(
+        legaia_render_kernels::screen_prim::FlatQuad {
+            xy: [(x0, y0), (x1, y0), (x0, y1), (x1, y1)],
+            color: l,
+            gouraud: Some([l, r, l, r]),
+            semi_transparent: false,
+            abr_mode: 0,
+            ot_index,
+            depth: None,
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,6 +195,29 @@ mod tests {
         assert!(left < 100 && right > 100, "straddles its centre");
         assert_eq!(lit[0].color[3], 1.0);
         assert_eq!(dim[0].color[3], 0.5);
+    }
+
+    /// The full bar end `0xBC` modulates to the `160` a retail duel capture
+    /// measures, and the bar is a gouraud quad with its two edge colours.
+    #[test]
+    fn the_vital_bar_modulates_by_the_grey_texel() {
+        assert_eq!(baka_bar_channel(0xBC), 160);
+        assert_eq!(baka_bar_channel(0), 0);
+        let p = baka_bar_prim(
+            &BakaBarView {
+                rect: (0x25, 0x26, 0x89, 0x2B),
+                rgb_left: [0xBC, 0x64, 0],
+                rgb_right: [0xBC, 0, 0],
+            },
+            5,
+        );
+        let legaia_render_kernels::screen_prim::ScreenPrim::Flat(q) = p else {
+            panic!("untextured");
+        };
+        let g = q.gouraud.expect("gouraud");
+        assert_eq!(g[0], g[2]);
+        assert_eq!(g[1], [160, 0, 0, 0xFF]);
+        assert_eq!(q.ot_index, 5);
     }
 
     #[test]

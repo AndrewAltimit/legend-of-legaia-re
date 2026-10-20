@@ -193,8 +193,7 @@ fn play_one_cast(mg: &mut LegaiaMinigames, seen: &mut Seen, budget: usize, fight
         seen.peak_tension = seen.peak_tension.max(tension(mg));
         f += 1;
     }
-    // Let the resolution banner run, then recast off the result screen - the
-    // edge the auxiliary converge banner is seeded from.
+    // Let the resolution banner run, then recast off the result screen.
     for _ in 0..0x110 {
         mg.fishing_pond_tick(0, false, 0);
         seen.absorb(&mg.fishing_pond_hud_json());
@@ -247,9 +246,11 @@ fn the_hook_reel_in_and_splash_banners_all_run_on_a_played_venue() {
         "no catch landed in 24 casts, so the reel-in banner never ran: {:?}",
         seen.ids
     );
+    // Landing and recasting seed no line-break pair: retail's reel-in arms
+    // write no `DAT_801d9164` (`0x801D3C68..0x801D3CCC`).
     assert!(
-        seen.ids.contains(&GLYPH_CONVERGE),
-        "the auxiliary banner never ran off the recast edge: {:?}",
+        !seen.ids.contains(&GLYPH_CONVERGE),
+        "the line-break pair ran without a broken line: {:?}",
         seen.ids
     );
 
@@ -291,21 +292,6 @@ fn the_hook_reel_in_and_splash_banners_all_run_on_a_played_venue() {
         "the reel-in banner must slide in from the RIGHT"
     );
 
-    // The auxiliary banner is one glyph emitted twice per frame, mirrored -
-    // a converging pair, not a single sprite.
-    let conv: Vec<_> = seen
-        .samples
-        .iter()
-        .filter(|s| s.0 == GLYPH_CONVERGE)
-        .collect();
-    assert!(conv.len() >= 2, "converge pair: {conv:?}");
-    assert!(
-        conv.chunks(2)
-            .filter(|c| c.len() == 2)
-            .all(|c| c[0].1 + c[1].1 == 0x140),
-        "the converging pair must be mirrored about the 0x140 stage width"
-    );
-
     // The splash fades: its brightness ramps up to the 0x80 hold and back
     // down, and it rises one pixel every 32 frames.
     let splash: Vec<_> = seen
@@ -324,31 +310,40 @@ fn the_hook_reel_in_and_splash_banners_all_run_on_a_played_venue() {
 }
 
 #[test]
-fn the_miss_banner_runs_when_reeling_hard_loses_the_line() {
+fn the_line_break_pair_runs_when_reeling_hard_loses_the_line() {
     // Heavy lure at Buma on the starter rod, reeled with Square: the gauge
-    // pins before the line is in and the fight snaps - the retry countdown the
-    // miss banner animates.
+    // pins before the line is in and the line breaks - the converging
+    // `LINE BREAK!` pair the lure tick's break arm seeds (`DAT_801d9164 = 1`
+    // at `0x801D3C54`), with no miss banner.
     let Some(seen) = run_venue(0, 2, 0x0BAD_F00D, 40, REEL_B) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset or the pond tables did not decode");
         return;
     };
     assert!(
-        seen.ids.contains(&GLYPH_MISS),
-        "no line snapped in 40 casts of hard reeling, so the miss banner \
+        seen.ids.contains(&GLYPH_CONVERGE),
+        "no line broke in 40 casts of hard reeling, so the line-break pair \
          never ran; glyphs seen: {:?}, peak tension {}",
         seen.ids,
         seen.peak_tension
     );
-    // Same mirrored trajectory as the reel-in banner - it enters from the
-    // right and holds at the shared 0xa0.
-    let xs = seen.xs(GLYPH_MISS);
     assert!(
-        xs.contains(&SLIDE_HOLD),
-        "the miss banner never reached the shared hold: {xs:?}"
+        !seen.ids.contains(&GLYPH_MISS),
+        "the miss banner is state 0x2d's, not the line break's: {:?}",
+        seen.ids
     );
+    // The auxiliary banner is one glyph emitted twice per frame, mirrored -
+    // a converging pair, not a single sprite.
+    let conv: Vec<_> = seen
+        .samples
+        .iter()
+        .filter(|s| s.0 == GLYPH_CONVERGE)
+        .collect();
+    assert!(conv.len() >= 2, "converge pair: {conv:?}");
     assert!(
-        xs.first().copied().unwrap_or(SLIDE_HOLD) > SLIDE_HOLD,
-        "the miss banner must slide in from the right"
+        conv.chunks(2)
+            .filter(|c| c.len() == 2)
+            .all(|c| c[0].1 + c[1].1 == 0x140),
+        "the converging pair must be mirrored about the 0x140 stage width"
     );
 }
 
@@ -413,7 +408,8 @@ fn the_play_page_services_the_same_banner_timers() {
     assert_eq!(hud["open"].as_bool(), Some(true), "{hud}");
 
     // Reel while the gauge is safe until the fight resolves - either
-    // resolution is a banner edge (reel-in on a catch, miss on a snap).
+    // resolution is a banner edge (reel-in on a catch, the line-break pair on
+    // a snap).
     let mut resolved = false;
     for _ in 0..60_000 {
         let t = state(&rt)["tension"].as_i64().unwrap_or(0);
@@ -425,8 +421,7 @@ fn the_play_page_services_the_same_banner_timers() {
     }
     assert!(resolved, "the play page's fight never resolved");
 
-    // Circle dismisses the result: the recast event is the auxiliary
-    // banner's seed on this host.
+    // Circle dismisses the result.
     tick(&mut rt, 0, 1);
     tick(&mut rt, CIRCLE, 1);
     assert_eq!(phase(&rt), "idle", "Circle must return to the shore");

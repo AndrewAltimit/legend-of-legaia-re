@@ -66,6 +66,13 @@
           this._onEngineTrap('scene rebuild', e);
           return false;
         }
+      } else if (r.player_rig_rebuilt) {
+        /* The lead's rig swapped mid-scene (cave01 hands the party to
+         * Noa): re-upload its whole geometry, not just the pose. */
+        try { this._uploadPlayer(); } catch (e) {
+          this._onEngineTrap('player rig upload', e);
+          return false;
+        }
       }
       /* The party wipe returned to the title (the engine started the title
        * theme): hand back to the page, which re-runs the boot title. */
@@ -534,49 +541,6 @@
         return;
       }
 
-      /* Field-to-battle transition capture: every intro style textures its
-       * geometry with the field frame the player was just looking at, so on
-       * the frame the emitter arms, read back the frame drawn above
-       * (readPixels hands rows bottom-up; the engine's blit flips them) and
-       * re-upload the VRAM texture immediately - this same frame's strips
-       * sample the capture, not stale texels. One-shot per transition; the
-       * curtain's per-frame intermediate afterwards rides the ordinary
-       * field_vram_take_dirty re-upload. */
-      if (!skipDraw && typeof rt.play_intro_wants_capture === 'function' &&
-          rt.play_intro_wants_capture()) {
-        try {
-          const gl = this.renderer.gl;
-          const cw = gl.drawingBufferWidth, ch = gl.drawingBufferHeight;
-          const buf = new Uint8Array(cw * ch * 4);
-          gl.readPixels(0, 0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, buf);
-          rt.play_intro_land_capture(buf, cw, ch);
-          this.renderer.uploadVram(rt.field_vram_bytes());
-        } catch (e) { /* presentation-only; keep playing without the capture */ }
-      }
-      /* A field-VM `43 12` copy that reads the display framebuffer (the
-       * ending vignettes' photo grab into VRAM (512, 0)) waits on the drawn
-       * frame: read it back and land it; the next field-VRAM pass runs the
-       * copy and the ordinary dirty re-upload carries it. The native
-       * window's twin is its redraw's `framebuffer_grab_pending` block. */
-      if (!skipDraw && typeof rt.play_frame_grab_pending === 'function' &&
-          rt.play_frame_grab_pending()) {
-        try {
-          /* Read the PSX display rect, not the canvas: the largest centred
-           * 4:3 rect of the drawing buffer, which is the 320 x 240 screen the
-           * engine projects onto. A canvas that is not 4:3 (fullscreen, a
-           * resized window) would otherwise squash or widen the photo; read
-           * this way both hosts land the same texels. */
-          const gl = this.renderer.gl;
-          const bw = gl.drawingBufferWidth, bh = gl.drawingBufferHeight;
-          const cw = Math.min(bw, Math.floor(bh * 4 / 3));
-          const ch = Math.min(bh, Math.floor(cw * 3 / 4));
-          const x0 = Math.floor((bw - cw) / 2), y0 = Math.floor((bh - ch) / 2);
-          const buf = new Uint8Array(cw * ch * 4);
-          gl.readPixels(x0, y0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, buf);
-          rt.play_land_frame_grab(buf, cw, ch);
-        } catch (e) { /* presentation-only */ }
-      }
-
       /* Screen-space PSX primitives over the finished 3D frame: the
        * field-to-battle transition's five style bodies + backdrop + fade,
        * emitted by the shared `legaia_render_kernels::battle_intro` and ordered by
@@ -587,6 +551,9 @@
        * enhancement - the native renderer's fog pass twin): over the
        * finished 3D frame, under the screen-prim layer and the HUD canvas. */
       if (!skipDraw && this._fogFrameOk) this._drawFogVolume(rt);
+      /* Bloom (an enhancement, off by default - the native renderer's bloom
+       * pass twin): over the fogged 3D frame, under the screen prims and HUD. */
+      if (!skipDraw && this._fogFrameOk && this.bloom) this._drawBloom(rt);
       if (!skipDraw) this._drawScreenPrims(rt);
 
       /* FPS + HUD, sampled twice a second. */
@@ -611,6 +578,65 @@
       if (!skipDraw) this._drawOverlay();
       /* ... and the screen primitives that cover it. */
       this._drawScreenPrimsOver();
+
+      /* Field-to-battle transition capture: every intro style textures its
+       * geometry with the field frame the player was just looking at, so on
+       * the frame the emitter arms, read back the FINISHED frame - after the
+       * 3D pass, the volumetric fog, both screen-prim lists (the fog-pool
+       * particles, drop shadows, light pools, fades) - and land it. The
+       * engine composes that frame without the transition's own layer
+       * (`tick_battle_intro`), so what is read is the field as shown, every
+       * enhancement included, the native window's capture target. Read
+       * earlier, straight after the 3D pass, the capture dropped the fog
+       * and every screen layer. readPixels hands rows bottom-up; the
+       * engine's blit flips them. The VRAM texture re-uploads at once so
+       * the next frame's strips sample the capture, not stale texels.
+       * One-shot per transition; the curtain's per-frame intermediate
+       * afterwards rides the ordinary field_vram_take_dirty re-upload.
+       * The page declares the readback every frame it draws: the engine
+       * leaves the transition layer off the arming frame only for a host
+       * that will read it back (a VR session, which skips this, keeps the
+       * transition from its first frame). */
+      if (typeof rt.play_set_intro_readback === 'function') {
+        rt.play_set_intro_readback(!skipDraw);
+      }
+      if (!skipDraw && typeof rt.play_intro_wants_capture === 'function' &&
+          rt.play_intro_wants_capture()) {
+        try {
+          const gl = this.renderer.gl;
+          const cw = gl.drawingBufferWidth, ch = gl.drawingBufferHeight;
+          const buf = new Uint8Array(cw * ch * 4);
+          gl.readPixels(0, 0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+          rt.play_intro_land_capture(buf, cw, ch);
+          this.renderer.uploadVram(rt.field_vram_bytes());
+        } catch (e) { /* presentation-only; keep playing without the capture */ }
+      }
+      /* A field-VM `43 12` copy that reads the display framebuffer (the
+       * ending vignettes' photo grab into VRAM (512, 0)) waits on the drawn
+       * frame: read back the FINISHED frame - after the volumetric fog and
+       * both screen-prim lists, as retail's copy reads what is displayed -
+       * and land it; the next field-VRAM pass runs the copy and the
+       * ordinary dirty re-upload carries it. The native window's twin is
+       * its redraw's `framebuffer_grab_pending` block, which reads its
+       * presented target. */
+      if (!skipDraw && typeof rt.play_frame_grab_pending === 'function' &&
+          rt.play_frame_grab_pending()) {
+        try {
+          /* Read the PSX display rect, not the canvas: the largest centred
+           * 4:3 rect of the drawing buffer, which is the 320 x 240 screen the
+           * engine projects onto. A canvas that is not 4:3 (fullscreen, a
+           * resized window) would otherwise squash or widen the photo; read
+           * this way both hosts land the same texels. */
+          const gl = this.renderer.gl;
+          const bw = gl.drawingBufferWidth, bh = gl.drawingBufferHeight;
+          const cw = Math.min(bw, Math.floor(bh * 4 / 3));
+          const ch = Math.min(bh, Math.floor(cw * 3 / 4));
+          const x0 = Math.floor((bw - cw) / 2), y0 = Math.floor((bh - ch) / 2);
+          const buf = new Uint8Array(cw * ch * 4);
+          gl.readPixels(x0, y0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+          rt.play_land_frame_grab(buf, cw, ch);
+        } catch (e) { /* presentation-only */ }
+      }
     }
 
     /* One frame of the screen-space PSX primitive pass.
@@ -744,6 +770,22 @@
       } catch (e) {
         this._fogBroken = true;
         try { console.warn('fog volume pass disabled:', e); } catch (_) { /* no console */ }
+      }
+    }
+
+    /* Bloom over the finished 3D frame, at the engine's response for the
+     * current mood (`play_bloom_params`). A driver that cannot link the pass
+     * disables it for the session; the page keeps playing without it. */
+    _drawBloom(rt) {
+      if (this._bloomBroken) return;
+      if (typeof rt.play_bloom_params !== 'function'
+          || typeof window.LegaiaBloomPass !== 'function') return;
+      try {
+        if (!this._bloomPass) this._bloomPass = new window.LegaiaBloomPass(this.renderer.gl);
+        this._bloomPass.draw(rt.play_bloom_params());
+      } catch (e) {
+        this._bloomBroken = true;
+        try { console.warn('bloom pass disabled:', e); } catch (_) { /* no console */ }
       }
     }
 

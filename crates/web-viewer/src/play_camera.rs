@@ -289,7 +289,7 @@ impl LegaiaRuntime {
 
     /// The camera-occlusion fade's focus point for this frame, in the page's
     /// **Y-up draw frame**, or empty when the engine side of the arming gate
-    /// says no ([`legaia_engine_core::field_occlusion::fade_armed`] + a live
+    /// says no ([`legaia_engine_screens::field_occlusion::fade_armed`] + a live
     /// player actor).
     ///
     /// It is the same point [`Self::field_player_occluded`] ray-casts to -
@@ -302,7 +302,7 @@ impl LegaiaRuntime {
     /// first-person eye) stay on the page.
     ///
     /// Six floats: the body centre, then the floor point under it
-    /// ([`legaia_engine_core::field_occlusion::player_feet`]) - the anchor of
+    /// ([`legaia_engine_screens::field_occlusion::player_feet`]) - the anchor of
     /// the feet-line rule that keeps the ground in front of the character
     /// from dissolving.
     pub fn play_occlusion_focus(&self) -> Vec<f32> {
@@ -310,13 +310,13 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
-        if !legaia_engine_core::field_occlusion::fade_armed(&host.world, cutscene) {
+        if !legaia_engine_screens::field_occlusion::fade_armed(&host.world, cutscene) {
             return Vec::new();
         }
         let w = &host.world;
         match (
-            legaia_engine_core::field_occlusion::player_body_centre(w),
-            legaia_engine_core::field_occlusion::player_feet(w),
+            legaia_engine_screens::field_occlusion::player_body_centre(w),
+            legaia_engine_screens::field_occlusion::player_feet(w),
         ) {
             // Retail Y-down -> the page's Y-up draw frame.
             (Some(c), Some(f)) => vec![c[0], -c[1], c[2], f[0], -f[1], f[2]],
@@ -351,7 +351,7 @@ impl LegaiaRuntime {
         debug_camera: bool,
         screen_owned: bool,
     ) -> Vec<f32> {
-        use legaia_engine_core::field_occlusion as fo;
+        use legaia_engine_screens::field_occlusion as fo;
         let cutscene = self.cutscene_owns_frame();
         let terms = fo::FadeHostTerms {
             enabled,
@@ -557,10 +557,22 @@ impl LegaiaRuntime {
         self.scene_host.camera().manual_zoom
     }
 
-    /// Put orbit, tilt and zoom back at their retail-identical defaults
-    /// ([`legaia_engine_field::camera::Camera::reset_follow_knobs`]).
-    pub fn play_camera_reset_framing(&mut self) {
-        self.scene_host.camera_mut().reset_follow_knobs();
+    /// The page's **Reset camera** button and canvas double-click: the
+    /// follow camera back at the retail framing on the current lead, through
+    /// the kernel the native window's double-click calls
+    /// ([`legaia_engine_field::camera::Camera::recenter_follow`]). Orbit,
+    /// tilt and zoom go to identity in any mode; in free roam a scripted
+    /// shot left holding the focus is released too, which is what the
+    /// knob-only reset could not undo. Returns whether the free-roam half
+    /// ran (`false` while a cutscene, battle or the world map owns the shot).
+    pub fn play_camera_reset_framing(&mut self) -> bool {
+        match self.scene_host.host_cam_mut() {
+            Some((h, camera)) => camera.recenter_follow(&h.world),
+            None => {
+                self.scene_host.camera_mut().reset_follow_knobs();
+                false
+            }
+        }
     }
 
     /// Cycle the camera-distance preset (retail -> far -> farther), the

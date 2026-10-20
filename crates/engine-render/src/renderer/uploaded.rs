@@ -154,7 +154,7 @@ fn f16_bits(v: f32) -> u32 {
 }
 
 /// A [`DrawClip`] in the uniform's three clip lanes (all zero = no clip).
-pub(super) fn pack_draw_clip(clip: Option<DrawClip>) -> [u32; 3] {
+pub(crate) fn pack_draw_clip(clip: Option<DrawClip>) -> [u32; 3] {
     match clip {
         None => [0; 3],
         Some(c) => [

@@ -63,6 +63,7 @@ in the hook, and must self-skip everywhere else.
 - `install-tools.sh` - install the local toolchain (Ghidra container, capstone, emulators).
 - `check-doc-density.py` - doc legibility-density gate (long lines / over-budget table cells).
 - `check-crate-layering.py` (+ `crate-layering.toml`) - hard gate: each engine kernel crate's engine-layer dependencies equal its row in the table, kernel crates depend only on kernel crates, and no format / tool / patcher crate depends on an engine-layer crate. `--ranks` prints the derived stack. See [`engine.md`](../docs/subsystems/engine.md#the-layering-gate).
+- `gen-crate-map.py` (+ `crate-map-layout.toml`) - hard gate with `--check`: regenerates the site's crate map data (`site/crate-map.json`), the README's crate and pipeline SVGs (`site/assets/crate-map-*.svg`, `pipeline-*.svg`) and its generated layer list from the manifests, `lib.rs` modules, `CLAUDE.md`'s crate tables and `crate-layering.toml`; fails on a stale output, a crate in no band, or an edge pointing up the stack. Only placement is hand-written, in the layout table. See [`engine.md`](../docs/subsystems/engine.md#crate-layering).
 - `check-integration-tests.py` - every `tests/*.rs` of a crate with `autotests = false` is declared in its `tests/integration.rs`; an undeclared file would never compile or run.
 - `check-md-links.py` - Markdown intra-repo link + heading-anchor gate (the docs-side sibling of `check-site-links.py`).
 - `check-site-links.py` - static-site internal-link + anchor gate.

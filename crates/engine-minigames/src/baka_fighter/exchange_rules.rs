@@ -9,6 +9,7 @@ impl BakaFight {
     /// (`0x801D4538..0x801D4634`).
     pub(super) fn commit(&mut self, slot: usize, attack: BakaAttack) {
         self.f[slot].clock.commit();
+        self.f[slot].hold_reset = true;
         // The clip store: `+0x5C` = the attack's display id, `+0x68 = 0`
         // (`0x801D44D8` / `0x801D44DC`), held on its last frame only for the
         // special (`ori v0,v0,0x8` at `0x801D4640`).

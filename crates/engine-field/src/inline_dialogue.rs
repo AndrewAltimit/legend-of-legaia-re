@@ -126,7 +126,8 @@ pub struct InlineDialogue {
     /// so the record holds at its PC until the leg's terminal frame clears
     /// the bit (`FUN_8003774C`, `0x80038004`).
     pub own_turn: Option<u8>,
-    /// This pass has spawned a record (an own-context op `0x44`). A raw
+    /// This pass has spawned a record (an own-context op `0x44`) or armed a
+    /// mode-24 door warp (`3E` with `op0 >= 100`). A raw
     /// `0x21` after that is the conversation's real end, not a prologue that
     /// failed to reach its box: the talk's effect was the spawn. `vozz`
     /// P1[7], the Genesis Tree, spawns the P2[13] approach and ends on
@@ -148,6 +149,13 @@ pub struct InlineDialogue {
     /// door's doorway, and glide it back out - without the out leg the player
     /// was left standing in a doorway the walls seal on every side.
     pub player_glide: Option<crate::cutscene_timeline::TimelinePlayerGlide>,
+    /// The player turn a talk record's cross-context `B8 F8 <op0> <op1>`
+    /// with a non-zero budget armed, while it is in flight: the walk
+    /// kernel's `0x38` RotateToAngle leg on the player. Only a player target
+    /// parks the caller (`0x801DEEFC`), so the record resumes past the op
+    /// when the ramp snaps. The casino seats (`koin1` P1[51..=56]) turn the
+    /// player to the cabinet this way before the sit clip.
+    pub player_turn: Option<crate::cutscene_timeline::TimelineFacing>,
     /// The box the pager still draws while no box is being typed
     /// ([`OwnedDialogPanel::held_after_press`]): the rows of the box the last
     /// press dispatched, with no page mark and no picker. Hosts draw it in
@@ -370,6 +378,7 @@ impl InlineDialogue {
             spawned: false,
             player_walk: None,
             player_glide: None,
+            player_turn: None,
             held_box: None,
         }
     }
@@ -407,6 +416,7 @@ impl InlineDialogue {
             spawned: false,
             player_walk: None,
             player_glide: None,
+            player_turn: None,
             held_box: None,
         }
     }

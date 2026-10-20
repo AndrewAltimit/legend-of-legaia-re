@@ -357,3 +357,29 @@ fn layout_clamps_rows_inside_the_screen() {
         );
     }
 }
+
+#[test]
+fn seat_cursor_takes_only_a_valid_target() {
+    let mut monsters = full_monsters();
+    monsters[2].alive = false;
+    let mut p = TargetPickerSession::new(TargetKind::SingleEnemy, 0, full_party(), monsters);
+    // A dead slot and the ally row are refused; the cursor stays put.
+    assert!(!p.seat_cursor(CursorRow::Enemy, 2));
+    assert!(!p.seat_cursor(CursorRow::Ally, 1));
+    assert_eq!(
+        p.state(),
+        PickerState::Cursor {
+            row: CursorRow::Enemy,
+            slot: 0
+        }
+    );
+    // A live monster - the fifth seat included - is taken.
+    assert!(p.seat_cursor(CursorRow::Enemy, 4));
+    assert_eq!(
+        p.state(),
+        PickerState::Cursor {
+            row: CursorRow::Enemy,
+            slot: 4
+        }
+    );
+}

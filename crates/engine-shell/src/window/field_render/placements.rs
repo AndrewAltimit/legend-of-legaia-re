@@ -4,6 +4,14 @@
 
 use super::*;
 
+/// [`PlayWindowApp::static_env_layers`]: terrain draws, placed-object
+/// draws, the scene's object binds.
+type StaticEnvLayers = (
+    Vec<legaia_engine_scene::field_env::EnvDraw>,
+    Vec<legaia_engine_scene::field_env::EnvDraw>,
+    Option<std::collections::HashMap<(u8, u8), legaia_engine_scene::field_env::ObjectBind>>,
+);
+
 impl PlayWindowApp {
     /// Resolve the field static-geometry placement draws for the current
     /// scene: each placed environment object's scene-pack mesh paired with a
@@ -181,17 +189,28 @@ impl PlayWindowApp {
         &self,
         res: &SceneResources,
     ) -> Vec<legaia_engine_scene::field_env::EnvDraw> {
+        let (mut draws, placements, _) = self.static_env_layers(res);
+        draws.extend(placements);
+        draws
+    }
+
+    /// [`Self::static_env_draws`] as its two layers - terrain (or the
+    /// overworld's landmarks and decorations) and the field's placed
+    /// objects - with the scene's object binds.
+    fn static_env_layers(&self, res: &SceneResources) -> StaticEnvLayers {
         use legaia_engine_scene::field_env;
         let Some(scene) = self.session.host.scene.as_ref() else {
-            return Vec::new();
+            return Default::default();
         };
         let index = &self.session.host.index;
         let env_tmds = field_env::env_pack_tmd_indices(scene, res);
         if env_tmds.is_empty() {
-            return Vec::new();
+            return Default::default();
         }
         let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
         let mut draws: Vec<field_env::EnvDraw> = Vec::new();
+        let mut placed: Vec<field_env::EnvDraw> = Vec::new();
+        let mut scene_binds = None;
         if legaia_engine_scene::scene::is_world_map_scene(&scene.name) {
             let mut tiles = scene
                 .walk_object_placements(index)
@@ -223,10 +242,11 @@ impl PlayWindowApp {
                 if let Some(binds) = binds.as_ref() {
                     self.follow_floor_placed_draws(&mut d, binds);
                 }
-                draws.extend(d);
+                placed.extend(d);
+                scene_binds = binds;
             }
         }
-        draws
+        (draws, placed, scene_binds)
     }
 
     pub(in crate::window) fn compute_coplanar_env_offsets(
@@ -301,11 +321,35 @@ impl PlayWindowApp {
     /// (`legaia_engine_scene::fog_ground`) - the browser play page makes the
     /// same call at its scene load. Rebuilt per scene load.
     pub(in crate::window) fn install_fog_ground(&mut self, res: &SceneResources) {
+        use legaia_engine_scene::field_env;
         let started = std::time::Instant::now();
-        let draws = self.static_env_draws(res);
+        // The bank lies on what is drawn: the story-hidden placements gone
+        // (the gate `resolve_placement_draws` runs), each placement at its
+        // render scale - the same layers the browser play page hands in.
+        let (terrain, mut placements, binds) = self.static_env_layers(res);
+        let world = &self.session.host.world;
+        if let Some(binds) = binds.as_ref() {
+            field_env::retain_visible_placed_draws(
+                &mut placements,
+                binds,
+                &world.hidden_object_records(),
+            );
+        }
+        let scales = field_env::placed_render_scales(
+            &placements,
+            binds.as_ref(),
+            &world.object_render_scales(),
+        );
         let host = &mut self.session.host;
         let field = host.scene.as_ref().and_then(|scene| {
-            legaia_engine_scene::fog_ground::build_for_scene(&[&draws], res, scene, &host.index)
+            legaia_engine_scene::fog_ground::build_for_scene(
+                &terrain,
+                &placements,
+                &scales,
+                res,
+                scene,
+                &host.index,
+            )
         });
         let label = host
             .scene

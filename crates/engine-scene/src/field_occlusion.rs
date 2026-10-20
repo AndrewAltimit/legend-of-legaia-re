@@ -150,19 +150,6 @@ impl FieldOccluders {
     ///   `discard` per texel (foliage, grates, tile skirts); the character
     ///   reads straight through it on screen, so it must not arm the gate.
     pub fn build(draw_lists: &[&[EnvDraw]], res: &SceneResources) -> Self {
-        Self::build_inner(draw_lists, res, true)
-    }
-
-    /// [`Self::build`] without the occluder filters: every drawn static
-    /// triangle, semi-transparent and cutout prims included (a pond's
-    /// blended surface or a hedge's cutout top is still ground the
-    /// volumetric fog may lie on - `crate::fog_ground`). Prims whose texture
-    /// never loaded stay out, since they never draw.
-    pub fn build_surfaces(draw_lists: &[&[EnvDraw]], res: &SceneResources) -> Self {
-        Self::build_inner(draw_lists, res, false)
-    }
-
-    fn build_inner(draw_lists: &[&[EnvDraw]], res: &SceneResources, occluders_only: bool) -> Self {
         use std::collections::HashMap;
         let mut cache: HashMap<usize, (Vec<[f32; 3]>, Vec<u32>)> = HashMap::new();
         let mut out = Self::default();
@@ -187,9 +174,8 @@ impl FieldOccluders {
                             &rt.raw,
                             |cba, tsb, uvs| {
                                 vram.prim_has_texture_data(cba, tsb, uvs)
-                                    && (!occluders_only
-                                        || vram.prim_opaque_fraction(cba, tsb, uvs)
-                                            >= OCCLUDER_MIN_OPACITY)
+                                    && vram.prim_opaque_fraction(cba, tsb, uvs)
+                                        >= OCCLUDER_MIN_OPACITY
                             },
                         );
                         let mut positions = mesh.positions;
@@ -205,7 +191,7 @@ impl FieldOccluders {
                                 .cba_tsb
                                 .get(tri[0] as usize)
                                 .is_some_and(|ct| ct[1] & semi != 0);
-                            if !(abe && occluders_only) {
+                            if !abe {
                                 indices.extend_from_slice(tri);
                             }
                         }
@@ -219,7 +205,7 @@ impl FieldOccluders {
                                 .blend
                                 .get(tri[0] as usize)
                                 .is_some_and(|w| w & semi != 0);
-                            if !(abe && occluders_only) {
+                            if !abe {
                                 indices.extend(tri.iter().map(|i| i + base));
                             }
                         }
@@ -277,13 +263,6 @@ impl FieldOccluders {
     /// unprovable and the fade stays off rather than guessing.
     pub fn is_empty(&self) -> bool {
         self.tris.is_empty()
-    }
-
-    /// The instanced triangles, retail Y-down world space - the static scene
-    /// the volumetric fog's ground field is rasterised from
-    /// (`crate::fog_ground`).
-    pub fn triangles(&self) -> &[[[f32; 3]; 3]] {
-        &self.tris
     }
 
     /// Total instanced triangle count (diagnostics / logs).

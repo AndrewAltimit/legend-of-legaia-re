@@ -786,3 +786,40 @@ fn a_capture_roll_never_downs_a_party_member() {
     assert!(world.drain_battle_captures().is_empty());
     assert_ne!(world.rng_state, 6, "the roll is drawn");
 }
+
+/// The battle Magic window's model: one row per learned spell, the hand on
+/// the session cursor, the highlighted spell's effective MP cost in the
+/// `MP` tab and a level of at least 1 - and no model outside battle.
+#[test]
+fn the_battle_spell_menu_model_projects_the_open_window() {
+    use legaia_engine_battle::spells::SpellCatalog;
+    let mut world = World {
+        party: legaia_engine_menus::party_state::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
+        ..World::default()
+    };
+    world.mode = SceneMode::Battle;
+    world.tables.spell_catalog = SpellCatalog::vanilla();
+    assert!(world.battle_spell_menu_model().is_none(), "no window open");
+    world.battle.spell_menu = Some(legaia_engine_battle::battle_magic::BattleSpellSession::new(
+        0,
+        0,
+        &[0x41],
+        &world.tables.spell_catalog,
+        200,
+        0,
+    ));
+    let cost = world.tables.spell_catalog.get(0x41).unwrap().mp_cost;
+    let m = world.battle_spell_menu_model().expect("browsing model");
+    assert_eq!(m.rows.len(), 1);
+    assert!(m.rows[0].1, "200 MP covers the spell");
+    assert_eq!(m.cursor, Some(0));
+    let (lv, mp) = m.level_mp.expect("the Lv / MP tabs");
+    assert!(lv >= 1);
+    assert_eq!(mp, u16::from(cost));
+
+    world.mode = SceneMode::Field;
+    assert!(world.battle_spell_menu_model().is_none(), "battle only");
+}

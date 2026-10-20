@@ -199,8 +199,13 @@ occlusion fade ray-casts from; `play_camera_orbit_by` / `play_camera_tilt_by`
 (`Camera::manual_orbit` / `manual_tilt` / `manual_zoom`) through the engine's
 cutscene-gated setters - the same fields the native window's left-mouse drag
 and wheel write, so the movement compass tracks the view on both hosts and a
-scripted shot is locked on both. `play_camera_reset_framing` is the
-double-click; `play_camera_set_orbit` remains for the `F3` hand-off. A
+scripted shot is locked on both. `play_camera_reset_framing` is the Reset
+camera button and the canvas double-click: it runs `Camera::recenter_follow`,
+the kernel the native double-click calls, which zeroes the three knobs in any
+mode and, in free roam, also releases a scripted shot that never handed the
+focus back, so the follow camera re-pins to the lead. The page side
+(`resetCamera`) also drops the `F3` vantage. `play_camera_set_orbit` remains
+for the `F3` hand-off. A
 direct entry through `enter_field` runs `Camera::reset_for_scene_entry` (the
 native `enter_field_live` is the paired site), and the page's picker calls
 `play_abandon_opening_chain` first so a scene picked mid-opening is that
@@ -275,7 +280,7 @@ out). Walking rolls the scene MAN's own step-driven encounter table, the world
 flips `Field -> Battle`, and the whole fight runs in `engine-core` (turn SM,
 player-driven command / arts / magic / item menus, damage formulas, loot).
 This module is presentation only: it folds battle events and strike FX into
-the shared `BattleHud` model via `engine_core::battle_hud::sync_battle_hud_rows`
+the shared `BattleHud` model via `engine_battle_hud::sync_battle_hud_rows`
 (the same fold the native window uses), arms the ENCOUNTER! banner on the mode
 edge, and mirrors the native window's battle HUD block - `battle_hud_draws_for`
 rows (retail HP/MP colour law), `encounter_banner_draws_for`, and the submenu
@@ -289,7 +294,11 @@ swirl) draw in the browser. `tick_battle_intro` tracks the encounter session's
 `Transition` phase and caches the frame's ordered geometry for the page's
 screen-prim pass (`play_screen_prim_*`); the one per-host step is the field
 frame readback - the page answers `play_intro_wants_capture` with a
-`gl.readPixels` of its own drawn frame into `play_intro_land_capture`, and
+`gl.readPixels` of its finished frame (after the volumetric fog and both
+screen-prim lists; the arming frame composes no transition layer once the page declares the
+readback with `play_set_intro_readback`, so a host that never reads back -
+a headless run - keeps the transition from its first frame) into
+`play_intro_land_capture`, and
 `field_vram_bytes` serves the emitter's captured VRAM clone for the length of
 the window.
 
@@ -416,7 +425,10 @@ headings and the tick/records-model injection sites to the native host's.
 
 ## Fishing minigame (`play_fishing`)
 
-`LegaiaRuntime::play_fishing_start` lifts the fishing overlay (PROT 0972)
+The play page has no fishing button: a fishing spot's own script reaches the
+minigame through the mode-24 door warp (`SceneHost::drain_minigame_warp`'s
+fishing arm), exactly as natively. `LegaiaRuntime::play_fishing_start` is the
+export-level launcher kept for drivers; it lifts the fishing overlay (PROT 0972)
 through the static-overlay map and hands it to
 `SceneHost::enter_fishing_from_overlay` - the door warp's own entry, which the
 native window's `L` launcher calls too. That decodes the species, spawn and
@@ -816,6 +828,35 @@ town's shop scenes, poses every vendor into one WebGL canvas through the NPC
 page's poser (`site/js/field-npc-model.js`) and copies each out as a still
 (`MeshView.snapshot`); its item renders reuse the characters page's cards
 through `site/js/item-thumbs.js`.
+
+The shops page's map pane is the game-world page's map view
+(`FieldSceneView` over `set_scene_field` + `field_scene_anim_init`) on the
+scene that holds the town's vendors. A vendor is placed through the same
+record the model comes from: its shop's owning record is partition 1,
+index `slot >= 1`, so the marker follows the live actor layer's entry with
+that `slot` (`field_scene_npc_catalog_json`), reading its position each frame
+from `field_scene_npc_draw_poses()` and projecting it through the map camera
+(`buildWorldOrbitVp`). Many shopkeepers are flag-dispatched spawns: the
+header tile is the off-map hide box or a staging square, and the spawn
+prologue's story-flag arms park the actor in one state and run it to its
+counter in another. So each vendor record also carries a `seat`
+(`shop_vendors::vendor_seat`): the first non-parked target of
+`placement_spawn_relocation` with every flag set, then with every flag
+clear, else the header tile. The marker follows the live actor while the
+running scene shows it at that seat, and sits on the seat otherwise (drawn
+dashed: the map runs another story state). A shop owned by a partition-0
+record (the Ancient Wind Cave's) has no actor and so no marker.
+
+`shop_item_records_json()` (`shop_items`) is the open item's disc side: per
+named item id, the item record's `kind` and price (sell is half), the
+equipment stat-bonus record (slot, INT / ATK / UDF / LDF / SPD, equip mask,
+Ra-Seru flag), the consumable's effect descriptor with its restore amount or
+stat effect, and the passive an equipped piece grants with its stat boosts -
+the `game-tables` parsers joined, decoded once at `load_disc` (disc-gated
+test: `crates/web-viewer/tests/shop_items_real.rs`). An open weapon or armour
+row draws the item-alone mesh (`set_equipped_character` with only that
+section filled, then `equipped_item_only_*`) in a `MeshView`, posed at frame
+0 of the character's first clip.
 
 ## Tactical Arts viewer (`arts_view`)
 
@@ -1240,6 +1281,7 @@ reference TIMs sitting in other PROT entries.
 |---|---|
 | [`nav_disc`](../../crates/web-viewer/src/nav_disc.rs) / [`inspect`](../../crates/web-viewer/src/inspect.rs) / [`viewer_render`](../../crates/web-viewer/src/viewer_render.rs) | `LegaiaViewer`'s disc load + entry navigation, the entry inspector's exports, and its internal render helpers. |
 | [`scene_geom`](../../crates/web-viewer/src/scene_geom.rs) | Kingdom / walk-ground / continent / ocean / slot-4 geometry exports behind the world-overview pages. |
+| [`shop_items`](../../crates/web-viewer/src/shop_items.rs) | `shop_item_records_json`: per-item SCUS records (item, equipment, effect, passive) for the shops page's open item. |
 | [`world_mist`](../../crates/web-viewer/src/world_mist.rs) | The kingdom MAN's fog-region table and the fog sheet art, for the world overview's Mist overlay. |
 | [`sentinel_placements`](../../crates/web-viewer/src/sentinel_placements.rs) | Cross-references a save state's live world-map actors against the disc's MAN placement records. |
 | [`prot_locate`](../../crates/web-viewer/src/prot_locate.rs) | `PROT.DAT` offset to owning-entry lookup, the browser twin of `prot-extract locate`. |
@@ -1260,7 +1302,7 @@ reference TIMs sitting in other PROT entries.
 | [`host_slot`](../../crates/web-viewer/src/host_slot.rs) | The page's slot for its `BootSession` over `play_sfx::PageSink`; every page module reaches the scene host through it. |
 | [`play_hotkeys`](../../crates/web-viewer/src/play_hotkeys.rs) | `play_host_hotkey`: the native window's option / cheat / camera keys, resolved through the shared `engine-session::hotkeys` table; the page half is `window.__playHotkeyActions` in `play.html`. |
 | [`play_lighting`](../../crates/web-viewer/src/play_lighting.rs) / [`play_fog_volume`](../../crates/web-viewer/src/play_fog_volume.rs) | The enhanced-lighting and volumetric-fog enhancements (twins of the native `I` / `F8` and `F9`), from the shared engine-side sources. |
-| [`play_cheats`](../../crates/web-viewer/src/play_cheats.rs) | The play page's Cheats panel, thin bindings over `engine-core::cheats`. |
+| [`play_cheats`](../../crates/web-viewer/src/play_cheats.rs) | The play page's Cheats panel, thin bindings over `engine-cheats::cheats`. |
 | [`play_toggles`](../../crates/web-viewer/src/play_toggles.rs) | Runtime twins of native launch switches: `--retail` (session-only `OptionsState::pin_retail`; the store is not written while it holds), `--set-flag`, `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS`. |
 | [`audio_api`](../../crates/web-viewer/src/audio_api.rs) | `LegaiaAudio`, the media page's audio bindings. |
 | [`play_host_parity`](../../crates/web-viewer/src/play_host_parity.rs) | Read-only probes over the live `World` for the tests pairing this host against the native window; not wasm exports. |

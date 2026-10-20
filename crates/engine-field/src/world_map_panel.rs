@@ -45,7 +45,7 @@
 //! actors that call [`list_cursor_input`]; it hangs off
 //! `WorldMapController::panels` and `World::tick_world_map` steps it once a
 //! frame. [`dev_menu_action`] is hosted by the dev-menu screen
-//! `legaia_engine_core::dev_menu_host`, whose cancel leg asks it for the park
+//! `legaia_engine_menu_runtime::dev_menu_host`, whose cancel leg asks it for the park
 //! phase and the draw-gate factor.
 //!
 //! Two things that host supplies are the **port's**, not retail's, and both

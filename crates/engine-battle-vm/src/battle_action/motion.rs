@@ -256,6 +256,39 @@ pub fn arrival_shove_step(sin: i16, cos: i16) -> (i16, i16) {
     ((sin >> 9), (cos >> 9))
 }
 
+/// The pose centroid `FUN_8004998C` accumulates: each part's translation
+/// summed in 16-bit halfwords (`lhu`/`addu`/`sh`), then divided by the part
+/// count with a truncating signed `div` (`0x8004A3DC..0x8004A42C`). Returns
+/// the `(x, z)` pair; `(0, 0)` for an empty pose.
+pub fn pose_centroid_xz(parts: &[([i16; 3], [i16; 3])]) -> (i16, i16) {
+    let n = parts.len();
+    if n == 0 {
+        return (0, 0);
+    }
+    let (mut sx, mut sz) = (0i16, 0i16);
+    for (t, _) in parts {
+        sx = sx.wrapping_add(t[0]);
+        sz = sz.wrapping_add(t[2]);
+    }
+    let n = n as i32;
+    ((i32::from(sx) / n) as i16, (i32::from(sz) / n) as i16)
+}
+
+/// The facing-rotated, scaled centroid offset the body-pair store adds to
+/// the live pair (`FUN_8004998C` `0x8004A43C..0x8004A538`), with the retail
+/// multiply order and arithmetic shifts. The `0xFFF - f` reads are the
+/// table's own mirrored index, not a negated angle.
+pub fn body_offset(facing: u16, cx: i16, cz: i16, scale: i32) -> (i16, i16) {
+    let f = facing & 0xFFF;
+    let m = 0xFFF - f;
+    let (cx, cz) = (i32::from(cx), i32::from(cz));
+    let sin = |a: u16| i32::from(legaia_engine_system::trig::sin12(a));
+    let cos = |a: u16| i32::from(legaia_engine_system::trig::trig12(a).1);
+    let x = ((((sin(f) * cz) >> 12) + ((cos(m) * cx) >> 12)) * scale) >> 12;
+    let z = ((((sin(m) * cx) >> 12) + ((cos(f) * cz) >> 12)) * scale) >> 12;
+    (x as i16, z as i16)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

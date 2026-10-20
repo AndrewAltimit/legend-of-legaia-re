@@ -225,6 +225,8 @@ Threads whose answer needs more than a table cell. Every other thread is a row o
 | `0x19` fallback approach drive - which anim-driver field does summon staging leave stale? | resolved (pinned + causally reproduced on the parked save) | `capture` + `disassembly` | [details ↓](#the-summon-then-melee-park-trigger---the-stale-field-is-0x1dc-bit-2) |
 | Super / Miracle Arts trigger chain | resolved (all 15 Supers live-executed) | `disassembly` + `capture` | [details ↓](#super--miracle-arts-trigger-chain) |
 | Xain "Bloody Horns"/"Terio Punch" ignore elemental guards (community mystery) | resolved | `disassembly` + `capture` | Not an element drop - a **resist-ladder bypass**. Capture-class modules (PROT 944..966) pick one of two damage wrappers: `FUN_801DD4B0` (fifth finisher argument `0`: `sw zero,0x10(sp)` at `0x801DD67C`, resist ladder runs) or `FUN_801DD6B4` (`1` at `0x801DD82C`; the finisher's `bne a3,zero` at `0x801DDBD4` skips the party-defender jewel/guard block). BH (952, `0x801F7948`) / TP (953, `0x801F7410`) use the bypass wrapper; enemy ESM (966, `0x801F8610`, `0x801F8F08`) uses the respecting one (hence Cort reads as Dark). See [battle-formulas.md](../../subsystems/battle-formulas.md) and [spell-table.md](../../formats/spell-table.md#cast-classes-record-byte-0). |
+| Which call applies Astral Slash's damage? | resolved (the melee kernel, on the staged clip's four beats) | `disassembly` + disc data | PROT 952's `0xB8` tick `0x801F6A0C` has no wrapper `jal` and no HP store; arm 2 stages clip `0x0A` on the caster (`0x801F6D88`) and parks the strike cursor (`ctx[+0x15] = 0xFF`, `0x801F6E78`). `FUN_80047430` calls `FUN_801EC3E4` on the playing entry every frame (`0x800478A0`); Gaza's (165) entry `0x0A` carries power bytes `0D 0E 0F 10` on beats `14 15 16 17`, so four melee hits accumulate and land on the last. Port: fold skipped, total lands on the beat ([cast-module.md](../../subsystems/cast-module.md#astral-slash-rolls-no-wrapper)). |
+| Is a plain monster swing elemental? | resolved (yes - the melee kernel's guard ladder keys on the attacker's record element) | `disassembly` | `FUN_801EC3E4`'s inlined ladder (`0x801ED5CC..0x801EDA00`) runs for a party defender and a monster attacker and reads `0x801C9348[attacker - 3] + 0x1D` in every arm: a matching elemental guard halves the excess over Defense, All Guard takes `3/4` unless the element is `7`. This is why a Luminous Jewel halves Astral Slash. The port had passed element `7` for every swing ([battle-formulas.md](../../subsystems/battle-formulas.md#underdog-rewrite-chip-floor-and-cap)). |
 | First boss trigger → Battle | resolved | `disassembly` | The scripted-battle arm is the field-VM op `3E FF <formation_row>` ([battle.md](../../subsystems/battle.md#scripted-battle-entry-3e-ff-row)): Zeto = garmel `P2[12]` row 9 (lone `0x4B`), Caruban = rikuroa stager `P1[3]` row 17 (lone `0x49`, `World::run_boss_stager_record`). `DAT_8007b7fc` is writer-less across `SCUS_942.54` + every static overlay (absolute, gp-relative and materialisation sweep); readers pin it as the debug forced-battle formation id - battle init `FUN_80055b6c` (`0x80055BF8..0x80055C24`) → `FUN_8005567c` seeds the formation cells `DAT_8007BD0C+` from it (`sb` at `0x80055698..0x800556A8`), and `FUN_80046A20` routes a nonzero value to its mode-0 debug-menu exit (`0x80046DDC`). Retail never sets it. |
 | How an enemy's signature cast picks the spell id it announces | resolved | `disassembly` | `FUN_801E9FD4`'s round-counter arm, `0x801EB7C0..0x801EB81C` (PROT 0898 file `0x1CFF0..0x1CFFC`): the round byte `ctx[+0x28A]` goes through the `0xAAAAAAAB` reciprocal, the arm returns unless `% 3 == 2`, then stores that remainder to `actor[+0x1DE]` (action category), loads the seat's byte from the formation cell `0x8007BD0C + seat`, and writes `actor[+0x1DF] = monster_id - 0x29` - the literal `0x2442FFD7`, with `sb v0,0x1DF(s4)` in the next `j`'s delay slot. Formation id `162` announces spell `0x79`, `163` `0x7A`, `164` `0x7B`, in the party spell table's own id space. See [randomizer.md](../../tooling/randomizer.md#delilas-party-swap). |
 | How a Delilas sibling's signature move stages its clips | resolved (walk order capture-pinned) | `capture` | The modules drive `actor[+0x1DA]` as an archive entry index; per-frame capture of natural duel playouts orders the walks. Lu (0960): `0x0E -> 0x0C -> 0x0D`, closing `0x0F`, all literals. Che (0959): `0x0A -> 0x0B`. Gi (0958): `0x0A -> 0x0B -> 0x0C -> 0x0A -> 0x0B`, closing `0x0D` - the `addiu v0,v0,-2` at `0x801F839C` is a **mid-cast rewind**, not a stray step. Sites + walks: [monster-animation.md](../../formats/monster-animation.md#a-special-attack-can-be-a-chain-of-entries); anatomy: [cast-module.md](../../subsystems/cast-module.md). |
@@ -251,7 +253,7 @@ Threads whose answer needs more than a table cell. Every other thread is a row o
 | Monster mesh + texture pool | resolved | `capture` | [details ↓](#monster-mesh--texture-pool) |
 | Terra slot-3 / story-flag overlap | resolved | `capture` | [details ↓](#terra-slot-3--story-flag-overlap) |
 | Battle party mesh pack `other5` = **PROT 1204** (battle form; Baka Fighter reuses it) | resolved (empirical) | `capture` | [details ↓](#battle-party-meshes--assembled-from-the-player-battle-files-prot-1204--baka-fighter--default-equipment-sibling) |
-| MP-cost ability-bit priority (half vs quarter) | resolved (dump-confirmed) | `disassembly` | [details ↓](#mp-cost-ability-bit-priority-half-vs-quarter) |
+| MP-cost ability-bit priority (half vs quarter) | resolved (re-read against the instructions) | `disassembly` | [details ↓](#mp-cost-ability-bit-priority-half-vs-quarter) |
 | Scripted Tetsu encounter → Battle (v0.1 oracle Battle leg) | resolved | `capture` | All three inputs derive from disc bytes: the formation-row selection is the standard scripted-battle op `3E FF 04` in `P1[10]` (same case-`0x3E` install arm as Zeto/Caruban; row 4 = lone Tetsu), the sparring-partner reposition is `P1[10]`'s `4C 51 15 0E 07 22` NpcRun→tile `(21,14)` = `RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS` exactly, and the spar Yes/No is a MES-embedded option picker (`0x29` open + N×2 signed relative-jump table, handler `FUN_80038050`; port `legaia_mes::Picker::jump_target` + `InlineDialogueRunner::last_choice`), not a field-VM opcode. [details ↓](#scripted-tetsu-encounter--battle-v01-oracle-battle-leg) |
 | Battle stage backdrop: which `scene_tmd_stream` a scene fights in | resolved | `capture` | A scene bundle carries one stage stream per sub-area, and the battle's is not uniformly the block's first - `map01` uses bundle slot 5 (entry 88), Rim Elm `town01` slot 6 (entry **7**). Engine `ProtIndex::battle_stage_entry_for_scene`. [details ↓](../../subsystems/battle.md#which-stage-stream-a-scene-fights-in) |
 | Battle stage backdrop: is the authored half completed, and how | resolved (two actors; per-stage transform; object 1 dropped) | `capture` + `disassembly` | `FUN_800513F0` allocates **two** actors from one shell TMD (`0x80051A7C..0x80051AC0`, `ctx+0x106C` / `+0x1070`), both drawn. Copy B takes a half turn (`0x80051BC0`) unless the stage is on the `DAT_80078B50` table (`0x80051BCC..0x80051C18`), which mirrors it in X instead (`0x80051CC4..0x80051CE4`). Live in 15 battle saves: both pointers distinct, the split matching the table every time. Not "drawn once, so nothing completes it" ([re-do-not-re-walk.md](../re-do-not-re-walk.md#the-backdrop-shell-is-drawn-once-so-no-completion-exists)). [details ↓](../../subsystems/battle.md#backdrop-shell---two-copies-of-one-mesh). |
@@ -568,7 +570,7 @@ on the owning page:
   members: `0` in the sparring fight, `1` for Vahn from the Meta capture on, `0` for Noa beside Terra,
   all `1` at the level-99 Rage state.
 
-Port: `engine-core::battle_hud::battle_magic_chip`.
+Port: `engine-battle-hud::battle_magic_chip`.
 
 ### The combo counter's glide is placement record 80's
 
@@ -1547,16 +1549,19 @@ Port: the summon band (`engine-battle-vm::battle_action::summon`), the stager an
 
 ### The fade actor's hold word
 
-*Status:* resolved
+*Status:* resolved. Evidence: `disassembly`, re-read against the listing.
 
 A hold of `-1` means **hold the landed colour until the actor is killed** (`FUN_80020C14`,
 `80020c14.txt`).
 
-- After the duration goes negative the tick sets `actor[+0x62] |= 0x100`, then
-  `lh v0,0x1e(a1); bltz v0,0x80020cd4`: a negative hold skips the countdown and the tick goes on
-  ramping and drawing.
-- A non-negative hold counts down and, on expiry, sets `actor[+0x10] |= 8` (finished) and returns
-  `-1` (draw nothing).
+- `a1 = actor + 0x7C`, so the start delay is `+0x98`, the hold `+0x9A` and the duration `+0x9C`.
+  While the delay is positive the tick returns `-1` (`0x80020C28..0x80020C54`).
+- After the duration goes negative the tick sets `actor[+0x62] |= 0x100` (`0x80020C88`), then
+  `lh v0,0x1e(a1); bltz v0,0x80020cd4` (`0x80020C90..0x80020C98`): a negative hold skips the
+  countdown and the tick goes on ramping and drawing.
+- A non-negative hold counts down by the frame step and, once it is no longer positive
+  (`bgtz` at `0x80020CB4`), sets `actor[+0x10] |= 8` (finished, `0x80020CC4`) and returns `-1`
+  (draw nothing).
 - Consequences: the escape white-out persists until the battle unloads; the summon flash-in persists
   until `0x34` kills it.
 - Port: `engine-system::fade::FadeState::step`.
@@ -2023,10 +2028,13 @@ Owning pages: [`battle-data-pack.md`](../../formats/battle-data-pack.md),
 
 ### MP-cost ability-bit priority (half vs quarter)
 
-*Status:* resolved (dump-confirmed)
+*Status:* resolved. Evidence: `disassembly`, re-read against the listing.
 
 Half wins over quarter, and both subtract a right-shifted copy rather than floor-divide
-(`overlay_battle_action_801e295c.txt`).
+(`overlay_battle_action_801e295c.txt`). The bits are the caster record's `+0xF4` word
+(`lw v1,0x6bc(v0)` off `0x80084140`, `0x801E4560` / `0x801E3D04`); the shift sits in each
+branch's delay slot (`srl v0,s0,0x1` at `0x801E4570`, `srl v0,s0,0x2` at `0x801E457C`), so the
+no-bit path's `beq` to `0x801E4584` jumps the one `subu s0,s0,v0` at `0x801E4580`.
 
 - The block is inlined twice, byte-identical: `0x801E4568` in state `0x28` (right after that state's
   capture-archive `jal 0x8003EC70` at `0x801E44EC`) and `0x801E3D0C` in state `0x3C` (right after

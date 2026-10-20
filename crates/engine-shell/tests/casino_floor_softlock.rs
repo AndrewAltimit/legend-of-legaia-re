@@ -60,6 +60,11 @@ fn extracted_dir() -> Option<PathBuf> {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return None;
     }
+    if let Some(d) = std::env::var_os("LEGAIA_EXTRACTED_DIR").map(PathBuf::from)
+        && d.join("PROT.DAT").exists()
+    {
+        return Some(d);
+    }
     let d = repo_root().join("extracted");
     if d.is_dir() {
         Some(d)

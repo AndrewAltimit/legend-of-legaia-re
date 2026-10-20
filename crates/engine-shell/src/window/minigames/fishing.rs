@@ -38,68 +38,17 @@ impl PlayWindowApp {
 }
 
 impl PlayWindowApp {
-    /// This frame's fishing HUD draw list: the retail persistent rows
-    /// (best-catch, capped point total, lure label, lures remaining) at their
-    /// traced stage-pixel pens, the catch HUD while a cast is out, and the
-    /// live one-shot banners. The text consumer and the sprite pass read the
-    /// same list. Empty outside a fishing session.
+    /// This frame's fishing HUD draw list
+    /// (`legaia_engine_screens::fishing_hud_items`, the list the browser play
+    /// page builds too), with this frame's live banners serviced in the
+    /// redraw handler. The text consumer and the sprite pass read the same
+    /// list. Empty outside a fishing session.
     pub(in crate::window) fn fishing_hud_items(&self) -> Vec<legaia_engine_ui::HudDraw> {
         let world = &self.session.host.world;
         if world.mode != SceneMode::Fishing {
             return Vec::new();
         }
-        let Some(s) = world.minigames.fishing.as_ref() else {
-            return Vec::new();
-        };
-        // The lure index is the session's - the entry's ownership gate
-        // already re-pointed it at an owned lure.
-        let lure = s.lure;
-        let lures_left = *world
-            .party
-            .inventory
-            .get(&(legaia_engine_fishing::fishing::lure_item_id(lure) as u8))
-            .unwrap_or(&0) as i32;
-        let mut items = legaia_engine_ui::persistent_hud_draws(
-            s.record.points,
-            s.record.best_points,
-            lure,
-            lures_left,
-        );
-        // The catch HUD, drawn over the persistent rows while a cast is out
-        // (`PondSession::catch_hud`). The cast line-projection term
-        // `DAT_801d9178` has no engine analogue and stays zero.
-        let c = s.catch_hud();
-        if c.visible {
-            items.extend(legaia_engine_ui::catch_hud_draws(
-                &legaia_engine_ui::CatchHudState {
-                    record: c.record,
-                    line_extent: 0,
-                    cast_power: c.cast_power,
-                    depth: c.depth,
-                    tension: c.tension,
-                    gauges_visible: c.gauges_visible,
-                },
-            ));
-        }
-        // A landed catch's result plate (`FUN_801D5298`): rank, points in
-        // the large digits, label and the rising species name.
-        if let Some(r) = s.catch_result() {
-            let name_len = world
-                .minigames
-                .fishing_captions
-                .as_ref()
-                .map_or(0, |t| t.species_name(r.species).len());
-            items.extend(legaia_engine_ui::catch_result_draws(
-                r.ramp,
-                r.strength,
-                r.points,
-                r.species as u32,
-                name_len,
-            ));
-        }
-        // This frame's live banners, serviced in the redraw handler.
-        items.extend(self.fishing_banner_draws.iter().copied());
-        items
+        legaia_engine_screens::fishing_hud_items(world, &self.fishing_banner_draws)
     }
 
     /// The sprite half of the fishing HUD as screen primitives: every plate,
@@ -120,53 +69,22 @@ impl PlayWindowApp {
         )
     }
 
-    /// The fishing rod and line as screen primitives: the rod model the rod
-    /// actor posed this frame (`PondSession::rod_faces`, wrapped by the shared
-    /// `fishing::rod` builder), then the session's line for this frame
-    /// (`legaia_engine_minigame_scenes::fishing_venue::fishing_line_frame`, the fish end
-    /// projected through the follow camera the scene draws with), wrapped by
-    /// the shared `fishing::line` builder. The browser play page makes the
-    /// same calls. Empty with no rod and no line out.
+    /// The fishing rod and line as screen primitives
+    /// (`legaia_engine_screens::fishing_line_screen_prims`, the call the
+    /// browser play page makes too), the line projected through this
+    /// window's session camera framed on the scene's centre.
     pub(in crate::window) fn fishing_line_screen_prims(
         &mut self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_engine_core::camera_view::resolve_field_camera;
-        if self.session.host.world.mode != SceneMode::Fishing {
-            return Vec::new();
-        }
         let center = [
             (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
             (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
         ];
-        let world = &mut self.session.host.world;
-        // The pond draws under the venue camera; the line projects through it.
-        let view = legaia_engine_minigame_scenes::fishing_venue::venue_view(&world.minigames)
-            .or_else(|| {
-                resolve_field_camera(world, &self.session.camera, None, center).field_view()
-            });
-        // The rod model first: its actor runs ahead of the lure tick, so in a
-        // shared bucket its packets are the earlier `AddPrim`s.
-        let mut prims: Vec<_> = world
-            .minigames
-            .fishing
-            .as_ref()
-            .map(|p| p.rod_faces())
-            .unwrap_or_default()
-            .into_iter()
-            .map(|f| legaia_engine_ui::fishing::rod::fishing_rod_prim(f.xy, f.rgb, f.ot))
-            .collect();
-        prims.extend(
-            legaia_engine_minigame_scenes::fishing_venue::fishing_line_frame(
-                &mut world.minigames,
-                view.as_ref(),
-            )
-            .and_then(|l| {
-                legaia_engine_ui::fishing::line::fishing_line_prim(
-                    l.fish, l.rod, l.fish_rgb, l.rod_rgb, l.ot,
-                )
-            }),
-        );
-        prims
+        legaia_engine_screens::fishing_line_screen_prims(
+            &mut self.session.host.world,
+            &self.session.camera,
+            center,
+        )
     }
 }
 

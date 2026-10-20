@@ -82,6 +82,8 @@ mod screen_effect_page_prims;
 mod sfx_cues_real;
 mod shop_overlay_parity;
 mod shop_vendors_real;
+// --- lane P ---
+mod shop_items_real;
 mod slot_bonus_marquee_ladder;
 mod soft_reset_records_page;
 mod status_marks_page;

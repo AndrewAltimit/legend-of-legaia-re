@@ -1683,7 +1683,7 @@ and
 bytes the current meshes sample, which keeps the prim filter and the uploaded
 set consistent. The retail field loader DMAs **every** scene TIM. The VRAM
 parity oracle reproduces live VRAM, so `BuildOptions { upload_all_tims: true }`
-switches `build_targeted` to `build_vram_full_from_buffers`: every parseable
+switches `build_targeted` to `build_vram_full_layered`: every parseable
 collected TIM is written to its header destination - images first as
 sequential DMA, then CLUTs with merge-zeros to preserve the row-479 palette
 split. On `town01` that takes oracle coverage from about 4% (targeted) to
@@ -1699,6 +1699,23 @@ CLUT's entry 0: on `map03` the row-484 slot at `x = 240` (the trees' base
 quads) keeps `0x8023`, an opaque near-black, where retail holds `0x0000`.
 Both hosts build the overworld VRAM through this kernel. Test:
 `engine-core/tests/world_map_kingdom_clut_overwrite.rs`.
+
+**The merge stops at the shared-block layer.** The shared blocks' TIMs
+(`init_data`) are uploaded before the scene's own and stand for content
+resident before the scene loads, so the build hands them to
+`build_vram_targeted_layered` / `build_vram_full_layered` as a lower layer. A
+scene CLUT block replaces every lower-layer word it covers, `0x0000` entries
+included, as `LoadImage` does; scene CLUT blocks still merge among themselves,
+and a zero never overwrites a cell the scene layer already owns. Without the
+split, `init_data`'s 256-wide row-484 CLUT survived under the scene palettes'
+transparent entries: in `tower` (Sky Gardens Tower) the foliage CLUTs at
+`(192, 484)` and `(208, 484)` kept `0x8023` and the vine and grass cutouts drew
+on dark-brown cards. The same row-484 class reached about thirty field scenes
+(`town01`, `cave01`, `tunnelb`, `rayman`, `nilboa`, `bylon` among them, and
+row 485 on `dolk` / `ropeway`). On the four with a retail state in the library
+(`town01`, `dolk2`, `tunnelb`, `cave01`) every word the split changes now
+equals retail's VRAM and none did before. Both hosts build field VRAM through
+this kernel. Test: `engine-core/tests/scene_clut_over_shared_layer.rs`.
 
 #### Field static-object placement (town01)
 
@@ -1791,6 +1808,27 @@ summit's props, the sky panorama among them: pack 37 carries `y_off = 2080`,
 and every retail capture holds its actor at the `-480` floor tier. Both hosts
 re-seat such draws through `field_env::follow_floor_placed_draws` over
 `World::object_floor_follow_records` when they bake the placed layer.
+
+**A scripted height is absolute, not a lift.** The same sweep stores the seat
+`ladder[nibble] + y_off` in the actor's `+0x16` (`0x8003A62C..0x8003A64C`),
+so every later write to `+0x16` replaces it: op `4C 42`'s immediate mirror
+(`world_y = -value`) and the actor tick's `+0x10 & 0x20000000` arm, which
+stores `-(+0x8E)` ahead of both floor arms (`0x8003BC50..0x8003BC64`) and
+leaves a law object whose script never writes `+0x8E` at `Y = 0` (the bind
+clears the slot, `0x8003A8D4`). The port seats each object-bind context's Y
+from its first object (`man_field_scripts::object_script_bind_heights`,
+`World::set_object_bind_heights`), and `World::object_draw_displacements`
+reports the actor's Y **less that seat**, since both hosts add the
+displacement to a draw that already stands on it. `suimon`'s water is the
+case: partition-0 records 5..9 raise `31 1D` and park `+0x8E` at
+`260..338`, so the sheet under the sluice and the channel upstream of it run
+inside the ditch, between the bed (rung 4, `-128`) and the banks (rung 12,
+`-384`). Measured as a lift from the `-320` seat, the channel stood level
+with the gate's lintel. The same rule moves the law objects of `concnow`
+(records 13 / 17 / 37), `jou` (7 / 8), `deroa` (5), `jagaroom` (18),
+`taiku` (19) and `station` (31); `chitei2`'s boulder and `doman`'s record 5
+sit on a zero seat and do not move. Disc-gated:
+`crates/engine-scene-host/tests/object_seat_height_disc.rs`.
 
 #### CLUT-trace + VRAM-oracle diagnostics
 
@@ -2007,13 +2045,15 @@ use separate shaders and are never graded.
   (`strength = 0` is a no-op).
 - **Palette-collapse mode** (`Renderer::set_palette_grade`) - what the
   prologue's gold sepia (`opdeene` / `opstati` / `opurud`) uses. Retail
-  applies the grade to the *loaded assets*: every uploaded CLUT entry is
-  rewritten to `L = max(r, g, b) -> (L, max(L-1, 0), L >> 1)`, and every
+  applies the grade to the *loaded assets*: four CLUT-cell cyclers rewrite
+  the CLUT rects `(0, 473, 320, 2)` and `(0, 476, 320, 34)` to
+  `L = max(r, g, b) -> (L, (L*247) >> 8, L >> 1)`, and every
   resident TMD colour word is rewritten by the scripts' two `4C E6` HSV ops
   to `(V, V*246 >> 8, V*112 >> 8)`, `V = min(max(rgb), 0xF8) - 30`. The
   port's shaders apply the same laws per decoded texel / packet colour
-  (`palette_law_word`, `prologue_sepia_word`), with runtime-neutral `0x80`
-  words kept neutral. The gold coefficients play no part in this mode.
+  (`palette_law_word`, `prologue_sepia_word`), the texel law only for a
+  4/8bpp prim whose CLUT base is inside those rects (`palette_law_reaches`),
+  with runtime-neutral `0x80` words kept neutral. The gold coefficients play no part in this mode.
 - **Depth-cue ramp.** Retail's per-render-node depth cue also crushes
   far-field blue (`B/R` down to about `0.13`).
   `Renderer::set_depth_cue_ramp(far, near_z, far_z, max_ir0)` stages it as a
@@ -2242,6 +2282,14 @@ for prim, the claw tips across the caster included. Its texels are dark (the
 leg CLUT tops out at `(128, 88, 0)`), so `B + F/4` under `(67, 67, 179)` adds
 under twenty a channel - which is why the single-sided
 [body cull](#the-field-pass-culls-back-faces) matters to its brightness.
+
+**A kill camera through the monster.** The defeat camera sweeps from the
+dying monster to the victor, and on the way it passes close enough that the
+body's near faces fill half the frame for a couple of frames. A PCSX-Redux film
+of the Caruban fight (`rikuroa_pre_caruban`, monster HP poked to 1,
+`scripts/pcsx-redux/autorun_film.lua`) shows two such frames on the console;
+the port's flat dark-blue frames on the same sweep are that, not a stray
+primitive.
 
 ## Coplanar surfaces: retail's ordering model, the port's depth policy
 
@@ -2932,7 +2980,13 @@ spill they draw falling fog rather than a sheet, from
   slowly, thresholded higher the further it has fallen so the tendrils part
   and thin; a high-frequency erosion term near the threshold rags their
   edges, and a second noise breaks them into falling puffs.
-- **Slow.** The fall coordinate scrolls one noise cell per
+- **Even along a diagonal rim.** The flow direction is the gradient of the
+  field's edge distance, which comes from cell centres and so steps once
+  per cell along a rim diagonal to the grid; the field smooths that
+  distance about the rim (three box passes) before the shaders or the
+  sheet mesh read it, or the curtain pinches into a row of V's, one per
+  cell step.
+- **Unhurried.** The fall coordinate scrolls one noise cell per
   `SPILL_FLOW_TICKS`; the second octave and the puffs move at their own
   rates, so the pattern changes as it falls.
 - **A slab, not a plane.** The vertex stage spreads the sheets outward down

@@ -32,7 +32,7 @@ pub(crate) const PORT_ONE_CARD_FILE: &str = "memcard1.mcr";
 /// two hosts kept the same save in two formats, and a save made in one could
 /// not be put in the other's port. Both mount a memory-card image now, and
 /// every Save / Load goes through the one card kernel
-/// ([`legaia_engine_core::card_write::write_save_into_card`], `save_at`).
+/// ([`legaia_engine_menu_runtime::card_write::write_save_into_card`], `save_at`).
 ///
 /// When `save_dir` holds no card yet, a freshly formatted one is mounted and
 /// every LGSF slot an older build left there is written into it, slot `N`
@@ -101,7 +101,7 @@ pub(crate) fn import_legacy_slots(
         let Ok((sf, resume)) = read_slot_save(save_dir, slot as u8) else {
             continue;
         };
-        match legaia_engine_core::card_write::write_save_into_card(
+        match legaia_engine_menu_runtime::card_write::write_save_into_card(
             card,
             slot as u8 + 1,
             &sf,

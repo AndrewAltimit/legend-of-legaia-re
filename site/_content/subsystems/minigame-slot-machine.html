@@ -22,6 +22,7 @@
   <h2>Getting there</h2>
   <p>The door is the <strong>mode-24 minigame warp</strong>: field-VM op <code>0x3E</code> with <code>op0 = 103</code> (sub-id 3) sets game mode <code>0x18</code> and loads the overlay. It is the ordinary scene-backup, overlay-load, return-to-field sequence, so the game returns to the exact field state it suspended. The mechanism is on the <a href="script-vm.html">field / event VM</a> page.</p>
   <p>A disc-wide walk finds five door records: three interchangeable cabinets in the Sol casino, and the Vidna cabinet in both variants of its scene. <strong>The door gate is a coin-bank compare</strong>, not an item check - a player with no coins never reaches the machine and sees the cabinet&rsquo;s refusal line instead. The debit before the warp is a <em>fee</em>, and at a slot cabinet it is zero, because the machine charges its own bets from the balance it copies in.</p>
+  <p>The three Sol cabinets seat the player the way the <a href="minigame-baka-fighter.html">Baka Fighter</a> cabinets do: a walk onto the stool, a turn to the machine and the sit clip before the fade, and a second pass after the warp that clears the fade and stands the player up. Every exit - the quit row, an empty machine, the port&rsquo;s Start escape - comes back through that pass.</p>
 </section>
 
 <section class="doc-section" id="states">

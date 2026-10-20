@@ -3,6 +3,8 @@ name = "legaia-engine-screens"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [lib]
 name = "legaia_engine_screens"
@@ -10,6 +12,7 @@ path = "src/lib.rs"
 
 [dependencies]
 legaia-engine-core.workspace = true
+legaia-engine-battle-hud.workspace = true
 legaia-engine-scene-host.workspace = true
 legaia-engine-menu-runtime.workspace = true
 legaia-engine-dialog.workspace = true
@@ -17,6 +20,7 @@ legaia-engine-scene.workspace = true
 legaia-engine-ui.workspace = true
 legaia-font.workspace = true
 legaia-engine-battle.workspace = true
+legaia-engine-battle-vm.workspace = true
 legaia-engine-effects.workspace = true
 legaia-engine-field.workspace = true
 legaia-engine-fishing.workspace = true
@@ -31,3 +35,7 @@ legaia-render-kernels.workspace = true
 
 [dev-dependencies]
 legaia-save.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

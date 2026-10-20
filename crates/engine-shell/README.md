@@ -71,7 +71,7 @@ until `--card <image>` mounts a real PSX memory-card image in it (`.mcr` /
 Both ports' fifteen blocks fill the preview grid off the same
 `SaveFile::from_retail_sc_block` lift the browser rack uses; Load reads the
 block's save, resuming into its own scene when it carries one, and Save
-writes through `engine-core::card_write::write_save_into_card` and writes the
+writes through `engine-menu-runtime::card_write::write_save_into_card` and writes the
 image back to its file.
 
 `legaia-engine load --card <image> [--block N]` is the headless half: it

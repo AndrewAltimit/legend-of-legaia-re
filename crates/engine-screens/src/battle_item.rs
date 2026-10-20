@@ -50,3 +50,29 @@ pub fn with_battle_item_frame<R>(
     };
     f(&frame)
 }
+
+/// Borrow a battle Magic window model (`World::battle_spell_menu_model`) as
+/// the shared builder's frame - the spell window's twin of
+/// [`with_battle_item_frame`].
+pub fn with_battle_spell_frame<R>(
+    model: &legaia_engine_battle::battle_magic::BattleSpellMenuModel,
+    f: impl FnOnce(&bii::BattleSpellMenuFrame<'_>) -> R,
+) -> R {
+    let rows: Vec<bii::BattleSpellRowView<'_>> = model
+        .rows
+        .iter()
+        .map(|(name, admissible, ra_seru)| bii::BattleSpellRowView {
+            name,
+            admissible: *admissible,
+            ra_seru: *ra_seru,
+        })
+        .collect();
+    let description: Vec<&str> = model.description.iter().map(String::as_str).collect();
+    let frame = bii::BattleSpellMenuFrame {
+        rows: &rows,
+        cursor: model.cursor,
+        description: &description,
+        level_mp: model.level_mp,
+    };
+    f(&frame)
+}

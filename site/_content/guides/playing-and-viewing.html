@@ -20,6 +20,7 @@
 
 <section class="doc-section" id="launcher">
   <h2>0 &middot; The launcher</h2>
+  <p class="hint">New to the release archive? <a href="desktop-apps.html">Desktop apps</a> covers the download, the first start past SmartScreen or Gatekeeper, the controls and the toggles, with screenshots; this page is the full reference.</p>
   <p>Started with <strong>no subcommand</strong> - a double-click, a desktop shortcut, the macOS app - <code>legaia-engine</code> runs a small launcher instead of printing help:</p>
   <div class="cli"><code>./legaia-engine</code></div>
   <ol class="steps">
@@ -68,10 +69,10 @@
       <tr><td><kbd>RShift</kbd></td><td>Select</td></tr>
     </tbody>
   </table>
-  <p><kbd>Esc</kbd> quits. The <a href="../play.html">browser play page</a> ships a <em>different</em> default layout (<kbd>X</kbd> is Circle there, <kbd>C</kbd> / <kbd>V</kbd> carry Triangle / Square, and WASD doubles the arrows), so a key that works in the tab is not necessarily the same button in the window. <code>config show</code> prints the desktop table, including any rebinding.</p>
+  <p><kbd>Esc</kbd> twice quits: the first press only shows <em>Press Esc again to quit</em> at the bottom left of the window, and a second press within three seconds closes it, so a stray press never loses unsaved progress. The <a href="../play.html">browser play page</a> ships a <em>different</em> default layout (<kbd>X</kbd> is Circle there, <kbd>C</kbd> / <kbd>V</kbd> carry Triangle / Square, and WASD doubles the arrows), so a key that works in the tab is not necessarily the same button in the window. <code>config show</code> prints the desktop table, including any rebinding.</p>
   <p><strong>Gamepads.</strong> The native window, the browser play page and the minigames page all read a gamepad, by position: bottom / right / left / top face buttons are Cross / Circle / Square / Triangle, bumpers L1 / R1, triggers L2 / R2, back / start Select / Start, and both the d-pad and the left stick drive the d-pad. The browser takes any controller it reports with the <code>standard</code> mapping; the native window takes any controller its platform's gamepad backend sees. Key Config (Select on the Options screen) rebinds keys only.</p>
   <h3>Camera and window toggles</h3>
-  <p>Left-mouse drag orbits the camera around your character (horizontal) and tilts it (vertical), the wheel zooms, and a double-click puts the framing back to retail - all three are locked while a cutscene has the camera.</p>
+  <p>Left-mouse drag orbits the camera around your character (horizontal) and tilts it (vertical), the wheel zooms, and a double-click puts the framing back to retail, centred on the party (the browser play page's <strong>Reset camera</strong> button does the same, and also leaves the <kbd>F3</kbd> debug vantage) - all three are locked while a cutscene has the camera.</p>
   <table>
     <thead><tr><th>Key</th><th>Toggle</th><th>Default</th></tr></thead>
     <tbody>
@@ -81,12 +82,15 @@
       <tr><td><kbd>F8</kbd></td><td>Time of day for enhanced lighting: auto, day, dusk, night</td><td>auto</td></tr>
       <tr><td><kbd>Y</kbd></td><td>Shadow-casting point lights (<code>--no-dyn-shadows</code> starts off)</td><td>on</td></tr>
       <tr><td><kbd>F4</kbd></td><td>Camera-occlusion fade: walls between the camera and your character dissolve to a dither (<code>--no-occlusion-fade</code> starts off)</td><td>on</td></tr>
-      <tr><td><kbd>F9</kbd></td><td>Volumetric ground fog (<code>--no-volumetric-fog</code> starts off)</td><td>on</td></tr>
+      <tr><td><kbd>F9</kbd></td><td>Volumetric ground fog (<code>--no-volumetric-fog</code> holds it off)</td><td>off</td></tr>
+      <tr><td><kbd>F10</kbd></td><td>Bloom: lamps, glowing props, lit windows and bright sky glow softly, stronger at night</td><td>off, remembered</td></tr>
       <tr><td><kbd>F1</kbd></td><td>Engine diagnostic text rows</td><td>off</td></tr>
       <tr><td><kbd>F2</kbd></td><td>Mute audio</td><td>off</td></tr>
       <tr><td><kbd>F3</kbd></td><td>Wide debug orbit camera instead of the field camera</td><td>off</td></tr>
     </tbody>
   </table>
+  <p>In the native window each press shows the toggle's new state at the bottom left for a moment (<em>Ground fog: off</em>); holding a key toggles once, not repeatedly. A key that only acts while you walk around (<kbd>F3</kbd>, <kbd>T</kbd>, <kbd>R</kbd>) says so when pressed on the title screen or in a menu. <kbd>F12</kbd> (or <kbd>?</kbd>) opens a panel listing every toggle key with its current state; press it again to close it.</p>
+  <p>The browser play page answers the same keys with the canvas focused. Its presentation toggles sit in one <strong>Visual enhancements</strong> panel under the canvas: each row names its key, says in a line what it does and whether it is a port enhancement or part of the PS1's own drawing, and the panel carries the Retail-faithful switch and a <strong>Reset to defaults</strong> button.</p>
   <p><code>--retail</code> starts a session with every enhancement off and the remembered engine-only options (camera distance, movement mode, the photosensitivity guard) at their retail values, writing nothing back to the options file - the one switch for a retail-faithful run.</p>
   <p class="hint">Window toggles and pad bindings cannot collide: a window key is handled <em>before</em> the pad lookup, so one parked on a bindable key would delete that button from the keyboard. Every toggle therefore lives on an F-key or a letter outside the bindable vocabulary (the key table above plus <kbd>C</kbd>, <kbd>V</kbd>, <kbd>D</kbd>, <kbd>E</kbd>).</p>
   <details class="disclosure">
@@ -145,6 +149,7 @@
       <tr><td>Learn all arts</td><td><code>--cheat-arts</code></td><td>Every art in the member's list, Hyper and Miracle Arts included.</td></tr>
       <tr><td>Max items</td><td><code>--cheat-max-items</code></td><td>Every held item and usable consumable to 99. Key items and equipment are left alone, so no story gate opens early.</td></tr>
       <tr><td>No encounters</td><td><code>--no-live-loop</code>, <kbd>F7</kbd></td><td>Random encounters off; story and boss fights still happen.</td></tr>
+      <tr><td>Walk through walls</td><td><code>--cheat-noclip</code></td><td>The field and world-map walk ignores walls, people and props; a door you walk into still opens.</td></tr>
       <tr><td>Gold / Coins</td><td><code>--cheat-gold N</code>, <code>--cheat-coins N</code></td><td>Sets the purse / casino coin bank, capped at 9,999,999.</td></tr>
       <tr><td>Item</td><td><code>--cheat-item ITEM[:QTY]</code></td><td>Adds through the bag's own add helper: stacks cap at 99, a full bag refuses. <code>ITEM</code> is an id or a name (<code>healing-leaf:5</code>). Repeatable.</td></tr>
       <tr><td>Codes</td><td><code>--cheat-file PATH</code></td><td>GameShark lines or a Mednafen <code>.cht</code>, written through the engine's map of retail RAM cells; a code with no engine cell is reported as unmapped. On the page, paste them into <strong>Codes</strong>.</td></tr>
@@ -198,7 +203,7 @@
     </tbody>
   </table>
   <p>While a minigame is up, the port's own status readout and key hints (which button attacks, how to quit) sit <strong>outside</strong> the game picture, so the game's own chrome never covers them: in the window's title bar in <code>play-window</code>, and in the strip under the canvas on the browser play page, fullscreen included.</p>
-  <p>The browser play page carries the fishing entry as a <strong>Fish here</strong> button under the canvas. Circle casts and locks the power meter, Cross reels, Square reels harder (the port's choice; retail casts on Cross or Square). Points bank into the world's persistent pool, so they survive leaving and re-entering, and the prize-exchange rows come off the same overlay with retail availability gating.</p>
+  <p>On the browser play page fishing starts where the game starts it: a fishing spot's own script hands over through the field VM's minigame warp, as on the console - the page has no launcher button of its own. Circle casts and locks the power meter, Cross reels, Square reels harder (the port's choice; retail casts on Cross or Square). Points bank into the world's persistent pool, so they survive leaving and re-entering, and the prize-exchange rows come off the same overlay with retail availability gating.</p>
   <p class="hint">The fishing HUD is the venue's own: its plates, digits, gauges and banners are records of the overlay's sprite table drawn out of the venue's HUD texture page, and the lure and count captions are read off your disc.</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
@@ -238,7 +243,7 @@
   <h2>7 &middot; Record and replay a session</h2>
   <div class="cli"><code>./legaia-engine record --disc "/path/to/disc.bin" --out session.toml</code></div>
   <div class="cli"><code>./legaia-engine replay --input session.toml</code></div>
-  <p><code>record</code> is <code>play-window</code> plus input capture into a small <code>j-replay-v1</code> TOML file. The file is checkpointed to disk about once a second and finalized on window close (<kbd>Esc</kbd>), so an interrupted session still yields a valid file up to the last checkpoint. <code>replay</code> runs it back headless and deterministic - the same file always produces a bit-identical engine trace, and it needs no disc at all.</p>
+  <p><code>record</code> is <code>play-window</code> plus input capture into a small <code>j-replay-v1</code> TOML file. The file is checkpointed to disk about once a second and finalized on window close (<kbd>Esc</kbd> twice, or the window's close button), so an interrupted session still yields a valid file up to the last checkpoint. <code>replay</code> runs it back headless and deterministic - the same file always produces a bit-identical engine trace, and it needs no disc at all.</p>
   <p><code>legaia-engine --help</code> lists many more subcommands; its <code>COMMAND GROUPS</code> footer separates the player-facing ones above from the development diagnostics (parity oracles, synthetic state drivers) you can ignore.</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
@@ -253,7 +258,7 @@
   <table>
     <thead><tr><th>Command</th><th>Shows</th></tr></thead>
     <tbody>
-      <tr><td><code>./asset-viewer prot extracted/PROT.DAT --cdname extracted/CDNAME.TXT</code></td><td>The archive browser</td></tr>
+      <tr><td><code>./asset-viewer</code></td><td>The archive browser</td></tr>
       <tr><td><code>./asset-viewer tim extracted/tim_scan/&lt;entry&gt;/&lt;tim-file&gt;</code></td><td>One texture</td></tr>
       <tr><td><code>./asset-viewer tmd extracted/tmd_scan</code></td><td>Every mesh in a directory, one at a time</td></tr>
       <tr><td><code>./asset-viewer vab extracted/PROT/&lt;entry&gt;.BIN --sample 0</code></td><td>One sample from a sound bank</td></tr>
@@ -261,6 +266,7 @@
     </tbody>
   </table>
   </div>
+  <p>Started with no view named (a double-click), <code>asset-viewer</code> opens the archive browser on the <code>extracted/PROT.DAT</code> in the current folder or beside the program; with none there it says how to make one and points at <code>legaia-studio</code>. The browser takes entry names from the <code>CDNAME.TXT</code> beside <code>PROT.DAT</code> unless <code>--cdname</code> names another.</p>
   <p>The scene name is a positional argument here, not a <code>--scene</code> flag (<code>field</code>, <code>world</code> and <code>dialog</code> all take their subject that way).</p>
   <p>In the PROT browser: <kbd>N</kbd> / <kbd>P</kbd> = next/prev entry, <kbd>PgDn</kbd> / <kbd>PgUp</kbd> = jump 10, <kbd>Esc</kbd> = quit; each entry's format is auto-detected and the first viewable sub-asset is shown. <code>tmd</code> pointed at a directory walks every mesh with the same keys. The <code>tim</code> subcommand also takes <code>extracted/PROT.DAT</code> itself with <code>--offset</code>/<code>--clut</code> for the system-UI textures that live outside any TOC entry.</p>
   <div class="see-also">
@@ -299,6 +305,7 @@
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Guides</span>
+    <a href="desktop-apps.html">Desktop apps</a>
     <a href="getting-started.html">Getting started</a>
     <a href="extracting-assets.html">Extracting assets</a>
     <a href="modding-and-translation.html">Modding + translation</a>

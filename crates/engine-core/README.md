@@ -22,17 +22,21 @@ runtime ([`engine-menu-runtime`](../engine-menu-runtime/README.md)).
   `engine-battle-vm` reaches the game through a host trait; this crate
   implements those traits over `World`.
 - **The `World` half of scene flow.** New Game seeding (`new_game`), the
-  live-loop arming (`live_loop`), the place-name banner, the player-rig source
+  live-loop arming (`live_loop`), the player-rig source
   (`World::player_rig_source`) and the constants the scene host and the tick
   share (`world::EFFECT_MODEL_LIBRARY_BASE`, `world::BGM_SUB_OP_ENGINE_STOP`).
   `SceneHost`, which owns the `World` and the `ProtIndex` and enters and
   ticks scenes, is `engine-scene-host`.
 - **The stateful side of battle and minigames.** The round loop, the
-  command flow, the battle HUD state and the minigame sessions' entry points.
-  The minigame venues and surfaces they drive, and the minigame seat itself
-  (`MinigameState`), are `engine-minigame-scenes`.
+  command flow, the battle HUD state (the glides and banners `BattleState`
+  carries) and the minigame sessions' entry points. The minigame venues and
+  surfaces they drive, and the minigame seat itself (`MinigameState`), are
+  `engine-minigame-scenes`. What the battle screen reads back off that state
+  is [`engine-battle-hud`](../engine-battle-hud/README.md), above this
+  crate.
 - **Saves.** `World::save_full` / `load_full` over the LGSF container in
-  `legaia-save`, and the retail memory-card write.
+  `legaia-save`. Writing a save into a mounted memory-card image is
+  `engine-menu-runtime::card_write`, above this crate.
 - **Scene staging.** The scene questions that take simulation state: which
   placed objects are live, which records the story hides. The `.glb` export
   built on them is [`engine-export`](../engine-export/README.md), above this

@@ -892,7 +892,8 @@ A renderer that blends every texel of a semi prim puts a stray `m` through the r
 
 The retail tables, kernels and screens above are pinned. What remains is the glue `PondSession` reconstructs, each marked at its call site:
 
-- **Line break.** Retail's rule is in [Fight exits](#fight-exits). The port snaps on the first frame at the ceiling, does not spend a lure, and plays the miss banner on the snap (the converging banner on the recast). The off-screen latch and the far-record tension strain are not ported.
+- **Line break.** Retail's rule is in [Fight exits](#fight-exits). The port snaps on the first frame at the ceiling and does not spend a lure. The snap seeds what retail's break arm seeds - the converging `LINE BREAK!` pair, cancelling the hook banner - and the empty reel-in and the recast seed nothing (`FishingBanners::on_snapped` / `on_recast`). The off-screen latch and the far-record tension strain are not ported.
+- **Cast camera.** Retail's cast cuts the view from behind the shore party to a low shot over the water behind the rod, which the line, the lure's flight and the fight play out in (a `minigame_fishing_pcsx` film, `scripts/pcsx-redux/autorun_film.lua`). The camera writes of states `0xd..0x22` are not decoded; the port keeps the shore view throughout and the rod appears at the cast lock.
 - **Fight pacing.** The line-record reel-down rates, the fish-AI branch order and re-roll interval, and the pull bias literal are engine-side readings of `FUN_801d4004`. The held-reel operand order (`pull * step / divisor`) is the natural integer reading, not separately pinned.
 - **Cast.** The power meter's per-frame step (hosts use `0x80`), the flight timing, and the mapping from locked power to the line record are approximations; retail's line-projection vector math is not decoded.
 - **Result plate.** The fish's lift before the plate and the `DAT_801d90bc` recast gate are not modelled.

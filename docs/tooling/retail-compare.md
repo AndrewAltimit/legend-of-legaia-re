@@ -1034,6 +1034,20 @@ the bars - the headless seed directly, the image child through
 `LEGAIA_BATTLE_MYSTIC_SHIELD=1`. `cort_guilty_cross_mid_cast` and
 `cort_mystic_circle_mid_cast` are the two.
 
+The sphere's texture is a page its second part, the render-mode-4 scroller
+`0x80078720`, rolls one row at a time, so where the page stands is time since
+the shield went up - the earlier turn the replay never runs. Raised on the
+first battle tick, the engine's page stood a pure rotation of `212` rows off
+retail's on `cort_guilty_cross_mid_cast`, with the CLUT at `(0, 485)`
+byte-identical, and the sphere's bands fell where retail's had none. The
+image child therefore takes every live battle scroller's rect as the
+displayed frame held it, through the same `LEGAIA_SEAT_VRAM_RECTS` file the
+field child uses ([the seeding model](#the-seeding-model)), written after the
+battle VRAM pass's own rotations (`World::apply_battle_vram_moves`). The two
+shield frames read `.772` and `.986` seated so, `.387` and `.630` without;
+`gimard_burning_attack`'s fire tunnel, a scroller of PROT 0903's, rose from
+`.569` to `.786` on the same seed.
+
 ### The keyframe each body stands on
 
 A looping clip - every idle stance - is a clock of its own, and the replay
@@ -1054,12 +1068,42 @@ child lands each slot on that cursor on the capture frame
 the same clip and the clip loops. Left on the replay's clock: a one-shot,
 which started with its action, and - while an action is in flight, ahead of
 the Done band `0x50..=0x5A` - the acting seat and its target, whose clips run
-with the action the seed has already placed (seated, Zeto's parked Big Wave clip cost
-`zeto_big_wave_mid_cast` `0.03`). The action's own clips start with the
+with the action the seed has already placed. The capture-class band
+`0x6F..=0x71` seats them all the same while they idle (clip `0`): its slot-B
+module paces itself on its own countdown and stages no clip on either seat, so
+the loop's cursor is time since the loop began. `zeto_big_wave_mid_cast`'s
+caster idles through PROT 0946's band in a close-up the sway fills, and seated
+on retail's cursor the frame reads `.959` against `.520`. Outside the band an
+idle seat in flight may have just come off the action's own clip - seating it
+cost a block each on `nivora_duel_mid_blazing_slash`,
+`player_steal_skeleton_banner` and `vera_summon_mid_cast`. A party target
+already on its reaction (`2`, `3`, `4`, `5` or `0x0B`) is seated too, on the
+reaction channel it plays: the reaction starts on the hit, which the replay
+lands on its own clock, and a knockdown carries the whole body in the two game
+frames the display lags the RAM by. `battle_gimard_tail_fire_b`'s Vahn reads
+knockdown cursor `72` in the RAM and `56` on the displayed frame; retail's own
+RAM-frame ordering table already draws him sprawled (his packets at screen
+rows `126..174`) where the frame on screen shows him upright mid-fall. Seated
+on `56` the frame reads `.809` against `.782`. A displayed cursor below zero
+predates the hit and is left alone. The action's own clips start with the
 approach `0x14` stages, so on the seed's own passes - the seed `0x0C`, and an
 Attack arm `0x14` whose body has not run (the yaw counter still on the seed's
 `0x200` rung) - both bodies still sway on their idle loops and are seated
 too (`super_queue_replace_*` `image` `.926` to `.938`).
+
+A downed party member holds entry `8`, the kneel that re-commits itself at
+every natural end ([battle-actor-rendering](../subsystems/battle-actor-rendering.md#the-commits-clip-tag-ladder)),
+with `+0x1D9 = 8`. The bar seed lands its HP at zero without the fall that
+leads there, so the body stood on its idle and the cursor seed, which lands
+only on the clip a body plays, never applied: `zora_glare_petrify_pre`'s Noa
+stood behind Vahn where retail's kneels. The bar seed now puts a party member
+it lands at zero HP on the kneel (`World::seat_downed_kneel`), on the headless
+side as in the child, and a clip seed of `8` lands its cursor. The kneel's pose
+centroid moves the body pair the framings read: Noa's stands at `(920, -461)`,
+retail's `(920, -463)`, where her idle stood at `(803, -313)`. The member also sits out every replayed
+round, so the heading its fall left it on is seeded with its ground pair, as
+a spent combatant's is (`RetailBattle::seeded_facing`): Noa's kneel faces
+`3723`, and drawn along the engine's `0` it spread across the frame.
 
 ### Rewards already granted
 
@@ -1708,6 +1752,7 @@ measured channels.
 | `footing` | engine floor sample at retail's `(X, Z)` vs retail's footing: 1 within 2, 0 at 128 (field and overworld classes; not scored while a script holds retail's player height, [below](#a-script-held-height-is-not-a-footing)) |
 | `camera` | mean of eight parts: pitch and yaw (1 within 16, 0 at 256, wrapped), `H` (1 within 4, 0 at 128), each eye word and each focus word (1 within 16, 0 at 1024) |
 | `facing` | field class only: mean over the player and every placement standing on its retail seat, each heading 1 within 32, 0 at 512, wrapped ([below](#the-facing-channel)) |
+| `npcs` | field class only: mean over every placement retail draws or parks that no ambient stream walks: 0 when one side parks it on the off-map seat and the other draws it, else its `(X, Z)` distance, 1 within 8, 0 at 128 ([below](#the-npcs-channel)) |
 | `bgm` | 1 when the engine's track-select word (`SceneHost::bgm_track_word`, the park sentinel `0x1000` included) equals retail's; the detail marks a held track on either side ([below](#a-held-track)) |
 | `fog_gate` | 1 when the engine's fog-pool gate equals retail's |
 | `view_window` | field class only: fraction of the four visible-tile window bytes equal to the zone camera's, or to the form the decoration pass clips them to at the engine's focus - a capture can land inside the pass ([encounter](../formats/encounter.md#the-window-is-not-cleared-with-the-scene)) |
@@ -1790,6 +1835,40 @@ landed when the gate samples it. The eight vsyncs left are the end-latch spins
 on flat 5 (`AD 05 08` after clips `8`, `9` and `8` reversed: `27`, `57` and
 `27` vsyncs in retail, `30`, `60` and `29` in the engine), which the actor's
 clip tick paces rather than the wait.
+
+### The npcs channel
+
+The facing channel only scores a placement within 96 units of its retail
+seat, so a placement standing in the wrong place, or one the engine draws
+while retail has it parked on the off-map seat (`16320, 16320`, or one tile
+short of it on an axis), was scored nowhere. This channel scores where each
+placement stands, matched by the same flat index, with ambient walkers left
+out for the same reason as there. The detail lists every miss with both
+positions and which side parks it.
+
+Its misses fall into two shapes:
+
+- **A record that ran on other flags.** A placement's record places it at
+  scene entry from the story flags of that moment (`town01` `P1[33]`: a
+  `4C 51` per flag arm, none for the parked case). The seed enters the scene
+  with the capture's flags, which can be later ones: in
+  `town01_tetsu_topic_prompt` the engine takes `P1[33]`'s `0x226`-set arm and
+  draws flats 69 / 70 at `(12608, 1728)` / `(12608, 1984)`, while retail,
+  which entered the town before the conversation, still has them parked.
+  `nivora_cutscene_delilas_intro` misses the same way. The flags channel
+  reads the bitmap now, not at entry, so it cannot see this.
+- **A cutscene's closing placement.** A handful of placements stand 64
+  units (half a tile) off their MAN spawn in retail - `izumi` flat 6, `kor5`
+  flat 14, `ropeway` flats 46 / 50, `dolk` / `dolk2` and `town0c` - where the
+  engine stands on the spawn byte exactly as `FUN_8003A1E4` decodes it
+  (`(b & 0x7F) * 0x80 + 0x40`, `+ 0x80` with bit 7, `0x8003A330..0x8003A384`).
+  `kor5` flat 14 (Old Deez) is a script's doing: the cutscene `P2[3]` walks
+  him off and puts him back with `A3 0E 20 5D` (`+0x115E`, tile `(32, 93)` =
+  `(4160, 11968)`), not on his spawn byte `0xDC` (`11904`), then latches
+  `0x43A` (`+0x14CB`). A later entry, retail's or the engine's, runs no
+  `P2[3]` and spawns him on `0xDC`; the two `kor5` states were captured in the
+  visit the cutscene ran in. `kor5_field_card_boot`, before it, scores him
+  exact. The other placements' movers are not traced.
 
 ## The image channel
 

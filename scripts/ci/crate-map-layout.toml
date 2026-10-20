@@ -1,0 +1,256 @@
+# Layout hints for the crate map: the site's interactive page
+# (site/_content/crates.html, data site/crate-map.json) and the README's
+# architecture diagrams (site/assets/crate-map-*.svg, pipeline-*.svg).
+#
+# scripts/ci/gen-crate-map.py joins this table with what the workspace already
+# says - every crates/*/Cargo.toml (edges, binaries), each src/lib.rs (public
+# modules), CLAUDE.md's crate tables (one-line scope) and
+# scripts/ci/crate-layering.toml (kernel ranks, roles, coupling reasons) - and
+# writes the outputs. Only placement and wording live here; no edge does.
+#
+# The generator fails when a crate is in no band or in two, when a band names
+# a crate that does not exist, or when a dependency edge points UP the stack:
+# every crate depends only on crates in its own band or a band below it. That
+# invariant is what lets the diagram read top to bottom.
+
+# --- Tracks ---------------------------------------------------------------
+# A crate's track colours its chip. `track` defaults to the band's.
+
+[tracks.engine]
+title = "Engine"
+blurb = "The from-scratch Rust port: simulation, rendering, audio and the hosts that run it."
+
+[tracks.preservation]
+title = "Preservation"
+blurb = "Reading the disc: the archive, the formats and the tools that extract and document every asset."
+
+[tracks.patcher]
+title = "Patcher"
+blurb = "Writing the disc: randomizer, translation packs, content mods and MIPS code hooks."
+
+[tracks.tooling]
+title = "Research tooling"
+blurb = "Measuring the port against retail: save-state readers, parity oracles and curated reference labels."
+
+# --- Bands, top of the stack first ---------------------------------------
+
+[[bands]]
+id = "hosts"
+title = "Hosts and front ends"
+blurb = "The programs people run. Each one is a thin shell over the crates below."
+track = "engine"
+crates = ["engine-shell", "web-viewer", "asset-viewer", "studio", "patcher", "extract", "asset"]
+
+[[bands]]
+id = "top"
+title = "Session, presentation, tools"
+blurb = "What both play hosts share above the simulation: the game session, the screens, the renderer and the audio stack; plus the tools that step a World from outside."
+track = "engine"
+crates = ["engine-session", "engine-screens", "engine-render", "engine-audio", "engine-export", "parity", "engine-capture"]
+
+[[bands]]
+id = "drivers"
+title = "World drivers"
+blurb = "Layers that hold a running World from outside: scene entry and tick, the pause menu, the battle HUD's reads, the cheats."
+track = "engine"
+crates = ["engine-scene-host", "engine-menu-runtime", "engine-battle-hud", "engine-cheats"]
+
+[[bands]]
+id = "core"
+title = "Simulation"
+blurb = "engine-core owns World and its tick, and implements each VM's Host trait. Everything below it names no World."
+track = "engine"
+crates = ["engine-core"]
+
+[[bands]]
+id = "kernels"
+title = "World-free kernels"
+blurb = "The ported VMs and rules engines, ranked by the committed layering table: a kernel depends only on kernels of a lower rank."
+track = "engine"
+# The crate list and its rows come from scripts/ci/crate-layering.toml.
+from_layering = true
+
+[[bands]]
+id = "libraries"
+title = "Patcher and capture libraries"
+blurb = "The disc-writing layers under legaia-patcher, and the emulator save-state readers under the parity oracles."
+track = "patcher"
+crates = [
+    "disc-patch", "translate", "code-hooks", "arts-patch", "texture-replace",
+    "party-swap", "delilas-party", "delilas-challenge",
+    "ram-image", "mednafen", "pcsx-redux",
+]
+
+[[bands]]
+id = "families"
+title = "Format families"
+blurb = "The Legaia-specific layer over the parsers: containers, scenes, actors, minigames, the 2D interface, the static tables, code overlays."
+track = "preservation"
+crates = [
+    "container-formats", "scene-formats", "actor-formats", "minigame-formats",
+    "ui-formats", "game-tables", "overlay-images", "disc-audit",
+]
+
+[[bands]]
+id = "leaves"
+title = "Disc and per-format parsers"
+blurb = "The foundation: sector reader, the PROT archive, LZS, and one small crate per file format."
+track = "preservation"
+crates = [
+    "iso", "prot", "lzs", "bytes", "tim", "tmd", "vab", "seq", "xa", "mdec",
+    "mes", "anm", "mdt", "art", "font", "save", "gamedata", "cheats",
+]
+
+# --- Per-crate overrides --------------------------------------------------
+
+[crates]
+patcher = { track = "patcher" }
+extract = { track = "preservation" }
+asset = { track = "preservation" }
+studio = { track = "preservation" }
+parity = { track = "tooling" }
+engine-capture = { track = "tooling" }
+ram-image = { track = "tooling" }
+mednafen = { track = "tooling" }
+pcsx-redux = { track = "tooling" }
+gamedata = { track = "tooling" }
+cheats = { track = "tooling" }
+
+# --- The three hosts on one engine ----------------------------------------
+
+[[hosts]]
+name = "Native play-window"
+crate = "engine-shell"
+how = "legaia-engine play-window: winit + wgpu + cpal, ticking engine-session's BootSession."
+
+[[hosts]]
+name = "Browser play page"
+crate = "web-viewer"
+how = "The same BootSession compiled to WebAssembly; site/js/play-app.js draws it through WebGL and WebAudio."
+
+[[hosts]]
+name = "Browser minigames page"
+crate = "web-viewer"
+how = "Drives the World-free minigame rules engines directly; it holds no World."
+
+# --- Disc to pixels -------------------------------------------------------
+# The walkthrough on the site page. Each step lights its crates; consecutive
+# steps are joined on the map.
+
+[[walk]]
+title = "Your disc image"
+crates = ["iso"]
+text = "A CD is a run of 2352-byte Mode 2 sectors. iso strips the sync, header and error-correction bytes and walks the ISO9660 directory to PROT.DAT, the executable, the movies and the XA streams."
+
+[[walk]]
+title = "PROT.DAT"
+crates = ["prot"]
+text = "Almost every asset is one entry of PROT.DAT. prot reads its table of contents (an entry's size is the gap to the next entry) and names entries from CDNAME.TXT."
+
+[[walk]]
+title = "LZS"
+crates = ["lzs"]
+text = "Many entries are LZS-compressed with a 4 KB ring buffer. Decoding never fails on its own, so every caller magic-checks the decoded bytes."
+
+[[walk]]
+title = "Scene bundle"
+crates = ["container-formats", "scene-formats", "tim", "tmd"]
+text = "A scene is a bundle of DATA_FIELD chunks and packs: the MAN script and map, TIM textures, TMD meshes. The format families split it; the per-format crates decode each piece."
+
+[[walk]]
+title = "SceneResources"
+crates = ["engine-scene"]
+text = "engine-scene resolves a CDNAME scene to its PROT entries and loads what it is built from - SceneResources, SceneAssets, the model bank, behind a virtual filesystem that reads a disc image or extracted files alike."
+
+[[walk]]
+title = "World tick"
+crates = ["engine-core", "engine-vm", "engine-field", "engine-motion-vm"]
+text = "engine-core's World ticks the ported VMs: the field VM runs the scene's own script, the per-actor tick steps the move VM, the motion VMs walk NPCs and the camera."
+
+[[walk]]
+title = "Scene host and session"
+crates = ["engine-scene-host", "engine-session"]
+text = "SceneHost enters and ticks the scene, routes BGM and hands off to movies; BootSession fixes the per-frame order both play hosts share."
+
+[[walk]]
+title = "Render kernels"
+crates = ["render-kernels", "engine-ui"]
+text = "The wgpu-free half of drawing: GTE math, screen primitives, effect emitters and the UI draw-list builders. Both hosts call the same kernels."
+
+[[walk]]
+title = "Pixels"
+crates = ["engine-render", "engine-shell", "web-viewer"]
+text = "Natively, engine-render draws into a software PSX VRAM through wgpu inside play-window. In the browser, web-viewer hands the same frame to WebGL on the play page."
+
+# --- README pipeline diagram ----------------------------------------------
+# The "disc in, everything out" flow at the top of the README.
+
+[[pipeline]]
+id = "disc"
+label = "Your disc image"
+sub = ".bin / .cue"
+col = 0
+row = 1
+
+[[pipeline]]
+id = "files"
+label = "Disc files"
+sub = "PROT.DAT, SCUS_942.54, movies, XA"
+col = 1
+row = 1
+
+[[pipeline]]
+id = "prot"
+label = "PROT.DAT entries"
+sub = "named by CDNAME.TXT"
+col = 2
+row = 1
+
+[[pipeline]]
+id = "assets"
+label = "Decoded assets"
+sub = "textures, meshes, audio, dialog, scripts, tables"
+col = 3
+row = 1
+
+[[pipeline]]
+id = "port"
+label = "The port"
+sub = "native window and browser"
+col = 4
+row = 0
+
+[[pipeline]]
+id = "viewers"
+label = "Viewers and data pages"
+sub = "the project site"
+col = 4
+row = 1
+
+[[pipeline]]
+id = "out"
+label = "Files on disk"
+sub = "PNG, WAV, OBJ, JSON, glb"
+col = 4
+row = 2
+
+[[pipeline]]
+id = "patcher"
+label = "legaia-patcher"
+sub = "randomizer, translation, mods"
+col = 2
+row = 3
+
+[[pipeline]]
+id = "patched"
+label = "Patched .bin or PPF"
+sub = "plays in the port or an emulator"
+col = 4
+row = 3
+
+[[pipeline_edges]]
+pairs = [
+    ["disc", "files"], ["files", "prot"], ["prot", "assets"],
+    ["assets", "port"], ["assets", "viewers"], ["assets", "out"],
+    ["prot", "patcher"], ["patcher", "patched"],
+]

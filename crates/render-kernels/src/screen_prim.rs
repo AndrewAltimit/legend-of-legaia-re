@@ -276,6 +276,35 @@ impl ScreenPrim {
         depth.is_some_and(|d| d.get().iter().all(|&z| z >= 1.0))
     }
 
+    /// Whether this primitive samples any texel of the VRAM rect
+    /// `(x, y, w, h)`: a textured quad whose page-relative UV box, placed on
+    /// its texture page at the page's colour depth, overlaps the rect. Flat
+    /// quads sample nothing.
+    pub fn samples_vram_rect(&self, rect: (u16, u16, u16, u16)) -> bool {
+        let ScreenPrim::Textured(q) = self else {
+            return false;
+        };
+        let page_x = u32::from(q.tpage & 0x0F) * 64;
+        let page_y = if q.tpage & 0x10 != 0 { 256 } else { 0 };
+        // Texels per VRAM halfword: 4bpp packs four, 8bpp two, 15bpp one.
+        let per_word = match (q.tpage >> 7) & 0x3 {
+            0 => 4,
+            1 => 2,
+            _ => 1,
+        };
+        let (u0, u1) = q.uv.iter().fold((u32::MAX, 0), |(lo, hi), &(u, _)| {
+            (lo.min(u32::from(u)), hi.max(u32::from(u)))
+        });
+        let (v0, v1) = q.uv.iter().fold((u32::MAX, 0), |(lo, hi), &(_, v)| {
+            (lo.min(u32::from(v)), hi.max(u32::from(v)))
+        });
+        let (sx0, sx1) = (page_x + u0 / per_word, page_x + u1 / per_word);
+        let (sy0, sy1) = (page_y + v0, page_y + v1);
+        let (rx, ry) = (u32::from(rect.0), u32::from(rect.1));
+        let (rx1, ry1) = (rx + u32::from(rect.2), ry + u32::from(rect.3));
+        sx0 < rx1 && rx <= sx1 && sy0 < ry1 && ry <= sy1
+    }
+
     /// The blend class that groups this primitive into a [`DrawRun`].
     pub fn blend_class(&self) -> BlendClass {
         match self {
@@ -1117,6 +1146,43 @@ pub fn line_quad(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A 15-bpp quad on page `(512, 0)` samples the ending vignettes' grab
+    /// rect `(512, 0, 320, 224)`; the same UVs on a page elsewhere, or a
+    /// flat quad, do not.
+    #[test]
+    fn a_textured_quad_samples_the_rect_its_page_and_uvs_cover() {
+        let quad = |tpage: u16| {
+            ScreenPrim::Textured(ScreenQuad {
+                xy: [(0, 0), (10, 0), (0, 10), (10, 10)],
+                uv: [(0, 0), (63, 0), (0, 63), (63, 63)],
+                clut: 0,
+                tpage,
+                color: 0x0080_8080,
+                gouraud: None,
+                semi_transparent: false,
+                ot_index: 1,
+                depth: None,
+            })
+        };
+        let grab = (512, 0, 320, 224);
+        // 15 bpp (depth 2), x = 8 * 64 = 512, y = 0.
+        assert!(quad(0x108).samples_vram_rect(grab));
+        // 15 bpp at (320, 256): below the rect.
+        assert!(!quad(0x115).samples_vram_rect(grab));
+        // 4 bpp at (448, 0): 64 texels are 16 halfwords, x 448..463.
+        assert!(!quad(0x007).samples_vram_rect(grab));
+        let flat = ScreenPrim::Flat(FlatQuad {
+            xy: [(0, 0), (10, 0), (0, 10), (10, 10)],
+            color: [1, 2, 3, 255],
+            gouraud: None,
+            semi_transparent: false,
+            abr_mode: 0,
+            ot_index: 1,
+            depth: None,
+        });
+        assert!(!flat.samples_vram_rect(grab));
+    }
 
     /// A far-plane quad (the colour wash's band) is a backdrop and splits
     /// out ahead of the rest, order kept; a depth-less or nearer quad is not.

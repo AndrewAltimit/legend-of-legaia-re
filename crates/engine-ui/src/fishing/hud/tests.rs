@@ -19,15 +19,19 @@ fn fishing_banners_seed_service_and_retire() {
     assert!(!b.hook.is_active(), "from-left cancelled by from-right");
     assert!(b.reel_in.is_active());
 
-    // Snapped instead: the miss banner runs.
+    // Snapped instead: the line-break arm seeds the converging pair and
+    // stops the hook banner; the miss banner is not its edge.
     let mut b2 = FishingBanners::default();
     b2.on_hook();
     b2.on_snapped();
-    assert!(b2.miss.is_active() && !b2.hook.is_active());
+    assert!(b2.converge.is_active() && !b2.hook.is_active());
+    assert!(!b2.miss.is_active());
 
-    // Recast seeds the auxiliary converging pair.
-    b2.on_recast();
-    assert!(b2.converge.is_active());
+    // The recast seeds nothing (the empty reel-in arm stores state 0x32
+    // and no timer).
+    let mut b3 = FishingBanners::default();
+    b3.on_recast();
+    assert_eq!(b3, FishingBanners::default());
 
     // Every timer retires on its own once its animation expires; the
     // splash outlives the banners, so run past both lifetimes.

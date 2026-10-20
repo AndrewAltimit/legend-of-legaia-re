@@ -161,13 +161,39 @@
         this.cam.halfHeight = this.cam.halfWidth;
       }, { passive: false });
       /* Double-click puts the follow camera back at the retail framing
-       * (orbit, tilt and zoom to their identity defaults). */
+       * on the lead - the same reset as the Reset camera button. Under the
+       * `F3` debug orbit it is left alone, as natively. */
       this.canvas.addEventListener('dblclick', (e) => {
         e.preventDefault();
-        if (!this.debugCamera && typeof this.rt.play_camera_reset_framing === 'function') {
-          try { this.rt.play_camera_reset_framing(); } catch (_) {}
-        }
+        if (!this.debugCamera) this.resetCamera();
       });
+    }
+
+    /* The Reset camera button (and the canvas double-click): back to the
+     * retail framing on the current lead. Three pieces of state can hold the
+     * view off it, and the button used to touch only the third:
+     *  - the ENGINE follow camera's orbit / tilt / zoom knobs and a scripted
+     *    shot left holding the focus - `play_camera_reset_framing`, the
+     *    shared `Camera::recenter_follow` the native double-click calls;
+     *  - the `F3` debug orbit vantage, which frames the scene from the
+     *    page's own orbit instead of the engine camera - switched off;
+     *  - that vantage's local yaw / pitch / half-window - back to defaults,
+     *    so the next `F3` starts from the stock framing.
+     * Writing only the local fields was a no-op on the default (engine)
+     * camera, which is why the button never recentred anything. */
+    resetCamera() {
+      this.debugCamera = false;
+      this.cam.yaw = 0;
+      this.cam.pitch = 0.62;
+      this.cam.halfWidth = this.cam.halfHeight = 520;
+      if (this._camBeforeBattle) {
+        this._camBeforeBattle.yaw = 0;
+        this._camBeforeBattle.pitch = 0.62;
+        this._camBeforeBattle.halfWidth = this._camBeforeBattle.halfHeight = 520;
+      }
+      if (this.rt && typeof this.rt.play_camera_reset_framing === 'function') {
+        try { this.rt.play_camera_reset_framing(); } catch (_) { /* no scene yet */ }
+      }
     }
 
     /* Held keys OR the not-yet-consumed press edges -> one pad word. */
@@ -210,34 +236,6 @@
     }
 
     /* ---------- fishing minigame ---------- */
-
-    /* Is a fishing session live on the engine's world this frame? */
-    fishingActive() {
-      if (typeof this.rt.play_fishing_active !== 'function') return false;
-      try { return !!this.rt.play_fishing_active(); } catch (e) { return false; }
-    }
-
-    /* Start / leave the fishing minigame. The engine suspends the current
-     * scene mode and restores it on exit, banking the session's points into the
-     * world's persistent pool - so the field is exactly where it was left and
-     * the point total survives. Returns `true` on a state change. */
-    toggleFishing() {
-      const rt = this.rt;
-      if (typeof rt.play_fishing_start !== 'function') return false;
-      try {
-        if (this.fishingActive()) {
-          rt.play_fishing_stop();
-          /* Drop the HUD immediately rather than waiting for the next layer to
-           * claim the overlay. */
-          if (this._menuCtx && this.menuOverlay) {
-            this._menuCtx.clearRect(0, 0, this.menuOverlay.width, this.menuOverlay.height);
-            this._overlayActive = false;
-          }
-          return true;
-        }
-        return !!rt.play_fishing_start();
-      } catch (e) { return false; }
-    }
 
     /* The live session's readout (`{live, phase, cast_power, tension, ...}`), or
      * `{live:false}`. */

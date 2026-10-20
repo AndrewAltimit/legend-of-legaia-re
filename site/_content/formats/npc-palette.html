@@ -109,6 +109,10 @@
   <p>The semantics matter: with plain last-write-wins, the partial TIMs' trailing zeros would blank the full
   TIMs' upper slots and the NPC meshes anchored there would lose their palettes. In the port the merge lives
   in <code>legaia_tmd::vram_targeted</code>, which runs the CLUT pass second, after the image blocks.</p>
+  <p>The merge applies among the scene's own TIMs only. The shared <code>init_data</code> block's TIMs are
+  resident before the scene loads, so a scene palette's zeros replace their words, as the PSX
+  <code>LoadImage</code> call does. Merging across that line left an opaque near-black under the Sky Gardens
+  Tower's foliage palettes on row 484, and the vines drew on dark-brown cards.</p>
 </section>
 
 <section class="doc-section" id="retail-dispatch">

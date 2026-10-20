@@ -70,23 +70,87 @@ pub fn dance_countin_prims(mg: &MinigameState) -> Vec<ScreenPrim> {
     )
 }
 
-/// The Baka Fighter HUD's textured strips for the duel surface's widget quads
-/// (`BakaDuelSurface::hud_quads`). The caller gates on its HUD art being
-/// drawn and a fight being up.
-pub fn baka_hud_prims(
-    quads: &[legaia_engine_minigames::baka_fighter::HudWidgetQuad],
+/// The Baka Fighter screen layer for one frame, both play hosts' one call:
+/// the duel HUD renderer's packets (`FUN_801d2afc` - VITAL bars and frames,
+/// combo counters, round pips, attack icons, the STAGE / PRESS SELECT strip
+/// and the high score; `BakaDuelSurface::duel_hud_packets`), then the
+/// cabinet's and the round chrome's widget quads (`BakaDuelSurface::hud_quads`,
+/// `FUN_801d5ed0`). Empty while the duel VRAM does not carry the HUD art
+/// (`BakaDuelSurface::hud_art_resident`), when the hosts draw text labels.
+///
+/// The packets are submitted in retail's link order; the ordering-table walk
+/// (`screen_prim::order_primitives`) then draws the HUD renderer's own
+/// bucket under the widget emitter's.
+///
+/// REF: FUN_801d2afc, FUN_801d5ed0
+pub fn baka_screen_prims(
+    surface: &legaia_engine_minigame_scenes::baka_duel_scene::BakaDuelSurface,
+    fight: &legaia_engine_minigames::baka_fighter::BakaFight,
 ) -> Vec<ScreenPrim> {
-    let views: Vec<ud::DanceHudQuadView> = quads
-        .iter()
-        .map(|q| ud::DanceHudQuadView {
-            poly_code: q.poly_code,
-            rect: (q.x0, q.y0, q.x1, q.y1),
-            uv: q.uv,
-            rgb_top: q.rgb_top,
-            rgb_bottom: q.rgb_bottom,
-            clut: q.clut,
-            tpage: q.tpage_attr,
-        })
-        .collect();
-    legaia_engine_ui::baka_strips::baka_hud_prims(&views)
+    use legaia_engine_minigames::baka_cabinet::DuelHudPacket;
+    let mut out = Vec::new();
+    for p in surface.duel_hud_packets(fight) {
+        match p {
+            DuelHudPacket::Bar { slot, bar } => {
+                let (left, right) = if slot == 0 {
+                    (bar.rgb_far, bar.rgb_anchor)
+                } else {
+                    (bar.rgb_anchor, bar.rgb_far)
+                };
+                out.push(legaia_engine_ui::baka_strips::baka_bar_prim(
+                    &legaia_engine_ui::baka_strips::BakaBarView {
+                        rect: (bar.x0, bar.y0, bar.x1, bar.y1),
+                        rgb_left: left,
+                        rgb_right: right,
+                    },
+                    legaia_engine_minigames::baka_cabinet::DUEL_HUD_OT,
+                ));
+            }
+            DuelHudPacket::Cell { quad, ot } => {
+                out.extend(legaia_engine_ui::baka_strips::baka_hud_prims_at(
+                    &[quad_view(&quad)],
+                    ot,
+                ));
+            }
+        }
+    }
+    let views: Vec<ud::DanceHudQuadView> = surface.hud_quads(fight).iter().map(quad_view).collect();
+    out.extend(legaia_engine_ui::baka_strips::baka_hud_prims(&views));
+    out
+}
+
+/// The Baka Fighter frame's font-digit placements, `(stage x, stage y,
+/// digit)`, both play hosts' one call: nothing across the cabinet's front end
+/// (attract card, player select), else the number drawers' layout
+/// (`baka_fighter_chrome::hud_digit_placements`) - minus its one-glyph round
+/// digit while [`baka_screen_prims`] draws the duel HUD, whose STAGE strip
+/// carries the retail number in its own cells.
+pub fn baka_digit_placements(
+    fight: &legaia_engine_minigames::baka_fighter::BakaFight,
+    hud_art_drawn: bool,
+) -> Vec<(i32, i32, u8)> {
+    if fight.cabinet().front_end() {
+        return Vec::new();
+    }
+    let mut placed = legaia_engine_minigames::baka_fighter_chrome::hud_digit_placements(
+        fight.round() as i32,
+        fight.tally().map(|t| (t.total(), t.gold_remaining())),
+    );
+    if hud_art_drawn {
+        // The round digit is always the layout's first placement.
+        placed.remove(0);
+    }
+    placed
+}
+
+fn quad_view(q: &legaia_engine_minigames::baka_fighter::HudWidgetQuad) -> ud::DanceHudQuadView {
+    ud::DanceHudQuadView {
+        poly_code: q.poly_code,
+        rect: (q.x0, q.y0, q.x1, q.y1),
+        uv: q.uv,
+        rgb_top: q.rgb_top,
+        rgb_bottom: q.rgb_bottom,
+        clut: q.clut,
+        tpage: q.tpage_attr,
+    }
 }

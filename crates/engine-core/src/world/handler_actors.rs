@@ -149,8 +149,26 @@ impl World {
     /// code and battle loads PROT 0898 over that window, so nothing pushes
     /// while a fight runs. A field wash still live at the encounter - the
     /// night tint of `town0b` - is the field's, and it comes back with it.
+    ///
+    /// None in a minigame either, for the same reason: the mode-24 entry
+    /// streams the minigame's overlay into slot A, the field overlay's
+    /// window (`FUN_80025980`'s `FUN_8003EBE4(sub_id + 0x4D)`; the
+    /// `baka_fighter_entry_pretransition` capture shows the overlay landing
+    /// there). Every casino seat fades out on op `34 01 FF FF FF 1E` before
+    /// its `3E` - a subtractive (blend `2`) white wash held at full - and
+    /// left pushing it hid the whole 3D duel under black, leaving only the
+    /// screen-space HUD (the round digit) on a seat-entered Baka Fighter.
+    /// The cabinet's own return path clears the wash after the warp.
     pub fn screen_tint_pushes(&self) -> Vec<ScreenTintPush> {
-        if self.mode == SceneMode::Battle {
+        if matches!(
+            self.mode,
+            SceneMode::Battle
+                | SceneMode::BakaFighter
+                | SceneMode::SlotMachine
+                | SceneMode::MuscleDome
+                | SceneMode::Fishing
+                | SceneMode::Dance
+        ) {
             return Vec::new();
         }
         self.actors

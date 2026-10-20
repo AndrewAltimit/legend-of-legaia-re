@@ -43,6 +43,14 @@ seed_6 = 35
 seed_7 = 35
 seed_8 = 35
 seed_9 = 35
+# --- lane C ---
+seed_10 = 35
+seed_11 = 35
+seed_12 = 35
+seed_13 = 35
+seed_14 = 35
+seed_15 = 35
+seed_16 = 35
 
 [segments]
 rim_elm = 4

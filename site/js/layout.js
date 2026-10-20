@@ -44,6 +44,7 @@ const NAV = [
     items: [
       { href: 'index.html',                     text: 'Home',                     key: 'home' },
       { href: 'architecture.html',              text: 'How it stacks',            key: 'architecture' },
+      { href: 'crates.html',                    text: 'Crate map',                key: 'crates' },
       { href: 'quickstart.html',                text: 'Quick start',              key: 'quickstart' },
     ],
   },
@@ -52,6 +53,7 @@ const NAV = [
     title: 'Guides',
     items: [
       { href: 'guides/getting-started.html',         text: 'Getting started',          key: 'guides/getting-started' },
+      { href: 'guides/desktop-apps.html',            text: 'Desktop apps',             key: 'guides/desktop-apps' },
       { href: 'guides/extracting-assets.html',       text: 'Extracting assets',        key: 'guides/extracting-assets' },
       { href: 'guides/playing-and-viewing.html',     text: 'Playing + viewing',        key: 'guides/playing-and-viewing' },
       { href: 'guides/modding-and-translation.html', text: 'Modding + translation',    key: 'guides/modding-and-translation' },

@@ -11,10 +11,13 @@
 //! the player rides straight back down: the third floor's west room was
 //! unreachable on foot.
 //!
+//! The engine runs the ride as the record does, so the bracket is the
+//! record's own `B1` / `B2` on the partner prop's `+0x10`.
+//!
 //! The test rides P0[6] (second-floor west lift, contact `(992, 5408)`) and
 //! then presses every direction from the landing, asserting the player stays
 //! on the third floor (the ride back would put it near `z = 5568`) and that
-//! the bracket lifts once the player is off the platform.
+//! the record has lifted the bracket by the time it releases the player.
 //!
 //! Skip-passes without `LEGAIA_DISC_BIN` / `extracted/`.
 
@@ -97,17 +100,21 @@ fn tower_lift_arrival_does_not_ride_back() {
     let Some((up, landing)) = up else {
         panic!("no pad direction from {START:?} rode the P0[6] lift up");
     };
-    eprintln!(
-        "[tower] {up:?} landed {landing:?}, bracket {:?}",
-        host.world.props.arrival_exempt
-    );
+    eprintln!("[tower] {up:?} landed {landing:?}");
+    // The record has run its `B2 <partner> 00` by the time it lets go: the
+    // partner platform is back in the touch probes.
     assert!(
-        !host.world.props.arrival_exempt.is_empty(),
-        "the ride brackets its partner platform for the arrival"
+        host.world
+            .props
+            .bank
+            .props
+            .values()
+            .filter(|p| p.record == 7)
+            .all(|p| !p.collision_exempt()),
+        "the ride lifts its bracket on the partner platform before it ends"
     );
     // Every way off the landing keeps the player on the third floor; each
-    // direction gets a fresh ride, so each starts under the bracket.
-    let mut lifted = false;
+    // direction gets a fresh ride.
     for d in DIRS {
         let at = ride(&mut host, up).expect("the same press rides again");
         assert_eq!(at, landing);
@@ -118,20 +125,16 @@ fn tower_lift_arrival_does_not_ride_back() {
             at.1 < 3000,
             "stepping {d:?} off the landing rode the partner lift back down (now {at:?})"
         );
-        hold(&mut host, d.mask(), 60);
-        lifted |= host.world.props.arrival_exempt.is_empty() && player_xz(&host).1 < 3000;
     }
-    assert!(
-        lifted,
-        "walking clear of the platform never lifted the bracket"
-    );
 }
 
 /// Second floor, west room, just short of the P0[6] lift's contact box.
 const START: (i16, i16) = (1000, 5216);
 
 /// Seat the player at [`START`] and hold `d`; the landing when that rode the
-/// lift up to the third floor.
+/// lift up to the third floor. The ride is the record's own run (door open,
+/// walk in, door shut, the jump, the partner door, the walk out), so the
+/// landing is where the player stands once the run releases the pad.
 fn ride(host: &mut SceneHost, d: PadButton) -> Option<(i16, i16)> {
     host.world.set_pad(0);
     for _ in 0..240 {
@@ -140,11 +143,11 @@ fn ride(host: &mut SceneHost, d: PadButton) -> Option<(i16, i16)> {
     host.world.props.arrival_exempt.clear();
     host.world.props.active_walk_touch = None;
     seat(host, START);
-    for _ in 0..40 {
-        host.world.set_pad(d.mask());
+    for f in 0..900 {
+        host.world.set_pad(if f < 40 { d.mask() } else { 0 });
         let _ = host.tick();
         let at = player_xz(host);
-        if at.1 < 3000 {
+        if f >= 40 && at.1 < 3000 && host.world.dialog.inline.is_none() {
             host.world.set_pad(0);
             return Some(at);
         }

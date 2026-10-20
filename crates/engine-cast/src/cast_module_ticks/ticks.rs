@@ -133,18 +133,42 @@ pub const ASTRAL_SLASH_TERMINAL_ARM: u8 = 4;
 /// The clip PROT 0952's arm 2 stages (`addiu v0,zero,0xa; sb v0,0x1da(s0)`
 /// at `0x801F6D88`).
 pub const ASTRAL_SLASH_ARM2_CLIP: u8 = 0x0A;
+/// The walk clip PROT 0952's arm 0 stages out of reach: a literal `1`
+/// (`li v1,0x1` at `0x801F6B7C`), not a step of the caster's current clip.
+pub const ASTRAL_SLASH_WALK_CLIP: u8 = 1;
+
+/// The PROT 0952 arm that parks the battle's strike cursor: arm 2 stores
+/// `ctx[+0x15] = 0xFF` (`li v0,0xff` / `sb v0,0x15(v1)` at
+/// `0x801F6E74..0x801F6E78`) as it stages clip `0x0A`. With the cursor
+/// parked, the melee kernel `FUN_801EC3E4` writes the accumulated total into
+/// live HP on the clip's last listed beat (`0x801EE9A4..0x801EE9EC`), so the
+/// cast's damage lands mid-swing, not at the band's exit.
+pub const ASTRAL_SLASH_STRIKE_PARK_ARM: u8 = 2;
 
 /// PROT 0952 (Astral Slash) tick body.
 ///
 /// Five phase arms behind `sltiu v1, 5` through the head table at
 /// `0x801F69D8` (arm targets `0x801F6AC4`, `6C28`, `6D08`, `6E98`, `6FF4`).
-/// It carries **no** damage-wrapper call at all; its whole simulation
-/// footprint is staging and the phase walk, all through `$s4 = ctx + 0x279`
-/// materialised at `0x801F6AA0`:
+/// It carries **no** damage-wrapper call and no HP store: the cast's damage
+/// is the clip arm 2 stages, rolled by the melee kernel `FUN_801EC3E4` on
+/// each of its beats (the host's job - `World::tick_battle_hit_events`), with
+/// the strike cursor arm 2 parks ([`ASTRAL_SLASH_STRIKE_PARK_ARM`]) landing
+/// the total on the last one. Its simulation footprint here is staging and
+/// the phase walk, all through `$s4 = ctx + 0x279` materialised at
+/// `0x801F6AA0`:
 ///
-/// * arms `0..=3` each advance the phase exactly once (arm 0 has two
-///   alternative advance sites on branches of the same arm);
-/// * arm `0` stages a computed clip with a `+0x1DC` bump (`0x801F6BBC`);
+/// * arm `0` draws `rand()` (`jal 0x80056798` at `0x801F6AC4`) into
+///   `ctx[+0x0D] = rand % 4` (`0x801F6AEC`) and advances the phase
+///   unconditionally (`0x801F6AFC..0x801F6B08`), then polls the range metric
+///   `FUN_8004E2F0(ctx[+0x13], caster[+0x1DD])` (`0x801F6B6C`). In reach
+///   (zero, `bne v0,zero` at `0x801F6B78` not taken) it runs the 0x20
+///   `FUN_80050BB8` separation nudges and advances **again**
+///   (`0x801F6BA4..0x801F6BB4`), straight to arm 2; out of reach it stages
+///   the walk clip literal `1` (`li v1,0x1` in the delay slot at
+///   `0x801F6B7C`, `sb v1,0x1da(s0)` at `0x801F6BBC`) with a `+0x1DC` bump;
+/// * arm `1` re-polls the metric (`0x801F6C90`) and advances only once it
+///   reads zero (`0x801F6CC8..0x801F6CD4`); out of reach it holds and
+///   stages nothing;
 /// * arm `2` stages clip `0x0A` with a bump, and writes `+0x21D = 1` on both
 ///   the caster and the victim - the slow-motion the move is known for;
 /// * arm `3` writes `+0x1DA = 0` **without** a `+0x1DC` bump (`0x801F6EA4`),
@@ -169,11 +193,17 @@ pub const ASTRAL_SLASH_ARM2_CLIP: u8 = 0x0A;
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
+/// `arrived` is the host's answer to the range poll (`FUN_8004E2F0 == 0`),
+/// read by arms 0 and 1; `arm0_rand` is the `rand()` arm 0 draws (the host
+/// draws it only on that arm, so the shared stream moves as retail's).
+///
 /// PORT: FUN_801F6A0C (phase machine + staging; packet arms unported)
 pub fn astral_slash_tick(
     ctx: &mut CastModuleCtx,
     caster: &mut CastActorState,
     victim: &mut CastActorState,
+    arrived: bool,
+    arm0_rand: u16,
 ) -> CastTickStep {
     if ctx.phase == ASTRAL_SLASH_TERMINAL_ARM {
         ctx.ctx_0d = 0;
@@ -181,7 +211,17 @@ pub fn astral_slash_tick(
     }
     run_tick(ctx, 5, |c| {
         match c.phase {
-            0 => stage_clip(caster, caster.staged_anim.wrapping_add(1)),
+            0 => {
+                c.ctx_0d = (arm0_rand % 4) as u8;
+                if arrived {
+                    // The unconditional advance, then the in-reach one.
+                    advance_phase(c);
+                } else {
+                    stage_clip(caster, ASTRAL_SLASH_WALK_CLIP);
+                }
+            }
+            // Out of reach: hold, nothing staged.
+            1 if !arrived => return true,
             2 => {
                 stage_clip(caster, ASTRAL_SLASH_ARM2_CLIP);
                 caster.anim_rate = 1;

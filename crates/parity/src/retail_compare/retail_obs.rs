@@ -411,7 +411,18 @@ impl RetailObs {
     }
 
     /// Read the field scrollers' captured rects ([`retail_scroll_rects`]).
+    ///
+    /// A battle state takes its live scrollers alone: a battle effect's
+    /// mode-4 part rolls its rect on the same part tick, and its rotation
+    /// count is time since the effect was seated - for the Mystic Shield's
+    /// page scroller (`0x80078720`), an earlier turn the replay never runs.
     pub(super) fn seat_scroll_rects(&mut self, ram: &[u8], vram: Option<&[u8]>) {
+        if let Some(v) = vram
+            && self.class == StateClass::Battle
+        {
+            self.scroll_rects = retail_scroll_rects(ram, v);
+            return;
+        }
         if let Some(v) = vram
             && matches!(self.class, StateClass::Field | StateClass::WorldMap)
         {
@@ -499,16 +510,27 @@ impl RetailObs {
         if let Some(h) = self.player_heading {
             env.push(("LEGAIA_SEAT_HEADING", (h & 0x0FFF).to_string()));
         }
-        if !self.scroll_rects.is_empty() {
-            let dir = crate::retail_compare_image::work_dir(out_dir);
-            let path = dir.join(format!("{label}.vrect.bin"));
-            if std::fs::create_dir_all(&dir).is_ok()
-                && std::fs::write(&path, vram_rects_file(&self.scroll_rects)).is_ok()
-            {
-                env.push(("LEGAIA_SEAT_VRAM_RECTS", path.display().to_string()));
-            }
+        if let Some(kv) = self.vram_rects_env(out_dir, label) {
+            env.push(kv);
         }
         env
+    }
+
+    /// The captured scroller rects as a `LEGAIA_SEAT_VRAM_RECTS` file under
+    /// the image work directory, and the variable naming it.
+    pub fn vram_rects_env(
+        &self,
+        out_dir: Option<&Path>,
+        label: &str,
+    ) -> Option<(&'static str, String)> {
+        if self.scroll_rects.is_empty() {
+            return None;
+        }
+        let dir = crate::retail_compare_image::work_dir(out_dir);
+        let path = dir.join(format!("{label}.vrect.bin"));
+        (std::fs::create_dir_all(&dir).is_ok()
+            && std::fs::write(&path, vram_rects_file(&self.scroll_rects)).is_ok())
+        .then(|| ("LEGAIA_SEAT_VRAM_RECTS", path.display().to_string()))
     }
 
     /// The frame step retail was running at the capture instant, in vsyncs a

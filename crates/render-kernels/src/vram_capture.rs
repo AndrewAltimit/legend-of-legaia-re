@@ -90,6 +90,54 @@ pub const FIELD_CAPTURE_ROWS: VramRect = VramRect::new(320, 0, PSX_SCREEN_WIDTH,
 pub const FIELD_CAPTURE_COLS: VramRect =
     VramRect::new(320, 256, PSX_SCREEN_WIDTH, PSX_SCREEN_HEIGHT);
 
+/// Rows of the captured page above the frame: retail's field draw area starts
+/// at VRAM row `4` (`FUN_8001DAF8(0x140)` installs the draw environments at
+/// `y = 4` / `y = 0xF4`, `224` rows tall), and the transition init copies
+/// display rows `0..0xE8` from row `0` of the buffer - so drawn row `d` lands
+/// at page `v = d + 4`. Every intro style's texel coordinates carry that
+/// offset (the particle grids seed `v` from `4`, the tile grid's `v` is
+/// `(y + 0x800) >> 4` against a projection whose top tile edge sits four rows
+/// above the screen).
+pub const FIELD_CAPTURE_V_OFFSET: u16 = 4;
+
+/// The whole 15-bpp texture page the intro styles sample at `(320, 256)`,
+/// `v = 0..=255`: the column rect plus the rows below it a texel coordinate
+/// can still name.
+pub const FIELD_CAPTURE_PAGE: VramRect = VramRect::new(320, 256, PSX_SCREEN_WIDTH, 256);
+
+/// Where the port lands its captured frame: the full `240`-row frame at
+/// [`FIELD_CAPTURE_V_OFFSET`] rows into [`FIELD_CAPTURE_PAGE`].
+///
+/// Retail lands `0xE8` rows (`LoadImage(320, 256, 320, 232)` from
+/// `0x801CEC4C`), of which the draw area's `224` sit at `v = 4..=227`. The
+/// port draws a full `240`-row frame, so it lands all of it, at the same
+/// offset (`v = 4..=243`).
+pub const FIELD_CAPTURE_LAND: VramRect = VramRect::new(
+    320,
+    256 + FIELD_CAPTURE_V_OFFSET,
+    PSX_SCREEN_WIDTH,
+    PSX_SCREEN_HEIGHT,
+);
+
+/// The rects the transition init clears to `0x0000` (transparent) around its
+/// capture - the three `ClearImage` calls at `0x801CEC74` / `0x801CECA0` /
+/// `0x801CECCC`: the four rows above the frame, everything below it, and the
+/// 16-column strip at `x = 640` past the page's right edge.
+///
+/// Retail's bottom clear is `(320, 484, 320, 28)`, from drawn row `224` down;
+/// the port's starts below its own last landed row (row `240`, VRAM `500`),
+/// since the port draws those sixteen rows and retail does not.
+pub const FIELD_CAPTURE_CLEARS: [VramRect; 3] = [
+    VramRect::new(320, 256, PSX_SCREEN_WIDTH, FIELD_CAPTURE_V_OFFSET),
+    VramRect::new(
+        320,
+        256 + FIELD_CAPTURE_V_OFFSET + PSX_SCREEN_HEIGHT,
+        PSX_SCREEN_WIDTH,
+        256 - FIELD_CAPTURE_V_OFFSET - PSX_SCREEN_HEIGHT,
+    ),
+    VramRect::new(640, 256, 16, 256),
+];
+
 /// How a frame is quantised on its way into VRAM.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CaptureOpts {

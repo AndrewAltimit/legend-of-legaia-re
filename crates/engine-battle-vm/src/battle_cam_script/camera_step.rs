@@ -77,6 +77,7 @@ impl BattleCamera {
             glides: std::collections::VecDeque::new(),
             last_frames: frames_now,
             frame_accum: 0,
+            yaw_frac: 0,
             frame_step: DEFAULT_CAMERA_FRAME_STEP,
             pass_granular: false,
             actor,
@@ -1009,14 +1010,21 @@ impl BattleCamera {
         // The action SM advances `ctx[+0x6DA]` once a pass, outside its
         // state switch, so the counter runs whether or not an action is
         // executing: by `DAT_1F800393 * 4 / 3`, or `1` when that is zero
-        // (`0x801E29E4..0x801E2A24`, a `mult` by `0x55555556`). Per vsync
-        // the port adds one; on retail's cadence it adds the pass's own
-        // increment, which at step `3` is `4`, not `3`.
+        // (`0x801E29E4..0x801E2A24`, a `mult` by `0x55555556`). On retail's
+        // cadence the port adds the pass's own increment, which at step `3`
+        // is `4`, not `3`. Per vsync it spreads the pass's increment over its vsyncs, carrying the
+        // remainder, so the counter keeps retail's rate on either cadence:
+        // a vsync apiece at step `2`, four in three at step `3`.
         if self.option != CAMERA_OPTION_FAR {
             let d = if self.pass_granular {
                 i32::from(action_yaw_pass_increment(vsyncs as u8))
             } else {
-                vsyncs as i32
+                let step = u32::from(self.frame_step.max(1));
+                let inc = u32::from(action_yaw_pass_increment(self.frame_step.max(1)));
+                self.yaw_frac += vsyncs as u32 * inc;
+                let d = self.yaw_frac / step;
+                self.yaw_frac %= step;
+                d as i32
             };
             self.action_yaw = self.action_yaw.wrapping_add(d) & 0xFFFF;
         }
@@ -1462,5 +1470,21 @@ mod pass_increment_tests {
             [0u8, 1, 2, 3, 4].map(action_yaw_pass_increment),
             [1, 1, 2, 4, 5]
         );
+    }
+
+    /// On the per-vsync cadence the counter keeps retail's rate: four units
+    /// over a step-`3` pass's three vsyncs, two over a step-`2` pass's two.
+    #[test]
+    fn the_per_vsync_counter_runs_at_the_pass_rate() {
+        use super::super::{BattleCamPhase, BattleCamera};
+        for (step, per_pass) in [(3u8, 4i32), (2, 2)] {
+            let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+            cam.set_frame_step(step);
+            let start = cam.action_yaw_base();
+            for v in 1..=u64::from(step) * 6 {
+                cam.advance_to(v);
+            }
+            assert_eq!(cam.action_yaw_base() - start, per_pass * 6, "step {step}");
+        }
     }
 }

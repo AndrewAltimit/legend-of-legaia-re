@@ -1087,6 +1087,84 @@ mod tests {
         }
     }
 
+    /// The reset-camera control (`Camera::recenter_follow`, both hosts'
+    /// button / double-click): in free roam it zeroes the knobs AND releases
+    /// a scripted shot that never handed the focus back, so the follow
+    /// camera re-pins the focus to the lead on the next tick. Clearing the
+    /// knobs alone left such a camera parked on the script's focus.
+    #[test]
+    fn recenter_follow_releases_a_stuck_scripted_shot_in_free_roam() {
+        use legaia_engine_vm::field::CameraParam;
+        let mut w = World {
+            mode: SceneMode::Field,
+            ..World::default()
+        };
+        // An op-0x45 snap beat with no hand-back: the latch stays set.
+        w.pending_field_events = vec![FieldEvent::CameraConfigure {
+            params: vec![
+                CameraParam {
+                    slot: 1,
+                    value: 1024,
+                },
+                CameraParam {
+                    slot: 6,
+                    value: (-100i16) as u16,
+                },
+            ],
+            apply_trigger: 0,
+            mode: 0,
+        }];
+        let mut c = Camera::default();
+        c.route_camera_events(&mut w);
+        assert!(c.script_owns_focus(), "the beat latches the focus");
+        c.orbit_by(&w, 1.0);
+        c.tilt_by(&w, 0.2);
+        c.zoom_by(&w, 2.0);
+
+        assert!(c.recenter_follow(&w), "free roam takes the full reset");
+        assert_eq!(
+            (c.manual_orbit, c.manual_tilt, c.manual_zoom),
+            (0.0, 0.0, 1.0)
+        );
+        assert!(!c.script_owns_focus(), "the focus is the follow camera's");
+        assert!(c.mover.is_none());
+        assert_eq!(c.mode, CameraMode::Follow);
+        assert_eq!((c.yaw, c.pitch, c.roll), (0.0, 0.0, 0.0));
+        assert!(c.zone.snap_pending, "the composed follow pose snaps in");
+    }
+
+    /// Off free roam the reset still zeroes the knobs (so a stale drag does
+    /// not greet the player when battle or the world map hands back), but
+    /// leaves a cutscene's shot to the script.
+    #[test]
+    fn recenter_follow_only_clears_knobs_while_a_cutscene_owns_the_camera() {
+        let mut w = World {
+            mode: SceneMode::Field,
+            ..World::default()
+        };
+        let mut c = Camera::default();
+        c.orbit_by(&w, 0.5);
+        c.zoom_by(&w, 1.5);
+        c.yaw = 1.25;
+        w.cutscene.timeline =
+            Some(legaia_engine_field::cutscene_timeline::CutsceneTimeline::new(vec![0], 0));
+        assert!(!c.recenter_follow(&w));
+        assert_eq!(
+            (c.manual_orbit, c.manual_tilt, c.manual_zoom),
+            (0.0, 0.0, 1.0)
+        );
+        assert_eq!(c.yaw, 1.25, "the cutscene's yaw is the script's");
+        for mode in [SceneMode::Battle, SceneMode::WorldMap] {
+            let w = World {
+                mode,
+                ..World::default()
+            };
+            c.manual_orbit = 0.7;
+            assert!(!c.recenter_follow(&w), "mode {mode:?}");
+            assert_eq!(c.manual_orbit, 0.0, "mode {mode:?}");
+        }
+    }
+
     /// Tilt and zoom clamp at the knob bounds and never accumulate beyond
     /// them; orbit wraps.
     #[test]

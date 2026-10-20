@@ -159,6 +159,11 @@ jobs:
       - name: Crate layering
         run: python3 scripts/ci/check-crate-layering.py
 
+      # The site's crate map, the README's crate diagrams and its layer list
+      # are generated from the manifests; a stale copy fails.
+      - name: Crate map freshness
+        run: python3 scripts/ci/gen-crate-map.py --check
+
       # A ratchet's baseline is edited in the same commit as the code that
       # moved it, and the corpus ratchets below skip on this runner. This one
       # needs only the baseline files: a value that moved the wrong way against

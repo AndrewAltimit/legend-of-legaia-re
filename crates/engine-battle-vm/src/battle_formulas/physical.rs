@@ -180,8 +180,22 @@ fn scale_pct(v: u32, pct: u8) -> u32 {
 /// ability arm, the HP-bar accumulator write, and the spirit-gauge accrual
 /// ([`super::spirit_gauge_fill`]).
 ///
-/// PORT: FUN_801EC3E4 (the melee roll pair + underdog rewrite + chip floor)
+/// The capped form of [`physical_excess`], for a caller that runs no guard
+/// ladder.
 pub fn physical_predamage(hit: &PhysicalHit, rand: &mut impl FnMut() -> u16) -> u16 {
+    physical_excess(hit, rand).min(PHYSICAL_DAMAGE_CAP) as u16
+}
+
+/// [`physical_predamage`] **before** its cap: the hit's excess `raw - guard`
+/// as the kernel holds it when the party-defender guard ladder runs
+/// (`0x801ED5CC..0x801EDA00`), ahead of the `guard + 9999` cap at
+/// `0x801EDA00`. A caller that applies the ladder
+/// ([`super::damage_finish`], whose own last stage is the 9999 cap) takes
+/// this, so the halve happens before the cap as retail's does. Same draws as
+/// [`physical_predamage`].
+///
+/// PORT: FUN_801EC3E4 (the melee roll pair + underdog rewrite + chip floor)
+pub fn physical_excess(hit: &PhysicalHit, rand: &mut impl FnMut() -> u16) -> u32 {
     let atk = u32::from(hit.attacker_atk);
     let scalar = u32::from(hit.command_scalar);
     let combo = u32::from(hit.combo_scale);
@@ -259,7 +273,6 @@ pub fn physical_predamage(hit: &PhysicalHit, rand: &mut impl FnMut() -> u16) -> 
         }
     }
 
-    // 7 - cap + damage.
-    let damage = raw.saturating_sub(guard).min(PHYSICAL_DAMAGE_CAP);
-    damage.min(u32::from(u16::MAX)) as u16
+    // 7 - the excess; the cap is the caller's ([`physical_predamage`]).
+    raw.saturating_sub(guard)
 }

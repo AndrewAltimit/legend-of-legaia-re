@@ -33,7 +33,7 @@
 //!
 //! The port keeps the composed line on [`crate::world::BattleState::message_banner`]
 //! from the raise to the matching unload, and both hosts draw it through
-//! [`crate::battle_hud::battle_banner_message`] into the top banner widget.
+//! `legaia_engine_battle_hud::battle_banner_message` into the top banner widget.
 
 use super::*;
 

@@ -1,12 +1,12 @@
 //! The play page's **Cheats** panel: thin wasm bindings over
-//! [`legaia_engine_core::cheats::PlayerCheat`] - the one cheat list both
-//! hosts expose, applied through `World::apply_cheat` (the native
+//! [`legaia_engine_cheats::cheats::PlayerCheat`] - the one cheat list both
+//! hosts expose, applied through `WorldCheats::apply_cheat` (the native
 //! `play-window`'s `--cheat-*` flags build the same values) - and over
-//! [`legaia_engine_core::cheat_applier::apply_text`] for pasted codes (the
+//! [`legaia_engine_cheats::cheat_applier::apply_text`] for pasted codes (the
 //! native `--cheat-file`).
 
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::cheats::PlayerCheat;
+use legaia_engine_cheats::cheats::{PlayerCheat, WorldCheats};
 use wasm_bindgen::prelude::*;
 
 /// A [`PlayerCheat`] from the page's `(key, number, text)` triple.
@@ -26,6 +26,7 @@ fn cheat_from_key(key: &str, n: f64, text: &str) -> Option<PlayerCheat> {
             qty: byte,
         },
         "encounters" => PlayerCheat::RandomEncounters(n != 0.0),
+        "noclip" => PlayerCheat::WalkThroughWalls(n != 0.0),
         _ => return None,
     })
 }
@@ -43,9 +44,9 @@ impl LegaiaRuntime {
 #[wasm_bindgen]
 impl LegaiaRuntime {
     /// Apply one cheat from the shared list
-    /// ([`legaia_engine_core::cheats::PLAYER_CHEAT_LIST`]) by key, with a
+    /// ([`legaia_engine_cheats::cheats::PLAYER_CHEAT_LIST`]) by key, with a
     /// numeric operand `n` (level, Seru level, gold, coins, quantity; `1` /
-    /// `0` for the encounters switch) and a text operand `text` (the item
+    /// `0` for the encounters and walk-through-walls switches) and a text operand `text` (the item
     /// query). Returns the one-line outcome the native window logs for the
     /// same cheat. Unknown keys return a reason.
     pub fn cheat_apply(&mut self, key: &str, n: f64, text: &str) -> String {
@@ -62,7 +63,7 @@ impl LegaiaRuntime {
         let Some(h) = self.scene_host.host_mut() else {
             return "no disc loaded".to_string();
         };
-        use legaia_engine_core::cheat_applier::{CheatTextFormat, apply_text};
+        use legaia_engine_cheats::cheat_applier::{CheatTextFormat, apply_text};
         match apply_text(&mut h.world, text, CheatTextFormat::sniff(text), strict) {
             Ok(report) => report.summary(),
             Err(e) => format!("codes not understood: {e}"),

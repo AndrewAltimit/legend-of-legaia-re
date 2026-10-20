@@ -117,7 +117,7 @@ impl PlayWindowApp {
             return false;
         };
         let block = commit.cell + 1;
-        let wrote = legaia_engine_core::card_write::write_save_into_card(
+        let wrote = legaia_engine_menu_runtime::card_write::write_save_into_card(
             card,
             block,
             &sf,
@@ -188,7 +188,7 @@ impl PlayWindowApp {
     /// it.
     ///
     /// A Save goes through the kernel the browser rack writes with
-    /// ([`legaia_engine_core::card_write::write_save_into_card`]) - the block's
+    /// ([`legaia_engine_menu_runtime::card_write::write_save_into_card`]) - the block's
     /// save number, payload, engine ext tail, resume point, identity and
     /// directory claim are decided there - and the card is then written back
     /// to the image file it was mounted from. Either step failing raises the

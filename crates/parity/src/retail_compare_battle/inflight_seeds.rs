@@ -286,6 +286,8 @@ impl RetailBattle {
     ///   action left it on is one nothing in the replay restores. Seeding
     ///   every combatant's heading moved the corpus both ways (camera up on
     ///   most, frames down on more than rose).
+    /// - **A downed party member** (HP `0`): it sits out every replayed
+    ///   round too.
     /// - **The action's target** only before the attacker's first strike has
     ///   committed. The strike commit turns its defender onto the attacker
     ///   (`0x801EEC34..0x801EECBC`), so after it the captured heading is the
@@ -327,7 +329,17 @@ impl RetailBattle {
         let ground = self.seeded_ground();
         let pc = usize::from(self.party_count);
         for (s, o) in out.iter_mut().enumerate() {
-            if ground[s].is_none() || !(end || spent[s]) {
+            // A downed party member sits out every replayed round as a spent
+            // one does, so the heading its fall left it on is one nothing
+            // restores - and its kneel is drawn along it
+            // (`zora_glare_petrify_post`'s Noa at `3723`).
+            let downed = s < pc
+                && self
+                    .party
+                    .get(s)
+                    .and_then(Option::as_ref)
+                    .is_some_and(|c| c.hp == 0);
+            if ground[s].is_none() || !(end || spent[s] || downed) {
                 continue;
             }
             let pool = if s < pc { s } else { 3 + (s - pc) };

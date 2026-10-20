@@ -24,6 +24,139 @@ impl PlayWindowApp {
         d
     }
 
+    /// The window's own chrome, drawn over everything else in the text
+    /// layer: the "press Escape again" line while a first `Escape` waits for
+    /// its confirmation (`handle_keyboard`), the last hotkey's notice line
+    /// ("Ground fog: off"), and the hotkey help panel (`F12` / `?`). None of
+    /// it is game surface - retail has no quit key and no host toggles.
+    pub(in crate::window) fn window_chrome_draws(&self, w: u32, h: u32) -> Vec<TextDraw> {
+        use crate::window::app_state::{NOTICE_DURATION, QUIT_CONFIRM_WINDOW};
+        if self.font_atlas.is_none() {
+            return Vec::new();
+        }
+        let mut stage: Vec<TextDraw> = Vec::new();
+        let mut rows: Vec<(&str, [f32; 4])> = Vec::new();
+        if self
+            .quit_prompt
+            .is_some_and(|t| t.elapsed() <= QUIT_CONFIRM_WINDOW)
+        {
+            rows.push(("Press Esc again to quit", [1.0, 0.9, 0.5, 1.0]));
+        }
+        if let Some((text, at)) = &self.notice
+            && at.elapsed() <= NOTICE_DURATION
+        {
+            rows.push((text.as_str(), [0.85, 0.95, 1.0, 1.0]));
+        }
+        // Bottom-left of the stage, stacking upward: the top-left is the
+        // field party readout's seat.
+        let mut y = legaia_engine_ui::BOOT_UI_STAGE_H as i32 - 6;
+        for (text, color) in rows.into_iter().rev() {
+            let layout = self.font.layout_ascii(text);
+            y -= layout.advance_y as i32 + 4;
+            self.push_scrim(
+                &mut stage,
+                (6, y - 1),
+                (layout.advance_x + 4, layout.advance_y + 2),
+                0.7,
+            );
+            stage.extend(text_draws_for(&layout, (8, y), color));
+        }
+        if self.hotkey_help {
+            stage.extend(self.hotkey_help_stage_draws());
+        }
+        let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+        legaia_engine_ui::scale_stage_text_draws(&mut stage, stage_origin, stage_scale);
+        stage
+    }
+
+    /// A translucent dark plate behind window text (the font atlas's solid
+    /// texel, tinted), so the line reads over a bright scene. Stage pixels.
+    fn push_scrim(&self, out: &mut Vec<TextDraw>, at: (i32, i32), size: (u32, u32), alpha: f32) {
+        if let Some(src) = self.battle_hud_solid_src() {
+            out.push(TextDraw {
+                dst: (at.0, at.1, size.0, size.1),
+                src,
+                color: [0.0, 0.0, 0.0, alpha],
+            });
+        }
+    }
+
+    /// The hotkey help panel: every host hotkey with its key and current
+    /// state, read off the shared table so a new hotkey lists itself. Stage
+    /// pixels.
+    fn hotkey_help_stage_draws(&self) -> Vec<TextDraw> {
+        use legaia_engine_session::hotkeys::{HOST_HOTKEYS, HostHotkey};
+        let head = [1.0f32, 0.9, 0.5, 1.0];
+        let key = [0.7f32, 0.85, 1.0, 1.0];
+        let text = [1.0f32, 1.0, 1.0, 1.0];
+        let entries: Vec<(&str, String)> = HOST_HOTKEYS
+            .iter()
+            .map(|&(hk, _)| {
+                let line = if hk == HostHotkey::CheatMaxAp {
+                    hk.label().to_string()
+                } else {
+                    format!("{}: {}", hk.label(), self.hotkey_state(hk))
+                };
+                (hk.key_label(), line)
+            })
+            .collect();
+        let width = |s: &str| self.font.layout_ascii(s).advance_x as i32;
+        let line_h = self.font.layout_ascii("Ag").advance_y as i32 + 1;
+        let per_col = entries.len().div_ceil(2);
+        let key_w = entries
+            .iter()
+            .map(|(k, _)| width(k))
+            .chain([width("Esc"), width("F12")])
+            .max()
+            .unwrap_or(0)
+            + 5;
+        // Each column as wide as its widest row; the panel centred on the
+        // stage.
+        let col_w = |rows: &[(&str, String)], extra: &str| {
+            rows.iter()
+                .map(|(_, l)| width(l))
+                .chain([width(extra)])
+                .max()
+                .unwrap_or(0)
+                + key_w
+        };
+        let left_w = col_w(&entries[..per_col], "Quit (press twice)") + 10;
+        let right_w = col_w(&entries[per_col..], "This help (also ?)");
+        let per_col = per_col as i32;
+        let stage_w = legaia_engine_ui::BOOT_UI_STAGE_W as i32;
+        let x0 = ((stage_w - left_w - right_w) / 2).max(4);
+        let col_w = left_w;
+        let height = (per_col + 3) * line_h + 12;
+        let y0 = ((legaia_engine_ui::BOOT_UI_STAGE_H as i32 - height) / 2).max(4);
+        let mut out = Vec::new();
+        self.push_scrim(
+            &mut out,
+            (x0 - 4, y0 - 4),
+            ((left_w + right_w + 8) as u32, height as u32),
+            0.85,
+        );
+        let mut put = |s: &str, at: (i32, i32), color: [f32; 4]| {
+            out.extend(text_draws_for(&self.font.layout_ascii(s), at, color));
+        };
+        put("Keys", (x0, y0), head);
+        let mut y = y0 + line_h + 2;
+        put("Esc", (x0, y), key);
+        put("Quit (press twice)", (x0 + key_w, y), text);
+        put("F12", (x0 + col_w, y), key);
+        put("This help (also ?)", (x0 + col_w + key_w, y), text);
+        y += line_h + 2;
+        for (i, (k, line)) in entries.iter().enumerate() {
+            let col = i as i32 / per_col;
+            let row = i as i32 % per_col;
+            let at = (x0 + col * col_w, y + row * line_h);
+            put(k, at, key);
+            put(line, (at.0 + key_w, at.1), text);
+        }
+        y += per_col * line_h + 2;
+        put("Pad keys: Options > Key Config", (x0, y), head);
+        out
+    }
+
     /// The HUD text list for one frame. `screens` is this frame's
     /// shop-family overlay ([`Self::shop_overlay_frame`]), built once by the
     /// caller so the chrome sprite pass reads the same composition.
@@ -383,74 +516,16 @@ impl PlayWindowApp {
         }
         // Fishing point-exchange list: the venue's prize rows with the retail
         // gating (row 0 hidden until affordable, greyed unavailable rows,
-        // one-time prizes latched after purchase).
-        if self.session.host.world.mode == SceneMode::Fishing
-            && let Some(ex) = &self.session.host.world.minigames.fishing_exchange
-        {
-            let world = &self.session.host.world;
-            // The venue sub-screen's panel frame (FUN_801d74b0): the retail
-            // menu-picker rect, centre-x converted to a left edge with the
-            // two-left / six-down skin bias, swaying on the overlay's idle
-            // sway triple (FUN_801d03b0). The list is anchored inside it.
-            let sway = world.minigames.fishing_venue.sway_offset;
-            let panel =
-                legaia_engine_fishing::fishing_chrome::centred_panel(0xA0, 0x50, 0x68, 0x50);
-            let (px, py) = panel
-                .map(|p| (p.x as i32 + sway.0 as i32, p.y as i32 + sway.1 as i32))
-                .unwrap_or((8, 98));
-            let names: Vec<String> = ex
-                .rows
-                .iter()
-                .map(|r| {
-                    r.name
-                        .clone()
-                        .unwrap_or_else(|| format!("item {:#04x}", r.item_id))
-                })
-                .collect();
-            // The screen itself is `legaia_engine_ui::fishing::exchange`,
-            // shared with the browser play page: the row layout, the ink
-            // rule and the one-time tag are decided once. This host supplies
-            // the pen (the swaying panel above), its own key legend, and the
-            // live bag reads the view needs.
-            use legaia_engine_ui::fishing::exchange as fx;
-            let rows: Vec<fx::ExchangeRowView<'_>> = ex
-                .rows
-                .iter()
-                .enumerate()
-                .map(|(i, r)| {
-                    let owned = *world.party.inventory.get(&r.item_id).unwrap_or(&0) as u32;
-                    fx::ExchangeRowView {
-                        name: names[i].as_str(),
-                        price: r.price,
-                        owned,
-                        available: ex.is_available(
-                            i,
-                            world.minigames.fishing_points,
-                            owned,
-                            world.minigames.fishing_prizes_purchased,
-                        ),
-                        one_time: r.is_one_time(),
-                        latched: ex.is_latched(i, world.minigames.fishing_prizes_purchased),
-                    }
-                })
-                .collect();
-            let view = fx::ExchangeView {
-                venue: ex.venue as u8,
-                points: world.minigames.fishing_points,
-                cursor: ex.cursor,
-                first_visible: ex.first_visible(world.minigames.fishing_points),
-                rows: &rows,
-            };
-            // The pen is the retail panel rect, a 320x240 stage position, so
-            // the rows scale onto the surface through the same stage the
-            // HUD rows and the browser play page use. Drawn in raw surface
-            // pixels they sat in the window's top-left at a third of the
-            // page's size.
-            let mut ex_draws = fx::exchange_screen_draws_for(
+        // one-time prizes latched after purchase), composed once for both
+        // hosts (`legaia_engine_screens::fishing_exchange_draws`) on the
+        // swaying venue panel. This host supplies its key legend; the pen is
+        // a 320x240 stage position, so the rows scale onto the surface
+        // through the same stage the HUD rows and the browser play page use.
+        if self.session.host.world.mode == SceneMode::Fishing {
+            let mut ex_draws = legaia_engine_screens::fishing_exchange_draws(
+                &self.session.host.world,
                 &self.font,
-                &view,
                 "   (Enter = trade, Left/Right = venue, P = close)",
-                (px, py),
                 white,
                 dim,
             );
@@ -470,26 +545,18 @@ impl PlayWindowApp {
         if self.session.host.world.mode == SceneMode::BakaFighter
             && let Some(f) = &self.session.host.world.minigames.baka_fighter
         {
-            // The duel's three number drawers, at their ported cell layouts:
-            // the one-glyph round digit, the 8 px right-aligned score field,
-            // and the 0x10 px "GET COIN" numeral strip for the prize. The
-            // placement is `baka_fighter_chrome::hud_digit_placements` and
-            // the glyph quads are `baka_strips` - both shared with the
-            // browser play page, which printed a summary line here instead.
-            // The HUD widget descriptors these cells patch (`DAT_801d7160`)
-            // index a sprite page no host uploads, so each cell draws as a
-            // font glyph at its ported x: the layout is retail's, the glyph
-            // source is not.
-            // The attract card and the player select draw no duel HUD
-            // (`baka_cabinet::draws_hud` is false across the front end).
-            let placed = if f.cabinet().front_end() {
-                Vec::new()
-            } else {
-                legaia_engine_minigames::baka_fighter_chrome::hud_digit_placements(
-                    f.round() as i32,
-                    f.tally().map(|t| (t.total(), t.gold_remaining())),
-                )
-            };
+            // The tally's number drawers as font glyphs at their ported cell
+            // layouts (the 8 px right-aligned score field and the 0x10 px
+            // "GET COIN" strip), plus the one-glyph round digit on a frame
+            // without the duel HUD's art: placement
+            // `minigame_hud::baka_digit_placements`, glyph quads
+            // `baka_strips` - both shared with the browser play page. With
+            // the art resident the duel HUD's own STAGE cells draw in the
+            // prim pass (`baka_hud_prims`).
+            let placed = legaia_engine_screens::minigame_hud::baka_digit_placements(
+                f,
+                self.baka_hud_art_drawn(),
+            );
             // The placements are 320x240 stage cells, like the rows above:
             // drawn raw they sat top-left at a fraction of the page's size.
             let mut cells = legaia_engine_ui::baka_strips::baka_digit_strip_draws_for(

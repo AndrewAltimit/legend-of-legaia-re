@@ -70,8 +70,8 @@ pub struct CastFxState {
     pub(crate) fatal_decision: Option<legaia_engine_cast::cast_fatal_decision::FatalDecisionState>,
     /// The outcome name PROT 0954's arm 9 put up in the move-name label
     /// (HUD element `0x4C`), until the band leaves. Read by
-    /// `battle_hud::battle_move_name`.
-    pub(crate) fatal_banner: Option<String>,
+    /// `legaia_engine_battle_hud::battle_move_name`.
+    pub fatal_banner: Option<String>,
     /// PROT 0904's ring-sweep angle, retail's `ctx+0x6D8`.
     ///
     /// Arm 12 grows it by the frame delta times `8` every tick
@@ -274,8 +274,8 @@ pub struct CastFxState {
     pub(crate) homing_holds_lists: Option<u8>,
     /// The text a directed summon module's arm last put up
     /// ([`legaia_engine_cast::cast_module_camera::ModuleCaption`]), cleared at
-    /// the band's `0x37` exit. Read by `battle_hud::battle_move_name`.
-    pub(crate) module_caption: Option<legaia_engine_cast::cast_module_camera::ModuleCaption>,
+    /// the band's `0x37` exit. Read by `legaia_engine_battle_hud::battle_move_name`.
+    pub module_caption: Option<legaia_engine_cast::cast_module_camera::ModuleCaption>,
     /// Pending move-FX sound cue id (`+0x0d`), set by [`crate::world::World::spawn_move_fx`]
     /// when the move carries a non-zero cue. The host drains it via
     /// [`crate::world::World::take_pending_move_fx_cue`] and routes it through

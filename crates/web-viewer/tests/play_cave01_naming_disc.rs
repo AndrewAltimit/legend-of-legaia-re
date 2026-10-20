@@ -49,3 +49,47 @@ fn the_cave01_naming_prompt_stands_over_noas_mesh() {
     assert!(!mesh.is_empty(), "the page still has a player rig");
     assert_ne!(mesh, vahn_mesh, "the rig was rebuilt off Vahn's mesh");
 }
+
+/// The page's own upload follows the rig. It uploads the player's geometry
+/// (indices, UVs, texture words) at scene build and only re-poses positions
+/// per frame, so a mid-scene rig rebuild must reach it through
+/// `FrameTicksReport::player_rig_rebuilt`. Driven one sim tick per display
+/// frame - the GPU page's cadence, under which the entry tick's scene
+/// rebuild and the party swap land in different frames; at several ticks a
+/// frame the rebuild happened to cover the swap, which hid the defect under
+/// a slow renderer.
+#[test]
+fn the_page_reuploads_the_rig_the_cave01_party_swap_rebuilds() {
+    let Ok(disc) = env::var("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let bytes = std::fs::read(&disc).expect("read disc image");
+    let mut rt = LegaiaRuntime::new();
+    rt.load_disc(bytes, String::new()).expect("load_disc");
+    assert!(rt.set_system_flag(0x156, true));
+    rt.enter_field("cave01").expect("enter cave01");
+    // What the page holds on the GPU: the scene build's upload.
+    let vahn_mesh = rt.player_mesh_indices();
+    let mut uploaded = vahn_mesh.clone();
+    let mut rebuilt_frames = 0;
+    let mut frames = 0;
+    while !rt.name_entry_is_active() && frames < 2000 {
+        let r = rt.frame_ticks(1, 0, 0).expect("frame");
+        // The page's follow-up (`play-view-frame.js`): a scene rebuild, or
+        // the rig's own re-upload.
+        if !r.scenes.is_empty() || r.player_rig_rebuilt {
+            uploaded = rt.player_mesh_indices();
+        }
+        rebuilt_frames += usize::from(r.player_rig_rebuilt);
+        frames += 1;
+    }
+    assert!(rt.name_entry_is_active(), "name entry never opened");
+    assert!(rebuilt_frames > 0, "the party swap reported a rig rebuild");
+    let live = rt.player_mesh_indices();
+    assert_ne!(live, vahn_mesh, "the engine's rig is Noa's");
+    assert_eq!(
+        uploaded, live,
+        "the geometry the page uploaded is the rig it poses (not Vahn's index buffer)"
+    );
+}

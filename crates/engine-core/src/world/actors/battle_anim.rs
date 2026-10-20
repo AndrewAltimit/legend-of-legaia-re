@@ -4,6 +4,12 @@
 use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
+/// Slots the per-actor pose ring keeps: retail's 32-frame ring
+/// ([`legaia_engine_battle::battle_afterimage::HISTORY_DEPTH`]) at up to
+/// four vsyncs a frame, since the per-vsync cadence pushes a slot a vsync
+/// (`World::ghost_ring_slots_per_frame`).
+const BATTLE_POSE_HISTORY_SLOTS: usize = legaia_engine_battle::battle_afterimage::HISTORY_DEPTH * 4;
+
 impl World {
     /// What a frame of seated clip cursors moves with them, re-derived the
     /// way the pass that poses the bodies derives it: every body pair
@@ -16,6 +22,33 @@ impl World {
         }
     }
 
+    /// Put a party member at zero HP on its downed kneel - entry `8`, which
+    /// re-commits itself at every natural end
+    /// ([`crate::world::battle::clip_ladder::PARTY_DOWNED_LOOP_ENTRY`]) - when
+    /// it is not there already. A seat that lands a member's HP at zero
+    /// skips the knockdown chain (`4 -> 7 -> 8`) that leads there, and a
+    /// capture of a downed member holds `+0x1D9 = +0x1DA = 8`. Returns
+    /// whether the member kneels. A no-op for a monster or a living member.
+    pub fn seat_downed_kneel(&mut self, slot: usize) -> bool {
+        use crate::world::battle::clip_ladder::PARTY_DOWNED_LOOP_ENTRY;
+        let Some(a) = self.actors.get(slot) else {
+            return false;
+        };
+        if a.battle_monster_id.is_some() || a.battle.hp != 0 {
+            return false;
+        }
+        if a.battle_reaction == Some(PARTY_DOWNED_LOOP_ENTRY) {
+            return true;
+        }
+        let kneels = self.commit_battle_reaction_entry(slot, PARTY_DOWNED_LOOP_ENTRY);
+        if kneels {
+            // The kneel's pose centroid moves the body pair `+0x3C..+0x40`
+            // the framings and the range law read.
+            self.refresh_battle_body_pairs();
+        }
+        kneels
+    }
+
     /// Land battle slot `slot`'s playing clip on the node cursor `+0x68` a
     /// capture held (12.4 sixteenths of a keyframe), re-posing it there -
     /// when the slot plays the clip the capture's `+0x1D9` names. Returns
@@ -24,10 +57,27 @@ impl World {
     /// clock left it rather than retail's. `cursor` may sit below zero (the
     /// displayed frame from before the loop's last wrap).
     pub fn seat_battle_clip_cursor(&mut self, slot: usize, clip: u8, cursor: i32) -> bool {
+        // A party member the capture holds downed plays entry `8`, the kneel
+        // that re-commits itself at every natural end
+        // ([`crate::world::battle::clip_ladder::PARTY_DOWNED_LOOP_ENTRY`]).
+        // A seat lands its HP at zero without the fall that led there, so
+        // the body would stand on its idle: put it on the kneel first.
+        let downed = clip == crate::world::battle::clip_ladder::PARTY_DOWNED_LOOP_ENTRY
+            && self
+                .actors
+                .get(slot)
+                .is_some_and(|a| a.battle_monster_id.is_none() && a.battle.hp == 0);
+        if downed && !self.seat_downed_kneel(slot) {
+            return false;
+        }
         let Some(a) = self.actors.get_mut(slot) else {
             return false;
         };
-        if a.battle.current_anim != clip {
+        // A struck body plays its reaction entry on the reaction channel
+        // (`+0x1D9` holds the committed entry, `World::commit_battle_reaction_entry`):
+        // the capture's `+0x1D9` names it, not the staged-anim id.
+        let reacting = !downed && a.battle_reaction_entry == Some(clip);
+        if !downed && !reacting && a.battle.current_anim != clip {
             return false;
         }
         let Some(player) = a.battle_animation.as_mut() else {
@@ -36,8 +86,16 @@ impl World {
         // Only a looping clip runs free of the phase the seed placed: a
         // one-shot (a swing, a reaction) started with its action, which the
         // seed already put where the capture's was. A looping clip wraps
-        // (retail's re-commit zeroes the cursor at the stream's end).
-        if !player.is_looping() {
+        // (retail's re-commit zeroes the cursor at the stream's end), and so
+        // does the self-re-committing kneel.
+        //
+        // A reaction is the one one-shot seated: it starts on the hit, which
+        // the replay lands on its own clock, and the frame on screen is two
+        // game frames older than the RAM's cursor - a knockdown moves the
+        // whole body in that time (`battle_gimard_tail_fire_b`'s Vahn, still
+        // upright mid-fall on the displayed frame at `72` less two frames'
+        // advance, sprawled on the RAM's).
+        if !player.is_looping() && !downed && !reacting {
             return false;
         }
         let total = (player.frame_count() * 16).max(1) as i32;
@@ -290,7 +348,7 @@ impl World {
                 });
                 actor
                     .battle_pose_history
-                    .truncate(legaia_engine_battle::battle_afterimage::HISTORY_DEPTH);
+                    .truncate(BATTLE_POSE_HISTORY_SLOTS);
                 actor.pose_frame = Some(pose);
                 // The mesh-variant swap, run off the same node cursor right
                 // after the facial animator at the end of the tick

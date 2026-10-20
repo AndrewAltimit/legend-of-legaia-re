@@ -160,9 +160,14 @@ pub fn emit_tile(rec: &crate::battle_intro_tiles::TileRecord, prims: &mut Vec<Sc
         let p: [ProjCorner; 4] =
             std::array::from_fn(|i| project_intro_corner(&rot, tr, q.corners[i]));
         let grey = u32::from(q.grey);
+        let uv = if q.tpage == crate::battle_intro_tiles::SHADE_TPAGE {
+            q.uv
+        } else {
+            unwrap_bottom_edge_v(q.uv)
+        };
         push_ft4_quad(
             &p,
-            q.uv,
+            uv,
             q.clut,
             q.tpage,
             grey << 16 | grey << 8 | grey,
@@ -171,6 +176,33 @@ pub fn emit_tile(rec: &crate::battle_intro_tiles::TileRecord, prims: &mut Vec<Sc
             prims,
         );
     }
+}
+
+/// The bottom tile row's `v` without the byte wrap.
+///
+/// The seeder stores `v = (y + 0x800) >> 4` with `sb` (`0x801D0AC0`), so the
+/// grid's bottom edge (`y = 0x800`, `v = 0x100`) is stored as `0`, and a
+/// bottom-row tile's texture runs from `v = 240` back down to `0` across it -
+/// a squashed, upside-down copy of the page. Retail never shows that at rest:
+/// the bottom row starts on screen row `236`, below its `224`-row draw area.
+/// The port draws a `240`-row frame, so its last rows would show it (the
+/// band under every intro frame). Here a corner at `v = 0` on a face whose
+/// other corners sit in the page's lower half is read as the `0x100` it was
+/// computed as, saturated to `0xFF` - one texel short over sixteen rows - so
+/// the bottom row samples the frame's last rows as every other row samples
+/// its own.
+///
+/// PORT: the one departure from `FUN_801D081C`'s stored bytes, confined to
+/// faces whose `v` straddles the wrap - only the bottom tile row's.
+pub(super) fn unwrap_bottom_edge_v(mut uv: [(u8, u8); 4]) -> [(u8, u8); 4] {
+    if uv.iter().any(|&(_, v)| v >= 0x80) {
+        for c in &mut uv {
+            if c.1 == 0 {
+                c.1 = 0xFF;
+            }
+        }
+    }
+    uv
 }
 
 /// Backface handling of one dispatched packet - the dispatcher's NCLIP mask.
@@ -215,8 +247,13 @@ pub(super) fn push_ft4_quad(
     if otz < INTRO_NEAR_OTZ {
         return false;
     }
+    let Some(xy) = gpu_span_cut(std::array::from_fn(|i| {
+        (p[i].xy.x as i16, p[i].xy.y as i16)
+    })) else {
+        return false;
+    };
     prims.push(ScreenPrim::Textured(ScreenQuad {
-        xy: std::array::from_fn(|i| (p[i].xy.x as i16, p[i].xy.y as i16)),
+        xy,
         uv,
         clut,
         tpage,
@@ -227,4 +264,75 @@ pub(super) fn push_ft4_quad(
         depth: None,
     }));
     true
+}
+
+/// The GPU's polygon-size limit on one projected `POLY_FT4`.
+///
+/// The prim leaves hand the GPU the GTE's saturated `SXY` with no clip of
+/// their own, and the GPU draws a quad as the triangles `(0, 1, 2)` and
+/// `(1, 2, 3)`, skipping either whose corners lie more than `1023` pixels
+/// apart horizontally or `511` vertically
+/// ([`crate::prim_near_reject::GPU_MAX_SPAN`]). A swirl band flying at the
+/// lens projects its clamped screen-rectangle corners to the saturation
+/// bounds, so on the console those quads vanish where an unclipped port
+/// paints the captured frame across the screen at many times its size.
+///
+/// Returns the corners to draw - with a skipped triangle collapsed onto a
+/// shared edge so only its partner rasterises - or `None` when both go.
+pub fn gpu_span_cut(xy: [(i16, i16); 4]) -> Option<[(i16, i16); 4]> {
+    use crate::prim_near_reject::GPU_MAX_SPAN;
+    let over = |tri: [usize; 3]| {
+        (0..2).any(|axis| {
+            let v = tri.map(|i| i32::from(if axis == 0 { xy[i].0 } else { xy[i].1 }));
+            let (lo, hi) = (v.iter().min().unwrap(), v.iter().max().unwrap());
+            (hi - lo) as f32 > GPU_MAX_SPAN[axis]
+        })
+    };
+    match (over([0, 1, 2]), over([1, 2, 3])) {
+        (false, false) => Some(xy),
+        (true, true) => None,
+        // Keep `(1, 2, 3)`: corner 0 onto corner 1 degenerates the first.
+        (true, false) => Some([xy[1], xy[1], xy[2], xy[3]]),
+        // Keep `(0, 1, 2)`: corner 3 onto corner 2 degenerates the second.
+        (false, true) => Some([xy[0], xy[1], xy[2], xy[2]]),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{gpu_span_cut, unwrap_bottom_edge_v};
+
+    /// A quad whose corners sit at the `SXY` saturation bounds is skipped
+    /// whole; a quad with one over-wide triangle keeps its partner; an
+    /// on-screen quad is untouched.
+    #[test]
+    fn the_gpu_span_limit_drops_saturated_quads() {
+        let screen = [(0, 0), (320, 0), (0, 240), (320, 240)];
+        assert_eq!(gpu_span_cut(screen), Some(screen));
+        let saturated = [(-1024, -1024), (1023, -1024), (-1024, 1023), (1023, 1023)];
+        assert_eq!(gpu_span_cut(saturated), None);
+        // Corner 3 flung off: triangle (1, 2, 3) spans 1300 px, (0, 1, 2)
+        // stays on screen.
+        let one = [(0, 0), (100, 0), (0, 100), (1000, 1000)];
+        assert_eq!(
+            gpu_span_cut(one),
+            Some([(0, 0), (100, 0), (0, 100), (0, 100)])
+        );
+    }
+
+    /// The bottom tile row's stored bytes (`v = 240` top, `0` bottom - the
+    /// `0x100` the seeder's `sb` wrapped) read as `240..=255`; every other
+    /// row, the top row's genuine `v = 0` included, is untouched.
+    #[test]
+    fn only_the_wrapped_bottom_edge_unwraps() {
+        let bottom = [(0, 240), (20, 240), (0, 0), (20, 0)];
+        assert_eq!(
+            unwrap_bottom_edge_v(bottom),
+            [(0, 240), (20, 240), (0, 255), (20, 255)]
+        );
+        let top = [(0, 0), (20, 0), (0, 16), (20, 16)];
+        assert_eq!(unwrap_bottom_edge_v(top), top);
+        let middle = [(0, 112), (20, 112), (0, 128), (20, 128)];
+        assert_eq!(unwrap_bottom_edge_v(middle), middle);
+    }
 }

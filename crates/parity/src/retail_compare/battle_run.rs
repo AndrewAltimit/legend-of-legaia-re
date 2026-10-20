@@ -392,6 +392,11 @@ pub(super) fn battle_image(
     if battle.mystic_shield {
         env.push(("LEGAIA_BATTLE_MYSTIC_SHIELD", "1".to_string()));
     }
+    // The live effect scrollers' rects as the displayed frame held them: a
+    // scroller's rotation count is time since its effect was seated.
+    if let Some(kv) = retail.vram_rects_env(opts.out_dir, &entry.label) {
+        env.push(kv);
+    }
     if !battle.entry_latches.is_empty() {
         env.push((
             "LEGAIA_BATTLE_LATCHES",

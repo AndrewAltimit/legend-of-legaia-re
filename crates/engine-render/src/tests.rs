@@ -16,3 +16,12 @@ mod sprite_blend;
 mod text_overlay;
 mod title_save_screen;
 mod vram_capture_gpu;
+// --- lane B ---
+mod fog_volume_parity;
+mod page_glsl;
+mod shader_eval;
+mod shading_law_parity;
+mod vertex_law_parity;
+// --- end lane B ---
+// --- lane L ---
+mod bloom_parity;

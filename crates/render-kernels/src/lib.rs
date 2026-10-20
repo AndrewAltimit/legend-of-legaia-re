@@ -20,6 +20,8 @@ pub mod battle_intro_tiles;
 pub mod battle_intro_transition;
 pub mod battle_trail;
 pub mod billboard;
+// --- lane L ---
+pub mod bloom;
 pub mod cast_aluru;
 pub mod cast_beam;
 pub mod cast_colour_wash;

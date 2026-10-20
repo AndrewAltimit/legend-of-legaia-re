@@ -437,7 +437,7 @@ Who writes the buffer differs:
 - **`0x59`.** The spawner's own `0x59` arm composes it on a raise only (`bne s5,zero` at `0x801D914C`): `strcpy(ctx + 0x1F9, prefix[char - 1])`, then the Seru's spell name (`0x800754C8[(ctx[+0x269] + 0x80) * 12 + 8]`), then a suffix (`0x801D9154..0x801D91D0`). The prefix table `0x801F4DFC` is indexed by character and names that character's Ra-Seru (parser `legaia_game_tables::absorb_caption`).
 - **`0x65`.** `FUN_801F452C` composes the line before its raise.
 
-Port: the line lives on `World::battle.message_banner` from the raise to the matching unload (`world::battle::message_banner`). Both play hosts draw it through `engine-core::battle_hud::battle_banner_message` into the top banner widget.
+Port: the line lives on `World::battle.message_banner` from the raise to the matching unload (`world::battle::message_banner`). Both play hosts draw it through `engine-battle-hud::battle_banner_message` into the top banner widget.
 
 A newly learned **art** is not announced here. Retail's cue for it is the `NEW ARTS!!` sprite banner the SpecialStarter `0x1A` commit raises (`engine-battle-vm::battle_action::flash_ramp`).
 

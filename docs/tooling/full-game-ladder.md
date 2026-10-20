@@ -214,6 +214,9 @@ continuous run is the only pass in which those writes are load-bearing:
   back to the same counter later. The picker's rows are the present party
   in party-list order (`FUN_801DB380`), and the talk parks on the shop op
   until the screen closes, then resumes past it.
+- **The Point Card.** A run that opens Rim Elm's chest buys with the card
+  held from chapter 1 on, so every purchase runs the accrual and the toast
+  ([below](#how-the-continuous-hand-plays)).
 - **Captured Seru.** A party that fights learns Seru magic and casts it, in
   rounds where another member's strike may land first: a cast queued at a
   monster that has since died goes through the turn picker's dead-target
@@ -342,6 +345,18 @@ boss band is already down when the run arrives: a party that left it at
 level 35 lost to Cort six times, one trained there to 41 beat him first
 time.
 
+**It opens the chests the retail run opened.** A placed chest (a
+partition-0 record that gives an item) whose flag an order-checked anchor
+up to five milestones ahead carries is a beat wherever the run stands,
+not only when the next anchor carries it. The Point Card is the case:
+`town0c` / `town0d` P0[17] (`0x10F`) lies in Rim Elm, and the playthrough
+first holds it at Mt. Rikuroa, past every visit the next-anchor rule makes
+there. Holding it, every buy credits the card's points
+(`World::credit_point_card`, `FUN_801DB7F4`'s accrual arm) and parks the
+shop on the card's toast (window 31) until a confirm, which the hand
+presses. The run's `[point card]` line prints whether the card is held,
+the bank and the toast edges pressed.
+
 **Which beats it plays** is still the next anchor's flags. One exception:
 standing early in the scene of the milestone after next, it plays toward
 that milestone's anchor as well. Noa's stretch begins in `cave01` during the
@@ -359,6 +374,28 @@ fight that turns goes back to Run on the next prompt.
 **Its MP is for the fights it cannot run from.** In a random encounter a
 member casts only a spell that leaves it half its MP; a fight that forbids
 running is cast at freely.
+
+**It aims.** A strike, an Arts string or a damage cast at one foe goes to
+the foe the hand picks, not the one the target cursor opens on (the
+member's last target while it stands): a cast to
+the standing foe the element matrix lands it hardest on
+(`matrix[summon creature element][foe element]`, `FUN_801DD864`), a strike
+and a tie to the standing foe with the least HP left. It steps the cursor
+there with Right, which runs retail's angular attack-target ring
+(`FUN_801D8A88` builds it from the seats, `FUN_801D8D00` steps it), and
+confirms where the cursor stands after a dozen presses that have not
+brought it there: the ring covers four seats, and a fifth foe (a Divide
+clone) is one no cursor reaches while the four below it stand
+([`battle-command-flow.md`](../subsystems/battle-command-flow.md#the-cursors-opening-and-the-fifth-seat)). The spell it casts is chosen against the same best foe. The
+segmented hands confirm the opening slot, so in them the ring is never
+stepped. The run's `[aim]` line counts the frames spent asking for a step
+and the commits that landed off the opening foe, and checks the engine
+underneath: a strike confirmed on a foe must dispatch
+(`World::dispatch_pending_party_action`) against that foe while it stands -
+the cursor, the commit and the actor's target byte `+0x1DD` are three writes
+of one value. Each strike that dispatched elsewhere prints its member, the
+foe confirmed and the actor struck; a foe that fell first is the dead-target
+redirect's (`FUN_801DB124`), and a confused member's strike is retargeted at the dispatch (`FUN_801E7320`); neither is counted.
 
 **Its bag is for the fights.** On the road a party of two or more spends a
 restorative only under 45%, a lone member under 65%; it does not open the
@@ -712,6 +749,7 @@ cargo test -p legaia-engine-shell --profile release-test \
 | `LEGAIA_FGL_NO_PAD=1` | Skips the pad tier. |
 | `LEGAIA_FGL_RNG_SEED=<u32>` | Re-seeds the world rand stream once a pad segment is seeded, dealing it another hand. Part C takes it at its New Game (or the checkpoint it resumes) and mixes it into each wipe reload, and asserts the baseline's `[continuous_seeds]` row `seed_<n>` when it has one (see [the seed set](#the-seed-set)). |
 | `LEGAIA_FGL_SEATED_RNG_SEED=<u32>` | The same for the seated pass - how a seated boss fight is checked across streams. |
+| `LEGAIA_FGL_PIN_RETAIL=1` | Pins every fidelity toggle to retail's value (`WorldToggles::pin_retail`) in each session the ladder opens, so both parts measure the retail-faithful mode. The gameplay difference from the defaults is the ledge-hop landing guard, off; the rest is presentation. |
 | `LEGAIA_FGL_CONTINUOUS_FROM=<id>` | Starts part C at that milestone, seeded once from its retail anchor and never again, and does not assert the baseline. A probe for a later stretch's carried state; the party it sets out with is retail's, so it is not the continuous score. |
 | `LEGAIA_FGL_CHECKPOINT_DIR=<dir>` | Part C keeps the engine's own save at each milestone it reaches in that directory (`<id>.lgsf`, with the scene, rand stream and learned exchange rate beside it). The saves hold disc-derived state: keep the directory under `target/`. |
 | `LEGAIA_FGL_CONTINUOUS_RESUME=<id>` | Starts part C at that milestone from the save an earlier run kept there, and does not assert the baseline. The party is the run's own; the picker rotation and the shopping memory start fresh, so a stall it shows is confirmed on the full run. |
@@ -728,7 +766,7 @@ Each run is a full New Game, about twenty minutes, so the set is run one
 seed at a time:
 
 ```bash
-for s in 3 4 5 6 7 8 9; do
+for s in $(seq 3 16); do
   LEGAIA_FGL_RNG_SEED=$s cargo test -p legaia-engine-shell --profile release-test \
     --test integration full_game_ladder::continuous:: -- --nocapture --test-threads 1
 done
@@ -1679,7 +1717,7 @@ clips and matches the same arts a windowed one does. Beyond that:
 
 | Variable | Prints |
 |---|---|
-| `LEGAIA_FGL_TRACE=1` | One line per played beat: what ran, how it ended and the flags it set. As `[hop]`, the hop failure that sent the pass to the beats, which the final stall would otherwise hide. A `[battle]` line at each fight's start and end (formation, both sides' HP, the action-SM state). Each pad segment's frames and planner cost. On success, the seated tier's trail, so a pad stall can be read against the route the seated tier took. |
+| `LEGAIA_FGL_TRACE=1` | One line per played beat: what ran, how it ended and the flags it set. As `[hop]`, the hop failure that sent the pass to the beats, which the final stall would otherwise hide. A `[battle]` line at each fight's start and end (formation, both sides' HP, the action-SM state). Each pad segment's frames and planner cost. In part C, an `[aim]` line for each target cursor the aim gave up on, with where the cursor stood. On success, the seated tier's trail, so a pad stall can be read against the route the seated tier took. |
 | `LEGAIA_FGL_TRACE_BATTLE=1` | A `[battle]` line every 1000 ticks. |
 | `LEGAIA_FGL_TRACE_HITS=1` | Each HP change with its actor and action state. |
 | `LEGAIA_FGL_CAPS=1` | Each script context the engine's anti-hang timeline cap ends (`World::cutscene.capped`): scene, modal or helper, record length, PC and opcode. Retail has no such cap, so each line is a record the engine cut short; over both passes there are none. |
@@ -1710,8 +1748,10 @@ Two reading notes. When the `COMP_DEBUG` wall-bit flood stops short of the goal 
   elemental guard on a retry); a beat that waits on a purchase or an equip
   reads as a stall at that beat. The continuous run's hand does buy
   ([above](#how-the-continuous-hand-plays)).
-- The fighter guards only a foe that hits hard every other round, never
-  targets a weakness, changes equipment only to guard a boss's element after
+- The segmented fighter guards only a foe that hits hard every other
+  round, takes the target cursor where it opens (only the continuous hand
+  [aims](#how-the-continuous-hand-plays), at a foe's elemental weakness or
+  its lowest HP), changes equipment only to guard a boss's element after
   losing to it, and flees a random encounter. A fight that needs anything
   else reads as a wipe.
 - The pad planner finds a crossing scene by trial, not by reading which side

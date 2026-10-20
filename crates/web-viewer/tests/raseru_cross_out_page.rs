@@ -12,7 +12,7 @@
 //!
 //! Both hosts draw the menu through `engine-ui`'s
 //! `battle_command_ui::battle_command_menu_sprites` with
-//! `engine-core::battle_hud::battle_raseru_cross_out` as its switch. The
+//! `engine-battle-hud::battle_raseru_cross_out` as its switch. The
 //! builder's own unit test pins the mark against the switch; this test drives
 //! the page's half from a real fight, which pins the two things only the page
 //! can get wrong: that its switch reaches the builder, and that its atlas

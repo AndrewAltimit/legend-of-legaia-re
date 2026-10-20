@@ -5,7 +5,8 @@
 //! hosts frame a dome fight from one kernel.
 
 use super::*;
-use legaia_engine_minigame_scenes::muscle_dome_scene::{BeatKind, SelectFraming};
+use legaia_engine_menus::muscle_dome_session::choreo::BeatKind;
+use legaia_engine_minigame_scenes::muscle_dome_scene::SelectFraming;
 use std::sync::Arc;
 
 #[wasm_bindgen]
@@ -22,10 +23,14 @@ impl LegaiaMinigames {
     /// close-up), `2` the `Auto | Command` prompt (turned toward the
     /// opponent). `camera_option` is the Battle Camera option word.
     pub fn muscle_surface_frame(&mut self, select: u32, camera_option: u8) -> i32 {
-        let Some(c) = self.muscle.as_ref() else {
+        let Some(c) = self.muscle.as_mut() else {
             self.muscle_surface.frame(|_| None, None, None, 0);
             return -1;
         };
+        // The play-out choreography steps once a page frame - this page's
+        // world tick (the play hosts step it in `World::tick`).
+        c.session.tick_choreo();
+        let c = &*c;
         let framing = match select {
             1 => SelectFraming::Member,
             2 => SelectFraming::Target,
@@ -104,7 +109,7 @@ impl LegaiaMinigames {
     /// The play-out beat on screen: `{"kind","play","attacker","at","len"}`
     /// (`kind` = `approach` / `swing` / `done`, `at` the ticks into it), or
     /// `null` outside a play-out - the schedule
-    /// (`muscle_dome_scene::turn_timeline`) the page times its hit numerals
+    /// (`muscle_dome_session::choreo`) the page times its hit numerals
     /// and HP bars against, so they land on the surface's swings.
     pub fn muscle_surface_beat_json(&self) -> String {
         let Some((beat, at)) = self.muscle_surface.playback_beat() else {

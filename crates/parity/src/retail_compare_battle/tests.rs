@@ -373,3 +373,58 @@ fn a_lone_member_rewrite_reads_back_as_the_party_code() {
     put8(&mut ram, actor + 0x1DE, 1);
     assert_eq!(ram_read::seed_target_code(&ram, ctx, actor), 0);
 }
+
+/// A downed party member sits out every replayed round, so its heading is
+/// seeded like a spent one's; and the capture-class band seats an idle
+/// caster and its idle target on the capture's loop cursor
+/// (`zora_glare_petrify_*`, `zeto_big_wave_mid_cast`).
+#[test]
+fn a_downed_member_keeps_its_heading_and_the_capture_band_seats_idle_loops() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 2);
+    put8(&mut ram, ctx + 1, 1);
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x6F);
+    put8(&mut ram, FORMATION_CELL, 0xA9);
+    for (slot, base, hp) in [
+        (0u32, 0x800E_C9E8u32, 180u16),
+        (1, 0x800E_CCBC, 0),
+        (3, 0x800E_D264, 22422),
+    ] {
+        put32(&mut ram, ACTOR_TABLE + slot * 4, base);
+        put16(&mut ram, base + 0x14C, hp);
+        put16(&mut ram, base + 0x14E, hp.max(150));
+        put16(&mut ram, base + 0x16C, 9);
+    }
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    b.active_actor = 3;
+    b.target_code = 0;
+    b.queued_category = 2;
+    b.ground = vec![Some([-229, 269]), Some([830, -319]), None, Some([649, -47])];
+    b.facing = vec![Some(0), Some(3723), None, Some(3297)];
+    let f = b.seeded_facing();
+    assert_eq!(f[1], Some(3723), "the downed member's heading is seeded");
+
+    b.clip_cursors = vec![(0, 0, 84), (1, 8, 108), (3, 0, 52)];
+    let seats =
+        |b: &RetailBattle| -> Vec<u8> { b.engine_clip_cursors().iter().map(|s| s.slot).collect() };
+    assert_eq!(
+        seats(&b),
+        vec![0, 1, 2],
+        "every idle body in the capture band"
+    );
+    b.action_state = 0x20;
+    assert_eq!(
+        seats(&b),
+        vec![1],
+        "outside it the action's seats keep the replay's"
+    );
+    // A party target already on its reaction is seated on the displayed
+    // frame; one whose displayed frame predates the hit is not.
+    b.clip_cursors = vec![(0, 4, 56), (1, 8, 108), (3, 0, 52)];
+    assert_eq!(seats(&b), vec![0, 1], "the struck member's knockdown");
+    b.clip_cursors = vec![(0, 4, -8)];
+    assert!(seats(&b).is_empty(), "before the hit");
+}

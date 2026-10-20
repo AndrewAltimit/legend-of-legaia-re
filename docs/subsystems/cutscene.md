@@ -2027,21 +2027,33 @@ It has two halves, both applied to **loaded assets** rather than per frame:
 
 | Half | What is rewritten | Law | Status |
 |---|---|---|---|
-| Textures | every CLUT row the scene bundle uploads | `L = max(r,g,b)` → `(L, max(L−1, 0), L >> 1)` | capture-pinned; the retail writer is not located |
+| Textures | the CLUT rects `(0, 473, 320, 2)` and `(0, 476, 320, 34)` | `L = max(r,g,b)` → `(L, (L*247) >> 8, L >> 1)`, by four CLUT-cell cyclers | disc data + capture |
 | Baked vertex colours | the colour words of every resident TMD | the `4C E6` HSV pair below | disassembly + capture |
 
-**The CLUT law.** A live capture of the retail opening (VRAM peeked against the disc TIMs) shows
-every CLUT row the `opdeene` bundle uploads rewritten entry-for-entry from the disc value
-`(r, g, b)` (5-bit BGR555) to
+**The CLUT law.** The writer is four [mode-3 CLUT-cell
+cyclers](field-ambient-fx.md#the-clut-cell-hsv-cycler-the-pulsating-flesh), records 10..13 of
+each prologue scene's effect-script bundle (extraction 0748 `opdeene`, 0753 `opstati`, 0763
+`opurud`; no other scene carries them). Each sets its HSV adds with op `0x2B` and captures a CLUT
+rect with op `0x2C`; the render tail `FUN_80019D50` re-uploads the capture through the HSV pass
+every frame, into the packet buffer and out by `LoadImage`:
+
+| Records | Op `0x2B` (h, s, v) | Rect captured | Effect |
+|---|---|---|---|
+| 10, 11 | `(0, -0x400, 0)` | `(0, 473, 320, 2)`, `(0, 476, 320, 34)` | grey: `S` clamps to 0, so every entry becomes `max(r, g, b)` |
+| 12, 13 | `(0x38, 0x80, 0)` | the same two rects | tint: captured after the greyers' upload, so the source is already grey |
+
+Composed through the 8-bit HSV pair (`c << 3` in, `>> 3` out), a 5-bit entry `(r, g, b)` ends as
 
 ```
-L = max(r, g, b)   →   (R, G, B) = (L, max(L − 1, 0), L >> 1)
+L = max(r, g, b)   →   (R, G, B) = (L, (L * 247) >> 8, L >> 1)
 ```
 
-with the STP bit preserved - zero mismatches across the graded terrain rows (the green
-foliage/ground page's row 509, the amber-rock row 508, the grey-scree row 501; 768 entries). The
-gold look is a **palette-space luminance collapse**: the same texel indices draw through
-gold-monochrome palettes.
+with the STP bit preserved - `L - 1` on green for `L <= 28`, `L - 2` above. The `s1_newgame_field`
+state pins it: the pool holds the four live parts with those HSV registers, the tinters' capture
+buffers hold the grey strip, the greyers' hold the disc CLUT, and all 32 grey levels of the
+graded strip map onto the law in VRAM. Rows 475, 510 and 511 and every column from 320 keep
+their disc colours. The gold look is a **palette-space luminance collapse**: the same texel
+indices draw through gold-monochrome palettes.
 
 **The packet colours.** Partition 1 record 0 of `opdeene`, `opstati` and `opurud` issues
 field-VM op `4C E6` twice - `4C E6 00 00 00 FF 00 00` then `4C E6 38 00 90 00 E2 FF` - the only
@@ -2078,12 +2090,9 @@ CLUT) and the amber family (the loaded TMDs' rewritten words).
   (`0x4C 0x8A`), no far-colour op (`0x4C 0x81`) and no per-actor depth-cue op `0x0C` in its
   motion-VM section. The GTE back/ambient colour `DAT_8007B788` is `0x00202020` in `opdeene` vs
   `0x00FFFFFF` in `town01` (`FUN_80043390`); it reaches only the light-source rows.
-- **Not a scannable CPU loop.** A signature scan for the CLUT law (the `>>10/11` blue-field
-  extract + `andi 0x1f` + `>>1` reconstruct + a `max`) across the STR overlay 0970 (28
-  functions), the field overlay 0897 (690) and `SCUS_942.54` (945) finds no CLUT-rewrite loop.
-  Overlay 0970 is MDEC/STR play code only; the strong SCUS hits are the SFX driver (`setbl`,
-  `DAT_8006F198`) and the arts-gauge path (`DAT_801C9370`). What rewrites the CLUT rows is
-  therefore still open - a table or DMA upload rather than an arithmetic loop.
+- **Not a dedicated CLUT loop.** No routine computes the law directly; a signature scan for
+  it (a `max`, a `>>1` blue) finds nothing because it is two passes of the general HSV
+  re-tint `FUN_80019D50`, data-driven by the effect scripts above.
 
 **Engine port.** The engine keeps the disc palettes in its software VRAM and applies the law in
 the mesh shaders instead - equivalent, because a 4/8bpp texel *is* a palette entry.
@@ -2096,7 +2105,9 @@ the mesh shaders instead - equivalent, because a 4/8bpp texel *is* a palette ent
 - each non-neutral packet colour takes the `4C E6` curve of its `max` (`prologue_sepia_word`;
   the page shader carries the twin);
 - exact-neutral words stay neutral (the ground tile kernel's runtime word);
-- the view-depth cue ramp is inert.
+- the view-depth cue ramp is inert;
+- the law reaches only a 4/8bpp prim whose CLUT base sits inside the two cycler rects
+  (`palette_law_reaches`).
 
 [`World::scene_color_grade`](../../crates/engine-core/src/world/narration.rs) owns the scene
 gate (`opdeene` / `opstati` / `opurud`, `None` elsewhere), guarded by
@@ -2445,6 +2456,15 @@ outer bands stop being circular and become the screen rectangle.
   light register (`cr8..cr20`).
 - The tick also washes the screen `0x101010` once the *previous* frame's clock has passed the
   bound.
+- **Inbound bands are cut by the GPU, not by a clip.** The prim leaves hand the GPU the GTE's
+  saturated `SXY`, and the GPU skips either triangle of a quad whose corners lie more than `1023`
+  pixels apart across or `511` down ([renderer](renderer.md#the-gpu-polygon-size-limit)). A band
+  flying at the lens carries the clamped screen-rectangle corners, so its quads saturate and
+  vanish on the console well before the `> 0x80` gate drops the band. The port applies the same
+  per-triangle rule to every intro quad (`battle_intro::gpu_span_cut`, shared with the tile
+  shatter); short of it, the captured frame painted the screen at many times its size. A band in
+  the last few hundred units before that cut still magnifies the capture several-fold, which is
+  the console's behaviour too.
 - The two texture pages pin the trig tables' phase: the primary half's `u = (x >> 4) + 0x20` and
   the mirrored half's `-0x61 - (x >> 4)` stay inside their capture halves only when x is
   non-negative over the sampled half turn, so `_DAT_8007B81C` (the x lane) is sine-phased and
@@ -2702,10 +2722,6 @@ Three details of these bodies are visible only in the disassembly; the port
 
 ## Open items
 
-- **The prologue CLUT rewrite.** The gold CLUT law is capture-pinned and reproduced, but the
-  retail routine that rewrites the rows is not located
-  ([sepia grade](#full-scene-sepia-grade-the-gold-prologue-look)); the hunt is indexed on
-  [open-rev-eng-threads.md](../reference/open-rev-eng-threads.md#battle--rendering).
 - **Cutscene camera re-seed** (a port difference). `CutsceneCameraInterp` arms glides per
   component where retail re-seeds all ten axes per apply beat
   ([engine port](#timeline-execution-engine-port)).

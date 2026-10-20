@@ -29,7 +29,7 @@
 //! This screen is a developer tool, so the shell keeps it behind an explicit
 //! opt-in rather than a menu row a player can reach. The one frame both hosts
 //! run against a live world and camera, and the routing of its cues onto the
-//! world's SFX ring, are `legaia_engine_core::dev_menu_host::DevMenuWorldExt`.
+//! world's SFX ring, are `legaia_engine_menu_runtime::dev_menu_host::DevMenuWorldExt`.
 
 use crate::debug_char_editor::{DebugEditor, clamp_record_stats};
 use legaia_engine_field::dev_equip_commit::{EquipCommit, EquipCommitHost, commit_equip};

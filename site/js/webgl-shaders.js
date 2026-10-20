@@ -804,7 +804,12 @@ vec3 point_gain(vec3 n) {
     float att = clamp(1.0 - (d * d) / (r * r), 0.0, 1.0);
     att = att * att;
     float lam = DYN_LAMBERT_FALLBACK;
-    if (n_len > 1e-6 && d > 1e-3) lam = abs(dot(n / n_len, to_l / d)) * 0.5 + 0.5;
+    /* The normal is in the mesh's retail (Y-down) frame and v_world in this
+     * page's (x, -y, z), so the direction to the light goes back to the
+     * retail frame for the dot - as the native shader takes it, where both
+     * are retail. */
+    vec3 to_l_retail = vec3(to_l.x, -to_l.y, to_l.z);
+    if (n_len > 1e-6 && d > 1e-3) lam = abs(dot(n / n_len, to_l_retail / d)) * 0.5 + 0.5;
     g += u_light_col[i].rgb * (att * lam * light_shadow(i, v_world));
   }
   return g;
@@ -889,9 +894,10 @@ vec3 grade_near(vec3 c) {
   return mix(c, c * u_grade.rgb, u_grade.a);
 }
 
-/* The prologue grade's ASSET half, on the raw BGR555 texel word: retail
- * rewrote every uploaded CLUT entry from (r, g, b) to
- *     L = max(r, g, b);  (L, max(L - 1, 0), L >> 1)
+/* The prologue grade's ASSET half, on the raw BGR555 texel word: retail's
+ * CLUT-cell cyclers grey every uploaded CLUT entry and re-tint the grey
+ * (hue +0x38, saturation +0x80), so (r, g, b) becomes
+ *     L = max(r, g, b);  (L, (L * 247) >> 8, L >> 1)
  * in 5-bit space with the STP bit preserved. A 4/8bpp texel IS a palette
  * entry, so applying the law to the decoded word is exactly equivalent - and
  * it leaves 0 at 0, so the transparency test below is unaffected. Byte-equal
@@ -901,8 +907,18 @@ uint palette_law_word(uint w) {
   uint g = (w >> 5u) & 31u;
   uint b = (w >> 10u) & 31u;
   uint l = max(r, max(g, b));
-  uint g2 = max(l, 1u) - 1u;
+  uint g2 = (l * 247u) >> 8u;
   return (w & 0x8000u) | ((l >> 1u) << 10u) | (g2 << 5u) | l;
+}
+
+/* Only CLUTs inside the two rects retail's cyclers re-upload are graded:
+ * (0, 473, 320, 2) and (0, 476, 320, 34). A 15-bit page has no CLUT.
+ * Twin of the native shader's palette_law_reaches. */
+bool palette_law_reaches(uint cba, uint depth) {
+  uint cx = (cba & 63u) * 16u;
+  uint cy = (cba >> 6u) & 511u;
+  bool row = (cy >= 473u && cy <= 474u) || (cy >= 476u && cy <= 509u);
+  return depth < 2u && cx < 320u && row;
 }
 
 /* The packet-colour half: the prologue scripts' two 4C E6 ops
@@ -1023,8 +1039,11 @@ void main() {
    * camera and the player. Placed before the untextured early-return so
    * both prim families fade; identity while u_occl_focus.w is zero, and
    * actor draws (u_occl_allow == 0) never fade. */
+  /* The Bayer threshold is authored top-down, as the native renderer reads
+   * it off its top-left pixel origin; the keep circle is in gl_FragCoord
+   * space, where its focus is staged. */
   if (u_occl_allow != 0
-      && occl_bayer(gl_FragCoord.xy) >= occl_keep(gl_FragCoord.xy, gl_FragCoord.w)) discard;
+      && occl_bayer(frag_top_px()) >= occl_keep(gl_FragCoord.xy, gl_FragCoord.w)) discard;
   uint u_pix = uint(v_uv.x) & 255u;
   uint v_pix = uint(v_uv.y) & 255u;
 
@@ -1115,7 +1134,7 @@ void main() {
    * (exactly equivalent). Applied BEFORE the transparency test, which the
    * law preserves (0 -> 0, STP kept). */
   bool palette_on = u_palette.w > 0.5;
-  if (palette_on) raw = palette_law_word(raw);
+  if (palette_on && palette_law_reaches(cba, depth)) raw = palette_law_word(raw);
   vec4 color = bgr555_to_rgba(raw);
   /* PSX per-texel semi-transparency gate: inside an ABE prim, only texels
    * with the STP bit set blend; STP=0 texels stay opaque. */

@@ -12,6 +12,7 @@
 
 pub mod disc_readers;
 pub mod fishing_venue;
+pub mod place_name_banner;
 pub mod resume;
 pub mod scene_host;
 pub mod scene_live;

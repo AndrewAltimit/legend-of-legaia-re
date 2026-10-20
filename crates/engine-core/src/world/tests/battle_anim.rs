@@ -707,12 +707,20 @@ fn special_starter_commit_freezes_the_battle_and_ghosts_the_dash() {
         world.actors[0].battle.current_anim,
         vm::anim_vm::DYNAMIC_ART_SLOT_B
     );
-    for _ in 0..10 {
+    // The per-vsync cadence pushes a ring slot a vsync; the walk's depths
+    // are battle frames, `frame_step` vsyncs each.
+    world.clock.frame_step = 2;
+    for _ in 0..20 {
         world.tick_battle_animations();
     }
     let ghosts = world.battle_ghost_draws();
     assert_eq!(ghosts.len(), 2, "two ghosts per retail walk");
-    // Quarter speed: step = 8/2 = 4, ghosts trail 4 and 8 frames.
+    // Quarter speed: step = 8/2 = 4, ghosts trail 4 and 8 battle frames -
+    // ring slots 8 and 16, slot 0 the live frame.
+    let hist = &world.actors[0].battle_pose_history;
+    assert_eq!(ghosts[0].pose, hist[8].pose);
+    assert_eq!(ghosts[1].pose, hist[16].pose);
+    assert_ne!(hist[8].pose, hist[7].pose, "the clip moves a slot a vsync");
     // Colour: Vahn's red base, the second ghost one decay dimmer.
     assert_eq!(ghosts[0].color, [0x60, 0x30, 0x30]);
     assert_eq!(ghosts[1].color, [0x50, 0x20, 0x20]);
@@ -1425,4 +1433,45 @@ fn the_creature_loop_counter_follows_its_clip_window() {
         run(false).iter().all(|&c| c == 0),
         "a non-creature seat is untouched"
     );
+}
+
+/// A party member seated at zero HP kneels on entry `8` - the capture's
+/// `+0x1D9 = +0x1DA = 8` - without the knockdown chain that leads there; a
+/// living member and a monster are left alone.
+#[test]
+fn a_member_seated_down_kneels_on_entry_8() {
+    let mut world = pose_test_world();
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 22];
+    clips[0] = Some(pose_test_clip(0, 2, 0));
+    clips[8] = Some(pose_test_clip(8, 12, 0));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.actors[0].battle.hp = 5;
+    assert!(
+        !world.seat_downed_kneel(0),
+        "a living member keeps its stance"
+    );
+    world.actors[0].battle.hp = 0;
+    assert!(world.seat_downed_kneel(0));
+    assert_eq!(world.actors[0].battle_reaction, Some(8));
+    assert!(world.seat_downed_kneel(0), "already kneeling");
+}
+
+/// A struck body's reaction - a one-shot on the reaction channel - takes the
+/// capture's cursor when the capture names that entry.
+#[test]
+fn a_reaction_entry_takes_the_capture_cursor() {
+    let mut world = pose_test_world();
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 22];
+    clips[0] = Some(pose_test_clip(0, 2, 0));
+    clips[4] = Some(pose_test_clip(4, 12, 0));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.actors[0].battle.hp = 50;
+    assert!(world.commit_battle_reaction_entry(0, 4));
+    assert!(!world.seat_battle_clip_cursor(0, 2, 40), "another entry");
+    assert!(world.seat_battle_clip_cursor(0, 4, 40));
+    let cursor = world.actors[0]
+        .battle_animation
+        .as_ref()
+        .map(|p| p.cursor_sixteenths());
+    assert_eq!(cursor, Some(40));
 }

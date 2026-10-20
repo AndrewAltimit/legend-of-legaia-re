@@ -255,12 +255,19 @@ impl FieldHostImpl<'_> {
         }
         // Player path: also propagate to the active actor slot's
         // move_state so the renderer / collision layer sees the teleport.
-        if is_player
-            && let Some(slot) = self.world.player_actor_slot
-            && let Some(actor) = self.world.actors.get_mut(slot as usize)
-        {
-            actor.move_state.world_x = world_x as i16;
-            actor.move_state.world_z = world_z as i16;
+        // The seat is re-floored as the system script's `A3 F8` is
+        // (`World::step_field_player_move_to`): a door's landing is a sub-area
+        // of the same grid at its own elevation (`tower`'s floors).
+        if is_player && let Some(slot) = self.world.player_actor_slot {
+            let y = self
+                .world
+                .sample_field_floor_height(i32::from(world_x as i16), i32::from(world_z as i16))
+                as i16;
+            if let Some(actor) = self.world.actors.get_mut(slot as usize) {
+                actor.move_state.world_x = world_x as i16;
+                actor.move_state.world_z = world_z as i16;
+                actor.move_state.world_y = y;
+            }
         }
         // The player arm's camera re-centre, `FUN_80017EC8(op[1] & 0x7F,
         // op[2] & 0x7F, ..)` at `0x801DEC9C`: re-latch the region box on the

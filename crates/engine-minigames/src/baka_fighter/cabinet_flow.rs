@@ -74,6 +74,11 @@ impl BakaFight {
             rung_prize: self.cfg[1].gold_reward,
             hp: [self.f[0].hp, self.f[1].hp],
             combo_taken: [self.f[0].combo, self.f[1].combo],
+            chosen_type: self
+                .f
+                .each_ref()
+                .map(|fs| fs.chosen.map_or(0, |a| i32::from(a.type_id()))),
+            type_hold: [self.f[0].hold, self.f[1].hold],
             // `FUN_801D3468` advances the round timer only once the round is
             // decided (a finisher flag or both HPs at zero) - in the port,
             // once the exchange that decided it has left the fight phase.

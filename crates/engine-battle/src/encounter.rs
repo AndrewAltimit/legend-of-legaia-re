@@ -337,8 +337,9 @@ pub struct EncounterSession {
     /// for the whole transition.
     ///
     /// [`IntroStyle::Swirl`](legaia_render_kernels::battle_intro_styles::IntroStyle::Swirl) runs
-    /// longer still (252); the session picks its length before the style is
-    /// resolved, so that override is not carried here.
+    /// longer still (252). The session arms before the style is resolved, so
+    /// the world re-sets the length on the transition's first frame
+    /// ([`Self::set_transition_length`]).
     pub transition_frames: u16,
     /// Frames the [`EncounterPhase::Grace`] phase lasts after a battle.
     /// Default 30 (~0.5s) - the post-battle "no immediate re-encounter"
@@ -444,6 +445,25 @@ impl EncounterSession {
             roll,
         };
         true
+    }
+
+    /// Set the [`EncounterPhase::Transition`] length to `frames`, rebasing a
+    /// transition already in flight so the frames it has run stay run.
+    ///
+    /// Retail picks the intro's length after the style: the init stores
+    /// `DAT_801D2458 = 132` and the swirl's arm re-stores `252`. The session
+    /// arms before the style is known, so the world calls this on the
+    /// transition's first frame with the length its style resolves to.
+    pub fn set_transition_length(&mut self, frames: u16) {
+        let old = self.transition_frames;
+        self.transition_frames = frames;
+        if let EncounterPhase::Transition {
+            frames_remaining, ..
+        } = &mut self.phase
+        {
+            let elapsed = old.saturating_sub(*frames_remaining);
+            *frames_remaining = frames.saturating_sub(elapsed);
+        }
     }
 
     /// Drain the [`EncounterPhase::Triggered`] roll. Engines call this

@@ -1,0 +1,302 @@
+<!--HEAD: <style>
+/* Track colours: four categorical slots, stepped per theme. Dark is the site
+ * default; the light block restates them. The same hues as the README's
+ * generated diagrams (scripts/ci/gen-crate-map.py THEMES). */
+.cm-root, .cm-walk, .cm-hosts {
+  --cm-engine: #4493f8;
+  --cm-preservation: #3fb950;
+  --cm-patcher: #f0883e;
+  --cm-tooling: #ab7df8;
+  --cm-uses: #4493f8;
+  --cm-usedby: #e3b341;
+  --cm-chip-a: 16%;
+}
+:root[data-theme="light"] .cm-root,
+:root[data-theme="light"] .cm-walk,
+:root[data-theme="light"] .cm-hosts {
+  --cm-engine: #0969da;
+  --cm-preservation: #1a7f37;
+  --cm-patcher: #bc4c00;
+  --cm-tooling: #8250df;
+  --cm-uses: #0969da;
+  --cm-usedby: #9a6700;
+  --cm-chip-a: 10%;
+}
+
+.cm-root { display: flex; flex-direction: column; gap: 0.75rem; }
+.cm-toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; }
+.cm-tracks { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.cm-tracks button {
+  display: inline-flex; align-items: center; gap: 0.4rem; cursor: pointer;
+  font: inherit; font-size: 0.82rem; color: var(--text);
+  background: var(--bg-card); border: 1px solid var(--border-hi); border-radius: 999px;
+  padding: 0.22rem 0.7rem 0.22rem 0.5rem;
+}
+.cm-tracks button[aria-pressed="false"] { opacity: 0.5; }
+.cm-tracks button[aria-pressed="false"] .cm-sw { background: transparent; }
+.cm-sw {
+  width: 0.8rem; height: 0.8rem; border-radius: 3px; flex: none;
+  border: 1.5px solid var(--c); background: color-mix(in srgb, var(--c) 35%, transparent);
+}
+.cm-search {
+  background: var(--bg-code); color: var(--text); border: 1px solid var(--border);
+  padding: 0.35rem 0.55rem; font: inherit; font-size: 0.84rem; border-radius: 3px;
+  width: 14rem; max-width: 100%;
+}
+.cm-opt { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.82rem; color: var(--text-muted); cursor: pointer; }
+.cm-stats { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.78rem; margin-left: auto; }
+
+.cm-body { display: grid; grid-template-columns: minmax(0, 1fr) 21rem; gap: 0.9rem; align-items: start; }
+@media (max-width: 1100px) { .cm-body { grid-template-columns: minmax(0, 1fr); } }
+
+.cm-stage { position: relative; min-width: 0; }
+.cm-edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 2; }
+.cm-edges path { fill: none; stroke-width: 1.6; opacity: 0.85; }
+.cm-edges path.uses { stroke: var(--cm-uses); }
+.cm-edges path.usedby { stroke: var(--cm-usedby); stroke-dasharray: 5 3; }
+.cm-edges path.walk { stroke: var(--accent); stroke-width: 2.2; stroke-dasharray: 7 5; animation: cm-flow 0.9s linear infinite; }
+@keyframes cm-flow { to { stroke-dashoffset: -24; } }
+
+.cm-band {
+  display: grid; grid-template-columns: 14.5rem minmax(0, 1fr); gap: 0.4rem 1rem;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px;
+  padding: 0.65rem 0.8rem; margin-bottom: 0.5rem;
+}
+.cm-band-head .cm-bt { font-size: 0.92rem; font-weight: 600; color: var(--text-bright); }
+.cm-band-head .cm-count { font-family: var(--font-mono); font-size: 0.7rem; font-weight: 400; color: var(--text-dim); margin-left: 0.3rem; }
+.cm-band-head p { margin: 0.2rem 0 0; font-size: 0.76rem; color: var(--text-dim); line-height: 1.4; }
+.cm-rows { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+.cm-row { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+.cm-rank { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-dim); width: 3.6rem; flex: none; }
+.cm-chip {
+  --c: var(--cm-engine);
+  font-family: var(--font-mono); font-size: 0.78rem; line-height: 1.2; color: var(--text);
+  background: color-mix(in srgb, var(--c) var(--cm-chip-a), var(--bg-card));
+  border: 1.5px solid var(--c); border-radius: 5px; padding: 0.24rem 0.5rem;
+  cursor: pointer; position: relative; z-index: 3;
+  transition: opacity 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+.cm-chip:hover, .cm-chip:focus-visible { color: var(--text-bright); }
+.cm-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cm-chip .cm-bin { font-size: 0.68rem; margin-left: 0.25rem; color: var(--text-dim); }
+.t-engine { --c: var(--cm-engine); }
+.t-preservation { --c: var(--cm-preservation); }
+.t-patcher { --c: var(--cm-patcher); }
+.t-tooling { --c: var(--cm-tooling); }
+
+.cm-root.is-focus .cm-chip { opacity: 0.22; }
+.cm-root.is-focus .cm-chip.is-hot,
+.cm-root.is-focus .cm-chip.is-uses,
+.cm-root.is-focus .cm-chip.is-usedby,
+.cm-root.is-focus .cm-chip.is-walk { opacity: 1; }
+.cm-root.is-focus .cm-chip.is-far { opacity: 0.6; }
+.cm-chip.is-hot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 45%, transparent); color: var(--text-bright); }
+.cm-chip.is-sel { box-shadow: 0 0 0 3px var(--accent); }
+.cm-chip.is-uses { box-shadow: 0 0 0 2px var(--cm-uses); }
+.cm-chip.is-usedby { box-shadow: 0 0 0 2px var(--cm-usedby); }
+.cm-chip.is-walk { box-shadow: 0 0 0 3px var(--accent); transform: translateY(-1px); }
+.cm-chip.is-off { opacity: 0.15 !important; }
+
+.cm-key { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; font-size: 0.76rem; color: var(--text-dim); }
+.cm-key span::before { content: ""; display: inline-block; width: 1.4rem; height: 0; vertical-align: middle; margin-right: 0.35rem; border-top: 2px solid; }
+.cm-key .k-uses::before { border-color: var(--cm-uses); }
+.cm-key .k-usedby::before { border-color: var(--cm-usedby); border-top-style: dashed; }
+
+.cm-card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px;
+  padding: 0.8rem 0.9rem; min-width: 0; position: sticky; top: calc(var(--topbar-h, 52px) + 0.75rem);
+  max-height: calc(100vh - var(--topbar-h, 52px) - 1.5rem); overflow-y: auto;
+}
+@media (max-width: 1100px) { .cm-card { position: static; max-height: none; } #cm-bands > .cm-card { margin-bottom: 0.5rem; } }
+.cm-card .cm-name { margin: 0; font-weight: 600; font-family: var(--font-mono); font-size: 1.02rem; color: var(--text-bright); overflow-wrap: anywhere; }
+.cm-card .cm-pkg { font-family: var(--font-mono); font-size: 0.74rem; color: var(--text-dim); }
+.cm-card .cm-scope { font-size: 0.84rem; color: var(--text); margin: 0.5rem 0; line-height: 1.5; }
+.cm-card .cm-h { display: block; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); margin: 0.8rem 0 0.3rem; font-weight: 600; }
+.cm-card .cm-tags { margin-top: 0.4rem; }
+.cm-none { font-size: 0.76rem; color: var(--text-dim); }
+.cm-card summary.cm-h { cursor: pointer; }
+.cm-step-ctl button:disabled, .cm-card .cm-links button:disabled { opacity: 0.45; cursor: default; }
+.cm-card .cm-tag { display: inline-block; font-size: 0.7rem; border: 1px solid var(--c); border-radius: 999px; padding: 0.05rem 0.5rem; margin-right: 0.3rem; color: var(--text); }
+.cm-mini { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.cm-mini button {
+  --c: var(--cm-engine);
+  font-family: var(--font-mono); font-size: 0.72rem; color: var(--text); cursor: pointer;
+  background: color-mix(in srgb, var(--c) var(--cm-chip-a), transparent); border: 1px solid var(--c); border-radius: 4px; padding: 0.1rem 0.35rem;
+}
+.cm-mods { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted); line-height: 1.6; overflow-wrap: anywhere; }
+.cm-card .cm-coupling { font-size: 0.78rem; color: var(--text-muted); margin: 0.25rem 0; }
+.cm-card .cm-links { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.9rem; }
+.cm-card .cm-links a, .cm-card .cm-links button {
+  font-size: 0.78rem; text-decoration: none; cursor: pointer;
+  border: 1px solid var(--border-hi); border-radius: 3px; padding: 0.25rem 0.55rem;
+  color: var(--text); background: var(--bg-card-hi); font-family: inherit;
+}
+.cm-card .cm-links a:hover, .cm-card .cm-links button:hover { border-color: var(--accent); color: var(--text-bright); }
+.cm-empty { color: var(--text-muted); font-size: 0.86rem; line-height: 1.55; }
+.cm-empty p { margin: 0 0 0.5rem; }
+
+/* Disc to pixels */
+.cm-walk { display: grid; grid-template-columns: 17rem minmax(0, 1fr); gap: 1rem; align-items: start; }
+@media (max-width: 760px) { .cm-walk { grid-template-columns: minmax(0, 1fr); } }
+.cm-steps { list-style: none; margin: 0; padding: 0 0 0 1.4rem; position: relative; }
+.cm-steps::before { content: ""; position: absolute; left: 0.55rem; top: 0.7rem; bottom: 0.7rem; border-left: 2px solid var(--border-hi); }
+.cm-steps .cm-dot {
+  position: absolute; left: 0.22rem; width: 0.85rem; height: 0.85rem; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); top: 0.5rem;
+  transition: top 0.45s cubic-bezier(.4,0,.2,1);
+}
+.cm-steps li { margin: 0; }
+.cm-steps button {
+  display: block; width: 100%; text-align: left; cursor: pointer; font: inherit; font-size: 0.86rem;
+  background: none; border: 1px solid transparent; border-radius: 4px; color: var(--text-muted);
+  padding: 0.35rem 0.5rem; margin: 0.08rem 0;
+}
+.cm-steps button:hover { color: var(--text-bright); border-color: var(--border-hi); }
+.cm-steps button[aria-current="step"] { color: var(--text-bright); background: var(--accent-soft); border-color: var(--accent-line); font-weight: 600; }
+.cm-steps .cm-n { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-dim); margin-right: 0.4rem; }
+.cm-step-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 0.9rem 1rem; min-width: 0; }
+.cm-step-panel .cm-stitle { font-weight: 600; margin: 0 0 0.4rem; font-size: 1.05rem; color: var(--text-bright); }
+.cm-step-panel p { margin: 0 0 0.7rem; line-height: 1.6; }
+.cm-step-ctl { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.9rem; }
+.cm-step-ctl button {
+  font: inherit; font-size: 0.8rem; cursor: pointer; color: var(--text);
+  background: var(--bg-card-hi); border: 1px solid var(--border-hi); border-radius: 3px; padding: 0.3rem 0.65rem;
+}
+.cm-step-ctl button:hover { border-color: var(--accent); color: var(--text-bright); }
+.cm-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; margin: 0.3rem 0 0.2rem; font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-dim); }
+.cm-strip span { padding: 0.1rem 0.35rem; border-radius: 3px; border: 1px solid var(--border); }
+.cm-strip span.is-on { color: var(--text-bright); border-color: var(--accent); background: var(--accent-soft); }
+.cm-strip span.is-done { color: var(--text-muted); }
+
+/* Three hosts */
+.cm-hosts svg { display: block; width: 100%; height: auto; max-width: 880px; }
+.cm-hosts .h-box { fill: var(--bg-card); stroke: var(--border-hi); stroke-width: 1.2; }
+.cm-hosts .h-host { fill: color-mix(in srgb, var(--cm-engine) 14%, var(--bg-card)); stroke: var(--cm-engine); stroke-width: 1.5; }
+.cm-hosts .h-shared { fill: color-mix(in srgb, var(--accent) 10%, var(--bg-card)); stroke: var(--accent); stroke-width: 1.5; }
+.cm-hosts text { fill: var(--text); font-family: var(--font-body, sans-serif); font-size: 13px; }
+.cm-hosts .h-t { font-weight: 600; fill: var(--text-bright); font-size: 14px; }
+.cm-hosts .h-m { font-family: var(--font-mono); font-size: 11.5px; fill: var(--text-muted); }
+.cm-hosts .h-e { stroke: var(--text-muted); stroke-width: 1.5; fill: none; }
+.cm-hosts .h-e2 { stroke: var(--cm-usedby); stroke-width: 1.5; fill: none; stroke-dasharray: 5 3; }
+.cm-hosts a:hover .h-host, .cm-hosts a:focus .h-host, .cm-hosts a:hover .h-box, .cm-hosts a:focus .h-box, .cm-hosts a:hover .h-shared, .cm-hosts a:focus .h-shared { stroke-width: 2.5; }
+.cm-hosts a:focus { outline: none; }
+.cm-hosts a:focus-visible rect { stroke: var(--accent); stroke-width: 3; }
+
+/* Phone: bands stack; the band blurb moves above its chips and edges hide. */
+@media (max-width: 700px) {
+  .cm-band { grid-template-columns: minmax(0, 1fr); }
+  .cm-edges { display: none; }
+  .cm-stats { margin-left: 0; width: 100%; }
+  .cm-search { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cm-chip, .cm-steps .cm-dot { transition: none; }
+  .cm-edges path.walk { animation: none; }
+}
+</style>
+<script src="js/crate-map.js"></script>
+-->
+<header class="page-header">
+  <div class="breadcrumb"><a href="index.html">home</a> · crate map</div>
+  <h1>The port's crate map</h1>
+  <p class="lede">The project is a Cargo workspace of small crates stacked in bands: one crate per disc format at the bottom, the format families over them, the engine's World-free kernels, the simulation, and the hosts at the top. Hover a crate to see what it uses and what uses it, click it for its scope, binaries and modules, or follow a scene from the disc to the screen.</p>
+</header>
+
+<section class="doc-section breakout" id="map">
+  <h2>The map</h2>
+  <p>Each band uses only the bands below it, and colour marks the track a crate belongs to. The edges are the real <code>[dependencies]</code> of every <code>Cargo.toml</code>, regenerated with the page's data (<a href="#how-it-stays-true">how</a>).</p>
+  <div class="cm-root" id="cm-root">
+    <div class="cm-toolbar">
+      <div class="cm-tracks" id="cm-tracks" role="group" aria-label="Show tracks"></div>
+      <input class="cm-search" id="cm-search" type="search" placeholder="Find a crate or module" aria-label="Find a crate or module">
+      <label class="cm-opt"><input type="checkbox" id="cm-transitive"> include indirect</label>
+      <span class="cm-stats" id="cm-stats" aria-live="polite"></span>
+    </div>
+    <div class="cm-key" aria-hidden="true"><span class="k-uses">uses</span><span class="k-usedby">used by</span></div>
+    <div class="cm-body" id="cm-body">
+      <div class="cm-stage" id="cm-stage">
+        <svg class="cm-edges" id="cm-edges" aria-hidden="true"></svg>
+        <div id="cm-bands"><p class="cm-empty">Loading the crate map...</p></div>
+        <noscript><img src="assets/crate-map-dark.svg" alt="The crate map: the workspace drawn as bands, hosts at the top and the per-format parsers at the bottom." style="max-width:100%"></noscript>
+      </div>
+      <aside class="cm-card" id="cm-card" aria-live="polite">
+        <div class="cm-empty">
+          <p><strong>Pick a crate.</strong> Hovering one lights the crates it uses and the crates that use it; clicking keeps the selection and fills this card.</p>
+          <p>Keyboard: Tab moves through the crates, Enter selects, Escape clears.</p>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<section class="doc-section" id="disc-to-pixels">
+  <h2>Disc to pixels</h2>
+  <p>The path one scene takes, from sectors on your disc to a frame on screen. Each step lights the crates that do the work; pick a step, or play the whole path, then trace it on the map.</p>
+  <div class="cm-walk" id="cm-walk">
+    <ol class="cm-steps" id="cm-steps"><li class="cm-dot" aria-hidden="true"></li></ol>
+    <div class="cm-step-panel" id="cm-step-panel" aria-live="polite"></div>
+  </div>
+</section>
+
+<section class="doc-section" id="three-hosts">
+  <h2>Three hosts, one engine</h2>
+  <p>No host carries a second copy of the game. The two play hosts tick the same <code>engine-session</code> <code>BootSession</code> over the same <code>World</code>; the minigames page drives the World-free minigame rules engines directly. What differs is only the shell: the window, the GPU API and the audio device. <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/host-drift.md">Host drift</a> covers the gates that keep a feature from landing in one host only.</p>
+  <figure class="cm-hosts">
+    <svg viewBox="0 0 880 400" role="img" aria-labelledby="cm-hosts-t">
+      <title id="cm-hosts-t">The native play-window and the browser play page both run engine-session over engine-core; the minigames page runs the minigame rules engines without a World.</title>
+      <defs>
+        <marker id="cm-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--text-muted)"/></marker>
+        <marker id="cm-ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--cm-usedby)"/></marker>
+      </defs>
+      <a href="#map" data-crate="engine-shell"><rect class="h-host" x="20" y="16" width="260" height="78" rx="8"/>
+        <text class="h-t" x="36" y="42">Native play-window</text>
+        <text class="h-m" x="36" y="62">engine-shell · legaia-engine</text>
+        <text class="h-m" x="36" y="80">winit + wgpu + cpal</text></a>
+      <a href="#map" data-crate="web-viewer"><rect class="h-host" x="310" y="16" width="260" height="78" rx="8"/>
+        <text class="h-t" x="326" y="42">Browser play page</text>
+        <text class="h-m" x="326" y="62">web-viewer (WASM) · play-app.js</text>
+        <text class="h-m" x="326" y="80">WebGL + WebAudio</text></a>
+      <a href="#map" data-crate="web-viewer"><rect class="h-host" x="600" y="16" width="260" height="78" rx="8"/>
+        <text class="h-t" x="616" y="42">Browser minigames page</text>
+        <text class="h-m" x="616" y="62">web-viewer (WASM)</text>
+        <text class="h-m" x="616" y="80">one module per minigame</text></a>
+
+      <path class="h-e" d="M150 94 L150 120 Q150 132 162 132 L280 132 Q292 132 292 144 L292 150" marker-end="url(#cm-ar)"/>
+      <path class="h-e" d="M440 94 L440 120 Q440 132 428 132 L310 132 Q298 132 298 144 L298 150" marker-end="url(#cm-ar)"/>
+      <path class="h-e2" d="M730 94 L730 320" marker-end="url(#cm-ar2)"/>
+
+      <a href="#map" data-crate="engine-session"><rect class="h-shared" x="120" y="152" width="360" height="62" rx="8"/>
+        <text class="h-t" x="136" y="177">engine-session · BootSession</text>
+        <text class="h-m" x="136" y="198">scene host + per-frame order + BGM director</text></a>
+      <path class="h-e" d="M300 214 L300 240" marker-end="url(#cm-ar)"/>
+      <a href="#map" data-crate="engine-core"><rect class="h-shared" x="120" y="242" width="360" height="56" rx="8"/>
+        <text class="h-t" x="136" y="266">engine-core · World</text>
+        <text class="h-m" x="136" y="286">the simulation and its tick</text></a>
+      <path class="h-e" d="M300 298 L300 320" marker-end="url(#cm-ar)"/>
+      <rect class="h-box" x="20" y="322" width="840" height="62" rx="8"/>
+      <text class="h-t" x="36" y="346">World-free kernels</text>
+      <text class="h-m" x="36" y="368">VMs, battle, field, menus, effects, render kernels</text>
+      <a href="#map" data-crate="engine-minigames"><rect class="h-host" x="600" y="330" width="250" height="46" rx="6"/>
+        <text class="h-t" x="614" y="351">minigame rules engines</text>
+        <text class="h-m" x="614" y="368">engine-minigames, engine-fishing</text></a>
+    </svg>
+    <figcaption>Solid arrows: the two play hosts share one session over one World. Dashed: the minigames page reaches the rules engines straight, below the World. Each box opens its crate on the map.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="how-it-stays-true">
+  <h2>How the map stays true</h2>
+  <p>The page draws from <code>site/crate-map.json</code>, which <code>scripts/ci/gen-crate-map.py</code> builds out of what the workspace already states: the edges and binaries from each crate's <code>Cargo.toml</code>, the public modules from its <code>src/lib.rs</code>, the one-line scope from the crate tables in <code>CLAUDE.md</code>, and the kernel ranks, roles and coupling reasons from <code>scripts/ci/crate-layering.toml</code>. Only placement is written by hand, in <code>scripts/ci/crate-map-layout.toml</code>.</p>
+  <ul>
+    <li><strong>Nothing points up.</strong> The generator fails if a crate depends on a crate in a band above its own, if a crate sits in no band or two, or if a crate has no line in <code>CLAUDE.md</code>.</li>
+    <li><strong>A stale map fails the commit.</strong> <code>gen-crate-map.py --check</code> runs in the pre-commit hook and in CI, so a new crate, edge or module cannot land without the page and the README diagrams being regenerated with it.</li>
+    <li><strong>The kernel ranks are not drawn by hand either.</strong> They are the stack <a href="subsystems/engine.html#crate-layout">the layering gate</a> derives from its committed table of allowed edges.</li>
+  </ul>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="subsystems/engine.html#crate-layout">Crate layering</a>
+    <a href="architecture.html">How the layers stack</a>
+    <a href="subsystems/browser-host.html">The browser host</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/host-drift.md">Host drift</a>
+  </div>
+</section>

@@ -299,20 +299,21 @@ impl FishingBanners {
         self.reel_in.start();
     }
 
-    /// The line snapped: the miss / retry banner runs (the retail state-`0x2d`
-    /// retry countdown), cancelling the hook banner.
+    /// The line broke: the converging `LINE BREAK!` pair runs and the hook
+    /// banner stops. The lure tick's line-break arm seeds exactly these two
+    /// timers - `sw zero` to `DAT_801d9160` at `0x801D3C30` and `1` to
+    /// `DAT_801d9164` at `0x801D3C54` - before parking the driver in state
+    /// `0x28`, which waits on the pair. The miss banner (`DAT_801d9268`,
+    /// state `0x2d`) is not this edge's.
     pub fn on_snapped(&mut self) {
         self.hook.cancel();
-        self.miss.start();
-    }
-
-    /// Returning to the cast loop. Retail seeds the auxiliary banner from its
-    /// own wait state (`0x28`); which session edge that is has not been pinned,
-    /// so mapping it to the recast is an engine-side choice - the animation
-    /// itself is the ported one.
-    pub fn on_recast(&mut self) {
         self.converge.start();
     }
+
+    /// Returning to the cast loop seeds nothing: the empty reel-in arm stores
+    /// state `0x32` and no banner timer (`0x801D3C8C..0x801D3C94`), and the
+    /// result screen's dismissal leaves through state `10` the same way.
+    pub fn on_recast(&mut self) {}
 
     /// Service every timer for one frame and collect the draws still live.
     pub fn service_frame(&mut self, frame_step: i32) -> Vec<HudDraw> {

@@ -75,6 +75,8 @@ pub struct MuscleDomeSession {
     /// The battle-open intro hold still to run, in frames - retail's
     /// `ctx[+0x6D6]` ([`Self::arm_intro`]).
     pub(super) intro: u16,
+    /// The play-out choreography ([`super::choreo::DomeChoreo`]).
+    pub(super) choreo: super::choreo::DomeChoreo,
 }
 
 impl MuscleDomeSession {
@@ -111,6 +113,7 @@ impl MuscleDomeSession {
             closed_in: false,
             last_turn_closes_in: false,
             intro: 0,
+            choreo: super::choreo::DomeChoreo::default(),
         }
     }
 
@@ -849,13 +852,44 @@ impl MuscleDomeSession {
         let Some(mut model) = self.damage.take() else {
             return false;
         };
-        model.begin_turn([self.f[0].hp, self.f[1].hp]);
+        let hp_before = [self.f[0].hp, self.f[1].hp];
+        model.begin_turn(hp_before);
         self.resolve_turn(|attacker, cmd| model.damage(attacker, cmd));
         let played = !model.plays().is_empty();
         self.last_turn_closes_in = played && !self.closed_in;
         self.closed_in |= played;
+        self.choreo.start(
+            model.plays(),
+            self.last_turn_closes_in,
+            hp_before,
+            [self.hp_max(0), self.hp_max(1)],
+        );
         self.damage = Some(model);
         true
+    }
+
+    /// Install both bodies the play-out moves (`[fighter, opponent]`): their
+    /// clips, reach and size class ([`super::choreo::ChoreoBody`]). Without
+    /// them a turn plays out on the fixed clip-less schedule.
+    pub fn install_choreo(&mut self, bodies: [super::choreo::ChoreoBody; 2]) {
+        self.choreo.install(bodies);
+    }
+
+    /// The play-out choreography: the bodies' positions, facings and poses
+    /// and the beat on screen.
+    pub fn choreo(&self) -> &super::choreo::DomeChoreo {
+        &self.choreo
+    }
+
+    /// Advance the play-out one tick (every host's per-frame step; the
+    /// bodies idle between turns).
+    pub fn tick_choreo(&mut self) {
+        self.choreo.tick();
+    }
+
+    /// Whether the last resolved turn is still playing out.
+    pub fn playback_running(&self) -> bool {
+        self.choreo.running()
     }
 
     /// Whether the last resolved turn's first play opened by walking its

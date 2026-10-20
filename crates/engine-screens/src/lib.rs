@@ -25,10 +25,17 @@ use legaia_game_tables::menu_windows::MenuWindowTable;
 
 mod banners;
 pub mod battle_command;
+// --- lane B ---
+pub mod battle_value_readout;
+// --- end lane B ---
 mod battle_item;
 pub mod dev_menu;
 pub mod field_frame;
 pub mod field_messages;
+// --- lane B ---
+pub mod field_occlusion;
+pub mod world_map_labels;
+// --- end lane B ---
 mod fishing;
 mod inventory_use;
 pub mod minigame_hud;
@@ -38,8 +45,10 @@ pub mod screen_layers;
 mod shop;
 
 pub use banners::banner_stage_draws;
-pub use battle_item::with_battle_item_frame;
-pub use fishing::fishing_banner_frame;
+pub use battle_item::{with_battle_item_frame, with_battle_spell_frame};
+pub use fishing::{
+    fishing_banner_frame, fishing_exchange_draws, fishing_hud_items, fishing_line_screen_prims,
+};
 pub use inventory_use::inventory_use_session_draws;
 pub use panel::{FallbackPanel, fallback_panel_draws, panel_frame_rect};
 pub use prize::{coin_counter_window_draws, prize_window_draws};

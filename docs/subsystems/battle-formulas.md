@@ -343,6 +343,17 @@ quarter-damage flag:             Offense = Defense + (Offense - Defense)/4 // 0x
 damage = Offense - Defense
 ```
 
+The ladder runs only for a party defender struck by a monster seat
+(`sltiu` on the target at `0x801ED5CC`, on the attacker at `0x801ED5D8`), and
+every arm keys on the **attacking monster's record element** `+0x1D`, read
+record-direct off `0x801C9348[attacker - 3]` (`0x801ED640`, `0x801ED6C8`, ...,
+`0x801ED9E0`). So a plain monster swing is elemental: an Earth Jewel halves an
+earth monster's strike (`Offense = Defense + (Offense - Defense) / 2`, one arm
+per element `0..=6` against the `+0xF4` / `+0xF8` guard bits), and All Guard
+(`+0xF8 & 0x10`) takes `3/4` and skips the element arms unless the element is
+`7` (`0x801ED61C..0x801ED65C`). It is the finisher's resist stage
+instruction for instruction.
+
 There is no floor at 1. An attacker whose ATK sits under the defender's defence
 still lands a hit that scales with its own roll - the ordinary case for long
 stretches of the game. The chip floor guarantees at least three points to any
@@ -354,13 +365,15 @@ then the inlined [spirit-gauge fill](#spirit-gauge-fill-on-damage-taken).
 **Port (Offense through cap).** `physical_predamage` (`PhysicalHit`,
 `command_power_scalar`, `physical_defense_is_udf`) ports the stages from the
 attack roll down; the party-defender guard ladder is `damage_finish`'s resist
-stage. `World::land_melee_hit` runs every physical hit - party and monster,
+stage, handed the monster attacker's element (`World::monster_seat_element`,
+the live `+0x1D`). `World::land_melee_hit` runs every physical hit - party and monster,
 swing and Art - through the fold and the roll, once per hit event the anim tick
 admits; a committed Art clip (`+0x1D9 > 0x10`) takes the `0x11` all-slots arm.
 RNG draws follow retail call order: attack roll, guard roll, then the rewrite
 draw and the chip-floor draw only when those arms fire. `damage_finish`'s post
 stages (equipment resists, the zeroed-hit floor, the cap) run on top by
-default; `--no-damage-finish` keeps the flat path, and the finisher supplies no
+default, on the uncapped excess (`physical_excess`) so the guard halve comes
+before the 9999 cap as at `0x801EDA00`; `--no-damage-finish` keeps the flat path, and the finisher supplies no
 guard halve because the Spirit stance is already the Defense triple. The
 `legaia_actor_formats::monster_archive` accessors (`attack()` / `defense_high()` /
 `defense_low()`) and `engine-core`'s `monster_def_from_record` follow the ATK /
@@ -378,7 +391,8 @@ clip the actor is playing.
 ```text
 // FUN_80047430, every actor every frame, 0x80047E1C..0x80047E54
 frame = cursor >> 4                               // node+0x68 is a 12.4 clip cursor
-idx   = FUN_80050E00(record + 0x10)               // 0 unless +0x11..+0x13 are ALL non-zero
+idx   = FUN_80050E00(record + 0x10)               // 0 unless +0x11..+0x13 are ALL non-zero;
+                                                  // then (record + 0x13) & 0xFF, a load-address byte
 actor[+0x1F7] = (frame < record[0x10 + idx]) ? 1 : 0
 
 // FUN_801EC3E4
@@ -782,7 +796,7 @@ spell** on `actor[+0x1DF]` at the module head.
 | PROT 944 | Guilty Cross `0x37` (dispatcher `+0x1510` -> `+0x2C` tick) | Cort (humanoid phases) | **bypass** (playtest: an Ebony Jewel makes no difference) |
 | PROT 944 | Curse All `0x53` (`+0xA98` tick) | none - casterless | no damage-wrapper call |
 | PROT 952 | Bloody Horns `0x5C` (dispatcher `+0x1150` -> `+0x740` tick, hit `0x1D0`) | Xain; Gaza (first fight) | **bypass** |
-| PROT 952 | Astral Slash `0xB8` (`+0x34` tick) | Xain; Gaza | no wrapper call in its tick; **respects** in play (Luminous Jewel halves it, 1570 -> 781) |
+| PROT 952 | Astral Slash `0xB8` (`+0x34` tick) | Gaza (first fight) | no wrapper call: the [melee kernel](#melee-hit---fun_801ec3e4) on the staged clip's four beats, guard ladder keyed on Gaza's light element (Luminous Jewel halves it, 1570 -> 781) |
 | PROT 953 | Terio Punch `0x5D` (`0x274`), Bull Charge `0x5E` - one shared tick | Xain | **bypass** |
 | PROT 958 | Blazing Slash `0x79` | Gi Delilas | **bypass** (6 calls) |
 | PROT 959 | Megaton Press `0x7A` | Che Delilas | **bypass** (3 calls) |
@@ -806,10 +820,19 @@ Notes on the census:
   Lightning / Hyper Crush / Chaos Flare / Genocidal Cannon all respect).
   Non-capture casts (plain-class, player summons, move-power specials) all reach
   the finisher with `param_5 = 0`.
-- Open: PROT 952 carries one respect call (`+0x15B0`, power `0x80`) with no
-  reachable in-module entry - same-shape twins sit at the same offsets in
-  sibling modules, so it reads as shared template dead code - and the call site
-  that applies Astral Slash's damage is unpinned.
+- Astral Slash's damage is not a cast-module roll. Its tick `0x801F6A0C`
+  stages clip `0x0A` on the caster at arm 2 (`sb v0,0x1da(s0)` at
+  `0x801F6D88`) and parks the strike cursor (`ctx[+0x15] = 0xFF` at
+  `0x801F6E78`); the anim tick `FUN_80047430` hands the playing entry to
+  `FUN_801EC3E4` every frame (`0x800478A0`). Gaza's (monster 165) entry `0x0A`
+  is a four-beat attack-band entry - power bytes `0D 0E 0F 10`, beats
+  `14 15 16 17`, 33 frames at rate 1 - so the cast is four melee hits whose
+  total lands on the fourth beat. Xain (139) carries Bloody Horns, not Astral
+  Slash; his own entry `0x0A` is a tag-`0x23` clip with no beats, which the
+  kernel's `rec[0] - 0x0C < 0x14` head test (`0x801EC448`) rejects.
+- PROT 952's one respect call (`+0x15B0`, power `0x80`) has no reachable
+  in-module entry; same-shape twins sit at the same offsets in sibling
+  modules, so it reads as shared template dead code.
 
 Module anatomy (paging, phase machine, the seat-0-hardcoded apply sites) is on
 [cast-module.md](cast-module.md).
@@ -1975,8 +1998,7 @@ Kernels that live elsewhere: `engine-battle-vm::status_effects` (`toxic_tick_dam
 The page's live hunts are indexed on
 [open-rev-eng-threads.md](../reference/open-rev-eng-threads.md#battle--rendering):
 the three [juggle-window](#the-juggle-window---what-makes-a-monster-juggleable)
-residuals and the call that applies Astral Slash's damage together with PROT 952's
-unreachable respect call ([wrappers](#capture-class-wrappers---fun_801dd4b0--fun_801dd6b4)).
+residuals.
 The ability bitfield at record `+0xF4` / `+0xF8` is fully catalogued as the
 64 passive indices of [accessory-passive-table.md](../formats/accessory-passive-table.md#the-64-passive-indices)
 ([settled](../reference/re-settled-threads/battle.md)).

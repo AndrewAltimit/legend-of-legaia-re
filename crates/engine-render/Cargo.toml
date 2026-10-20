@@ -25,6 +25,9 @@ wgpu.workspace = true
 winit.workspace = true
 
 [dev-dependencies]
+# The shading-law parity test parses the native WGSL and the play page's
+# GLSL into naga IR and evaluates both (no GPU).
+naga = { workspace = true, features = ["wgsl-in", "glsl-in"] }
 # The battle-intro descriptor-table oracle reads PROT 0979 straight out of
 # `PROT.DAT` (disc-gated; nothing is committed).
 legaia-prot.workspace = true

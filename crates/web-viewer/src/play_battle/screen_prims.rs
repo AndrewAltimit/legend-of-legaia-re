@@ -34,8 +34,24 @@ impl LegaiaRuntime {
         // decides alone - the fades, the pushes, the cinematic bars, the
         // PROT-0900 widgets, the Arts banner, the Cross Beam, the shop's
         // opening fade and the pause wipe.
+        // The capture frame carries no transition layer. The page reads the
+        // emitter's one-shot capture back off the frame it draws, after every
+        // other layer (`play-view-frame.js`), so that frame has to be the
+        // field as the player sees it - the fog-pool particles, the drop
+        // shadows, the light pools, the volumetric fog, the enhanced
+        // lighting - and not the transition's own backdrop or strips, which
+        // sample the capture rather than belong to it. The native window
+        // composes its capture target the same way (`render_scene_frame`).
+        let transition = self.tick_battle_intro_prims().unwrap_or_default();
+        // Only for a host that reads back: one that never lands the capture
+        // would otherwise lose the whole transition, not one frame.
+        let transition = if self.intro_readback && self.play_intro_wants_capture() {
+            Vec::new()
+        } else {
+            transition
+        };
         let host = legaia_engine_screens::screen_layers::HostScreenPrims {
-            transition: self.tick_battle_intro_prims().unwrap_or_default(),
+            transition,
             // The weapon-trail bands and the move-FX afterimage streak.
             battle_fx: self.battle_fx_screen_prims(),
             field_fog: self.tick_field_fog_prims(),
@@ -358,10 +374,21 @@ impl LegaiaRuntime {
 
 #[wasm_bindgen]
 impl LegaiaRuntime {
+    /// Declare that this page answers [`Self::play_intro_wants_capture`] by
+    /// reading its finished frame back. The arming frame is then composed
+    /// without the transition layer, so the readback sees the field as the
+    /// player saw it; without the declaration the transition draws from its
+    /// first frame, as on a host that has no readback.
+    pub fn play_set_intro_readback(&mut self, on: bool) {
+        self.intro_readback = on;
+    }
+
     /// Whether the armed transition still needs its one-shot field-frame
-    /// capture. The page answers by reading back its own drawn frame
-    /// (`gl.readPixels` after the field 3D pass, before the screen-prim
-    /// pass) and handing it to [`Self::play_intro_land_capture`].
+    /// capture. The page answers by reading back its own finished frame
+    /// (`gl.readPixels` after the 3D pass, the volumetric fog and both
+    /// screen-prim lists - a frame [`Self::tick_battle_intro`] composed
+    /// without the transition layer) and handing it to
+    /// [`Self::play_intro_land_capture`].
     pub fn play_intro_wants_capture(&self) -> bool {
         self.battle_intro
             .as_ref()
@@ -371,8 +398,9 @@ impl LegaiaRuntime {
 
     /// Whether a field-VM `43 12` copy is waiting on the drawn frame
     /// (`World::framebuffer_grab_pending` - the ending vignettes' photo
-    /// grab). The page answers like the transition capture: read back the
-    /// field 3D pass and hand it to [`Self::play_land_frame_grab`].
+    /// grab). The page answers like the transition capture: read back its
+    /// finished frame (after the volumetric fog and both screen-prim lists)
+    /// and hand it to [`Self::play_land_frame_grab`].
     pub fn play_frame_grab_pending(&self) -> bool {
         self.scene_host
             .host()

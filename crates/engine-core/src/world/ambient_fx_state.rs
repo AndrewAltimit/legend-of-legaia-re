@@ -100,7 +100,8 @@ pub struct AmbientFxState {
     /// Capture alignment, the scroller sibling of [`Self::cell_fx_seed`]: a
     /// retail state's mode-4 scroller rects `(x, y, w, h)` with the texels
     /// its VRAM held there, written over the engine's after every field
-    /// VRAM pass ([`crate::world::World::step_field_vram_effects`]). A
+    /// VRAM pass ([`crate::world::World::step_field_vram_effects`]) and
+    /// after every battle one ([`crate::world::World::apply_battle_vram_moves`]). A
     /// scroller's rotation count is time since the entry, and `jouine`'s
     /// flesh columns, `keikoku`'s waterfall and `korout`'s cloud sea are
     /// these rects. Empty everywhere but the comparison's `play-window`

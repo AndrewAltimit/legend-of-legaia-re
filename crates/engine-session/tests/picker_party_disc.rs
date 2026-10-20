@@ -13,6 +13,7 @@
 
 use std::path::PathBuf;
 
+use legaia_engine_cheats::cheats::WorldCheats;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_session::native::NativeSession;
 use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
@@ -156,7 +157,7 @@ fn level_cheat_applies_retail_growth() {
     }
     let pairs = w.item_name_pairs();
     assert!(!pairs.is_empty(), "item names install from the disc");
-    let id = legaia_engine_core::cheats::resolve_item(
+    let id = legaia_engine_cheats::cheats::resolve_item(
         "healing leaf",
         pairs.iter().map(|(i, n)| (*i, n.as_str())),
     )

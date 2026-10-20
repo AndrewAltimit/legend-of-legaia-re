@@ -55,6 +55,8 @@ members = [
     "crates/engine-capture",
     "crates/engine-core",
     "crates/engine-menu-runtime",
+    "crates/engine-battle-hud",
+    "crates/engine-cheats",
     "crates/engine-scene-host",
     "crates/engine-effects",
     "crates/engine-fishing",
@@ -115,6 +117,9 @@ toml = { version = "0.8", default-features = false, features = ["parse"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = "0.3"
+# The naga version wgpu 26 resolves to; named directly only by the
+# shading-law parity test, which also needs its GLSL front end.
+naga = { version = "26.0.0", default-features = false }
 wgpu = "26"
 winit = "0.30"
 
@@ -141,6 +146,8 @@ legaia-engine-capture = { path = "crates/engine-capture" }
 legaia-engine-cast = { path = "crates/engine-cast" }
 legaia-engine-core = { path = "crates/engine-core" }
 legaia-engine-menu-runtime = { path = "crates/engine-menu-runtime" }
+legaia-engine-battle-hud = { path = "crates/engine-battle-hud" }
+legaia-engine-cheats = { path = "crates/engine-cheats" }
 legaia-engine-scene-host = { path = "crates/engine-scene-host" }
 legaia-engine-effects = { path = "crates/engine-effects" }
 legaia-engine-export = { path = "crates/engine-export" }

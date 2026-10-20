@@ -28,6 +28,7 @@
      Disclosure      details.disclosure > summary + .disclosure-body
      Link row        .see-also > .see-also-label + links
      Command         .cli > code   (copy button attached by main.js)
+     Screenshot      figure.screenshot > img + figcaption; .shot-pair of two
 
    Colour: never write a literal colour on a content page or in a doc SVG.
    Use the custom properties below - the light theme restates all of them.
@@ -2205,18 +2206,30 @@ kbd {
 
 .shop-browser {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr) minmax(320px, 420px);
+  grid-template-columns: 220px minmax(0, 1fr) minmax(340px, 460px);
+  grid-template-areas: "towns middle map";
   gap: 1rem;
   margin: 1rem 0 1.5rem;
   min-height: 540px;
+  align-items: start;
 }
+.shop-towns  { grid-area: towns; align-self: stretch; }
+.shop-middle { grid-area: middle; align-self: stretch; }
+.shop-map    { grid-area: map; }
 
+/* The map rides beside the vendor list on a wide screen, sits above it on a
+ * medium one, and stacks between the town list and the vendors on a phone. */
 @media (max-width: 1280px) {
-  .shop-browser { grid-template-columns: 220px minmax(0, 1fr); }
-  .shop-detail  { grid-column: 1 / -1; }
+  .shop-browser {
+    grid-template-columns: 200px minmax(0, 1fr);
+    grid-template-areas: "towns map" "towns middle";
+  }
 }
 @media (max-width: 720px) {
-  .shop-browser { grid-template-columns: 1fr; }
+  .shop-browser {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "towns" "map" "middle";
+  }
   .shop-towns   { max-height: 220px; }
 }
 
@@ -2233,7 +2246,7 @@ kbd {
 
 .shop-towns,
 .shop-middle,
-.shop-detail {
+.shop-map {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -2395,11 +2408,6 @@ kbd {
 }
 .ship-item-featured .ship-name { color: var(--accent); font-weight: 500; }
 
-.shop-detail-body {
-  padding: 0.85rem 0.95rem 1rem;
-  overflow-y: auto;
-  flex: 1;
-}
 .detail-kind {
   font-family: var(--font-mono);
   font-size: 0.66rem;
@@ -3494,19 +3502,6 @@ kbd {
   object-fit: cover;
   object-position: 70% 40%;
 }
-.hero-media .caption {
-  /* margin: 0 overrides the site-wide .caption top margin, which pushed the
-     overlay down and left a strip of un-darkened video above it. */
-  position: absolute; left: 0; right: 0; top: 0; margin: 0;
-  padding: 0.65rem 1.2rem 1.4rem;
-  background: linear-gradient(to bottom, rgba(10, 12, 16, 0.8), transparent);
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  color: #b9c2d2;
-  text-align: center;
-  pointer-events: none;
-}
-.hero-media .caption a { color: #e6ebf3; pointer-events: auto; }
 /* The still stands in for the gameplay loop only under reduced motion. */
 .hero-media img.poster { display: none; }
 @media (prefers-reduced-motion: reduce) {
@@ -4114,6 +4109,42 @@ details.about-data > .about-body > h3:first-child { margin-top: 0.6rem; }
 /* Left-aligned label variants, for text that starts at a node's edge. */
 :is(figure.diagram, figure.pipeline) .dg-label.dg-start,
 :is(figure.diagram, figure.pipeline) .dg-sub.dg-start { text-anchor: start; }
+
+/* figure.screenshot - a captured image of an app (Legaia Studio, the native
+   window) with a caption. The frame and caption take their colours from the
+   site tokens; the image itself is a picture of the app and is not themed.
+   .shot-pair lays two screenshots side by side and stacks them on a phone. */
+figure.screenshot {
+  margin: 1.5rem 0;
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  border-radius: 6px;
+  padding: 0.5rem;
+}
+figure.screenshot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 3px;
+}
+figure.screenshot figcaption {
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.25rem 0.1rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.shot-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+.shot-pair figure.screenshot { margin: 0; }
+@media (max-width: 620px) {
+  .shot-pair { grid-template-columns: minmax(0, 1fr); }
+}
 
 .steps {
   display: flex;

@@ -273,7 +273,7 @@ legaia-engine play-str MOV/MV1.STR --disc "Legend of Legaia (USA).bin"</code></p
     <li><strong>The same white ramp ends two ways.</strong> The fade helper's second argument is a blend mode: under additive it whites out, under subtractive it blacks out. Read as a depth, every style would half-blend and never reach either end.</li>
     <li><strong>Sound.</strong> Phase 0 writes the battle-start cue straight into slot 0 of the pending effects ring, and for an ordinary fight re-applies the live music level to the field track over a ramp. Phase 2 starts the battle track during the effect, which is where the port starts it too.</li>
   </ul>
-  <p>Port: the state machine is the encounter session's transition phase (<code>battle_intro_transition::tick_transition</code>); the per-record simulation of each style and the packet builders are shared by both hosts. Two retail nuances are not carried, because the port's screen-overlay path has no depth-cue channel: a moving tile's opaque faces and the late swirl fade toward a far colour in retail and keep their packet colours in the port.</p>
+  <p>Port: the state machine is the encounter session's transition phase (<code>battle_intro_transition::tick_transition</code>); the per-record simulation of each style and the packet builders are shared by both hosts. Two retail nuances are not carried, because the port's screen-overlay path has no depth-cue channel: a moving tile's opaque faces and the late swirl fade toward a far colour in retail and keep their packet colours in the port. Both sides drop a quad whose projected corners outrun the GPU polygon-size limit, which is what removes a swirl band flying into the lens.</p>
 </section>
 
 <section class="doc-section" id="see-also">

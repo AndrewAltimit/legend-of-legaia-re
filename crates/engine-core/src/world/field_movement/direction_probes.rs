@@ -297,7 +297,7 @@ impl World {
             return true;
         }
         self.props.colliders.iter().any(|c| {
-            if !c.solid || self.collider_arrival_exempt(c) {
+            if !c.solid || self.collider_arrival_exempt(c) || self.prop_collider_exempt(c) {
                 return false;
             }
             let ((cx, cz), half) = if c.moving_box {
@@ -354,7 +354,7 @@ impl World {
             let px = x.saturating_add(dx) as i32;
             let pz = z.saturating_sub(dz) as i32;
             for c in &self.props.colliders {
-                if !c.solid || self.collider_arrival_exempt(c) {
+                if !c.solid || self.collider_arrival_exempt(c) || self.prop_collider_exempt(c) {
                     continue;
                 }
                 let ((cx, cz), half) = if c.moving_box {

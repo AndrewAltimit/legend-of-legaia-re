@@ -154,6 +154,14 @@ pub(super) struct FighterState {
     pub(super) ai_cursor: usize,
     /// The combat tick's frame cursor over the chosen attack's action record.
     pub(super) clock: StrikeClock,
+    /// Frames the chosen attack type has been held (`&DAT_801dc048[slot]`,
+    /// block `+0x8C`): the combat tick adds the frame step while the type is
+    /// `1..=3` and zeroes it otherwise, and a fresh commit zeroes it after
+    /// the add. The duel HUD's lit attack icon reads it as its flash.
+    pub(super) hold: i32,
+    /// A commit landed since the last hold step: the step zeroes the hold
+    /// instead of advancing it, the order retail's combat tick runs in.
+    pub(super) hold_reset: bool,
 }
 
 impl FighterState {
@@ -169,6 +177,23 @@ impl FighterState {
             cooldown: 0,
             ai_cursor: 0,
             clock: StrikeClock::default(),
+            hold: 0,
+            hold_reset: false,
+        }
+    }
+
+    /// One combat-tick step of the held-type timer.
+    ///
+    /// REF: FUN_801d3f44 (`0x801D4448..0x801D446C` the add / zero,
+    /// `0x801D44CC` the commit's zero)
+    pub(super) fn step_hold(&mut self, frame_step: i32) {
+        let held_type = self.chosen.map(BakaAttack::type_id);
+        if std::mem::take(&mut self.hold_reset) {
+            self.hold = 0;
+        } else if matches!(held_type, Some(1..=3)) {
+            self.hold += frame_step;
+        } else {
+            self.hold = 0;
         }
     }
 
@@ -180,5 +205,7 @@ impl FighterState {
         self.crit_pending = false;
         self.cooldown = COOLDOWN_RESET;
         self.clock = StrikeClock::default();
+        self.hold = 0;
+        self.hold_reset = false;
     }
 }

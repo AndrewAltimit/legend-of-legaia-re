@@ -346,7 +346,7 @@ Every row is landed. What each wire had to be:
   wiring it *into the dome* would have been a bug; `engine-core::world_views::timed_fight`
   gates it on the formation's first monster seat and both hosts draw the strip.
 - **`tile_for_slot`** (`801e1934`, `crates/ui-formats/src/save_icon.rs`).
-  The card-block icon writer in `engine-core::card_write` routes through it;
+  The card-block icon writer in `engine-menu-runtime::card_write` routes through it;
   retail's VRAM x is `0x3C0 + slot * 4` halfwords.
 
 `DELETE` rows: `symbol_pad_bit` (`801d4040`) duplicated `DanceDir::pad_bit`
@@ -531,7 +531,7 @@ Facts the re-read established, owned by
   save number in a directory frame's **filename**; a 5x3 preview grid is keyed
   by **physical block**, and on a real card the two disagree (`-03` can sit in
   block 1). Filenames must be unique, so a host that addresses a block asks this
-  walk which numbers are taken: `engine-core::card_write::card_save_index`.
+  walk which numbers are taken: `engine-menu-runtime::card_write::card_save_index`.
 - The save filename separator is `PRO-`, not `PRO_`: the retail literals are at
   `0x801EF03C` / `0x801EF054` (PROT 0899 file `0x20824` / `0x2083C`). The
   matcher takes it from `legaia_save::card::LEGAIA_SAVE_FILENAME_PREFIX`. A test

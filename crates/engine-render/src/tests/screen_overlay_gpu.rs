@@ -13,8 +13,24 @@ use wgpu::util::DeviceExt;
 
 pub(super) const TARGET: usize = 4; // 4x4 offscreen render target
 
-/// Attempt to get a headless device+queue; `None` when no adapter exists.
+/// The headless device+queue every GPU test shares; `None` when no adapter
+/// exists.
+///
+/// One device for the whole test binary, handed out as clones, rather than
+/// an instance per test: with the default parallel test runner, many
+/// threads creating and dropping their own Vulkan instances crashed the
+/// Vulkan loader itself (SIGSEGV inside `libvulkan.so.1` under
+/// `vkSetDebugUtilsObjectNameEXT`, reached from `wgpu_hal`'s
+/// `set_object_name` in `create_buffer`), whichever test happened to be
+/// naming a buffer at the time. A single shared device sidesteps that race
+/// and also keeps the GPU's memory to one context.
 pub(super) fn headless_device() -> Option<(wgpu::Device, wgpu::Queue)> {
+    static GPU: std::sync::OnceLock<Option<(wgpu::Device, wgpu::Queue)>> =
+        std::sync::OnceLock::new();
+    GPU.get_or_init(open_headless_device).clone()
+}
+
+fn open_headless_device() -> Option<(wgpu::Device, wgpu::Queue)> {
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
         backends: wgpu::Backends::PRIMARY,
         ..Default::default()

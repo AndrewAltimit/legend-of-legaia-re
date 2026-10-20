@@ -17,6 +17,10 @@
     <p>Start <code>legaia-engine</code> with no arguments - or double-click <code>Legend of Legaia.exe</code> on Windows, <code>Legend of Legaia.app</code> on macOS. A window asks for your disc image once, remembers it, and opens the title screen; see <a href="playing-and-viewing.html#launcher">the launcher</a>. The rest of this page is about the extraction tools.</p>
   </div>
   <div class="notice">
+    <div class="notice-title">Rather use buttons than a terminal?</div>
+    <p>The same archive carries <strong>Legaia Studio</strong>, a desktop app that browses, previews, exports and extracts the disc with no commands at all. <a href="desktop-apps.html">Desktop apps</a> walks through downloading, the first start on Windows, macOS and Linux, Studio itself and the native port, with screenshots.</p>
+  </div>
+  <div class="notice">
     <div class="notice-title">Bring your own disc</div>
     <p>One rule shapes everything here: <strong>the project ships no Sony-owned bytes.</strong> The archive contains only the project's own compiled tools. Every tool operates on a disc image <em>you</em> supply - a raw Mode 2/2352 <code>.bin</code> dump of your own <em>Legend of Legaia</em> (USA) disc, <code>SCUS-94254</code>. A <code>.cue</code> sheet is accepted anywhere a disc image is: the referenced <code>BINARY</code> track is resolved automatically.</p>
   </div>
@@ -161,6 +165,7 @@
     <thead><tr><th>Binary</th><th>What it's for</th></tr></thead>
     <tbody>
       <tr><td><code>legaia-engine</code></td><td>The from-scratch engine: plays the game - field, battles, menus, minigames, movies, saves - straight from your disc, plus record / replay.</td></tr>
+      <tr><td><code>legaia-studio</code></td><td>Desktop app: open your disc, browse and search the archive, preview and export textures, models, audio, text, characters and movies, or extract the whole disc - all with buttons (<a href="desktop-apps.html#studio">guide</a>).</td></tr>
       <tr><td><code>asset-viewer</code></td><td>Windowed browser for textures, meshes, audio banks, and scene demos.</td></tr>
       <tr><td><code>legaia-patcher</code></td><td>Disc patcher: randomizer, translation toolchain, and manual record edits; emits shareable PPF patches.</td></tr>
       <tr><td><code>save-tool</code></td><td>PSX memory-card / save inspector: character records, save-block diffs.</td></tr>
@@ -186,6 +191,7 @@
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Guides</span>
+    <a href="desktop-apps.html">Desktop apps</a>
     <a href="extracting-assets.html">Extracting assets</a>
     <a href="playing-and-viewing.html">Playing + viewing</a>
     <a href="modding-and-translation.html">Modding + translation</a>

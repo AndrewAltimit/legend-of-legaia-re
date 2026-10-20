@@ -192,6 +192,65 @@ impl World {
         )
     }
 
+    /// Owned projection of the open battle Magic window (retail state
+    /// `0x46`) while its list is browsed: the rows (name, affordability,
+    /// Ra-Seru icon), the hand row, the highlighted spell's info-window lines
+    /// off the disc's spell table and its level (the caster's record
+    /// `+0x161` list) and effective MP cost - the `Lv` / `MP` tabs.
+    ///
+    /// `None` while no Magic window is browsing (target select draws the
+    /// HUD's target surfaces, not this window) or a dialogue box owns the
+    /// frame.
+    pub fn battle_spell_menu_model(
+        &self,
+    ) -> Option<legaia_engine_battle::battle_magic::BattleSpellMenuModel> {
+        use legaia_engine_battle::battle_magic::{BattleSpellMenuModel, SpellPhase};
+        if self.mode != legaia_engine_mode::mode::SceneMode::Battle {
+            return None;
+        }
+        if self.dialog.current.is_some() || self.dialog.inline.is_some() {
+            return None;
+        }
+        let menu = self.battle.spell_menu.as_ref()?;
+        let SpellPhase::Select { cursor } = menu.phase else {
+            return None;
+        };
+        let ra_seru = |id: u8| legaia_engine_menus::pause_screens::RA_SERU_SPELL_IDS.contains(&id);
+        let rows = menu
+            .spells
+            .iter()
+            .map(|s| (s.name.clone(), s.affordable, ra_seru(s.id)))
+            .collect();
+        let selected = menu.spells.get(cursor as usize);
+        let description = selected
+            .and_then(|s| self.menu.text.as_ref().and_then(|t| t.spell_desc(s.id)))
+            .map(|d| d.lines().map(str::to_string).collect())
+            .unwrap_or_default();
+        let level_mp = selected.map(|s| {
+            let char_slot = self.party_roster_slot(menu.actor as usize);
+            let level = self
+                .party
+                .roster
+                .members
+                .get(char_slot)
+                .and_then(|m| {
+                    let list = m.spell_list();
+                    let n = (list.count as usize).min(list.ids.len());
+                    let at = list.ids[..n].iter().position(|&id| id == s.id)?;
+                    Some(list.levels[at])
+                })
+                .filter(|&l| l > 0)
+                .unwrap_or(1);
+            (level, u16::from(s.mp_cost))
+        });
+        Some(BattleSpellMenuModel {
+            rows,
+            cursor: (!menu.spells.is_empty()).then_some(cursor as usize),
+            description,
+            level_mp,
+        })
+    }
+
     /// Owned projection of the open battle item menu for the windowed item
     /// surface (`legaia_engine_ui::battle_item_ui` on both hosts): the
     /// dedup row list + mapped cursor

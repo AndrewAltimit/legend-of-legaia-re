@@ -48,6 +48,8 @@ DIAG_GATES: list[dict[str, object]] = [
     {"env": "LEGAIA_DIAG_DRAWS", "additive": False, "note": "write the frame's draw census + CPU VRAM to a file; draws nothing"},
     {"env": "LEGAIA_DIAG_DRAW_TRIS", "additive": False, "note": "beside LEGAIA_DIAG_DRAWS, write one census family per triangle; draws nothing"},
     {"env": "LEGAIA_DIAG_CAPTURE_TICK", "additive": False, "note": "take a gated --screenshot capture at a chosen world tick instead of on its gate; draws nothing"},
+    # --- lane B2 ---
+    {"env": "LEGAIA_DIAG_INTRO_CAPTURE", "additive": False, "note": "write the field frame the battle intro captured as a PNG; draws nothing"},
     {"env": "LEGAIA_DIAG_CAST_PRES", "additive": False, "note": "print one stderr line per cast-module tick whose arm has presentation sites; draws nothing"},
     {"env": "LEGAIA_DIAG_CAPTURE_STATE", "additive": False, "note": "print the battle state on the --screenshot frame; draws nothing"},
     {"env": "LEGAIA_DIAG_CAST_SEQ", "additive": False, "note": "record a cast's frames + per-tick metadata for the cast-sequence oracle; draws nothing"},

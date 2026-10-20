@@ -269,7 +269,7 @@ impl SceneHost {
                         .map(|(_, w)| w)
                         .unwrap_or_default()
                     } else {
-                        legaia_engine_core::place_name_banner::record_leading_flag_writes(
+                        crate::place_name_banner::record_leading_flag_writes(
                             &mf,
                             &man,
                             usize::from(record),

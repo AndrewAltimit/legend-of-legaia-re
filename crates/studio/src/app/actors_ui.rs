@@ -4,7 +4,7 @@
 
 use std::time::Instant;
 
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 
 use super::App;
 use super::viewport::Viewport;
@@ -98,7 +98,7 @@ impl App {
                         }
                     }
                 } else if let Some(Err(e)) = &st.catalogs {
-                    ui.colored_label(Color32::LIGHT_RED, e);
+                    ui.colored_label(ui.visuals().error_fg_color, e);
                 }
                 ui.separator();
                 ui.heading("Monsters");
@@ -134,7 +134,7 @@ impl App {
                             });
                     }
                     Some(Err(e)) => {
-                        ui.colored_label(Color32::LIGHT_RED, e);
+                        ui.colored_label(ui.visuals().error_fg_color, e);
                     }
                     None => {}
                 }
@@ -190,7 +190,7 @@ impl App {
             let a = match &mut v.actor {
                 Ok(a) => a,
                 Err(e) => {
-                    ui.colored_label(Color32::LIGHT_RED, e.as_str());
+                    ui.colored_label(ui.visuals().error_fg_color, e.as_str());
                     return;
                 }
             };

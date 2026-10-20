@@ -75,11 +75,23 @@ impl World {
             });
         }
         let exempt = &self.props.arrival_exempt;
+        // A door whose own record has set its `+0x10 & 3` (`31 00` as it
+        // swings open, a ride's `B1 <partner> 00`) is out of the touch probes
+        // until the record clears it again, as `FUN_801CF754` /
+        // `FUN_801CF9F4` skip `flags & 3` actors.
+        let script_exempt = |s: &u8| {
+            self.props
+                .walk_touch_records
+                .get(s)
+                .and_then(|&r| self.walk_touch_door_prop(r))
+                .is_some_and(|a| self.props.bank.props[&a].collision_exempt())
+        };
         let hit = self
             .props
             .walk_touch
             .iter()
             .filter(|(s, _)| !exempt.iter().any(|(e, _)| e == *s))
+            .filter(|(s, _)| !script_exempt(s))
             .find(|(_, ((wx, wz), _))| {
                 points.iter().any(|&(qx, qz)| {
                     (qx - *wx as i32).abs() < FIELD_PROP_BOX_HALF
@@ -128,6 +140,34 @@ impl World {
         let Some(event) = resolved else {
             return;
         };
+        // A door bound to a placed object with a prop runs its own record on
+        // contact (`FUN_801d5b5c` resumes the object's script, which the prop
+        // runner executes): the door swings open, the record walks the player
+        // in, closes it, and its own `A3 F8 x z` makes the jump. Applying the
+        // decoded `MoveTo` here as well put the player on the far side before
+        // the door had moved, so the swing played out of view and the
+        // partner door's opening, run by the same record afterwards, never
+        // showed (`tower`'s floor doors). Post the touch to the prop instead.
+        // REF: FUN_801d5b5c
+        if matches!(event, WalkTouchEvent::PlayerMoveTo { .. })
+            && let Some(anchor) = self
+                .props
+                .walk_touch_records
+                .get(&touch_slot)
+                .and_then(|&r| self.walk_touch_door_prop(r))
+        {
+            // An interact-gated object (`+0x10 & 0x40020000`, contact result
+            // bit `1`) blocks but posts nothing on contact: only the confirm
+            // press runs it (`nilboa` P0[6], the Shield Control Panel lever,
+            // whose `A3 F8` is the cutscene after its Yes/No).
+            // REF: FUN_801CFC40, FUN_801CF9F4
+            if !self.props.bank.props[&anchor].interact_gated()
+                && self.props.pending_touch.is_none()
+            {
+                self.props.pending_touch = Some(anchor);
+            }
+            return;
+        }
         match event {
             // A `Warp` event is, by construction, **only** ever a mode-24
             // minigame sub-id: `is_genuine_warp` gates the decoded `0x3E`'s
@@ -351,6 +391,21 @@ impl World {
             (!self.field_tile_is_wall(x, z) && (0..4).any(|d| !self.field_dir_blocked(x, z, d)))
                 .then_some((x, z))
         })
+    }
+
+    /// The bank prop a walk-touch door's flat `record` binds, when the
+    /// record is a runnable prop script (a placed object with a bank entry):
+    /// the prop the contact resumes.
+    pub(in crate::world::field_movement) fn walk_touch_door_prop(
+        &self,
+        record: usize,
+    ) -> Option<(u8, u8)> {
+        self.props
+            .bank
+            .props
+            .iter()
+            .find(|(_, p)| p.record == record)
+            .map(|(&a, _)| a)
     }
 
     /// Whether a prop collider is under the arrival bracket

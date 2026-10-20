@@ -202,7 +202,7 @@ impl World {
 
     /// The `+0x16E` status word of the member the command ring is open for,
     /// `None` without a command session. The ring's Rot / Curse marks read
-    /// it (`crate::battle_hud::battle_ring_marks`), as its refusals do
+    /// it (`legaia_engine_battle_hud::battle_ring_marks`), as its refusals do
     /// ([`ring_arm_refused`]).
     pub fn battle_command_status_word(&self) -> Option<u16> {
         let cmd = self.battle.command.as_ref()?;
@@ -358,7 +358,19 @@ impl World {
             session.phase,
             legaia_engine_battle::arts_command_input::ArtsInputPhase::Entering
         );
+        let was_targeting = matches!(
+            session.phase,
+            legaia_engine_battle::arts_command_input::ArtsInputPhase::Targeting { .. }
+        );
         session.input(ev, party, monsters);
+        // The `0x5A` cursor the entry's confirm opened starts on the
+        // member's current target ([`World::seat_attack_cursor`]).
+        if !was_targeting
+            && let legaia_engine_battle::arts_command_input::ArtsInputPhase::Targeting { picker } =
+                &mut session.phase
+        {
+            self.seat_attack_cursor(session.actor, picker);
+        }
 
         // Sparring tutorial: the entry's own two flow states. Leaving the
         // entry is retail's `0x50 -> 0x5A` (the confirm, or the exhausting

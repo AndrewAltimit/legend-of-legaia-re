@@ -120,8 +120,8 @@ pub fn field_message_frame(
 
     // The overworld map display (retail game mode `0x0D`, PROT 0981's label
     // pass): one box per discovered place, then the compass letters.
-    let labels = legaia_engine_core::world_map_labels::map_display_labels_now(world);
-    let marks = legaia_engine_core::world_map_labels::map_display_compass_marks(world);
+    let labels = crate::world_map_labels::map_display_labels_now(world);
+    let marks = crate::world_map_labels::map_display_compass_marks(world);
     if !labels.is_empty() || !marks.is_empty() {
         let rows: Vec<ui::MapLabelDraw<'_>> = labels
             .iter()

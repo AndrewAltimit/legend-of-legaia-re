@@ -39,7 +39,6 @@ impl World {
         session.arm_intro();
         self.minigames.muscle_dome = Some(session);
         self.minigames.muscle_hub_between_legs = false;
-        self.minigames.muscle_playback_frames = 0;
         self.mode = SceneMode::MuscleDome;
         // The hub's announcer lines, staged ahead of the first visit's arms.
         self.queue_xa_prestage(legaia_engine_minigames::muscle_ringside::hub_xa_prestage());
@@ -395,6 +394,12 @@ impl World {
                 s.tick_intro(step);
             }
         }
+        // The play-out choreography steps every tick: the bodies idle
+        // between turns, act a resolved turn out, and hold a knockdown once
+        // the leg is decided.
+        if let Some(s) = self.minigames.muscle_dome.as_mut() {
+            s.tick_choreo();
+        }
         let confirm = self.input.just_pressed(input::PadButton::Cross);
         match phase {
             MusclePhase::Select => {
@@ -433,16 +438,12 @@ impl World {
                     // damage rolls draw on the world stream (retail's one
                     // `rand()` seed).
                     s.resolve_turn_on_stream(&mut self.rng_state);
-                    // The turn's plays now animate (the dome surface plays
-                    // out `turn_timeline`: the closing walk, the swings, the
-                    // done tails); the leg holds at `TurnOver` for that long,
-                    // as retail's action phases do before the round driver
-                    // re-enters the command cluster.
-                    self.minigames.muscle_playback_frames =
-                        legaia_engine_minigame_scenes::muscle_dome_scene::turn_playback_ticks(
-                            s.last_turn_plays(),
-                            s.last_turn_closes_in(),
-                        );
+                    // The turn's plays now act out on the session's
+                    // choreography (`muscle_dome_session::choreo`): the
+                    // approach, the swings with their hits, the done tails.
+                    // The leg holds at `TurnOver` until it has, as retail's
+                    // action phases run before the round driver re-enters
+                    // the command cluster.
                 }
             }
             MusclePhase::TurnOver => {
@@ -454,9 +455,9 @@ impl World {
                 // executing during a leg, so a confirm gate here was a silent
                 // one-press stall with nothing on screen to explain it.
                 // REF: FUN_801e295c (turn-top arm)
-                if self.minigames.muscle_playback_frames > 0 {
-                    self.minigames.muscle_playback_frames -= 1;
-                } else if let Some(s) = self.minigames.muscle_dome.as_mut() {
+                if let Some(s) = self.minigames.muscle_dome.as_mut()
+                    && !s.playback_running()
+                {
                     s.next_turn();
                 }
             }
@@ -492,41 +493,30 @@ impl World {
         }
     }
 
-    /// Ticks left of the resolved turn's playback: while non-zero the leg
-    /// sits at `TurnOver` and the turn's plays animate, so the hosts show the
-    /// turn's damage rather than the next command cluster. Retail's round
-    /// driver reaches its command phase only after the action phases
-    /// `0xFE` / `0xFF` have played every queued action; the port times that
-    /// span with the dome surface's own replay cadence
-    /// ([`legaia_engine_minigame_scenes::muscle_dome_scene::turn_playback_ticks`]).
-    pub fn muscle_playback_frames(&self) -> u32 {
-        self.minigames.muscle_playback_frames
+    /// Whether the resolved turn is still playing out: while it is the leg
+    /// sits at `TurnOver` and the hosts show the turn's plays rather than the
+    /// next command cluster. Retail's round driver reaches its command phase
+    /// only after the action phases `0xFE` / `0xFF` have played every queued
+    /// action.
+    pub fn muscle_playback_running(&self) -> bool {
+        self.minigames
+            .muscle_dome
+            .as_ref()
+            .is_some_and(|s| s.playback_running())
     }
 
-    /// The play the dome surface is replaying this tick and its attacker's
-    /// running damage total: `(attacker slot, total)`. The surface plays the
-    /// turn out on [`legaia_engine_minigame_scenes::muscle_dome_scene::turn_timeline`]; the total
-    /// sums that attacker's landed damage up to and including the current
-    /// play, which is the tally retail's play-out counts up ("TOTAL n").
-    /// `None` outside a playback.
+    /// The play the choreography is acting out this tick and its attacker's
+    /// running damage total: `(attacker slot, total)`. The total sums that
+    /// attacker's landed damage up to and including the current play, which
+    /// is the tally retail's play-out counts up ("TOTAL n"). `None` outside a
+    /// playback.
     pub fn muscle_playback_tally(&self) -> Option<(usize, i32)> {
-        let left = self.minigames.muscle_playback_frames;
-        if left == 0 {
-            return None;
-        }
         let s = self.minigames.muscle_dome.as_ref()?;
+        let (beat, _) = s.choreo().beat()?;
         let plays = s.last_turn_plays();
-        let closes_in = s.last_turn_closes_in();
-        let total =
-            legaia_engine_minigame_scenes::muscle_dome_scene::turn_playback_ticks(plays, closes_in);
-        let beat = legaia_engine_minigame_scenes::muscle_dome_scene::beat_at(
-            plays,
-            closes_in,
-            total.saturating_sub(left),
-        )?;
-        let i = beat.play;
+        let i = beat.play.min(plays.len().checked_sub(1)?);
         let attacker = plays[i].attacker.min(1);
-        if beat.kind == legaia_engine_minigame_scenes::muscle_dome_scene::BeatKind::Approach {
+        if beat.kind == legaia_engine_menus::muscle_dome_session::choreo::BeatKind::Approach {
             // The walk in is the acting side's action; nothing has landed.
             return Some((attacker, 0));
         }

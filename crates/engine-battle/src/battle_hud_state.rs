@@ -7,7 +7,7 @@
 //! `Vec<TextDraw>` for the GPU pipeline; engines that render via a
 //! different path (web / terminal) can read the same struct directly.
 //! The `World` projections that feed it live in
-//! `legaia_engine_core::battle_hud`.
+//! `legaia_engine_battle_hud`.
 //!
 //! ## Frame timing
 //!

@@ -348,6 +348,21 @@ impl World {
         self.casting.move_fx_streak
     }
 
+    /// History-ring slots per retail battle frame. Retail's ring takes one
+    /// slot a battle frame and the walk reads slot `depth` itself, slot 0
+    /// the live frame (`+0x1FB + s0`, `+0x4C + 8 * s0`, `+0x17A + 2 * s0`,
+    /// `FUN_80049348` `0x80049454..0x800494A0`). The port's ring takes a
+    /// slot each anim pass: one a vsync on the per-vsync cadence, so a ghost
+    /// `depth` battle frames back is `depth * frame_step` slots back; one a
+    /// battle frame on retail's cadence.
+    fn ghost_ring_slots_per_frame(&self) -> usize {
+        if self.toggles.battle_sm_frame_cadence {
+            1
+        } else {
+            usize::from(self.clock.frame_step.max(1))
+        }
+    }
+
     /// Plan this frame's arts after-image ghosts - the engine seat of the
     /// retail per-actor walk `FUN_80049348` (see
     /// [`legaia_engine_battle::battle_afterimage`]). For every battle actor with a pose
@@ -362,6 +377,7 @@ impl World {
     pub fn battle_ghost_draws(&self) -> Vec<BattleGhostDraw> {
         use legaia_engine_battle::battle_afterimage as ai;
         let mut out = Vec::new();
+        let per_frame = self.ghost_ring_slots_per_frame();
         for (i, actor) in self.actors.iter().enumerate() {
             if actor.battle_pose_history.is_empty() {
                 continue;
@@ -376,7 +392,7 @@ impl World {
             };
             let hist = &actor.battle_pose_history;
             let plans = ai::plan_ghosts(actor.battle.anim_rate.get(), monster, base, |depth| {
-                hist.get(depth.saturating_sub(1))
+                hist.get(per_frame * depth)
                     .map(|f| f.ghost_eligible)
                     .unwrap_or(false)
             });
@@ -386,7 +402,7 @@ impl World {
             // from ghost to ghost.
             let mut table = actor.battle_model_table.clone();
             for p in plans {
-                let Some(f) = hist.get(p.depth.saturating_sub(1)) else {
+                let Some(f) = hist.get(per_frame * p.depth) else {
                     continue;
                 };
                 let drawn = ghost_model_step(&mut table, f);
@@ -463,14 +479,15 @@ impl World {
         let actor = self.actors.get(i)?;
         let mut table = actor.battle_model_table.clone()?;
         let hist = &actor.battle_pose_history;
+        let per_frame = self.ghost_ring_slots_per_frame();
         let monster = actor.battle_monster_id.is_some();
         let plans = ai::plan_ghosts(actor.battle.anim_rate.get(), monster, [0; 3], |depth| {
-            hist.get(depth.saturating_sub(1))
+            hist.get(per_frame * depth)
                 .map(|f| f.ghost_eligible)
                 .unwrap_or(false)
         });
         for p in &plans {
-            if let Some(f) = hist.get(p.depth.saturating_sub(1))
+            if let Some(f) = hist.get(per_frame * p.depth)
                 && f.variant_track.stream_parts != 0
             {
                 table.step(

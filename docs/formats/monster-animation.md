@@ -273,7 +273,23 @@ So for every list short of four entries - every reaction entry on the disc -
 the consumed beat is the **first** byte, `entry[+0x10]`. It is not "the index
 of the terminator": the routine's result lives in `v0`, which the decompiled C
 renders as `void`. A four-slot list hands the tick a load-address-dependent
-index instead; only attack-band entries carry one. No third consumer exists: a
+index instead; only attack-band entries carry one (35 monster ids, thirteen distinct entries
+across the archive, Gaza's Astral Slash entry `0x0A` among them).
+
+**The four-slot read.** Every action entry sits on a word boundary of a
+word-aligned block, so the low byte of `entry + 0x13` is one of the 64
+values `0x13 + 4k`, and the tick reads `entry[0x23 + 4k]`: the high byte of
+a head word (mostly zero, with a few `1`..`3` and `0xFF` slots) or, from
+`k = 0x1B`, a byte of the animation stream. Which `k` is fixed by where the
+battle heap put the monster block - the base moves with the fight - so no
+disc byte decides it. The two fights measured from save states both read
+`0`: Lu Delilas's entry `0x0C` at `0x800B5D2C` (index `0x3F`) and the Terra
+fight's tag-`0x11` entry at `0x800B7740` (index `0x53`). A `0` beat means
+the window is down for the whole clip and, with the entry's `+0x76` lock
+clear and a byte staged behind, the event-path commit cuts the clip two
+frames in. Nine of the thirteen carry the lock (Gaza's does), which
+leaves only the window. The port takes the measured `0` for both consumers
+(`battle_action::FOUR_SLOT_GATE_FRAME`). No third consumer exists: a
 word-wise `jal` scan over `SCUS_942.54` and every image in
 `extracted/overlays/` finds no third call site for `FUN_80050E00`. Reader
 `legaia_actor_formats::monster_archive::juggle_windows` (`gate_frame()` is the

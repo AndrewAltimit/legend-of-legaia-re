@@ -372,7 +372,7 @@ walk frame after it until the next scene load
 (`World::overworld_curve_bias`;
 [renderer](renderer.md#the-overworld-curvature-table-fun_800271a8)). The
 scene load installs the table
-(`World::install_world_map_locations`). `engine-core::world_map_labels`
+(`World::install_world_map_locations`). `engine-screens::world_map_labels`
 gates and projects the labels and builds the panel's primitives, which ride
 the shared screen-primitive list (`engine-screens::screen_layers`); the names,
 their boxes and the compass letters are `engine-ui::map_label_*`, which each

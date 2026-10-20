@@ -1332,7 +1332,15 @@ an armed fight), and the `WorldMap` tick (which drains into
 `DAT_801D2458`: 132 display frames, 252 for the swirl
 (`battle_intro_styles::intro_duration_frames`,
 [`cutscene.md`](cutscene.md#how-long-a-transition-runs-dat_801d2458)). The
-entity clock counts up to the number the session counts down from. Every fade
+entity clock counts up to the number the session counts down from. The session
+arms before the style is known, so `World::tick_battle_intro` resolves the style
+on the transition's first frame (`World::battle_intro_style_inputs`, the same
+resolver both hosts arm their emitters through) and rebases the countdown onto
+its length (`EncounterSession::set_transition_length`); a caller that set its
+own length keeps it. Both clocks count display frames: the entity adds the
+frame step `0x1F800393` per tick (`0x801D19F0..0x801D19FC` in the swirl,
+`0x801D0E24..0x801D0E34` in the shatter), and one world tick is one display
+frame, so the swirl runs 4.2 s and every other style 2.2 s. Every fade
 ramp is a lead before it, and the tile shatter's records hold at their seeded
 pose until `delay < elapsed * 0x3C` with `delay = rand() % 5000`, so the grid
 needs ~84 frames just to finish starting.
@@ -1351,13 +1359,71 @@ The simulation kernels are in `crates/engine-battle-vm`. The packet builders
 are `render-kernels::battle_intro` (`crates/render-kernels/src/battle_intro.rs`). `BattleIntro`
 holds the style's working set between frames and synchronises its clock from
 the live transition entity. The one-shot field frame capture lands the drawn
-field in the texture pages each style's packets name (`Renderer::capture_rgba`
+field in the texture pages each style's packets name (`Renderer::capture_scene_rgba`
 -> `land_capture_rgba` on the native window, `gl.readPixels` ->
 `play_intro_land_capture` on the page). The emitted `ScreenPrim`s composite
 over the scene: through `RenderTarget::SceneWithScreenPrims` natively, through
 the page's screen-prim pass in the browser. The hosts differ only in how the
 captured frame is read back
 ([`host-drift.md`](../tooling/host-drift.md#screen-space-psx-primitives-across-the-two-hosts)).
+
+### What the capture holds
+
+Retail's intro copies the displayed framebuffer, so the capture is the frame
+the player was looking at, not a re-render of the field geometry alone. Both
+hosts capture their **finished** frame on the tick the emitter arms: the 3D
+pass with every enhancement it runs (enhanced lighting under the chosen time
+of day, the volumetric ground fog, the occlusion fade, the glow sprites) and
+both screen-primitive lists (the fog-pool particles, the actor drop shadows,
+the attached-light pools, the fades). Only the transition's own layer is left
+out - its backdrop and strips sample the capture rather than belong to it.
+The native window composes its screen layers a second time without the
+transition list and reads that target back (`render_scene_frame`); the page
+composes the arming tick without the transition list (`tick_battle_intro`)
+and reads its frame back after the last screen-prim pass. With every
+enhancement off the capture is the faithful frame the window presents on that
+tick. A capture of the bare scene - the 3D pass alone - dropped all of the
+screen layers, retail's fog-pool particles and drop shadows among them, and
+on the page also the volumetric fog, which draws after the 3D pass.
+`LEGAIA_DIAG_INTRO_CAPTURE=<png>` writes the native capture out, and
+`LEGAIA_BATTLE_ARM_TICK=<n>` holds a `--battle` arm until world tick `n` so
+the capture follows frames the window has already drawn.
+
+### Where the capture lands in the page
+
+Retail's field draws a `224`-row area starting at VRAM row `4`
+(`FUN_8001DAF8(0x140)` installs both draw environments at `y = 4` and
+`y = 0xF4`), and the transition init (`FUN_801CE8CC`) copies `0xE8` display
+rows from row `0` - `MoveImage` at `0x801CEBC8`, `StoreImage`, the mask-bit
+loop, `LoadImage(320, 256, 320, 232)` at `0x801CEC4C` - then clears three rects
+to `0x0000`: `(320, 256, 320, 4)`, `(320, 484, 320, 28)` and
+`(640, 256, 16, 256)`. So drawn row `d` sits at page `v = d + 4`, and every
+style's texel coordinates are authored against that: the particle grids
+seed `v` from `4`, and the tile grid's projection puts its top edge four
+rows above the screen. A live shatter state's VRAM shows the layout exactly
+(`v 0..=3` and `v >= 228` zero, `v 4..=227` all mask-set;
+`scripts/pcsx-redux/autorun_tile_shatter_page.lua`).
+
+The port lands its frame at the same offset (`vram_capture::FIELD_CAPTURE_LAND`)
+and clears the same rects around it (`FIELD_CAPTURE_CLEARS`), except that it
+lands all `240` rows it draws (`v 4..=243`) where retail lands `224`. Two
+consequences follow from the console's layout:
+
+- The tile shatter and the particle styles start on the field as it was;
+  landing at `v = 0` put their first frame four rows high.
+- The curtain's column record (descriptor `2`, `v0 = 0`, `h = 240`) samples
+  from `v = 0`, so its identity frame is the field four rows *down* over four
+  black rows, on the console as in the port.
+
+The bottom tile row is the one place the port departs from the stored bytes.
+The seeder stores `v = (y + 0x800) >> 4` with `sb` (`0x801D0AC0`), so the
+grid's bottom edge (`v = 0x100`) wraps to `0` and a bottom-row tile maps
+`v = 240` down to `0` - a squashed, inverted copy of the page. On the console
+that row starts on screen row `236`, under the `224`-row draw area, so it is
+never seen at rest. The port's frame is `240` rows tall, and the wrap showed
+as a band of garbage across its last rows on every shatter frame;
+`battle_intro::emit_tile` reads a wrapped bottom edge as `0xFF`
+(`unwrap_bottom_edge_v`).
 
 Per-style packet detail - what each emitter builds, the dispatcher flag decode,
 and the two nuances the port leaves un-carried - is on

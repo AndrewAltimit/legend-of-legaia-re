@@ -14,7 +14,7 @@ mod camera_ghost;
 mod capture;
 mod cast_band;
 mod casting;
-mod clip_ladder;
+pub(in crate::world) mod clip_ladder;
 mod command_flow;
 mod commit_log_launch;
 mod counterattack;

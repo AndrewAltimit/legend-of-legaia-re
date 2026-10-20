@@ -3,6 +3,7 @@
 //! and the key-name tables the scripts and bindings are spelled in.
 
 use super::*;
+use legaia_engine_cheats::cheats::WorldCheats;
 
 /// The launch's fidelity switches: which of the port's enhancements this
 /// session runs with. One value, so "retail-faithful" has one definition on
@@ -288,8 +289,8 @@ pub struct DebugSeeds {
 /// The `--cheat-*` operands - the native twin of the browser play page's
 /// Cheats panel (its "No encounters" switch is `--no-live-loop` here, and
 /// `F7` at runtime). Both hosts build the shared
-/// `legaia_engine_core::cheats::PlayerCheat` list and apply it through
-/// `World::apply_cheat`.
+/// `legaia_engine_cheats::cheats::PlayerCheat` list and apply it through
+/// `WorldCheats::apply_cheat`.
 #[derive(Debug, Default, Clone)]
 pub struct PlayCheats {
     pub level: Option<u8>,
@@ -304,14 +305,16 @@ pub struct PlayCheats {
     pub seru_level: Option<u8>,
     pub arts: bool,
     pub max_items: bool,
+    /// `--cheat-noclip`: walk through walls.
+    pub noclip: bool,
 }
 
 impl PlayCheats {
     /// The requested cheats as the shared list
-    /// ([`legaia_engine_core::cheats::PlayerCheat`]) - the values the play
+    /// ([`legaia_engine_cheats::cheats::PlayerCheat`]) - the values the play
     /// page's Cheats panel builds, in panel order.
-    pub fn list(&self) -> Vec<legaia_engine_core::cheats::PlayerCheat> {
-        use legaia_engine_core::cheats::PlayerCheat;
+    pub fn list(&self) -> Vec<legaia_engine_cheats::cheats::PlayerCheat> {
+        use legaia_engine_cheats::cheats::PlayerCheat;
         let mut out = Vec::new();
         out.extend(self.level.map(PlayerCheat::PartyLevel));
         if self.restore {
@@ -327,6 +330,9 @@ impl PlayCheats {
         if self.max_items {
             out.push(PlayerCheat::MaxItems);
         }
+        if self.noclip {
+            out.push(PlayerCheat::WalkThroughWalls(true));
+        }
         out.extend(self.gold.map(|g| PlayerCheat::Gold(i64::from(g))));
         out.extend(self.coins.map(|c| PlayerCheat::Coins(u64::from(c))));
         out.extend(self.items.iter().map(|s| PlayerCheat::give_item_spec(s)));
@@ -334,7 +340,7 @@ impl PlayCheats {
     }
 
     /// Apply every requested cheat to `world` through
-    /// `World::apply_cheat`, logging each outcome line. `templates` is the
+    /// `WorldCheats::apply_cheat`, logging each outcome line. `templates` is the
     /// executable's New Game party template, which a level below the current
     /// one is rebuilt from.
     pub(crate) fn apply(
@@ -649,6 +655,11 @@ pub(super) fn key_from_name(name: &str) -> Option<KeyCode> {
         "F7" => KeyCode::F7,
         "F8" => KeyCode::F8,
         "F9" => KeyCode::F9,
+        // `F10` bloom.
+        "F10" => KeyCode::F10,
+        // The hotkey help panel (`help_key`): `F12`, or the `?` key.
+        "F12" => KeyCode::F12,
+        "/" | "?" | "SLASH" => KeyCode::Slash,
         "W" => KeyCode::KeyW,
         "X" => KeyCode::KeyX,
         "Y" => KeyCode::KeyY,
@@ -742,7 +753,7 @@ mod cheat_list_host_tests {
     fn every_listed_cheat_has_a_control_on_both_hosts() {
         let cli = include_str!("../bin/legaia-engine/cli.rs");
         let page = include_str!("../../../../site/_content/play.html");
-        for (key, _) in legaia_engine_core::cheats::PLAYER_CHEAT_LIST {
+        for (key, _) in legaia_engine_cheats::cheats::PLAYER_CHEAT_LIST {
             if key == "encounters" {
                 assert!(cli.contains("no_live_loop"));
                 assert!(page.contains("play-cheat-no-encounters"));
@@ -819,6 +830,7 @@ mod key_script_tests {
         names.extend((b'A'..=b'Z').map(|c| (c as char).to_string()));
         names.extend((0..=9).map(|d| d.to_string()));
         names.extend((1..=12).map(|f| format!("F{f}")));
+        names.push("/".to_string());
         let reachable: std::collections::BTreeSet<String> = names
             .iter()
             .filter_map(|n| key_from_name(n))

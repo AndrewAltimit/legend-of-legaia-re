@@ -199,6 +199,10 @@ pub struct BattleCamera {
     /// Sub-step vsync accumulator (steps fire every [`Self::frame_step`]
     /// frames).
     pub(super) frame_accum: u64,
+    /// The yaw counter's sub-vsync remainder on the per-vsync cadence: the
+    /// pass increment `4 * step / 3` spread over the pass's `step` vsyncs,
+    /// in units of `1 / step`.
+    pub(super) yaw_frac: u32,
     /// Vsyncs one camera step spans - retail's frame step `DAT_1F800393`,
     /// the multiplier the walker `FUN_8002149C` applies to every increment.
     /// [`DEFAULT_CAMERA_FRAME_STEP`] unless a caller sets another.

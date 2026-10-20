@@ -188,9 +188,7 @@ pub fn compose_screen_prims(
     under.extend(screen_fx_prims(world));
     // The overworld map display's mini-map panel (bucket 1, the text's own:
     // the compass letters the hosts' text layer draws sit on its plates).
-    under.extend(legaia_engine_core::world_map_labels::map_display_prims(
-        world,
-    ));
+    under.extend(crate::world_map_labels::map_display_prims(world));
     if menu.covers_field() {
         under.clear();
     }
@@ -280,6 +278,18 @@ pub fn compose_screen_prims(
     over.extend(fishing_line);
     over.extend(fishing_hud);
     over.extend(world_map_markers);
+    // A frame a field-VM `43 12` copy is waiting to read back (the ending
+    // vignettes' photo grab) carries nothing textured from the copy's own
+    // destination. On the console the copy runs in the frame it is queued,
+    // before the image panel `43 13` over that rect draws; here it waits for
+    // the host's readback, so the panel would draw the stale destination and
+    // be read back into its own photo.
+    let grab_dests = world.framebuffer_grab_dests();
+    if !grab_dests.is_empty() {
+        let keep = |p: &ScreenPrim| !grab_dests.iter().any(|&r| p.samples_vram_rect(r));
+        under.retain(keep);
+        over.retain(keep);
+    }
     (under, over)
 }
 

@@ -17,6 +17,18 @@ sub-session from the world, and writes each outcome back.
   world (status snapshots, the Items bag, equipment, the spell list, the arts
   editor, the options screen, the warp list), the per-frame root-list step,
   and the outcome appliers that write each result back to the world.
+- **`card_write`** - a session's `SaveFile` written into a mounted memory-card
+  image, the one kernel both play hosts' card Save commits: the save number a
+  block is filed under (`card_save_index`, over retail's
+  `classify_card_directory`), the slot portrait off the disc's save-icon sheet
+  (`retail_block_icon`), and the payload, resume point, block identity and
+  directory claim (`write_save_into_card`). It reads no `World`; it sits here
+  because it reads the disc through `ProtIndex` and is the card side of the
+  save-slot directory above.
+- **`dev_menu_host`** - the developer menu's `World` seam
+  (`DevMenuWorldExt` on `engine-menus`' `DevMenuSession`): one frame of the
+  screen against the live world and its camera, and its cues routed onto the
+  world's SFX ring. Both hosts' dev menus call it.
 - **`menu_validator`** - the out-of-battle host of the action validator
   `FUN_8003FB10` (`RosterValidator`, over the roster records) and the Magic
   screen's "would this spell do anything" question (`spell_affects_anyone`).

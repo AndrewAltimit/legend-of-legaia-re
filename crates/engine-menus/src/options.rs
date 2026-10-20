@@ -162,7 +162,8 @@ pub struct OptionsState {
     /// Volumetric ground fog (engine-only, non-retail): a low drifting mist
     /// bank over the scenes that read as misty or night, parted by the
     /// characters walking through it ([`legaia_render_kernels::fog_volume`]). Mirrors into
-    /// `legaia_engine_core::world::WorldToggles::volumetric_fog`. **Default on**; off is
+    /// `legaia_engine_core::world::WorldToggles::volumetric_fog`. **Default off**
+    /// while the look matures (`F9` / the page's box turns it on); off is
     /// the frame without the feature, pixel for pixel. Presentation only -
     /// the bank reads the actors and never writes back.
     pub volumetric_fog: bool,
@@ -193,6 +194,14 @@ pub struct OptionsState {
     /// page's "See-through walls" box; `F4` on both). **Default on**; off is
     /// retail's authored framing. Pure presentation.
     pub occlusion_fade: bool,
+    // --- lane L ---
+    /// Bloom (engine-only, non-retail): the 3D frame's bright pixels - lamp
+    /// halos, emissive props, lit windows, sunlit sky - bleed a soft glow
+    /// into their surroundings (`Renderer::set_bloom` on the native window,
+    /// the page's "Bloom" box; `F10` on both). **Default off** while the
+    /// look matures. Pure presentation: the screen-space layers and the HUD
+    /// never bloom, and nothing reaches the simulation.
+    pub bloom: bool,
 }
 
 impl Default for OptionsState {
@@ -216,11 +225,12 @@ impl Default for OptionsState {
             reduce_flashing: true,
             retail_static_window: true,
             retail_view_window: true,
-            volumetric_fog: true,
+            volumetric_fog: false,
             enhanced_lighting: true,
             lighting_time_of_day: "auto".to_string(),
             light_shadows: true,
             occlusion_fade: true,
+            bloom: false,
         }
     }
 }
@@ -244,6 +254,28 @@ impl OptionsState {
         self.enhanced_lighting = false;
         self.light_shadows = false;
         self.occlusion_fade = false;
+        self.bloom = false;
+    }
+
+    // --- lane Q ---
+    /// Put every presentation knob back at its shipped default - the play
+    /// page's **Reset to defaults** in its Visual enhancements panel. Covers
+    /// exactly the knobs that panel groups: enhanced lighting and its time of
+    /// day, lamp shadows, bloom, ground fog, the occlusion fade, the
+    /// camera-distance preset and the two retail tile windows. Movement,
+    /// flash guard, audio and the retail options-screen rows are not
+    /// presentation and keep the player's values.
+    pub fn reset_visual_enhancements(&mut self) {
+        let d = OptionsState::default();
+        self.camera_distance = d.camera_distance;
+        self.retail_static_window = d.retail_static_window;
+        self.retail_view_window = d.retail_view_window;
+        self.volumetric_fog = d.volumetric_fog;
+        self.enhanced_lighting = d.enhanced_lighting;
+        self.lighting_time_of_day = d.lighting_time_of_day;
+        self.light_shadows = d.light_shadows;
+        self.occlusion_fade = d.occlusion_fade;
+        self.bloom = d.bloom;
     }
 
     /// The options screen's rows as the config words a save block carries.
@@ -290,6 +322,9 @@ impl OptionsState {
         if knobs & OCCLUSION_FADE != 0 {
             self.occlusion_fade = from.occlusion_fade;
         }
+        if knobs & BLOOM != 0 {
+            self.bloom = from.bloom;
+        }
     }
 
     /// The engine-only knobs currently off their retail value, by field
@@ -322,6 +357,9 @@ impl OptionsState {
         }
         if self.occlusion_fade {
             out.push("occlusion_fade");
+        }
+        if self.bloom {
+            out.push("bloom");
         }
         out
     }
@@ -1105,6 +1143,8 @@ pub mod options_pin {
     /// for the session - the retail-compare child's Battle Camera word - so
     /// neither the options file nor a loaded save moves it.
     pub const ROW_FIRST: u32 = 1 << 9;
+    /// `bloom` - clear of the retail-row bits above [`ROW_FIRST`].
+    pub const BLOOM: u32 = 1 << 24;
     /// Every knob [`super::OptionsState::pin_retail`] writes.
     pub const RETAIL: u32 = CAMERA_DISTANCE
         | PRECISE_MOVEMENT
@@ -1114,7 +1154,8 @@ pub mod options_pin {
         | VOLUMETRIC_FOG
         | ENHANCED_LIGHTING
         | LIGHT_SHADOWS
-        | OCCLUSION_FADE;
+        | OCCLUSION_FADE
+        | BLOOM;
 }
 
 /// Session-only overrides of persisted options, and what to persist under
@@ -1286,7 +1327,6 @@ mod tests {
             [
                 "camera_distance",
                 "reduce_flashing",
-                "volumetric_fog",
                 "enhanced_lighting",
                 "light_shadows",
                 "occlusion_fade"
@@ -1295,7 +1335,10 @@ mod tests {
         o.precise_movement = true;
         o.retail_static_window = false;
         o.retail_view_window = false;
+        o.volumetric_fog = true;
         assert_eq!(o.retail_deviations().len(), 9);
+        o.bloom = true;
+        assert_eq!(o.retail_deviations().len(), 10);
         let rows = (o.battle_camera, o.field_move, o.audio);
         o.pin_retail();
         assert!(o.retail_deviations().is_empty());
@@ -1334,6 +1377,23 @@ mod tests {
     /// and an options file written before they existed reads them as on, not
     /// as `false` - an old store must not silently switch see-through walls
     /// or lamp shadows off.
+    #[test]
+    fn bloom_defaults_off_and_persists_an_explicit_on() {
+        let opts = OptionsState::default();
+        assert!(!opts.bloom);
+        let old: OptionsState = toml::from_str("muted = true\n").unwrap();
+        assert!(!old.bloom);
+        let on = OptionsState {
+            bloom: true,
+            ..opts
+        };
+        let back: OptionsState = toml::from_str(&toml::to_string(&on).unwrap()).unwrap();
+        assert!(back.bloom);
+        let mut pinned = back.clone();
+        pinned.pin_retail();
+        assert!(!pinned.bloom);
+    }
+
     #[test]
     fn occlusion_fade_and_light_shadows_default_on_and_survive_old_files() {
         let opts = OptionsState::default();
@@ -1382,6 +1442,31 @@ mod tests {
         assert!(!rows[6].teal);
         assert!(rows[7].teal && rows[8].teal && rows[9].teal);
         assert_eq!(rows[7].value, Some("Vibration On"));
+    }
+
+    #[test]
+    fn reset_visual_enhancements_restores_presentation_defaults_only() {
+        let mut o = OptionsState::default();
+        o.pin_retail();
+        o.bloom = true;
+        o.volumetric_fog = true;
+        o.lighting_time_of_day = "night".to_string();
+        o.precise_movement = true;
+        o.bgm_volume = 3;
+        o.reset_visual_enhancements();
+        let d = OptionsState::default();
+        assert_eq!(o.enhanced_lighting, d.enhanced_lighting);
+        assert_eq!(o.lighting_time_of_day, d.lighting_time_of_day);
+        assert_eq!(o.light_shadows, d.light_shadows);
+        assert_eq!(o.bloom, d.bloom);
+        assert_eq!(o.volumetric_fog, d.volumetric_fog);
+        assert_eq!(o.occlusion_fade, d.occlusion_fade);
+        assert_eq!(o.camera_distance, d.camera_distance);
+        assert_eq!(o.retail_view_window, d.retail_view_window);
+        assert_eq!(o.retail_static_window, d.retail_static_window);
+        assert!(o.precise_movement, "movement is not a visual knob");
+        assert_eq!(o.bgm_volume, 3, "audio is not a visual knob");
+        assert!(!o.reduce_flashing, "the flash guard keeps its value");
     }
 
     #[test]

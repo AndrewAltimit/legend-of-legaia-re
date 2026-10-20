@@ -102,8 +102,9 @@ fn magic_boost_adds_thirty_points() {
 
 /// The Done band's grant raises screen element `0x59`, and the line it
 /// carries - the caption table's prefix for the acting character, the Seru's
-/// spell name, the suffix - is what both hosts' banner read returns until the
-/// matching unload retires it.
+/// spell name, the suffix - is the battle message banner, which both hosts'
+/// banner read (`legaia_engine_battle_hud::battle_banner_message`) returns
+/// until the matching unload retires it.
 #[test]
 fn the_absorb_raise_carries_the_caption_line_until_its_unload() {
     use legaia_engine_battle_vm::battle_action::BattleActionHost;
@@ -123,7 +124,11 @@ fn the_absorb_raise_carries_the_caption_line_until_its_unload() {
         host.ui_element(crate::world::ABSORB_BANNER_ELEMENT, 0);
     }
     assert_eq!(
-        crate::battle_hud::battle_banner_message(&world).as_deref(),
+        world
+            .battle
+            .message_banner
+            .as_ref()
+            .map(|b| b.text.as_str()),
         Some(format!("A0 {name}!").as_str())
     );
     // An unload of a different element leaves it standing.
@@ -131,7 +136,6 @@ fn the_absorb_raise_carries_the_caption_line_until_its_unload() {
     assert!(world.battle.message_banner.is_some());
     BattleHostImpl { world: &mut world }.ui_element(crate::world::ABSORB_BANNER_ELEMENT, 1);
     assert!(world.battle.message_banner.is_none());
-    assert_eq!(crate::battle_hud::battle_banner_message(&world), None);
 }
 
 /// `FUN_801D8DE8` is the HUD screen-element spawner; it calls no effect

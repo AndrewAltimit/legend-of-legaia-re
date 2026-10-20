@@ -32,6 +32,10 @@ directory) produced by `legaia-extract`
 
 ## 0. The launcher
 
+The project site's [desktop apps guide](https://andrewaltimit.github.io/legend-of-legaia-re/guides/desktop-apps.html) covers the download, the
+first start past SmartScreen or Gatekeeper, the controls and the toggles with
+screenshots; this page is the full reference.
+
 Started with **no subcommand** - a double-click, a desktop shortcut, the macOS
 app - `legaia-engine` runs a small launcher instead of printing help:
 
@@ -106,7 +110,9 @@ Keyboard defaults are arrows = D-pad, then:
 | `Enter`, `Space` | Start |
 | `RShift` | Select |
 
-`Esc` quits. The browser play page ships a *different* default layout (`X` is
+`Esc` twice quits: the first press only shows *Press Esc again to quit* at
+the bottom left of the window, and a second press within three seconds closes it,
+so a stray press does not lose an unsaved game. The browser play page ships a *different* default layout (`X` is
 Circle there, `C` / `V` carry Triangle / Square, and WASD doubles the arrows),
 so a key that works in the tab is not necessarily the same button in the
 window. `config show` prints the desktop table, including any rebinding.
@@ -122,8 +128,9 @@ keys only.
 
 **Camera.** Left-mouse drag orbits the camera around your character
 (horizontal) and tilts it (vertical), the wheel zooms in and out, and a
-double-click puts the framing back to retail. All three are locked while a
-cutscene has the camera.
+double-click puts the framing back to retail, centred on the party (the
+browser play page's **Reset camera** button does the same, and also leaves the
+`F3` debug vantage). All three are locked while a cutscene has the camera.
 
 **Window toggles.** These are the port's enhancements and conveniences; each
 enhancement has a retail-faithful off position
@@ -135,16 +142,28 @@ enhancement has a retail-faithful off position
 | `F8` | Lighting time of day: auto, day, dusk, night | auto | - |
 | `Y` | Shadows cast by the enhanced point lights | on | `--no-dyn-shadows` |
 | `F4` | Camera-occlusion fade: walls between the camera and your character dissolve to a dither | on | `--no-occlusion-fade` |
-| `F9` | Volumetric ground fog | on | `--no-volumetric-fog` |
+| `F9` | Volumetric ground fog | off | `--no-volumetric-fog` |
+| `F10` | Bloom: lamps, glowing props, lit windows and bright sky glow softly, stronger at night | off, remembered | - |
 | `R` | Precise free-angle movement | off (retail-style movement), remembered | - |
 | `T` | Camera distance preset: retail, far, farther | far, remembered | - |
 | `F3` | Wide debug orbit camera | off | - |
 | `F2` | Mute audio | off | `--no-audio` |
 | `F1` | The engine's diagnostic text rows | off | - |
 
+In the native window each press shows the toggle's new state at the bottom
+left for a moment (*Ground fog: off*); holding a key toggles once, not
+repeatedly. A key that only acts while you walk
+around (`F3`, `T`, `R`) says so when pressed on the title screen or in a menu.
+`F12` (or `?`) opens a panel listing every toggle key with its current state;
+press it again to close it.
+
 The browser play page answers the same keys from the same table, with the
-canvas focused: each moves the matching checkbox or button under the canvas,
-and `F1` hides the readout bar above it.
+canvas focused: each moves the matching control under the canvas, and `F1`
+hides the readout bar above it. Every presentation toggle sits in one
+**Visual enhancements** panel there, each row naming its key, a one-line
+description and whether it is a port enhancement or a piece of retail's own
+drawing; the panel also carries the Retail-faithful switch and a **Reset to
+defaults** button for the panel's settings.
 
 A handful of keys are development hand-triggers rather than player controls:
 `N` opens the name-entry screen for the lead character, and `F5`, `F`, `G`,
@@ -290,7 +309,7 @@ Both hosts reach the same seed, `World::seed_picker_party`.
 
 ### Cheats
 
-Both hosts carry the same cheats, all written by `legaia_engine_core::cheats`
+Both hosts carry the same cheats, all written by `legaia_engine_cheats::cheats`
 so the state they leave is one a playthrough could reach:
 
 | Cheat | Native | Effect |
@@ -302,6 +321,7 @@ so the state they leave is one a playthrough could reach:
 | Learn all arts | `--cheat-arts` | Every art in the member's list, Hyper and Miracle Arts included. |
 | Max items | `--cheat-max-items` | Every held item and every usable consumable to 99. Key items and equipment are left alone, so no story gate opens early. |
 | No encounters | `--no-live-loop`, `F7` | Random encounters off; story and boss fights still happen. |
+| Walk through walls | `--cheat-noclip` | The field and world-map walk ignores walls, people and props; a door you walk into still opens. |
 | Gold | `--cheat-gold N` | Sets the purse, capped at 9,999,999. |
 | Coins | `--cheat-coins N` | Sets the casino coin bank, capped at 9,999,999. |
 | Item | `--cheat-item ITEM[:QTY]` | Adds through the bag's own add helper: stacks cap at 99, a full bag refuses. `ITEM` is an id or a name (`healing-leaf:5`). Repeatable. |
@@ -348,8 +368,9 @@ button attacks, how to quit) sit **outside** the game picture, so the game's
 own chrome never covers them: in the window's title bar in `play-window`, and
 in the strip under the canvas on the browser play page, fullscreen included.
 
-The browser play page carries the fishing entry as a **Fish here** button under
-the canvas. Cross casts and reels, Square reels harder, Cross recasts once a
+On the browser play page fishing starts where the game starts it: a fishing
+spot's own script hands over through the field VM's minigame warp, as on the
+console - the page has no launcher button of its own. Cross casts and reels, Square reels harder, Cross recasts once a
 catch resolves - the same pad the field controller reads, because the driver is
 the shared per-frame fishing tick rather than a per-host input handler. Points
 bank into the world's persistent pool, so they survive leaving and re-entering,
@@ -416,7 +437,7 @@ pad button names (`Cross`, `Circle`, `Start`, `L1`).
 
 `record` is `play-window` plus input capture into a small `j-replay-v1` TOML
 file. The file is checkpointed to disk about once a second and finalized on
-window close (`Esc`), so an interrupted session still yields a valid file up
+window close (`Esc` twice, or the window's close button), so an interrupted session still yields a valid file up
 to the last checkpoint. `replay` runs it back headless and deterministic - the
 same file always produces a bit-identical engine trace, and it needs no disc
 at all. Details: [determinism-replay.md](../tooling/determinism-replay.md).
@@ -433,7 +454,8 @@ dialog font at `extracted/font/`, which the pipeline writes by default (or
 `font-extract --disc` rebuilds).
 
 ```bash
-./asset-viewer prot extracted/PROT.DAT --cdname extracted/CDNAME.TXT   # archive browser
+./asset-viewer                                                         # archive browser on ./extracted
+./asset-viewer prot extracted/PROT.DAT                                 # the same, named explicitly
 ./asset-viewer tim  extracted/tim_scan/<entry>/<tim-file>              # one texture
 ./asset-viewer tmd  extracted/tmd_scan                                 # cycle 3D meshes
 ./asset-viewer vab  extracted/PROT/<entry>.BIN --sample 0              # play a sample
@@ -441,7 +463,12 @@ dialog font at `extracted/font/`, which the pipeline writes by default (or
 ```
 
 The scene name is a positional argument here, not a `--scene` flag (`field`,
-`world` and `dialog` all take their subject that way).
+`world` and `dialog` all take their subject that way). Started with no view
+named (a double-click), `asset-viewer` opens the archive browser on the
+`extracted/PROT.DAT` in the current folder or beside the program; with none
+there it says how to make one and points at `legaia-studio`. The browser takes
+entry names from the `CDNAME.TXT` beside `PROT.DAT` unless `--cdname` names
+another.
 
 In the PROT browser: `N` / `P` = next/prev entry, `PgDn` / `PgUp` = jump 10,
 `Esc` = quit; each entry's format is auto-detected and the first viewable

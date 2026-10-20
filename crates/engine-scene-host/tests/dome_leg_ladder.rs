@@ -353,20 +353,21 @@ fn a_resolved_turn_holds_for_its_playback_and_tallies_it() {
         assert!(s.last_turn_closes_in(), "the leg's first plays walk in");
         (
             plays.len(),
-            legaia_engine_minigame_scenes::muscle_dome_scene::turn_playback_ticks(
+            legaia_engine_menus::muscle_dome_session::choreo::turn_playback_ticks(
                 plays,
                 s.last_turn_closes_in(),
             ),
         )
     };
-    assert_eq!(w.muscle_playback_frames(), hold);
+    // No bodies installed: the clip-less schedule times the play-out.
+    assert!(w.muscle_playback_running());
     let (attacker, _) = w
         .muscle_playback_tally()
         .expect("a tally while playing out");
     assert!(attacker <= 1);
     // The play-out is an action frame to the shared HUD kernels both hosts
     // read: the command cluster is down and the acting side's plaque is up.
-    use legaia_engine_core::battle_hud as bh;
+    use legaia_engine_battle_hud as bh;
     assert_eq!(bh::battle_hud_phase(&w), bh::BattleHudPhase::Action);
     if attacker == 0 {
         assert!(
@@ -374,16 +375,20 @@ fn a_resolved_turn_holds_for_its_playback_and_tallies_it() {
             "the fighter's plaque"
         );
     }
-    for _ in 0..hold {
+    let mut held = 0u32;
+    while w.muscle_playback_running() {
         assert_eq!(
             w.minigames.muscle_dome.as_ref().unwrap().phase(),
             MusclePhase::TurnOver,
             "the leg holds through the play-out"
         );
+        held += 1;
+        assert!(held <= hold + 1, "the play-out outlived its schedule");
         let _ = w.tick();
     }
+    assert!(held + 1 >= hold, "held {held} of {hold} ticks");
     let _ = w.tick();
-    assert_eq!(w.muscle_playback_frames(), 0);
+    assert!(!w.muscle_playback_running());
     assert!(w.muscle_playback_tally().is_none());
     let s = w.minigames.muscle_dome.as_ref().unwrap();
     assert!(

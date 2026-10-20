@@ -158,6 +158,15 @@ impl Renderer {
         };
 
         let view = color_view;
+        // The bloom enhancement: the scene half of the frame renders into
+        // an offscreen target the bloom passes read, and their composite
+        // lands on `view`. `None` (bloom off, a non-scene target) is the
+        // single pass straight onto `view` the frame always was.
+        let bloom_target = match &target {
+            RenderTarget::Scene(_) => self.bloom_scene_target(),
+            _ => None,
+        };
+        let scene_view: &wgpu::TextureView = bloom_target.as_ref().unwrap_or(view);
         let mut enc = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -173,6 +182,8 @@ impl Renderer {
             // is the single pass it always was.
             let fog_split =
                 self.fog_volume_active.get() && matches!(target, RenderTarget::Scene(_));
+            // Either enhancement ends the 3D half in a pass of its own.
+            let scene_split = fog_split || bloom_target.is_some();
             let depth_attachment = matches!(
                 target,
                 RenderTarget::Mesh { .. }
@@ -190,7 +201,7 @@ impl Renderer {
                     load: wgpu::LoadOp::Clear(DEPTH_CLEAR),
                     // Kept when the ground-fog pass will sample it after the
                     // 3D draws; discarded otherwise, as it always was.
-                    store: if fog_split {
+                    store: if scene_split {
                         wgpu::StoreOp::Store
                     } else {
                         wgpu::StoreOp::Discard
@@ -231,7 +242,7 @@ impl Renderer {
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("legaia frame pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view,
+                    view: scene_view,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -499,11 +510,18 @@ impl Renderer {
                     // The volumetric ground-fog enhancement: after every 3D
                     // draw (depth-tested against them, writing none), before
                     // every screen-space layer and the HUD.
-                    if fog_split {
+                    // Bloom then reads that finished 3D half and composites
+                    // it onto the presented target, under every screen layer.
+                    if scene_split {
                         drop(rp);
-                        self.encode_fog_volume_pass(&mut enc, view, scene_vp);
+                        if fog_split {
+                            self.encode_fog_volume_pass(&mut enc, scene_view, scene_vp);
+                        }
+                        if bloom_target.is_some() {
+                            self.encode_bloom_passes(&mut enc, view);
+                        }
                         rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                            label: Some("legaia frame pass (after fog)"),
+                            label: Some("legaia frame pass (after fog / bloom)"),
                             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                                 view,
                                 depth_slice: None,

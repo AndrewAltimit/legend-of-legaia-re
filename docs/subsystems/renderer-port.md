@@ -198,9 +198,21 @@ on [renderer.md](renderer.md#volumetric-ground-fog-enhancement).
 both hosts over their static draw lists) puts the sheet mesh on the drawn
 floor and stops it over open air, so a tower top such as `teien` no longer
 carries a flat bank across the sky around it. Past a rim the mesh keeps
-going as a near-vertical spill curtain hugging the wall face, then, further
-out and far below the rim, as a faint distant haze layer (a negative mesh
-weight) that lies only where nothing drawn stands above it. The field also
+going as a near-vertical spill curtain hugging the wall face, carrying a
+third of the bank (`SPILL_SHARE`), then, further out and far below the rim,
+as a faint distant haze layer (a negative mesh weight) that lies only where
+nothing drawn stands above it.
+
+The field is built from what is on screen, not from what the data holds
+(`fog_ground::FogSurfaces`): the placed objects a script hid or scaled to
+nothing are left out and the rest are taken at their render scale, as the
+hosts draw them; a prim whose texels are almost all the transparent word
+(`SURFACE_MIN_OPACITY`) is not a surface; and a semi-transparent prim is
+floor only where it lies level (a pond, not a mist veil hung across a
+corridor) and is never a wall the spill drapes over. The bank's movers
+follow the same rule: a field channel that draws nothing (render scale
+`0`, the off-map hide box, a flag word that opts out of the drop shadow)
+does not part it. The field also
 reaches the shader as an RGBA8 texture at binding 3, visible to both stages
 (coverage, spill, flow; at most 256 x 256 texels of 64 world units, uploaded
 only when its generation changes): it fades the bank across the floor's edge
@@ -220,6 +232,50 @@ the static triangles plus two nearest-site sweeps over at most 65,536
 cells. Per frame the pass adds one texture sample per sheet fragment and
 per vertex (four more on spill vertices and fragments), a handful of noise
 evaluations on spill and haze fragments, and nothing on the CPU.
+
+## Bloom (enhancement, NOT retail)
+
+`Renderer::set_bloom(true)` makes the bright parts of the 3D frame - lamp
+halos, emissive props, lit windows, sunlit sky - bleed a soft glow into
+their surroundings. **Off by default, and off IS the frame without it**: none
+of the passes below run and the scene is the single pass it always was.
+
+With it on, the scene half of a `RenderTarget::Scene` frame (the 3D draws,
+the glow sprites, the volumetric fog) renders into an offscreen target
+instead of the presented one, and `renderer/bloom.rs` runs an extract and
+four blur passes at a quarter of the surface on each axis, then a composite:
+
+1. **extract** - four bilinear taps cover the 4x4 scene block under one
+   bloom texel, each weighted on its own by a soft-knee brightness law (the
+   largest channel against a threshold, a quadratic ease across the knee),
+   so one bright pixel does not lift its dark neighbours;
+2. **blur** - a separable 9-tap Gaussian as five linear taps, horizontal then
+   vertical, twice;
+3. **composite** - the scene texel plus the glow times the intensity,
+   saturating, written to the presented target.
+
+The screen-space layers (the attached-light pools, sprites, text, the
+composited ordering-table tail) draw after the composite, so the HUD never
+blooms.
+
+The response comes from `legaia_render_kernels::bloom::BloomParams`, keyed on
+enhanced lighting's mood: the darker the mood the lower the threshold and the
+stronger the glow (`for_glow` over `LightingMood::glow`), so at night the
+lamps, halos and the Genesis Tree carry it while daylight takes only a faint
+lift on its brightest surfaces; with enhanced lighting off the daylight
+response applies. The renderer derives it from its own staged mood.
+
+The browser play page draws the same passes through `site/js/webgl-bloom.js`:
+it blits the finished default framebuffer into a texture (it cannot sample
+the framebuffer itself), runs the same extract and blur, and adds the glow
+back with an additive blend - the sum the native composite writes - at the
+engine's response (`play_bloom_params`). The `bloom_parity` test evaluates
+each of the three fragment stages on both hosts through `shader_eval` and
+requires them to agree.
+
+**Cost.** One full-resolution composite pass plus five passes over a
+sixteenth of the pixels; on the page, one extra resolve blit. Nothing on the
+CPU beyond two uniform writes a frame.
 
 ## Screen-space overlay pass
 
@@ -329,6 +385,11 @@ transition's texture-page words decode to, each spanning VRAM columns
 `320..=639` on its own row. Only **`FIELD_CAPTURE_COLS` is a capture
 destination**: the rows rect is the intermediate the curtain's column pass
 renders into every frame, and no style samples it from the capture.
+Inside the columns page the frame lands four rows down
+(`FIELD_CAPTURE_LAND`, retail's drawn-row-to-`v` offset) and the rows around
+it are cleared to transparent (`FIELD_CAPTURE_CLEARS`), as the transition
+init does
+([where the capture lands](battle-stage-camera.md#where-the-capture-lands-in-the-page)).
 
 ## Field-to-battle transition emitter
 
@@ -340,8 +401,11 @@ working set, advances it off the transition entity's own clock, and emits
 lives in [`legaia-render-kernels`](../../crates/render-kernels/src/battle_intro.rs) - both hosts arm it -
 and [`src/battle_intro.rs`](../../crates/engine-render/src/battle_intro.rs) here holds the
 one renderer-bound wrapper, `update_field_capture`, which turns
-`Renderer::capture_rgba` output into the emitter's `land_capture_rgba` /
-`refresh_captured_page` calls.
+`Renderer::capture_scene_rgba` output into the emitter's `land_capture_rgba` /
+`refresh_captured_page` calls. The target it reads back is the caller's: the
+play window hands it the frame it presents, screen layers and enhancement
+passes included, less the transition's own primitives
+([what the capture holds](battle-stage-camera.md#what-the-capture-holds)).
 
 All five styles tick and all five emit: `emit_particle_field` (both particle
 arms) plus `emit_spinup_ring`, `emit_tile`, `emit_swirl_band`, and

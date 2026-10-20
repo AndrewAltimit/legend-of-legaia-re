@@ -835,6 +835,15 @@ a child is still in flight, as retail's `ctx[+0x24D]` gate does. A target the
 flight never reached is folded at the band's end with the rest. 
 Disc-gated oracle: `monster_special_anim_sweep_disc::tail_fire_lands_from_its_homing_flight`.
 
+The hit arm also turns its victim. Unless the victim stands Stoned
+(`+0x16E & 4`, `0x801E19FC..0x801E1A08`) it ORs `1` into `+0x1DC` and stores
+`FUN_80019B28(victim[+0x38], victim[+0x34], caster[+0x38], caster[+0x34])`
+to the victim's `+0x46` (`0x801E1A10..0x801E1A54`), the caster being
+`ctx[+0x13]` (`0x801E1850`): the victim faces the caster along the two live
+pairs, where the melee strike's turn reads the defender's body pair. Both Tail
+Fire captures hold Vahn at `4068`, turned onto Gimard. The port turns the
+victim after its fold (`World::fold_pending_cast_target`).
+
 #### The monster's cast is only as real as the catalog
 
 A monster's cast is picked before the band is armed: `pick_monster_action`

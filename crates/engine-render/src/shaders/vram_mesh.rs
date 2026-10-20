@@ -91,30 +91,6 @@ struct VsOut {
     @location(5) world_w: vec3<f32>,
 };
 
-// Snap a clip-space x/y to the nearest integer pixel of a viewport sized
-// (vp_w, vp_h). Returns the snapped clip position with z/w preserved. This
-// is the GTE-style "vertex jitter" that gives PSX rendering its
-// characteristic shimmer on slow-moving geometry.
-fn psx_snap_clip(clip: vec4<f32>, vp_w: f32, vp_h: f32) -> vec4<f32> {
-    if vp_w <= 0.0 || vp_h <= 0.0 {
-        return clip;
-    }
-    // NDC after perspective divide.
-    let ndc_x = clip.x / clip.w;
-    let ndc_y = clip.y / clip.w;
-    // Pixel coords (NDC -> [0, vp]).
-    let px = (ndc_x * 0.5 + 0.5) * vp_w;
-    let py = (ndc_y * 0.5 + 0.5) * vp_h;
-    // Snap to nearest integer pixel.
-    let snapped_x = floor(px + 0.5);
-    let snapped_y = floor(py + 0.5);
-    // Back to NDC.
-    let nx = (snapped_x / vp_w) * 2.0 - 1.0;
-    let ny = (snapped_y / vp_h) * 2.0 - 1.0;
-    // Re-multiply by w to rebuild clip space.
-    return vec4<f32>(nx * clip.w, ny * clip.w, clip.z, clip.w);
-}
-
 // `z = a * w + b` of `m`'s depth row over its `w` row, read the way
 // `legaia_engine_field::overworld_draw_order::depth_affine` reads it: the
 // column with the largest `w` weight gives `a`, the translation column `b`.
@@ -355,7 +331,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     // (exactly equivalent - see `palette_law_word`). Transparency is judged
     // on the raw word below, which the law preserves (0 -> 0, STP kept).
     let palette_on = u.palette.w > 0.5;
-    if palette_on {
+    if palette_on && palette_law_reaches(cba, tsb) {
         word = palette_law_word(word);
     }
     let color = bgr555_to_rgba(word);
@@ -473,7 +449,7 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     // Same prologue palette-collapse as the opaque pass (STP preserved, so
     // the discard test above is unaffected by ordering).
     let palette_on = u.palette.w > 0.5;
-    if palette_on {
+    if palette_on && palette_law_reaches(cba, tsb) {
         word = palette_law_word(word);
     }
     let color = bgr555_to_rgba(word);
@@ -511,7 +487,11 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
         dyn_far(psx_modulate(color.rgb, u.depth_cue.rgb * 255.0), u.light_dir, u.light_color),
         ir0,
     );
-    return vec4<f32>(cued * f_scale, 1.0);
+    // Saturate before the mode-3 pre-scale: the target clamps the
+    // foreground before the blend equation reads it, and the quarter must
+    // apply to that saturated value (`B + 0.25 * F`), as it does on the
+    // browser play page where the 0.25 is a blend factor.
+    return vec4<f32>(clamp(cued, vec3<f32>(0.0), vec3<f32>(1.0)) * f_scale, 1.0);
 }
 
 @fragment

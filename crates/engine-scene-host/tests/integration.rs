@@ -88,13 +88,15 @@ mod map01_flyin_camera;
 mod map01_overworld_walk_disc;
 mod map03_conditional_walls_disc;
 mod map03_floating_castle_disc;
-mod map_display_disc;
 mod menu_item_category_disc;
 mod model_rebind_live_disc;
 mod move_ctrl52_census_disc;
 mod move_ext_strip_census_disc;
 mod move_op03_census_disc;
 mod muscle_contest_real;
+// --- lane D2 ---
+mod muscle_dome_choreo_real;
+// --- end lane D2 ---
 mod muscle_dome_lead_max_hp_disc;
 mod muscle_dome_minigame_real;
 mod muscle_dome_scene_real;
@@ -104,6 +106,7 @@ mod npc_morph_placement_disc;
 mod npc_morph_rikuroa_disc;
 mod object_effect_row_disc;
 mod object_grid_refresh_disc;
+mod object_seat_height_disc;
 mod opdeene_caption_playback;
 mod opdeene_field_channels;
 mod opdeene_narration_playback;
@@ -163,3 +166,5 @@ mod world_frame_tail_ladder;
 mod world_map_menu_gate;
 mod world_map_player_anim_disc;
 mod world_map_slot4_resources;
+// --- lane E ---
+mod tower_elevator_doors_disc;

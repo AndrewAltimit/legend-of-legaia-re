@@ -3,7 +3,7 @@
 //! `FUN_801D9D3C` and seeds the intro timer `ctx[+0x6D6]`, and state `0x0B`
 //! drains it by the frame step until it expires and `FUN_800355F0` sweeps
 //! every text actor away. The labels themselves are built per frame by
-//! `battle_hud::battle_intro_names`; this module owns the timer.
+//! `legaia_engine_battle_hud::battle_intro_names`; this module owns the timer.
 //!
 //! The one arm that skips the composer: a formation whose first monster id
 //! byte (`0x8007BD0C`) is `0xB5` stores flow `0x0C` directly and draws no

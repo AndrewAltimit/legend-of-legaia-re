@@ -4,7 +4,7 @@
 
 **Project site:** [andrewaltimit.github.io/legend-of-legaia-re](https://andrewaltimit.github.io/legend-of-legaia-re/) - play, browse and patch in the browser, nothing to install.
 
-[![The port in motion: Rim Elm, the world map, Sol Tower, a Gimard summon in battle, a shop, Noa's dance, the slot machine, the Muscle Dome and the opening movie](site/assets/hero-montage.webp)](https://andrewaltimit.github.io/legend-of-legaia-re/)
+[![The port in motion: Rim Elm at dusk, the world map, a swirl into a boss battle, the transport system in Jette's Fortress, a Gimard summon, sparring with Tetsu, Noa's dance, a scatter into battle, the Caruban fight and the Genesis Tree revival, the slot machine, fishing, Baka Fighter and the opening movie](site/assets/hero-montage.webp)](https://andrewaltimit.github.io/legend-of-legaia-re/)
 
 This repository is code and documentation only. **You bring the disc**: nothing Sony owns is committed or distributed, and everything browser-side reads your image locally in the tab - it is never uploaded. See [You bring the disc](#you-bring-the-disc).
 
@@ -21,25 +21,12 @@ This repository is code and documentation only. **You bring the disc**: nothing 
 | **Export to Blender / Unity / VRChat** | Scenes, NPCs, props, equipment and the party as `.glb` | `legaia-engine export-glb` ([guide](docs/tooling/vrchat-world-export.md)) |
 | **Understand how the game works** | Format specs, subsystem docs, traced functions, RAM map | [`docs/`](docs/overview.md) |
 
-```mermaid
-flowchart TD
-    disc["Your disc image (.bin or .cue)"]
-    iso["Disc files: PROT.DAT, SCUS_942.54, MOV, XA"]
-    prot["1233 PROT entries, named by CDNAME.TXT"]
-    assets["Decoded assets: textures, meshes, audio, dialog, scripts, tables"]
-    engine["The port: native window and browser"]
-    viewers["Viewers and data pages"]
-    files["PNG / WAV / OBJ / JSON / glb on disk"]
-    patcher["legaia-patcher: randomizer, translation, mods"]
-    out["Patched .bin or shareable PPF"]
-
-    disc --> iso --> prot --> assets
-    assets --> engine
-    assets --> viewers
-    assets --> files
-    prot --> patcher --> out
-    out -. "plays in the port or an emulator" .-> engine
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="site/assets/pipeline-dark.svg">
+    <img alt="From your disc to everything the project makes: the disc image is read into its files, PROT.DAT's entries and decoded assets, which feed the port, the viewers and exported files; legaia-patcher writes a patched image or a PPF that plays in the port or an emulator." src="site/assets/pipeline-light.svg" width="900">
+  </picture>
+</p>
 
 ## What it is, and is not
 
@@ -47,20 +34,7 @@ A **port**, in the [ScummVM](https://www.scummvm.org/) / [OpenRCT2](https://gith
 
 **Retail is the ground truth, not a cage.** The traced disassembly and the parity oracles pin the original's arithmetic, RNG, script pacing and save layout, and a retail-faithful mode stays testable. On top of it the port adds things the original never had - enhanced lighting, volumetric ground fog, see-through walls around the player, free-angle movement, an orbit camera, [VR](docs/subsystems/vr-mode.md) - as toggles, on by default where they are clearly better, with retail one switch away. Per-knob defaults: [`docs/subsystems/engine.md`](docs/subsystems/engine.md#fidelity-and-enhancements).
 
-One engine runs behind every host. The simulation crates carry no GPU, windowing or audio-device dependency, so the same code ticks natively and as WebAssembly:
-
-```mermaid
-flowchart LR
-    subgraph sim["Shared simulation"]
-        vm["The ported VMs and World-free kernels:<br/>engine-vm, engine-battle-vm, engine-cast, engine-motion-vm, engine-field, engine-battle, ..."]
-        core["engine-core: World, scenes, battle, menus, saves"]
-        session["engine-session: per-frame order, BGM director"]
-        vm --> core --> session
-    end
-    session --> native["legaia-engine play-window<br/>winit + wgpu + cpal"]
-    session --> web["Browser play page<br/>WASM + WebGL + WebAudio"]
-    core --> mini["Browser minigames page"]
-```
+One engine runs behind every host. The simulation crates carry no GPU, windowing or audio-device dependency, so the same code ticks in a native window and as WebAssembly in the browser; [How it fits together](#how-it-fits-together) draws the whole stack.
 
 ## What works
 
@@ -109,7 +83,7 @@ cd legaia-tools-<version>-x86_64-unknown-linux-gnu
 
 Every archive carries every tool. `README-PLAY.txt` inside covers first launch, including the macOS Gatekeeper prompt; [`docs/tooling/releases.md`](docs/tooling/releases.md) covers what is in an archive and how it is built. The engine and `asset-viewer` want a GPU and, on Linux, ALSA.
 
-Every archive also carries **Legaia Studio** (`legaia-studio`), a desktop app for the asset side: open your disc image, browse the archive by scene, preview textures, models, characters, monsters, audio, dialog and movies, and export them, or run the full extraction with a progress bar ([`crates/studio`](crates/studio/README.md)).
+Every archive also carries **Legaia Studio** (`legaia-studio`), a desktop app for the asset side: open your disc image, browse the archive by scene, preview textures, models, characters, monsters, audio, dialog and movies, and export them, or run the full extraction with a progress bar ([`crates/studio`](crates/studio/README.md)). The site's [desktop apps guide](https://andrewaltimit.github.io/legend-of-legaia-re/guides/desktop-apps.html) walks through downloading, the first start on each system, Studio and the native port, with screenshots.
 
 ![Legaia Studio previewing Gimard Lv3's textured battle model beside the monster list](site/assets/legaia-studio.jpg)
 
@@ -195,24 +169,90 @@ Start at [`docs/overview.md`](docs/overview.md): how the layers stack from disc 
 | [`docs/tooling/`](docs/tooling/extraction.md) | Extraction CLIs, the [randomizer](docs/tooling/randomizer.md), [translation](docs/tooling/translation/index.md), Ghidra and emulator automation, and the parity instruments. |
 | [`docs/reference/`](docs/reference/functions.md) | Traced functions, the RAM map, builds, curated game data, and the [open](docs/reference/open-rev-eng-threads.md) / [settled](docs/reference/re-settled-threads.md) / [falsified](docs/reference/re-do-not-re-walk.md) research threads. |
 
-## Repository layout
+## How it fits together
 
-A Cargo workspace; each crate has a one-page `README.md`. [`CLAUDE.md`](CLAUDE.md) is the full map - every doc page and every crate, one line each.
+The repository is one Cargo workspace of small crates, each with a one-page `README.md`. They stack in bands: a crate depends only on crates in its own band or a band below it, so the stack reads from the programs people run at the top down to the disc parsers at the bottom. Colour marks the track a crate belongs to.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="site/assets/crate-map-dark.svg">
+    <img alt="The crate map: hosts and front ends at the top; then the session, presentation and tool crates; the World drivers; engine-core; the World-free kernels in ranks; the patcher and capture libraries; the format families; and the disc and per-format parsers at the bottom. Colour marks the engine, preservation, patcher and research-tooling tracks." src="site/assets/crate-map-light.svg" width="900">
+  </picture>
+</p>
+
+**Explore it interactively on the [crate map](https://andrewaltimit.github.io/legend-of-legaia-re/crates.html):** hover a crate to light what it uses and what uses it, open its scope, binaries and modules, filter by track, and follow a scene from the disc to the screen. The page, this diagram and the layer list below are generated from the workspace itself (every `Cargo.toml`, the crate tables in [`CLAUDE.md`](CLAUDE.md) and the [layering table](scripts/ci/crate-layering.toml)) by [`scripts/ci/gen-crate-map.py`](scripts/ci/gen-crate-map.py), and a gate fails a commit that leaves them stale.
+
+### Four tracks
+
+| Track | What it is | Start at |
+|---|---|---|
+| **Preservation** | Reading the disc: the sector reader, the PROT archive, one parser per format, the Legaia-specific format families over them, and the tools that extract and document every asset. | [`legaia-extract`](crates/extract/README.md), [`asset`](crates/asset/README.md), [`docs/formats/`](docs/formats/overview.md) |
+| **Engine** | The from-scratch port: the ported script VMs and rules engines as `World`-free kernels, the simulation in [`engine-core`](crates/engine-core/README.md), the session both play hosts tick, the wgpu renderer and the from-scratch SPU. | [`docs/subsystems/engine.md`](docs/subsystems/engine.md) |
+| **Patcher** | Writing the disc: same-size PROT edits with EDC/ECC re-encode, MAN relocation, translation packs, MIPS code hooks, model and texture replacement - all behind [`legaia-patcher`](crates/patcher/README.md). | [`docs/tooling/randomizer.md`](docs/tooling/randomizer.md) |
+| **Research tooling** | Measuring the port against retail: emulator save-state readers, the parity oracles and retail comparison corpus, and the curated reference labels. | [`docs/tooling/retail-compare.md`](docs/tooling/retail-compare.md) |
+
+### The layers
+
+Top of the stack first. Every crate name links its README.
+
+<!-- crate-map:layers:begin (generated by scripts/ci/gen-crate-map.py; edit crate-map-layout.toml) -->
+
+- **Hosts and front ends.** The programs people run. Each one is a thin shell over the crates below. \
+  [`engine-shell`](crates/engine-shell/README.md), [`web-viewer`](crates/web-viewer/README.md), [`asset-viewer`](crates/asset-viewer/README.md), [`studio`](crates/studio/README.md), [`patcher`](crates/patcher/README.md),
+  [`extract`](crates/extract/README.md), [`asset`](crates/asset/README.md)
+- **Session, presentation, tools.** What both play hosts share above the simulation: the game session, the screens, the renderer and the audio stack; plus the tools that step a World from outside. \
+  [`engine-session`](crates/engine-session/README.md), [`engine-screens`](crates/engine-screens/README.md), [`engine-render`](crates/engine-render/README.md), [`engine-audio`](crates/engine-audio/README.md), [`engine-export`](crates/engine-export/README.md),
+  [`parity`](crates/parity/README.md), [`engine-capture`](crates/engine-capture/README.md)
+- **World drivers.** Layers that hold a running World from outside: scene entry and tick, the pause menu, the battle HUD's reads, the cheats. \
+  [`engine-scene-host`](crates/engine-scene-host/README.md), [`engine-menu-runtime`](crates/engine-menu-runtime/README.md), [`engine-battle-hud`](crates/engine-battle-hud/README.md), [`engine-cheats`](crates/engine-cheats/README.md)
+- **Simulation.** engine-core owns World and its tick, and implements each VM's Host trait. Everything below it names no World. \
+  [`engine-core`](crates/engine-core/README.md)
+- **World-free kernels.** The ported VMs and rules engines, ranked by the committed layering table: a kernel depends only on kernels of a lower rank. \
+  Rank 6: [`engine-minigame-scenes`](crates/engine-minigame-scenes/README.md) \
+  Rank 5: [`engine-menus`](crates/engine-menus/README.md) \
+  Rank 4: [`engine-fishing`](crates/engine-fishing/README.md), [`engine-minigames`](crates/engine-minigames/README.md), [`engine-scene`](crates/engine-scene/README.md), [`engine-ui`](crates/engine-ui/README.md) \
+  Rank 3: [`engine-battle`](crates/engine-battle/README.md), [`engine-cast`](crates/engine-cast/README.md), [`engine-effects`](crates/engine-effects/README.md), [`engine-field`](crates/engine-field/README.md) \
+  Rank 2: [`engine-battle-vm`](crates/engine-battle-vm/README.md), [`render-kernels`](crates/render-kernels/README.md) \
+  Rank 1: [`engine-camera`](crates/engine-camera/README.md), [`engine-mode`](crates/engine-mode/README.md), [`engine-motion-vm`](crates/engine-motion-vm/README.md) \
+  Rank 0: [`engine-dialog`](crates/engine-dialog/README.md), [`engine-system`](crates/engine-system/README.md), [`engine-vm`](crates/engine-vm/README.md)
+- **Patcher and capture libraries.** The disc-writing layers under legaia-patcher, and the emulator save-state readers under the parity oracles. \
+  [`disc-patch`](crates/disc-patch/README.md), [`translate`](crates/translate/README.md), [`code-hooks`](crates/code-hooks/README.md), [`arts-patch`](crates/arts-patch/README.md), [`texture-replace`](crates/texture-replace/README.md),
+  [`party-swap`](crates/party-swap/README.md), [`delilas-party`](crates/delilas-party/README.md), [`delilas-challenge`](crates/delilas-challenge/README.md), [`ram-image`](crates/ram-image/README.md), [`mednafen`](crates/mednafen/README.md),
+  [`pcsx-redux`](crates/pcsx-redux/README.md)
+- **Format families.** The Legaia-specific layer over the parsers: containers, scenes, actors, minigames, the 2D interface, the static tables, code overlays. \
+  [`container-formats`](crates/container-formats/README.md), [`scene-formats`](crates/scene-formats/README.md), [`actor-formats`](crates/actor-formats/README.md), [`minigame-formats`](crates/minigame-formats/README.md), [`ui-formats`](crates/ui-formats/README.md),
+  [`game-tables`](crates/game-tables/README.md), [`overlay-images`](crates/overlay-images/README.md), [`disc-audit`](crates/disc-audit/README.md)
+- **Disc and per-format parsers.** The foundation: sector reader, the PROT archive, LZS, and one small crate per file format. \
+  [`iso`](crates/iso/README.md), [`prot`](crates/prot/README.md), [`lzs`](crates/lzs/README.md), [`bytes`](crates/bytes/README.md), [`tim`](crates/tim/README.md),
+  [`tmd`](crates/tmd/README.md), [`vab`](crates/vab/README.md), [`seq`](crates/seq/README.md), [`xa`](crates/xa/README.md), [`mdec`](crates/mdec/README.md),
+  [`mes`](crates/mes/README.md), [`anm`](crates/anm/README.md), [`mdt`](crates/mdt/README.md), [`art`](crates/art/README.md), [`font`](crates/font/README.md),
+  [`save`](crates/save/README.md), [`gamedata`](crates/gamedata/README.md), [`cheats`](crates/cheats/README.md)
+
+<!-- crate-map:layers:end -->
+
+### Three hosts, one engine
+
+| Host | Crate | Draws through |
+|---|---|---|
+| Native `play-window` | [`engine-shell`](crates/engine-shell/README.md) (the `legaia-engine` binary) | winit + wgpu ([`engine-render`](crates/engine-render/README.md)) + cpal ([`engine-audio`](crates/engine-audio/README.md)) |
+| Browser play page | [`web-viewer`](crates/web-viewer/README.md), compiled to WebAssembly | WebGL + WebAudio, from `site/js/play-app.js` |
+| Browser minigames page | the same `web-viewer` build | one JS module per minigame |
+
+Both play hosts tick the same [`engine-session`](crates/engine-session/README.md) `BootSession` over the same `World`; the minigames page drives the `World`-free minigame rules engines directly. What differs is only the shell. [Host drift](docs/tooling/host-drift.md) covers the gates that keep a feature from reaching one host only.
+
+A scene takes one path through the stack on every host: [`iso`](crates/iso/README.md) reads the sectors, [`prot`](crates/prot/README.md) finds the entry, [`lzs`](crates/lzs/README.md) decompresses it, [`container-formats`](crates/container-formats/README.md) and [`scene-formats`](crates/scene-formats/README.md) split the bundle, [`engine-scene`](crates/engine-scene/README.md) loads its resources, [`engine-core`](crates/engine-core/README.md)'s `World` ticks the ported VMs over it, [`engine-scene-host`](crates/engine-scene-host/README.md) and `engine-session` order the frame, [`render-kernels`](crates/render-kernels/README.md) and [`engine-ui`](crates/engine-ui/README.md) build the draws, and wgpu or WebGL puts them on screen.
+
+### Around the crates
 
 | Path | Holds |
 |---|---|
-| `crates/iso`, `prot`, `lzs` and the per-format crates | Disc reader, PROT archive, LZS, and a parser per format (`tim`, `tmd`, `vab`, `seq`, `xa`, `mes`, `anm`, `mdt`, `art`, `font`, `mdec`, `save`). |
-| `crates/container-formats`, `scene-formats`, `actor-formats`, `minigame-formats`, `ui-formats`, `game-tables`, `overlay-images` | The Legaia-specific format families over those parsers. |
-| `crates/asset`, `disc-audit` | The `asset` command-line binary and the whole-disc measurement it fronts. |
-| `crates/extract` | `legaia-extract`, the one-shot pipeline. |
-| `crates/engine-*`, `render-kernels` | The port: simulation (`engine-core`, `engine-vm` and the kernel crates under them), rendering, audio, and the `legaia-engine` binary (`engine-shell`). |
-| `crates/asset-viewer`, `web-viewer` | The native viewer, and the WASM build behind the site. |
-| `crates/patcher` over `disc-patch`, `translate`, `code-hooks`, `arts-patch`, `texture-replace`, `party-swap`, `delilas-party`, `delilas-challenge` | `legaia-patcher` and the layers under it. |
-| `crates/mednafen`, `pcsx-redux`, `ram-image`, `parity` | Emulator save-state readers and the retail parity oracles. |
-| `crates/gamedata`, `cheats`, and `data/` | Curated, non-Sony reference tables. |
-| `docs/`, `site/` | The technical reference, and the project site's sources. |
+| `docs/` | The technical reference: formats, subsystems, tooling, reference tables ([start here](docs/overview.md)). |
+| `site/` | The project site's sources: page fragments, the browser hosts' JS, the generator `site/_gen.py`. |
+| `data/` | Curated, non-Sony reference tables (game data mined from public walkthroughs, music and scene names). |
 | `ghidra/`, `scripts/` | Analysis scripts (dumps are gitignored), CI gates, capture automation ([map](scripts/README.md)). |
 | `extracted/` | Your disc's assets. Sony bytes, gitignored, never committed. |
+
+[`CLAUDE.md`](CLAUDE.md) is the full map of the repository - every doc page and every crate, one line each - and [crate layering](docs/subsystems/engine.md#crate-layering) explains the rules the stack keeps and the gate that holds the engine's kernel ranks.
 
 ## Contributing
 

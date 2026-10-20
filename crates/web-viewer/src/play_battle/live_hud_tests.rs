@@ -264,7 +264,7 @@ fn live_battle_overlay_carries_bars_and_enemy_target_strip() {
             );
         }
         assert!(targeting, "Cross on Attack opens the target picker");
-        let rows = legaia_engine_core::battle_hud::battle_enemy_target_rows(w);
+        let rows = legaia_engine_battle_hud::battle_enemy_target_rows(w);
         assert!(
             !rows.is_empty(),
             "enemy target rows resolve from the live formation"

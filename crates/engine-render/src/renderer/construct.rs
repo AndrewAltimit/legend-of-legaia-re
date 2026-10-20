@@ -189,6 +189,8 @@ impl Renderer {
         Ok(Self {
             fog_volume_pass: std::cell::RefCell::new(None),
             fog_volume_active: std::cell::Cell::new(false),
+            bloom_pass: std::cell::RefCell::new(None),
+            bloom_on: std::cell::Cell::new(false),
             surface,
             device,
             queue,

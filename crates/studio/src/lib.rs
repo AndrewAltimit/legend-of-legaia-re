@@ -14,6 +14,7 @@ pub mod app;
 pub mod arts;
 pub mod export;
 pub mod extract_job;
+pub mod launch;
 pub mod library;
 pub mod media;
 pub mod player;
@@ -39,6 +40,17 @@ pub struct Block {
     pub name: String,
     /// Positions in [`Library::entries`].
     pub entries: Vec<usize>,
+}
+
+/// The display name of the scene a CDNAME label names (`town01` -> `Rim
+/// Elm`), from the curated scene-name table (`legaia_gamedata`,
+/// `docs/reference/scene-names.md`). `None` for a label the table does not
+/// name, or one whose display name is the label itself.
+pub fn place_name(label: &str) -> Option<&'static str> {
+    arts::gamedata()
+        .scene_by_id(label)
+        .map(|s| s.name.as_str())
+        .filter(|n| !n.eq_ignore_ascii_case(label))
 }
 
 /// Group a library's entries under their CDNAME block labels (the labels
@@ -146,6 +158,7 @@ impl Studio {
         self.analysis = None;
         self.analyzing = None;
         self.settings.last_source = Some(path.to_path_buf());
+        self.settings.remember_recent(path);
         self.save_settings();
         let classes = Arc::new(Mutex::new(vec![None; lib.entries.len()]));
         self.classes = Arc::clone(&classes);
@@ -249,7 +262,8 @@ impl Studio {
     /// search. Every whitespace-separated term of `query` must match, case
     /// blind, one of: the CDNAME label the filenames carry, the retail
     /// CDNAME block (the two differ by the +2 index shift), the entry's
-    /// category, or its PROT index (`865`, `0865` or `0x361`). `class`, when
+    /// category, its PROT index (`865`, `0865` or `0x361`), or the display
+    /// name of the scene its block names ([`place_name`]). `class`, when
     /// set, also requires that exact category.
     pub fn entry_matches(&self, pos: usize, block: &str, query: &str, class: Option<&str>) -> bool {
         let Some(lib) = &self.library else {
@@ -268,9 +282,11 @@ impl Studio {
             format!("{:04}", e.index),
             format!("0x{:x}", e.index),
         ];
+        let place = place_name(block).unwrap_or("").to_lowercase();
         query.split_whitespace().all(|term| {
-            let t = term.to_ascii_lowercase();
+            let t = term.to_lowercase();
             block.to_ascii_lowercase().contains(&t)
+                || place.contains(&t)
                 || retail.to_ascii_lowercase().contains(&t)
                 || cat.is_some_and(|c| c.contains(&t))
                 || index_texts.iter().any(|s| s.contains(&t))

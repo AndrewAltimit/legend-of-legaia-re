@@ -1309,7 +1309,7 @@ decidable per instance, not from a source pattern.
 |---|---|---|
 | **Same layout, different letterforms.** A shared layout is not a shared draw. | Battle numerals: VRAM cells natively, dialog font on the page. | `engine-ui::battle_numerals` + the fifth tier-7 rule. |
 | **Same override set, different bodies.** | Two `BgmDirector`s disagreed on the duplicate-start guard, master volume and the pause gate. | One body: `engine-session`'s `AudioDirector`. |
-| **A law written twice in two shading languages.** | See [shading](#the-two-hosts-do-not-share-a-shading-law). | Only a rendered frame from each host compares them. |
+| **A law written twice in two shading languages.** | See [shading](#the-two-hosts-do-not-share-a-shading-law). | The field mesh, its vertex stage, the enhancement layer and the fog sheets are evaluated on both texts by `engine-render`'s parity tests; the shadow maps only by a rendered frame from each host. |
 | **A draw list that carries half a mesh.** | A surface running `tmd_to_vram_mesh` alone drops every untextured prim. | Assert the **untextured corner count**, never the total. |
 | **Length parity is not coverage.** | A white `a_flat_rgba` stream has the right length. | Assert content. |
 | **Two hosts agreeing on a wrong law.** | Both laid the crawl out in surface pixels with 1x glyphs. | Only a retail frame flags it. |
@@ -1342,13 +1342,12 @@ reverse-engineering questions, so they are not on
 
 | Difference | State |
 |---|---|
-| shading law | One law in WGSL and GLSL; nothing pairs the shader bodies. See [shading](#the-two-hosts-do-not-share-a-shading-law). |
+| shading law | One law in WGSL and GLSL, paired by evaluation for the field mesh's both stages, its enhancement layer and the fog sheets' fragment stage. Unpaired: the point lights' shadow-map sampling, the fog sheets' vertex stage, clip depth. See [shading](#the-two-hosts-do-not-share-a-shading-law). |
 | battle body blend | Native keys the posed override by TMD index (two bodies sharing a TMD share one); the page orders blend passes per mesh, not per prim. |
 | lit rows under the palette collapse | Not drift: both hosts run a lit row's shaded colour through the prologue's packet sepia, which the light kernel's output never meets in retail. See [light-source rows](#light-source-rows-in-a-graded-scene). |
-| cheats | One `World::cheat_*` call each. Every listed cheat is a launch switch natively and a runtime control on the page (`F6` / `F7` are runtime on both, through the [hotkey table](#host-hotkeys)); a GameShark file is a launch switch natively and pasted text on the page (`cheat_apply_codes`). |
+| cheats | One `WorldCheats::cheat_*` call each. Every listed cheat is a launch switch natively and a runtime control on the page (`F6` / `F7` are runtime on both, through the [hotkey table](#host-hotkeys)); a GameShark file is a launch switch natively and pasted text on the page (`cheat_apply_codes`). |
 | launch switches | See [launch switches](#launch-switches-against-page-settings). |
 | fishing wander readout | Native dev-menu aid for `FUN_801d2050`'s tracked points; no page twin by choice. |
-| fishing exchange panel pen | Native adds the venue overlay's idle sway (`FUN_801d03b0`). |
 | op `0x35` sub-op `8` | Open on purpose: `FUN_80019898` replays the record at `0x8007057C` through `FUN_80026478`, which in every captured state is silent, so the default no-op is faithful ([`audio.md`](../subsystems/audio.md#sub-op-8-replays-an-empty-record)). |
 | absent on both | The map display's player pointer ([`world-map.md`](../subsystems/world-map.md#the-map-display---prot-0981)), the Baka in-duel pause menu (`0xBE` / `0xBF`; the pause edge `0x110` includes Triangle, which the cameo test reads held). |
 | not retail | A dialogue text blip, a door cue and a footstep cue: the pager cues only its picker, a scene change cues nothing, and walking is silent ([`sfx-table.md`](../formats/sfx-table.md#the-dialog-box-cues-its-picker-not-its-text)). |
@@ -1586,12 +1585,12 @@ screens.
 | Seru-trade text | `seru_trade::trade_screen_text` |
 | save-select | `engine-screens::pause_screens::save_select_overlay_draws` over `SaveScreenFlow::overlay_model` and `engine-ui`'s `save_select_overlay_draws`, `title_band_sprites` + `TitleBandState` (page backdrop: `boot_title_backdrop_draws_json`) |
 | Load / New Game | `engine-scene-host::resume` (`resume_card_load`, `enter_new_game`), `TitleSession::for_front_end`, `SceneHost::current_resume` ([`save-screen.md`](../subsystems/save-screen.md#where-a-load-lands-and-when-continue-is-live)) |
-| card write | `engine-core::card_write::write_save_into_card`, `MountedCard::persist` |
+| card write | `engine-menu-runtime::card_write::write_save_into_card`, `MountedCard::persist` |
 | menu blips | `menu_cues::menu_edge_blip`; a blip is a one-cue batch (`SfxFireBatch::immediate`) and ages no other cue |
 | name entry | `NameEntryInput::from_pad_edge`; view `engine-screens::field_screens::name_entry_view` (`NameEntry::cursor_cells`, `name_entry::caret_on`) |
 | dev menu | `DevMenuWorldExt::tick_host` (CAMERA row, EQUIP commit), `DevMenuWorldExt::route_sfx` |
 | coin counter (op `0x49` sub-op 6) | `field_submode_screen::coin_counter_lines` through `engine-ui::text_lines::pen_line_draws_for`: the field overlay's entry panel `FUN_801E6F70` (record 10) and confirm panel (record 11) |
-| place-name banner | `engine-core::place_name_banner` from `SceneHost::load_scene` (a text balloon, not the slot-`0x2E` actor whose script `0x801F32B4` only closes panels) |
+| place-name banner | `engine-scene-host::place_name_banner` from `SceneHost::load_scene` (a text balloon, not the slot-`0x2E` actor whose script `0x801F32B4` only closes panels) |
 | minigame purses in a save | `World::save_full` / `load_full`, `LGSF` block `LGX7` ([`save-screen.md`](../subsystems/save-screen.md#the-minigame-purses-are-live-state-words-too)) |
 
 Shop windows 35 and 39 are the tier-1 denominator case
@@ -1785,6 +1784,25 @@ GLSL on the other, written separately. The law is in
 packet colour, and neither applies a light source. Both hosts implement it; the
 browser has no light uniform left.
 
+**The field mesh law is paired by evaluation, not by text.**
+`crates/engine-render/src/tests/shading_law_parity.rs` parses the native
+VRAM-mesh and colour-mesh WGSL and the page's fragment shader (its JS template
+resolved against the file's own constants) into naga IR and runs both on the
+CPU (`tests/shader_eval.rs`, an interpreter over that IR) over one grid: CLUT
+words through a row the prologue's palette law reaches and one it does not,
+packet colours around the `0x80` neutral, both prim families, the opaque pass
+and each ABR mode's blend pass composited through each host's blend table, the
+grade, the palette collapse, the view-depth cue ramp and the dither over a 4x4
+block. The outputs must agree; under the dither a value exactly on a 5-bit
+boundary may land one step apart, because the native law divides the colour
+byte by 128 and the page multiplies the normalised colour by 255 / 128, and
+those flips are counted and bounded. The page's ABR table
+(`_setSemiBlend`) is pinned as text beside the arithmetic the test gives it.
+The first run of it found one real difference: the native blend pass applied
+mode 3's quarter before the target saturated the foreground, so an over-unity
+graded colour added more than `0.25`; it now saturates first, as the page's
+constant-alpha factor does.
+
 `a_flat_rgba` means the prim's packet colour everywhere, with alpha as the job:
 
 | flag | meaning |
@@ -1805,18 +1823,35 @@ Traps in that stream, each of which has fired:
 - **Assert content, not length.** A hand-written white stream satisfies
   `len == n * 4`; the per-body tests are in `muscle_web_real.rs`.
 
-Shader pairs with no gate between them: the overworld curvature
-(`overworld_curve_clip` / `overworldCurve`), the continent's flat bucket depth
-(`overworld_flat_depth` / `overworldFlatDepth`), the ground depth cue
-(`overworld_ground_cue` / `overworldGroundCue`,
-[`overworld_ground_cue`](../../crates/engine-field/src/overworld_ground_cue.rs)),
-the PSX snap and dither (`psx_snap_clip` / `psxSnapClip`, `psx_dither`), the
-effect clip (`EFFECT_CLIP_WGSL` / `u_eclip_m`, `u_eclip_b`) and the fog-volume
-body. The CPU kernels they mirror are pinned against retail
-(`overworld_curvature`, `overworld_draw_order`); the WGSL side is GPU-tested,
-and the ground cue's GLSL twin has a shape-matched host-free check
-(`overworld_ground_cue_glsl`). An edit to one shader is carried to the other by
-hand.
+The same evaluation pairs the rest of the field shader surface, each test
+beside the first in `crates/engine-render/src/tests/`:
+
+- **The vertex stage** (`vertex_law_parity`): the VRAM-mesh and colour-mesh
+  `vs_main` against the page's `VS_SRC` - the overworld curvature
+  (`overworld_curve_clip` / `overworldCurve`), the continent's flat bucket
+  and ground depth cue (`overworld_flat_depth`, `overworld_ground_cue` and
+  their GLSL twins), the PSX snap (`psx_snap_clip` / `psxSnapClip`) and the
+  per-primitive near reject - on clip `x`, `y`, `w`, the packet colour and the
+  reject decision. Clip `z` is not compared: the hosts encode depth
+  differently by design.
+- **The enhancement layer at its enabled settings** (in `shading_law_parity`):
+  the key light, screen pool, ambient floor, emissive gain, window glow and
+  point lights (shadows off) through the native scene pipelines, the
+  occlusion fade's screen-door decision pixel for pixel, and the object-effect
+  clip through the native f16 packing.
+- **The fog sheets' fragment stage** (`fog_volume_parity`): `FOG_SHADER_SRC`
+  against the page's `webgl-fog-volume.js` over analytic textures, with the
+  soft intersection read back through native reverse-Z and both of the page's
+  depth encodings.
+
+Running them found four more real differences, each fixed on the side that
+departed: the native colour mesh never applied the PSX snap and the native
+snap divided by a non-positive `w`; the page's point lights dotted a
+retail-frame normal with a page-frame direction, and its occlusion fade read
+the Bayer matrix bottom-up. What stays unpaired: the point lights'
+shadow-map sampling (each host renders its maps under its own clip
+conventions, so a mock would have to reimplement both light projections), the
+fog sheets' vertex stage, and anything that only moves clip `z`.
 
 **Enhanced lighting** is one source, `legaia_render_kernels::scene_lighting`: the
 same `tag_emissive_*` calls, emitter clustering, `nearest_lights` pick around

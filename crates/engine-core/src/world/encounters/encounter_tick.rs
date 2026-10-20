@@ -170,6 +170,64 @@ impl World {
         self.tick_battle_intro();
     }
 
+    /// The battle's **first monster id** - retail's `DAT_8007BD0C`, slot 0 of
+    /// the resolved formation cell.
+    ///
+    /// Three sources, in the order retail's own value becomes available:
+    ///
+    /// 1. the rolled formation row's own slot 0. This is the only source that
+    ///    answers while the encounter sits in its `Transition` phase, which is
+    ///    when the intro is armed: the world is still in Field mode there and
+    ///    [`World::battle_monster_slots`] returns empty outside
+    ///    `SceneMode::Battle`;
+    /// 2. the live actor table, for an in-battle re-arm (a second wave, a
+    ///    scripted re-entry) where the formation row is not the authority;
+    ///    and
+    /// 3. the formation id itself - a **row index**, not a monster id, and
+    ///    therefore wrong for the selector. It is the last resort only
+    ///    because the emitter must produce some style.
+    pub fn battle_intro_slot0(&self, formation_id: u16) -> u8 {
+        self.tables
+            .formation_table
+            .formation(formation_id)
+            .and_then(|d| d.slots.first())
+            .map(|s| s.monster_id as u8)
+            .or_else(|| {
+                self.battle_monster_slots()
+                    .first()
+                    .map(|&(_, id, _)| id as u8)
+            })
+            .unwrap_or(formation_id as u8)
+    }
+
+    /// All three intro-style selector inputs for `formation_id` - the retail
+    /// globals `DAT_8007BD60`, `DAT_8007BD0C` and `DAT_80084540`.
+    ///
+    /// `battle_flags` is `DAT_8007BD60`, of which the selector reads only bit
+    /// `0x80`; the entity SM's confirm state ORs that bit in when the rolled
+    /// row's `record[+0]` is non-zero (`FUN_801DA51C` at
+    /// `0x801DA5F8..0x801DA61C`), which is what makes the scripted / boss arm
+    /// reachable at all. `scene_index` is `DAT_80084540`, the loaded scene's
+    /// raw CDNAME define ([`crate::world::BattleState::map_id`]) - not
+    /// `Scene::start`, which is two below it in the extraction frame. None of
+    /// the three is a host choice, so both hosts and the transition length
+    /// read them from here.
+    pub fn battle_intro_style_inputs(
+        &self,
+        formation_id: u16,
+    ) -> legaia_render_kernels::battle_intro_styles::IntroStyleInputs {
+        legaia_render_kernels::battle_intro_styles::IntroStyleInputs {
+            battle_flags: self
+                .tables
+                .formation_table
+                .formation(formation_id)
+                .map(|d| d.per_battle_flags())
+                .unwrap_or(0),
+            formation_slot0: self.battle_intro_slot0(formation_id),
+            scene_index: self.battle.map_id,
+        }
+    }
+
     /// One frame of the field-to-battle transition entity, `FUN_801CF5BC`.
     ///
     /// The encounter session's `Transition` phase *is* this transition: retail
@@ -216,6 +274,32 @@ impl World {
             self.battle.intro_effects.clear();
             self.battle.intro_mode_handoff = false;
             return;
+        };
+        // First frame of the transition: the style the intro's init picks
+        // fixes `DAT_801D2458` (132, or 252 for the swirl), and the session
+        // armed before it was known. Rebase the countdown onto it. A session
+        // whose length a caller set to something else (a test or tool
+        // shortening the bracket) keeps its own.
+        if self.battle.intro.is_none() {
+            use legaia_render_kernels::battle_intro_styles::{
+                INTRO_DURATION_FRAMES, INTRO_DURATION_FRAMES_SWIRL, intro_duration_frames,
+                select_intro_style,
+            };
+            let style =
+                select_intro_style(&self.battle_intro_style_inputs(roll.formation_id)).style;
+            let frames = intro_duration_frames(style) as u16;
+            if let Some(session) = self.encounters.session.as_mut()
+                && [INTRO_DURATION_FRAMES, INTRO_DURATION_FRAMES_SWIRL]
+                    .contains(&i32::from(session.transition_frames))
+            {
+                session.set_transition_length(frames);
+            }
+        }
+        let frames_remaining = match self.encounters.session.as_ref().map(|s| s.phase()) {
+            Some(EncounterPhase::Transition {
+                frames_remaining, ..
+            }) => frames_remaining,
+            _ => frames_remaining,
         };
         let total = self
             .encounters

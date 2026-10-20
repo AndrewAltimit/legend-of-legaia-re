@@ -26,6 +26,16 @@ asset-viewer battle-scene [--queued-action N]   # battle-action SM driver
 asset-viewer world <SCENE> [--max-actors N]     # engine-core World composite demo
 ```
 
+With no subcommand (a double-click in a file manager) the viewer runs `prot`
+on `extracted/PROT.DAT` in the current folder, else `PROT.DAT` there, else
+`extracted/PROT.DAT` beside the binary; with none of them it prints how to
+make one (and that `legaia-studio` browses a disc image directly), waiting for
+Enter on Windows so the console does not close on the message. `prot` names
+its entries from the `CDNAME.TXT` beside `PROT.DAT` unless `--cdname` is
+given. A failure prints one `asset-viewer: <what>: <cause>` line, and a
+window or renderer that cannot start ends the run with that line instead of
+a panic.
+
 `save-icons` paints the sixteen 16x16 save-slot tiles that sit row-interleaved
 across one 256x16 strip, each through its **own** 16-colour palette - which is
 exactly what the plain `tim` mode cannot do. Tile N is the memory-card icon

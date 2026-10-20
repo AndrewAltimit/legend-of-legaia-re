@@ -440,8 +440,38 @@ impl SceneHost {
         {
             session.install_magic(0, magic);
         }
+        // The bodies the play-out moves: the lead's battle form and the
+        // seated monster, with the clips, reach and size class the battle's
+        // approach and reactions read.
+        let monster_id = opponent_record.as_ref().map(|r| r.id);
+        if let Some(bodies) = self.dome_choreo_bodies(DOME_LEAD_CHAR_SLOT, monster_id) {
+            session.install_choreo(bodies);
+        }
         self.world.enter_muscle_dome(session);
         true
+    }
+
+    /// The dome play-out's two bodies: the fighter `char_slot`'s battle form
+    /// (player battle file `863 + slot`) and monster `monster_id` (PROT 867).
+    /// `None` when either does not decode.
+    fn dome_choreo_bodies(
+        &self,
+        char_slot: u32,
+        monster_id: Option<u16>,
+    ) -> Option<[legaia_engine_menus::muscle_dome_session::choreo::ChoreoBody; 2]> {
+        use legaia_engine_menus::muscle_dome_session::choreo::ChoreoBody;
+        let player = self
+            .index
+            .entry_bytes_extended(
+                legaia_actor_formats::battle_texture_catalog::PLAYER_FILE_ENTRIES[0]
+                    + char_slot.min(2),
+            )
+            .ok()?;
+        let archive = self.index.entry_bytes_extended(867).ok()?;
+        Some([
+            ChoreoBody::fighter(&player, char_slot)?,
+            ChoreoBody::monster(&archive, monster_id?)?,
+        ])
     }
 
     /// The dome fighter's normal-art rows in grid order, through the shared
@@ -498,6 +528,10 @@ impl SceneHost {
     }
 }
 
+/// The dome fighter's player battle file slot: the lead's (`0` = PROT 0863,
+/// the file [`SceneHost::lead_swing_costs`] reads), which is also the body
+/// both play hosts draw.
+pub const DOME_LEAD_CHAR_SLOT: u32 = 0;
 /// Flat favored-class swing cost: the opponent's every card, and a lead card
 /// whose swing record does not resolve.
 pub const DOME_FAVORED_COST: u16 = 0x1E;

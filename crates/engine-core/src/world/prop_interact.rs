@@ -284,7 +284,7 @@ impl World {
         let pz = ms.world_z.saturating_sub(dz) as i32;
         let mut best: Option<(i32, (u8, u8))> = None;
         for c in &self.props.colliders {
-            if !c.solid || !c.interact {
+            if !c.solid || !c.interact || self.prop_collider_exempt(c) {
                 continue;
             }
             let Some(anchor) = c.anchor else { continue };
@@ -445,14 +445,9 @@ impl World {
             id.ctx.local_flags = prop.anim.flags;
         }
         let mut parked = false;
+        let own_record = self.props.bank.props.get(&anchor).map(|p| p.record);
         // Where the record's own `23 <x> <z>` seated the prop this slice.
         let mut own_seat: Option<(i32, i32)> = None;
-        let door_teleports = self.props.bank.props.get(&anchor).is_some_and(|p| {
-            self.props
-                .walk_touch_records
-                .values()
-                .any(|&r| r == p.record)
-        });
         {
             let mut host = FieldHostImpl { world: self };
             let mut budget = legaia_engine_field::inline_dialogue::INLINE_DIALOGUE_STEP_BUDGET;
@@ -541,12 +536,11 @@ impl World {
                 // throwaway context left the player where the touch found
                 // them, on the near side of the lift.
                 // REF: FUN_801DE840 (0x801DEFC0..0x801DF054), FUN_8003774C (case 0x47)
-                // A door bind whose record also teleports the player is a
-                // walk-touch door: the contact dispatch already applied its
-                // decoded `MoveTo` (`check_field_walk_touch`), so its walk-in
-                // leg is not replayed on top of the landing (`tower`'s floor
-                // doors walk the player into the doorway, glide, then `A3 F8`
-                // to the next floor).
+                // A door bind whose record also teleports the player plays its
+                // walk-in leg like any other: the contact dispatch leaves the
+                // record's `A3 F8` to the record (`check_field_walk_touch`),
+                // so `tower`'s floor doors walk the player into the doorway,
+                // close behind them, then jump to the next floor.
                 // The record's next cross-context op on the player waits while
                 // a compass leg it armed is still walking the player; the
                 // halt clear `32 F8 0A` is exempt.
@@ -584,7 +578,6 @@ impl World {
                 }
                 if player_target
                     && b == 0xC7
-                    && !door_teleports
                     && let (Some(&b0), Some(&b1), Some(&b2)) = (
                         id.bytecode.get(id.pc + 2),
                         id.bytecode.get(id.pc + 3),
@@ -625,12 +618,44 @@ impl World {
                 // REF: FUN_8003774C, FUN_801DE840 (0x801DE90C..0x801DE944)
                 let other_target = b & 0x80 != 0 && !player_target;
                 let own_halt = (id.ctx.flags & 0x400, id.ctx.saved_pc, id.ctx.wait_accum);
-                let ctx = if player_target {
-                    &mut player_ctx
+                // An actor-word op aimed at another **placed object** lands on
+                // that object's words, not on the record's own: `tower`'s floor
+                // doors open the partner door one floor away with `AC <id> 07`,
+                // `AC <id> 01`, `AB <id> 03`, drop its collision with `B1 <id>
+                // 00`, wait on its end latch with `AC <id> 08` / `AD <id> 08`
+                // and close it with the mirror run. Stepped on the record's own
+                // context, the partner door never moved and the record's own
+                // door swung again in its place, out of view.
+                // A record naming its own object (`rayman` P0[4]'s `AB 04 07`)
+                // is the executing context already.
+                let object_target = if other_target {
+                    vm::field::peek_extended(&id.bytecode, id.pc)
+                        .filter(|_| is_object_word_op(&id.bytecode, id.pc))
+                        .and_then(|t| host.world.cross_context_object_prop(t))
+                        .filter(|&r| Some(r) != own_record)
                 } else {
-                    &mut id.ctx
+                    None
                 };
-                let step = field_step_routed(&mut host, ctx, &id.bytecode, id.pc);
+                let step = if let Some(record) = object_target {
+                    let mut target_ctx = host.world.object_prop_ctx(record);
+                    let r = vm::field::step_with_caller(
+                        &mut host,
+                        &mut target_ctx,
+                        &mut id.ctx,
+                        false,
+                        &id.bytecode,
+                        id.pc,
+                    );
+                    host.world.store_object_prop_ctx(record, &target_ctx);
+                    r
+                } else {
+                    let ctx = if player_target {
+                        &mut player_ctx
+                    } else {
+                        &mut id.ctx
+                    };
+                    field_step_routed(&mut host, ctx, &id.bytecode, id.pc)
+                };
                 if other_target && own_halt.0 == 0 && id.ctx.flags & 0x400 != 0 {
                     id.ctx.flags &= !0x400;
                     id.ctx.saved_pc = own_halt.1;
@@ -838,16 +863,115 @@ impl World {
         if ctx.field_6a != 0 {
             prop.anim.rate = ctx.field_6a;
         }
+        // The collision layer reads `+0x10 & 3` live
+        // ([`Self::prop_collider_exempt`]): an opened door stops blocking, and
+        // a door its record closes again (`32 00`) blocks again.
         prop.cflags = ctx.flags;
-        if prop.collision_exempt() {
-            for c in &mut self.props.colliders {
-                if c.anchor == Some(anchor) {
-                    c.solid = false;
+    }
+
+    /// The flat MAN record of the placed object a cross-context target byte
+    /// names, when that object has a prop in the bank: `FUN_8003C83C` walks
+    /// the actor list for `+0x50 == target`, and a bound object's `+0x50` is
+    /// its gate-0 trigger's flat record index (`FUN_8003A55C`). A target the
+    /// placement channels claim first is not an object; with no channel list
+    /// (a prop run before the channels spawn) the id is the record itself.
+    ///
+    /// REF: FUN_8003C83C, FUN_8003A55C
+    pub(crate) fn cross_context_object_prop(&self, target: u8) -> Option<usize> {
+        if target == legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET || target == 0xFB {
+            return None;
+        }
+        let record = match legaia_engine_field::field_channels::resolve_target(
+            &self.field_vm.channels,
+            target,
+        ) {
+            Some(ci) => {
+                let c = &self.field_vm.channels[ci];
+                if !c.object_bind {
+                    return None;
                 }
+                usize::from(c.ctx.script_id)
+            }
+            None => usize::from(target),
+        };
+        self.props
+            .bank
+            .props
+            .values()
+            .any(|p| p.record == record)
+            .then_some(record)
+    }
+
+    /// A context standing for placed object `record`'s actor: its `+0x62`
+    /// clip-control word, `+0x10` flag word and `+0x6A` rate, read from the
+    /// object's prop.
+    pub(crate) fn object_prop_ctx(&self, record: usize) -> FieldCtx {
+        let p = self.props.bank.props.values().find(|p| p.record == record);
+        FieldCtx {
+            script_id: record as u16,
+            local_flags: p.map_or(0, |p| p.anim.flags),
+            flags: p.map_or(0, |p| p.cflags),
+            field_6a: p.map_or(0, |p| p.anim.rate),
+            saved_pc: 0xFFFF_FFFF,
+            field_72: 0x1000,
+            ..FieldCtx::default()
+        }
+    }
+
+    /// Write an op's result on [`Self::object_prop_ctx`] back onto every prop
+    /// the object draws and onto its object-bind channel, so the anim tick and
+    /// the collision layer read the new words on the next frame.
+    pub(crate) fn store_object_prop_ctx(&mut self, record: usize, ctx: &FieldCtx) {
+        for p in self
+            .props
+            .bank
+            .props
+            .values_mut()
+            .filter(|p| p.record == record)
+        {
+            p.anim.flags = ctx.local_flags;
+            p.cflags = ctx.flags;
+            if ctx.field_6a != 0 {
+                p.anim.rate = ctx.field_6a;
+            }
+        }
+        if let Some(c) = self
+            .field_vm
+            .channels
+            .iter_mut()
+            .find(|c| c.object_bind && usize::from(c.ctx.script_id) == record)
+        {
+            c.ctx.local_flags = ctx.local_flags;
+            c.ctx.flags = ctx.flags;
+            if ctx.field_6a != 0 {
+                c.ctx.field_6a = ctx.field_6a;
             }
         }
     }
 
+    /// `FUN_801CF754` / `FUN_801CF9F4`'s live `flags & 3` filter for a prop
+    /// collider: the bound prop's `+0x10` as its record last left it.
+    pub(crate) fn prop_collider_exempt(&self, c: &FieldPropCollider) -> bool {
+        c.anchor
+            .and_then(|a| self.props.bank.props.get(&a))
+            .is_some_and(|p| p.collision_exempt())
+    }
+}
+
+/// The actor-word ops a prop run routes onto another placed object
+/// ([`World::cross_context_object_prop`]): the clip-control word `+0x62`
+/// (`2B` / `2C` / `2D`, `4C 35` / `4C 36`), the flag word `+0x10` (`31` /
+/// `32` / `33`) and the rate `+0x6A` (`4C 41`). Any other op on an object
+/// keeps the stand-in context.
+fn is_object_word_op(bytecode: &[u8], pc: usize) -> bool {
+    match bytecode.get(pc).map(|b| b & 0x7F) {
+        Some(0x2B..=0x2D | 0x31..=0x33) => true,
+        Some(0x4C) => matches!(bytecode.get(pc + 2), Some(0x35 | 0x36 | 0x41)),
+        _ => false,
+    }
+}
+
+impl World {
     /// Step the player one frame of a script walk-to-tile leg (op `0x47`
     /// on the player, `C7 F8 <tx> <tz> <mode>`): toward `target` by at most
     /// `speed` on each axis, facing the step, on the floor under every step.

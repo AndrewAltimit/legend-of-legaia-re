@@ -26,7 +26,7 @@ same surface on both hosts from one shared builder.
 | Sprite emitters | `FUN_8002C488` (one sprite), `FUN_8002C69C` (sized widget), `FUN_8002BDC4` (window fill) |
 | Retained handle list | `ctx[+0x1074]`, forty handles; glide slots `ctx[+0x11B4 + slot * 0xC]` |
 | Art | resident system-UI TIM `PROT.DAT` `0x18E0` -> VRAM page `(896, 256)`, CLUT row 511; menu-glyph atlas page `(896, 0)`, CLUT row 510 |
-| Port | model `engine-core::battle_hud`, draw builder `engine-ui::battle_hud::battle_hud_draws_for`, pins `engine-ui::battle_chrome` |
+| Port | model `engine-battle-hud`, draw builder `engine-ui::battle_hud::battle_hud_draws_for`, pins `engine-ui::battle_chrome` |
 
 Every HUD element, with its art, placement record, retail draw routine and port module:
 
@@ -46,6 +46,7 @@ Every HUD element, with its art, placement record, retail draw routine and port 
 | Message banner | class-0 window, widget `0x03` | `0x45..=0x4B`, `0x59`, `0x65`, `0x66`; formation line 67 | `FUN_8002C69C` + `FUN_8002BDC4` | `engine-ui::battle_hud_chrome` |
 | Intro enemy names | class-0 window, widget `0x03` | none (immediate geometry) | `FUN_801D9D3C` | `battle_hud::battle_intro_names` |
 | Item window | window-skin 9-slice, hand cursor | step `0x05`; target strip = record 7 | state `0x3C` / `0x64` | `engine-ui::battle_item_ui` |
+| Magic window | the item window's skin plus two gold tabs | trail tab `0x0E` | state `0x46` | `engine-ui::battle_item_ui::battle_spell_window_*` |
 | Arts banner | value-readout sheet, tpage `(448, 0)` | none | `FUN_801E2524` / `FUN_801E2650` | `engine-battle-vm::battle_action::flash_ramp`, `battle_numerals::arts_banner_prims` |
 
 ### Screen layout
@@ -246,7 +247,7 @@ glides that arm's chip onto the trail as a third tab abutting the plaque, at
 
 Both `0x0D` and `0x0E` carry interior `w = 0x30`; the `arts_bar_*` captures
 read `Begin | Vahn | Attack` over the direction chips. Port:
-`engine-core::battle_hud::battle_breadcrumb_third_tab`, drawn by
+`engine-battle-hud::battle_breadcrumb_third_tab`, drawn by
 `engine-ui::battle_hud` on both hosts.
 
 <a id="the-party-status-readout---and-it-has-no-gauge"></a>
@@ -716,7 +717,7 @@ The port's party band is the field actor table, which a scene script can blank
 (`opurud` resets slots 1 / 2), so its battle entry re-seats the three values
 off the roster (`World::seed_party_battle_hp_from_records`).
 
-**Port.** `engine-core::battle_hud` carries the rule as predicates
+**Port.** `engine-battle-hud` carries the rule as predicates
 (`battle_panels_visible`, `battle_readout_bar_slot`, `battle_begin_tab_visible`,
 `battle_ring_ap_plate_value`, `battle_move_name`, `battle_target_plaque`,
 `battle_combo_style`, `battle_magic_chip`) and decodes the table itself
@@ -1146,7 +1147,7 @@ the text-actor list empty. What carries the fight from there is
 Every spawn is node kind 0, style 3. After the second run's teardown the round
 prompt builds `Begin` / `Run` on ids `3` and `4`.
 
-**Port.** `engine-core::battle_hud::battle_intro_names` builds the labels (the
+**Port.** `engine-battle-hud::battle_intro_names` builds the labels (the
 grouping and run suffix of `target_picker::enemy_menu_rows`, the layout of
 `target_picker::layout_enemy_menu_rows`), measured with the host's
 `legaia-font` and reading `+0x34` off the live actor position.
@@ -1238,6 +1239,33 @@ Known divergences, disclosed in the module doc:
   `178`, under which `146` is where a four-digit maximum starts;
 - the floating world-anchored name tag and the target-camera re-frame are not
   drawn.
+
+## The battle magic window (`0x46`)
+
+The magic window is the item window's frame with spell content. A PCSX-Redux
+film of `cort_evolved_battle_first_menu` walked one RIGHT press into the ring
+(`scripts/pcsx-redux/autorun_film.lua`, pad `60:LEFT,150:RIGHT`) shows:
+
+| Piece | Pin (screenshot-read) |
+|---|---|
+| list window | the item list's rect, x `166..=313`, y `28..=164`, `PAGE n/m` header |
+| description window | the item description's rect, x `8..=167`, y `122..=164`; two lines, the spell's name then its scope (`Inferno` / `Attack all enemies.`), pitch 14 |
+| hand cursor | the item window's seat and pitch |
+| rows | eight per page; a leading element icon at the item rows' pen, the name 25 px right of it (32 px past the wider winged Ra-Seru icon) |
+| `Lv` / `MP` tabs | two gold tab plates top right, x `188..=247` and `250..=313`, y `8..=28`: the highlighted spell's level and MP cost |
+| breadcrumbs | `Begin` \| member \| the Ra-Seru arm's label - the HUD's trail (record `0x0E`), not the window's |
+
+The magic window's target step closes both windows; with an all-enemies spell
+the screen keeps only the trail and an `All` plate.
+
+**Port.** `engine-ui::battle_item_ui::battle_spell_window_*` composes the two
+windows, the tabs and the hand through the same 9-slice, tab-banner and hand
+cells the item window uses; `World::battle_spell_menu_model` projects the open
+`BattleSpellSession` (rows, hand row, the disc spell table's info lines, the
+caster's record `+0x161` level, the effective MP cost), and
+`engine-screens::with_battle_spell_frame` hands it to both play hosts. Not
+drawn: the element and Ra-Seru icon cells (the gap is kept), and the
+target step's `All` plate - the target step still draws the port's text line.
 
 ## Screen-element placement table `0x80076C10` and its copy helpers
 
@@ -1502,7 +1530,7 @@ see [Arts presentation](battle-actor-rendering.md#arts-presentation-slow-motion-
 <a id="battle-hud-model"></a>
 ## Engine port: the battle HUD model
 
-[`engine-core::battle_hud`](../../crates/engine-core/src/battle_hud.rs) is the
+[`engine-battle-hud`](../../crates/engine-battle-hud/src/lib.rs) is the
 renderer-agnostic UI state for the in-battle screen: per-slot HP / MP / AP and
 status state plus a queue of damage popups and battle-event log lines.
 `engine-ui::battle_hud::battle_hud_draws_for` turns one `BattleHudFrame` into

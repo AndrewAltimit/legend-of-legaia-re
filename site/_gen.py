@@ -84,6 +84,7 @@ TITLE_OVERRIDES: dict[str, str] = {
     "tooling/rom-patcher": "Legend of Legaia Randomizer - In-Browser ROM Patcher",
     "tooling/translation-workbench": "Legend of Legaia Translation Workbench - Edit a Language Pack in the Browser",
     "guides/vrchat-world": "Legend of Legaia in VRChat - Build a World from Your Own Disc",
+    "guides/desktop-apps": "Legaia Studio and the Native Legend of Legaia Port - Download and Run",
 }
 
 # Hand-written meta descriptions for the same landing pages. Everything else
@@ -176,11 +177,22 @@ DESCRIPTIONS: dict[str, str] = {
         "sectors to a running from-scratch engine: formats, parsers, "
         "subsystems, and the WASM port."
     ),
+    "crates": (
+        "An interactive map of the Legend of Legaia RE workspace: every crate "
+        "in its layer, what it uses and what uses it, and the path a scene "
+        "takes from disc sectors to pixels in the native and browser hosts."
+    ),
     "guides/vrchat-world": (
         "Turn a Legend of Legaia town into a private VRChat world: export any "
         "scene from your own disc as glTF, then build it in Unity with the "
         "project's kit - walkable retail terrain, animated villagers, doors "
         "that teleport you inside, and the scene's music on loop."
+    ),
+    "guides/desktop-apps": (
+        "Download Legaia Studio and the native Legend of Legaia port for "
+        "Windows, macOS or Linux: first start past SmartScreen and Gatekeeper, "
+        "browsing and exporting your disc's textures, models, music and movies, "
+        "and playing with keyboard or gamepad from your own disc image."
     ),
     "writeups/index": (
         "Technical deep-dives from reverse engineering Legend of Legaia: a "
@@ -401,6 +413,7 @@ WIDE_PAGES: set[str] = {
 # docs column and its reading measure; only a `section.doc-section.breakout`
 # spans the wide column. See "Column width policy" in css/styles.css.
 PROSE_WIDE_PAGES: set[str] = {
+    "crates",
     "disc-map",
     "reference/music-tracks",
     "reference/scene-names",
@@ -524,6 +537,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     # depth = 0 (root)
     ("index.html",                 "Home",                          "home",                       "home.html"),
     ("architecture.html",          "How the layers stack",          "architecture",               "architecture.html"),
+    ("crates.html",                "Crate map",                     "crates",                     "crates.html"),
     ("quickstart.html",            "Quick start",                   "quickstart",                 "quickstart.html"),
     ("play.html",                  "Play the port (WASM)",          "play",                       "play.html"),
     ("viewer.html",                "Asset viewer (WASM)",           "viewer",                     "viewer.html"),
@@ -543,6 +557,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("guides/getting-started.html", "Getting started (release tools)", "guides/getting-started",     "guides/getting-started.html"),
     ("guides/extracting-assets.html","Extracting assets",             "guides/extracting-assets",   "guides/extracting-assets.html"),
     ("guides/playing-and-viewing.html","Playing and viewing",         "guides/playing-and-viewing", "guides/playing-and-viewing.html"),
+    ("guides/desktop-apps.html",   "Desktop apps: Legaia Studio and the native port", "guides/desktop-apps", "guides/desktop-apps.html"),
     ("guides/modding-and-translation.html","Modding and translation", "guides/modding-and-translation","guides/modding-and-translation.html"),
     ("guides/translating.html",    "Translating the game",           "guides/translating",         "guides/translating.html"),
     ("guides/vrchat-world.html",   "Importing a world into VRChat",  "guides/vrchat-world",        "guides/vrchat-world.html"),
@@ -1003,6 +1018,11 @@ def build_gamedata_json() -> tuple[dict, dict]:
                 "name":        town,
                 "scene_label": TOWN_TO_SCENE.get(town),
                 "shop_scenes": TOWN_SHOP_SCENES.get(town, []),
+                # Display name per shop scene, for the map pane's scene tabs.
+                "shop_scene_names": {
+                    s["label"]: s["display"] for s in CDNAME_SCENES
+                    if s["label"] in TOWN_SHOP_SCENES.get(town, [])
+                },
                 "shops":       shops_list,
                 "casino":      casino_by_town.get(town, []),
                 "fishing":     fishing_by_town.get(town, []),

@@ -14,6 +14,7 @@ mod ambient_touch_wake;
 mod animation_chain;
 mod arts_banner_ladder;
 mod arts_spirit_charge;
+mod astral_slash_clip_damage_disc;
 mod bag_use_list_rows;
 mod baka_front_end_world;
 mod baka_tally_world;
@@ -39,7 +40,6 @@ mod battle_loop_wiring;
 mod battle_member_step_back;
 mod battle_open_flow;
 mod battle_physical_damage;
-mod battle_plaque_badge_census_disc;
 mod battle_player_driven;
 mod battle_reaction_stage_precedence;
 mod battle_real_data_chain;
@@ -150,6 +150,10 @@ mod unseeded_battle_wipe_guard;
 mod walk_regen_and_actor_collision_wiring;
 mod world_map_axis_convention;
 mod world_map_kingdom_clut_overwrite;
+// --- lane V ---
+mod scene_clut_over_shared_layer;
 mod world_map_render_ladder;
 mod world_trig_lut;
 mod worldmap_save_screen_handoff;
+// --- lane K ---
+mod casino_seat_disc;

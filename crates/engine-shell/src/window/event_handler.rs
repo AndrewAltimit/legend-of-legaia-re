@@ -62,6 +62,7 @@ impl ApplicationHandler for PlayWindowApp {
         if let Some(r) = self.win.renderer.as_ref() {
             r.set_dyn_shadows(self.options_state.light_shadows);
             r.set_occlusion_fade(self.options_state.occlusion_fade);
+            r.set_bloom(self.options_state.bloom);
         }
         self.upload_assets();
         self.win.request_redraw();
@@ -198,8 +199,8 @@ impl ApplicationHandler for PlayWindowApp {
                 let held = state == ElementState::Pressed;
                 self.orbit_drag_last_x = held.then_some(self.cursor_x);
                 self.orbit_drag_last_y = held.then_some(self.cursor_y);
-                // Double-click: the follow camera back to retail framing
-                // (orbit / tilt / zoom to identity), the page's `dblclick`.
+                // Double-click: the follow camera back to retail framing on
+                // the lead (`Camera::recenter_follow`), the page's `dblclick`.
                 // The `T` preset is a persisted option and stays.
                 if held {
                     let now = std::time::Instant::now();
@@ -208,7 +209,11 @@ impl ApplicationHandler for PlayWindowApp {
                         .is_some_and(|t| now.duration_since(t) <= DOUBLE_CLICK_WINDOW);
                     self.last_left_press = (!double).then_some(now);
                     if double && !self.field_debug_camera && !self.boot_ui.is_active() {
-                        self.session.camera.reset_follow_knobs();
+                        // The page's Reset camera button and `dblclick` run
+                        // the same kernel (`play_camera_reset_framing`).
+                        self.session
+                            .camera
+                            .recenter_follow(&self.session.host.world);
                         log::info!("camera: follow framing reset (double-click)");
                     }
                 }

@@ -16,8 +16,9 @@
 //! record so the page can say why it shows no model.
 
 use super::*;
+use legaia_engine_field::man_field_scripts as mfs;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
-use legaia_scene_formats::man_section::{self, ManFile};
+use legaia_scene_formats::man_section::{self, ActorPlacement, ManFile};
 use legaia_scene_formats::shop_stock;
 
 /// One shop record in a scene, with the record that issues it.
@@ -31,6 +32,10 @@ pub struct ShopVendor {
     pub count_off: usize,
     /// `(partition, record index)` of the MAN record whose span holds the op.
     pub owner: Option<(usize, usize)>,
+    /// World `(x, z)` the owning placement stands on while the shop is open
+    /// ([`vendor_seat`]); `None` for a record that is not a placement or
+    /// whose prologue never seats it.
+    pub seat: Option<(i16, i16)>,
 }
 
 /// Every partition record's absolute start, sorted, as
@@ -80,6 +85,7 @@ pub fn scene_shop_vendors(
         .ok_or_else(|| format!("{name}: scene has no MAN"))?;
     let mf = man_section::parse(&man).map_err(|e| format!("MAN parse: {e:#}"))?;
     let starts = record_starts(&mf, man.len());
+    let placements = mfs::classify_placements(&mf, &man);
     // The first section header bounds the record data region.
     let sections_start = mf
         .sections
@@ -97,10 +103,48 @@ pub fn scene_shop_vendors(
                 .filter_map(|&o| man.get(o).copied())
                 .collect(),
             owner: owner_of(&starts, sections_start, r.count_off),
+            seat: None,
             count_off: r.count_off,
             name: r.name,
         })
+        .map(|mut v| {
+            v.seat = match v.owner {
+                Some((1, slot)) if slot > 0 => placements
+                    .iter()
+                    .find(|(p, _)| p.index == slot)
+                    .and_then(|(p, _)| vendor_seat(&mf, &man, p)),
+                _ => None,
+            };
+            v
+        })
         .collect())
+}
+
+/// Where a vendor's actor stands while its shop is open, in world units, or
+/// `None` when no state of its spawn prologue seats it on the map.
+///
+/// A shopkeeper's placement is often a **flag-dispatched spawn**
+/// ([`mfs::placement_spawn_relocation`]): its header tile is the off-map hide
+/// box or a staging square, and the prologue's story-flag arms either park it
+/// or run it to its counter. Which arm a visit takes depends on the save, so
+/// this takes the first arm that seats the actor anywhere but the hide box -
+/// every flag set (the later story state the town's shops are visited in),
+/// then every flag clear (the fresh game) - and falls back to the header tile
+/// when neither arm moves it and the header is not the hide box.
+pub fn vendor_seat(mf: &ManFile, man: &[u8], p: &ActorPlacement) -> Option<(i16, i16)> {
+    let seated = |enc: Option<(u8, u8)>| {
+        enc.filter(|&(x, z)| (x & 0x7F, z & 0x7F) != mfs::PARKED_SENTINEL_TILE)
+            .map(|(x, z)| (mfs::grid_byte_to_world(x), mfs::grid_byte_to_world(z)))
+    };
+    let hot = mfs::placement_spawn_relocation(mf, man, p, &|_| true);
+    let cold = mfs::placement_spawn_relocation(mf, man, p, &|_| false);
+    seated(hot).or_else(|| seated(cold)).or_else(|| {
+        let hidden =
+            p.world_x == mfs::FIELD_OFFMAP_HIDE_XZ || p.world_z == mfs::FIELD_OFFMAP_HIDE_XZ;
+        // An arm that parks the actor in both states still leaves the header
+        // as its only station.
+        (!hidden).then_some((p.world_x, p.world_z))
+    })
 }
 
 #[wasm_bindgen]
@@ -113,7 +157,8 @@ impl LegaiaViewer {
     ///     "stock_names": ["Healing Leaf", ...], // item table names (or null)
     ///     "partition": 1, "record": 7,   // owning MAN record (null if none)
     ///     "npc": 3,                      // NPC catalog index, or null
-    ///     "why": null } ]                // reason when npc is null
+    ///     "why": null,                   // reason when npc is null
+    ///     "seat": [x, z] } ]             // where it stands (vendor_seat), or null
     /// ```
     ///
     /// `npc` indexes `field_npc_catalog_json().npcs` (`field_npc_mesh(npc)`
@@ -169,6 +214,7 @@ impl LegaiaViewer {
                     "record": v.owner.map(|o| o.1),
                     "npc": npc,
                     "why": why,
+                    "seat": v.seat.map(|(x, z)| [x, z]),
                 })
             })
             .collect();

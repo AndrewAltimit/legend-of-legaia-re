@@ -156,6 +156,24 @@
   </div>
 </section>
 
+<section class="doc-section" id="play-out">
+  <h2>A leg plays out as a battle</h2>
+  <p>Nothing about a leg&rsquo;s choreography is the dome&rsquo;s own: a turn acts out on the battle&rsquo;s animation and locomotion code, and the port plays it on the same kernels its battles use.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Piece</th><th>What decides it</th></tr></thead>
+    <tbody>
+      <tr><td>Clip speed</td><td>the anim tick&rsquo;s rate law: <code>rate / 4</code> keyframes a vsync at the normal speed byte</td></tr>
+      <tr><td>Where the walk stops</td><td>the range law <code>FUN_8004E2F0</code>: the attacker&rsquo;s live position against the target&rsquo;s body pair, the monster&rsquo;s size class and the party reach offset</td></tr>
+      <tr><td>Travel</td><td>each clip&rsquo;s own root speed and end step; a reaction slides its body back</td></tr>
+      <tr><td>The hit</td><td>the swing&rsquo;s event frame; a flinch, or a knockdown on the killing hit</td></tr>
+      <tr><td>Walking home</td><td>none - the next string starts where the last one left the pair</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>A walk that stopped on a margin of its own rather than on the range law is what left daylight between a fist and its target.</p>
+</section>
+
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <p>The cursor packing, the course ladder, both restores, the arena data file and ringside stills, the round driver&rsquo;s phases, the command input and the sound are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-muscle-dome.md" target="_blank" rel="noopener"><code>docs/subsystems/minigame-muscle-dome.md</code></a>.</p>

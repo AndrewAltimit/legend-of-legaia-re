@@ -30,7 +30,7 @@ pub struct BattleSpoilsBanner {
     /// is empty, else the lead's team (`FUN_801D84C0`'s two build arms).
     pub subject: legaia_engine_battle_vm::battle_party_panel::ResultSubject,
     /// `(level_up, report)` rows below rest - the windows' raise glide
-    /// ([`crate::battle_hud::battle_result_windows_dy`]).
+    /// ([`BattleState::result_windows_dy`](crate::world::BattleState::result_windows_dy)).
     pub slide: (i32, i32),
 }
 
@@ -134,7 +134,7 @@ impl World {
             drops,
             level_ups,
             subject: self.battle_result_subject(),
-            slide: crate::battle_hud::battle_result_windows_dy(self),
+            slide: self.battle.result_windows_dy(),
         })
     }
 
@@ -299,7 +299,7 @@ impl World {
             .map(|(t, lead)| t.compose(subject, &lead));
         Some(BattleDefeatBanner {
             line,
-            slide_y: crate::battle_hud::battle_result_windows_dy(self).1,
+            slide_y: self.battle.result_windows_dy().1,
         })
     }
     /// Resolve a finished battle and return to the field.

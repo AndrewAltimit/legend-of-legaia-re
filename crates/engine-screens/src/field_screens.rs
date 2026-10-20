@@ -154,3 +154,127 @@ pub fn field_party_hud_draws(
         },
     )
 }
+
+/// The field overlay's **passive-ability badge column** (`FUN_801d095c`):
+/// the icons floated over the player's head while an accessory passive is
+/// active, seated through the host's view-projection `vp` (column-major,
+/// mapping onto the 320x240 stage). Empty while no passive is active or the
+/// anchor does not project.
+///
+/// `World` answers the three head-relative world points
+/// (`World::passive_hud_points`, lifted by fractions of the player's `+0x72`)
+/// and the icon list for a resolved anchor (`World::passive_hud_icons`); the
+/// projection between them is this function, so both play hosts seat the
+/// column the same way. Retail takes the anchor's **X from the first**
+/// projected point and its **Y from the third** - a mixed pair, not one
+/// point's.
+///
+/// The caller still owns the suppress gate: the column answers the party
+/// readout's `_DAT_8007B868` suppression, which each host asks with its own
+/// screen terms.
+pub fn passive_hud_icons(
+    world: &World,
+    vp: &[f32; 16],
+) -> Vec<legaia_engine_field::field_passive_hud::HudIcon> {
+    if !world.passive_hud_active() {
+        return Vec::new();
+    }
+    let Some(points) = world.passive_hud_points() else {
+        return Vec::new();
+    };
+    let project = |p: [f32; 3]| -> Option<(i32, i32)> {
+        let v = [p[0], p[1], p[2], 1.0];
+        let mut clip = [0.0f32; 4];
+        for (i, c) in clip.iter_mut().enumerate() {
+            *c = (0..4).map(|j| vp[j * 4 + i] * v[j]).sum();
+        }
+        if clip[3] <= 0.01 {
+            return None;
+        }
+        Some((
+            ((clip[0] / clip[3] * 0.5 + 0.5) * 320.0) as i32,
+            ((0.5 - clip[1] / clip[3] * 0.5) * 240.0) as i32,
+        ))
+    };
+    let (Some(first), Some(third)) = (project(points[0]), project(points[2])) else {
+        return Vec::new();
+    };
+    world.passive_hud_icons((first.0, third.1))
+}
+
+/// The badge column's icons as surface-pixel text draws, through the stage
+/// transform `(stage_origin, stage_scale)`.
+///
+/// The icon ids `0x47..=0x4D` name cells of the field pictogram bank
+/// (`FUN_8002C488`), which neither host has a sprite atlas for, so each draws
+/// as the same gold ASCII stand-in the menu painters' pictograms use.
+pub fn passive_hud_text_draws(
+    font: &legaia_font::Font,
+    icons: &[legaia_engine_field::field_passive_hud::HudIcon],
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<legaia_engine_ui::TextDraw> {
+    let mut out = Vec::new();
+    for i in icons {
+        let mut draws = legaia_engine_ui::text_draws_for(
+            &font.layout_ascii("*"),
+            (i.x, i.y),
+            legaia_engine_ui::MENU_TEXT_GOLD,
+        );
+        legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+        out.extend(draws);
+    }
+    out
+}
+
+/// The field party HUD's rearm terms for this frame, the first half of its
+/// per-frame step on both play hosts.
+///
+/// A scene change is retail's rearm condition (its own arm includes "the
+/// staged scene load is still pending"): without it the stationary compare
+/// would run against the previous scene's coordinates and pop the readout up
+/// mid-transition. `scene_latch` is the host's record of the scene the HUD
+/// last ran in. Then retail's player-engaged term: a script or conversation
+/// that holds the player restarts the idle countdown every frame, read a
+/// frame late, the order retail's actor lists run in
+/// (`FieldPartyHud::rearm_term`).
+pub fn field_party_hud_rearm(
+    hud: &mut legaia_engine_field::world_map_panel_host::FieldPartyHud,
+    scene_latch: &mut Option<String>,
+    host: &legaia_engine_scene_host::scene_host::SceneHost,
+) {
+    let scene = host.scene.as_ref().map(|s| s.name.clone());
+    if scene != *scene_latch {
+        *scene_latch = scene;
+        hud.rearm();
+    }
+    let held =
+        legaia_engine_core::world_views::world_map_panel_host::field_hud_rearm_held(&host.world);
+    if hud.rearm_term(held) {
+        hud.rearm();
+    }
+}
+
+/// One frame of the field party HUD's decision kernel, the second half of
+/// its per-frame step on both play hosts: the Field HP Display option
+/// (`_DAT_800845C4`, not a camera mode), the suppress mask over the **packed**
+/// d-pad of the word the world was handed this tick (`World::input` - not a
+/// host's held keys, which would keep the HUD hidden while the world itself
+/// was fed a neutral pad), the player's position for the stationary compare,
+/// and the host's `suppressed` answer and projected stage `y`.
+pub fn field_party_hud_tick(
+    hud: &mut legaia_engine_field::world_map_panel_host::FieldPartyHud,
+    world: &World,
+    suppressed: bool,
+    projected_y: Option<i16>,
+) {
+    let view_mode =
+        legaia_engine_core::world_views::world_map_panel_host::field_hud_view_mode(world);
+    let pad = legaia_engine_field::world_map_panel_host::packed_pad(world.input.pad());
+    let player_pos = world
+        .player_actor_slot
+        .map(usize::from)
+        .and_then(|s| world.actors.get(s))
+        .map(|a| (a.move_state.world_x, a.move_state.world_z));
+    hud.tick(suppressed, view_mode, pad, player_pos, 1, projected_y);
+}

@@ -97,7 +97,7 @@ pub struct WorldToggles {
     /// highlighted arm. Only the second highlights a command chip - the menu
     /// SM's pre-dispatch block (`FUN_801D0748`, `0x801D07FC..0x801D0AC0`)
     /// runs under `_DAT_800846C8 != 0` and stamps the highlighted arm's
-    /// frame style. Read by `battle_hud::battle_chip_highlight`.
+    /// frame style. Read by `legaia_engine_battle_hud::battle_chip_highlight`.
     pub battle_command: legaia_engine_menus::option_values::BattleCommandOpt,
     /// The options screen's **Battle Camera** row (config word
     /// `0x800846C0`, Close / Normal / Far), which the battle camera's action

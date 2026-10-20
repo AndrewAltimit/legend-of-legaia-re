@@ -32,7 +32,7 @@
 //! Both play hosts build their opt-in developer menu through
 //! [`dev_menu_list_draws_for`] and place its cursor with
 //! [`dev_menu_cursor_xy`], over the row model in
-//! `legaia_engine_core::dev_menu_host`: `legaia-engine`'s native window
+//! `legaia_engine_menu_runtime::dev_menu_host`: `legaia-engine`'s native window
 //! behind `LEGAIA_DEV_MENU=1` (host module `window/dev_menu.rs`) and the
 //! browser play page behind its session-only Dev-menu checkbox
 //! (`web-viewer/src/play_dev_menu.rs`). That screen carries the subset of

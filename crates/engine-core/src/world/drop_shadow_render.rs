@@ -34,7 +34,7 @@ pub const DROP_SHADOW_DEPTH_LIFT: i32 = 6;
 const PARTY_CLASS_BIT: u32 = 0x0100_0000;
 /// The placement class bit (`0x20000`) `FUN_8003A1E4` ORs into every
 /// partition-1 actor it seats, which the port's channel flags do not mirror.
-const PLACEMENT_CLASS_BIT: u32 = 0x0002_0000;
+pub(super) const PLACEMENT_CLASS_BIT: u32 = 0x0002_0000;
 
 impl World {
     /// Retail's overworld bit `_DAT_1F800394 & 1`, which `FUN_800271A8` sets

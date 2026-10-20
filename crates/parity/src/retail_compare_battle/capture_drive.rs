@@ -102,12 +102,36 @@ impl RetailBattle {
             // staged no clip - `0x14` stages the approach - so both bodies
             // still sway on the idle loops the replay reaches on its own
             // clock (`super_queue_replace_*`).
-            .filter(|&&(slot, ..)| {
+            //
+            // The capture-class band `0x6F..=0x71` is the exception for a
+            // body it leaves on its idle loop (clip `0`): the slot-B module
+            // there runs its own countdown and stages no clip on either seat,
+            // so that cursor is time since the loop began -
+            // `zeto_big_wave_mid_cast`'s caster idles through PROT 0946's band
+            // in a close-up the loop's sway fills. Elsewhere an idle seat in
+            // flight may have just come off the action's own clip.
+            //
+            // So is a party target already on its reaction (the
+            // `+0x1EF..+0x1F3` family `2, 3, 4, 5, 0x0B`): the reaction
+            // started on the hit, which the replay lands on its own clock,
+            // and the displayed frame is two game frames older than the RAM -
+            // a knockdown carries the whole body in that time
+            // (`battle_gimard_tail_fire_b`'s Vahn). A cursor below zero is a
+            // displayed frame from before the hit, left alone.
+            .filter(|&&(slot, clip, cursor)| {
                 let staged = !(self.action_state == 0x0C
                     || self.action_state == 0x14 && self.walk_yaw_base == 0x200);
                 let in_flight =
                     self.action_state != 0 && staged && !(0x50..=0x5A).contains(&self.action_state);
-                !in_flight || (slot != self.active_actor && slot != self.target_code)
+                let capture_band_idle = clip == 0 && (0x6F..=0x71).contains(&self.action_state);
+                let party_reaction = slot < 3
+                    && slot == self.target_code
+                    && matches!(clip, 2..=5 | 0x0B)
+                    && cursor >= 0;
+                !in_flight
+                    || capture_band_idle
+                    || party_reaction
+                    || (slot != self.active_actor && slot != self.target_code)
             })
             .filter_map(|&(slot, clip, cursor)| {
                 let slot = if slot < 3 {
@@ -334,7 +358,7 @@ pub(super) fn run_drive(
                     .camera
                     .as_ref()
                     .map(|c| (c.close_up_accum(), c.is_gliding())),
-                legaia_engine_core::battle_hud::battle_action_plaque_dy(world),
+                legaia_engine_battle_hud::battle_action_plaque_dy(world),
                 world
                     .actors
                     .iter()

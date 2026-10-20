@@ -161,3 +161,89 @@ fn safe_escape_triples_a_fleeing_members_guard() {
     // Both: the guard roll is tripled (`0x801ED22C`), so less gets through.
     assert!(hit_on_member(true, true) < plain);
 }
+
+/// A monster's swing on a party member through the melee kernel's inlined
+/// guard ladder (`0x801ED5CC..0x801EDA00`): every arm keys on the attacking
+/// monster's record element `+0x1D`, so the member's elemental guard and All
+/// Guard bits apply to a plain monster strike as they do to a special.
+/// `element` is the monster's; `bits_f4` / `bits_f8` are ORed into the
+/// member's ability words.
+fn monster_swing_on_member(element: u8, bits_f4: u32, bits_f8: u32) -> u32 {
+    let mut w = duel();
+    w.load_party(legaia_save::Party::zeroed(1));
+    w.party.party_count = 1;
+    w.actors[0].battle.hp = 5000;
+    w.set_battle_defense(0, 30);
+    w.actors[1].battle_element = Some(element);
+    let rec = &mut w.party.roster.members[0];
+    let mut bits = rec.ability_bits();
+    for (i, b) in bits_f4.to_le_bytes().into_iter().enumerate() {
+        bits[i] |= b;
+    }
+    for (i, b) in bits_f8.to_le_bytes().into_iter().enumerate() {
+        bits[4 + i] |= b;
+    }
+    rec.set_ability_bits(bits);
+    w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false, false);
+    w.actors[0].battle.damage_accum
+}
+
+/// Passive `0x1D` (Earth guard) is `+0xF4` bit 29; the earth arm halves the
+/// hit's excess over Defense (`0x801ED6D8..0x801ED6E0`).
+#[test]
+fn an_elemental_guard_halves_a_matching_monsters_swing() {
+    const EARTH_GUARD: u32 = 0x2000_0000;
+    let plain = monster_swing_on_member(0, 0, 0);
+    let guarded = monster_swing_on_member(0, EARTH_GUARD, 0);
+    assert!(plain > 1, "the swing lands ({plain})");
+    assert_eq!(guarded, plain >> 1);
+    // A guard for another element leaves an earth swing alone...
+    assert_eq!(monster_swing_on_member(0, 0x4000_0000, 0), plain);
+    // ...and no guard reaches a non-elemental (`7`) monster.
+    let neutral = monster_swing_on_member(7, 0, 0);
+    assert_eq!(monster_swing_on_member(7, EARTH_GUARD, 0), neutral);
+}
+
+/// All Guard (`+0xF8` bit `0x10`, passive `0x24`) takes `3/4` of an
+/// elemental monster's swing and skips the per-element arms
+/// (`0x801ED61C..0x801ED65C`), but not a non-elemental one's.
+#[test]
+fn all_guard_takes_three_quarters_of_an_elemental_monsters_swing() {
+    const ALL_GUARD: u32 = 0x10;
+    let plain = monster_swing_on_member(5, 0, 0);
+    assert_eq!(monster_swing_on_member(5, 0, ALL_GUARD), (plain * 3) >> 2);
+    let neutral = monster_swing_on_member(7, 0, 0);
+    assert_eq!(monster_swing_on_member(7, 0, ALL_GUARD), neutral);
+}
+
+/// The guard ladder halves the excess **before** the `Defense + 9999` cap
+/// (`0x801ED5CC..0x801EDA00`, then the cap at `0x801EDA00`): a guarded
+/// swing whose excess is still above 9999 after the halve lands the full
+/// cap, not half of it.
+#[test]
+fn the_guard_ladder_runs_before_the_damage_cap() {
+    const EARTH_GUARD: u32 = 0x2000_0000;
+    let strike = |guard: u32| {
+        let mut w = duel();
+        w.load_party(legaia_save::Party::zeroed(1));
+        w.party.party_count = 1;
+        w.actors[0].battle.hp = 5000;
+        w.set_battle_defense(0, 0);
+        w.set_battle_attack(1, 60000);
+        w.actors[1].battle_element = Some(0);
+        let rec = &mut w.party.roster.members[0];
+        let mut bits = rec.ability_bits();
+        for (i, b) in guard.to_le_bytes().into_iter().enumerate() {
+            bits[i] |= b;
+        }
+        rec.set_ability_bits(bits);
+        w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false, false);
+        w.actors[0].battle.damage_accum
+    };
+    assert_eq!(strike(0), 9999);
+    assert_eq!(
+        strike(EARTH_GUARD),
+        9999,
+        "halved excess still clears the cap"
+    );
+}

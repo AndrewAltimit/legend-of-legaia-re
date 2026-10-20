@@ -369,11 +369,12 @@ impl LegaiaRuntime {
         self.baka_session().is_some() && self.minigame_ui.baka_surface.hud_art_resident()
     }
 
-    /// The Baka cabinet's and round chrome's widgets as screen-space PSX
-    /// primitives against the duel VRAM: the shared quad kernel
-    /// (`BakaDuelSurface::hud_quads`, retail `FUN_801d5ed0`) through the
-    /// shared builder (`baka_strips::baka_hud_prims`), the same two calls
-    /// the native window makes. Empty unless [`Self::baka_hud_art_drawn`].
+    /// The Baka Fighter screen layer as screen-space PSX primitives against
+    /// the duel VRAM: the duel HUD (`FUN_801d2afc` - bars, pips, combo,
+    /// attack icons, the STAGE strip) and the cabinet's and round chrome's
+    /// widgets (`FUN_801d5ed0`), through the one shared builder
+    /// (`minigame_hud::baka_screen_prims`) the native window calls too.
+    /// Empty unless [`Self::baka_hud_art_drawn`].
     pub(crate) fn baka_hud_prims(&self) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
         if !self.baka_hud_art_drawn() {
             return Vec::new();
@@ -381,9 +382,7 @@ impl LegaiaRuntime {
         let Some(f) = self.baka_session() else {
             return Vec::new();
         };
-        legaia_engine_screens::minigame_hud::baka_hud_prims(
-            &self.minigame_ui.baka_surface.hud_quads(f),
-        )
+        legaia_engine_screens::minigame_hud::baka_screen_prims(&self.minigame_ui.baka_surface, f)
     }
 
     /// The Baka Fighter frame's text: the retail number drawers and, while
@@ -395,23 +394,16 @@ impl LegaiaRuntime {
             return Vec::new();
         };
         let mut out = Vec::new();
-        // The duel's three retail number drawers - the round digit, the
-        // right-aligned score field and the `0x10` px "GET COIN" strip - at
-        // the ported cell layout the native window draws. This page printed
-        // `tally N   coins N` as one prose line instead, so the two hosts
-        // showed the same numbers in different places and at different
-        // strides. Layout from `baka_fighter_chrome::hud_digit_placements`,
-        // quads from `baka_strips`, both shared.
-        // The attract card and the player select draw no duel HUD
-        // (`baka_cabinet::draws_hud` is false across the front end).
-        let placed = if f.cabinet().front_end() {
-            Vec::new()
-        } else {
-            legaia_engine_minigames::baka_fighter_chrome::hud_digit_placements(
-                f.round() as i32,
-                f.tally().map(|t| (t.total(), t.gold_remaining())),
-            )
-        };
+        // The tally's number drawers (the right-aligned score field and the
+        // `0x10` px "GET COIN" strip), plus the round digit on a frame
+        // without the duel HUD's art, at the ported cell layout the native
+        // window draws: placement `minigame_hud::baka_digit_placements`,
+        // quads `baka_strips`, both shared. With the art resident the duel
+        // HUD's own STAGE cells draw in the prim pass (`baka_hud_prims`).
+        let placed = legaia_engine_screens::minigame_hud::baka_digit_placements(
+            f,
+            self.baka_hud_art_drawn(),
+        );
         out.extend(legaia_engine_ui::baka_strips::baka_digit_strip_draws_for(
             font,
             &placed,

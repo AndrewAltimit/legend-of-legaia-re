@@ -140,8 +140,10 @@ impl PlayWindowApp {
     /// This is the port's equivalent of the console's framebuffer *being*
     /// VRAM. Two things ride on it. The **capture** is a one-shot: retail's
     /// strips sample the frame the GPU drew moments earlier, so the port
-    /// re-renders the field scene offscreen and blits it into the rect the
-    /// style's texture pages decode to. The **curtain's intermediate** is
+    /// re-renders `target` offscreen and blits it into the rect the style's
+    /// texture pages decode to. The caller hands in the frame it presents,
+    /// screen layers and enhancement passes included, less the transition's
+    /// own primitives - the frame the player was looking at. The **curtain's intermediate** is
     /// per-frame: its column pass renders into VRAM `(320, 0)` and its row
     /// pass samples that, so the page changes every frame of a curtain
     /// transition (see `legaia_engine_render::battle_intro`).
@@ -157,7 +159,7 @@ impl PlayWindowApp {
     pub(in crate::window) fn capture_battle_intro_frame(
         intro: Option<&mut BattleIntro>,
         renderer: &legaia_engine_render::Renderer,
-        scene: &RenderScene<'_>,
+        target: legaia_engine_render::RenderTarget<'_>,
         base: Option<&legaia_tim::Vram>,
     ) -> Option<legaia_engine_render::UploadedVram> {
         let intro = intro?;
@@ -166,8 +168,18 @@ impl PlayWindowApp {
         let page = match legaia_engine_render::battle_intro::update_field_capture(
             intro,
             renderer,
-            legaia_engine_render::RenderTarget::Scene(scene),
+            target,
             base,
+            |img| {
+                // `LEGAIA_DIAG_INTRO_CAPTURE=<png>`: the frame the intro
+                // landed, as read back - what its styles will sample.
+                if let Some(path) = std::env::var_os("LEGAIA_DIAG_INTRO_CAPTURE") {
+                    let path = std::path::PathBuf::from(path);
+                    if let Err(e) = write_capture_png(&path, img) {
+                        log::error!("play-window: intro capture dump: {e:#}");
+                    }
+                }
+            },
         ) {
             Ok(Some(p)) => p,
             Ok(None) => return None,

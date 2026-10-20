@@ -1134,8 +1134,13 @@ impl World {
     /// into [`crate::world::FieldPropState::pending_touch`] - the same probe both refuses the
     /// step and posts the touch (`FUN_801D01B0`'s bit-`4` auto-post of
     /// `FUN_801D5B5C`).
+    ///
+    /// With [`crate::world::FieldLocomotion::walk_through_walls`] set (the
+    /// cheat), nothing blocks: every probe still runs, so a touched door
+    /// still posts, but every axis commits.
     pub fn advance_with_collision(&mut self, slot: usize, dir_bits: u16, speed: i32) {
         let edge = self.locomotion.leading_edge_wall_probes;
+        let noclip = self.locomotion.walk_through_walls;
         let solid_npcs = self.npcs.solid;
         let mut remaining = speed;
         while remaining > 0 {
@@ -1150,7 +1155,7 @@ impl World {
                 } else {
                     self.field_tile_is_wall(cx, nz)
                 } || actors;
-                if !blocked {
+                if noclip || !blocked {
                     self.actors[slot].move_state.world_z = nz;
                     self.locomotion.step_delta.1 = FIELD_PROBE_DELTA;
                 }
@@ -1162,7 +1167,7 @@ impl World {
                 } else {
                     self.field_tile_is_wall(cx, nz)
                 } || actors;
-                if !blocked {
+                if noclip || !blocked {
                     self.actors[slot].move_state.world_z = nz;
                     self.locomotion.step_delta.1 = -FIELD_PROBE_DELTA;
                 }
@@ -1178,7 +1183,7 @@ impl World {
                 } else {
                     self.field_tile_is_wall(nx, cz2)
                 } || actors;
-                if !blocked {
+                if noclip || !blocked {
                     self.actors[slot].move_state.world_x = nx;
                     self.locomotion.step_delta.0 = FIELD_PROBE_DELTA;
                 }
@@ -1190,7 +1195,7 @@ impl World {
                 } else {
                     self.field_tile_is_wall(nx, cz2)
                 } || actors;
-                if !blocked {
+                if noclip || !blocked {
                     self.actors[slot].move_state.world_x = nx;
                     self.locomotion.step_delta.0 = -FIELD_PROBE_DELTA;
                 }
