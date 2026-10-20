@@ -1028,6 +1028,15 @@ Two limits are measured rather than argued:
   With the party sat out the three parked-Gaza frames score worse (`image`
   `.718` to `.551`, `.620` to `.595`, `.608` to `.503`) and two Delilas casts
   read their depth a step early (`camera` `1.0` to `.999`).
+- **A live key keeps its key.** A combatant whose key the capture holds
+  live ranks behind the acting seat - the turn pick took the seat over it -
+  so retail had not run it yet. `battle_melee_hit_spark`'s Gimard holds `26`
+  beside Vahn's spent key, yet on every stream the replay's round runs
+  Gimard's swing first, whose knockback moves Vahn `159` units before his
+  own turn. Sat out, the round runs in retail's order and lands Vahn within
+  `19` units of his pair (`50` otherwise), but the frame frames him on
+  another heading (`image` `.720` to `.628`) and
+  `nivora_duel_pre_plasma_strike` falls `.921` to `.712`, so live keys stay.
 - **A revived victim keeps its key.** A victim seeded at `1` HP for the
   replayed kill reads a spent key as well. Sat out, the two
   `rim_elm_gimard_seru_capture_*` drives frame Vahn's last swing some fifty
@@ -3116,7 +3125,16 @@ every pass, so it moves with the phase of both clips):
   range, in a state only an in-range check enters. Retail's check passed
   with the two at least nine units nearer - on another pose of the
   skeleton, or before the separation pass moved them - and the capture
-  does not say which; nothing re-tests the pair inside the loop. The engine's check runs against the idle pose the seed stands
+  does not say which. The anim tick does re-test it: `FUN_80047430`'s
+  in-range back-off (`0x80047C3C..0x80047D1C`) steps the acting attacker of
+  an Attack (`+0x1DE == 3`, flow `0xFF`) back along its facing,
+  `(trig * DAT_1F800393 * +0x21D) >> 13` a tick, for as long as the range
+  law reads in range, which leaves a strike loop's attacker just outside its
+  reach. The port does not run that term. Run, it stands this capture's Vahn
+  `8` units off his captured pair (`42` without it), but the corpus's undrift
+  search and glide alignment are tuned to the port without it, and several
+  ratcheted frames fell (`noa_levelup_fight_pre` `.832` to `.476`,
+  `battle_noa_miracle_art_combo` `.785` to `.629`). The engine's check runs against the idle pose the seed stands
   the skeleton in (`359`), fails, and its walk clip takes one step, `42`
   units, before the strike loop. The case-7 yaw endpoint still lands on
   retail's (`2356` against `2358`); what the nearer ground moves is the
