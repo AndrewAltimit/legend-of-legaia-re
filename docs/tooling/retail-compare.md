@@ -1966,7 +1966,7 @@ placement stands, matched by the same flat index, with ambient walkers left
 out for the same reason as there. The detail lists every miss with both
 positions and which side parks it.
 
-Its misses fall into two shapes:
+Its misses fall into three shapes:
 
 - **A record that ran on other flags.** A placement's record places it at
   scene entry from the story flags of that moment (`town01` `P1[33]`: a
@@ -1975,11 +1975,33 @@ Its misses fall into two shapes:
   `town01_tetsu_topic_prompt` the engine takes `P1[33]`'s `0x226`-set arm and
   draws flats 69 / 70 at `(12608, 1728)` / `(12608, 1984)`, while retail,
   which entered the town before the conversation, still has them parked.
-  `nivora_cutscene_delilas_intro` misses the same way. The flags channel
-  reads the bitmap now, not at entry, so it cannot see this.
+  The flags channel reads the bitmap now, not at entry, so it cannot see
+  this.
+- **A cutscene that ran earlier in the visit.** `nivora_cutscene_delilas_intro`
+  is parked in `nilboa` `P2[3]`, and its three misses are what ran before it.
+  Gala (flat 50, `P1[24]`) holds `+0x94` on `P2[0]` `+0x5D8`, his compass
+  walk in the first-visit cutscene `P2[0]` - gated on, and setting, system
+  flag `0x47C` - which ends by parking him (`A3 32 7F 7F`, `+0x990`). The
+  seed enters with `0x47C` already set, so `P2[0]` never runs and he stays on
+  his header tile `(0x50, 0x64)`. The two pushable blocks (flats 39 / 40,
+  `P1[13]` / `P1[14]`, model 116) sit on the park seat with `+0x8C` / `+0x8D`
+  at `7F 7F` and their records looping at the `0x457` test; with `0x457` set
+  their own prologue moves them to the pushed tiles, which is where the
+  engine draws them. The one record that parks both and lays the bridge
+  tiles under them is `P2[26]` (global record `0x68`: `A3 27 7F 7F`,
+  `A3 28 7F 7F`, then `4C 83` fills and `4C 70` / `4C 71` wall paints), and
+  no op-`0x44` site in `nilboa` names `0x68` - the entry spawns only
+  `P2[17]`, the ravine selector (`0x10` / `0x11` / `0x12` pick Fire, Wind or
+  Thunder Ravine; the Wind arm parks the blocks too, but this state is in
+  Thunder Ravine, `0x12`). What spawns `P2[26]` is not found. The flags
+  channel's two bits are `P1[0]`'s region flags: retail holds `0x52C`
+  (box `[26, 0 .. 126, 87]`) although the player stands at tile row `114`,
+  and the engine `0x52B` (box `[16, 88 .. 126, 126]`, the player's tile), so
+  retail's last region pass ran before the cutscene walked the player in and
+  the engine's ran after.
 - **A cutscene's closing placement.** A placement can stand 64 units (half
   a tile) off the tile its spawn decodes (`(b & 0x7F) * 0x80 + 0x40`,
-  `+ 0x80` with bit 7, `0x8003A330..0x8003A384`) for two reasons. Most are
+  `+ 0x80` instead with bit 7, `0x8003A330..0x8003A384`) for two reasons. Most are
   the spawn section's own `0x41` compass walk, which the engine plays out
   as retail does ([script-vm](../subsystems/script-vm.md)): `dolk` flats
   47 / 48, `dolk2` flat 56, the ropeway shopkeepers 46 / 50 and `izumi`
