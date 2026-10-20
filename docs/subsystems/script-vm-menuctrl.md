@@ -911,7 +911,7 @@ predicate.
 | Sub | Arm | Instruction | What it does |
 |---|---|---|---|
 | 0 | `0x801E17AC` | `[4C, 50, lo, hi]` | Actor model select; `>= 0xF0` sets ctx flag `0x01000000`. See [sub-0](#sub-0-the-model-set-re-stages-the-actor). |
-| 1 | `0x801E1828` | `[4C, 51, x, z, depth, move_id]` | NPC / player move-to-tile with run dispatch (side-effect only, always advances). On the player (`0x801E1954..0x801E1A3C`) the `move_id` is also the clip base `_DAT_8007BDD8`, picked and bound at once ([`field-locomotion.md`](field-locomotion.md#the-clip-base-and-the-settle-tail)). |
+| 1 | `0x801E1828` | `[4C, 51, x, z, depth, move_id]` | Seat on a tile and bind a looping move clip (always advances). See [sub-1](#sub-1-the-seat-binds-its-move-clip). |
 | 2 | `0x801E1ABC` | `[4C, 52, item_id]` | **TAKE_ITEM** - see below. |
 | 3 | `0x801E1AF8` | `[4C, 53]` | Dialog-wait poll, `FUN_801D65D8(1)`. |
 | 4 | `0x801E1B0C` | `[4C, 54]` | Dialog-advance poll, `FUN_801D65D8(0)`. |
@@ -929,6 +929,48 @@ clean sites across most field scenes. Aimed at the player (`CC F8 50 ..`, four
 sites: `jagaroom` twice with `0x26`, `urudre1` with `0x5D` and then `0xF0`) it
 resolves through `FUN_8003C83C` to the player object, so the party-bank bit and
 the re-stage land on the player.
+
+#### Sub-1: the seat binds its move clip
+
+The arm writes, in order, on the actor `FUN_8003C83C` resolved (the
+executing context, or the `CC <t> 51` target):
+
+1. **Party-bank bit.** The depth byte's bit 7 sets or clears `+0x10` bit
+   `0x01000000` (`0x801E1828..0x801E1858`), the bit `FUN_800204F8` routes
+   clip ids through the party locomotion bank on. Party members are seated
+   with depth `0x8_` (`korout` `P2[3]`: `CC 09 51 42 9E 84 0A`); `town0d`
+   `P1[3]` seats a party model with depth `06` and so plays scene-bank clip
+   `26`. The seater `FUN_8003A1E4` raises the bit at `0x8003A3B0`, before
+   the install pre-run, so a prologue seat has the last word.
+2. **Anim control.** `+0x62 &= 0xFF75` (`0x801E1864`) drops hold, clamp and
+   reverse, so whatever one-shot a beat left on the actor, the new clip
+   loops forward.
+3. **Seat.** The tile (`(b & 0x7F) * 128 + 0x40`, `+0x40` more on bit 7)
+   into `+0x14` / `+0x18`, the compass LUT `0x80073F04` heading into
+   `+0x26`, and a floor re-sample (`FUN_80019278`) into `+0x16` when
+   `+0x10` carries a `0x20200` bit or `_DAT_8007B6A8` is set, never under
+   `0x20000000` (`0x801E1904..0x801E1940`). No walk kernel is armed: it is a teleport.
+4. **Clip.** On the player (`0x801E1954..0x801E1A3C`) the `move_id` is the
+   clip base `_DAT_8007BDD8`, picked and bound at once
+   ([`field-locomotion.md`](field-locomotion.md#the-clip-base-and-the-settle-tail)).
+   On anyone else (`0x801E1A68..0x801E1AB4`) it records the tile in
+   `+0x8C` / `+0x8D`, stores the byte into `+0x5C` with `+0x5E = -2` and
+   calls `FUN_800204F8`, which re-binds and restarts the clip whatever was
+   playing, then calls `FUN_801D81E0` and the visibility cull
+   `FUN_801D79E8`.
+
+The clip binds on every path that reaches the op - the install pre-run, a
+cutscene's cross-context poke and a live channel alike. Two shipped
+consequences: `teien`'s Berserker (`P1[6]`, model `0x14`) seats itself
+beside its tree with `4C 51 AA 30 00 2A` on its pre-fight arm (system flag
+`0x1C9` clear) and loops scene clip `42`, the tree-eating cycle, instead of
+its header clip `39`; and `korout` `P2[3]` seats Noa and Gala with walk
+clips `10` and `15` before the `C1` compass legs walk them up the bridge.
+Port: `FieldHostImpl::run_to_tile` writes the bit, the mask and `+0x5C` on
+every NPC arm and raises the clip cue on the cross-context arm; the
+pre-run's `+0x5C` is what `bind_scene_actors` binds at scene entry. The
+port's cue skips a re-request of the clip already playing
+(`World::carry_npc_run_anim`), where retail's `+0x5E = -2` restarts it.
 
 #### Sub-2 is TAKE_ITEM, not a menu poll
 

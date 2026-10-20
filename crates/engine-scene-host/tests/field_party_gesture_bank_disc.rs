@@ -17,7 +17,9 @@
 
 use legaia_engine_field::field_anim::FieldClipPlayer;
 use legaia_engine_scene_host::scene_host::SceneHost;
-use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, LinearWalker, man_script_spans};
+use legaia_scene_formats::field_disasm::{
+    FlagKind, InsnInfo, LinearWalker, MenuCtrlKind, man_script_spans,
+};
 
 /// Bones of every party-member field clip (the hero meshes carry 12 objects,
 /// the last two equipment templates no clip poses).
@@ -66,8 +68,35 @@ fn party_gestures_bind_from_the_live_party_bank() {
             .filter(|p| (0xF0..=0xF2).contains(&p.model_index))
             .map(|p| p.index as u8)
             .collect();
-        // The seater raises the bit for every party model it seats.
+        // The seater raises the bit for every party model it seats
+        // (`0x8003A3B0`), ahead of the install pre-run - where an own
+        // `4C 51` seat sets or clears it again from its depth byte's bit 7
+        // (`0x801E1828..0x801E1858`). `town0d` `P1[3]` seats with depth `06`
+        // and plays scene clip `26` off the cleared bit.
+        let spans = man_script_spans(&mf, &man);
+        let reseats_off_bank = |slot: u8| {
+            spans
+                .iter()
+                .find(|&&(part, rec, ..)| part == 1 && rec == usize::from(slot))
+                .is_some_and(|&(_, _, start, pc0, len)| {
+                    LinearWalker::new(&man[start..start + len], pc0)
+                        .flatten()
+                        .any(|i| {
+                            i.extended.is_none()
+                                && matches!(
+                                    i.info,
+                                    InsnInfo::MenuCtrl {
+                                        kind: MenuCtrlKind::Nibble5NpcRun { depth, .. },
+                                        ..
+                                    } if depth & 0x80 == 0
+                                )
+                        })
+                })
+        };
         for &slot in &party {
+            if reseats_off_bank(slot) {
+                continue;
+            }
             assert_eq!(
                 host.world.npc_party_bank(slot),
                 Some(true),
