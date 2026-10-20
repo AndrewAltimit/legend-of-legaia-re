@@ -790,6 +790,19 @@ pub(super) fn plan_search(
             if blockers.dir_blocked_except(cx, cz, dir, &skip) {
                 continue;
             }
+            // The walk stops where the leading probes first touch a body, so
+            // a cell whose centre the probes from the cell before clear may
+            // still be one the player never reaches: the probes 64 units
+            // ahead of the centre itself are already inside the body. The
+            // player halts a few units short, and the next leg starts from
+            // there, not from the centre the lattice assumed. `korb3`'s
+            // switch P0[18] (box centre (4800, 4720)) stops a walk north at
+            // Z 4862, while the cell (37, 75) it would turn east from is
+            // centred on Z 4832. Only the goal cell is entered regardless:
+            // a walk up to a body to face it ends pressed against it.
+            if next != gc && blockers.dir_blocked_except(nx, nz, dir, &skip) {
+                continue;
+            }
             if nt != ct && avoid.contains(&nt) {
                 continue;
             }

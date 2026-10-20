@@ -1155,6 +1155,16 @@ pub(super) fn pad_walk(
                             .map(|d| w.field_actor_dir_blocked(px, pz, d))
                             .collect::<Vec<_>>()
                     );
+                    for c in &w.props.colliders {
+                        if (c.center.0 - i32::from(px)).abs() < 400
+                            && (c.center.1 - i32::from(pz)).abs() < 400
+                        {
+                            eprintln!(
+                                "      [stall-prop] centre {:?} live {:?} solid {} moving {} interact {} anchor {:?}",
+                                c.center, c.live, c.solid, c.moving_box, c.interact, c.anchor
+                            );
+                        }
+                    }
                     if std::env::var_os("LEGAIA_FGL_STALL_PRESSES").is_some() {
                         // Debug only: hold each press for 20 ticks from here
                         // and print where it leaves the player.

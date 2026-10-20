@@ -512,6 +512,15 @@ to Nivora set four rules the continuous hand plays by:
   corridor's centre line, where the tile's centre is clear, steps back onto
   the line instead of pressing on (the follower's dead band otherwise
   ignores so small an offset; P0[3] stops a walk 8 units west of it).
+- **A switch stays solid after its press.** `korb3`'s switch P0[18]
+  opens its partner with `B1 13 00`, which `FUN_8003C83C` resolves to
+  object `0x13` (P0[19]), not to the switch, so the switch's own box
+  (centre `(4800, 4720)`, half-extent `0x50`) still blocks. A walk north
+  from the hall stops at Z `4862`, where the leading probes 64 units ahead
+  touch the box, short of the centre `4832` of the cell the lattice turns
+  east from. The planner therefore enters a cell only when the probes from
+  its own centre clear the bodies ahead in the direction it is entered
+  from, the goal cell excepted.
 - **A closer is no beat and no obstacle.** A walk-on record that raises no
   system flag, lowers one the next anchor carries and walls tiles up
   (`4C 71`; `korb3` P2[4..13]) is never walked as a beat, and a walk may
