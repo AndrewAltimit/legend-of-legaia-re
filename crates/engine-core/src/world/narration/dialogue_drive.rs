@@ -1141,7 +1141,8 @@ impl World {
         }
     }
 
-    /// One walk-kernel frame of every free-standing NPC face-at leg.
+    /// One walk-kernel frame of every free-standing NPC face-at, rotate and
+    /// compass-walk leg.
     /// REF: FUN_8003774C (the 0x4C arm), FUN_8003BC08
     pub(crate) fn tick_field_npc_face_legs(&mut self) {
         for (slot, mut ramp) in std::mem::take(&mut self.npcs.face_legs) {
@@ -1152,6 +1153,32 @@ impl World {
         for (slot, mut leg) in std::mem::take(&mut self.npcs.rotate_legs) {
             if !self.step_npc_rotate_leg(&mut leg) {
                 self.npcs.rotate_legs.insert(slot, leg);
+            }
+        }
+        // A compass walk a placement's load-frame slice armed: the kernel
+        // spends the tick's frame step (`DAT_1F800393`) against the leg's
+        // budget and, on landing, clears the context's halt bit `0x400` and
+        // its `+0x54` cursor (the shared epilogue), so the record can be
+        // poked again.
+        // REF: FUN_8003BC08 (the 0x400 kernel visit), FUN_8003774C (the 0x37 / 0x41 arm)
+        for (slot, mut leg) in std::mem::take(&mut self.npcs.glide_legs) {
+            leg.state.speed = self.clock.display_frame_step.max(1);
+            if self.step_npc_glide(&mut leg) {
+                self.npcs.glide_legs.insert(slot, leg);
+                continue;
+            }
+            let pos = self.npcs.positions.get(&slot).copied();
+            if let Some(c) = self
+                .field_vm
+                .channels
+                .iter_mut()
+                .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
+            {
+                c.ctx.flags &= !0x400;
+                if let Some((x, z)) = pos {
+                    c.ctx.world_x = x as u16;
+                    c.ctx.world_z = z as u16;
+                }
             }
         }
     }

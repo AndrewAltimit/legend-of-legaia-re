@@ -503,6 +503,7 @@ impl World {
                         }
                     }
                 };
+                let exec_slot = self.field_vm.executing_channel;
                 self.field_vm.executing_channel = None;
                 self.field_vm.executing_object = None;
                 // A poke at a placed object's clip words reaches the clip it
@@ -535,6 +536,29 @@ impl World {
                         // `P1[22]` (`23 63 4F`, `41 06 01`, `38 86 00`) and
                         // `izumi` `P1[1]` stand turned by the `38` past the
                         // glide.
+                        //
+                        // The glide itself is the walk kernel's: the arm
+                        // seats the op on the actor's `+0x94` under the halt
+                        // bit, and `FUN_8003BC08` runs `FUN_8003774C` on it
+                        // from the next tick until it lands.
+                        // REF: FUN_801DE840 (0x801DEE90..0x801DEF1C), FUN_8003774C (the 0x37 / 0x41 arm)
+                        if let Some(slot) = exec_slot
+                            && let Some((body0, body1, rate)) =
+                                compass_walk_operands(&man[record_offset..], pc)
+                        {
+                            self.npcs.glide_legs.insert(
+                                slot,
+                                legaia_engine_field::cutscene_timeline::TimelineNpcGlide {
+                                    slot,
+                                    state: legaia_engine_motion_vm::motion_vm::MotionState::default(
+                                    ),
+                                    body0,
+                                    body1,
+                                    rate,
+                                    frames: 0,
+                                },
+                            );
+                        }
                         let stalled = resume_pc == pc;
                         channels[i].pc = resume_pc;
                         if opcode_byte & 0x7F == 0x21 || stalled {
@@ -736,4 +760,20 @@ impl World {
             }
         }
     }
+}
+
+/// The leg a compass-walk op at `pc` arms, as `(body0, body1, rate)`:
+/// `[37|41 b0 b1]` on the running context, `[B7|C1 id b0 b1]` on another.
+/// The rate is `0x80` for `0x37` and `0x40` for `0x41`
+/// (`0x80037904` in the walk kernel).
+// REF: FUN_801DE840 (the 0x37 / 0x41 arm), FUN_8003774C (0x8003789C..0x800379F8)
+pub(crate) fn compass_walk_operands(bc: &[u8], pc: usize) -> Option<(u8, u8, i32)> {
+    let op = *bc.get(pc)?;
+    let rate = match op & 0x7F {
+        0x37 => 0x80,
+        0x41 => 0x40,
+        _ => return None,
+    };
+    let at = pc + if op & 0x80 != 0 { 2 } else { 1 };
+    Some((*bc.get(at)?, *bc.get(at + 1)?, rate))
 }

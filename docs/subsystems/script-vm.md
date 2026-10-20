@@ -276,6 +276,23 @@ cold or supplied flags): `man_field_scripts::placement_spawn_relocation`,
 applied by `npc_catalog`; roster pinned against a live fresh-game capture's
 actor list (`_DAT_8007C354`).
 
+A spawn section can also end in a **compass walk on its own actor**. The
+`0x37` / `0x41` arm halts the context and seats the op on `+0x94`, but it
+hands back the PC past the op, and the load slice stops only on an executed
+`0x21`, an unmoved PC or a sub-`0x20` byte (`0x8003A4C4..0x8003A4F4`), so it
+runs on into the ops after the walk. The walk itself is the kernel's:
+`FUN_8003BC08` runs `FUN_8003774C` on every tick the halt bit holds, and the
+landing clears it. Shop and counter staff use it to stand on a tile corner
+the `0x23` grid cannot name: `dolk` `P1[21]` is `25`, `23 64 4D`, `41 06 01`,
+`38 80 00` - seated on tile `(100, 77)` at `(12864, 9920)`, then `0x40` units
+along `+X` to `(12928, 9920)`, then turned to compass index `0`. The
+ropeway's two shopkeepers (`41 05 01`, `+X +Z`) and `izumi` `P1[1]`
+(`41 01 01` from its header tile, `-X -Z`) do the same. Retail RAM holds
+each node on the walked position with `+0x8C` / `+0x8D` still on the seat
+tile. Port: the
+pre-run arms the leg (`FieldNpcState::glide_legs`) and
+`World::tick_field_npc_face_legs` steps it.
+
 The partition-1 spawn loop itself runs only when the scene load actually
 loaded a MAN. The field-scene initializer (`FUN_801D6704` in PROT 0897) passes
 `a0 = loader mask & 4` to `FUN_8003AEB0` (`0x801D6D98`; bit `4` is the MAN

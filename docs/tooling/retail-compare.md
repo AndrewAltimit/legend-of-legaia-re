@@ -1904,18 +1904,22 @@ Its misses fall into two shapes:
   which entered the town before the conversation, still has them parked.
   `nivora_cutscene_delilas_intro` misses the same way. The flags channel
   reads the bitmap now, not at entry, so it cannot see this.
-- **A cutscene's closing placement.** A handful of placements stand 64
-  units (half a tile) off their MAN spawn in retail - `izumi` flat 6, `kor5`
-  flat 14, `ropeway` flats 46 / 50, `dolk` / `dolk2` and `town0c` - where the
-  engine stands on the spawn byte exactly as `FUN_8003A1E4` decodes it
-  (`(b & 0x7F) * 0x80 + 0x40`, `+ 0x80` with bit 7, `0x8003A330..0x8003A384`).
-  `kor5` flat 14 (Old Deez) is a script's doing: the cutscene `P2[3]` walks
-  him off and puts him back with `A3 0E 20 5D` (`+0x115E`, tile `(32, 93)` =
+- **A cutscene's closing placement.** A placement can stand 64 units (half
+  a tile) off the tile its spawn decodes (`(b & 0x7F) * 0x80 + 0x40`,
+  `+ 0x80` with bit 7, `0x8003A330..0x8003A384`) for two reasons. Most are
+  the spawn section's own `0x41` compass walk, which the engine plays out
+  as retail does ([script-vm](../subsystems/script-vm.md)): `dolk` flats
+  47 / 48, `dolk2` flat 56, the ropeway shopkeepers 46 / 50 and `izumi`
+  flat 6 all stand on retail's position. The rest are a script's doing.
+  `town0c` flat 59 in `rim_elm_queen_bee_battle` is caught on `P1[21]`'s
+  `C1 3B 02 46` leg, and `dolk2` flat 70 in `dolk2_market_noa` stands where
+  the market beat put it. `kor5` flat 14 (Old Deez) is the readable case:
+  the cutscene `P2[3]` walks him off and puts him back with `A3 0E 20 5D` (`+0x115E`, tile `(32, 93)` =
   `(4160, 11968)`), not on his spawn byte `0xDC` (`11904`), then latches
   `0x43A` (`+0x14CB`). A later entry, retail's or the engine's, runs no
   `P2[3]` and spawns him on `0xDC`; the two `kor5` states were captured in the
   visit the cutscene ran in. `kor5_field_card_boot`, before it, scores him
-  exact. The other placements' movers are not traced.
+  exact.
 
 ## The image channel
 

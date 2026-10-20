@@ -544,3 +544,80 @@ fn a_spawned_screen_tween_keeps_step_with_the_wait_behind_it() {
         assert!(seen >= 20, "step {step}: the record sat on the wait");
     }
 }
+
+/// A free-roam placement channel for the spawn-prologue tests below.
+fn prologue_channel(
+    slot: usize,
+    id: u16,
+    off: usize,
+) -> legaia_engine_field::field_channels::FieldChannel {
+    legaia_engine_field::field_channels::FieldChannel {
+        placement_index: slot,
+        ctx: legaia_engine_vm::field::FieldCtx {
+            script_id: id,
+            ..legaia_engine_vm::field::FieldCtx::default()
+        },
+        record_offset: off,
+        pc: 0,
+        done: false,
+        object_bind: false,
+    }
+}
+
+/// A placement whose spawn section seats it with `MOVE_TO` and then runs a
+/// `41` compass walk on itself (`dolk` `P1[21]`: `23 64 4D`, `41 06 01`,
+/// `38 80 00`) ends half a tile east of the `MOVE_TO` tile: the load slice
+/// runs on past the yield (the `38` turns it), and the walk kernel plays the
+/// `0x40 * 1` leg out over the next ticks, then clears the context's halt.
+#[test]
+fn a_spawn_prologue_compass_walk_moves_the_placement_after_the_seat() {
+    let mut w = World {
+        mode: legaia_engine_mode::mode::SceneMode::Field,
+        ..World::default()
+    };
+    let man = vec![
+        0x25, 0x23, 0x64, 0x4D, 0x41, 0x06, 0x01, 0x38, 0x80, 0x00, 0x21,
+    ];
+    w.field_vm.channels = vec![prologue_channel(21, 0x2F, 0)];
+    w.field_vm.channels_man = Some(std::sync::Arc::new(man));
+    w.npcs.positions.insert(21, (16320, 16320));
+    w.pre_run_field_channel_prologues();
+    // The seat lands in the load frame; the leg does not move it yet.
+    assert_eq!(w.npcs.positions.get(&21), Some(&(12864, 9920)));
+    assert!(w.npcs.glide_legs.contains_key(&21), "the leg is armed");
+    assert!(w.field_vm.channels[0].ctx.is_halted());
+    for _ in 0..8 {
+        w.tick_field_npc_motions();
+    }
+    assert_eq!(w.npcs.positions.get(&21), Some(&(12928, 9920)));
+    assert!(w.npcs.glide_legs.is_empty(), "the leg landed");
+    assert!(
+        !w.field_vm.channels[0].ctx.is_halted(),
+        "landing clears 0x400"
+    );
+}
+
+/// The cross-context form (`C1 <id> b0 b1`) in one placement's spawn
+/// section walks the placement it names, not the poking record's own actor:
+/// direction `1` is `-X -Z` in the axis table at `0x80073F14`.
+#[test]
+fn a_spawn_prologue_cross_context_compass_walk_moves_its_target() {
+    let mut w = World {
+        mode: legaia_engine_mode::mode::SceneMode::Field,
+        ..World::default()
+    };
+    // Record 0 pokes channel `0x16`; record 1 (offset 6) does nothing.
+    let man = vec![0x25, 0xC1, 0x16, 0x01, 0x01, 0x21, 0x25, 0x21];
+    w.field_vm.channels = vec![prologue_channel(3, 0x10, 0), prologue_channel(9, 0x16, 6)];
+    w.field_vm.channels_man = Some(std::sync::Arc::new(man));
+    w.npcs.positions.insert(3, (1000, 1000));
+    w.npcs.positions.insert(9, (2240, 2368));
+    w.pre_run_field_channel_prologues();
+    assert!(w.npcs.glide_legs.contains_key(&9));
+    assert!(!w.npcs.glide_legs.contains_key(&3));
+    for _ in 0..8 {
+        w.tick_field_npc_motions();
+    }
+    assert_eq!(w.npcs.positions.get(&9), Some(&(2176, 2304)));
+    assert_eq!(w.npcs.positions.get(&3), Some(&(1000, 1000)));
+}
