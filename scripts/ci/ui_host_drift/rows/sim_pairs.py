@@ -429,6 +429,24 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["effect_model_draws"],
     },
     {
+        "what": "battle effect world scale, native vs play page - the 4x "
+        "base matrix every battle FX layer composes (retail "
+        "`DAT_8007BF10 = 16384 * I`, a battle-mode value the backdrop is "
+        "only one more actor under): the native window took it only while "
+        "a stage mesh was loaded and fell back to 1x on a stageless fight, "
+        "the page always drew at 4x. Both take the one decision "
+        "`battle_fx::battle_world_scale`",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/window/event_handler/redraw_overlay.rs",
+                "build_fx_frame",
+            ),
+            "web": ("crates/web-viewer/src/play_battle_fx.rs", "build_battle_fx"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["battle_world_scale"],
+    },
+    {
         "what": "battle stage world state, native vs play page - the stage "
         "class the backdrop ramp reads, the volumetric fog's stage cap (the "
         "bank may not outshine the stage it lies on) and each monster's "

@@ -1286,6 +1286,15 @@ the far framing. Guard: `the_ground_under_an_actor_projects_under_the_actor`
 projects each retail seat through both classes at every framing and requires
 the same pixel.
 
+**The scale belongs to the mode, not to the stage.** `DAT_8007BF10` is a
+per-mode base matrix ([`renderer.md`](renderer.md)), and the backdrop is one
+more actor drawn through it, so a fight whose stage stream does not resolve
+still draws its actors and effects at 4× under the phase camera. Both play
+hosts take the scale from one decision,
+`legaia_engine_session::battle_fx::battle_world_scale`, and draw every battle
+through the phase camera; a `SIM_PAIRS` row of the
+[host-drift gate](../tooling/host-drift.md) pins the effect layers to it.
+
 The grid's `DPCS` ramp window is **not** scaled: it is keyed on view depth
 `SZ`, and the scale is a model transform under a camera whose translation is
 already in view units

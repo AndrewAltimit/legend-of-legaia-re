@@ -151,6 +151,7 @@
       <tr><td>dome</td><td>two actors from one half-shell mesh</td><td>Half turn about Y by default; X mirror for stages listed at <code>0x80078B50</code></td></tr>
     </tbody>
   </table>
+  <p>The scale belongs to the battle mode, not to the stage: the backdrop is one more actor drawn through the same base matrix, so a fight whose stage stream does not resolve still draws its actors and effects at 4x under the phase camera. Both play hosts take the scale from one decision, <code>battle_fx::battle_world_scale</code>.</p>
   <p>Seats are two static tables of <code>[i16 x, y, z, pad]</code> entries selected by combatant count (party table <code>0x800775C8</code>, stride <code>0x18</code>; monster table <code>0x80077608</code>, stride <code>0x20</code>, alternate family four rows up). The values are on the <a href="battle.html#battle-background">main page</a>.</p>
 </section>
 

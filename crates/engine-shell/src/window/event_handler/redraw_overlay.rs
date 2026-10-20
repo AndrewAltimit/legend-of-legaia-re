@@ -286,7 +286,6 @@ impl PlayWindowApp {
         // cameras carry no world negation, so battle models keep the
         // per-model Y-flip; the field cameras compose FIELD_WORLD_FLIP) -
         // composed in `effect_draws`, the list both hosts draw.
-        let fx_in_battle = self.session.host.world.mode == SceneMode::Battle;
         // Battle FX ride the actor camera composition (the retail
         // 4x world-scale base under the shared rotation) so
         // effects land on the scaled actor stage; field FX use
@@ -299,11 +298,10 @@ impl PlayWindowApp {
         // identity before the projection), so the half-extents must not go
         // through the 4x a second time. See
         // `legaia_render_kernels::effect_billboard`.
-        let fx_scale = if fx_in_battle && self.battle_stage_mesh.is_some() {
-            BATTLE_WORLD_SCALE
-        } else {
-            1.0
-        };
+        // The scale is the battle mode's base matrix, stage or no stage: the
+        // one decision both hosts take (`battle_fx::battle_world_scale`).
+        let fx_scale =
+            legaia_engine_session::battle_fx::battle_world_scale(&self.session.host.world);
         let fx_cam = if fx_scale != 1.0 {
             cam * Mat4::from_scale(Vec3::splat(fx_scale))
         } else {

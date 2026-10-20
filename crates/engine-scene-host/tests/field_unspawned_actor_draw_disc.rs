@@ -37,18 +37,13 @@ fn uru_draws_no_unspawned_bound_actor() {
         "uru pre-binds its scene pack onto actor slots ({unspawned_bound} inactive bound)"
     );
     let drawn: Vec<usize> = (0..w.actors.len())
-        .filter(|&i| w.actor_slot_drawn(i, false))
+        .filter(|&i| w.actor_slot_drawn(i))
         .collect();
     assert!(
         drawn.iter().all(|&i| w.actors[i].active),
         "only spawned actors draw ({drawn:?})"
     );
     assert!(drawn.contains(&0), "the player (slot 0) still draws");
-    // The synthetic battle camera keeps drawing every bound body.
-    let synthetic = (0..w.actors.len())
-        .filter(|&i| w.actor_slot_drawn(i, true))
-        .count();
-    assert_eq!(synthetic, bound);
     println!(
         "uru: {bound} bound actor slots, {unspawned_bound} never spawned, {} drawn",
         drawn.len()

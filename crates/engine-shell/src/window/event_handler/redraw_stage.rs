@@ -536,10 +536,11 @@ impl PlayWindowApp {
         // Retail's per-primitive near reject (`camera_frame::prim_near_cut`):
         // a primitive whose mean corner depth sits near or behind the eye
         // is not drawn, where a per-pixel clip would paint it across the
-        // frame. Only under a retail camera - the field debug orbit and
-        // the stage-less battle framing are vantages retail never had.
+        // frame. Only under a retail camera - the field debug orbit is a
+        // vantage retail never had; every battle
+        // draws through the phase camera.
         let retail_camera = match self.session.host.world.mode {
-            SceneMode::Battle => self.battle_stage_mesh.is_some(),
+            SceneMode::Battle => true,
             _ => !self.field_debug_camera,
         } && std::env::var_os("LEGAIA_DIAG_NO_PRIM_NEAR").is_none();
         r.set_prim_near_reject(

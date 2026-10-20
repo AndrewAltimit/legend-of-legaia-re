@@ -151,7 +151,7 @@ fn a_four_member_resume_on_uru_raises_only_the_player_and_keeps_the_ground() {
     );
     for slot in 0..4 {
         assert_eq!(
-            world.actor_slot_drawn(slot, false),
+            world.actor_slot_drawn(slot),
             slot == player,
             "actor {slot} drawn after the resume"
         );

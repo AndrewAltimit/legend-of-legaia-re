@@ -44,10 +44,10 @@ use legaia_engine_camera::psx_camera::{WORLD_FLIP, mat4_mul, mat4_scale};
 use legaia_engine_mode::mode::SceneMode;
 use wasm_bindgen::prelude::*;
 
-/// Retail 4x uniform battle world scale - the same constant
-/// [`crate::play_battle_render`] exports to the page, repeated here because
-/// every FX matrix folds it in (the native `fx_cam = cam * scale(4.0)`).
-const BATTLE_WORLD_SCALE: f32 = 4.0;
+/// Retail 4x uniform battle world scale - the shared value both hosts read
+/// (`legaia_engine_session::battle_fx`), because every FX matrix folds it in
+/// (the native `fx_cam = cam * scale(4.0)`).
+use legaia_engine_session::battle_fx::BATTLE_WORLD_SCALE;
 
 /// Outline strip width as a fraction of the billboard's larger side, with a
 /// world-unit floor so a tiny sprite still reads. The native outline is a
@@ -431,8 +431,10 @@ impl LegaiaRuntime {
         // centre flipped into the battle camera's Y-up frame (a billboard has
         // no model matrix to carry the flip), the half-extents out of the 4x
         // view scale, the texel corners mirrored, the TSB semi bit set. The
-        // page's VP is unscaled, so every corner takes the 4x here.
-        let s = BATTLE_WORLD_SCALE;
+        // page's VP is unscaled, so every corner takes the 4x here - the
+        // battle mode's base matrix, the scale the native window takes from
+        // the same kernel, stage or no stage.
+        let s = legaia_engine_session::battle_fx::battle_world_scale(world);
         for b in effect_billboards(world, s) {
             let corners = b.corners(right, up).map(|c| [c[0] * s, c[1] * s, c[2] * s]);
             push_billboard(&mut frame, &b, corners, [right, up], s);

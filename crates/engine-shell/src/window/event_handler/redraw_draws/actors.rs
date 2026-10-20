@@ -290,11 +290,8 @@ impl<'m> DrawCtx<'_, 'm> {
         }
         // The camera the battle bodies' tint pass judges depth under
         // (`World::battle_actor_draw_plan`): the phase-scripted dome
-        // camera this pass projects with, or none outside a
-        // stage-dome battle (the body is then judged at retail's
-        // parked depth).
-        let battle_pose = (in_battle && app.battle_stage_mesh.is_some())
-            .then(|| app.session.host.world.battle_cam_pose());
+        // camera this pass projects with in every battle.
+        let battle_pose = in_battle.then(|| app.session.host.world.battle_cam_pose());
         for (i, actor) in app.session.host.world.actors.iter().enumerate() {
             let Some(tmd_idx) = actor.tmd_binding else {
                 continue;
@@ -307,12 +304,7 @@ impl<'m> DrawCtx<'_, 'm> {
             // cliff pack smeared across the whole frame. The browser
             // play page never drew them (it draws the player and the
             // NPC catalog, not `world.actors`).
-            if !app
-                .session
-                .host
-                .world
-                .actor_slot_drawn(i, in_battle && app.battle_stage_mesh.is_none())
-            {
+            if !app.session.host.world.actor_slot_drawn(i) {
                 continue;
             }
             // The summon band's hide (`+0x21C = 0xFF` with the prim

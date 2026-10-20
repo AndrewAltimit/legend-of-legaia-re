@@ -495,14 +495,11 @@ impl PlayWindowApp {
         out
     }
 
-    /// The world scale a stage battle's actors and effects are drawn at
-    /// ([`BATTLE_WORLD_SCALE`]); `1` for a fight with no stage mesh.
+    /// The world scale a battle's actors and effects are drawn at: the
+    /// battle mode's base matrix, stage or no stage
+    /// (`legaia_engine_session::battle_fx::battle_world_scale`).
     pub(super) fn battle_stage_scale(&self) -> f32 {
-        if self.battle_stage_mesh.is_some() {
-            BATTLE_WORLD_SCALE
-        } else {
-            1.0
-        }
+        legaia_engine_session::battle_fx::battle_world_scale(&self.session.host.world)
     }
 
     /// The readout's **layout**, shared by the retail-art emit above and the

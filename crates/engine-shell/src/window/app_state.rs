@@ -1058,9 +1058,10 @@ pub(super) const FIELD_WORLD_FLIP: Mat4 = Mat4::from_cols_array(&[
 
 /// The retail battle world scale: the battle base matrix `0x8007BF10` is
 /// `16384 * I` (GTE `4096` = 1.0) in every catalogued battle savestate - a
-/// **4.0x uniform scale** composed under the camera rotation. See
-/// [`PlayWindowApp::battle_dome_camera_mvp`].
-pub(super) const BATTLE_WORLD_SCALE: f32 = 4.0;
+/// **4.0x uniform scale** composed under the camera rotation. The one value
+/// both hosts read (`legaia_engine_session::battle_fx::BATTLE_WORLD_SCALE`).
+/// See [`PlayWindowApp::battle_dome_camera_mvp`].
+pub(super) const BATTLE_WORLD_SCALE: f32 = legaia_engine_session::battle_fx::BATTLE_WORLD_SCALE;
 
 /// World-map ocean CLUT animation state. Holds the 13 BGR555 frames (32 bytes
 /// each) decoded from the kingdom bundle and the current frame cursor + tick

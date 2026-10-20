@@ -32,3 +32,31 @@ pub fn spawn_pending_move_fx(world: &mut World) -> Option<u16> {
         CueDispatch::Voice { .. } => None,
     }
 }
+
+/// The battle world scale: retail's base matrix `DAT_8007BF10` holds
+/// `16384 * I` in battle mode (GTE `4096` = 1.0), a **4x uniform scale**
+/// composed under the camera rotation for every drawn battle object - the
+/// actors (`FUN_80048A08`), the backdrop (registered as an ordinary
+/// background actor by `FUN_800513F0`) and the effect sprites, whose centres
+/// `FUN_800195A8` transforms through the same camera matrix
+/// ([`docs/subsystems/battle-stage-camera.md`](../../../docs/subsystems/battle-stage-camera.md#the-4-world-scale)).
+pub const BATTLE_WORLD_SCALE: f32 = 4.0;
+
+/// The world scale a battle draw - actor, backdrop or effect layer - composes
+/// under the camera this frame: [`BATTLE_WORLD_SCALE`] in battle, `1` in every
+/// other mode.
+///
+/// The scale is the battle **mode's** base matrix, not a property of the
+/// stage: the matrix is a per-mode value and the backdrop is just one more
+/// actor drawn through it, so a fight whose stage did not resolve still draws
+/// its actors and effects at 4x. Both play hosts take the effect layers'
+/// scale from here; the native window used to fall back to `1` (and to an
+/// unscaled auto-framing camera) whenever no stage mesh was loaded, while the
+/// browser page always drew at 4x.
+pub fn battle_world_scale(world: &World) -> f32 {
+    if world.mode == legaia_engine_mode::mode::SceneMode::Battle {
+        BATTLE_WORLD_SCALE
+    } else {
+        1.0
+    }
+}

@@ -147,53 +147,6 @@ impl PlayWindowApp {
         Some(Vec3::from(view.eye()))
     }
 
-    /// Battle camera: frame the **monster** actors (the ones carrying a bound
-    /// mesh + idle animation) rather than the player vicinity. The live-loop
-    /// seats battle actors at the retail stage seats around the world origin
-    /// (`enter_battle` - party at negative Z, monsters at positive Z, from
-    /// the `battle_seats` tables), far from the field player's world coords,
-    /// so `camera_mvp`'s player-centred box leaves the enemies entirely
-    /// off-screen. Framing the enemy cluster (gently orbiting) puts the
-    /// animated monsters centre-frame and at a useful size.
-    pub(super) fn battle_camera_mvp(&self, aspect: f32) -> Mat4 {
-        let world = &self.session.host.world;
-        let pc = world.party.party_count as usize;
-        let mut lo = [f32::INFINITY; 3];
-        let mut hi = [f32::NEG_INFINITY; 3];
-        let mut any = false;
-        for (i, a) in world.actors.iter().enumerate() {
-            // Monster slots only (party occupies slots 0..party_count and isn't
-            // mesh-bound in the play-window battle path anyway).
-            if i < pc || a.tmd_binding.is_none() {
-                continue;
-            }
-            let p = [
-                a.move_state.world_x as f32,
-                a.move_state.world_y as f32,
-                a.move_state.world_z as f32,
-            ];
-            for k in 0..3 {
-                lo[k] = lo[k].min(p[k]);
-                hi[k] = hi[k].max(p[k]);
-            }
-            any = true;
-        }
-        if !any {
-            // No bound monsters yet - fall back to the field framing.
-            return self.camera_mvp(aspect);
-        }
-        // The bare position box collapses to a point/line; expand it to enclose
-        // the monster mesh bodies (a few hundred units tall/wide).
-        const M: f32 = 450.0;
-        for k in 0..3 {
-            lo[k] -= M;
-            hi[k] += M;
-        }
-        // Gentle orbit (slower than the field's 0.25) so the animated enemies
-        // read in 3D from several angles without spinning fast.
-        orbit_camera_mvp(lo, hi, 0.12, 0.35, self.win.elapsed_secs(), aspect)
-    }
-
     /// The phase-scripted battle camera's diagnostics for this frame.
     ///
     /// The camera itself is **engine** state now: `World::tick` steps it for
@@ -436,24 +389,21 @@ impl PlayWindowApp {
     }
 
     /// The matrix **every** battle draw of this frame goes through: the
-    /// phase-scripted dome camera when a stage mesh is up, the monster-framing
-    /// orbit otherwise.
+    /// phase-scripted dome camera, in every battle.
     ///
-    /// One selector, because the alternative has already shipped here: the
-    /// scene pass picked between the two while the move-FX streak and the
-    /// weapon-trail passes both called [`Self::battle_camera_mvp`]
-    /// unconditionally. In a stage-dome battle - which is every scripted
-    /// fight - that projected the swing ribbon and the streak through an
-    /// auto-framed orbit while the swordsman holding them was drawn through
-    /// the scripted camera, so the effects sat wherever the two framings
-    /// happened to disagree. A trail is attached to a body; it has to ride
-    /// the body's camera.
+    /// One selector, because two have already shipped here. The scene pass
+    /// once picked between this camera and an auto-framed monster orbit
+    /// while the move-FX streak and the weapon-trail passes called the orbit
+    /// unconditionally, so in a stage battle the swing ribbon sat wherever
+    /// the two framings disagreed: a trail is attached to a body and has to
+    /// ride the body's camera. And a fight whose stage did not resolve used
+    /// to fall back to that orbit, unscaled, while the browser page drew it
+    /// through the phase camera at the 4x base matrix - which is retail's
+    /// frame: the camera and the base matrix belong to the battle mode, and
+    /// the backdrop is only one more actor drawn through them
+    /// (`legaia_engine_session::battle_fx::battle_world_scale`).
     pub(super) fn battle_scene_mvp(&self, aspect: f32) -> Mat4 {
-        if self.battle_stage_mesh.is_some() {
-            self.battle_dome_camera_mvp(aspect)
-        } else {
-            self.battle_camera_mvp(aspect)
-        }
+        self.battle_dome_camera_mvp(aspect)
     }
 
     /// The model factor every **stage-class** battle draw carries: the

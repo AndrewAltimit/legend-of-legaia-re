@@ -1311,9 +1311,8 @@ forest trees (`0x180`), the `0x380` billboards of `deene` and `retona`.
   `gimard_burning_attack`) drew at another angle under the yaw-first,
   unflipped product the hosts used before.
 - *No prefix.* A part with no `0x780` bit gets none, and neither does any
-  part drawn through a host's own vantage (the debug orbits, the stage-less
-  battle orbit, the overworld top view), where there is no retail rotation
-  to undo.
+  part drawn through a host's own vantage (the debug orbits, the overworld
+  top view), where there is no retail rotation to undo.
 - *Summons.* `engine-effects::summon` runs a camera-locked part through the
   motion block and leaves its position to its program; its translation
   glide, which snaps a part to `origin + anim bank`, is kept for world-space
