@@ -620,14 +620,6 @@ pub fn run_engine_battle(
             p(battle.cam_tween.1)
         ));
     }
-    if matches!(driven, Some(Some(_)))
-        && let Some(cam) = session.host.world.battle.camera.as_mut()
-    {
-        let mask = cam.align_glide_origin(battle.cam_tween.0, battle.cam_tween.1);
-        if let Some(t) = cam_trace.as_mut() {
-            t.push_str(&format!(" | aligned {mask:#010b}"));
-        }
-    }
     if let Some(t) = cam_trace.as_mut() {
         let pc = usize::from(battle.party_count);
         let world = &session.host.world;
@@ -654,12 +646,12 @@ pub fn run_engine_battle(
             ));
         }
     }
-    let world = &session.host.world;
     // How far the drive moved each placed combatant: a capture of a running
     // action stands its combatants where the action had already moved them,
     // and the drive replays the action from there.
     let mut ground_drift = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
     if matches!(driven, Some(Some(_))) {
+        let world = &session.host.world;
         for (slot, d) in ground_drift.iter_mut().enumerate() {
             let (Some([gx, gz]), Some(a)) = (ground[slot], world.actors.get(slot)) else {
                 continue;
@@ -670,6 +662,27 @@ pub fn run_engine_battle(
             ]);
         }
     }
+    // With the drift measured, the combatants stand on the capture's own
+    // ground for the camera, which is then aligned against the framing its
+    // law arms there (`legaia_engine_capture::ground_snap`); the image child
+    // does the same at its frame (`LEGAIA_BATTLE_GROUND_SNAP`).
+    if matches!(driven, Some(Some(_))) {
+        let world = &mut session.host.world;
+        let target = legaia_engine_capture::ground_snap::snap_battle_ground(
+            world,
+            &battle.engine_ground_snaps(),
+        );
+        let mask = match (world.battle.camera.as_mut(), target) {
+            (Some(cam), Some(target)) => {
+                cam.align_glide_origin_to(battle.cam_tween.0, battle.cam_tween.1, target)
+            }
+            _ => 0,
+        };
+        if let Some(t) = cam_trace.as_mut() {
+            t.push_str(&format!(" | aligned {mask:#010b}"));
+        }
+    }
+    let world = &session.host.world;
     let pose = world.battle_cam_pose();
     let camera = CameraObs {
         pitch: pose.pitch.round() as i16,

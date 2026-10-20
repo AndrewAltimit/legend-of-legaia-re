@@ -102,6 +102,45 @@ impl RetailBattle {
             && matches!(self.span_gate, SpanGate::DoneHold { .. })
     }
 
+    /// Every captured combatant's live pair and heading by engine slot - the
+    /// ground the capture holds, not the seed's (which [`Self::undrift`]
+    /// may have moved) - for the phase's ground seat
+    /// ([`legaia_engine_capture::ground_snap`]).
+    pub fn engine_ground_snaps(&self) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
+        // Past the end signal the sequencer poses the winners and the results
+        // framing reads poses the replay's clips do not share; the ground
+        // stays the replay's.
+        if self.span_gate.is_end() {
+            return Vec::new();
+        }
+        let pc = usize::from(self.party_count.clamp(1, 3));
+        self.captured
+            .iter()
+            .enumerate()
+            .filter_map(|(pool, c)| {
+                let (live, body, clip, _) = (*c)?;
+                let slot = if pool < 3 {
+                    (pool < pc).then_some(pool)?
+                } else {
+                    let m = pool - 3;
+                    (m < usize::from(self.monster_count)).then_some(pc + m)?
+                };
+                Some(legaia_engine_capture::ground_snap::GroundSnap {
+                    slot: u8::try_from(slot).ok()?,
+                    x: live[0],
+                    z: live[1],
+                    facing: self.facing.get(pool).copied().flatten(),
+                    body: (if pool == usize::from(self.active_actor) {
+                        (0x1E..=0x20).contains(&self.action_state)
+                    } else {
+                        pool >= 3 && matches!(clip, 2..=5 | 0x0B)
+                    })
+                    .then_some(body),
+                })
+            })
+            .collect()
+    }
+
     /// [`Self::clip_cursors`] on engine slots: the party's pool slots
     /// `0..party_count` as they are, the monster row `3..` packed behind
     /// the party, as the engine seats it.

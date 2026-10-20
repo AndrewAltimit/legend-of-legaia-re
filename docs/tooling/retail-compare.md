@@ -975,18 +975,52 @@ engine's own replay measures the push:
    like everyone else.
 4. A replayed push depends on where it starts, so one step back can still
    stand a combatant short. The own-drift rule is re-run on each run's own
-   drift (`captured - drift` again) for as long as the residual falls, three
-   rounds at most. It does not converge on every capture:
-   `rim_elm_gimard_victory` reads `78`, `56`, then `89` and keeps the second.
-   The own-drift run replaces the target's-drift one only when it stands the
-   fight at least `UNDRIFT_MIN` nearer: `noa_levelup_fight_pre` reads `53`
-   against `56`, two replays of one push, and keeps the first rule.
+   drift (`captured - drift` again) for four rounds and keeps its nearest
+   run. A round that lands further off does not end the iteration: the push
+   is not monotone in where it starts, and with the attacker's in-range
+   back-off `noa_levelup_fight_pre`'s second round lands `396` units further
+   off than its first while a later one lands nearest. The own-drift run replaces
+   the target's-drift one only when it stands the fight at least
+   `UNDRIFT_MIN` nearer.
 5. A capture past the end signal is not re-run: the win pose's own travel is not
    a push the capture holds twice.
 
 The second rule is what `rim_elm_gimard_seru_capture_before` / `_after` need:
 Vahn ends his swing `108` units off the pair his target's drift names, and
 the yaw his heading feeds read `82` off with it.
+
+### The ground at the phase
+
+The undrift search gets each combatant within some units of its captured
+pair, not onto it, and the framings that look at the combatants read what is
+left: case 6 the acting seat's live pair, cases 7 and 8 the body pairs, every
+case the heading. The capture holds each combatant's live pair and heading
+exactly, so once the drive holds the phase, both the headless channel and the
+image child stand them there before the camera is aligned
+(`legaia_engine_capture::ground_snap`, `LEGAIA_BATTLE_GROUND_SNAP`; the
+ground drift the undrift search reads is measured first).
+
+- **A reacting monster stands on its body pair.** A body on a reaction clip
+  (`2`..`5`, `0x0B`) the replay strikes at another keyframe than retail's
+  puts its centroid elsewhere for the same live pair (`rim_elm_gimard_seru_capture_before`'s
+  knocked-down Gimard: engine body `(277, 1246)` against retail's
+  `(230, 1053)`), so it is moved until its body pair is the captured one. So
+  is the acting seat in the strike band `0x1E..=0x20`, whose framing (case
+  7) reads body pairs. A party member's reaction is seated on its displayed
+  keyframe ([below](#the-keyframe-each-body-stands-on)), which the RAM's body
+  pair does not describe, and an actor with no pose has no centroid to move.
+- **The framing is the law's on that ground.** The glide in flight was armed
+  on the replay's ground. A probe step of a copy of the camera
+  (`World::battle_camera_framing_now`) before and after the move says where
+  the law arms on each; a component whose glide already heads where the
+  pre-move probe does keeps its endpoint, moved by the probe's difference
+  (which cancels the probe step's own counter advance), and any other takes
+  the post-move probe's. The glide is then aligned onto retail's live pose
+  only on the components whose endpoint that framing agrees with
+  (`BattleCamera::align_glide_origin_to`), as before, so a framing the law
+  gets wrong still reads as one.
+- **Past the end signal** nothing is moved: the winners' poses and the
+  results framing read clips the replay does not share.
 
 ### Combatants that had already acted
 
@@ -3126,19 +3160,13 @@ every pass, so it moves with the phase of both clips):
   with the two at least nine units nearer - on another pose of the
   skeleton, or before the separation pass moved them - and the capture
   does not say which. The anim tick does re-test it: `FUN_80047430`'s
-  in-range back-off (`0x80047C3C..0x80047D1C`) steps the acting attacker of
-  an Attack (`+0x1DE == 3`, flow `0xFF`) back along its facing,
-  `(trig * DAT_1F800393 * +0x21D) >> 13` a tick, for as long as the range
-  law reads in range, which leaves a strike loop's attacker just outside its
-  reach. The port does not run that term. Run, it stands this capture's Vahn
-  `8` units off his captured pair (`42` without it), but the corpus's undrift
-  search and glide alignment are tuned to the port without it, and several
-  ratcheted frames fell (`noa_levelup_fight_pre` `.832` to `.476`,
-  `battle_noa_miracle_art_combo` `.785` to `.629`). The engine's check runs against the idle pose the seed stands
-  the skeleton in (`359`), fails, and its walk clip takes one step, `42`
-  units, before the strike loop. The case-7 yaw endpoint still lands on
-  retail's (`2356` against `2358`); what the nearer ground moves is the
-  focus endpoint, `16` units off, which takes the yaw's phase
+  in-range back-off (`0x80047C3C..0x80047D1C`,
+  [battle-action](../subsystems/battle-action.md#where-an-action-leaves-its-combatants))
+  steps the acting attacker of an Attack back along its facing for as long
+  as the range law reads in range, which leaves a strike loop's attacker
+  just outside its reach. The replay's Vahn stops `8` units off his
+  captured pair with it, `42` without it, and the phase seat
+  ([above](#the-ground-at-the-phase)) stands him on it
   ([above](#an-ease-out-camera-carries-its-history)). The second skeleton,
   which stands off the action at `(56, -622)`, is ghosted in retail's frame:
   the near-camera ghost pass measures it `1172` units from its point on the

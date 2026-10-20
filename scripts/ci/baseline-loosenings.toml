@@ -168,3 +168,12 @@ reason = "A monster cast's homing hit now turns its victim onto the caster (FUN_
 changes = [
   ["states/battle_gimard_tail_fire_b/image", 0.805, 0.782],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The port now runs FUN_80047430's in-range back-off (0x80047C3C..0x80047D1C): an attacker inside its reach steps back along its facing every frame of an Attack. Both captures are strike-loop or Done-band frames of a party combo, so the replayed strikes now stand the attacker at the edge of its reach and the hits, knockbacks and the undrift search's winning run land on another timeline. The phase seat (ground_snap) now stands every combatant on its captured ground, which lifts victory's camera to 1.0 and seven other combo frames; what these two frames still read is the replay's clock. rim_elm_gimard_victory shows the engine's Vahn on another keyframe of the Somersault under hit-spark rays drawn on its own rand() stream. noa_levelup_fight_pre's case-8 yaw reads the swing counter ctx[+0x6DA], which the capture holds at 724 and the replay at 644 - 80 frames apart, outside the clock's slack, so no alignment carries it; the old frame's counter sat nearer only because another undrift run won, and its yaw was off too (1245 against 1202, now 1274)."
+changes = [
+  ["states/noa_levelup_fight_pre/camera", 0.981, 0.971],
+  ["states/noa_levelup_fight_pre/image", 0.832, 0.787],
+  ["states/rim_elm_gimard_victory/image", 0.908, 0.841],
+]

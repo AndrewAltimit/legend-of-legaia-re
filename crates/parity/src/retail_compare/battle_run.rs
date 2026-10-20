@@ -213,11 +213,17 @@ pub(super) fn run_battle(
                     let reaches = e.mode == legaia_engine_mode::mode::SceneMode::Battle
                         && e.driven.is_some_and(|d| d.is_some())
                         && e.age_short.is_none();
-                    if !reaches || rule_best.as_ref().is_some_and(|(_, _, r)| residual >= *r) {
+                    if !reaches {
                         break;
                     }
+                    // A worse round is not the end of the iteration: the
+                    // push a replay lands is not monotone in where it
+                    // starts, so the next round, taken on this one's drift,
+                    // can land nearer than any before it.
                     drift = e.ground_drift;
-                    rule_best = Some((b, e, residual));
+                    if !rule_best.as_ref().is_some_and(|(_, _, r)| residual >= *r) {
+                        rule_best = Some((b, e, residual));
+                    }
                 }
                 // The first rule has only to beat the first run. A later one
                 // replaces a rule that already stands the fight nearer only
@@ -436,6 +442,10 @@ pub(super) fn battle_image(
             } else {
                 battle.cam_tween
             }),
+        ));
+        env.push((
+            "LEGAIA_BATTLE_GROUND_SNAP",
+            legaia_engine_capture::ground_snap::ground_snaps_to_env(&battle.engine_ground_snaps()),
         ));
         if battle.displayed_camera_on_agreement() {
             env.push((

@@ -144,6 +144,12 @@ pub struct ScreenshotConfig {
     /// for those endpoints on every component
     /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::glide_endpoint_matches`]).
     /// Set by the retail-compare image channel on a Done-band capture.
+    /// `LEGAIA_BATTLE_GROUND_SNAP=slot:x:z[:facing],...`: the capture's
+    /// combatants' live pairs and headings, by engine slot, which the captured
+    /// frame stands them on before the camera is aligned
+    /// ([`legaia_engine_capture::ground_snap`]). Set by the retail-compare
+    /// image channel on an action drive.
+    pub battle_ground_snap: Vec<legaia_engine_capture::ground_snap::GroundSnap>,
     pub battle_cam_align_displayed: Option<(
         legaia_engine_camera::projection::BattleCamPose,
         legaia_engine_camera::projection::BattleCamPose,
@@ -533,6 +539,9 @@ impl ScreenshotConfig {
             battle_cam_align: std::env::var("LEGAIA_BATTLE_CAM_ALIGN")
                 .ok()
                 .and_then(|v| legaia_engine_capture::camera_align::cam_align_from_env(&v)),
+            battle_ground_snap: std::env::var("LEGAIA_BATTLE_GROUND_SNAP")
+                .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))
+                .unwrap_or_default(),
             battle_cam_align_displayed: std::env::var("LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED")
                 .ok()
                 .and_then(|v| legaia_engine_capture::camera_align::cam_align_from_env(&v)),

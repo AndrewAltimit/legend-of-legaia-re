@@ -183,24 +183,41 @@ impl PlayWindowApp {
         if let Some((live, end)) = self.screenshot.as_ref().and_then(|sc| sc.battle_cam_align)
             && self.session.host.world.mode == SceneMode::Battle
             && self.capture_phase_met()
-            && let Some(cam) = self.session.host.world.battle.camera.as_mut()
+            && self.session.host.world.battle.camera.is_some()
         {
-            // A Done-band capture's displayed pose, where the glide walks
-            // retail's own table (`LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED`).
-            let live = match self
+            // Stand the combatants on the capture's own ground first, and
+            // align against the framing the camera's law arms there
+            // (`LEGAIA_BATTLE_GROUND_SNAP`, `ground_snap`).
+            let snaps = self
                 .screenshot
                 .as_ref()
-                .and_then(|sc| sc.battle_cam_align_displayed)
-            {
-                Some((shown, _)) if cam.glide_endpoint_matches(end) => shown,
-                _ => live,
+                .map(|sc| sc.battle_ground_snap.clone())
+                .unwrap_or_default();
+            let world = &mut self.session.host.world;
+            let target = legaia_engine_capture::ground_snap::snap_battle_ground(world, &snaps);
+            // A Done-band capture's displayed pose, where the glide walks
+            // retail's own table (`LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED`).
+            let displayed = self
+                .screenshot
+                .as_ref()
+                .and_then(|sc| sc.battle_cam_align_displayed);
+            let world = &mut self.session.host.world;
+            let mask = match (world.battle.camera.as_mut(), target) {
+                (Some(cam), Some(target)) => {
+                    let live = match displayed {
+                        Some((shown, _)) if cam.glide_endpoint_matches_to(end, target) => shown,
+                        _ => live,
+                    };
+                    cam.align_glide_origin_to(live, end, target)
+                }
+                _ => 0,
             };
             // The near-camera ghost bits are derived from the pose, and the
             // tick computed them on the unaligned one. Re-derive them only
             // when every component took retail's value: a partly aligned
             // pose is neither retail's camera nor the engine's own.
-            if cam.align_glide_origin(live, end) == 0xFF {
-                self.session.host.world.refresh_battle_camera_ghost();
+            if mask == 0xFF {
+                world.refresh_battle_camera_ghost();
             }
         }
     }

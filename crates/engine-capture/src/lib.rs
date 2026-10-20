@@ -36,6 +36,7 @@ pub mod cast_parts;
 pub mod clip_cursors;
 pub mod field_seeds;
 pub mod formation_cell;
+pub mod ground_snap;
 pub mod hud_glide;
 pub mod phase_gate;
 pub mod script_gate;

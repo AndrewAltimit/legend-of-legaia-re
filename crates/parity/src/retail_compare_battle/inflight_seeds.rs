@@ -97,7 +97,7 @@ impl UndriftActing {
     pub const fn rounds(self) -> usize {
         match self {
             Self::WithTarget => 1,
-            Self::Own => 3,
+            Self::Own => 4,
         }
     }
 }

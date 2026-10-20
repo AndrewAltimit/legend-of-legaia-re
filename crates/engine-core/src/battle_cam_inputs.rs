@@ -754,6 +754,37 @@ impl World {
         }
     }
 
+    /// The framing endpoint the battle camera would arm on the world as it
+    /// now stands: a copy of the camera, stepped once on this frame's inputs
+    /// (the combatants' live and body pairs, headings and the action-SM
+    /// state), its glide target read off and the copy dropped. The live
+    /// camera, the world and its `rand()` stream are untouched. `None`
+    /// outside battle or before the camera exists.
+    ///
+    /// A capture harness that has just stood the combatants on a capture's
+    /// ground reads this to ask whether the engine's framing law, on that
+    /// ground, heads where retail's tween table does - the glide in flight
+    /// was armed on the ground the replay left.
+    pub fn battle_camera_framing_now(&self) -> Option<projection::BattleCamPose> {
+        if self.mode != legaia_engine_mode::mode::SceneMode::Battle {
+            return None;
+        }
+        let mut copy = Some(self.battle.camera.as_ref()?.clone());
+        let step = u64::from(copy.as_ref()?.frame_step().max(1));
+        let inputs = battle_cam_inputs(self);
+        let tracks = battle_attack_tracks(self);
+        let mut rng = self.rng_state;
+        script::drive_on_stream(
+            &mut copy,
+            true,
+            inputs,
+            self.clock.display_frames + step,
+            tracks.as_ref(),
+            &mut rng,
+        );
+        copy.map(|c| c.glide_target())
+    }
+
     /// The battle camera's current pose, or the shared boot pose before the
     /// first tick armed it. While a battle-stage module owns the camera
     /// globals (the Cort arrival / form transition,

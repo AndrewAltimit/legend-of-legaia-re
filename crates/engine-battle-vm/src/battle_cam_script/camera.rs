@@ -194,7 +194,7 @@ pub const CAMERA_OPTION_FAR: u8 = 2;
 
 /// The phase-scripted battle camera state. Created on battle entry, stepped
 /// once per 2 retail display frames (`World::clock.display_frames`), dropped on exit.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BattleCamera {
     pub(super) phase: BattleCamPhase,
     pub(super) pose: BattleCamPose,
@@ -290,7 +290,7 @@ pub struct BattleCamera {
 
 /// [`BattleCamera`]'s per-art attack-camera state - retail's `ctx[+0x26D]` /
 /// `+0x26E` / `+0x26F` / `+0x87C` plus the disc table the arms fold.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub(super) struct AttackChannel {
     /// The parsed `0x801F4E10` table. `None` on a disc-free host, which
     /// leaves the whole channel inert (retail cannot run without it either).
