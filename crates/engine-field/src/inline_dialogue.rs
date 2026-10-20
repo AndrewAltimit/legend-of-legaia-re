@@ -178,7 +178,20 @@ pub struct HeldBox {
     pub until_next_line: bool,
 }
 
+/// The pager idle state a `0x24` continuation leaves (`_DAT_801F2734 = 4`):
+/// the handler `0x801D8708` returns before clearing the row array, so the box
+/// goes on drawing ([`HeldBox::until_next_line`]).
+pub const PAGER_IDLE_KEEP_ROWS: u32 = 4;
+
 impl HeldBox {
+    /// The pager state `_DAT_801F2734` this held box stands for:
+    /// [`PAGER_IDLE_KEEP_ROWS`] for a `0x24` continuation, `None` for a box
+    /// drawn on its press's frame only (the state that press stored is gone
+    /// by the next call, so nothing after it reads one).
+    pub fn pager_state(&self) -> Option<u32> {
+        self.until_next_line.then_some(PAGER_IDLE_KEEP_ROWS)
+    }
+
     /// The box a press on `panel` leaves on screen, given the byte the pager
     /// dispatched on: a page's post-page byte, or a picker's continuation
     /// byte (`open + n*2 + 1`). Retail compares the raw byte against `0x24`

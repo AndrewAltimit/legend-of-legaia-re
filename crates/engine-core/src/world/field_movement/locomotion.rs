@@ -942,6 +942,22 @@ impl World {
         self.apply_player_clip_pick(&pick, leader);
     }
 
+    /// The standing clip the op-`0x49` installer `FUN_801F1278` stores on
+    /// the player: the clip base, the clip id and the party-bank bit it
+    /// computes ([`legaia_engine_field::field_subsystem_enter::enter_context`]),
+    /// bound through the selector the way the settle tail binds the same sum.
+    pub(crate) fn field_player_installer_clip(&mut self, base: u16, clip: i16, party_bank: bool) {
+        let leader = self.locomotion.player_anim.as_ref().map_or(0, |a| a.leader);
+        self.locomotion.clip_base = base;
+        let pick = legaia_engine_field::field_player_clip::SettleClipPick {
+            clip: clip as u16,
+            party_flag: party_bank,
+            binds: true,
+            bind_party_flag: party_bank,
+        };
+        self.apply_player_clip_pick(&pick, leader);
+    }
+
     /// Store one clip pick on the player and hand what it binds to the clip
     /// player. Shared by the settle tail and the script arms that aim a clip
     /// at the player ([`Self::field_player_script_clip`]).

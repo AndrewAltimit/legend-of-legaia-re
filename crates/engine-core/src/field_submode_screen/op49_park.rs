@@ -20,6 +20,57 @@ impl World {
         }
     }
 
+    /// The part of the subsystem actor's installer `FUN_801F1278` an
+    /// op-`0x49` park changes on screen. Retail spawns the actor on the op's
+    /// Idle arm and runs the installer on its first dispatch, with the
+    /// operand pointer `_DAT_8007B450` live - so every arm takes the park
+    /// branch.
+    ///
+    /// - **The player stands.** The clip base `_DAT_8007BDD8 = 2`, the
+    ///   player's `+0x5C = 2 + leader * 7` and the party-bank bit
+    ///   (`0x801F1318..0x801F1354`): the leader's idle clip, whatever the
+    ///   player was playing when the script opened the screen.
+    /// - **A held box comes down.** The rewind at `0x801F1434..0x801F144C`
+    ///   takes the pager from its idle `4` - a `0x24` continuation, whose rows
+    ///   the pager goes on drawing - to `1`, which draws nothing.
+    ///
+    /// PORT: FUN_801F1278 (the park-arm writes the engine mirrors)
+    pub(crate) fn run_submode_installer(&mut self) {
+        use legaia_engine_field::field_subsystem_enter::{
+            CTX_PARTY_BANK, enter_context, rearm_state,
+        };
+        let leader = self.locomotion.player_anim.as_ref().map_or(0, |a| a.leader);
+        let flags = if self.locomotion.player_party_bank {
+            CTX_PARTY_BANK
+        } else {
+            0
+        };
+        let ctx = enter_context(flags, 0, leader);
+        self.field_player_installer_clip(
+            ctx.clip_base,
+            ctx.player_clip,
+            ctx.flags & CTX_PARTY_BANK != 0,
+        );
+        // One pager, one state word: whichever context's box it is still
+        // drawing takes the rewind.
+        let rewind = |held: &mut Option<legaia_engine_field::inline_dialogue::HeldBox>| {
+            if let Some(state) = held.as_ref().and_then(|h| h.pager_state())
+                && rearm_state(state) != state
+            {
+                *held = None;
+            }
+        };
+        if let Some(inline) = self.dialog.inline.as_mut() {
+            rewind(&mut inline.held_box);
+        }
+        if let Some(tl) = self.cutscene.timeline.as_mut() {
+            rewind(&mut tl.held_box);
+        }
+        for tl in &mut self.field_vm.helper_contexts {
+            rewind(&mut tl.held_box);
+        }
+    }
+
     /// Record an op-`0x49` arm's **kind byte** - retail's
     /// `_DAT_8007B450 = operand`, reduced to the one byte every consumer
     /// dereferences.

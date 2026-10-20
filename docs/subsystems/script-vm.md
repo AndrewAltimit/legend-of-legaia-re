@@ -2456,6 +2456,18 @@ Its layout half - average the members' projected screen X, centre, then relax ov
 The STATE_RESUME "Done writer (field-overlay `FUN_801F159C`-class)" named above is the dispatcher of the subsystem actor that op `0x49` and the field menu button both spawn. It is not a party picker: its default handler is slot `7` of the table `PTR_FUN_801F33B4`, the state pick `FUN_801F1F4C`, which moves the actor on to the pause-menu session `0x30`; a sub-op whose `0x801F33A4` byte is not `-1` replaces that `7` with its own screen. Ported as `legaia_engine_field::field_subsystem_enter` (the installer) and `field_state_pick` (slot `7`).
 
 - **Enter** `FUN_801F1278(actor)`: suspends field input (`FUN_801DE190`, sets `_DAT_8007C364+0x10` bit `0x80000`, clears pad latch `_DAT_1F800394` bit `0x8000`), forces the submode context `_DAT_801C6EA4+0x3E = 1`, saves the caller's `+0x50` into `+0x40` and installs handler `7` (the state pick), seeds three roster cells `_DAT_801C6EA4+0x36/+0x38/+0x3A` from the roster `DAT_80084594` (count) / `DAT_80084598..A` (member ids), homes the cursor (`+0x46=0xA0`,`+0x48=0x58`), and if a parked op-`0x49` operand `_DAT_8007B450` is live remaps `+0x50` through the sub-op table `&DAT_801F33A4` (below).
+- **What the enter half changes on screen.** It stands the player: clip base
+  `_DAT_8007BDD8 = 2`, player `+0x5C = 2 + leader * 7` (the leader's idle clip
+  in the locomotion bank) and the party-bank bit `+0x10 |= 0x1000000`
+  (`0x801F1318..0x801F1354`). On the park arm it also rewinds `DAT_801F2734`
+  from `4` or `7` to `1` (`0x801F1434..0x801F144C`). That word is the dialog
+  pager's state ([`mes.md`](../formats/mes.md)), not a submode word: `4` is the
+  idle a `0x24` continuation leaves, which goes on drawing the box's rows, and
+  `1` draws nothing, so a screen a script opens under a held box takes the box
+  down. Port: `World::run_submode_installer`, run on every op-`0x49` arm. The
+  current-member byte `_DAT_8007B469` it re-resolves has one reader, the
+  equipment sub-draw `FUN_801E5B4C`, whose only caller `FUN_801F16C0` stores the
+  entry's code before every call, so the re-resolve is never observed.
 - **Resume / close** `FUN_801F159C(actor)`: active only while submode state `DAT_801F2734 ∈ {1,4,7}`; re-arms via `FUN_801F1278` when a pad flag is set, dispatches the per-frame handler `PTR_FUN_801F33B4[actor+0x50]`, and on confirm (`_DAT_801C6EA4+0x3E == 0`) sets the actor yield bit (`+0x10 |= 8`), releases the pad latch, and drops the field/tile-board busy flag (`_DAT_8007B450` / `_DAT_8007C364+0x10 &= ~0x80000`).
 
 #### Which screen a sub-op opens: the table at `0x801F33A4`

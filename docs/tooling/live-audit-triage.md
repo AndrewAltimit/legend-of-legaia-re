@@ -560,6 +560,9 @@ dispatch arm.
 | `801f1138` / `801f1e48` / `801f1fdc` / `801f1d90` / `801f20b0` / `801f2134` | the state machines | `WIRE` - slots `0x27` / `0x32` / `0x28` / `0x13` / `0x1a` / `0x00` |
 | `801f16c0` / `801f17d8` / `801f1890` / `801f1950` / `801f1a1c` / `801f1ab0` / `801f1b64` | the panel painters | `WIRE` - panel-window records, not handler slots |
 | `801f90dc` | `acquisition_caption` | `REPLACE` - the routine is `FUN_801D0F1C` |
+| `801f1278` | `enter_context` | `WIRE` - `World::run_submode_installer` on every op-`0x49` arm: the player's idle clip and party-bank bit (the field read as a "scroll" word is the clip id `+0x5C`) |
+| `801f1278` | `rearm_state` | `WIRE` - same call site: `DAT_801F2734` is the dialog pager's state, and its idle `4` is a held `0x24` box (`HeldBox::pager_state`) |
+| `801f1278` | `resolve_current_member` | `REPLACE` - `_DAT_8007B469`'s one reader `FUN_801E5B4C` is only called by `FUN_801F16C0`, which stores the byte first; the port passes it as `EquipPanelInput::char_index` |
 
 The painters are the `+0x18` callback of a record in the `0x801F2B98`
 panel-window table

@@ -629,6 +629,21 @@ fn a_picker_commit_on_a_next_line_continuation_keeps_the_prompt_box_up() {
     );
 }
 
+/// An op-`0x49` park that opens a screen under a held `0x24` box takes the
+/// box down: the subsystem actor's installer `FUN_801F1278` rewinds the
+/// pager from its idle `4` to `1` (`0x801F1434..0x801F144C`), and state `1`
+/// draws nothing.
+#[test]
+fn a_park_opening_a_screen_takes_down_a_held_continuation_box() {
+    let mut world = World::new();
+    world.start_inline_dialogue(held_box_script(0x24));
+    commit_first_option(&mut world);
+    let held = world.dialog.inline.as_ref().unwrap().held_box.as_ref();
+    assert_eq!(held.and_then(|h| h.pager_state()), Some(4));
+    world.run_submode_installer();
+    assert!(world.dialog.inline.as_ref().unwrap().held_box.is_none());
+}
+
 /// Any other continuation stores state `0` (a picker's default at
 /// `0x801D9548`), which draws on the commit's own pager call and is followed
 /// by the idle `1`, which draws nothing: the box lasts the commit frame only.

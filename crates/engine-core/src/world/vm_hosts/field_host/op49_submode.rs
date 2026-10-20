@@ -101,6 +101,9 @@ impl FieldHostImpl<'_> {
         }
     }
     pub(super) fn op49_menu_request(&mut self, sub_op: u8, instr: &[u8]) {
+        // Every Idle arm spawns the subsystem actor, whose installer stands
+        // the player and takes down a held box before any screen runs.
+        self.world.run_submode_installer();
         // Recognise + open an inline gold shop (sub-0); non-shop op-0x49 sub-0
         // payloads (inn / save prompts) fail the priced-record validation.
         if sub_op == 0 {
