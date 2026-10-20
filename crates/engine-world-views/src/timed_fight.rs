@@ -10,7 +10,7 @@ use legaia_engine_menus::timed_fight::*;
 /// `true` while the battle's command phase is up - from the round start to
 /// the `Begin` that plays the round out - which is the strip's lifetime (see
 /// the module docs).
-pub fn strip_visible(world: &crate::world::World) -> bool {
+pub fn strip_visible(world: &legaia_engine_core::world::World) -> bool {
     world.mode == legaia_engine_mode::mode::SceneMode::Battle
         && world.battle.flow != legaia_engine_menus::battle_flow::BattleFlowState::Idle
 }
@@ -21,9 +21,9 @@ pub fn strip_visible(world: &crate::world::World) -> bool {
 ///
 /// The gate reads the first **monster** seat's id - the port seats the
 /// formation's slot 0 at actor index `party_count`
-/// ([`crate::world::World::battle_monster_slots`]), where retail's fixed table
+/// ([`legaia_engine_core::world::World::battle_monster_slots`]), where retail's fixed table
 /// keeps it at index 3 - and the percentage reads the same seat.
-pub fn timed_fight_strip(world: &crate::world::World) -> Option<TimedFightStrip> {
+pub fn timed_fight_strip(world: &legaia_engine_core::world::World) -> Option<TimedFightStrip> {
     if !strip_visible(world) {
         return None;
     }

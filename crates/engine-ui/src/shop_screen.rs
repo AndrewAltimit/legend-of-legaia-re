@@ -139,7 +139,7 @@ pub struct ShopPickerView<'a> {
 }
 
 /// One party member for window 41, as a host projects it from
-/// `engine-core::world_views::shop::party_compare_members`.
+/// `engine-world-views::shop::party_compare_members`.
 #[derive(Debug, Clone, Copy)]
 pub struct ShopCompareMember<'a> {
     pub name: &'a str,

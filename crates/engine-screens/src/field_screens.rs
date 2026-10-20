@@ -126,8 +126,7 @@ pub fn field_party_hud_draws(
     surface_h: u32,
 ) -> BattleHudDraws {
     use legaia_engine_ui::field_party_hud as fp;
-    let rows =
-        legaia_engine_core::world_views::world_map_panel_host::field_party_hud_members(world);
+    let rows = legaia_engine_world_views::world_map_panel_host::field_party_hud_members(world);
     let members: Vec<fp::FieldHudMember<'_>> = rows
         .iter()
         .map(|m| fp::FieldHudMember {
@@ -248,8 +247,7 @@ pub fn field_party_hud_rearm(
         *scene_latch = scene;
         hud.rearm();
     }
-    let held =
-        legaia_engine_core::world_views::world_map_panel_host::field_hud_rearm_held(&host.world);
+    let held = legaia_engine_world_views::world_map_panel_host::field_hud_rearm_held(&host.world);
     if hud.rearm_term(held) {
         hud.rearm();
     }
@@ -268,8 +266,7 @@ pub fn field_party_hud_tick(
     suppressed: bool,
     projected_y: Option<i16>,
 ) {
-    let view_mode =
-        legaia_engine_core::world_views::world_map_panel_host::field_hud_view_mode(world);
+    let view_mode = legaia_engine_world_views::world_map_panel_host::field_hud_view_mode(world);
     let pad = legaia_engine_field::world_map_panel_host::packed_pad(world.input.pad());
     let player_pos = world
         .player_actor_slot

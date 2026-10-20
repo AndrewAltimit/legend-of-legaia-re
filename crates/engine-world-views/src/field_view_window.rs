@@ -6,7 +6,7 @@
 //! this frame at all, and the placed-actor and field-NPC gates that run the
 //! world's own cull.
 
-use crate::world::World;
+use legaia_engine_core::world::World;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene::field_view_window::{ViewCells, view_cells};
 
@@ -15,7 +15,7 @@ use legaia_engine_scene::field_view_window::{ViewCells, view_cells};
 ///
 /// `None` when:
 ///
-/// - the crop knob is off ([`crate::world::WorldToggles::view_window_crop`],
+/// - the crop knob is off ([`legaia_engine_core::world::WorldToggles::view_window_crop`],
 ///   from [`legaia_engine_menus::options::OptionsState::retail_view_window`]);
 /// - `retail_framing` is false - the host passes [`framing_is_retail`] and
 ///   clears it under its own debug camera. The window is authored for
@@ -25,7 +25,7 @@ use legaia_engine_scene::field_view_window::{ViewCells, view_cells};
 /// - the world is not in [`SceneMode::Field`]: the kingdom overworld is drawn
 ///   by the PROT 0901 library, not by the pair this module ports, and the
 ///   other modes draw no `.MAP` cells;
-/// - no camera view is published yet ([`crate::world::FieldNpcState::cull_view`]
+/// - no camera view is published yet ([`legaia_engine_core::world::FieldNpcState::cull_view`]
 ///   is `None` until the zone follow camera composes);
 /// - the focus tile lies outside the region box. Retail latches the box at
 ///   the camera's own re-centre tile (`FUN_80017DD4`), so the two agree by
@@ -68,7 +68,7 @@ pub fn field_view_cells(world: &World, retail_framing: bool) -> Option<ViewCells
 /// `FUN_8001ADA4` skips any actor carrying `flags & 0xA`
 /// (`0x8001AE4C..0x8001AE58`), so a culled object draws nothing. Over the
 /// 84 placed-object actors of each `rikuroa` capture
-/// ([`crate::world::field_npc_cull::field_actor_culled`] fed the state's
+/// ([`legaia_engine_core::world::field_npc_cull::field_actor_culled`] fed the state's
 /// focus, box and window) the kernel reproduces bit 1 for every one -
 /// including the ring of moss spires on the slopes below the summit, which
 /// retail never draws from it.

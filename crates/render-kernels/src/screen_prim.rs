@@ -509,7 +509,7 @@ pub fn light_pool_prims(
 pub const WORLD_MAP_MARKER_OT: u32 = 0;
 
 /// One overworld marker segment, already projected and widened by
-/// `legaia_engine_core::world_map_markers` (a port marker, not a retail
+/// `legaia_engine_world_views::world_map_markers` (a port marker, not a retail
 /// primitive): an opaque flat quad at [`WORLD_MAP_MARKER_OT`]. Both hosts wrap
 /// the kernel's quads through this, so the blend class and bucket are decided
 /// once.

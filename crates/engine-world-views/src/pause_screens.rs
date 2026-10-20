@@ -8,7 +8,7 @@
 
 use legaia_engine_menus::pause_screens::*;
 
-use crate::world::World;
+use legaia_engine_core::world::World;
 
 /// Host entry point for the window-14 target panel off the live world: the
 /// disc item-effect table and the roster are the only fields it reads. See

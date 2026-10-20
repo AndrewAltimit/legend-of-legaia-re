@@ -5,13 +5,13 @@
 //! composition + baking). See `docs/tooling/vrchat-world-export.md`.
 
 use super::*;
-use legaia_engine_core::scene_staging::assemble_field_scene;
 use legaia_engine_export::glb_export::{
     FloorSampler, GlbExportOptions, export_animated_prop_glbs, export_equipment_item_glbs,
     export_npc_glbs, export_party_field_glbs, export_scene_traversal, export_world_glb,
     items_manifest, party_manifest, world_manifest,
 };
 use legaia_engine_scene::npc_catalog::catalog_scene_npcs;
+use legaia_engine_world_views::scene_staging::assemble_field_scene;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn cmd_export_glb(

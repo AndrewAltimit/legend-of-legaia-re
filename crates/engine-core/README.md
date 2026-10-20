@@ -37,10 +37,14 @@ runtime ([`engine-menu-runtime`](../engine-menu-runtime/README.md)).
 - **Saves.** `World::save_full` / `load_full` over the LGSF container in
   `legaia-save`. Writing a save into a mounted memory-card image is
   `engine-menu-runtime::card_write`, above this crate.
-- **Scene staging.** The scene questions that take simulation state: which
-  placed objects are live, which records the story hides. The `.glb` export
-  built on them is [`engine-export`](../engine-export/README.md), above this
-  crate.
+- **What the hosts read back.** The per-frame camera resolution
+  (`camera_view`) is here. The other host-facing reads of a `World` - the
+  visible-tile crop policy, scene staging, the world-map markers and sky, the
+  field party HUD and the menu / minigame view models - are
+  [`engine-world-views`](../engine-world-views/README.md), and the battle
+  screen's are [`engine-battle-hud`](../engine-battle-hud/README.md), both
+  above this crate. The `.glb` export is
+  [`engine-export`](../engine-export/README.md), above it too.
 
 ## The split line
 
@@ -81,6 +85,7 @@ engine-shell / web-viewer / asset-viewer      hosts
 engine-session, engine-screens, parity        host-shared top
 engine-menu-runtime                           the pause menu over World
 engine-scene-host                             SceneHost, resume, live preview
+engine-world-views, engine-battle-hud         reads of World
 engine-core                                   World, the tick, battle loop
 engine-minigame-scenes                        minigame venues + surfaces
 engine-scene, engine-* kernels, render-kernels   World-free rules + scene loading

@@ -329,7 +329,7 @@ takes, bounded by AP.
 - `0x8007BD0C` is the formation cell, not a battle-type byte: the strip's gate reads "the first
   enemy is monster `0xB6`" - Koru, the one four-turn timed boss - and no dome round fields that id.
 
-Port: `engine-core::world_views::muscle_dome` (`parse_course_ladder`, `course_score_cell`, `resolve_turn`
+Port: `engine-world-views::muscle_dome` (`parse_course_ladder`, `course_score_cell`, `resolve_turn`
 playing whole strings per actor, `DomeDamageModel` - the one retail damage kernel both hosts
 resolve through). Falsified readings:
 [`re-do-not-re-walk.md`](../re-do-not-re-walk.md#muscle-dome-was-never-a-card-battle).
@@ -384,7 +384,7 @@ Behaviour: per-press `ctx+0x6dc` debit + `actor+0x1df` append; auto-end on exhau
 (`0x50 -> 0x5a`); the `0x5a -> 0x6e` Begin|Reselect chain; Triangle inert at learned-art
 constant 0.
 
-Port: `engine-core::world_views::muscle_dome` (`selection_exhausted` / `reset_selection`),
+Port: `engine-world-views::muscle_dome` (`selection_exhausted` / `reset_selection`),
 `web-viewer::minigames_muscle` (`arts_input` pieces + `muscle_arts_list_json`). Owning page:
 [`minigame-muscle-dome.md § Arts command input`](../../subsystems/minigame-muscle-dome.md#arts-command-input-packet-pinned).
 

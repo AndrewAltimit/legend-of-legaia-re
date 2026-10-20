@@ -22,7 +22,7 @@
 //! cells the terrain already holds.
 //!
 //! What a host draws from it is decided by one kernel,
-//! [`crate::scene_staging::placed_draw_live`]. With
+//! `legaia_engine_world_views::scene_staging::placed_draw_live`. With
 //! [`StaticObjectWindow::retail_windowing`] set - the play hosts' default
 //! (`OptionsState::retail_static_window`) - a window-owned placement draws only
 //! while this list holds a drawn actor for it, which is retail's sub-area

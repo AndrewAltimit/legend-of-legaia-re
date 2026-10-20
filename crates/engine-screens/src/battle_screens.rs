@@ -204,7 +204,7 @@ pub fn battle_tutorial_chrome_draws(
             scale,
         ));
     }
-    if legaia_engine_core::world_views::timed_fight::timed_fight_strip(world).is_some() {
+    if legaia_engine_world_views::timed_fight::timed_fight_strip(world).is_some() {
         out.extend(legaia_engine_ui::timed_fight_strip_chrome_draws(
             rects, origin, scale,
         ));
@@ -283,7 +283,7 @@ pub fn battle_hud_frame_draws(
                 // same ordering-table slot), so the plaque sits under the
                 // strip's fill. Neither host can put the plaque's name under
                 // the strip's frame in its layer order - it parks it.
-                || legaia_engine_core::world_views::timed_fight::timed_fight_strip(w).is_some(),
+                || legaia_engine_world_views::timed_fight::timed_fight_strip(w).is_some(),
             badges: inputs.badges.as_ref(),
             // The same box, tested against the party surfaces' own rows: a
             // bottom-anchored prompt lands on the active-actor bar (188..208)
@@ -750,7 +750,7 @@ pub fn battle_tutorial_stage_draws(
             ));
         }
     }
-    if let Some(strip) = legaia_engine_core::world_views::timed_fight::timed_fight_strip(world) {
+    if let Some(strip) = legaia_engine_world_views::timed_fight::timed_fight_strip(world) {
         out.extend(legaia_engine_ui::timed_fight_strip_text_draws(
             font,
             &legaia_engine_ui::TimedFightStripView {

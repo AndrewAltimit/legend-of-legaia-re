@@ -78,7 +78,7 @@ impl LegaiaRuntime {
         debug_camera: bool,
     ) -> Option<legaia_engine_scene::field_view_window::ViewCells> {
         let h = self.scene_host.host()?;
-        legaia_engine_core::field_view_window::field_view_cells(
+        legaia_engine_world_views::field_view_window::field_view_cells(
             &h.world,
             legaia_engine_scene::field_view_window::framing_is_retail(self.scene_host.camera())
                 && !debug_camera,

@@ -279,12 +279,12 @@ impl<'m> DrawCtx<'_, 'm> {
                 {
                     continue;
                 }
-                if !legaia_engine_core::scene_staging::placed_draw_live(
+                if !legaia_engine_world_views::scene_staging::placed_draw_live(
                     app.field_placement_window_keys
                         .get(di)
                         .and_then(Option::as_ref),
                     static_window,
-                ) || !legaia_engine_core::field_view_window::placed_actor_visible(
+                ) || !legaia_engine_world_views::field_view_window::placed_actor_visible(
                     &app.session.host.world,
                     view_cells.as_ref(),
                     model.w_axis.x as i32,
@@ -389,12 +389,12 @@ impl<'m> DrawCtx<'_, 'm> {
                     continue;
                 }
                 let model = &object_moved(model, record);
-                if !legaia_engine_core::scene_staging::placed_draw_live(
+                if !legaia_engine_world_views::scene_staging::placed_draw_live(
                     app.field_placement_color_window_keys
                         .get(di)
                         .and_then(Option::as_ref),
                     static_window,
-                ) || !legaia_engine_core::field_view_window::placed_actor_visible(
+                ) || !legaia_engine_world_views::field_view_window::placed_actor_visible(
                     &app.session.host.world,
                     view_cells.as_ref(),
                     model.w_axis.x as i32,

@@ -47,14 +47,14 @@ The split line is `World` (and, for scene assembly, `engine-scene`):
 - **The Muscle Dome leg** - a leg is an ordinary battle under the hood
   (spells, the battle command menu, the arts input), so `MuscleDomeSession`,
   its command menu, the ring / magic gates and the loadouts built off a live
-  roster stay in `engine-core::world_views::muscle_dome`. The contest hub's
+  roster stay in `engine-world-views::muscle_dome`. The contest hub's
   screen timers (`muscle_ringside`) are here: `HubTimers::tick` takes the four
   things it reads off the simulation as `HubTickInputs`, which
   `World::tick_muscle_hub` fills.
 - **The engine bag** - `prize_exchange::apply_redeem` is generic over
   `RedeemBag`; `engine-menus` implements it for the world's `ItemBag`.
   `tile_board`'s per-cell draw assembly reads the `World` and is
-  `engine-core::world_views::tile_board`.
+  `engine-world-views::tile_board`.
 
 The pure leaves these engines share with the rest of the engine (the BIOS
 `rand()` LCG, both pad-word layouts, the `.MAP` region tables, the field clip

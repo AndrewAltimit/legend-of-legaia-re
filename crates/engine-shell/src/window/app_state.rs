@@ -327,7 +327,7 @@ pub(super) struct PlayWindowApp {
     /// `field_placement_color_draws` (parallel lists): `Some` for the sub-area
     /// window sweep's placements, which the per-frame pass gates on the
     /// world's windowed static-object list through
-    /// `legaia_engine_core::scene_staging::placed_draw_live` - the same kernel the browser play page
+    /// `legaia_engine_world_views::scene_staging::placed_draw_live` - the same kernel the browser play page
     /// asks.
     pub(super) field_placement_window_keys:
         Vec<Option<legaia_engine_scene::field_env::PlacedWindowKey>>,

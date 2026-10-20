@@ -64,7 +64,7 @@
   {
    "id": "drivers",
    "title": "World drivers",
-   "blurb": "Layers that hold a running World from outside: scene entry and tick, the pause menu, the battle HUD's reads, the cheats.",
+   "blurb": "Layers that hold a running World from outside: scene entry and tick, the pause menu, the battle HUD's and the field screens' reads, the cheats.",
    "rows": [
     {
      "label": "",
@@ -72,6 +72,7 @@
       "engine-scene-host",
       "engine-menu-runtime",
       "engine-battle-hud",
+      "engine-world-views",
       "engine-cheats"
      ]
     }
@@ -902,6 +903,7 @@
     "engine-screens",
     "engine-session",
     "engine-shell",
+    "engine-world-views",
     "parity",
     "web-viewer"
    ],
@@ -1219,18 +1221,14 @@
     "battle_sideband_textures",
     "camera_view",
     "dance_venue",
-    "field_view_window",
     "fishing_exchange_input",
     "frame_step",
     "live_loop",
     "move_buffer_host",
     "new_game",
     "options",
-    "scene_staging",
     "scus_leaf_kernels",
     "world",
-    "world_map_markers",
-    "world_views",
     "casino_coin_bank",
     "field_submode_code_lock",
     "field_submode_flag_window",
@@ -1251,6 +1249,7 @@
     "engine-screens",
     "engine-session",
     "engine-shell",
+    "engine-world-views",
     "parity",
     "web-viewer"
    ],
@@ -1351,7 +1350,9 @@
     "tim",
     "tmd"
    ],
-   "dev_deps": [],
+   "dev_deps": [
+    "engine-world-views"
+   ],
    "bins": [],
    "lib": true,
    "modules": [
@@ -1488,6 +1489,7 @@
     "engine-screens",
     "engine-session",
     "engine-shell",
+    "engine-world-views",
     "parity",
     "web-viewer"
    ],
@@ -1663,6 +1665,7 @@
     "engine-screens",
     "engine-session",
     "engine-shell",
+    "engine-world-views",
     "parity",
     "web-viewer"
    ],
@@ -1772,6 +1775,7 @@
     "engine-scene-host",
     "engine-screens",
     "engine-shell",
+    "engine-world-views",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-minigames/README.md"
@@ -1810,6 +1814,7 @@
     "engine-screens",
     "engine-session",
     "engine-shell",
+    "engine-world-views",
     "parity",
     "web-viewer"
    ],
@@ -1957,6 +1962,7 @@
     "engine-screens",
     "engine-session",
     "engine-shell",
+    "engine-world-views",
     "parity",
     "studio",
     "web-viewer"
@@ -1983,6 +1989,7 @@
     "engine-scene",
     "engine-system",
     "engine-vm",
+    "engine-world-views",
     "game-tables",
     "minigame-formats",
     "overlay-images",
@@ -2050,6 +2057,7 @@
     "engine-scene-host",
     "engine-system",
     "engine-ui",
+    "engine-world-views",
     "font",
     "game-tables",
     "minigame-formats",
@@ -2119,6 +2127,7 @@
    "dev_deps": [
     "engine-cheats",
     "engine-minigames",
+    "engine-world-views",
     "lzs",
     "mes",
     "minigame-formats",
@@ -2135,6 +2144,7 @@
     "hotkeys",
     "mode_trace",
     "native",
+    "party_spec",
     "scene_actors",
     "session",
     "xa_banks"
@@ -2180,6 +2190,7 @@
     "engine-session",
     "engine-system",
     "engine-ui",
+    "engine-world-views",
     "font",
     "game-tables",
     "iso",
@@ -2409,6 +2420,53 @@
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-vm/README.md"
+  },
+  "engine-world-views": {
+   "package": "legaia-engine-world-views",
+   "deps": [
+    "engine-battle",
+    "engine-core",
+    "engine-field",
+    "engine-menus",
+    "engine-minigames",
+    "engine-mode",
+    "engine-scene",
+    "render-kernels",
+    "scene-formats",
+    "ui-formats"
+   ],
+   "dev_deps": [
+    "container-formats",
+    "engine-system",
+    "lzs",
+    "save",
+    "tim",
+    "tmd"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "field_view_window",
+    "muscle_dome",
+    "pause_screens",
+    "scene_staging",
+    "shop",
+    "tile_board",
+    "timed_fight",
+    "world_map_markers",
+    "world_map_panel_host",
+    "world_map_sky"
+   ],
+   "band": "drivers",
+   "track": "engine",
+   "scope": "The hosts' reads of a running <code>World</code> outside battle: the visible-tile crop policy, scene staging, world-map markers and sky, the field party HUD, and the shop / pause / tile-board / timed-fight / Muscle Dome view models. Above <code>engine-core</code>.",
+   "dependents": [
+    "engine-scene-host",
+    "engine-screens",
+    "engine-shell",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-world-views/README.md"
   },
   "extract": {
    "package": "legaia-extract",
@@ -3220,6 +3278,7 @@
     "engine-session",
     "engine-shell",
     "engine-ui",
+    "engine-world-views",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/render-kernels/README.md"
@@ -3328,6 +3387,7 @@
     "engine-session",
     "engine-shell",
     "engine-vm",
+    "engine-world-views",
     "parity",
     "patcher",
     "render-kernels",
@@ -3628,6 +3688,7 @@
     "engine-scene",
     "engine-shell",
     "engine-ui",
+    "engine-world-views",
     "patcher",
     "texture-replace",
     "web-viewer"
@@ -3698,6 +3759,7 @@
     "engine-system",
     "engine-ui",
     "engine-vm",
+    "engine-world-views",
     "font",
     "game-tables",
     "gamedata",

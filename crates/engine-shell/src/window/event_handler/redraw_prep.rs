@@ -252,7 +252,7 @@ impl PlayWindowApp {
         // browser play page asks too). The terrain draws are gated per draw
         // below; the ground re-uploads a cropped index list whenever the
         // rectangle moves.
-        let view_cells = legaia_engine_core::field_view_window::field_view_cells(
+        let view_cells = legaia_engine_world_views::field_view_window::field_view_cells(
             &self.session.host.world,
             legaia_engine_scene::field_view_window::framing_is_retail(&self.session.camera)
                 && !self.field_debug_camera,

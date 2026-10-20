@@ -143,9 +143,7 @@ impl PlayWindowApp {
                 self.tile_slots_queued.clear();
             } else {
                 for slot in
-                    legaia_engine_core::world_views::tile_board::tile_actor_slots_needing_mesh(
-                        world,
-                    )
+                    legaia_engine_world_views::tile_board::tile_actor_slots_needing_mesh(world)
                 {
                     if self.tile_slots_queued.insert(slot) {
                         self.drained_spawn_slots.remove(&slot);

@@ -84,7 +84,7 @@ pub struct TextBoxInput {
 /// PORT: FUN_801ee90c
 ///
 /// Wired: `PanelActorKind::TextBox` in
-/// `legaia_engine_core::world_views::world_map_panel_host`; its confirm arm's party
+/// `legaia_engine_world_views::world_map_panel_host`; its confirm arm's party
 /// restore is applied to the live records by `World::restore_party_hp_mp`.
 pub fn text_box_tick(phase: i16, input: TextBoxInput) -> (i16, i32, i16, Vec<TextBoxEffect>) {
     let mut phase = phase;

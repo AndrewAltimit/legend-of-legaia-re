@@ -911,7 +911,7 @@ as well as on the tick, so a decision that went stale on a guarded frame
 cannot reach the screen whichever host skipped the step.
 
 The predicate they ask is one kernel,
-`legaia_engine_core::world_views::world_map_panel_host::field_hud_suppressed`. It used to be
+`legaia_engine_world_views::world_map_panel_host::field_hud_suppressed`. It used to be
 an enumeration spelled out in each host, and the copies had drifted: the page's
 was missing all three of the window-side terms, and the native window gated the
 badge column on a different test again - which put the badges over every dialog
@@ -1623,7 +1623,7 @@ skips the picker's story baseline, which would otherwise clear system flags
 | clear colour | `engine-screens::field_frame::frame_clear_color`, `battle_stage_clear::scene_clear` |
 | prologue grade | `World::frame_grade` |
 | object-effect clip (field-VM `4C C2 1`) | `World::object_effect_mesh_clip` ([`renderer.md`](../subsystems/renderer.md#what-a-raised-0x42-draws)) |
-| world-map markers | `legaia_engine_core::world_map_markers` + `screen_prim::world_map_marker_prim` |
+| world-map markers | `legaia_engine_world_views::world_map_markers` + `screen_prim::world_map_marker_prim` |
 | narration crawl, title card | `cutscene_text_stage_draws` (stage pixels) |
 | dialog reading box (snapshot, layout, both halves) | `engine-screens::dialog_screens`; box height off the pager's row word `_DAT_801F2740` |
 | field message layer (balloon, map labels, tile-board prompt, Incense notice, reading box: order and gates) | `engine-screens::field_messages::field_message_frame`; balloon width `commit_text_balloon_measure` |

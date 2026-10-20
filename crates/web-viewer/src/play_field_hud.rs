@@ -39,7 +39,7 @@ use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
 
 impl LegaiaRuntime {
     /// Retail's `_DAT_8007B868` suppress gate, asked of the shared kernel
-    /// [`legaia_engine_core::world_views::world_map_panel_host::field_hud_suppressed`].
+    /// [`legaia_engine_world_views::world_map_panel_host::field_hud_suppressed`].
     /// This host answers only the term the world cannot: whether a page-side
     /// panel owns the frame. The enumeration used to be spelled out here and
     /// again in the native window, and the two copies had drifted.
@@ -49,7 +49,7 @@ impl LegaiaRuntime {
         };
         // A movie owning the screen is the native window's `cutscene` term:
         // the readout must not sit over an in-game FMV.
-        legaia_engine_core::world_views::world_map_panel_host::field_hud_suppressed(
+        legaia_engine_world_views::world_map_panel_host::field_hud_suppressed(
             &h.world,
             self.menu.is_open() || self.fmv.is_open(),
         )

@@ -223,7 +223,7 @@ impl LegaiaRuntime {
     /// sweep's whose actor is not on the world's windowed static-object list.
     /// Every entry is `1` unless retail windowing is on
     /// ([`Self::set_retail_static_window`]). The same
-    /// [`legaia_engine_core::scene_staging::placed_draw_live`] kernel the native play-window's
+    /// [`legaia_engine_world_views::scene_staging::placed_draw_live`] kernel the native play-window's
     /// placed-object pass asks per draw.
     pub fn field_placement_live(&self) -> Vec<u8> {
         let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.host()) else {
@@ -233,7 +233,7 @@ impl LegaiaRuntime {
         f.window_keys
             .iter()
             .map(|k| {
-                u8::from(legaia_engine_core::scene_staging::placed_draw_live(
+                u8::from(legaia_engine_world_views::scene_staging::placed_draw_live(
                     k.as_ref(),
                     window,
                 ))
@@ -263,7 +263,7 @@ impl LegaiaRuntime {
             .zip(per)
             .map(|(d, m)| {
                 u8::from(
-                    !legaia_engine_core::field_view_window::placed_actor_visible(
+                    !legaia_engine_world_views::field_view_window::placed_actor_visible(
                         &h.world,
                         Some(&cells),
                         d.world_x + m[0],

@@ -34,6 +34,7 @@ ENV_KERNEL_ROOTS = [
         "engine-core",
         "engine-menu-runtime",
         "engine-scene-host",
+        "engine-world-views",
         "engine-dialog",
         "engine-effects",
         "engine-field",

@@ -11,8 +11,8 @@
 //!
 //! Skips (and passes) without `extracted/`.
 
-use legaia_engine_core::scene_staging::assemble_field_scene;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_engine_world_views::scene_staging::assemble_field_scene;
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {

@@ -343,7 +343,7 @@ Every row is landed. What each wire had to be:
   ([motion-vm.md](../subsystems/motion-vm.md#the-motion-pause-kick)).
 - **`timed_fight_turns_left`** (`801d0748`). The strip it feeds is Koru's timed
   fight. A Muscle Dome round is an ordinary battle that ends on a knockout, so
-  wiring it *into the dome* would have been a bug; `engine-core::world_views::timed_fight`
+  wiring it *into the dome* would have been a bug; `engine-world-views::timed_fight`
   gates it on the formation's first monster seat and both hosts draw the strip.
 - **`tile_for_slot`** (`801e1934`, `crates/ui-formats/src/save_icon.rs`).
   The card-block icon writer in `engine-menu-runtime::card_write` routes through it;
@@ -426,7 +426,7 @@ section.
   and `0x2B`, which are not.
 - The panel-window host all of `world_map_panel_actors.rs`,
   `world_map_overlay.rs`, `world_map_panel.rs` and `travel_art_actor.rs` named
-  as missing is `legaia_engine_core::world_views::world_map_panel_host`
+  as missing is `legaia_engine_world_views::world_map_panel_host`
   ([`world-map.md`](../subsystems/world-map.md#the-panel-actor-state-machines)).
 
 ### The battle-camera rows

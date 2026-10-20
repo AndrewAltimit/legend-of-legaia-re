@@ -42,7 +42,7 @@ impl World {
     /// the word), ported as [`World::field_npc_culled`] over the camera view
     /// the hosts publish: a culled glider keeps the Y it had. Under the
     /// visible-tile crop the hosts also skip the culled NPC's draw
-    /// ([`crate::field_view_window::npc_actor_visible`]); with the crop off
+    /// (`legaia_engine_world_views::field_view_window::npc_actor_visible`); with the crop off
     /// the hold shows only on a glider the player walks back into view of.
     ///
     /// A slot a scripted arc is carrying keeps the arc's height: the arc

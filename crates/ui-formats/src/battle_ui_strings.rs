@@ -135,7 +135,7 @@ pub const OVL_SOLO_SURPRISED: u32 = 0x801F_4CF8;
 /// The timed fight's strip format string - the first bytes of the overlay,
 /// registered as text actor `1` by the round-start arm (`lui`+`addiu` pair
 /// `0x801D0F80..0x801D0F84`) whenever the formation's first monster is Koru
-/// (`legaia_engine_core::world_views::timed_fight`).
+/// (`legaia_engine_world_views::timed_fight`).
 pub const OVL_TIMED_FIGHT_STRIP: u32 = 0x801C_E818;
 
 /// Base of the per-Ra-Seru magic-command label table (`0x801D8F0C`).

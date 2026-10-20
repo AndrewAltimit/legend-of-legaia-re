@@ -1026,7 +1026,7 @@ The port models the same two layers and shares every rule between the native `pl
 | Damage | `engine-minigames::muscle_dome` (`damage.rs`) | `DomeDamageModel`: move-power row via the id map, predamage roll (`FUN_801DD0AC`), element affinity (`FUN_801DD864`), finisher (`FUN_801DDB30`), on a PsyQ `rand()` stream in retail call order; defender's `+0x170` gauge accrues per hit |
 | Hub envelopes | `engine-minigames::muscle_dome` (`hub.rs`), `engine-minigames::muscle_ringside` | `HubScreen`, `HubTimers`, `HubBackdrop`, `FirstVisitHub` |
 | Leg session | `engine-menus::muscle_dome_session` (`session.rs`) | `MuscleDomeSession`: deal, budget-gated commit, queue, tokenizer, cast, KO-only ending |
-| Command flow | `engine-menus::muscle_dome_session` (`menu.rs`, `ring.rs`, `loadout.rs`) | `DomeMenu`, `DomeRing`, `ChipMark`, `DomeMagic`, `art_catalog_for`; world loadout via `engine-core::world_views::muscle_dome::magic_loadout_for` |
+| Command flow | `engine-menus::muscle_dome_session` (`menu.rs`, `ring.rs`, `loadout.rs`) | `DomeMenu`, `DomeRing`, `ChipMark`, `DomeMagic`, `art_catalog_for`; world loadout via `engine-world-views::muscle_dome::magic_loadout_for` |
 | World | `engine-core` (`world/frame_tick/minigame_sessions/muscle_dome.rs`, `scene/host/minigame_warp.rs`) | `SceneMode::MuscleDome`, `World::enter_muscle_dome` / `tick_muscle_dome` / `leave_muscle_dome` / `report_muscle_leg` / `settle_muscle_contest` |
 | Play-out | `engine-menus::muscle_dome_session::choreo` | `DomeChoreo`, `ChoreoBody`: clips at the battle rate, range-law approach, root motion, reaction pick |
 | 3D surface | `engine-minigame-scenes::muscle_dome_scene` | `MuscleDomeSurface`, `arena_ring`, `DomeCamera` |

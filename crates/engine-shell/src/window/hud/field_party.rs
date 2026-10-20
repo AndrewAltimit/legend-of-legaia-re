@@ -7,14 +7,14 @@ impl PlayWindowApp {
     /// Is the field party HUD allowed to be on screen at all this frame?
     ///
     /// Retail's `_DAT_8007B868` suppress global, asked of the shared kernel
-    /// [`legaia_engine_core::world_views::world_map_panel_host::field_hud_suppressed`].
+    /// [`legaia_engine_world_views::world_map_panel_host::field_hud_suppressed`].
     /// This host answers only the term the world cannot: a window-side panel
     /// with no `World` state behind it. The enumeration used to live here in
     /// full and a second copy lived on the browser play page, and the copies
     /// had drifted - the page's lacked all three of the host terms below, and
     /// this one gated the badge column (`FUN_801d095c`) differently again.
     pub(in crate::window) fn field_party_hud_suppressed(&self) -> bool {
-        legaia_engine_core::world_views::world_map_panel_host::field_hud_suppressed(
+        legaia_engine_world_views::world_map_panel_host::field_hud_suppressed(
             &self.session.host.world,
             self.boot_ui.is_active()
                 || self.menu_runtime.is_open()
@@ -86,7 +86,7 @@ impl PlayWindowApp {
             && let Some(n) = sc.hud_countdown
             && !gated_drawn
         {
-            let mode = legaia_engine_core::world_views::world_map_panel_host::field_hud_view_mode(
+            let mode = legaia_engine_world_views::world_map_panel_host::field_hud_view_mode(
                 &self.session.host.world,
             );
             let idle = legaia_engine_field::world_map_panel_actors::hud_idle_frames(mode, false);

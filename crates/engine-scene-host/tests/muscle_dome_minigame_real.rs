@@ -1,7 +1,7 @@
 //! Disc-gated: drive the **real** parsed Muscle Dome direction tables
 //! (battle overlay PROT 0898) + the lead character's real swing costs
 //! (player file PROT 0863) through the engine match rules
-//! ([`legaia_engine_core::world_views::muscle_dome`]).
+//! ([`legaia_engine_world_views::muscle_dome`]).
 //!
 //! Closes the engine end of the arena: the play-window load path resolves
 //! the real deck (command ids `0xC..=0xF`) and the real per-command costs

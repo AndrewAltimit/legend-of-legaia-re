@@ -160,7 +160,7 @@ fn a_four_member_resume_on_uru_raises_only_the_player_and_keeps_the_ground() {
     // The crop at the seat keeps the ground the retail frame shows: the
     // player's column band and the rows from just behind the player to well
     // past the top of the frame.
-    let cells = legaia_engine_core::field_view_window::field_view_cells(world, true)
+    let cells = legaia_engine_world_views::field_view_window::field_view_cells(world, true)
         .expect("the crop is live at the retail seat");
     let (tx, tz) = (i32::from(x) >> 7, i32::from(z) >> 7);
     for col in tx - 8..=tx + 8 {

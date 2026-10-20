@@ -123,7 +123,7 @@ sub-screen's own state-2 dispatch runs, so the hand stays on the row
 (capture-confirmed: a 99-stack row neither opens the stepper nor buys).
 
 Port: `engine-menus::shop::{ShopScreenPhase, shop_screen_windows}`,
-`engine-core::world_views::shop::party_compare_members` and `MenuRuntime::{shop_screen_phase,
+`engine-world-views::shop::party_compare_members` and `MenuRuntime::{shop_screen_phase,
 covers_field}`; `engine-ui::shop_screen` composes the frames (window 33
 wears the carved plaque), the picker, the paged list, window 41 and the
 painters' hand / currency-pictogram sprites, and

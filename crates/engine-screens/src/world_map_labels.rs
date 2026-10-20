@@ -20,7 +20,7 @@
 //! This module is the gate and the projection; the two draws are
 //! `legaia_engine_ui::map_label_*`. The projection is the frame's own matrix
 //! ([`camera_frame::frame_vp`]) at the display's 4:3 aspect, the same route
-//! [`legaia_engine_core::world_map_markers`] takes.
+//! [`legaia_engine_world_views::world_map_markers`] takes.
 //!
 //! REF: FUN_801CE850, FUN_8003D368, FUN_8003CE64
 

@@ -655,7 +655,7 @@ impl PlayWindowApp {
 
     /// The overworld's entity and player markers as screen primitives,
     /// through the kernel the browser play page calls
-    /// (`legaia_engine_core::world_map_markers`) and the shared
+    /// (`legaia_engine_world_views::world_map_markers`) and the shared
     /// `world_map_marker_prim` wrapper. The camera is the resolver's
     /// non-scripted frame; the kernel itself draws nothing under a scripted
     /// shot (the map01 fly-in shows the bare continent).
@@ -681,16 +681,19 @@ impl PlayWindowApp {
         let player_mesh_drawn = world
             .player_actor_slot
             .is_some_and(|pslot| self.drained_spawn_slots.contains(&pslot));
-        legaia_engine_core::world_map_markers::marker_quads(world, &frame, aabb, !player_mesh_drawn)
-            .iter()
-            .map(|q| {
-                legaia_render_kernels::screen_prim::world_map_marker_prim(q.xy, q.rgba, q.depth)
-            })
-            .collect()
+        legaia_engine_world_views::world_map_markers::marker_quads(
+            world,
+            &frame,
+            aabb,
+            !player_mesh_drawn,
+        )
+        .iter()
+        .map(|q| legaia_render_kernels::screen_prim::world_map_marker_prim(q.xy, q.rgba, q.depth))
+        .collect()
     }
 
     /// The overworld sky band (`FUN_801F73E4`) as screen primitives, through
-    /// the gate (`legaia_engine_core::world_views::world_map_sky`) and wrapper
+    /// the gate (`legaia_engine_world_views::world_map_sky`) and wrapper
     /// (`screen_prim::sky_band_prims`) the browser play page calls. Each
     /// quad is depth-tested at the far plane, so it fills only what the
     /// terrain left clear - retail's farthest-bucket draw order.
@@ -708,11 +711,8 @@ impl PlayWindowApp {
             None,
             [(aabb.0[0] + aabb.1[0]) * 0.5, (aabb.0[2] + aabb.1[2]) * 0.5],
         );
-        let sprites = legaia_engine_core::world_views::world_map_sky::sky_band(
-            world,
-            &self.session.camera,
-            &frame,
-        );
+        let sprites =
+            legaia_engine_world_views::world_map_sky::sky_band(world, &self.session.camera, &frame);
         legaia_render_kernels::screen_prim::sky_band_prims(&sprites)
     }
 

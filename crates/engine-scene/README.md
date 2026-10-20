@@ -20,7 +20,7 @@ depends on it. Hosts, tools and tests name its modules directly
 | `npc_catalog` | Every actor a scene's MAN places, resolved against a built `SceneResources` (and, for the play shape, the global model pool), plus the scene's ANM bundle lookup (`scene_anm_bundle`). |
 | `field_env` | The environment-geometry draw resolver: which `SceneResources` TMD each `.MAP` placement or terrain tile draws and where, object binds, prop animation, floor anchors. |
 | `coplanar_draws` | Cross-draw coplanar-surface separation over a resolved `EnvDraw` list. |
-| `field_view_window` | The camera's visible-tile crop: the cell rectangle one frame of `FUN_801F7088` walks (`view_cells`) and the per-cell decoration / ground gates. Whether a host crops this frame is `engine-core::field_view_window`. |
+| `field_view_window` | The camera's visible-tile crop: the cell rectangle one frame of `FUN_801F7088` walks (`view_cells`) and the per-cell decoration / ground gates. Whether a host crops this frame is `engine-world-views::field_view_window`. |
 | `field_ground` | The walk-ground heightfield as a render mesh: positions (static and live-wave), indices, flat refs, the visible-tile crop of the index list. |
 | `field_occlusion` | The camera-occlusion fade's visibility gate: a per-triangle eye-to-player ray-cast over the assembled static scene (`FieldOccluders`), and the strength ramp. Its arming terms over a `World` are `engine-screens::field_occlusion`. |
 | `scene_assembly` | The full static scene assembly kernel (`AssembledScene`, `assemble_field_scene_with`) and the hybrid textured / vertex-colour mesh builders. |
@@ -39,11 +39,11 @@ decoders), `engine-battle` (encounter tables), `engine-dialog`,
 `legaia-engine-core`, and the compiler enforces that - a consumer that only
 reads scenes links this crate without the simulation.
 
-What stays above, in `engine-core`:
+What stays above:
 
-- `scene_host` - `SceneHost`, which owns a `World` and a `ProtIndex`, enters
-  scenes and ticks them.
-- `scene_staging` - the scene questions that take simulation state: whether
+- `SceneHost` (`engine-scene-host`), which owns a `World` and a `ProtIndex`,
+  enters scenes and ticks them.
+- `scene_staging` (`engine-world-views`) - the scene questions that take simulation state: whether
   a placed object is live against a running world's static-object window,
   the story-hidden record set (a scratch `World` staged at the scene's
   free-roam visit), and `assemble_field_scene`, which hands that set to

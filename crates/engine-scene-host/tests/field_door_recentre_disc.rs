@@ -22,11 +22,11 @@
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::scene_staging::placed_draw_live;
 use legaia_engine_field::field_regions::{self, RegionTable};
 use legaia_engine_scene::field_env::{self, PlacedWindowKey};
 use legaia_engine_scene_host::scene_host::SceneHost;
 use legaia_engine_system::input::PadButton;
+use legaia_engine_world_views::scene_staging::placed_draw_live;
 
 fn open_disc() -> Option<std::path::PathBuf> {
     let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {

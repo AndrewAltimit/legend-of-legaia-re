@@ -133,8 +133,10 @@ fn static_story_evaluation_matches_the_live_world() {
         host.enter_field_scene(scene_name, 0).expect("enter");
         let live = host.world.hidden_object_records();
         let scene = host.scene.as_ref().expect("scene");
-        let statically =
-            legaia_engine_core::scene_staging::story_hidden_records_for_scene(scene, &host.index);
+        let statically = legaia_engine_world_views::scene_staging::story_hidden_records_for_scene(
+            scene,
+            &host.index,
+        );
         assert_eq!(
             statically, live,
             "{scene_name}: static story evaluation diverges from the live world"
@@ -259,7 +261,10 @@ fn town0b_staging_is_the_night_attack() {
     // The static evaluator (site viewer, exporters) agrees.
     let scene = host.scene.as_ref().expect("scene");
     assert_eq!(
-        legaia_engine_core::scene_staging::story_hidden_records_for_scene(scene, &host.index),
+        legaia_engine_world_views::scene_staging::story_hidden_records_for_scene(
+            scene,
+            &host.index
+        ),
         hidden
     );
     // A later town01 pick resets the staging: day, theme 2016, wall intact.

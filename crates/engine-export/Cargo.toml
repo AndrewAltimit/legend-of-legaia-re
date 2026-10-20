@@ -22,6 +22,10 @@ legaia-tim.workspace = true
 legaia-tmd.workspace = true
 serde_json.workspace = true
 
+[dev-dependencies]
+# The disc-gated export test assembles its scene through `scene_staging`.
+legaia-engine-world-views.workspace = true
+
 [[test]]
 name = "integration"
 path = "tests/integration.rs"

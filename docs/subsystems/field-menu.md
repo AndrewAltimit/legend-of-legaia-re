@@ -29,7 +29,7 @@ draw builders; the remaining differences from retail are listed under
 | Port: session | `engine-menus` (`field_menu`, `pause_screens`, `equip_session`, `spell_menu`, `menu_list_rows`), driven by `engine-session::BootSession` |
 | Port: drawing | `engine-ui` (`pause_menu`, `menu::*`, `menu::window_painters`, `menu::window_dispatch`) |
 
-`engine-core::world_views::pause_screens` holds only the functions that read a `World`;
+`engine-world-views::pause_screens` holds only the functions that read a `World`;
 the screen models are `engine-menus::pause_screens`. Dumps cited as `overlay_menu_<addr>.txt` live in
 `ghidra/scripts/funcs/`.
 
@@ -1676,7 +1676,7 @@ re-aggregate. A non-equipment id draws current values with no arrows.
 
 Port: `engine-ui::equip_compare_panel_fields` (window 25, from
 `pause_screens::EquipCompareModel`) and `party_compare_panel_fields` (window
-41, from `engine-core::world_views::shop::party_compare_members`, drawn for the whole buy
+41, from `engine-world-views::shop::party_compare_members`, drawn for the whole buy
 flow through `engine-ui::shop_screen`). The port installs the staged id in a
 copy of the equip bytes and re-runs the aggregator rather than swapping
 blocks.

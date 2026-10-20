@@ -16,9 +16,9 @@
 use std::path::PathBuf;
 
 use legaia_container_formats::tim_scan;
-use legaia_engine_core::scene_staging::assemble_field_scene;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_scene::vfs::{DiscVfs, Vfs};
+use legaia_engine_world_views::scene_staging::assemble_field_scene;
 
 fn disc_index() -> Option<ProtIndex> {
     let path = PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
