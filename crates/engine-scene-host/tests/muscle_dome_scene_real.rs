@@ -92,3 +92,89 @@ fn the_dome_surface_poses_the_real_fighters_in_the_arena() {
     assert!(surface.scene().is_none(), "no session drops the scene");
     eprintln!("[ran] dome surface: {} verts", first.len());
 }
+
+/// The minigames page re-seats the surface on the next rung's opponent
+/// without a session-less frame in between (`muscle_start_vs` replaces the
+/// leg in one call), so the surface must rebuild its posed buffers on a new
+/// `(monster, character)` key: round 2 posed into round 1's index / UV /
+/// CBA buffers is the "opponent mesh corrupts on the second round" defect.
+/// The re-seated scene must equal a fresh surface's scene for the same pair.
+#[test]
+fn a_new_opponent_rebuilds_the_posed_buffers() {
+    let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let host = match SceneHost::open_disc(&disc) {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("[skip] open_disc failed: {e:#}");
+            return;
+        }
+    };
+    let read = |i: usize| host.index.entry_bytes(i as u32).ok();
+    let ladder = read(legaia_engine_minigame_scenes::muscle_dome_scene::ARENA_OVERLAY_PROT_INDEX)
+        .and_then(|raw| legaia_engine_minigames::muscle_dome::parse_course_ladder(&raw))
+        .expect("the course ladder parses");
+    let rounds = &ladder[0].rounds;
+    assert!(rounds.len() >= 2, "course 0 has a second round");
+    let (a, b) = (rounds[0].monster_id as u16, rounds[1].monster_id as u16);
+    assert_ne!(a, b, "rounds 1 and 2 seat different opponents");
+
+    let card = |command_id: u8| MuscleCard {
+        command_id,
+        cost: 0x1E,
+    };
+    let hand = [card(0xC), card(0xD), card(0xE), card(0xF)];
+    let leg = || MuscleDomeSession::new(hand, hand, [120, 120], [500, 400], 1);
+
+    // Round 1, played for a few frames.
+    let s1 = leg();
+    let mut surface = MuscleDomeSurface::default();
+    for _ in 0..8 {
+        surface
+            .frame_seated(read, &s1, a, 0)
+            .expect("round 1 decodes");
+    }
+    let generation = surface.generation();
+
+    // Round 2 against the next rung, straight after (no None frame).
+    let s2 = leg();
+    let reseated = surface
+        .frame_seated(read, &s2, b, 0)
+        .expect("round 2 decodes")
+        .clone();
+    assert_ne!(
+        surface.generation(),
+        generation,
+        "a new seat bumps the generation"
+    );
+
+    let mut fresh = MuscleDomeSurface::default();
+    let want = fresh
+        .frame_seated(read, &s2, b, 0)
+        .expect("round 2 decodes fresh")
+        .clone();
+    assert_eq!(
+        reseated.bases, want.bases,
+        "body offsets follow the new opponent"
+    );
+    assert_eq!(reseated.positions.len(), want.positions.len());
+    assert_eq!(
+        reseated.indices, want.indices,
+        "triangles are the new opponent's"
+    );
+    assert_eq!(reseated.uvs, want.uvs);
+    assert_eq!(reseated.cba_tsb, want.cba_tsb);
+    assert_eq!(reseated.flat_rgba, want.flat_rgba);
+    assert_eq!(reseated.textured_indices, want.textured_indices);
+    assert_eq!(reseated.untextured_indices, want.untextured_indices);
+    assert_eq!(
+        reseated.positions, want.positions,
+        "same pose on the same tick"
+    );
+    eprintln!(
+        "[ran] dome re-seat {a:#x} -> {b:#x}: {} verts",
+        want.positions.len()
+    );
+}
