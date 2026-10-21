@@ -1,9 +1,16 @@
 //! [`BarSeed`]: the HP / MP / status bars a capture shows, applied to the
 //! engine's combatants, with their environment hand-off.
 
+/// [`BarSeed::slot`] values from this base name an **empty retail pool
+/// seat** (`slot - EMPTY_SEAT_SLOT_BASE`) rather than an engine actor: only
+/// the ground pair is read, and it stands the seat's struct
+/// (`World::seat_empty_battle_seat`). Engine slots never reach it.
+pub const EMPTY_SEAT_SLOT_BASE: u8 = 0x80;
+
 /// One combatant's mid-fight bars as the capture read them: engine actor
 /// slot, HP, MP - and, where the seed places it, the live ground pair
-/// `+0x34` / `+0x38` (`RetailBattle::seeded_ground`).
+/// `+0x34` / `+0x38` (`RetailBattle::seeded_ground`). A slot from
+/// [`EMPTY_SEAT_SLOT_BASE`] carries an empty seat's ground instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BarSeed {
     pub slot: u8,
@@ -65,6 +72,12 @@ pub(crate) fn seed_status(world: &mut legaia_engine_core::world::World, slot: u8
 /// from the one its seed scored.
 pub fn apply_bar_seeds(world: &mut legaia_engine_core::world::World, seeds: &[BarSeed]) {
     for s in seeds {
+        if let Some(pool) = s.slot.checked_sub(EMPTY_SEAT_SLOT_BASE) {
+            if let Some([x, z]) = s.ground {
+                world.seat_empty_battle_seat(pool, x, z);
+            }
+            continue;
+        }
         let Some(a) = world.actors.get_mut(usize::from(s.slot)) else {
             continue;
         };

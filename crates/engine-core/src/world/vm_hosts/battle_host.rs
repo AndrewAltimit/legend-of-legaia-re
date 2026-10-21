@@ -272,10 +272,11 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .pending_battle_events
             .push(BattleEvent::CameraBounds);
     }
-    fn in_retail_pool(&self, slot: u8) -> bool {
-        self.world
-            .retail_battle_pool_slot(usize::from(slot))
-            .is_some()
+    fn pool_position(&self, pool: u8) -> Option<(i16, i16)> {
+        self.world.battle_pool_position(pool)
+    }
+    fn set_pool_position(&mut self, pool: u8, x: i16, z: i16) {
+        self.world.set_battle_pool_position(pool, x, z);
     }
 
     fn monster_action_tags(&self, slot: u8) -> Option<Vec<u8>> {

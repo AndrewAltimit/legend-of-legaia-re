@@ -131,13 +131,23 @@ pub trait BattleActionHost {
     /// positionless host stays positionless).
     fn seed_formation_recentre(&mut self, _actor: u8) {}
 
-    /// Whether engine slot `slot` is one of the seven pool slots retail's
-    /// actor walks visit (party seats `0..3`, monster seats `3..7`) - the
-    /// slots the SM tail's make-way step moves
-    /// ([`crate::battle_action::make_way_step`]). The default is any slot
-    /// that carries a position.
-    fn in_retail_pool(&self, slot: u8) -> bool {
-        self.actor_position(slot).is_some()
+    /// The live pair of retail **pool** slot `pool` (`0..3` party seats,
+    /// `3..7` monster seats) - the walk the SM tail's make-way step runs
+    /// ([`crate::battle_action::make_way_step`]). Retail's pool has a struct
+    /// behind every slot, an empty party seat included, and the step moves
+    /// it; a host that models those seats answers for them here. The default
+    /// maps the pool slot back to its engine slot and reads
+    /// [`Self::actor_position`]; an empty seat reads `None`.
+    fn pool_position(&self, pool: u8) -> Option<(i16, i16)> {
+        let e = crate::battle_slot::engine_slot_for_retail(self.party_count(), pool)?;
+        self.actor_position(e)
+    }
+
+    /// The mutation half of [`Self::pool_position`].
+    fn set_pool_position(&mut self, pool: u8, x: i16, z: i16) {
+        if let Some(e) = crate::battle_slot::engine_slot_for_retail(self.party_count(), pool) {
+            self.set_actor_position(e, x, z);
+        }
     }
 
     /// Body-size / bulk class of the monster seated in `actor_slot` - the

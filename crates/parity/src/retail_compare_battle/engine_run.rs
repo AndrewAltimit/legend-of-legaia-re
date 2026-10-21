@@ -408,8 +408,12 @@ pub fn run_engine_battle(
                     spent_key: spent.get(slot).copied().unwrap_or(false),
                 })
             })
-            .collect()
+            .collect::<Vec<_>>()
     };
+    // The empty party seats stand where the capture's structs stand: they
+    // weigh in every recentre's box (`World::seat_empty_battle_seat`).
+    let mut hp_seed = hp_seed;
+    hp_seed.extend(battle.empty_seat_seeds());
     apply_bar_seeds(&mut session.host.world, &hp_seed);
     if battle.mystic_shield {
         session.host.world.raise_mystic_shield();

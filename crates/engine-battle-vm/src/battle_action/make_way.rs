@@ -19,8 +19,9 @@
 //! loads `ctx[+0x13]` and the attacker's `+0x1DD` in the prologue
 //! (`0x801E2994..0x801E29C0`) and the tail tests them (`beq s0,v0` /
 //! `beq s0,t2`). The tail walks retail's seven pool slots with no liveness
-//! test, so a fallen monster is moved too; the port walks every seated
-//! engine slot.
+//! test, so a fallen monster is moved too - and so is an empty party seat,
+//! whose struct the round-start recentre reads
+//! ([`BattleActionHost::pool_position`]).
 //!
 //! PORT: FUN_801E295C (`0x801E30CC..0x801E31E8` state `0x14`'s make-way arm,
 //! `0x801E6814..0x801E6934` the shared tail)
@@ -62,16 +63,24 @@ pub fn make_way_offset(pos: (i16, i16), angle: u16, step: i16) -> (i16, i16) {
     )
 }
 
-/// The engine slots the make-way walk visits: retail's seven pool slots
-/// ([`BattleActionHost::in_retail_pool`]).
-fn make_way_slots<H: BattleActionHost + ?Sized>(host: &H) -> impl Iterator<Item = u8> + '_ {
-    (0..ACTOR_SLOTS as u8).filter(move |&s| host.in_retail_pool(s))
+/// Retail's pool width the tail walks (`sltiu v0,s0,0x7` at `0x801E6904`).
+pub const MAKE_WAY_POOL: u8 = 7;
+
+/// The pool slots a pass skips: the attacker's and its target's. A group
+/// code `8` / `9` names no pool slot and skips nothing.
+fn pool_pair<H: BattleActionHost + ?Sized>(host: &H, attacker: u8, target: u8) -> (u8, u8) {
+    let seats = crate::battle_slot::SeatMap::new(host.party_count());
+    (seats.retail(attacker).get(), seats.retail(target).get())
 }
 
 /// State `0x14`'s make-way arm: write each bystander's heading and seed the
 /// countdown with the melee monster's size class - the target's when a party
 /// member attacks, the attacker's own when a monster does (`sltiu v0,v0,0x3`
 /// at `0x801E31A8` picks the record `0x801C9348[slot - 3]`).
+///
+/// `attacker` / `target` are engine slots; the walk runs over retail's pool
+/// ([`BattleActionHost::pool_position`]), empty seats included - retail
+/// gives an empty party seat a heading like any other bystander.
 pub(super) fn arm_make_way<H: BattleActionHost + ?Sized>(
     host: &H,
     ctx: &mut BattleActionCtx,
@@ -87,12 +96,10 @@ pub(super) fn arm_make_way<H: BattleActionHost + ?Sized>(
     let (Some(a), Some(t)) = (host.actor_position(attacker), host.actor_position(target)) else {
         return;
     };
-    let others: Vec<u8> = make_way_slots(host)
-        .filter(|&s| s != attacker && s != target)
-        .collect();
-    for s in others {
-        if let Some(p) = host.actor_position(s) {
-            ctx.dodge_angles[usize::from(s)] = make_way_angle(a, t, p);
+    let (skip_a, skip_t) = pool_pair(host, attacker, target);
+    for r in (0..MAKE_WAY_POOL).filter(|&r| r != skip_a && r != skip_t) {
+        if let Some(p) = host.pool_position(r) {
+            ctx.dodge_angles[usize::from(r)] = make_way_angle(a, t, p);
         }
     }
     let melee_monster = if attacker < host.party_count() {
@@ -104,7 +111,7 @@ pub(super) fn arm_make_way<H: BattleActionHost + ?Sized>(
 }
 
 /// The SM tail's make-way step, run after every pass: while the countdown
-/// is non-zero, step every seated slot other than `attacker` / `target`
+/// is non-zero, step every pool slot other than `attacker`'s / `target`'s
 /// along its heading, then drain the countdown by the frame step, floored at
 /// zero (`bgez` / `sh zero` at `0x801E692C..0x801E6934`).
 pub fn make_way_step<H: BattleActionHost + ?Sized>(
@@ -117,13 +124,11 @@ pub fn make_way_step<H: BattleActionHost + ?Sized>(
         return;
     }
     let step = host.frame_dt();
-    let slots: Vec<u8> = make_way_slots(host)
-        .filter(|&s| s != attacker && s != target)
-        .collect();
-    for s in slots {
-        if let Some(p) = host.actor_position(s) {
-            let (x, z) = make_way_offset(p, ctx.dodge_angles[usize::from(s)], step);
-            host.set_actor_position(s, x, z);
+    let (skip_a, skip_t) = pool_pair(host, attacker, target);
+    for r in (0..MAKE_WAY_POOL).filter(|&r| r != skip_a && r != skip_t) {
+        if let Some(p) = host.pool_position(r) {
+            let (x, z) = make_way_offset(p, ctx.dodge_angles[usize::from(r)], step);
+            host.set_pool_position(r, x, z);
         }
     }
     ctx.dodge_countdown = ctx.dodge_countdown.wrapping_sub(step).max(0);

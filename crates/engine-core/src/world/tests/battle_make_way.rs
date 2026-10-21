@@ -99,3 +99,44 @@ fn the_bystanders_step_out_of_the_attackers_lane() {
     // The attacker and its target are not moved by the tail.
     assert_eq!(pos(&world, 3), (0, 0), "the target holds the origin");
 }
+
+/// A solo fight's two empty party seats are structs the walks move, and
+/// they weigh in the box. `gimard_summon_start` holds Vahn at `(82, -542)`,
+/// both empty seats at `(-82, 543)` and Gimard at `(63, -228)` - a box
+/// already centred on the origin, so the cast's seed recentre moves nobody.
+/// With the empty seats on the origin instead the same seed would shift the
+/// fight by `(-41, 271)`.
+#[test]
+fn a_solo_fights_empty_seats_hold_its_formation_centred() {
+    use legaia_engine_battle::monster_catalog::MonsterDef;
+    let mut world = World::new();
+    world.enter_battle(1, 1);
+    world
+        .tables
+        .monster_catalog
+        .insert(MonsterDef::new(201, "Gimard".to_string(), 300, 5));
+    world.actors[1].battle_monster_id = Some(201);
+    world.actors[1].battle.hp = 76;
+    world.actors[0].battle.hp = 196;
+    world.actors[0].move_state.world_x = 82;
+    world.actors[0].move_state.world_z = -542;
+    world.actors[1].move_state.world_x = 63;
+    world.actors[1].move_state.world_z = -228;
+    for pool in [1, 2] {
+        world.seat_empty_battle_seat(pool, -82, 543);
+    }
+    world.actors[0].battle.action_category = 2; // Magic
+    world.actors[0].battle.active_target = 1;
+    world.seed_battle_formation_recentre(0);
+    assert_eq!(pos(&world, 0), (82, -542));
+    assert_eq!(pos(&world, 1), (63, -228));
+    assert_eq!(world.battle_pool_position(1), Some((-82, 543)));
+
+    // The empty seats move with the formation: a melee seed on Gimard
+    // carries them by the same shift as Vahn.
+    world.actors[0].battle.action_category = 3;
+    world.seed_battle_formation_recentre(0);
+    assert_eq!(pos(&world, 1), (0, 0));
+    assert_eq!(pos(&world, 0), (82 - 63, -542 + 228));
+    assert_eq!(world.battle_pool_position(2), Some((-82 - 63, 543 + 228)));
+}

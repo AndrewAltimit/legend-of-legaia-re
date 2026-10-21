@@ -878,6 +878,18 @@ pub struct BattleState {
     /// so two fights with no field tick between them still install twice.
     /// Not a retail word.
     pub entry_serial: u32,
+    /// The live pair of every retail pool slot the engine seats no actor in,
+    /// indexed by pool slot (`0..3` party seats, `3..7` monster seats).
+    ///
+    /// Retail has a struct behind every pool slot, a battle's empty party
+    /// seats included; each starts the fight at the origin, and the walks
+    /// that skip no slot move it - the round-start and action-seed recentres
+    /// take pool slots `0..3` unconditionally, the melee make-way step all
+    /// seven. Those seats then weigh in the next recentre's box, so a solo
+    /// or duo fight's formation depends on where they stand (a solo capture
+    /// reads its two empty seats on the mirror of the lone member's pair).
+    /// Reset by [`crate::world::World::enter_battle`].
+    pub empty_seat_ground: [(i16, i16); 7],
 }
 
 /// One frame's tag-`0x67` ribbon source: the `8`-byte seat vector the
@@ -1020,6 +1032,7 @@ impl BattleState {
             stage_outdoor: false,
             message_banner: None,
             entry_serial: 0,
+            empty_seat_ground: [(0, 0); 7],
         }
     }
 

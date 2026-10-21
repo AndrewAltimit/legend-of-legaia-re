@@ -856,6 +856,8 @@ Called from state `0x0C` for every category but Run (`jal 0x801efe44` at `0x801E
 
 So a melee opens with its target on the stage origin and the rest of the formation translated with it. A retail position capture of the Cort fight (`cort_evolved_battle_first_menu`, Noa's melee first) reads Vahn `(0, -812) -> (0, -1625)`, Noa `(600, -762) -> (600, -1575)`, Gala `(-600, -762) -> (-600, -1575)` and Cort `(0, 813) -> (0, 0)` across the seed pass.
 
+**Empty party seats count.** Retail keeps a struct behind every pool slot: a solo fight's table holds distinct pointers at slots `1` and `2` with HP `0`. Both recentres take slots `0..3` unconditionally and the make-way step walks all seven, so those structs move with the formation from their battle-start origin and weigh in every later box. `gimard_summon_start` reads both at `(-82, 543)` against Vahn's `(82, -542)` - the box centred on the origin. The port keeps them in `BattleState::empty_seat_ground`, moves them in every walk, and the retail comparison seeds them from the capture.
+
 The function writes no camera state of its own beyond the focus pair, and the seed's next call, the action framing `FUN_801D5854(actor, 6)`, frames the acting actor's live position. The port drops the focus shift for that reason.
 
 Port: `battle_action::seed_formation_recentre` (kernel) via `BattleActionHost::seed_formation_recentre` -> `World::seed_battle_formation_recentre`, which maps the engine's compacted actor table onto retail's pool the way the round-start recentre does.

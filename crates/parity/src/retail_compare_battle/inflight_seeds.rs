@@ -45,6 +45,37 @@ impl RetailBattle {
         out
     }
 
+    /// The capture's empty party seats, as [`BarSeed`]s on
+    /// [`legaia_engine_capture::bar_seeds::EMPTY_SEAT_SLOT_BASE`]-based
+    /// slots: pool slots `party_count..3`, each with its struct's live pair.
+    ///
+    /// Retail keeps a struct behind an empty party seat, and the round-start
+    /// and action-seed recentres box it with the combatants, so a capture's
+    /// formation is centred with those seats where they stand; seeded on
+    /// the origin instead, the replayed seed recentre would move the fight
+    /// off the capture's ground. None on an opening capture, whose seats are
+    /// still on the origin.
+    pub fn empty_seat_seeds(&self) -> Vec<BarSeed> {
+        if self.seed_plan() == SeedPlan::Opening {
+            return Vec::new();
+        }
+        (usize::from(self.party_count.clamp(1, 3))..3)
+            .filter_map(|r| {
+                let ground = self.ground.get(r).copied().flatten()?;
+                Some(BarSeed {
+                    slot: legaia_engine_capture::bar_seeds::EMPTY_SEAT_SLOT_BASE + r as u8,
+                    hp: 0,
+                    mp: 0,
+                    ground: Some(ground),
+                    facing: None,
+                    defeat_lanes: None,
+                    status: 0,
+                    spent_key: false,
+                })
+            })
+            .collect()
+    }
+
     /// The ground pairs the seed puts on its first battle tick, by engine
     /// slot ([`BarSeed::ground`]).
     ///
