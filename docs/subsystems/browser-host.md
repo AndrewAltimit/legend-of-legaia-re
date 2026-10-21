@@ -1058,8 +1058,8 @@ the fishing species table out of 0972, and the Muscle Dome hand command-id
 table out of the battle overlay 0898. Nothing is shipped with the site.
 
 Per game: `<g>_start` / a step or input method
-(`dance_press` / `baka_choose` / `slot_spin` + `slot_stop` +
-`slot_collect` / `fishing_pond_start` + `fishing_pond_tick` / `muscle_commit` +
+(`dance_press` / `baka_choose` / `slot_step`, one packed pad word a frame /
+`fishing_pond_start` + `fishing_pond_tick` / `muscle_commit` +
 `muscle_end_selection` + `muscle_resolve` + `muscle_next_turn`) /
 `<g>_state_json`. The dome adds a second tier for the contest above a leg
 (`muscle_contest_start` / `muscle_report_leg` / `muscle_contest_settle` /
