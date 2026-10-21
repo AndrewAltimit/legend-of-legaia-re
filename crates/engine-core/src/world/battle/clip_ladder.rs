@@ -140,6 +140,47 @@ pub fn commit_tag_ladder(i: LadderInputs) -> LadderWrites {
     w
 }
 
+/// The lowest first-cue id for which a monster's re-committed block entry
+/// skips its first cue (`lhu v0,0x56(v0)` / `sltiu v0,v0,0x64` at
+/// `0x8004B048..0x8004B050`).
+pub const BLOCK_RECOMMIT_CUE_FLOOR: u16 = 0x64;
+
+/// The cue-track cursor `+0x1F6` a commit seeds (`0x8004AFC0..0x8004B05C`).
+///
+/// Every commit stores `0` (`sb zero,0x1f6(s1)` in the delay slot at
+/// `0x8004AFD0`) and then stores `1` (`0x8004B05C`) when the staged entry
+/// `+0x1DA` is the clip already playing (`+0x1D9`, `bne` at `0x8004AFCC`)
+/// **and** the juggle byte `+0x1F7` is up (`0x8004AFD4`), for these entries:
+///
+/// - the light-flinch slots `+0x1EF` / `+0x1F0` (`0x8004AFE4..0x8004AFFC`);
+/// - the block slot `+0x1F3` (`0x8004B004`), on a party seat
+///   (`sltiu v0,s3,0x3` at `0x8004B010`) or when the entry's first cue id
+///   (`entry[+0x56]`, slot 0 of the `+0x54` track) is at least
+///   [`BLOCK_RECOMMIT_CUE_FLOOR`].
+///
+/// So a hit that re-stages the reaction inside its own juggle window
+/// restarts the clip without its first sound cue: the impact sound is not
+/// layered on top of the one still ringing. The knockdown `+0x1F1` and
+/// get-up `+0x1F2` always restart at `0`.
+///
+/// PORT: FUN_8004AD80 (`0x8004AFC0..0x8004B05C`, the cue-cursor seed)
+pub fn recommit_cue_cursor(
+    map: [u8; 5],
+    current: u8,
+    entry: u8,
+    window_open: bool,
+    party: bool,
+    first_cue: u16,
+) -> u8 {
+    if entry != current || !window_open {
+        return 0;
+    }
+    let skip = entry == map[0]
+        || entry == map[1]
+        || (entry == map[4] && (party || first_cue >= BLOCK_RECOMMIT_CUE_FLOOR));
+    u8::from(skip)
+}
+
 /// The party reaction map `FUN_80053CB8` hardcodes into `+0x1EF..+0x1F3`
 /// (the player files store the family identity-ordered).
 pub const PARTY_REACTION_MAP: [u8; 5] = [2, 3, 4, 5, 0x0B];
@@ -240,6 +281,24 @@ impl World {
             return false;
         };
         let first_monster = self.battle_first_monster_byte();
+        // The cue-cursor seed reads the clip still playing (`+0x1D9`) and its
+        // juggle byte `+0x1F7` as the last tick left them, before the
+        // install below replaces either.
+        let cue_cursor = self.battle_reaction_map(slot).map_or(0, |map| {
+            let a = &self.actors[slot];
+            let first_cue = clip
+                .effect_script
+                .get(0x56..0x58)
+                .map_or(0, |b| u16::from_le_bytes([b[0], b[1]]));
+            recommit_cue_cursor(
+                map,
+                self.battle_current_anim(slot),
+                entry,
+                a.battle_juggle_window,
+                a.battle_monster_id.is_none(),
+                first_cue,
+            )
+        });
         let actor = &mut self.actors[slot];
         let inputs = LadderInputs {
             tag: clip.action_id,
@@ -268,7 +327,7 @@ impl World {
         // (retail `sb zero,0x1f5` on every commit).
         actor.battle_effect_script = Some(clip.effect_script).filter(|s| !s.is_empty());
         actor.battle_effect_cursor = 0;
-        actor.battle_anim_cue_cursor = 0;
+        actor.battle_anim_cue_cursor = cue_cursor;
         true
     }
 
@@ -428,6 +487,27 @@ mod tests {
             first_monster: 0x10,
             getup_entry: 5,
         }
+    }
+
+    /// `0x8004AFC0..0x8004B05C`: only a same-entry re-commit inside the
+    /// juggle window of a flinch, or of a block under the party / first-cue
+    /// gate, skips the first cue.
+    #[test]
+    fn a_juggled_flinch_recommit_skips_its_first_cue() {
+        let map = [2, 3, 4, 5, 0x0B];
+        // Light flinches re-staged inside the window.
+        assert_eq!(recommit_cue_cursor(map, 2, 2, true, false, 0), 1);
+        assert_eq!(recommit_cue_cursor(map, 3, 3, true, false, 0), 1);
+        // Window down, or a different clip playing: the cursor starts at 0.
+        assert_eq!(recommit_cue_cursor(map, 2, 2, false, false, 0), 0);
+        assert_eq!(recommit_cue_cursor(map, 0, 2, true, false, 0), 0);
+        // Knockdown and get-up always restart at 0.
+        assert_eq!(recommit_cue_cursor(map, 4, 4, true, false, 0x200), 0);
+        assert_eq!(recommit_cue_cursor(map, 5, 5, true, true, 0x200), 0);
+        // Block: every party seat, a monster only from cue 0x64 up.
+        assert_eq!(recommit_cue_cursor(map, 0x0B, 0x0B, true, true, 0), 1);
+        assert_eq!(recommit_cue_cursor(map, 0x0B, 0x0B, true, false, 0x63), 0);
+        assert_eq!(recommit_cue_cursor(map, 0x0B, 0x0B, true, false, 0x64), 1);
     }
 
     #[test]

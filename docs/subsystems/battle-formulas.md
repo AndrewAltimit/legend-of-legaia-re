@@ -439,13 +439,40 @@ every monster; reader `legaia_actor_formats::monster_archive::light_flinch_windo
 image in `extracted/overlays/` finds exactly two stores to `+0x1F7`: `sb
 zero,0x1f7(s2)` at `0x80047E50` and `sb v0,0x1f7(s2)` at `0x80047E54`. Readers:
 `0x801EC950`, `0x801ECA4C` in the damage kernel, and the SCUS anim commit
-`FUN_8004AD80` at `0x8004AFD4` (the counter / guard window). **Capture.** A live
+`FUN_8004AD80` at `0x8004AFD4`, which seeds the sound-cue cursor and is not a
+counter or guard window ([below](#the-commits-read-is-a-sound-cue-skip)). **Capture.** A live
 write-watch (`scripts/pcsx-redux/autorun_juggle_window.lua`) over three battle
 states sees no other `pc` and measures the computed windows: Gilium id 161
 (`f8/2`) 16 ticks at speed 8 and 32 under an Art, with the counter reading `2`,
 `3`, `4` on hits 8-12 ticks apart; Gobu Gobu id 4 (`f8/2`) 16 ticks
 (`t=326..342`), its tag-3 flinch `f10/2` 22 against a computed 20; Vahn
 (`f3/1`) 12 ticks three times.
+
+#### The commit's read is a sound-cue skip
+
+The anim commit's one read of `+0x1F7` decides where the re-staged clip's
+sound-cue track starts, nothing about damage or guarding:
+
+```text
+// FUN_8004AD80
+0x8004AFCC  bne  +0x1DA, +0x1D9          // staged entry is the clip already playing
+0x8004AFD0  sb   zero, 0x1f6(s1)         // delay slot: every commit starts the cue cursor at 0
+0x8004AFD4  lbu  +0x1F7; beqz -> keep 0  // juggle byte up
+0x8004AFE4  staged == +0x1EF or +0x1F0   -> 1     // light flinch
+0x8004B004  staged == +0x1F3 (block):
+0x8004B010    party seat (s3 < 3)        -> 1
+0x8004B048    else entry[+0x56] >= 0x64  -> 1     // the entry's first cue id
+0x8004B05C  sb   v0, 0x1f6(s1)
+```
+
+`+0x1F6` is the cursor of the entry's `+0x54` sound-cue track
+([monster-animation.md](../formats/monster-animation.md#sound-cue-track-entry-0x540x73)),
+so a hit that restarts a flinch inside its own window replays the clip
+without its first cue. The juggle counter and the guard roll live in the
+melee kernel and read the byte themselves (`0x801EC950`, `0x801ECA4C`); the
+commit uses the same `+0x1F7`, so there is no second beat to trace. Port:
+`clip_ladder::recommit_cue_cursor`, applied in
+`World::commit_battle_reaction_entry`.
 
 **Port.** `World::next_juggle` rewrites `BattleState::juggle` on every hit
 `land_melee_hit` resolves, from the defender's block entry and its
@@ -1997,7 +2024,7 @@ Kernels that live elsewhere: `engine-battle-vm::status_effects` (`toxic_tick_dam
 
 The page's live hunts are indexed on
 [open-rev-eng-threads.md](../reference/open-rev-eng-threads.md#battle--rendering):
-the three [juggle-window](#the-juggle-window---what-makes-a-monster-juggleable)
+the two [juggle-window](#the-juggle-window---what-makes-a-monster-juggleable)
 residuals.
 The ability bitfield at record `+0xF4` / `+0xF8` is fully catalogued as the
 64 passive indices of [accessory-passive-table.md](../formats/accessory-passive-table.md#the-64-passive-indices)
