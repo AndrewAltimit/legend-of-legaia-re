@@ -45,7 +45,9 @@ flowchart LR
 | Write the texture inventories | `prot_tim_catalog.tsv`, `prot_tim_deep_catalog.tsv` | `--skip-catalog` |
 | Build the dialog-font artifacts | `font/` | `--skip-font` |
 
-`--verbose` prints one line per file written.
+`--verbose` prints one line per file written. `--all-textures` adds one
+stage: every TIM in every PROT entry, raw or LZS-compressed, written as `.tim`
++ `.png` under `tim_scan/` (`asset tim-scan` and `tim convert-dir` in one step).
 
 Output lands in `./extracted/` (gitignored):
 

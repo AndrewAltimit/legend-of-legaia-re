@@ -76,7 +76,7 @@ Three independent checks, because the audit's own graph is one of the suspects:
 1. **Reverse-edge walk** over the audit's graph, to the point where each chain
    stops.
 2. **Textual sweep** for the anchor symbol and every intermediate caller across
-   the host crates (`engine-shell`, `web-viewer`, `asset-viewer`,
+   the host crates (`engine-shell`, `web-play`, `web-viewer`, `asset-viewer`,
    `engine-render`, `engine-ui`). Run it with a positive control - a symbol
    known to have host references - so a zero is a real zero.
 3. **Re-run of the audit** after any correction to the reachability pass,
@@ -89,7 +89,7 @@ Then nothing becomes a newly claimed wiring gap and `--not-live` stays a floor.
 
 `engine-core` has no `[[bin]]` and no `#[wasm_bindgen]` entry point, and neither
 do the other library crates. Reachability is measured from *host* roots
-(`engine-shell`, `web-viewer`, `asset-viewer`), so an anchor in a library crate
+(`engine-shell`, `web-play`, `web-viewer`, `asset-viewer`), so an anchor in a library crate
 becomes live only through an edit in a crate that has a root.
 
 Two consequences for scoping work. A pass limited to library files can produce
@@ -297,7 +297,7 @@ Grouped by the defect that hid the edge. This is the regression set.
 - **Trait default method.** `set_actor_model`, as above.
 - **Type-anchor granularity.** `MapObject` (behaviour in the free
   `parse_map_objects`), `ClutCellFx` (`World::step_clut_fx` plus `read_cell`),
-  `OptionsPhase` (`OptionsSession::tick`, live through the `web-viewer` roots).
+  `OptionsPhase` (`OptionsSession::tick`, live through the `web-play` roots).
 
 The fishing presentation half lives in `crates/engine-ui/src/fishing/hud.rs`
 (`persistent_hud_draws`, called from `window/hud.rs`) and is live the same way.
@@ -352,8 +352,10 @@ Every row is landed. What each wire had to be:
 `DELETE` rows: `symbol_pad_bit` (`801d4040`) duplicated `DanceDir::pad_bit`
 (arms `0x80` / `0x20` / `0x10`), which now carries the tag.
 `camera_height_from_size_class` (`801f0348`) duplicated
-`camera_height_for_frame`, which is the whole of `FUN_801F0348`, is wired
-through `BattleActionHost::camera_bounds` and inlines the `<< 7` + clamp.
+`camera_height_for_frame`, which is the whole of `FUN_801F0348`, is called
+from the action seed (`battle_action/dispatch.rs`, and the magic arm in
+`battle_action/magic.rs`) with `BattleActionHost::monster_size_class`, and
+inlines the `<< 7` + clamp.
 
 <a id="disclose-texts"></a>
 ### `DISCLOSE` and `REPLACE` reasons
@@ -686,7 +688,7 @@ Remaining gaps, by prerequisite:
   selectors, `centred_panel`: the hosts lay their readouts out at their own pens
   rather than in 320x240 framebuffer coordinates.
 - `dance_face_rig` and `walk_grid_overhead` want a call in
-  `crates/web-viewer/`; `bite_pad_nudge` wants `PondInput` to carry the retail
+  `crates/web-play/`; `bite_pad_nudge` wants `PondInput` to carry the retail
   pressed-pad word instead of a pre-counted `edge_bonus`.
 
 ### The render / GTE cluster
@@ -1108,7 +1110,7 @@ the fields by category, so the player sees the wrong rows today.
   audio host asks `spu_base_for_slot` directly". It does not - that helper's
   only references outside its own module are in the guard test
   `infra_boot_offset_table.rs`, and nothing in `engine-audio`, `engine-shell`
-  or `web-viewer` consults a per-slot SPU base at all. The verdict survives
+  or the browser crates consults a per-slot SPU base at all. The verdict survives
   (the mixer owns one flat `SpuRam` and places a bank at the transfer address
   it is handed), but the blocker is a representation the port does not have,
   not a helper that beat the seeder to the job.
