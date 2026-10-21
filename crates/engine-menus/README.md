@@ -23,7 +23,12 @@ the engine-core module holds the `World`-taking entry that passes them.
 A module moves here when its whole dependency closure inside the engine is in
 this crate, `legaia-engine-system` (pad input) or the other `World`-free crates
 below `engine-core` (`legaia-engine-battle` for the stat aggregator and spell
-catalog, `legaia-engine-vm` for the window-script VM). Doc links that point
+catalog, `legaia-engine-vm` for the window-script VM,
+[`legaia-engine-dev-menu`](../engine-dev-menu/README.md) for the field
+overlay's dev-menu row kernels and the equip applier the pause menu's equip
+session shares, `legaia-engine-camera` for the options screen's camera
+distance preset). The crate names no field kernel: the dev-menu bodies sit in
+a crate below both it and `legaia-engine-field`. Doc links that point
 back up at `engine-core` are plain code spans, since rustdoc cannot resolve a
 link into a dependent crate.
 

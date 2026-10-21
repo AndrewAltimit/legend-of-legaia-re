@@ -2022,6 +2022,7 @@ name = "legaia-engine-camera"
 version = "0.1.0"
 dependencies = [
  "legaia-engine-system",
+ "serde",
  "serde_json",
 ]
 
@@ -2091,6 +2092,7 @@ dependencies = [
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
  "legaia-engine-cast",
+ "legaia-engine-dev-menu",
  "legaia-engine-dialog",
  "legaia-engine-effects",
  "legaia-engine-field",
@@ -2116,6 +2118,14 @@ dependencies = [
  "legaia-tmd",
  "legaia-ui-formats",
  "log",
+]
+
+[[package]]
+name = "legaia-engine-dev-menu"
+version = "0.1.0"
+dependencies = [
+ "legaia-engine-system",
+ "legaia-overlay-images",
 ]
 
 [[package]]
@@ -2165,6 +2175,7 @@ dependencies = [
  "legaia-actor-formats",
  "legaia-anm",
  "legaia-engine-camera",
+ "legaia-engine-dev-menu",
  "legaia-engine-dialog",
  "legaia-engine-mode",
  "legaia-engine-motion-vm",
@@ -2178,7 +2189,6 @@ dependencies = [
  "legaia-save",
  "legaia-scene-formats",
  "legaia-tmd",
- "serde",
 ]
 
 [[package]]
@@ -2203,6 +2213,7 @@ dependencies = [
  "legaia-engine-battle",
  "legaia-engine-battle-vm",
  "legaia-engine-core",
+ "legaia-engine-dev-menu",
  "legaia-engine-field",
  "legaia-engine-menus",
  "legaia-engine-minigames",
@@ -2227,8 +2238,9 @@ dependencies = [
  "legaia-art",
  "legaia-engine-battle",
  "legaia-engine-battle-vm",
+ "legaia-engine-camera",
+ "legaia-engine-dev-menu",
  "legaia-engine-dialog",
- "legaia-engine-field",
  "legaia-engine-minigames",
  "legaia-engine-system",
  "legaia-engine-vm",
@@ -2343,6 +2355,7 @@ dependencies = [
  "legaia-container-formats",
  "legaia-disc-audit",
  "legaia-engine-battle",
+ "legaia-engine-camera",
  "legaia-engine-dialog",
  "legaia-engine-field",
  "legaia-engine-menus",
@@ -2382,6 +2395,7 @@ dependencies = [
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
  "legaia-engine-core",
+ "legaia-engine-dev-menu",
  "legaia-engine-dialog",
  "legaia-engine-effects",
  "legaia-engine-field",
@@ -2422,6 +2436,7 @@ dependencies = [
  "legaia-engine-battle-hud",
  "legaia-engine-battle-vm",
  "legaia-engine-core",
+ "legaia-engine-dev-menu",
  "legaia-engine-dialog",
  "legaia-engine-effects",
  "legaia-engine-field",

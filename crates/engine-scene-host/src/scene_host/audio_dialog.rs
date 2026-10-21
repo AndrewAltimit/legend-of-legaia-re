@@ -96,11 +96,11 @@ impl SceneHost {
 
     /// The developer EVENT FLAG page's list projection, read off the field
     /// overlay's image (extraction entry `0897`) at `DAT_801F2E94`. Empty
-    /// when the entry cannot be read. See [`legaia_engine_field::dev_menu_flags::flag_list_tags`].
+    /// when the entry cannot be read. See [`legaia_engine_dev_menu::dev_menu_flags::flag_list_tags`].
     pub fn dev_flag_list_tags(&self) -> Vec<u8> {
         self.index
             .entry_bytes(legaia_engine_core::incense_notice::FIELD_OVERLAY_PROT_INDEX)
-            .map(|b| legaia_engine_field::dev_menu_flags::flag_list_tags(&b))
+            .map(|b| legaia_engine_dev_menu::dev_menu_flags::flag_list_tags(&b))
             .unwrap_or_default()
     }
 

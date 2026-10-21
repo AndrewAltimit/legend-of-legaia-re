@@ -76,7 +76,7 @@
 //! Host: `legaia_engine_core::field_submode_screen` runs the dispatcher over
 //! the live `SubmodeDriver` pool actor every field frame.
 
-use crate::dev_menu_leaves::{
+use legaia_engine_dev_menu::dev_menu_leaves::{
     EquipPanelDraw, EquipPanelInput, EquipProps, ItemProps, equip_stat_panel,
 };
 

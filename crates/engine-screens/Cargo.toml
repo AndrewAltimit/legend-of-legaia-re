@@ -11,6 +11,7 @@ name = "legaia_engine_screens"
 path = "src/lib.rs"
 
 [dependencies]
+legaia-engine-dev-menu.workspace = true
 legaia-engine-core.workspace = true
 legaia-engine-world-views.workspace = true
 legaia-engine-battle-hud.workspace = true

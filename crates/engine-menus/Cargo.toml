@@ -11,7 +11,8 @@ name = "legaia_engine_menus"
 path = "src/lib.rs"
 
 [dependencies]
-legaia-engine-field.workspace = true
+legaia-engine-camera.workspace = true
+legaia-engine-dev-menu.workspace = true
 legaia-engine-battle-vm.workspace = true
 anyhow.workspace = true
 legaia-art.workspace = true

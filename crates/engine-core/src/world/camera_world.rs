@@ -134,6 +134,7 @@ impl CameraWorld for World {
 mod tests {
     use super::*;
 
+    use legaia_engine_camera::camera_distance::CameraDistance;
     use legaia_engine_mode::mode::SceneMode;
     use legaia_engine_vm::Position as ActorVmPosition;
 

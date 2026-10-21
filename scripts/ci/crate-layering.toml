@@ -35,6 +35,10 @@ foreign = ["cheats", "gamedata"]
 role = "dialog pager and text balloon"
 deps = []
 
+[crates.engine-dev-menu]
+role = "the field overlay's dev-menu bodies: row model, value steps, flag editor, equip applier"
+deps = ["engine-system"]
+
 [crates.engine-vm]
 role = "window-widget, field, move and effect VMs, the actor tick"
 deps = []
@@ -44,7 +48,7 @@ role = "game-mode seat and the 28-mode driver"
 deps = ["engine-system"]
 
 [crates.engine-camera]
-role = "the shared GTE camera: build, projection, mover, shake, camera-relative glide"
+role = "the shared GTE camera: build, projection, mover, shake, camera-relative glide, distance preset"
 deps = ["engine-system"]
 
 [crates.engine-battle-vm]
@@ -85,6 +89,7 @@ deps = [
 role = "World-free field kernels"
 deps = [
     "engine-camera",
+    "engine-dev-menu",
     "engine-dialog",
     "engine-mode",
     "engine-motion-vm",
@@ -113,8 +118,9 @@ role = "menu, title and memory-card front end"
 deps = [
     "engine-battle",
     "engine-battle-vm",
+    "engine-camera",
+    "engine-dev-menu",
     "engine-dialog",
-    "engine-field",
     "engine-minigames",
     "engine-system",
     "engine-vm",
@@ -123,6 +129,7 @@ deps = [
 [crates.engine-scene]
 role = "scene resolution and loading, environment draws, virtual filesystem"
 deps = [
+    "engine-camera",
     "engine-dialog",
     "engine-field",
     "engine-system",
@@ -165,12 +172,6 @@ from = "engine-battle"
 to = "render-kernels"
 items = ["battle_intro_styles::INTRO_DURATION_FRAMES"]
 reason = "the encounter session's default transition length is the battle-intro model's, which sits with its draw half"
-
-[[coupling]]
-from = "engine-menus"
-to = "engine-field"
-items = ["dev_equip_commit", "dev_menu_leaves", "dev_menu_adjust", "dev_menu_flags", "world_map_panel::{SFX_CURSOR_MOVE, dev_menu_action}", "camera::CameraDistance"]
-reason = "the equip commit and the dev menu's row kernels are field-overlay dev-menu bodies the field's own submode hub and panel code also run, so no crate below both can hold them; the pause menu's equip session and the dev menu screen share them, and the options screen's camera preset is the field follow camera's eye-back knob"
 
 [[coupling]]
 from = "engine-fishing"

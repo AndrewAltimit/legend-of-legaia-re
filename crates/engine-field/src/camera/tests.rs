@@ -90,19 +90,6 @@ fn scene_entry_seeds_a_missing_h_with_the_field_value() {
 }
 
 #[test]
-fn distance_cycle_and_labels_round_trip() {
-    let mut d = CameraDistance::Retail;
-    for _ in 0..3 {
-        assert_eq!(CameraDistance::from_label(d.label()), Some(d));
-        d = d.cycle();
-    }
-    assert_eq!(d, CameraDistance::Retail, "cycle is a 3-cycle");
-    assert!(CameraDistance::Retail.scale() == 1.0);
-    assert!(CameraDistance::Far.scale() > 1.0);
-    assert!(CameraDistance::Farther.scale() > CameraDistance::Far.scale());
-}
-
-#[test]
 fn compass_azimuth_defaults_to_zero_and_sums_bias() {
     let c = Camera::default();
     assert_eq!(c.compass_azimuth_units(), 0, "defaults keep the old feed");

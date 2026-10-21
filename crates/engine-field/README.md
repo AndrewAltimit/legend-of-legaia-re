@@ -67,8 +67,8 @@ a dependent crate.
   the free stack, and the render step that projects each particle through a
   `FogView` into `FogQuad`s).
 - **Field camera** - `camera` (`Camera`, the follow / zone / scripted
-  camera both hosts tick, with `CameraDistance` and the camera-zone request
-  and cull-view types). Generic over `CameraWorld`, the slice of the world it
+  camera both hosts tick, with the camera-zone request and cull-view types;
+  its eye-back preset `CameraDistance` is `legaia-engine-camera`'s). Generic over `CameraWorld`, the slice of the world it
   reads and publishes; engine-core implements it for `World`. See
   [`docs/subsystems/world-map.md`](../../docs/subsystems/world-map.md) and
   [`docs/subsystems/cutscene.md`](../../docs/subsystems/cutscene.md) for the
@@ -106,11 +106,14 @@ a dependent crate.
   `field_passive_hud`, `field_state_pick`, `field_subsystem_enter`,
   `pooled_actor_seed`, `code_lock_actor`, `escape_timer`, `motion_pause`
   and `clut_fade_actor`.
-- **Submode, panels and the dev menu** - `submode_hub_actors` (the op-`0x49`
+- **Submode and panels** - `submode_hub_actors` (the op-`0x49`
   submode system-actor handler family), `world_map_panel` /
   `world_map_panel_actors` (the panel window system and its actor state
-  machines), `dev_menu_leaves`, `dev_menu_adjust`, `dev_menu_flags` (the
-  EVENT FLAG editor kernels) and `dev_equip_commit`.
+  machines). The developer-menu bodies the hub and panel code run
+  (`dev_menu_leaves`, `dev_menu_adjust`, `dev_menu_flags`, `dev_equip_commit`,
+  `dev_menu_action`) sit one crate down, in
+  [`legaia-engine-dev-menu`](../engine-dev-menu/README.md), so the menu front
+  end shares them without naming this crate.
 - **World map** - `world_map_entity` (the entity state machine
   `FUN_801DA51C`), `world_map_dim`, `world_map_horizon`,
   `travel_art_actor` (Riremito and Rula) and `world_map_markers` (the port's

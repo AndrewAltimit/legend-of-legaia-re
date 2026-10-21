@@ -41,8 +41,9 @@
 //! Hosts reach this through `legaia_engine_world_views::field_view_window::field_view_cells`, which adds the port's policy:
 //! the crop only holds at retail's own framing (see its docs).
 
+use legaia_engine_camera::camera_distance::CameraDistance;
+use legaia_engine_field::camera::Camera;
 use legaia_engine_field::camera::FieldCullView;
-use legaia_engine_field::camera::{Camera, CameraDistance};
 
 /// The cell rectangle one frame of `FUN_801F7088` walks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

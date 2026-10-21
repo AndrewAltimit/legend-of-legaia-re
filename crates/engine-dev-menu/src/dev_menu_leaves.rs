@@ -23,7 +23,7 @@
 //! strength of the one item that is.
 //!
 //! A fifth leaf of the same overlay, the `0x4C 0xD3` countdown scheduler
-//! `FUN_801D2EBC`, lives in [`crate::escape_timer`] - it has an engine caller
+//! `FUN_801D2EBC`, lives in `legaia_engine_field::escape_timer` - it has an engine caller
 //! and so does not belong under this module's wiring status at all.
 //!
 //! ## Source
@@ -378,7 +378,7 @@ impl ListPickerPhase {
 /// The unwind dispatcher is `FUN_801EA9B0`, and it returns `1`
 /// unconditionally - `s1` is loaded with `1` in the delay slot of its bound
 /// check and every arm, including the out-of-range one, exits through
-/// `move v0,s1` (see [`crate::world_map_panel::dev_menu_action`]). So phase
+/// `move v0,s1` (see [`crate::dev_menu_action::dev_menu_action`]). So phase
 /// `CancelUnwind` always draws; that gate never suppresses it. The argument
 /// stays because the phase-1 leg's gate is the caller's own input-allowed
 /// flag, which does vary.
@@ -556,7 +556,7 @@ pub enum StatDelta {
 ///
 /// Wired: [`equip_stat_panel`] is the whole sub-draw and runs this twice - once
 /// over the live loadout, once over the trial one - and
-/// [`crate::submode_hub_actors::entry_list`] calls it where the `jal` sits. The
+/// `legaia_engine_field::submode_hub_actors::entry_list` calls it where the `jal` sits. The
 /// live path is `World::tick_submode_screen` -> `HubPainter::EntryList` ->
 /// `entry_list`.
 /// PORT: FUN_801E5B4C (aggregation loops)
@@ -840,7 +840,7 @@ pub fn equip_candidate(mode: u32, cursor: i32, inventory: &[u8]) -> EquipCandida
 ///
 /// PORT: FUN_801E5B4C
 ///
-/// Wired: [`crate::submode_hub_actors::entry_list`] calls this where retail's
+/// Wired: `legaia_engine_field::submode_hub_actors::entry_list` calls this where retail's
 /// `jal 0x801F1778` sits, once per drawn entry. Its own caller chain is
 /// `World::tick_submode_screen` -> `HubPainter::EntryList`.
 pub fn equip_stat_panel(

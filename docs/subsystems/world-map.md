@@ -485,7 +485,7 @@ exits through `move v0,s1`).
 #### Engine port
 
 The renderer-free dev-menu leaves live in
-`legaia_engine_field::dev_menu_leaves`:
+`legaia_engine_dev_menu::dev_menu_leaves`:
 
 - `panel_geometry`, `dev_menu_cursor_step` (swap-wrap), `list_body_draws` (the
   phase x gate draw gate);
@@ -629,11 +629,13 @@ linear flow. It is the same body.
 
 #### Engine port
 
-`legaia_engine_field::world_map_panel` carries all three: `PanelCommand` /
+`legaia_engine_field::world_map_panel` carries the first two: `PanelCommand` /
 `PanelEffect` / `decode_panel_command` / `run_panel_script` /
-`party_panel_geometry` for `FUN_801E9B3C`, `list_cursor_input` for
-`FUN_801E9DC8`, and `dev_menu_action` for `FUN_801EA9B0`'s bound, park-phase
-and constant-return contract. The cheat arms' global pokes are not modelled.
+`party_panel_geometry` for `FUN_801E9B3C` and `list_cursor_input` for
+`FUN_801E9DC8`. `legaia_engine_dev_menu::dev_menu_action` carries
+`FUN_801EA9B0`'s bound, park-phase and constant-return contract, one crate
+below both the field kernels and the menu front end whose dev-menu screen
+calls it. The cheat arms' global pokes are not modelled.
 
 `legaia_engine_field::world_map_panel_host::PanelWindowHost` owns the
 `0x801F2B98` descriptor array and one window object per slot; `run_script`
@@ -870,7 +872,7 @@ Rows step `0x0E`, or `0x0D` while the op-`0x49` descriptor cell
   `(x + 0x0C, y + 8)` under ink `9`. Kind `2` draws the plain three rows. Any
   other kind draws nothing (the arm at `0x801E6280` branches to the epilogue).
 
-Port: `legaia_engine_field::dev_menu_leaves::equip_stat_panel` is the whole
+Port: `legaia_engine_dev_menu::dev_menu_leaves::equip_stat_panel` is the whole
 sub-draw, composing `aggregate_slot_stats` (twice), `can_equip`,
 `resolve_equip_slot` and `stat_deltas`. `submode_hub_actors::entry_list` calls it
 where the `jal` sits and splices its rows in as `HubDraw::EntrySubPanel`. The
@@ -1030,7 +1032,7 @@ overlay data region `0x801F28F0..0x801F2Fxx` and the context `_DAT_801C6EA4`.
   `_DAT_801F2E8C` clamps to `[1, 255]`, the BGM index `_DAT_801F2E90` cycles
   the sentinel-terminated (`0x58`) table at `0x801F2E94`, and later arms poke
   per-character party records. Port: the two integer bounding kernels and the
-  pad-edge decode, `legaia_engine_field::dev_menu_adjust` (`wrap12_step`,
+  pad-edge decode, `legaia_engine_dev_menu::dev_menu_adjust` (`wrap12_step`,
   `clamp1_255_step`, `pad_step`); the table-cycle and party-record arms are
   not ported.
 
@@ -1066,7 +1068,7 @@ More `+0x54`-keyed actor state machines share the band (`ctx[+0x54]` = phase,
 | Function | Dump | What it is | Port |
 |---|---|---|---|
 | `FUN_801E5338` | `801e5338.txt` | Sparkle emitter: up to 8 `SPRT` particles at `rand()` offsets (`FUN_80056798`) around `ctx[+0x14/+0x16]`, each through a 10-frame sprite anim, posted via `AddPrim`; phase `2` waits for all to retire, then sets bit `0x8`. | None - [retail never runs it](#the-sparkle-burst-has-no-spawner) |
-| `FUN_801EA9B0` | `overlay_cutscene_dialogue_801ea9b0.txt` | Dev-menu row-action dispatcher ([above](#fun_801ea9b0---dev-menu-row-action-dispatcher-1000-bytes)). | `world_map_panel::dev_menu_action` |
+| `FUN_801EA9B0` | `overlay_cutscene_dialogue_801ea9b0.txt` | Dev-menu row-action dispatcher ([above](#fun_801ea9b0---dev-menu-row-action-dispatcher-1000-bytes)). | `dev_menu_action::dev_menu_action` (`engine-dev-menu`) |
 | `FUN_801EE094` | `801ee094.txt` | **Riremito** travel-art actor (string `"ON RIREMITO"`): scans the CDNAME define table (`0x80088758`, count `_DAT_8007B806`, `0x10` stride, `s16` define number at `+0xC`) for the TOC index `_DAT_80084628`; a miss parks phase `99` and prints `"UNFIND MAP NUMBER %d"`. | `engine-field::travel_art_actor` |
 | `FUN_801EE328` | `801ee328.txt` | **Rula** travel-art actor (string `"ON RULA"`): same define-table search; phase 2 raises the halt bit on `_DAT_8007C364[+0x10]`, scrolls `_DAT_8007C364[+0x16]` and spawns a hold-at-black fade via `FUN_80024E80`. | `engine-field::travel_art_actor` |
 | `FUN_801EF014` | `801ef014.txt` | Flag-window picker over the tile descriptor `_DAT_8007B450`: counts selectable cells (`+1`), drives `FUN_801E9DC8`, commits the pick into `_DAT_8007BB88`, exits via `ctx[+0x50] = 0x1A`. | `flag_window_tick` |

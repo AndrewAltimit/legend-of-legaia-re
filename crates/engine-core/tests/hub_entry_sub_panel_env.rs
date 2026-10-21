@@ -15,12 +15,12 @@
 
 use legaia_engine_core::field_submode_screen::RETAIL_WEAPON_SLOTS;
 use legaia_engine_core::world::World;
-use legaia_engine_field::actor_handler::ActorHandler;
-use legaia_engine_field::dev_menu_leaves::{
+use legaia_engine_dev_menu::dev_menu_leaves::{
     EQUIP_GLYPH_HIGHER, EQUIP_GLYPH_LOWER, EQUIP_INK_HIGHER, EQUIP_INK_LOWER, EQUIP_INK_NORMAL,
     EQUIP_INK_REJECT, EQUIP_MODE_BLANK, EQUIP_MODE_DIRECT, EQUIP_MODE_INVENTORY, EQUIP_REJECT_VA,
     EquipPanelDraw,
 };
+use legaia_engine_field::actor_handler::ActorHandler;
 use legaia_engine_field::submode_hub_actors::{HubDraw, slot};
 use legaia_engine_menus::equipment::{DiscEquipInfo, equip_modifier_table_from_disc};
 
@@ -213,7 +213,7 @@ fn value_inks(panel: &[EquipPanelDraw]) -> Vec<i32> {
 
 /// Every arrow draws under the ink the label left, not under the ink it picks.
 fn assert_arrows_keep_the_label_ink(panel: &[EquipPanelDraw]) {
-    use legaia_engine_field::dev_menu_leaves::EQUIP_INK_NORMAL;
+    use legaia_engine_dev_menu::dev_menu_leaves::EQUIP_INK_NORMAL;
     for d in panel {
         if let EquipPanelDraw::Arrow { ink, .. } = d {
             assert_eq!(*ink, EQUIP_INK_NORMAL, "the arrow keeps the label's ink");

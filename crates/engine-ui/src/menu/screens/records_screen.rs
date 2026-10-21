@@ -1,7 +1,7 @@
 //! Battle-records screen draw-list builder (world-map dev-menu "records"
 //! page). This is the render half of `FUN_801ED710`, whose data model
 //! (value clamping, play-time decomposition, treasure percentage) is ported
-//! renderer-free in `legaia_engine_field::dev_menu_leaves::records_screen`.
+//! renderer-free in `legaia_engine_dev_menu::dev_menu_leaves::records_screen`.
 //!
 //! The retail routine takes `(param_1 = x origin, param_2 = y origin)` and
 //! draws a fixed grid of labels + zero/blank-padded decimal fields via three
@@ -103,7 +103,7 @@ pub mod record_offset {
 /// `0x414`-byte character record, unclamped.
 ///
 /// The display caps live in the model
-/// (`legaia_engine_field::dev_menu_leaves::records_screen`); this is only the
+/// (`legaia_engine_dev_menu::dev_menu_leaves::records_screen`); this is only the
 /// read.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RecordCounters {
@@ -156,7 +156,7 @@ pub struct RecordsLabels<'a> {
 }
 
 /// The display-ready records model, mirroring
-/// `legaia_engine_field::dev_menu_leaves::RecordsScreen`. The shell builds it
+/// `legaia_engine_dev_menu::dev_menu_leaves::RecordsScreen`. The shell builds it
 /// from that model and adds the caller-owned labels.
 #[derive(Debug, Clone, Copy)]
 pub struct RecordsScreenView<'a> {

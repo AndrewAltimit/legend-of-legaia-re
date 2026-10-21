@@ -46,6 +46,7 @@ members = [
     "crates/engine-camera",
     "crates/engine-cast",
     "crates/engine-system",
+    "crates/engine-dev-menu",
     "crates/engine-dialog",
     "crates/engine-menus",
     "crates/engine-mode",
@@ -157,6 +158,7 @@ legaia-engine-export = { path = "crates/engine-export" }
 legaia-engine-field = { path = "crates/engine-field" }
 legaia-engine-mode = { path = "crates/engine-mode" }
 legaia-engine-scene = { path = "crates/engine-scene" }
+legaia-engine-dev-menu = { path = "crates/engine-dev-menu" }
 legaia-engine-dialog = { path = "crates/engine-dialog" }
 legaia-engine-menus = { path = "crates/engine-menus" }
 legaia-engine-system = { path = "crates/engine-system" }

@@ -98,7 +98,7 @@ identifier to any free function of that name, which is how a function value
 reaches `map` / `sort_by_key`. It does not distinguish a function value from a
 **struct field** of the same name: the field `stat_deltas` in
 `crates/engine-battle/src/seru_stats.rs` links to the free `stat_deltas` in
-`crates/engine-field/src/dev_menu_leaves.rs`. Nor from a **local binding**: a
+`crates/engine-dev-menu/src/dev_menu_leaves.rs`. Nor from a **local binding**: a
 free function called `gate` collects an in-edge from every reachable function
 that merely names a local `gate`, which is why the whole of
 `battle_attack_camera.rs` read live from six unrelated callers. A short,
@@ -349,15 +349,15 @@ recognisable: match the mechanism, apply the same fix.
 | `800468a4`, `80057914` | `engine-vm/src/vram_rect_copy.rs` | FALSE-EDGE | Module tag moved onto `enqueue` / `build_packet`, each with its own tag; the file was live through `op43_sub12_calls`, which no tag covered. Both helpers have a host now (`World::apply_vram_rect_copies`), so the split no longer hides an unwired half. |
 | `80053cb8` | `engine-battle-vm/src/battle_formulas/stat_init.rs` | STALE-TAG | `LegaiaMinigames::muscle_player_fighter`, under a `#[wasm_bindgen]` root, calls `init_party_battle_stats`, which calls `equip_stat_bonuses`. |
 | `801d0750` | `engine-minigames/src/dance_tutorial.rs` | FALSE-EDGE | `countdown_frame` renamed `tutorial_countdown_frame`; the live `countdown_frame` is the Baka chrome's same-named free function. |
-| `801e5b4c` | `engine-field/src/dev_menu_leaves.rs` | RESOLVED | `resolve_equip_slot` was already reached through `dev_equip_commit::commit_equip`. The rest of the address is now reached too: `equip_stat_panel` is the whole sub-draw and `submode_hub_actors::entry_list` calls it where retail's only `jal` sits. |
-| `801ead98` | `engine-field/src/dev_menu_leaves.rs` | FALSE-EDGE | Module tags and the impl-less type tags dropped for per-item anchors. |
-| `801eca08` | `engine-field/src/dev_menu_leaves.rs` | FALSE-EDGE | `cursor_step` renamed `dev_menu_cursor_step`; the live `cursor_step` is `engine-minigames/src/baka_cabinet.rs`'s same-named free function. |
-| `801ed710` | `engine-field/src/dev_menu_leaves.rs` | STALE-TAG | `records_screen` / `decompose_play_time` are reached from `dev_records_model` in `engine-shell/src/window/dev_menu.rs` -> `PlayWindowApp::build_dev_records_draws` -> `tick_dev_menu`. |
+| `801e5b4c` | `engine-dev-menu/src/dev_menu_leaves.rs` | RESOLVED | `resolve_equip_slot` was already reached through `dev_equip_commit::commit_equip`. The rest of the address is now reached too: `equip_stat_panel` is the whole sub-draw and `submode_hub_actors::entry_list` calls it where retail's only `jal` sits. |
+| `801ead98` | `engine-dev-menu/src/dev_menu_leaves.rs` | FALSE-EDGE | Module tags and the impl-less type tags dropped for per-item anchors. |
+| `801eca08` | `engine-dev-menu/src/dev_menu_leaves.rs` | FALSE-EDGE | `cursor_step` renamed `dev_menu_cursor_step`; the live `cursor_step` is `engine-minigames/src/baka_cabinet.rs`'s same-named free function. |
+| `801ed710` | `engine-dev-menu/src/dev_menu_leaves.rs` | STALE-TAG | `records_screen` / `decompose_play_time` are reached from `dev_records_model` in `engine-shell/src/window/dev_menu.rs` -> `PlayWindowApp::build_dev_records_draws` -> `tick_dev_menu`. |
 | `8001fa68`, `800203ec`, `80020424`, `80020454`, `800204a4` | `engine-vm/src/actor_node_pool.rs`, `u16_list_append.rs` | FALSE-EDGE | Cleared by the receiver gate; the collisions were `ActorNodePool::new` / `::default`. |
 | `800421d4`, `80042310`, `800423e0`, `80042ee0`, `80042f4c`, `80043048`, `8004313c` | `save/src/retail_inventory.rs` | FALSE-EDGE | Cleared by the receiver gate; the collisions were `RetailInventory` / `ItemWindow` methods reached through the crate's `lib.rs` re-export. |
 | `80046870` | `engine-system/src/incense_window.rs` | FALSE-EDGE | Cleared by the receiver gate; the collision was `ScreenOrient::from_byte`. |
 | `801d71b8` | `engine-battle-vm/src/battle_attack_camera.rs` | FALSE-EDGE | `gate` renamed `attack_camera_gate`; a free function named `gate` is reached by the bare-identifier edge from every function that merely *mentions* one. |
-| `801d2ebc` | `engine-field/src/dev_menu_leaves.rs` | FALSE-EDGE | Cleared when the countdown scheduler moved to `escape_timer.rs`, which has a caller; the collision was `EscapeTimer::tick`. |
+| `801d2ebc` | `engine-dev-menu/src/dev_menu_leaves.rs` | FALSE-EDGE | Cleared when the countdown scheduler moved to `escape_timer.rs`, which has a caller; the collision was `EscapeTimer::tick`. |
 | `801d6d38`, `801d8a58`, `801d98f0`, `801dae24`, `801daef4`, `801dafd4`, `801dbc5c`, `801dc6b4`, `801dd12c`, `801dd1b8`, `801dd26c`, `801e4f40` | `engine-menus/src/save_subscreen.rs` | FALSE-EDGE | Cleared by the receiver gate; the chain was `session.tick(` -> `BattleTutorial::tick` -> `dispatch(` -> `SaveScreenMachine::dispatch`. |
 | `801db380`, `801db7f4`, `801dbd94` | `engine-menus/src/shop.rs` | FALSE-EDGE | Cleared by the receiver gate; the collision was the session constructors' `new(`. |
 | `800508dc` | `engine-battle/src/anim_cue.rs` | FALSE-EDGE, then wired | `AnimCueState::tick` is named `tick_cues`: in `engine-audio`, whose `lib.rs` re-exported the type and called `spu.tick()`, the receiver gate passed - the shape of `footstep.rs` above. The module is in `engine-core` and `World::step_actor_anim_cues` calls it per animation frame. |

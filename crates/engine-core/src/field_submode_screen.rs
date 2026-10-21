@@ -43,7 +43,7 @@
 //! FUN_801D9C3C (the spawn), FUN_801E9B3C (the panel install this records
 //! rather than performs)
 
-use legaia_engine_field::dev_menu_leaves::{EquipProps, ItemProps};
+use legaia_engine_dev_menu::dev_menu_leaves::{EquipProps, ItemProps};
 use legaia_engine_field::submode_hub_actors::{
     self as hub, ACTOR_RETIRE, CoinCounter, HubAction, HubActor, HubDraw, HubEnv, HubEquipEnv,
     HubEquipRecord, HubFrame, HubGrid, HubPainter, slot,

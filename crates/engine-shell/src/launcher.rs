@@ -749,7 +749,7 @@ mod tests {
 
     #[test]
     fn option_rows_step_and_wrap() {
-        use legaia_engine_field::camera::CameraDistance;
+        use legaia_engine_camera::camera_distance::CameraDistance;
         use legaia_engine_menus::options::OptionsState;
         let mut o = OptionsState::default();
         let mut s = LauncherSettings::default();

@@ -161,7 +161,7 @@ mod tests {
     /// the field knobs hold.
     #[test]
     fn retail_vantage_is_the_retail_follow_framing_or_a_battle_frame() {
-        use legaia_engine_field::camera::CameraDistance;
+        use legaia_engine_camera::camera_distance::CameraDistance;
         let mut world = World::new();
         world.mode = SceneMode::Field;
         let cam = Camera::default();

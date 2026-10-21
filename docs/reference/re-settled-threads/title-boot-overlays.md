@@ -1089,7 +1089,7 @@ hosts.
 - No `jal`, data word or `addiu` materialisation of `0x801E5A08` exists in any image. The live
   equip confirm is `FUN_801D9C14`'s candidate arm.
 
-Port: `legaia_engine_field::dev_equip_commit::commit_equip`.
+Port: `legaia_engine_dev_menu::dev_equip_commit::commit_equip`.
 
 ### The dead Return view mode
 

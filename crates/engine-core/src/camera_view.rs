@@ -463,7 +463,7 @@ mod tests {
         let base = field_follow_view(&Camera::default(), &w).unwrap();
         let mut cam = Camera::default();
         cam.manual_orbit = 0.5;
-        cam.distance = legaia_engine_field::camera::CameraDistance::Far;
+        cam.distance = legaia_engine_camera::camera_distance::CameraDistance::Far;
         cam.follow_slot = 0;
         let v = field_follow_view(&cam, &w).unwrap();
         assert!((v.yaw - (base.yaw - 0.5)).abs() < 1e-6);
@@ -481,7 +481,7 @@ mod tests {
     fn follow_view_tilts_and_zooms_about_the_character() {
         let w = world_with_player(300, -200);
         let mut cam = Camera::default();
-        cam.distance = legaia_engine_field::camera::CameraDistance::Far;
+        cam.distance = legaia_engine_camera::camera_distance::CameraDistance::Far;
         cam.zone.active = true;
         cam.globals.0[0] = FIELD_PITCH_UNITS as i32;
         cam.globals.0[1] = FIELD_FOLLOW_YAW_UNITS as i32;
@@ -543,7 +543,7 @@ mod tests {
         let w = world_with_player(300, -200);
         let mut cam = Camera::default();
         cam.manual_orbit = 0.3;
-        cam.distance = legaia_engine_field::camera::CameraDistance::Far;
+        cam.distance = legaia_engine_camera::camera_distance::CameraDistance::Far;
         let a = field_follow_view(&cam, &w).unwrap();
         cam.manual_tilt = 0.0;
         cam.manual_zoom = 1.0;

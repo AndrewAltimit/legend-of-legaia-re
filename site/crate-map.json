@@ -138,6 +138,7 @@
      "label": "rank 1",
      "crates": [
       "engine-camera",
+      "engine-dev-menu",
       "engine-mode",
       "engine-motion-vm"
      ]
@@ -1042,6 +1043,7 @@
    "lib": true,
    "modules": [
     "battle_camera",
+    "camera_distance",
     "camera_mover",
     "camera_rel_actor",
     "camera_rel_glide",
@@ -1052,17 +1054,19 @@
    "band": "kernels",
    "track": "engine",
    "rank": 1,
-   "role": "the shared GTE camera: build, projection, mover, shake, camera-relative glide",
-   "scope": "The shared retail GTE camera below the battle VM, the field and the draw kernels: <code>psx_camera</code> build + projection, <code>BattleCamPose</code> and the GTE constants, the op-<code>0x45</code> mover, tween + shake, the camera-relative glide.",
+   "role": "the shared GTE camera: build, projection, mover, shake, camera-relative glide, distance preset",
+   "scope": "The shared retail GTE camera below the battle VM, the field and the draw kernels: <code>psx_camera</code> build + projection, <code>BattleCamPose</code> and the GTE constants, the op-<code>0x45</code> mover, tween + shake, the camera-relative glide, the follow camera's distance preset.",
    "dependents": [
     "engine-battle-vm",
     "engine-capture",
     "engine-cast",
     "engine-core",
     "engine-field",
+    "engine-menus",
     "engine-minigame-scenes",
     "engine-minigames",
     "engine-render",
+    "engine-scene",
     "engine-shell",
     "engine-world-views",
     "parity",
@@ -1193,6 +1197,7 @@
     "engine-battle-vm",
     "engine-camera",
     "engine-cast",
+    "engine-dev-menu",
     "engine-dialog",
     "engine-effects",
     "engine-field",
@@ -1264,6 +1269,37 @@
     "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-core/README.md"
+  },
+  "engine-dev-menu": {
+   "package": "legaia-engine-dev-menu",
+   "deps": [
+    "engine-system",
+    "overlay-images"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "dev_equip_commit",
+    "dev_menu_action",
+    "dev_menu_adjust",
+    "dev_menu_flags",
+    "dev_menu_leaves"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 1,
+   "role": "the field overlay's dev-menu bodies: row model, value steps, flag editor, equip applier",
+   "scope": "The field overlay's developer-menu bodies below both <code>engine-field</code> and <code>engine-menus</code>: dev-menu row model and list picker, value steps, EVENT FLAG editor, the equip applier the pause menu's equip session shares, the row-action dispatcher.",
+   "dependents": [
+    "engine-core",
+    "engine-field",
+    "engine-menu-runtime",
+    "engine-menus",
+    "engine-scene-host",
+    "engine-screens"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-dev-menu/README.md"
   },
   "engine-dialog": {
    "package": "legaia-engine-dialog",
@@ -1383,6 +1419,7 @@
     "actor-formats",
     "anm",
     "engine-camera",
+    "engine-dev-menu",
     "engine-dialog",
     "engine-mode",
     "engine-motion-vm",
@@ -1418,10 +1455,6 @@
     "cutscene_narration",
     "cutscene_timeline",
     "dance_marker",
-    "dev_equip_commit",
-    "dev_menu_adjust",
-    "dev_menu_flags",
-    "dev_menu_leaves",
     "dialog_state",
     "escape_timer",
     "field_actor_clone",
@@ -1483,7 +1516,7 @@
    "track": "engine",
    "rank": 3,
    "role": "World-free field kernels",
-   "scope": "The <code>World</code>-free field kernels: actor programs and per-actor field-overlay bodies, region queries and the shared minigame floor (<code>minigame_floor</code>, <code>dance_marker</code>), follow-camera parameters and eases, player clip playback, op-<code>0x49</code> submode and its hub actors, panel windows and dev-menu leaves, world-map controller + entity SM (<code>FUN_801DA51C</code>), inline-dialogue / cutscene-timeline context state, CLUT effects, the fog particle pool, MAN field-script decoders, field camera (<code>CameraWorld</code>).",
+   "scope": "The <code>World</code>-free field kernels: actor programs and per-actor field-overlay bodies, region queries and the shared minigame floor (<code>minigame_floor</code>, <code>dance_marker</code>), follow-camera parameters and eases, player clip playback, op-<code>0x49</code> submode and its hub actors, panel windows, world-map controller + entity SM (<code>FUN_801DA51C</code>), inline-dialogue / cutscene-timeline context state, CLUT effects, the fog particle pool, MAN field-script decoders, field camera (<code>CameraWorld</code>).",
    "dependents": [
     "asset-viewer",
     "engine-capture",
@@ -1491,7 +1524,6 @@
     "engine-export",
     "engine-fishing",
     "engine-menu-runtime",
-    "engine-menus",
     "engine-minigame-scenes",
     "engine-minigames",
     "engine-scene",
@@ -1548,6 +1580,7 @@
     "engine-battle",
     "engine-battle-vm",
     "engine-core",
+    "engine-dev-menu",
     "engine-field",
     "engine-menus",
     "engine-minigames",
@@ -1591,8 +1624,9 @@
     "art",
     "engine-battle",
     "engine-battle-vm",
+    "engine-camera",
+    "engine-dev-menu",
     "engine-dialog",
-    "engine-field",
     "engine-minigames",
     "engine-system",
     "engine-vm",
@@ -1909,6 +1943,7 @@
     "anm",
     "container-formats",
     "disc-audit",
+    "engine-camera",
     "engine-dialog",
     "engine-field",
     "engine-system",
@@ -1992,6 +2027,7 @@
     "engine-battle",
     "engine-battle-vm",
     "engine-core",
+    "engine-dev-menu",
     "engine-dialog",
     "engine-effects",
     "engine-field",
@@ -2059,6 +2095,7 @@
     "engine-battle-hud",
     "engine-battle-vm",
     "engine-core",
+    "engine-dev-menu",
     "engine-dialog",
     "engine-effects",
     "engine-field",
@@ -2302,6 +2339,7 @@
     "engine-cast",
     "engine-cheats",
     "engine-core",
+    "engine-dev-menu",
     "engine-effects",
     "engine-field",
     "engine-fishing",
@@ -2935,6 +2973,7 @@
     "engine-battle-vm",
     "engine-cast",
     "engine-core",
+    "engine-dev-menu",
     "engine-effects",
     "engine-field",
     "engine-minigame-scenes",
@@ -3995,19 +4034,6 @@
     "battle_intro_styles::INTRO_DURATION_FRAMES"
    ],
    "reason": "the encounter session's default transition length is the battle-intro model's, which sits with its draw half"
-  },
-  {
-   "from": "engine-menus",
-   "to": "engine-field",
-   "items": [
-    "dev_equip_commit",
-    "dev_menu_leaves",
-    "dev_menu_adjust",
-    "dev_menu_flags",
-    "world_map_panel::{SFX_CURSOR_MOVE, dev_menu_action}",
-    "camera::CameraDistance"
-   ],
-   "reason": "the equip commit and the dev menu's row kernels are field-overlay dev-menu bodies the field's own submode hub and panel code also run, so no crate below both can hold them; the pause menu's equip session and the dev menu screen share them, and the options screen's camera preset is the field follow camera's eye-back knob"
   },
   {
    "from": "engine-fishing",

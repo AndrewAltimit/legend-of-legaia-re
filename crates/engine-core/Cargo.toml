@@ -17,6 +17,7 @@ path = "src/lib.rs"
 test-drivers = []
 
 [dependencies]
+legaia-engine-dev-menu.workspace = true
 legaia-engine-camera.workspace = true
 legaia-engine-mode.workspace = true
 legaia-engine-scene.workspace = true
