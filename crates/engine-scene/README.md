@@ -23,6 +23,7 @@ depends on it. Hosts, tools and tests name its modules directly
 | `field_view_window` | The camera's visible-tile crop: the cell rectangle one frame of `FUN_801F7088` walks (`view_cells`) and the per-cell decoration / ground gates. Whether a host crops this frame is `engine-world-views::field_view_window`. |
 | `field_ground` | The walk-ground heightfield as a render mesh: positions (static and live-wave), indices, flat refs, the visible-tile crop of the index list. |
 | `field_occlusion` | The camera-occlusion fade's visibility gate: a per-triangle eye-to-player ray-cast over the assembled static scene (`FieldOccluders`), and the strength ramp. Its arming terms over a `World` are `engine-screens::field_occlusion`. |
+| `fog_ground` | The volumetric fog's ground coverage field for one assembled scene (`FogSurfaces`, `build_for_scene`): the static draws and the walk-ground heightfield fed to `render-kernels::fog_volume`, built once per scene load on both hosts. |
 | `scene_arrivals` | `ArrivalCatalog`: every scene's inbound door / warp arrivals (`0x3F` sites keyed by destination), ranked for the scene picker's default seat. |
 | `scene_assembly` | The full static scene assembly kernel (`AssembledScene`, `assemble_field_scene_with`) and the hybrid textured / vertex-colour mesh builders. |
 | `man_census` | A scene's MAN carriers and the scene-name entry points of the censuses whose decoders are `legaia_engine_field::man_field_scripts`. |
@@ -35,8 +36,8 @@ depends on it. Hosts, tools and tests name its modules directly
 
 A module is here when its dependency closure inside the engine stops at the
 `World`-free kernel crates: `engine-field` (field regions, MAN script
-decoders), `engine-battle` (encounter tables), `engine-dialog`,
-`engine-mode`, `engine-system` and `render-kernels`. It must not name
+decoders), `engine-camera`, `engine-dialog`, `engine-vm`, `engine-system`
+and `render-kernels`. It must not name
 `legaia-engine-core`, and the compiler enforces that - a consumer that only
 reads scenes links this crate without the simulation.
 

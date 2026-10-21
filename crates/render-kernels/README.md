@@ -91,12 +91,17 @@ or cpal, so it builds for native and `wasm32` alike.
 - `shutter_bars` - the shutter blackout's two quads.
 - `display_mirror` - the PSX display environment's screen-X mirror
   (`FUN_800597C8`, replaced by the single-orientation surface).
+- `ui_tint` - a 2D overlay quad's tint law: retail's 5-bit texture
+  modulation and the dialog font CLUTs' own shadow colours.
+- `bloom` - the bloom enhancement's response (not retail): threshold and
+  strength per enhanced-lighting mood; the passes are host code.
 
 This crate depends on `legaia-engine-camera` (the GTE camera and projection
 constants) and `legaia-engine-vm` (`move_ext_strip`, `field_actor_billboard`
 and the move-VM `ActorState`), and on nothing above them. The battle-side
 draws that project battle-VM records (the numeral readout, the Theeder
-beams) are one crate up, in `legaia-engine-ui`.
+beams built from `cast_theeder_packet`) are one crate up, in
+`legaia-engine-ui`.
 
 ## See also
 

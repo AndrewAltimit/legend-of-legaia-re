@@ -61,7 +61,7 @@ Each module is named for the kernel module whose types it fills in.
 ## Place in the layering
 
 ```text
-engine-shell / web-viewer                       hosts
+engine-shell / web-play / web-viewer            hosts
 engine-screens, engine-session                  host-shared top
 engine-scene-host                               SceneHost
 engine-world-views, engine-battle-hud           reads of World

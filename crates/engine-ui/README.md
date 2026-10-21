@@ -106,6 +106,9 @@ navigation logic depends on the GPU backend.
   (`FUN_801F1E48` / `FUN_801F1B64`) and the tile board's quit prompt (walk-SM
   state `5`); geometry arrives from `engine-core::incense_notice` /
   `engine-world-views::tile_board`.
+- `world_map_labels` - the overworld map display's place labels and compass
+  letters (PROT 0981's label pass): each label's dialog-skin box and name;
+  the gate and projection arrive from `engine-screens::world_map_labels`.
 - `battle_timed_fight_strip` - the `Turns Left / HP Left` strip of the one
   turn-limited boss fight; gate and numbers are `engine-world-views::timed_fight`.
 - `baka_strips` - the Baka Fighter HUD's digit strips (`FUN_801d69e4`,
@@ -139,7 +142,7 @@ Several modules are not UI at all but live here for the same structural reason -
 they are wgpu-free draw kernels both hosts must share, and this crate is the
 shared leaf:
 
-- `minigame_fx` - the draw builder for `engine-core`'s effect-part pool and
+- `minigame_fx` - the draw builder for `engine-minigames::minigame_fx`'s effect-part pool and
   for the dance run's own sprite-part emits: one placeholder-cell
   materialisation, so a part looks the same on the native HUD, the play
   page's overlay and the minigames page's canvas.
@@ -196,4 +199,4 @@ read its prose.
 What the gate cannot see is drift *inside* a shared builder's inputs - two
 hosts calling the same function with different models. The gaps of that
 shape found by reading the hosts side by side are recorded in the
-[web-viewer README](../../docs/subsystems/browser-host.md#platform-drift-against-the-native-window).
+[browser-host page](../../docs/subsystems/browser-host.md#platform-drift-against-the-native-window).

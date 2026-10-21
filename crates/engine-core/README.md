@@ -55,6 +55,9 @@ lives in the kernel crate for its area, where it can be unit-tested alone:
 |---|---|
 | Battle arithmetic, monster AI, catalogs, encounters, level-up | [`engine-battle`](../engine-battle/README.md), [`engine-battle-vm`](../engine-battle-vm/README.md) |
 | Field actor programs, camera, regions, world map | [`engine-field`](../engine-field/README.md) |
+| The shared GTE camera, its tweens and shake | [`engine-camera`](../engine-camera/README.md) |
+| Slot-B cast / summon module bodies | [`engine-cast`](../engine-cast/README.md) |
+| The field overlay's developer-menu bodies | [`engine-dev-menu`](../engine-dev-menu/README.md) |
 | Menus, title, shop, inn, memory card | [`engine-menus`](../engine-menus/README.md), [`engine-dialog`](../engine-dialog/README.md) |
 | Minigame rules, their 3D surfaces and venues, the minigame seat | [`engine-minigames`](../engine-minigames/README.md), [`engine-fishing`](../engine-fishing/README.md), [`engine-minigame-scenes`](../engine-minigame-scenes/README.md) |
 | Effects | [`engine-effects`](../engine-effects/README.md) |
@@ -81,7 +84,7 @@ crate. Paths name the owning crate - nothing is re-exported.
 ## Place in the layering
 
 ```text
-engine-shell / web-viewer / asset-viewer      hosts
+engine-shell / web-play / asset-viewer        hosts
 engine-session, engine-screens, parity        host-shared top
 engine-menu-runtime                           the pause menu over World
 engine-scene-host                             SceneHost, resume, live preview

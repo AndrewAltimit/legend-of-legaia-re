@@ -50,7 +50,7 @@ fields it seeds at entry are public for that reason.
 ## Place in the layering
 
 ```text
-engine-shell / web-viewer / asset-viewer        hosts
+engine-shell / web-play / web-viewer          hosts
 engine-session, engine-screens, parity          host-shared top
 engine-menu-runtime                             the pause menu over World
 engine-scene-host                               SceneHost, resume, live preview

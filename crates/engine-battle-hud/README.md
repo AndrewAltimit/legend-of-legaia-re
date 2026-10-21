@@ -28,7 +28,7 @@ The retail behaviour behind each read is in
 ## Place in the layering
 
 ```text
-engine-shell / web-viewer                       hosts
+engine-shell / web-play                         hosts
 engine-screens, parity                          host-shared top
 engine-battle-hud                               the battle HUD's reads of World
 engine-core                                     World, the tick, battle loop

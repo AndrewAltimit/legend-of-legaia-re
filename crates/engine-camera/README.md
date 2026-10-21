@@ -56,7 +56,7 @@ the browser play page ease a scripted shot instead of snapping every
 
 Which camera owns a given frame, and what its inputs are, is one layer up:
 the frame type and its matrix in `engine-field::camera_frame`, the resolver
-that reads the live world in `engine-core::camera_view`.
+that reads the live world in `engine-world-views::camera_view`.
 
 ## Tests
 

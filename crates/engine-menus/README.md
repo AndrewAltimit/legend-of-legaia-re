@@ -81,7 +81,7 @@ link into a dependent crate.
   edges fire), `menu_glyph_atlas`, `save_menu_atlas` (the shared 256x256
   save / pause / battle-badge sprite bake), `debug_char_editor` (the
   developer character editor), `dev_menu_host` (the developer menu screen
-  it sits on; engine-core's `DevMenuWorldExt` runs it against a `World`) and
+  it sits on; engine-menu-runtime's `DevMenuWorldExt` runs it against a `World`) and
   `key_rebind`.
 - **Title + boot** - `publisher_logos`, `title` (title state machine),
   `title_screen_atlas`, `name_entry` (the `town01` naming screen) and

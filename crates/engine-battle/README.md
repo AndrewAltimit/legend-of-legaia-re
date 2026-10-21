@@ -14,7 +14,7 @@ down into this crate. Consumers name the kernels here directly
 
 A module moves here when its whole dependency closure inside the engine is
 itself in this crate - it may use `legaia-engine-battle-vm`,
-`legaia-engine-system`, the asset crates and
+`legaia-engine-system`, `legaia-render-kernels`, the asset crates and
 its siblings, but nothing that reaches `World`. A kernel tangled with `World`
 stays in `engine-core` until its pure half is split out. Doc links that point
 back up at `engine-core` are written as plain code spans, since rustdoc cannot

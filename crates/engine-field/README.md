@@ -20,8 +20,8 @@ this crate, `legaia-engine-system` (pad input, fades, mode-entry
 initialisers), `legaia-engine-mode` (the game-mode seat), `legaia-engine-vm`
 or the other `World`-free crates below `engine-core`. The field-overlay
 kernels the field VM itself does not import live here rather than in
-`legaia-engine-vm`, and `legaia-engine-fishing`, `legaia-engine-minigames`
-and `legaia-engine-menus` sit above this crate. The slot-A minigame overlays'
+`legaia-engine-vm`, and `legaia-engine-fishing` and `legaia-engine-minigames`
+sit above this crate; `legaia-engine-menus` does not name it. The slot-A minigame overlays'
 shared scene floor (`minigame_floor`: ground height, polar tables, the floor
 sweep) and the dance floor's step-marker flipbook (`dance_marker`) live here
 because both the fishing and the dance engines stand on them and the floor is

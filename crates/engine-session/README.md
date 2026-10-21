@@ -43,6 +43,11 @@ over its `AudioOut`); a `wasm32` build never links cpal.
   hosts take in their per-tick effect step: `spawn_pending_move_fx` seats a
   pending move effect and resolves its sound cue through the retail dispatch
   decode.
+- [`battle_vram`](src/battle_vram.rs) - the battle VRAM's per-tick
+  re-stamps both hosts run (`stamp_battle_faces`, `step_battle_vram_edits`):
+  the party's facial animation, the status CLUT recolour, the effect CLUT
+  stages and the stage module's queued `MoveImage`s. Each host keeps only
+  its upload.
 - [`xa_banks`](src/xa_banks.rs) - the CD-XA voice banks' staging: which
   files the arts shouts and the battle one-shot clips come from, and how a
   file's demuxed channels become bank entries. The native boot reads the

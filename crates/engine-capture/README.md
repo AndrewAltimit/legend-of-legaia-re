@@ -33,6 +33,14 @@ form in both directions.
 - [`clip_cursors`](src/clip_cursors.rs) - `ClipCursorSeed`, where each
   combatant's playing clip stood in the capture (the anim node's cursor
   `+0x68`), so a seated fight draws its combatants at retail's keyframe.
+- [`ground_snap`](src/ground_snap.rs) - the combatants' ground positions at
+  the captured phase (`LEGAIA_BATTLE_GROUND_SNAP`), which a replayed push or
+  approach lands near rather than on.
+- [`melee_hits`](src/melee_hits.rs) - the hits a captured melee action had
+  already landed, replayed at retail's amounts (`LEGAIA_BATTLE_MELEE_HITS`).
+- [`cast_parts`](src/cast_parts.rs) - a captured cast's live effect parts
+  (`LEGAIA_SEAT_CAST_PARTS`), seated over the replay's own parts on the
+  capture frame.
 
 ## Layering
 
