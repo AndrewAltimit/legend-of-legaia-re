@@ -889,13 +889,15 @@ SIM_PAIRS: list[dict[str, object]] = [
         "cutscene params onto it - so the two hosts' cameras, their cutscene "
         "shots and the azimuth each fed the locomotion compass all diverged "
         "with no shared symbol to notice it. Both sites must reach the "
-        "resolver, not a camera of their own",
+        "resolver, not a camera of their own - through the host seam "
+        "`engine-world-views::screen_passes::HostView::frame`, which is the "
+        "resolver on the host's scene-box centre",
         "sites": {
             "native": (NATIVE_REDRAW_PASSES, "compute_scene_camera"),
             "web": (WEB_PLAY_CAMERA, "resolve_camera_frame"),
         },
         "mode": "symbols_all",
-        "symbols": ["resolve_field_camera"],
+        "symbols": ["frame"],
     },
     {
         "what": "direct scene entry's camera reset, native vs play page - a "

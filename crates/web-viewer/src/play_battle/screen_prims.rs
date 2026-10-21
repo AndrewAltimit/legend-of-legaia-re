@@ -240,11 +240,9 @@ impl LegaiaRuntime {
     }
 
     fn battle_fx_screen_prims(&self) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
+        use legaia_engine_world_views::screen_passes::{move_fx_streak_quads, weapon_trail_prims};
         use legaia_render_kernels::battle_trail as bt;
-        use legaia_render_kernels::battle_trail::TRAIL_POINTS;
-        use legaia_render_kernels::streak_pass::{
-            MOVE_FX_STREAK_OT, StreakSource, clip_ribbon_quads, streak_quads_scheduled,
-        };
+        use legaia_render_kernels::streak_pass::MOVE_FX_STREAK_OT;
 
         let Some(host) = self.scene_host.host() else {
             return Vec::new();
@@ -256,68 +254,28 @@ impl LegaiaRuntime {
         let scale = crate::play_battle_render::BATTLE_WORLD_SCALE;
         let pose = self.battle_cam_pose();
         let vp = legaia_engine_camera::projection::battle_vp(&pose, scale, 4.0 / 3.0);
-        let mut out = Vec::new();
-        for d in world.battle_weapon_trail_draws() {
-            let Some(actor) = world.actors.get(d.actor_slot as usize) else {
-                continue;
-            };
-            let pos = [
-                f32::from(actor.move_state.world_x),
-                f32::from(actor.move_state.world_y),
-                f32::from(actor.move_state.world_z),
-            ];
-            let mut steps = Vec::with_capacity(d.steps.len());
-            'draw: for s in &d.steps {
-                let mut pts = [(0i16, 0i16); TRAIL_POINTS];
-                for (i, t) in s.iter().enumerate() {
-                    // Page placement law (see the actor draw loop in
-                    // play-app.js): posed local point + raw translation,
-                    // both scaled by BATTLE_WORLD_SCALE; no Y negation -
-                    // the battle VP's trailing flip carries it.
-                    let p = [
-                        (pos[0] + f32::from(t[0])) * scale,
-                        (pos[1] + f32::from(t[1])) * scale,
-                        (pos[2] + f32::from(t[2])) * scale,
-                    ];
-                    match bt::project_stage_point_cols(&vp, p) {
-                        Some(xy) => pts[i] = xy,
-                        None => break 'draw,
-                    }
-                }
-                steps.push(pts);
-            }
-            out.extend(bt::weapon_trail_prims(&steps, d.rgb, bt::WEAPON_TRAIL_OT));
-        }
-        // Move-FX streak: same source block + emitter schedule as the
-        // native window's `move_fx_streak_quads`.
-        if let Some(trail) = world.active_move_fx_trail_texpage() {
-            let block = world.move_fx_streak();
-            if let Some(src) =
-                StreakSource::from_block(block.launch, block.half_width(), Some(trail))
-            {
-                let mvp = glam::Mat4::from_cols_array(&vp)
-                    * glam::Mat4::from_scale(glam::Vec3::splat(scale));
-                // `ctx[+0x13] < 3` is a pool-slot test (`0x801E0C78`).
-                let party = world
-                    .battle_seat_map()
-                    .is_party(world.battle_ctx.active_actor);
-                let frame = world.clock.display_frames as u32;
-                for q in streak_quads_scheduled(&src, &mvp, frame, block.counter_word, party) {
-                    out.push(q.to_screen_prim(MOVE_FX_STREAK_OT));
-                }
-            }
-        }
-        // Clip-tag ribbon (`FUN_8004CE2C` tag `0x67` ->
-        // `FUN_801E1D98(&target[+0x3C], 0xC)`): same kernel as the native
-        // window's `move_fx_streak_quads`, through this page's scaled MVP.
-        if let Some(c) = world.battle.clip_ribbon {
-            let mvp =
-                glam::Mat4::from_cols_array(&vp) * glam::Mat4::from_scale(glam::Vec3::splat(scale));
-            let frame = world.clock.display_frames as u32;
-            for q in clip_ribbon_quads(c.seat.map(f32::from), c.trail_id, &mvp, frame) {
-                out.push(q.to_screen_prim(MOVE_FX_STREAK_OT));
-            }
-        }
+        // Page placement law (see the actor draw loop in play-app.js): posed
+        // local point + raw translation, both scaled by BATTLE_WORLD_SCALE;
+        // no Y negation - the battle VP's trailing flip carries it.
+        let mut out = weapon_trail_prims(world, |pos, t| {
+            bt::project_stage_point_cols(
+                &vp,
+                [
+                    (pos[0] + f32::from(t[0])) * scale,
+                    (pos[1] + f32::from(t[1])) * scale,
+                    (pos[2] + f32::from(t[2])) * scale,
+                ],
+            )
+        });
+        // The move-FX streak and the clip-tag ribbon, through this page's
+        // scaled MVP.
+        let mvp =
+            glam::Mat4::from_cols_array(&vp) * glam::Mat4::from_scale(glam::Vec3::splat(scale));
+        out.extend(
+            move_fx_streak_quads(world, &mvp)
+                .iter()
+                .map(|q| q.to_screen_prim(MOVE_FX_STREAK_OT)),
+        );
         out
     }
 

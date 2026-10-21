@@ -86,15 +86,15 @@ impl LegaiaRuntime {
         // a cutscene beat that stages no focus slot with no lead actor live,
         // and the overworld walk arm's player position; a pinned `[0, 0]`
         // framed the world origin instead of the map.
-        let centre = {
-            let (lo, hi) = self.scene_aabb();
-            [(lo[0] + hi[0]) * 0.5, (lo[2] + hi[2]) * 0.5]
-        };
+        let aabb = self.scene_aabb();
         let scripted = self.cutscene_owns_frame();
+        let target = self
+            .host_view_at(aabb)
+            .expect("checked above")
+            .scripted_target();
         let (host, camera) = self.scene_host.host_cam_mut().expect("checked above");
         let world = &host.world;
         let cutscene = if scripted {
-            let target = camera_view::cutscene_view(world, centre);
             // The shared kernel (`frame_step::CutsceneGlide`, the native
             // window's twin): replay the banked `apply == 0` snaps, then step
             // the glide by the display frames the world ran since the last
@@ -106,7 +106,7 @@ impl LegaiaRuntime {
             self.cutscene_glide.idle(camera);
             None
         };
-        camera_view::resolve_field_camera(world, camera, cutscene, centre)
+        legaia_engine_world_views::screen_passes::HostView::new(world, camera, aabb).frame(cutscene)
     }
 }
 
@@ -253,6 +253,8 @@ impl LegaiaRuntime {
     /// camera. A query, not a step: it resolves the frame's **arm** without
     /// advancing the cutscene glide, and the scale depends on nothing else.
     pub fn play_render_curve_scale(&mut self) -> f32 {
+        // Off the overworld the scale is 0 whatever the frame; asking first
+        // keeps a field session from paying for the box.
         if !self
             .scene_host
             .host()
@@ -260,17 +262,12 @@ impl LegaiaRuntime {
         {
             return 0.0;
         }
-        let centre = {
-            let (lo, hi) = self.scene_aabb();
-            [(lo[0] + hi[0]) * 0.5, (lo[2] + hi[2]) * 0.5]
+        let aabb = self.scene_aabb();
+        let scripted = self.cutscene_owns_frame();
+        let Some(view) = self.host_view_at(aabb) else {
+            return 0.0;
         };
-        let world = &self.scene_host.host().expect("checked above").world;
-        let cutscene = self
-            .cutscene_owns_frame()
-            .then(|| camera_view::cutscene_view(world, centre));
-        let frame =
-            camera_view::resolve_field_camera(world, self.scene_host.camera(), cutscene, centre);
-        legaia_engine_field::camera_frame::frame_curve_scale(true, &frame)
+        view.curve_scale(scripted.then(|| view.scripted_target()))
     }
 
     /// The overworld curvature table's build offset for the scene pass, in
@@ -400,12 +397,11 @@ impl LegaiaRuntime {
         // The HUD band is the FOLLOW camera's reading: a scripted shot must
         // not decide where the readout sits.
         let aabb = self.scene_aabb();
-        let centre = [(aabb.0[0] + aabb.1[0]) * 0.5, (aabb.0[2] + aabb.1[2]) * 0.5];
-        let Some(host) = self.scene_host.host() else {
+        let Some(view) = self.host_view_at(aabb) else {
             self.set_field_player_screen_y(crate::runtime::NO_FIELD_PROJECTION);
             return;
         };
-        let world = &host.world;
+        let world = view.world;
         let pos = world
             .player_actor_slot
             .map(usize::from)
@@ -418,8 +414,7 @@ impl LegaiaRuntime {
                     a.move_state.world_z as f32,
                 ]
             });
-        let frame =
-            camera_view::resolve_field_camera(world, self.scene_host.camera(), None, centre);
+        let frame = view.follow_frame();
         let out = match (pos, camera_frame::frame_vp(&frame, aabb, aspect)) {
             (Some(p), Some(m)) => {
                 // Column-major 4x4: row 1 is the Y row, row 3 the W row.

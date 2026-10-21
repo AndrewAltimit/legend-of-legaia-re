@@ -21,7 +21,7 @@
 //! field entry (`upload_effect_textures_into_vram`).
 
 use legaia_engine_world_views::screen_passes;
-use legaia_render_kernels::screen_prim::{ScreenPrim, fog_puff_prim};
+use legaia_render_kernels::screen_prim::ScreenPrim;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use crate::runtime::LegaiaRuntime;
@@ -51,6 +51,17 @@ impl LegaiaRuntime {
         self.scene_aabb.unwrap_or_default()
     }
 
+    /// The world, scene camera and `scene_box` this frame's projections read
+    /// (`screen_passes::HostView`, the seam the native window reads through
+    /// too). `None` before a scene is staged.
+    pub(crate) fn host_view_at(
+        &self,
+        scene_box: ([f32; 3], [f32; 3]),
+    ) -> Option<screen_passes::HostView<'_>> {
+        let (host, camera) = self.scene_host.host_cam()?;
+        Some(screen_passes::HostView::new(&host.world, camera, scene_box))
+    }
+
     /// Run the fog pool's render step for this tick and return its sheets as
     /// screen primitives. Empty outside game mode 3 (a field scene or the
     /// kingdom overworld) or while the script gate is clear.
@@ -70,15 +81,9 @@ impl LegaiaRuntime {
         // Recorded whether or not the gate let the step run: the drop
         // shadows project through the same field-FX view either way.
         self.fx_depth_affine = Some(fx.depth_affine());
-        let world = &session.host.world;
-        if !world.fog.gate {
-            return Vec::new();
-        }
-        world
-            .fog_quads()
-            .iter()
-            .map(|q| fog_puff_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth))
-            .collect()
+        self.host_view_at(self.field_pass_box())
+            .map(|v| v.fog_prims())
+            .unwrap_or_default()
     }
 }
 
@@ -102,41 +107,35 @@ impl LegaiaRuntime {
 impl LegaiaRuntime {
     /// This tick's actor drop shadows (retail's `FUN_8001C394` blob) as
     /// screen primitives: the shared pass both hosts draw
-    /// (`legaia_engine_world_views::screen_passes::drop_shadow_screen_prims`).
+    /// (`legaia_engine_world_views::screen_passes::HostView::drop_shadow_prims`).
     /// Each cell carries its corners' scene depth, so the page's screen-prim
     /// pass tests it against the field it already drew. The blob texels live
     /// on the menu-glyph atlas page `(960, 256)`, resident in the field VRAM
     /// through the boot system-UI underlay.
     pub(crate) fn field_drop_shadow_prims(&self) -> Vec<ScreenPrim> {
-        let aabb = self.field_pass_box();
-        let Some((host, camera)) = self.scene_host.host_cam() else {
-            return Vec::new();
-        };
-        screen_passes::drop_shadow_screen_prims(&host.world, camera, aabb)
+        self.host_view_at(self.field_pass_box())
+            .map(|v| v.drop_shadow_prims())
+            .unwrap_or_default()
     }
 }
 
 impl LegaiaRuntime {
     /// This tick's move-VM strip spans (the extension sub-op `0x2C` callee
     /// `FUN_801D31B0`) as screen primitives - the shared pass both hosts draw
-    /// (`legaia_engine_world_views::screen_passes::move_strip_screen_prims`).
+    /// (`legaia_engine_world_views::screen_passes::HostView::move_strip_prims`).
     pub(crate) fn tick_move_strip_prims(&mut self) -> Vec<ScreenPrim> {
-        let aabb = self.field_pass_box();
-        let Some((host, camera)) = self.scene_host.host_cam() else {
-            return Vec::new();
-        };
-        screen_passes::move_strip_screen_prims(&host.world, camera, aabb)
+        self.host_view_at(self.field_pass_box())
+            .map(|v| v.move_strip_prims())
+            .unwrap_or_default()
     }
 
     /// This frame's attached lights (the field VM's op `0x34` sub-1 light
     /// pools) as screen primitives - the shared pass both hosts draw
-    /// (`legaia_engine_world_views::screen_passes::light_screen_prims`).
+    /// (`legaia_engine_world_views::screen_passes::HostView::light_prims`).
     pub(crate) fn field_light_prims(&self) -> Vec<ScreenPrim> {
-        let aabb = self.field_pass_box();
-        let Some((host, camera)) = self.scene_host.host_cam() else {
-            return Vec::new();
-        };
-        screen_passes::light_screen_prims(&host.world, camera, aabb)
+        self.host_view_at(self.field_pass_box())
+            .map(|v| v.light_prims())
+            .unwrap_or_default()
     }
 }
 

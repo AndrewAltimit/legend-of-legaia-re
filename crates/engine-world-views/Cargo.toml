@@ -24,6 +24,7 @@ legaia-render-kernels.workspace = true
 legaia-scene-formats.workspace = true
 legaia-ui-formats.workspace = true
 legaia-tmd.workspace = true
+glam.workspace = true
 
 [dev-dependencies]
 legaia-engine-system.workspace = true

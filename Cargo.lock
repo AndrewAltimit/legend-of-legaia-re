@@ -2608,6 +2608,7 @@ dependencies = [
 name = "legaia-engine-world-views"
 version = "0.1.0"
 dependencies = [
+ "glam",
  "legaia-container-formats",
  "legaia-engine-battle",
  "legaia-engine-camera",

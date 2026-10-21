@@ -12,9 +12,6 @@
 //! (is the leader's mesh resident) and hands the prims to the page's
 //! screen-prim pass.
 
-use legaia_engine_world_views::screen_passes::{
-    world_map_marker_screen_prims, world_map_sky_screen_prims,
-};
 use legaia_render_kernels::screen_prim::ScreenPrim;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -28,20 +25,18 @@ impl LegaiaRuntime {
         // marker is the stand-in for when it did not (the native window's
         // gate is the same question about its own upload).
         let draw_player = self.player.is_none();
-        let Some((host, camera)) = self.scene_host.host_cam() else {
-            return Vec::new();
-        };
-        world_map_marker_screen_prims(&host.world, camera, aabb, draw_player)
+        self.host_view_at(aabb)
+            .map(|v| v.world_map_marker_prims(draw_player))
+            .unwrap_or_default()
     }
 
     /// This frame's overworld sky band (`FUN_801F73E4`), the shared pass the
     /// native window draws too. Empty outside the world map.
     pub(crate) fn world_map_sky_prims(&mut self) -> Vec<ScreenPrim> {
         let aabb = self.scene_aabb();
-        let Some((host, camera)) = self.scene_host.host_cam() else {
-            return Vec::new();
-        };
-        world_map_sky_screen_prims(&host.world, camera, aabb)
+        self.host_view_at(aabb)
+            .map(|v| v.world_map_sky_prims())
+            .unwrap_or_default()
     }
 }
 

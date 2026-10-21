@@ -471,11 +471,7 @@ impl PlayWindowApp {
     ///   opdeene supplies all three per beat; the Z component is the eye-back
     ///   depth (raw ~16k-21k across beats).
     pub(super) fn cutscene_view(&self) -> ([f32; 3], f32, f32, f32, f32, [f32; 3]) {
-        let scene_center = [
-            (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
-            (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
-        ];
-        let v = camera_view::cutscene_view(&self.session.host.world, scene_center);
+        let v = self.host_view().scripted_target();
         (v.focus, v.pitch, v.yaw, v.roll, v.h, v.tr_eye)
     }
 

@@ -31,12 +31,16 @@ Each module is named for the kernel module whose types it fills in.
   `engine-field::world_map_markers`.
 - **`world_map_sky`** - the overworld sky band's sprites off the world map
   state (`render-kernels::world_map_sky`).
-- **`screen_passes`** - the field and overworld screen-space passes as
-  finished `screen_prim::ScreenPrim`s, one call each from `World`: drop
-  shadows, move-VM strips, attached lights, world-map markers and the sky
-  band. Each is the mode gate, the resolver's non-scripted frame on the
-  scene box's centre (`scene_centre`) and the kernel's prim wrap - the
-  three steps both hosts used to spell themselves.
+- **`screen_passes`** - the host seam. `HostView` borrows the `World`, the
+  scene camera and the scene box together; its methods are the frame's
+  camera (`frame`, `follow_frame`, `scripted_target`), the overworld curve
+  scale, the move-VM part camera, and the field / overworld screen passes as
+  finished `ScreenPrim`s (fog sheets, drop shadows, move-VM strips, attached
+  lights, world-map markers, sky band). Beside it, `weapon_trail_prims` and
+  `move_fx_streak_quads` are the battle screen FX over the world alone, each
+  host supplying only its battle projection. A host keeps what it holds
+  alone: the scripted-shot gate and glide, its debug vantages, its boot-title
+  gate, its leader-mesh answer.
 - **`world_map_panel_host`** - the field party HUD's gates and rows
   (`field_hud_suppressed`, `field_hud_view_mode`, `field_party_hud_members`).
 - **`shop`, `pause_screens`** - the party compare rows and the item target

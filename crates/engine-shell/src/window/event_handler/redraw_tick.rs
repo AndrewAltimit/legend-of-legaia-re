@@ -629,10 +629,7 @@ impl PlayWindowApp {
         // The fog pool's render step, once per sim tick through the session
         // step the browser page runs too (`BootSession::step_field_fog`); the
         // draw prep only wraps the quads it left (`take_field_fog_prims`).
-        let centre = [
-            (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
-            (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
-        ];
+        let centre = legaia_engine_world_views::screen_passes::scene_centre(self.scene_aabb);
         let _ = self.session.step_field_fog(centre);
         // Catch any path that re-uploaded VRAM over the battle
         // texture this frame (and restore it).
