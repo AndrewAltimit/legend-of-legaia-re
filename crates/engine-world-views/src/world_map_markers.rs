@@ -126,7 +126,7 @@ mod tests {
     #[test]
     fn player_marker_projects_on_screen_under_the_walk_camera() {
         let w = world_map_world();
-        let frame = legaia_engine_core::camera_view::resolve_field_camera(
+        let frame = crate::camera_view::resolve_field_camera(
             &w,
             &legaia_engine_field::camera::Camera::default(),
             None,
@@ -149,7 +149,7 @@ mod tests {
     #[test]
     fn no_player_marker_when_the_host_draws_the_mesh() {
         let w = world_map_world();
-        let frame = legaia_engine_core::camera_view::resolve_field_camera(
+        let frame = crate::camera_view::resolve_field_camera(
             &w,
             &legaia_engine_field::camera::Camera::default(),
             None,
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn walk_camera_quads_carry_scene_depth() {
         let w = world_map_world();
-        let frame = legaia_engine_core::camera_view::resolve_field_camera(
+        let frame = crate::camera_view::resolve_field_camera(
             &w,
             &legaia_engine_field::camera::Camera::default(),
             None,

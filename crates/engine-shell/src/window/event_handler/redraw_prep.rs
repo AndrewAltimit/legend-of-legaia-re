@@ -401,7 +401,7 @@ impl PlayWindowApp {
         // staged param (`camera_view::cutscene_owns_camera`) so a beat record
         // WITHOUT camera beats - a field taunt, the Drake mist-wall
         // force-walk bands - keeps the ordinary field / walk camera.
-        if legaia_engine_core::camera_view::cutscene_owns_camera(&self.session.host.world) {
+        if legaia_engine_world_views::camera_view::cutscene_owns_camera(&self.session.host.world) {
             let (focus, pitch, yaw, roll, h, tr_eye) = self.cutscene_view();
             // Glide pacing from the op-`0x45` `apply_trigger` (retail
             // `FUN_801DE084` → `FUN_801DB510`): a Configure with `apply == 0`

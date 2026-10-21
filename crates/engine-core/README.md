@@ -37,8 +37,8 @@ runtime ([`engine-menu-runtime`](../engine-menu-runtime/README.md)).
 - **Saves.** `World::save_full` / `load_full` over the LGSF container in
   `legaia-save`. Writing a save into a mounted memory-card image is
   `engine-menu-runtime::card_write`, above this crate.
-- **What the hosts read back.** The per-frame camera resolution
-  (`camera_view`) is here. The other host-facing reads of a `World` - the
+- **What the hosts read back** is not here. The host-facing reads of a
+  `World` - the per-frame camera resolution (`camera_view`), the
   visible-tile crop policy, scene staging, the world-map markers and sky, the
   field party HUD and the menu / minigame view models - are
   [`engine-world-views`](../engine-world-views/README.md), and the battle

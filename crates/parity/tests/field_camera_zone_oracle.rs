@@ -485,7 +485,9 @@ fn every_walkable_state_frames_through_the_zone_camera() {
             // the distance knob, so a framing measurement that re-derives the
             // view from `[params]` is measuring its own arithmetic. This line
             // is `psx_camera_vp`'s six inputs verbatim.
-            if let Some(v) = legaia_engine_core::camera_view::field_follow_view(&cam, &host.world) {
+            if let Some(v) =
+                legaia_engine_world_views::camera_view::field_follow_view(&cam, &host.world)
+            {
                 println!(
                     "[view] {}\tfocus={:.3},{:.3},{:.3}\tpitch={:.6}\tyaw={:.6}\t\
                      roll={:.6}\th={:.3}\ttr_eye={:.3},{:.3},{:.3}",

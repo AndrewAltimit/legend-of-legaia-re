@@ -202,7 +202,7 @@ Two things the browser host has to do that the native one gets for free:
 ## The camera (`play_camera`)
 
 The engine's, not the page's. `play_camera_vp(w, h)` resolves which camera owns
-the frame through the shared `engine-core::camera_view::resolve_field_camera` -
+the frame through the shared `engine-world-views::camera_view::resolve_field_camera` -
 the retail field follow view, an op-`0x45` cutscene shot with its between-beat
 glide, the overworld walk view, or the world map's top-view debug camera - and
 returns the column-major view-projection the play page's script uploads.

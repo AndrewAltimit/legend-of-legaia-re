@@ -81,7 +81,7 @@ CANONICAL_LADDERS = [
     # entered*. A ladder written to convert a row cannot convert it until it is
     # named here. When a lane adds a ladder, it belongs in this list in the same
     # commit.
-    ("world_map_render_ladder", "legaia-engine-core"),
+    ("world_map_render_ladder", "legaia-engine-world-views"),
     ("dev_menu_equip_ladder", "legaia-web-play"),
     ("audio_session_ladder", "legaia-engine-audio"),
     ("scene_bgm_transition_ladder", "legaia-engine-scene-host"),

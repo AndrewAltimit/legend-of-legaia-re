@@ -12,7 +12,7 @@
 //! (`docs/tooling/host-drift.md` tier 5).
 //!
 //! What the *kernels* do with the bag and the record is asserted disc-free in
-//! `crates/engine-core/tests/world_map_render_ladder.rs`, over the same
+//! `crates/engine-world-views/tests/world_map_render_ladder.rs`, over the same
 //! `DevMenuSession` wrapper both hosts call. This file's job is narrower and
 //! is the half that file cannot cover: that a pad stream on a real host
 //! reaches them at all.

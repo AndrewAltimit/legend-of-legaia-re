@@ -24,10 +24,10 @@
 
 use std::path::{Path, PathBuf};
 
-use legaia_engine_core::camera_view::cutscene_owns_camera;
 use legaia_engine_session::native::NativeSession;
 use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_engine_system::input::PadButton;
+use legaia_engine_world_views::camera_view::cutscene_owns_camera;
 
 fn extracted_dir() -> Option<PathBuf> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {

@@ -51,6 +51,7 @@ serde_json.workspace = true
 sha2.workspace = true
 
 [dev-dependencies]
+legaia-engine-world-views.workspace = true
 legaia-actor-formats.workspace = true
 legaia-iso.workspace = true
 legaia-mdec.workspace = true

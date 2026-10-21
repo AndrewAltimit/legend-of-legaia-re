@@ -112,7 +112,7 @@ pub fn fishing_line_screen_prims(
     }
     let view =
         legaia_engine_minigame_scenes::fishing_venue::venue_view(&world.minigames).or_else(|| {
-            legaia_engine_core::camera_view::resolve_field_camera(
+            legaia_engine_world_views::camera_view::resolve_field_camera(
                 world,
                 camera,
                 None,

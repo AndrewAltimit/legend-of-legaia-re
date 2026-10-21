@@ -10,7 +10,7 @@
 //! The native window did all of that. Two hosts, one engine, two cameras.
 //!
 //! Now both hosts resolve the frame through
-//! [`legaia_engine_core::camera_view`] and upload the matrix it returns. The
+//! [`legaia_engine_world_views::camera_view`] and upload the matrix it returns. The
 //! page keeps exactly one camera of its own - the drag-orbit debug vantage -
 //! and it is an explicit override with the native window's `F3` semantics,
 //! not the default projection.
@@ -19,10 +19,10 @@
 //! (the field follow camera).
 
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::camera_view;
 use legaia_engine_field::camera_frame;
 use legaia_engine_field::camera_frame::FieldCameraFrame;
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_world_views::camera_view;
 use wasm_bindgen::prelude::*;
 
 impl LegaiaRuntime {

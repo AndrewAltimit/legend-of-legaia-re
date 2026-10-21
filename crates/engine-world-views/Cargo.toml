@@ -27,7 +27,9 @@ legaia-tmd.workspace = true
 glam.workspace = true
 
 [dev-dependencies]
+legaia-engine-dev-menu.workspace = true
 legaia-engine-system.workspace = true
+legaia-engine-vm.workspace = true
 legaia-save.workspace = true
 # Named only by the disc-gated scene-assembly tests.
 legaia-container-formats.workspace = true

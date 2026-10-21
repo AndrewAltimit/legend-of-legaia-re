@@ -50,7 +50,7 @@ impl<S: AudioSink> BootSession<S> {
         if !legaia_engine_core::world::World::fog_mode(world.mode) {
             return None;
         }
-        let frame = legaia_engine_core::camera_view::resolve_field_camera(
+        let frame = legaia_engine_world_views::camera_view::resolve_field_camera(
             world,
             &self.camera,
             None,
@@ -82,7 +82,7 @@ impl<S: AudioSink> BootSession<S> {
         if !legaia_engine_core::world::World::fog_mode(world.mode) || !world.fog.gate {
             return;
         }
-        let frame = legaia_engine_core::camera_view::resolve_field_camera(
+        let frame = legaia_engine_world_views::camera_view::resolve_field_camera(
             world,
             &self.camera,
             None,

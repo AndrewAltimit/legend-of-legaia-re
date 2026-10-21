@@ -1638,7 +1638,7 @@ are two region records' compositions.
 
 **Port.** The engine runs the zone camera in both walkable modes
 (`camera::zone_camera_scene`).
-[`camera_view::resolve_field_camera`](../../crates/engine-core/src/camera_view.rs)'s
+[`camera_view::resolve_field_camera`](../../crates/engine-world-views/src/camera_view.rs)'s
 world-map arm hands both hosts the pose as `FieldCameraFrame::WorldMapWalk`
 (the eye trio in retail GTE units, the 6x scale applied as a world transform
 about the focus globals `0x80089118/20`). The scale rides retail's rotation

@@ -1234,7 +1234,6 @@
     "battle_party_form",
     "battle_round",
     "battle_sideband_textures",
-    "camera_view",
     "dance_venue",
     "fishing_exchange_input",
     "frame_step",
@@ -2165,6 +2164,7 @@
     "engine-scene-host",
     "engine-system",
     "engine-vm",
+    "engine-world-views",
     "font",
     "game-tables",
     "iso",
@@ -2180,7 +2180,6 @@
    "dev_deps": [
     "engine-cheats",
     "engine-minigames",
-    "engine-world-views",
     "lzs",
     "mes",
     "minigame-formats",
@@ -2496,7 +2495,9 @@
    ],
    "dev_deps": [
     "container-formats",
+    "engine-dev-menu",
     "engine-system",
+    "engine-vm",
     "lzs",
     "save",
     "tim"
@@ -2504,6 +2505,7 @@
    "bins": [],
    "lib": true,
    "modules": [
+    "camera_view",
     "effect_draws",
     "field_view_window",
     "muscle_dome",
@@ -2519,10 +2521,11 @@
    ],
    "band": "drivers",
    "track": "engine",
-   "scope": "The hosts' reads of a running <code>World</code> outside battle: the visible-tile crop policy, scene staging, world-map markers and sky, the field party HUD, the effect draw lists, and the shop / pause / tile-board / timed-fight / Muscle Dome view models. Above <code>engine-core</code>.",
+   "scope": "The hosts' reads of a running <code>World</code> outside battle: the per-frame camera resolution, the visible-tile crop policy, scene staging, world-map markers and sky, the field party HUD, the effect draw lists, and the shop / pause / tile-board / timed-fight / Muscle Dome view models. Above <code>engine-core</code>.",
    "dependents": [
     "engine-scene-host",
     "engine-screens",
+    "engine-session",
     "engine-shell",
     "web-play",
     "web-viewer"
@@ -3026,6 +3029,7 @@
     "actor-formats",
     "arts-patch",
     "disc-patch",
+    "engine-world-views",
     "game-tables",
     "iso",
     "lzs",

@@ -25,8 +25,8 @@
 //! REF: FUN_801DE084 (the op-`0x45` Configure apply handler), FUN_801DBE9C
 //! (the field follow camera), FUN_801E76D4 (the world-map controller).
 
-use crate::world::World;
 use legaia_engine_camera::psx_camera::FieldCameraView;
+use legaia_engine_core::world::World;
 use legaia_engine_field::camera::{CUTSCENE_WORLD_SCALE, Camera};
 use legaia_engine_field::camera_frame::{
     FIELD_CAM_DEPTH, FIELD_FOLLOW_YAW_UNITS, FIELD_H, FIELD_PITCH_UNITS, FOLLOW_PIVOT_LIFT,

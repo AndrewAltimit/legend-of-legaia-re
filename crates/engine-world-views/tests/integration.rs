@@ -9,3 +9,4 @@ mod field_lit_rows_cave01_disc;
 mod scene_clut_over_shared_layer;
 mod scene_mesh_pool_walk_disc;
 mod world_map_kingdom_clut_overwrite;
+mod world_map_render_ladder;

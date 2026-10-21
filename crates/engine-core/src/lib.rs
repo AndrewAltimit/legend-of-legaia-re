@@ -10,7 +10,6 @@ pub mod battle_cam_inputs;
 pub mod battle_party_form;
 pub mod battle_round;
 pub mod battle_sideband_textures;
-pub mod camera_view;
 pub mod dance_venue;
 pub mod fishing_exchange_input;
 pub mod frame_step;

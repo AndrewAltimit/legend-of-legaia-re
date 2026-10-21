@@ -5,10 +5,10 @@ use super::*;
 /// Retail field follow-camera parameters: pitch `_DAT_8007B790 = 450` units
 /// (~39.6 deg down-tilt), GTE `H = _DAT_8007B6F4 = 512`, and the
 /// engine-calibrated eye-back depth. They live in the shared camera resolver
-/// (`legaia_engine_core::camera_view`) because the browser play page frames
+/// (`legaia_engine_world_views::camera_view`) because the browser play page frames
 /// the same shot from the same numbers; re-declaring them here is how the two
 /// hosts' field cameras used to drift apart without a diff.
-use legaia_engine_core::camera_view;
+use legaia_engine_world_views::camera_view;
 
 /// The debug orbit vantage's **input vocabulary**, shared with the browser
 /// play page's own orbit (`site/js/play-app.js`, its `pointermove` and

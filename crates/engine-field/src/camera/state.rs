@@ -150,7 +150,7 @@ pub struct Camera {
 ///
 /// Lives on [`Camera`] so both hosts get one camera: the native window and
 /// the browser play page each read the composed globals through
-/// `legaia_engine_core::camera_view::field_follow_view`.
+/// `legaia_engine_world_views::camera_view::field_follow_view`.
 #[derive(Debug, Clone)]
 pub struct ZoneFollow {
     /// The camera parameter block (`0x8007B607..0x8007B627`).
@@ -164,7 +164,7 @@ pub struct ZoneFollow {
     /// (`0x1F800384..87`), which the composer's sweeps span.
     pub attrs: crate::field_regions::RegionAttributes,
     /// `true` once this scene's follow camera has composed from field
-    /// terrain - the gate `legaia_engine_core::camera_view::field_follow_view` reads
+    /// terrain - the gate `legaia_engine_world_views::camera_view::field_follow_view` reads
     /// to prefer the composed globals over its pinned fallback.
     pub active: bool,
     /// The player tile the block was last queried at.

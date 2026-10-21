@@ -18,8 +18,8 @@
 //! `legaia_engine_session::BootSession::step_field_fog`. Its *draw* - the
 //! quads the step left - is [`HostView::fog_prims`].
 
+use crate::camera_view::{cutscene_view, resolve_field_camera};
 use legaia_engine_camera::psx_camera::FieldCameraView;
-use legaia_engine_core::camera_view::{cutscene_view, resolve_field_camera};
 use legaia_engine_core::world::World;
 use legaia_engine_field::camera::Camera;
 use legaia_engine_field::camera_frame::{FieldCameraFrame, frame_curve_scale};

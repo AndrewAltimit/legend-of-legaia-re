@@ -3,7 +3,7 @@
 //! per-pass constants every host reads.
 //!
 //! Resolving *which* arm a frame takes reads the live world, and sits above
-//! this crate (`legaia_engine_core::camera_view::resolve_field_camera`);
+//! this crate (`legaia_engine_world_views::camera_view::resolve_field_camera`);
 //! everything here is a function of the resolved frame alone, so the
 //! kernels that project through a frame (the fog pool, the overworld ground
 //! cue, the curvature bend) name it directly.
@@ -27,7 +27,7 @@ use legaia_engine_mode::mode::SceneMode;
 /// composer `FUN_801DAB90` turns the block plus the player's position into a
 /// target and the per-frame ease walks `_DAT_8007B790` toward it. That path
 /// is [`Camera::zone`](crate::camera::Camera::zone), live whenever the world carries field
-/// terrain, and `legaia_engine_core::camera_view::field_follow_view` reads its output. This constant is what
+/// terrain, and `legaia_engine_world_views::camera_view::field_follow_view` reads its output. This constant is what
 /// a world with **no** terrain loaded (a unit world, a bare test scene)
 /// frames with - the anchor state's own reading, which the zone camera
 /// reproduces there from `town01`'s record.
@@ -48,7 +48,7 @@ pub const FIELD_FOLLOW_YAW_UNITS: f32 = -160.0;
 /// Field GTE `H` (`_DAT_8007B6F4`) fallback. `512` in the field, `256` in
 /// battle - written per phase, unlike `OFX` / `OFY`.
 ///
-/// `legaia_engine_core::camera_view::field_follow_view` prefers the live
+/// `legaia_engine_world_views::camera_view::field_follow_view` prefers the live
 /// [`legaia_engine_camera::retail_cam::RetailCamGlobals::h`] whenever the camera carries one -
 /// the zone camera's composed `B618`, or an op-`0x45` slot-`9` beat. Retail's
 /// scene-entry reset leaves `H` at `0` ("as the scene establishes it"), which
@@ -77,10 +77,10 @@ pub const RETAIL_FIELD_DEPTH_UNITS: f32 = 16384.0;
 /// field state holds `_DAT_8007BF10 = 24576 * I` - a 6x uniform scale. So
 /// retail's transform is `screen = proj(H) * (S * Rot * (v - focus) +
 /// tr_eye)`, and a 1x renderer reproduces it pixel-for-pixel with
-/// `tr_eye / S` - the same reduction `legaia_engine_core::camera_view::cutscene_view` applies to an
+/// `tr_eye / S` - the same reduction `legaia_engine_world_views::camera_view::cutscene_view` applies to an
 /// op-`0x45` beat's offset trio.
 ///
-/// While the zone camera is live, `legaia_engine_core::camera_view::field_follow_view` feeds the whole
+/// While the zone camera is live, `legaia_engine_world_views::camera_view::field_follow_view` feeds the whole
 /// composed trio instead of this constant.
 pub const FIELD_CAM_DEPTH: f32 = RETAIL_FIELD_DEPTH_UNITS / CUTSCENE_WORLD_SCALE;
 
@@ -131,7 +131,7 @@ pub const FOLLOW_PIVOT_LIFT: f32 = 64.0;
 /// The **terrain-less fallback** overworld walk view, for a controller zoom.
 ///
 /// A world-map scene with its field terrain loaded frames through the zone
-/// camera instead (`legaia_engine_core::camera_view::resolve_field_camera`'s world-map arm), which is what
+/// camera instead (`legaia_engine_world_views::camera_view::resolve_field_camera`'s world-map arm), which is what
 /// retail runs; this pinned pose is only what a world with no zone table
 /// (unit worlds, a headless overworld) is framed with. Two resident states
 /// sit on it, but the per-region captures in `docs/subsystems/world-map.md`
@@ -166,7 +166,7 @@ pub fn world_map_walk_view(azimuth: i32, zoom: i32) -> FieldCameraView {
     }
 }
 
-/// Re-express a zone-camera `legaia_engine_core::camera_view::field_follow_view` pose in the overworld walk
+/// Re-express a zone-camera `legaia_engine_world_views::camera_view::field_follow_view` pose in the overworld walk
 /// frame [`world_map_walk_vp`] composes: focus at the origin (the player
 /// translation carries it), eye trio back in retail GTE units (the follow
 /// view divides it by the 6x world scale; the walk frame scales the world

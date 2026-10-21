@@ -18,7 +18,7 @@
 //!
 //! ```text
 //! cargo llvm-cov clean --profraw-only
-//! cargo llvm-cov -p legaia-engine-core \
+//! cargo llvm-cov -p legaia-engine-world-views \
 //!     --test integration world_map_render_ladder:: --no-report
 //! cargo llvm-cov report --json \
 //!     --output-path target/cov-world_map_render_ladder.json
@@ -248,7 +248,7 @@ fn rung2b_map_display(w: &mut World) -> Result<(), String> {
         return Err("the open display still carries a fade".into());
     }
     if !matches!(
-        legaia_engine_core::camera_view::map_display_frame(w),
+        legaia_engine_world_views::camera_view::map_display_frame(w),
         Some(legaia_engine_field::camera_frame::FieldCameraFrame::WorldMapDisplay { .. })
     ) {
         return Err("the display did not take the camera".into());
@@ -289,7 +289,7 @@ fn rung2b_map_display(w: &mut World) -> Result<(), String> {
     if w.screen_fade_draws().is_empty() {
         return Err("the exit spawned no walk-frame fade-in".into());
     }
-    if legaia_engine_core::camera_view::map_display_frame(w).is_some() {
+    if legaia_engine_world_views::camera_view::map_display_frame(w).is_some() {
         return Err("the closed display kept the camera".into());
     }
     // Let the fade-in run out before the next rung reads a quiet frame.

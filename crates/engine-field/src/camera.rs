@@ -48,7 +48,7 @@ pub const CUTSCENE_WORLD_SCALE: f32 = 6.0;
 /// vocabulary both hosts steer from: the play-window's left-mouse drag and
 /// wheel, and the browser play page's `pointermove` / `wheel` handlers on the
 /// canvas. The knobs compose onto the retail zone-driven follow camera
-/// (`legaia_engine_core::camera_view::field_follow_view`) and stay centred on the
+/// (`legaia_engine_world_views::camera_view::field_follow_view`) and stay centred on the
 /// character; every one is identity at its default, so the untouched camera
 /// is the retail shot bit for bit.
 ///

@@ -15,7 +15,7 @@ use legaia_engine_scene::field_view_window::{ViewCells, framing_is_retail, view_
 /// Whether this frame's camera stands where retail's would: the host's own
 /// debug vantage (`F3`, `debug_camera`) is off, and the frame is a battle
 /// frame (the phase camera), a scripted shot
-/// ([`legaia_engine_core::camera_view::cutscene_owns_camera`] - the cutscene
+/// ([`crate::camera_view::cutscene_owns_camera`] - the cutscene
 /// arm reads none of the user's follow knobs), or the follow camera at
 /// retail framing ([`framing_is_retail`]: the `Retail` distance preset with
 /// the drag / tilt / zoom knobs at identity).
@@ -32,7 +32,7 @@ use legaia_engine_scene::field_view_window::{ViewCells, framing_is_retail, view_
 pub fn retail_vantage(world: &World, camera: &Camera, debug_camera: bool) -> bool {
     !debug_camera
         && (world.mode == SceneMode::Battle
-            || legaia_engine_core::camera_view::cutscene_owns_camera(world)
+            || crate::camera_view::cutscene_owns_camera(world)
             || framing_is_retail(camera))
 }
 
