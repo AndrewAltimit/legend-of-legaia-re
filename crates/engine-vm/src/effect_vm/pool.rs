@@ -671,7 +671,9 @@ impl Pool {
 
             // --- child walk: anim frame advance + motion integration -----
             for ci in 0..MAX_CHILD_SLOTS {
-                if self.children[ci].frame_count == 0 || (only.is_some() && !seeded_here[ci]) {
+                if self.children[ci].frame_count == 0
+                    || (only.is_some() && seeded_here.get(ci) != Some(&true))
+                {
                     continue;
                 }
                 live_slots += 1;
