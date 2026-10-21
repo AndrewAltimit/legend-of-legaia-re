@@ -1,144 +1,197 @@
 <!--HEAD: <style>
-.npc-shell { display: flex; flex-direction: column; gap: 1rem; }
-.file-input-group {
-  display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;
-  padding: 0.75rem; border: 1px solid var(--border); background: var(--bg-card);
-}
-.file-input-group input[type="file"] { color: var(--text-muted); font-family: var(--font-mono); font-size: 0.85rem; }
-.npc-status { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.82rem; }
+/* NPC page layout. Everything here is scoped to this page.
+ *
+ *   toolbar   location picker + kind filters + scene status
+ *   stage     model card | conversation   (side by side once the content
+ *             column is wide enough - a container query, so the sidebar /
+ *             rail breakpoints of the app shell don't have to be mirrored)
+ *   cast      the clickable grid of every actor in the location           */
+.npc-shell { display: flex; flex-direction: column; gap: 1rem; container-type: inline-size; }
+.npc-status { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.8rem; line-height: 1.5; }
+#npc-main { display: flex; flex-direction: column; gap: 0.85rem; min-width: 0; }
 
-.npc-picker { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
+/* ---- toolbar ---- */
+.npc-toolbar {
+  display: flex; flex-direction: column; gap: 0.5rem;
+  padding: 0.65rem 0.75rem; background: var(--bg-card); border: 1px solid var(--border);
+}
+.npc-picker { display: flex; gap: 0.5rem 0.75rem; align-items: center; flex-wrap: wrap; }
+.npc-picker label { font-size: 0.85rem; color: var(--text); font-weight: 600; }
 .npc-select {
   background: var(--bg-code); color: var(--text); border: 1px solid var(--border);
   padding: 0.3rem 0.5rem; font: inherit; font-size: 0.85rem; border-radius: 3px;
-  min-width: 16rem;
+  min-width: 0; width: min(100%, 20rem);
 }
 .npc-filters { display: flex; gap: 0.35rem; flex-wrap: wrap; }
 .npc-filter {
-  background: var(--bg-card); color: var(--text-muted); border: 1px solid var(--border);
-  padding: 0.25rem 0.55rem; font-family: var(--font-mono); font-size: 0.74rem;
-  border-radius: 3px; cursor: pointer;
+  background: var(--bg-code); color: var(--text-muted); border: 1px solid var(--border);
+  padding: 0.22rem 0.55rem; font-family: var(--font-mono); font-size: 0.74rem;
+  border-radius: 999px; cursor: pointer;
 }
 .npc-filter:hover { border-color: var(--accent); color: var(--text); }
 .npc-filter.is-active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.npc-filter-n { opacity: 0.7; margin-left: 0.3em; }
 
-.npc-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 0.5rem;
+/* ---- stage: model card + conversation ---- */
+.npc-stage {
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.85rem; align-items: start;
+  scroll-margin-top: calc(var(--topbar-h) + 0.75rem);
 }
-.npc-card {
+@container (min-width: 760px) {
+  .npc-stage { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  /* The tree scrolls inside its own column so the cast grid stays one
+   * scroll away however long the conversation is. */
+  .npc-convo { max-height: calc(100vh - var(--topbar-h) - 2rem); overflow-y: auto; }
+}
+/* Pin the model beside a long tree, but only where the whole card fits. */
+@media (min-height: 760px) {
+  @container (min-width: 760px) {
+    .npc-model { position: sticky; top: calc(var(--topbar-h) + 0.75rem); }
+  }
+}
+.npc-model {
   background: var(--bg-card); border: 1px solid var(--border);
-  padding: 0.5rem 0.6rem; cursor: pointer;
-  font-family: var(--font-mono); font-size: 0.78rem;
-  display: flex; flex-direction: column; gap: 0.2rem; min-width: 0;
+  padding: 0.75rem; display: flex; flex-direction: column; gap: 0.6rem; min-width: 0;
 }
-.npc-card:hover { border-color: var(--accent); }
-.npc-card.is-active { border-color: var(--accent); background: var(--bg-raised); }
-.npc-card-name {
-  color: var(--text); font-size: 0.85rem;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.npc-card-meta { color: var(--text-dim); font-size: 0.72rem; }
-.npc-card-tags { display: flex; gap: 0.25rem; flex-wrap: wrap; margin-top: 0.1rem; }
-.npc-tag {
-  display: inline-block; padding: 0.02rem 0.35rem;
-  background: var(--bg-code); color: var(--text-dim); font-size: 0.68rem;
-  border: 1px solid var(--border); border-radius: 2px;
-}
-.npc-tag-talk { color: var(--accent); border-color: var(--accent); }
-.npc-tag-cond { color: var(--text-muted); font-style: italic; }
-
-.npc-viewer-wrap {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 330px);
-  gap: 1rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  padding: 0.85rem;
-}
-@media (max-width: 860px) { .npc-viewer-wrap { grid-template-columns: minmax(0, 1fr); } }
 canvas.npc-canvas {
-  width: 100%; aspect-ratio: 4 / 3; max-height: 460px;
+  width: 100%; height: clamp(220px, 34vh, 320px);
   background: radial-gradient(circle at 50% 38%, #1c2026 0%, #0c0e12 100%);
   border: 1px solid var(--border); display: block; cursor: grab;
 }
 canvas.npc-canvas:active { cursor: grabbing; }
-.npc-side { font-family: var(--font-mono); font-size: 0.82rem; display: flex; flex-direction: column; gap: 0.55rem; }
-.npc-side h3 { margin: 0; color: var(--text); font-size: 1rem; }
-.npc-stat { color: var(--text-muted); line-height: 1.6; }
+.npc-side { font-family: var(--font-mono); font-size: 0.8rem; display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+.npc-side h3 {
+  margin: 0; color: var(--text); font-size: 1rem;
+  line-height: 1.35; overflow-wrap: anywhere;
+}
+.npc-side h3 .npc-name-quote::before { content: "\201C"; color: var(--accent); }
+.npc-side h3 .npc-name-quote::after { content: "\2026\201D"; color: var(--text-dim); }
+.npc-facts {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.15rem 0.75rem; margin: 0; color: var(--text-muted); line-height: 1.45;
+}
+.npc-facts dt { color: var(--text-dim); }
+.npc-facts dd { margin: 0; overflow-wrap: anywhere; }
+.npc-facts b { color: var(--text); }
+.npc-stat { color: var(--text-muted); line-height: 1.5; }
 .npc-stat b { color: var(--text); }
-.npc-quote {
-  color: var(--text-muted); font-size: 0.78rem; line-height: 1.5;
-  background: var(--bg-code); border-left: 2px solid var(--accent);
-  padding: 0.4rem 0.55rem; white-space: pre-wrap;
-}
 .npc-section-label {
-  color: var(--text-dim); font-size: 0.7rem; text-transform: uppercase;
-  letter-spacing: 0.05em; margin-top: 0.2rem;
+  color: var(--text-dim); font-size: 0.68rem; text-transform: uppercase;
+  letter-spacing: 0.05em; min-width: 5.5rem;
 }
-.npc-controls { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.npc-ctl-group { display: flex; flex-direction: column; gap: 0.4rem; padding-top: 0.5rem; border-top: 1px solid var(--border); }
+.npc-ctl-row { display: flex; gap: 0.4rem 0.5rem; align-items: center; flex-wrap: wrap; }
+.npc-controls { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.npc-controls[hidden] { display: none; }
 .npc-controls button {
   background: var(--bg-card); color: var(--text); border: 1px solid var(--border);
-  padding: 0.32rem 0.6rem; font-family: var(--font-mono); font-size: 0.76rem; cursor: pointer;
+  padding: 0.28rem 0.55rem; font-family: var(--font-mono); font-size: 0.74rem; cursor: pointer;
 }
 .npc-controls button:hover { border-color: var(--accent); }
 .npc-controls button[disabled] { opacity: 0.4; cursor: not-allowed; }
 .npc-anm-row { display: flex; align-items: center; gap: 0.55rem; }
-.npc-anm-row input[type=range] { flex: 1; }
+.npc-anm-row input[type=range] { flex: 1; min-width: 0; }
 .npc-anm-readout {
-  font: 0.76rem/1.0 var(--font-mono, monospace);
+  font: 0.74rem/1.0 var(--font-mono, monospace);
   color: var(--text-muted); min-width: 11ch; text-align: right;
 }
-.npc-note { color: var(--text-dim); font-size: 0.74rem; line-height: 1.55; }
+.npc-note { color: var(--text-dim); font-size: 0.74rem; line-height: 1.5; }
 
-/* Conversation tree: one actor's whole dialogue, every branch. */
+/* ---- conversation tree: one actor's whole dialogue, every branch ---- */
 .npc-convo {
   background: var(--bg-card); border: 1px solid var(--border);
-  padding: 0.75rem 0.85rem; margin-bottom: 0.75rem; min-width: 0;
+  padding: 0 0.75rem 0.75rem; min-width: 0;
 }
-.npc-convo-head { display: flex; gap: 0.6rem; align-items: baseline; flex-wrap: wrap; margin-bottom: 0.5rem; }
+.npc-convo-head {
+  position: sticky; top: 0; z-index: 1; background: var(--bg-card);
+  display: flex; gap: 0.25rem 0.6rem; align-items: center; flex-wrap: wrap;
+  padding: 0.65rem 0 0.5rem; margin-bottom: 0.5rem; border-bottom: 1px solid var(--border);
+}
 .npc-convo-head h3 { margin: 0; font-size: 1rem; color: var(--text); }
-.npc-convo-meta { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.74rem; flex: 1; min-width: 10rem; }
-.npc-convo-tree { font-size: 0.84rem; line-height: 1.5; display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
-.npc-convo-tree .npc-seq { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+.npc-convo-meta { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.72rem; flex: 1 1 12rem; min-width: 0; }
+.npc-convo-empty { color: var(--text-dim); font-size: 0.82rem; line-height: 1.5; margin: 0; }
+.npc-convo-tree { font-size: 0.84rem; line-height: 1.5; display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
+.npc-convo-tree .npc-seq { display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
 .npc-page {
   background: var(--bg-code); border-left: 2px solid var(--accent);
-  padding: 0.35rem 0.55rem; color: var(--text); overflow-wrap: anywhere;
+  padding: 0.35rem 0.55rem; color: var(--text); overflow-wrap: anywhere; border-radius: 0 3px 3px 0;
 }
 .npc-page-line { white-space: pre-wrap; }
+.npc-page-line + .npc-page-line { margin-top: 0.05rem; }
 .npc-page-who {
-  color: var(--text-dim); font-family: var(--font-mono); font-size: 0.68rem;
+  color: var(--text-dim); font-family: var(--font-mono); font-size: 0.66rem;
   text-transform: uppercase; letter-spacing: 0.04em;
 }
 .npc-page-balloon { border-left-style: dashed; }
-.npc-arm { border-left: 1px solid var(--border); padding-left: 0.6rem; min-width: 0; }
+/* An arm hangs off a thin guide rail; a narrow column keeps a deep tree
+ * readable by indenting each level only a little. */
+.npc-arm { min-width: 0; }
 .npc-arm > summary {
-  cursor: pointer; color: var(--text-muted); font-family: var(--font-mono);
-  font-size: 0.76rem; padding: 0.15rem 0; overflow-wrap: anywhere;
+  list-style: none; cursor: pointer; color: var(--text-muted); font-family: var(--font-mono);
+  font-size: 0.75rem; line-height: 1.45; padding: 0.15rem 0 0.15rem 1.1rem; position: relative;
+  overflow-wrap: anywhere; border-radius: 3px;
 }
-.npc-arm > summary:hover { color: var(--text); }
-.npc-arm-body { padding: 0.25rem 0 0.15rem; }
+.npc-arm > summary::-webkit-details-marker { display: none; }
+.npc-arm > summary::before {
+  content: "\25B8"; position: absolute; left: 0.2rem; top: 0.15rem;
+  color: var(--text-dim); transition: transform 0.12s;
+}
+.npc-arm[open] > summary::before { transform: rotate(90deg); }
+.npc-arm > summary:hover { color: var(--text); background: var(--bg-raised); }
+.npc-arm-body { margin-left: 0.45rem; padding: 0.3rem 0 0.15rem 0.65rem; border-left: 1px solid var(--border); }
+.npc-arm-count { color: var(--text-dim); font-size: 0.68rem; white-space: nowrap; }
 .npc-kw { color: var(--accent); font-weight: 600; }
 .npc-choice-label, .npc-next-label {
-  color: var(--text-dim); font-family: var(--font-mono); font-size: 0.7rem;
+  color: var(--text-dim); font-family: var(--font-mono); font-size: 0.68rem;
   text-transform: uppercase; letter-spacing: 0.05em;
 }
 .npc-option > summary { color: var(--text); font-family: inherit; font-size: 0.84rem; }
-.npc-next { border-top: 1px dashed var(--border); padding-top: 0.3rem; }
+.npc-next { border-top: 1px dashed var(--border); padding-top: 0.35rem; }
 .npc-action, .npc-end, .npc-goto {
-  font-family: var(--font-mono); font-size: 0.74rem; color: var(--text-muted);
-  overflow-wrap: anywhere;
+  font-family: var(--font-mono); font-size: 0.73rem; color: var(--text-muted);
+  overflow-wrap: anywhere; line-height: 1.45;
 }
+.npc-goto { display: flex; gap: 0.35rem; align-items: baseline; }
 .npc-action::before { content: "\25B8  "; color: var(--accent); }
 .npc-action-flag { color: var(--text-dim); }
 .npc-end { color: var(--text-dim); font-style: italic; }
 .npc-end-undecoded, .npc-end-budget { color: var(--accent); font-style: normal; }
 .npc-goto button {
   background: none; border: none; padding: 0; font: inherit; color: var(--accent);
-  cursor: pointer; text-decoration: underline; text-align: left;
+  cursor: pointer; text-decoration: underline; text-align: left; overflow-wrap: anywhere;
 }
 .npc-flash { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---- cast grid ---- */
+.npc-cast-head { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; margin: 0.25rem 0 -0.35rem; }
+.npc-cast-head h3 { margin: 0; font-size: 1rem; color: var(--text); }
+.npc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 0.45rem;
+}
+@container (max-width: 480px) { .npc-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); } }
+.npc-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  padding: 0.45rem 0.6rem; cursor: pointer; text-align: left; color: inherit;
+  font-family: var(--font-mono); font-size: 0.76rem;
+  display: flex; flex-direction: column; gap: 0.2rem; min-width: 0;
+}
+.npc-card:hover { border-color: var(--accent); }
+.npc-card.is-active { border-color: var(--accent); background: var(--bg-raised); box-shadow: inset 3px 0 0 var(--accent); }
+.npc-card-name {
+  color: var(--text); font-size: 0.82rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.npc-card-meta { color: var(--text-dim); font-size: 0.7rem; }
+.npc-card-tags { display: flex; gap: 0.25rem; flex-wrap: wrap; margin-top: 0.1rem; }
+.npc-tag {
+  display: inline-block; padding: 0.02rem 0.35rem;
+  background: var(--bg-code); color: var(--text-dim); font-size: 0.66rem;
+  border: 1px solid var(--border); border-radius: 2px;
+}
+.npc-tag-talk { color: var(--accent); border-color: var(--accent); }
+.npc-tag-cond { color: var(--text-muted); font-style: italic; }
 </style>
 <script src="js/rom-cache.js"></script>
 <script src="js/disc-info.js"></script>
@@ -159,60 +212,70 @@ canvas.npc-canvas:active { cursor: grabbing; }
 </div>
 
 <div class="hint">
-  <strong>How to use it.</strong> Load a disc, choose a location, then click a card in the cast grid. Each card is labelled with the first line that character says to you - the game has no other name for most of them. The side panel spins the model, scrubs its idle clip frame by frame, snaps back to the rest pose, and downloads the posed model as a textured <code>.glb</code>. Under the viewer, the <strong>Conversation</strong> panel lays out everything the character can say: each story stage's lines, the choices you can pick and where each one leads, and what talking to them again does.
+  <strong>How to use it.</strong> Load a disc, choose a location, then click a card in the cast grid. Each card is labelled with the first line that character says to you - the game has no other name for most of them. The model panel spins the model, scrubs its idle clip frame by frame, snaps back to the rest pose, and downloads the posed model as a textured <code>.glb</code>. Beside it (below it on a phone), the <strong>Conversation</strong> panel lays out everything the character can say: each story stage's lines, the choices you can pick and where each one leads, and what talking to them again does.
 </div>
 
 <section class="doc-section">
   <div class="npc-shell">
     <div id="npc-main" style="display: none;">
-      <div class="npc-picker">
-        <label for="npc-scene"><strong>Location:</strong></label>
-        <select id="npc-scene" class="npc-select"></select>
-        <div class="npc-filters" id="npc-filters"></div>
+      <div class="npc-toolbar">
+        <div class="npc-picker">
+          <label for="npc-scene">Location</label>
+          <select id="npc-scene" class="npc-select"></select>
+          <div class="npc-filters" id="npc-filters" role="group" aria-label="Show actors of kind"></div>
+        </div>
+        <div class="npc-status" id="npc-scene-status"></div>
       </div>
-      <div class="npc-status" id="npc-scene-status" style="margin: 0.5rem 0;"></div>
 
-      <div class="npc-viewer-wrap" id="npc-viewer-wrap" style="display: none; margin-bottom: 0.75rem;">
-        <div>
+      <div class="npc-stage" id="npc-viewer-wrap" style="display: none;">
+        <div class="npc-model">
           <canvas id="npc-canvas" class="npc-canvas" width="640" height="480"></canvas>
-        </div>
-        <div class="npc-side">
-          <h3 id="npc-name">-</h3>
-          <div class="npc-quote" id="npc-quote" style="display: none;"></div>
-          <div class="npc-stat" id="npc-stats"></div>
+          <div class="npc-side">
+            <h3 id="npc-name">-</h3>
+            <div id="npc-stats"></div>
 
-          <div class="npc-section-label">View</div>
-          <div class="npc-controls">
-            <button id="npc-spin-btn" type="button">&#9208; stop spin</button>
-            <button id="npc-reset-btn" type="button">&#8634; reset view</button>
-            <button id="npc-glb-btn" class="btn-accent" type="button" title="Download this NPC as a textured glTF model, posed as shown">Download .glb</button>
+            <div class="npc-ctl-group">
+              <div class="npc-ctl-row">
+                <span class="npc-section-label">View</span>
+                <div class="npc-controls">
+                  <button id="npc-spin-btn" type="button">&#9208; stop spin</button>
+                  <button id="npc-reset-btn" type="button">&#8634; reset view</button>
+                  <button id="npc-glb-btn" class="btn-accent" type="button" title="Download this NPC as a textured glTF model, posed as shown">Download .glb</button>
+                </div>
+              </div>
+              <div class="npc-ctl-row">
+                <span class="npc-section-label" id="npc-anm-label">Animation</span>
+                <div class="npc-controls">
+                  <button id="npc-play-btn" type="button">&#9654; play</button>
+                  <button id="npc-rest-btn" type="button">&#8634; rest pose</button>
+                </div>
+              </div>
+              <div class="npc-anm-row">
+                <input type="range" id="npc-anm-frame" min="0" max="0" value="0" aria-labelledby="npc-anm-label">
+                <span id="npc-anm-readout" class="npc-anm-readout">-</span>
+              </div>
+              <div class="npc-note" id="npc-anm-note"></div>
+            </div>
           </div>
-
-          <div class="npc-section-label" id="npc-anm-label">Animation</div>
-          <div class="npc-anm-row">
-            <input type="range" id="npc-anm-frame" min="0" max="0" value="0">
-            <span id="npc-anm-readout" class="npc-anm-readout">-</span>
-          </div>
-          <div class="npc-controls">
-            <button id="npc-play-btn" type="button">&#9654; play</button>
-            <button id="npc-rest-btn" type="button">&#8634; rest pose</button>
-          </div>
-          <div class="npc-note" id="npc-anm-note"></div>
         </div>
+
+        <section class="npc-convo" id="npc-convo" aria-label="Conversation">
+          <div class="npc-convo-head">
+            <h3>Conversation</h3>
+            <span class="npc-convo-meta" id="npc-convo-meta"></span>
+            <div class="npc-controls" id="npc-convo-ctl">
+              <button id="npc-convo-open" type="button">expand all</button>
+              <button id="npc-convo-close" type="button">collapse all</button>
+            </div>
+          </div>
+          <div class="npc-convo-tree" id="npc-convo-tree"></div>
+        </section>
       </div>
 
-      <section class="npc-convo" id="npc-convo" style="display: none;" aria-label="Conversation">
-        <div class="npc-convo-head">
-          <h3>Conversation</h3>
-          <span class="npc-convo-meta" id="npc-convo-meta"></span>
-          <div class="npc-controls">
-            <button id="npc-convo-open" type="button">expand all</button>
-            <button id="npc-convo-close" type="button">collapse all</button>
-          </div>
-        </div>
-        <div class="npc-convo-tree" id="npc-convo-tree"></div>
-      </section>
-
+      <div class="npc-cast-head">
+        <h3>Cast</h3>
+        <span class="npc-status" id="npc-cast-count"></span>
+      </div>
       <div id="npc-grid" class="npc-grid"></div>
     </div>
   </div>
@@ -289,7 +352,8 @@ canvas.npc-canvas:active { cursor: grabbing; }
   const wrap       = document.getElementById('npc-viewer-wrap');
   const canvasEl   = document.getElementById('npc-canvas');
   const nameEl     = document.getElementById('npc-name');
-  const quoteEl    = document.getElementById('npc-quote');
+  const castCount  = document.getElementById('npc-cast-count');
+  const convoCtl   = document.getElementById('npc-convo-ctl');
   const statsEl    = document.getElementById('npc-stats');
   const spinBtn    = document.getElementById('npc-spin-btn');
   const resetBtn   = document.getElementById('npc-reset-btn');
@@ -349,9 +413,13 @@ canvas.npc-canvas:active { cursor: grabbing; }
   ];
 
   function renderFilters() {
-    filtersEl.innerHTML = FILTERS.map(f =>
-      `<button class="npc-filter${f.key === filter ? ' is-active' : ''}" data-filter="${f.key}" type="button">${f.text}</button>`
-    ).join('');
+    const count = (key) => catalog
+      ? catalog.npcs.filter(n => key === 'all' || n.kind === key).length : null;
+    filtersEl.innerHTML = FILTERS.map(f => {
+      const c = count(f.key);
+      return `<button class="npc-filter${f.key === filter ? ' is-active' : ''}" data-filter="${f.key}" type="button" aria-pressed="${f.key === filter}">` +
+        `${f.text}${c == null ? '' : `<span class="npc-filter-n">${c}</span>`}</button>`;
+    }).join('');
   }
   filtersEl.addEventListener('click', (e) => {
     const b = e.target.closest('.npc-filter');
@@ -368,6 +436,8 @@ canvas.npc-canvas:active { cursor: grabbing; }
 
   function renderGrid() {
     const list = visibleNpcs();
+    castCount.textContent = list.length
+      ? `${list.length} shown · click one to view it` : '';
     if (!list.length) {
       gridEl.innerHTML = '<p class="npc-note">No actors of this kind in this location.</p>';
       return;
@@ -386,7 +456,13 @@ canvas.npc-canvas:active { cursor: grabbing; }
 
   gridEl.addEventListener('click', (e) => {
     const card = e.target.closest('.npc-card');
-    if (card) select(parseInt(card.dataset.i, 10));
+    if (!card) return;
+    select(parseInt(card.dataset.i, 10));
+    /* The stage sits above the cast: bring it back into view when the
+     * click came from further down the grid. */
+    if (wrap.getBoundingClientRect().bottom < window.innerHeight * 0.25) {
+      wrap.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
   });
 
   /* ---------------- conversation tree ----------------
@@ -398,8 +474,30 @@ canvas.npc-canvas:active { cursor: grabbing; }
 
   const esc = (s) => window.escapeHtml(String(s));
   /* Arms nest deeper than a reader wants open at once: open the first few
-   * levels, collapse the rest. */
+   * levels, collapse the rest. A long conversation opens one level less, so
+   * its story stages read as an outline in the half-width column. */
   const OPEN_DEPTH = 3;
+  const OPEN_DEPTH_LONG = 1;
+  const LONG_PAGES = 16;
+  let openDepth = OPEN_DEPTH;
+
+  /* Pages of text inside an arm, every path counted - shown on the arm's
+   * summary so a collapsed branch still says how much it holds. */
+  function countPages(nodes) {
+    let c = 0;
+    for (const n of nodes || []) {
+      if (n.t === 'page') c++;
+      else if (n.t === 'choice') n.options.forEach(o => { c += countPages(o.then); });
+      else if (n.t === 'branch') c += countPages(n.taken) + countPages(n.else);
+      else if (n.t === 'event') c += countPages(n.body);
+      else if (n.t === 'next') c += countPages(n.then);
+    }
+    return c;
+  }
+  function pagesTag(nodes) {
+    const c = countPages(nodes);
+    return c > 1 ? ` <span class="npc-arm-count">· ${c} pages</span>` : '';
+  }
 
   function indexNodes(nodes, map) {
     for (const n of nodes || []) {
@@ -427,7 +525,7 @@ canvas.npc-canvas:active { cursor: grabbing; }
   }
 
   function arm(summary, body, depth, cls) {
-    return `<details class="npc-arm${cls ? ' ' + cls : ''}"${depth < OPEN_DEPTH ? ' open' : ''}>` +
+    return `<details class="npc-arm${cls ? ' ' + cls : ''}"${depth < openDepth ? ' open' : ''}>` +
       `<summary>${summary}</summary><div class="npc-arm-body npc-seq">${body}</div></details>`;
   }
 
@@ -446,7 +544,7 @@ canvas.npc-canvas:active { cursor: grabbing; }
       }
       case 'choice':
         return `<div class="npc-choice npc-seq" data-node="${n.id}"><div class="npc-choice-label">Choose</div>` +
-          n.options.map(o => arm(`<span class="npc-kw">▸</span> “${esc(o.label)}”`,
+          n.options.map(o => arm(`“${esc(o.label)}”${pagesTag(o.then)}`,
             renderNodes(o.then, ctx, depth + 1), depth, 'npc-option')).join('') + '</div>';
       case 'branch': {
         /* Flatten an else-chain of tests into If / Else if / Otherwise. */
@@ -458,7 +556,7 @@ canvas.npc-canvas:active { cursor: grabbing; }
           const who = cur.actor === 0xF8 ? 'player' : cur.actor === 0xFB ? 'scene script'
             : cur.actor != null ? `actor 0x${cur.actor.toString(16)}` : '';
           const actor = who ? ` <span class="npc-tag">${who}</span>` : '';
-          html += arm(`<span class="npc-kw">${first ? 'If' : 'Else if'}</span> ${esc(cur.cond)}${actor}`,
+          html += arm(`<span class="npc-kw">${first ? 'If' : 'Else if'}</span> ${esc(cur.cond)}${actor}${pagesTag(cur.taken)}`,
             renderNodes(cur.taken, ctx, depth + 1), depth);
           first = false;
           if (cur.else.length === 1 && cur.else[0].t === 'branch') {
@@ -470,14 +568,14 @@ canvas.npc-canvas:active { cursor: grabbing; }
             cur = null;
           }
         }
-        html += arm('<span class="npc-kw">Otherwise</span>', renderNodes(rest, ctx, depth + 1), depth);
+        html += arm('<span class="npc-kw">Otherwise</span>' + pagesTag(rest), renderNodes(rest, ctx, depth + 1), depth);
         return html + '</div>';
       }
       case 'action':
         return `<div class="npc-action npc-action-${n.kind}" data-node="${n.id}">${esc(n.text)}</div>`;
       case 'event':
         return `<details class="npc-arm npc-event" data-node="${n.id}"><summary>` +
-          `<span class="npc-kw">Event</span> record ${n.record} starts</summary>` +
+          `<span class="npc-kw">Event</span> record ${n.record} starts${pagesTag(n.body)}</summary>` +
           `<div class="npc-arm-body npc-seq">${renderNodes(n.body, { ...ctx, inEvent: true }, depth + 1)}</div></details>`;
       case 'next': {
         const only = n.then.length === 1 ? n.then[0] : null;
@@ -505,16 +603,20 @@ canvas.npc-canvas:active { cursor: grabbing; }
       tree = null;
     }
     window.__npcTree = tree;
+    convoEl.scrollTop = 0;
     if (!tree || !tree.nodes.length) {
-      convoEl.style.display = 'none';
-      convoTree.innerHTML = '';
+      /* The panel stays up so the stage keeps its two columns. */
+      convoMeta.textContent = '';
+      convoCtl.hidden = true;
+      convoTree.innerHTML = '<p class="npc-convo-empty">Nothing to say - talking to this actor runs no dialogue.</p>';
       return;
     }
     const ctx = { byId: indexNodes(tree.nodes, new Map()), rootId: tree.nodes[0].id, inEvent: false };
+    openDepth = tree.page_count > LONG_PAGES ? OPEN_DEPTH_LONG : OPEN_DEPTH;
     convoMeta.textContent = `${tree.page_count} page${tree.page_count === 1 ? '' : 's'} of text across every story state` +
       (tree.via_proxy ? ` · this actor hands its talk to placement ${tree.record}` : '');
     convoTree.innerHTML = renderNodes(tree.nodes, ctx, 0);
-    convoEl.style.display = '';
+    convoCtl.hidden = !convoTree.querySelector('details');
   }
 
   convoTree.addEventListener('click', (e) => {
@@ -542,6 +644,20 @@ canvas.npc-canvas:active { cursor: grabbing; }
 
   function updateSpinLabel(on) {
     spinBtn.textContent = on ? '⏸ stop spin' : '▶ start spin';
+  }
+
+  /* The heading is the actor's whole first line (the card truncates it);
+   * an actor with no line keeps its card label. */
+  function setName(n) {
+    nameEl.textContent = '';
+    if (n.dialog) {
+      const q = document.createElement('span');
+      q.className = 'npc-name-quote';
+      q.textContent = n.dialog;
+      nameEl.appendChild(q);
+    } else {
+      nameEl.textContent = labelFor(n);
+    }
   }
 
   function select(i) {
@@ -574,8 +690,8 @@ canvas.npc-canvas:active { cursor: grabbing; }
      * (js/field-npc-model.js). */
     const r = window.FieldNpcModel.show(meshView, viewer, catalog, n);
     if (!r.ok) {
-      nameEl.textContent = labelFor(n);
-      statsEl.innerHTML = `<b>No renderable geometry</b> - ${escapeHtml(r.why || 'nothing to draw')}.`;
+      setName(n);
+      statsEl.innerHTML = `<div class="npc-stat"><b>No renderable geometry</b> - ${escapeHtml(r.why || 'nothing to draw')}.</div>`;
       return;
     }
     const posed = r.posed;
@@ -601,21 +717,16 @@ canvas.npc-canvas:active { cursor: grabbing; }
       anmNote.textContent = 'This actor is a single piece and needs no pose - it has no clip.';
     }
 
-    nameEl.textContent = labelFor(n);
-    if (n.dialog) {
-      quoteEl.style.display = '';
-      quoteEl.textContent = '“' + n.dialog + '…”';
-    } else {
-      quoteEl.style.display = 'none';
-    }
+    setName(n);
     const tile = `tile (${n.x >> 7}, ${n.z >> 7})`;
-    statsEl.innerHTML =
-      `Model <b>${n.model}</b> in the scene's mesh pool · <b>${n.nobj}</b> part${n.nobj === 1 ? '' : 's'}<br>` +
-      (n.anim > 0 ? `Animation clip <b>${n.anim - 1}</b><br>` : 'No animation clip<br>') +
-      (n.conditional
-        ? 'Stands off-map until the story places it - a <b>story-gated</b> spawn.<br>'
-        : `Stands at ${tile}<br>`) +
-      (n.kind === 'door' ? `Warps to map <b>${n.target_map}</b>` : '');
+    statsEl.innerHTML = '<dl class="npc-facts">' +
+      `<dt>Model</dt><dd><b>${n.model}</b> in the scene's mesh pool · <b>${n.nobj}</b> part${n.nobj === 1 ? '' : 's'}</dd>` +
+      `<dt>Clip</dt><dd>${n.anim > 0 ? `animation clip <b>${n.anim - 1}</b>` : 'no animation clip'}</dd>` +
+      `<dt>Stands</dt><dd>${n.conditional
+        ? 'off-map until the story places it - a <b>story-gated</b> spawn'
+        : `at ${tile}`}</dd>` +
+      (n.kind === 'door' ? `<dt>Warps</dt><dd>to map <b>${n.target_map}</b></dd>` : '') +
+      '</dl>';
     updateSpinLabel(meshView.cam.autoRotate);
   }
 
@@ -660,7 +771,6 @@ canvas.npc-canvas:active { cursor: grabbing; }
     selected = null;
     catalog = null;
     wrap.style.display = 'none';
-    convoEl.style.display = 'none';
     gridEl.innerHTML = '';
     sceneStat.textContent = `Loading ${label}…`;
     /* Let the status paint before the synchronous WASM scene build. */
@@ -683,6 +793,7 @@ canvas.npc-canvas:active { cursor: grabbing; }
     const n = catalog.npcs.length;
     sceneStat.innerHTML = `<b>${n}</b> actor${n === 1 ? '' : 's'} in <code>${label}</code>`
       + (notes.length ? ` · ${notes.join(' · ')}` : '');
+    renderFilters();
     renderGrid();
     /* Open on the first talking NPC - the most interesting thing in a town. */
     const first = catalog.npcs.find(x => x.kind === 'talk') || catalog.npcs[0];
