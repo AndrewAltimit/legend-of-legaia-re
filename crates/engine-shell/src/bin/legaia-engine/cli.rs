@@ -17,8 +17,8 @@ use std::path::PathBuf;
         by `legaia-extract` (the `--extracted-root` default `extracted` resolves \
         against the current directory).\n\n\
         Start here:\n  \
-        legaia-engine            (no subcommand: the launcher asks for the disc once, \
-        remembers it, and opens the title screen)\n  \
+        legaia-engine            (no subcommand: the launcher - pick the disc once, \
+        set display options, press Play for the title screen)\n  \
         legaia-engine play-window --disc \"Legend of Legaia (USA).bin\"\n  \
         legaia-engine list-scenes --disc \"Legend of Legaia (USA).bin\"\n\n\
         Config and saves (`legaia-input.toml`, `legaia-options.toml`, `saves/`) \
@@ -36,7 +36,7 @@ use std::path::PathBuf;
 )]
 pub(crate) struct Cli {
     /// Omit to run the launcher: it asks for the disc image once, remembers
-    /// it, and boots the game.
+    /// it, offers the display options, and starts the game on Play.
     #[command(subcommand)]
     pub(crate) cmd: Option<Cmd>,
 }
