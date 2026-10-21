@@ -69,8 +69,17 @@ pub fn validate(path: &Path) -> Result<Source> {
     }
     let bin = legaia_iso::raw::resolve_disc_path(path)
         .with_context(|| format!("resolving {}", path.display()))?;
-    let mut disc = RawDisc::open(&bin)
-        .with_context(|| format!("{} is not a Mode2/2352 disc image", bin.display()))?;
+    // The reader's own message names the file and says what is wrong with
+    // it; only an error that does not (permission, I/O) gets the path added.
+    let mut disc = RawDisc::open(&bin).map_err(|e| {
+        let named = e.to_string().contains(&bin.display().to_string());
+        let e = anyhow::Error::new(e);
+        if named {
+            e
+        } else {
+            e.context(format!("opening {}", bin.display()))
+        }
+    })?;
     let vol = iso9660::read_volume(&mut disc).context("reading the ISO9660 volume")?;
     let files = iso9660::walk_files(&mut disc, &vol.root).context("walking the ISO9660 tree")?;
     if !files

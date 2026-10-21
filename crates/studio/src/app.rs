@@ -494,39 +494,91 @@ impl App {
 
     // --- Panels ------------------------------------------------------------
 
+    /// The native file dialog for a disc image, opened where the last one
+    /// was.
+    fn pick_disc(&mut self) {
+        let mut dialog = rfd::FileDialog::new()
+            .set_title("Choose your Legend of Legaia disc image")
+            .add_filter("PlayStation disc image", &["bin", "cue", "BIN", "CUE"]);
+        if let Some(dir) = self.last_dir() {
+            dialog = dialog.set_directory(dir);
+        }
+        if let Some(p) = dialog.pick_file() {
+            self.open_path(&p);
+        }
+    }
+
+    /// The native folder dialog for a `legaia-extract` output folder.
+    fn pick_folder(&mut self) {
+        let mut dialog = rfd::FileDialog::new().set_title("Choose a legaia-extract output folder");
+        if let Some(dir) = self.last_dir() {
+            dialog = dialog.set_directory(dir);
+        }
+        if let Some(p) = dialog.pick_folder() {
+            self.open_path(&p);
+        }
+    }
+
+    /// The folder holding the source opened last, if it still exists.
+    fn last_dir(&self) -> Option<PathBuf> {
+        self.studio
+            .settings
+            .last_source
+            .as_deref()
+            .and_then(Path::parent)
+            .filter(|d| d.is_dir())
+            .map(Path::to_path_buf)
+    }
+
+    /// The app-wide shortcuts that are not tied to a widget: Ctrl+O, F5
+    /// (Play), Ctrl+1..4 (the views).
+    fn shortcuts(&mut self, ctx: &egui::Context) {
+        let cmd = |k| egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, k);
+        if ctx.input_mut(|i| i.consume_shortcut(&cmd(egui::Key::O))) {
+            self.pick_disc();
+        }
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F5)) {
+            self.start_game();
+        }
+        for (key, mode) in [
+            (egui::Key::Num1, Mode::Browse),
+            (egui::Key::Num2, Mode::Actors),
+            (egui::Key::Num3, Mode::Media),
+            (egui::Key::Num4, Mode::Extract),
+        ] {
+            if ctx.input_mut(|i| i.consume_shortcut(&cmd(key))) {
+                self.mode = mode;
+            }
+        }
+    }
+
     fn top_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.heading("Legaia Studio");
+            ui.label(
+                RichText::new("Legaia Studio")
+                    .heading()
+                    .color(crate::theme::accent(ui)),
+            );
             ui.separator();
-            ui.selectable_value(&mut self.mode, Mode::Browse, "Browse");
-            ui.selectable_value(&mut self.mode, Mode::Actors, "Characters & monsters");
-            ui.selectable_value(&mut self.mode, Mode::Media, "Movies & voice");
-            ui.selectable_value(&mut self.mode, Mode::Extract, "Extract");
+            for (mode, label, key) in [
+                (Mode::Browse, "Browse", "Ctrl+1"),
+                (Mode::Actors, "Characters & monsters", "Ctrl+2"),
+                (Mode::Media, "Movies & voice", "Ctrl+3"),
+                (Mode::Extract, "Extract", "Ctrl+4"),
+            ] {
+                ui.selectable_value(&mut self.mode, mode, label)
+                    .on_hover_text(key);
+            }
             ui.separator();
-            let ctrl_o = ui.input_mut(|i| {
-                i.consume_shortcut(&egui::KeyboardShortcut::new(
-                    egui::Modifiers::COMMAND,
-                    egui::Key::O,
-                ))
-            });
-            if (ui
+            if ui
                 .button("Open disc image...")
                 .on_hover_text("Ctrl+O")
                 .clicked()
-                || ctrl_o)
-                && let Some(p) = rfd::FileDialog::new()
-                    .set_title("Choose your Legend of Legaia disc image")
-                    .add_filter("PlayStation disc image", &["bin", "cue", "BIN", "CUE"])
-                    .pick_file()
             {
-                self.open_path(&p);
+                self.pick_disc();
             }
-            if ui.button("Open extracted folder...").clicked()
-                && let Some(p) = rfd::FileDialog::new()
-                    .set_title("Choose a legaia-extract output folder")
-                    .pick_folder()
-            {
-                self.open_path(&p);
+            if ui.button("Open extracted folder...").clicked() {
+                self.pick_folder();
             }
             ui.add_enabled_ui(!self.studio.settings.recent.is_empty(), |ui| {
                 ui.menu_button("Recent", |ui| {
@@ -604,23 +656,30 @@ impl App {
             _ => {}
         }
         if let Some(e) = &self.studio.error {
-            ui.horizontal(|ui| {
-                ui.colored_label(ui.visuals().error_fg_color, e);
-                if ui
-                    .small_button("Copy")
-                    .on_hover_text("Copy this message to the clipboard")
-                    .clicked()
-                {
-                    ui.ctx().copy_text(e.clone());
-                }
-                dismiss = ui.small_button("Dismiss").clicked();
-            });
+            // A banner that wraps, with its buttons first so a long message
+            // (a path, a log tail) can never push them off the window.
+            let red = ui.visuals().error_fg_color;
+            egui::Frame::new()
+                .fill(red.gamma_multiply(0.12))
+                .stroke(egui::Stroke::new(1.0_f32, red.gamma_multiply(0.5)))
+                .corner_radius(4.0)
+                .inner_margin(egui::Margin::symmetric(8, 5))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.horizontal_top(|ui| {
+                        if ui
+                            .small_button("Copy")
+                            .on_hover_text("Copy this message to the clipboard")
+                            .clicked()
+                        {
+                            ui.ctx().copy_text(e.clone());
+                        }
+                        dismiss = ui.small_button("Dismiss").clicked();
+                        ui.add(egui::Label::new(RichText::new(e).color(red)).wrap());
+                    });
+                });
         } else if let Some(s) = &self.studio.status {
-            let green = if ui.visuals().dark_mode {
-                Color32::from_rgb(140, 200, 140)
-            } else {
-                Color32::from_rgb(30, 120, 40)
-            };
+            let green = crate::theme::good(ui);
             let row = ui.horizontal(|ui| {
                 ui.colored_label(green, s);
                 if let Some(dir) = &self.last_written
@@ -734,6 +793,7 @@ impl App {
         let s = &mut self.studio.settings;
         if !self.appearance_applied {
             self.appearance_applied = true;
+            crate::theme::install(ctx);
             ctx.set_theme(theme_preference(s.theme));
             ctx.set_zoom_factor(crate::settings::sane_zoom(s.zoom));
             return;
@@ -774,15 +834,20 @@ impl App {
             (_, Err(why)) => Some(why.clone()),
             _ => None,
         };
-        let resp = ui.add_enabled(
-            blocked.is_none(),
-            egui::Button::new(if running { "Game running" } else { "Play" }),
-        );
+        let button = if running {
+            egui::Button::new("Game running")
+        } else if blocked.is_none() {
+            crate::theme::primary_button("Play")
+        } else {
+            egui::Button::new("Play")
+        };
+        let resp = ui.add_enabled(blocked.is_none(), button);
         let resp = match &blocked {
             Some(why) => resp.on_disabled_hover_text(why),
             None => resp.on_hover_text(
-                "Start the game (legaia-engine) on this disc, at the title screen. \
-                 Saves and settings are the same as when you start the game directly.",
+                "Start the game (legaia-engine) on this disc, at the title screen (F5). \
+                 Saves and settings are the same as when you start the game directly; \
+                 the display options set in the game's own launcher apply here too.",
             ),
         };
         if resp.clicked() {
@@ -801,9 +866,15 @@ impl App {
         }
         if let (Some(engine), Ok(bin)) = (self.engine.clone(), disc) {
             self.player.stop();
+            // The launch switches the game's own launcher keeps
+            // (`--psx-render`, `--retail`), so both starts look the same.
+            let extra = crate::launch::engine_launcher_settings()
+                .map(|f| crate::launch::launch_switches(&f))
+                .unwrap_or_default();
             match crate::launch::Game::start(
                 &engine,
                 &bin,
+                &extra,
                 crate::launch::engine_data_dir().as_deref(),
             ) {
                 Ok(g) => {
@@ -1030,18 +1101,27 @@ impl App {
 
     fn preview(&mut self, ui: &mut egui::Ui) {
         let Some(lib) = self.studio.library.clone() else {
-            welcome(ui);
-            if !self.studio.settings.recent.is_empty() {
-                ui.add_space(12.0);
-                ui.label(RichText::new("Open again").strong());
-                if let Some(p) = self.recent_list(ui) {
-                    self.open_path(&p);
-                }
-            }
+            self.start_page(ui);
             return;
         };
         let Some(pos) = self.studio.selected else {
-            ui.label("Select a PROT entry on the left.");
+            ui.add_space(12.0);
+            ui.label(
+                RichText::new("Pick an entry on the left to preview it")
+                    .size(17.0)
+                    .color(crate::theme::accent(ui)),
+            );
+            ui.add_space(6.0);
+            for line in [
+                "Each block is one scene or system file of the game, named as on the disc \
+                 and by the place it is (town01 - Rim Elm).",
+                "Search by place, kind of data or entry number (Ctrl+F); the arrow keys \
+                 walk the list.",
+                "Characters & monsters (Ctrl+2) and Movies & voice (Ctrl+3) show the \
+                 game's actors and movies directly; Extract (Ctrl+4) unpacks everything.",
+            ] {
+                ui.add(egui::Label::new(line).wrap());
+            }
             return;
         };
         let Some(a) = self.studio.analysis.clone().filter(|a| a.pos == pos) else {
@@ -1870,6 +1950,7 @@ impl eframe::App for App {
         }
         self.run_automation(ctx);
         self.poll_game(ctx);
+        self.shortcuts(ctx);
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F1)) {
             self.about_open = !self.about_open;
         }
@@ -1884,6 +1965,10 @@ impl eframe::App for App {
         egui::TopBottomPanel::top("top").show(ctx, |ui| self.top_bar(ui));
         self.about_window(ctx);
         match self.mode {
+            // Nothing open yet: the start page takes the whole window.
+            Mode::Browse if self.studio.library.is_none() => {
+                egui::CentralPanel::default().show(ctx, |ui| self.start_page(ui));
+            }
             Mode::Browse => {
                 egui::SidePanel::left("browser")
                     .resizable(true)
@@ -1978,9 +2063,30 @@ impl App {
                 );
                 ui.add_space(6.0);
                 ui.label(RichText::new("Keyboard").strong());
-                ui.label("Ctrl+O open a disc image  -  Ctrl+F search the archive  -  F1 this box");
-                ui.label("Up / Down, Page Up / Down, Home / End walk the archive tree");
-                ui.label("Ctrl+= / Ctrl+- / Ctrl+0 zoom in, out, reset (also under View)");
+                egui::Grid::new("about_keys")
+                    .num_columns(2)
+                    .spacing([16.0, 3.0])
+                    .show(ui, |ui| {
+                        for (keys, what) in [
+                            ("Ctrl+O", "open a disc image"),
+                            ("Ctrl+1 .. Ctrl+4", "Browse, Characters, Movies, Extract"),
+                            ("F5", "play the open disc"),
+                            ("Ctrl+F, Esc", "search the archive, clear the search"),
+                            (
+                                "Up / Down, PgUp / PgDn, Home / End",
+                                "walk the archive tree",
+                            ),
+                            (
+                                "Ctrl+= / Ctrl+- / Ctrl+0",
+                                "zoom in, out, reset (also View)",
+                            ),
+                            ("F1", "this box"),
+                        ] {
+                            ui.monospace(keys);
+                            ui.label(what);
+                            ui.end_row();
+                        }
+                    });
             });
         self.about_open = open;
     }
@@ -1994,22 +2100,132 @@ fn theme_preference(t: crate::settings::Theme) -> egui::ThemePreference {
     }
 }
 
-fn welcome(ui: &mut egui::Ui) {
-    ui.add_space(20.0);
-    ui.heading("Welcome to Legaia Studio");
-    ui.label("Browse, preview and extract the assets on your own Legend of Legaia disc.");
-    ui.add_space(8.0);
-    ui.label("1. Open your disc image (the .bin of a Mode2/2352 dump, or its .cue) with the button above, or drop it on this window.");
-    ui.label("2. Browse the PROT.DAT archive on the left; previews show textures, 3D models, audio and dialog text.");
-    ui.label(
-        "3. Export what you select, or switch to Extract to unpack the whole disc into a folder.",
-    );
-    ui.label("4. Press Play in the top bar to start the game itself on the disc (USA disc).");
-    ui.add_space(8.0);
-    ui.label(
-        RichText::new("No game data ships with this program; it reads only the disc you supply.")
-            .weak(),
-    );
+impl App {
+    /// The start page: what the app is for, the two ways in as large
+    /// buttons, the recent list, and what each view does.
+    fn start_page(&mut self, ui: &mut egui::Ui) {
+        const COLUMN: f32 = 700.0;
+        let accent = crate::theme::accent(ui);
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                let side = ((ui.available_width() - COLUMN) / 2.0).max(12.0);
+                ui.horizontal(|ui| {
+                    ui.add_space(side);
+                    ui.vertical(|ui| {
+                        ui.set_max_width(COLUMN);
+                        ui.add_space(28.0);
+                        ui.label(RichText::new("Legaia Studio").size(30.0).color(accent));
+                        ui.label(
+                            RichText::new(
+                                "Browse, preview and extract everything on your own \
+                                 Legend of Legaia disc - and start the game on it.",
+                            )
+                            .size(15.0),
+                        );
+                        ui.add_space(18.0);
+                        ui.horizontal(|ui| {
+                            let big = egui::vec2(230.0, 38.0);
+                            if ui
+                                .add(
+                                    crate::theme::primary_button("Open disc image...")
+                                        .min_size(big),
+                                )
+                                .on_hover_text(
+                                    "Your .bin (a raw Mode2/2352 dump) or its .cue. Ctrl+O",
+                                )
+                                .clicked()
+                            {
+                                self.pick_disc();
+                            }
+                            if ui
+                                .add(egui::Button::new("Open extracted folder...").min_size(big))
+                                .on_hover_text("A folder legaia-extract (or Extract) wrote")
+                                .clicked()
+                            {
+                                self.pick_folder();
+                            }
+                        });
+                        ui.label(
+                            RichText::new(
+                                "or drop the file (or folder) on this window, or type its \
+                                 path in the bar above",
+                            )
+                            .weak(),
+                        );
+                        if let Some(p) = self.studio.loading() {
+                            ui.add_space(10.0);
+                            ui.horizontal(|ui| {
+                                ui.spinner();
+                                ui.label(format!("Opening {} ...", p.display()));
+                            });
+                        }
+                        if !self.studio.settings.recent.is_empty() {
+                            ui.add_space(20.0);
+                            ui.label(RichText::new("Open again").strong().size(15.0));
+                            egui::Frame::new()
+                                .fill(ui.visuals().faint_bg_color)
+                                .corner_radius(6.0)
+                                .inner_margin(10.0)
+                                .show(ui, |ui| {
+                                    ui.set_width(ui.available_width());
+                                    if let Some(p) = self.recent_list(ui) {
+                                        self.open_path(&p);
+                                    }
+                                });
+                        }
+                        ui.add_space(20.0);
+                        ui.label(RichText::new("What you can do").strong().size(15.0));
+                        egui::Grid::new("start_features")
+                            .num_columns(2)
+                            .spacing([18.0, 8.0])
+                            .show(ui, |ui| {
+                                for (title, what) in [
+                                    (
+                                        "Browse",
+                                        "Every entry of the game's archive by scene, with \
+                                         textures, 3D models, sound, music and dialog to \
+                                         preview and export.",
+                                    ),
+                                    (
+                                        "Characters & monsters",
+                                        "The party with any equipment and every monster, \
+                                         each battle animation and Tactical Art.",
+                                    ),
+                                    (
+                                        "Movies & voice",
+                                        "The disc's movies with their soundtrack, and the \
+                                         streamed voice and music.",
+                                    ),
+                                    (
+                                        "Extract",
+                                        "Unpack the whole disc into a folder of PNG, WAV, \
+                                         OBJ and glTF files.",
+                                    ),
+                                    (
+                                        "Play",
+                                        "Start the game itself on the open disc (the USA \
+                                         disc). F5",
+                                    ),
+                                ] {
+                                    ui.label(RichText::new(title).strong().color(accent));
+                                    ui.add(egui::Label::new(what).wrap());
+                                    ui.end_row();
+                                }
+                            });
+                        ui.add_space(20.0);
+                        ui.label(
+                            RichText::new(
+                                "No game data ships with this program: it reads only the \
+                                 disc image you choose, and writes only into folders you \
+                                 pick. F1 lists the keyboard shortcuts.",
+                            )
+                            .weak(),
+                        );
+                    });
+                });
+            });
+    }
 }
 
 fn human_size(n: u64) -> String {

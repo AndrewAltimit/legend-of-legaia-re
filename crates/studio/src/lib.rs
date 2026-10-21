@@ -21,6 +21,7 @@ pub mod player;
 pub mod raster;
 pub mod scene_vram;
 pub mod settings;
+pub mod theme;
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, channel};
