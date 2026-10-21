@@ -445,7 +445,9 @@ pub struct BattleState {
     /// `(engine battle slot, amount)` in push order, `0` for an amount the
     /// ring no longer holds. Each party melee hit the replay lands on the
     /// front entry's slot pops it and takes a known amount instead of its
-    /// own roll (the rolls still draw). Empty on every ordinary fight.
+    /// own roll (the rolls still draw). A capture inside a monster's cast
+    /// seeds the same ring, and the cast's hit on the front slot pops it
+    /// (`World::cast_spell_on_slots`). Empty on every ordinary fight.
     pub forced_melee_hits: std::collections::VecDeque<(u8, u16)>,
     /// The string's total on its victim (`DAT_8007BD14`), `(engine slot,
     /// total)`: the replayed hit that lands the total (`kill_check`) takes

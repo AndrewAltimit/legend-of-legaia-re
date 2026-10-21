@@ -6,9 +6,9 @@ use super::*;
 impl RetailBattle {
     /// The hits a party **melee** capture's action had landed, in push order
     /// ([`RetailBattle::action_hit_sequence`]), for the replay to deal again
-    /// at retail's amounts (`legaia_engine_capture::melee_hits`). Empty for
-    /// any other plan: a cast's hits come from its module, not the melee
-    /// kernel.
+    /// at retail's amounts (`legaia_engine_capture::melee_hits`), and the
+    /// same for a monster's cast. Empty for any other plan: a party cast's
+    /// hits come from its module, not the melee kernel.
     ///
     /// The total is `DAT_8007BD14` on the action's target, read only when
     /// the ring holds pushes (so it is this action's).
@@ -23,6 +23,20 @@ impl RetailBattle {
                     hits: self.action_hit_sequence.clone(),
                     total: (self.target_code >= 3 && self.combo_total > 0)
                         .then_some((self.target_code, self.combo_total)),
+                }
+            }
+            // A monster's cast (`+0x1DE == 2`) pushes its hits on the same
+            // ring; the replay's cast rolls them on its own stream
+            // (`battle_gimard_tail_fire_*`: retail's `16` on Vahn, the replay
+            // `14` / `17`).
+            SeedPlan::Action { seat, .. }
+                if seat >= 3
+                    && self.queued_category == 2
+                    && !self.action_hit_sequence.is_empty() =>
+            {
+                legaia_engine_capture::melee_hits::MeleeHitSeed {
+                    hits: self.action_hit_sequence.clone(),
+                    total: None,
                 }
             }
             _ => Default::default(),

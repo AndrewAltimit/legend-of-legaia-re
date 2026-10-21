@@ -1290,6 +1290,13 @@ lands the total completes (`BattleState::forced_melee_total`). The rolls
 still draw, so the stream advances as retail's did. `noa_levelup_fight_pre`
 reads `camera` `.970` to `1.000` and `image` `.790` to `.996`.
 
+A monster's cast (`+0x1DE == 2` on a monster seat) pushes its hits on the
+same ring, and its replay seeds them the same way: the cast's hit on the
+ring's front slot takes the pushed amount (`World::cast_spell_on_slots`).
+`battle_gimard_tail_fire_*` push `16` on Vahn, which the replay rolled as
+`14` per vsync and `17` on retail's cadence, and the `DAMAGE` readout and
+the HP bar in the frame now read retail's.
+
 ### Rewards already granted
 
 A capture on the results frame or after it (`SpanGate::Results` / `Exit`) holds
