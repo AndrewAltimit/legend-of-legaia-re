@@ -339,7 +339,7 @@ pub const HORN_STAGER_RECORDS: [u32; 10] = [
 pub fn stager_seated_records(entry: u32) -> &'static [u32] {
     match entry {
         930 => &HORN_STAGER_RECORDS,
-        _ => &[],
+        e => super::creature_stager_records(e),
     }
 }
 

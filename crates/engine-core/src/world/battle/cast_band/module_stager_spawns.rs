@@ -1,7 +1,8 @@
 //! The op-`0x20` calls a module's own parts make into its stager, for the
 //! modules whose stager arms only seat more records: PROT 0905 (Vera), 0906
 //! (Gizam), 0907 (Nighto), 0908 (Zenoir), 0910 (Swordie), 0911 (Orb), 0912
-//! (Freed), 0913 (Nova) and 0930 (Horn), and the capture cells PROT 0938, 0944, 0946, 0961 and 0962
+//! (Freed), 0913 (Nova), the summon-creature modules 0914, 0915, 0917, 0921,
+//! 0928..0933, and the capture cells PROT 0938, 0944, 0946, 0961 and 0962
 //! (PROT 0940's stager is a bare `jr ra`). PROT 0909's stager also steps the
 //! module's phase and runs through [`World::run_viguro_stager_calls`].
 
@@ -13,6 +14,11 @@ use legaia_engine_cast::cast_module_ticks::{
     nighto_stager_spawns, nova_stager_spawns, orb_stager_spawns, swordie_stager_spawns,
     vera_stager_spawns, zenoir_stager_spawns,
 };
+use legaia_engine_cast::cast_module_ticks::{
+    barra_stager_spawns, gola_gola_stager_spawns, iota_stager_spawns, jedo_stager_spawns,
+    meta_stager_spawns, mule_stager_spawns, mushura_stager_spawns, palma_stager_spawns,
+    terra_stager_spawns,
+};
 
 impl World {
     /// Whether module `entry`'s stager arms are run off its parts' op-`0x20`
@@ -20,7 +26,29 @@ impl World {
     pub(in crate::world::battle::cast_band) fn runs_part_stager_calls(entry: u32) -> bool {
         matches!(
             entry,
-            905 | 906 | 907 | 908 | 910 | 911 | 912 | 913 | 930 | 938 | 940 | 944 | 946 | 961 | 962
+            905 | 906
+                | 907
+                | 908
+                | 910
+                | 911
+                | 912
+                | 913
+                | 914
+                | 915
+                | 917
+                | 921
+                | 928
+                | 929
+                | 930
+                | 931
+                | 932
+                | 933
+                | 938
+                | 940
+                | 944
+                | 946
+                | 961
+                | 962
         )
     }
 
@@ -105,6 +133,7 @@ impl World {
                     .count()
             });
             let phase = self.casting.module_phase;
+            let mut barra_counter = self.casting.module_barra_counter;
             let mut rand = || self.next_rand();
             let spawns = match entry {
                 906 => gizam_stager_spawns(arm, caller, body, &mut rand),
@@ -116,6 +145,15 @@ impl World {
                 913 => nova_stager_spawns(arm, caller),
                 912 => freed_stager_spawns(arm, caller, &mut rand),
                 930 => horn_stager_spawns(arm, caller, &mut rand),
+                914 => gola_gola_stager_spawns(arm, caller),
+                915 => mushura_stager_spawns(arm, caller),
+                917 => barra_stager_spawns(arm, caller, &mut barra_counter),
+                921 => iota_stager_spawns(arm, caller, &mut rand),
+                928 => palma_stager_spawns(arm, caller, &mut rand),
+                929 => mule_stager_spawns(arm, caller, &mut rand),
+                931 => jedo_stager_spawns(arm, caller),
+                932 => meta_stager_spawns(arm, caller),
+                933 => terra_stager_spawns(arm, caller),
                 938 => chaos_breath_cell_stager_spawns(arm, caller),
                 // PROT 0940's stager `FUN_801F82CC` is a bare `jr ra`.
                 940 => Vec::new(),
@@ -125,6 +163,7 @@ impl World {
                 962 => blade_breath_cell_stager_spawns(arm, caller),
                 _ => Vec::new(),
             };
+            self.casting.module_barra_counter = barra_counter;
             for s in &spawns {
                 self.seat_stager_spawn(entry, s);
             }

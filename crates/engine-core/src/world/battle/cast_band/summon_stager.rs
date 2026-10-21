@@ -44,6 +44,7 @@ impl World {
         // starts from zero for the same reason.
         self.casting.module_nighto_outcome = None;
         self.casting.module_stager_calls.clear();
+        self.casting.module_barra_counter = 0;
         self.casting.module_record_clocks.clear();
         self.casting.module_ring_angle = 0;
         self.casting.module_theeder = Default::default();

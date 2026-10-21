@@ -143,6 +143,10 @@ pub struct CastFxState {
     /// (`World::run_cast_module_code`); PROT 0909's phase rendezvous are two
     /// of them.
     pub(crate) module_stager_calls: Vec<(u8, legaia_engine_cast::cast_module_ticks::StagerCaller)>,
+    /// PROT 0917's stager counter word `0x801F9364`
+    /// ([`legaia_engine_cast::cast_module_ticks::BARRA_STAGER_COUNTER`]),
+    /// `0` in the image the band pages in for each cast.
+    pub(crate) module_barra_counter: u16,
     /// The clocks of PROT 0909's stager-calling records the host did not
     /// seat, as `(record, stager arm, frames left)`
     /// ([`legaia_engine_cast::cast_module_camera::VIGURO_STAGER_CALLERS`]).
@@ -364,6 +368,7 @@ impl CastFxState {
             module_settle_ticks: 0,
             module_nighto_outcome: None,
             module_stager_calls: Vec::new(),
+            module_barra_counter: 0,
             module_record_clocks: Vec::new(),
             module_split_saved_target: None,
             module_swordie: Default::default(),

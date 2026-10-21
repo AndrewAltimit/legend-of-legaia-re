@@ -2255,6 +2255,19 @@ holds twelve of each live, three calls' worth. Arms 1 and 3 seat three wisps
 each with the Freed-shaped wait / spin / length / radius / roll pokes, arm 3
 three point pairs more; arms 2, 5 and 6 one record each on the caller.
 
+The stagers of PROT 0914, 0915, 0917, 0921, 0928, 0929 and 0931..0933 run
+the same way (`cast_module_ticks::creature_stager_spawns`, arm by arm off
+each image's second dump). Most arms seat one record on the caller; the ones
+with more shape are Gola Gola's arm 3 (thirty-two copies turned `0x80` apart
+about the caller's heading), Barra's arms 0 / 2 (a record per call argument)
+and arm 1 (four records in turn off the module word `0x801F9364`), Iota's
+`rand()` spoke, Palma's arm 4 (forty-eight records scattered off `rand()`
+over a far plane) and arm 5 (an eight-ray fan), and Mule's `rand()`
+scatters (arms 0, 1, 4) and ray fan (arm 8). Mule's arm 3 is two screen
+fades, which are not carried. PROT 0918's stager keeps a handle its module
+reads, PROT 0925's turns and moves its caller, and PROT 0934's reads the
+caller's display trio `+0x3C`, so those three stay on the whole-set seat.
+
 Palma's arm 1 holds on the band timer: retail's arm returns busy on the
 stream request's token `ctx[+0x276]` past most of the sustain
 (`palma_summon_mid_cast` sits there with the timer at 94), and the engine's
