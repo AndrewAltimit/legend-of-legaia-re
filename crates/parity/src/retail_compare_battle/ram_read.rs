@@ -84,7 +84,7 @@ pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon
 /// - the wait `+0x54`, drained by the same product (`8` a vsync).
 ///
 /// A word the part's program rewrote inside the lag is not recovered.
-fn displayed_part_halfword(ram: &[u8], node: u32, off: u16, lag: i32) -> u16 {
+pub(super) fn displayed_part_halfword(ram: &[u8], node: u32, off: u16, lag: i32) -> u16 {
     let h = |o: u32| i32::from(game_anchors::u16_at(ram, node + o) as i16);
     let now = h(u32::from(off));
     let mode = h(0x5A);

@@ -428,3 +428,31 @@ fn a_downed_member_keeps_its_heading_and_the_capture_band_seats_idle_loops() {
     b.clip_cursors = vec![(0, 4, -8)];
     assert!(seats(&b).is_empty(), "before the hit");
 }
+
+/// A seated cast part is taken back over the display lag: its position by
+/// its velocity, its roll by its bank rate, its channels by their rates in
+/// render mode 2, its wait by the drain (`displayed_part_halfword`).
+#[test]
+fn cast_part_seed_walks_back_over_the_display_lag() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let n = 0x8008_1F1C;
+    put16(&mut ram, n + 0x5A, 2);
+    put16(&mut ram, n + 0x14, (-741i16) as u16);
+    put16(&mut ram, n + 0x3C, 152);
+    put16(&mut ram, n + 0x28, 800);
+    put16(&mut ram, n + 0x84, 0x100);
+    put16(&mut ram, n + 0xB6, 300);
+    put16(&mut ram, n + 0xC2, (-64i16) as u16);
+    put16(&mut ram, n + 0x54, 304);
+    let at = |off| ram_read::displayed_part_halfword(&ram, n, off, 6) as i16;
+    assert_eq!(at(0x14), -741 - 6 * 19);
+    assert_eq!(at(0x28), 800 - 6 * 32);
+    assert_eq!(at(0xB6), 300 + 6 * 8);
+    assert_eq!(at(0x54), 304 + 6 * 8);
+    // Render mode 3 neither moves nor turns.
+    put16(&mut ram, n + 0x5A, 3);
+    let at = |off| ram_read::displayed_part_halfword(&ram, n, off, 6) as i16;
+    assert_eq!(at(0x14), -741);
+    assert_eq!(at(0x28), 800);
+    assert_eq!(at(0xB6), 300);
+}
