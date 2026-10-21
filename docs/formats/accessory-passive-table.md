@@ -18,24 +18,33 @@ index's **no-passive sentinel**, not a marker. Likewise the equip record's
 `+5` byte is the equipment-side index slot, carrying the sentinel `0x40` on
 every retail row.
 
-## Indexing (Ghidra-traced)
+## Indexing
 
-From the stat aggregator `FUN_80042558` (event-driven, not per-frame)
-(`ghidra/scripts/funcs/80042558.txt`, static `SCUS_942.54`), which walks each
-active party member's eight equipment-slot bytes at char record `+0x196`:
+From the stat aggregator `FUN_80042558` (event-driven, not per-frame, static
+`SCUS_942.54`), which walks the eight equipment-slot bytes at char record
+`+0x196` of each of the **three** character records `0x80084708 + k*0x414`:
 
 ```text
-kind = item_table[id].byte(+0)                  ; DAT_80074368[id*0xC]
-if kind == 1: index = equip_bonus[sub].byte(+5) ; DAT_80074F6D[sub*8]
-if kind == 2: index = descriptor[sub].byte(+3)  ; DAT_800752C3[sub*4]
-if index < 0x40:
-    char[+0xF4 + (index>>5)*4] |= 1 << (index & 0x1F)
+// FUN_80042558
+0x800425EC  char[+0xF4..+0x103] = 0                      // four sw zero
+0x80042620  id   = char[+0x196 + slot]                    // slot 0..7, loop at 0x8004270C
+0x80042638  kind = item_table[id].byte(+0)                // 0x80074368 + id*0xC
+0x80042640  kind == 1: index = equip_bonus[sub].byte(+5)  // 0x80074F68 + sub*8
+0x800426B0  kind == 2: index = descriptor[sub].byte(+3)   // 0x800752C0 + sub*4
+0x80042664  index < 0x40 (sltiu):
+0x80042684      char[+0xF4 + (index>>5)*4] |= 1 << (index & 0x1F)   // sllv / or / sw
+0x80042D38  global[0..3] |= char[+0xF4..+0x103]           // 0x80074358
+0x80042D8C  k < 3 -> next record (+0x414)                  // no active-member test
 ```
+
+The loop has no party-membership test: a record that has left the party is
+still rebuilt and still feeds the global mask, so a party-wide passive on an
+absent member's accessory stays in force.
 
 - `char +0xF4..+0x103` is the per-character 4×u32 **ability bitfield** (the
   word the MP-cost ability bits `0x10`/`0x20` = indices `0x04`/`0x05` live
   in - see `engine-battle-vm::battle_formulas::mp_cost_after_ability_bits`).
-- The aggregator then ORs all three members' bitfields into the **global**
+- The aggregator then ORs all three records' bitfields into the **global**
   4×u32 mask at `DAT_80074358..0x80074368` (bit-tested by `FUN_800431D0`),
   which is how the party-wide passives are consumed.
 - Index `>= 0x40` grants nothing. Retail data: every equip-bonus row carries

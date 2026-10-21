@@ -439,6 +439,41 @@ fn refresh_party_ability_bits_derives_and_propagates_party_wide() {
     assert_eq!(world.party.roster.members[1].ability_bits()[1], 0x40); // bit 14
 }
 
+/// `FUN_80042558` walks the three character records with no active-member
+/// test (`0x80042D8C..0x80042D94`), so a member who has left the party keeps
+/// a rebuilt bitfield and still feeds the global mask.
+#[test]
+fn refresh_party_ability_bits_walks_records_outside_the_party() {
+    use legaia_engine_battle::accessory_passives::AccessoryPassives;
+
+    let mut world = World {
+        party: legaia_engine_menus::party_state::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
+        ..World::default()
+    };
+    world.set_accessory_passives(AccessoryPassives::from_entries(
+        [(0x50, 0x05), (0x51, 0x0E)],
+        [0x0E],
+    ));
+    let mut party = legaia_save::Party::zeroed(3);
+    let mut eq = party.members[2].equipment();
+    eq.slots[5] = 0x51;
+    party.members[2].set_equipment(eq);
+    world.party.roster = party;
+
+    world.refresh_party_ability_bits();
+
+    assert_eq!(world.party.roster.members[2].ability_bits()[1], 0x40); // bit 14
+    assert!(world.party_has_ability(0x0E));
+    // The lone active member sees the party-wide bit through the global mask.
+    assert_eq!(
+        world.party.character_ability_bits[0] & (1 << 0x0E),
+        1 << 0x0E
+    );
+}
+
 #[test]
 fn refresh_party_ability_bits_noops_without_a_catalog() {
     let mut world = World {
