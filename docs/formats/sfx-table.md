@@ -198,6 +198,10 @@ names, with no fallback bank. The ring ages by the vsyncs one host tick spans.
   sequencer note that held the voice no longer matches it and its note-off does
   not reach the cue.
 - While `_DAT_8007BA88` is non-zero every cue is forced onto channel `6`.
+- A sustained run loops until something keys it off: the next sustained cue,
+  or the teardown `FUN_80017910`, which the mode init and the battle anim
+  commit call
+  ([`audio.md`](../subsystems/audio.md#sustained-cues-loop-until-the-teardown-releases-them)).
 
 Port: `legaia_engine_audio::SfxBank` carries the cursor, limit and held count
 (`set_field_family` selects the limit, called per tick from the world's mode);

@@ -303,6 +303,16 @@ arming the next surface is a soft-lock, and it does not have to be the command
 itself that breaks - see the readout desync in
 [`battle-action.md`](battle-action-exit-gates.md#the-0x51-exit-gate-and-the-hp-bar-settle-invariant).
 
+### Every press sounds a blip
+
+Each handler raises a cue through the dispatcher `FUN_8004FCC8` as it acts on a
+press: `0x21` for a commit, `0x22` for a target-cursor step, `0x23` for a
+cancel or a refused arm. Most go through two shared tails - `0x801D20D4` keys
+`0x21` and `0x801D2968` keys `0x23` - which is why every ring arm and both
+round-prompt chips commit with one sound and every refusal shares another. The
+item and magic windows sound the list kernel's own cues instead. Site table and
+port: [`audio.md`](audio.md#the-battle-command-surfaces-blips).
+
 ### The ring's cancel steps back a member
 
 The cancel mask is the ring handler's first test (`0x801D11B4`, ahead of the

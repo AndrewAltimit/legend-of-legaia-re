@@ -76,7 +76,7 @@ separate retail chunks.
 - **Music**: [BGM dispatch](#bgm-dispatch) · [which track a scene plays](#which-track-a-scene-plays) · [swap handshake](#the-track-swap-handshake-fun_800243f0--op-0x35-sub-op-0xa) · [stop / pause / replay](#the-control-words-stop-pause-replay) · [movies](#movies-and-the-score) · [cold scene entry](#the-cold-scene-entry-sequence-and-what-each-missing-step-sounds-like) · [battle track](#the-battle-sound-set-picks-the-fights-track) · [`music_01` bank](#global-pool-bgm-the-music_01-bank)
 - **libsnd**: [SsAPI sequencer](#ssapi-sequencer-0x80061-0x80067-cluster) · [tempo](#where-wall-clock-tempo-becomes-an-integer-tick-step) · [event decode](#the-decoder-does-not-consume-a-whole-event) · [key-on pitch law](#the-key-on-pitch-law---note-against-the-tones-center) · [voice allocator](#voice-allocator--key-onoff-flush-the-middle-tier)
 - **libspu**: [SPU control](#libspu--spu-control-0x80068-0x8006d-cluster) · [DMA transfer engine](#spu-dma-transfer-engine) · [reverb](#reverb-model-engine-audio) · [Gaussian resampler](#voice-resampler---4-point-gaussian-interpolation-engine-audio) · [seq-management layer](#ssapi-seq-management-layer-above-libspu)
-- **Port**: [Sequencer](#engine-audio-model---sequencer-port) · [SPU](#engine-audio-model---from-scratch-spu-port) · [SFX bank + scheduler](#sfx-bank--scheduler) · [XA-ADPCM](#xa-adpcm)
+- **Port**: [Sequencer](#engine-audio-model---sequencer-port) · [SPU](#engine-audio-model---from-scratch-spu-port) · [SFX bank + scheduler](#sfx-bank--scheduler) · [battle command blips](#the-battle-command-surfaces-blips) · [sustained cues](#sustained-cues-loop-until-the-teardown-releases-them) · [XA-ADPCM](#xa-adpcm)
 - **Voice**: [arts shout](#battle-arts-voice-shout-path-engine) · [animation cue track](#the-second-shout-trigger---the-animation-cue-track-fun_800508dc) · [XA dispatchers and census](#cd-xa-voice-clip-dispatchers-and-static-cue-census) · [a normal attack](#what-a-normal-attack-sounds-like)
 - **Measurement**: [audio-trace parity oracle](#audio-trace-parity-oracle) · [open items](#open-items)
 
@@ -1706,6 +1706,67 @@ hosts refill that region per mode from `World::sync_sfx_residency`, so a
 category-`6` cue keys PROT 0876 in the field and is silent in battle, where
 retail's slot 6 is closed; the latch, the writers and the closed-slot rule are
 in [`sfx-table.md`](../formats/sfx-table.md#one-region-per-mode-slot-2-and-slot-6).
+
+### The battle command surfaces' blips
+
+Every press the battle command flow takes sounds a blip, and two producers
+write them. The flow SM `FUN_801D0748` calls the cue dispatcher `FUN_8004FCC8`,
+which stores `id - 1` on the ring for an id below `0x40`
+(`0x8004FD9C..0x8004FE28`), so its three ids key descriptors one lower:
+
+| Dispatcher id | Ring id | Meaning | Sites |
+|---|---|---|---|
+| `0x21` | `0x20` | a commit | the shared tail `0x801D20D4` (round prompt `Begin` / `Run`, the ring's `Item`, magic and Spirit arms, the arts entry's confirm), the `Attack` arm `0x801D15D0`, the attack-mode prompt `0x801D175C` / `0x801D17CC`, the target cursor's confirm `0x801D22B0`, the commit screen's `Begin` `0x801D31A4` |
+| `0x22` | `0x21` | a cursor step | the target cursor's move `0x801D263C`; the highlight walk at `0x801D082C..0x801D0A40` under the cross-button command option |
+| `0x23` | `0x22` | a cancel or a refused arm | the shared tail `0x801D2968` (the ring's cancel, its refused arms, the attack-mode cancel), the target cursor's cancel `0x801D2320`, the arts entry's refused directions `0x801D1EA0..0x801D1F78` and its cancel `0x801D2104`, the commit screen's `Reselect` `0x801D3054` |
+
+The item and magic windows are list windows paged by the SCUS list kernel
+`FUN_80032A44`, which writes the ring itself: `0x21` a step, `0x20` a confirm,
+`0x23` a disabled row, `0x37` a cancel ([`field-menu.md`](field-menu.md)). The
+item window's flow state reads the kernel's mode word `0x8007BB94` (`3`
+cancelled, `2` chosen) at `0x801D17F8`. The press that exhausts the arts gauge
+leaves the entry silently: `bne s0,zero,0x801D3290` at `0x801D20CC` steps over
+the tail's cue.
+
+The dispatcher's de-dup word `0x8007B724` is `-1` from the mode init
+(`0x8001DDA4`) and no other dumped routine stores it, so it never suppresses
+one of these.
+
+Port: `engine-core::world::battle::command_flow::ui_cues` derives one blip per
+frame from each surface's state before and after its input (the command
+session, the spell and item windows, the arts entry) and pushes its ring id,
+which both hosts drain through `AudioDirector::route_world_sfx`. Measured by
+`engine-shell/tests/battle_ui_sfx_disc.rs` on the play window's frame body:
+`Begin`, the `Item` arm, the item list's cancel and the ring's cancel each come
+due on the ring and key a voice on the tick of the press.
+
+### Sustained cues loop until the teardown releases them
+
+A descriptor with `+3 & 0x20` is a sustained cue: the drainer keys it on voices
+`7 .. 7 + n` and records `n` in `gp+0x5D0`
+([`sfx-table.md`](../formats/sfx-table.md#voice-allocation-one-shots-descend-from-23-sustained-cues-ascend-from-7)).
+Its sample loops (the VAG repeat flag) under a held ADSR sustain, so nothing in
+the voice ends it. Two things do: the drainer's own release of the old run when
+the next sustained cue keys, and the teardown `FUN_80017910`, which keys off
+voices `7 .. 7 + gp+0x5D0`, clears the count and writes `-1` to `gp+0x40C`.
+Its callers:
+
+| Caller | Site | When |
+|---|---|---|
+| mode init `FUN_8001DCF8` | `0x8001DDA8` | every mode entry - a battle's start and the field init after it |
+| battle anim commit `FUN_8004AD80` | `0x8004AE68` | any actor's commit whose staged clip `+0x1DA` differs from its latched clip `+0x1DB` (`0x8004AE54..0x8004AE60`); a re-commit of the same clip leaves the run sounding |
+| battle tint pass `FUN_80050120` | `0x8005040C` | a monster seat (`3..=6`) in its fade arm, while the low 24 bits of its render node's `+0x74` word are non-zero |
+| debug sound test | `overlay_debug_menu` | "stop all" |
+
+So a monster's looping attack sound - the `bse.dat` row a clip's cue track rings
+(cue `0x202` in a `map03` fight) - ends on the frame the next clip commits.
+Port: `SfxBank::release_sustained` is the teardown over the live voices; the
+anim commit raises `SfxRingOp::ReleaseSustained` in call order with the ring
+writes, `AudioDirector::apply_sfx_ring_ops` runs it ahead of the frame's drain,
+and `route_world_sfx` runs it on the edge into or out of a battle. The tint
+pass's site is not wired. Measured on the same harness: the `map03` fight keys
+`0x202` on voice 7, the next clip commit keys it off, and no cue voice sounds
+for longer than a clip.
 
 ### Retail capture of the slot-2 / slot-6 residency
 
