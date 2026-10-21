@@ -239,6 +239,26 @@ impl PlayWindowApp {
             // when every component took retail's value: a partly aligned
             // pose is neither retail's camera nor the engine's own.
             if mask == 0xFF {
+                // Every component took retail's pose, so the framing no
+                // longer reads the engine's bodies: the body pairs a seat
+                // stood a pose-mismatched body on served the framing law
+                // only, and the frame draws each body where retail's live
+                // pair puts it - its pose drawn from the live pair, as
+                // `FUN_80048A08` draws it - not shifted by the gap between
+                // the two poses' centroids (`battle_vahn_tri_somersault_super`:
+                // Vahn `62` and the reacting monster `76` units off retail's
+                // pairs on their body snaps).
+                if snaps.iter().any(|s| s.body.is_some()) {
+                    let live: Vec<_> = snaps
+                        .iter()
+                        .copied()
+                        .map(|mut s| {
+                            s.body = None;
+                            s
+                        })
+                        .collect();
+                    let _ = legaia_engine_capture::ground_snap::snap_battle_ground(world, &live);
+                }
                 world.refresh_battle_camera_ghost();
             }
         }

@@ -1032,6 +1032,17 @@ ground drift the undrift search reads is measured first).
   only on the components whose endpoint that framing agrees with
   (`BattleCamera::align_glide_origin_to`), as before, so a framing the law
   gets wrong still reads as one.
+- **An aligned frame draws the live pairs.** The body-pair moves serve the
+  framing law. Once the image child's alignment has taken retail's live
+  pose on every component, the camera no longer reads the engine's bodies,
+  so the child stands every combatant back on its captured live pair before
+  drawing: retail's draw `FUN_80048A08` poses a body from its live pair, and
+  a body moved by the gap between the two poses' centroids draws that far
+  off. `battle_vahn_tri_somersault_super` (a counter in the strike band) had
+  Vahn `62` units and the reacting monster `76` units off retail's pairs
+  (`image` `.843` to `.932`); `rim_elm_gimard_victory` `.840` to `.891`,
+  `battle_noa_miracle_art_combo` `.861` to `.892`. A partly aligned camera
+  keeps the body-pair ground, which its own framing still reads.
 - **Past the end signal** nothing is moved: the winners' poses and the
   results framing read clips the replay does not share.
 
