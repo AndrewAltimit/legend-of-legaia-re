@@ -38,6 +38,7 @@ pub mod field_seeds;
 pub mod formation_cell;
 pub mod ground_snap;
 pub mod hud_glide;
+pub mod melee_hits;
 pub mod phase_gate;
 pub mod script_gate;
 

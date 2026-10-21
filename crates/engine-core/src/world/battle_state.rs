@@ -439,6 +439,24 @@ pub struct BattleState {
     /// staged): the next party killing blow's absorb roll lands. Drawn and
     /// consumed like [`Self::forced_steal`].
     pub forced_absorb: bool,
+    /// The same kind of seed for a capture inside a melee action: the
+    /// pushes its landed hits left on the damage-number ring
+    /// (`ctx[+0x83C + i*4]`, struck slot at `ctx[+0x318 + i*2]`), as
+    /// `(engine battle slot, amount)` in push order, `0` for an amount the
+    /// ring no longer holds. Each party melee hit the replay lands on the
+    /// front entry's slot pops it and takes a known amount instead of its
+    /// own roll (the rolls still draw). Empty on every ordinary fight.
+    pub forced_melee_hits: std::collections::VecDeque<(u8, u16)>,
+    /// The string's total on its victim (`DAT_8007BD14`), `(engine slot,
+    /// total)`: the replayed hit that lands the total (`kill_check`) takes
+    /// whatever brings the string to it, and an earlier hit of unknown
+    /// amount leaves room for it. The total decides more than the bar: the
+    /// closing hit commits the knockdown `+0x1F1` when the string passes a
+    /// quarter of the survivor's maximum, and a knockdown's get-up ends on a
+    /// root step of hundreds of units. `noa_levelup_fight_pre` totals `19`
+    /// against Gobu Gobu's `76`, no more than the quarter, and a replay that
+    /// rolled `21` knocked him down and stood the fight 300 units off.
+    pub forced_melee_total: Option<(u8, u32)>,
     /// The commit log's launch glide - retail's `0x35 + i` clones gliding the
     /// log off the left edge when the member leaves the ring for a sub-screen
     /// and back when they return
@@ -936,6 +954,8 @@ impl BattleState {
             forced_monster_cast: None,
             forced_monster_target: None,
             forced_steal: false,
+            forced_melee_hits: Default::default(),
+            forced_melee_total: None,
             forced_absorb: false,
             commit_log_launch: None,
             action_plaque_glide: None,

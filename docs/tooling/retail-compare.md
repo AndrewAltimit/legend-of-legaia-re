@@ -1234,6 +1234,24 @@ left alone. A slot the action left at `0` keeps its HP: reviving a kill is
 seed against the capture, so the snapshot they read is taken with the hits
 landed.
 
+The replay deals those hits again on its own stream, and its damage rolls
+are not retail's. The amounts move more than the bars: a combo's closing hit
+commits the defender's knockdown `+0x1F1` when the string's total passes a
+quarter of a survivor's maximum ([battle-action-helpers](../subsystems/battle-action-helpers.md)),
+and the knockdown's get-up ends on a root step of hundreds of units.
+`noa_levelup_fight_pre`'s Noa totals `19` on Gobu Gobu's `76` - no more than
+the quarter, so he flinches and stands - where the replay rolled `21`,
+knocked him down and stood the fight 300 units and 74 yaw units off. So a
+party melee capture seeds the replay with its hits
+(`legaia_engine_capture::melee_hits`, `LEGAIA_BATTLE_MELEE_HITS` for the
+image child): the ring's pushes in order, each landing its amount where the
+ring still holds it (an amount reads `0` once its number has left the
+screen), and the string's total `DAT_8007BD14` - the `TOTAL` the combo
+cluster draws, which the melee kernel's HP write stores - which the hit that
+lands the total completes (`BattleState::forced_melee_total`). The rolls
+still draw, so the stream advances as retail's did. `noa_levelup_fight_pre`
+reads `camera` `.970` to `1.000` and `image` `.790` to `.996`.
+
 ### Rewards already granted
 
 A capture on the results frame or after it (`SpanGate::Results` / `Exit`) holds

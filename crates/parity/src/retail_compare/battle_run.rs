@@ -395,6 +395,15 @@ pub(super) fn battle_image(
             legaia_engine_capture::clip_cursors::clip_cursors_to_env(&seeds),
         ));
     }
+    // A party melee capture's landed hits, so the replayed combo deals
+    // retail's amounts (`legaia_engine_capture::melee_hits`).
+    let hits = battle.melee_hit_seeds();
+    if !hits.is_empty() {
+        env.push((
+            "LEGAIA_BATTLE_MELEE_HITS",
+            legaia_engine_capture::melee_hits::melee_hits_to_env(&hits),
+        ));
+    }
     if battle.mystic_shield {
         env.push(("LEGAIA_BATTLE_MYSTIC_SHIELD", "1".to_string()));
     }

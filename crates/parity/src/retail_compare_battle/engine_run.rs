@@ -570,6 +570,10 @@ pub fn run_engine_battle(
                     }
                 }
                 pre_drive = Some(snap);
+                legaia_engine_capture::melee_hits::seed_melee_hits(
+                    &mut session.host.world,
+                    &battle.melee_hit_seeds(),
+                );
                 driven = Some(run_drive(
                     &mut session,
                     &mut director,

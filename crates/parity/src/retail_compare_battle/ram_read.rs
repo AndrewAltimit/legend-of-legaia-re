@@ -73,6 +73,8 @@ const RING_VALUE: u32 = 0x83C;
 const RING_SEAT: u32 = 0x318;
 /// The ring's entry count (`FUN_801F44A0` folds its cursor `mod 8`).
 const RING_LEN: u8 = 8;
+/// The string's running total `DAT_8007BD14` (`0x801EEA64..0x801EEA78`).
+const COMBO_TOTAL: u32 = 0x8007_BD14;
 
 /// The hits the action in flight has landed on each pool slot's HP, off the
 /// damage-number ring `FUN_801F44A0` pushes (inlined at `0x801E1898..0x801E1918`
@@ -94,6 +96,29 @@ const RING_LEN: u8 = 8;
 /// mid-combo shows the hits on the ring and the victim's HP untouched
 /// (`battle_vahn_tri_somersault_super`: `242` pushed, `442` banked, full
 /// HP). What the bank still holds is taken off the slot's sum.
+/// The ring's pushes in order, `(pool slot, amount)` - the hits the action
+/// in flight resolved, each as the melee kernel landed it, `0` where the
+/// number has left the screen and the ring no longer holds it. Empty where
+/// [`action_hits`] is (outside an action, or a ring that has wrapped).
+pub(super) fn action_hit_sequence(ram: &[u8], ctx: u32) -> Vec<(u8, u16)> {
+    let state = game_anchors::u8_at(ram, ctx + 7);
+    let count = game_anchors::u8_at(ram, ctx + RING_PUSHES);
+    if game_anchors::u8_at(ram, ctx + 6) != 0xFF
+        || PRE_SEED_STATES.contains(&state)
+        || state == 0x0C
+        || count > RING_LEN
+    {
+        return Vec::new();
+    }
+    (0..u32::from(count))
+        .filter_map(|i| {
+            let value = game_anchors::u16_at(ram, ctx + RING_VALUE + i * 4) as i16;
+            let seat = game_anchors::u16_at(ram, ctx + RING_SEAT + i * 2);
+            (seat < 8).then_some((seat as u8, value.max(0) as u16))
+        })
+        .collect()
+}
+
 pub(super) fn action_hits(ram: &[u8], ctx: u32) -> Vec<(u8, u16)> {
     let state = game_anchors::u8_at(ram, ctx + 7);
     let count = game_anchors::u8_at(ram, ctx + RING_PUSHES);
@@ -272,6 +297,8 @@ impl RetailBattle {
                 .flatten(),
             module_phase: game_anchors::u8_at(ram, ctx + 0x279),
             action_hits: action_hits(ram, ctx),
+            action_hit_sequence: action_hit_sequence(ram, ctx),
+            combo_total: u32::from(game_anchors::u16_at(ram, COMBO_TOTAL)),
             entry_latches: Vec::new(),
             clip_cursors: (0..8u32)
                 .filter_map(|slot| {

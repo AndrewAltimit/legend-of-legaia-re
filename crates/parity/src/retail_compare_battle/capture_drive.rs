@@ -4,6 +4,31 @@
 use super::*;
 
 impl RetailBattle {
+    /// The hits a party **melee** capture's action had landed, in push order
+    /// ([`RetailBattle::action_hit_sequence`]), for the replay to deal again
+    /// at retail's amounts (`legaia_engine_capture::melee_hits`). Empty for
+    /// any other plan: a cast's hits come from its module, not the melee
+    /// kernel.
+    ///
+    /// The total is `DAT_8007BD14` on the action's target, read only when
+    /// the ring holds pushes (so it is this action's).
+    pub fn melee_hit_seeds(&self) -> legaia_engine_capture::melee_hits::MeleeHitSeed {
+        match self.seed_plan() {
+            SeedPlan::Action { seat, .. }
+                if seat < 3
+                    && self.queued_category == 3
+                    && !self.action_hit_sequence.is_empty() =>
+            {
+                legaia_engine_capture::melee_hits::MeleeHitSeed {
+                    hits: self.action_hit_sequence.clone(),
+                    total: (self.target_code >= 3 && self.combo_total > 0)
+                        .then_some((self.target_code, self.combo_total)),
+                }
+            }
+            _ => Default::default(),
+        }
+    }
+
     /// Monster indices that read `0` HP on a capture of a **party** action in
     /// flight: the swing's victims, which [`run_engine_battle`] can seed at
     /// `1` HP so the replay makes the kill rather than ending the fight at

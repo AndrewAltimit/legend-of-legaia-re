@@ -298,6 +298,10 @@ pub struct ScreenshotConfig {
     /// beside the bars as the headless seed raises it
     /// (`World::raise_mystic_shield`). Cleared once raised.
     pub mystic_shield: std::cell::Cell<bool>,
+    /// `LEGAIA_BATTLE_MELEE_HITS=slot:amount,...`: the hits a captured
+    /// party melee action had landed, dealt again at those amounts by the
+    /// replay (`legaia_engine_capture::melee_hits`). Seeded with the drive.
+    pub battle_melee_hits: legaia_engine_capture::melee_hits::MeleeHitSeed,
     /// `LEGAIA_SEAT_CAST_PARTS`: a captured cast's live slot-B parts, seated
     /// over the replay's parts of the same records on the frame the capture
     /// is taken (`SummonScene::install_part_snapshot`); taken once.
@@ -650,6 +654,9 @@ impl ScreenshotConfig {
             battle_bars_seeded: std::cell::Cell::new(false),
             seat_battle_clips: std::env::var("LEGAIA_SEAT_BATTLE_CLIPS")
                 .map(|v| legaia_engine_capture::clip_cursors::clip_cursors_from_env(&v))
+                .unwrap_or_default(),
+            battle_melee_hits: std::env::var("LEGAIA_BATTLE_MELEE_HITS")
+                .map(|v| legaia_engine_capture::melee_hits::melee_hits_from_env(&v))
                 .unwrap_or_default(),
             mystic_shield: std::cell::Cell::new(
                 std::env::var("LEGAIA_BATTLE_MYSTIC_SHIELD").is_ok_and(|v| v.trim() == "1"),

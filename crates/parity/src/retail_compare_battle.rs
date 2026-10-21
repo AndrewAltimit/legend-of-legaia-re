@@ -432,6 +432,14 @@ pub struct RetailBattle {
     /// replay re-deals them, so the seed takes them back off the bars
     /// ([`Self::pre_action_hp`]).
     pub action_hits: Vec<(u8, u16)>,
+    /// The same ring in push order ([`action_hit_sequence`]): a party melee
+    /// replay lands these amounts rather than its own rolls
+    /// ([`Self::melee_hit_seeds`]).
+    pub action_hit_sequence: Vec<(u8, u16)>,
+    /// The string's running total `DAT_8007BD14` (the `TOTAL` the combo
+    /// cluster draws; the melee kernel's HP write stores it,
+    /// `0x801EEA64..0x801EEA78`).
+    pub combo_total: u32,
     /// Each pool slot's live `+0x34` / `+0x38` pair (party `0..=2`,
     /// monsters `3..=7`), `None` for an empty slot.
     pub ground: Vec<Option<[i16; 2]>>,

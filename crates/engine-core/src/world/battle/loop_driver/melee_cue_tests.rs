@@ -564,3 +564,19 @@ fn a_forced_absorb_lands_once() {
     assert!(w.roll_seru_absorb(0, 1), "the seed lands it");
     assert!(!w.battle.forced_absorb, "and is spent");
 }
+
+/// The retail-compare melee seed: a known push lands its amount, and the
+/// hit that lands the total brings the string to the captured total.
+#[test]
+fn a_forced_melee_string_lands_the_captured_total() {
+    let mut w = absorb_duel();
+    w.actors[1].battle.hp = 500;
+    w.actors[1].battle.max_hp = 500;
+    w.battle.forced_melee_hits = [(1u8, 7u16), (1, 0)].into_iter().collect();
+    w.battle.forced_melee_total = Some((1, 19));
+    w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, false);
+    assert_eq!(w.actors[1].battle.damage_accum, 7, "the known push");
+    w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, true);
+    assert_eq!(w.actors[1].battle.damage_accum, 19, "the closing hit lands the total");
+    assert!(w.battle.forced_melee_hits.is_empty());
+}

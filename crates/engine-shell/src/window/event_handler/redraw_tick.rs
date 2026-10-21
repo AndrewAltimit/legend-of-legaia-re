@@ -454,6 +454,10 @@ impl PlayWindowApp {
                 } else {
                     if world.mode == SceneMode::Battle && !sc.battle_drive_primed.replace(true) {
                         drive.prime(world);
+                        legaia_engine_capture::melee_hits::seed_melee_hits(
+                            world,
+                            &sc.battle_melee_hits,
+                        );
                     }
                     drive.steer(world);
                     // A reached phase is held with no input until it is
