@@ -54,7 +54,7 @@
 //! engine's stand-in for the retail world-map dev menu the records page is a
 //! row of: the native window behind the `LEGAIA_DEV_MENU` opt-in
 //! (`window/dev_menu.rs`) and the browser play page behind its session-only
-//! Dev-menu checkbox (`web-viewer/src/play_dev_menu.rs`). Both feed the six
+//! Dev-menu checkbox (`web-play/src/play_dev_menu.rs`). Both feed the six
 //! per-character counters through [`RecordCounters`] and the play clock from
 //! `World::clock.play_time_seconds`. The lifetime battle and escape
 //! counters and the treasure census are state the engine does not keep yet,

@@ -4,7 +4,7 @@
 //! Both rungs are *ladders*, not oracles - each drives a real scene through
 //! `SceneHost` with a pad word per tick and reads the presenter's **output**
 //! surface every frame, exactly as the two hosts do
-//! (`web_viewer::play_cutscene` and the native window's HUD both call
+//! (`web_play::play_cutscene` and the native window's HUD both call
 //! `CutsceneNarration::visible_lines` / the inline panel's page bytes). The
 //! deeper behaviour of each presenter already has its own disc oracle
 //! (`opdeene_narration_playback`, `inline_dialogue_vm_no_panic_disc`); what was

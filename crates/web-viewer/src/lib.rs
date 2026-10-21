@@ -9,70 +9,25 @@ pub(crate) mod art_clip_bank;
 pub mod arts_view;
 pub mod audio;
 mod audio_api;
-pub mod boot_title;
-pub mod cards;
 mod catalog;
 mod character;
-pub mod disc;
 pub mod equipment_view;
-mod field_actors;
 pub mod field_npc;
 pub mod field_scene;
-mod host_slot;
 mod inspect;
-pub mod minigames;
 mod monster;
 mod nav_disc;
 pub mod npc_dialog;
 mod packet_color;
-pub mod pad_bindings;
-pub mod play;
-pub mod play_battle;
-pub mod play_battle_body_blend;
-pub mod play_battle_fx;
-pub mod play_battle_limb_dim;
-pub mod play_battle_render;
-pub mod play_battle_vram;
-pub mod play_bgm;
-pub mod play_camera;
-pub mod play_cheats;
-pub mod play_cutscene;
-pub mod play_dance_art;
-pub mod play_dev_menu;
-pub mod play_dialog;
-pub mod play_field_fx;
-pub mod play_field_hud;
-pub mod play_fishing;
-pub mod play_fmv;
-pub mod play_fog_volume;
-pub mod play_frame_step;
-pub mod play_host_parity;
-pub mod play_hotkeys;
-pub mod play_lighting;
-pub mod play_menu;
-pub mod play_minigame_arena;
-pub mod play_minigame_slots;
-pub mod play_minigames;
-pub mod play_name_entry;
-pub mod play_sfx;
-pub mod play_shop;
-pub mod play_tile_board;
-pub mod play_toggles;
-pub mod play_world_map_markers;
-pub mod play_xa;
 pub mod player_anm;
 mod prot_locate;
-pub mod resume;
 pub mod rom_patcher;
-pub mod runtime;
 mod scene_export;
 mod scene_geom;
 pub mod sentinel_placements;
-pub mod session_save;
 pub mod sfx_view;
-pub mod shop_vendors;
-// --- lane P ---
 pub mod shop_items;
+pub mod shop_vendors;
 pub mod summon_view;
 pub mod texture_pack;
 pub mod texture_registry;
@@ -81,11 +36,12 @@ pub mod translate_workbench;
 mod viewer_render;
 mod world_mist;
 
-use disc::{EntryMeta, extract_prot_dat, extract_scus, parse_prot_toc};
 use legaia_container_formats::tim_scan;
 use legaia_disc_audit::categorize::{Class, classify};
 use legaia_disc_audit::tim_catalog;
 use legaia_disc_audit::tim_deep_catalog;
+use legaia_web_play::disc;
+use legaia_web_play::disc::{EntryMeta, extract_prot_dat, extract_scus, parse_prot_toc};
 use wasm_bindgen::Clamped;
 use wasm_bindgen::prelude::*;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
@@ -240,7 +196,7 @@ struct KingdomPack {
     /// stepped by [`LegaiaViewer::kingdom_clut_tick`]. `None` until
     /// `set_scene_kingdom` resolves it (raw PROT.DAT loads have no CDNAME
     /// block to resolve against).
-    clut_anim: Option<crate::field_scene::FieldSceneAnim>,
+    clut_anim: Option<legaia_web_play::field_scene_anim::FieldSceneAnim>,
 }
 
 #[wasm_bindgen]
@@ -344,7 +300,7 @@ pub struct LegaiaViewer {
     /// placements, resolved against `field_scene`'s TMD pool). Populated by
     /// [`LegaiaViewer::set_scene_npcs`]; consumed by the `field_npc_*`
     /// accessors.
-    field_npcs: Option<field_npc::FieldNpcPack>,
+    field_npcs: Option<legaia_web_play::field_npc::FieldNpcPack>,
     /// Cached engine-core PROT index over the loaded disc (built on the
     /// first `set_scene_field`; cleared on `load_disc`).
     prot_index: Option<std::sync::Arc<legaia_engine_scene::scene::ProtIndex>>,
@@ -362,7 +318,6 @@ pub struct LegaiaViewer {
     /// slot byte to label a player file's five sections, which are **not** in
     /// the same order for every character. `None` on raw PROT.DAT loads.
     equip_stats: Option<legaia_game_tables::equip_stats::EquipStatTable>,
-    // --- lane P ---
     /// Every named item's stat record as JSON ([`shop_items`]), joined from
     /// the SCUS item / equipment / effect / passive tables at load time for
     /// the shops page. `None` on raw PROT.DAT loads.

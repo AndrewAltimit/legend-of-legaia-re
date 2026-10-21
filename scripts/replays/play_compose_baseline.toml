@@ -1,4 +1,4 @@
-# Ratchet for `crates/web-viewer/tests/play_compose_ladder.rs`.
+# Ratchet for `crates/web-play/tests/play_compose_ladder.rs`.
 #
 # `reached` is the highest rung the browser play page's draw-composition
 # ladder has cleared. The test asserts `score >= reached` and never writes

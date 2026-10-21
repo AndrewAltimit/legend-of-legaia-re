@@ -1969,7 +1969,7 @@ OT bucket, not a quad family.
 Both hosts composite the frame's pushes through one emitter - `World::screen_tint_push_args`
 into `legaia_render_kernels::screen_prim::screen_effect_push_prims`, which applies the floor, the
 two-bit mask and the red/blue swap. The page-side consumer is pinned by
-`crates/web-viewer/tests/screen_effect_page_prims.rs` (the `town0e` entry script issues the
+`crates/web-play/tests/screen_effect_page_prims.rs` (the `town0e` entry script issues the
 instruction), the native call site by the `SIM_PAIRS` row in
 `scripts/ci/check-ui-host-drift.py`.
 
@@ -2754,7 +2754,7 @@ the field-VM opcode's own literals are per-scene MAN data, named by their decode
 | IDCT + dequantize formula | `crates/mdec/src/lib.rs`; PSX-SPX §MDEC |
 | BT.601 coefficients | `crates/mdec/src/lib.rs` |
 | XA sector layout + demux | `crates/xa/src/demux.rs`; [`formats/xa.md`](../formats/xa.md) |
-| Interleaved STR A/V decode + sync clock | `crates/engine-shell/src/cutscene_av.rs`; browser twin `crates/web-viewer/src/play_fmv.rs` |
+| Interleaved STR A/V decode + sync clock | `crates/engine-shell/src/cutscene_av.rs`; browser twin `crates/web-play/src/play_fmv.rs` |
 | Audio-cursor playback clock | `crates/engine-audio/src/lib.rs` (`AudioOut::xa_cursor_secs`) |
 | Game modes 26 / 27 | `crates/engine-mode/src/mode.rs` |
 | `play-str` frame loop | `crates/engine-shell/src/window/str_player.rs` (`cmd_play_str` / `StrPlayerApp`) |

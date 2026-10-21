@@ -43,7 +43,7 @@ All retail routines here are resident in `SCUS_942.54` unless marked as battle-o
 | Staged clip commit, ladder, rate arms | `engine-core` `world/actors/battle_anim.rs`, `world/battle/clip_ladder.rs`; `engine-battle-vm::battle_anim_rate` |
 | Tint pass, draw tick, ghost pass | `engine-battle-vm::{battle_actor_tint, battle_actor_tick, battle_action::camera_ghost}`, `engine-battle::battle_body_blend` |
 | Trails, streaks, after-images | `render-kernels::battle_trail`, `engine-battle::battle_afterimage`, `render-kernels::{battle_trail, streak_pass, afterimage}` |
-| Hosts | `crates/engine-shell/src/window/battle.rs`; `crates/web-viewer/src/play_battle_render.rs`, `play_battle.rs`, `play_battle_fx.rs` |
+| Hosts | `crates/engine-shell/src/window/battle.rs`; `crates/web-play/src/play_battle_render.rs`, `play_battle.rs`, `play_battle_fx.rs` |
 
 ## Draw pipeline
 
@@ -516,7 +516,7 @@ The same entry replays the party forms' `VramWriteLog`, draws the stage the sess
 
 ### Browser play-page battle render
 
-The browser play page runs the same `Field → Battle` edge through `legaia_web_viewer::play_battle_render` (`LegaiaRuntime::enter_battle_render` / `exit_battle_render`), reusing the shared kernels:
+The browser play page runs the same `Field → Battle` edge through `legaia_web_play::play_battle_render` (`LegaiaRuntime::enter_battle_render` / `exit_battle_render`), reusing the shared kernels:
 
 - **Stage.** The scene's battle-kind resource build (`SceneLoadKind::Battle`) makes the stage dome and its textures resident. The dome takes `drawn_objects_tmd` plus the `MirrorXTable` second copy, pre-appended via `VramMesh::append_scaled` so the page uploads one mesh. The ground grid comes from `build_ground_grid` with the `DAT_80078C1C` far colour.
 - **VRAM.** The flame atlas, per-slot monster injection and assembled party bands land in a throwaway battle VRAM the page swaps in for the fight; battle exit re-uploads the untouched field VRAM.

@@ -35,7 +35,7 @@ The VM-side modules live in `crates/engine-battle-vm`. Camera inputs and the per
 `engine-core::battle_cam_inputs` (`World::tick_battle_camera`,
 `World::battle_cam_pose`). Both hosts - the native `play-window`
 (`crates/engine-shell/src/window/`) and the browser play page
-(`crates/web-viewer/src/play_battle_render.rs`) - only read the pose.
+(`crates/web-play/src/play_battle_render.rs`) - only read the pose.
 
 Camera globals:
 

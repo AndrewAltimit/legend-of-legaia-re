@@ -82,7 +82,7 @@ def check_boot_installs() -> tuple[list[str], list[str], int]:
             continue
         problems.append(
             f"BOOT DRIFT world.{m}: the native boot ({BOOT_NATIVE.relative_to(REPO)}) "
-            f"installs it and no shipped crates/web-viewer source calls it. Install it "
+            f"installs it and no shipped crates/web-play source calls it. Install it "
             f"in the page's load_disc (better: fold it into one engine install both "
             f"boots call), or add a [[boot_install]] waiver with a reason."
         )

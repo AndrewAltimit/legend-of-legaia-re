@@ -888,7 +888,7 @@
 
     /* Battle effect layer: append this frame's FX draws to `draws`.
      *
-     * Two engine-composed seams, both from `crates/web-viewer/play_battle_fx`:
+     * Two engine-composed seams, both from `crates/web-play/play_battle_fx`:
      *
      *  - the effect POOL, as one batched mesh of camera-facing textured quads
      *    (the retail FUN_801E0088 pass-2 billboards, sampling the flame atlas

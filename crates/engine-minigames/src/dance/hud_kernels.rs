@@ -187,7 +187,7 @@ pub struct DanceStingVoice {
 }
 
 // Wired: the browser dance page's `dance_sting`
-// (`web-viewer::minigames_dance`) takes its `(program, tone, note)` triple
+// (`web-play::minigames_dance`) takes its `(program, tone, note)` triple
 // from here rather than recomputing it, and decodes the named tone out of the
 // overlay's own VAB - which is what makes the bank index a read of
 // [`STING_PROGRAM`] instead of a literal `1` that happened to agree. In the

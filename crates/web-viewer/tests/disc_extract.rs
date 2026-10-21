@@ -4,7 +4,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_web_viewer::disc::{extract_prot_dat, is_mode2_2352_disc, parse_prot_toc};
+use legaia_web_play::disc::{extract_prot_dat, is_mode2_2352_disc, parse_prot_toc};
 use std::env;
 use std::fs;
 

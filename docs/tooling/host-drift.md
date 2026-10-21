@@ -9,7 +9,7 @@ so a host does not re-spell it.
 | Host | Crate | Driven by |
 |---|---|---|
 | native play-window | [`crates/engine-shell`](../../crates/engine-shell/) | wgpu via [`crates/engine-render`](../../crates/engine-render/README.md) |
-| browser play page | [`crates/web-viewer`](../../crates/web-viewer/README.md) `runtime.rs` + `play_*.rs` | [`site/js/play-app.js`](../../site/js/play-app.js) + the `play-view-*.js` files it names |
+| browser play page | [`crates/web-play`](../../crates/web-play/README.md) `runtime.rs` + `play_*.rs` | [`site/js/play-app.js`](../../site/js/play-app.js) + the `play-view-*.js` files it names |
 | browser minigames page | same crate, `minigames*.rs` (`LegaiaMinigames`) | per-minigame modules under `site/js/` |
 
 Both play hosts tick one `engine-session::BootSession`; the minigames page
@@ -148,7 +148,7 @@ checks (`check-dump-stat-drift.py`, `check-dump-base-integrity.py`,
 Every tier below reads sources. Every cargo gate beside them - `cargo fmt`,
 `cargo clippy --all-targets --workspace`, `cargo test`, `cargo build` - builds
 for the **host** triple, so the `#[cfg(target_arch = "wasm32")]` blocks that
-run through much of `crates/web-viewer/` are code none of those four ever
+run through much of `crates/web-play/` and `crates/web-viewer/` are code none of those four ever
 sees. A page feature written inside one can name a private field, a moved
 method or a deleted type and stay green through the whole ladder; the first
 thing that compiles it is a wasm build, which is where one was found.
@@ -678,7 +678,7 @@ that is the cheaper fix wherever the surfaces are genuinely the same screen.
 
 The pause menu went that way. Its draw-list assembly used to live twice: in
 `engine-shell`'s `window/menu_draws.rs` + `window/title_save_draws.rs` and in
-`web-viewer`'s `play_menu.rs`. Two of the divergences that had already grown
+`web-play`'s `play_menu.rs`. Two of the divergences that had already grown
 there are exactly this tier's shape - one host resolved a title tab through
 the descriptor painter and the other through a pinned-pen label builder, and
 the Items screen's Use-route confirm framed before the screen's window set on
@@ -1000,7 +1000,7 @@ work**, in the form the waiver rules above require.
 `[[boot_install]]` rows in `ui-host-drift-waivers.toml`.
 
 The tier takes every `world.install_*` / `world.set_*` call in
-`crates/engine-session/src/session.rs` and requires a shipped `crates/web-viewer`
+`crates/engine-session/src/session.rs` and requires a shipped `crates/web-play`
 source to call the same method, or a waiver.
 
 The case it exists for: the native boot installed six static-SCUS progression
@@ -1013,7 +1013,7 @@ accessory passive, played no melee grunt or cast voice (a zero cue duration),
 and skipped the victory pose's `rand()` - so its RNG stream left the native
 one's after every battle. Both boots now call one entry,
 `World::install_retail_progression_tables`
-(`crates/web-viewer/tests/play_boot_tables_parity.rs`).
+(`crates/web-play/tests/play_boot_tables_parity.rs`).
 
 Blind spot: a table the boot writes as a **field assignment**. Four of the six
 were, which is the argument for the single entry - a table installed through a
@@ -1061,7 +1061,7 @@ field instead (`WorldToggles`), written by each host: the native session from
 its environment in one function
 (`legaia_engine_session::native::apply_env_world_toggles`, run on every native
 session open, so a corpus run's child processes inherit it) and the play page
-from a `LegaiaRuntime` setter ([`play_toggles.rs`](../../crates/web-viewer/src/play_toggles.rs)).
+from a `LegaiaRuntime` setter ([`play_toggles.rs`](../../crates/web-play/src/play_toggles.rs)).
 
 The tier scans every `crates/engine-*` crate a browser host links, plus
 `render-kernels`, for `env::var` / `var_os` / `vars` / `vars_os` (comments
@@ -1280,7 +1280,7 @@ decidable per instance, not from a source pattern.
 |---|---|---|
 | <a id="one-decision-two-inputs"></a>**One decision, two inputs.** A predicate both hosts run, fed from different state. | The occlusion-fade arming gate: native excluded boot UI, world map, cutscene camera and debug orbit; the page only battle and minigames. | Split into the half the world can answer (`field_occlusion::fade_armed`, with `player_body_centre` as both ray target and shader focus) and the half only the host can (master toggle, a UI owning the screen, debug vantage, VR eye). |
 | **A rule spelled beside the shared predicate.** A host calls the predicate and adds its own clause. | Native asked `field_menu_open_allowed` *and* `!menu_runtime.is_open()` *and* its narration local; the page asked only the predicate, so Start opened the pause menu over a shop. | Move the clause into the kernel; a copy is two spellings again. |
-| **A shared builder starved by its caller's slice.** The output degrades instead of failing. | Battle HUD status badges: `Stone` / `Rage` / `Faint` decode with the CLUT-only TIM one file *before* the system-UI sheet (`save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET`). Rooted at the sheet, 6 of 9 resolve; rooted at the extension, 9 of 9. | Run the builder both ways and assert they differ (`crates/web-viewer/tests/battle_hud_badges.rs`). |
+| **A shared builder starved by its caller's slice.** The output degrades instead of failing. | Battle HUD status badges: `Stone` / `Rage` / `Faint` decode with the CLUT-only TIM one file *before* the system-UI sheet (`save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET`). Rooted at the sheet, 6 of 9 resolve; rooted at the extension, 9 of 9. | Run the builder both ways and assert they differ (`crates/web-play/tests/battle_hud_badges.rs`). |
 | **An input contract one host does not honour.** | `MenuRuntime::tick` filters no repeats; the native window handed it the *held* word, so one press stepped several rows. | `menu_runtime::menu_input_from_pad_edges` on both. |
 | **A raw word into a packed-mask reader.** | `World::input` holds the raw PSX word (Cross `0x4000`); the op-`0x49` submode family tests the packed masks `FUN_8001822C` builds (Cross `0x0040`). Cross did nothing on a coin cabinet on both hosts, and the tests fed the packed constant so they asserted the defect. | `World::submode_pad_words` through `dev_menu::retail_packed`. |
 | **A typed channel narrowed at one host.** | The web strike-SFX scheduler was `u8` end to end and dropped every cue above `0xFF` through a `try_from`. | Widen to the event's `u16`. |
@@ -1651,7 +1651,7 @@ skips the picker's story baseline, which would otherwise clear system flags
 
 The site's full-map viewer is a fifth consumer of the same kernels:
 `engine-scene-host::scene_live::LiveScene` enters the scene through `SceneHost` and
-ticks it headless, and `web-viewer::field_actors::FieldActors` +
+ticks it headless, and `web-play::field_actors::FieldActors` +
 `site/js/field-actors.js` are the one actor path both pages use. The disc-gated
 `crates/web-viewer/tests/field_scene_anim.rs` runs the viewer and
 `LegaiaRuntime` side by side and requires floor-wave offsets, ground positions,
@@ -1735,7 +1735,7 @@ angle. `World` publishes the pair as `FieldNpcState::tilts`
 (`World::field_npc_tilt`), and each host composes through the builder the
 placement-tilt rule already ties together (`battle_intro::placement_rotation`,
 `placementModelEuler`). Disc-wide, op `0x15` has no authored site and op `0x16`
-has 45, all in `juui1` (`crates/web-viewer/tests/play_npc_tilt_parity.rs`).
+has 45, all in `juui1` (`crates/web-play/tests/play_npc_tilt_parity.rs`).
 
 ### Screen-space PSX primitives across the two hosts
 

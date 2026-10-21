@@ -596,7 +596,7 @@ mod battle_entry_yaw_tests {
     /// the kernel's own cases live in `legaia_engine_battle_vm::battle_cam_script`,
     /// and what this pins is that the window's `BattleCamInputs` carries its
     /// result rather than the raw compass word. The browser play page's twin
-    /// of this test is in `crates/web-viewer/src/play_battle_render.rs`.
+    /// of this test is in `crates/web-play/src/play_battle_render.rs`.
     ///
     /// Every azimuth on (or beside) the seat axis is replaced - `0` and `2048`
     /// are the two that put the eye straight down it, and the port's fixed
@@ -771,7 +771,7 @@ mod battle_cam_shared_tests {
     /// monster) driven through THIS host's derivation + the shared drive
     /// must land on the literal measured close-up. The browser host's
     /// mirror test (`web_pose_matches_the_native_recipe` in
-    /// `web-viewer::play_battle_render`) runs the identical world recipe to
+    /// `web-play::play_battle_render`) runs the identical world recipe to
     /// the identical literals, so the two hosts' poses are equal to each
     /// other by transitivity.
     #[test]
@@ -844,7 +844,7 @@ mod battle_cam_shared_tests {
     /// was invisible on the pinned recipe. This seats the actor **off-axis**
     /// with the two headings deliberately different, so reading the wrong one
     /// lands on a different yaw. The browser mirror
-    /// (`web-viewer::play_battle_render`) asserts the same literals.
+    /// (`web-play::play_battle_render`) asserts the same literals.
     #[test]
     #[allow(clippy::field_reassign_with_default)]
     fn the_camera_reads_the_battle_heading_not_the_field_heading() {

@@ -1,7 +1,7 @@
 //! `legaia-engine-session` - the per-frame game session both play hosts run.
 //!
 //! The host-neutral modules are free of wgpu, winit and cpal, so the native
-//! window (`engine-shell`) and the browser play page (`web-viewer`) link the
+//! window (`engine-shell`) and the browser play page (`web-play`) link the
 //! same code. A host supplies only what it owns: the audio output (any
 //! [`legaia_engine_audio::AudioSink`]), the GPU, and its input source.
 //!

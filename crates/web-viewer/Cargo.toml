@@ -10,12 +10,10 @@ autotests = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-legaia-engine-camera.workspace = true
+legaia-web-play.workspace = true
 legaia-engine-menus.workspace = true
 legaia-engine-field.workspace = true
-legaia-engine-fishing.workspace = true
 legaia-render-kernels.workspace = true
-legaia-engine-battle-vm.workspace = true
 legaia-tim.workspace = true
 legaia-prot.workspace = true
 legaia-lzs.workspace = true
@@ -29,21 +27,11 @@ legaia-seq.workspace = true
 legaia-vab.workspace = true
 legaia-xa.workspace = true
 legaia-mdec.workspace = true
-legaia-engine-vm.workspace = true
-legaia-engine-ui.workspace = true
-glam.workspace = true
 legaia-font.workspace = true
-legaia-save.workspace = true
-legaia-engine-core.workspace = true
 legaia-engine-world-views.workspace = true
-legaia-engine-battle-hud.workspace = true
-legaia-engine-cheats.workspace = true
 legaia-engine-scene-host.workspace = true
-legaia-engine-menu-runtime.workspace = true
 legaia-engine-scene.workspace = true
 legaia-engine-audio = { workspace = true, features = ["audio-webaudio"] }
-legaia-engine-session.workspace = true
-legaia-engine-screens.workspace = true
 legaia-mednafen.workspace = true
 legaia-actor-formats.workspace = true
 legaia-arts-patch.workspace = true
@@ -54,15 +42,10 @@ legaia-delilas-party.workspace = true
 legaia-disc-audit.workspace = true
 legaia-disc-patch.workspace = true
 legaia-engine-battle.workspace = true
-legaia-engine-dialog.workspace = true
 legaia-engine-effects.workspace = true
-legaia-engine-minigame-scenes.workspace = true
-legaia-engine-minigames.workspace = true
-legaia-engine-mode.workspace = true
 legaia-engine-system.workspace = true
 legaia-game-tables.workspace = true
 legaia-minigame-formats.workspace = true
-legaia-overlay-images.workspace = true
 legaia-ram-image.workspace = true
 legaia-scene-formats.workspace = true
 legaia-texture-replace.workspace = true
@@ -89,6 +72,8 @@ features = [
 ]
 
 [dev-dependencies]
+legaia-engine-minigames.workspace = true
+legaia-engine-ui.workspace = true
 sha2.workspace = true
 toml.workspace = true
 

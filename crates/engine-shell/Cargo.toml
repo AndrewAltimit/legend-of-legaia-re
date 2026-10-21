@@ -107,9 +107,9 @@ tempfile.workspace = true
 legaia-pcsx-redux.workspace = true
 # `mode_seat_host_parity` drives the BROWSER host beside this one, so the two
 # mode traces are compared by running both rather than by transcribing one.
-# `legaia-web-viewer` never depends on this crate, so the edge is acyclic, and
+# `legaia-web-play` never depends on this crate, so the edge is acyclic, and
 # it is dev-only: the shipped `legaia-engine` binary links none of it.
-legaia-web-viewer.workspace = true
+legaia-web-play.workspace = true
 
 [[test]]
 name = "integration"

@@ -36,7 +36,7 @@ SAVE_IO_ROUTES = [
     },
     {
         "host": "web",
-        "root": "crates/web-viewer/src",
+        "root": "crates/web-play/src",
         "primitives": {
             "write_session_into_card": {"apply_card_outcome", "service_card_save"},
             "load_session_from_card": {"apply_card_outcome"},

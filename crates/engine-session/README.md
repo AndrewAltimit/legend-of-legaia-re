@@ -89,7 +89,7 @@ suspends the field, the field. It runs the parts the session can do itself
 and returns a `TickOwner` the host matches on.
 
 Both play hosts run it. The browser play page holds a `BootSession` over its
-WebAudio output (`crates/web-viewer/src/host_slot.rs`), built with
+WebAudio output (`crates/web-play/src/host_slot.rs`), built with
 `from_host` over the scene host it assembles in memory, and its `tick_frame`
 calls `BootSession::tick`. A host declares what it does itself:
 `set_host_drains_queues` (the per-tick presentation queues) and

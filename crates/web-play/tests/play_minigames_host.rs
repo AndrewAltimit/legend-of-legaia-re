@@ -1,0 +1,613 @@
+//! Disc-gated oracle for the browser play page's **in-world minigame host**
+//! (`LegaiaRuntime::play_mg_*`, drawn by `site/js/play-minigames.js`).
+//!
+//! The defect this pins: a page player walking into the Vidna casino cabinet
+//! entered `SceneMode::SlotMachine` with a frozen field and no UI, and the
+//! same held for the duel, the dome and the dance hall. The contract under
+//! test is host-side, not pixel-side:
+//!
+//! 1. **The door warp lands the page in a drawable session.** The mode-24
+//!    warp is armed the way the field-VM `0x3E` arm does it, the scene host
+//!    drains it through its own overlay loader, and the runtime's overlay
+//!    draw list carries the HUD rows for that game.
+//! 2. **The presentation decodes off the visitor's disc.** The compact PROT
+//!    image behind the shared bundle must parse, and each game's scene
+//!    exports must return geometry / art - the slot scene graph and reel
+//!    symbols, the dome's staged monster + VRAM, the Baka opponent mesh, the
+//!    dance hall.
+//! 3. **Input reaches the rules and Start leaves.** A Cross press spins the
+//!    slot reels; a Start press restores the field mode and the page's game
+//!    label goes back to `null`.
+//!
+//! No Sony bytes are asserted, only structural facts. Skips + passes when
+//! `LEGAIA_DISC_BIN` is unset.
+
+#![cfg(not(target_arch = "wasm32"))]
+
+use legaia_web_play::runtime::LegaiaRuntime;
+
+const START: u16 = 0x0008;
+const CROSS: u16 = 0x4000;
+
+/// Mode-24 sub-ids (`legaia_engine_mode::minigame_entry::MinigameSubId`).
+const SUB_SLOT: u8 = 3;
+const SUB_BAKA: u8 = 4;
+const SUB_MUSCLE: u8 = 5;
+const SUB_DANCE: u8 = 6;
+
+fn loaded_in(scene: &str) -> Option<LegaiaRuntime> {
+    let disc = std::env::var("LEGAIA_DISC_BIN").ok()?;
+    let bytes = std::fs::read(&disc).ok()?;
+    let mut rt = LegaiaRuntime::new();
+    rt.load_disc(bytes, String::new()).ok()?;
+    rt.enter_field(scene).ok()?;
+    Some(rt)
+}
+
+fn tick(rt: &mut LegaiaRuntime, n: usize) {
+    for _ in 0..n {
+        rt.tick_frame().expect("tick_frame");
+    }
+}
+
+/// Press `mask` for one tick, release for one.
+fn press(rt: &mut LegaiaRuntime, mask: u16) {
+    rt.set_pad(mask);
+    tick(rt, 1);
+    rt.set_pad(0);
+    tick(rt, 1);
+}
+
+fn game_json(rt: &LegaiaRuntime) -> serde_json::Value {
+    serde_json::from_str(&rt.play_mg_game_json()).expect("game json")
+}
+
+/// Arm the warp the way the casino door does and let the host drain it.
+fn warp_into(rt: &mut LegaiaRuntime, sub_id: u8, expect_mode: &str, expect_game: &str) {
+    assert!(rt.play_mg_debug_warp(sub_id), "a scene must be loaded");
+    tick(rt, 2);
+    assert_eq!(
+        rt.scene_mode(),
+        expect_mode,
+        "sub-id {sub_id} must land in {expect_mode} (the scene host's own loader)"
+    );
+    let g = game_json(rt);
+    assert_eq!(g["game"].as_str(), Some(expect_game), "{g}");
+    assert!(
+        g["art"].as_bool() == Some(true),
+        "the compact PROT image must decode: {g}"
+    );
+}
+
+fn caption_json(rt: &LegaiaRuntime) -> serde_json::Value {
+    serde_json::from_str(&rt.play_mg_caption_json()).expect("caption json")
+}
+
+/// The caption's rows as `(kind, clauses)`, asserting it belongs to `game`.
+fn caption_rows(rt: &LegaiaRuntime, game: &str) -> Vec<(String, Vec<String>)> {
+    let cap = caption_json(rt);
+    assert_eq!(cap["game"].as_str(), Some(game), "{cap}");
+    cap["rows"]
+        .as_array()
+        .expect("rows")
+        .iter()
+        .map(|r| {
+            let kind = r["kind"].as_str().expect("kind").to_string();
+            assert!(kind == "readout" || kind == "hint", "{cap}");
+            let clauses: Vec<String> = r["clauses"]
+                .as_array()
+                .expect("clauses")
+                .iter()
+                .map(|c| c.as_str().expect("clause").to_string())
+                .collect();
+            assert!(
+                !clauses.is_empty() && clauses.iter().all(|c| !c.trim().is_empty()),
+                "{game}: a row with nothing to say: {cap}"
+            );
+            (kind, clauses)
+        })
+        .collect()
+}
+
+/// The overlay draw list must carry the game picture's own text while the
+/// game is up.
+fn assert_hud_rows(rt: &mut LegaiaRuntime, game: &str) {
+    let ov: serde_json::Value =
+        serde_json::from_str(&rt.play_overlay_draws_json(960, 720)).expect("overlay json");
+    assert_eq!(
+        ov["open"].as_bool(),
+        Some(true),
+        "{game}: overlay closed: {ov}"
+    );
+    let texts = ov["texts"].as_array().expect("texts");
+    assert!(
+        !texts.is_empty(),
+        "{game}: the HUD rows must produce font quads"
+    );
+    for q in texts {
+        let dst = q["dst"].as_array().expect("dst");
+        assert!(
+            dst[2].as_i64().unwrap_or(0) > 0,
+            "{game}: zero-width quad {q}"
+        );
+    }
+}
+
+/// Start leaves the game and the field comes back, on every host.
+fn assert_start_exits(rt: &mut LegaiaRuntime, game: &str) {
+    press(rt, START);
+    assert_eq!(
+        rt.scene_mode(),
+        "Field",
+        "{game}: Start must restore the field"
+    );
+    let g = game_json(rt);
+    assert!(
+        g["game"].is_null(),
+        "{game}: the page label must clear: {g}"
+    );
+    let ov: serde_json::Value =
+        serde_json::from_str(&rt.play_overlay_draws_json(960, 720)).expect("overlay json");
+    // Nothing else is up in a quiet field, so the overlay payload closes
+    // once the minigame rows are gone (the field party HUD is idle-gated).
+    let _ = ov;
+    let cap = caption_json(rt);
+    assert!(
+        cap["game"].is_null() && cap["rows"].as_array().is_some_and(|r| r.is_empty()),
+        "{game}: the caption must clear on quit: {cap}"
+    );
+}
+
+#[test]
+fn casino_door_warp_draws_the_slot_machine_and_start_leaves() {
+    let Some(mut rt) = loaded_in("koin1") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    assert!(game_json(&rt)["game"].is_null());
+    warp_into(&mut rt, SUB_SLOT, "SlotMachine", "slot");
+    assert!(rt.play_mg_slot_active());
+    // The machine draws itself - cabinet, reels, furniture, the 1014-dot
+    // matrix and the coin HUD - through the shared screen-prim builder on its
+    // own art-pack VRAM, so it carries no status-text rows (the native
+    // window's frame too).
+    assert!(
+        rt.play_mg_slot_cabinet_ready(),
+        "the machine's resident set must decode"
+    );
+    assert_eq!(rt.play_mg_slot_vram().len(), 1024 * 512 * 2);
+    assert!(
+        rt.play_screen_prim_count() > 1014,
+        "the screen-prim pass must carry the machine: {}",
+        rt.play_screen_prim_count()
+    );
+    // ...and the caption is live with nothing to add: the fallback status
+    // rows are for a machine that is not on screen.
+    assert!(
+        caption_rows(&rt, "slot").is_empty(),
+        "a machine that draws itself needs no status rows"
+    );
+
+    // The retail machine's presentation off the disc.
+    assert!(
+        rt.play_mg_slot_art_ready(),
+        "PROT 1200 art pack must decode"
+    );
+    assert!(
+        rt.play_mg_slot_scene_ready(),
+        "PROT 0975 scene graph must decode"
+    );
+    let scene: serde_json::Value =
+        serde_json::from_str(&rt.play_mg_slot_scene_json()).expect("scene json");
+    assert_eq!(scene["ok"].as_bool(), Some(true));
+    assert!(scene["paylines"].as_array().is_some_and(|p| !p.is_empty()));
+    assert_eq!(rt.play_mg_slot_symbol_rgba(0).len(), 64 * 64 * 4);
+    assert_eq!(rt.play_mg_slot_bonus_number_rgba(1).len(), 64 * 64 * 4);
+    assert_eq!(rt.play_mg_slot_reel_pos().len(), 3);
+    assert_eq!(rt.play_mg_slot_strip(0).len(), 20);
+    let st: serde_json::Value =
+        serde_json::from_str(&rt.play_mg_slot_state_json()).expect("state json");
+    assert_eq!(st["live"].as_bool(), Some(true));
+    // An empty bank meets retail's state-1 coin gate, which raises the
+    // not-enough-coins prompt (state `0x5A`) instead of refusing a spin.
+    let broke = st["balance"].as_i64().is_some_and(|b| b < 3);
+    assert_eq!(
+        st["phase"].as_str(),
+        Some(if broke { "no_coins" } else { "idle" })
+    );
+
+    // Cross reaches the engine's session: the reels spin.
+    if st["can_spin"].as_bool() == Some(true) {
+        press(&mut rt, CROSS);
+        let st: serde_json::Value =
+            serde_json::from_str(&rt.play_mg_slot_state_json()).expect("state json");
+        assert_ne!(
+            st["phase"].as_str(),
+            Some("idle"),
+            "a Cross press must charge a spin: {st}"
+        );
+    }
+    assert_start_exits(&mut rt, "slot");
+}
+
+#[test]
+fn arena_door_warp_draws_the_muscle_dome_and_start_leaves() {
+    let Some(mut rt) = loaded_in("koin1") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    warp_into(&mut rt, SUB_MUSCLE, "MuscleDome", "muscle");
+    let g = game_json(&rt);
+    let monster = g["muscle"]["monster_id"]
+        .as_u64()
+        .expect("the PROT 0977 ladder must stage a monster for the opened contest");
+    // The 3D arena is the engine surface the native window draws too
+    // (`MuscleDomeSurface::frame`): it seats the ladder's monster, the lead's
+    // battle form and the PROT 1225 arena.
+    assert!(
+        rt.play_mg_muscle_scene_frame() >= 0,
+        "monster {monster:#x} + the lead's player file must build the dome surface"
+    );
+    let pos = rt.play_mg_muscle_scene_positions();
+    assert!(!pos.is_empty());
+    assert_eq!(rt.play_mg_muscle_scene_flat_rgba().len(), pos.len() / 3 * 4);
+    assert_eq!(rt.play_mg_muscle_scene_vram().len(), 1024 * 512 * 2);
+    assert_eq!(rt.play_mg_muscle_scene_vp(4.0 / 3.0).len(), 16);
+    let st: serde_json::Value =
+        serde_json::from_str(&rt.play_mg_muscle_state_json()).expect("state json");
+    assert_eq!(st["live"].as_bool(), Some(true));
+    // The door stages the lead record's own fighter - the AP pool is its live
+    // AGL and the entry HP its live HP - through the builder the native
+    // launcher shares (`SceneHost::dome_lead_fighter`), not the flat 120 AP /
+    // 400 HP stand-in the door used to field on both hosts.
+    let lead: serde_json::Value =
+        serde_json::from_str(&rt.debug_lead_live_stats_json()).expect("lead json");
+    let agl = lead["agl"].as_u64().expect("a lead record");
+    assert!(agl > 0, "the page's party has a live AGL: {lead}");
+    assert_eq!(
+        st["budget"].as_u64(),
+        Some(agl),
+        "dome AP pool = lead AGL: {st} vs {lead}"
+    );
+    assert_eq!(
+        st["hp"][0].as_u64(),
+        lead["hp"].as_u64(),
+        "dome entry HP = lead HP"
+    );
+    assert_eq!(st["costs"].as_array().map(|c| c.len()), Some(4), "{st}");
+    eprintln!("[ok] door-staged dome fighter {st} from lead {lead}");
+    // The intro card + ROUND banner arm on the fresh contest's first leg.
+    tick(&mut rt, 4);
+    let hub: serde_json::Value =
+        serde_json::from_str(&rt.play_mg_muscle_hub_quads_json()).expect("hub json");
+    assert_eq!(
+        hub["ok"].as_bool(),
+        Some(true),
+        "PROT 0977 sprite table: {hub}"
+    );
+    assert!(
+        hub["quads"].as_array().is_some_and(|q| !q.is_empty()),
+        "the intro card must be up on the first leg: {hub}"
+    );
+    assert_eq!(rt.play_mg_muscle_hub_sheet_dims(4).len(), 2);
+    let dims = rt.play_mg_muscle_hub_sheet_dims(4);
+    assert_eq!(
+        rt.play_mg_muscle_hub_sheet_rgba(4, 0).len(),
+        (dims[0] * dims[1] * 4) as usize
+    );
+    // The hub's first visit (intro strip, title, course card, ROUND card)
+    // covers the leg, and draws on the hub layer; the leg's own HUD is the
+    // battle chrome - the command ring's plates and the status plate, the
+    // same builders a battle draws - and it comes up once the hub is done.
+    let mut chrome_at = None;
+    for t in 0..4000 {
+        tick(&mut rt, 1);
+        let ov: serde_json::Value =
+            serde_json::from_str(&rt.play_overlay_draws_json(960, 720)).expect("overlay json");
+        if ov["sprites"].as_array().is_some_and(|s| !s.is_empty()) {
+            chrome_at = Some(t);
+            break;
+        }
+    }
+    assert!(
+        chrome_at.is_some(),
+        "the leg's battle chrome never came up past the hub"
+    );
+    assert_hud_rows(&mut rt, "muscle");
+    // The command ring is battle chrome; the dome's status rows only speak
+    // between turns and over the Ra-Seru list, so the caption is live here
+    // whatever it holds.
+    let _ = caption_rows(&rt, "muscle");
+    assert_start_exits(&mut rt, "muscle");
+}
+
+#[test]
+fn duel_door_warp_draws_baka_fighter_and_start_leaves() {
+    let Some(mut rt) = loaded_in("koin1") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    warp_into(&mut rt, SUB_BAKA, "BakaFighter", "baka");
+    // The attract card. Its prompt is the caption's one row - and it is NOT
+    // text in the frame, where the title logo draws over the text layer: with
+    // the HUD pages resident the card's own widgets are retail quads in the
+    // prim pass, so the overlay's font list is empty.
+    let rows = caption_rows(&rt, "baka");
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0].0, "hint");
+    assert_eq!(rows[0].1, ["BAKA FIGHTER", "Start or Cross to begin"]);
+    let ov: serde_json::Value =
+        serde_json::from_str(&rt.play_overlay_draws_json(960, 720)).expect("overlay json");
+    assert!(
+        ov["texts"].as_array().is_none_or(|t| t.is_empty()),
+        "the attract card carries no font text - the prompt is the caption's: {ov}"
+    );
+    let g = game_json(&rt);
+    let opp = g["baka"]["opponent"].as_u64().expect("opponent") as u32;
+    assert!((1..=16).contains(&opp), "ladder roster id: {g}");
+    // Rows 0..2 fold onto the party pack (side 0); 3..16 have their own.
+    let side = g["baka"]["opponent_side"].as_u64().expect("side") as u32;
+    assert_eq!(side, u32::from(opp >= 3), "{g}");
+    assert!(rt.play_mg_baka_presentation_ready());
+    assert!(
+        !rt.play_mg_baka_fighter_positions(0, 0).is_empty(),
+        "player mesh"
+    );
+    assert!(
+        !rt.play_mg_baka_fighter_positions(side, opp).is_empty(),
+        "opponent {opp} mesh (side {side})"
+    );
+    let dims = rt.play_mg_baka_anim_dims(side, opp, 0);
+    assert!(
+        dims.len() == 2 && dims[1] > 0,
+        "opponent idle clip: {dims:?}"
+    );
+    assert!(
+        !rt.play_mg_baka_stage_positions(0).is_empty(),
+        "PROT 1203 stage wall"
+    );
+    assert_eq!(rt.play_mg_baka_duel_vram(opp).len(), 1024 * 512 * 2);
+    let st: serde_json::Value =
+        serde_json::from_str(&rt.play_mg_baka_state_json()).expect("state json");
+    assert_eq!(st["live"].as_bool(), Some(true));
+    assert_eq!(st["phase"].as_str(), Some("fighting"));
+    // The cabinet boots on its attract card, whose own "press start" edge
+    // (`0x844`) takes Start: the first press begins, and from the fade-out
+    // on Start quits as in every other game.
+    press(&mut rt, START);
+    assert_eq!(
+        rt.scene_mode(),
+        "BakaFighter",
+        "Start begins on the attract card"
+    );
+    assert_start_exits(&mut rt, "baka");
+}
+
+#[test]
+fn dance_door_warp_draws_the_hall_and_start_leaves() {
+    let Some(mut rt) = loaded_in("koin1") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    warp_into(&mut rt, SUB_DANCE, "Dance", "dance");
+    // The dance opens on its pre-song count-in, and the count-in banner is
+    // NOT a font row: with the hall's HUD page resident it is retail's own
+    // `READY...` sprite, emitted into the screen-prim pass. So the frame's
+    // content is asserted where it actually is - a text-row assertion here
+    // would be asserting the placeholder the sprite replaced.
+    assert!(
+        rt.play_screen_prim_count() >= 1,
+        "the count-in banner draws as screen-space primitives"
+    );
+    // The count-in withholds the status rows: the caption is live and empty.
+    assert!(
+        caption_rows(&rt, "dance").is_empty(),
+        "no status rows over the count-in"
+    );
+    // Run the count-in out; the status readout arms behind it - as caption
+    // rows, never as font rows in the frame.
+    let mut rows = Vec::new();
+    for _ in 0..16 {
+        tick(&mut rt, 20);
+        rows = caption_rows(&rt, "dance");
+        if !rows.is_empty() {
+            break;
+        }
+    }
+    assert_eq!(
+        rows.iter().map(|r| r.0.as_str()).collect::<Vec<_>>(),
+        ["readout", "hint"],
+        "the dance status readout arms once the count-in clears: {rows:?}"
+    );
+    assert_eq!(rows[0].1[0], "DANCE");
+    assert_eq!(rows[1].1.last().map(String::as_str), Some("Start = quit"));
+    // No row spells the beat track: that is the game's own beat bar.
+    assert!(
+        rows.iter()
+            .flat_map(|r| &r.1)
+            .all(|c| !c.starts_with("beat") && !c.starts_with("COMBO")),
+        "{rows:?}"
+    );
+    // With the hall's HUD page resident the score boxes / digits / `Lv.`
+    // gauges draw as retail's own quads in the screen-prim pass.
+    assert!(
+        rt.play_screen_prim_count() > 0,
+        "the dance HUD's retail quads reach the prim pass"
+    );
+    assert!(
+        rt.play_mg_dance_body_ready(),
+        "the dance cast + choreography must decode"
+    );
+    // The run's floor poses through the engine cast surface: a live
+    // generation, and positions that move frame to frame.
+    let scene_gen = rt.play_mg_dance_scene_frame();
+    assert!(
+        scene_gen >= 0,
+        "the dance cast surface poses the run's floor"
+    );
+    let pos_a = rt.play_mg_dance_scene_positions();
+    assert!(!pos_a.is_empty());
+    assert_eq!(pos_a.len() / 3 * 2, rt.play_mg_dance_scene_uvs().len());
+    assert!(!rt.play_mg_dance_scene_indices().is_empty());
+    assert!(
+        !rt.play_mg_dance_env_positions().is_empty(),
+        "the other7 hall must bake"
+    );
+    assert_eq!(rt.play_mg_dance_body_vram().len(), 1024 * 512 * 2);
+    // The hall frames through the world's staged camera, which the overlay's
+    // keyframe track flies (`FUN_801CF470`): it moves frame to frame.
+    let vp_a = rt.play_mg_dance_venue_vp(4.0 / 3.0);
+    assert_eq!(vp_a.len(), 16);
+    tick(&mut rt, 30);
+    let vp_b = rt.play_mg_dance_venue_vp(4.0 / 3.0);
+    assert_ne!(vp_a, vp_b, "the dance camera holds still");
+    assert_eq!(
+        rt.play_mg_dance_scene_frame(),
+        scene_gen,
+        "a pose is not a rebuild"
+    );
+    assert_ne!(
+        pos_a,
+        rt.play_mg_dance_scene_positions(),
+        "the dancers' clips run"
+    );
+    let st: serde_json::Value =
+        serde_json::from_str(&rt.play_mg_dance_state_json()).expect("state json");
+    assert_eq!(st["live"].as_bool(), Some(true));
+    let chart: serde_json::Value =
+        serde_json::from_str(&rt.play_mg_dance_chart_json()).expect("chart json");
+    assert!(chart["rows"].as_array().is_some_and(|r| !r.is_empty()));
+    assert_start_exits(&mut rt, "dance");
+}
+
+/// Outside a minigame the host is inert: no label, no rows, no VRAM restore.
+#[test]
+fn quiet_field_has_no_minigame_payload() {
+    let Some(mut rt) = loaded_in("town01") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    tick(&mut rt, 3);
+    let g = game_json(&rt);
+    assert!(g["game"].is_null(), "{g}");
+    assert!(!rt.play_mg_take_vram_restore());
+    assert!(rt.play_mg_slot_reel_pos().is_empty());
+    assert_eq!(rt.play_mg_slot_state_json(), r#"{"live":false}"#);
+}
+
+/// The round-start cameo's eye blit (`FUN_801D65F8`, the duel overlay's
+/// VRAM-to-VRAM helper `BakaDuelAssets::apply_wink` ports) on the play page's
+/// duel surface.
+///
+/// The cameo spawns only when the round setup reads Triangle in the **held**
+/// pad word (`_DAT_8007B850 & 0x10`, `0x801D0190..0x801D01C4`), and from its
+/// first frame its pose names blit row 0 - a `MoveImage` of the stored eye
+/// cell into the live one. Nothing else in a duel asks for that edit, so a
+/// cabinet played with the pad up never reaches it.
+///
+/// Two runs of the same cabinet - Start off the attract card, Cross on the
+/// player select, then a stretch of the first round - differ only in whether
+/// Triangle is held throughout. The seated pair is the same in both, so the
+/// duel VRAM the page uploads can only differ by the blit.
+#[test]
+fn duel_round_setup_with_triangle_held_runs_the_cameo_eye_blit() {
+    const TRIANGLE: u16 = 0x1000;
+    let run = |held: u16| -> Option<(Vec<u8>, String)> {
+        let mut rt = loaded_in("koin1")?;
+        warp_into(&mut rt, SUB_BAKA, "BakaFighter", "baka");
+        for t in 0..360 {
+            // Start begins off the attract card; Cross confirms the select.
+            let edge = match t {
+                10 => START,
+                40 | 80 | 120 => CROSS,
+                _ => 0,
+            };
+            rt.set_pad(held | edge);
+            tick(&mut rt, 1);
+            rt.play_mg_baka_scene_frame();
+        }
+        rt.set_pad(0);
+        Some((rt.play_mg_baka_scene_vram(), rt.play_mg_baka_state_json()))
+    };
+    let Some((plain, plain_state)) = run(0) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let (held, held_state) = run(TRIANGLE).expect("the disc loaded for the first run");
+    assert_eq!(
+        plain.len(),
+        1024 * 512 * 2,
+        "no duel surface: {plain_state}"
+    );
+    assert_eq!(held.len(), 1024 * 512 * 2, "no duel surface: {held_state}");
+    let moved = plain
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .zip(held.as_chunks::<2>().0)
+        .filter(|(a, b)| a != b)
+        .count();
+    assert!(
+        moved > 0,
+        "holding Triangle over the round setup must run the cameo's eye blit\n\
+         plain: {plain_state}\nheld: {held_state}"
+    );
+    eprintln!("[ok] cameo eye blit: {moved} VRAM texels moved");
+}
+
+/// A closed chain on the play page's dance run: the human's sequence-clear
+/// banner, which the rules engine spawns as three sprite parts
+/// (`good_banner_spawn`, `FUN_801D40DC`, into `spawn_sprite_part`,
+/// `FUN_801D3FD0`).
+///
+/// Nothing but a **matched** note reaches it: a press on the chart's symbol
+/// inside the beat window, with the human's lane short enough that one match
+/// closes the chain (a fresh run's gauge puts it in lane 0, where it does).
+/// A blind button stream mostly misses, which is why the door-warp test
+/// above never scores. So this one reads the run's own judged symbol and
+/// presses it on the frame the beat clock wraps, the way a player keeps time
+/// with the music - Square for symbol 1, Circle for symbol 2 (the judge's
+/// `0x80` / `0x20` bits) - and requires the score to move. On lane 0 only a
+/// closed chain scores; a bare hit banks nothing.
+#[test]
+fn dance_on_beat_presses_close_a_chain_and_spawn_its_banner() {
+    const SQUARE: u16 = 0x8000;
+    const CIRCLE: u16 = 0x2000;
+    let Some(mut rt) = loaded_in("koin1") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    warp_into(&mut rt, SUB_DANCE, "Dance", "dance");
+    let state = |rt: &LegaiaRuntime| -> serde_json::Value {
+        serde_json::from_str(&rt.play_mg_dance_state_json()).expect("state json")
+    };
+    let mut prev_phase = u64::MAX;
+    let mut scored = None;
+    for _ in 0..3000 {
+        let st = state(&rt);
+        if st["score"].as_u64().unwrap_or(0) > 0 {
+            scored = Some(st);
+            break;
+        }
+        let phase = st["phase"].as_u64().unwrap_or(u64::MAX);
+        // The beat clock wrapped since the last frame: the next judge lands
+        // at the head of the window.
+        let wrapped = phase < prev_phase;
+        prev_phase = phase;
+        let button = match st["judged"].as_u64() {
+            Some(1) if wrapped => SQUARE,
+            Some(2) if wrapped => CIRCLE,
+            _ => 0,
+        };
+        rt.set_pad(button);
+        tick(&mut rt, 1);
+        rt.set_pad(0);
+    }
+    let st = scored.unwrap_or_else(|| {
+        panic!(
+            "on-beat presses of the judged symbol never closed a chain: {}",
+            state(&rt)
+        )
+    });
+    eprintln!("[ok] dance chain closed: {st}");
+}

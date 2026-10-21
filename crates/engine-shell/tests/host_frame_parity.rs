@@ -29,7 +29,7 @@
 use legaia_engine_session::host_trace::{self, HostTraceFrame};
 use legaia_engine_shell::window::HeadlessPlayWindow;
 use legaia_engine_system::input::PadButton;
-use legaia_web_viewer::runtime::LegaiaRuntime;
+use legaia_web_play::runtime::LegaiaRuntime;
 
 /// How many sim ticks each display frame runs, cycled.
 #[derive(Clone, Copy, Debug)]

@@ -359,7 +359,7 @@ mod title_backdrop_tests {
     /// composes as retail's title-strip stack (`FUN_801E0418`,
     /// `title_strip_sprites`) - the same five strips at the same dim the
     /// browser play page emits from `boot_title_backdrop_draws_json`
-    /// (`web-viewer/tests/title_backdrop_parity.rs` pins that half off the
+    /// (`web-play/tests/title_backdrop_parity.rs` pins that half off the
     /// disc).
     #[test]
     fn the_boot_save_select_draws_retails_title_strips() {

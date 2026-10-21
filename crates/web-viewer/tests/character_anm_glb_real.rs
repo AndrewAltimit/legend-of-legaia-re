@@ -10,7 +10,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_web_viewer::disc::{extract_prot_dat, parse_prot_toc};
+use legaia_web_play::disc::{extract_prot_dat, parse_prot_toc};
 use legaia_web_viewer::player_anm::{bundle_json, corpus_record_meta};
 use std::env;
 

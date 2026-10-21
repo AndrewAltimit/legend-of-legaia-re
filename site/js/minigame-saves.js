@@ -18,7 +18,7 @@
  *   - the coin session line and the import handler.
  *
  * Byte-level work (summaries, icon decode, the 4-byte coin patch) is the WASM
- * save tools (crates/web-viewer/src/session_save.rs), loaded lazily.
+ * save tools (crates/web-play/src/session_save.rs), loaded lazily.
  */
 (function () {
   'use strict';

@@ -38,7 +38,7 @@
 //! owning three counters plus the two output bytes (`0x800915DA` /
 //! `0x800915DB`).
 //!
-//! **Wired on the browser play page only.** `legaia-web-viewer`'s
+//! **Wired on the browser play page only.** `legaia-web-play`'s
 //! `play_sfx` calls [`FootstepCadence::tick_cadence`] from its per-frame
 //! field update, turning a returned [`CadenceTick`] into voice starts on the
 //! live `WebAudioOut` SPU. The native window does not yet route it: its

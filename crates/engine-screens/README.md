@@ -85,7 +85,7 @@ The returned `ShopOverlayFrame` carries:
 
 What stays with the host: assembling the inputs, the stage scale, layer order,
 and the upload (wgpu on `engine-shell`'s `play-window`, quad JSON on the
-`web-viewer` play page). The native window builds the frame in its redraw and
+`web-play` play page). The native window builds the frame in its redraw and
 hands it to both its text pass (`build_hud`) and its chrome sprite pass.
 
 The individual pieces (`gold_shop_screen`, `shop_window_draws`,

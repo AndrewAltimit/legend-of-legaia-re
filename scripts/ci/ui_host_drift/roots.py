@@ -18,7 +18,10 @@ HOSTS = {
         REPO / "crates" / "engine-shell" / "src",
         REPO / "crates" / "engine-render" / "src",
     ],
-    "web": [REPO / "crates" / "web-viewer" / "src"],
+    "web": [
+        REPO / "crates" / "web-play" / "src",
+        REPO / "crates" / "web-viewer" / "src",
+    ],
 }
 
 # Shared **composition** crates: engine code that projects engine-core state

@@ -3,7 +3,7 @@
  * Classic script (no `import` / `export` / `import.meta` - see
  * docs/tooling/site-shell.md). Defines `window.LegaiaPlayFmv`.
  *
- * The engine (`crates/web-viewer/src/play_fmv.rs`) owns every decision: when a
+ * The engine (`crates/web-play/src/play_fmv.rs`) owns every decision: when a
  * movie is armed, which raw-sector window of which `MV*.STR` it is, when the
  * world is held, and whether a pad edge may abort it (retail: the attract
  * movie only, on a face button / Select - routed engine-side off the pad word
@@ -42,7 +42,7 @@
   'use strict';
 
   /* Raw Mode-2 sector size. Paired with RAW_SECTOR_SIZE in
-   * crates/web-viewer/src/play_fmv.rs. */
+   * crates/web-play/src/play_fmv.rs. */
   const RAW_SECTOR = 2352;
   /* The retail decode screen the frame is centred on. */
   const SCREEN_W = 320, SCREEN_H = 240;

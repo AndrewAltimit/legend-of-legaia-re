@@ -24,7 +24,7 @@ CANONICAL_LADDERS = [
     ("menu_replay", "legaia-engine-shell"),
     ("minigame_replay", "legaia-engine-shell"),
     ("v0_1_playthrough", "legaia-engine-shell"),
-    ("play_compose_ladder", "legaia-web-viewer"),
+    ("play_compose_ladder", "legaia-web-play"),
     # --- lane W1-A ---
     # Two ladders for content no pad-only *engine-shell* ladder can reach.
     #
@@ -61,7 +61,7 @@ CANONICAL_LADDERS = [
     ("fmv_ladder", "legaia-mdec"),
     ("narration_ladder", "legaia-engine-scene-host"),
     # --- lane W1-C ---
-    ("battle_render_ladder", "legaia-web-viewer"),
+    ("battle_render_ladder", "legaia-web-play"),
     ("arts_swing_ladder", "legaia-engine-shell"),
     # --- lane W1-B ---
     # Three pad-driven ladders that live in `engine-core` because what they
@@ -69,7 +69,7 @@ CANONICAL_LADDERS = [
     # opened from a field-VM instruction, a Baka duel played through its
     # cabinet intro to the end-of-match tally, and a Muscle Dome leg played to
     # its between-leg tally. Each reaches content no engine-shell or
-    # web-viewer ladder does, so leaving them out is a different number rather
+    # web-play ladder does, so leaving them out is a different number rather
     # than a smaller one.
     ("submode_screen_ladder", "legaia-engine-core"),
     ("baka_duel_ladder", "legaia-engine-scene-host"),
@@ -82,14 +82,14 @@ CANONICAL_LADDERS = [
     # named here. When a lane adds a ladder, it belongs in this list in the same
     # commit.
     ("world_map_render_ladder", "legaia-engine-core"),
-    ("dev_menu_equip_ladder", "legaia-web-viewer"),
+    ("dev_menu_equip_ladder", "legaia-web-play"),
     ("audio_session_ladder", "legaia-engine-audio"),
     ("scene_bgm_transition_ladder", "legaia-engine-scene-host"),
     ("battle_tutorial_ladder", "legaia-engine-core"),
     ("fishing_pond_ladder", "legaia-engine-fishing"),
-    ("fishing_banner_ladder", "legaia-web-viewer"),
+    ("fishing_banner_ladder", "legaia-web-play"),
     ("pause_special_use_ladder", "legaia-engine-menu-runtime"),
-    ("menu_depth_ladder", "legaia-web-viewer"),
+    ("menu_depth_ladder", "legaia-web-play"),
     ("battle_depth_replay", "legaia-engine-shell"),
     ("battle_flee_ladder", "legaia-engine-core"),
     ("battle_full_playthrough", "legaia-engine-core"),
@@ -167,13 +167,13 @@ CANONICAL_LADDERS = [
     # All three are disc-gated and skip-pass without `LEGAIA_DISC_BIN`, and all
     # three are exported WITHOUT `--release` - see the module docstring's "a
     # release export loses executed code".
-    ("page_compose_ladder", "legaia-web-viewer"),
-    ("slot_bonus_marquee_ladder", "legaia-web-viewer"),
+    ("page_compose_ladder", "legaia-web-play"),
+    ("slot_bonus_marquee_ladder", "legaia-web-play"),
     ("slot_bonus_marquee", "legaia-asset"),
     # --- lane L1 ---
     # The browser play page driven into a battle with retail's own one-shot
     # arm flag raised, so the tutorial box the page composes actually exists.
-    ("battle_tutorial_page", "legaia-web-viewer"),
+    ("battle_tutorial_page", "legaia-web-play"),
     # --- lane L2 ---
     # The pause menu's three data-driven kernels, driven to their OUTPUT (bag
     # count, picked weapon id, destination rows) rather than to their call.
@@ -235,7 +235,7 @@ CANONICAL_LADDERS = [
     # real_card_roundtrip, not on the disc; skip-passes without a card.
     ("pause_menu_compose", "legaia-engine-ui"),
     ("battle_fx_ladder", "legaia-engine-ui"),
-    ("dome_ladder_and_hub_real", "legaia-web-viewer"),
+    ("dome_ladder_and_hub_real", "legaia-web-play"),
     ("character_pack_real", "legaia-actor-formats"),
     ("boot_overlay_disc", "legaia-overlay-images"),
     ("cdname_retail_parse_disc", "legaia-prot"),
@@ -391,7 +391,7 @@ CANONICAL_LADDERS = [
     # only other input is the pad word `boot_logos_step` takes.
     #
     # Disc-gated (PROT 0895 `init.pak`); export WITHOUT `--release`.
-    ("boot_logos_ladder", "legaia-web-viewer"),
+    ("boot_logos_ladder", "legaia-web-play"),
     #
     # `field_vm_op_arms_disc` is the other exit this page records: an
     # existing honest driver promoted into the set rather than a new fixture.
@@ -414,7 +414,7 @@ CANONICAL_LADDERS = [
     # raises the gate unconditionally, and asserts the pass carries the quads.
     # It was written, green and outside the union, which is the "promote the
     # oracle that already drove it" exit one more time.
-    ("fog_page_prims", "legaia-web-viewer"),
+    ("fog_page_prims", "legaia-web-play"),
     #
     # `play_page_host_parity_ladder` is the page half of the shared camera kernels -
     # the NCLIP cull mode, the occlusion fade's arming gate and body centre,
@@ -422,7 +422,7 @@ CANONICAL_LADDERS = [
     # making in JS, so each is engine code whose only browser caller is the
     # page's own per-frame read surface; the ladder drives a real
     # `LegaiaRuntime` over two disc scenes and reads the exports back.
-    ("play_page_host_parity_ladder", "legaia-web-viewer"),
+    ("play_page_host_parity_ladder", "legaia-web-play"),
     #
     # `clone_reflection_effect_arms_disc` is `field_vm_op_arms_disc`'s sibling for
     # three more arms: the actor clone (`4C 14`), the reflection controller
@@ -453,8 +453,8 @@ CANONICAL_LADDERS = [
     # `CD F8` box both ways, which makes `sync_field_ctx_player_anchor`
     # observable as a flip rather than as a call.
     ("arts_banner_ladder", "legaia-engine-core"),
-    ("morph_page_ladder", "legaia-web-viewer"),
-    ("play_minigames_host", "legaia-web-viewer"),
+    ("morph_page_ladder", "legaia-web-play"),
+    ("play_minigames_host", "legaia-web-play"),
     ("conc_flag_6de_position_latch_disc", "legaia-engine-scene-host"),
     # --- lane W7-C (reach burn-down) ---
     # One new ladder, nine promotions and four whole-game instruments.
@@ -495,8 +495,8 @@ CANONICAL_LADDERS = [
     ("shop_quantity_stepper", "legaia-engine-menu-runtime"),
     ("shop_quantity_compose", "legaia-engine-ui"),
     ("fishing_hub_and_floor_window_disc", "legaia-engine-scene-host"),
-    ("play_ringside_still_disc", "legaia-web-viewer"),
-    ("attached_light_page_prims", "legaia-web-viewer"),
+    ("play_ringside_still_disc", "legaia-web-play"),
+    ("attached_light_page_prims", "legaia-web-play"),
     ("code_lock_doman_disc", "legaia-engine-scene-host"),
     ("full_game_ladder", "legaia-engine-shell"),
     ("boss_approach_disc", "legaia-engine-shell"),
@@ -506,8 +506,8 @@ CANONICAL_LADDERS = [
     # strips, `801e0418`) and the command ring's Ra-Seru cross-out in Tetsu's
     # fight (`801dbc30`); each has a native twin outside the union (a bin
     # unit test, a shared-builder unit test).
-    ("title_backdrop_parity", "legaia-web-viewer"),
-    ("raseru_cross_out_page", "legaia-web-viewer"),
+    ("title_backdrop_parity", "legaia-web-play"),
+    ("raseru_cross_out_page", "legaia-web-play"),
     # Three routines reached only through the world's frame tail: the
     # fishing strike splash (`801d7a5c`, a cadence match in the world's
     # fishing tick), a shipped op-`0x43` sub-`0x12` rect copy drained by the
@@ -518,30 +518,30 @@ CANONICAL_LADDERS = [
     ("world_frame_tail_ladder", "legaia-engine-scene-host"),
     # An all-target spell committed on the play page from a played-through
     # card, so the commit log copies the whole-row label (`801d57e8`).
-    ("commit_log_all_target_page", "legaia-web-viewer"),
+    ("commit_log_all_target_page", "legaia-web-play"),
     # The SFX ring's replace-last (`80035bd0`): every headless member runs
     # its producers, but the ring lives in a host's SFX scheduler and the
     # play page's is the only one that exists without an audio device. The
     # overworld sub-list's confirm brings its cue due there.
-    ("world_map_sublist_sfx_page", "legaia-web-viewer"),
+    ("world_map_sublist_sfx_page", "legaia-web-play"),
     # The two ailment marks over the command chips - the Curse plate on the
     # ring (`801dbec4`) and the Rot stamp on the arts entry (`801dbddc`) -
     # with the ailment seeded the way an inflicting strike writes it.
-    ("status_marks_page", "legaia-web-viewer"),
+    ("status_marks_page", "legaia-web-play"),
     # Retail's visible-tile crop (`801f7088` / `801f6d48`), which the shared
     # kernel answers only at the retail camera preset - and both hosts start
     # on a wider one. The page's distance control takes it there.
-    ("view_window_crop_page", "legaia-web-viewer"),
+    ("view_window_crop_page", "legaia-web-play"),
     # The passive-ability badge column (`801d095c`), behind a party that
     # wears one of six passive bits: an accessory equipped by pad.
-    ("passive_badge_page", "legaia-web-viewer"),
+    ("passive_badge_page", "legaia-web-play"),
     # The end of the game: `edlast`'s credits, their press poll, and `49 0C`'s
     # return-to-title soft reset (slot `0x33`, `FUN_801EDF00`) - the records
     # screen over the field and the title hand-off.
-    ("soft_reset_records_page", "legaia-web-viewer"),
+    ("soft_reset_records_page", "legaia-web-play"),
     # The casino prize counter's Yes/No confirm (window 46, `801d603c`):
     # coins and the clerk's `49 07` arm seeded, the pad walks a prize to it.
-    ("prize_confirm_page", "legaia-web-viewer"),
+    ("prize_confirm_page", "legaia-web-play"),
     # A promoted oracle (record-seated, not pad-driven - the L3 members'
     # disclosure): the effect ribbon (`801cfa48`, `effect_ribbon.rs`) and its
     # RNG (`801d0290`) are built only for a summon whose move program issues
@@ -558,7 +558,7 @@ CANONICAL_LADDERS = [
     # the dream's walk-on band, pages cutscene record `P2[1]` to its
     # `34 30 05`, and composes the spawned sprite-arm quads through
     # `play_field_fx_sync`.
-    ("dream_yaw_part_page_ladder", "legaia-web-viewer"),
+    ("dream_yaw_part_page_ladder", "legaia-web-play"),
     # The map display's location stepper (`801cf5e8`), reached only by a
     # Square press on the open L1 display (Circle's own step arm sits behind
     # the exit test). Enters each kingdom map through

@@ -37,7 +37,7 @@
 //! ## REPLACED-BY: `legaia_save::emu::CardView` + `legaia_save::card`
 //!
 //! Applies to every routine below. The port already reads and writes real
-//! `0x2000`-byte card blocks - `web-viewer::cards::write_session_into_card`
+//! `0x2000`-byte card blocks - `web-play::cards::write_session_into_card`
 //! mounts a card image, patches the SC block through `legaia_save`, stamps
 //! the block identity and claims the directory frame - and it does all of it
 //! **synchronously**, against bytes it owns. There is no PSX kernel in the

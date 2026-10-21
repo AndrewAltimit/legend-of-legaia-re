@@ -155,11 +155,11 @@ and each has a union member that lifts it.
 
 | Exclusion | Why | What lifts it |
 |---|---|---|
-| draw-list builders (`engine-ui`) | `crates/engine-session/src/session.rs` names neither `engine-ui` nor `engine-render`. | `play_compose_ladder` (`crates/web-viewer/tests/`) drives the play page's `LegaiaRuntime` by pad and composes its whole per-frame read surface. |
-| `engine-render` | A hard wgpu link `web-viewer` does not carry. | A spawned `play-window` run: `LLVM_PROFILE_FILE` is inherited by child processes, so a test that spawns `CARGO_BIN_EXE_legaia-engine` gets the child's profile merged into the export. |
+| draw-list builders (`engine-ui`) | `crates/engine-session/src/session.rs` names neither `engine-ui` nor `engine-render`. | `play_compose_ladder` (`crates/web-play/tests/`) drives the play page's `LegaiaRuntime` by pad and composes its whole per-frame read surface. |
+| `engine-render` | A hard wgpu link `web-play` does not carry. | A spawned `play-window` run: `LLVM_PROFILE_FILE` is inherited by child processes, so a test that spawns `CARGO_BIN_EXE_legaia-engine` gets the child's profile merged into the export. |
 | `bin/`-resident code | No `#[test]` can *call* into a `bin/` target. | The same spawn route: a ladder that runs the subcommand covers it. The native window's composition is library code (`crates/engine-shell/src/window/`). |
 | native minigames | The window opens each from `WindowEvent::KeyboardInput` (`K` dance, `U` how-to, `L` fishing, `O` slots, `M` Muscle Dome, `B` Baka, `P` prize exchange); `--pad-script` writes a pad word and that handler never runs. | `--key-script` (`TICK:KEY`), composed with `--pad-script`; `native_minigame_ladder` asserts each rung's captured frame differs from the same tick with nothing open. Needs a display. |
-| the standalone minigames page | Neither `minigame_replay` nor `play_compose_ladder` drives it. | Its own oracles in `crates/web-viewer/tests/`. |
+| the standalone minigames page | Neither `minigame_replay` nor `play_compose_ladder` drives it. | Its own oracles in `crates/web-play/tests/`. |
 | the BGM route | No pad ladder holds a `BgmDirector`: `critical_path_replay`, `minigame_replay` and `play_compose_ladder` never call `SceneHost::route_bgm_events`, and the `BootSession` ladders set `enable_audio: false`. Every `0x35` sub-op arm and the mixer path are unentered by construction. | `scene_bgm_transition_ladder` and `crates/engine-audio/tests/audio_session_ladder.rs` (through `legaia_engine_audio::TestAudioSink`). They are session-shaped, not pad-driven. |
 | `mdec` | The play page has no STR playback (its FMV arm auto-skips). | A spawned `play-str` run. |
 | render-pass callers | A row whose only callers are render passes needs a **composing** ladder; no headless fixture reaches it however deep it walks. | See [the fog rows](#a-render-pass-row-needs-a-composing-ladder-not-a-deeper-one). |
@@ -586,7 +586,7 @@ about the cells that outlived their own fixtures.
 | `fade.rs` | 1 | `80020b00` | Closed with it: `victory.rs`'s `BattleEndCause::Escaped` arm loads `escape_fade_template()` on the teardown that same rung reaches |
 | `world/vm_hosts/field_host/scene_host.rs` (op `4C EA`) | 1 | `8003c7ec` | Closed, and by the third exit rather than by a new fixture: `field_vm_op_arms_disc` already drove the op from the disc's own bytecode and was simply not in `CANONICAL_LADDERS`. See [the promoted-oracle note](#a-third-way-a-row-closes-promote-the-oracle-that-already-drove-it) |
 | `equipment.rs` + `world/vm_hosts/field_host/party_inventory.rs` (op `4C 52`) | 1 | `800430ac` | Closed by the same promotion, and it is the sharper of the two: the op's **fallback** leg only runs when the bag misses, so the row was gated twice over, and the oracle drives the same real instruction under both bag states rather than once. See [the promoted-oracle note](#a-third-way-a-row-closes-promote-the-oracle-that-already-drove-it) |
-| `publisher_logos.rs` | 1 | `801cefd4` | Closed: `boot_logos_ladder` (`crates/web-viewer/tests/`) opens the logo phase on the browser play page and steps the sequencer to its end on a neutral pad, then again with Start. It is the only union member that starts **before** the title card, which is why one rung was enough |
+| `publisher_logos.rs` | 1 | `801cefd4` | Closed: `boot_logos_ladder` (`crates/web-play/tests/`) opens the logo phase on the browser play page and steps the sequencer to its end on a neutral pad, then again with Start. It is the only union member that starts **before** the title card, which is why one rung was enough |
 | `menu_arrange.rs` | 1 | `801d64a8` | Closed: `menu_depth_ladder`'s Items rung picks command-window row 2. It named that step before it reached it - the rung drove Arrange on a bag its own Throw Out leg had emptied, so retail's buzz-on-empty dispatch swallowed the confirm; Arrange runs first now |
 | `save_subscreen.rs` (sub-`0x15` list source) | 1 | `801da2a0` | Closed by seeding its gate: `pause_learned_content_ladder` prepends one Seru spell to the lead record (plus the Ra-Seru the list length is gated on) and drives Status -> Cross -> the page's latch/exchange by pad, and the exchange reaches the record |
 | `menu/window_painters.rs` (window 37) | 1 | `801d5944` | Closed: `menu_depth_ladder`'s sell rung drives the root picker's Sell row to the quantity screen. It was a pure reach gap on **both** hosts - `sell_quantity_draws_for` has one call site both hosts reach (`legaia_engine_screens::shop_window_draws`, filtering window id 37) - and the union's other shop rungs all buy |
@@ -663,7 +663,7 @@ otherwise it reads as content the next headless fixture will pick up, and no
 headless fixture ever will.
 
 **The rung existed and was not in the union.** `fog_page_prims`
-(`crates/web-viewer/tests/`) drives the browser play page's per-tick
+(`crates/web-play/tests/`) drives the browser play page's per-tick
 screen-prim assembly - `tick_frame` -> `tick_field_fog_prims` ->
 `World::fog_render_step` - over the first scene whose scene-controller record
 raises the gate **unconditionally**, re-derived from the same walk the native
@@ -1353,7 +1353,7 @@ the non-`engine-core` slice only, so a shared ladder moves more than its row
 here says.
 
 The top proposal of this table's earlier state is **built**:
-`crates/web-viewer/tests/play_compose_ladder.rs` is the draw-composition
+`crates/web-play/tests/play_compose_ladder.rs` is the draw-composition
 ladder, a canonical member of the report's union, and it also swallowed most
 of what the *battle render*, *menu render* and *dev menu* proposals covered -
 its driven fights build the intro, the ground grid, the party HUD, the
@@ -1399,7 +1399,7 @@ page remain outside the union and keep their harness-blind rows above.
 ### Battle render, battle target and arts swing are built
 
 Three proposals left this table together, as two files:
-`crates/web-viewer/tests/battle_render_ladder.rs` (the intro styles and
+`crates/web-play/tests/battle_render_ladder.rs` (the intro styles and
 the attack-target ring) and `crates/engine-shell/tests/arts_swing_ladder.rs`
 (the shout bank, the facial animator and the XA-clip census). Each needs its
 own `cargo llvm-cov` export joined into the union, **without `--release`**.
@@ -1616,7 +1616,7 @@ distinction between this page's question and
 [`host-drift.md`](host-drift.md)'s. Both hosts now composite the frame's
 pushes through `legaia_render_kernels::screen_prim::screen_effect_push_prims`, and
 the ladder that says so is a **draw-list** assertion rather than a pool one:
-`crates/web-viewer/tests/screen_effect_page_prims.rs` enters a shipped
+`crates/web-play/tests/screen_effect_page_prims.rs` enters a shipped
 scene whose entry script issues the instruction and reads the page's uploaded
 primitives back.
 
@@ -1632,7 +1632,7 @@ ladder on either, and the two have different answers.
 **The snap-beat bank is a ladder gap.** `Camera::take_camera_snap_beats` runs
 once per frame from each host's cutscene camera interp, and only there, so a
 ladder that never parks in a scripted beat never reaches it - every rung this
-tree had opened on a town or an arena. `crates/web-viewer/tests/screen_effect_page_prims.rs`
+tree had opened on a town or an arena. `crates/web-play/tests/screen_effect_page_prims.rs`
 adds the rung, and the assertion is the published camera frame's own `arm`
 word: `"cutscene"` is the branch that calls the bank, so the rung cannot pass
 by entering a scene that never leaves the follow arm.
@@ -1660,7 +1660,7 @@ outside its denominator in the same way an untagged helper is.
 That is worth stating rather than leaving implicit, because the natural
 reading of a silent instrument is that it approves. What answers for these is
 [`host-drift.md`](host-drift.md)'s paired-kernel tiers plus a ladder per host:
-`crates/web-viewer/tests/play_page_host_parity_ladder.rs` drives the page's own
+`crates/web-play/tests/play_page_host_parity_ladder.rs` drives the page's own
 per-frame read surface over two disc scenes, and the native half is in a
 `bin/` target, so what runs it is a spawned `play-window` -
 `native_minigame_ladder`'s rungs each open on a field scene with the
@@ -1810,9 +1810,9 @@ looks conclusive. A workspace-wide search for the symbol answers with the
 `engine-ui` definition, its own unit tests and the compose oracle first, and
 both call sites sit past a `| head` boundary - so a scan that is not counted,
 or is read off a truncated pipe, reports the definition side and no callers at
-all. The cheap guard is to grep the two host directories by name
-(`crates/web-viewer/src`, `crates/engine-shell/src/bin`) rather than the tree,
-because a host claim is about those two places and nowhere else.
+all. The cheap guard is to grep the host directories by name
+(`crates/web-play/src`, `crates/web-viewer/src`, `crates/engine-shell/src/bin`) rather than the tree,
+because a host claim is about those places and nowhere else.
 
 The pairing was the verdict-shaped part of the set, and it held: `801d1288` is
 the Muscle Dome tally's per-lane voice resolve and `80065034` is the audio side

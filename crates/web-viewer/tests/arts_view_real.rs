@@ -112,8 +112,7 @@ fn every_arts_table_art_resolves_to_a_decoded_clip() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    let scus =
-        legaia_web_viewer::disc::extract_scus(&disc_bytes).expect("SCUS_942.54 in disc image");
+    let scus = legaia_web_play::disc::extract_scus(&disc_bytes).expect("SCUS_942.54 in disc image");
     let table = arts_table::parse_from_scus(&scus).expect("arts-name table");
     let mut unresolved: Vec<(String, String)> = Vec::new();
     for (cslot, character) in [
@@ -344,7 +343,7 @@ fn probe_dump_bank_names() {
     let Some((mut arts, disc_bytes)) = loaded() else {
         return;
     };
-    let scus = legaia_web_viewer::disc::extract_scus(&disc_bytes).unwrap();
+    let scus = legaia_web_play::disc::extract_scus(&disc_bytes).unwrap();
     let table = arts_table::parse_from_scus(&scus).unwrap();
     for (cslot, character) in [
         (0u32, Character::Vahn),
@@ -548,8 +547,7 @@ fn arts_voice_is_the_retail_cue_not_a_guess() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    let scus =
-        legaia_web_viewer::disc::extract_scus(&disc_bytes).expect("SCUS_942.54 in disc image");
+    let scus = legaia_web_play::disc::extract_scus(&disc_bytes).expect("SCUS_942.54 in disc image");
     let table = ArtsVoiceTable::parse_from_scus(&scus).expect("arts-voice table parses");
 
     // Clip file per character = XA<(char*2+1)+1>.XA.

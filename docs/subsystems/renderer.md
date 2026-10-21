@@ -1006,7 +1006,7 @@ a blue-black. No other per-object colour rule exists in the draw.
 Port: `legaia_engine_battle_vm::battle_actor_draw` (`LimbDimPlan`), resolved by
 `World::battle_limb_dim_plan`. The native window applies it to the per-frame
 posed mesh; the browser play page re-uploads the actor's packet-colour stream
-when the plan's key changes (`web-viewer::play_battle_limb_dim`). One
+when the plan's key changes (`web-play::play_battle_limb_dim`). One
 deliberate difference: the port's tint flash is a per-draw cue over the whole
 mesh, so a limb dimmed during a flash also takes the flash, where retail's
 override replaces it.
@@ -1266,7 +1266,7 @@ at the first `HALT` misses it. It is live content: `urudre1` is Vahn's dream
 at Uru Mais, its walk-on band at tile `(97, 10)` starts cutscene record
 `P2[1]`, whose `34 30 05` installs stager record 6, whose op `0x25` spawns
 record 14 as a run of `0x4000` sprite-arm quads
-(`crates/web-viewer/tests/dream_yaw_part_page_ladder.rs` plays it).
+(`crates/web-play/tests/dream_yaw_part_page_ladder.rs` plays it).
 
 **A `0x400` node's `+0x14` is an eye-space offset.** It comes from the part's
 own op `0x07` WORLD_SET, moved on by the part tick's motion block
@@ -2467,10 +2467,10 @@ instance env-pack meshes exactly as the field hosts do.
 | # | Surface | Draw-list assembly |
 |---|---|---|
 | 1 | native `play-window` | `engine-shell` `window/field_render.rs` + `window/geometry.rs` |
-| 2 | browser play page | `web-viewer` `play.rs` + `play_battle_render.rs` |
+| 2 | browser play page | `web-play` `play.rs` + `play_battle_render.rs` |
 | 3 | browser field-scene viewer | `web-viewer` `field_scene.rs`; `scene_geom.rs` for the world map |
-| 4 | browser dance-hall venue | `web-viewer` `minigames_dance.rs` |
-| 5 | browser fishing venue | `web-viewer` `minigames_fishing_scene.rs` |
+| 4 | browser dance-hall venue | `web-play` `minigames_dance.rs` |
+| 5 | browser fishing venue | `web-play` `minigames_fishing_scene.rs` |
 
 A kernel wired into one and not another is invisible in a diff, because no
 file holds two of the columns. Host-drift

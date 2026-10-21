@@ -285,7 +285,7 @@ age-based render fades.
 Both hosts draw each `EffectSprite` as a **camera-facing textured quad**: the
 native window through the VRAM-mesh pipeline (`upload_vram_mesh`, sampling the
 scene VRAM at the sprite's atlas page / CLUT / UV as a `SceneDraw`), the play
-page through the same shape in `web-viewer::play_battle_fx`.
+page through the same shape in `web-play::play_battle_fx`.
 
 `World::spawn_debug_effect` seats a synthetic marker by hand (the `E` key in
 `play-window`). It is not a retail path; dev spawns keep a fixed budget and

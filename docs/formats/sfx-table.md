@@ -565,7 +565,7 @@ Tests (disc-gated): `sfx_cue_resident_bank` (engine-session) - routed cues key a
 voice via the tone-index path and both banks pack inside the reserved region.
 `sfx_shared_region` (engine-session) - walks the residency through field, battle
 and three minigames, checks every named bank fits above slot 0, and keys
-`0x2E` / `0x2F` out of PROT 0876. `play_sfx_channel` (web-viewer) - in town a
+`0x2E` / `0x2F` out of PROT 0876. `play_sfx_channel` (web-play) - in town a
 category-`0` cue sounds out of PROT 0868 and a category-`6` cue out of PROT
 0876 while a category-`2` cue has no bank; a forced battle swaps the region to
 PROT 0869.

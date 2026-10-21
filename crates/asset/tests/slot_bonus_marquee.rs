@@ -20,7 +20,7 @@
 //! time, and the payout caption sliding in. The *machine-driven* half of the
 //! same gate (a real bonus round played to its product payout, whose live state
 //! feeds these same kernels) is
-//! `crates/web-viewer/tests/slot_bonus_marquee_ladder.rs`; this file is the
+//! `crates/web-play/tests/slot_bonus_marquee_ladder.rs`; this file is the
 //! disc-data half and the one that can spawn the production CLI caller.
 //!
 //! The last rung spawns `CARGO_BIN_EXE_asset slot-scene`, which is the only

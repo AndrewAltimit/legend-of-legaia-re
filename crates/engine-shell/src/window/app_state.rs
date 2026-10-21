@@ -844,7 +844,7 @@ pub(super) struct PlayWindowApp {
     /// Owned here because the rack and the block grid are rebuilt from it
     /// every time the save screen asks, and because a Load off that port
     /// reads the block out of these bytes. The browser play page's rack is
-    /// the same model (`web-viewer`'s `cards.rs`): a host-kept card in port 1
+    /// the same model (`web-play`'s `cards.rs`): a host-kept card in port 1
     /// and a player's image in port 2.
     pub(super) card: Option<MountedCard>,
     /// The card in **port 1**: the window's own `memcard1.mcr` in the save

@@ -651,7 +651,7 @@ Ports: `card_directory_scan`, `card_free_blocks`, `classify_card_directory`
 chains them and `card_directory_slots` builds a session's slot list from a
 directory. The port holds to the same rule from both scanners: **only positive
 evidence of absence yields `SlotContent::Free`** - a directory frame no save
-claims that the free count can pay for (card path, `web-viewer::cards`), or a
+claims that the free count can pay for (card path, `web-play::cards`), or a
 `NotFound` on the slot file (disk path, `scan_save_dir`). Every other failure
 to read builds `SlotSnapshot::foreign`.
 
@@ -747,7 +747,7 @@ Under `CardPorts`, `present` on a pill means "something is mounted here".
 `scripts/ci/check-ui-host-drift.py` pins the rack kind each host declares. A
 host supplies only the bytes:
 
-- **Browser play page** (`legaia_web_viewer::cards` + `play_menu`): port 1 is
+- **Browser play page** (`legaia_web_play::cards` + `play_menu`): port 1 is
   the **browser card**, a formatted card image
   (`legaia_save::card::formatted_card_image`) kept in page storage and written
   back on every in-game save. Either port also takes the player's own card
@@ -919,7 +919,7 @@ into its own options each tick before it pushes those back onto the world
 A save the engine writes always carries the live words: the simulation rows
 off their mirrors, the rest as the host last pushed them.
 
-The `cross_host` test in `web-viewer/src/cards.rs` pins the resume seat over
+The `cross_host` test in `web-play/src/cards.rs` pins the resume seat over
 the library cards, together with byte-identical blocks from both hosts' Save
 and each host loading the other's block to the same world.
 

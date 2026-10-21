@@ -44,7 +44,7 @@
  * theme the arena inherits) is the page-level MgBgm hook.
  *
  * The RULES are `legaia-engine-core::muscle_dome` + the ported battle
- * formulas, reached through `LegaiaMinigames` (crates/web-viewer/src/
+ * formulas, reached through `LegaiaMinigames` (crates/web-play/src/
  * minigames_muscle.rs): every committed command resolves through the real
  * arts/physical damage roll (FUN_801dd0ac), the element-affinity scale
  * (FUN_801dd864) and the damage finisher (FUN_801ddb30), against fighter

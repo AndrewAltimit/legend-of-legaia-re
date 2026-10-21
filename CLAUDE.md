@@ -121,7 +121,7 @@ How the runtime engine works.
 | [`asset-loader.md`](docs/subsystems/asset-loader.md) | LBA resolver + sub-asset chain. |
 | [`renderer.md`](docs/subsystems/renderer.md) | TMD renderer at `FUN_8002735c` (60 GTE ops). No culling of the port's own: what drops geometry is retail's (visible-tile crop at retail framing, actor cull, per-prim rejects); the clip volume holds the whole scene (`SCENE_FAR`). |
 | [`renderer-port.md`](docs/subsystems/renderer-port.md) | The port's wgpu renderer pass by pass: PSX-mode rasterisation, the enhancement passes, the screen-space overlay, VRAM capture, the battle HUD and menu pipelines, the frame profiler. |
-| [`browser-host.md`](docs/subsystems/browser-host.md) | The browser host module by module: what `web-viewer` exports for the play page, the minigames page, the viewer pages and the ROM patcher. |
+| [`browser-host.md`](docs/subsystems/browser-host.md) | The browser host module by module: what the wasm bundle (`web-play` + `web-viewer`) exports for the play page, the minigames page, the viewer pages and the ROM patcher. |
 | [`shading.md`](docs/subsystems/shading.md) | How a pixel gets its colour: texel index -> CLUT read from **VRAM** (not the file) -> `texel * colour / 128` -> depth cue -> blend -> dither. No light source. Why exported palettes look wrong. |
 | [`vr-mode.md`](docs/subsystems/vr-mode.md) | WebXR `immersive-vr` on the site's 3D pages: the flat renderer stays the geometry source, only the framebuffer and view-projection fork per eye. |
 | [`audio.md`](docs/subsystems/audio.md) | PsyQ libsnd / libspu stack, SsAPI sequencer, SPU DMA engine; the cold scene-entry sequence every host owes, and how BGM parity is measured against a save state. |
@@ -317,7 +317,8 @@ The edges among the engine's kernel crates are a committed table (`scripts/ci/cr
 | [`crates/parity`](crates/parity/README.md) | - | The engine measured against retail: the VRAM / mode / audio / PCM oracles, the recomp differential's `sim_trace`, and the retail comparison corpus (`retail_compare*`). Drives the native session (`engine-session::native`); tool code no play host links. |
 | [`crates/engine-shell`](crates/engine-shell/README.md) | `legaia-engine` | Top-level native driver: `play` / `play-window`, `save` / `load`, `play-str`, `record` / `replay`, `config`, and the parity-oracle subcommands; `--help` groups every one. |
 | [`crates/asset-viewer`](crates/asset-viewer/README.md) | `asset-viewer` | Combined viewer: TIM, TMD, VAB, SEQ, stage geometry, PROT browser, scene-bundle presets, `save-icons` sheet, dialog box, field-VM scene runner with dialog rendering, battle-scene SM driver, and `world` (the `engine-core` composite ticking over a CDNAME scene). |
-| [`crates/web-viewer`](crates/web-viewer/README.md) | - | WASM target serving three products: the asset inspectors (disc browser, viewers, `.glb` export), the play / minigames runtime (the browser hosts of the port), and the client-side ROM patcher (nothing is uploaded). |
+| [`crates/web-play`](crates/web-play/README.md) | - | The browser hosts of the port: the play page's `LegaiaRuntime` (the native window's `BootSession`) and the minigames page's `LegaiaMinigames`, plus the field actor layer and in-memory disc access the viewer shares. An rlib; its exports ship in `web-viewer`'s bundle. |
+| [`crates/web-viewer`](crates/web-viewer/README.md) | - | The WASM bundle the site loads (`cdylib` over `web-play`), and its own two products: the asset inspectors (disc browser, viewers, `.glb` export) and the client-side ROM patcher (nothing is uploaded). |
 
 ### Ghidra-side scripts - [`ghidra/scripts/`](ghidra/scripts/README.md)
 

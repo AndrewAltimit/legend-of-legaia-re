@@ -15,6 +15,8 @@ use super::*;
 use legaia_engine_scene::field_env::EnvDraw;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_scene::scene_resources::SceneResources;
+use legaia_web_play::field_actors::{ActorBanks, FieldActors};
+use legaia_web_play::field_scene_anim::FieldSceneAnim;
 use std::sync::Arc;
 
 /// A fully-assembled field scene held by [`LegaiaViewer`] between
@@ -79,32 +81,9 @@ pub struct FieldScenePack {
     /// actors pose from.
     pub locomotion_anm: Option<legaia_actor_formats::player_anm::PlayerAnmBundle>,
     /// The scene's MAN-placed actors over the live world
-    /// ([`crate::field_actors::FieldActors`], the play page's own actor
+    /// ([`FieldActors`], the play page's own actor
     /// layer), exported as `field_scene_npc_*`.
-    pub(crate) actors: crate::field_actors::FieldActors,
-}
-
-/// The bundle type-6 **CLUT-walk table** runner (`legaia_scene_formats::clut_walk`,
-/// `FUN_8001ada4` case 0xB - water / waterfall shimmer, 12 carriers; see
-/// `docs/subsystems/field-ambient-fx.md`), shared by the map viewer and the
-/// play runtime. It runs on the retail game-tick clock: a game tick every
-/// [`legaia_engine_vm::frame_clock::FrameClock::frame_step`] vsyncs
-/// (`DAT_1F800393`; 2 in towns, 3 on the overworld).
-///
-/// The other VRAM writers - the ambient move-VM tree and the scripted CLUT
-/// effects - are the world's, stepped through
-/// `World::step_field_vram_effects` by whichever host owns the world (the
-/// play runtime's scene host, the map viewer's
-/// [`legaia_engine_scene_host::scene_live::LiveScene`]).
-pub struct FieldSceneAnim {
-    /// The CLUT-walk shimmer (the slot-5 / type-6 walker or the legacy
-    /// ocean-head fallback), stepped by the one engine kernel the native
-    /// window runs (`legaia_engine_scene::clut_walk_anim`).
-    clut: Option<legaia_engine_scene::clut_walk_anim::ClutWalkAnim>,
-    /// Vsyncs per game tick (retail `DAT_1F800393`).
-    frame_step: u8,
-    /// Vsyncs banked toward the next game tick.
-    vsync_accum: u8,
+    pub actors: FieldActors,
 }
 
 // Hybrid env-mesh builders - in the shared assembly kernel
@@ -164,11 +143,7 @@ pub fn build_field_scene_anim(
         pack.display_vram_mut(),
     )?
     .anim;
-    Some(FieldSceneAnim {
-        clut: Some(clut),
-        frame_step,
-        vsync_accum: 0,
-    })
+    Some(FieldSceneAnim::clut_only(clut, frame_step))
 }
 
 /// Enter the pack's scene live and headless
@@ -214,7 +189,7 @@ pub fn build_field_scene_live(index: Arc<ProtIndex>, pack: &mut FieldScenePack) 
     match live.as_mut() {
         Some(live) => actors.rebuild(
             &mut live.host,
-            crate::field_actors::ActorBanks {
+            ActorBanks {
                 scene_anm: scene_anm.as_ref(),
                 locomotion_anm: locomotion_anm.as_ref(),
             },
@@ -413,7 +388,7 @@ pub fn tick_field_scene_vsync(pack: &mut FieldScenePack) -> bool {
         // (after the world tick).
         actors.drive(
             &mut live.host,
-            crate::field_actors::ActorBanks {
+            ActorBanks {
                 scene_anm: scene_anm.as_ref(),
                 locomotion_anm: locomotion_anm.as_ref(),
             },
@@ -430,83 +405,6 @@ pub fn tick_field_scene_vsync(pack: &mut FieldScenePack) -> bool {
     }
     wrote |= host.world.step_field_vram_effects(&mut hres.vram, false);
     wrote
-}
-
-impl FieldSceneAnim {
-    /// CLUT-walk-only animation state for the **play** runtime
-    /// ([`crate::runtime::LegaiaRuntime`]): there the live scene host's own
-    /// `World` carries the ambient move-VM tree (spawned at scene entry and
-    /// drained per sim tick), so only the CLUT-walk half runs here.
-    pub(crate) fn clut_only(
-        clut: legaia_engine_scene::clut_walk_anim::ClutWalkAnim,
-        frame_step: u8,
-    ) -> FieldSceneAnim {
-        FieldSceneAnim {
-            clut: Some(clut),
-            frame_step,
-            vsync_accum: 0,
-        }
-    }
-
-    /// Which CLUT animator is installed: `1` the walker, `2` the legacy
-    /// ocean-head cycle, `0` none (the two are exclusive). Read by
-    /// `LegaiaRuntime::play_field_anim_kind`.
-    pub(crate) fn kind_code(&self) -> u32 {
-        use legaia_engine_scene::clut_walk_anim::ClutWalkAnim;
-        match self.clut {
-            Some(ClutWalkAnim::Walk { .. }) => 1,
-            Some(ClutWalkAnim::Ocean { .. }) => 2,
-            None => 0,
-        }
-    }
-
-    /// Re-point the animator at the world's **live** vsyncs-per-game-tick
-    /// (`World::clock.frame_step`, retail `DAT_1F800393`).
-    ///
-    /// The play runtime snapshotted this at scene rebuild while the native
-    /// window reads it off the world every frame. Today the two agree (the
-    /// scene loader installs the per-mode floor and only the un-wired
-    /// adaptive resolver `World::resolve_frame_step` can raise it), so this
-    /// is the shape of the drift rather than a visible one - but a snapshot
-    /// is exactly what makes wiring that resolver change one host only.
-    pub fn set_frame_step(&mut self, frame_step: u8) {
-        self.frame_step = frame_step.max(1);
-    }
-
-    /// Advance `vsyncs` retail vsyncs and apply any due VRAM writes to
-    /// `vram`. Returns `true` when texels changed.
-    pub fn tick(&mut self, vsyncs: u32, vram: &mut legaia_tim::Vram) -> bool {
-        let dt = u32::from(self.frame_step.max(1));
-        let mut game_ticks = 0u32;
-        for _ in 0..vsyncs.min(64) {
-            self.vsync_accum += 1;
-            if u32::from(self.vsync_accum) >= dt {
-                self.vsync_accum = 0;
-                game_ticks += 1;
-            }
-        }
-        if game_ticks == 0 {
-            return false;
-        }
-        let mut wrote = false;
-        // The CLUT-walk shimmer, one engine step per game tick.
-        if let Some(clut) = self.clut.as_mut() {
-            for _ in 0..game_ticks {
-                wrote |= clut.game_tick(dt, vram);
-            }
-        }
-        wrote
-    }
-
-    /// CLUT-walk entry count, for the UI status line.
-    pub fn walker_entries(&self) -> usize {
-        match self.clut.as_ref() {
-            Some(legaia_engine_scene::clut_walk_anim::ClutWalkAnim::Walk { table, .. }) => {
-                table.entries.len()
-            }
-            _ => 0,
-        }
-    }
 }
 
 impl LegaiaViewer {
@@ -1138,7 +1036,7 @@ impl LegaiaViewer {
 }
 
 /// The map viewer's actor exports: the loaded scene's MAN-placed actors over
-/// its live world, through [`crate::field_actors::FieldActors`] - the play
+/// its live world, through [`FieldActors`] - the play
 /// page's own actor layer, whose `play_npc_*` exports these mirror one for
 /// one (`site/js/field-actors.js` draws both). Every export answers empty /
 /// `-1` / `null` while no scene runs live.
@@ -1169,7 +1067,7 @@ impl LegaiaViewer {
         actors
             .build_mesh(
                 &live.host,
-                crate::field_actors::ActorBanks {
+                ActorBanks {
                     scene_anm: scene_anm.as_ref(),
                     locomotion_anm: locomotion_anm.as_ref(),
                 },
@@ -1179,7 +1077,7 @@ impl LegaiaViewer {
         Ok(i)
     }
 
-    /// [`crate::field_actors::FieldActors::shatter_states`] over the live
+    /// [`FieldActors::shatter_states`] over the live
     /// scene - the play page's `play_npc_shatter_states`.
     pub fn field_scene_npc_shatter_states(&self) -> Vec<u8> {
         self.npc_ctx()
@@ -1187,7 +1085,7 @@ impl LegaiaViewer {
             .unwrap_or_default()
     }
 
-    /// [`crate::field_actors::FieldActors::shatter`] over the live scene -
+    /// [`FieldActors::shatter`] over the live scene -
     /// the play page's `play_npc_shatter`.
     pub fn field_scene_npc_shatter(&mut self, i: u32) -> Vec<f32> {
         let Some(pack) = self.field_scene.as_mut() else {
@@ -1205,7 +1103,7 @@ impl LegaiaViewer {
         };
         actors.shatter(
             &live.host,
-            crate::field_actors::ActorBanks {
+            ActorBanks {
                 scene_anm: scene_anm.as_ref(),
                 locomotion_anm: locomotion_anm.as_ref(),
             },
@@ -1315,7 +1213,7 @@ impl LegaiaViewer {
 }
 
 impl LegaiaViewer {
-    fn npc_actors(&self) -> Option<&crate::field_actors::FieldActors> {
+    fn npc_actors(&self) -> Option<&FieldActors> {
         self.field_scene
             .as_ref()
             .filter(|p| p.live.is_some())
@@ -1326,16 +1224,16 @@ impl LegaiaViewer {
     fn npc_ctx(
         &self,
     ) -> Option<(
-        &crate::field_actors::FieldActors,
+        &FieldActors,
         &legaia_engine_scene_host::scene_host::SceneHost,
-        crate::field_actors::ActorBanks<'_>,
+        ActorBanks<'_>,
     )> {
         let p = self.field_scene.as_ref()?;
         let live = p.live.as_ref()?;
         Some((
             &p.actors,
             &live.host,
-            crate::field_actors::ActorBanks {
+            ActorBanks {
                 scene_anm: p.scene_anm.as_ref(),
                 locomotion_anm: p.locomotion_anm.as_ref(),
             },

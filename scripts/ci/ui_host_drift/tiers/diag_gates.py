@@ -36,7 +36,7 @@ def initialiser_is_off(init: str) -> bool:
 
 
 def web_toggle_defaults_off(symbol: str) -> tuple[bool, str]:
-    """Does `symbol` exist in web-viewer and initialise to false?
+    """Does `symbol` exist in web-play / web-viewer and initialise to false?
 
     Returns `(ok, detail)`. The initialiser test is the whole point: a toggle
     that exists but defaults on is the defect this tier was written for,
@@ -46,7 +46,8 @@ def web_toggle_defaults_off(symbol: str) -> tuple[bool, str]:
         r"\b" + re.escape(symbol) + r"\b[^=;]*=\s*([^;]+);",
         re.S,
     )
-    for path in (REPO / "crates" / "web-viewer" / "src").rglob("*.rs"):
+    web_roots = (REPO / "crates" / "web-play" / "src", REPO / "crates" / "web-viewer" / "src")
+    for path in (p for root in web_roots for p in sorted(root.rglob("*.rs"))):
         text = path.read_text(encoding="utf-8", errors="replace")
         m = pattern.search(text)
         if not m:
@@ -55,7 +56,7 @@ def web_toggle_defaults_off(symbol: str) -> tuple[bool, str]:
         if initialiser_is_off(init):
             return True, f"{path.relative_to(REPO)}: {init}"
         return False, f"{path.relative_to(REPO)}: initialiser is `{init}`, expected false"
-    return False, f"no `{symbol}` found in crates/web-viewer/src"
+    return False, f"no `{symbol}` found in crates/web-play/src or crates/web-viewer/src"
 
 
 def check_diag_gates() -> tuple[list[str], int]:
@@ -72,7 +73,7 @@ def check_diag_gates() -> tuple[list[str], int]:
             f"UNDECLARED DIAG GATE {env}: add it to DIAG_GATES in "
             f"{ROWS_FILE} and say whether it is `additive` (draws "
             f"something retail does not). An additive gate needs a default-off "
-            f"twin in crates/web-viewer, or the browser draws it always."
+            f"twin in crates/web-play, or the browser draws it always."
         )
     for env in sorted(set(declared) - found):
         problems.append(

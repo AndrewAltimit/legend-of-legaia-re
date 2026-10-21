@@ -33,7 +33,7 @@ CONTENT_FN_RE = re.compile(r"\bfn\s+([a-z_][a-z_0-9]*)")
 METHOD_CALL_RE = re.compile(r"[.:]\s*([a-z_][a-z_0-9]*)\s*\(")
 SELF_METHOD_RE = re.compile(r"\bself\.([a-z_][a-z_0-9]*)\s*\(")
 # A helper reached through the page's actor layer (`self.actors.drive(`): the
-# delegate is the host's own code (`web-viewer::field_actors`, shared with the
+# delegate is the host's own code (`web-play::field_actors`, shared with the
 # map viewer), so the subtree it reaches is the kernel's. Named field only - a
 # general `self.<field>.<method>(` edge would follow every engine-type field
 # into same-named host fns.

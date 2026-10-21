@@ -23,7 +23,7 @@
 
 # `battle_hud_draws_for` / `encounter_banner_draws_for` were waived here as
 # "undone work" - the browser page had no battle host to draw into. The
-# battle host is done: `web-viewer/src/play_battle.rs` arms the live gameplay
+# battle host is done: `web-play/src/play_battle.rs` arms the live gameplay
 # loop on `enter_field` (`arm_live_battles`, the browser twin of
 # `BootSession::enter_field_live`), `tick_battle_presentation` folds battle
 # events + refreshes the HUD through the shared
@@ -67,7 +67,7 @@
 # latches one key name per physical press in `handle_key` (winit repeats a
 # held key, and consuming that stream would bind the confirm key to whatever
 # row was highlighted). The browser page arms it off
-# `web-viewer::pad_bindings::live_mapping`, persists through `store_mapping`
+# `web-play::pad_bindings::live_mapping`, persists through `store_mapping`
 # into `localStorage`, and feeds `KeyboardEvent.code` through
 # `play_menu_key` - which has to be a second entry point, because the screen
 # exists to bind keys that carry no pad bit yet and the page's pad path drops
@@ -99,7 +99,7 @@
 # explicit, deliberate act by the person at the keyboard that a link cannot
 # carry", and the browser twin of that exists: the play page's Dev-menu
 # checkbox, which starts unchecked on every load, is never persisted and is
-# never read from the URL (`crates/web-viewer/src/play_dev_menu.rs`). Both
+# never read from the URL (`crates/web-play/src/play_dev_menu.rs`). Both
 # hosts now drive the same `DevMenuSession` off the same packed pad words
 # (shared `engine-system::pad::retail_packed`), commit the EQUIP row
 # through the same `WorldEquipHost`, and draw both pages at the paired pens -
@@ -113,7 +113,7 @@
 # that "the browser play page has no shop host: nothing in
 # `crates/web-viewer/src` opens a `ShopSession` or drains
 # `take_pending_field_shop`". That premise was false against the tree it
-# claimed to describe: `web-viewer/src/play_shop.rs` drains
+# claimed to describe: `web-play/src/play_shop.rs` drains
 # `take_pending_field_shop` in `poll_field_shop`, `runtime.rs` calls it every
 # `tick_frame`, and `site/js/play-app.js` drives the session through
 # `play_shop_is_open` / `play_shop_input` / `play_overlay_draws_json`. The
@@ -133,7 +133,7 @@
 # through the shared `magic_xp::accrue_and_level` kernel, and returns the
 # `FUN_80035C00` pair. `MenuRuntime` holds the beat and both hosts paint
 # window 7 off the disc-parsed rect - `window/menu_draws.rs` and
-# `web-viewer/src/play_menu.rs` - holding the pad for a confirm / cancel
+# `web-play/src/play_menu.rs` - holding the pad for a confirm / cancel
 # press exactly like the window-31 toast below.
 
 # `amount_prompt_draws_for` (window 31, the Point Card toast) and
@@ -144,7 +144,7 @@
 # holds `point_card_toast` until a press, and both hosts resolve id 31 off the
 # same disc-parsed window table through the shared shop composition
 # (`crates/engine-screens/src/shop.rs`), with the Items-screen arm in
-# `window/menu_draws.rs` and `web-viewer/src/play_menu.rs`.
+# `window/menu_draws.rs` and `web-play/src/play_menu.rs`.
 #
 # Which window the beat opens was disc-sourced rather than inferred: both retail
 # buy commits hand the widget VM a script whose entire body is `01 1F` plus the

@@ -75,7 +75,7 @@ pub(super) const CARD_PREFIX_LEN: usize = 16;
 /// on, so `-03` can sit in any block. That makes "which save numbers does
 /// this card already carry" a question the rack has to ask before it
 /// claims a block, and this is the pass that answers it:
-/// `LegaiaRuntime::card_save_index` in `web-viewer::cards` reads the
+/// `LegaiaRuntime::card_save_index` in `web-play::cards` reads the
 /// [`SlotContent::LegaiaSave`] entries to pick a number no file on the
 /// card is already using. Without it the rack derived the number from the
 /// block alone and wrote duplicate filenames onto a retail card.
@@ -276,7 +276,7 @@ impl CardDirEntry {
 ///
 /// Wired: the browser card rack enumerates the player's inserted card
 /// image's directory frames into [`CardDirEntry`]s and fills this table
-/// (`web-viewer::cards::card_block_snapshots`), pairing it with
+/// (`web-play::cards::card_block_snapshots`), pairing it with
 /// [`card_free_blocks`] to price the free-cell captions of the 5x3 grid.
 pub fn card_directory_scan(entries: &[CardDirEntry]) -> ([CardDirEntry; CARD_DIR_FRAMES], usize) {
     // Retail clears every slot before the walk, so a shorter enumeration
@@ -306,7 +306,7 @@ pub fn card_directory_scan(entries: &[CardDirEntry]) -> ([CardDirEntry; CARD_DIR
 /// Wired: costs the [`card_directory_scan`] table the browser card rack
 /// fills off an inserted card image; the resulting budget decides whether
 /// an unclaimed grid cell captions free or foreign
-/// (`web-viewer::cards::card_block_snapshots`). The engine's own
+/// (`web-play::cards::card_block_snapshots`). The engine's own
 /// disk-backed LGSF slot list has no block budget to spend.
 pub fn card_free_blocks(table: &[CardDirEntry], count: usize) -> i32 {
     let mut used: i32 = 0;

@@ -486,7 +486,7 @@ impl PlayWindowApp {
                 continue;
             }
             // Rot limb dimming (`FUN_80048A08`), the browser page's twin in
-            // `web-viewer::play_battle_limb_dim`.
+            // `web-play::play_battle_limb_dim`.
             if actor.battle_animation.is_some() {
                 self.session
                     .host
@@ -497,7 +497,7 @@ impl PlayWindowApp {
             // pass `FUN_8004DC68`, the capture / defeat fade): the colour
             // word's ABE + ABR onto every prim's TSB, as `FUN_80043390` ORs
             // them into each packet. The browser play page's twin is
-            // `web-viewer::play_battle_body_blend`.
+            // `web-play::play_battle_body_blend`.
             if let Some(plan) = self.body_draw_plan(ai) {
                 plan.apply_body_blend(&mut vmesh.cba_tsb);
             }

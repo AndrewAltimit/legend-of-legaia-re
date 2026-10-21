@@ -1,43 +1,43 @@
 # legaia-web-viewer
 
-The WebAssembly crate behind the static site. It takes a disc image the
+The WebAssembly bundle behind the static site. It takes a disc image the
 visitor picks - a full Mode2/2352 `.bin`, a raw `PROT.DAT`, or a single
 `.tim` - and nothing leaves the browser.
 
-## Three products in one crate
+## One bundle, two crates
 
-The crate serves three different things, and each has its own corner of
-`src/`:
+The site loads one wasm module, and it is this crate's `cdylib`. Two of
+the products in it are this crate's own; the third is linked in:
 
-| Product | What it is | Where in `src/` |
+| Product | What it is | Where |
 |---|---|---|
-| **Asset inspectors** | The disc browser and the viewer pages: entry classification, TIM / TMD / MES / SEQ / VAB inspectors, full-map field scenes, NPC, shop-vendor, arts, summon and equipment viewers, `.glb` export, the world-overview geometry. | `nav_disc`, `inspect`, `viewer_render`, `disc`, `catalog`, `field_scene`, `field_npc`, `npc_dialog`, `shop_vendors`, `character`, `monster`, `arts_view`, `equipment_view`, `summon_view`, `sfx_view`, `scene_export`, `scene_geom`, `audio_api` |
-| **The play / minigames runtime** | The browser hosts of the port. `LegaiaRuntime` holds the same `BootSession` the native window ticks; `LegaiaMinigames` drives the minigame rules engines outside a scene. | `runtime/`, `play/`, every `play_*` module, `boot_title`, `host_slot`, `pad_bindings`, `session_save`, `cards`, `resume`; `minigames/` and every `minigames_*` module |
+| **Asset inspectors** | The disc browser and the viewer pages: entry classification, TIM / TMD / MES / SEQ / VAB inspectors, full-map field scenes, NPC, shop-vendor, arts, summon and equipment viewers, `.glb` export, the world-overview geometry. | `nav_disc`, `inspect`, `viewer_render`, `catalog`, `field_scene`, `field_npc`, `npc_dialog`, `shop_vendors`, `character`, `monster`, `arts_view`, `equipment_view`, `summon_view`, `sfx_view`, `scene_export`, `scene_geom`, `audio_api` |
 | **The ROM patcher** | The client-side randomizer, texture replacer and language-pack workbench over `legaia-patcher` and its layer crates. | `rom_patcher/`, `texture_registry`, `texture_pack`, `translate_workbench` |
+| **The play / minigames runtime** | The browser hosts of the port: `LegaiaRuntime` and `LegaiaMinigames`. | [`legaia-web-play`](../web-play/README.md) |
 
-The runtime is not a second implementation of the game: it links the same
-engine crates as `legaia-engine` and differs only in what draws (the site's
-WebGL renderer in `site/js/`) and what plays (`engine-audio`'s WebAudio
-output). Module by module, the exports are in
+wasm-bindgen gathers the `#[wasm_bindgen]` exports of every crate the
+`cdylib` links, so the runtime's exports reach the page through the same
+`legaia_web_viewer.js` as this crate's: the site's JS API does not depend on
+which crate an export lives in. The viewer pages also stand on `web-play`'s
+field actor layer (`field_actors`, `field_npc`, `field_scene_anim`) and its
+in-memory disc access (`disc`), naming those modules there directly. Module
+by module, the exports are in
 [`docs/subsystems/browser-host.md`](../../docs/subsystems/browser-host.md).
 
 ## What it must not depend on
 
 - **No `wgpu`, `winit` or `cpal`.** It never links `engine-render`, and it
   takes `engine-audio` with the `audio-webaudio` feature.
-- **No native host.** `engine-shell` and `parity` are not dependencies;
-  `engine-shell`'s dev-only host-parity tests link *this* crate, not the
-  other way round.
+- **No native host.** `engine-shell` and `parity` are not dependencies.
 
 ## Place in the layering
 
-A host, at the top of the graph beside `engine-shell`: it sits on
-`engine-session` and `engine-screens` (the game loop and shop-family screens
-both play hosts share), on `engine-core` / `engine-scene` and the kernel
-crates directly, on the format crates for the inspectors, and on `patcher`
+At the top of the graph beside `engine-shell`: it sits on `web-play` (the
+browser hosts), on `engine-scene-host` / `engine-scene` and the kernel crates the
+viewer pages read, on the format crates for the inspectors, and on `patcher`
 with its layer crates for the ROM patcher. See
 [`docs/subsystems/engine.md`](../../docs/subsystems/engine.md#hosts) and,
-for the gates that keep it in step with the native window,
+for the gates that keep the browser host in step with the native window,
 [`docs/tooling/host-drift.md`](../../docs/tooling/host-drift.md).
 
 ## Build
@@ -71,8 +71,9 @@ python3 -m http.server -d site 8000
 ## Crate type
 
 `crate-type = ["cdylib", "rlib"]` - `cdylib` for the WASM build, `rlib` so
-native Rust can link it: this crate's own `tests/` and `engine-shell`'s
-dev-only host-parity tests drive the browser host beside the native one.
+this crate's own `tests/` can link it natively. The browser host's tests,
+and `engine-shell`'s dev-only host-parity tests, link `legaia-web-play`
+instead.
 
 ## See also
 

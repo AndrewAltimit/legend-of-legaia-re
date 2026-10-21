@@ -35,7 +35,7 @@
 //! `legaia_engine_menu_runtime::dev_menu_host`: `legaia-engine`'s native window
 //! behind `LEGAIA_DEV_MENU=1` (host module `window/dev_menu.rs`) and the
 //! browser play page behind its session-only Dev-menu checkbox
-//! (`web-viewer/src/play_dev_menu.rs`). That screen carries the subset of
+//! (`web-play/src/play_dev_menu.rs`). That screen carries the subset of
 //! retail's 24 rows whose backing state the engine owns; the rest of the
 //! retail list (party warps, story-flag pokes, the equip pager) still has no
 //! engine counterpart, so the geometry here is exercised by fewer rows than

@@ -300,7 +300,7 @@ def main() -> int:
             continue
         problems.append(
             f"DRIFT {name} ({builders[name]}): wired in the native window, "
-            f"not in the browser play page. Wire it into crates/web-viewer, or "
+            f"not in the browser play page. Wire it into crates/web-play, or "
             f"add a waiver with a reason to {WAIVERS.relative_to(REPO)}."
         )
     for name in orphan:

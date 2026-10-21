@@ -385,7 +385,7 @@ Behaviour: per-press `ctx+0x6dc` debit + `actor+0x1df` append; auto-end on exhau
 constant 0.
 
 Port: `engine-world-views::muscle_dome` (`selection_exhausted` / `reset_selection`),
-`web-viewer::minigames_muscle` (`arts_input` pieces + `muscle_arts_list_json`). Owning page:
+`web-play::minigames_muscle` (`arts_input` pieces + `muscle_arts_list_json`). Owning page:
 [`minigame-muscle-dome.md § Arts command input`](../../subsystems/minigame-muscle-dome.md#arts-command-input-packet-pinned).
 
 ### Slot-B overlay cluster (`0900..0969`) per-entry identity

@@ -15,7 +15,7 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use legaia_engine_scene::scene::ProtIndex;
-use legaia_web_viewer::disc::{extract_cdname_txt, extract_prot_dat};
+use legaia_web_play::disc::{extract_cdname_txt, extract_prot_dat};
 use legaia_web_viewer::field_scene::{
     build_field_scene, build_field_scene_live, tick_field_scene_vsync,
 };
@@ -104,7 +104,7 @@ fn the_map_viewer_animates_what_the_play_page_animates_or_skip() {
         ("jou", 64),
         ("map01", 120),
     ] {
-        let mut rt = legaia_web_viewer::runtime::LegaiaRuntime::new();
+        let mut rt = legaia_web_play::runtime::LegaiaRuntime::new();
         rt.load_disc(bytes.clone(), String::new())
             .expect("load disc");
         rt.enter_field(scene).expect("enter");
@@ -255,7 +255,7 @@ fn play_runtime_animates_field_vram_or_skip() {
 
     // jou: the scene host spawns the ambient tree at entry; ticking the
     // runtime must rewrite VRAM texels and report them dirty.
-    let mut rt = legaia_web_viewer::runtime::LegaiaRuntime::new();
+    let mut rt = legaia_web_play::runtime::LegaiaRuntime::new();
     rt.load_disc(bytes.clone(), String::new())
         .expect("load disc");
     rt.enter_field("jou").expect("enter jou");
@@ -275,7 +275,7 @@ fn play_runtime_animates_field_vram_or_skip() {
 
     // garmel: the walker table must be parked + ticked by the runtime too
     // (the ambient tree is jou-specific; shimmer covers the walker family).
-    let mut rt = legaia_web_viewer::runtime::LegaiaRuntime::new();
+    let mut rt = legaia_web_play::runtime::LegaiaRuntime::new();
     rt.load_disc(bytes, String::new()).expect("load disc");
     rt.enter_field("garmel").expect("enter garmel");
     let before = rt.field_vram_bytes();

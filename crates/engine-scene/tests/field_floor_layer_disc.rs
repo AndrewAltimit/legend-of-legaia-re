@@ -102,7 +102,7 @@ fn sweep(index: &ProtIndex) -> Vec<Floor> {
             .len();
         // The terrain layer as the play page draws it: visible cells whose
         // record is *not* `FLAG_PLACED` (those are already drawn, posed, by
-        // the placement layer - `web_viewer::play::build_field_render`).
+        // the placement layer - `web_play::play::build_field_render`).
         let terrain = scene
             .field_terrain_tiles(index)
             .ok()

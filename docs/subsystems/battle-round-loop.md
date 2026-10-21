@@ -155,7 +155,7 @@ The hosts use different channels. The native window draws a bounded HUD line (`W
 
 ## Live gameplay loop - Field ↔ Battle in `tick`
 
-`World::tick` drives the whole Field -> Battle -> Field round trip. Both hosts arm it through one kernel, `World::arm_live_loop` (`crates/engine-core/src/live_loop.rs`): scene label, the synthetic encounter fallback for scenes whose MAN carries no table, the loop / player-battle flags, the Seru registry and the battle-BGM swap. The native `BootSession::enter_field_live` (`crates/engine-session`) and the browser's `LegaiaRuntime::arm_live_battles` (`crates/web-viewer/src/play_battle.rs`) are callers of it.
+`World::tick` drives the whole Field -> Battle -> Field round trip. Both hosts arm it through one kernel, `World::arm_live_loop` (`crates/engine-core/src/live_loop.rs`): scene label, the synthetic encounter fallback for scenes whose MAN carries no table, the loop / player-battle flags, the Seru registry and the battle-BGM swap. The native `BootSession::enter_field_live` (`crates/engine-session`) and the browser's `LegaiaRuntime::arm_live_battles` (`crates/web-play/src/play_battle.rs`) are callers of it.
 
 Per frame:
 
@@ -714,7 +714,7 @@ The bank maps cue ids (the `kind` byte the art-record `HitCue` and the overlay s
 | `0x80..=0xFE` | Reserved per-character / per-art SFX ids. |
 
 - The bank is decoded from the user's `SCUS_942.54` descriptor table `DAT_8006F198` at boot (`SfxTable::from_scus` -> `SfxBank::from_descriptors`, see [`sfx-table.md`](../formats/sfx-table.md)) and plays through the per-scene music VAB. `SfxBank::play_one_shot` delegates to `VabBank::play_note` for tone lookup, pitch math and ADSR.
-- The live battle loop drives it: each `BattleSfxCue` drained from `World::drain_battle_sfx_cues` is enqueued at its `timing_frames` delay, and one `tick_sfx_frame` per simulation tick keys matured cues on. The host side is `AudioDirector::{set_sfx_bank, enqueue_sfx, tick_sfx_frame}` in `crates/engine-session`, used by both the native window and the browser page (`crates/web-viewer/src/play_sfx.rs`).
+- The live battle loop drives it: each `BattleSfxCue` drained from `World::drain_battle_sfx_cues` is enqueued at its `timing_frames` delay, and one `tick_sfx_frame` per simulation tick keys matured cues on. The host side is `AudioDirector::{set_sfx_bank, enqueue_sfx, tick_sfx_frame}` in `crates/engine-session`, used by both the native window and the browser page (`crates/web-play/src/play_sfx.rs`).
 - Cues touch only the SPU (no RNG), so battle determinism is unaffected. A missing bank / VAB / free voice drops the cue silently.
 
 ### Item catalog

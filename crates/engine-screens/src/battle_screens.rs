@@ -5,7 +5,7 @@
 //!
 //! Each of these used to live twice - once in the native window
 //! (`engine-shell/src/window/hud*.rs`) and once on the browser play page
-//! (`web-viewer/src/play_battle*`) - near line for line, and the copies had
+//! (`web-play/src/play_battle*`) - near line for line, and the copies had
 //! started to disagree (the arts-input chrome under a dialogue box). What a
 //! host still owns is assembling [`BattleScreenInputs`] from its holders, the
 //! stage transform's surface, and the upload.

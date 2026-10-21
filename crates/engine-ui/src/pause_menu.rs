@@ -5,7 +5,7 @@
 //! Every other module in this crate builds one panel. This one is the layer
 //! above: it is the code that used to live twice - once in the native
 //! `play-window`'s `window/menu_draws.rs` + `window/title_save_draws.rs`, once
-//! in the browser play page's `web-viewer/src/play_menu.rs` - with each host
+//! in the browser play page's `web-play/src/play_menu.rs` - with each host
 //! deciding for itself which window set a screen frames, whether a title tab
 //! goes through the descriptor painter or the pinned fallback, and where a
 //! modal sits in the sprite order. Two hosts assembling the same kind of list

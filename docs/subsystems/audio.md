@@ -730,7 +730,7 @@ installer walk's type-0 bank and type-2 score - rather than hunting it for the t
 the disc-gated test pins that the two readings agree on every slot, including which six
 have no pair.
 
-The site's minigame pages take exactly this path per game (`crates/web-viewer/src/minigames/bgm.rs`): `render_music01_bgm` / `render_music01_loop` split the pair, `VabBank::upload` the VAB, and render through the from-scratch `Spu` + `Sequencer` - the same components the live `AudioDirector` uses. Minigame BGM sources are disc-pinned extraction constants (base-independent): the Baka Fighter init loads extraction 1043 (#55 `M112` "Sol disco fever"); the dance overlay loads extraction 1048/1054 (#60/#66, the Sol disco finals, mode-selected, see [`minigame-dance.md`](minigame-dance.md)); the slot machine and fishing/Muscle Dome start **no** track and inherit their host scene's op-`0x35` BGM. The `music01_bgm_render` WASM surface renders any bank slot for the dance's Sol-disco jukebox.
+The site's minigame pages take exactly this path per game (`crates/web-play/src/minigames/bgm.rs`): `render_music01_bgm` / `render_music01_loop` split the pair, `VabBank::upload` the VAB, and render through the from-scratch `Spu` + `Sequencer` - the same components the live `AudioDirector` uses. Minigame BGM sources are disc-pinned extraction constants (base-independent): the Baka Fighter init loads extraction 1043 (#55 `M112` "Sol disco fever"); the dance overlay loads extraction 1048/1054 (#60/#66, the Sol disco finals, mode-selected, see [`minigame-dance.md`](minigame-dance.md)); the slot machine and fishing/Muscle Dome start **no** track and inherit their host scene's op-`0x35` BGM. The `music01_bgm_render` WASM surface renders any bank slot for the dance's Sol-disco jukebox.
 
 #### The ending theme: two entries on sound slot 10
 
@@ -2041,7 +2041,7 @@ stages art-bank record 0 (`0x10`, installed at dynamic slot `0x11`), whose
 track opens `(0, 0xC8)` - `XA1.XA` channel 0 - and whose effect script
 spawns the aura (`0x07`, `0x08` and the direct `0x14`) on its first frame.
 Both hosts stage those six banks with `XA30` as the battle clip set
-(`BATTLE_XA_CLIP_SLOTS` in `engine-session::boot` and `web-viewer::play_xa`).
+(`BATTLE_XA_CLIP_SLOTS` in `engine-session::boot` and `web-play::play_xa`).
 
 On a **party** seat (battle slot `< 3`) the cue-id band `0xC8..=0xFF`, minus the
 single hole at `0xFA`, is the arts voice: the id is re-based by `+0x38`, which is
@@ -2338,7 +2338,7 @@ modelled busy window of `dur` vsyncs for the router's drive gate, and the
 demuxes `XA27` / `XA30` into a `legaia_engine_audio::XaClipBank` at boot
 (`read_battle_xa_clip_bank`) and `AudioDirector::play_xa_clip` mixes the
 requested `(slot, channel)` PCM, cut at the retail read span, through the same
-XA path as the arts shouts. The browser page's `web-viewer` `play_xa` demuxes
+XA path as the arts shouts. The browser page's `web-play` `play_xa` demuxes
 the raw sectors the page slices out of the visitor's own disc bytes into the
 same banks and plays them through `WebAudioOut::play_xa_shout`. The monster
 leg's `0x2A8` resolves to a `bse.dat` row keyed through the struck monster's

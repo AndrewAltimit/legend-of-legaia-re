@@ -6,7 +6,7 @@
  * its field / battle branches.
  *
  * Everything drawn here is decoded off the visitor's own disc by the engine
- * (`crates/web-viewer/src/play_minigame*.rs`), through the same presentation
+ * (`crates/web-play/src/play_minigame*.rs`), through the same presentation
  * bundle the standalone minigames page uses; the 3D renderers below are the
  * standalone page's (`minigame-muscle.js` / `minigame-baka.js` /
  * `minigame-dance.js` scene builders) re-pointed at the play runtime's

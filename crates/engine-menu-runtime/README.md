@@ -36,7 +36,7 @@ sub-session from the world, and writes each outcome back.
 ## Place in the layering
 
 ```text
-engine-shell / web-viewer                       hosts
+engine-shell / web-play                         hosts
 engine-session, engine-screens, parity          host-shared top
 engine-menu-runtime                             the pause menu over World
 engine-scene-host                               SceneHost, resume, live preview

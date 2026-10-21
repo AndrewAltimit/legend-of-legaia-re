@@ -213,7 +213,7 @@ pub fn two_line_choice_panel_draws_for(
 /// `open_entry_screen` when the op-`0x49` park's kind byte is `0x0D`, and
 /// each host resolves this id off the disc window table
 /// (`window/menu_draws.rs::context_locked_screen_draws`,
-/// `web-viewer/src/play_menu.rs::build_context_locked`).
+/// `web-play/src/play_menu.rs::build_context_locked`).
 pub fn label_list_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,

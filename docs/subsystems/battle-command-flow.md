@@ -651,7 +651,7 @@ environment variable in the condition. `World::prime_battle_tutorial` is a
 debug force, and `LEGAIA_BATTLE_TUTORIAL` (`0` suppress / `1` force / `now`
 force and enter a fight) is `play-window`'s hand-testing knob on top of it -
 neither is the port. Browser oracle:
-`crates/web-viewer/tests/battle_tutorial_page.rs`.
+`crates/web-play/tests/battle_tutorial_page.rs`.
 
 The `asset-viewer battle-scene` subcommand drives the engine-side composite end-to-end: loads the same battle bundle TMDs, builds an `engine-core::World` in `SceneMode::Battle`, spawns 3 party + 5 monster actor slots, and ticks the [battle-action state machine](battle-action.md) per frame. HUD shows the current `ActionState` (decoded into the named variant), queued action, per-slot liveness, transition counts, and any `BattleEndCause` the SM emits. Triangle cycles `queued_action`; Cross re-seeds at `ActionState::Begin`.
 

@@ -97,7 +97,7 @@ flowchart TD
         session["engine-session: BootSession"]
         present["engine-screens<br/>over engine-ui + render-kernels"]
         native["engine-shell: legaia-engine<br/>engine-render (winit + wgpu)"]
-        web["web-viewer: WASM site build"]
+        web["web-play: browser hosts<br/>in web-viewer's WASM site build"]
         vm --> kernels
         kernels --> scene
         scene --> core
@@ -128,7 +128,7 @@ Over them sit the format-family crates: `container-formats` (asset dispatch, chu
 
 **The port.** `engine-core` holds the `World` and the scene host. Directly below it, `engine-scene` is the disc-facing half: it resolves a scene to its PROT entries and loads what the scene is built from, without naming `World`. Below that sit the kernels that never touch `World` - `engine-battle`, `engine-field`, `engine-menus`, `engine-dialog`, `engine-effects`, `engine-system`, `engine-mode`, `engine-camera` (the shared GTE camera), `engine-minigames` (over `engine-fishing`) and `engine-minigame-scenes` - and the ported VMs in `engine-vm`, `engine-battle-vm` (the battle side, with the slot-B cast / summon modules one rank above it in `engine-cast`) and `engine-motion-vm`. No crate re-exports another, so a path's first segment is the crate that owns the code.
 
-On the presentation side, `engine-ui` builds renderer-agnostic draw lists over the shared `render-kernels`; `engine-screens` composes the screens both hosts draw (shop family, battle HUD, pause menu) once; `engine-session` is the `BootSession` and BGM director every play host ticks. `engine-render` (winit + wgpu) is the native renderer and `engine-audio` (SPU + sequencer; cpal natively, WebAudio in the browser) the audio stack both hosts link, `engine-shell` is the `legaia-engine` binary, `engine-export` the `.glb` exporter behind `export-glb`, and `parity` holds the retail oracles over the capture seeds in `engine-capture`. `asset-viewer` and the `web-viewer` WASM target sit beside them.
+On the presentation side, `engine-ui` builds renderer-agnostic draw lists over the shared `render-kernels`; `engine-screens` composes the screens both hosts draw (shop family, battle HUD, pause menu) once; `engine-session` is the `BootSession` and BGM director every play host ticks. `engine-render` (winit + wgpu) is the native renderer and `engine-audio` (SPU + sequencer; cpal natively, WebAudio in the browser) the audio stack both hosts link, `engine-shell` is the `legaia-engine` binary, `engine-export` the `.glb` exporter behind `export-glb`, and `parity` holds the retail oracles over the capture seeds in `engine-capture`. `asset-viewer`, the `web-play` browser hosts and the `web-viewer` WASM bundle that ships them sit beside them.
 
 The port ships three hosts on that one engine: the native `play-window`, the browser play page, and the browser minigames page. `engine-session`, `engine-screens` and `engine-ui` carry no wgpu or winit dependency (and reach cpal only through `engine-audio` on native targets), which is what lets the same session code run natively and in `wasm32`. The gates that keep the hosts in step are in [`tooling/host-drift.md`](tooling/host-drift.md).
 

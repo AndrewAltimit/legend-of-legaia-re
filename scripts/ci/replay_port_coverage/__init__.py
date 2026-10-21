@@ -65,7 +65,7 @@ The four `engine-shell` ladders drive the headless `BootSession`, which builds
 no draw list - so `engine-ui` reported zero executed regions across their whole
 union, and the largest NO-LADDER cluster in `docs/tooling/reach-triage.md` was
 invisible to this report by construction. `play_compose_ladder`
-(`crates/web-viewer/tests/`) closes that shape: the browser play page's
+(`crates/web-play/tests/`) closes that shape: the browser play page's
 composition is *library* code, so the ladder feeds pad words per tick and calls
 the page's per-frame read surface (`play_overlay_draws_json`, the menu / battle
 / fishing / dev-menu overlays, the screen-prim route, the battle 3D + FX
@@ -102,8 +102,8 @@ Usage:
     # per-ladder table is only possible when the exports are separate, and
     # that table is what makes dropping a ladder a visible cost. The package
     # differs per ladder ([`CANONICAL_LADDERS`] carries it): the engine-shell
-    # ladders and the web-viewer composition ladder are different crates, and
-    # `--test` links each crate's LIBRARY - which is why the web-viewer route
+    # ladders and the web-play composition ladder are different crates, and
+    # `--test` links each crate's LIBRARY - which is why the web-play route
     # can execute composition code the native window runs only behind a wgpu
     # surface.
     # Clean first: the reader collapses duplicate spans keyed on the exact

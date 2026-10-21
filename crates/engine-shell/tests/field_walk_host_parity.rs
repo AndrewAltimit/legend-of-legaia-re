@@ -26,7 +26,7 @@
 use legaia_engine_session::native::NativeSession;
 use legaia_engine_session::session::BootConfig;
 use legaia_engine_system::input::PadButton;
-use legaia_web_viewer::runtime::LegaiaRuntime;
+use legaia_web_play::runtime::LegaiaRuntime;
 
 const SCENE: &str = "town01";
 const TICKS: u32 = 300;

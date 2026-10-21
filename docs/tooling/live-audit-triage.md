@@ -381,7 +381,7 @@ The reason each row carries, in short form. The source tag is authoritative.
 - **`category_check`** (wired) - the item-category favor score behind retail's
   per-character item-menu ordering and greying.
 - **`card_directory_scan` / `card_free_blocks` / `classify_card_directory`**
-  (wired) - the browser card rack (`web-viewer::cards`) mounts raw card images
+  (wired) - the browser card rack (`web-play::cards`) mounts raw card images
   and runs them; see [the card rows](#the-menu--save--memory-card-cluster).
 - **`alloc_list_head` / `alloc_and_append` / `free`** - the engine's actor
   storage is a generational `Vec` pool, not a retail free-stack.
@@ -1028,7 +1028,7 @@ backwards in one direction:
 |---|---|---|
 | `cd_dma`, `stream_file` | `REPLACE` | `crate::scene::ProtIndex` reads a whole PROT entry synchronously; no libcd handle, no DMA channel, no completion to poll, no cursor to position |
 | `overlay_loader` | `REPLACE` | on-demand PROT resolution - the port has no RAM windows to page overlays into, so the cache pair has nothing to cache |
-| `card_bu_io`, `card_flow` | `REPLACE` | `legaia_save::emu::CardView` + `legaia_save::card`, driven synchronously by `web-viewer::cards::write_session_into_card` |
+| `card_bu_io`, `card_flow` | `REPLACE` | `legaia_save::emu::CardView` + `legaia_save::card`, driven synchronously by `web-play::cards::write_session_into_card` |
 | `mdec_dma_sync` | `REPLACE` | the `legaia_mdec` software decoder; a decoded frame is finished when the call returns |
 | `float_tween`, `title_prim` | `REPLACE` | the `engine-ui` draw-list builders, which rebuild screen state each frame instead of tweening or queueing GPU packets |
 | `pooled_actor_seed` | `REPLACE` | `World::open_field_submode_screen`'s side `SubmodeScreen` struct - and both entries are retail-unreachable besides |
@@ -1049,7 +1049,7 @@ bytes, leaves the icon-frame descriptor and block count as found, and writes no
 title - so a block "reads wrong on a real card's Load screen". Neither half
 holds: `SaveFile::write_into_retail_sc_block` copies the whole four-byte
 `SAVE_BLOCK_HEADER`, and `legaia_save::card::write_retail_block_identity` -
-called immediately after by `web-viewer::cards::write_session_into_card` -
+called immediately after by `web-play::cards::write_session_into_card` -
 writes the title digits and the portrait. `engine-core`'s
 `the_composer_writes_the_whole_magic_and_leaves_identity_to_its_owner` pins the
 division. The stale text is what made the module read as a wiring gap; with it
