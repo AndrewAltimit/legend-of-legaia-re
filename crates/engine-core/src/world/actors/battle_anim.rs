@@ -49,6 +49,50 @@ impl World {
         kneels
     }
 
+    /// Carry a body still falling on its knockdown on to the get-up the
+    /// capture shows it rising on: when slot `slot` plays its knockdown
+    /// entry `+0x1F1` on the reaction channel and the capture's `+0x1D9`
+    /// names its get-up entry `+0x1F2`, run the knockdown's natural end - the
+    /// anim tick's end-of-clip path and the commit after it, which for a
+    /// monster at HP `0` is the death arm (`+0x21C = 2`, the spoils, and with
+    /// a Seru staged in `ctx[+0x269]` the get-up `0x8004B688..0x8004B6A0`).
+    /// The reaction starts on the hit, which the replay lands on its own
+    /// clock, so the knockdown the replay struck may still be falling where
+    /// retail's has ended (`rim_elm_gimard_seru_capture_before`: retail's
+    /// Gimard sixteen keyframes into the get-up, the replay's two short of
+    /// the knockdown's end). A no-op on any other pairing.
+    ///
+    /// REF: FUN_80047430 (`0x80047B30..0x80047B58`), FUN_8004AD80
+    fn seat_knockdown_end(&mut self, slot: usize, clip: u8) {
+        let Some(map) = self.battle_reaction_map(slot) else {
+            return;
+        };
+        let (knockdown, getup) = (map[2], map[3]);
+        let Some(a) = self.actors.get(slot) else {
+            return;
+        };
+        if getup == 0
+            || clip != getup
+            || knockdown == getup
+            || a.battle_reaction != Some(4)
+            || a.battle_reaction_entry != Some(knockdown)
+        {
+            return;
+        }
+        self.finish_battle_reaction(slot, 4);
+        // The passes retail ran since then ran the presentation tick's arm 2
+        // on the body each time (`0x80050230..0x80050244`): blend `0x1000`
+        // and `0x81000000` in the mode word, the additive draw the capture
+        // shows. Its lanes hold while the get-up plays (the arm's fade gate
+        // compares the committed entry against the knockdown).
+        if let Some(a) = self.actors.get_mut(slot)
+            && a.battle.render_flag == legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE
+        {
+            a.battle.render_blend = legaia_engine_battle_vm::battle_formulas::TINT_BLEND_FULL;
+            a.battle.flag_word |= 0x8100_0000;
+        }
+    }
+
     /// Land battle slot `slot`'s playing clip on the node cursor `+0x68` a
     /// capture held (12.4 sixteenths of a keyframe), re-posing it there -
     /// when the slot plays the clip the capture's `+0x1D9` names. Returns
@@ -70,6 +114,7 @@ impl World {
         if downed && !self.seat_downed_kneel(slot) {
             return false;
         }
+        self.seat_knockdown_end(slot, clip);
         let Some(a) = self.actors.get_mut(slot) else {
             return false;
         };

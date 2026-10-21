@@ -257,6 +257,16 @@ impl RetailBattle {
             // a knockdown carries the whole body in that time
             // (`battle_gimard_tail_fire_b`'s Vahn). A cursor below zero is a
             // displayed frame from before the hit, left alone.
+            //
+            // A monster target is seated on one reaction only: the get-up a
+            // killed monster rises on for the absorb, with a Seru staged in
+            // `ctx[+0x269]` (the commit's death arm, `0x8004B688..0x8004B6A0`).
+            // Its knockdown ran on the replay's clock too, and the replay's
+            // may still be falling where retail's has ended - the world
+            // carries it on to the get-up (`World::seat_battle_clip_cursor`,
+            // `rim_elm_gimard_seru_capture_before`). A monster's other
+            // reactions stay on the replay's clock: seated on its knockdown,
+            // `rim_elm_gimard_victory`'s Gimard read `.888` to `.883`.
             .filter(|&&(slot, clip, cursor)| {
                 let staged = !(self.action_state == 0x0C
                     || self.action_state == 0x14 && self.walk_yaw_base == 0x200);
@@ -269,14 +279,17 @@ impl RetailBattle {
                 // the loop began - a clock the replay reaches on its own
                 // (`gimard_summon_start`'s Gobu Gobu).
                 let summon_band_idle = clip == 0 && (0x32..=0x34).contains(&self.action_state);
-                let party_reaction = slot < 3
-                    && slot == self.target_code
-                    && matches!(clip, 2..=5 | 0x0B)
-                    && cursor >= 0;
+                let target_reaction = slot == self.target_code
+                    && cursor >= 0
+                    && if slot < 3 {
+                        matches!(clip, 2..=5 | 0x0B)
+                    } else {
+                        clip != 0 && self.absorbed_seru != 0
+                    };
                 !in_flight
                     || capture_band_idle
                     || summon_band_idle
-                    || party_reaction
+                    || target_reaction
                     || (slot != self.active_actor && slot != self.target_code)
             })
             .filter_map(|&(slot, clip, cursor)| {
@@ -510,7 +523,7 @@ pub(super) fn run_drive(
                     c.close_up_accum(),
                     c.glide_target().tr,
                 )),
-                (0..world.actors.len().min(4))
+                (0..world.actors.len().min(8))
                     .map(|i| {
                         let a = &world.actors[i];
                         format!(

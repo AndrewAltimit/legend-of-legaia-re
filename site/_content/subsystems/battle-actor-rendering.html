@@ -167,7 +167,7 @@
 <pre><code>baked + (tint - baked) * blend / 0x1000</code></pre>
   <p>and the GPU still multiplies the texel through it. With no blend weight set, the same word is derived from depth instead: the distance fade. A colour word of zero is the summon-hide&rsquo;s &ldquo;not drawn&rdquo; value, not a black tint.</p>
   <ul class="bullets">
-    <li>The <strong>capture / defeat fade</strong> ORs additive blending into the node&rsquo;s mode word, so the fading body is never an opaque black silhouette.</li>
+    <li>The <strong>capture / defeat fade</strong> ORs additive blending into the node&rsquo;s mode word, so the fading body is never an opaque black silhouette. It runs after the near-camera ghost pass, which clears the same bits, so the fade&rsquo;s OR is what the draw reads.</li>
     <li>The <strong>near-camera ghost pass</strong> (<code>FUN_8004DC68</code>) makes a body that crowds the lens translucent.</li>
     <li>Shading itself is on <a href="shading.html">shading and palettes</a>.</li>
   </ul>
