@@ -273,7 +273,7 @@ The results frame of the end-of-battle sequence raises two framed windows over t
 
 ### The report text
 
-The victory text is one buffer (`ctx + 0xA9`). The second row is the overlay's `Gained` sentence with blanks the two number draws fill; both figures are right-aligned inside the sentence. The EXP figure is the per-member share from `gp+0xA04`, handed to the number draw `FUN_8003563C` ([XP distribution](#xp-distribution)).
+The victory text is one buffer (`ctx + 0xA9`). The second row is the overlay's `Gained` sentence with blanks the two number draws fill; both figures are right-aligned inside the sentence. The EXP figure is the per-member share from `gp+0xA04`, handed to the number draw `FUN_8003563C` ([XP distribution](#xp-distribution)). That call appends a number record to the report window's text actor (`0x27`): the EXP share (`u32`) at x `0x2E` and the gold (`u16`) at `0xB6`, both at y `0x0E` in a five-cell field, CLUT `7`. The actor-list draw `FUN_80031D00` renders each record in the menu numeral cells (`8 x 12` at `v = 0xD0`, 8 px a digit, leading zeros blank), so the figures are in the numeral face, not the dialog font.
 
 A drop appends the SCUS template `gp + 0x384` points at: a `0x7C` row break and a `0xC2` item escape that the results frame patches with the item id (`0x8004F5C4..0x8004F600`). It becomes a third row inside the same fixed `288 x 42` box.
 
