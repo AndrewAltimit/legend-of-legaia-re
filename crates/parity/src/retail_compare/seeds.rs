@@ -403,12 +403,15 @@ pub fn retail_object_clips(ram: &[u8]) -> Vec<ObjectClipSeed> {
             let frames = game_anchors::u16_at(ram, rec + 2);
             let gated = game_anchors::u8_at(ram, rec + 1) & 1 != 0;
             let div = game_anchors::u8_at(ram, rec + 6);
-            let per_frame = legaia_engine_vm::actor_tick::clip_step(rate as u16, gated, div);
             let cursor = rewind_clip_cursor(
                 game_anchors::i16_at(ram, n + 0x68),
                 flags,
                 frames,
-                per_frame.saturating_mul(lag_frames),
+                clip_display_lag_units(
+                    legaia_engine_vm::actor_tick::clip_step(rate as u16, gated, div),
+                    step,
+                    lag_frames,
+                ),
             );
             (1..0x100).contains(&clip).then_some(ObjectClipSeed {
                 record,
@@ -421,6 +424,18 @@ pub fn retail_object_clips(ram: &[u8]) -> Vec<ObjectClipSeed> {
         .collect()
 }
 
+/// How far a clip cursor moved over the display lag: one anim tick
+/// (`FUN_800204F8`) adds the clip step times the frame-step scalar
+/// `DAT_1F800393` (`mult a0,v0` at `0x80020660` / `0x80020680`), so each of
+/// the `lag_frames` game frames moves it `clip_step * frame_step` units.
+/// `nilboa`'s Noa runs a gated clip (divisor `4`, step `4`) on a step-`2`
+/// frame: `8` a game frame, `16` over the two-frame lag.
+pub fn clip_display_lag_units(clip_step: u16, frame_step: u8, lag_frames: u16) -> u16 {
+    clip_step
+        .saturating_mul(u16::from(frame_step))
+        .saturating_mul(lag_frames)
+}
+
 /// A clip cursor `back` units before the capture, as the anim tick
 /// (`FUN_800204F8`) would have stood it: a held clip (`+0x62 & 2`) does not
 /// move; otherwise it steps against its direction (`& 0x80` reverses), and
@@ -430,12 +445,30 @@ pub fn retail_object_clips(ram: &[u8]) -> Vec<ObjectClipSeed> {
 /// the state holds cursor `48` on a step-`2` frame: the displayed frame is
 /// two game frames back, at `32`, and her arms are down there where the
 /// RAM's `48` has them raised.
+///
+/// A one-shot clip standing on the limit it clamps to (`frames * 16 - 1`
+/// forward, `0` reversed) with the end latch `0x100` up is parked there and
+/// is not taken back. The tick clears the latch and raises it again on every
+/// pass that finds the cursor at the limit (`0x80020638`, `0x800206D4` /
+/// `0x80020728`), so the state cannot say how long ago the clip arrived; a
+/// one-shot spends every tick after its swing on that limit, which makes
+/// "parked" the reading the frame bears out. `mei_house_door_pcsx`'s door
+/// (`town01` record 1, clip 1, cursor `479` of a 30-frame clip) shows the
+/// open leaf of the end pose, not the leaf two game frames short of it.
 pub fn rewind_clip_cursor(cursor: i16, flags: u16, frames: u16, back: u16) -> i16 {
-    use legaia_engine_scene::field_env::{ANIM_CLAMP, ANIM_HOLD, ANIM_REVERSE};
+    use legaia_engine_scene::field_env::{ANIM_CLAMP, ANIM_END, ANIM_HOLD, ANIM_REVERSE};
     if flags & ANIM_HOLD != 0 || back == 0 || frames == 0 {
         return cursor;
     }
     let span = i32::from(frames) * 16;
+    let limit = if flags & ANIM_REVERSE == 0 {
+        span - 1
+    } else {
+        0
+    };
+    if flags & ANIM_CLAMP != 0 && flags & ANIM_END != 0 && i32::from(cursor) == limit {
+        return cursor;
+    }
     let back = i32::from(back);
     let c = i32::from(cursor);
     let c = if flags & ANIM_REVERSE == 0 {

@@ -225,6 +225,33 @@ fn a_clip_cursor_rewinds_to_the_displayed_frame() {
     assert_eq!(rewind_clip_cursor(48, 0x15, 8, 0), 48);
 }
 
+/// The lag is counted in game frames of `clip_step * frame_step` units:
+/// Noa's gated clip (rate `8`, divisor `4` -> step `4`) on a step-`2` frame
+/// moves `16` over the two-frame lag, which puts the RAM's `48` on `32`.
+#[test]
+fn a_clip_lag_scales_by_the_frame_step() {
+    let step = legaia_engine_vm::actor_tick::clip_step(8, true, 4);
+    assert_eq!(step, 4);
+    assert_eq!(clip_display_lag_units(step, 2, 2), 16);
+    assert_eq!(
+        rewind_clip_cursor(48, 0x15, 8, clip_display_lag_units(step, 2, 2)),
+        32
+    );
+    assert_eq!(clip_display_lag_units(8, 3, 2), 48);
+}
+
+/// A one-shot parked on its clamp limit with the end latch up stays there;
+/// the same cursor without the latch, or a looping clip, is taken back.
+#[test]
+fn a_parked_one_shot_is_not_rewound() {
+    use legaia_engine_scene::field_env::{ANIM_CLAMP, ANIM_END, ANIM_REVERSE};
+    let parked = ANIM_CLAMP | ANIM_END;
+    assert_eq!(rewind_clip_cursor(479, parked, 30, 64), 479);
+    assert_eq!(rewind_clip_cursor(0, parked | ANIM_REVERSE, 30, 64), 0);
+    assert_eq!(rewind_clip_cursor(479, ANIM_CLAMP, 30, 64), 415);
+    assert_eq!(rewind_clip_cursor(470, parked, 30, 64), 406);
+}
+
 /// A walker is seated where the displayed frame drew it: `rikuroa`'s Caruban
 /// stands at `Z = 9792` in the RAM, began the tick at `9760` (`+0x20`, the
 /// tick iterator's pre-tick copy), and the frame two ticks back shows `9728`.

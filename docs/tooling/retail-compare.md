@@ -461,12 +461,28 @@ engine verdict:
   same word on the per-slot cursor its record's `A2 <id> <clip>` bound (the
   channel whose script id is the record), under the same rule, and every
   cursor is the displayed frame's: the RAM's taken back by the display lag's
-  game frames at the clip's own step (`rewind_clip_cursor`), wrapping a loop
-  and clamping a one-shot. `nivora_cutscene_delilas_intro` is the case: Noa
-  loops clip `45` while her line is up, from the scene bank's record `44`
-  (byte-identical to the clip retail's `+0x4C` points at, so the bank is
-  not what parted the frames), and the state holds cursor `48` on a
-  step-`2` frame. Her arms are raised there and down at the displayed `32`.
+  game frames (`rewind_clip_cursor`), wrapping a loop and clamping a
+  one-shot. A game frame moves a cursor by the clip's step **times the
+  frame step**: the anim tick `FUN_800204F8` multiplies its step by
+  `DAT_1F800393` before adding it (`mult a0,v0` at `0x80020660` /
+  `0x80020680`), so the lag is `clip step * frame step * 2`
+  (`clip_display_lag_units`). `nivora_cutscene_delilas_intro` is the case:
+  Noa loops clip `45` while her line is up, from the scene bank's record
+  `44` (byte-identical to the clip retail's `+0x4C` points at, so the bank
+  is not what parted the frames), and the state holds cursor `48` on a
+  step-`2` frame. The clip carries the blend gate with divisor `4`, a step
+  of `4`, so the displayed cursor is `48 - 4 * 2 * 2 = 32`, where her arms
+  hang; taken back by the step alone (`40`) they were half raised and the
+  frame read `0.973`, at `32` it reads `0.995`.
+
+  A one-shot parked on the limit it clamps to (`frames * 16 - 1`, or `0`
+  reversed) with the end latch `0x100` up is not taken back. The tick
+  clears the latch and raises it again on every pass that finds the cursor
+  there, so nothing in the state says how long ago the swing ended, and a
+  one-shot spends every tick after its swing on that limit.
+  `mei_house_door_pcsx`'s door (`town01` record 1, clip 1, `479` of a
+  30-frame clip) shows the end pose's leaf; rewound it drew the leaf
+  four frames short.
 
   So is an ending vignette's photo panel. The vignette record grabs the
   drawn frame into `(512, 0)` (`43 12`) and shows it through the image
