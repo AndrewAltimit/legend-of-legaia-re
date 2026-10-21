@@ -460,6 +460,19 @@ impl World {
     /// retail's cadence it runs on the pass ahead of the action SM; per
     /// vsync it stays at the anim tick's tail.
     pub(in crate::world) fn tick_battle_cast_drive(&mut self, vsyncs: u8) {
+        // On retail's cadence the drive is one call a battle frame with the
+        // frame step folded into every counter and step
+        // (`HomingSlots::step_pass`), not `step` one-vsync calls: the
+        // counters fall `4 * step` and are tested once, so a re-armed list
+        // spawn or a landing waits for the next pass.
+        if self.toggles.battle_sm_frame_cadence {
+            if vsyncs > 0 {
+                let streak_before = self.casting.move_fx_streak.counter_word;
+                self.casting.move_fx_streak.tick_counter_by(vsyncs);
+                self.tick_homing_slots_pass(vsyncs, streak_before);
+            }
+            return;
+        }
         for _ in 0..vsyncs {
             // The move-FX streak counter walk (retail `FUN_801E09F8` phase
             // 1): `ctx[+0x6C6]` falls 4 per frame, shrinking the trail's

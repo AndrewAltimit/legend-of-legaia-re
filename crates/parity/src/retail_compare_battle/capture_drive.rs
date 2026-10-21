@@ -485,9 +485,10 @@ pub(super) fn run_drive(
         }
         if std::env::var_os("LEGAIA_RC_POS_TRACE").is_some() && world.mode == SceneMode::Battle {
             eprintln!(
-                "[pos] t={t} act={} st=0x{:02X} {}",
+                "[pos] t={t} act={} st=0x{:02X} yawc={:?} {}",
                 world.battle_ctx.active_actor,
                 world.battle_ctx.action_state,
+                world.battle.camera.as_ref().map(|c| c.action_yaw_base()),
                 (0..world.actors.len().min(4))
                     .map(|i| {
                         let a = &world.actors[i];

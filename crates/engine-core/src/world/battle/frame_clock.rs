@@ -250,6 +250,20 @@ impl World {
         true
     }
 
+    /// Whether the next world tick runs an action-SM pass on retail's
+    /// cadence: it opens a battle frame no pass has claimed yet
+    /// ([`Self::battle_sm_pass_due`]). `false` on the per-vsync cadence,
+    /// where every tick runs one.
+    pub fn battle_sm_pass_due_next_tick(&self) -> bool {
+        self.toggles.battle_sm_frame_cadence
+            && self.battle.sm_pass_frame
+                != Some(
+                    self.battle
+                        .frame_clock
+                        .frame_of(self.clock.display_frames + 1),
+                )
+    }
+
     /// How many vsyncs of the actor anim tick this tick runs, and claim the
     /// frame. Retail's anim tick `FUN_80047430` is an actor-list node of the
     /// same main-loop pass as the battle frame driver, and it advances each
@@ -306,9 +320,7 @@ impl World {
         self.tick_battle_animations();
         if self.battle.anim_slot_reached {
             let events_before = self.pending_battle_events.len();
-            for _ in 0..self.battle.anim_pass_vsyncs {
-                self.tick_battle_locomotion();
-            }
+            self.tick_battle_locomotion_dt(self.battle.anim_pass_vsyncs);
             self.tick_battle_hit_events();
             self.fold_new_battle_events(events_before);
         }

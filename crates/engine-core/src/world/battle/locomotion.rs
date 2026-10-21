@@ -385,6 +385,16 @@ impl World {
     /// (`world::battle::clip_ladder`); a living knockdown's own commit clears
     /// `+0x1DC`, so a knockdown's root speed moves the actor.
     pub(in crate::world) fn tick_battle_locomotion(&mut self) {
+        self.tick_battle_locomotion_dt(1);
+    }
+
+    /// [`Self::tick_battle_locomotion`] over `dt` vsyncs at once: retail's
+    /// anim tick moves each actor `trig * speed * dt * scale >> 15` on one
+    /// pass behind **one** range poll (`lbu v0,0x393` into the root-motion
+    /// product at `0x80047D20..0x80047E18`). On retail's cadence the pass
+    /// runs it once with `dt` the frame step; a range a pass's first vsync
+    /// would close does not stop its second.
+    pub(in crate::world) fn tick_battle_locomotion_dt(&mut self, dt: u8) {
         use legaia_engine_battle_vm::battle_action::ActionState;
         self.seed_battle_seats();
         // On retail's cadence the pass took the pairs from the last pass's
@@ -401,17 +411,17 @@ impl World {
             ActionState::AttackWindup | ActionState::AttackAdvance | ActionState::AttackShortStep
         );
         if active < self.actors.len() {
-            self.drive_in_range_backoff(active);
+            self.drive_in_range_backoff(active, dt);
         }
         if approaching && active < self.actors.len() {
-            self.drive_attack_approach(active);
+            self.drive_attack_approach(active, dt);
         }
         for i in 0..self.actors.len() {
             if approaching && i == active {
                 // The approach drive above already walked this clip.
                 continue;
             }
-            self.drive_playing_root_motion(i);
+            self.drive_playing_root_motion(i, dt);
         }
     }
 
@@ -499,7 +509,7 @@ impl World {
     /// target. An actor holding the `+0x1DC` bit-3 latch does not move.
     // PORT: FUN_80047430 (`0x80047D20..0x80047E18`, the signed root-motion
     // term; the approach half is `drive_attack_approach`)
-    fn drive_playing_root_motion(&mut self, slot: usize) {
+    fn drive_playing_root_motion(&mut self, slot: usize, dt: u8) {
         let Some((speed, scale)) = self.battle_playing_root_motion(slot) else {
             return;
         };
@@ -520,7 +530,7 @@ impl World {
             return;
         }
         let (sin, cos) = legaia_engine_system::trig::trig12(facing);
-        let raw = motion::root_motion_raw(sin, cos, speed, 1, scale);
+        let raw = motion::root_motion_raw(sin, cos, speed, dt, scale);
         let frame = self.battle_frame_id();
         let (dx, dz) = self.actors[slot]
             .battle
@@ -545,7 +555,7 @@ impl World {
     /// which steps it forward only while out of range. The shift is `13`
     /// against the root term's `15`: a speed of `-4` on the same law.
     // PORT: FUN_80047430 (`0x80047C3C..0x80047D1C`, the in-range back-off)
-    fn drive_in_range_backoff(&mut self, slot: usize) {
+    fn drive_in_range_backoff(&mut self, slot: usize, dt: u8) {
         use crate::battle_round::RoundPhase;
         if self.battle.round_flow.phase != RoundPhase::Execute {
             return;
@@ -567,7 +577,7 @@ impl World {
         }
         // A frozen actor (`+0x21D == 0`) multiplies the step to nothing.
         let (sin, cos) = legaia_engine_system::trig::trig12(facing);
-        let raw = motion::root_motion_raw(sin, cos, BACKOFF_SPEED, 1, rate);
+        let raw = motion::root_motion_raw(sin, cos, BACKOFF_SPEED, dt, rate);
         let frame = self.battle_frame_id();
         let (dx, dz) = self.actors[slot]
             .battle
@@ -580,7 +590,7 @@ impl World {
 
     /// Approach leg: facing recompute + range-gated root-motion step toward
     /// the target (see [`Self::tick_battle_locomotion`]).
-    fn drive_attack_approach(&mut self, slot: usize) {
+    fn drive_attack_approach(&mut self, slot: usize, dt: u8) {
         let Some(a) = self.actors.get(slot) else {
             return;
         };
@@ -602,7 +612,7 @@ impl World {
         }
         let (speed, scale) = self.battle_root_motion_of(slot);
         let (sin, cos) = legaia_engine_system::trig::trig12(facing);
-        let raw = motion::root_motion_raw(sin, cos, speed.abs(), 1, scale);
+        let raw = motion::root_motion_raw(sin, cos, speed.abs(), dt, scale);
         let frame = self.battle_frame_id();
         let (dx, dz) = self.actors[slot]
             .battle

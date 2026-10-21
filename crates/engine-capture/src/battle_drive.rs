@@ -1008,6 +1008,8 @@ impl BattleDrive {
         {
             let pc = world.party.party_count.clamp(1, 3);
             let state = world.battle_ctx.action_state;
+            let pass_next = world.battle_sm_pass_due_next_tick();
+            let step = world.battle_frame_step();
             if let Some(yaw) = steer.yaw
                 && world.mode == SceneMode::Battle
                 && world.battle_ctx.active_actor == engine_seat(seat, pc)
@@ -1026,7 +1028,20 @@ impl BattleDrive {
                 if state == want && !matches!(end, SpanGate::CaptureFade { .. }) {
                     let d = (cam.action_yaw_base() - i32::from(yaw)).rem_euclid(0x1000);
                     if d.min(0x1000 - d) <= YAW_CLOCK_SLACK {
-                        cam.set_action_yaw_base(i32::from(yaw));
+                        // Retail's word is the one its last pass left, after
+                        // that pass's prologue drift. On retail's cadence the
+                        // pin lands ahead of a tick whose pass adds the drift
+                        // again, so it stands one pass short there.
+                        let drift = if pass_next {
+                            i32::from(
+                                legaia_engine_battle_vm::battle_cam_script::action_yaw_pass_increment(
+                                    step,
+                                ),
+                            )
+                        } else {
+                            0
+                        };
+                        cam.set_action_yaw_base(i32::from(yaw) - drift);
                     }
                 }
                 if let Some(coin) = steer.coin {
