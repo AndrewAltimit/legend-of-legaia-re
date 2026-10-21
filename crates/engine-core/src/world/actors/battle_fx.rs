@@ -241,6 +241,44 @@ impl World {
         }
     }
 
+    /// One call into the cue dispatcher `FUN_8004FCC8(id)` - the SCUS entry
+    /// every battle-overlay and stage-module site uses for a plain "play
+    /// this". An id `>= 0x100` is a CD-XA voice: the two gates and the
+    /// starter's triple ([`legaia_engine_battle_vm::battle_cast_cue::admit_voice_cue`])
+    /// onto [`AudioState::battle_xa_cues`]. Below it the id goes on the SFX
+    /// ring as the drainer's descriptor index: `id - 1` under `0x40`
+    /// (`addiu a1,s0,-0x1` / `sh a1` at `0x8004FD9C..0x8004FE28`), `id`
+    /// itself from there to `0x100` (`sh s0` at `0x8004FDE4`). The de-dup
+    /// word `0x8007B724` is `-1` from the mode init and never matches.
+    // PORT: FUN_8004FCC8 (the whole dispatch; the voice arm's kernel is
+    // `admit_voice_cue`, the ring arm's `anim_cue::dispatch_ring_id`)
+    pub(in crate::world) fn dispatch_battle_cue(&mut self, id: u16) {
+        if id >= 0x100 {
+            let raw = self
+                .audio
+                .xa_cue_durations
+                .as_deref()
+                .and_then(|t| t.get(usize::from(id - 0x100)).copied());
+            let gates = legaia_engine_battle_vm::battle_cast_cue::VoiceCueGates {
+                side_band_stage: 0,
+                clip_span_left: self.audio.battle_xa_busy_frames,
+            };
+            if let legaia_engine_battle_vm::battle_cast_cue::VoiceCueVerdict::Play(req) =
+                legaia_engine_battle_vm::battle_cast_cue::admit_voice_cue(id, gates, raw)
+            {
+                self.push_battle_xa_cue(legaia_engine_system::sound_state::XaVoiceClip {
+                    clip: req.clip_slot,
+                    channel: req.channel,
+                    duration_sectors: req.duration_sectors,
+                });
+            }
+            return;
+        }
+        if let Some(ring) = legaia_engine_battle::anim_cue::dispatch_ring_id(id) {
+            self.audio.sfx_ring_ops.push(SfxRingOp::Push(ring as i16));
+        }
+    }
+
     /// One call into the battle sound funnel `FUN_8004FE5C(id, category)`
     /// ([`legaia_engine_battle::sfx_cue::route_sfx_cue`]), with its two outputs placed where
     /// both hosts read them: the CD-XA leg on
@@ -671,11 +709,11 @@ impl World {
     /// (`target[+0x36] != 0` takes the ramped shot):
     /// `player_steal_skeleton_banner` reads its killed skeleton `183` down.
     ///
+    /// The pass also runs the sustained-cue teardown for every fading seat,
+    /// ahead of those gates (`0x8005040C`).
+    ///
     /// PORT: FUN_80050120 (arm 2's monster sink and its `ctx[+0x288]` latch)
     pub(super) fn tick_battle_defeat_sink(&mut self) {
-        if self.battle_ctx.absorbed_seru != 0 {
-            return;
-        }
         // One sink step a battle frame: the pass multiplies the size by the
         // frame step before the shift (`mult v1,v0` over `0x1F800393`,
         // `sra 2`, `0x80050480..0x800504A0`), so a step-`2` frame sinks
@@ -685,10 +723,30 @@ impl World {
             return;
         }
         self.battle.defeat_sink_frame = Some(frame);
+        // The sustained-cue teardown (`jal 0x80017910` at `0x8005040C`) sits
+        // ahead of every sink gate: a fading monster seat with its colour
+        // word still lit releases the held sustained run each pass, absorb,
+        // capture and scripted fight alike - so a looping cue the dying
+        // monster keyed cannot outlive its fade.
+        // REF: FUN_80017910
+        let first = self.party.party_count as usize;
+        let fading = (first..(first + 4).min(self.actors.len())).any(|slot| {
+            let a = &self.actors[slot];
+            a.active
+                && a.battle_monster_id.is_some()
+                && a.battle.render_flag
+                    == legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE
+                && a.battle.render_color & 0x00FF_FFFF != 0
+        });
+        if fading {
+            self.audio.sfx_ring_ops.push(SfxRingOp::ReleaseSustained);
+        }
+        if self.battle_ctx.absorbed_seru != 0 {
+            return;
+        }
         let step = i32::from(self.battle.frame_clock.step.max(1));
         let lone_scripted =
             self.battle_ctx.scripted_fight != 0 && self.battle_monster_slots().len() <= 1;
-        let first = self.party.party_count as usize;
         for slot in first..(first + 4).min(self.actors.len()) {
             let a = &self.actors[slot];
             if !a.active

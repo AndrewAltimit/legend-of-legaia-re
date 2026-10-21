@@ -642,41 +642,10 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// decline it, so an item turn was silent apart from whatever clip it
     /// staged.
     ///
-    /// An id below `0x100` keeps the SFX queue.
+    /// An id below `0x100` goes on the SFX ring the dispatcher's way - `id - 1`
+    /// under `0x40` ([`World::dispatch_battle_cue`]).
     fn one_shot_sfx(&mut self, cue_id: u16) {
-        if cue_id >= 0x100 {
-            let raw = self
-                .world
-                .audio
-                .xa_cue_durations
-                .as_deref()
-                .and_then(|t| t.get(usize::from(cue_id - 0x100)).copied());
-            let gates = legaia_engine_battle_vm::battle_cast_cue::VoiceCueGates {
-                side_band_stage: 0,
-                clip_span_left: self.world.audio.battle_xa_busy_frames,
-            };
-            if let legaia_engine_battle_vm::battle_cast_cue::VoiceCueVerdict::Play(req) =
-                legaia_engine_battle_vm::battle_cast_cue::admit_voice_cue(cue_id, gates, raw)
-            {
-                self.world
-                    .push_battle_xa_cue(legaia_engine_system::sound_state::XaVoiceClip {
-                        clip: req.clip_slot,
-                        channel: req.channel,
-                        duration_sectors: req.duration_sectors,
-                    });
-            }
-            return;
-        }
-        let slot = self.world.battle_ctx.active_actor;
-        self.world
-            .audio
-            .battle_sfx_cues
-            .push(legaia_engine_battle::battle_events::BattleSfxCue {
-                kind: cue_id,
-                timing_frames: 0,
-                actor_slot: slot,
-                target_slot: slot,
-            });
+        self.world.dispatch_battle_cue(cue_id);
     }
     /// The acting character's learned-spell record, for the queued-magic
     /// follow-up guard. Party slots only - retail reaches the record through

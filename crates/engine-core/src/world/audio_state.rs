@@ -395,6 +395,15 @@ impl World {
         self.audio.sfx_ring_ops.push(SfxRingOp::Push(id));
     }
 
+    /// Queue the sustained-cue teardown `FUN_80017910` for the host: the
+    /// held sustained run (voices `7 ..`) is keyed off ahead of the frame's
+    /// drain ([`SfxRingOp::ReleaseSustained`]). Retail's mode init
+    /// `FUN_8001DCF8` runs it on every mode entry (`0x8001DDA8`), which is
+    /// the seat a scene load takes.
+    pub fn release_sustained_sfx(&mut self) {
+        self.audio.sfx_ring_ops.push(SfxRingOp::ReleaseSustained);
+    }
+
     /// Queue `FUN_80035BD0(id)` - the overwrite producer - for the host ring.
     /// The engine-core mirror of the cursor pair is unchanged by it (it
     /// neither advances the cursor nor moves the parked slot); only the parked

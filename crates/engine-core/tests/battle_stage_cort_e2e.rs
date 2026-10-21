@@ -68,7 +68,15 @@ fn world_before(formation_monster: u16) -> World {
     w.set_encounter_session(Some(session));
     w.mode = SceneMode::Field;
     w.toggles.live_gameplay_loop = true;
+    // A synthetic XA span table, so the stage cues' CD-XA arm has a span.
+    w.audio.xa_cue_durations = Some(vec![10; 0x200]);
     w
+}
+
+/// The `(clip, channel)` the dispatcher `FUN_8004FCC8` starts for a cue id
+/// past `0x100`: slot `(id - 0x100) >> 3`, channel `id & 7`.
+fn xa_of(id: u16) -> (u32, u32) {
+    (u32::from(id - 0x100) >> 3, u32::from(id & 7))
 }
 
 fn walk_into_battle(w: &mut World) {
@@ -108,7 +116,11 @@ fn the_cort_fight_walks_the_arrival_then_the_form_transition_back_to_the_field()
         frames += 1;
         assert!(frames < 4000, "the arrival never handed the battle back");
         assert_eq!(w.mode, SceneMode::Battle);
-        cues.extend(w.audio.battle_sfx_cues.drain(..).map(|c| c.kind));
+        cues.extend(
+            w.drain_battle_xa_cues()
+                .into_iter()
+                .map(|c| (c.clip, c.channel)),
+        );
         max_drop = max_drop.max(w.actors[boss].move_state.world_y);
         if let Some(b) = w.battle.stage_banner.clone() {
             banner = Some(b);
@@ -126,7 +138,11 @@ fn the_cort_fight_walks_the_arrival_then_the_form_transition_back_to_the_field()
             );
         }
     }
-    assert!(cues.contains(&ARRIVAL_CUE), "arrival cue raised: {cues:?}");
+    // `0x20A` is past `0x100`: the dispatcher's CD-XA arm, not an SFX row.
+    assert!(
+        cues.contains(&xa_of(ARRIVAL_CUE)),
+        "arrival cue raised: {cues:?}"
+    );
     assert_eq!(
         max_drop, ARRIVAL_DROP_HEIGHT,
         "the boss drops in from above"
@@ -177,7 +193,11 @@ fn the_cort_fight_walks_the_arrival_then_the_form_transition_back_to_the_field()
         frames += 1;
         assert!(frames < 4000, "the form transition never exited");
         assert!(w.battle.victory.is_none(), "no results sequence");
-        cues.extend(w.audio.battle_sfx_cues.drain(..).map(|c| c.kind));
+        cues.extend(
+            w.drain_battle_xa_cues()
+                .into_iter()
+                .map(|c| (c.clip, c.channel)),
+        );
         if w.mode == SceneMode::Battle {
             saw_one_hp |= w.actors[boss].battle.hp == 1 && w.actors[boss].battle.liveness == 1;
             saw_parked |= w.battle_ctx.action_state == FORM_TRANSITION_ACTION_STATE;
@@ -186,7 +206,7 @@ fn the_cort_fight_walks_the_arrival_then_the_form_transition_back_to_the_field()
             }
         }
     }
-    assert!(cues.contains(&FORM_TRANSITION_CUE), "{cues:?}");
+    assert!(cues.contains(&xa_of(FORM_TRANSITION_CUE)), "{cues:?}");
     assert!(saw_one_hp, "the killing blow leaves the first form at 1 HP");
     assert!(saw_parked, "the SM is parked at 0xFC");
     assert!(

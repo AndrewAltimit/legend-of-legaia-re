@@ -84,6 +84,15 @@ impl World {
         // The pad word of a dispatched pass: a press parked while the
         // prompt's glide was landing stands in for a tick with none.
         let mut ev: BattleCommandInput = self.take_command_pad_buffer();
+        // The cross-button entry walks a highlight ahead of the handlers and
+        // keys `FUN_8004FCC8(0x22)` when it moves (`0x801D082C` / `0x801D08D0`
+        // / `0x801D0988` / `0x801D0A40`).
+        if self.toggles.battle_command
+            == legaia_engine_menus::option_values::BattleCommandOpt::CrossButton
+            && session.walk_highlight(&mut ev)
+        {
+            self.push_battle_ui_cue(super::ui_cues::BattleUiCue::Cursor);
+        }
         // The ring's two status refusals (`ring_arm_refused`): a press on
         // a refused arm is dropped with the buzz cue, and the ring stays up.
         if let CommandPhase::Menu { .. } = session.phase {

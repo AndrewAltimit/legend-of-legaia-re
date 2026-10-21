@@ -304,11 +304,6 @@ pub struct SceneHost {
     /// / warp arrival), which fires the trigger at the current tile, matching
     /// retail's stale-globals first-frame dispatch.
     last_trigger_tile: Option<(u8, u8)>,
-    /// Sustained-SFX voice bookkeeping (retail `gp+0x5D0` held count +
-    /// `gp+0x40C` current cue). Released by
-    /// [`SceneHost::release_sustained_sfx`] on scene load; see
-    /// [`host::sustained_sfx`](self) for the retail provenance.
-    pub sustained_sfx: SustainedSfx,
     /// The global mode cell (retail `DAT_80073F20`, a byte). Written by
     /// [`SceneHost::set_mode_cell`]; zero until set (retail BSS default).
     mode_cell: u8,
@@ -343,12 +338,11 @@ mod lifecycle;
 mod minigame_warp;
 mod player_rig;
 pub use player_rig::PlayerRigMesh;
+mod mode_cell;
 mod scene_entry;
 mod submode_lines;
-mod sustained_sfx;
 
 pub use effects::*;
-use legaia_engine_system::sustained_sfx::SustainedSfx;
 pub use minigame_warp::{
     DOME_FAVORED_COST, DOME_STANDIN_BUDGET, DOME_STANDIN_COMBATANT, DOME_STANDIN_HP,
     DomeLeadFighter, MinigameWarpOutcome,

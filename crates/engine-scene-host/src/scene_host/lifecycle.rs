@@ -65,7 +65,6 @@ impl SceneHost {
             field_man_cache: None,
             scene_gold_charges: Vec::new(),
             last_trigger_tile: None,
-            sustained_sfx: SustainedSfx::new(),
             mode_cell: 0,
             new_game_defaults: None,
             // DAT_8007B6EC boot value - FUN_8001FFA4 stores -1.
@@ -130,10 +129,10 @@ impl SceneHost {
     pub fn load_scene(&mut self, name: &str) -> Result<&Scene> {
         // Release any sustained-SFX voices the outgoing scene still holds -
         // the retail teardown runs from the mode initializer on mode entry
-        // (and from the battle anim commit on anim transitions, which
-        // engines drive via [`SceneHost::release_sustained_sfx`] directly).
-        // REF: FUN_80017910, FUN_8001DCF8, FUN_8004AD80
-        self.release_sustained_sfx();
+        // (`jal 0x80017910` at `0x8001DDA8`). The request rides the world's
+        // SFX ring queue to the host's director, which keys the voices off.
+        // REF: FUN_80017910, FUN_8001DCF8
+        self.world.release_sustained_sfx();
         // A scene load that lands while a battle is still up (a host's scene
         // picker, a debug seat) abandons that battle first, so its results
         // sequencer and field snapshot cannot ride into the next fight.
