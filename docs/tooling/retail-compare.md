@@ -2817,6 +2817,17 @@ the next frame the player moves. The two chest frames read `.958` to `.994`
 and `.966` to `.998`. The headless `camera` channel keeps the snap's eye, so
 it goes on scoring the compose.
 
+The staging descriptor `0x801F3580` holds the pose the ease is heading for,
+and it settles which side a remaining `camera` miss is on. In
+`drake_castle_to_worldmap` it reads eye Z `16784` against the live `16687`,
+and in `doman_arrival_from_korb2` (walked by tile pokes) pitch `444` and eye
+`(-86, 495, 11061)` against the live `474` / `(-86, 408, 11042)`; both players
+hold their previous-position pair equal to the position. The engine composes
+`drake_castle_to_worldmap`'s descriptor to the unit and `doman_arrival_from_korb2`'s
+pitch exactly, with its eye `28` / `8` off the descriptor where the live pose
+is `87` / `19` off it, so the bulk of both misses is the frozen ease, not the
+compose.
+
 A seat is not the last snap of the settle window. The entry script runs its
 first pass on the ticks after the seat
 ([below](#the-region-selector-band-and-the-entry-order)), and in `town01` and
