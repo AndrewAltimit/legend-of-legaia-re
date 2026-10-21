@@ -509,6 +509,13 @@ fn seed_part(p: &SummonPart, record_bytes: &[u8], origin: [i16; 3]) -> Option<Su
     // sprite node (`effect_sprite_arm`, op `0x23`) collapses to a point and
     // a default-arm mesh (`effect_default_arm`) to nothing.
     state.field_72 = SPAWN_RENDER_SCALE;
+    // The render mode `+0x5A` the seater derives from `model_sel` before the
+    // first VM run (`0x4000 -> 3`, `0x4001 -> 5`): it keeps those nodes off
+    // the motion block, whose `+0x90..+0x9A` words are a mode-3 node's HSV
+    // adds and their rates.
+    if let Some(mode) = RenderMode::from_model_sel(p.model_sel) {
+        state.move_submode = mode.raw();
+    }
     Some(SummonPartRuntime {
         model_sel: p.model_sel,
         reserved: p.reserved,

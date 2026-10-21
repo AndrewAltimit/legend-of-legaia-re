@@ -1078,7 +1078,7 @@ pub(crate) fn apply_scroll_fx(vram: &mut legaia_tim::Vram, fx: &vram_scroll::Vra
     true
 }
 
-fn read_rect(vram: &legaia_tim::Vram, x: u16, y: u16, w: u16, h: u16) -> Vec<u16> {
+pub(crate) fn read_rect(vram: &legaia_tim::Vram, x: u16, y: u16, w: u16, h: u16) -> Vec<u16> {
     let mut out = Vec::with_capacity(usize::from(w) * usize::from(h));
     for row in 0..h {
         for col in 0..w {
@@ -1107,7 +1107,7 @@ impl World {
 }
 
 /// Write a `w`-wide halfword rect into the software VRAM.
-fn write_rect(vram: &mut legaia_tim::Vram, x: u16, y: u16, w: u16, texels: &[u16]) {
+pub(crate) fn write_rect(vram: &mut legaia_tim::Vram, x: u16, y: u16, w: u16, texels: &[u16]) {
     for (row, chunk) in texels.chunks(usize::from(w.max(1))).enumerate() {
         let bytes: Vec<u8> = chunk.iter().flat_map(|t| t.to_le_bytes()).collect();
         vram.write_block(x, y + row as u16, w, 1, &bytes);

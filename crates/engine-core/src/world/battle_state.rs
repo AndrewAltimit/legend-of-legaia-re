@@ -603,6 +603,17 @@ pub struct BattleState {
     /// [`crate::world::World::apply_battle_vram_moves`]; cleared at battle
     /// entry.
     pub vram_scrolls: Vec<legaia_engine_field::vram_scroll::VramScrollFx>,
+    /// The CLUT-cell recolours the live effect parts' mode-3 render tail
+    /// wrote this frame - `FUN_80019D50` on a `0x4000` part that captured a
+    /// VRAM rect with op `0x2C` (Mule's backdrop CLUT `0x7A00` hue cycle).
+    /// Applied with [`Self::vram_moves`] by
+    /// [`crate::world::World::apply_battle_vram_moves`]; cleared at battle
+    /// entry.
+    pub cell_fx: Vec<legaia_engine_field::clut_cell_fx::ClutCellFx>,
+    /// Each live mode-3 rect's texels as op `0x2C` captured them - the
+    /// buffer every frame's recolour reads from. Dropped once no live part
+    /// recolours the rect.
+    pub cell_captures: std::collections::BTreeMap<(u16, u16, u16, u16), Vec<u16>>,
     /// How the engine's one-vsync ticks group into battle frames - the unit
     /// the root-motion carry truncates over and the camera steps on
     /// ([`crate::world::World::set_battle_frame_step`]).
@@ -1013,6 +1024,8 @@ impl BattleState {
             separation_frame: None,
             vram_moves: Vec::new(),
             vram_scrolls: Vec::new(),
+            cell_fx: Vec::new(),
+            cell_captures: Default::default(),
             frame_clock: Default::default(),
             pass_draw_frame: None,
             sm_pass_frame: None,

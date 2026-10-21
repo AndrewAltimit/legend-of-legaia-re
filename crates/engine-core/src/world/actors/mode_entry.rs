@@ -316,6 +316,8 @@ impl World {
         self.battle.backdrop_rebound = false;
         self.battle.vram_moves.clear();
         self.battle.vram_scrolls.clear();
+        self.battle.cell_fx.clear();
+        self.battle.cell_captures.clear();
         self.battle.vram_loads = Default::default();
         self.battle.stage_camera = None;
         self.battle.stage_banner = None;
