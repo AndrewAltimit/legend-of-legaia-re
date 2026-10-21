@@ -62,6 +62,8 @@ code spans, since rustdoc cannot resolve a link into a dependent crate.
   sound-source arm, the sound-stream request pair, the scene control block's
   reset values, the boot offset table, the identity index-list init and the
   dialog line count). The reset's body over a `World` is in `engine-core`.
+  `incense_window` is the Incense top-up `FUN_80046870`, the item applier's
+  selector-`0x82` arm the pause Items screen runs.
 - **Story flags** - `story_flag_state` (the retail system / story flag
   arrays and the story-flag bit image the scripts test and set, held as one
   unit on `World`).

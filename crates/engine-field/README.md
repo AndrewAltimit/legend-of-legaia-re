@@ -104,8 +104,8 @@ a dependent crate.
   `field_actor_timers` (the shutter envelope, the eased move and the floor
   ladder; the shutter's two quads are `render-kernels::shutter_bars`),
   `field_passive_hud`, `field_state_pick`, `field_subsystem_enter`,
-  `pooled_actor_seed`, `code_lock_actor`, `escape_timer`, `motion_pause`,
-  `clut_fade_actor` and `incense_window` (the Incense top-up `FUN_80046870`).
+  `pooled_actor_seed`, `code_lock_actor`, `escape_timer`, `motion_pause`
+  and `clut_fade_actor`.
 - **Submode, panels and the dev menu** - `submode_hub_actors` (the op-`0x49`
   submode system-actor handler family), `world_map_panel` /
   `world_map_panel_actors` (the panel window system and its actor state

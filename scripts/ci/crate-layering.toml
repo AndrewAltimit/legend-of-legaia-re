@@ -169,8 +169,8 @@ reason = "the encounter session's default transition length is the battle-intro 
 [[coupling]]
 from = "engine-menus"
 to = "engine-field"
-items = ["dev_equip_commit", "dev_menu_leaves", "dev_menu_adjust", "dev_menu_flags", "world_map_panel::{SFX_CURSOR_MOVE, dev_menu_action}", "incense_window::top_up_cooldown"]
-reason = "the equip commit and the dev menu's row kernels are field-overlay dev-menu bodies; the pause menu's equip session and the dev menu screen share them"
+items = ["dev_equip_commit", "dev_menu_leaves", "dev_menu_adjust", "dev_menu_flags", "world_map_panel::{SFX_CURSOR_MOVE, dev_menu_action}", "camera::CameraDistance"]
+reason = "the equip commit and the dev menu's row kernels are field-overlay dev-menu bodies the field's own submode hub and panel code also run, so no crate below both can hold them; the pause menu's equip session and the dev menu screen share them, and the options screen's camera preset is the field follow camera's eye-back knob"
 
 [[coupling]]
 from = "engine-fishing"
