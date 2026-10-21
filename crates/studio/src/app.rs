@@ -1834,11 +1834,19 @@ impl App {
             });
         ui.add_space(6.0);
         ui.horizontal(|ui| {
+            let can_start = !running && disc.is_some();
+            let start = if can_start {
+                crate::theme::primary_button("Start extraction")
+            } else {
+                egui::Button::new("Start extraction")
+            };
             if ui
-                .add_enabled(
-                    !running && disc.is_some(),
-                    egui::Button::new("Start extraction"),
-                )
+                .add_enabled(can_start, start)
+                .on_disabled_hover_text(if running {
+                    "An extraction is running."
+                } else {
+                    "Open a disc image first (an extracted folder is already extracted)."
+                })
                 .clicked()
             {
                 self.start_extract();

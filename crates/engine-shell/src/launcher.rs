@@ -181,6 +181,12 @@ pub fn validate_disc(path: &Path) -> std::result::Result<DiscInfo, DiscProblem> 
     if !path.exists() {
         return Err(DiscProblem::Missing(path.to_path_buf()));
     }
+    // A typed relative path is made absolute against the directory it was
+    // typed in: the game runs in the data directory, where it would not
+    // resolve, and the remembered path must survive a different start
+    // directory.
+    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let path = absolute.as_path();
     let unreadable = |reason: String| DiscProblem::Unreadable {
         path: path.to_path_buf(),
         reason,

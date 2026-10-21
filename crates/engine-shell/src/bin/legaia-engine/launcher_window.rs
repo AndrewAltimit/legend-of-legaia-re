@@ -770,6 +770,32 @@ impl LauncherApp {
                 .problem
                 .as_ref()
                 .is_some_and(|p| problem_path(p).is_some());
+        // A chosen file reads as its name, then the folder it is in.
+        if is_path && self.typed.is_empty() {
+            let p = Path::new(&line);
+            let name = p
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| line.clone());
+            c.text(tx, card.y + 20, &c.ellipsize_left(&name, inner), INK);
+            if let Some(dir) = p.parent().filter(|d| !d.as_os_str().is_empty()) {
+                // The last two folders are what a person recognises; the
+                // full path is in the help for *Change disc*.
+                let parts: Vec<String> = dir
+                    .components()
+                    .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                    .collect();
+                let tail = parts[parts.len().saturating_sub(2)..].join("/");
+                let folder = if parts.len() > 2 {
+                    format!(".../{tail}")
+                } else {
+                    dir.display().to_string()
+                };
+                let shown = format!("in {}", c.ellipsize_left(&folder, inner - c.width("in ")));
+                c.text(tx, card.y + 32, &shown, FAINT);
+            }
+            return;
+        }
         let lines = if is_path {
             vec![c.ellipsize_left(&line, inner)]
         } else {
@@ -892,9 +918,12 @@ impl LauncherApp {
                     "Choose your disc image first.".into()
                 }
             }
-            Item::ChooseDisc => "Pick your Legend of Legaia (USA) disc image: the .bin of a \
-                 Mode2/2352 dump, or its .cue. It is checked and remembered. Ctrl+O."
-                .into(),
+            Item::ChooseDisc => match &self.disc {
+                Some(d) => format!("Pick another disc image. Now: {}", d.path.display()),
+                None => "Pick your Legend of Legaia (USA) disc image: the .bin of a \
+                         Mode2/2352 dump, or its .cue. It is checked and remembered. Ctrl+O."
+                    .into(),
+            },
             Item::Panel => match self.panel {
                 Panel::Options => "Show the keyboard controls.".into(),
                 Panel::Controls => "Back to the options.".into(),
