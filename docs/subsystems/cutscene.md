@@ -1216,17 +1216,19 @@ Not `4C 88`: op0 `0x88` (nibble-8 sub-8) is a different op that writes
 `_DAT_80084628/80084624/8008462C`. `FUN_8003CF04` is a list **finder** (walks `0x8007C34C`
 matching `node[+0xC] == handler && !(node[+0x10] & 8)`), not a kill function.
 
-**Seed meaning** (from the roller's reads, `see ghidra/scripts/funcs/80037174.txt`):
+**Seed meaning** (from the roller `FUN_80037174`'s reads; `_DAT_801C6EA4` holds a **pointer** to the seed block, re-loaded with `lw 0x6ea4` before each read):
 
 | offset | role | default |
 |---|---|---|
-| `+0x4C` | window **top Y**. Slot `i` draws at `Y = (+0x4C) - subscroll + 16*i`. | `0x40` (64) |
-| `+0x4E` | **line-slot count** `n`. The roller keeps `n + 1` slot states at `actor+0x80…` (`0xFF` empty, `0xFE` blank page, `1` text). | `0x08` (8) |
-| `+0x50` | scroll **divisor**. A per-actor accumulator gains the frame step `DAT_1F800393` each frame (not while paused); on reaching `+0x50` it resets to zero and the sub-scroll `actor+0x9E` (0..15) steps. | `0x04` (4) |
-| `+0x52` | **release line count**. With it non-zero and slot 1 occupied, the roller pauses itself (`actor+0x10 \|= 0x80000`) and clears `+0x52` when the pages retired so far (`actor+0x6A`, plus one if slot 0 is occupied) equal it. Written only by the `word3 == 1` sub-mode. | `0` |
+| `+0x4C` | window **top Y**. Slot `i` draws at `Y = (+0x4C) - subscroll + 16*i` (`0x80037554..0x80037564`, `+0x10` per slot at `0x8003760C`), centred at `X = (0x140 - width) >> 1` past its lead byte (`0x80037588..0x800375AC`). | `0x40` (64) |
+| `+0x4E` | **line-slot count** `n`. The roller keeps `n + 1` slot states at `actor+0x80…` (`0xFF` empty, `0xFE` blank page, `1` text; written at `0x800373A8`). | `0x08` (8) |
+| `+0x50` | scroll **divisor**. A per-actor accumulator (`actor+0x50`) gains the frame step `DAT_1F800393` each frame unless `+0x10 & 0x80000` (`0x80037228..0x80037250`); on reaching `+0x50` it resets to zero and the sub-scroll `actor+0x9E` (0..15) steps (`0x80037254..0x8003727C`). The first pass primes the sub-scroll at `0xF` and the accumulator at the divisor (`0x800371C4..0x800371DC`), so the first page enters at once. | `0x04` (4) |
+| `+0x52` | **release line count**. With it non-zero and slot 1 occupied, the roller pauses itself (`actor+0x10 \|= 0x80000`) and clears `+0x52` when the pages retired so far (`actor+0x6A`, plus one if slot 0 is occupied) equal it (`0x800373BC..0x80037428`). Written only by the `word3 == 1` sub-mode. | `0` |
 
 The **clip window** is `Y` from `(+0x4C) + 4` to `min((+0x4C) + 16*n - 1, 0xE8)`, `X` from `0` to
-`0x13F`, so lines enter and leave it a pixel at a time. A full 16-pixel climb shifts the slot
+`0x13F`, so lines enter and leave it a pixel at a time: a `DR_AREA` pair the roller links after its
+lines (`0x80037610..0x800376D4`), so it executes before them, and a second pair restoring the draw
+environment's area linked ahead of them (`0x80037434..0x800374D4`). A full 16-pixel climb shifts the slot
 states up one, counts a retired page when slot 0 held one, and admits the next page at slot `n`.
 The block ends when the retired count reaches the page count: the roller clears its parent's
 `+0x10` bit `0x400` and kills itself.
