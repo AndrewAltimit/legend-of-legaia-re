@@ -2294,10 +2294,18 @@ caller, and run off the same calls
 
 Their records leave the module's whole-set seat.
 
-Palma's arm 1 holds on the band timer: retail's arm returns busy on the
-stream request's token `ctx[+0x276]` past most of the sustain
-(`palma_summon_mid_cast` sits there with the timer at 94), and the engine's
-resident stream would otherwise run the arm-3 / 4 sweep a sustain early.
+Palma's arm 1 holds on the side-band token `ctx[+0x276]`
+(`0x801F6D58..0x801F6D60`, [The side-band token](#the-side-band-token)): its
+four-slot read outlasts most of the sustain, and with the stage cleared at
+once the arm-3 / 4 sweep ran a sustain early. Palma's arm 7 holds until the
+creature plays clip `2`, which arm 6 stages bare (`sb v0,0x1da(s4)` at
+`0x801F7828`): retail commits it at the end of clip `1`, so the creature seat
+waits for its clip's boundary there as PROT 0907..0909 and 0913's do. Barra's
+arm `0xD` steps the countdown word by `p / 8` a pass as the creature arcs
+(`0x801F7CB0..0x801F7CE0`), and arm `0xE` climbs on from that value to
+`0x56`, a third of its length from zero; arm `0xE`'s pass puts the creature
+into the defeat fade (`+0x21C = 2`, `+0x225 = 2`, `0x801F7FE4..`), so it is
+gone when arm `0xF` frames the struck row.
 Mushura's arms 0 and 1 show the latched victim the band's freeze hid
 (`World::apply_mushura_writes`). Horn's seat visibility is carried
 (`World::apply_horn_writes`): arm 1 shows
@@ -3269,6 +3277,17 @@ The decoder tracks both through the same constant pass (`FadeStore`,
 and arm 13 kills it before spawning the fade back out. A held fade the module
 never kills is dropped once no cast module is resident, so a band that ends on
 one does not leave its tint over the rest of the battle.
+
+The same slots hold parts. A `sw v0` after a `FUN_80021B04` /
+`FUN_80050ED4` call parks the part it seated (`PartStore`, the spawn record
+read off `a2`), and a kill of that slot halts the engine's parts of that
+record. A kill inside a counted loop over a handle array (`sltiu` on a
+counter, `bne` back to the loop head, the slot pointer stepped in the delay
+slot) reaches every slot the loop walks: PROT 0923's arm 11 halts twelve
+slots from `0x801FA478` and eight from `0x801FA4B4`, among them the blue and
+yellow held fades its arm 10 parked at `0x801FA4C8` / `0x801FA4CC`. Read as
+one slot, those two fades stayed up as a white screen from arm 12 to the
+end of the turn.
 
 **Only where the port paces the arm.** A call is placed in time by its arm,
 so it is as right as the port's pacing of that arm, and many tick ports walk

@@ -56,6 +56,8 @@ impl World {
     /// - PROT 0916's arm `0x11`, kill path, on its passing tick: the victim's
     ///   HP to `0` (`sh zero,0x14C(s3)` at `0x801F7E14`), and the band's fold
     ///   owes nothing - the damage path is the only one that reaches the hit.
+    /// - PROT 0917's arm `0xE` pass: the creature into the defeat fade
+    ///   (`+0x21C = 2`, [`cam::BARRA_CREATURE_FADE_ARM`]).
     /// - PROT 0931 on a fight that is not scripted: arm 29 makes no damage
     ///   call (the fold is waived), arm 30 adds `delta << 2` to every living
     ///   monster's `+0x1BA` a pass (`0x801F86E0..0x801F874C`) and its exit
@@ -93,6 +95,13 @@ impl World {
             && let Some(a) = self.actors.get_mut(usize::from(seat_slot))
         {
             a.battle.shatter = w;
+        }
+        if entry == 917
+            && phase_in == cam::BARRA_CREATURE_FADE_ARM
+            && passed
+            && let Some(a) = self.actors.get_mut(usize::from(seat_slot))
+        {
+            a.battle.render_flag = 2;
         }
         if entry == JEDO_ENTRY && self.battle_ctx.scripted_fight == 0 {
             if phase_in == cam::JEDO_HIT_ARM && passed {

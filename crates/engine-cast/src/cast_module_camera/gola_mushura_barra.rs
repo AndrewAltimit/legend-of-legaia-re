@@ -354,6 +354,11 @@ pub fn mushura_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats)
 /// `FUN_801DD0AC(0x12, 7, target)` (`0x801F7C48`).
 pub const BARRA_HIT_ARM: u8 = 0xD;
 
+/// PROT 0917's arm whose pass puts the creature into the capture / defeat
+/// fade (`+0x21C = 2`, `+0x225 = 2` at `0x801F7FE4..0x801F7FE8`): it fades
+/// out additive before arm 0xF frames the struck row on the ground.
+pub const BARRA_CREATURE_FADE_ARM: u8 = 0xE;
+
 /// Arms 4 and 5 pull the TR z global in by `p << 7` a pass from the `0xFFFF`
 /// arm 3 / 4 store, to below `0x801` and `0xC01`.
 const BARRA_PULL: i32 = P << 7;
@@ -379,8 +384,8 @@ const BARRA_PULL: i32 = P << 7;
 /// | 0xA | word | `+= scalar << 6` |
 /// | 0xB | word | a cut on `(0, 0, 0)`; `+= scalar << 8` |
 /// | 0xC | word, TR z `+= 3 p` a pass | TR `(0x1000, 0x1000, 0x42D3)`, yaw `0x8C4`, pitch `0xFE0`; clip `2`; word `= 0` |
-/// | 0xD | the victim's fall (`+0x36 += 16 p` from `-0x2000`) | the hit |
-/// | 0xE | word `+= p / 8` until `0x56` | word `= scalar << 7` |
+/// | 0xD | the victim's fall (`+0x36 += 16 p` from `-0x2000`); word `+= p / 8` a pass | the hit |
+/// | 0xE | word `+= p / 8` until `0x56`, on from arm 0xD's | word `= scalar << 7` |
 /// | 0xF | word, then the victim settled | every pass a cut on the victim at a third of the depth, TR z easing from half the depth; the caption cleared; `0xFF` |
 ///
 /// PORT: FUN_801F6A30, overlay_summon_barra_0917_801f6a30 (PROT 0917; the whole phase chain's gates, camera writes and stores, captions, creature seat and clips - the seat swaps, the victim and creature arcs, part spawns and the epilogue's ctx bytes not carried)
@@ -518,6 +523,10 @@ pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
         }
         BARRA_HIT_ARM => {
             st.ramp += 16 * P;
+            // The arm also steps the word by `p / 8` every pass (the
+            // creature's arc, `0x801F7CB0..0x801F7CE0`), and arm 0xE climbs
+            // on from where it leaves it rather than from zero.
+            st.countdown.0 += P / 8;
             gate(st.ramp < 0)
         }
         0xF => {
