@@ -267,17 +267,18 @@ pins every Water item, both all-stats items, the four Elixirs, and Fury Boost by
 their real ids. Provenance: `case 6` lines `2380-2472`, `case 7` lines
 `2473-2639` of `ghidra/scripts/funcs/800402f4.txt`.
 
-## Indexing (Ghidra-traced)
+## Indexing
 
 The lookup is **double-indirected by item id -> subtype -> descriptor**. From
-`FUN_8003043c` (`ghidra/scripts/funcs/8003043c.txt`):
+`FUN_8003043C`:
 
 ```text
-subtype    = item_name_table[id].byte(+1)      ; DAT_80074369[id*0xC]
-descriptor = (&DAT_800752C0)[subtype * 4]      ; stride-4 record
-arm        = descriptor[+0]                     ; effect class / validator arm
-tier       = descriptor[+1]
-flags      = descriptor[+2]
+// FUN_8003043C
+0x80030474  subtype    = item_name_table[id].byte(+1)   // 0x80074368 + id*0xC
+0x80030478  descriptor = 0x800752C0 + subtype * 4       // stride-4 record
+0x80030484  flags      = descriptor[+2]
+0x80030498  arm        = descriptor[+0]                 // effect class / validator arm
+0x8003049C  tier       = descriptor[+1]
 ```
 
 The item record's `+0` byte - its **kind** - is a sibling selector some callers
@@ -286,8 +287,12 @@ preview derivation `FUN_801D6A54` requires `kind == 2` *and* `class == 6`
 before it maps the tier onto a preview mode. `ItemEffectTable::kind` exposes it
 alongside `subtype`, since the two are read as a pair.
 
-The `& 0x20` all-party test is read in `FUN_8003043c` itself (it selects the
-all-targets call to the action validator `FUN_8003fb10`). The `0x02` / `0x04`
+The `& 0x20` all-party test is read in `FUN_8003043C` itself (`andi 0x20` at
+`0x8003048C`): a flagged item makes one call to the action validator
+`FUN_8003FB10(arm, tier, 0)` (`0x800304A0`) and returns its result. Every retail
+flagged item's arm is the party walker `0x01` or an out-of-battle arm
+`0x80..=0x83`, none of which reads the target argument - except item `0x99`,
+whose arm `0x7F` is past every validator arm and so always refuses. The `0x02` / `0x04`
 field-vs-battle usability bits are read by the field item-menu list builder
 `FUN_80030628` (`ghidra/scripts/funcs/80030628.txt`), where two menu contexts
 gate on `flags & 2` and `flags & 4` respectively. The battle item path reads the
@@ -317,10 +322,11 @@ heals) against the real executable.
 Beyond the static field/battle bits, the session also models the retail
 **menu-usability gate** that `FUN_8003043c` performs: an item is only offered
 (not greyed) when at least one currently-eligible target would actually benefit
-from it. `FUN_8003043c` walks the live party (`+0x458` class byte) calling the
-shared relevance/validity predicate `FUN_8003fb10(class, tier, target)` per
-member - returning "usable" if any member's current state makes the effect do
-something. The from-scratch equivalent (`inventory_use::item_has_valid_target` ->
+from it. An unflagged item's `FUN_8003043C` walks the party list - count
+`0x80084594`, member ids from `0x80084598` (`0x800304B0..0x80030518`), skipping
+any id `>= 3` (`sltiu v0,v0,0x3` at `0x800304DC`) - calling the shared
+relevance/validity predicate `FUN_8003FB10(class, tier, member)` per member and
+returning "usable" if any call succeeds (`sltu v0,zero,s1` at `0x8003051C`). The from-scratch equivalent (`inventory_use::item_has_valid_target` ->
 `effect_benefits_target`) greys a heal when every living ally is at full HP, a
 cure when nobody carries the matching status, and a revive when nobody has
 fallen, re-implementing the item-relevance arms of the retail predicate
