@@ -426,7 +426,7 @@ python3 scripts/ci/third-party-licenses.py "${LICENSE_TARGETS[@]}" \
     printf '    mdec            FMV movies -> image frames\n'
     printf '    mes             dialog-container inspector\n'
     printf '    anm             animation-container inspector\n'
-    printf '    mdt             move-table inspector\n'
+    printf '    mdt             MOVE clip-bank inspector\n'
     printf '    art             Tactical Arts data inspector\n'
     printf '    font-extract    dialog font -> glyph atlas + widths\n'
     printf 'Play + view\n'

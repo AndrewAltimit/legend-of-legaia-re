@@ -486,7 +486,9 @@ card at `saves/memcard1.mcr` - the same raw card image the browser play page
 keeps, which any PSX emulator reads. The first launch that finds no card
 there writes any `slot_NN` save files an older build left into it. Run from the same
 directory each time - or pass explicit paths where supported
-(`--save-dir`, `config set --config-file`).
+(`--save-dir`, `config set --config-file`). A game started from the
+[launcher](#0-the-launcher) always runs from the per-user data directory, so
+these files sit there however it was started.
 
 Rebind keys with `config`:
 
@@ -579,7 +581,7 @@ python3 -m http.server -d site      # then open /play.html
 Nothing is uploaded: the disc image you pick stays in the tab.
 
 Rebuild after changing anything the page compiles - which is most of the
-workspace, not just `crates/web-viewer`. To check whether the bundle you built
+workspace, not just `crates/web-play` and `crates/web-viewer`. To check whether the bundle you built
 still matches your sources:
 
 ```bash

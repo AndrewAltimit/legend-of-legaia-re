@@ -65,7 +65,7 @@ Open the [play page](https://andrewaltimit.github.io/legend-of-legaia-re/play.ht
 
 ### Play natively
 
-Download the archive for your platform from the [Releases page](https://github.com/AndrewAltimit/legend-of-legaia-re/releases) and start the engine with no arguments (double-click `Legend of Legaia.exe` on Windows, `Legend of Legaia.app` on macOS). It asks for your disc image once, remembers it, and opens the title screen.
+Download the archive for your platform from the [Releases page](https://github.com/AndrewAltimit/legend-of-legaia-re/releases) and start the engine with no arguments (double-click `Legend of Legaia.exe` on Windows, `Legend of Legaia.app` on macOS). The launcher opens: choose your disc image once (it is checked and remembered), set the display options, and press Play for the title screen.
 
 | Platform | Archive |
 |---|---|
