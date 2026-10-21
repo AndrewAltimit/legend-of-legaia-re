@@ -287,6 +287,18 @@ pub struct ScreenshotConfig {
     pub display_lag: u64,
     /// The first tick of the drive's current run in its action state.
     pub state_since: std::cell::Cell<Option<u64>>,
+    /// The framing the battle camera's law armed on the gate tick, kept for
+    /// the `<shot>.retake` the gate writes beside the frame
+    /// ([`Self::display_lag`]).
+    pub gate_cam_target: std::cell::Cell<Option<legaia_engine_camera::projection::BattleCamPose>>,
+    /// `LEGAIA_BATTLE_CAM_GATE_TARGET=<8 numbers>`: on a display-lag retake,
+    /// the framing the first run's camera armed on the gate tick. Retail's
+    /// tween endpoints (`LEGAIA_BATTLE_CAM_ALIGN`) are the RAM's, the gate
+    /// tick's; the retake's own framing is two game frames older and may
+    /// stand a step of yaw drift or depth ramp short of them. The agreement
+    /// test is the gate's, so the retake aligns against this framing and
+    /// draws the displayed live pose.
+    pub battle_cam_gate_target: Option<legaia_engine_camera::projection::BattleCamPose>,
     /// `LEGAIA_BATTLE_BARS=slot:hp:mp,...`: the capture's mid-fight HP / MP,
     /// seeded on the first battle tick as the headless seed seeds them
     /// ([`legaia_engine_capture::bar_seeds::apply_bar_seeds`]).
@@ -581,6 +593,10 @@ impl ScreenshotConfig {
             battle_cam_align_displayed: std::env::var("LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED")
                 .ok()
                 .and_then(|v| legaia_engine_capture::camera_align::cam_align_from_env(&v)),
+            gate_cam_target: std::cell::Cell::new(None),
+            battle_cam_gate_target: std::env::var("LEGAIA_BATTLE_CAM_GATE_TARGET")
+                .ok()
+                .and_then(|v| legaia_engine_capture::camera_align::cam_pose_from_env(&v)),
             seat_hud_glides_landed: std::env::var_os("LEGAIA_SEAT_HUD_GLIDES_LANDED").is_some(),
             seat_hud_glides: std::env::var("LEGAIA_SEAT_HUD_GLIDES")
                 .map(|v| legaia_engine_capture::hud_glide::HudGlideSeat::list_from_env(&v))

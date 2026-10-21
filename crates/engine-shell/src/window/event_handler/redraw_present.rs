@@ -487,7 +487,7 @@ impl PlayWindowApp {
         if let (Some(path), Some(_)) = (sc.path.as_ref(), sc.phase_gate.as_ref()) {
             if let Some(want) = self.tick_no.checked_sub(sc.display_lag) {
                 eprintln!("display lag: retake at tick {want} (cast gate)");
-                let _ = std::fs::write(path.with_extension("retake"), want.to_string());
+                let _ = std::fs::write(path.with_extension("retake"), retake_note(sc, want));
             }
             return;
         }
@@ -500,7 +500,21 @@ impl PlayWindowApp {
             .filter(|&t| t >= since)
         {
             eprintln!("display lag: retake at tick {want} (state since {since})");
-            let _ = std::fs::write(path.with_extension("retake"), want.to_string());
+            let _ = std::fs::write(path.with_extension("retake"), retake_note(sc, want));
         }
+    }
+}
+
+/// The `<shot>.retake` note: the tick to take the frame on, then - when the
+/// battle camera was aligned on the gate tick - the framing its law armed
+/// there, which the retake's alignment tests retail's endpoints against
+/// (`LEGAIA_BATTLE_CAM_GATE_TARGET`).
+fn retake_note(sc: &super::super::launch_options::ScreenshotConfig, want: u64) -> String {
+    match sc.gate_cam_target.get() {
+        Some(t) => format!(
+            "{want}\n{}",
+            legaia_engine_capture::camera_align::cam_pose_to_env(&t)
+        ),
+        None => want.to_string(),
     }
 }

@@ -1500,6 +1500,84 @@ pub fn action_yaw_pass_increment(step: u8) -> u16 {
     if d == 0 { 1 } else { d }
 }
 
+/// The framing a display-lag retake aligns its glide against: the retake
+/// tick's own (`armed`), with each pitch, yaw and eye component that misses
+/// retail's RAM endpoint (`end`) taken from the gate tick's framing (`gate`)
+/// when that one agrees.
+///
+/// The retake draws two game frames before the RAM's instant, and the
+/// camera's own drift between them - the yaw counter's
+/// [`action_yaw_pass_increment`] a pass, a `0x6F` depth ramp - can put the
+/// retake's endpoint a step off the RAM's on a framing the gate tick agrees
+/// with. The focus keeps the retake's: it is a midpoint of the body pairs the
+/// retake draws, not a clock.
+pub fn retake_align_target(
+    armed: BattleCamPose,
+    gate: BattleCamPose,
+    end: BattleCamPose,
+) -> BattleCamPose {
+    let ang = |a: f32, b: f32| ((a - b).rem_euclid(4096.0)).min((b - a).rem_euclid(4096.0));
+    let mut t = armed;
+    if ang(armed.pitch, end.pitch) > ALIGN_ANGLE_TOLERANCE
+        && ang(gate.pitch, end.pitch) <= ALIGN_ANGLE_TOLERANCE
+    {
+        t.pitch = gate.pitch;
+    }
+    if ang(armed.yaw, end.yaw) > ALIGN_ANGLE_TOLERANCE
+        && ang(gate.yaw, end.yaw) <= ALIGN_ANGLE_TOLERANCE
+    {
+        t.yaw = gate.yaw;
+    }
+    for k in 0..3 {
+        if (armed.tr[k] - end.tr[k]).abs() > ALIGN_TR_TOLERANCE
+            && (gate.tr[k] - end.tr[k]).abs() <= ALIGN_TR_TOLERANCE
+        {
+            t.tr[k] = gate.tr[k];
+        }
+    }
+    t
+}
+
+#[cfg(test)]
+mod retake_target_tests {
+    use super::*;
+
+    fn pose(yaw: f32, z: f32, fz: f32) -> BattleCamPose {
+        BattleCamPose {
+            pitch: 0.0,
+            yaw,
+            tr: [0.0, 1280.0, z],
+            focus: [649.0, 0.0, fz],
+        }
+    }
+
+    /// `zora_glare_petrify_pre`: the retake's case-6 framing stands a pass of
+    /// yaw drift and a step of depth ramp short of the RAM's endpoint, which
+    /// the gate tick's framing meets.
+    #[test]
+    fn a_retake_short_of_the_ram_endpoint_takes_the_gate_framing() {
+        let t = retake_align_target(
+            pose(2914.0, 4761.0, -47.0),
+            pose(2919.0, 4608.0, -47.0),
+            pose(2919.0, 4608.0, -47.0),
+        );
+        assert_eq!((t.yaw, t.tr[2]), (2919.0, 4608.0));
+    }
+
+    /// A retake that already agrees keeps its own framing, and the focus is
+    /// always the retake's (`nivora_duel_mid_blazing_slash`,
+    /// `battle_vahn_tri_somersault_super`).
+    #[test]
+    fn an_agreeing_retake_and_every_focus_stay_the_retakes() {
+        let t = retake_align_target(
+            pose(4051.0, 4915.0, -700.0),
+            pose(4055.0, 4915.0, -630.0),
+            pose(4051.0, 4915.0, -630.0),
+        );
+        assert_eq!((t.yaw, t.focus[2]), (4051.0, -700.0));
+    }
+}
+
 #[cfg(test)]
 mod pass_increment_tests {
     use super::action_yaw_pass_increment;

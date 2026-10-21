@@ -194,7 +194,29 @@ impl PlayWindowApp {
                 .map(|sc| sc.battle_ground_snap.clone())
                 .unwrap_or_default();
             let world = &mut self.session.host.world;
-            let target = legaia_engine_capture::ground_snap::snap_battle_ground(world, &snaps);
+            let armed = legaia_engine_capture::ground_snap::snap_battle_ground(world, &snaps);
+            // On a display-lag retake the frame is two game frames older than
+            // the RAM the endpoints were read from, and the framing armed
+            // here may stand a step of yaw drift or depth ramp short of them;
+            // a component the gate tick's framing agrees on (the first run
+            // carried it over, `LEGAIA_BATTLE_CAM_GATE_TARGET`) takes the
+            // gate's (`retake_align_target`). The gate tick keeps its own for
+            // the retake it names.
+            let gate_target = self
+                .screenshot
+                .as_ref()
+                .and_then(|sc| sc.battle_cam_gate_target);
+            if let Some(sc) = self.screenshot.as_ref()
+                && gate_target.is_none()
+            {
+                sc.gate_cam_target.set(armed);
+            }
+            let target = match (armed, gate_target) {
+                (Some(a), Some(g)) => {
+                    Some(legaia_engine_battle_vm::battle_cam_script::retake_align_target(a, g, end))
+                }
+                (a, _) => a,
+            };
             // A Done-band capture's displayed pose, where the glide walks
             // retail's own table (`LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED`).
             let displayed = self

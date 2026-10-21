@@ -641,6 +641,9 @@ pub fn run_engine_battle(
     // the image child does the same, `LEGAIA_BATTLE_CAM_ALIGN`). Pad drives
     // only: a replayed cast's close-ups and module shots measured worse
     // aligned (`flute_spikefish_midcast` image `.910` to `.828`).
+    if std::env::var_os("LEGAIA_RC_FX_TRACE").is_some() {
+        trace_effect_pool(&session.host.world);
+    }
     let mut cam_trace = None;
     if std::env::var_os("LEGAIA_RC_CAM_TRACE").is_some()
         && let Some(cam) = session.host.world.battle.camera.as_ref()
@@ -866,5 +869,60 @@ pub(super) fn combat_snapshot(
         },
         battle_bgm: world.audio.current_bgm,
         save: world.save_full(),
+    }
+}
+
+/// `LEGAIA_RC_FX_TRACE`: the engine's effect-VM pool (`FUN_801E0080`'s
+/// masters and children) at the sampled tick, on stderr, in the units the
+/// retail pool holds them (world position `>> 8`) - the engine half of a
+/// side-by-side against the capture's `_DAT_8007BD30` pool.
+fn trace_effect_pool(world: &legaia_engine_core::world::World) {
+    for (i, a) in world.actors.iter().enumerate() {
+        if !a.active {
+            continue;
+        }
+        eprintln!(
+            "[fx] actor {i} pos ({}, {}, {}) impact {} colour {:#x} monster {:?}",
+            a.move_state.world_x,
+            a.move_state.world_y,
+            a.move_state.world_z,
+            a.battle.impact_state,
+            a.battle.render_color,
+            a.battle_monster_id
+        );
+    }
+    let pool = &world.effect_pool;
+    for (i, m) in pool.master_slots.iter().enumerate() {
+        if m.child_count == 0 && m.spawn_cursor == 0 {
+            continue;
+        }
+        eprintln!(
+            "[fx] master {i} total {} flags {:#04x} cur {} wait {} ang {} pos ({}, {}, {}) script {:#x}",
+            m.child_count,
+            m.flags,
+            m.spawn_cursor,
+            m.state,
+            m.angle,
+            m.pos_x >> 8,
+            m.pos_y >> 8,
+            m.pos_z >> 8,
+            m.script_offset
+        );
+    }
+    for (i, c) in pool.children.iter().enumerate() {
+        if c.frame_count == 0 {
+            continue;
+        }
+        eprintln!(
+            "[fx] child {i} frames {} cur {} wait {} vel {:?} pos ({}, {}, {}) anim {}",
+            c.frame_count,
+            c.frame_cursor,
+            c.wait,
+            c.velocity,
+            c.pos[0] >> 8,
+            c.pos[1] >> 8,
+            c.pos[2] >> 8,
+            c.anim_id
+        );
     }
 }

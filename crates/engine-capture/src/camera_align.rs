@@ -48,5 +48,32 @@ pub fn cam_align_from_env(
     Some((pose(0), pose(8)))
 }
 
+/// One pose as eight comma-separated numbers (`pitch, yaw, tr.x, tr.y,
+/// tr.z, focus.x, focus.y, focus.z`) - the gate-tick framing a display-lag
+/// retake carries (`LEGAIA_BATTLE_CAM_GATE_TARGET`).
+pub fn cam_pose_to_env(p: &legaia_engine_camera::projection::BattleCamPose) -> String {
+    [p.pitch, p.yaw]
+        .into_iter()
+        .chain(p.tr)
+        .chain(p.focus)
+        .map(|v| v.to_string())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// Parse [`cam_pose_to_env`]'s string back; `None` on any malformed field.
+pub fn cam_pose_from_env(v: &str) -> Option<legaia_engine_camera::projection::BattleCamPose> {
+    let n: Vec<f32> = v
+        .split(',')
+        .map(|f| f.trim().parse().ok())
+        .collect::<Option<_>>()?;
+    (n.len() == 8).then(|| legaia_engine_camera::projection::BattleCamPose {
+        pitch: n[0],
+        yaw: n[1],
+        tr: [n[2], n[3], n[4]],
+        focus: [n[5], n[6], n[7]],
+    })
+}
+
 #[cfg(test)]
 mod tests;

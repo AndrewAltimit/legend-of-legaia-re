@@ -99,12 +99,13 @@ question; a camera channel far off on a state whose label names a cutscene
 is script progress; a `bgm` miss on an arrival state is capture timing
 ([below](#arrival-states-are-captured-before-the-town-runs)).
 
-Two environment switches open up a battle state's `camera` channel:
+Environment switches that open up a battle state's channels:
 
 | Switch | Adds |
 |---|---|
 | `LEGAIA_RC_CAM_TRACE=1` | to the `camera` detail: the engine's camera phase, live pose and glide target against retail's live pose and tween-table endpoints, the origin-alignment mask, and per combatant both sides' live pair, body pair, heading, clip and monster size class |
 | `LEGAIA_RC_POS_TRACE=1` | on stderr, one line per drive tick: the acting seat, the action state and each of the first four combatants' live pair, body pair, heading, clip and target |
+| `LEGAIA_RC_FX_TRACE=1` | on stderr, at the sampled tick: each active combatant's live pair, burn selector `+0x21F` and colour word, then the effect-VM pool (`FUN_801E0080`'s masters and children) with positions in the retail pool's whole units - the engine half of a side-by-side against the capture's `_DAT_8007BD30` pool |
 | `LEGAIA_RC_SEED_TRACE=1` | on stderr, one line per stream the battle search tried (prompt, drive or cast outcome, surprise opening, measured ground drift) and one for the undrift re-run's verdict |
 
 The first says which component of a framing misses its endpoint and which
@@ -2256,6 +2257,26 @@ units round, the far ice crystals swing across the screen while the two
 duellists hold still, and the frame read `0.611` against retail's with the
 crystals `70` to `90` px off. Every action drive but a `DoneHold` takes the
 displayed pose, also where its frame stays at the RAM's instant.
+
+The endpoints the alignment tests against are the RAM's, the gate tick's.
+On a retaken frame the framing the engine's camera arms is two game frames
+older and can stand a step short of them: case 6 on a caster drifts with the
+yaw counter (`+max(1, 4 * frame_step / 3)` a pass) and with a `0x6F` depth
+ramp. Tested on the retake tick, those components read as a different
+framing and kept the engine's own pose. So the first run writes the framing
+its camera armed on the gate tick into the `<shot>.retake` note beside the
+tick, the parent hands it to the re-run (`LEGAIA_BATTLE_CAM_GATE_TARGET`),
+and a pitch, yaw or eye component the retake's own framing misses but the
+gate's meets is tested on the gate's (`retake_align_target`); the retake
+then draws the displayed pose. The focus keeps the retake's framing: it is a
+midpoint of the body pairs the retake draws, not a clock, and tested on the
+gate's it framed `battle_vahn_tri_somersault_super` off its bodies. `zora_glare_petrify_pre` is the
+case: at the retake its framing reads yaw `2914` and TR z `4761` against the
+RAM's `2919` / `4608`, so yaw and depth stayed on the engine's `2913` /
+`4865` where retail's display shows `2897` / `4910`. Vahn stands a few
+hundred units in front of the focus, and those 16 yaw units moved him some
+20 px across the frame while the backdrop held still (`image` `.763` to
+`.971`).
 
 A `DoneHold` takes it only where the engine's glide heads for retail's
 framing on every component (`BattleCamera::glide_endpoint_matches`,
