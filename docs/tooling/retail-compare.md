@@ -2044,7 +2044,14 @@ Its misses fall into three shapes:
   no op-`0x44` site in `nilboa` names `0x68` - the entry spawns only
   `P2[17]`, the ravine selector (`0x10` / `0x11` / `0x12` pick Fire, Wind or
   Thunder Ravine; the Wind arm parks the blocks too, but this state is in
-  Thunder Ravine, `0x12`). What spawns `P2[26]` is not found. The flags
+  Thunder Ravine, `0x12`). `P2[26]` is a **walk-on** record: six kind-1
+  records in `nilboa`'s `.PCH` sidecar ([scene-v12-table](../formats/scene-v12-table.md);
+  extraction `0636`, filed under `jou` by the +2 label shift) name `b2 =
+  0x1A` on tiles `(46, 63..=65)` and `(54, 62..=64)`, the two ends of the
+  pushed-block bridge. Retail's player crossed them on the way to Thunder
+  Ravine; the seat stands the player at row `114` and stamps its own tile
+  into the walk-on pair, so nothing crosses them. A card load of the save
+  draws the blocks where the engine does, so this miss is visit history. The flags
   channel's two bits are `P1[0]`'s region flags: retail holds `0x52C`
   (box `[26, 0 .. 126, 87]`) although the player stands at tile row `114`,
   and the engine `0x52B` (box `[16, 88 .. 126, 126]`, the player's tile), so

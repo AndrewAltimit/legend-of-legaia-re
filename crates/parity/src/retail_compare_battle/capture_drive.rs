@@ -485,12 +485,15 @@ pub(super) fn run_drive(
                     .map(|i| {
                         let a = &world.actors[i];
                         format!(
-                            "| {i}: ({}, {}) b{:?} f{} c{:#04X} tgt{} ",
+                            "| {i}: ({}, {}) b{:?} f{} c{:#04X} k{:?} r{} t{} tgt{} ",
                             a.move_state.world_x,
                             a.move_state.world_z,
                             a.battle.seat,
                             a.battle.facing_angle & 0xFFF,
                             world.battle_current_anim(i),
+                            a.battle_animation.as_ref().map(|p| p.current_frame()),
+                            a.battle.anim_rate.get(),
+                            a.battle.render_flag,
                             a.battle.active_target
                         )
                     })

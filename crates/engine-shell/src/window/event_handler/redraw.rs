@@ -187,6 +187,29 @@ impl PlayWindowApp {
             w.presentation.fade.as_ref().map(|f| f.age_vsyncs()),
         );
         eprintln!("capture camera: {:?}", w.battle_cam_pose());
+        // Every battle body's draw inputs: where it stands, which clip and
+        // keyframe it shows, and its tint state / colour word.
+        for (i, a) in w
+            .actors
+            .iter()
+            .enumerate()
+            .take(8)
+            .filter(|(_, a)| a.active)
+        {
+            eprintln!(
+                "capture body {i}: pos ({}, {}) hp {} anim {} reaction {:?} entry {:?} \
+                 frame {:?} tint {} colour {:08X}",
+                a.move_state.world_x,
+                a.move_state.world_z,
+                a.battle.hp,
+                a.battle.current_anim,
+                a.battle_reaction,
+                a.battle_reaction_entry,
+                a.battle_animation.as_ref().map(|p| p.current_frame()),
+                a.battle.render_flag,
+                a.battle.render_color,
+            );
+        }
         for (rgb, abr, ot) in w.screen_fade_draws() {
             eprintln!("capture fade: rgb {rgb:06X} abr {abr} ot {ot}");
         }

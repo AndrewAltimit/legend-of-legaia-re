@@ -577,6 +577,9 @@ fn a_forced_melee_string_lands_the_captured_total() {
     w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, false);
     assert_eq!(w.actors[1].battle.damage_accum, 7, "the known push");
     w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, true);
-    assert_eq!(w.actors[1].battle.damage_accum, 19, "the closing hit lands the total");
+    assert_eq!(
+        w.actors[1].battle.damage_accum, 19,
+        "the closing hit lands the total"
+    );
     assert!(w.battle.forced_melee_hits.is_empty());
 }
