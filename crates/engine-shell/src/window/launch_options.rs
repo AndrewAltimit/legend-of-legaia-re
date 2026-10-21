@@ -30,6 +30,36 @@ pub struct LaunchFidelity {
     /// rasterisation defaults to clean, and retail-faithful *shading* does
     /// not imply it.
     pub psx_render: bool,
+    /// The window's fullscreen / size launch overrides. Presentation, not
+    /// fidelity: carried here so the one launch value reaches the window,
+    /// and left at its default by both constructors below.
+    pub window: WindowLaunch,
+}
+
+/// `play-window`'s window launch flags: `--fullscreen` / `--windowed` and
+/// `--window-scale`. `None` takes the persisted option
+/// (`OptionsState::fullscreen` / `window_scale`). Window chrome only: the
+/// renderer draws the same frame at any surface size.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WindowLaunch {
+    pub fullscreen: Option<bool>,
+    pub scale: Option<u8>,
+}
+
+impl WindowLaunch {
+    /// From the command line's three flags.
+    pub fn from_flags(fullscreen: bool, windowed: bool, scale: Option<u8>) -> Self {
+        Self {
+            fullscreen: if fullscreen {
+                Some(true)
+            } else if windowed {
+                Some(false)
+            } else {
+                None
+            },
+            scale,
+        }
+    }
 }
 
 impl LaunchFidelity {
@@ -44,6 +74,7 @@ impl LaunchFidelity {
             volumetric_fog: true,
             retail: false,
             psx_render: false,
+            window: WindowLaunch::default(),
         }
     }
 
@@ -58,6 +89,7 @@ impl LaunchFidelity {
             volumetric_fog: false,
             retail: true,
             psx_render: false,
+            window: WindowLaunch::default(),
         }
     }
 }

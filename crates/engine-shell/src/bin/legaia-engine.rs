@@ -353,6 +353,9 @@ fn main() -> Result<()> {
             no_occlusion_fade,
             no_volumetric_fog,
             psx_render,
+            fullscreen,
+            windowed,
+            window_scale,
             retail,
             learn_spell,
             set_flag,
@@ -404,6 +407,7 @@ fn main() -> Result<()> {
             if retail {
                 window::LaunchFidelity {
                     psx_render,
+                    window: window::WindowLaunch::from_flags(fullscreen, windowed, window_scale),
                     ..window::LaunchFidelity::retail()
                 }
             } else {
@@ -421,6 +425,7 @@ fn main() -> Result<()> {
                     volumetric_fog: !no_volumetric_fog,
                     retail: false,
                     psx_render,
+                    window: window::WindowLaunch::from_flags(fullscreen, windowed, window_scale),
                 }
             },
             window::DebugSeeds::from_args(&learn_spell, &set_flag, resume_save)?.with_cheats(

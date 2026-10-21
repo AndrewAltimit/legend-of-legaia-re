@@ -230,7 +230,7 @@ const RIGHT_W: i32 = STAGE_W - PAD - RIGHT_X;
 const COLUMNS_Y: i32 = 108;
 const BUTTON_H: i32 = 20;
 const BUTTON_PITCH: i32 = 24;
-const ROW_PITCH: i32 = 14;
+const ROW_PITCH: i32 = 13;
 
 /// A focusable control.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1216,6 +1216,19 @@ pub(crate) enum Cmd {
         /// the same). Off by default - clean modern output.
         #[arg(long, default_value_t = false)]
         psx_render: bool,
+        /// Open borderless fullscreen for this session, whatever the options
+        /// file says. `F11` or `Alt+Enter` toggles fullscreen at runtime (and
+        /// remembers it). Window chrome only: the frame is the same.
+        #[arg(long, default_value_t = false, conflicts_with = "windowed")]
+        fullscreen: bool,
+        /// Open windowed for this session, whatever the options file says.
+        #[arg(long, default_value_t = false)]
+        windowed: bool,
+        /// Windowed size as a multiple of the PlayStation's 320x240 display,
+        /// 2..=6 (3 = 960x720, the default), for this session; the launcher's
+        /// Window size row stores it.
+        #[arg(long, value_name = "N", value_parser = clap::value_parser!(u8).range(2..=6))]
+        window_scale: Option<u8>,
         /// Run retail-faithful: every enhancement off (enhanced lighting and
         /// its shadows, the volumetric fog, the occlusion fade, the entry
         /// pulse) and every persisted engine-only option pinned to its retail

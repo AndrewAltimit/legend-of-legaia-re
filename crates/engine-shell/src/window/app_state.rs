@@ -875,6 +875,13 @@ pub(super) struct PlayWindowApp {
     /// Start in PSX-faithful rasterisation (`--psx-render` or
     /// `LEGAIA_PSX_RENDER=1`), applied to the renderer once it opens.
     pub(super) psx_render: bool,
+    /// `--fullscreen` / `--windowed` / `--window-scale`, over the persisted
+    /// `OptionsState::fullscreen` / `window_scale` ([`Self::window_setup`]).
+    pub(super) window_launch: crate::window::WindowLaunch,
+    /// Alt held (`ModifiersChanged`), for the Alt+Enter fullscreen toggle.
+    pub(super) alt_held: bool,
+    /// The fullscreen key's leading edge (a held key repeats).
+    pub(super) fullscreen_key_held: bool,
     /// The occlusion fade's **visibility gate**: the static scene's
     /// world-space triangles (retail Y-down frame), rebuilt per scene load
     /// by `upload_assets` from the same resolved env draw list the render

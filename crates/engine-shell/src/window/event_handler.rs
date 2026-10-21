@@ -29,7 +29,8 @@ mod redraw_tick;
 
 impl ApplicationHandler for PlayWindowApp {
     fn resumed(&mut self, evl: &ActiveEventLoop) {
-        if !self.win.open(evl, minigames::WINDOW_TITLE) {
+        let setup = self.window_setup();
+        if !self.win.open_with(evl, minigames::WINDOW_TITLE, setup) {
             return;
         }
         // Opt-in PSX-faithful rendering: affine (perspective-incorrect) UV
@@ -132,6 +133,8 @@ impl ApplicationHandler for PlayWindowApp {
             } => {
                 self.handle_keyboard(evl, code, state);
             }
+            // Alt is read for the Alt+Enter fullscreen toggle only.
+            WindowEvent::ModifiersChanged(m) => self.alt_held = m.state().alt_key(),
             // Left-mouse drag-orbit. Horizontal drag rotates the field camera
             // around the player (`Camera::manual_orbit`); the movement
             // compass reads the same field, so the d-pad remap tracks the

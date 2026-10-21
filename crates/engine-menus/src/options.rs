@@ -202,6 +202,15 @@ pub struct OptionsState {
     /// look matures. Pure presentation: the screen-space layers and the HUD
     /// never bloom, and nothing reaches the simulation.
     pub bloom: bool,
+    /// Native window: open borderless fullscreen (`F11` / `Alt+Enter` in
+    /// `play-window`, `--fullscreen`; the launcher's row). Window chrome,
+    /// not a render knob: the frame is drawn the same at any surface, and a
+    /// `--screenshot` run ignores it.
+    pub fullscreen: bool,
+    /// Native window: the windowed size as a multiple of the PlayStation's
+    /// 320x240 display, `2..=6` (`--window-scale`; the launcher's row).
+    /// Default 3 = 960x720. Window chrome like [`Self::fullscreen`].
+    pub window_scale: u8,
 }
 
 impl Default for OptionsState {
@@ -231,6 +240,8 @@ impl Default for OptionsState {
             light_shadows: true,
             occlusion_fade: true,
             bloom: false,
+            fullscreen: false,
+            window_scale: 3,
         }
     }
 }

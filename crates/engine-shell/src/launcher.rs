@@ -306,6 +306,8 @@ pub const GAME_LOG: &str = "legaia-engine-game.log";
 /// switch (persisted in [`LauncherSettings`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OptionRow {
+    Fullscreen,
+    WindowSize,
     EnhancedLighting,
     TimeOfDay,
     LampShadows,
@@ -323,8 +325,10 @@ pub enum OptionRow {
 
 /// The option rows in screen order, with the heading each group starts
 /// under (`Some` on a group's first row).
-pub const OPTION_ROWS: [(Option<&str>, OptionRow); 13] = [
-    (Some("Graphics"), OptionRow::EnhancedLighting),
+pub const OPTION_ROWS: [(Option<&str>, OptionRow); 15] = [
+    (Some("Display"), OptionRow::Fullscreen),
+    (None, OptionRow::WindowSize),
+    (None, OptionRow::EnhancedLighting),
     (None, OptionRow::TimeOfDay),
     (None, OptionRow::LampShadows),
     (None, OptionRow::SeeThroughWalls),
@@ -341,6 +345,10 @@ pub const OPTION_ROWS: [(Option<&str>, OptionRow); 13] = [
 
 const TIMES_OF_DAY: [&str; 4] = ["auto", "day", "dusk", "night"];
 
+/// `OptionsState::window_scale`'s range
+/// (`legaia_engine_render::window::WindowSetup::SCALES`).
+const WINDOW_SCALES: (u8, u8) = (2, 6);
+
 fn on_off(b: bool) -> String {
     if b { "On" } else { "Off" }.into()
 }
@@ -356,6 +364,8 @@ impl OptionRow {
     /// The row's label.
     pub fn label(self) -> &'static str {
         match self {
+            Self::Fullscreen => "Fullscreen",
+            Self::WindowSize => "Window size",
             Self::EnhancedLighting => "Enhanced lighting",
             Self::TimeOfDay => "Time of day",
             Self::LampShadows => "Lamp shadows",
@@ -375,6 +385,14 @@ impl OptionRow {
     /// One or two sentences on what the row does, for the help line.
     pub fn help(self) -> &'static str {
         match self {
+            Self::Fullscreen => {
+                "Fill the screen with a borderless window. In game: F11 or Alt+Enter."
+            }
+            Self::WindowSize => {
+                "The game window's size when not fullscreen, in steps of the \
+                 PlayStation's 320x240 picture. The game still draws at any size you \
+                 drag the window to."
+            }
             Self::EnhancedLighting => {
                 "A time-of-day mood, real light at lamps and glowing props. Off draws the \
                  game's own baked shading. In game: I."
@@ -425,7 +443,12 @@ impl OptionRow {
     pub fn overridden_by_retail(self) -> bool {
         !matches!(
             self,
-            Self::Retail | Self::PsxRender | Self::MusicVolume | Self::SfxVolume
+            Self::Retail
+                | Self::PsxRender
+                | Self::MusicVolume
+                | Self::SfxVolume
+                | Self::Fullscreen
+                | Self::WindowSize
         )
     }
 
@@ -436,6 +459,11 @@ impl OptionRow {
         s: &LauncherSettings,
     ) -> String {
         match self {
+            Self::Fullscreen => on_off(opts.fullscreen),
+            Self::WindowSize => {
+                let k = u32::from(opts.window_scale.clamp(WINDOW_SCALES.0, WINDOW_SCALES.1));
+                format!("{}x{}", 320 * k, 240 * k)
+            }
             Self::EnhancedLighting => on_off(opts.enhanced_lighting),
             Self::TimeOfDay => capitalise(&opts.lighting_time_of_day),
             Self::LampShadows => on_off(opts.light_shadows),
@@ -468,6 +496,19 @@ impl OptionRow {
             }
         };
         match self {
+            Self::Fullscreen => opts.fullscreen ^= true,
+            Self::WindowSize => {
+                let (lo, hi) = WINDOW_SCALES;
+                let cur = opts.window_scale.clamp(lo, hi);
+                // Wraps, like the other lists.
+                opts.window_scale = if dir < 0 {
+                    if cur == lo { hi } else { cur - 1 }
+                } else if cur == hi {
+                    lo
+                } else {
+                    cur + 1
+                };
+            }
             Self::EnhancedLighting => opts.enhanced_lighting ^= true,
             Self::TimeOfDay => {
                 let cur = TIMES_OF_DAY
