@@ -1085,8 +1085,23 @@ impl BattleDrive {
         world.audio.sound_bank_ready = !(ours
             && state == 0x6E
             && !(capture_accum_done(world, height, accum) && capture_yaw_done(world, height, yaw)));
+        // `0x6F` ramps the depth before it polls (`0x801E4FFC..0x801E5014`,
+        // then `FUN_8003F2B8(1)`), so the pass that leaves the state has
+        // ramped too: retail's depth on entering `0x70` is the exit pass's.
+        // A capture past `0x6F` releases the poll on the pass whose ramp lands
+        // the capture's depth, not on the one after it (which took one more
+        // ramp step, `16` a vsync - `48` at a frame step of `3` - off the
+        // depth every `0x70` shot is cut at). A capture in `0x6F` itself is
+        // sampled on that landing tick, so it keeps the state held.
+        let per_pass = CAPTURE_RAMP_PER_TICK
+            * if world.toggles.battle_sm_frame_cadence {
+                u32::from(world.battle_frame_step().max(1))
+            } else {
+                1
+            };
+        let release_at = if want == 0x6F { 0 } else { per_pass };
         world.battle.prev_action_cleared =
-            !(ours && state == 0x6F && !capture_ramp_done(world, height));
+            !(ours && state == 0x6F && u32::from(capture_ramp_left(world, height)) > release_at);
         // `0x6F` ramps `ctx[+0x6D0]` and then arms case 6 on the new depth in
         // the same pass (`sh a0,0x6d0(v0)` at `0x801E5014`, `jal 0x801D5854`
         // at `0x801E501C`), so the pass that lands the capture's depth also

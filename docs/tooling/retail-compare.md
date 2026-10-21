@@ -1578,7 +1578,11 @@ reads took:
   Far), where the accumulator counts only from the caster's last clip commit.
 
 The drive holds the engine's polls busy (`BattleDrive::steer`) until its depth
-has come down to retail's, its accumulator has run as far through `0x6E` as
+has come down to retail's (for a capture past `0x6F`, until the pass whose ramp
+lands it: `0x6F` ramps before it polls, so retail's exit pass ramped too, and
+released a pass late the engine cut every `0x70` shot one ramp step deeper -
+`cort_evolved_final_crisis_mid_cast` TR z `26` short on the per-vsync cadence, `77` on
+the battle-frame cadence), its accumulator has run as far through `0x6E` as
 retail's (less what the `0x6F` frames still to come add), and the yaw counter
 agrees. The yaw matters under retail's ease-out camera: the three Delilas
 specials (`che_delilas_megaton_press_mid_cast` and its two siblings) sit `34`
