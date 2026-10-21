@@ -80,3 +80,31 @@ fn an_empty_seat_seed_stands_the_seat() {
     assert_eq!(world.battle_pool_position(2), Some((-82, 543)));
     assert_eq!(world.actors[2].move_state.world_x, before);
 }
+
+/// Ground in a seed means the captured formation already holds its seed
+/// recentre; bars alone do not.
+#[test]
+fn a_ground_seed_holds_the_seed_recentre() {
+    let mut world = legaia_engine_core::world::World::new();
+    world.enter_battle(1, 1);
+    let bars = BarSeed {
+        slot: 0,
+        hp: 10,
+        mp: 0,
+        ground: None,
+        facing: None,
+        defeat_lanes: None,
+        status: 0,
+        spent_key: false,
+    };
+    apply_bar_seeds(&mut world, &[bars]);
+    assert!(!world.battle.seed_recentre_held);
+    apply_bar_seeds(
+        &mut world,
+        &[BarSeed {
+            ground: Some([0, 400]),
+            ..bars
+        }],
+    );
+    assert!(world.battle.seed_recentre_held);
+}

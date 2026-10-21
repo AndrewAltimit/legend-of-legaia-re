@@ -123,6 +123,9 @@ impl World {
     ///
     /// REF: FUN_801EFE44
     pub(in crate::world) fn seed_battle_formation_recentre(&mut self, actor: u8) {
+        if self.battle.seed_recentre_held {
+            return;
+        }
         let Some(a) = self.actors.get(usize::from(actor)) else {
             return;
         };

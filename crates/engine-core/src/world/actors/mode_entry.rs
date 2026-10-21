@@ -179,6 +179,7 @@ impl World {
         self.battle.entry_serial = self.battle.entry_serial.wrapping_add(1);
         // Every empty pool seat starts the fight on the origin.
         self.battle.empty_seat_ground = [(0, 0); 7];
+        self.battle.seed_recentre_held = false;
         self.battle.monster_flee_attempted = false;
         // The battle scene setup re-seeds object-effect row 0
         // (`0x80055DDC..0x80055DF8`).

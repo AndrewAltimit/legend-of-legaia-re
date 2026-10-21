@@ -1002,6 +1002,12 @@ The second rule is what `rim_elm_gimard_seru_capture_before` / `_after` need:
 Vahn ends his swing `108` units off the pair his target's drift names, and
 the yaw his heading feeds read `82` off with it.
 
+### A recentre the capture already holds
+
+Every action's seed recentres the formation ([`FUN_801EFE44`](../subsystems/battle-action-helpers.md#fun_801efe44---the-action-seeds-formation-recentre)) on the ground it stood on **before** the action moved anyone. A capture holds only the ground after, and the recentre's result depends on the formation's shape, not on where it starts - so replaying it over the captured shape places the fight where retail never stood, and the undrift passes cannot take it back (`horn_summon_mid_cast`: the stager had walked the party to `z = 400`, and the replayed recentre threw the whole fight back about `600` units).
+
+A seed that places ground therefore holds the seed recentre for the fight (`BattleState::seed_recentre_held`, raised by `apply_bar_seeds`, so the image child holds it too). The make-way step is a push like any other and stays with the undrift.
+
 ### The ground at the phase
 
 The undrift search gets each combatant within some units of its captured

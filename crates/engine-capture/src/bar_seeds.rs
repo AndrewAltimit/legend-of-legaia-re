@@ -70,7 +70,14 @@ pub(crate) fn seed_status(world: &mut legaia_engine_core::world::World, slot: u8
 /// by the `play-window` image child alike: the monster AI's picks and every
 /// kill read these bars, so a child on full bars plays a different fight
 /// from the one its seed scored.
+///
+/// A seed that places ground also holds the action seed's formation
+/// recentre (`BattleState::seed_recentre_held`): the captured ground
+/// already carries it.
 pub fn apply_bar_seeds(world: &mut legaia_engine_core::world::World, seeds: &[BarSeed]) {
+    if seeds.iter().any(|s| s.ground.is_some()) {
+        world.battle.seed_recentre_held = true;
+    }
     for s in seeds {
         if let Some(pool) = s.slot.checked_sub(EMPTY_SEAT_SLOT_BASE) {
             if let Some([x, z]) = s.ground {

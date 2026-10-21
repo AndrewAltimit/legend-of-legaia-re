@@ -140,3 +140,14 @@ fn a_solo_fights_empty_seats_hold_its_formation_centred() {
     assert_eq!(pos(&world, 0), (82 - 63, -542 + 228));
     assert_eq!(world.battle_pool_position(2), Some((-82 - 63, 543 + 228)));
 }
+
+/// A capture seed's ground already holds the seed recentre; a fight seeded
+/// that way keeps it rather than recentring the captured shape again.
+#[test]
+fn a_held_seed_recentre_leaves_the_ground() {
+    let mut world = cort_fight();
+    world.battle.seed_recentre_held = true;
+    let _ = world.step_battle();
+    assert_eq!(pos(&world, 0), (0, -812));
+    assert_eq!(pos(&world, 3), (0, 813));
+}

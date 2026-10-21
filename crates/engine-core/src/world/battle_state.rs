@@ -890,6 +890,20 @@ pub struct BattleState {
     /// reads its two empty seats on the mirror of the lone member's pair).
     /// Reset by [`crate::world::World::enter_battle`].
     pub empty_seat_ground: [(i16, i16); 7],
+    /// A capture seed stood the combatants on ground that already holds the
+    /// action seed's formation recentre (`FUN_801EFE44`): retail ran it on
+    /// the ground the fight stood on before the captured action (and every
+    /// action of the round ahead of it) moved anyone, and the seed has only
+    /// the ground after. The recentre's result does not depend on where the
+    /// formation starts, only on its shape, so replaying it over the
+    /// captured shape lands the fight somewhere retail never stood - a
+    /// summon capture whose stager has walked the party forward is thrown
+    /// six hundred units back - and no undrift pass can take it back. A
+    /// fight seeded this way skips the seed recentre. Set by
+    /// `legaia_engine_capture::bar_seeds::apply_bar_seeds` whenever a seed
+    /// places ground; never in play. Reset by
+    /// [`crate::world::World::enter_battle`].
+    pub seed_recentre_held: bool,
 }
 
 /// One frame's tag-`0x67` ribbon source: the `8`-byte seat vector the
@@ -1033,6 +1047,7 @@ impl BattleState {
             message_banner: None,
             entry_serial: 0,
             empty_seat_ground: [(0, 0); 7],
+            seed_recentre_held: false,
         }
     }
 
