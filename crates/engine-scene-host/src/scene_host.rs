@@ -304,9 +304,6 @@ pub struct SceneHost {
     /// / warp arrival), which fires the trigger at the current tile, matching
     /// retail's stale-globals first-frame dispatch.
     last_trigger_tile: Option<(u8, u8)>,
-    /// The global mode cell (retail `DAT_80073F20`, a byte). Written by
-    /// [`SceneHost::set_mode_cell`]; zero until set (retail BSS default).
-    mode_cell: u8,
     /// Retail new-game defaults (starting-party template + starting bag),
     /// installed by hosts that can read `SCUS_942.54` (the native
     /// `BootSession`, the browser runtime's `load_disc`). When present,
@@ -338,7 +335,6 @@ mod lifecycle;
 mod minigame_warp;
 mod player_rig;
 pub use player_rig::PlayerRigMesh;
-mod mode_cell;
 mod scene_entry;
 mod submode_lines;
 

@@ -65,7 +65,6 @@ impl SceneHost {
             field_man_cache: None,
             scene_gold_charges: Vec::new(),
             last_trigger_tile: None,
-            mode_cell: 0,
             new_game_defaults: None,
             // DAT_8007B6EC boot value - FUN_8001FFA4 stores -1.
             bgm_volume_raw: legaia_engine_core::new_game::GAME_STATE_COLD_RESET.bgm_volume_raw,

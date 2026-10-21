@@ -276,7 +276,8 @@ pub struct FieldSubsystemReset {
     pub list_head: u32,
     /// `gp+0x138` - cleared to 0.
     pub gp_138: u32,
-    /// `DAT_80073F20` - stamped by `FUN_8003C110(0x0C)`.
+    /// `DAT_80073F20` - the text writer's glyph-advance byte, stamped by
+    /// `FUN_8003C110(0x0C)` (the narrow pass the menu painters also stage).
     pub mode_byte: u8,
     /// `gp+0x13C` - set to 7.
     pub gp_13c: u32,
