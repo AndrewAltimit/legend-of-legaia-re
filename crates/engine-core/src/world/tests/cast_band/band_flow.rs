@@ -135,11 +135,11 @@ fn a_seru_cast_runs_the_summon_band_and_the_stager_folds_once_at_its_strike() {
     // The flash cue went through the dispatcher `FUN_8004FCC8`: `0x63` is
     // past `0x40`, so the ring carries it unchanged.
     assert!(
-        world.take_sfx_ring_ops().contains(
-            &legaia_engine_system::sound_state::SfxRingOp::Push(
+        world
+            .take_sfx_ring_ops()
+            .contains(&legaia_engine_system::sound_state::SfxRingOp::Push(
                 legaia_engine_battle_vm::battle_action::SUMMON_FLASH_CUE as i16
-            )
-        ),
+            )),
         "the 0x33 arm's 0x63 cue"
     );
 }
