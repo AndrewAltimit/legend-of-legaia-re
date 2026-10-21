@@ -7,7 +7,7 @@
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
-    <dt>Crate</dt><dd><code>legaia-web-viewer</code>, one wasm target serving three products</dd>
+    <dt>Crates</dt><dd><code>legaia-web-play</code> (the play and minigames runtimes) under <code>legaia-web-viewer</code> (the inspectors, the ROM patcher and the <code>cdylib</code> the site loads): one wasm bundle, three products</dd>
     <dt>Session</dt><dd><code>legaia_engine_session::BootSession</code> over the page&rsquo;s audio output - the type the native window runs</dd>
     <dt>Frame</dt><dd><code>tick_frame()</code> calls the session&rsquo;s tick in the native frame order and returns the scene a door just walked into</dd>
     <dt>Draw side</dt><dd>Resolved against the <em>same</em> scene resources the host built at scene entry; nothing is decoded twice</dd>
@@ -18,13 +18,13 @@
 <section class="doc-section" id="modules">
   <h2>Module map</h2>
   <figure class="diagram">
-    <svg viewBox="0 0 880 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Module map of the browser host. One engine session, BootSession, sits at the centre, shared with the native window. The play runtime modules wrap it for the play page: runtime, play, dialog, cutscene and FMV, camera, menu, battle, shop, sound. The minigames page, the viewer pages and the ROM patcher are three more product surfaces in the same wasm bundle that do not go through the session.">
+    <svg viewBox="0 0 880 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Module map of the browser host. One engine session, BootSession, sits at the centre, shared with the native window. The play runtime modules wrap it for the play page: runtime, play, dialog, cutscene and FMV, camera, menu, battle, shop, sound. The minigames page, the viewer pages and the ROM patcher are three more product surfaces in the same wasm bundle that do not go through the session. The play runtime and the minigames page live in the web-play crate, the viewer pages and the ROM patcher in web-viewer, which links web-play and builds the bundle.">
       <defs><marker id="bh-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       <rect class="dg-node-accent" x="330" y="16" width="220" height="56" rx="4"/>
       <text class="dg-label" x="440" y="41">engine-session::BootSession</text>
       <text class="dg-sub" x="440" y="57">the native window&#x27;s own session</text>
       <rect class="dg-group" x="10" y="110" width="500" height="300" rx="6"/>
-      <text class="dg-sub dg-start" x="20" y="126">play page: wraps the session</text>
+      <text class="dg-sub dg-start" x="20" y="126">web-play - play page: wraps the session</text>
       <rect class="dg-node" x="24" y="136" width="230" height="44" rx="4"/>
       <text class="dg-label" x="139" y="155">runtime</text>
       <text class="dg-sub" x="139" y="171">load, pad, tick, state</text>
@@ -60,21 +60,21 @@
       <text class="dg-sub dg-start" x="540" y="126">same bundle, no session</text>
       <rect class="dg-node" x="546" y="136" width="308" height="44" rx="4"/>
       <text class="dg-label" x="700" y="155">minigames</text>
-      <text class="dg-sub" x="700" y="171">standalone playable page</text>
+      <text class="dg-sub" x="700" y="171">web-play: standalone playable page</text>
       <rect class="dg-node" x="546" y="188" width="308" height="44" rx="4"/>
       <text class="dg-label" x="700" y="207">field_scene / field_npc</text>
-      <text class="dg-sub" x="700" y="223">assembled maps, NPC catalog</text>
+      <text class="dg-sub" x="700" y="223">web-viewer: assembled maps, NPC pages</text>
       <rect class="dg-node" x="546" y="240" width="308" height="44" rx="4"/>
       <text class="dg-label" x="700" y="259">arts_view / equipment_view</text>
-      <text class="dg-sub" x="700" y="275">viewer pages</text>
+      <text class="dg-sub" x="700" y="275">web-viewer: viewer pages</text>
       <rect class="dg-node" x="546" y="292" width="308" height="44" rx="4"/>
       <text class="dg-label" x="700" y="311">scene_export</text>
-      <text class="dg-sub" x="700" y="327">.glb export</text>
+      <text class="dg-sub" x="700" y="327">web-viewer: .glb export</text>
       <rect class="dg-node" x="546" y="344" width="308" height="44" rx="4"/>
       <text class="dg-label" x="700" y="363">rom_patcher</text>
-      <text class="dg-sub" x="700" y="379">client-side, nothing uploaded</text>
+      <text class="dg-sub" x="700" y="379">web-viewer: client-side, nothing uploaded</text>
     </svg>
-    <figcaption>The play runtime is the engine, not a re-implementation of it: it holds the same session type the native window runs, built over a scene host assembled in memory from the visitor&rsquo;s own disc image. The other surfaces share the format crates and the render kernels but run no session.</figcaption>
+    <figcaption>The play runtime is the engine, not a re-implementation of it: it holds the same session type the native window runs, built over a scene host assembled in memory from the visitor&rsquo;s own disc image. The other surfaces share the format crates and the render kernels but run no session. Two crates build the bundle: <code>web-play</code> holds the play and minigames runtimes, <code>web-viewer</code> the inspectors and the patcher, and depends on <code>web-play</code>, never the reverse. wasm-bindgen collects the exports of every crate the bundle links, so which crate an export lives in is invisible to the site&rsquo;s JavaScript.</figcaption>
   </figure>
 </section>
 

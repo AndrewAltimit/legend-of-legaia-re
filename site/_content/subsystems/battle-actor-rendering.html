@@ -186,6 +186,8 @@
     </tbody>
   </table>
   </div>
+  <p><strong>Where the weapon trail lands.</strong> The sweep is sampled off the pose-history ring: step <code>k</code> is the pose <code>2k</code> frames ago, retail&rsquo;s rewind at a constant rate. Each control point is turned by the body&rsquo;s facing and set on its slot&rsquo;s ground base with retail&rsquo;s integer arithmetic (products round toward zero, no base height), then placed the way the hosts place a battle body - the frame flip and the 4x world scale - and projected through the battle view-projection.</p>
+  <p>Both hosts call one kernel for that, <code>engine-world-views::screen_passes::weapon_trail_prims</code>, and hand it nothing but their battle view-projection, so a trail cannot land in one place on the page and another in the window. Tests pin the native composition to the page&rsquo;s matrix and a trail point onto the body&rsquo;s own drawn point under both. PROT 0904&rsquo;s Theeder beam projects through the same point kernel (<code>render-kernels::battle_trail::project_battle_point</code>). The bands composite over the scene; retail&rsquo;s ordering-table interleave with scene depth is not reproduced.</p>
 </section>
 
 <section class="doc-section" id="see-also">
