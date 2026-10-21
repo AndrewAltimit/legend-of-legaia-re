@@ -541,7 +541,7 @@ packets, SPU triggers and libgpu VRAM copies. The port splits it by block.
 | Wait drain, move-VM gate | `move_vm::decrement_wait_timer`, `move_vm::actor_tick` |
 | Mode 2 / 6 channel growth, keyframe cursor and pack | `move_vm::integrate_draw_channels`, `advance_keyframe_cursor`, `keyframe_pose_entries` |
 | Motion block + post-VM clamps | `engine-effects::part_motion` (`motion_block`) |
-| Mode 3 CLUT-cell integrator | `engine-field::clut_cell_fx::mode3_integrate` |
+| Mode 3 CLUT-cell integrator | `engine-field::clut_cell_fx::mode3_integrate`; on the battle part lists `World::queue_battle_part_scrolls`, whose recolours `World::apply_battle_vram_moves` lands |
 | Mode 4 VRAM-rect scroller | `engine-field::vram_scroll::mode4_integrate` |
 | Mode 5 positional sound emitter | `engine-vm::sfx_emitter::emitter_tick`, driven from `World::tick_ambient_fx`; voices by `AudioDirector::drive_sfx_emitters` |
 | `+0x5A` seeding from `model_sel` | `engine-effects::summon::RenderMode::from_model_sel` (`0x4000 -> Particle`, `0x4001 -> SoundEmitter`); the field seater `World::spawn_ambient_record_at` writes `+0x5A` itself (`3` / `5`) |

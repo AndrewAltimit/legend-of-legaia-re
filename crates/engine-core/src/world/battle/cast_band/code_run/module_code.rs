@@ -136,7 +136,13 @@ impl World {
                     });
                 // PROT 0916's arm `0x14` settle poll on the latched victim.
                 st.victim_settled = self.chain_seat_settled(usize::from(latched), true);
+                // The applier stage `ctx[+0x276]` a side-band wait arm polls:
+                // up while the engine's stand-in for its reads runs, or while
+                // a capture replay holds it.
+                let held = st.sideband_busy;
+                st.sideband_busy |= self.battle_ctx.menu_open != 0;
                 let d = direct(&mut st, ctx.phase, seats);
+                st.sideband_busy = held;
                 self.store_module_cam(st);
                 d
             })

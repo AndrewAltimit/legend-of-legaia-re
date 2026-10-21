@@ -413,13 +413,15 @@ impl World {
             self.set_battle_flow(legaia_engine_menus::battle_flow::BattleFlowState::Idle);
         }
 
-        // `ctx.menu_open` is retail's cast-menu latch: the summon-invoke arm
-        // sets it and the menu system clears it when the battle menu closes.
-        // The engine's menus are the session objects the early returns above
-        // gate on, so reaching this line IS "no menu open" - release the
-        // latch here, or the Done band's `0x51` gate (which stays while it is
-        // set) parks every summon-band action forever.
-        self.battle_ctx.menu_open = 0;
+        // `ctx.menu_open` is retail's side-band applier stage `ctx[+0x276]`:
+        // the summon-invoke arm seeds it to `1` and `FUN_801F12D0` steps it
+        // back to `0` once the slots of `summon.dat` it streams have landed.
+        // The engine's side-band is resident, so the stage stands for the
+        // reads' CD time only: up for `sideband_token_vsyncs` of its base,
+        // then down. Module arms that poll it (Horn's arm 2, Mule's arm 1),
+        // the `0x35` band-word clamp and the Done band's `0x51` gate wait
+        // that long, as retail's do.
+        self.tick_sideband_token();
 
         // Battle locomotion - the anim tick's root-motion drive
         // (`FUN_80047430`): the attack band's approach walk toward the
@@ -786,6 +788,29 @@ impl World {
     /// Queue one CD-XA clip start and hold the modelled drive busy for its
     /// read span (`dur` vsyncs - see [`crate::world::AudioState::battle_xa_busy_frames`]).
     /// REF: FUN_8003D53C
+    /// One vsync of the side-band applier's stage byte (see the call in
+    /// [`Self::live_battle_tick`]): a fresh seed arms the read time off its
+    /// base `ctx[+0x277]`, and the byte drops once that has run out.
+    ///
+    /// PORT: FUN_801F12D0 (the stage byte's lifetime; each slot's CD read is
+    /// [`legaia_engine_battle_vm::battle_action::SIDEBAND_SLOT_READ_VSYNCS`])
+    fn tick_sideband_token(&mut self) {
+        if self.battle_ctx.menu_open == 0 {
+            self.casting.sideband_read_left = None;
+            return;
+        }
+        let left = self.casting.sideband_read_left.get_or_insert_with(|| {
+            legaia_engine_battle_vm::battle_action::sideband_token_vsyncs(
+                self.battle_ctx.summon_frame_idx,
+            )
+        });
+        *left = left.saturating_sub(1);
+        if *left == 0 {
+            self.battle_ctx.menu_open = 0;
+            self.casting.sideband_read_left = None;
+        }
+    }
+
     pub(in crate::world) fn push_battle_xa_cue(
         &mut self,
         cue: legaia_engine_system::sound_state::XaVoiceClip,

@@ -1003,8 +1003,10 @@ pub struct BattleActionCtx {
     /// `0x801E2F44` writes the acting *slot* to `ctx[+0x20]` there, not an
     /// element id to the actor.
     pub action_ui_element: u8,
-    /// `[+0x276]` - menu-open flag (gates the `QueuedFromMenu`/`PreActionWait`
-    /// transition). Non-zero while a menu is still drawing.
+    /// `[+0x276]` - the side-band applier stage (`FUN_801F12D0`): seeded to
+    /// `1` when a `summon.dat` / `readef.DAT` read starts, `0` once its slots
+    /// have landed. It gates the `QueuedFromMenu` / `PreActionWait`
+    /// transition, the Done band's `0x51` exit and the `0x35` band word.
     pub menu_open: u8,
     /// `[+0x277]` - summon-frame index written at `SummonInvoke`.
     pub summon_frame_idx: u8,

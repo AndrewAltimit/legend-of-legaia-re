@@ -240,7 +240,7 @@ One subsection per handled state: what runs on a frame in that state, and where 
 
 Resets ctx counters at `+0x6DA..+0x6DB`; seeds the [turn cursor](#the-turn-cursor-ctx0x1a) `ctx[+0x1A]` from the formation-advantage byte `ctx[+0x290]`; **latches** `ctx[+0x290]` → `ctx[+0x291]` and *then* clears `ctx[+0x290]` (`0x801E2B30`). The latch is what the escape roll reads all battle - see [the escape roll](battle-action-helpers.md#the-escape-roll-fun_801e791c). It also faces the actor at its target, [below](#the-cast-begin-facing-store).
 
-**Next:** `0x0A` (or `0x0B` if `ctx[+0x276] != 0` is set, i.e. action queued from menu).
+**Next:** `0x0A` (or `0x0B` if `ctx[+0x276] != 0` is set, the side-band applier still streaming).
 
 #### State `0x0A` - Pre-action wait
 
@@ -250,7 +250,7 @@ Calls `func_0x8003F2B8(1)` (likely a "pause until previous animation cleared" ga
 
 #### State `0x0B` - Action queued from menu
 
-Holds while `ctx[+0x276] != 0` (menu still open).
+Holds while `ctx[+0x276] != 0` (the side-band applier stage, `FUN_801F12D0`, still streaming).
 
 **Next:** `0x0A` once cleared.
 

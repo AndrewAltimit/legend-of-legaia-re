@@ -240,13 +240,27 @@ impl World {
     /// again for the attack (`0x801F7590..`), arm 17's hides it
     /// (`0x801F8454..`) and the hit arm 18 shows each struck monster
     /// (`0x801F87C4..`). The engine's shown word is its resting `0` under a
-    /// lowered flag.
+    /// lowered flag. Each pass also halts the parts the arm kills by their
+    /// parked handles and runs out the loops arm 16 ends
+    /// ([`legaia_engine_cast::cast_module_camera::mule_arm_kills`],
+    /// [`legaia_engine_cast::cast_module_camera::mule_arm_loop_ends`]).
     pub(in crate::world::battle::cast_band) fn apply_mule_writes(
         &mut self,
         phase_in: u8,
         passed: bool,
     ) {
         use legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN;
+        if passed && let Some(scene) = self.casting.active_summon.as_mut() {
+            let kills = legaia_engine_cast::cast_module_camera::mule_arm_kills(phase_in);
+            let ends = legaia_engine_cast::cast_module_camera::mule_arm_loop_ends(phase_in);
+            for part in &mut scene.parts {
+                if part.tag.is_some_and(|t| kills.contains(&t)) {
+                    part.finished = true;
+                } else if part.tag.is_some_and(|t| ends.contains(&t)) {
+                    part.state.field_8c = 0;
+                }
+            }
+        }
         let hidden = match (phase_in, passed) {
             (1, _) | (11 | 18, true) => false,
             (5 | 17, true) => true,

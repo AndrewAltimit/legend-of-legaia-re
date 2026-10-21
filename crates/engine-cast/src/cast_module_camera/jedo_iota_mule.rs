@@ -403,6 +403,42 @@ pub fn iota_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
 /// which cannot kill, are not carried.
 pub const MULE_HIT_ARM: u8 = 18;
 
+/// The parts each PROT 0929 arm halts on its pass (`ori 0x8` into the flag
+/// word of a handle the module parked at `0x801F9A88..`), by record:
+///
+/// | arm | halts | site |
+/// |---:|---|---|
+/// | 12 | arm 3's bubble volley `0x801F917C` | `0x801F77A8..0x801F77D8` |
+/// | 14 | arm 12's three creature-borne parts | `0x801F796C..0x801F79B8` |
+/// | 16 | arm 15's three far parts, arm 14's three creature-borne parts | `0x801F8218..0x801F82A4` |
+/// | 19 | arm 17's spray `0x801F9738` (handle `0x801F9AAC`) | `0x801F8A48..0x801F8A60` |
+pub fn mule_arm_kills(phase: u8) -> &'static [u32] {
+    match phase {
+        12 => &[0x801F_917C],
+        14 => &[0x801F_91C0, 0x801F_9220, 0x801F_9284],
+        16 => &[
+            0x801F_9344,
+            0x801F_9398,
+            0x801F_9498,
+            0x801F_94E0,
+            0x801F_9528,
+        ],
+        19 => &[0x801F_9738],
+        _ => &[],
+    }
+}
+
+/// The parts PROT 0929's arm 16 lets run out instead of halting: it zeroes
+/// their op-`0x18` loop counter `+0x8C` (`0x801F82A8..0x801F82C0`), so each
+/// leaves its loop at the next op `0x19` and halts. They are arm 14's two
+/// CLUT-cell cyclers, the backdrop CLUT row's `0x801F95A8` and `0x801F9468`.
+pub fn mule_arm_loop_ends(phase: u8) -> &'static [u32] {
+    match phase {
+        16 => &[0x801F_9468, 0x801F_95A8],
+        _ => &[],
+    }
+}
+
 /// PROT 0929 (Mule): its word `0x801F9A80` drains by `p`. From arm 5 on its
 /// framings aim at `(0, 0, a)`, where `a` is the world anchor's Z
 /// `0x80089120` that arms 1..4 push by `p / 2` a pass; the port models the
@@ -413,7 +449,7 @@ pub const MULE_HIT_ARM: u8 = 18;
 /// | arm | gate | camera / writes |
 /// |---|---|---|
 /// | 0 | - | a cut on the origin |
-/// | 1, 2 | the band timer (2) | the anchor `+= p / 2` while the band timer runs, arm 0's cut following it |
+/// | 1, 2 | the side-band applier stage `ctx[+0x276]` (1); the band timer (2) | the anchor `+= p / 2` while the band timer runs, arm 0's cut following it |
 /// | 3, 4 | the stage word (4) | the anchor `+= p / 2` a pass, arm 0's cut following it |
 /// | 5 | word | a `0x7E`-frame shot, the creature seated at `(0, -a)` facing `0x800`, clip `1`; `+= scalar * 126` |
 /// | 6..8 | word | cuts; `+= scalar * 150` / `150` / `240` |
@@ -456,7 +492,15 @@ pub fn mule_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             if seats.band_timer != 0 {
                 st.ramp += P / 2;
             }
-            anchored(st.ramp, phase == 2 && seats.band_timer != 0)
+            // Arm 1 returns busy while the side-band applier stage
+            // `ctx[+0x276]` is up (`0x801F6D94..0x801F6DA8`,
+            // [`super::sideband_wait_arm`]), arm 2 while the band timer runs.
+            let hold = if phase == 1 {
+                st.sideband_busy
+            } else {
+                seats.band_timer != 0
+            };
+            anchored(st.ramp, hold)
         }
         3 => {
             st.ramp += P / 2;
@@ -574,7 +618,16 @@ pub fn mule_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
                     [i32::from(g.centroid_x), 0, i32::from(g.centroid_z)],
                     1,
                 ),
-                _ => cut([0x80, 0x700], [0, 0x600, 0x1800], on(seats.victim), 1),
+                // One target: the focus is its `+0x34` / `+0x38` as they
+                // stand, not negated (`0x801F8314..0x801F8348`), and the
+                // depth ten times its body radius `*(+0x22C) + 0x58`, capped
+                // at `0x1800` (`0x801F834C..0x801F8394`).
+                _ => cut(
+                    [0x80, 0x700],
+                    [0, 0x600, (10 * i32::from(seats.victim_radius)).min(0x1800)],
+                    [i32::from(seats.victim.x), 0, i32::from(seats.victim.z)],
+                    1,
+                ),
             };
             with_drift(shot, d)
         }

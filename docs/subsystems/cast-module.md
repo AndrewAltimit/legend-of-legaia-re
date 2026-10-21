@@ -2311,10 +2311,18 @@ the hit arm 18 shows the monsters it strikes. Mule's arms 1..4 also push the
 anchor `0x80089120` under arm 0's landed cut, which the view builder reads
 every frame, so the director re-arms that cut on the moved anchor each
 pass; without it the row filled the screen where retail frames it small in
-the distance. Mule's arm 1 waits on the stream token `ctx[+0x276]` and arm 2
-on the band timer: the engine's resident stream passes arm 1 at once, so the
-split between the two arms differs from retail's (`28` and `94` vsyncs)
-while their sum does not. Otherwise not carried by any of them: the writes to the other
+the distance. Mule's arm 1 waits on the side-band applier stage
+`ctx[+0x276]` and arm 2 on the band timer; the stage stays up for the
+engine's stand-in for the applier's reads
+([The side-band token](#the-side-band-token)), so the two arms split their
+sum as retail's do. Mule's part kills are carried by their parked handles
+(`cast_module_camera::mule_arm_kills`): arm 12 halts arm 3's bubble volley,
+arm 14 arm 12's three creature-borne parts, arm 16 arm 15's far parts and
+arm 14's glows, arm 19 arm 17's spray, and arm 16 zeroes the loop counters
+of arm 14's two CLUT-cell cyclers so each runs out its loop and halts
+(`0x801F82A8..0x801F82C0`). Arm 16's exit frames a lone target on its own
+`+0x34` / `+0x38`, unnegated, at ten times its body radius (at most
+`0x1800`). Otherwise not carried by any of them: the writes to the other
 seats (the monster row's re-seat, hiding, orbits and restore, Mushura's walk
 and steering, Barra's seat swaps and arcs), the stage words `ctx[+0x27A..+0x286]` and the camera
 block `0x80083FF8`, and pad rumble. Jedo's kill is the host's
@@ -2797,6 +2805,29 @@ Two live casts confirm the chain: Vera (`0905`) started
 `addiu a0, v0, 0x1b0` in `0936` and `addiu a0, v0, 0x1b2` in `0937`. Hyper
 Crush speaks on `XA23.XA` channel 0 or 1 and Hyper Lightning on channel 2 or
 3. A backward scan for `addiu a0, zero, imm` reports no literal on both.
+
+### The side-band token
+
+<a id="the-side-band-token"></a>
+
+The summon invoke `0x32` seeds the applier stage `ctx[+0x276] = 1` with the
+base slot `ctx[+0x277]`, and `FUN_801F12D0` walks it: odd stages request a
+slot of `summon.dat` (`FUN_80055B4C`), even stages wait for the transfer SM
+`FUN_801F17F8` to land it (`ctx[+0x26B]` back to `0`) and upload it. It
+stops after two slots for a `readef` group, three for a summon base below
+`0xCB` and four from `0xCB` up (`battle_action::sideband_slot_count`). A
+PCSX-Redux capture of each read (the cast-sequence probe's `c276` column)
+runs about `30` vsyncs a slot: Mule's four-slot seed drops `119` vsyncs
+after `0x32` stores it, a two-slot turn seed `62`.
+
+The engine's side-band is resident, so it keeps the byte up for that CD
+time alone (`SIDEBAND_SLOT_READ_VSYNCS` a slot, `World::tick_sideband_token`)
+and then drops it. While it is up, a module arm that polls it holds (Horn's
+arm 2, Mule's arm 1; `cast_module_camera::sideband_wait_arm`), the `0x35`
+band word is clamped at `1`, and the Done band's `0x51` exit waits. A
+capture replay standing on a poll arm holds it there as well
+(`PhaseGate::sideband_wait`). The per-turn `readef` seed `FUN_801DABA4`
+makes is not modelled: the engine's turn opens with the byte down.
 
 ### Per-module cue census
 
@@ -3312,7 +3343,16 @@ wrapped across the 320-pixel line in two or three strips. Mode `2` mirrors
 the second strip. The two per-line offset arrays the emitter also adds
 (`ctx[+0x32E]` / `ctx[+0x4EE]`, signed high bytes) have no writer on the
 disc, so the port reads them as zero. It is Mule's underwater backdrop: with
-the mode unported the creature's whole performance played over black.
+the mode unported the creature's whole performance played over black. The
+backdrop's colours cycle from Mule's arm 15 on because its CLUT is a part's:
+arm 14 seats `0x801F95A8`, a `0x4000` (render mode `3`) node whose program
+captures row 488 (`2C [0, 488, 256, 1]`), waits `287`, then swings its hue
+rate `+0x96` between `+64` and `-64` every `31` waits; the part tick's
+`FUN_80019D50` recolours the captured row each frame. Its sibling
+`0x801F9468` cycles the 16-entry row 491 the same way. The battle part
+lists run that render tail as the field's ambient parts do
+(`World::queue_battle_part_scrolls` queues the recolour, `apply_battle_vram_moves`
+lands it on the battle VRAM).
 
 **The stage byte.** `ctx[+0x278]` is what darkens the stage under a cast:
 the ambient pass drives the backdrop pair's depth cue to black once the byte

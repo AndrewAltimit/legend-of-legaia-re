@@ -85,6 +85,11 @@ pub struct CastFxState {
     /// outside a `0x34` / `0x35` stager call. A director's band-timer gate
     /// reads this rather than the context's pre-step copy.
     pub(crate) band_word_live: Option<i16>,
+    /// Vsyncs left before the side-band applier drops its stage byte
+    /// `ctx[+0x276]` (`BattleActionCtx::menu_open`) after the summon
+    /// invoke `0x32` seeds it; `None` while no seed is being read
+    /// ([`legaia_engine_battle_vm::battle_action::sideband_token_vsyncs`]).
+    pub(crate) sideband_read_left: Option<u16>,
     /// PROT 0948's beam counter, retail's module word `0x801F8858`: arm 2
     /// zeroes it as it passes and the beam builder `FUN_801F726C` adds
     /// `step * 2` on every call.
@@ -370,6 +375,7 @@ impl CastFxState {
             fatal_banner: None,
             module_ring_angle: 0,
             band_word_live: None,
+            sideband_read_left: None,
             module_beam_counter: 0,
             module_beam_live: false,
             module_flee: false,

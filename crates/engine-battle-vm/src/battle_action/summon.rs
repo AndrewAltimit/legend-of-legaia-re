@@ -169,6 +169,38 @@ pub(super) fn summon_invoke<H: BattleActionHost + ?Sized>(
     transition(ctx, ActionState::SummonFadeIn)
 }
 
+/// Vsyncs the transfer SM `FUN_801F17F8` spends on one `0x10800`-byte slot
+/// of `summon.dat` / `readef.DAT` (open, seek, read, close), as the applier
+/// stage `ctx[+0x276]` measures it on a PCSX-Redux capture: the four-slot
+/// Mule seed lands `119` vsyncs after `0x32` stores it, a two-slot `readef`
+/// turn seed `62`. The engine's streams are resident, so this is the CD
+/// cost the applier's token stands in for, not a read.
+pub const SIDEBAND_SLOT_READ_VSYNCS: u16 = 30;
+
+/// How many slots the side-band applier `FUN_801F12D0` streams from base
+/// byte `ctx[+0x277]` before it drops its stage `ctx[+0x276]` to `0`: two
+/// (`base`, `base + 1`) for a `readef` group, a third for a `summon.dat`
+/// base (bit 7 set, or `0x36`; the stage-4 tests at `0x801F163C..`), and a
+/// fourth when that base is `0xCB` or above (stage 6, `sltiu 0xcb`).
+///
+/// PORT: FUN_801F12D0 (the stage chain's slot count; the uploads are
+/// `legaia_actor_formats::summon_readef`'s)
+pub fn sideband_slot_count(base: u8) -> u8 {
+    if base & 0x80 == 0 && base != 0x36 {
+        2
+    } else if base < 0xCB {
+        3
+    } else {
+        4
+    }
+}
+
+/// The vsyncs the applier's stage byte stays up after a seed of `base`:
+/// [`sideband_slot_count`] reads of [`SIDEBAND_SLOT_READ_VSYNCS`] each.
+pub fn sideband_token_vsyncs(base: u8) -> u16 {
+    u16::from(sideband_slot_count(base)) * SIDEBAND_SLOT_READ_VSYNCS
+}
+
 /// State `0x33`: sustain clip `0x12` on the caster and wait for the anim cue
 /// `+0x1F5`; on the cue, spawn the flash-in fade (`0x801E4A50..0x801E4AA0`).
 pub(super) fn summon_fade_in<H: BattleActionHost + ?Sized>(
@@ -382,6 +414,19 @@ pub(super) fn summon_done<H: BattleActionHost + ?Sized>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The applier's slot count off its base byte: two for a `readef`
+    /// group, three for a `summon.dat` base below `0xCB`, four above.
+    #[test]
+    fn sideband_slot_count_follows_the_applier_stage_tests() {
+        assert_eq!(sideband_slot_count(0x12), 2);
+        assert_eq!(sideband_slot_count(0x36), 3);
+        assert_eq!(sideband_slot_count(0x80), 3);
+        assert_eq!(sideband_slot_count(0xCA), 3);
+        // Mule, spell 0x9B: 0x9B * 4 + 99 = 0x2CF, byte 0xCF.
+        assert_eq!(sideband_slot_count(0xCF), 4);
+        assert_eq!(sideband_token_vsyncs(0xCF), 4 * SIDEBAND_SLOT_READ_VSYNCS);
+    }
 
     #[test]
     fn hide_predicate_is_party_always_monster_only_alive() {

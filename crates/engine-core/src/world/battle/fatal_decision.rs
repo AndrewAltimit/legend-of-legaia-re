@@ -116,7 +116,7 @@ impl World {
 
     /// `*(actor[+0x22C]) + 0x58`: [`PARTY_BODY_RADIUS`] on a party seat, the
     /// record size class `<< 5` on a monster's.
-    fn battle_body_radius(&self, slot: u8) -> i16 {
+    pub(crate) fn battle_body_radius(&self, slot: u8) -> i16 {
         match self
             .actors
             .get(usize::from(slot))

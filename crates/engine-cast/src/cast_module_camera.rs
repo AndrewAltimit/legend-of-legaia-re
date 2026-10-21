@@ -99,6 +99,10 @@ pub struct ModuleCamSeats {
     /// * 4` - the monster AI's ability cooldown `dat[m + 4]`, which PROT
     /// 0953 reads as its charge flag. `0` for a party caster.
     pub caster_latch: i32,
+    /// The victim's body radius `*(victim[+0x22C]) + 0x58`, which a shot can
+    /// size its depth by (PROT 0929's arm-16 exit: `10 * r`, at most
+    /// `0x1800`).
+    pub victim_radius: i16,
 }
 
 /// The module-resident state the camera arms carry between ticks: the
@@ -1194,9 +1198,12 @@ pub const fn stream_poll_arm(prot_entry: u32) -> Option<u8> {
 /// creature seek `FUN_8003EAE4(0, 0xE)` and steps on. Retail spends as many
 /// vsyncs there as the turn's side-band read takes -
 /// `horn_summon_mid_cast` sits in it 28 vsyncs into the sustain, three
-/// sparkle volleys in - while the engine's read is resident.
+/// sparkle volleys in - while the engine's read is resident. PROT 0929's
+/// arm 1 makes the same test (`0x801F6D94..0x801F6DA8`) behind its anchor
+/// push, then seeks `FUN_8003EAE4(0, 0xE)`.
 pub const fn sideband_wait_arm(prot_entry: u32) -> Option<u8> {
     match prot_entry {
+        929 => Some(1),
         930 => Some(2),
         _ => None,
     }
