@@ -348,8 +348,16 @@ impl RetailBattle {
         // The camera frames the seed's pass on both SM cadences
         // (`World::battle_camera_state`), so the heading reaches the frame
         // on either.
+        // A Spirit turn (category `4`) never writes it at all: the band
+        // `0x46..=0x48` and its Done tail keep the heading the seat's last
+        // turn left (`nivora_duel_pre_megaton_press`'s Gala at `3980`, which
+        // the Done band's case 6 subtracts from the yaw counter).
+        let spirit_turn = self.queued_category == 4
+            && (self.action_state == 0x0C
+                || (0x46..=0x48).contains(&self.action_state)
+                || (0x50..=0x52).contains(&self.action_state));
         if matches!(self.seed_plan(), SeedPlan::Action { .. })
-            && self.action_state <= 0x14
+            && (self.action_state <= 0x14 || spirit_turn)
             && let Some(a) = spent.get_mut(usize::from(engine_seat(
                 self.active_actor,
                 self.party_count,

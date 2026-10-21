@@ -378,10 +378,26 @@ pub(super) fn spirit_post_damage<H: BattleActionHost + ?Sized>(
 pub const SPIRIT_BAND_HOLD: i16 = 0x20;
 
 /// `0x47`'s exit re-arms the timer for the flush (`li v0,0x300` at
-/// `0x801E54E0`), which `0x48` drains eight units a frame step.
+/// `0x801E54E0`). `0x48` zeroes it on its first pass: see
+/// [`spirit_flush_timer`].
 pub const SPIRIT_FLUSH_HOLD: i16 = 0x300;
 /// `0x48`'s per-frame drain multiplier (`sll v1,v0,0x3` at `0x801E5748`).
 pub const SPIRIT_FLUSH_STEP: i16 = 8;
+
+/// `0x48`'s timer update (`0x801E572C..0x801E5760`). The compare is the
+/// other way round from a drain: `slt v0,a0,v1` takes the timer below
+/// `8 * step`, and `beq v0,zero,0x801E5760` sends a timer **at or above** it
+/// to `sh zero,0x2(s7)` (the `subu` in the delay slot is dead there). Only a
+/// positive timer under `8 * step` is stepped down, which drives it negative.
+/// So the `0x300` hold `0x47` arms is spent the first pass, and the flush
+/// lasts as long as the clip and the plate keep it.
+pub(super) fn spirit_flush_timer(timer: i16, step: i16) -> i16 {
+    if timer <= 0 {
+        return timer;
+    }
+    let drain = step.saturating_mul(SPIRIT_FLUSH_STEP);
+    if timer < drain { timer - drain } else { 0 }
+}
 
 /// State `0x46`: pull the camera in to the Spirit close-up (`ctx[+0x6D0] =
 /// 0x800`), stage the committed spirit clip (`+0x1DA = +0x1E7`) with the
@@ -487,9 +503,9 @@ fn step_spirit_plate(ctx: &mut BattleActionCtx, step: i16) {
     }
 }
 
-/// State `0x48`: finish the AP plate's climb, drain the `0x300` hold eight
-/// units a frame step (clamped at zero), and hand the action to the Done band
-/// once the hold is out, the actor's anim pair has settled on idle
+/// State `0x48`: finish the AP plate's climb, spend the `0x300` hold
+/// ([`spirit_flush_timer`]), and hand the action to the Done band once the
+/// hold is out, the actor's anim pair has settled on idle
 /// (`+0x1DA == +0x1D9 == 0`) and the plate sits on its target.
 ///
 /// PORT: FUN_801E295C (state `0x48`, `0x801E56D0..0x801E57C4`)
@@ -499,14 +515,7 @@ pub(super) fn spirit_arts_flush<H: BattleActionHost + ?Sized>(
 ) -> StepOutcome {
     let slot = ctx.active_actor;
     step_spirit_plate(ctx, host.frame_dt());
-    if ctx.frame_timer > 0 {
-        let step = host.frame_dt().saturating_mul(SPIRIT_FLUSH_STEP);
-        ctx.frame_timer = if ctx.frame_timer < step {
-            0
-        } else {
-            ctx.frame_timer - step
-        };
-    }
+    ctx.frame_timer = spirit_flush_timer(ctx.frame_timer, host.frame_dt());
     host.pose(slot, Pose::Idle);
     let settled = host
         .actor(slot)
