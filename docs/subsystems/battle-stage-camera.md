@@ -1217,6 +1217,20 @@ between holds:
   step lands on the pass that entered its state, and that pass's frame takes
   the new length under the same id (`BattleFrameClock::retime_frame`). A new
   id there opened a second pass on the next tick.
+- **A pass's work is one call with the step folded in, not `step`
+  one-vsync calls.** Retail tests every counter and range once a pass, so a
+  threshold a pass's first vsync would cross does not stop its second:
+  - the cast tick's effect-child drive (`FUN_801E09F8`,
+    `HomingSlots::step_pass`) moves each homing slot
+    `(lut * speed * step) << 3 >> 15` (`mult` by `0x1F800393` at
+    `0x801E103C` / `0x801E1098`), drops every slot counter and the streak
+    word by `4 * step` (`0x801E0C1C`, `0x801E1110`, `0x801E17A8`), takes the
+    phase-`1` hand-over only on a pass that opens with the word at zero
+    (`0x801E0C14`), and counts a phase-`2` landing's counter down on the
+    landing pass itself (`0x801E1338` falls into the phase-`3` arm);
+  - the anim tick's root motion (`FUN_80047430`,
+    `World::tick_battle_locomotion_dt`) steps
+    `trig * speed * step * scale >> 15` behind one range poll.
 - **The paged modules run inside the pass** (`World::module_pass`). Retail
   enters the summon stager `FUN_801F1ED4` and the capture tick `FUN_801F2160`
   once a pass, and each counted arm drains `scalar * delta`, drifts `k * delta`
@@ -1233,7 +1247,11 @@ between holds:
   `0x32..=0x37` keeps the live state: `0x29`'s summon-route arm falls through
   into the entered state's case-6 call (`0x801E4604`, `0x801E4748`).
 - **The retail-compare seed** starts the yaw-coin steer at `0x14`, since the
-  seed's `0x800` value is no coin. A replay's summon flash is re-run to the
+  seed's `0x800` value is no coin. A capture's yaw counter is the word its
+  last pass left, after that pass's prologue drift, so ahead of a tick that
+  runs a pass the steer pins it one pass's drift short
+  (`World::battle_sm_pass_due_next_tick`); pinned whole, every pass framed
+  `rim_elm_gimard_victory` four units round (`image` `.821`, then `.887`). A replay's summon flash is re-run to the
   capture's age once the gate holds (`PhaseGate::align_fade`): retail's own
   frame step varies frame to frame, so its flash can sit between two of the
   replay's passes ([retail-compare](../tooling/retail-compare.md#driving-to-the-phase)).

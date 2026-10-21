@@ -104,7 +104,8 @@ Environment switches that open up a battle state's channels:
 | Switch | Adds |
 |---|---|
 | `LEGAIA_RC_CAM_TRACE=1` | to the `camera` detail: the engine's camera phase, live pose and glide target against retail's live pose and tween-table endpoints, the origin-alignment mask, and per combatant both sides' live pair, body pair, heading, clip and monster size class |
-| `LEGAIA_RC_POS_TRACE=1` | on stderr, one line per drive tick: the acting seat, the action state and each of the first four combatants' live pair, body pair, heading, clip and target |
+| `LEGAIA_RC_POS_TRACE=1` | on stderr, one line per drive tick: the acting seat, the action state, the camera's yaw counter, focus, glide-target focus and yaw, and each of the first four combatants' live pair, body pair, heading, clip and target |
+| `LEGAIA_RC_DRIVE_TRACE=1` | on stderr, one line per tick of a replayed cast's run to its gate: the action state, the yaw counter, the close-up accumulator, every heading, the caster's body pair, the glide-target focus and the camera pose |
 | `LEGAIA_RC_FX_TRACE=1` | on stderr, at the sampled tick: each active combatant's live pair, burn selector `+0x21F` and colour word, then the effect-VM pool (`FUN_801E0080`'s masters and children) with positions in the retail pool's whole units - the engine half of a side-by-side against the capture's `_DAT_8007BD30` pool |
 | `LEGAIA_RC_SEED_TRACE=1` | on stderr, one line per stream the battle search tried (prompt, drive or cast outcome, surprise opening, measured ground drift) and one for the undrift re-run's verdict |
 

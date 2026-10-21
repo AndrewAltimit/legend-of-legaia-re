@@ -503,7 +503,7 @@ pub fn run_engine_battle(
                 if std::env::var_os("LEGAIA_RC_DRIVE_TRACE").is_some() {
                     let w = &session.host.world;
                     eprintln!(
-                        "[cast] t={t} st=0x{:02X} act={} yb={:?} acc={:?} facing={:?} cam={:?}",
+                        "[cast] t={t} st=0x{:02X} act={} yb={:?} acc={:?} facing={:?} body0={:?} tgt={:?} cam={:?}",
                         w.battle_ctx.action_state,
                         w.battle_ctx.active_actor,
                         w.battle.camera.as_ref().map(|c| c.action_yaw_base()),
@@ -513,6 +513,8 @@ pub fn run_engine_battle(
                             .take(8)
                             .map(|a| a.battle.facing_angle & 0xFFF)
                             .collect::<Vec<_>>(),
+                        w.actors.first().map(|a| a.battle.seat),
+                        w.battle.camera.as_ref().map(|c| c.glide_target().focus),
                         w.battle
                             .camera
                             .as_ref()

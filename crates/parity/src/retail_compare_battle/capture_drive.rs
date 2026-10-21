@@ -488,7 +488,12 @@ pub(super) fn run_drive(
                 "[pos] t={t} act={} st=0x{:02X} yawc={:?} {}",
                 world.battle_ctx.active_actor,
                 world.battle_ctx.action_state,
-                world.battle.camera.as_ref().map(|c| c.action_yaw_base()),
+                world.battle.camera.as_ref().map(|c| (
+                    c.action_yaw_base(),
+                    c.framing_pose().focus,
+                    c.glide_target().focus,
+                    c.framing_pose().yaw,
+                )),
                 (0..world.actors.len().min(4))
                     .map(|i| {
                         let a = &world.actors[i];
