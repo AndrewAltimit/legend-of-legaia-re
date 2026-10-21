@@ -41,7 +41,7 @@ fn cell_verts(positions: &[[f32; 3]], col: i32, row: i32) -> Option<usize> {
 #[test]
 fn town01_cave_overhang_sliver_is_a_far_bucket_cell_drawn_under_everything() {
     let Some(index) = open_index() else {
-        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/PROT.DAT missing");
         return;
     };
     let scene = Scene::load(&index, "town01").expect("load town01");
@@ -95,7 +95,7 @@ fn town01_cave_overhang_sliver_is_a_far_bucket_cell_drawn_under_everything() {
 #[test]
 fn overworld_ground_carries_no_far_bucket_marker() {
     let Some(index) = open_index() else {
-        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/PROT.DAT missing");
         return;
     };
     let scene = Scene::load(&index, "map01").expect("load map01");

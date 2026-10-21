@@ -288,7 +288,9 @@ fn move_fx_guards_when_uninstalled_or_inert() {
     bare.tick_move_fx(0x100); // no-op
 
     let Some(bytes) = overlay_0898() else {
-        eprintln!("[skip] LEGAIA_DISC_BIN unset (guard-only checks already ran)");
+        eprintln!(
+            "[skip] LEGAIA_DISC_BIN unset or extracted/PROT.DAT missing (guard-only checks already ran)"
+        );
         return;
     };
     let mut world = world_with_move_power(&bytes);

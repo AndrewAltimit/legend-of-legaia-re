@@ -45,9 +45,12 @@ SKIP = re.compile(
 RESULT = re.compile(
     r"^test result: \w+\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out"
 )
-# Inputs a skip line can name besides the disc.
+# The disc variable itself, not a longer name it prefixes (`LEGAIA_DISC_BIN_JP`).
+DISC_VAR = re.compile(r"LEGAIA_DISC_BIN(?!\w)")
+# Inputs a skip line can name besides the disc - another disc's variable
+# (`LEGAIA_DISC_BIN_JP`, `LEGAIA_FANPATCH_BASE_BIN`) among them.
 OTHER_INPUT = re.compile(
-    r"extracted|PROT|save|\.mc|mednafen|sstate|library|card|corpus|dump|funcs|pcsx|recomp|PAL|lang",
+    r"extracted|PROT|save|\.mc|mednafen|sstate|library|card|corpus|dump|funcs|pcsx|recomp|PAL|lang|LEGAIA_\w+",
     re.IGNORECASE,
 )
 
@@ -77,7 +80,7 @@ def tally(lines: list[str]) -> dict:
     disc_only = {
         name: why
         for name, why in skips.items()
-        if "LEGAIA_DISC_BIN" in why and not OTHER_INPUT.search(why.replace("LEGAIA_DISC_BIN", ""))
+        if DISC_VAR.search(why) and not OTHER_INPUT.search(DISC_VAR.sub("", why))
     }
     other = {name: why for name, why in skips.items() if name not in disc_only}
     return {
@@ -107,10 +110,11 @@ def report(t: dict) -> str:
 
 
 def self_test() -> int:
-    log = """running 4 tests
+    log = """running 5 tests
 test a::ran ... ok
 test a::no_disc ... ok
 test a::no_extract ... ok
+test a::no_jp ... ok
 test a::quiet ... ok
 
 successes:
@@ -121,16 +125,19 @@ successes:
 ---- a::no_extract stdout ----
 [skip] extracted/PROT.DAT or LEGAIA_DISC_BIN missing
 
+---- a::no_jp stdout ----
+[skip] LEGAIA_DISC_BIN_JP unset
+
 ---- a::ran stdout ----
 checked 12 entries, none skipped a beat
 
 successes:
     a::ran
 
-test result: ok. 4 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 5 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s
 """.splitlines()
     t = tally(log)
-    want = (4, 0, 1, ["a::no_disc"], ["a::no_extract"])
+    want = (5, 0, 1, ["a::no_disc"], ["a::no_extract", "a::no_jp"])
     got = (t["passed"], t["failed"], t["ignored"], sorted(t["disc_only"]), sorted(t["other"]))
     if got != want:
         print(f"self-test: FAILED\n  got  {got}\n  want {want}")

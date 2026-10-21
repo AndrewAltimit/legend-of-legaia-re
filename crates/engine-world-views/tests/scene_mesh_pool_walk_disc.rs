@@ -47,7 +47,7 @@ fn open_index() -> Option<ProtIndex> {
 #[test]
 fn town01_mesh_pack_is_the_descriptor_walk_not_a_byte_sweep() {
     let Some(index) = open_index() else {
-        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/PROT.DAT missing");
         return;
     };
     let scene = Scene::load(&index, "town01").expect("load town01");
@@ -98,7 +98,7 @@ fn town01_mesh_pack_is_the_descriptor_walk_not_a_byte_sweep() {
 #[test]
 fn every_block_walks_one_mesh_pack_and_every_member_parses() {
     let Some(index) = open_index() else {
-        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/PROT.DAT missing");
         return;
     };
     let mut blocks_with_a_pack = 0usize;
@@ -155,7 +155,7 @@ fn every_block_walks_one_mesh_pack_and_every_member_parses() {
 #[test]
 fn taiku_count4_bundle_registers_its_whole_pack_in_order() {
     let Some(index) = open_index() else {
-        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/PROT.DAT missing");
         return;
     };
     let scene = Scene::load(&index, "taiku").expect("load taiku");
