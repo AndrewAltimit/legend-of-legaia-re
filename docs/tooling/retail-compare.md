@@ -3392,6 +3392,18 @@ every pass, so it moves with the phase of both clips):
   on the aligned pose when every component took retail's value
   (`World::refresh_battle_camera_ghost`); run on the unaligned glide the
   skeleton stood solid (`image` `.929` to `.978`).
+- **A push the replay deals twice.** `theeder_summon_mid_cast` (`0x33`,
+  before the flash) seats Vahn and the third Gilium on their captured
+  pairs at the dispatch, and the separation pass (`FUN_80051078`, threshold
+  `(640 + 704) / 6 = 224` on the body pairs) pushes them apart during the
+  invoke clip: Vahn ends `16` units off his pair, the Gilium `16` the other
+  way, and the close-up's focus reads Vahn's body pair (`-94` against
+  retail's `-67` on X). Retail's pairs are the state after any push its own
+  cast made, so the replay pushes from where retail's push ended. Standing
+  both on the captured ground at the gate measured worse (`image` `.874` to
+  `.865`), with or without retail's live camera pose: the focus the frame
+  is drawn at is the engine's body pair one pass old, which the snap does
+  not move.
 - **A pose two frames on.** `battle_noa_miracle_art_combo`'s case-7 focus
   is the midpoint of two body pairs, and at the capture's accumulator
   (`72`, nine vsyncs after the swing clip's commit) retail's Noa reads body
