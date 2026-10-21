@@ -132,21 +132,46 @@ pub fn env_arts_saved_list() -> bool {
     std::env::var_os("LEGAIA_ARTS_SAVED_LIST").is_some()
 }
 
+/// `LEGAIA_SMART_MONSTERS`: set at all.
+pub fn env_smart_monsters() -> bool {
+    std::env::var_os("LEGAIA_SMART_MONSTERS").is_some()
+}
+
+/// `LEGAIA_WORLD_MAP_MARKERS`: set at all.
+pub fn env_world_map_markers() -> bool {
+    std::env::var_os("LEGAIA_WORLD_MAP_MARKERS").is_some()
+}
+
 /// Apply the gameplay switches a native session takes from the process
 /// environment. The engine itself reads no environment for a gameplay
 /// switch (a `wasm32` build has none, so a switch read there could never be
 /// thrown in the browser); this is the native host's half, and the play
-/// page's twins are `set_battle_frame_cadence` / `set_arts_saved_list`.
+/// page's twins are `set_battle_frame_cadence` / `set_arts_saved_list` /
+/// `set_smart_monsters` / `set_world_map_markers`, applied together by its
+/// `apply_page_toggles`.
 /// Every native session open applies it, so a corpus run's child processes
 /// inherit the switch. An unset variable leaves the toggle as the world
 /// built it; `LEGAIA_BATTLE_FRAME_CADENCE` sets the cadence either way
-/// (`0` lowers it), `LEGAIA_ARTS_SAVED_LIST` only raises its list.
+/// (`0` lowers it), `LEGAIA_ARTS_SAVED_LIST`, `LEGAIA_SMART_MONSTERS` and
+/// `LEGAIA_WORLD_MAP_MARKERS` only raise theirs.
 pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldToggles) {
     if let Some(on) = env_battle_frame_cadence() {
         toggles.battle_sm_frame_cadence = on;
     }
     if env_arts_saved_list() {
         toggles.arts_saved_list = true;
+    }
+    // Opt-in, not retail: a monster's single-target attack goes to the
+    // lowest-HP living party member instead of a uniform random pick. The
+    // RNG stream is unchanged. The page's twin is `set_smart_monsters`.
+    if env_smart_monsters() {
+        toggles.smarter_monster_targeting = true;
+    }
+    // The overworld's per-placement entity markers, a port debug overlay
+    // (retail draws nothing over a town entrance). The page's twin is
+    // `set_world_map_markers`.
+    if env_world_map_markers() {
+        toggles.overworld_marker_overlay = true;
     }
 }
 

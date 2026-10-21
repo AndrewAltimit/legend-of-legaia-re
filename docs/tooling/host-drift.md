@@ -1062,6 +1062,11 @@ its environment in one function
 (`legaia_engine_session::native::apply_env_world_toggles`, run on every native
 session open, so a corpus run's child processes inherit it) and the play page
 from a `LegaiaRuntime` setter ([`play_toggles.rs`](../../crates/web-play/src/play_toggles.rs)).
+A tier-3 row pins the two appliers (`apply_env_world_toggles`,
+`apply_page_toggles`) to the same set of toggle fields, so a switch the
+native window reads inline in its launch code - where `LEGAIA_SMART_MONSTERS`
+and `LEGAIA_WORLD_MAP_MARKERS` once sat - shows as a field the native applier
+lacks.
 
 The tier scans every `crates/engine-*` crate a browser host links, plus
 `render-kernels`, for `env::var` / `var_os` / `vars` / `vars_os` (comments

@@ -59,6 +59,25 @@ from ui_host_drift.rows.host_files import (
 # injection is a call made from a place the pairing should not pin.
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "environment-switch world toggles, native vs play page - the "
+        "native window read `LEGAIA_SMART_MONSTERS` and "
+        "`LEGAIA_WORLD_MAP_MARKERS` inline in its launch code, outside the one "
+        "place a native session raises its switches; the page's boxes write "
+        "the same `WorldToggles` fields through `apply_page_toggles`. The two "
+        "appliers must name the same set",
+        "sites": {
+            "native": ("crates/engine-session/src/native.rs", "apply_env_world_toggles"),
+            "web": ("crates/web-play/src/play_toggles.rs", "apply_page_toggles"),
+        },
+        "mode": "symbols_all",
+        "symbols": [
+            "smarter_monster_targeting",
+            "overworld_marker_overlay",
+            "battle_sm_frame_cadence",
+            "arts_saved_list",
+        ],
+    },
+    {
         "what": "field party readout on a claimed tick, native vs play page - "
         "the native window stepped `FUN_801D0D38`'s countdown on every tick "
         "whose owner is not the field (a host screen, the naming prompt, the "
