@@ -413,8 +413,8 @@ pub const MULE_HIT_ARM: u8 = 18;
 /// | arm | gate | camera / writes |
 /// |---|---|---|
 /// | 0 | - | a cut on the origin |
-/// | 1, 2 | the band timer (2) | the anchor `+= p / 2` while the band timer runs |
-/// | 3, 4 | the stage word (4) | the anchor `+= p / 2` a pass |
+/// | 1, 2 | the band timer (2) | the anchor `+= p / 2` while the band timer runs, arm 0's cut following it |
+/// | 3, 4 | the stage word (4) | the anchor `+= p / 2` a pass, arm 0's cut following it |
 /// | 5 | word | a `0x7E`-frame shot, the creature seated at `(0, -a)` facing `0x800`, clip `1`; `+= scalar * 126` |
 /// | 6..8 | word | cuts; `+= scalar * 150` / `150` / `240` |
 /// | 9 | word | a `0x3C`-frame shot, the spell name, clip `0`; `+= scalar * 60` |
@@ -430,6 +430,13 @@ pub const MULE_HIT_ARM: u8 = 18;
 ///
 /// PORT: overlay_summon_mule_0929_801f69fc (PROT 0929; the whole phase chain's gates, camera writes, captions, creature seat and clips - the monster-row writes, the wave and its per-pass hits, part spawns and the stage bytes not carried)
 pub fn mule_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
+    // Arms 1..4 push the anchor under arm 0's landed cut, and the view
+    // builder reads the global every frame, so the shot's focus walks with
+    // it: re-armed as a one-frame cut on the moved anchor each pass.
+    let anchored = |a: i32, hold: bool| ArmDirection {
+        hold,
+        ..cut([0, 0], [0, 0x500, 0x800], [0, 0, a], 1)
+    };
     let gated = |st: &mut ModuleCamState, add: i32| -> bool {
         if counted(st, P) {
             return true;
@@ -449,21 +456,21 @@ pub fn mule_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             if seats.band_timer != 0 {
                 st.ramp += P / 2;
             }
-            gate(phase == 2 && seats.band_timer != 0)
+            anchored(st.ramp, phase == 2 && seats.band_timer != 0)
         }
         3 => {
             st.ramp += P / 2;
             st.countdown.0 = P / 4;
-            ArmDirection::PASS
+            anchored(st.ramp, false)
         }
         4 => {
             st.ramp += P / 2;
             st.countdown.0 += P / 4;
             if st.countdown.0 < 0x81 {
-                return ArmDirection::HOLD;
+                return anchored(st.ramp, true);
             }
             st.countdown.0 = 24 * S;
-            ArmDirection::PASS
+            anchored(st.ramp, false)
         }
         5 => {
             if gated(st, 126 * S) {

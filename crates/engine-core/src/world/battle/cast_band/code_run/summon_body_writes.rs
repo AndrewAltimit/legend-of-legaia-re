@@ -231,6 +231,37 @@ impl World {
         }
     }
 
+    /// PROT 0929's (Mule) monster-row visibility. Arm 1 shows every living
+    /// monster on each of its passes, held or not (`+0x04 = 0x20080200`,
+    /// `+0x21C = 0`, `0x801F6D04..0x801F6D50`, ahead of the stream-token
+    /// gate), so the row stands in the underwater backdrop while the bubbles
+    /// rise; arm 5's pass hides it for the creature's entrance
+    /// (`+0x04 = 0`, `+0x21C = 0xFF`, `0x801F7040..`), arm 11's shows it
+    /// again for the attack (`0x801F7590..`), arm 17's hides it
+    /// (`0x801F8454..`) and the hit arm 18 shows each struck monster
+    /// (`0x801F87C4..`). The engine's shown word is its resting `0` under a
+    /// lowered flag.
+    pub(in crate::world::battle::cast_band) fn apply_mule_writes(
+        &mut self,
+        phase_in: u8,
+        passed: bool,
+    ) {
+        use legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN;
+        let hidden = match (phase_in, passed) {
+            (1, _) | (11 | 18, true) => false,
+            (5 | 17, true) => true,
+            _ => return,
+        };
+        let pc = usize::from(self.party.party_count);
+        for a in self.actors.iter_mut().skip(pc) {
+            if a.battle_monster_id.is_none() || a.battle.hp == 0 {
+                continue;
+            }
+            a.battle.render_flag = if hidden { RENDER_FLAG_HIDDEN } else { 0 };
+            a.battle.render_color = 0;
+        }
+    }
+
     /// PROT 0915's (Mushura) arms 0 and 1 show the latched victim on every
     /// pass (`sb zero,0x21C` / `sw 0x20080200,0x4` at `0x801F6BB8` /
     /// `0x801F6CB8`): the band's freeze hid it, and the opening framings are
