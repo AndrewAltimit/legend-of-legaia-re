@@ -68,14 +68,20 @@ const BACKOFF_CATEGORY: u8 = 3;
 /// step runs against the facing (`subu`).
 const BACKOFF_SPEED: i16 = -4;
 
-/// Separation body radius of a party slot. Retail reads
-/// `(*(actor+0x22C))[+0x58]`; the enemy stager derives a monster's from its
-/// size class as `size << 5`, but the party constant is not pinned in the
-/// dumped corpus - the engine uses the roster-minimum monster radius
-/// (size class 14, the smallest on the disc). Party seats sit >= 600 units
-/// apart, so at threshold `(r1+r2)/6` this choice fires no party-party
-/// nudge from authored seats either way.
-const PARTY_SEPARATION_RADIUS: i16 = 14 << 5;
+/// Separation body radius of a party seat: the `+0x58` word of the actor's
+/// node (`*(actor+0x22C)`) that `FUN_80050BB8` reads. The seat stager
+/// `FUN_800513F0` writes it as `0x280` (`li v0,0x280` / `sh v0,0x58(s1)` at
+/// `0x8005151C`) and overwrites it with `0x400` when the seat's roster id
+/// `DAT_8007BD10[i]` is `4` (`0x80051528..0x80051538`). Every catalogued
+/// battle capture reads `640` on Vahn / Noa / Gala and `1024` on Terra.
+const PARTY_SEPARATION_RADIUS: i16 = 0x280;
+
+/// [`PARTY_SEPARATION_RADIUS`] for the roster-id-`4` seat (Terra).
+const TERRA_SEPARATION_RADIUS: i16 = 0x400;
+
+/// The 1-based roster id (`DAT_8007BD10[i]`) whose seat takes
+/// [`TERRA_SEPARATION_RADIUS`].
+const TERRA_ROSTER_ID: u8 = 4;
 
 /// The render scale `+0x72` the body-pair store multiplies by: the actor
 /// allocator's `0x1000` (`FUN_80020DE0`), 4.12 unity.
@@ -619,6 +625,25 @@ impl World {
         ms.world_z = clamp(ms.world_z, dz, tz);
     }
 
+    /// The separation body radius of battle `slot`, the node `+0x58` word the
+    /// seat stager writes: a party seat's [`PARTY_SEPARATION_RADIUS`] (or
+    /// [`TERRA_SEPARATION_RADIUS`] on the roster-id-`4` seat), a monster's
+    /// size class `<< 5` (`0x800518C4..0x800518D4`).
+    ///
+    /// REF: FUN_800513F0
+    pub(in crate::world) fn battle_separation_radius(&self, slot: usize) -> i16 {
+        let s = slot as u8;
+        if s < self.party.party_count {
+            if self.battle_party_char_id(s) == TERRA_ROSTER_ID {
+                TERRA_SEPARATION_RADIUS
+            } else {
+                PARTY_SEPARATION_RADIUS
+            }
+        } else {
+            i16::from(self.battle_size_class_of(s)) << 5
+        }
+    }
+
     /// PORT-adjacent driver for `FUN_80051078` / `FUN_80050BB8` (the kernels
     /// live in `legaia_engine_battle_vm::battle_separation`): one all-pairs
     /// separation pass in the retail visitation order, on the line after the
@@ -629,8 +654,7 @@ impl World {
     /// `+0x4` render word is not faithfully maintained here). Overlap is
     /// measured on the **seat** pairs and the nudge moves the **live**
     /// pairs, exactly as the kernel's field mapping documents. Radii:
-    /// monster `size_class << 5` (the enemy stager's derivation), party
-    /// [`PARTY_SEPARATION_RADIUS`].
+    /// [`Self::battle_separation_radius`].
     ///
     /// REF: FUN_80051078, FUN_80050BB8, FUN_80046A20
     pub(in crate::world) fn tick_battle_separation(&mut self) {
@@ -646,11 +670,7 @@ impl World {
         for (i, sep) in seps.iter_mut().enumerate().take(n) {
             let a = &self.actors[i];
             alive[i] = a.battle.liveness != 0;
-            let radius = if (i as u8) < self.party.party_count {
-                PARTY_SEPARATION_RADIUS
-            } else {
-                i16::from(self.battle_size_class_of(i as u8)) << 5
-            };
+            let radius = self.battle_separation_radius(i);
             let seat = self.battle_seat_of(i);
             *sep = SepActor {
                 radius,
@@ -912,6 +932,47 @@ mod tests {
         }
     }
 
+    /// The party radius is the seat stager's `0x280` (`0x400` on Terra's
+    /// roster-id-4 seat), what every battle capture reads at the node's
+    /// `+0x58` - not a monster size class.
+    #[test]
+    fn party_separation_radius_is_the_seat_stagers() {
+        let mut w = World::new();
+        w.enter_battle(2, 1);
+        w.party.active_party = vec![0, 1];
+        assert_eq!(w.battle_separation_radius(0), 640);
+        assert_eq!(w.battle_separation_radius(1), 640);
+        w.party.active_party = vec![0, 3];
+        assert_eq!(w.battle_separation_radius(1), 1024, "Terra's seat");
+    }
+
+    /// Two party members pushed into each other part until the projected gap
+    /// reaches retail's `(640 + 640) / 6 = 213` and no further: the spacing
+    /// the separation pass holds between party members whom an action has
+    /// walked together. The port's old `448` radius held them at `149`.
+    #[test]
+    fn overlapping_party_members_part_to_the_retail_gap() {
+        let mut w = World::new();
+        w.enter_battle(2, 1);
+        w.party.active_party = vec![0, 1];
+        // Monster out of play; the two party seats 40 apart on X.
+        w.actors[2].battle.liveness = 0;
+        w.actors[0].move_state.world_x = 0;
+        w.actors[0].move_state.world_z = -800;
+        w.actors[1].move_state.world_x = 40;
+        w.actors[1].move_state.world_z = -800;
+        for _ in 0..400 {
+            w.tick_battle_locomotion();
+            w.tick_battle_separation();
+        }
+        let gap =
+            i32::from(w.actors[1].move_state.world_x) - i32::from(w.actors[0].move_state.world_x);
+        assert!(
+            (213..213 + 8).contains(&gap),
+            "party members part to the retail threshold, got {gap}"
+        );
+    }
+
     #[test]
     fn separation_is_a_no_op_on_authored_seats_and_fires_on_overlap() {
         let mut w = battle_world();
@@ -931,8 +992,8 @@ mod tests {
             .map(|a| (a.move_state.world_x, a.move_state.world_z))
             .collect();
         assert_eq!(before, after, "authored seats never overlap the threshold");
-        // Near-coincident seats overlap: party radius 448 alone gives
-        // threshold (448+0)/6 = 74 > proj 8, so both ordered pairs nudge the
+        // Near-coincident seats overlap: party radius 640 alone gives
+        // threshold (640+0)/6 = 106 > proj 8, so both ordered pairs nudge the
         // live positions apart along the seat axis. (Exactly-coincident
         // seats are the degenerate case where the two ordered pairs read the
         // same atan2(0,0) bearing and cancel - retail arithmetic too.)
