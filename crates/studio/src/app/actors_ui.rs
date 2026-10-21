@@ -207,23 +207,54 @@ impl App {
             if let (Pick::Character(c), Some(Ok(cats))) = (v.pick, &st.catalogs)
                 && let Some(cat) = cats.get(c)
             {
-                ui.horizontal_wrapped(|ui| {
-                    for (s, (label, ids)) in cat.sections.iter().enumerate() {
+                // The pickers are flowed into rows by their measured width:
+                // a combo box's size is only known once it is placed, so a
+                // wrapping layout lets the last one run off the window.
+                let font = egui::TextStyle::Button.resolve(ui.style());
+                let extra = ui.spacing().button_padding.x * 2.0
+                    + ui.spacing().icon_width
+                    + ui.spacing().icon_spacing
+                    + ui.spacing().item_spacing.x
+                    + 8.0;
+                let texts: Vec<String> = cat
+                    .sections
+                    .iter()
+                    .enumerate()
+                    .map(|(s, (label, ids))| {
                         let cur = st.equipment[c][s];
                         let name = ids
                             .iter()
                             .find(|(id, _)| *id == cur)
                             .map(|(_, n)| n.as_str())
                             .unwrap_or("?");
-                        egui::ComboBox::from_id_salt(("equip", c, s))
-                            .selected_text(format!("{label}: {name}"))
-                            .show_ui(ui, |ui| {
-                                for (id, n) in ids {
-                                    ui.selectable_value(&mut st.equipment[c][s], *id, n);
-                                }
-                            });
-                    }
-                });
+                        format!("{label}: {name}")
+                    })
+                    .collect();
+                let widths: Vec<f32> = texts
+                    .iter()
+                    .map(|t| {
+                        ui.painter()
+                            .layout_no_wrap(t.clone(), font.clone(), egui::Color32::WHITE)
+                            .size()
+                            .x
+                            + extra
+                    })
+                    .collect();
+                let rows = flow_rows(&widths, ui.available_width());
+                for row in rows {
+                    ui.horizontal(|ui| {
+                        for s in row {
+                            let ids = &cat.sections[s].1;
+                            egui::ComboBox::from_id_salt(("equip", c, s))
+                                .selected_text(texts[s].clone())
+                                .show_ui(ui, |ui| {
+                                    for (id, n) in ids {
+                                        ui.selectable_value(&mut st.equipment[c][s], *id, n);
+                                    }
+                                });
+                        }
+                    });
+                }
             }
             if !a.clips.is_empty() {
                 v.clip = v.clip.min(a.clips.len() - 1);
@@ -300,5 +331,40 @@ impl App {
                 self.report("glTF", res, &out);
             }
         }
+    }
+}
+
+/// Indices of `widths` grouped into rows that each fit `max` (a row always
+/// takes at least one item, so an item wider than `max` gets a row alone).
+fn flow_rows(widths: &[f32], max: f32) -> Vec<Vec<usize>> {
+    let mut rows: Vec<Vec<usize>> = Vec::new();
+    let mut used = 0.0;
+    for (i, w) in widths.iter().enumerate() {
+        match rows.last_mut() {
+            Some(row) if used + w <= max => {
+                row.push(i);
+                used += w;
+            }
+            _ => {
+                rows.push(vec![i]);
+                used = *w;
+            }
+        }
+    }
+    rows
+}
+
+#[cfg(test)]
+mod tests {
+    use super::flow_rows;
+
+    #[test]
+    fn pickers_flow_into_rows_that_fit() {
+        assert_eq!(
+            flow_rows(&[300.0, 300.0, 300.0], 700.0),
+            vec![vec![0, 1], vec![2]]
+        );
+        assert_eq!(flow_rows(&[900.0, 100.0], 700.0), vec![vec![0], vec![1]]);
+        assert!(flow_rows(&[], 700.0).is_empty());
     }
 }

@@ -3032,6 +3032,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "toml",
+ "winit",
 ]
 
 [[package]]

@@ -17,6 +17,7 @@ pub mod extract_job;
 pub mod launch;
 pub mod library;
 pub mod media;
+pub mod placement;
 pub mod player;
 pub mod raster;
 pub mod scene_vram;

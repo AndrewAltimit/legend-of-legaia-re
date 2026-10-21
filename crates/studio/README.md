@@ -96,9 +96,12 @@ legaia-studio "/path/to/Legend of Legaia (USA).bin"     # open at start
 ```
 
 Settings (last disc, the recent list, output and export folders, extract
-options, window size, the view and preview tab last open, theme and zoom)
-live in
-`legaia-studio/settings.json` under the per-user config folder.
+options, window size and position, the view and preview tab last open,
+theme and zoom) live in `legaia-studio/settings.json` under the per-user
+config folder. The window position is restored only when its title bar
+would land on a monitor that is still connected (`placement`, checked
+against the monitors the windowing system reports as the event loop
+starts); otherwise the window opens centred.
 
 Keyboard: Ctrl+O opens a disc image, Ctrl+1 .. Ctrl+4 switch between Browse,
 Characters & monsters, Movies & voice and Extract, F5 plays the open disc,

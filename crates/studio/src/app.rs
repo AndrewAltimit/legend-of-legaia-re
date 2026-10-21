@@ -190,6 +190,7 @@ pub struct App {
     about_open: bool,
     /// The window's inner size, tracked for the settings file.
     window_size: Option<[f32; 2]>,
+    window_pos: Option<[i32; 2]>,
     path_text: String,
     filter: String,
     class_filter: Option<String>,
@@ -274,6 +275,7 @@ impl App {
             tab,
             about_open: false,
             window_size: None,
+            window_pos: None,
             path_text,
             filter: String::new(),
             class_filter: None,
@@ -1970,6 +1972,16 @@ impl eframe::App for App {
             let z = ctx.zoom_factor();
             self.window_size = Some([r.width() * z, r.height() * z]);
         }
+        // The outer corner in physical pixels (`placement`): points times
+        // pixels per point, which already folds in the UI zoom. Wayland
+        // reports no position, so nothing is kept there.
+        if let Some(r) = ctx.input(|i| i.viewport().outer_rect) {
+            let ppp = ctx.pixels_per_point();
+            self.window_pos = Some([
+                (r.min.x * ppp).round() as i32,
+                (r.min.y * ppp).round() as i32,
+            ]);
+        }
         egui::TopBottomPanel::top("top").show(ctx, |ui| self.top_bar(ui));
         self.about_window(ctx);
         match self.mode {
@@ -2000,6 +2012,9 @@ impl eframe::App for App {
         s.tab = Some(self.tab.key().to_string());
         if let Some(size) = self.window_size {
             s.window_size = Some(size);
+        }
+        if let Some(pos) = self.window_pos {
+            s.window_pos = Some(pos);
         }
         self.studio.save_settings();
         if let Some(job) = &mut self.job {
