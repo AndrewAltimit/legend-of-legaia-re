@@ -940,6 +940,11 @@ mod key_script_tests {
         // script deliberately never reaches; `--screenshot-last-tick` ends a
         // scripted run instead.
         handled.remove("Escape");
+        // So does the fullscreen toggle (`fullscreen_key`: `F11`, or
+        // `Alt+Enter` incl. the keypad's): window chrome a capture must never
+        // flip, resolved ahead of `handle_key`.
+        handled.remove("F11");
+        handled.remove("NumpadEnter");
         assert!(
             handled.len() >= 20,
             "the handler reads its keys as `KeyCode::*`"

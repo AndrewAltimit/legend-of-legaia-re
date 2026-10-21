@@ -1097,6 +1097,7 @@
     "formation_cell",
     "ground_snap",
     "hud_glide",
+    "melee_hits",
     "phase_gate",
     "script_gate"
    ],
@@ -2275,7 +2276,6 @@
     "scus_leaf_kernels",
     "sound_state",
     "story_flag_state",
-    "sustained_sfx",
     "trig"
    ],
    "band": "kernels",
@@ -2466,7 +2466,8 @@
     "timed_fight",
     "world_map_markers",
     "world_map_panel_host",
-    "world_map_sky"
+    "world_map_sky",
+    "screen_passes"
    ],
    "band": "drivers",
    "track": "engine",
@@ -2519,6 +2520,7 @@
    "modules": [
     "accent_font",
     "builtin",
+    "cell_text",
     "escape_icons",
     "glyph_count",
     "latin",
@@ -3473,10 +3475,12 @@
     "launch",
     "library",
     "media",
+    "placement",
     "player",
     "raster",
     "scene_vram",
-    "settings"
+    "settings",
+    "theme"
    ],
    "band": "hosts",
    "track": "preservation",
