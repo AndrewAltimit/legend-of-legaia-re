@@ -585,6 +585,10 @@ pub struct BattleState {
     pub backdrop_slot_1_yaw: u16,
     /// The battle frame [`Self::backdrop_slot_1_yaw`] last advanced on.
     pub backdrop_spin_frame: Option<u64>,
+    /// The battle frame the separation pass last ran on
+    /// ([`World::tick_battle_separation`]): retail runs it once a battle
+    /// frame, so a per-vsync replay runs it on the frame's first tick.
+    pub separation_frame: Option<u64>,
     /// Battle VRAM `MoveImage`s a stage module issued this frame, in order.
     /// Applied to the host's battle VRAM by
     /// [`crate::world::World::apply_battle_vram_moves`]; cleared at battle
@@ -1004,6 +1008,7 @@ impl BattleState {
             sparring_round_pending: false,
             backdrop_slot_1_yaw: 0,
             backdrop_spin_frame: None,
+            separation_frame: None,
             vram_moves: Vec::new(),
             vram_scrolls: Vec::new(),
             frame_clock: Default::default(),

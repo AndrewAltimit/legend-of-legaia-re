@@ -535,7 +535,14 @@ impl World {
         // REF: FUN_80051078, FUN_80050BB8 (kernels in
         // `legaia_engine_battle_vm::battle_separation`; driver
         // `World::tick_battle_separation`)
-        if sm_pass {
+        //
+        // The nudge is not scaled by the frame step (neither routine reads
+        // `DAT_1F800393`), so it moves a pair a fixed amount a **pass**: on
+        // the per-vsync cadence, where the action SM steps every tick, the
+        // pass still runs once a battle frame, on the frame's first tick.
+        let frame = self.battle_frame_id();
+        if sm_pass && self.battle.separation_frame != Some(frame) {
+            self.battle.separation_frame = Some(frame);
             self.tick_battle_separation();
         }
 
