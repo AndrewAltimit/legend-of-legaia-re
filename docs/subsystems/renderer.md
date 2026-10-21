@@ -828,17 +828,21 @@ flat-depth references both hosts upload beside the ground, and the ground
 shaders - `field_far_bucket_depth` in `engine-render`, `fieldFarBucket` in
 `site/js/webgl-shaders.js` - act on the mark:
 
-- **Sloped far-bucket cells** (`x0` / `x1` pair swapped) have their depth
-  scaled into the thin slice at the far end of the range, keeping their own
-  per-pixel order inside it.
-- **Flat far-bucket cells** (`z0` / `z1` pair swapped) are pushed back by
-  `field_ground::FLAT_FAR_BUCKET_PUSH` of their depth - within half a
-  percent of real. Post passes that read the depth buffer (the volumetric
-  fog's soft edge, the lamp halos) still see the floor where it is, while a
-  decal authored on the floor plane paints over it. Without the push the two
-  tie at float rounding: `doman`'s subtractive shadow strips (CLUT `0x7F84`,
-  tpage `0x5F`), a tenth of a unit above the sunk ground at view depth near
-  1700, lose every pixel.
+- **Sloped far-bucket cells** (`x0` / `x1` pair swapped) and **flat** ones
+  (`z0` / `z1` pair swapped) have their depth scaled into the thin slice at
+  the far end of the range, keeping their own per-pixel order inside it.
+
+The flat cells need the slice as much as the sloped ones. The subtractive
+wall-base shadow strips (CLUT `0x7F84`, tpage `0x5F`, ABR 2) are decals, and
+where they lie is per scene: `doman`'s sit a tenth of a unit above the sunk
+ground, while `conc`, `conc2`, `conc3`, `concnow` and `urudre2` author theirs
+six units **below** the floor plane. Retail draws them over the far bucket
+either way. Pushed back by half a percent of its depth, a flat cell still hid
+every `conc` strip from the blend pass, which tests against the opaque depth
+without writing it (`conc_field_card_boot`, the dark band along the back
+wall). The cost falls on the one post pass that reads the depth buffer, the
+volumetric fog's soft edge, which no longer fades a sheet against a far-bucket
+floor.
 
 Disc-gated pin: `crates/engine-scene/tests/field_ground_far_bucket_disc.rs`.
 

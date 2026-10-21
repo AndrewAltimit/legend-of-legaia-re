@@ -426,9 +426,9 @@ float overworldFlatW(mat4 m, vec4 fa, vec4 fb) {
 bool fieldFarBucket(vec4 fa) {
   return u_curve <= 0.0 && fa.x > fa.z;
 }
-/* A flat far-bucket cell carries a swapped z pair (fa.y > fa.w): pushed back
- * by FIELD_FLAT_FAR_BUCKET_PUSH of its depth so a decal on the floor plane
- * paints over it (engine-core field_ground::FLAT_FAR_BUCKET_PUSH). */
+/* A flat far-bucket cell carries a swapped z pair (fa.y > fa.w) and goes into
+ * the same far slice, so a decal authored under the floor plane paints over
+ * it as it does over retail's far bucket (engine-scene field_ground::flat_refs). */
 bool fieldFlatFarBucket(vec4 fa) {
   return u_curve <= 0.0 && fa.y > fa.w && fa.x <= fa.z;
 }
@@ -1018,8 +1018,7 @@ void main() {
    * the clear value, keeping its own per-pixel order inside the slice
    * (FIELD_FAR_BUCKET_DEPTH_SCALE in engine-render - same scale, mirrored for
    * this page's forward depth). */
-  if (v_far_bucket > 1.5) far_bucket_depth = 1.0 - (1.0 - far_bucket_depth) * (1.0 - 0.005);
-  else if (v_far_bucket > 0.5) far_bucket_depth = 1.0 - (1.0 - far_bucket_depth) * 0.001;
+  if (v_far_bucket > 0.5) far_bucket_depth = 1.0 - (1.0 - far_bucket_depth) * 0.001;
   gl_FragDepth = far_bucket_depth;
   /* Facet normal for the dynamic light, taken before any discard so the
    * derivatives sit in uniform control flow. Its sign follows the

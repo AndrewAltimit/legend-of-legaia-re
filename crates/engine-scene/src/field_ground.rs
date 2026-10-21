@@ -154,13 +154,15 @@ pub fn render_indices(hf: &WalkHeightfield) -> Vec<u32> {
 /// push the marked cell's depth into a thin slice behind every other draw
 /// (`FIELD_FAR_BUCKET_DEPTH_SCALE` in `engine-render`, the GLSL twin in
 /// `site/js/webgl-shaders.js`), keeping its own per-pixel order inside the
-/// slice. A **flat** far-bucket cell keeps its real depth to within half a
-/// percent: its `z0` / `z1` pair is swapped instead, and the shaders push it
-/// back by [`FLAT_FAR_BUCKET_PUSH`] of its own depth - far enough that a
-/// decal authored on the floor plane (`doman`'s subtractive shadow strips,
-/// a tenth of a unit above the sunk ground) beats it, as it does in retail's
-/// far bucket, near enough that the passes reading the depth buffer (the
-/// fog's soft edge, the lamp halos) still see the floor where it is.
+/// slice. A **flat** far-bucket cell carries its own marker - the `z0` /
+/// `z1` pair swapped - and goes into the same slice. A flat cell needs it as
+/// much as a sloped one: a decal authored on or under the floor plane draws
+/// over retail's far bucket wherever it lies, and the subtractive wall-base
+/// shadow strips of `conc` / `conc2` / `conc3` / `concnow` / `urudre2` (CLUT
+/// `0x7F84`, tpage `0x5F`) lie six units **below** it. A push of half a
+/// percent of the cell's depth, which `doman`'s strips (a tenth of a unit
+/// above the sunk ground) clear, left every one of those strips under the
+/// floor in `conc_field_card_boot`.
 ///
 /// REF: FUN_801F6D48
 pub fn flat_refs(hf: &WalkHeightfield, positions: &[[f32; 3]]) -> Vec<[f32; 8]> {
@@ -205,11 +207,6 @@ pub fn is_far_bucket_ref(r: &[f32; 8]) -> bool {
 pub fn is_flat_far_bucket_ref(r: &[f32; 8]) -> bool {
     r[1] > r[3]
 }
-
-/// The fraction of its own depth a flat far-bucket cell is pushed back
-/// (`FIELD_FLAT_FAR_BUCKET_PUSH` in `engine-render`, the GLSL twin in
-/// `site/js/webgl-shaders.js`).
-pub const FLAT_FAR_BUCKET_PUSH: f32 = 0.005;
 
 /// Crop an already-built ground index list to this frame's visible cells: keep
 /// each quad (six indices, as [`render_indices`] or the builder emits them)
