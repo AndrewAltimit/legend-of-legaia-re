@@ -400,7 +400,14 @@ impl World {
     /// drain ([`SfxRingOp::ReleaseSustained`]). Retail's mode init
     /// `FUN_8001DCF8` runs it on every mode entry (`0x8001DDA8`), which is
     /// the seat a scene load takes.
+    ///
+    /// Back-to-back requests collapse into one: the teardown clears the held
+    /// count, so a second one keys nothing off, and a host that reloads the
+    /// scene it just loaded queues the same frame another host queues once.
     pub fn release_sustained_sfx(&mut self) {
+        if self.audio.sfx_ring_ops.last() == Some(&SfxRingOp::ReleaseSustained) {
+            return;
+        }
         self.audio.sfx_ring_ops.push(SfxRingOp::ReleaseSustained);
     }
 
