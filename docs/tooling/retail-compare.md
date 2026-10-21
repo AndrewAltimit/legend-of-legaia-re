@@ -3059,7 +3059,11 @@ Three things put the engine on the same pass:
   `+0x46`, which `0x14` recomputes from the target bearing
   (`0x801E3078..0x801E3088`). Before that store, the heading is the one
   Vahn's last turn left (`34`), which the replayed prompt does not restore,
-  so the seed stands the seat on it (`RetailBattle::seeded_facing`).
+  so the seed stands the seat on it (`RetailBattle::seeded_facing`). A
+  Spirit turn (category `4`) writes no heading at all, so the seed keeps the
+  acting seat's through its band and its Done tail too
+  (`nivora_duel_pre_megaton_press`: Gala at `3980`, which the Done band's
+  case 6 subtracts from the yaw counter).
 - **The turn order.** The capture is round `0` (`ctx[+0x28A] = 0`) with
   both initiative keys `+0x16C` spent, so Gobu Gobu had already dispatched.
   A replayed swing walks Gobu Gobu about `250` units on and pushes Vahn `164`

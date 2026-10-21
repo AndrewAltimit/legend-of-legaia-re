@@ -507,6 +507,8 @@ pub(super) fn run_drive(
                     c.framing_pose().focus,
                     c.glide_target().focus,
                     c.framing_pose().yaw,
+                    c.close_up_accum(),
+                    c.glide_target().tr,
                 )),
                 (0..world.actors.len().min(4))
                     .map(|i| {

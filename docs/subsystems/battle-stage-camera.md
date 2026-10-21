@@ -1262,21 +1262,26 @@ between holds:
 
 Measured with `LEGAIA_BATTLE_FRAME_CADENCE=1` against the per-vsync run of
 the same build, the retail-disc rows that rise are `theeder_summon_mid_cast`
-`image` `.874` to `.996`, `zeto_call_wave_mid_cast` `.963` to `.970`,
+`image` `.874` to `.996`, `zeto_call_wave_mid_cast` `.960` to `.973`,
 `horn_summon_mid_cast` `.979` to `.984`, and `camera` on
 `gimard_burning_attack` (`.963` to `.999`), `vera_summon_mid_cast` and
 `aluru_summon_mid_cast`. Over the retail-disc rows the falls sum to about
-`.20` against `.18` of rises, so the toggle stays off:
+`.19` against `.19` of rises, and the falls are not yet shown to be
+retail's, so the toggle stays off:
 
 | Capture | Falls | Cause |
 |---|---|---|
-| `battle_gimard_tail_fire_a`, `battle_gimard_tail_fire_b` | `image` `.822` to `.784`, `.807` to `.789` | the flame children stand older and higher on the pass; both cadences sit one ground burst short of retail's pool at the gate (its landing master at record `12` of `16`, the engine's at `8`) |
-| `gimard_burning_attack` | `image` `.786` to `.763` | the fire cloud's particles; the camera itself lands (`.999`) |
-| `nivora_duel_pre_megaton_press` | `image` `.919` to `.899` | the Done hold frames yaw `2288` against retail's `2286` (per vsync `2284`): the engine's Gala faces `0` where retail's faces `3980`, and its yaw counter stands as far off the other way |
-| `rim_elm_gimard_seru_capture_before` | `image` `.971` to `.953` | case 8's yaw reads Vahn's heading on the walk back, `133` against retail's `161` (per vsync `143`) |
-| `noa_levelup_banner` | `image` `.962` to `.945` | the Results camera stands at eye `y` `982` against retail's `941` (per vsync `978`) |
-| `freed_summon_mid_cast`, `juggernaut_summon_mid_cast`, `gimard_summon_start`, `gizam_summon_mid_cast` | `image` by `.004` to `.013` | case `0x12`'s chase reads the pass-old body pair: Juggernaut's focus `x` stands at `45` where retail's reads `63` beside its body's `64` (per vsync `53`); the frozen ambient is retail's (`0x70`) only on this cadence |
+| `battle_gimard_tail_fire_a`, `battle_gimard_tail_fire_b` | `image` `.822` to `.784`, `.807` to `.789` | the flight runs late on both cadences: at the gate the engine's flame head stands some `300` units short of retail's, where retail's pool already holds flame children at the target band that neither engine run has; the cadence's head stands a further pass short |
+| `gimard_burning_attack` | `image` `.786` to `.763` | the fire cloud stands detached from the mouth; the camera itself lands (`.999`) |
+| `rim_elm_gimard_seru_capture_before` | `image` `.971` to `.953` | the frames differ in ground blocks at the tolerance's edge: the two cadences' cameras stand within a unit of each other, both with focus `z` `1102` against retail's `1124` |
+| `noa_levelup_banner` | `image` `.962` to `.945` | the posing bodies' blocks; on both cadences the Results script's `TR.y` (`-5 * actor[+0x3E]` plus the accumulator term) reads Vahn's display height at `-191` where retail's reads `-183` |
+| `freed_summon_mid_cast`, `juggernaut_summon_mid_cast`, `gimard_summon_start`, `gizam_summon_mid_cast` | `image` by `.004` to `.016` | the caster's body still moves some `7` units a pass where retail's has nearly stopped (Juggernaut's body `64` beside focus `63`), and case `0x12`'s chase on the cadence trails one pass of it: at the RAM's gate the focus `x` stands at `59` (per vsync `61`); the frozen ambient is retail's (`0x70`) only on this cadence |
 | `cort_guilty_cross_mid_cast`, `cort_evolved_ultra_charge_mid_cast` | `image` `.961` to `.952`, `.894` to `.888` | the capture band's drifts and holds land a few vsyncs off retail's at the gate |
+
+Taking the displayed frame (the gate's tick less the two-frame display lag)
+on the cadence does not recover them: the Tail Fire pair falls to `.721` and
+`.725`, and on the replayed casts the summon flash moves off retail's
+(`juggernaut_summon_mid_cast` `.788`, `freed_summon_mid_cast` `.023`).
 
 ### Screen shake
 

@@ -289,6 +289,17 @@ fn spent_combatants_keep_their_heading_until_the_strike_commits() {
     // A combatant whose turn is still to come keeps the engine's.
     b.init_keys[4] = Some(3);
     assert_eq!(b.seeded_facing()[2], None);
+    // A Spirit turn writes no heading, so its Done tail keeps the acting
+    // seat's (`nivora_duel_pre_megaton_press`: Gala at `3980`).
+    b.queued_category = 4;
+    b.action_state = 0x51;
+    assert_eq!(b.seeded_facing()[0], Some(484));
+    b.queued_category = 3;
+    assert_eq!(
+        b.seeded_facing()[0],
+        None,
+        "an attack's Done tail is the replay's"
+    );
 }
 
 /// A counterattack capture - a party seat's strike loop inside a monster's
