@@ -579,7 +579,7 @@ about the cells that outlived their own fixtures.
 | `other_game_overlay.rs` | 1 | `801d14b0` | Closed by delegation: `baka_fighter::tally_drain_step` (`801d6710`) **is** `other_game_overlay::step_scale`, one routine linked twice, so the duel ladder's tally drain enters the anchor. The arena's own driver is still one call away |
 | `battle_tutorial.rs` | 2 | `801f6b70` `801f747c` | Closed: `battle_tutorial_ladder` primes the script, walks into a real encounter and drives the box; `training_battle` was never the only route |
 | `world_map.rs` | 2 | `800196a4` `801d8258` | Closed by `world_map_render_ladder` - rung 2 taps L1 on the overworld and runs the fade ramp to its mode-12 hand-off, and the horizon-gate rung arms the emitter through `World::tick`. Read the second with its own caveat (see below) |
-| `fog_particles.rs` | 3 | `8003f348` `8003f3fc` `8003f86c` | Closed by `fog_page_prims`, the one *composing* member of the union - a headless fixture cannot convert these at all, whatever scene it walks; see [the composing-host note](#a-render-pass-row-needs-a-composing-ladder-not-a-deeper-one) |
+| `fog_particles.rs` | 3 | `8003f348` `8003f3fc` `8003f86c` | Closed by `fog_page_prims`, a *composing* member of the union. The step is a per-tick session step now (`BootSession::step_field_fog`), so a headless driver of the window's tick body reaches it too; see [the composing-host note](#a-render-pass-row-needs-a-composing-ladder-not-a-deeper-one) |
 | `cutscene_narration.rs` | 1 | `80037174` | Closed: `narration_ladder` drives the opening-prologue subtitle roller |
 | `world/narration/dialogue_drive.rs` | 1 | `8003cf7c` | Closed: the same ladder drives the inline field-VM conversation path, as opposed to the pre-decoded dialog panel every other ladder drives |
 | `world/battle/stats.rs` + `battle_formulas/escape.rs` | 1 | `801e791c` | Closed: `battle_flee_ladder` is a canonical member now, and its first rung is an **assured** escape that leaves the battle |
@@ -630,12 +630,23 @@ The fog emitter is the row that separates "no fixture drives this content" from
 "no fixture of this *kind* exists", and the two read identically in the
 never-entered set.
 
-Its three addresses sit under `World::fog_render_step`, which is a **render
-pass** call: the native window makes it in `redraw_passes.rs` and the browser
-page in `play_field_fx.rs`, and nothing else in the workspace does. A headless
-ladder can walk the scene that raises the gate and still never touch them,
-because it composes no frame - so "drive a deeper scene" is the wrong fixture
-however far it goes.
+Its three addresses sit under `World::fog_render_step`, which was a **render
+pass** call when the row was written: the native window made it from its draw
+prep and the browser page from its screen-prim assembly, so a headless ladder
+could walk the scene that raises the gate and still never touch them.
+
+That premise no longer holds, and the reason is a host fix rather than a
+fixture. The step moved into the session as `BootSession::step_field_fog`,
+run once per sim tick: natively from the tick body's frame tail
+(`run_sim_ticks` -> `tick_frame_tail_effects`), on the page from
+`tick_field_fog_prims`, and for a driver that draws nothing through
+`BootSession::fog_render_tick` (the retail-compare battle drives and the
+capture seeding call it). So `HeadlessPlayWindow` - the window's own tick body
+with no renderer, which `host_frame_parity`'s fogged-field scenario drives
+over `vell` - reaches the step without composing a frame. The rule below is
+still the right reading of *this row's history*; for the fog emitter today,
+any driver of the window's tick body, or of `fog_render_tick`, is a candidate
+fixture.
 
 The gate itself is not the gap. `_DAT_8007B854` is raised and cleared by the
 field-VM `0x4C` nibble-3 pair, and the [op census](field-op-census.md) finds
@@ -1729,7 +1740,7 @@ part worth keeping rather than the fact that it emptied:
 
 | addresses | verdict | where it went |
 |---|---|---|
-| `8003f348` `8003f3fc` `8003f86c` | (a) | [content not driven](#no-ladder-content-not-driven) - the fog emitter, which only a **composing** ladder can enter |
+| `8003f348` `8003f3fc` `8003f86c` | (a) | [content not driven](#no-ladder-content-not-driven) - the fog emitter, which only a **composing** ladder could enter while its step ran from the draw path (it is a per-tick session step now) |
 | `80057914` | (a), since **converted** | the op-`0x43` sub-`0x12` carriers the census names, drained by the headless frame tail - see [the rows no ladder converts](#rows-no-ladder-converts-and-why) |
 | `801d095c` | (b), since **converted** | the [`engine-vm` table](#engine-vm), on a party that holds a HUD-badge ability - `passive_badge_page` equips one |
 | `8003c7ec` `800430ac` `801cefd4` | (a) | [content not driven](#no-ladder-content-not-driven) - two field-VM op carriers and the boot chain |

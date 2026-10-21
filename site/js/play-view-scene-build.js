@@ -9,7 +9,7 @@
   'use strict';
 
   const {
-    A2R, placementWorldBox, PLAYER_MESH_ID, NPC_MESH_BASE, TILE_MESH_BASE,
+    A2R, PLAYER_MESH_ID, NPC_MESH_BASE, TILE_MESH_BASE,
   } = window.LegaiaPlayShared;
 
   window.LegaiaUtil.installMethods(window.PlayView, class {
@@ -161,7 +161,6 @@
            * used to drop them here (the full-map viewer's classifier), which
            * left the opdeene prologue's sepia sky and ridge line a navy void
            * behind the tableau. */
-          const aabb = this.renderer.getMeshAabb(meshId);
           const draw = {
             meshId,
             x: pos[i * 3], y: -pos[i * 3 + 1], z: pos[i * 3 + 2],
@@ -184,8 +183,6 @@
               draw.x, draw.y, draw.z,
               rx * A2R, (rots[i] & 0xFFF) * A2R, rz * A2R, draw.scale);
           }
-          /* World box for the occluder test, baked once (see `_frame`). */
-          draw.box = placementWorldBox(aabb, draw);
           /* Floor-wave bookkeeping: the rung index this draw's Y came from,
            * and the Y the scene's baked ladder gave it. `_applyFloorWave`
            * re-derives `y` from these when the ladder moves. */

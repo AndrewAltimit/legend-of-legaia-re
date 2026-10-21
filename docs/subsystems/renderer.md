@@ -2151,7 +2151,7 @@ frame. Pinned by
 `crates/engine-scene-host/tests/field_unspawned_actor_draw_disc.rs`.
 
 **The site play page** (`site/js/play-view-frame.js`) applies the same crop and
-actor cull and adds nothing: `OCCLUDER_CULL = false`. A per-body occlusion
+actor cull and adds nothing; the per-body occluder cull it once carried is deleted. A per-body occlusion
 cull (drop a body the eye-to-player segment pierces) is the wrong tool even
 in exact segment-vs-AABB form, because placement boxes are axis-aligned over
 whole terrain tiles, walls and buildings, so the segment sweeps through a

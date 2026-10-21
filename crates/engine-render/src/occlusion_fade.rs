@@ -51,7 +51,7 @@
 //! per-BODY occluder cull (lens->player segment vs whole-placement AABBs)
 //! and had to disable it - terrain tiles / walls span whole-scene boxes, so
 //! neighbouring bodies blinked out as the camera orbited
-//! (`site/js/play-app.js` `OCCLUDER_CULL`, docs/subsystems/renderer.md).
+//! (docs/subsystems/renderer.md).
 //! Fragment granularity has no such failure mode.
 //!
 //! This module is the CPU mirror of the WGSL (`occl_bayer` in the shader
