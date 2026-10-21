@@ -456,3 +456,33 @@ fn cast_part_seed_walks_back_over_the_display_lag() {
     assert_eq!(at(0x28), 800);
     assert_eq!(at(0xB6), 300);
 }
+
+/// A turning effect-script table part is seeded as its rotation trio on the
+/// displayed frame - `freed_summon_mid_cast`'s ray fan: record `0x801F5A04`,
+/// `+0x26 = 644` turning `-0x1C0 >> 3 = -56` a vsync, four vsyncs of lag at
+/// step `2` - while a still part, a slot-B record and a killed node are not.
+#[test]
+fn action_fx_part_seed_is_the_displayed_rotation() {
+    let mut ram = vec![0u8; 0x20_0000];
+    put32(&mut ram, frame_step::FORCED_STEP, 2);
+    let nodes = [0x8008_1F1C, 0x8008_2000, 0x8008_2100, 0x8008_2200];
+    put32(&mut ram, 0x8007_C34C + 4, nodes[0]);
+    for (i, &n) in nodes.iter().enumerate() {
+        put32(&mut ram, n, nodes.get(i + 1).copied().unwrap_or(0));
+        put32(&mut ram, n + 0x0C, 0x8002_1DF4);
+        put32(&mut ram, n + 0x48, 0x801F_5A04);
+        put16(&mut ram, n + 0x5A, 1);
+        put16(&mut ram, n + 0x26, 644);
+        put16(&mut ram, n + 0x82, 0xFE40);
+    }
+    put16(&mut ram, nodes[1] + 0x82, 0);
+    put32(&mut ram, nodes[2] + 0x48, 0x801F_6A00);
+    put32(&mut ram, nodes[3] + 0x10, 0x8);
+    let seeds = ram_read::retail_action_fx_parts(&ram);
+    assert_eq!(seeds.len(), 1);
+    assert_eq!(seeds[0].tag, 0x801F_5A04);
+    assert_eq!(
+        seeds[0].pokes,
+        vec![(0x24, 0), (0x26, 644 + 4 * 56), (0x28, 0)]
+    );
+}

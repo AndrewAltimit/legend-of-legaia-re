@@ -70,6 +70,53 @@ pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon
         .collect()
 }
 
+/// The render banks an effect-script table part's seed carries: its
+/// rotation trio `+0x24..+0x28`.
+const ACTION_FX_SEED_OFFSETS: [u16; 3] = [0x24, 0x26, 0x28];
+
+/// Every live effect-script table part (`FUN_80021DF4` nodes whose record
+/// `+0x48` lies in the resident battle overlay below the slot-B image -
+/// the `0x801F6324` prototypes `FUN_801DEA50`'s table arm seats) that is
+/// turning (a non-zero rate in `+0x80..+0x84`), in actor-list order, as a
+/// [`CastPartSeed`](legaia_engine_effects::summon::CastPartSeed) of its
+/// rotation trio as the displayed frame held it ([`displayed_part_halfword`]).
+///
+/// A turning part's banks are a clock of its age in vsyncs: the part tick
+/// adds the rate times the frame step every pass, so a part seated on a
+/// step-`2` pass has turned two vsyncs' worth by its first draw, where the
+/// replay's per-vsync seat has turned one. The summon invoke clip's ray fan
+/// (record `0x801F5A04`, `-56` a vsync about Y) reads that way: one vsync
+/// ahead of the displayed frame in the replay (`freed_summon_mid_cast`
+/// `+0x26` `812` against the displayed `868`), every ray standing a few
+/// degrees off retail's. Only the banks are seated - the part's program
+/// words (wait, PC, level ramp) may have been rewritten inside the display
+/// lag and are not recovered.
+pub(super) fn retail_action_fx_parts(
+    ram: &[u8],
+) -> Vec<legaia_engine_effects::summon::CastPartSeed> {
+    let lag = i32::from(display_lag_vsyncs(ram));
+    let overlay = legaia_game_tables::move_power::BATTLE_OVERLAY_BASE..SLOT_B.start;
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| {
+            let rec = game_anchors::u32_at(ram, n + 0x48);
+            game_anchors::u32_at(ram, n + 0x0C) == PART_TICK
+                && game_anchors::u32_at(ram, n + 0x10) & 0x8 == 0
+                && overlay.contains(&rec)
+                && (0x80..=0x84)
+                    .step_by(2)
+                    .any(|o| game_anchors::u16_at(ram, n + o) != 0)
+        })
+        .map(|n| legaia_engine_effects::summon::CastPartSeed {
+            tag: game_anchors::u32_at(ram, n + 0x48),
+            pokes: ACTION_FX_SEED_OFFSETS
+                .iter()
+                .map(|&o| (o, displayed_part_halfword(ram, n, o, lag)))
+                .collect(),
+        })
+        .collect()
+}
+
 /// Part `node`'s halfword `+off` as the displayed frame held it, `lag`
 /// vsyncs before the RAM: the part tick `FUN_80021DF4` integrates, a frame
 /// at a time and scaled by the frame step times the rate byte `8` (`>> 6`),
@@ -244,6 +291,7 @@ impl RetailBattle {
             keep_backdrop_object_1: game_anchors::u8_at(ram, KEEP_BACKDROP_OBJECT_1) != 0,
             mystic_shield: game_anchors::u32_at(ram, MYSTIC_SHIELD_HANDLE) != 0,
             cast_parts: retail_cast_parts(ram),
+            action_fx_parts: retail_action_fx_parts(ram),
             backdrop_slot_1_yaw: game_anchors::u16_at(ram, BACKDROP_SLOT_1_YAW),
             monster_ids,
             seat_chars: (0..u32::from(party_count))

@@ -311,6 +311,12 @@ pub struct RetailBattle {
     /// image child seats over the replay's part of the same record on the
     /// capture frame (`LEGAIA_SEAT_CAST_PARTS`).
     pub cast_parts: Vec<legaia_engine_effects::summon::CastPartSeed>,
+    /// The state's turning effect-script table parts (`FUN_80021DF4` nodes
+    /// whose record lies in the battle overlay's prototype band), each as
+    /// its displayed rotation trio, which the image child seats over the
+    /// replay's part of the same record on the capture frame
+    /// (`LEGAIA_SEAT_ACTION_FX_PARTS`).
+    pub action_fx_parts: Vec<legaia_engine_effects::summon::CastPartSeed>,
     /// `0x800891D2` - the Y angle the backdrop draw turns its slot 1 by, in
     /// 4096ths of a turn. Time spent in keeping fights since boot, so a
     /// replay carries it over rather than winding its own.

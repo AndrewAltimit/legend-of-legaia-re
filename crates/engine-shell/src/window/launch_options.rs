@@ -318,6 +318,12 @@ pub struct ScreenshotConfig {
     /// over the replay's parts of the same records on the frame the capture
     /// is taken (`SummonScene::install_part_snapshot`); taken once.
     pub seat_cast_parts: std::cell::Cell<Option<Vec<legaia_engine_effects::summon::CastPartSeed>>>,
+    /// `LEGAIA_SEAT_ACTION_FX_PARTS`: a captured state's turning
+    /// effect-script table parts, each its displayed rotation trio, seated
+    /// over the replay's parts of the same records on the capture frame
+    /// (`World::install_action_fx_part_snapshot`); taken once.
+    pub seat_action_fx_parts:
+        std::cell::Cell<Option<Vec<legaia_engine_effects::summon::CastPartSeed>>>,
     /// `LEGAIA_SEAT_BATTLE_CLIPS=slot:clip:cursor,...`: each body's playing
     /// clip cursor as the capture held it, landed on the capture frame
     /// ([`legaia_engine_capture::clip_cursors`]).
@@ -679,6 +685,11 @@ impl ScreenshotConfig {
             ),
             seat_cast_parts: std::cell::Cell::new(
                 std::env::var("LEGAIA_SEAT_CAST_PARTS")
+                    .ok()
+                    .map(|v| legaia_engine_capture::cast_parts::cast_parts_from_env(&v)),
+            ),
+            seat_action_fx_parts: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_ACTION_FX_PARTS")
                     .ok()
                     .map(|v| legaia_engine_capture::cast_parts::cast_parts_from_env(&v)),
             ),

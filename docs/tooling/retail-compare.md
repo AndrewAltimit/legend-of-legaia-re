@@ -1184,6 +1184,34 @@ displayed frame: seated from the RAM, Ultra Charge's camera-locked discs
 `972` on their growth channel) drew larger than retail's frame and took the
 score back down to `.736`.
 
+### A turning effect part's banks are a clock
+
+The exception is a part seated once that **turns**. The effect-script walk's
+table arm (`FUN_801DEA50`) seats its prototypes from the resident battle
+overlay (records below the slot-B image) with the caster's facing turned
+half a circle, and a prototype with a rate in `+0x80..+0x84` turns by that
+rate times the frame step every pass from its seat. Retail seats it on a
+whole pass and its first part tick already turns it a whole step; the
+replay's per-vsync seat turns it one vsync. The summon invoke clip's ray fan
+(record `0x801F5A04`, `-56` a vsync about Y) shows it: with the flash
+aligned to the capture's age, the replay's fan stood a vsync further round
+than the displayed frame's (`freed_summon_mid_cast` `+0x26` `812` against
+retail's `644` RAM, `868` displayed), every ray a few degrees off.
+
+The image child takes those parts' rotation trio as the displayed frame held
+it (`RetailBattle::action_fx_parts`: `FUN_80021DF4` nodes, kill bit clear,
+record in the battle overlay below `0x801F69D8`, a non-zero bank rate) as
+`LEGAIA_SEAT_ACTION_FX_PARTS`, and seats each over the replay's part of the
+same record (`World::install_action_fx_part_snapshot`; a table-form part is
+tagged with its record's address). Only the banks are seated: the part's
+program words may have been rewritten inside the display lag (Swordie's fan
+reloads its wait for the fade-out on the captured pass), so the wait, the
+PC and the level ramp stay the replay's. `freed_summon_mid_cast` rose from
+`.906` to `.954`, `swordie_summon_mid_cast` from `.939` to `.992` and
+`shiny_refactor_gimard_precast` (the same fan) from `.902` to `.928`; seating
+the level as well measured no better. The fan's angles are this clock, not a
+`rand()` draw.
+
 ### The keyframe each body stands on
 
 A looping clip - every idle stance - is a clock of its own, and the replay

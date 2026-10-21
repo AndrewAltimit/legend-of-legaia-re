@@ -66,6 +66,14 @@ impl PlayWindowApp {
             {
                 scene.install_part_snapshot(&parts);
             }
+            // ... and the effect-script table parts' rotation clocks
+            // (`LEGAIA_SEAT_ACTION_FX_PARTS`).
+            if due && let Some(parts) = sc.seat_action_fx_parts.take() {
+                self.session
+                    .host
+                    .world
+                    .install_action_fx_part_snapshot(&parts);
+            }
             // A capture taken mid-glide shows the shot as far along as
             // retail's mover had come (its frame-skip history, which no
             // replay reproduces): the gate carries the frames it had left on

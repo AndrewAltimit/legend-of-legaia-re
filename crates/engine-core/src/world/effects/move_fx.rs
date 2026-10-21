@@ -225,15 +225,57 @@ impl World {
                     .filter(|p| twins.contains(&p.record_off)),
             );
         }
+        parts.retain(|p| p.record_off < overlay.len());
         let mut scene = legaia_engine_effects::summon::SummonScene::spawn_parts(
             &parts,
             &overlay,
             crate::world::EFFECT_MODEL_LIBRARY_BASE,
             origin,
         );
+        // Each part keeps its record's address in the resident battle
+        // overlay - the `+0x48` word a retail node carries - so a capture
+        // can find the replay's part of the record a state's node runs
+        // ([`Self::install_action_fx_part_snapshot`]).
+        for (part, p) in scene.parts.iter_mut().zip(&parts) {
+            part.tag = Some(move_power::BATTLE_OVERLAY_BASE + p.record_off as u32);
+        }
         scene.pose_parts(rot, scale);
         self.casting.active_action_fx.push(scene);
         true
+    }
+
+    /// Seat the live effect-script table parts of a captured state over the
+    /// replay's parts of the same records
+    /// ([`legaia_engine_effects::summon::CastPartSeed`], tagged with the
+    /// record's battle-overlay address): the capture harness's twin of
+    /// [`legaia_engine_effects::summon::SummonScene::install_part_snapshot`]
+    /// for the table-form scenes, which are one scene per spawn rather than
+    /// one scene per cast. Seeds go onto the live parts of their tag in
+    /// scene order, one each; a seed with no part left is skipped and a
+    /// part with no seed is left alone - the snapshot re-poses parts the
+    /// replay spawned, it neither invents nor retires one.
+    pub fn install_action_fx_part_snapshot(
+        &mut self,
+        seeds: &[legaia_engine_effects::summon::CastPartSeed],
+    ) {
+        let mut used: std::collections::BTreeMap<u32, usize> = Default::default();
+        for seed in seeds {
+            let n = used.entry(seed.tag).or_insert(0);
+            let Some(part) = self
+                .casting
+                .active_action_fx
+                .iter_mut()
+                .flat_map(|s| s.parts.iter_mut())
+                .filter(|p| !p.finished && p.tag == Some(seed.tag))
+                .nth(*n)
+            else {
+                continue;
+            };
+            *n += 1;
+            for &(off, value) in &seed.pokes {
+                part.poke(off, value);
+            }
+        }
     }
 
     /// Seat one battle-overlay record by its address, as `FUN_80050ED4`

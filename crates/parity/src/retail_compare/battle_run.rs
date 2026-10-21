@@ -416,6 +416,14 @@ pub(super) fn battle_image(
             legaia_engine_capture::cast_parts::cast_parts_env(&battle.cast_parts),
         ));
     }
+    // ... and the effect-script table parts' rotation clocks, which carry
+    // the frame step of the pass that seated them.
+    if !battle.action_fx_parts.is_empty() {
+        env.push((
+            "LEGAIA_SEAT_ACTION_FX_PARTS",
+            legaia_engine_capture::cast_parts::cast_parts_env(&battle.action_fx_parts),
+        ));
+    }
     // The live effect scrollers' rects as the displayed frame held them: a
     // scroller's rotation count is time since its effect was seated.
     if let Some(kv) = retail.vram_rects_env(opts.out_dir, &entry.label) {
