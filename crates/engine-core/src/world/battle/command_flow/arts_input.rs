@@ -344,14 +344,9 @@ impl World {
                 }
             }
             if refused {
-                self.audio.battle_sfx_cues.push(
-                    legaia_engine_battle::battle_events::BattleSfxCue {
-                        kind: legaia_engine_battle::arts_command_input::ROT_REFUSED_CUE,
-                        timing_frames: 0,
-                        actor_slot: session.actor,
-                        target_slot: session.actor,
-                    },
-                );
+                // `FUN_8004FCC8(ROT_REFUSED_CUE)` (`0x801D1EA0..0x801D1F78`):
+                // the dispatcher stores `id - 1` on the ring.
+                self.push_battle_ui_cue(super::ui_cues::BattleUiCue::Back);
             }
         }
         let was_entering = matches!(
@@ -362,7 +357,11 @@ impl World {
             session.phase,
             legaia_engine_battle::arts_command_input::ArtsInputPhase::Targeting { .. }
         );
+        let phase_before = session.phase.clone();
         session.input(ev, party, monsters);
+        if let Some(cue) = super::ui_cues::arts_phase_cue(&phase_before, &session.phase, ev.cross) {
+            self.push_battle_ui_cue(cue);
+        }
         // The `0x5A` cursor the entry's confirm opened starts on the
         // member's current target ([`World::seat_attack_cursor`]).
         if !was_targeting

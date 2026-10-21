@@ -33,6 +33,8 @@ pub enum AudioCommand {
     RingDue(i16),
     /// A cue fired at once, off the scheduler (a UI blip).
     SfxNow(u16),
+    /// The sustained-cue teardown (`FUN_80017910`).
+    SfxReleaseSustained,
     /// A CD-XA clip request: `(clip slot, channel, duration sectors)`.
     XaClip(u32, u32, u32),
     /// An arts-voice shout request: `(character slot, action)`.

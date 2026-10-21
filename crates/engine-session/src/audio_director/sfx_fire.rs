@@ -232,8 +232,22 @@ impl<S: AudioSink> AudioDirector<S> {
                     self.sfx_sched
                         .arm_ring_slot(slot.into(), id, i32::from(delay))
                 }
+                SfxRingOp::ReleaseSustained => {
+                    self.release_sustained_sfx();
+                }
             }
         }
+    }
+
+    /// The sustained-cue teardown `FUN_80017910` over the live voices: key
+    /// off the run the drainer holds from voice 7 and clear its count
+    /// ([`legaia_engine_audio::SfxBank::release_sustained`]). Returns how
+    /// many voices it released.
+    // REF: FUN_80017910
+    pub fn release_sustained_sfx(&mut self) -> u8 {
+        self.commands.push(super::AudioCommand::SfxReleaseSustained);
+        let bank = &self.sfx_bank;
+        self.audio.with_spu(|spu| bank.release_sustained(spu))
     }
 
     /// Mirror the field-side SFX sources the ring's cues resolve against:
@@ -366,6 +380,15 @@ impl<S: AudioSink> AudioDirector<S> {
         world: &mut legaia_engine_core::world::World,
         index: &legaia_engine_scene::scene::ProtIndex,
     ) {
+        // A battle's entry and its exit are each a retail mode init
+        // (`FUN_8001DCF8`, the battle mode word and the field init's), and
+        // the init tears down the held sustained run before the new mode's
+        // first cue (`jal 0x80017910` at `0x8001DDA8`).
+        let in_battle = world.mode == legaia_engine_mode::mode::SceneMode::Battle;
+        if self.sfx_in_battle.is_some_and(|was| was != in_battle) {
+            self.release_sustained_sfx();
+        }
+        self.sfx_in_battle = Some(in_battle);
         let ops = world.take_sfx_ring_ops();
         // One `World::tick` is one vsync, and the scheduler ticks once per
         // `World::tick`, so the ring ages by the vsyncs one tick spans

@@ -643,6 +643,16 @@ impl World {
             self.battle_ctx.arts_banner_stage = stage;
             self.battle_ctx.arts_banner_level = level;
         }
+        // The sustained-cue teardown (`lbu v1,0x1db(s1)` / `lbu v0,0x1da(s1)`
+        // / `beq` / `jal 0x80017910` at `0x8004AE54..0x8004AE68`): a commit
+        // whose staged clip differs from the latched one keys off the held
+        // sustained SFX run, whichever actor keyed it. This is what ends a
+        // looping attack sound when its clip gives way to the next; a
+        // re-commit of the same clip leaves it sounding.
+        // REF: FUN_80017910
+        if self.actors[i].battle.latched_anim != q {
+            self.audio.sfx_ring_ops.push(SfxRingOp::ReleaseSustained);
+        }
         // The art-name label's close (`0x8004AE70..0x8004AEAC`): a party seat
         // (`sltiu v0,s3,0x3`) whose outgoing clip sits on dynamic slot
         // `0x11` - every art constant and the SpecialStarter install there -

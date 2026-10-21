@@ -42,3 +42,4 @@ mod world_map_camera_remap;
 mod casino_seat_round_trip;
 // --- lane H ---
 mod baka_seat_duel_hud;
+mod battle_ui_sfx_disc;

@@ -1322,7 +1322,14 @@ fn a_committed_swing_plays_its_animation_cue_track() {
     let mut ops = Vec::new();
     for _ in 0..12 {
         world.tick_battle_animations();
-        ops.extend(world.take_sfx_ring_ops());
+        // The clip commits along the way raise the sustained teardown
+        // (`FUN_80017910`), which is not a cue of the track.
+        ops.extend(
+            world
+                .take_sfx_ring_ops()
+                .into_iter()
+                .filter(|op| *op != SfxRingOp::ReleaseSustained),
+        );
     }
     assert_eq!(
         ops,

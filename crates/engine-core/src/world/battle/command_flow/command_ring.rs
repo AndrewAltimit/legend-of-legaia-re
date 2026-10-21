@@ -102,19 +102,27 @@ impl World {
                 }
             }
             if refused {
-                self.audio.battle_sfx_cues.push(
-                    legaia_engine_battle::battle_events::BattleSfxCue {
-                        kind: legaia_engine_battle::arts_command_input::ROT_REFUSED_CUE,
-                        timing_frames: 0,
-                        actor_slot: session.actor,
-                        target_slot: session.actor,
-                    },
-                );
+                // `FUN_8004FCC8(0x23)` through the shared tail `0x801D2968`.
+                self.push_battle_ui_cue(super::ui_cues::BattleUiCue::Back);
             }
         }
         let was_round_prompt = matches!(session.phase, CommandPhase::RoundPrompt { .. });
         let phase_before = session.phase.clone();
         session.input(ev, party, monsters);
+        // The surface's blip (`super::ui_cues`). A Ra-Seru arm the special
+        // word forbids is refused below, and retail answers that refusal
+        // with the cancel cue through `0x801D2968` (`0x801D1454`), not the
+        // commit.
+        let refused_magic =
+            matches!(session.phase, CommandPhase::OpenSpellMenu) && self.battle.raseru_forbidden();
+        let cue = if refused_magic {
+            Some(super::ui_cues::BattleUiCue::Back)
+        } else {
+            super::ui_cues::command_phase_cue(&phase_before, &session.phase)
+        };
+        if let Some(cue) = cue {
+            self.push_battle_ui_cue(cue);
+        }
         // A target cursor this press opened starts on the member's current
         // target, as retail's does ([`World::seat_attack_cursor`]).
         if !matches!(phase_before, CommandPhase::Targeting { .. })
