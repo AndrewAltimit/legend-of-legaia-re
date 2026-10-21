@@ -194,3 +194,21 @@ reason = "Monster specials now roll on the move-power word FUN_801DD0AC actually
 changes = [
   ["states/battle_gimard_tail_fire_b/image", 0.809, 0.805],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The party separation radius is now the seat stager's 0x280 (0x400 on Terra), and the action seed's formation recentre and melee make-way step are ported, so party members stand at retail's spacing instead of packed together. Frames that sit mid-swing or mid-summon now hold the combatants on a different formation history, so the gaza2 park frames, the melee spark and the Gimard capture and shiny frames move slightly. battle_melee_hit_spark fell 0.771 -> 0.747 at the stager-radius change and reads 0.747..0.761 across combined-tree runs since the separation pass moved to once per battle frame; the other moves are under 0.05. The two Delilas and the theeder camera rows moved by 0.001."
+changes = [
+  ["states/battle_gaza2_park_0x19/camera", 0.936, 0.899],
+  ["states/battle_gaza2_park_0x19/image", 0.774, 0.725],
+  ["states/battle_gaza2_park_0x19_summon_melee/camera", 0.895, 0.881],
+  ["states/battle_gaza2_park_0x19_summon_melee/image", 0.685, 0.671],
+  ["states/battle_melee_hit_spark/image", 0.771, 0.747],
+  ["states/delilas_gi_spirit_artifact/image", 0.74, 0.739],
+  ["states/delilas_gi_spirit_distortion_v3/image", 0.718, 0.717],
+  ["states/rim_elm_gimard_seru_capture_before/camera", 0.999, 0.998],
+  ["states/rim_elm_gimard_seru_capture_before/image", 0.968, 0.966],
+  ["states/shiny_refactor_gimard_plus35/camera", 0.999, 0.998],
+  ["states/shiny_refactor_gimard_precast/image", 0.911, 0.902],
+  ["states/theeder_summon_mid_cast/camera", 1.0, 0.999],
+]
