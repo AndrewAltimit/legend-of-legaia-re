@@ -37,6 +37,22 @@ pub use vram_posed::*;
 /// this constant and is kept in lockstep.
 pub const TSB_SEMI_TRANSPARENT_BIT: u16 = 0x8000;
 
+/// Bit 11 of the per-vertex TSB attribute marks a **runtime-emitted packet
+/// colour**: a primitive whose colour word a draw-time builder wrote (the
+/// render dispatcher's draw-kind-4 sprite arm `FUN_8002A5A4` and default arm
+/// `FUN_80028158`, which build their packets from the node's `+0xA0` block
+/// every frame), not a baked colour word of a resident TMD.
+///
+/// The prologue grade's packet half rewrites only the resident TMDs' words
+/// (`4C E6` -> `FUN_801D8280` walks `DAT_8007C018[0..=DAT_8007BB38]`), so a
+/// runtime word keeps its colour while its texels still go through the
+/// palette law. `opdeene`'s caption quads carry the word `0x7F7F7F`, which
+/// the shaders' exact-neutral test cannot tell from an authored word: the
+/// white "It was the Seru." drew amber. Bits 9..=11 are outside every TSB
+/// field the shaders decode (page x/y, ABR, depth) and the engine's other
+/// tags (`0x1000` window, `0x2000` emissive, `0x8000` semi).
+pub const TSB_RUNTIME_PACKET_BIT: u16 = 0x0800;
+
 /// Pack the prim semi-transparency enable into bit 15 of a TSB word (see
 /// [`TSB_SEMI_TRANSPARENT_BIT`]). Clears the bit first so on-disc garbage
 /// in the unused high bits can't leak through as a phantom enable.

@@ -357,7 +357,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     // word (retail grades the loaded TMD colour words alongside the CLUTs;
     // runtime-emitted neutral words stay neutral).
     var prim = in.prim_color;
-    if palette_on {
+    if palette_on && (tsb & 0x0800u) == 0u {
         prim = palette_collapse_prim(prim);
     }
     let lit = psx_modulate(color.rgb, prim);
@@ -454,7 +454,7 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     // applies here too, and the opt-in dynamic light matches the opaque pass
     // (identity when disabled) so lit water/glass composites consistently.
     var prim = in.prim_color;
-    if palette_on {
+    if palette_on && (tsb & 0x0800u) == 0u {
         prim = palette_collapse_prim(prim);
     }
     let lit = psx_modulate(color.rgb, prim);

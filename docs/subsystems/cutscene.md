@@ -1260,6 +1260,20 @@ offset `0x01EC30`, VRAM `fb=(384,0)`, among that pack's scene textures
 (`tim-scan extracted/PROT/0749_opdeene.BIN`). The scene renderer draws it as a screen-space
 textured quad.
 
+**Who draws it.** Two move-VM stager parts, records 21 and 22 of `opdeene`'s stager bundle,
+spawned as children (`25 15`, `25 16`) of record 20, itself a child (`25 14`) of record 4, which
+the opening timeline `P2[18]` installs at `+0x65D` (`34 30 03`). Both programs open
+`07 (0, 0, 792)` / `(1, 1, 792)`, `15 0400` (camera-locked, [renderer](renderer.md#camera-relative-nodes-fun_8001cf50)),
+`23` (the draw-kind-4 sprite arm: the 112x32 rect at tpage `6`, CLUT `0x40` = `(0, 1)`), then
+`0C` with colour word `0xC9..` / `0xCA..` - ABR `1` for the face, ABR `2` for the shadow one
+pixel down-right - and level `0xFFF` (fully cued to black), and `0D FFBC` ramps the level to `0`:
+the fade-in. The `new_game_cutscene_intro_a` capture holds both nodes on the actor lists
+(`+0x56 = 4`, `+0x9E = 0x4000`, `+0x52 = 0x400`) and their two `GT4` packets in the ordering
+table, shadow first. The engine spawns and draws the same two parts
+([`effect_sprite_arm`](../../crates/engine-effects/src/effect_sprite_arm.rs)); the image-blit
+overlay below predates that and still draws its own fade on a beat of its own, about 160 frames
+ahead of the parts.
+
 Evidence (cold-boot probes in `scripts/pcsx-redux/`):
 
 - **Text-path census** (`autorun_text_census.lua`): over the whole `opdeene` leg the only text
@@ -2106,6 +2120,10 @@ the mesh shaders instead - equivalent, because a 4/8bpp texel *is* a palette ent
 - each decoded texel word goes through the 5-bit law;
 - each non-neutral packet colour takes the `4C E6` curve of its `max` (`prologue_sepia_word`;
   the page shader carries the twin);
+- a runtime-emitted packet keeps its colour: the draw-kind-4 sprite and default arms build their
+  words at draw time from the node's `+0xA0` block, after the rewrite and outside the resident
+  TMDs it walks, so their meshes carry `TSB_RUNTIME_PACKET_BIT` (`0x0800`) and both shaders skip
+  the packet half for them (the caption quads' `0x7F7F7F` word drew amber without it);
 - exact-neutral words stay neutral (the ground tile kernel's runtime word);
 - the view-depth cue ramp is inert;
 - the law reaches only a 4/8bpp prim whose CLUT base sits inside the two cycler rects

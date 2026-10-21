@@ -3102,8 +3102,11 @@ prim's depth key is its model-space centroid's clip-space `w` under the draw
 MVP (`psx_blend::prim_depth_key`) - equal, by MVP linearity, to the average
 of its vertices' clip `w`, which is the GTE avg-Z the OT bins on. All semi
 prims across all of a scene's draws (textured + untextured in one list)
-blend far to near regardless of draw boundaries. Equal keys form one bucket
-and draw later-submitted-first, the retail LIFO bucket order. Per-prim
+blend far to near regardless of draw boundaries. Keys are snapped to a whole
+`SZ` (`psx_blend::snap_depth_key`; retail's `OTZ` is an integer, the port's
+key an `f32` that two matrix chains can land a thousandth apart), and equal
+keys form one bucket and draw later-submitted-first, the retail LIFO bucket
+order. Per-prim
 metadata (`psx_blend::SemiPrim`) is recorded once at mesh upload; the
 per-frame ordering list reuses one renderer-owned buffer, and contiguous
 same-draw, same-mode tail runs coalesce into single indexed draws

@@ -82,7 +82,12 @@ correct global order (`psx_blend::sort_blend_list`).
 
 Equal keys form one OT bucket and draw later-submitted-first - the
 retail LIFO bucket order (`AddPrim` prepends to a bucket's list,
-`DrawOTag` walks it head-first). The per-prim metadata
+`DrawOTag` walks it head-first). A key is snapped to a whole `SZ` first
+(`psx_blend::snap_depth_key`): retail's `OTZ` is an integer, while one depth
+reached through two model matrices can come out a thousandth apart in `f32`.
+`opdeene`'s caption is the case - two camera-locked sprite-arm quads at view
+depth `792`, the subtractive shadow keyed `791.999`, which drew it over the
+additive face until the keys were snapped. The per-prim metadata
 (`psx_blend::SemiPrim`: centroid + ABR mode + tail location) is recorded
 once at upload time by the tail builders; the per-frame list lives in a
 reused buffer, and contiguous same-draw, same-mode runs coalesce into

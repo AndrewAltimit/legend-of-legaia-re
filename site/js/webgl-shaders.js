@@ -1179,8 +1179,12 @@ void main() {
    * (0.45 + 0.55 * dot(n, -u_light)) off the screen-space geometric normal of
    * v_world - a bare-geometry viewer aid, not retail, and the last of it on
    * this host. See docs/tooling/host-drift.md. */
-  vec3 prim_color = palette_on ? palette_collapse_prim(v_flat_rgba.rgb)
-                               : v_flat_rgba.rgb;
+  /* A runtime-emitted packet (TSB bit 0x0800: the sprite / default arm's
+   * draw-time words) is outside the TMD-word rewrite; its texels still take
+   * the palette law above. Twin of the native guard. */
+  vec3 prim_color = (palette_on && (tsb & 0x0800u) == 0u)
+                        ? palette_collapse_prim(v_flat_rgba.rgb)
+                        : v_flat_rgba.rgb;
   vec3 lit = clamp(color.rgb * prim_color * (255.0 / 128.0),
                    vec3(0.0), vec3(1.0));
   /* Opt-in dynamic light over the baked shading (identity when off), at

@@ -877,10 +877,11 @@ pub fn vram_mesh(d: &Decoded, scale: u16, colour: &ColourWord) -> legaia_tmd::me
     };
     for p in &d.packets {
         let base = mesh.positions.len() as u32;
+        // Draw-time packets: outside the prologue grade's TMD-word rewrite.
         let tsb = legaia_tmd::mesh::pack_tsb_semi(
             (p.tpage & !0x60) | (u16::from(colour.abr) << 5),
             colour.semi,
-        );
+        ) | legaia_tmd::mesh::TSB_RUNTIME_PACKET_BIT;
         if colour.split_quads {
             // Handler bank 3's quad leaf (`FUN_80045BB4`): sixteen `GT3`s.
             use legaia_render_kernels::sprite_arm::{SplitVertex, subdivide_quad};
