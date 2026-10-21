@@ -1102,6 +1102,22 @@ impl BattleDrive {
         let release_at = if want == 0x6F { 0 } else { per_pass };
         world.battle.prev_action_cleared =
             !(ours && state == 0x6F && u32::from(capture_ramp_left(world, height)) > release_at);
+        // Retail's ramp ran on its own frame steps (2 and 3 vsyncs a pass,
+        // as each frame's cost set them), so the depth it left `0x6F` on
+        // sits on a lattice the replay's passes need not share: at a fixed
+        // step the engine's last ramp can land up to a pass short of it.
+        // Before the module's arm 0 cuts its shot on that depth (`0x70`,
+        // the module phase still `0`), stand it on retail's.
+        let short = i32::from(height as i16) - i32::from(world.battle.camera_frame_height);
+        if ours
+            && want == 0x70
+            && state == 0x70
+            && world.casting.module_phase == 0
+            && short > 0
+            && (short as u32) < per_pass
+        {
+            world.battle.camera_frame_height = height as i16;
+        }
         // `0x6F` ramps `ctx[+0x6D0]` and then arms case 6 on the new depth in
         // the same pass (`sh a0,0x6d0(v0)` at `0x801E5014`, `jal 0x801D5854`
         // at `0x801E501C`), so the pass that lands the capture's depth also
