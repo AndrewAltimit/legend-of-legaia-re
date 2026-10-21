@@ -450,7 +450,7 @@ Writes the camera depth `ctx[+0x6D0] = 0x800` first (`0x801E52AC`, the Spirit cl
 
 #### State `0x48` - Spirit - flush
 
-Finishes the gauge ramp; drains `ctx[+0x6D8]` by `8 * step`, clamped at zero (`0x801E572C..0x801E5760`). Leaves when `actor[+0x1DA] == actor[+0x1D9] == 0`, the hold is out and the gauge element sits on its target.
+Finishes the gauge ramp, then updates the hold `ctx[+0x6D8]` with a compare the other way round from a drain (`0x801E572C..0x801E5760`): `slt v0,a0,v1` tests the hold below `8 * step`, and `beq v0,zero,0x801E5760` sends a hold at or above it to `sh zero,0x2(s7)`. Only a positive hold under `8 * step` is stepped down, past zero. The `0x300` that `0x47` arms is therefore spent on the first pass, and the flush lasts only as long as the clip and the gauge keep it. Leaves when `actor[+0x1DA] == actor[+0x1D9] == 0`, the hold is zero and the gauge element sits on its target.
 
 **Next:** `0x50`.
 
