@@ -249,12 +249,19 @@ impl RetailBattle {
                 let in_flight =
                     self.action_state != 0 && staged && !(0x50..=0x5A).contains(&self.action_state);
                 let capture_band_idle = clip == 0 && (0x6F..=0x71).contains(&self.action_state);
+                // So is a seat idling through a summon's invoke and freeze
+                // (`0x32..=0x34`): the band stages no clip on the victim
+                // before the module's hit, so its idle cursor is time since
+                // the loop began - a clock the replay reaches on its own
+                // (`gimard_summon_start`'s Gobu Gobu).
+                let summon_band_idle = clip == 0 && (0x32..=0x34).contains(&self.action_state);
                 let party_reaction = slot < 3
                     && slot == self.target_code
                     && matches!(clip, 2..=5 | 0x0B)
                     && cursor >= 0;
                 !in_flight
                     || capture_band_idle
+                    || summon_band_idle
                     || party_reaction
                     || (slot != self.active_actor && slot != self.target_code)
             })

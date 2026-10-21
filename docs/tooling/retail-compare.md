@@ -1206,7 +1206,11 @@ the Done band `0x50..=0x5A` - the acting seat and its target, whose clips run
 with the action the seed has already placed. The capture-class band
 `0x6F..=0x71` seats them all the same while they idle (clip `0`): its slot-B
 module paces itself on its own countdown and stages no clip on either seat, so
-the loop's cursor is time since the loop began. `zeto_big_wave_mid_cast`'s
+the loop's cursor is time since the loop began. The summon band's invoke and
+freeze (`0x32..=0x34`) are seated the same way: they stage no clip on the
+victim before the module's hit, so `gimard_summon_start`'s idling Gobu Gobu
+reads its loop's own clock (`.955` to `.979` on the battle-frame cadence,
+where the replay's loop phase had drifted two keyframes). `zeto_big_wave_mid_cast`'s
 caster idles through PROT 0946's band in a close-up the sway fills, and seated
 on retail's cursor the frame reads `.959` against `.520`. Outside the band an
 idle seat in flight may have just come off the action's own clip - seating it
