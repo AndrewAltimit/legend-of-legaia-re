@@ -3309,7 +3309,9 @@ fires nothing. An arm that cannot hold fires as it runs. PROT 0910..0913 are
 exempt: their bodies hold every arm retail holds, so an arm they pass at once
 is a stream or CD poll the resident stream answers, and its calls fire.
 
-Two decode details matter for these modules. PROT 0911 spills
+An arm's walk opens with the register the switch loaded the phase byte into
+holding that arm's phase, which is what Barra's arm 3 stores as the stage
+byte (`sb s1,0x278(a1)` at `0x801F6E90`: `3`). Two decode details matter for these modules. PROT 0911 spills
 `ctx + 0x279` to `0x3C(sp)` and its advance tail bumps the phase through the
 reloaded pointer (`lw t6,0x3C(sp)` / `sb v0,0(t6)`), so a register reloaded
 from a spilled alias's slot is an alias too. And a site in a `j`'s delay slot

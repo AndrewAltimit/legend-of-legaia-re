@@ -1546,6 +1546,15 @@ pub fn decode(bytes: &[u8], own_end: usize) -> CastPresentation {
             // An arm entered through a `j` stub runs the stub's delay slot
             // and then the code at its target.
             let mut seed = s2.clone();
+            // The register the switch loaded the phase byte into still holds
+            // the arm's own phase on entry: PROT 0917 / 0928 store it as the
+            // stage byte (`sb s1,0x278(a1)` at `0x801F6E90`, `sb a1,0x278(v0)`
+            // at `0x801F6F1C`).
+            if let Some(li) = img.ins(d.load)
+                && li.op() == 0x24
+            {
+                seed.r[li.rt()] = V::C(u32::from(phase));
+            }
             let entry = match img.ins(entry) {
                 Some(i) if i.is_j() => {
                     if let Some(d) = img.ins(entry + 4) {
