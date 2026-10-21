@@ -1183,9 +1183,12 @@ pub struct BattleActionCtx {
     /// it stores the staged percent here on every player Seru cast, `0` when
     /// nothing staged.
     pub follow_up_pending: u8,
-    /// `[+0x6D6]` - per-action ramp target (the state machine's "PC offset"
-    /// cursor for the action body - separate from `action_state`).
-    pub ramp_target: u16,
+    /// `[+0x6D6]` - the **make-way countdown**: state `0x14` seeds it with the
+    /// melee monster's size class (`sh v0,0x0(s7)` at `0x801E31E8`, `s7 =
+    /// ctx + 0x6D6`), and while it is non-zero the SM's shared tail steps
+    /// every bystander aside along [`Self::dodge_angles`], draining it by the
+    /// frame step. See [`super::make_way_step`].
+    pub dodge_countdown: i16,
     /// `[+0x6D8]` - frame countdown timer (signed; decremented by frame dt
     /// every state that needs to wait).
     pub frame_timer: i16,
@@ -1195,8 +1198,11 @@ pub struct BattleActionCtx {
     pub damage_target: i16,
     /// `[+0x6DE]` - HP-bar target (paired with `damage_target`).
     pub hp_bar_target: i16,
-    /// `[+0x6E6 + i*2]` - per-actor facing offsets (one per slot 0..7).
-    pub per_actor_facing: [u16; ACTOR_SLOTS],
+    /// `[+0x6E6 + i*2]` - each bystander's **make-way heading**, written by
+    /// state `0x14` (`0x801E3108..0x801E3198`): the attack heading turned a
+    /// quarter towards the side of the attack line the bystander stands on.
+    /// Indexed by engine slot. See [`super::make_way_angles`].
+    pub dodge_angles: [u16; ACTOR_SLOTS],
     /// `[+0x0D]` - the per-action **battle-camera angle variant**, `0..=3`.
     ///
     /// Rolled once per action at [`ActionState::ActionSeed`]

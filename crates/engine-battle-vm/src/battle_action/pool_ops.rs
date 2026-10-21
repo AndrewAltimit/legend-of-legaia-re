@@ -125,37 +125,76 @@ pub fn normalize_formation_span(
     focus_x: &mut i32,
     focus_z: &mut i32,
 ) {
+    squash_formation_span(pos, alive, focus_x, focus_z);
+    // Pass 3: recompute extents (positions moved), then recentre on the
+    // centroid `((max + min) as u32) >> 1` truncated to i16.
+    recentre_formation(pos, alive, |_| true, focus_x, focus_z);
+}
+
+/// The action seed's formation recentre, `FUN_801EFE44` (state `0x0C`,
+/// `jal 0x801efe44` at `0x801E2D44` for every category but Run, and at
+/// `0x801E2DE8` on the monster Run arm).
+///
+/// Passes 1 and 2 are [`normalize_formation_span`]'s: extents over pool slots
+/// `0..3` and the `3..7` slots with live HP, then an axis whose span exceeds
+/// `0x800` rescaled to `0x800` (focus pair likewise). The recentre box
+/// differs: when the acting slot's category is Attack (`+0x1DE == 3`), it
+/// takes only the **target** `target`, or the target's whole side when the
+/// target is the all-party code `8` (slots `< 3`) or the all-monster code
+/// `9` (slots `>= 3`); any other category takes every included slot. The
+/// box's centroid `((max + min) as u32) >> 1` is subtracted from every
+/// included slot and added onto the focus pair. A melee therefore opens with
+/// its target on the stage origin and the rest of the formation translated
+/// with it.
+///
+/// `pos` / `alive` are the retail pool (index = pool slot); `target` is the
+/// acting slot's `+0x1DD`, already a pool slot or `8` / `9`.
+///
+/// PORT: FUN_801EFE44
+pub fn seed_formation_recentre(
+    pos: &mut [FormationPos],
+    alive: &[bool],
+    attack: bool,
+    target: u8,
+    focus_x: &mut i32,
+    focus_z: &mut i32,
+) {
+    squash_formation_span(pos, alive, focus_x, focus_z);
+    let in_box = |i: usize| {
+        if attack && i as u8 != target {
+            match target {
+                8 => i < 3,
+                9 => i >= 3,
+                _ => false,
+            }
+        } else {
+            true
+        }
+    };
+    recentre_formation(pos, alive, in_box, focus_x, focus_z);
+}
+
+/// Passes 1 and 2 of [`normalize_formation_span`] alone: the per-axis
+/// squash of a span over `0x800`, with no recentre.
+fn squash_formation_span(
+    pos: &mut [FormationPos],
+    alive: &[bool],
+    focus_x: &mut i32,
+    focus_z: &mut i32,
+) {
     let included = |i: usize| i < 3 || alive.get(i).copied().unwrap_or(false);
     let slots = pos.len().min(7);
-
-    // extents(): min/max of X and Z over the included slots (seeded ±30000).
-    let extents = |pos: &[FormationPos]| {
-        let (mut max_x, mut min_x) = (-30000i16, 30000i16);
-        let (mut max_z, mut min_z) = (-30000i16, 30000i16);
-        for (i, p) in pos.iter().enumerate().take(slots) {
-            if !included(i) {
-                continue;
-            }
-            if max_x < p.x {
-                max_x = p.x;
-            }
-            if p.x < min_x {
-                min_x = p.x;
-            }
-            if max_z < p.z {
-                max_z = p.z;
-            }
-            if p.z < min_z {
-                min_z = p.z;
-            }
+    let (mut max_x, mut min_x) = (-30000i16, 30000i16);
+    let (mut max_z, mut min_z) = (-30000i16, 30000i16);
+    for (i, p) in pos.iter().enumerate().take(slots) {
+        if !included(i) {
+            continue;
         }
-        (max_x, min_x, max_z, min_z)
-    };
-
-    // Pass 1 + 2: extents, then per-axis span-normalise. The comparison uses
-    // the full i32 extent; the divisor is that extent narrowed to i16
-    // (retail's `(short)(max - min)`).
-    let (max_x, min_x, max_z, min_z) = extents(pos);
+        max_x = max_x.max(p.x);
+        min_x = min_x.min(p.x);
+        max_z = max_z.max(p.z);
+        min_z = min_z.min(p.z);
+    }
     if max_x as i32 - min_x as i32 > 0x800 {
         let span = max_x.wrapping_sub(min_x) as i32;
         for (i, p) in pos.iter_mut().enumerate().take(slots) {
@@ -174,10 +213,32 @@ pub fn normalize_formation_span(
         }
         *focus_z = focus_z.wrapping_shl(11) / span;
     }
+}
 
-    // Pass 3: recompute extents (positions moved), then recentre on the
-    // centroid `((max + min) as u32) >> 1` truncated to i16.
-    let (max_x, min_x, max_z, min_z) = extents(pos);
+/// The recentre both formation kernels end on: the centroid `((max + min)
+/// as u32) >> 1` of the included slots `in_box` admits, subtracted from
+/// every included slot and added onto the focus pair. An empty box
+/// (extents still at their `-30000` / `30000` seeds) recentres by zero.
+fn recentre_formation(
+    pos: &mut [FormationPos],
+    alive: &[bool],
+    in_box: impl Fn(usize) -> bool,
+    focus_x: &mut i32,
+    focus_z: &mut i32,
+) {
+    let included = |i: usize| i < 3 || alive.get(i).copied().unwrap_or(false);
+    let slots = pos.len().min(7);
+    let (mut max_x, mut min_x) = (-30000i16, 30000i16);
+    let (mut max_z, mut min_z) = (-30000i16, 30000i16);
+    for (i, p) in pos.iter().enumerate().take(slots) {
+        if !included(i) || !in_box(i) {
+            continue;
+        }
+        max_x = max_x.max(p.x);
+        min_x = min_x.min(p.x);
+        max_z = max_z.max(p.z);
+        min_z = min_z.min(p.z);
+    }
     let cx = (((max_x as i32 + min_x as i32) as u32) >> 1) as i16;
     let cz = (((max_z as i32 + min_z as i32) as u32) >> 1) as i16;
     for (i, p) in pos.iter_mut().enumerate().take(slots) {

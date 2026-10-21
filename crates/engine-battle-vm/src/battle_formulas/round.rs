@@ -704,8 +704,9 @@ pub const CAMERA_HEIGHT_MAX: i16 = 0x1400;
 ///
 /// Called at [`ActionSeed`](crate::battle_action::ActionState), which is where
 /// `FUN_801E295C` calls it (`801e2d2c`, unconditionally, just ahead of the
-/// gated `jal 0x801efe44` that the engine's `BattleActionHost::camera_bounds`
-/// hook stands in for).
+/// gated `jal 0x801efe44`, the formation recentre the engine's
+/// `BattleActionHost::seed_formation_recentre`
+/// hook runs).
 ///
 /// PORT: FUN_801f0348
 pub fn camera_height_for_frame(

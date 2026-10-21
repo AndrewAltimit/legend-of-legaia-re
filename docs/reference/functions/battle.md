@@ -1282,7 +1282,7 @@ below `DAT_1F800393`. Ported as `engine-vm::effect_vm` (the pool walk in `effect
 It lives in overlay `0898`'s render tail, the `0x801F0000..0x801F8000` band -
 a neighbourhood fact, not a property of this routine, which is why the
 directory row above no longer carries those bounds. Two already-documented
-neighbours share the band: `FUN_801EFE44`'s camera-bounds arm at `+0x48C`, and
+neighbours share the band: `FUN_801EFE44`'s formation-recentre arm at `+0x48C`, and
 `FUN_801F17F8`, the side-band streaming SM. Neither address appears anywhere in
 this routine's own dump, and a row that cites one is offering somebody else's
 bytes as evidence for this one.

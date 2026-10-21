@@ -22,7 +22,8 @@ pub enum BattleEvent {
     /// `BattleActionHost::ui_element` - battle UI element scheduler.
     /// `mode == 0` spawns / resets, `mode == 1` terminates.
     UiElement { effect_id: u8, mode: u8 },
-    /// `BattleActionHost::camera_bounds` - recompute camera framing.
+    /// `BattleActionHost::seed_formation_recentre` - the action seed's
+    /// formation recentre `FUN_801EFE44` ran (it moves the combatants).
     CameraBounds,
     /// `BattleActionHost::camera_frame_height` - the per-action camera framing
     /// height / distance (`ctx+0x6D0`) the port of `FUN_801F0348` resolved from

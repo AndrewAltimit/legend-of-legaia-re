@@ -266,10 +266,16 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     fn begin_counterattack(&mut self, counterer: u8, attacker: u8) -> bool {
         self.world.begin_counterattack(counterer, attacker)
     }
-    fn camera_bounds(&mut self) {
+    fn seed_formation_recentre(&mut self, actor: u8) {
+        self.world.seed_battle_formation_recentre(actor);
         self.world
             .pending_battle_events
             .push(BattleEvent::CameraBounds);
+    }
+    fn in_retail_pool(&self, slot: u8) -> bool {
+        self.world
+            .retail_battle_pool_slot(usize::from(slot))
+            .is_some()
     }
 
     fn monster_action_tags(&self, slot: u8) -> Option<Vec<u8>> {

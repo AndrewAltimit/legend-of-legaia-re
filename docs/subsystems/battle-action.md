@@ -256,13 +256,15 @@ Holds while `ctx[+0x276] != 0` (menu still open).
 
 #### State `0x0C` - Action seed
 
-Reads `actor[+0x1DE]` (action category) and dispatches into the appropriate band. Calls `FUN_801EED1C` (the arts queue-builder; slot < 3) or, for a monster slot with the `+0x16E & 0x380` bits, `FUN_801E7320` (random-retarget: the rolled action - including a Magic cast - is kept, only its target re-rolls to the opposite side; see the [`0x380` notes](battle-action-helpers.md#ai-delegated-0x380-party-members---what-is-and-isnt-pinned)). Reads RNG via `func_0x80056798()`. Calls `FUN_801EFE44` (camera bounds) and `FUN_801D5854(actor_id, 6)` (idle pose) unless `+0x1DE == 5` (run). The inner switch on `actor[+0x1DE]` is the "action category" dispatch - see [Inner dispatch](#inner-dispatch---actor-action-category).
+Reads `actor[+0x1DE]` (action category) and dispatches into the appropriate band. Calls `FUN_801EED1C` (the arts queue-builder; slot < 3) or, for a monster slot with the `+0x16E & 0x380` bits, `FUN_801E7320` (random-retarget: the rolled action - including a Magic cast - is kept, only its target re-rolls to the opposite side; see the [`0x380` notes](battle-action-helpers.md#ai-delegated-0x380-party-members---what-is-and-isnt-pinned)). Reads RNG via `func_0x80056798()`.
+
+Calls `FUN_801EFE44` (the [formation recentre](battle-action-helpers.md#fun_801efe44---the-action-seeds-formation-recentre), which puts an Attack's target on the stage origin) and `FUN_801D5854(actor_id, 6)` (idle pose) unless `+0x1DE == 5` (run). The inner switch on `actor[+0x1DE]` is the "action category" dispatch - see [Inner dispatch](#inner-dispatch---actor-action-category).
 
 **Next:** `0x14`/`0x28`/`0x3C`/`0x46`/`0x50`/`0x64`/`0x68` per category.
 
 #### State `0x14` - Attack - face target
 
-`FUN_801D5854(actor, 6)` (ready pose); computes target bearing via `func_0x80019B28(s8 X/Z, actor X/Z)` and writes facing into `actor[+0x46]`; iterates the 8-actor table at `0x801C9370` writing AI-side facing offsets at `ctx[+0x6E6 + i*2]`; calls `FUN_8004E2F0(actor, target)` for [range/LOS](battle.md). If range = 0 → `0x1E` (skip approach). Party arm: stages approach anim `+0x1DA = 1` (the walk entry) → short-step. Monster arm: first-byte tag search over its action-record array (`FUN_80050E2C`, tag `0x20`, retry `1`) stages the returned entry index.
+`FUN_801D5854(actor, 6)` (ready pose); computes target bearing via `func_0x80019B28(s8 X/Z, actor X/Z)` and writes facing into `actor[+0x46]`; iterates the pool writing each bystander's [make-way heading](battle-action-helpers.md#the-make-way-step-state-0x14-and-the-sm-tail) at `ctx[+0x6E6 + i*2]` and seeds the make-way countdown `ctx[+0x6D6]` with the melee monster's size class; calls `FUN_8004E2F0(actor, target)` for [range/LOS](battle.md). If range = 0 → `0x1E` (skip approach). Party arm: stages approach anim `+0x1DA = 1` (the walk entry) → short-step. Monster arm: first-byte tag search over its action-record array (`FUN_80050E2C`, tag `0x20`, retry `1`) stages the returned entry index.
 
 **Next:** `0x15` (monster, tag-0x20 found); `0x19` (party, **or** a monster whose action table has no tag-`0x20` walk - the fallback stages tag `1` and skips the walk chain entirely); `0x1E` (in range).
 
@@ -1196,7 +1198,7 @@ is in the middle of a character-record lookup and is not a function.
 - `ActionCategory` - symbolic enum for the action-category byte at `actor[+0x1DE]`.
 - `BattleActor` - the per-actor fields the state machine reads or writes. Field names mirror the `+0xNNN` byte offsets above so the link to the decompile stays explicit.
 - `BattleActionCtx` - the subset of the live ctx struct (`_DAT_8007BD24`-pointed) the state machine touches: `action_state`, `active_actor`, the `+0x6D8` countdown timer, etc.
-- `BattleActionHost` - engine callbacks for every cited helper (`FUN_801D5854` → `pose`, `FUN_801D8DE8` → `ui_element`, `FUN_8004E2F0` → `range_check`, `FUN_801DABA4` → `recompute_battle_order`, `FUN_801EFE44` → `camera_bounds`, `FUN_801EED1C` / `FUN_801E7320` → `party_setup` / `monster_setup`, `func_0x80056798` → `rng`, `func_0x8003F2B8` → `previous_action_cleared`, ...). All methods have default impls so a minimal host compiles.
+- `BattleActionHost` - engine callbacks for every cited helper (`FUN_801D5854` → `pose`, `FUN_801D8DE8` → `ui_element`, `FUN_8004E2F0` → `range_check`, `FUN_801DABA4` → `recompute_battle_order`, `FUN_801EFE44` → `seed_formation_recentre`, `FUN_801EED1C` / `FUN_801E7320` → `party_setup` / `monster_setup`, `func_0x80056798` → `rng`, `func_0x8003F2B8` → `previous_action_cleared`, ...). All methods have default impls so a minimal host compiles.
 - `step(host, ctx) -> StepOutcome` - runs one frame's worth of dispatch; returns `Stay` (still waiting on a precondition), `Transition { from, to }`, `BattleComplete` (terminal), or `UnknownState { state }` (default-arm fall-through for unmapped bytes).
 
 `engine-core`'s `World` composes this with the move VM and effect kernels; `World::step_battle` drives it once per battle frame.
@@ -1250,6 +1252,8 @@ The port reads it: `MonsterAnimPlayer::new` seeds `loop_budget = count << 4` and
 ### Where an action leaves its combatants
 
 An action does **not** return its combatants to their authored formation seats. Retail leaves each one standing on the ground the action put it on. `World::tick_battle_locomotion` therefore drives exactly one leg - the approach - and no walk-home leg at all.
+
+What does move the formation as a whole is the action seed's recentre (an Attack's target to the stage origin) and the round start's; and a melee's bystanders step aside out of the attacker's lane while it walks in ([the make-way step](battle-action-helpers.md#the-make-way-step-state-0x14-and-the-sm-tail)). Those three, plus the separation pass, are what keep party members apart after an exchange.
 
 The capture evidence is four save states of one solo fight. Two read the authored formation (party `z = -800`, monster `z = +800`, 1600 apart); two later ones read the party member at `z ~ -540` and the monster at `z ~ -250`, ~300 apart and both far off the formation. Across every mid-battle state in the library each actor's `+0x3C`/`+0x40` pair sits within ~110 units of its live `+0x34`/`+0x38` pair, so the reference pair cannot be a seat the actor has walked away from.
 

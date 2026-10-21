@@ -48,7 +48,7 @@ Port module names are given as `crate::module`: `engine-battle-vm::battle_action
 | `FUN_801D5854` | pose driver | Camera / presentation program per pose id `0..9` | [Pose driver](#fun_801d5854---per-actor-pose-driver) |
 | `FUN_801D829C` | angle-tween builder | Prescales `TR.z` and arms a camera tween | [Tween prescale](#fun_801d829c---camera-angle-tween-prescale) |
 | `0x801F0348` | target-size framing | Camera height from a monster's size class | [Target-size framing](#0x801f0348---target-size-camera-framing) |
-| `FUN_801EFE44` | camera bounds | Min / max X and Z over the actor table | [Camera bounds](#fun_801efe44---battle-camera-bounds) |
+| `FUN_801EFE44` | formation recentre | Squash a span over `0x800`, then centre the action's box (an Attack's target) on the origin | [Formation recentre](#fun_801efe44---the-action-seeds-formation-recentre) |
 | `_DAT_8007B910` | audio duck cell | Live audio level the summon / capture arms ramp | [Audio duck](#the-audio-duck-_dat_8007b910) |
 | `FUN_8003D53C` / `FUN_8004C140` | XA clip player / arts-voice selector | Battle voice cues | [Voice cues](#battle-voice-cues) |
 | `FUN_801F3990` | cast audio-cue dispatcher | Item / Spirit voice cue at state `0x3D` | [Cast audio cue](#fun_801f3990---cast-audio-cue-dispatcher) |
@@ -842,13 +842,35 @@ The second store clobbers the first, so a monster's attack frames on the attacke
 
 Both lookups sit behind an **outer gate** on the target byte, `sltiu v0,v1,0x8` at `0x801F037C`, whose branch target is the clamp. A target slot of `8` or above therefore suppresses the attacker-side store as well and leaves `ctx+0x6D0` at the `0x0C00` seed. Live slot bytes are only ever `0..=6`, so the gate guards against a stale `+0x1DD`.
 
-Port: `battle_formulas::camera_height_for_frame` (whole routine, gate included) over `camera_height_from_size_class` (the `<< 7` + clamp). It runs at `ActionSeed`, the same edge as retail's call at `801e2d2c`, ahead of the gated `FUN_801EFE44` bounds walk. It feeds `BattleActionHost::camera_frame_height` and lands on `World::battle.camera_frame_height`. The size input is the monster record's `+0x1F` ([`monster-animation.md`](../formats/monster-animation.md), `MonsterRecord::size_class` -> `MonsterDef::size_class`) through the `BattleActionHost::monster_size_class` hook.
+Port: `battle_formulas::camera_height_for_frame` (whole routine, gate included) over `camera_height_from_size_class` (the `<< 7` + clamp). It runs at `ActionSeed`, the same edge as retail's call at `801e2d2c`, ahead of the gated `FUN_801EFE44` formation recentre. It feeds `BattleActionHost::camera_frame_height` and lands on `World::battle.camera_frame_height`. The size input is the monster record's `+0x1F` ([`monster-animation.md`](../formats/monster-animation.md), `MonsterRecord::size_class` -> `MonsterDef::size_class`) through the `BattleActionHost::monster_size_class` hook.
 
 Retail's monster-band base is the literal `3` at `0x801F0384` / `0x801F03CC`, because retail reserves three party slots whatever the party size. The port takes that base as a parameter (`RETAIL_MONSTER_SLOT_BASE` for the retail reading) because `engine-core` compacts its seating and seats the first monster at `party_count`. The two agree for any three-member party. `apply_side_lockout` documents the same seating split from the other side.
 
-### `FUN_801EFE44` - battle camera bounds
+### `FUN_801EFE44` - the action seed's formation recentre
 
-Called from state `0x0C` for non-flee actions. Walks the 8-slot actor table computing min / max X and Z to set the battle camera's frustum. It reads the action state machine's data and writes none of it.
+Called from state `0x0C` for every category but Run (`jal 0x801efe44` at `0x801E2D44`, skipped by the `+0x1DE == 5` test at `0x801E2D3C`) and from the monster Run arm (`0x801E2DE8`). It **moves the combatants**: every live pair `+0x34` / `+0x38` it walks is rewritten.
+
+1. **Squash.** Extents over pool slots `0..3` and the `3..7` slots with live HP (`+0x14C`); an axis whose span exceeds `0x800` is rescaled to `0x800` (`x << 11 / span`), the focus pair `_DAT_80089118` / `_DAT_80089120` likewise. This half is [`FUN_801DB318`](#actor-pool-leaf-helpers)'s.
+2. **The box.** Extents again, but when the acting slot `ctx[+0x13]`'s category is Attack (`+0x1DE == 3`) only its target `+0x1DD` is boxed - or the target's whole side for the group codes `8` (slots `< 3`) and `9` (slots `>= 3`). Any other category boxes every included slot.
+3. **Recentre.** The box's centroid `((max + min) as u32) >> 1` is subtracted from every included slot and added onto the focus pair.
+
+So a melee opens with its target on the stage origin and the rest of the formation translated with it. A retail position capture of the Cort fight (`cort_evolved_battle_first_menu`, Noa's melee first) reads Vahn `(0, -812) -> (0, -1625)`, Noa `(600, -762) -> (600, -1575)`, Gala `(-600, -762) -> (-600, -1575)` and Cort `(0, 813) -> (0, 0)` across the seed pass.
+
+The function writes no camera state of its own beyond the focus pair, and the seed's next call, the action framing `FUN_801D5854(actor, 6)`, frames the acting actor's live position. The port drops the focus shift for that reason.
+
+Port: `battle_action::seed_formation_recentre` (kernel) via `BattleActionHost::seed_formation_recentre` -> `World::seed_battle_formation_recentre`, which maps the engine's compacted actor table onto retail's pool the way the round-start recentre does.
+
+### The make-way step (state `0x14` and the SM tail)
+
+A melee's bystanders step out of the attacker's lane. State `0x14` (`0x801E30CC..0x801E3198`) takes the attack heading `h = (FUN_80019B28(target, attacker) + 0x800) & 0xFFF` and, for every pool slot that is neither the attacker nor its target, reads its own `(FUN_80019B28(slot, attacker) + 0x800) & 0xFFF` against `h`: within a half turn it stores `h + 0x400`, else `h - 0x400`, into `ctx[+0x6E6 + slot*2]`. It then seeds the countdown `ctx[+0x6D6]` with the melee monster's size class `+0x1F` - the target's for a party attacker, the attacker's own for a monster (`0x801E31A0..0x801E31E8`).
+
+The action SM's shared tail `0x801E6814`, which every state's pass ends on, runs while the countdown is non-zero: each of those slots steps `(sin[a] * step) >> 9` in X and `(cos[a] * step) >> 9` in Z (`step` = the frame step `DAT_1F800393`), and the countdown drains by the step, floored at zero (`0x801E6824..0x801E6934`). A whole countdown therefore moves a bystander about `size * 8` units. The tail walks the seven pool slots with no liveness test and skips the pass's attacker and target as the prologue loaded them.
+
+The same capture pins it: at frame step `3`, Vahn and Gala each step `(-23, -9)` a pass for twelve passes while Noa walks in, ending `(-276, -108)` from where the seed put them. Without it, a party member's approach runs straight through a partner standing between it and the target, and the round ends with the party bunched along the attack line.
+
+PROT 0941's enemy Steal writes the same angle table at its arm `0`.
+
+Port: `battle_action::arm_make_way` (state `0x14`) and `battle_action::make_way_step`, run after every `battle_action::step` pass.
 
 ## Audio and voice
 

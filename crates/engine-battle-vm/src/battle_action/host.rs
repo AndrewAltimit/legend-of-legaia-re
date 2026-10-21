@@ -104,10 +104,10 @@ pub trait BattleActionHost {
 
     /// Write the slot's live position pair (`+0x34`/`+0x38`) - the mutation
     /// half of [`BattleActionHost::actor_position`]. The SM needs it for
-    /// exactly one arm: state `0x16`'s arrival shove
-    /// ([`motion::arrival_shove_step`]), which displaces the *target* when
-    /// the walker arrives. Default no-op (a positionless host stays
-    /// positionless).
+    /// state `0x16`'s arrival shove ([`motion::arrival_shove_step`]), which
+    /// displaces the *target* when the walker arrives, and for the tail's
+    /// make-way step ([`crate::battle_action::make_way_step`]). Default
+    /// no-op (a positionless host stays positionless).
     fn set_actor_position(&mut self, _slot: u8, _x: i16, _z: i16) {}
 
     /// The slot's **seat** (anchor) pair - retail `actor[+0x3C]`/`+0x40`,
@@ -123,9 +123,22 @@ pub trait BattleActionHost {
     /// `0x801E3444..0x801E3490` stores all four halfwords). Default no-op.
     fn set_actor_anchor(&mut self, _slot: u8, _x: i16, _z: i16) {}
 
-    /// Equivalent of `FUN_801EFE44` - battle camera bounds. Walks the 8-slot
-    /// table for min/max. Default no-op.
-    fn camera_bounds(&mut self) {}
+    /// `FUN_801EFE44`, the action seed's **formation recentre** on the acting
+    /// slot `actor`: squash an axis whose span exceeds `0x800`, then move
+    /// every combatant so the box the action frames - the target alone for
+    /// an Attack - is centred on the origin
+    /// ([`crate::battle_action::seed_formation_recentre`]). Default no-op (a
+    /// positionless host stays positionless).
+    fn seed_formation_recentre(&mut self, _actor: u8) {}
+
+    /// Whether engine slot `slot` is one of the seven pool slots retail's
+    /// actor walks visit (party seats `0..3`, monster seats `3..7`) - the
+    /// slots the SM tail's make-way step moves
+    /// ([`crate::battle_action::make_way_step`]). The default is any slot
+    /// that carries a position.
+    fn in_retail_pool(&self, slot: u8) -> bool {
+        self.actor_position(slot).is_some()
+    }
 
     /// Body-size / bulk class of the monster seated in `actor_slot` - the
     /// monster record's `+0x1F` byte that retail reads through the per-enemy

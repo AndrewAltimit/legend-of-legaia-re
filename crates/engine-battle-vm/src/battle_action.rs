@@ -45,6 +45,9 @@ pub use dispatch::*;
 mod attack;
 use attack::*;
 
+mod make_way;
+pub use make_way::*;
+
 mod action_tags;
 pub use action_tags::*;
 

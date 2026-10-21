@@ -394,3 +394,64 @@ fn bearing_diagonals_hit_lut_end() {
     // dz=100,dx=50 -> idx=(50<<11)/100=0x400, lut=0x100 -> 0x900.
     assert_eq!(bearing_12bit(&lut, 0, 0, -100, -50), 0x900);
 }
+
+/// The action seed's recentre puts a melee's target on the stage origin and
+/// translates everyone else with it: retail's Cort fight, Noa attacking from
+/// the three-on-one formation, reads `(0,-1625) (600,-1575) (-600,-1575)
+/// (0,0)` on the pass after the seed (`autorun` position capture of
+/// `cort_evolved_battle_first_menu`).
+#[test]
+fn an_attack_seed_recentres_on_its_target() {
+    let mut pos = [
+        FormationPos { x: 0, z: -812 },
+        FormationPos { x: 600, z: -762 },
+        FormationPos { x: -600, z: -762 },
+        FormationPos { x: 0, z: 813 },
+    ];
+    let alive = [true, true, true, true];
+    let (mut fx, mut fz) = (0i32, 0i32);
+    seed_formation_recentre(&mut pos, &alive, true, 3, &mut fx, &mut fz);
+    assert_eq!(
+        pos.map(|p| (p.x, p.z)),
+        [(0, -1625), (600, -1575), (-600, -1575), (0, 0)]
+    );
+    assert_eq!((fx, fz), (0, 813));
+}
+
+/// A non-Attack seed frames the whole formation: the recentre is the
+/// round-start one.
+#[test]
+fn a_non_attack_seed_recentres_like_the_round_start() {
+    let start = [
+        FormationPos { x: 0, z: -812 },
+        FormationPos { x: 600, z: -762 },
+        FormationPos { x: -600, z: -762 },
+        FormationPos { x: 300, z: 1300 },
+    ];
+    let alive = [true, true, true, true];
+    let (mut a, mut b) = (start, start);
+    let (mut fx, mut fz) = (0i32, 0i32);
+    seed_formation_recentre(&mut a, &alive, false, 3, &mut fx, &mut fz);
+    let (mut gx, mut gz) = (0i32, 0i32);
+    normalize_formation_span(&mut b, &alive, &mut gx, &mut gz);
+    assert_eq!(a, b);
+    assert_eq!((fx, fz), (gx, gz));
+}
+
+/// A group target frames its whole side: `9` boxes every live monster seat.
+#[test]
+fn an_all_monster_attack_frames_the_monster_side() {
+    let mut pos = [
+        FormationPos { x: 0, z: -800 },
+        FormationPos::default(),
+        FormationPos::default(),
+        FormationPos { x: -300, z: 800 },
+        FormationPos { x: 300, z: 1000 },
+    ];
+    let alive = [true, false, false, true, true];
+    let (mut fx, mut fz) = (0i32, 0i32);
+    seed_formation_recentre(&mut pos, &alive, true, 9, &mut fx, &mut fz);
+    // Box x -300..300, z 800..1000: centroid (0, 900).
+    assert_eq!((pos[3].x, pos[3].z), (-300, -100));
+    assert_eq!((pos[0].x, pos[0].z), (0, -1700));
+}
