@@ -253,12 +253,48 @@ impl<S: AudioSink> BootSession<S> {
     /// tail hands back for drawing is dropped - a headless session draws
     /// nothing - except the spawned move's sound cue, which goes to the
     /// director when one is attached, the way both hosts route it.
+    /// Seat a pending summon creature with its clip set on a headless
+    /// session ([`Self::run_world_frame_tail`]); the request stays for the
+    /// unrendered seat when the archive or the creature will not load.
+    fn seat_headless_summon_creature(&mut self) {
+        let world = &self.host.world;
+        if world.mode != legaia_engine_mode::mode::SceneMode::Battle {
+            return;
+        }
+        let Some((spell_id, _)) = world.pending_summon_spawn() else {
+            return;
+        };
+        let prev = world.casting.summon_actor_slot.map(usize::from);
+        let Ok(archive) = self
+            .host
+            .index
+            .entry_bytes_extended(crate::battle_stage::MONSTER_ARCHIVE_PROT_INDEX)
+        else {
+            return;
+        };
+        if crate::battle_stage::seat_summon_creature(&mut self.host, spell_id, &archive, prev)
+            .is_some()
+        {
+            let _ = self.host.world.take_pending_summon_spawn();
+        }
+    }
+
     fn run_world_frame_tail(&mut self) {
         // The summon spawn request's seat (both play hosts bind the creature
         // mesh and seat it; a directed module's walk arm reads the seat, so a
         // headless run seats it unrendered), the world tail and the VRAM
         // effects: one body with every other headless driver
         // (`SceneHost::step_headless_frame_tail`).
+        //
+        // The seat takes the creature's own clip set, as both play hosts'
+        // seat does (`battle_stage::seat_summon_creature`, renderer-free):
+        // retail's slot-7 body runs its keyframe pose every frame
+        // (`FUN_80048A08` -> `FUN_8004998C`), and the burning-body emitter at
+        // that decoder's tail spends `+0x21F` on objects of the pose. Seated
+        // unrendered without a clip it had no pose, so a headless run
+        // emitted none of `gimard_burning_attack`'s effect-`0x0B` puffs. The
+        // unrendered seat stays the fallback when the archive will not read.
+        self.seat_headless_summon_creature();
         let tail = self.host.step_headless_frame_tail();
         if let (Some(cue), Some(bgm)) = (tail.move_fx_cue, self.bgm.as_mut())
             && let legaia_engine_audio::CueDispatch::Ring { ring_value, .. } =

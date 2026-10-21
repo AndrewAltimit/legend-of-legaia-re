@@ -882,13 +882,14 @@ fn trace_effect_pool(world: &legaia_engine_core::world::World) {
             continue;
         }
         eprintln!(
-            "[fx] actor {i} pos ({}, {}, {}) impact {} colour {:#x} monster {:?}",
+            "[fx] actor {i} pos ({}, {}, {}) impact {} colour {:#x} monster {:?} flags {:#010x}",
             a.move_state.world_x,
             a.move_state.world_y,
             a.move_state.world_z,
             a.battle.impact_state,
             a.battle.render_color,
-            a.battle_monster_id
+            a.battle_monster_id,
+            a.battle.flag_word
         );
     }
     let pool = &world.effect_pool;
