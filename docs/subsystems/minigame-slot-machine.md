@@ -488,7 +488,7 @@ Each has a dump `overlay_slot_machine_<addr>.txt` unless marked SCUS.
 | `FUN_801d2aa4` | payout chart: per row the symbol icons (order table `DAT_801d3784`, page selected by the arg) + the `DAT_801d3598` payout split into tens / units via `FUN_801d32c8` |
 | `FUN_801d32c8` | single-digit glyph: one gouraud `POLY_GT4` for `(x, y, digit)`, texpage `0x1D`, CLUT `0x7B42`, `U = digit * 0x10`, 16x16, semi-transparent (GP0 word `0x2c808080`, shade `0x70` / `0x80`), into the prim buffer `_DAT_1f8003a0` (advanced `0x28`), linked via `func_0x8003d2c4`. **Confirmed** from the prim writes |
 | `FUN_801d079c` | bonus-rounds-remaining lamps: three 16x16 HUD sprites (`x = 0x230` step `0x10`, tpage `0x84`, CLUT `0x7A8D`) into `_DAT_1f8003a0`; the first `DAT_801d3cb0` draw at the bright / dim shade `DAT_801d3c9c & 1` selects, the rest neutral, then a trailing quad linked via `func_0x80059010` |
-| `FUN_801d30f8` | attract-text column: sets text attribute `DAT_80073f20 = 0xc`, walks the 14-entry pointer table `0x801d34b8` drawing each string via `func_0x80036888` at `(param1, param2)`, y `+0xd` per line |
+| `FUN_801d30f8` | attract-text column: sets the glyph-advance byte `DAT_80073f20 = 0xc` (narrow), walks the 14-entry pointer table `0x801d34b8` drawing each string via `func_0x80036888` at `(param1, param2)`, y `+0xd` per line |
 | `FUN_801d317c` | UI panel quad: one 168x48 `POLY_FT4` (tag `0x9000000`, colour `0x2c808080`, CLUT word `0x7b43`) at the caller's `(param1, param2)` into `_DAT_1f8003a0`, linked via `func_0x8003d2c4` |
 | `FUN_801d13c4` | effectively empty: a 3-iteration counter loop with no writes and no calls (loads the address of `DAT_801d3cc0`, never uses it) |
 | `FUN_800172c0` | SCUS: the per-frame **scene camera** |

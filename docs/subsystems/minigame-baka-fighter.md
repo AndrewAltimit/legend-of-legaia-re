@@ -820,7 +820,7 @@ Port: `BakaScoreTables::from_overlay` reads both tables out of a loaded PROT 097
 
 `PTR_..._801D7134` (file `+0x891C`) is eleven words running `0x801CE948` **down** to `0x801CE818`. `0x801CE818` is the overlay base: the words address the image's own head string pool at `+0x00..+0x130`, emitted in reading order over a pool the compiler laid out backwards. The lowest word points at the image's leading NUL, so the panel's eleventh line is a deliberate blank.
 
-`FUN_801D6CBC(x, y)` stages widget kind `0xC` into `DAT_80073F20`, walks the table drawing each line through the glyph renderer `FUN_80036888(str, 0, 0, x - 0x10, y)` with `y` advancing `0xD` per line, and closes with the widget dispatcher `FUN_8002C69C(x - 0x10, y, 0xF0, 0x8F)` - a 240x143 frame. Its one caller is the cabinet SM at `0x801D1638`, the state `0xC0` "How to Play" arm. The body forms `0x801D7134` with a `lui` / `addiu` pair split across an unrelated store, so a backward-only scan from the table finds no reference.
+`FUN_801D6CBC(x, y)` sets the glyph-advance byte `DAT_80073F20` to `0xC` (narrow), walks the table drawing each line through the glyph renderer `FUN_80036888(str, 0, 0, x - 0x10, y)` with `y` advancing `0xD` per line, and closes with the widget dispatcher `FUN_8002C69C(x - 0x10, y, 0xF0, 0x8F)` - a 240x143 frame. Its one caller is the cabinet SM at `0x801D1638`, the state `0xC0` "How to Play" arm. The body forms `0x801D7134` with a `lui` / `addiu` pair split across an unrelated store, so a backward-only scan from the table finds no reference.
 
 ### HUD in the port
 

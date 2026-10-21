@@ -81,6 +81,18 @@ the cheapest place to look for a claim that is still wrong.
   party still feeds the global passive mask; the format page had said
   "each active party member", and the port walked only the active party
   ([settled](re-settled-threads/battle.md)).
+- **The action seed's "camera bounds" walk moves the combatants.**
+  `FUN_801EFE44` recentres the formation on the action's box - an
+  Attack's target alone - so a melee opens with its target on the stage
+  origin, and state `0x14` steps the bystanders out of the attacker's lane;
+  the port had carried the routine as an inert event
+  ([settled](re-settled-threads/battle.md),
+  [falsified](re-do-not-re-walk.md#battle--arts--level-up)).
+- **The party body radius is the seat stager's `0x280`.** `FUN_800513F0`
+  writes it, `0x400` for Terra (`0x8005151C..0x80051538`); the port had
+  used a guessed `448`, and ran the separation pass on every vsync where
+  retail runs it once a battle frame
+  ([settled](re-settled-threads/rendering-camera.md)).
 - **The prologue's gold CLUTs are effect-script cyclers, and the law bends at
   the top.** Four mode-3 CLUT-cell cyclers grey and re-tint the CLUT rects
   `(0, 473, 320, 2)` / `(0, 476, 320, 34)`; green is `(L * 247) >> 8`, not
