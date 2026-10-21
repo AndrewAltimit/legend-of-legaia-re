@@ -236,6 +236,7 @@ impl LegaiaRuntime {
             spell_id,
             target,
             ground: [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+            idle: [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
         });
         true
     }

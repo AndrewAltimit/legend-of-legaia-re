@@ -31,6 +31,17 @@ pub struct InflightCastSeed {
     /// actions left them - the caster included - and a fresh entry's
     /// authored seats frame the cast somewhere else. `None` keeps the seat.
     pub ground: [Option<[i16; 2]>; INFLIGHT_GROUND_SLOTS],
+    /// The node cursor `+0x68` (sixteenths of a keyframe) each combatant's
+    /// idle loop (entry `0`) stands on at the dispatch, by engine battle
+    /// slot. An idle loop is a clock the replay reaches on its own, and the
+    /// pose it shows moves the body pair `+0x3C..+0x40` the separation pass
+    /// `FUN_80050BB8` measures, so a bystander swaying at another phase than
+    /// retail's is pushed where retail's was not
+    /// (`theeder_summon_mid_cast`). The retail comparison sets it to the
+    /// capture's cursor less the advance the replay's own loop makes between
+    /// the dispatch and the capture's phase. `None` keeps the replay's
+    /// phase.
+    pub idle: [Option<i32>; INFLIGHT_GROUND_SLOTS],
 }
 
 /// Battle slots an [`InflightCastSeed`] places: three party seats and five

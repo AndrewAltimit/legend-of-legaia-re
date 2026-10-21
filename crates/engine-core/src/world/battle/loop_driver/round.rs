@@ -339,6 +339,15 @@ impl World {
                 }
             }
         }
+        let mut seated = false;
+        for (slot, cursor) in seed.idle.iter().enumerate() {
+            if let Some(c) = *cursor {
+                seated |= self.seat_battle_clip_cursor(slot, 0, c);
+            }
+        }
+        if seated {
+            self.settle_seated_clips();
+        }
         let price = u16::from(self.tables.spell_catalog.mp_cost(seed.spell_id));
         if let Some(a) = self.actors.get_mut(usize::from(seed.caster)) {
             a.battle.action_category = 2;

@@ -1039,7 +1039,7 @@ ground drift the undrift search reads is measured first).
 - **A reacting monster stands on its body pair.** A body on a reaction clip
   (`2`..`5`, `0x0B`) the replay strikes at another keyframe than retail's
   puts its centroid elsewhere for the same live pair (`rim_elm_gimard_seru_capture_before`'s
-  knocked-down Gimard: engine body `(277, 1246)` against retail's
+  Gimard on its get-up: engine body `(244, 1110)` against retail's
   `(230, 1053)`), so it is moved until its body pair is the captured one. So
   is the acting seat in the strike band `0x1E..=0x20`, whose framing (case
   7) reads body pairs. A party member's reaction is seated on its displayed
@@ -1274,6 +1274,20 @@ approach `0x14` stages, so on the seed's own passes - the seed `0x0C`, and an
 Attack arm `0x14` whose body has not run (the yaw counter still on the seed's
 `0x200` rung) - both bodies still sway on their idle loops and are seated
 too (`super_queue_replace_*` `image` `.926` to `.938`).
+
+A monster target is seated on one reaction: the get-up a killed monster
+rises on for the absorb, with a Seru staged in `ctx[+0x269]` (the commit's
+death arm, `0x8004B688..0x8004B6A0`). Its knockdown started on the replay's
+hit too, and the replay's can still be falling where retail's has ended:
+`rim_elm_gimard_seru_capture_before` holds Gimard sixteen keyframes into
+its get-up (`+0x1D9 = +0x1DA = 4`, `+0x1DC = 4`, the history ring at
+`+0x17A` showing the knockdown's last keyframe seventeen frames back) where
+the replay's knockdown had two keyframes left. The seat runs the
+knockdown's natural end first - the death arm, the fade's arm `2`, the
+get-up commit - and then lands the get-up's cursor (`.971` to `.981`, with the fade's additive draw
+[restored](../subsystems/battle-actor-rendering.md#how-the-tint-words-reach-the-pixel)). A monster's other reactions stay on the
+replay's clock: seated on its knockdown, `rim_elm_gimard_victory` read
+`.888` to `.883`.
 
 A downed party member holds entry `8`, the kneel that re-commits itself at
 every natural end ([battle-actor-rendering](../subsystems/battle-actor-rendering.md#the-commits-clip-tag-ladder)),
@@ -3423,18 +3437,28 @@ every pass, so it moves with the phase of both clips):
   on the aligned pose when every component took retail's value
   (`World::refresh_battle_camera_ghost`); run on the unaligned glide the
   skeleton stood solid (`image` `.929` to `.978`).
-- **A push the replay deals twice.** `theeder_summon_mid_cast` (`0x33`,
+- **A push a bystander's sway deals.** `theeder_summon_mid_cast` (`0x33`,
   before the flash) seats Vahn and the third Gilium on their captured
-  pairs at the dispatch, and the separation pass (`FUN_80051078`, threshold
-  `(640 + 704) / 6 = 224` on the body pairs) pushes them apart during the
-  invoke clip: Vahn ends `16` units off his pair, the Gilium `16` the other
-  way, and the close-up's focus reads Vahn's body pair (`-94` against
-  retail's `-67` on X). Retail's pairs are the state after any push its own
-  cast made, so the replay pushes from where retail's push ended. Standing
-  both on the captured ground at the gate measured worse (`image` `.874` to
-  `.865`), with or without retail's live camera pose: the focus the frame
-  is drawn at is the engine's body pair one pass old, which the snap does
-  not move.
+  pairs at the dispatch. The separation pass runs on every battle frame
+  straight after the action SM (`jal 0x801E295C; jal 0x80051078` in
+  `FUN_80046A20`, gated only on the command-flow byte `0xFF` and the
+  running battle-end signal), and pushes a pair whose **body** pairs come
+  within `(640 + 704) / 6 = 224` along their bearing (`FUN_80050BB8`). At
+  the capture retail's pair reads `230`, no push. The replay pushed both
+  `16` units apart during the invoke clip because the Gilium's idle sway ran
+  on the replay's clock: its body stood some `45` units nearer Vahn than
+  retail's sway puts it, under the threshold for two frames. The cast
+  replay is therefore run twice: the first run measures how far each
+  bystander's idle loop advances between the dispatch and the phase
+  (`EngineBattle::idle_advance`), and the second winds each loop back by
+  that much from the capture's cursor at the dispatch
+  (`RetailBattle::with_inflight_idle`, `InflightCastSeed::idle`, the third
+  `;` field of `LEGAIA_BATTLE_INFLIGHT`). Nobody is pushed, every live pair
+  is the captured one at the phase, and the bodies land within `6` units of
+  retail's (`camera` `.999` to `1.000`). The frame reads `.874` to `.867`:
+  what is left is a whole-frame shift of about seven pixels - the summon
+  close-up's focus on the displayed frame - and aligned for that shift the
+  frame's error falls (mean `11.7` to `11.3`).
 - **A pose two frames on.** `battle_noa_miracle_art_combo`'s case-7 focus
   is the midpoint of two body pairs, and at the capture's accumulator
   (`72`, nine vsyncs after the swing clip's commit) retail's Noa reads body

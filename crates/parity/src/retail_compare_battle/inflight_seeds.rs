@@ -24,6 +24,7 @@ impl RetailBattle {
                 spell_id: self.queued_action,
                 target: self.target_code,
                 ground: self.engine_ground(),
+                idle: self.inflight_idle,
             })
     }
 
@@ -134,6 +135,60 @@ impl UndriftActing {
 }
 
 impl RetailBattle {
+    /// This in-flight cast capture with each bystander's idle loop wound back
+    /// to where it stood at the dispatch: the capture's cursor less the
+    /// advance the engine's own replay measured for that slot between the
+    /// dispatch and the phase (`EngineBattle::idle_advance`). `None` when no
+    /// slot has both. The caster is left alone - its clip at the dispatch is
+    /// the cast's own.
+    ///
+    /// The separation pass `FUN_80050BB8` measures **body** pairs
+    /// (`+0x3C..+0x40`, the live pair plus the pose centroid) every battle
+    /// frame (`FUN_80046A20` `jal 0x80051078` straight after the action SM),
+    /// so where a bystander's idle sway stands decides whether a pair comes
+    /// within `(r_a + r_b) / 6` during the cast. A capture's live pairs are
+    /// retail's after any push its own frames dealt; a replay whose sway
+    /// runs at another phase pushes where retail did not
+    /// (`theeder_summon_mid_cast`: the third Gilium's replayed sway stood its
+    /// body some `45` units nearer Vahn than retail's, under the `224`
+    /// threshold, and both were pushed `16` units apart).
+    pub fn with_inflight_idle(
+        &self,
+        advance: &[Option<u32>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+    ) -> Option<Self> {
+        self.inflight_cast()?;
+        let pc = usize::from(self.party_count.clamp(1, 3));
+        let caster = usize::from(engine_seat(self.active_actor, self.party_count));
+        let mut out = self.clone();
+        let mut any = false;
+        for &(pool, clip, cursor) in &self.clip_cursors {
+            let pool = usize::from(pool);
+            let slot = if pool < 3 {
+                if pool >= pc {
+                    continue;
+                }
+                pool
+            } else {
+                let m = pool - 3;
+                if m >= usize::from(self.monster_count) {
+                    continue;
+                }
+                pc + m
+            };
+            if clip != 0 || slot == caster {
+                continue;
+            }
+            let Some(Some(adv)) = advance.get(slot) else {
+                continue;
+            };
+            if let Some(o) = out.inflight_idle.get_mut(slot) {
+                *o = Some(cursor - *adv as i32);
+                any = true;
+            }
+        }
+        any.then_some(out)
+    }
+
     /// This capture with every combatant's ground pair moved back by what
     /// the engine's replay of the action moved it
     /// (`EngineBattle::ground_drift`), or `None` when nothing moved enough

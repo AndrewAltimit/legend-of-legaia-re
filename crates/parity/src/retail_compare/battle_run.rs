@@ -253,6 +253,37 @@ pub(super) fn run_battle(
         }
         None => (battle, None),
     };
+    // A replayed cast reaches its phase with every bystander's idle loop on
+    // the replay's own clock, and the sway moves the body pairs the
+    // separation pass measures through the whole cast: run the same stream
+    // once more with each loop wound back to stand on the capture's cursor
+    // at the phase (`RetailBattle::with_inflight_idle`), and keep it when it
+    // still reaches the phase.
+    let idled;
+    let (battle, reached) = match reached {
+        Some(first_run) if first_run.inflight.is_some_and(|t| t.is_some()) => {
+            match battle.with_inflight_idle(&first_run.idle_advance) {
+                Some(b) => match crate::retail_compare_battle::run_engine_battle(
+                    opts.extracted,
+                    retail,
+                    &b,
+                    first_run.rng_seed,
+                    reached_victims,
+                ) {
+                    Ok(e)
+                        if e.mode == legaia_engine_mode::mode::SceneMode::Battle
+                            && e.inflight.is_some_and(|t| t.is_some()) =>
+                    {
+                        idled = b;
+                        (&idled, Some(e))
+                    }
+                    _ => (battle, Some(first_run)),
+                },
+                None => (battle, Some(first_run)),
+            }
+        }
+        r => (battle, r),
+    };
     let engine = match reached.or(off_pose).map(Ok).or(first) {
         Some(Ok(e)) => e,
         Some(Err(e)) => {
@@ -529,14 +560,20 @@ pub(super) fn battle_image(
             .iter()
             .map(|g| g.map_or_else(|| "-".to_string(), |[x, z]| format!("{x}:{z}")))
             .collect();
+        let idle: Vec<String> = seed
+            .idle
+            .iter()
+            .map(|c| c.map_or_else(|| "-".to_string(), |c| c.to_string()))
+            .collect();
         env.push((
             "LEGAIA_BATTLE_INFLIGHT",
             format!(
-                "{},{},{};{}",
+                "{},{},{};{};{}",
                 seed.caster,
                 seed.spell_id,
                 seed.target,
-                ground.join(",")
+                ground.join(","),
+                idle.join(",")
             ),
         ));
         // On the battle-frame cadence a `0x32` capture's displayed frame is

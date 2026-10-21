@@ -71,6 +71,11 @@ pub struct EngineBattle {
     /// placed (`[x, z]`, the phase's ground pair less the seeded one), for
     /// a driven action that reached its phase ([`RetailBattle::undrift`]).
     pub ground_drift: [Option<[i32; 2]>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+    /// Per engine slot, how far (sixteenths of a keyframe) a replayed cast's
+    /// idle loop advanced between the dispatch and the capture's phase -
+    /// `None` for a slot that left its idle loop on the way
+    /// ([`RetailBattle::with_inflight_idle`]).
+    pub idle_advance: [Option<u32>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
     /// The camera's phase, glide target and origin-alignment mask set
     /// against the capture's tween endpoints - a diagnostic the `camera`
     /// detail carries under `LEGAIA_RC_CAM_TRACE`.
@@ -464,6 +469,7 @@ pub fn run_engine_battle(
         }
     }
     let mut phase_tick = None;
+    let mut idle_advance = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
     let mut driven = None;
     // A driven capture plays rounds the retail history did not (a Spirit
     // here, a strike there), so its combatant, bag, flag and track channels
@@ -499,11 +505,13 @@ pub fn run_engine_battle(
             }
         }
         (SeedPlan::Cast, Some(gate)) if prompt_tick.is_some() => {
+            let mut idle = IdleClock::default();
             for t in 0..INFLIGHT_TICKS {
+                idle.sample(&session.host.world);
                 if std::env::var_os("LEGAIA_RC_DRIVE_TRACE").is_some() {
                     let w = &session.host.world;
                     eprintln!(
-                        "[cast] t={t} st=0x{:02X} act={} yb={:?} acc={:?} facing={:?} body0={:?} tgt={:?} cam={:?}",
+                        "[cast] t={t} st=0x{:02X} act={} yb={:?} acc={:?} facing={:?} bodies={:?} tgt={:?} cam={:?}",
                         w.battle_ctx.action_state,
                         w.battle_ctx.active_actor,
                         w.battle.camera.as_ref().map(|c| c.action_yaw_base()),
@@ -513,7 +521,11 @@ pub fn run_engine_battle(
                             .take(8)
                             .map(|a| a.battle.facing_angle & 0xFFF)
                             .collect::<Vec<_>>(),
-                        w.actors.first().map(|a| a.battle.seat),
+                        w.actors
+                            .iter()
+                            .take(8)
+                            .map(|a| (a.move_state.world_x, a.move_state.world_z, a.battle.seat))
+                            .collect::<Vec<_>>(),
                         w.battle.camera.as_ref().map(|c| c.glide_target().focus),
                         w.battle
                             .camera
@@ -529,6 +541,7 @@ pub fn run_engine_battle(
                         cam.align_glide_origin(battle.cam_tween.0, battle.cam_tween.1);
                     }
                     phase_tick = Some(t);
+                    idle_advance = idle.advance();
                     break;
                 }
                 gate.steer(&mut session.host.world);
@@ -779,8 +792,54 @@ pub fn run_engine_battle(
         battle_bgm: snap.battle_bgm,
         save: snap.save,
         ground_drift,
+        idle_advance,
         cam_trace,
     })
+}
+
+/// The advance each battle slot's idle loop (entry `0`) makes over a
+/// replayed cast, sampled once a tick: the cursor's forward steps summed
+/// across its wraps. A slot seen off its idle loop - on another clip, on a
+/// reaction, a one-shot - is dropped for the span.
+#[derive(Default)]
+struct IdleClock {
+    last: [Option<(u16, u32)>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+    sum: [u32; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+    lost: [bool; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+}
+
+impl IdleClock {
+    fn sample(&mut self, w: &legaia_engine_core::world::World) {
+        for slot in 0..legaia_engine_core::world::INFLIGHT_GROUND_SLOTS {
+            if self.lost[slot] {
+                continue;
+            }
+            let looping_idle = w.actors.get(slot).and_then(|a| {
+                let p = a.battle_animation.as_ref()?;
+                (a.battle_reaction.is_none() && w.battle_current_anim(slot) == 0 && p.is_looping())
+                    .then(|| (p.cursor_sixteenths(), (p.frame_count() * 16).max(1)))
+            });
+            let Some((cur, span)) = looping_idle else {
+                self.lost[slot] = true;
+                continue;
+            };
+            if let Some((prev, _)) = self.last[slot] {
+                let step = (u32::from(cur) + span - u32::from(prev)) % span;
+                self.sum[slot] += step;
+            }
+            self.last[slot] = Some((cur, span));
+        }
+    }
+
+    fn advance(&self) -> [Option<u32>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS] {
+        let mut out = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+        for (slot, o) in out.iter_mut().enumerate() {
+            if !self.lost[slot] && self.last[slot].is_some() {
+                *o = Some(self.sum[slot]);
+            }
+        }
+        out
+    }
 }
 
 /// The combatant-side observables a battle state is scored on.

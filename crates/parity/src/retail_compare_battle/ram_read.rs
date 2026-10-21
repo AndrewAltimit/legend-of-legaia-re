@@ -393,6 +393,7 @@ impl RetailBattle {
             action_hit_sequence: action_hit_sequence(ram, ctx),
             combo_total: u32::from(game_anchors::u16_at(ram, COMBO_TOTAL)),
             entry_latches: Vec::new(),
+            inflight_idle: [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
             clip_cursors: (0..8u32)
                 .filter_map(|slot| {
                     let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);

@@ -467,6 +467,11 @@ pub struct RetailBattle {
     /// clip wraps). The frame the capture shows each body on
     /// ([`legaia_engine_capture::clip_cursors`]).
     pub clip_cursors: Vec<(u8, u8, i32)>,
+    /// The idle-loop cursor each engine battle slot takes at an in-flight
+    /// cast's dispatch ([`legaia_engine_core::world::InflightCastSeed::idle`]):
+    /// empty on the RAM read, filled from a first replay's measured advance
+    /// ([`Self::with_inflight_idle`]).
+    pub inflight_idle: [Option<i32>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
     /// Each pool slot's heading `+0x46` (12-bit), beside [`Self::ground`]:
     /// the attack band's facing recompute stores it every frame of a
     /// swing and nothing turns the actor back, so a member stands facing
