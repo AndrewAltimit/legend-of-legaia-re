@@ -1732,6 +1732,23 @@ The dispatcher's de-dup word `0x8007B724` is `-1` from the mode init
 (`0x8001DDA4`) and no other dumped routine stores it, so it never suppresses
 one of these.
 
+Every caller's id goes through the same split: `id >= 0x100` takes the
+dispatcher's CD-XA arm whoever calls it. The Cort stage modules' cues `0x20A`
+(968, `0x801F6AC4`) and `0x20B` (969, `0x801F6A70`) are therefore voice clips -
+slot `0x21`, channels `2` / `3` - not SFX rows. Port: `World::dispatch_battle_cue`
+is the whole dispatcher; the action SM's one-shots and the stage modules call
+it.
+
+The cross-button command entry (option `0x800846C8 != 0`) walks a highlight
+instead of committing on a direction: `BattleCommandSession::walk_highlight`
+moves the lit arm with cue `0x22` and swallows the direction, and the confirm
+takes the lit arm.
+
+The sparring tutorial adds no cue of its own. Its hook `FUN_801F6B70` runs on
+the flow state a press has already committed, and neither it nor its box
+emitter `FUN_801F747C` calls a cue routine, so a wrong-lesson pick sounds the
+commit and nothing else.
+
 Port: `engine-core::world::battle::command_flow::ui_cues` derives one blip per
 frame from each surface's state before and after its input (the command
 session, the spell and item windows, the arts entry) and pushes its ring id,
@@ -1763,8 +1780,10 @@ So a monster's looping attack sound - the `bse.dat` row a clip's cue track rings
 Port: `SfxBank::release_sustained` is the teardown over the live voices; the
 anim commit raises `SfxRingOp::ReleaseSustained` in call order with the ring
 writes, `AudioDirector::apply_sfx_ring_ops` runs it ahead of the frame's drain,
-and `route_world_sfx` runs it on the edge into or out of a battle. The tint
-pass's site is not wired. Measured on the same harness: the `map03` fight keys
+`route_world_sfx` runs it on the edge into or out of a battle, a scene load
+queues it (`World::release_sustained_sfx`), and the defeat-fade pass
+(`World::tick_battle_defeat_sink`) queues it for every fading monster seat
+ahead of the sink's absorb / capture gates, as the tint pass's call sits. Measured on the same harness: the `map03` fight keys
 `0x202` on voice 7, the next clip commit keys it off, and no cue voice sounds
 for longer than a clip.
 
