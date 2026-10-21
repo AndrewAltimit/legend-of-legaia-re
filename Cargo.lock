@@ -2057,6 +2057,7 @@ dependencies = [
  "legaia-game-tables",
  "legaia-overlay-images",
  "legaia-prot",
+ "legaia-render-kernels",
 ]
 
 [[package]]
@@ -2579,7 +2580,6 @@ dependencies = [
  "glam",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
- "legaia-engine-cast",
  "legaia-engine-field",
  "legaia-font",
  "legaia-game-tables",

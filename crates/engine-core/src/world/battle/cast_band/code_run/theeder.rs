@@ -83,7 +83,9 @@ impl World {
     /// and build the primitives with `legaia_engine_ui::cast_theeder`.
     ///
     /// REF: FUN_801F815C, FUN_801F83A4, FUN_801F8634, FUN_801F8B84
-    pub fn theeder_draw(&self) -> Option<legaia_engine_cast::seru_magic_ticks::TheederPacket> {
+    pub fn theeder_draw(
+        &self,
+    ) -> Option<legaia_render_kernels::cast_theeder_packet::TheederPacket> {
         if self.mode != SceneMode::Battle || self.casting.summon_stager.is_none() {
             return None;
         }

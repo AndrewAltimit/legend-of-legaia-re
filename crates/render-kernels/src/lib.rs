@@ -27,6 +27,7 @@ pub mod cast_beam;
 pub mod cast_colour_wash;
 pub mod cast_rain;
 pub mod cast_swordie;
+pub mod cast_theeder_packet;
 pub mod display_mirror;
 pub mod drop_shadow;
 pub mod effect_billboard;

@@ -53,7 +53,7 @@ deps = ["engine-camera", "engine-system"]
 
 [crates.engine-cast]
 role = "slot-B cast / summon module ticks, their camera and countdown, cast-arm kernels"
-deps = ["engine-battle-vm", "engine-camera", "engine-system"]
+deps = ["engine-battle-vm", "engine-camera", "engine-system", "render-kernels"]
 
 [crates.engine-motion-vm]
 role = "the two per-actor motion VMs"
@@ -69,7 +69,7 @@ deps = ["engine-camera", "engine-vm"]
 
 [crates.engine-ui]
 role = "renderer-agnostic draw-list builders"
-deps = ["engine-battle-vm", "engine-cast", "render-kernels"]
+deps = ["engine-battle-vm", "render-kernels"]
 dev = ["engine-camera", "engine-field"]
 
 [crates.engine-effects]
@@ -188,10 +188,4 @@ reason = "the dance floor's step markers are tile actors the shared minigame flo
 from = "engine-ui"
 to = "engine-battle-vm"
 items = ["battle_party_panel", "battle_commit_log", "panel_backread_loader", "battle_value_readout", "battle_action::FlashQuad"]
-reason = "the battle HUD model and the numeral readout the draw-list builders project are defined with the battle kernels that fill them"
-
-[[coupling]]
-from = "engine-ui"
-to = "engine-cast"
-items = ["seru_magic_ticks::TheederPacket"]
-reason = "the Theeder packet the cast draw-list builder projects is defined with the PROT 0904 tick body that fills it"
+reason = "the battle HUD model and the numeral readout the draw-list builders project are defined with the battle kernels that fill them: the action SM's flash ramp stamps the readout's glyph page and the commit log stages off the cursor pose, so the model cannot move below the action SM; the edge points down a rank"

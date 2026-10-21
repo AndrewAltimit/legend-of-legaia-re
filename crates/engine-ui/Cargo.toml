@@ -12,7 +12,6 @@ path = "src/lib.rs"
 
 [dependencies]
 legaia-engine-battle-vm.workspace = true
-legaia-engine-cast.workspace = true
 legaia-render-kernels.workspace = true
 bytemuck.workspace = true
 glam.workspace = true

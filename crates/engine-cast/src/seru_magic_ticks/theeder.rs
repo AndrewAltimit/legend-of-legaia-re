@@ -1,6 +1,7 @@
 //! PROT 0904 Theeder (`0x82`): monster-row cone sweep tick, its ray geometry and trail packets.
 
 use super::*;
+use legaia_render_kernels::cast_theeder_packet::TheederPacket;
 
 // ---------------------------------------------------------------------------
 // PROT 0904 - Theeder (spell id 0x82)
@@ -410,34 +411,6 @@ impl TheederFx {
         let h = self.cell_seed.wrapping_mul(0x9E37_79B9);
         [((h >> 13) & 3) as u8, ((h >> 21) & 3) as u8]
     }
-}
-
-/// One tick's PROT 0904 packets, in retail battle space (Y down). The hosts
-/// project the points and build the primitives with
-/// `legaia_engine_ui::cast_theeder`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TheederPacket {
-    /// Arm 9: two `FUN_801F815C` lightning prongs from the root to `tips`.
-    Prongs {
-        mouth: [i16; 3],
-        tips: [[i16; 3]; 2],
-        cells: [u8; 2],
-    },
-    /// Arm 11's hold: `FUN_801F83A4`'s charge beam at brightness `level`.
-    Charge {
-        mouth: [i16; 3],
-        tip: [i16; 3],
-        level: u16,
-    },
-    /// Arms 11 (exit) and 12: `FUN_801F8634` - the fan over the first
-    /// `drawn` trail pairs plus the beam core from the root to `tip`.
-    Sweep {
-        mouth: [i16; 3],
-        tip: [i16; 3],
-        drawn: usize,
-    },
-    /// Arm 13: `FUN_801F8B84` - the fan over the first `drawn` pairs, no core.
-    Retract { mouth: [i16; 3], drawn: usize },
 }
 
 /// The `+0x04` mesh-tint word PROT 0904's ring sweep stamps on every seat it

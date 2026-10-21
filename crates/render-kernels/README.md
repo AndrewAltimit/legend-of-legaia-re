@@ -46,6 +46,9 @@ or cpal, so it builds for native and `wasm32` alike.
 - `cast_swordie` - PROT 0910's screen-space packets (`FUN_801F7C18` /
   `FUN_801F7DD0`): the two panels that slide apart along a diagonal cut, and
   the slash streak down the cut.
+- `cast_theeder_packet` - PROT 0904's (Theeder) per-tick draw packet: what
+  the module's tick body in `legaia-engine-cast` records and
+  `legaia_engine_ui::cast_theeder` turns into primitives, kept below both.
 - `gte` - fixed-point GTE arithmetic (`q3.12` rotation, `q19.12`
   translation, the UNR divide, NCLIP/AVSZ, register-transfer + memory ops,
   the from-scratch `psx_sin` / `psx_cos` trig LUT).

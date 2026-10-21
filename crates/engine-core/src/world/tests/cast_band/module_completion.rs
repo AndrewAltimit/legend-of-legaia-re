@@ -316,7 +316,7 @@ fn the_theeder_band_holds_through_its_ramp_and_sweep() {
             done = true;
             break;
         }
-        use legaia_engine_cast::seru_magic_ticks::TheederPacket as P;
+        use legaia_render_kernels::cast_theeder_packet::TheederPacket as P;
         let kind = match world.theeder_draw() {
             Some(P::Prongs { .. }) => Some("prongs"),
             Some(P::Charge { .. }) => Some("charge"),

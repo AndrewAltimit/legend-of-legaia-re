@@ -113,8 +113,7 @@
      "crates": [
       "engine-fishing",
       "engine-minigames",
-      "engine-scene",
-      "engine-ui"
+      "engine-scene"
      ]
     },
     {
@@ -123,7 +122,8 @@
       "engine-battle",
       "engine-cast",
       "engine-effects",
-      "engine-field"
+      "engine-field",
+      "engine-ui"
      ]
     },
     {
@@ -1117,7 +1117,8 @@
     "engine-camera",
     "engine-system",
     "game-tables",
-    "overlay-images"
+    "overlay-images",
+    "render-kernels"
    ],
    "dev_deps": [
     "actor-formats",
@@ -1141,7 +1142,6 @@
     "engine-battle-hud",
     "engine-capture",
     "engine-core",
-    "engine-ui",
     "parity"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-cast/README.md"
@@ -2315,7 +2315,6 @@
    "package": "legaia-engine-ui",
    "deps": [
     "engine-battle-vm",
-    "engine-cast",
     "font",
     "game-tables",
     "minigame-formats",
@@ -2359,7 +2358,7 @@
    ],
    "band": "kernels",
    "track": "engine",
-   "rank": 4,
+   "rank": 3,
    "role": "renderer-agnostic draw-list builders",
    "scope": "Renderer-agnostic UI draw-list builders over the wgpu-free kernels of <code>render-kernels</code> and the battle HUD model in <code>engine-battle-vm</code> - the draw layer both the native renderer and the browser play page use.",
    "dependents": [
@@ -3250,6 +3249,7 @@
     "cast_colour_wash",
     "cast_rain",
     "cast_swordie",
+    "cast_theeder_packet",
     "display_mirror",
     "drop_shadow",
     "effect_billboard",
@@ -3278,6 +3278,7 @@
    "scope": "The wgpu-free render kernels both hosts share: GTE math, <code>screen_prim</code> + its CPU rasteriser, <code>vram_capture</code>, the effect emitters, the battle-intro model + emitter, enhanced <code>scene_lighting</code>.",
    "dependents": [
     "engine-battle",
+    "engine-cast",
     "engine-core",
     "engine-effects",
     "engine-field",
@@ -3958,15 +3959,7 @@
     "battle_value_readout",
     "battle_action::FlashQuad"
    ],
-   "reason": "the battle HUD model and the numeral readout the draw-list builders project are defined with the battle kernels that fill them"
-  },
-  {
-   "from": "engine-ui",
-   "to": "engine-cast",
-   "items": [
-    "seru_magic_ticks::TheederPacket"
-   ],
-   "reason": "the Theeder packet the cast draw-list builder projects is defined with the PROT 0904 tick body that fills it"
+   "reason": "the battle HUD model and the numeral readout the draw-list builders project are defined with the battle kernels that fill them: the action SM's flash ramp stamps the readout's glyph page and the commit log stages off the cursor pose, so the model cannot move below the action SM; the edge points down a rank"
   }
  ],
  "hosts": [
