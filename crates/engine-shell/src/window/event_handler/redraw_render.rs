@@ -319,7 +319,7 @@ impl PlayWindowApp {
         let target = |scene| present_target(scene, &screen_prims, &light_prims);
         redraw_present::capture_sweep_frame(
             r,
-            target(&scene),
+            &|| target(&scene),
             self.screenshot.as_ref(),
             self.tick_no,
             &mut self.sweep_next_tick,

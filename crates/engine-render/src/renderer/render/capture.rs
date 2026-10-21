@@ -28,6 +28,20 @@ fn crop_capture(img: &CaptureImage, x: u32, y: u32, w: u32, h: u32) -> CaptureIm
     }
 }
 
+impl CaptureImage {
+    /// Whether any pixel is not opaque. Every pass the frame encodes writes
+    /// alpha `1` (the clear, and each blend state's alpha replaces), so a
+    /// rendered frame is opaque everywhere; the damaged readback the
+    /// harnesses have caught is a band of `(0, 0, 0, 0)` texels - tiles of
+    /// the target the copy took before the frame had written them.
+    pub fn has_unwritten_texels(&self) -> bool {
+        self.rgba.as_chunks::<4>().0.iter().any(|px| px[3] != 0xFF)
+    }
+}
+
+/// How many readbacks [`Renderer::capture_rgba_settled`] takes at most.
+pub const SETTLED_CAPTURE_TRIES: usize = 8;
+
 impl Renderer {
     /// Render one frame offscreen and land it in the **software PSX VRAM** at
     /// `dst`, quantised to BGR555 - the port's equivalent of the console's
@@ -77,6 +91,53 @@ impl Renderer {
             return Ok(img);
         };
         Ok(crop_capture(&img, x, y, w, h))
+    }
+
+    /// [`Self::capture_rgba`] read until it is a frame the scene drew: the
+    /// first opaque readback ([`CaptureImage::has_unwritten_texels`]) that
+    /// the next opaque one reproduces byte for byte, within
+    /// [`SETTLED_CAPTURE_TRIES`] readbacks (the last opaque one otherwise,
+    /// and the first one when none is opaque).
+    ///
+    /// Re-rendering an unchanged target is deterministic, yet under heavy
+    /// GPU contention (the runners share one GPU) a readback has come back
+    /// with tiles of its top rows still zero: a band of 1 to 16 rows whose
+    /// lower edge steps every 32 columns, the rest byte-identical. Two
+    /// consecutive readbacks can carry the same band, so agreement alone
+    /// let it through; the alpha channel cannot be zero in a drawn frame.
+    /// The retail-compare corpus scored `palma_summon_mid_cast` and
+    /// `jedo_summon_mid_cast`, white flash frames, `0.036` low on such runs:
+    /// the band is one stage row of black across the forty top blocks.
+    pub fn capture_rgba_settled<'a>(
+        &self,
+        target: &dyn Fn() -> RenderTarget<'a>,
+    ) -> Result<CaptureImage> {
+        let mut last: Option<CaptureImage> = None;
+        let mut last_err = None;
+        for _ in 0..SETTLED_CAPTURE_TRIES {
+            match self.capture_rgba(target()) {
+                Ok(img) if img.has_unwritten_texels() => {
+                    if last.is_none() {
+                        last = Some(img);
+                    }
+                }
+                Ok(img) => {
+                    if let Some(prev) = &last
+                        && !prev.has_unwritten_texels()
+                        && prev.rgba == img.rgba
+                    {
+                        return Ok(img);
+                    }
+                    last = Some(img);
+                }
+                Err(e) => last_err = Some(e),
+            }
+        }
+        match (last, last_err) {
+            (Some(img), _) => Ok(img),
+            (None, Some(e)) => Err(e),
+            (None, None) => anyhow::bail!("no capture taken"),
+        }
     }
 
     /// Render one frame into an offscreen texture at the current surface

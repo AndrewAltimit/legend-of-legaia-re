@@ -59,9 +59,9 @@ pub(super) fn stage_draw_marks(
 
 /// The `--screenshot-every` sweep: capture this frame into the sweep dir
 /// when its tick is due, and exit after the last one.
-pub(super) fn capture_sweep_frame(
+pub(super) fn capture_sweep_frame<'a>(
     r: &legaia_engine_render::Renderer,
-    target: RenderTarget<'_>,
+    target: &dyn Fn() -> RenderTarget<'a>,
     screenshot: Option<&ScreenshotConfig>,
     tick_no: u64,
     sweep_next_tick: &mut u64,
@@ -77,7 +77,7 @@ pub(super) fn capture_sweep_frame(
         let path = sw.dir.join(format!("tick_{:05}.png", tick_no));
         let last_tick = sw.last_tick;
         *sweep_next_tick = tick_no + sw.every;
-        match r.capture_rgba(target) {
+        match r.capture_rgba_settled(target) {
             Ok(img) => match write_capture_png(&path, &img) {
                 Ok(()) => {
                     println!(
@@ -229,29 +229,11 @@ impl PlayWindowApp {
                 .as_ref()
                 .and_then(|sc| sc.path.clone())
                 .unwrap();
-            // Read the frame back until two consecutive readbacks of
-            // this same frame agree. Re-rendering an unchanged target is
-            // deterministic, yet under heavy machine load a readback
-            // has come back with its top rows still zero - a black band
-            // of up to 15 rows whose lower edge steps every 32 columns
-            // (GPU tiles), the rest of the frame byte-identical - on a
-            // few runs in ten of the retail-compare corpus (never with
-            // the child run alone; see `Renderer::capture_rgba`).
-            // A band is not a frame the scene drew, so the capture is
-            // the first one a second readback reproduces.
-            let mut capture = r.capture_rgba(target(scene));
-            for retry in 1..=4 {
-                let Ok(prev) = &capture else { break };
-                match r.capture_rgba(target(scene)) {
-                    Ok(next) if next.rgba == prev.rgba => break,
-                    next => {
-                        eprintln!(
-                            "screenshot readback {retry} disagreed with the previous one; reading again"
-                        );
-                        capture = next;
-                    }
-                }
-            }
+            // A frame the scene drew: opaque, and reproduced by a second
+            // readback (`Renderer::capture_rgba_settled` - a readback under
+            // GPU contention has come back with a zero band over its top
+            // rows, twice running).
+            let capture = r.capture_rgba_settled(&|| target(scene));
             match capture {
                 Ok(img) => match write_capture_png(&path, &img) {
                     Ok(()) => {
@@ -383,14 +365,7 @@ impl PlayWindowApp {
         }
         let mut shot = String::new();
         if (tick - start).is_multiple_of(rec.every) && rec.shots < rec.max {
-            let mut capture = r.capture_rgba(target());
-            for _ in 0..3 {
-                let Ok(prev) = &capture else { break };
-                match r.capture_rgba(target()) {
-                    Ok(next) if next.rgba == prev.rgba => break,
-                    next => capture = next,
-                }
-            }
+            let capture = r.capture_rgba_settled(target);
             match capture.and_then(|img| {
                 legaia_parity::retail_compare_image::Frame::from_engine_capture(
                     &img.rgba,
