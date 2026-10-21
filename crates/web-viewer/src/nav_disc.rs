@@ -103,7 +103,10 @@ impl LegaiaViewer {
                 // Decode the item-name table so the enemy table can show drop
                 // names instead of raw ids. Silent on failure (regional build
                 // with a different table address) - the page falls back to ids.
+                // The viewer pages show these in a system font, so the table is
+                // held as the dialog font draws it (`$N` -> `LvN`).
                 if let Some(table) = legaia_game_tables::item_names::ItemNameTable::from_scus(&scus)
+                    .map(|t| t.drawn(legaia_font::cell_text::level_mark(None)))
                 {
                     console_log(&format!(
                         "Decoded item-name table from SCUS ({} named ids)",

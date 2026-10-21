@@ -11,7 +11,8 @@ impl LegaiaViewer {
     ///
     /// Shape:
     /// ```json
-    /// { "records": [ { "id": u16, "name": "Gimard", "hp": u16, "mp": u16,
+    /// { "records": [ { "id": u16, "name": "Gimard Lv2" (as drawn),
+    ///                  "raw_name": "Gimard $2" (disc text), "hp": u16, "mp": u16,
     ///                  "stats": [u16; 6], "battle_stats": [u16; 6],
     ///                  "battle_stats_random": [u16; 6],
     ///                  "fights": { "flagged": u32, "clear": u32, "random": u32,
@@ -141,7 +142,10 @@ impl LegaiaViewer {
                 let (steal_item, steal_item_name, steal_chance) = steal_of(r.id);
                 serde_json::json!({
                     "id": r.id,
-                    "name": r.name,
+                    // As the battle font draws it (`Gimard $2` -> `Gimard Lv2`);
+                    // the viewer reads the USA executable, so the mark is `Lv`.
+                    "name": legaia_font::cell_text::display_name(&r.name, legaia_font::cell_text::level_mark(None)),
+                    "raw_name": r.name,
                     "hp": r.hp,
                     "mp": r.mp,
                     "stats": r.stats,

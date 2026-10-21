@@ -44,6 +44,8 @@ The crate does **not** depend on a renderer - it only produces glyph rectangles 
 
 ### Accented Latin
 
+`cell_text::display_name(raw, level_mark)` renders a disc string the way the font page draws it for a host showing it in a system font: cell `0x24` (`$`) is the level mark (`cell_text::level_mark(exe)`: `Lv`, `Nv` on the French page), so the monster archive's `Gimard $2` reads `Gimard Lv2`, and cell `0x2A` (`*`) is `×`. Stored strings stay raw; the font-atlas path needs no mapping.
+
 `latin::LATIN_CELLS` is the byte layout for accented Latin (CP437 / CP850, the bytes the PAL discs write) with each cell's ASCII fold and glyph recipe; `latin::fold_for_char` / `fold_for_byte` / `drawn_byte_for_char` answer the lookups, and `LANGUAGE_SETS` lists the characters per language. `accent_font::build_accent_font(page, widths)` rebuilds every recipe cell from the page's own base letters plus a drawn mark, `accent_font_state` tells whether a disc already carries the result, and `cell_draw` classifies a byte as drawing, overprinting (ink, zero advance) or blank. See [`docs/formats/dialog-font.md`](../../docs/formats/dialog-font.md#the-accent-font).
 
 ### Disc-only construction (no save state)

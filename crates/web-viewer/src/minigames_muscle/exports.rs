@@ -811,7 +811,9 @@ impl LegaiaMinigames {
             .map(|r| {
                 let bs = r.battle_stats();
                 serde_json::json!({
-                    "id": r.id, "name": r.name, "hp": r.hp,
+                    "id": r.id,
+                    "name": legaia_font::cell_text::display_name(&r.name, legaia_font::cell_text::level_mark(None)),
+                    "hp": r.hp,
                     "agl": bs[0], "atk": bs[1], "udf": bs[2], "ldf": bs[3],
                     "int": bs[4], "spd": bs[5], "element": r.element,
                 })

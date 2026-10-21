@@ -562,7 +562,9 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     const se = r.side_effects || {};
     const elementName = r.element_name || 'neutral';
     return {
-      id: r.id, name: r.name, hp: r.hp, mp: r.mp,
+      // `name` is as the battle font draws it (`Gimard Lv2`); `raw_name` the
+      // disc text (`Gimard $2`), kept so a search for either form hits.
+      id: r.id, name: r.name, raw_name: r.raw_name || r.name, hp: r.hp, mp: r.mp,
       rs0: s[0] ?? 0, rs1: s[1] ?? 0, rs2: s[2] ?? 0,
       rs3: s[3] ?? 0, rs4: s[4] ?? 0, rs5: s[5] ?? 0,
       bs0: b[0] ?? 0, bs1: b[1] ?? 0, bs2: b[2] ?? 0,
@@ -783,7 +785,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     if (q) {
       const has = (s) => !!s && String(s).toLowerCase().includes(q);
       rows = rows.filter(r =>
-        has(r.name) || String(r.id) === q ||
+        has(r.name) || has(r.raw_name) || String(r.id) === q ||
         has(r.drop_item_name) || has(r.steal_item_name) ||
         r.magicAttacks.some(m => has(m.name)));
     }

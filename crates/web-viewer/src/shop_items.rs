@@ -78,7 +78,7 @@ fn boosted_tag(s: BoostedStat) -> &'static str {
 /// item-name table is not found in `scus` (a build with a different table
 /// address); the other tables are optional and their fields come back `null`.
 pub fn item_records_json(scus: &[u8]) -> Option<String> {
-    let names = ItemNameTable::from_scus(scus)?;
+    let names = ItemNameTable::from_scus(scus)?.drawn(legaia_font::cell_text::level_mark(None));
     let effects = ItemEffectTable::from_scus(scus);
     let equips = EquipStatTable::from_scus(scus);
     let passives = AccessoryPassiveTable::from_scus(scus);

@@ -373,7 +373,10 @@ impl LegaiaMinigames {
                 ldf: bs[3],
                 element: rec.element.min(ELEMENT_NEUTRAL),
             },
-            rec.name.clone(),
+            legaia_font::cell_text::display_name(
+                &rec.name,
+                legaia_font::cell_text::level_mark(None),
+            ),
         ))
     }
 }
