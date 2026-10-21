@@ -82,6 +82,7 @@ pub mod scene_transition_sweep;
 pub mod submode_hub_actors;
 pub mod travel_art_actor;
 pub mod vdf_pulse;
+pub mod vram_scroll;
 pub mod walk_regen;
 pub mod world_map;
 pub mod world_map_dim;

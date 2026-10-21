@@ -1501,6 +1501,7 @@
     "submode_hub_actors",
     "travel_art_actor",
     "vdf_pulse",
+    "vram_scroll",
     "walk_regen",
     "world_map",
     "world_map_dim",

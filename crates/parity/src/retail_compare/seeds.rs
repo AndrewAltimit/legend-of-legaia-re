@@ -178,7 +178,7 @@ pub(super) const PART_TICK: u32 = 0x8002_1DF4;
 
 /// Every live mode-4 VRAM scroller on a retail state's actor lists - a
 /// `FUN_80021DF4` part with `+0x5A = 4`, rect `+0xD0..+0xD6`
-/// ([`legaia_engine_core::world::ambient`]'s `vram_scroll`) - with the
+/// (`legaia_engine_field::vram_scroll`) - with the
 /// texels the state's VRAM (`1024 x 512` BGR555 LE) holds there.
 pub fn retail_scroll_rects(ram: &[u8], vram: &[u8]) -> Vec<SeededVramRect> {
     if vram.len() != 1024 * 512 * 2 {

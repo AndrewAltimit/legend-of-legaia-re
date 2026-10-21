@@ -97,7 +97,7 @@ impl World {
     /// scroller after the VM call on any part whose `+0x5A` is `4`
     /// (`0x80022CB8`), whatever list the part sits on, so a battle effect's
     /// scroller animates its rect exactly as a field ambient one does
-    /// ([`super::super::ambient::vram_scroll`]). The fired rotations queue on
+    /// ([`legaia_engine_field::vram_scroll`]). The fired rotations queue on
     /// [`crate::world::BattleState::vram_scrolls`] for the hosts' battle VRAM.
     ///
     /// PORT: FUN_80021DF4 (the mode-4 arm, `0x80022CB8..0x80022EE0`, on the
@@ -111,11 +111,11 @@ impl World {
         }
         let step = self.clock.frame_step.max(1);
         for part in parts.iter_mut().filter(|p| !p.finished) {
-            if part.state.move_submode != super::super::ambient::vram_scroll::RENDER_MODE_SCROLL {
+            if part.state.move_submode != legaia_engine_field::vram_scroll::RENDER_MODE_SCROLL {
                 continue;
             }
             if let Some(fx) =
-                super::super::ambient::vram_scroll::mode4_integrate(&mut part.state, step)
+                legaia_engine_field::vram_scroll::mode4_integrate(&mut part.state, step)
             {
                 self.battle.vram_scrolls.push(fx);
             }

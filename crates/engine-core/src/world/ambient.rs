@@ -29,7 +29,7 @@
 //!    software VRAM exactly like the scripted-CLUT sibling
 //!    [`World::step_clut_fx`].
 //!
-//! 3. **The mode-4 render tail.** The scroller sibling ([`vram_scroll`])
+//! 3. **The mode-4 render tail.** The scroller sibling ([`legaia_engine_field::vram_scroll`])
 //!    rotates an authored VRAM rect in place once per fired period. That
 //!    write is *destructive* rather than recomputed-from-capture, so its
 //!    requests are queued per game tick and drained against the same VRAM
@@ -51,12 +51,10 @@
 //! channel and motion blocks around the VM - [`legaia_engine_effects::part_motion`])
 //! REF: FUN_800252EC, FUN_80021DF4, FUN_80019D50, FUN_801DE840
 
-pub mod vram_scroll;
-
 use super::*;
 use legaia_engine_field::clut_cell_fx::{self, ClutCellFx};
+use legaia_engine_field::vram_scroll::{self, VramScrollFx};
 use legaia_engine_vm::move_vm::{self, ActorState, ActorTickOutcome};
-use vram_scroll::VramScrollFx;
 
 /// Per-tick opcode budget for one ambient part (the records are small; the
 /// budget only guards a malformed stream).

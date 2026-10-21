@@ -55,7 +55,7 @@
 //! retail countdown/reload and returns the tick's strip widths;
 //! [`rotate_rect`] is the pure texel kernel. `World::step_ambient_fx` owns
 //! VRAM and applies the two together, the same contract the mode-3 sibling
-//! ([`legaia_engine_field::clut_cell_fx`]) uses - except that this one is **destructive**:
+//! ([`crate::clut_cell_fx`]) uses - except that this one is **destructive**:
 //! the rect is rotated in place, so it is applied once per game tick rather
 //! than recomputed per frame from a cached capture.
 
@@ -77,7 +77,7 @@ const OFF_RECT: usize = 0xD0 - 0xAC;
 pub const RENDER_MODE_SCROLL: i16 = 4;
 
 /// A live scroller's seat as reported by
-/// [`World::active_ambient_scroll_rects`](crate::world::World::active_ambient_scroll_rects):
+/// `World::active_ambient_scroll_rects`:
 /// the VRAM rect `(x, y, w, h)` it animates, then the authored per-period
 /// horizontal and vertical steps (`+0xCC`, `+0xCE`).
 pub type ScrollSeat = ((u16, u16, u16, u16), i16, i16);

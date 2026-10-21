@@ -600,7 +600,7 @@ pub struct BattleState {
     /// band this way). Applied with [`Self::vram_moves`] by
     /// [`crate::world::World::apply_battle_vram_moves`]; cleared at battle
     /// entry.
-    pub vram_scrolls: Vec<crate::world::ambient::vram_scroll::VramScrollFx>,
+    pub vram_scrolls: Vec<legaia_engine_field::vram_scroll::VramScrollFx>,
     /// How the engine's one-vsync ticks group into battle frames - the unit
     /// the root-motion carry truncates over and the camera steps on
     /// ([`crate::world::World::set_battle_frame_step`]).

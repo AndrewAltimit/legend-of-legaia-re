@@ -542,7 +542,7 @@ packets, SPU triggers and libgpu VRAM copies. The port splits it by block.
 | Mode 2 / 6 channel growth, keyframe cursor and pack | `move_vm::integrate_draw_channels`, `advance_keyframe_cursor`, `keyframe_pose_entries` |
 | Motion block + post-VM clamps | `engine-effects::part_motion` (`motion_block`) |
 | Mode 3 CLUT-cell integrator | `engine-field::clut_cell_fx::mode3_integrate` |
-| Mode 4 VRAM-rect scroller | `engine-core::world::ambient::vram_scroll::mode4_integrate` |
+| Mode 4 VRAM-rect scroller | `engine-field::vram_scroll::mode4_integrate` |
 | Mode 5 positional sound emitter | `engine-vm::sfx_emitter::emitter_tick`, driven from `World::tick_ambient_fx`; voices by `AudioDirector::drive_sfx_emitters` |
 | `+0x5A` seeding from `model_sel` | `engine-effects::summon::RenderMode::from_model_sel` (`0x4000 -> Particle`, `0x4001 -> SoundEmitter`); the field seater `World::spawn_ambient_record_at` writes `+0x5A` itself (`3` / `5`) |
 | Part seater `FUN_80021B04` | `move_vm::spawn_move_actor`; field host `World::spawn_ambient_record_at` |

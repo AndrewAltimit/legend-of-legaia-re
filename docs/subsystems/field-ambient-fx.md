@@ -944,7 +944,7 @@ oscillators.
   `engine-field::man_field_scripts::scene_entry_ambient_installs` names the
   same records and is a tool for tests and the `.glb` export, not a second
   installer; render tails
-  `engine-field::clut_cell_fx` (mode 3) and `world::ambient::vram_scroll`
+  `engine-field::clut_cell_fx` (mode 3) and `engine-field::vram_scroll`
   (mode 4); morph kernels `scene-formats::vdf_morph` (record walk + delta
   blend), `engine-vm::vdf_morph` (actor lanes + envelope) and
   `engine-core::world::npc_morph`; enhancement pulse `engine-field::vdf_pulse`.
