@@ -71,10 +71,10 @@
 
   <h3 id="studio-open">Open your disc</h3>
   <figure class="screenshot">
-    <img src="../img/desktop/studio-welcome.jpg" width="1280" height="400" alt="Legaia Studio's start screen: a short welcome, the four steps, and an Open again list of two disc images and an extracted folder" loading="lazy">
-    <figcaption>The start screen. <em>Open again</em> (and <em>Recent</em> in the top bar) lists the last eight discs and folders you opened; click one to reopen it.</figcaption>
+    <img src="../img/desktop/studio-welcome.jpg" width="1280" height="500" alt="Legaia Studio's start page: the title, a gold Open disc image button beside Open extracted folder, and a list of what each view does" loading="lazy">
+    <figcaption>The start page. Once you have opened something, an <em>Open again</em> list (also <em>Recent</em> in the top bar) holds the last eight discs and folders; click one to reopen it.</figcaption>
   </figure>
-  <p>Click <em>Open disc image...</em> (<kbd>Ctrl</kbd>+<kbd>O</kbd>), drop the <code>.bin</code> or <code>.cue</code> onto the window, or type its path. A folder that <code>legaia-extract</code> already wrote opens too, with <em>Open extracted folder...</em>. Studio checks the image before loading it and reopens the last one at the next start. The <em>x</em> beside a recent entry takes it off the list, and an entry whose file has been moved or deleted drops off by itself.</p>
+  <p>Click the gold <em>Open disc image...</em> button (<kbd>Ctrl</kbd>+<kbd>O</kbd>), drop the <code>.bin</code> or <code>.cue</code> onto the window, or type its path. A folder that <code>legaia-extract</code> already wrote opens too, with <em>Open extracted folder...</em>. Studio checks the image before loading it and reopens the last one at the next start; if the file is not a disc image, a red banner says why, with <em>Copy</em> for a bug report. The <em>x</em> beside a recent entry takes it off the list, and an entry whose file has been moved or deleted drops off by itself.</p>
 
   <h3 id="studio-browse">Browse and search the archive</h3>
   <figure class="screenshot">
@@ -87,7 +87,7 @@
   <p>The tabs above the preview show what the selected entry holds:</p>
   <div class="shot-pair">
     <figure class="screenshot">
-      <img src="../img/desktop/studio-textures.jpg" width="836" height="600" alt="The Textures tab listing a Rim Elm entry's 96 textures, one texture page with a rug drawn large, the palette slider, zoom and PNG export buttons" loading="lazy">
+      <img src="../img/desktop/studio-textures.jpg" width="836" height="600" alt="The Textures tab listing a Rim Elm entry's 96 textures, one page of ground textures drawn large, the palette slider, zoom and PNG export buttons" loading="lazy">
       <figcaption><em>Textures</em>: every image in the entry, with a palette (CLUT) slider.</figcaption>
     </figure>
     <figure class="screenshot">
@@ -106,7 +106,7 @@
 
   <h3 id="studio-actors">Characters &amp; monsters</h3>
   <figure class="screenshot">
-    <img src="../img/desktop/studio-actors.jpg" width="1280" height="800" alt="The Characters &amp; monsters view: the party and monster lists on the left, Vahn in battle form at the start of his Power Slash art on the right, with the equipment pickers, the clip picker and the frame slider" loading="lazy">
+    <img src="../img/desktop/studio-actors.jpg" width="1280" height="800" alt="The Characters &amp; monsters view: the party and monster lists on the left, Vahn in battle form partway through his Pyro Pummel art on the right, with the equipment pickers, the clip picker and the frame slider" loading="lazy">
     <figcaption>The party in battle form with any equipment, and every monster by name with its element; every battle animation plays or steps frame by frame.</figcaption>
   </figure>
   <p>Pick a party member to see the battle model built from the equipment you choose, or a monster from the list (<code>Gimard Lv2</code>, with its element badge). Every battle animation plays at game speed or steps a frame at a time; for Vahn, Noa and Gala the list includes every Tactical Art by name. <em>Export glTF</em> writes the animated model.</p>
@@ -122,13 +122,14 @@
   <p>Choose an output folder (Studio proposes one beside the disc image), tick any steps to skip, and start. The tab shows progress and the log, can be cancelled, and offers <em>Open output folder</em> when it ends. Tick <em>Export all textures as PNG</em> to also get every texture on the disc as a PNG. What the folder holds is described in <a href="getting-started.html#one-shot-extract">Getting started</a>.</p>
 
   <h3 id="studio-play">Play, and the rest of the window</h3>
-  <p><strong>Play</strong> in the top bar starts the game on the open disc, at the title screen. Saves, key bindings and options are the same ones the game uses when you start it directly, and the disc is remembered for the game too: starting <em>Legend of Legaia</em> later skips the disc question. Play needs the USA disc image and <code>legaia-engine</code> in the same folder; when it is greyed out, hover it to see why. If the game stops with an error, the status line shows the end of its log and where the full log is.</p>
+  <p><strong>Play</strong> - the gold button in the top bar, or <kbd>F5</kbd> - starts the game on the open disc, at the title screen. Saves, key bindings and options are the same ones the game uses when you start it directly, and the disc is remembered for the game too: starting <em>Legend of Legaia</em> later finds it ready. The display options you set in the game's launcher (below) apply to a game started from Studio too. Play needs the USA disc image and <code>legaia-engine</code> in the same folder; when it is greyed out, hover it to see why. If the game stops with an error, the status line shows the end of its log and where the full log is.</p>
   <figure class="screenshot">
     <img src="../img/desktop/studio-light.jpg" width="1280" height="800" alt="Legaia Studio in its light theme, showing the monster Drake Ghost textured in the Characters &amp; monsters view" loading="lazy">
     <figcaption>The light theme, from the <em>View</em> menu.</figcaption>
   </figure>
   <ul class="bullets">
-    <li><strong>Status line</strong> - a confirmation (an export written, the game started) clears itself after a few seconds; an error stays until <em>Dismiss</em>, and <em>Copy</em> puts its text on the clipboard for a bug report.</li>
+    <li><strong>Status line</strong> - a confirmation (an export written, the game started) clears itself after a few seconds; an error is a red banner that stays until <em>Dismiss</em>, and <em>Copy</em> puts its text on the clipboard for a bug report.</li>
+    <li><strong>Keyboard</strong> - <kbd>Ctrl</kbd>+<kbd>1</kbd> to <kbd>Ctrl</kbd>+<kbd>4</kbd> switch between Browse, Characters &amp; monsters, Movies &amp; voice and Extract; <kbd>F5</kbd> plays; <kbd>F1</kbd> lists every shortcut.</li>
     <li><strong>View</strong> - a light or dark theme, or follow the desktop; and the zoom of the whole window, also on <kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd>. Both are remembered.</li>
     <li><strong>About</strong> (<kbd>F1</kbd>) - the version, the keyboard shortcuts, and where the third-party license notices sit.</li>
   </ul>
@@ -145,12 +146,25 @@
 
   <h3 id="port-start">Three ways to start it</h3>
   <ul class="bullets">
-    <li><strong>Double-click</strong> <code>Legend of Legaia.exe</code> (Windows), <code>Legend of Legaia.app</code> (macOS) or <code>legaia-engine</code> (Linux). The first time, a small window asks for your disc image: press <kbd>Enter</kbd> or click to browse, drag the <code>.bin</code> or <code>.cue</code> onto it, or type its path. The disc is checked (a PAL or Japanese disc is refused; a randomized or translated USA disc is fine), remembered in <code>launcher.toml</code>, and the game opens on the title screen. Later starts go straight there. To switch discs, delete <code>launcher.toml</code> from the folder listed below.</li>
+    <li><strong>Double-click</strong> <code>Legend of Legaia.exe</code> (Windows), <code>Legend of Legaia.app</code> (macOS) or <code>legaia-engine</code> (Linux). The <a href="#port-launcher">launcher</a> opens: pick your disc once, set the display options if you like, and press <em>Play</em>.</li>
     <li><strong>From Legaia Studio</strong> - <a href="#studio-play"><em>Play</em></a> starts it on the disc Studio has open, and remembers that disc for the double-click start.</li>
     <li><strong>From a terminal</strong> - every option is a flag:
       <div class="cli"><code>./legaia-engine play-window --disc "/path/to/Legend of Legaia (USA).bin" --boot-ui</code></div>
       <code>--boot-ui</code> opens on the title screen; without it the game drops you straight into Rim Elm. <code>./legaia-engine play-window --help</code> lists the rest, and <a href="playing-and-viewing.html#play-window">Playing and viewing</a> explains them.</li>
   </ul>
+
+  <h3 id="port-launcher">The launcher</h3>
+  <figure class="screenshot">
+    <img src="../img/desktop/port-launcher.jpg" width="960" height="720" alt="The launcher: a disc card saying Legend of Legaia (USA) is ready, the Play, Change disc, Controls, Open saves folder and Quit buttons with a help box, and the option list from Enhanced lighting to Original game only" loading="lazy">
+    <figcaption>The launcher. Once it knows your disc it letters itself in the game's own font.</figcaption>
+  </figure>
+  <ol class="steps">
+    <li><b>Choose disc...</b><span>Pick your <code>.bin</code> or <code>.cue</code> (<kbd>Ctrl</kbd>+<kbd>O</kbd>), drag it onto the window, or type its path. It is checked and remembered.</span></li>
+    <li><b>Options</b><span>Turn the enhancements on or off before you start; they are the same settings the in-game keys below change.</span></li>
+    <li><b>Play</b><span>The game opens on the title screen and the launcher closes.</span></li>
+  </ol>
+  <p>The disc card at the top says whether the disc is ready, or what is wrong with it: moved, not a disc image, or another region's disc (a PAL or Japanese disc is refused; a randomized or translated USA disc is fine). The help box under the buttons explains whichever row is focused. The arrow keys move, <kbd>Left</kbd> / <kbd>Right</kbd> change an option, <kbd>Enter</kbd> presses, <kbd>Esc</kbd> quits; the mouse works too. <em>Controls</em> shows your key bindings, and <em>Open saves folder</em> opens the folder your saves and settings live in.</p>
+  <p><em>PlayStation pixel look</em> adds the console's wobbling vertices and colour dithering; <em>Original game only</em> starts the game exactly as the original looks and moves - every enhancement off for that session, your settings kept for next time. If the game ever stops with an error, the launcher comes back and shows it.</p>
 
   <h3 id="port-controls">Controls</h3>
   <p>The arrow keys are the D-pad. A gamepad works too, by button position (bottom / right / left / top face buttons are Cross / Circle / Square / Triangle), and either the D-pad or the left stick moves.</p>
@@ -175,7 +189,7 @@
     <img src="../img/desktop/port-help.jpg" width="960" height="720" alt="The native window with the F12 panel open, listing every toggle key with its current state" loading="lazy">
     <figcaption><kbd>F12</kbd> (or <kbd>?</kbd>) lists every toggle key with its current state; press it again to close.</figcaption>
   </figure>
-  <p>The port adds a few enhancements over the original, each on its own key, each with the original look one press away. A press shows the toggle's new state at the bottom left for a moment.</p>
+  <p>The port adds a few enhancements over the original, each on its own key (and on the <a href="#port-launcher">launcher</a>), each with the original look one press away. A press shows the toggle's new state at the bottom left for a moment.</p>
   <table>
     <thead><tr><th>Key</th><th>Toggle</th><th>Starts</th></tr></thead>
     <tbody>
@@ -190,7 +204,7 @@
     </tbody>
   </table>
   <p>The panel also lists a few keys for tinkering rather than playing: <kbd>F1</kbd> diagnostic text, <kbd>F3</kbd> a free debug camera, <kbd>F6</kbd> to fill the AP gauge and <kbd>F7</kbd> to switch random encounters off and on. Lighting, camera distance and movement mode are remembered between sessions.</p>
-  <p>To play exactly as the original looks and moves, start with <code>--retail</code>: every enhancement off and every engine option at its original value for that session, without changing your saved options.</p>
+  <p>To play exactly as the original looks and moves, turn on <em>Original game only</em> in the launcher, or start with <code>--retail</code>: every enhancement off and every engine option at its original value for that session, without changing your saved options.</p>
   <div class="cli"><code>./legaia-engine play-window --disc "/path/to/Legend of Legaia (USA).bin" --boot-ui --retail</code></div>
 
   <h3 id="port-saves">Where saves and settings live</h3>
@@ -203,7 +217,7 @@
       <tr><td>macOS</td><td><code>~/Library/Application Support/legaia-engine</code></td><td>the same folder</td></tr>
     </tbody>
   </table>
-  <p>Saves go to <code>saves/memcard1.mcr</code>, a standard PlayStation memory-card image that emulators read too; options to <code>legaia-options.toml</code>, key bindings to <code>legaia-input.toml</code>. A <code>play-window</code> run from a terminal keeps these three in the current directory instead, so run it from the same place each time (or pass <code>--save-dir</code>).</p>
+  <p>Saves go to <code>saves/memcard1.mcr</code>, a standard PlayStation memory-card image that emulators read too; options to <code>legaia-options.toml</code>, key bindings to <code>legaia-input.toml</code>, and the log of the last launcher-started game to <code>legaia-engine-game.log</code>. A <code>play-window</code> run from a terminal keeps these three in the current directory instead, so run it from the same place each time (or pass <code>--save-dir</code>).</p>
 </section>
 
 <section class="doc-section" id="see-also">

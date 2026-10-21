@@ -9,7 +9,7 @@ Pick your path:
 
 | You want to | Do this |
 |---|---|
-| **Play the game** | Start `legaia-engine` with no arguments - double-click it (`Legend of Legaia.exe` on Windows, `Legend of Legaia.app` on macOS). It asks for your disc image once, remembers it, and opens the title screen. [Playing and viewing](playing-and-viewing.md#0-the-launcher) has the controls. |
+| **Play the game** | Start `legaia-engine` with no arguments - double-click it (`Legend of Legaia.exe` on Windows, `Legend of Legaia.app` on macOS). It asks for your disc image once and remembers it; the launcher also sets the display options, then *Play* opens the title screen. [Playing and viewing](playing-and-viewing.md#0-the-launcher) has the controls. |
 | **Play without installing anything** | Open the project site's play page and pick your disc image there; it runs the same engine in the browser. |
 | **Get the assets out** | Follow sections 1-3 below, then [extracting-assets.md](extracting-assets.md). |
 | **Randomize, mod or translate** | Sections 1-2 below, then [modding-and-translation.md](modding-and-translation.md) or [translating.md](translating.md). |

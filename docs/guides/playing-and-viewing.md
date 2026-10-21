@@ -37,17 +37,36 @@ first start past SmartScreen or Gatekeeper, the controls and the toggles with
 screenshots; this page is the full reference.
 
 Started with **no subcommand** - a double-click, a desktop shortcut, the macOS
-app - `legaia-engine` runs a small launcher instead of printing help:
+app - `legaia-engine` opens its launcher instead of printing help:
 
 ```bash
 ./legaia-engine
 ```
 
-On the first start a window asks for your Legend of Legaia (USA) disc image.
-Press `Enter` or click to open the system file dialog, drag the `.bin` (or
-`.cue`) onto the window, or type its path and press `Enter`; `Esc` quits. On
-Linux the dialog goes through the desktop's file-chooser portal; where no
-portal runs, the drag-and-drop and typed-path routes still work.
+The launcher is one screen: a disc card at the top, the actions on the left
+(*Play*, *Choose disc...* / *Change disc...*, *Controls*, *Open saves
+folder*, *Quit*) with a help box under them that explains whatever is
+focused, and the options on the right. Once a disc validates, the screen is
+lettered in the game's own dialog font, read from that disc.
+
+| Key / mouse | Does |
+|---|---|
+| Up / Down | move between every control |
+| Tab, Right on a button | jump between the buttons and the option list |
+| Left / Right on an option | change it (a switch flips, a list steps, a volume moves by one) |
+| Enter, Space, click | press the focused button, or step an option forward |
+| Right-click an option | step it back |
+| Ctrl+O | open the file dialog |
+| typing | enter a disc path (Enter uses it, Esc clears it) |
+| Esc | leave the controls page, or quit |
+
+### Choosing the disc
+
+*Choose disc...* opens the system file dialog (`Ctrl+O` does too); dragging
+the `.bin` (or `.cue`) onto the window, or typing its path and pressing
+`Enter`, works as well. On Linux the dialog goes through the desktop's
+file-chooser portal; where no portal runs, the drag-and-drop and typed-path
+routes still work.
 
 On a Wayland desktop the launcher window opens through XWayland, because the
 windowing library has no Wayland drag-and-drop; the compositor carries a drag
@@ -56,35 +75,77 @@ XWayland (`DISPLAY` unset), or with `LEGAIA_LAUNCHER_WAYLAND=1`, the window is
 native Wayland and only the file dialog and the typed path take a disc. The
 game itself always opens on the desktop's default backend.
 
-On Windows, double-click `Legend of Legaia.exe`: it starts `legaia-engine.exe`
-with no console window. `legaia-engine.exe` is a console program so its
-subcommands behave normally in a terminal; double-clicked directly, it closes
-the console it was given (a brief flash) unless `LEGAIA_KEEP_CONSOLE` is set,
-and run from a command prompt it keeps printing its log there.
-
 The chosen image is checked before it is accepted, through the same reader the
 game boots from: a `.cue` resolves to its `.bin`, the image must be raw
 Mode 2/2352, its `SYSTEM.CNF` must boot `SCUS_942.54`, and `PROT.DAT` must be
 present. A PAL or Japanese disc is refused with the executable it boots; a
 randomized or translated USA disc is accepted, since it still boots the USA
 executable. The check reads a few sectors, not the whole image - it is not the
-SHA-256 fingerprint `disc-extract verify` computes.
+SHA-256 fingerprint `disc-extract verify` computes. The disc card says what is
+wrong in one line (the file moved, is not a disc image, is another region's
+disc) and the help box gives the reason and the fix.
 
 A disc that passes is remembered in `launcher.toml` in the platform config
 directory (`~/.config/legaia-engine` on Linux, `%APPDATA%\legaia-engine` on
-Windows, `~/Library/Application Support/legaia-engine` on macOS), and the game
-opens on the title screen (`play-window --disc <bin> --boot-ui`). Later starts
-skip the window entirely. It comes back only when the remembered file is gone
-or no longer validates, and then says which. To switch discs, delete
-`launcher.toml`, or run `play-window --disc` directly.
+Windows, `~/Library/Application Support/legaia-engine` on macOS); the next
+start shows it ready, with *Play* focused, so `Enter` starts the game.
+*Change disc...* picks another one.
+
+### Options
+
+The option list holds the engine's enhancement knobs, so none of them needs a
+terminal flag:
+
+| Row | Stored in | In game | Default |
+|---|---|---|---|
+| Enhanced lighting | `legaia-options.toml` | `I` | on |
+| Time of day (auto, day, dusk, night) | `legaia-options.toml` | `F8` | auto |
+| Lamp shadows | `legaia-options.toml` | `Y` | on |
+| See-through walls | `legaia-options.toml` | `F4` | on |
+| Ground fog | `legaia-options.toml` | `F9` | off |
+| Bloom | `legaia-options.toml` | `F10` | off |
+| PlayStation pixel look (`--psx-render`) | `launcher.toml` | - | off |
+| Camera distance (retail, far, farther) | `legaia-options.toml` | `T` | far |
+| Free-angle movement | `legaia-options.toml` | `R` | off |
+| Reduce flashing | `legaia-options.toml` | - | on |
+| Music / sound effects volume (0..10, 8 = the original mix) | `legaia-options.toml` | - | 8 |
+| Original game only (`--retail`) | `launcher.toml` | - | off |
+
+The rows stored in `legaia-options.toml` are the game's own options: the
+launcher writes the same file the in-game keys change, so a toggle made in
+either place is the one the other shows. The two `launcher.toml` rows are
+launch switches with no option behind them. *Original game only* starts the
+game retail-faithful (`play-window --retail`): every enhancement off for that
+session, the saved options untouched; the rows it overrides read *Original*
+while it is on. *Controls* swaps the option list for the current key bindings
+(`legaia-input.toml`).
+
+### Playing
+
+*Play* starts the game on the title screen (`play-window --disc <bin>
+--boot-ui`, plus `--psx-render` / `--retail` when those are on) in a child
+process, and the launcher window closes. When the game exits normally the
+launcher ends with it. When it stops with an error, the launcher comes back
+with the error lines of the game's log; the whole log is
+`legaia-engine-game.log` in the saves folder. Run from a terminal, the game's
+output still prints there too.
+
+`LEGAIA_LAUNCHER_DIRECT=1` skips the screen: a remembered disc that still
+validates boots straight into the game, in the launcher's own process.
+
+On Windows, double-click `Legend of Legaia.exe`: it starts `legaia-engine.exe`
+with no console window. `legaia-engine.exe` is a console program so its
+subcommands behave normally in a terminal; double-clicked directly, it closes
+the console it was given (a brief flash) unless `LEGAIA_KEEP_CONSOLE` is set,
+and run from a command prompt it keeps printing its log there.
 
 A launcher start runs the game from the per-user data directory
 (`~/.local/share/legaia-engine` on Linux; the same folder as the settings on
 Windows and macOS), so key bindings (`legaia-input.toml`), options
 (`legaia-options.toml`) and `saves/` stay in one place however the binary was
-started. `LEGAIA_ENGINE_CONFIG_DIR` and `LEGAIA_ENGINE_DATA_DIR` override the
-two directories. Every subcommand below behaves exactly as before; the
-launcher only answers the no-argument case.
+started; *Open saves folder* opens it. `LEGAIA_ENGINE_CONFIG_DIR` and
+`LEGAIA_ENGINE_DATA_DIR` override the two directories. Every subcommand below
+behaves exactly as before; the launcher only answers the no-argument case.
 
 ## 1. Boot the engine
 

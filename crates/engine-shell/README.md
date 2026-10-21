@@ -52,7 +52,7 @@ authoritative list; the broad groups are:
 | Group | Subcommands | What they do |
 |---|---|---|
 | Scene inspection | `info`, `list-scenes`, `clut-trace`, `man-scripts`, `xa-cue`, `config dump-cutscene-map` | Headless reports on a scene's resolved asset chain / dropped CLUTs / MAN field-VM scripts / XA voice-cue slots, plus the CDNAME→`MV*` map as an editable TOML. |
-| Launch | *(no subcommand)* | First-run launcher: asks for the disc image once (native picker, drag-and-drop, typed path), remembers it, boots `play-window --boot-ui`. |
+| Launch | *(no subcommand)* | The launcher screen: disc status and picker (native dialog, drag-and-drop, typed path), the enhancement options and controls, *Play* boots `play-window --boot-ui` in a child process. |
 | Run | `play`, `play-window`, `play-str`, `record` | Boot a scene headless (`play`) or in a wgpu window (`play-window`); play an MDEC movie (`play-str`); capture pad input to a replay (`record`). |
 | Asset export | `export-glb` | Bake a scene (or `--all-scenes`) into textured world / NPC / animated-prop `.glb`s + a placement manifest for Unity/VRChat or Blender; `--items` exports every equipment item as animated item-alone / with-limb `.glb`s, `--party` the party's field forms as villager-shaped `.glb`s ([`docs/tooling/vrchat-world-export.md`](../../docs/tooling/vrchat-world-export.md)). |
 | Save / config | `save`, `load`, `config` | Disk-save smoke round-trip + the keyboard→pad input mapping. The window's own Save writes a block of `saves/memcard1.mcr` with the loaded scene as its resume point, and Continue / Load re-enter that scene before hydrating the world, as retail does; `save` / `load` / `--resume-save` still read and write LGSF slot files. `load --card <image>` reads a block out of a real PSX memory-card image instead ([below](#memory-card-images)). |
@@ -161,8 +161,8 @@ with the headless subcommands. The binary is split into modules under
   (`info`, `run`, `replay`, `trace`, `vram`, `sessions`, `export_glb`: scene
   inspection, the oracle drivers, save/load, and the synthetic-session
   drivers).
-- `launcher_window.rs` - the no-subcommand launcher's picker window (engine
-  text overlay + `rfd` native file dialog). Its settings / validation /
+- `launcher_window.rs` - the no-subcommand launcher screen (engine
+  text overlay + `rfd` native file dialog). Its settings / validation / option rows /
   decision logic is the library module `launcher` (`src/launcher.rs`), unit
   tested without a display or a disc; the user-facing description is
   [`playing-and-viewing.md`](../../docs/guides/playing-and-viewing.md#0-the-launcher).

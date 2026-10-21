@@ -297,7 +297,7 @@ flowchart LR
 
 | Host | Crate | Renders through | Notes |
 |---|---|---|---|
-| Native window | `engine-shell` (`legaia-engine play-window`) | `engine-render` (wgpu) | With no subcommand, `legaia-engine` runs a first-run launcher that asks for the disc once and boots `play-window`. |
+| Native window | `engine-shell` (`legaia-engine play-window`) | `engine-render` (wgpu) | With no subcommand, `legaia-engine` runs a launcher that remembers the disc, edits the enhancement options and starts `play-window` on *Play*. |
 | Browser play page | `web-viewer` (`runtime.rs` + `play_*.rs`) | the site's WebGL renderer | Runs the same `SceneHost`; see [The browser host](#the-browser-host). |
 | Browser minigames page | `web-viewer` (`minigames*.rs`) | the site's WebGL / canvas modules | Drives the minigame rules engines directly, outside a scene. |
 | Headless | `engine-shell` (`play`, `record` / `replay`, `scenarios`), `parity`, test binaries | none, or an offscreen renderer | Same `BootSession`; this is what the oracles and replays measure. |

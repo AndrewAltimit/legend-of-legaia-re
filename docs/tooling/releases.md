@@ -253,7 +253,8 @@ files:
 
 - `README-PLAY.txt` - the file a player needs: start `legaia-engine` (or the
   macOS app) with no arguments, pick your own Legend of Legaia (USA) disc
-  image once, and play. It restates that no game data is included and where
+  image once in the launcher, set its display options, and press Play. It
+  restates that no game data is included and where
   settings and saves live, and lists the keyboard controls (every pad
   button, the Escape-twice quit) and the display toggles. The launcher itself is described in
   [`playing-and-viewing.md`](../guides/playing-and-viewing.md#0-the-launcher).
