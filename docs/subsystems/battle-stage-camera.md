@@ -532,6 +532,20 @@ linked at their own mean depth like every other backdrop packet, and a
 depth-tested mesh draws the same band once the arc stands where retail's
 does.
 
+**Which side of the ribbon draws.** The backdrop arm hands the prim
+dispatcher `FUN_80043390` the node's colour word ORed with `0x40000000` for
+copy A and with `0x48000000` for a copy whose `+0x5A` reflection bits are up
+(`lui a1,0x4000` at `0x8001B014`, `lui a1,0x4800` at `0x8001AFFC`). Bit
+`0x08000000` lowers the winding mask `0x1F80003C` to `0x7FFFFFFF`
+(`0x80043520..0x80043540`), which the flat-textured quad leaf's two-half
+`NCLIP` test (`FUN_80044DC8`, `0x80044E68..0x80044EAC`) can then no longer
+fail. So the mirrored copy draws both sides and every other copy only its
+front faces. The ribbon faces the arena's centre and the battle camera stands
+outside its ring, so copy A's near quads - those between the camera and the
+combatants - face away and drop out
+(`legaia_engine_scene_host::scene_host::backdrop_copy_nclip`, both hosts'
+per-draw NCLIP word on the spun draws).
+
 The spin is `World::tick_battle_backdrop_spin` (once a battle frame) and
 `legaia_engine_scene_host::scene_host::backdrop_slot_1_basis`; both play hosts draw
 slot 1 as one unbaked copy, twice a frame, under that basis

@@ -332,7 +332,7 @@ pub struct SceneHost {
 mod audio_dialog;
 mod battle_intro_inputs;
 mod battle_stage;
-pub use battle_stage::{BattleStageLayers, backdrop_slot_1_basis};
+pub use battle_stage::{BattleStageLayers, backdrop_copy_nclip, backdrop_slot_1_basis};
 mod effects;
 mod lifecycle;
 mod minigame_warp;

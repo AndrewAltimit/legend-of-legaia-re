@@ -278,6 +278,12 @@ impl<'m> DrawCtx<'_, 'm> {
                 let basis = Mat4::from_mat3(glam::Mat3::from_cols_array_2d(&rows).transpose());
                 let mvp = cam * PlayWindowApp::battle_stage_model() * basis;
                 if let Some(mesh) = app.battle_stage_spun_mesh.and_then(|i| store.meshes.get(i)) {
+                    // Copy A culls its back faces, the mirrored copy B
+                    // draws both sides (`backdrop_copy_nclip`).
+                    nclip_marks.push((
+                        draws.len(),
+                        legaia_engine_scene_host::scene_host::backdrop_copy_nclip(*second, copy_b),
+                    ));
                     draws.push(SceneDraw { mesh, mvp, cue });
                 }
                 if let Some(mesh) = app

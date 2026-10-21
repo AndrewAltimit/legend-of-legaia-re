@@ -148,9 +148,15 @@
       if (b.backdropSpun && !backdropHidden
           && typeof rt.play_battle_backdrop_spun_models === 'function') {
         const models = rt.play_battle_backdrop_spun_models();
-        for (let o = 0; o + 16 <= models.length; o += 16) {
+        /* Copy A culls its back faces (the camera stands outside the
+         * ribbon's ring, so its near quads drop); a mirrored copy B draws
+         * both sides (`backdrop_copy_nclip`). Guarded against a cached WASM. */
+        const spunNclip = (typeof rt.play_battle_backdrop_spun_nclip === 'function')
+          ? rt.play_battle_backdrop_spun_nclip() : null;
+        for (let o = 0, k = 0; o + 16 <= models.length; o += 16, k++) {
           draws.push({
             meshId: b.backdropSpun, model: models.slice(o, o + 16), cue: backdropCue,
+            nclip: (spunNclip && k < spunNclip.length) ? spunNclip[k] : undefined,
           });
         }
       }

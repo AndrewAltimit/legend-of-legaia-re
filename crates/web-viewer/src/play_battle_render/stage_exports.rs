@@ -174,6 +174,25 @@ impl LegaiaRuntime {
         out
     }
 
+    /// The NCLIP word of each [`Self::play_battle_backdrop_spun_models`]
+    /// draw, in the same order: copy A culls its back faces, a mirrored
+    /// copy B draws both sides
+    /// (`legaia_engine_scene_host::scene_host::backdrop_copy_nclip`, the
+    /// native window's per-draw mark). Empty when the models are.
+    pub fn play_battle_backdrop_spun_nclip(&self) -> Vec<u32> {
+        let Some(br) = self.battle_render.as_ref() else {
+            return Vec::new();
+        };
+        let (Some(_), Some(sh)) = (br.backdrop_spun.as_ref(), br.shell.as_ref()) else {
+            return Vec::new();
+        };
+        [false, true]
+            .map(|copy_b| {
+                legaia_engine_scene_host::scene_host::backdrop_copy_nclip(sh.second, copy_b)
+            })
+            .to_vec()
+    }
+
     pub fn play_battle_ground_positions(&self) -> Vec<f32> {
         self.battle_render
             .as_ref()
