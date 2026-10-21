@@ -642,32 +642,7 @@ impl LegaiaRuntime {
         if self.menu_glyph_atlas.is_none() || self.title_atlas.is_some() {
             return Vec::new();
         }
-        let (menu_open, cursor) = match session.phase() {
-            TitlePhase::MainMenu { cursor } => (true, cursor),
-            _ => (false, 0),
-        };
-        if legaia_engine_menus::title_overlay::title_text_phase(session.retail_submode(), menu_open)
-            != 2
-        {
-            return Vec::new();
-        }
-        // Anchor inside the same centred + integer-scaled 256x256 title stage
-        // the art path uses. The rows sit between the wordmark band (ends at
-        // src y=140) and the copyright bands (start at src y=195).
-        let atlas_w: u32 = 256;
-        let atlas_h: u32 = 256;
-        let title_scale = (surface_w / atlas_w).min(surface_h / atlas_h).clamp(1, 4);
-        let ts = title_scale as i32;
-        let stage_x0 = (surface_w as i32 - atlas_w as i32 * ts) / 2;
-        let stage_y0 = (surface_h as i32 - atlas_h as i32 * ts) / 2;
-        // "NEW GAME" is 8 cells x 8 px wide at a 1x glyph multiplier; centre
-        // that inside the 256-wide stage.
-        let menu_w_src = 8 * 8;
-        let pen = (
-            stage_x0 + (atlas_w as i32 - menu_w_src) / 2 * ts,
-            stage_y0 + 152 * ts,
-        );
-        ui::title_menu_draws_for(2, cursor, session.continue_enabled, pen, title_scale)
+        legaia_engine_screens::title_screens::title_menu_glyph_draws(session, surface_w, surface_h)
     }
 
     /// Compose the title-TIM bands (wordmark, Press Start, NEW GAME /
@@ -685,21 +660,9 @@ impl LegaiaRuntime {
         if self.title_atlas.is_none() {
             return Vec::new();
         }
-        // Fade-in dims the whole card via alpha; other phases are opaque.
-        let alpha = match session.phase() {
-            TitlePhase::FadeIn { frames_remaining } => {
-                let total = session.fade_in_frames.max(1) as f32;
-                1.0 - (frames_remaining as f32 / total).clamp(0.0, 1.0)
-            }
-            TitlePhase::Done(_) => return Vec::new(),
-            _ => 1.0,
-        };
-        let mut state = ui::TitleBandState::card(alpha);
-        state.press_start = matches!(session.phase(), TitlePhase::PressStart { .. });
-        if let TitlePhase::MainMenu { cursor } = session.phase() {
-            state.menu = Some((cursor, true));
-        }
-        ui::title_band_sprites(state, origin, scale)
+        legaia_engine_screens::title_screens::title_band_state(session)
+            .map(|state| ui::title_band_sprites(state, origin, scale))
+            .unwrap_or_default()
     }
 
     /// Whether the parked backdrop session owns the frame behind the menu.

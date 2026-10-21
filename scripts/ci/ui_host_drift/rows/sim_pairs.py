@@ -59,6 +59,52 @@ from ui_host_drift.rows.host_files import (
 # injection is a call made from a place the pairing should not pin.
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "field party readout on a claimed tick, native vs play page - "
+        "the native window stepped `FUN_801D0D38`'s countdown on every tick "
+        "whose owner is not the field (a host screen, the naming prompt, the "
+        "prologue hand-off, the pause menu's spawn and press) while the page's "
+        "tick loop skipped it there, so its countdown froze under the menu "
+        "and the scene-change rearm landed a tick late. Both claim arms step "
+        "it now; the frame-body trace compares the readout state per frame "
+        "(`host_frame_parity`, `party_hud`)",
+        "sites": {
+            "native": ("crates/engine-shell/src/window/event_handler/redraw_tick.rs", "sim_tick"),
+            "web": ("crates/web-play/src/runtime/frame_ticks.rs", "frame_ticks"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["tick_field_party_hud"],
+    },
+    {
+        "what": "slot machine paylines, native vs play page - the page folded "
+        "the paylines into its cabinet list ahead of the cash-out box, which "
+        "shares their OT bucket, so the lines drew over the box there and "
+        "under it natively. Both hosts take the cabinet and the paylines as "
+        "two layers from `engine-screens::minigame_hud`",
+        "sites": {
+            "native": ("crates/engine-shell/src/window/minigames/slot_machine.rs", None),
+            "web": ("crates/web-play/src/play_minigame_slots.rs", None),
+        },
+        "mode": "symbols_all",
+        "symbols": ["slot_cabinet_prims", "slot_payline_prims"],
+    },
+    {
+        "what": "battle screen FX, native vs play page - the weapon trail, "
+        "the move-FX streak and ribbons and the Theeder beam were projected "
+        "by each host through its own battle camera, and the two drifted "
+        "(the native streak dropped the world scale and the packet's "
+        "semi-transparency). Each host's screen-prim assembly now takes "
+        "both layers from `engine-screens::battle_fx`",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/window/event_handler/redraw_overlay.rs",
+                "build_screen_prims",
+            ),
+            "web": ("crates/web-play/src/play_battle/screen_prims.rs", "tick_battle_intro"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["battle_fx_prims", "theeder_prims"],
+    },
+    {
         "what": "shop / prize-counter opening, native vs play page - each host "
         "drained the field VM's op-`0x49` shop and prize-counter requests "
         "itself and spelled the opening tick's no-edge rule (the Cross that "

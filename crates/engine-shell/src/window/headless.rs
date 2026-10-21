@@ -143,6 +143,12 @@ impl HeadlessPlayWindow {
         &self.app.menu_runtime
     }
 
+    /// The window's field party-status readout state (`FUN_801D0D38`'s
+    /// countdown, cached position and last decision).
+    pub fn field_party_hud(&self) -> &legaia_engine_field::world_map_panel_host::FieldPartyHud {
+        &self.app.field_party_hud
+    }
+
     /// Whether the window's pause menu owns the frame (the boot-UI arm).
     pub fn boot_ui_active(&self) -> bool {
         self.app.boot_ui.is_active()

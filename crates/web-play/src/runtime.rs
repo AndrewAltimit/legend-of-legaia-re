@@ -635,6 +635,14 @@ impl LegaiaRuntime {
         &self.menu
     }
 
+    /// The page's field party-status readout state - read-only, for the same
+    /// native tests. Not a wasm export.
+    pub fn debug_field_party_hud(
+        &self,
+    ) -> &legaia_engine_field::world_map_panel_host::FieldPartyHud {
+        &self.field_party_hud
+    }
+
     /// Build the page's audio director now, as a browser's `audio_init`
     /// after the first user gesture does (off wasm it runs over a
     /// device-free sink), so a native test compares a page whose audio is

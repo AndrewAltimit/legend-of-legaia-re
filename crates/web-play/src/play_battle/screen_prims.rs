@@ -52,13 +52,23 @@ impl LegaiaRuntime {
         };
         let host = legaia_engine_screens::screen_layers::HostScreenPrims {
             transition,
-            // The weapon-trail bands and the move-FX afterimage streak.
-            battle_fx: self.battle_fx_screen_prims(),
+            // The weapon-trail bands, the move-FX afterimage streak and
+            // the Theeder beam: one placement and projection, the native
+            // window's too (`engine-screens::battle_fx`).
+            battle_fx: self
+                .scene_host
+                .host()
+                .map(|h| legaia_engine_screens::battle_fx::battle_fx_prims(&h.world))
+                .unwrap_or_default(),
             field_fog: self.tick_field_fog_prims(),
             drop_shadows: self.field_drop_shadow_prims(),
             move_strips: self.tick_move_strip_prims(),
             field_lights: self.field_light_prims(),
-            theeder: self.theeder_prims(),
+            theeder: self
+                .scene_host
+                .host()
+                .map(|h| legaia_engine_screens::battle_fx::theeder_prims(&h.world))
+                .unwrap_or_default(),
             value_readout: self.battle_value_readout_prims(),
             dance_countin: self
                 .scene_host
@@ -74,8 +84,7 @@ impl LegaiaRuntime {
                 .unwrap_or_default(),
             baka_hud: self.baka_hud_prims(),
             slot_cabinet: self.slot_cabinet_prims(),
-            // The page strokes the paylines in JS, over the canvas.
-            slot_paylines: Vec::new(),
+            slot_paylines: self.slot_payline_prims(),
             fishing_line: self.fishing_line_prims(),
             fishing_hud: self.fishing_hud_sprite_prims(),
             world_map_markers: self.world_map_marker_prims(),
@@ -196,67 +205,6 @@ impl LegaiaRuntime {
                 Some(prims)
             }
         }
-    }
-
-    /// This frame's in-battle screen FX primitives - the browser seat of
-    /// the two effects the native window composites over its battle scene:
-    ///
-    /// * the **weapon-trail** bands (`World::battle_weapon_trail_draws` -
-    ///   retail `FUN_8005112C` / `FUN_80048310`; packets from the shared
-    ///   `legaia_render_kernels::battle_trail::weapon_trail_prims` port of
-    ///   `FUN_800485BC`), placed and projected by the shared
-    ///   `screen_passes::weapon_trail_prims` through the page's own
-    ///   `battle_vp` - the kernel the native window calls too;
-    /// * the **move-FX afterimage streak** (the shared
-    ///   `legaia_render_kernels::streak_pass` schedule of `FUN_801E09F8`, quad
-    ///   packets from the ported `FUN_801E1AB0` / `FUN_801E1D98`) - the
-    ///   layer this page previously did not draw at all.
-    // REF: FUN_800485BC / FUN_801E1AB0 - per-host projection seat; the
-    // packets and schedules live in engine-ui.
-    fn theeder_prims(&self) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        let Some(world) = self.scene_host.host().map(|h| &h.world) else {
-            return Vec::new();
-        };
-        let Some(packet) = world.theeder_draw() else {
-            return Vec::new();
-        };
-        // Placed and projected as a battle body is - the weapon trail's
-        // kernel, which the native window calls too.
-        let scale = crate::play_battle_render::BATTLE_WORLD_SCALE;
-        let pose = self.battle_cam_pose();
-        let vp = legaia_engine_camera::projection::battle_vp(&pose, scale, 4.0 / 3.0);
-        legaia_engine_ui::cast_theeder::theeder_prims(&packet, world.theeder_trail(), |p| {
-            legaia_render_kernels::battle_trail::project_battle_point(&vp, scale, p)
-        })
-    }
-
-    fn battle_fx_screen_prims(&self) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_engine_world_views::screen_passes::{move_fx_streak_quads, weapon_trail_prims};
-        use legaia_render_kernels::streak_pass::MOVE_FX_STREAK_OT;
-
-        let Some(host) = self.scene_host.host() else {
-            return Vec::new();
-        };
-        let world = &host.world;
-        if world.mode != legaia_engine_mode::mode::SceneMode::Battle {
-            return Vec::new();
-        }
-        let scale = crate::play_battle_render::BATTLE_WORLD_SCALE;
-        let pose = self.battle_cam_pose();
-        let vp = legaia_engine_camera::projection::battle_vp(&pose, scale, 4.0 / 3.0);
-        // The trail's placement and projection are the shared kernel's;
-        // the page hands it the same battle VP its bodies draw through.
-        let mut out = weapon_trail_prims(world, &vp, scale);
-        // The move-FX streak and the clip-tag ribbon, through this page's
-        // scaled MVP.
-        let mvp =
-            glam::Mat4::from_cols_array(&vp) * glam::Mat4::from_scale(glam::Vec3::splat(scale));
-        out.extend(
-            move_fx_streak_quads(world, &mvp)
-                .iter()
-                .map(|q| q.to_screen_prim(MOVE_FX_STREAK_OT)),
-        );
-        out
     }
 
     /// Tear the emitter down when the transition ends (battle handoff, or a

@@ -220,6 +220,29 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
         "trigger": r"(?s)\A(?=.*\buploadGround\s*\().*\bplay_battle_active\b",
         "requires": [r"\bsetGroundEnable\s*\(\s*false\s*\)"],
     },
+    {
+        "kernel": "battle screen FX through one placement and projection",
+        "why": "the weapon trail, the move-FX streak (and its ribbons) and "
+        "the Theeder beam are packets from shared kernels, and for as long as "
+        "each host built the camera they project through, the two drifted: "
+        "the native window projected the streak without the battle world "
+        "scale and drew it as an opaque scene mesh, the page as an additive "
+        "screen primitive. The camera, the scale and the prim wrap are one "
+        "function now (`engine-screens::battle_fx`); a surface that reads "
+        "the raw battle-FX seams must be that function",
+        "trigger": r"\b(?:theeder_draw|battle_weapon_trail_draws|move_fx_streak_quads|clip_ribbon_quads)\s*\(",
+        "requires": [r"\bbattle_fx_vp\b"],
+        "exempt": {
+            "crates/engine-world-views/src/screen_passes.rs":
+                "the kernels themselves (`weapon_trail_prims`, "
+                "`move_fx_streak_quads`) take the view-projection as an "
+                "argument; `engine-screens::battle_fx` is their one caller "
+                "that builds it",
+            "crates/web-play/src/play_battle/test_probes.rs":
+                "counts the draws (`debug_battle_*` probes for the battle "
+                "ladder) and projects or draws nothing",
+        },
+    },
     # RETIRED: "screen-space fade quad" (resolving `intro_fade(...)` requires
     # `fade_prim`). The whole transition emission - fade included - became
     # single-assembler when the `battle_intro` emitter moved to `engine-ui`

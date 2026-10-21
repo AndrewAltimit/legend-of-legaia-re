@@ -91,64 +91,40 @@ impl LegaiaRuntime {
     }
 
     /// The whole machine as screen primitives through the shared
-    /// `slot_cabinet::slot_cabinet_prims` - the native window's
-    /// `slot_cabinet_screen_prims` twin. Empty outside a session.
+    /// `minigame_hud::slot_cabinet_prims` - the native window's
+    /// `slot_cabinet_screen_prims` twin. Empty outside a session or before
+    /// the cabinet art resolved.
     pub(crate) fn slot_cabinet_prims(&self) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_engine_ui::slot_cabinet as usc;
         let (Some(m), Some(c)) = (
             self.slot_session(),
             self.minigame_art().and_then(|a| a.slot_cabinet.as_ref()),
         ) else {
             return Vec::new();
         };
-        // The cash-out flow over the machine (the picker, the prompt, the
-        // fade) - or, on a rules page, in its place.
-        let menu = usc::slot_menu_prims(c, m.screen(), m.fade_level());
-        if matches!(
-            m.screen(),
-            legaia_minigame_formats::minigame_slot_scene::SlotScreen::Instructions { .. }
-        ) {
-            return menu;
+        legaia_engine_screens::minigame_hud::slot_cabinet_prims(
+            m,
+            c,
+            &self.minigame_ui.slot.dots,
+            self.minigame_ui.slot.clock.blink,
+        )
+    }
+
+    /// The paylines as their own screen-prim layer (the shared
+    /// `minigame_hud::slot_payline_prims`, the native window's
+    /// `slot_payline_screen_prims` twin), composed after the cabinet so the
+    /// cash-out box covers them on both hosts. Only with the cabinet art:
+    /// the 2D-canvas fallback strokes the lines itself.
+    pub(crate) fn slot_payline_prims(&self) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
+        if self
+            .minigame_art()
+            .and_then(|a| a.slot_cabinet.as_ref())
+            .is_none()
+        {
+            return Vec::new();
         }
-        let strips = m.strips();
-        let clear;
-        let dots: &[u8] = if self.minigame_ui.slot.dots.is_empty() {
-            clear = legaia_minigame_formats::minigame_slot_scene::clear_dots();
-            &clear
-        } else {
-            &self.minigame_ui.slot.dots
-        };
-        let mut prims = usc::slot_cabinet_prims(&usc::SlotCabinetInput {
-            scene: &c.scene,
-            cabinet: c.cabinet.as_ref(),
-            hud: &c.hud,
-            reel_pos: core::array::from_fn(|r| m.reel_pos(r)),
-            strips: [&strips[0], &strips[1], &strips[2]],
-            stop_open: core::array::from_fn(|r| m.reel_stop_open(r)),
-            winning_line: m.winning_line_word(),
-            dots,
-            blink: self.minigame_ui.slot.clock.blink,
-            balance: m.balance(),
-        });
-        // The paylines over it: the machine's own ported pass + projection
-        // (`SlotMachine::payline_segments`) through the shared
-        // `slot_paylines` builder - the native window's
-        // `slot_payline_screen_prims` twin. The 2D-canvas fallback strokes
-        // them itself, so they join the prim pass only with the cabinet.
-        use legaia_engine_ui::slot_paylines as usp;
-        let segments: Vec<usp::PaylineSegment> = m
-            .payline_segments()
-            .iter()
-            .map(|l| usp::PaylineSegment {
-                a: [l.a.0, l.a.1],
-                b: [l.b.0, l.b.1],
-                rgb: [l.prim.color.0, l.prim.color.1, l.prim.color.2],
-                semi: l.prim.code & 0x02 != 0,
-            })
-            .collect();
-        prims.extend(usp::payline_screen_prims(&segments));
-        prims.extend(menu);
-        prims
+        self.slot_session()
+            .map(legaia_engine_screens::minigame_hud::slot_payline_prims)
+            .unwrap_or_default()
     }
 
     /// The machine's one text draw: its rules pages

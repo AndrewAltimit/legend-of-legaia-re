@@ -166,6 +166,10 @@ fn visited_battle(tr: &[HostTraceFrame]) -> Result<(), String> {
 /// display frame, and the frame the shop was staged ahead of.
 struct NativeRun {
     trace: Vec<HostTraceFrame>,
+    /// The field party readout's state after every display frame - a host
+    /// holding, not a session one, so outside `HostTraceFrame`: each host
+    /// steps it on every tick, the early-exit ticks included.
+    hud: Vec<String>,
     /// The director's last commands, for a divergence report.
     audio_recent: Vec<String>,
     pads: Vec<u16>,
@@ -180,6 +184,7 @@ fn native_trace(disc: &str, sc: &Scenario, cadence: Cadence) -> NativeRun {
         w.session(),
         w.menu_runtime(),
     )];
+    let mut hud = vec![format!("{:?}", w.field_party_hud())];
     let mut pads = Vec::new();
     let mut arm_frame = None;
     let mut key_frames = Vec::new();
@@ -219,10 +224,12 @@ fn native_trace(disc: &str, sc: &Scenario, cadence: Cadence) -> NativeRun {
             w.session(),
             w.menu_runtime(),
         ));
+        hud.push(format!("{:?}", w.field_party_hud()));
     }
     NativeRun {
         audio_recent: audio_recent(w.session()),
         trace: out,
+        hud,
         pads,
         arm_frame,
         key_frames,
@@ -279,6 +286,10 @@ impl PageDriver {
         // The draw: the engine camera the page draws through, which advances
         // the cutscene glide.
         let _ = self.rt.play_camera_vp(320.0, 240.0);
+        // The party readout's band test: the lead projected through the
+        // follow camera (`play_field_hud_project`, which `_frame` calls on
+        // every drawn frame).
+        self.rt.play_field_hud_project(320.0, 240.0);
     }
 }
 
@@ -297,7 +308,7 @@ fn page_trace(
     sc: &Scenario,
     cadence: Cadence,
     run: &NativeRun,
-) -> (Vec<HostTraceFrame>, Vec<String>) {
+) -> (Vec<HostTraceFrame>, Vec<String>, Vec<String>) {
     let mut rt = LegaiaRuntime::new();
     rt.load_disc(disc, String::new()).expect("load_disc");
     // Audio up from the start, as the native window's director is: the page
@@ -314,6 +325,7 @@ fn page_trace(
         d.rt.debug_session().expect("session"),
         d.rt.debug_menu_runtime(),
     )];
+    let mut hud = vec![format!("{:?}", d.rt.debug_field_party_hud())];
     let (mut t, mut f) = (0u32, 0u32);
     while t < sc.ticks {
         let n = cadence.ticks(f).min(sc.ticks - t);
@@ -334,9 +346,10 @@ fn page_trace(
             d.rt.debug_session().expect("session"),
             d.rt.debug_menu_runtime(),
         ));
+        hud.push(format!("{:?}", d.rt.debug_field_party_hud()));
     }
     let recent = audio_recent(d.rt.debug_session().expect("session"));
-    (out, recent)
+    (out, recent, hud)
 }
 
 /// Run `sc` at each cadence on both hosts; the lines name every channel that
@@ -353,10 +366,18 @@ fn run(sc: &Scenario, cadences: &[Cadence]) -> Vec<String> {
     let mut all = Vec::new();
     for &c in cadences {
         let run = native_trace(&disc, sc, c);
-        let (p, page_audio) = page_trace(bytes.clone(), sc, c, &run);
+        let (p, page_audio, page_hud) = page_trace(bytes.clone(), sc, c, &run);
+        let label = format!("{} {:?}", sc.scene, c);
+        assert_eq!(run.hud.len(), page_hud.len());
+        if let Some(i) = run.hud.iter().zip(&page_hud).position(|(a, b)| a != b) {
+            eprintln!(
+                "[host-frame] {label}: party readout parts at frame {i}\n  native = {}\n  page   = {}",
+                run.hud[i], page_hud[i]
+            );
+            all.push(format!("{label}: `party_hud` parts at frame {i}"));
+        }
         let n = run.trace;
         assert_eq!(n.len(), p.len());
-        let label = format!("{} {:?}", sc.scene, c);
         if let Err(e) = (sc.exercised)(&n) {
             eprintln!(
                 "[host-frame] {label}: vacuous ({e}); last native sample {:?}",

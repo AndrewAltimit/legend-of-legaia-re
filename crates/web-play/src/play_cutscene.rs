@@ -137,22 +137,8 @@ impl LegaiaRuntime {
         // The crawl and the title card in retail's 320x240 stage, through
         // the shared `cutscene_text_stage_draws`, then the page's stage
         // transform - the native window's narration draw, pass for pass.
-        let lines = w
-            .cutscene
-            .narration
-            .as_ref()
-            .map(|n| n.visible_lines())
-            .unwrap_or_default();
-        let crawl: Vec<(&str, i32)> = lines.iter().map(|l| (l.text, l.y)).collect();
-        let card: Vec<&str> = w
-            .cutscene
-            .card
-            .iter()
-            .flatten()
-            .map(String::as_str)
-            .collect();
         let mut texts: Vec<TextDraw> =
-            ui::cutscene_text_stage_draws(font, &crawl, &card, [1.0, 1.0, 1.0, 1.0]);
+            legaia_engine_screens::field_screens::cutscene_narration_stage_draws(w, font);
         let (origin, scale) = crate::play_menu::stage_transform(surface_w, surface_h);
         ui::scale_stage_text_draws(&mut texts, origin, scale);
         serde_json::json!({

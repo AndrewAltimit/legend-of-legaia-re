@@ -94,7 +94,7 @@ mod stage_exports;
 /// per-draw scale for those is `1.0`. The camera's translation trio is
 /// authored in this scaled space, so a class left at raw 1x would be
 /// orbited at four times the intended radius.
-pub(crate) const BATTLE_WORLD_SCALE: f32 = 4.0;
+pub(crate) const BATTLE_WORLD_SCALE: f32 = legaia_engine_camera::projection::BATTLE_WORLD_SCALE;
 
 /// Host-safe log: the browser console on wasm, stderr on the native test
 /// build (`crate::console_log` is a hard wasm-only stub that panics off-web,

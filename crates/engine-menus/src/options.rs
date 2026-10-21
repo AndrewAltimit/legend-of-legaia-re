@@ -75,6 +75,11 @@ use crate::option_values::{
     AudioMode, BattleCameraOpt, BattleCommandOpt, FieldMoveOpt, HpDisplayOpt, SelectAttackOpt,
 };
 
+/// The top of the `0..=10` range of [`OptionsState::bgm_volume`] and
+/// [`OptionsState::sfx_volume`] (10 = a 1.25x boost over the retail mix at 8),
+/// the bound every host's control clamps to.
+pub const VOLUME_MAX: u8 = 10;
+
 /// Full set of user-editable options. Engines round-trip via
 /// [`OptionsState::load_or_default`] / [`OptionsState::save`] (TOML,
 /// mirroring `input::Mapping`).

@@ -52,7 +52,7 @@ mod value_readout;
 /// The retail 4x battle world scale (`play_battle_render::BATTLE_WORLD_SCALE`,
 /// private to that module) - the actor stage the battle view-projection is
 /// built for, so an actor origin has to be scaled before it is projected.
-const BATTLE_WORLD_SCALE_LOCAL: f32 = 4.0;
+const BATTLE_WORLD_SCALE_LOCAL: f32 = legaia_engine_camera::projection::BATTLE_WORLD_SCALE;
 
 impl LegaiaRuntime {
     /// Arm the live gameplay loop on the freshly-entered scene, the browser

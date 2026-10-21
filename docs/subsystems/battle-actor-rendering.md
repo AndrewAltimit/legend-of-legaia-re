@@ -436,8 +436,8 @@ The swept `POLY_G4` streak an ordinary arts swing leaves behind a party characte
 **Port.** Trigger table and sweep / band schedule: `render-kernels::battle_trail`. Projected band packets: `render-kernels::battle_trail` (a gouraud `FlatQuad` through the shared screen-prim pass, ABR 1). `World::battle_weapon_trail_draws` samples the sweep off the pose-history ring (step `k` = the pose `2k` frames ago, the retail rewind under a constant rate), bounded by the ring's per-frame clip key.
 
 **Placement.** Each control point is turned by the body's facing and set on its slot's ground base with retail's integer arithmetic (`battle_trail::trail_world_point`: products rounding toward zero, no base height), then placed as the hosts place a battle body - frame flip, the 4x world scale - and projected through the battle view-projection (`battle_trail::project_battle_point`).
-Both hosts call one kernel for it, `engine-world-views::screen_passes::weapon_trail_prims`, handing it only their battle VP: the native window's glam composition, which `battle_vp_matches_the_native_glam_composition` pins to the page's `battle_vp`. `the_weapon_trail_lands_on_the_body_it_trails` pins a trail point onto the body's own drawn point under both.
-PROT 0904's Theeder beam projects through the same `project_battle_point`. The bands composite over the scene; retail's OT interleave with scene depth is not reproduced.
+The kernel is `engine-world-views::screen_passes::weapon_trail_prims`; both hosts reach it through one caller, `engine-screens::battle_fx::battle_fx_prims`, which builds the battle VP itself (`battle_fx_vp`: `battle_vp` at the stage's 4:3, which `battle_vp_matches_the_native_glam_composition` pins to the native window's glam composition). `the_weapon_trail_lands_on_the_body_it_trails` pins a trail point onto the body's own drawn point under both compositions.
+PROT 0904's Theeder beam projects through the same `project_battle_point`, from `engine-screens::battle_fx::theeder_prims`. The bands composite over the scene; retail's OT interleave with scene depth is not reproduced.
 
 <a id="weapon-trail-afterimage-streak"></a>
 
@@ -451,7 +451,7 @@ The launch position is not the bare actor position. Retail re-seeds its stack pa
 
 **Port.** `engine-effects::action_effect_script::MoveFxStreak` (file `crates/engine-effects/src/action_effect_script.rs`) is the block: record id rather than pointer, one shared launch point rather than four identical copies. The live per-frame walk `World::step_actor_effect_script` installs it and `World::move_fx_streak` reads it back. `render-kernels::streak_pass` projects it once per frame and hands the corners to the packet builder `afterimage::build_afterimage_quad`, whose jitter law, brightness band, UVs, CLUT (`0x7700 + trail id`) and texpage (`0x0027`) are retail's.
 
-Both hosts draw it: the native window appends the quads to its screen-space textured batch (`move_fx_streak_quads` in `redraw_passes.rs`), the play page emits them as screen prims at `streak_pass::MOVE_FX_STREAK_OT` (`play_battle.rs`).
+Both hosts draw it through one function, `engine-screens::battle_fx::battle_fx_prims`: the packets as semi-transparent screen prims at `streak_pass::MOVE_FX_STREAK_OT`, projected through the battle VP with the 4x world scale composed.
 
 Differences from retail:
 

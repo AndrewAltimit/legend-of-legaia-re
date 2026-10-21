@@ -142,6 +142,53 @@ impl LegaiaRuntime {
         self.page_toggles.arts_saved_list
     }
 
+    /// The photosensitivity guard (`OptionsState::reduce_flashing`), the
+    /// native launcher's Reduce flashing row: persisted with the other
+    /// options and applied through the session's option knobs. Retail mode
+    /// pins it off for the session; an edit under the pin is the pin's.
+    pub fn set_reduce_flashing(&mut self, on: bool) {
+        if self.options_state.reduce_flashing != on {
+            self.options_state.reduce_flashing = on;
+            self.persist_and_apply_options();
+        }
+    }
+
+    /// Whether [`Self::set_reduce_flashing`] is on.
+    pub fn reduce_flashing(&self) -> bool {
+        self.options_state.reduce_flashing
+    }
+
+    /// The music bus level, `0..=10` (`OptionsState::bgm_volume`, 8 = the
+    /// retail mix), the native launcher's Music volume row. Clamped, then
+    /// persisted and applied to the mixer.
+    pub fn set_bgm_volume(&mut self, level: u8) {
+        let level = level.min(legaia_engine_menus::options::VOLUME_MAX);
+        if self.options_state.bgm_volume != level {
+            self.options_state.bgm_volume = level;
+            self.persist_and_apply_options();
+        }
+    }
+
+    /// The music bus level [`Self::set_bgm_volume`] sets.
+    pub fn bgm_volume(&self) -> u8 {
+        self.options_state.bgm_volume
+    }
+
+    /// The sound-effect bus level, `0..=10` (`OptionsState::sfx_volume`),
+    /// the native launcher's Sound effects volume row.
+    pub fn set_sfx_volume(&mut self, level: u8) {
+        let level = level.min(legaia_engine_menus::options::VOLUME_MAX);
+        if self.options_state.sfx_volume != level {
+            self.options_state.sfx_volume = level;
+            self.persist_and_apply_options();
+        }
+    }
+
+    /// The sound-effect bus level [`Self::set_sfx_volume`] sets.
+    pub fn sfx_volume(&self) -> u8 {
+        self.options_state.sfx_volume
+    }
+
     /// Retail-faithful mode, the native `--retail`: pin every persisted
     /// engine-only option to its retail value (`OptionsState::pin_retail`:
     /// retail camera distance, 8-way movement, no photosensitivity slew,

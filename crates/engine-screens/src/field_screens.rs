@@ -1,6 +1,6 @@
 //! Smaller field-side projections both play hosts used to carry a copy of:
-//! the save-menu atlas' band table, the name-entry view, and the field party
-//! HUD readout.
+//! the save-menu atlas' band table, the name-entry view, the field party HUD
+//! readout, the field overlay's stage windows and the opening narration.
 
 use legaia_engine_core::world::World;
 use legaia_engine_menus::name_entry::NameEntry;
@@ -274,4 +274,66 @@ pub fn field_party_hud_tick(
         .and_then(|s| world.actors.get(s))
         .map(|a| (a.move_state.world_x, a.move_state.world_z));
     hud.tick(suppressed, view_mode, pad, player_pos, 1, projected_y);
+}
+
+/// The field overlay's own stage windows that ride the shop-family overlay
+/// group, in the retail 320x240 stage: the end-of-game records screen at the
+/// engine's pen (op-`0x49` sub-op `0xC`, handler slot `0x33`,
+/// `FUN_801EDF00`), then the floor window (sub-op 4, slot `0x23` - the Uru
+/// Mais warp pads) and the code lock (sub-op 2, slot `0x21` - doman's password
+/// door) through the shared line composition. A host scales the result with
+/// its stage transform.
+pub fn field_window_stage_draws(
+    host: &legaia_engine_scene_host::scene_host::SceneHost,
+    font: &legaia_font::Font,
+) -> Vec<legaia_engine_ui::TextDraw> {
+    let mut stage = Vec::new();
+    if let Some(pen) = host.world.soft_reset_records_pen() {
+        stage.extend(crate::dev_menu::records_draws_for_world(
+            &host.world,
+            font,
+            pen,
+        ));
+    }
+    let mut floor = host.flag_window_lines();
+    floor.extend(host.code_lock_lines());
+    stage.extend(legaia_engine_ui::text_lines::text_line_draws_for(
+        font,
+        floor
+            .iter()
+            .map(|l| (&l.text[..], i32::from(l.x), i32::from(l.y), l.marked)),
+        [1.0, 1.0, 1.0, 1.0],
+        legaia_engine_ui::text_lines::FLOOR_WINDOW_MARKED_INK,
+    ));
+    stage
+}
+
+/// The opening cutscene's narration in the retail 320x240 stage: the
+/// bottom-up subtitle crawl (`FUN_80037174` - every visible line centred at
+/// its current window Y) and the static title card, through
+/// `engine-ui::cutscene_text_stage_draws`. Empty when neither is up. A host
+/// scales the result with its stage transform.
+// REF: FUN_80037174
+pub fn cutscene_narration_stage_draws(
+    world: &World,
+    font: &legaia_font::Font,
+) -> Vec<legaia_engine_ui::TextDraw> {
+    let lines = world
+        .cutscene
+        .narration
+        .as_ref()
+        .map(|n| n.visible_lines())
+        .unwrap_or_default();
+    let crawl: Vec<(&str, i32)> = lines.iter().map(|l| (l.text, l.y)).collect();
+    let card: Vec<&str> = world
+        .cutscene
+        .card
+        .iter()
+        .flatten()
+        .map(String::as_str)
+        .collect();
+    if crawl.is_empty() && card.is_empty() {
+        return Vec::new();
+    }
+    legaia_engine_ui::cutscene_text_stage_draws(font, &crawl, &card, [1.0, 1.0, 1.0, 1.0])
 }

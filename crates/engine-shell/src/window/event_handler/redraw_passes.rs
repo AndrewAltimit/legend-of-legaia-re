@@ -5,10 +5,6 @@
 
 use super::super::*;
 
-/// The 320x240 stage's aspect: every stage-projected battle pass's camera.
-const STAGE_ASPECT: f32 =
-    legaia_engine_ui::BOOT_UI_STAGE_W as f32 / legaia_engine_ui::BOOT_UI_STAGE_H as f32;
-
 /// Decoded cutscene camera inputs to the retail PSX GTE model:
 /// `(focus, pitch_radians, yaw_radians, roll_radians, h, tr_eye)`. See
 /// [`PlayWindowApp::cutscene_view`].
@@ -744,56 +740,6 @@ impl PlayWindowApp {
         (effect_model_draws, part_draws, field_fx_draws)
     }
 
-    /// This frame's move-FX afterimage streak, as screen-space quads on the
-    /// retail 320x240 stage.
-    ///
-    /// The pass retail runs once per move-FX frame: project the launch point
-    /// the action effect script's terminator staged
-    /// (`legaia_engine_effects::action_effect_script::MoveFxStreak`), fan a
-    /// camera-facing billboard out at the staged half-width, and emit the
-    /// jittered semi-transparent `POLY_FT4` the ported `FUN_801E1AB0` builds.
-    ///
-    /// Gated on the move-FX scene being live: the trail texpage is
-    /// scene-scoped (`World::spawn_move_fx` sets it, `tick_move_fx` drops it
-    /// when the scene drains), so the streak lasts exactly as long as the
-    /// effect it trails. Empty outside a move.
-    // PORT: FUN_801E1AB0 (per-frame emission; the packet + the projection
-    // live in `legaia_engine_render::{afterimage, streak_pass}`)
-    fn move_fx_streak_quads(&self) -> Vec<legaia_render_kernels::afterimage::AfterimageQuad> {
-        // The quads project into the 320x240 stage (`project_stage_point`),
-        // so the camera is the stage's 4:3 - the aspect the scene pass draws
-        // at inside its stage viewport (`scene_viewport_for`) and the page's
-        // `battle_vp` hard-codes. The surface's own aspect put the trail and
-        // the streak off the bodies on any window that is not 4:3 (the
-        // runner's 960x699 among them).
-        let mvp = self.battle_scene_mvp(STAGE_ASPECT);
-        legaia_engine_world_views::screen_passes::move_fx_streak_quads(
-            &self.session.host.world,
-            &mvp,
-        )
-    }
-
-    /// PROT 0904's (Theeder) beam packets this frame
-    /// ([`legaia_engine_core::world::World::theeder_draw`] through
-    /// `legaia_engine_ui::cast_theeder::theeder_prims`, the kernel the browser
-    /// play page draws them with), placed and projected as a battle body is
-    /// (`battle_trail::project_battle_point`: frame flip, world scale, the
-    /// battle camera at the stage's 4:3) - the weapon trail's projection,
-    /// and the page's.
-    pub(super) fn theeder_screen_prims(
-        &self,
-    ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_render_kernels::battle_trail as bt;
-        let world = &self.session.host.world;
-        let Some(packet) = world.theeder_draw() else {
-            return Vec::new();
-        };
-        let vp = self.battle_scene_mvp(STAGE_ASPECT).to_cols_array();
-        legaia_engine_ui::cast_theeder::theeder_prims(&packet, world.theeder_trail(), |p| {
-            bt::project_battle_point(&vp, BATTLE_WORLD_SCALE, p)
-        })
-    }
-
     /// This frame's field fog sheets (`legaia_engine_field::fog_particles`):
     /// the quads the last sim tick's render step left
     /// (`BootSession::step_field_fog`, `FUN_8003F348` / `FUN_8003F3FC`, run
@@ -850,26 +796,6 @@ impl PlayWindowApp {
         &self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
         self.host_view().light_prims()
-    }
-
-    /// This frame's weapon-trail bands, as screen-space gouraud quads on
-    /// the retail 320x240 stage. The trigger + sweep come from
-    /// `World::battle_weapon_trail_draws` (retail `FUN_8005112C` /
-    /// `FUN_80048310`); the point placement, projection and band packets
-    /// from `legaia_engine_world_views::screen_passes::weapon_trail_prims`,
-    /// the kernel the browser play page calls with its own `battle_vp`.
-    // REF: FUN_800485BC (ported in `legaia_render_kernels::battle_trail`)
-    pub(super) fn weapon_trail_screen_prims(
-        &self,
-    ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        let world = &self.session.host.world;
-        if world.mode != SceneMode::Battle {
-            return Vec::new();
-        }
-        // The stage's 4:3, as for the streak. The placement and the
-        // projection of each point are the shared kernel's.
-        let vp = self.battle_scene_mvp(STAGE_ASPECT).to_cols_array();
-        legaia_engine_world_views::screen_passes::weapon_trail_prims(world, &vp, BATTLE_WORLD_SCALE)
     }
 
     /// Build this frame's arts after-image ghost meshes - the render half of
@@ -999,53 +925,5 @@ impl PlayWindowApp {
             }
         }
         out
-    }
-
-    /// Build this frame's move-FX afterimage streak mesh. The PROT-0900
-    /// screen-effect widgets it used to batch with ride the screen-prim pass
-    /// (`screen_layers::screen_fx_prims`), where they sort against the fog
-    /// sheets by their retail OT slots.
-    pub(super) fn build_screen_fx_meshes(
-        &self,
-        r: &legaia_engine_render::Renderer,
-    ) -> Option<UploadedVramMesh> {
-        let mut screen_fx_tex = None;
-        let streak = self.move_fx_streak_quads();
-        if streak.is_empty() {
-            return None;
-        }
-        let mut pos: Vec<[f32; 3]> = Vec::new();
-        let mut uvs: Vec<[u8; 2]> = Vec::new();
-        let mut cba_tsb: Vec<[u16; 2]> = Vec::new();
-        let mut idx: Vec<u32> = Vec::new();
-        // Move-FX afterimage streak. Unlike the widget quads these are not
-        // axis-aligned rects - the packet carries four independent corners in
-        // the retail `xy0..xy3` order (TL, TR, BL, BR) - so they are pushed
-        // vertex-by-vertex. Depth `0.0` puts them in front of every widget:
-        // retail links each streak packet at the projected billboard's own OT
-        // bucket (inside the scene), which this screen-space batch cannot
-        // express, so the engine draws them over the actors instead.
-        for q in &streak {
-            let base = pos.len() as u32;
-            for (x, y) in q.xy {
-                pos.push([x as f32, y as f32, 0.0]);
-            }
-            idx.extend_from_slice(&[base, base + 1, base + 2, base + 1, base + 3, base + 2]);
-            for (u, v) in q.uv {
-                uvs.push([u, v]);
-            }
-            cba_tsb.extend(std::iter::repeat_n([q.clut, q.tpage], q.xy.len()));
-        }
-        if !idx.is_empty() {
-            let normals = vec![[0.0f32; 3]; pos.len()];
-            // Screen-FX sprites are engine-synthesised: no baked colour word,
-            // so the neutral colour draws the texel unchanged.
-            let colors = vec![[legaia_tmd::legaia_prims::MODULATION_NEUTRAL; 3]; pos.len()];
-            match r.upload_vram_mesh(&pos, &uvs, &cba_tsb, &normals, &colors, &idx) {
-                Ok(m) => screen_fx_tex = Some(m),
-                Err(e) => log::warn!("screen-fx textured mesh upload: {e:#}"),
-            }
-        }
-        screen_fx_tex
     }
 }

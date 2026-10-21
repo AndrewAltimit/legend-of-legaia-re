@@ -347,29 +347,12 @@ impl LegaiaRuntime {
         let mut windows = screens.stage_texts;
         // The end-of-game soft reset (op-0x49 sub-op 0xC, slot 0x33): the
         // records screen at the engine's pen, as the native window draws it.
-        if let Some(pen) = self
-            .scene_host
-            .host()
-            .and_then(|h| h.world.soft_reset_records_pen())
-        {
-            windows.extend(self.records_draws_at(font, pen));
-        }
-        // The field floor window (op-0x49 sub-op 4, the Uru Mais warp pads), through
-        // the engine layout + shared line composition the native window
-        // draws (`SceneHost::flag_window_lines`).
+        // The field floor window (op-0x49 sub-op 4, the Uru Mais warp pads)
+        // and the code lock (sub-op 2, slot 0x21) follow, through the one
+        // builder the native window draws them with.
         if let Some(host) = self.scene_host.host() {
-            let mut floor = host.flag_window_lines();
-            // The code lock (op-0x49 sub-op 2, slot 0x21), same line
-            // composition as the native window (`SceneHost::code_lock_lines`).
-            floor.extend(host.code_lock_lines());
-            windows.extend(legaia_engine_ui::text_lines::text_line_draws_for(
-                font,
-                floor
-                    .iter()
-                    .map(|l| (&l.text[..], i32::from(l.x), i32::from(l.y), l.marked)),
-                [1.0, 1.0, 1.0, 1.0],
-                legaia_engine_ui::text_lines::FLOOR_WINDOW_MARKED_INK,
-            ));
+            windows
+                .extend(legaia_engine_screens::field_screens::field_window_stage_draws(host, font));
         }
         let banners = screens.banner_texts;
         // In-battle overlay (HUD rows / encounter banner / command menus),

@@ -251,56 +251,8 @@ impl PlayWindowApp {
         if self.title_screen.is_some() {
             return Vec::new();
         }
-        use legaia_engine_menus::title::TitlePhase;
-        // Same one selector as the font path and as the browser page: the
-        // rows are drawn for whatever sub-mode word `title_draw_list` calls a
-        // menu, and the session's phase only supplies the cursor row.
-        let (menu_open, cursor) = match session.phase() {
-            TitlePhase::MainMenu { cursor } => (true, cursor),
-            _ => (false, 0),
-        };
-        let phase_id = legaia_engine_menus::title_overlay::title_text_phase(
-            session.retail_submode(),
-            menu_open,
-        );
-        if phase_id != 2 {
-            return Vec::new();
-        }
-        // Anchor inside the same centred + integer-scaled 256×256
-        // title stage that `title_screen_sprite_draws` uses. The menu
-        // rows sit between the wordmark band (ends at src y=140) and
-        // the copyright bands (start at src y=195) - the menu-glyph
-        // cell is 14 px tall at 1× and we render at 2× the title-art
-        // scale for retail-faithful sizing (~28 px atlas-pixels per
-        // row, two rows + gutter = ~60 px in source).
-        let atlas_w: u32 = 256;
-        let atlas_h: u32 = 256;
-        let title_scale = (surface_w / atlas_w.max(1))
-            .min(surface_h / atlas_h.max(1))
-            .clamp(1, 4);
-        let title_scale_i32 = title_scale as i32;
-        let stage_x0 = (surface_w as i32 - (atlas_w as i32) * title_scale_i32) / 2;
-        let stage_y0 = (surface_h as i32 - (atlas_h as i32) * title_scale_i32) / 2;
-        // Render menu glyphs at 2× the title-art scale so the letters
-        // match the retail proportion (~28 px tall in framebuffer
-        // pixels at 1×). "NEW GAME" is 8 cells × 8 px × 2 = 128 px at
-        // 1× glyph_scale, then × title_scale for the on-screen size.
-        let glyph_scale = title_scale;
-        let menu_w_src = 8 * 8; // 8 chars × 8 px (1× glyph multiplier)
-        // Centre horizontally inside the 256-wide title stage.
-        let pen_src_x = (atlas_w as i32 - menu_w_src) / 2;
-        let pen_src_y = 152;
-        let pen = (
-            stage_x0 + pen_src_x * title_scale_i32,
-            stage_y0 + pen_src_y * title_scale_i32,
-        );
-        legaia_engine_ui::title_menu_draws_for(
-            phase_id,
-            cursor,
-            session.continue_enabled,
-            pen,
-            glyph_scale,
-        )
+        // The rows, the anchor and the phase selector are the page's too.
+        legaia_engine_screens::title_screens::title_menu_glyph_draws(session, surface_w, surface_h)
     }
 }
 
@@ -320,24 +272,9 @@ impl PlayWindowApp {
 ///
 /// [`TitleBandState::backdrop`]: legaia_engine_ui::TitleBandState::backdrop
 fn boot_title_band_state(boot_ui: &BootUiState) -> Option<legaia_engine_ui::TitleBandState> {
-    use legaia_engine_menus::title::TitlePhase;
     match boot_ui {
         BootUiState::Title(session) => {
-            let alpha = match session.phase() {
-                TitlePhase::Done(_) => return None,
-                TitlePhase::FadeIn { frames_remaining } => {
-                    let total = session.fade_in_frames.max(1) as f32;
-                    1.0 - (frames_remaining as f32 / total).clamp(0.0, 1.0)
-                }
-                _ => 1.0,
-            };
-            let mut st = legaia_engine_ui::TitleBandState::card(alpha);
-            st.press_start = matches!(session.phase(), TitlePhase::PressStart { .. });
-            // Main-menu rows: selected row bright, unselected dim.
-            if let TitlePhase::MainMenu { cursor } = session.phase() {
-                st.menu = Some((cursor, true));
-            }
-            Some(st)
+            legaia_engine_screens::title_screens::title_band_state(session)
         }
         BootUiState::SaveSelect(s) => {
             if !s.phase().shows_title_backdrop() {

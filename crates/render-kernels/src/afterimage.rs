@@ -7,8 +7,8 @@
 //! any caller of that helper read as "the streak emitter ran".
 //!
 //! Wired through [`crate::streak_pass`], which supplies the two projection
-//! inputs and calls [`build_afterimage_quad`] once per move-FX frame; the
-//! native window appends the packets to its screen-space textured batch.
+//! inputs and calls [`build_afterimage_quad`] once per move-FX frame; both
+//! play hosts draw the packets as screen primitives.
 //! Both of the gaps this module used to carry are closed:
 //!
 //! * **The projection inputs now have a producer.** Retail reads them off the
@@ -80,9 +80,10 @@
 //! That converter is still the route for a host that wants the streak
 //! *interleaved* with the scene's own primitives at the retail OT depth. The
 //! wired path takes a different one: [`crate::streak_pass`] hands the packets
-//! to engine-shell's screen-FX batch, which draws them over the actors under
-//! a 320x240 orthographic MVP. Retail links each packet inside the scene, so
-//! that ordering is an engine departure, not a reproduction.
+//! to the shared battle FX layer (`legaia_engine_screens::battle_fx`), which
+//! links them into the screen-prim pass over the actors on both hosts.
+//! Retail links each packet inside the scene, so that ordering is an engine
+//! departure, not a reproduction.
 
 /// Units the source point is pushed down (+Y) before projection
 /// (retail adds `0x120` to the Y of `*(_DAT_8007bd24 + 0x1144)`). Applied
@@ -177,9 +178,8 @@ pub struct AfterimageQuad {
 
 impl AfterimageQuad {
     /// This packet as a screen-space primitive for the shared overlay pass
-    /// ([`crate::screen_prim`]) - the route the browser play page draws the
-    /// streak through (the native window batches the same fields into its
-    /// own VRAM-sampling mesh; either way the packet is this struct).
+    /// ([`crate::screen_prim`]) - the route both play hosts draw the streak
+    /// through (`legaia_engine_screens::battle_fx::battle_fx_prims`).
     pub fn to_screen_prim(&self, ot_index: u32) -> crate::screen_prim::ScreenPrim {
         crate::screen_prim::ScreenPrim::Textured(crate::screen_prim::ScreenQuad {
             xy: self.xy,

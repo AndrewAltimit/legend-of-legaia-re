@@ -435,6 +435,18 @@ div.play-vis-head { cursor: default; }
             <input type="checkbox" id="play-precise-move"> Precise movement
           </label>
           <label class="play-dev-menu"
+                 title="Photosensitivity guard: slew-limit the palette light animations so scenes like the koin3 dance floor cannot strobe (the native launcher's Reduce flashing row, persisted with the other options). Off restores retail's full-swing palette steps.">
+            <input type="checkbox" id="play-reduce-flashing"> Reduce flashing
+          </label>
+          <label class="play-volume" title="Music level, 0-10 (8 is the retail mix): the mixer's BGM bus, the native launcher's Music volume row. Persisted with the other options.">
+            Music <input type="range" id="play-bgm-volume" min="0" max="10" step="1" value="8">
+            <span id="play-bgm-volume-value">8</span>
+          </label>
+          <label class="play-volume" title="Sound-effect level, 0-10 (8 is the retail mix): the mixer's SFX bus, the native launcher's Sound effects volume row. Persisted with the other options.">
+            SFX <input type="range" id="play-sfx-volume" min="0" max="10" step="1" value="8">
+            <span id="play-sfx-volume-value">8</span>
+          </label>
+          <label class="play-dev-menu"
                  title="Debug overlay: mark every overworld placement (towns, caves, doors) with the port's entity marker (the native window's LEGAIA_WORLD_MAP_MARKERS). Retail draws nothing there.">
             <input type="checkbox" id="play-world-map-markers"> Overworld markers
           </label>
@@ -2324,6 +2336,35 @@ div.play-vis-head { cursor: default; }
     }
   }
   preciseEl.addEventListener('change', () => { applyPreciseMove(); canvas.focus(); });
+
+  /* Reduce flashing and the music / SFX bus levels - the native launcher's
+   * rows. The engine owns and persists all three (`OptionsState`), so the
+   * controls only write through and mirror the stored values back. */
+  const flashEl = document.getElementById('play-reduce-flashing');
+  const bgmVolEl = document.getElementById('play-bgm-volume');
+  const sfxVolEl = document.getElementById('play-sfx-volume');
+  const bgmVolValEl = document.getElementById('play-bgm-volume-value');
+  const sfxVolValEl = document.getElementById('play-sfx-volume-value');
+  function syncAudioOptions() {
+    const rt = window.__playRuntime;
+    if (!rt) return;
+    try {
+      if (typeof rt.reduce_flashing === 'function') flashEl.checked = !!rt.reduce_flashing();
+      if (typeof rt.bgm_volume === 'function') bgmVolEl.value = String(rt.bgm_volume());
+      if (typeof rt.sfx_volume === 'function') sfxVolEl.value = String(rt.sfx_volume());
+    } catch (e) {}
+    bgmVolValEl.textContent = bgmVolEl.value;
+    sfxVolValEl.textContent = sfxVolEl.value;
+  }
+  flashEl.addEventListener('change', () => { rtCall('set_reduce_flashing', !!flashEl.checked); canvas.focus(); });
+  bgmVolEl.addEventListener('input', () => {
+    bgmVolValEl.textContent = bgmVolEl.value;
+    rtCall('set_bgm_volume', parseInt(bgmVolEl.value, 10));
+  });
+  sfxVolEl.addEventListener('input', () => {
+    sfxVolValEl.textContent = sfxVolEl.value;
+    rtCall('set_sfx_volume', parseInt(sfxVolEl.value, 10));
+  });
   window.__playApplyPreciseMove = applyPreciseMove;
   window.__playSyncPreciseMove = syncPreciseMove;
 
@@ -2398,6 +2439,7 @@ div.play-vis-head { cursor: default; }
     syncRenderToggles();
     syncGroundFog();
     syncPreciseMove();
+    syncAudioOptions();
     syncCameraDistance();
     syncPageToggles();
     /* Lamp shadows and see-through walls are engine options the pin covers
@@ -2439,6 +2481,7 @@ div.play-vis-head { cursor: default; }
     }
     applyPageToggles();
     syncPreciseMove();
+    syncAudioOptions();
     syncGroundFog();
     syncRenderToggles();
     syncCameraDistance();
@@ -2512,6 +2555,7 @@ div.play-vis-head { cursor: default; }
     syncRenderToggles();
     syncGroundFog();
     syncPreciseMove();
+    syncAudioOptions();
     syncCameraDistance();
     syncPageToggles();
     applySeeThrough();

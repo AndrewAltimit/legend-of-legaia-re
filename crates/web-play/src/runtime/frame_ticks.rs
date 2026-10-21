@@ -90,9 +90,11 @@ impl LegaiaRuntime {
                         r.menu_ticked = true;
                         edge = 0;
                         self.play_tick_overlay_sfx();
+                        self.tick_field_party_hud();
                         continue;
                     }
                     for g in s..steps {
+                        self.tick_field_party_hud();
                         let picked = self.game_over_input(if g == s { edge } else { 0 });
                         if picked == "quit" {
                             // The battle score must not outlive the battle: the
@@ -109,12 +111,14 @@ impl LegaiaRuntime {
                 TickOwner::NameEntry(committed) => {
                     r.name_committed |= committed;
                     edge = 0;
+                    self.tick_field_party_hud();
                     continue;
                 }
                 TickOwner::PrologueSkip(target) => {
                     self.enter_field_core(target, false)?;
                     r.scenes.push(target.to_string());
                     edge = 0;
+                    self.tick_field_party_hud();
                     continue;
                 }
                 TickOwner::PauseMenuSpawned => {
@@ -122,6 +126,7 @@ impl LegaiaRuntime {
                     r.menu_ticked = true;
                     edge = 0;
                     self.play_tick_overlay_sfx();
+                    self.tick_field_party_hud();
                     continue;
                 }
                 TickOwner::PauseMenuOpened(scripted) => {
@@ -130,6 +135,7 @@ impl LegaiaRuntime {
                     r.menu_opened = true;
                     edge = 0;
                     self.play_tick_overlay_sfx();
+                    self.tick_field_party_hud();
                     continue;
                 }
                 // A shop or the prize exchange suspends the field and takes

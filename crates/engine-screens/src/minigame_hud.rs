@@ -273,3 +273,129 @@ pub fn muscle_hub_quads(
         in_dome,
     }
 }
+
+/// The shared minigame effect pool's live parts (`MinigameState::fx` - the
+/// fishing splash, wander ripples, catch bursts) as the view the
+/// `engine-ui::minigame_fx::fx_part_draws` builder takes.
+pub fn fx_part_views(
+    pool: &legaia_engine_minigames::minigame_fx::MinigameFxPool,
+) -> Vec<legaia_engine_ui::minigame_fx::FxPartView> {
+    pool.frames()
+        .into_iter()
+        .map(|p| legaia_engine_ui::minigame_fx::FxPartView {
+            x: p.x as i32,
+            y: p.y as i32,
+            sprite: p.sprite,
+            fade: p.fade,
+        })
+        .collect()
+}
+
+/// The dance run's own sprite-part emits as the view the
+/// `engine-ui::minigame_fx::dance_sprite_part_draws` builder takes.
+///
+/// The geometry is the port's: `dance::sprite_part_emit` (`FUN_801d387c`)
+/// resolves each live part's arm off its own actor record, and
+/// `dance::sprite_part_fade_weight` its alpha. Only the `Shadowed` arm draws
+/// the cell twice; the template / marker-Z arms carry no screen pair to draw.
+pub fn dance_sprite_part_views(
+    frames: &[legaia_engine_minigames::dance::SpritePartFrame],
+) -> Vec<legaia_engine_ui::minigame_fx::DanceSpritePartView> {
+    use legaia_engine_minigames::dance::SpritePartEmit;
+    frames
+        .iter()
+        .filter_map(|f| {
+            let (x, y, shadow) = match f.emit {
+                SpritePartEmit::Shadowed { x, y, .. } => (x, y, true),
+                SpritePartEmit::Plain { x, y, .. } | SpritePartEmit::Marker { x, y, .. } => {
+                    (x, y, false)
+                }
+                SpritePartEmit::CopyTemplate
+                | SpritePartEmit::SetTemplateZ
+                | SpritePartEmit::None => return None,
+            };
+            Some(legaia_engine_ui::minigame_fx::DanceSpritePartView {
+                x: x as i32,
+                y: y as i32,
+                sprite: f.sprite,
+                fade: f.fade,
+                shadow,
+            })
+        })
+        .collect()
+}
+
+/// The slot machine's five paylines as screen primitives: the ported payline
+/// pass (`FUN_801D3380`) with its projection (`SlotMachine::payline_segments`)
+/// through the shared `slot_paylines` builder. Empty on a rules page, which
+/// replaces the machine, paylines included.
+///
+/// Its own list, not part of [`slot_cabinet_prims`]: the composer appends it
+/// after the cabinet (`screen_layers::compose_screen_prims`), and the
+/// paylines and the cash-out box share OT bucket `2`, where the later append
+/// draws first - so the box covers the lines on every host.
+pub fn slot_payline_prims(
+    m: &legaia_engine_minigames::slot_machine::SlotMachine,
+) -> Vec<ScreenPrim> {
+    use legaia_engine_ui::slot_paylines as usp;
+    if matches!(
+        m.screen(),
+        legaia_minigame_formats::minigame_slot_scene::SlotScreen::Instructions { .. }
+    ) {
+        return Vec::new();
+    }
+    let segments: Vec<usp::PaylineSegment> = m
+        .payline_segments()
+        .iter()
+        .map(|l| usp::PaylineSegment {
+            a: [l.a.0, l.a.1],
+            b: [l.b.0, l.b.1],
+            rgb: [l.prim.color.0, l.prim.color.1, l.prim.color.2],
+            semi: l.prim.code & 0x02 != 0,
+        })
+        .collect();
+    usp::payline_screen_prims(&segments)
+}
+
+/// The whole machine as screen primitives - cabinet, reels, furniture, dot
+/// matrix and coin HUD through `slot_cabinet::slot_cabinet_prims`, then the
+/// cash-out flow over it (the picker, the prompt, the fade; on a rules page,
+/// the page alone). `dots` is the marquee's composed buffer for this frame,
+/// empty for the cleared matrix; `blink` its blink counter.
+pub fn slot_cabinet_prims(
+    m: &legaia_engine_minigames::slot_machine::SlotMachine,
+    assets: &legaia_engine_ui::slot_cabinet::SlotCabinetAssets,
+    dots: &[u8],
+    blink: u32,
+) -> Vec<ScreenPrim> {
+    use legaia_engine_ui::slot_cabinet as usc;
+    let menu = usc::slot_menu_prims(assets, m.screen(), m.fade_level());
+    if matches!(
+        m.screen(),
+        legaia_minigame_formats::minigame_slot_scene::SlotScreen::Instructions { .. }
+    ) {
+        return menu;
+    }
+    let strips = m.strips();
+    let clear;
+    let dots: &[u8] = if dots.is_empty() {
+        clear = legaia_minigame_formats::minigame_slot_scene::clear_dots();
+        &clear
+    } else {
+        dots
+    };
+    let mut prims = usc::slot_cabinet_prims(&usc::SlotCabinetInput {
+        scene: &assets.scene,
+        cabinet: assets.cabinet.as_ref(),
+        hud: &assets.hud,
+        reel_pos: core::array::from_fn(|r| m.reel_pos(r)),
+        strips: [&strips[0], &strips[1], &strips[2]],
+        stop_open: core::array::from_fn(|r| m.reel_stop_open(r)),
+        winning_line: m.winning_line_word(),
+        dots,
+        blink,
+        balance: m.balance(),
+    });
+    prims.extend(menu);
+    prims
+}

@@ -13,31 +13,17 @@ impl PlayWindowApp {
     pub(in crate::window) fn slot_payline_screen_prims(
         &self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_engine_ui::slot_paylines as usp;
         if self.session.host.world.mode != SceneMode::SlotMachine {
             return Vec::new();
         }
-        let Some(m) = self.session.host.world.minigames.slot_machine.as_ref() else {
-            return Vec::new();
-        };
-        // A rules page replaces the machine, paylines included.
-        if matches!(
-            m.screen(),
-            legaia_minigame_formats::minigame_slot_scene::SlotScreen::Instructions { .. }
-        ) {
-            return Vec::new();
-        }
-        let segments: Vec<usp::PaylineSegment> = m
-            .payline_segments()
-            .iter()
-            .map(|l| usp::PaylineSegment {
-                a: [l.a.0, l.a.1],
-                b: [l.b.0, l.b.1],
-                rgb: [l.prim.color.0, l.prim.color.1, l.prim.color.2],
-                semi: l.prim.code & 0x02 != 0,
-            })
-            .collect();
-        usp::payline_screen_prims(&segments)
+        self.session
+            .host
+            .world
+            .minigames
+            .slot_machine
+            .as_ref()
+            .map(legaia_engine_screens::minigame_hud::slot_payline_prims)
+            .unwrap_or_default()
     }
 
     /// Advance the slot machine's marquee one frame and compose its dot
@@ -114,7 +100,6 @@ impl PlayWindowApp {
     pub(in crate::window) fn slot_cabinet_screen_prims(
         &self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_engine_ui::slot_cabinet as usc;
         if self.slot_gpu.is_none() || self.session.host.world.mode != SceneMode::SlotMachine {
             return Vec::new();
         }
@@ -124,36 +109,15 @@ impl PlayWindowApp {
         ) else {
             return Vec::new();
         };
-        // The cash-out flow over the machine (the picker, the prompt, the
-        // fade) - or, on a rules page, in its place. The browser play page
-        // composes the same pair (`play_minigame_slots.rs`).
-        let menu = usc::slot_menu_prims(assets, m.screen(), m.fade_level());
-        if matches!(
-            m.screen(),
-            legaia_minigame_formats::minigame_slot_scene::SlotScreen::Instructions { .. }
-        ) {
-            return menu;
-        }
-        let strips = m.strips();
-        let dots = if self.slot_dots.is_empty() {
-            legaia_minigame_formats::minigame_slot_scene::clear_dots()
-        } else {
-            self.slot_dots.clone()
-        };
-        let mut prims = usc::slot_cabinet_prims(&usc::SlotCabinetInput {
-            scene: &assets.scene,
-            cabinet: assets.cabinet.as_ref(),
-            hud: &assets.hud,
-            reel_pos: core::array::from_fn(|r| m.reel_pos(r)),
-            strips: [&strips[0], &strips[1], &strips[2]],
-            stop_open: core::array::from_fn(|r| m.reel_stop_open(r)),
-            winning_line: m.winning_line_word(),
-            dots: &dots,
-            blink: self.slot_marquee_clock.blink,
-            balance: m.balance(),
-        });
-        prims.extend(menu);
-        prims
+        // The cabinet, the reels and the cash-out flow over them; the
+        // paylines are their own layer (`slot_payline_screen_prims`), as on
+        // the browser play page.
+        legaia_engine_screens::minigame_hud::slot_cabinet_prims(
+            m,
+            assets,
+            &self.slot_dots,
+            self.slot_marquee_clock.blink,
+        )
     }
 
     /// The slot machine's rules-page text (`slot_cabinet::

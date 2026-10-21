@@ -492,7 +492,8 @@ impl OptionRow {
             if dir < 0 {
                 v.saturating_sub(1)
             } else {
-                v.saturating_add(1).min(10)
+                v.saturating_add(1)
+                    .min(legaia_engine_menus::options::VOLUME_MAX)
             }
         };
         match self {

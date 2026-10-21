@@ -19,8 +19,9 @@
 //!   by the live battle tick and read back through `World::casting.move_fx_streak`.
 //! * **Nothing emitted a per-frame pass.** `World::casting.move_fx_trail_texpage`
 //!   was read only as a log line. [`streak_quads`] is the pass; the native
-//!   window's screen-FX builder calls it every battle frame and appends the
-//!   quads to the same screen-space textured batch the widget overlays ride.
+//!   //!   battle FX layer both hosts draw (`legaia_engine_screens::battle_fx`)
+//!   calls it every battle frame and links the quads into the screen-prim
+//!   pass at [`MOVE_FX_STREAK_OT`].
 //!
 //! ## Projection: the engine camera, not the GTE
 //!

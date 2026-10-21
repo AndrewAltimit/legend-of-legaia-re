@@ -57,8 +57,6 @@ mod headless;
 mod hud;
 #[path = "window/menu_draws.rs"]
 mod menu_draws;
-#[path = "window/minigame_fx.rs"]
-mod minigame_fx;
 #[path = "window/minigames.rs"]
 mod minigames;
 #[path = "window/record.rs"]

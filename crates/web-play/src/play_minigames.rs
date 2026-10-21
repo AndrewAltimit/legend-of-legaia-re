@@ -393,46 +393,15 @@ impl LegaiaRuntime {
     /// that window, the dance parts because this page had no emit site for
     /// them at all.
     fn minigame_fx_stage_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
-        use legaia_engine_minigames::dance::SpritePartEmit;
+        use legaia_engine_screens::minigame_hud::{dance_sprite_part_views, fx_part_views};
         use legaia_engine_ui::minigame_fx as fx;
         let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
         let mg = &host.world.minigames;
-        let parts: Vec<fx::FxPartView> = mg
-            .fx
-            .frames()
-            .into_iter()
-            .map(|p| fx::FxPartView {
-                x: p.x as i32,
-                y: p.y as i32,
-                sprite: p.sprite,
-                fade: p.fade,
-            })
-            .collect();
-        let mut out = fx::fx_part_draws(font, &parts, (0, 0), 1);
+        let mut out = fx::fx_part_draws(font, &fx_part_views(&mg.fx), (0, 0), 1);
         if let Some(g) = mg.dance.as_ref() {
-            let dance_parts: Vec<fx::DanceSpritePartView> = g
-                .sprite_part_emits()
-                .into_iter()
-                .filter_map(|f| {
-                    let (x, y, shadow) = match f.emit {
-                        SpritePartEmit::Shadowed { x, y, .. } => (x, y, true),
-                        SpritePartEmit::Plain { x, y, .. }
-                        | SpritePartEmit::Marker { x, y, .. } => (x, y, false),
-                        SpritePartEmit::CopyTemplate
-                        | SpritePartEmit::SetTemplateZ
-                        | SpritePartEmit::None => return None,
-                    };
-                    Some(fx::DanceSpritePartView {
-                        x: x as i32,
-                        y: y as i32,
-                        sprite: f.sprite,
-                        fade: f.fade,
-                        shadow,
-                    })
-                })
-                .collect();
+            let dance_parts = dance_sprite_part_views(&g.sprite_part_emits());
             out.extend(fx::dance_sprite_part_draws(font, &dance_parts, (0, 0), 1));
         }
         out

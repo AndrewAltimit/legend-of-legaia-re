@@ -2432,9 +2432,11 @@ dependencies = [
 name = "legaia-engine-screens"
 version = "0.1.0"
 dependencies = [
+ "glam",
  "legaia-engine-battle",
  "legaia-engine-battle-hud",
  "legaia-engine-battle-vm",
+ "legaia-engine-camera",
  "legaia-engine-core",
  "legaia-engine-dev-menu",
  "legaia-engine-dialog",
@@ -2470,6 +2472,7 @@ dependencies = [
  "legaia-engine-battle",
  "legaia-engine-battle-hud",
  "legaia-engine-battle-vm",
+ "legaia-engine-camera",
  "legaia-engine-cheats",
  "legaia-engine-core",
  "legaia-engine-effects",
