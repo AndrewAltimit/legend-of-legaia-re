@@ -76,6 +76,13 @@ pub struct PhaseGate {
     /// tick. The clocks that ran on through the wait (the flash's age) then
     /// cannot place the frame: the engine's frame is its tick on the arm.
     pub stream_wait: bool,
+    /// The capture sits on a module arm that waits on the side-band applier
+    /// stage `ctx[+0x276]`
+    /// (`legaia_engine_cast::cast_module_camera::sideband_wait_arm`). Unlike
+    /// a stream poll, the clocks that run through this wait (the flash's
+    /// age) still place the frame: the replay holds the engine's arm busy
+    /// ([`Self::steer`]) until they do, as retail's read held its own.
+    pub sideband_wait: bool,
 }
 
 /// How far a walk-arm yaw base has swung from its seat (`0x200`), in
@@ -93,6 +100,9 @@ impl PhaseGate {
         }
         if self.stream_wait {
             s.push_str(",s");
+        }
+        if self.sideband_wait {
+            s.push_str(",h");
         }
         if let Some(a) = self.cam_accum {
             s.push_str(&format!(",a{a}"));
@@ -173,6 +183,10 @@ impl PhaseGate {
             }
             _ => None,
         };
+        let sideband_wait = parts.last() == Some(&"h");
+        if sideband_wait {
+            parts.pop();
+        }
         let stream_wait = parts.last() == Some(&"s");
         if stream_wait {
             parts.pop();
@@ -205,6 +219,7 @@ impl PhaseGate {
             accum_align,
             camera_pass,
             stream_wait,
+            sideband_wait,
         })
     }
 
@@ -287,7 +302,17 @@ impl PhaseGate {
     /// engine's poll is always ready and leaves on the entry tick. Hold the
     /// engine's poll busy until its camera has run a pass in the state
     /// ([`Self::met`]); every other gate leaves the poll alone.
+    ///
+    /// A capture on a side-band wait arm ([`Self::sideband_wait`]) holds
+    /// that arm busy instead, for as long as the engine stands on it in the
+    /// capture's state: retail's arm waited out the turn's read while the
+    /// band's other clocks ran on, and the engine's read is resident.
     pub fn steer(&self, world: &mut legaia_engine_core::world::World) {
+        if self.sideband_wait {
+            world.casting.module_cam.sideband_busy = world.mode == SceneMode::Battle
+                && world.battle_ctx.action_state == self.action_state
+                && self.module_phase == Some(world.casting.module_phase);
+        }
         if !self.camera_pass || self.action_state != SUMMON_INVOKE_STATE {
             return;
         }

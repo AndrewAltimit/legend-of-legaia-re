@@ -454,7 +454,8 @@ pub const HORN_LAST_ARM: u8 = 0xB;
 /// | arm | gate | camera / writes |
 /// |---|---|---|
 /// | 0, 1 | - | a cut on the origin, then a `0x100`-frame rise |
-/// | 2, 3 | - (the load) | arm 3: a white fade in after `0x100`, word `= 0x180`, the creature seated at `(0, 0x800)` facing `0x800` |
+/// | 2 | the side-band applier stage `ctx[+0x276]` ([`super::sideband_wait_arm`]) | the creature seek |
+/// | 3 | - (the stream poll) | a white fade in after `0x100`, word `= 0x180`, the creature seated at `(0, 0x800)` facing `0x800` |
 /// | 4 | word | a fade out, the spell name; `+= 0x114` |
 /// | 5, 6 | one drain each | - |
 /// | 7 | word | a cut, the attack name; `+= 0x100` |
@@ -478,7 +479,9 @@ pub fn horn_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
     match phase {
         0 => cut([0, 0], [0, 0x400, 0x400], [0; 3], 1),
         1 => cut([0, 0], [0, 0x1500, 0], [0, 0, -0x200], 0x100),
-        2 => ArmDirection::PASS,
+        // Arm 2 returns busy while the side-band applier stage `ctx[+0x276]`
+        // is up (`0x801F6D60..0x801F6D68`; `sideband_wait_arm`).
+        2 => gate(st.sideband_busy),
         3 => {
             st.countdown.0 = 0x180;
             st.creature = Some(ModuleSeat {

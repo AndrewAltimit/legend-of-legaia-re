@@ -314,6 +314,149 @@ pub fn freed_stager_spawns(
     }
 }
 
+/// PROT 0930's sparkle triple, which its stager's arm 0 seats on every call
+/// the looping record `0x801F857C` makes.
+pub const HORN_SPARKLE_RECORDS: [u32; 3] = [0x801F_859C, 0x801F_85FC, 0x801F_865C];
+
+/// The records PROT 0930's stager seats, which no tick-body arm names: the
+/// host leaves them out of the module's whole-set seat, since the stager
+/// seats each on the pass a part calls it.
+pub const HORN_STAGER_RECORDS: [u32; 10] = [
+    0x801F_859C,
+    0x801F_85FC,
+    0x801F_865C,
+    0x801F_8900,
+    0x801F_8BEC,
+    0x801F_8F60,
+    0x801F_906C,
+    0x801F_90C8,
+    0x801F_9338,
+    0x801F_9194,
+];
+
+/// The records a summon-creature module's ported stager seats itself, which
+/// the host's whole-set seat of the module's unnamed records leaves out.
+pub fn stager_seated_records(entry: u32) -> &'static [u32] {
+    match entry {
+        930 => &HORN_STAGER_RECORDS,
+        _ => &[],
+    }
+}
+
+/// One of PROT 0930's rising wisps (arms 1 and 3): the wisp seats on the
+/// caller, then the arm stores its wait `+0x54 = 32 k + rand % 17`, a spin
+/// `+0x84 = rand % 129 - 0x40`, a length `+0xBA = rand % 129 + 0x400`, a
+/// radius `+0xB6 = rand % 385 + 0xC00` and its roll
+/// `+0x28 = 0x1000 k / 3 + rand % roll_mod`, drawing `rand()` in that order.
+fn horn_wisp(
+    record: u32,
+    caller: StagerCaller,
+    k: u16,
+    roll_mod: u32,
+    rand: &mut dyn FnMut() -> u32,
+) -> StagerSpawn {
+    let mut s = StagerSpawn::at(record, caller.pos, caller.rot);
+    let wait = (k << 5) + (rand() % 17) as u16;
+    let spin = (rand() % 129) as i32 - 0x40;
+    let length = rand() % 129 + 0x400;
+    let radius = rand() % 385 + 0xC00;
+    let roll = (u32::from(k) << 12) / 3 + rand() % roll_mod;
+    s.pokes = vec![
+        (0x54, wait),
+        (0x84, spin as u16),
+        (0xBA, length as u16),
+        (0xB6, radius as u16),
+        (0x28, roll as u16),
+    ];
+    s
+}
+
+/// PROT 0930 (Horn) - the stager `0x801F7EA4`, its seven arms (jump table
+/// `0x801F6A58`). Every record but arm 0's sits on the caller's `+0x14` /
+/// `+0x24`.
+///
+/// | arm | seats |
+/// |---:|---|
+/// | 0 | four sparkle triples `0x801F859C` / `0x801F85FC` / `0x801F865C` round a ring (`0x801F7EFC..0x801F80B4`) |
+/// | 1 | three wisps `0x801F8900` ([`horn_wisp`], roll jitter `rand % 1024`; `0x801F80B8..0x801F8204`) |
+/// | 2 | `0x801F8BEC` (`0x801F8208`) |
+/// | 3 | three wisps `0x801F8F60` (roll jitter `rand % 819`), then three pairs `0x801F906C` / `0x801F90C8` (`0x801F821C..0x801F8518`) |
+/// | 4 | nothing |
+/// | 5 / 6 | `0x801F9338` / `0x801F9194` (`0x801F8520` / `0x801F8534`) |
+///
+/// **Arm 0** draws a base angle `b = rand % 1024` once, then for
+/// `i = 0..4` a radius `r = rand % 6 + 20` and an angle
+/// `a = (b + 0x400 i + (rand % 4096) / 5) & 0xFFF`, and with
+/// `s = trunc(sin a * r / 4096)`, `c = trunc(cos a * r / 4096)` stores `s` /
+/// `c` over each record's halfwords `+6` / `+8` before seating it at
+/// `(-64 s, -64 c, 0x800)` - a fresh stack trio, not the caller's point -
+/// turned by the caller's `+0x24`. The record's program reads the two
+/// halfwords as the sparkle's drift, so each sparkle starts out on a ring and
+/// moves along its own spoke.
+///
+/// **Arm 3's pairs** draw `j = rand % 819` per pair and, with
+/// `a = 0x1000 k / 3 + j`, store `+0x3C = trunc(sin a / 288)` and
+/// `+0x3E = trunc(cos a / 384)` into both records of the pair
+/// (`0x801F83A8..0x801F8518`).
+///
+/// PORT: FUN_801F7EA4 (PROT 0930 stager; every arm)
+pub fn horn_stager_spawns(
+    arm: u8,
+    caller: StagerCaller,
+    rand: &mut dyn FnMut() -> u32,
+) -> Vec<StagerSpawn> {
+    match arm {
+        0 => {
+            let base = rand() % 1024;
+            let mut out = Vec::with_capacity(12);
+            for i in 0..4u32 {
+                let r = (rand() % 6 + 0x14) as i32;
+                let angle = ((base + (i << 10) + (rand() % 4096) / 5) & 0xFFF) as u16;
+                let (sin, cos) = trig12(angle);
+                let s = (i32::from(sin) * r / 4096) as i16;
+                let c = (i32::from(cos) * r / 4096) as i16;
+                let pos = [
+                    (i32::from(s) * -64) as i16,
+                    (i32::from(c) * -64) as i16,
+                    0x800,
+                ];
+                for record in HORN_SPARKLE_RECORDS {
+                    let mut sp = StagerSpawn::at(record, pos, caller.rot);
+                    sp.patches = vec![(record + 6, s as u16), (record + 8, c as u16)];
+                    out.push(sp);
+                }
+            }
+            out
+        }
+        1 => (0..3)
+            .map(|k| horn_wisp(0x801F_8900, caller, k, 1024, rand))
+            .collect(),
+        2 => vec![StagerSpawn::at(0x801F_8BEC, caller.pos, caller.rot)],
+        3 => {
+            let mut out: Vec<StagerSpawn> = (0..3)
+                .map(|k| horn_wisp(0x801F_8F60, caller, k, 819, rand))
+                .collect();
+            for k in 0..3u32 {
+                let angle = ((k << 12) / 3 + rand() % 819) as u16;
+                let (sin, cos) = trig12(angle);
+                let pokes = vec![
+                    (0x3C, (i32::from(sin) / 288) as u16),
+                    (0x3E, (i32::from(cos) / 384) as u16),
+                ];
+                for record in [0x801F_906C, 0x801F_90C8] {
+                    let mut sp = StagerSpawn::at(record, caller.pos, caller.rot);
+                    sp.pokes = pokes.clone();
+                    out.push(sp);
+                }
+            }
+            out
+        }
+        5 => vec![StagerSpawn::at(0x801F_9338, caller.pos, caller.rot)],
+        6 => vec![StagerSpawn::at(0x801F_9194, caller.pos, caller.rot)],
+        _ => Vec::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,6 +471,69 @@ mod tests {
 
     /// Arm 0's eight rays share one anchor, `/ 32` back along the caller's
     /// heading at `y = -0x15E`, and fan their rolls one eighth apart.
+    /// PROT 0930's arm 0 seats four sparkle triples on a ring at depth
+    /// `0x800`, each record carrying its spoke's drift in `+6` / `+8` and
+    /// standing `-64` times that drift off the centre.
+    #[test]
+    fn horn_sparkles_ring_the_centre() {
+        let caller = StagerCaller {
+            pos: [10, 20, 30],
+            rot: [0, 0x123, 0],
+            ..Default::default()
+        };
+        let mut r = counter();
+        let s = horn_stager_spawns(0, caller, &mut r);
+        assert_eq!(s.len(), 12);
+        for (i, sp) in s.iter().enumerate() {
+            assert_eq!(sp.record, [0x801F_859C, 0x801F_85FC, 0x801F_865C][i % 3]);
+            assert_eq!(sp.rot, caller.rot);
+            assert_eq!(sp.pos[2], 0x800);
+            let s_ = sp.patches[0].1 as i16;
+            let c_ = sp.patches[1].1 as i16;
+            assert_eq!(sp.patches[0].0, sp.record + 6);
+            assert_eq!(sp.patches[1].0, sp.record + 8);
+            assert!(i32::from(s_).abs() <= 25 && i32::from(c_).abs() <= 25);
+            assert!(i32::from(s_).pow(2) + i32::from(c_).pow(2) >= 18 * 18);
+            assert_eq!(sp.pos[0], s_ * -64);
+            assert_eq!(sp.pos[1], c_ * -64);
+        }
+        // Each triple shares its spoke; the four spokes are a quarter turn apart.
+        assert_eq!(s[0].pos, s[1].pos);
+        assert_eq!(s[1].pos, s[2].pos);
+        assert_ne!(s[0].pos, s[3].pos);
+    }
+
+    /// PROT 0930's wisps take their pokes in the arm's `rand()` order and
+    /// ranges, and arm 3 adds three point pairs.
+    #[test]
+    fn horn_wisps_and_pairs() {
+        let caller = StagerCaller::default();
+        let mut r = counter();
+        let s = horn_stager_spawns(1, caller, &mut r);
+        assert_eq!(s.len(), 3);
+        for (k, sp) in s.iter().enumerate() {
+            assert_eq!(sp.record, 0x801F_8900);
+            let get = |o: u16| sp.pokes.iter().find(|p| p.0 == o).unwrap().1;
+            assert!((32 * k as u16..32 * k as u16 + 17).contains(&get(0x54)));
+            assert!((-0x40..=0x40).contains(&(get(0x84) as i16)));
+            assert!((0x400..0x400 + 129).contains(&get(0xBA)));
+            assert!((0xC00..0xC00 + 385).contains(&get(0xB6)));
+            let base = (0x1000 * k as u32 / 3) as u16;
+            assert!((base..base + 1024).contains(&get(0x28)));
+        }
+        let s = horn_stager_spawns(3, caller, &mut r);
+        assert_eq!(s.len(), 9);
+        assert!(s[..3].iter().all(|sp| sp.record == 0x801F_8F60));
+        for pair in s[3..].chunks(2) {
+            assert_eq!(pair[0].record, 0x801F_906C);
+            assert_eq!(pair[1].record, 0x801F_90C8);
+            assert_eq!(pair[0].pokes, pair[1].pokes);
+        }
+        assert_eq!(horn_stager_spawns(4, caller, &mut r), Vec::new());
+        assert_eq!(horn_stager_spawns(5, caller, &mut r)[0].record, 0x801F_9338);
+        assert_eq!(horn_stager_spawns(6, caller, &mut r)[0].record, 0x801F_9194);
+    }
+
     #[test]
     fn nighto_rays_fan_round_the_crystal() {
         let caller = StagerCaller {

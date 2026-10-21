@@ -474,6 +474,11 @@ impl RetailBattle {
             && self.caster_clip == SUMMON_INVOKE_CLIP)
             .then_some(self.cam_accum);
         // A frame inside the stream poll's arm is placed by the arm alone.
+        // A frame inside a side-band wait is placed by the band's clocks,
+        // with the engine's arm held busy until they get there.
+        let sideband_wait = module_phase.is_some_and(|p| {
+            legaia_engine_cast::cast_module_camera::sideband_wait_arm(entry) == Some(p)
+        });
         let stream_wait = module_phase.is_some_and(|p| {
             legaia_engine_cast::cast_module_camera::stream_poll_arm(entry) == Some(p)
         });
@@ -489,6 +494,7 @@ impl RetailBattle {
             // The summon head's RAM is a pass in (`PhaseGate::steer`).
             camera_pass: self.action_state == SUMMON_INVOKE_STATE,
             stream_wait,
+            sideband_wait,
         })
     }
 }

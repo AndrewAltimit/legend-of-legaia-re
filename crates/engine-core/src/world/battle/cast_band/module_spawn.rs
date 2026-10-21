@@ -317,6 +317,13 @@ impl World {
                 SpawnRecord::Module(va) => Some(va),
                 SpawnRecord::BattleProto(_) => None,
             })
+            // A ported stager seats its own records on the pass a part
+            // calls it (`Self::run_part_stager_calls`).
+            .chain(
+                legaia_engine_cast::cast_module_ticks::stager_seated_records(entry)
+                    .iter()
+                    .copied(),
+            )
             .collect();
         let rest: Vec<_> = module
             .parts

@@ -3596,10 +3596,13 @@ pub const CREATURE_PER_PASS_SPAWNS: &[&[ModuleSpawn]] = &[
 ];
 
 /// The slot-B records some module arm seats on every pass it runs, held or
-/// not ([`CAPTURE_PER_PASS_SPAWNS`], [`CREATURE_PER_PASS_SPAWNS`]). How many
-/// of them are live, how old each is and - for PROT 0962's rays - which way
-/// each was rolled is the history of the passes the frame driver made,
-/// which a replay at another frame cadence does not reproduce.
+/// not ([`CAPTURE_PER_PASS_SPAWNS`], [`CREATURE_PER_PASS_SPAWNS`]), and the
+/// ones a ported stager seats on every call a looping part makes
+/// ([`crate::cast_module_ticks::HORN_SPARKLE_RECORDS`]). How many of them are
+/// live, how old each is and (for PROT 0962's rays and PROT 0930's
+/// sparkles) which way each was rolled is the history of the passes the
+/// frame driver made, and for PROT 0930 of the side-band wait its arm 2
+/// holds on, which a replay at another frame cadence does not reproduce.
 pub fn per_pass_spawn_records() -> impl Iterator<Item = u32> {
     super::CAPTURE_PER_PASS_SPAWNS
         .iter()
@@ -3609,6 +3612,7 @@ pub fn per_pass_spawn_records() -> impl Iterator<Item = u32> {
             SpawnRecord::Module(va) => Some(va),
             SpawnRecord::BattleProto(_) => None,
         })
+        .chain(crate::cast_module_ticks::HORN_SPARKLE_RECORDS)
 }
 
 /// The spawn calls module `prot_entry`'s arm `phase` makes with `timing`

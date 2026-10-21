@@ -1161,6 +1161,21 @@ remains a difference this channel no longer sees; the
 [cast-sequence oracle](cast-sequence-oracle.md) without the seat is the
 instrument for it.
 
+PROT 0930's sparkles are the same kind of part: its stager seats a volley
+of them on every op-`0x20` call its looping record `0x801F857C` makes, each
+at a `rand()` spoke, and how many volleys are live is the side-band wait's
+length. They are in the seat too (`per_pass_spawn_records`), which holds
+`horn_summon_mid_cast` at `.979`.
+
+Each seeded word is taken back to the displayed frame
+(`displayed_part_halfword`): the part tick integrates the render banks, the
+position (velocity and heading speed) and, in render modes `2` / `6`, the
+channel block at the rate `>> 3` a vsync, and drains the wait by `8`, so the
+frame on screen holds each word less [the display lag](#replayed-casts)'s
+worth. Seated from the RAM, the sparkles stood a volley's drift further in
+(`.967`), and `cort_evolved_ultra_charge_mid_cast`'s rays read `.822` against
+`.886` taken back.
+
 The snapshot is kept to those records. A part seated once runs on a clock
 the replay already aligns, and the RAM is one frame-pair ahead of the
 displayed frame: seated from the RAM, Ultra Charge's camera-locked discs
@@ -1723,6 +1738,7 @@ vsync, so each kind of capture adds the clock that places it inside:
 | Done band `0x51` / `0x52` | hold countdown `ctx[+0x6D8]` (the pad-driven plan's `DoneHold`): `0x3C` frames, or `0x96` behind a magic level-up banner | `d<timer>` |
 | `0x35` / `0x36` under a ported pacing director | module phase byte `ctx[+0x279]` (`PhaseGate::module_phase`) | `m<phase>` |
 | On a module's stream-poll arm (`cast_module_camera::stream_poll_arm`: PROT 0910 / 0913 arm 2) | none: the engine's tick on the arm is the frame (`PhaseGate::stream_wait`) | `m<phase>,s` |
+| On a module's side-band wait arm (`cast_module_camera::sideband_wait_arm`: PROT 0930 arm 2) | the flash's age, with the engine's arm held busy until it gets there (`PhaseGate::sideband_wait`, `steer`) | `m<phase>,h` |
 
 Notes on the rows:
 
@@ -1748,6 +1764,15 @@ Notes on the rows:
   following arm's spawns and camera instead of the wait's frame.
 - **Walk arm.** The phase byte only names the arm's entry. An engine walk that
   arrives sooner leaves the arm first, and its exit is then the frame taken.
+- **Side-band wait.** PROT 0930's arm 2 waits on the side-band applier
+  stage `ctx[+0x276]`, not on the CD poll. The flash and the sparkle volleys
+  its looping record keeps seating run on through that wait
+  (`horn_summon_mid_cast`: three volleys, the flash 28 vsyncs into the
+  sustain), so the flash still places the frame; the replay instead holds the
+  engine's arm (`ModuleCamState::sideband_busy`) while it stands on the
+  capture's arm. Taken on the arm's first tick the frame read `.121`, and
+  left to run on to the flash's age it reached arm 4, whose wisps retail has
+  not seated yet.
 - **Countdown arms.** `shiny_refactor_gimard_plus35` is arm 9 at countdown
   `928`, some 16 vsyncs into the arm, after the breath has grown. The display
   lag is added back as for the other gates.

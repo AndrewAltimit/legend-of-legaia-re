@@ -2237,8 +2237,23 @@ rampage, Jedo's sparks, Ozma's flames). Three kinds of point are not carried:
 a `rand()` spread (seated at the spread's centre), a height off the victim's
 `+0x3E` (Barra arm `0xB`, seated at `z = 0`), and Mule arm 17's world-anchor
 point and TR z scale (the origin at unit scale). The records only a module's
-own stager seats (reached through a part's op-`0x20` call, which the engine
-does not run for these modules) are seated whole on the stager's first tick.
+own stager seats (reached through a part's op-`0x20` call) are seated whole on
+the stager's first tick, except where the stager is ported and runs off those
+calls.
+
+**Horn's stager** `FUN_801F7EA4` is the ported one
+(`cast_module_ticks::horn_stager_spawns`). Arm 0's record `0x801F857C` runs
+a `0x4000`-pass loop (op `0x18`) of an op-`0x20` call to arm 0 and a wait of
+`0x0B` (op `0x09`), and each call seats four sparkle triples `0x801F859C` / `0x801F85FC` /
+`0x801F865C`: a base angle `rand % 1024` and, a quarter turn apart, a radius
+`rand % 6 + 20` and a jitter `(rand % 4096) / 5`. Each record's halfwords
+`+6` / `+8` are overwritten with the spoke's `trunc(sin * r / 4096)` /
+`trunc(cos * r / 4096)` before the seat, and the seat stands at `-64` times
+those, depth `0x800`, on a stack trio rather than the caller's point
+(`0x801F7EFC..0x801F80B4`). `horn_summon_mid_cast` (arm 2, the stream wait)
+holds twelve of each live, three calls' worth. Arms 1 and 3 seat three wisps
+each with the Freed-shaped wait / spin / length / radius / roll pokes, arm 3
+three point pairs more; arms 2, 5 and 6 one record each on the caller.
 
 Palma's arm 1 holds on the band timer: retail's arm returns busy on the
 stream request's token `ctx[+0x276]` past most of the sustain

@@ -43,9 +43,14 @@ const PART_TICK: u32 = 0x8002_1DF4;
 /// A part seated once is left to the replay, whose own state is aligned to
 /// the displayed frame - the RAM runs one frame-pair ahead of it, and a
 /// growing channel seated from the RAM overshoots the frame on screen.
+///
+/// The seeds are taken back to the displayed frame the same way
+/// ([`displayed_part_halfword`]): each integrated word less the
+/// [`display_lag_vsyncs`] the part tick ran on it since.
 pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon::CastPartSeed> {
     let per_pass: Vec<u32> =
         legaia_engine_cast::cast_module_camera::per_pass_spawn_records().collect();
+    let lag = i32::from(display_lag_vsyncs(ram));
     crate::retail_compare_script::actor_nodes(ram)
         .into_iter()
         .filter(|&n| {
@@ -59,10 +64,50 @@ pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon
             tag: game_anchors::u32_at(ram, n + 0x48),
             pokes: legaia_engine_effects::summon::CAST_PART_SEED_OFFSETS
                 .iter()
-                .map(|&o| (o, game_anchors::u16_at(ram, n + u32::from(o))))
+                .map(|&o| (o, displayed_part_halfword(ram, n, o, lag)))
                 .collect(),
         })
         .collect()
+}
+
+/// Part `node`'s halfword `+off` as the displayed frame held it, `lag`
+/// vsyncs before the RAM: the part tick `FUN_80021DF4` integrates, a frame
+/// at a time and scaled by the frame step times the rate byte `8` (`>> 6`),
+/// so one vsync's worth is the rate `>> 3`.
+///
+/// - the render banks `+0x24..+0x28` by `+0x80..+0x84` (`0x80022918..`);
+/// - the position `+0x14..+0x18` by the velocity `+0x3C..+0x40` and, on X
+///   / Z, the speed `+0x98` along the heading `+0x96` (`0x800229B4..`);
+///   both skipped for render modes `3` and `5` (`0x800228A0..0x800228B0`);
+/// - the channels `+0xB4..+0xBA` and `+0xC8` by `+0xC0..+0xC6` / `+0xCA` in
+///   render modes `2` and `6` (`0x80021E78..0x80021FA0`);
+/// - the wait `+0x54`, drained by the same product (`8` a vsync).
+///
+/// A word the part's program rewrote inside the lag is not recovered.
+fn displayed_part_halfword(ram: &[u8], node: u32, off: u16, lag: i32) -> u16 {
+    let h = |o: u32| i32::from(game_anchors::u16_at(ram, node + o) as i16);
+    let now = h(u32::from(off));
+    let mode = h(0x5A);
+    let moves = mode != 3 && mode != 5;
+    let per_vsync = match off {
+        0x24 | 0x26 | 0x28 if moves => h(u32::from(off) + 0x5C) >> 3,
+        0x14 | 0x16 | 0x18 if moves => {
+            let heading = (h(0x96) & 0xFFF) as u16;
+            let (sin, cos) = legaia_engine_system::trig::trig12(heading);
+            let speed = h(0x98);
+            let along = match off {
+                0x14 => i32::from(sin) * speed,
+                0x18 => i32::from(cos) * speed,
+                _ => 0,
+            };
+            (along + (h(u32::from(off) + 0x28) << 12)) >> 15
+        }
+        0xB4 | 0xB6 | 0xB8 | 0xBA if mode == 2 || mode == 6 => h(u32::from(off) + 0x0C) >> 3,
+        0xC8 if mode == 2 || mode == 6 => h(0xCA) >> 3,
+        0x54 => -8,
+        _ => 0,
+    };
+    (now - per_vsync * lag) as u16
 }
 
 /// `ctx[+0x273]` - the pushes the damage-number ring took this action.
