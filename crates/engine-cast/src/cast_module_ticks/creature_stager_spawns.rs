@@ -225,6 +225,39 @@ pub fn palma_stager_spawns(
 /// PROT 0928's records its stager scatters off `rand()`.
 pub const PALMA_VOLLEY_RECORDS: [u32; 2] = [0x801F_9D68, 0x801F_9F08];
 
+/// PROT 0929's stager arm 3 (`0x801F8E30..0x801F8EAC`): two
+/// `FUN_80024E80(0x801C9070, 1)` calls over one template, rewritten between
+/// them. Both are kind `1` (additive) over `0x20` frames with no hold: a
+/// rise from black to white, then a fall from white to black that waits the
+/// rise out (`+0x14 = 0x20`, the start delay). The template's id word
+/// `+0x18` is not written; the call stamps id `1`.
+///
+/// ```text
+/// sh 1,(t)  sh 0x20,2(t)  sh 0,6/8/A(t)    sh 0xFF,E/10/12(t)  sh 0,14(t)  sh 0,16(t)
+/// sh 1,(t)  sh 0x20,2(t)  sh 0xFF,6/8/A(t) sh 0,E/10/12(t)     sh 0x20,14(t) sh 0,16(t)
+/// ```
+pub const MULE_STAGER_FADES: [legaia_engine_battle_vm::battle_action::SummonFadeTemplate; 2] = [
+    legaia_engine_battle_vm::battle_action::SummonFadeTemplate {
+        kind: 1,
+        duration: 0x20,
+        start_rgb: [0, 0, 0],
+        end_rgb: [0xFF, 0xFF, 0xFF],
+        delay: 0,
+        hold: 0,
+    },
+    legaia_engine_battle_vm::battle_action::SummonFadeTemplate {
+        kind: 1,
+        duration: 0x20,
+        start_rgb: [0xFF, 0xFF, 0xFF],
+        end_rgb: [0, 0, 0],
+        delay: 0x20,
+        hold: 0,
+    },
+];
+
+/// PROT 0929's stager arm that spawns [`MULE_STAGER_FADES`].
+pub const MULE_STAGER_FADE_ARM: u8 = 3;
+
 /// PROT 0929 (Mule) - the stager `0x801F8C30`, nine arms (jump table
 /// `0x801F69D8`):
 ///
@@ -233,7 +266,7 @@ pub const PALMA_VOLLEY_RECORDS: [u32; 2] = [0x801F_9D68, 0x801F_9F08];
 /// | 0 / 4 | `0x801F90A4` / `0x801F95DC` at `(rand % 1025 - 0x200, 0, rand % 1025 - 0x200)`, turned by the caller, at its scale |
 /// | 1 | twenty-four `0x801F90A4` at `(rand % 513 - 0x100, -(rand % 257), -(rand % 33) - 0x48A)`, turned by the caller, at its scale |
 /// | 2 | eight `0x801F92DC` on the caller: `+0x54 = k`, `+0x84 = 0x40`, `+0xB4 = +0xB8 = +0xBA = 0`, `+0xB6 = 0x600`, `+0x28 = 0x200 k` |
-/// | 3 | two screen fades (`FUN_80024E80`), not carried |
+/// | 3 | no seat: the two screen fades [`MULE_STAGER_FADES`] |
 /// | 5 / 6 / 7 | `0x801F9944` / `0x801F9998` / `0x801F9A0C` on the caller at its scale |
 /// | 8 | four `0x801F98D8` on the caller: `+0xBA = -0x100`, `+0xB8 = 0`, `+0x84 = rand % 33 - 0x10`, `+0xB6 = 0x400`, `+0xB4 = rand % 129 + 0x80`, `+0x28 = (caller +0x28 + 0x400 k + rand % 128) & 0xFFF` |
 ///

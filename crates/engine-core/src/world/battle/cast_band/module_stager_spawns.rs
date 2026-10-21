@@ -8,11 +8,11 @@
 
 use super::*;
 use legaia_engine_cast::cast_module_ticks::{
-    CALL_WAVE_WAVE_RECORD, FREED_STAGER_FADE, StagerSpawn, blade_breath_cell_stager_spawns,
-    call_wave_stager_spawns, chaos_breath_cell_stager_spawns, dead_end_crisis_stager_spawns,
-    freed_stager_spawns, gizam_stager_spawns, guilty_cross_cell_stager_spawns, horn_stager_spawns,
-    nighto_stager_spawns, nova_stager_spawns, orb_stager_spawns, swordie_stager_spawns,
-    vera_stager_spawns, zenoir_stager_spawns,
+    CALL_WAVE_WAVE_RECORD, FREED_STAGER_FADE, MULE_STAGER_FADE_ARM, MULE_STAGER_FADES, StagerSpawn,
+    blade_breath_cell_stager_spawns, call_wave_stager_spawns, chaos_breath_cell_stager_spawns,
+    dead_end_crisis_stager_spawns, freed_stager_spawns, gizam_stager_spawns,
+    guilty_cross_cell_stager_spawns, horn_stager_spawns, nighto_stager_spawns, nova_stager_spawns,
+    orb_stager_spawns, swordie_stager_spawns, vera_stager_spawns, zenoir_stager_spawns,
 };
 use legaia_engine_cast::cast_module_ticks::{
     barra_stager_spawns, gola_gola_stager_spawns, iota_stager_spawns, jedo_stager_spawns,
@@ -57,7 +57,8 @@ impl World {
     /// arm seats ([`gizam_stager_spawns`], [`nighto_stager_spawns`],
     /// [`zenoir_stager_spawns`], [`freed_stager_spawns`]). PROT 0906's
     /// arms 0..2 (the flash pair, the creature shown, the phase release)
-    /// stay on its director's phase-5 clock; PROT 0912's arm 6 is a fade.
+    /// stay on its director's phase-5 clock; PROT 0912's arm 6 is a fade,
+    /// PROT 0929's arm 3 two.
     ///
     /// Retail runs the call inside the part's own move-VM step, so its
     /// records are seated on that frame; the engine queues the call
@@ -100,16 +101,21 @@ impl World {
             })
             .unwrap_or([0; 3]);
         for (arm, caller) in calls {
-            if entry == 912 && arm == 6 {
-                let mut fade = None;
-                legaia_engine_system::fade::spawn_fade(
-                    &mut fade,
-                    &legaia_engine_battle_vm::battle_action::summon_fade_template(
-                        &FREED_STAGER_FADE,
-                    ),
-                    1,
-                );
-                self.presentation.module_fades.extend(fade);
+            let stager_fades: &[_] = match (entry, arm) {
+                (912, 6) => std::slice::from_ref(&FREED_STAGER_FADE),
+                (929, MULE_STAGER_FADE_ARM) => &MULE_STAGER_FADES,
+                _ => &[],
+            };
+            if !stager_fades.is_empty() {
+                for t in stager_fades {
+                    let mut fade = None;
+                    legaia_engine_system::fade::spawn_fade(
+                        &mut fade,
+                        &legaia_engine_battle_vm::battle_action::summon_fade_template(t),
+                        1,
+                    );
+                    self.presentation.module_fades.extend(fade);
+                }
                 continue;
             }
             // PROT 0905's arm 0 first lifts its caller, arm 5's first glow,
