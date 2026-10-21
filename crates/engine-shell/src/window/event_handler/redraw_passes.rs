@@ -773,23 +773,13 @@ impl PlayWindowApp {
         )
     }
 
-    /// This frame's weapon-trail bands, as screen-space gouraud quads on
-    /// the retail 320x240 stage - the projection seat of the swept
-    /// `POLY_G4` trail. The trigger + sweep come from
-    /// `World::battle_weapon_trail_draws` (retail `FUN_8005112C` /
-    /// `FUN_80048310`); the band packets from
-    /// `legaia_render_kernels::battle_trail::weapon_trail_prims`
-    /// (`FUN_800485BC`). Placement is the live body's model law (party
-    /// battle arm: translation + the Y-flip), so the bands land exactly on
-    /// the weapon as drawn.
-    // REF: FUN_800485BC (packet + band order live in
-    // `legaia_render_kernels::battle_trail`; this is the per-host projection)
     /// PROT 0904's (Theeder) beam packets this frame
     /// ([`legaia_engine_core::world::World::theeder_draw`] through
     /// `legaia_engine_ui::cast_theeder::theeder_prims`, the kernel the browser
-    /// play page draws them with), projected with the battle camera at the
-    /// stage's 4:3 - the weapon trail's projection. Retail points are Y-down;
-    /// this host's battle space is Y-up, so Y is negated on the way in.
+    /// play page draws them with), placed and projected as a battle body is
+    /// (`battle_trail::project_battle_point`: frame flip, world scale, the
+    /// battle camera at the stage's 4:3) - the weapon trail's projection,
+    /// and the page's.
     pub(super) fn theeder_screen_prims(
         &self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
@@ -798,9 +788,9 @@ impl PlayWindowApp {
         let Some(packet) = world.theeder_draw() else {
             return Vec::new();
         };
-        let mvp = self.battle_scene_mvp(STAGE_ASPECT);
+        let vp = self.battle_scene_mvp(STAGE_ASPECT).to_cols_array();
         legaia_engine_ui::cast_theeder::theeder_prims(&packet, world.theeder_trail(), |p| {
-            bt::project_stage_point(&mvp, [f32::from(p[0]), -f32::from(p[1]), f32::from(p[2])])
+            bt::project_battle_point(&vp, BATTLE_WORLD_SCALE, p)
         })
     }
 
@@ -862,6 +852,13 @@ impl PlayWindowApp {
         self.host_view().light_prims()
     }
 
+    /// This frame's weapon-trail bands, as screen-space gouraud quads on
+    /// the retail 320x240 stage. The trigger + sweep come from
+    /// `World::battle_weapon_trail_draws` (retail `FUN_8005112C` /
+    /// `FUN_80048310`); the point placement, projection and band packets
+    /// from `legaia_engine_world_views::screen_passes::weapon_trail_prims`,
+    /// the kernel the browser play page calls with its own `battle_vp`.
+    // REF: FUN_800485BC (ported in `legaia_render_kernels::battle_trail`)
     pub(super) fn weapon_trail_screen_prims(
         &self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
@@ -869,22 +866,10 @@ impl PlayWindowApp {
         if world.mode != SceneMode::Battle {
             return Vec::new();
         }
-        // The stage's 4:3, as for the streak.
-        let mvp = self.battle_scene_mvp(STAGE_ASPECT);
-        // The live body's battle model: translation * scale(1, -1, 1) about
-        // the actor origin (the party arm of `actor_model`; retail anchors
-        // every sweep step at the CURRENT slot base - `FUN_800485BC` reads
-        // `ctx[+0x34]/[+0x38]` fresh per band).
-        legaia_engine_world_views::screen_passes::weapon_trail_prims(world, |pos, t| {
-            legaia_render_kernels::battle_trail::project_stage_point(
-                &mvp,
-                [
-                    pos[0] + f32::from(t[0]),
-                    pos[1] - f32::from(t[1]),
-                    pos[2] + f32::from(t[2]),
-                ],
-            )
-        })
+        // The stage's 4:3, as for the streak. The placement and the
+        // projection of each point are the shared kernel's.
+        let vp = self.battle_scene_mvp(STAGE_ASPECT).to_cols_array();
+        legaia_engine_world_views::screen_passes::weapon_trail_prims(world, &vp, BATTLE_WORLD_SCALE)
     }
 
     /// Build this frame's arts after-image ghost meshes - the render half of

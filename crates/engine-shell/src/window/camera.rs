@@ -475,6 +475,23 @@ impl PlayWindowApp {
         (v.focus, v.pitch, v.yaw, v.roll, v.h, v.tr_eye)
     }
 
+    /// A battle body's model at retail position `pos` (Y down) turned by its
+    /// facing `+0x46`: `T(F pos) . Ry . F`, drawn under `cam * scale`.
+    ///
+    /// The translation takes the frame flip too (`T(F pos)`, as the effect
+    /// parts and ground shadows are placed): the battle camera ends in `F`,
+    /// so `F . T(pos) . R . F` puts the mesh back in retail's Y-down frame
+    /// but would draw a body's height `+0x36` upside down - a killed monster
+    /// the defeat fade sinks (`+0x36 += size * step / 4`) rose out of the
+    /// floor instead.
+    pub(super) fn battle_body_model(pos: Vec3, facing: u16) -> Mat4 {
+        let rot = Mat4::from_rotation_y(f32::from(facing & 0xFFF) / 4096.0 * std::f32::consts::TAU);
+        let pos = Vec3::from(legaia_engine_battle::battle_afterimage::placement_pos(
+            pos.to_array(),
+        ));
+        Mat4::from_translation(pos) * rot * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
+    }
+
     pub(super) fn actor_model(&self, slot: usize) -> Mat4 {
         let a = &self.session.host.world.actors[slot];
         let pos = Vec3::new(
@@ -509,19 +526,7 @@ impl PlayWindowApp {
             // the monster's FACE - and the party's `0`; it is also what turns
             // an approaching attacker toward its target and a fleeing party
             // away from the fight.
-            let rot = Mat4::from_rotation_y(
-                f32::from(a.battle.facing_angle & 0xFFF) / 4096.0 * std::f32::consts::TAU,
-            );
-            // The translation takes the frame flip too (`T(F pos)`, as the
-            // effect parts and ground shadows are placed): the battle camera
-            // ends in `F`, so `F . T(pos) . R . F` puts the mesh back in
-            // retail's Y-down frame but would draw a body's height `+0x36`
-            // upside down - a killed monster the defeat fade sinks
-            // (`+0x36 += size * step / 4`) rose out of the floor instead.
-            let pos = Vec3::from(legaia_engine_battle::battle_afterimage::placement_pos(
-                pos.to_array(),
-            ));
-            Mat4::from_translation(pos) * rot * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
+            Self::battle_body_model(pos, a.battle.facing_angle)
         } else {
             let yaw = std::f32::consts::PI
                 + (a.move_state.render_26 as f32) / 4096.0 * std::f32::consts::TAU;
@@ -760,6 +765,73 @@ mod battle_cam_shared_tests {
                     assert!(
                         (a - b).abs() <= 1e-3 * b.abs().max(1.0),
                         "pose {p:?} aspect {aspect} elem {i}: shared {a} vs native {b}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// **The weapon trail rides the body, on both hosts.** A sweep control
+    /// point is an object position in the body's mesh frame; retail turns it
+    /// by the body's yaw and sets it on the slot's ground base
+    /// (`FUN_800485BC`), and the shared kernel places and projects it
+    /// (`battle_trail::project_battle_point`) through the battle VP both
+    /// hosts hand it - the native composition here, `battle_vp` on the page,
+    /// pinned equal above. Where the body's own draw (`battle_body_model`
+    /// under `cam * scale`) puts the same mesh-frame point is where the
+    /// trail must land. The two hosts' old per-host projections each missed
+    /// it: the native one dropped the world scale and the body's turn, the
+    /// page's the frame flip, so its bands hung under the floor.
+    #[test]
+    fn the_weapon_trail_lands_on_the_body_it_trails() {
+        use legaia_render_kernels::battle_trail as bt;
+        let to_rad = |units: f32| units / 4096.0 * std::f32::consts::TAU;
+        let pose = projection::BattleCamPose {
+            pitch: 32.0,
+            yaw: 2288.0,
+            tr: [-512.0, 1152.0, 2457.0],
+            focus: [0.0, 0.0, -800.0],
+        };
+        let cam = PlayWindowApp::psx_camera_mvp(
+            to_rad(pose.pitch),
+            to_rad(pose.yaw),
+            0.0,
+            256.0,
+            Vec3::from(pose.tr),
+            Vec3::from(pose.focus) * BATTLE_WORLD_SCALE,
+            4.0 / 3.0,
+        );
+        let page_vp = projection::battle_vp(&pose, BATTLE_WORLD_SCALE, 4.0 / 3.0);
+        let actor_cam = cam * Mat4::from_scale(Vec3::splat(BATTLE_WORLD_SCALE));
+        for (ground, facing) in [
+            ([0i16, -800i16], 0u16),
+            ([350, -775], 0x300),
+            ([-600, -900], 0xA40),
+        ] {
+            let body = PlayWindowApp::battle_body_model(
+                Vec3::new(f32::from(ground[0]), 0.0, f32::from(ground[1])),
+                facing,
+            );
+            for local in [[0i16, -420, 60], [35, -610, 180], [-20, -300, -90]] {
+                let clip = actor_cam
+                    * body
+                    * glam::Vec4::new(
+                        f32::from(local[0]),
+                        f32::from(local[1]),
+                        f32::from(local[2]),
+                        1.0,
+                    );
+                let want = (
+                    (clip.x / clip.w * 0.5 + 0.5) * 320.0,
+                    (0.5 - clip.y / clip.w * 0.5) * 240.0,
+                );
+                let p = bt::trail_world_point(ground, facing, local);
+                for vp in [cam.to_cols_array(), page_vp] {
+                    let got = bt::project_battle_point(&vp, BATTLE_WORLD_SCALE, p).unwrap();
+                    assert!(
+                        (f32::from(got.0) - want.0).abs() <= 1.5
+                            && (f32::from(got.1) - want.1).abs() <= 1.5,
+                        "ground {ground:?} facing {facing:#x} local {local:?}: trail {got:?} vs body {want:?}"
                     );
                 }
             }

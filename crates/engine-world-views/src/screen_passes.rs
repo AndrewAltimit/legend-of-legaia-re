@@ -218,34 +218,31 @@ impl<'a> HostView<'a> {
 /// retail `FUN_8005112C` / `FUN_80048310`; band packets from
 /// `battle_trail::weapon_trail_prims`, the `FUN_800485BC` port).
 ///
-/// `project` takes the struck body's battle seat (`world_x/y/z`) and one
-/// control point's local offset and returns its 320x240 stage point, or
-/// `None` past the near plane, where the step's sweep is truncated rather
-/// than smeared through a wrapped vertex. It is the host's: the two hosts
-/// keep different battle model spaces (the window a Y-up space the stage
-/// flip is folded into, the page the scaled placement space its VP's
-/// trailing flip carries), so how a point reaches the stage is the one part
-/// that is not shared.
-pub fn weapon_trail_prims(
-    world: &World,
-    project: impl Fn([f32; 3], [i16; 3]) -> Option<(i16, i16)>,
-) -> Vec<ScreenPrim> {
+/// Each control point is turned by the body's facing and set on its ground
+/// base by retail's own arithmetic (`battle_trail::trail_world_point`), then
+/// placed and projected the way both hosts place a battle body
+/// (`battle_trail::project_battle_point`: frame flip, `world_scale`, the
+/// host's `vp`). The hosts pass only their battle view-projection - the
+/// native window's glam composition, which
+/// `battle_vp_matches_the_native_glam_composition` pins to the page's
+/// `legaia_engine_camera::projection::battle_vp` - so the trail is one
+/// kernel on both. A point past the near plane truncates its step's sweep
+/// rather than smearing a wrapped vertex.
+pub fn weapon_trail_prims(world: &World, vp: &[f32; 16], world_scale: f32) -> Vec<ScreenPrim> {
     use legaia_render_kernels::battle_trail as bt;
     let mut out = Vec::new();
     for d in world.battle_weapon_trail_draws() {
         let Some(actor) = world.actors.get(d.actor_slot as usize) else {
             continue;
         };
-        let pos = [
-            f32::from(actor.move_state.world_x),
-            f32::from(actor.move_state.world_y),
-            f32::from(actor.move_state.world_z),
-        ];
+        let base = [actor.move_state.world_x, actor.move_state.world_z];
+        let yaw = actor.battle.facing_angle;
         let mut steps = Vec::with_capacity(d.steps.len());
         'draw: for s in &d.steps {
             let mut pts = [(0i16, 0i16); bt::TRAIL_POINTS];
             for (i, t) in s.iter().enumerate() {
-                match project(pos, *t) {
+                let p = bt::trail_world_point(base, yaw, *t);
+                match bt::project_battle_point(vp, world_scale, p) {
                     Some(xy) => pts[i] = xy,
                     None => break 'draw,
                 }
@@ -330,7 +327,7 @@ mod tests {
         assert!(v.world_map_marker_prims(true).is_empty());
         assert!(v.world_map_sky_prims().is_empty());
         assert_eq!(v.curve_scale(None), 0.0);
-        assert!(weapon_trail_prims(&world, |_, _| Some((0, 0))).is_empty());
+        assert!(weapon_trail_prims(&world, &glam::Mat4::IDENTITY.to_cols_array(), 4.0).is_empty());
         assert!(move_fx_streak_quads(&world, &glam::Mat4::IDENTITY).is_empty());
     }
 }

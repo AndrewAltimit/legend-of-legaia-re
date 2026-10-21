@@ -204,10 +204,9 @@ impl LegaiaRuntime {
     /// * the **weapon-trail** bands (`World::battle_weapon_trail_draws` -
     ///   retail `FUN_8005112C` / `FUN_80048310`; packets from the shared
     ///   `legaia_render_kernels::battle_trail::weapon_trail_prims` port of
-    ///   `FUN_800485BC`), projected with the page's own `battle_vp` in its
-    ///   scaled placement space (`(pos + local) * BATTLE_WORLD_SCALE`, the
-    ///   same composition the actor draws use - world Y goes through
-    ///   as-is, the VP's trailing flip handles it);
+    ///   `FUN_800485BC`), placed and projected by the shared
+    ///   `screen_passes::weapon_trail_prims` through the page's own
+    ///   `battle_vp` - the kernel the native window calls too;
     /// * the **move-FX afterimage streak** (the shared
     ///   `legaia_render_kernels::streak_pass` schedule of `FUN_801E09F8`, quad
     ///   packets from the ported `FUN_801E1AB0` / `FUN_801E1D98`) - the
@@ -221,27 +220,18 @@ impl LegaiaRuntime {
         let Some(packet) = world.theeder_draw() else {
             return Vec::new();
         };
-        // The page's placement law (as for the weapon trail): retail points
-        // scaled by BATTLE_WORLD_SCALE with Y as-is - the battle VP's
-        // trailing flip carries the Y-down axis.
+        // Placed and projected as a battle body is - the weapon trail's
+        // kernel, which the native window calls too.
         let scale = crate::play_battle_render::BATTLE_WORLD_SCALE;
         let pose = self.battle_cam_pose();
         let vp = legaia_engine_camera::projection::battle_vp(&pose, scale, 4.0 / 3.0);
         legaia_engine_ui::cast_theeder::theeder_prims(&packet, world.theeder_trail(), |p| {
-            legaia_render_kernels::battle_trail::project_stage_point_cols(
-                &vp,
-                [
-                    f32::from(p[0]) * scale,
-                    f32::from(p[1]) * scale,
-                    f32::from(p[2]) * scale,
-                ],
-            )
+            legaia_render_kernels::battle_trail::project_battle_point(&vp, scale, p)
         })
     }
 
     fn battle_fx_screen_prims(&self) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
         use legaia_engine_world_views::screen_passes::{move_fx_streak_quads, weapon_trail_prims};
-        use legaia_render_kernels::battle_trail as bt;
         use legaia_render_kernels::streak_pass::MOVE_FX_STREAK_OT;
 
         let Some(host) = self.scene_host.host() else {
@@ -254,19 +244,9 @@ impl LegaiaRuntime {
         let scale = crate::play_battle_render::BATTLE_WORLD_SCALE;
         let pose = self.battle_cam_pose();
         let vp = legaia_engine_camera::projection::battle_vp(&pose, scale, 4.0 / 3.0);
-        // Page placement law (see the actor draw loop in play-app.js): posed
-        // local point + raw translation, both scaled by BATTLE_WORLD_SCALE;
-        // no Y negation - the battle VP's trailing flip carries it.
-        let mut out = weapon_trail_prims(world, |pos, t| {
-            bt::project_stage_point_cols(
-                &vp,
-                [
-                    (pos[0] + f32::from(t[0])) * scale,
-                    (pos[1] + f32::from(t[1])) * scale,
-                    (pos[2] + f32::from(t[2])) * scale,
-                ],
-            )
-        });
+        // The trail's placement and projection are the shared kernel's;
+        // the page hands it the same battle VP its bodies draw through.
+        let mut out = weapon_trail_prims(world, &vp, scale);
         // The move-FX streak and the clip-tag ribbon, through this page's
         // scaled MVP.
         let mvp =
