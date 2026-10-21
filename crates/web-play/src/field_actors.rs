@@ -794,7 +794,7 @@ impl FieldActors {
         for e in &n.pack.entries {
             match host.world.field_npc_draw_tint(e.placement.index) {
                 Some((colour, blend)) => {
-                    let (far, ir0) = legaia_engine_core::world::tint_cue(colour, blend);
+                    let (far, ir0) = legaia_engine_field::object_tint::tint_cue(colour, blend);
                     out.extend_from_slice(&[far[0], far[1], far[2], ir0]);
                     any = true;
                 }

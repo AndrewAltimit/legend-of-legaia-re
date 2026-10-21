@@ -174,7 +174,7 @@ impl<'m> DrawCtx<'_, 'm> {
         let store = &self.store;
         let cam = self.cam;
         let view_cells = self.view_cells;
-        let effect_clip = |key: legaia_engine_core::world::ActorTintKey, model: &Mat4| {
+        let effect_clip = |key: legaia_engine_field::object_tint::ActorTintKey, model: &Mat4| {
             cues.effect_clip(key, model)
         };
         let posed_prop_baked_v = &store.posed.posed_prop_baked_v;

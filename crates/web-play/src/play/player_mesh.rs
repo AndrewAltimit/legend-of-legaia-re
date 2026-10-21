@@ -171,7 +171,7 @@ impl LegaiaRuntime {
             .host()
             .and_then(|h| h.world.player_draw_tint())
             .map(|(colour, blend)| {
-                let (far, ir0) = legaia_engine_core::world::tint_cue(colour, blend);
+                let (far, ir0) = legaia_engine_field::object_tint::tint_cue(colour, blend);
                 vec![far[0], far[1], far[2], ir0]
             })
             .unwrap_or_default()

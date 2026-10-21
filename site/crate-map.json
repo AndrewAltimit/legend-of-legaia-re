@@ -1488,6 +1488,7 @@
     "morph_weight_apply",
     "motion_pause",
     "move_vm_globals",
+    "object_tint",
     "overworld_draw_order",
     "overworld_ground_cue",
     "packet_color",

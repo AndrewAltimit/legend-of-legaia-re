@@ -69,6 +69,7 @@ pub mod minigame_floor;
 pub mod morph_weight_apply;
 pub mod motion_pause;
 pub mod move_vm_globals;
+pub mod object_tint;
 pub mod overworld_draw_order;
 pub mod overworld_ground_cue;
 pub mod packet_color;

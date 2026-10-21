@@ -200,8 +200,8 @@ pub use narration::FrameGrade;
 mod npc_morph;
 pub use npc_morph::MorphOwner;
 mod object_actor_height;
-pub use object_actor_height::{
-    ActorTint, ActorTintKey, ObjectGlideLeg, ObjectRampSlot, ObjectSlotRamp, TintRamp, tint_cue,
+use legaia_engine_field::object_tint::{
+    ActorTint, ActorTintKey, ObjectGlideLeg, ObjectRampSlot, ObjectSlotRamp,
 };
 pub mod pause_session;
 mod prop_interact;

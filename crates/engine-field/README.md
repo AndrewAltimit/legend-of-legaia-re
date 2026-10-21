@@ -58,6 +58,9 @@ a dependent crate.
 - **Colour + render policy** - `clut_fx` (the `4C` n6 sub-`0x61` CLUT-cell
   write and cross-fade), `clut_cell_fx` (the move-VM-driven HSV cycler; see
   [`docs/subsystems/field-ambient-fx.md`](../../docs/subsystems/field-ambient-fx.md)),
+  `object_tint` (the op-`4C 42` / `4C 81` word ramps, the parked object
+  walk leg, the actor draw tint and its depth-cue form `tint_cue`; the
+  scheduling over the field channels is `engine-core`'s),
   `vdf_pulse` (an enhancement arm of the vertex-morph substitution),
   `field_lit_mesh` (the light-source TMD rows' shading; see
   [`docs/subsystems/shading.md`](../../docs/subsystems/shading.md)),

@@ -25,7 +25,7 @@ mod world_map;
 // `IR0`, `FUN_8001ADA4` -> `FUN_80043390`). One shape for placed
 // objects, NPCs and the player.
 fn tint_draw_cue((colour, blend): (u32, u16)) -> Option<legaia_engine_render::DrawCue> {
-    let (far, max_ir0) = legaia_engine_core::world::tint_cue(colour, blend);
+    let (far, max_ir0) = legaia_engine_field::object_tint::tint_cue(colour, blend);
     Some(legaia_engine_render::DrawCue {
         far,
         near_z: -1.0,
@@ -72,7 +72,7 @@ pub(super) struct DrawLists<'m> {
 pub(super) struct FrameCues {
     player_tint_cue: Option<legaia_engine_render::DrawCue>,
     effect_clips: Vec<(
-        legaia_engine_core::world::ActorTintKey,
+        legaia_engine_field::object_tint::ActorTintKey,
         legaia_engine_effects::object_effect::EffectClip,
         f32,
     )>,
@@ -82,7 +82,7 @@ impl FrameCues {
     /// The object-effect clip a draw keyed `key` at `model` carries.
     fn effect_clip(
         &self,
-        key: legaia_engine_core::world::ActorTintKey,
+        key: legaia_engine_field::object_tint::ActorTintKey,
         model: &Mat4,
     ) -> Option<legaia_engine_render::DrawClip> {
         let effect_clips = &self.effect_clips;
@@ -102,8 +102,8 @@ impl FrameCues {
 }
 
 /// The key a placed object's record draws under.
-fn object_key(record: Option<usize>) -> Option<legaia_engine_core::world::ActorTintKey> {
-    record.map(|r| legaia_engine_core::world::ActorTintKey::Object(r as u16))
+fn object_key(record: Option<usize>) -> Option<legaia_engine_field::object_tint::ActorTintKey> {
+    record.map(|r| legaia_engine_field::object_tint::ActorTintKey::Object(r as u16))
 }
 
 /// Everything one frame's scene draw lists are built from.

@@ -240,7 +240,7 @@ impl LegaiaRuntime {
     /// before the shared kernel `World::object_effect_mesh_clip` - the one
     /// the native window asks per placed / NPC draw.
     pub fn play_effect_clip(&self, kind: u8, key: u32, model: Vec<f32>) -> Vec<f32> {
-        use legaia_engine_core::world::ActorTintKey;
+        use legaia_engine_field::object_tint::ActorTintKey;
         let Some(h) = self.scene_host.host() else {
             return Vec::new();
         };

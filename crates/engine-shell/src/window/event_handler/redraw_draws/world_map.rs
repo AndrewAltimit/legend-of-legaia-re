@@ -12,7 +12,7 @@ impl<'m> DrawCtx<'_, 'm> {
         let cam = self.cam;
         let cutscene_cam = self.cutscene_cam;
         let player_tint_cue = cues.player_tint_cue;
-        let effect_clip = |key: legaia_engine_core::world::ActorTintKey, model: &Mat4| {
+        let effect_clip = |key: legaia_engine_field::object_tint::ActorTintKey, model: &Mat4| {
             cues.effect_clip(key, model)
         };
         let posed_overrides = &store.posed.posed_overrides;
@@ -216,7 +216,7 @@ impl<'m> DrawCtx<'_, 'm> {
                     .or_else(|| store.meshes.get(tmd_idx));
                 if let Some(mesh) = mesh {
                     if let Some(c) = effect_clip(
-                        legaia_engine_core::world::ActorTintKey::Player,
+                        legaia_engine_field::object_tint::ActorTintKey::Player,
                         &app.actor_model(slot),
                     ) {
                         clip_marks.push((draws.len(), c));
@@ -235,7 +235,7 @@ impl<'m> DrawCtx<'_, 'm> {
                         .or_else(|| store.color_meshes.get(cidx))
                 {
                     if let Some(c) = effect_clip(
-                        legaia_engine_core::world::ActorTintKey::Player,
+                        legaia_engine_field::object_tint::ActorTintKey::Player,
                         &app.actor_model(cslot),
                     ) {
                         color_clip_marks.push((color_draws.len(), c));
