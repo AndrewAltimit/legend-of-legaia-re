@@ -403,6 +403,9 @@ impl World {
         }
         if p.wash_live {
             out.extend(legaia_render_kernels::cast_colour_wash::band_prims(&p.wash));
+            out.extend(legaia_render_kernels::cast_colour_wash::scanline_prims(
+                &p.wash,
+            ));
         }
         out
     }
