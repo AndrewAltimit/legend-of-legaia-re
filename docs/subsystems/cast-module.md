@@ -2263,8 +2263,11 @@ about the caller's heading), Barra's arms 0 / 2 (a record per call argument)
 and arm 1 (four records in turn off the module word `0x801F9364`), Iota's
 `rand()` spoke, Palma's arm 4 (forty-eight records scattered off `rand()`
 over a far plane) and arm 5 (an eight-ray fan), and Mule's `rand()`
-scatters (arms 0, 1, 4) and ray fan (arm 8). Mule's arm 3 is two screen
-fades, which are not carried. PROT 0918's stager keeps a handle its module
+scatters (arms 0, 1, 4) and ray fan (arm 8). Mule's arm 3 seats nothing: it
+is two additive screen fades over one rewritten template
+(`0x801F8E30..0x801F8EAC`), black to white over `0x20` frames and then, after
+a `0x20`-frame delay, white to black (`MULE_STAGER_FADES`), carried on the
+same stager-fade seat as PROT 0912's arm 6. PROT 0918's stager keeps a handle its module
 reads, PROT 0925's turns and moves its caller, and PROT 0934's reads the
 caller's display trio `+0x3C`, so those three stay on the whole-set seat.
 
@@ -2277,7 +2280,18 @@ Mushura's arms 0 and 1 show the latched victim the band's freeze hid
 (`World::apply_horn_writes`): arm 1 shows
 the party, arm 3 seats the creature hidden and arm 4 shows it, arm 8 hides
 the party for the rise, and the heal arm `0xA` shows it again and hides the
-creature. Otherwise not carried by any of them: the writes to the other
+creature. Mule's monster-row visibility is carried too
+(`World::apply_mule_writes`): arm 1 shows every living monster on each of
+its passes, held or not (`0x801F6D04`, ahead of the stream-token gate),
+arms 5 and 17 hide the row on their passes and arm 11 shows it again, and
+the hit arm 18 shows the monsters it strikes. Mule's arms 1..4 also push the
+anchor `0x80089120` under arm 0's landed cut, which the view builder reads
+every frame, so the director re-arms that cut on the moved anchor each
+pass; without it the row filled the screen where retail frames it small in
+the distance. Mule's arm 1 waits on the stream token `ctx[+0x276]` and arm 2
+on the band timer: the engine's resident stream passes arm 1 at once, so the
+split between the two arms differs from retail's (`28` and `94` vsyncs)
+while their sum does not. Otherwise not carried by any of them: the writes to the other
 seats (the monster row's re-seat, hiding, orbits and restore, Mushura's walk
 and steering, Barra's seat swaps and arcs), the stage words `ctx[+0x27A..+0x286]` and the camera
 block `0x80083FF8`, and pad rumble. Jedo's kill is the host's
@@ -3264,10 +3278,18 @@ it, the wash covers every additive part over the sky: PROT 0909's vortex
 (the textured cones `0x801F7E18` / `0x801F7EA0`, the spiral at tpage `0x88`)
 then shows only where it crosses the floor. Seven modules set the band mode (0909,
 0918, 0922, 0930, 0931, 0946, 0950). Six set mode `1` (0917, 0923, 0928,
-0929, 0963, 0965): per-line textured strips that resample texture page `0xA8`
-through CLUT `0x7A00` with a sine wobble off two per-line arrays at
-`ctx[+0x32E]` / `ctx[+0x4EE]`. That mode is not ported, and the hook draws
-nothing for it.
+0929, 0963, 0965): a textured backdrop instead of the bands
+(`0x801F2958..0x801F2D20`, `legaia_render_kernels::cast_colour_wash::scanline_prims`).
+Each screen line `y` in `0..0xE0` is one-line `POLY_FT4` strips, opaque,
+coloured `(alpha, alpha, alpha)`, that resample 8bpp page `0xA8` (VRAM
+`(512, 0)`) through CLUT `0x7A00` (`(0, 488)`): row `v_base + y` from a start
+`u` of `u_base` plus a sine wobble over the band height (`ctx[+0x27C]`,
+amplitude `ctx[+0x27B]`, scrolled by `ctx[+0x32A]`), the 256-texel row
+wrapped across the 320-pixel line in two or three strips. Mode `2` mirrors
+the second strip. The two per-line offset arrays the emitter also adds
+(`ctx[+0x32E]` / `ctx[+0x4EE]`, signed high bytes) have no writer on the
+disc, so the port reads them as zero. It is Mule's underwater backdrop: with
+the mode unported the creature's whole performance played over black.
 
 **The stage byte.** `ctx[+0x278]` is what darkens the stage under a cast:
 the ambient pass drives the backdrop pair's depth cue to black once the byte
@@ -3297,8 +3319,8 @@ everywhere it is close to invisible in retail too.
 **Not fired.** The 17 fade sites the decoder does not place sit in spawn
 stagers, routines the move VM's op `0x20` calls with an arm of its own rather
 than off `ctx[+0x279]` (PROT 0906, 0909, 0912, 0916, 0923, 0927, 0929, 0948,
-0959, 0963, 0966). PROT 0906's flash pair rides its director's phase-5 clock
-and PROT 0912's blue fade its stager port ([spawn reports](#a-module-that-reports-its-spawns)). The streak ribbon's anchor is a trio the arm builds from a
+0959, 0963, 0966). PROT 0906's flash pair rides its director's phase-5 clock,
+and PROT 0912's blue fade and PROT 0929's arm-3 pair ride their stager ports ([spawn reports](#a-module-that-reports-its-spawns)). The streak ribbon's anchor is a trio the arm builds from a
 seat or the camera plus a random spread, which the constant tracker does not
 fold. The party CLUT reload on a status cure (`LoadImage` of a 240x1 row at
 `y = 0x1E1 + seat` out of a RAM copy) has no source the data names. The

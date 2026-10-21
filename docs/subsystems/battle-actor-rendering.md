@@ -433,7 +433,11 @@ The swept `POLY_G4` streak an ordinary arts swing leaves behind a party characte
 3. Projects each vertex through `FUN_800195A8`.
 4. Drops `0x3B808080` packets into the OT - a `POLY_G4`: four-point gouraud, semi-transparent, untextured. `0x808080` is a placeholder the per-vertex fill overwrites; `v0/v2` are the leading step's pair carrying the band's lead colour, `v1/v3` trailing. The OT slot is the average of the four corner depths with the same rounding fixup.
 
-**Port.** Trigger table and sweep / band schedule: `render-kernels::battle_trail`. Projected band packets: `render-kernels::battle_trail` (a gouraud `FlatQuad` through the shared screen-prim pass, ABR 1). `World::battle_weapon_trail_draws` samples the sweep off the pose-history ring (step `k` = the pose `2k` frames ago, the retail rewind under a constant rate), bounded by the ring's per-frame clip key. Both hosts project with their own battle camera and composite the bands over the scene; retail's OT interleave with scene depth is not reproduced.
+**Port.** Trigger table and sweep / band schedule: `render-kernels::battle_trail`. Projected band packets: `render-kernels::battle_trail` (a gouraud `FlatQuad` through the shared screen-prim pass, ABR 1). `World::battle_weapon_trail_draws` samples the sweep off the pose-history ring (step `k` = the pose `2k` frames ago, the retail rewind under a constant rate), bounded by the ring's per-frame clip key.
+
+**Placement.** Each control point is turned by the body's facing and set on its slot's ground base with retail's integer arithmetic (`battle_trail::trail_world_point`: products rounding toward zero, no base height), then placed as the hosts place a battle body - frame flip, the 4x world scale - and projected through the battle view-projection (`battle_trail::project_battle_point`).
+Both hosts call one kernel for it, `engine-world-views::screen_passes::weapon_trail_prims`, handing it only their battle VP: the native window's glam composition, which `battle_vp_matches_the_native_glam_composition` pins to the page's `battle_vp`. `the_weapon_trail_lands_on_the_body_it_trails` pins a trail point onto the body's own drawn point under both.
+PROT 0904's Theeder beam projects through the same `project_battle_point`. The bands composite over the scene; retail's OT interleave with scene depth is not reproduced.
 
 <a id="weapon-trail-afterimage-streak"></a>
 

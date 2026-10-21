@@ -2192,11 +2192,16 @@ the lower edge stepping every 32 columns, every other pixel byte-identical
 to a clean run of the same state - is a GPU readback race, not a frame the
 scene drew: the step is the GPU's tile width, and the same child re-run
 never reproduces it. It showed on a few runs in ten under heavy machine
-load. `Renderer::capture_rgba` waits for the frame's own submission before
-it encodes the copy, and the screenshot harness re-reads until two
-consecutive readbacks agree (each disagreement is logged by the child and
-counted by the parent), so a capture is always one a second readback
-reproduces. The frame is also cropped from the stage rect the window drew
+load, and two consecutive readbacks can carry the same band, so agreement
+alone does not catch it: `palma_summon_mid_cast` and `jedo_summon_mid_cast`,
+both white flash frames, swung `0.036` between runs on one black stage row
+across the forty top blocks. The band's texels are `(0, 0, 0, 0)`, and every
+pass a frame encodes writes alpha `1`, so a texel with alpha below `0xFF` is
+one the frame never wrote. `Renderer::capture_rgba` waits for the frame's own
+submission before it encodes the copy, and every capture the window takes
+(the single shot, the sweep, the cast-sequence recorder) goes through
+`Renderer::capture_rgba_settled`: it re-reads until an opaque readback is
+reproduced byte for byte by the next one. The frame is also cropped from the stage rect the window drew
 into (`pause_menu::stage_transform`), not from the capture's origin, so a
 surface the window manager resized off `960 x 720` still compares the
 picture.
