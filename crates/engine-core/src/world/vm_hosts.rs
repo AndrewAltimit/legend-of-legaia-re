@@ -181,16 +181,39 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         if self.world.mode != SceneMode::Battle {
             return;
         }
-        self.world.casting.module_stager_calls.push((
-            arg0 as u8,
-            legaia_engine_cast::cast_module_ticks::StagerCaller {
-                pos: [state.world_x, state.world_y, state.world_z],
-                rot: [state.render_24, state.render_26, state.render_28],
-                radius_b4: state.actor_u16(0xB4) as i16,
-                arg: arg1,
-                scale: state.field_72,
-            },
-        ));
+        let mut caller = legaia_engine_cast::cast_module_ticks::StagerCaller {
+            pos: [state.world_x, state.world_y, state.world_z],
+            rot: [state.render_24, state.render_26, state.render_28],
+            radius_b4: state.actor_u16(0xB4) as i16,
+            arg: arg1,
+            scale: state.field_72,
+            disp: [state.anim_3c, state.anim_3e, state.anim_40],
+        };
+        // PROT 0925's stager writes into its caller, so its arm runs here,
+        // inside the caller's step as retail's does; what it seats waits
+        // for the module's next tick like every other stager's seats.
+        if self.world.casting.module_running_entry == Some(925) {
+            let phase = self.world.casting.module_phase;
+            let mut words = self.world.casting.module_spikefish_words;
+            let world = &mut *self.world;
+            let mut rand = || world.next_rand();
+            let seats = legaia_engine_cast::cast_module_ticks::spikefish_stager_spawns(
+                arg0 as u8,
+                &mut caller,
+                phase,
+                &mut words,
+                &mut rand,
+            );
+            self.world.casting.module_spikefish_words = words;
+            self.world.casting.module_stager_seats.extend(seats);
+            [state.world_x, state.world_y, state.world_z] = caller.pos;
+            [state.render_24, state.render_26, state.render_28] = caller.rot;
+            return;
+        }
+        self.world
+            .casting
+            .module_stager_calls
+            .push((arg0 as u8, caller));
     }
 
     /// Op `0x1D` - `sh op[1], DAT_8007B6DE`: a store straight into SFX ring

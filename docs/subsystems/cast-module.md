@@ -2267,9 +2267,32 @@ scatters (arms 0, 1, 4) and ray fan (arm 8). Mule's arm 3 seats nothing: it
 is two additive screen fades over one rewritten template
 (`0x801F8E30..0x801F8EAC`), black to white over `0x20` frames and then, after
 a `0x20`-frame delay, white to black (`MULE_STAGER_FADES`), carried on the
-same stager-fade seat as PROT 0912's arm 6. PROT 0918's stager keeps a handle its module
-reads, PROT 0925's turns and moves its caller, and PROT 0934's reads the
-caller's display trio `+0x3C`, so those three stay on the whole-set seat.
+same stager-fade seat as PROT 0912's arm 6.
+
+The stagers of PROT 0918, 0924, 0925 and 0934 do more than seat on the
+caller, and run off the same calls
+(`cast_module_ticks::late_creature_stager_spawns`):
+
+- **PROT 0918 (Kemaro)**: arm 0 seats `0x801F8C40` and keeps its handle in
+  `0x801F92C4`; the module's arm 4 lifts that part `6 * scalar * step` a
+  battle frame to `-0x800`, ahead of its countdown gate
+  (`0x801F712C..0x801F718C`). Arm 1 seats one record, arm 2 sixteen copies
+  rolled `k << 8`.
+- **PROT 0924 (Ultimate Rave)**: one record on the caller per arm.
+- **PROT 0925 (Spikefish)**: arm 1 turns its caller's roll to
+  `rand % 1025` plus a quarter turn off the table `0x801F8008` and seats on
+  it. While the module sits in arm 7 with fewer than sixteen ring parts it
+  also moves the caller onto a circle of radius `rand % 129 + 0x40` at
+  `z = 0x200` and seats a ring part there, kept in the handle table
+  `0x801F809C`; arm 7's pass halts every one of them. The arm writes into
+  its caller, so the engine runs it inside the caller's op-`0x20` step and
+  seats what it returns on the module's next tick.
+- **PROT 0934 (Ozma)**: arm 0 seats three records on the caller's `+0x3C`
+  trio. Arms 1..3 scatter sparks `0x801F9E28` and bolts `0x801F9F2C` off
+  `rand()`, each with a random wait `+0x54`; arms 1 and 2 grow their volley
+  with the word `0x801FA410` the module zeroes in arms 0 and 10.
+
+Their records leave the module's whole-set seat.
 
 Palma's arm 1 holds on the band timer: retail's arm returns busy on the
 stream request's token `ctx[+0x276]` past most of the sustain

@@ -19,6 +19,9 @@ use legaia_engine_cast::cast_module_ticks::{
     meta_stager_spawns, mule_stager_spawns, mushura_stager_spawns, palma_stager_spawns,
     terra_stager_spawns,
 };
+use legaia_engine_cast::cast_module_ticks::{
+    kemaro_stager_spawns, ozma_stager_spawns, ultimate_rave_stager_spawns,
+};
 
 impl World {
     /// Whether module `entry`'s stager arms are run off its parts' op-`0x20`
@@ -36,13 +39,17 @@ impl World {
                 | 914
                 | 915
                 | 917
+                | 918
                 | 921
+                | 924
+                | 925
                 | 928
                 | 929
                 | 930
                 | 931
                 | 932
                 | 933
+                | 934
                 | 938
                 | 940
                 | 944
@@ -69,6 +76,11 @@ impl World {
     /// FUN_801F8310 (PROT 0908's), FUN_801F835C (PROT 0912's), each reached
     /// through `gp[+0x714]`
     pub(in crate::world::battle::cast_band) fn run_part_stager_calls(&mut self, entry: u32) {
+        // The seats of the arms run inside their caller's step (PROT
+        // 0925's), in call order.
+        for s in std::mem::take(&mut self.casting.module_stager_seats) {
+            self.seat_stager_spawn(entry, &s);
+        }
         let calls = std::mem::take(&mut self.casting.module_stager_calls);
         // A capture cell's stager runs only for the body whose arms seat
         // per arm; its other bodies keep the pager's whole-set placement,
@@ -140,6 +152,7 @@ impl World {
             });
             let phase = self.casting.module_phase;
             let mut barra_counter = self.casting.module_barra_counter;
+            let mut ozma_word = self.casting.module_ozma_word;
             let mut rand = || self.next_rand();
             let spawns = match entry {
                 906 => gizam_stager_spawns(arm, caller, body, &mut rand),
@@ -160,6 +173,9 @@ impl World {
                 931 => jedo_stager_spawns(arm, caller),
                 932 => meta_stager_spawns(arm, caller),
                 933 => terra_stager_spawns(arm, caller),
+                918 => kemaro_stager_spawns(arm, caller),
+                924 => ultimate_rave_stager_spawns(arm, caller),
+                934 => ozma_stager_spawns(arm, caller, &mut ozma_word, &mut rand),
                 938 => chaos_breath_cell_stager_spawns(arm, caller),
                 // PROT 0940's stager `FUN_801F82CC` is a bare `jr ra`.
                 940 => Vec::new(),
@@ -170,9 +186,64 @@ impl World {
                 _ => Vec::new(),
             };
             self.casting.module_barra_counter = barra_counter;
+            self.casting.module_ozma_word = ozma_word;
             for s in &spawns {
                 self.seat_stager_spawn(entry, s);
             }
+        }
+    }
+
+    /// The module-side writes of the stagers' words and handles, on every
+    /// tick of the arm that makes them (`passed`: the arm handed over).
+    ///
+    /// - PROT 0918's arm 4 lifts its stager's arm-0 part (the handle
+    ///   `0x801F92C4`) `6 * scalar * step` a battle frame up to `-0x800`,
+    ///   on every pass ahead of its countdown gate
+    ///   (`0x801F712C..0x801F718C`).
+    /// - PROT 0925's arm 7 halts every ring part its stager seated (the
+    ///   handle table `0x801F809C`) on the pass it hands over
+    ///   (`0x801F7210..0x801F7254`).
+    /// - PROT 0934's arms 0 and 10 zero the stager word `0x801FA410`
+    ///   (`0x801F6C3C`; `0x801F78F8`, on its pass).
+    ///
+    /// REF: FUN_801F6C70 (PROT 0918), FUN_801F6A00 (PROT 0925),
+    /// FUN_801F6A40 (PROT 0934)
+    pub(in crate::world::battle::cast_band) fn late_creature_stager_words(
+        &mut self,
+        entry: u32,
+        phase: u8,
+        passed: bool,
+    ) {
+        use legaia_engine_cast::cast_module_ticks as t;
+        match entry {
+            918 if phase == 4 => {
+                let lift = (t::KEMARO_LIFT_PER_SCALAR
+                    * legaia_engine_cast::cast_module_camera::SPEED_SCALAR)
+                    as i16;
+                if let Some(part) = self.casting.active_summon.as_mut().and_then(|sc| {
+                    sc.parts
+                        .iter_mut()
+                        .rev()
+                        .find(|p| p.tag == Some(t::KEMARO_LIFTED_RECORD))
+                }) {
+                    let y = part.state.world_y.wrapping_sub(lift);
+                    part.state.world_y = y.max(t::KEMARO_LIFT_CEILING);
+                }
+            }
+            925 if phase == t::SPIKEFISH_RING_ARM && passed => {
+                if let Some(sc) = self.casting.active_summon.as_mut() {
+                    for part in &mut sc.parts {
+                        if part
+                            .tag
+                            .is_some_and(|r| t::SPIKEFISH_RING_RECORDS.contains(&r))
+                        {
+                            part.finished = true;
+                        }
+                    }
+                }
+            }
+            934 if phase == 0 || (phase == 10 && passed) => self.casting.module_ozma_word = 0,
+            _ => {}
         }
     }
 

@@ -147,6 +147,20 @@ pub struct CastFxState {
     /// ([`legaia_engine_cast::cast_module_ticks::BARRA_STAGER_COUNTER`]),
     /// `0` in the image the band pages in for each cast.
     pub(crate) module_barra_counter: u16,
+    /// The cast module whose code ran last (`World::run_cast_module_code`),
+    /// whose stager an op-`0x20` call reaches; `None` until a cast's first
+    /// tick.
+    pub(crate) module_running_entry: Option<u32>,
+    /// PROT 0925's stager words `0x801F8014` / `0x801F8018`
+    /// ([`legaia_engine_cast::cast_module_ticks::SpikefishStagerWords`]).
+    pub(crate) module_spikefish_words: legaia_engine_cast::cast_module_ticks::SpikefishStagerWords,
+    /// PROT 0934's stager word `0x801FA410`
+    /// ([`legaia_engine_cast::cast_module_ticks::OZMA_STAGER_WORD`]).
+    pub(crate) module_ozma_word: i32,
+    /// Seats a stager arm run inside its caller's op-`0x20` step decided
+    /// (PROT 0925's, which writes into its caller), for the band to seat on
+    /// the module's next tick.
+    pub(crate) module_stager_seats: Vec<legaia_engine_cast::cast_module_ticks::StagerSpawn>,
     /// The clocks of PROT 0909's stager-calling records the host did not
     /// seat, as `(record, stager arm, frames left)`
     /// ([`legaia_engine_cast::cast_module_camera::VIGURO_STAGER_CALLERS`]).
@@ -369,6 +383,10 @@ impl CastFxState {
             module_nighto_outcome: None,
             module_stager_calls: Vec::new(),
             module_barra_counter: 0,
+            module_running_entry: None,
+            module_spikefish_words: Default::default(),
+            module_ozma_word: 0,
+            module_stager_seats: Vec::new(),
             module_record_clocks: Vec::new(),
             module_split_saved_target: None,
             module_swordie: Default::default(),

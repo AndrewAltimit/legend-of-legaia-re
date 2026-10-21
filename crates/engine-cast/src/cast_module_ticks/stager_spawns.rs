@@ -28,6 +28,8 @@ pub struct StagerCaller {
     /// `+0x72`, the caller's render scale, which a stager arm forwards as the
     /// seat's scale (PROT 0911 arm 1, PROT 0913 arms 3..5).
     pub scale: u16,
+    /// `+0x3C..+0x40`, the trio PROT 0934's arm 0 seats on.
+    pub disp: [i16; 3],
 }
 
 /// One `FUN_80021B04(pos, rot, record, 0x1000)` call out of a stager arm.
@@ -339,6 +341,7 @@ pub const HORN_STAGER_RECORDS: [u32; 10] = [
 pub fn stager_seated_records(entry: u32) -> &'static [u32] {
     match entry {
         930 => &HORN_STAGER_RECORDS,
+        918 | 924 | 925 | 934 => super::late_creature_stager_records(entry),
         e => super::creature_stager_records(e),
     }
 }
@@ -542,6 +545,7 @@ mod tests {
             radius_b4: 0,
             arg: 0,
             scale: 0x1000,
+            disp: [0; 3],
         };
         let mut r = counter();
         let s = nighto_stager_spawns(0, caller, &mut r);
@@ -593,6 +597,7 @@ mod tests {
             radius_b4: 0,
             arg: 0,
             scale: 0x1000,
+            disp: [0; 3],
         };
         let body = [10, -20, 30];
         let s = zenoir_stager_spawns(1, caller, body, &mut counter());
@@ -623,6 +628,7 @@ mod tests {
             radius_b4: 0,
             arg: 2,
             scale: 0x1000,
+            disp: [0; 3],
         };
         let mut draws = [129 + 0x40, 65 + 0x20].into_iter();
         let b = gizam_stager_spawns(3, caller, [7; 3], &mut || draws.next().unwrap());
@@ -662,6 +668,7 @@ mod tests {
             radius_b4: 0,
             arg: 0,
             scale: 0x1000,
+            disp: [0; 3],
         };
         let mut n = 0u32;
         let shards = freed_stager_spawns(3, caller, &mut || {

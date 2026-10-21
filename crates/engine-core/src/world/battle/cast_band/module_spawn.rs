@@ -273,8 +273,22 @@ impl World {
         if entry == legaia_engine_cast::cast_fatal_decision::FATAL_DECISION_ENTRY {
             return false;
         }
+        // PROT 0924's and 0925's stagers are ported: their parts' op-`0x20`
+        // calls seat the stager's records (`Self::run_part_stager_calls`).
+        let parts: Vec<_> = if matches!(entry, 924 | 925) {
+            const LINK_BASE: u32 = legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
+            let own = legaia_engine_cast::cast_module_ticks::stager_seated_records(entry);
+            module
+                .parts
+                .iter()
+                .filter(|p| !own.contains(&(LINK_BASE + p.record_off as u32)))
+                .cloned()
+                .collect()
+        } else {
+            module.parts.clone()
+        };
         self.casting.active_summon = Some(legaia_engine_effects::summon::SummonScene::spawn_parts(
-            &module.parts,
+            &parts,
             &module.bytes,
             crate::world::EFFECT_MODEL_LIBRARY_BASE,
             origin,

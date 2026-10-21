@@ -25,6 +25,7 @@ impl World {
         if entry == legaia_engine_cast::cast_fatal_decision::FATAL_DECISION_ENTRY {
             return Some(self.run_fatal_decision(entry));
         }
+        self.casting.module_running_entry = Some(entry);
         let mut ctx = self.cast_module_ctx();
         // The phase the tick enters on, before a state-touching stager below
         // steps it (PROT 0909's arm 0 is its stager's).
@@ -1311,6 +1312,7 @@ impl World {
         if entry == 911 {
             self.orb_arm_writes(phase_in, ctx.phase);
         }
+        self.late_creature_stager_words(entry, phase_in, ctx.phase != phase_in);
         self.casting.module_ctx_278 = ctx.ctx_278;
         self.casting.module_ring_angle = ctx.ctx_6d8;
         self.casting.module_phase = ctx.phase;
