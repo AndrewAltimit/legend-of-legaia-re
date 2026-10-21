@@ -292,6 +292,29 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["field_scene_lights"],
     },
     {
+        "what": "enhanced lighting's mood, native vs play page - each host "
+        "looked up the running scene's name and its held scripted grade and "
+        "graded the persisted time of day over them itself, and each tinted "
+        "the fog bank by the mood behind its own toggle test. Both ask "
+        "`field_frame::lighting_mood` and `field_frame::fog_volume_color`",
+        "sites": {
+            "native": (NATIVE_REDRAW_PASSES, "lighting_mood"),
+            "web": ("crates/web-play/src/play_lighting.rs", "lighting_mood"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["field_frame::lighting_mood"],
+    },
+    {
+        "what": "the fog bank's mood tint, native vs play page - see the "
+        "mood row above. Both ask `field_frame::fog_volume_color`",
+        "sites": {
+            "native": (NATIVE_REDRAW_PASSES, "stage_fog_volume"),
+            "web": ("crates/web-play/src/play_fog_volume.rs", "play_fog_volume_header"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["fog_volume_color"],
+    },
+    {
         "what": "move-FX spawn to sound, native vs play page - each host "
         "took the pending spawn, seated it, took the cue and classified it "
         "itself, and the two had drifted on the classification's arms (the "

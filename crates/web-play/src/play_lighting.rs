@@ -53,16 +53,14 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
-    /// The mood this frame is lit under: the persisted time of day over the
-    /// running scene and its held scripted grade (the native redraw's call).
+    /// The mood this frame is lit under
+    /// (`legaia_engine_screens::field_frame::lighting_mood`, the native
+    /// redraw's answer too).
     pub(crate) fn lighting_mood(&self) -> sl::LightingMood {
-        let grade = self
-            .scene_host
-            .host()
-            .and_then(|h| h.world.held_scene_grade());
-        TimeOfDay::from_name(&self.options_state.lighting_time_of_day)
-            .unwrap_or_default()
-            .mood_graded(&self.scene_name(), grade)
+        legaia_engine_screens::field_frame::lighting_mood(
+            self.scene_host.host(),
+            &self.options_state.lighting_time_of_day,
+        )
     }
 
     /// Derive (once per scene) the static + prop light sets.

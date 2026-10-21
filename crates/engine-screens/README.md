@@ -61,7 +61,8 @@ nothing. This crate is the projection between them for:
   band table and badge cells, the name-entry view, the field party HUD, and
   the passive-ability badge column over the player's head
   (`passive_hud_icons` through the host's camera, `passive_hud_text_draws`);
-- the **frame's field decisions** (`field_frame`): the enhanced scene lights
+- the **frame's field decisions** (`field_frame`): enhanced lighting's mood
+  and the fog bank's tint under it, the enhanced scene lights
   a frame draws and the frame clear colour, off the world and the open
   screen; and the camera-occlusion fade's world half (`field_occlusion`:
   whether the fade arms, the player's body centre and feet it aims at),

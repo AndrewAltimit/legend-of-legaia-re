@@ -41,6 +41,18 @@ impl PlayWindowApp {
         )
     }
 
+    /// The mood enhanced lighting lights this frame under
+    /// (`legaia_engine_screens::field_frame::lighting_mood`, the answer the
+    /// browser play page reads too).
+    pub(in crate::window) fn lighting_mood(
+        &self,
+    ) -> legaia_render_kernels::scene_lighting::LightingMood {
+        legaia_engine_screens::field_frame::lighting_mood(
+            Some(&self.session.host),
+            &self.options_state.lighting_time_of_day,
+        )
+    }
+
     /// Stage this frame's volumetric ground-fog bank on the renderer, or
     /// clear it - the browser play page's `_drawFogVolume` twin.
     ///
@@ -53,26 +65,6 @@ impl PlayWindowApp {
     /// map and the in-world minigame venues (their own VRAM and camera) draw
     /// none; a scripted shot and the `F3` debug vantage do - the bank is world
     /// geometry, and `cam` is that frame's own matrix.
-    /// The mood enhanced lighting lights this frame under: the persisted
-    /// time of day over the loaded scene and its held scripted grade
-    /// (`scene_lighting::TimeOfDay::mood_graded` - the same call the browser
-    /// play page makes).
-    pub(in crate::window) fn lighting_mood(
-        &self,
-    ) -> legaia_render_kernels::scene_lighting::LightingMood {
-        use legaia_render_kernels::scene_lighting::TimeOfDay;
-        let scene_name = self
-            .session
-            .host
-            .scene
-            .as_ref()
-            .map(|s| s.name.as_str())
-            .unwrap_or("");
-        TimeOfDay::from_name(&self.options_state.lighting_time_of_day)
-            .unwrap_or_default()
-            .mood_graded(scene_name, self.session.host.world.held_scene_grade())
-    }
-
     pub(in crate::window) fn stage_fog_volume(
         &self,
         r: &legaia_engine_render::Renderer,
@@ -121,11 +113,11 @@ impl PlayWindowApp {
             mesh_positions: &positions,
             ground_gen: f.ground_gen,
             // Enhanced lighting: the mist sits in the scene's mood light.
-            color: if self.dynamic_lighting {
-                legaia_render_kernels::scene_lighting::fog_tint(f.color, &self.lighting_mood())
-            } else {
-                f.color
-            },
+            color: legaia_engine_screens::field_frame::fog_volume_color(
+                f.color,
+                self.dynamic_lighting,
+                &self.lighting_mood(),
+            ),
             opacity: f.opacity,
             height: f.height,
             layers: FOG_LAYERS,

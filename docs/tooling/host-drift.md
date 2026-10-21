@@ -1640,6 +1640,7 @@ skips the picker's story baseline, which would otherwise clear system flags
 | CLUT-walk shimmer | `engine-scene::clut_walk_anim` (`ClutWalkAnim::install`); parser `legaia_scene_formats::clut_walk` |
 | occlusion fade | `field_occlusion::host_fade_armed`, `FadeRamp`, `player_body_centre` |
 | scene lights | `engine-screens::field_frame::field_scene_lights` |
+| lighting mood, fog-bank tint | `engine-screens::field_frame::lighting_mood`, `fog_volume_color` |
 | clear colour | `engine-screens::field_frame::frame_clear_color`, `battle_stage_clear::scene_clear` |
 | prologue grade | `World::frame_grade` |
 | object-effect clip (field-VM `4C C2 1`) | `World::object_effect_mesh_clip` ([`renderer.md`](../subsystems/renderer.md#what-a-raised-0x42-draws)) |

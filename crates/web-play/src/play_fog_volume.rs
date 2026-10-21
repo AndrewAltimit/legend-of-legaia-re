@@ -50,11 +50,12 @@ impl LegaiaRuntime {
             .map(|f| f.header())
             .unwrap_or_default();
         // Enhanced lighting: the mist sits in the scene's mood light (the
-        // native window's `stage_fog_volume` rule).
-        if self.options_state.enhanced_lighting && !h.is_empty() {
+        // native window's `stage_fog_volume` asks the same).
+        if !h.is_empty() {
             use legaia_render_kernels::fog_volume::header as hd;
-            let c = legaia_render_kernels::scene_lighting::fog_tint(
+            let c = legaia_engine_screens::field_frame::fog_volume_color(
                 [h[hd::COLOR_R], h[hd::COLOR_G], h[hd::COLOR_B]],
+                self.options_state.enhanced_lighting,
                 &self.lighting_mood(),
             );
             h[hd::COLOR_R] = c[0];
