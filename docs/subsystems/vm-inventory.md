@@ -55,7 +55,7 @@ disassembly (`sltiu` immediate before the `jr`), not off the port.
 | [Field VM `0x4C` MENU_CTRL](script-vm-menuctrl.md) | inline in `FUN_801DE840` | 16 outer nibbles; `B` and `F` reach retail's error printer, `F` sub-`F` excepted | resolved | yes - `field::step::menu_ctrl` | yes |
 | [Effect VM](effect-vm.md) | `FUN_801E0088` | **none** - see [No opcode space](#the-effect-vm-has-no-opcode-space) | resolved | yes - `effect_vm` | yes |
 | [Battle-action SM](battle-action.md) | `FUN_801E295C` | 256-slot JT `0x801CED44`, sparse handled bands, no default arm | partial | yes - `battle_action` | yes |
-| [World-map entity SM](world-map.md) | `FUN_801DA51C` | 5 states | resolved | yes - `world_map` | yes |
+| [World-map entity SM](world-map.md) | `FUN_801DA51C` | 5 states | resolved | yes - `engine-field::world_map_entity` | yes |
 | [Tile-board walk SM](tile-board.md) | `overlay_0897_801EF2B0` | 15 states, JT at `0x801CF65C` | resolved | yes - `engine-minigames::tile_board` | yes |
 | [Cast-module phase machine](cast-module.md#the-module-phase-byte-ctx--0x279) | one tick body per PROT 0903..0966 image, named by 0898's `0x801CF4EC` / `0x801CF56C` | per-image: the `ctx+0x279` phase byte through a word table or a `beq`/`slti` chain | resolved | yes - `cast_module_ticks` + `cast_arm_ticks` + `seru_magic_ticks` | yes - `World::run_cast_module_code` |
 | Per-actor anim dispatch | `FUN_80021DF4` | 7 dispatch bytes `0x01..=0x07` at `actor[+0x5A]` | resolved | yes - `anim_vm` / `actor_tick` | yes |
@@ -241,9 +241,13 @@ Live, and worth knowing why:
 - **`title_overlay`**. `TitleSession` (`engine-menus::title`) owns both the
   menu half ([`TitleMenuState`](#what-of-the-tick-runs-on-both-hosts)) and a
   `TitleTickState`.
-- **`vram_rect_copy`** (called from `engine-core::world::vram_rect_fx`) and
-  **`cutscene_trigger`** (called from `engine-mode::mode` and the native
-  boot-cutscene path).
+- **`vram_rect_copy`** (called from `engine-core::world::vram_rect_fx`).
+
+Not a port at all: **`cutscene_trigger`** (`engine-system::movie::cutscene_trigger`)
+is a static catalogue of the three retail writers of the `StrInit` game mode,
+with no `PORT:` tag. Only tests and doc links read it; the trigger paths it
+names run through the field VM's op `0x4C` `0xE2` arm and `TitleSession`'s
+attract arm.
 
 Reading `port-catalog.py --live-audit`: `move_vm_overlay_ext`'s `step` and
 `walk` show as *live* there, and they are not. Both names collide with live

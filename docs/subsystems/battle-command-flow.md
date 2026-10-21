@@ -555,7 +555,7 @@ A sweep reaches the action SM as retail's target-group code, not a sentinel: the
 
 `engine-menus::battle_input` carries the three phases (`CommandPhase::RoundPrompt`
 / `Menu` / `AttackMode`) and `engine-ui::battle_command_ui::ChipPhase` the
-seating for each; `engine-scene-host::disc_readers::battle_open` composes the banner and
+seating for each; `engine-menus::battle_open` composes the banner and
 `World::raise_battle_open_banner` queues it onto the shared battle message box
 (retail's `ctx[+0x6B2]` surface). The round-scoped prompt is armed from
 `World::arm_round_open_prompt`, keyed on the flow byte parking at

@@ -248,12 +248,13 @@
     <tbody>
       <tr><td>Enhanced lighting (<code>I</code>; <code>F8</code> cycles time of day)</td><td><strong>on</strong></td><td>a time-of-day mood over the baked shading, point lights at lamps and glowing props, emissive surfaces, lit windows at night and soft halos - one shared kernel on both hosts</td></tr>
       <tr><td>Lamp shadows (<code>Y</code>)</td><td>on</td><td>shadow maps for the lighting&rsquo;s point lights; inert while lighting is off</td></tr>
-      <tr><td>Volumetric ground fog (<code>F9</code>)</td><td><strong>on</strong></td><td>a drifting mist bank over misty and night scenes, parted by every character walking through it</td></tr>
+      <tr><td>Volumetric ground fog (<code>F9</code>)</td><td>off while the look matures</td><td>a drifting mist bank over misty and night scenes, parted by every character walking through it</td></tr>
       <tr><td>Bloom (<code>F10</code>)</td><td>off</td><td>bright pixels - lamp halos, glowing props, lit windows, sunlit sky - bleed a soft glow, stronger at night; the HUD never blooms</td></tr>
       <tr><td>See-through walls (<code>F4</code>)</td><td><strong>on</strong></td><td>geometry that <em>completely</em> hides the player dissolves to a dither circle around them</td></tr>
       <tr><td>Leading-edge wall probes, solid NPCs, live NPCs</td><td><strong>on</strong></td><td>retail&rsquo;s three-probe collision footprint, NPC collision and the villagers&rsquo; ambient wander</td></tr>
       <tr><td>Ledge-hop landing guard</td><td><strong>on</strong> (off under <code>--retail</code>)</td><td>refuses a field ledge hop whose landing the walk could not leave; retail tests no landing, and a diagonal step-up can box the player in for good</td></tr>
       <tr><td>Entry pulse</td><td>on (off under <code>--retail</code>)</td><td>a rolling vertex-morph envelope at scene entry over the packs it is authored for (jou&rsquo;s flesh ground, Rim Elm&rsquo;s shoreline)</td></tr>
+      <tr><td>Retail static-object window</td><td><strong>on</strong></td><td>a sub-area&rsquo;s placed props draw only while the camera&rsquo;s region box holds them, as retail&rsquo;s windowed object list does; off draws every placement for the whole map</td></tr>
       <tr><td>Visible-tile crop</td><td><strong>on</strong> at retail framing</td><td>retail draws only the cells the camera&rsquo;s tile window reaches; any wider or re-aimed view draws the whole map instead of opening black edges</td></tr>
       <tr><td>Reduce flashing</td><td><strong>on</strong></td><td>slew-limits the ambient palette cyclers (retail&rsquo;s casino dance floor strobes at 15 Hz); simulation identical either way</td></tr>
       <tr><td>Music / sound-effect level (<code>bgm_volume</code> / <code>sfx_volume</code> in the options file)</td><td><code>8</code> / <code>8</code></td><td>two engine-only mixer buses, <code>0..=10</code> with 8 the retail mix; voice and movie audio ride neither, and at the default the mix is bit-identical to retail&rsquo;s single bus</td></tr>
@@ -262,6 +263,7 @@
       <tr><td>Camera distance (<code>T</code>), debug orbit (<code>F3</code>), drag / tilt / zoom</td><td><code>Far</code> / off / identity</td><td>framing only; the follow-camera knobs lock while a cutscene owns the camera and reset to the retail shot on a double-click</td></tr>
       <tr><td>Retail battle cadence</td><td>off</td><td>the whole battle pass once a battle frame, retail&rsquo;s cadence, instead of once a vsync; the faithful model, staged off while comparison rows still fall</td></tr>
       <tr><td>Saved-chain Arts list</td><td>off</td><td>the command ring&rsquo;s Arts arm opens the port&rsquo;s saved-chain list instead of retail&rsquo;s per-press directional input</td></tr>
+      <tr><td>Smart monsters</td><td>off</td><td>a monster&rsquo;s single-target attack goes to the weakest living party member instead of retail&rsquo;s random pick; the RNG stream is unchanged</td></tr>
       <tr><td>PSX rasterisation</td><td>off</td><td>sub-pixel vertex snap + 15-bit ordered dither</td></tr>
       <tr><td>Semi-transparency blend</td><td><strong>on</strong></td><td>retail ABE blending - on because it <em>is</em> retail</td></tr>
       <tr><td><a href="vr-mode.html">WebXR VR</a></td><td>off</td><td>stereo presentation on the site&rsquo;s WebGL pages</td></tr>

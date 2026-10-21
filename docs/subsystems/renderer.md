@@ -84,7 +84,7 @@ flowchart TD
 | wgpu-free kernels both hosts link: GTE math, `screen_prim`, `vram_capture`, `battle_intro`, `scene_lighting`, `prim_near_reject` | `crates/render-kernels` |
 | Scene VRAM build, culls, lifts, per-frame draw plans | `crates/engine-core` and the kernel crates under it |
 | Native draw-list assembly | `crates/engine-shell` (`window/`) |
-| Browser draw-list assembly and WebGL shaders | `crates/web-viewer`, `site/js/webgl-*.js` |
+| Browser draw-list assembly and WebGL shaders | `crates/web-play` (play and minigames pages), `crates/web-viewer` (viewer pages), `site/js/webgl-*.js` |
 
 ## Which mesh leaf a frame actually enters
 
@@ -1170,7 +1170,7 @@ Details that matter to a port:
   clamp `FUN_801DAA50`), and the Y global measures `0` on every sampled field
   frame while the player's footing is not `0`. The camera's vertical framing
   rides the composed eye Y. The port ships the zeroed focus wherever a zone
-  camera is active (`engine-core::camera_view`) and falls back to the
+  camera is active (`engine-world-views::camera_view`) and falls back to the
   player's sampled floor only in a world with no terrain to compose an eye
   trio from.
 - **The staging descriptor at `0x801F3580` is not in this chain.** The
@@ -2479,7 +2479,7 @@ is the gate that measures it.
 
 ### The structural split: what a browser surface *can* share
 
-`engine-render` links wgpu, so `web-viewer` cannot depend on it. Every kernel
+`engine-render` links wgpu, so neither `web-play` nor `web-viewer` can depend on it. Every kernel
 that lives there - `psx_dither`, `psx_blend`, `dyn_light`, the shadow half of
 `scene_lights`, `occlusion_fade` - is native-only as code, and its browser
 twin is a second implementation in GLSL or JS. Kernels in `engine-core`,
@@ -2540,7 +2540,7 @@ axes, so each knob states both:
 | `Renderer::set_dynamic_lighting` | off | on (`I`, `--no-dynamic-lighting`, the page's "Enhanced lighting" box) | *off*, pixel-identical | enhanced lighting: mood, point lights, emissives, glow |
 | `Renderer::set_dyn_shadows` | on | on (`Y`, `--no-dyn-shadows`, "Lamp shadows") | inert while dynamic lighting is off | the point-light shadow maps only |
 | `Renderer::set_occlusion_fade` | off | on (`F4`, `--no-occlusion-fade`, "See-through walls") | *off*, pixel-identical | the camera-occlusion fade |
-| `Renderer::set_fog_volume` | nothing staged | on (`F9`, `--no-volumetric-fog`) | nothing staged, pixel-identical | the [volumetric ground fog](#volumetric-ground-fog-enhancement) |
+| `Renderer::set_fog_volume` | nothing staged | off while the look matures (`F9`, `--no-volumetric-fog`, the page's "Ground fog" box; persisted) | nothing staged, pixel-identical | the [volumetric ground fog](#volumetric-ground-fog-enhancement) |
 
 Replays and `retail-compare` captures force the enhancements off, so recorded
 sessions and the parity oracles stay on the faithful render.

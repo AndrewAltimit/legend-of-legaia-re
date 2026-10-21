@@ -609,7 +609,7 @@ Context fields: `ctx[+0]` = party count, `ctx[+1]` = monster count, `ctx[+0x13]`
 
 **Not ported** (listed in `monster_ai`'s module docs): the `'O'` (`0x4F`) boss post-amble that rewrites another actor slot's action queue, and the capture-archive preload for spell ids `0x2E` / `0x2F`.
 
-**Faithful default = uniform-random single target.** Retail's `OneEnemy` / physical target is a uniform random living party member (`rand % party_count`, re-rolled past downed slots). An opt-in, non-faithful toggle (`World::toggles.smarter_monster_targeting`, off by default; `play-window` reads `LEGAIA_SMART_MONSTERS=1`) redirects a single-target attack to the lowest-HP living member. It is RNG-neutral: the faithful pick is still rolled in full (magic roll, target roll + re-roll loop, scripted override, anti-repeat ring) and only the resolved single party slot is replaced, so the RNG stream is byte-identical and all-party / monster-band / self targets are untouched.
+**Faithful default = uniform-random single target.** Retail's `OneEnemy` / physical target is a uniform random living party member (`rand % party_count`, re-rolled past downed slots). An opt-in, non-faithful toggle (`World::toggles.smarter_monster_targeting`, off by default; `play-window` reads `LEGAIA_SMART_MONSTERS=1`, the browser play page has a "Smart monsters" checkbox) redirects a single-target attack to the lowest-HP living member. It is RNG-neutral: the faithful pick is still rolled in full (magic roll, target roll + re-roll loop, scripted override, anti-repeat ring) and only the resolved single party slot is replaced, so the RNG stream is byte-identical and all-party / monster-band / self targets are untouched.
 
 ### The two AI gates
 

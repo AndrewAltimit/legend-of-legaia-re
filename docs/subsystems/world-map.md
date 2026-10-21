@@ -377,7 +377,7 @@ gates and projects the labels and builds the panel's primitives, which ride
 the shared screen-primitive list (`engine-screens::screen_layers`); the names,
 their boxes and the compass letters are `engine-ui::map_label_*`, which each
 host calls from its text and chrome passes. Disc pin:
-`crates/engine-scene-host/tests/map_display_disc.rs`.
+`crates/engine-screens/tests/map_display_disc.rs`.
 
 Not ported: the player's **map pointer**. Mode `1` spawns it through
 `FUN_80021B04` at the player's position with the move-VM program at
