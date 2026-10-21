@@ -197,18 +197,37 @@ changes = [
 
 [[loosening]]
 file = "scripts/ci/retail-compare-baseline.json"
-reason = "The party separation radius is now the seat stager's 0x280 (0x400 on Terra), and the action seed's formation recentre and melee make-way step are ported, so party members stand at retail's spacing instead of packed together. Frames that sit mid-swing or mid-summon now hold the combatants on a different formation history, so the gaza2 park frames, the melee spark and the Gimard capture and shiny frames move slightly. battle_melee_hit_spark fell 0.771 -> 0.747 at the stager-radius change and reads 0.747..0.761 across combined-tree runs since the separation pass moved to once per battle frame; the other moves are under 0.05. The two Delilas and the theeder camera rows moved by 0.001."
+reason = "The party separation radius is now the seat stager's 0x280 (0x400 on Terra), and the action seed's formation recentre and melee make-way step are ported, so party members stand at retail's spacing instead of packed together. Frames held mid-swing or mid-summon now replay on a different formation history: battle_melee_hit_spark measured 0.772 before the radius change and 0.747 after it, and the separation pass moving to once a battle frame brought it back to 0.761 (one binary gives one frame every run). The gaza2 park frames sit on patched-disc fights whose seed search picks another RNG stream with the new spacing."
 changes = [
-  ["states/battle_gaza2_park_0x19/camera", 0.936, 0.899],
-  ["states/battle_gaza2_park_0x19/image", 0.774, 0.725],
-  ["states/battle_gaza2_park_0x19_summon_melee/camera", 0.895, 0.881],
-  ["states/battle_gaza2_park_0x19_summon_melee/image", 0.685, 0.671],
-  ["states/battle_melee_hit_spark/image", 0.771, 0.747],
+  ["states/battle_gaza2_park_0x19/image", 0.774, 0.74],
+  ["states/battle_gaza2_park_0x19_summon_melee/camera", 0.895, 0.886],
+  ["states/battle_gaza2_park_0x19_summon_melee/image", 0.685, 0.682],
+  ["states/battle_gaza2_park_0x19_target_vahn/image", 0.836, 0.824],
+  ["states/battle_melee_hit_spark/image", 0.771, 0.761],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The summon-creature stagers of PROT 0914-0933, Horn's stager and the 0x6F release on the landing pass replace the whole-set seat for these casts, so the mid-cast frames stand their parts on the stager's own records and timing. Final Crisis, Big Wave and theeder rose on the same changes; Mystic Circle and Call Wave each lose a sliver (one image block, a 35-unit eye depth at the captured zoom), traced to the stager seats and not to any later change (identical on every later integration binary)."
+changes = [
+  ["states/cort_mystic_circle_mid_cast/image", 0.986, 0.983],
+  ["states/zeto_call_wave_mid_cast/camera", 1.0, 0.998],
+  ["states/zeto_call_wave_mid_cast/image", 0.961, 0.96],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The image child now takes a seeded clip cursor back by clip step * frame step per displayed game frame (FUN_800204F8 multiplies the step by DAT_1F800393 at 0x80020660 / 0x80020680) and leaves a one-shot parked on its clamp limit. That lifts nivora_cutscene_delilas_intro 0.973 -> 0.995 and rikuroa_pre_caruban 0.988 -> 1.000; two states each lose one 8x8 block at the tolerance edge on an NPC or prop pose (doman's save-point shell, the dolk2 market actors)."
+changes = [
+  ["states/dolk2_market_noa/image", 0.994, 0.993],
+  ["states/doman_field_card_boot/image", 0.993, 0.992],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Three patched-disc rows move by 0.001 across the wave 12-13 battle changes (party spacing, the stager seats, the per-frame separation pass): the two Delilas frames show a swapped party model the engine does not draw, and the shiny Gimard camera sits one unit off on the captured zoom. Not traced to a single change; each is one block or one camera unit at the tolerance edge."
+changes = [
   ["states/delilas_gi_spirit_artifact/image", 0.74, 0.739],
   ["states/delilas_gi_spirit_distortion_v3/image", 0.718, 0.717],
-  ["states/rim_elm_gimard_seru_capture_before/camera", 0.999, 0.998],
-  ["states/rim_elm_gimard_seru_capture_before/image", 0.968, 0.966],
   ["states/shiny_refactor_gimard_plus35/camera", 0.999, 0.998],
-  ["states/shiny_refactor_gimard_precast/image", 0.911, 0.902],
-  ["states/theeder_summon_mid_cast/camera", 1.0, 0.999],
 ]

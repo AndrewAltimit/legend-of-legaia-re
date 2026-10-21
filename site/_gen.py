@@ -1478,13 +1478,28 @@ def _playability_tiles() -> list[str]:
               if isinstance(v, dict) and isinstance(v.get("image"), (int, float))]
     if scores:
         mean = 100.0 * sum(scores) / len(scores)
+        # The corpus is every catalogued capture (`scripts/scenarios.toml`),
+        # not just the states the baseline seeded; it rounds down to a stable
+        # "N00+" so the tile does not move with every state added, while the
+        # mean's own count stays exact.
+        try:
+            manifest = ROOT.parent / "scripts" / "scenarios.toml"
+            total = len(tomllib.loads(manifest.read_text(encoding="utf-8")).get("scenarios", []))
+        except (OSError, ValueError):
+            total = 0
+        total = max(total, len(states))
+        corpus = f"{total // 100 * 100}+" if total >= 100 else str(total)
         tiles.append(tile(
             f"{mean:.1f}<small>%</small>",
-            f"mean frame match against retail, over {len(scores)} captured states",
+            f"mean frame match against retail, across {corpus} captured states "
+            f"({len(scores)} with a scored frame)",
             mean,
-            f"Retail compare: mean frame match {mean:.1f} percent over {len(scores)} states",
-            f"Retail compare: the engine is seeded from {len(scores)} retail save states "
-            f"and its frame is compared with retail's own; the score is the share of "
+            f"Retail compare: mean frame match {mean:.1f} percent over {len(scores)} "
+            f"scored frames from {total} captured states",
+            f"Retail compare: {total} retail save states are catalogued; the engine is "
+            f"seeded from each it can stand in and scored against the state's RAM and "
+            f"VRAM, and {len(scores)} carry a scored frame, compared with retail's own. "
+            f"The score is the share of "
             f"8x8 blocks whose mean colour is within 24 of retail's on every channel, "
             f"averaged over the states that carry a scored frame.",
             DOCS_BLOB + "tooling/retail-compare.md"))
