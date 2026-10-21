@@ -231,6 +231,15 @@ fn palma_sweep(phase: u8, t: i32) -> ArmDirection {
     cut([pitch, yaw], [0, tr_y, raw_tr_z(tr_z)], [0; 3], 1)
 }
 
+/// The stage byte `ctx[+0x278]` PROT 0928's arm 3 stores once its word `T`
+/// has climbed to `scalar << 7` (`slt` / `bne` at `0x801F6F04..0x801F6F0C`,
+/// `sb a1,0x278(v0)` at `0x801F6F1C`, `a1` the phase byte the switch loaded:
+/// `3`). It darkens and drops the stage under the arm's starfield wash, and
+/// no later arm touches it before arm `0x11`'s `0`.
+pub fn palma_stage_byte(phase: u8, countdown: i32) -> Option<u8> {
+    (phase == 3 && countdown >= S << 7).then_some(3)
+}
+
 /// PROT 0928 (Palma): the word `T` at `0x801FA0D0` drives arms 3 and 4
 /// upwards (`T += p` to `scalar * 256` / `128`), where the module stores the
 /// camera globals straight from sines of `T` every pass; the port lands each

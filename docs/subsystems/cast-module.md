@@ -2300,7 +2300,12 @@ four-slot read outlasts most of the sustain, and with the stage cleared at
 once the arm-3 / 4 sweep ran a sustain early. Palma's arm 7 holds until the
 creature plays clip `2`, which arm 6 stages bare (`sb v0,0x1da(s4)` at
 `0x801F7828`): retail commits it at the end of clip `1`, so the creature seat
-waits for its clip's boundary there as PROT 0907..0909 and 0913's do. Barra's
+waits for its clip's boundary there as PROT 0907..0909 and 0913's do. Palma's
+arm 3 stores the stage byte `3` once its word has climbed to `scalar << 7`
+(`sb a1,0x278(v0)` at `0x801F6F1C`, `a1` the phase byte the switch loaded),
+so the stage drops away under the starfield its scanline wash draws from arm
+3 to arm `0x11`; the decoder reads that store with no value
+(`cast_module_camera::palma_stage_byte` carries it). Barra's
 arm `0xD` steps the countdown word by `p / 8` a pass as the creature arcs
 (`0x801F7CB0..0x801F7CE0`), and arm `0xE` climbs on from that value to
 `0x56`, a third of its length from zero; arm `0xE`'s pass puts the creature

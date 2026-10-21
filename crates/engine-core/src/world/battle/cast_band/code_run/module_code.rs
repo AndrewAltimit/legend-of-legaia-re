@@ -1319,6 +1319,14 @@ impl World {
             self.orb_arm_writes(phase_in, ctx.phase);
         }
         self.late_creature_stager_words(entry, phase_in, ctx.phase != phase_in);
+        if entry == 928
+            && let Some(v) = legaia_engine_cast::cast_module_camera::palma_stage_byte(
+                phase_in,
+                self.casting.module_cam.countdown.0,
+            )
+        {
+            ctx.ctx_278 = v;
+        }
         self.casting.module_ctx_278 = ctx.ctx_278;
         self.casting.module_ring_angle = ctx.ctx_6d8;
         self.casting.module_phase = ctx.phase;

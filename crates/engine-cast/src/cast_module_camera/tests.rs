@@ -1109,3 +1109,11 @@ fn mule_arm_kills_follow_the_parked_handles() {
     assert_eq!(mule_arm_loop_ends(16), &[0x801F_9468, 0x801F_95A8]);
     assert!(mule_arm_kills(15).is_empty());
 }
+
+/// Palma's arm 3 drops the stage once its word passes `scalar << 7`.
+#[test]
+fn palma_arm_3_drops_the_stage_halfway() {
+    assert_eq!(palma_stage_byte(3, (SPEED_SCALAR << 7) - 1), None);
+    assert_eq!(palma_stage_byte(3, SPEED_SCALAR << 7), Some(3));
+    assert_eq!(palma_stage_byte(4, SPEED_SCALAR << 8), None);
+}
