@@ -98,6 +98,8 @@ terminal flag:
 
 | Row | Stored in | In game | Default |
 |---|---|---|---|
+| Fullscreen (borderless) | `legaia-options.toml` | `F11`, `Alt+Enter` | off |
+| Window size (640x480 .. 1920x1440, steps of 320x240) | `legaia-options.toml` | - | 960x720 |
 | Enhanced lighting | `legaia-options.toml` | `I` | on |
 | Time of day (auto, day, dusk, night) | `legaia-options.toml` | `F8` | auto |
 | Lamp shadows | `legaia-options.toml` | `Y` | on |
@@ -210,6 +212,7 @@ enhancement has a retail-faithful off position
 | `F3` | Wide debug orbit camera | off | - |
 | `F2` | Mute audio | off | `--no-audio` |
 | `F1` | The engine's diagnostic text rows | off | - |
+| `F11`, `Alt+Enter` | Borderless fullscreen | off, remembered | `--fullscreen` / `--windowed` |
 
 In the native window each press shows the toggle's new state at the bottom
 left for a moment (*Ground fog: off*); holding a key toggles once, not
@@ -217,6 +220,13 @@ repeatedly. A key that only acts while you walk
 around (`F3`, `T`, `R`) says so when pressed on the title screen or in a menu.
 `F12` (or `?`) opens a panel listing every toggle key with its current state;
 press it again to close it.
+
+**Window size.** The windowed size is a multiple of the PlayStation's
+320x240 picture, `--window-scale 2..6` (3 = 960x720, the default), stored as
+`window_scale` with the fullscreen state in `legaia-options.toml`; the
+launcher's *Window size* row edits it. Both are window chrome: the frame is
+drawn the same at any surface, and a `--screenshot` run ignores the stored
+pair so a capture never depends on what a player last chose.
 
 The browser play page answers the same keys from the same table, with the
 canvas focused: each moves the matching control under the canvas, and `F1`
