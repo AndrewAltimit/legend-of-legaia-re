@@ -425,13 +425,14 @@ impl App {
             }
             Ok(TmdViewData::Vram(payload)) => {
                 let title = format!(
-                    "TMD [{}/{}] {}  ({} tri-verts) vram={} TIMs from {}  - {}  {}",
+                    "TMD [{}/{}] {}  ({} tri-verts) vram={} TIMs from {}{}  - {}  {}",
                     idx,
                     total,
                     short_path(&path),
                     payload.indices.len() / 3,
                     payload.tim_count,
                     payload.tim_dir_label,
+                    payload.dark_note(),
                     label,
                     BROWSE_KEYS,
                 );

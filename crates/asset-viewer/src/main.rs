@@ -818,10 +818,11 @@ fn run(cmd: Cmd) -> Result<()> {
                         );
                         Display {
                             title: format!(
-                                "TMD {} (vram: {} TIMs from {})",
+                                "TMD {} (vram: {} TIMs from {}){}",
                                 path.display(),
                                 payload.tim_count,
-                                payload.tim_dir_label
+                                payload.tim_dir_label,
+                                payload.dark_note()
                             ),
                             image: None,
                             audio: None,

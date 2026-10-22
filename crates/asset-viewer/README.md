@@ -50,7 +50,11 @@ session exercises every record in order.
 Renders Legaia TMDs spinning. Uploads every sibling TIM into the shared
 software VRAM model so meshes that reference textures across multiple VRAM
 pages render correctly; the textured path draws the TMD's baked colour words
-through the retail texture blend and depth cue, with no light source.
+through the retail texture blend and depth cue, with no light source. A mesh
+whose surface is mostly baked near black on the disc
+(`legaia_tmd::mesh::tmd_dark_baked_share`, e.g. `town01`'s dark-sky shell in
+PROT 6) says so in the window title; `--no-textures` draws the bare geometry
+under the viewer light, which ignores baked colours and shows the shape.
 
 Useful flags:
 

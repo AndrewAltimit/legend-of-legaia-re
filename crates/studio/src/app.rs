@@ -1623,7 +1623,7 @@ impl App {
             mv.view.version += 1;
         }
         let dark = model.dark_baked_share();
-        if mv.view.shading == Shading::Textured && dark >= crate::raster::MOSTLY_DARK_SHARE {
+        if mv.view.shading == Shading::Textured && dark >= legaia_tmd::mesh::MOSTLY_DARK_SHARE {
             ui.label(
                 RichText::new(format!(
                     "{:.0}% of this mesh's surface carries near-black colour words on the disc. \

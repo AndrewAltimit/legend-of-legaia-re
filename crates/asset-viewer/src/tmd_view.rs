@@ -25,6 +25,27 @@ pub(crate) struct VramMeshPayload {
     pub(crate) tim_count: usize,
     /// Source dir we pulled the TIMs from (window-title context).
     pub(crate) tim_dir_label: String,
+    /// Share of the whole TMD's surface baked near black on the disc
+    /// (`legaia_tmd::mesh::tmd_dark_baked_share`, untextured prims
+    /// included). At or above `MOSTLY_DARK_SHARE` the title says the dark
+    /// render is the data, not a missing texture.
+    pub(crate) dark_share: f32,
+}
+
+impl VramMeshPayload {
+    /// The window-title note for a mesh that is mostly black on the disc,
+    /// empty otherwise. The `--no-textures` view is the bare-geometry
+    /// viewer light, which ignores baked colours, so it shows the shape.
+    pub(crate) fn dark_note(&self) -> String {
+        if self.dark_share >= legaia_tmd::mesh::MOSTLY_DARK_SHARE {
+            format!(
+                " [{:.0}% baked near black on the disc: dark is the data, --no-textures shows the shape]",
+                self.dark_share * 100.0
+            )
+        } else {
+            String::new()
+        }
+    }
 }
 
 /// Loader result: either a flat-shaded mesh, or a VRAM-textured one with
@@ -92,6 +113,15 @@ pub(crate) fn load_tmd_for_view(
             tally.log_summary();
             if !vram_mesh.indices.is_empty() {
                 warn_unfilled_cluts(&vram_mesh, &vram);
+                let dark_share = legaia_tmd::mesh::tmd_dark_baked_share(&tmd, &bytes);
+                if dark_share >= legaia_tmd::mesh::MOSTLY_DARK_SHARE {
+                    log::info!(
+                        "{:.0}% of this mesh's surface carries near-black colour words on the disc; \
+                         retail scales every texel by that word, so the dark render is the data, \
+                         not a missing texture (--no-textures shows the shape)",
+                        dark_share * 100.0
+                    );
+                }
                 let label = match sibling.as_ref() {
                     Some(s) if vram_extras.is_empty() => short_path(s),
                     Some(s) => format!("{} + {} extra dir(s)", short_path(s), vram_extras.len()),
@@ -107,6 +137,7 @@ pub(crate) fn load_tmd_for_view(
                     vram,
                     tim_count,
                     tim_dir_label: label,
+                    dark_share,
                 }));
             }
         }

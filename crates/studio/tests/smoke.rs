@@ -110,6 +110,13 @@ fn a_mesh_baked_black_on_the_disc_is_named_and_lit_shows_its_shape() {
                 .collect();
             (px.iter().filter(|&&b| b).count(), px.len().max(1))
         };
+        // The asset viewer measures the raw TMD; both tools read one number.
+        let bytes = a.tmd_bytes(&a.tmds[0]);
+        let whole = legaia_tmd::mesh::tmd_dark_baked_share(
+            &legaia_tmd::parse(bytes).expect("parse"),
+            bytes,
+        );
+        assert!((whole - m.dark_baked_share()).abs() < 1e-6, "PROT {index}");
         (
             m.dark_baked_share(),
             near_black(Shading::Textured),
@@ -118,7 +125,7 @@ fn a_mesh_baked_black_on_the_disc_is_named_and_lit_shows_its_shape() {
     };
     let (dark6, (tex_black, tex_drawn), (lit_black, _)) = probe(6);
     assert!(
-        dark6 >= raster::MOSTLY_DARK_SHARE,
+        dark6 >= legaia_tmd::mesh::MOSTLY_DARK_SHARE,
         "PROT 6 dark share {dark6}"
     );
     assert!(
