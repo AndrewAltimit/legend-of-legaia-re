@@ -499,9 +499,16 @@ pub(super) fn battle_image(
             )),
         ));
     }
+    // Every pad drive, as the headless seed snaps and aligns every driven
+    // capture: a menu capture's case-0 close-up subtracts its member's
+    // heading (`0x8F0 - actor[+0x46]`), which only the ground snap carries -
+    // the replay never ran the earlier turn that left it.
     if matches!(
         battle.battle_drive(),
-        Some(legaia_engine_capture::battle_drive::BattleDrive::Action { .. })
+        Some(
+            legaia_engine_capture::battle_drive::BattleDrive::Action { .. }
+                | legaia_engine_capture::battle_drive::BattleDrive::Menu { .. }
+        )
     ) {
         env.push((
             "LEGAIA_BATTLE_CAM_ALIGN",
