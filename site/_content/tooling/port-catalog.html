@@ -228,6 +228,7 @@
 "80062340" = "SsSeqOpen (slot-bitmap walk + load)"</code></pre>
   <ul class="bullets">
     <li>One section is not PsyQ infrastructure: <code>unreferenced</code> holds <strong>retail-unreachable entry points</strong> - real routines nothing on the disc reaches in any reference form, per the <a href="address-reference-scan.html">address-reference scan</a>. A row moves there on its subject matter, never on its reference count alone.</li>
+    <li><strong>A hand port leaves the list.</strong> Once a routine gains a Rust body under a <code>// PORT:</code> tag its row is deleted - the address counts as ported either way, but the row would go on claiming it is out of scope. A row that keeps a tag says why: the tag is incidental (the address named on another routine's tag line, or a subsumption marker with no body), or the VA is aliased and the tag ports a different image's routine.</li>
     <li>The port worklist is not zero and should not be: <a href="disc-coverage.html">disc coverage</a> keeps surfacing routines no citation-denominated worklist could list, and documenting one <em>raises</em> the worklist. That is the two measurements composing correctly - never hold the number down by declining to document a function, and never park one in the ignore list to hide it.</li>
   </ul>
   <details class="disclosure">

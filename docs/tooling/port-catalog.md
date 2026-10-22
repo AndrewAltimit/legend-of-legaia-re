@@ -403,6 +403,7 @@ Categories are organisational - one TOML table per cluster (`bios` / `libc` / `l
 - **Adding an entry:** put the address in the matching table with a one-line factual reason naming the PsyQ function and, where known, the BIOS vector. The reason shows in drill-down output. Provenance citations belong in [`docs/reference/functions.md`](../reference/functions.md), not in the TOML.
 - **The list is curated, not exhaustive.** Newly dumped PsyQ helpers surface in `--missing-ports` until added. Treat unfamiliar 16-byte thunks in `0x8005xxxx` / `0x8006xxxx` as likely ignore candidates rather than ports.
 - **Only the ignore TOML closes a worklist row.** Reclassifying a row in a generated CSV changes nothing the catalog reads.
+- **A hand port leaves the list.** When a routine gains a Rust body under a `// PORT:` tag, delete its row: the catalog counts the address ported either way, but the row goes on claiming it is out of scope. A row that also carries a tag is right in two cases only, and its reason says which: the tag is incidental (the address is named on another routine's `PORT:` line, or the tag marks a subsumption with no body behind it), or the VA is aliased and the tag ports a different image's routine. `catalog.csv` rows with `ignored` and `ported` both `1` are the set to review.
 
 ### The `unreferenced` sections
 

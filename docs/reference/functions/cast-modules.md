@@ -188,15 +188,15 @@ dispatcher, PROT 0900's minigame tile rasteriser, and data in a save-state
 capture of the slot-B buffer. The row that answers a question is the one whose
 image matches the image you are reading.
 
-`0x801F69D8` and `0x801F69EC` carry scope rows in
-[`scripts/ci/port-catalog-ignore.toml`](../../../scripts/ci/port-catalog-ignore.toml)
-naming the world-map and minigame residents, and `0x801F69E8` / `0x801F69F0` /
-`0x801F69F4` carry `worklist_data` rows taken from a save-state capture of the
-slot-B buffer. None of those rows
-is wrong and none of them is about these modules: they are the same address in
-a different resident. The ignore file's rows and `battle.md`'s tables coexist
-because a band address is only meaningful as an `(image, VA)` pair, which is
-the same reason the trampoline map is keyed on `(entry, body)`.
+`0x801F69D8` and `0x801F69EC` carry `va_aliased_overlay_local` rows in
+[`scripts/ci/port-catalog-ignore.toml`](../../../scripts/ci/port-catalog-ignore.toml):
+an address claim that the bare VA is no one port site, naming the world-map,
+field-render and module residents. The modules' own routines at those VAs are
+ported per image, each tag naming its PROT entry, and
+[`image-scoped-verdicts.toml`](../../../scripts/ci/image-scoped-verdicts.toml)
+classifies the non-module residents image by image. A band address is only
+meaningful as an `(image, VA)` pair, which is the same reason the trampoline
+map is keyed on `(entry, body)`.
 
 `0x801F69F4` is the sharpest single case: in PROT 0909 it is the Viguro tick,
 and in PROT 0968 it is the boss stage-module tick - two unrelated routines, one

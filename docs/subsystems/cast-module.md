@@ -1048,22 +1048,25 @@ Verdicts:
 - **DATA**: an arm switch on `a1` whose arms only call `FUN_80021B04` /
   `FUN_80050ED4` / `FUN_801DFDF0` / `FUN_80024E80` with a module-resident
   record pointer and a scale literal. The spawn pool produces its whole
-  output. Scope rows under `[slot_b_spawn_stagers]` in
-  `scripts/ci/port-catalog-ignore.toml`;
-  `crates/overlay-images/tests/cast_module_data_rows_real.rs` re-derives per row that
-  the routine frame-matches in its owning image, that its spawn count is the
-  one below, and that it calls no damage wrapper.
-- **DATA, ported**: a DATA routine whose arms the engine runs one by one
-  (`cast_module_ticks`' `*_stager_spawns` modules), seating each spawn call
-  on the arm and pass that makes it instead of seating the module's whole
-  record set at once. The verdict still holds: the routine writes no
-  simulation state.
+  output, so the routine is not a port site: a scope row under
+  `[slot_b_spawn_stagers]` in `scripts/ci/port-catalog-ignore.toml`.
+- **PORT (spawn-only)**: the same shape, hand-ported. The engine runs the
+  arms one by one (`cast_module_ticks`' `*_stager_spawns` modules), seating
+  each spawn call on the arm and pass that makes it instead of seating the
+  module's whole record set at once. The routine still writes no simulation
+  state, but a hand port is a port site: each carries a `// PORT:` tag and
+  none is on the ignore list.
 - **PORT**: reads or writes simulation state (a damage roll with the HP
   clamp, the staged-clip bytes, `ctx+0x279`, `ctx+0x278`, the victim's
   fields). Ported in `cast_module_ticks`.
 - **SCOPE-IGNORE**: nothing there. Scope rows under `[slot_b_cast_module]`: six
-  null stagers, one unreferenced routine, and PROT 0920's per-frame effect
-  updater `0x801F7B88`.
+  null stagers and PROT 0909's three unreferenced routines (the table lists
+  the stager-adjacent one).
+
+`crates/overlay-images/tests/cast_module_data_rows_real.rs` re-derives the
+spawn-only shape off the disc for every DATA and PORT (spawn-only) row, and
+for PROT 0912's stager `0x801F835C`: the routine frame-matches in its owning
+image, its spawn count is the one below, and it calls no damage wrapper.
 
 | VA | Owner | Routine | Verdict |
 |---|---|---|---|
@@ -1076,7 +1079,7 @@ Verdicts:
 | `801F6A0C` | 952 (`cast_bloody_horns`) | cast tick body (`0xB8`, Astral Slash), 5 phase arms; writes `+0x1DA`, `+0x1DC`, anim rate `+0x21D`, `ctx+0x279`, strike cursor `ctx+0x15`; no damage site ([below](#astral-slash-rolls-no-wrapper)) | PORT |
 | `801F6DD8` | 958 (`cast_blazing_slash`) | cast tick body via the trampoline; damage roll (bypass); writes HP `+0x14C`, `+0x1DA`, `+0x1DC`, `ctx+0x278` | PORT |
 | `801F6EDC` | 945 (`cast_water_column`) | cast tick body via the trampoline; damage roll (resist); writes HP `+0x14C`, status `+0x16E`, `+0x1DA`, `+0x1DC` | PORT |
-| `801F7F2C` | 944 (`cast_guilty_cross`) | spawn stager, 3 spawn calls (residue in 945) | DATA, ported |
+| `801F7F2C` | 944 (`cast_guilty_cross`) | spawn stager, 3 spawn calls (residue in 945) | PORT (spawn-only) |
 | `801F8118` | 942 (`cast_power_up`) | spawn stager, 2 spawn calls (residue in 943) | DATA |
 | `801F8504` | 948 (`cast_cross_beam`) | spawn stager, 1 spawn call (residue in 949) | DATA |
 | `801F8578` | 919 (`summon_spoon`) | spawn stager, 4 spawn calls (residue in 920) | DATA |
@@ -1084,55 +1087,55 @@ Verdicts:
 | `801F74B4` | 939 (`cast_spore_gas`) | null stager | SCOPE-IGNORE |
 | `801F75BC` | 949 (`cast_water_crystals`) | frameless stager, `sltiu a1, 8`, 0 spawn calls; writes the **victim**'s `+0x0C` and anim rate `+0x21D` | PORT |
 | `801F769C` | 943 (`cast_curse`) | spawn stager, 3 spawn calls | DATA |
-| `801F76C4` | 946 (`cast_call_wave`) | spawn stager, 5 spawn calls | DATA, ported |
+| `801F76C4` | 946 (`cast_call_wave`) | spawn stager, 5 spawn calls | PORT (spawn-only) |
 | `801F7740` | 906 (`summon_gizam`) | spawn stager, `sltiu a1, 7`, 4 spawn arms; writes `+0x0C`, `ctx+0x279` | PORT |
 | `801F776C` | 945 (`cast_water_column`) | spawn stager, 2 spawn calls | DATA |
-| `801F7820` | 924 (`stager_ultimate_rave`) | spawn stager, 1 spawn call | DATA, ported |
+| `801F7820` | 924 (`stager_ultimate_rave`) | spawn stager, 1 spawn call | PORT (spawn-only) |
 | `801F7850` | 937 (`cast_hyper_lightning`) | spawn stager, 5 spawn calls | DATA |
-| `801F78A4` | 961 (`cast_dead_end_crisis`) | spawn stager, 6 spawn calls | DATA, ported |
+| `801F78A4` | 961 (`cast_dead_end_crisis`) | spawn stager, 6 spawn calls | PORT (spawn-only) |
 | `801F78F8` | 947 (`cast_v_windhash`) | null stager | SCOPE-IGNORE |
 | `801F7948` | 909 (`summon_viguro`) | framed routine no table names and nothing references | SCOPE-IGNORE |
-| `801F7A80` | 914 (`summon_gola_gola`) | spawn stager, `sltiu a1, 6`, 2 spawn calls | DATA, ported |
-| `801F7AB8` | 938 (`cast_chaos_breath`) | spawn stager, 3 spawn calls | DATA, ported |
-| `801F7AE8` | 925 (`summon_spikefish`) | spawn stager, 3 spawn calls | DATA, ported |
+| `801F7A80` | 914 (`summon_gola_gola`) | spawn stager, `sltiu a1, 6`, 2 spawn calls | PORT (spawn-only) |
+| `801F7AB8` | 938 (`cast_chaos_breath`) | spawn stager, 3 spawn calls | PORT (spawn-only) |
+| `801F7AE8` | 925 (`summon_spikefish`) | spawn stager, 3 spawn calls | PORT (spawn-only) |
 | `801F7AF4` | 909 (`summon_viguro`) | spawn stager, `sltiu a1, 7`, 2 spawn calls; writes `+0x0C`, `+0x1DA`, target `+0x1DD`, `ctx+0x279` | PORT |
 | `801F7B74` | 965 (`cast_doomsday`) | spawn stager, 2 spawn calls | DATA |
 | `801F7BA0` | 952 (`cast_bloody_horns`) | null stager | SCOPE-IGNORE |
 | `801F7BD0` | 936 (`cast_hyper_crush`) | spawn stager, 4 spawn calls | DATA |
 | `801F7DB0` | 941 (`cast_steal`) | spawn stager, `sltiu a1, 5`, 2 spawn calls | DATA |
-| `801F7EA4` | 930 (`summon_horn`) | spawn stager, `sltiu a1, 7`, 8 spawn calls | DATA, ported |
+| `801F7EA4` | 930 (`summon_horn`) | spawn stager, `sltiu a1, 7`, 8 spawn calls | PORT (spawn-only) |
 | `801F7EC4` | 956 (`cast_water_hazard`) | spawn stager, 5 spawn calls | DATA |
 | `801F7FA8` | 907 (`summon_nighto`) | spawn stager, 2 spawn calls, called by its own parts; writes into the parts it seats and into a record's bytes | PORT |
-| `801F7FE8` | 911 (`summon_orb`) | spawn stager, 1 spawn call | DATA, ported |
-| `801F800C` | 921 (`summon_iota`) | spawn stager, 2 spawn calls | DATA, ported |
-| `801F8078` | 905 (`summon_stager_x83`) | spawn stager, 2 spawn calls | DATA, ported |
-| `801F813C` | 962 (`cast_blade_breath`) | spawn stager, 3 spawn calls | DATA, ported |
+| `801F7FE8` | 911 (`summon_orb`) | spawn stager, 1 spawn call | PORT (spawn-only) |
+| `801F800C` | 921 (`summon_iota`) | spawn stager, 2 spawn calls | PORT (spawn-only) |
+| `801F8078` | 905 (`summon_stager_x83`) | spawn stager, 2 spawn calls | PORT (spawn-only) |
+| `801F813C` | 962 (`cast_blade_breath`) | spawn stager, 3 spawn calls | PORT (spawn-only) |
 | `801F81A0` | 963 (`cast_genocidal_cannon`) | spawn stager, 4 spawn calls | DATA |
 | `801F81E8` | 920 (`summon_slippery`) | null stager | SCOPE-IGNORE |
 | `801F8208` | 950 (`cast_rolling_flare`) | spawn stager, 1 spawn call | DATA |
 | `801F8250` | 959 (`cast_megaton_press`) | spawn stager, `sltiu a1, 6`, 11 spawn calls | DATA |
 | `801F82CC` | 940 (`cast_glare_divide`) | null stager | SCOPE-IGNORE |
-| `801F82D8` | 917 (`summon_barra`) | spawn stager, `sltiu a1, 5`, 3 spawn calls | DATA, ported |
+| `801F82D8` | 917 (`summon_barra`) | spawn stager, `sltiu a1, 5`, 3 spawn calls | PORT (spawn-only) |
 | `801F8310` | 908 (`summon_zenoir`) | spawn stager, 5 spawn calls, called by its own parts; writes into the parts it seats | PORT |
 | `801F835C` | 912 (`summon_freed`) | spawn stager, 3 spawn arms and a fade, called by its own parts; writes into the parts it seats | PORT |
-| `801F84A4` | 932 (`summon_meta`) | spawn stager, 1 spawn call | DATA, ported |
+| `801F84A4` | 932 (`summon_meta`) | spawn stager, 1 spawn call | PORT (spawn-only) |
 | `801F85A8` | 927 (`summon_juggernaut`) | spawn stager, `sltiu a1, 9`, 7 spawn calls; damage roll (shared); writes HP `+0x14C` | PORT |
 | `801F85D4` | 954 (`cast_fatal_decision`) | null stager | SCOPE-IGNORE |
-| `801F864C` | 913 (`summon_nova`) | spawn stager, `sltiu a1, 6`, 3 spawn calls | DATA, ported |
-| `801F8748` | 933 (`summon_terra`) | spawn stager, 2 spawn calls | DATA, ported |
+| `801F864C` | 913 (`summon_nova`) | spawn stager, `sltiu a1, 6`, 3 spawn calls | PORT (spawn-only) |
+| `801F8748` | 933 (`summon_terra`) | spawn stager, 2 spawn calls | PORT (spawn-only) |
 | `801F88F8` | 916 (`summon_aluru`) | spawn stager, `sltiu a1, 8`, 7 spawn calls | DATA |
-| `801F89D4` | 910 (`summon_swordie`) | spawn stager, `sltiu a1, 5`, 1 spawn call | DATA, ported |
-| `801F8AB0` | 918 (`summon_kemaro`) | spawn stager, `a1` arms 0..2, 3 spawn calls (the last a 16-iteration loop); keeps arm 0's handle in `0x801F92C4` | DATA, ported |
-| `801F8ADC` | 931 (`summon_jedo`) | spawn stager, 1 spawn call | DATA, ported |
+| `801F89D4` | 910 (`summon_swordie`) | spawn stager, `sltiu a1, 5`, 1 spawn call | PORT (spawn-only) |
+| `801F8AB0` | 918 (`summon_kemaro`) | spawn stager, `a1` arms 0..2, 3 spawn calls (the last a 16-iteration loop); keeps arm 0's handle in `0x801F92C4` | PORT (spawn-only) |
+| `801F8ADC` | 931 (`summon_jedo`) | spawn stager, 1 spawn call | PORT (spawn-only) |
 | `801F8B90` | 923 (`summon_gilium`) | spawn stager, 3 spawn calls; writes `ctx+0x278` | PORT |
 | `801F8BF8` | 964 (`cast_element_change`) | spawn stager, 2 spawn calls | DATA |
-| `801F8C30` | 929 (`summon_mule`) | spawn stager, `sltiu a1, 9`, 10 spawn calls | DATA, ported |
+| `801F8C30` | 929 (`summon_mule`) | spawn stager, `sltiu a1, 9`, 10 spawn calls | PORT (spawn-only) |
 | `801F8D30` | 958 (`cast_blazing_slash`) | spawn stager, 7 spawn calls | DATA |
 | `801F8D64` | 966 (`cast_evil_seru_magic`) | spawn stager, `sltiu a1, 9`, 7 spawn calls; damage roll (resist); writes HP `+0x14C`, `+0x1DA`, `+0x1DC` | PORT |
-| `801F8E68` | 928 (`summon_palma`) | spawn stager, `sltiu a1, 7`, 12 spawn calls | DATA, ported |
+| `801F8E68` | 928 (`summon_palma`) | spawn stager, `sltiu a1, 7`, 12 spawn calls | PORT (spawn-only) |
 | `801F90E4` | 922 (`summon_puera`) | spawn stager, 0 spawn calls; writes `ctx+0x278` | PORT |
-| `801F92AC` | 934 (`summon_ozma`) | spawn stager, 11 spawn calls | DATA, ported |
-| `801F7F34` | 915 (`summon_mushura`) | spawn stager, two arms sharing one `jal` and two record pointers | DATA, ported |
+| `801F92AC` | 934 (`summon_ozma`) | spawn stager, 11 spawn calls | PORT (spawn-only) |
+| `801F7F34` | 915 (`summon_mushura`) | spawn stager, two arms sharing one `jal` and two record pointers | PORT (spawn-only) |
 | `801F7FF0` | 935 (`cast_earthquake`) | spawn stager, arm 0 only, 1 spawn call | DATA |
 | `801F9370` | 955 (`cast_white_shield`) | spawn stager, 1 spawn call | DATA |
 | `801F99F4` | 957 (`summon_effect_table`) | spawn stager, `sltiu a1, 5`, 3 spawn calls | DATA |

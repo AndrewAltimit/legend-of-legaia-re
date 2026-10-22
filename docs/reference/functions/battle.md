@@ -258,20 +258,20 @@ this band is on
 | 935 | `801F69D8` (5656 B) | `801F7FF0` (56 B) | Capture sub-id `0x00`: 0x4A Earthquake. 2 framed functions. Spawns: `FUN_80021B04` x14. |
 | 936 | `801F69D8` (4600 B) | `801F7BD0` (252 B) | Capture sub-id `0x01`: 0x4B Hyper Crush. 2 framed functions. Spawns: `FUN_80021B04` x15. |
 | 937 | `801F69D8` (3704 B) | `801F7850` (396 B) | Capture sub-id `0x02`: 0x4C Hyper Lightning. 2 framed functions. Spawns: `FUN_80021B04` x21. |
-| 938 | `801F7A40` (120 B) | `801F7AB8` (272 B) | Capture sub-id `0x03`: 0x4E Chaos Breath; 0xB7 Mystic Circle. 4 framed functions. Spawns: `FUN_80021B04` x4, `FUN_80050ED4` x9. 2 internal `jal`. |
+| 938 | `801F7A40` (120 B) | `801F7AB8` (272 B) | Capture sub-id `0x03`: 0x4E Chaos Breath; 0xB7 Mystic Circle. 4 framed functions. Spawns: `FUN_80021B04` x4, `FUN_80050ED4` x9. 2 internal `jal`. Stager port `cast_module_ticks::chaos_breath_cell_stager_spawns`. |
 | 939 | `801F69D8` (2780 B) | `801F74B4` (8 B) | Capture sub-id `0x04`: 0x4F Spore Gas. 1 framed function. Spawns: `FUN_80021B04` x10. Stager row is a bare `jr ra; nop` stub. |
 | 940 | `801F8228` (164 B) | `801F82CC` (8 B) | Capture sub-id `0x05`: 0x3C Glare; 0x50 Divide; 0xAC Mystic Shield; 0xAE Clone. 4 framed functions. Spawns: `FUN_80021B04` x2, `FUN_80050ED4` x9. 3 internal `jal`. Stager row is a bare `jr ra; nop` stub. |
 | 941 | `801F7D38` (120 B) | `801F7DB0` (192 B, 5 arms) | Capture sub-id `0x06`: 0x51 Steal; 0xB9 Stone Circle. 4 framed functions. Head table (5 words) is the stager's. Spawns: `FUN_80050ED4` x11. 2 internal `jal`. |
 | 942 | `801F80A0` (120 B) | `801F8118` (160 B) | Capture sub-id `0x07`: 0x52 Power Up; 0xAA Dark Typhoon. 4 framed functions. Spawns: `FUN_80021B04` x5, `FUN_80050ED4` x13. 2 internal `jal`. |
 | 943 | `801F7624` (120 B) | `801F769C` (212 B) | Capture sub-id `0x08`: 0x40 Curse; 0xB5 Lapis Wave. 7 framed functions. Spawns: `FUN_80021B04` x5, `FUN_80050ED4` x7. 4 internal `jal`. |
-| 944 | `801F7EBC` (112 B) | `801F7F2C` (164 B) | Capture sub-id `0x09`: 0x37 Guilty Cross; 0x53 Curse All. 4 framed functions. Spawns: `FUN_80021B04` x3, `FUN_80050ED4` x10. 2 internal `jal`. |
+| 944 | `801F7EBC` (112 B) | `801F7F2C` (164 B) | Capture sub-id `0x09`: 0x37 Guilty Cross; 0x53 Curse All. 4 framed functions. Spawns: `FUN_80021B04` x3, `FUN_80050ED4` x10. 2 internal `jal`. Stager port `cast_module_ticks::guilty_cross_cell_stager_spawns`. |
 | 945 | `801F76F4` (120 B) | `801F776C` (164 B) | Capture sub-id `0x0A`: 0x54 Water Column; 0xBA Jugger Power. 6 framed functions. Spawns: `FUN_80021B04` x12, `FUN_80050ED4` x9. 4 internal `jal`. |
-| 946 | `801F69FC` (3272 B) | `801F76C4` (520 B) | Capture sub-id `0x0B`: 0x55 Call Wave; 0x56 Big Wave. 2 framed functions. Spawns: `FUN_80021B04` x20. |
+| 946 | `801F69FC` (3272 B) | `801F76C4` (520 B) | Capture sub-id `0x0B`: 0x55 Call Wave; 0x56 Big Wave. 2 framed functions. Spawns: `FUN_80021B04` x20. Stager port `cast_module_ticks::call_wave_stager_spawns`. |
 | 947 | `801F69F0` (3848 B) | `801F78F8` (8 B) | Capture sub-id `0x0C`: 0x57 V-Windhash; 0xA7 Neo Windhash. 1 framed function. Spawns: `FUN_80021B04` x15. Stager row is a bare `jr ra; nop` stub. |
 | 948 | `801F69F0` (2172 B) | `801F8504` (96 B) | Capture sub-id `0x0D`: 0x58 Cross Beam. 3 framed functions. Spawns: `FUN_80021B04` x8. 1 internal `jal`. |
 | 949 | `801F6A10` (2988 B) | `801F75BC` (116 B, 8 arms) | Capture sub-id `0x0E`: 0x59 Water Crystals. 2 framed functions. Spawns: `FUN_80021B04` x30. |
 | 950 | `801F8190` (120 B) | `801F8208` (56 B) | Capture sub-id `0x0F`: 0x5A Rolling Flare; 0xAB Shadow Break. 4 framed functions. Spawns: `FUN_80050ED4` x12. 2 internal `jal`. |
-| 951 | `801F816C` (112 B) | `801F81DC` (272 B) | Capture sub-id `0x10`: 0x36 Chaos Flare; 0x5B Scythe Wind. 4 framed functions. Spawns: `FUN_80021B04` x4, `FUN_80050ED4` x16. 2 internal `jal`. |
+| 951 | `801F816C` (112 B) | `801F81DC` (272 B) | Capture sub-id `0x10`: 0x36 Chaos Flare; 0x5B Scythe Wind. 4 framed functions. Spawns: `FUN_80021B04` x4, `FUN_80050ED4` x16. 2 internal `jal`. The stager is spawn-only and unported (the spawn pool stages it); the `FUN_801F81DC` ports in the tree are PROT 0910's different routine at the same VA. |
 | 952 | `801F7B28` (120 B) | `801F7BA0` (8 B) | Capture sub-id `0x11`: 0x5C Bloody Horns; 0xB8 Astral Slash. 4 framed functions. 4 internal `jal`. Stager row is a bare `jr ra; nop` stub. |
 | 953 | `801F69FC` (3112 B) | `801F7624` (420 B) | Capture sub-id `0x12`: 0x5D Terio Punch; 0x5E Bull Charge. 3 framed functions. Spawns: `FUN_80021B04` x17. 2 internal `jal`. |
 | 954 | `801F6A58` (7036 B) | `801F85D4` (8 B) | Capture sub-id `0x13`: 0x5F Fatal Decision. 1 framed function. Spawns: `FUN_80021B04` x5. Stager row is a bare `jr ra; nop` stub. |
@@ -281,8 +281,8 @@ this band is on
 | 958 | `801F8E60` (88 B) | `801F8D30` (304 B) | Capture sub-id `0x17`: 0x79 Blazing Slash. 3 framed functions. Spawns: `FUN_80050ED4` x15. 1 internal `jal`. |
 | 959 | `801F87F4` (88 B) | `801F8250` (1444 B, 6 arms) | Capture sub-id `0x18`: 0x7A Megaton Press. 3 framed functions. Head table (6 words) is the stager's. Spawns: `FUN_80050ED4` x41. 1 internal `jal`. |
 | 960 | `801F8638` (120 B) | `801F86B0` (184 B) | Capture sub-id `0x19`: 0x7B Plasma Strike; 0xA6 Neo Star Slash. 4 framed functions. Spawns: `FUN_80050ED4` x24. 2 internal `jal`. |
-| 961 | `801F7A54` (96 B) | `801F78A4` (432 B) | Capture sub-id `0x1A`: 0xA1 Dead End Crisis; 0xB4 Final Crisis. 5 framed functions. Spawns: `FUN_80050ED4` x23. 3 internal `jal`. |
-| 962 | `801F8080` (188 B) | `801F813C` (172 B) | Capture sub-id `0x1B`: 0xA2 Blade Breath; 0xA3 Thunder Needle; 0xA4 Gigaton Press; 0xA5 Ultra Charge. 6 framed functions. Spawns: `FUN_80050ED4` x21. 4 internal `jal`. |
+| 961 | `801F7A54` (96 B) | `801F78A4` (432 B) | Capture sub-id `0x1A`: 0xA1 Dead End Crisis; 0xB4 Final Crisis. 5 framed functions. Spawns: `FUN_80050ED4` x23. 3 internal `jal`. Stager port `cast_module_ticks::dead_end_crisis_stager_spawns`. |
+| 962 | `801F8080` (188 B) | `801F813C` (172 B) | Capture sub-id `0x1B`: 0xA2 Blade Breath; 0xA3 Thunder Needle; 0xA4 Gigaton Press; 0xA5 Ultra Charge. 6 framed functions. Spawns: `FUN_80050ED4` x21. 4 internal `jal`. Stager port `cast_module_ticks::blade_breath_cell_stager_spawns`. |
 | 963 | `801F8438` (88 B) | `801F81A0` (664 B) | Capture sub-id `0x1C`: 0xB3 Genocidal Cannon. 3 framed functions. Spawns: `FUN_80021B04` x3, `FUN_80050ED4` x46. 1 internal `jal`. |
 | 964 | `801F8E3C` (124 B) | `801F8BF8` (580 B) | Capture sub-id `0x1D`: 0xAF Element Change; 0xB0 Rogue Wind; 0xB1 Rogue Thunder; 0xB2 Rogue Flame. 5 framed functions. Spawns: `FUN_80021B04` x5, `FUN_80050ED4` x30. 4 internal `jal`. |
 | 965 | `801F7B1C` (88 B) | `801F7B74` (184 B) | Capture sub-id `0x1E`: 0xB6 Doomsday. 4 framed functions. Spawns: `FUN_80021B04` x1, `FUN_80050ED4` x20. 1 internal `jal`. |

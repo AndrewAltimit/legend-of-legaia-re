@@ -1,12 +1,14 @@
 //! Disc-gated: the slot-B band's **DATA** verdict, checked against the disc.
 //!
 //! `docs/subsystems/cast-module.md`'s worklist grades most of the band's
-//! routines **DATA** - "an arm switch whose arms do nothing but call
+//! stagers by one shape - "an arm switch whose arms do nothing but call
 //! `FUN_80021B04` / `FUN_80050ED4` / `FUN_801DFDF0` / `FUN_80024E80` with a
-//! module-resident record pointer" - and files them out of the port worklist
-//! on that basis, as `[slot_b_spawn_stagers]` in
-//! `scripts/ci/port-catalog-ignore.toml`. This test is what makes the filing
-//! checkable: for each row it asserts, off the disc,
+//! module-resident record pointer". The ones the spawn pool alone covers are
+//! **DATA** and filed out of the port worklist on that basis, as
+//! `[slot_b_spawn_stagers]` in `scripts/ci/port-catalog-ignore.toml`; the
+//! ones the engine hand-ports arm by arm are **PORT (spawn-only)** and carry
+//! `// PORT:` tags instead. This test checks the shape both verdicts rest on,
+//! for every such row: it asserts, off the disc,
 //!
 //! 1. the routine's **owning image** is where the doc says it is, by finding
 //!    the routine's own frame-matched extent in that image (a band image ends
@@ -34,7 +36,9 @@ const SPAWN: [u32; 4] = [0x8002_1B04, 0x8005_0ED4, 0x801D_FDF0, 0x8002_4E80];
 const WRAPPERS: [u32; 3] = [0x801D_D0AC, 0x801D_D4B0, 0x801D_D6B4];
 
 /// `(routine VA, owning PROT entry, `jal`s into a spawn primitive)` - the
-/// **DATA** rows of `docs/subsystems/cast-module.md`'s verdict table.
+/// **DATA** and **PORT (spawn-only)** rows of
+/// `docs/subsystems/cast-module.md`'s verdict table, plus PROT 0912's
+/// stager `0x801F835C`, which the table grades PORT.
 ///
 /// The count is `jal` sites, not records: PROT 0915's stager reaches one
 /// shared call from two arms with two different record pointers.
@@ -180,7 +184,7 @@ fn every_data_row_is_a_spawn_stager_the_pool_covers() {
         return;
     };
 
-    assert_eq!(DATA_ROWS.len(), 46, "the doc's DATA verdict count");
+    assert_eq!(DATA_ROWS.len(), 46, "the doc's spawn-only stager count");
     let mut pool = CastEffectPool::new();
     let mut total_spawn = 0usize;
 

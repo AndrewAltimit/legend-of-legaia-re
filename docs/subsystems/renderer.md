@@ -381,8 +381,9 @@ fragment discard ([below](#what-a-raised-0x42-draws)).
   output slot, two vertices and a q12 fraction `a3`, it lerps X/Y/Z
   (`out = b + ((a-b)*frac >> 12)`) and, by flag word `a2`, the packed
   attributes: bit `0x1` the UV pair at `+0x18/0x19`, bit `0x2` the RGB triple
-  at `+0x14..0x16`, bit `0x800` selects the trailing endpoint. It carries a
-  `[render_pipeline]` scope row in `scripts/ci/port-catalog-ignore.toml`. See
+  at `+0x14..0x16`, bit `0x800` selects the trailing endpoint. Ported as
+  `legaia_render_kernels::gte::raster`'s clipped-vertex lerp, `REPLACED-BY`
+  the graphics backend's own clipper. See
   `ghidra/scripts/funcs/80029724.txt`.
 
 ## The shatter renderer (`FUN_80029888` + `FUN_80029DD8`)
@@ -723,7 +724,7 @@ and carried as a scope row in `scripts/ci/port-catalog-ignore.toml`:
 | Routine | What it is | Port |
 |---|---|---|
 | `FUN_80028158` | Procedural ring / crown / fan builder: a Legaia TMD object of `GT4` packets ([`effect-vm.md`](effect-vm.md#the-default-arms-draw)) | **Ported and drawn** - `legaia_engine_effects::effect_default_arm`, a byte-exact builder behind every default-arm node and every battle ground shadow |
-| `FUN_8002A5A4` | One textured billboard quad into a caller buffer | Scope row (`render_pipeline`) |
+| `FUN_8002A5A4` | One textured billboard quad into a caller buffer | **Ported** - `legaia_render_kernels::sprite_arm`, the dispatcher's sprite arm |
 | `FUN_801CFA48` | Lightning effect-ribbon random walk ([`battle-action.md`](battle-action.md#overlay-local-prng-fun_801d0290)) | **Ported and drawn** - `legaia_engine_effects::effect_ribbon`, the geometry and the TMD packet chain it installs as the actor's model |
 | `FUN_80019D50` | CLUT-cell HSV cycler ([`field-ambient-fx.md`](field-ambient-fx.md)) | **Ported** - `legaia_engine_field::clut_cell_fx`, live through `world::ambient` |
 | `FUN_800351C0` | Full-screen `320x224` backdrop quad (tag `0x08000000`) | Scope row (`render_pipeline`) |

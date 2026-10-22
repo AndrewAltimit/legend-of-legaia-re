@@ -620,7 +620,7 @@ Two sibling `jr`-jump-table dispatchers into the slot-B routines. Their clean se
 
 `0x801F1ED4` is the summon spell's visual driver. The summon **creature spawn** is a separate mechanism (the `summon.dat` applier `FUN_801F12D0` / `FUN_801F19EC`, see [summon-readef](../formats/summon-readef.md)). `0x801F69D8` / `0x801F7088` are per-summon effect leaves reached through these dispatchers.
 
-Port: `engine-battle-vm::battle_cast_dispatch` carries the `0x801F2160` dispatcher (the `+1` effect-class read, the `0x20` bound and the arm table). The targets `FUN_801F69D8..FUN_801F9BA8` are the slot-B cast modules, each with its own scope row in the `slot_b_cast_module` section of `scripts/ci/port-catalog-ignore.toml`; see [`cast-module.md`](cast-module.md).
+Port: `engine-battle-vm::battle_cast_dispatch` carries the `0x801F2160` dispatcher (the `+1` effect-class read, the `0x20` bound and the arm table). The targets `FUN_801F69D8..FUN_801F9BA8` are the slot-B cast modules' tick bodies, ported per image in `engine-cast`; [`cast-module.md`](cast-module.md#the-band-as-a-port-worklist) has the per-routine verdicts, and only the band's null stagers and unreferenced routines sit in the ignore list's `slot_b_cast_module` section.
 
 ### Per-frame action-effect update helpers
 
