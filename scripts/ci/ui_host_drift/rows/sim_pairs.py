@@ -1090,21 +1090,35 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["draw_plane_summaries", "coplanar_draw_offsets"],
     },
     {
-        "what": "title attract hand-off, native vs play page - retail's "
-        "`AttractIdle` (`0x10`) arm hands the screen to `fmv_id 0` and comes "
-        "back to the menu, so a host that arms the countdown must also drive "
-        "the session out of `TitlePhase::Attract` or the title freezes there "
-        "forever. Both hosts go through the same three session calls; what "
-        "they do between `mark_attract_started` and `finish_attract` is "
-        "theirs (the window decodes the movie, the play page has no "
-        "STR/MDEC playback and says so), and pinning the calls is what stops "
-        "one host arming a countdown it cannot return from",
+        "what": "title card, native vs play page - the session's one front "
+        "end (`engine-session::front_end::FrontEnd`) steps the title: the "
+        "tick, the row counter onto the seat, retail's `AttractIdle` "
+        "(`0x10`) hand-off to `fmv_id 0` and its skip edge, the return to "
+        "the menu. Each host supplies only its movie lane and acts on the "
+        "step; a host that ticked the `TitleSession` itself could arm a "
+        "countdown it never returns from, or order the hand-off against the "
+        "tick differently from the other host",
         "sites": {
-            "native": (NATIVE_BOOT_CUTSCENE, "service_title_attract"),
+            "native": (NATIVE_BOOT_CUTSCENE, "tick_boot_ui"),
             "web": (WEB_BOOT_TITLE, "boot_title_step"),
         },
         "mode": "symbols_all",
-        "symbols": ["attract_pending", "mark_attract_started", "finish_attract"],
+        "symbols": ["FrontEndStep", "AttractStart", "AttractEnded", "Picked"],
+    },
+    {
+        "what": "publisher logos to title, native vs play page - `init.pak`'s "
+        "phase-3 arm (`FUN_801CEFD4`) branches on the entry word to "
+        "`CARD INIT` through `ModeSeat::boot_handoff`, and the title's "
+        "Continue scan runs at that hand-off. The page used to keep a title "
+        "it opened before the logos and never took the seat's hand-off, so "
+        "its mode word stayed short of `CARD INIT`. Both step the logos "
+        "through `FrontEnd::step` and raise the title on its `TitleOpened`",
+        "sites": {
+            "native": (NATIVE_BOOT_CUTSCENE, "tick_boot_ui"),
+            "web": (WEB_BOOT_TITLE, "boot_logos_step"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["FrontEndStep", "TitleOpened"],
     },
     {
         "what": "ground-heightfield sink, native vs play page - the walk-ground "

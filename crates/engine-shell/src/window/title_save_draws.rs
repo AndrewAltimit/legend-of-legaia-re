@@ -22,7 +22,7 @@ impl PlayWindowApp {
         use legaia_engine_title::publisher_logos::STAGE;
         use legaia_engine_ui::boot_logos::{LogoQuadView, publisher_logo_sprite_draws};
 
-        let BootUiState::PublisherLogos(session) = &self.boot_ui else {
+        let Some(session) = self.boot_ui.logos_session() else {
             return Vec::new();
         };
         let Some(assets) = self.publisher_logos.as_ref() else {
@@ -226,7 +226,7 @@ impl PlayWindowApp {
     /// single source of menu glyphs.
     ///
     /// Returns an empty vec when:
-    /// - boot UI isn't [`BootUiState::Title`], or
+    /// - boot UI isn't on the title card ([`BootUiState::FrontEnd`]), or
     /// - the title session has already reached
     ///   [`legaia_engine_title::title::TitlePhase::Done`], or
     /// - the title-screen atlas IS uploaded (retail-faithful path
@@ -238,7 +238,7 @@ impl PlayWindowApp {
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<legaia_engine_ui::SpriteDraw> {
-        let BootUiState::Title(session) = &self.boot_ui else {
+        let Some(session) = self.boot_ui.title_session() else {
             return Vec::new();
         };
         if self.menu_glyphs.is_none() {
@@ -273,9 +273,9 @@ impl PlayWindowApp {
 /// [`TitleBandState::backdrop`]: legaia_engine_ui::TitleBandState::backdrop
 fn boot_title_band_state(boot_ui: &BootUiState) -> Option<legaia_engine_ui::TitleBandState> {
     match boot_ui {
-        BootUiState::Title(session) => {
-            legaia_engine_screens::title_screens::title_band_state(session)
-        }
+        BootUiState::FrontEnd(fe) => fe
+            .title_session()
+            .and_then(legaia_engine_screens::title_screens::title_band_state),
         BootUiState::SaveSelect(s) => {
             if !s.phase().shows_title_backdrop() {
                 return None;

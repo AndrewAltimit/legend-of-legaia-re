@@ -235,9 +235,11 @@ pub struct LegaiaRuntime {
     pub(crate) menu_assets: Option<crate::play_menu::PlayMenuAssets>,
     /// Live pause-menu navigation state; `Some` while the menu is up.
     pub(crate) play_menu: Option<crate::play_menu::PlayMenu>,
-    /// Boot-chain title-screen session; `Some` while the title runs before a
-    /// scene is entered ([`crate::boot_title`]).
-    pub(crate) boot_title: Option<legaia_engine_title::title::TitleSession>,
+    /// The boot front end (publisher logos, then the title card) - the
+    /// session's one front end ([`legaia_engine_session::FrontEnd`]), which
+    /// the native window steps too. `Some` while the logos or the title run
+    /// before a scene is entered ([`crate::boot_title`]).
+    pub(crate) boot_front_end: Option<legaia_engine_session::FrontEnd>,
     /// The title session **parked as a backdrop** while the boot Continue
     /// hand-off's save-select owns the screen. Retail keeps the title art up
     /// behind the Load panel at a dim; this page used to release the session
@@ -251,9 +253,6 @@ pub struct LegaiaRuntime {
     pub(crate) boot_title_attract_skips: u32,
     /// Disc-sourced title-screen art (PROT 0888), built with the title flow.
     pub(crate) title_atlas: Option<legaia_engine_title::title_screen_atlas::TitleScreenAtlas>,
-    /// Publisher-logo boot phase, the stage **ahead** of the title card
-    /// ([`crate::boot_title`]). `Some` while the logos play.
-    pub(crate) boot_logos: Option<legaia_engine_title::publisher_logos::PublisherLogosSession>,
     /// Disc-sourced publisher-logo atlas (PROT 0895 `init.pak`), built on the
     /// first logo run and kept for the page load.
     pub(crate) boot_logos_atlas: Option<legaia_engine_title::publisher_logos::LogosAtlas>,
@@ -479,11 +478,10 @@ impl LegaiaRuntime {
             menu_font: None,
             menu_assets: None,
             play_menu: None,
-            boot_title: None,
+            boot_front_end: None,
             boot_title_backdrop: None,
             boot_title_attract_skips: 0,
             title_atlas: None,
-            boot_logos: None,
             boot_logos_atlas: None,
             boot_logos_failed: false,
             menu_glyph_atlas: None,

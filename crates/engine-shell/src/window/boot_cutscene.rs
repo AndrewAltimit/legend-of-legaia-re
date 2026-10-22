@@ -6,34 +6,23 @@ use legaia_engine_audio::AudioSink;
 // hand-offs below stop the score through it.
 use legaia_engine_scene_host::scene_host::BgmDirector as _;
 
-/// What [`PlayWindowApp::service_title_attract`] wants done with the title
-/// screen's attract hand-off this frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TitleAttractAction {
-    /// Nothing pending - run the ordinary title tick.
-    Idle,
-    /// The countdown fired: start this `fmv_id` and freeze the title.
-    Start(i16),
-    /// The movie is up; the title stays frozen.
-    Playing,
-    /// The movie drained and the session is back on the menu.
-    Finished,
-    /// The player aborted the movie with a pad press; the session is back on
-    /// the menu and the caller has to tear the decoder down.
-    Aborted,
+/// The window's movie lane for the title's attract movie
+/// ([`legaia_engine_session::AttractLane`]): the movie runs while the
+/// windowed MDEC decoder holds it (`self.cutscene`, which the redraw drain
+/// clears when it plays out), and a skip tears the decoder down once the
+/// boot-UI match releases `self`.
+struct WindowAttractLane {
+    live: bool,
+    aborted: bool,
 }
 
-/// Build the window's title session:
-/// [`legaia_engine_title::title::TitleSession::for_front_end_at`], the
-/// constructor the browser page's title uses too. Continue follows
-/// `continue_enabled`; the menu opens on `row`, the seat's row counter
-/// (`ModeSeat::title_row`); the attract hand-off is armed (this host plays
-/// retail's `fmv_id 0` through its windowed MDEC path).
-pub(super) fn title_session(
-    continue_enabled: bool,
-    row: u8,
-) -> legaia_engine_title::title::TitleSession {
-    legaia_engine_title::title::TitleSession::for_front_end_at(continue_enabled, row)
+impl legaia_engine_session::AttractLane for WindowAttractLane {
+    fn request_skip(&mut self) {
+        self.aborted = true;
+    }
+    fn running(&mut self) -> bool {
+        self.live && !self.aborted
+    }
 }
 
 impl PlayWindowApp {
@@ -293,17 +282,26 @@ impl PlayWindowApp {
         let _ = self.session.step_audio_frame();
     }
 
-    /// Score the title screen: start the global-pool title theme
-    /// ([`legaia_engine_system::music_labels::TITLE_THEME_BGM_ID`]). Called on
-    /// every entry to [`BootUiState::Title`]; the director suppresses a
-    /// same-id restart, so re-entering from the save-select / options
-    /// panels never drops the playhead. A `false` return (no disc bank,
-    /// audio off) simply leaves the title silent.
+    /// Score the title screen through the session's
+    /// `BootSession::start_title_bgm`. Called on every entry to the title
+    /// card ([`BootUiState::FrontEnd`]); the director suppresses a same-id
+    /// restart, so re-entering from the save-select / options panels never
+    /// drops the playhead. A `false` return (no disc bank, audio off) simply
+    /// leaves the title silent.
     fn start_title_bgm(&mut self) {
-        let id = legaia_engine_system::music_labels::TITLE_THEME_BGM_ID;
-        if !self.session.start_global_bgm(id) {
-            log::debug!("title: theme bgm {id} unavailable; title stays silent");
+        if !self.session.start_title_bgm() {
+            log::debug!("title: theme bgm unavailable; title stays silent");
         }
+    }
+
+    /// Put the title card back up - a refused Options row, a backed-out
+    /// Continue, a title-opened menu closing, the post-wipe title - through
+    /// the session's one constructor with a fresh scan of both card ports,
+    /// and score it.
+    pub(super) fn reopen_title(&mut self) {
+        let any_save = rack_has_save(self.card_ports());
+        self.boot_ui = BootUiState::FrontEnd(self.session.front_end_title(any_save));
+        self.start_title_bgm();
     }
 
     /// Tick the boot-UI state machine (when active) using the latest
@@ -330,7 +328,6 @@ impl PlayWindowApp {
         let cross = pressed & 0x4000 != 0;
         let circle = pressed & 0x2000 != 0;
         let triangle = pressed & 0x1000 != 0;
-        let start = pressed & 0x0008 != 0;
         let up = pressed & 0x0010 != 0;
         let down = pressed & 0x0040 != 0;
         let left = pressed & 0x0080 != 0;
@@ -363,179 +360,86 @@ impl PlayWindowApp {
 
         let boot_ui_active = match &mut self.boot_ui {
             BootUiState::Inactive => false,
-            BootUiState::PublisherLogos(session) => {
-                // Start (or Cross) skips the boot sequence.
-                if start || cross {
-                    session.request_skip();
-                }
-                session.tick();
-                if session.is_done() {
-                    // The hand-off is the mode table's, not this host's:
-                    // `init.pak`'s phase-3 arm runs the core-state reset and
-                    // branches on the entry word - the front end (`CARD INIT`)
-                    // when it is raised, the debug menu (`CONFIG INIT`) when it
-                    // is not. The seat performs that branch and this arm raises
-                    // the screen the mode it returns owns.
-                    use legaia_engine_mode::mode::GameMode;
-                    let next = self.session.mode_seat.boot_handoff();
-                    match next {
-                        GameMode::CardInit => {
-                            let any_present = rack_has_save(self.card_ports());
-                            self.boot_ui = BootUiState::Title(title_session(
-                                any_present,
-                                self.session.mode_seat.title_row(),
-                            ));
-                            self.start_title_bgm();
-                        }
-                        // The dev route. The port has no debug-menu screen, so
-                        // it lands on the title anyway - logged rather than
-                        // silently folded, because the two are different modes.
-                        other => {
-                            log::info!("boot hand-off went to {other:?}; no engine screen owns it");
-                            self.boot_ui = BootUiState::Title(title_session(
-                                false,
-                                self.session.mode_seat.title_row(),
-                            ));
-                            self.start_title_bgm();
-                        }
-                    }
-                }
-                true
-            }
-            BootUiState::Title(session) => 'title: {
-                // The attract hand-off runs ahead of the tick: while the
-                // movie owns the screen the title is frozen, exactly as
-                // retail's master mode 0x1A takes the front-end off the
-                // dispatcher until the STR overlay unloads.
-                let attract = Self::service_title_attract(session, cutscene_live, pressed);
-                if let TitleAttractAction::Start(id) = attract {
-                    start_attract = Some(id);
-                }
-                if attract == TitleAttractAction::Aborted {
-                    abort_attract = true;
-                }
-                if attract == TitleAttractAction::Finished {
-                    attract_finished = true;
-                }
-                if matches!(
-                    attract,
-                    TitleAttractAction::Start(_)
-                        | TitleAttractAction::Playing
-                        | TitleAttractAction::Aborted
-                ) {
-                    break 'title true;
-                }
-                use legaia_engine_title::title::{TitleEvent, TitleInput, TitleOutcome};
-                let input = TitleInput {
-                    up,
-                    down,
-                    cross,
-                    start,
-                    circle,
+            BootUiState::FrontEnd(front_end) => {
+                // The logos, the mode-table hand-off after them, the title
+                // tick and the attract hand-off are the session's one front
+                // end (`legaia_engine_session::front_end`), the browser
+                // page's too; this arm supplies the rack scan and the movie
+                // lane, and acts on what the step reports.
+                use legaia_engine_session::FrontEndStep;
+                use legaia_engine_title::title::TitleOutcome;
+                let ports = [self.port1_card.as_ref(), self.card.as_ref()];
+                let mut lane = WindowAttractLane {
+                    live: cutscene_live,
+                    aborted: false,
                 };
-                let events = session.tick(input);
-                // Retail's row counter outlives this title.
-                self.session.mode_seat.set_title_row(session.row_counter());
-                for ev in &events {
-                    match ev {
-                        TitleEvent::NewGameSelected => {
-                            // The retail sub-mode the row moved to: NEW GAME
-                            // is 0x16 (LaunchFade), CONTINUE is 0x18
-                            // (ContinueFadeIn). The browser page reads the
-                            // same value through `boot_title_submode`.
-                            log::info!(
-                                "title: New Game (retail sub-mode 0x{:02X})",
-                                session.retail_submode()
-                            );
+                let step = front_end.step(
+                    &mut self.session.mode_seat,
+                    pressed,
+                    || rack_has_save(ports),
+                    &mut lane,
+                );
+                match step {
+                    FrontEndStep::TitleOpened(_) => self.start_title_bgm(),
+                    FrontEndStep::AttractStart(id) => start_attract = Some(id),
+                    FrontEndStep::AttractEnded if lane.aborted => abort_attract = true,
+                    FrontEndStep::AttractEnded => attract_finished = true,
+                    FrontEndStep::Picked(TitleOutcome::NewGame) => {
+                        // Mirror the retail NEW GAME -> field-launch (master
+                        // mode 2 -> mode 3): one call on both hosts - the
+                        // seeded slate, the title theme stopped, and the
+                        // shared opening order (`resume::enter_new_game`:
+                        // `opdeene`, else `town01`). The page's twin is
+                        // `play_new_game`. See docs/subsystems/boot.md
+                        // "New Game boot chain".
+                        match self.session.start_new_game(&self.field_live_opts) {
+                            Some(scene) => {
+                                // The cutscene -> Rim Elm handoff is armed
+                                // inside `enter_field_scene` off opdeene's
+                                // MAN timeline
+                                // (World::arm_prologue_handoff_from_man).
+                                log::info!(
+                                    "new game: seeded party_count={}, entered '{scene}'",
+                                    self.session.host.world.party.party_count,
+                                );
+                                // The host swapped to the prologue scene:
+                                // rebuild the render-side scene state so its
+                                // geometry replaces the boot scene's.
+                                self.rebuild_scene_render_state();
+                            }
+                            None => log::warn!(
+                                "new game: no opening scene would enter; staying on the \
+                                 pre-booted scene"
+                            ),
                         }
-                        TitleEvent::ContinueSelected => {
-                            log::info!(
-                                "title: Continue (retail sub-mode 0x{:02X})",
-                                session.retail_submode()
-                            );
-                        }
-                        TitleEvent::AttractTimeout => {
-                            log::info!(
-                                "title: attract countdown fired (retail sub-mode 0x{:02X})",
-                                session.retail_submode()
-                            );
-                        }
-                        TitleEvent::OptionsSelected => {
-                            // The selection event is informational; the Options
-                            // panel opens when the title session resolves to
-                            // `TitleOutcome::Options` below.
-                            log::info!("title: Options");
-                        }
-                        _ => {}
+                        self.boot_ui = BootUiState::Inactive;
                     }
-                }
-                if let Some(outcome) = session.outcome() {
-                    match outcome {
-                        TitleOutcome::NewGame => {
-                            // Mirror the retail NEW GAME → field-launch
-                            // (master mode 2 → mode 3): establish a fresh slate
-                            // and seed the starting party (Vahn) from the disc's
-                            // SCUS template, then enter the prologue cutscene
-                            // scene `opdeene` (the front-end launcher's opening
-                            // scene id, verified live), which hands off to the
-                            // interactive `town01`. See docs/subsystems/boot.md
-                            // "New Game boot chain".
-                            // One call on both hosts: the seeded slate, the
-                            // title theme stopped, and the shared opening
-                            // order (`resume::enter_new_game`: `opdeene`,
-                            // else `town01`). The page's twin is
-                            // `play_new_game`.
-                            match self.session.start_new_game(&self.field_live_opts) {
-                                Some(scene) => {
-                                    // The cutscene -> Rim Elm handoff is armed
-                                    // inside `enter_field_scene` off opdeene's
-                                    // MAN timeline
-                                    // (World::arm_prologue_handoff_from_man).
-                                    log::info!(
-                                        "new game: seeded party_count={}, entered '{scene}'",
-                                        self.session.host.world.party.party_count,
-                                    );
-                                    // The host swapped to the prologue scene:
-                                    // rebuild the render-side scene state so its
-                                    // geometry replaces the boot scene's.
-                                    self.rebuild_scene_render_state();
-                                }
-                                None => log::warn!(
-                                    "new game: no opening scene would enter; staying on the \
-                                     pre-booted scene"
-                                ),
-                            }
-                            self.boot_ui = BootUiState::Inactive;
+                    FrontEndStep::Picked(TitleOutcome::Continue) => {
+                        // Retail's title card manager over the shell's
+                        // rack (retail's two card ports, each a mounted
+                        // card image): `title_continue`, the browser
+                        // page's call too, with no field gate in front.
+                        self.save_flow.reset();
+                        self.boot_ui = BootUiState::SaveSelect(
+                            legaia_engine_menus::save_select::SaveSelectSession::title_continue(
+                                &card_save_rack(self.card_ports()),
+                            ),
+                        );
+                    }
+                    FrontEndStep::Picked(TitleOutcome::Options) => {
+                        // The retail options screen is the pause menu's
+                        // framed Options sub-screen; the title reaches it
+                        // through the same menu runtime the Start press
+                        // does, as the browser play page's title does
+                        // (`play_menu_open_row("Options")`). A refused
+                        // open leaves the title up.
+                        if !self.open_menu_row_from_title(
+                            legaia_engine_menus::field_menu::FieldMenuRow::Options,
+                        ) {
+                            self.reopen_title();
                         }
-                        TitleOutcome::Continue => {
-                            // Retail's title card manager over the shell's
-                            // rack (retail's two card ports, each a mounted
-                            // card image): `title_continue`, the browser
-                            // page's call too, with no field gate in front.
-                            self.save_flow.reset();
-                            self.boot_ui = BootUiState::SaveSelect(
-                                legaia_engine_menus::save_select::SaveSelectSession::title_continue(
-                                    &card_save_rack(self.card_ports()),
-                                ),
-                            );
-                        }
-                        TitleOutcome::Options => {
-                            // The retail options screen is the pause menu's
-                            // framed Options sub-screen; the title reaches it
-                            // through the same menu runtime the Start press
-                            // does, as the browser play page's title does
-                            // (`play_menu_open_row("Options")`). A refused
-                            // open leaves the title up.
-                            if !self.open_menu_row_from_title(
-                                legaia_engine_menus::field_menu::FieldMenuRow::Options,
-                            ) {
-                                self.boot_ui = BootUiState::Title(title_session(
-                                    rack_has_save(self.card_ports()),
-                                    self.session.mode_seat.title_row(),
-                                ));
-                                self.start_title_bgm();
-                            }
-                        }
+                    }
+                    FrontEndStep::Logos | FrontEndStep::Title(_) | FrontEndStep::AttractPlaying => {
                     }
                 }
                 true
@@ -561,11 +465,7 @@ impl PlayWindowApp {
                         SelectOutcome::Cancelled => {
                             // Back to title (the theme is already up; the
                             // director suppresses the same-id restart).
-                            self.boot_ui = BootUiState::Title(title_session(
-                                rack_has_save(self.card_ports()),
-                                self.session.mode_seat.title_row(),
-                            ));
-                            self.start_title_bgm();
+                            self.reopen_title();
                         }
                         _ => {
                             if let Some(c) = commit {
@@ -735,11 +635,7 @@ impl PlayWindowApp {
                             self.session.close_field_menu();
                             self.boot_ui = BootUiState::Inactive;
                             if std::mem::take(&mut self.menu_from_title) {
-                                self.boot_ui = BootUiState::Title(title_session(
-                                    rack_has_save(self.card_ports()),
-                                    self.session.mode_seat.title_row(),
-                                ));
-                                self.start_title_bgm();
+                                self.reopen_title();
                             }
                         }
                     }
@@ -755,11 +651,7 @@ impl PlayWindowApp {
                 // resolve (the deferred field restore, the battle track
                 // stopped) is the session's step, the page's too.
                 if self.session.step_party_wipe_hold(session) {
-                    self.boot_ui = BootUiState::Title(title_session(
-                        rack_has_save(self.card_ports()),
-                        self.session.mode_seat.title_row(),
-                    ));
-                    self.start_title_bgm();
+                    self.reopen_title();
                 }
                 true
             }
@@ -916,12 +808,12 @@ impl PlayWindowApp {
     pub(super) fn boot_ui_draws(&self, surface_w: u32, surface_h: u32) -> Vec<TextDraw> {
         match &self.boot_ui {
             BootUiState::Inactive => Vec::new(),
-            BootUiState::PublisherLogos(_) => {
+            BootUiState::FrontEnd(fe) => {
                 // The publisher logos are drawn via the sprite overlay
                 // (see `publisher_logo_sprite_draw`); no font text.
-                Vec::new()
-            }
-            BootUiState::Title(s) => {
+                let Some(s) = fe.title_session() else {
+                    return Vec::new();
+                };
                 use legaia_engine_title::title::TitlePhase;
                 // Which screen the front end draws is retail's own selector
                 // word `state[+0x204]`, not this host's enum: both hosts ask
@@ -1112,7 +1004,7 @@ impl PlayWindowApp {
     ///
     /// Shared by the in-flow field-VM cutscene
     /// ([`Self::try_start_windowed_cutscene`]) and the title attract
-    /// ([`Self::service_title_attract`]) so both hosts of the FMV path decode
+    /// (the front end's `AttractStart`) so both hosts of the FMV path decode
     /// through one kernel.
     pub(super) fn decode_fmv(
         &self,
@@ -1211,56 +1103,6 @@ impl PlayWindowApp {
         });
     }
 
-    /// The title screen's attract hand-off, native side.
-    ///
-    /// Retail's `AttractIdle` (`0x10`) arm zeroes the FMV index and writes
-    /// master game mode `0x1A`, i.e. hands the screen to `fmv_id 0`
-    /// (`MV1.STR`) and comes back to the title afterwards
-    /// (`legaia_engine_title::title_overlay::ATTRACT_FMV_ID`;
-    /// `cutscene_trigger::TITLE_TICK_INLINE`). This runs the same movie
-    /// through the window's own MDEC path and calls `finish_attract` once its
-    /// frames drain - the drain itself is the redraw handler's, which clears
-    /// `self.cutscene`.
-    ///
-    /// Returns `true` while the attract owns the screen, so the caller skips
-    /// the rest of the title tick.
-    // REF: FUN_801DD35C
-    ///
-    /// `pressed` is this tick's just-pressed pad word. Retail lets the player
-    /// abort the attract movie (`fmv_id 0` is the one skippable movie -
-    /// `legaia_engine_system::movie::cutscene::fmv_skip_edge_hit`), and this host used
-    /// to play it to its last frame whatever the player pressed: the abort
-    /// existed only in the browser. An abort returns
-    /// [`TitleAttractAction::Aborted`] so the caller can tear the decoder
-    /// down; the session is finished here either way.
-    fn service_title_attract(
-        session: &mut legaia_engine_title::title::TitleSession,
-        cutscene_live: bool,
-        pressed: u16,
-    ) -> TitleAttractAction {
-        if let Some(fmv_id) = session.attract_pending() {
-            session.mark_attract_started();
-            return TitleAttractAction::Start(fmv_id);
-        }
-        if session.attract_playing() && !cutscene_live {
-            session.finish_attract();
-            return TitleAttractAction::Finished;
-        }
-        if session.attract_playing() {
-            // The attract slot is the skippable movie; ask the shared test
-            // rather than spelling the button set out a second time.
-            if legaia_engine_system::movie::cutscene::fmv_skip_edge_hit(
-                legaia_engine_title::title_overlay::ATTRACT_FMV_ID,
-                pressed,
-            ) {
-                session.finish_attract();
-                return TitleAttractAction::Aborted;
-            }
-            return TitleAttractAction::Playing;
-        }
-        TitleAttractAction::Idle
-    }
-
     pub(super) fn try_start_windowed_cutscene(&mut self) {
         let Some(fmv_id) = self.session.host.world.active_fmv() else {
             return;
@@ -1344,5 +1186,23 @@ impl PlayWindowApp {
 impl BootUiState {
     pub(super) fn is_active(&self) -> bool {
         !matches!(self, BootUiState::Inactive)
+    }
+
+    /// The publisher-logo session, while the front end plays the logos.
+    pub(super) fn logos_session(
+        &self,
+    ) -> Option<&legaia_engine_title::publisher_logos::PublisherLogosSession> {
+        match self {
+            BootUiState::FrontEnd(fe) => fe.logos_session(),
+            _ => None,
+        }
+    }
+
+    /// The title session, while the front end shows the title card.
+    pub(super) fn title_session(&self) -> Option<&legaia_engine_title::title::TitleSession> {
+        match self {
+            BootUiState::FrontEnd(fe) => fe.title_session(),
+            _ => None,
+        }
     }
 }

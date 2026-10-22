@@ -70,7 +70,7 @@ use legaia_save::emu::MountedCard;
 impl LegaiaRuntime {
     /// The card in rack slot `slot`, if one is inserted.
     pub(crate) fn card(&self, slot: usize) -> Option<&MountedCard> {
-        self.cards.get(slot).and_then(|c| c.as_ref())
+        card_in(&self.cards, slot)
     }
 
     /// Per-**card-slot** snapshots: the pill row of the retail save screen.
@@ -332,6 +332,25 @@ impl LegaiaRuntime {
         })
         .to_string()
     }
+}
+
+/// The card in rack slot `slot`, off the rack field alone (so a caller can
+/// hold it beside other runtime fields).
+fn card_in(cards: &[Option<MountedCard>; CARD_SLOTS], slot: usize) -> Option<&MountedCard> {
+    cards.get(slot).and_then(|c| c.as_ref())
+}
+
+/// Whether any inserted card holds a readable save block - the title's
+/// Continue-enable scan over this host's rack, the browser twin of the native
+/// window's `rack_has_save` over its two ports.
+pub(crate) fn rack_has_save(cards: &[Option<MountedCard>; CARD_SLOTS]) -> bool {
+    (0..CARD_SLOTS).any(|slot| {
+        card_in(cards, slot).is_some_and(|card| {
+            legaia_engine_menus::save_select::card_block_snapshots(card)
+                .iter()
+                .any(|b| b.present)
+        })
+    })
 }
 
 #[cfg(test)]

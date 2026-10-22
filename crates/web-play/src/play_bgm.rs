@@ -92,7 +92,7 @@ impl LegaiaRuntime {
     /// (`play_title_bgm`), so a session still on it is left alone.
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     pub(crate) fn start_current_bgm_on_late_audio(&mut self) {
-        if self.boot_title.is_some() {
+        if self.boot_front_end.is_some() {
             return;
         }
         if self.audio_director().is_none_or(|d| d.is_attached()) {

@@ -416,8 +416,12 @@ pub(super) fn run_one(
     session.begin_new_game();
     // `<label>@<save>`: the run plays the scene with a library card save's
     // party, bag and story flags instead of the New Game party's.
+    // `title` / `title+continue[@save]`: the run enters through the boot
+    // front end instead of a scene (`front_end.rs`); a Continue's save is
+    // loaded off the card by the save-select, not seeded here.
+    let front_end = split_front_end(&spec.scene);
     let (label, save) = split_save(&spec.scene);
-    if let Some(save) = save {
+    if let Some(save) = save.filter(|_| front_end.is_none()) {
         match card_save(save) {
             Ok(sf) => session.host.world.load_full(sf),
             Err(e) => {
@@ -485,7 +489,7 @@ pub(super) fn run_one(
     // A label the scene set does not hold names no scene: entering it by
     // name loads an empty field (no MAN, no player) that then reads as a
     // softlock. Report it as the entry failure it is.
-    if !known_scenes.contains(scene) {
+    if front_end.is_none() && !known_scenes.contains(scene) {
         findings.push(mk(
             &session,
             "unknown_scene",
@@ -503,7 +507,13 @@ pub(super) fn run_one(
         };
     }
     let entered = catch_unwind(AssertUnwindSafe(|| {
-        let r = session.enter_scene_live(scene, &opts);
+        if let Some(route) = &front_end {
+            return enter_through_front_end(&mut session, route, &opts).map(|_| ());
+        }
+        let r = session
+            .enter_scene_live(scene, &opts)
+            .map(|_| ())
+            .map_err(|e| format!("{e:#}"));
         if let Some(id) = minigame {
             // The casino doors refuse a player with no coins (the cabinet
             // record's coin compare), so a run arriving through the door

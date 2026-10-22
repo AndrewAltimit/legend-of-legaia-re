@@ -30,6 +30,17 @@ impl HeadlessPlayWindow {
     /// ignored (the options start at their defaults,
     /// as a fresh browser profile's do).
     pub fn open(disc: &Path, scene: &str) -> Result<Self> {
+        Self::open_with(disc, scene, false)
+    }
+
+    /// [`Self::open`] as `play-window --boot-ui` launches: the boot front end
+    /// (publisher logos, then the title card) owns the frames until the
+    /// title resolves, over the pre-booted `scene`.
+    pub fn open_boot_ui(disc: &Path, scene: &str) -> Result<Self> {
+        Self::open_with(disc, scene, true)
+    }
+
+    fn open_with(disc: &Path, scene: &str, boot_ui: bool) -> Result<Self> {
         let save_dir = std::env::temp_dir().join("legaia-headless-window-saves");
         let mut app = assemble_play_window(PlayWindowLaunch {
             scene,
@@ -38,7 +49,7 @@ impl HeadlessPlayWindow {
             enable_audio: true,
             audio_detached: true,
             world_map: false,
-            boot_ui: false,
+            boot_ui,
             save_dir: &save_dir,
             card: None,
             cheat_file: None,
@@ -147,6 +158,14 @@ impl HeadlessPlayWindow {
     /// countdown, cached position and last decision).
     pub fn field_party_hud(&self) -> &legaia_engine_field::world_map_panel_host::FieldPartyHud {
         &self.app.field_party_hud
+    }
+
+    /// The boot front end, while it owns the frame (`open_boot_ui`).
+    pub fn front_end(&self) -> Option<&legaia_engine_session::FrontEnd> {
+        match &self.app.boot_ui {
+            BootUiState::FrontEnd(fe) => Some(fe),
+            _ => None,
+        }
     }
 
     /// Whether the window's pause menu owns the frame (the boot-UI arm).

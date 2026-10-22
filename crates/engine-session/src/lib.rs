@@ -10,6 +10,8 @@
 //!   world state it leaves (stage class, fog cap, monster texture slots).
 //! - [`battle_vram`] - the battle VRAM's per-tick re-stamps: facial animation,
 //!   the status / effect CLUT steps, the stage module's moves.
+//! - [`front_end`] - the boot front end (publisher logos, title card,
+//!   attract hand-off) both play hosts and the soak harness step.
 //! - [`audio_director`] - the BGM / SFX / CD-XA director over an `AudioSink`.
 //! - [`scene_actors`] - the scene-entry actor binding both hosts run before
 //!   building meshes (the lead's locomotion clips, NPC clip cursors, floor
@@ -31,6 +33,7 @@ pub mod battle_intro;
 pub mod battle_presentation;
 pub mod battle_stage;
 pub mod battle_vram;
+pub mod front_end;
 pub mod host_trace;
 pub mod hotkeys;
 pub mod mode_trace;
@@ -42,4 +45,5 @@ pub mod session;
 pub mod xa_banks;
 
 pub use audio_director::AudioDirector;
+pub use front_end::{AttractLane, FrontEnd, FrontEndScreen, FrontEndStep, NoMovieLane};
 pub use session::{BootConfig, BootSession, PauseMenuPress, TickClaims, TickOwner};

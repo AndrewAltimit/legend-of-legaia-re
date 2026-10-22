@@ -583,6 +583,7 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
         boot_ui,
         publisher_logos_atlas_data.is_some(),
         [port1_card.as_ref(), mounted_card.as_ref()],
+        &session.mode_seat,
     );
 
     // The window, then the loop.

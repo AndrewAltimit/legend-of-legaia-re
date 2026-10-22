@@ -1018,13 +1018,12 @@ pub(super) struct PlayWindowApp {
 pub(super) enum BootUiState {
     /// No boot UI - engine ticks the scene normally.
     Inactive,
-    /// Boot publisher logos (PROT 0895). Runs before the title screen.
-    /// The atlas + per-logo rects live on [`PlayWindowApp`] so the
-    /// renderer can sample one quad per frame.
-    PublisherLogos(legaia_engine_title::publisher_logos::PublisherLogosSession),
-    /// Title screen is active. Pad input drives the
-    /// [`legaia_engine_title::title::TitleSession`].
-    Title(legaia_engine_title::title::TitleSession),
+    /// The boot front end: the publisher logos (PROT 0895), then the title
+    /// card and its attract movie - the session's one front end
+    /// ([`legaia_engine_session::FrontEnd`]), which the browser play page
+    /// steps too. The logo atlas + per-logo rects live on [`PlayWindowApp`]
+    /// so the renderer can sample one quad per frame.
+    FrontEnd(legaia_engine_session::FrontEnd),
     /// Save-select panel is active.
     SaveSelect(legaia_engine_menus::save_select::SaveSelectSession),
     /// Field (pause) menu is active. The menu session itself is hosted by

@@ -140,6 +140,8 @@ pub(super) fn filter_scenes(all: &[String], extra: &[String]) -> Vec<String> {
                     .map(|s| format!("{s}+talk")),
             )
             .chain(extra.iter().cloned())
+            // The boot front end's two ways into the game.
+            .chain(FRONT_END_RUNS.iter().map(|s| s.to_string()))
             .collect(),
     };
     // `LEGAIA_SOAK_SAVE=<save>` plays every run from that card save. A

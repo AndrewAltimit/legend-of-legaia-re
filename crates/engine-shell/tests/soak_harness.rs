@@ -36,6 +36,11 @@
 //!   `LEGAIA_SOAK_FRAMES` is set. Report-only unless `LEGAIA_SOAK_STRICT=1`.
 //! - `soak_replay` - opt-in, runs only when `LEGAIA_SOAK_REPLAY=<file>` is set:
 //!   replays one saved finding and prints what the detectors see.
+//! - `front_end_new_game_reaches_free_roam` /
+//!   `front_end_continue_lands_a_library_save` - the boot front end
+//!   (logos, title, New Game through the naming prompt; Continue through the
+//!   save-select) on the shared `engine-session` front end. A run labelled
+//!   `title` / `title+continue[@save]` soaks from the same entry leg.
 //! - `soak_fixtures` - replays every committed fixture under
 //!   `scripts/replays/soak/` and reports whether each still reproduces.
 //!
@@ -66,6 +71,7 @@ use legaia_engine_system::input::PadButton;
 mod driver;
 mod environment;
 mod findings;
+mod front_end;
 mod policy;
 mod progress_trace;
 mod replay_files;
@@ -78,6 +84,7 @@ mod talk_visit;
 use driver::*;
 use environment::*;
 use findings::*;
+use front_end::*;
 use policy::*;
 use progress_trace::*;
 use replay_files::*;

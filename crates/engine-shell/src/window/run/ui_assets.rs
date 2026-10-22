@@ -305,15 +305,16 @@ pub(super) fn initial_boot_ui(
     boot_ui: bool,
     has_publisher_logos: bool,
     cards: [Option<&MountedCard>; 2],
+    seat: &legaia_engine_mode::mode::ModeSeat,
 ) -> BootUiState {
     if boot_ui {
-        if has_publisher_logos {
-            BootUiState::PublisherLogos(
-                legaia_engine_title::publisher_logos::PublisherLogosSession::new(),
-            )
-        } else {
-            BootUiState::Title(boot_cutscene::title_session(rack_has_save(cards), 0))
-        }
+        // The session's one cold-boot rule (`FrontEnd::cold_boot`): the
+        // logos when they built, else the title with the rack's Continue bit.
+        BootUiState::FrontEnd(legaia_engine_session::FrontEnd::cold_boot(
+            seat,
+            has_publisher_logos,
+            rack_has_save(cards),
+        ))
     } else {
         BootUiState::Inactive
     }

@@ -183,10 +183,9 @@ impl LegaiaRuntime {
         // title art.
         self.menu_assets = None;
         self.play_menu = None;
-        self.boot_title = None;
+        self.boot_front_end = None;
         self.boot_title_backdrop = None;
         self.title_atlas = None;
-        self.boot_logos = None;
         self.boot_logos_atlas = None;
         self.boot_logos_failed = false;
         self.menu_glyph_atlas = None;
