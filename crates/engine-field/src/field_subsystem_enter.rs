@@ -214,11 +214,13 @@ pub fn enter_context(flags_before: u32, pad_before: u32, leader: u16) -> EnterCo
 /// The `0x8E`/`0x8F` byte pair saved, forced to `0xFF`, and restored around the
 /// roster-seed call `FUN_801D9E1C`.
 ///
-/// PORT: FUN_801F1278 (the `+0x8E` / `+0x8F` mask round trip)
+/// REF: FUN_801F1278 (the `+0x8E` / `+0x8F` mask round trip,
+/// `0x801F12D8..0x801F1314`)
 ///
-/// NOT WIRED: the engine has no port of the refresh `FUN_801D9E1C` it
-/// brackets, so there is no call to mask the pair around; the round trip is
-/// net-transparent to every reader outside that call.
+/// A record of the round trip, not a port of it: the engine has no port of
+/// the refresh `FUN_801D9E1C` it brackets, so there is no call to mask the
+/// pair around, and the round trip is net-transparent to every reader
+/// outside that call.
 ///
 /// Two independent bytes, each stashed in its own register and put back after
 /// the call - so whatever `FUN_801D9E1C` does with them, the enter path is

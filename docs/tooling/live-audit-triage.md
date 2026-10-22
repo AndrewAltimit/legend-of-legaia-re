@@ -1688,6 +1688,29 @@ structure they blamed and are rewritten; every row stays held.
 | `80021248` `normalize_camera_relative_params` | held | the producer is ported; the actor family (`DAT_8007071C`, list `_DAT_8007C34C`) has no engine counterpart |
 | `801ead98` `decode_camera_readout` | wired | the "camera word" is the scratchpad region box `0x1F800384..87`, and the world map reads the same box the field publishes - PROT 0901's `0x801F8EE0..0x801F8EF4` is only a save / restore of it and the view-window bytes. Now wired: the dev menu carries the CAMERA row (`DevMenuRow::Camera`, retail row 3), and `DevMenuWorldExt::tick_host` hands it the box word and the follow switch `0x8007B606` each tick on both hosts |
 
+### The permissive-only rows, read against the bytes
+
+The audit's *live only on the permissive graph* rows carry `REPLACED-BY:` or
+`NOT WIRED:`, so neither graph disputes the disclosure. What the section does
+not ask is whether the tagged item ports the routine at all. Each row was read
+beside its routine's disassembly, against the image's own bytes where a dump's
+base was in doubt.
+
+| anchor | verdict | evidence |
+|---|---|---|
+| `800559EC` `read`, `80055AC8` `close` | full | the shared prologue (park `_DAT_8007BD08`, timer `0xB4`); `read`'s `FUN_8003E800(dst, len >> 11, 1)` is the synchronous copy; on retail `close` does nothing else (the dev `FUN_80060910` call is skipped) |
+| `8003DDA0` `StreamLoadQueue` | full | every store: `gp+0x90C`, `gp+0x8F0`, `gp+0x91C = 0x78`, the `[idx, cursor]` descriptor, `gp+0x984`, `gp+0x8BC` |
+| `80055B4C` `arm` | full | three instructions: `addiu a0,a0,1; sb a0,0x26b(ctx); sb zero,0x26c(ctx)` |
+| `801F17F8` `step` | partial | the stage machine matches; the `ctx[+0x276]`-gated call to `0x801F12D0` (`0x801F180C..0x801F181C`) and the `0x314` handle store (`0x801F1908`) are not carried, and the tag says so |
+| `801F17F8` `decode_request` | `REF` | a slice (`0x801F18CC..0x801F1914`) of the routine `step` already ports |
+| `8001D7F8` scene-name sync | full | the `+0x20` lowercase at `0x8001D82C..0x8001D850`, the 150-record scan with last match winning, the `strcpy` to `0x80084548` |
+| `800203EC`, `80020424`, `80020454`, `800204A4` actor node pool | full | the 143-slot top-down fill at stride `0xD8`, the pop / link / push-then-unlink store orders; the empty-stack and overflow guards are disclosed |
+| `801E0598` `reset` | partial | the two failure-latch clears (`0x801E05CC` / `0x801E05D4`) and the cold name-cache loop; about twenty further card globals are not modelled, and the phase and handle resets are the port's own |
+| `801E380C` `step`, `801E3C90` `read_file`, `801E3D68` `write_file`, `801E435C` `poll_events_a` | full | read from the menu image (PROT 0899, base `0x801CE818`); the phase stores `read_file` / `write_file` fold in are their caller's (`0x801E1618`, `0x801E15B4`) |
+| `801E13B8` `CardWriteMachine` | partial | the dispatch, delays and format retry match; the format arm's closing stores `0x801E164C..0x801E1660` are not modelled |
+| `80024190` field save actor `tick` | full | the jump table at `0x80010898` matches the state arms |
+| `801F1278` `MaskedBytes` | `REF` | the `+0x8E` / `+0x8F` save-force-restore (`0x801F12D8..0x801F1314`) writes nothing the engine models; the routine stays ported through its other slices |
+
 ## See also
 
 - [`port-catalog.md`](port-catalog.md) - the catalog, the `live` axis and the

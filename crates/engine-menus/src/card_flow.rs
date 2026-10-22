@@ -401,7 +401,8 @@ pub enum CardWriteEvent {
 
 /// The write / format machine over `DAT_801F329C`.
 ///
-/// PORT: FUN_801e13b8
+/// PORT: FUN_801e13b8 (partial: the format arm's three closing stores
+/// `0x801E164C..0x801E1660` are not modelled)
 #[derive(Debug, Clone, Default)]
 pub struct CardWriteMachine {
     state: CardWriteState,
@@ -433,7 +434,8 @@ impl CardWriteMachine {
     /// Advance one frame. `poll` is `DAT_801F3804` (this frame's raw poll)
     /// and `frame_delta` is `DAT_1F800393`.
     ///
-    /// PORT: FUN_801e13b8
+    /// PORT: FUN_801e13b8 (partial: the format arm's three closing stores
+    /// `0x801E164C..0x801E1660` are not modelled)
     pub fn tick(
         &mut self,
         poll: CardPollResult,
