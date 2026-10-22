@@ -927,6 +927,20 @@ case aims at those positions - case 6 on a caster, case 0 on a member, case
   `super_queue_replace_*` `.938` to `.996`). Elsewhere the live pair
   stands: a body carried by its own clip's root motion reads better on it
   (`battle_melee_hit_spark` `.760` against `.743`).
+- **After-image ghosts on the displayed frame.** The ghost walk
+  ([`FUN_80049348`](../subsystems/battle-actor-rendering.md#the-after-image-ghost-walk-fun_80049348))
+  re-poses each ghost from the history ring's cursor `+0x17A` and live pair
+  `+0x4C` at `step` and `2 * step` slots back, and a replay's ring is its
+  own clock: it runs the engine's frame step where the capture's passes ran
+  another, so the walk's depths reach other keyframes of the swing. The
+  image child seats each party seat's two ghosts from the capture's ring,
+  two slots down for the display lag, on the capture frame
+  (`RetailBattle::ghost_ring`, `LEGAIA_SEAT_GHOST_RING`,
+  `World::seat_battle_ghost_ring`), when the ring holds the clip the body
+  plays. `battle_melee_hit_spark`'s Vahn ran step-`3` passes, so his
+  displayed ghosts stand at cursors `80` / `56` where the step-`2` replay's
+  read `84` / `68` (`image` `.765` to `.783`). A monster's ring id is
+  `record[+0x77] + 0x10`, not a clip, and its ghosts stay the replay's.
 - **Heading.** On a capture past the end signal each placed combatant takes its
   heading `+0x46` (a `:facing` field after `:x:z`). The attack band's recompute
   stores it every frame of a swing and nothing turns the actor back, so the

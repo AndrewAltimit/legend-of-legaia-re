@@ -726,6 +726,40 @@ fn special_starter_commit_freezes_the_battle_and_ghosts_the_dash() {
     assert_eq!(ghosts[1].color, [0x50, 0x20, 0x20]);
 }
 
+/// A seated ghost is drawn from the slot the walk reads, re-posed from the
+/// playing clip at the ring's cursor and stood on the ring's pair - the
+/// capture's ghosts rather than the replay's.
+#[test]
+fn a_seated_ghost_ring_slot_draws_the_captured_keyframe_and_ground() {
+    let mut world = pose_test_world();
+    world.actors[1].active = true;
+    let mut bank: Vec<Option<MonsterAnimation>> = vec![None; 16];
+    bank[0xA] = Some(pose_test_clip(0x1A, 60, 0));
+    world.set_actor_battle_art_bank(0, std::sync::Arc::new(bank));
+    world.actors[0].battle.queued_anim = 0x1A;
+    world.commit_staged_battle_anim(0);
+    world.clock.frame_step = 2;
+    for _ in 0..20 {
+        world.tick_battle_animations();
+    }
+    // Quarter speed: the walk's depths are 4 and 8 battle frames.
+    assert!(world.seat_battle_ghost_ring(0, 4, 0x50, [-21, 116]));
+    assert!(world.seat_battle_ghost_ring(0, 8, 0x38, [-21, 106]));
+    let mut at = world.actors[0].battle_animation.clone().unwrap();
+    let want_near = at.seat_cursor(0x50);
+    let want_far = at.seat_cursor(0x38);
+    let ghosts = world.battle_ghost_draws();
+    assert_eq!(ghosts.len(), 2);
+    assert_eq!(ghosts[0].pose, want_near);
+    assert_eq!([ghosts[0].pos[0], ghosts[0].pos[2]], [-21, 116]);
+    assert_eq!(ghosts[1].pose, want_far);
+    assert_eq!([ghosts[1].pos[0], ghosts[1].pos[2]], [-21, 106]);
+    assert_eq!(ghosts[0].color, [0x60, 0x30, 0x30]);
+    // A body with no playing clip has nothing to re-pose from.
+    world.actors[1].battle_animation = None;
+    assert!(!world.seat_battle_ghost_ring(1, 4, 0x50, [0, 0]));
+}
+
 /// An art action constant (`>= 0x1B`) drops the whole battle to half speed
 /// (`0x8004BB78..0x8004BBA8`, `ctx[+0x243]` clear), and the frozen actor's
 /// pose stops advancing while a normal-rate actor's keeps moving.

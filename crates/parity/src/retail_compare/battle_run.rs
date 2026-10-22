@@ -493,6 +493,15 @@ pub(super) fn battle_image(
             legaia_engine_capture::effect_children::effect_children_env(&battle.effect_children),
         ));
     }
+    // ... and the after-image ghosts at the keyframes and ground the
+    // capture's history ring held: the replay's ring runs on its own frame
+    // step, so the walk's depths reach other keyframes of the swing.
+    if !battle.ghost_ring.is_empty() {
+        env.push((
+            "LEGAIA_SEAT_GHOST_RING",
+            legaia_engine_capture::ghost_ring::ghost_ring_to_env(&battle.ghost_ring),
+        ));
+    }
     // The live effect scrollers' rects as the displayed frame held them: a
     // scroller's rotation count is time since its effect was seated.
     if let Some(kv) = retail.vram_rects_env(opts.out_dir, &entry.label) {

@@ -526,6 +526,42 @@ fn action_fx_part_seed_is_the_displayed_rotation() {
     );
 }
 
+/// The ghosts on screen are the walk's slots read from the displayed frame,
+/// two ring slots down: `battle_melee_hit_spark`'s Vahn (rate `4`, step `2`)
+/// shows ring slots 4 and 6 - cursors `80` / `56` on `(-21, 116)` /
+/// `(-21, 106)` - and a slot of another clip is left out.
+#[test]
+fn the_ghost_ring_seed_is_the_displayed_frames_walk() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let p = 0x800E_C9E8;
+    put32(&mut ram, ACTOR_TABLE, p);
+    put8(&mut ram, p + 0x21D, 4);
+    let cursors = [128u16, 116, 104, 92, 80, 68, 56, 44];
+    for (i, &c) in cursors.iter().enumerate() {
+        let i = i as u32;
+        put8(&mut ram, p + 0x1FB + i, 0x11);
+        put16(&mut ram, p + 0x17A + 2 * i, c);
+        put32(
+            &mut ram,
+            p + POSITION_RING + 8 * i,
+            (-21i32) as u32 & 0xFFFF,
+        );
+        put32(&mut ram, p + POSITION_RING + 8 * i + 4, 136 - 5 * i);
+    }
+    let seeds = ram_read::retail_ghost_ring(&ram, 1);
+    let got: Vec<_> = seeds
+        .iter()
+        .map(|s| (s.slot, s.clip, s.depth, s.cursor, s.x, s.z))
+        .collect();
+    assert_eq!(
+        got,
+        vec![(0, 0x11, 2, 80, -21, 116), (0, 0x11, 4, 56, -21, 106)]
+    );
+    // The older ghost's slot holding another clip drops it.
+    put8(&mut ram, p + 0x1FB + 6, 0x10);
+    assert_eq!(ram_read::retail_ghost_ring(&ram, 1).len(), 1);
+}
+
 /// A burst child (the narrow arm's record `0x801F5D0C`) is seeded whole,
 /// turning or not: its `rand()`-rolled spread `+0x3E`, scale `+0x72`,
 /// heading `+0x96` and tail `+0x98` ride beside the position and channels.

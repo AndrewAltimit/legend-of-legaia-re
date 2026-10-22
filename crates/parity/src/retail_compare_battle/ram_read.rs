@@ -171,6 +171,74 @@ pub(super) fn retail_action_fx_parts(
         .collect()
 }
 
+/// A battle actor's ring-id history `+0x1FB`: one byte a battle frame,
+/// slot 0 the live frame (`FUN_80049348` reads `+0x1FB + s0`).
+const RING_ID: u32 = 0x1FB;
+/// Its anim-cursor history `+0x17A`: one halfword a battle frame.
+const RING_CURSOR: u32 = 0x17A;
+/// The ring's depth (`0x1F` shifts and slot 0).
+const RING_SLOTS: u32 = 32;
+/// The lowest ring id the ghost walk draws (`sltiu v0,v0,0x11` at
+/// `0x80049460`).
+const GHOST_RING_ID_MIN: u8 = 0x11;
+
+/// Every after-image ghost the **displayed** frame drew, as the history
+/// ring holds it ([`legaia_engine_capture::ghost_ring`]).
+///
+/// The walk `FUN_80049348` reads ring slots `step` and `2 * step` back from
+/// the frame it draws, `step = 8 / +0x21D` (`1` for a zero rate), doubled on
+/// a monster seat (`0x800493F0..0x80049428`), and skips a slot whose ring id
+/// is `0x10` or below. The displayed frame was drawn
+/// [`DISPLAYED_FRAMES_BACK`] slots before the RAM's, so each ghost on
+/// screen is that many slots further down. Only a ghost of the clip the
+/// displayed frame shows (the same ring id) is seated: the engine re-poses
+/// it from the body's playing clip.
+///
+/// Party seats only. A party seat's ring id is its committed dynamic slot
+/// `+0x1D9` (`0x80047FCC`), which names the clip the engine must be
+/// playing; a monster's is `record[+0x77] + 0x10` (`0x80048044..0x80048060`),
+/// which does not, and the Tail Fire captures' Gimard ghosts read worse
+/// seated on a replay standing elsewhere (`battle_gimard_tail_fire_a`
+/// `.925` to `.920`).
+pub(super) fn retail_ghost_ring(
+    ram: &[u8],
+    party_count: u8,
+) -> Vec<legaia_engine_capture::ghost_ring::GhostRingSeed> {
+    let mut out = Vec::new();
+    for pool in 0..u32::from(party_count.clamp(1, 3)) {
+        let slot = pool;
+        let p = game_anchors::u32_at(ram, ACTOR_TABLE + pool * 4);
+        if !in_ram(p) {
+            continue;
+        }
+        let rate = u32::from(game_anchors::u8_at(ram, p + 0x21D));
+        let step = (8u32.checked_div(rate).unwrap_or(0)).max(1);
+        let shown = game_anchors::u8_at(ram, p + RING_ID + DISPLAYED_FRAMES_BACK);
+        for depth in [step, 2 * step] {
+            let at = DISPLAYED_FRAMES_BACK + depth;
+            if at >= RING_SLOTS {
+                continue;
+            }
+            let id = game_anchors::u8_at(ram, p + RING_ID + at);
+            if id < GHOST_RING_ID_MIN || id != shown {
+                continue;
+            }
+            let (Ok(slot), Ok(depth)) = (u8::try_from(slot), u8::try_from(depth)) else {
+                continue;
+            };
+            out.push(legaia_engine_capture::ghost_ring::GhostRingSeed {
+                slot,
+                clip: id,
+                depth,
+                cursor: game_anchors::u16_at(ram, p + RING_CURSOR + at * 2),
+                x: i32::from(game_anchors::u32_at(ram, p + POSITION_RING + at * 8) as i16),
+                z: i32::from(game_anchors::u32_at(ram, p + POSITION_RING + at * 8 + 4) as i16),
+            });
+        }
+    }
+    out
+}
+
 /// `_DAT_8007BD30` - the effect pool's base pointer (`FUN_801E0080`).
 const EFFECT_POOL_PTR: u32 = 0x8007_BD30;
 /// The pool's child slots: `0x80` of `0x20` bytes from `+0x10`.
@@ -476,6 +544,7 @@ impl RetailBattle {
             cast_parts: retail_cast_parts(ram),
             action_fx_parts: retail_action_fx_parts(ram),
             effect_children: retail_effect_children(ram),
+            ghost_ring: retail_ghost_ring(ram, party_count),
             backdrop_slot_1_yaw: game_anchors::u16_at(ram, BACKDROP_SLOT_1_YAW),
             monster_ids,
             seat_chars: (0..u32::from(party_count))

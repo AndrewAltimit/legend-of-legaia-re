@@ -74,6 +74,14 @@ impl PlayWindowApp {
                     .world
                     .install_action_fx_part_snapshot(&parts);
             }
+            // ... and the after-image ghosts where the capture's history
+            // ring stood them (`LEGAIA_SEAT_GHOST_RING`).
+            if due && let Some(ghosts) = sc.seat_ghost_ring.take() {
+                legaia_engine_capture::ghost_ring::apply_ghost_ring(
+                    &mut self.session.host.world,
+                    &ghosts,
+                );
+            }
             // ... and the effect pool's billboards where retail's walker had
             // put them (`LEGAIA_SEAT_EFFECT_CHILDREN`).
             if due && let Some(children) = sc.seat_effect_children.take() {

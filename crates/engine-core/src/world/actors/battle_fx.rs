@@ -462,6 +462,59 @@ impl World {
         out
     }
 
+    /// Stand one after-image ghost where a capture's history ring holds it:
+    /// the pose-history slot the ghost walk reads for `depth` battle frames
+    /// back ([`Self::battle_ghost_draws`]) becomes the actor's playing clip
+    /// posed at `cursor` (12.4 sixteenths) on the ground pair `pos`
+    /// (`[x, z]`), ghost-eligible. Retail's ring keeps, per battle frame,
+    /// the cursor `+0x17A`, the live pair `+0x4C` and the ring id `+0x1FB`
+    /// the walk `FUN_80049348` re-poses each ghost from; a replay's ring is
+    /// the replay's own clock - another frame step, another strike tick -
+    /// so its ghosts stand at other keyframes than the capture's.
+    ///
+    /// `false` (nothing written) when the actor has no playing clip or no
+    /// history to seat into. A debug seam: the retail-comparison image
+    /// child is its caller.
+    pub fn seat_battle_ghost_ring(
+        &mut self,
+        slot: usize,
+        depth: usize,
+        cursor: u16,
+        pos: [i32; 2],
+    ) -> bool {
+        let at = self.ghost_ring_slots_per_frame() * depth;
+        let Some(actor) = self.actors.get_mut(slot) else {
+            return false;
+        };
+        let Some(player) = actor.battle_animation.as_ref() else {
+            return false;
+        };
+        let Some(template) = actor
+            .battle_pose_history
+            .get(at)
+            .or_else(|| actor.battle_pose_history.back())
+            .cloned()
+        else {
+            return false;
+        };
+        let mut seated = player.clone();
+        let pose = seated.seat_cursor(cursor);
+        let frame = crate::world::BattleGhostFrame {
+            pose,
+            pos: [pos[0], template.pos[1], pos[1]],
+            ghost_eligible: true,
+            clip_key: player.attach_key(),
+            variant_track: player.variant_track(),
+            frame: (cursor >> 4) as i16,
+        };
+        let hist = &mut actor.battle_pose_history;
+        while hist.len() <= at {
+            hist.push_back(template.clone());
+        }
+        hist[at] = frame;
+        true
+    }
+
     /// The objects actor `i`'s live body draws this frame, indexed by TMD
     /// object; `None` draws every object.
     ///

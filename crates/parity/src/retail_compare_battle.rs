@@ -333,6 +333,10 @@ pub struct RetailBattle {
     /// the displayed frame held them, which the image child stands in its
     /// own pool on the capture frame (`LEGAIA_SEAT_EFFECT_CHILDREN`).
     pub effect_children: Vec<legaia_engine_core::world::EffectChildSeed>,
+    /// The after-image ghosts the displayed frame drew, as each body's
+    /// history ring held them, which the image child seats over the
+    /// replay's ring on the capture frame (`LEGAIA_SEAT_GHOST_RING`).
+    pub ghost_ring: Vec<legaia_engine_capture::ghost_ring::GhostRingSeed>,
     /// `0x800891D2` - the Y angle the backdrop draw turns its slot 1 by, in
     /// 4096ths of a turn. Time spent in keeping fights since boot, so a
     /// replay carries it over rather than winding its own.

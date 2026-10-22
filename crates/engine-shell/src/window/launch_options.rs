@@ -343,6 +343,11 @@ pub struct ScreenshotConfig {
     /// clip cursor as the capture held it, landed on the capture frame
     /// ([`legaia_engine_capture::clip_cursors`]).
     pub seat_battle_clips: Vec<legaia_engine_capture::clip_cursors::ClipCursorSeed>,
+    /// `LEGAIA_SEAT_GHOST_RING=slot:clip:depth:cursor:x:z,...`: each after-image
+    /// ghost as the capture's history ring holds it, seated on the capture
+    /// frame ([`legaia_engine_capture::ghost_ring`]); taken once.
+    pub seat_ghost_ring:
+        std::cell::Cell<Option<Vec<legaia_engine_capture::ghost_ring::GhostRingSeed>>>,
 }
 
 /// Debug state `play-window` seeds before the first world tick, so a capture
@@ -725,6 +730,11 @@ impl ScreenshotConfig {
                 std::env::var("LEGAIA_SEAT_EFFECT_CHILDREN")
                     .ok()
                     .map(|v| legaia_engine_capture::effect_children::effect_children_from_env(&v)),
+            ),
+            seat_ghost_ring: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_GHOST_RING")
+                    .ok()
+                    .map(|v| legaia_engine_capture::ghost_ring::ghost_ring_from_env(&v)),
             ),
         }))
     }
