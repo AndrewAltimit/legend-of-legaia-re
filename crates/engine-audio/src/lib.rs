@@ -45,6 +45,7 @@ pub mod vab_bind;
 #[cfg(all(target_arch = "wasm32", feature = "audio-webaudio"))]
 mod webaudio;
 pub mod xa_clip_bank;
+pub mod xa_resample;
 pub mod xa_transport;
 
 pub use battle_voice::{
@@ -222,6 +223,10 @@ pub struct XaPlayback {
     /// start that *trails* the trigger by this many samples instead of
     /// racing ahead of the animation. Zero for FMV/BGM (no gate).
     pub start_delay: u32,
+    /// The CD decoder's 37.8 / 18.9 kHz to 44.1 kHz converter state
+    /// ([`xa_resample`]). Start it at its default; streams at any other
+    /// rate interpolate linearly and leave it untouched.
+    pub rate_conv: xa_resample::XaRateConverter,
 }
 
 impl XaPlayback {
@@ -262,6 +267,33 @@ impl XaPlayback {
             }
         }
         let stride = self.channels.n() as usize;
+        if xa_resample::is_cd_xa_rate(self.sample_rate) {
+            // The CD decoder's zig-zag converter: whole source frames are
+            // pulled as it needs them, so the cursor advances in steps of one.
+            let doubled = self.sample_rate == 18_900;
+            let looping = self.looping;
+            let mono = matches!(self.channels, legaia_xa::Channels::Mono);
+            let pcm = &self.pcm;
+            let cursor = &mut self.cursor;
+            let out = self.rate_conv.next(doubled, || {
+                let mut i = *cursor as usize;
+                if i >= frames {
+                    if !looping {
+                        return None;
+                    }
+                    *cursor = 0.0;
+                    i = 0;
+                }
+                *cursor += 1.0;
+                let l = pcm[i * stride];
+                let r = if mono { l } else { pcm[i * stride + 1] };
+                Some((l, r))
+            });
+            let Some((l, r)) = out else {
+                return (0, 0);
+            };
+            return self.finish_sample(l, r, frames);
+        }
         // Linear interpolate between two source samples.
         let i0 = self.cursor as usize;
         let i1 = (i0 + 1).min(frames.saturating_sub(1));
@@ -281,6 +313,15 @@ impl XaPlayback {
                 (lerp_i16(l0, l1, alpha), lerp_i16(r0, r1, alpha))
             }
         };
+        let out = self.finish_sample(l, r, frames);
+        // Advance one SPU-rate output sample.
+        self.cursor += self.sample_rate as f64 / SPU_INTERNAL_RATE as f64;
+        out
+    }
+
+    /// Apply the stream gain and the one-shot tail fade to one 44.1 kHz
+    /// sample pair.
+    fn finish_sample(&self, l: i16, r: i16, frames: usize) -> (i16, i16) {
         // Tail fade-out: a one-shot stream that hard-cuts from its last
         // (possibly loud) sample straight to silence pops. Ramp the final
         // few ms down to zero so exhaustion is click-free. Past the end
@@ -304,8 +345,6 @@ impl XaPlayback {
         let g = self.gain as i32;
         let l = (((l as i32 * g) >> 14) as f32 * fade).clamp(i16::MIN as f32, i16::MAX as f32);
         let r = (((r as i32 * g) >> 14) as f32 * fade).clamp(i16::MIN as f32, i16::MAX as f32);
-        // Advance one SPU-rate output sample.
-        self.cursor += self.sample_rate as f64 / SPU_INTERNAL_RATE as f64;
         (l as i16, r as i16)
     }
 }
@@ -647,6 +686,7 @@ impl OfflineMixer {
                 gain,
                 cursor: 0.0,
                 start_delay: start_delay_frames,
+                rate_conv: Default::default(),
             },
         );
     }
@@ -831,6 +871,7 @@ mod tests {
             gain: 0x4000,
             cursor: 0.0,
             start_delay: 0,
+            rate_conv: Default::default(),
         }
     }
 
@@ -910,6 +951,7 @@ mod tests {
             gain: 0x4000,
             cursor: 0.0,
             start_delay: 0,
+            rate_conv: Default::default(),
         };
         let (l, r) = xa.tick_for_spu();
         assert_eq!(l, 100);
@@ -926,6 +968,7 @@ mod tests {
             gain: 0,
             cursor: 0.0,
             start_delay: 0,
+            rate_conv: Default::default(),
         };
         let (l, r) = xa.tick_for_spu();
         assert_eq!((l, r), (0, 0));

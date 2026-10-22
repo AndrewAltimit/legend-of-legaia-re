@@ -251,6 +251,10 @@ pub fn cmd_spu(save: &Path, all: bool) -> Result<()> {
         Some((l, r)) => println!("  reverb depth (vLOUT/vROUT)   : 0x{l:04X} 0x{r:04X}"),
         None => println!("  reverb depth (vLOUT/vROUT)   : <not captured>"),
     }
+    match spu.cd_volume() {
+        Some((l, r)) => println!("  CD input volume (L/R)        : 0x{l:04X} 0x{r:04X}"),
+        None => println!("  CD input volume (L/R)        : <not captured>"),
+    }
     let reverb_mask = spu.voice_reverb_mask();
     match reverb_mask {
         Some(m) => println!("  voice reverb mask (EON)      : 0x{m:06X}"),

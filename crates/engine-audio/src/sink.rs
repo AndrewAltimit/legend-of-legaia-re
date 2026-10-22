@@ -106,6 +106,7 @@ pub trait AudioSink {
                 gain,
                 cursor: 0.0,
                 start_delay: 0,
+                rate_conv: Default::default(),
             });
         });
     }
@@ -136,6 +137,7 @@ pub trait AudioSink {
             gain,
             cursor: 0.0,
             start_delay: start_delay_frames,
+            rate_conv: Default::default(),
         };
         self.with_core(|s| crate::stage_xa_shout(s, shout));
     }

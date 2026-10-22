@@ -2002,6 +2002,51 @@ the group decoder reconstructs each channel. See
 [`formats/xa.md`](../formats/xa.md) for the sound-group decode and [Cutscene /
 STR](cutscene.md) for the interleaved A/V path.
 
+### The CD decoder's rate converter
+
+Decoded XA reaches the SPU's CD input at 44.1 kHz, converted by the CD
+decoder, not by the SPU's per-voice Gaussian interpolator. The converter is a
+fixed 7-for-6 polyphase filter: each 37.8 kHz sample enters a 32-entry
+history, and every sixth one releases seven outputs, each the dot product of
+the last 29 history entries with one of seven coefficient rows (the "zig-zag"
+kernel, tabulated in the nocash PSX specifications). An 18.9 kHz stream is
+pushed through the same filter with every sample entered twice. The rows sum
+to about `0x7400` against a `0x8000` scale, so the converter passes DC at about
+`0.906` (-0.86 dB), and its low-pass leaves far less image above the source
+Nyquist than a two-point interpolator: a 15 kHz tone's 21.3 kHz image sits at
+`0.059` of the tone through the converter against `0.439` through linear
+interpolation.
+
+The port runs this converter for every XA stream at 37.8 or 18.9 kHz
+(`legaia_engine_audio::xa_resample`, inside `XaPlayback`); a stream at any
+other rate keeps the linear path.
+
+### The CD input volume
+
+The SPU scales the CD input by its CD volume registers (`0x1F801DB0` /
+`0x1F801DB2`, Q15). Legaia writes them only through libsnd `SsSetSerialVol`
+(`FUN_800643C4`, register `= v * 0x102` for a `0..=127` level), from three
+places:
+
+| Writer | Level | Register | When |
+|---|---|---|---|
+| `FUN_8003EE7C(0)` | `0` | `0x0000` | every one-shot cue's start (`FUN_8003D53C`, before the seek) and end (`FUN_8003D764` state `8`) |
+| `FUN_8003EE7C(0x75)` at `0x8003D92C` | `117` | `0x75EA` | `FUN_8003D764` state `6`, once the drive reports a read (status bit `0x20`) |
+| `FUN_8002614C` / `FUN_8002657C`, the STR overlay | `0x3FFF` clamped to `127` | `0x7FFE` | a BGM volume change; a movie's start |
+
+So every one-shot voice - arts shouts, grunts, cast voices, field voice lines,
+minigame announcers - plays at `0x75EA`, about `0.921` (-0.71 dB), while a
+movie's audio plays at full scale. The save-state library agrees: every state
+holds `0x0000` (between cues), `0x75EA` (battle states with a voice up) or
+`0x7FFE`. `FUN_8003EE7C(v)` is `SsSetSerialVol(0, v, v)` followed by
+`SsSetSerialAttr(0, SS_MIX, 1)`; see `ghidra/scripts/funcs/8003ee7c.txt`,
+`8003d764.txt`, `800643c4.txt`. The port mixes cues at
+`legaia_engine_session::audio_director::XA_CUE_GAIN` and movies at unity, and
+`legaia_mednafen::PsxSpu::cd_volume` reads the register pair out of a mednafen
+state (`mednafen-state spu` prints it). Together with the converter, a real
+shout lands in the mix at `0.85` of its decoded RMS
+(`engine-session/tests/xa_cue_level_disc.rs`).
+
 ## Battle arts-voice shout path (engine)
 
 The Tactical-Arts **shout** - each character's voice clip when an art executes - is CD-XA audio,

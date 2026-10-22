@@ -43,7 +43,7 @@ mod xa_clips;
 pub use command_log::{AudioCommand, AudioCommandLog};
 #[cfg(test)]
 use sfx_banks::resolve_sfx_slot;
-pub use xa_clips::{XA_GAIN_UNITY, XaChannelSource, XaLaneStats, XaStageRequest};
+pub use xa_clips::{XA_CUE_GAIN, XA_GAIN_UNITY, XaChannelSource, XaLaneStats, XaStageRequest};
 
 /// The pause menu's cursor-step cue, re-exported from the one engine-side
 /// table both hosts fire from ([`legaia_engine_menus::menu_cues`], provenance

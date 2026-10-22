@@ -136,6 +136,15 @@ In that stream only about 10 % of 128-byte sound groups pass the standard XA val
 
 The `extracted/XA/*.XA` files copied by the disc-extract step are exactly those Form-1-truncated bytes. They are usable for byte-stable hashing only, not for decoding.
 
+## From decoded PCM to the mix
+
+The decoded 37.8 kHz PCM is not what the SPU hears. The CD decoder converts it
+to 44.1 kHz with a fixed 29-tap zig-zag filter, and the SPU scales the result
+by its CD-input volume, which the game sets per use (one level for voice cues,
+another for movies). Both belong to playback, not to the format; see
+[The CD decoder's rate converter](../subsystems/audio.md#the-cd-decoders-rate-converter)
+and [The CD input volume](../subsystems/audio.md#the-cd-input-volume).
+
 ## Scope limits
 
 - **8-bit ADPCM is decoded but has no disc to test against.** Every channel on the NA disc is 4-bit at 37.8 kHz ([settled](../reference/re-settled-threads/audio.md)), so the 8-bit path (see "Sound-group decode (8-bit)" above) is covered by synthetic unit tests only. It is wired through the demux, CLI and cutscene consumers, which map each channel's reported width, so a disc that uses 8-bit would decode without code changes; it is not verified bit-exact against a real 8-bit reference.

@@ -311,6 +311,18 @@ impl<'a> PsxSpu<'a> {
         Some((l, r))
     }
 
+    /// CD audio input volume `(left, right)` - SPU registers
+    /// `0x1F801DB0`/`0x1F801DB2`, the gain the SPU applies to the CD-DA /
+    /// XA-ADPCM stream the CD controller feeds it. Signed Q15: `0x7FFF` is
+    /// unity. libsnd's `SsSetSerialVol` (`FUN_800643C4`) writes `v * 0x102`
+    /// for a `0..=127` argument, so a register value names the libsnd level it
+    /// came from. `None` if the register shadow wasn't captured.
+    pub fn cd_volume(&self) -> Option<(i16, i16)> {
+        let l = self.reg_u16_at(0x1F80_1DB0)? as i16;
+        let r = self.reg_u16_at(0x1F80_1DB2)? as i16;
+        Some((l, r))
+    }
+
     /// Master volume `(left, right)` as the current accumulated output of
     /// mednafen's global sweep registers. Distinct from the libspu MVOL
     /// write that *drives* the sweep target - this is the post-sweep value

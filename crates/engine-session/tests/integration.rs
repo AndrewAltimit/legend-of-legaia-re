@@ -45,3 +45,4 @@ mod world_map_camera_offset_oracle;
 mod world_map_door_encounter_disc;
 mod world_map_fog_oracle;
 mod world_map_live;
+mod xa_cue_level_disc;
