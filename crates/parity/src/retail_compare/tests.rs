@@ -351,3 +351,20 @@ fn older_buffer_cell_rects_come_from_the_other_packet_buffer() {
     put16(&mut ram, node + 0x9C, 3);
     assert!(retail_older_buffer_cell_rects(&ram).is_empty());
 }
+
+/// A pair both sides park scores its exact coordinates: a park seat and the
+/// one `41` step short of it are distinct placements (town01 `P1[36]`).
+#[test]
+fn a_parked_pair_scores_its_exact_coordinates() {
+    let seat = (16320, 16320);
+    let stepped = (16320, 16256);
+    assert!(npc_parked(seat.0, seat.1) && npc_parked(stepped.0, stepped.1));
+    assert_eq!(npc_pair_score(stepped, stepped), 1.0);
+    assert_eq!(npc_pair_score(seat, seat), 1.0);
+    assert_eq!(npc_pair_score(stepped, seat), 0.0);
+    assert_eq!(npc_pair_score(seat, stepped), 0.0);
+    // Parked on one side only, and the drawn falloff, are unchanged.
+    assert_eq!(npc_pair_score(seat, (12608, 1984)), 0.0);
+    assert_eq!(npc_pair_score((4160, 11968), (4160, 11964)), 1.0);
+    assert_eq!(npc_pair_score((4160, 11968), (4160, 11840)), 0.0);
+}

@@ -2160,7 +2160,7 @@ measured channels.
 | `footing` | engine floor sample at retail's `(X, Z)` vs retail's footing: 1 within 2, 0 at 128 (field and overworld classes; not scored while a script holds retail's player height, [below](#a-script-held-height-is-not-a-footing)) |
 | `camera` | mean of eight parts: pitch and yaw (1 within 16, 0 at 256, wrapped), `H` (1 within 4, 0 at 128), each eye word and each focus word (1 within 16, 0 at 1024) |
 | `facing` | field class only: mean over the player and every placement standing on its retail seat, each heading 1 within 32, 0 at 512, wrapped ([below](#the-facing-channel)) |
-| `npcs` | field class only: mean over every placement retail draws or parks that no ambient stream walks: 0 when one side parks it on the off-map seat and the other draws it, else its `(X, Z)` distance, 1 within 8, 0 at 128 ([below](#the-npcs-channel)) |
+| `npcs` | field class only: mean over every placement retail draws or parks that no ambient stream walks: 0 when one side parks it on the off-map seat and the other draws it, exact coordinates when both park it, else its `(X, Z)` distance, 1 within 8, 0 at 128 ([below](#the-npcs-channel)) |
 | `bgm` | 1 when the engine's track-select word (`SceneHost::bgm_track_word`, the park sentinel `0x1000` included) equals retail's; the detail marks a held track on either side ([below](#a-held-track)) |
 | `fog_gate` | 1 when the engine's fog-pool gate equals retail's |
 | `view_window` | field class only: fraction of the four visible-tile window bytes equal to the zone camera's, or to the form the decoration pass clips them to at the engine's focus - a capture can land inside the pass ([encounter](../formats/encounter.md#the-window-is-not-cleared-with-the-scene)) |
@@ -2254,6 +2254,16 @@ park seat leaves it), was scored nowhere. This channel scores where each
 placement stands, matched by the same flat index, with ambient walkers left
 out for the same reason as there. The detail lists every miss with both
 positions and which side parks it.
+
+The park window only classifies a node as parked. A placement both sides park
+still scores its exact coordinates: 1 on retail's, 0 anywhere else. A park
+seat is a script literal, and the spawn section's `41` step after it is a
+whole step, so retail RAM carries no sub-step spread there - across the
+field and world-map corpus every parked pair the engine holds sits on
+retail's exact coordinates. A one-step miss is therefore a placement
+difference (`town01` `P1[36]` without its spawn section's `41 00 01` leg
+parks at `(16320, 16320)` against retail's `(16320, 16256)`), which the window
+alone would have scored as a match.
 
 Its misses fall into three shapes:
 
