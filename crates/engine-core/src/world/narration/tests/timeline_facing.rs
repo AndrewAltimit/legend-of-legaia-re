@@ -390,5 +390,8 @@ fn a_walk_on_a_turning_npc_waits_for_the_turn() {
         }
     }
     let t = armed_at.expect("the walk starts once the turn has landed");
-    assert!(t >= 5, "the walk waited out the turn's budget (armed at {t})");
+    assert!(
+        t >= 5,
+        "the walk waited out the turn's budget (armed at {t})"
+    );
 }
