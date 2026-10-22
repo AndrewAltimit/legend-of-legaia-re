@@ -68,6 +68,9 @@ pub(super) struct Tunables {
     pub(super) digest_every: u64,
     pub(super) menu_close_frames: u64,
     pub(super) battle_frames: u64,
+    /// `LEGAIA_SOAK_BATTLE_HP_POOL`: the monster HP left above which a fight
+    /// still landing actions outlasts `battle_frames` without being endless.
+    pub(super) battle_hp_pool: u32,
     pub(super) queue_cap: usize,
     /// `LEGAIA_SOAK_TRACE=N`: print a state line every N frames (replay
     /// triage; 0 = off).
@@ -168,6 +171,7 @@ impl Tunables {
             digest_every: 15,
             menu_close_frames: 900,
             battle_frames: env_u64("LEGAIA_SOAK_BATTLE_FRAMES").unwrap_or(18_000),
+            battle_hp_pool: env_u64("LEGAIA_SOAK_BATTLE_HP_POOL").unwrap_or(20_000) as u32,
             queue_cap: 4096,
             trace_every: env_u64("LEGAIA_SOAK_TRACE").unwrap_or(0),
             min_distinct: env_u64("LEGAIA_SOAK_MIN_DISTINCT").unwrap_or(3) as usize,
@@ -582,6 +586,12 @@ pub(super) fn run_one(
     let mut park: Option<(String, u64, u64)> = None;
     let mut menu_open_since: Option<u64> = None;
     let mut battle_since: Option<u64> = None;
+    // Endless battle: the frame the last action that moved a resource ended
+    // on, the resources it left, and whether the previous frame was already
+    // in the end-of-action gate.
+    type BattleProgress = (u64, Vec<(u16, u16)>, bool);
+    let mut battle_progress: Option<BattleProgress> = None;
+    let mut battle_pressed = 0u64;
     let mut prev_mode = session.host.world.mode;
     let mut prev_scene = session.host.world.active_scene_label.clone();
     let mut reported: BTreeSet<String> = BTreeSet::new();
@@ -1055,21 +1065,69 @@ pub(super) fn run_one(
             }
             prev_mode = w.mode;
         }
-        // Battle that never ends.
+        // Battle that never ends: one battle outlasts the window. Two things
+        // move that line. A fight with no action ending on a changed HP / MP
+        // for the whole window is endless however it started. And a fight
+        // still landing actions in the window's last quarter, against a
+        // monster side holding more than the HP pool, is long, not endless:
+        // a random pad chips about 200 a round off Cort's 50000. Below the
+        // pool a long fight stays a finding - a summon hitting for 1 reads
+        // as progress, and only the clock catches it.
         if w.mode == SceneMode::Battle {
             let since = *battle_since.get_or_insert(frame);
-            if frame - since > t.battle_frames {
+            let resources: Vec<(u16, u16)> = w
+                .actors
+                .iter()
+                .take(8)
+                .map(|a| (a.battle.hp, a.battle.mp))
+                .collect();
+            let (last, seen, was_in_gate) =
+                battle_progress.get_or_insert_with(|| (frame, resources.clone(), false));
+            let in_gate = w.battle_ctx.action_state == ActionState::EndOfAction.as_byte();
+            if in_gate && !*was_in_gate && resources != *seen {
+                *last = frame;
+                *seen = resources;
+            }
+            *was_in_gate = in_gate;
+            let idle = frame - *last;
+            let pool: u32 = w
+                .actors
+                .iter()
+                .take(8)
+                .filter(|a| a.battle_monster_id.is_some())
+                .map(|a| u32::from(a.battle.hp))
+                .sum();
+            if pad != 0 {
+                battle_pressed = frame;
+            }
+            let long_fight = idle <= t.battle_frames / 4 && pool > t.battle_hp_pool;
+            let due = idle > t.battle_frames || (frame - since > t.battle_frames && !long_fight);
+            // A command prompt the pad has left alone for the window's last
+            // quarter waits on the player, as retail's does.
+            let at = if due {
+                held_by(&session)
+            } else {
+                String::new()
+            };
+            let player_idle =
+                at.starts_with("battle:command:") && frame - battle_pressed > t.battle_frames / 4;
+            if due && !player_idle {
                 findings.push(mk(
                     &session,
                     "battle_endless",
                     frame,
-                    held_by(&session),
-                    format!("in Battle for {} frames", frame - since),
+                    at,
+                    format!(
+                        "in Battle for {} frames, {idle} since an action ended on a changed HP / MP, monster HP {pool}",
+                        frame - since
+                    ),
                 ));
                 break;
             }
         } else {
             battle_since = None;
+            battle_progress = None;
+            battle_pressed = frame;
         }
         // Pause menu that cannot be closed: the policy starts backing out
         // after at most 420 frames, so a menu open past the close budget

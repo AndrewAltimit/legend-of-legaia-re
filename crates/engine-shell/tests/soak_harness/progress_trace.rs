@@ -400,14 +400,15 @@ pub(super) fn trace_line(s: &NativeSession, pad: u16) -> String {
             if a.battle.max_hp > 0 || a.battle.liveness != 0 {
                 let _ = write!(
                     out,
-                    " a{i}:{}/{}L{}D{:?}P{}A{}T{}",
+                    " a{i}:{}/{}L{}D{:?}P{}A{}T{}C{}",
                     a.battle.hp,
                     a.battle.max_hp,
                     a.battle.liveness,
                     a.battle.hp_display,
                     a.battle.hp_bar_pending,
                     a.battle.damage_accum,
-                    a.battle.active_target
+                    a.battle.active_target,
+                    a.battle.current_anim
                 );
             }
         }
