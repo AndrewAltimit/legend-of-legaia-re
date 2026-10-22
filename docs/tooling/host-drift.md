@@ -349,6 +349,8 @@ is reached at runtime.
 | pause-menu press | `symbols_all` on `press_field_menu` at every host's press site. |
 | pause-menu open with no press | `symbols_all` on `open_field_menu` (the title's Continue / Options rows). |
 | party wipe | `symbols_all` on `GameOverOutcome::ReturnToTitle` across the two routing sites. |
+| title card | `symbols_all` on `FrontEndStep` + `AttractStart` + `AttractEnded` + `Picked` across the native boot UI and the page's `boot_title_step`: the session's front end steps the title, the host acts on the step. |
+| logos to title | `symbols_all` on `FrontEndStep` + `TitleOpened` across the native boot UI and the page's `boot_logos_step`: both take the seat's `boot_handoff` through the front end. |
 | dev-menu tick | `symbols_all` on `retail_packed` + `commit_equip_row` + the records-page toggle. |
 | dev-records model | `symbols_all` on `record_counters` + `records_screen` across the two model builders. |
 | play clock | `symbols_same` on `advance_play_time` across the two menu draw sites. |
@@ -1676,6 +1678,7 @@ screens.
 
 | Decision | Kernel |
 |---|---|
+| boot front end | `engine-session::front_end::FrontEnd` (logos, `ModeSeat::boot_handoff`, title tick and row counter, attract hand-off and skip edge); per host: the movie lane (`AttractLane`), the rack scan, the outcome's action. The soak harness steps the same object headless ([`soak-harness.md`](soak-harness.md#front-end-runs)) |
 | title Continue | `SaveSelectSession::title_continue`: retail's title card manager, no pause-menu gate (window: `BootUiState::SaveSelect`; page: `play_menu_open_title_continue`, a title-opened save sub-screen). The page once opened the pause menu's Load row, whose field gates could bounce a Continue back to the title |
 | pause-menu press and open | `BootSession::press_field_menu`, `World::field_menu_open_allowed` (dialogue engagement, narration, title card, locks, shop), `open_field_menu`, `close_field_menu` |
 | pause-menu stack | `field_menu_dispatch::tick_root_list`, `tick_open_subsession`, `finish_subsession`; per host: rack I/O, key table, options store (`SubsessionHandoff`) |

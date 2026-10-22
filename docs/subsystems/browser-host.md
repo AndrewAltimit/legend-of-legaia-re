@@ -592,6 +592,17 @@ Cross skips, and the quads come out of the shared
 window draws through, so the 640x480 boot stage letterboxes identically on
 both. The title theme starts when the card comes up, not under the logos.
 
+Neither stage is stepped here. Both exports step the session's one front end,
+`legaia_engine_session::FrontEnd`, which the native window's boot UI steps
+too: the logo skip and tick, the mode seat's `boot_handoff` to `CARD INIT`
+with the Continue scan at that moment, the title tick, the row counter onto
+the seat, and the attract hand-off with its skip edge. The page supplies the
+movie lane (`PageAttractLane` over `play_fmv`, settled again in the arming
+frame so an unplayable movie never outlives it), the rack scan
+(`cards::rack_has_save`) and what each outcome does. The page calls
+`boot_title_start` before `boot_logos_start`; the logos replace that title, and
+the front end raises a fresh one when they hand off.
+
 One start owns the page at a time. Every user-initiated start - New Game, a
 scene picked from the list, a save imported over a live title - bumps a page
 start generation and calls `play_cancel_start` first, which drops the logo and

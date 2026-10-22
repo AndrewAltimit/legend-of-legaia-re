@@ -161,13 +161,43 @@ conversation that cannot be left is invisible to it until someone opens that
 one. A talk run leaves the random encounter roll disarmed: a New Game party
 loses a dungeon's first fight, and the run is there for the records.
 
+### Front-end runs
+
+Every other run enters its scene by name. Two labels enter through the boot
+front end instead (`soak_harness/front_end.rs`), stepping the same
+`engine-session::front_end::FrontEnd` both play hosts step:
+
+- `title` cold-boots on the publisher logos, takes the mode seat's hand-off
+  to the title card and picks New Game, which enters the opening
+  (`BootSession::start_new_game`).
+- `title+continue[@<save>]` mounts the library card in port 1, opens the
+  title with Continue live, picks it, and walks the retail save-select
+  (`SaveSelectSession::title_continue` stepped through `SaveScreenFlow`, as
+  the native window's boot save-select is) onto the named save's block, then
+  resumes it through `BootSession::resume_save`. With no `@<save>` it takes
+  the card's first save.
+
+The front-end leg is scripted from the run's own state, not drawn from the
+policy, so a replay of the recorded pads lands where the run did. The library
+is `LEGAIA_SAVES_LIBRARY`, else the first `saves/library` found walking up
+from the crate, so a worktree reads its main checkout's.
+
+Two deterministic tests pin each chain end to end:
+`front_end_new_game_reaches_free_roam` (title, New Game, the prologue, the
+`town01` naming prompt confirmed through its retail Yes / No, the controls
+handed back in `town01`) and `front_end_continue_lands_a_library_save` (the
+save resumes in its own scene with its money, and keeps ticking). The native
+window's own boot-UI arm is checked through its headless frame path in
+`native_front_end.rs`.
+
 ### The scene set
 
 Every CDNAME label that resolves to a playable scene (a kingdom overworld, or
 a scene whose field MAN resolves), unioned with the decoded `0x3F`
 destinations of those scenes, plus the five minigame pseudo-scenes, a `+rt`
-round-trip twin of every scene, a `+talk` twin of every field scene, and a
-`+shop` twin of every scene with a shop. Nothing is hand-listed.
+round-trip twin of every scene, a `+talk` twin of every field scene, a
+`+shop` twin of every scene with a shop, and the two front-end runs. Nothing
+else is hand-listed.
 
 ## Policies
 
