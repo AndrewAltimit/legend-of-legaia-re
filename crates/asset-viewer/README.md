@@ -109,6 +109,14 @@ Walks `PROT.DAT` end-to-end and pages through every entry, showing
 classifier output (TIM hits, TMD hits, scene-bundle membership) and
 naming each entry from `CDNAME.TXT`.
 
+Keys (the same in the `tmd` and `stage` directory walks): `N` / `P` or the
+arrows step, `PgDn` / `PgUp` step 10, `Home` / `End` go to the first and last
+item, and digits followed by `Enter` jump straight to a number (`goto`): a
+PROT index here, the 1-based position the title shows in a directory walk.
+The window title is the only text these views draw, so it carries the key
+list and, while a number is typed, the number; an out-of-range number says
+the valid range there. `Esc` cancels a typed number, and otherwise quits.
+
 A `scene_tmd_stream` entry is previewed the way retail *places* it rather than
 drawn raw: object 1 dropped, and a second copy under the stage's transform
 (`legaia_scene_formats::battle_backdrop`). The transform comes from `SCUS_942.54`,

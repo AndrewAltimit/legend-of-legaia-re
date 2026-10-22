@@ -43,6 +43,7 @@ mod cli;
 mod dialog_app;
 mod display;
 mod field_app;
+mod goto;
 mod loaders;
 mod mesh_bounds;
 mod pad_keymap;
@@ -910,6 +911,8 @@ fn run(cmd: Cmd) -> Result<()> {
         mesh_browser,
         stage_browser,
         fatal: None,
+        goto: Default::default(),
+        base_title: String::new(),
     };
     event_loop.run_app(&mut app).context("run event loop")?;
     match app.fatal {

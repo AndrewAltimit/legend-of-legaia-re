@@ -3,6 +3,7 @@
 //! navigable sequence of [`Display`]s.
 
 use crate::display::{Display, MeshView, display_for_prot_entry};
+use crate::goto::{BROWSE_KEYS, GotoInput, goto_target};
 use crate::mesh_bounds::mesh_aabb;
 use crate::scene_files::short_path;
 use crate::stage_view::load_stage_for_view;
@@ -45,6 +46,10 @@ pub(crate) struct App {
     /// Why the window could not start (no window, no usable GPU adapter):
     /// `main` reports it once the event loop has exited.
     pub(crate) fatal: Option<anyhow::Error>,
+    /// A number being typed to jump to (`goto`).
+    pub(crate) goto: GotoInput,
+    /// The current display's title, without the go-to prompt.
+    pub(crate) base_title: String,
 }
 
 /// Directory walk for the `stage <DIR>` mode. Holds the list of files that
@@ -108,10 +113,26 @@ impl Browser {
 }
 
 impl App {
-    fn apply(&mut self, display: Display) {
+    /// The window title: the display's own, led by the go-to prompt while
+    /// a number is typed.
+    fn refresh_title(&self) {
+        let what = if self.browser.is_some() {
+            "PROT entry"
+        } else {
+            "item"
+        };
+        let title = match self.goto.prompt(what) {
+            Some(p) => format!("{p}  |  {}", self.base_title),
+            None => self.base_title.clone(),
+        };
         if let Some(w) = &self.window {
-            w.set_title(&display.title);
+            w.set_title(&title);
         }
+    }
+
+    fn apply(&mut self, display: Display) {
+        self.base_title = display.title.clone();
+        self.refresh_title();
         if let Some(r) = &self.renderer {
             self.texture = match display.image {
                 Some((rgba, w, h)) => match r.upload_texture(&rgba, w, h) {
@@ -214,9 +235,12 @@ impl App {
         };
         b.current = cursor;
         b.last_count = count;
-        let help = " - [N]ext [P]rev [PgDn]+10 [PgUp]-10 [Esc] quit";
         let mut display = display;
-        display.title.push_str(help);
+        display.title = format!(
+            "{}  (of 0..{})  -  {BROWSE_KEYS}",
+            display.title,
+            count.saturating_sub(1)
+        );
         self.apply(display);
     }
 
@@ -227,6 +251,57 @@ impl App {
             self.step_mesh(delta);
         } else if self.stage_browser.is_some() {
             self.step_stage(delta);
+        }
+    }
+
+    /// The number of items the active browse mode walks, and whether its
+    /// titles number them from 1 (the directory walks) or by PROT index.
+    fn browse_len(&self) -> Option<(usize, bool)> {
+        if let Some(b) = &self.browser {
+            Some((b.entry_count() as usize, false))
+        } else if let Some(mb) = &self.mesh_browser {
+            Some((mb.count(), true))
+        } else {
+            self.stage_browser.as_ref().map(|sb| (sb.count(), true))
+        }
+    }
+
+    /// Show item `pos` (a position in the active browse mode's list).
+    fn show_at(&mut self, pos: usize) {
+        if let Some(b) = self.browser.as_mut() {
+            b.current = pos as u32;
+            self.show_browser_current();
+        } else if let Some(mb) = self.mesh_browser.as_mut() {
+            mb.current = pos;
+            self.show_mesh_current();
+        } else if let Some(sb) = self.stage_browser.as_mut() {
+            sb.current = pos;
+            self.show_stage_current();
+        }
+    }
+
+    /// Enter: jump to the typed number, or say it is out of range.
+    fn goto_typed(&mut self) {
+        let Some(typed) = self.goto.take() else {
+            return;
+        };
+        let Some((count, one_based)) = self.browse_len() else {
+            return;
+        };
+        match goto_target(typed, count, one_based) {
+            Some(pos) => self.show_at(pos),
+            None => {
+                let range = if one_based {
+                    format!("1..={count}")
+                } else {
+                    format!("0..={}", count.saturating_sub(1))
+                };
+                self.base_title = format!(
+                    "No {typed} here (the range is {range})  |  {}",
+                    self.base_title
+                );
+                self.refresh_title();
+            }
         }
     }
 
@@ -258,13 +333,14 @@ impl App {
         let display = match load_stage_for_view(&path) {
             Ok(payload) => {
                 let title = format!(
-                    "STAGE [{}/{}] {}  ({} verts, {} lines)  - {}  [N]ext [P]rev [PgDn]+10 [PgUp]-10 [Esc] quit",
+                    "STAGE [{}/{}] {}  ({} verts, {} lines)  - {}  {}",
                     idx,
                     total,
                     short_path(&path),
                     payload.positions.len(),
                     payload.indices.len() / 2,
                     label,
+                    BROWSE_KEYS,
                 );
                 Display {
                     title,
@@ -329,13 +405,14 @@ impl App {
         let display = match load_tmd_for_view(&path, &extras, no_textures) {
             Ok(TmdViewData::Flat { positions, indices }) => {
                 let title = format!(
-                    "TMD [{}/{}] {}  ({} verts, {} tris) untextured  - {}  [N]ext [P]rev [PgDn]+10 [PgUp]-10 [Esc] quit",
+                    "TMD [{}/{}] {}  ({} verts, {} tris) untextured  - {}  {}",
                     idx,
                     total,
                     short_path(&path),
                     positions.len(),
                     indices.len() / 3,
                     label,
+                    BROWSE_KEYS,
                 );
                 Display {
                     title,
@@ -348,7 +425,7 @@ impl App {
             }
             Ok(TmdViewData::Vram(payload)) => {
                 let title = format!(
-                    "TMD [{}/{}] {}  ({} tri-verts) vram={} TIMs from {}  - {}  [N]ext [P]rev [PgDn]+10 [PgUp]-10 [Esc] quit",
+                    "TMD [{}/{}] {}  ({} tri-verts) vram={} TIMs from {}  - {}  {}",
                     idx,
                     total,
                     short_path(&path),
@@ -356,6 +433,7 @@ impl App {
                     payload.tim_count,
                     payload.tim_dir_label,
                     label,
+                    BROWSE_KEYS,
                 );
                 Display {
                     title,
@@ -446,12 +524,37 @@ impl ApplicationHandler for App {
                     },
                 ..
             } => match code {
-                KeyCode::Escape => event_loop.exit(),
+                // Esc first cancels a number being typed, then quits.
+                KeyCode::Escape => {
+                    if self.goto.cancel() {
+                        self.refresh_title();
+                    } else {
+                        event_loop.exit();
+                    }
+                }
                 KeyCode::ArrowRight | KeyCode::KeyN | KeyCode::Space => self.step(1),
                 KeyCode::ArrowLeft | KeyCode::KeyP => self.step(-1),
                 KeyCode::PageDown => self.step(10),
                 KeyCode::PageUp => self.step(-10),
-                _ => {}
+                KeyCode::Home if self.browse_len().is_some() => self.show_at(0),
+                KeyCode::End => {
+                    if let Some((n, _)) = self.browse_len().filter(|(n, _)| *n > 0) {
+                        self.show_at(n - 1);
+                    }
+                }
+                KeyCode::Enter | KeyCode::NumpadEnter => self.goto_typed(),
+                KeyCode::Backspace => {
+                    self.goto.backspace();
+                    self.refresh_title();
+                }
+                code => {
+                    if let Some(d) = digit_of(code)
+                        && self.browse_len().is_some()
+                    {
+                        self.goto.push(d);
+                        self.refresh_title();
+                    }
+                }
             },
             WindowEvent::RedrawRequested => {
                 if let Some(r) = &self.renderer {
@@ -502,4 +605,22 @@ impl ApplicationHandler for App {
             _ => {}
         }
     }
+}
+
+/// The digit a number-row or keypad key types.
+fn digit_of(code: KeyCode) -> Option<u8> {
+    use KeyCode::*;
+    Some(match code {
+        Digit0 | Numpad0 => 0,
+        Digit1 | Numpad1 => 1,
+        Digit2 | Numpad2 => 2,
+        Digit3 | Numpad3 => 3,
+        Digit4 | Numpad4 => 4,
+        Digit5 | Numpad5 => 5,
+        Digit6 | Numpad6 => 6,
+        Digit7 | Numpad7 => 7,
+        Digit8 | Numpad8 => 8,
+        Digit9 | Numpad9 => 9,
+        _ => return None,
+    })
 }
