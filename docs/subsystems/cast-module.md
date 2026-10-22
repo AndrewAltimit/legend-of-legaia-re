@@ -3188,6 +3188,18 @@ without the commit, so the creature starts with whatever `+0x21B` /
 `+0x176` the seat last held - the zeros the previous cast's `0xFF` arm left.
 Its window first applies at the clip's first commit.
 
+The seat's presentation words it does reset: colour `+0x04 = -1`
+(`0x801F1D5C`), mode word `+0x08 = 0` (`0x801F1D68`), tint state
+`+0x21C = 0` (`0x801F1E7C`) and impact selector `+0x21F = 0` (`0x801F1E88`).
+A previous creature can leave the seat in the defeat fade (`+0x21C = 2`), and
+the tint pass `FUN_80050120` keeps running on seat 7 like any other. Its
+party fade-done reset (`+0x21C = 0`, `+0x1DA = 0`, `+0x1DC = 1`) is gated on
+the seat index (`sltiu v0,s2,0x3` at `0x80050330`), so it never touches the
+creature. Both matter to a clip-gated module: an engine seat that kept the
+stale fade and took the party reset lost the clip PROT 0907's arm 7 staged,
+arm 8 bumped `0` to `1` instead of `1` to `2`, and arm 10 held the band's
+`0x36` for good. Port: `World::seat_summon_actor`, `World::tick_battle_impact_fx`.
+
 Module stores in the Seru band (PROT 0903..0913):
 
 | Module | Address | Arm | Store |

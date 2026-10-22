@@ -939,7 +939,7 @@ impl World {
         }
     }
 
-    pub(super) fn tick_battle_impact_fx(&mut self) {
+    pub(in crate::world) fn tick_battle_impact_fx(&mut self) {
         use legaia_engine_battle_vm::battle_formulas::{FadeInputs, TintWords, tint_sm_step};
         use legaia_engine_battle_vm::battle_impact_fx as ifx;
         // The tag-`0x67` ribbon is a per-frame call in retail: re-derived
@@ -959,12 +959,19 @@ impl World {
                 (entry.is_some() && entry == cached, cached)
             })
             .collect();
-        for (a, (on_knockdown, cached_knockdown)) in self.actors.iter_mut().zip(knockdown) {
+        let creature_seat = self.casting.summon_actor_slot.map(usize::from);
+        for (i, (a, (on_knockdown, cached_knockdown))) in
+            self.actors.iter_mut().zip(knockdown).enumerate()
+        {
             // `+0x22C == 0` (no battle record) skips the slot.
             if !a.active {
                 continue;
             }
-            let party = a.battle_monster_id.is_none();
+            // Retail's party test is the seat index (`sltiu v0,s2,0x3` at
+            // `0x80050250` / `0x80050330`), so the summon creature - seat 7,
+            // no monster record either - is not a party seat: its defeat
+            // fade ends without the party fade-done reset of `+0x1DA`.
+            let party = a.battle_monster_id.is_none() && creature_seat != Some(i);
             // A monster standing dead and idle outside the defeat fade - no
             // reaction playing, state `0`, its lanes still lit - is a body the
             // death arm (`0x8004B66C`, the knockdown's natural end on HP 0)
@@ -974,7 +981,7 @@ impl World {
             // waits on its lanes draining (`+0x04 == 0`), so the engine puts
             // such a body into the fade rather than let it stand lit for
             // good.
-            if !party
+            if a.battle_monster_id.is_some()
                 && a.battle.hp == 0
                 && a.battle.render_flag == 0
                 && a.battle_reaction.is_none()

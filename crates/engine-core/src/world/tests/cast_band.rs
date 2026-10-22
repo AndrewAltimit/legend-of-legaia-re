@@ -7,6 +7,7 @@ use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
 mod band_flow;
+mod creature_seat_reuse;
 mod fight_kind_gates;
 mod hit_folds;
 mod module_completion;
