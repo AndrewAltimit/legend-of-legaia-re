@@ -110,7 +110,7 @@
       <tr><td>buy list</td><td>list window</td><td>content-builder list (case <code>0x0B</code>), priced against gold; the row words are <code>[class][0x800 dim][item id]</code> and the record&rsquo;s last entries are hoisted to the top</td></tr>
       <tr><td>35 quantity</td><td>(138, 100, 168&times;50)</td><td>&ldquo;Have N&rdquo;, &ldquo;How many will you buy?&rdquo;, then <em>quantity / bound</em> at +34 px; the price appears once, in the running total, whose digit-field width comes from the <em>unit</em> price</td></tr>
       <tr><td>39 sell detail</td><td>(14, 95, 144&times;53)</td><td>name, description, price row (5-digit, half price), accessory passive name + description</td></tr>
-      <tr><td>31 Point Card toast</td><td>-</td><td>8-digit balance between a heading and a &ldquo;point(s)&rdquo; label</td></tr>
+      <tr><td>31 Point Card toast</td><td>-</td><td>8-digit balance between a heading and a &ldquo;point(s)&rdquo; label; the quantity commit closes the stepper first, so the toast rides over the name, gold, detail and compare windows alone</td></tr>
     </tbody>
   </table>
   <p><strong>The last rows come first - for Platinum Card holders.</strong> The buy list is built by the SCUS content builder&rsquo;s case <code>0x0B</code>, which splits the record at <code>count &minus; 3</code>: entries at or past the split go into the row buffer first, drawn in the teal pen even when the player cannot afford them, and the rest follow. Those last three record slots are walked only when the party carries or wears item <code>0xFF</code>, the <strong>Platinum Card</strong>; otherwise the builder stops three entries short. Every shop record reserves the three slots and pads the unused ones with unsellable template ids, so the card&rsquo;s exclusive strip is 0, 2 or 3 rows wide - and it lines up one-for-one with the <code>*</code> markers the walkthrough tables carry. Those markers were read as &ldquo;new in this town&rdquo;, but the same item is starred in more than one town. A retail capture confirms the gate: Retock&rsquo;s Items Shop builds thirteen rows, the last three first, while the party carries the card, and ten rows in record order once the card is taken out of the bag.</p>
@@ -120,14 +120,80 @@
     <div class="disclosure-body">
       <p>The picker cursor word (<code>DAT_801E46BC</code>): low 12 bits = selected row; bit <code>0x1000</code> = blink phase; bit <code>0x2000</code> = parked presentation (every row drawn, keyed to blink); bit <code>0x4000</code> = cursor suppressed. The stock list re-runs the same decode against <code>_DAT_8007BB98</code>; shared kernel <code>engine-menus::shop::shop_cursor_mode</code>.</p>
       <p>Opening and closing slide the windows through <a href="../formats/window-script.html">widget scripts</a>: the open script (<code>DAT_801E4E38</code>) brings in vendor name <code>0x21</code>, mode panel <code>0x2A</code>, gold <code>0x20</code>, <code>0x28</code> and <code>0x22</code>; the Sell transition (<code>DAT_801E4E54</code>) slides away <code>0x28</code> / <code>0x2A</code> / <code>0x22</code> and keeps the gold and name plates. The randomizer&rsquo;s Seru-trading vendor patches exactly these seams to grow the panel to four rows.</p>
+      <p><strong>Leaving</strong> runs the same machinery backwards. Quit, or a cancel on the mode panel, selects sub-screen <code>0</code> (<code>FUN_801DD12C</code>): its first frame hands the widget VM the close-all script <code>0x801E4A78</code>, every window slides back to its park edge, and only once the widget VM is idle does the fade start. The exit draws no text of its own - the next line is the merchant&rsquo;s script resuming past op <code>0x49</code>. The port&rsquo;s <code>ShopExit</code> beat is that sub-screen: the windows keep their content while they slide out, and the session is dropped on the way out of the beat.</p>
+      <p>The opening slides start on the tick after the fade lands, so the first window frame is already one step in from the park edge. Retail then holds black for about fifty frames while the overlay loads; the port does not reproduce that wait.</p>
       <p>Every equipment bonus record on the disc carries the <code>0x40</code> no-passive sentinel, so the sell panel&rsquo;s passive lines always come from the item-effect table arm.</p>
     </div>
   </details>
 </section>
 
+<section class="doc-section" id="window-text">
+  <h2>Window text and the compare panels</h2>
+  <p>No shop label is computed. Every string a window prints sits in the menu overlay&rsquo;s own string pool and is loaded by address by that window&rsquo;s renderer. The port reads the same strings out of your disc&rsquo;s PROT 0899 at boot (<code>engine-menus::shop::ShopLabels</code>); a session without the overlay draws those windows with no label text rather than with invented text.</p>
+  <table class="data-table">
+    <thead><tr><th>Window</th><th>Renderer</th><th>What it prints</th></tr></thead>
+    <tbody>
+      <tr><td>42 picker</td><td><code>FUN_801D4868</code></td><td>the three mode rows</td></tr>
+      <tr><td>41 party compare</td><td><code>FUN_801D4C28</code></td><td>per-member stat block, or one of two notes</td></tr>
+      <tr><td>35 buy quantity</td><td><code>FUN_801D5510</code></td><td>held count, prompt</td></tr>
+      <tr><td>36 recipient</td><td><code>FUN_801D56FC</code></td><td>bag row, then one row per present member</td></tr>
+      <tr><td>37 sell quantity</td><td><code>FUN_801D5944</code></td><td>prompt</td></tr>
+      <tr><td>39 sell detail</td><td><code>FUN_801D5AE8</code></td><td>price, or the unsellable note</td></tr>
+      <tr><td>31 Point Card toast</td><td><code>FUN_801DCE20</code></td><td>heading, balance, unit</td></tr>
+    </tbody>
+  </table>
+  <p>Three of the labels carry the string primitive&rsquo;s two-byte <strong>name escapes</strong>, expanded at draw time (<code>FUN_80036888</code>): each recipient row opens with <code>0xC1 n</code>, character <code>n</code>&rsquo;s name, so a row reads as that character&rsquo;s own sentence; the toast heading opens with <code>0xC2 0xFE</code>, the Point Card&rsquo;s item name. An escape&rsquo;s operand can be <code>0</code>, so a plain C-string read stops inside the label - the port keeps escapes whole and resolves them off the live roster.</p>
+
+  <h3>The party compare (window 41)</h3>
+  <p>One block per <strong>present</strong> party member, walked through the party list; a member who has not joined has no block. Each block takes the first rule that applies:</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The party compare decision for one member. If any of the member's eight equip bytes equals the staged item, print the equipped note. Otherwise, if the item is not equipment, print current ATK, UDF and LDF with no arrows. Otherwise, if the equip mask excludes the member, print the cannot-equip note. Otherwise do a trial equip: write the piece into its slot byte, recompute the stats, restore the byte, and print each stat with a rise or fall arrow and the trial value where it changed.">
+      <defs><marker id="shc-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="10" y="20" width="180" height="56" rx="5"/>
+      <text class="dg-label" x="100" y="44">Already equipped?</text><text class="dg-sub" x="100" y="62">8 equip bytes vs item</text>
+      <rect class="dg-node" x="230" y="20" width="180" height="56" rx="5"/>
+      <text class="dg-label" x="320" y="44">Not equipment?</text><text class="dg-sub" x="320" y="62">item record +0 != 1</text>
+      <rect class="dg-node" x="450" y="20" width="180" height="56" rx="5"/>
+      <text class="dg-label" x="540" y="44">Mask excludes?</text><text class="dg-sub" x="540" y="62">equip record +6</text>
+      <rect class="dg-node-accent" x="670" y="20" width="180" height="56" rx="5"/>
+      <text class="dg-label" x="760" y="44">Trial equip</text><text class="dg-sub" x="760" y="62">write, recompute, restore</text>
+      <path class="dg-edge" d="M190 48 L228 48" marker-end="url(#shc-arrow)"/>
+      <path class="dg-edge" d="M410 48 L448 48" marker-end="url(#shc-arrow)"/>
+      <path class="dg-edge" d="M630 48 L668 48" marker-end="url(#shc-arrow)"/>
+      <text class="dg-edge-label" x="209" y="40" text-anchor="middle">no</text>
+      <text class="dg-edge-label" x="429" y="40" text-anchor="middle">no</text>
+      <text class="dg-edge-label" x="649" y="40" text-anchor="middle">no</text>
+      <rect class="dg-node-ok" x="10" y="150" width="180" height="56" rx="5"/>
+      <text class="dg-label" x="100" y="174">Equipped note</text><text class="dg-sub" x="100" y="192">nothing else</text>
+      <rect class="dg-node-ok" x="230" y="150" width="180" height="56" rx="5"/>
+      <text class="dg-label" x="320" y="174">Current stats</text><text class="dg-sub" x="320" y="192">ATK / UDF / LDF, no arrows</text>
+      <rect class="dg-node-warn" x="450" y="150" width="180" height="56" rx="5"/>
+      <text class="dg-label" x="540" y="174">Cannot-equip note</text><text class="dg-sub" x="540" y="192">characters 0..=2 tested</text>
+      <rect class="dg-node-ok" x="670" y="150" width="180" height="56" rx="5"/>
+      <text class="dg-label" x="760" y="174">Current, arrow, trial</text><text class="dg-sub" x="760" y="192">arrow only where it changes</text>
+      <path class="dg-edge" d="M100 76 L100 148" marker-end="url(#shc-arrow)"/>
+      <path class="dg-edge" d="M320 76 L320 148" marker-end="url(#shc-arrow)"/>
+      <path class="dg-edge" d="M540 76 L540 148" marker-end="url(#shc-arrow)"/>
+      <path class="dg-edge" d="M760 76 L760 148" marker-end="url(#shc-arrow)"/>
+      <text class="dg-edge-label" x="108" y="116">yes</text>
+      <text class="dg-edge-label" x="328" y="116">yes</text>
+      <text class="dg-edge-label" x="548" y="116">yes</text>
+    </svg>
+    <figcaption>The trial equip writes the staged piece into the slot byte its class names, recomputes the stats (<code>FUN_801CF650</code> around <code>FUN_80042558</code>) and restores the byte. The class is not the byte index: the weapon goes to a per-character slot, and head, body and legs map through a small remap table.</figcaption>
+  </figure>
+  <p>The rise and fall arrows are not font characters but cells of the menu-glyph page, the row right after the numerals (<code>FUN_8003C1F8</code>, glyphs <code>4</code> and <code>5</code>, in the rise and fall inks). The port attaches those cells to the font with the numerals, so every separator glyph - the compare arrows here and on the Equip screen, the quantity windows&rsquo; slash - draws from the same page.</p>
+
+  <h3>The recipient rows and the item detail line</h3>
+  <ul class="bullets">
+    <li><strong>Recipient (window 36).</strong> The bag row first, then one row per present member. A member the item&rsquo;s mask excludes keeps the row in the dim ink; the hand still lands on it, and a confirm there buzzes.</li>
+    <li><strong>Item detail (window 34).</strong> The item name and held count, then the executable&rsquo;s detail printer (<code>FUN_800337B0</code>): an accessory with a passive prints the passive&rsquo;s description; anything else prints its description. Equipment without one prints a slot template naming who can wear it, followed by one or two label / value pairs taken from the equipment record&rsquo;s own bonus bytes - ATK for a weapon, UDF and INT for headgear, UDF and LDF for armour, ATK and LDF for footwear.</li>
+  </ul>
+  <p>All of this is capture-confirmed on Retock&rsquo;s Arms Shop and Items Shop. The shops are interiors of the same scene reached only through their doors: a position poke straight into a shop leaves its room inactive, its merchant neither drawn nor talkable, so the probe pokes the door tile instead and talks to the merchant from there.</p>
+</section>
+
 <section class="doc-section" id="engine-port">
   <h2>In the port</h2>
-  <p>The stock scan is <code>legaia_scene_formats::shop_stock</code>; the session, quantity stepper, recipient picker, Point Card bank and row-ink rules live in <code>engine-menus::shop</code>; and the screens - every window above, the prize exchange and the coin counter - are composed once in <code>engine-screens</code> and drawn by both play hosts. The grant kernel refuses a buy past 99, as the retail clamp does.</p>
+  <p>The stock scan is <code>legaia_scene_formats::shop_stock</code>; the session, quantity stepper, recipient picker, Point Card bank and row-ink rules live in <code>engine-menus::shop</code>; <code>engine-menu-runtime</code>&rsquo;s <code>MenuRuntime</code> runs the session over a live world; and the screens - every window above, the prize exchange and the coin counter - are composed once in <code>engine-screens</code> and drawn by both play hosts. The grant kernel refuses a buy past 99, as the retail clamp does.</p>
   <p>A merchant&rsquo;s record reaches op <code>0x49</code> through a <strong>talk</strong>, so what parks on the op is the inline dialogue runner, not the field script. The runner holds the conversation on the op while the shop is armed and takes the Done edge on the frame after the screen closes, which is what clears the arm; a talk that ended at the op instead would leave a stale Done edge, and the next shop talk would spend it and open nothing. The casino prize counter parks the same way: retail&rsquo;s op <code>0x49</code> ignores the sub-op while the park word <code>_DAT_8007B450</code> is up, taking the Done arm on <code>1</code> and otherwise returning the unchanged PC (<code>0x801E097C</code>), so every screen the op opens holds its record until it closes.</p>
   <p>The literal restore amounts of consumables stay curated, because they live in overlay code rather than in the item-effect table.</p>
 </section>
