@@ -718,7 +718,7 @@ fn a_glide_retired_on_the_frozen_pass_is_read_off_the_tables() {
         &uvs,
     );
     assert_eq!(
-        landed_glide_pool_seats(&ram, ctx, 3),
+        landed_glide_pool_seats(&ram, ctx, [3, 3]),
         vec![HudGlideSeat {
             target: [16, 12],
             elapsed: 10,
@@ -732,7 +732,7 @@ fn a_glide_retired_on_the_frozen_pass_is_read_off_the_tables() {
         &[(16, 8), (32, 8)],
         &uvs,
     );
-    assert_eq!(landed_glide_pool_seats(&ram, ctx, 3), vec![]);
+    assert_eq!(landed_glide_pool_seats(&ram, ctx, [3, 3]), vec![]);
 }
 
 /// A Spirit turn's bar and plate come off the widgets the glide records name:
@@ -768,4 +768,30 @@ fn the_spirit_gauge_is_read_off_its_widgets() {
     );
     put8(&mut ram, actor + 0x1DE, 1);
     assert_eq!(retail_spirit_gauge(&ram, ctx, Some(actor), 6), None);
+}
+
+/// A pass whose own history entry reads the `0x2BC` clamp stepped `4`
+/// (the raw duration past `0x2D0` sets the step, `0x800170F8..0x80017104`),
+/// whatever the history's largest entry says: `delilas_gi_spirit_artifact`'s
+/// newest entry is the clamp and the one before it `0x2CF`, so its last two
+/// passes stepped `4` and `3` while [`frame_step`] reads `3`.
+#[test]
+fn a_clamped_history_entry_is_a_step_four_pass() {
+    let mut ram = vec![0u8; 0x20_0000];
+    put16(&mut ram, STEP_MODE, 0x10);
+    let hist = [
+        566u16, 700, 660, 719, 700, 588, 574, 583, 560, 564, 567, 561, 567, 562, 559, 559,
+    ];
+    for (i, d) in hist.into_iter().enumerate() {
+        put16(&mut ram, FRAME_HISTORY + i as u32 * 2, d);
+    }
+    put32(&mut ram, 0x8007_B758, 5);
+    assert_eq!(frame_step(&ram), 3);
+    assert_eq!(pass_steps(&ram), [4, 3]);
+    put32(&mut ram, 0x8007_B758, 6);
+    assert_eq!(pass_steps(&ram), [3, 4]);
+    put32(&mut ram, 0x8007_B758, 4);
+    assert_eq!(pass_steps(&ram), [3, 3]);
+    put32(&mut ram, FORCED_STEP, 2);
+    assert_eq!(pass_steps(&ram), [2, 2]);
 }

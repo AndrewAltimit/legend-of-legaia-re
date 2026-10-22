@@ -62,6 +62,10 @@ pub(super) fn retail_cam_tween(
     (live, end)
 }
 
+/// The tween divisor of the action shots (`nivora_duel_mid_blazing_slash`
+/// reads yaw `59` with `589` to go at step `2`: `(589 + 2 * 59) / 59 = 12`).
+const SHOT_TWEEN_DIVISOR: i32 = 0xC;
+
 /// How many passes back along the live tween table the displayed frame
 /// stands: the display lag's `passes`, but never past the pass that armed
 /// the table. Before that the camera was walking the previous framing's
@@ -150,6 +154,7 @@ pub(super) fn summon_route_prior_end(ram: &[u8], ctx: u32, action_state: u8) -> 
 /// the table the RAM holds was armed, where that arm moved it. A component
 /// walked back past it was on the earlier table by then, and walks back from
 /// there along that table instead ([`summon_route_prior_end`]).
+#[cfg(test)]
 pub(super) fn displayed_cam_live(
     ram: &[u8],
     ctx: u32,
@@ -157,8 +162,38 @@ pub(super) fn displayed_cam_live(
     frame_step: u8,
     prior_end: [Option<i32>; 9],
 ) -> legaia_engine_camera::projection::BattleCamPose {
+    displayed_cam_live_steps(
+        ram,
+        ctx,
+        &vec![frame_step; usize::from(passes)],
+        false,
+        prior_end,
+    )
+}
+
+/// [`displayed_cam_live`] with each pass walked back on its own frame step,
+/// newest first ([`pass_steps`]): the pass the RAM holds moved its
+/// components `step * increment`, and each pass before it the re-arm's share
+/// of the wider gap on that pass's own step.
+///
+/// `shot_divisor` takes the re-arm divisor as the action shots' `0xC`
+/// wherever every moving component admits it, which a small increment pins
+/// only loosely off its own gap (yaw `2` with `5` to go at step `4` admits
+/// `7..=12`; `nivora_duel_pre_megaton_press` reads `0.922` on `7` and `0.954`
+/// on `12`). It goes with steps the floor confirmed
+/// ([`older_table_step`]); the history-max steps keep the largest
+/// increment's own estimate, which they were measured with.
+pub(super) fn displayed_cam_live_steps(
+    ram: &[u8],
+    ctx: u32,
+    steps: &[u8],
+    shot_divisor: bool,
+    prior_end: [Option<i32>; 9],
+) -> legaia_engine_camera::projection::BattleCamPose {
     let (live, _) = retail_cam_tween(ram, ctx);
-    let fs = i32::from(frame_step.max(1));
+    let passes = steps.len();
+    let step_of = |n: usize| i32::from(steps.get(n).copied().unwrap_or(1).max(1));
+    let fs = step_of(0);
     // The raw words the walker steps: pitch / yaw (12-bit), the eye
     // translation, the focus (stored negated).
     let raw_live: [i32; 9] = [
@@ -184,14 +219,32 @@ pub(super) fn displayed_cam_live(
         let (_, end) = rec(k);
         i32::from((end as i16).wrapping_sub(raw_live[k as usize] as i16))
     };
-    let d = (0..9u32)
-        .filter(|&k| k != 2)
-        .map(|k| (rec(k).0.abs(), gap(k).abs()))
-        .max()
-        .filter(|&(inc, _)| inc > 0)
-        .map_or(0xC, |(inc, g)| {
-            ((g + fs * inc + inc / 2) / inc).clamp(fs + 1, 0x40)
-        });
+    // The divisor the walker re-arms by: `inc = ceil(gap_before / d)` with
+    // `gap_before = gap + fs * inc`, so each moving component admits
+    // `ceil(gap_before / inc) ..= ceil(gap_before / (inc - 1)) - 1`.
+    let admits = |d: i32| {
+        (0..9u32).filter(|&k| k != 2).all(|k| {
+            let inc = rec(k).0.abs();
+            let g = gap(k).abs();
+            if inc == 0 || g == 0 {
+                return true;
+            }
+            let before = g + fs * inc;
+            (inc - 1) * d < before && before <= inc * d
+        })
+    };
+    let d = if shot_divisor && admits(SHOT_TWEEN_DIVISOR) {
+        SHOT_TWEEN_DIVISOR
+    } else {
+        (0..9u32)
+            .filter(|&k| k != 2)
+            .map(|k| (rec(k).0.abs(), gap(k).abs()))
+            .max()
+            .filter(|&(inc, _)| inc > 0)
+            .map_or(SHOT_TWEEN_DIVISOR, |(inc, g)| {
+                ((g + fs * inc + inc / 2) / inc).clamp(fs + 1, 0x40)
+            })
+    };
     let mut back = [0i32; 9];
     for k in (0..9u32).filter(|&k| k != 2) {
         let (inc, _) = rec(k);
@@ -208,30 +261,31 @@ pub(super) fn displayed_cam_live(
         // walker closed on that endpoint and never stood beyond it, so the
         // pass before it stood the earlier re-arm's step short of it.
         let mut prior = None;
-        for _ in 1..passes {
+        for n in 1..passes {
+            let fs_n = step_of(n).min(d - 1);
             let pos = raw_live[k as usize] - dir * moved;
             // A pass back on the earlier table steps away from its endpoint.
             let earlier = |p: i32| {
                 let to = p - pos;
-                to.signum() * dir * fs * ((to.abs() + (d - fs) - 1) / (d - fs))
+                to.signum() * dir * fs_n * ((to.abs() + (d - fs_n) - 1) / (d - fs_n))
             };
             if let Some(p) = prior {
                 moved += earlier(p);
                 continue;
             }
             let wide = g.abs() + moved;
-            let step = (wide + (d - fs) - 1) / (d - fs);
+            let step = (wide + (d - fs_n) - 1) / (d - fs_n);
             // `p` behind `pos` (further from the endpoint), and the step back
             // on this table would land behind `p` too.
             if let Some(p) = prior_end[k as usize]
                 && (pos - p) * dir > 0
-                && (pos - dir * fs * step - p) * dir < 0
+                && (pos - dir * fs_n * step - p) * dir < 0
             {
                 prior = Some(p);
                 moved += earlier(p);
                 continue;
             }
-            moved += fs * step;
+            moved += fs_n * step;
         }
         back[k as usize] = dir * moved;
     }

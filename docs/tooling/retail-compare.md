@@ -2503,6 +2503,26 @@ duellists hold still, and the frame read `0.611` against retail's with the
 crystals `70` to `90` px off. Every action drive but a `DoneHold` takes the
 displayed pose, also where its frame stays at the RAM's instant.
 
+**Each pass on its own step.** The two passes the walk-back undoes need not
+share a step. The frame driver stores a duration of `0x2D0` hsyncs or more in
+the history as the `0x2BC` clamp but takes the step off the raw duration
+(`0x800170A8`, `0x800170F8..0x80017104`), so a pass whose own entry reads the
+clamp stepped `4` while the history's largest entry names `3` (`pass_steps`;
+the history's write cursor is `gp+0x440`). The floor confirms it: the battle
+grid's `POLY_GT4` corners sit on a fixed `0x100`-unit lattice, so a pose is
+scored by how far each drawn corner lies from the lattice projected under it
+(`camera_pool::older_table_step`). The table being built fits the RAM's pose
+to under a pixel, and on `delilas_gi_spirit_artifact`, `gimard_burning_attack`
+and `nivora_duel_pre_megaton_press` the older table fits the one-pass
+walk-back at step `4` and not at `3`. Where the history's per-pass steps
+differ from the largest entry's and the older table confirms the newest, the
+child walks each pass back on its own step, with the re-arm divisor taken as
+the shots' `0xC` wherever every moving component admits it (a small
+increment pins it loosely off its own gap). Otherwise the walk-back keeps the
+single step. The three Delilas Spirit captures rose with it (`0.893` to
+`0.949`, `0.779` to `0.891`, `0.909` to `0.958`), their backdrop four to five
+pixels closer.
+
 The endpoints the alignment tests against are the RAM's, the gate tick's.
 On a retaken frame the framing the engine's camera arms is two game frames
 older and can stand a step short of them: case 6 on a caster drifts with the

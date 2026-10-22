@@ -474,17 +474,34 @@ impl RetailBattle {
             ) as i32,
             cam_style: game_anchors::u8_at(ram, ctx + 0xD),
             cam_tween: retail_cam_tween(ram, ctx),
-            displayed_cam_live: displayed_cam_live(
-                ram,
-                ctx,
-                tween_passes_back(
+            displayed_cam_live: {
+                let passes = tween_passes_back(
                     action_state,
                     game_anchors::u16_at(ram, ctx + 0x6DA),
                     display_lag_vsyncs(ram) / u16::from(frame_step(ram).max(1)),
-                ),
-                frame_step(ram),
-                summon_route_prior_end(ram, ctx, action_state),
-            ),
+                );
+                // Each pass on its own step where the older ordering table's
+                // floor confirms the newest one; the history's largest entry
+                // for every pass otherwise.
+                let steps = pass_steps(ram);
+                let confirmed =
+                    steps != [frame_step(ram); 2] && older_table_step(ram, ctx) == Some(steps[0]);
+                let steps = if confirmed {
+                    steps
+                } else {
+                    [frame_step(ram); 2]
+                };
+                let steps: Vec<u8> = (0..usize::from(passes))
+                    .map(|n| steps.get(n).copied().unwrap_or(frame_step(ram)))
+                    .collect();
+                displayed_cam_live_steps(
+                    ram,
+                    ctx,
+                    &steps,
+                    confirmed,
+                    summon_route_prior_end(ram, ctx, action_state),
+                )
+            },
             camera_option: game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION),
             battle_id: game_anchors::u8_at(ram, BATTLE_ID_WORD),
             hud_glides_landed: (0..HUD_GLIDE_SLOTS).all(|s| {
@@ -502,7 +519,7 @@ impl RetailBattle {
                 }
                 // Retired records that landed on the frozen pass, still
                 // mid-glide on screen.
-                for seat in landed_glide_pool_seats(ram, ctx, frame_step(ram)) {
+                for seat in landed_glide_pool_seats(ram, ctx, pass_steps(ram)) {
                     if !seats.iter().any(|s| s.target == seat.target) {
                         seats.push(seat);
                     }

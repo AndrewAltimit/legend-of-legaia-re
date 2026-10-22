@@ -18,7 +18,8 @@
 //! on the record's last in-flight pass, draws it displaced by exactly the
 //! glide's offset at that `elapsed`. A retired record whose offset the two
 //! tables show is one that landed this pass, and the displayed frame is one
-//! frame step before the older table (`display_lag_vsyncs`).
+//! frame step before the older table (the older pass's own step,
+//! `pass_steps`).
 
 use std::collections::HashSet;
 
@@ -97,11 +98,13 @@ fn glide_axis(start: i16, target: i16, elapsed: u8, total: u8) -> i32 {
 ///
 /// For each retired record with a widget and a last `elapsed`, `total` is
 /// bounded by the snap rule: the landing pass found `total - elapsed <=
-/// step` (`0x801D9C20`), so `total` is in `elapsed + 1 ..= elapsed + step`.
+/// step` (`0x801D9C20`), so `total` is in `elapsed + 1 ..= elapsed + step`
+/// on the landing pass's step (`steps[0]`).
 /// A total whose offset at `elapsed` the older table shows (at least two
 /// sprites moved by it onto their rest seats in the other table) names the
-/// record; its displayed `elapsed` is one frame step less.
-pub(super) fn landed_glide_pool_seats(ram: &[u8], ctx: u32, step: u8) -> Vec<HudGlideSeat> {
+/// record; its displayed `elapsed` is less the older pass's step
+/// (`steps[1]`).
+pub(super) fn landed_glide_pool_seats(ram: &[u8], ctx: u32, steps: [u8; 2]) -> Vec<HudGlideSeat> {
     let retired: Vec<u32> = (0..HUD_GLIDE_SLOTS)
         .filter(|&s| {
             let r = ctx + HUD_GLIDE_TABLE + s * HUD_GLIDE_STRIDE;
@@ -125,7 +128,7 @@ pub(super) fn landed_glide_pool_seats(ram: &[u8], ctx: u32, step: u8) -> Vec<Hud
     }
     let sets: Vec<HashSet<(SpriteKey, (i16, i16))>> =
         tables.iter().map(|t| t.iter().copied().collect()).collect();
-    let step = step.max(1);
+    let step = steps[0].max(1);
     let mut out = Vec::new();
     for r in retired {
         let last = game_anchors::u8_at(ram, r + 1);
@@ -162,7 +165,7 @@ pub(super) fn landed_glide_pool_seats(ram: &[u8], ctx: u32, step: u8) -> Vec<Hud
         if let Some((_, total)) = best {
             out.push(HudGlideSeat {
                 target,
-                elapsed: last.saturating_sub(step),
+                elapsed: last.saturating_sub(steps[1]),
                 total,
             });
         }

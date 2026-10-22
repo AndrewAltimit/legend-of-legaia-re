@@ -52,6 +52,7 @@ use legaia_engine_session::native::NativeSession;
 use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 
 mod camera_align;
+mod camera_pool;
 mod capture_drive;
 mod engine_run;
 mod frame_step;
@@ -66,6 +67,7 @@ mod seed_plan;
 mod summon_fade;
 
 use camera_align::*;
+use camera_pool::*;
 use capture_drive::*;
 pub use engine_run::*;
 pub use frame_step::*;
