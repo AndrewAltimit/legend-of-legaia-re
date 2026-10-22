@@ -34,6 +34,7 @@ omissions. The harness does what the hosts do:
 | name entry | while the overlay is up, routes the pad edge into `step_name_entry` and skips the field tick, as both hosts' modal arms do |
 | shop / prize counter | a shop or prize counter the tick staged opens in a `MenuRuntime`; while it is up the field gets a neutral pad (or is frozen whole, for a session that suspends it), the session steps on the frame's edges, and a closed one unparks the field script (`finish_field_shop` / `finish_prize_exchange`) - the play window's `tick_menu_runtime_session` |
 | save screen | a Save pick writes `save_full` into an in-memory card and refreshes the grid's snapshot; a Load pick resumes that block's file through `resume_save` - the play window's `apply_save_commit`, with the card held in memory |
+| party wipe | runs the return-to-title hold both hosts run (`take_party_wipe`, then `step_party_wipe_hold` to its resolve) and, when the run has written a save, resumes the latest one the way the title's Continue -> Load does; the title screen itself is not driven. A run with no save on its card ends at the wipe |
 
 The L1 map display on a kingdom map needs no duty of the harness - the tick
 runs it - but it is a modal the pad drives, so it is in the progress digest
@@ -45,6 +46,13 @@ then `World::request_minigame_warp` arms the same mode-24 door warp the
 cabinet's op-`0x3E` makes, so the next tick loads the minigame overlay
 through the retail path. The venue's coin compare is satisfied by giving the
 party casino coins first - the one non-pad precondition the harness sets.
+The policy's random face buttons leave most minigames within a few hundred
+frames (a cancel on a hub, a lost round), so every `MINIGAME_REVISIT_EVERY`
+frames that the party stands free in the venue the run requests the warp
+again, coins topped up for the door: a minigame run spends most of its budget
+in the minigame, and the re-entry path is soaked with it. The report counts
+frames ticked per mode, which is how a mode that runs reach but never stay
+in shows up.
 
 A round-trip run is a pseudo-scene `<scene>+rt`. Every `ROUND_TRIP_EVERY`
 frames, on a frame a player could save on (free field roam: no menu,
@@ -201,6 +209,7 @@ on one frame and neutral on the next.
 | `value` | roster HP / MP over max, a live HP / MP maximum that is not the stat aggregator's rebuild of the base window, a level outside `1..=99`, battle HP over max, money out of range, a bag stack over 99, a count on a free slot, or two stacks of one id inside the active window |
 | `unbounded_growth` | an engine queue grows past a cap |
 | `effect_residue` | on the first field or world-map frame after a battle exit or a scene load, `World::battle_effect_residue` names a battle effect still live (the `efect.dat` pool, a move-FX / effect-script / summon scene-graph, the streak block, a cast-band request) - retail resets the whole actor pool at both points ([`effect-vm.md`](../subsystems/effect-vm.md#battle-effects-die-with-the-battle)) |
+| `wipe_continue` | after a party wipe, the hold never resolves, leaves the world in Battle, or the Continue does not land in the saved scene or leaves the wipe raised. What the wipe leaves live past the resume is the `effect_residue` check's, on the next frame |
 | `save_roundtrip` | in a `+rt` run, the save taken after a resume disagrees with the save it resumed; the location names the first differing field (`party[i]+offset`, `ext.money`, `ext_v2.field_position`, ...) |
 
 The **progress digest** hashes everything a player could see move: mode and
@@ -215,7 +224,11 @@ A softlock is **located** by what holds the frame: `pause-menu:<row>:<phase>`,
 `helper@pc:op`, `dialogue`, `shop`, `name-entry`, `mode:<minigame>`, or
 `free-roam:immobile@tile(x,z)`. The pond names its sub-screen
 (`mode:Fishing:<phase>`, `:hub-<screen>`, `:exchange`), so a reduction cannot
-trade a park on one screen for an idle shore that merely waits for a cast. A battle park whose HP-bar pair is absorbing
+trade a park on one screen for an idle shore that merely waits for a cast.
+The arena names its leg phase or, between legs, its contest state
+(`mode:MuscleDome:leg-Select`, `:contest-Tally`), and its digest hashes the leg
+and contest whole: hashing only their presence read a cursor walk on the
+selection grid as a frozen screen. A battle park whose HP-bar pair is absorbing
 (`hp != hp_display` with a zero accumulator - the shape that holds the
 `0x51` bar-drain gate for good, see `BattleActor::set_hp_synced`) carries a
 `:hp-bar-absorbing` suffix.
@@ -252,7 +265,7 @@ a direction held across the arrival walks straight back in.
 A finding's **signature** is `detector|scene|location`. Findings are
 deduplicated by signature and ranked: panics, hangs and tick errors first;
 softlocks, battle loops, door loops, stuck menus, endless battles, drops to
-title and unknown scenes next; free-roam immobility, script stalls, starved
+title, unknown scenes and failed wipe continues next; free-roam immobility, script stalls, starved
 control and confinement after; value, non-finite, queue-growth and save
 round-trip checks last.
 

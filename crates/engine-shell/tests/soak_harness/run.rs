@@ -21,8 +21,16 @@ pub(super) struct RunStats {
     pub(super) battles: u32,
     pub(super) battles_won: u32,
     pub(super) wiped: bool,
+    /// Party wipes the run played on from: the return-to-title hold ran to
+    /// its resolve and the card's latest save was resumed (Continue).
+    pub(super) wipe_continues: u32,
+    /// `+mg` runs: door warps back into the minigame after it was left.
+    pub(super) minigame_revisits: u32,
     pub(super) scenes_entered: BTreeSet<String>,
     pub(super) modes: BTreeSet<String>,
+    /// Frames ticked in each world mode: whether a run that reached a mode
+    /// also stayed in it long enough to soak it.
+    pub(super) mode_frames: BTreeMap<String, u64>,
     pub(super) menu_opens: u32,
     pub(super) fmvs: u32,
     pub(super) save_commits: u32,
@@ -72,6 +80,75 @@ pub(super) struct Tunables {
     /// it (no `# soak-arming` header): such a replay is judged in the
     /// configuration that recorded it.
     pub(super) host_arming: bool,
+}
+
+/// Frames between two re-entries of a `+mg` run's minigame, counted on the
+/// run clock; a re-entry waits for free roam in the venue.
+pub(super) const MINIGAME_REVISIT_EVERY: u64 = 300;
+
+/// Hold frames a party wipe may take before `wipe_continue` fires: the
+/// hold's own length is a short fixed fade (`GameOverSession::new`).
+const WIPE_HOLD_MAX_FRAMES: u32 = 600;
+
+/// After a party wipe: run the return-to-title hold both hosts run
+/// (`BootSession::take_party_wipe`, then `step_party_wipe_hold` until it
+/// resolves), check the world it leaves is no longer a battle, and resume the
+/// card save at `key` the way the title's Continue -> Load does. The title
+/// screen itself is the hosts' (`boot_ui`) and is not driven.
+fn continue_after_wipe(
+    session: &mut NativeSession,
+    card: &SoakCard,
+    key: (u8, u8),
+    opts: &FieldLiveOpts,
+) -> Result<(), (String, String)> {
+    let Some(mut hold) = session.take_party_wipe(false) else {
+        return Err((
+            "no-hold".into(),
+            "game over raised but the session handed back no wipe hold".into(),
+        ));
+    };
+    let resolved = (0..WIPE_HOLD_MAX_FRAMES).any(|_| session.step_party_wipe_hold(&mut hold));
+    let w = &session.host.world;
+    if !resolved {
+        return Err((
+            "hold-never-resolves".into(),
+            format!("wipe hold still running after {WIPE_HOLD_MAX_FRAMES} frames"),
+        ));
+    }
+    if w.game_over_hold || w.mode == SceneMode::Battle {
+        return Err((
+            "hold-left-battle".into(),
+            format!(
+                "after the hold resolved: mode {:?}, game_over_hold {}",
+                w.mode, w.game_over_hold
+            ),
+        ));
+    }
+    let (sf, resume) = card
+        .get(&key)
+        .cloned()
+        .expect("the latest save is on the card");
+    let landing = session.resume_save(sf, &resume.scene, opts);
+    if !matches!(
+        landing,
+        legaia_engine_scene_host::resume::ResumeLanding::SavedScene(_)
+    ) {
+        return Err((
+            "resume-landing".into(),
+            format!("Continue into {:?} landed {landing:?}", resume.scene),
+        ));
+    }
+    let w = &session.host.world;
+    if w.game_over || w.game_over_hold || w.mode == SceneMode::Battle {
+        return Err((
+            "resume-still-wiped".into(),
+            format!(
+                "after Continue: mode {:?}, game_over {}, game_over_hold {}",
+                w.mode, w.game_over, w.game_over_hold
+            ),
+        ));
+    }
+    Ok(())
 }
 
 /// Confirm presses a `control_starved` window must contain.
@@ -473,11 +550,15 @@ pub(super) fn run_one(
     // A round-trip run starts with one save on the card, so the pause
     // menu's Load row (open in every scene; Save is per-scene) has a file
     // to resume - an empty card refuses before any commit.
+    // The card cell the run last wrote: what a Continue after a party wipe
+    // resumes.
+    let mut latest_save: Option<(u8, u8)> = None;
     if round_trip {
         let sf = session.host.world.save_full();
         let resume = session.current_resume();
         card.insert((0, 0), (sf, resume));
         refresh_rack(&mut session, &card);
+        latest_save = Some((0, 0));
     }
     let mut policy = Policy::new(run_seed(&spec.scene, spec.seed));
     let mut menu_rt = MenuRuntime::new(std::env::temp_dir().join("legaia-soak-menu"));
@@ -679,6 +760,12 @@ pub(super) fn run_one(
         // run reads back what an earlier Save wrote.
         if let Some(commit) = session.last_save_commit.take() {
             stats.save_commits += 1;
+            if matches!(
+                commit.kind,
+                legaia_engine_menus::save_screen::SaveCommitKind::Save
+            ) {
+                latest_save = Some((commit.port, commit.cell));
+            }
             let r = catch_unwind(AssertUnwindSafe(|| {
                 apply_save_commit(&mut session, &mut card, commit, &opts)
             }));
@@ -715,6 +802,24 @@ pub(super) fn run_one(
                 menu_rt.open_shop_menu(shop);
                 stats.shop_opens += 1;
             }
+        }
+        // `<venue>+mg<sub_id>`: back through the cabinet door every
+        // `MINIGAME_REVISIT_EVERY` frames the party stands free in the venue.
+        // The policy's random face buttons leave most minigames within a few
+        // hundred frames (a cancel in a hub, a lost round), so without this a
+        // minigame run spends most of its budget on the casino floor. Coins
+        // are topped up for the door's compare, as at entry.
+        if let Some(id) = minigame
+            && frame % MINIGAME_REVISIT_EVERY == MINIGAME_REVISIT_EVERY - 1
+            && session.host.world.mode == SceneMode::Field
+            && session.host.world.active_scene_label == scene
+            && round_trip_ready(&session)
+            && !menu_rt.is_open()
+        {
+            let w = &mut session.host.world;
+            w.minigames.casino_coins = w.minigames.casino_coins.max(500);
+            w.request_minigame_warp(id);
+            stats.minigame_revisits += 1;
         }
         // `<scene>+talk`: stand in front of the scene's next talk target
         // every `TALK_VISIT_EVERY` free field frames and press the action
@@ -810,12 +915,46 @@ pub(super) fn run_one(
             }
         }
 
-        let w = &session.host.world;
-        stats.modes.insert(format!("{:?}", w.mode));
-        if w.game_over || w.game_over_hold {
+        let mode = format!("{:?}", session.host.world.mode);
+        *stats.mode_frames.entry(mode.clone()).or_default() += 1;
+        stats.modes.insert(mode);
+        if session.host.world.game_over || session.host.world.game_over_hold {
             stats.wiped = true;
-            break;
+            // A wipe with a save on the card plays on the way a player does:
+            // the hosts' return-to-title hold, then Continue into that save.
+            // With no save there is nothing to continue from and the run ends.
+            let Some(key) = latest_save else { break };
+            let r = catch_unwind(AssertUnwindSafe(|| {
+                continue_after_wipe(&mut session, &card, key, &opts)
+            }));
+            match r {
+                Ok(Ok(())) => {
+                    stats.wipe_continues += 1;
+                    // What the wipe left that the resume did not reset is
+                    // checked on the next frame by the residue detector
+                    // (`prev_mode` is still Battle).
+                    continue;
+                }
+                Ok(Err((loc, detail))) => {
+                    findings.push(mk(&session, "wipe_continue", frame, loc, detail));
+                    break;
+                }
+                Err(_) => {
+                    let (loc, msg, frames) = LAST_PANIC
+                        .with(|p| p.borrow_mut().take())
+                        .unwrap_or_default();
+                    findings.push(mk(
+                        &session,
+                        "panic",
+                        frame,
+                        loc,
+                        format!("[wipe continue] {msg} | {frames}"),
+                    ));
+                    break;
+                }
+            }
         }
+        let w = &session.host.world;
         // Effect residue: a battle-scoped effect (the `efect.dat` pool, a
         // move-FX / effect-script / summon scene-graph, the streak block)
         // still live on the first frame past a battle exit or a scene load.

@@ -108,6 +108,21 @@ pub(super) fn progress_digest(s: &NativeSession) -> u64 {
         SceneMode::BakaFighter => {
             let _ = write!(h, "{:?}", w.minigames.baka_fighter);
         }
+        // The arena: the leg (fighters, phase, selection menu, choreography),
+        // the contest between legs and its settlement. Presence alone left a
+        // cursor walk on the selection grid invisible.
+        SceneMode::MuscleDome => {
+            let m = &w.minigames;
+            let _ = write!(
+                h,
+                "{:?}|{:?}|{:?}|{}|{:?}",
+                m.muscle_dome,
+                m.muscle_contest,
+                m.muscle_settlement,
+                m.muscle_hub_between_legs,
+                m.muscle_ringside_still
+            );
+        }
         _ => {
             let _ = write!(
                 h,
@@ -222,6 +237,18 @@ pub(super) fn held_by(s: &NativeSession) -> String {
                 variant(&format!("{:?}", f.phase()))
             };
             return format!("mode:Fishing:{screen}");
+        }
+        // The arena names its leg phase, or the contest state between legs.
+        SceneMode::MuscleDome => {
+            let m = &w.minigames;
+            let screen = if let Some(leg) = m.muscle_dome.as_ref() {
+                format!("leg-{}", variant(&format!("{:?}", leg.phase())))
+            } else if let Some(c) = m.muscle_contest.as_ref() {
+                format!("contest-{:?}", c.state())
+            } else {
+                "hub".into()
+            };
+            return format!("mode:MuscleDome:{screen}");
         }
         other => return format!("mode:{other:?}"),
     }
