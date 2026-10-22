@@ -549,7 +549,13 @@ pub(super) fn battle_image(
         ));
         env.push((
             "LEGAIA_BATTLE_GROUND_SNAP",
-            legaia_engine_capture::ground_snap::ground_snaps_to_env(&battle.engine_ground_snaps()),
+            legaia_engine_capture::ground_snap::ground_snaps_to_env(
+                &if battle.displayed_camera() {
+                    battle.engine_image_ground_snaps()
+                } else {
+                    battle.engine_ground_snaps()
+                },
+            ),
         ));
         if battle.displayed_camera_on_agreement() {
             env.push((

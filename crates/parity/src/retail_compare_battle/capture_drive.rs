@@ -190,6 +190,29 @@ impl RetailBattle {
     /// may have moved) - for the phase's ground seat
     /// ([`legaia_engine_capture::ground_snap`]).
     pub fn engine_ground_snaps(&self) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
+        self.ground_snaps(false)
+    }
+
+    /// [`Self::engine_ground_snaps`] for the image child, whose frame is the
+    /// **displayed** one. On the action seed's own pass - `0x14` with the
+    /// yaw counter still on the seed's `0x200` rung ([`tween_passes_back`]) -
+    /// each combatant stands on the pair the position ring holds for that
+    /// frame ([`Self::displayed_ground`]), a body pair moved with it: the
+    /// seed recentres the formation (`jal 0x801EFE44` at `0x801E2D44`) on
+    /// the RAM's pass, after the frame on screen was built.
+    /// `super_queue_replace_*` hold Vahn `(+36, +45)` and Gobu Gobu
+    /// `(+36, +52)` off the pairs that frame drew them on (`.938` to
+    /// `.996`).
+    ///
+    /// Elsewhere the RAM's pairs stay: a body moving on its own clip's
+    /// root motion is drawn from the replay's pose at the displayed tick,
+    /// and `battle_melee_hit_spark` (Vahn `+5`, the struck monster `+11` a
+    /// frame) reads `.760` on the RAM's pairs against `.743` on the ring's.
+    pub fn engine_image_ground_snaps(&self) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
+        self.ground_snaps(self.action_state == 0x14 && self.walk_yaw_base == 0x200)
+    }
+
+    fn ground_snaps(&self, displayed: bool) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
         // Past the end signal the sequencer poses the winners and the results
         // framing reads poses the replay's clips do not share; the ground
         // stays the replay's.
@@ -201,13 +224,18 @@ impl RetailBattle {
             .iter()
             .enumerate()
             .filter_map(|(pool, c)| {
-                let (live, body, clip, _) = (*c)?;
+                let (mut live, mut body, clip, _) = (*c)?;
                 let slot = if pool < 3 {
                     (pool < pc).then_some(pool)?
                 } else {
                     let m = pool - 3;
                     (m < usize::from(self.monster_count)).then_some(pc + m)?
                 };
+                if displayed && let Some(Some(then)) = self.displayed_ground.get(pool) {
+                    let d = [then[0].wrapping_sub(live[0]), then[1].wrapping_sub(live[1])];
+                    body = [body[0].wrapping_add(d[0]), body[1].wrapping_add(d[1])];
+                    live = *then;
+                }
                 Some(legaia_engine_capture::ground_snap::GroundSnap {
                     slot: u8::try_from(slot).ok()?,
                     x: live[0],

@@ -600,3 +600,53 @@ fn effect_children_are_the_displayed_frames() {
     assert_eq!((seeds[1].frame_cursor, seeds[1].wait), (0, 8));
     assert_eq!(seeds[1].mirror, 2);
 }
+
+/// On the action seed's own pass the image child stands each combatant on
+/// the displayed frame's ring slot - the seed's formation recentre moved
+/// them after that frame was built - and elsewhere on the RAM's live pair.
+#[test]
+fn the_seed_pass_image_ground_is_the_displayed_ring_slot() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 1);
+    put8(&mut ram, ctx + 1, 1);
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x14);
+    put16(&mut ram, ctx + 0x6DA, 0x200);
+    put8(&mut ram, FORMATION_CELL, 0x04);
+    for (slot, base, live, shown) in [
+        (0u32, 0x800E_C9E8u32, [-7i16, -338i16], [-43i16, -383i16]),
+        (3, 0x800E_D264, [0, 0], [-36, -52]),
+    ] {
+        put32(&mut ram, ACTOR_TABLE + slot * 4, base);
+        put16(&mut ram, base + 0x14C, 50);
+        put16(&mut ram, base + 0x14E, 50);
+        put16(&mut ram, base + 0x34, live[0] as u16);
+        put16(&mut ram, base + 0x38, live[1] as u16);
+        put32(&mut ram, base + 0x4C, live[0] as u16 as u32);
+        put32(&mut ram, base + 0x50, live[1] as u16 as u32);
+        for k in 1..3u32 {
+            put32(&mut ram, base + 0x4C + 8 * k, shown[0] as u16 as u32);
+            put32(&mut ram, base + 0x50 + 8 * k, shown[1] as u16 as u32);
+        }
+    }
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    let pairs = |s: Vec<legaia_engine_capture::ground_snap::GroundSnap>| {
+        s.iter().map(|g| (g.slot, g.x, g.z)).collect::<Vec<_>>()
+    };
+    assert_eq!(
+        pairs(b.engine_image_ground_snaps()),
+        vec![(0, -43, -383), (1, -36, -52)]
+    );
+    assert_eq!(
+        pairs(b.engine_ground_snaps()),
+        vec![(0, -7, -338), (1, 0, 0)]
+    );
+    // Past the seed's pass the RAM's pairs stand.
+    b.walk_yaw_base = 0x202;
+    assert_eq!(
+        pairs(b.engine_image_ground_snaps()),
+        vec![(0, -7, -338), (1, 0, 0)]
+    );
+}

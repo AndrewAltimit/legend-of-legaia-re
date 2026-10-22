@@ -610,6 +610,18 @@ impl RetailBattle {
                     })
                 })
                 .collect(),
+            displayed_ground: (0..8u32)
+                .map(|slot| {
+                    let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
+                    let at = p + POSITION_RING + DISPLAYED_FRAMES_BACK * 8;
+                    in_ram(p).then(|| {
+                        [
+                            game_anchors::u32_at(ram, at) as i32 as i16,
+                            game_anchors::u32_at(ram, at + 4) as i32 as i16,
+                        ]
+                    })
+                })
+                .collect(),
             ground: (0..8u32)
                 .map(|slot| {
                     let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);

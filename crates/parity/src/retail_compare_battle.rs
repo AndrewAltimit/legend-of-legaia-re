@@ -111,6 +111,12 @@ const BATTLE_CAMERA_OPTION: u32 = 0x8008_46C0;
 const SELECT_ATTACK_OPTION: u32 = 0x8008_46C4;
 /// Eight-slot battle actor pointer table.
 const ACTOR_TABLE: u32 = 0x801C_9370;
+/// A battle actor's position history ring: 32 `(i32 X, i32 Z)` slots
+/// (`FUN_80047430`, `0x80047E58..0x80048060`).
+const POSITION_RING: u32 = 0x4C;
+/// The ring slot the displayed frame was drawn on: the display lag is two
+/// game frames ([`display_lag_vsyncs`]), one ring slot each.
+const DISPLAYED_FRAMES_BACK: u32 = 2;
 /// The tint-state byte `actor[+0x21C]`'s defeat-fade value.
 const DEFEAT_FADE_STATE: u8 = legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE;
 /// The SCUS frame driver's battle-entry counter `gp+0x330`: below `0x80`
@@ -464,6 +470,14 @@ pub struct RetailBattle {
     /// places and [`Self::undrift`] moves it; this is what the capture
     /// held. The post-strike framings read the body pair (cases 7 and 8).
     pub captured: Vec<Option<CapturedActor>>,
+    /// Each pool slot's live pair on the **displayed** frame: slot
+    /// [`DISPLAYED_FRAMES_BACK`] of the position history ring `+0x4C` (an
+    /// `i32` X / Z pair every 8 bytes, slot 0 the live pair, shifted one
+    /// slot a battle frame by the anim tick `FUN_80047430`,
+    /// `0x80047E58..0x80048060`). The frame on screen is the one built two
+    /// game frames before the RAM's ([`display_lag_vsyncs`]), and a seat
+    /// that moved inside those two frames drew where the ring says.
+    pub displayed_ground: Vec<Option<[i16; 2]>>,
     /// Each pool slot's playing clip `+0x1D9` and the cursor of its anim
     /// node (`*(+0x22C) + 0x68`, 12.4 sixteenths of a keyframe) taken back
     /// to the **displayed** frame, two game frames before the RAM's: as

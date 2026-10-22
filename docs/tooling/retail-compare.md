@@ -917,6 +917,16 @@ case aims at those positions - case 6 on a caster, case 0 on a member, case
   capture, which is sampled before any round ran. The acting seat is placed
   too, even on a captured Attack whose pair is a point on the walk the drive
   replays: the walk ends at its target whatever it starts from.
+- **Ground on the displayed frame.** The anim tick keeps a per-actor
+  position ring (`+0x4C`, slot 0 the live pair, one slot a battle frame),
+  so the pairs the frame on screen drew are in RAM two slots down. On the
+  action seed's own pass (`0x14` with the yaw counter still on `0x200`) the
+  seed's formation recentre (`jal 0x801EFE44` at `0x801E2D44`) has moved
+  every combatant since that frame was built, and the image child stands
+  them on the ring's slot instead (`RetailBattle::engine_image_ground_snaps`;
+  `super_queue_replace_*` `.938` to `.996`). Elsewhere the live pair
+  stands: a body carried by its own clip's root motion reads better on it
+  (`battle_melee_hit_spark` `.760` against `.743`).
 - **Heading.** On a capture past the end signal each placed combatant takes its
   heading `+0x46` (a `:facing` field after `:x:z`). The attack band's recompute
   stores it every frame of a swing and nothing turns the actor back, so the
