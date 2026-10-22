@@ -641,7 +641,17 @@ pub fn capture_finalize_settled<H: BattleActionHost + ?Sized>(host: &H, target: 
 /// clearing `+0x21C` on every live seat and every party seat
 /// (`0x801E5254..0x801E526C`) - a dead monster keeps its defeat-fade state.
 ///
-/// PORT: FUN_801E295C (`0x801E50EC..0x801E52A0`)
+/// PORT: FUN_801E295C (`0x801E50EC..0x801E52A0`), except the walk's mode-word
+/// store: on each seat it clears, retail writes `+0x08 = 0x81000000` (an
+/// additive draw) when the prim word `+0x04` reads zero (`lw v0,0x4(v1)` /
+/// `sw a2,0x8(v1)` at `0x801E5278..0x801E5288`). The port does not make it,
+/// because its colour word cannot carry the test: [`BattleActor::render_color`]
+/// rests at `0` where retail's rests at the neutral `0x20080200`, and the
+/// draw reads a zero word with `+0x21C` clear as that neutral
+/// (`World::battle_actor_draw_plan`'s lanes). A seat this exit clears therefore has
+/// no engine state meaning "lanes at zero" for an additive mode word to apply
+/// to; writing `0x81000000` would draw every resting seat as a full-bright
+/// additive body.
 pub(super) fn magic_capture_finalize<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
