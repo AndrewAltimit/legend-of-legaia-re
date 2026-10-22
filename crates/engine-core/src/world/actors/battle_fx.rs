@@ -809,18 +809,18 @@ impl World {
     /// (`gimard_burning_attack` holds two of its effect-`0x0B` puffs at the
     /// creature's mouth) and a Tail-Fire-struck party member.
     ///
-    /// The accumulator is the frame driver's: low nibble kept, `+8` a frame
-    /// (`FUN_80046A20`, `0x8004713C..0x80047160`, `DAT_1F800393 << 3` at one
-    /// step a tick).
+    /// The accumulator is the frame driver's: low nibble kept, `+8` a vsync
+    /// (`FUN_80046A20`, `0x8004713C..0x80047160`, `DAT_1F800393 << 3` a
+    /// frame); `add` is that gain since the last call.
     ///
     /// Not ported: selector `2`'s screen-shake globals (`_DAT_8007B92C` /
     /// `_DAT_8007B930`, `gp+0xA30..0xA34`, `0x8004A838..0x8004A8BC`).
     ///
     /// PORT: FUN_8004998C (`0x8004A5FC..0x8004A8D8`, the selector emit loop)
-    pub(in crate::world) fn emit_battle_burn_sprites(&mut self) {
+    pub(in crate::world) fn emit_battle_burn_sprites(&mut self, add: u16) {
         use legaia_engine_battle_vm::battle_impact_fx as ifx;
         use legaia_engine_system::rotation_lut::RotationLut;
-        let acc = (self.battle.burn_emit_accum & 0xF) + 8;
+        let acc = (self.battle.burn_emit_accum & 0xF) + add;
         self.battle.burn_emit_accum = acc;
         let emits = acc / ifx::BURN_EMIT_QUANTUM;
         if emits == 0 {
@@ -1037,7 +1037,11 @@ impl World {
             }
         }
         self.tick_battle_defeat_sink();
-        self.emit_battle_burn_sprites();
+        // On retail's cadence the draw that closes the pass sheds the puffs
+        // (`World::tick_battle_anim_pass`), after the advance and the walk.
+        if !self.toggles.battle_sm_frame_cadence {
+            self.emit_battle_burn_sprites(8);
+        }
         self.tick_jette_shatter_hook();
         // The per-clip arms: the acting actor's committed record key + cursor
         // window select the writes onto it and its target.

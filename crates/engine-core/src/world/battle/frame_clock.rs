@@ -341,6 +341,12 @@ impl World {
         // has not seeded yet included (the draw stores every drawn actor's).
         self.seed_battle_seats();
         self.refresh_battle_body_pairs();
+        // The same draw sheds the burning bodies' puffs (the tail of
+        // `FUN_8004998C`, `0x8004A5FC..0x8004A8D8`) at the pose and ground
+        // the pass left, on the frame driver's accumulator `ctx[+0x328]`,
+        // which gained `step << 3` this frame (`0x8004713C..0x80047160`).
+        let vsyncs = self.battle.anim_pass_vsyncs;
+        self.emit_battle_burn_sprites(8 * u16::from(vsyncs));
     }
 
     /// The action state the battle camera frames. Retail's framing calls

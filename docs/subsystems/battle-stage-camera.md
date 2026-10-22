@@ -1227,6 +1227,12 @@ between holds:
   runs the pass (`BattleCamera::set_pass_granular`), and the action yaw
   counter `ctx[+0x6DA]` gains `step * 4 / 3` a pass, `1` when that is zero
   (`0x801E29E4..0x801E2A24`): `4` at step `3`, not `3`.
+- **The draw sheds the burn puffs.** The burning-body emitter at the tail of
+  `FUN_8004998C` runs from the draw callback, after the anim tick and the
+  walk, on the frame driver's accumulator `ctx[+0x328]` (`step << 3` a
+  frame), so on the cadence the pass's last step emits them
+  (`World::tick_battle_anim_pass`); the per-vsync cadence keeps the emitter
+  in the impact pass.
 - **Fades and effects step with the pass.** The fade actors drain the step a
   tick (`FUN_80020C14`, `lbu v0,0x393(v0)` at `0x80020C34`), and the effect
   pool walker runs one sweep per vsync the pass spans, ahead of the frame
@@ -1300,7 +1306,7 @@ retail's, so the toggle stays off:
 | Capture | Falls | Cause |
 |---|---|---|
 | `battle_gimard_tail_fire_a`, `battle_gimard_tail_fire_b` | `image` `.822` to `.784`, `.807` to `.790` | the flight's flame children stand a pass further along than retail's at the gate; the struck body's burn puffs are `rand()`-placed, and the frame moves several hundredths with the draw |
-| `gimard_burning_attack` | `image` `.786` to `.763` | the fire cloud stands detached from the mouth: the breath's youngest puffs are missing at the jaw, where retail's frame holds them; the camera itself lands (`.999`) |
+| `gimard_burning_attack` | `image` `.786` to `.767` | the fire cloud stands detached from the mouth: the burning body's youngest puffs are missing at the jaw, where retail's frame holds them; the camera itself lands (`.999`). The puffs are shed by the draw that closes the pass, at the pose and ground the pass left, which moved the frame only from `.763` |
 | `cort_guilty_cross_mid_cast`, `cort_evolved_ultra_charge_mid_cast` | `image` `.961` to `.952`, `.894` to `.888` | the capture band's drifts and holds land a few vsyncs off retail's at the gate |
 | `freed_summon_mid_cast` | `image` `.994` to `.988` | the frame stands on the flash age the pass grid offers (`22` against `23`), and one vsync either way loses a fifth of the blocks |
 | `battle_melee_hit_spark`, the `rim_elm` pair | `image` by `.002` to `.004` | ground and spark blocks at the tolerance's edge |
