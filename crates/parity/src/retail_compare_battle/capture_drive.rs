@@ -270,8 +270,13 @@ impl RetailBattle {
             .filter(|&&(slot, clip, cursor)| {
                 let staged = !(self.action_state == 0x0C
                     || self.action_state == 0x14 && self.walk_yaw_base == 0x200);
-                let in_flight =
-                    self.action_state != 0 && staged && !(0x50..=0x5A).contains(&self.action_state);
+                // `0xFD` / `0xFF` (idle hold, round boundary) are where the
+                // action SM sits through the command flow: no action runs,
+                // so the commanding member's idle loop is a clock like any
+                // other seat's (`delilas_che_hammer_gaps_v3`'s Che).
+                let in_flight = !matches!(self.action_state, 0 | 0xFD | 0xFF)
+                    && staged
+                    && !(0x50..=0x5A).contains(&self.action_state);
                 let capture_band_idle = clip == 0 && (0x6F..=0x71).contains(&self.action_state);
                 // So is a seat idling through a summon's invoke and freeze
                 // (`0x32..=0x34`): the band stages no clip on the victim
