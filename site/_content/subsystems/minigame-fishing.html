@@ -22,6 +22,7 @@
   <h2>Getting there</h2>
   <p>The door is the <strong>mode-24 minigame warp</strong>: field-VM op <code>0x3E</code> with <code>op0 = 100</code> (sub-id 0) sets game mode <code>0x18</code> and loads the overlay. It is the ordinary scene-backup, overlay-load, return-to-field sequence, so the game returns to the exact field state it suspended. The mechanism is on the <a href="script-vm.html">field / event VM</a> page.</p>
   <p>A disc-wide walk finds the door at exactly two sites, both signboards on the overworld. Which one the party came from picks the venue: state 1 compares the departure scene&rsquo;s id against two immediates and selects <strong>Buma</strong> or <strong>Vidna</strong>, which in turn selects the prize page and the spawn page. Both pond areas are in the bundle&rsquo;s one map.</p>
+  <p>The warp is the last op of the signboard&rsquo;s own talk record, which the action button runs like any town conversation. Before it, the board refuses on a frozen lake (Karisto only, system flag <code>0x378</code> clear), on no fishing rod and on no lure; then it asks whether to fish, and a yes fades the screen to white and waits 48 frames before the warp. The record is laid out on the <a href="world-map-internals.html">world-map internals</a> page.</p>
   <p>Fishing loads no music of its own; it keeps whatever the departure scene was playing. The driver has no direct caller either - it is the tick word of an actor template the init spawns.</p>
 </section>
 

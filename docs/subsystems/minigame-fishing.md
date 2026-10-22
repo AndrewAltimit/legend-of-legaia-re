@@ -34,6 +34,8 @@ The pond is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` wi
 
 The op is the only way in: there is no menu entry and no dedicated opcode, and the venue bundle `other1` carries essentially no field-VM script of its own. A disc-wide walk of every scene MAN finds the fishing door at exactly two sites, both signboard placements on the overworld: `map02` P1[7] and `map03` P1[19]. Census test: `crates/engine-scene/tests/minigame_entry_census_disc.rs`.
 
+The `0x3E` is the last op of the signboard's **interaction record**, not something the board does on contact. The action button runs that record through the field's interaction probe and dialog SM (`FUN_801CF9F4`, `FUN_80039B7C`), which the overworld shares with every town. Before the warp it refuses on a frozen lake (`map03` only, system flag `0x378` clear), on no rod (`0xA0..0xA2`) and on no lure (`0x9D..0x9F`), each tested with `4C DC` over the bag and the party's equipment. It then asks a yes / no question, and on yes runs a white fade and a 48-frame wait. The record table and the port's path are in [`world-map.md` § Talk-to](world-map.md#talk-to-the-action-button).
+
 The entry is the ordinary scene-backup -> overlay-load -> return-to-field sequence of any mode-24 minigame, so the game returns to the exact field state it suspended.
 
 **The driver has no `jal` caller.** `FUN_801cf3bc` is the `+0x08` tick word of the static 24-byte actor template at `0x801D8FF4`. The sub-id-0 init `FUN_801CF070` materialises that template and spawns an actor from it (`jal FUN_80020DE0` at `0x801CF22C`); the per-frame pool walk reaches it through `jalr actor[+0x0C]` in `FUN_8002519C`.

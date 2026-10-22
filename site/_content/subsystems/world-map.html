@@ -164,7 +164,7 @@
     </tbody>
   </table>
   </div>
-  <p>The interior legs - what each town's exits lead to, which deeper rooms are gated - are on the <a href="history-world-map.html">chapter-1 hub sweep</a>. NPCs on the map are partition-1 placement records whose dialogue text is inline in the record; talking to one opens that text directly.</p>
+  <p>The interior legs - what each town's exits lead to, which deeper rooms are gated - are on the <a href="history-world-map.html">chapter-1 hub sweep</a>. NPCs, signposts and the two fishing signboards on the map are partition-1 placement records. The action button runs the record of the placement in front of the player through the same talk runner a town uses, so a signboard checks the lake, the rod and the lure and asks before it opens the fishing minigame.</p>
   <h3 id="sidecar">Doors that live in the other trigger table</h3>
   <p>Every scene has <em>two</em> walk-on trigger tables: one inside the <code>.MAP</code>, and a one-sector <code>.PCH</code> sidecar staged just past it in memory, searched second. Five scenes put every door in the sidecar, which made them look one-way to any tool reading the map alone: Uru Mais (<code>uru</code>), its three dream rooms (<code>urudre1..3</code>) and <code>jouine</code>, the deepest Drake Castle room.</p>
   <div class="table-wrap">

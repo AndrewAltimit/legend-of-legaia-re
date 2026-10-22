@@ -1241,14 +1241,18 @@ config fall back to the shared formation and a generic interaction.
 
 - **`EncounterZone { formation_id }`** - spawns its own formation when it
   fires, instead of the map-wide shared one.
-- **`MinigameDoor { sub_id }`** - engaging it (`World::engage_world_map_entity`)
-  drives the SM to its transition state, which arms the **mode-24 minigame
-  door warp** (`World::arm_minigame_warp` + `World::minigames.pending_warp`)
-  as the field-VM `0x3E` arm and the walk-touch arm do. `sub_id` is
-  `op0 - 100` off a partition-1 actor's `0x3E`: a *code-overlay* selector,
-  never a map id. On the three overworld scenes the only such placements are
-  the `map02` / `map03` fishing signboards (`sub_id 0`). It raises no
-  transition event.
+- **`MinigameDoor { sub_id, slot }`** - a placement whose record carries a
+  genuine `0x3E` (`op0 - 100`, a *code-overlay* selector, never a map id). On
+  the three overworld scenes the only such placements are the `map02` /
+  `map03` fishing signboards (`sub_id 0`); `slot` is the placement index its
+  interaction record is installed under. A door with a record is **talk-to**:
+  the action button runs the record ([below](#talk-to-the-action-button)) and
+  the record's own `0x3E` arms the mode-24 warp. Engaging the entity directly
+  (`World::engage_world_map_entity`) drives the SM to its transition state,
+  which arms the same warp (`World::arm_minigame_warp` +
+  `World::minigames.pending_warp`); that path remains only for a door with no
+  record and for the simplified-dialogue mode, which has no runner. It raises
+  no transition event.
 - **`OverworldPortal { scene_name, index, entry_x, entry_z, dir }`** - a town
   or dungeon entrance, sourced from the `.MAP` walk-on tile trigger -> MAN
   `P2` record -> `0x3F` bridge (`man_field_scripts::overworld_portal_sites`).
@@ -1260,11 +1264,14 @@ config fall back to the shared formation and a generic interaction.
   index. No `MapIdResolver` is involved on any overworld path.
 - **`Npc { interact_id, text_id, inline }`** - surfaces
   `FieldEvent::FieldInteract`. `inline` is the record's inline dialog-text
-  block ([below](#npc-dialogue-text-source)); `tick_world_map` opens it (sets
-  `World::dialog.current` and emits `FieldEvent::OpenDialog`) when the player
-  presses confirm within one tile of the entity, and dismisses it on the next
-  confirm / cancel. `text_id` is `None` from the MAN classifier; the inline
-  block is the text source.
+  block ([below](#npc-dialogue-text-source)). With the field-VM dialogue
+  runner on, an NPC is talked to through the action-button probe like any
+  other placement ([below](#talk-to-the-action-button)). The simplified
+  dialogue mode instead opens `inline` (sets `World::dialog.current` and emits
+  `FieldEvent::OpenDialog`) when the player presses confirm within one tile of
+  the entity's static spawn, and dismisses it on the next confirm / cancel.
+  `text_id` is `None` from the MAN classifier; the inline block is the text
+  source.
 
 `WorldMapTransition` is emitted by the SM's `on_scene_transition` and
 **drained by `SceneHost::tick`**, which loads the portal's `scene_name` (field
@@ -1279,12 +1286,52 @@ buttons.
 
 Portals fire themselves. `World::auto_engage_world_map_portals` runs each
 `tick_world_map`, after locomotion and before the entity-SM step: any walk-onto
-entity (`OverworldPortal` or `MinigameDoor`) whose placement tile (`pos >> 7`)
-matches the player's tile is driven to its transition state, so the same
-tick's SM step surfaces the transition and the host loads the destination.
-Only `Idle` portals are engaged, so a portal fires once per visit. NPCs are
-talk-to and are not auto-engaged. This is the port's stand-in for retail's
-per-tile trigger lookup.
+entity (`OverworldPortal`, or a `MinigameDoor` with no interaction record to
+run) whose placement tile (`pos >> 7`) matches the player's tile is driven to
+its transition state, so the same tick's SM step surfaces the transition and
+the host loads the destination. Only `Idle` portals are engaged, so a portal
+fires once per visit. NPCs and record-bearing doors are talk-to and are not
+auto-engaged. This is the port's stand-in for retail's per-tile trigger
+lookup.
+
+#### Talk-to: the action button
+
+The overworld frame driver `FUN_801D1344` runs the field overlay's pad
+controller `FUN_801D01B0`, so the overworld's action button is the field's
+interaction probe `FUN_801CF9F4`: one compass point 64 units ahead of the
+player along its facing, box-tested at ±72 against every placed actor. A hit
+hands the touched placement's own partition-1 record to the dialog SM
+`FUN_80039B7C`, which resumes it past its spawn section's `0x21` - the same
+dispatch a town NPC or a casino cabinet gets
+([`script-vm.md`](script-vm.md#0x3e-warp-mode-24-minigame-door-warp)).
+
+The port runs the same path. On a confirm press with no box up,
+`World::world_map_record_talk_slot` asks `World::field_interact_probe_slot`
+for a placement carrying an installed interaction record; a hit posts
+`World::trigger_field_interact` on it and `tick_world_map` steps
+`World::drive_inline_dialogue`, the field's talk runner. The probe reads the
+placements' **live** seats (`World::npcs.positions`), not their static
+spawns: most overworld talk placements spawn in the off-map hide box and are
+seated or left parked by their spawn section, and `map02` `P1[6]` (a
+direction sign) is seated by its own `23 53 49`.
+
+The fishing signboards are records of this shape. `map03` `P1[19]`, from
+its interaction cursor:
+
+| Step | Ops | Effect |
+|---|---|---|
+| Frozen lake | `73 78 ..` | System flag `0x378` clear: a two-line refusal, then the talk ends. Set: on to the tackle checks. |
+| Rod | `4C DC A0..A2` | Party holds no rod `0xA0..0xA2` (bag or equipment): a refusal. |
+| Lure | `4C DC 9D..9F` | No lure `0x9D..0x9F`: a refusal. |
+| Prompt | `1F ..`, `2A` | The fishing-spot line and a two-row picker. The second row ends the talk. |
+| Fade | `34 01 FF FF FF 28`, `4A 30` | A white screen fade, then a 48-frame wait. |
+| Warp | `3E 64` | Mode-24 door warp, `sub_id 0` (fishing). |
+
+`map02` `P1[7]` is the same record without the frozen-lake gate. Each
+refusal ends on a jump back to the interaction entry, so the next press asks
+again. Pins: `world_map_fishing_signboard_runs_its_record_into_fishing` and
+`world_map_fishing_signboard_refuses_frozen_lake_and_no_rod`
+(`crates/engine-session/tests/world_map_live.rs`).
 
 `SceneHost::enter_world_map_scene` seeds one portal per bridge site at its
 trigger-tile centre.
