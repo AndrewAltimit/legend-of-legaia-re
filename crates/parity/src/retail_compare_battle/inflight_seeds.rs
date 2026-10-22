@@ -495,8 +495,23 @@ impl RetailBattle {
         }
         if let Some(y) = g.walk_yaw.as_mut() {
             // `6 * scalar` a vsync, taken back no further than the seat.
+            //
+            // A replay on retail's battle-frame cadence swings the base and
+            // walks the creature a pass at a time, so the displayed frame is
+            // the two passes back on their own steps: Burning Attack's
+            // history is clamped, its passes ran step `4`
+            // ([`display_pass_steps`]), and taken back eight vsyncs the
+            // creature stands on its cloud (`gimard_burning_attack` `.783`
+            // to `.846`) where twice the history's step `3` left it short.
+            // The per-vsync replay keeps two of the history's step
+            // ([`display_lag_vsyncs`]).
+            let lag = if legaia_engine_session::native::battle_frame_cadence_on() {
+                self.display_pass_lag
+            } else {
+                self.display_lag
+            };
             let per_vsync = 6 * legaia_engine_cast::cast_module_camera::MODULE_DRAIN_PER_TICK;
-            let back = (i32::from(self.display_lag) * per_vsync).min(walk_swing(i32::from(*y)));
+            let back = (i32::from(lag) * per_vsync).min(walk_swing(i32::from(*y)));
             *y = ((i32::from(*y) - back) & 0xFFF) as u16;
         }
         Some(g)

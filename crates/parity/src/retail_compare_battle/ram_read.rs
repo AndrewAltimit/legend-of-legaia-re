@@ -597,6 +597,7 @@ impl RetailBattle {
             queued_category: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DE)),
             summon_fade: summon_fade(ram),
             display_lag: display_lag_vsyncs(ram),
+            display_pass_lag: display_pass_steps(ram).iter().map(|&s| u16::from(s)).sum(),
             frame_step: frame_step(ram),
             cam_accum: game_anchors::u32_at(ram, ctx + 0x87C),
             caster_clip: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1D9)),

@@ -370,6 +370,9 @@ pub struct RetailBattle {
     /// Vsyncs the capture's displayed frame lags its RAM
     /// ([`display_lag_vsyncs`]).
     pub display_lag: u16,
+    /// Vsyncs the two passes the displayed frame lags by spanned, each on
+    /// its own step ([`display_pass_steps`]).
+    pub display_pass_lag: u16,
     /// `ctx[+0x87C]` - the close-up accumulator the active actor's clip
     /// commit zeroes.
     pub cam_accum: u32,
