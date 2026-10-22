@@ -26,7 +26,10 @@ impl Baseline {
         };
         for r in reports {
             b.classes.insert(r.label.clone(), r.class);
-            if !r.channels.is_empty() {
+            // A patched-disc state run on the retail disc for want of its
+            // own image measures the patch's distance, not the engine's:
+            // the baseline keeps what its own image scored.
+            if !r.channels.is_empty() && r.resident_disc_missing.is_none() {
                 b.states.insert(r.label.clone(), r.channels.clone());
             }
         }
@@ -73,6 +76,25 @@ impl Baseline {
         self.drops(reports, allow_unmeasured, true)
     }
 
+    /// The baselined states this run measured on the retail disc because
+    /// their own patched image was not found ([`StateReport::resident_disc_missing`]),
+    /// with the reason. [`Self::drops`] leaves them out: the baseline was cut
+    /// on the image, so a comparison would score the patch, and a machine
+    /// without the images would read every such state as a drop.
+    pub fn fallback_skips(&self, reports: &[StateReport]) -> Vec<String> {
+        reports
+            .iter()
+            .filter(|r| self.states.contains_key(&r.label))
+            .filter_map(|r| {
+                let why = r.resident_disc_missing.as_deref()?;
+                Some(format!(
+                    "{}: not compared - its own image was not used ({why}); the engine ran the retail disc",
+                    r.label
+                ))
+            })
+            .collect()
+    }
+
     pub(super) fn drops(
         &self,
         reports: &[StateReport],
@@ -89,7 +111,7 @@ impl Baseline {
             let Some(r) = by_label.get(label.as_str()) else {
                 continue;
             };
-            if r.resident_patch.is_some() != patched {
+            if r.resident_patch.is_some() != patched || r.resident_disc_missing.is_some() {
                 continue;
             }
             for (ch, &want) in chans {
@@ -123,6 +145,20 @@ pub fn markdown_report(reports: &[StateReport], summary: &CorpusSummary) -> Stri
         summary.mean_state_score,
         summary.patched_mean_state_score
     );
+    let missing: Vec<&str> = reports
+        .iter()
+        .filter(|r| r.resident_disc_missing.is_some())
+        .map(|r| r.label.as_str())
+        .collect();
+    if !missing.is_empty() {
+        let _ = writeln!(
+            s,
+            "**{} patched-disc state(s) ran the retail disc: their own image was not found \
+             (`LEGAIA_PATCHED_DISCS`), so they are not compared against the baseline:** {}\n",
+            missing.len(),
+            missing.join(", ")
+        );
+    }
     let _ = writeln!(s, "## Channels (mean over seeded retail-disc states)\n");
     let _ = writeln!(s, "| channel | mean | measured |\n|---|---|---|");
     for ch in CHANNELS {
@@ -167,6 +203,14 @@ pub fn markdown_report(reports: &[StateReport], summary: &CorpusSummary) -> Stri
                 .map(|p| format!(" - patched disc: {p}"))
                 .unwrap_or_default()
         );
+        if let Some(d) = r.detail.get("resident_disc") {
+            let flag = if r.resident_disc_missing.is_some() {
+                "**own image missing** - "
+            } else {
+                ""
+            };
+            let _ = writeln!(s, "- disc: {flag}{d}");
+        }
         for ch in CHANNELS {
             if let Some(v) = r.channels.get(*ch) {
                 let d = r.detail.get(*ch).map(String::as_str).unwrap_or("");

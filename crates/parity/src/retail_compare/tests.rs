@@ -68,6 +68,44 @@ fn a_bless_replaces_a_measured_states_channel_set() {
     assert_eq!(full.states["arrival"], chans(&[("camera", 0.8)]));
 }
 
+fn patched_report(label: &str, image: f64, missing: Option<&str>) -> StateReport {
+    StateReport {
+        label: label.into(),
+        emulator: "pcsx-redux".into(),
+        fingerprint: String::new(),
+        scene: String::new(),
+        game_mode: 0x15,
+        class: StateClass::Battle,
+        unseeded: String::new(),
+        channels: chans(&[("image", image)]),
+        detail: BTreeMap::new(),
+        score: Some(image),
+        image: None,
+        resident_patch: Some("party swap".into()),
+        resident_disc_missing: missing.map(str::to_string),
+    }
+}
+
+/// A patched-disc state whose own image was missing ran the retail disc:
+/// it is skipped by the ratchet with its reason, and a bless keeps the
+/// score its own image measured.
+#[test]
+fn a_state_run_without_its_own_image_is_skipped_and_never_blessed() {
+    let mut prior = Baseline::default();
+    prior.states.insert("swap".into(), chans(&[("image", 0.9)]));
+    let fallback = vec![patched_report("swap", 0.5, Some("image.bin not found"))];
+    assert!(prior.patched_drift(&fallback, &[]).is_empty());
+    let skips = prior.fallback_skips(&fallback);
+    assert_eq!(skips.len(), 1);
+    assert!(skips[0].contains("image.bin not found"));
+    let blessed = Baseline::from_reports(&fallback).merged_over(Some(prior.clone()), &[]);
+    assert_eq!(blessed.states["swap"], chans(&[("image", 0.9)]));
+    // On its own image the same drop is reported.
+    let own = vec![patched_report("swap", 0.5, None)];
+    assert_eq!(prior.patched_drift(&own, &[]).len(), 1);
+    assert!(prior.fallback_skips(&own).is_empty());
+}
+
 /// The sub-screen word names the screen: a root row's route, one of the
 /// Equip row's three steps, the title family (clear) or a script-entered
 /// screen no root row routes to.

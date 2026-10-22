@@ -151,10 +151,21 @@ that image's own files, so a party-swap capture's fighter is the same mesh on
 both sides. The image is looked up by name in the directories
 `LEGAIA_PATCHED_DISCS` lists, else beside `LEGAIA_DISC_BIN` and one directory
 up; its `PROT.DAT`, `CDNAME.TXT` and `SCUS_942.54` are extracted once under
-the report directory (`resident-discs/`). Each such state's JSON detail says
-which disc the engine ran (`resident_disc`); an image missing from the
-machine falls back to the retail disc and says so. The images are never
-committed.
+the report directory (`resident-discs/`). The name may carry a subdirectory
+(`old/legaia_shiny_charm_100.bin`). Each such state's report entry names the
+disc the engine ran. An image missing from the machine falls back to the
+retail disc: the report flags the state at its head and in its entry, and the
+ratchet neither compares it against the baseline (cut on its own image) nor
+writes it into one - `--check` prints it as `[skip]` with the reason. The
+images are never committed.
+
+Which image a state was made on is read off its resident executable: every
+`SCUS_942.54` byte where a candidate image differs from retail must hold the
+candidate's value in the state's RAM, and what else differs must fall inside
+the runtime mask of the retail-clean states (the same mask
+[`patch_taint_audit.py scan`](pcsx-redux-automation.md#patched-disc-taint)
+learns). The executable cannot tell builds apart that share it - the three
+Delilas images do - and there the capture's own description names the image.
 
 The Delilas captures record defects of the patcher builds they were made on
 (the welded hammer slab and its stray texels, Gi's detached fist), and on

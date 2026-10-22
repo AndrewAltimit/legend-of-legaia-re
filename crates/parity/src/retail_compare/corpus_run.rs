@@ -150,7 +150,10 @@ pub fn run_corpus(opts: &RunOptions<'_>) -> Result<Vec<StateReport>> {
                 "resident_disc".into(),
                 match r {
                     Ok(_) => format!("engine ran the capture's own image {name}"),
-                    Err(e) => format!("engine ran the retail disc: {e:#}"),
+                    Err(e) => {
+                        report.resident_disc_missing = Some(format!("{e:#}"));
+                        format!("engine ran the retail disc: {e:#}")
+                    }
                 },
             );
         }
@@ -178,6 +181,7 @@ pub(super) fn run_one(
         score: None,
         image: None,
         resident_patch: entry.resident_patch.clone(),
+        resident_disc_missing: None,
     };
     let mut retail = match read_retail(entry, scus) {
         Ok(r) => r,

@@ -68,6 +68,13 @@ pub struct StateReport {
     /// patched disc, so it replays that build's executable, not retail's.
     #[serde(default)]
     pub resident_patch: Option<String>,
+    /// Set when the scenario names its patched image (`resident_disc`) but
+    /// the run could not use it, so the engine ran the retail disc: why.
+    /// The committed baseline was cut on the state's own image, so such a
+    /// run is neither compared against it nor written into it
+    /// ([`Baseline::fallback_skips`]).
+    #[serde(default)]
+    pub resident_disc_missing: Option<String>,
 }
 
 pub(crate) fn round3(v: f64) -> f64 {
