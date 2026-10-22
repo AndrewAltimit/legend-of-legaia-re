@@ -1181,6 +1181,7 @@
     "effect_children",
     "field_seeds",
     "formation_cell",
+    "ghost_ring",
     "ground_snap",
     "hud_glide",
     "melee_hits",
