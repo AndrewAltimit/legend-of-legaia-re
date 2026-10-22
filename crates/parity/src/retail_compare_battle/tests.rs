@@ -235,11 +235,39 @@ fn the_displayed_camera_stands_two_passes_short() {
     put32(&mut ram, 0x8008_40C0, 4368);
     put16(&mut ram, rec(5), 55);
     put16(&mut ram, rec(5) + 2, 4915);
-    let p = camera_align::displayed_cam_live(&ram, ctx, 2, 2);
+    let p = camera_align::displayed_cam_live(&ram, ctx, 2, 2, [None; 9]);
     assert_eq!(p.yaw, (544 + 118 + 142) as f32);
     assert_eq!(p.tr[2], (4368 - 110 - 2 * 66) as f32);
     // No lag, no walk back.
-    assert_eq!(camera_align::displayed_cam_live(&ram, ctx, 0, 2).yaw, 544.0);
+    assert_eq!(
+        camera_align::displayed_cam_live(&ram, ctx, 0, 2, [None; 9]).yaw,
+        544.0
+    );
+}
+
+/// A `0x32` capture on the summon route's first pass: the eye depth walks
+/// back one pass along the close-up table (`2 * 183`) and then one `0x29`
+/// step short of that table's endpoint `prescale(0xC00)`, not on past it.
+/// The yaw, whose endpoint the arm did not move, walks back both passes.
+#[test]
+fn a_fresh_summon_route_table_walks_back_onto_the_seed_depth() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let rec = |k: u32| ctx + camera_align::TWEEN_TABLE + k * 4;
+    put16(&mut ram, 0x8007_B792, 2104);
+    put16(&mut ram, rec(1), 12);
+    put16(&mut ram, rec(1) + 2, 1990);
+    put32(&mut ram, 0x8008_40C0, 4279);
+    put16(&mut ram, rec(5), 183);
+    put16(&mut ram, rec(5) + 2, 2457);
+    let mut prior = [None; 9];
+    prior[5] = Some(4915);
+    let p = camera_align::displayed_cam_live(&ram, ctx, 2, 2, prior);
+    assert_eq!(p.tr[2], (4279 + 366 - 2 * 27) as f32);
+    assert_eq!(p.yaw, (2104 + 24 + 28) as f32);
+    // Without the prior endpoint both passes stay on the close-up table.
+    let p = camera_align::displayed_cam_live(&ram, ctx, 2, 2, [None; 9]);
+    assert_eq!(p.tr[2], (4279 + 366 + 2 * 219) as f32);
 }
 
 /// A spent combatant takes its captured heading into a running fight, and

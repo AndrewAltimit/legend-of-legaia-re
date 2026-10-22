@@ -84,6 +84,50 @@ pub(super) fn tween_passes_back(action_state: u8, yaw_counter: u16, passes: u16)
     }
 }
 
+/// The eye depth the case-6 table chased before a `0x32` capture's table was
+/// armed, as [`displayed_cam_live`]'s `prior_end` (component 5, the eye
+/// translation's Z).
+///
+/// The summon route arm stores the close-up depth `ctx[+0x6D0] = 0x600`
+/// (`0x801E4604`) and state `0x32` on the pass it leaves `0x29`, and every
+/// `0x32` pass re-arms case 6 on it. Until that pass case 6 framed the cast on
+/// the depth the action seed's `FUN_801F0348` stored (`0x801E2D2C`), so a
+/// capture on the route's first pass holds a table one pass old: the frame on
+/// screen two passes back was still closing on the seed's depth.
+/// `flute_spikefish_midcast` holds TR z `4279` walking to `prescale(0x600)` at
+/// `183` a vsync; two passes back along that table read `5083`, beyond the
+/// `0x29` endpoint `prescale(0xC00) = 4915` the camera climbed toward, and its
+/// frame matches at about `4600`, one pass back and one `0x29` step short.
+pub(super) fn summon_route_prior_end(ram: &[u8], ctx: u32, action_state: u8) -> [Option<i32>; 9] {
+    let mut prior = [None; 9];
+    if action_state != 0x32 {
+        return prior;
+    }
+    let seat = game_anchors::u8_at(ram, ctx + 0x13);
+    let actor = game_anchors::u32_at(ram, ACTOR_TABLE + u32::from(seat.min(7)) * 4);
+    if !in_ram(actor) {
+        return prior;
+    }
+    let target = game_anchors::u8_at(ram, actor + 0x1DD);
+    let depth = legaia_engine_battle_vm::battle_formulas::camera_height_for_frame(
+        seat,
+        target,
+        legaia_engine_battle_vm::battle_formulas::RETAIL_MONSTER_SLOT_BASE,
+        |slot| {
+            let rec =
+                game_anchors::u32_at(ram, 0x801C_9348 + u32::from(slot.saturating_sub(3)) * 4);
+            if in_ram(rec) {
+                game_anchors::u8_at(ram, rec + 0x1F)
+            } else {
+                0
+            }
+        },
+    );
+    prior[5] =
+        Some(legaia_engine_battle_vm::battle_cam_script::prescale_tr_z(i32::from(depth)) as i32);
+    prior
+}
+
 /// The live pose the **displayed** frame was drawn at: retail's live camera
 /// walked back `passes` passes along its tween table.
 ///
@@ -101,11 +145,17 @@ pub(super) fn tween_passes_back(action_state: u8, yaw_counter: u16, passes: u16)
 ///
 /// `d` is read off the table's largest increment, `0xC` when every
 /// component has landed.
+///
+/// `prior_end` names, per component, the endpoint the walker chased before
+/// the table the RAM holds was armed, where that arm moved it. A component
+/// walked back past it was on the earlier table by then, and walks back from
+/// there along that table instead ([`summon_route_prior_end`]).
 pub(super) fn displayed_cam_live(
     ram: &[u8],
     ctx: u32,
     passes: u16,
     frame_step: u8,
+    prior_end: [Option<i32>; 9],
 ) -> legaia_engine_camera::projection::BattleCamPose {
     let (live, _) = retail_cam_tween(ram, ctx);
     let fs = i32::from(frame_step.max(1));
@@ -153,9 +203,34 @@ pub(super) fn displayed_cam_live(
         // One pass back is the table's own increment...
         let mut moved = fs * inc.abs();
         // ...and each pass before it the re-arm's share of the wider gap.
+        // Once a pass back would carry the component past the endpoint the
+        // earlier table chased, that pass ran on the earlier table: the
+        // walker closed on that endpoint and never stood beyond it, so the
+        // pass before it stood the earlier re-arm's step short of it.
+        let mut prior = None;
         for _ in 1..passes {
+            let pos = raw_live[k as usize] - dir * moved;
+            // A pass back on the earlier table steps away from its endpoint.
+            let earlier = |p: i32| {
+                let to = p - pos;
+                to.signum() * dir * fs * ((to.abs() + (d - fs) - 1) / (d - fs))
+            };
+            if let Some(p) = prior {
+                moved += earlier(p);
+                continue;
+            }
             let wide = g.abs() + moved;
             let step = (wide + (d - fs) - 1) / (d - fs);
+            // `p` behind `pos` (further from the endpoint), and the step back
+            // on this table would land behind `p` too.
+            if let Some(p) = prior_end[k as usize]
+                && (pos - p) * dir > 0
+                && (pos - dir * fs * step - p) * dir < 0
+            {
+                prior = Some(p);
+                moved += earlier(p);
+                continue;
+            }
             moved += fs * step;
         }
         back[k as usize] = dir * moved;

@@ -178,7 +178,8 @@ impl RetailBattle {
     /// pass into the ease, and the frame on screen is older than it. Aligned
     /// to the RAM's pose the frame lands on the wrong side of it
     /// (`flute_spikefish_midcast` `.910` to `.810`); to the displayed one
-    /// both flute captures rise (`.910` to `.929`, `.740` to `.942`). The
+    /// both flute captures rise, once the walk-back steps onto the `0x29`
+    /// table the route arm replaced ([`summon_route_prior_end`]). The
     /// summon close-up and the module shots keep the replay's own pose.
     pub fn cast_glide_aligned(&self) -> bool {
         matches!(self.seed_plan(), SeedPlan::Cast) && self.action_state == 0x32

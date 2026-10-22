@@ -3531,8 +3531,20 @@ every pass, so it moves with the phase of both clips):
   frames along the step table (`displayed_cam_live`). Retail's RAM is one
   pass into the ease and the frame on screen older than it, so the RAM's
   pose lands the frame past retail's (`flute_spikefish_midcast` `.910` to
-  `.810`) and the displayed one on it (`.910` to `.929`;
-  `flute_lippian_midcast` `.740` to `.942`).
+  `.810`) and the displayed one on it.
+
+  One pass into the ease is also one pass since its table was armed: the
+  route arm re-arms case 6 on the close-up depth on the pass it stores
+  `0x32`, and the pass before it was still the `0x29` chase toward the
+  seed's depth (`FUN_801F0348`, `prescale(0xC00) = 4915` here). Walked back
+  two passes along the close-up table the eye stood at `5083`, beyond that
+  endpoint and further out than the camera ever was: the near-camera Gobu
+  Gobu drew smaller than retail's, and the frame read `.937`. The walk-back
+  steps onto the earlier table at the pass that would cross its endpoint
+  (`summon_route_prior_end`), which puts the eye one pass back and one
+  `0x29` step short of `4915` (`4591`) while the yaw, whose endpoint the arm
+  left alone, walks both passes: `flute_spikefish_midcast` `.937` to `.991`,
+  `flute_lippian_midcast` `.946` to `.994`.
 - **An opening sampled after the sweep.** `v0_1_battle_start_tetsu` (flow
   `0x14`, past the intro timer) is taken once the engine's entry sweep and
   then its intro-name hold are over - the order retail runs them in, since

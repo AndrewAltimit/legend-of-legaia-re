@@ -483,6 +483,7 @@ impl RetailBattle {
                     display_lag_vsyncs(ram) / u16::from(frame_step(ram).max(1)),
                 ),
                 frame_step(ram),
+                summon_route_prior_end(ram, ctx, action_state),
             ),
             camera_option: game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION),
             battle_id: game_anchors::u8_at(ram, BATTLE_ID_WORD),
