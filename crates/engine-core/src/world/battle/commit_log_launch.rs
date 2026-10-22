@@ -106,6 +106,10 @@ impl World {
                 .then(|| LogLaunch::new(false));
         } else if element == READOUT_BAR_ELEMENT {
             self.battle.readout_bar_glide = Some(LogLaunch::new(false));
+        } else if element == legaia_engine_battle_vm::battle_action::SPIRIT_AP_BAR_ELEMENT {
+            // The Spirit arm's raise of the AP bar and, on the same pass,
+            // the AP plate (`0x801E2FD4` / `0x801E2FE0`): one glide.
+            self.battle.spirit_gauge_glide = Some(LogLaunch::new(false));
         } else if element == HUD_TARGET_BANNER {
             self.battle.target_plaque_glide = Some(LogLaunch::new(false));
             self.battle.target_plate_cleared = false;
@@ -164,6 +168,7 @@ impl World {
             self.battle.action_plaque_glide.as_mut(),
             self.battle.target_plaque_glide.as_mut(),
             self.battle.readout_bar_glide.as_mut(),
+            self.battle.spirit_gauge_glide.as_mut(),
             self.battle.module_panels_glide.as_mut(),
             self.battle.result_windows_glide.as_mut(),
             self.battle.round_prompt_glide.as_mut(),
@@ -212,8 +217,15 @@ impl World {
     /// engine holds took the seat. The retail-compare capture seats this
     /// from a capture whose glides were in flight; no game path calls it.
     pub fn seat_battle_hud_glide(&mut self, target: [i16; 2], elapsed: u8) -> bool {
+        // A Spirit turn raises no readout bar and no ring: its AP bar and AP
+        // plate are the records landing on the bar's seat and the ring
+        // plate's.
+        let spirit = self.spirit_gauge_view().is_some();
         let glide = match target {
             [16, 12] => self.battle.action_plaque_glide.as_mut(),
+            [16, 192] | [208, 172] if spirit => Some(self.battle.spirit_gauge_glide.get_or_insert(
+                legaia_engine_battle_vm::battle_commit_log::LogLaunch::new(false),
+            )),
             [16, 192] => self.battle.readout_bar_glide.as_mut(),
             [_, 192] => self.battle.target_plaque_glide.as_mut(),
             [104 | 180, 86] => self.battle.round_prompt_glide.as_mut(),
@@ -258,6 +270,7 @@ impl World {
             self.battle.action_plaque_glide.as_mut(),
             self.battle.target_plaque_glide.as_mut(),
             self.battle.readout_bar_glide.as_mut(),
+            self.battle.spirit_gauge_glide.as_mut(),
             self.battle.module_panels_glide.as_mut(),
             self.battle.round_prompt_glide.as_mut(),
             self.battle.ring_open_glide.as_mut(),
@@ -351,6 +364,7 @@ impl World {
             self.battle.action_plaque_glide.as_ref(),
             self.battle.target_plaque_glide.as_ref(),
             self.battle.readout_bar_glide.as_ref(),
+            self.battle.spirit_gauge_glide.as_ref(),
             self.battle.module_panels_glide.as_ref(),
             self.battle.round_prompt_glide.as_ref(),
             self.battle.ring_open_glide.as_ref(),

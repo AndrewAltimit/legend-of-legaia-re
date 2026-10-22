@@ -439,12 +439,20 @@ pub fn arts_input_chrome_draws(
     if world.mode == SceneMode::MuscleDome && !dome_battle_chrome_up(world) {
         return Vec::new();
     }
-    let Some(view) = world
-        .arts_input_view()
-        .or_else(|| world.spirit_gauge_view())
-    else {
+    let entry = world.arts_input_view();
+    // A Spirit turn's bar and plate glide in on their raise; the entry
+    // session's draw at rest.
+    let (bar_dy, plate_dx) = if entry.is_none() {
+        world.spirit_gauge_glide_offsets()
+    } else {
+        (0, 0)
+    };
+    let Some(view) = entry.or_else(|| world.spirit_gauge_view()) else {
         return Vec::new();
     };
+    let s = scale.max(1) as i32;
+    let bar_origin = (origin.0, origin.1 + bar_dy * s);
+    let plate_origin = (origin.0 + plate_dx * s, origin.1);
     let frame = ai::ArtsInputFrame {
         buffer: view.pennants,
         spent: view.pennant_spent,
@@ -457,7 +465,7 @@ pub fn arts_input_chrome_draws(
         phase: arts_input_screen(view.phase),
     };
     let mut out =
-        ai::arts_input_chrome_draws(&ai::ArtsInputAtlasRects::BAKED, &frame, origin, scale);
+        ai::arts_input_chrome_draws(&ai::ArtsInputAtlasRects::BAKED, &frame, bar_origin, scale);
     // The Rot stamp over each direction the caster's rotted limbs refuse, on
     // top of the chips (retail draws it right after the D-pad glyph).
     if let Some(rot) = chrome.and_then(|r| r.battle).and_then(|b| b.rot_stamp) {
@@ -483,7 +491,7 @@ pub fn arts_input_chrome_draws(
                 full_mark: r.gauge_100,
             },
             &frame,
-            origin,
+            plate_origin,
             scale,
         ));
     }

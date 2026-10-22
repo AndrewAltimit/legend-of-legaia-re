@@ -498,6 +498,13 @@ pub struct BattleState {
     /// the item pre-arm for a party actor (`0x801E3DA0..0x801E3DC0`)
     /// (`legaia_engine_battle_hud::battle_readout_bar_dy`).
     pub readout_bar_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
+    /// The Spirit turn's AP bar and AP plate raise glide. The Spirit arm of
+    /// the action seed raises placement records `0x0F` (the AP bar,
+    /// `(16, 234)` -> `(16, 192)`) and `0x52` (the AP plate, `(328, 172)` ->
+    /// `(208, 172)`) with mode `0` on the same pass (`jal 0x801D8DE8` at
+    /// `0x801E2FD4` / `0x801E2FE0`), so both walk one sixteen-vsync step
+    /// together (`World::spirit_gauge_glide_offsets`).
+    pub spirit_gauge_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
     /// The roster panels' raise glide when a cast module raises them
     /// itself: PROT 0911 (Orb) arm 9's pass calls `FUN_801D8DE8(6, 0)`, then
     /// `(0x4E + i, 0)` for each further member, and stores `ctx[+0x18] = 6`
@@ -1023,6 +1030,7 @@ impl BattleState {
             action_plaque_glide: None,
             target_plaque_glide: None,
             readout_bar_glide: None,
+            spirit_gauge_glide: None,
             module_panels_glide: None,
             round_prompt_glide: None,
             ring_open_glide: None,

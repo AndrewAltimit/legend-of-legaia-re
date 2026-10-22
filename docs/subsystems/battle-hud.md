@@ -568,6 +568,25 @@ round prompt's confirm arm (`jal 0x801D388C` at `0x801D109C`):
 | `0x1A` | the plaque behind the tab | `y = -24 -> 14` |
 | `0x52` | the AP plate | `x = 328 -> 208` |
 
+#### A Spirit turn raises its gauge on a glide
+
+The Spirit arm of the action seed sizes the AP bar (record `0x0F`) off the
+acting member's AGL less 6 and raises it with the AP plate (record `0x52`),
+both with mode `0` on the seed pass (`jal 0x801D8DE8` at `0x801E2FD4` and
+`0x801E2FE0`). The bar rises `y = 234 -> 192` and the plate slides
+`x = 328 -> 208` over the same sixteen vsyncs as the actor plaque raised
+beside them. The port runs both on one glide
+(`BattleState::spirit_gauge_glide`, `World::spirit_gauge_glide_offsets`),
+which the arts-entry chrome builder offsets the Spirit view by.
+
+#### A retired record keeps its last `elapsed`
+
+The stepper snaps a record whose remaining `total - elapsed` is within the
+frame step without writing `elapsed` (`0x801D9C20` branches to the snap,
+which jumps to the retire at `0x801D9D1C` past the `sb v0,0x1(a1)` at
+`0x801D9C44`). A retired record therefore still holds its target, its start
+and the `elapsed` of its last in-flight pass, and only `total` reads zero.
+
 #### The stepper's return holds the pad
 
 `FUN_801D9BBC` returns a value the menu SM reads as "a glide is still up":

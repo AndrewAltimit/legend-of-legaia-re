@@ -200,6 +200,21 @@ impl World {
         })
     }
 
+    /// Where the Spirit turn's AP bar and AP plate sit relative to their rest
+    /// seats while their raise glide runs ([`crate::world::BattleState::spirit_gauge_glide`]):
+    /// `(bar dy, plate dx)` in stage pixels, `(0, 0)` once landed. The bar
+    /// rises from `y = 234` onto `192` and the plate slides from `x = 328`
+    /// onto `208` (placement records `0x0F` / `0x52`, walked by
+    /// `FUN_801D9BBC`).
+    pub fn spirit_gauge_glide_offsets(&self) -> (i32, i32) {
+        use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
+        let g = self.battle.spirit_gauge_glide.as_ref();
+        (
+            LogLaunch::seat_dy(g, 234, 192),
+            LogLaunch::seat_dy(g, 328, 208),
+        )
+    }
+
     /// The `+0x16E` status word of the member the command ring is open for,
     /// `None` without a command session. The ring's Rot / Curse marks read
     /// it (`legaia_engine_battle_hud::battle_ring_marks`), as its refusals do

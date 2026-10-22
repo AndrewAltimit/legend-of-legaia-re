@@ -58,3 +58,38 @@ fn the_next_arts_entry_opens_on_the_spirit_extended_gauge() {
     let view = world.arts_input_view().expect("the entry is open");
     assert_eq!(view.pool_max, 279, "the entry pool is the live gauge");
 }
+
+/// The Spirit arm raises the AP bar (record `0x0F`, `y = 234 -> 192`) and
+/// the AP plate (record `0x52`, `x = 328 -> 208`) with mode `0` on the seed
+/// pass (`0x801E2FD4` / `0x801E2FE0`), so both walk in over the sixteen-vsync
+/// glide and come to rest together; a capture seat lands them on the
+/// displayed frame's `elapsed` (`delilas_gi_spirit_artifact`: ten of
+/// sixteen, the bar eight below its seat, the plate twenty-three right).
+#[test]
+fn the_spirit_bar_and_plate_glide_in_on_their_raise() {
+    let mut world = spirit_world();
+    commit_spirit_and_begin(&mut world);
+    let mut first = None;
+    for _ in 0..4000 {
+        world.tick();
+        if world.spirit_gauge_view().is_some() {
+            first = Some(world.spirit_gauge_glide_offsets());
+            break;
+        }
+    }
+    let (dy, dx) = first.expect("the Spirit gauge came up");
+    assert!(dy > 0 && dy <= 42, "the bar rises from below: {dy}");
+    assert!(
+        dx > 0 && dx <= 120,
+        "the plate slides in from the right: {dx}"
+    );
+    for _ in 0..16 {
+        world.tick();
+    }
+    assert_eq!(world.spirit_gauge_glide_offsets(), (0, 0), "both landed");
+    assert!(world.seat_battle_hud_glide([16, 192], 10));
+    assert!(world.seat_battle_hud_glide([208, 172], 10));
+    assert_eq!(world.spirit_gauge_glide_offsets(), (16, 45));
+    world.land_battle_hud_glides();
+    assert_eq!(world.spirit_gauge_glide_offsets(), (0, 0));
+}
