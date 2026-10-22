@@ -79,7 +79,9 @@ pub const SHOP_PRICE_DIGITS: u8 = 6;
 ///   inverted blink bit (`1` animated / `0` static).
 ///
 /// PORT: FUN_801d4868 (per-row cursor gate, `0x801D48B4..0x801D4910`)
-/// PORT: FUN_801d5de0 (same decode, `0x801D5E40..0x801D5E9C`)
+/// REF: FUN_801d5de0 - the casino prize list's renderer, which inlines the
+/// same decode over `_DAT_8007BB98` at `0x801D5E40..0x801D5E9C`; the shop
+/// shares the idiom, not the routine.
 pub fn shop_cursor_mode(word: u32, row: u16) -> Option<u8> {
     if word & 0x4000 != 0 {
         return None;

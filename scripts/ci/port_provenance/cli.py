@@ -32,6 +32,25 @@ from port_provenance import __doc__
 # ---------------------------------------------------------------------------
 
 
+def resolve_extracted(arg: str | None, funcs: Path) -> Path:
+    """The extracted-disc directory a run reads.
+
+    An explicit `--extracted` wins. Otherwise a `--funcs` that names another
+    checkout's `ghidra/scripts/funcs` brings that checkout's `extracted/` with
+    it: a worktree run that passed only `--funcs` used to fall back to the
+    worktree's own (absent) `extracted/` and report the rows the image tests
+    settle as findings.
+    """
+    if arg is not None:
+        return Path(arg).expanduser()
+    funcs = funcs.resolve()
+    if funcs.parts[-3:] == ("ghidra", "scripts", "funcs"):
+        sibling = funcs.parent.parent.parent / "extracted"
+        if sibling.is_dir():
+            return sibling
+    return DEFAULT_EXTRACTED
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--addr", default="", help="single-address drill-down")
@@ -75,18 +94,21 @@ def main() -> int:
     )
     ap.add_argument(
         "--extracted",
-        default=str(DEFAULT_EXTRACTED),
-        help="extracted disc directory, for the caller/branch-site test",
+        default=None,
+        help="extracted disc directory, for the caller/branch-site and "
+        "image-entry tests (default: the `extracted/` of the checkout --funcs "
+        "names, else this checkout's)",
     )
     ap.add_argument(
         "--allow-vacuous",
         action="store_true",
-        help="exit 0 instead of 2 when the dump corpus is missing",
+        help="exit 0 instead of 2 when the dump corpus or the extracted images "
+        "are missing",
     )
     args = ap.parse_args()
 
     paths.FUNCS_DIR = Path(args.funcs).expanduser()
-    paths.EXTRACTED = Path(args.extracted).expanduser()
+    paths.EXTRACTED = resolve_extracted(args.extracted, paths.FUNCS_DIR)
 
     # The rows are checked before the corpus is: a row that names nothing
     # changes which module every tag under it belongs to, so the report below
@@ -181,11 +203,15 @@ def main() -> int:
     )
     imgs = images()
     if not imgs:
+        # Without the images the caller/branch-site test and the image-entry
+        # test are both off, and the run reports every row they settle: about
+        # ninety findings that are not findings. A partial run that exits 0
+        # reads as a worklist; it is the vacuous pass with a number attached.
         print(
             f"  no extracted images under {paths.EXTRACTED} - the caller/branch-site "
-            "test is OFF, so rows citing a caller's jal site read as "
-            "unsupported. Run legaia-extract, pass --extracted <dir>, or read "
-            "this run as partial."
+            "and image-entry tests are OFF, so rows citing a caller's jal site "
+            "and image-qualified tags read as findings. Run legaia-extract, "
+            "pass --extracted <dir>, or read this run as partial."
         )
     else:
         print(
@@ -228,6 +254,12 @@ def main() -> int:
         + (", ".join(f"{k}={v}" for k, v in sorted(by_signal.items())) or "(none)")
         + f"; {len(findings) - len(unwaived)} waived."
     )
+    if not imgs and not args.allow_vacuous:
+        print(
+            "check-port-provenance: partial run (no extracted images); exiting "
+            "2. Pass --extracted <dir>, or --allow-vacuous to accept it."
+        )
+        return 2
     if args.strict and unwaived:
         print(
             "check-port-provenance: --strict and unwaived findings remain. "

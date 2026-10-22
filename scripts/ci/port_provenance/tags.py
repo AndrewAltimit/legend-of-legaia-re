@@ -38,8 +38,20 @@ def module_of(rel: str) -> str:
     """The module a source file belongs to, for grouping and finding keys."""
     for stem in SPLIT_MODULES:
         if rel.startswith(stem + "/"):
-            return stem + ".rs"
+            return split_parent(stem)
     return rel
+
+
+def split_parent(stem: str) -> str:
+    """The file a `SPLIT_MODULES` row keys its findings on.
+
+    A module split for size keeps `<stem>.rs` beside `<stem>/`. A row naming a
+    crate's `src` directory is a module that became a whole crate; its parent
+    is the crate root `src/lib.rs`, since no `src.rs` exists beside it.
+    """
+    if stem.endswith("/src"):
+        return stem + "/lib.rs"
+    return stem + ".rs"
 
 
 class Tag:

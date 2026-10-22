@@ -286,6 +286,13 @@ directory and its parent `<row>.rs` to exist - or, for a row naming a crate's
 is read, so it also fires in a worktree, which has no corpus. A module that
 moves is one edit in `rows.py`.
 
+A module that became a whole crate is a row naming the crate's `src`
+directory (`crates/engine-battle-hud/src`). Its parent is the crate root
+`src/lib.rs`, since no `src.rs` sits beside it, and its findings key on that
+file. Before that form was accepted, the row failed the check above and the
+checker exited 1 on every run - which reads, from a script that only looks for
+findings, like a run that found none.
+
 ## Reading a report
 
     python3 scripts/ci/check-port-provenance.py              # ranked report
@@ -294,13 +301,17 @@ moves is one edit in `rows.py`.
     python3 scripts/ci/check-port-provenance.py --signal dual-label
     python3 scripts/ci/check-port-provenance.py --emit-waivers
     python3 scripts/ci/check-port-provenance.py \
-        --funcs     /path/to/checkout/ghidra/scripts/funcs \
-        --extracted /path/to/checkout/extracted          # from a worktree
+        --funcs /path/to/checkout/ghidra/scripts/funcs   # from a worktree
 
 Both corpora are gitignored, so a worktree has neither and the run there would
 otherwise examine nothing. `--funcs` / `--extracted` rebind them to another
 checkout's copies by path - which is the supported way to run the checker from
 a worktree, because *copying* either corpus in would stage Sony bytes.
+`--extracted` defaults to the `extracted/` of the checkout `--funcs` names: a
+worktree run that rebound only the dumps used to read its own absent
+`extracted/`, switch off both byte tests, and report about ninety rows those
+tests settle - every caller-site citation as a `doc-citation`, every
+image-qualified tag as a `non-entry` - as a worklist.
 `--live-only` needs `target/port-catalog/catalog.csv`, which
 `port-catalog.py --live-only` writes. Prefer it: a wrong tag on an inert port is
 a doc bug, while a wrong tag on a live one also mis-credits disc coverage.
@@ -552,7 +563,9 @@ Three properties are worth stating plainly, because each is a limit:
   image's name and is not by itself proof the row meant that image.
 - **Without `extracted/` the test is silent**, and the run says so in its
   header rather than printing a clean count - those rows come back as
-  unsupported, which is the honest degradation and not a pass.
+  unsupported, which is the honest degradation and not a pass. The run then
+  exits **2**, as a corpus-blind one does
+  ([below](#an-empty-corpus-is-not-a-clean-run)).
 
 Do not re-add a waiver of this shape. If the citation really is a caller site
 the test says so and names the image; if it does not, the citation is worth
@@ -661,6 +674,11 @@ in and the `--funcs` flag that fixes it. `--allow-vacuous` restores the old exit
 0 for a caller that genuinely wants the no-op. Nothing in CI or pre-commit runs
 this checker, so the new exit code cannot turn a passing gate red; it only stops
 a hand-run from reading as a pass.
+
+A run with the dumps and without the extracted images is the same failure in
+the other direction: it reports too much rather than nothing, and the excess
+looks like work. It exits **2** too, after printing its report, and
+`--allow-vacuous` accepts it the same way.
 
 ## The sibling question for the register: does a `disassembly` row cite an address
 
