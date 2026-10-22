@@ -359,11 +359,11 @@ fn the_cd_reverb_send_is_up_in_the_hub_and_down_in_a_leg() {
     let mut w = world_with_contest();
     w.mode = SceneMode::Field;
     assert!(!w.cd_input_reverb(), "the field leaves the bit clear");
-    let card = legaia_engine_menus::muscle_dome_session::MuscleCard {
+    let card = legaia_engine_battle_menus::muscle_dome_session::MuscleCard {
         command_id: 0x0C,
         cost: 0x1E,
     };
-    let mut s = legaia_engine_menus::muscle_dome_session::MuscleDomeSession::new(
+    let mut s = legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession::new(
         [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
         [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
         [120, 120],
