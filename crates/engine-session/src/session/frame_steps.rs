@@ -454,8 +454,11 @@ impl<S: AudioSink> BootSession<S> {
                 g.passed()
             );
         }
+        let world = &mut self.host.world;
         let edge = legaia_engine_core::dance_venue::sync_dance_venue(
-            &mut self.host.world,
+            world.mode,
+            &mut world.minigames,
+            &mut world.battle.map_id,
             &mut self.camera,
         );
         (edge, finished.is_some())

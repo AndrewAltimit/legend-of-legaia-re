@@ -163,7 +163,12 @@ fn entering_the_dance_stages_the_venue_and_leaving_restores_the_scene() {
     assert_eq!(e.cleared_dancer_slots, DanceMode::Qualifier.cast_size());
     host.world.enter_dance(game);
     assert_eq!(
-        sync_dance_venue(&mut host.world, &mut camera),
+        sync_dance_venue(
+            host.world.mode,
+            &mut host.world.minigames,
+            &mut host.world.battle.map_id,
+            &mut camera,
+        ),
         Some(DanceVenueEdge::Staged)
     );
     assert_eq!(host.world.battle.map_id, u32::from(e.scene_block_base));
@@ -178,7 +183,12 @@ fn entering_the_dance_stages_the_venue_and_leaving_restores_the_scene() {
 
     host.world.exit_dance();
     assert_eq!(
-        sync_dance_venue(&mut host.world, &mut camera),
+        sync_dance_venue(
+            host.world.mode,
+            &mut host.world.minigames,
+            &mut host.world.battle.map_id,
+            &mut camera,
+        ),
         Some(DanceVenueEdge::Restored)
     );
     assert_eq!(host.world.battle.map_id, block_base);
@@ -243,7 +253,12 @@ fn the_dance_camera_follows_the_overlay_keyframe_track() {
         other => panic!("the dance frames through the venue camera, got {other:?}"),
     };
     // Staging frame = the tick's first: key 0 at weight 0, the entry pose.
-    sync_dance_venue(&mut host.world, &mut camera);
+    sync_dance_venue(
+        host.world.mode,
+        &mut host.world.minigames,
+        &mut host.world.battle.map_id,
+        &mut camera,
+    );
     assert_eq!(frame(&host, &camera), venue_camera(&e));
     let a = track.key_pose(DanceMode::Qualifier, 0).unwrap();
     let b = track.key_pose(DanceMode::Qualifier, 1).unwrap();
@@ -254,7 +269,12 @@ fn the_dance_camera_follows_the_overlay_keyframe_track() {
     let mut ticks = 1;
     for beat in 1..=2 {
         while ticks < 1 + beat * period {
-            sync_dance_venue(&mut host.world, &mut camera);
+            sync_dance_venue(
+                host.world.mode,
+                &mut host.world.minigames,
+                &mut host.world.battle.map_id,
+                &mut camera,
+            );
             ticks += 1;
         }
         let v = frame(&host, &camera);
