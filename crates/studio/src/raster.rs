@@ -161,7 +161,69 @@ impl Model {
         }
         (covered, textured)
     }
+
+    /// Share of the mesh's surface (`0.0..=1.0`, by rest-pose triangle
+    /// area) whose baked colour words are all near black - the modulation
+    /// of a textured prim, the fill of an untextured one, every channel of
+    /// every corner below [`DARK_BAKED_CHANNEL`]. Retail multiplies the
+    /// texel by that word (`texel * colour / 128`), so such a triangle draws
+    /// black however its texture resolves: the darkness is the disc's, not a
+    /// missed page. The dark-sky shell of `town01` (PROT 6) is the shape this
+    /// reads: its sky dome is untextured gouraud authored `(0, 0, 0)` at
+    /// every corner - few triangles, most of the surface.
+    pub fn dark_baked_share(&self) -> f32 {
+        let (mut dark, mut total) = (0.0f64, 0.0f64);
+        for tri in self.indices.as_chunks::<3>().0 {
+            let v = tri.map(|i| i as usize);
+            let Some(p) = v
+                .iter()
+                .map(|&i| self.rest.get(i).copied())
+                .collect::<Option<Vec<_>>>()
+            else {
+                continue;
+            };
+            let a = [p[1][0] - p[0][0], p[1][1] - p[0][1], p[1][2] - p[0][2]];
+            let b = [p[2][0] - p[0][0], p[2][1] - p[0][1], p[2][2] - p[0][2]];
+            let n = [
+                a[1] * b[2] - a[2] * b[1],
+                a[2] * b[0] - a[0] * b[2],
+                a[0] * b[1] - a[1] * b[0],
+            ];
+            let area = f64::from((n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt());
+            total += area;
+            let black = v.iter().all(|&i| {
+                let c = if self.textured.get(i) == Some(&1) {
+                    self.modulation.get(i)
+                } else {
+                    self.fill.get(i)
+                };
+                c.is_some_and(|c| c.iter().all(|&k| k < DARK_BAKED_CHANNEL))
+            });
+            if black {
+                dark += area;
+            }
+        }
+        if total > 0.0 {
+            (dark / total) as f32
+        } else {
+            0.0
+        }
+    }
 }
+
+/// A baked colour channel below this reads as black once the texel is
+/// scaled by it (`16 / 128` of the texel at most).
+pub const DARK_BAKED_CHANNEL: u8 = 16;
+
+/// A [`Model::dark_baked_share`] at or above this marks a mesh that is
+/// mostly black on the disc, which the model tab says in words. Black
+/// untextured prims (door voids, shadow blobs) are common in scene meshes,
+/// so the bar is "most of the surface", not "some of it".
+pub const MOSTLY_DARK_SHARE: f32 = 0.5;
+
+/// The lowest colour [`Shading::Lit`] shades a prim from, per channel, so a
+/// prim baked near black still shows its shape under the viewer light.
+const LIT_FLOOR: f32 = 72.0;
 
 /// Orbit camera around the model's bounding-sphere centre.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -195,7 +257,9 @@ pub enum Shading {
     Textured,
     /// No textures: every prim in its colour under a fixed viewer light,
     /// so geometry reads when the entry carries no textures of its own.
-    /// A viewer aid, not a claim about retail.
+    /// Colours are floored at a mid-dark grey so a prim baked black (a
+    /// dark-sky shell's dome) still shows its shape. A viewer aid, not a
+    /// claim about retail.
     Lit,
 }
 
@@ -389,7 +453,7 @@ pub fn render(
                     [0, 1, 2].map(|k| c[k] as f32 * m[k] / 128.0)
                 } else if shading == Shading::Lit {
                     let c = lerp3(lit_src);
-                    [0, 1, 2].map(|k| c[k] * lit * boost)
+                    [0, 1, 2].map(|k| (c[k] * boost).max(LIT_FLOOR) * lit)
                 } else {
                     lerp3(&model.fill)
                 };

@@ -1622,6 +1622,20 @@ impl App {
             mv.drawn_with = with;
             mv.view.version += 1;
         }
+        let dark = model.dark_baked_share();
+        if mv.view.shading == Shading::Textured && dark >= crate::raster::MOSTLY_DARK_SHARE {
+            ui.label(
+                RichText::new(format!(
+                    "{:.0}% of this mesh's surface carries near-black colour words on the disc. \
+                     Retail scales every texel by that word, so it draws black here (in the \
+                     game the scene's depth cue then blends it toward the far colour): the \
+                     darkness is the data, not a missing texture. \
+                     \"Untextured + viewer light\" shows the shape.",
+                    dark * 100.0
+                ))
+                .weak(),
+            );
+        }
         mv.view.show(ui, model, vram);
     }
 

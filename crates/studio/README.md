@@ -87,6 +87,13 @@ finished or cancelled run with *Show folder*, a failure on the error banner
   `legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid`, sampling a
   `legaia_tim::Vram` with the page / CLUT addressing the site viewer's shader
   uses; the wgpu renderer is not reachable from a glow context.
+- **Meshes baked black.** Some meshes draw near black with retail shading
+  although their textures resolve: `town01`'s dark-sky shell (PROT 6) has an
+  untextured sky dome authored `(0, 0, 0)` at every corner and near-black
+  colour words over a dim palette on the island. When most of a mesh's
+  surface is baked that dark (`Model::dark_baked_share`), the model tab says
+  the darkness is the disc's; the Lit aid floors colours to a grey so the
+  shape still reads.
 - **Text codec.** `Library::text_codec` picks the dialog codec from the boot
   executable the way `legaia_translate::build::detect` does (Latin with the
   high accented cells on every Latin build but the USA one).
