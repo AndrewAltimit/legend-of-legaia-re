@@ -238,3 +238,20 @@ reason = "Port-tag honesty audit against the disassembly: twelve PORT tags claim
 changes = [
   ["totals/ported", 1026, 1014],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The battle body pair now averages the playing stream's own part count, as FUN_8004998C does (lbu v1,0x0(s4) then div at 0x8004A3DC..0x8004A42C), instead of every expanded equipment channel; recomputed from retail RAM it reproduces the stored body pairs to the unit for summon invoke, melee and monster reaction clips. The fix lifts freed .954 -> .994, noa_levelup_banner .962 -> .999 and the swordie / meta / mule / nighto close-ups. Three close-ups fall because the old wrong centroid cancelled a cadence-off 2 px lead: with the battle frame cadence on, juggernaut reads 1.000 and gimard_summon_start .998 on the same build. The shiny Gimard precast is the same close-up on a patched disc."
+changes = [
+  ["states/gimard_summon_start/image", 0.989, 0.981],
+  ["states/juggernaut_summon_mid_cast/image", 0.999, 0.981],
+  ["states/shiny_refactor_gimard_precast/image", 0.954, 0.94],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The strike loop's clip commit now snaps the attacker to its reach in 4-unit steps, re-facing each step (FUN_8004AD80's tail, 0x8004BF7C..0x8004C118, confirmed by a per-frame PCSX-Redux trace of Vahn's 0D 0F 0E string). battle_melee_hit_spark rises .699 -> .765; two Vahn states lose one 8x8 block or one camera unit at the tolerance edge."
+changes = [
+  ["states/battle_vahn_tri_somersault_super/image", 0.931, 0.93],
+  ["states/rim_elm_gimard_seru_capture_before/camera", 0.999, 0.998],
+]
