@@ -48,6 +48,10 @@ pub struct EngineBattle {
     pub age_short: Option<u16>,
     /// The win pose the engine's battle-end sequence picked, when it runs.
     pub win_pose: Option<u8>,
+    /// The party melee hits a driven action pushed onto the damage ring
+    /// between the drive's start and its sample
+    /// (`BattleState::party_melee_pushes`); `None` without a drive.
+    pub action_pushes: Option<u32>,
     /// The engine's action-SM state when sampled.
     pub action_state: u8,
     /// The engine's active seat `ctx[+0x13]` when sampled.
@@ -477,6 +481,7 @@ pub fn run_engine_battle(
     // placed them - and only phase and camera at the phase itself.
     let mut pre_drive = None;
     let mut age_short = None;
+    let mut action_pushes = None;
     match (plan, battle.phase_gate()) {
         // The entry sweep owns retail's camera until the frame driver's
         // counter passes `0xC0`; run the engine's to the same count.
@@ -593,12 +598,21 @@ pub fn run_engine_battle(
                     &mut session.host.world,
                     &battle.melee_hit_seeds(),
                 );
+                let pushes_before = session.host.world.battle.party_melee_pushes;
                 driven = Some(run_drive(
                     &mut session,
                     &mut director,
                     drive,
                     &mut age_short,
                 )?);
+                action_pushes = Some(
+                    session
+                        .host
+                        .world
+                        .battle
+                        .party_melee_pushes
+                        .wrapping_sub(pushes_before),
+                );
             }
         }
         _ => {
@@ -775,6 +789,7 @@ pub fn run_engine_battle(
         inflight: seed.map(|_| phase_tick),
         driven,
         win_pose: world.battle.victory.and_then(|v| v.pose_id),
+        action_pushes,
         action_state: world.battle_ctx.action_state,
         active_actor: world.battle_ctx.active_actor,
         active_target: world

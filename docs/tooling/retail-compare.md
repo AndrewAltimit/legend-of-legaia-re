@@ -1423,6 +1423,26 @@ lands the total completes (`BattleState::forced_melee_total`). The rolls
 still draw, so the stream advances as retail's did. `noa_levelup_fight_pre`
 reads `camera` `.970` to `1.000` and `image` `.790` to `.996`.
 
+An unknown amount ahead of a known one leaves the known tail its room, and
+the last unknown hit ahead of a tail the ring still holds whole takes what
+the total leaves after it, so that tail lands its own captured amounts.
+
+The ring also counts the string. A blocked swing skips the melee kernel's
+damage body (`bne s7,zero,0x801EE6D4` at `0x801ECB60`) and with it the push,
+so the ring holds one entry per hit that connected, and the block itself is a
+`rand()` roll ([battle-formulas](../subsystems/battle-formulas.md#block-roll)).
+`battle_melee_hit_spark`'s Vahn queues three swings and Somersault against a
+Gimard that can block, and the ring holds three pushes - two expired, then
+the art's `15` of `29`: one swing was blocked. A replay that connected all
+four handed the third swing the `15` and the art the `2` left of the total,
+drew `2` on screen and knocked Gimard `28` units further. A party melee
+capture therefore wants a stream whose drive pushes as many party hits as
+the ring holds (`EngineBattle::action_pushes`, the engine's
+`BattleState::party_melee_pushes` across the drive): a stream that reaches
+the phase on another count is kept as the fallback while the rest are tried,
+and the first such run is kept when none matches. On the matching stream the
+frame draws `15` and Gimard stands on his captured `(-6, 405)`.
+
 A monster's cast (`+0x1DE == 2` on a monster seat) pushes its hits on the
 same ring, and its replay seeds them the same way: the cast's hit on the
 ring's front slot takes the pushed amount (`World::cast_spell_on_slots`).

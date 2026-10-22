@@ -583,3 +583,31 @@ fn a_forced_melee_string_lands_the_captured_total() {
     );
     assert!(w.battle.forced_melee_hits.is_empty());
 }
+
+/// A string whose earlier pushes have expired but whose closing amount the
+/// ring still holds: the last unknown hit takes what the total leaves after
+/// the known tail, so the closing hit lands its own captured amount
+/// (`battle_melee_hit_spark`: two expired pushes, then `15` of `29`). Each
+/// landed party hit counts one ring push.
+#[test]
+fn a_known_closing_push_keeps_its_amount() {
+    let mut w = absorb_duel();
+    w.actors[1].battle.hp = 500;
+    w.actors[1].battle.max_hp = 500;
+    w.battle.forced_melee_hits = [(1u8, 0u16), (1, 0), (1, 15)].into_iter().collect();
+    w.battle.forced_melee_total = Some((1, 29));
+    let pushes = w.battle.party_melee_pushes;
+    w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, false);
+    assert!(
+        w.actors[1].battle.damage_accum <= 13,
+        "the first leaves room for the known 15"
+    );
+    w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, false);
+    assert_eq!(
+        w.actors[1].battle.damage_accum, 14,
+        "the second fills to 29 - 15"
+    );
+    w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, true);
+    assert_eq!(w.actors[1].battle.damage_accum, 29);
+    assert_eq!(w.battle.party_melee_pushes, pushes + 3);
+}

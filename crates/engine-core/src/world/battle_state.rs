@@ -470,6 +470,12 @@ pub struct BattleState {
     /// against Gobu Gobu's `76`, no more than the quarter, and a replay that
     /// rolled `21` knocked him down and stood the fight 300 units off.
     pub forced_melee_total: Option<(u8, u32)>,
+    /// Party melee hits that reached the damage body this battle - each one
+    /// a push of retail's damage-number ring (`ctx[+0x273]`, the push at
+    /// `0x801EDDE4`), which a blocked hit skips (`bne s7,zero,0x801EE6D4` at
+    /// `0x801ECB60`). A running count the retail-compare drive differences
+    /// across an action to tell a replayed string from retail's.
+    pub party_melee_pushes: u32,
     /// The commit log's launch glide - retail's `0x35 + i` clones gliding the
     /// log off the left edge when the member leaves the ring for a sub-screen
     /// and back when they return
@@ -1011,6 +1017,7 @@ impl BattleState {
             forced_steal: false,
             forced_melee_hits: Default::default(),
             forced_melee_total: None,
+            party_melee_pushes: 0,
             forced_absorb: false,
             commit_log_launch: None,
             action_plaque_glide: None,

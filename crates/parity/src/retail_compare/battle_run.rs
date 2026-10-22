@@ -61,6 +61,23 @@ pub(super) fn run_battle(
     // the phase on another one is kept as the fallback while the remaining
     // streams are tried (`RetailBattle::win_pose`).
     let mut off_pose = None;
+    // A party melee capture also wants retail's landed swings: the ring
+    // holds one push per hit that reached the damage body, and a blocked
+    // swing pushes none, so a stream whose block rolls landed another count
+    // replays another string - another total, another knockback, another
+    // number on screen (`battle_melee_hit_spark`: three of four landed).
+    let ring_pushes = {
+        let seed = battle.melee_hit_seeds();
+        let party_swing = matches!(
+            battle.seed_plan(),
+            crate::retail_compare_battle::SeedPlan::Action { seat, .. } if seat < 3
+        );
+        // A capture past the end signal is placed by the results sequence,
+        // not inside the string, and already searches on its win pose.
+        (party_swing && battle.win_pose.is_none() && !seed.hits.is_empty())
+            .then_some(seed.hits.len() as u32)
+    };
+    let mut off_hits = None;
     let opening = battle.seed_plan() == crate::retail_compare_battle::SeedPlan::Opening;
     // A replayed cast tries its victims revived first: unlike a pad-driven
     // swing, a cast onto a corpse still reaches its phase, so the HP-as-read
@@ -142,6 +159,10 @@ pub(super) fn run_battle(
                         off_pose.get_or_insert(e);
                         continue;
                     }
+                    if ring_pushes.is_some() && e.action_pushes != ring_pushes {
+                        off_hits.get_or_insert((e, victims));
+                        continue;
+                    }
                     reached = Some(e);
                     reached_victims = victims;
                     break 'search;
@@ -155,6 +176,14 @@ pub(super) fn run_battle(
                 }
             }
         }
+    }
+    // No stream landed retail's count: the first that reached the phase is
+    // kept, as it was before the count was asked for.
+    if reached.is_none()
+        && let Some((e, victims)) = off_hits.take()
+    {
+        reached = Some(e);
+        reached_victims = victims;
     }
     // A driven action replays the pushes its capture already holds; run the
     // same stream once more from the ground the replay says retail started
