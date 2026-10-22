@@ -1278,15 +1278,35 @@ half of all launches die this way; with no input on the display, none do.
 Flooding `XI_HierarchyChanged` instead does not reproduce it, because the
 hierarchy converter never asks for the version.
 
-Nothing in the engine can close the window: the `Display` is opened inside
-`EventLoop::new`, and the latest `winit` 0.30 release keeps this order. So the
-drivers that spawn a capture child (`native_minigame_ladder` and the
-retail-compare image channel) run it through
-`legaia_parity::window_child::output_retrying_startup_race`. The child logs
-`play-window: event loop open` as soon as `EventLoop::new` returns, and a
-`SIGSEGV` without that line on stderr is retried exactly once, with a
-`[retry]` line naming the reason. A `SIGSEGV` after the line, or a second
-startup death, is returned as the failure it is.
+Nothing in the engine can close the window. The `Display` is opened, the raw
+events are selected and the first libXi call is made all inside
+`EventLoop::new`, and the latest `winit` 0.30 release keeps this order. The
+builder takes no device-event filter, and `listen_device_events` only exists
+once `new` has returned, after the race. The pointer read at the fault is
+ASCII text left in a recycled heap chunk, and running the child with
+`GLIBC_TUNABLES=glibc.malloc.tcache_count=0:glibc.malloc.perturb=255` (every
+`malloc` zero-filled, so the unwritten `vers` reads as null and the version
+check fails safely) removes the crash under the same flood. That confirms
+the mechanism, but it trades allocator speed in the whole process for one
+startup window, so no host sets it.
+
+The upstream fix belongs in `winit`'s X11 `EventLoop::new`: make the first
+libXi call before any XInput2 selection on the root window, or query devices
+over its XCB connection (`xinput_xi_query_device`) instead of Xlib's
+`XIQueryDevice`, which takes libXi's lazy setup off the path. On the libXi
+side, `_XiCheckExtInit` would need to clear `vers` before its round trip.
+
+Until then, everything that launches `play-window` and waits on it relaunches
+exactly this death once. The child logs `play-window: event loop open` as
+soon as `EventLoop::new` returns, and a `SIGSEGV` without that line is the
+startup race:
+
+| Launcher | Where | On a second startup death |
+|---|---|---|
+| `native_minigame_ladder`, the retail-compare image channel | `legaia_parity::window_child::output_retrying_startup_race`, reading the child's stderr | returns the failure; a `[retry]` line names the first |
+| Legaia Studio's Play button | `legaia_studio::launch::Game::poll`, reading the game's log file | an error line saying the game crashed twice while opening its window and can be started again |
+
+A `SIGSEGV` after the line is a different crash and is never relaunched.
 
 Paired tick-locked and matching frame for frame: field walk and camera, the
 dialogue box (typewriter, page hand, row scroll), the pause menu's Items /
