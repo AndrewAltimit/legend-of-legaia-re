@@ -79,7 +79,7 @@ fn host_drains(session: &mut NativeSession) {
 /// The route ladder's fighter: Begin, Attack, Auto, confirm the target,
 /// confirm a message box, back out of a bag - every one a pad press.
 fn fight_pad(session: &NativeSession) -> u16 {
-    use legaia_engine_menus::battle_input::CommandPhase;
+    use legaia_engine_battle_menus::battle_input::CommandPhase;
     let w = &session.host.world;
     if !w.battle.tutorial_boxes.is_empty() {
         return PadButton::Cross.mask();

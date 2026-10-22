@@ -35,7 +35,7 @@
 //! strikes, case 8 on the done tail and the battle-over arm on a win.
 //!
 //! The bodies move on the session's play-out choreography
-//! (`legaia_engine_menus::muscle_dome_session::choreo`): the battle's clip
+//! (`legaia_engine_battle_menus::muscle_dome_session::choreo`): the battle's clip
 //! rate, the range-law approach, root motion, the end steps and the
 //! reaction pick, stepped once a world tick by the host that owns the
 //! session. The surface reads the poses, positions and facings off it and
@@ -69,9 +69,9 @@ pub const BATTLE_WORLD_SCALE: f32 = 4.0;
 
 /// The seat body `i` stands on at leg open, `(x, z)`: the lone party seat
 /// and the lone monster seat
-/// (`legaia_engine_menus::muscle_dome_session::choreo::seat_xz`).
+/// (`legaia_engine_battle_menus::muscle_dome_session::choreo::seat_xz`).
 pub fn seat_xz(i: usize) -> [f32; 2] {
-    let [x, z] = legaia_engine_menus::muscle_dome_session::choreo::seat_xz(i);
+    let [x, z] = legaia_engine_battle_menus::muscle_dome_session::choreo::seat_xz(i);
     [x as f32, z as f32]
 }
 

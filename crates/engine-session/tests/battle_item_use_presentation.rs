@@ -22,7 +22,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_menus::battle_input::{AttackMode, BattleCommand, CommandPhase, RoundChoice};
+use legaia_engine_battle_menus::battle_input::{
+    AttackMode, BattleCommand, CommandPhase, RoundChoice,
+};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_session::native::NativeSession;
 use legaia_engine_session::session::{BootConfig, FieldLiveOpts};

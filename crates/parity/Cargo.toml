@@ -38,6 +38,7 @@ legaia-vab.workspace = true
 legaia-engine-dialog.workspace = true
 legaia-engine-effects.workspace = true
 legaia-engine-field.workspace = true
+legaia-engine-battle-menus.workspace = true
 legaia-engine-menus.workspace = true
 legaia-engine-mode.workspace = true
 legaia-engine-system.workspace = true

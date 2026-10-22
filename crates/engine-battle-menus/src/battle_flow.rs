@@ -121,7 +121,7 @@ impl BattleFlowState {
 
 /// Which host-owned battle submenu is open, if any. The engine splits the
 /// windows retail drives from inside `FUN_801D0748` into separate sessions
-/// ([`crate::inventory_use`] / [`legaia_engine_battle::battle_magic`] /
+/// (`legaia_engine_menus::inventory_use` / [`legaia_engine_battle::battle_magic`] /
 /// [`legaia_engine_battle::battle_arts`]), so the flow state has to be recomposed from them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BattleMenuKind {
@@ -160,7 +160,7 @@ pub fn flow_state_for(phase: Option<&CommandPhase>, menu: BattleMenuKind) -> Bat
         // A confirmed target commits the action: retail's target cursor (0x5A)
         // goes straight to the commit state (0x6E) once the last member has
         // picked. Its 0x64 "target confirm" is the *item window's* own target
-        // step, which the engine runs inside `crate::inventory_use` - so
+        // step, which the engine runs inside `legaia_engine_menus::inventory_use` - so
         // nothing here produces `TargetConfirm` yet.
         Some(CommandPhase::Confirmed { .. }) => BattleFlowState::CommitBegin,
         // The commit-confirm screen itself, and the two exits it resolves to

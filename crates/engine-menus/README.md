@@ -55,17 +55,12 @@ link into a dependent crate.
   picker's rows and labels, the list page lengths, and the UI cue each shop
   input raises); see
   [`docs/subsystems/shop.md`](../../docs/subsystems/shop.md).
-- **Battle command input** - `battle_input` (`BattleCommandSession`, the
-  player-driven command picker the live battle loop opens per party turn,
-  and the chip-cluster model both it and the dome project), `battle_open`
-  (the formation open banner and its hold timers), `battle_flow` (the
-  command-flow state byte `ctx[+0x06]` as a projection of the session's
-  phases, and the tutorial box the flow state is showing), `timed_fight` (Koru's
-  turn-limit gate and strip readout) and `muscle_dome_session` (one Muscle Dome leg:
-  `MuscleDomeSession`, its command menu, ring and loadout kernels, over the
-  contest ladder `legaia-engine-minigames` carries)
-  and `option_values` (the options screen's value enums - Select Attack,
-  battle camera, field HP display, ...).
+- **Battle command input** - not in this crate. The command picker, the
+  open banner, the command-flow byte, the timed fight and the Muscle Dome
+  match session are
+  [`legaia-engine-battle-menus`](../engine-battle-menus/README.md), a
+  sibling; the options screen's value enums they key on (`option_values`)
+  are `legaia-engine-system`'s.
 - **Options** - `options`: `OptionsState` and its TOML persistence, the
   options screen session and its row model, the key-rebind flow over
   `key_rebind`, and the retail-deviation report. The push of the simulation
@@ -112,10 +107,6 @@ link into a dependent crate.
 
 - `gameover_banner` - the game-over banner letter stager `FUN_801CE844`.
 - `menu` - the engine's pause / shop / inn menu state machine.
-
-`muscle_dome_session` is the Muscle Dome match session (the deal, the commit
-and the ring) over this crate's battle-input and arts-input models; the
-World-free ladder and contest tables are `legaia_engine_minigames::muscle_dome`.
 
 ## See also
 

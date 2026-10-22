@@ -350,7 +350,7 @@ pub struct BattleState {
     /// `false` (the default) the live loop auto-resolves each party turn with
     /// a physical Attack on the first living monster (the historical spine
     /// behaviour). When `true`, every party turn pauses the action SM and runs
-    /// a [`legaia_engine_menus::battle_input::BattleCommandSession`] that reads
+    /// a [`legaia_engine_battle_menus::battle_input::BattleCommandSession`] that reads
     /// [`crate::world::World::input`]: the player selects a command from the battle command
     /// menu and a target before the strike commits. Requires
     /// [`crate::world::WorldToggles::live_gameplay_loop`]; hosts that want a playable battle
@@ -366,12 +366,12 @@ pub struct BattleState {
     /// is parked meanwhile); `None` when the SM is running or outside battle.
     /// Managed by the live loop; hosts read it to draw the command menu /
     /// target cursor.
-    pub command: Option<legaia_engine_menus::battle_input::BattleCommandSession>,
+    pub command: Option<legaia_engine_battle_menus::battle_input::BattleCommandSession>,
     /// Active inventory submenu for the player-driven battle, opened when the
     /// player picks **Item** from the command menu. `Some` while the player
     /// browses items / picks a target (both the action SM and
     /// [`crate::world::BattleState::command`] are parked meanwhile); `None` otherwise. The
-    /// World owns it - not [`legaia_engine_menus::battle_input::BattleCommandSession`] -
+    /// World owns it - not [`legaia_engine_battle_menus::battle_input::BattleCommandSession`] -
     /// because it needs the live inventory + party stats. Hosts read it to
     /// draw the item overlay.
     pub item_menu: Option<legaia_engine_menus::inventory_use::InventoryUseSession>,
@@ -411,9 +411,9 @@ pub struct BattleState {
     /// The battle **command-flow** cursor - retail `ctx[+0x06]`, the byte the
     /// menu-half SM `FUN_801D0748` runs on and the key the sparring-tutorial
     /// hook table indexes. Recomposed each frame from the live command session
-    /// plus submenus by [`legaia_engine_menus::battle_flow::flow_state_for`]; the turn-start
+    /// plus submenus by [`legaia_engine_battle_menus::battle_flow::flow_state_for`]; the turn-start
     /// prompt is raised directly by `World::open_battle_command`.
-    pub flow: legaia_engine_menus::battle_flow::BattleFlowState,
+    pub flow: legaia_engine_battle_menus::battle_flow::BattleFlowState,
     /// The live loop's round state - which of retail's two round bands the
     /// battle is in (the command band collects every party member's command
     /// before the execution band dispatches anyone by initiative), the
@@ -532,7 +532,8 @@ pub struct BattleState {
     /// `ctx[+0x884]`: the press parked while the stepper's return was under
     /// `World::GLIDE_PAD_BUFFER_BELOW`, handed to the first dispatched pass
     /// that reads no press of its own.
-    pub(crate) command_pad_buffer: Option<legaia_engine_menus::battle_input::BattleCommandInput>,
+    pub(crate) command_pad_buffer:
+        Option<legaia_engine_battle_menus::battle_input::BattleCommandInput>,
     /// The result windows' raise glide: the results frame spawns the report
     /// (`0x41`) or loss (`0x42`) window and the level-up window
     /// (`0x44 + mask`) at their seat A, off screen, and `FUN_801D9BBC` walks
@@ -708,7 +709,7 @@ pub struct BattleState {
     /// than the tutorial: the battle-open formation banner
     /// ([`crate::world::World::raise_battle_open_banner`]) rides it too.
     pub tutorial_boxes:
-        std::collections::VecDeque<legaia_engine_menus::battle_flow::ActiveTutorialBox>,
+        std::collections::VecDeque<legaia_engine_battle_menus::battle_flow::ActiveTutorialBox>,
     /// The sparring tutorial's **standing prompt**: the last self-dismissing
     /// box to leave [`Self::tutorial_boxes`]. Retail registers such a prompt
     /// as a text actor under sort key `1` (`FUN_801F747C` -> `FUN_8003541C`
@@ -721,7 +722,7 @@ pub struct BattleState {
     /// category ring). It holds nothing: the battle loop parks on the queue
     /// alone. Hosts draw it with the queue's front group
     /// ([`crate::world::World::battle_tutorial_boxes_on_screen`]).
-    pub tutorial_standing: Option<legaia_engine_menus::battle_flow::ActiveTutorialBox>,
+    pub tutorial_standing: Option<legaia_engine_battle_menus::battle_flow::ActiveTutorialBox>,
     /// The battle screen's chip / banner labels, read off the user's own disc
     /// ([`legaia_ui_formats::battle_ui_strings`]). Empty when the host had no disc
     /// to read - the port's own wording is used then, so the surfaces still
@@ -1002,7 +1003,7 @@ impl BattleState {
             arts_menu: None,
             arts_input: None,
             swing_costs: [[legaia_engine_battle::arts_command_input::FAVORED_COST; 4]; 3],
-            flow: legaia_engine_menus::battle_flow::BattleFlowState::Idle,
+            flow: legaia_engine_battle_menus::battle_flow::BattleFlowState::Idle,
             round_flow: crate::battle_round::RoundFlow::default(),
             inflight_seed: None,
             forced_monster_cast: None,

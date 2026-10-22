@@ -56,7 +56,7 @@ pub enum SceneMode {
     /// sub-id `4` (the Baka Fighter overlay, PROT 0976).
     BakaFighter,
     /// Muscle Dome contest, an ordinary battle fought to a KO - the direction-entry /
-    /// commit / resolve loop owns the frame (`legaia_engine_menus::muscle_dome_session::MuscleDomeSession`); field
+    /// commit / resolve loop owns the frame (`legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession`); field
     /// / battle dispatch is suspended and the interrupted mode restored on
     /// exit. Retail: the arena runs *inside* the battle overlay (PROT 0898)
     /// on the `_DAT_8007bd24` context, entered through the `game_mode 0x18`

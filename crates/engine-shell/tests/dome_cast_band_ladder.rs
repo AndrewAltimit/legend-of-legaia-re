@@ -13,7 +13,7 @@
 //! dispatch is table arithmetic and the tick kernels are pure - so it runs in
 //! CI unconditionally and is the non-vacuous half when no disc is present.
 
-use legaia_engine_menus::muscle_dome_session::{
+use legaia_engine_battle_menus::muscle_dome_session::{
     DomeCastRefusal, DomeMagic, DomeRing, DomeRingChip, MuscleCard, MuscleDomeSession, MusclePhase,
 };
 

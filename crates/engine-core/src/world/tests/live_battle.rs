@@ -18,7 +18,7 @@ fn live_battle_world_3v2() -> World {
 
 #[test]
 fn spirit_command_charges_ap_and_raises_the_guard_stance() {
-    use legaia_engine_menus::battle_input::{BattleCommandSession, CommandPhase};
+    use legaia_engine_battle_menus::battle_input::{BattleCommandSession, CommandPhase};
     let mut world = live_battle_world_3v2();
     world.battle.command = Some(BattleCommandSession {
         actor: 0,
@@ -177,7 +177,7 @@ fn enemy_agl_budget_drives_multi_strike_and_gates_on_agl() {
 
 #[test]
 fn run_command_arms_the_run_band() {
-    use legaia_engine_menus::battle_input::{BattleCommandSession, CommandPhase};
+    use legaia_engine_battle_menus::battle_input::{BattleCommandSession, CommandPhase};
     let mut world = live_battle_world_3v2();
     world.battle.command = Some(BattleCommandSession {
         actor: 0,
@@ -387,7 +387,9 @@ fn npc_walk_steps_track_heading_and_keep_it_after_arrival() {
 #[test]
 fn run_in_a_no_escape_fight_rolls_and_fails() {
     use legaia_engine_battle::target_picker::SlotState;
-    use legaia_engine_menus::battle_input::{BattleCommandInput, BattleCommandSession, Resolution};
+    use legaia_engine_battle_menus::battle_input::{
+        BattleCommandInput, BattleCommandSession, Resolution,
+    };
     let run = |no_escape: bool| -> (World, bool, bool) {
         let mut world = live_battle_world_3v2();
         world.battle.no_escape = no_escape;

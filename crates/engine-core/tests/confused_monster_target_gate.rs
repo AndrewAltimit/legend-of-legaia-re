@@ -79,7 +79,7 @@ fn battle_world(seed: u32) -> World {
 /// target = self). Filtering on `category == 3` therefore drops exactly the
 /// outcome that proves the arm ran, and reads as "the monster never acted".
 fn armed_actions(w: &mut World, slot: u8, frames: usize) -> Vec<(u8, u8)> {
-    use legaia_engine_menus::battle_input::CommandPhase;
+    use legaia_engine_battle_menus::battle_input::CommandPhase;
     let mut seen: Vec<(u8, u8)> = Vec::new();
     for frame in 0..frames {
         // A party nobody can command still raises the party-wide screens
@@ -389,8 +389,8 @@ fn a_confused_party_member_is_flipped_the_other_way() {
         if let Some(session) = w.battle.command.as_ref().filter(|s| {
             !matches!(
                 s.phase,
-                legaia_engine_menus::battle_input::CommandPhase::RoundPrompt { .. }
-                    | legaia_engine_menus::battle_input::CommandPhase::CommitConfirm { .. }
+                legaia_engine_battle_menus::battle_input::CommandPhase::RoundPrompt { .. }
+                    | legaia_engine_battle_menus::battle_input::CommandPhase::CommitConfirm { .. }
             )
         }) {
             let still_confused = w

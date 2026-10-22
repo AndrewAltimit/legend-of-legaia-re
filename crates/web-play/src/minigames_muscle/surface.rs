@@ -5,7 +5,7 @@
 //! hosts frame a dome fight from one kernel.
 
 use super::*;
-use legaia_engine_menus::muscle_dome_session::choreo::BeatKind;
+use legaia_engine_battle_menus::muscle_dome_session::choreo::BeatKind;
 use legaia_engine_minigame_scenes::muscle_dome_scene::SelectFraming;
 use std::sync::Arc;
 

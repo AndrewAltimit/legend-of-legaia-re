@@ -16,7 +16,7 @@ The port runs the same flow on both play hosts: round prompt, direct-commit D-pa
 | Command-step helper | `FUN_801D388C(step)` (window choreography per step), cursor step `FUN_801D32BC` |
 | Next-member scans | `FUN_801DB81C` (from the current member), `FUN_801DBA04` (from zero) |
 | Stage overlays | 967 tutorial hook `FUN_801F6B70`; 968 arrival `FUN_801F69F4`; 969 form transition `FUN_801F69D8`; all ticked by the SCUS side-band `FUN_80056208` |
-| Port | `engine-menus::battle_input`, `engine-menus::battle_flow` / `battle_tutorial` / `battle_stage_module` / `battle_sideband`, `engine-ui::battle_command_ui` |
+| Port | `engine-battle-menus::battle_input`, `engine-battle-menus::battle_flow` / `battle_tutorial` / `battle_stage_module` / `battle_sideband`, `engine-ui::battle_command_ui` |
 
 ```mermaid
 stateDiagram-v2
@@ -115,7 +115,7 @@ through rather than by being handled.
 That band is what pins the tutorial's table. Its nine live slots are exactly
 these ten states **minus the magic window** - the sparring fight teaches attacks,
 items, spirit and hyper arts, and never magic. Engine mirror
-[`engine-menus::battle_flow`](../../crates/engine-menus/src/battle_flow.rs), which
+[`engine-battle-menus::battle_flow`](../../crates/engine-battle-menus/src/battle_flow.rs), which
 carries that cross-check as a test.
 
 <a id="the-state-chain"></a>
@@ -553,9 +553,9 @@ A sweep reaches the action SM as retail's target-group code, not a sentinel: the
 
 ### Phases and input map
 
-`engine-menus::battle_input` carries the three phases (`CommandPhase::RoundPrompt`
+`engine-battle-menus::battle_input` carries the three phases (`CommandPhase::RoundPrompt`
 / `Menu` / `AttackMode`) and `engine-ui::battle_command_ui::ChipPhase` the
-seating for each; `engine-menus::battle_open` composes the banner and
+seating for each; `engine-battle-menus::battle_open` composes the banner and
 `World::raise_battle_open_banner` queues it onto the shared battle message box
 (retail's `ctx[+0x6B2]` surface). The round-scoped prompt is armed from
 `World::arm_round_open_prompt`, keyed on the flow byte parking at
@@ -593,7 +593,7 @@ the drawn seating.
 ### How the engine raises the flow state
 
 The engine splits what `FUN_801D0748` does in one machine across a
-[`battle_input::BattleCommandSession`](../../crates/engine-menus/src/battle_input.rs)
+[`battle_input::BattleCommandSession`](../../crates/engine-battle-menus/src/battle_input.rs)
 plus host-owned Item / Magic / Arts submenus, so the flow byte is *recomposed*
 each frame by `battle_flow::flow_state_for` (an open submenu wins over the
 command phase). The round around them is retail's own two bands - every

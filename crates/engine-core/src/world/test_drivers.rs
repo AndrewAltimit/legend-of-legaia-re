@@ -12,8 +12,8 @@
 
 use super::World;
 use crate::battle_round::PendingPartyAction;
+use legaia_engine_battle_menus::battle_input::BattleCommandInput;
 use legaia_engine_battle_vm::battle_action::StepOutcome;
-use legaia_engine_menus::battle_input::BattleCommandInput;
 
 pub trait BattleTestDrivers {
     /// The flag `World::step_action_plate_glides` holds the stepper's return

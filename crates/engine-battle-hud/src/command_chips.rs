@@ -3,7 +3,7 @@
 
 use super::*;
 
-use legaia_engine_menus::battle_input::{BattleCommandChips, CommandChipPhase};
+use legaia_engine_battle_menus::battle_input::{BattleCommandChips, CommandChipPhase};
 
 /// The chip a cluster draws **highlighted**, given the session's cursor:
 /// `Some(cursor)` under the Battle Command option's cross-button value,
@@ -24,7 +24,7 @@ pub fn battle_chip_highlight(
     world: &legaia_engine_core::world::World,
     cursor: usize,
 ) -> Option<usize> {
-    use legaia_engine_menus::option_values::BattleCommandOpt;
+    use legaia_engine_system::option_values::BattleCommandOpt;
     (world.toggles.battle_command == BattleCommandOpt::CrossButton).then_some(cursor)
 }
 
@@ -38,7 +38,7 @@ pub fn battle_chip_highlight(
 pub fn battle_command_chips(
     world: &legaia_engine_core::world::World,
 ) -> Option<BattleCommandChips> {
-    use legaia_engine_menus::battle_input::{
+    use legaia_engine_battle_menus::battle_input::{
         AttackMode, BattleCommand, CommandPhase, CommitChoice, RoundChoice,
     };
     use legaia_ui_formats::battle_ui_strings::BattleUiLabel;
@@ -132,7 +132,7 @@ pub fn battle_command_chips(
 pub(super) fn dome_command_chips(
     world: &legaia_engine_core::world::World,
 ) -> Option<BattleCommandChips> {
-    use legaia_engine_menus::battle_input::{BattleCommand, CommitChoice};
+    use legaia_engine_battle_menus::battle_input::{BattleCommand, CommitChoice};
     use legaia_ui_formats::battle_ui_strings::BattleUiLabel;
     let s = world.minigames.muscle_dome.as_ref()?;
     if world.dialog.current.is_some() || world.dialog.inline.is_some() {
@@ -194,9 +194,9 @@ use legaia_engine_battle_vm::battle_commit_log::{CommitLogRow, CommitLogTarget};
 /// arm order (records `0x0C` / `0x0E`), not read off a commit arm.
 pub fn battle_commit_log(world: &legaia_engine_core::world::World) -> Vec<CommitLogRow> {
     use legaia_engine_battle::target_picker::CursorRow;
+    use legaia_engine_battle_menus::battle_input::CommandPhase;
     use legaia_engine_battle_vm::battle_commit_log as log;
     use legaia_engine_core::battle_round::{PendingPartyAction, RoundPhase};
-    use legaia_engine_menus::battle_input::CommandPhase;
     use legaia_ui_formats::battle_ui_strings::BattleUiLabel;
     if world.mode != legaia_engine_mode::mode::SceneMode::Battle
         || world.battle.round_flow.phase != RoundPhase::Command

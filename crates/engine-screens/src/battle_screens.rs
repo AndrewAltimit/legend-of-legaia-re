@@ -12,8 +12,8 @@
 
 use legaia_engine_battle::battle_hud_state::BattleHud;
 use legaia_engine_battle_hud as bh;
+use legaia_engine_battle_menus::battle_flow::ActiveTutorialBox;
 use legaia_engine_core::world::World;
-use legaia_engine_menus::battle_flow::ActiveTutorialBox;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_ui::battle_hud_chrome::BattleBadgeRects;
 use legaia_engine_ui::{
@@ -699,7 +699,7 @@ pub fn battle_text_draws(
             }));
         }
     } else if let Some(cmd) = &w.battle.command {
-        use legaia_engine_menus::battle_input::CommandPhase;
+        use legaia_engine_battle_menus::battle_input::CommandPhase;
         match &cmd.phase {
             CommandPhase::RoundPrompt { .. }
             | CommandPhase::Menu { .. }

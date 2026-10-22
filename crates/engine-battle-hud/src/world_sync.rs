@@ -329,7 +329,7 @@ pub fn battle_intro_names(
 /// the way every group label is - `0xA0 + avg(+0x34) / 8 - width / 2` over
 /// the monster's battle X, which the lone monster seat puts at `0`
 /// (`legaia_engine_battle::battle_seats`) - and clamped into `6 ..= 0x13A - width`. Up for
-/// the leg's battle-open hold ([`legaia_engine_menus::muscle_dome_session::MuscleDomeSession::intro_up`])
+/// the leg's battle-open hold ([`legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession::intro_up`])
 /// once no hub screen covers the leg.
 fn dome_intro_names(
     world: &legaia_engine_core::world::World,

@@ -207,13 +207,13 @@ fn the_ringside_pick_reads_the_lead_record_after_the_leg() {
     stats.hp_max = 300;
     rec.set_record_stats(stats);
     w.load_party(party);
-    let card = legaia_engine_menus::muscle_dome_session::MuscleCard {
+    let card = legaia_engine_battle_menus::muscle_dome_session::MuscleCard {
         command_id: 0x0C,
         cost: 0x1E,
     };
     let fought_to = |w: &mut World, hp: i32| {
         w.enter_muscle_dome(
-            legaia_engine_menus::muscle_dome_session::MuscleDomeSession::new(
+            legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession::new(
                 [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
                 [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
                 [120, 120],
@@ -252,12 +252,12 @@ fn the_ringside_pick_reads_the_lead_record_after_the_leg() {
 fn the_shared_escape_reports_a_left_leg_and_ends_the_contest() {
     use legaia_engine_system::input::PadButton;
     let mut w = world_with_contest();
-    let card = legaia_engine_menus::muscle_dome_session::MuscleCard {
+    let card = legaia_engine_battle_menus::muscle_dome_session::MuscleCard {
         command_id: 0x0C,
         cost: 0x1E,
     };
     w.enter_muscle_dome(
-        legaia_engine_menus::muscle_dome_session::MuscleDomeSession::new(
+        legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession::new(
             [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
             [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
             [120, 120],
@@ -290,12 +290,12 @@ fn a_won_leg_mid_ladder_stays_in_the_arena_and_stages_the_next_fight() {
     use legaia_engine_system::input::PadButton;
     let mut w = world_with_contest();
     w.mode = SceneMode::Field;
-    let card = legaia_engine_menus::muscle_dome_session::MuscleCard {
+    let card = legaia_engine_battle_menus::muscle_dome_session::MuscleCard {
         command_id: 0x0C,
         cost: 0x1E,
     };
     let won_leg = |w: &mut World| {
-        let mut s = legaia_engine_menus::muscle_dome_session::MuscleDomeSession::new(
+        let mut s = legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession::new(
             [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
             [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
             [120, 120],
@@ -307,7 +307,7 @@ fn a_won_leg_mid_ladder_stays_in_the_arena_and_stages_the_next_fight() {
         s.resolve_turn(|attacker, _| if attacker == 0 { 5 } else { 0 });
         assert_eq!(
             s.phase(),
-            legaia_engine_menus::muscle_dome_session::MusclePhase::Won
+            legaia_engine_battle_menus::muscle_dome_session::MusclePhase::Won
         );
         w.enter_muscle_dome(s);
     };
@@ -401,11 +401,11 @@ fn the_hub_timers_hand_the_next_leg_off_after_the_round_card() {
     use legaia_engine_system::input::PadButton;
     let mut w = world_with_contest();
     w.mode = SceneMode::Field;
-    let card = legaia_engine_menus::muscle_dome_session::MuscleCard {
+    let card = legaia_engine_battle_menus::muscle_dome_session::MuscleCard {
         command_id: 0x0C,
         cost: 0x1E,
     };
-    let mut s = legaia_engine_menus::muscle_dome_session::MuscleDomeSession::new(
+    let mut s = legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession::new(
         [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
         [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
         [120, 120],
@@ -468,12 +468,12 @@ fn the_hub_timers_hand_the_next_leg_off_after_the_round_card() {
 fn a_course_ending_leg_and_a_between_legs_escape_hand_the_field_back() {
     use legaia_engine_mode::mode::SceneMode;
     use legaia_engine_system::input::PadButton;
-    let card = legaia_engine_menus::muscle_dome_session::MuscleCard {
+    let card = legaia_engine_battle_menus::muscle_dome_session::MuscleCard {
         command_id: 0x0C,
         cost: 0x1E,
     };
     let decide = |w: &mut World, won: bool| {
-        let mut s = legaia_engine_menus::muscle_dome_session::MuscleDomeSession::new(
+        let mut s = legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession::new(
             [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
             [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
             [120, 120],

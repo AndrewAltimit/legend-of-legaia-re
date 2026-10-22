@@ -68,10 +68,10 @@ impl World {
     /// the phase before and after it.
     pub(in crate::world) fn note_auto_attack_pick(
         &mut self,
-        before: &legaia_engine_menus::battle_input::CommandPhase,
-        after: &legaia_engine_menus::battle_input::CommandPhase,
+        before: &legaia_engine_battle_menus::battle_input::CommandPhase,
+        after: &legaia_engine_battle_menus::battle_input::CommandPhase,
     ) {
-        use legaia_engine_menus::battle_input::{BattleCommand, CommandPhase as P};
+        use legaia_engine_battle_menus::battle_input::{BattleCommand, CommandPhase as P};
         let attack_target = matches!(
             after,
             P::Targeting {

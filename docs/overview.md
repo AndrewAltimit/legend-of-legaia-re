@@ -90,7 +90,7 @@ flowchart TD
     end
     subgraph port["The port"]
         vm["engine-vm, engine-battle-vm, engine-cast, engine-motion-vm"]
-        kernels["World-free kernels<br/>engine-system, engine-mode, engine-dialog, engine-camera, engine-dev-menu, engine-battle,<br/>engine-effects, engine-field, engine-fishing, engine-minigames, engine-menus, engine-minigame-scenes"]
+        kernels["World-free kernels<br/>engine-system, engine-mode, engine-dialog, engine-camera, engine-dev-menu, engine-battle,<br/>engine-effects, engine-field, engine-fishing, engine-minigames,<br/>engine-menus, engine-battle-menus, engine-title, engine-minigame-scenes"]
         scene["engine-scene: scene resolution + loading"]
         core["engine-core: World and its tick"]
         drivers["World drivers<br/>engine-scene-host, engine-menu-runtime, engine-battle-hud,<br/>engine-world-views, engine-cheats"]
@@ -130,7 +130,9 @@ Over them sit the format-family crates: `container-formats` (asset dispatch, chu
 
 **The port.** `engine-core` holds the `World` and its tick. Above it, the World drivers hold a running `World` from outside: `engine-scene-host` (scene entry and tick), `engine-menu-runtime` (the pause menu), `engine-battle-hud` and `engine-world-views` (the hosts' reads) and `engine-cheats`.
 
-Directly below `engine-core`, `engine-scene` is the disc-facing half: it resolves a scene to its PROT entries and loads what the scene is built from, without naming `World`. Below that sit the kernels that never touch `World` - `engine-battle`, `engine-field`, `engine-menus`, `engine-dialog`, `engine-effects`, `engine-system`, `engine-mode`, `engine-camera` (the shared GTE camera), `engine-dev-menu` (the developer-menu bodies), `engine-minigames` and `engine-fishing`, and `engine-minigame-scenes` over both - and the ported VMs in `engine-vm`, `engine-battle-vm` (the battle side, with the slot-B cast / summon modules one rank above it in `engine-cast`) and `engine-motion-vm`. No crate re-exports another, so a path's first segment is the crate that owns the code.
+Directly below `engine-core`, `engine-scene` is the disc-facing half: it resolves a scene to its PROT entries and loads what the scene is built from, without naming `World`.
+
+Below that sit the kernels that never touch `World` - `engine-battle`, `engine-field`, `engine-menus` with its siblings `engine-battle-menus` (the battle command picker) and `engine-title` (the title front end), `engine-dialog`, `engine-effects`, `engine-system`, `engine-mode`, `engine-camera` (the shared GTE camera), `engine-dev-menu` (the developer-menu bodies), `engine-minigames` and `engine-fishing`, and `engine-minigame-scenes` over both - and the ported VMs in `engine-vm`, `engine-battle-vm` (the battle side, with the slot-B cast / summon modules one rank above it in `engine-cast`) and `engine-motion-vm`. No crate re-exports another, so a path's first segment is the crate that owns the code.
 
 On the presentation side, `engine-ui` builds renderer-agnostic draw lists over the shared `render-kernels`; `engine-screens` composes the screens both hosts draw (shop family, battle HUD, pause menu) once; `engine-session` is the `BootSession` and BGM director every play host ticks. `engine-render` (winit + wgpu) is the native renderer and `engine-audio` (SPU + sequencer; cpal natively, WebAudio in the browser) the audio stack both hosts link, `engine-shell` is the `legaia-engine` binary, `engine-export` the `.glb` exporter behind `export-glb`, and `parity` holds the retail oracles over the capture seeds in `engine-capture`. `asset-viewer`, the `web-play` browser hosts and the `web-viewer` WASM bundle that ships them sit beside them.
 

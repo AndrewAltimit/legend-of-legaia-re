@@ -64,6 +64,11 @@ code spans, since rustdoc cannot resolve a link into a dependent crate.
   dialog line count). The reset's body over a `World` is in `engine-core`.
   `incense_window` is the Incense top-up `FUN_80046870`, the item applier's
   selector-`0x82` arm the pause Items screen runs.
+- **Option values** - `option_values` (the options screen's value enums,
+  one per config word it edits: sound, battle camera, Select Attack, battle
+  command entry, field movement default, field HP display). The options
+  session is `legaia-engine-menus`; the battle input, the battle camera and
+  the field HUD key on these values too, which is why they sit this low.
 - **Story flags** - `story_flag_state` (the retail system / story flag
   arrays and the story-flag bit image the scripts test and set, held as one
   unit on `World`).

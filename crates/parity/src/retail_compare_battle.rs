@@ -38,11 +38,11 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
+use legaia_engine_battle_menus::battle_flow::BattleFlowState;
 use legaia_engine_capture::bar_seeds::*;
 use legaia_engine_capture::battle_drive::*;
 use legaia_engine_capture::hud_glide::*;
 use legaia_engine_capture::phase_gate::*;
-use legaia_engine_menus::battle_flow::BattleFlowState;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_ram_image::game_anchors;
 use serde::{Deserialize, Serialize};

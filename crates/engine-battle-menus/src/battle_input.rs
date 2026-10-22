@@ -87,7 +87,7 @@
 //! chains / learned spells / live MP / inventory + party stats), so the live
 //! loop opens a host-owned `legaia_engine_battle::battle_arts::BattleArtsSession` /
 //! `legaia_engine_battle::battle_magic::BattleSpellSession` /
-//! [`crate::inventory_use::InventoryUseSession`] instead. `Spirit` and `Run`
+//! `legaia_engine_menus::inventory_use::InventoryUseSession` instead. `Spirit` and `Run`
 //! resolve immediately (no target). Target selection reuses
 //! [`legaia_engine_battle::target_picker`].
 //!
@@ -119,7 +119,7 @@ pub enum BattleCommand {
     /// `legaia_engine_battle::battle_magic`).
     Magic,
     /// Use an item - hands off to the host inventory submenu (see
-    /// [`crate::inventory_use`]).
+    /// `legaia_engine_menus::inventory_use`).
     Item,
     /// Spirit: guard for the turn (+5 AP via
     /// `legaia_engine_battle::ap_gauge::ApGauge::charge_spirit`, guard-halved damage until
@@ -222,7 +222,7 @@ pub struct BattleCommandInput {
     /// (1) goes straight to the target cursor (`0x5A`), `Command` (2)
     /// straight to the directional arts entry (`0x50`). The host fills it
     /// from the world's mirror of the pause-menu row each frame.
-    pub select_attack: crate::option_values::SelectAttackOpt,
+    pub select_attack: legaia_engine_system::option_values::SelectAttackOpt,
 }
 
 /// The round-open prompt's two chips - retail flow state `0x1E`, the pair
@@ -337,7 +337,7 @@ pub enum CommandPhase {
     OpenSpellMenu,
     /// The player picked Item. The command session can't run the inventory
     /// picker itself (it needs the live inventory + party stats), so it hands
-    /// off: the live loop opens an [`crate::inventory_use::InventoryUseSession`]
+    /// off: the live loop opens an `legaia_engine_menus::inventory_use::InventoryUseSession`
     /// and applies the chosen item, then cycles the turn.
     OpenItemMenu,
     /// The player picked Spirit: the live loop charges the AP gauge and sets
@@ -933,7 +933,7 @@ fn step_menu(
         // stores `0x50` in the branch delay slot (the arts entry, a
         // `Command` pick made for the player).
         if command == BattleCommand::Attack {
-            use crate::option_values::SelectAttackOpt;
+            use legaia_engine_system::option_values::SelectAttackOpt;
             return match ev.select_attack {
                 SelectAttackOpt::Select => CommandPhase::AttackMode { cursor: 0 },
                 SelectAttackOpt::Automatic => {

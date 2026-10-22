@@ -61,6 +61,7 @@ flowchart BT
     EMG["engine-minigames"]
     EMENU["engine-menus"]
     ETTL["engine-title"]
+    EBMENU["engine-battle-menus"]
     EMGS["engine-minigame-scenes"]
     ESCN["engine-scene<br/>Scene, ProtIndex"]
     CORE["engine-core<br/>World"]
@@ -110,7 +111,9 @@ flowchart BT
     EFISH --> EFIELD
     EMG --> EFISH
     EMENU --> EMG
-    EMGS --> EMENU
+    EBMENU --> EB
+    EBMENU --> EMG
+    EMGS --> EBMENU
     EMGS --> ESCN
     ESCN --> EFIELD
     CORE --> ESCN
@@ -156,7 +159,7 @@ The shape to read off it:
 - **`engine-camera` is the shared GTE camera** (build, projection, the op-`0x45` mover, shake, the camera-relative glide, the follow camera's distance preset) that the battle camera script, the field camera, the Baka Fighter duel and the draw kernels all run on.
 - **`engine-dev-menu` is the field overlay's developer-menu bodies,** held below both the field kernels and the menu front end: the field's op-`0x49` submode hub and panel code run its row kernels, and the dev menu screen and the pause menu's equip session run the same kernels and the equip applier.
 - **`engine-cast` sits one rank above `engine-battle-vm`.** It holds the slot-B cast / summon module bodies the battle action SM pages in; they call the action SM's helpers, the formulas and the camera script, and nothing below names them. A draw packet a module body records for the hosts sits in `render-kernels`, so the draw-list builders project it without naming a module.
-- **A ring of `World`-free kernel crates sits above them** (`engine-mode`, `engine-battle`, `engine-effects`, `engine-field`, `engine-fishing`, `engine-minigames`, `engine-menus`, `engine-title`, `engine-scene`, `engine-minigame-scenes`). Each holds rules and state that never touch the `World` struct, so it can be unit-tested alone.
+- **A ring of `World`-free kernel crates sits above them** (`engine-mode`, `engine-battle`, `engine-effects`, `engine-field`, `engine-fishing`, `engine-minigames`, `engine-menus`, `engine-battle-menus`, `engine-title`, `engine-scene`, `engine-minigame-scenes`). Each holds rules and state that never touch the `World` struct, so it can be unit-tested alone.
 - **`engine-scene` is the disc-facing half of scene handling.** It resolves a CDNAME scene to its PROT entries (`Scene`, `ProtIndex`), decodes what the scene is built from (`SceneResources`, `SceneAssets`, the model bank, the environment draw resolver and assembly kernel) and holds the virtual filesystem. It names no `World`, so a tool that only reads scenes links it without the simulation, and it is a row of the layering table like the other kernels: `engine-minigame-scenes` builds the dance and fishing venues on it.
 - **`engine-core` is where they meet.** It owns `World` and implements the per-VM `Host` traits. A module there that shares its name with a kernel module (`dance`, `mode`, `camera`, ...) holds only the functions that read a `World` or a `Scene`; the rules are in the kernel crate.
 - **Presentation is a separate branch.** `render-kernels` -> `engine-ui` -> `engine-render` and `engine-audio` do not depend on `engine-core`; the hosts compose them with it. `render-kernels` is also what the effect, field and minigame kernels link for GTE math.
@@ -214,22 +217,23 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `engine-fishing` | `engine-field`, `engine-system`, `render-kernels`, `game-tables`, `minigame-formats`, `scene-formats`, `tmd` | Fishing rules engine. |
 | `engine-minigames` | `engine-field`, `engine-battle-vm`, `engine-camera`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `game-tables`, `minigame-formats`, `scene-formats`, `save` | Minigame rules engines. |
 | `engine-title` | `engine-system`, `ui-formats`, `tim` | Publisher logos, the title state machine and the title overlay tick. |
-| `engine-menus` | `engine-minigames`, `engine-dev-menu`, `engine-camera`, `engine-dialog`, `engine-battle`, `engine-battle-vm`, `engine-system`, `engine-vm`, `actor-formats`, `game-tables`, `minigame-formats`, `scene-formats`, `ui-formats`, `art`, `font`, `save`, `tim` | Menu and memory-card front end. |
-| `engine-minigame-scenes` | `engine-scene`, `engine-menus`, `engine-minigames`, `engine-fishing`, `engine-field`, `engine-battle`, `engine-battle-vm`, `engine-camera`, `engine-mode`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `container-formats`, `game-tables`, `minigame-formats`, `overlay-images`, `scene-formats`, `prot`, `tim`, `tmd` | The minigames' 3D scene surfaces, venues and the `World`'s minigame seat. |
+| `engine-menus` | `engine-minigames`, `engine-dev-menu`, `engine-camera`, `engine-dialog`, `engine-battle`, `engine-battle-vm`, `engine-system`, `engine-vm`, `actor-formats`, `game-tables`, `scene-formats`, `ui-formats`, `art`, `font`, `save`, `tim` | Menu and memory-card front end. |
+| `engine-battle-menus` | `engine-minigames`, `engine-battle`, `engine-battle-vm`, `engine-system`, `actor-formats`, `game-tables`, `minigame-formats`, `ui-formats`, `art`, `save` | Battle command input, command-flow byte, open banner, timed fight, Muscle Dome match session. |
+| `engine-minigame-scenes` | `engine-scene`, `engine-battle-menus`, `engine-minigames`, `engine-fishing`, `engine-field`, `engine-battle`, `engine-battle-vm`, `engine-camera`, `engine-mode`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `container-formats`, `game-tables`, `minigame-formats`, `overlay-images`, `scene-formats`, `prot`, `tim`, `tmd` | The minigames' 3D scene surfaces, venues and the `World`'s minigame seat. |
 | `engine-scene` | `engine-field`, `engine-camera`, `engine-dialog`, `engine-system`, `engine-vm`, `render-kernels`, `disc-audit` + the format-family and parser crates | Scene resolution and loading, environment draws, virtual filesystem; no `World`. |
 | `engine-core` | `engine-scene`, every `engine-*` kernel crate above, `render-kernels` + the format-family and parser crates | `World`, the tick, battle loop, saves. |
 | `engine-scene-host` | `engine-world-views`, `engine-core`, `engine-scene`, the kernel crates it enters scenes through + format-family and parser crates | `SceneHost`: scene entry and tick, BGM routing, resume, live preview. |
 | `engine-menu-runtime` | `engine-scene-host`, `engine-core`, `engine-scene`, `engine-menus`, `engine-battle`, `engine-battle-vm`, `engine-dev-menu`, `engine-field`, `engine-minigames`, `engine-system`, `art`, `game-tables`, `save`, `ui-formats` | The pause menu over `World`, the memory-card Save writer, the dev menu's `World` seam. |
-| `engine-battle-hud` | `engine-core`, `engine-battle`, `engine-battle-vm`, `engine-cast`, `engine-menus`, `engine-mode`, `art`, `font`, `ui-formats` | The battle HUD's reads of `World`. |
-| `engine-world-views` | `engine-core`, `engine-scene`, `engine-battle`, `engine-camera`, `engine-effects`, `engine-field`, `engine-menus`, `engine-minigames`, `engine-mode`, `render-kernels`, `scene-formats`, `ui-formats`, `tmd` | The hosts' reads of `World` outside battle: per-frame camera, crop policy, scene staging, world-map markers and sky, field party HUD, effect draw lists, menu and minigame view models. |
+| `engine-battle-hud` | `engine-core`, `engine-battle`, `engine-battle-vm`, `engine-battle-menus`, `engine-cast`, `engine-mode`, `engine-system`, `art`, `font`, `ui-formats` | The battle HUD's reads of `World`. |
+| `engine-world-views` | `engine-core`, `engine-scene`, `engine-battle`, `engine-camera`, `engine-effects`, `engine-field`, `engine-menus`, `engine-battle-menus`, `engine-minigames`, `engine-mode`, `engine-system`, `render-kernels`, `scene-formats`, `ui-formats`, `tmd` | The hosts' reads of `World` outside battle: per-frame camera, crop policy, scene staging, world-map markers and sky, field party HUD, effect draw lists, menu and minigame view models. |
 | `engine-cheats` | `engine-core`, `engine-battle`, `engine-battle-vm`, `engine-menus`, `engine-system`, `cheats`, `game-tables`, `save` | The player cheat list and the GameShark code applier over `World`. |
 | `engine-ui` | `render-kernels`, `engine-battle-vm`, `game-tables`, `minigame-formats`, `ui-formats`, `tim`, `font` | Draw-list builders; no wgpu. |
 | `engine-render` | `engine-ui`, `render-kernels`, `engine-camera`, `tim`, `font` | wgpu renderer. |
 | `engine-audio` | `xa`, `vab`, `seq`, `prot` | SPU model, sequencer, output backends. |
 | `engine-session` | `engine-battle-hud`, `engine-world-views`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-audio`, `engine-menus`, `engine-title`, `engine-minigame-scenes`, `engine-battle`, `engine-battle-vm`, `engine-effects`, `engine-field`, `engine-mode`, `engine-system`, `engine-vm`, `render-kernels` + format-family and parser crates | `BootSession` + BGM director; no wgpu or winit. |
-| `engine-screens` | `engine-battle-hud`, `engine-world-views`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-ui`, `engine-battle`, `engine-battle-vm`, `engine-dev-menu`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-fishing`, `engine-menus`, `engine-title`, `engine-minigame-scenes`, `engine-minigames`, `engine-mode`, `engine-system`, `render-kernels`, `game-tables`, `minigame-formats`, `font` | The screens both hosts draw: shop family, battle HUD, pause menu, dialog box. |
+| `engine-screens` | `engine-battle-hud`, `engine-world-views`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-ui`, `engine-battle`, `engine-battle-vm`, `engine-dev-menu`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-fishing`, `engine-menus`, `engine-battle-menus`, `engine-title`, `engine-minigame-scenes`, `engine-minigames`, `engine-mode`, `engine-system`, `render-kernels`, `game-tables`, `minigame-formats`, `font` | The screens both hosts draw: shop family, battle HUD, pause menu, dialog box. |
 | `engine-export` | `engine-core`, `engine-scene`, `engine-field`, `engine-vm`, `actor-formats`, `game-tables`, `scene-formats`, `tim`, `tmd` | The `.glb` world exporter behind `export-glb`. |
-| `engine-capture` | `engine-scene-host`, `engine-core`, `engine-battle`, `engine-battle-vm`, `engine-camera`, `engine-cast`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-menus`, `engine-mode`, `engine-system`, `art`, `save`, `scene-formats` | Capture seeds, gates and pad drives shared by `parity` and the native capture child. |
+| `engine-capture` | `engine-scene-host`, `engine-core`, `engine-battle`, `engine-battle-vm`, `engine-camera`, `engine-cast`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-battle-menus`, `engine-mode`, `engine-system`, `art`, `save`, `scene-formats` | Capture seeds, gates and pad drives shared by `parity` and the native capture child. |
 | `parity` | `engine-capture`, `engine-battle-hud`, `engine-session`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-audio`, `engine-ui`, the kernel crates it measures, `mednafen`, `pcsx-redux`, `ram-image` + parser crates | Parity oracles + retail comparison. |
 | `engine-shell` | `parity`, `engine-capture`, `engine-session`, `engine-screens`, `engine-battle-hud`, `engine-world-views`, `engine-cheats`, `engine-export`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-render`, `engine-ui`, `engine-audio`, the kernel crates + format-family and parser crates | The native host. |
 | `web-play` | `engine-session`, `engine-screens`, `engine-battle-hud`, `engine-world-views`, `engine-cheats`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-ui`, `engine-audio`, the kernel crates + format-family and parser crates | The browser hosts: the play and minigames runtimes. |
@@ -247,7 +251,7 @@ The edges among the `World`-free kernel crates are a committed table, [`scripts/
 | 2 | `engine-battle-vm`, `render-kernels` |
 | 3 | `engine-battle`, `engine-cast`, `engine-effects`, `engine-field`, `engine-ui` |
 | 4 | `engine-fishing`, `engine-minigames`, `engine-scene` |
-| 5 | `engine-menus` |
+| 5 | `engine-battle-menus`, `engine-menus` |
 | 6 | `engine-minigame-scenes` |
 
 Three more rules ride on the same table. A kernel crate depends only on kernel crates, so nothing in it can reach `engine-core`, the session, the renderer or a host. A crate outside the engine layer (a format, tool or patcher crate) never depends on an engine-layer crate. And `engine-system` carries a `foreign` set: the only workspace crates it names are the two label crates `cheats` and `gamedata`.

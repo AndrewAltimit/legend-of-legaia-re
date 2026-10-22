@@ -179,7 +179,7 @@ impl PlayWindowApp {
         if let Some(audio) = self.session.audio.as_ref() {
             audio.set_mono(matches!(
                 self.options_state.audio,
-                legaia_engine_menus::option_values::AudioMode::Mono
+                legaia_engine_system::option_values::AudioMode::Mono
             ));
             // Master mute (engine-only knob; `F2` toggles it live). The
             // mixer gate zeroes the output while the sequencer / SPU keep

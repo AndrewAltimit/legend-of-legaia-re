@@ -255,7 +255,7 @@ fn the_sparring_exit_leaves_the_flag_bank_as_retail_does() {
 fn lesson_pad(w: &World) -> u16 {
     use legaia_engine_battle::arts_command_input::ArtsInputPhase;
     use legaia_engine_battle::battle_tutorial::TutorialLesson;
-    use legaia_engine_menus::battle_input::CommandPhase;
+    use legaia_engine_battle_menus::battle_input::CommandPhase;
     let cross = InputState::mask_of([PadButton::Cross]);
     if !w.battle.tutorial_boxes.is_empty() || w.battle.item_menu.is_some() {
         return cross;

@@ -32,7 +32,7 @@
 use crate::world::World;
 use legaia_engine_battle::arts_command_input::ArtsInputPhase;
 use legaia_engine_battle::battle_magic::SpellPhase;
-use legaia_engine_menus::battle_input::CommandPhase;
+use legaia_engine_battle_menus::battle_input::CommandPhase;
 use legaia_engine_menus::inventory_use::{InventoryUseEvent, InventoryUseState};
 use legaia_engine_system::sound_state::SfxRingOp;
 
@@ -173,7 +173,7 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_engine_menus::battle_input::BattleCommand;
+    use legaia_engine_battle_menus::battle_input::BattleCommand;
 
     #[test]
     fn the_dispatcher_ids_land_one_below_on_the_ring() {

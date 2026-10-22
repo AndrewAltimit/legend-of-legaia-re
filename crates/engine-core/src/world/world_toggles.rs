@@ -85,32 +85,32 @@ pub struct WorldToggles {
     /// retail.
     pub use_damage_finish: bool,
     /// Battle "Select Attack" option - retail config word `0x800846C4`,
-    /// the pause menu's row ([`legaia_engine_menus::option_values::SelectAttackOpt`]): whether
+    /// the pause menu's row ([`legaia_engine_system::option_values::SelectAttackOpt`]): whether
     /// the ring's Attack arm shows the `Auto | Command` prompt (`0x78`), goes
     /// straight to the target cursor (`0x5A`) or straight to the directional
     /// arts entry (`0x50`) - `FUN_801D0748`'s `0x28` Left arm at
     /// `0x801D15E0..0x801D1650`. Hosts mirror their `OptionsState` onto this
     /// the way they mirror [`crate::world::FieldLocomotion::run_default`].
-    pub(crate) select_attack: legaia_engine_menus::option_values::SelectAttackOpt,
+    pub(crate) select_attack: legaia_engine_system::option_values::SelectAttackOpt,
     /// The options screen's **Battle Command** row (config word
     /// `0x800846C8`): directional buttons, or the cross button over a
     /// highlighted arm. Only the second highlights a command chip - the menu
     /// SM's pre-dispatch block (`FUN_801D0748`, `0x801D07FC..0x801D0AC0`)
     /// runs under `_DAT_800846C8 != 0` and stamps the highlighted arm's
     /// frame style. Read by `legaia_engine_battle_hud::battle_chip_highlight`.
-    pub battle_command: legaia_engine_menus::option_values::BattleCommandOpt,
+    pub battle_command: legaia_engine_system::option_values::BattleCommandOpt,
     /// The options screen's **Battle Camera** row (config word
     /// `0x800846C0`, Close / Normal / Far), which the battle camera's action
     /// shots read (`BattleCamera::set_camera_option`). Hosts mirror their
     /// `OptionsState` onto this through `crate::options::apply_to_world`.
-    pub battle_camera: legaia_engine_menus::option_values::BattleCameraOpt,
+    pub battle_camera: legaia_engine_system::option_values::BattleCameraOpt,
     /// The options screen's **Field HP Display** row (config word
     /// `0x800845C4`, Immediate / Gradual / Display Off). The field party
     /// HUD (`FUN_801D0D38`) reads it as its idle delay - `0x28` frames,
     /// `0xA0` frames, or never - so hosts mirror their `OptionsState` onto
     /// this through `crate::options::apply_to_world` and both ask
     /// `world_map_panel_host::field_hud_view_mode`.
-    pub field_hp_display: legaia_engine_menus::option_values::HpDisplayOpt,
+    pub field_hp_display: legaia_engine_system::option_values::HpDisplayOpt,
     /// Draw the overworld's per-placement **entity markers**
     /// (`legaia_engine_world_views::world_map_markers`: a cyan post at each portal, green at
     /// each NPC, red at each encounter zone). A port debug overlay, not a
@@ -189,10 +189,10 @@ impl WorldToggles {
             smarter_monster_targeting: false,
             use_vm_dialogue: false,
             use_damage_finish: true,
-            select_attack: legaia_engine_menus::option_values::SelectAttackOpt::default(),
-            battle_command: legaia_engine_menus::option_values::BattleCommandOpt::default(),
-            battle_camera: legaia_engine_menus::option_values::BattleCameraOpt::default(),
-            field_hp_display: legaia_engine_menus::option_values::HpDisplayOpt::Immediate,
+            select_attack: legaia_engine_system::option_values::SelectAttackOpt::default(),
+            battle_command: legaia_engine_system::option_values::BattleCommandOpt::default(),
+            battle_camera: legaia_engine_system::option_values::BattleCameraOpt::default(),
+            field_hp_display: legaia_engine_system::option_values::HpDisplayOpt::Immediate,
             overworld_marker_overlay: false,
             battle_pass_rand_draw: true,
             battle_sm_frame_cadence: DEFAULT_BATTLE_SM_FRAME_CADENCE,

@@ -380,7 +380,7 @@ impl World {
         // hook's rewind discards the entry and reopens the command menu.
         if self.battle.tutorial.is_some() {
             use legaia_engine_battle::arts_command_input::ArtsInputPhase as P;
-            use legaia_engine_menus::battle_flow::BattleFlowState as Flow;
+            use legaia_engine_battle_menus::battle_flow::BattleFlowState as Flow;
             let rejected = match &session.phase {
                 P::Entering if !was_entering => self.set_battle_flow(Flow::ArtsCommandEntry),
                 P::Review | P::Targeting { .. } | P::Confirmed { .. } if was_entering => {

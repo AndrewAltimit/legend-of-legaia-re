@@ -6,10 +6,10 @@
 //! (`0x801D0C1C..0x801D0C58`).
 
 use super::*;
-use legaia_engine_menus::battle_input::{BattleCommandSession, CommandPhase};
-use legaia_engine_menus::option_values::BattleCommandOpt;
+use legaia_engine_battle_menus::battle_input::{BattleCommandSession, CommandPhase};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::input::PadButton;
+use legaia_engine_system::option_values::BattleCommandOpt;
 
 /// A one-member fight parked on a freshly opened round prompt.
 fn prompt_world() -> World {

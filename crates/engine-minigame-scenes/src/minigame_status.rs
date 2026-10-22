@@ -21,8 +21,8 @@
 //! Dome answers that read the world ([`MuscleWorld`]).
 
 use crate::minigame_state::MinigameState;
+use legaia_engine_battle_menus::muscle_dome_session::MusclePhase;
 use legaia_engine_fishing::fishing::PondSession;
-use legaia_engine_menus::muscle_dome_session::MusclePhase;
 use legaia_engine_minigames::baka_fighter::{BakaFight, MatchPhase};
 use legaia_engine_minigames::dance::{DanceGame, Judge, dance_number_digits};
 use legaia_engine_minigames::muscle_dome::{ContestFlags, TIME_METER_MAX};

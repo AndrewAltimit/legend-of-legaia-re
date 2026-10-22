@@ -159,7 +159,9 @@ fn a_new_machine_seeds_its_display_strips_from_the_permuted_symbol_strips() {
 
 #[test]
 fn the_time_meter_climbs_through_selection_and_drains_once_it_ends() {
-    use legaia_engine_menus::muscle_dome_session::{MuscleCard, MuscleDomeSession, MusclePhase};
+    use legaia_engine_battle_menus::muscle_dome_session::{
+        MuscleCard, MuscleDomeSession, MusclePhase,
+    };
     use legaia_engine_minigames::muscle_dome::TIME_METER_MAX;
     let hand = || {
         [0u8, 1, 2, 3].map(|i| MuscleCard {

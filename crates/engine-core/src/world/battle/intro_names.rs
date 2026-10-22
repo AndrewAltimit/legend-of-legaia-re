@@ -25,10 +25,10 @@
 use super::*;
 
 /// `ctx[+0x6D6]` for an ordinary open (`li v0,0x5a`, `0x801D0E08`).
-pub const INTRO_HOLD_FRAMES: u16 = legaia_engine_menus::battle_open::PLAIN_OPEN_FRAMES;
+pub const INTRO_HOLD_FRAMES: u16 = legaia_engine_battle_menus::battle_open::PLAIN_OPEN_FRAMES;
 /// `ctx[+0x6D6]` when the formation roll produced an advantage
 /// (`li v0,0x78` behind the `ctx[+0x290]` test, `0x801D0E30`).
-pub const INTRO_HOLD_FRAMES_ADVANTAGE: u16 = legaia_engine_menus::battle_open::BANNER_FRAMES;
+pub const INTRO_HOLD_FRAMES_ADVANTAGE: u16 = legaia_engine_battle_menus::battle_open::BANNER_FRAMES;
 /// The monster id that suppresses the names (`li v0,0xb5`, `0x801D0DF0`).
 pub const INTRO_NAMELESS_MONSTER: u16 = 0xB5;
 

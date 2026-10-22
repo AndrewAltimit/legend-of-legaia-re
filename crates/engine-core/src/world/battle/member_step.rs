@@ -66,10 +66,10 @@ impl World {
     /// (`0x801D30D0..0x801D30DC`) and does not.
     fn step_member_cursor_back(&mut self, from: u8, prompt_actor: u8, ring_cancel: bool) {
         use crate::battle_round::PendingPartyAction;
+        use legaia_engine_battle_menus::battle_flow::BattleFlowState as Flow;
         use legaia_engine_battle_vm::battle_cursor_pose::{
             ActorCursor, CursorActor, CursorStep, step_actor_cursor,
         };
-        use legaia_engine_menus::battle_flow::BattleFlowState as Flow;
         let party_count = self.party.party_count.clamp(1, 3);
         let seats: Vec<CursorActor> = (0..party_count)
             .map(|s| CursorActor {

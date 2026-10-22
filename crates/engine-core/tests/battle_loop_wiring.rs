@@ -69,7 +69,7 @@ fn open_command_menu(w: &mut World) -> usize {
 /// bare Cross no longer lands on a target. Every press here is one edge, and
 /// the only non-Cross press is the ring walk off its opening `Item` arm.
 fn open_target_cursor(w: &mut World) {
-    use legaia_engine_menus::battle_input::{BattleCommand, CommandPhase};
+    use legaia_engine_battle_menus::battle_input::{BattleCommand, CommandPhase};
     for _ in 0..64 {
         let Some(session) = w.battle.command.as_ref() else {
             panic!("the command session closed before a target cursor opened");

@@ -132,7 +132,7 @@ fn the_queued_swing_byte_resolves_a_move_power_record() {
     // opens on), then `Auto` on the attack-mode prompt, then the target
     // cursor's confirm. Phase-driven rather than a fixed press count so the
     // test says what it is steering, not how many frames that takes.
-    use legaia_engine_menus::battle_input::{BattleCommand, CommandPhase};
+    use legaia_engine_battle_menus::battle_input::{BattleCommand, CommandPhase};
     let cross = InputState::mask_of([PadButton::Cross]);
     let left = InputState::mask_of([PadButton::Left]);
     let mut release = false;

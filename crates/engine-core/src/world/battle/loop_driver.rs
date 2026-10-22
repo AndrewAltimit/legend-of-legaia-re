@@ -335,7 +335,8 @@ impl World {
         // prompt under it.
         if self.battle.inflight_seed.is_some()
             && self.battle.command.is_some()
-            && self.battle.flow == legaia_engine_menus::battle_flow::BattleFlowState::TurnPrompt
+            && self.battle.flow
+                == legaia_engine_battle_menus::battle_flow::BattleFlowState::TurnPrompt
             && self
                 .battle
                 .camera
@@ -410,7 +411,7 @@ impl World {
         // Returning to Idle here is what lets the next turn's
         // `open_battle_command` raise the turn-start prompt again.
         if self.battle.tutorial.is_some() {
-            self.set_battle_flow(legaia_engine_menus::battle_flow::BattleFlowState::Idle);
+            self.set_battle_flow(legaia_engine_battle_menus::battle_flow::BattleFlowState::Idle);
         }
 
         // `ctx.menu_open` is retail's side-band applier stage `ctx[+0x276]`:

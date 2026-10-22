@@ -298,7 +298,7 @@ pub fn run_engine_battle(
         .world
         .seed_battle_backdrop_keep_object_1(battle.keep_backdrop_object_1);
     session.host.world.toggles.battle_camera =
-        legaia_engine_menus::option_values::BattleCameraOpt::from_word(battle.camera_option);
+        legaia_engine_system::option_values::BattleCameraOpt::from_word(battle.camera_option);
     // Hand any replayed BGM words to the director before reading the word.
     session.host.route_bgm_events(&mut director)?;
     let seats = retail_roster_slots(battle);

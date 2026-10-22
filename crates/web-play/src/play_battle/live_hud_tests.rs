@@ -184,7 +184,7 @@ fn live_battle_overlay_carries_bars_and_enemy_target_strip() {
     // why the failure read `cmd_phase=None`. Step to the arm, then
     // confirm.
     {
-        use legaia_engine_menus::battle_input::{AttackMode, BattleCommand, CommandPhase};
+        use legaia_engine_battle_menus::battle_input::{AttackMode, BattleCommand, CommandPhase};
         let tap = |rt: &mut LegaiaRuntime, b: legaia_engine_system::input::PadButton| {
             settle(rt);
             rt.set_pad(b.mask());
@@ -240,7 +240,7 @@ fn live_battle_overlay_carries_bars_and_enemy_target_strip() {
         let w = &rt.scene_host.host().expect("host").world;
         let targeting = matches!(
             w.battle.command.as_ref().map(|c| &c.phase),
-            Some(legaia_engine_menus::battle_input::CommandPhase::Targeting { .. })
+            Some(legaia_engine_battle_menus::battle_input::CommandPhase::Targeting { .. })
         );
         if !targeting {
             let pc = w.party.party_count.clamp(1, 3) as usize;

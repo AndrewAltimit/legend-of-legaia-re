@@ -130,6 +130,15 @@ deps = [
     "engine-vm",
 ]
 
+[crates.engine-battle-menus]
+role = "battle command flow and input, the open banner, the timed fight, the Muscle Dome match session"
+deps = [
+    "engine-battle",
+    "engine-battle-vm",
+    "engine-minigames",
+    "engine-system",
+]
+
 [crates.engine-scene]
 role = "scene resolution and loading, environment draws, virtual filesystem"
 deps = [
@@ -146,11 +155,11 @@ dev = ["engine-battle", "engine-menus", "engine-mode"]
 role = "the minigames' 3D scene surfaces, venues and the World's minigame seat"
 deps = [
     "engine-battle",
+    "engine-battle-menus",
     "engine-battle-vm",
     "engine-camera",
     "engine-field",
     "engine-fishing",
-    "engine-menus",
     "engine-minigames",
     "engine-mode",
     "engine-scene",

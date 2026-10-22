@@ -4,7 +4,7 @@
 //!
 //! [`legaia_engine_battle::battle_tutorial`] is the ported machine; this is what makes it
 //! *fire*. Retail's hook key is the command-flow byte `ctx[+0x06]`
-//! ([`legaia_engine_menus::battle_flow`]), which the engine has to recompose from its split
+//! ([`legaia_engine_battle_menus::battle_flow`]), which the engine has to recompose from its split
 //! command session + submenus.
 //!
 //! ## Frame shape
@@ -23,7 +23,7 @@
 use super::*;
 
 use legaia_engine_battle::battle_tutorial::{BattleTutorial, BattleTutorialScript, TutorialLesson};
-use legaia_engine_menus::battle_flow::{
+use legaia_engine_battle_menus::battle_flow::{
     ActiveTutorialBox, BattleFlowState, TUTORIAL_BOX_AUTO_FRAMES,
 };
 
@@ -404,9 +404,9 @@ impl World {
     /// detached from the World for the frame.
     pub(in crate::world) fn sync_battle_flow(
         &mut self,
-        phase: Option<&legaia_engine_menus::battle_input::CommandPhase>,
+        phase: Option<&legaia_engine_battle_menus::battle_input::CommandPhase>,
     ) -> bool {
-        use legaia_engine_menus::battle_flow::{BattleMenuKind, flow_state_for};
+        use legaia_engine_battle_menus::battle_flow::{BattleMenuKind, flow_state_for};
 
         let menu = if self.battle.item_menu.is_some() {
             BattleMenuKind::Item

@@ -17,7 +17,7 @@ fn live_tick(w: &mut World) -> Option<legaia_engine_battle_vm::battle_action::St
 }
 
 fn take_commit_begin(w: &mut World) -> bool {
-    use legaia_engine_menus::battle_input::CommandPhase;
+    use legaia_engine_battle_menus::battle_input::CommandPhase;
     let Some(cmd) = w.battle.command.as_mut() else {
         return false;
     };

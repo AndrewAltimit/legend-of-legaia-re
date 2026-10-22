@@ -1,0 +1,27 @@
+[package]
+name = "legaia-engine-battle-menus"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
+
+[lib]
+name = "legaia_engine_battle_menus"
+path = "src/lib.rs"
+
+[dependencies]
+legaia-actor-formats.workspace = true
+legaia-art.workspace = true
+legaia-engine-battle.workspace = true
+legaia-engine-battle-vm.workspace = true
+legaia-engine-minigames.workspace = true
+legaia-engine-system.workspace = true
+legaia-game-tables.workspace = true
+legaia-minigame-formats.workspace = true
+legaia-save.workspace = true
+legaia-ui-formats.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

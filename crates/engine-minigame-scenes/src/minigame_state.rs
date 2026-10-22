@@ -121,9 +121,9 @@ pub struct MinigameState {
     pub baka_return_mode: SceneMode,
     /// Muscle Dome contest state. `Some` while `mode ==
     /// SceneMode::MuscleDome`; the hand-select / commit / resolve loop runs
-    /// each tick. See [`legaia_engine_menus::muscle_dome_session::MuscleDomeSession`] and
+    /// each tick. See [`legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession`] and
     /// `World::enter_muscle_dome`.
-    pub muscle_dome: Option<legaia_engine_menus::muscle_dome_session::MuscleDomeSession>,
+    pub muscle_dome: Option<legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession>,
     /// The scene mode to restore when the Muscle Dome contest ends
     /// (`World::enter_muscle_dome` snapshots the interrupted mode).
     pub muscle_return_mode: SceneMode,

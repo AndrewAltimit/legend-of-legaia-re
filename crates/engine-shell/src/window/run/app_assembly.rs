@@ -307,7 +307,7 @@ impl PlayWindowApp {
                 legaia_engine_menus::options::OptionsSetting::BattleCamera.pin_bit(),
             );
             self.options_state.battle_camera =
-                legaia_engine_menus::option_values::BattleCameraOpt::from_word(v);
+                legaia_engine_system::option_values::BattleCameraOpt::from_word(v);
         }
         // Push the loaded options into their live consumers (audio downmix)
         // before the loop starts.

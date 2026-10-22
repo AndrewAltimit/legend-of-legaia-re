@@ -400,11 +400,11 @@ fn a_retail_saves_options_are_honoured_on_import() {
     );
     assert_eq!(
         world.toggles.battle_camera,
-        legaia_engine_menus::option_values::BattleCameraOpt::Far
+        legaia_engine_system::option_values::BattleCameraOpt::Far
     );
     assert_eq!(
         world.toggles.field_hp_display,
-        legaia_engine_menus::option_values::HpDisplayOpt::DisplayOff
+        legaia_engine_system::option_values::HpDisplayOpt::DisplayOff
     );
     assert_eq!(
         world.take_loaded_options(),

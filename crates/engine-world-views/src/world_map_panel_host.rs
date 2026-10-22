@@ -42,9 +42,9 @@ use legaia_engine_field::world_map_panel_host::*;
 /// PORT: FUN_801d0d38 (`lw a2,0x45c4(v0)` at `0x801D0D74`)
 pub fn field_hud_view_mode(world: &legaia_engine_core::world::World) -> i32 {
     match world.toggles.field_hp_display {
-        legaia_engine_menus::option_values::HpDisplayOpt::Immediate => 0,
-        legaia_engine_menus::option_values::HpDisplayOpt::Gradual => 1,
-        legaia_engine_menus::option_values::HpDisplayOpt::DisplayOff => 2,
+        legaia_engine_system::option_values::HpDisplayOpt::Immediate => 0,
+        legaia_engine_system::option_values::HpDisplayOpt::Gradual => 1,
+        legaia_engine_system::option_values::HpDisplayOpt::DisplayOff => 2,
     }
 }
 
@@ -182,9 +182,9 @@ mod tests {
     #[test]
     fn the_hp_display_option_drives_the_hud_idle_on_every_scene_kind() {
         use legaia_engine_core::world::World;
-        use legaia_engine_menus::option_values::HpDisplayOpt;
         use legaia_engine_menus::options::OptionsState;
         use legaia_engine_mode::mode::SceneMode;
+        use legaia_engine_system::option_values::HpDisplayOpt;
         for (opt, mode, first_draw) in [
             (HpDisplayOpt::Immediate, 0, Some(0x28u32)),
             (HpDisplayOpt::Gradual, 1, Some(0xA0)),

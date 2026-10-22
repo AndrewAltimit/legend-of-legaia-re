@@ -245,7 +245,7 @@ const DIRS: [PadButton; 4] = [
 /// A human's battle hand: Begin or Run on the round prompt, any ring arm,
 /// Auto or Command, arts strings, cancel now and then.
 fn human_pad(session: &NativeSession, rng: &mut Rng) -> u16 {
-    use legaia_engine_menus::battle_input::CommandPhase;
+    use legaia_engine_battle_menus::battle_input::CommandPhase;
     let w = &session.host.world;
     if !w.battle.tutorial_boxes.is_empty() {
         return PadButton::Cross.mask();

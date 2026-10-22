@@ -1079,7 +1079,7 @@ the persistent words the page reads off the visitor's memory card, and
 resolves species names against the loaded PROT 0972 overlay image; the
 cast-meter sweep rate and the flight / reel-down / snap glue are the module's
 engine-side reconstruction (`docs/subsystems/minigame-fishing.md`). Muscle Dome drives
-[`legaia_engine_menus::muscle_dome_session::MuscleDomeSession`] on the disc's dealt
+[`legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession`] on the disc's dealt
 hand with the native launcher's flat favored per-card cost (the browser has
 no player battle file for the per-command `+0x74` swing bytes) and a
 battle-path damage stand-in matching the native `tick_muscle_dome`

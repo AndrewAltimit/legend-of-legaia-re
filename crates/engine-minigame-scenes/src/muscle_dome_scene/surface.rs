@@ -1,10 +1,10 @@
 //! The arena surface a host draws: the camera, playback state and the per-frame pose / camera drive.
 
 use super::*;
+use legaia_engine_battle_menus::muscle_dome_session::choreo::{Beat, BeatKind};
+use legaia_engine_battle_menus::muscle_dome_session::{MuscleDomeSession, MusclePhase};
 use legaia_engine_battle_vm::battle_cam_script as cam;
 use legaia_engine_camera::projection;
-use legaia_engine_menus::muscle_dome_session::choreo::{Beat, BeatKind};
-use legaia_engine_menus::muscle_dome_session::{MuscleDomeSession, MusclePhase};
 use legaia_engine_minigames::muscle_dome::DomeContest;
 use std::sync::Arc;
 
@@ -356,8 +356,8 @@ impl MuscleDomeSurface {
     /// phase each moment of a leg is in a battle, the acting body, its
     /// target and the formation - and store the pose on the scene.
     fn drive_camera(&mut self, session: &MuscleDomeSession, assets: &MuscleDomeAssets) {
-        use legaia_engine_menus::battle_input::CommandPhase;
-        use legaia_engine_menus::muscle_dome_session::DomeMenu;
+        use legaia_engine_battle_menus::battle_input::CommandPhase;
+        use legaia_engine_battle_menus::muscle_dome_session::DomeMenu;
         let beat = self.beat.map(|(b, _)| b);
         let acting = beat.map_or(0, |b| b.attacker);
         let target = acting ^ 1;

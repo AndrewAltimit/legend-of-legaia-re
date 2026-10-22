@@ -53,6 +53,7 @@ ENGINE_API_CRATES = (
     "engine-scene",
     "engine-menus",
     "engine-title",
+    "engine-battle-menus",
     "engine-mode",
     "engine-dialog",
     "engine-system",

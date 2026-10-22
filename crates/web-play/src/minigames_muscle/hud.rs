@@ -290,7 +290,7 @@ impl LegaiaMinigames {
     /// victory-message pointer table at `0x801F4DFC` indexed `char_id - 1`,
     /// the reward spell's name from the shared spell-name table, and a fixed
     /// suffix at `0x801F4C28`. The index half is
-    /// [`MuscleDomeSession::reward_banner`](legaia_engine_menus::muscle_dome_session::MuscleDomeSession::reward_banner);
+    /// [`MuscleDomeSession::reward_banner`](legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession::reward_banner);
     /// this resolves the two overlay strings off the as-loaded PROT 0898
     /// image and the spell name off `SCUS_942.54`.
     ///

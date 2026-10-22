@@ -13,7 +13,7 @@
 //! mirrored byte for byte:
 //!
 //! - the command-flow byte `ctx[+6]` is the engine's own flow mirror
-//!   ([`legaia_engine_menus::battle_flow::BattleFlowState`], the selection band `0x1E..=0x78`
+//!   ([`legaia_engine_battle_menus::battle_flow::BattleFlowState`], the selection band `0x1E..=0x78`
 //!   byte for byte), `0xFF` while the action SM owns the round (every
 //!   catalogued state of a running action reads `0xFF`), and `0x14` - an
 //!   entry / round-start byte below the `0x1F` gate - before the first round

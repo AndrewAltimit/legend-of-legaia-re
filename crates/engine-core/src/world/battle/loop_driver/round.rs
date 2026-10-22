@@ -154,7 +154,7 @@ impl World {
     /// back-attack arm at `0x801D0E68..0x801D0EB0`)
     pub(in crate::world) fn begin_battle_round(&mut self) {
         use crate::battle_round::RoundPhase;
-        use legaia_engine_menus::battle_flow::BattleFlowState;
+        use legaia_engine_battle_menus::battle_flow::BattleFlowState;
         // The side-band holds the round start back in two fights. The
         // sparring fight's opening caption: retail's side-band tick sees
         // `0x14` stored, raises the caption and sets `ctx[+0x6B0]`, and
@@ -240,8 +240,8 @@ impl World {
     /// PORT: FUN_801D0748 (state `0xFE`, `0x801D31E8..0x801D3224`)
     pub(in crate::world) fn begin_round_execution(&mut self) {
         use crate::battle_round::RoundPhase;
+        use legaia_engine_battle_menus::battle_flow::BattleFlowState;
         use legaia_engine_battle_vm::battle_action::ActionState;
-        use legaia_engine_menus::battle_flow::BattleFlowState;
         self.battle.round_flow.phase = RoundPhase::Execute;
         self.battle.round_flow.flat_walk_last = None;
         self.sweep_battle_intro_names();
@@ -326,7 +326,7 @@ impl World {
         self.battle.arts_input = None;
         self.battle.round_flow.phase = RoundPhase::Execute;
         self.sweep_battle_intro_names();
-        self.set_battle_flow(legaia_engine_menus::battle_flow::BattleFlowState::Idle);
+        self.set_battle_flow(legaia_engine_battle_menus::battle_flow::BattleFlowState::Idle);
         // The capture's MP is already charged (the Magic band debits at
         // `0x28`, before the summon band); credit the catalog price back so
         // the band's own debit lands on the captured figure.
@@ -440,8 +440,8 @@ impl World {
     ///
     /// REF: FUN_801D0748 (state `0x6E`, `0x801D3024..0x801D31E4`)
     pub(in crate::world) fn open_commit_confirm(&mut self, actor: u8) {
-        use legaia_engine_menus::battle_flow::BattleFlowState as Flow;
-        use legaia_engine_menus::battle_input::BattleCommandSession;
+        use legaia_engine_battle_menus::battle_flow::BattleFlowState as Flow;
+        use legaia_engine_battle_menus::battle_input::BattleCommandSession;
         if !self.battle.player_driven {
             self.begin_round_execution();
             return;
@@ -682,7 +682,7 @@ impl World {
     /// Retail's `0x14` arm sets `ctx[+0x06] = 0x1E` before any member picks,
     /// and the ring (`0x28`) is only reached through it - so the prompt is a
     /// property of the **round**, not of the turn. The port reads that off
-    /// [`legaia_engine_menus::battle_flow::BattleFlowState::TurnPrompt`]: the round boundary
+    /// [`legaia_engine_battle_menus::battle_flow::BattleFlowState::TurnPrompt`]: the round boundary
     /// parks the flow there and battle entry leaves it at `Idle`, and
     /// [`World::open_battle_command`] now builds the session **already on the
     /// prompt** in both cases. What is left for this pass is the one ordering
@@ -698,8 +698,8 @@ impl World {
     ///
     /// REF: FUN_801D0748 (states 0x14 / 0x1E)
     pub(super) fn arm_round_open_prompt(&mut self) {
-        use legaia_engine_menus::battle_flow::BattleFlowState;
-        use legaia_engine_menus::battle_input::CommandPhase;
+        use legaia_engine_battle_menus::battle_flow::BattleFlowState;
+        use legaia_engine_battle_menus::battle_input::CommandPhase;
         if self.battle.flow != BattleFlowState::TurnPrompt {
             return;
         }

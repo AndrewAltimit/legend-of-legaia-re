@@ -21,7 +21,7 @@ use std::path::PathBuf;
 
 use legaia_engine_battle::arts_command_input::ArtsInputPhase;
 use legaia_engine_battle::battle_tutorial::{TUTORIAL_ARM_FLAG, TutorialLesson};
-use legaia_engine_menus::battle_input::CommandPhase;
+use legaia_engine_battle_menus::battle_input::CommandPhase;
 use legaia_engine_menus::inventory_use::InventoryUseState;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_session::native::NativeSession;

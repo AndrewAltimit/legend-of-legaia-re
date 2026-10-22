@@ -69,14 +69,15 @@ fn every_rolled_limb_is_refused() {
 fn ring_world() -> World {
     let mut world = arts_world();
     world.battle.arts_input = None;
-    world.battle.command = Some(legaia_engine_menus::battle_input::BattleCommandSession::new(0, 0));
+    world.battle.command =
+        Some(legaia_engine_battle_menus::battle_input::BattleCommandSession::new(0, 0));
     world
 }
 
 fn ring_press(
     world: &mut World,
     button: PadButton,
-) -> legaia_engine_menus::battle_input::CommandPhase {
+) -> legaia_engine_battle_menus::battle_input::CommandPhase {
     world.input.set_pad(0);
     world.input.set_pad(button.mask());
     world.audio.sfx_ring_ops.clear();
@@ -93,7 +94,7 @@ fn ring_press(
 /// with the buzz; two limbs still open it.
 #[test]
 fn a_fully_rotted_body_cannot_open_attack() {
-    use legaia_engine_menus::battle_input::CommandPhase;
+    use legaia_engine_battle_menus::battle_input::CommandPhase;
     let mut world = ring_world();
     world.battle.status_effects.apply(0, StatusKind::Rot);
     for limb in 0..3 {
@@ -120,7 +121,7 @@ fn a_fully_rotted_body_cannot_open_attack() {
 /// `0x801D1434..0x801D1440`: Curse refuses the Magic arm with the buzz.
 #[test]
 fn curse_refuses_the_magic_arm() {
-    use legaia_engine_menus::battle_input::CommandPhase;
+    use legaia_engine_battle_menus::battle_input::CommandPhase;
     let mut world = ring_world();
     world.battle.status_effects.apply(0, StatusKind::Curse);
     assert!(matches!(

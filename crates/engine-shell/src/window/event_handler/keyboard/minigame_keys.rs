@@ -225,7 +225,7 @@ impl PlayWindowApp {
                 // run / give-up path, retail's `_DAT_80084448 = 4` arm) and
                 // settles a contest that has run out.
                 if let Some(s) = self.session.host.world.leave_muscle_dome() {
-                    use legaia_engine_menus::muscle_dome_session::MusclePhase;
+                    use legaia_engine_battle_menus::muscle_dome_session::MusclePhase;
                     let phase = s.phase();
                     match phase {
                         MusclePhase::Won => log::info!("muscle: leg won"),

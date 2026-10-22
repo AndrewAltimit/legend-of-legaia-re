@@ -4,7 +4,7 @@
 //! them, and the next turn's arts entry opens on the extended gauge.
 
 use super::*;
-use legaia_engine_menus::battle_input::{BattleCommandSession, CommandPhase};
+use legaia_engine_battle_menus::battle_input::{BattleCommandSession, CommandPhase};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::input::PadButton;
 

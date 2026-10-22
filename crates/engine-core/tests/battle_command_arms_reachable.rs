@@ -104,8 +104,10 @@ fn enter_battle(w: &mut World) {
 /// `Attack` arm - so `Arts` is reached *through* `Attack`, which is where
 /// retail puts the directional command entry. Panics if the walk never gets
 /// there: a miss means the arm was removed, not that the driver was unlucky.
-fn pick_command(w: &mut World, want: legaia_engine_menus::battle_input::BattleCommand) {
-    use legaia_engine_menus::battle_input::{AttackMode, BattleCommand, CommandPhase, RoundChoice};
+fn pick_command(w: &mut World, want: legaia_engine_battle_menus::battle_input::BattleCommand) {
+    use legaia_engine_battle_menus::battle_input::{
+        AttackMode, BattleCommand, CommandPhase, RoundChoice,
+    };
     let ring_arm = match want {
         BattleCommand::Arts => BattleCommand::Attack,
         other => other,
@@ -180,7 +182,7 @@ fn open_surfaces(w: &World) -> Vec<&'static str> {
 
 #[test]
 fn arts_command_opens_an_input_session_that_reads_directions() {
-    use legaia_engine_menus::battle_input::BattleCommand;
+    use legaia_engine_battle_menus::battle_input::BattleCommand;
 
     let mut w = build_world();
     enter_battle(&mut w);
@@ -228,7 +230,7 @@ fn arts_command_opens_an_input_session_that_reads_directions() {
 
 #[test]
 fn magic_and_item_arms_each_open_their_own_surface() {
-    use legaia_engine_menus::battle_input::BattleCommand;
+    use legaia_engine_battle_menus::battle_input::BattleCommand;
 
     for (command, expected) in [
         (BattleCommand::Magic, "spell_menu"),

@@ -325,7 +325,7 @@ pub struct DomeSelectPad {
     pub triangle: bool,
     /// The "Select Attack" option word `0x800846C4` the ring's Attack arm
     /// reads.
-    pub select_attack: crate::option_values::SelectAttackOpt,
+    pub select_attack: legaia_engine_system::option_values::SelectAttackOpt,
 }
 
 /// One dealt slot: a direction-command id + its per-fighter AP cost.

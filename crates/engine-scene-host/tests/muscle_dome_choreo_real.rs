@@ -18,7 +18,9 @@
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_engine_menus::muscle_dome_session::choreo::{BeatKind, BodyAct, ChoreoBody, DomeChoreo};
+use legaia_engine_battle_menus::muscle_dome_session::choreo::{
+    BeatKind, BodyAct, ChoreoBody, DomeChoreo,
+};
 use legaia_engine_minigames::muscle_dome::DomePlay;
 use legaia_engine_scene_host::scene_host::SceneHost;
 

@@ -17,7 +17,7 @@
 //! `MusclePhase::TurnOver`, i.e. one intermission per turn instead of per
 //! fight.
 
-use legaia_engine_menus::muscle_dome_session::{MuscleCard, MuscleDomeSession, MusclePhase};
+use legaia_engine_battle_menus::muscle_dome_session::{MuscleCard, MuscleDomeSession, MusclePhase};
 use legaia_engine_minigames::muscle_dome::{ContestState, HAND_SLOTS};
 
 /// Four identical direction slots at 30 AP each - the retail deal shape.

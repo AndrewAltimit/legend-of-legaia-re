@@ -16,7 +16,7 @@
 //!    overlay holds none and only reads it. So the cell is an input to the
 //!    battle, not a mode selector the arena could branch a timeout on.
 //! 3. **No dome round can raise the timed-fight HUD.** Every course-ladder
-//!    monster id is strictly below [`legaia_engine_menus::muscle_dome_session::TIMED_FIGHT_MONSTER_ID`], the id the
+//!    monster id is strictly below [`legaia_engine_battle_menus::muscle_dome_session::TIMED_FIGHT_MONSTER_ID`], the id the
 //!    `Turns Left / HP Left` strip's draw sites gate on.
 //!
 //! No Sony bytes are asserted - only instruction *shapes* and counts, and the
@@ -159,8 +159,8 @@ fn dome_round_hands_off_to_an_ordinary_battle_and_ends_on_a_ko() {
         .max()
         .expect("the ladder has rounds");
     assert!(
-        top < legaia_engine_menus::muscle_dome_session::TIMED_FIGHT_MONSTER_ID,
+        top < legaia_engine_battle_menus::muscle_dome_session::TIMED_FIGHT_MONSTER_ID,
         "ladder tops out at {top:#x}, below the timed fight's {:#x}",
-        legaia_engine_menus::muscle_dome_session::TIMED_FIGHT_MONSTER_ID
+        legaia_engine_battle_menus::muscle_dome_session::TIMED_FIGHT_MONSTER_ID
     );
 }

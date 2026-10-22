@@ -319,7 +319,7 @@ impl World {
     ///
     /// PORT: FUN_801D0748 (`0x801D0B2C..0x801D0BCC`)
     pub(in crate::world) fn battle_command_glide_gate(&mut self) -> bool {
-        use legaia_engine_menus::option_values::BattleCommandOpt;
+        use legaia_engine_system::option_values::BattleCommandOpt;
         let ret = self.battle.widget_glide_return;
         if ret != 0 {
             let pressed = self.input.pad() & !self.input.pad_prev() != 0;
@@ -365,9 +365,9 @@ impl World {
     /// This tick's command pad edges.
     pub(in crate::world) fn battle_command_pad_edges(
         &self,
-    ) -> legaia_engine_menus::battle_input::BattleCommandInput {
+    ) -> legaia_engine_battle_menus::battle_input::BattleCommandInput {
         use legaia_engine_system::input::PadButton;
-        legaia_engine_menus::battle_input::BattleCommandInput {
+        legaia_engine_battle_menus::battle_input::BattleCommandInput {
             up: self.input.just_pressed(PadButton::Up),
             down: self.input.just_pressed(PadButton::Down),
             left: self.input.just_pressed(PadButton::Left),
@@ -387,12 +387,12 @@ impl World {
     /// PORT: FUN_801D0748 (`0x801D0C1C..0x801D0C58`)
     pub(in crate::world) fn take_command_pad_buffer(
         &mut self,
-    ) -> legaia_engine_menus::battle_input::BattleCommandInput {
+    ) -> legaia_engine_battle_menus::battle_input::BattleCommandInput {
         let live = self.battle_command_pad_edges();
         let parked = self.battle.command_pad_buffer.take();
         let pressed = self.input.pad() & !self.input.pad_prev() != 0;
         match parked {
-            Some(p) if !pressed => legaia_engine_menus::battle_input::BattleCommandInput {
+            Some(p) if !pressed => legaia_engine_battle_menus::battle_input::BattleCommandInput {
                 select_attack: live.select_attack,
                 ..p
             },
@@ -404,10 +404,10 @@ impl World {
     /// was on before the frame and the one it is on after.
     pub(in crate::world) fn launch_commit_log_for(
         &mut self,
-        before: &legaia_engine_menus::battle_input::CommandPhase,
-        after: &legaia_engine_menus::battle_input::CommandPhase,
+        before: &legaia_engine_battle_menus::battle_input::CommandPhase,
+        after: &legaia_engine_battle_menus::battle_input::CommandPhase,
     ) {
-        use legaia_engine_menus::battle_input::{BattleCommand, CommandPhase as P};
+        use legaia_engine_battle_menus::battle_input::{BattleCommand, CommandPhase as P};
         let leaves_ring = matches!(before, P::Menu { .. })
             && matches!(
                 after,

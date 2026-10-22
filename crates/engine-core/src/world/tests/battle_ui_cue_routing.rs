@@ -3,10 +3,10 @@
 
 use super::*;
 use legaia_engine_battle::battle_tutorial::TutorialLesson;
-use legaia_engine_menus::battle_input::{BattleCommandSession, CommandPhase};
-use legaia_engine_menus::option_values::BattleCommandOpt;
+use legaia_engine_battle_menus::battle_input::{BattleCommandSession, CommandPhase};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::input::PadButton;
+use legaia_engine_system::option_values::BattleCommandOpt;
 use legaia_engine_system::sound_state::SfxRingOp;
 
 fn ring_world() -> World {

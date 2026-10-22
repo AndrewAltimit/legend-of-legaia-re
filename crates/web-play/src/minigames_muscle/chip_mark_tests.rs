@@ -1,5 +1,5 @@
 use super::*;
-use legaia_engine_menus::muscle_dome_session::MuscleCard;
+use legaia_engine_battle_menus::muscle_dome_session::MuscleCard;
 
 fn session(special: u32) -> MuscleDomeSession {
     let card = MuscleCard {
@@ -17,7 +17,7 @@ fn session(special: u32) -> MuscleDomeSession {
 #[test]
 fn a_forbidden_chip_carries_the_cross_out_quad() {
     let rows = LegaiaMinigames::muscle_chip_json(&session(
-        legaia_engine_menus::muscle_dome_session::SPECIAL_ITEM_FORBIDDEN,
+        legaia_engine_battle_menus::muscle_dome_session::SPECIAL_ITEM_FORBIDDEN,
     ));
     let item = rows.iter().find(|r| r["chip"] == "item").unwrap();
     assert_eq!(item["mark"], "forbidden");

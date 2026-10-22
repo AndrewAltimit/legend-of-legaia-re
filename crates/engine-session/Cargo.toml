@@ -48,6 +48,7 @@ legaia-engine-vm.workspace = true
 legaia-game-tables.workspace = true
 
 [dev-dependencies]
+legaia-engine-battle-menus.workspace = true
 legaia-engine-cheats.workspace = true
 legaia-lzs.workspace = true
 legaia-mes.workspace = true

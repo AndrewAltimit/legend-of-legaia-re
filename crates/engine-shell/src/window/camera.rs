@@ -865,7 +865,7 @@ mod battle_cam_shared_tests {
         tetsu.tmd_binding = Some(0);
         world.actors = vec![vahn, tetsu];
         world.battle.command =
-            Some(legaia_engine_menus::battle_input::BattleCommandSession::new(0, 0));
+            Some(legaia_engine_battle_menus::battle_input::BattleCommandSession::new(0, 0));
         // The **arts input** picker is what arms retail's case-0 close-up;
         // the command chooser alone keeps the far framing (see
         // `script::phase_for_state`).
@@ -942,7 +942,7 @@ mod battle_cam_shared_tests {
         tetsu.tmd_binding = Some(0);
         world.actors = vec![vahn, tetsu];
         world.battle.command =
-            Some(legaia_engine_menus::battle_input::BattleCommandSession::new(0, 0));
+            Some(legaia_engine_battle_menus::battle_input::BattleCommandSession::new(0, 0));
         // The **arts input** picker is what arms retail's case-0 close-up;
         // the command chooser alone keeps the far framing (see
         // `script::phase_for_state`).

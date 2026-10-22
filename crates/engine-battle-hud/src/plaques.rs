@@ -4,8 +4,8 @@
 //! marks.
 
 use super::*;
+use legaia_engine_battle_menus::battle_input::CommandChipPhase;
 use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
-use legaia_engine_menus::battle_input::CommandChipPhase;
 
 /// The party member whose full-width readout bar (placement record 7) is
 /// up this frame, or `None`.
@@ -683,7 +683,7 @@ pub fn battle_magic_chip(world: &legaia_engine_core::world::World, ordinal: u8) 
             if idx == 4 {
                 "-".to_string()
             } else {
-                legaia_engine_menus::battle_input::BattleCommand::Magic
+                legaia_engine_battle_menus::battle_input::BattleCommand::Magic
                     .label()
                     .to_string()
             }
@@ -692,7 +692,7 @@ pub fn battle_magic_chip(world: &legaia_engine_core::world::World, ordinal: u8) 
 }
 
 /// The mark the Ra-Seru chip wears in a regular battle: the red cross-out
-/// ([`legaia_engine_menus::muscle_dome_session::ChipMark::Forbidden`], `FUN_801DBC30`) while the
+/// ([`legaia_engine_battle_menus::muscle_dome_session::ChipMark::Forbidden`], `FUN_801DBC30`) while the
 /// special word forbids it, else none. The phase-`0x28` arm draws the mark
 /// before it tests the pad (`0x801D12DC..0x801D12F4`).
 ///
@@ -700,11 +700,11 @@ pub fn battle_magic_chip(world: &legaia_engine_core::world::World, ordinal: u8) 
 /// [`battle_raseru_cross_out`])
 pub fn battle_magic_chip_mark(
     world: &legaia_engine_core::world::World,
-) -> Option<legaia_engine_menus::muscle_dome_session::ChipMark> {
+) -> Option<legaia_engine_battle_menus::muscle_dome_session::ChipMark> {
     world
         .battle
         .raseru_forbidden()
-        .then_some(legaia_engine_menus::muscle_dome_session::ChipMark::Forbidden)
+        .then_some(legaia_engine_battle_menus::muscle_dome_session::ChipMark::Forbidden)
 }
 
 /// Whether this frame draws the red cross-out X over the command ring's

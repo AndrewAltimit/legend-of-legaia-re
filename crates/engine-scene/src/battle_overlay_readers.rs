@@ -3,7 +3,7 @@
 //! [`crate::scene::ProtIndex`].
 //!
 //! The formation banner, its hold timers and wording live in
-//! `legaia_engine_menus::battle_open`; these readers name no kernel, so they
+//! `legaia_engine_battle_menus::battle_open`; these readers name no kernel, so they
 //! sit with the `ProtIndex` they read through.
 
 use legaia_ui_formats::battle_ui_strings::{BattleUiStrings, OVERLAY_BASE_VA};

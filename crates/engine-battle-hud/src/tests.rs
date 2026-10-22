@@ -1,6 +1,6 @@
 use super::*;
+use legaia_engine_battle_menus::battle_input::CommandChipPhase;
 use legaia_engine_core::world::test_drivers::BattleTestDrivers;
-use legaia_engine_menus::battle_input::CommandChipPhase;
 
 /// Identical adjacent monsters must collapse into one dedup-labelled
 /// retail row (FUN_801D9D3C via `target_picker::enemy_menu_rows`), and a
@@ -116,7 +116,7 @@ fn battle_world(party: u8) -> legaia_engine_core::world::World {
 
 #[test]
 fn round_prompt_is_panels_only() {
-    use legaia_engine_menus::battle_input::BattleCommandSession;
+    use legaia_engine_battle_menus::battle_input::BattleCommandSession;
     let mut w = battle_world(1);
     w.battle.command = Some(BattleCommandSession::new_round_open(0, 0, false));
     assert_eq!(battle_hud_phase(&w), BattleHudPhase::RoundPrompt);
@@ -135,7 +135,7 @@ fn round_prompt_is_panels_only() {
 /// sixteen-vsync glide lands.
 #[test]
 fn the_round_prompt_opens_on_a_glide_from_seat_a() {
-    use legaia_engine_menus::battle_input::BattleCommandSession;
+    use legaia_engine_battle_menus::battle_input::BattleCommandSession;
     let mut w = battle_world(1);
     w.battle.command = Some(BattleCommandSession::new_round_open(0, 0, false));
     // No glide recorded: everything at rest.
@@ -185,7 +185,7 @@ fn the_round_prompt_opens_on_a_glide_from_seat_a() {
 /// right edge - and sinks the roster panels from their rest row.
 #[test]
 fn the_ring_opens_on_a_glide_from_seat_a() {
-    use legaia_engine_menus::battle_input::BattleCommandSession;
+    use legaia_engine_battle_menus::battle_input::BattleCommandSession;
     let mut w = battle_world(1);
     w.battle.command = Some(BattleCommandSession::new(0, 0));
     assert_eq!(battle_command_surface(&w), Some(CommandSurface::Ring));
@@ -252,7 +252,7 @@ fn the_ring_opens_on_a_glide_from_seat_a() {
 /// flow SM draws the static SCUS word and never reads `ctx[+0x287]`.
 #[test]
 fn a_no_escape_round_prompt_still_reads_run() {
-    use legaia_engine_menus::battle_input::BattleCommandSession;
+    use legaia_engine_battle_menus::battle_input::BattleCommandSession;
     let mut w = battle_world(1);
     w.battle.no_escape = true;
     w.battle.command = Some(BattleCommandSession::new_round_open(0, 0, true));
@@ -265,7 +265,7 @@ fn a_no_escape_round_prompt_still_reads_run() {
 
 #[test]
 fn the_ring_is_bar_tab_plaque_and_ap_plate() {
-    use legaia_engine_menus::battle_input::BattleCommandSession;
+    use legaia_engine_battle_menus::battle_input::BattleCommandSession;
     let mut w = battle_world(1);
     w.actors[0].battle.spirit_gauge = 37;
     w.battle.command = Some(BattleCommandSession::new(0, 0));
@@ -317,7 +317,7 @@ fn the_arts_entry_keeps_the_attack_trail_and_names_its_arm_chips() {
 
 #[test]
 fn the_magic_chip_reads_dash_without_a_raseru_and_the_disc_name_with_one() {
-    use legaia_engine_menus::battle_input::BattleCommandSession;
+    use legaia_engine_battle_menus::battle_input::BattleCommandSession;
     let mut w = battle_world(1);
     w.battle.command = Some(BattleCommandSession::new(0, 0));
     let chips = battle_command_chips(&w).expect("ring chips");
@@ -342,7 +342,7 @@ fn the_magic_chip_reads_dash_without_a_raseru_and_the_disc_name_with_one() {
 
 #[test]
 fn the_raseru_forbidden_bit_greys_the_chip_and_marks_it() {
-    use legaia_engine_menus::battle_input::BattleCommandSession;
+    use legaia_engine_battle_menus::battle_input::BattleCommandSession;
     let mut w = battle_world(1);
     w.battle.command = Some(BattleCommandSession::new(0, 0));
     let mut eq = w.party.roster.members[0].equipment();
@@ -358,7 +358,7 @@ fn the_raseru_forbidden_bit_greys_the_chip_and_marks_it() {
     assert!(!enabled);
     assert_eq!(
         battle_magic_chip_mark(&w),
-        Some(legaia_engine_menus::muscle_dome_session::ChipMark::Forbidden)
+        Some(legaia_engine_battle_menus::muscle_dome_session::ChipMark::Forbidden)
     );
     assert!(battle_raseru_cross_out(&w), "the ring is up: the X draws");
     // Off the ring (no command session) the arm does not run.
@@ -371,7 +371,7 @@ fn the_raseru_forbidden_bit_greys_the_chip_and_marks_it() {
 /// Curse - and nothing at all off the ring.
 #[test]
 fn the_ring_marks_follow_the_word_and_the_members_status() {
-    use legaia_engine_menus::battle_input::BattleCommandSession;
+    use legaia_engine_battle_menus::battle_input::BattleCommandSession;
     let mut w = battle_world(1);
     w.battle.command = Some(BattleCommandSession::new(0, 0));
     assert_eq!(
@@ -428,7 +428,7 @@ fn noa_gate_reads_the_byte_before_everyone_elses() {
 
 #[test]
 fn attack_mode_keeps_bar_tab_plaque_and_ap_plate() {
-    use legaia_engine_menus::battle_input::{BattleCommandSession, CommandPhase};
+    use legaia_engine_battle_menus::battle_input::{BattleCommandSession, CommandPhase};
     let mut w = battle_world(1);
     let mut cmd = BattleCommandSession::new(0, 0);
     cmd.phase = CommandPhase::AttackMode { cursor: 0 };

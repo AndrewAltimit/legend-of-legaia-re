@@ -27,6 +27,7 @@ legaia-engine-camera.workspace = true
 legaia-engine-effects.workspace = true
 legaia-engine-field.workspace = true
 legaia-engine-fishing.workspace = true
+legaia-engine-battle-menus.workspace = true
 legaia-engine-menus.workspace = true
 legaia-engine-title.workspace = true
 legaia-engine-minigame-scenes.workspace = true

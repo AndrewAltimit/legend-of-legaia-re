@@ -41,6 +41,7 @@ ENV_KERNEL_ROOTS = [
         "engine-fishing",
         "engine-menus",
         "engine-title",
+        "engine-battle-menus",
         "engine-minigames",
         "engine-minigame-scenes",
         "engine-mode",

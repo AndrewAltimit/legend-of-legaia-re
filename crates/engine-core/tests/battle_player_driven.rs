@@ -124,7 +124,7 @@ fn battle_waits_for_player_command_then_resolves() {
     // arm it opens on), `Auto` on the attack-mode prompt, then the target
     // cursor's confirm; the strike commits and the single-monster formation
     // wipes. ---
-    use legaia_engine_menus::battle_input::{BattleCommand, CommandPhase};
+    use legaia_engine_battle_menus::battle_input::{BattleCommand, CommandPhase};
     let left = InputState::mask_of([PadButton::Left]);
     let mut returned = false;
     let mut release = false;

@@ -1,4 +1,4 @@
-use legaia_engine_menus::battle_flow::BattleFlowState;
+use legaia_engine_battle_menus::battle_flow::BattleFlowState;
 use legaia_engine_mode::mode::SceneMode;
 
 /// Ticks the pad path may take to reach a menu capture's surface.
@@ -1164,7 +1164,7 @@ impl BattleDrive {
         &self,
         world: &legaia_engine_core::world::World,
     ) -> Option<legaia_engine_system::input::PadButton> {
-        use legaia_engine_menus::battle_input::CommandPhase;
+        use legaia_engine_battle_menus::battle_input::CommandPhase;
         use legaia_engine_system::input::PadButton;
         if world.mode != SceneMode::Battle || matches!(self, Self::Opening { .. }) {
             return None;

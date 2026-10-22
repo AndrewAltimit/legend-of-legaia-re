@@ -173,7 +173,7 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
         // one opens straight on the ring - dismiss the prompt when it is up.
         if matches!(
             w.battle.command.as_ref().map(|s| &s.phase),
-            Some(legaia_engine_menus::battle_input::CommandPhase::RoundPrompt { .. })
+            Some(legaia_engine_battle_menus::battle_input::CommandPhase::RoundPrompt { .. })
         ) {
             press(&mut w, PadButton::Cross); // Begin -> the command ring
         }
@@ -199,7 +199,9 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
         for _ in 0..4 {
             match w.battle.command.as_ref().map(|c| &c.phase) {
                 None => break,
-                Some(legaia_engine_menus::battle_input::CommandPhase::CommitConfirm { .. }) => {
+                Some(legaia_engine_battle_menus::battle_input::CommandPhase::CommitConfirm {
+                    ..
+                }) => {
                     press(&mut w, PadButton::Cross) // Begin
                 }
                 Some(_) => press(&mut w, PadButton::Down), // ring: Spirit arm

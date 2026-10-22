@@ -96,7 +96,7 @@ pub struct FieldLocomotion {
     pub precise_movement: bool,
     /// Field Move option: `false` = Walk, `true` = Run (retail config word
     /// `0x800846CC`, the pause menu's "Field Move" row - see
-    /// [`legaia_engine_menus::option_values::FieldMoveOpt`]). Hosts mirror their
+    /// [`legaia_engine_system::option_values::FieldMoveOpt`]). Hosts mirror their
     /// [`legaia_engine_menus::options::OptionsState`] onto this the way they mirror
     /// [`crate::world::FieldLocomotion::precise_movement`].
     ///

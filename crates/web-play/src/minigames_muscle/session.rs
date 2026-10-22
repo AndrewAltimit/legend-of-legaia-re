@@ -108,7 +108,7 @@ impl LegaiaMinigames {
         let Ok(records) = bca::art_animation_bank(&record0) else {
             return Vec::new();
         };
-        legaia_engine_menus::muscle_dome_session::art_catalog_from_bank(&records)
+        legaia_engine_battle_menus::muscle_dome_session::art_catalog_from_bank(&records)
     }
 
     /// The player fighter's record stats: SCUS new-game template leveled

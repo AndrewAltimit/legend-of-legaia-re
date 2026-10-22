@@ -114,7 +114,7 @@ fn drive_arts_entry_and_collect_shouts(
     w: &mut World,
     entry: &[PadButton],
 ) -> Vec<legaia_engine_battle::battle_events::BattleShoutCue> {
-    use legaia_engine_menus::battle_input::BattleCommand;
+    use legaia_engine_battle_menus::battle_input::BattleCommand;
 
     walk_into_battle(w);
 
@@ -154,7 +154,7 @@ fn drive_arts_entry_and_collect_shouts(
             // whatever the cursor is on; the other presses are the spatial
             // seatings - Left onto the `Attack` arm, Left/Right onto the
             // `Auto`/`Command` chip.
-            use legaia_engine_menus::battle_input::{AttackMode, CommandPhase};
+            use legaia_engine_battle_menus::battle_input::{AttackMode, CommandPhase};
             match cmd.phase {
                 CommandPhase::Menu { .. } if cmd.menu_command() != Some(BattleCommand::Attack) => {
                     InputState::mask_of([PadButton::Left])

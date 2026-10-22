@@ -21,7 +21,7 @@ impl World {
     /// `muscle_dome::apply_contest_start_restore`)
     pub fn enter_muscle_dome(
         &mut self,
-        session: legaia_engine_menus::muscle_dome_session::MuscleDomeSession,
+        session: legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession,
     ) {
         if self.mode != SceneMode::MuscleDome {
             self.minigames.muscle_return_mode = self.mode;
@@ -61,8 +61,8 @@ impl World {
     /// contest open with its tally intact.
     pub fn leave_muscle_dome(
         &mut self,
-    ) -> Option<legaia_engine_menus::muscle_dome_session::MuscleDomeSession> {
-        use legaia_engine_menus::muscle_dome_session::MusclePhase;
+    ) -> Option<legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession> {
+        use legaia_engine_battle_menus::muscle_dome_session::MusclePhase;
         use legaia_engine_minigames::muscle_dome::{LEG_OUTCOME_RAN, LegReport};
         if self.minigames.muscle_hub_between_legs && self.minigames.muscle_dome.is_none() {
             // Between legs: the last leg is already reported, so leaving
@@ -105,7 +105,7 @@ impl World {
     /// Returns the session so the host can read the final state.
     pub fn exit_muscle_dome(
         &mut self,
-    ) -> Option<legaia_engine_menus::muscle_dome_session::MuscleDomeSession> {
+    ) -> Option<legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession> {
         self.leave_muscle_arena();
         self.end_muscle_leg()
     }
@@ -126,7 +126,7 @@ impl World {
     /// session, write the fighter's HP back and pick the ringside still.
     pub(in crate::world::frame_tick) fn end_muscle_leg(
         &mut self,
-    ) -> Option<legaia_engine_menus::muscle_dome_session::MuscleDomeSession> {
+    ) -> Option<legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession> {
         let session = self.minigames.muscle_dome.take();
         // The battle end writes the fighter's HP back into the lead record
         // (`+0x106`), and the background read that follows streams one of the
@@ -241,10 +241,10 @@ impl World {
     ///
     /// The word is what crosses the ring's Item chip out on every unlocked
     /// course and the Ra-Seru chip on Master
-    /// ([`legaia_engine_menus::muscle_dome_session::SPECIAL_ITEM_FORBIDDEN`] /
-    /// [`legaia_engine_menus::muscle_dome_session::SPECIAL_MAGIC_FORBIDDEN`]). Both dome entry
+    /// ([`legaia_engine_battle_menus::muscle_dome_session::SPECIAL_ITEM_FORBIDDEN`] /
+    /// [`legaia_engine_battle_menus::muscle_dome_session::SPECIAL_MAGIC_FORBIDDEN`]). Both dome entry
     /// paths hand it to
-    /// [`legaia_engine_menus::muscle_dome_session::MuscleDomeSession::set_special_word`].
+    /// [`legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession::set_special_word`].
     ///
     /// An arena re-entered with the word already non-zero only advances the
     /// ladder cursor (`0x801CEC00`); the port keeps the cursor on
@@ -374,7 +374,7 @@ impl World {
     /// PORT: FUN_801d0748 (that round driver's phase loop: pick / commit /
     /// resolve), with the presentation left to the host.
     pub(in crate::world::frame_tick) fn tick_muscle_dome(&mut self) {
-        use legaia_engine_menus::muscle_dome_session::MusclePhase;
+        use legaia_engine_battle_menus::muscle_dome_session::MusclePhase;
         let Some(phase) = self.minigames.muscle_dome.as_ref().map(|s| s.phase()) else {
             // Between legs the arena hub owns the frame (its INTERVAL, the
             // ringside still and the ROUND card) until
@@ -408,7 +408,7 @@ impl World {
                 // Ra-Seru list and the Begin | Reselect confirm - is the
                 // session's command flow, which runs the battle's own
                 // command and entry sessions (`muscle_dome::DomeMenu`).
-                let pad = legaia_engine_menus::muscle_dome_session::DomeSelectPad {
+                let pad = legaia_engine_battle_menus::muscle_dome_session::DomeSelectPad {
                     left: self.input.just_pressed(input::PadButton::Left),
                     right: self.input.just_pressed(input::PadButton::Right),
                     up: self.input.just_pressed(input::PadButton::Up),
@@ -423,7 +423,7 @@ impl World {
                     .muscle_dome
                     .as_mut()
                     .map(|s| s.select_input(pad));
-                if ev == Some(legaia_engine_menus::muscle_dome_session::DomeMenuEvent::Run) {
+                if ev == Some(legaia_engine_battle_menus::muscle_dome_session::DomeMenuEvent::Run) {
                     // Run on the round prompt: the leg is reported as ran,
                     // which settles the contest as a give-up - the shared
                     // escape path.
@@ -516,7 +516,8 @@ impl World {
         let plays = s.last_turn_plays();
         let i = beat.play.min(plays.len().checked_sub(1)?);
         let attacker = plays[i].attacker.min(1);
-        if beat.kind == legaia_engine_menus::muscle_dome_session::choreo::BeatKind::Approach {
+        if beat.kind == legaia_engine_battle_menus::muscle_dome_session::choreo::BeatKind::Approach
+        {
             // The walk in is the acting side's action; nothing has landed.
             return Some((attacker, 0));
         }

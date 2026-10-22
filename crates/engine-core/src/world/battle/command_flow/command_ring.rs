@@ -10,8 +10,8 @@ impl World {
     /// queued action / target is filled in by [`Self::tick_battle_command`]
     /// once the player confirms. No-op unless [`crate::world::BattleState::player_driven`].
     pub(in crate::world) fn open_battle_command(&mut self, actor: u8) {
-        use legaia_engine_menus::battle_flow::BattleFlowState as Flow;
-        use legaia_engine_menus::battle_input::BattleCommandSession;
+        use legaia_engine_battle_menus::battle_flow::BattleFlowState as Flow;
+        use legaia_engine_battle_menus::battle_input::BattleCommandSession;
         if !self.battle.player_driven {
             return;
         }
@@ -69,7 +69,9 @@ impl World {
     pub(in crate::world) fn tick_battle_command(&mut self) {
         use crate::battle_round::PendingPartyAction;
         use legaia_engine_battle::target_picker::CursorRow;
-        use legaia_engine_menus::battle_input::{BattleCommandInput, CommandPhase, Resolution};
+        use legaia_engine_battle_menus::battle_input::{
+            BattleCommandInput, CommandPhase, Resolution,
+        };
 
         let Some(mut session) = self.battle.command.take() else {
             return;
@@ -88,7 +90,7 @@ impl World {
         // keys `FUN_8004FCC8(0x22)` when it moves (`0x801D082C` / `0x801D08D0`
         // / `0x801D0988` / `0x801D0A40`).
         if self.toggles.battle_command
-            == legaia_engine_menus::option_values::BattleCommandOpt::CrossButton
+            == legaia_engine_system::option_values::BattleCommandOpt::CrossButton
             && session.walk_highlight(&mut ev)
         {
             self.push_battle_ui_cue(super::ui_cues::BattleUiCue::Cursor);
@@ -96,7 +98,7 @@ impl World {
         // The ring's two status refusals (`ring_arm_refused`): a press on
         // a refused arm is dropped with the buzz cue, and the ring stays up.
         if let CommandPhase::Menu { .. } = session.phase {
-            use legaia_engine_menus::battle_input::BattleCommand;
+            use legaia_engine_battle_menus::battle_input::BattleCommand;
             let status = self.raw_status_word(session.actor);
             let cursor_arm = session.menu_command();
             let mut refused = false;
@@ -192,7 +194,7 @@ impl World {
         if self.battle.tutorial.is_some()
             && let Some(res) = resolution
         {
-            use legaia_engine_menus::battle_flow::BattleFlowState as Flow;
+            use legaia_engine_battle_menus::battle_flow::BattleFlowState as Flow;
             let rejected = match res {
                 // Attack is the only command that reaches Confirmed with a
                 // target in the engine; it commits category 3.
@@ -527,7 +529,7 @@ impl World {
 
     fn apply_target_cursor_tint(
         &mut self,
-        session: &legaia_engine_menus::battle_input::BattleCommandSession,
+        session: &legaia_engine_battle_menus::battle_input::BattleCommandSession,
     ) {
         use legaia_engine_battle::target_picker::{CursorRow, PickerState};
         use legaia_engine_battle_vm::battle_action::{

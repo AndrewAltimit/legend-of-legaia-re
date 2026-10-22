@@ -471,7 +471,7 @@ impl World {
         self.toggles.select_attack = o.battle_select_attack;
         self.toggles.battle_command = o.battle_command;
         self.locomotion.run_default =
-            o.field_move == legaia_engine_menus::option_values::FieldMoveOpt::Run;
+            o.field_move == legaia_engine_system::option_values::FieldMoveOpt::Run;
         self.toggles.field_hp_display = o.field_hp_display;
         self.toggles.retail_options = options;
     }

@@ -22,8 +22,8 @@
 use std::path::PathBuf;
 
 use legaia_engine_battle::battle_tutorial::TUTORIAL_ARM_FLAG;
-use legaia_engine_menus::battle_flow::BattleFlowState;
-use legaia_engine_menus::battle_input::CommandPhase;
+use legaia_engine_battle_menus::battle_flow::BattleFlowState;
+use legaia_engine_battle_menus::battle_input::CommandPhase;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_session::native::NativeSession;
 use legaia_engine_session::session::{BootConfig, FieldLiveOpts};

@@ -29,10 +29,10 @@ Three things it is **not**:
 | Data file | `data\field\other6.lzs` = extraction 1220..=1225 (hub art, ringside stills, arena backdrop) |
 | Ladder + score tables | PROT 0977: roster `0x801D1920`, course descriptors `0x801D1A08`, score table `0x801D1860` |
 | Ringside still loader | `FUN_801F6B24`, PROT 0978 (`field_back_read`, slot-B base `0x801F69D8`) |
-| Port | [Engine port](#engine-port): `engine-minigames::muscle_dome`, `engine-menus::muscle_dome_session`, `engine-minigames::muscle_ringside`, `engine-minigame-scenes::muscle_dome_scene`, `web-play::minigames_muscle` |
+| Port | [Engine port](#engine-port): `engine-minigames::muscle_dome`, `engine-battle-menus::muscle_dome_session`, `engine-minigames::muscle_ringside`, `engine-minigame-scenes::muscle_dome_scene`, `web-play::minigames_muscle` |
 | Disc parsers | `legaia_minigame_formats::muscle_dome` (deck tables), `muscle_dome::parse_course_ladder` / `parse_score_table` |
 
-Throughout, "ctx" is the shared battle context at `_DAT_8007BD24` and "actor" is a battle actor record reached through `&DAT_801C9370`. Port paths written `muscle_dome::X` resolve as `legaia_engine_minigames::muscle_dome::X`; the leg session is `legaia_engine_menus::muscle_dome_session`.
+Throughout, "ctx" is the shared battle context at `_DAT_8007BD24` and "actor" is a battle actor record reached through `&DAT_801C9370`. Port paths written `muscle_dome::X` resolve as `legaia_engine_minigames::muscle_dome::X`; the leg session is `legaia_engine_battle_menus::muscle_dome_session`.
 
 ```mermaid
 flowchart TD
@@ -195,7 +195,7 @@ No turn boundary reaches the table above. The two boundaries are written by diff
 
 While a leg runs the game is in battle mode, so the hub - the only thing that draws INTERVAL and the tally - is not executing. Retail has no beat between turns: the command cluster comes straight back.
 
-Both boundaries reach a port host as "the turn's playback ended", so the verdict lives in one shared place: `muscle_dome::leg_boundary_raises_interval` (`engine-minigames`), called at the leg boundary by the hub timer kernel both play hosts drive (`engine-minigames::muscle_ringside::HubTimers`) and by the browser dome page (the `muscle_leg_shows_interval` binding). `MusclePhase::ends_turn` / `ends_leg` name the same split on the session side. Locked by `engine-menus/tests/muscle_intermission_cadence.rs` and `web-play/tests/muscle_page_cadence.rs`.
+Both boundaries reach a port host as "the turn's playback ended", so the verdict lives in one shared place: `muscle_dome::leg_boundary_raises_interval` (`engine-minigames`), called at the leg boundary by the hub timer kernel both play hosts drive (`engine-minigames::muscle_ringside::HubTimers`) and by the browser dome page (the `muscle_leg_shows_interval` binding). `MusclePhase::ends_turn` / `ends_leg` name the same split on the session side. Locked by `engine-battle-menus/tests/muscle_intermission_cadence.rs` and `web-play/tests/muscle_page_cadence.rs`.
 
 <a id="course-ladder-the-opponent-per-course-round"></a>
 
@@ -797,7 +797,7 @@ The member gate `ctx[+0x25F + member]` is written once by the party battle-actor
 
 **A cast spends MP, not AP.** Taking the chip writes `ctx+6 = 0x46` and, at the confirm, the spell id into `actor+0x1DF[0]` with `actor+0x1DE = 2` and `actor+0x1E7 = 9` (`0x801D1A14..0x801D1A34`, `0x801D14A4`, `0x801D14C0`). Nothing on that path reads `ctx+0x6D8` / `ctx+0x6DC`; the cast replaces the direction string. The cost is the static spell table's `+3` byte (`DAT_800754C8 + id*12`) discounted by the record's ability bitfield `+0xF4` - bit `0x20` halves it, bit `0x10` takes a quarter off (`0x801D1A38..0x801D1B70`) - and the confirm arm refuses when `actor+0x150` is short (`0x801D1C0C..0x801D1C28`). The debit is the shared band's (`FUN_801E295C` state `0x28`).
 
-Port (`crates/engine-menus/src/muscle_dome_session/ring.rs`, `session.rs`): `DomeRing` / `ChipMark` / `DomeMagic` carry the gates, marks and the learned list with its ability-bit price; `MuscleDomeSession::commit_cast` is the pick; the cast resolves through `engine-battle::spells::cast_spell`, the rule the regular battle's cast band uses. The special word is the session's (`set_special_word`, overlaid by `MuscleDomeSession::ring`), seeded on both hosts through `contest_entry_word` - the play hosts from the world's flag bank (`World::dome_special_word`), the minigames page from the `unlock` mask its `muscle_contest_start` is handed (`muscle_special_word` reads it back). A standalone leg opened without a contest keeps the word at `0`, which forbids nothing.
+Port (`crates/engine-battle-menus/src/muscle_dome_session/ring.rs`, `session.rs`): `DomeRing` / `ChipMark` / `DomeMagic` carry the gates, marks and the learned list with its ability-bit price; `MuscleDomeSession::commit_cast` is the pick; the cast resolves through `engine-battle::spells::cast_spell`, the rule the regular battle's cast band uses. The special word is the session's (`set_special_word`, overlaid by `MuscleDomeSession::ring`), seeded on both hosts through `contest_entry_word` - the play hosts from the world's flag bank (`World::dome_special_word`), the minigames page from the `unlock` mask its `muscle_contest_start` is handed (`muscle_special_word` reads it back). A standalone leg opened without a contest keeps the word at `0`, which forbids nothing.
 
 <a id="the-dd0ac-chain-is-not-a-direction-swings"></a>
 <a id="the-queue-the-dome-resolves-is-the-tokenizers"></a>
@@ -880,7 +880,7 @@ The `Turns Left / HP Left` strip lives in the battle overlay and its phase-`0x14
 - The strip is one framed window across the top: gold border from framebuffer column `9` to `309`, top edge on row `11`. The per-actor name plate sits in the same top-left seat, from column `9`, rows `13..28`.
 - They never share a frame. Of 27 checkpoints, the three at a `Begin / Run` prompt show the strip, and the plate shows only in action frames (phase `0xFF`).
 
-Port: `engine-menus::timed_fight` (gate, numbers, lifetime) and `legaia_engine_ui::battle_timed_fight_strip` (the format string off the user's PROT 0898, the two numbers at `+0x68` / `+0xD2`), drawn by both hosts. The port draws all chrome sprites, then all text, so while the strip is up both hosts park the plaque (`plaque_seat_taken`). `TIMED_FIGHT_TURN_LIMIT` is the numerator of `timed_fight_turns_left`, reachable by no dome session.
+Port: `engine-battle-menus::timed_fight` (gate, numbers, lifetime) and `legaia_engine_ui::battle_timed_fight_strip` (the format string off the user's PROT 0898, the two numbers at `+0x68` / `+0xD2`), drawn by both hosts. The port draws all chrome sprites, then all text, so while the strip is up both hosts park the plaque (`plaque_seat_taken`). `TIMED_FIGHT_TURN_LIMIT` is the numerator of `timed_fight_turns_left`, reachable by no dome session.
 
 <a id="the-dump-set-is-the-whole-battle-overlay---a-filename-prefix-is-not-dome-evidence"></a>
 
@@ -1026,10 +1026,10 @@ The port models the same two layers and shares every rule between the native `pl
 | Contest | `engine-minigames::muscle_dome` (`contest.rs`) | `DomeContest` (cursor, unlock seed, Master clamp, tally rows, start restore), `settle_contest`, `leg_boundary_raises_interval` |
 | Damage | `engine-minigames::muscle_dome` (`damage.rs`) | `DomeDamageModel`: move-power row via the id map, predamage roll (`FUN_801DD0AC`), element affinity (`FUN_801DD864`), finisher (`FUN_801DDB30`), on a PsyQ `rand()` stream in retail call order; defender's `+0x170` gauge accrues per hit |
 | Hub envelopes | `engine-minigames::muscle_dome` (`hub.rs`), `engine-minigames::muscle_ringside` | `HubScreen`, `HubTimers`, `HubBackdrop`, `FirstVisitHub` |
-| Leg session | `engine-menus::muscle_dome_session` (`session.rs`) | `MuscleDomeSession`: deal, budget-gated commit, queue, tokenizer, cast, KO-only ending |
-| Command flow | `engine-menus::muscle_dome_session` (`menu.rs`, `ring.rs`, `loadout.rs`) | `DomeMenu`, `DomeRing`, `ChipMark`, `DomeMagic`, `art_catalog_for`; world loadout via `engine-world-views::muscle_dome::magic_loadout_for` |
+| Leg session | `engine-battle-menus::muscle_dome_session` (`session.rs`) | `MuscleDomeSession`: deal, budget-gated commit, queue, tokenizer, cast, KO-only ending |
+| Command flow | `engine-battle-menus::muscle_dome_session` (`menu.rs`, `ring.rs`, `loadout.rs`) | `DomeMenu`, `DomeRing`, `ChipMark`, `DomeMagic`, `art_catalog_for`; world loadout via `engine-world-views::muscle_dome::magic_loadout_for` |
 | World | `engine-core` (`world/frame_tick/minigame_sessions/muscle_dome.rs`, `scene/host/minigame_warp.rs`) | `SceneMode::MuscleDome`, `World::enter_muscle_dome` / `tick_muscle_dome` / `leave_muscle_dome` / `report_muscle_leg` / `settle_muscle_contest` |
-| Play-out | `engine-menus::muscle_dome_session::choreo` | `DomeChoreo`, `ChoreoBody`: clips at the battle rate, range-law approach, root motion, reaction pick |
+| Play-out | `engine-battle-menus::muscle_dome_session::choreo` | `DomeChoreo`, `ChoreoBody`: clips at the battle rate, range-law approach, root motion, reaction pick |
 | 3D surface | `engine-minigame-scenes::muscle_dome_scene` | `MuscleDomeSurface`, `arena_ring`, `DomeCamera` |
 | Minigames page | `web-play::minigames_muscle` | `muscle_*` wasm bindings; `site/js/minigame-muscle.js` |
 
@@ -1073,7 +1073,7 @@ The port models the same two layers and shares every rule between the native `pl
 | Done band | `0x50` seeds `ctx[+0x6D8] = 0x3C`, `0x51` counts it down | `DONE_TAIL_TICKS = 0x3C` after each attacker's string |
 | Walk home | none | none: the next string starts where the last left the pair |
 
-The reaction map is the installers': the party's fixed slots `[2, 3, 4, 5]` (`FUN_80053CB8`), a monster's last-match scan of tags `2..=5` with the knockdown falling back to the first flinch (`FUN_80054CB0`). Both play hosts install the bodies on the arena-door path (`SceneHost::dome_choreo_bodies`), the minigames page when it starts a leg. A session with no bodies installed acts the turn out on a fixed clip-less schedule (`choreo::turn_timeline`: a 48-tick approach on the leg's first turn, 34 ticks a swing, the `0x3C` tail) with nothing moving. Pinned by `crates/engine-menus/src/muscle_dome_session/choreo.rs` (unit) and `engine-scene-host/tests/muscle_dome_choreo_real.rs` (every ladder rung closes to the range law and lands its hit).
+The reaction map is the installers': the party's fixed slots `[2, 3, 4, 5]` (`FUN_80053CB8`), a monster's last-match scan of tags `2..=5` with the knockdown falling back to the first flinch (`FUN_80054CB0`). Both play hosts install the bodies on the arena-door path (`SceneHost::dome_choreo_bodies`), the minigames page when it starts a leg. A session with no bodies installed acts the turn out on a fixed clip-less schedule (`choreo::turn_timeline`: a 48-tick approach on the leg's first turn, 34 ticks a swing, the `0x3C` tail) with nothing moving. Pinned by `crates/engine-battle-menus/src/muscle_dome_session/choreo.rs` (unit) and `engine-scene-host/tests/muscle_dome_choreo_real.rs` (every ladder rung closes to the range law and lands its hit).
 
 The HUD kernels read the hold as an action frame (`battle_hud::battle_hud_phase`): the acting side's plaque holds the top-left seat and the running tally of the side acting (`World::muscle_playback_tally`) rides the status caption as text - the dome VRAM carries no `(448, 0)` page for the `etim` TOTAL cells.
 

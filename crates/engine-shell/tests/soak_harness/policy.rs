@@ -458,7 +458,7 @@ impl Policy {
 pub(super) fn fight_pad(s: &NativeSession) -> u16 {
     use legaia_engine_battle::arts_command_input::ArtsInputPhase;
     use legaia_engine_battle::battle_tutorial::TutorialLesson;
-    use legaia_engine_menus::battle_input::CommandPhase;
+    use legaia_engine_battle_menus::battle_input::CommandPhase;
     use legaia_engine_menus::inventory_use::InventoryUseState;
     let w = &s.host.world;
     if !w.battle.tutorial_boxes.is_empty() {
