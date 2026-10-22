@@ -1306,3 +1306,57 @@ Its distinctive data (the 0x800768xx actor tables, the purse 0x8008459C) is
 shared with no sibling here because the siblings are the damage routines; the
 corroboration it used to get came from the PsyQ `rand` thunk, now a REF.
 """
+
+[[waiver]]
+key = "module-orphan:crates/engine-battle-vm/src/battle_action/pool_ops.rs:801db124"
+reason = """
+Read against the battle overlay's own bytes (PROT 0898, base 0x801CE818) and
+the tag holds: the target byte `+0x1DD` bounded `sltiu 8` (0x801DB164), the
+HP test `lhu +0x14C` (0x801DB17C), the spell-tier gate through the spell
+table 0x800754C8 (`sltiu 0xa` at 0x801DB1C8), the item ids 0xFE / 0x98, and
+the two `rand` rerolls (`jal 0x80056798` at 0x801DB210 / 0x801DB290) are
+`redirect_dead_target`. Its one distinctive datum is the static spell table,
+which the pool helpers beside it never read.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-battle-vm/src/battle_action/summon.rs:801f12d0"
+reason = """
+Read against PROT 0898's bytes: the stage-4 test (`lb +0x277` sign, `== 0x36`,
+else `sb zero,0x276` at 0x801F1644..0x801F1660) and the stage-6 `sltiu 0xcb`
+(0x801F16A0) are `sideband_slot_count`. The tag is scoped to that slice; the
+routine's `LoadImage` uploads are summon_readef's, so its data (the side-band
+addresses) is shared with nothing in the action-SM module.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-cast/src/cast_module_ticks.rs:801f76c4"
+reason = """
+Read against PROT 0946's bytes: three seats `0x801F7928` / `0x801F79C0` /
+`0x801F7A08` (`jal 0x80021B04` at 0x801F7710 / 0x801F7728 / 0x801F7740), the
+ray `0x801F7970` with its `rand` stores into `+0x54`, `+0x84`, `+0xBA`, `+0xB6`
+in order (0x801F7764..0x801F780C), and arm 1's wave `0x801F7BF8`. A slot-B
+stager's records are image-local, so no sibling in this module (other images'
+routines) can share them.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-cast/src/cast_module_ticks.rs:801f7f34"
+reason = """
+Read against PROT 0915's bytes: arm 0 seats `0x801F8004` (`addiu a2,a2,-0x7ffc`
+at 0x801F7F6C), arm 1 `0x801F80A4` (0x801F7F7C), each `FUN_80021B04` on the
+caller with scale `lhu +0x72`. Image-local records, as for every slot-B
+stager in this module.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-menus/src/shop.rs:801d5de0"
+reason = """
+Read against the menu overlay's bytes (PROT 0899): `FUN_801D5DE0` is the casino
+prize list's row renderer, and the two tags in shop/row_style.rs claim scoped
+slices of it - the cursor-word decode (`lw -0x4468` = 0x8007BB98, `andi
+0x4000` / `0x2000` / `0xfff` at 0x801D5E40..0x801D5E9C) the shop renderer
+FUN_801D4868 repeats, and the row-ink selection. Its distinctive data (the
+prize table 0x801E4518, row bytes 0x801EF0D0 / 0x801EF0E0) belongs to the
+prize session FUN_801DC1CC, which is ported in engine-minigames, not here.
+"""

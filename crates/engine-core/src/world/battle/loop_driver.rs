@@ -785,15 +785,16 @@ impl World {
         Some(outcome)
     }
 
-    /// Queue one CD-XA clip start and hold the modelled drive busy for its
-    /// read span (`dur` vsyncs - see [`crate::world::AudioState::battle_xa_busy_frames`]).
-    /// REF: FUN_8003D53C
     /// One vsync of the side-band applier's stage byte (see the call in
     /// [`Self::live_battle_tick`]): a fresh seed arms the read time off its
     /// base `ctx[+0x277]`, and the byte drops once that has run out.
     ///
-    /// PORT: FUN_801F12D0 (the stage byte's lifetime; each slot's CD read is
-    /// [`legaia_engine_battle_vm::battle_action::SIDEBAND_SLOT_READ_VSYNCS`])
+    /// REF: FUN_801F12D0 - a timing model of its stage byte, not its code:
+    /// retail drops `ctx[+0x276]` as each slot's read and `LoadImage` uploads
+    /// finish; this counts down a measured read cost per slot
+    /// ([`legaia_engine_battle_vm::battle_action::SIDEBAND_SLOT_READ_VSYNCS`]).
+    /// The slot count it reads is the ported slice
+    /// (`battle_action::sideband_slot_count`).
     fn tick_sideband_token(&mut self) {
         if self.battle_ctx.menu_open == 0 {
             self.casting.sideband_read_left = None;
@@ -811,6 +812,9 @@ impl World {
         }
     }
 
+    /// Queue one CD-XA clip start and hold the modelled drive busy for its
+    /// read span (`dur` vsyncs - see [`crate::world::AudioState::battle_xa_busy_frames`]).
+    /// REF: FUN_8003D53C
     pub(in crate::world) fn push_battle_xa_cue(
         &mut self,
         cue: legaia_engine_system::sound_state::XaVoiceClip,

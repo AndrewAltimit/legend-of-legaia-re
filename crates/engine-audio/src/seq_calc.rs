@@ -266,7 +266,9 @@ pub struct SeqCalcState {
 ///
 /// Retail also flushes the voices once per frame between the two
 /// (`jal 0x80065bac` at `0x80062fdc`); this does not, and [`SeqCall`] has no
-/// arm for it.
+/// arm for it. This tier is the differential host, which carries no voice
+/// state to flush; on the playback path the flush is
+/// `Sequencer::flush_key_ons`, whose key-on timing the key-on census matches.
 ///
 /// Returns `None` when the latch was already held (retail's early return), else
 /// the `(slot, channel, call)` triples in order.

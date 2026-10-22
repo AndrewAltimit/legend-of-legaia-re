@@ -322,7 +322,7 @@ impl World {
     /// roster's names; it rides the steal caption's seat and closes the
     /// same way.
     ///
-    /// PORT: FUN_801F69F8 (PROT 0940; the caption raise)
+    /// PORT: overlay_cast_glare_divide_0940_801f69f8 (PROT 0940; the caption raise)
     fn raise_glare_caption(&mut self, petrified: Option<u8>) {
         const NOTHING_HAPPENED: u32 = 0x801F_8630;
         const TURNED_TO_STONE: [u32; 3] = [0x801F_85E8, 0x801F_8600, 0x801F_8618];

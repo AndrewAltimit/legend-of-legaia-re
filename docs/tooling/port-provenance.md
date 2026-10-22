@@ -473,6 +473,24 @@ recorded.
 | `80062F98`, `80065034`, `80066B00`, `80066E50`, `80067E9C` | libsnd calc tier, voice key-on, voice chooser, cue pitch, sequence volume | keep, partial | Each tag now names the missing arms: the per-frame voice flush `jal 0x80065BAC`, the `vag == 0xFF` arm and the record stores, the flag-2 winner call and `+0x2A` clear, the caller's `fine`, the independent left / right volumes. |
 | `80056798`, `8003D344`, `800583C8`, `8005842C`, `80026520`, `800266E0` | `rand`, `ApplyMatrix`, `LoadImage`, `StoreImage`, two actor sound releases | REF | Each was named in passing on another routine's tag; all were already on the ignore list. |
 
+The libsnd partials stay partial on purpose. The calc tier's missing voice
+flush has nothing to act on - the tier is the `note-trace` differential host,
+and playback's flush is `Sequencer::flush_key_ons` - and the key-on record
+stores `80065034` skips are reached only by the minigames' direct voice cues,
+whose states already match retail's key-on census exactly.
+
+#### The standing findings, read the same way
+
+| Finding | Verdict | Evidence |
+|---|---|---|
+| `801DB124` module-orphan | waived, full | the battle image's bytes: `+0x1DD < 8`, HP `+0x14C`, the spell-tier gate through `0x800754C8` (`sltiu 0xa` at `0x801DB1C8`), item ids `0xFE` / `0x98`, two `rand` rerolls |
+| `801F12D0` module-orphan (summon.rs) | waived, partial | the stage-4 `0x36` / sign test and stage-6 `sltiu 0xcb` are `sideband_slot_count`; the uploads are not this module's |
+| `801F12D0` module-orphan (loop_driver.rs) | `REF` | `tick_sideband_token` counts down a measured read cost; it models the stage byte's lifetime, not the routine's code |
+| `801F76C4`, `801F7F34` module-orphans | waived, full | each stager's seats and `rand` stores match its own image (PROT 0946, PROT 0915); slot-B records are image-local by construction |
+| `801D5DE0` module-orphan | waived, partial | the casino prize list's renderer; the shop module ports two scoped slices, the cursor decode `0x801D5E40..0x801D5E9C` and the row ink |
+| `801CECD0` dual-label | resolved | both pages describe the boot asset-load machine; the functions table now links the boot page |
+| `801F69F8` non-entry | image-qualified | PROT 0940 opens `addiu sp,sp,-0x58` there; the tag names `overlay_cast_glare_divide_0940_801f69f8` |
+
 ### A waiver can check the operands and miss the owner
 
 `0x801F90DC` had a `module-orphan` finding, and the signal was right: the code

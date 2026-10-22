@@ -495,7 +495,7 @@
 "80067480" = "SsVabClose helper (per-slot record reset)"
 "800683d8" = "SsVabTransfer (VAB program-attr lookup)"
 "800684cc" = "SsVabClose (by VAB-ID search)"
-"80068b98" = "SsSeqOpen (slot/track-count bounds-check)"
+"80068b98" = "libsnd VAB / program select (the program-change core), not SsSeqOpen: rejects vab_id >= 0x10, a bank whose state byte (0x801CE368 + vab) is not 1, and program >= the bank's program count (0x801CE332), returning -1; otherwise installs the bank's three table pointers (0x801CE2A8 / 0x801CE268 / 0x801CE2F0 + vab*4) as the current set, latches the vab and program bytes (0x801CE349 / 0x801CE34E) and the program's tone-page byte from ProgAtr +8 (0x801CE34F), and returns 0. Twelve SCUS `jal` sites reach it, among them the note-on dispatch 80067C1C, the program-attribute set 80067D0C, the tone getter 80064DF8, the key-on 80065034 and the note-trigger dispatch 80066308. The engine binds a bank per sequence and reads the tone page directly. see ghidra/scripts/funcs/80068b98.txt"
 "80068c5c" = "SsSeq auto-poll on (_DAT_801CE330 = 1)"
 "80068c80" = "SsVabClose, not SsSeqClose: ids below 16, open-state byte 0x801CE368[id], SpuFree (8006a728) of the resident body at 0x801CE3C8[id], open-bank count 0x801CE3C0 decremented"
 "80068d34" = "SsSeqPlay 1-shot wrapper"

@@ -837,6 +837,14 @@ impl VoiceAttr {
 /// the per-voice record stores (owner, vab, program, tone, note, reserved
 /// flag, age; `0x800652c0..0x80065334`), the re-entry lock at `0x801CD2B4`
 /// and the bank select through `0x80068B98` - the caller passes the bank.
+///
+/// The record stores are what would matter audibly: they hand the voice to
+/// owner `0x21` with the tone's priority and the reserved flag, so the BGM
+/// allocator `FUN_80066B00` treats it as taken. Only the minigames' direct
+/// voice cues reach this routine, and the key-on census on the casino floor,
+/// Baka Fighter and dance states matches retail key-on for key-on without
+/// them, so they stay out until a capture shows a cue and a BGM note
+/// contending for one voice.
 pub fn key_on_voice_attr(attr: &VoiceAttr, spu: &mut Spu, vab: &VabBank) -> bool {
     if usize::from(attr.voice) >= 24 {
         return false;
