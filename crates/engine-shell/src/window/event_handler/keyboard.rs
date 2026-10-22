@@ -218,4 +218,27 @@ mod tests {
             t0 + QUIT_CONFIRM_WINDOW + Duration::from_millis(1)
         ));
     }
+
+    #[test]
+    fn startup_hint_shows_only_when_armed_and_times_from_first_draw() {
+        use crate::window::app_state::{STARTUP_HINT_DURATION, StartupHint};
+        let t0 = Instant::now();
+        // Unarmed (a capture, the headless window): never drawn.
+        let quiet = StartupHint::default();
+        assert!(!quiet.visible(t0));
+        assert!(!quiet.visible(t0 + Duration::from_secs(1)));
+        // Armed: the clock starts at the first frame that asks.
+        let mut hint = StartupHint::default();
+        hint.arm();
+        let first = t0 + Duration::from_secs(30);
+        assert!(hint.visible(first));
+        assert!(hint.visible(first + STARTUP_HINT_DURATION));
+        assert!(!hint.visible(first + STARTUP_HINT_DURATION + Duration::from_millis(1)));
+        // Opening the help panel ends it early.
+        let mut hint = StartupHint::default();
+        hint.arm();
+        assert!(hint.visible(t0));
+        hint.dismiss();
+        assert!(!hint.visible(t0 + Duration::from_secs(1)));
+    }
 }

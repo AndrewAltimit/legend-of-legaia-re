@@ -378,8 +378,11 @@ pub(super) fn cmd_play_window_with_record(
 
     // A player's window reads controllers; a scripted capture's pad word
     // belongs to its script.
+    // Its window chrome too: the start-up key hint is for a player, and a
+    // capture must not draw it.
     if app.screenshot.is_none() {
         app.gamepad = super::gamepad::GamepadHost::open();
+        app.startup_hint.arm();
     }
 
     // On demand, not `run_app`: only `run_app_on_demand` clears the exit

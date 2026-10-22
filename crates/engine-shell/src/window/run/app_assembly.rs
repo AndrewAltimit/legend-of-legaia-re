@@ -233,6 +233,9 @@ impl PlayWindowApp {
             quit_prompt: None,
             notice: None,
             hotkey_help: false,
+            // Armed by `cmd_play_window_with_record` for an interactive
+            // window only.
+            startup_hint: Default::default(),
             help_key_held: None,
             caption_title: crate::window::minigames::WINDOW_TITLE.to_string(),
         }

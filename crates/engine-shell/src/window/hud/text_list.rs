@@ -47,6 +47,14 @@ impl PlayWindowApp {
         {
             rows.push((text.as_str(), [0.85, 0.95, 1.0, 1.0]));
         }
+        // The start-up pointer at the help panel, under the panel's own
+        // gold; never with the panel up.
+        if !self.hotkey_help && self.startup_hint.visible(std::time::Instant::now()) {
+            rows.push((
+                crate::window::app_state::STARTUP_HINT_TEXT,
+                [1.0, 0.9, 0.5, 1.0],
+            ));
+        }
         // Bottom-left of the stage, stacking upward: the top-left is the
         // field party readout's seat.
         let mut y = legaia_engine_ui::BOOT_UI_STAGE_H as i32 - 6;

@@ -137,6 +137,7 @@ impl PlayWindowApp {
             ElementState::Pressed if self.help_key_held != Some(code) => {
                 self.help_key_held = Some(code);
                 self.hotkey_help = !self.hotkey_help;
+                self.startup_hint.dismiss();
             }
             ElementState::Released if self.help_key_held == Some(code) => {
                 self.help_key_held = None;

@@ -226,6 +226,55 @@ pub(in crate::window) fn escape_quits(
     armed.is_some_and(|t| now.saturating_duration_since(t) <= QUIT_CONFIRM_WINDOW)
 }
 
+/// How long the start-up key hint stays up once the window first draws.
+pub(in crate::window) const STARTUP_HINT_DURATION: std::time::Duration =
+    std::time::Duration::from_secs(12);
+
+/// The start-up key hint's line: a player who opens the window from Studio
+/// or a file manager is told nowhere else that `F12` lists the keys.
+pub(in crate::window) const STARTUP_HINT_TEXT: &str = "F12 or ? lists the keys - Esc twice quits";
+
+/// The one-line key hint a player's window shows when it opens. Armed only
+/// for an interactive window (`cmd_play_window_with_record`, no
+/// `--screenshot` harness),
+/// so a parity capture, a periodic sweep and the headless window never draw
+/// it. Its clock starts on the first frame that asks, not at launch, so a
+/// slow disc load or the intro movie does not eat it.
+#[derive(Debug, Default)]
+pub(in crate::window) struct StartupHint {
+    armed: bool,
+    shown_at: std::cell::Cell<Option<std::time::Instant>>,
+    dismissed: bool,
+}
+
+impl StartupHint {
+    pub(in crate::window) fn arm(&mut self) {
+        self.armed = true;
+    }
+
+    /// The player has found the keys (opened the help panel): the hint is
+    /// done.
+    pub(in crate::window) fn dismiss(&mut self) {
+        self.dismissed = true;
+    }
+
+    /// Whether the hint draws on a frame at `now`; the first call that
+    /// answers yes starts its clock.
+    pub(in crate::window) fn visible(&self, now: std::time::Instant) -> bool {
+        if !self.armed || self.dismissed {
+            return false;
+        }
+        let at = match self.shown_at.get() {
+            Some(t) => t,
+            None => {
+                self.shown_at.set(Some(now));
+                now
+            }
+        };
+        now.saturating_duration_since(at) <= STARTUP_HINT_DURATION
+    }
+}
+
 pub(super) struct PlayWindowApp {
     pub(super) session: NativeSession,
     pub(super) font: Font,
@@ -956,6 +1005,8 @@ pub(super) struct PlayWindowApp {
     pub(super) notice: Option<(String, std::time::Instant)>,
     /// The hotkey help panel (`F12` / `?`) is up.
     pub(super) hotkey_help: bool,
+    /// The start-up line pointing at that panel ([`StartupHint`]).
+    pub(super) startup_hint: StartupHint,
     /// The help key held down, so its auto-repeat does not flip the panel.
     pub(super) help_key_held: Option<KeyCode>,
     /// The title bar text last written (`sync_minigame_caption_title`): the
