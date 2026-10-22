@@ -76,6 +76,12 @@ resolve a link into a dependent crate.
 - `battle_anim` - per-actor battle clip playback.
 - `battle_afterimage` - Super / Miracle Art after-image ghosts.
 - `battle_attach_swap` - the per-channel model table of a party seat and the mesh-variant swap (`FUN_8004CCD4`) that rewrites it; the battle draw set.
+- `battle_party_form` - a party member's battle form: the player-file
+  assembly (or the PROT 1204 fallback), band pixels and palette, idle and
+  action clips, art bank, over a `PartyFormDisc` reader and a `VramSink`
+  (`VramWriteLog` records the writes for a renderer). Reading the roster off
+  a `World` and installing the forms on the actors is engine-core's
+  `battle_party_form`.
 - `battle_body_blend` - whole-mesh semi-transparency.
 - `battle_effect_clut` / `battle_status_clut` - the effect palette stage and
   the status recolour pass of `FUN_8004CE2C`.

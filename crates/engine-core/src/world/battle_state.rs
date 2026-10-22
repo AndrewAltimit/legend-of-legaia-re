@@ -695,7 +695,7 @@ pub struct BattleState {
     /// Applied with [`Self::vram_moves`] by
     /// [`crate::world::World::apply_battle_vram_moves`]; cleared at battle
     /// entry.
-    pub vram_loads: crate::battle_party_form::VramWriteLog,
+    pub vram_loads: legaia_engine_battle::battle_party_form::VramWriteLog,
     /// PROT 0969's own data words while it runs.
     pub(crate) form_transition: legaia_engine_battle::battle_stage_module::FormTransitionState,
     /// The camera globals a stage module owns while it runs; `None` when the

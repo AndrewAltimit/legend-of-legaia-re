@@ -26,6 +26,7 @@ pub mod battle_effect_clut;
 pub mod battle_events;
 pub mod battle_hud_state;
 pub mod battle_magic;
+pub mod battle_party_form;
 pub mod battle_return_flags;
 pub mod battle_seats;
 pub mod battle_sideband;

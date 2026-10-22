@@ -39,7 +39,7 @@ All retail routines here are resident in `SCUS_942.54` unless marked as battle-o
 | Port piece | Where |
 |---|---|
 | Party assembly, monster mesh + texture relocation | `crates/actor-formats` (`battle_char_assembly`, `monster_archive`) |
-| Per-fight form install | `engine-core::battle_party_form` |
+| Per-fight form build, install | `engine-battle::battle_party_form` (build), `engine-core::battle_party_form` (install) |
 | Staged clip commit, ladder, rate arms | `engine-core` `world/actors/battle_anim.rs`, `world/battle/clip_ladder.rs`; `engine-battle-vm::battle_anim_rate` |
 | Tint pass, draw tick, ghost pass | `engine-battle-vm::{battle_actor_tint, battle_actor_tick, battle_action::camera_ghost}`, `engine-battle::battle_body_blend` |
 | Trails, streaks, after-images | `render-kernels::battle_trail`, `engine-battle::battle_afterimage`, `render-kernels::{battle_trail, streak_pass, afterimage}` |
@@ -110,11 +110,11 @@ The separator-default collectors (Vahn `parse_record`, Noa / Gala `collect_palet
 Building the forms is an engine duty, not a host one, because retail's loader assembles the party whether or not anything draws it.
 
 - `SceneHost::tick` runs `SceneHost::ensure_battle_party_forms` the tick a battle is up, once per fight (`BattleState::entry_serial`, bumped by `World::enter_battle`). Play hosts and headless drivers (the ladders, the soak harness) all get the idle, action clips, art bank and art records; without them a fight swings zero-length clips and matches no art.
-- The kernel is `engine-core::battle_party_form`: `install_party_battle_forms` runs `PartyFormSources::load`, then `build_party_battle_form` per member, then `World::install_party_battle_form`.
+- The build kernel is `engine-battle::battle_party_form` (`World`-free, over a `PartyFormDisc` reader and a `VramSink`). Its `World` adapter is `engine-core::battle_party_form`: `install_party_battle_forms` runs `PartyFormSources::load`, then `build_party_battle_form` per member with the member's roster slot and equipment, then `World::install_party_battle_form`.
 - Its VRAM writes go to a `VramWriteLog`, not a live VRAM. A renderer reads `SceneHost::battle_party_forms`, replays the log into the battle VRAM it composes, and adds only the GPU upload, its own posing and the facial animator's registration.
 - A session that drives a bare `World` with no `SceneHost` has no disc index. It is the one explicit injection point and calls `install_party_battle_forms` itself after `World::enter_battle`.
 - The kernel falls back to PROT 1204 when the player file carries no idle stream (an assembled mesh with no pose source draws every piece at its object origin), and overlays the separator-default battle palette on a fallback mesh's rows only.
-- Monsters install their texture slot and idle clip through `World::install_monster_battle_form`. A mid-battle summon takes the slot one past the highest monster slot bound (`battle_party_form::monster_tex_slots_used`), since repeated species share a slot.
+- Monsters install their texture slot and idle clip through `World::install_monster_battle_form`. A mid-battle summon takes the slot one past the highest monster slot bound (`engine-battle::battle_party_form::monster_tex_slots_used`), since repeated species share a slot.
 
 #### Battle display list
 

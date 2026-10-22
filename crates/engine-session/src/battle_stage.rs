@@ -176,7 +176,7 @@ pub struct SummonSeat {
     /// The high actor slot the creature holds.
     pub slot: usize,
     /// The battle texture slot its texture pool goes to: the first one past
-    /// the monsters' ([`legaia_engine_core::battle_party_form::monster_tex_slots_used`]).
+    /// the monsters' ([`legaia_engine_battle::battle_party_form::monster_tex_slots_used`]).
     pub tex_slot: u8,
     /// The body (mesh, idle clip, archive-order clips).
     pub asset: legaia_engine_effects::summon::SummonSpawnAsset,
@@ -233,7 +233,7 @@ pub fn seat_summon_creature(
         .map(|(_, _, slot)| slot)
         .collect();
     let tex_slot =
-        legaia_engine_core::battle_party_form::monster_tex_slots_used(monster_slots).min(4);
+        legaia_engine_battle::battle_party_form::monster_tex_slots_used(monster_slots).min(4);
     let slot = seat.unwrap_or(8 + world.party.party_count as usize);
     if let Some(a) = world.actors.get_mut(slot) {
         a.active = true;

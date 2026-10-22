@@ -224,7 +224,7 @@ pub struct SceneHost {
     /// the actors by [`SceneHost::ensure_battle_party_forms`] once per
     /// [`legaia_engine_core::world::BattleState::entry_serial`]; kept for the renderers
     /// until the battle ends. `None` outside battle.
-    battle_party_forms: Option<legaia_engine_core::battle_party_form::BattlePartyForms>,
+    battle_party_forms: Option<legaia_engine_battle::battle_party_form::BattlePartyForms>,
     /// What the last **mode-24 minigame door-warp** drain did, if one has run.
     ///
     /// Deliberately a host field rather than a [`SceneTickEvent`] variant: the

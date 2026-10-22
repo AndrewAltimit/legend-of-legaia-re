@@ -1985,6 +1985,7 @@ dependencies = [
  "legaia-tim",
  "legaia-tmd",
  "legaia-ui-formats",
+ "log",
  "serde",
 ]
 
