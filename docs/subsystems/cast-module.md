@@ -2735,7 +2735,10 @@ exit yaw store `ctx[+0x6DA] = 0x780` is applied as the module finishes
   `z` (arms 1..3); Big Wave cuts to `z/2` and pans to `2z` over `0x100` frames
   (arms 4, 5), then cuts to pitch `0x180`, yaw `0xF00 - facing`,
   TR `(0, 0x600, 3z/2)` (arm 6) and spins the yaw `delta * scalar / 4` a frame
-  through arms 7 and 8.
+  through arms 7 and 8. Big Wave's arm-0 branch also halves the caster's
+  animation rate `+0x21D` beside its stage store (`0x801F6BFC..0x801F6C08`;
+  `zeto_big_wave_mid_cast` holds Zeto at `4`), so Zeto sways at half speed
+  until the Done arm's restore; the port halves it on the same store.
 - **0953** arm 0 forks on the caster's battle-scoped latch word
   `0x801C8FE0 + (ctx[+0x13] + 1) * 4` (the monster AI's cooldown
   `dat[m + 4]`). Zero takes the **charge**: the body sets the latch and leaves

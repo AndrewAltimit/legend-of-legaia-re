@@ -402,6 +402,22 @@ impl World {
                         ) =>
                 {
                     self.casting.module_ctx_278 = v;
+                    // Big Wave's branch halves the caster's animation rate
+                    // `+0x21D` beside the store (`lbu; srl 1; sb` at
+                    // `0x801F6BFC..0x801F6C08`): Zeto sways at half speed
+                    // through the band, until the Done arm's restore
+                    // (`FUN_801E93C8`).
+                    if entry == 946
+                        && s.va == legaia_engine_cast::cast_module_camera::WAVE_BIG_STAGE_STORE
+                        && passed
+                        && let Some(a) = self
+                            .actors
+                            .get_mut(usize::from(self.battle_ctx.active_actor))
+                    {
+                        a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(
+                            a.battle.anim_rate.get() >> 1,
+                        );
+                    }
                 }
                 PresentationCall::ArmedWash { rgb: Some(rgb) } if each => {
                     self.casting.module_pres.armed_wash = Some(rgb);
