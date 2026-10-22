@@ -3,7 +3,7 @@
 # soak-seed = 105
 # soak-signature = "battle_endless|chitei2|battle:state:32:hp-bar-absorbing"
 # detail: in Battle for 18001 frames
-# fixed (harness): a fight still landing actions against a monster side above the HP pool (LEGAIA_SOAK_BATTLE_HP_POOL) is long, not endless - a random pad chips about 200 a round off Cort's 50000 HP
+# fixed (harness): a fight still moving HP / MP against a monster side above the HP pool (LEGAIA_SOAK_BATTLE_HP_POOL) is long, not endless - a random pad chips about 200 a round off Cort's 50000 HP
 # soak-arming = "host"
 # reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell --profile release-test --test integration soak_harness::soak_replay -- --nocapture
 [meta]
