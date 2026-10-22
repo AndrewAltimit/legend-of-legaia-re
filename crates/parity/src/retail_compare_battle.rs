@@ -317,6 +317,10 @@ pub struct RetailBattle {
     /// replay's part of the same record on the capture frame
     /// (`LEGAIA_SEAT_ACTION_FX_PARTS`).
     pub action_fx_parts: Vec<legaia_engine_effects::summon::CastPartSeed>,
+    /// The state's live effect-pool children (`_DAT_8007BD30 + 0x10`) as
+    /// the displayed frame held them, which the image child stands in its
+    /// own pool on the capture frame (`LEGAIA_SEAT_EFFECT_CHILDREN`).
+    pub effect_children: Vec<legaia_engine_core::world::EffectChildSeed>,
     /// `0x800891D2` - the Y angle the backdrop draw turns its slot 1 by, in
     /// 4096ths of a turn. Time spent in keeping fights since boot, so a
     /// replay carries it over rather than winding its own.

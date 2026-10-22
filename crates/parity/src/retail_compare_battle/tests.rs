@@ -497,3 +497,78 @@ fn action_fx_part_seed_is_the_displayed_rotation() {
         vec![(0x24, 0), (0x26, 644 + 4 * 56), (0x28, 0)]
     );
 }
+
+/// A burst child (the narrow arm's record `0x801F5D0C`) is seeded whole,
+/// turning or not: its `rand()`-rolled spread `+0x3E`, scale `+0x72`,
+/// heading `+0x96` and tail `+0x98` ride beside the position and channels.
+#[test]
+fn a_burst_child_seeds_its_rolled_words() {
+    let mut ram = vec![0u8; 0x20_0000];
+    put32(&mut ram, frame_step::FORCED_STEP, 2);
+    let n = 0x8008_1F1C;
+    put32(&mut ram, 0x8007_C34C + 4, n);
+    put32(&mut ram, n + 0x0C, 0x8002_1DF4);
+    put32(&mut ram, n + 0x48, 0x801F_5D0C);
+    put16(&mut ram, n + 0x5A, 2);
+    put16(&mut ram, n + 0x3E, 44);
+    put16(&mut ram, n + 0x72, 0x800);
+    put16(&mut ram, n + 0x96, 64);
+    put16(&mut ram, n + 0x98, 72);
+    let seeds = ram_read::retail_action_fx_parts(&ram);
+    assert_eq!(seeds.len(), 1);
+    let poke = |o: u16| seeds[0].pokes.iter().find(|p| p.0 == o).map(|p| p.1);
+    assert_eq!(poke(0x3E), Some(44));
+    assert_eq!(poke(0x72), Some(0x800));
+    assert_eq!(poke(0x96), Some(64));
+    assert_eq!(poke(0x98), Some(72));
+    assert!(poke(0x14).is_some() && poke(0xC8).is_some());
+}
+
+/// The effect pool's children are read back to the displayed frame: a
+/// child holding its frame takes the lag back off its wait, one that just
+/// entered a frame steps back onto the previous one, and one seeded inside
+/// the lag is dropped. The batch index is the entry's place in the pack0
+/// pointer table at the head's `+0x08`.
+#[test]
+fn effect_children_are_the_displayed_frames() {
+    let mut ram = vec![0u8; 0x20_0000];
+    put32(&mut ram, frame_step::FORCED_STEP, 1); // lag 2 sweeps
+    let pool = 0x800E_6A5C;
+    put32(&mut ram, 0x8007_BD30, pool);
+    put16(&mut ram, pool, 0x1000);
+    let table = 0x800E_46E8;
+    put32(&mut ram, pool + 8, table);
+    // Batch 1 at `entry`: three frames, delays 2 / 4 / 4, speed 1.
+    let entry = 0x800E_4782;
+    put32(&mut ram, table + 4, entry);
+    for (k, d) in [2u8, 4, 4].iter().enumerate() {
+        let f = entry + 2 + 6 * k as u32;
+        ram[(f + 1 - 0x8000_0000) as usize] = *d;
+        ram[(f + 2 - 0x8000_0000) as usize] = 1;
+    }
+    let child = |slot: u32, cursor: u8, wait: u8, vy: i16| {
+        let c = pool + 0x10 + slot * 0x20;
+        (c, cursor, wait, vy)
+    };
+    for (c, cursor, wait, vy) in [
+        child(0, 2, 16, -4), // holding frame 2: wait 16 -> 32
+        child(1, 1, 32, 0),  // just entered frame 1 -> frame 0, then +8
+        child(2, 0, 8, 0),   // seeded inside the lag -> dropped
+    ] {
+        ram[(c - 0x8000_0000) as usize] = 3;
+        ram[(c + 2 - 0x8000_0000) as usize] = cursor;
+        ram[(c + 3 - 0x8000_0000) as usize] = wait;
+        ram[(c + 1 - 0x8000_0000) as usize] = 2;
+        put16(&mut ram, c + 6, vy as u16);
+        put32(&mut ram, c + 0x10, (-300i32 << 8) as u32);
+        put32(&mut ram, c + 0x1C, entry + 2 + 6 * u32::from(cursor));
+    }
+    let seeds = ram_read::retail_effect_children(&ram);
+    assert_eq!(seeds.len(), 2);
+    assert_eq!(seeds[0].anim_id, 1);
+    assert_eq!((seeds[0].frame_cursor, seeds[0].wait), (2, 32));
+    // Two motion steps of `-4 * 1` taken back off Y.
+    assert_eq!(seeds[0].pos[1], (-300 << 8) + 8);
+    assert_eq!((seeds[1].frame_cursor, seeds[1].wait), (0, 8));
+    assert_eq!(seeds[1].mirror, 2);
+}

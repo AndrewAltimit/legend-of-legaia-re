@@ -13,7 +13,44 @@ pub const DEBUG_EFFECT_LIFETIME_FRAMES: u32 = 30;
 /// master slots so the debug exerciser degrades the same way).
 pub const MAX_DEBUG_EFFECTS: usize = 32;
 
+/// One live effect-pool child as a captured state holds it (pool
+/// `_DAT_8007BD30 + 0x10 + slot * 0x20`): the pack0 batch it animates, its
+/// frame cursor and 5.3 wait, its `rand() % 4` mirror bits and its 16.8
+/// position and velocity. Installed by
+/// [`World::install_effect_child_snapshot`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct EffectChildSeed {
+    pub anim_id: u16,
+    pub frame_count: u8,
+    pub frame_cursor: u8,
+    pub wait: u8,
+    pub mirror: u8,
+    pub pos: [i32; 3],
+    pub velocity: [i16; 3],
+}
+
 impl World {
+    /// Stand the effect pool's children where a captured state's stood
+    /// (`Pool::install_child_snapshot`): the capture harness's seat for the
+    /// 2D billboards, whose placement - a burning body's random pose object
+    /// and jitter, a master's randomized legs, the mirror bits - is the
+    /// `rand()` stream's history since the fight began.
+    pub fn install_effect_child_snapshot(&mut self, seeds: &[EffectChildSeed]) {
+        let children: Vec<legaia_engine_vm::effect_vm::ChildSlot> = seeds
+            .iter()
+            .map(|s| legaia_engine_vm::effect_vm::ChildSlot {
+                frame_count: s.frame_count,
+                mirror: s.mirror,
+                frame_cursor: s.frame_cursor,
+                wait: s.wait,
+                velocity: s.velocity,
+                pos: s.pos,
+                anim_id: s.anim_id,
+            })
+            .collect();
+        self.effect_pool.install_child_snapshot(&children);
+    }
+
     /// Tick the effect pool - one sweep of the faithful retail walker
     /// (`Pool::tick_retail`, the `FUN_801E0088` pass-1 port): the master
     /// spawn cadence over the catalog's 14-byte pack1 records and the child

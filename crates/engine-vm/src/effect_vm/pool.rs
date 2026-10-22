@@ -719,6 +719,18 @@ impl Pool {
         }
     }
 
+    /// Replace every child slot with `children`, in order from slot `0`,
+    /// and free the rest. The masters are left alone: a child is all a
+    /// frame draws (pass 2 walks the children only), and which children a
+    /// master's randomized legs and `rand() % 4` mirror bits put where is
+    /// the stream's history, which a capture harness takes from the state
+    /// it compares against rather than from a replay.
+    pub fn install_child_snapshot(&mut self, children: &[ChildSlot]) {
+        for (i, slot) in self.children.iter_mut().enumerate() {
+            *slot = children.get(i).cloned().unwrap_or_default();
+        }
+    }
+
     /// Seed one child slot from a spawn record (`FUN_801E0088` pass 1, the
     /// spawn block `0x801E0184..0x801E03F0`).
     fn seed_child(

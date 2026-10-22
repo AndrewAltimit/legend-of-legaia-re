@@ -455,6 +455,15 @@ pub(super) fn battle_image(
             legaia_engine_capture::cast_parts::cast_parts_env(&battle.action_fx_parts),
         ));
     }
+    // The effect pool's billboards as the displayed frame held them: where a
+    // burning body's sheds and a master's randomized legs put each child is
+    // the stream's history.
+    if !battle.effect_children.is_empty() {
+        env.push((
+            "LEGAIA_SEAT_EFFECT_CHILDREN",
+            legaia_engine_capture::effect_children::effect_children_env(&battle.effect_children),
+        ));
+    }
     // The live effect scrollers' rects as the displayed frame held them: a
     // scroller's rotation count is time since its effect was seated.
     if let Some(kv) = retail.vram_rects_env(opts.out_dir, &entry.label) {

@@ -168,7 +168,7 @@ pub use battle::{CASTER_STAGE_TICK_LIMIT, CasterStagePhase, CasterStageRun};
 mod effects;
 pub use effects::{
     ClutBlendFx, ClutCellFx, ClutCellFxPhase, DEBUG_EFFECT_LIFETIME_FRAMES,
-    EFFECT_MODEL_LIBRARY_BASE, MAX_DEBUG_EFFECTS, ScriptVramMove,
+    EFFECT_MODEL_LIBRARY_BASE, EffectChildSeed, MAX_DEBUG_EFFECTS, ScriptVramMove,
 };
 mod encounters;
 pub use encounters::FieldBossStager;

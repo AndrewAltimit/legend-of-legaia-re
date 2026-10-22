@@ -324,6 +324,12 @@ pub struct ScreenshotConfig {
     /// (`World::install_action_fx_part_snapshot`); taken once.
     pub seat_action_fx_parts:
         std::cell::Cell<Option<Vec<legaia_engine_effects::summon::CastPartSeed>>>,
+    /// `LEGAIA_SEAT_EFFECT_CHILDREN`: a captured state's live effect-pool
+    /// children as the displayed frame held them, stood in the engine's
+    /// pool on the capture frame (`World::install_effect_child_snapshot`);
+    /// taken once.
+    pub seat_effect_children:
+        std::cell::Cell<Option<Vec<legaia_engine_core::world::EffectChildSeed>>>,
     /// `LEGAIA_SEAT_BATTLE_CLIPS=slot:clip:cursor,...`: each body's playing
     /// clip cursor as the capture held it, landed on the capture frame
     /// ([`legaia_engine_capture::clip_cursors`]).
@@ -692,6 +698,11 @@ impl ScreenshotConfig {
                 std::env::var("LEGAIA_SEAT_ACTION_FX_PARTS")
                     .ok()
                     .map(|v| legaia_engine_capture::cast_parts::cast_parts_from_env(&v)),
+            ),
+            seat_effect_children: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_EFFECT_CHILDREN")
+                    .ok()
+                    .map(|v| legaia_engine_capture::effect_children::effect_children_from_env(&v)),
             ),
         }))
     }

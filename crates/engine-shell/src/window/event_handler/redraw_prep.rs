@@ -74,6 +74,14 @@ impl PlayWindowApp {
                     .world
                     .install_action_fx_part_snapshot(&parts);
             }
+            // ... and the effect pool's billboards where retail's walker had
+            // put them (`LEGAIA_SEAT_EFFECT_CHILDREN`).
+            if due && let Some(children) = sc.seat_effect_children.take() {
+                self.session
+                    .host
+                    .world
+                    .install_effect_child_snapshot(&children);
+            }
             // A capture taken mid-glide shows the shot as far along as
             // retail's mover had come (its frame-skip history, which no
             // replay reproduces): the gate carries the frames it had left on

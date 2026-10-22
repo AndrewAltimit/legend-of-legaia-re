@@ -74,6 +74,15 @@ pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon
 /// rotation trio `+0x24..+0x28`.
 const ACTION_FX_SEED_OFFSETS: [u16; 3] = [0x24, 0x26, 0x28];
 
+/// What a burst child's seed carries on top of [`CAST_PART_SEED_OFFSETS`]
+/// (position, banks, wait, channel block): the three words the burst
+/// `FUN_801F30C4` rolls off `rand()` for it - spread `+0x3E`, tail `+0x98`
+/// and, through the seater's `rot[1] & 0xFFF`, heading `+0x96` - and the
+/// scale `+0x72` it writes beside them.
+///
+/// [`CAST_PART_SEED_OFFSETS`]: legaia_engine_effects::summon::CAST_PART_SEED_OFFSETS
+const BURST_CHILD_EXTRA_OFFSETS: [u16; 4] = [0x3E, 0x72, 0x96, 0x98];
+
 /// Every live effect-script table part (`FUN_80021DF4` nodes whose record
 /// `+0x48` lies in the resident battle overlay below the slot-B image -
 /// the `0x801F6324` prototypes `FUN_801DEA50`'s table arm seats) that is
@@ -103,18 +112,152 @@ pub(super) fn retail_action_fx_parts(
             game_anchors::u32_at(ram, n + 0x0C) == PART_TICK
                 && game_anchors::u32_at(ram, n + 0x10) & 0x8 == 0
                 && overlay.contains(&rec)
-                && (0x80..=0x84)
-                    .step_by(2)
-                    .any(|o| game_anchors::u16_at(ram, n + o) != 0)
+                && (is_burst_child(rec)
+                    || (0x80..=0x84)
+                        .step_by(2)
+                        .any(|o| game_anchors::u16_at(ram, n + o) != 0))
         })
-        .map(|n| legaia_engine_effects::summon::CastPartSeed {
-            tag: game_anchors::u32_at(ram, n + 0x48),
-            pokes: ACTION_FX_SEED_OFFSETS
-                .iter()
-                .map(|&o| (o, displayed_part_halfword(ram, n, o, lag)))
-                .collect(),
+        .map(|n| {
+            let tag = game_anchors::u32_at(ram, n + 0x48);
+            let offsets: Vec<u16> = if is_burst_child(tag) {
+                legaia_engine_effects::summon::CAST_PART_SEED_OFFSETS
+                    .iter()
+                    .chain(&BURST_CHILD_EXTRA_OFFSETS)
+                    .copied()
+                    .collect()
+            } else {
+                ACTION_FX_SEED_OFFSETS.to_vec()
+            };
+            legaia_engine_effects::summon::CastPartSeed {
+                tag,
+                pokes: offsets
+                    .iter()
+                    .map(|&o| (o, displayed_part_halfword(ram, n, o, lag)))
+                    .collect(),
+            }
         })
         .collect()
+}
+
+/// `_DAT_8007BD30` - the effect pool's base pointer (`FUN_801E0080`).
+const EFFECT_POOL_PTR: u32 = 0x8007_BD30;
+/// The pool's child slots: `0x80` of `0x20` bytes from `+0x10`.
+const EFFECT_CHILD_SLOTS: u32 = 0x80;
+/// Most pack0 batches the pointer table at head `+0x08` is searched over.
+const PACK0_SEARCH: u32 = 0x100;
+
+/// Every live effect-pool child of the state, as the displayed frame held
+/// it ([`rewind_effect_child`]), in slot order. A child's anim cursor
+/// `+0x1C` points into its pack0 batch (`entry + 2 + 6 * frame_cursor`);
+/// the batch index the engine keys on is the entry's place in the pointer
+/// table at the pool head's `+0x08`. A child whose batch is not found is
+/// left out.
+pub(super) fn retail_effect_children(
+    ram: &[u8],
+) -> Vec<legaia_engine_core::world::EffectChildSeed> {
+    let pool = game_anchors::u32_at(ram, EFFECT_POOL_PTR);
+    if !in_ram(pool) {
+        return Vec::new();
+    }
+    let table = game_anchors::u32_at(ram, pool + 8);
+    if !in_ram(table) {
+        return Vec::new();
+    }
+    let motion_scale = i32::from(game_anchors::i16_at(ram, pool));
+    let lag = display_lag_vsyncs(ram);
+    let mut out = Vec::new();
+    for slot in 0..EFFECT_CHILD_SLOTS {
+        let c = pool + 0x10 + slot * 0x20;
+        let frame_count = game_anchors::u8_at(ram, c);
+        if frame_count == 0 {
+            continue;
+        }
+        let frame_cursor = game_anchors::u8_at(ram, c + 2);
+        let entry =
+            game_anchors::u32_at(ram, c + 0x1C).wrapping_sub(2 + 6 * u32::from(frame_cursor));
+        let Some(anim_id) =
+            (0..PACK0_SEARCH).find(|&i| game_anchors::u32_at(ram, table + 4 * i) == entry)
+        else {
+            continue;
+        };
+        let pos = [0x0C, 0x10, 0x14].map(|o| game_anchors::u32_at(ram, c + o) as i32);
+        let velocity = [4, 6, 8].map(|o| game_anchors::i16_at(ram, c + o));
+        let seed = legaia_engine_core::world::EffectChildSeed {
+            anim_id: anim_id as u16,
+            frame_count,
+            frame_cursor,
+            wait: game_anchors::u8_at(ram, c + 3),
+            mirror: game_anchors::u8_at(ram, c + 1),
+            pos,
+            velocity,
+        };
+        let frame = |k: u8, b: u32| game_anchors::u8_at(ram, entry + 2 + 6 * u32::from(k) + b);
+        if let Some(seed) = rewind_effect_child(seed, lag, motion_scale, frame) {
+            out.push(seed);
+        }
+    }
+    out
+}
+
+/// Child `seed` taken back `sweeps` walker sweeps - the display lag, since
+/// `FUN_801E0080` sweeps once a vsync. `frame(k, b)` reads byte `b` of the
+/// batch's frame `k` (`+1` hold delay, `+2` motion speed). `None` for a
+/// child the walker seeded inside the window, which the displayed frame
+/// does not hold yet.
+///
+/// The inverse of one sweep (`0x801E0088` pass 1): a child whose wait still
+/// holds its frame's whole delay entered that frame on the sweep, so it
+/// stood on the previous frame at wait `0`; any other took `8` off its wait.
+/// Either way it took one motion step, `vel * speed * scale * 8 >> 15`, on
+/// the frame it ended the sweep on. A child on frame `0` within `8` of its
+/// first delay was seeded on the sweep (the seed's batch is walked in the
+/// same sweep, so it starts one decrement down).
+pub(super) fn rewind_effect_child(
+    mut seed: legaia_engine_core::world::EffectChildSeed,
+    sweeps: u16,
+    motion_scale: i32,
+    frame: impl Fn(u8, u32) -> u8,
+) -> Option<legaia_engine_core::world::EffectChildSeed> {
+    for _ in 0..sweeps {
+        let speed = i32::from(frame(seed.frame_cursor, 2));
+        for (p, v) in seed.pos.iter_mut().zip(seed.velocity) {
+            let step = i32::from(v)
+                .wrapping_mul(speed)
+                .wrapping_mul(motion_scale)
+                .wrapping_shl(3)
+                >> 15;
+            *p = p.wrapping_sub(step);
+        }
+        let held = (u32::from(frame(seed.frame_cursor, 1)) << 3) as u8;
+        if seed.frame_cursor == 0 {
+            if seed.wait >= held.saturating_sub(8) {
+                return None;
+            }
+            seed.wait += 8;
+        } else if seed.wait == held {
+            seed.frame_cursor -= 1;
+            seed.wait = 0;
+        } else {
+            seed.wait = seed.wait.saturating_add(8);
+        }
+    }
+    Some(seed)
+}
+
+/// Whether `record` is one of the two stager records the battle burst
+/// `FUN_801F30C4` seats its twelve children on (the wide arm's
+/// `0x801F5DA4`, the narrow arm's `0x801F5D0C`). Each child's heading,
+/// spread and tail are three `rand()` draws, so where a burst's rays and
+/// puffs point is the stream's history since the fight began, which no
+/// replay re-deals: `battle_melee_hit_spark`'s Somersault holds twelve
+/// narrow-arm rays fanned at headings no seed reproduces.
+fn is_burst_child(record: u32) -> bool {
+    [
+        legaia_engine_vm::battle_burst::BurstMode::Wide,
+        legaia_engine_vm::battle_burst::BurstMode::Narrow,
+    ]
+    .iter()
+    .any(|m| m.record_addr() == record)
 }
 
 /// Part `node`'s halfword `+off` as the displayed frame held it, `lag`
@@ -292,6 +435,7 @@ impl RetailBattle {
             mystic_shield: game_anchors::u32_at(ram, MYSTIC_SHIELD_HANDLE) != 0,
             cast_parts: retail_cast_parts(ram),
             action_fx_parts: retail_action_fx_parts(ram),
+            effect_children: retail_effect_children(ram),
             backdrop_slot_1_yaw: game_anchors::u16_at(ram, BACKDROP_SLOT_1_YAW),
             monster_ids,
             seat_chars: (0..u32::from(party_count))
