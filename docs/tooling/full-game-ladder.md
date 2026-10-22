@@ -369,7 +369,11 @@ run's fights have cost so far in party HP per foe HP, times `(n + 1) / 2`
 for a group of `n` - and fights while that is under three fifths of what
 the party has left. The exchange rate is learned across the whole run, so
 the hand takes on larger groups as the party levels and gears up, and a
-fight that turns goes back to Run on the next prompt.
+fight that turns goes back to Run on the next prompt. A member under a
+quarter of its HP makes every encounter a run, whatever the sum says: the
+first round that finds it drops it, and a fight's revive sets the fallen at
+1 HP. Priced on the sum alone, `concnow` after Zora's fight was taken on
+1 + 1 + 1708 HP, and the next surprise round wiped the party.
 
 **Its MP is for the fights it cannot run from.** In a random encounter a
 member casts only a spell that leaves it half its MP; a fight that forbids
@@ -521,6 +525,18 @@ to Nivora set four rules the continuous hand plays by:
   east from. The planner therefore enters a cell only when the probes from
   its own centre clear the bodies ahead in the direction it is entered
   from, the goal cell excepted.
+- **NPC bodies never seal a pocket on their own.** The same probe test
+  around a standing NPC is coarser than the locomotion, which slides past
+  a body at sub-cell offsets the lattice does not hold. `deene`'s entry
+  corridor reads sealed by P1[4] and P1[5] at (18, 46) / (17, 46), yet the
+  player leaves it between them at (17, 47). A plan the NPC bodies alone
+  keep from its goal is searched again without them, and the follower's
+  stall handling answers a body that does block. Without it the hand left
+  the corridor only when a talk's step-away happened to cross the gap,
+  which the run's timing decides: from the same tile, with the same NPCs,
+  the lean onto P1[4] faced it on one display-frame parity and P1[5] on
+  the other, so a fight that ran an odd number of ticks longer stranded
+  the party there.
 - **A closer is no beat and no obstacle.** A walk-on record that raises no
   system flag, lowers one the next anchor carries and walls tiles up
   (`4C 71`; `korb3` P2[4..13]) is never walked as a beat, and a walk may
