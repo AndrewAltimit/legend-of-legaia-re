@@ -226,8 +226,11 @@ impl<'a> PsxSpu<'a> {
     /// CD input volume `(left, right)` - SPU `0x1F801DB0` / `0x1F801DB2`,
     /// the register libspu's `SpuSetCommonAttr` writes from `cd.volume`.
     /// Unlike the voice and master volumes this register has no sweep mode:
-    /// it is a plain signed Q15 gain, `0x7FFF` full scale. Read from the
-    /// named `CDVol` entry (two `i32`), which equals the `Regs` shadow.
+    /// it is a plain signed Q15 gain, `0x7FFF` full scale. libsnd's
+    /// `SsSetSerialVol` (`FUN_800643C4`) writes `v * 0x102` for a `0..=127`
+    /// argument, so a register value names the libsnd level it came from.
+    /// Read from the named `CDVol` entry (two `i32`), which equals the `Regs`
+    /// shadow.
     pub fn cd_volume(&self) -> Option<(i16, i16)> {
         let b = self.entry_bytes("CDVol")?;
         if b.len() < 8 {
@@ -308,18 +311,6 @@ impl<'a> PsxSpu<'a> {
     pub fn reverb_output_volume(&self) -> Option<(i16, i16)> {
         let l = self.reg_u16_at(0x1F80_1D84)? as i16;
         let r = self.reg_u16_at(0x1F80_1D86)? as i16;
-        Some((l, r))
-    }
-
-    /// CD audio input volume `(left, right)` - SPU registers
-    /// `0x1F801DB0`/`0x1F801DB2`, the gain the SPU applies to the CD-DA /
-    /// XA-ADPCM stream the CD controller feeds it. Signed Q15: `0x7FFF` is
-    /// unity. libsnd's `SsSetSerialVol` (`FUN_800643C4`) writes `v * 0x102`
-    /// for a `0..=127` argument, so a register value names the libsnd level it
-    /// came from. `None` if the register shadow wasn't captured.
-    pub fn cd_volume(&self) -> Option<(i16, i16)> {
-        let l = self.reg_u16_at(0x1F80_1DB0)? as i16;
-        let r = self.reg_u16_at(0x1F80_1DB2)? as i16;
         Some((l, r))
     }
 
