@@ -657,6 +657,10 @@ pub struct BattleState {
     /// the root-motion carry truncates over and the camera steps on
     /// ([`crate::world::World::set_battle_frame_step`]).
     pub frame_clock: crate::world::battle::BattleFrameClock,
+    /// A one-frame stretch of the battle frame clock a replay installed
+    /// ([`crate::world::World::stretch_battle_frame`]): the stretched
+    /// frame's id and the step the frame after its pass returns to.
+    pub frame_stretch: Option<(u64, u8)>,
     /// The battle frame the frame driver's discarded `rand()` draw last ran
     /// on ([`crate::world::World::tick_battle_pass_draw`]) - one draw a
     /// battle frame, however many vsyncs it spans.
@@ -1070,6 +1074,7 @@ impl BattleState {
             cell_fx: Vec::new(),
             cell_captures: Default::default(),
             frame_clock: Default::default(),
+            frame_stretch: None,
             pass_draw_frame: None,
             sm_pass_frame: None,
             anim_pass_frame: None,

@@ -1120,11 +1120,40 @@ impl BattleDrive {
             return;
         }
         let SpanGate::CaptureFade {
-            height, accum, yaw, ..
+            height,
+            accum,
+            yaw,
+            arm,
         } = end
         else {
             return;
         };
+        // A directed module's countdown drains `scalar * step` a pass, so on
+        // retail's cadence the replay's countdown moves on a lattice of whole
+        // passes from the arm's own start. Retail's frames do not all share
+        // a step (`FUN_80016B6C` measures each one's cost), and the paging
+        // and stream-in that open the band run long: Guilty Cross's arm-1
+        // word `456` sits half a step-2 pass off the replay's `464` / `448`,
+        // as does Cort's clip cursor (`142` at rate `4`, with the two counted
+        // from the same pass). A pass a step longer moves both onto
+        // retail's; the replay takes it on the arm's first pass, the gate
+        // then lands on retail's word, and the display lag's frame two passes
+        // back on retail's displayed one.
+        if let Some((phase, countdown)) = arm
+            && ours
+            && want == 0x70
+            && state == 0x70
+            && world.casting.module_phase == phase
+            && world.battle_sm_pass_due_next_tick()
+        {
+            let step = i32::from(world.battle_frame_step().max(1));
+            let per_vsync = legaia_engine_cast::cast_module_camera::MODULE_DRAIN_PER_TICK;
+            let ahead = world.casting.module_cam.countdown.0 - countdown;
+            let off = ahead.rem_euclid(per_vsync * step);
+            if ahead > per_vsync * step && off != 0 && off % per_vsync == 0 {
+                world.stretch_battle_frame((step + off / per_vsync) as u8);
+            }
+        }
         world.audio.sound_bank_ready = !(ours
             && state == 0x6E
             && !(capture_accum_done(world, height, accum) && capture_yaw_done(world, height, yaw)));
