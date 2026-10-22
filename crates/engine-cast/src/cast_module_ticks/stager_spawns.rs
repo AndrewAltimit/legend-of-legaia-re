@@ -285,7 +285,7 @@ pub const FREED_STAGER_FADE: legaia_engine_battle_vm::battle_action::SummonFadeT
 ///
 /// Arm 6 spawns nothing: it is the fade [`FREED_STAGER_FADE`].
 ///
-/// PORT: FUN_801F835C (PROT 0912 stager; spawn arms 3..5)
+/// PORT: FUN_801F835C (PROT 0912 stager; arms 3..5 here, arm 6 is [`FREED_STAGER_FADE`])
 pub fn freed_stager_spawns(
     arm: u8,
     caller: StagerCaller,

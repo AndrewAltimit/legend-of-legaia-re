@@ -304,8 +304,8 @@ impl SceneHost {
                         // synchronous host satisfies on arrival - same reasoning
                         // as sub-op 9's barrier above - so the commit routes
                         // immediately.
-                        // PORT: FUN_800266E0 (the detach half of the commit)
-                        // PORT: FUN_80026520 (the close half; both are subsumed by
+                        // REF: FUN_800266E0 (the detach half of the commit)
+                        // REF: FUN_80026520 (the close half; both are subsumed by
                         // the director's release of its paused source)
                         10 => {
                             director.unhalt_pause();

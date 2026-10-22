@@ -1,7 +1,7 @@
 //! The SsAPI **per-frame calc tier** - retail's `SsSeqCalc` dispatch and the
 //! three per-channel kernels it fans out to.
 //!
-//! PORT: FUN_80062f98 - the per-frame sequencer top.
+//! PORT: FUN_80062f98 - the per-frame sequencer top, without its voice flush.
 //! PORT: FUN_800649b0 - the tempo slide + tick-step recompute.
 //! PORT: FUN_8006320c - the ascending volume slide.
 //! PORT: FUN_8006352c - the descending volume slide.
@@ -262,8 +262,11 @@ pub struct SeqCalcState {
     pub channel_count: i16,
 }
 
-/// `SsSeqCalc` itself: latch, flush the voices once, then walk every enabled
-/// `(slot, channel)`.
+/// `SsSeqCalc` itself: latch, then walk every enabled `(slot, channel)`.
+///
+/// Retail also flushes the voices once per frame between the two
+/// (`jal 0x80065bac` at `0x80062fdc`); this does not, and [`SeqCall`] has no
+/// arm for it.
 ///
 /// Returns `None` when the latch was already held (retail's early return), else
 /// the `(slot, channel, call)` triples in order.
@@ -356,7 +359,9 @@ pub const RETAIL_TICK_DIVISOR: u32 = 60;
 ///
 /// Unlike the slide's [`tick_budget`], which floors, this rounds; it is the
 /// one a track's tempo events reach.
-// PORT: FUN_80061954 (the budget tail), FUN_80062410 (the same tail at open)
+// REF: FUN_80061954 (the budget tail `0x800619d4..0x80061af4` of the tempo
+// meta handler), FUN_80062410 (the same tail `0x8006265c..0x80062738` at SEQ
+// open). Only these tails are mirrored, so neither routine is ported here.
 pub fn tempo_set_budget(resolution: i16, bpm: u32, divisor: u32) -> (i16, i16) {
     let d = divisor.wrapping_mul(60);
     let t1 = (i32::from(resolution) as u32).wrapping_mul(bpm);

@@ -391,7 +391,10 @@ pub trait PrimHost {
 ///
 /// Always queues - there is no early-out in the original.
 ///
-/// PORT: FUN_80058298
+/// REF: FUN_80058298 - a libgpu wrapper (RECT validate, then a GPU-queue add
+/// through the vtable at `0x80078D4C`). This forwards to
+/// [`PrimHost::queue_clear_rect`]; no host implements that outside the tests,
+/// so the routine is on the catalog's ignore list rather than ported here.
 pub fn exec_clear_image<H: PrimHost>(host: &mut H, rect: Rect12, r: u8, g: u8, b: u8) {
     host.queue_clear_rect(rect, r, g, b);
 }
@@ -402,7 +405,8 @@ pub fn exec_clear_image<H: PrimHost>(host: &mut H, rect: Rect12, r: u8, g: u8, b
 /// dimension is zero, matching the original's `li v0, -0x1` early-out
 /// path (`*(short *)(rect + 4) == 0 || *(short *)(rect + 6) == 0`).
 ///
-/// PORT: FUN_80058490
+/// REF: FUN_80058490 - ported once, as `legaia_tim::Vram::move_image`; this
+/// forwards to [`PrimHost::queue_move_image`].
 pub fn exec_move_image<H: PrimHost>(
     host: &mut H,
     src: Rect12,

@@ -61,6 +61,11 @@ impl Sequencer {
     ///
     /// PORT: FUN_80067E9C (the per-voice re-apply loop, via
     /// [`Self::remix_all`] at the next flush)
+    ///
+    /// Partial: retail keeps independent left / right sequence volumes, each
+    /// clamped to `0x7F` (`+0x58` / `+0x5A`, `0x80067ef0..0x80067f24`), and
+    /// re-reads the channel pan from the per-voice record (`0x8006824c`);
+    /// this keeps one value for both sides and the channel's current pan.
     pub fn set_master_vol(&mut self, v: u8) {
         let v = v.min(127);
         if v != self.master_vol {

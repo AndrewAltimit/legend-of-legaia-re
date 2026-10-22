@@ -1289,8 +1289,8 @@ The title tick reaches three SCUS-side helpers to emit GPU primitives:
 
 | Helper | Role | Port (`legaia_engine_menus::title_prim`) |
 |---|---|---|
-| `FUN_80058298` | `ClearImage` rect-fill queue (37 instructions) | `exec_clear_image(host, rect, r, g, b)` |
-| `FUN_80058490` | `MoveImage` VRAM-to-VRAM copy (49 instructions) | `exec_move_image(host, src, dst_x, dst_y)`, early-out on zero extent like the original's `li v0, -1` path |
+| `FUN_80058298` | `ClearImage` rect-fill queue (37 instructions) | Not ported: a libgpu wrapper on the catalog's ignore list. `exec_clear_image(host, rect, r, g, b)` forwards to a `PrimHost` hook. |
+| `FUN_80058490` | `MoveImage` VRAM-to-VRAM copy (49 instructions) | `exec_move_image(host, src, dst_x, dst_y)` forwards to a `PrimHost` hook, early-out on zero extent like the original's `li v0, -1` path. The copy itself is ported once, as `legaia_tim::Vram::move_image`. |
 | `FUN_800198E0` | Sprite-descriptor dispatcher (146 instructions) | `exec_sprite_descriptor(host, &SpriteDescriptor)`: tag-`0x11` simple variant + complex variant (alpha-OR pre-pass under `flags & 8`, four width-divisor variants from `flags & 3`) |
 
 `FUN_800198E0` accepts a packed struct with custom magic `0x11` **or** a real

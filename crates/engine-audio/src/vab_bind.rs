@@ -209,7 +209,7 @@ impl VabBank {
         // order, so a program number resolves to its page by rank among the
         // used slots.
         //
-        // PORT: FUN_80068d94 - retail computes exactly this mapping at VAB
+        // REF: FUN_80068d94 - retail computes exactly this mapping at VAB
         // open: it walks the full ProgAtr table writing the running count of
         // used programs seen so far into each entry's +8 reserved word, and
         // the program-change consumer FUN_80068b98 reads that byte back as
@@ -700,7 +700,10 @@ pub enum PitchPath {
 /// disc-authored pair reaches - the remainder goes negative and retail reads
 /// off the front of its own table; the port clamps the index instead.
 ///
-/// PORT: FUN_80066d8c (sequencer arm), FUN_80066e50 (cue arm)
+/// PORT: FUN_80066d8c (sequencer arm), FUN_80066e50 (cue arm, partial)
+///
+/// The cue arm's `fine` argument (`andi a1,a1,0xffff` at `0x80066e7c`) is
+/// fixed at `CUE_FINE` rather than taken from the caller.
 fn compute_pitch(note: u8, tone: &VagAtr, path: PitchPath) -> u16 {
     let shift = tone.shift as u32;
     let (semitone_carry, fine_index) = match path {

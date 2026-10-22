@@ -901,7 +901,9 @@ impl BakaDuelScene {
 /// [`WALL_CULL_DEPTH`]. A dropped model's vertices collapse to a point.
 /// Returns whether it drew.
 ///
-/// PORT: FUN_801D6D60 - `FUN_8003D344` moves the position through the
+/// PORT: FUN_801D6D60
+///
+/// `FUN_8003D344` (`ApplyMatrix`) moves the position through the
 /// camera (`0x801D6D88`), the depth test rejects below `0x2711`
 /// (`0x801D6D98`), `FUN_8004629C` (`RotMatrixY`) turns the model by the
 /// rotation argument's `Y` (`0x801D6DB0`), and `FUN_80043390` draws scene

@@ -23,7 +23,11 @@ def check_declared_paths() -> list[str]:
                 f"SPLIT_MODULES names `{stem}`, which is not a directory - no "
                 f"file folds into it. Point the row at where the module is."
             )
-        elif not (REPO / f"{stem}.rs").is_file():
+        elif not (REPO / f"{stem}.rs").is_file() and not (
+            # A whole crate that was one module before it was split out: its
+            # parent file is the crate root.
+            stem.endswith("/src") and (REPO / stem / "lib.rs").is_file()
+        ):
             problems.append(
                 f"SPLIT_MODULES names `{stem}`, but its parent file "
                 f"`{stem}.rs` does not exist - the findings would be keyed on "

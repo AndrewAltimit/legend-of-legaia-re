@@ -231,3 +231,10 @@ changes = [
   ["states/delilas_gi_spirit_distortion_v3/image", 0.718, 0.717],
   ["states/shiny_refactor_gimard_plus35/camera", 0.999, 0.998],
 ]
+
+[[loosening]]
+file = "scripts/ci/port-catalog-baseline.json"
+reason = "Port-tag honesty audit against the disassembly: twelve PORT tags claimed routines the Rust does not implement and are now REF. Seven named a routine only in passing or as a subsumption note (8004695C, 800583C8, 8005842C, 80056798, 8003D344, 80026520, 800266E0, all already on the ignore list); 8003D53C, 80061954, 80062410 and 80068D94 port one arithmetic tail of a CD or libsnd routine the engine replaces; 80058298 (ClearImage) only forwards to a trait no host implements. The four not already ignored joined the ignore list, so the port worklist is unchanged."
+changes = [
+  ["totals/ported", 1026, 1014],
+]

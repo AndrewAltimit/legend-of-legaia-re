@@ -184,7 +184,11 @@ pub const MAN_LOAD_RESUME: [(u8, u16); 2] = [(FLAG_SCENE_ACTIVE, 2), (FLAG_PROGR
 
 /// Seat a fresh program actor.
 ///
-/// PORT: FUN_801D5A24, overlay_field_0897_801d5a24 (`0x801d5a24..0x801d5a64`)
+/// PORT: FUN_801D5A24 (PROT 0897 field image, `0x801d5a24..0x801d5a64`)
+///
+/// Read from the field image's own bytes at base `0x801CE818`. The
+/// `overlay_0897_801d5a24.txt` dump is mis-based and prints a 31-instruction
+/// mid-function fragment at this VA; it is not this routine.
 ///
 /// Seventeen instructions: allocate from [`SPAWN_DESCRIPTOR`] against the
 /// generic effect-actor list, then `+0x54 = 0` and `+0x50 = program`. State

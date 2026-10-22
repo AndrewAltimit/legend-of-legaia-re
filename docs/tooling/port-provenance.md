@@ -280,8 +280,9 @@ reading as evidence:
 matches no file: every child falls back to being a module of its own, each is
 judged against a fraction of its siblings, and the waivers keyed on the parent
 file stop matching. Nothing errors. `path_check.py` requires each row's
-directory and its parent `<row>.rs` to exist, and each `DEFINING_DOC_ROOTS`
-entry to be a directory; a miss prints the rows and exits 1 before the corpus
+directory and its parent `<row>.rs` to exist - or, for a row naming a crate's
+`src` directory (a module split out into a crate of its own), the crate root
+`src/lib.rs` - and each `DEFINING_DOC_ROOTS` entry to be a directory; a miss prints the rows and exits 1 before the corpus
 is read, so it also fires in a worktree, which has no corpus. A module that
 moves is one edit in `rows.py`.
 
@@ -435,6 +436,42 @@ next run. A leaf routine (no frame) is not accepted this way and stays a
 finding for a reader. Two ignore rows this surfaced were filed as phantoms off
 an unbased dump at `0x801F7624` / `0x801F76F4` while the capture trampolines
 of PROT `0943` and `0945` open there; both are VA-aliased rows now.
+
+### An address named on a tag line is not a port of it
+
+The reader takes every `FUN_<addr>` on a `PORT:` line as a claim, so a tag
+that mentions a second routine in its prose ports that routine too, as far
+as the catalog can tell. Two shapes did this, and both were settled by
+reading the Rust beside the routine's disassembly:
+
+- **The address in passing.** A parenthetical listing what the port does
+  *not* carry, a step in another routine's narration, a subsumption note on a
+  call site. The tag is right about its own routine and wrong about the one it
+  names. Spell the second address `0x<addr>`, or move it to a `REF:` line.
+- **The sliver.** One arithmetic tail of a routine whose real work is a drive,
+  a device or a library tier the port replaces, or a function that only
+  forwards to a trait method no host implements. The Rust is a faithful
+  copy of a fragment, and `PORT:` claims the routine. Write `REF:` naming the
+  instruction range it mirrors, and file the routine in
+  `port-catalog-ignore.toml` on what it *is*, so the worklist does not grow.
+
+A partial port keeps its `PORT:` tag and says which arms it lacks, with their
+addresses, on the tag line or in the block under it. The catalog cannot tell
+a partial from a whole port, so that text is the only place the gap is
+recorded.
+
+| Address | Routine | Verdict | Evidence |
+|---|---|---|---|
+| `801D5A24` | scripted-scene actor spawner (field image) | keep | The field image's own bytes at base `0x801CE818` hold the 17-instruction spawner: `jal 0x80020DE0` with `a0 = 0x801F26D8`, then `sh zero,0x54(v0)` / `sh s0,0x50(v0)`. Two `jal`s reach it in that image and two in SCUS. The `overlay_0897_801d5a24.txt` dump is mis-based and prints a 31-instruction fragment. |
+| `801F835C` | PROT 0912's stager | keep | Arms 3..5 seat records (`jal 0x80021B04` at `0x801F83C8` / `0x801F84BC`) and arm 3 stores six randomised fields into each shard; arm 6 writes the fade template at `0x801C9070` (`0x801F84CC..0x801F850C`), which `FREED_STAGER_FADE` carries. The spawn-only shape the stager test checks still holds. |
+| `8004695C` | screen-wash latch arm | REF | Three stores (`DAT_8007B6CC`, `gp+0x9D4`, `gp+0x9D0`). PROT 0933's director named it only in its "not carried" list. |
+| `8003D53C` | CD-XA clip starter | REF, ignored | A libcd sequence (`8003ED04`, `8005C42C`, `8005BECC`, `8005C034`); only the stop-LBA sum `0x8003D698..0x8003D6D8` and the `0x2A30` clamp are mirrored. |
+| `80058298` | `ClearImage` | REF, ignored | RECT validate (`jal 0x80058170`) and a GPU-queue add through the vtable at `0x80078D4C`; the Rust forwards to a `PrimHost` hook no host implements. |
+| `80058490` | `MoveImage` | keep, once | `legaia_tim::Vram::move_image` performs the copy and the zero-extent reject (`beq v0,zero` on `+4` / `+6`); the three caller and forwarding sites carry `REF:`. |
+| `80061954`, `80062410` | tempo meta handler, `_SsSeqInit` | REF, ignored | `tempo_set_budget` is the budget tail of each (`0x800619D4..0x80061AF4`, `0x8006265C..0x80062738`); the tempo read, BPM store, record init and header checks are the engine `Sequencer`'s. |
+| `80068D94` | VAB header open | REF, ignored | Only the program-to-tone-page running count (`0x80068F70..0x80068F90`) is reproduced; the slot pick, checks and SPU allocation are the engine binder's own. |
+| `80062F98`, `80065034`, `80066B00`, `80066E50`, `80067E9C` | libsnd calc tier, voice key-on, voice chooser, cue pitch, sequence volume | keep, partial | Each tag now names the missing arms: the per-frame voice flush `jal 0x80065BAC`, the `vag == 0xFF` arm and the record stores, the flag-2 winner call and `+0x2A` clear, the caller's `fine`, the independent left / right volumes. |
+| `80056798`, `8003D344`, `800583C8`, `8005842C`, `80026520`, `800266E0` | `rand`, `ApplyMatrix`, `LoadImage`, `StoreImage`, two actor sound releases | REF | Each was named in passing on another routine's tag; all were already on the ignore list. |
 
 ### A waiver can check the operands and miss the owner
 

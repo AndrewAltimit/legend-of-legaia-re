@@ -228,7 +228,8 @@ impl Sequencer {
 
     /// Retail voice-allocation scan.
     ///
-    /// PORT: FUN_80066B00 - the sound driver's voice chooser, called per
+    /// PORT: FUN_80066B00 - the sound driver's voice chooser (partial; see
+    /// the end of this note), called per
     /// resolved tone by the note-trigger dispatcher (`FUN_80066308`) with the
     /// tone's staged `prior` byte as the request priority. Semantics recovered
     /// from the decompiled reference (no bytes copied):
@@ -261,6 +262,12 @@ impl Sequencer {
     /// clears its ring history). The engine's stand-ins: "reserved" = bound
     /// to an entry in `self.active`; "envelope" = the SPU voice's live ADSR
     /// level.
+    ///
+    /// Partial against the disassembly: two of the routine's tail stores are
+    /// not carried - the `0x8006A7A4(0, 0xFFFFFF)` call when the winner's
+    /// record flag is `2` (`0x80066d34..0x80066d4c`), and the unconditional
+    /// `+0x2A` clear (`0x80066d74`), which on the drop path lands one record
+    /// past the last voice.
     pub(super) fn alloc_voice(&mut self, spu: &mut Spu, req_prio: u8) -> Option<u8> {
         let occupied: u32 = self
             .active

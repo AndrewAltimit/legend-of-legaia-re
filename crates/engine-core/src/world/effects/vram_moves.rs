@@ -60,7 +60,7 @@ impl World {
     /// script emits a negative or empty rect - one here is a decode fault,
     /// dropped rather than alias-wrapped.
     ///
-    /// PORT: FUN_80058490 (the sub-0x60 consumer: `jal` at 0x801E1B84 in the
+    /// REF: FUN_80058490 (the sub-0x60 consumer: `jal` at 0x801E1B84 in the
     /// handler arm 0x801E1B28..0x801E1B90 of FUN_801DE840)
     pub fn apply_script_vram_moves(&mut self, vram: &mut legaia_tim::Vram) -> bool {
         let moves = std::mem::take(&mut self.ambient.script_vram_moves);
@@ -189,7 +189,9 @@ impl World {
 /// entry an HSV cycler later darkens to black opaque: a `0x0000` entry is
 /// transparent, `0x8000` is black.
 ///
-/// PORT: FUN_801DE840 (`4C D4` / `4C D5` arm; `FUN_8005842C` / `FUN_800583C8`)
+/// PORT: FUN_801DE840 (`4C D4` / `4C D5` arm; `StoreImage` / `LoadImage`)
+/// REF: FUN_8005842C (`StoreImage`), FUN_800583C8 (`LoadImage`) - libgpu
+/// wrappers this replays against the port's VRAM model
 fn apply_vram_stp(vram: &mut legaia_tim::Vram, x: u16, y: u16, set: bool) -> bool {
     if usize::from(x) + 16 > 1024 || usize::from(y) >= 512 {
         return false;

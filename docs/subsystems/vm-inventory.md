@@ -211,7 +211,8 @@ faithful and tested, and nothing outside its own crate calls it.
 Still inert:
 
 - **`title_prim`** (`engine-menus::title_prim`) - the SCUS sprite-emit
-  primitives (`FUN_80058298`, `FUN_80058490`, `FUN_800198E0`). No caller
+  dispatcher `FUN_800198E0`, beside two forwarding shims for the libgpu
+  wrappers `FUN_80058298` / `FUN_80058490` that carry `REF:` only. No caller
   outside its own module; tagged `REPLACED-BY:` the `engine-ui` title / save
   draw-list builders, so no host is owed it.
 - **`move_vm_overlay_ext::step` / `walk`** - a standalone walker over
