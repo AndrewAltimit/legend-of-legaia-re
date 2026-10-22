@@ -331,6 +331,11 @@ pub(super) fn cmd_play_window_with_record(
     // share this one: the movie runs on it on demand and hands it back, then
     // the scene window runs on it to the end.
     let mut event_loop = EventLoop::new().context("create event loop")?;
+    // A capture driver reads this line as "past the X11 startup race": a
+    // child that dies of SIGSEGV without it died inside `EventLoop::new`
+    // (libXi's first-use race) and is retried once
+    // (`legaia_parity::window_child`).
+    log::info!("{}", legaia_parity::window_child::EVENT_LOOP_OPEN_MARKER);
     play_intro_movie(
         &mut event_loop,
         scene,

@@ -16,6 +16,8 @@
 //! - [`cast_sequence`] - one cast scored against retail frame by frame,
 //!   paired on the action-SM clock (`legaia-engine cast-sequence-score`,
 //!   `docs/tooling/cast-sequence-oracle.md`).
+//! - [`window_child`] - spawn a `play-window` child, retrying once the X11
+//!   startup race (`SIGSEGV` inside libXi before the event loop opens).
 //!
 //! Tool code, never shipped in a play host: it reads emulator states and links
 //! the wgpu renderer for frame captures.
@@ -32,3 +34,4 @@ pub mod retail_compare_image;
 pub mod retail_compare_script;
 pub mod sim_trace;
 pub mod vram_oracle;
+pub mod window_child;

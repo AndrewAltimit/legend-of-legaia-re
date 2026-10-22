@@ -362,7 +362,10 @@ pub fn engine_frame_with(
     }
     let retake = shot.with_extension("retake");
     let _ = std::fs::remove_file(&retake);
-    let mut out = cmd.output().context("spawn play-window")?;
+    // `output_retrying_startup_race`: a child that dies of SIGSEGV before its
+    // event loop opens hit libXi's first-use race, not a capture defect.
+    let mut out = crate::window_child::output_retrying_startup_race(&mut cmd, label)
+        .context("spawn play-window")?;
     // A child that names an earlier tick (`LEGAIA_CAPTURE_DISPLAY_LAG`: the
     // frame retail's display shows) is run again and takes its frame there;
     // the child is tick-locked, so the re-run walks the same frames.
@@ -378,7 +381,8 @@ pub fn engine_frame_with(
         if let Some(target) = lines.next().map(str::trim).filter(|l| !l.is_empty()) {
             cmd.env("LEGAIA_BATTLE_CAM_GATE_TARGET", target);
         }
-        out = cmd.output().context("spawn play-window")?;
+        out = crate::window_child::output_retrying_startup_race(&mut cmd, label)
+            .context("spawn play-window")?;
     }
     let retries = String::from_utf8_lossy(&out.stderr)
         .lines()

@@ -183,7 +183,15 @@ fn run_window_env(
         cmd.arg("--pad-script").arg(p);
     }
     cmd.args(extra);
-    let out = cmd.output().expect("spawn legaia-engine play-window");
+    // A child that dies of SIGSEGV before its event loop opens hit libXi's
+    // first-use race against XInput2 raw events (anything moving the pointer
+    // on the shared display), not a defect of the rung: it is run once more.
+    let label = shot.file_stem().map(|s| s.to_string_lossy().into_owned());
+    let out = legaia_parity::window_child::output_retrying_startup_race(
+        &mut cmd,
+        label.as_deref().unwrap_or("play-window"),
+    )
+    .expect("spawn legaia-engine play-window");
     // The exit status rides on stderr so every rung's failure message names
     // it: a child killed by a signal leaves both streams empty, and without
     // the status that reads the same as a run that wrote nothing.

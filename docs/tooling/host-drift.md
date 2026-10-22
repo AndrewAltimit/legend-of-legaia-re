@@ -1247,6 +1247,46 @@ Traps, each of which has produced a false drift report:
 | play clock | `World::tick_play_clock` is wall time, so a tick-stepped page and a free-running window show different `TIME` values. |
 | battle backdrop | `SceneHost::battle_stage_entry` picks the stage variant the region reader stored on the last field step (`_DAT_8007BD60`), else the scene default. Compare two hosts' battles only from the same region state (`LEGAIA_BATTLE_STAGE` forces one natively). |
 | headless GPU | `--use-angle=swiftshader` runs a few frames a second; `--use-angle=vulkan` keeps a run to minutes. |
+| startup `SIGSEGV` | A native child killed by `SIGSEGV` with empty stdout and stderr died in libXi before its event loop opened; spawn it through `legaia_parity::window_child`, which retries exactly that death once ([below](#a-native-child-that-dies-before-its-event-loop-opens)). |
+
+### A native child that dies before its event loop opens
+
+On an X11 display, `play-window` can die of `SIGSEGV` inside
+`EventLoop::new`, before it has written a byte to stdout or stderr. The fault
+is in libXi's lazy per-display setup, raced by `winit` 0.30's own ordering:
+
+1. `EventLoop::new` selects XInput2 raw pointer and key events on the root
+   window (`update_listen_device_events`), then makes its first libXi call,
+   `XIQueryDevice` (`init_device`).
+2. That first call runs `_XiCheckExtInit`, which `malloc`s libXi's extension
+   record and fills its `vers` pointer only when an `XGetExtensionVersion`
+   round trip returns.
+3. A raw event read off the socket during that round trip is converted on the
+   spot: `_XReply` -> `_XEnq` -> `XInputWireToCookie` -> `wireToRawEvent`,
+   which asks `_XiCheckVersion` whether to copy the event's flags. That
+   dereferences the unwritten `vers`; when the allocator recycled the chunk,
+   the pointer is garbage.
+
+Every frame of that chain is in the backtrace of a caught crash, and the
+libXi offsets resolve by disassembly to the `malloc` in `_XiCheckExtInit` and
+the `_XiCheckVersion` call in the raw-event converter. The trigger is anything
+that moves the pointer or presses a key on the shared display while a child is
+inside those few hundred microseconds: a person at the desktop or a
+remote-desktop input device. That is why rungs launched together die
+together. On a private `Xvfb` with pointer motion flooded through XTest, about
+half of all launches die this way; with no input on the display, none do.
+Flooding `XI_HierarchyChanged` instead does not reproduce it, because the
+hierarchy converter never asks for the version.
+
+Nothing in the engine can close the window: the `Display` is opened inside
+`EventLoop::new`, and the latest `winit` 0.30 release keeps this order. So the
+drivers that spawn a capture child (`native_minigame_ladder` and the
+retail-compare image channel) run it through
+`legaia_parity::window_child::output_retrying_startup_race`. The child logs
+`play-window: event loop open` as soon as `EventLoop::new` returns, and a
+`SIGSEGV` without that line on stderr is retried exactly once, with a
+`[retry]` line naming the reason. A `SIGSEGV` after the line, or a second
+startup death, is returned as the failure it is.
 
 Paired tick-locked and matching frame for frame: field walk and camera, the
 dialogue box (typewriter, page hand, row scroll), the pause menu's Items /
