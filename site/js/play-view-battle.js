@@ -192,7 +192,13 @@
         const groundDrawn = (typeof rt.play_battle_ground_drawn !== 'function')
           || rt.play_battle_ground_drawn();
         if (groundDrawn) {
-          draws.push({ meshId: b.ground, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0, cue: b.groundCue });
+          /* Retail links every grid quad into one far ordering-table entry
+           * (`0x3FEC >> otshift`): the floor never hides what is drawn after
+           * it - the native host's `pin_to_far_bucket`. */
+          draws.push({
+            meshId: b.ground, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0, cue: b.groundCue,
+            farBucket: true,
+          });
         }
       }
       const S = b.scale;

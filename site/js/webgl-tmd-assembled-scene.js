@@ -534,6 +534,8 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     /* The NCLIP word staged for the current placement (`_setPlacementNclip`);
      * the frame's `nclipCull` until a placement carries its own. */
     let nclipOn = this.nclipCull;
+    /* Whether the whole-draw far bucket (`u_far_slice`) is staged. */
+    let farOn = false;
     for (const [meshId, list] of byMesh) {
       const m = this.sceneMeshes.get(meshId);
       if (m.indexCount === 0) continue;
@@ -562,9 +564,17 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
         gl.uniform1i(this.locOcclAllow, p.noOccl ? 0 : 1);
         nclipOn = this._setPlacementNclip(p.nclip, nclipOn);
         eclipOn = this._setEffectClip(p.effectClip, eclipOn);
+        /* A far-bucket placement (the battle ground grid) writes its depth
+         * into the far slice, behind everything else on the frame. */
+        const wantFar = !!p.farBucket;
+        if (wantFar !== farOn && this.locFarSlice) {
+          gl.uniform1i(this.locFarSlice, wantFar ? 1 : 0);
+          farOn = wantFar;
+        }
         gl.drawElements(gl.TRIANGLES, m.indexCount, gl.UNSIGNED_INT, 0);
       }
     }
+    if (farOn) gl.uniform1i(this.locFarSlice, 0);
     /* Hand the frame-global cue back before the blend pass / next frame. */
     if (cueOn !== undefined && cueOn !== this.cueParams) {
       this._setCue(this.cueParams);

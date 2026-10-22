@@ -725,6 +725,8 @@ out vec4 o_color;
  * frames, 0 (the GL default) on every other surface. */
 uniform int u_log_depth_on;
 ${LOG_DEPTH_GLSL}
+/* Whole-draw far bucket (0 = off, the GL default): see main(). */
+uniform int u_far_slice;
 
 /* The fragment's pixel in the native renderer's frame (origin top-left):
  * gl_FragCoord counts from the bottom, wgpu's position builtin from the
@@ -1019,6 +1021,13 @@ void main() {
    * (FIELD_FAR_BUCKET_DEPTH_SCALE in engine-render - same scale, mirrored for
    * this page's forward depth). */
   if (v_far_bucket > 0.5) far_bucket_depth = 1.0 - (1.0 - far_bucket_depth) * 0.001;
+  /* A whole draw the page marks far-bucket (u_far_slice: the battle ground
+   * grid, which retail links into one far ordering-table entry) sits on one
+   * depth just in front of the clear, behind everything else on the frame
+   * (engine-render's pin_to_far_bucket / FAR_BUCKET_DEPTH, mirrored for this
+   * page's forward depth). The grid is one flat layer with no order of its
+   * own to keep. */
+  if (u_far_slice != 0) far_bucket_depth = 1.0 - 1.0e-6;
   gl_FragDepth = far_bucket_depth;
   /* Facet normal for the dynamic light, taken before any discard so the
    * derivatives sit in uniform control flow. Its sign follows the

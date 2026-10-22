@@ -25,6 +25,7 @@ mod uploaded;
 #[cfg(test)]
 pub(crate) use construct::choose_surface_format;
 use depth::*;
+pub use depth::{FAR_BUCKET_DEPTH, pin_to_far_bucket};
 pub use fog_volume::{FogGroundTexture, FogVolumeDraw};
 // The fog sheets' WGSL, for the host-parity test that evaluates it.
 #[cfg(test)]
