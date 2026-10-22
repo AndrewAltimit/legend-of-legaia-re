@@ -339,6 +339,7 @@ fn main() -> Result<()> {
             battle_bgm,
             screenshot,
             screenshot_tick,
+            screenshot_chrome,
             screenshot_every,
             screenshot_dir,
             screenshot_last_tick,
@@ -401,7 +402,8 @@ fn main() -> Result<()> {
                 screenshot_last_tick,
                 pad_script.as_deref(),
                 key_script.as_deref(),
-            )?,
+            )?
+            .map(|s| s.with_chrome(screenshot_chrome)),
             seed_party,
             battle.as_deref(),
             if retail {

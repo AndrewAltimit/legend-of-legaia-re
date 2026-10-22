@@ -1,0 +1,10 @@
+[package]
+name = "legaia-app-theme"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The palette and spacing values the desktop apps share (Studio, the game launcher, the play window's chrome)"
+
+[lib]
+name = "legaia_app_theme"
+path = "src/lib.rs"

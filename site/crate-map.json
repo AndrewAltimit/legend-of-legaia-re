@@ -223,7 +223,8 @@
       "font",
       "save",
       "gamedata",
-      "cheats"
+      "cheats",
+      "app-theme"
      ]
     }
    ]
@@ -330,6 +331,25 @@
     "engine-vm"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/anm/README.md"
+  },
+  "app-theme": {
+   "package": "legaia-app-theme",
+   "deps": [],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "spacing",
+    "chrome"
+   ],
+   "band": "leaves",
+   "track": "tooling",
+   "scope": "The desktop programs' one palette (dark and light) and spacing values: Studio's egui theme, the game launcher, the play window's own chrome. No dependencies.",
+   "dependents": [
+    "engine-shell",
+    "studio"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/app-theme/README.md"
   },
   "art": {
    "package": "legaia-art",
@@ -2271,6 +2291,7 @@
    "package": "legaia-engine-shell",
    "deps": [
     "actor-formats",
+    "app-theme",
     "art",
     "container-formats",
     "engine-audio",
@@ -3603,6 +3624,7 @@
    "package": "legaia-studio",
    "deps": [
     "actor-formats",
+    "app-theme",
     "art",
     "container-formats",
     "disc-audit",

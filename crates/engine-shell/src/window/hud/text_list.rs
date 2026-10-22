@@ -6,6 +6,13 @@
 //! cover them.
 
 use super::*;
+use legaia_app_theme::{chrome, spacing};
+
+/// The window chrome's colours, from the palette the launcher and Studio
+/// share (`legaia_app_theme::chrome`).
+const HEADING: [f32; 4] = chrome::HEADING.to_f32();
+const KEY: [f32; 4] = chrome::KEY.to_f32();
+const TEXT: [f32; 4] = chrome::TEXT.to_f32();
 
 impl PlayWindowApp {
     /// One line of this window's own text at a pen on the shared 320x240
@@ -36,31 +43,34 @@ impl PlayWindowApp {
         }
         let mut stage: Vec<TextDraw> = Vec::new();
         let mut rows: Vec<(&str, [f32; 4])> = Vec::new();
-        if self
-            .quit_prompt
-            .is_some_and(|t| t.elapsed() <= QUIT_CONFIRM_WINDOW)
+        // The timed lines are a player's: a `--screenshot` capture leaves
+        // them out unless `--screenshot-chrome` asks for them (a scripted key
+        // press would otherwise put its notice in the frame).
+        let timed = self.screenshot.as_ref().is_none_or(|s| s.chrome);
+        if timed
+            && self
+                .quit_prompt
+                .is_some_and(|t| t.elapsed() <= QUIT_CONFIRM_WINDOW)
         {
-            rows.push(("Press Esc again to quit", [1.0, 0.9, 0.5, 1.0]));
+            rows.push(("Press Esc again to quit", HEADING));
         }
-        if let Some((text, at)) = &self.notice
+        if timed
+            && let Some((text, at)) = &self.notice
             && at.elapsed() <= NOTICE_DURATION
         {
-            rows.push((text.as_str(), [0.85, 0.95, 1.0, 1.0]));
+            rows.push((text.as_str(), KEY));
         }
         // The start-up pointer at the help panel, under the panel's own
         // gold; never with the panel up.
         if !self.hotkey_help && self.startup_hint.visible(std::time::Instant::now()) {
-            rows.push((
-                crate::window::app_state::STARTUP_HINT_TEXT,
-                [1.0, 0.9, 0.5, 1.0],
-            ));
+            rows.push((crate::window::app_state::STARTUP_HINT_TEXT, HEADING));
         }
         // Bottom-left of the stage, stacking upward: the top-left is the
         // field party readout's seat.
-        let mut y = legaia_engine_ui::BOOT_UI_STAGE_H as i32 - 6;
+        let mut y = legaia_engine_ui::BOOT_UI_STAGE_H as i32 - spacing::CHROME_INSET;
         for (text, color) in rows.into_iter().rev() {
             let layout = self.font.layout_ascii(text);
-            y -= layout.advance_y as i32 + 4;
+            y -= layout.advance_y as i32 + spacing::CHROME_LINE_GAP;
             self.push_scrim(
                 &mut stage,
                 (6, y - 1),
@@ -94,9 +104,9 @@ impl PlayWindowApp {
     /// pixels.
     fn hotkey_help_stage_draws(&self) -> Vec<TextDraw> {
         use legaia_engine_session::hotkeys::{HOST_HOTKEYS, HostHotkey};
-        let head = [1.0f32, 0.9, 0.5, 1.0];
-        let key = [0.7f32, 0.85, 1.0, 1.0];
-        let text = [1.0f32, 1.0, 1.0, 1.0];
+        let head = HEADING;
+        let key = KEY;
+        let text = TEXT;
         let entries: Vec<(&str, String)> = HOST_HOTKEYS
             .iter()
             .map(|&(hk, _)| {

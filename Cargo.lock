@@ -1747,6 +1747,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-app-theme"
+version = "0.1.0"
+
+[[package]]
 name = "legaia-art"
 version = "0.1.0"
 dependencies = [
@@ -2539,6 +2543,7 @@ dependencies = [
  "gilrs",
  "glam",
  "legaia-actor-formats",
+ "legaia-app-theme",
  "legaia-art",
  "legaia-container-formats",
  "legaia-engine-audio",
@@ -3062,6 +3067,7 @@ dependencies = [
  "eframe",
  "env_logger",
  "legaia-actor-formats",
+ "legaia-app-theme",
  "legaia-art",
  "legaia-container-formats",
  "legaia-disc-audit",

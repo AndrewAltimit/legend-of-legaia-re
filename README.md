@@ -226,7 +226,7 @@ Top of the stack first. Every crate name links its README.
   [`iso`](crates/iso/README.md), [`prot`](crates/prot/README.md), [`lzs`](crates/lzs/README.md), [`bytes`](crates/bytes/README.md), [`tim`](crates/tim/README.md),
   [`tmd`](crates/tmd/README.md), [`vab`](crates/vab/README.md), [`seq`](crates/seq/README.md), [`xa`](crates/xa/README.md), [`mdec`](crates/mdec/README.md),
   [`mes`](crates/mes/README.md), [`anm`](crates/anm/README.md), [`mdt`](crates/mdt/README.md), [`art`](crates/art/README.md), [`font`](crates/font/README.md),
-  [`save`](crates/save/README.md), [`gamedata`](crates/gamedata/README.md), [`cheats`](crates/cheats/README.md)
+  [`save`](crates/save/README.md), [`gamedata`](crates/gamedata/README.md), [`cheats`](crates/cheats/README.md), [`app-theme`](crates/app-theme/README.md)
 
 <!-- crate-map:layers:end -->
 

@@ -220,8 +220,11 @@ repeatedly. A key that only acts while you walk
 around (`F3`, `T`, `R`) says so when pressed on the title screen or in a menu.
 `F12` (or `?`) opens a panel listing every toggle key with its current state;
 press it again to close it. A player's window says so for its first few
-seconds (*F12 or ? lists the keys*, bottom left) until the panel is opened; a
-`--screenshot` capture never draws that line.
+seconds (*F12 or ? lists the keys*, bottom left) until the panel is opened. A
+`--screenshot` capture leaves that line, the toggle notices and the quit
+prompt out, so it shows only what the game draws; `--screenshot-chrome` keeps
+them (for a documentation shot - they are timed by the wall clock, so such a
+capture is not frame-exact).
 
 **Window size.** The windowed size is a multiple of the PlayStation's
 320x240 picture, `--window-scale 2..6` (3 = 960x720, the default), stored as

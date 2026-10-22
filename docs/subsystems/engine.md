@@ -239,6 +239,7 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `web-play` | `engine-session`, `engine-screens`, `engine-battle-hud`, `engine-world-views`, `engine-cheats`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-ui`, `engine-audio`, the kernel crates + format-family and parser crates | The browser hosts: the play and minigames runtimes. |
 | `web-viewer` | `web-play`, `engine-world-views`, `engine-scene-host`, `engine-scene`, `engine-audio`, the kernel crates the viewer pages read, `patcher` and its layer crates + format-family and parser crates | The wasm bundle (`cdylib` over `web-play`), the asset inspectors and the ROM patcher. |
 | `asset-viewer` | `engine-core`, `engine-scene`, `engine-vm`, `engine-battle-vm`, `engine-dialog`, `engine-field`, `engine-mode`, `engine-system`, `engine-ui`, `engine-render`, `engine-audio`, `disc-audit` + format-family and parser crates | Standalone asset viewer. |
+| `app-theme` | - | The desktop programs' shared palette (dark and light) and spacing: Studio, the launcher, the play window's chrome. |
 
 ### The layering gate
 

@@ -5,6 +5,7 @@ members = [
     "crates/prot",
     "crates/lzs",
     "crates/bytes",
+    "crates/app-theme",
     "crates/game-tables",
     "crates/actor-formats",
     "crates/overlay-images",
@@ -132,6 +133,7 @@ winit = "0.30"
 # default features off: their default `cli` feature exists only for their own
 # binary, and a library dependent never needs it.
 legaia-bytes = { path = "crates/bytes" }
+legaia-app-theme = { path = "crates/app-theme" }
 legaia-anm = { path = "crates/anm", default-features = false }
 legaia-art = { path = "crates/art", default-features = false }
 legaia-game-tables = { path = "crates/game-tables" }

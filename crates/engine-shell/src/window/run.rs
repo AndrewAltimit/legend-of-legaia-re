@@ -380,8 +380,11 @@ pub(super) fn cmd_play_window_with_record(
     // belongs to its script.
     // Its window chrome too: the start-up key hint is for a player, and a
     // capture must not draw it.
+    // `--screenshot-chrome` keeps the hint in a capture on purpose.
     if app.screenshot.is_none() {
         app.gamepad = super::gamepad::GamepadHost::open();
+    }
+    if app.screenshot.as_ref().is_none_or(|s| s.chrome) {
         app.startup_hint.arm();
     }
 

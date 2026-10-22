@@ -1023,6 +1023,12 @@ pub(crate) enum Cmd {
         /// reproduces the same frame run-to-run.
         #[arg(long, default_value_t = 120)]
         screenshot_tick: u64,
+        /// Keep the window's own timed chrome - the start-up key hint and a
+        /// toggle's notice line - in `--screenshot` / `--screenshot-every`
+        /// captures (for documentation shots). Off by default: a parity
+        /// capture shows only what the game draws.
+        #[arg(long)]
+        screenshot_chrome: bool,
         /// Periodic screenshot sweep: capture a PNG every N ticks into
         /// `--screenshot-dir` (named `tick_%05d.png`). Composable with
         /// `--pad-script`; the run exits after the capture at

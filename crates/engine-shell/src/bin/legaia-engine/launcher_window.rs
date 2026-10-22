@@ -200,22 +200,27 @@ fn prefer_x11_for_drop(wayland: bool, x11: bool, keep_wayland: bool) -> bool {
 }
 
 // --- Palette -----------------------------------------------------------
+//
+// The shared dark palette (`legaia_app_theme`), which Studio's dark theme
+// draws in too.
 
-const INK: [f32; 4] = [0.93, 0.93, 0.96, 1.0];
-const DIM: [f32; 4] = [0.60, 0.64, 0.74, 1.0];
-const FAINT: [f32; 4] = [0.42, 0.45, 0.54, 1.0];
-const GOLD: [f32; 4] = [1.0, 0.82, 0.36, 1.0];
-const GOOD: [f32; 4] = [0.50, 0.86, 0.52, 1.0];
-const WARN: [f32; 4] = [1.0, 0.58, 0.36, 1.0];
-const ON_GOLD: [f32; 4] = [0.10, 0.08, 0.04, 1.0];
-const BODY: [f32; 4] = [0.055, 0.06, 0.095, 1.0];
-const BAND: [f32; 4] = [0.085, 0.095, 0.15, 1.0];
-const CARD: [f32; 4] = [0.11, 0.12, 0.18, 1.0];
-const FOCUS: [f32; 4] = [0.20, 0.23, 0.36, 1.0];
-const BUTTON: [f32; 4] = [0.15, 0.16, 0.24, 1.0];
-const PRIMARY: [f32; 4] = [0.88, 0.70, 0.26, 1.0];
-const PRIMARY_FOCUS: [f32; 4] = [1.0, 0.84, 0.40, 1.0];
-const RULE: [f32; 4] = [0.24, 0.26, 0.36, 1.0];
+use legaia_app_theme::DARK as P;
+
+const INK: [f32; 4] = P.ink.to_f32();
+const DIM: [f32; 4] = P.ink_dim.to_f32();
+const FAINT: [f32; 4] = P.ink_faint.to_f32();
+const GOLD: [f32; 4] = P.accent.to_f32();
+const GOOD: [f32; 4] = P.good.to_f32();
+const WARN: [f32; 4] = P.warn.to_f32();
+const ON_GOLD: [f32; 4] = P.on_accent.to_f32();
+const BODY: [f32; 4] = P.ground.to_f32();
+const BAND: [f32; 4] = P.band.to_f32();
+const CARD: [f32; 4] = P.card.to_f32();
+const FOCUS: [f32; 4] = P.hover.to_f32();
+const BUTTON: [f32; 4] = P.raised.to_f32();
+const PRIMARY: [f32; 4] = P.accent_fill.to_f32();
+const PRIMARY_FOCUS: [f32; 4] = P.accent_fill_focus.to_f32();
+const RULE: [f32; 4] = P.rule.to_f32();
 
 /// Virtual stage the screen is laid out on; scaled up by an integer factor
 /// (2x in the 960x720 window, 4x on a 2x HiDPI display) and centred.

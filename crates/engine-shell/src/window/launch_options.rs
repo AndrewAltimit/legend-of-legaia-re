@@ -106,6 +106,10 @@ pub struct ScreenshotConfig {
     /// sweep is requested.
     pub path: Option<std::path::PathBuf>,
     pub capture_tick: u64,
+    /// `--screenshot-chrome`: keep the window's timed chrome (the start-up
+    /// key hint, a toggle's notice line) in the capture. Off by default, so
+    /// a parity capture shows only what the game draws.
+    pub chrome: bool,
     /// Periodic capture sweep (`--screenshot-every` + `--screenshot-dir`).
     pub sweep: Option<ScreenshotSweep>,
     /// tick -> pad button mask pressed for exactly that tick.
@@ -492,6 +496,12 @@ pub struct ScreenshotSweep {
 }
 
 impl ScreenshotConfig {
+    /// `--screenshot-chrome` ([`Self::chrome`]).
+    pub fn with_chrome(mut self, chrome: bool) -> Self {
+        self.chrome = chrome;
+        self
+    }
+
     /// Parse the CLI flags into a config. `None` when none of `--screenshot`,
     /// `--screenshot-every` and `--key-script` is present. Errors on an
     /// unparseable `--pad-script` / `--key-script` entry or a half-specified
@@ -578,6 +588,7 @@ impl ScreenshotConfig {
         Ok(Some(Self {
             path,
             capture_tick,
+            chrome: false,
             sweep,
             pad_script: script,
             key_script: keys,
@@ -1039,6 +1050,25 @@ mod key_script_tests {
                 .is_none(),
             "no capture and no script is still no config"
         );
+    }
+
+    /// A capture leaves the window's timed chrome out unless
+    /// `--screenshot-chrome` asks for it.
+    #[test]
+    fn captures_leave_timed_chrome_out_by_default() {
+        let cfg = ScreenshotConfig::from_args(
+            Some(std::path::PathBuf::from("x.png")),
+            60,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("parses")
+        .expect("a capture builds a config");
+        assert!(!cfg.chrome);
+        assert!(cfg.with_chrome(true).chrome);
     }
 
     /// An unparseable entry is an error, not a silently empty script.
