@@ -14,7 +14,7 @@ runtime, and writes only into folders the user chooses.
 | Area | What the user gets |
 |---|---|
 | Open | The start page (nothing open yet): the two ways in as large buttons, the recent list, what each view does. A native file dialog (opened in the last disc's folder; or a typed path, or a file dropped on the window) for a `.bin` / `.cue` disc image or a `legaia-extract` output folder. The image is validated (Mode2/2352, ISO9660, `PROT.DAT` present) before loading; the last choice is reopened on the next start, and a last disc that has moved is named on the error line. Every view that needs a disc shows the start page until one is open. *Recent* (and the start screen) lists up to eight recent sources, newest first (`Settings::remember_recent`); gone paths are pruned, and each has a remove button. |
-| Browse | The `PROT.DAT` entries grouped under their CDNAME block names and the scene's display name (`place_name`, from `legaia_gamedata`'s scene table), each with its category (`legaia_disc_audit::categorize`, classified in the background) and size; a search whose every term must match the CDNAME label, the place name, the retail block, the category or the index (`Studio::entry_matches`), plus a category filter; arrow / Page / Home / End keys walk the visible rows; the disc's ISO9660 files with a save button. A preview tab the entry has nothing for shows its Overview. |
+| Browse | The `PROT.DAT` entries grouped under their CDNAME block names and the scene's display name (`place_name`, from `legaia_gamedata`'s scene table), each with its category (`legaia_disc_audit::categorize`, classified in the background) and size; a search whose every term must match the CDNAME label, the place name, the retail block, the category or the index (`Studio::entry_matches`), plus a category filter, with a match count and a hint when nothing matches; arrow / Page / Home / End keys walk the visible rows; the disc's ISO9660 files with a save button. A preview tab the entry has nothing for shows its Overview. |
 | Overview | PROT index, the filename label and the retail CDNAME block (the two differ by the +2 index shift, [`cdname.md`](../../docs/formats/cdname.md)), location in `PROT.DAT`, the DATA_FIELD chunk list, raw `.BIN` export. |
 | Textures | Every TIM in the entry, raw or inside an LZS section (`tim_scan`), with a CLUT slider and zoom; PNG export of one or all. A 4 / 8 bpp TIM with no CLUT in its file (its palette is another upload's VRAM cell) shows its indices as a grey ramp. |
 | 3D model | Every TMD (`tmd_scan`, `scene_tmd_stream`) in an orbit view with retail shading (`texel * colour / 128`) or untextured under a viewer light. Textures come from the entry's own TIMs or from its **scene** (see below); OBJ and textured `.glb` export. |
@@ -27,7 +27,26 @@ runtime, and writes only into folders the user chooses.
 | Status line | A confirmation clears itself after a few seconds (the clock restarts while the pointer is on it); an error is a wrapping banner that stays, with *Copy* and *Dismiss* ahead of the text so a long path never pushes them off the window. |
 | View | Light, dark or follow-system theme, and the UI zoom (also Ctrl+= / Ctrl+- / Ctrl+0); both remembered. Both themes carry the Legaia look (`theme`): the launcher's blue-grey panels and title gold for the selection and the primary buttons. |
 | About | Version, license, where `THIRD-PARTY-LICENSES.txt` sits (beside the binary, or beside the macOS `.app`), the keyboard shortcuts. |
-| Extract | The full `legaia-extract` pipeline (`legaia_extract::run`) on a worker thread into a chosen folder, with the CLI's skip options, a progress bar, a log, Cancel and *Open output folder*; the output folder defaults to one beside the disc image; *Export all textures* adds the every-TIM sweep (`--all-textures`: `tim_scan/` as `asset tim-scan` + `tim convert-dir` write it). |
+| Extract | The full `legaia-extract` pipeline (`legaia_extract::run`) on a worker thread into a chosen folder, with the CLI's skip options, a progress bar, a log, Cancel and *Open output folder* (progress and outcome: [below](#extraction-progress)); the output folder defaults to one beside the disc image; *Export all textures* adds the every-TIM sweep (`--all-textures`: `tim_scan/` as `asset tim-scan` + `tim convert-dir` write it). |
+
+## Extraction progress
+
+The Extract view numbers the steps the way the log does (verification is
+step 0, the rest count from 1; the every-texture sweep adds one) and fills
+the bar over the steps the run has, so a run without the sweep ends at 100%.
+Under the bar sit the time so far and, once the current step has done a
+twentieth of its units over at least two seconds, that step's remaining time
+extrapolated from its own rate (`extract_job::Progress::step_remaining`).
+There is no estimate for the whole run: the steps differ too much in cost.
+
+Warnings are tagged in the log (`extract_job::WARNING_PREFIX`), counted, drawn
+in the warning colour, and can be shown on their own. Before a run, a note
+under the output folder says whether it is new, empty, already holds files
+(same-named files are replaced) or is a file (`extract_job::OutDir`), and an
+*Open* button shows an existing folder. A run goes on behind the other views;
+its end is announced once on the status line of whichever view is open, a
+finished or cancelled run with *Show folder*, a failure on the error banner
+(`ExtractJob::take_finished`).
 
 ## How it is built
 

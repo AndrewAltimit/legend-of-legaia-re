@@ -12,7 +12,7 @@ use std::sync::mpsc::Receiver;
 use eframe::egui::{self, Color32, ColorImage, RichText, TextureHandle, TextureOptions};
 
 use crate::analyze::Analysis;
-use crate::extract_job::{ExtractJob, Outcome};
+use crate::extract_job::{ExtractJob, OutDir as ExtractOutDir, Outcome};
 use crate::player::Player;
 use crate::raster::{Model, Shading};
 use crate::scene_vram::SceneVram;
@@ -217,6 +217,8 @@ pub struct App {
     // Extract mode.
     out_text: String,
     job: Option<ExtractJob>,
+    /// The extraction log shows only its warnings.
+    log_warnings_only: bool,
     /// The game binary shipped beside this one, if any.
     engine: Option<PathBuf>,
     /// A game started with Play, while it runs.
@@ -310,6 +312,7 @@ impl App {
             player: Player::default(),
             out_text,
             job: None,
+            log_warnings_only: false,
             engine: std::env::current_exe()
                 .ok()
                 .and_then(|exe| crate::launch::find_engine(&exe)),
@@ -954,10 +957,24 @@ impl App {
         };
         ui.horizontal(|ui| {
             ui.label("Search:");
+            // The field takes the panel's width, less the clear button and
+            // the field's own inner margin (outside `desired_width`). A
+            // resizable panel grows to fit its content, so a field even a
+            // few points too wide would widen the panel on every frame.
+            let clear_w = if self.filter.is_empty() { 0.0 } else { 28.0 };
             let resp = ui.add(
                 egui::TextEdit::singleline(&mut self.filter)
-                    .hint_text("scene, place name, category or index (Ctrl+F)"),
+                    .hint_text("scene, place name, category or index (Ctrl+F)")
+                    .desired_width((ui.available_width() - clear_w - 16.0).max(80.0)),
             );
+            if !self.filter.is_empty()
+                && ui
+                    .small_button("x")
+                    .on_hover_text("Clear the search (Esc)")
+                    .clicked()
+            {
+                self.filter.clear();
+            }
             if ui.input_mut(|i| {
                 i.consume_shortcut(&egui::KeyboardShortcut::new(
                     egui::Modifiers::COMMAND,
@@ -983,42 +1000,78 @@ impl App {
                     ui.selectable_value(&mut self.class_filter, Some(c.to_string()), c);
                 }
             });
-        ui.separator();
         let filter = self.filter.trim().to_string();
+        let filtering = !filter.is_empty() || self.class_filter.is_some();
+        // The rows the search shows, per block, in disc order.
+        let shown: Vec<(usize, Vec<usize>)> = self
+            .studio
+            .blocks
+            .iter()
+            .enumerate()
+            .map(|(b, block)| {
+                let rows = block
+                    .entries
+                    .iter()
+                    .copied()
+                    .filter(|&pos| {
+                        self.studio.entry_matches(
+                            pos,
+                            &block.name,
+                            &filter,
+                            self.class_filter.as_deref(),
+                        )
+                    })
+                    .collect();
+                (b, rows)
+            })
+            .filter(|(_, rows): &(usize, Vec<usize>)| !rows.is_empty())
+            .collect();
+        // Every row the search shows, in disc order: what the arrow keys walk.
+        let visible: Vec<usize> = shown.iter().flat_map(|(_, r)| r.iter().copied()).collect();
+        if filtering {
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(format!(
+                        "{} of {} entries match, in {} blocks",
+                        visible.len(),
+                        lib.entries.len(),
+                        shown.len()
+                    ))
+                    .weak(),
+                );
+                if ui.small_button("Show all").clicked() {
+                    self.filter.clear();
+                    self.class_filter = None;
+                }
+            });
+        }
+        ui.separator();
+        if filtering && visible.is_empty() {
+            ui.add_space(8.0);
+            ui.label(RichText::new("Nothing matches.").strong());
+            ui.add(
+                egui::Label::new(
+                    "Every word has to match a scene label (town01), a place name (Rim Elm), \
+                     a kind of data (tim, vab, scene_tmd_stream) or an entry number (865 or \
+                     0x361).",
+                )
+                .wrap(),
+            );
+        }
         let mut clicked = None;
         let mut iso_save: Option<crate::library::IsoFile> = None;
-        // Every row the search shows, in disc order: what the arrow keys walk.
-        let mut visible: Vec<usize> = Vec::new();
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
-                for block in &self.studio.blocks {
-                    let rows: Vec<usize> = block
-                        .entries
-                        .iter()
-                        .copied()
-                        .filter(|&pos| {
-                            self.studio.entry_matches(
-                                pos,
-                                &block.name,
-                                &filter,
-                                self.class_filter.as_deref(),
-                            )
-                        })
-                        .collect();
-                    if rows.is_empty() {
-                        continue;
-                    }
-                    visible.extend_from_slice(&rows);
+                for (b, rows) in shown {
+                    let block = &self.studio.blocks[b];
                     let first = lib.entries[rows[0]].index;
-                    let open = (!filter.is_empty() || self.class_filter.is_some())
-                        .then_some(true)
-                        .or_else(|| {
-                            self.reveal
-                                .filter(|s| block.entries.contains(s))
-                                .map(|_| true)
-                        });
+                    let open = filtering.then_some(true).or_else(|| {
+                        self.reveal
+                            .filter(|s| block.entries.contains(s))
+                            .map(|_| true)
+                    });
                     let title = match crate::place_name(&block.name) {
                         Some(place) => {
                             format!("{first:04}  {}  -  {place}  ({})", block.name, rows.len())
@@ -1440,7 +1493,9 @@ impl App {
                 view: Viewport::new(Shading::Textured),
             });
         }
-        ui.horizontal(|ui| {
+        // Wraps: at the default window width the export buttons used to run
+        // off the right edge.
+        ui.horizontal_wrapped(|ui| {
             egui::ComboBox::from_id_salt("tmd")
                 .selected_text(format!("TMD #{}", self.tmd_sel))
                 .show_ui(ui, |ui| {
@@ -1512,7 +1567,7 @@ impl App {
             None
         };
         let Some(mv) = &mut self.model else { return };
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label("Textures:");
             ui.selectable_value(
                 &mut mv.source,
@@ -1847,8 +1902,39 @@ impl App {
                     {
                         self.out_text = p.display().to_string();
                     }
+                    let out = PathBuf::from(self.out_text.trim());
+                    if !self.out_text.trim().is_empty()
+                        && out.is_dir()
+                        && ui
+                            .button("Open")
+                            .on_hover_text("Open this folder in the file manager")
+                            .clicked()
+                    {
+                        self.show_folder(&out);
+                    }
                 });
                 ui.end_row();
+                // What the run will do to the chosen folder, before it starts.
+                if !running && !self.out_text.trim().is_empty() {
+                    ui.label("");
+                    let out = PathBuf::from(self.out_text.trim());
+                    match ExtractOutDir::of(&out) {
+                        ExtractOutDir::New => ui.label(RichText::new("A new folder.").weak()),
+                        ExtractOutDir::Empty => ui.label(RichText::new("An empty folder.").weak()),
+                        ExtractOutDir::HasFiles => ui.label(
+                            RichText::new(
+                                "This folder already has files: ones with the same names are \
+                                 replaced, the rest are left alone.",
+                            )
+                            .color(ui.visuals().warn_fg_color),
+                        ),
+                        ExtractOutDir::NotAFolder => ui.label(
+                            RichText::new("This is a file, not a folder.")
+                                .color(ui.visuals().error_fg_color),
+                        ),
+                    };
+                    ui.end_row();
+                }
                 ui.label("Options");
                 ui.vertical(|ui| {
                     let s = &mut self.studio.settings;
@@ -1864,10 +1950,11 @@ impl App {
                             "Skip TIM catalog TSVs (--skip-catalog)",
                         );
                         ui.checkbox(&mut s.skip_font, "Skip dialog font (--skip-font)");
-                    ui.checkbox(
-                        &mut s.all_textures,
-                        "Export all textures as PNG: every TIM, raw and compressed, into tim_scan/ (--all-textures)",
-                    );
+                        ui.checkbox(
+                            &mut s.all_textures,
+                            "Export all textures as PNG: every TIM, raw and compressed, \
+                             into tim_scan/ (--all-textures)",
+                        );
                     });
                 });
                 ui.end_row();
@@ -1902,29 +1989,23 @@ impl App {
                 }
             }
         });
-        let Some(outcome) = self.job.as_ref().map(ExtractJob::outcome) else {
-            return;
-        };
-        if matches!(outcome, Some(Outcome::Done(_)) | Some(Outcome::Cancelled)) {
-            // The folder this job wrote into (`start_extract` records it).
-            if let Some(out) = self.studio.settings.last_out_dir.clone()
-                && out.is_dir()
-                && ui.button("Open output folder").clicked()
-            {
-                self.show_folder(&out);
-            }
-        }
         let Some(job) = &self.job else { return };
+        let outcome = job.outcome();
         let p = job.progress();
+        let steps = crate::extract_job::step_count(&job.options);
+        let elapsed = crate::extract_job::human_duration(job.elapsed());
+        let out = job.options.out.clone();
+        ui.add_space(4.0);
+        let units = if p.total > 0 {
+            format!(" - {} of {}", p.done, p.total)
+        } else {
+            String::new()
+        };
         let text = match &outcome {
-            None => format!(
-                "step {}/{}: {} ({}/{})",
-                p.step,
-                legaia_extract::STEP_COUNT,
-                p.step_name,
-                p.done,
-                p.total
-            ),
+            // Numbered the way the log numbers them: verification is step 0,
+            // the rest count from 1.
+            None if p.step == 0 => format!("Checking the disc image: {}{units}", p.step_name),
+            None => format!("Step {} of {}: {}{units}", p.step, steps - 1, p.step_name,),
             Some(Outcome::Done(s)) => format!(
                 "Done: {} disc files, {} PROT entries, {} streams, {} PNGs, {} WAVs{}",
                 s.iso_files,
@@ -1947,28 +2028,111 @@ impl App {
         let frac = if matches!(outcome, Some(Outcome::Done(_))) {
             1.0
         } else {
-            p.fraction()
+            p.fraction(steps)
         };
-        ui.add(egui::ProgressBar::new(frac).text(text));
-        if p.warnings > 0 {
-            ui.label(format!("{} warning(s) in the log", p.warnings));
+        let failed = matches!(outcome, Some(Outcome::Failed(_)));
+        let mut bar = egui::ProgressBar::new(frac).text(text);
+        if running {
+            bar = bar.animate(true);
+        }
+        if failed {
+            bar = bar.fill(ui.visuals().error_fg_color.gamma_multiply(0.6));
+        }
+        ui.add(bar);
+        let mut show = false;
+        ui.horizontal_wrapped(|ui| {
+            let timing = match &outcome {
+                None => match p.step_remaining(std::time::Instant::now()) {
+                    Some(left) => format!(
+                        "{elapsed} so far; about {} left in this step",
+                        crate::extract_job::human_duration(left)
+                    ),
+                    None => format!("{elapsed} so far"),
+                },
+                Some(_) => format!("took {elapsed}"),
+            };
+            ui.label(RichText::new(timing).weak());
+            if p.warnings > 0 {
+                ui.separator();
+                ui.label(
+                    RichText::new(format!("{} warning(s)", p.warnings))
+                        .color(ui.visuals().warn_fg_color),
+                );
+                ui.checkbox(&mut self.log_warnings_only, "Show only warnings");
+            }
+            if out.is_dir() {
+                ui.separator();
+                show = ui
+                    .button("Open output folder")
+                    .on_hover_text(out.display().to_string())
+                    .clicked();
+            }
+        });
+        if show {
+            self.show_folder(&out);
         }
         if running {
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_millis(100));
         }
         ui.separator();
+        let lines: Vec<&String> = if self.log_warnings_only && p.warnings > 0 {
+            p.warning_lines().collect()
+        } else {
+            p.log.iter().collect()
+        };
         let row = ui.text_style_height(&egui::TextStyle::Monospace);
         egui::ScrollArea::both()
             .stick_to_bottom(true)
             .auto_shrink([false, false])
-            .show_rows(ui, row, p.log.len(), |ui, range| {
+            .show_rows(ui, row, lines.len(), |ui, range| {
                 // One row per line, so the virtualised rows stay aligned.
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                for line in &p.log[range] {
-                    ui.monospace(line);
+                let warn = ui.visuals().warn_fg_color;
+                let err = ui.visuals().error_fg_color;
+                for line in &lines[range] {
+                    let text = RichText::new(line.as_str()).monospace();
+                    let text = if line.starts_with(crate::extract_job::WARNING_PREFIX) {
+                        text.color(warn)
+                    } else if line.starts_with("FAILED") {
+                        text.color(err)
+                    } else {
+                        text
+                    };
+                    ui.label(text);
                 }
             });
+    }
+
+    /// Announce a finished extraction once, on whatever view is open: the
+    /// run goes on in the background while the user browses, and its end
+    /// used to show only on the Extract view.
+    fn announce_extraction(&mut self) {
+        let Some(job) = &mut self.job else { return };
+        let Some(outcome) = job.take_finished() else {
+            return;
+        };
+        let out = job.options.out.clone();
+        let took = crate::extract_job::human_duration(job.elapsed());
+        match outcome {
+            Outcome::Done(_) => {
+                self.studio.status = Some(format!(
+                    "Extraction finished in {took}: written to {}",
+                    out.display()
+                ));
+                self.last_written = Some(out);
+            }
+            Outcome::Cancelled => {
+                self.studio.status = Some(format!(
+                    "Extraction cancelled; the files written so far are in {}",
+                    out.display()
+                ));
+                self.last_written = out.is_dir().then_some(out);
+            }
+            Outcome::Failed(e) => {
+                self.studio.error = Some(format!("Extraction failed: {e}"));
+            }
+        }
     }
 }
 
@@ -1997,6 +2161,11 @@ impl eframe::App for App {
             self.open_path(p);
         }
         self.run_automation(ctx);
+        self.announce_extraction();
+        if self.job.as_ref().is_some_and(|j| j.outcome().is_none()) {
+            // Keep polling while a run goes on behind another view.
+            ctx.request_repaint_after(std::time::Duration::from_millis(250));
+        }
         self.poll_game(ctx);
         self.shortcuts(ctx);
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F1)) {
