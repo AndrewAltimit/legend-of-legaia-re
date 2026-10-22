@@ -68,6 +68,11 @@ const BACKOFF_CATEGORY: u8 = 3;
 /// product is the forward one; the step subtracts it (`subu`).
 const BACKOFF_SPEED: i16 = 4;
 
+/// Bound on [`World::commit_reach_snap`]'s walk: retail's loops have none.
+/// At `trig >> 10` a step (four units) this covers a gap of `16384` units,
+/// more than the stage.
+const REACH_SNAP_MAX_STEPS: usize = 4096;
+
 /// Separation body radius of a party seat: the `+0x58` word of the actor's
 /// node (`*(actor+0x22C)`) that `FUN_80050BB8` reads. The seat stager
 /// `FUN_800513F0` writes it as `0x280` (`li v0,0x280` / `sh v0,0x58(s1)` at
@@ -607,6 +612,67 @@ impl World {
         ms.world_z = ms.world_z.wrapping_sub(dz as i16);
     }
 
+    /// The clip commit's reach snap (`FUN_8004AD80`, `0x8004BF7C..0x8004C118`).
+    ///
+    /// When the acting actor commits a clip while the action SM sits in the
+    /// strike loop `0x1E`, the commit's tail measures it against its target
+    /// with the range law and walks its live pair onto the edge of its reach
+    /// in one go: out of range, it steps **forward** along the bearing to
+    /// the target's body pair until the law reads in range; in range, it
+    /// steps **back** until the law reads out of range. Each step re-faces
+    /// the actor (`+0x46 = (bearing(target +0x40/+0x3C -> actor
+    /// +0x38/+0x34) + 0x800) & 0xFFF`) and moves the pair by `trig >> 10`
+    /// (`sll 0x10` / `sra 0x1A`, four units at full scale), and both loops
+    /// run at least once (`do`-`while`). So every swing of a string opens
+    /// with the attacker one step either side of the boundary, whatever the
+    /// previous clip's root motion and the target's knockback did to the
+    /// gap: a retail trace of Vahn's `0x0D` -> `0x0F` commit steps him 60
+    /// units forward in one frame (`autorun_melee_string_trace.lua`, the
+    /// range poll's return address `0x8004C05C` repeating down to `0`).
+    ///
+    /// The engine had no counterpart, so a string's gap was set by root
+    /// motion alone and drifted outside retail's.
+    ///
+    /// Retail's loops are unbounded: a target the law can never reach (the
+    /// all-target sentinel, a slot `>= 8`) hangs them. The port bounds them
+    /// at [`REACH_SNAP_MAX_STEPS`] and skips a target `>= 8`.
+    // PORT: FUN_8004AD80 (`0x8004BF7C..0x8004C118`, the strike-loop reach snap)
+    pub(in crate::world) fn commit_reach_snap(&mut self, slot: usize) {
+        let Some(a) = self.actors.get(slot) else {
+            return;
+        };
+        let target = a.battle.active_target;
+        if target >= 8 || self.actors.get(usize::from(target)).is_none() {
+            return;
+        }
+        let forward = self.battle_range_metric(slot as u8, target) != 0;
+        for _ in 0..REACH_SNAP_MAX_STEPS {
+            let (tx, tz) = self.battle_seat_of(usize::from(target));
+            let ms = &self.actors[slot].move_state;
+            let facing = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
+                tz, tx, ms.world_z, ms.world_x,
+            )
+            .wrapping_add(0x800)
+                & 0xFFF;
+            let (sin, cos) = legaia_engine_system::trig::trig12(facing);
+            let (dx, dz) = (sin >> 10, cos >> 10);
+            let a = &mut self.actors[slot];
+            a.battle.facing_angle = facing;
+            let ms = &mut a.move_state;
+            if forward {
+                ms.world_x = ms.world_x.wrapping_add(dx);
+                ms.world_z = ms.world_z.wrapping_add(dz);
+            } else {
+                ms.world_x = ms.world_x.wrapping_sub(dx);
+                ms.world_z = ms.world_z.wrapping_sub(dz);
+            }
+            let in_range = self.battle_range_metric(slot as u8, target) == 0;
+            if in_range == forward {
+                break;
+            }
+        }
+    }
+
     /// Approach leg: facing recompute + range-gated root-motion step toward
     /// the target (see [`Self::tick_battle_locomotion`]).
     fn drive_attack_approach(&mut self, slot: usize, dt: u8) {
@@ -836,6 +902,54 @@ mod tests {
             tz_other - 100,
             "a non-Attack category stands still"
         );
+    }
+
+    /// `FUN_8004AD80`'s strike-loop tail: a commit by the acting actor in
+    /// `0x1E` walks it in `trig >> 10` steps onto the edge of its reach -
+    /// forward until the range law reads in range when it starts out of
+    /// range, back until it reads out of range when it starts inside - and
+    /// faces it at the target. Outside `0x1E`, or for another actor, a
+    /// commit leaves the pair alone.
+    #[test]
+    fn a_strike_loop_commit_snaps_the_attacker_to_its_reach() {
+        let setup = |z: i16, state: ActionState| {
+            let mut w = battle_world();
+            w.actors[0].battle.active_target = 1;
+            w.actors[0].battle.action_category = 3;
+            w.actors[1].battle.liveness = 1;
+            w.battle_ctx.active_actor = 0;
+            w.battle_ctx.action_state = state.as_byte();
+            w.seed_battle_seats();
+            w.actors[0].move_state.world_x = 0;
+            w.actors[0].move_state.world_z = z;
+            w
+        };
+        // Far out of range: one commit walks it in, to the first step that
+        // reads in range.
+        let mut w = setup(-800, ActionState::AttackChain);
+        assert_ne!(w.battle_range_metric(0, 1), 0);
+        w.note_active_clip_commit(0);
+        let z_in = w.actors[0].move_state.world_z;
+        assert!(z_in > -800);
+        assert_eq!(w.battle_range_metric(0, 1), 0);
+        let mut back = setup(z_in - 4, ActionState::AttackChain);
+        assert_ne!(back.battle_range_metric(0, 1), 0, "one step short is out");
+        assert_eq!(w.actors[0].battle.facing_angle, 0, "faced along +Z");
+        // Deep inside: it backs out to the first step that reads out.
+        back.actors[0].move_state.world_z = 700;
+        assert_eq!(back.battle_range_metric(0, 1), 0);
+        back.note_active_clip_commit(0);
+        let z_out = back.actors[0].move_state.world_z;
+        assert!(z_out < 700);
+        assert_ne!(back.battle_range_metric(0, 1), 0);
+        // Another state: no snap.
+        let mut idle = setup(-800, ActionState::AttackWindup);
+        idle.note_active_clip_commit(0);
+        assert_eq!(idle.actors[0].move_state.world_z, -800);
+        // Another actor's commit: no snap.
+        let mut other = setup(-800, ActionState::AttackChain);
+        other.note_active_clip_commit(1);
+        assert_eq!(other.actors[0].move_state.world_z, -800);
     }
 
     /// A seat named by `approach_hold` (a replayed retail park) turns onto
@@ -1227,9 +1341,12 @@ mod tests {
             w.actors[0].move_state.world_z,
         );
         let end_dist = i32::from(end.1) - i32::from(seat0.1);
-        assert_eq!(
-            end_dist, max_dist,
-            "the attacker must hold the ground it closed to"
+        // The strike clip's commit in `0x1E` backs it out of its reach by
+        // whole `trig >> 10` steps (`World::commit_reach_snap`), so it ends
+        // a few units short of the deepest point, never back home.
+        assert!(
+            end_dist <= max_dist && max_dist - end_dist <= 32,
+            "the attacker must hold the ground it closed to: {end_dist} vs {max_dist}"
         );
         // ... and its body pair stands on that ground.
         w.tick_battle_locomotion();

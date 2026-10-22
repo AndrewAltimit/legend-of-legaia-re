@@ -676,6 +676,15 @@ impl World {
                 self.battle_ctx.active_clip_commits.wrapping_add(1);
             self.battle_ctx.active_clip_commit_frame = self.clock.display_frames;
         }
+        // The commit's tail: a strike clip the acting actor commits in the
+        // strike loop stands it on the edge of its reach.
+        // REF: FUN_8004AD80 (`0x8004BF7C..0x8004C118`)
+        if i == usize::from(self.battle_ctx.active_actor)
+            && self.battle_ctx.action_state
+                == legaia_engine_battle_vm::battle_action::ActionState::AttackChain.as_byte()
+        {
+            self.commit_reach_snap(i);
+        }
     }
 
     // PORT: FUN_8004AD80 (the commit body; boundary selection is the tick's)

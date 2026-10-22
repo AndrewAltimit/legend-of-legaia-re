@@ -1283,6 +1283,12 @@ Just ahead of that term the same tick runs an **in-range back-off** (`0x80047C3C
 
 The shift is two less than the root term's, so it is a speed of `4` on the same law, subtracted - and the subtraction comes after the shift: the forward product is floored (`sra`) and then taken off, so a fractional step rounds toward the target, where flooring a negated product would round one unit further away on every fractional axis, every in-range frame. It holds an attacker whose strikes carry it into its target at the edge of its reach for as long as the attack runs: `player_steal_skeleton_pre` captures Vahn in the strike loop with the range law reading `361` against the skeleton's `352`, just outside. Port: `World::drive_in_range_backoff`, with its own truncation carry (`BattleActor::backoff_carry`).
 
+The clip commit `FUN_8004AD80` closes the gap a swing at a time (`0x8004BF7C..0x8004C118`). When the acting actor commits any clip while the SM sits in the strike loop `0x1E`, the commit's tail polls the range law against the actor's target. Out of range, it steps the live pair **forward** by `trig >> 10` (four units at full scale) along the bearing to the target's body pair, re-facing the actor on every step, until the law reads in range. In range, it steps **back** the same way until it reads out of range.
+
+Both loops run at least once and neither is bounded. So every swing of a string opens with the attacker one step either side of the edge of its reach, whatever the previous clip's root motion and the target's knockback did to the gap.
+
+A retail trace of Vahn's `0x0D` -> `0x0F` commit against Gimard steps him 60 units forward inside one frame: the range poll's return address `0x8004C05C` repeats, its metric falling `393 -> 337 -> 0` (`scripts/pcsx-redux/autorun_melee_string_trace.lua`). Port: `World::commit_reach_snap`, from the commit's camera-reset point (`World::note_active_clip_commit`); the port bounds the loops at 4096 steps and skips a target slot `>= 8`, which retail would hang on.
+
 The negative speeds in the player files are the reactions' - knockdown, block, some flinches - so a struck actor slides back; there is no recover backstep. Entry 8 carries speed `0` in every file and is the downed party member's kneel ([battle.md](battle-actor-rendering.md#the-commits-clip-tag-ladder)); the SM's pose `8` is a camera program.
 
 ### The sound a melee swing makes, and which half of it the port has
