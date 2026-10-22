@@ -179,10 +179,12 @@ impl Blockers {
         pass: impl Fn(&legaia_engine_core::world::FieldPropCollider) -> bool,
     ) -> Self {
         const NPC_HALF: i32 = 0x40 - 0x18;
+        let npcs_off = NPC_BODIES_OFF.with(std::cell::Cell::get);
         let mut boxes: Vec<(i32, i32, i32)> = w
             .npcs
             .positions
             .values()
+            .filter(|_| !npcs_off)
             .map(|&(x, z)| (i32::from(x), i32::from(z), NPC_HALF))
             .collect();
         for c in &w.props.colliders {
@@ -345,6 +347,25 @@ pub(super) fn plan_path(
         }
     }
     let (path, seen, reached) = plan_search(session, from, goal, None, avoid)?;
+    // The NPC boxes are the conservative half of the planner: a body
+    // tests every probe of a lattice cell, where the player slides past
+    // one at sub-cell offsets the lattice does not hold. Two NPCs standing
+    // in a corridor mouth then read as a wall the player walks through:
+    // `deene`'s entry corridor, sealed by P1[4] and P1[5] at (18, 46) /
+    // (17, 46), which the player leaves between them at (17, 47). When the
+    // bodies alone keep the goal out of reach, the route ignores them and
+    // the follower's stall handling answers a body that does block.
+    if !reached {
+        let open = NPC_BODIES_OFF.with(|f| {
+            f.set(true);
+            let r = plan_search(session, from, goal, None, avoid);
+            f.set(false);
+            r
+        });
+        if let Some((p, _, true)) = open {
+            return Some(p);
+        }
+    }
     if !reached && std::env::var_os("LEGAIA_FGL_COMP_DEBUG").is_some() {
         let tiles: HashSet<(i32, i32)> = seen
             .iter()
@@ -463,6 +484,10 @@ pub(super) const UNREACHED_MIN_CELLS: usize = 4_000;
 pub(super) type PlanKey = (String, (i16, i16), u64, u64);
 
 thread_local! {
+    /// Whether [`Blockers::build`] leaves the field NPCs' bodies out: the
+    /// second search of a plan the bodies alone kept from its goal
+    /// ([`plan_path`]).
+    pub(super) static NPC_BODIES_OFF: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// Failed plans: the cells the search reached and the one nearest the
     /// goal, by [`PlanKey`].
     pub(super) static UNREACHED: std::cell::RefCell<HashMap<PlanKey, (HashSet<Cell>, Cell)>> =
