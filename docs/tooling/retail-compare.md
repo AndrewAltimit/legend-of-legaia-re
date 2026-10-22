@@ -2223,9 +2223,12 @@ Its misses fall into three shapes:
   as retail does ([script-vm](../subsystems/script-vm.md)): `dolk` flats
   47 / 48, `dolk2` flat 56, the ropeway shopkeepers 46 / 50 and `izumi`
   flat 6 all stand on retail's position. The rest are a script's doing.
-  `town0c` flat 59 in `rim_elm_queen_bee_battle` is caught on `P1[21]`'s
-  `C1 3B 02 46` leg, and `dolk2` flat 70 in `dolk2_market_noa` stands where
-  the market beat put it. `kor5` flat 14 (Old Deez) is the readable case:
+  `town0c` flat 59 in `rim_elm_queen_bee_battle` is caught mid-way along
+  `P1[21]`'s `C1 3B 02 46` leg, which the gate now carries
+  ([below](#a-capture-held-behind-a-walking-placement-gates-on-the-leg)), and
+  `dolk2` flat 70 in `dolk2_market_noa` stands where `P2[7]`'s audience beat
+  left it (its `+0x94` is that record's `CC 46 85 14 00 F8` face-at), a
+  cutscene that ran earlier in the visit. `kor5` flat 14 (Old Deez) is the readable case:
   the cutscene `P2[3]` walks him off and puts him back with `A3 0E 20 5D` (`+0x115E`, tile `(32, 93)` =
   `(4160, 11968)`), not on his spawn byte `0xDC` (`11904`), then latches
   `0x43A` (`+0x14CB`). A later entry, retail's or the engine's, runs no
@@ -3088,6 +3091,37 @@ drives' retake, `LEGAIA_CAPTURE_DISPLAY_LAG`, counted from the tick the
 engine started replaying the record). `minigame_baka_pcsx` reads `0.965`
 and `minigame_slot_machine_pcsx` `0.993` (from `0.961` / `0.990`); the
 remaining blocks are the floor emblem's palette cycle.
+
+### A capture held behind a walking placement gates on the leg
+
+A compass walk on a placement (`B7` / `C1 <id> b0 b1`) does not park its
+record: the arm seats the op on the target's `+0x94`, raises its `0x400` and
+returns past the op, and the dispatcher prologue (`0x801DE90C..0x801DE944`)
+then returns the record's next cross-context op on that actor at its own PC
+until the walk kernel lands the leg. A capture parked on that op says
+nothing about the leg through its PC; the target's spent units `+0x54` do.
+`rim_elm_queen_bee_battle` is parked on `town0c` `P1[21]`'s `C1 3B 02 41`
+with flat 59 eight units into the `C1 3B 02 46` leg before it (`64` world
+units west of the leg's start), and a gate on the PC alone met it on the
+leg's first tick, with Nene still on her start tile.
+
+So a gate on a cross-context op whose target node carries the halt bit with
+a compass walk seated carries the target byte and that cursor
+(`ScriptGate::walk`, the `:w<id>.<units>` tail of `LEGAIA_SCRIPT_GATE`), and
+is met once the engine's leg on the same placement
+(`World::npc_compass_walk_accum`) has spent as many - or has landed. A leg
+spends one unit a vsync, so the image child's gate takes the display lag's
+vsyncs off. The `npcs` channel reads `0.973` to `1.000` on that state.
+
+The same capture shape exposed an engine defect on the frame grid's other
+side. A turn (`B8 <id> <dir> <budget>`) raises the same `0x400` on its NPC
+for the ramp, so the op after it on that actor waits too; the timeline
+honoured that for a turn armed on an earlier tick but not for one armed in
+the same slice. `edteien` `P2[1]` (`ending_vignette_fullscreen`) runs
+`B8 0A 82 0C` then `C1 0A 02 CB`: the engine started flat 10's walk with the
+turn, twelve vsyncs ahead of retail's, and the state caught it `28` units
+further along. With the hold, every placement of that state stands on
+retail's position.
 
 ### An attack-face capture frames the shot the state before it armed
 

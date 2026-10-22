@@ -488,10 +488,17 @@ impl World {
                 // then `B3 1F 0A` within one tick, and the halt-bit verify
                 // must hold until Noa lands - stepping past it opened the
                 // "Noa: Vahn..." box with Noa still walking through Vahn.
+                // A rotate leg armed earlier in this slice (`B8 <id> <dir>
+                // <budget>`) holds its actor too: the halt-acquire arm raises
+                // the target's `0x400` for the ramp. `edteien` P2[1] runs
+                // `B8 0A 82 0C` then `C1 0A 02 CB` in one tick; stepping past
+                // the turn started the walk twelve vsyncs early.
+                // REF: FUN_801DE840 (0x801DEE90..0x801DEF24, 0x801DE90C..0x801DE944)
                 let own_npc_glide_target = opcode_byte & 0x80 != 0
                     && (!tl.npc_glides.is_empty()
                         || !tl.npc_walks.is_empty()
                         || !tl.npc_faces.is_empty()
+                        || !tl.npc_facings.is_empty()
                         || !npc_glide_hold.is_empty())
                     && !(opcode_byte & 0x7F == 0x32 && tl.bytecode.get(pc + 2) == Some(&0x0A))
                     && vm::field::peek_extended(&tl.bytecode, pc)
@@ -506,6 +513,7 @@ impl World {
                                 || tl.npc_glides.iter().any(|g| g.slot == slot)
                                 || tl.npc_walks.contains(&slot)
                                 || tl.npc_faces.iter().any(|f| f.slot == slot)
+                                || tl.npc_facings.iter().any(|f| f.slot == Some(slot))
                         });
                 if halted_target || own_glide_target || own_npc_glide_target {
                     tl.frames = tl.frames.saturating_sub(1);

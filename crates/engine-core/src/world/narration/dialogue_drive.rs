@@ -389,11 +389,18 @@ impl World {
             // cross-context op aimed at it at its own PC: the talk retries
             // next frame. `town0c` `P1[21]` (the queen-bee beat) sends
             // `C1 3B 02 46` then `C1 3B 02 41`, and the second leg starts
-            // where the first one landed.
+            // where the first one landed. A turn the talk set going holds
+            // its placement the same way: the halt-acquire arm of `B8 <id>`
+            // and the `CC <id> 85` face-at raise the same `0x400`.
             // REF: FUN_801DE840 (0x801DE90C..0x801DE944)
             let walking_target = ext_target
                 .and_then(|t| host.world.placement_slot_for_target(t))
-                .filter(|slot| host.world.npcs.glide_legs.contains_key(slot));
+                .filter(|slot| {
+                    let n = &host.world.npcs;
+                    n.glide_legs.contains_key(slot)
+                        || n.rotate_legs.contains_key(slot)
+                        || n.face_legs.contains_key(slot)
+                });
             if walking_target.is_some() {
                 break;
             }
@@ -1017,6 +1024,30 @@ impl World {
             .map(|ci| &view[ci])
             .filter(|ch| !ch.object_bind)
             .and_then(|ch| u8::try_from(ch.placement_index).ok())
+    }
+
+    /// How far the compass-walk leg (`B7` / `C1 <t> b0 b1`) a script armed on
+    /// the placement target byte `t` names has run: the spent units the walk
+    /// kernel keeps on the actor's `+0x54` (one per vsync, the frame step a
+    /// tick). `None` while no such leg is live - before the arm, or after
+    /// the landing clears the halt. Searches the talk runner's legs, the
+    /// modal timeline's and every concurrent helper's.
+    ///
+    /// REF: FUN_8003774C (the 0x37 / 0x41 arm)
+    pub fn npc_compass_walk_accum(&self, t: u8) -> Option<u16> {
+        let slot = self.placement_slot_for_target(t)?;
+        let in_timeline = |tl: &legaia_engine_field::cutscene_timeline::CutsceneTimeline| {
+            tl.npc_glides
+                .iter()
+                .find(|g| g.slot == slot)
+                .map(|g| g.state.op_accum)
+        };
+        self.npcs
+            .glide_legs
+            .get(&slot)
+            .map(|g| g.state.op_accum)
+            .or_else(|| self.cutscene.timeline.as_ref().and_then(in_timeline))
+            .or_else(|| self.field_vm.helper_contexts.iter().find_map(in_timeline))
     }
 
     /// A facing op aimed at another placement from a context that is not a

@@ -62,6 +62,42 @@ pub struct RetailScript {
     /// Parked on the player's clip end-latch spin (`AD F8 08`): the player's
     /// clip cursor `+0x68`, how far the poked clip has run.
     pub player_latch: Option<i16>,
+    /// Parked on a cross-context op whose target placement still walks a
+    /// compass leg: the target byte and the leg's spent units `+0x54`
+    /// ([`walking_target`]).
+    pub walk: Option<(u8, i16)>,
+}
+
+/// The halt bit a walk arm raises on its target (`+0x10 & 0x400`), held
+/// until the walk kernel lands the leg.
+const HALT: u32 = 0x400;
+
+/// A gate op aimed at a placement that is still walking: the op at the PC
+/// is a cross-context one (`0x80` set, the target byte after it), and the
+/// node whose flat index `+0x50` is that byte carries the halt bit with a
+/// compass walk (`B7` / `C1`, ops `0x37` / `0x41`) seated on its `+0x94`.
+/// The dispatcher prologue (`0x801DE90C..0x801DE944`) returns such an op at
+/// its own PC every frame until the leg lands, so the PC says nothing about
+/// how far the leg has run; its `+0x54` does. `town0c`'s queen-bee beat
+/// (`rim_elm_queen_bee_battle`) is parked on `C1 3B 02 41` with flat 59
+/// eight units into the `C1 3B 02 46` leg before it.
+fn walking_target(ram: &[u8], nodes: &[u32], op: u8, target: Option<u8>) -> Option<(u8, i16)> {
+    if op & 0x80 == 0 {
+        return None;
+    }
+    let target = target.filter(|&t| t != 0xF8 && t != 0xFB)?;
+    nodes.iter().find_map(|&n| {
+        if game_anchors::u32_at(ram, n + 0x0C) != FIELD_ACTOR_TICK
+            || game_anchors::u16_at(ram, n + 0x50) != u16::from(target)
+            || game_anchors::u32_at(ram, n + 0x10) & HALT == 0
+        {
+            return None;
+        }
+        let seat = game_anchors::u32_at(ram, n + 0x94);
+        let walk_op = in_ram(seat).then(|| game_anchors::u8_at(ram, seat))?;
+        (walk_op & 0x80 != 0 && matches!(walk_op & 0x7F, 0x37 | 0x41))
+            .then(|| (target, game_anchors::i16_at(ram, n + 0x54)))
+    })
 }
 
 /// The player's clip end-latch spin: the cross-context local-flag test
@@ -147,7 +183,8 @@ impl RetailScripts {
             typing: pager_typing(ram),
             ..Self::default()
         };
-        for node in actor_nodes(ram) {
+        let nodes = actor_nodes(ram);
+        for &node in &nodes {
             let tick = game_anchors::u32_at(ram, node + 0x0C);
             let flags = game_anchors::u32_at(ram, node + 0x10);
             let id = game_anchors::u16_at(ram, node + 0x50);
@@ -178,12 +215,19 @@ impl RetailScripts {
                 on_player_latch(op, bytes_at(ram, base.wrapping_add(pc as u32 + 1), 2))
                     .then(|| player.map(|p| game_anchors::i16_at(ram, p + 0x68)))
                     .flatten();
+            let walk = walking_target(
+                ram,
+                &nodes,
+                op,
+                bytes_at(ram, base.wrapping_add(pc as u32 + 1), 1).map(|b| b[0]),
+            );
             out.running.push(RetailScript {
                 flat_index: id,
                 pc,
                 wait: game_anchors::i16_at(ram, node + 0x54),
                 op,
                 player_latch,
+                walk,
                 head,
                 latches: bytes_at(ram, base, pc + 1)
                     .map(|body| run_latches(&body, pc))
@@ -216,6 +260,7 @@ pub fn script_gate_from_retail(scripts: &RetailScripts) -> Option<ScriptGate> {
         resumed_early: std::cell::Cell::new(false),
         typing: scripts.typing.filter(|_| s.op & 0x7F < 0x20),
         latch: s.player_latch,
+        walk: s.walk,
     })
 }
 
@@ -237,6 +282,11 @@ pub fn displayed_script_gate_from_retail(scripts: &RetailScripts) -> Option<Scri
     }
     if let Some(left) = g.glide_left.as_mut() {
         *left += i32::from(scripts.display_lag);
+    }
+    // A leg spends one unit a vsync, so the displayed frame's leg had
+    // `display_lag` units fewer behind it.
+    if let Some((_, accum)) = g.walk.as_mut() {
+        *accum = (i32::from(*accum) - i32::from(scripts.display_lag)).max(0) as i16;
     }
     Some(g)
 }
@@ -297,6 +347,67 @@ mod tests {
         assert!(RetailScripts::from_ram(&ram).running.is_empty());
     }
 
+    /// A gate op aimed at a placement still walking the compass leg the
+    /// record armed carries that leg's spent units; a target with no leg on
+    /// its `+0x94`, or one whose halt bit is down, carries nothing.
+    #[test]
+    fn a_gate_held_behind_a_walking_placement_carries_the_leg() {
+        fn w32(ram: &mut [u8], va: u32, v: u32) {
+            let o = (va & 0x1F_FFFF) as usize;
+            ram[o..o + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        fn w16(ram: &mut [u8], va: u32, v: u16) {
+            let o = (va & 0x1F_FFFF) as usize;
+            ram[o..o + 2].copy_from_slice(&v.to_le_bytes());
+        }
+        let mut ram = vec![0u8; 0x20_0000];
+        let (walker, seat) = (0x8010_2000u32, 0x8012_2000u32);
+        w32(&mut ram, walker + 0x0C, FIELD_ACTOR_TICK);
+        w32(&mut ram, walker + 0x10, HALT);
+        w16(&mut ram, walker + 0x50, 59);
+        w16(&mut ram, walker + 0x54, 8);
+        w32(&mut ram, walker + 0x94, seat);
+        // `town0c` `P1[21]`: `C1 3B 02 46` seated on flat 59.
+        let o = (seat & 0x1F_FFFF) as usize;
+        ram[o..o + 4].copy_from_slice(&[0xC1, 0x3B, 0x02, 0x46]);
+        let nodes = [walker];
+        assert_eq!(walking_target(&ram, &nodes, 0xC1, Some(59)), Some((59, 8)));
+        // Not a cross-context op, the player, or another target.
+        assert_eq!(walking_target(&ram, &nodes, 0x41, Some(59)), None);
+        assert_eq!(walking_target(&ram, &nodes, 0xC1, Some(0xF8)), None);
+        assert_eq!(walking_target(&ram, &nodes, 0xC1, Some(58)), None);
+        // A seated rotate is not a walk.
+        ram[o] = 0xB8;
+        assert_eq!(walking_target(&ram, &nodes, 0xC1, Some(59)), None);
+        ram[o] = 0xC1;
+        // The landing drops the halt bit.
+        w32(&mut ram, walker + 0x10, 0);
+        assert_eq!(walking_target(&ram, &nodes, 0xC1, Some(59)), None);
+        // The displayed frame is the display lag's vsyncs into the leg less.
+        let scripts = RetailScripts {
+            running: vec![RetailScript {
+                flat_index: 57,
+                pc: 0xD9,
+                wait: 0,
+                op: 0xC1,
+                head: vec![0x25],
+                latches: Vec::new(),
+                player_latch: None,
+                walk: Some((59, 8)),
+            }],
+            display_lag: 4,
+            ..RetailScripts::default()
+        };
+        assert_eq!(
+            script_gate_from_retail(&scripts).and_then(|g| g.walk),
+            Some((59, 8))
+        );
+        assert_eq!(
+            displayed_script_gate_from_retail(&scripts).and_then(|g| g.walk),
+            Some((59, 4))
+        );
+    }
+
     /// A text gate caught while the pager types (state `0x0B`) carries the
     /// typing row and reveal counter, taken two pager calls back for the
     /// displayed frame; a gate parked on `AD F8 08` carries the player's
@@ -321,6 +432,7 @@ mod tests {
             head: vec![0x1F],
             latches: Vec::new(),
             player_latch: (op == 0xAD).then_some(219),
+            walk: None,
         };
         let scripts = RetailScripts {
             running: vec![script(0x1F)],
