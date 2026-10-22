@@ -775,6 +775,7 @@ for a reason that is not a port defect:
 | [Sit out spent turns](#combatants-that-had-already-acted) | initiative keys `+0x16C` | `RetailBattle::engine_spent_keys`, the `:k` tail of `LEGAIA_BATTLE_BARS` |
 | [Raise the Mystic Shield](#the-mystic-shield-a-capture-already-holds) | the shield word `_DAT_8007BD84` | `World::raise_mystic_shield`, `LEGAIA_BATTLE_MYSTIC_SHIELD=1` |
 | [Seat the per-pass parts](#parts-a-module-seats-on-every-pass) | the live parts of every record a module seats on every pass | `SummonScene::install_part_snapshot`, `LEGAIA_SEAT_CAST_PARTS` |
+| [Stand the effect billboards](#the-effect-pools-billboards-are-stream-history) | the live effect-pool children `_DAT_8007BD30 + 0x10` | `World::install_effect_child_snapshot`, `LEGAIA_SEAT_EFFECT_CHILDREN` |
 | [Land each body's clip](#the-keyframe-each-body-stands-on) | anim node cursor `*(+0x22C) + 0x68`, clip `+0x1D9`, rates `+0x21D` / entry `+0x78` | `World::seat_battle_clip_cursor`, `LEGAIA_SEAT_BATTLE_CLIPS` |
 | [Take back landed hits](#hits-already-landed) | this action's damage-number ring pushes `ctx[+0x83C]` / `+0x318`, count `ctx[+0x273]` | `RetailBattle::pre_action_hp` |
 | [Take back rewards](#rewards-already-granted) | EXP share `gp+0xA04`, stat window, banner element `ctx[+0x26]` | `ungrant_results_rewards`, `ungrant_magic_level_up` |
@@ -1227,6 +1228,45 @@ PC and the level ramp stay the replay's. `freed_summon_mid_cast` rose from
 `shiny_refactor_gimard_precast` (the same fan) from `.902` to `.928`; seating
 the level as well measured no better. The fan's angles are this clock, not a
 `rand()` draw.
+
+A battle-burst child is the other case, and its words **are** draws. The
+move VM's op `0x17` (`FUN_801F30C4`) seats twelve children on one of two
+records (`0x801F5DA4` wide, `0x801F5D0C` narrow), each with a heading, a
+spread `+0x3E` and a tail `+0x98` rolled off `rand()`
+([battle-action-helpers](../subsystems/battle-action-helpers.md#fun_801f30c4---the-move-vms-battle-escape-op-0x17)).
+Every such child is seeded whole, turning or not: position, banks, wait, the
+channel block, and the spread, scale `+0x72`, heading `+0x96` and tail,
+taken back the display lag like the rest (`is_burst_child`). The engine's
+children carry their record as their tag for it. `battle_melee_hit_spark`'s
+Somersault holds twelve narrow-arm rays; seeded, they move only a few pixels,
+since the displayed frame catches them a vsync after their seat.
+
+### The effect pool's billboards are stream history
+
+The 2D effect pool (`_DAT_8007BD30`, [effect-vm](../subsystems/effect-vm.md))
+draws its children where `rand()` put them: a master with the randomized-legs
+flag scatters its records, every child rolls its UV mirror bits, and the
+burning-body emitter at the tail of `FUN_8004998C` picks a random pose object
+and jitters it before it spawns a fire master
+([battle-action-helpers](../subsystems/battle-action-helpers.md#the-burning-body-emitter-at-the-tail-of-fun_8004998c)).
+No replay re-deals that, so the image child stands the state's own children
+in its pool on the capture frame (`RetailBattle::effect_children`,
+`LEGAIA_SEAT_EFFECT_CHILDREN`, `World::install_effect_child_snapshot`). Each
+child's batch is its anim cursor `+0x1C` less `2 + 6 * frame_cursor`, looked
+up in the pack0 pointer table at the pool head's `+0x08`.
+
+The children are the displayed frame's, taken back the display lag one walker
+sweep at a time (`rewind_effect_child`; the walker sweeps once a vsync): a
+child whose wait still holds its frame's whole delay entered that frame on
+the sweep and steps back onto the previous one at wait `0`, any other gains
+`8`, each takes back one motion step, and a child on its first frame within
+`8` of its first delay was seeded inside the window and is dropped. The
+masters stay the replay's; a frame draws only children.
+
+The fire clouds were the largest single difference on the enemy-attack
+states: `battle_gimard_tail_fire_a` rose from `.822` to `.925`, `_b` from
+`.807` to `.897`, `gimard_burning_attack` from `.786` to `.817` and
+`rim_elm_gimard_victory` from `.888` to `.891`.
 
 ### The keyframe each body stands on
 
