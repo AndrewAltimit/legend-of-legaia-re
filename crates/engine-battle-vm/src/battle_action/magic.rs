@@ -566,26 +566,110 @@ pub(super) fn magic_capture_phase2<H: BattleActionHost + ?Sized>(
     transition(ctx, ActionState::MagicCaptureFinalize)
 }
 
+/// What state `0x71`'s settle test reads off one seat
+/// ([`BattleActionHost::capture_settle_view`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CaptureSettleSeat {
+    /// The playing clip `+0x1D9`.
+    pub clip: u8,
+    /// `+0x14C != 0`.
+    pub alive: bool,
+    /// The prim word `+0x04` reads `0` (a monster's defeat fade run out).
+    pub prim_zero: bool,
+}
+
+/// The playing clip a downed party seat holds: entry `8`, which re-commits
+/// itself at every natural end.
+pub const CAPTURE_SETTLE_DOWN_CLIP: u8 = 8;
+
+/// How many passes state `0x71` waits on its settle test before it lets go.
+/// Retail's wait has no bound; this one is the port's, for the same reason
+/// the cast band's settle waits carry one: an engine clip that never reports
+/// the id retail waits for would hold the action for good.
+pub const CAPTURE_SETTLE_PASS_LIMIT: u16 = 600;
+
+/// State `0x71`'s settle test (`0x801E50FC..0x801E5200`), keyed on the
+/// acting actor's target byte `+0x1DD` (`sp+0x20`, loaded at the SM's entry).
+///
+/// * **`target < 7`** (`sltiu v0,s0,0x7` at `0x801E50FC`): that seat alone.
+///   A clip of `0` has settled whatever the HP (`0x801E5124`); a live seat
+///   on any other clip has not (`0x801E5134`); a dead seat has once it plays
+///   the down clip `8` (`0x801E513C`), and otherwise holds while its prim
+///   word is non-zero (`0x801E514C`) or it is a party seat (`0x801E5154`) -
+///   so a dead monster settles once its defeat fade has run out.
+/// * **`target >= 7`** (`0x801E516C..0x801E5200`): the party seats
+///   `0 .. ctx[+0x00]`, a live one on clip `0` and a dead one on clip `8`.
+///   No monster seat is read.
+///
+/// The caster is not read on either arm, so the capture band does not wait
+/// out its own cast clip.
+pub fn capture_finalize_settled<H: BattleActionHost + ?Sized>(host: &H, target: u8) -> bool {
+    if target < 7 {
+        let Some(s) = host.capture_settle_view(target) else {
+            return true;
+        };
+        if s.clip == 0 {
+            return true;
+        }
+        if s.alive {
+            return false;
+        }
+        if s.clip == CAPTURE_SETTLE_DOWN_CLIP {
+            return true;
+        }
+        s.prim_zero && target >= host.party_count()
+    } else {
+        (0..host.party_count()).all(|slot| {
+            host.capture_settle_view(slot).is_none_or(|s| {
+                if s.alive {
+                    s.clip == 0
+                } else {
+                    s.clip == CAPTURE_SETTLE_DOWN_CLIP
+                }
+            })
+        })
+    }
+}
+
+/// State `0x71` - capture finalize (`0x801E50EC..0x801E52A0`).
+///
+/// Re-arms the ready pose, then holds until [`capture_finalize_settled`]
+/// passes (or [`CAPTURE_SETTLE_PASS_LIMIT`] runs out). The exit re-runs the
+/// target-size framing `FUN_801F0348` (`jal` at `0x801E520C`) as `0x70`'s
+/// exit did, stores `0x50`, clears `ctx[+0x243]` / `ctx[+0x278]`, writes the
+/// ambient base, and walks seats `0..7` (`sltiu v0,s0,0x7` at `0x801E5290`)
+/// clearing `+0x21C` on every live seat and every party seat
+/// (`0x801E5254..0x801E526C`) - a dead monster keeps its defeat-fade state.
+///
+/// PORT: FUN_801E295C (`0x801E50EC..0x801E52A0`)
 pub(super) fn magic_capture_finalize<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     let slot = ctx.active_actor;
     host.pose(slot, Pose::Idle);
-    // Ensure all 8 slots are settled - alive with non-zero "+0x4" or non-`8`
-    // current_anim. We model as: every alive actor has current_anim != 8.
-    let total = host.slot_count();
-    let stable = (0..total).all(|s| {
-        host.actor(s)
-            .map(|a| a.liveness == 0 || a.current_anim != 8)
-            .unwrap_or(true)
-    });
-    if !stable {
+    let target = host.actor(slot).map_or(8, |a| a.active_target);
+    if !capture_finalize_settled(host, target)
+        && ctx.capture_settle_passes < CAPTURE_SETTLE_PASS_LIMIT
+    {
+        ctx.capture_settle_passes += 1;
         return stay(ctx);
     }
-    // Reset per-actor render flag.
-    for s in 0..total {
-        if let Some(a) = host.actor_mut(s) {
+    ctx.capture_settle_passes = 0;
+    // `0x801E520C`: the same re-seed `0x70`'s exit ran.
+    let party_count = host.party_count();
+    let frame_height = crate::battle_formulas::camera_height_for_frame(
+        ctx.active_actor,
+        target,
+        party_count,
+        |s| host.monster_size_class(s),
+    );
+    ctx.camera_frame_height = frame_height;
+    host.camera_frame_height(frame_height);
+    for s in 0..7u8 {
+        if let Some(a) = host.actor_mut(s)
+            && (a.liveness != 0 || s < party_count)
+        {
             a.render_flag = 0;
         }
     }

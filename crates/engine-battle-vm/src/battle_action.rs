@@ -54,8 +54,11 @@ pub use action_tags::*;
 pub mod motion;
 
 mod magic;
-pub use magic::CAPTURE_CAMERA_VARIANT;
 use magic::*;
+pub use magic::{
+    CAPTURE_CAMERA_VARIANT, CAPTURE_SETTLE_DOWN_CLIP, CAPTURE_SETTLE_PASS_LIMIT, CaptureSettleSeat,
+    capture_finalize_settled,
+};
 
 mod summon;
 use summon::*;
