@@ -478,19 +478,13 @@ impl RetailBattle {
                 let passes = tween_passes_back(
                     action_state,
                     game_anchors::u16_at(ram, ctx + 0x6DA),
-                    display_lag_vsyncs(ram) / u16::from(frame_step(ram).max(1)),
+                    DISPLAY_LAG_PASSES,
                 );
                 // Each pass on its own step where the older ordering table's
                 // floor confirms the newest one; the history's largest entry
                 // for every pass otherwise.
-                let steps = pass_steps(ram);
-                let confirmed =
-                    steps != [frame_step(ram); 2] && older_table_step(ram, ctx) == Some(steps[0]);
-                let steps = if confirmed {
-                    steps
-                } else {
-                    [frame_step(ram); 2]
-                };
+                let steps = display_pass_steps(ram);
+                let confirmed = steps != [frame_step(ram); 2];
                 let steps: Vec<u8> = (0..usize::from(passes))
                     .map(|n| steps.get(n).copied().unwrap_or(frame_step(ram)))
                     .collect();
@@ -513,13 +507,13 @@ impl RetailBattle {
                 // cleared can still be unfolding on screen.
                 if game_anchors::u8_at(ram, ctx + 6) == 0x1E
                     && seats.is_empty()
-                    && let Some(seat) = round_prompt_pool_seat(ram, frame_step(ram))
+                    && let Some(seat) = round_prompt_pool_seat(ram, display_pass_steps(ram)[1])
                 {
                     seats.push(seat);
                 }
                 // Retired records that landed on the frozen pass, still
                 // mid-glide on screen.
-                for seat in landed_glide_pool_seats(ram, ctx, pass_steps(ram)) {
+                for seat in landed_glide_pool_seats(ram, ctx, display_pass_steps(ram)) {
                     if !seats.iter().any(|s| s.target == seat.target) {
                         seats.push(seat);
                     }
@@ -597,19 +591,24 @@ impl RetailBattle {
                         & legaia_engine_battle_vm::battle_anim_rate::FROZEN_IDLE_STATUS_BITS
                         != 0
                         && clip == 0;
-                    let prod = i32::from(frame_step(ram))
-                        * i32::from(game_anchors::u8_at(ram, p + 0x21D))
-                        * entry_rate;
-                    let advance = if frozen {
-                        0
-                    } else if slowed {
-                        prod >> 2
-                    } else {
-                        prod >> 1
-                    };
-                    let frames_back =
-                        i32::from(display_lag_vsyncs(ram) / u16::from(frame_step(ram).max(1)));
-                    Some((slot as u8, clip, cursor - frames_back * advance))
+                    // Each of the lag's passes on its own step
+                    // (`display_pass_steps`).
+                    let back: i32 = display_pass_steps(ram)
+                        .iter()
+                        .map(|&step| {
+                            let prod = i32::from(step)
+                                * i32::from(game_anchors::u8_at(ram, p + 0x21D))
+                                * entry_rate;
+                            if frozen {
+                                0
+                            } else if slowed {
+                                prod >> 2
+                            } else {
+                                prod >> 1
+                            }
+                        })
+                        .sum();
+                    Some((slot as u8, clip, cursor - back))
                 })
                 .collect(),
             captured: (0..8u32)

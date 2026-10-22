@@ -165,7 +165,7 @@ pub fn retail_page_mark(ram: &[u8]) -> Option<u8> {
     if frame > 1 || !(0..16).contains(&timer) {
         return None;
     }
-    let lag = 2 * i32::from(crate::retail_compare_battle::frame_step(ram).max(1));
+    let lag = i32::from(crate::retail_compare_battle::display_lag_vsyncs(ram).max(2));
     Some(if timer < lag {
         frame as u8 ^ 1
     } else {
@@ -384,7 +384,7 @@ pub fn retail_object_models(ram: &[u8]) -> Vec<(u16, i16)> {
 /// the display lag's game frames ([`rewind_clip_cursor`]).
 pub fn retail_object_clips(ram: &[u8]) -> Vec<ObjectClipSeed> {
     let step = crate::retail_compare_battle::frame_step(ram).max(1);
-    let lag_frames = crate::retail_compare_battle::display_lag_vsyncs(ram) / u16::from(step);
+    let lag_frames = crate::retail_compare_battle::DISPLAY_LAG_PASSES;
     let mut seen = std::collections::BTreeSet::new();
     crate::retail_compare_script::actor_nodes(ram)
         .into_iter()
@@ -547,7 +547,7 @@ pub fn walker_displayed_seat(pos: (i16, i16), prev: (i16, i16), lag: i32) -> (i1
 /// display lag ([`rewind_morph_weights`]).
 pub fn retail_morphs(ram: &[u8]) -> Vec<MorphSeed> {
     let step = crate::retail_compare_battle::frame_step(ram).max(1);
-    let lag_frames = crate::retail_compare_battle::display_lag_vsyncs(ram) / u16::from(step);
+    let lag_frames = crate::retail_compare_battle::DISPLAY_LAG_PASSES;
     let mut seen = std::collections::BTreeSet::new();
     crate::retail_compare_script::actor_nodes(ram)
         .into_iter()

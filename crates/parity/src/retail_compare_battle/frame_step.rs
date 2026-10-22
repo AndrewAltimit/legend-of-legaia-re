@@ -103,6 +103,32 @@ pub fn pass_steps(ram: &[u8]) -> [u8; 2] {
     [step_for(0), step_for(1)]
 }
 
+/// How many passes the displayed frame lags the RAM a capture holds: the
+/// double buffer's two ([`display_lag_vsyncs`]).
+pub const DISPLAY_LAG_PASSES: u16 = 2;
+
+/// The steps of the two passes the displayed frame lags by, newest first:
+/// [`pass_steps`] where they differ from [`frame_step`] and the older
+/// ordering table's battle floor confirms the newest
+/// (`camera_pool::older_table_step`), `frame_step` for both otherwise.
+///
+/// The history alone cannot settle a clamped entry: `0x2BC` is also a raw
+/// duration of exactly `700` hsyncs, stored unclamped and stepped `3`. The
+/// floor can, wherever the camera moved on the newest pass.
+pub fn display_pass_steps(ram: &[u8]) -> [u8; 2] {
+    let fs = frame_step(ram);
+    let steps = pass_steps(ram);
+    if steps == [fs; 2] {
+        return steps;
+    }
+    let ctx = game_anchors::u32_at(ram, BATTLE_CTX);
+    if in_ram(ctx) && older_table_step(ram, ctx) == Some(steps[0]) {
+        steps
+    } else {
+        [fs; 2]
+    }
+}
+
 /// How far the displayed frame lags the RAM a capture holds: **two** game
 /// frames. Retail double-buffers - the CPU builds frame `N` while the GPU
 /// draws `N - 1` and the display scans out `N - 2` - so the VRAM display
@@ -117,6 +143,14 @@ pub fn pass_steps(ram: &[u8]) -> [u8; 2] {
 /// shows `123` on screen, one at `255` shows `206`, one at `102` shows
 /// `49`, and a block `6` vsyncs past its delay on a step-`3` frame shows no
 /// flash at all.
+///
+/// The two passes need not share a step ([`display_pass_steps`]), but this
+/// lag stays two of [`frame_step`]: taken as the confirmed passes' sum, the
+/// part seeds it drives split the captures it reaches
+/// (`delilas_gi_spirit_streaks_v2` `0.956` to `0.988`,
+/// `delilas_gi_spirit_distortion_v3` `0.889` to `0.864`,
+/// `gimard_burning_attack` `0.817` to `0.808`). The camera walk-back, the
+/// idle clip cursors and the glide seats take the per-pass steps.
 pub fn display_lag_vsyncs(ram: &[u8]) -> u16 {
-    2 * u16::from(frame_step(ram))
+    DISPLAY_LAG_PASSES * u16::from(frame_step(ram))
 }

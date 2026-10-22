@@ -803,3 +803,24 @@ fn no_floor_tables_leave_the_pass_step_unconfirmed() {
     let ram = vec![0u8; 0x20_0000];
     assert_eq!(older_table_step(&ram, 0x800E_B654), None);
 }
+
+/// The history's per-pass steps are taken only where the battle floor
+/// confirms them: a clamped newest entry with no ordering tables to check it
+/// against leaves both passes on the history's largest entry, and the lag on
+/// two of them.
+#[test]
+fn unconfirmed_pass_steps_keep_the_history_max() {
+    let mut ram = vec![0u8; 0x20_0000];
+    put16(&mut ram, STEP_MODE, 0x10);
+    let hist = [
+        566u16, 700, 660, 719, 700, 588, 574, 583, 560, 564, 567, 561, 567, 562, 559, 559,
+    ];
+    for (i, d) in hist.into_iter().enumerate() {
+        put16(&mut ram, FRAME_HISTORY + i as u32 * 2, d);
+    }
+    put32(&mut ram, 0x8007_B758, 5);
+    put32(&mut ram, BATTLE_CTX, 0x800E_B654);
+    assert_eq!(pass_steps(&ram), [4, 3]);
+    assert_eq!(display_pass_steps(&ram), [3, 3]);
+    assert_eq!(display_lag_vsyncs(&ram), 6);
+}

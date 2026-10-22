@@ -2523,6 +2523,26 @@ single step. The three Delilas Spirit captures rose with it (`0.893` to
 `0.949`, `0.779` to `0.891`, `0.909` to `0.958`), their backdrop four to five
 pixels closer.
 
+The confirmed steps (`display_pass_steps`) also take back the idle clip
+cursors pass by pass and seat the retired glides. The display lag in vsyncs
+(`display_lag_vsyncs`) stays two of the history's step: as the confirmed
+passes' sum it moves the part seeds it drives both ways
+(`delilas_gi_spirit_streaks_v2` `0.956` to `0.988`, its sparkles thinned to
+retail's, against `delilas_gi_spirit_distortion_v3` `0.889` to `0.864` and
+`gimard_burning_attack` `0.817` to `0.808`). An older table that fits a large
+step is not proof of the step either: `nivora_duel_pre_plasma_strike` and
+`rim_elm_gimard_seru_capture_before` have unclamped histories of step `2`, yet
+their floor fits the one-pass walk-back best at `4`, so the table moved more
+than its increment says on those passes.
+
+A cast's module shot is not held back by the walk-back but by its framing.
+`gimard_burning_attack`'s floor follows its tween table (the older table
+fits a step-`4` walk-back to `0.73` px against `3.34` px for the live pose),
+yet aligning the child to the displayed pose changes nothing: the replay's
+camera arms a different endpoint (yaw `3137` against retail's ease toward
+`3582`), and `align_glide_origin` takes retail's live value only on
+components whose endpoints agree.
+
 The endpoints the alignment tests against are the RAM's, the gate tick's.
 On a retaken frame the framing the engine's camera arms is two game frames
 older and can stand a step short of them: case 6 on a caster drifts with the
