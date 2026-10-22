@@ -73,6 +73,11 @@ fn a_door_of_light_arrival_on_map01_refuses_the_menu_until_its_record_ends() {
     // triple `0x55 @ (37, 109)` (tests/door_item_retail_timeline.rs).
     host.world.pending_named_scene_transition = Some(("map01".to_string(), 37, 109, 0));
     let _ = tick_through_hold(&mut host);
+    // The capture ran this record at frame step 2; the engine pins the
+    // overworld's step at 3. A script's walk and wait spend the step once a
+    // game frame, so they are measured on the capture's step.
+    host.world.set_frame_step_floor(2);
+    host.world.seed_frame_step(2);
     let [_, _, arrival_z] = host.world.fog_player_world_pos();
 
     let mut ran = 0usize;

@@ -369,6 +369,18 @@ pub struct CutsceneTimeline {
     /// many again on the party placements (Noa / Gala turning to face Vahn).
     // REF: FUN_801DE840 (0x801E2148..0x801E21DC), FUN_8003774C (the 0x4C arm)
     pub npc_faces: Vec<TimelineNpcFace>,
+    /// The player's compass-walk leg landed on the last game frame: the
+    /// actor still holds its halt for this context until the next game
+    /// frame. Retail's walk kernel runs after the script in the actor tick
+    /// (`FUN_8003BC08`: runner `0x8003BD34`, kernel `0x8003BD50`), so a
+    /// landing clears `0x400` after the frame's script slice and the next
+    /// op on the actor runs on the following game frame, not on a vsync
+    /// between the two.
+    // REF: FUN_8003BC08, FUN_8003774C
+    pub player_landed_hold: bool,
+    /// The NPC placements whose walk, turn or face-at leg landed on the last
+    /// game frame - [`Self::player_landed_hold`] for NPCs.
+    pub npc_landed_hold: Vec<u8>,
     /// Ticks left on the **scene-bank** clip the timeline last poked onto the
     /// player (`A2 F8 <move_id>` with the party-bank bit down): the clip's
     /// end-latch length at its own step (`legaia_engine_vm::actor_tick::clip_end_ticks`).
@@ -560,6 +572,8 @@ impl CutsceneTimeline {
             npc_walks: Vec::new(),
             npc_facings: Vec::new(),
             npc_faces: Vec::new(),
+            player_landed_hold: false,
+            npc_landed_hold: Vec::new(),
             player_clip_ticks: 0,
             player_clip_wait: None,
             npc_clip_spin_frames: 0,

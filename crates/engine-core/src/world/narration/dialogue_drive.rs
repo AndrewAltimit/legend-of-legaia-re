@@ -956,6 +956,18 @@ impl World {
         &mut self,
         ramp: &mut legaia_engine_field::inline_dialogue::TalkFaceRamp,
     ) -> bool {
+        let speed = self.clock.display_frame_step.max(1);
+        self.step_player_face_leg_by(ramp, speed)
+    }
+
+    /// [`Self::step_player_face_leg`] spending `speed` vsyncs of the leg: a
+    /// cutscene record's legs advance one game frame at a time, by the
+    /// frame step (`DAT_1F800393`).
+    pub fn step_player_face_leg_by(
+        &mut self,
+        ramp: &mut legaia_engine_field::inline_dialogue::TalkFaceRamp,
+        speed: u16,
+    ) -> bool {
         let target = self.talk_face_target(ramp.program[4]);
         let player = self
             .player_actor_slot
@@ -970,7 +982,6 @@ impl World {
         let (Some((tx, tz)), Some((px, pz, yaw))) = (target, player) else {
             return true;
         };
-        let speed = self.clock.display_frame_step.max(1);
         let (yaw, done) = ramp.step(px, pz, yaw as u16, tx, tz, speed);
         if let Some(slot) = self.player_actor_slot
             && let Some(actor) = self.actors.get_mut(usize::from(slot))
@@ -992,6 +1003,18 @@ impl World {
         slot: u8,
         ramp: &mut legaia_engine_field::inline_dialogue::TalkFaceRamp,
     ) -> bool {
+        let speed = self.clock.display_frame_step.max(1);
+        self.step_npc_face_leg_by(slot, ramp, speed)
+    }
+
+    /// [`Self::step_npc_face_leg`] spending `speed` vsyncs of the leg (see
+    /// [`Self::step_player_face_leg_by`]).
+    pub fn step_npc_face_leg_by(
+        &mut self,
+        slot: u8,
+        ramp: &mut legaia_engine_field::inline_dialogue::TalkFaceRamp,
+        speed: u16,
+    ) -> bool {
         let bind = ramp.program[4];
         let target = if bind == 0xF8 {
             self.player_actor_slot
@@ -1006,7 +1029,6 @@ impl World {
         // A never-posed NPC stands at the retail spawn default `0` (engine
         // `0x800`).
         let yaw = self.npcs.headings.get(&slot).copied().unwrap_or(0x800);
-        let speed = self.clock.display_frame_step.max(1);
         let (yaw, done) = ramp.step(x, z, yaw as u16, tx, tz, speed);
         self.set_timeline_facing(Some(slot), yaw as i16);
         done

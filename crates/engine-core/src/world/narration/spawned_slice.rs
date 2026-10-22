@@ -166,10 +166,31 @@ impl World {
         // a leg that lands frees the player for the script only on the next
         // frame. `glide_hold` carries that frame.
         // REF: FUN_8003774C (the 0x37 / 0x41 arm), FUN_8003BC08
-        let mut glide_hold = false;
+        //
+        // Every leg below advances on the game-frame grid: the kernel spends
+        // the frame step `DAT_1F800393` once per game frame
+        // (`lbu s2,0x393` at `0x80037864`, the spend at `0x80037A10` for
+        // `0x38` and the `0x37` / `0x41` arm's), and nothing on the vsyncs
+        // between ([`legaia_engine_vm::frame_clock::FrameClock::script_frame_delta`]).
+        // A leg that lands keeps its actor held for the script through the
+        // rest of that game frame; the hold drops on the next one.
+        // REF: FUN_8003774C, FUN_8003BC08
+        let grid = self.clock.script_frame_delta();
+        if grid > 0 {
+            tl.player_landed_hold = false;
+            tl.npc_landed_hold.clear();
+        }
+        let mut glide_hold = tl.player_landed_hold;
         if let Some(mut glide) = tl.player_glide.take() {
-            if self.step_player_glide(&mut glide) {
+            if grid == 0 {
                 tl.player_glide = Some(glide);
+            } else {
+                glide.state.speed = grid;
+                if self.step_player_glide(&mut glide) {
+                    tl.player_glide = Some(glide);
+                } else {
+                    tl.player_landed_hold = true;
+                }
             }
             glide_hold = true;
         }
@@ -177,11 +198,18 @@ impl World {
         // kernel against a placement. A leg that lands this frame keeps its
         // actor held for the script until the next one, like `glide_hold`.
         // REF: FUN_8003774C (the 0x37 / 0x41 arm), FUN_8003BC08
-        let mut npc_glide_hold: Vec<u8> = Vec::new();
+        let mut npc_glide_hold: Vec<u8> = tl.npc_landed_hold.clone();
         for mut glide in std::mem::take(&mut tl.npc_glides) {
             npc_glide_hold.push(glide.slot);
+            if grid == 0 {
+                tl.npc_glides.push(glide);
+                continue;
+            }
+            glide.state.speed = grid;
             if self.step_npc_glide(&mut glide) {
                 tl.npc_glides.push(glide);
+            } else {
+                tl.npc_landed_hold.push(glide.slot);
             }
         }
         // NPC walk-to-tile legs (`C7 <id> ..`) run on the motion VM
@@ -203,6 +231,11 @@ impl World {
             if let Some(slot) = fw.slot {
                 npc_glide_hold.push(slot);
             }
+            if grid == 0 {
+                tl.npc_facings.push(fw);
+                continue;
+            }
+            fw.state.speed = grid;
             fw.frames += 1;
             let r = legaia_engine_motion_vm::motion_vm::step(
                 &mut fw.state,
@@ -216,6 +249,8 @@ impl World {
                 && fw.frames < WALK_PARK_TIMEOUT
             {
                 tl.npc_facings.push(fw);
+            } else if let Some(slot) = fw.slot {
+                tl.npc_landed_hold.push(slot);
             }
         }
         // NPC face-at legs (`CC <id> 85|8E|8F ..`): the target's walk kernel
@@ -224,10 +259,17 @@ impl World {
         // REF: FUN_8003774C (the 0x4C arm), FUN_8003BC08
         for mut face in std::mem::take(&mut tl.npc_faces) {
             npc_glide_hold.push(face.slot);
+            if grid == 0 {
+                tl.npc_faces.push(face);
+                continue;
+            }
             face.frames += 1;
-            if !self.step_npc_face_leg(face.slot, &mut face.ramp) && face.frames < WALK_PARK_TIMEOUT
+            if !self.step_npc_face_leg_by(face.slot, &mut face.ramp, grid)
+                && face.frames < WALK_PARK_TIMEOUT
             {
                 tl.npc_faces.push(face);
+            } else {
+                tl.npc_landed_hold.push(face.slot);
             }
         }
         // Player end-latch spin (`AD F8 08`): held while the scene-bank clip
@@ -257,12 +299,17 @@ impl World {
         // resume the record past the yield when the ramp snaps.
         // REF: FUN_8003774C (case 0x38 interpreted in place)
         if let Some(mut fw) = tl.facing_wait.take() {
-            fw.frames += 1;
-            let r = legaia_engine_motion_vm::motion_vm::step(
-                &mut fw.state,
-                legaia_engine_motion_vm::motion_vm::MotionTarget::default(),
-                &fw.program,
-            );
+            let r = if grid == 0 {
+                legaia_engine_motion_vm::motion_vm::StepResult::Yield
+            } else {
+                fw.state.speed = grid;
+                fw.frames += 1;
+                legaia_engine_motion_vm::motion_vm::step(
+                    &mut fw.state,
+                    legaia_engine_motion_vm::motion_vm::MotionTarget::default(),
+                    &fw.program,
+                )
+            };
             if fw.state.yaw_written {
                 // Raw write-back (`yaw` may sit outside 0..0xFFF mid-ramp,
                 // exactly as retail's `+0x26` does); render consumers mask.
@@ -289,9 +336,9 @@ impl World {
         // frame - see `CutsceneTimeline::player_face`.
         // REF: FUN_8003774C (the 0x4C arm)
         if let Some((mut ramp, resume_pc, frames)) = tl.player_face.take() {
-            let done = self.step_player_face_leg(&mut ramp);
+            let done = grid > 0 && self.step_player_face_leg_by(&mut ramp, grid);
             if !done && frames < WALK_PARK_TIMEOUT {
-                tl.player_face = Some((ramp, resume_pc, frames + 1));
+                tl.player_face = Some((ramp, resume_pc, frames + u32::from(grid > 0)));
                 self.field_vm.channels = channels;
                 self.field_vm.stepping_view.clear();
                 self.cutscene.in_timeline = false;
@@ -743,8 +790,11 @@ impl World {
                     // tick, so the leg spends its first unit on the arming
                     // frame (the player arm does the same).
                     tl.npc_glides.retain(|g| g.slot != slot);
-                    if host.world.step_npc_glide(&mut glide) {
+                    glide.state.speed = grid;
+                    if grid == 0 || host.world.step_npc_glide(&mut glide) {
                         tl.npc_glides.push(glide);
+                    } else {
+                        tl.npc_landed_hold.push(slot);
                     }
                     npc_glide_hold.push(slot);
                     tl.pc = pc + 4;
@@ -817,9 +867,34 @@ impl World {
                     // Only a player target parks the caller; an NPC's turn
                     // plays out while the record runs on (`li s7,3` in the
                     // delay slot at `0x801DEEFC`).
-                    if slot.is_some() {
+                    if let Some(npc) = slot {
                         tl.npc_facings.retain(|f| f.slot != slot);
-                        tl.npc_facings.push(leg);
+                        let mut leg = leg;
+                        let mut live = true;
+                        // The placements tick after the spawned records
+                        // (list `_DAT_8007C354` behind `_DAT_8007C34C`), so
+                        // on the game-frame grid the kernel takes the turn's
+                        // first frame in the frame that armed it, as it does
+                        // a walk's.
+                        if grid > 0 && host.world.clock.game_tick_live {
+                            leg.state.speed = grid;
+                            leg.frames += 1;
+                            let r = legaia_engine_motion_vm::motion_vm::step(
+                                &mut leg.state,
+                                legaia_engine_motion_vm::motion_vm::MotionTarget::default(),
+                                &leg.program,
+                            );
+                            if leg.state.yaw_written {
+                                host.world.set_timeline_facing(slot, leg.state.yaw as i16);
+                            }
+                            live = r != legaia_engine_motion_vm::motion_vm::StepResult::Done;
+                        }
+                        if live {
+                            tl.npc_facings.push(leg);
+                        } else {
+                            tl.npc_landed_hold.push(npc);
+                        }
+                        npc_glide_hold.push(npc);
                         tl.pc = pc + 4;
                         continue;
                     }
@@ -859,8 +934,10 @@ impl World {
                     };
                     tl.npc_faces.retain(|f| f.slot != slot);
                     tl.npc_facings.retain(|f| f.slot != Some(slot));
-                    if !host.world.step_npc_face_leg(slot, &mut face.ramp) {
+                    if grid == 0 || !host.world.step_npc_face_leg_by(slot, &mut face.ramp, grid) {
                         tl.npc_faces.push(face);
+                    } else {
+                        tl.npc_landed_hold.push(slot);
                     }
                     npc_glide_hold.push(slot);
                     tl.pc = pc + 6;
@@ -1006,8 +1083,11 @@ impl World {
                                 resume_pc: pc + 4,
                                 frames: 0,
                             };
-                        if host.world.step_player_glide(&mut glide) {
+                        glide.state.speed = grid;
+                        if grid == 0 || host.world.step_player_glide(&mut glide) {
                             tl.player_glide = Some(glide);
+                        } else {
+                            tl.player_landed_hold = true;
                         }
                         glide_hold = true;
                         tl.pc = pc + 4;
@@ -1433,8 +1513,21 @@ impl World {
         // channels never write through: their `placement_index` is a FLAT
         // record index, not a placement slot, and the NPC surfaces are
         // placement-keyed.
+        // A placement a compass walk moved in this slice keeps the walk's
+        // position: the kernel steps the live `+0x14` / `+0x18` after any
+        // seat the same slice wrote (`town0c` `P1[21]` seats Nene with
+        // `CC 3B 51` and walks her with `C1 3B 02 46` on one game frame).
+        let walked: Vec<u8> = tl
+            .npc_glides
+            .iter()
+            .map(|g| g.slot)
+            .chain(tl.npc_landed_hold.iter().copied())
+            .collect();
         for (c, pre) in channels.iter().zip(channel_pre_pos) {
-            if !c.object_bind && (c.ctx.world_x, c.ctx.world_z) != pre {
+            if !c.object_bind
+                && (c.ctx.world_x, c.ctx.world_z) != pre
+                && !walked.contains(&(c.placement_index as u8))
+            {
                 self.npcs.positions.insert(
                     c.placement_index as u8,
                     (c.ctx.world_x as i16, c.ctx.world_z as i16),

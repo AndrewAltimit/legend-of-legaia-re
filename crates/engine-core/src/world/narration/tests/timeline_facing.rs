@@ -395,3 +395,50 @@ fn a_walk_on_a_turning_npc_waits_for_the_turn() {
         "the walk waited out the turn's budget (armed at {t})"
     );
 }
+
+/// On the game-frame grid an NPC compass walk spends the frame step once a
+/// game frame and nothing between, and the op after it on the same actor
+/// waits through the rest of the frame the leg lands on. `C1 05 02 41` is
+/// eight units (`div 8`, rate `0x40`: eight world units a unit) at step 2:
+/// four game frames, the first being the arming one.
+#[test]
+fn an_npc_walk_advances_on_the_game_frame_grid() {
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    let mut w = timeline_with_npc_facing_op(0x82, 0x00, 0x000);
+    // `C1 05 02 41` (walk -X), `B8 05 84 00` (instant turn), long wait.
+    w.cutscene.timeline = Some(CutsceneTimeline::new(
+        vec![
+            0xC1, 0x05, 0x02, 0x41, 0xB8, 0x05, 0x84, 0x00, 0x4A, 0xFF, 0x7F,
+        ],
+        0,
+    ));
+    w.clock.game_tick_live = true;
+    w.clock.frame_step = 2;
+    let mut xs = Vec::new();
+    let mut freed_at = None;
+    for vsync in 0..12 {
+        w.clock.game_tick_fired = vsync % 2 == 0;
+        w.step_cutscene_timeline();
+        xs.push(w.npcs.positions.get(&5).map(|p| p.0));
+        let tl = w.cutscene.timeline.as_ref().expect("timeline installed");
+        if freed_at.is_none() && tl.pc > 4 {
+            freed_at = Some(vsync);
+        }
+    }
+    // 16 world units a game frame, held on the vsync between.
+    assert_eq!(
+        &xs[..8],
+        &[
+            Some(984),
+            Some(984),
+            Some(968),
+            Some(968),
+            Some(952),
+            Some(952),
+            Some(936),
+            Some(936)
+        ]
+    );
+    // Landed on the game frame at vsync 6; the turn runs on the next one.
+    assert_eq!(freed_at, Some(8));
+}

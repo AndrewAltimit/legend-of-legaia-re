@@ -1557,10 +1557,26 @@ counts the same display frames, and `World::clock.display_frames` counts elapsed
 for consumers that advance in retail-frame time - the camera glide diffs it rather than counting
 ticks.
 
-What a record times through an actor is not on the frame grid yet. An end-latch spin on a poked
-NPC clip (`AD <id> 08`) holds for the clip's length at the per-vsync step, where retail's actor
-tick steps the cursor once a game frame by `rate * step`: the opening record's four spins on
-flat 5 hold `27` / `57` / `27` / `60` vsyncs in retail and `30` / `60` / `29` / `60` in the engine.
+The legs a record runs on an actor are on the same grid. The walk kernel `FUN_8003774C` spends
+the frame step (`lbu s2,0x393` at `0x80037864`) once a game frame against a compass walk's or a
+turn's budget, and an actor's tick `FUN_8003BC08` runs it after the script runner
+(`0x8003BD34`, then `0x8003BD50`). The placements tick on the list behind the spawned records
+(`_DAT_8007C354` after `_DAT_8007C34C`), so a walk or turn a record arms on one takes its first
+step in the arming frame, and one that lands clears the actor's `0x400` after that frame's
+script slice: the record's next op on the actor runs on the following game frame. The engine
+steps every timeline leg - player and NPC compass walks, NPC turns and face-ats, the player's
+turn and face-at parks - by `FrameClock::script_frame_delta`, nothing on the vsyncs between game
+frames, and holds a landed actor until the next game frame
+(`CutsceneTimeline::player_landed_hold` / `npc_landed_hold`). Stepped one unit a vsync instead,
+a leg landed up to a frame early and the next op ran between two game frames, and the residue
+added up over a chain of legs: `map01`'s credits record (`P2[40]`, five player walks and turns)
+put Vahn about a dozen vsyncs ahead of its camera glide. The Door of Light arrival record
+(`map01` `P2[9]`, captured at step `2`) runs `295` vsyncs against retail's `294`.
+
+An end-latch spin on a poked NPC clip (`AD <id> 08`) is not on the grid yet: it holds for the
+clip's length at the per-vsync step, where retail's actor tick steps the cursor once a game
+frame by `rate * step`: the opening record's four spins on flat 5 hold `27` / `57` / `27` /
+`60` vsyncs in retail and `30` / `60` / `29` / `60` in the engine.
 
 The disc-gated oracle
 [`opening_chain_wall_time`](../../crates/engine-scene-host/tests/opening_chain_wall_time.rs) pins the

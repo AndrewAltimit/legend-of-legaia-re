@@ -2555,7 +2555,7 @@ Shapes the corpus separates, each with what it indicates:
 | retail's camera focus thousands of units off its player (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | a focus left behind - a probe poke, or a script carrying a movement-locked player; the seed lands retail's focus ([below](#a-poked-player-keeps-the-arrival-focus)) |
 | a town label over the overworld's `H`, word `2000` and fog gate | a door caught before the town's field init ran; scored as the overworld `0x80084540` names ([below](#arrival-states-are-captured-before-the-town-runs)) |
 | retail word held by a flag the entry script already consumed (`garmel`'s `0x196`) | script progress: the track was started by a beat that has since cleared its trigger flag, so a card load would not restart it |
-| camera depth and position off on an ending vignette (`ending_vignette_rimelm_walkaway`) | a residue of about a dozen frames of the credits walk against the camera glide ([below](#ending-vignettes-are-mid-script)) |
+| camera depth and position off on an ending vignette (`ending_vignette_rimelm_walkaway`) | the credits walk against the camera glide: a frame of residue left ([below](#ending-vignettes-are-mid-script)) |
 | a translucent near-camera body brighter or wider in the engine frame (`theeder_summon_mid_cast`, `nivora_duel_pre_megaton_press`) | the near-camera ghost (`0x8300_0000`, bank 2, `B + F/4`) a frame or two off the displayed one, not a blend defect ([below](#a-near-camera-ghost-is-checked-against-retails-own-packets)) |
 
 ### A near-camera ghost is checked against retail's own packets
@@ -3036,10 +3036,12 @@ player still walking the compass leg `C1 F8 03 C4` at `+0x93` (the player's
 the compass-walk arm's own shape: it seats the leg on the player and returns
 past the op, and the `B8 F8` waits in the dispatcher prologue until the leg
 lands. The `45 0B` glide after `+0x6E` likewise starts with the `+0x6E` leg,
-not after it. The engine plays the walk the same way, and the gated state
-lands within a few dozen units of retail's player; what remains is about a
-dozen frames between the walk and the glide (retail's glide is 123 frames
-in after 111 walked units, the engine's after 123).
+not after it. The engine plays the walk the same way. Its legs once
+stepped one unit a vsync and freed the next op on the vsync after a landing,
+which put Vahn about a dozen vsyncs ahead of the glide over the record's five
+walks and turns; on the game-frame grid
+([cutscene](../subsystems/cutscene.md#record-pacing---the-60-hz-sub-clock))
+the gated state stands `8` units from retail's player.
 
 The frame matches once the overworld scales about the right point. The
 credits walk holds the focus `(12091, 3449)` about a hundred units off the
