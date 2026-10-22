@@ -186,6 +186,9 @@ pub struct AudioDirector<S: AudioSink> {
     /// retail mode init (`FUN_8001DCF8`), which tears down the held
     /// sustained cue run (`FUN_80017910` at `0x8001DDA8`).
     sfx_in_battle: Option<bool>,
+    /// The CD input's reverb send last handed the output
+    /// ([`Self::set_cd_reverb`]); `SPUCNT` bit 2, clear at boot.
+    cd_reverb: bool,
     /// The command record ([`Self::commands`]).
     commands: AudioCommandLog,
 }
@@ -252,6 +255,7 @@ impl<S: AudioSink> AudioDirector<S> {
             resident_slot0: None,
             sfx_evicted: false,
             sfx_in_battle: None,
+            cd_reverb: false,
             commands: AudioCommandLog::default(),
         }
     }
@@ -265,6 +269,25 @@ impl<S: AudioSink> AudioDirector<S> {
     /// The audio output the director keys into.
     pub fn audio(&self) -> &Arc<S> {
         &self.audio
+    }
+
+    /// Route the CD input (every XA stream) into the SPU's reverb send, or
+    /// stop - `SPUCNT` bit 2, which retail raises only in the Baka Fighter
+    /// duel and the Muscle Dome hub
+    /// ([`legaia_engine_core::world::World::cd_input_reverb`]). Acts and
+    /// logs on the edge only.
+    pub fn set_cd_reverb(&mut self, on: bool) {
+        if self.cd_reverb == on {
+            return;
+        }
+        self.cd_reverb = on;
+        self.commands.push(AudioCommand::CdReverb(on));
+        self.audio.set_cd_reverb(on);
+    }
+
+    /// The CD input's reverb send as last set ([`Self::set_cd_reverb`]).
+    pub fn cd_reverb(&self) -> bool {
+        self.cd_reverb
     }
 }
 

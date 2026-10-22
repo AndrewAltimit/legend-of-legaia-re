@@ -887,7 +887,7 @@ Every reader of the cell is a volume setter. Across the dumped corpus it has 26 
 |---|---|
 | `FUN_800267A8` | halves it (`<< 15`, then arithmetic `>> 16`) into `FUN_80062004`, which is `SsSeqSetVol(slot, channel 0, vol, ...)` via `FUN_80061EDC` |
 | `FUN_80026478` | hands the same halved value to `FUN_8002657C`, which writes it as **both** channels of `FUN_80064890(slot, vol_l, vol_r)` (symmetric, so not a pan) |
-| four `SpuSetCommonAttr` sites (`FUN_8006BCB4`) | build an `SpuCommonAttr` on the stack with the cell in the CD-volume pair |
+| the minigame overlays' `SpuSetCommonAttr` sites (`FUN_8006BCB4`) | stack the cell in the `cd.volume` pair under mask `0x300`, which applies only CD reverb and CD mix, so the volume is not written ([`audio.md`](audio.md#the-cd-input-enable-volume-and-reverb-send)) |
 | cold reset `FUN_8001FFA4` | seeds it `0xD7` beside its persistent reference, then calls the audio-context volume re-apply `FUN_8002614C(0)` |
 
 The **screen fade is a different scalar**: `_DAT_8007B440`, drawn each frame by the wipe / curtain emitter `FUN_8003479C` (clamped `0xF2`). It is ramped by the function at VA `0x801ED308` in the menu / cutscene overlay family (see `ghidra/scripts/funcs/801ed308.txt`: own prologue, `jal 0x8003479c` at `0x801ED3F0` / `0x801ED4BC` / `0x801ED510`). Name the overlay when citing that VA: in the **battle** image `0x801ED308` is interior to `FUN_801EC3E4` (the underdog-rewrite arm's power-scalar read), which touches `_DAT_8007B440` nowhere. The two scalars ramp together, because a summon dims the screen and ducks the music.

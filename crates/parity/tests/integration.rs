@@ -25,6 +25,7 @@ mod battle_party_palette_retail_capture;
 mod battle_party_pose_live;
 mod battle_stage_live;
 mod cast_sequence_pairing;
+mod cd_input_parity;
 mod chapter1_frontier_ladder;
 mod chest_randomizer_runtime_e2e;
 mod door_randomizer_runtime_e2e;

@@ -349,6 +349,49 @@ fn a_won_leg_mid_ladder_stays_in_the_arena_and_stages_the_next_fight() {
     assert!(!w.muscle_hub_between_legs(), "the new leg owns the arena");
 }
 
+/// The CD input's reverb send (`SPUCNT` bit 2) follows the arena's own
+/// writes: up while the hub owns the frame (`FUN_801CEA6C`), down once a
+/// leg is fought (`FUN_801D1510`) and back in the field.
+#[test]
+fn the_cd_reverb_send_is_up_in_the_hub_and_down_in_a_leg() {
+    use legaia_engine_mode::mode::SceneMode;
+    use legaia_engine_system::input::PadButton;
+    let mut w = world_with_contest();
+    w.mode = SceneMode::Field;
+    assert!(!w.cd_input_reverb(), "the field leaves the bit clear");
+    let card = legaia_engine_menus::muscle_dome_session::MuscleCard {
+        command_id: 0x0C,
+        cost: 0x1E,
+    };
+    let mut s = legaia_engine_menus::muscle_dome_session::MuscleDomeSession::new(
+        [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
+        [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
+        [120, 120],
+        [400, 1],
+        1,
+    );
+    assert!(s.commit_card(0, 0));
+    s.end_selection();
+    s.resolve_turn(|attacker, _| if attacker == 0 { 5 } else { 0 });
+    w.enter_muscle_dome(s);
+    assert!(
+        !w.cd_input_reverb(),
+        "a leg with no hub screen over it is fought dry"
+    );
+    w.set_pad(0);
+    let _ = w.tick();
+    w.set_pad(PadButton::Cross.mask());
+    let _ = w.tick();
+    assert!(w.muscle_hub_between_legs());
+    assert!(
+        w.cd_input_reverb(),
+        "the between-legs hub routes the CD input"
+    );
+    w.leave_muscle_dome();
+    assert_eq!(w.mode, SceneMode::Field);
+    assert!(!w.cd_input_reverb(), "leaving the arena drops the bit");
+}
+
 /// The hub kernel both play hosts drive plays the INTERVAL screen and the
 /// re-entered hub's ROUND card over the still, and only then asks for the
 /// next fight - once.

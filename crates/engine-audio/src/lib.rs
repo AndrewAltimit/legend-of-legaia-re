@@ -413,8 +413,24 @@ impl StreamResampler {
                 seq.tick_sample(&mut self.spu);
             }
             self.prev = self.cur;
-            // Mix SPU output with master-fade applied.
-            let spu_sample = self.spu.tick();
+            // This sample's CD input: the XA stream, if one is attached.
+            let mut xa_sample = None;
+            if let Some(xa) = self.xa.as_mut() {
+                if xa.is_done() {
+                    // Active shout exhausted: promote a queued shout (if any)
+                    // so back-to-back arts don't lose the later clip's audio.
+                    self.xa = self.pending_xa.take();
+                    if let Some(next) = self.xa.as_mut() {
+                        xa_sample = Some(next.tick_for_spu());
+                    }
+                } else {
+                    xa_sample = Some(xa.tick_for_spu());
+                }
+            }
+            // Mix SPU output with master-fade applied. The SPU sees the CD
+            // input for its reverb send (`Spu::cd_reverb`, off outside the
+            // two minigames that raise it).
+            let spu_sample = self.spu.tick_with_cd_input(xa_sample.unwrap_or((0, 0)));
             let fv = self.master_fade;
             let spu_faded = if fv >= 1.0 {
                 spu_sample
@@ -422,20 +438,10 @@ impl StreamResampler {
                 apply_fade(spu_sample, fv)
             };
             let mut sample = spu_faded;
-            // XA is mixed in after the fade - not subject to BGM crossfade.
-            if let Some(xa) = self.xa.as_mut() {
-                if xa.is_done() {
-                    // Active shout exhausted: promote a queued shout (if any)
-                    // so back-to-back arts don't lose the later clip's audio.
-                    self.xa = self.pending_xa.take();
-                    if let Some(next) = self.xa.as_mut() {
-                        let xa_sample = next.tick_for_spu();
-                        sample = mix_stereo(sample, xa_sample);
-                    }
-                } else {
-                    let xa_sample = xa.tick_for_spu();
-                    sample = mix_stereo(sample, xa_sample);
-                }
+            // XA's dry path is mixed in after the fade - not subject to BGM
+            // crossfade.
+            if let Some(xa_sample) = xa_sample {
+                sample = mix_stereo(sample, xa_sample);
             }
             self.cur = sample;
             self.phase -= 1.0;

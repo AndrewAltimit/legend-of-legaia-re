@@ -80,6 +80,17 @@ pub struct Spu {
     /// [`Voice::bus`]'s gain before it reaches the dry mix and the reverb
     /// send. Unity on both (the default) is the retail mix, bit-identical.
     pub bus_gain: [u16; 2],
+    /// `SPUCNT` bit 2, "CD audio reverb": the CD input (the decoded XA the
+    /// host mixes beside the voices) also feeds the reverb send. libspu's
+    /// `SpuSetCommonAttr` writes it from `cd.reverb` under mask `0x100`.
+    /// Off at boot and everywhere but two minigame overlays, which raise it
+    /// on entry and drop it on the way out: the Baka Fighter init
+    /// `FUN_801CF00C` and the Muscle Dome contest (re-)entry `FUN_801CEA6C`
+    /// set it, the dome's opponent installer `FUN_801D1510`, its settlement
+    /// `FUN_801D0F60` and the shared exit clear it. The library states agree
+    /// (`SPUCNT = 0xC085` in the duel and the dome hub, `0xC081` elsewhere).
+    /// Off, the mix is bit-identical to a model without the bit.
+    pub cd_reverb: bool,
 }
 
 impl Default for Spu {
@@ -94,6 +105,7 @@ impl Default for Spu {
             reverb_mode_raw: 0,
             mono: false,
             bus_gain: [BUS_GAIN_UNITY; 2],
+            cd_reverb: false,
         }
     }
 }
@@ -196,6 +208,15 @@ impl Spu {
     /// (44.1 kHz). Returns the (left, right) sample, master-volume scaled
     /// and clamped to i16.
     pub fn tick(&mut self) -> (i16, i16) {
+        self.tick_with_cd_input((0, 0))
+    }
+
+    /// [`Self::tick`] with this sample's CD input: the decoded XA stream the
+    /// host mixes in beside the voices. The CD input's dry path stays with
+    /// the host (it rides outside the BGM fade); what the SPU owns is the
+    /// reverb send, which takes the CD input when [`Self::cd_reverb`] is
+    /// set - `SPUCNT` bit 2, the hardware's "CD audio reverb" enable.
+    pub fn tick_with_cd_input(&mut self, cd: (i16, i16)) -> (i16, i16) {
         let mut acc_l: i64 = 0;
         let mut acc_r: i64 = 0;
         let mut send_l: i64 = 0;
@@ -223,6 +244,10 @@ impl Spu {
                 send_l += l as i64;
                 send_r += r as i64;
             }
+        }
+        if self.cd_reverb {
+            send_l += cd.0 as i64;
+            send_r += cd.1 as i64;
         }
         // Drive the reverb network with the reverb-tagged voices' sum.
         let send_l_i16 = send_l.clamp(i16::MIN as i64, i16::MAX as i64) as i16;
@@ -404,5 +429,27 @@ mod tests {
             assert_eq!(ml, mr);
             assert_eq!(ml, sl, "both sides take the louder (left) volume");
         }
+    }
+
+    /// `SPUCNT` bit 2: with it clear the CD input never reaches the network
+    /// (the SPU output is silent with no voice sounding, whatever the CD
+    /// carries); with it set the CD input drives the reverb send, and the
+    /// network's wet tail comes back through the SPU output.
+    #[test]
+    fn cd_input_feeds_the_reverb_send_only_with_cd_reverb_set() {
+        let render = |cd_reverb: bool| {
+            let mut spu = Spu::new();
+            spu.set_retail_reverb();
+            spu.cd_reverb = cd_reverb;
+            (0..8192)
+                .map(|i| spu.tick_with_cd_input(if i < 2048 { (8000, -8000) } else { (0, 0) }))
+                .collect::<Vec<_>>()
+        };
+        assert!(render(false).iter().all(|&s| s == (0, 0)));
+        let wet = render(true);
+        assert!(
+            wet[2048..].iter().any(|&(l, r)| l != 0 || r != 0),
+            "the reverb tail outlives the CD burst"
+        );
     }
 }

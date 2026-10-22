@@ -39,6 +39,9 @@ pub enum AudioCommand {
     XaClip(u32, u32, u32),
     /// An arts-voice shout request: `(character slot, action)`.
     Shout(u8, u8),
+    /// The CD input's reverb send turned on or off (`SPUCNT` bit 2), logged
+    /// on the edge.
+    CdReverb(bool),
 }
 
 /// How many recent commands [`AudioCommandLog::recent`] keeps for a report.

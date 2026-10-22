@@ -1186,7 +1186,8 @@ Sits underneath the SsAPI sequencer and drives the SPU hardware directly. PsyQ `
 | `_DAT_8007AF40` | SPU register base pointer (SPU MMIO at `0x1F801C00..0x1F801E00`). |
 | `_DAT_8007AF40 + 0x180/0x182` | `MAIN_VOL_L/R`. |
 | `_DAT_8007AF40 + 0x1AA` | `SPUCNT` (control register). |
-| `_DAT_8007AF40 + 0x1B0/0x1B2` | `REVERB_VOL_L/R`. |
+| `_DAT_8007AF40 + 0x184/0x186` | Reverb output volume `vLOUT/vROUT` (`SpuSetReverbDepth`). |
+| `_DAT_8007AF40 + 0x1B0/0x1B2` | CD input volume L/R (`SpuCommonAttr.cd.volume`, [the CD input](#the-cd-input-enable-volume-and-reverb-send)). |
 | `_DAT_8007AF40 + 0x1C0..0x1FE` | Reverb config block (APF1, COMB1-4, IIR_ALPHA, …). |
 | `_DAT_8007AF68` | SPU address-shift (typically `3` - the SPU 8-byte-word scale). |
 | `_DAT_8007AF6C` | SPU address-alignment granule. |
@@ -1282,6 +1283,59 @@ Boundaries:
 - Mode selection via `Spu::write_reverb_mode_byte(raw)` matches the libspu byte API (1=Room, 2=StudioA, …, 9=Pipe). Out-of-range bytes fall back to `Off`. This is the engine half of `SpuSetReverbModeParam` (`FUN_8006B1B4`, the 30-attribute commit).
 - The network runs behind the hardware's 39-tap half-band FIR on both sides (44.1 kHz ↔ 22.05 kHz): the send is low-passed before it is decimated into the tank, and the tank's output is zero-stuffed back up through the same kernel - the centre sample passes through on one phase, the 20 even taps interpolate the other at gain 2. The coefficients are the published hardware-reference table. Plain decimation would fold send content above 11 kHz back into the tank at full level; the FIR takes it out.
 - Output volume (`vLOUT`/`vROUT`) isn't part of the mode preset on hardware (libspu sets it separately via `SpuSetReverbDepth`); the engine installs the measured depth, overridable with `Reverb::set_output_volume`.
+
+#### The CD input: enable, volume and reverb send
+
+Every CD-XA line - battle voices, announcer lines, movie audio - reaches the
+mix through the SPU's CD input, not through a voice. Three registers carry it,
+and the library states pin each:
+
+| Register | Retail | Port |
+|---|---|---|
+| `SPUCNT` bit 0, CD audio enable | set in every state | XA is always mixed |
+| `0x1F801DB0/B2`, CD input volume | `0` between lines, `0x7FFE` while one plays, `0x75EA` in some battle states | every stream at unity (`XA_GAIN_UNITY`) |
+| `SPUCNT` bit 2, CD audio reverb | set in the Baka Fighter duel and the Muscle Dome hub only | `Spu::cd_reverb`, from `World::cd_input_reverb` |
+
+The volume is libsnd's `SsSetSerialVol` (`FUN_800643C4`): `vol * 0x102`,
+`vol` clamped to `127` (`sll 7; addu; sll 1` at `0x80064414..0x8006441C`)
+under mask `0xC0`. The clip starter `FUN_8003D53C` mutes it through
+`FUN_8003EE7C(0)` at `0x8003D6DC` while it seeks; the audio-context re-apply
+`FUN_8002614C` and `FUN_8002657C` raise it to `127` (`li a1,0x3fff`, clamped).
+`127 * 0x102 = 0x7FFE` is one LSB under unity, the gain the port mixes at.
+`0x75EA = 117 * 0x102` has no located writer: no `jal` to `FUN_800643C4`,
+`FUN_8003EE7C` or `SpuSetCommonAttr` (`FUN_8006BCB4`) on the disc, and no
+direct store to `0x1F801DB0`, passes `117`
+([open item](#open-items)).
+
+The reverb bit is `SpuCommonAttr.cd.reverb` under mask `0x100`. libsnd's
+wrapper `SsSetSerialAttr` (`FUN_80062A0C`) could write it, but every call site
+on the disc passes the mix attribute. Two minigame overlays write mask `0x300` -
+CD reverb and CD mix - through `SpuSetCommonAttr` directly:
+
+| Site | Overlay | Routine | `cd.reverb` |
+|---|---|---|---|
+| `0x801CF364` | PROT 0976 | Baka Fighter init `FUN_801CF00C` | `1` |
+| `0x801CF054` | PROT 0977 | Muscle Dome contest init / re-entry `FUN_801CEA6C` | `1` |
+| `0x801D153C` | PROT 0977 | opponent installer `FUN_801D1510` | `0` |
+| `0x801D0F9C` | PROT 0977 | contest settlement `FUN_801D0F60` | `0` |
+| `0x801D1F10` | 0976 and 0977 (file `+0x36F8`) | the shared exit into `FUN_80026018` | `0` |
+
+So an announcer line rings through Studio C for the whole duel and while the
+dome hub owns the frame (the first visit, the ROUND card, the between-legs
+INTERVAL), and a dome leg is fought dry. The same stack slot carries the live
+audio level `_DAT_8007B910` in `cd.volume`, but the mask leaves the volume
+alone. Capture: `SPUCNT = 0xC085` in the duel and dome-hub library states,
+`0xC081` in the other 96.
+
+Port: `Spu::tick_with_cd_input` adds the XA sample to the reverb send when
+`Spu::cd_reverb` is set; the XA's dry path stays where it was, after the BGM
+fade. `BootSession::step_audio_frame` (and the two minigame XA starters) hand
+`World::cd_input_reverb` to `AudioDirector::set_cd_reverb`, which logs the edge
+as `AudioCommand::CdReverb`; the minigames page raises it on the one XA lane it
+has, which only the duel and the hub start. With the bit clear the mix is
+bit-identical. Oracle: `parity/tests/cd_input_parity.rs` (all three registers,
+every library state); `engine-session/tests/cd_reverb_minigame_disc.rs` (the
+door warp reaches the mix core).
 
 ### Voice resampler - 4-point Gaussian interpolation (engine-audio)
 
@@ -2381,6 +2435,7 @@ anything read off a captured envelope.
 | Per-vsync voice state | PCSX-Redux save-state dump per vsync | pitch / ADSR-word vocabulary of the sounding voices | good for register writes, not for envelopes |
 | Key-on census | PCSX-Redux breakpoint on `SpuSetKey` | every note the score keys, with timing | exact |
 | Per-voice programming | every library mednafen state | pitch, ADSR words, L/R volume, reverb send of each sequence voice; the duck's volume law | exact per state (`parity/tests/mednafen_voice_parity.rs`) |
+| CD input | every library mednafen state | CD audio enable, CD input volume, CD reverb send ([above](#the-cd-input-enable-volume-and-reverb-send)) | exact per state (`parity/tests/cd_input_parity.rs`) |
 
 ### Capture shapes and the trace record
 
@@ -2709,6 +2764,11 @@ census above covers the battle theme's notes once it is playing.
   engine counterpart: the port has no drive to seek.
 - **SPU transfer timing** is not modelled, which is the one-key-on residual on
   `dolk2_market_noa`.
+- **The `0x75EA` CD input volume.** Seven battle states hold the CD input at
+  `117 * 0x102` against `127 * 0x102` everywhere else a line plays; the
+  writer is not located and the port mixes every XA stream at unity
+  ([above](#the-cd-input-enable-volume-and-reverb-send)). A write-watch on
+  `0x1F801DB0` across a battle voice cue names it.
 - **Two emitter inputs are constants.** The per-row scale pair `0x80091658`
   reads `0x80` in every captured state and has no traced writer, and the port
   folds mono at mix time (`Spu::mono`, the larger side) where the emitter arm

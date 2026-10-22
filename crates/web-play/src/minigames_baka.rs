@@ -957,6 +957,10 @@ impl LegaiaMinigames {
         self.baka_xa_fired = self.baka_xa_fired.wrapping_add(1);
         #[cfg(target_arch = "wasm32")]
         if let Some(out) = self.audio_out.as_ref() {
+            // Every line this lane starts is the duel's or the dome hub's,
+            // the two places retail routes the CD input into the reverb send
+            // (`SPUCNT` bit 2; `World::cd_input_reverb` on the play hosts).
+            out.set_cd_reverb(true);
             let channels = if pcm.stereo {
                 legaia_xa::Channels::Stereo
             } else {

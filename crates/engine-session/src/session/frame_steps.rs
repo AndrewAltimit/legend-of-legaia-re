@@ -475,9 +475,11 @@ impl<S: AudioSink> BootSession<S> {
     // REF: FUN_801D1288, FUN_8003D53C
     pub fn sound_muscle_hub(&mut self) {
         let frame = self.host.world.take_muscle_hub_sounds();
+        let cd_reverb = self.host.world.cd_input_reverb();
         let Some(bgm) = self.bgm.as_mut() else {
             return;
         };
+        bgm.set_cd_reverb(cd_reverb);
         if let Some(c) = frame.xa {
             let fired = bgm
                 .play_xa_clip(
@@ -522,9 +524,11 @@ impl<S: AudioSink> BootSession<S> {
         else {
             return;
         };
+        let cd_reverb = self.host.world.cd_input_reverb();
         let Some(bgm) = self.bgm.as_mut() else {
             return;
         };
+        bgm.set_cd_reverb(cd_reverb);
         let fired = bgm
             .play_xa_clip(u32::from(xa.clip), u32::from(xa.chan), u32::from(xa.dur))
             .is_some();
@@ -609,7 +613,9 @@ impl<S: AudioSink> BootSession<S> {
         // A field script's duck (op `4C 4D`) re-targets the same ramp the
         // battle's summon / capture arms drive.
         let duck = self.host.world.take_field_audio_duck();
+        let cd_reverb = self.host.world.cd_input_reverb();
         let bgm = self.bgm.as_mut()?;
+        bgm.set_cd_reverb(cd_reverb);
         if let Some(pct) = duck {
             bgm.set_duck_pct(pct);
         }

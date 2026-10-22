@@ -14,6 +14,7 @@ mod battle_party_forms_headless;
 mod battle_xa_clip_bank;
 mod bgm_scene_resolution;
 mod cast_voice_lazy_stage;
+mod cd_reverb_minigame_disc;
 mod dance_sfx_disc;
 mod dead_target_redirect_disc;
 mod dialog_font_metrics;
