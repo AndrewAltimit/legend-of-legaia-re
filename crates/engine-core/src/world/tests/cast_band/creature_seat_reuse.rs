@@ -26,6 +26,22 @@ fn dirty_seat(world: &mut World, slot: usize) {
     b.render_color = 688;
     b.flag_word = 0x8100_0000;
     b.impact_state = 3;
+    // A shattering creature's word, and an after-image history whose
+    // frames clear the ring-id gate.
+    b.shatter = 0x800;
+    let frame = crate::world::BattleGhostFrame {
+        pose: legaia_anm::player::PoseFrame {
+            bone_outputs: Vec::new(),
+            factor: 0,
+            finished: false,
+        },
+        pos: [1, 2, 3],
+        ghost_eligible: true,
+        clip_key: 4,
+        variant_track: Default::default(),
+        frame: 5,
+    };
+    world.actors[slot].battle_pose_history = std::iter::repeat_n(frame, 32).collect();
 }
 
 #[test]
@@ -43,6 +59,13 @@ fn the_installer_resets_a_reused_seats_presentation_words() {
         "+0x21C = 0: the stale defeat fade is gone"
     );
     assert_eq!(b.impact_state, 0, "+0x21F = 0");
+    assert_eq!(b.shatter, 0, "+0x1BA = 0 (`0x801F1E94`)");
+    // `+0x1FB..+0x21A` zeroed (`0x801F1E98..0x801F1EB0`): no frame of the
+    // ring is a ghost, and the rings it does not touch keep their bytes.
+    let hist = &world.actors[9].battle_pose_history;
+    assert_eq!(hist.len(), 32);
+    assert!(hist.iter().all(|f| !f.ghost_eligible));
+    assert!(hist.iter().all(|f| f.pos == [1, 2, 3] && f.clip_key == 4));
 }
 
 #[test]

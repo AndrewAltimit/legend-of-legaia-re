@@ -3190,7 +3190,12 @@ Its window first applies at the clip's first commit.
 
 The seat's presentation words it does reset: colour `+0x04 = -1`
 (`0x801F1D5C`), mode word `+0x08 = 0` (`0x801F1D68`), tint state
-`+0x21C = 0` (`0x801F1E7C`) and impact selector `+0x21F = 0` (`0x801F1E88`).
+`+0x21C = 0` (`0x801F1E7C`), impact selector `+0x21F = 0` (`0x801F1E88`),
+the shatter word `+0x1BA = 0` (`0x801F1E94`), and the 32-byte
+committed-anim-id ring `+0x1FB..+0x21A` (`0x801F1E98..0x801F1EB0`) that
+`FUN_80047430` shifts each frame and the after-image walk `FUN_80049348`
+gates on (`0x10 < id`). The position, cursor and entry rings beside it keep
+their bytes.
 A previous creature can leave the seat in the defeat fade (`+0x21C = 2`), and
 the tint pass `FUN_80050120` keeps running on seat 7 like any other. Its
 party fade-done reset (`+0x21C = 0`, `+0x1DA = 0`, `+0x1DC = 1`) is gated on

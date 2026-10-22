@@ -24,7 +24,7 @@ impl World {
     /// stand-in (no band-pacing director) keeps the stand-in's spawn point,
     /// which its walk is measured from.
     ///
-    /// PORT: FUN_801F19EC (the seat, facing, target and rate stores, and the seat's presentation-word resets)
+    /// PORT: FUN_801F19EC (the seat, facing, target and rate stores, and the seat's presentation, shatter and anim-id-ring resets)
     pub fn seat_summon_actor(&mut self, slot: usize) {
         let staged = self.casting.summon_stager.as_ref().map(|st| {
             let caster = self.actors.get(st.caster as usize);
@@ -79,6 +79,19 @@ impl World {
         a.battle.flag_word = 0;
         a.battle.render_flag = 0;
         a.battle.impact_state = 0;
+        // `sh zero,0x1ba` (`0x801F1E94`): the shatter word a previous
+        // creature's module raised on this seat (six summons shatter their
+        // own creature), which the draw copies to the node's `+0x7A` and
+        // turns into the shatter renderer.
+        a.battle.shatter = 0;
+        // `sb zero,0x1fb(v0)` over 32 bytes (`0x801F1E98..0x801F1EB0`): the
+        // committed-anim-id ring `FUN_80047430` shifts each frame and the
+        // after-image walk `FUN_80049348` gates on (`0x10 < id`). Only the id
+        // ring is zeroed - the position / cursor / entry rings keep their
+        // bytes - so the history stays and no frame of it is a ghost.
+        for f in a.battle_pose_history.iter_mut() {
+            f.ghost_eligible = false;
+        }
         a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(
             super::module_creature::SUMMON_SEAT_ANIM_RATE,
         );
