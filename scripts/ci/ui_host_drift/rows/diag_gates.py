@@ -97,6 +97,7 @@ DIAG_ROOTS = [
     REPO / "crates" / "engine-field",
     REPO / "crates" / "engine-scene",
     REPO / "crates" / "engine-menus",
+    REPO / "crates" / "engine-title",
     REPO / "crates" / "engine-dialog",
     REPO / "crates" / "engine-system",
     REPO / "crates" / "engine-ui",

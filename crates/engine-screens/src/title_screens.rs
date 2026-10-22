@@ -3,7 +3,7 @@
 //! no-title-art fallback draws. Each host keeps only its atlas residency
 //! answers (is the title TIM resident, is the glyph atlas) and its surface.
 
-use legaia_engine_menus::title::{TitlePhase, TitleSession};
+use legaia_engine_title::title::{TitlePhase, TitleSession};
 use legaia_engine_ui::{SpriteDraw, TitleBandState};
 
 /// Which title-TIM bands the card draws this frame, and how bright: the
@@ -47,7 +47,7 @@ pub fn title_menu_glyph_draws(
         _ => (false, 0),
     };
     let phase_id =
-        legaia_engine_menus::title_overlay::title_text_phase(session.retail_submode(), menu_open);
+        legaia_engine_title::title_overlay::title_text_phase(session.retail_submode(), menu_open);
     if phase_id != 2 {
         return Vec::new();
     }

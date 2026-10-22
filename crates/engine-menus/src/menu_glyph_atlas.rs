@@ -1,7 +1,7 @@
 //! Menu-glyph sprite atlas - RGBA decode + per-character draw helpers.
 //!
 //! Pairs with [`legaia_ui_formats::menu_glyph_atlas`] (TIM source pin) and
-//! [`crate::title_screen_atlas`] (title-art bands). Decodes the 256×256
+//! `legaia_engine_title::title_screen_atlas` (title-art bands). Decodes the 256×256
 //! 4bpp atlas at `PROT.DAT` offset `0x11218` into a tint-friendly
 //! "stencil" RGBA8 buffer the renderer uploads as a sprite atlas:
 //!

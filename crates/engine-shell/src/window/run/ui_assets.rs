@@ -33,13 +33,13 @@ pub(super) fn load_dialog_font(session: &NativeSession, extracted_root: &Path) -
 /// entry doesn't parse - retail discs always have it.
 pub(super) fn build_publisher_logos_atlas(
     session: &NativeSession,
-) -> Option<legaia_engine_menus::publisher_logos::LogosAtlas> {
+) -> Option<legaia_engine_title::publisher_logos::LogosAtlas> {
     match session
         .host
         .index
         .entry_bytes(legaia_ui_formats::init_pak::PROT_INDEX as u32)
     {
-        Ok(b) => match legaia_engine_menus::publisher_logos::build_atlas_from_init_pak(&b) {
+        Ok(b) => match legaia_engine_title::publisher_logos::build_atlas_from_init_pak(&b) {
             Ok(a) => {
                 log::info!(
                     "play-window: publisher-logos atlas built ({}x{}, {} logos)",
@@ -67,13 +67,13 @@ pub(super) fn build_publisher_logos_atlas(
 /// retail discs always have it.
 pub(super) fn build_title_screen_atlas(
     session: &NativeSession,
-) -> Option<legaia_engine_menus::title_screen_atlas::TitleScreenAtlas> {
+) -> Option<legaia_engine_title::title_screen_atlas::TitleScreenAtlas> {
     match session
         .host
         .index
         .entry_bytes(legaia_ui_formats::title_pak::PROT_INDEX_PRIMARY as u32)
     {
-        Ok(b) => match legaia_engine_menus::title_screen_atlas::build_atlas_from_prot_888(
+        Ok(b) => match legaia_engine_title::title_screen_atlas::build_atlas_from_prot_888(
             &b,
             legaia_ui_formats::title_pak::TITLE_TIM_OFFSET,
         ) {
@@ -309,7 +309,7 @@ pub(super) fn initial_boot_ui(
     if boot_ui {
         if has_publisher_logos {
             BootUiState::PublisherLogos(
-                legaia_engine_menus::publisher_logos::PublisherLogosSession::new(),
+                legaia_engine_title::publisher_logos::PublisherLogosSession::new(),
             )
         } else {
             BootUiState::Title(boot_cutscene::title_session(rack_has_save(cards), 0))

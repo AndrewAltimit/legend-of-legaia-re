@@ -12,6 +12,7 @@ path = "src/lib.rs"
 
 [dependencies]
 legaia-engine-menus.workspace = true
+legaia-engine-title.workspace = true
 anyhow.workspace = true
 log.workspace = true
 serde.workspace = true

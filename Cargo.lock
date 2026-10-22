@@ -2221,6 +2221,7 @@ dependencies = [
  "legaia-engine-scene",
  "legaia-engine-scene-host",
  "legaia-engine-system",
+ "legaia-engine-title",
  "legaia-engine-vm",
  "legaia-game-tables",
  "legaia-prot",
@@ -2247,7 +2248,6 @@ dependencies = [
  "legaia-font",
  "legaia-game-tables",
  "legaia-minigame-formats",
- "legaia-prot",
  "legaia-save",
  "legaia-scene-formats",
  "legaia-tim",
@@ -2451,6 +2451,7 @@ dependencies = [
  "legaia-engine-scene",
  "legaia-engine-scene-host",
  "legaia-engine-system",
+ "legaia-engine-title",
  "legaia-engine-ui",
  "legaia-engine-world-views",
  "legaia-font",
@@ -2485,6 +2486,7 @@ dependencies = [
  "legaia-engine-scene",
  "legaia-engine-scene-host",
  "legaia-engine-system",
+ "legaia-engine-title",
  "legaia-engine-vm",
  "legaia-engine-world-views",
  "legaia-font",
@@ -2543,6 +2545,7 @@ dependencies = [
  "legaia-engine-screens",
  "legaia-engine-session",
  "legaia-engine-system",
+ "legaia-engine-title",
  "legaia-engine-ui",
  "legaia-engine-world-views",
  "legaia-font",
@@ -2588,6 +2591,17 @@ dependencies = [
  "legaia-gamedata",
  "serde",
  "toml",
+]
+
+[[package]]
+name = "legaia-engine-title"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-engine-system",
+ "legaia-prot",
+ "legaia-tim",
+ "legaia-ui-formats",
 ]
 
 [[package]]
@@ -3168,6 +3182,7 @@ dependencies = [
  "legaia-engine-screens",
  "legaia-engine-session",
  "legaia-engine-system",
+ "legaia-engine-title",
  "legaia-engine-ui",
  "legaia-engine-vm",
  "legaia-engine-world-views",

@@ -41,7 +41,7 @@ SPLIT_MODULES = frozenset({
     "crates/delilas-party/src/delilas_party",
     "crates/engine-cast/src/cast_module_ticks",
     "crates/engine-fishing/src/fishing",
-    "crates/engine-menus/src/title_overlay",
+    "crates/engine-title/src/title_overlay",
     "crates/web-play/src/minigames_muscle",
     "crates/engine-core/src/world/vm_hosts",
     "crates/engine-core/src/world/narration",

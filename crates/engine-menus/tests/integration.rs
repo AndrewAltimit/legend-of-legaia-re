@@ -10,5 +10,3 @@ mod menu_suite_e2e;
 mod muscle_intermission_cadence;
 mod pause_menu_kernel_wiring;
 mod save_subscreen_ladder;
-mod title_attract_handoff;
-mod title_menu_law;

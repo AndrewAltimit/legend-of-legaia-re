@@ -102,7 +102,7 @@ impl SaveSelectSession {
     /// itself and owing nothing to the field.
     ///
     /// Retail runs it inside the title overlay's own front-end machine
-    /// (`FUN_801DDCCC`, see [`crate::title_overlay`]): `AttractIdle`
+    /// (`FUN_801DDCCC`, see `legaia_engine_title::title_overlay`): `AttractIdle`
     /// (sub-mode `0x10`) confirms on `pad & 0x844` (`0x801DDC04`), and row 1
     /// stores `0x18` (`ContinueFadeIn`, `0x801DDC5C`) with the cue `0x20`.
     /// From there the card manager (`0x14` -> `0x07` -> `0x15` -> `0x09` ->

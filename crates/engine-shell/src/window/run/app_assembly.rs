@@ -8,9 +8,9 @@ pub(super) struct WindowParts<'a> {
     pub(super) session: NativeSession,
     pub(super) font: Font,
     pub(super) scene_res: SceneResources,
-    pub(super) publisher_logos_atlas_data: Option<legaia_engine_menus::publisher_logos::LogosAtlas>,
+    pub(super) publisher_logos_atlas_data: Option<legaia_engine_title::publisher_logos::LogosAtlas>,
     pub(super) title_screen_atlas_data:
-        Option<legaia_engine_menus::title_screen_atlas::TitleScreenAtlas>,
+        Option<legaia_engine_title::title_screen_atlas::TitleScreenAtlas>,
     pub(super) menu_glyph_atlas_data: Option<legaia_engine_menus::menu_glyph_atlas::MenuGlyphAtlas>,
     pub(super) save_menu_atlas_data: Option<legaia_engine_menus::save_menu_atlas::SaveMenuAtlas>,
     pub(super) menu_window_table: Option<legaia_game_tables::menu_windows::MenuWindowTable>,

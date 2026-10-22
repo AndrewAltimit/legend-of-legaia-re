@@ -113,8 +113,12 @@ deps = [
     "render-kernels",
 ]
 
+[crates.engine-title]
+role = "publisher logos, the title state machine and the title overlay tick"
+deps = ["engine-system"]
+
 [crates.engine-menus]
-role = "menu, title and memory-card front end"
+role = "menu and memory-card front end"
 deps = [
     "engine-battle",
     "engine-battle-vm",

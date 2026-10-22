@@ -19,7 +19,7 @@ impl PlayWindowApp {
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<legaia_engine_ui::SpriteDraw> {
-        use legaia_engine_menus::publisher_logos::STAGE;
+        use legaia_engine_title::publisher_logos::STAGE;
         use legaia_engine_ui::boot_logos::{LogoQuadView, publisher_logo_sprite_draws};
 
         let BootUiState::PublisherLogos(session) = &self.boot_ui else {
@@ -29,7 +29,7 @@ impl PlayWindowApp {
             return Vec::new();
         };
         let idx = session.current_logo();
-        if idx >= legaia_engine_menus::publisher_logos::LOGO_COUNT {
+        if idx >= legaia_engine_title::publisher_logos::LOGO_COUNT {
             return Vec::new();
         }
         let quads: Vec<LogoQuadView> = session
@@ -189,7 +189,7 @@ impl PlayWindowApp {
     /// Each band is positioned at its source `y` within a centred,
     /// integer-scaled 256×256 stage. Returns an empty vec when
     /// boot-UI isn't `Title`, the atlas wasn't uploaded, or the title
-    /// session has reached [`legaia_engine_menus::title::TitlePhase::Done`].
+    /// session has reached [`legaia_engine_title::title::TitlePhase::Done`].
     pub(super) fn title_screen_sprite_draws(
         &self,
         surface_w: u32,
@@ -228,7 +228,7 @@ impl PlayWindowApp {
     /// Returns an empty vec when:
     /// - boot UI isn't [`BootUiState::Title`], or
     /// - the title session has already reached
-    ///   [`legaia_engine_menus::title::TitlePhase::Done`], or
+    ///   [`legaia_engine_title::title::TitlePhase::Done`], or
     /// - the title-screen atlas IS uploaded (retail-faithful path
     ///   covers the menu rows itself), or
     /// - the menu-glyph atlas wasn't uploaded, or

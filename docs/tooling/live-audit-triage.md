@@ -272,9 +272,9 @@ crates; each row's site names the owning crate.
 | `801d829c` | `build_camera_angle_tween` | `crates/engine-camera/src/battle_camera.rs` | WIRE (wired) |
 | `801d9d30` | `apply_shake` | `crates/engine-camera/src/battle_camera.rs` | DISCLOSE |
 | `801e0088` | `child_billboards` / `pass2_brightness` | `crates/engine-vm/src/effect_vm/pool.rs` | FALSE INERT |
-| `801e36c4` | `exec_centered_bar` | `crates/engine-menus/src/title_prim.rs` | DISCLOSE |
-| `801e373c` | `init_card_state` / `exec_card_init` | `crates/engine-menus/src/title_prim.rs` | DISCLOSE |
-| `801e3ee0` | `exec_centered_text` | `crates/engine-menus/src/title_prim.rs` | DISCLOSE |
+| `801e36c4` | `exec_centered_bar` | `crates/engine-title/src/title_prim.rs` | DISCLOSE |
+| `801e373c` | `init_card_state` / `exec_card_init` | `crates/engine-title/src/title_prim.rs` | DISCLOSE |
+| `801e3ee0` | `exec_centered_text` | `crates/engine-title/src/title_prim.rs` | DISCLOSE |
 | `801f0348` | `camera_height_from_size_class` | `crates/engine-battle-vm/src/battle_formulas/round.rs` | DELETE |
 
 ### `FALSE INERT` evidence

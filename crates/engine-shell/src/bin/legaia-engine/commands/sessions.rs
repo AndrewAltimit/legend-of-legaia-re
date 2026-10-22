@@ -167,9 +167,9 @@ pub(crate) fn cmd_gte_replay(trace_path: &Path, verbose: bool) -> Result<()> {
     anyhow::bail!("trace replay produced mismatches");
 }
 
-/// Map an input letter to a [`legaia_engine_menus::title::TitleInput`] mask.
-fn title_input_for(c: char) -> legaia_engine_menus::title::TitleInput {
-    use legaia_engine_menus::title::TitleInput;
+/// Map an input letter to a [`legaia_engine_title::title::TitleInput`] mask.
+fn title_input_for(c: char) -> legaia_engine_title::title::TitleInput {
+    use legaia_engine_title::title::TitleInput;
     let mut i = TitleInput::default();
     match c {
         's' => i.start = true,
@@ -183,7 +183,7 @@ fn title_input_for(c: char) -> legaia_engine_menus::title::TitleInput {
 }
 
 pub(crate) fn cmd_title(script: &str, no_save: bool, fade_frames: u16) -> Result<()> {
-    use legaia_engine_menus::title::{TitleEvent, TitleSession};
+    use legaia_engine_title::title::{TitleEvent, TitleSession};
     let mut s = if no_save {
         TitleSession::without_save_data()
     } else {

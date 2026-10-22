@@ -8,7 +8,7 @@
 //! `overlay_menu`, `overlay_title`, `overlay_save_ui_*` and
 //! `overlay_shop_save` dumps of it are the same function (byte-identical
 //! bodies), so which overlay hosts it is an open question rather than a
-//! per-subsystem variant; see the note in `engine-menus/src/title_overlay.rs`.
+//! per-subsystem variant; see the note in `engine-title/src/title_overlay.rs`.
 //!
 //! Drives the slot-list UI (read save metadata, browse, Load/Save/Delete
 //! confirmations). Renderer-agnostic - engines render the slot list

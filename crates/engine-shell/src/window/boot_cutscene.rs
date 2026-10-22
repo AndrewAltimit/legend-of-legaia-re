@@ -24,7 +24,7 @@ enum TitleAttractAction {
 }
 
 /// Build the window's title session:
-/// [`legaia_engine_menus::title::TitleSession::for_front_end_at`], the
+/// [`legaia_engine_title::title::TitleSession::for_front_end_at`], the
 /// constructor the browser page's title uses too. Continue follows
 /// `continue_enabled`; the menu opens on `row`, the seat's row counter
 /// (`ModeSeat::title_row`); the attract hand-off is armed (this host plays
@@ -32,8 +32,8 @@ enum TitleAttractAction {
 pub(super) fn title_session(
     continue_enabled: bool,
     row: u8,
-) -> legaia_engine_menus::title::TitleSession {
-    legaia_engine_menus::title::TitleSession::for_front_end_at(continue_enabled, row)
+) -> legaia_engine_title::title::TitleSession {
+    legaia_engine_title::title::TitleSession::for_front_end_at(continue_enabled, row)
 }
 
 impl PlayWindowApp {
@@ -425,7 +425,7 @@ impl PlayWindowApp {
                 ) {
                     break 'title true;
                 }
-                use legaia_engine_menus::title::{TitleEvent, TitleInput, TitleOutcome};
+                use legaia_engine_title::title::{TitleEvent, TitleInput, TitleOutcome};
                 let input = TitleInput {
                     up,
                     down,
@@ -922,7 +922,7 @@ impl PlayWindowApp {
                 Vec::new()
             }
             BootUiState::Title(s) => {
-                use legaia_engine_menus::title::TitlePhase;
+                use legaia_engine_title::title::TitlePhase;
                 // Which screen the front end draws is retail's own selector
                 // word `state[+0x204]`, not this host's enum: both hosts ask
                 // `title_text_phase` about `TitleSession::retail_submode`, so
@@ -938,7 +938,7 @@ impl PlayWindowApp {
                     TitlePhase::FadeIn { .. } => return Vec::new(),
                     TitlePhase::PressStart { .. } => (false, 0),
                 };
-                let phase_id = legaia_engine_menus::title_overlay::title_text_phase(
+                let phase_id = legaia_engine_title::title_overlay::title_text_phase(
                     s.retail_submode(),
                     menu_open,
                 );
@@ -1216,7 +1216,7 @@ impl PlayWindowApp {
     /// Retail's `AttractIdle` (`0x10`) arm zeroes the FMV index and writes
     /// master game mode `0x1A`, i.e. hands the screen to `fmv_id 0`
     /// (`MV1.STR`) and comes back to the title afterwards
-    /// (`legaia_engine_menus::title_overlay::ATTRACT_FMV_ID`;
+    /// (`legaia_engine_title::title_overlay::ATTRACT_FMV_ID`;
     /// `cutscene_trigger::TITLE_TICK_INLINE`). This runs the same movie
     /// through the window's own MDEC path and calls `finish_attract` once its
     /// frames drain - the drain itself is the redraw handler's, which clears
@@ -1234,7 +1234,7 @@ impl PlayWindowApp {
     /// [`TitleAttractAction::Aborted`] so the caller can tear the decoder
     /// down; the session is finished here either way.
     fn service_title_attract(
-        session: &mut legaia_engine_menus::title::TitleSession,
+        session: &mut legaia_engine_title::title::TitleSession,
         cutscene_live: bool,
         pressed: u16,
     ) -> TitleAttractAction {
@@ -1250,7 +1250,7 @@ impl PlayWindowApp {
             // The attract slot is the skippable movie; ask the shared test
             // rather than spelling the button set out a second time.
             if legaia_engine_system::movie::cutscene::fmv_skip_edge_hit(
-                legaia_engine_menus::title_overlay::ATTRACT_FMV_ID,
+                legaia_engine_title::title_overlay::ATTRACT_FMV_ID,
                 pressed,
             ) {
                 session.finish_attract();

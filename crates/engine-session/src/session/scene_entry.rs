@@ -90,7 +90,7 @@ impl<S: AudioSink> BootSession<S> {
                 .enter(GameMode::MainInit, &mut self.host.world);
             debug_assert!(
                 matches!(plan, Some(ModeInitPlan::Stage(st))
-                    if st.overlay_entry == legaia_engine_menus::title_overlay::FIELD_SCENE_INIT_PC),
+                    if st.overlay_entry == legaia_engine_title::title_overlay::FIELD_SCENE_INIT_PC),
                 "MAIN INIT's plan should name the per-scene initializer"
             );
         }

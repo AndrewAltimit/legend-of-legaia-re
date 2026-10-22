@@ -213,7 +213,7 @@ Top of the stack first. Every crate name links its README.
   Rank 4: [`engine-fishing`](crates/engine-fishing/README.md), [`engine-minigames`](crates/engine-minigames/README.md), [`engine-scene`](crates/engine-scene/README.md) \
   Rank 3: [`engine-battle`](crates/engine-battle/README.md), [`engine-cast`](crates/engine-cast/README.md), [`engine-effects`](crates/engine-effects/README.md), [`engine-field`](crates/engine-field/README.md), [`engine-ui`](crates/engine-ui/README.md) \
   Rank 2: [`engine-battle-vm`](crates/engine-battle-vm/README.md), [`render-kernels`](crates/render-kernels/README.md) \
-  Rank 1: [`engine-camera`](crates/engine-camera/README.md), [`engine-dev-menu`](crates/engine-dev-menu/README.md), [`engine-mode`](crates/engine-mode/README.md), [`engine-motion-vm`](crates/engine-motion-vm/README.md) \
+  Rank 1: [`engine-camera`](crates/engine-camera/README.md), [`engine-dev-menu`](crates/engine-dev-menu/README.md), [`engine-mode`](crates/engine-mode/README.md), [`engine-motion-vm`](crates/engine-motion-vm/README.md), [`engine-title`](crates/engine-title/README.md) \
   Rank 0: [`engine-dialog`](crates/engine-dialog/README.md), [`engine-system`](crates/engine-system/README.md), [`engine-vm`](crates/engine-vm/README.md)
 - **Patcher and capture libraries.** The disc-writing layers under legaia-patcher, and the emulator save-state readers under the parity oracles. \
   [`disc-patch`](crates/disc-patch/README.md), [`translate`](crates/translate/README.md), [`code-hooks`](crates/code-hooks/README.md), [`arts-patch`](crates/arts-patch/README.md), [`texture-replace`](crates/texture-replace/README.md),

@@ -1,11 +1,12 @@
 # legaia-engine-menus
 
-The engine's menu, title and memory-card front end, minus `World`: the item
+The engine's menu and memory-card front end, minus `World`: the item
 and equipment catalogs, the inventory-use and spell-menu sessions, the SCUS
 list-row model every pause-menu list window shares, the menu overlay's widget
-choreography and tables, the title and boot screens, the card write flow and
+choreography and tables, the card write flow and
 `bu` I/O layer. The field dialog pager sits one crate down, in
-[`legaia-engine-dialog`](../engine-dialog/README.md). Free of
+[`legaia-engine-dialog`](../engine-dialog/README.md); the publisher logos and
+the title screen are a sibling, [`legaia-engine-title`](../engine-title/README.md). Free of
 wgpu, winit and cpal, so it builds for native and `wasm32` alike.
 
 `legaia-engine-menu-runtime` owns the composition - `MenuRuntime`, the
@@ -83,9 +84,9 @@ link into a dependent crate.
   developer character editor), `dev_menu_host` (the developer menu screen
   it sits on; engine-menu-runtime's `DevMenuWorldExt` runs it against a `World`) and
   `key_rebind`.
-- **Title + boot** - `publisher_logos`, `title` (title state machine),
-  `title_screen_atlas`, `name_entry` (the `town01` naming screen) and
-  `game_over` (party wipe to the title).
+- **Naming + game over** - `name_entry` (the `town01` naming screen) and
+  `game_over` (party wipe to the title). The publisher logos and the title
+  screen are [`legaia-engine-title`](../engine-title/README.md).
 - **Memory card + save screen** - `card_flow` (the write / format flow over
   the card I/O machine), `card_bu_io` (the `bu` device wrappers),
   `save_select` (the slot-select session, card directory and card I/O
@@ -107,12 +108,8 @@ link into a dependent crate.
   (the gold-shop and prize-exchange sessions), each one subsystem's state
   held as a unit on the composite `World`.
 
-## Title overlay, game-over banner and menu state machine
+## Game-over banner and menu state machine
 
-- `title_overlay` - the title-screen tick `FUN_801DD35C` (the sub-mode
-  dispatcher, its menu and transitions) and `title_overlay::title_draw_list`,
-  the sub-mode -> screen selector both hosts ask.
-- `title_prim` - the SCUS-side GPU primitive helpers the title overlay calls.
 - `gameover_banner` - the game-over banner letter stager `FUN_801CE844`.
 - `menu` - the engine's pause / shop / inn menu state machine.
 

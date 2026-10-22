@@ -19,6 +19,7 @@ path = "src/bin/legaia-launch.rs"
 [dependencies]
 legaia-engine-camera.workspace = true
 legaia-engine-menus.workspace = true
+legaia-engine-title.workspace = true
 legaia-engine-field.workspace = true
 legaia-render-kernels.workspace = true
 legaia-engine-battle-vm.workspace = true

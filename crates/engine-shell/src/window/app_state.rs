@@ -100,7 +100,7 @@ pub(super) struct WindowedCutscene {
 /// to sample one logo per frame.
 pub(super) struct PublisherLogosAssets {
     /// Per-logo source rects in atlas pixels.
-    pub(super) rects: [(u32, u32, u32, u32); legaia_engine_menus::publisher_logos::LOGO_COUNT],
+    pub(super) rects: [(u32, u32, u32, u32); legaia_engine_title::publisher_logos::LOGO_COUNT],
     /// GPU-resident sprite atlas (vertically stacked logos).
     pub(super) atlas: legaia_engine_render::UploadedSpriteAtlas,
 }
@@ -240,14 +240,14 @@ pub(super) struct PlayWindowApp {
     /// CPU-side atlas data waiting for renderer upload. Moved into
     /// `publisher_logos` on the first frame the renderer is available.
     pub(super) pending_publisher_logos_atlas:
-        Option<legaia_engine_menus::publisher_logos::LogosAtlas>,
+        Option<legaia_engine_title::publisher_logos::LogosAtlas>,
     /// Title-screen atlas (built once from PROT 0888). `None` if the
     /// disc isn't loaded or the title TIM doesn't parse.
     pub(super) title_screen: Option<TitleScreenAssets>,
     /// CPU-side title atlas waiting for renderer upload. Moved into
     /// `title_screen` on the first frame the renderer is available.
     pub(super) pending_title_screen_atlas:
-        Option<legaia_engine_menus::title_screen_atlas::TitleScreenAtlas>,
+        Option<legaia_engine_title::title_screen_atlas::TitleScreenAtlas>,
     /// Menu-glyph atlas (built once from raw `PROT.DAT` at 0x11218).
     /// `None` if the disc isn't loaded or the TIM doesn't parse.
     pub(super) menu_glyphs: Option<MenuGlyphAssets>,
@@ -1021,10 +1021,10 @@ pub(super) enum BootUiState {
     /// Boot publisher logos (PROT 0895). Runs before the title screen.
     /// The atlas + per-logo rects live on [`PlayWindowApp`] so the
     /// renderer can sample one quad per frame.
-    PublisherLogos(legaia_engine_menus::publisher_logos::PublisherLogosSession),
+    PublisherLogos(legaia_engine_title::publisher_logos::PublisherLogosSession),
     /// Title screen is active. Pad input drives the
-    /// [`legaia_engine_menus::title::TitleSession`].
-    Title(legaia_engine_menus::title::TitleSession),
+    /// [`legaia_engine_title::title::TitleSession`].
+    Title(legaia_engine_title::title::TitleSession),
     /// Save-select panel is active.
     SaveSelect(legaia_engine_menus::save_select::SaveSelectSession),
     /// Field (pause) menu is active. The menu session itself is hosted by

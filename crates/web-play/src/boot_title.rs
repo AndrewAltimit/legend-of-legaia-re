@@ -44,8 +44,8 @@
 
 use super::*;
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_menus::title::{TitleInput, TitlePhase, TitleSession};
-use legaia_engine_menus::title_screen_atlas::build_atlas_from_prot_888;
+use legaia_engine_title::title::{TitleInput, TitlePhase, TitleSession};
+use legaia_engine_title::title_screen_atlas::build_atlas_from_prot_888;
 use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
 
 /// `(edge & mask)` test on a PSX-encoded pad-edge word.
@@ -113,7 +113,7 @@ impl LegaiaRuntime {
             crate::console_log("boot logos: PROT 0895 (init.pak) unavailable");
             return;
         };
-        match legaia_engine_menus::publisher_logos::build_atlas_from_init_pak(&bytes) {
+        match legaia_engine_title::publisher_logos::build_atlas_from_init_pak(&bytes) {
             Ok(a) => {
                 self.boot_logos_failed = false;
                 self.boot_logos_atlas = Some(a);
@@ -273,7 +273,7 @@ impl LegaiaRuntime {
         }
         if attract_playing {
             let fmv_id = self.fmv.armed_for().map_or(
-                legaia_engine_menus::title_overlay::ATTRACT_FMV_ID,
+                legaia_engine_title::title_overlay::ATTRACT_FMV_ID,
                 |(_, id)| id,
             );
             // Retail's abort: `fmv_id 0` on a face button / Select
@@ -305,7 +305,7 @@ impl LegaiaRuntime {
         let Some(session) = self.boot_title.as_mut() else {
             return String::new();
         };
-        use legaia_engine_menus::title::TitleOutcome;
+        use legaia_engine_title::title::TitleOutcome;
         match session.outcome() {
             Some(o) => {
                 // The session is not simply dropped at the hand-off: retail
@@ -391,7 +391,7 @@ impl LegaiaRuntime {
     /// which case the caller goes straight to the title, exactly as the
     /// native `--boot-ui` chain does with an unbuildable atlas.
     ///
-    /// Only the native window used to play these: `legaia_engine_menus::publisher_logos`
+    /// Only the native window used to play these: `legaia_engine_title::publisher_logos`
     /// and its atlas builder were shared, and the browser play page entered
     /// the boot chain one stage late, at the title.
     pub fn boot_logos_start(&mut self) -> bool {
@@ -402,7 +402,7 @@ impl LegaiaRuntime {
         if self.boot_logos_atlas.is_none() {
             return false;
         }
-        self.boot_logos = Some(legaia_engine_menus::publisher_logos::PublisherLogosSession::new());
+        self.boot_logos = Some(legaia_engine_title::publisher_logos::PublisherLogosSession::new());
         true
     }
 
@@ -457,7 +457,7 @@ impl LegaiaRuntime {
     /// so the two hosts letterbox the logos identically and a fade level is
     /// the same alpha in both.
     pub fn boot_logos_draws_json(&self, surface_w: u32, surface_h: u32) -> String {
-        use legaia_engine_menus::publisher_logos::{LOGO_COUNT, STAGE};
+        use legaia_engine_title::publisher_logos::{LOGO_COUNT, STAGE};
         use legaia_engine_ui::boot_logos::{LogoQuadView, publisher_logo_sprite_draws};
         let (Some(session), Some(atlas)) =
             (self.boot_logos.as_ref(), self.boot_logos_atlas.as_ref())
@@ -565,7 +565,7 @@ impl LegaiaRuntime {
                 TitlePhase::MainMenu { cursor } => (true, cursor),
                 _ => (false, 0u8),
             };
-            let phase = legaia_engine_menus::title_overlay::title_text_phase(
+            let phase = legaia_engine_title::title_overlay::title_text_phase(
                 session.retail_submode(),
                 menu_open,
             );

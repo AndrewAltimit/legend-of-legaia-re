@@ -35,7 +35,7 @@
   <p>The port is a stack of small crates with one rule running through it: the lower a crate sits, the fewer things it may link. Format parsers know nothing about engines; the VMs know nothing about GPUs or speakers; the simulation draws nothing; and only the hosts at the top touch a window, a browser or an audio device. That is what lets the browser run the same engine as the native window - it simply links a different top row.</p>
   <p>The <a href="../crates.html">crate map</a> draws the same stack interactively: every crate in its band, what it uses and what uses it, its scope and modules, and the path a scene takes from the disc to the screen. Its data is generated from the workspace's own manifests, so it cannot drift from them.</p>
   <figure class="diagram">
-    <svg viewBox="0 0 900 898" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Crate dependency layers, top to bottom. Hosts: engine-shell (native window and the legaia-engine binary), web-play (browser play and minigames pages, shipped in the web-viewer WASM bundle), asset-viewer. Host glue: parity (oracles, native only), and engine-session (BootSession and the BGM director) with engine-screens (shop, prize, inn and banner screens), both written once and ticked by both play hosts. Engine: engine-render (wgpu), engine-audio (SPU and sequencer) and engine-core (World, the tick, battle loop) with engine-scene-host (SceneHost) and engine-menu-runtime (the pause menu) directly above it, over engine-scene (scene resolution and loading, no World, also linked by engine-minigame-scenes for the dance and fishing venues). Below them the World-free kernel crates in ranks, each linking only lower-ranked ones: engine-minigame-scenes over engine-menus over engine-minigames, beside engine-fishing (ranks 6 to 4); then engine-ui, engine-field, engine-effects, engine-battle and engine-cast (the slot-B cast module bodies) at rank 3; then render-kernels and engine-battle-vm at rank 2; then engine-camera, engine-motion-vm, engine-mode and engine-dev-menu (the developer-menu bodies) at rank 1; then engine-vm, engine-dialog and engine-system at the bottom. Under the kernels sit the format-family crates and under those the per-format parser crates.">
+    <svg viewBox="0 0 900 898" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Crate dependency layers, top to bottom. Hosts: engine-shell (native window and the legaia-engine binary), web-play (browser play and minigames pages, shipped in the web-viewer WASM bundle), asset-viewer. Host glue: parity (oracles, native only), and engine-session (BootSession and the BGM director) with engine-screens (shop, prize, inn and banner screens), both written once and ticked by both play hosts. Engine: engine-render (wgpu), engine-audio (SPU and sequencer) and engine-core (World, the tick, battle loop) with engine-scene-host (SceneHost) and engine-menu-runtime (the pause menu) directly above it, over engine-scene (scene resolution and loading, no World, also linked by engine-minigame-scenes for the dance and fishing venues). Below them the World-free kernel crates in ranks, each linking only lower-ranked ones: engine-minigame-scenes over engine-menus over engine-minigames, beside engine-fishing (ranks 6 to 4); then engine-ui, engine-field, engine-effects, engine-battle and engine-cast (the slot-B cast module bodies) at rank 3; then render-kernels and engine-battle-vm at rank 2; then engine-camera, engine-motion-vm, engine-mode, engine-dev-menu (the developer-menu bodies) and engine-title (the title front end) at rank 1; then engine-vm, engine-dialog and engine-system at the bottom. Under the kernels sit the format-family crates and under those the per-format parser crates.">
       <defs><marker id="en-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       <text class="dg-edge-label" x="888" y="22" text-anchor="end">hosts</text>
       <rect class="dg-node-accent" x="60" y="30" width="230" height="56" rx="5"/>
@@ -88,14 +88,16 @@
       <rect class="dg-node" x="295" y="550" width="180" height="40" rx="5"/>
       <text class="dg-label" x="385" y="575">engine-battle-vm</text>
       <text class="dg-sub dg-start" x="34" y="627">rank 1</text>
-      <rect class="dg-node" x="100" y="602" width="180" height="40" rx="5"/>
-      <text class="dg-label" x="190" y="627">engine-camera</text>
-      <rect class="dg-node" x="295" y="602" width="180" height="40" rx="5"/>
-      <text class="dg-label" x="385" y="627">engine-motion-vm</text>
-      <rect class="dg-node" x="490" y="602" width="180" height="40" rx="5"/>
-      <text class="dg-label" x="580" y="627">engine-mode</text>
-      <rect class="dg-node" x="685" y="602" width="180" height="40" rx="5"/>
-      <text class="dg-label" x="775" y="627">engine-dev-menu</text>
+      <rect class="dg-node" x="100" y="602" width="145" height="40" rx="5"/>
+      <text class="dg-label" x="172.5" y="627">engine-camera</text>
+      <rect class="dg-node" x="252" y="602" width="145" height="40" rx="5"/>
+      <text class="dg-label" x="324.5" y="627">engine-motion-vm</text>
+      <rect class="dg-node" x="404" y="602" width="145" height="40" rx="5"/>
+      <text class="dg-label" x="476.5" y="627">engine-mode</text>
+      <rect class="dg-node" x="556" y="602" width="145" height="40" rx="5"/>
+      <text class="dg-label" x="628.5" y="627">engine-dev-menu</text>
+      <rect class="dg-node" x="708" y="602" width="145" height="40" rx="5"/>
+      <text class="dg-label" x="780.5" y="627">engine-title</text>
       <text class="dg-sub dg-start" x="34" y="679">rank 0</text>
       <rect class="dg-node" x="100" y="654" width="180" height="40" rx="5"/>
       <text class="dg-label" x="190" y="679">engine-vm</text>
@@ -156,7 +158,8 @@
       <tr><td><code>engine-effects</code></td><td>The effect kernels that need no <code>World</code>: the action effect scripts, the ribbon and render-mode-4 emitters, the summon scene-graph driver, the screen effects and object effects</td></tr>
       <tr><td><code>engine-system</code></td><td>The <code>World</code>-free runtime system at the bottom of the engine stack: pad input and the retail pad pump, the stream chunk installer, MDEC DMA sync, sound state, fades, mode-entry initialisers, the RAM-cell map</td></tr>
       <tr><td><code>engine-mode</code></td><td>The game-mode seat over <code>engine-system</code>: the 28-entry mode table, its driver and the minigame door-warp ids</td></tr>
-      <tr><td><code>engine-menus</code></td><td>The <code>World</code>-free menu front end: item and equipment catalogs, the inventory-use and spell-menu sessions, the window-widget host, title and boot screens, the memory-card flow, inn, shop, save, status and pause screens</td></tr>
+      <tr><td><code>engine-menus</code></td><td>The <code>World</code>-free menu front end: item and equipment catalogs, the inventory-use and spell-menu sessions, the window-widget host, the memory-card flow, inn, shop, save, status and pause screens</td></tr>
+      <tr><td><code>engine-title</code></td><td>The <code>World</code>-free boot front end: the publisher-logos phase, the title state machine, the title overlay tick and its SCUS primitive helpers</td></tr>
       <tr><td><code>engine-dialog</code></td><td>The dialog layer below <code>engine-field</code> and <code>engine-menus</code>: the dialog pager (panel, row window, typewriter pacing, the picker slide) and the text balloon</td></tr>
       <tr><td><code>engine-field</code></td><td>The <code>World</code>-free field kernels: actor programs, the follow camera&rsquo;s parameters and eases, player clip playback, the op-<code>0x49</code> submode, the field event queue, CLUT effects, the world-map controller, the MAN field-script decoders, the inline-dialogue and cutscene-timeline context state and the field camera</td></tr>
       <tr><td><code>engine-ui</code></td><td>Renderer-agnostic draw lists (<code>TextDraw</code> / <code>SpriteDraw</code>) over the shared render kernels and the battle HUD model - the wgpu-free draw layer both hosts link</td></tr>
@@ -298,7 +301,7 @@
       <tr><td><a href="effect-vm.html">Effect VM</a></td><td><code>engine-vm::effect_vm</code></td><td>slot pool, init / spawn / tick</td></tr>
       <tr><td><a href="battle-action.html">Battle action SM</a></td><td><code>engine-battle-vm::battle_action</code></td><td>47 states in 7 bands; art strikes read from the actor&rsquo;s chosen art</td></tr>
       <tr><td><a href="actor-vm.html">Window-widget VM</a></td><td><code>engine-vm</code> crate root</td><td>13 opcodes; the menu overlay&rsquo;s window choreography</td></tr>
-      <tr><td><a href="boot.html#title-overlay-state">Title sub-mode dispatcher</a></td><td><code>engine-menus::title_overlay</code></td><td>25-entry jump table; the title &rarr; field launch write</td></tr>
+      <tr><td><a href="boot.html#title-overlay-state">Title sub-mode dispatcher</a></td><td><code>engine-title::title_overlay</code></td><td>25-entry jump table; the title &rarr; field launch write</td></tr>
     </tbody>
   </table>
   </div>
@@ -316,7 +319,7 @@
       <tr><td>Battle</td><td><code>engine-core</code> round loop over <code>engine-battle</code> and <code>engine-battle-vm</code></td><td>the full round: seats, all six commands, Tactical Arts with Miracle / Super expansion, status ticks, AP gauge, spoils</td></tr>
       <tr><td>Menus</td><td><code>engine-menus</code>, with the <code>World</code> side in <code>engine-menu-runtime</code></td><td>the pause menu&rsquo;s two-level stack, items, magic, equip, status, options</td></tr>
       <tr><td>Shop / inn / level-up</td><td><code>engine-menus</code> (shop, inn), <code>engine-battle</code> (level-up)</td><td>stock from the MAN, prices from the item table; inns as scripted dialogue; the XP curve and growth tables read from the executable</td></tr>
-      <tr><td>Title + save</td><td><code>engine-menus</code> (title, save select), <code>legaia_save</code></td><td>the real title sheet; the LGSF save container with sentinel-guarded extensions; real memory-card blocks patched in place</td></tr>
+      <tr><td>Title + save</td><td><code>engine-title</code> (title), <code>engine-menus</code> (save select), <code>legaia_save</code></td><td>the real title sheet; the LGSF save container with sentinel-guarded extensions; real memory-card blocks patched in place</td></tr>
       <tr><td>Audio</td><td><code>engine-session</code>&rsquo;s BGM director, <code>engine-audio</code></td><td>script-driven BGM with retail&rsquo;s hard cuts; SFX cues fired against the bank each cue&rsquo;s category names</td></tr>
       <tr><td>Minigames</td><td><code>engine-minigames</code>, <code>engine-fishing</code>, <code>engine-minigame-scenes</code></td><td>the warp minigames as suspending scene modes with their own rules engines</td></tr>
       <tr><td>Cutscenes</td><td><code>play-str</code>, <code>mdec</code></td><td>STR video through the from-scratch MDEC decoder with XA audio in sync (<a href="cutscene.html">cutscene</a>)</td></tr>

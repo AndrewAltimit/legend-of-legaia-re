@@ -32,9 +32,6 @@ legaia-ui-formats.workspace = true
 serde.workspace = true
 toml = { workspace = true, features = ["display"] }
 
-[dev-dependencies]
-legaia-prot.workspace = true
-
 [[test]]
 name = "integration"
 path = "tests/integration.rs"

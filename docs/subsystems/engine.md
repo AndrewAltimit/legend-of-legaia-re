@@ -60,6 +60,7 @@ flowchart BT
     EFISH["engine-fishing"]
     EMG["engine-minigames"]
     EMENU["engine-menus"]
+    ETTL["engine-title"]
     EMGS["engine-minigame-scenes"]
     ESCN["engine-scene<br/>Scene, ProtIndex"]
     CORE["engine-core<br/>World"]
@@ -84,6 +85,8 @@ flowchart BT
     EMODE --> ESYS
     ECAM --> ESYS
     EDEV --> ESYS
+    ETTL --> ESYS
+    ETTL --> FAM
     EBV --> ECAM
     EBV --> FAM
     EMV --> ESYS
@@ -153,7 +156,7 @@ The shape to read off it:
 - **`engine-camera` is the shared GTE camera** (build, projection, the op-`0x45` mover, shake, the camera-relative glide, the follow camera's distance preset) that the battle camera script, the field camera, the Baka Fighter duel and the draw kernels all run on.
 - **`engine-dev-menu` is the field overlay's developer-menu bodies,** held below both the field kernels and the menu front end: the field's op-`0x49` submode hub and panel code run its row kernels, and the dev menu screen and the pause menu's equip session run the same kernels and the equip applier.
 - **`engine-cast` sits one rank above `engine-battle-vm`.** It holds the slot-B cast / summon module bodies the battle action SM pages in; they call the action SM's helpers, the formulas and the camera script, and nothing below names them. A draw packet a module body records for the hosts sits in `render-kernels`, so the draw-list builders project it without naming a module.
-- **A ring of `World`-free kernel crates sits above them** (`engine-mode`, `engine-battle`, `engine-effects`, `engine-field`, `engine-fishing`, `engine-minigames`, `engine-menus`, `engine-scene`, `engine-minigame-scenes`). Each holds rules and state that never touch the `World` struct, so it can be unit-tested alone.
+- **A ring of `World`-free kernel crates sits above them** (`engine-mode`, `engine-battle`, `engine-effects`, `engine-field`, `engine-fishing`, `engine-minigames`, `engine-menus`, `engine-title`, `engine-scene`, `engine-minigame-scenes`). Each holds rules and state that never touch the `World` struct, so it can be unit-tested alone.
 - **`engine-scene` is the disc-facing half of scene handling.** It resolves a CDNAME scene to its PROT entries (`Scene`, `ProtIndex`), decodes what the scene is built from (`SceneResources`, `SceneAssets`, the model bank, the environment draw resolver and assembly kernel) and holds the virtual filesystem. It names no `World`, so a tool that only reads scenes links it without the simulation, and it is a row of the layering table like the other kernels: `engine-minigame-scenes` builds the dance and fishing venues on it.
 - **`engine-core` is where they meet.** It owns `World` and implements the per-VM `Host` traits. A module there that shares its name with a kernel module (`dance`, `mode`, `camera`, ...) holds only the functions that read a `World` or a `Scene`; the rules are in the kernel crate.
 - **Presentation is a separate branch.** `render-kernels` -> `engine-ui` -> `engine-render` and `engine-audio` do not depend on `engine-core`; the hosts compose them with it. `render-kernels` is also what the effect, field and minigame kernels link for GTE math.
@@ -210,7 +213,8 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `engine-field` | `engine-mode`, `engine-motion-vm`, `engine-dialog`, `engine-camera`, `engine-dev-menu`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `minigame-formats`, `overlay-images`, `scene-formats`, `anm`, `mes`, `save`, `tmd` | Field kernels: actor programs, camera, cue routers. |
 | `engine-fishing` | `engine-field`, `engine-system`, `render-kernels`, `game-tables`, `minigame-formats`, `scene-formats`, `tmd` | Fishing rules engine. |
 | `engine-minigames` | `engine-field`, `engine-battle-vm`, `engine-camera`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `game-tables`, `minigame-formats`, `scene-formats`, `save` | Minigame rules engines. |
-| `engine-menus` | `engine-minigames`, `engine-dev-menu`, `engine-camera`, `engine-dialog`, `engine-battle`, `engine-battle-vm`, `engine-system`, `engine-vm`, `actor-formats`, `game-tables`, `minigame-formats`, `scene-formats`, `ui-formats`, `art`, `font`, `save`, `tim` | Menu, title and memory-card front end. |
+| `engine-title` | `engine-system`, `ui-formats`, `tim` | Publisher logos, the title state machine and the title overlay tick. |
+| `engine-menus` | `engine-minigames`, `engine-dev-menu`, `engine-camera`, `engine-dialog`, `engine-battle`, `engine-battle-vm`, `engine-system`, `engine-vm`, `actor-formats`, `game-tables`, `minigame-formats`, `scene-formats`, `ui-formats`, `art`, `font`, `save`, `tim` | Menu and memory-card front end. |
 | `engine-minigame-scenes` | `engine-scene`, `engine-menus`, `engine-minigames`, `engine-fishing`, `engine-field`, `engine-battle`, `engine-battle-vm`, `engine-camera`, `engine-mode`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `container-formats`, `game-tables`, `minigame-formats`, `overlay-images`, `scene-formats`, `prot`, `tim`, `tmd` | The minigames' 3D scene surfaces, venues and the `World`'s minigame seat. |
 | `engine-scene` | `engine-field`, `engine-camera`, `engine-dialog`, `engine-system`, `engine-vm`, `render-kernels`, `disc-audit` + the format-family and parser crates | Scene resolution and loading, environment draws, virtual filesystem; no `World`. |
 | `engine-core` | `engine-scene`, every `engine-*` kernel crate above, `render-kernels` + the format-family and parser crates | `World`, the tick, battle loop, saves. |
@@ -222,8 +226,8 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `engine-ui` | `render-kernels`, `engine-battle-vm`, `game-tables`, `minigame-formats`, `ui-formats`, `tim`, `font` | Draw-list builders; no wgpu. |
 | `engine-render` | `engine-ui`, `render-kernels`, `engine-camera`, `tim`, `font` | wgpu renderer. |
 | `engine-audio` | `xa`, `vab`, `seq`, `prot` | SPU model, sequencer, output backends. |
-| `engine-session` | `engine-battle-hud`, `engine-world-views`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-audio`, `engine-menus`, `engine-minigame-scenes`, `engine-battle`, `engine-battle-vm`, `engine-effects`, `engine-field`, `engine-mode`, `engine-system`, `engine-vm`, `render-kernels` + format-family and parser crates | `BootSession` + BGM director; no wgpu or winit. |
-| `engine-screens` | `engine-battle-hud`, `engine-world-views`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-ui`, `engine-battle`, `engine-battle-vm`, `engine-dev-menu`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-fishing`, `engine-menus`, `engine-minigame-scenes`, `engine-minigames`, `engine-mode`, `engine-system`, `render-kernels`, `game-tables`, `minigame-formats`, `font` | The screens both hosts draw: shop family, battle HUD, pause menu, dialog box. |
+| `engine-session` | `engine-battle-hud`, `engine-world-views`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-audio`, `engine-menus`, `engine-title`, `engine-minigame-scenes`, `engine-battle`, `engine-battle-vm`, `engine-effects`, `engine-field`, `engine-mode`, `engine-system`, `engine-vm`, `render-kernels` + format-family and parser crates | `BootSession` + BGM director; no wgpu or winit. |
+| `engine-screens` | `engine-battle-hud`, `engine-world-views`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-ui`, `engine-battle`, `engine-battle-vm`, `engine-dev-menu`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-fishing`, `engine-menus`, `engine-title`, `engine-minigame-scenes`, `engine-minigames`, `engine-mode`, `engine-system`, `render-kernels`, `game-tables`, `minigame-formats`, `font` | The screens both hosts draw: shop family, battle HUD, pause menu, dialog box. |
 | `engine-export` | `engine-core`, `engine-scene`, `engine-field`, `engine-vm`, `actor-formats`, `game-tables`, `scene-formats`, `tim`, `tmd` | The `.glb` world exporter behind `export-glb`. |
 | `engine-capture` | `engine-scene-host`, `engine-core`, `engine-battle`, `engine-battle-vm`, `engine-camera`, `engine-cast`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-menus`, `engine-mode`, `engine-system`, `art`, `save`, `scene-formats` | Capture seeds, gates and pad drives shared by `parity` and the native capture child. |
 | `parity` | `engine-capture`, `engine-battle-hud`, `engine-session`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-audio`, `engine-ui`, the kernel crates it measures, `mednafen`, `pcsx-redux`, `ram-image` + parser crates | Parity oracles + retail comparison. |
@@ -239,7 +243,7 @@ The edges among the `World`-free kernel crates are a committed table, [`scripts/
 | Rank | Crates |
 |---|---|
 | 0 | `engine-system`, `engine-dialog`, `engine-vm` |
-| 1 | `engine-camera`, `engine-dev-menu`, `engine-mode`, `engine-motion-vm` |
+| 1 | `engine-camera`, `engine-dev-menu`, `engine-mode`, `engine-motion-vm`, `engine-title` |
 | 2 | `engine-battle-vm`, `render-kernels` |
 | 3 | `engine-battle`, `engine-cast`, `engine-effects`, `engine-field`, `engine-ui` |
 | 4 | `engine-fishing`, `engine-minigames`, `engine-scene` |
@@ -575,7 +579,7 @@ Every VM is ported handler by handler: the handler is dumped from Ghidra, writte
 | Actor VM (window widgets) | `FUN_801D6628`, 13 opcodes | `engine-vm/src/lib.rs` | [actor-vm](actor-vm.md) |
 | Battle action SM | `FUN_801E295C` | `engine-battle-vm/src/battle_action.rs`, `BattleActionHost` | [battle-action](battle-action.md) |
 | World-map entity SM | `FUN_801DA51C` | `engine-field/src/world_map_entity.rs` | [world-map](world-map.md) |
-| Title sub-mode dispatcher | `FUN_801DD35C`, 25-entry JT at `0x801CF244` | `engine-menus/src/title_overlay.rs` | [boot](boot.md#sub-mode-dispatcher) |
+| Title sub-mode dispatcher | `FUN_801DD35C`, 25-entry JT at `0x801CF244` | `engine-title/src/title_overlay.rs` | [boot](boot.md#sub-mode-dispatcher) |
 
 Per-VM notes that are not on the owning pages:
 
@@ -584,7 +588,7 @@ Per-VM notes that are not on the owning pages:
 - **Effect VM.** A slot pool (`Pool`) of 28-byte `MasterSlot`s and 32-byte `ChildSlot`s; `Pool::init_head` / `Pool::spawn` port `FUN_801DE914` / `FUN_801DFDF0`, and the per-frame walker `FUN_801E0080` is `Pool::tick_retail` (pass 1) + `Pool::child_billboards` (pass 2). The walker's only host callback is `EffectHost::next_random`.
 - **Battle action SM.** A per-frame edge-triggered state machine with 47 explicit states across the bands Attack `0x14..0x20`, Magic / Item `0x28..0x2E`, Summon `0x32..0x38`, Spirit `0x3C..0x40` / `0x46..0x48`, Done `0x50..0x52` / `0x5A`, Run / Capture `0x64..0x6B`, Magic-capture `0x6E..0x71`, terminal `0xFD` / `0xFF`. The Tactical-Arts strike band reads per-strike power bytes, hit timing, status effects and hit cues from `BattleActionHost::art_record` and surfaces them through `apply_art_strike(ArtStrikeInfo)`.
 - **Title dispatcher.** `TitleTickState::step` executes the graph, including all 56 `state[+0x204] = N` stores with their guards. Master game mode `0x02` has **two** writers: `LaunchGame` (`0x06`) at `0x801DFC00` on the NEW GAME route and `LaunchFade` (`0x16`) at `0x801DFAFC` on the load route.
-- **SCUS sprite-emit primitives** (`engine-menus/src/title_prim.rs`). The port of the sprite-descriptor dispatcher `FUN_800198E0` (tag-`0x11` + alpha-OR pre-pass + width-divisor variants) behind a `PrimHost` trait, beside forwarding shims for the libgpu wrappers `FUN_80058298` (`ClearImage`) and `FUN_80058490` (`MoveImage`, whose VRAM copy is `legaia_tim::Vram::move_image`). The overlay-side helpers (`FUN_801E1C1C` and friends, shared across the menu / battle / shop / save UI overlays) are a separate port.
+- **SCUS sprite-emit primitives** (`engine-title/src/title_prim.rs`). The port of the sprite-descriptor dispatcher `FUN_800198E0` (tag-`0x11` + alpha-OR pre-pass + width-divisor variants) behind a `PrimHost` trait, beside forwarding shims for the libgpu wrappers `FUN_80058298` (`ClearImage`) and `FUN_80058490` (`MoveImage`, whose VRAM copy is `legaia_tim::Vram::move_image`). The overlay-side helpers (`FUN_801E1C1C` and friends, shared across the menu / battle / shop / save UI overlays) are a separate port.
 
 ## Gameplay systems
 
@@ -593,7 +597,7 @@ The shell loop closes: title -> save-select -> field / encounter -> battle -> sa
 | System | Module | Notes |
 |---|---|---|
 | Game-mode driver | `engine-mode::mode` (`GameMode`, `ModeEntry`, `ModeDriver`); `World` side in `engine-core::world::mode_world` | The 28-entry table at SCUS `0x8007078C`. Boot starts in `MainInit`, as retail does. |
-| Title screen | `engine-menus::title::TitleSession` | `FadeIn -> PressStart -> MainMenu -> Done`, with a no-save fallback. The title TIM (PROT 0890 at `0x14228`, 256x256 8bpp) is decoded by `title_screen_atlas`. Layout: [boot](boot.md#title-screen-overlay-state). |
+| Title screen | `engine-title::title::TitleSession` | `FadeIn -> PressStart -> MainMenu -> Done`, with a no-save fallback. The title TIM (PROT 0890 at `0x14228`, 256x256 8bpp) is decoded by `title_screen_atlas`. Layout: [boot](boot.md#title-screen-overlay-state). |
 | Save select | `engine-menus::save_select::SaveSelectSession` | Slot-list browse with Load / Save / Delete confirms. See [save-screen](save-screen.md). |
 | Encounters | `engine-battle::encounter` | Per-scene table, step-driven random battle trigger, 5-phase transition. |
 | Battle | `engine-core` round loop over `engine-battle-vm` | Runs end to end, Tactical Arts included; the party is assembled from the player battle files' equipment sections. `engine-battle::target_picker` is the target cursor. See [battle](battle.md). |

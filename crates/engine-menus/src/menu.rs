@@ -6,7 +6,7 @@
 //! **This module is not a port of `FUN_801DD35C`, and used to say it was.**
 //! That routine is the *title-screen* tick - one resident copy, PROT 0899
 //! file `+0xEB44` - and the module that describes it is
-//! [`crate::title_overlay`], which carries the `PORT:` tag for it. Two
+//! `legaia_engine_title::title_overlay`, which carries the `PORT:` tag for it. Two
 //! things falsify the old reading, both read off the disassembly in
 //! `overlay_menu_801dd35c.txt` (12104 bytes / 3026 instructions,
 //! `entry=801dd35c`; `overlay_menu_801de234.txt` is the same dump requested

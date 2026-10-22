@@ -237,26 +237,26 @@ pub struct LegaiaRuntime {
     pub(crate) play_menu: Option<crate::play_menu::PlayMenu>,
     /// Boot-chain title-screen session; `Some` while the title runs before a
     /// scene is entered ([`crate::boot_title`]).
-    pub(crate) boot_title: Option<legaia_engine_menus::title::TitleSession>,
+    pub(crate) boot_title: Option<legaia_engine_title::title::TitleSession>,
     /// The title session **parked as a backdrop** while the boot Continue
     /// hand-off's save-select owns the screen. Retail keeps the title art up
     /// behind the Load panel at a dim; this page used to release the session
     /// at the hand-off and compose the panel over black
     /// ([`crate::boot_title::LegaiaRuntime::boot_title_backdrop_draws_json`]).
-    pub(crate) boot_title_backdrop: Option<legaia_engine_menus::title::TitleSession>,
+    pub(crate) boot_title_backdrop: Option<legaia_engine_title::title::TitleSession>,
     /// How many attract hand-offs the title has skipped this session. The
     /// countdown fires the same way it does natively, but this page has no
     /// STR/MDEC playback on the play path, so the movie is skipped and the
     /// count is what the page discloses instead of showing it.
     pub(crate) boot_title_attract_skips: u32,
     /// Disc-sourced title-screen art (PROT 0888), built with the title flow.
-    pub(crate) title_atlas: Option<legaia_engine_menus::title_screen_atlas::TitleScreenAtlas>,
+    pub(crate) title_atlas: Option<legaia_engine_title::title_screen_atlas::TitleScreenAtlas>,
     /// Publisher-logo boot phase, the stage **ahead** of the title card
     /// ([`crate::boot_title`]). `Some` while the logos play.
-    pub(crate) boot_logos: Option<legaia_engine_menus::publisher_logos::PublisherLogosSession>,
+    pub(crate) boot_logos: Option<legaia_engine_title::publisher_logos::PublisherLogosSession>,
     /// Disc-sourced publisher-logo atlas (PROT 0895 `init.pak`), built on the
     /// first logo run and kept for the page load.
-    pub(crate) boot_logos_atlas: Option<legaia_engine_menus::publisher_logos::LogosAtlas>,
+    pub(crate) boot_logos_atlas: Option<legaia_engine_title::publisher_logos::LogosAtlas>,
     /// The atlas build was attempted and failed (no disc, or `init.pak` did
     /// not parse), so it is not retried every frame.
     pub(crate) boot_logos_failed: bool,

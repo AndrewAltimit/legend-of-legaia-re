@@ -52,6 +52,7 @@ ENGINE_API_CRATES = (
     "engine-field",
     "engine-scene",
     "engine-menus",
+    "engine-title",
     "engine-mode",
     "engine-dialog",
     "engine-system",
