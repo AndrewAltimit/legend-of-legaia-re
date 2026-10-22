@@ -2367,6 +2367,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-engine-save-state"
+version = "0.1.0"
+dependencies = [
+ "legaia-engine-battle",
+ "legaia-engine-battle-vm",
+ "legaia-engine-core",
+ "legaia-engine-field",
+ "legaia-engine-menus",
+ "legaia-engine-mode",
+ "legaia-engine-system",
+ "legaia-prot",
+ "legaia-save",
+ "legaia-scene-formats",
+]
+
+[[package]]
 name = "legaia-engine-scene"
 version = "0.1.0"
 dependencies = [

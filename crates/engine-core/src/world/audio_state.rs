@@ -169,7 +169,7 @@ pub struct AudioState {
     /// sub-`5` arms the release.
     ///
     /// REF: FUN_800267A8
-    pub(crate) sound_arm: Option<legaia_engine_system::scus_leaf_kernels::TimedSoundArm>,
+    pub sound_arm: Option<legaia_engine_system::scus_leaf_kernels::TimedSoundArm>,
     /// The per-slot SFX-cue delay table (`DAT_8007C338`) the field VM's op
     /// `0x36` sub-`4` writes.
     ///

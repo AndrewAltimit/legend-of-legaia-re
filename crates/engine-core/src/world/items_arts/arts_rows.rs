@@ -16,7 +16,7 @@ impl World {
     /// chain ends with ([`legaia_engine_battle::battle_arts::chain_matches_record`]) supplies
     /// the real power profile; chains with no matching record fall back to a
     /// synthetic profile derived from the directional commands.
-    pub(crate) fn build_battle_arts_rows(
+    pub fn build_battle_arts_rows(
         &self,
         caster: u8,
     ) -> Vec<legaia_engine_battle::battle_arts::ArtRow> {
