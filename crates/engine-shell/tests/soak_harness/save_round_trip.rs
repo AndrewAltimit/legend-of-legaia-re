@@ -144,11 +144,15 @@ pub(super) fn split_save(label: &str) -> (&str, Option<&str>) {
 /// The library card the `@<save>` runs read.
 pub(super) const SOAK_CARD: &str = "playthrough-endgame-7saves.mcr";
 
+/// Prefix of the `card save` error a run raises when no save library is
+/// found at all - the one card failure the fixture tests count as a skip.
+pub(super) const NO_SAVE_LIBRARY: &str = "no save library";
+
 /// The save named `save` on the soak card, lifted into a [`legaia_save::SaveFile`].
 pub(super) fn card_save(save: &str) -> Result<legaia_save::SaveFile, String> {
-    let lib = std::env::var_os("LEGAIA_SAVES_LIBRARY")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| repo_root().join("saves/library"));
+    let lib = saves_library().ok_or_else(|| {
+        format!("{NO_SAVE_LIBRARY}: set LEGAIA_SAVES_LIBRARY or check out saves/library")
+    })?;
     // `<card>:<save>` names its own card; a bare save reads
     // `LEGAIA_SOAK_CARD`, else the default.
     let (card, save) = match save.split_once(':') {

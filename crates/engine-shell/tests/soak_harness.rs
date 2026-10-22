@@ -367,6 +367,13 @@ fn soak_fixtures() {
             .unwrap()
             .join()
             .expect("fixture thread");
+        if let Some(e) = card_save_error(&findings) {
+            eprintln!(
+                "[soak-fixture] {} -> DID NOT RUN: {e}",
+                f.file_name().unwrap().to_string_lossy()
+            );
+            continue;
+        }
         let hit = lr
             .signature
             .as_ref()
@@ -414,6 +421,7 @@ fn soak_fixed_fixtures() {
     let probe = open_session(&src);
     let known: BTreeSet<String> = scene_set(&probe).into_iter().collect();
     drop(probe);
+    let mut skipped: Vec<String> = Vec::new();
     for f in files {
         let text = std::fs::read_to_string(&f).expect("read replay");
         let max_battles: Option<u32> =
@@ -431,6 +439,19 @@ fn soak_fixed_fixtures() {
             .expect("fixed-fixture thread");
         let name = f.file_name().unwrap().to_string_lossy().into_owned();
         let sig = lr.signature.expect("checked above");
+        // A replay that never started measured nothing: an `@<save>` replay
+        // whose card save cannot be lifted ran 0 frames and so cannot raise
+        // its signature. With no library at all it is a counted skip; with a
+        // library that lacks the card or the save it is a failure.
+        if let Some(e) = card_save_error(&out.findings) {
+            assert!(
+                e.starts_with(NO_SAVE_LIBRARY),
+                "{name}: the replay's card save does not load: {e}"
+            );
+            eprintln!("[soak-fixed] {name}: SKIPPED, {e}");
+            skipped.push(name);
+            continue;
+        }
         eprintln!(
             "[soak-fixed] {name}: {} frames, {} battles, findings {:?}",
             out.stats.frames_run,
@@ -452,6 +473,22 @@ fn soak_fixed_fixtures() {
             );
         }
     }
+    if !skipped.is_empty() {
+        eprintln!(
+            "[soak-fixed] {} of the fixed replays did NOT run (no save library): {}",
+            skipped.len(),
+            skipped.join(", ")
+        );
+    }
+}
+
+/// The error of a run that could not lift its `@<save>` card save (it ran
+/// no frames), if that is how it ended.
+fn card_save_error(findings: &[Finding]) -> Option<&str> {
+    findings
+        .iter()
+        .find(|g| g.detector == "tick_error" && g.location == "card save")
+        .map(|g| g.detail.as_str())
 }
 
 // Disc-free unit tests.

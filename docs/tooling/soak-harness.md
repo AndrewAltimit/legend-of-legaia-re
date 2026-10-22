@@ -298,7 +298,8 @@ LEGAIA_SOAK_SEEDS=30 LEGAIA_SOAK_FRAMES=18000 LEGAIA_SOAK_JOBS=8 LEGAIA_SOAK_TAG
 | variable | meaning |
 |---|---|
 | `LEGAIA_DISC_BIN` | required; every disc-gated test skips and passes without it |
-| `LEGAIA_EXTRACTED_DIR` | extracted tree to read (falls back to `<repo>/extracted`, then to the disc image itself) |
+| `LEGAIA_EXTRACTED_DIR` | extracted tree to read (falls back to `extracted/` in the workspace or the nearest ancestor that has one - a worktree finds its enclosing checkout's - then to the disc image itself) |
+| `LEGAIA_SAVES_LIBRARY` | save library the `@<save>` runs and replays read (falls back to `saves/library/` up the tree the same way) |
 | `LEGAIA_SOAK_SEEDS` / `LEGAIA_SOAK_SEED_BASE` | seed count and first seed |
 | `LEGAIA_SOAK_FRAMES` | frames per run |
 | `LEGAIA_SOAK_SCENES` | comma list of scenes / pseudo-scenes instead of the full set |
@@ -379,7 +380,10 @@ to `fixed/`.
 
 [`scripts/replays/soak/fixed/`](../../scripts/replays/soak/fixed/) holds the
 closed findings as regressions. `soak_fixed_fixtures` replays each and fails
-if its recorded signature fires again; a `# soak-expect-max-battles = N`
+if its recorded signature fires again. An `@<save>` replay whose card save does
+not load runs no frames and so proves nothing: with no save library found at
+all it is reported as a skip and listed at the end, and with a library that
+lacks its card or save it fails. A `# soak-expect-max-battles = N`
 header also bounds the battles the replay may open, since a loop that stops
 signing as `battle_loop` could still fight twice. A fixed replay's `frames`
 may run past the finding frame, so the check covers what happens after it -
