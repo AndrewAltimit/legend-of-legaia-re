@@ -70,6 +70,7 @@ impl SceneHost {
                             PlacementKind::Portal { target_map } => {
                                 legaia_engine_field::world_map_entity_config::WorldMapEntityConfig::MinigameDoor {
                                     sub_id: target_map,
+                                    slot: u8::try_from(p.index).unwrap_or(u8::MAX),
                                 }
                             }
                             PlacementKind::Npc {

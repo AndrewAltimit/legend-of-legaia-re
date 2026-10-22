@@ -499,6 +499,7 @@ fn world_map_minigame_door_engage_arms_the_door_warp() {
     world.enter_world_map();
     world.install_world_map_entities_with_configs(vec![WorldMapEntityConfig::MinigameDoor {
         sub_id: 5,
+        slot: 0,
     }]);
     // Encounters off so only the transition path can fire.
     world.set_world_map_encounter(false, 50, 0, 64);
@@ -535,7 +536,7 @@ fn world_map_walking_onto_minigame_door_auto_engages() {
     world.set_world_map_encounter(false, 50, 0, 64);
     // A door at tile (3,3) -> world (3*128 + 64 = 448, 448).
     world.install_world_map_entities_at(vec![(
-        WorldMapEntityConfig::MinigameDoor { sub_id: 3 },
+        WorldMapEntityConfig::MinigameDoor { sub_id: 3, slot: 0 },
         (448, 448),
     )]);
 
@@ -656,7 +657,10 @@ fn world_map_entity_markers_pair_position_and_kind() {
     // Put the player on a known plane so the marker `y` is deterministic.
     world.actors[0].move_state.world_y = -200;
     world.install_world_map_entities_at(vec![
-        (WorldMapEntityConfig::MinigameDoor { sub_id: 3 }, (448, 320)),
+        (
+            WorldMapEntityConfig::MinigameDoor { sub_id: 3, slot: 0 },
+            (448, 320),
+        ),
         (
             WorldMapEntityConfig::Npc {
                 interact_id: 4,

@@ -103,6 +103,17 @@ impl World {
         // press. Runs before locomotion so opening a box suppresses movement +
         // portal auto-engage this frame (both gate off `current_dialog`).
         self.tick_world_map_npc_dialog();
+        // The talk runner the field drives: a record the action button just
+        // engaged starts this frame, and a running one steps on the frame's
+        // pad edges. Its ops do the rest - a fishing signboard's `0x3E` arms
+        // the minigame warp exactly as a casino cabinet's does in a town.
+        self.drive_inline_dialogue();
+        if !self.dialogue_owns_input()
+            && self.dialog.active_inline_prologue.is_none()
+            && !self.interaction_timeline_holds_talk_facing()
+        {
+            self.release_talk_facing();
+        }
 
         // Move the player first, then auto-engage any portal the player just
         // walked onto (sets its SM to Transitioning), so the entity SM step
@@ -878,12 +889,15 @@ impl World {
             if ctx.state != legaia_engine_field::world_map_entity::EntityState::Idle as u16 {
                 continue;
             }
-            if !matches!(
-                self.world_map.entity_configs.get(idx),
-                Some(WorldMapEntityConfig::MinigameDoor { .. })
-                    | Some(WorldMapEntityConfig::OverworldPortal { .. })
-            ) {
-                continue;
+            match self.world_map.entity_configs.get(idx) {
+                Some(WorldMapEntityConfig::OverworldPortal { .. }) => {}
+                // A door whose placement carries an interaction record is
+                // talk-to, not walk-onto: the action-button probe runs that
+                // record and its own `0x3E` warps
+                // ([`Self::world_map_record_talk_slot`]).
+                Some(WorldMapEntityConfig::MinigameDoor { slot, .. })
+                    if !self.world_map_door_runs_record(*slot) => {}
+                _ => continue,
             }
             let Some(&(ex, ez)) = self.world_map.entity_positions.get(idx) else {
                 continue;
@@ -1271,6 +1285,17 @@ impl World {
         if self.world_map.player_walking || !self.input.just_pressed(input::PadButton::Cross) {
             return;
         }
+        // A placement whose interaction record the field-VM dialogue runner
+        // can execute takes the field's own path: the retail facing probe
+        // finds it, the interact posts on it, and the record runs from its
+        // interaction cursor (`drive_inline_dialogue`, stepped right after
+        // this in [`Self::tick_world_map`]).
+        if let Some(slot) = self.world_map_record_talk_slot() {
+            self.dialog.input_consumed = true;
+            self.trigger_field_interact(0, slot);
+            self.face_field_npc(slot);
+            return;
+        }
         if self.world_map.entity_positions.is_empty() {
             return;
         }
@@ -1320,6 +1345,42 @@ impl World {
                 depth_id: 0,
             });
         }
+    }
+
+    /// The placement the overworld action button engages through its own
+    /// interaction record, if any.
+    ///
+    /// The overworld runs the field overlay's pad controller
+    /// (`FUN_801D01B0`, from the frame driver `FUN_801D1344`), so its
+    /// action button is the field's interaction probe (`FUN_801CF9F4`,
+    /// [`Self::field_interact_probe_slot`]): one compass point 64 units
+    /// ahead of the player, box-tested at ±72 against every placed actor.
+    /// A hit hands the touched placement's record to the dialog SM
+    /// (`FUN_80039B7C`), which resumes it past its spawn section. `map03`
+    /// `P1[19]`, the Buma fishing signboard, is a record of that shape:
+    /// the frozen-lake flag `0x378`, the rod and lure holdings (`4C DC`),
+    /// "Do you want to fish?", a 48-frame white fade (`34 01`, `4A 30`)
+    /// and only then its `3E 64` warp.
+    ///
+    /// `None` while the field-VM dialogue runner is off (the simplified
+    /// path has nothing to run the record with) or when the probe hits a
+    /// placement with no installed record.
+    ///
+    /// REF: FUN_801CF9F4, FUN_80039B7C, FUN_801D1344
+    pub fn world_map_record_talk_slot(&self) -> Option<u8> {
+        if !self.toggles.use_vm_dialogue || self.npcs.dialog_prologue.is_empty() {
+            return None;
+        }
+        self.field_interact_probe_slot()
+            .filter(|slot| self.npcs.dialog_prologue.contains_key(slot))
+    }
+
+    /// Whether the overworld minigame door on placement `slot` is entered
+    /// through its interaction record (talk-to) rather than the walk-over
+    /// fallback: the record is installed and the runner that executes it
+    /// is on.
+    fn world_map_door_runs_record(&self, slot: u8) -> bool {
+        self.toggles.use_vm_dialogue && self.npcs.dialog_prologue.contains_key(&slot)
     }
 
     /// Host signal that the player engaged overworld entity `idx` (walked onto

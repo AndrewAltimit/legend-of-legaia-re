@@ -823,6 +823,11 @@ impl World {
                 // Overworld helper spawns (an op-0x44 issued by a world-map
                 // record) execute concurrently, same as the field arm - both
                 // are retail-frame paced.
+                //
+                // One Cross/Circle edge per tick, as in the field arm: the
+                // script's `0x4C` dialog poll and the talk-to probe in
+                // `tick_world_map` share it.
+                self.dialog.input_consumed = false;
                 self.step_spawned_record_contexts();
                 // The scene system script (ctx `0xFB`, MAN `P1[0]`). The
                 // overworld is a mode-3 field-run scene and retail runs its

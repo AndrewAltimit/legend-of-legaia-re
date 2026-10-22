@@ -571,7 +571,7 @@ impl<'a> legaia_engine_field::world_map_entity::WorldMapEntityHost for WorldMapE
             // instead resolved a code-overlay selector through a CDNAME
             // ordinal and warped the player to an unrelated scene.
             // REF: FUN_801DE840 case 0x3e at 0x801E078C
-            Some(WorldMapEntityConfig::MinigameDoor { sub_id }) => {
+            Some(WorldMapEntityConfig::MinigameDoor { sub_id, .. }) => {
                 let sub_id = *sub_id;
                 self.world.arm_minigame_warp();
                 self.world.minigames.pending_warp = Some(sub_id);
