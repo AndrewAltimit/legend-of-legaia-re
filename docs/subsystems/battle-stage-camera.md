@@ -134,6 +134,30 @@ grid would be a flat slab across the stage.
 viewer; the sweep is
 `the_ground_tile_is_addressed_by_the_emitters_own_constants`.
 
+#### Where the grid sorts
+
+Every grid quad goes into one ordering-table entry: the prologue forms
+`*(0x1F8003F4) + ((0x3FEC >> otshift) << 2)` (`ori t3,zero,0x3fec`, `srav`,
+`sll`, `add` at `0x801D02D4..0x801D02E0`) and links each packet there, the
+far end of the table. The floor is therefore painted before anything else on
+the frame and hides nothing drawn after it, including geometry that reaches
+below the floor plane.
+
+The port draws the grid as ordinary depth-tested geometry, so a primitive
+under the floor plane loses to it. PROT 0946's Call Wave rays are the visible
+case: `zeto_call_wave_mid_cast` holds sixteen ray parts (record `0x801F7970`,
+`+0x52 = 0x380`, so each is a screen-aligned billboard rolled by `+0x28`),
+and retail's frame fans them all the way round Zeto over the floor where the
+port shows only the half pointing up.
+
+Seating the grid in a far depth bucket (every fragment on one depth behind
+the scene, on both hosts) reproduces retail's full fan, but it also shows
+what the depth test was hiding elsewhere: `rim_elm_gimard_seru_capture_before`'s
+rising Gimard (no floor clip in retail, node `+0x42 = 0`) draws an additive
+patch at its base that retail's frame does not show. Across the battle
+states the image channel moves `-0.006..+0.005`, so the change waits on
+that second difference.
+
 #### The two culls
 
 | Cull | Where | Rule |

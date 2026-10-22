@@ -46,6 +46,7 @@
   </figure>
   <h3>Ground grid</h3>
   <p>The floor is not geometry from a file. A GTE rasteriser emits a flat tiled grid each frame in two passes: the first transforms each grid point and writes a per-cell visibility byte, the second emits four gouraud-textured quads per visible cell. One 64&times;64 texel window is stretched over each cell. The routine contains no RNG and mirrors no corner - the tiling is deterministic. The grid has one extra cell of bias on the depth axis, so it is not quite centred.</p>
+  <p>Every grid quad is linked into one ordering-table entry at the far end of the table, so the floor is painted before anything else and hides nothing drawn after it - not even geometry reaching below the floor plane. The port depth-tests the grid like any other mesh, which is why Zeto's Call Wave rays only fan upward in the port where retail's fan all the way round him over the floor.</p>
   <h3>Which backdrop a fight uses</h3>
   <p>A scene bundle carries one backdrop mesh stream per sub-area, and the battle uses whichever one the chunk walker last recorded. The choice is scene data, not a code table, and it is not uniformly the block's first stream: Rim Elm carries four sub-area backdrops and the sparring match is fought in the second.</p>
   <h3>Two copies of one mesh</h3>
