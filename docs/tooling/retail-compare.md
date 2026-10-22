@@ -2323,7 +2323,9 @@ Its misses fall into three shapes:
   `0x43A` (`+0x14CB`). A later entry, retail's or the engine's, runs no
   `P2[3]` and spawns him on `0xDC`; the two `kor5` states were captured in the
   visit the cutscene ran in. `kor5_field_card_boot`, before it, scores him
-  exact.
+  exact. The engine reaches both seats: `engine-scene-host`'s
+  `kor5_old_deez_seat_disc` enters `kor5` on `0xDC`, plays `P2[3]` and lands
+  him on `(4160, 11968)` with `0x43A` set.
 
 ## The image channel
 
