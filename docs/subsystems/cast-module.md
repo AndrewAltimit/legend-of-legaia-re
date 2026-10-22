@@ -3271,6 +3271,7 @@ instructions before the call:
 | PROT 0898 `FUN_801F2410` colour wash | stores into `ctx[+0x27A..+0x286]`, `ctx[+0x32A]`, `ctx[+0x32C]` | 14 |
 | `FUN_801E1D98` streak ribbon | a stack trio anchor and a trail id | 6 |
 | stage byte `ctx[+0x278]` (no call: a `sb` the battle frame's ambient pass `FUN_80050120` reads) | a literal | 45 |
+| PROT 0898 `FUN_801D8DE8` HUD element spawn | the element and mode; for the message bar `0x5B`, the line pointer stored into `0x800774AC` | 16 |
 
 `legaia_overlay_images::cast_presentation::decode` recovers them as data.
 Each tick body opens on a switch over `ctx[+0x279]` - a jump table bounded by
@@ -3288,6 +3289,14 @@ fades, Evil Seru Magic's arm 2 / 4 / 10 / 26 / 27 fades (all three of arm
 26's), and Gimard's arm 8 CLUT copy
 (`crates/overlay-images/tests/cast_presentation_real.rs`). Of the band's 258
 `FUN_80024E80` sites, 241 sit on a phase arm and 239 of those resolve whole.
+
+A HUD element site also carries the phase the straight-line code after the
+call stores (`PhaseExit`), since an arm that forks raises its bar on one way
+out only: Call Wave's arm 0 raises the message bar and bumps the phase to `1`,
+Big Wave leaves the same arm for `4` without it. The engine raises the bar
+(`World::raise_module_message_bar`) on the pass whose phase change matches,
+for a line the image holds, and leaves PROT 0940, 0941 and 0954 to their hand
+ports ([battle-hud.md](battle-hud.md#the-bottom-message-bar-record-0x5b)).
 
 `World::fire_cast_presentation` fires them after `World::run_cast_module_code`
 has run the tick, keyed by `(module, tick body, phase)`. A call that leaves
