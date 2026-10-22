@@ -199,6 +199,8 @@ pub struct App {
     clut: usize,
     tim_zoom: f32,
     tim_tex: Option<((usize, usize, usize), TextureHandle)>,
+    /// The decode failure for the key [`Self::tim_tex`] would hold.
+    tim_err: Option<((usize, usize, usize), String)>,
     // Model tab.
     tmd_sel: usize,
     model: Option<ModelView>,
@@ -242,7 +244,20 @@ impl App {
         if studio.settings.prune_recent() {
             studio.save_settings();
         }
-        let open = initial.or_else(|| studio.settings.last_source.clone().filter(|p| p.exists()));
+        // The disc or folder opened last, when it is still there. When it
+        // has gone (moved, renamed, an unplugged drive) say so: the recent
+        // list has just dropped it, and the start page alone would read as
+        // a first run.
+        let last = studio.settings.last_source.clone();
+        let open = initial.or_else(|| last.clone().filter(|p| p.exists()));
+        if open.is_none()
+            && let Some(gone) = last.filter(|p| !p.exists())
+        {
+            studio.error = Some(format!(
+                "The disc opened last is no longer at {} - open it from where it is now.",
+                gone.display()
+            ));
+        }
         let path_text = open
             .as_ref()
             .map(|p| p.display().to_string())
@@ -283,6 +298,7 @@ impl App {
             clut: 0,
             tim_zoom: 2.0,
             tim_tex: None,
+            tim_err: None,
             tmd_sel: 0,
             model: None,
             scenes: HashMap::new(),
@@ -338,6 +354,7 @@ impl App {
         self.player.stop();
         self.model = None;
         self.tim_tex = None;
+        self.tim_err = None;
         self.studio.open(p);
     }
 
@@ -348,6 +365,7 @@ impl App {
             self.tmd_sel = 0;
             self.vab_sel = 0;
             self.tim_tex = None;
+            self.tim_err = None;
             self.model = None;
         }
         self.studio.select(pos);
@@ -1247,7 +1265,8 @@ impl App {
         self.tim_sel = self.tim_sel.min(a.tims.len() - 1);
         egui::SidePanel::left("tim_list")
             .resizable(true)
-            .default_width(230.0)
+            // Wide enough for one unwrapped row ("#0   320x8 4bpp lzs#0 @0x4F00").
+            .default_width(270.0)
             .show_inside(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     for (i, t) in a.tims.iter().enumerate() {
@@ -1270,12 +1289,20 @@ impl App {
                 });
             });
         let t = a.tims[self.tim_sel].clone();
-        ui.horizontal(|ui| {
+        // Wraps rather than clipping the export buttons off a narrow pane.
+        ui.horizontal_wrapped(|ui| {
             if t.palettes > 1 {
                 ui.label("CLUT:");
                 ui.add(egui::Slider::new(&mut self.clut, 0..=t.palettes - 1));
             } else if t.palettes == 1 {
                 ui.label("1 CLUT");
+            } else if t.bpp <= 8 {
+                ui.label("no CLUT in the file: indices shown in grey")
+                    .on_hover_text(
+                        "The game draws this texture with a palette another upload left \
+                         in VRAM, so the file alone has no colours. The 3D model tab's \
+                         scene VRAM shows it as the game does.",
+                    );
             } else {
                 ui.label("direct colour (no CLUT)");
             }
@@ -1311,21 +1338,29 @@ impl App {
             }
         });
         let key = (a.pos, self.tim_sel, self.clut);
-        if self.tim_tex.as_ref().map(|(k, _)| *k) != Some(key) {
-            self.tim_tex = match export::tim_rgba(a, &t, self.clut) {
+        // A failed decode is remembered with its key like a texture, so the
+        // message stays up and the TIM is not re-decoded every frame.
+        let have = self.tim_tex.as_ref().map(|(k, _)| *k) == Some(key)
+            || self.tim_err.as_ref().map(|(k, _)| *k) == Some(key);
+        if !have {
+            self.tim_tex = None;
+            self.tim_err = None;
+            match export::tim_rgba(a, &t, self.clut) {
                 Ok((w, h, rgba)) if w > 0 && h > 0 => {
                     let img = ColorImage::from_rgba_unmultiplied([w, h], &rgba);
-                    Some((
+                    self.tim_tex = Some((
                         key,
                         ui.ctx().load_texture("tim", img, TextureOptions::NEAREST),
-                    ))
+                    ));
                 }
-                Ok(_) => None,
-                Err(e) => {
-                    ui.colored_label(ui.visuals().error_fg_color, format!("{e:#}"));
-                    None
+                Ok((w, h, _)) => {
+                    self.tim_err = Some((key, format!("empty TIM ({w}x{h})")));
                 }
-            };
+                Err(e) => self.tim_err = Some((key, format!("{e:#}"))),
+            }
+        }
+        if let Some((_, e)) = &self.tim_err {
+            ui.colored_label(ui.visuals().error_fg_color, e);
         }
         if let Some((_, tex)) = &self.tim_tex {
             let size = tex.size_vec2() * self.tim_zoom;
@@ -1788,10 +1823,13 @@ impl App {
                 ui.label("Disc image");
                 match &disc {
                     Some(p) => ui.monospace(p.display().to_string()),
-                    None => ui.colored_label(
-                        ui.visuals().error_fg_color,
-                        "open a disc image first (Browse > Open disc image)",
-                    ),
+                    None => {
+                        let r = ui.add(crate::theme::primary_button("Open disc image..."));
+                        if r.clicked() {
+                            self.pick_disc();
+                        }
+                        r
+                    }
                 };
                 ui.end_row();
                 ui.label("Output folder");
@@ -1985,8 +2023,11 @@ impl eframe::App for App {
         egui::TopBottomPanel::top("top").show(ctx, |ui| self.top_bar(ui));
         self.about_window(ctx);
         match self.mode {
-            // Nothing open yet: the start page takes the whole window.
-            Mode::Browse if self.studio.library.is_none() => {
+            // Nothing open yet: the start page takes the whole window, in
+            // every view that needs a disc to show anything (a view restored
+            // from the last session used to open on a bare "open a disc
+            // first" line with no way to do it).
+            Mode::Browse | Mode::Actors | Mode::Media if self.studio.library.is_none() => {
                 egui::CentralPanel::default().show(ctx, |ui| self.start_page(ui));
             }
             Mode::Browse => {
