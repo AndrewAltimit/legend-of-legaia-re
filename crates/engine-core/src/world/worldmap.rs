@@ -1377,6 +1377,15 @@ impl World {
         if !self.toggles.use_vm_dialogue || self.npcs.dialog_prologue.is_empty() {
             return None;
         }
+        // The probe lives inside the pad controller, which the frame driver
+        // skips while a script context engages the player (`+0x10 &
+        // 0x80000`) - the field's gate in `tick_field_interaction_probe`.
+        if self.script_context_engages_player()
+            || self.field_scripts_held_for_battle()
+            || self.encounter_owns_player()
+        {
+            return None;
+        }
         self.field_interact_probe_slot()
             .filter(|slot| self.npcs.dialog_prologue.contains_key(slot))
     }
