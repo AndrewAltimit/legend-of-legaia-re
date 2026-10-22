@@ -755,6 +755,13 @@ fn a_seated_ghost_ring_slot_draws_the_captured_keyframe_and_ground() {
     assert_eq!(ghosts[1].pose, want_far);
     assert_eq!([ghosts[1].pos[0], ghosts[1].pos[2]], [-21, 106]);
     assert_eq!(ghosts[0].color, [0x60, 0x30, 0x30]);
+    // Single-sided, as the live body: both shells additive read twice
+    // retail's ghost.
+    assert!(
+        ghosts
+            .iter()
+            .all(|g| g.nclip_mode() == crate::world::BATTLE_BODY_NCLIP)
+    );
     // A body with no playing clip has nothing to re-pose from.
     world.actors[1].battle_animation = None;
     assert!(!world.seat_battle_ghost_ring(1, 4, 0x50, [0, 0]));

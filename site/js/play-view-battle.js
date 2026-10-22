@@ -380,6 +380,11 @@
               x: gh[j] * S, y: gh[j + 1] * S, z: gh[j + 2] * S,
               rotY: -tf[o + 3],
               scale: S * gh[j + 6],
+              /* Single-sided, as the live body (`BattleGhostDraw::
+               * nclip_mode`): both shells additive read twice retail's
+               * ghost. Guarded against a cached WASM. */
+              nclip: (typeof rt.play_battle_actor_ghost_nclip === 'function')
+                ? rt.play_battle_actor_ghost_nclip(i, g) : undefined,
               strictDepth: true,
               cue: {
                 far: [gh[j + 3], gh[j + 4], gh[j + 5]],

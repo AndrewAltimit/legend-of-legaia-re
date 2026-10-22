@@ -919,6 +919,7 @@ impl PlayWindowApp {
                         ghost_pos: gpos,
                         body_pos: bpos,
                         color: g.color,
+                        nclip: g.nclip_mode(),
                     });
                 }
                 Err(e) => log::warn!("ghost mesh upload: {e:#}"),

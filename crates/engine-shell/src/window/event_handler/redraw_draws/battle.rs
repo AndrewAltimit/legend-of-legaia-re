@@ -113,7 +113,9 @@ impl<'m> DrawCtx<'_, 'm> {
     pub(super) fn push_battle_ghosts(&self, out: &mut DrawLists<'m>, actor_cam: Mat4) {
         let store = &self.store;
         let battle_ghost_uploads = &store.posed.battle_ghost_uploads;
-        let DrawLists { draws, .. } = out;
+        let DrawLists {
+            draws, nclip_marks, ..
+        } = out;
         use legaia_engine_battle::battle_afterimage as ai;
         let eye = ai::camera_eye_from_vp(&actor_cam.to_cols_array());
         for g in battle_ghost_uploads {
@@ -132,6 +134,9 @@ impl<'m> DrawCtx<'_, 'm> {
                 }
                 None => Mat4::IDENTITY,
             };
+            // Single-sided, as the live body: the walk's draw word carries no
+            // double-sided bit (`BattleGhostDraw::nclip_mode`).
+            nclip_marks.push((draws.len(), g.nclip));
             // The walk's `+0x78 = 0x1000` (`0x800493D8`): the DPCS output is
             // the far colour whatever the prim's baked colour, so the cue
             // is a constant full weight toward the ghost colour.
