@@ -7,13 +7,15 @@ impl LegaiaRuntime {
     /// Load / Save sub-screen: the real retail save-select chrome, driven off
     /// the memory-card rack - the native window's `save_select_overlay`
     /// twin, with the pill row bound to the rack's card ports and the preview
-    /// grid to the selected card's blocks.
+    /// grid to the selected card's blocks. `flow` is the driver the screen
+    /// runs under: the pause menu's own, or the title's Continue screen's
+    /// (`crate::boot_continue`).
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn build_save_select(
+    pub(crate) fn build_save_select(
         &self,
         assets: &PlayMenuAssets,
         s: &SaveSelectSession,
-        menu: &PlayMenu,
+        flow: &SaveScreenFlow,
         sprites: &mut Vec<SpriteDraw>,
         texts: &mut Vec<TextDraw>,
         origin: (i32, i32),
@@ -26,7 +28,7 @@ impl LegaiaRuntime {
         // to return before every phase overlay when the atlas was absent,
         // leaving the title and nothing else.
         let out = legaia_engine_screens::pause_screens::save_select_overlay_draws(
-            &menu.save_flow,
+            flow,
             s,
             &assets.font,
             assets.chrome.as_ref().map(|(_, rects)| rects),

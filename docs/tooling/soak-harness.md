@@ -172,8 +172,8 @@ front end instead (`soak_harness/front_end.rs`), stepping the same
   (`BootSession::start_new_game`).
 - `title+continue[@<save>]` mounts the library card in port 1, opens the
   title with Continue live, picks it, and walks the retail save-select
-  (`SaveSelectSession::title_continue` stepped through `SaveScreenFlow`, as
-  the native window's boot save-select is) onto the named save's block, then
+  (the session's `ContinueScreen`, the screen both play hosts step) onto the
+  named save's block, then
   resumes it through `BootSession::resume_save`. With no `@<save>` it takes
   the card's first save.
 
@@ -188,7 +188,8 @@ Two deterministic tests pin each chain end to end:
 handed back in `town01`) and `front_end_continue_lands_a_library_save` (the
 save resumes in its own scene with its money, and keeps ticking). The native
 window's own boot-UI arm is checked through its headless frame path in
-`native_front_end.rs`.
+`native_front_end.rs`, New Game and a Continue over a library card mounted
+in port 2 (`HeadlessPlayWindow::open_boot_ui`'s card).
 
 ### The scene set
 

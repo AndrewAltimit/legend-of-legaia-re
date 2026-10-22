@@ -1061,7 +1061,9 @@ the title overlay's own card manager (`FUN_801DDCCC`): `AttractIdle`
 leg `0x04` / `0x05`) ends in `LaunchFade` (`0x16`), whose load-route master
 mode write is at `0x801DFAFC`. No field runs under the title, so nothing a
 field gate refuses (a dialogue, a lock, an op-`0x49` park) stands in front of
-it. Both hosts open it as `SaveSelectSession::title_continue`.
+it. Both hosts run it as one `engine-session::title_continue::ContinueScreen`
+over `SaveSelectSession::title_continue`; a backed-out Continue returns to
+the title card.
 
 Continue's enablement is a port guard with no retail counterpart (retail lets
 the row be picked and lets the save screen say "No data"). Both hosts open

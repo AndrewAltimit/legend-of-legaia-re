@@ -1904,7 +1904,7 @@ Two rows left the table above through page ladders, and both were closer
 than their verdicts said. `801e0418` was already drawn on both hosts - the
 save-select backdrop is `title_band_sprites`' dim arm, which returns
 `title_strip_sprites` - so the row was reach, not wiring:
-`title_backdrop_parity` walks the page's title Continue into the save-select
+`title_backdrop_parity` walks the page's title Continue into its Continue screen
 and holds the backdrop to `title_strip_sprites` strip for strip, and the
 `legaia-engine` binary's `title_backdrop_tests` hold the native
 `boot_title_band_state` to the same list. `801dbc30` was drawn on both hosts

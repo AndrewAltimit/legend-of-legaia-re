@@ -73,9 +73,8 @@ impl LegaiaRuntime {
         FrontEndScreens {
             boot_logos: self.boot_logos_is_active(),
             title: self.boot_title_is_active(),
-            // The page's Continue opens the pause menu's Load row: its save
-            // select is `pause_menu`.
-            save_select: false,
+            // The title's Continue screen (`crate::boot_continue`).
+            save_select: self.boot_continue_is_open(),
             pause_menu: self.play_menu_is_open(),
             game_over: self.game_over.is_some(),
         }

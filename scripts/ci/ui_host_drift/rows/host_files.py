@@ -57,6 +57,8 @@ NATIVE_REDRAW = "crates/engine-shell/src/window/event_handler/redraw.rs"
 NATIVE_FIELD_RENDER = "crates/engine-shell/src/window/field_render.rs"
 NATIVE_GEOMETRY = "crates/engine-shell/src/window/geometry.rs"
 WEB_BOOT_TITLE = "crates/web-play/src/boot_title.rs"
+# The title's Continue screen glue over `engine-session::ContinueScreen`.
+WEB_BOOT_CONTINUE = "crates/web-play/src/boot_continue.rs"
 WEB_MINIGAMES_MUSCLE = "crates/web-play/src/minigames_muscle/exports.rs"
 WEB_PLAY_BATTLE = "crates/web-play/src/play_battle.rs"
 WEB_PLAY_BATTLE_SCREEN_PRIMS = "crates/web-play/src/play_battle/screen_prims.rs"

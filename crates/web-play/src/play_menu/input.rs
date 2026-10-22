@@ -258,11 +258,13 @@ impl LegaiaRuntime {
             // Load / Save browse the console's two memory-card ports, so the
             // rack is `CardPorts` - which is also what puts the session in
             // the matching two-stage flow; no host flips that flag by hand
-            // (`SaveSelectSession::for_rack`). Every other
+            // (`SaveSelectSession::for_rack`); the rack is the session's
+            // over the two ports (`card_port_rack`), the native window's
+            // too. Every other
             // row builds the real retail sub-session from the disc catalogs
             // installed on the host world at `load_disc` (spell / equipment /
             // item), matching the native shell's `FieldMenuSubsession::build`.
-            let rack = SaveRack::CardPorts(self.card_slot_snapshots());
+            let rack = legaia_engine_session::title_continue::card_port_rack(self.card_ports());
             let sub = self.scene_host.host().map(|host| {
                 let world = &host.world;
                 let chain = world.chain_library();

@@ -675,6 +675,17 @@ impl LegaiaRuntime {
         else {
             return false;
         };
+        self.play_menu_blip(blip)
+    }
+}
+
+impl LegaiaRuntime {
+    /// Sound one menu blip (the decision already made, as the title's
+    /// Continue screen makes it: `ContinueStep::blip`).
+    pub(crate) fn play_menu_blip(
+        &mut self,
+        blip: legaia_engine_menus::menu_cues::MenuBlip,
+    ) -> bool {
         let event = match blip {
             legaia_engine_menus::menu_cues::MenuBlip::Cursor => "menu_cursor",
             legaia_engine_menus::menu_cues::MenuBlip::Confirm => "menu_confirm",

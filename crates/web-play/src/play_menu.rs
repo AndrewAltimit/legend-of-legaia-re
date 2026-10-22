@@ -77,7 +77,7 @@ use legaia_engine_menu_runtime::field_menu_dispatch::{self, FieldMenuSubsession}
 use legaia_engine_menus::field_menu::{FieldMenuOutcome, FieldMenuRow, FieldMenuSession};
 use legaia_engine_menus::save_menu_atlas::{SaveMenuAtlas, build_atlas};
 use legaia_engine_menus::save_screen::{SaveCommitKind, SaveRefusal, SaveScreenFlow};
-use legaia_engine_menus::save_select::{SaveRack, SaveSelectSession};
+use legaia_engine_menus::save_select::SaveSelectSession;
 use legaia_engine_system::input::PadButton;
 use legaia_engine_ui::{SaveMenuAtlasRects, SpriteDraw, TextDraw};
 
@@ -134,17 +134,16 @@ pub struct PlayMenu {
     /// are *not* in the table yet, and an unbound key has no bit. The native
     /// window latches the same thing in its `pending_key_name`.
     pending_key: Option<String>,
-    /// Opened by the boot title's Continue or Options row, not by Start: the
-    /// sub-screen's exit closes the whole menu, so the title comes back
-    /// instead of a root picker the title never showed. The native window
-    /// keeps the same flag (`menu_from_title`) for Options and runs Continue
-    /// as a standalone save-select, which backs out to the title too.
+    /// Opened by the boot title's Options row, not by Start: the sub-screen's
+    /// exit closes the whole menu, so the title comes back instead of a root
+    /// picker the title never showed. The native window keeps the same flag
+    /// (`menu_from_title`). Continue is no pause row on either host
+    /// (`crate::boot_continue`).
     ///
     /// A card Load that succeeded parks its scene label on this struct for
     /// the page to collect; the exit then leaves the menu open so the label
     /// survives until `play_menu_take_load_scene`, and the page closes the
-    /// menu itself once it has it. Continue used to skip the flag for that
-    /// reason alone, which put a backed-out Continue on the pause root.
+    /// menu itself once it has it.
     from_title: bool,
     /// The menu owns the sim tick ([`LegaiaRuntime::play_menu_tick`]): set on
     /// the tick after the pause wipe spawns it, or at the open when no wipe
@@ -217,47 +216,6 @@ impl LegaiaRuntime {
 #[cfg(test)]
 mod blip_tests {
     use super::*;
-
-    /// The title's Continue is retail's title card manager, not a pause row:
-    /// it opens the Load screen where the pause menu itself is refused (a
-    /// dialogue owns the player), as the native window's standalone save
-    /// select does. Through the Load row it used to bounce to the title.
-    #[test]
-    fn title_continue_opens_where_the_pause_menu_would_not() {
-        let mut rt = LegaiaRuntime::new();
-        let host = legaia_engine_scene_host::scene_host::SceneHost::from_prot_bytes(
-            crate::play_fmv::tests::synthetic_prot(),
-            None,
-        )
-        .expect("synthetic host");
-        rt.scene_host.install(host, None).expect("session");
-        rt.scene_host.host_mut().expect("host").world.dialog.current =
-            Some(legaia_engine_field::dialog_state::DialogRequest {
-                text_id: 0,
-                inline: vec![0x1F, b'x', 0x00],
-                world_x: 0,
-                world_z: 0,
-                depth_id: 0,
-            });
-        assert!(
-            !rt.play_menu_open_row("Load"),
-            "the pause menu's Load row is refused under a dialogue"
-        );
-        assert!(!rt.play_menu_is_open());
-        assert!(rt.play_menu_open_title_continue(), "Continue opens anyway");
-        assert!(rt.play_menu_owns_frame());
-        assert!(rt.play_menu_sub_is_open(), "on the Load screen");
-        let m = rt.play_menu.as_ref().expect("menu");
-        assert!(m.from_title, "backing out returns to the title");
-        let Some(PlaySub::Session(sub)) = m.sub.as_ref() else {
-            panic!("a sub-session");
-        };
-        assert!(
-            matches!(sub.as_ref(), FieldMenuSubsession::Save(s)
-                if s.mode() == legaia_engine_menus::save_select::SaveSelectMode::Load),
-            "the Load screen"
-        );
-    }
 
     /// The menu's blip rides the edge the refusal box let through: the press
     /// that dismisses a refusal is silent, as on the native window, and an

@@ -8,6 +8,7 @@
 //! same bundle as the viewer pages'. Module by module, see
 //! `docs/subsystems/browser-host.md`.
 
+pub mod boot_continue;
 pub mod boot_title;
 pub mod cards;
 pub mod disc;

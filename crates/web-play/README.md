@@ -15,7 +15,7 @@ Module by module, the exports are in
 
 | Area | Modules |
 |---|---|
-| The play runtime | `runtime/` (the simulation: disc load, scene setup, the frame), `play/` and every `play_*` module (what the page draws and plays), `boot_title`, `cards`, `resume`, `session_save`, `host_slot`, `pad_bindings` |
+| The play runtime | `runtime/` (the simulation: disc load, scene setup, the frame), `play/` and every `play_*` module (what the page draws and plays), `boot_title`, `boot_continue`, `cards`, `resume`, `session_save`, `host_slot`, `pad_bindings` |
 | The minigames runtime | `minigames/` and every `minigames_*` module |
 | The field actor layer | `field_actors` (the MAN-placed actors over a live world), `field_npc` (the NPC catalog they draw from), `field_scene_anim` (the CLUT-walk runner) - shared with the field-scene viewer in `legaia-web-viewer` |
 | Disc image access | `disc` - the in-memory ISO walk and PROT.DAT / CDNAME / SCUS extraction both crates load a visitor's image through |

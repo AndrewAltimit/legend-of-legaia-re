@@ -1391,12 +1391,14 @@ div.play-vis-head { cursor: default; }
       ctx.clearRect(0, 0, menuCanvas.width, menuCanvas.height);
       if (cancelBootTitle === cancelThis) cancelBootTitle = null;
     };
-    /* Superseded (`supersedeStarts`): tear down without an outcome. A
-     * Continue / Options row the title handed off to closes with it. */
+    /* Superseded (`supersedeStarts`): tear down without an outcome. The
+     * Continue screen or the Options row the title handed off to closes
+     * with it (`boot_title_close` drops the Continue screen). */
     const cancelThis = () => {
       const wasHandoff = !torn && handoff;
       teardownTitle();
-      if (wasHandoff) { try { runtime.play_menu_close(); } catch (e) {} }
+      if (wasHandoff === 'options') { try { runtime.play_menu_close(); } catch (e) {} }
+      if (wasHandoff === 'continue') { try { runtime.boot_title_close(); } catch (e) {} }
     };
     cancelBootTitle = cancelThis;
     const finish = (outcome) => {
@@ -1404,10 +1406,10 @@ div.play-vis-head { cursor: default; }
       if (gen !== startGen) return;   /* a newer start owns the page */
       try { then(outcome); } catch (e) { console.warn('boot title -> then', e); }
     };
-    /* Chrome blitter for the Continue / Options sub-screens: they are the
-     * pause menu's own Load and Options rows (the engine opens them off the
-     * title outcome), so they draw off the same two atlases the in-game menu
-     * uses.
+    /* Chrome blitter for the Continue screen and the Options sub-screen:
+     * the session's save-select and the pause menu's own Options row (the
+     * engine opens each off the title outcome), so they draw off the same
+     * two atlases the in-game menu uses.
      *
      * Resolved on first use, not here. `play_menu_has_chrome()` reports the
      * engine's *cached* menu assets and answers `false` while it has not built
@@ -1428,10 +1430,11 @@ div.play-vis-head { cursor: default; }
       } catch (e) { console.warn('boot title chrome', e); }
       return chromeBlit;
     };
-    /* Non-empty once Continue / Options handed off to a pause-menu row; the
-     * loop then drives that menu instead of the title card, and finishes when
-     * it closes. A Continue that loaded a save finishes with 'loaded' and the
-     * engine lands it (`play_resume_save`). */
+    /* Non-empty once the title handed off: 'continue' to the engine's
+     * Continue screen (`boot_continue_step` / `boot_continue_draws_json`),
+     * 'options' to the pause menu's Options row. The loop then drives that
+     * screen instead of the title card. A Continue that loaded a save
+     * finishes with 'loaded' and the engine lands it (`play_resume_save`). */
     let handoff = '';
     let loaded = false;
     const titleHeld = new Set();
@@ -1491,11 +1494,55 @@ div.play-vis-head { cursor: default; }
         try { window.LegaiaPlayFmv.service(runtime, document.querySelector('.play-canvas-wrap')); }
         catch (e) { console.warn('title fmv', e); }
       }
+      /* Draw one save-select / menu frame: black, the title art the
+       * engine keeps behind the Continue screen (retail dims the card
+       * behind the Load window; `boot_title_backdrop_draws_json` answers
+       * inactive for Options and for the phases retail draws over black),
+       * then the chrome and the text. */
+      const drawHandoff = (md) => {
+        ctx.clearRect(0, 0, menuCanvas.width, menuCanvas.height);
+        if (!md || !md.open) return;
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, menuCanvas.width, menuCanvas.height);
+        let bd = null;
+        try { bd = JSON.parse(runtime.boot_title_backdrop_draws_json(menuCanvas.width, menuCanvas.height)); }
+        catch (e) { bd = null; }
+        if (bd && bd.active && titleBlit) titleBlit.blit(ctx, bd.sprites);
+        /* By here the engine has built its menu assets, so the atlas is
+           finally answerable for. */
+        const cb = ensureChrome();
+        if (cb) cb.blitDarkened(ctx, md.sprites, md.darken);
+        const fb = ensureFont();
+        if (fb) fb.blit(ctx, md.texts);
+      };
+      const backToTitle = () => {
+        /* Options closed, or Continue backed out without loading: retail
+         * returns to the title card. */
+        handoff = '';
+        try { runtime.boot_title_start(); } catch (e) { return finish('new_game'); }
+        statusEl.textContent = 'Press Start (Enter). Up/Down to choose, Z to confirm.';
+      };
+      if (handoff === 'continue') {
+        /* The title's Continue: the session's one Continue screen (the
+         * native window's too). One step per tick - the card-read dialog
+         * counts down a frame timer. The step reports 'loaded' (the save
+         * is parked for `play_resume_save`) or 'back'. */
+        let step = '';
+        for (let i = 0; i < ticks && !step; i++) {
+          try { step = runtime.boot_continue_step(i === 0 ? edge : 0); } catch (e) { return finish('new_game'); }
+        }
+        let md = null;
+        try { md = JSON.parse(runtime.boot_continue_draws_json(menuCanvas.width, menuCanvas.height)); }
+        catch (e) { md = null; }
+        drawHandoff(md);
+        if (step === 'loaded') return finish('loaded');
+        if (step === 'back') backToTitle();
+        return;
+      }
       if (handoff) {
-        /* Continue / Options: the retail save-select and options screens,
-         * reached through the shared pause-menu rows rather than a second
-         * copy on this page. One step per tick, as play-app.js: the
-         * save screen's card-read dialog counts down a frame timer. */
+        /* Options: the retail options screen, reached through the shared
+         * pause-menu row rather than a second copy on this page. One step
+         * per tick, as play-app.js. */
         for (let i = 0; i < ticks; i++) {
           try { runtime.play_menu_input(i === 0 ? edge : 0); } catch (e) { return finish('new_game'); }
         }
@@ -1503,38 +1550,14 @@ div.play-vis-head { cursor: default; }
         let md = null;
         try { md = JSON.parse(runtime.play_menu_draws_json(menuCanvas.width, menuCanvas.height)); }
         catch (e) { md = null; }
-        ctx.clearRect(0, 0, menuCanvas.width, menuCanvas.height);
-        if (md && md.open) {
-          ctx.fillStyle = '#000';
-          ctx.fillRect(0, 0, menuCanvas.width, menuCanvas.height);
-          /* Retail keeps the title art up behind the save-select at a dim,
-           * so the Load screen is composed over the card and not over black.
-           * The engine parks the title session as a backdrop at the Continue
-           * hand-off and answers with the same bands the card itself draws. */
-          let bd = null;
-          try { bd = JSON.parse(runtime.boot_title_backdrop_draws_json(menuCanvas.width, menuCanvas.height)); }
-          catch (e) { bd = null; }
-          if (bd && bd.active && titleBlit) titleBlit.blit(ctx, bd.sprites);
-          /* By here a pause-menu row is open, so the engine has built its
-             menu assets and the atlas is finally answerable for. */
-          const cb = ensureChrome();
-          if (cb) cb.blitDarkened(ctx, md.sprites, md.darken);
-          const fb = ensureFont();
-          if (fb) fb.blit(ctx, md.texts);
-        }
+        drawHandoff(md);
         let stillOpen = false;
         try { stillOpen = runtime.play_menu_is_open(); } catch (e) {}
         if (loaded) {
           try { runtime.play_menu_close(); } catch (e) {}
           return finish('loaded');
         }
-        if (!stillOpen) {
-          /* Options closed, or Continue backed out without loading: retail
-           * returns to the title card. */
-          handoff = '';
-          try { runtime.boot_title_start(); } catch (e) { return finish('new_game'); }
-          statusEl.textContent = 'Press Start (Enter). Up/Down to choose, Z to confirm.';
-        }
+        if (!stillOpen) backToTitle();
         return;
       }
       /* The title session counts retail frames - the attract countdown is

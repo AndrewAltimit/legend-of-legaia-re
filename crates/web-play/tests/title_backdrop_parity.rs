@@ -11,8 +11,8 @@
 //!
 //! This is the browser half of the parity. The native half is the
 //! `title_backdrop_tests` module beside `boot_title_band_state` in the
-//! `legaia-engine` binary (`window/title_save_draws.rs`): the boot
-//! save-select resolves to the same backdrop state and composes to the same
+//! `legaia-engine` binary (`window/title_save_draws.rs`): the title's
+//! Continue screen resolves to the same backdrop state and composes to the same
 //! `title_strip_sprites` list. Both halves compare against the shared builder
 //! itself, so neither host's expectation is transcribed from the other.
 //!
@@ -93,7 +93,7 @@ fn the_title_continue_save_select_draws_retails_title_strips() {
         }
     }
     assert_eq!(outcome, "continue", "Cross on the Continue row hands off");
-    assert!(rt.play_menu_sub_is_open(), "the Load save-select is up");
+    assert!(rt.boot_continue_is_open(), "the Load save-select is up");
 
     // The backdrop is the title-strip drawer's own output at retail's dim,
     // CONTINUE lit: five strips, sprite for sprite.
@@ -145,15 +145,18 @@ fn the_title_continue_save_select_draws_retails_title_strips() {
         got.len()
     );
 
-    // Backing out closes the title-opened menu, and the backdrop goes with it.
+    // Backing out closes the Continue screen, and the backdrop goes with it.
     for _ in 0..8 {
-        if !rt.play_menu_is_open() {
+        if !rt.boot_continue_is_open() {
             break;
         }
-        rt.play_menu_input(0);
-        rt.play_menu_input(CIRCLE);
+        rt.boot_continue_step(0);
+        rt.boot_continue_step(CIRCLE);
     }
-    assert!(!rt.play_menu_is_open(), "the menu closed back to the title");
+    assert!(
+        !rt.boot_continue_is_open(),
+        "the screen closed back to the title"
+    );
     assert_eq!(
         backdrop(&rt)["active"],
         false,

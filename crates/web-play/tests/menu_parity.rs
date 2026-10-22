@@ -638,13 +638,11 @@ fn the_save_row_is_greyed_and_buzzes_in_a_field_scene() {
 }
 
 /// The title's Continue opens the save-select as retail's title card
-/// manager (`SaveSelectSession::title_continue`, both hosts' call); backing
-/// out of it must return to the title, not to a pause root list the title
-/// never showed. The page marks the title-opened menu so the sub-screen's
-/// exit closes it, as the native window's standalone save-select's cancel
-/// lands on the title.
+/// manager (`legaia_engine_session::ContinueScreen`, both hosts' owner);
+/// backing out of it must return to the title, never to a pause root list
+/// the title never showed - no pause menu opens under it at all.
 #[test]
-fn a_backed_out_title_continue_closes_the_menu_instead_of_landing_on_the_root() {
+fn a_backed_out_title_continue_returns_to_the_title() {
     let Some(mut rt) = loaded_in_town() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
@@ -671,25 +669,21 @@ fn a_backed_out_title_continue_closes_the_menu_instead_of_landing_on_the_root() 
         }
     }
     assert_eq!(outcome, "continue", "Cross on the Continue row hands off");
-    assert!(rt.play_menu_is_open(), "the save-select is up");
-    assert!(
-        rt.play_menu_sub_is_open(),
-        "on the Load sub-screen, not the root"
-    );
-    // Circle backs out of the port pick; the title-opened menu closes with it.
+    assert!(rt.boot_continue_is_open(), "the save-select is up");
+    assert!(!rt.play_menu_is_open(), "no pause menu stands under it");
+    // Circle backs out of the port pick.
+    let mut step = String::new();
     for _ in 0..8 {
-        if !rt.play_menu_is_open() {
+        rt.boot_continue_step(0);
+        step = rt.boot_continue_step(CIRCLE);
+        if !step.is_empty() {
             break;
         }
-        rt.play_menu_input(0);
-        rt.play_menu_input(CIRCLE);
-        assert!(
-            !rt.play_menu_is_open() || rt.play_menu_sub_is_open(),
-            "a backed-out Continue must never show the pause root list"
-        );
     }
-    assert!(!rt.play_menu_is_open(), "the menu closed back to the title");
-    assert_eq!(rt.play_menu_take_load_scene(), "", "nothing was loaded");
+    assert_eq!(step, "back", "Circle on the pills backs out");
+    assert!(!rt.boot_continue_is_open(), "the screen closed");
+    assert!(!rt.play_menu_is_open(), "and no pause root list is up");
+    assert!(!rt.play_menu_take_load(), "nothing was loaded");
 }
 
 /// Tick through a confirmed card op's write / read beat and result line
@@ -743,14 +737,22 @@ fn a_cold_title_continue_loads_a_save_off_the_card() {
         rt.play_menu_is_open()
     );
     assert_eq!(outcome, "continue", "Cross on the Continue row hands off");
-    assert!(rt.play_menu_sub_is_open(), "the Load screen is up");
-    rt.play_menu_input(CROSS); // SLOT 1
+    assert!(rt.boot_continue_is_open(), "the Load screen is up");
+    assert_eq!(rt.boot_continue_step(CROSS), ""); // SLOT 1
     for _ in 0..200 {
-        rt.play_menu_input(0);
+        rt.boot_continue_step(0);
     }
-    rt.play_menu_input(CROSS); // block 1 -> "Do you wish to load?"
-    rt.play_menu_input(LEFT);
-    rt.play_menu_input(CROSS);
-    run_commit_beat(&mut rt);
+    rt.boot_continue_step(CROSS); // block 1 -> "Do you wish to load?"
+    rt.boot_continue_step(LEFT);
+    let mut step = rt.boot_continue_step(CROSS);
+    // The read beat and its result line, with no input.
+    for _ in 0..300 {
+        if !step.is_empty() {
+            break;
+        }
+        step = rt.boot_continue_step(0);
+    }
+    assert_eq!(step, "loaded", "the Load read its block");
+    assert!(!rt.boot_continue_is_open(), "the screen closed");
     assert!(rt.play_menu_take_load(), "the Load parked its save");
 }

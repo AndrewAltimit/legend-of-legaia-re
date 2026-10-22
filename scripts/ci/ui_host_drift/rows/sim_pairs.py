@@ -23,6 +23,7 @@ from ui_host_drift.rows.host_files import (
     NATIVE_SAVE_HELPERS,
     NATIVE_TITLE_SAVE,
     NATIVE_XA_DISC,
+    WEB_BOOT_CONTINUE,
     WEB_BOOT_TITLE,
     WEB_FIELD_SCENE,
     WEB_MINIGAMES_DANCE,
@@ -756,20 +757,34 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["toggle_notice", "refused_notice"],
     },
     {
-        "what": "title Continue, native vs play page - retail runs CONTINUE "
-        "inside the title overlay's own card manager (`FUN_801DDCCC`: row 1 "
-        "of sub-mode `0x10` stores `0x18` at `0x801DDC5C`, the card path runs "
-        "to `LaunchFade`'s load-route master-mode write at `0x801DFAFC`), with "
-        "no field under it. The native window opened a standalone save "
-        "select; the page opened the pause menu's Load row, whose field gates "
-        "could bounce a Continue back to the title. Both open "
-        "`SaveSelectSession::title_continue`",
+        "what": "title Continue open, native vs play page - retail runs "
+        "CONTINUE inside the title overlay's own card manager (`FUN_801DDCCC`: "
+        "row 1 of sub-mode `0x10` stores `0x18` at `0x801DDC5C`, the card path "
+        "runs to `LaunchFade`'s load-route master-mode write at `0x801DFAFC`), "
+        "with no field under it. The page once opened the pause menu's Load "
+        "row, whose field gates could bounce a Continue back to the title, and "
+        "later a title-opened pause sub-screen beside the window's standalone "
+        "screen. Both open the session's one `ContinueScreen`",
         "sites": {
             "native": (NATIVE_BOOT_CUTSCENE, "tick_boot_ui"),
-            "web": (WEB_PLAY_MENU_OPEN_CLOSE, "play_menu_open_title_continue"),
+            "web": (WEB_BOOT_CONTINUE, "open_boot_continue"),
         },
         "mode": "symbols_all",
-        "symbols": ["title_continue"],
+        "symbols": ["ContinueScreen"],
+    },
+    {
+        "what": "title Continue frame, native vs play page - the refusal "
+        "pre-empt, the card read, the block-grid filter and the confirmed "
+        "block's read are `ContinueScreen::step`'s; each host only sounds the "
+        "step's blip and acts on `Loaded` / `BackedOut`. The window's "
+        "standalone screen once ran the grid filter ahead of the refusal "
+        "notice and fired no blips, where the page's sub-screen did both",
+        "sites": {
+            "native": (NATIVE_BOOT_CUTSCENE, "tick_boot_ui"),
+            "web": (WEB_BOOT_CONTINUE, "boot_continue_step"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["ContinueStep", "blip", "Loaded", "BackedOut"],
     },
     {
         "what": "options persistence, native vs play page - what a save "
@@ -1271,17 +1286,18 @@ SIM_PAIRS: list[dict[str, object]] = [
         "hosts must declare the same kind. No host sets the card-slots flag "
         "any more: `SaveSelectSession::for_rack` derives it from the "
         "`SaveRack` variant, and the driver around the second stage is the "
-        "shared `save_screen::SaveScreenFlow` - so the assertion is on the "
-        "rack kind each host builds, which is the one thing left that a host "
-        "still chooses",
+        "shared `save_screen::SaveScreenFlow`. No host builds the rack "
+        "either: the pause menu's Load / Save rows take the session's "
+        "`card_port_rack` over the two ports (the title's Continue screen "
+        "builds it inside `ContinueScreen::open`)",
         "sites": {
-            # The rack builder over the window's two cards (port 1 its own
-            # `memcard1.mcr`, port 2 `--card`'s image).
-            "native": (NATIVE_SAVE_HELPERS, "card_save_rack"),
-            "web": (WEB_PLAY_MENU_INPUT, None),
+            # The pause menu's sub-session build, over the window's two
+            # cards (port 1 its own `memcard1.mcr`, port 2 `--card`'s image).
+            "native": (NATIVE_BOOT_CUTSCENE, "tick_boot_ui"),
+            "web": (WEB_PLAY_MENU_INPUT, "play_menu_input"),
         },
-        "mode": "pattern_same",
-        "pattern": r"SaveRack::(\w+)",
+        "mode": "symbols_all",
+        "symbols": ["card_port_rack"],
     },
     {
         "what": "enemy Steal table - PROT 0941's `0x51` arm resolves a MONSTER "

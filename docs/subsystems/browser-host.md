@@ -599,7 +599,11 @@ with the Continue scan at that moment, the title tick, the row counter onto
 the seat, and the attract hand-off with its skip edge. The page supplies the
 movie lane (`PageAttractLane` over `play_fmv`, settled again in the arming
 frame so an unplayable movie never outlives it), the rack scan
-(`cards::rack_has_save`) and what each outcome does. The page calls
+(`cards::rack_has_save`) and what each outcome does. Continue hands the
+frame to the session's `ContinueScreen` (`boot_continue.rs`:
+`boot_continue_step` reports `"loaded"` with the save parked for
+`play_resume_save`, or `"back"`; `boot_continue_draws_json` draws it),
+the native window's screen too. The page calls
 `boot_title_start` before `boot_logos_start`; the logos replace that title, and
 the front end raises a fresh one when they hand off.
 

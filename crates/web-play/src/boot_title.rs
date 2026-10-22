@@ -172,9 +172,9 @@ impl LegaiaRuntime {
     /// `play_menu_open_row("Options")` fails when the menu will not open on
     /// this world, and this page used to answer a failed row with
     /// `"new_game"`. The native window's Options row has the same door and
-    /// the same answer (`open_menu_row_from_title`). Continue no longer goes
-    /// through a pause row on either host (`SaveSelectSession::title_continue`),
-    /// so it reaches this only when the menu art is missing.
+    /// the same answer (`open_menu_row_from_title`). Continue goes through no
+    /// pause row on either host (`legaia_engine_session::ContinueScreen`), so
+    /// it reaches this only when the menu art is missing.
     ///
     /// Returns `""` (the "title still running" answer), having put a fresh
     /// title session back up with its attract countdown armed.
@@ -329,35 +329,32 @@ impl LegaiaRuntime {
                 self.attract_ended(ended);
                 String::new()
             }
-            // The session is not simply dropped at the hand-off: retail
-            // keeps the title art on screen behind the save-select, so
-            // Continue parks it as the backdrop
-            // (`boot_title_backdrop_draws_json`) and only New Game /
-            // Options release it. Retail composes the boot options screen
-            // against black, so Options takes the drop.
+            // The title session is dropped at the hand-off. Retail keeps
+            // the title art behind the save-select, which the Continue
+            // screen answers for itself (`boot_title_backdrop_draws_json`);
+            // the boot options screen is composed against black.
             FrontEndStep::Picked(outcome) => {
-                let parked = self.boot_front_end.take().and_then(FrontEnd::into_title);
+                self.boot_front_end = None;
                 match outcome {
                     TitleOutcome::NewGame => "new_game".to_string(),
-                    // Continue and Options route to the same two screens the
-                    // native window routes them to - the retail save-select
-                    // and the retail options screen - reached here through
-                    // the pause menu's own rows rather than through a second
-                    // copy of either. The page then drives `play_menu_input`
-                    // / `play_menu_draws_json` until the menu closes.
                     // Continue is retail's title card manager, not a pause
-                    // row: `SaveSelectSession::title_continue`, the native
-                    // window's call too, with no field gate in front of it.
-                    // Backing out returns to the title card (the menu is
-                    // title-opened).
+                    // row: the session's one Continue screen
+                    // (`legaia_engine_session::ContinueScreen`), the native
+                    // window's too, with no field gate in front of it. The
+                    // page then drives `boot_continue_step` /
+                    // `boot_continue_draws_json` until it reports "loaded"
+                    // or "back" (`crate::boot_continue`).
                     TitleOutcome::Continue => {
-                        if self.play_menu_open_title_continue() {
-                            self.boot_title_backdrop = parked;
+                        if self.open_boot_continue() {
                             "continue".to_string()
                         } else {
-                            self.reopen_title_after_failed_row("Load")
+                            self.reopen_title_after_failed_row("Continue")
                         }
                     }
+                    // Options routes to the retail options screen through
+                    // the pause menu's own row, the native window's route
+                    // too; the page drives `play_menu_input` /
+                    // `play_menu_draws_json` until the menu closes.
                     TitleOutcome::Options => {
                         if self.play_menu_open_row("Options") {
                             self.play_menu_mark_from_title();
@@ -378,7 +375,7 @@ impl LegaiaRuntime {
     /// Abort the title flow (page navigated away / cancelled).
     pub fn boot_title_close(&mut self) {
         self.boot_front_end = None;
-        self.boot_title_backdrop = None;
+        self.boot_continue = None;
     }
 
     /// Tear down every start in flight before the page begins another one: a
@@ -642,13 +639,11 @@ impl LegaiaRuntime {
     /// Save chrome at retail's dim, rather than the screen being composed
     /// over black.
     ///
-    /// The page reaches retail's save-select through the pause menu's own
-    /// Load row, and used to drop its title session at that hand-off, so the
-    /// art went with it. The session is parked in `boot_title_backdrop`
-    /// instead and drawn through the same `ui::title_band_sprites` kernel the
-    /// live card uses, with `ui::TitleBandState::backdrop`'s dim. Retail
-    /// pivots to pure black once a slot is confirmed, which is why the
-    /// confirm phases draw nothing.
+    /// Drawn while the title's Continue screen is up, through the same
+    /// `ui::title_band_sprites` kernel the live card uses, with
+    /// `ui::TitleBandState::backdrop`'s dim. Retail pivots to pure black once
+    /// a slot is confirmed, which is why the confirm phases draw nothing
+    /// (`ContinueScreen::shows_title_backdrop`).
     pub fn boot_title_backdrop_draws_json(&self, surface_w: u32, surface_h: u32) -> String {
         if !self.boot_title_backdrop_visible() {
             return r#"{"active":false,"sprites":[]}"#.to_string();
@@ -704,15 +699,15 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
-    /// Whether the parked backdrop session owns the frame behind the menu.
-    ///
-    /// Alive only while the Load row's save-select is the open sub-screen,
-    /// and suppressed for the two phases retail composes against black
-    /// (`NowChecking` / `SlotPreview`) - the same test the native window's
-    /// `title_screen_sprite_draws` makes.
+    /// Whether the title art stands behind the Continue screen this frame:
+    /// the screen's own rule (`ContinueScreen::shows_title_backdrop`, off for
+    /// the phases retail composes against black), the native window's
+    /// `title_screen_sprite_draws` test too, and the title art resolved.
     pub(crate) fn boot_title_backdrop_visible(&self) -> bool {
-        self.boot_title_backdrop.is_some()
-            && self.title_atlas.is_some()
-            && self.play_menu_save_select_over_title()
+        self.title_atlas.is_some()
+            && self
+                .boot_continue
+                .as_ref()
+                .is_some_and(legaia_engine_session::ContinueScreen::shows_title_backdrop)
     }
 }

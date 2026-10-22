@@ -240,12 +240,12 @@ pub struct LegaiaRuntime {
     /// the native window steps too. `Some` while the logos or the title run
     /// before a scene is entered ([`crate::boot_title`]).
     pub(crate) boot_front_end: Option<legaia_engine_session::FrontEnd>,
-    /// The title session **parked as a backdrop** while the boot Continue
-    /// hand-off's save-select owns the screen. Retail keeps the title art up
-    /// behind the Load panel at a dim; this page used to release the session
-    /// at the hand-off and compose the panel over black
+    /// The title's Continue screen while it owns the frame - the session's
+    /// one owner ([`legaia_engine_session::ContinueScreen`]), the native
+    /// window's too ([`crate::boot_continue`]). Retail keeps the title art up
+    /// behind it at a dim
     /// ([`crate::boot_title::LegaiaRuntime::boot_title_backdrop_draws_json`]).
-    pub(crate) boot_title_backdrop: Option<legaia_engine_title::title::TitleSession>,
+    pub(crate) boot_continue: Option<legaia_engine_session::ContinueScreen>,
     /// How many attract hand-offs the title has skipped this session. The
     /// countdown fires the same way it does natively, but this page has no
     /// STR/MDEC playback on the play path, so the movie is skipped and the
@@ -479,7 +479,7 @@ impl LegaiaRuntime {
             menu_assets: None,
             play_menu: None,
             boot_front_end: None,
-            boot_title_backdrop: None,
+            boot_continue: None,
             boot_title_attract_skips: 0,
             title_atlas: None,
             boot_logos_atlas: None,

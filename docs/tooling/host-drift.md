@@ -344,13 +344,14 @@ is reached at runtime.
 | feature | assertion |
 |---|---|
 | Muscle Dome damage | `pattern_same` over the `resolve_turn*` family each host names. |
-| save-select model | `pattern_same` over the `SaveRack` variant each host builds. |
+| save-select model | `symbols_all` on the session's `card_port_rack` at both pause menus' Load / Save sub-session build. |
 | live-loop arming | `symbols_all` on the shared `World::arm_live_loop`. |
 | pause-menu press | `symbols_all` on `press_field_menu` at every host's press site. |
 | pause-menu open with no press | `symbols_all` on `open_field_menu` (the title's Continue / Options rows). |
 | party wipe | `symbols_all` on `GameOverOutcome::ReturnToTitle` across the two routing sites. |
 | title card | `symbols_all` on `FrontEndStep` + `AttractStart` + `AttractEnded` + `Picked` across the native boot UI and the page's `boot_title_step`: the session's front end steps the title, the host acts on the step. |
 | logos to title | `symbols_all` on `FrontEndStep` + `TitleOpened` across the native boot UI and the page's `boot_logos_step`: both take the seat's `boot_handoff` through the front end. |
+| title Continue | `symbols_all` on `ContinueScreen` (the open) and on `ContinueStep` + `blip` + `Loaded` + `BackedOut` (the frame) across the native boot UI and the page's `open_boot_continue` / `boot_continue_step`. |
 | dev-menu tick | `symbols_all` on `retail_packed` + `commit_equip_row` + the records-page toggle. |
 | dev-records model | `symbols_all` on `record_counters` + `records_screen` across the two model builders. |
 | play clock | `symbols_same` on `advance_play_time` across the two menu draw sites. |
@@ -1672,6 +1673,44 @@ screens.
 | script-arc follow (`FUN_801DB510` / `FUN_801DAA50`) | `World::script_arc_follow_camera` |
 | scene viewport | Native hands the renderer its stage rect (`Renderer::set_scene_viewport`), so 3D draws inside the integer-scaled 4:3 stage as on the page's canvas. |
 
+<a id="the-title-continue-screen"></a>
+
+### The title Continue screen
+
+Continue is hosted the same way on both play hosts: one
+`legaia_engine_session::ContinueScreen`, opened over the host's two card
+ports when the title picks the row, stepped once per tick on the raw pad
+edge. The step owns every rule the screen has - the refusal notice takes the
+pad first, the port read is answered off the ports, the block grid filters
+the edge (an empty-block Load is swallowed) before the session ticks, and a
+confirmed block is read off its card (one that will not read raises
+`CardReadFailed` over a fresh screen). It reports `Running`, `BackedOut` or
+`Loaded` with the frame's blip.
+
+The shapes it replaced, each a one-host reading:
+
+- **Two frame orders.** The window ran the grid filter before the refusal
+  notice, so the press that dismissed a notice also moved the grid; the
+  page's sub-screen took the notice first.
+- **Blips on one host.** The window's standalone screen fired no menu cues
+  (its cue pass ran only under the pause menu); the page's sub-screen did.
+- **Two hosting shapes.** The window held a bare `SaveSelectSession` beside
+  its pause-menu `save_flow`; the page stood a pause menu up (`PlayMenu` with
+  a Load sub-session) that the title opened and its close tore down.
+
+What stays a host's: the ports it mounts (the window's `memcard1.mcr` and
+`--card`, the page's card rack), sounding the blip, and the landing - the
+window resumes through `BootSession::resume_save` and hands the score to the
+scene, the page parks the save for `play_resume_save`. The page's draws are
+`boot_continue_draws_json` (the shared save-select composition over the
+screen's flow) under `boot_title_backdrop_draws_json`.
+
+Tests: `engine-session` unit tests (`title_continue::tests`), the window's
+`native_front_end::boot_ui_continue_loads_the_port_two_card` (title ->
+Continue -> a library card's block 1 in port 2 -> its scene, through the
+window's frame path), the soak's `front_end_continue_lands_a_library_save`,
+and the page's `menu_parity` / `title_backdrop_parity` Continue runs.
+
 <a id="the-boot-options-screen-is-the-pause-menus-on-both-hosts"></a>
 
 ### Menus, shops and saves
@@ -1679,7 +1718,7 @@ screens.
 | Decision | Kernel |
 |---|---|
 | boot front end | `engine-session::front_end::FrontEnd` (logos, `ModeSeat::boot_handoff`, title tick and row counter, attract hand-off and skip edge); per host: the movie lane (`AttractLane`), the rack scan, the outcome's action. The soak harness steps the same object headless ([`soak-harness.md`](soak-harness.md#front-end-runs)) |
-| title Continue | `SaveSelectSession::title_continue`: retail's title card manager, no pause-menu gate (window: `BootUiState::SaveSelect`; page: `play_menu_open_title_continue`, a title-opened save sub-screen). The page once opened the pause menu's Load row, whose field gates could bounce a Continue back to the title |
+| title Continue | `engine-session::title_continue::ContinueScreen`: retail's title card manager, no pause-menu gate, with its own `SaveScreenFlow` and frame order (refusal pre-empt, port read, grid filter, tick, block read); the rack and the Continue scan (`card_port_rack`, `card_port_blocks`, `rack_has_save`) beside it. Per host: the ports, the blip, the landing (window `BootUiState::Continue`; page `boot_continue_step`). See [below](#the-title-continue-screen) |
 | pause-menu press and open | `BootSession::press_field_menu`, `World::field_menu_open_allowed` (dialogue engagement, narration, title card, locks, shop), `open_field_menu`, `close_field_menu` |
 | pause-menu stack | `field_menu_dispatch::tick_root_list`, `tick_open_subsession`, `finish_subsession`; per host: rack I/O, key table, options store (`SubsessionHandoff`) |
 | pause-menu draw assembly | `engine-ui::pause_menu` (`engine-ui/tests/pause_menu_compose.rs`); the session-to-view projection `engine-screens::pause_screens` |
