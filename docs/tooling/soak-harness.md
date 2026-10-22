@@ -230,7 +230,7 @@ on one frame and neutral on the next.
 | `script_stall` | the modal timeline (or first helper context) sits at one PC for a whole window of field frames, even while something else moves - except that a record whose scripted walkers are still stepping is progressing (a `0xC7` walk, or the `B3 <id> 0A` wait on one: `bylon`'s Zopu walks some 2400 frames), and so is a walk-on record under the re-poll bit (`2E 13`), re-run from its top every tick while the player, free to walk off, stands on its tile |
 | `battle_loop` | three battles open from one parked timeline PC |
 | `menu_stuck` | the pause menu stays open through the Circle back-out |
-| `battle_endless` | one battle outlasts `LEGAIA_SOAK_BATTLE_FRAMES` |
+| `battle_endless` | one battle outlasts `LEGAIA_SOAK_BATTLE_FRAMES` - except a long fight (below) and a command prompt the pad has left alone for the window's last quarter, which waits on the player |
 | `control_starved` | the field refuses the pad for `LEGAIA_SOAK_STARVE_FRAMES` with no free-roam frame, the script reaches no PC it has not already been at, and the window holds the confirm presses that would page a conversation through |
 | `confined` | from the frame the field hands the player back, 900 direction-held frames, each of the four directions among them, never carry them 48 units |
 | `door_loop` | six scene changes inside 600 frames with no direction pressed between them |
@@ -267,6 +267,16 @@ selection grid as a frozen screen. A battle park whose HP-bar pair is absorbing
 `script_stall` does not count frames spent in battle, the pause menu or a
 minigame (they suspend the field VM by design), nor frames under a
 player-owned modal (name entry, a shop).
+
+A **long fight** is not an endless one. An action that ends (the action
+SM enters its end-of-action gate `0x5A`) on a changed HP or MP is progress.
+A fight with no such action for a whole window is endless however it
+started. A fight that is still landing them in the window's last quarter,
+against a monster side holding more than `LEGAIA_SOAK_BATTLE_HP_POOL`, runs
+on: a random pad chips about 200 a round off Cort's 50000 HP, and every such
+soak of `chitei2` read as a hang at whatever state the clock hit. Below the
+pool the clock alone decides, since a fight that runs long because its
+damage is wrong (a summon hitting for 1) still lands actions.
 
 `control_starved` is the detector for a script going round. The softlock and
 script-stall clocks restart whenever anything moves, so a conversation that
@@ -353,6 +363,7 @@ LEGAIA_SOAK_SEEDS=30 LEGAIA_SOAK_FRAMES=18000 LEGAIA_SOAK_JOBS=8 LEGAIA_SOAK_TAG
 | `LEGAIA_SOAK_SOFTLOCK_FRAMES` | softlock and script-stall window |
 | `LEGAIA_SOAK_STARVE_FRAMES` | `control_starved` window (default 5400) |
 | `LEGAIA_SOAK_BATTLE_FRAMES` | endless-battle threshold |
+| `LEGAIA_SOAK_BATTLE_HP_POOL` | monster HP left above which a fight still landing actions is long, not endless (default 20000) |
 | `LEGAIA_SOAK_HANG_SECS` | single-tick watchdog |
 | `LEGAIA_SOAK_MINIMIZE` / `LEGAIA_SOAK_CONFIRM_MAX` / `LEGAIA_SOAK_NO_CONFIRM` | reduction budget per signature / signatures confirmed / skip confirmation |
 | `LEGAIA_SOAK_SAVE` / `LEGAIA_SOAK_CARD` | play every run from that card save / read saves from that library card |
@@ -385,7 +396,7 @@ LEGAIA_SOAK_REPLAY=target/soak/big/replays/<slug>.replay.toml LEGAIA_SOAK_TRACE=
 prints a state line every `N` frames - mode, scene, holder, player position,
 the bytes at every live script context's PC, scripted NPC glides with their
 targets, and in battle the action state, frame timer and every actor's HP /
-display / accumulator - plus each distinct script body a timeline or helper
+display / accumulator / target / playing clip `+0x1D9` (`C`) - plus each distinct script body a timeline or helper
 runs, once, as hex (the first `LEGAIA_SOAK_TRACE_BYTES` bytes, `0x400` by
 default). `LEGAIA_SOAK_TRACE_NPC=<slot>` adds that placement's position to
 every line, walking or not, which is how to find where an actor stood before a
@@ -468,6 +479,7 @@ regression.
 | `edlast_ending_unequip_live_max_stale` | `edbalden+rt@...:PRO-00`: the ending's scripted unequip left a Max HP +10% on a record whose accessory was gone | the aggregator pass every equipment change runs rebuilds the live maxima with the ability bits |
 | `map01_door_of_wind_carries_cupboard_run` / `map02_door_of_light_carries_conversation` | `chitei2+talk@PRO-03` / `ropeway2+talk@...:PRO-02`: a cupboard or a conversation opened while a Door's travel art ran, and its record parked in the overworld for good | a scene load drops the departing scene's conversation and prop runs with its actor list |
 | `jouind_ledge_hop_walled_landing` | a diagonal step-up hop under Right+Down set the player in the corner of a raised pocket at (2880, 2886), every direction walled and no step left to hop out | retail tests no landing (`FUN_801d1878` checks only `2s` / `3s`, the arc runs no collision); the port's landing guard (`WorldToggles::hop_landing_guard`, an enhancement, off under `pin_retail`) refuses a hop no step could leave |
+| `chitei2_cort_long_fight` | `chitei2@...:PRO-02`: a random-pad fight against Cort (50000 HP) outlasted the 18000-frame window and signed as a hang at whatever state the clock hit | harness: a fight still landing actions against a monster side above the HP pool is long, not endless |
 | `edlast_credits_end_takes_a_held_confirm` | `edbylon@...:PRO-01`: the credits ended parked on their last loop for 1800 frames | not an engine defect: the loop polls a held Circle / Cross and the policy only tapped; the policy now holds a polled button, and the replay (holding Cross) pins that the engine leaves on it, into the `49 0C` soft reset |
 | `jou_level_up_bakes_accessory_into_base` | `jou@...:PRO-01`: Noa, wearing Max HP / MP +25%, levelled to base 2691 / 446 - her boosted live maxima plus the growth - and the live maxima no longer matched the aggregator's rebuild | a level-up grows the base window and the aggregator rebuilds the live maxima from it |
 | `jouina_terra_summon_hits_for_one` | `jouina@PRO-10` under a 7200-frame battle window: Noa's Terra summon hit each Bio Castle Freed for 1, and the fight outlasted the window | every player cast's summon body is its own `summon.dat` record (`FUN_80054CB0(record, 4)` from `FUN_801F19EC`); the big summons had no body and rolled the MP-scaled placeholder - see [summon-readef.md](../formats/summon-readef.md#the-stat-head-is-the-summon-body) |

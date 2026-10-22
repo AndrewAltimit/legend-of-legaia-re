@@ -161,7 +161,7 @@ One line per handled state; the full per-state behaviour is under [State detail]
 | `0x6E` | Capture module - load | Waits for the drive, pages the cast module in | `0x6F` |
 | `0x6F` | Capture module - fade | Audio duck, waits for the load | `0x70` |
 | `0x70` | Capture module - run | Ticks the paged [cast module](cast-module.md) every frame until it returns zero | `0x71` |
-| `0x71` | Capture module - finalize | Waits for every slot to settle, resets render flags | `0x50` |
+| `0x71` | Capture module - finalize | Waits for the seat the cast targeted (or the party row) to settle, resets render flags | `0x50` |
 | `0xFD` | Idle hold | Action-end pose only | stays |
 | `0xFF` | Round boundary | `ctx[+0x06] = 0x14`, bumps the round counter | back to the command flow |
 
@@ -542,7 +542,14 @@ Same audio duck as `0x6F`, behind the same `ctx[+0x287]` gate. Pins `ctx[+0xD] =
 
 #### State `0x71` - Magic-capture - finalize
 
-`FUN_801D5854(actor, 6)`; checks all 8 slots are settled (alive with non-zero `+0x4`, or non-`8` `+0x1D9`). Once stable: clears ctx buffers, writes the 4-byte fade sentinel (`84 10 42 08`), iterates resetting per-actor `+0x21C = 0` and `+0x8 = 0x81000000`.
+`FUN_801D5854(actor, 6)`, then a settle test keyed on the acting actor's target byte `+0x1DD` (`sp+0x20`, loaded at the SM's entry). The caster is not read on either arm, so the band does not wait out its own cast clip:
+
+- **Target below `7`** (`sltiu v0,s0,0x7` at `0x801E50FC`): that seat alone. Clip `+0x1D9 == 0` has settled whatever the HP (`0x801E5124`); a live seat on any other clip holds (`0x801E5134`); a dead seat has settled on the down clip `8` (`0x801E513C`), and otherwise holds while its prim word `+0x04` is non-zero (`0x801E514C`) or it is a party seat (`0x801E5154`). A dead monster settles once its defeat fade has run out.
+- **Any other code** (`0x801E516C..0x801E5200`, slot `7` included): the party seats `0 .. ctx[+0x00]`, a live one on clip `0`, a dead one on clip `8`. No monster seat is read.
+
+Once settled: re-runs the target-size framing `FUN_801F0348` (`jal` at `0x801E520C`, as `0x70`'s exit did), stores `0x50`, clears `ctx[+0x243]` / `ctx[+0x278]`, writes the 4-byte fade sentinel (`84 10 42 08`) to `ctx[+0x890]`, and walks seats `0..7` clearing `+0x21C` on every live seat and every party seat (`0x801E5254..0x801E526C`) and setting `+0x8 = 0x81000000` where `+0x04` is zero. A dead monster keeps its defeat-fade `+0x21C`.
+
+**Port.** `magic::magic_capture_finalize` over `capture_finalize_settled` and `BattleActionHost::capture_settle_view`. The engine holds a downed party seat on its defeat pose, not on entry `8`, so `World`'s view reads a dead party seat with no reaction left to play as clip `8`. Retail's wait has no bound; the port lets go after `CAPTURE_SETTLE_PASS_LIMIT` passes, as the cast band's settle waits do. The port used to wait for every live seat to leave clip `8`, which held each of Cort's capture-class casts here for the length of his own cast clip.
 
 **Next:** `0x50`.
 
