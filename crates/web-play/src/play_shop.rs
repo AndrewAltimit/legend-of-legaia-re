@@ -34,13 +34,14 @@
 //! resolve their row labels from the disc item table (`World::menu.text`).
 //!
 //! Row inks come from the retail kernels
-//! `legaia_engine_world_views::shop::{shop_root_command_rows, shop_buy_row_ink,
-//! shop_stock_row_ink}` (`FUN_801D4868`; the list kernel `FUN_80032A44`'s
-//! shop-row arm; `FUN_801D5DE0`), so an empty bag greys the Sell row, a full
-//! stack / unaffordable price greys a stock row, and the Platinum Card band a
-//! shop builds (`ShopInventory::featured_rows`) draws in the teal pen on this
-//! host too. `shop_stock_row_ink` is the **casino prize list's** kernel - it
-//! gates on the coin bank - and inks the prize-exchange rows, not the shop's.
+//! `legaia_engine_menus::shop::{shop_root_command_rows, shop_buy_row_ink}`
+//! (`FUN_801D4868`; the list kernel `FUN_80032A44`'s shop-row arm) and
+//! `legaia_engine_ui::prize_exchange::prize_row_ink` (`FUN_801D5DE0`), so an
+//! empty bag greys the Sell row, a full stack / unaffordable price greys a
+//! stock row, and the Platinum Card band a shop builds
+//! (`ShopInventory::featured_rows`) draws in the teal pen on this host too.
+//! `prize_row_ink` is the **casino prize list's** kernel - it gates on the
+//! coin bank - and inks the prize-exchange rows, not the shop's.
 //!
 //! # The screens themselves
 //!

@@ -97,7 +97,7 @@ fn choice_marker_sprites(rows: &[ChoiceRow; 2], flags: ChoiceFlags) -> Vec<Paint
 ///
 /// PORT: FUN_801D603C
 /// REF: FUN_801d5de0 - window 44's content renderer, the prize list this
-/// confirm sits over. Ported as `engine-menus::shop::shop_stock_row_ink`.
+/// confirm sits over. Ported as [`crate::prize_exchange::prize_row_ink`].
 /// REF: FUN_801d688c - the shared picker that maintains the cursor word the
 /// `flags` argument carries. Ported as `engine-menus::shop::shop_cursor_mode`.
 ///

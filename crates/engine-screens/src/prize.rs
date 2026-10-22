@@ -35,7 +35,7 @@ pub fn prize_window_draws(
                     price: r.price,
                     held,
                     // FUN_801D5DE0's ink arm, over the coin bank.
-                    ink: legaia_engine_menus::shop::shop_stock_row_ink(
+                    ink: px::prize_row_ink(
                         i16::from(held),
                         r.gate as i16,
                         world.minigames.casino_coins as i32,

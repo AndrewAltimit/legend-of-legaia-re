@@ -13,8 +13,9 @@ the wrong retail bytes as covered. The gate that asks the third question is
 
 ## The defect this exists for
 
-`engine-menus::shop::shop_stock_row_ink` carried `PORT: FUN_801D5DE0` while live
-on both hosts. That routine is the **casino prize list's** row renderer: it
+The prize list's ink kernel (`engine-ui::prize_exchange::prize_row_ink`, filed
+then as `engine-menus::shop::shop_stock_row_ink`) carried `PORT: FUN_801D5DE0`
+while live on both hosts. That routine is the **casino prize list's** row renderer: it
 indexes the prize table `0x801E4518` at `base + block*0x60 + row*8`, takes the
 block byte from the entry-context pointer `_DAT_8007B450[1]`, and gates
 affordability on `_DAT_800845A4`, the coin bank. The party gold purse

@@ -15,7 +15,8 @@ pub struct ShopRow<'a> {
     /// its record's "already owned / restricted" marker; `5` the buy list's
     /// hoisted band. Callers derive it with
     /// `legaia_engine_menus::shop::shop_buy_row_ink` (buy list) or
-    /// `shop_stock_row_ink`; rows with no retail ink of their own pass
+    /// [`crate::prize_exchange::prize_row_ink`] (the casino prize list); rows
+    /// with no retail ink of their own pass
     /// [`SHOP_INK_NORMAL`].
     pub ink: u8,
 }

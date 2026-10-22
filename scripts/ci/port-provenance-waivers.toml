@@ -1348,15 +1348,3 @@ at 0x801F7F6C), arm 1 `0x801F80A4` (0x801F7F7C), each `FUN_80021B04` on the
 caller with scale `lhu +0x72`. Image-local records, as for every slot-B
 stager in this module.
 """
-
-[[waiver]]
-key = "module-orphan:crates/engine-menus/src/shop.rs:801d5de0"
-reason = """
-Read against the menu overlay's bytes (PROT 0899): `FUN_801D5DE0` is the casino
-prize list's row renderer, and the two tags in shop/row_style.rs claim scoped
-slices of it - the cursor-word decode (`lw -0x4468` = 0x8007BB98, `andi
-0x4000` / `0x2000` / `0xfff` at 0x801D5E40..0x801D5E9C) the shop renderer
-FUN_801D4868 repeats, and the row-ink selection. Its distinctive data (the
-prize table 0x801E4518, row bytes 0x801EF0D0 / 0x801EF0E0) belongs to the
-prize session FUN_801DC1CC, which is ported in engine-minigames, not here.
-"""
