@@ -156,6 +156,14 @@ which disc the engine ran (`resident_disc`); an image missing from the
 machine falls back to the retail disc and says so. The images are never
 committed.
 
+The Delilas captures record defects of the patcher builds they were made on
+(the welded hammer slab and its stray texels, Gi's detached fist), and on
+their own images the engine draws those defects too. Pointing
+`LEGAIA_PATCHED_DISCS` at a directory holding a fresh `legaia-patcher` build
+under the capture's image name renders the same battle instant on the
+current patch instead - a check of the mod, not a score: the retail frame
+still shows the old build.
+
 The test is disc-gated (`LEGAIA_DISC_BIN`) and finds the library and the
 extracted disc through `LEGAIA_SAVES_LIBRARY` / `LEGAIA_EXTRACTED_DIR`
 before the repo-relative defaults - in a git worktree the data lives in the
