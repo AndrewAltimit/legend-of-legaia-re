@@ -1854,6 +1854,19 @@ the engine directs carries the module arm `ctx[+0x279]` and the countdown word;
 the phase is held until the engine's module sits in that arm with its word run
 down as far, which places the module's shot in flight.
 
+On the battle-frame cadence that word drains `scalar * step` a pass, so the
+replay's countdown stands on a lattice of whole passes from the arm's start,
+and so does the caster's clip cursor, counted from the same pass. Retail's
+frames run the step their own cost sets, and the paging and stream-in that open
+the band run long, so a capture can sit half a pass off it:
+`cort_guilty_cross_mid_cast` holds arm-1 word `456` and Cort's cursor `142` (rate
+`4`), where the replay's step-`2` passes hold `464` / `448` and `140` / `144`.
+On the arm's first pass the drive stretches one pass a step longer
+(`World::stretch_battle_frame`, settled on the pass after), which moves both
+clocks onto retail's; the gate then lands on retail's word, and the display-lag
+retake two passes back on retail's displayed frame (`.952` to `.960`, the
+per-vsync replay's `.961`).
+
 **Ahead of the seed pass (`SpanGate::Landed`).** `0x00`, `0x0A` and `0x0B` run
 before the seed pass copies the next actor into `ctx[+0x13]` from `ctx[+0x274]`
 (`0x801E2C50..0x801E2C5C`). A capture there reads the previous actor in
@@ -2006,6 +2019,11 @@ Notes on the rows:
   following arm's spawns and camera instead of the wait's frame.
 - **Walk arm.** The phase byte only names the arm's entry. An engine walk that
   arrives sooner leaves the arm first, and its exit is then the frame taken.
+  The displayed frame's yaw is the RAM's taken back by the display lag; on the
+  battle-frame cadence the swing moves a pass at a time, so the lag is the two
+  passes' own steps (`display_pass_steps`), not twice the history's:
+  `gimard_burning_attack`'s clamped history ran step `4`, and taken back eight
+  vsyncs the creature stands on its cloud (`.783` to `.846`).
 - **Side-band wait.** PROT 0930's arm 2 waits on the side-band applier
   stage `ctx[+0x276]`, not on the CD poll. The flash and the sparkle volleys
   its looping record keeps seating run on through that wait

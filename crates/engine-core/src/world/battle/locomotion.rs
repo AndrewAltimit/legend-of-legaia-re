@@ -811,9 +811,13 @@ mod tests {
     use legaia_engine_battle_vm::battle_action::{ActionState, StepOutcome};
 
     /// A world in battle mode with 1 party member and 1 monster at the
-    /// authored solo seats (0,-800) vs (0,+800).
+    /// authored solo seats (0,-800) vs (0,+800), on the per-vsync cadence:
+    /// these drive the locomotion seat a tick at a time, which re-takes the
+    /// body pairs at the head of each call (on retail's cadence the anim
+    /// pass's draw takes them instead, `World::tick_battle_anim_pass`).
     fn battle_world() -> World {
         let mut w = World::new();
+        w.toggles.battle_sm_frame_cadence = false;
         w.enter_battle(1, 1);
         w
     }
@@ -1178,6 +1182,7 @@ mod tests {
         // overlap nudged the live pairs every frame for the whole action and
         // flung both members tens of thousands of units off the stage.
         let mut w = World::new();
+        w.toggles.battle_sm_frame_cadence = false;
         w.enter_battle(2, 1);
         for i in 0..3 {
             w.actors[i].battle.liveness = 1;
@@ -1226,6 +1231,7 @@ mod tests {
     #[test]
     fn overlapping_party_members_part_to_the_retail_gap() {
         let mut w = World::new();
+        w.toggles.battle_sm_frame_cadence = false;
         w.enter_battle(2, 1);
         w.party.active_party = vec![0, 1];
         // Monster out of play; the two party seats 40 apart on X.

@@ -1218,13 +1218,13 @@ lives for a frame. Its case-6 arm on the `0x800` rung walks one camera step
 before `0x14` re-arms on `0x200`, which is the pass the `super_queue_replace_*`
 captures hold.
 
-The engine runs the SM every vsync by default, with timers draining by one.
-Retail's cadence is in place behind `WorldToggles::battle_sm_frame_cadence`
-(`World::battle_sm_pass_due`; a native session raises it from
-`LEGAIA_BATTLE_FRAME_CADENCE=1`, the play page from its "Retail battle
-cadence" box). On it the whole battle pass runs on the first tick of each
-`BattleFrameClock` frame, a frame step of vsyncs at once, and every tick
-between holds:
+The engine runs retail's cadence by default
+(`WorldToggles::battle_sm_frame_cadence`, `World::battle_sm_pass_due`; a
+native session lowers it with `LEGAIA_BATTLE_FRAME_CADENCE=0`, the play page
+with its "Retail battle cadence" box, and the SM then runs every vsync with
+timers draining by one). On it the whole battle pass runs on the first tick
+of each `BattleFrameClock` frame, a frame step of vsyncs at once, and every
+tick between holds:
 
 - **The order inside the pass.** The frame driver's work comes first: the
   cast tick's census and its effect-child drive (`FUN_801E09F8`, the
@@ -1281,8 +1281,11 @@ between holds:
     `0x801E103C` / `0x801E1098`), drops every slot counter and the streak
     word by `4 * step` (`0x801E0C1C`, `0x801E1110`, `0x801E17A8`), takes the
     phase-`1` hand-over only on a pass that opens with the word at zero
-    (`0x801E0C14`), and counts a phase-`2` landing's counter down on the
-    landing pass itself (`0x801E1338` falls into the phase-`3` arm);
+    (`0x801E0C14`), and runs the phase-`3` arm on a phase-`2` landing's
+    own pass (`0x801E13D8` / `0x801E1558` fall into it at `0x801E1560`): a
+    counter the landing armed non-zero takes the pass's drain, and a zero one
+    hits there (`beq v0,zero,0x801E1844` at `0x801E17A0`), so Tail Fire
+    (record `+0x06 = 0`) lands its damage on the landing pass;
   - the anim tick's root motion (`FUN_80047430`,
     `World::tick_battle_locomotion_dt`) steps
     `trig * speed * step * scale >> 15` behind one range poll.
@@ -1315,34 +1318,52 @@ between holds:
   older), so the image child takes the RAM's gate and re-runs to the tick the
   display lag back.
 
-Measured with `LEGAIA_BATTLE_FRAME_CADENCE=1` against the per-vsync run of
-the same build over every battle state, the retail-disc rows that rise are
-`theeder_summon_mid_cast` `image` `.880` to `.994`, `battle_melee_hit_spark`
-`.699` to `.771`, `juggernaut_summon_mid_cast` `.981` to `1.000`,
-`gimard_summon_start` `.981` to `.998`, `zeto_call_wave_mid_cast` `.960` to
-`.973`, `gizam_summon_mid_cast` and `horn_summon_mid_cast`, and `camera` on
-`gimard_burning_attack` (`.963` to `.999`), `battle_melee_hit_spark`,
-`vera_summon_mid_cast` and `aluru_summon_mid_cast`. The summon close-ups read
-the body pair the last pass drew, as retail's do, once the pair averages the
-stream's own parts ([battle-action](battle-action.md#where-an-action-leaves-its-combatants)).
-Over the retail-disc rows the `image` rises sum to `.249` against `.097` of
-falls (`camera` nets `+.041`), but six rows still fall by more than the
-metric's noise, so the toggle stays off:
+Measured over every battle state against the per-vsync run of the same
+build, the retail-disc rows that rise are `theeder_summon_mid_cast` `image`
+`.880` to `.994`, `gimard_burning_attack` `.817` to `.846`,
+`juggernaut_summon_mid_cast` `.981` to `1.000`, `gimard_summon_start` `.981`
+to `.998`, `battle_gimard_tail_fire_b` `.897` to `.910`,
+`battle_melee_hit_spark`, `gizam_summon_mid_cast` and `horn_summon_mid_cast`,
+and `camera` on `gimard_burning_attack` (`.963` to `.999`). The summon
+close-ups read the body pair the last pass drew, as retail's do, once the pair
+averages the stream's own parts
+([battle-action](battle-action.md#where-an-action-leaves-its-combatants)).
+Three alignments of the replay hold the rest on retail's frame:
 
-| Capture | Falls | Cause |
-|---|---|---|
-| `gimard_burning_attack` | `image` `.817` to `.783` | the creature stands off its cloud: the image child seats retail's live puffs, and on the cadence the walking Gimard reaches the yaw-base gate `21` units past retail's live pair `(143, -1606)` (per vsync `62` short of it), while retail's creature walks `111` units a frame at its frame step. Retail starts the walk a whole frame before the yaw base swings, so the gate's relation to the walk is frame-step history |
-| `battle_gimard_tail_fire_a`, `battle_gimard_tail_fire_b` | `image` `.925` to `.915`, `.897` to `.871` | Gimard's body and the damage number's height; the pool's flame children are retail's own (seated from the capture) on both cadences |
-| `cort_guilty_cross_mid_cast`, `cort_evolved_ultra_charge_mid_cast` | `image` `.961` to `.952`, `.894` to `.888` | the capture band reaches the phase gate four vsyncs later on the cadence; retaken six vsyncs before the gate the frame reads `.952`, ten before it `.960` |
-| `freed_summon_mid_cast` | `image` `.994` to `.988` | the frame stands on the flash age the pass grid offers (`22` against `23`), and one vsync either way loses a fifth of the blocks |
+- **A capture-band module arm on retail's lattice.** A directed module's
+  countdown and the caster's clip move in whole passes from the arm's start,
+  and retail's mixed steps can leave them half a pass off that lattice
+  (Guilty Cross: arm-1 word `456` and Cort's cursor `142` against the
+  replay's `464` / `448`). The drive stretches one pass of the arm a step
+  longer (`World::stretch_battle_frame`) so both land on retail's
+  ([retail-compare](../tooling/retail-compare.md#placing-a-capture-inside-a-state)):
+  `cort_guilty_cross_mid_cast` `.952` to `.960`.
+- **The walk taken back over its passes' own steps.** Burning Attack's
+  history is the `0x2BC` clamp and its passes ran step `4`, so the displayed
+  frame's walk-yaw gate stands eight vsyncs back on the cadence, not twice the
+  history's step `3`.
+- **The homing landing's pass** (above): Tail Fire's popup and its victim's
+  reaction stood a pass late without it.
 
-On the patched-disc rows the `battle_gaza2_park_0x19` trio loses its frame:
-the image child's drive parks in `0x5A` short of the phase on the cadence.
+The retail-disc rows that still fall are within a few blocks.
+`freed_summon_mid_cast` reads `.994` per vsync and `.988` on the cadence: at
+the pass grid's gate tick the close-up trails its target by a unit more, and
+the rays' and Gala's edges shift with it. `battle_noa_miracle_art_combo`
+falls `.003`, and `cort_guilty_cross_mid_cast`,
+`cort_evolved_final_crisis_mid_cast`, `battle_gimard_tail_fire_a`,
+`vera_summon_mid_cast`, `rim_elm_gimard_seru_capture_before` and
+`nivora_duel_mid_blazing_slash` fall `.002` at most.
+
+On the patched-disc rows `shiny_refactor_gimard_plus35` (`.948` to `.930`),
+`delilas_gi_spirit_streaks_v2` (`.956` to `.940`) and
+`shiny_refactor_gimard_levelup` (`.847` to `.835`) fall, and the
+`battle_gaza2_park_0x19` trio loses its frame: the image child's drive parks
+in `0x5A` short of the phase on the cadence.
 
 Taking the displayed frame (the gate's tick less the two-frame display lag)
-on the cadence does not recover them: the Tail Fire pair falls further, and
-on the replayed casts the summon flash moves off retail's
-(`juggernaut_summon_mid_cast` `.788`, `freed_summon_mid_cast` `.023`).
+for every capture on the cadence does not help: on the replayed casts the
+summon flash moves off retail's (`juggernaut_summon_mid_cast` `.788`,
+`freed_summon_mid_cast` `.023`).
 
 ### Screen shake
 

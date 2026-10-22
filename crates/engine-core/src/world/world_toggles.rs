@@ -128,12 +128,11 @@ pub struct WorldToggles {
     pub battle_pass_rand_draw: bool,
     /// Run the battle action SM `FUN_801E295C` once a battle frame, retail's
     /// cadence ([`crate::world::World::battle_sm_pass_due`]), instead of once
-    /// a vsync. The faithful model, staged off: the retail-compare drives,
-    /// phase gates and displayed-frame retakes were tuned against the
-    /// per-vsync SM and measure worse until they are re-tuned (see
-    /// `docs/subsystems/battle-stage-camera.md`, the frame step). The engine
-    /// never reads the process environment for it: the native session
-    /// raises it from `LEGAIA_BATTLE_FRAME_CADENCE=1`
+    /// a vsync. The faithful model and the default
+    /// ([`DEFAULT_BATTLE_SM_FRAME_CADENCE`]); clearing it runs the per-vsync
+    /// SM (see `docs/subsystems/battle-stage-camera.md`, the frame step).
+    /// The engine never reads the process environment for it: the native
+    /// session sets it from `LEGAIA_BATTLE_FRAME_CADENCE` (`0` lowers it)
     /// (`legaia_engine_session::native::apply_env_world_toggles`, which a
     /// corpus run's child processes inherit) and the browser play page from
     /// its `set_battle_frame_cadence` switch.
@@ -176,7 +175,7 @@ pub struct WorldToggles {
 /// which raises or lowers from here) and the browser play page's
 /// `PageToggles` with its "Retail battle cadence" box, which reads the runtime
 /// before its first write.
-pub const DEFAULT_BATTLE_SM_FRAME_CADENCE: bool = false;
+pub const DEFAULT_BATTLE_SM_FRAME_CADENCE: bool = true;
 
 impl WorldToggles {
     pub fn new() -> Self {

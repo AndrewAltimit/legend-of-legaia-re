@@ -694,6 +694,8 @@ fn empty_effect_script_clips_step_nothing() {
 fn special_starter_commit_freezes_the_battle_and_ghosts_the_dash() {
     use legaia_engine_battle_vm::battle_anim_rate::{RATE_FROZEN, RATE_QUARTER};
     let mut world = pose_test_world();
+    // The ring's slot-per-vsync reading below is the per-vsync cadence's.
+    world.toggles.battle_sm_frame_cadence = false;
     world.actors[1].active = true;
     let mut bank: Vec<Option<MonsterAnimation>> = vec![None; 16];
     bank[0xA] = Some(pose_test_clip(0x1A, 60, 0));

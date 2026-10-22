@@ -71,6 +71,8 @@ fn a_melee_seed_puts_its_target_on_the_origin() {
 #[test]
 fn the_bystanders_step_out_of_the_attackers_lane() {
     let mut world = cort_fight();
+    // The per-vsync pass: one SM step a tick, the clock never consulted.
+    world.toggles.battle_sm_frame_cadence = false;
     let _ = world.step_battle(); // the seed
     let (v0, g0) = (pos(&world, 0), pos(&world, 2));
     for _ in 0..80 {
@@ -97,6 +99,36 @@ fn the_bystanders_step_out_of_the_attackers_lane() {
         )
     );
     // The attacker and its target are not moved by the tail.
+    assert_eq!(pos(&world, 3), (0, 0), "the target holds the origin");
+}
+
+/// The same make-way on retail's battle-frame cadence: one pass a battle
+/// frame of the default step `2`, each pass `(lut * 2) >> 9` per axis, so
+/// the countdown drains in half the per-vsync passes and the bystanders
+/// land on retail's step-`3` total to within a pass.
+#[test]
+fn the_bystanders_step_out_on_the_battle_frame_cadence() {
+    let mut world = cort_fight();
+    world.toggles.battle_sm_frame_cadence = true;
+    let step = |w: &mut World| {
+        w.clock.display_frames += 1;
+        let _ = w.step_battle();
+    };
+    step(&mut world); // the seed
+    let (v0, g0) = (pos(&world, 0), pos(&world, 2));
+    for _ in 0..160 {
+        step(&mut world);
+    }
+    assert_eq!(world.battle_ctx.dodge_countdown, 0);
+    let (v1, g1) = (pos(&world, 0), pos(&world, 2));
+    let dv = (i32::from(v1.0 - v0.0), i32::from(v1.1 - v0.1));
+    let dg = (i32::from(g1.0 - g0.0), i32::from(g1.1 - g0.1));
+    assert_eq!(dv, dg, "one heading for both bystanders");
+    // Retail's twelve step-3 passes: `(-276, -108)`.
+    assert!(
+        (dv.0 + 276).abs() <= 24 && (dv.1 + 108).abs() <= 9,
+        "within a step-3 pass of retail's: {dv:?}"
+    );
     assert_eq!(pos(&world, 3), (0, 0), "the target holds the origin");
 }
 

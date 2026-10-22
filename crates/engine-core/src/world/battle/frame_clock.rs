@@ -509,7 +509,7 @@ mod tests {
     use super::*;
 
     /// On retail's cadence the action SM takes one pass a battle frame and
-    /// drains its timers by the step; on the staged-off per-vsync cadence
+    /// drains its timers by the step; on the per-vsync cadence
     /// it takes every tick and drains by one.
     #[test]
     fn the_sm_pass_runs_once_a_battle_frame_on_retail_cadence() {
@@ -550,7 +550,10 @@ mod tests {
                 passes.push((t, w.battle_sm_frame_dt()));
             }
         }
-        assert_eq!(passes, [(10, 2), (12, 2), (15, 3), (17, 2), (19, 2), (21, 2)]);
+        assert_eq!(
+            passes,
+            [(10, 2), (12, 2), (15, 3), (17, 2), (19, 2), (21, 2)]
+        );
         assert!(w.battle.frame_stretch.is_none());
         w.toggles.battle_sm_frame_cadence = false;
         w.stretch_battle_frame(3);
