@@ -219,7 +219,9 @@ left for a moment (*Ground fog: off*); holding a key toggles once, not
 repeatedly. A key that only acts while you walk
 around (`F3`, `T`, `R`) says so when pressed on the title screen or in a menu.
 `F12` (or `?`) opens a panel listing every toggle key with its current state;
-press it again to close it.
+press it again to close it. A player's window says so for its first few
+seconds (*F12 or ? lists the keys*, bottom left) until the panel is opened; a
+`--screenshot` capture never draws that line.
 
 **Window size.** The windowed size is a multiple of the PlayStation's
 320x240 picture, `--window-scale 2..6` (3 = 960x720, the default), stored as
@@ -543,10 +545,13 @@ there it says how to make one and points at `legaia-studio`. The browser takes
 entry names from the `CDNAME.TXT` beside `PROT.DAT` unless `--cdname` names
 another.
 
-In the PROT browser: `N` / `P` = next/prev entry, `PgDn` / `PgUp` = jump 10,
-`Esc` = quit; each entry's format is auto-detected and the first viewable
-sub-asset is shown. `tmd` pointed at a directory walks every mesh with the
-same keys. The `tim` subcommand also takes `extracted/PROT.DAT` itself with
+In the PROT browser: `N` / `P` (or the arrows) = next/prev entry, `PgDn` /
+`PgUp` = jump 10, `Home` / `End` = first/last, typing a number and pressing
+`Enter` jumps to that PROT index (the window title shows what is typed;
+`Esc` cancels it), `Esc` = quit; each entry's format is auto-detected and the
+first viewable sub-asset is shown. `tmd` and `stage` pointed at a directory
+walk every file with the same keys, a typed number naming the 1-based
+position their titles show. The `tim` subcommand also takes `extracted/PROT.DAT` itself with
 `--offset`/`--clut` for the system-UI textures that live outside any TOC
 entry.
 
