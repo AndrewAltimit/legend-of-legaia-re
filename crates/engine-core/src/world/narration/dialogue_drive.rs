@@ -63,7 +63,8 @@ impl World {
         // ticks. Runs before the slice below for the same reason retail's
         // actor tick runs before the dialog SM: the spin must see the latch the
         // clip earned on *this* frame, not last frame's.
-        self.props.bank.tick_actor_clips_for_frame();
+        let grid = self.clock.script_frame_delta();
+        self.props.bank.tick_actor_clips_for_frame_scaled(grid);
         // The halt window a talk's `CC F8 85` acquire opened: one walk-kernel
         // visit a frame on the player's face-the-speaker turn, closing the
         // window on its terminal frame. The acquire's own frame took its
@@ -1105,18 +1106,19 @@ impl World {
                     }
                 } else {
                     let cur = self.npcs.headings.get(&slot).copied().unwrap_or(0x800);
+                    let grid = self.clock.script_frame_delta();
                     let mut leg = legaia_engine_field::cutscene_timeline::TimelineFacing {
                         slot: Some(slot),
                         state: legaia_engine_motion_vm::motion_vm::MotionState {
                             yaw: (cur as u16) & 0x0FFF,
-                            speed: 1,
+                            speed: grid,
                             ..Default::default()
                         },
                         program: [0x38, op0, op1],
                         resume_pc: pc + 4,
                         frames: 0,
                     };
-                    if !self.step_npc_rotate_leg(&mut leg) {
+                    if grid == 0 || !self.step_npc_rotate_leg(&mut leg) {
                         self.npcs.rotate_legs.insert(slot, leg);
                     }
                 }
@@ -1212,16 +1214,26 @@ impl World {
         &mut self,
         id: &mut legaia_engine_field::inline_dialogue::InlineDialogue,
     ) -> bool {
+        // The talk's legs advance on the game-frame grid, as a record's do:
+        // the walk kernel spends the frame step once a game frame and
+        // nothing between (`FUN_8003774C`, `lbu s2,0x393` at `0x80037864`).
+        let grid = self.clock.script_frame_delta();
+        if grid == 0 && (id.player_walk.is_some() || id.player_turn.is_some()) {
+            return true;
+        }
         if let Some(mut walk) = id.player_walk.take() {
             walk.frames += 1;
-            let arrived = self.step_player_walk_leg(walk.target, walk.speed);
+            let arrived = self.step_player_walk_leg(walk.target, walk.speed.saturating_mul(grid));
             if !arrived && walk.frames < WALK_PARK_TIMEOUT {
                 id.player_walk = Some(walk);
                 return true;
             }
         }
         if let Some(mut leg) = id.player_turn.take()
-            && !self.step_npc_rotate_leg(&mut leg)
+            && {
+                leg.state.speed = grid;
+                !self.step_npc_rotate_leg(&mut leg)
+            }
         {
             id.player_turn = Some(leg);
             return true;
@@ -1257,7 +1269,8 @@ impl World {
     ) {
         self.npcs.face_legs.remove(&slot);
         self.npcs.rotate_legs.remove(&slot);
-        if !self.step_npc_face_leg(slot, &mut ramp) {
+        let grid = self.clock.script_frame_delta();
+        if grid == 0 || !self.step_npc_face_leg_by(slot, &mut ramp, grid) {
             self.npcs.face_legs.insert(slot, ramp);
         }
     }
@@ -1266,12 +1279,19 @@ impl World {
     /// compass-walk leg.
     /// REF: FUN_8003774C (the 0x4C arm), FUN_8003BC08
     pub(crate) fn tick_field_npc_face_legs(&mut self) {
+        // On the game-frame grid: a vsync between two game frames moves no
+        // leg, and a game frame spends the frame step.
+        let grid = self.clock.script_frame_delta();
+        if grid == 0 {
+            return;
+        }
         for (slot, mut ramp) in std::mem::take(&mut self.npcs.face_legs) {
-            if !self.step_npc_face_leg(slot, &mut ramp) {
+            if !self.step_npc_face_leg_by(slot, &mut ramp, grid) {
                 self.npcs.face_legs.insert(slot, ramp);
             }
         }
         for (slot, mut leg) in std::mem::take(&mut self.npcs.rotate_legs) {
+            leg.state.speed = grid;
             if !self.step_npc_rotate_leg(&mut leg) {
                 self.npcs.rotate_legs.insert(slot, leg);
             }
@@ -1283,7 +1303,7 @@ impl World {
         // poked again.
         // REF: FUN_8003BC08 (the 0x400 kernel visit), FUN_8003774C (the 0x37 / 0x41 arm)
         for (slot, mut leg) in std::mem::take(&mut self.npcs.glide_legs) {
-            leg.state.speed = self.clock.display_frame_step.max(1);
+            leg.state.speed = grid;
             if self.step_npc_glide(&mut leg) {
                 self.npcs.glide_legs.insert(slot, leg);
                 continue;
@@ -1329,7 +1349,10 @@ impl World {
             id.face_ramp = None;
             return;
         };
-        let speed = self.clock.display_frame_step.max(1);
+        let speed = self.clock.script_frame_delta();
+        if speed == 0 {
+            return;
+        }
         let (yaw, done) = ramp.step(px, pz, yaw as u16, tx, tz, speed);
         if let Some(slot) = self.player_actor_slot
             && let Some(actor) = self.actors.get_mut(usize::from(slot))

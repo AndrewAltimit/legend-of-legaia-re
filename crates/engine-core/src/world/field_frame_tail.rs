@@ -453,8 +453,16 @@ impl World {
     /// talk running on it) reads the latch. An actor whose word is the
     /// template's looping state plays exactly as a free-running clip.
     ///
-    /// PORT: FUN_800204F8 (advance half, NPC actors)
+    /// REF: FUN_800204F8
     pub fn tick_npc_clips(&mut self) {
+        self.tick_npc_clips_scaled(1);
+    }
+
+    /// [`Self::tick_npc_clips`] for a game frame `scale` vsyncs long
+    /// ([`legaia_engine_scene::field_env::PropAnim::tick_scaled`]).
+    ///
+    /// PORT: FUN_800204F8 (advance half, NPC actors)
+    pub fn tick_npc_clips_scaled(&mut self, scale: u16) {
         if !self.field_npc_clips_advance() {
             return;
         }
@@ -476,7 +484,7 @@ impl World {
             if let Some(rate) = live_rate {
                 c.rate = rate;
             }
-            c.tick();
+            c.tick_scaled(scale);
             let out = c.flags;
             if flags.is_some()
                 && let Some(ch) = self

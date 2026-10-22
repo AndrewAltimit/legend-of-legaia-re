@@ -26,7 +26,14 @@ impl World {
         tl.stepped = true;
         // The player's poked scene-bank clip plays one engine tick per
         // slice, parked or not - retail's clip tick runs every frame.
-        tl.player_clip_ticks = tl.player_clip_ticks.saturating_sub(1);
+        // On the game-frame grid the countdown spends the frame step once a
+        // game frame, as the cursor it stands in for advances
+        // (`clip_end_ticks` counts vsyncs at one step each).
+        let grid = self.clock.script_frame_delta();
+        // Parks hand their landing to the next game frame only while the
+        // game-tick clock runs; without it every tick is a frame.
+        let grid_live = self.clock.game_tick_live;
+        tl.player_clip_ticks = tl.player_clip_ticks.saturating_sub(u32::from(grid));
         self.cutscene.in_timeline = modal;
         self.field_vm.in_spawned_record_slice = true;
         let mut channels = std::mem::take(&mut self.field_vm.channels);
@@ -95,6 +102,20 @@ impl World {
             }
             tl.pc += width;
         }
+        // A park whose leg landed on the last game frame resumes on this one,
+        // and not on a vsync between the two.
+        if let Some(resume_pc) = tl.park_landed {
+            if grid == 0 {
+                self.field_vm.channels = channels;
+                self.field_vm.stepping_view.clear();
+                self.cutscene.in_timeline = false;
+                self.field_vm.in_spawned_record_slice = false;
+                tl.frames = tl.frames.saturating_sub(1);
+                return false;
+            }
+            tl.park_landed = None;
+            tl.pc = resume_pc;
+        }
         // Cross-context walk-to-tile park (`C7 <id> <tx> <tz> <mode>` = op
         // 0x47 against an NPC channel / the player anchor): retail saves the
         // yield-op pointer into the TARGET actor's `+0x94` and the per-frame
@@ -111,9 +132,18 @@ impl World {
         // REF: FUN_8003774C (case 0x47), FUN_8003BC08 (0x400 walk-bit tick)
         if let Some(mut walk) = tl.walk_wait.take() {
             walk.frames += 1;
+            // The player's leg is stepped here, on the game-frame grid
+            // (`0x80 * DAT_1F800393 / (4 << bits)` a frame); an NPC's runs on
+            // the motion tick, which keeps the same grid.
+            let mut landed_now = false;
             let arrived = match walk.slot {
                 Some(slot) => !self.npcs.motions.contains_key(&slot),
-                None => self.step_player_walk_leg(walk.target, walk.speed),
+                None if grid == 0 => false,
+                None => {
+                    landed_now =
+                        self.step_player_walk_leg(walk.target, walk.speed.saturating_mul(grid));
+                    landed_now
+                }
             };
             if !arrived && walk.frames < WALK_PARK_TIMEOUT {
                 tl.walk_wait = Some(walk);
@@ -152,6 +182,15 @@ impl World {
                     }
                 }
             }
+            if grid_live && (landed_now || grid == 0) {
+                tl.park_landed = Some(walk.resume_pc);
+                self.field_vm.channels = channels;
+                self.field_vm.stepping_view.clear();
+                self.cutscene.in_timeline = false;
+                self.field_vm.in_spawned_record_slice = false;
+                tl.frames = tl.frames.saturating_sub(1);
+                return false;
+            }
             tl.pc = walk.resume_pc;
         }
         // Player compass walk (`B7 F8 <b0> <b1>` / `C1 F8 ..`, ops `0x37` /
@@ -175,7 +214,6 @@ impl World {
         // A leg that lands keeps its actor held for the script through the
         // rest of that game frame; the hold drops on the next one.
         // REF: FUN_8003774C, FUN_8003BC08
-        let grid = self.clock.script_frame_delta();
         if grid > 0 {
             tl.player_landed_hold = false;
             tl.npc_landed_hold.clear();
@@ -220,6 +258,10 @@ impl World {
             npc_glide_hold.push(slot);
             if self.npcs.motions.contains_key(&slot) {
                 tl.npc_walks.push(slot);
+            } else {
+                // Landed on the last game frame's motion tick: held until
+                // the next game frame, as the compass legs are.
+                tl.npc_landed_hold.push(slot);
             }
         }
         // NPC rotate legs (`B8 <id> <dir> <budget>`): the same in-place
@@ -328,6 +370,15 @@ impl World {
                 tl.frames = tl.frames.saturating_sub(1);
                 return false;
             }
+            if grid_live {
+                tl.park_landed = Some(fw.resume_pc);
+                self.field_vm.channels = channels;
+                self.field_vm.stepping_view.clear();
+                self.cutscene.in_timeline = false;
+                self.field_vm.in_spawned_record_slice = false;
+                tl.frames = tl.frames.saturating_sub(1);
+                return false;
+            }
             tl.pc = fw.resume_pc;
         }
         // Player face-at park (`CC F8 85|8E|8F <lo> <hi> <id>`): the walk
@@ -339,6 +390,15 @@ impl World {
             let done = grid > 0 && self.step_player_face_leg_by(&mut ramp, grid);
             if !done && frames < WALK_PARK_TIMEOUT {
                 tl.player_face = Some((ramp, resume_pc, frames + u32::from(grid > 0)));
+                self.field_vm.channels = channels;
+                self.field_vm.stepping_view.clear();
+                self.cutscene.in_timeline = false;
+                self.field_vm.in_spawned_record_slice = false;
+                tl.frames = tl.frames.saturating_sub(1);
+                return false;
+            }
+            if grid_live {
+                tl.park_landed = Some(resume_pc);
                 self.field_vm.channels = channels;
                 self.field_vm.stepping_view.clear();
                 self.cutscene.in_timeline = false;
@@ -706,6 +766,17 @@ impl World {
                             tl.pc = pc + 5;
                             continue;
                         }
+                        // The kernel takes the player's first step in the
+                        // frame that armed the park, after the script slice.
+                        if grid > 0
+                            && grid_live
+                            && host
+                                .world
+                                .step_player_walk_leg((tx, tz), speed.saturating_mul(grid))
+                        {
+                            tl.park_landed = Some(pc + 5);
+                            break;
+                        }
                         tl.walk_wait = Some(legaia_engine_field::cutscene_timeline::TimelineWalk {
                             slot,
                             target: (tx, tz),
@@ -898,6 +969,24 @@ impl World {
                         tl.pc = pc + 4;
                         continue;
                     }
+                    // The turn's first step falls in the arming frame too.
+                    let mut leg = leg;
+                    if grid > 0 && grid_live {
+                        leg.state.speed = grid;
+                        leg.frames += 1;
+                        let r = legaia_engine_motion_vm::motion_vm::step(
+                            &mut leg.state,
+                            legaia_engine_motion_vm::motion_vm::MotionTarget::default(),
+                            &leg.program,
+                        );
+                        if leg.state.yaw_written {
+                            host.world.set_timeline_facing(slot, leg.state.yaw as i16);
+                        }
+                        if r == legaia_engine_motion_vm::motion_vm::StepResult::Done {
+                            tl.park_landed = Some(leg.resume_pc);
+                            break;
+                        }
+                    }
                     tl.facing_wait = Some(leg);
                     break;
                 }
@@ -963,7 +1052,12 @@ impl World {
                             tl.visited[pc] = true;
                         }
                         let resume_pc = pc + 6;
-                        if host.world.step_player_face_leg(&mut ramp) {
+                        if grid_live {
+                            if grid > 0 && host.world.step_player_face_leg_by(&mut ramp, grid) {
+                                tl.park_landed = Some(resume_pc);
+                                break;
+                            }
+                        } else if host.world.step_player_face_leg(&mut ramp) {
                             tl.pc = resume_pc;
                             continue;
                         }

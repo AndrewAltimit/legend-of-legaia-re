@@ -381,6 +381,14 @@ pub struct CutsceneTimeline {
     /// The NPC placements whose walk, turn or face-at leg landed on the last
     /// game frame - [`Self::player_landed_hold`] for NPCs.
     pub npc_landed_hold: Vec<u8>,
+    /// A park whose leg landed on the game-frame grid (a walk-to-tile, a
+    /// player turn or face-at): the PC the record resumes at on the next
+    /// game frame. The kernel that lands the leg runs after the record's
+    /// script slice in the frame's actor tick (`FUN_8003BC08`, runner
+    /// `0x8003BD34` then kernel `0x8003BD50`), so the parked record sees the
+    /// landing one frame later.
+    // REF: FUN_8003BC08, FUN_8003774C
+    pub park_landed: Option<usize>,
     /// Ticks left on the **scene-bank** clip the timeline last poked onto the
     /// player (`A2 F8 <move_id>` with the party-bank bit down): the clip's
     /// end-latch length at its own step (`legaia_engine_vm::actor_tick::clip_end_ticks`).
@@ -574,6 +582,7 @@ impl CutsceneTimeline {
             npc_faces: Vec::new(),
             player_landed_hold: false,
             npc_landed_hold: Vec::new(),
+            park_landed: None,
             player_clip_ticks: 0,
             player_clip_wait: None,
             npc_clip_spin_frames: 0,

@@ -1573,10 +1573,22 @@ added up over a chain of legs: `map01`'s credits record (`P2[40]`, five player w
 put Vahn about a dozen vsyncs ahead of its camera glide. The Door of Light arrival record
 (`map01` `P2[9]`, captured at step `2`) runs `295` vsyncs against retail's `294`.
 
-An end-latch spin on a poked NPC clip (`AD <id> 08`) is not on the grid yet: it holds for the
-clip's length at the per-vsync step, where retail's actor tick steps the cursor once a game
-frame by `rate * step`: the opening record's four spins on flat 5 hold `27` / `57` / `27` /
-`60` vsyncs in retail and `30` / `60` / `29` / `60` in the engine.
+The clip cursors the end-latch spins wait on (`AC <id> 08` / `AD <id> 08`) are on the grid too.
+The anim tick `FUN_800204F8` runs once a game frame and multiplies each clip's step by the frame
+step before it adds it (`mult a0,v0` at `0x80020660` / `0x80020680`), so the engine advances
+every placed-prop, NPC and cross-context cursor `step * DAT_1F800393` on a game frame and not at
+all between (`PropAnim::tick_scaled`, `World::tick_actor_anims`), and a timeline's player spin
+counts its clip's length down by the frame step. The opening record's spins on flat 5 hold `27` /
+`57` / `27` vsyncs in retail and `28` / `60` / `30` in the engine; stepped a vsync at a time they
+held `30` / `60` / `29`. The record runs from its second opening wait to its scene change in
+`3810` vsyncs against retail's `3828` (`3798` stepped per vsync).
+
+The legs a talk runs on its placements and the player (`InlineDialogue::player_walk` /
+`player_turn`, the free-standing face-at, turn and compass-walk legs) and the walk-to-tile legs
+(`C7 <id> ..`, `World::tick_field_npc_motions`) keep the same grid. A parked record - a player
+walk-to-tile, turn or face-at - resumes on the game frame after the one its leg lands on
+(`CutsceneTimeline::park_landed`): the kernel takes the leg's first step in the arming frame
+and its landing after that frame's script slice.
 
 The disc-gated oracle
 [`opening_chain_wall_time`](../../crates/engine-scene-host/tests/opening_chain_wall_time.rs) pins the

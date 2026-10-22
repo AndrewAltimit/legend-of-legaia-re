@@ -14,6 +14,10 @@ use legaia_engine_mode::mode::SceneMode;
 /// runs exactly `n` ticks - but it stays written in frames because that is
 /// the unit the glide speed is denominated in (`dt = _DAT_1f800393` at 1 per
 /// call), and a future host that oversampled would need it.
+///
+/// The legs move on the game-frame grid, `speed * frame step` a game frame;
+/// the tests below run at frame step `1` ([`one_vsync_frames`]) so a game
+/// frame is one tick and the leg's per-frame step is its base speed.
 fn tick_retail_frames(world: &mut World, n: usize) {
     let mut fired = 0;
     while fired < n {
@@ -24,9 +28,16 @@ fn tick_retail_frames(world: &mut World, n: usize) {
     }
 }
 
+/// Pin the frame step at `1`: every tick is a game frame.
+fn one_vsync_frames(world: &mut World) {
+    world.set_frame_step_floor(1);
+    world.seed_frame_step(1);
+}
+
 #[test]
 fn scripted_field_npc_leg_walks_through_motion_vm_and_ends_where_it_lands() {
     let mut world = World::new();
+    one_vsync_frames(&mut world);
     world.mode = SceneMode::Field;
     world.npcs.positions.insert(1, (1000, 1000));
 
@@ -117,6 +128,7 @@ fn scripted_legs_run_through_a_dialogue() {
 #[test]
 fn walk_leg_heading_write_is_once_per_leg_not_per_frame() {
     let mut world = World::new();
+    one_vsync_frames(&mut world);
     world.mode = SceneMode::Field;
     world.npcs.positions.insert(2, (2000, 2000));
     assert!(world.start_field_npc_motion(2, 2200, 2000));
@@ -335,4 +347,29 @@ fn interaction_prologue_npc_run_seats_the_interacted_npc() {
         legaia_engine_field::man_field_scripts::facing_index_to_engine_heading(2),
         "operand byte +3's low nibble is the LUT facing"
     );
+}
+
+/// On a frame step of `2` a walk-to-tile leg moves twice its base speed on
+/// each game frame and not at all on the vsync between: `0x47`'s spend is
+/// `0x80 * DAT_1F800393 / (4 << bits)` a game frame.
+#[test]
+fn a_walk_to_tile_leg_moves_on_the_game_frame_grid() {
+    let mut world = World::new();
+    world.set_frame_step_floor(2);
+    world.seed_frame_step(2);
+    world.mode = SceneMode::Field;
+    world.npcs.positions.insert(1, (1000, 1000));
+    assert!(world.start_field_npc_motion(1, 1300, 1000));
+    let mut xs = Vec::new();
+    for _ in 0..6 {
+        let _ = world.tick();
+        xs.push(world.npcs.positions.get(&1).map(|p| p.0).unwrap_or(0));
+    }
+    // Moves come in steps of 16 (8 a vsync, two vsyncs a frame) and
+    // alternate with vsyncs that move nothing.
+    let deltas: Vec<i16> = std::iter::once(xs[0] - 1000)
+        .chain(xs.windows(2).map(|w| w[1] - w[0]))
+        .collect();
+    assert!(deltas.iter().all(|&d| d == 0 || d == 16), "{deltas:?}");
+    assert_eq!(deltas.iter().filter(|&&d| d == 16).count(), 3, "{deltas:?}");
 }
