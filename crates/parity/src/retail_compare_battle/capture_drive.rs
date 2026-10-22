@@ -255,6 +255,16 @@ impl RetailBattle {
     /// [`Self::clip_cursors`] on engine slots: the party's pool slots
     /// `0..party_count` as they are, the monster row `3..` packed behind
     /// the party, as the engine seats it.
+    /// A monster parked in the approach poll with its walk clip dead: a live
+    /// approach in `0x19` always plays its Move clip, so `+0x1D9 == 0` there
+    /// is the park.
+    fn parked_approach(&self) -> bool {
+        self.active_actor >= 3
+            && self.action_state == 0x19
+            && self.queued_category == 3
+            && self.caster_clip == 0
+    }
+
     pub fn engine_clip_cursors(&self) -> Vec<legaia_engine_capture::clip_cursors::ClipCursorSeed> {
         let pc = self.party_count.clamp(1, 3);
         self.clip_cursors
@@ -320,8 +330,14 @@ impl RetailBattle {
                     } else {
                         clip != 0 && self.absorbed_seru != 0
                     };
+                // So is a monster parked in the approach poll on its idle
+                // ([`ActionSteer::park`]): the flinch's stale bit turned its
+                // walk into the idle loop, which has run on its own clock
+                // since (`battle_gaza2_park_0x19_target_vahn`'s Gaza).
+                let parked_idle = clip == 0 && slot == self.active_actor && self.parked_approach();
                 !in_flight
                     || capture_band_idle
+                    || parked_idle
                     || summon_band_idle
                     || target_reaction
                     || (slot != self.active_actor && slot != self.target_code)
@@ -400,13 +416,7 @@ impl RetailBattle {
                 end: self.span_gate,
                 style: Some(self.cam_style),
                 steer: ActionSteer {
-                    // A monster parked in the approach poll with its walk
-                    // clip dead: a live approach in `0x19` always plays its
-                    // Move clip, so `+0x1D9 == 0` there is the park.
-                    park: seat >= 3
-                        && state == 0x19
-                        && self.queued_category == 3
-                        && self.caster_clip == 0,
+                    park: seat >= 3 && self.parked_approach(),
                     // A party killing blow on its victim, or a monster
                     // action (a cast or a strike) on the party seat it
                     // aimed at: the monster's pick is a draw, and a run on
