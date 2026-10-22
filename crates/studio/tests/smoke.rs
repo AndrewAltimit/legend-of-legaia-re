@@ -43,6 +43,41 @@ fn state_builds_without_a_window() {
     );
 }
 
+/// The model tab's texture-source default reads coverage. Two `town01`
+/// scene_tmd_stream entries each carry two TIMs: PROT 6's cover every CLUT
+/// and texel its mesh reads (it opens on the entry), PROT 7's miss a few
+/// prims (it opens on the scene's VRAM).
+#[test]
+fn texture_coverage_separates_self_contained_meshes_from_scene_meshes() {
+    let Some(bin) = disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN not set; skipping texture-coverage test");
+        return;
+    };
+    let out = scratch("coverage");
+    let mut s = Studio::new(Some(out.join("settings.json")));
+    s.open_blocking(&bin).expect("load disc");
+    let lib = s.library.clone().unwrap();
+    let mut coverage = |index: u32| {
+        let pos = lib.position_of(index).expect("entry");
+        let a = s.select_blocking(pos).expect("analyse");
+        assert!(!a.tims.is_empty(), "PROT {index} carries TIMs of its own");
+        let m = Model::from_tmd(a.tmd_bytes(&a.tmds[0])).expect("mesh builds");
+        m.texture_coverage(&a.vram())
+    };
+    // PROT 7: three triangles read a page the scene uploads.
+    let (covered, textured) = coverage(7);
+    assert!(
+        textured > 0 && covered < textured,
+        "PROT 7: {covered}/{textured}"
+    );
+    // PROT 6: its two TIMs hold everything its mesh reads.
+    let (covered, textured) = coverage(6);
+    assert!(
+        textured > 0 && covered == textured,
+        "PROT 6: {covered}/{textured}"
+    );
+}
+
 #[test]
 fn extraction_of_a_missing_image_fails_cleanly() {
     let dir = scratch("missing");

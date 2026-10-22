@@ -1477,17 +1477,17 @@ impl App {
         let t = a.tmds[self.tmd_sel].clone();
         let key = (a.pos, self.tmd_sel);
         if self.model.as_ref().map(|m| m.key) != Some(key) {
-            // Textures inside the entry: show those. None: the mesh samples
-            // pages another entry of its scene uploads, so start there.
-            let source = if a.tims.is_empty() {
-                TexSource::Scene
-            } else {
-                TexSource::Entry
-            };
+            // Start on the entry's own TIMs only when they hold every CLUT
+            // and texel the mesh's textured prims read; otherwise the mesh
+            // samples pages another entry of its scene uploads, so start
+            // on the scene.
+            let model = Model::from_tmd(a.tmd_bytes(&t));
+            let entry_vram = a.vram();
+            let source = default_tex_source(model.as_ref(), &entry_vram);
             self.model = Some(ModelView {
                 key,
-                model: Model::from_tmd(a.tmd_bytes(&t)),
-                entry_vram: a.vram(),
+                model,
+                entry_vram,
                 source,
                 drawn_with: None,
                 view: Viewport::new(Shading::Textured),
@@ -2458,6 +2458,16 @@ impl App {
                     });
                 });
             });
+    }
+}
+
+/// The texture source a model view opens on: the entry's own TIMs when they
+/// cover every textured prim of the mesh (`Model::texture_coverage`), else
+/// the scene's VRAM, where the missing pages and CLUTs are uploaded.
+fn default_tex_source(model: Option<&Model>, entry_vram: &legaia_tim::Vram) -> TexSource {
+    match model.map(|m| m.texture_coverage(entry_vram)) {
+        Some((covered, textured)) if covered < textured => TexSource::Scene,
+        _ => TexSource::Entry,
     }
 }
 

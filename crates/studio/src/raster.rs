@@ -139,6 +139,28 @@ impl Model {
     pub fn triangles(&self) -> usize {
         self.indices.len() / 3
     }
+
+    /// How many textured triangles `vram` can draw: their CLUT entries and
+    /// the texels under their UV box are populated
+    /// (`legaia_tim::Vram::prim_texture_status`, the test the asset viewer
+    /// drops prims by). `(covered, textured)`.
+    pub fn texture_coverage(&self, vram: &legaia_tim::Vram) -> (usize, usize) {
+        let mut covered = 0;
+        let mut textured = 0;
+        for tri in self.indices.as_chunks::<3>().0 {
+            let v = tri.map(|i| i as usize);
+            if v.iter().any(|&i| self.textured.get(i) != Some(&1)) {
+                continue;
+            }
+            textured += 1;
+            let [cba, tsb] = self.cba_tsb[v[0]];
+            let uvs = v.map(|i| (self.uvs[i][0], self.uvs[i][1]));
+            if vram.prim_texture_status(cba, tsb, &uvs).ok() {
+                covered += 1;
+            }
+        }
+        (covered, textured)
+    }
 }
 
 /// Orbit camera around the model's bounding-sphere centre.
@@ -391,6 +413,39 @@ mod tests {
     fn empty_model_input_is_rejected() {
         assert!(Model::from_tmd(&[]).is_none());
         assert!(Model::from_tmd(&[0u8; 64]).is_none());
+    }
+
+    #[test]
+    fn texture_coverage_reads_the_clut_and_the_page_under_the_uvs() {
+        // One 4bpp triangle: CLUT at (0, 480), texture page 5 (x 320),
+        // UVs 0..=15 (4 VRAM words wide, 16 rows).
+        let cba = 480 << 6;
+        let tsb = 5;
+        let m = Model {
+            positions: vec![[0.0; 3]; 3],
+            rest: vec![[0.0; 3]; 3],
+            object_ids: vec![0; 3],
+            uvs: vec![[0, 0], [15, 0], [0, 15]],
+            cba_tsb: vec![[cba, tsb]; 3],
+            modulation: vec![[0x80; 3]; 3],
+            fill: vec![[0; 3]; 3],
+            textured: vec![1; 3],
+            indices: vec![0, 1, 2],
+            center: [0.0; 3],
+            radius: 1.0,
+        };
+        let mut vram = legaia_tim::Vram::new();
+        assert_eq!(m.texture_coverage(&vram), (0, 1), "nothing uploaded");
+        vram.write_clut_row(0, 480, &[0x11; 32]);
+        assert_eq!(m.texture_coverage(&vram), (0, 1), "palette, no texels");
+        vram.write_block(320, 0, 4, 16, &[0x22; 4 * 2 * 16]);
+        assert_eq!(m.texture_coverage(&vram), (1, 1));
+        // An untextured triangle is not counted either way.
+        let flat = Model {
+            textured: vec![0; 3],
+            ..m
+        };
+        assert_eq!(flat.texture_coverage(&legaia_tim::Vram::new()), (0, 0));
     }
 
     #[test]
