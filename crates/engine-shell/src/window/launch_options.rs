@@ -197,6 +197,11 @@ pub struct ScreenshotConfig {
     /// (`World::seat_battle_hud_glide`, the combo cluster's age). Set by the
     /// retail-compare image channel.
     pub seat_hud_glides: Vec<legaia_engine_capture::hud_glide::HudGlideSeat>,
+    /// `LEGAIA_SEAT_SPIRIT_GAUGE=<bar width>,<plate value>`: a Spirit turn's
+    /// AP bar width and AP plate value as the retail capture's displayed
+    /// frame shows them; the captured frame seats the engine's on them.
+    /// Set by the retail-compare image channel.
+    pub seat_spirit_gauge: Option<(i16, i16)>,
     /// `LEGAIA_SCRIPT_GATE=<flat>:<head hex>:<pc>:<wait>`: the field twin of
     /// [`Self::phase_gate`] - capture the first frame the engine's context
     /// for a retail capture's running record holds its PC
@@ -610,6 +615,12 @@ impl ScreenshotConfig {
                 .ok()
                 .and_then(|v| legaia_engine_capture::camera_align::cam_pose_from_env(&v)),
             seat_hud_glides_landed: std::env::var_os("LEGAIA_SEAT_HUD_GLIDES_LANDED").is_some(),
+            seat_spirit_gauge: std::env::var("LEGAIA_SEAT_SPIRIT_GAUGE")
+                .ok()
+                .and_then(|v| {
+                    let (w, p) = v.split_once(',')?;
+                    Some((w.trim().parse().ok()?, p.trim().parse().ok()?))
+                }),
             seat_hud_glides: std::env::var("LEGAIA_SEAT_HUD_GLIDES")
                 .map(|v| legaia_engine_capture::hud_glide::HudGlideSeat::list_from_env(&v))
                 .unwrap_or_default(),

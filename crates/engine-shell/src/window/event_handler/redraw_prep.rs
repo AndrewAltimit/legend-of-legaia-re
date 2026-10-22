@@ -120,6 +120,11 @@ impl PlayWindowApp {
                     }
                 }
             }
+            if due && let Some((width, plate)) = sc.seat_spirit_gauge {
+                let ctx = &mut self.session.host.world.battle_ctx;
+                ctx.spirit_bar_width = width;
+                ctx.spirit_plate_value = plate;
+            }
             if due && let Some(rgb) = sc.seat_clear {
                 self.session.host.world.presentation.clear_rgb = rgb;
                 self.session.host.world.presentation.clear_ramp = None;

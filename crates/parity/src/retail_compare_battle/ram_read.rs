@@ -500,8 +500,16 @@ impl RetailBattle {
                 {
                     seats.push(seat);
                 }
+                // Retired records that landed on the frozen pass, still
+                // mid-glide on screen.
+                for seat in landed_glide_pool_seats(ram, ctx, frame_step(ram)) {
+                    if !seats.iter().any(|s| s.target == seat.target) {
+                        seats.push(seat);
+                    }
+                }
                 seats
             },
+            spirit_gauge: retail_spirit_gauge(ram, ctx, active, display_lag_vsyncs(ram)),
             hud_glides_unseen: {
                 let lag = display_lag_vsyncs(ram);
                 let live: Vec<u8> = (0..HUD_GLIDE_SLOTS)

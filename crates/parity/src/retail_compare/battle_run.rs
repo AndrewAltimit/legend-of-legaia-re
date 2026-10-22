@@ -589,6 +589,10 @@ pub(super) fn battle_image(
             legaia_engine_capture::hud_glide::HudGlideSeat::to_env(&battle.hud_glides),
         ));
     }
+    // A Spirit turn's bar and plate, sized as retail sized them.
+    if let Some((width, plate)) = battle.spirit_gauge {
+        env.push(("LEGAIA_SEAT_SPIRIT_GAUGE", format!("{width},{plate}")));
+    }
     // A capture taken mid-cast replays its cast and is captured on its phase
     // (the gate), with the fixed tick as the deadline.
     // The capture's own frame step over its last stretch, as the headless

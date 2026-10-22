@@ -650,3 +650,122 @@ fn the_seed_pass_image_ground_is_the_displayed_ring_slot() {
         vec![(0, -7, -338), (1, 0, 0)]
     );
 }
+
+/// One cleared 64-bucket ordering table at `ot` whose head bucket chains
+/// `SPRT` packets (CLUT `0x7FCC`, `16 x 20`) at `pool` drawn on `seats`.
+fn put_sprite_table(ram: &mut [u8], ot: u32, pool: u32, seats: &[(i16, i16)], uvs: &[(u8, u8)]) {
+    const N: u32 = 64;
+    put32(ram, ot, 0x00FF_FFFF);
+    for i in 1..N {
+        put32(ram, ot + i * 4, (ot + (i - 1) * 4) & 0x00FF_FFFF);
+    }
+    let tail = (ot + (N - 2) * 4) & 0x00FF_FFFF;
+    put32(ram, ot + (N - 1) * 4, pool & 0x00FF_FFFF);
+    for (i, (&(x, y), &(u, v))) in seats.iter().zip(uvs).enumerate() {
+        let p = pool + i as u32 * 20;
+        let next = if i + 1 == seats.len() {
+            tail
+        } else {
+            (p + 20) & 0x00FF_FFFF
+        };
+        put32(ram, p, (4 << 24) | next);
+        put32(ram, p + 4, 0x6480_8080);
+        put32(
+            ram,
+            p + 8,
+            (u32::from(y as u16) << 16) | u32::from(x as u16),
+        );
+        put32(
+            ram,
+            p + 12,
+            (0x7FCC << 16) | (u32::from(v) << 8) | u32::from(u),
+        );
+        put32(ram, p + 16, (20 << 16) | 16);
+    }
+}
+
+/// `delilas_gi_spirit_artifact`'s actor plaque: the record retired on the
+/// pass the capture froze (`total` cleared, `elapsed` left on its last
+/// in-flight `13`), the table being built draws the plaque at rest and the
+/// older one eight pixels above it - the offset the glide had at `13` of
+/// `16` (`-26 + 38 * 13 / 16 = 4`, target `12`). The displayed frame is one
+/// step of `3` older: `10`. A plaque the two tables draw on the same seat
+/// landed earlier and yields no seat.
+#[test]
+fn a_glide_retired_on_the_frozen_pass_is_read_off_the_tables() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let rec = ctx + HUD_GLIDE_TABLE;
+    put8(&mut ram, rec + 1, 13);
+    put16(&mut ram, rec + 4, 16);
+    put16(&mut ram, rec + 6, 12);
+    put16(&mut ram, rec + 8, 16);
+    put16(&mut ram, rec + 10, (-26i16) as u16);
+    put32(&mut ram, ctx + 0x1074, 0x8009_E4C0);
+    let uvs = [(0, 0), (16, 0)];
+    put_sprite_table(
+        &mut ram,
+        0x800F_0000,
+        0x8010_0000,
+        &[(16, 8), (32, 8)],
+        &uvs,
+    );
+    put_sprite_table(
+        &mut ram,
+        0x800F_1000,
+        0x8010_1000,
+        &[(16, 0), (32, 0)],
+        &uvs,
+    );
+    assert_eq!(
+        landed_glide_pool_seats(&ram, ctx, 3),
+        vec![HudGlideSeat {
+            target: [16, 12],
+            elapsed: 10,
+            total: 16
+        }]
+    );
+    put_sprite_table(
+        &mut ram,
+        0x800F_1000,
+        0x8010_1000,
+        &[(16, 8), (32, 8)],
+        &uvs,
+    );
+    assert_eq!(landed_glide_pool_seats(&ram, ctx, 3), vec![]);
+}
+
+/// A Spirit turn's bar and plate come off the widgets the glide records name:
+/// the bar's width `+0x0E`, taken back across the display lag while it grows
+/// past the AGL seed, and the plate's value `+0x10`.
+#[test]
+fn the_spirit_gauge_is_read_off_its_widgets() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let actor = 0x800E_CCBC;
+    put8(&mut ram, ctx + 7, 0x47);
+    put8(&mut ram, actor + 0x1DE, 4);
+    put16(&mut ram, actor + 0x154, 194);
+    let seat = |ram: &mut Vec<u8>, slot: u32, seats: [i16; 4], widget: u32| {
+        let r = ctx + HUD_GLIDE_TABLE + slot * HUD_GLIDE_STRIDE;
+        for (i, s) in seats.iter().enumerate() {
+            put16(ram, r + 4 + i as u32 * 2, *s as u16);
+        }
+        put32(ram, ctx + 0x1074 + slot * 4, widget);
+    };
+    seat(&mut ram, 0, [16, 192, 16, 234], 0x8009_E540);
+    seat(&mut ram, 1, [208, 172, 328, 172], 0x8009_E500);
+    put16(&mut ram, 0x8009_E540 + 0x0E, 188);
+    put16(&mut ram, 0x8009_E500 + 0x10, 100);
+    assert_eq!(
+        retail_spirit_gauge(&ram, ctx, Some(actor), 6),
+        Some((188, 100))
+    );
+    put16(&mut ram, 0x8009_E540 + 0x0E, 200);
+    assert_eq!(
+        retail_spirit_gauge(&ram, ctx, Some(actor), 6),
+        Some((194, 100))
+    );
+    put8(&mut ram, actor + 0x1DE, 1);
+    assert_eq!(retail_spirit_gauge(&ram, ctx, Some(actor), 6), None);
+}

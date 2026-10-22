@@ -987,23 +987,35 @@ engine's plates still mid-rise while retail's had long since landed
   `elapsed` byte, less the display lag, is how far the displayed frame shows it
   (`FUN_801D9BBC` adds the frame step a pass, so the byte counts vsyncs).
 
-Two limits to read a residual by. The RAM cannot say how long ago a glide
-landed, and the displayed frame is two frame steps older:
-`battle_noa_miracle_art_combo`'s plates landed inside that window, so its frame
-shows them still rising while the seat lands them.
+**Landed on the frozen pass.** A table that reads every record landed is not
+proof the frame on screen shows them landed: the displayed frame is two frame
+steps older than the RAM. The stepper retires a record by clearing `total`
+alone and never writes the snap's `elapsed`
+([battle-hud](../subsystems/battle-hud.md#a-retired-record-keeps-its-last-elapsed)),
+so a retired record still names its target, its start and the `elapsed` of
+its last in-flight pass. The two ordering tables decide whether that pass is
+the older table's: the table being built draws the widget at rest, the older
+one draws its sprites displaced by exactly the glide's offset at that
+`elapsed` (`total` bounded by the snap rule to `elapsed + 1 ..= elapsed +
+step`). A record two or more sprites confirm is seated at that `elapsed` less
+one frame step (`landed_glide_pool_seats`), on top of the landed seat.
+`delilas_gi_spirit_artifact` reads plaque, AP bar and AP plate retired at `13`;
+the older table draws the plaque eight pixels above its seat, the bar eight
+below and the plate twenty-three right - thirteen of sixteen - and the frame
+on screen shows ten (`0.763` to `0.893`). `battle_noa_miracle_art_combo`'s
+plaque and bar are the same case (`0.892` to `0.964`). A record both tables
+draw at rest landed before the older table was built and stays landed; the
+one capture this cannot place is one saved on the pass right after the
+landing pass, where the displayed frame still shows the last in-flight
+`elapsed` and both tables draw the rest seat.
 
-The round prompt's open glide is the one case the packets recover
-([battle-hud](../subsystems/battle-hud.md#the-round-prompt-opens-on-a-glide)).
-`koru_strip_forced`'s RAM holds no glide record - the stepper clears a record
-on the pass that snaps it - yet the frame on screen shows the panel mid-rise,
-no D-pad glyph, and `Begin` ten pixels short of its seat. The two ordering
-tables hold the frame being built and the one the GPU drew before it: one
-draws the `Begin` left cap (`SPRT`, CLUT `0x7FC4`, texel `(208, 0)`) at rest
-on `x = 96`, the other on `x = 101`, fourteen vsyncs into the glide. The
-displayed frame is one frame step older than the older table, so a prompt
-capture with an empty glide table takes that table's `elapsed` less one step
-as the prompt's seat (`round_prompt_pool_seat`; twelve here, which is the
-`x = 106` on screen).
+A Spirit turn's AP bar and AP plate are seated by value as well as by glide
+(`LEGAIA_SEAT_SPIRIT_GAUGE`, `spirit_gauge::retail_spirit_gauge`): the bar's
+width off its widget's `+0x0E` (taken back across the display lag while the
+band grows it past the AGL seed) and the plate's value off its `+0x10`. A
+replay reaches the band with its own sizing
+(`delilas_gi_spirit_distortion_v3`: the engine's bar drew some sixty pixels
+short of retail's `199`).
 
 A menu capture can be younger than the display lag outright.
 `arts_input_start_gala_nail` was saved on the pass that pressed `Command`: the

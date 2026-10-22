@@ -56,7 +56,9 @@ mod capture_drive;
 mod engine_run;
 mod frame_step;
 mod hud_glide;
+mod hud_glide_pool;
 mod inflight_seeds;
+mod spirit_gauge;
 pub use inflight_seeds::UndriftActing;
 mod ram_read;
 mod scoring;
@@ -68,9 +70,11 @@ use capture_drive::*;
 pub use engine_run::*;
 pub use frame_step::*;
 use hud_glide::*;
+use hud_glide_pool::*;
 use ram_read::*;
 pub use scoring::*;
 pub use seed_plan::*;
+use spirit_gauge::*;
 pub use summon_fade::*;
 
 /// Battle context pointer.
@@ -406,6 +410,10 @@ pub struct RetailBattle {
     /// surface on a pass the display has not shown yet
     /// ([`Self::displayed_menu_flow`]).
     pub hud_glides_unseen: bool,
+    /// A Spirit turn's AP bar width and AP plate value as the displayed
+    /// frame shows them (`spirit_gauge::retail_spirit_gauge`); `None`
+    /// outside one.
+    pub spirit_gauge: Option<(i16, i16)>,
     /// The options screen's Select Attack word `0x800846C4` (Select `0` /
     /// Automatic `1` / Command `2`): whether the ring's Attack arm opens
     /// the `Auto | Command` prompt `0x78`.
