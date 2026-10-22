@@ -549,7 +549,7 @@ An engine that wants a different storage layout implements the per-VM host trait
 
 ### The frame model
 
-One `World::tick` is one retail vsync, and retail runs one sim step per vsync without ever catching up: a slow frame makes a slow game. The hosts render at the display's refresh instead, so the engine owns the rules that turn display frames into ticks, in `engine-core::frame_step`, and every host calls them rather than spelling them out:
+One `World::tick` is one retail vsync, and retail runs one sim step per vsync without ever catching up: a slow frame makes a slow game. The hosts render at the display's refresh instead, so the engine owns the rules that turn display frames into ticks, in `engine-field::frame_step` (over the `FrameStepWorld` seat `World` implements, so the rules name no `World`), and every host calls them rather than spelling them out:
 
 | Rule | Kernel | What it pins |
 |---|---|---|

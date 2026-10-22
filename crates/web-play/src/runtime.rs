@@ -119,7 +119,7 @@ pub struct LegaiaRuntime {
     /// shared kernel (`frame_step::CutsceneGlide`) the native window owns
     /// one of too. Without it every `apply > 0` Camera Configure beat snapped
     /// on this host.
-    pub(crate) cutscene_glide: legaia_engine_core::frame_step::CutsceneGlide,
+    pub(crate) cutscene_glide: legaia_engine_field::frame_step::CutsceneGlide,
     /// The engine camera [`Self::play_camera_vp`] last handed the page: the
     /// matrix and the frame it was built from. The field FX pass reads the
     /// frame back only when the page draws through that exact matrix, so the
@@ -132,7 +132,7 @@ pub struct LegaiaRuntime {
     /// Wall-clock to sim-tick accumulator (`frame_step::SimStepper`), the
     /// native window's frame-step rule. The page's animation loop asks it
     /// how many ticks each display frame runs ([`Self::play_drain_sim_steps`]).
-    pub(crate) sim_stepper: legaia_engine_core::frame_step::SimStepper,
+    pub(crate) sim_stepper: legaia_engine_field::frame_step::SimStepper,
     /// This tick's explicit camera-azimuth override (the VR first-person
     /// gaze), drained by the camera tick. `None` = the engine camera's own
     /// compass azimuth drives the d-pad remap, exactly as it does natively.

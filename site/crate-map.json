@@ -811,6 +811,7 @@
     "test_sink",
     "vab_bind",
     "xa_clip_bank",
+    "xa_resample",
     "xa_transport"
    ],
    "band": "top",
@@ -1155,6 +1156,7 @@
     "camera_align",
     "cast_parts",
     "clip_cursors",
+    "effect_children",
     "field_seeds",
     "formation_cell",
     "ground_snap",
@@ -1289,7 +1291,6 @@
     "battle_sideband_textures",
     "dance_venue",
     "fishing_exchange_input",
-    "frame_step",
     "live_loop",
     "move_buffer_host",
     "new_game",
@@ -1304,7 +1305,7 @@
    ],
    "band": "core",
    "track": "engine",
-   "scope": "The renderer-free simulation half: <code>World</code> and its tick, the frame-step rules, battle loop, New Game seeding, LGSF saves, and the <code>World</code> entry points of the sessions that live in the kernel crates below it.",
+   "scope": "The renderer-free simulation half: <code>World</code> and its tick, battle loop, New Game seeding, LGSF saves, and the <code>World</code> entry points of the sessions that live in the kernel crates below it.",
    "dependents": [
     "asset-viewer",
     "engine-battle-hud",
@@ -1533,6 +1534,7 @@
     "field_warp_tile",
     "float_tween",
     "fog_particles",
+    "frame_step",
     "inline_dialogue",
     "leader_swap",
     "man_field_scripts",
@@ -1570,7 +1572,7 @@
    "track": "engine",
    "rank": 3,
    "role": "World-free field kernels",
-   "scope": "The <code>World</code>-free field kernels: actor programs and per-actor field-overlay bodies, region queries and the shared minigame floor (<code>minigame_floor</code>, <code>dance_marker</code>), follow-camera parameters and eases, player clip playback, op-<code>0x49</code> submode and its hub actors, panel windows, world-map controller + entity SM (<code>FUN_801DA51C</code>), inline-dialogue / cutscene-timeline context state, CLUT effects, the fog particle pool, MAN field-script decoders, field camera (<code>CameraWorld</code>).",
+   "scope": "The <code>World</code>-free field kernels: actor programs and per-actor field-overlay bodies, region queries and the shared minigame floor (<code>minigame_floor</code>, <code>dance_marker</code>), follow-camera parameters and eases, player clip playback, op-<code>0x49</code> submode and its hub actors, panel windows, world-map controller + entity SM (<code>FUN_801DA51C</code>), inline-dialogue / cutscene-timeline context state, CLUT effects, the fog particle pool, MAN field-script decoders, field camera (<code>CameraWorld</code>) and the host frame-step rules (<code>frame_step</code>).",
    "dependents": [
     "asset-viewer",
     "engine-capture",
@@ -2243,6 +2245,7 @@
     "battle_presentation",
     "battle_stage",
     "battle_vram",
+    "front_end",
     "host_trace",
     "hotkeys",
     "mode_trace",
@@ -2250,6 +2253,7 @@
     "party_spec",
     "scene_actors",
     "session",
+    "title_continue",
     "xa_banks"
    ],
    "band": "top",
@@ -3146,7 +3150,8 @@
     "retail_compare_image",
     "retail_compare_script",
     "sim_trace",
-    "vram_oracle"
+    "vram_oracle",
+    "window_child"
    ],
    "band": "top",
    "track": "tooling",
@@ -3959,6 +3964,7 @@
    "bins": [],
    "lib": true,
    "modules": [
+    "boot_continue",
     "boot_title",
     "cards",
     "disc",

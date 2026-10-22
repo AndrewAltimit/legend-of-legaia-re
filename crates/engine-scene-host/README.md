@@ -40,8 +40,7 @@ scene, tick it, drain what the tick queued.
 ## The split line
 
 A rule that reads or writes `World` without the loaded scene or the disc
-index stays in `engine-core`: the tick, the frame-step rules
-(`engine-core::frame_step`), New Game seeding (`engine-core::new_game`), the
+index stays in `engine-core`: the tick, New Game seeding (`engine-core::new_game`), the
 player-rig source (`World::player_rig_source`). What
 this crate adds is the part only the scene's owner can do - reading the disc
 at entry, swapping scenes, handing events to the host's audio. The `World`

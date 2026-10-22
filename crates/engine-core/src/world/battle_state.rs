@@ -852,7 +852,7 @@ pub struct BattleState {
     pub return_mode: SceneMode,
     /// Raised by [`crate::world::World::finish_battle`] on every return to
     /// the field or the overworld, taken by the host's camera half
-    /// ([`crate::frame_step::camera_after_world_tick`]): the field camera
+    /// ([`legaia_engine_field::frame_step::camera_after_world_tick`]): the field camera
     /// re-seats on the player as a scene entry does.
     ///
     /// Retail leaves a battle through MAIN INIT back into field mode 3, whose

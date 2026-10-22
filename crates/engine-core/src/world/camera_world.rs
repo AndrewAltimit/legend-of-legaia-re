@@ -130,7 +130,7 @@ impl CameraWorld for World {
     }
 }
 
-impl crate::frame_step::FrameStepWorld for World {
+impl legaia_engine_field::frame_step::FrameStepWorld for World {
     fn set_camera_azimuth(&mut self, azimuth: u16) {
         self.locomotion.camera_azimuth = azimuth;
     }
@@ -1224,8 +1224,8 @@ mod tests {
         for hz in [60.0f64, 120.0, 144.0] {
             let mut world = World::default();
             let mut camera = Camera::default();
-            let mut glide = crate::frame_step::CutsceneGlide::new();
-            let mut stepper = crate::frame_step::SimStepper::new();
+            let mut glide = legaia_engine_field::frame_step::CutsceneGlide::new();
+            let mut stepper = legaia_engine_field::frame_step::SimStepper::new();
             let start = legaia_engine_camera::psx_camera::FieldCameraView {
                 focus: [0.0, 0.0, 0.0],
                 pitch: 0.0,

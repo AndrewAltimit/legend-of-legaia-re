@@ -16,8 +16,8 @@ runtime ([`engine-menu-runtime`](../engine-menu-runtime/README.md)).
   ([layout](../../docs/subsystems/engine.md#how-world-is-laid-out)).
 - **The tick.** `World::tick` is one retail vsync: the effect pool, the
   per-actor move-VM pass, then the scene mode's own step. The rules that
-  turn a host's display frames into ticks (`frame_step`) are here too, so
-  every host paces the simulation the same way.
+  turn a host's display frames into ticks are `legaia_engine_field::frame_step`,
+  over the `FrameStepWorld` seat this crate implements for `World`.
 - **The VM hosts.** Each interpreter in `engine-vm`, `engine-motion-vm` and
   `engine-battle-vm` reaches the game through a host trait; this crate
   implements those traits over `World`.

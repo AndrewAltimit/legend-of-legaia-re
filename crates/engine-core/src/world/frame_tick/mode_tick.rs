@@ -122,7 +122,7 @@ impl World {
         //
         // **One `World::tick` is exactly one retail display frame (vsync).**
         // Both hosts drive it that way through one fixed-timestep kernel
-        // (`crate::frame_step::SimStepper`, `TICK_SECS = 1/60`, backlog
+        // (`legaia_engine_field::frame_step::SimStepper`, `TICK_SECS = 1/60`, backlog
         // capped at four ticks). So `SIM_HZ == RETAIL_FPS`, the retail-frame sub-clock is
         // an identity - `field_frame_step` is `1` on every tick and
         // `field_frames == frame` - and the gates below are statements of

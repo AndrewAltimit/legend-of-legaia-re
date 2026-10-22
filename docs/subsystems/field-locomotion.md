@@ -94,7 +94,7 @@ At the field floor the controller runs 30 times a second and spends `2 * base_st
 
 ### The engine's rule: one tick is one vsync
 
-`World::tick` is denominated in **retail display frames**: one call advances the simulation by exactly one vsync. Both hosts drain wall time through one fixed-timestep kernel (`engine-core::frame_step::SimStepper`, `TICK_SECS = 1/60`, backlog capped at four ticks; the browser page reaches it through `play_drain_sim_steps`). See [`engine.md`](engine.md#the-frame-model). `World::clock.display_frame_step` is `1` on every tick and `World::clock.display_frames == World::frame`; it survives as a unit marker on consumers whose durations are authored in display frames, not as a throttle.
+`World::tick` is denominated in **retail display frames**: one call advances the simulation by exactly one vsync. Both hosts drain wall time through one fixed-timestep kernel (`engine-field::frame_step::SimStepper`, `TICK_SECS = 1/60`, backlog capped at four ticks; the browser page reaches it through `play_drain_sim_steps`). See [`engine.md`](engine.md#the-frame-model). `World::clock.display_frame_step` is `1` on every tick and `World::clock.display_frames == World::frame`; it survives as a unit marker on consumers whose durations are authored in display frames, not as a throttle.
 
 The port takes the fine-grained half of retail's identity - the controller once per vsync with the scalar at `1` (`World::move_vm.ramp_ratio`) - instead of once per game tick with the scalar at `2`. Same wall speed, twice the poses. `World::clock.frame_step` still carries the retail cadence for the consumers that genuinely sample at game-tick rate (the actor pool, the CLUT / ambient game-tick banks).
 

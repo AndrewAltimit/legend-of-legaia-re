@@ -1,5 +1,5 @@
 //! The play page's frame-step exports: the shared wall-clock to sim-tick rule
-//! ([`legaia_engine_core::frame_step::SimStepper`]) the native window's redraw
+//! ([`legaia_engine_field::frame_step::SimStepper`]) the native window's redraw
 //! drains through too.
 //!
 //! The page's animation loop fires at the display refresh. It used to keep
@@ -15,7 +15,7 @@ use wasm_bindgen::prelude::*;
 impl LegaiaRuntime {
     /// How many sim ticks this display frame runs, given the wall time since
     /// the previous call in **milliseconds**. At most
-    /// [`legaia_engine_core::frame_step::MAX_BACKLOG_TICKS`]; a longer gap is
+    /// [`legaia_engine_field::frame_step::MAX_BACKLOG_TICKS`]; a longer gap is
     /// dropped, not carried.
     pub fn play_drain_sim_steps(&mut self, elapsed_ms: f64) -> u32 {
         self.sim_stepper.drain(elapsed_ms / 1000.0)
@@ -37,7 +37,7 @@ mod tests {
     #[test]
     fn the_export_drains_through_the_shared_stepper() {
         let mut rt = LegaiaRuntime::new();
-        let mut native = legaia_engine_core::frame_step::SimStepper::new();
+        let mut native = legaia_engine_field::frame_step::SimStepper::new();
         for ms in [8.0, 8.0, 16.7, 33.4, 250.0, 16.7, 6.9] {
             assert_eq!(rt.play_drain_sim_steps(ms), native.drain(ms / 1000.0));
         }

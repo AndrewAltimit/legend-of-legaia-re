@@ -36,8 +36,8 @@
 
 use legaia_engine_camera::psx_camera::{CutsceneCameraInterp, FieldCameraView};
 
-use legaia_engine_field::camera::{Camera, CameraWorld};
-use legaia_engine_field::camera_rig::CameraRig;
+use crate::camera::{Camera, CameraWorld};
+use crate::camera_rig::CameraRig;
 
 /// The slice of the world the frame-step rules touch beyond the camera's own
 /// seat ([`CameraWorld`]): the compass azimuth the d-pad remap reads, the

@@ -203,8 +203,8 @@ impl PlayWindowApp {
             disc_path: disc.map(|d| d.to_path_buf()),
             cutscene: None,
             movie_score: legaia_engine_system::movie::movie_audio::MovieScore::new(),
-            cutscene_glide: legaia_engine_core::frame_step::CutsceneGlide::new(),
-            sim_stepper: legaia_engine_core::frame_step::SimStepper::new(),
+            cutscene_glide: legaia_engine_field::frame_step::CutsceneGlide::new(),
+            sim_stepper: legaia_engine_field::frame_step::SimStepper::new(),
             active_dialog: None,
             seru_names: None,
             // Resolved against the persisted option right below, once the

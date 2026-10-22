@@ -1046,10 +1046,10 @@ pub(super) struct PlayWindowApp {
     /// retail-display-frame clock (`frame_step::CutsceneGlide`, the browser
     /// page's twin). Reset (snaps) while no cutscene timeline is active and
     /// on every scene entry.
-    pub(super) cutscene_glide: legaia_engine_core::frame_step::CutsceneGlide,
+    pub(super) cutscene_glide: legaia_engine_field::frame_step::CutsceneGlide,
     /// Wall-clock to sim-tick accumulator: the shared frame-step rule
     /// (`frame_step::SimStepper`) the browser page drains through too.
-    pub(super) sim_stepper: legaia_engine_core::frame_step::SimStepper,
+    pub(super) sim_stepper: legaia_engine_field::frame_step::SimStepper,
     /// Active dialog box, mirroring `World::dialog.current`. Opened from the
     /// scene's MES container the frame a dialog request appears (field-VM
     /// op `0x3F` or the overworld talk-to), ticked for its typewriter reveal,
