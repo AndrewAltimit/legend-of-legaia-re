@@ -832,10 +832,12 @@ impl World {
             if !a.active || selector == 0 {
                 continue;
             }
-            let Some(objects) = a
-                .pose_frame
-                .as_ref()
-                .map(|p| p.bone_outputs.iter().map(|(t, _)| *t).collect::<Vec<_>>())
+            // `rand() % *(entry + 0x88)` (`lbu v1,0x0(s4)` / `div` at
+            // `0x8004A634..0x8004A640`): the object is drawn among the
+            // playing stream's own parts, not a party clip's expanded
+            // equipment channels.
+            let Some(objects) = crate::world::battle::stream_pose(a)
+                .map(|p| p.iter().map(|(t, _)| *t).collect::<Vec<_>>())
                 .filter(|o| !o.is_empty())
             else {
                 continue;

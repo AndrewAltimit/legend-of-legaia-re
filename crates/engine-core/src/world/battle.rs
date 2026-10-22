@@ -27,6 +27,7 @@ mod homing;
 mod initiative;
 mod intro_names;
 mod locomotion;
+pub(in crate::world) use locomotion::stream_pose;
 mod loop_driver;
 mod member_step;
 mod message_banner;

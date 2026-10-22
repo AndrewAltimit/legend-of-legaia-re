@@ -124,7 +124,7 @@ pub(crate) fn pose_centroid_y(parts: &[([i16; 3], [i16; 3])]) -> i16 {
 /// they pulled Vahn's invoke-clip centroid some nine units off retail's
 /// (`x` `30` against `39` on keyframes 2..5, the summon close-up's focus).
 /// `None` for an actor with no clip or no pose.
-fn stream_pose(a: &crate::world::Actor) -> Option<&[([i16; 3], [i16; 3])]> {
+pub(in crate::world) fn stream_pose(a: &crate::world::Actor) -> Option<&[([i16; 3], [i16; 3])]> {
     let player = a.battle_animation.as_ref()?;
     let parts = &a.pose_frame.as_ref()?.bone_outputs;
     let n = usize::from(player.variant_track().stream_parts);
