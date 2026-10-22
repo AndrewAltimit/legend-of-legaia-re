@@ -753,6 +753,15 @@ vec3 psx_dither(vec3 rgb) {
   return (c5 * 8.0 + floor(c5 / 4.0)) / 255.0;
 }
 
+/* The textured blend pass's foreground truncated to its 5-bit channel, as
+ * the GPU hands it to the blend equation (texel5 * colour / 128, floored).
+ * Twin of engine-render's psx_blend_foreground: a dim additive layer loses
+ * up to one 5-bit step per channel, so a large faint layer adds nothing
+ * where a full-precision sum would wash the frame. */
+vec3 psx_blend_foreground(vec3 rgb) {
+  return floor(clamp(rgb, 0.0, 1.0) * 31.0 + 0.001) / 31.0;
+}
+
 /* Enhanced-lighting tunables, from the JS constants above the shader. */
 const float DYN_DIFFUSE = ${glslFloat(DYN_DIFFUSE)};
 const float DYN_MAX_GAIN = ${glslFloat(DYN_MAX_GAIN)};
@@ -1234,8 +1243,9 @@ void main() {
   }
 
   /* 15-bit dither on the opaque pass only: the textured blend pass's
-   * foreground is a raw texel, which retail never dithers. */
-  o_color = vec4(u_semi_pass == 1 ? lit : psx_dither(lit), 1.0);
+   * foreground is a raw texel, which retail never dithers, read by the
+   * blend equation as a truncated 5-bit channel. */
+  o_color = vec4(u_semi_pass == 1 ? psx_blend_foreground(lit) : psx_dither(lit), 1.0);
 }
 `;
 

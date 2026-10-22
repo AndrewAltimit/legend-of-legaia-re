@@ -58,6 +58,41 @@ fn both_shader_texts_parse() {
     let _ = parse_glsl(&page_fragment_glsl());
 }
 
+/// The blend pass's foreground is the GPU's truncated 5-bit channel on both
+/// hosts: `floor(texel5 * colour / 128)`. A dim texel under a dim colour
+/// adds nothing, and an exact step keeps its value.
+#[test]
+fn the_blend_foreground_truncates_to_five_bits_on_both_hosts() {
+    let native = parse_wgsl(&compose_scene_lit_shader(VRAM_MESH_SHADER_SRC));
+    let page = parse_glsl(&page_fragment_glsl());
+    let no_fetch = || -> Box<shader_eval::ImageFetch> { Box::new(|_, _, _| [0, 0, 0, 1]) };
+    let mut machines = [
+        Machine::new(&native, no_fetch()),
+        Machine::new(&page, no_fetch()),
+    ];
+    // `(texel5, colour byte)` -> the GPU's 5-bit foreground.
+    let cases: [(u32, u32, u32); 5] = [
+        (1, 0x40, 0),
+        (10, 0x30, 3),
+        (10, 0x60, 7),
+        (16, 0x80, 16),
+        (31, 0xFF, 31),
+    ];
+    for m in &mut machines {
+        let f = m.function("psx_blend_foreground");
+        for &(t5, c, want) in &cases {
+            let x = t5 as f32 / 31.0 * c as f32 / 128.0;
+            let out = m
+                .call(f, vec![Val::f(&[x, x, x])])
+                .ok()
+                .flatten()
+                .expect("foreground");
+            let got = (out.floats()[0] * 31.0).round() as u32;
+            assert_eq!(got, want, "texel5 {t5} colour {c:#x}");
+        }
+    }
+}
+
 // ---- the shared scene state, staged into each host's uniforms ----
 
 const STAGE_W: f32 = 320.0;

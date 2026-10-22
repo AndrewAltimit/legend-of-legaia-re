@@ -96,7 +96,10 @@ single indexed draws (`psx_blend::coalesce_sorted`).
 **Dither parity** follows retail's rule that only shading arithmetic is
 dithered: the untextured blend entries dither `F` (a gouraud result)
 before the blend; the textured blend pass draws raw texels and stays
-undithered.
+undithered. Its foreground is truncated to a 5-bit channel before the blend
+equation reads it (`psx_blend_foreground`, both hosts, every render mode),
+which is how the GPU hands the modulated texel to the blend
+([shading](shading.md#step-6-semi-transparency)).
 
 In the `legaia-engine play-window` binary PSX mode (vertex snap + dither)
 is opt-in via the `LEGAIA_PSX_RENDER=1` environment variable.
