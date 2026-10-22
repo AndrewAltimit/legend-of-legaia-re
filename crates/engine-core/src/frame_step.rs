@@ -14,9 +14,9 @@
 //!
 //! ## The frame model
 //!
-//! One [`crate::world::World::tick`] is one retail vsync. Retail runs one sim
-//! step per vsync and never catches up: a frame that runs long makes the game
-//! run slow (the adaptive frame step `DAT_1F800393` changes the game-tick
+//! One world tick (engine-core's `World::tick`) is one retail vsync. Retail
+//! runs one sim step per vsync and never catches up: a frame that runs long
+//! makes the game run slow (the adaptive frame step `DAT_1F800393` changes the game-tick
 //! cadence, not the number of vsyncs a second of play is made of). The hosts
 //! render at the display's refresh, which is not 60 Hz on most monitors, so
 //! each display frame drains wall time through a [`SimStepper`]:
@@ -36,8 +36,27 @@
 
 use legaia_engine_camera::psx_camera::{CutsceneCameraInterp, FieldCameraView};
 
-use crate::world::World;
-use legaia_engine_field::camera::Camera;
+use legaia_engine_field::camera::{Camera, CameraWorld};
+use legaia_engine_field::camera_rig::CameraRig;
+
+/// The slice of the world the frame-step rules touch beyond the camera's own
+/// seat ([`CameraWorld`]): the compass azimuth the d-pad remap reads, the
+/// positional sound emitters' listener focus, the battle exit's camera
+/// re-seat latch, and the camera rig the cutscene glide reads its beat from.
+/// engine-core's `World` implements it next to [`CameraWorld`].
+pub trait FrameStepWorld: CameraWorld {
+    /// Publish the compass azimuth (`0..4096`) the field locomotion's d-pad
+    /// remap reads this tick.
+    fn set_camera_azimuth(&mut self, azimuth: u16);
+    /// Install the camera focus the positional sound emitters listen from,
+    /// as retail stores it (`_DAT_80089118` / `_DAT_80089120`, negated).
+    fn set_sound_listener_focus(&mut self, focus_stored_x: i32, focus_stored_z: i32);
+    /// Take the battle exit's camera re-seat latch: `true` once per return to
+    /// the field or the overworld.
+    fn take_field_camera_reseat(&mut self) -> bool;
+    /// The field camera rig (the staging beat's `apply` count and mode).
+    fn camera_rig(&self) -> &CameraRig;
+}
 
 /// One sim tick, in seconds: the retail NTSC vsync period the engine's tick
 /// is denominated in (`SIM_HZ == RETAIL_FPS`).
@@ -50,7 +69,7 @@ pub const MAX_BACKLOG_TICKS: u32 = 4;
 /// Wall-clock to sim-tick accumulator shared by every host.
 ///
 /// A host calls [`Self::drain`] once per display frame with the wall time
-/// since the previous call and runs that many [`crate::world::World::tick`]s.
+/// since the previous call and runs that many world ticks.
 /// While the game is paused or single-stepped it calls [`Self::resync`] so
 /// the gap does not come back as catch-up ticks.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -107,14 +126,14 @@ impl SimStepper {
 /// The native session always ran this before `legaia_engine_scene_host::scene_host::SceneHost::tick`;
 /// the browser page ran it after, so its locomotion read the azimuth the
 /// camera had one tick earlier.
-pub fn camera_before_world_tick(
+pub fn camera_before_world_tick<W: FrameStepWorld + ?Sized>(
     camera: &mut Camera,
-    world: &mut World,
+    world: &mut W,
     azimuth_override: Option<u16>,
 ) {
     camera.reset_for_free_roam(world);
     let az = azimuth_override.unwrap_or_else(|| camera.compass_azimuth_units_for(world));
-    world.locomotion.camera_azimuth = az % 4096;
+    world.set_camera_azimuth(az % 4096);
     // The positional sound emitters measure their box against the focus the
     // camera last stored (`_DAT_80089118` / `_DAT_80089120`).
     let focus = camera.globals.focus_stored();
@@ -128,7 +147,11 @@ pub fn camera_before_world_tick(
 /// retail runs through the same field init.
 ///
 /// REF: FUN_80025C24, FUN_801D6704
-pub fn camera_after_world_tick(camera: &mut Camera, world: &mut World, scene_entered: bool) {
+pub fn camera_after_world_tick<W: FrameStepWorld + ?Sized>(
+    camera: &mut Camera,
+    world: &mut W,
+    scene_entered: bool,
+) {
     // A battle that returned to the field / overworld this tick re-enters
     // field mode in retail, whose init runs the same reset (`FUN_801D6704`
     // -> `FUN_80025C24` at `0x801D698C`). It runs ahead of this tick's camera
@@ -190,18 +213,19 @@ impl CutsceneGlide {
     /// `camera` as snaps (a snap and a glide committed in one tick glide from
     /// the snapped pose), then step the glide toward `target` by the display
     /// frames elapsed since the last call.
-    pub fn advance(
+    pub fn advance<W: FrameStepWorld + ?Sized>(
         &mut self,
-        world: &World,
+        world: &W,
         camera: &mut Camera,
         target: FieldCameraView,
     ) -> FieldCameraView {
         for comps in camera.take_camera_snap_beats() {
             self.interp.snap_components(&comps);
         }
-        let apply = u32::from(world.camera.state.apply_trigger);
-        let mode = world.camera.state.mode;
-        let steps = self.take_steps(world.clock.display_frames);
+        let rig = world.camera_rig();
+        let apply = u32::from(rig.state.apply_trigger);
+        let mode = rig.state.mode;
+        let steps = self.take_steps(world.display_frames());
         let view = self.interp.glide_view(target, apply, mode, steps);
         match self.align_left.take() {
             Some(left) => self.interp.set_frames_left(left).unwrap_or(view),
@@ -291,45 +315,5 @@ mod tests {
         assert_eq!(g.take_steps(10), 10);
         assert_eq!(g.take_steps(10), 0);
         assert_eq!(g.take_steps(12), 2);
-    }
-
-    /// A 60-frame glide takes 60 ticks of world time to arrive whatever the
-    /// refresh rate: at 144 Hz the hosts redraw ~144 times over those ticks
-    /// and the glide must still land on tick 60, not earlier.
-    #[test]
-    fn a_glide_spans_its_apply_frames_at_120_and_144_hz() {
-        for hz in [60.0f64, 120.0, 144.0] {
-            let mut world = World::default();
-            let mut camera = Camera::default();
-            let mut glide = CutsceneGlide::new();
-            let mut stepper = SimStepper::new();
-            let start = FieldCameraView {
-                focus: [0.0, 0.0, 0.0],
-                pitch: 0.0,
-                yaw: 0.0,
-                roll: 0.0,
-                h: 512.0,
-                tr_eye: [0.0, 0.0, 1000.0],
-            };
-            let target = FieldCameraView {
-                focus: [600.0, 0.0, 0.0],
-                ..start
-            };
-            // First call snaps the pose to `start`.
-            glide.advance(&world, &mut camera, start);
-            world.camera.state.apply_trigger = 60;
-            world.camera.state.mode = 1;
-            let mut arrived_at = None;
-            for _ in 0..(hz as u32 * 2) {
-                for _ in 0..stepper.drain(1.0 / hz) {
-                    world.clock.display_frames += 1;
-                }
-                let v = glide.advance(&world, &mut camera, target);
-                if arrived_at.is_none() && (v.focus[0] - 600.0).abs() < 1e-3 {
-                    arrived_at = Some(world.clock.display_frames);
-                }
-            }
-            assert_eq!(arrived_at, Some(60), "{hz} Hz");
-        }
     }
 }

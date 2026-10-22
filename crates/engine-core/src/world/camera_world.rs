@@ -130,6 +130,24 @@ impl CameraWorld for World {
     }
 }
 
+impl crate::frame_step::FrameStepWorld for World {
+    fn set_camera_azimuth(&mut self, azimuth: u16) {
+        self.locomotion.camera_azimuth = azimuth;
+    }
+
+    fn set_sound_listener_focus(&mut self, focus_stored_x: i32, focus_stored_z: i32) {
+        World::set_sound_listener_focus(self, focus_stored_x, focus_stored_z);
+    }
+
+    fn take_field_camera_reseat(&mut self) -> bool {
+        World::take_field_camera_reseat(self)
+    }
+
+    fn camera_rig(&self) -> &legaia_engine_field::camera_rig::CameraRig {
+        &self.camera
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1196,5 +1214,45 @@ mod tests {
             (c.manual_orbit, c.manual_tilt, c.manual_zoom),
             (0.0, 0.0, 1.0)
         );
+    }
+
+    /// A 60-frame glide takes 60 ticks of world time to arrive whatever the
+    /// refresh rate: at 144 Hz the hosts redraw ~144 times over those ticks
+    /// and the glide must still land on tick 60, not earlier.
+    #[test]
+    fn a_glide_spans_its_apply_frames_at_120_and_144_hz() {
+        for hz in [60.0f64, 120.0, 144.0] {
+            let mut world = World::default();
+            let mut camera = Camera::default();
+            let mut glide = crate::frame_step::CutsceneGlide::new();
+            let mut stepper = crate::frame_step::SimStepper::new();
+            let start = legaia_engine_camera::psx_camera::FieldCameraView {
+                focus: [0.0, 0.0, 0.0],
+                pitch: 0.0,
+                yaw: 0.0,
+                roll: 0.0,
+                h: 512.0,
+                tr_eye: [0.0, 0.0, 1000.0],
+            };
+            let target = legaia_engine_camera::psx_camera::FieldCameraView {
+                focus: [600.0, 0.0, 0.0],
+                ..start
+            };
+            // First call snaps the pose to `start`.
+            glide.advance(&world, &mut camera, start);
+            world.camera.state.apply_trigger = 60;
+            world.camera.state.mode = 1;
+            let mut arrived_at = None;
+            for _ in 0..(hz as u32 * 2) {
+                for _ in 0..stepper.drain(1.0 / hz) {
+                    world.clock.display_frames += 1;
+                }
+                let v = glide.advance(&world, &mut camera, target);
+                if arrived_at.is_none() && (v.focus[0] - 600.0).abs() < 1e-3 {
+                    arrived_at = Some(world.clock.display_frames);
+                }
+            }
+            assert_eq!(arrived_at, Some(60), "{hz} Hz");
+        }
     }
 }
