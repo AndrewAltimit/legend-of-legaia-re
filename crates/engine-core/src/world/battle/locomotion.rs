@@ -64,9 +64,9 @@ const DEFAULT_SPEED_SCALE: u8 = 4;
 const BACKOFF_CATEGORY: u8 = 3;
 
 /// The in-range back-off as a root speed: its `>> 13` (`0x80047CCC` /
-/// `0x80047D14`) over the root term's `>> 15` is a factor of four, and the
-/// step runs against the facing (`subu`).
-const BACKOFF_SPEED: i16 = -4;
+/// `0x80047D14`) over the root term's `>> 15` is a factor of four. The
+/// product is the forward one; the step subtracts it (`subu`).
+const BACKOFF_SPEED: i16 = 4;
 
 /// Separation body radius of a party seat: the `+0x58` word of the actor's
 /// node (`*(actor+0x22C)`) that `FUN_80050BB8` reads. The seat stager
@@ -553,7 +553,7 @@ impl World {
     /// its reach drifts back toward the edge of it for as long as its attack
     /// runs - the counterweight to its strike clips' positive root speed,
     /// which steps it forward only while out of range. The shift is `13`
-    /// against the root term's `15`: a speed of `-4` on the same law.
+    /// against the root term's `15`: a speed of `4` on the same law, subtracted.
     // PORT: FUN_80047430 (`0x80047C3C..0x80047D1C`, the in-range back-off)
     fn drive_in_range_backoff(&mut self, slot: usize, dt: u8) {
         use crate::battle_round::RoundPhase;
@@ -576,6 +576,14 @@ impl World {
             return;
         }
         // A frozen actor (`+0x21D == 0`) multiplies the step to nothing.
+        //
+        // Retail shifts the **forward** product and subtracts it
+        // (`sra v1,t1,0xd` / `subu` at `0x80047CCC..0x80047CD0`), so the
+        // step is `-floor(trig * dt * scale / 8192)`. Shifting the negated
+        // product instead floors the other way: a unit further back, every
+        // in-range frame, on every axis whose step carries a fraction, which
+        // over a strike string parks the attacker outside where retail's
+        // law leaves it.
         let (sin, cos) = legaia_engine_system::trig::trig12(facing);
         let raw = motion::root_motion_raw(sin, cos, BACKOFF_SPEED, dt, rate);
         let frame = self.battle_frame_id();
@@ -584,8 +592,8 @@ impl World {
             .backoff_carry
             .step_in_frame(frame, raw);
         let ms = &mut self.actors[slot].move_state;
-        ms.world_x = ms.world_x.wrapping_add(dx as i16);
-        ms.world_z = ms.world_z.wrapping_add(dz as i16);
+        ms.world_x = ms.world_x.wrapping_sub(dx as i16);
+        ms.world_z = ms.world_z.wrapping_sub(dz as i16);
     }
 
     /// Approach leg: facing recompute + range-gated root-motion step toward
@@ -811,6 +819,62 @@ mod tests {
             z_other,
             tz_other - 100,
             "a non-Attack category stands still"
+        );
+    }
+
+    /// The back-off's rounding: retail shifts the forward product and
+    /// subtracts it (`sra v1,t1,0xd` / `subu`, `0x80047CCC..0x80047CD0`), so
+    /// one battle frame moves the pair by `-floor(trig * step * scale /
+    /// 8192)` per axis - never the floor of the negated product, which steps
+    /// a unit further back on every fractional axis.
+    #[test]
+    fn the_back_off_floors_the_forward_product() {
+        let mut w = battle_world();
+        w.actors[0].battle.active_target = 1;
+        w.actors[0].battle.action_category = 3;
+        w.actors[1].battle.liveness = 1;
+        w.battle_ctx.active_actor = 0;
+        w.battle_ctx.action_state = ActionState::AttackChain.as_byte();
+        w.battle.round_flow.phase = crate::battle_round::RoundPhase::Execute;
+        w.tick_battle_locomotion(); // seed seats
+        let (tx, tz) = (
+            w.actors[1].move_state.world_x,
+            w.actors[1].move_state.world_z,
+        );
+        w.actors[0].move_state.world_x = tx;
+        w.actors[0].move_state.world_z = tz - 100;
+        // A heading whose sine and cosine both leave a fraction.
+        let facing = 100u16;
+        w.actors[0].battle.facing_angle = facing;
+        let scale = w.actors[0].battle.anim_rate.get();
+        let scale = if scale == 0 {
+            DEFAULT_SPEED_SCALE
+        } else {
+            scale
+        };
+        let (sin, cos) = legaia_engine_system::trig::trig12(facing);
+        let step = |trig: i16| -((i32::from(trig) * 2 * i32::from(scale)) >> 13);
+        // One battle frame of two vsyncs, on a fresh frame (the carry starts
+        // over), with the attacker still inside its reach.
+        let frame = w.battle_frame_id();
+        while w.battle_frame_id() == frame {
+            w.clock.display_frames += 1;
+        }
+        assert_eq!(w.battle_range_metric(0, 1), 0);
+        let (x0, z0) = (
+            w.actors[0].move_state.world_x,
+            w.actors[0].move_state.world_z,
+        );
+        w.tick_battle_locomotion();
+        w.tick_battle_locomotion();
+        let (x1, z1) = (
+            w.actors[0].move_state.world_x,
+            w.actors[0].move_state.world_z,
+        );
+        assert_eq!(w.actors[0].battle.facing_angle, facing);
+        assert_eq!(
+            (i32::from(x1 - x0), i32::from(z1 - z0)),
+            (step(sin), step(cos))
         );
     }
 
