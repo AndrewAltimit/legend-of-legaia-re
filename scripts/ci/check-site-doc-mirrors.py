@@ -102,6 +102,16 @@ MIRRORS = [
      "site/_content/tooling/byte-accounting.html"),
     ("docs/reference/builds.md",
      "site/_content/reference/builds.html"),
+    ("docs/tooling/retail-compare.md",
+     "site/_content/tooling/retail-compare.html"),
+    ("docs/tooling/full-game-ladder.md",
+     "site/_content/tooling/full-game-ladder.html"),
+    ("docs/tooling/soak-harness.md",
+     "site/_content/tooling/soak-harness.html"),
+    ("docs/tooling/pal-localizations.md",
+     "site/_content/tooling/pal-localizations.html"),
+    ("docs/tooling/randomizer-delilas.md",
+     "site/_content/tooling/randomizer-delilas.html"),
 ]
 
 # Register mirrors: fragments whose rows are rendered from docs/ at build time.

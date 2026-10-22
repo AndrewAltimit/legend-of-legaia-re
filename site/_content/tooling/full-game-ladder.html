@@ -1,0 +1,364 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; full-game ladder</div>
+  <h1>Full-game ladder: New Game to the credits</h1>
+  <p class="lede">The full-game ladder is the test behind the claim that the port plays the whole story. It asks one question: <strong>from a cold New Game, how far toward the ending credits does the engine get, and where does it stop?</strong> The story is cut into segments between milestones; each segment starts from a real retail save taken at its milestone and is scored on how far the engine gets toward the next one. A separate continuous run plays one New Game straight through on pad input alone. When either falls short, the report names the reason one level down - the script instruction that parked, the door gate that refused, the story flag never set and the disc records that set it - so a stall points at the next thing to fix.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="contents">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Test</dt><dd><code>crates/engine-shell/tests/full_game_ladder.rs</code> (part C in <code>full_game_ladder/continuous.rs</code>)</dd>
+    <dt>Spine</dt><dd><code>scripts/replays/full_game_spine.toml</code> - the milestone list, New Game (<code>opdeene</code>) to the credits crawl (<code>edlast</code>)</dd>
+    <dt>Baseline</dt><dd><code>scripts/replays/full_game_baseline.toml</code> - every score is asserted <code>&gt;=</code>; a drop is a finding</dd>
+    <dt>Part A</dt><dd>The spine is anchored, ordered and routed through the disc's scene graph</dd>
+    <dt>Part B</dt><dd>The segmented ladder: each segment seeded from its milestone's retail save and scored on four cumulative tiers</dd>
+    <dt>Part C</dt><dd>The continuous run: one New Game, never re-seeded, reloading only its own saves after a wipe</dd>
+    <dt>Needs</dt><dd>Your disc (<code>LEGAIA_DISC_BIN</code>), the extracted tree and the save library; without them every part prints <code>[skip]</code> and passes. Anchor bytes are read at test time and never committed.</dd>
+  </dl>
+  <p>Three terms recur below. A scene's script records live in <strong>partitions</strong>: <code>P0[n]</code> holds placed props and doors, <code>P1[n]</code> NPC and entry records, <code>P2[n]</code> walk-on and spawned records. A <strong>walk-on band</strong> is a run of tiles that starts a <code>P2</code> record when stepped on. A <strong>story flag</strong> is one bit of the system-flag bank, written like <code>0x227</code>; op <code>0x3F</code> is the field VM's scene change.</p>
+</section>
+
+<section class="doc-section" id="relation" data-doc="how-it-relates-to-the-other-ladders">
+  <h2>How it relates to the other ladders</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Instrument</th><th>Question</th></tr></thead>
+    <tbody>
+      <tr><td><code>critical_path_replay</code></td><td>How far a pad run gets along the chapter-1 route, with no seating.</td></tr>
+      <tr><td><code>chapter1_frontier_ladder</code> (parity)</td><td>Which chapter-1 scenes load, script, walk and leave - breadth.</td></tr>
+      <tr><td>Chapter-2 / chapter-3 / boss spine oracles</td><td>Whether the pinned gates of one story arc sequence through the engine.</td></tr>
+      <tr><td><strong>This ladder</strong></td><td>How far each stretch of the <em>whole</em> story gets from a real save there, and how far a cold New Game gets without help.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The chapter ladders are deeper where they reach; this one is shallow and wide. A stall here names where to point the deep instruments.</p>
+</section>
+
+<section class="doc-section" id="spine" data-doc="the-spine">
+  <h2>The spine</h2>
+  <p>The spine is the main-story milestone sequence. Each milestone names its scene and a <strong>retail anchor</strong>: a save on one of the library's memory cards (card file and save name) or a catalogued save state (scenario label and backup fingerprint). The ladder reads the anchor's <strong>SC save window</strong>, RAM <code>0x80084140..0x80086140</code> - exactly the block a memory card stores (<a href="../formats/save-record.html">save record</a>) - so a card save and a live state yield the same thing: party records, bag, gold, the system-flag bank at <code>0x80085758</code>, the scene label and the field position snapshot.</p>
+  <p>The order is the anchors' own. The two playthrough cards are one run whose play-time counters and flag populations rise together; chapter-1 anchors, which come from several sessions, are ordered by flag inclusion; the ending anchor is a debug credits run that anchors the scene but is excluded from the order check.</p>
+  <p><strong>Part A</strong> re-derives all of it: every anchor loads into the scene the spine names, the flag-inclusion order holds pair by pair, every reach flag is set in its own anchor, and a route between consecutive milestones exists in the disc's scene graph. It prints that route with its hop kinds:</p>
+  <div class="table-wrap">
+  <table class="compact">
+    <thead><tr><th>Arrow</th><th>Hop</th></tr></thead>
+    <tbody>
+      <tr><td><code>&gt;</code></td><td>A <code>0x3F</code> scene change a walk-on <code>.MAP</code> band reaches.</td></tr>
+      <tr><td><code>=&gt;</code></td><td>A <code>0x3F</code> only a talk, touch or scripted record carries.</td></tr>
+      <tr><td><code>~fmv~&gt;</code></td><td>An FMV hand-off (<code>4C E2 id</code>) from a walk-on record; the destination is retail's post-play dispatch (<code>FUN_801CEA3C</code>).</td></tr>
+      <tr><td><code>~fmv=&gt;</code></td><td>An FMV hand-off from a record no walk-on band reaches.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Routes are cheapest-first with walk-on hops preferred, so a <code>=&gt;</code> in a route means no all-walk-on route exists. What "reached" means is per milestone: <code>scene</code> (in the scene, walking), <code>control</code> (and the pad is back) or <code>flags</code> (and every reach flag is set). A reach flag is one the anchor gained over its predecessor that a clean partition-2 SET site in that scene writes, per the disc-wide system-flag census; entry-script writes are excluded because they fire on every visit.</p>
+  <h3>Waypoints</h3>
+  <p>The cheapest route is not always the story's. A milestone can name <code>via</code> scenes - story waypoints the anchors show the retail run passed through - and they are visited in order, each with its beats pass played, before the route heads for the milestone itself. Each is justified in the spine by the flags that put it there. Typical reasons:</p>
+  <ul>
+    <li><strong>An item behind a detour.</strong> The Fire Path milestone goes through <code>stone</code>, which holds the Star Pearl that opens the <code>tunnela</code> door; the cheaper elevator route only opens after Xain.</li>
+    <li><strong>A flag another scene waits on.</strong> <code>conc3</code> P2[10] sets the <code>0x3E5</code> the <code>juui1</code> hand-off in <code>conc2</code> tests; <code>dohaty</code> P2[13] sets the <code>0x1D4</code> every <code>station</code> placement waits on.</li>
+    <li><strong>An errand.</strong> Sol Tower B2 visits <code>koin2</code> and <code>koin4</code> for the Sage's Gate chests and the bread they ask for.</li>
+    <li><strong>A shortcut that leaves the dungeon.</strong> In <code>garmel</code> and <code>vozz</code> the cheapest route walks back out to the overworld; the story's way on is a boss or a scripted flight.</li>
+  </ul>
+  <p>A milestone may instead name <code>continuous_via</code>: waypoints only the continuous run plays, where a seeded segment starts past the story or its seated hand cannot play it. Dr. Usha's research and Nivora are the case.</p>
+</section>
+
+<section class="doc-section" id="tiers" data-doc="segments-and-tiers,seeding">
+  <h2>Segments, tiers and seeding</h2>
+  <p>One pad run cannot cross the game, so the ladder is <strong>segmented</strong>: segment <code>i</code> seeds the engine at milestone <code>i</code> and asks how far it gets toward milestone <code>i + 1</code>. Segment 0 is seeded by <code>BootSession::start_new_game</code> - the cold opening, not a save. The tiers are cumulative:</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The tier ladder for one segment. Seed segment i from milestone i's retail save. If it does not land in the milestone scene, tier 0, none. If the entry script never settles, tier 1, loads. If milestone i plus 1 is not reached with the player seated on each door, tier 2, enters. If it is reached seated but not with pad input alone, tier 3, progresses. If pad input alone reaches it, tier 4, pad.">
+      <defs><marker id="fgl-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-accent" x="10" y="20" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="85" y="44">Seed segment i</text><text class="dg-sub" x="85" y="62">retail save at milestone i</text>
+      <rect class="dg-node" x="190" y="20" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="265" y="44">Lands in scene?</text><text class="dg-sub" x="265" y="62">Field or WorldMap</text>
+      <rect class="dg-node" x="370" y="20" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="445" y="44">Entry settles?</text><text class="dg-sub" x="445" y="62">pad back, or script left</text>
+      <rect class="dg-node" x="550" y="20" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="625" y="44">Reached seated?</text><text class="dg-sub" x="625" y="62">doors + beats pass</text>
+      <rect class="dg-node" x="730" y="20" width="140" height="56" rx="4"/>
+      <text class="dg-label" x="800" y="44">Reached by pad?</text><text class="dg-sub" x="800" y="62">fresh seed, input only</text>
+      <path class="dg-edge" d="M160 48 L188 48" marker-end="url(#fgl-arrow)"/>
+      <path class="dg-edge" d="M340 48 L368 48" marker-end="url(#fgl-arrow)"/>
+      <path class="dg-edge" d="M520 48 L548 48" marker-end="url(#fgl-arrow)"/>
+      <path class="dg-edge" d="M700 48 L728 48" marker-end="url(#fgl-arrow)"/>
+      <text class="dg-edge-label" x="168" y="40">yes</text>
+      <text class="dg-edge-label" x="348" y="40">yes</text>
+      <text class="dg-edge-label" x="528" y="40">yes</text>
+      <text class="dg-edge-label" x="708" y="40">yes</text>
+      <path class="dg-edge-dim" d="M265 76 L265 190" marker-end="url(#fgl-arrow)"/>
+      <path class="dg-edge-dim" d="M445 76 L445 190" marker-end="url(#fgl-arrow)"/>
+      <path class="dg-edge-dim" d="M625 76 L625 190" marker-end="url(#fgl-arrow)"/>
+      <path class="dg-edge-dim" d="M770 76 L770 190" marker-end="url(#fgl-arrow)"/>
+      <path class="dg-edge" d="M830 76 L830 190" marker-end="url(#fgl-arrow)"/>
+      <text class="dg-edge-label" x="272" y="140">no</text>
+      <text class="dg-edge-label" x="452" y="140">no</text>
+      <text class="dg-edge-label" x="632" y="140">no</text>
+      <text class="dg-edge-label" x="742" y="140">no</text>
+      <text class="dg-edge-label" x="836" y="140">yes</text>
+      <rect class="dg-node-warn" x="200" y="192" width="130" height="50" rx="4"/>
+      <text class="dg-label" x="265" y="214">0 &middot; none</text><text class="dg-sub" x="265" y="231">seed failed</text>
+      <rect class="dg-node" x="380" y="192" width="130" height="50" rx="4"/>
+      <text class="dg-label" x="445" y="214">1 &middot; loads</text><text class="dg-sub" x="445" y="231">save lands</text>
+      <rect class="dg-node" x="560" y="192" width="130" height="50" rx="4"/>
+      <text class="dg-label" x="625" y="214">2 &middot; enters</text><text class="dg-sub" x="625" y="231">script settles</text>
+      <rect class="dg-node" x="706" y="192" width="88" height="50" rx="4"/>
+      <text class="dg-label" x="750" y="214">3</text><text class="dg-sub" x="750" y="231">progresses</text>
+      <rect class="dg-node-ok" x="800" y="192" width="74" height="50" rx="4"/>
+      <text class="dg-label" x="837" y="214">4</text><text class="dg-sub" x="837" y="231">pad</text>
+      <text class="dg-sub" x="440" y="282">The headline: how many leading segments, in spine order, each clear tier 3 and tier 4.</text>
+    </svg>
+    <figcaption>Tiers 3 and 4 are two separate passes over the same route. The seated pass proves doors, scripts, gates and the scene graph; the pad pass repeats the route from a fresh seed as a player would, and is the locomotion claim.</figcaption>
+  </figure>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>#</th><th>Tier</th><th>Cleared when</th></tr></thead>
+    <tbody>
+      <tr><td class="num">0</td><td><code>none</code></td><td>The seed fails, lands outside its milestone scene, or the seated pass panics.</td></tr>
+      <tr><td class="num">1</td><td><code>loads</code></td><td>The seeded save lands in its milestone's scene, Field or WorldMap.</td></tr>
+      <tr><td class="num">2</td><td><code>enters</code></td><td>The entry script settles: the pad comes back, or the script leaves the scene itself.</td></tr>
+      <tr><td class="num">3</td><td><code>progresses</code></td><td>The next milestone is reached by <strong>seated</strong> traversal plus the beats pass.</td></tr>
+      <tr><td class="num">4</td><td><code>pad</code></td><td>The next milestone is reached with pad input only.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The <strong>headline</strong> is how many milestones a cold New Game reaches contiguously at <code>progresses</code> and at <code>pad</code>, plus the tier sum over all segments.</p>
+  <h3>Seeding</h3>
+  <p>A seed goes through the host's own resume path, <code>BootSession::resume_save</code>, so a segment is a load of a real save. The import carries the whole system-flag bank, the party count and roster, and the field position snapshot where the resume seats the party. The anchor's <strong>Field Move</strong> option comes in with the other options words, as retail's card load restores it, so the ladder's player runs or walks as the anchor's player did - timed scripts are paced for it. A <em>state</em> anchor taken mid-field has a live position that differs from its snapshot, so the ladder arms <code>SceneHost::set_entry_seat</code> with the live one; a card save seats from its own snapshot.</p>
+</section>
+
+<section class="doc-section" id="continuous" data-doc="the-continuous-run">
+  <h2>The continuous run</h2>
+  <p>Every segment above starts from the retail save at its milestone, so it plays with the party, bag and gold a retail player had there. That scores each stretch's doors and scripts; it does not say whether the engine's own run <em>arrives</em> at a stretch able to clear it. <strong>Part C</strong> asks that. It seeds one session with <code>start_new_game</code> and plays the pad pass toward each milestone in turn, never re-seeding.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Seeded segments versus the continuous run. Top row: each segment between milestones starts from its own retail save, so every stretch begins with a retail player's party and bag. Bottom row: one New Game plays every stretch in order, carrying its own party, bag and gold; at each milestone it keeps its own save, and after a party wipe it reloads that save, as a player would. Only the next anchor's flags steer it, as route knowledge.">
+      <defs><marker id="fgl-arrow2" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-label dg-start" x="10" y="22">Part B - segmented</text>
+      <rect class="dg-node-accent" x="10" y="36" width="90" height="34" rx="4"/><text class="dg-sub" x="55" y="57">New Game</text>
+      <rect class="dg-node-accent" x="230" y="36" width="90" height="34" rx="4"/><text class="dg-sub" x="275" y="57">retail save</text>
+      <rect class="dg-node-accent" x="450" y="36" width="90" height="34" rx="4"/><text class="dg-sub" x="495" y="57">retail save</text>
+      <rect class="dg-node-accent" x="670" y="36" width="90" height="34" rx="4"/><text class="dg-sub" x="715" y="57">retail save</text>
+      <path class="dg-edge" d="M100 53 L220 53" marker-end="url(#fgl-arrow2)"/>
+      <path class="dg-edge" d="M320 53 L440 53" marker-end="url(#fgl-arrow2)"/>
+      <path class="dg-edge" d="M540 53 L660 53" marker-end="url(#fgl-arrow2)"/>
+      <path class="dg-edge" d="M760 53 L860 53" marker-end="url(#fgl-arrow2)"/>
+      <text class="dg-edge-label" x="120" y="90">each stretch starts fresh from what retail held there</text>
+      <rect class="dg-group" x="4" y="110" width="872" height="128" rx="6"/>
+      <text class="dg-label dg-start" x="14" y="132">Part C - continuous</text>
+      <rect class="dg-node-accent" x="10" y="146" width="90" height="34" rx="4"/><text class="dg-sub" x="55" y="167">New Game</text>
+      <rect class="dg-node-ok" x="230" y="146" width="90" height="34" rx="4"/><text class="dg-sub" x="275" y="167">own save</text>
+      <rect class="dg-node-ok" x="450" y="146" width="90" height="34" rx="4"/><text class="dg-sub" x="495" y="167">own save</text>
+      <rect class="dg-node-ok" x="670" y="146" width="90" height="34" rx="4"/><text class="dg-sub" x="715" y="167">own save</text>
+      <path class="dg-edge" d="M100 163 L220 163" marker-end="url(#fgl-arrow2)"/>
+      <path class="dg-edge" d="M320 163 L440 163" marker-end="url(#fgl-arrow2)"/>
+      <path class="dg-edge" d="M540 163 L660 163" marker-end="url(#fgl-arrow2)"/>
+      <path class="dg-edge" d="M760 163 L860 163" marker-end="url(#fgl-arrow2)"/>
+      <path class="dg-edge-dim" d="M600 180 C600 220 495 220 495 184" marker-end="url(#fgl-arrow2)"/>
+      <text class="dg-edge-label" x="610" y="215">wipe: reload own save</text>
+      <text class="dg-edge-label" x="120" y="205">party, bag, gold and levels are whatever the run earned</text>
+    </svg>
+    <figcaption>The continuous score, <code>[continuous] reached</code>, is the count of milestones reached in order. Its distance from the segmented headline is the measurement: how much of each stretch rests on arriving with a retail player's party.</figcaption>
+  </figure>
+  <ul>
+    <li><strong>The story state is the engine's from the first frame.</strong> The next anchor's flags still steer the beats pass - they are route knowledge - but nothing of an anchor's party or bag reaches the session.</li>
+    <li><strong>It keeps its own saves.</strong> At each milestone reached it takes <code>World::save_full</code>; after a party wipe it reloads that save, with the same guard retry and reload allowance the pad tier has.</li>
+    <li><strong>It stops at the first milestone it cannot reach</strong> and prints the stall.</li>
+  </ul>
+  <h3>What only a continuous run exercises</h3>
+  <p>A seeded segment starts from state retail wrote, so anything the engine would have had to write itself before that point is never asked of it. The continuous run is the only pass in which those writes are load-bearing:</p>
+  <ul>
+    <li><strong>Scripted grants.</strong> A flag, item or equipment change an earlier script makes is in every later anchor whether or not the port runs the op correctly. Op <code>0x3B</code> (<code>SET_EQUIP_SLOT</code>, how a Ra-Seru is put on and grows a stage) is the case in point: a mis-applied port still passed every segment, because each seed already wore the Ra-Seru.</li>
+    <li><strong>Joins after a reload.</strong> A member who joins takes a level-1 record from the starting-party template, which a seeded save (already holding all four records) never reads.</li>
+    <li><strong>The pause menu, the shop screen and the Point Card.</strong> No seeded pass buys; the continuous hand drives the merchant's op <code>0x49</code>, the buy list, the quantity stepper and the recipient picker, and with the card held every purchase runs its accrual and toast.</li>
+    <li><strong>Growth and captured Seru.</strong> Levels, gold and the bag are what the run earned, and a party that fights learns Seru magic and casts it into rounds where a target may already have died - the turn picker's dead-target redirect.</li>
+  </ul>
+  <h3>How the continuous hand plays</h3>
+  <p>The continuous hand is the pad tier's hand plus what a player who means to finish does between fights. On arrival in a field scene it runs one upkeep pass, in this order:</p>
+  <ol class="steps steps-vertical">
+    <li><strong>Shops.</strong> It talks to each merchant with a priced stock list, buying healing items for each present member, then the affordable equipment that improves a slot the most, then more heals. Stock is counted in healing restored, not item count, and a counter that sells heals is visited first.</li>
+    <li><strong>Equipment.</strong> Start, Equip, the Best Equipment row for each member; empty Goods slots are filled best passive first. Because Best Equipment ranks a weapon by stats alone and an off-class weapon raises the arm command's AP cost (<a href="../subsystems/arts-command-gauge.html">arts command gauge</a>), the hand then swaps in a weapon that swings cheaper.</li>
+    <li><strong>Rest.</strong> Under four fifths of its HP (or low MP) in a scene that rolls no encounters, it takes the scene's rest: a bed's walk-on band or a keeper whose record runs the <code>4C 82</code> restore.</li>
+    <li><strong>The scene's story.</strong> It plays the beats pass without waiting for a door to refuse, for further rounds while a round still raises a new flag.</li>
+    <li><strong>Training.</strong> While a member is more than a level short of the target - the anchors' own level curve a few milestones ahead - it trains from the bed, taking the fights it prices as winnable.</li>
+  </ol>
+  <p>In a fight it takes the random encounters it expects to win, pricing each from what the run's fights have cost so far, and runs from the rest; it saves MP for fights it cannot flee, aims its strikes and casts at the foe they land hardest on (stepping retail's angular target ring with Right), and runs past encounters on the way to a staged boss so the party's HP and bag are the boss's. Its options travel with its saves, and it switches Field Move to Run when walking is what holds it - the playthrough's player had by Mt. Rikuroa.</p>
+  <details class="disclosure">
+    <summary>The cases the continuous hand had to learn</summary>
+    <div class="disclosure-body">
+      <ul>
+        <li><strong>Talks the story reaches from elsewhere.</strong> A talk that ran and raised nothing is asked again once a later talk has moved a flag its record tests; a record that polls a box (<code>CD F8</code>) is stood in after its talk arms it.</li>
+        <li><strong>A maze of stones and closers.</strong> A gate stone (<code>4C 70</code>) is examined only from a tile the walk reaches, so <code>korb3</code>'s maze opens gate by gate from the hall the party arrives in.</li>
+        <li><strong>An errand the story waits on.</strong> <code>kor</code>'s guard dogs wait on <code>0x40A</code>, which the Sage's Gate spawns once all eight chests in <code>koin2</code> have each been handed a Soru Bread.</li>
+        <li><strong>A rest that stops resting.</strong> A keeper restores on one branch of its story only; a rest that lifts nobody is remembered as dry, and a bed that stops working leaves the bag in its place.</li>
+        <li><strong>A counter the story has closed.</strong> <code>dolk2</code>'s dealers sell nothing while the festival flag <code>0x27D</code> is up; the hand finds and plays the record that lowers it, then returns.</li>
+        <li><strong>Budget.</strong> A stretch has the pad segment's walking budget plus a share per waypoint, and four times its battle allowance, since this hand fights.</li>
+        <li><strong>A milestone reached with a fight committed.</strong> A save between a record's <code>3E FF</code> and the fight it commits (Cort's arrival in <code>jouine</code>) would skip the boss on reload, so the run keeps its earlier save and walks into such a door ready.</li>
+        <li><strong>A later start.</strong> <code>LEGAIA_FGL_CONTINUOUS_FROM</code> seeds the run once from a later anchor; its stalls read against the anchor's position before its flags.</li>
+      </ul>
+    </div>
+  </details>
+  <h3>The carried-state diff</h3>
+  <p>Under <code>LEGAIA_FGL_TRACE</code> the run prints, at each milestone and at the stall, the engine's own state beside the retail anchor's: levels, XP, HP, MP and equipment bytes, the party, gold and bag, and the flags each side holds that the other does not. It is what tells an engine defect from a weak party:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>The diff shows</th><th>Reading</th></tr></thead>
+    <tbody>
+      <tr><td>An equipment byte or bag item retail holds and the engine never gained</td><td>A scripted grant: find the op that writes it in the scene the anchors bracket.</td></tr>
+      <tr><td>A member in the roster with no record line (zero max HP)</td><td>A join that found no template row.</td></tr>
+      <tr><td>Lower level and XP, same equipment</td><td>Growth: the hand fled or the fights paid nothing.</td></tr>
+      <tr><td>Flags the anchor has and the engine lacks</td><td>Beats retail played that the hand walked past (optional ones show here too).</td></tr>
+      <tr><td>Flags the engine has and the anchor lacks</td><td>A beat retail had not played yet, or a latch.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="callout callout-warn">
+    <p class="callout-title">A ratchet, not a guarantee</p>
+    <p>Every random draw - the encounter step, the formation, the escape roll, enemy targeting - comes off one world rand stream, so a change that shifts one draw re-deals every later fight. The baseline therefore records the continuous score on several dealt streams (<code>[continuous_seeds]</code>, one row per <code>LEGAIA_FGL_RNG_SEED</code>), and each dealt run asserts its own row.</p>
+  </div>
+</section>
+
+<section class="doc-section" id="passes" data-doc="how-the-seated-tier-plays-a-segment,how-the-pad-tier-walks,input-conventions-in-both-passes">
+  <h2>How the two passes play a segment</h2>
+  <h3>The seated tier</h3>
+  <p><strong>Seated traversal</strong> follows the route hop by hop. On a field scene it seats the player one tile off a walk-on door and then onto it, so the engine's own tile-change dispatch fires the door record; on the overworld it seats the player on the installed portal. The engine does the scene change; the ladder only places the player. A hop that still fails after the scene's beats have run marks its edge dead, and the route is recomputed around it.</p>
+  <p>The <strong>beats pass</strong> runs once per scene visit - and again when the story returns to a scene with new flags - when the scene is the target with its reach flags unset, at a waypoint, or when a hop's door does not fire. It approaches every boss stager whose park gate is clear, every round until a contact gains nothing, and talks to the NPCs whose records reach a flag the next anchor carries or a destination the route needs.</p>
+  <h3>The pad tier</h3>
+  <p>The pad tier repeats the route from a fresh seed with the random-encounter roll armed, and plays the same waypoints and beats with pad input only. It plans with an A* search over the collision lattice (<code>World::field_dir_blocked</code> and the actor boxes) and follows the plan with a walker that inverts the live camera remap. The planner models the two ways a field map joins its own parts - a town's house interiors sit in the same map as its street:</p>
+  <ul>
+    <li>a <strong>kind-0 teleport</strong> tile is an edge to its landing cell, and a closed door prop standing over one counts as open, since pressing into it is the touch that opens it (<code>31 00</code>);</li>
+    <li>an <strong>object door</strong> - a touch-class or interact-class prop whose record reaches <code>31 00</code> - opens itself on contact or on the action button, which the follower taps when held against it.</li>
+  </ul>
+  <p>Where the start's walk component cannot reach the door, a pad hop tries a crossing scene. Ledge hops, warp pads that read their own floor list, clocks and timed switches are each modelled where the route needs them.</p>
+  <h3>Input conventions in both passes</h3>
+  <ul>
+    <li><strong>Scripted sequences</strong> get Cross on a press-2-release-14 duty cycle, and nothing while no script holds the frame.</li>
+    <li><strong>The naming prompt's Yes/No confirm</strong> gets Up first, since it opens on No.</li>
+    <li><code>BootSession::tick</code> routes the naming prompt's pad edges and drains the per-tick queues as both play hosts do, so a headless driver that only ticks crosses the opening.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="fights" data-doc="how-fights-are-played">
+  <h2>How fights are played</h2>
+  <p>A battle is fought through the command ring, one pad edge at a time, by a fighter shaped like a player. For each member, in priority order:</p>
+  <ol class="steps steps-vertical">
+    <li><strong>Revive</strong> a member who is down.</li>
+    <li><strong>Heal</strong> a member in danger - a party heal when two or more are, else the smallest single heal that lifts the worst-off clear. Heals already committed this round count as landed.</li>
+    <li><strong>Cast</strong> the strongest affordable damaging Seru spell.</li>
+    <li><strong>Attack</strong> through Command, entering the longest art the command pool pays for and spending the rest on plain directions; whether a matched art fires is the queue builder's call. Rotted limbs (<code>+0x16E &amp; 0x38</code>) close their own directions, and the plan keeps to the open ones.</li>
+  </ol>
+  <p>A member is <strong>in danger</strong> when it is under 45% of its HP (three fifths against a boss far above the party's HP), or cannot survive another loss the size of the biggest it took between two of the party's command windows - a round, not a hit.</p>
+  <p><strong>Random encounters</strong> that interrupt a segmented pad walk are fled through the round prompt's Run, unless the fight forbids running; after two failed runs with nothing to heal with, against foes the party can plausibly beat, the hand fights instead. <strong>Guards and boss reads:</strong> a foe that winds up - a charge body that sets its caster's ability latch and deals nothing - is guarded against on the turn its blow lands, and a boss lost to once is retried with its element guarded.</p>
+  <p><strong>Tick caps.</strong> A fight runs at least 60&#8239;000 ticks and continues while a foe's HP is still dropping, up to 600&#8239;000; it is unresolved only once 36&#8239;000 ticks pass with no foe losing HP.</p>
+</section>
+
+<section class="doc-section" id="stall" data-doc="how-to-read-a-stall,diagnostics">
+  <h2>How to read a stall</h2>
+  <p>Part B prints one table row per segment and a stall list. Each stall line is one level down from the tier that failed:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Line shape</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>seed: ...</code> / <code>seed landed A in &lt;mode&gt;</code></td><td>The resume failed or did not land walking in the milestone's scene (tier 0).</td></tr>
+      <tr><td><code>entry script never released: &lt;holder&gt; ... op=..</code></td><td>The pad holder - cutscene timeline, dialogue, spawned record - parked on that instruction for a whole window.</td></tr>
+      <tr><td><code>hop A -&gt; B: no walk-on door to B</code></td><td>The scene change is carried by a talk, touch or scripted record that seating cannot trigger, and no talk the ladder finds leads there.</td></tr>
+      <tr><td><code>no overworld portal to B installed</code></td><td>The overworld seeder installed no portal to B under the live flags; the portal set is printed.</td></tr>
+      <tr><td><code>N door(s) to B, none fired: ... gates FAIL: 0x.. clear</code></td><td>The door record's story gates (retail <code>FUN_8003BDE0</code>) refuse it; the failing flags are named.</td></tr>
+      <tr><td><code>B is reached by an FMV hand-off ...</code></td><td>The hop is a movie whose trigger record is not on a walk-on band.</td></tr>
+      <tr><td><code>reach flag(s) 0x.. never set</code></td><td>The target scene was reached but the beat that separates the milestones did not play.</td></tr>
+      <tr><td><code>battle unresolved ...: action SM ctx[7]=0x..</code></td><td>The fight ran out its budget in that action state (<code>FUN_801E295C</code>).</td></tr>
+      <tr><td><code>party wiped: ...</code></td><td>The fighter lost.</td></tr>
+      <tr><td><code>no walkable path ...</code> / <code>pad walk stalled at tile ..</code></td><td>The lattice cannot reach the door, or the follower stopped making progress on a path that exists.</td></tr>
+      <tr><td><code>PANIC: ...</code></td><td>An engine panic, caught per segment.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Under each failed seated segment the ladder lists the flags the next anchor has that the engine never set, each with the disc sites that set it (scene, partition, record) from the system-flag census - usually naming the record to look at next.</p>
+  <div class="callout callout-trap">
+    <p class="callout-title">Two stalls that are not what they look like</p>
+    <p><strong>An unresolved battle is not proof of a parked engine.</strong> The line prints the action state on the tick the budget ran out; a fight still trading blows reaches the cap as readily as one that froze. <code>LEGAIA_FGL_TRACE=1 LEGAIA_FGL_TRACE_HITS=1</code> settles it: a parked engine shows no <code>[commit]</code> and no <code>[hit]</code> after some tick, an outlasted hand shows commits to the end.</p>
+    <p><strong>A pad wipe that moves with an unrelated change is first a rand-stream question.</strong> Any change in how many draws happen before a fight - gating a fog region, say - deals every later fight another hand. Run the segment under a spread of <code>LEGAIA_FGL_RNG_SEED</code> values and count the wipes; the fragility is often a property of the anchor (a lone member at low HP) rather than of the hand.</p>
+  </div>
+  <p>A third shape is a <strong>boss the anchor's party cannot outlast</strong>: the hand's damage rolls are right - every term reads off the disassembly - but the party saved at that anchor cannot survive the boss's turns, and the fix belongs in what the fighter chooses (guards, healing order, MP top-ups) rather than in the engine.</p>
+  <h3>Diagnostics</h3>
+  <p>Trace switches, all environment variables:</p>
+  <div class="table-wrap">
+  <table class="compact">
+    <thead><tr><th>Variable</th><th>Prints</th></tr></thead>
+    <tbody>
+      <tr><td><code>LEGAIA_FGL_TRACE=1</code></td><td>One line per beat played, hop failures, <code>[battle]</code> start and end lines, per-segment frame and planner cost, and part C's aim and carried-state lines.</td></tr>
+      <tr><td><code>LEGAIA_FGL_TRACE_BATTLE=1</code> / <code>_HITS=1</code></td><td>A battle line every 1000 ticks / each HP change with its actor and action state.</td></tr>
+      <tr><td><code>LEGAIA_FGL_CAPS=1</code></td><td>Each script context the engine's anti-hang timeline cap ends. Retail has no such cap, so each line is a record the engine cut short.</td></tr>
+      <tr><td><code>LEGAIA_FGL_PAD_DEBUG</code>, <code>_SHOP_DEBUG</code>, <code>_HEAL_DEBUG</code></td><td>The fighter's pad and menu windows in a stuck fight; each shop and field-heal pad edge.</td></tr>
+      <tr><td><code>LEGAIA_FGL_WALK_DEBUG</code>, <code>_PLAN_DEBUG</code>, <code>_COMP_DEBUG</code>, <code>_JUMP_DEBUG</code>, <code>_CLOCK_DEBUG</code>, <code>_POS_TRACE</code></td><td>A stalled walk's wall map, the planner's door edges, the tile map of a failed walk component, door and lift rides, clock flags, scripted movement.</td></tr>
+      <tr><td><code>LEGAIA_FGL_PROBE_AT=&lt;scene&gt;:&lt;x&gt;,&lt;z&gt;;U;R;...</code></td><td>Seats the player and holds each listed direction, printing where it went - asking the engine, not the lattice, whether a spot can be walked off.</td></tr>
+      <tr><td><code>LEGAIA_FGL_EDGES</code>, <code>_GAINED</code>, <code>_SITES</code></td><td>Part A: a scene's in- and out-edges; the flags a milestone's anchor gained with their disc SET sites; every site that sets or clears a named flag.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="doc-section" id="run" data-doc="how-to-run">
+  <h2>How to run</h2>
+  <p>The extracted tree and the save library default to <code>extracted/</code> and <code>saves/library/</code> under the repo root; point a worktree at the main checkout's copies:</p>
+  <div class="cli"><code>LEGAIA_EXTRACTED_DIR=/path/to/extracted LEGAIA_SAVES_LIBRARY=/path/to/saves/library cargo test -p legaia-engine-shell --profile release-test --test integration full_game_ladder:: -- --nocapture --test-threads 1</code></div>
+  <div class="table-wrap">
+  <table class="compact">
+    <thead><tr><th>Variable</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>LEGAIA_FGL_ONLY=&lt;id&gt;,...</code></td><td>Runs only the segments ending at those milestones; no baseline assert.</td></tr>
+      <tr><td><code>LEGAIA_FGL_NO_PAD=1</code></td><td>Skips the pad tier.</td></tr>
+      <tr><td><code>LEGAIA_FGL_RNG_SEED=&lt;u32&gt;</code></td><td>Deals the pad segments and part C another hand of the world rand stream; part C asserts the matching <code>[continuous_seeds]</code> row.</td></tr>
+      <tr><td><code>LEGAIA_FGL_SEATED_RNG_SEED=&lt;u32&gt;</code></td><td>The same for the seated pass.</td></tr>
+      <tr><td><code>LEGAIA_FGL_PIN_RETAIL=1</code></td><td>Pins every fidelity toggle to retail (<code>WorldToggles::pin_retail</code>), so both parts measure the retail-faithful mode.</td></tr>
+      <tr><td><code>LEGAIA_FGL_CHECKPOINT_DIR=&lt;dir&gt;</code></td><td>Part C keeps its own save at each milestone (disc-derived state: keep it under <code>target/</code>).</td></tr>
+      <tr><td><code>LEGAIA_FGL_CONTINUOUS_FROM</code> / <code>_RESUME</code> / <code>_UNTIL=&lt;id&gt;</code></td><td>Start part C from a later anchor, resume it from a kept checkpoint, or stop it at a milestone - probes for one stretch, none of which assert the baseline.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The ratchet asserts every per-segment tier, both headline counts and the tier sum <code>&gt;=</code> the baseline. Raise the baseline in a reviewed edit from the block the run prints; never lower it to make a red run green. A full continuous run is a whole New Game, so the seed set is run one seed at a time.</p>
+</section>
+
+<section class="doc-section" id="limits" data-doc="what-it-cannot-measure">
+  <h2>What it cannot measure</h2>
+  <ul>
+    <li><strong>The seated tier places the player.</strong> It proves doors, scripts, gates and the scene graph, not locomotion; the pad tier is the locomotion claim.</li>
+    <li><strong>The segmented hands do not shop, and pick conversation options by rotation.</strong> A beat that waits on a purchase or an equip reads as a stall there; only the continuous hand buys.</li>
+    <li><strong>The segmented fighter is narrow.</strong> It guards only a foe that hits hard every other round, takes the target cursor where it opens, changes equipment only to guard a boss's element after losing, and flees random encounters. A fight that needs anything else reads as a wipe.</li>
+    <li><strong>Crossings are found by trial.</strong> The pad planner does not read which side each door of a crossing scene lands on, and a crossing whose side is story state needs that beat played first.</li>
+    <li><strong>Transports a script spawns on a flag are not graph edges.</strong> Routes follow <code>0x3F</code> names and FMV hand-offs; a flight or cart an entry script spawns is taken on arrival, which the graph does not model.</li>
+    <li><strong>Waypoints are hand-set</strong> from the anchors' flag differences; a stretch whose retail path left no flag the census can place has none.</li>
+    <li><strong>Chapter-1 anchors come from several sessions</strong>, some with cheat-seeded parties, so they seed faithfully to that session rather than to one canonical playthrough.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="route" data-doc="route-notes">
+  <h2>Route notes</h2>
+  <p>The full page keeps a long list of scene-specific facts the route and the pad hand depend on, each a property of the disc's scripts cited by scene and record. They fall into four groups:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Group</th><th>What it covers</th></tr></thead>
+    <tbody>
+      <tr><td>Split parties, pickers and staged fights</td><td>Three-actor talks (<code>43 02</code>) where each member stands in its own part of the map and Square hands control on; how a script's picker is answered; staged boss fights on walk-on bands.</td></tr>
+      <tr><td>Sol Tower</td><td>The warp pads that read their own floor list (op <code>0x49</code> sub-op 4) and branch to one scene change per floor; the stone maze in <code>korb3</code> and Gaza's fights.</td></tr>
+      <tr><td>Nivora</td><td>The Three Tunnels split, the boulders and the flags <code>nilboa</code>'s entry script raises; Uru Mais and its three dreams.</td></tr>
+      <tr><td>Overworld and dungeon joins</td><td>Where the overworld's static collision grid splits into separate walk components, and which story beat (a drained water gate, a thawed route south) joins them.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="-">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/engine.html">Engine reimplementation</a>
+    <a href="determinism-replay.html">Determinism + replay</a>
+    <a href="../formats/save-record.html">Per-character save record</a>
+    <a href="../subsystems/save-screen.html">Save screen</a>
+    <a href="../subsystems/battle-command-flow.html">Battle command flow</a>
+    <a href="../subsystems/arts-command-gauge.html">Arts command gauge</a>
+    <a href="retail-compare.html">Retail comparison corpus</a>
+    <a href="soak-harness.html">Soak harness</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/full-game-ladder.md" target="_blank" rel="noopener">Full doc</a>
+  </div>
+</section>

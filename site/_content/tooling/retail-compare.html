@@ -1,0 +1,262 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; retail comparison corpus</div>
+  <h1>Retail comparison corpus</h1>
+  <p class="lede">How far is the port from retail, and where? The retail comparison corpus answers that for every captured moment at once. For each retail save state in the library that the engine can be put into, it seeds the engine into the same situation, lets it settle, and scores what the engine shows against what retail showed - channel by channel, state by state - then ranks the states worst first and holds the scores to a ratcheted baseline. It is the breadth sibling of the single-mechanism oracles: those pin one subsystem exactly, this one measures the whole port at every moment someone captured.</p>
+</header>
+
+<section class="doc-section" id="how-it-works" data-doc="how-it-works,contents">
+  <h2>How it works</h2>
+  <p>Nothing here runs an emulator. A save state&rsquo;s RAM holds every retail observable the corpus compares, and its VRAM holds the frame that was on the TV - the display registers say which rectangle - so retail&rsquo;s side is read offline. The engine&rsquo;s side is a real session seeded through the port&rsquo;s own card-load path and ticked forward.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The retail comparison pipeline. A library save state is read two ways: its RAM gives retail's observables (scene, mode, player, camera, party, flags, bag, track word) and its VRAM plus display registers give the displayed frame. The RAM observables seed the engine through its card-load path; the engine settles for a fixed window or runs to the captured script or battle phase. Each channel is scored between 0 and 1 against retail. The scores produce a report ranked worst state first and are checked against a ratcheted baseline that fails on any drop and accepts a rise only through a reviewed bless.">
+      <defs><marker id="rc-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-accent" x="20" y="130" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="95" y="153">Library save state</text><text class="dg-sub" x="95" y="171">mednafen / PCSX-Redux</text>
+      <rect class="dg-node" x="220" y="50" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="315" y="73">Retail RAM</text><text class="dg-sub" x="315" y="91">scene, camera, party, flags</text>
+      <rect class="dg-node" x="220" y="220" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="315" y="243">Retail VRAM</text><text class="dg-sub" x="315" y="261">cropped displayed frame</text>
+      <path class="dg-edge" d="M170 148 L218 86" marker-end="url(#rc-arrow)"/>
+      <path class="dg-edge" d="M170 168 L218 240" marker-end="url(#rc-arrow)"/>
+      <rect class="dg-node" x="450" y="50" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="545" y="73">Seed the engine</text><text class="dg-sub" x="545" y="91">card-load resume + seat</text>
+      <path class="dg-edge" d="M410 78 L448 78" marker-end="url(#rc-arrow)"/>
+      <rect class="dg-node" x="450" y="135" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="545" y="158">Settle or run to phase</text><text class="dg-sub" x="545" y="176">script / battle / menu gate</text>
+      <path class="dg-edge" d="M545 106 L545 133" marker-end="url(#rc-arrow)"/>
+      <rect class="dg-node-accent" x="450" y="220" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="545" y="243">Score each channel</text><text class="dg-sub" x="545" y="261">0..1 per channel</text>
+      <path class="dg-edge" d="M545 191 L545 218" marker-end="url(#rc-arrow)"/>
+      <path class="dg-edge" d="M410 248 L448 248" marker-end="url(#rc-arrow)"/>
+      <path class="dg-edge-dim" d="M410 92 L430 92 L430 232 L448 232" marker-end="url(#rc-arrow)"/>
+      <rect class="dg-node" x="690" y="160" width="170" height="56" rx="4"/>
+      <text class="dg-label" x="775" y="183">Report</text><text class="dg-sub" x="775" y="201">worst state first</text>
+      <rect class="dg-node-ok" x="690" y="250" width="170" height="56" rx="4"/>
+      <text class="dg-label" x="775" y="273">Ratchet</text><text class="dg-sub" x="775" y="291">no channel may drop</text>
+      <path class="dg-edge" d="M640 240 L688 196" marker-end="url(#rc-arrow)"/>
+      <path class="dg-edge" d="M640 260 L688 274" marker-end="url(#rc-arrow)"/>
+      <text class="dg-edge-label" x="422" y="166" text-anchor="end">observables</text>
+    </svg>
+    <figcaption>Retail is read offline from the state; the engine is a real session. A state the engine cannot be seeded into stays in the report with its reason, so the summary counts what the instrument cannot reach instead of dropping it.</figcaption>
+  </figure>
+  <dl class="kv">
+    <dt>Corpus and channels</dt><dd><code>parity::retail_compare</code> - enumerate the library, read retail, seed the engine, score</dd>
+    <dt>Battle half</dt><dd><code>parity::retail_compare_battle</code> - read the encounter out of a battle state, enter it, score the battle channels</dd>
+    <dt>Script phase</dt><dd><code>parity::retail_compare_script</code> - read the running field contexts, run the engine to the same script phase</dd>
+    <dt>Frame channel</dt><dd><code>parity::retail_compare_image</code> - crop retail&rsquo;s frame, render the engine&rsquo;s, compare</dd>
+    <dt>Driver</dt><dd><code>scripts/ci/retail-compare.py</code>, over the <code>legaia-engine retail-compare</code> subcommand</dd>
+    <dt>Ratchet</dt><dd><code>retail_compare_corpus</code> (disc-gated test) against <code>scripts/ci/retail-compare-baseline.json</code> - scores and classes only, no pixels, no RAM</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="running" data-doc="running-it">
+  <h2>Running it</h2>
+  <div class="cli"><code>scripts/ci/retail-compare.py --filter town01</code></div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Flag</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr><td><i>(none)</i></td><td>the state channels; report under <code>captures/retail-compare/</code></td></tr>
+      <tr><td><code>--images</code></td><td>adds the image channel - renders real frames, so it needs a display</td></tr>
+      <tr><td><code>--check</code></td><td>asserts the baseline</td></tr>
+      <tr><td><code>--bless</code></td><td>folds a reviewed rise into the baseline</td></tr>
+      <tr><td><code>--filter a,b</code></td><td>only states whose label matches either</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The driver builds <code>legaia-engine</code> first (<code>--no-build</code> skips it) and exits cleanly with a <code>[skip]</code> line when the save-state library or the extracted disc is missing. Both are gitignored, per-machine data: the library is your own captures of your own disc.</p>
+</section>
+
+<section class="doc-section" id="reading" data-doc="reading-the-report">
+  <h2>Reading the report</h2>
+  <p><code>report.md</code> opens with the channel means over the seeded states and the class counts, then lists every seeded state <strong>worst first</strong>, each channel with both sides&rsquo; values and, when the frame ran, a side-by-side image. The unseeded states close it, each with its reason; <code>report.json</code> carries the same rows for scripts.</p>
+  <p>The worst states are the product. For each, decide first whether the divergence is the instrument&rsquo;s - a seeding gap - or the engine&rsquo;s:</p>
+  <ul>
+    <li>a <code>camera</code> channel at 1 beside a bad image is a <strong>rendering</strong> question;</li>
+    <li>a <code>camera</code> channel far off on a state whose label names a cutscene is <strong>script progress</strong>;</li>
+    <li>a <code>bgm</code> miss on an arrival state is <strong>capture timing</strong> - a door caught before the new scene&rsquo;s field init ran.</li>
+  </ul>
+  <p>Trace switches (<code>LEGAIA_RC_CAM_TRACE</code>, <code>_POS_TRACE</code>, <code>_DRIVE_TRACE</code>, <code>_FX_TRACE</code>, <code>_SEED_TRACE</code>) open a battle state up further: which component of a camera framing misses its endpoint and which input put it there, how the combatants got where they stand, and which seeding stream the battle search tried.</p>
+  <div class="callout callout-trap"><p class="callout-title">The side-by-side PNGs are retail pixels</p><p>The report directory holds frames from your disc. It stays under the gitignored <code>captures/</code> tree and is never committed.</p></div>
+</section>
+
+<section class="doc-section" id="ratchet" data-doc="the-ratchet">
+  <h2>The ratchet</h2>
+  <p>The baseline file holds, per state label, each measured channel&rsquo;s score and the state&rsquo;s class. The disc-gated test re-runs the corpus and fails when:</p>
+  <ul>
+    <li>any state&rsquo;s channel falls below its baselined score (beyond a JSON round-trip slack);</li>
+    <li>a baselined channel of a state the run did seed goes unmeasured;</li>
+    <li>a seedable state fails to seed, or no state seeds at all.</li>
+  </ul>
+  <p>A rise is allowed and is folded in by a reviewed <code>--bless</code>, which merges: a state outside the filter or one the run could not seed keeps its baselined channels, and a run without a display keeps each image score. A channel that no longer applies to a re-classed state leaves the file rather than failing every later check.</p>
+  <p>States the manifest tags as made on a <strong>patched disc</strong> replay a modified executable, so their RAM and frame are not retail&rsquo;s. They stay in the corpus - some are the only capture of their scene - but sit outside the headline means and the ratchet; a drop there prints as <code>[patched-drift]</code> for review. A difference on such a state is a lead to confirm against a retail capture, not a measured engine defect.</p>
+</section>
+
+<section class="doc-section" id="corpus" data-doc="the-corpus">
+  <h2>The corpus</h2>
+  <p>Every scenario in <code>scripts/scenarios.toml</code> whose backup fingerprint resolves to a library save state is one corpus state. Each is classed by the game-mode word and the scene label:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Class</th><th>Retail condition</th><th>Seeded</th></tr></thead>
+    <tbody>
+      <tr><td><code>field</code></td><td>mode <code>0x03</code>, a non-overworld scene</td><td>yes</td></tr>
+      <tr><td><code>world_map</code></td><td>mode <code>0x03</code> on a kingdom overworld</td><td>yes</td></tr>
+      <tr><td><code>battle</code></td><td>mode <code>0x14</code> / <code>0x15</code></td><td>yes</td></tr>
+      <tr><td><code>menu</code></td><td>mode <code>0x17</code></td><td>the pause-menu screens</td></tr>
+      <tr><td><code>field_init</code></td><td>mode <code>0x02</code>, scene mid-load</td><td>no</td></tr>
+      <tr><td><code>minigame</code></td><td>mode <code>0x19</code></td><td>no</td></tr>
+      <tr><td><code>cutscene</code></td><td>mode <code>0x1A</code> / <code>0x1B</code> (STR playback)</td><td>no</td></tr>
+      <tr><td><code>other</code></td><td>anything else</td><td>no</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>A field state is named by the scene it is <strong>running</strong>, which is not always its label. A walked door writes the destination label frames before the field init loads the block, so a capture in that window shows the outgoing scene under the incoming label; the corpus scores it as the scene actually loaded and records the label as pending.</p>
+</section>
+
+<section class="doc-section" id="observables" data-doc="retail-observables">
+  <h2>Retail observables</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Observable</th><th>Address</th></tr></thead>
+    <tbody>
+      <tr><td>scene label / loaded scene</td><td><code>0x8007050C</code> / <code>0x80084540</code></td></tr>
+      <tr><td>game mode</td><td><code>0x8007B83C</code></td></tr>
+      <tr><td>player <code>(X, footing, Z)</code></td><td><code>*0x8007C364 + 0x14/0x16/0x18</code></td></tr>
+      <tr><td>camera pitch / yaw, GTE <code>H</code></td><td><code>0x8007B790</code> / <code>0x8007B792</code>, <code>0x8007B6F4</code></td></tr>
+      <tr><td>camera eye / focus</td><td><code>0x800840B8..C0</code> / <code>0x80089118</code>, <code>0x80089120</code></td></tr>
+      <tr><td>actor headings</td><td><code>actor + 0x26</code></td></tr>
+      <tr><td>BGM track word</td><td><code>0x8007BAC8</code></td></tr>
+      <tr><td>fog-pool gate</td><td><code>0x8007B854</code> (<a href="../subsystems/field-ambient-fx.html">field ambient effects</a>)</td></tr>
+      <tr><td>visible-tile window</td><td>scratchpad <code>0x1F8003E8..EB</code> (<a href="../formats/encounter.html">encounter</a>)</td></tr>
+      <tr><td>party / flags / bag / gold</td><td>the live game-state window at <code>0x80084140</code></td></tr>
+      <tr><td>displayed frame</td><td>VRAM + display registers</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The live game-state window is byte for byte the front of a save block - the <a href="../subsystems/save-screen.html">save composer</a> copies exactly these bytes - so the corpus pads it to a block and lifts it through the same parse a memory-card load uses. Party, story flags, bag and gold therefore come out in the engine&rsquo;s own schema on both sides. Both emulators&rsquo; states crop the displayed frame by one rule: display start and mode from the GPU&rsquo;s last GP1 writes.</p>
+</section>
+
+<section class="doc-section" id="seeding" data-doc="the-seeding-model">
+  <h2>The seeding model</h2>
+  <ol class="steps">
+    <li><strong>Resume.</strong> The engine opens the state&rsquo;s scene through its own card-load path over the lifted save: story flags first (retail&rsquo;s order, so an entry script reads the saved story), then the scene entry, then party, flags, bag and gold.</li>
+    <li><strong>Seat.</strong> The player stands on retail&rsquo;s <code>(X, Z)</code> with the floor-sampled height, as a warp landing. The walk-on dispatcher&rsquo;s last-tile pair is stamped with the seat tile, because a player <em>standing</em> on a trigger tile has already fired it.</li>
+    <li><strong>Camera.</strong> The arrival snap composes from the state&rsquo;s own camera parameter block - whichever region record was installed last, which is walk history a tile re-query cannot recover.</li>
+    <li><strong>Frame step.</strong> The step retail was running at is rebuilt from its frame-time ring and handed over; it decides which script waits can complete.</li>
+    <li><strong>Settle.</strong> The session ticks a fixed window with no input - or, for a mid-script, battle or menu state, runs to that state&rsquo;s phase.</li>
+  </ol>
+  <p>The <strong>image channel</strong> is rendered by <code>play-window</code>, the real renderer, run as a child process seeded the same way (a scratch save resumed with <code>--resume-save</code>, then seated) and screenshotted at a fixed world tick. A <code>--scene</code> door entry is deliberately <em>not</em> used: it runs the scene&rsquo;s arrival from the picker&rsquo;s seat, so the frame would score the arrival rather than the scene.</p>
+  <h3>What seeding does not carry</h3>
+  <p>Each of these is an instrument limit, not an engine verdict:</p>
+  <ul>
+    <li><strong>Script progress</strong> outside a running record the phase gate reaches.</li>
+    <li><strong>Actor state</strong> - NPC positions, animation phases, open doors, live effects - is whatever the engine&rsquo;s own entry produces.</li>
+    <li><strong>Timing.</strong> Retail&rsquo;s frame is one instant; the engine&rsquo;s is a fixed tick after entry. Some history is held through the warm-up instead of run as game time - the field VM&rsquo;s script counters and the BIOS <code>rand()</code> seed, so every warm-up draw is the one retail would make next - and a few phases are aligned explicitly: the field HUD&rsquo;s idle countdown and the palette the ambient colour cyclers write. Ambient animation and water palette walks cannot be phase-aligned.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="mid-script" data-doc="mid-script-states">
+  <h2>Mid-script states</h2>
+  <p>A field capture taken while a spawned script record runs holds that record&rsquo;s context on retail&rsquo;s actor lists: its script base, program counter, record index and wait accumulator, plus the cutscene camera mover&rsquo;s progress. Such a state is not sampled a fixed window after entry. The engine runs until its own context for the same record - matched by the record&rsquo;s first bytes - holds retail&rsquo;s PC with at least retail&rsquo;s wait and at most retail&rsquo;s glide left, or has just executed the op retail is parked on.</p>
+  <p>Dialogue is met on the frame the capture shows: a box that has typed its page and waits for the press, or - for a capture caught mid-typing - the same row with the reveal counter at least the capture&rsquo;s. A gate the run never meets within its deadline falls back to the settle-window sample, and the <code>script</code> detail says which happened.</p>
+</section>
+
+<section class="doc-section" id="battle" data-doc="battle-states">
+  <h2>Battle states</h2>
+  <p>A battle capture carries its whole encounter in RAM: party and monster counts, the command-flow byte and action-state cursor, the monster ids, the scripted-fight bit, the present party and every combatant&rsquo;s HP and MP. The seed replays the fight from a running field, as retail entered it, and then places it at the capture&rsquo;s phase. Each step exists because leaving it out moves a channel for a reason that is not a port defect:</p>
+  <ol class="steps">
+    <li><strong>Enter the fight</strong> with the captured formation, party and stage variant.</li>
+    <li><strong>Pin the random stream</strong> at the entry, searched over, since the capture holds the stream at the capture rather than at the entry.</li>
+    <li><strong>Stand the combatants</strong> on their captured ground positions and headings, taking back pushes the capture already holds.</li>
+    <li><strong>Land the HUD glides</strong> and each body&rsquo;s animation keyframe the capture had already reached.</li>
+    <li><strong>Take back</strong> hits already landed this action, rewards already granted and turns already spent.</li>
+    <li><strong>Place the phase</strong> - drive the engine&rsquo;s own command surfaces, one press every other tick, to the captured command-flow state, action state and acting seat; a replayed cast runs to its gate.</li>
+  </ol>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Battle channel</th><th>Score</th></tr></thead>
+    <tbody>
+      <tr><td><code>enemies</code></td><td>fraction of retail monster seats the engine seated with the same id, in order</td></tr>
+      <tr><td><code>enemy_hp</code> / <code>battle_party</code></td><td>fraction of equal HP / max HP / MP / max MP fields; the maxima are the real check, since current values are seeded</td></tr>
+      <tr><td><code>phase</code></td><td>1 when the engine&rsquo;s command-flow state matches retail&rsquo;s - and for a driven action, the same action-SM state on the same seat</td></tr>
+      <tr><td><code>bgm</code></td><td>retail&rsquo;s track word against the field track the engine will resume</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Fields a capture probe wrote into RAM after battle init, and fields on a patched-disc state, are listed in the detail but left unscored.</p>
+</section>
+
+<section class="doc-section" id="menu" data-doc="menu-states">
+  <h2>Menu states</h2>
+  <p>A menu capture names its screen in the menu overlay&rsquo;s sub-screen word. The pause menu&rsquo;s screens - Items, Magic, Equip (and its slot browse and candidate list), Status, Options, Load, Save - are seeded: the field seed runs, then the pause menu is driven through its own pad path, <code>Start</code>, <code>Down</code> onto the row, <code>Cross</code>. The <code>menu</code> channel is 1 when the engine holds the same sub-screen. Title, boot and script-entered screens (the casino prize exchange) stay in the report as classified limits.</p>
+</section>
+
+<section class="doc-section" id="channels" data-doc="channels">
+  <h2>Channels</h2>
+  <p>Each channel scores in <code>[0, 1]</code>; a state&rsquo;s score is the mean of its measured channels. Distances score 1 inside a tolerance and fall linearly to 0 at a cut-off, so a near miss and a far one read differently.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Channel</th><th>Score</th></tr></thead>
+    <tbody>
+      <tr><td><code>scene</code> / <code>mode</code></td><td>the engine landed in retail&rsquo;s scene, in the class&rsquo;s mode</td></tr>
+      <tr><td><code>position</code></td><td>player <code>(X, Z)</code> after settling</td></tr>
+      <tr><td><code>footing</code></td><td>engine floor sample at retail&rsquo;s <code>(X, Z)</code> against retail&rsquo;s footing</td></tr>
+      <tr><td><code>camera</code></td><td>mean of eight parts: pitch, yaw, <code>H</code>, the three eye words and two focus words</td></tr>
+      <tr><td><code>facing</code></td><td>headings of the player and every placement standing on its retail seat</td></tr>
+      <tr><td><code>npcs</code></td><td>where each scripted placement stands, or whether one side parks it off-map</td></tr>
+      <tr><td><code>bgm</code> / <code>fog_gate</code></td><td>the track-select word and the ambient-particle gate equal retail&rsquo;s</td></tr>
+      <tr><td><code>view_window</code></td><td>the four visible-tile window bytes</td></tr>
+      <tr><td><code>party</code> / <code>flags</code> / <code>inventory</code></td><td>roster fields; story-flag bits; bag slots and gold</td></tr>
+      <tr><td><code>image</code></td><td>fraction of <code>8 &times; 8</code> blocks within tolerance (below)</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><code>party</code>, <code>flags</code> and <code>inventory</code> are seeded straight from retail, so on their own they check the seeding and whatever the settle window changed - an entry script that grants an item, a flag the save round trip does not carry.</p>
+</section>
+
+<section class="doc-section" id="image" data-doc="the-image-channel">
+  <h2>The image channel</h2>
+  <p>Retail draws a <code>320 &times; 224</code> area, so the compared frame is the top 224 rows of the display crop. The port keeps a <code>320 &times; 240</code> logical screen whose rows line up with retail&rsquo;s draw rows, rendered at an integer scale and box-filtered back down.</p>
+  <dl class="kv">
+    <dt><code>within</code> (the score)</dt><dd>the fraction of <code>8 &times; 8</code> blocks whose mean colour is within a fixed tolerance of retail&rsquo;s on every channel</dd>
+    <dt><code>mae</code></dt><dd>mean absolute error per channel per pixel, for reference</dd>
+  </dl>
+  <p>Block means rather than pixels: the engine rasterises at its own resolution with its own filtering, so a per-pixel test would mostly score dither and sub-pixel edges. A block test moves on a wrong camera, missing or extra geometry, wrong palettes and wrong overlays. A retail frame dark enough to be a fade is not scored - a dark engine frame would match it and say nothing.</p>
+  <p>The child runs <strong>at retail framing with every enhancement off</strong>: retail camera distance, no enhanced lighting, no ground fog, no see-through-walls fade, no entry pulse, no photosensitivity slew. It is also tick-locked - exactly one world tick per redraw - so a fogged scene&rsquo;s frame does not move with machine load.</p>
+</section>
+
+<section class="doc-section" id="divergence" data-doc="divergence-shapes">
+  <h2>Divergence shapes</h2>
+  <p>A low score has a shape, and the shape says where to look:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Shape</th><th>Indicates</th></tr></thead>
+    <tbody>
+      <tr><td>camera exact, frame smeared by stretched planes or one flat colour</td><td>a mesh retail does not draw there - back faces of a sky dome, a never-spawned actor at the origin, a prop at the wrong scale</td></tr>
+      <tr><td>retail frame black beyond a rectangle, the engine&rsquo;s filled</td><td>the visible-tile window; see <a href="../subsystems/renderer.html">renderer</a></td></tr>
+      <tr><td>an effect missing in the engine frame</td><td>an actor or effect the fresh entry does not spawn, or one the port does not draw</td></tr>
+      <tr><td>camera and dialogue off together, phase gate not met</td><td>a script record the gate could not bring the engine to</td></tr>
+      <tr><td>flag bits one apart inside the region-selector band</td><td>the entry script&rsquo;s one-hot region selector, re-evaluated at the seat</td></tr>
+      <tr><td>a town label over the overworld&rsquo;s camera and track</td><td>a door caught before the town&rsquo;s field init ran</td></tr>
+      <tr><td>retail&rsquo;s camera focus far from its player</td><td>a focus left behind by a probe poke or a movement-locked script; the seed lands retail&rsquo;s focus</td></tr>
+      <tr><td>a translucent near-camera body brighter in the engine frame</td><td>the near-camera ghost a frame or two off the displayed one, not a blend defect</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The full doc works through each shape against named states, including the ones that turned out to be capture artefacts rather than engine defects.</p>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/engine.html">Engine reimplementation</a>
+    <a href="determinism-replay.html">Determinism + replay</a>
+    <a href="recomp-differential.html">Recomp differential</a>
+    <a href="mednafen-automation.html">Mednafen automation</a>
+    <a href="pcsx-redux-automation.html">PCSX-Redux automation</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/cast-sequence-oracle.md" target="_blank" rel="noopener">Cast-sequence oracle</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/host-drift.md" target="_blank" rel="noopener">Host drift</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/retail-compare.md" target="_blank" rel="noopener">Full doc</a>
+  </div>
+</section>

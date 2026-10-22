@@ -58,6 +58,11 @@
       <div class="card-title">Randomizer: internals</div>
       <div class="card-body">How an edit travels from a PROT entry to a rewritten disc sector, the techniques every feature is built from, and where injected MIPS code is allowed to live.</div>
     </a>
+    <a class="card" href="randomizer-delilas.html">
+      <span class="card-kicker">Companion to Randomizer</span>
+      <div class="card-title">Delilas Challenge and party swap</div>
+      <div class="card-body">The two Delilas mods from the inside: the Muscle Dome course and its reward, and the battle-model, voice, move-set and cast-route rebuilds that put a Delilas sibling in a party slot.</div>
+    </a>
     <a class="card" href="translation.html">
       <div class="card-title">Translation packs</div>
       <div class="card-body"><code>legaia-patcher translate</code> exports a disc's text as an editable YAML pack and applies a filled pack back as a same-size patch. Built for community translations.</div>
@@ -66,7 +71,8 @@
       <div class="card-title">Translation workbench</div>
       <div class="card-body">Edit a language pack line by line in the browser, with live byte, on-screen-width and scene-fit feedback against your own disc.</div>
     </a>
-    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/pal-localizations.md" target="_blank" rel="noopener">
+    <a class="card" href="pal-localizations.html">
+      <span class="card-kicker">Companion to Translation packs</span>
       <div class="card-title">Official PAL localizations</div>
       <div class="card-body">How the official French / German / Italian discs align to the USA coordinate space, and how their text is lifted onto it.</div>
     </a>
@@ -129,7 +135,7 @@
 
 <section class="doc-section" id="measure">
   <h2>Measure the port</h2>
-  <p>Four questions, four instruments: how much of the game is understood and reimplemented (port catalog, disc coverage), how much of one entry's bytes a parser really consumes (byte accounting), whether the port matches retail frame for frame (differential oracle), and whether it matches <em>itself</em> run twice (determinism).</p>
+  <p>How much of the game is understood and reimplemented (port catalog, disc coverage), how much of one entry's bytes a parser really consumes (byte accounting), whether the port matches retail (the retail comparison corpus against save states, the differential oracle frame by frame), whether it matches <em>itself</em> run twice (determinism), whether it plays from New Game to the credits (the full-game ladder), and what breaks when nobody plays it sensibly (the soak harness).</p>
   <div class="card-grid">
     <a class="card" href="port-catalog.html">
       <div class="card-title">Port catalog</div>
@@ -151,6 +157,18 @@
       <div class="card-title">Determinism + replay</div>
       <div class="card-body"><code>legaia-engine record</code> / <code>replay</code>: capture your inputs to a small text file and play them back frame-perfectly. Same input twice &rarr; bit-identical state trace.</div>
     </a>
+    <a class="card" href="retail-compare.html">
+      <div class="card-title">Retail comparison corpus</div>
+      <div class="card-body">Seed the engine from every catalogued retail save state and score scene, camera, BGM, party, flags, battle state and the frame against the state's own RAM and VRAM, worst first.</div>
+    </a>
+    <a class="card" href="full-game-ladder.html">
+      <div class="card-title">Full-game ladder</div>
+      <div class="card-body">New Game to credits as segmented story milestones, each segment driven from its anchor by pad input alone (a scripted walker and fighter press the buttons); a stall names the parked script op, the failing door gates and the unset flags with their disc setters.</div>
+    </a>
+    <a class="card" href="soak-harness.html">
+      <div class="card-title">Soak harness</div>
+      <div class="card-body">Seeded, game-shaped random pad input over every playable scene and minigame - optionally seeded from a library memory-card save, and with a save / load round trip - with panic / softlock / stall detectors and reduced replay repros.</div>
+    </a>
   </div>
 </section>
 
@@ -158,21 +176,9 @@
   <h2>More tooling docs (on GitHub)</h2>
   <p>These live in <code>docs/tooling/</code> only: the parity and playthrough instruments, the CI gates that keep a measurement honest, and the per-row triage ledgers behind the port catalog.</p>
   <div class="card-grid">
-    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/retail-compare.md" target="_blank" rel="noopener">
-      <div class="card-title">Retail comparison corpus</div>
-      <div class="card-body">Seed the engine from every catalogued retail save state and score scene, camera, BGM, party, flags, battle state and the frame against the state's own RAM and VRAM, worst first.</div>
-    </a>
     <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/cast-sequence-oracle.md" target="_blank" rel="noopener">
       <div class="card-title">Cast-sequence oracle</div>
       <div class="card-body">The corpus's time-axis sibling: one spell, summon or monster cast recorded on both sides from cast begin to past its Done band, and scored against retail frame by frame.</div>
-    </a>
-    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/full-game-ladder.md" target="_blank" rel="noopener">
-      <div class="card-title">Full-game ladder</div>
-      <div class="card-body">New Game to credits as segmented story milestones, each segment driven from its anchor by pad input alone (a scripted walker and fighter press the buttons); a stall names the parked script op, the failing door gates and the unset flags with their disc setters.</div>
-    </a>
-    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/soak-harness.md" target="_blank" rel="noopener">
-      <div class="card-title">Soak harness</div>
-      <div class="card-body">Seeded, game-shaped random pad input over every playable scene and minigame - optionally seeded from a library memory-card save, and with a save / load round trip - with panic / softlock / stall detectors and reduced replay repros.</div>
     </a>
     <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/field-op-census.md" target="_blank" rel="noopener">
       <div class="card-title">Field-op census</div>

@@ -1,0 +1,477 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; delilas features</div>
+  <h1>Randomizer: the Delilas features</h1>
+  <p class="lede">Three <a href="randomizer.html">patcher</a> features are built around the Delilas siblings - Gi, Lu and Che, the recurring boss duellists. They are the largest mods the patcher ships: unlike the table randomizers they combine script edits, model and animation rebuilds, audio re-voicing and injected MIPS code. This page is their design reference for modders - what each pass edits, where, and why. The flags themselves are listed on the <a href="randomizer.html#delilas-challenge">randomizer page</a>.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Feature</th><th>Flag</th><th>What the player gets</th></tr></thead>
+    <tbody>
+      <tr><td><a href="#delilas-challenge">Delilas Challenge</a></td><td><code>--delilas-challenge</code></td><td>a fourth Muscle Dome enrollment option: a two-round arena course (Che and Lu together, then Gi) paying 5000 coins and a reward item</td></tr>
+      <tr><td><a href="#reward">Custom items</a></td><td><code>--custom-items</code></td><td>three new items in cut item slots; standalone, and the course's reward when both are set</td></tr>
+      <tr><td><a href="#delilas-party-swap">Delilas party swap</a></td><td><code>--delilas-party V,N,G</code></td><td>play as the siblings: the party wears their battle models, names, voices and elements, and the story duels field Vahn, Noa and Gala instead</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="cli"><code>legaia-patcher randomize --input DISC.bin --delilas-challenge --custom-items</code></div>
+  <div class="cli"><code>legaia-patcher randomize --input DISC.bin --delilas-party gi,lu,che --delilas-moves delilas</code></div>
+  <p>Sub-options of the swap are <code>--delilas-moves hybrid|delilas</code>, <code>--delilas-arts-voice original|adjusted|removed</code> and <code>--delilas-che-hammer</code>. Two read-only checkers ship with them: <code>legaia-patcher delilas-verify</code> and <code>delilas-audit</code>. The shared write path and the injected-code arenas are on <a href="randomizer-internals.html">Randomizer: internals</a>; all three features also run in the in-browser <a href="rom-patcher.html">ROM patcher</a>.</p>
+  <dl class="kv">
+    <dt>PROT</dt><dd>the disc archive <code>PROT.DAT</code>, addressed by entry number; 0898 is the battle overlay, 0977 the Muscle Dome arena overlay</dd>
+    <dt>SCUS</dt><dd>the executable <code>SCUS_942.54</code></dd>
+    <dt>Cave</dt><dd>injected code hosted in bytes nothing references</dd>
+    <dt><code>koin1</code></dt><dd>the Sol casino scene that holds the dome clerk</dd>
+    <dt>MAN</dt><dd>a scene's script-and-placement file</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="delilas-challenge" data-doc="delilas-challenge">
+  <h2>Delilas Challenge</h2>
+  <p><code>--delilas-challenge</code> adds a new dome <em>course</em> of two rounds - <strong>Che and Lu together (1v2), then Gi (1v1)</strong> - paying 5000 coins into the dome winnings counter on a full clear, plus a <a href="#reward">reward item</a>. Retail has no such fight: the Nivora Ravine duels are solo, and no retail formation fields two distinct Delilas.</p>
+  <p>It is a dome course rather than a scripted battle because a normal battle staged from <code>koin1</code> freezes on any spell: that scene never installs battle-effect, summon or player-magic asset residency - the same reason the <a href="../subsystems/minigame-muscle-dome.html">Muscle Dome</a> disables magic. The feature is two halves that always ship together: a <code>koin1</code> script edit and an arena code injection. It is seedless, re-applying it is a no-op, and it is on in the web patcher's Balanced and Full Chaos presets.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Delilas Challenge flow. The koin1 clerk's fourth who-menu option, gated on story flag 0x378, shows a confirm picker that sets the dome-active flag 0x509 and the course-3 request flag 0x539 and clears the three course-unlock flags, then runs the retail arena warp. The arena's seed hook turns the request into course 3, course word 0x131. Round 0 fields Che and Lu as slim clones; a win leads to round 1 against Gi, course word 0x132; a win there settles through the cleared latch and pays 5000 coins plus the reward and sets flag 0x50A, and the koin1 award ceremony names the reward. A loss in either round goes through the dome's own loss scenes, winnings halved, back to Sol.">
+      <defs><marker id="rdl-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="15" y="30" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="110" y="53">koin1 clerk</text><text class="dg-sub" x="110" y="71">4th who-menu option</text>
+      <rect class="dg-node" x="237" y="30" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="332" y="53">Confirm picker</text><text class="dg-sub" x="332" y="71">arms the course flags</text>
+      <rect class="dg-node" x="459" y="30" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="554" y="53">Arena warp</text><text class="dg-sub" x="554" y="71">retail op 3E 69</text>
+      <rect class="dg-node-accent" x="681" y="30" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="776" y="53">Seed hook</text><text class="dg-sub" x="776" y="71">course 3, word 0x131</text>
+      <path class="dg-edge" d="M205 58 L235 58" marker-end="url(#rdl-arrow)"/>
+      <text class="dg-edge-label" x="190" y="22">flag 0x378 set</text>
+      <path class="dg-edge" d="M427 58 L457 58" marker-end="url(#rdl-arrow)"/>
+      <path class="dg-edge" d="M649 58 L679 58" marker-end="url(#rdl-arrow)"/>
+      <path class="dg-edge" d="M776 86 L776 122 L110 122 L110 158" marker-end="url(#rdl-arrow)"/>
+      <rect class="dg-node-accent" x="15" y="160" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="110" y="183">Round 0</text><text class="dg-sub" x="110" y="201">Che + Lu, slim clones</text>
+      <rect class="dg-node-accent" x="237" y="160" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="332" y="183">Round 1</text><text class="dg-sub" x="332" y="201">Gi, word 0x132</text>
+      <rect class="dg-node" x="459" y="160" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="554" y="183">Settle</text><text class="dg-sub" x="554" y="201">cleared latch 0x801D1ADC</text>
+      <rect class="dg-node" x="681" y="160" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="776" y="183">Payout</text><text class="dg-sub" x="776" y="201">5000 coins + reward, 0x50A</text>
+      <path class="dg-edge" d="M205 188 L235 188" marker-end="url(#rdl-arrow)"/>
+      <text class="dg-edge-label" x="208" y="180">win</text>
+      <path class="dg-edge" d="M427 188 L457 188" marker-end="url(#rdl-arrow)"/>
+      <text class="dg-edge-label" x="430" y="180">win</text>
+      <path class="dg-edge" d="M649 188 L679 188" marker-end="url(#rdl-arrow)"/>
+      <rect class="dg-node-warn" x="120" y="290" width="220" height="56" rx="4"/>
+      <text class="dg-label" x="230" y="313">Dome loss scenes</text><text class="dg-sub" x="230" y="331">winnings halved, back to Sol</text>
+      <path class="dg-edge-dim" d="M110 216 L190 288" marker-end="url(#rdl-arrow)"/>
+      <path class="dg-edge-dim" d="M332 216 L270 288" marker-end="url(#rdl-arrow)"/>
+      <text class="dg-edge-label" x="104" y="258">loss</text>
+      <text class="dg-edge-label" x="312" y="258">loss</text>
+      <rect class="dg-node-ok" x="641" y="290" width="230" height="56" rx="4"/>
+      <text class="dg-label" x="756" y="313">koin1 award ceremony</text><text class="dg-sub" x="756" y="331">names the reward</text>
+      <path class="dg-edge" d="M776 216 L776 288" marker-end="url(#rdl-arrow)"/>
+    </svg>
+    <figcaption>Until the Koru death event latches flag <code>0x378</code> the clerk brushes the player off. Losing a round returns to the Sol venue by the dome's own design - there is no game over.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="koin1-menu" data-doc="-">
+  <h2>The koin1 menu and warp</h2>
+  <p>This half is script and data only.</p>
+  <ul>
+    <li><strong>Picker.</strong> The 3-option <code>0x28</code> who-enrolls picker grows to the 4-option <code>0x29</code> form - the picker arity ceiling - with the new arm appended at the record's end.</li>
+    <li><strong>Quick-path skip.</strong> Retail hides the who-menu for good once Noa or Gala has refused enrollment (flags <code>0x559</code> / <code>0x558</code>), which would strand the new option on most saves. The skip tests are <strong>retargeted at never-set flags, never NOPed</strong>: <code>0x21</code> is the field VM's frame-yield opcode (<a href="../subsystems/script-vm.html">script VM</a>), not a no-op, so filling with it breaks the clerk dialog mid-interaction.</li>
+    <li><strong>The new arm</strong> mirrors a retail difficulty arm exactly: gate on <code>0x378</code>, set the dome-active flag, clear the three course-unlock flags, set the course-3 request flag, then the verbatim BGM, wait and arena-warp ops.</li>
+    <li><strong>Fit.</strong> The <code>koin1</code> MAN is sector-aligned with zero compressed slack, so the grown script fits only through the optimal LZS packer. If another edit (a grown language pack, say) has taken the headroom, this half skips with a note instead of failing the run.</li>
+  </ul>
+  <p>The dome fields whichever fighter the arena normally seats; routing a chosen party member into the arena's fighter slot is an open RE thread.</p>
+</section>
+
+<section class="doc-section" id="arena-course" data-doc="-">
+  <h2>The arena course</h2>
+  <p>The arena overlay (PROT 0977) has no course beyond Master, so course 3 is added by same-size edits there plus caves in SCUS.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Edit</th><th>Site</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td>Seed detour</td><td><code>FUN_801CEA6C</code> @ <code>0x801CEBCC</code></td><td>decodes flag <code>0x539</code> into the packed course / round word as course 3, then clears it</td></tr>
+      <tr><td>Course descriptor</td><td><code>0x801D1A08 + 3*8</code></td><td><code>{round_count, roster_ptr}</code>; all four readers compute <code>base + course*8</code>, so one write serves all</td></tr>
+      <tr><td>Hub actor template</td><td>relocated into a SCUS cave</td><td>it occupied the course-3 slot; its one <code>lui</code> / <code>addiu</code> reference is repointed</td></tr>
+      <tr><td>Roster</td><td>SCUS cave</td><td>Gi / Che / Lu, with the dome's own name strings</td></tr>
+      <tr><td>Payout detour</td><td><code>FUN_801D0F60</code> @ <code>0x801D1118</code></td><td>returns 5000 for course 3</td></tr>
+      <tr><td>Display detour</td><td><code>FUN_801D1184</code> @ <code>0x801D125C</code></td><td>shows the same 5000 on the results screen</td></tr>
+      <tr><td>Reward detour</td><td><code>0x801D114C</code></td><td>grants the reward item(s) through a routine at <code>0x800352EC</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <ul>
+    <li><strong>Seed guard.</strong> The seed fires only when the retail flag seed has left the course word at its no-course default <code>1</code>, which only the Delilas arm produces. The request flag is cleared whether or not it seeded, so a stale one cannot hijack a later Beginner / Expert / Master enrollment.</li>
+    <li><strong>The seed word carries bit <code>0x100</code></strong> (<code>0x131</code>). The battle-exit selector <code>FUN_80046A20</code> tests it to route a leg's end back to arena mode <code>0x18</code>; without it a lost leg falls into the ordinary game-over gate. Every retail seed carries it.</li>
+    <li><strong>Payout.</strong> Courses 0-2 pay from a table that course 3 indexes past into zeros. The payout load sits behind the settlement's cleared latch, raised only on <em>course exhausted and survived</em>, so a loss pays nothing and retail's halve-on-loss is untouched. The results screen re-reads the table on its own, hence the separate display detour.</li>
+    <li><strong>The quit residue.</strong> The hub's round-end routing reads the <code>koin1</code> menu-selection residue at <code>0x80084448</code> and treats <strong>4</strong> as "the player chose quit". The Delilas enrollment rides the who-menu's fourth slot, so its residue is exactly 4; the seat routine clears the cell at round-0 install. Leaving mid-course settles as a loss (halve), not a quit (zero).</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="slim-clones" data-doc="-">
+  <h2>The 1v2 round: slim clones</h2>
+  <p>Two full Delilas monster blocks overshoot the battle heap's distinct-monster budget. The failing allocation returns NULL, which the loader uses unchecked, so a naive 1v2 freezes at the round load (the arithmetic is on the <a href="../subsystems/battle.html">battle</a> page). The fix streams <strong>slim clones</strong> without touching the originals.</p>
+  <dl class="kv">
+    <dt>What a clone drops</dt><dd>most castable spell entries; mesh, stats, name and reactions stay byte-identical. The entry count and index space are preserved: a dropped slot aliases the basic-attack entry.</dd>
+    <dt>Constraint 1</dt><dd>exactly one rollable castable survives per sibling. The AI's cast pick is <code>rand % castable_count</code>, and an empty menu executes the divide guard the BIOS parks on.</dd>
+    <dt>Constraint 2</dt><dd>the signature special's staged entries survive verbatim. Each sibling's cast module stages block entries <strong>by raw index</strong> (Lu: <code>14 &rarr; 12 &rarr; 13</code>, Che: <code>10 &rarr; 11</code>), and an aliased stand-in never satisfies the module's completion wait.</dd>
+    <dt>Where they live</dt><dd>archive slots 190 / 191, ids nothing on the disc references. The real slots 163 / 164 are never modified, so the ravine duels and the Master course keep every move.</dd>
+    <dt>How they are reached</dt><dd>the formation seats the <strong>real ids</strong>, so AI, names and id-keyed tables stay genuine. Two small caves hook the loader's id-to-slot sites and add 27 to the id for the archive fetch only, and only while the course word reads <code>0x131</code>.</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="battle-rules" data-doc="-">
+  <h2>Battle-rule edits the course needs</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Edit</th><th>Site</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>Magic lockout</td><td>two mask words in PROT 0898</td><td>widen <code>&amp; 0x200</code> to <code>&amp; 0x300</code> so every dome contest locks magic</td></tr>
+      <tr><td>Special cadence</td><td>AI arm reload &rarr; cave over <code>FUN_80035274</code></td><td>stagger the two siblings' specials</td></tr>
+      <tr><td>Gi's borrowed casts</td><td>second cave arm</td><td>Divide and Spore Gas, one-shot each</td></tr>
+      <tr><td><code>PRG ERR%d</code> paint</td><td>reporter <code>0x80016444</code></td><td>hide a benign malloc-failure counter</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <ul>
+    <li><strong>Magic lockout.</strong> Retail rejects the Magic command only on the Master course's bit. The arena never installs summon / player-magic sound and art residency, so a Meta cast in the course corrupts audio state; widening the mask to the contest marker every dome seed carries closes it. Retail Beginner / Expert legs lose their latent magic access too - the same corruption waits there.</li>
+    <li><strong>Special cadence.</strong> The bespoke Delilas AI arm queues the signature special on the shared turn counter <code>% 3 == 2</code>, which would synchronize both siblings. In the Che and Lu round the course-gated block fires a special every four turns with the two siblings two turns apart; every other context resumes the stock arm register-exactly. The block lives over <code>FUN_80035274</code>, a SCUS function with zero references in any image - the only always-resident home left.</li>
+    <li><strong>Gi's round.</strong> The second arm queues <strong>Divide</strong> on Gi's first pick below half HP and <strong>Spore Gas</strong> on his first pick once the counter reaches 3, through the actor's cast queue - the mechanism the signature specials ride. Both stream their capture-class <a href="../subsystems/cast-module.html">cast modules</a> at cast time. Gi's monster block is byte-untouched.</li>
+    <li><strong><code>PRG ERR%d</code>.</strong> The 1v2's tight heap fails transient effect allocations in bursts, which retail tolerates, but every failure bumps the counter the on-screen dev reporter prints. One branch becomes unconditional; the other error arms stay.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="sharing-verification" data-doc="-">
+  <h2>Arena sharing and verification</h2>
+  <p>The course's seed routine and template cave live in the verified-dead SCUS region at <code>0x8007AE00</code>, which shiny Seru and the arts AP override also use (<a href="randomizer-internals.html#arena">the arena budget</a>). Requested with <code>--shiny-seru</code>, the challenge installs and shiny Seru yields with a note; the AP override, Super Arts list and pack, and oscillating AP are refused up front.</p>
+  <ul>
+    <li><strong>Disc oracles</strong> <code>delilas_challenge_real</code>, <code>delilas_dome_real</code> and <code>delilas_dome_compose_real</code> check the patched picker and branch at decode level, the seed hook, descriptor and roster, determinism, idempotence and EDC/ECC validity of every touched sector.</li>
+    <li><strong>Played:</strong> the clerk reaches the option, the warp lands in the arena, the course runs its roster round by round, a lost leg routes back through the dome's loss scenes.</li>
+    <li><strong>Static and disc-oracle only:</strong> the 5000-coin payout hook and the custom-item prize.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="reward" data-doc="-">
+  <h2>Completion reward and the custom items</h2>
+  <p>A winning settle grants a reward alongside the coins, riding the same latch-gated arm that pays the Master course's retail prize: a two-word detour into a routine that gives one item per reward when the settling course is 3.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th><code>--custom-items</code></th><th>Reward</th></tr></thead>
+    <tbody>
+      <tr><td>off (default)</td><td>one retail <strong>Honey</strong> (the permanent all-stats-+4 consumable)</td></tr>
+      <tr><td>on</td><td><strong>Nature's Elixir</strong>, <strong>Ra-Seru Tear</strong> and <strong>Fury Bloom</strong></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><code>--custom-items</code> is a standalone feature. It installs records, descriptors, jump-table arms, item-machinery caves and battle-overlay hooks, and no arena writes; a <code>random</code> drop / chest / steal mode adds the three ids to its fill pool. With neither that nor the challenge, the items exist but nothing hands them out. The items claim the item table's only free slots - three empty-name records left by cut content - after a census shows every other named id is reachable in retail.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Item</th><th>Usable</th><th>Effect</th><th>Mechanism</th></tr></thead>
+    <tbody>
+      <tr><td>Nature's Elixir</td><td>field and battle</td><td>full HP and MP for one ally</td><td>a new applier arm fills MP, then tail-jumps into the retail HP-restore arm so the popup accounting is retail's</td></tr>
+      <tr><td>Ra-Seru Tear</td><td>battle</td><td>a free cast of the user's own Ra-Seru summon</td><td>hooks the action-seed dispatch; a one-shot flag turns the summon leg's MP deduct into a zero-cost write</td></tr>
+      <tr><td>Fury Bloom</td><td>battle</td><td>Fury Boost on every living party member</td><td>a custom arm writes the action-gauge extension per member, since group targeting lives inside each retail class arm</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The Tear is caster-matched by necessity: the big summons stream the caster's own choreography, and a mismatched pair parks the battle in the summon driver's completion poll. All three play the heal chime from their own arms, because the cast-audio dispatcher maps item classes through a fixed table and a new class would be silent.</p>
+  <div class="callout callout-trap">
+    <p class="callout-title">A cave must survive a cold boot</p>
+    <p>A zero-reference libapi slot passes every static scan and every save-state probe, yet the kernel calls it during boot init, and a disc that overwrites it parks at the PS1 logo. A cold-boot watcher is part of the cave verification standard; the falsified candidate is recorded on <a href="../reference/re-do-not-re-walk.html">Do not re-walk</a>.</p>
+  </div>
+  <p><strong>The award ceremony names the reward.</strong> The course sits outside the token table retail's ceremony substitutes from, so an unedited script would award "0 tokens" and never mention the items. Four flag tests spliced at the narration record's own branch point - before the message run, since control ops inside it cut the ceremony short - keep the retail flow whenever a course-unlock flag is set, and otherwise route a won Delilas course to a parallel flow that names the items. A Delilas loss falls through into the retail box. Oracle: <code>custom_items_real</code>.</p>
+</section>
+
+<section class="doc-section" id="delilas-party-swap" data-doc="delilas-party-swap">
+  <h2>Delilas party swap</h2>
+  <p><code>--delilas-party gi,lu,che</code> (any permutation, in Vahn, Noa, Gala order) swaps the playable party's battle identity with the siblings. Each character keeps their own stats, magic and story but wears the mapped sibling's battle model, name, voice and element. In exchange each sibling's monster block is rebuilt around the mapped hero's model, so the three Nivora Ravine duels and the Muscle Dome Master legs field Vahn, Noa and Gala. It is in no preset and ignores the seed.</p>
+  <p>The swap is possible because both pose systems use flat per-part rigid transforms addressed by <strong>part index</strong>, and both texture systems are 4bpp indices with 16-colour palettes. A same-part-count model therefore inherits every clip.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Pass</th><th>What it rewrites</th><th>Disc oracle</th></tr></thead>
+    <tbody>
+      <tr><td><a href="#battle-model">Battle models</a>, both directions</td><td>every equipment-section record of <code>PLAYER1..3</code>; monster blocks 162-164</td><td><code>party_swap_real</code>, <code>delilas_party_real</code></td></tr>
+      <tr><td><a href="#field-form">Field form</a></td><td>PROT 0874 field mesh and atlas window</td><td><code>delilas_party_real</code></td></tr>
+      <tr><td><a href="#poses">Victory poses and battle idle</a></td><td><code>readef.DAT</code> base "ME" archives; the inline idle</td><td><code>party_swap_idle_continuity_real</code></td></tr>
+      <tr><td><a href="#voices">Voices</a></td><td>battle bank programs, XA banks, <code>monster.snd</code> clip bands</td><td><code>delilas_party_real</code></td></tr>
+      <tr><td><a href="#signature-art">Signature art</a></td><td>one 50-AP Hyper per slot</td><td><code>delilas_party_real</code></td></tr>
+      <tr><td><a href="#element-bank">Element</a></td><td>the per-character element table</td><td><code>delilas_party_real</code></td></tr>
+      <tr><td><a href="#move-set">Move set</a></td><td>the whole art archive and bank</td><td><code>delilas_party_real</code></td></tr>
+      <tr><td><a href="#cast-route">Retail cast route</a></td><td>cast modules 958 / 959 / 960, queue hook, staged rows</td><td><code>delilas_cast_stage_real</code>, <code>delilas_cast_remap_real</code></td></tr>
+      <tr><td><a href="#enemy-side">Enemy side and story scenes</a></td><td>hero clips in the swapped blocks; sibling NPC rigs in four scenes</td><td><code>enemy_anim_mirror_real</code>, <code>nivora_field_real</code></td></tr>
+      <tr><td><a href="#saves-audit">Saves and dialog</a></td><td>portrait tiles, new-game names, speaker lines</td><td><code>delilas_party_real</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="callout callout-warn">
+    <p class="callout-title">Exclusive with the Challenge</p>
+    <p>Both features edit the AI picker's Delilas arm: the Challenge detours one word of it, and the swap's enemy-side conversion rewrites the body and refuses an arm that is neither retail nor its own. The CLI and the site patcher reject the pair before writing anything. Menu portraits and battle HUD faces stay retail.</p>
+  </div>
+</section>
+
+<section class="doc-section" id="battle-model" data-doc="-">
+  <h2>Battle model: permutation, bake and relayout</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Battle-model pipeline. The sibling's mesh from its monster block is re-ordered from head-first to the player's torso-first part order, aligned to the host rig as a whole, then baked per part about its rest pivot with an axial and radial scale. The welded weapon fist is swapped for the sibling's other fist and the host's own equipped weapon is fused into the hand. Texels are re-laid bit-exactly with the face-stamp window kept clear, every equipment-section record of the player file is rewritten, and the result is written to the disc inside the retail entry footprint.">
+      <defs><marker id="rdl-arrow2" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="15" y="20" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="110" y="43">Sibling mesh</text><text class="dg-sub" x="110" y="61">monster blocks 162-164</text>
+      <rect class="dg-node" x="237" y="20" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="332" y="43">Anatomy permutation</text><text class="dg-sub" x="332" y="61">head-first &#8594; torso-first</text>
+      <rect class="dg-node-accent" x="459" y="20" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="554" y="43">Whole-rig R_align</text><text class="dg-sub" x="554" y="61">host facing, then per part</text>
+      <rect class="dg-node-accent" x="681" y="20" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="776" y="43">Pivot-anchored bake</text><text class="dg-sub" x="776" y="61">axial span, radial height</text>
+      <path class="dg-edge" d="M205 48 L235 48" marker-end="url(#rdl-arrow2)"/>
+      <path class="dg-edge" d="M427 48 L457 48" marker-end="url(#rdl-arrow2)"/>
+      <path class="dg-edge" d="M649 48 L679 48" marker-end="url(#rdl-arrow2)"/>
+      <path class="dg-edge" d="M776 76 L776 112 L110 112 L110 148" marker-end="url(#rdl-arrow2)"/>
+      <rect class="dg-node" x="15" y="150" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="110" y="173">Weapon fuse</text><text class="dg-sub" x="110" y="191">welded fist out, host weapon in</text>
+      <rect class="dg-node" x="237" y="150" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="332" y="173">Texel relayout</text><text class="dg-sub" x="332" y="191">face window kept clear</text>
+      <rect class="dg-node" x="459" y="150" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="554" y="173">Record rewrite</text><text class="dg-sub" x="554" y="191">every equip-section record</text>
+      <rect class="dg-node-ok" x="681" y="150" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="776" y="173">Disc write</text><text class="dg-sub" x="776" y="191">inside the entry footprint</text>
+      <path class="dg-edge" d="M205 178 L235 178" marker-end="url(#rdl-arrow2)"/>
+      <path class="dg-edge" d="M427 178 L457 178" marker-end="url(#rdl-arrow2)"/>
+      <path class="dg-edge" d="M649 178 L679 178" marker-end="url(#rdl-arrow2)"/>
+    </svg>
+    <figcaption>The same bake drives the opposite direction (hero meshes into the sibling monster blocks), the field form and the story-scene NPC rigs.</figcaption>
+  </figure>
+  <ul>
+    <li><strong>Anatomy permutation.</strong> Players order bones <code>torso, pelvis, head, arms, legs</code>; every Delilas mesh orders parts <code>head, torso, pelvis, arms, legs</code>. Noa's extra hair bone merges into the head part.</li>
+    <li><strong>Pivot-anchored bake</strong>, per part: <code>v' = R_t<sup>T</sup> S(R_align (R_s v))</code>. Each part anchors at the joint the engine rotates it about, scales axially onto the target's joint-to-joint span and radially by the height ratio, so chains stay closed under every clip while the sibling's shapes survive.</li>
+    <li><strong>Texel re-layout</strong>, bit-exact: islands shelf-pack between the monster page and the party band's section tiles; palettes are union-merged into the palette columns the character's base record does not claim.</li>
+    <li><strong>Every equipment-section record</strong> is rewritten, so the swap survives any equipment; the swing records and the character's own animation source are kept. New-game names follow the mapping; existing saves keep their stored names.</li>
+  </ul>
+  <p><strong><code>R_align</code> reads the rig as a whole, not joint by joint.</strong> It turns the whole rig onto the host's facing (up = pelvis to head, lateral = the two shoulders) and then swings each part minimally onto its own host bone. A per-joint bend-plane reference fails because the two sides do not always find the same kind of reference: Che's torso rolled almost half a turn about his own spine that way, and Gi's upper arm likewise. It shows only in a per-part affine fit against the sibling's own mesh - no joint gap ever opens, so gap-based probes are blind to it.</p>
+  <h3>Welded weapons and the host's weapon</h3>
+  <p>Che's hammer-fist and Gi's blade-fist are <strong>welded weapons</strong>, several times the radius of a hand; a host clip that assumes a hand-sized part sweeps them across the body. Each is replaced with the sibling's other fist, mirrored, and the <strong>host's own equipped weapon</strong> goes in the hand: the curated item-alone cut the equipment viewer uses recovers that record's weapon prims verbatim and merges them into the baked hand.</p>
+  <p>The weapon keeps its real texture on three measured invariants (UVs inside its own section tile, at most two palette columns, a fixed-size tile upload), so only the prims' palette column is remapped. Ra-Seru weapon records keep a bare arm. <code>--delilas-che-hammer</code> is a comparison option that keeps Che's hammer and skips the fusion for his file.</p>
+  <h3>Two runtime readers the layout must respect</h3>
+  <ul>
+    <li><strong>The face animator writes.</strong> Every battle frame it copies the host's eye and mouth frames onto fixed rows of section 1's tile. Sibling texels parked there would be overwritten the moment a battle starts - clean on disc, a palette-mismatched patch live - so the relayout leaves that window empty.</li>
+    <li><strong>The Spirit streamer samples vertex indices</strong> of specific objects. A slot whose geometry is deliberately dropped would answer with bytes past its empty pool and stretch the trail to a garbage point, so the rewrite never emits an empty object where retail had geometry: such slots get a prim-less stub with the retail vertex count, pinned at the part's socket.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="field-form" data-doc="-">
+  <h2>Field form</h2>
+  <p>Each character's field mesh and atlas window (PROT 0874, see <a href="../formats/character-mesh.html">character mesh</a>) rebuild from the sibling's <strong>own field NPC mesh</strong> in the ravine duel scene's pack - retail-authored chibi geometry that fits the budget at full detail - through the same pivot-anchored bake, so the walking chains and the neck stay closed.</p>
+  <ul>
+    <li>NPC meshes are authored for fixed-camera scenes and are not watertight from free angles, so the rebuilt head and torso carry a winding-reversed twin per prim, narrowed by a size ladder until the container fits; the hair shell's genuine openings are sealed with flat fills.</li>
+    <li>The head re-lays into the character's atlas window; bodies stay flat vertex colours, the retail field style. The battle-model conversion is the fallback when the NPC source is unavailable.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="poses" data-doc="-">
+  <h2>Victory poses, battle idle and hands</h2>
+  <p>Each character's eight win-pose streams (the base "ME" archive in <code>readef.DAT</code>; see <a href="../formats/battle-data-pack.html">battle data pack</a>) are rebuilt from the sibling's own victory clip, retargeted per part from the bake's own frames and re-encoded with the retail channel-delta codec, round-trip checked through the retail decoder on every apply.</p>
+  <ul>
+    <li><strong>A win pose loops.</strong> Every retail record carries a loop window the tick replays up to 255 times before the results sequencer moves on, authored as a seamless cycle. A one-shot flourish resampled into that shape snaps on every wrap.</li>
+    <li><strong>So the lead-in stays retail, verbatim.</strong> The base streams are not victory-only: entry 0 is the Spirit power-up flourish the battle plays after every charge. Only the loop window carries the sibling's post-win cycle, phase-picked against the retail lead-in's last frame. The window bytes themselves are never written.</li>
+  </ul>
+  <p><strong>Battle idle.</strong> The player idle is raw packed inline in the character's base record, so it is rewritten at its exact retail length; the sibling's cycle is resampled to the host's frame count and plays faster than authored. Its re-anchor is <strong>one rigid whole-body translation</strong> - battle poses are flat absolute transforms, so moving one channel alone shears the torso off the body - with x / z from the torso and y from the deepest ankle pivot over the cycle. The idle rides the same single re-compressed write as the signature-art edits, and an overflow is a hard error rather than a silent drop. The run-in stays the host's.</p>
+  <p><strong>Hands follow a wrist-attitude law.</strong> Mapping each part's orientation independently preserves neither rig's hand-to-forearm relation, which points a fused weapon across the torso, so each hand is slaved to its forearm at the host's rest wrist attitude. Hand rotations feed no translation term, so only orientation changes. The head's bob is carried across.</p>
+</section>
+
+<section class="doc-section" id="voices" data-doc="-">
+  <h2>Voices</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Voice path</th><th>Retail source</th><th>What the swap does</th></tr></thead>
+    <tbody>
+      <tr><td>Reaction grunts</td><td>SPU one-shots in the battle bank</td><td>the siblings' samples spliced over them in place; cue tracks and routing stay retail</td></tr>
+      <tr><td>Arts shouts</td><td><code>XA2</code> / <code>XA4</code> / <code>XA6</code></td><td>per <code>--delilas-arts-voice</code></td></tr>
+      <tr><td>Swing vocalizations</td><td><code>XA30.XA</code> channel groups</td><td>muted, then re-voiced</td></tr>
+      <tr><td>Victory barks</td><td><code>XA21.XA</code>, one channel each of <code>XA20</code> / <code>XA22</code></td><td>muted, then re-voiced</td></tr>
+      <tr><td>Staged-event lines</td><td><code>XA1</code> / <code>XA3</code> / <code>XA5</code> and <code>XA27..29</code></td><td>muted, then re-voiced; fanfare beds per <code>--delilas-arts-voice</code></td></tr>
+      <tr><td>Victory-pose voice</td><td>SPU clips in <code>monster.snd</code></td><td>overwritten with the siblings' grunt bodies</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Re-voicing decodes each sibling's SPU samples to PCM, normalizes, resamples to the channel's CD-XA rate and re-encodes through the project's own XA-ADPCM encoder at each channel head; subheaders, routing and other speakers' channels stay byte-identical. The routing that pins which channel is which is traced on the <a href="../subsystems/audio.html">audio</a> page.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th><code>--delilas-arts-voice</code></th><th>Shout and fanfare banks</th></tr></thead>
+    <tbody>
+      <tr><td><code>original</code> (default)</td><td>left retail: Vahn, Noa and Gala call their own arts out of the siblings' bodies</td></tr>
+      <tr><td><code>adjusted</code></td><td>the retail hero shouts are re-voiced toward each mapped sibling</td></tr>
+      <tr><td><code>removed</code></td><td>silent; the spliced grunts remain the audible attack voice</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The fanfares follow the same contract because a Hyper Art fires <strong>no</strong> shout - its fanfare is its only audio. <code>adjusted</code> runs a deterministic DSP chain (time-stretch, resample, a cepstral formant and timbre pass, pitch bend, tone filters) per clip, laid back at its original start so cue timing holds. Two properties matter to anyone retuning it: <code>pitch</code> is a resample and drags the formants with it, so the audible formant shift is <code>pitch + formant_st</code>; and the browser tuning dashboard applies its spectral pass before the resample, so a bake must order the passes the same way to honour the values tuned there.</p>
+</section>
+
+<section class="doc-section" id="signature-art" data-doc="-">
+  <h2>The signature art</h2>
+  <p>Each hero slot gives up one Hyper art to carry the mapped sibling's <strong>signature special</strong> - Gi's Blazing Slash, Che's Megaton Press, Lu's Plasma Strike. The host is that character's 50-AP Hyper (Vahn's Burning Flare, Noa's Vulture Blade, Gala's Explosive Fist): the only three that clear every gate, since the new combo <code>L R L R D</code> must match the replaced combo's length and must not collide with a combo string shared across characters.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Edit</th><th>Where</th><th>Rule</th></tr></thead>
+    <tbody>
+      <tr><td>Name</td><td>the arts-table record's own name pointer</td><td>never by searching for the old text: names nest</td></tr>
+      <tr><td>Combo</td><td>both copies retail keeps in sync (display glyphs and the matcher)</td><td>after a collision check against every art of that character</td></tr>
+      <tr><td>Animation</td><td>the host art's "ME" stream</td><td>the sibling's choreography, by archive <strong>entry index</strong></td></tr>
+      <tr><td>Hit timing</td><td>entry <code>+0x10..0x13</code></td><td>re-scheduled on the measured connect frames</td></tr>
+      <tr><td>Effects</td><td>the entry's 8-record effect script</td><td>the sibling's burst; the host's element cues removed</td></tr>
+      <tr><td>Camera</td><td>one arm of the swing-camera dispatcher</td><td>thresholds re-timed to the longer clip</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <ul>
+    <li><strong>A chain of stages.</strong> The enemy-side modules stage several entries in sequence, so the final stage alone would show the payoff with no wind-up. Stages are retargeted individually, concatenated, and each resampled to hold its authored duration at the chain's fastest rate. When the slot cannot hold the chain, a fit ladder halves keyframe density (wall time unchanged), then drops stages from the <em>front</em> - a move that loses its wind-up still reads; one that loses its strike does not.</li>
+    <li><strong>Hit timing anchors on the connect.</strong> A proportional rescale lands most hits in the wind-up, and anchoring on the payoff stage's start lands them seconds late, because the stage opens with its own approach. Authored contact beats are used where retail has them; elsewhere the connect is measured as the frame the whole body arrests hardest. The slot count stays the host's: power and frame are parallel arrays walked by one cursor, and a zero slot ends the walk.</li>
+    <li><strong>Effects.</strong> As an enemy, a signature draws its visuals from a per-spell code module a one-byte art id cannot name, so the burst is borrowed from the sibling's ordinary casts, or - for the first hero slot - from an <strong>effect transplant</strong>: a cast module's part prototype copied into one of the few unreferenced effect-prototype slots, an 88-byte cave that holds exactly one.</li>
+  </ul>
+  <h3>The swing camera</h3>
+  <p>The attack camera (<code>FUN_801D71B8</code>, see the <a href="../formats/battle-attack-camera-table.html">attack-camera table</a>) dispatches per character and art through three per-character jump tables; no live arm is shared across characters. An arm is a cascade of tests on the animation cursor whose highest threshold is keyframe 17, while a signature chain runs 46 to 100 frames, so an unedited camera finishes inside the wind-up. Each threshold is scaled so the <strong>last</strong> shot change lands where the payoff stage begins. Vahn's host arm reads no cursor at all, so its slot swaps with Tornado Flame's arm - a swap rather than a retarget, since every arm is live somewhere and a retarget would alias it.</p>
+</section>
+
+<section class="doc-section" id="element-bank" data-doc="-">
+  <h2>Elements and the bank the runtime walks</h2>
+  <p>Each slot fights in its sibling's <strong>element</strong>. The battle overlay's per-character element table is the only per-character element on the disc, and both affinity readers index the matrix with it, so the byte decides what every attack from that slot deals and what it takes. The siblings' own elements come off their monster records - <strong>Gi fire, Che earth, Lu thunder</strong> - read from an archive image captured before the model loop, so a re-skinned block cannot feed itself back. Effect scripts and the hit-flash byte are cosmetic, not the element.</p>
+  <p>The art-record edits reach the runtime through one pointer chain, from the per-character base record to its art bank and on to the action entry. Against a live battle capture, two characters' banks are byte-identical to the patcher's decode of the disc and the third differs only in a field the tick writes - so a same-size edit inside a bank record is an edit the runtime sees.</p>
+</section>
+
+<section class="doc-section" id="move-set" data-doc="-">
+  <h2>The Delilas move set</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th><code>--delilas-moves</code></th><th>Behaviour</th></tr></thead>
+    <tbody>
+      <tr><td><code>hybrid</code> (default)</td><td>every art keeps the animation retail authored for it; only the reskinned Hyper plays a Delilas motion</td></tr>
+      <tr><td><code>delilas</code></td><td>the rest of the kit is re-authored around the sibling's swings</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><strong>The archive is rebuilt, not extended.</strong> A character's art streams share one fixed <code>readef.DAT</code> slot that retail mostly fills, and several art records already point at one stream, so the archive is re-emitted with the signature stream, the sibling's locomotion clip and one entry per distinct sibling swing, and every record that reads it is repointed round-robin and re-timed in the same pass. Each record's name becomes the label of the clip it now plays - repeated strings compress far better, which keeps the rewritten base record inside its LZS footprint.</p>
+  <p><strong>What survives.</strong> An art is listed only after it has been performed once, so an art whose combo is blanked is simply never listed - retail's own mechanism for the Super and Miracle finisher rows. Four groups keep a working combo: the signature host; bank row 11, the Miracle Art, whose combo is the only route to the wholesale queue overwrite; every art a Super Art trigger names, since a Super is matched against the finished action queue; and every art at or below the innate cap, which arrives through a script grant and would otherwise be a listed art that can never fire.</p>
+</section>
+
+<section class="doc-section" id="enemy-side" data-doc="-">
+  <h2>The enemy side and the story scenes</h2>
+  <ul>
+    <li><strong>Enemy-side clips.</strong> Each swapped block's archive entries are rewritten with the hero's own idle, walk, reactions and swings, the hero's 50-AP Hyper split across the entries the signature stages by raw index, and the hero's victory flourish. Per-entry frame floors respect the one measured module gate: PROT 0960's damage tick waits for keyframe 22, so Lu's payoff entry holds at least 23 frames. All six mapping permutations fit without the budget ladder.</li>
+    <li><strong>The signature becomes a physical attack.</strong> Retail decides the boss cast in the AI picker, not the monster block: the Delilas arms write a capture-class spell id derived from the monster id, which pages PROT 958 / 959 / 960. The 24-word case body is rewritten in place to queue an Attack whose strike bytes are the staged chain entries the mirror filled. Those entries carry empty hit lists on the retail disc, so each takes the head shape of the block's strongest ordinary attack.</li>
+    <li><strong>Field forms in the ravine.</strong> The Delilas field forms are scene-resident pack members; the scene mirror rebuilds them as the heroes' field rigs, pivot-baked onto the siblings' scene-idle rest frames, and repaints the sibling head TIMs with the heroes' faces. The hero source is a capture of PROT 0874 taken before the field-form pass rewrites it.</li>
+  </ul>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Scene</th><th>Bundle</th><th>Rebuilt</th></tr></thead>
+    <tbody>
+      <tr><td><code>stone</code> (map-stone confrontation)</td><td>0175</td><td>three sibling members</td></tr>
+      <tr><td><code>taiku2</code> (Zora's floating castle)</td><td>0426</td><td>four per-beat shading copies per sibling, one bake</td></tr>
+      <tr><td><code>conc2</code> (past Conkram)</td><td>0624</td><td>court-outfit meshes; head TIMs in entry 0625</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>These scenes keep their NPC meshes inside the bundle's compressed TMD section, so the rebuild reflows the member pack and recompresses, in place when it fits and otherwise as a whole-bundle section re-lay inside the entry footprint. <code>taiku2</code>'s kneeling stances fool the limb splitter into a wrong role pairing, so its slots reuse the assignment measured on the byte-identical rigs in <code>stone</code>.</p>
+</section>
+
+<section class="doc-section" id="saves-audit" data-doc="-">
+  <h2>Saves, dialog and the audit tools</h2>
+  <ul>
+    <li><strong>Save metadata follows the mapping.</strong> The save-select face, the memory-card block icon and the boot load screen's copies come off the <a href="../formats/save-icon.html">save-slot portrait sheet</a>; each hero tile is exchanged byte-exact with the mapped sibling's tile. Existing card saves keep the icon they were written with.</li>
+    <li><strong>Dialog follows the swap.</strong> Every line that names a sibling is rewritten through the <a href="translation.html">translation</a> machinery to name the hero who took that place, keeping the "Delilas" surname. A line that overflows its segment budget drops the surname one occurrence at a time, then contracts "I am" to "I'm".</li>
+  </ul>
+  <p><code>delilas-audit</code> classifies any produced disc against a retail baseline with a static battery and no emulator; <code>delilas-verify</code> is the faster single-disc check for a stale patcher build.</p>
+  <div class="cli"><code>legaia-patcher delilas-audit --input patched.bin --baseline retail.bin</code></div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Check</th><th>Passes when</th></tr></thead>
+    <tbody>
+      <tr><td>Stream census</td><td>every base-archive lead-in frame reachable mid-fight is byte-retail</td></tr>
+      <tr><td>Pose battery</td><td>arm-closure and extent metrics over every battle and art clip sit inside bands taken from the baseline</td></tr>
+      <tr><td>Hand radius</td><td>no textured hand exceeds twice the baseline radius (the welded-weapon class)</td></tr>
+      <tr><td>Equip invariance</td><td>every record of an equipment section carries the section default's texture pool, so equipping any item is a VRAM no-op</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="doc-section" id="cast-route" data-doc="-">
+  <h2>The retail cast route</h2>
+  <p>In retail a Delilas signature is a capture-class spell whose cast pages a per-spell <a href="../subsystems/cast-module.html">cast module</a> (PROT 958 / 959 / 960) and runs the whole boss choreography from data. For a slot whose module has passed the player-caster audit - all three have, and all three are probe-verified - performing the signature art routes the finished arts queue into that real cast instead of the art-side reskin.</p>
+  <h3>Why the unedited module cannot be used</h3>
+  <p>A party actor has a first-class equivalent of a monster's anim table, so "no monster block" is not the blocker. These are, in order of severity:</p>
+  <ul>
+    <li><strong>Kernel-RAM corruption on every cast.</strong> The module's one monster-block access reads past the loader's fixed-up words when the seat-0 monster carries few castables, and the following store lands in PSX kernel RAM. Retail never trips it because only Lu, with enough entries, reaches the module.</li>
+    <li><strong>A softlock with no escape.</strong> The battle re-enters the module every frame and advances only when it returns 0, with no timer; one phase gate needs a clip length most of Gala's equippable weapons do not provide.</li>
+    <li><strong>Friendly fire.</strong> The damage call and both HP writes are hardcoded to actor slot 0.</li>
+  </ul>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The retail cast route. The signature combo is entered and the matcher emits a starter and marker pair. The queue hook hands the pair to the queue edit, which asks whether the starter is at the queue base. If yes, the action converts to an immediate cast with no approach run. If no, the queue is left untouched, the earlier arts play out, and the strike-loop fetch at 0x801E374C morphs the action mid-chain to category 2 with the spell id. Both paths reach battle state 0x28 then 0x6E, where cast module 958, 959 or 960 runs.">
+      <defs><marker id="rdl-arrow3" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="15" y="20" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="110" y="43">Signature combo</text><text class="dg-sub" x="110" y="61">L R L R D</text>
+      <rect class="dg-node" x="237" y="20" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="332" y="43">Matcher</text><text class="dg-sub" x="332" y="61">emits starter + marker</text>
+      <rect class="dg-node" x="459" y="20" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="554" y="43">Queue hook</text><text class="dg-sub" x="554" y="61">ARENA1 queue edit</text>
+      <rect class="dg-node-accent" x="681" y="20" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="776" y="43">Starter at base?</text><text class="dg-sub" x="776" y="61">first byte of the queue</text>
+      <path class="dg-edge" d="M205 48 L235 48" marker-end="url(#rdl-arrow3)"/>
+      <path class="dg-edge" d="M427 48 L457 48" marker-end="url(#rdl-arrow3)"/>
+      <path class="dg-edge" d="M649 48 L679 48" marker-end="url(#rdl-arrow3)"/>
+      <rect class="dg-node" x="681" y="160" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="776" y="183">Immediate cast</text><text class="dg-sub" x="776" y="201">no approach run</text>
+      <path class="dg-edge" d="M800 76 L800 158" marker-end="url(#rdl-arrow3)"/>
+      <text class="dg-edge-label" x="808" y="122">yes</text>
+      <rect class="dg-node" x="459" y="160" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="554" y="183">Defer</text><text class="dg-sub" x="554" y="201">earlier arts play out</text>
+      <path class="dg-edge" d="M720 76 L610 158" marker-end="url(#rdl-arrow3)"/>
+      <text class="dg-edge-label" x="676" y="122">no</text>
+      <rect class="dg-node" x="237" y="160" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="332" y="183">Strike-loop fetch</text><text class="dg-sub" x="332" y="201">0x801E374C morphs mid-chain</text>
+      <path class="dg-edge" d="M459 188 L429 188" marker-end="url(#rdl-arrow3)"/>
+      <rect class="dg-node-ok" x="300" y="290" width="380" height="56" rx="4"/>
+      <text class="dg-label" x="490" y="313">State 0x28 &#8594; 0x6E</text><text class="dg-sub" x="490" y="331">cast module 958 / 959 / 960 runs</text>
+      <path class="dg-edge" d="M332 216 L420 288" marker-end="url(#rdl-arrow3)"/>
+      <path class="dg-edge" d="M776 216 L600 288" marker-end="url(#rdl-arrow3)"/>
+    </svg>
+    <figcaption>Base-or-defer is exhaustive because it follows the matcher's own emission shapes: the only queues with raw inputs before the starter are chains whose leading art the AP admission gate dropped, and those are basic strikes the player entered. A missed morph fails soft - the marker plays as an ordinary art row.</figcaption>
+  </figure>
+  <p>The route halves the Hyper admission tier so an art-then-special chain clears admission at realistic mid-battle AP. The per-slot markers double as the replaced host art's own constant, so performing that host art alone still casts. Retail raises the spell-name banner for monster casters only; a two-word in-place gate change makes every Magic cast run the retail label block, so player Seru casts gain the banner enemy casts always had. The route shares its caves with shiny Seru and the arts AP features; on a conflict the patch keeps the art-side signature and says so.</p>
+  <h3>Module edits by defect class</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Class</th><th>Modules</th><th>Defect on a player cast</th><th>Fix</th></tr></thead>
+    <tbody>
+      <tr><td>Seat-0 damage / HP sites</td><td>all</td><td>damage and HP writes hardcoded to party seat 0</td><td>retargeted to the derived victim</td></tr>
+      <tr><td>Dead-victim wipe arm</td><td>all</td><td>a boss cast's victim is a hero, so a dead victim meant game over</td><td>taken out of the player path; its dead body hosts caves</td></tr>
+      <tr><td>Finale teardown</td><td>per module (959 and 960 share one pattern)</td><td>a model-less effect entity stays in a draw table and hard-freezes the frame the choreography ends</td><td>its stream words are neutralised at the settle tail</td></tr>
+      <tr><td>Finale reaction wait</td><td>958</td><td>a monster corpse never leaves the reaction row, so a kill at the finale deadlocks</td><td>wait gated on the victim being alive</td></tr>
+      <tr><td>Cast-bed audio</td><td>960</td><td>the cue is dropped when XA is busy; the walk reaches damage early</td><td>preempt cave and a deterministic tick counter</td></tr>
+      <tr><td>Seat-3 record toggles</td><td>960</td><td>two stores through an arbitrary victim's record</td><td>nop'd</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><strong>The cast bed.</strong> Plasma Strike's 16.9-second cast bed is fired through a jingle wrapper that drops the cue whenever XA is busy, so a preempt cave calls the guard-free player directly; and the walk to the damage stage is held on a tick counter kept in a dead word of the module image itself, so the bed's blast lands on the damage whiteout. The bed's own slow intro is front-shifted in place with a short linear dissolve chosen by local waveform correlation, converging back onto the retail bytes within the written span. The signature's fanfare channels are silenced, since they would pre-play the bed's head at commit.</p>
+  <p><strong>Staged caster rows.</strong> The module stages the caster's clips by raw index; on a party caster retail row <code>0x0A</code> is empty and <code>0x0B</code> is the Block clip. The swap authors real rows from the sibling's wind-up and smash, <strong>inserted below the palette offsets</strong> of the base record - everything above is battle-load scratch, and rows parked there pass every post-load RAM probe yet are destroyed before the first turn. Block moves byte-unchanged to a placeholder row and the one party-init literal that seeds it follows.</p>
+  <p>The punch sounds ride each action entry's cue track, re-authored so a player volley produces byte-identical sound-ring traffic to a retail one. Where the file's budget allows, the stage walks are un-folded to the full retail chains through small staging caves, and Lu's strike is hosted as an identity copy because module 0960 tests its cursor against absolute thresholds.</p>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="randomizer.html#delilas-challenge">Randomizer flags: Delilas Challenge</a>
+    <a href="randomizer.html#delilas-party-swap">Randomizer flags: party swap</a>
+    <a href="randomizer-internals.html">Randomizer: internals</a>
+    <a href="rom-patcher.html">ROM patcher</a>
+    <a href="../subsystems/cast-module.html">Cast modules</a>
+    <a href="../subsystems/minigame-muscle-dome.html">Muscle Dome</a>
+    <a href="../formats/battle-data-pack.html">Battle data pack</a>
+    <a href="../formats/monster-animation.html">Monster animation</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/party-swap/README.md" target="_blank" rel="noopener">party-swap crate</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/randomizer-delilas.md" target="_blank" rel="noopener">Full doc</a>
+  </div>
+</section>
