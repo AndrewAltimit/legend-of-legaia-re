@@ -252,16 +252,23 @@ const PACK0_SEARCH: u32 = 0x100;
 /// the batch index the engine keys on is the entry's place in the pointer
 /// table at the pool head's `+0x08`. A child whose batch is not found is
 /// left out.
+///
+/// `None` when the state holds no pool to read; an empty list is a read
+/// pool with no live child, which the image child seats too: a replay that
+/// reached the capture behind retail's clock still carries billboards
+/// retail's walker had already retired (`rim_elm_gimard_seru_capture_before`:
+/// the replayed Gimard is still on its approach clip, whose eight dust
+/// puffs retail had drawn out a dozen frames before).
 pub(super) fn retail_effect_children(
     ram: &[u8],
-) -> Vec<legaia_engine_core::world::EffectChildSeed> {
+) -> Option<Vec<legaia_engine_core::world::EffectChildSeed>> {
     let pool = game_anchors::u32_at(ram, EFFECT_POOL_PTR);
     if !in_ram(pool) {
-        return Vec::new();
+        return None;
     }
     let table = game_anchors::u32_at(ram, pool + 8);
     if !in_ram(table) {
-        return Vec::new();
+        return None;
     }
     let motion_scale = i32::from(game_anchors::i16_at(ram, pool));
     let lag = display_lag_vsyncs(ram);
@@ -296,7 +303,7 @@ pub(super) fn retail_effect_children(
             out.push(seed);
         }
     }
-    out
+    Some(out)
 }
 
 /// Child `seed` taken back `sweeps` walker sweeps - the display lag, since

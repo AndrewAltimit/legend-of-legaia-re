@@ -486,11 +486,12 @@ pub(super) fn battle_image(
     }
     // The effect pool's billboards as the displayed frame held them: where a
     // burning body's sheds and a master's randomized legs put each child is
-    // the stream's history.
-    if !battle.effect_children.is_empty() {
+    // the stream's history. An empty pool is seated too, which retires the
+    // billboards a replay running behind retail's clock still carries.
+    if let Some(children) = &battle.effect_children {
         env.push((
             "LEGAIA_SEAT_EFFECT_CHILDREN",
-            legaia_engine_capture::effect_children::effect_children_env(&battle.effect_children),
+            legaia_engine_capture::effect_children::effect_children_env(children),
         ));
     }
     // ... and the after-image ghosts at the keyframes and ground the

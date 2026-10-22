@@ -627,7 +627,7 @@ fn effect_children_are_the_displayed_frames() {
         put32(&mut ram, c + 0x10, (-300i32 << 8) as u32);
         put32(&mut ram, c + 0x1C, entry + 2 + 6 * u32::from(cursor));
     }
-    let seeds = ram_read::retail_effect_children(&ram);
+    let seeds = ram_read::retail_effect_children(&ram).expect("a pool");
     assert_eq!(seeds.len(), 2);
     assert_eq!(seeds[0].anim_id, 1);
     assert_eq!((seeds[0].frame_cursor, seeds[0].wait), (2, 32));
@@ -635,6 +635,20 @@ fn effect_children_are_the_displayed_frames() {
     assert_eq!(seeds[0].pos[1], (-300 << 8) + 8);
     assert_eq!((seeds[1].frame_cursor, seeds[1].wait), (0, 8));
     assert_eq!(seeds[1].mirror, 2);
+}
+
+/// A readable pool with no live child reads as an empty seat, not as no
+/// pool: the image child must retire the billboards its replay still
+/// carries. A state with no pool pointer reads as `None`.
+#[test]
+fn an_empty_effect_pool_is_still_a_seat() {
+    let mut ram = vec![0u8; 0x20_0000];
+    assert!(ram_read::retail_effect_children(&ram).is_none());
+    let pool = 0x800E_6A5C;
+    put32(&mut ram, 0x8007_BD30, pool);
+    put16(&mut ram, pool, 0x1000);
+    put32(&mut ram, pool + 8, 0x800E_46E8);
+    assert_eq!(ram_read::retail_effect_children(&ram), Some(Vec::new()));
 }
 
 /// On the action seed's own pass the image child stands each combatant on

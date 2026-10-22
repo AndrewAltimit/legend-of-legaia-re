@@ -331,8 +331,9 @@ pub struct RetailBattle {
     pub action_fx_parts: Vec<legaia_engine_effects::summon::CastPartSeed>,
     /// The state's live effect-pool children (`_DAT_8007BD30 + 0x10`) as
     /// the displayed frame held them, which the image child stands in its
-    /// own pool on the capture frame (`LEGAIA_SEAT_EFFECT_CHILDREN`).
-    pub effect_children: Vec<legaia_engine_core::world::EffectChildSeed>,
+    /// own pool on the capture frame (`LEGAIA_SEAT_EFFECT_CHILDREN`) -
+    /// an empty pool included. `None` when the state holds no pool.
+    pub effect_children: Option<Vec<legaia_engine_core::world::EffectChildSeed>>,
     /// The after-image ghosts the displayed frame drew, as each body's
     /// history ring held them, which the image child seats over the
     /// replay's ring on the capture frame (`LEGAIA_SEAT_GHOST_RING`).
