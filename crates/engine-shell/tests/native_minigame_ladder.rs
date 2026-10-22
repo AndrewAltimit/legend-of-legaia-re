@@ -184,10 +184,12 @@ fn run_window_env(
     }
     cmd.args(extra);
     let out = cmd.output().expect("spawn legaia-engine play-window");
-    (
-        String::from_utf8_lossy(&out.stdout).into_owned(),
-        String::from_utf8_lossy(&out.stderr).into_owned(),
-    )
+    // The exit status rides on stderr so every rung's failure message names
+    // it: a child killed by a signal leaves both streams empty, and without
+    // the status that reads the same as a run that wrote nothing.
+    let mut stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    stderr.push_str(&format!("\n[exit] {}\n", out.status));
+    (String::from_utf8_lossy(&out.stdout).into_owned(), stderr)
 }
 
 /// Decode a captured PNG into `(width, height, rgba)`.
