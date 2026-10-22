@@ -470,6 +470,14 @@ pub struct BattleState {
     /// against Gobu Gobu's `76`, no more than the quarter, and a replay that
     /// rolled `21` knocked him down and stood the fight 300 units off.
     pub forced_melee_total: Option<(u8, u32)>,
+    /// A retail-comparison seed: the engine slot of an attacker held where
+    /// it stands for its approach. Retail can park a monster in state
+    /// `0x19` with its Move clip dead (`+0x1DC` bit 2 left set by a flinch
+    /// turns the clip's natural end into idle, `0x80047B44`); the engine's
+    /// approach always walks, its anti-softlock design, so a capture of the
+    /// park is replayed with this seat's walk held instead. `None` on every
+    /// ordinary fight.
+    pub approach_hold: Option<u8>,
     /// Party melee hits that reached the damage body this battle - each one
     /// a push of retail's damage-number ring (`ctx[+0x273]`, the push at
     /// `0x801EDDE4`), which a blocked hit skips (`bne s7,zero,0x801EE6D4` at
@@ -1024,6 +1032,7 @@ impl BattleState {
             forced_steal: false,
             forced_melee_hits: Default::default(),
             forced_melee_total: None,
+            approach_hold: None,
             party_melee_pushes: 0,
             forced_absorb: false,
             commit_log_launch: None,

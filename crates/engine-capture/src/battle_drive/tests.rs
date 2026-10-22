@@ -111,6 +111,7 @@ fn the_battle_drive_round_trips_through_its_env_form() {
                 cursor: Some(5),
                 fading: Some((3, 0xF0)),
                 spoils: true,
+                park: true,
                 ..ActionSteer::default()
             },
         },

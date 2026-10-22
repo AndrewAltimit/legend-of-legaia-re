@@ -400,6 +400,13 @@ impl RetailBattle {
                 end: self.span_gate,
                 style: Some(self.cam_style),
                 steer: ActionSteer {
+                    // A monster parked in the approach poll with its walk
+                    // clip dead: a live approach in `0x19` always plays its
+                    // Move clip, so `+0x1D9 == 0` there is the park.
+                    park: seat >= 3
+                        && state == 0x19
+                        && self.queued_category == 3
+                        && self.caster_clip == 0,
                     // A party killing blow on its victim, or a monster
                     // action (a cast or a strike) on the party seat it
                     // aimed at: the monster's pick is a draw, and a run on

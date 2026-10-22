@@ -200,6 +200,14 @@ pub struct ActionSteer {
     /// The capture shows the death-spoils caption (HUD element `0x5B`): the
     /// phase is met only on a stream whose kill rolled the steal too.
     pub spoils: bool,
+    /// The capture is a monster parked in the approach poll `0x19` with its
+    /// walk clip dead (`+0x1D9 == 0`; `docs/subsystems/battle-action-exit-gates.md`,
+    /// the `0x19` park). The engine always walks an approach, so the replay
+    /// holds that seat where it stands for the action
+    /// (`BattleState::approach_hold`), and the yaw counter, which runs on
+    /// through the park for as long as retail sat in it, takes the capture's
+    /// word outright rather than only within the clock's slack.
+    pub park: bool,
 }
 
 /// Where inside a state that spans many frames a capture sits.
@@ -572,6 +580,9 @@ impl BattleDrive {
                 if steer.spoils {
                     s.push_str(",s");
                 }
+                if steer.park {
+                    s.push_str(",h");
+                }
                 if let Some(q) = steer.queue {
                     s.push_str(",q");
                     for b in q {
@@ -625,6 +636,8 @@ impl BattleDrive {
                 steer.arts = true;
             } else if last == "s" {
                 steer.spoils = true;
+            } else if last == "h" {
+                steer.park = true;
             } else if let Some(g) = last.strip_prefix('g') {
                 steer.gauge = Some(g.parse().ok()?);
             } else if let Some(k) = last.strip_prefix('k') {
@@ -1027,7 +1040,7 @@ impl BattleDrive {
                 // capture band gates on the counter instead.
                 if state == want && !matches!(end, SpanGate::CaptureFade { .. }) {
                     let d = (cam.action_yaw_base() - i32::from(yaw)).rem_euclid(0x1000);
-                    if d.min(0x1000 - d) <= YAW_CLOCK_SLACK {
+                    if steer.park || d.min(0x1000 - d) <= YAW_CLOCK_SLACK {
                         // Retail's word is the one its last pass left, after
                         // that pass's prologue drift. On retail's cadence the
                         // pin lands ahead of a tick whose pass adds the drift
@@ -1053,6 +1066,10 @@ impl BattleDrive {
         let ours = world.mode == SceneMode::Battle
             && world.battle_ctx.active_actor == engine_seat(seat, pc);
         let state = world.battle_ctx.action_state;
+        // The parked approach ([`ActionSteer::park`]): from the seat's Attack
+        // arm `0x14` to the poll, its walk is held where it stands.
+        world.battle.approach_hold =
+            (steer.park && ours && (0x14..=want).contains(&state)).then(|| engine_seat(seat, pc));
         // The capture's counterattack HUD, on the frame the engine holds its
         // state ([`ActionSteer::message`] / [`ActionSteer::plate_cleared`]).
         if ours && state == want {

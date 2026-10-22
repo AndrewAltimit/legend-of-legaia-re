@@ -629,6 +629,11 @@ impl World {
         if self.battle_range_metric(slot as u8, target) == 0 {
             return;
         }
+        // A replayed retail park holds this seat's walk
+        // ([`BattleState::approach_hold`]).
+        if self.battle.approach_hold == Some(slot as u8) {
+            return;
+        }
         let (speed, scale) = self.battle_root_motion_of(slot);
         let (sin, cos) = legaia_engine_system::trig::trig12(facing);
         let raw = motion::root_motion_raw(sin, cos, speed.abs(), dt, scale);
@@ -831,6 +836,42 @@ mod tests {
             tz_other - 100,
             "a non-Attack category stands still"
         );
+    }
+
+    /// A seat named by `approach_hold` (a replayed retail park) turns onto
+    /// its target but takes no approach step; any other seat walks.
+    #[test]
+    fn a_held_approach_turns_but_does_not_walk() {
+        let run = |hold: Option<u8>| {
+            let mut w = battle_world();
+            w.actors[0].battle.active_target = 1;
+            w.actors[0].battle.action_category = 3;
+            w.actors[1].battle.liveness = 1;
+            w.battle_ctx.active_actor = 0;
+            w.battle_ctx.action_state = ActionState::AttackShortStep.as_byte();
+            w.battle.approach_hold = hold;
+            let start = (
+                w.actors[0].move_state.world_x,
+                w.actors[0].move_state.world_z,
+            );
+            for _ in 0..20 {
+                w.tick_battle_locomotion();
+            }
+            (
+                start,
+                (
+                    w.actors[0].move_state.world_x,
+                    w.actors[0].move_state.world_z,
+                ),
+            )
+        };
+        let (start, held) = run(Some(0));
+        assert_eq!(held, start);
+        let (start, walked) = run(Some(1));
+        assert_ne!(walked, start);
+        let (start, free) = run(None);
+        assert_eq!(free, walked);
+        assert_ne!(free, start);
     }
 
     /// The back-off's rounding: retail shifts the forward product and
