@@ -46,6 +46,29 @@ impl World {
             let table_staged = if s.direct {
                 self.spawn_effect_caught_up(s.effect, at, s.facing, owed);
                 None
+            } else if let Some(slot) = s.homing_slot {
+                // The flight's table arm (`0x801E1204..0x801E1238`): rotation
+                // trio `ctx[+0x1164 + slot * 8]` - the slot heading, the two
+                // other angles never written - at scale `0x1000`, and the
+                // spawned actor replaces the slot's handle.
+                let staged = self.spawn_action_table_effect_posed(
+                    s.effect,
+                    at,
+                    [0, s.facing as i16, 0],
+                    0x1000,
+                );
+                if staged {
+                    let fx = &mut self.casting.active_action_fx;
+                    for scene in fx.iter_mut() {
+                        if scene.homing_slot == Some(slot) {
+                            scene.homing_slot = None;
+                        }
+                    }
+                    if let Some(scene) = fx.last_mut() {
+                        scene.homing_slot = Some(slot);
+                    }
+                }
+                Some(staged)
             } else {
                 // `FUN_801DEA50`'s table arm: the actor's facing turned half
                 // a circle, the code's base scale times the actor's

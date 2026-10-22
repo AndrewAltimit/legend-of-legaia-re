@@ -119,6 +119,7 @@ impl World {
                     direct: s.direct,
                     at: s.at,
                     facing: script_actor.facing,
+                    homing_slot: None,
                 },
             );
         }

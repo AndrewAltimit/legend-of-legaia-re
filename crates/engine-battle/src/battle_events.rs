@@ -180,8 +180,15 @@ pub struct BattleEffectSpawn {
     /// World-space spawn position (battle-world units).
     pub at: (i32, i32, i32),
     /// The acting actor's facing at spawn time (12-bit PSX angle) - retail
-    /// passes it as the direct form's spawn angle (`0x801dee98`).
+    /// passes it as the direct form's spawn angle (`0x801dee98`). For a
+    /// flight spawn ([`Self::homing_slot`]) it is the slot's heading.
     pub facing: u16,
+    /// `Some(slot)` for a spawn the move's homing flight made
+    /// (`FUN_801E09F8`) rather than the effect-script walk. Its table form
+    /// seats at the slot's own rotation trio `ctx[+0x1164 + slot * 8]` - the
+    /// heading un-turned, scale `0x1000` (`0x801E1204..0x801E1228`) - and
+    /// becomes that slot's handle, the actor the flight drags.
+    pub homing_slot: Option<u8>,
 }
 
 /// One **hit event** the attack band resolved this tick - the retail
