@@ -35,9 +35,11 @@ in `legaia-engine-battle`, the packet colour helpers and field camera in
 `legaia-engine-field`, the cameras in `legaia-engine-battle-vm`.
 
 What stays in `engine-core` is everything that reads the world: the `World`
-entry points that seat a rung and tick a surface, the two venue halves that
-take the world or the scene host (`dance_venue::sync_dance_venue`,
-`fishing_venue::tick_fishing_venue_on_host` / `venue_floor_bytes`), and the
-disc-gated tests that drive a surface through a live `World`. A disc-gated
+entry points that seat a rung and tick a surface, the fishing venue half
+that takes the scene host (`fishing_venue::tick_fishing_venue_on_host` /
+`venue_floor_bytes`), and the disc-gated tests that drive a surface through
+a live `World`. The dance venue's globals step
+(`dance_venue::sync_dance_venue`) lives here: it takes the scene mode, the
+minigame seat and the scene block base rather than the `World` holding them. A disc-gated
 test that needs only a venue and a `ProtIndex` (the dance cast surface, the
 dance HUD page staging) lives in this crate's own `tests/`.

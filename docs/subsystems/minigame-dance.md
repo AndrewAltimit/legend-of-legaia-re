@@ -473,7 +473,7 @@ Entry and exit are two different routines forming a save / restore pair. The ent
 
 **Entry face stamps.** The init makes five `(dancer, pose)` face-stamp calls. It raises the mode global `DAT_801D514C` to `1` for the first three (no slot remap) and drops it to `0` for the last two (qualifier remap), clearing the three-word pose latch at `0x801D56CC` before each batch. The calls therefore stamp rigs `0`, `1`, `2`, `2`, `3` - every face the floor can show, before the first frame.
 
-**Port.** `dance::dance_scene_entry` carries every store and fixed-argument call of the init; `dance::dance_scene_stage` is the exit. `engine-minigame-scenes::dance_venue` consumes them, with its `World` half in `engine-core::dance_venue`:
+**Port.** `dance::dance_scene_entry` carries every store and fixed-argument call of the init; `dance::dance_scene_stage` is the exit. `engine-minigame-scenes::dance_venue` consumes them, with the step that stages and restores the world globals, `dance_venue::sync_dance_venue`, beside it:
 
 - `sync_dance_venue` runs once a host frame on the native play window and the browser play page. On the first dance frame it saves and replaces the `_DAT_80084540` mirror (`World::battle.map_id`) with the record's block base and the camera's visible-tile window with the record's symmetric `(-8, -10, 8, 10)`, and publishes the venue camera. On the first frame after the run it restores both. While staged, `camera_view::resolve_field_camera` returns `FieldCameraFrame::Venue`.
 - The port keeps the walked-in scene loaded and suspended under the dance, so the scene-name save / restore has nothing to copy. `InputState::clear_edges` on the dance edges is a port affordance, not the `_DAT_8007B880` store.
@@ -840,7 +840,7 @@ The dance is fully playable in the port on all three surfaces. The rules, the ca
 | Tutorial | `legaia_engine_minigames::dance_tutorial` | the Disco King script's shape |
 | Marker kernel | `legaia_engine_field::dance_marker`, `minigame_floor::MarkerFloor` | marker flipbook + floor sweep |
 | World wiring | `engine-core`: `World::enter_dance` / `tick_dance` / `exit_dance`, `SceneMode::Dance` | suspending scene mode, flag writes, count-in, SFX |
-| Venue | `engine-minigame-scenes::dance_venue`, `dance_cast_scene`; `engine-core::dance_venue::sync_dance_venue` | hall build, staging, camera, face stamps, posed cast surface |
+| Venue | `engine-minigame-scenes::dance_venue`, `dance_cast_scene`; `engine-minigame-scenes::dance_venue::sync_dance_venue` | hall build, staging, camera, face stamps, posed cast surface |
 | Draw builders | `engine-ui::dance` | HUD / count-in / tutorial screen primitives |
 | Hosts | `engine-shell` (`window/minigames.rs`, `window/hud.rs`), `web-play` (`minigames_dance.rs`, `play_minigame_arena.rs`) | upload and input |
 

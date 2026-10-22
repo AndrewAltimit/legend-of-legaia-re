@@ -455,7 +455,7 @@ impl<S: AudioSink> BootSession<S> {
             );
         }
         let world = &mut self.host.world;
-        let edge = legaia_engine_core::dance_venue::sync_dance_venue(
+        let edge = legaia_engine_minigame_scenes::dance_venue::sync_dance_venue(
             world.mode,
             &mut world.minigames,
             &mut world.battle.map_id,

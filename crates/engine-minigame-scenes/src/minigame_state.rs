@@ -237,7 +237,7 @@ pub struct MinigameState {
     /// upload work", which is the shape a silent one-host regression hides in.
     pub dance_hud_art_staged: bool,
     /// What the dance entry staged over the walked-in scene's globals, `Some`
-    /// exactly while a dance runs - see `legaia_engine_core::dance_venue::sync_dance_venue`.
+    /// exactly while a dance runs - see `crate::dance_venue::sync_dance_venue`.
     pub dance_venue: Option<crate::dance_venue::DanceVenueStage>,
     /// Staging counter behind [`crate::dance_venue::DanceVenueStage::generation`].
     pub dance_venue_generation: u32,

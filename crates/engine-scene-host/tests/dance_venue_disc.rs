@@ -26,9 +26,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::dance_venue::sync_dance_venue;
 use legaia_engine_field::camera::Camera;
 use legaia_engine_field::camera_frame::FieldCameraFrame;
+use legaia_engine_minigame_scenes::dance_venue::sync_dance_venue;
 use legaia_engine_minigame_scenes::dance_venue::{
     DanceVenue, DanceVenueEdge, venue_camera, venue_cdname_stub, venue_sfx_vab_index,
 };

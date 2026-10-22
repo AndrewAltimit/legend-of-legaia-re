@@ -1,18 +1,16 @@
 //! The dance venue's **globals**: the save / restore pair the
 //! dance overlay's init `FUN_801CEF54` and teardown `FUN_801D414C` run around
 //! the beat clock. The venue itself (its scene, resources, draws, camera pose
-//! and face stamps) is `legaia_engine_minigame_scenes::dance_venue`; this
+//! and face stamps) is the parent module, [`super`]; this
 //! file keeps the one step that reads and writes the world's globals: the
 //! scene mode, the minigame seat and the scene block base (engine-core's
 //! `World::mode`, `World::minigames` and `World::battle.map_id`).
 //!
 //! See `docs/subsystems/minigame-dance.md` § Entering and leaving the hall.
 
+use super::{DanceVenueEdge, DanceVenueStage, venue_camera, venue_camera_at};
+use crate::minigame_state::MinigameState;
 use legaia_engine_field::camera::Camera;
-use legaia_engine_minigame_scenes::dance_venue::{
-    DanceVenueEdge, DanceVenueStage, venue_camera, venue_camera_at,
-};
-use legaia_engine_minigame_scenes::minigame_state::MinigameState;
 use legaia_engine_minigames::dance::dance_scene_entry;
 use legaia_engine_mode::mode::SceneMode;
 
