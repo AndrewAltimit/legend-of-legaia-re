@@ -31,6 +31,9 @@ pub(super) struct RunStats {
     /// Frames ticked in each world mode: whether a run that reached a mode
     /// also stayed in it long enough to soak it.
     pub(super) mode_frames: BTreeMap<String, u64>,
+    /// Battle surfaces a run reached: each command-session phase it saw,
+    /// and the item / spell / arts pickers it opened.
+    pub(super) battle_surfaces: BTreeSet<String>,
     pub(super) menu_opens: u32,
     pub(super) fmvs: u32,
     pub(super) save_commits: u32,
@@ -917,6 +920,24 @@ pub(super) fn run_one(
 
         let mode = format!("{:?}", session.host.world.mode);
         *stats.mode_frames.entry(mode.clone()).or_default() += 1;
+        if session.host.world.mode == SceneMode::Battle {
+            let b = &session.host.world.battle;
+            if let Some(c) = b.command.as_ref() {
+                stats
+                    .battle_surfaces
+                    .insert(variant(&format!("{:?}", c.phase)));
+            }
+            for (open, name) in [
+                (b.item_menu.is_some(), "item-menu"),
+                (b.spell_menu.is_some(), "spell-menu"),
+                (b.arts_menu.is_some(), "arts-menu"),
+                (b.arts_input.is_some(), "arts-input"),
+            ] {
+                if open {
+                    stats.battle_surfaces.insert(name.into());
+                }
+            }
+        }
         stats.modes.insert(mode);
         if session.host.world.game_over || session.host.world.game_over_hold {
             stats.wiped = true;

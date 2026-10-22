@@ -156,6 +156,15 @@ pub(super) fn write_report(
     for (m, n) in r.outcomes.iter().flat_map(|o| o.stats.mode_frames.iter()) {
         *mode_frames.entry(m).or_default() += n;
     }
+    let mut surfaces: BTreeMap<&String, u32> = BTreeMap::new();
+    for name in r
+        .outcomes
+        .iter()
+        .flat_map(|o| o.stats.battle_surfaces.iter())
+    {
+        *surfaces.entry(name).or_default() += 1;
+    }
+    let _ = writeln!(md, "- runs that reached each battle surface: {surfaces:?}");
     let revisits: u32 = r.outcomes.iter().map(|o| o.stats.minigame_revisits).sum();
     let _ = writeln!(
         md,
