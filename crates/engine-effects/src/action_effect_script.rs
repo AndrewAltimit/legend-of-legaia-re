@@ -800,8 +800,20 @@ impl HomingSlots {
                     }
                     if (s.pos[0] - t[0]).abs() + (s.pos[2] - t[2]).abs() <= HOMING_ARRIVAL {
                         land(s, i as u8, t, record, &list, &mut out);
-                        if landing_counts && s.counter != 0 {
-                            s.counter = (s.counter - fall).max(0);
+                        // The landing falls into the phase-3 arm on the
+                        // same pass (`0x801E13D8` / `0x801E1558` to
+                        // `0x801E1560`): a counter the landing armed
+                        // non-zero takes the pass's drain, and a zero one
+                        // hits and frees the slot there and then
+                        // (`beq v0,zero,0x801E1844` at `0x801E17A0`).
+                        if landing_counts {
+                            if s.counter != 0 {
+                                s.counter = (s.counter - fall).max(0);
+                            } else {
+                                self.hits[i] = s.child;
+                                s.phase = 0;
+                                s.child = 0;
+                            }
                         }
                     }
                 }
@@ -1485,6 +1497,20 @@ mod tests {
         assert_eq!(h.slots[0].counter, 0);
         h.step_pass(&rec, 0, 2, |_| Some(target));
         assert_eq!(h.hits, [1, 0, 0, 0]);
+    }
+
+    /// Tail Fire's record arms no landing counter (`+0x06 == 0`): the pass
+    /// that lands runs the phase-3 arm on a zero counter and hits there
+    /// (`0x801E1560` -> `0x801E17A0` -> `0x801E1844`), not a pass later.
+    #[test]
+    fn a_zero_counter_landing_hits_on_its_pass() {
+        let rec = tail_fire_like(0, 0);
+        let target = [100, 0, 100];
+        let mut h = HomingSlots::default();
+        h.seed(Some(18), (0, 0, 0), &[Some(target)], |_| 1);
+        h.step_pass(&rec, 0, 2, |_| Some(target));
+        assert_eq!(h.hits, [1, 0, 0, 0]);
+        assert_eq!(h.slots[0].phase, 0);
     }
 
     /// A record with `+0x09` set drags its handle between spawns: the pass
