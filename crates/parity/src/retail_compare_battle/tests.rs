@@ -795,3 +795,11 @@ fn a_clamped_history_entry_is_a_step_four_pass() {
     put32(&mut ram, FORCED_STEP, 2);
     assert_eq!(pass_steps(&ram), [2, 2]);
 }
+
+/// Without two ordering tables drawing the battle floor the step stays
+/// unconfirmed, and the walk-back keeps the history's single step.
+#[test]
+fn no_floor_tables_leave_the_pass_step_unconfirmed() {
+    let ram = vec![0u8; 0x20_0000];
+    assert_eq!(older_table_step(&ram, 0x800E_B654), None);
+}
