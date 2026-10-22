@@ -462,6 +462,22 @@ impl World {
         out
     }
 
+    /// Close the ghost walk's slot for `depth` battle frames back (its
+    /// ring-id gate fails): the capture's walk drew no ghost there - the art
+    /// had not committed that far back on retail's clock - so the replay
+    /// draws none either. No-op past the history. A debug seam beside
+    /// [`Self::seat_battle_ghost_ring`].
+    pub fn close_battle_ghost_ring(&mut self, slot: usize, depth: usize) {
+        let at = self.ghost_ring_slots_per_frame() * depth;
+        if let Some(f) = self
+            .actors
+            .get_mut(slot)
+            .and_then(|a| a.battle_pose_history.get_mut(at))
+        {
+            f.ghost_eligible = false;
+        }
+    }
+
     /// Stand one after-image ghost where a capture's history ring holds it:
     /// the pose-history slot the ghost walk reads for `depth` battle frames
     /// back ([`Self::battle_ghost_draws`]) becomes the actor's playing clip

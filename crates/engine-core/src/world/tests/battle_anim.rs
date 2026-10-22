@@ -762,6 +762,11 @@ fn a_seated_ghost_ring_slot_draws_the_captured_keyframe_and_ground() {
             .iter()
             .all(|g| g.nclip_mode() == crate::world::BATTLE_BODY_NCLIP)
     );
+    // A closed depth draws no ghost: the walk keeps the other.
+    world.close_battle_ghost_ring(0, 8);
+    let ghosts = world.battle_ghost_draws();
+    assert_eq!(ghosts.len(), 1);
+    assert_eq!(ghosts[0].pose, want_near);
     // A body with no playing clip has nothing to re-pose from.
     world.actors[1].battle_animation = None;
     assert!(!world.seat_battle_ghost_ring(1, 4, 0x50, [0, 0]));

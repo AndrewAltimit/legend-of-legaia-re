@@ -551,14 +551,23 @@ fn the_ghost_ring_seed_is_the_displayed_frames_walk() {
     let seeds = ram_read::retail_ghost_ring(&ram, 1);
     let got: Vec<_> = seeds
         .iter()
-        .map(|s| (s.slot, s.clip, s.depth, s.cursor, s.x, s.z))
+        .map(|s| (s.slot, s.clip, s.depth, s.drawn, s.cursor, s.x, s.z))
         .collect();
     assert_eq!(
         got,
-        vec![(0, 0x11, 2, 80, -21, 116), (0, 0x11, 4, 56, -21, 106)]
+        vec![
+            (0, 0x11, 2, true, 80, -21, 116),
+            (0, 0x11, 4, true, 56, -21, 106)
+        ]
     );
-    // The older ghost's slot holding another clip drops it.
-    put8(&mut ram, p + 0x1FB + 6, 0x10);
+    // A slot the gate closes (ring id `0x10` or below) is seeded undrawn,
+    // as `battle_vahn_tri_somersault_super`'s depth 4 ...
+    put8(&mut ram, p + 0x1FB + 6, 0x00);
+    let seeds = ram_read::retail_ghost_ring(&ram, 1);
+    assert_eq!(seeds.len(), 2);
+    assert!(seeds[0].drawn && !seeds[1].drawn);
+    // ... and a slot of another art clip is left to the replay.
+    put8(&mut ram, p + 0x1FB + 6, 0x12);
     assert_eq!(ram_read::retail_ghost_ring(&ram, 1).len(), 1);
 }
 

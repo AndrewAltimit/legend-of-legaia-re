@@ -343,7 +343,7 @@ pub struct ScreenshotConfig {
     /// clip cursor as the capture held it, landed on the capture frame
     /// ([`legaia_engine_capture::clip_cursors`]).
     pub seat_battle_clips: Vec<legaia_engine_capture::clip_cursors::ClipCursorSeed>,
-    /// `LEGAIA_SEAT_GHOST_RING=slot:clip:depth:cursor:x:z,...`: each after-image
+    /// `LEGAIA_SEAT_GHOST_RING=slot:clip:depth:drawn:cursor:x:z,...`: each after-image
     /// ghost as the capture's history ring holds it, seated on the capture
     /// frame ([`legaia_engine_capture::ghost_ring`]); taken once.
     pub seat_ghost_ring:

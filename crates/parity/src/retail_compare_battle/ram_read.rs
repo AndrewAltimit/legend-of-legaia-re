@@ -192,7 +192,11 @@ const GHOST_RING_ID_MIN: u8 = 0x11;
 /// [`DISPLAYED_FRAMES_BACK`] slots before the RAM's, so each ghost on
 /// screen is that many slots further down. Only a ghost of the clip the
 /// displayed frame shows (the same ring id) is seated: the engine re-poses
-/// it from the body's playing clip.
+/// it from the body's playing clip. A depth the gate closed is seeded as
+/// undrawn, so a replay whose art committed earlier on its own clock draws
+/// no ghost there either (`battle_vahn_tri_somersault_super`: the art's
+/// first slot is 5, so the walk's depth 4 from the displayed slot 2 reads a
+/// ring id of `0` and retail draws one ghost, the replay two).
 ///
 /// Party seats only. A party seat's ring id is its committed dynamic slot
 /// `+0x1D9` (`0x80047FCC`), which names the clip the engine must be
@@ -220,16 +224,30 @@ pub(super) fn retail_ghost_ring(
                 continue;
             }
             let id = game_anchors::u8_at(ram, p + RING_ID + at);
-            if id < GHOST_RING_ID_MIN || id != shown {
-                continue;
-            }
             let (Ok(slot), Ok(depth)) = (u8::try_from(slot), u8::try_from(depth)) else {
                 continue;
             };
+            // The walk drew nothing here: the replay must not either.
+            if id < GHOST_RING_ID_MIN {
+                out.push(legaia_engine_capture::ghost_ring::GhostRingSeed {
+                    slot,
+                    clip: id,
+                    depth,
+                    drawn: false,
+                    cursor: 0,
+                    x: 0,
+                    z: 0,
+                });
+                continue;
+            }
+            if id != shown {
+                continue;
+            }
             out.push(legaia_engine_capture::ghost_ring::GhostRingSeed {
                 slot,
                 clip: id,
                 depth,
+                drawn: true,
                 cursor: game_anchors::u16_at(ram, p + RING_CURSOR + at * 2),
                 x: i32::from(game_anchors::u32_at(ram, p + POSITION_RING + at * 8) as i16),
                 z: i32::from(game_anchors::u32_at(ram, p + POSITION_RING + at * 8 + 4) as i16),

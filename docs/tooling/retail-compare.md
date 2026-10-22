@@ -939,7 +939,12 @@ case aims at those positions - case 6 on a caster, case 0 on a member, case
   `World::seat_battle_ghost_ring`), when the ring holds the clip the body
   plays. `battle_melee_hit_spark`'s Vahn ran step-`3` passes, so his
   displayed ghosts stand at cursors `80` / `56` where the step-`2` replay's
-  read `84` / `68` (`image` `.765` to `.783`). A monster's ring id is
+  read `84` / `68` (`image` `.765` to `.783`). A depth whose ring id fails
+  the walk's gate is seeded undrawn and closed on the replay's ring
+  (`World::close_battle_ghost_ring`): `battle_vahn_tri_somersault_super`'s
+  art begins one slot past the walk's first depth, so retail draws one
+  ghost where the replay, its art committed earlier on its own clock, drew
+  two (`.930` to `.946`). A monster's ring id is
   `record[+0x77] + 0x10`, not a clip, and its ghosts stay the replay's.
 - **Heading.** On a capture past the end signal each placed combatant takes its
   heading `+0x46` (a `:facing` field after `:x:z`). The attack band's recompute
