@@ -163,7 +163,8 @@ scenario as `backup_fingerprint`. The library directory is **gitignored**
 `backup_fingerprint` field. When a scenario has one, both
 `scripts/manage-states.py` and `run_probe.sh --scenario` resolve the
 **library copy in preference** to the live slot - so probes keep working
-after you've saved over the original slot. See the field schema +
+after you've saved over the original slot. From a git worktree, which has no
+library of its own, `run_probe.sh` looks in the main checkout's next. See the field schema +
 workflow at the top of [`scripts/scenarios.toml`](../../scripts/scenarios.toml).
 
 ## The harness

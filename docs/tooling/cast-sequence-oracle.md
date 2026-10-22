@@ -62,7 +62,10 @@ caster's cast begin (`0x28`) it grabs `PCSX.GPU.takeScreenShot()` every
 the `ctx[+0x6D8]` / `+0x6DA` / `+0x87C` words, PROT 0903's countdown, every
 seat's HP, the main loop's frame counter `gp+0x480` (`frame`, read at
 `0x8007B798`) and the side-band applier stage `ctx[+0x276]` (`c276`, the
-token a module's stream-wait arm polls). At cast begin it also logs each pool slot's ground pair
+token a module's stream-wait arm polls). A second file, `body.csv`, holds
+per vsync the acting seat's clip `+0x1D9`, node cursor `+0x68`, live pair,
+body pair `+0x3C` / `+0x40` and the camera focus with its tween endpoints:
+the series a summon close-up's framing is read off. At cast begin it also logs each pool slot's ground pair
 `+0x34` / `+0x38` (`done.txt`). The run uses the recompiler (`--fast`) unless a
 formation is forced, and `run_probe.sh` stages the disc in a private directory,
 so no `.ppf` beside the image reaches it.

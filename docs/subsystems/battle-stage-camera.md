@@ -1286,22 +1286,24 @@ between holds:
 
 Measured with `LEGAIA_BATTLE_FRAME_CADENCE=1` against the per-vsync run of
 the same build over every battle state, the retail-disc rows that rise are
-`theeder_summon_mid_cast` `image` `.867` to `.996`, `zeto_call_wave_mid_cast`
-`.960` to `.973`, `horn_summon_mid_cast` `.979` to `.984`, and `camera` on
-`gimard_burning_attack` (`.963` to `.999`), `vera_summon_mid_cast` and
-`aluru_summon_mid_cast`. Over the retail-disc rows the `image` falls sum to
-`.170` against `.150` of rises (`camera` nets `+.035`), and the falls are not
-yet shown to be retail's, so the toggle stays off:
+`theeder_summon_mid_cast` `image` `.880` to `.994`, `juggernaut_summon_mid_cast`
+`.981` to `1.000`, `gimard_summon_start` `.981` to `.998`,
+`zeto_call_wave_mid_cast` `.960` to `.973`, `gizam_summon_mid_cast` and
+`horn_summon_mid_cast`, and `camera` on `gimard_burning_attack` (`.963` to
+`.999`), `vera_summon_mid_cast` and `aluru_summon_mid_cast`. The summon
+close-ups read the body pair the last pass drew, as retail's do, once the pair
+averages the stream's own parts ([battle-action](battle-action.md#where-an-action-leaves-its-combatants)).
+Over the retail-disc rows the `image` rises sum to `.177` against `.111` of
+falls (`camera` nets `+.037`), but the falls below are not yet shown to be
+retail's, so the toggle stays off:
 
 | Capture | Falls | Cause |
 |---|---|---|
-| `gimard_burning_attack` | `image` `.817` to `.783` | the fire cloud stands detached from the mouth: the breath's youngest parts are missing at the jaw, where retail's frame holds them; the camera itself lands (`.999`) |
-| `battle_gimard_tail_fire_a`, `battle_gimard_tail_fire_b` | `image` `.925` to `.915`, `.897` to `.870` | the flight's flame children stand a pass further along than retail's at the gate |
-| `noa_levelup_banner` | `image` `.962` to `.945` | the posing bodies' blocks; on both cadences the Results script's `TR.y` (`-5 * actor[+0x3E]` plus the accumulator term) reads Vahn's display height at `-191` where retail's reads `-183` |
-| `freed_summon_mid_cast`, `juggernaut_summon_mid_cast`, `gimard_summon_start`, `gizam_summon_mid_cast` | `image` `.954` to `.938`, `.999` to `.988`, `.989` to `.979`, `.957` to `.953` | the summon close-up's focus: on the cadence case `0x12` frames the body pair the last pass drew, as retail's does, but the engine's body still moves some `7` units a pass on clip `9`'s last keyframes where retail's has nearly stopped (Juggernaut's endpoint `64` beside its live `63`, the engine's `59`); the frame lands two or three pixels off. Freed's frame also stands on the flash age the pass grid offers (`22` against `23`), and one vsync either way loses a fifth of the blocks |
-| `battle_melee_hit_spark` | `image` `.758` to `.746` | the hit's spark and the swing's ghosts a pass on |
+| `battle_gimard_tail_fire_a`, `battle_gimard_tail_fire_b` | `image` `.822` to `.784`, `.807` to `.790` | the flight's flame children stand a pass further along than retail's at the gate; the struck body's burn puffs are `rand()`-placed, and the frame moves several hundredths with the draw |
+| `gimard_burning_attack` | `image` `.786` to `.763` | the fire cloud stands detached from the mouth: the breath's youngest puffs are missing at the jaw, where retail's frame holds them; the camera itself lands (`.999`) |
 | `cort_guilty_cross_mid_cast`, `cort_evolved_ultra_charge_mid_cast` | `image` `.961` to `.952`, `.894` to `.888` | the capture band's drifts and holds land a few vsyncs off retail's at the gate |
-| `rim_elm_gimard_seru_capture_before`, `rim_elm_gimard_victory` | `image` `.981` to `.975`, `.891` to `.887` | ground blocks at the tolerance's edge |
+| `freed_summon_mid_cast` | `image` `.994` to `.988` | the frame stands on the flash age the pass grid offers (`22` against `23`), and one vsync either way loses a fifth of the blocks |
+| `battle_melee_hit_spark`, the `rim_elm` pair | `image` by `.002` to `.004` | ground and spark blocks at the tolerance's edge |
 
 On the patched-disc rows `battle_gaza2_park_0x19` and
 `battle_gaza2_park_0x19_target_vahn` lose their frame: the image child's

@@ -109,6 +109,27 @@ pub(crate) fn pose_centroid_y(parts: &[([i16; 3], [i16; 3])]) -> i16 {
     (i32::from(sy) / n as i32) as i16
 }
 
+/// The channels of a battle actor's decoded pose the body-pair store
+/// averages: the playing stream's **own** parts. `FUN_8004998C` sums one
+/// translation per stream part and divides by the stream's part count, the
+/// byte at `*(entry + 0x88)` (`lbu v1,0x0(s4)` / `div` at
+/// `0x8004A3DC..0x8004A42C`). A party clip expanded per assembled object
+/// (`expand_animation_for_objects`) carries further channels past those -
+/// equipment objects that copy their attach bone's channel - and averaged in
+/// they pulled Vahn's invoke-clip centroid some nine units off retail's
+/// (`x` `30` against `39` on keyframes 2..5, the summon close-up's focus).
+/// `None` for an actor with no clip or no pose.
+fn stream_pose(a: &crate::world::Actor) -> Option<&[([i16; 3], [i16; 3])]> {
+    let player = a.battle_animation.as_ref()?;
+    let parts = &a.pose_frame.as_ref()?.bone_outputs;
+    let n = usize::from(player.variant_track().stream_parts);
+    Some(if n != 0 && n < parts.len() {
+        &parts[..n]
+    } else {
+        parts
+    })
+}
+
 /// The body-pair offset (`FUN_8004998C`): the shared kernel
 /// [`motion::body_offset`].
 pub(crate) fn body_offset(facing: u16, cx: i16, cz: i16, scale: i32) -> (i16, i16) {
@@ -127,11 +148,7 @@ impl World {
             .battle
             .seat
             .unwrap_or((a.move_state.world_x, a.move_state.world_z));
-        let cy = a
-            .battle_animation
-            .as_ref()
-            .and(a.pose_frame.as_ref())
-            .map_or(0, |p| pose_centroid_y(&p.bone_outputs));
+        let cy = stream_pose(a).map_or(0, pose_centroid_y);
         let y = a.move_state.world_y.wrapping_add(cy);
         Some([f32::from(x), f32::from(y), f32::from(z)])
     }
@@ -485,13 +502,7 @@ impl World {
             if a.battle.seat.is_none() {
                 continue;
             }
-            let centroid = if a.battle_animation.is_some() {
-                a.pose_frame
-                    .as_ref()
-                    .map(|p| pose_centroid_xz(&p.bone_outputs))
-            } else {
-                None
-            };
+            let centroid = stream_pose(a).map(pose_centroid_xz);
             let (dx, dz) = centroid
                 .map(|(cx, cz)| body_offset(a.battle.facing_angle, cx, cz, BATTLE_RENDER_SCALE))
                 .unwrap_or((0, 0));
@@ -968,6 +979,39 @@ mod tests {
         ];
         assert_eq!(pose_centroid_xz(&parts), (7, -2));
         assert_eq!(pose_centroid_xz(&[]), (0, 0));
+    }
+
+    /// The body pair averages the playing stream's own parts: a clip
+    /// expanded per assembled object carries equipment channels past them,
+    /// and those stay out of the centroid.
+    #[test]
+    fn the_body_pair_averages_only_the_streams_parts() {
+        use legaia_actor_formats::monster_archive::{MonsterAnimation, PartPose};
+        let pose = |x: i16| PartPose {
+            tx: x,
+            ..PartPose::default()
+        };
+        let mut anim = MonsterAnimation {
+            variant_track: Default::default(),
+            action_id: 0,
+            rate: 1,
+            attach_key: 0,
+            solo_flag: 0,
+            impact_class: 0,
+            effect_script: Vec::new(),
+            part_count: 3,
+            frame_count: 2,
+            frames: vec![vec![pose(10), pose(20), pose(300)]; 2],
+        };
+        anim.variant_track.stream_parts = 2;
+        let mut a = crate::world::Actor::default();
+        a.battle_animation = legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(&anim);
+        a.pose_frame = Some(a.battle_animation.as_mut().unwrap().seat_cursor(0));
+        assert_eq!(stream_pose(&a).map(pose_centroid_xz), Some((15, 0)));
+        // An unrecorded count (a synthetic clip) keeps every channel.
+        anim.variant_track.stream_parts = 0;
+        a.battle_animation = legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(&anim);
+        assert_eq!(stream_pose(&a).map(pose_centroid_xz), Some((110, 0)));
     }
 
     #[test]
