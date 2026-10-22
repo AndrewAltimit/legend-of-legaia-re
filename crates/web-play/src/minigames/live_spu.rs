@@ -161,7 +161,7 @@ impl LegaiaMinigames {
                 return 0;
             };
             let volume_word =
-                legaia_engine_core::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
+                legaia_engine_menus::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
             let (mut ramp, _) = run.tally_roll();
             let target = round.max(0);
             let from = self.muscle_tally_voiced_steps;

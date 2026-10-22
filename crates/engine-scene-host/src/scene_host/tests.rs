@@ -298,7 +298,7 @@ fn bgm_reattach_volume_matches_retail_shift_pair() {
     assert_eq!(bgm_reattach_volume(-1), -1);
     // The level the re-attach derives from the cold-reset raw global.
     assert_eq!(
-        bgm_reattach_volume(legaia_engine_core::new_game::GAME_STATE_COLD_RESET.bgm_volume_raw),
+        bgm_reattach_volume(legaia_engine_menus::new_game::GAME_STATE_COLD_RESET.bgm_volume_raw),
         -1
     );
     // Plain halving for small positives.

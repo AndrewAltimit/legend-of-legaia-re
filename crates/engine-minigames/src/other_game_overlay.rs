@@ -157,7 +157,7 @@ pub struct VoiceAttrCue {
 /// volume the voice-attr primitive's last two arguments take.
 ///
 /// `_DAT_80084580` is the voice/SFX volume setting, cold-reset to `200` by
-/// `FUN_8001FFA4` (see `legaia_engine_core::new_game::GAME_STATE_COLD_RESET`) - **not** a
+/// `FUN_8001FFA4` (see `legaia_engine_menus::new_game::GAME_STATE_COLD_RESET`) - **not** a
 /// party-block coordinate. The SCUS cue drainer `FUN_80016B6C` passes the very
 /// same `(_DAT_80084580 << 0xf) >> 0x10` expression into arguments 7 and 8 of
 /// the same primitive, which is what pins these two slots as `vol_l` / `vol_r`.

@@ -77,7 +77,7 @@ fn picker_entry_seeds_three_equipped_members_that_fight() {
         assert_eq!(names, ["Vahn", "Noa", "Gala"]);
         for (slot, rec) in w.party.roster.members.iter().enumerate().take(3) {
             let eq = rec.equipment().slots;
-            let weapon = eq[legaia_engine_core::new_game::WEAPON_SLOT_BYTE[slot]];
+            let weapon = eq[legaia_engine_menus::new_game::WEAPON_SLOT_BYTE[slot]];
             assert_ne!(weapon, 0, "member {slot} holds a starter weapon");
             assert_ne!(eq[0], 0, "member {slot} wears starter armour");
             eprintln!("[ran] member {slot} loadout {eq:?}");

@@ -102,6 +102,11 @@ link into a dependent crate.
   money, inventory, arts, level-up tracking, name entry) and `shop_state`
   (the gold-shop and prize-exchange sessions), each one subsystem's state
   held as a unit on the composite `World`.
+- **New Game record seeding** - `new_game` (the live record a starting-party
+  template row seeds, the scene-picker party's starter loadout, the
+  cold-boot defaults bundle `NewGameDefaults` and the game-state cold-reset
+  values `GAME_STATE_COLD_RESET`). engine-core's `new_game` applies them to
+  a `World`.
 
 ## Game-over banner and menu state machine
 

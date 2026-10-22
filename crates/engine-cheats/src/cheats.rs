@@ -11,7 +11,7 @@
 //!   by [`World::install_retail_progression_tables`]) and the record's XP,
 //!   next-level threshold and displayed level all agree. **Lowering** a level
 //!   re-derives the character from its New Game template
-//!   ([`legaia_engine_core::new_game::starting_record`]) plus the growth for the levels it
+//!   ([`legaia_engine_menus::new_game::starting_record`]) plus the growth for the levels it
 //!   keeps ([`WorldCheats::cheat_rebuild_level`]) - growth is not reversible, so the
 //!   only honest way down is to replay it from level 1.
 //! * **Seru magic** goes through retail's learn edge
@@ -187,7 +187,7 @@ pub trait WorldCheats {
 
     /// Re-derive roster slot `roster_slot` at `level` from its New Game
     /// template: the record's stat block is reset to `template`'s seed
-    /// ([`legaia_engine_core::new_game::starting_record`]), the tracker drops to level 1
+    /// ([`legaia_engine_menus::new_game::starting_record`]), the tracker drops to level 1
     /// with 0 XP, and the XP that reaches `level` is granted back through the
     /// tracker - so the stats are the template plus the retail growth for
     /// exactly the levels kept. Permanent stat-up items and other off-curve
@@ -385,7 +385,7 @@ impl WorldCheats for World {
         if old.hp_max == 0 {
             return None;
         }
-        let fresh = legaia_engine_core::new_game::starting_record(template);
+        let fresh = legaia_engine_menus::new_game::starting_record(template);
         let mut hms = fresh.hp_mp_sp();
         hms.hp_cur = old.hp_cur;
         hms.mp_cur = old.mp_cur;

@@ -316,8 +316,8 @@ fn a_retail_saves_audio_levels_are_honoured_on_import() {
     assert_eq!(
         (cold.configured_level, cold.voice_volume),
         (
-            crate::new_game::GAME_STATE_COLD_RESET.brightness_ref,
-            crate::new_game::GAME_STATE_COLD_RESET.voice_volume
+            legaia_engine_menus::new_game::GAME_STATE_COLD_RESET.brightness_ref,
+            legaia_engine_menus::new_game::GAME_STATE_COLD_RESET.voice_volume
         ),
         "the save crate's cold-reset pair is FUN_8001FFA4's"
     );

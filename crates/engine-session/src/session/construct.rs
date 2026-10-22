@@ -63,7 +63,7 @@ impl<S: AudioSink> BootSession<S> {
         host.new_game_defaults =
             starting_party
                 .clone()
-                .map(|party| legaia_engine_core::new_game::NewGameDefaults {
+                .map(|party| legaia_engine_menus::new_game::NewGameDefaults {
                     party,
                     inventory: starting_inventory.clone(),
                     // Retail's Vahn-alone roster by default: every headless

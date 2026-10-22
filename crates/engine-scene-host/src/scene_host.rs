@@ -311,7 +311,7 @@ pub struct SceneHost {
     /// scene entered with no party / save loaded - so the pause menu always
     /// reads valid party data. `None` (the default) leaves the world's
     /// scaffold party untouched, which is what disc-free tests expect.
-    pub new_game_defaults: Option<legaia_engine_core::new_game::NewGameDefaults>,
+    pub new_game_defaults: Option<legaia_engine_menus::new_game::NewGameDefaults>,
     /// Field BGM volume global - mirrors `DAT_8007B6EC`. Boot value `-1`
     /// (set by the game-state initializer `FUN_8001FFA4`). Consumed by
     /// the op `0x35` sub-op `8` route ([`bgm_reattach_volume`]).

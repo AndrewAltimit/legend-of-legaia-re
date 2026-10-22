@@ -490,7 +490,7 @@ data and a loaded save is never clobbered.
 
 On a scene-picker host (`NewGameDefaults::picker_party`) the party half is
 `World::seed_picker_party`: Vahn, Noa and Gala as the present battle party, each
-from their own template row and in a starter loadout (`new_game::starter_loadout`
+from their own template row and in a starter loadout (`engine-menus::new_game::starter_loadout`
 - the weakest gear the `DAT_80074F68` equipment table lets the character wear
 per slot, exclusive weapon family first). The loadout is the port's choice;
 retail's New Game leaves the equipment bytes zero. Headless sessions keep the
