@@ -122,6 +122,19 @@
   white-space: pre-wrap; word-break: break-word;
 }
 .play-dialog.is-hidden { display: none; }
+/* The hotkey notice line ("Ground fog: off"), bottom-left like the native
+   window's: host chrome, not game surface. */
+.play-notice {
+  position: absolute; left: 1.5%; bottom: 1.5%; max-width: 70%;
+  background: rgba(0, 0, 0, 0.7); color: #d9f2ff;
+  font-family: var(--font-mono); font-size: 0.78rem; padding: 0.15rem 0.45rem;
+  pointer-events: none;
+}
+.play-notice.is-hidden { display: none; }
+.play-keys-sub {
+  grid-column: 1 / -1; margin-top: 0.35rem; font-size: 0.7rem;
+  text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim);
+}
 .play-dialog-opt { color: #b9c6ff; }
 .play-dialog-opt.is-sel { color: #fff2a8; }
 
@@ -404,6 +417,7 @@ div.play-vis-head { cursor: default; }
             <canvas id="play-menu-canvas" class="play-menu-overlay" width="960" height="720"></canvas>
             <div class="play-focus-veil" id="play-veil">Click to take the controls</div>
             <div class="play-dialog is-hidden" id="play-dialog"></div>
+            <div class="play-notice is-hidden" id="play-notice" role="status" aria-live="polite"></div>
           </div>
           <!-- A minigame's status rows and key hints, as the engine exports
                them (`play_mg_caption_json`, play-minigames.js
@@ -677,6 +691,8 @@ div.play-vis-head { cursor: default; }
             <kbd>Drag</kbd><span>Swing / tilt the camera (locked during cutscenes)</span>
             <kbd>Wheel</kbd><span>Zoom in / out</span>
             <kbd>Dbl-click</kbd><span>Reset the camera to retail framing</span>
+            <!-- The host hotkeys, listed from the engine's own table
+                 (`host_hotkeys_json`) once a runtime is up. -->
           </div>
         </div>
 
@@ -1049,6 +1065,7 @@ div.play-vis-head { cursor: default; }
       statusEl.textContent = `Disc loaded (${count} PROT entries). Pick a boot mode.`;
       modesEl.style.display = 'grid';
       window.__playRuntime = runtime;
+      if (typeof window.__playListHotkeys === 'function') window.__playListHotkeys(runtime);
       if (typeof window.__playApplyDevMenu === 'function') window.__playApplyDevMenu();
       /* The option boxes reflect the engine's persisted options - after the
        * page's session switches (Retail-faithful pins them) are applied; the
@@ -2737,6 +2754,45 @@ div.play-vis-head { cursor: default; }
    * value into the controls. The rest drive the control the key stands for,
    * so a key and a click are one path. `debug_camera` is PlayView's own. */
   const hudEl = document.querySelector('.play-hud');
+  /* The state of each hotkey the page holds itself, for the notice line;
+   * the options hotkeys' state is read engine-side. */
+  window.__playHotkeyPageState = {
+    diag_rows: () => (hudEl && hudEl.style.display === 'none' ? 'off' : 'on'),
+    cheat_encounters: () => (cheatNoEncEl.checked ? 'off' : 'on'),
+  };
+  const noticeEl = document.getElementById('play-notice');
+  let noticeTimer = 0;
+  /* Show `text` on the notice line for the native window's
+   * `NOTICE_DURATION`-like span. */
+  window.__playShowNotice = (text) => {
+    if (!noticeEl) return;
+    noticeEl.textContent = text;
+    noticeEl.classList.remove('is-hidden');
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(() => noticeEl.classList.add('is-hidden'), 2500);
+  };
+  /* List the host hotkeys in the Controls card from the engine's table, so
+   * the page names every key the native window binds (F1 diagnostics, F2
+   * sound, F6 / F7 cheats, R movement, ...) without a second list. */
+  let hotkeysListed = false;
+  window.__playListHotkeys = (rt) => {
+    if (hotkeysListed || !rt || typeof rt.host_hotkeys_json !== 'function') return;
+    let rows = [];
+    try { rows = JSON.parse(rt.host_hotkeys_json()); } catch (_) { return; }
+    if (!rows.length || !rows[0].label) return;
+    hotkeysListed = true;
+    const head = document.createElement('div');
+    head.className = 'play-keys-sub';
+    head.textContent = 'Host keys (game window focused)';
+    keysEl.appendChild(head);
+    for (const r of rows) {
+      const k = document.createElement('kbd');
+      k.textContent = r.key;
+      const t = document.createElement('span');
+      t.textContent = r.label;
+      keysEl.append(k, t);
+    }
+  };
   window.__playHotkeyActions = {
     diag_rows: () => { if (hudEl) hudEl.style.display = hudEl.style.display === 'none' ? '' : 'none'; },
     audio_mute: () => {},

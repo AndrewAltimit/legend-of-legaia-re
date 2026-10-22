@@ -1550,6 +1550,23 @@ its HUD bar for `F1`, through `window.__playHotkeyActions`. The table's test
 holds every key off the bindable set, and a `SIM_PAIRS` row pins both sites
 to the shared calls.
 
+A press also owes the player a word. The native window shows a notice line
+after every hotkey (`toggle_notice`: `Ground fog: off`) and the refusal
+(`refused_notice`: `Camera distance: only while walking around`); the page
+showed neither, so `F2`, `F7` and a refused `T` were dead keys there - the
+mute and the encounter switch change nothing else on screen. The page now
+asks `play_host_hotkey_notice(id, page_state)` after the action (the options
+state read engine-side, the HUD bar, debug vantage and encounter box passed
+from the page) and `play_host_hotkey_refusal(code)` when the press was
+refused, and draws the line over the canvas's bottom-left corner as the
+window does. Its Controls card lists the table from `host_hotkeys_json`
+(`id`, `code`, `key`, `label`) rather than a second list, so a new hotkey
+names itself on both hosts. A second `SIM_PAIRS` row pins both Rust sites to
+the two notice kernels; the JavaScript half is pinned by
+`play_hotkeys::tests::the_page_shows_hotkey_notices`. The native window's
+`F12` panel (every hotkey with its current state) has no page twin beyond
+that list: the page's own checkboxes already show the state.
+
 ### Controllers
 
 A gamepad binds buttons to buttons by position, so the Key Config table never

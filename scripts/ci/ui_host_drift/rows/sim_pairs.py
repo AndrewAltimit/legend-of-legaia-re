@@ -717,13 +717,15 @@ SIM_PAIRS: list[dict[str, object]] = [
         "the browser. Both resolve the key through the shared table "
         "(`HostHotkey::from_dom_code`), refuse the field-only keys under a "
         "front-end screen (`HostHotkey::refused` over a `FrontEndScreens` "
-        "each host fills field by field - the page once tested `needs_field` "
+        "each host fills field by field - the page's fill is "
+        "`hotkey_screens`, shared by the press and its refusal notice, so "
+        "its site is the whole file - the page once tested `needs_field` "
         "against the title and logos alone, so `T` / `R` persisted options "
         "behind its pause menu), and make the options edit through "
         "`apply_options_hotkey` before persisting",
         "sites": {
             "native": (NATIVE_KEYBOARD_OPTION, "option_key"),
-            "web": (WEB_PLAY_HOTKEYS, "play_host_hotkey"),
+            "web": (WEB_PLAY_HOTKEYS, None),
         },
         "mode": "symbols_all",
         "symbols": [
@@ -737,6 +739,21 @@ SIM_PAIRS: list[dict[str, object]] = [
             "apply_options_hotkey",
             "persist_and_apply_options",
         ],
+    },
+    {
+        "what": "host hotkey notices, native vs play page - the transient "
+        "line after a hotkey press (`Ground fog: off`) and the refusal line "
+        "for a field-only key under a front-end screen. The native window "
+        "showed both; the page showed neither, so `F2`, `F7` and a refused "
+        "`T` read as dead keys there. Both word them through the shared "
+        "`toggle_notice` / `refused_notice` (the page's JS half is pinned by "
+        "`play_hotkeys::tests::the_page_shows_hotkey_notices`)",
+        "sites": {
+            "native": (NATIVE_KEYBOARD_OPTION, None),
+            "web": (WEB_PLAY_HOTKEYS, None),
+        },
+        "mode": "symbols_all",
+        "symbols": ["toggle_notice", "refused_notice"],
     },
     {
         "what": "title Continue, native vs play page - retail runs CONTINUE "
