@@ -1292,28 +1292,27 @@ between holds:
 
 Measured with `LEGAIA_BATTLE_FRAME_CADENCE=1` against the per-vsync run of
 the same build over every battle state, the retail-disc rows that rise are
-`theeder_summon_mid_cast` `image` `.880` to `.994`, `juggernaut_summon_mid_cast`
-`.981` to `1.000`, `gimard_summon_start` `.981` to `.998`,
-`zeto_call_wave_mid_cast` `.960` to `.973`, `gizam_summon_mid_cast` and
-`horn_summon_mid_cast`, and `camera` on `gimard_burning_attack` (`.963` to
-`.999`), `vera_summon_mid_cast` and `aluru_summon_mid_cast`. The summon
-close-ups read the body pair the last pass drew, as retail's do, once the pair
-averages the stream's own parts ([battle-action](battle-action.md#where-an-action-leaves-its-combatants)).
-Over the retail-disc rows the `image` rises sum to `.177` against `.111` of
-falls (`camera` nets `+.037`), but the falls below are not yet shown to be
-retail's, so the toggle stays off:
+`theeder_summon_mid_cast` `image` `.880` to `.994`, `battle_melee_hit_spark`
+`.699` to `.771`, `juggernaut_summon_mid_cast` `.981` to `1.000`,
+`gimard_summon_start` `.981` to `.998`, `zeto_call_wave_mid_cast` `.960` to
+`.973`, `gizam_summon_mid_cast` and `horn_summon_mid_cast`, and `camera` on
+`gimard_burning_attack` (`.963` to `.999`), `battle_melee_hit_spark`,
+`vera_summon_mid_cast` and `aluru_summon_mid_cast`. The summon close-ups read
+the body pair the last pass drew, as retail's do, once the pair averages the
+stream's own parts ([battle-action](battle-action.md#where-an-action-leaves-its-combatants)).
+Over the retail-disc rows the `image` rises sum to `.249` against `.097` of
+falls (`camera` nets `+.041`), but six rows still fall by more than the
+metric's noise, so the toggle stays off:
 
 | Capture | Falls | Cause |
 |---|---|---|
-| `battle_gimard_tail_fire_a`, `battle_gimard_tail_fire_b` | `image` `.822` to `.784`, `.807` to `.790` | the flight's flame children stand a pass further along than retail's at the gate; the struck body's burn puffs are `rand()`-placed, and the frame moves several hundredths with the draw |
-| `gimard_burning_attack` | `image` `.786` to `.767` | the fire cloud stands detached from the mouth: the burning body's youngest puffs are missing at the jaw, where retail's frame holds them; the camera itself lands (`.999`). The puffs are shed by the draw that closes the pass, at the pose and ground the pass left, which moved the frame only from `.763` |
-| `cort_guilty_cross_mid_cast`, `cort_evolved_ultra_charge_mid_cast` | `image` `.961` to `.952`, `.894` to `.888` | the capture band's drifts and holds land a few vsyncs off retail's at the gate |
+| `gimard_burning_attack` | `image` `.817` to `.783` | the creature stands off its cloud: the image child seats retail's live puffs, and on the cadence the walking Gimard reaches the yaw-base gate `21` units past retail's live pair `(143, -1606)` (per vsync `62` short of it), while retail's creature walks `111` units a frame at its frame step. Retail starts the walk a whole frame before the yaw base swings, so the gate's relation to the walk is frame-step history |
+| `battle_gimard_tail_fire_a`, `battle_gimard_tail_fire_b` | `image` `.925` to `.915`, `.897` to `.871` | Gimard's body and the damage number's height; the pool's flame children are retail's own (seated from the capture) on both cadences |
+| `cort_guilty_cross_mid_cast`, `cort_evolved_ultra_charge_mid_cast` | `image` `.961` to `.952`, `.894` to `.888` | the capture band reaches the phase gate four vsyncs later on the cadence; retaken six vsyncs before the gate the frame reads `.952`, ten before it `.960` |
 | `freed_summon_mid_cast` | `image` `.994` to `.988` | the frame stands on the flash age the pass grid offers (`22` against `23`), and one vsync either way loses a fifth of the blocks |
-| `battle_melee_hit_spark`, the `rim_elm` pair | `image` by `.002` to `.004` | ground and spark blocks at the tolerance's edge |
 
-On the patched-disc rows `battle_gaza2_park_0x19` and
-`battle_gaza2_park_0x19_target_vahn` lose their frame: the image child's
-drive parks in `0x5A` short of the phase on the cadence.
+On the patched-disc rows the `battle_gaza2_park_0x19` trio loses its frame:
+the image child's drive parks in `0x5A` short of the phase on the cadence.
 
 Taking the displayed frame (the gate's tick less the two-frame display lag)
 on the cadence does not recover them: the Tail Fire pair falls further, and
