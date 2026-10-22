@@ -93,7 +93,7 @@ flowchart TD
         kernels["World-free kernels<br/>engine-system, engine-mode, engine-dialog, engine-camera, engine-dev-menu, engine-battle,<br/>engine-effects, engine-field, engine-fishing, engine-minigames,<br/>engine-menus, engine-battle-menus, engine-title, engine-minigame-scenes"]
         scene["engine-scene: scene resolution + loading"]
         core["engine-core: World and its tick"]
-        drivers["World drivers<br/>engine-scene-host, engine-menu-runtime, engine-battle-hud,<br/>engine-world-views, engine-cheats"]
+        drivers["World drivers<br/>engine-scene-host, engine-menu-runtime, engine-battle-hud,<br/>engine-world-views, engine-cheats, engine-save-state"]
         audio["engine-audio: SPU + sequencer"]
         session["engine-session: BootSession"]
         present["engine-screens<br/>over engine-ui + render-kernels"]
@@ -128,7 +128,7 @@ An arrow runs from a crate to the crates built on it. The exact edges, and the g
 
 Over them sit the format-family crates: `container-formats` (asset dispatch, chunk stream, pack), `scene-formats` (field and world-map scenes), `actor-formats` (the character and monster model formats), `minigame-formats`, `ui-formats`, `game-tables` (the static data tables) and `overlay-images` (the code-overlay image formats). `disc-audit` measures the whole disc, `asset` is the command-line binary over it and the format families, and `extract` drives the whole pipeline. `mednafen` and `pcsx-redux` read emulator save states over the shared `ram-image`; `gamedata` and `cheats` are curated label sets.
 
-**The port.** `engine-core` holds the `World` and its tick. Above it, the World drivers hold a running `World` from outside: `engine-scene-host` (scene entry and tick), `engine-menu-runtime` (the pause menu), `engine-battle-hud` and `engine-world-views` (the hosts' reads) and `engine-cheats`.
+**The port.** `engine-core` holds the `World` and its tick. Above it, the World drivers hold a running `World` from outside: `engine-scene-host` (scene entry and tick), `engine-menu-runtime` (the pause menu), `engine-battle-hud` and `engine-world-views` (the hosts' reads), `engine-cheats` and `engine-save-state` (LGSF saves).
 
 Directly below `engine-core`, `engine-scene` is the disc-facing half: it resolves a scene to its PROT entries and loads what the scene is built from, without naming `World`.
 

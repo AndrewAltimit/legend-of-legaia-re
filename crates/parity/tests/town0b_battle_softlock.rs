@@ -20,6 +20,7 @@
 //! `mist_rim_elm` anchor). Skip-passes without `LEGAIA_DISC_BIN`, an extracted
 //! tree or the save library.
 
+use legaia_engine_save_state::WorldSaveState;
 use std::hash::Hasher;
 use std::path::PathBuf;
 

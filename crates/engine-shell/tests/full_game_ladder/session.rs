@@ -3,6 +3,7 @@
 //! back).
 
 use super::*;
+use legaia_engine_save_state::WorldSaveState;
 
 // ---------------------------------------------------------------------------
 // Session + seeding

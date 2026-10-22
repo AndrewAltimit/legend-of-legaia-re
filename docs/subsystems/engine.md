@@ -70,6 +70,7 @@ flowchart BT
     BHUD["engine-battle-hud<br/>HUD reads"]
     WV["engine-world-views<br/>field reads"]
     ECHT["engine-cheats<br/>WorldCheats"]
+    ESAV["engine-save-state<br/>WorldSaveState"]
     EUI["engine-ui"]
     EREN["engine-render<br/>wgpu"]
     EAUD["engine-audio<br/>SPU + sequencer"]
@@ -130,6 +131,7 @@ flowchart BT
     WV --> CORE
     SH --> WV
     ECHT --> CORE
+    ESAV --> CORE
     SESS --> MR
     SESS --> BHUD
     SESS --> EAUD
@@ -142,12 +144,14 @@ flowchart BT
     SHELL --> PAR
     SHELL --> SCR
     SHELL --> ECHT
+    SHELL --> ESAV
     SHELL --> EXP
     EXP --> CORE
     SHELL --> EREN
     WEBP --> SESS
     WEBP --> SCR
     WEBP --> ECHT
+    WEBP --> ESAV
     WEB --> WEBP
 ```
 
@@ -167,6 +171,7 @@ The shape to read off it:
 - **The battle HUD's reads of `World` are their own crate above `engine-core`.** `engine-battle-hud` answers what the in-battle screen shows off the battle state (phase word, command chips, commit log, plaques and their glides, banners, badges) and fills the `BattleHud` model. The simulation names none of it: the two battle-screen facts the battle loop decides on, the Ra-Seru refusal and the result windows' raise glide, are `BattleState` methods in `engine-core`, over the glide step `LogLaunch::seat_dy` in `engine-battle-vm` that both sides share.
 - **The hosts' other reads of `World` are a sibling crate.** `engine-world-views` holds what a host draws outside battle off the live world: the per-frame camera resolution (`camera_view`), the visible-tile crop policy, scene staging (placed-draw liveness, the story-hidden set, `assemble_field_scene`), the world-map markers and sky, the field party HUD, and the shop / pause / tile-board / timed-fight / Muscle Dome view models. The simulation names none of it.
 - **Cheats are a crate above `engine-core` too.** `engine-cheats` holds the player cheat list (`PlayerCheat`, applied through the `WorldCheats` extension trait on `World`) and the GameShark code applier. They write a `World` the host owns and nothing in the simulation calls them.
+- **LGSF saves are a crate above `engine-core`.** `engine-save-state` holds the full save-file round trip (`WorldSaveState::save_full` / `load_full`, the story-flag half a card load hydrates first, and the option words a save carries), applied through an extension trait on `World` the way the cheats are. The simulation never saves a file; the per-record half it does run (`World::save_party` / `load_party`, which the tick and New Game call) stays in `engine-core`. The round-trip tests live with the crate.
 - **`engine-session` and `engine-screens` are the host-shared top.** `BootSession` (scene host + per-frame order + BGM director), the boot front end (`FrontEnd`: logos, title, attract hand-off) and the shop-family screens are written once and ticked by both play hosts.
 - **`engine-export` is a tool layer above `engine-core`, not a host layer.** The `.glb` world exporter steps a scratch `World` to bake animation and traversal data, so it needs the simulation; nothing in the simulation needs it, and only the native binary links it.
 
@@ -227,6 +232,7 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `engine-battle-hud` | `engine-core`, `engine-battle`, `engine-battle-vm`, `engine-battle-menus`, `engine-cast`, `engine-mode`, `engine-system`, `art`, `font`, `ui-formats` | The battle HUD's reads of `World`. |
 | `engine-world-views` | `engine-core`, `engine-scene`, `engine-battle`, `engine-camera`, `engine-effects`, `engine-field`, `engine-menus`, `engine-battle-menus`, `engine-minigames`, `engine-mode`, `engine-system`, `render-kernels`, `scene-formats`, `ui-formats`, `tmd` | The hosts' reads of `World` outside battle: per-frame camera, crop policy, scene staging, world-map markers and sky, field party HUD, effect draw lists, menu and minigame view models. |
 | `engine-cheats` | `engine-core`, `engine-battle`, `engine-battle-vm`, `engine-menus`, `engine-system`, `cheats`, `game-tables`, `save` | The player cheat list and the GameShark code applier over `World`. |
+| `engine-save-state` | `engine-core`, `engine-battle`, `engine-menus`, `engine-mode`, `engine-system`, `save` | The LGSF save-file round trip over `World` (`WorldSaveState`). |
 | `engine-ui` | `render-kernels`, `engine-battle-vm`, `game-tables`, `minigame-formats`, `ui-formats`, `tim`, `font` | Draw-list builders; no wgpu. |
 | `engine-render` | `engine-ui`, `render-kernels`, `engine-camera`, `tim`, `font` | wgpu renderer. |
 | `engine-audio` | `xa`, `vab`, `seq`, `prot` | SPU model, sequencer, output backends. |
@@ -611,7 +617,7 @@ The shell loop closes: title -> save-select -> field / encounter -> battle -> sa
 | Tactical Arts chain editor | `engine-battle::tactical_arts_editor` | Menu-side compose / name / save flow with a per-character library. |
 | Field scenes + dialogue | `engine-scene-host`, `engine-core`, `engine-field`, `engine-dialog` | Scenes load and run their own MAN bytecode. `World::step_inline_dialogue` ports the retail dialog state machine `FUN_80039B7C` through the field VM (`play-window --simple-dialogue` opts out to the segment-pool fallback). |
 | Dialog text | `legaia-mes::DialogPlayer` | Paces glyph / spacing / substitution / page-break events; both hosts render the `DialogSnapshot` at the retail geometry (`FUN_801D84D0`, the per-frame line pager). Encoding: [mes](../formats/mes.md) (`FUN_8003CA38` / `FUN_80036044` / `FUN_80036888` / `FUN_80036514`). |
-| Save / load | `World::save_full` / `load_full`, `legaia_save` | LGSF files and real memory-card blocks (`legaia_save::card::write_block`). |
+| Save / load | `engine-save-state` (`WorldSaveState::save_full` / `load_full`), `legaia_save` | LGSF files and real memory-card blocks (`legaia_save::card::write_block`). |
 
 ### The LGSF save format
 

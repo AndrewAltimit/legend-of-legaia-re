@@ -32,6 +32,7 @@
 //! See [`docs/subsystems/engine.md`](../../../docs/subsystems/engine.md)
 //! for the broader engine architecture and where this fits.
 
+use legaia_engine_save_state::WorldSaveState;
 use std::fs;
 use std::path::{Path, PathBuf};
 

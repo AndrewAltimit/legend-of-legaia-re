@@ -80,7 +80,7 @@ impl World {
 
     /// The player actor's live field position, or `None` when no player
     /// actor is seated (a headless scene inspection).
-    pub(crate) fn player_field_position(&self) -> Option<(i16, i16)> {
+    pub fn player_field_position(&self) -> Option<(i16, i16)> {
         let slot = self.player_actor_slot? as usize;
         let a = self.actors.get(slot)?;
         if !a.active {

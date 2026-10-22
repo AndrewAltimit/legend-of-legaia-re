@@ -2,6 +2,7 @@
 //! [`RetailObs`], settle it, and sample the [`EngineObs`] the scorers read.
 
 use super::*;
+use legaia_engine_save_state::WorldSaveState;
 
 /// What the engine shows after seeding.
 pub struct EngineObs {

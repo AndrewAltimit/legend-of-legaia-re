@@ -10,6 +10,7 @@
 //! Skip-passes without disc data / extracted assets (the `LEGAIA_DISC_BIN`
 //! convention) so CI works without Sony bytes.
 
+use legaia_engine_save_state::WorldSaveState;
 use std::path::PathBuf;
 
 use legaia_engine_mode::mode::SceneMode;

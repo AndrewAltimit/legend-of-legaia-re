@@ -22,6 +22,7 @@
 //! Persistence (localStorage, base64) and file downloads stay on the JS
 //! side (`site/js/legaia-saves.js`) - this module is serialization only.
 
+use legaia_engine_save_state::WorldSaveState;
 use legaia_save::{SaveFile, SaveResume, emu};
 use wasm_bindgen::prelude::*;
 

@@ -7,6 +7,7 @@
 //! (`[gp[+0x2D2], gp[+0x2D4])`).
 
 use legaia_engine_core::world::*;
+use legaia_engine_save_state::WorldSaveState;
 use legaia_save::retail_inventory::ITEM_SLOTS_TOTAL;
 
 /// A party-seat world whose bag holds exactly the given `(slot, id, count)`

@@ -27,6 +27,7 @@ legaia-tmd.workspace = true
 legaia-art.workspace = true
 legaia-engine-audio.workspace = true
 legaia-engine-core.workspace = true
+legaia-engine-save-state.workspace = true
 legaia-engine-battle-hud.workspace = true
 legaia-engine-scene-host.workspace = true
 legaia-engine-world-views.workspace = true

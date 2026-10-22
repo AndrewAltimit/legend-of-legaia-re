@@ -1,4 +1,5 @@
 use legaia_engine_core::world::*;
+use legaia_engine_save_state::WorldSaveState;
 
 #[test]
 fn load_full_hydrates_level_up_tracker_from_record_levels() {

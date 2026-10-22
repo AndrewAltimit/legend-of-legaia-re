@@ -3,6 +3,7 @@
 //! the [`EngineBattle`].
 
 use super::*;
+use legaia_engine_save_state::WorldSaveState;
 
 /// What the engine shows after the battle seed.
 pub struct EngineBattle {

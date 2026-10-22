@@ -29,6 +29,7 @@
 //! Nothing here is uploaded; the bytes live in the tab for the session.
 
 use legaia_engine_menus::save_select::SlotSnapshot;
+use legaia_engine_save_state::WorldSaveState;
 use legaia_save::SaveResume;
 use legaia_save::emu;
 use wasm_bindgen::prelude::*;

@@ -2,6 +2,7 @@
 //! the save resume and the native half of a card load.
 
 use super::*;
+use legaia_engine_save_state::WorldSaveState;
 
 impl<S: AudioSink> BootSession<S> {
     /// Begin a New Game: clear the world to a fresh slate
@@ -265,7 +266,7 @@ impl<S: AudioSink> BootSession<S> {
     ///
     /// [`Self::enter_field_live`] cold-boots the scene at record 0 (a fresh
     /// party, no story progress). This variant runs that path and then
-    /// hydrates the world from `save` via [`legaia_engine_core::World::load_full`]
+    /// hydrates the world from `save` via [`WorldSaveState::load_full`](legaia_engine_save_state::WorldSaveState::load_full)
     /// (party records, story flags, money, inventory) so the field VM sees the
     /// saved story state on its first tick. It is the building block for
     /// "continue a saved game" and for the story-gated paths that a cold boot

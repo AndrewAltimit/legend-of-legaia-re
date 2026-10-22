@@ -91,7 +91,7 @@ pub struct WorldToggles {
     /// arts entry (`0x50`) - `FUN_801D0748`'s `0x28` Left arm at
     /// `0x801D15E0..0x801D1650`. Hosts mirror their `OptionsState` onto this
     /// the way they mirror [`crate::world::FieldLocomotion::run_default`].
-    pub(crate) select_attack: legaia_engine_system::option_values::SelectAttackOpt,
+    pub select_attack: legaia_engine_system::option_values::SelectAttackOpt,
     /// The options screen's **Battle Command** row (config word
     /// `0x800846C8`): directional buttons, or the cross button over a
     /// highlighted arm. Only the second highlights a command chip - the menu
@@ -163,11 +163,11 @@ pub struct WorldToggles {
     /// rows the simulation reads have their own mirrors here and on
     /// `FieldLocomotion::run_default`; this keeps the rest (Sound, the
     /// vibration rows) so a save carries the whole window, as retail's
-    /// does. See [`crate::world::World::retail_options`].
+    /// does. See `WorldSaveState::retail_options` (`legaia-engine-save-state`).
     pub retail_options: legaia_save::card::RetailOptions,
     /// The option words a save load restored that the host has not adopted
-    /// yet ([`crate::world::World::take_loaded_options`]).
-    pub(crate) loaded_options: Option<legaia_save::card::RetailOptions>,
+    /// yet (`WorldSaveState::take_loaded_options` (`legaia-engine-save-state`)).
+    pub loaded_options: Option<legaia_save::card::RetailOptions>,
 }
 
 /// The default of [`WorldToggles::battle_sm_frame_cadence`] - the one value

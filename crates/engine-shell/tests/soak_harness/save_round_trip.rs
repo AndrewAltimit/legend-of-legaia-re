@@ -3,6 +3,7 @@
 //! seeded runs.
 
 use super::*;
+use legaia_engine_save_state::WorldSaveState;
 
 /// Frames between two round trips in a `+rt` run.
 pub(super) const ROUND_TRIP_EVERY: u64 = 600;

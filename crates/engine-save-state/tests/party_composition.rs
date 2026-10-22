@@ -1,4 +1,5 @@
 use legaia_engine_core::world::*;
+use legaia_engine_save_state::WorldSaveState;
 
 // ---------------------------------------------------------------------------
 // Present-party composition (`World::party.active_party`)

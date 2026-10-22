@@ -3,6 +3,7 @@
 //! every detector armed.
 
 use super::*;
+use legaia_engine_save_state::WorldSaveState;
 
 // ---------------------------------------------------------------------------
 // Run

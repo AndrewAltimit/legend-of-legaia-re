@@ -65,7 +65,7 @@
   {
    "id": "drivers",
    "title": "World drivers",
-   "blurb": "Layers that hold a running World from outside: scene entry and tick, the pause menu, the battle HUD's and the field screens' reads, the cheats.",
+   "blurb": "Layers that hold a running World from outside: scene entry and tick, the pause menu, the battle HUD's and the field screens' reads, the cheats, the LGSF saves.",
    "rows": [
     {
      "label": "",
@@ -74,7 +74,8 @@
       "engine-menu-runtime",
       "engine-battle-hud",
       "engine-world-views",
-      "engine-cheats"
+      "engine-cheats",
+      "engine-save-state"
      ]
     }
    ]
@@ -931,6 +932,7 @@
     "engine-menu-runtime",
     "engine-menus",
     "engine-minigame-scenes",
+    "engine-save-state",
     "engine-scene-host",
     "engine-screens",
     "engine-session",
@@ -1332,6 +1334,7 @@
     "engine-cheats",
     "engine-export",
     "engine-menu-runtime",
+    "engine-save-state",
     "engine-scene-host",
     "engine-screens",
     "engine-session",
@@ -1660,6 +1663,7 @@
     "engine-field",
     "engine-menus",
     "engine-minigames",
+    "engine-save-state",
     "engine-scene",
     "engine-scene-host",
     "engine-system",
@@ -1767,6 +1771,7 @@
     "engine-cheats",
     "engine-core",
     "engine-menu-runtime",
+    "engine-save-state",
     "engine-scene-host",
     "engine-screens",
     "engine-session",
@@ -1918,6 +1923,7 @@
     "engine-core",
     "engine-field",
     "engine-minigame-scenes",
+    "engine-save-state",
     "engine-scene-host",
     "engine-screens",
     "engine-session",
@@ -1997,6 +2003,38 @@
     "engine-shell"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-render/README.md"
+  },
+  "engine-save-state": {
+   "package": "legaia-engine-save-state",
+   "deps": [
+    "engine-battle",
+    "engine-core",
+    "engine-menus",
+    "engine-mode",
+    "engine-system",
+    "save"
+   ],
+   "dev_deps": [
+    "engine-battle-vm",
+    "engine-field",
+    "prot",
+    "scene-formats"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [],
+   "band": "drivers",
+   "track": "engine",
+   "scope": "LGSF saves over a running <code>World</code>: the full save-file round trip (<code>save_full</code> / <code>load_full</code>) and the option words a save carries, through the <code>WorldSaveState</code> extension trait. Above <code>engine-core</code>.",
+   "dependents": [
+    "engine-menu-runtime",
+    "engine-scene-host",
+    "engine-session",
+    "engine-shell",
+    "parity",
+    "web-play"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-save-state/README.md"
   },
   "engine-scene": {
    "package": "legaia-engine-scene",
@@ -2099,6 +2137,7 @@
     "engine-minigame-scenes",
     "engine-minigames",
     "engine-mode",
+    "engine-save-state",
     "engine-scene",
     "engine-system",
     "engine-vm",
@@ -2230,6 +2269,7 @@
     "engine-menus",
     "engine-minigame-scenes",
     "engine-mode",
+    "engine-save-state",
     "engine-scene",
     "engine-scene-host",
     "engine-system",
@@ -2314,6 +2354,7 @@
     "engine-minigames",
     "engine-mode",
     "engine-render",
+    "engine-save-state",
     "engine-scene",
     "engine-scene-host",
     "engine-screens",
@@ -2428,6 +2469,7 @@
     "engine-minigames",
     "engine-mode",
     "engine-motion-vm",
+    "engine-save-state",
     "engine-scene",
     "engine-scene-host",
     "engine-screens",
@@ -3127,6 +3169,7 @@
     "engine-menu-runtime",
     "engine-menus",
     "engine-mode",
+    "engine-save-state",
     "engine-scene",
     "engine-scene-host",
     "engine-session",
@@ -3508,6 +3551,7 @@
     "engine-menu-runtime",
     "engine-menus",
     "engine-minigames",
+    "engine-save-state",
     "engine-scene-host",
     "engine-session",
     "engine-shell",
@@ -3956,6 +4000,7 @@
     "engine-minigame-scenes",
     "engine-minigames",
     "engine-mode",
+    "engine-save-state",
     "engine-scene",
     "engine-scene-host",
     "engine-screens",

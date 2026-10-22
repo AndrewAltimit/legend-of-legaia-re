@@ -2,6 +2,7 @@
 
 use super::*;
 use legaia_engine_audio::AudioSink;
+use legaia_engine_save_state::WorldSaveState;
 // `NativeAudioDirector::stop` is a `BgmDirector` trait item; the title/boot
 // hand-offs below stop the score through it.
 use legaia_engine_scene_host::scene_host::BgmDirector as _;

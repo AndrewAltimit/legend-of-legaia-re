@@ -12,18 +12,18 @@ path = "src/lib.rs"
 
 [dependencies]
 legaia-engine-core.workspace = true
+legaia-engine-battle.workspace = true
+legaia-engine-menus.workspace = true
+legaia-engine-mode.workspace = true
+legaia-engine-system.workspace = true
+legaia-save.workspace = true
 
 [dev-dependencies]
 # `finish_battle` for the capture round-trips (`world::test_drivers`).
 legaia-engine-core = { workspace = true, features = ["test-drivers"] }
-legaia-engine-battle.workspace = true
 legaia-engine-battle-vm.workspace = true
 legaia-engine-field.workspace = true
-legaia-engine-menus.workspace = true
-legaia-engine-mode.workspace = true
-legaia-engine-system.workspace = true
 legaia-prot.workspace = true
-legaia-save.workspace = true
 legaia-scene-formats.workspace = true
 
 [[test]]

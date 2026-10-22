@@ -32,6 +32,7 @@ env_logger.workspace = true
 legaia-art.workspace = true
 legaia-engine-capture.workspace = true
 legaia-engine-core.workspace = true
+legaia-engine-save-state.workspace = true
 legaia-engine-world-views.workspace = true
 legaia-engine-battle-hud.workspace = true
 legaia-engine-cheats.workspace = true

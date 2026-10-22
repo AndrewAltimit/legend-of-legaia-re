@@ -56,6 +56,7 @@
 //!   - `scripts/scenarios.toml` missing or scenario label unknown
 //!   - The scenario's `.mc{slot}` save missing on disk
 
+use legaia_engine_save_state::WorldSaveState;
 use std::path::PathBuf;
 
 use legaia_engine_core::world::{Actor, World};

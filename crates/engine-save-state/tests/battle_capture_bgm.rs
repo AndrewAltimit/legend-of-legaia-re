@@ -1,6 +1,7 @@
 use crate::support::capture_world;
 use legaia_engine_core::world::test_drivers::BattleTestDrivers;
 use legaia_engine_core::world::*;
+use legaia_engine_save_state::WorldSaveState;
 
 #[test]
 fn capture_progress_round_trips_through_save_load() {

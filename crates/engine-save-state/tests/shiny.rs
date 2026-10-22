@@ -1,5 +1,6 @@
 use crate::support::capture_world;
 use legaia_engine_core::world::test_drivers::BattleTestDrivers;
+use legaia_engine_save_state::WorldSaveState;
 
 #[test]
 fn shiny_capture_marks_spell_shiny_and_persists_through_save() {

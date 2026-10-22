@@ -14,6 +14,7 @@
 //! is a synthetic `0x2000` buffer, so it runs in CI.
 
 use legaia_engine_core::world::World;
+use legaia_engine_save_state::WorldSaveState;
 use legaia_save::card::{RETAIL_BLOCK_CHECKSUM_OFFSET, SAVE_BLOCK_MAGIC};
 use legaia_save::{SaveFile, sc_block_checksum_valid};
 

@@ -215,6 +215,7 @@ impl LegaiaRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use legaia_engine_save_state::WorldSaveState;
     use legaia_save::SaveResume;
 
     fn disc_runtime() -> Option<LegaiaRuntime> {

@@ -48,7 +48,7 @@ use legaia_actor_formats::monster_archive::MonsterAnimation;
 use legaia_anm::{AnimPlayer, PoseFrame};
 use legaia_engine_battle::battle_events::{BattleEvent, BattleHitEvent, BattleHitFx, BattleSfxCue};
 use legaia_engine_battle::levelup::{LevelUpBanner, LevelUpResult, LevelUpTracker};
-use legaia_engine_battle::tactical_arts::{ArtLearnedBanner, TacticalArtsTracker};
+use legaia_engine_battle::tactical_arts::ArtLearnedBanner;
 use legaia_engine_battle_vm::battle_action::{
     BattleActionCtx, BattleActor, BattleEndCause, StepOutcome,
 };

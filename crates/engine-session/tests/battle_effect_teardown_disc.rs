@@ -20,6 +20,7 @@
 //! Skip-passes without `LEGAIA_DISC_BIN`, an extracted tree or the save
 //! library.
 
+use legaia_engine_save_state::WorldSaveState;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 

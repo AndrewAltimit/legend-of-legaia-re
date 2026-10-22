@@ -14,6 +14,7 @@
 //! sit well under part B's: the distance between the two is the measurement.
 
 use super::*;
+use legaia_engine_save_state::WorldSaveState;
 
 /// Reloads a continuous run gets at one milestone's stretch after a party
 /// wipe, the guard retry included - the pad pass's allowance.

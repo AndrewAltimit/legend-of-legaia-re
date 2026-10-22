@@ -16,6 +16,7 @@ use legaia_engine_audio::AudioSink;
 use legaia_engine_field::field_anim::FieldClipPlayer;
 use legaia_engine_menus::game_over::GameOverSession;
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_save_state::WorldSaveState;
 
 use super::BootSession;
 use crate::audio_director::SfxFrameReport;

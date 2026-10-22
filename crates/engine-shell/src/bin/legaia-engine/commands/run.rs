@@ -3,6 +3,7 @@
 //! Mechanical split from `commands.rs` (behavior-preserving).
 
 use super::*;
+use legaia_engine_save_state::WorldSaveState;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn cmd_play(

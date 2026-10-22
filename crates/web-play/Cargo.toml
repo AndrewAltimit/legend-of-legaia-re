@@ -23,6 +23,7 @@ legaia-engine-battle-vm.workspace = true
 legaia-engine-camera.workspace = true
 legaia-engine-cheats.workspace = true
 legaia-engine-core.workspace = true
+legaia-engine-save-state.workspace = true
 legaia-engine-dialog.workspace = true
 legaia-engine-field.workspace = true
 legaia-engine-fishing.workspace = true

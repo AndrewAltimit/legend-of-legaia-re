@@ -251,7 +251,7 @@ impl World {
 
     /// Record one use of `art_id` by `char_id` (roster index).
     ///
-    /// Delegates to [`TacticalArtsTracker::notify_art_used`]. When the use
+    /// Delegates to [`TacticalArtsTracker::notify_art_used`](legaia_engine_battle::tactical_arts::TacticalArtsTracker::notify_art_used). When the use
     /// count first crosses the learn threshold, this method:
     ///
     /// 1. Pushes [`BattleEvent::TacticalArtLearned`] onto
