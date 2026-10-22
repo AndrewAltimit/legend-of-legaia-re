@@ -586,11 +586,9 @@ pub(super) fn run_one(
     let mut park: Option<(String, u64, u64)> = None;
     let mut menu_open_since: Option<u64> = None;
     let mut battle_since: Option<u64> = None;
-    // Endless battle: the frame the last action that moved a resource ended
-    // on, the resources it left, and whether the previous frame was already
-    // in the end-of-action gate.
-    type BattleProgress = (u64, Vec<(u16, u16)>, bool);
-    let mut battle_progress: Option<BattleProgress> = None;
+    // Endless battle: the frame a battle actor's HP / MP last moved, and what
+    // it moved to.
+    let mut battle_progress: Option<(u64, Vec<(u16, u16)>)> = None;
     let mut battle_pressed = 0u64;
     let mut prev_mode = session.host.world.mode;
     let mut prev_scene = session.host.world.active_scene_label.clone();
@@ -1066,13 +1064,14 @@ pub(super) fn run_one(
             prev_mode = w.mode;
         }
         // Battle that never ends: one battle outlasts the window. Two things
-        // move that line. A fight with no action ending on a changed HP / MP
-        // for the whole window is endless however it started. And a fight
-        // still landing actions in the window's last quarter, against a
-        // monster side holding more than the HP pool, is long, not endless:
-        // a random pad chips about 200 a round off Cort's 50000. Below the
-        // pool a long fight stays a finding - a summon hitting for 1 reads
-        // as progress, and only the clock catches it.
+        // move that line. A fight in which no HP / MP moved for the whole
+        // window is endless however it started. And a fight still landing
+        // actions in the window's last quarter, against a monster side
+        // holding more than the HP pool, is long, not endless: a random pad
+        // chips about 200 a round off Cort's 50000, and a round of three
+        // Gilium summons runs past 6000 frames. Below the pool a long fight
+        // stays a finding - a summon hitting for 1 reads as progress, and
+        // only the clock catches it.
         if w.mode == SceneMode::Battle {
             let since = *battle_since.get_or_insert(frame);
             let resources: Vec<(u16, u16)> = w
@@ -1081,14 +1080,11 @@ pub(super) fn run_one(
                 .take(8)
                 .map(|a| (a.battle.hp, a.battle.mp))
                 .collect();
-            let (last, seen, was_in_gate) =
-                battle_progress.get_or_insert_with(|| (frame, resources.clone(), false));
-            let in_gate = w.battle_ctx.action_state == ActionState::EndOfAction.as_byte();
-            if in_gate && !*was_in_gate && resources != *seen {
+            let (last, seen) = battle_progress.get_or_insert_with(|| (frame, resources.clone()));
+            if resources != *seen {
                 *last = frame;
                 *seen = resources;
             }
-            *was_in_gate = in_gate;
             let idle = frame - *last;
             let pool: u32 = w
                 .actors
@@ -1118,7 +1114,7 @@ pub(super) fn run_one(
                     frame,
                     at,
                     format!(
-                        "in Battle for {} frames, {idle} since an action ended on a changed HP / MP, monster HP {pool}",
+                        "in Battle for {} frames, {idle} since an HP / MP moved, monster HP {pool}",
                         frame - since
                     ),
                 ));
