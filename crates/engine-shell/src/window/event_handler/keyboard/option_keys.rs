@@ -32,7 +32,7 @@ impl PlayWindowApp {
         let screens = legaia_engine_session::hotkeys::FrontEndScreens {
             boot_logos: self.boot_ui.logos_session().is_some(),
             title: self.boot_ui.title_session().is_some(),
-            save_select: matches!(self.boot_ui, BootUiState::SaveSelect(_)),
+            save_select: matches!(self.boot_ui, BootUiState::Continue(_)),
             pause_menu: matches!(self.boot_ui, BootUiState::FieldMenu { .. }),
             game_over: matches!(self.boot_ui, BootUiState::GameOver(_)),
         };

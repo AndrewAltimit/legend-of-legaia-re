@@ -123,7 +123,7 @@ impl PlayWindowApp {
     /// Not part of [`Self::field_menu_sub_draws`]'s shared composition: this
     /// screen is the **save-select** surface, and the native window reaches
     /// the same one from the boot Continue -> Load path
-    /// (`BootUiState::SaveSelect`). Both go through `save_select_overlay`
+    /// (`BootUiState::Continue`). Both go through `save_select_overlay`
     /// (the shared overlay model + composition) so the in-game and boot
     /// entries cannot drift from each other; hoisting only the pause half
     /// would have forked them. Pre-scaled to surface coords, so the caller
@@ -134,6 +134,7 @@ impl PlayWindowApp {
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<TextDraw> {
-        self.save_select_overlay(s, surface_w, surface_h).texts
+        self.save_select_overlay(&self.save_flow, s, surface_w, surface_h)
+            .texts
     }
 }

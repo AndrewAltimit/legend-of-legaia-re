@@ -132,7 +132,7 @@ pub(super) struct MenuGlyphAssets {
 /// when the disc has both a readable PROT 0899 (carries the SLOT 1 /
 /// SLOT 2 pill sprites with CLUT 7) AND a readable PROT.DAT (carries
 /// the system-UI sprite sheet at offset `0x018E0` with the 9-slice
-/// panel chrome under CLUT row 2). Reused by [`BootUiState::SaveSelect`]
+/// panel chrome under CLUT row 2). Reused by [`BootUiState::Continue`]
 /// to compose the retail 81×29 "Load" panel from 14 byte-pinned
 /// textured-sprite primitives + the 2 slot pills over the dimmed
 /// title background.
@@ -834,7 +834,7 @@ pub(super) struct PlayWindowApp {
     /// re-used slots re-upload their new templates.
     pub(super) tile_slots_queued: std::collections::HashSet<u8>,
     /// Boot-UI state. `BootUiState::Inactive` means the legacy
-    /// "go straight to the scene" path; `Title` / `SaveSelect` route
+    /// "go straight to the scene" path; `Title` / `Continue` route
     /// player input through the boot sessions until the player picks
     /// New Game / Continue and the scene becomes interactive.
     pub(super) boot_ui: BootUiState,
@@ -1024,8 +1024,11 @@ pub(super) enum BootUiState {
     /// steps too. The logo atlas + per-logo rects live on [`PlayWindowApp`]
     /// so the renderer can sample one quad per frame.
     FrontEnd(legaia_engine_session::FrontEnd),
-    /// Save-select panel is active.
-    SaveSelect(legaia_engine_menus::save_select::SaveSelectSession),
+    /// The title's Continue screen: the retail save-select over the two
+    /// card ports, the session's one owner
+    /// ([`legaia_engine_session::ContinueScreen`]), which the browser play
+    /// page steps too. This arm supplies the ports and lands a loaded save.
+    Continue(legaia_engine_session::ContinueScreen),
     /// Field (pause) menu is active. The menu session itself is hosted by
     /// the [`NativeSession`]
     /// (`session.field_menu`, the retail CARD mode pair / `game_mode 0x17`;

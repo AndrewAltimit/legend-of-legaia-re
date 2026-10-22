@@ -85,24 +85,25 @@ impl PlayWindowApp {
         if self.save_menu.is_none() {
             return (Vec::new(), None);
         }
-        use legaia_engine_menus::save_select::SaveSelectSession;
-        // The save-select session (or field-menu Save sub-session) that
-        // drives both pill chrome and any retail Load-mode overlays.
-        let session: &SaveSelectSession = match &self.boot_ui {
-            BootUiState::SaveSelect(s) => s,
+        // The save-select session (the title's Continue screen, or the
+        // field-menu Save sub-session) and the driver it runs under: both
+        // pill chrome and any retail Load-mode overlays draw off the pair.
+        let draws = match &self.boot_ui {
+            BootUiState::Continue(c) => {
+                self.save_select_overlay(c.flow(), c.session(), surface_w, surface_h)
+            }
             BootUiState::FieldMenu {
                 sub: Some(active), ..
             } => {
                 use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
                 if let FieldMenuSubsession::Save(s) = active {
-                    s
+                    self.save_select_overlay(&self.save_flow, s, surface_w, surface_h)
                 } else {
                     return (Vec::new(), None);
                 }
             }
             _ => return (Vec::new(), None),
         };
-        let draws = self.save_select_overlay(session, surface_w, surface_h);
         (draws.sprites, draws.darken.map(|d| d.sprite))
     }
 
@@ -111,17 +112,19 @@ impl PlayWindowApp {
     /// (`SaveScreenFlow::overlay_model`) borrowed into `engine-ui`'s view and
     /// composed by `save_select_overlay_draws`, the browser play page's calls
     /// too. The text half draws with or without the system-UI atlas; the
-    /// sprite half needs it. Serves the boot Continue -> Load screen and the
-    /// pause menu's Load / Save rows alike.
+    /// sprite half needs it. Serves the boot Continue -> Load screen (over
+    /// the [`legaia_engine_session::ContinueScreen`]'s own driver) and the
+    /// pause menu's Load / Save rows (over the window's `save_flow`) alike.
     pub(super) fn save_select_overlay(
         &self,
+        flow: &legaia_engine_menus::save_screen::SaveScreenFlow,
         s: &legaia_engine_menus::save_select::SaveSelectSession,
         surface_w: u32,
         surface_h: u32,
     ) -> legaia_engine_ui::SaveSelectOverlayDraws {
         let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
         legaia_engine_screens::pause_screens::save_select_overlay_draws(
-            &self.save_flow,
+            flow,
             s,
             &self.font,
             self.save_menu.as_ref().map(|a| &a.rects),
@@ -259,15 +262,15 @@ impl PlayWindowApp {
 /// Which title-TIM bands the boot UI draws this frame, and how bright - the
 /// state half of [`PlayWindowApp::title_screen_sprite_draws`].
 ///
-/// Active during both the Title phases and the SaveSelect boot sub-state. The
-/// SaveSelect arm is the retail backdrop, [`TitleBandState::backdrop`]: the
+/// Active during both the Title phases and the Continue boot sub-state. The
+/// Continue arm is the retail backdrop, [`TitleBandState::backdrop`]: the
 /// menu overlay's `FUN_801DD35C` calls the title-strip drawer `FUN_801E0418`
 /// at `0x801E0260` and then the dimmed art `FUN_801E02A4` with one brightness
 /// byte, only while `_DAT_8007BB00` (the came-from-the-title word) is set -
 /// the `lw v0,-0x4500(v0)` / `beq v0,zero,0x801E0270` pair at `0x801E01D0`.
 /// Retail pivots to pure black once a slot is confirmed (NowChecking /
 /// SlotPreview): the dialog + portrait grid + info panel are composed against
-/// black, never the title art. The browser play page makes the same two cuts
+/// black, never the title art. The browser play page asks the same screen
 /// (`boot_title_backdrop_visible`).
 ///
 /// [`TitleBandState::backdrop`]: legaia_engine_ui::TitleBandState::backdrop
@@ -276,12 +279,11 @@ fn boot_title_band_state(boot_ui: &BootUiState) -> Option<legaia_engine_ui::Titl
         BootUiState::FrontEnd(fe) => fe
             .title_session()
             .and_then(legaia_engine_screens::title_screens::title_band_state),
-        BootUiState::SaveSelect(s) => {
-            if !s.phase().shows_title_backdrop() {
-                return None;
-            }
-            Some(legaia_engine_ui::TitleBandState::backdrop())
-        }
+        // The screen's own rule (`ContinueScreen::shows_title_backdrop`),
+        // the browser play page's too.
+        BootUiState::Continue(c) => c
+            .shows_title_backdrop()
+            .then(legaia_engine_ui::TitleBandState::backdrop),
         _ => None,
     }
 }
@@ -289,7 +291,6 @@ fn boot_title_band_state(boot_ui: &BootUiState) -> Option<legaia_engine_ui::Titl
 #[cfg(test)]
 mod title_backdrop_tests {
     use super::*;
-    use legaia_engine_menus::save_select::{SaveSelectMode, SaveSelectSession, SlotSnapshot};
 
     /// The native half of the save-select backdrop parity: the boot
     /// save-select resolves to the retail backdrop state, and that state
@@ -300,8 +301,8 @@ mod title_backdrop_tests {
     /// disc).
     #[test]
     fn the_boot_save_select_draws_retails_title_strips() {
-        let session = SaveSelectSession::new(SaveSelectMode::Load, vec![SlotSnapshot::empty(1)]);
-        let state = boot_title_band_state(&BootUiState::SaveSelect(session))
+        let screen = legaia_engine_session::ContinueScreen::open([None, None]);
+        let state = boot_title_band_state(&BootUiState::Continue(screen))
             .expect("the save-select keeps the title behind it");
         assert_eq!(state, legaia_engine_ui::TitleBandState::backdrop());
         let origin = (7, 11);

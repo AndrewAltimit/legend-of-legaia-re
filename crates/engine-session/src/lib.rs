@@ -12,6 +12,8 @@
 //!   the status / effect CLUT steps, the stage module's moves.
 //! - [`front_end`] - the boot front end (publisher logos, title card,
 //!   attract hand-off) both play hosts and the soak harness step.
+//! - [`title_continue`] - the title's Continue screen (the save-select over
+//!   the two card ports) both play hosts and the soak harness step.
 //! - [`audio_director`] - the BGM / SFX / CD-XA director over an `AudioSink`.
 //! - [`scene_actors`] - the scene-entry actor binding both hosts run before
 //!   building meshes (the lead's locomotion clips, NPC clip cursors, floor
@@ -42,6 +44,7 @@ pub mod native;
 pub mod party_spec;
 pub mod scene_actors;
 pub mod session;
+pub mod title_continue;
 pub mod xa_banks;
 
 pub use audio_director::AudioDirector;
@@ -49,3 +52,4 @@ pub use front_end::{AttractLane, FrontEnd, FrontEndScreen, FrontEndStep, NoMovie
 pub use session::{
     BootConfig, BootSession, NewGameHost, PauseMenuPress, TickClaims, TickOwner, start_new_game_on,
 };
+pub use title_continue::{CardPorts, ContinueLoad, ContinueScreen, ContinueStep};

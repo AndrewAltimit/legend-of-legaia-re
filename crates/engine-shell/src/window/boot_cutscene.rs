@@ -26,9 +26,10 @@ impl legaia_engine_session::AttractLane for WindowAttractLane {
 }
 
 impl PlayWindowApp {
-    /// Drive [`legaia_engine_menus::save_screen::SaveScreenFlow`] for whichever
-    /// save screen is open this frame, and return the edge the session should
-    /// see.
+    /// Drive [`legaia_engine_menus::save_screen::SaveScreenFlow`] for the
+    /// pause menu's Load / Save sub-screen when it is open this frame, and
+    /// return the edge the session should see. The title's Continue screen
+    /// runs its own driver ([`legaia_engine_session::ContinueScreen`]).
     ///
     /// Two responsibilities, both the kernel's decision and neither this
     /// host's: *when* a port must be read (the flow asks, once per port), and
@@ -38,7 +39,6 @@ impl PlayWindowApp {
     fn service_save_flow(&mut self, edge: u16) -> u16 {
         use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
         let session = match &self.boot_ui {
-            BootUiState::SaveSelect(s) => Some(s),
             BootUiState::FieldMenu {
                 sub: Some(FieldMenuSubsession::Save(s)),
             } => Some(s),
@@ -50,7 +50,6 @@ impl PlayWindowApp {
         // Re-borrow: the port read needed the cards while the session above
         // borrowed `self.boot_ui`.
         let session = match &mut self.boot_ui {
-            BootUiState::SaveSelect(s) => s,
             BootUiState::FieldMenu {
                 sub: Some(FieldMenuSubsession::Save(s)),
             } => s,
@@ -68,8 +67,7 @@ impl PlayWindowApp {
         if let Some(request) = request {
             let ok = self.write_save_commit(request);
             let mut flow = std::mem::take(&mut self.save_flow);
-            if let BootUiState::SaveSelect(s)
-            | BootUiState::FieldMenu {
+            if let BootUiState::FieldMenu {
                 sub: Some(FieldMenuSubsession::Save(s)),
             } = &mut self.boot_ui
             {
@@ -311,6 +309,8 @@ impl PlayWindowApp {
         // Build edge-triggered "newly pressed" mask so menu navigation
         // doesn't auto-repeat on held keys.
         let pressed = self.pad & !self.prev_pad;
+        // The title's Continue screen runs its own driver on the raw edge.
+        let raw_pressed = pressed;
         // Save-screen driver first: answer the card read the flow is waiting
         // on and let it step the block-grid cursor / gate an empty-block Load
         // BEFORE the session sees this edge. It runs ahead of the match
@@ -328,10 +328,6 @@ impl PlayWindowApp {
         let cross = pressed & 0x4000 != 0;
         let circle = pressed & 0x2000 != 0;
         let triangle = pressed & 0x1000 != 0;
-        let up = pressed & 0x0010 != 0;
-        let down = pressed & 0x0040 != 0;
-        let left = pressed & 0x0080 != 0;
-        let right = pressed & 0x0020 != 0;
         // Read before the match: it borrows `self.boot_ui`, so the title
         // arm cannot call back into `self`.
         let cutscene_live = self.cutscene.is_some();
@@ -415,15 +411,12 @@ impl PlayWindowApp {
                         self.boot_ui = BootUiState::Inactive;
                     }
                     FrontEndStep::Picked(TitleOutcome::Continue) => {
-                        // Retail's title card manager over the shell's
-                        // rack (retail's two card ports, each a mounted
-                        // card image): `title_continue`, the browser
-                        // page's call too, with no field gate in front.
-                        self.save_flow.reset();
-                        self.boot_ui = BootUiState::SaveSelect(
-                            legaia_engine_menus::save_select::SaveSelectSession::title_continue(
-                                &card_save_rack(self.card_ports()),
-                            ),
+                        // Retail's title card manager over the shell's two
+                        // card ports, each a mounted card image: the
+                        // session's one Continue screen, the browser page's
+                        // too, with no field gate in front.
+                        self.boot_ui = BootUiState::Continue(
+                            legaia_engine_session::ContinueScreen::open(self.card_ports()),
                         );
                     }
                     FrontEndStep::Picked(TitleOutcome::Options) => {
@@ -444,45 +437,51 @@ impl PlayWindowApp {
                 }
                 true
             }
-            BootUiState::SaveSelect(session) => {
-                use legaia_engine_menus::save_select::{SelectInput, SelectOutcome};
-                let input = SelectInput {
-                    up,
-                    down,
-                    left,
-                    right,
-                    cross,
-                    circle,
-                    triangle,
-                };
-                let _ = session.tick(input);
-                if let Some(outcome) = session.outcome() {
-                    // `commit` pairs the port off the outcome with the block
-                    // cell off the grid; the flat pill-slot reading is what
-                    // this used to do and is wrong for a two-stage rack.
-                    let commit = save_flow.commit(session);
-                    match outcome {
-                        SelectOutcome::Cancelled => {
-                            // Back to title (the theme is already up; the
-                            // director suppresses the same-id restart).
-                            self.reopen_title();
+            BootUiState::Continue(screen) => {
+                // The refusal notice, the card read, the block grid and the
+                // confirm are the session's one Continue screen
+                // (`legaia_engine_session::ContinueScreen`), the browser
+                // page's too; this arm supplies the ports, sounds the blip
+                // and lands what it loaded. It steps on the raw edge: the
+                // window's `save_flow` above serves the pause menu only.
+                use legaia_engine_session::ContinueStep;
+                let ports = [self.port1_card.as_ref(), self.card.as_ref()];
+                let step = screen.step(raw_pressed, ports);
+                if let Some(blip) = step.blip() {
+                    self.fire_menu_cue(u16::from(blip.cue()));
+                }
+                match step {
+                    ContinueStep::Running { .. } => {}
+                    ContinueStep::BackedOut { .. } => {
+                        // Back to title (the theme is already up; the
+                        // director suppresses the same-id restart).
+                        self.reopen_title();
+                    }
+                    ContinueStep::Loaded { load, .. } => {
+                        // A Load re-enters the save's own scene; the
+                        // pre-booted `--scene` is only the fallback for a
+                        // file with no resume point.
+                        let landing =
+                            self.session
+                                .resume_save(load.save, &load.scene, &self.field_live_opts);
+                        log::info!(
+                            "continue: port {} block {} landed {} ({:?})",
+                            load.port + 1,
+                            load.block,
+                            landing.kind(),
+                            landing.scene()
+                        );
+                        if landing.entered_scene() {
+                            self.rebuild_scene_render_state();
                         }
-                        _ => {
-                            if let Some(c) = commit {
-                                // A Load re-enters the save's own scene; the
-                                // pre-booted `--scene` is only the fallback
-                                // for a file with no resume point.
-                                let _ = self.apply_save_commit(c);
-                            }
-                            // Hand the score from the title theme to the
-                            // loaded scene: stop, then re-play the world's
-                            // own op-0x35 track when it is a global-pool id.
-                            if let Some(bgm) = self.session.bgm.as_mut() {
-                                bgm.stop();
-                            }
-                            self.session.restore_field_bgm();
-                            self.boot_ui = BootUiState::Inactive;
+                        // Hand the score from the title theme to the loaded
+                        // scene: stop, then re-play the world's own op-0x35
+                        // track when it is a global-pool id.
+                        if let Some(bgm) = self.session.bgm.as_mut() {
+                            bgm.stop();
                         }
+                        self.session.restore_field_bgm();
+                        self.boot_ui = BootUiState::Inactive;
                     }
                 }
                 true
@@ -600,7 +599,7 @@ impl PlayWindowApp {
                     // The shell's save rack: retail's two card ports, each
                     // a mounted card image. Its kind is what puts a Load /
                     // Save sub-session in the two-stage flow.
-                    let rack = card_save_rack([self.port1_card.as_ref(), self.card.as_ref()]);
+                    let rack = card_port_rack([self.port1_card.as_ref(), self.card.as_ref()]);
                     self.save_flow.reset();
                     // Build sub-sessions from the DISC tables the boot path
                     // already installed on the world (spell table, equipment
@@ -785,7 +784,7 @@ impl PlayWindowApp {
             self.session.close_field_menu();
             return false;
         }
-        let rack = card_save_rack(self.card_ports());
+        let rack = card_port_rack(self.card_ports());
         self.save_flow.reset();
         let world = &self.session.host.world;
         let chain_library = world.chain_library();
@@ -882,12 +881,13 @@ impl PlayWindowApp {
                     pen,
                 )
             }
-            BootUiState::SaveSelect(s) => {
+            BootUiState::Continue(c) => {
                 // The whole screen's text half - the mode's title word and
                 // pill rows, the phase overlays (NowChecking dialog, slot-info
                 // text / captions, confirm messagebox) - through the one
                 // composition the pause menu's Load / Save rows share.
-                self.save_select_overlay(s, surface_w, surface_h).texts
+                self.save_select_overlay(c.flow(), c.session(), surface_w, surface_h)
+                    .texts
             }
             BootUiState::FieldMenu { sub } => {
                 use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;

@@ -21,10 +21,8 @@
 
 use super::*;
 use legaia_engine_menus::save_screen::SaveScreenFlow;
-use legaia_engine_menus::save_select::{
-    SaveSelectSession, SelectInput, SelectOutcome, SelectPhase,
-};
-use legaia_engine_session::{FrontEnd, FrontEndStep, NoMovieLane};
+use legaia_engine_menus::save_select::{SaveSelectSession, SelectPhase};
+use legaia_engine_session::{ContinueScreen, ContinueStep, FrontEnd, FrontEndStep, NoMovieLane};
 use legaia_engine_title::title::{TitleOutcome, TitlePhase};
 use legaia_save::emu::MountedCard;
 
@@ -181,10 +179,9 @@ fn select_pad(session: &SaveSelectSession, flow: &SaveScreenFlow, frame: u32, ce
     }
 }
 
-/// Continue from the title: the retail save-select over a rack whose port 1
-/// holds `card` (`SaveSelectSession::title_continue`, both hosts' call),
-/// stepped through the shared [`SaveScreenFlow`] exactly as the native
-/// window's boot save-select steps it, then the picked block resumed through
+/// Continue from the title: the session's one Continue screen
+/// ([`ContinueScreen`], both play hosts' owner) over ports whose port 1
+/// holds `card`, then the loaded block resumed through
 /// `BootSession::resume_save`. `Ok((landing scene, frames))`.
 pub(super) fn drive_continue(
     session: &mut NativeSession,
@@ -192,41 +189,26 @@ pub(super) fn drive_continue(
     cell: u8,
     opts: &FieldLiveOpts,
 ) -> Result<(String, u32), String> {
-    let rack = SaveRack::CardPorts(vec![
-        card_port_snapshot(0, Some("MEMORY CARD")),
-        card_port_snapshot(1, None),
-    ]);
-    let mut select = SaveSelectSession::title_continue(&rack);
-    let mut flow = SaveScreenFlow::new();
+    let ports = [Some(card), None];
+    let mut screen = ContinueScreen::open(ports);
     for frame in 0..FRONT_END_BUDGET {
-        if let Some(port) = flow.pending_read(&select) {
-            let blocks = if port == 0 {
-                legaia_engine_menus::save_select::card_block_snapshots(card)
-            } else {
-                (0..15).map(SlotSnapshot::empty).collect()
-            };
-            flow.install_blocks(port, blocks);
-        }
-        let pad = select_pad(&select, &flow, frame, cell);
-        let edge = flow.before_tick(&mut select, pad);
-        let edge = if flow.tick_refusal(edge) { 0 } else { edge };
-        let _ = select.tick(SelectInput::from_pad_edge(edge));
-        let Some(outcome) = select.outcome() else {
-            continue;
+        let pad = select_pad(screen.session(), screen.flow(), frame, cell);
+        let load = match screen.step(pad, ports) {
+            ContinueStep::Running { .. } => continue,
+            ContinueStep::BackedOut { .. } => {
+                return Err("the save-select cancelled back to the title".into());
+            }
+            ContinueStep::Loaded { load, .. } => load,
         };
-        if outcome == SelectOutcome::Cancelled {
-            return Err("the save-select cancelled back to the title".into());
+        if load.port != 0 || load.block != cell + 1 {
+            return Err(format!(
+                "loaded port {} block {}, wanted port 1 block {}",
+                load.port + 1,
+                load.block,
+                cell + 1
+            ));
         }
-        let commit = flow
-            .commit(&select)
-            .ok_or_else(|| format!("{outcome:?} carried no commit"))?;
-        if commit.cell != cell {
-            return Err(format!("loaded cell {}, wanted {cell}", commit.cell));
-        }
-        let (sf, resume) = card
-            .save_at(commit.cell)
-            .ok_or_else(|| format!("block {} holds no save", commit.cell + 1))?;
-        let landing = session.resume_save(sf, &resume.scene, opts);
+        let landing = session.resume_save(load.save, &load.scene, opts);
         let scene = landing
             .scene()
             .ok_or_else(|| format!("the resume landed {}", landing.kind()))?
@@ -235,7 +217,7 @@ pub(super) fn drive_continue(
     }
     Err(format!(
         "the save-select did not commit in {FRONT_END_BUDGET} frames (phase {:?})",
-        select.phase()
+        screen.session().phase()
     ))
 }
 
