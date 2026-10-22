@@ -168,6 +168,7 @@ impl World {
             self.battle.action_plaque_glide.as_mut(),
             self.battle.target_plaque_glide.as_mut(),
             self.battle.readout_bar_glide.as_mut(),
+            self.battle.message_bar_glide.as_mut(),
             self.battle.spirit_gauge_glide.as_mut(),
             self.battle.module_panels_glide.as_mut(),
             self.battle.result_windows_glide.as_mut(),
@@ -226,6 +227,11 @@ impl World {
             [16, 192] | [208, 172] if spirit => Some(self.battle.spirit_gauge_glide.get_or_insert(
                 legaia_engine_battle_vm::battle_commit_log::LogLaunch::new(false),
             )),
+            // The message bar takes the readout bar's seat (record 91 over
+            // record 7) while a caption is up.
+            [16, 192] if self.battle.steal_caption.is_some() => {
+                self.battle.message_bar_glide.as_mut()
+            }
             [16, 192] => self.battle.readout_bar_glide.as_mut(),
             [_, 192] => self.battle.target_plaque_glide.as_mut(),
             [104 | 180, 86] => self.battle.round_prompt_glide.as_mut(),
@@ -270,6 +276,7 @@ impl World {
             self.battle.action_plaque_glide.as_mut(),
             self.battle.target_plaque_glide.as_mut(),
             self.battle.readout_bar_glide.as_mut(),
+            self.battle.message_bar_glide.as_mut(),
             self.battle.spirit_gauge_glide.as_mut(),
             self.battle.module_panels_glide.as_mut(),
             self.battle.round_prompt_glide.as_mut(),
@@ -364,6 +371,7 @@ impl World {
             self.battle.action_plaque_glide.as_ref(),
             self.battle.target_plaque_glide.as_ref(),
             self.battle.readout_bar_glide.as_ref(),
+            self.battle.message_bar_glide.as_ref(),
             self.battle.spirit_gauge_glide.as_ref(),
             self.battle.module_panels_glide.as_ref(),
             self.battle.round_prompt_glide.as_ref(),

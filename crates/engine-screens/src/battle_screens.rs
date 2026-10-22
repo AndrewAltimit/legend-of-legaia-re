@@ -303,6 +303,7 @@ pub fn battle_hud_frame_draws(
             panels_dy: bh::battle_round_prompt_panels_dy(w),
             target_select: target_select.as_ref().map(|(n, b)| (n.as_str(), *b)),
             message_bar: message_bar.as_deref(),
+            message_bar_dy: bh::battle_message_bar_dy(w),
             ap_plate_value: bh::battle_ring_ap_plate_value(w),
             ap_plate_dx: bh::battle_ring_ap_plate_dx(w),
             commit_log: &commit_log,

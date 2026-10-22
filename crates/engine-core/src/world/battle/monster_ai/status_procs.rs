@@ -464,7 +464,7 @@ const GLARE_ENTRY: u32 = 940;
 /// A zero-terminated line out of a slot-B module image at `va`, with the
 /// dialog escapes `0xC0..=0xCF` taken as two bytes (their operand may be
 /// `0`: `0xC1 0x00` names the first party member).
-fn module_line(image: &[u8], va: u32) -> Option<Vec<u8>> {
+pub(in crate::world) fn module_line(image: &[u8], va: u32) -> Option<Vec<u8>> {
     let off = va.checked_sub(legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE)?;
     let tail = image.get(off as usize..)?;
     let mut i = 0;

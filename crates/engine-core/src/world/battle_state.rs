@@ -320,6 +320,12 @@ pub struct BattleState {
     pub steal: legaia_engine_battle::battle_steal::StealBand,
     /// The death-spoils caption on screen (HUD element `0x5B`), if any.
     pub steal_caption: Option<legaia_engine_battle::battle_steal::StealCaption>,
+    /// The message bar's raise glide (placement record 91, `(16, 234)` ->
+    /// `(16, 192)`): `FUN_801D8DE8(0x5B, 0)` spawns the bar at seat A and
+    /// `FUN_801D9BBC` glides it to seat B. Started by a cast module's raise
+    /// ([`crate::world::World::raise_module_message_bar`];
+    /// `legaia_engine_battle_hud::battle_message_bar_dy`).
+    pub message_bar_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
     /// The party art-name label (element `0x4C`, records 76 / 77) has been
     /// taken down: the commit that replaces a party member's art clip on
     /// dynamic slot `0x11` destroys widget `0x21`
@@ -1039,6 +1045,7 @@ impl BattleState {
             action_plaque_glide: None,
             target_plaque_glide: None,
             readout_bar_glide: None,
+            message_bar_glide: None,
             spirit_gauge_glide: None,
             module_panels_glide: None,
             round_prompt_glide: None,

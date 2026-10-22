@@ -455,6 +455,10 @@ pub struct BattleHudFrame<'a> {
     /// nor the target plaque on the same row draws
     /// (`player_steal_skeleton_banner` shows the caption alone on the row).
     pub message_bar: Option<&'a str>,
+    /// The message bar's offset below its rest seat while its raise glide
+    /// runs (`engine-battle-hud::battle_message_bar_dy`): positive from the
+    /// raise until it lands. `0` at rest.
+    pub message_bar_dy: i32,
     /// The ring's AP plate (placement record 82 at `(208, 172)`) and the
     /// value it shows - the acting member's Spirit gauge - or `None` when
     /// the plate is off. Drawn from the status screen's own gauge pieces,

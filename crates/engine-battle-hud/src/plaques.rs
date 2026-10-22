@@ -220,6 +220,25 @@ pub fn battle_message_bar(world: &legaia_engine_core::world::World) -> Option<St
     world.battle.steal_caption.as_ref().map(|c| c.text.clone())
 }
 
+/// Seat A / seat B rows of the message bar's glide record (placement record
+/// 91): `y = 234` -> `192`, the record `zeto_call_wave_mid_cast` holds
+/// mid-raise.
+pub(super) const MESSAGE_BAR_SEATS_Y: (i32, i32) = (234, 192);
+
+/// How far the message bar sits below its rest seat this frame - the raise
+/// glide `FUN_801D8DE8(0x5B, 0)` starts
+/// ([`legaia_engine_core::world::BattleState::message_bar_glide`]). `0` with
+/// no bar up or once it has landed.
+pub fn battle_message_bar_dy(world: &legaia_engine_core::world::World) -> i32 {
+    if world.mode != legaia_engine_mode::mode::SceneMode::Battle
+        || world.battle.steal_caption.is_none()
+    {
+        return 0;
+    }
+    let (a, b) = MESSAGE_BAR_SEATS_Y;
+    LogLaunch::seat_dy(world.battle.message_bar_glide.as_ref(), a, b)
+}
+
 /// Seat A / seat B rows of a roster panel (records 6 / `0x4E` / `0x4F`:
 /// `y = 236` -> `170`), off the placement table.
 pub(super) const ROSTER_PANEL_SEATS_Y: (i32, i32) = (236, 170);
