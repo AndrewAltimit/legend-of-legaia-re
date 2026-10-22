@@ -1251,12 +1251,36 @@ worth. Seated from the RAM, the sparkles stood a volley's drift further in
 (`.967`), and `cort_evolved_ultra_charge_mid_cast`'s rays read `.822` against
 `.886` taken back.
 
-The snapshot is kept to those records. A part seated once runs on a clock
-the replay already aligns, and the RAM is one frame-pair ahead of the
-displayed frame: seated from the RAM, Ultra Charge's camera-locked discs
-(`0x801F87F4` / `0x801F884C` / `0x801F88A4`, `992` against the engine's
-`972` on their growth channel) drew larger than retail's frame and took the
-score back down to `.736`.
+The part seeds are taken back over the two passes' **own** steps
+(`pass_steps`), not twice the history's step. Ultra Charge's capture holds
+sixteen clamped `0x2BC` entries: the largest entry names step `3`, but every
+pass whose entry is the clamp ran step `4`
+([below](#a-drives-frame-is-the-one-the-display-showed)), and its consecutive
+rays stand four vsyncs apart. Taken back six vsyncs the rays read `.894`,
+eight `.901`.
+
+The snapshot is otherwise kept to those records. A part seated once runs on
+a clock the replay already aligns, and the RAM is one frame-pair ahead of the
+displayed frame: seated raw from the RAM, Ultra Charge's camera-locked discs
+(`0x801F87F4` / `0x801F884C` / `0x801F88A4`, `992` against the engine's `972`
+on their growth channel) drew larger than retail's frame and took the score
+down to `.736`. Taken back over the passes' steps they land on the frame on
+screen (`.901` to `.918`), so they are in the seat
+(`ULTRA_CHARGE_SHOT_DISCS`); the module's rings, seated the same way,
+measured no better and stay the replay's.
+
+So are the parts a capture-cell stager seats with `rand()` rolls stored over
+the seat (`ROLLED_STAGER_RECORDS`): Call Wave's rays (`0x801F7970`, wait,
+lean rate `+0x84`, spread, length and roll each a draw) and Final Crisis's
+shards (`0x801F7E80`). Their lean rate rides the seed beside the usual
+words. A volley the module has spent reads its length channel `+0xC8` at
+`0` with the rate still set; taken back past zero it would draw backwards,
+so a growing length channel that rewinds below zero is seated at `0` (it was
+restarted inside the lag). `zeto_call_wave_mid_cast` holds two volleys of
+eight; seeded, the upper half of the fan lands on retail's rays. The lower
+half stays under the floor, which the port depth-tests where retail paints
+it first
+([battle-stage-camera](../subsystems/battle-stage-camera.md#where-the-grid-sorts)).
 
 ### A turning effect part's banks are a clock
 
@@ -2536,7 +2560,12 @@ single step. The three Delilas Spirit captures rose with it (`0.893` to
 pixels closer.
 
 The confirmed steps (`display_pass_steps`) also take back the idle clip
-cursors pass by pass and seat the retired glides. The display lag in vsyncs
+cursors pass by pass and seat the retired glides. The glides still in flight
+and the slot-B part seeds take the history's per-pass steps unconfirmed
+(`pass_steps`): a glide record steps by its pass's own step, and
+`zeto_call_wave_mid_cast`'s message bar shows it - elapsed `11` in the RAM,
+`7` in the older table (the bar's frame top at `y = 208`), `3` on screen
+(`y = 219`), where twice the history's step-`3` word would seat `5`. The display lag in vsyncs
 (`display_lag_vsyncs`) stays two of the history's step: as the confirmed
 passes' sum it moves the part seeds it drives both ways
 (`delilas_gi_spirit_streaks_v2` `0.956` to `0.988`, its sparkles thinned to

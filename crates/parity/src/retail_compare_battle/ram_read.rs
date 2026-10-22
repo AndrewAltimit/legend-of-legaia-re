@@ -44,13 +44,34 @@ const PART_TICK: u32 = 0x8002_1DF4;
 /// the displayed frame - the RAM runs one frame-pair ahead of it, and a
 /// growing channel seated from the RAM overshoots the frame on screen.
 ///
+/// Ultra Charge's camera-locked shot discs
+/// ([`ULTRA_CHARGE_SHOT_DISCS`](legaia_engine_cast::cast_module_camera::ULTRA_CHARGE_SHOT_DISCS))
+/// are seated too: their growth channel is a clock of the frames since arm
+/// 0, and taken back over the two passes' steps it lands on the frame on
+/// screen (`cort_evolved_ultra_charge_mid_cast` `.901` to `.918`; Ultra
+/// Charge's rings, seated the same way, measured no better and are left to
+/// the replay).
+///
 /// The seeds are taken back to the displayed frame the same way
-/// ([`displayed_part_halfword`]): each integrated word less the
-/// [`display_lag_vsyncs`] the part tick ran on it since.
+/// ([`displayed_part_halfword`]): each integrated word less the vsyncs the
+/// part tick ran on it since - the two passes' own steps ([`pass_steps`]),
+/// not twice the history's [`frame_step`]. A history of clamped entries
+/// (`cort_evolved_ultra_charge_mid_cast` holds sixteen `0x2BC`s) reads step
+/// `3` off the clamp where every pass ran step `4`, and the rays stood two
+/// vsyncs' turn off the frame on screen.
+///
+/// The parts a capture-cell stager seats with `rand()` rolls
+/// ([`ROLLED_STAGER_RECORDS`](legaia_engine_cast::cast_module_ticks::ROLLED_STAGER_RECORDS))
+/// are seated the same way, their lean rate `+0x84` with them: Call Wave's
+/// rays fan at angles the replay's own stream does not deal.
 pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon::CastPartSeed> {
+    use legaia_engine_cast::cast_module_camera::ULTRA_CHARGE_SHOT_DISCS;
+    use legaia_engine_cast::cast_module_ticks::{
+        ROLLED_STAGER_EXTRA_OFFSETS, ROLLED_STAGER_RECORDS,
+    };
     let per_pass: Vec<u32> =
         legaia_engine_cast::cast_module_camera::per_pass_spawn_records().collect();
-    let lag = i32::from(display_lag_vsyncs(ram));
+    let lag = pass_steps(ram).iter().map(|&s| i32::from(s)).sum::<i32>();
     crate::retail_compare_script::actor_nodes(ram)
         .into_iter()
         .filter(|&n| {
@@ -58,14 +79,25 @@ pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon
             game_anchors::u32_at(ram, n + 0x0C) == PART_TICK
                 && game_anchors::u32_at(ram, n + 0x10) & 0x8 == 0
                 && SLOT_B.contains(&rec)
-                && per_pass.contains(&rec)
+                && (per_pass.contains(&rec)
+                    || ROLLED_STAGER_RECORDS.contains(&rec)
+                    || ULTRA_CHARGE_SHOT_DISCS.contains(&rec))
         })
-        .map(|n| legaia_engine_effects::summon::CastPartSeed {
-            tag: game_anchors::u32_at(ram, n + 0x48),
-            pokes: legaia_engine_effects::summon::CAST_PART_SEED_OFFSETS
-                .iter()
-                .map(|&o| (o, displayed_part_halfword(ram, n, o, lag)))
-                .collect(),
+        .map(|n| {
+            let tag = game_anchors::u32_at(ram, n + 0x48);
+            let extra: &[u16] = if ROLLED_STAGER_RECORDS.contains(&tag) {
+                &ROLLED_STAGER_EXTRA_OFFSETS
+            } else {
+                &[]
+            };
+            legaia_engine_effects::summon::CastPartSeed {
+                tag,
+                pokes: legaia_engine_effects::summon::CAST_PART_SEED_OFFSETS
+                    .iter()
+                    .chain(extra)
+                    .map(|&o| (o, displayed_part_halfword(ram, n, o, lag)))
+                    .collect(),
+            }
         })
         .collect()
 }
@@ -297,7 +329,15 @@ pub(super) fn displayed_part_halfword(ram: &[u8], node: u32, off: u16, lag: i32)
         0x54 => -8,
         _ => 0,
     };
-    (now - per_vsync * lag) as u16
+    let then = now - per_vsync * lag;
+    // The length channel `+0xC8` grows from zero off op `0x1C`'s rate: one
+    // that rewinds past zero was (re)started inside the lag and stood at
+    // zero on screen. Call Wave's spent volley reads `0` at rate `96`; taken
+    // back eight vsyncs it would read `-96`, a ray drawn backwards.
+    if off == 0xC8 && now >= 0 && per_vsync > 0 && then < 0 {
+        return 0;
+    }
+    then as u16
 }
 
 /// `ctx[+0x273]` - the pushes the damage-number ring took this action.
@@ -502,7 +542,15 @@ impl RetailBattle {
                 game_anchors::u8_at(ram, ctx + HUD_GLIDE_TABLE + s * HUD_GLIDE_STRIDE) == 0
             }),
             hud_glides: {
-                let mut seats = hud_glide_seats(ram, ctx, display_lag_vsyncs(ram));
+                // Taken back over the two passes' own steps, as the
+                // round-prompt and landed seats below are: a glide's
+                // `elapsed` advances by each pass's step.
+                // `zeto_call_wave_mid_cast`'s message bar reads `11` in the
+                // RAM, `7` in the older ordering table (a step-`4` pass) and
+                // `3` on screen, where twice the history's step-`3` word
+                // would put it at `5`.
+                let lag: u16 = pass_steps(ram).iter().map(|&s| u16::from(s)).sum();
+                let mut seats = hud_glide_seats(ram, ctx, lag);
                 // A round prompt whose open glide the table has already
                 // cleared can still be unfolding on screen.
                 if game_anchors::u8_at(ram, ctx + 6) == 0x1E

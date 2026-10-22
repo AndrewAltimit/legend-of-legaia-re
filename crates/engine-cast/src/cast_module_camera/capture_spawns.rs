@@ -462,6 +462,13 @@ const E962_0: [ModuleSpawn; 4] = [
     spawn(0x801F884C, ZEROED),
     spawn(0x801F88A4, ZEROED),
 ];
+/// PROT 0962's three camera-locked shot discs (`E962_0`'s zeroed-trio
+/// records, seated once by arm 0): each waits, turns itself to zero, locks
+/// to the camera and grows its channel block a vsync at a time. The growth
+/// is a clock of the frames since arm 0, which a capture reads back off the
+/// part.
+pub const ULTRA_CHARGE_SHOT_DISCS: [u32; 3] = [0x801F_87F4, 0x801F_884C, 0x801F_88A4];
+
 // 0x801F6C68: arm 1 seats one ray on every pass, on the zeroed stack trio
 // with a random roll `rand() % 0x1000` stored over its `z` angle
 // (`0x801F6C34..0x801F6C6C`); the host supplies the roll as the arm point.
