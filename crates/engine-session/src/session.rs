@@ -46,6 +46,7 @@ mod tick_owner;
 use disc_tables::*;
 pub use disc_tables::{BATTLE_XA_CLIP_SLOTS, attach_escape_icons};
 pub use frame_steps::{CUE_FOOTSTEP, step_npc_clip_players};
+pub use scene_entry::{NewGameHost, start_new_game_on};
 pub use tick_owner::{TickClaims, TickOwner};
 
 /// What one menu-button press did ([`BootSession::press_field_menu`]).

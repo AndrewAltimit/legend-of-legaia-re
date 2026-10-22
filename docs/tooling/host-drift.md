@@ -1691,7 +1691,7 @@ screens.
 | save-select | `engine-screens::pause_screens::save_select_overlay_draws` over `SaveScreenFlow::overlay_model` and `engine-ui`'s `save_select_overlay_draws`, `title_band_sprites` + `TitleBandState` (page backdrop: `boot_title_backdrop_draws_json`) |
 | title card | `engine-screens::title_screens::title_band_state` (fade ramp, prompt, menu rows) and `title_menu_glyph_draws` (the no-title-art rows and their anchor); a host answers only which atlas is resident |
 | Options rows without a pause menu | the page's Reduce flashing box and Music / SFX sliders (`set_reduce_flashing`, `set_bgm_volume`, `set_sfx_volume`) are the native launcher's rows over the same `OptionsState` fields and store |
-| Load / New Game | `engine-scene-host::resume` (`resume_card_load`, `enter_new_game`), `TitleSession::for_front_end`, `SceneHost::current_resume` ([`save-screen.md`](../subsystems/save-screen.md#where-a-load-lands-and-when-continue-is-live)) |
+| Load / New Game | `engine-scene-host::resume` (`resume_card_load`, `enter_new_game`), `engine-session::start_new_game_on` (the slate, the score hand-off and the landing check; a host hands in only its scene entry through `NewGameHost`), `TitleSession::for_front_end`, `SceneHost::current_resume` ([`save-screen.md`](../subsystems/save-screen.md#where-a-load-lands-and-when-continue-is-live)) |
 | card write | `engine-menu-runtime::card_write::write_save_into_card`, `MountedCard::persist` |
 | menu blips | `menu_cues::menu_edge_blip`; a blip is a one-cue batch (`SfxFireBatch::immediate`) and ages no other cue |
 | name entry | `NameEntryInput::from_pad_edge`; view `engine-screens::field_screens::name_entry_view` (`NameEntry::cursor_cells`, `name_entry::caret_on`) |

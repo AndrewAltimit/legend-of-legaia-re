@@ -1042,15 +1042,17 @@ SIM_PAIRS: list[dict[str, object]] = [
     {
         "what": "starting a New Game, native vs play page - the seeded slate "
         "(`begin_new_game_seeded`) and the opening order (opdeene, else "
-        "town01) are one engine entry per host. The page used to seed and "
-        "enter from play.html callbacks, and its post-wipe title skipped "
-        "the seed entirely",
+        "town01) are one session function, `start_new_game_on`, each host "
+        "handing in only its scene entry (`NewGameHost`). The page used to "
+        "seed and enter from play.html callbacks, its post-wipe title "
+        "skipped the seed entirely, and its entry later skipped the landing "
+        "check the native one makes",
         "sites": {
             "native": (NATIVE_BOOT_SCENE_ENTRY, "start_new_game"),
             "web": ("crates/web-play/src/resume.rs", "start_new_game"),
         },
         "mode": "symbols_all",
-        "symbols": ["enter_new_game", "begin_new_game"],
+        "symbols": ["start_new_game_on"],
     },
     {
         "what": "coplanar draw lifts, native vs play page - every host that "
