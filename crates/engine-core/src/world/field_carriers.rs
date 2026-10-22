@@ -40,6 +40,8 @@ impl World {
         self.npcs.face_legs.clear();
         self.npcs.rotate_legs.clear();
         self.npcs.glide_legs.clear();
+        self.npcs.landed_ticks.clear();
+        self.npcs.talk_player_landed = None;
         self.props.walk_touch.clear();
         self.props.boss_stagers.clear();
         self.props.active_walk_touch = None;

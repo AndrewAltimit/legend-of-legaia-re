@@ -659,6 +659,29 @@ impl World {
                     tl.pc = pc + insn.size;
                     continue;
                 }
+                // An NPC end-latch spin (`AD <id> 08`) re-tests on game frames
+                // only. The placement's anim tick latches `+0x62 & 0x100`
+                // after the record's script slice (the placements tick on
+                // `_DAT_8007C354`, behind the records on `_DAT_8007C34C`), so
+                // the record sees the latch on the next game frame, never on a
+                // vsync between two. A per-vsync capture of `opdeene` `P2[18]`
+                // holds its spins on flat 5 for `27` / `57` / `27` vsyncs at
+                // step `3`, each ending on a game frame.
+                // REF: FUN_8003BC08 (0x8003BDC4), FUN_800204F8, FUN_8002519C
+                if grid == 0
+                    && grid_live
+                    && opcode_byte == 0xAD
+                    && tl.bytecode.get(pc + 2) == Some(&8)
+                    && target.is_some_and(|(_, ci)| {
+                        !channels[ci].object_bind
+                            && host
+                                .world
+                                .npc_clip_cursor_bound(channels[ci].placement_index as u8)
+                    })
+                {
+                    tl.frames = tl.frames.saturating_sub(1);
+                    break;
+                }
                 // Player-anchor channel (`0xF8`) ExecMove / halt-acquire
                 // completion model. Retail resolves `0xF8` to the live player
                 // object (`_DAT_8007C364`, the `FUN_8003C83C` special-target

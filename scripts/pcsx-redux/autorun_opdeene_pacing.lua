@@ -19,6 +19,9 @@
 --      the three opening legs' records `0x23,0x21,0x32`),
 --      LEGAIA_ACTOR_ID (vignette actor `+0x50`, default 5).
 -- Output: <out>/opdeene_pacing.csv. Pure RAM observation - integers only.
+-- `rec_at` / `a_at` place the record and the actor in the walk order
+-- `FUN_8002519C` ticks them in: `list * 1000 + position` on the heads at
+-- `0x8007C34C + 4 * list`.
 
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
@@ -47,7 +50,7 @@ end
 local out = probe.out_path("opdeene_pacing.csv")
 local CSV = io.open(out, "w")
 CSV:write("vsync,step393,mode,label,rec_pc,rec_wait,rec_flags,mover_t,mover_d,"
-    .. "a_flags,a_5c,a_5e,a_62,a_68,a_6a,a_x,a_z,a_26,roller_retired,roller_flags\n")
+    .. "a_flags,a_5c,a_5e,a_62,a_68,a_6a,a_x,a_z,a_26,roller_retired,roller_flags,rec_at,a_at\n")
 
 local function label()
     local s = ""
@@ -61,6 +64,7 @@ end
 
 local function scan()
     local rec, mover, actor, roller = nil, nil, nil, nil
+    local rec_at, actor_at = -1, -1
     local seen = {}
     for k = 0, 8 do
         local p = u32(0x8007C34C + 4 * k)
@@ -76,15 +80,17 @@ local function scan()
             elseif tick == FIELD_TICK then
                 if RECORD_IDS[id] and rec == nil and probe.in_ram(u32(p + 0x90)) then
                     rec = p
+                    rec_at = k * 1000 + n
                 elseif id == ACTOR_ID and actor == nil and bit.band(u32(p + 0x10), 0x100) == 0 then
                     actor = p
+                    actor_at = k * 1000 + n
                 end
             end
             p = u32(p)
             n = n + 1
         end
     end
-    return rec, mover, actor, roller
+    return rec, mover, actor, roller, rec_at, actor_at
 end
 
 probe.run({
@@ -92,7 +98,7 @@ probe.run({
     capture_frames = FRAMES,
     on_arm = function() return {} end,
     on_capture = function(ctx, e)
-        local rec, mover, actor, roller = scan()
+        local rec, mover, actor, roller, rec_at, actor_at = scan()
         local rl_retired, rl_flags = -1, 0
         if roller then rl_retired, rl_flags = s16(roller + 0x6A), u32(roller + 0x10) end
         local rp, rw, rf = -1, -1, 0
@@ -105,9 +111,10 @@ probe.run({
             a62, a68, a6a = u16(actor + 0x62), u16(actor + 0x68), s16(actor + 0x6A)
             ax, az, a26 = s16(actor + 0x14), s16(actor + 0x18), u16(actor + 0x26)
         end
-        CSV:write(string.format("%d,%d,%d,%s,%d,%d,0x%08X,%d,%d,0x%08X,%d,%d,0x%04X,%d,%d,%d,%d,%d,%d,0x%08X\n",
+        CSV:write(string.format("%d,%d,%d,%s,%d,%d,0x%08X,%d,%d,0x%08X,%d,%d,0x%04X,%d,%d,%d,%d,%d,%d,0x%08X,%d,%d\n",
             e, probe.mem.read_scratch_u8(0x1F800393) or -1, u16(0x8007B83C), label(),
-            rp, rw, rf, mt, md, af, a5c, a5e, a62, a68, a6a, ax, az, a26, rl_retired, rl_flags))
+            rp, rw, rf, mt, md, af, a5c, a5e, a62, a68, a6a, ax, az, a26, rl_retired, rl_flags,
+            rec_at, actor_at))
         if e % 200 == 0 then
             CSV:flush()
             PCSX.log(string.format("[opdeene_pacing] vsync %d pc %d", e, rp))

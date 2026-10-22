@@ -354,6 +354,17 @@ impl World {
     /// the host: its clip lengths live in the locomotion bundle, which the
     /// world does not hold.
     ///
+    /// A new clip takes two of its steps on the frame of the poke: a
+    /// per-vsync capture of `opdeene` `P2[18]` (`autorun_opdeene_pacing.lua`)
+    /// reads flat 5's cursor at `2 * step * frame step` (`48`, `24`, and
+    /// `224 - 48` reversed) on the first frame after each `A2 05 <clip>`, and one
+    /// step a frame from there. So the bind ticks the new cursor once at the
+    /// frame step, ahead of the frame's own anim tick, and returns the
+    /// control word that tick left (a consumed restart request `0x200`) for
+    /// the caller to write back over the actor's `+0x62`. `None` when no
+    /// cursor was bound. Only while the game-tick clock runs; without it a
+    /// tick is a frame and the bind keeps its cursor at the clip's start.
+    ///
     /// PORT: FUN_800204F8 (binder half, at the poke)
     pub fn bind_npc_scene_clip(
         &mut self,
@@ -362,25 +373,22 @@ impl World {
         party_bank: bool,
         flags: u16,
         rate: i16,
-    ) {
+    ) -> Option<u16> {
         if party_bank || anim_id == 0 {
-            return;
+            return None;
         }
-        let Some(&(frames, gated, div)) = self
+        let &(frames, gated, div) = self
             .locomotion
             .scene_clip_meta
-            .get(usize::from(anim_id) - 1)
-        else {
-            return;
-        };
+            .get(usize::from(anim_id) - 1)?;
         if frames == 0 {
-            return;
+            return None;
         }
         if let Some(c) = self.npcs.clip_cursors.get(&slot)
             && c.anim_id == anim_id
         {
             self.seat_npc_phase_draw(slot);
-            return;
+            return None;
         }
         let mut cursor = PropAnim::cross_context(anim_id, frames);
         cursor.scaled_step = gated;
@@ -389,9 +397,14 @@ impl World {
             cursor.rate = rate;
         }
         cursor.flags = flags;
+        if self.clock.game_tick_live {
+            cursor.tick_scaled(u16::from(self.clock.frame_step.max(1)));
+        }
+        let out = cursor.flags;
         self.npcs.clip_cursors.insert(slot, cursor);
         self.npcs.clip_rate_live.insert(slot);
         self.seat_npc_phase_draw(slot);
+        Some(out)
     }
 
     /// Whether NPC `slot`'s actor carries the party-bank bit `0x01000000` -

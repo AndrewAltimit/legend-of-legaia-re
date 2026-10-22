@@ -1578,17 +1578,38 @@ The anim tick `FUN_800204F8` runs once a game frame and multiplies each clip's s
 step before it adds it (`mult a0,v0` at `0x80020660` / `0x80020680`), so the engine advances
 every placed-prop, NPC and cross-context cursor `step * DAT_1F800393` on a game frame and not at
 all between (`PropAnim::tick_scaled`, `World::tick_actor_anims`), and a timeline's player spin
-counts its clip's length down by the frame step. The opening record's spins on flat 5 hold `27` /
-`57` / `27` vsyncs in retail and `28` / `60` / `30` in the engine; stepped a vsync at a time they
-held `30` / `60` / `29`. The record runs from its second opening wait to its scene change in
-`3810` vsyncs against retail's `3828` (`3798` stepped per vsync).
+counts its clip's length down by the frame step.
+
+Two more facts close the spins, both read off a per-vsync capture of `opdeene` `P2[18]`
+(`scripts/pcsx-redux/autorun_opdeene_pacing.lua`, which records where the record and the
+vignette actor stand in the walk order):
+
+- **The actor ticks after the record.** The record's context is on the first list head
+  (`_DAT_8007C34C`), flat 5 on the third (`_DAT_8007C354`), and `FUN_8002519C` walks the heads in
+  order, so the clip latch `+0x62 & 0x100` lands after the record's slice and the record sees it
+  on the next game frame: every spin ends on a game frame. The engine's record re-tests an NPC
+  end latch only on game frames.
+- **A new clip takes two steps on the poke's frame.** Flat 5's cursor reads `48`, `24` and
+  `224 - 48` (reversed) on the first frame after `A2 05 08`, `A2 05 09` and `A2 05 08`, two
+  scaled steps each, and one a frame from there. `World::bind_npc_scene_clip` ticks the new
+  cursor once at the frame step ahead of the frame's own tick and writes the control word it
+  left (a consumed restart request `0x200`) back over the actor's `+0x62`. Where the second step
+  comes from inside the poke (`FUN_80024E08` into `FUN_80020F88`) is not traced.
+
+With both the three spins hold `27` / `57` / `27` vsyncs as in retail (stepped a vsync at a time
+they held `30` / `60` / `29`), and the record runs from its second opening wait to its dolly wait
+in `1515` vsyncs and to its scene change in `3828`, both retail's counts.
 
 The legs a talk runs on its placements and the player (`InlineDialogue::player_walk` /
 `player_turn`, the free-standing face-at, turn and compass-walk legs) and the walk-to-tile legs
 (`C7 <id> ..`, `World::tick_field_npc_motions`) keep the same grid. A parked record - a player
 walk-to-tile, turn or face-at - resumes on the game frame after the one its leg lands on
 (`CutsceneTimeline::park_landed`): the kernel takes the leg's first step in the arming frame
-and its landing after that frame's script slice.
+and its landing after that frame's script slice. A talk holds the same way: a placement a talk
+arms a leg on sits at the tail of its actor list behind the talk (`town0c` flat 59 in
+`rim_elm_queen_bee_battle`, `dolk2`'s face-at targets in `dolk2_market_noa`), so the next op
+the talk aims at it waits for the game frame after the landing (`FieldNpcState::landed_ticks`,
+`talk_player_landed` for the player's legs).
 
 The disc-gated oracle
 [`opening_chain_wall_time`](../../crates/engine-scene-host/tests/opening_chain_wall_time.rs) pins the

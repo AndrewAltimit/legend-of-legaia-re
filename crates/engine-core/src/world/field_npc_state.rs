@@ -189,6 +189,17 @@ pub struct FieldNpcState {
     /// the kernel's landing clears it. `dolk`'s vendors (`P1[21]`
     /// `23 64 4D` / `41 06 01`) end half a tile east of their `MOVE_TO`
     /// tile that way, the counter between them and the player.
+    /// The world tick a free-standing walk, turn or face-at leg on placement
+    /// `slot` landed on, while the game-tick clock runs. The kernel visits a
+    /// placement after the context that armed it - an armed target sits at
+    /// the tail of its actor list (`town0c` flat 59 behind its talk in
+    /// `rim_elm_queen_bee_battle`, `dolk2`'s face-at targets in
+    /// `dolk2_market_noa`) - so a talk sees the landing on the next game
+    /// frame, and the next op it aims at the placement waits until then.
+    pub(crate) landed_ticks: std::collections::BTreeMap<u8, u64>,
+    /// The same for the player's walk or turn a talk parked on
+    /// ([`legaia_engine_field::inline_dialogue::InlineDialogue::player_walk`]).
+    pub(crate) talk_player_landed: Option<u64>,
     pub(crate) glide_legs:
         std::collections::BTreeMap<u8, legaia_engine_field::cutscene_timeline::TimelineNpcGlide>,
     /// **Live per-slot model id**, keyed by placement `slot`: what the
@@ -355,6 +366,8 @@ impl FieldNpcState {
             motions: std::collections::BTreeMap::new(),
             face_legs: std::collections::BTreeMap::new(),
             rotate_legs: std::collections::BTreeMap::new(),
+            landed_ticks: std::collections::BTreeMap::new(),
+            talk_player_landed: None,
             glide_legs: std::collections::BTreeMap::new(),
             models: std::collections::BTreeMap::new(),
             ambient: std::collections::BTreeMap::new(),
