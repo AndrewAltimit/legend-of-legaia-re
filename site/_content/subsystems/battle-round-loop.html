@@ -4,7 +4,7 @@
   <p class="lede">One fight from the outside in: how a field step or a script op becomes a battle, how a round hands turns out, how the battle ends, and what the party walks away with. The per-state detail of an action lives on the <a href="battle-action.html">action state machine</a> page and the menu on the <a href="battle-command-flow.html">command flow</a> page; this page is the loop that holds them.</p>
 </header>
 
-<section class="doc-section" id="at-a-glance">
+<section class="doc-section" id="at-a-glance" data-doc="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Random entry</dt><dd>Per-step region roll <code>FUN_801D9E1C</code> (field overlay) on entering a new 128-unit tile</dd>
@@ -17,7 +17,7 @@
   </dl>
 </section>
 
-<section class="doc-section" id="loop">
+<section class="doc-section" id="loop" data-doc="the-loop-in-one-picture">
   <h2>The loop in one picture</h2>
   <figure class="diagram">
     <svg viewBox="0 0 880 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Field to battle loop: a field tick either rolls a region encounter on a new tile or runs a scripted entry op; both go through the transition bracket to battle entry, which fills the formation cell. A round alternates a command band, where each member commits, and an execution band, where the highest initiative key acts. The end-of-action gate or an escape hands off to the results sequencer; at phase 0x43 the game mode returns to main init, which reloads the field or, on an unscripted wipe, goes to the title screen with the cursor on Continue.">
@@ -66,14 +66,14 @@
   </figure>
 </section>
 
-<section class="doc-section" id="encounters">
+<section class="doc-section" id="encounters" data-doc="encounters">
   <h2>Getting into a fight</h2>
   <p><strong>Random.</strong> A scene whose MAN carries encounter regions rolls per step: a per-region rate counter, a formation-range pick, and a one-step anti-repeat (record layout on the <a href="../formats/encounter.html">encounter record</a> page). The roll's trigger branch is destructive - it draws RNG, latches the anti-repeat and re-seeds its counter before returning - so a roll with nothing to receive it is a fight silently thrown away. The port keeps a five-phase bracket around it (idle, transition, triggered, battling, post-battle grace) and logs every way a roll can fail to become a battle.</p>
   <p><strong>Scripted.</strong> Boss fights enter through field-VM op <code>0x3E</code> with a first operand of <code>0xFF</code> (any value below 100 runs the same body; 100 and up is the door warp). The op points the system entity's encounter-record slot at formation row <code>op1</code> of the scene's own table and requests the battle mode switch. There is no boss battle-id global: the candidate, <code>DAT_8007B7FC</code>, has readers and no writer anywhere on the disc - it is a debug forced-battle id retail never sets.</p>
   <p>Boss rows sit outside every region's rollable slice, so only the op reaches them, and they carry a non-zero first header byte. On that predicate the confirm ORs bit <code>0x80</code> into the per-battle flags byte <code>DAT_8007BD60</code>, which selects the boss intro style and, at battle init, becomes the scripted-fight byte <code>ctx[+0x287]</code>.</p>
 </section>
 
-<section class="doc-section" id="bands">
+<section class="doc-section" id="bands" data-doc="live-gameplay-loop---field--battle-in-tick">
   <h2>The two bands of a round</h2>
   <p>Two state machines hand a round back and forth. In the <strong>command band</strong> the flow SM walks every living party member through the command ring while the action SM idles. In the <strong>execution band</strong> the action SM dispatches every combatant, party and monster alike, by the max-key pick, and consumes each key as its owner is dispatched.</p>
   <p>So a monster that won initiative still waits for the last party commit: <strong>initiative orders the execution band, it never lets anyone act before the prompt.</strong> The one exception is a rolled back attack, which arms the round straight from the intro timer; with the party's keys zeroed by the side lockout, only the monsters act.</p>
@@ -84,9 +84,27 @@
     <dt>Round start</dt><dd>Actor sweep <code>FUN_801D88CC</code>, key re-seed if none is live, the per-round poison ticker <code>FUN_801E752C</code> on every round but the first</dd>
   </dl>
   <p>The pick loop carries no HP or occupancy test of its own, which is the root of a traced <a href="../writeups/glitches/turn-order-and-arts.html">turn-order oddity</a>: when every remaining key is zero the result is a draw over the seats walked.</p>
+
+  <h3>The loop in the port</h3>
+  <p>One per-frame <code>World::tick</code> drives the whole Field &rarr; Battle &rarr; Field round trip, and both play hosts arm it through one kernel, <code>World::arm_live_loop</code>: the scene label, the loop and player-battle flags, the Seru registry and the battle-music swap. Per frame:</p>
+  <ul class="bullets">
+    <li><strong>Field tick.</strong> A step is the player crossing into a new 128-unit tile; each step drives one region roll. When the roll triggers, the formation is resolved against the formation table, the field actors are snapshotted, the battle actors are seeded from the formation and the monster catalog, and the mode flips to Battle. With a battle track configured, the field track is stashed and the battle theme cross-fades in.</li>
+    <li><strong>Battle tick.</strong> Steps the action state machine plus the glue retail performs through its render and animation systems: art-strike and basic-strike damage, marking zero-HP combatants down so the wipe scan resolves, and three animation-retired gates the port retires on the frame their state is reached.</li>
+    <li><strong>Return.</strong> <code>World::finish_battle</code> (below) restores the field; the scene host then re-runs the scene-entry script, as retail&rsquo;s field reload does. That re-run is what dispatches post-battle beat records - a boss&rsquo;s victory flags land from the scene&rsquo;s own script bytes, not from engine code.</li>
+  </ul>
+  <p>The loop flag gates only the field side, the random roll. Once the world is in battle, the battle tick always runs, because battle entry is not gated - a scripted fight or a world-map encounter flips the mode on its own - and a gated battle driver could strand a session mid-fight.</p>
+  <h3>The six commands</h3>
+  <ul class="bullets">
+    <li><strong>Attack</strong> opens the <a href="battle-command-flow.html">target cursor</a> and commits a physical strike through the action state machine.</li>
+    <li><strong>Arts</strong> opens the per-press arts entry: one d-pad press per command until the AP pool cannot afford the next. The entered buffer becomes retail&rsquo;s <a href="battle-action-queue.html">action queue</a> - tokenised, learn-on-use checked, Miracle / Super finishes applied - and each swing, starter and art is its own staged clip whose hit events land the damage. The port&rsquo;s older saved-chain list stays behind the <em>Saved-chain Arts list</em> toggle.</li>
+    <li><strong>Magic</strong> lists the caster&rsquo;s learned spells, MP-gated; the cast runs at the caster&rsquo;s dispatch and folds damage, heals, cures, revives, timed buffs, captures and escapes.</li>
+    <li><strong>Item</strong> opens the shared item-use session with ally and enemy rows; the cursor walks only the selected item&rsquo;s side, as retail&rsquo;s does.</li>
+    <li><strong>Spirit</strong> raises the guard stance at the commit, so it covers every monster that acts first, and charges the gauge at the member&rsquo;s dispatch (<a href="#ap-gauge">below</a>).</li>
+    <li><strong>Run</strong> stamps every party member and begins the round at once; each member&rsquo;s dispatch rolls the escape. In a no-escape fight Run still commits and the roll fails - retail tests the no-escape byte only after the compare.</li>
+  </ul>
 </section>
 
-<section class="doc-section" id="status">
+<section class="doc-section" id="status" data-doc="status-effects">
   <h2>Status effects</h2>
   <p>Each actor carries its ailments as one packed halfword at <code>+0x16E</code>, mirrored for party slots into the character record.</p>
   <div class="table-wrap">
@@ -105,16 +123,65 @@
   </table>
   </div>
   <p>The poison ticker subtracts against <code>current - 1</code> before applying the cap, so a tick that would reach zero leaves the actor at 1 HP, and it draws no RNG. Bit <code>0x0400</code> has clearers all over the battle code and <strong>no retail setter</strong>: a word-level decode of the executable and every overlay finds only clears. Faint is not a bit at all - it is current HP of zero.</p>
+  <h3>How the port enforces them</h3>
+  <ul class="bullets">
+    <li><strong>Once a round.</strong> The ticker runs at the round boundary, just before the keys re-seed, with the never-kill clamp.</li>
+    <li><strong>Lost turns.</strong> An actor carrying Numb, Sleep, Stone or Faint loses its turn when it comes up. A party member whose raw status word carries Stone / Numb / Sleep committed no command, since the ring refuses it; its turn arms category <code>0</code>, which the action seed sends straight to Done. It is never auto-armed as a strike.</li>
+    <li><strong>On-hit strip.</strong> A landed melee hit clears the target&rsquo;s delegation bits, Numb and Sleep (<code>FUN_801EC3E4</code>), unless the target is Stone; a Stone target takes no damage.</li>
+    <li><strong>Magic blocked.</strong> A cursed or fainted monster caster falls back to a physical strike; a party caster in that state finds the Magic arm bouncing back to the command menu.</li>
+    <li><strong>Confuse</strong> retargets to a random living member of the other side. <strong>Stone</strong> lifts when the party escapes: retail&rsquo;s run band floors every 0-HP member at 1.</li>
+  </ul>
 </section>
 
-<section class="doc-section" id="ai">
+<section class="doc-section" id="ap-gauge" data-doc="ap--spirit-gauge">
+  <h2>AP and the Spirit turn</h2>
+  <p>The arts entry spends a per-turn budget. The port&rsquo;s gauge grows one AP per ten levels - 4 AP at level 1, capped at 10 - and refills at every round start. Every art starter and art body costs one; system actions and the direction bytes are free. What the entry actually spends in retail is the battle actor&rsquo;s action gauge, seeded at battle setup from the character&rsquo;s live AGL (<a href="arts-command-gauge.html">arts command gauge</a>).</p>
+  <p>A <strong>Spirit</strong> turn extends that gauge in three steps, all inside the <a href="battle-action.html">action state machine</a>:</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A Spirit turn. The action seed sends category 4 straight to state 0x46, which sets the Spirit close-up camera and stages an extended gauge of seven fifths of the base plus eight, capped. State 0x47 grows the AP bar one frame step at a time and climbs the plate; 0x48 finishes the plate. The Done band then pays the action accumulator into Spirit, and the next round boundary restores the actor's gauge to the extended value, which the next arts entry opens on.">
+      <defs><marker id="brl-ap-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="10" y="30" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="85" y="53">Seed arm</text><text class="dg-sub" x="85" y="71">category 4 &#8594; 0x46</text>
+      <rect class="dg-node-accent" x="190" y="30" width="160" height="56" rx="4"/>
+      <text class="dg-label" x="270" y="53">0x46 close-up</text><text class="dg-sub" x="270" y="71">stage extended gauge</text>
+      <rect class="dg-node-accent" x="380" y="30" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="455" y="53">0x47 / 0x48</text><text class="dg-sub" x="455" y="71">bar grows, plate</text>
+      <rect class="dg-node" x="560" y="30" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="635" y="53">Done band</text><text class="dg-sub" x="635" y="71">pays into Spirit</text>
+      <rect class="dg-node-ok" x="560" y="130" width="300" height="56" rx="4"/>
+      <text class="dg-label" x="710" y="153">Next round boundary</text><text class="dg-sub" x="710" y="171">gauge = extended; next arts entry</text>
+      <path class="dg-edge" d="M160 58 L188 58" marker-end="url(#brl-ap-arrow)"/>
+      <path class="dg-edge" d="M350 58 L378 58" marker-end="url(#brl-ap-arrow)"/>
+      <path class="dg-edge" d="M530 58 L558 58" marker-end="url(#brl-ap-arrow)"/>
+      <path class="dg-edge" d="M635 86 L635 128" marker-end="url(#brl-ap-arrow)"/>
+    </svg>
+    <figcaption>The extended gauge is <code>min(base &times; 7 / 5 + 8, 0x120)</code>. A Spirit turn raises the AP bar and its plate but never the readout bar an item turn raises, because the seed sends it past the item pre-arm. The Done band pays 8 into Spirit for every action and 0x20 for a Spirit turn, capped at 100.</figcaption>
+  </figure>
+  <p>The port draws the bar through the arts-entry chrome builders on both hosts, so the Spirit bar is the arts bar, one pixel per AP between its end pieces.</p>
+</section>
+
+<section class="doc-section" id="ai" data-doc="monster-ai-fun_801e9fd4-action-picker--fun_801e7320-target-resolver">
   <h2>Monster AI</h2>
   <p>Two routines. The <strong>action picker</strong> <code>FUN_801E9FD4</code> counts the live magic ids in the monster record and rolls <code>rand % (1 + live_count)</code>: zero is a physical strike on a random party member, anything else picks that spell, checks the monster can afford it, and resolves the target from the spell's shape byte. A large switch on the monster id can then override the choice with bespoke scripted casts on cooldowns - each case is AI for one monster.</p>
   <p>The <strong>target resolver</strong> <code>FUN_801E7320</code> runs only for actors with the <code>0x380</code> delegation bits set. It expands the targeting class the picker left in actor <code>+0x1DD</code>: a living monster slot (<code>rand % monster_count + 3</code> - pool slot 3 is the first monster whatever the party size), a living party slot, or an all-target code.</p>
   <p>A data constraint hides in the cast path: after choosing magic the picker counts the rollable castable entries and divides by the count. A count of zero executes the divide-by-zero trap and the BIOS parks the machine. Retail data never has that shape; a rebuilt monster block must keep at least one rollable entry while its magic array is live.</p>
+  <h3>Two gates the AI reads</h3>
+  <ul class="bullets">
+    <li><strong>The battle-mode byte</strong> <code>ctx[+0x28A]</code> gates multi-phase boss scripts. Its only writer is the action machine&rsquo;s round-end arm, so it is a round counter, zero in the first round; advancing it walks a round-scripted boss to its next scripted cast.</li>
+    <li><strong>The delegation bits</strong> <code>0x380</code> are not a monster flag. They are set only on party members whose record carries the Rage passive, which hands that member to the target resolver. A normal monster keeps them clear, so its scripted-cast cases fire.</li>
+  </ul>
+  <p>The cooldown latches behind those scripted casts are cleared only at battle init, so a boss self-heals at most once per fight. In the port the picker&rsquo;s generic core and the per-monster switch are separate (<code>World::pick_monster_action</code>, <code>engine-battle::monster_ai</code>); a scripted cast the active spell catalog cannot fold degrades to a physical strike.</p>
+  <p><strong>Targeting stays retail by default.</strong> A single-target monster attack goes to a uniformly random living party member. The <em>Smart monsters</em> toggle redirects it to the lowest-HP member instead, after the faithful pick has been rolled in full, so the random stream is byte-identical either way (<a href="engine.html#fidelity">engine options</a>).</p>
+  <details class="disclosure">
+    <summary>Details: the charm battle softlock</summary>
+    <div class="disclosure-body">
+      <p>The randomizer&rsquo;s enemy-ally (&ldquo;charm&rdquo;) feature widens the monster-wipe scan&rsquo;s down-mask from <code>0x4</code> to <code>0x384</code>, so a living charmed monster counts as down and the player need not kill their own ally. That breaks an invariant the victory arm leans on: under the retail mask, a living acting actor at monster-wipe victory is always a party member, so the arm keeps the acting slot and reads its character id from the three-byte party roster to stage the win pose. When the charmed ally lands the last kill, the acting slot is a monster, the roster read runs past its three bytes, and the win-pose stream request is garbage - the battle wedges at the victory hand-off. Retail never reaches the state.
+        The port&rsquo;s victory arm re-picks whenever the acting slot is not a living party slot, uniformly among eligible slots, so it cannot spin.</p>
+    </div>
+  </details>
 </section>
 
-<section class="doc-section" id="battle-end">
+<section class="doc-section" id="battle-end" data-doc="battle-end,party-wipe--the-game-over-overlay">
   <h2>How a battle ends</h2>
   <p>The battle does not exit on the frame the <code>0x5A</code> gate raises the signal. The battle tick stops stepping the action SM and runs the results sequencer every frame instead:</p>
   <div class="table-wrap">
@@ -133,14 +200,53 @@
   <p>The posing actor is the <strong>party leader</strong>, not whoever levelled: nothing in the battle overlay stores a seat into the pose slot, and a three-member capture shows seat 0 posing while another member takes the level. Escape runs a shorter arm with no results and the same exit gate.</p>
   <h3>Party wipe</h3>
   <p>The exit store is the same, wipe or no wipe. The fork lives one mode later, in the main-init scene setup <code>FUN_8003AEB0</code>: when the party-survived latch (<code>DAT_8007BD60</code> bit <code>0x80</code>) is clear and story flag 0 is clear, it switches to the card-init mode and the player lands on the <strong>title screen with the cursor on Continue</strong>. Retail's game over is a silent return to the title - no game-over art, no menu of its own. With story flag 0 set, the same wipe is a <em>scripted loss</em> and returns to the field standing, at 1 HP. The mode-18 &ldquo;game over&rdquo; overlay is a developer harness the retail path never enters.</p>
+  <p>The port can build a state retail cannot: a battle with no seated party, whose hollow slots read as dead. It therefore lets the party-wipe arm fire only with at least one seated member, while a monster wipe still resolves.</p>
+  <h3>What the port does on the way out</h3>
+  <p><code>World::finish_battle</code> is the one exit, on both hosts:</p>
+  <ul class="bullets">
+    <li><strong>HP and MP persist</strong> from the battle actors into the roster records, and back onto the restored field party.</li>
+    <li><strong>The windows.</strong> A victory raises retail&rsquo;s two framed result windows (<a href="level-up.html">level-up</a>); a wipe raises the loss window and hands the title screen its Continue cursor.</li>
+    <li><strong>Spoils.</strong> The formation&rsquo;s XP is split equally among surviving members, its gold summed, and the one drop rolled once per enemy seat with a final 1-in-4 gate (<a href="battle-formulas.html">battle formulas</a>).</li>
+    <li><strong>The exit&rsquo;s party loop</strong> clears statuses (unless the arena bit is up) and stands 0-HP members up at 1; the story-flag return fold runs; the encounter grace starts.</li>
+    <li><strong>The field camera re-seats on the player</strong>, as a scene entry does. Retail leaves through main init back into field mode, whose init resets the camera and re-centres the window on the saved player tile. The port keeps the scene resident, so it re-centres explicitly; without that the camera kept the focus it had pinned on the party&rsquo;s battle seat until the player moved.</li>
+  </ul>
+  <h3>A battle left before its exit</h3>
+  <p>Retail leaves a battle only through that path; the port&rsquo;s hosts can leave one early - a scene picker, a debug seat, a test running several fights on one runtime. Two resets keep it out of the next fight. <strong>Battle entry clears the results sequencer</strong>, as retail&rsquo;s battle init zeroes the end-of-battle marker; a surviving sequence would otherwise own the new fight from its first frame, with no round prompt. And <strong>a scene load or New Game abandons a live battle</strong>, a port-only path that drops the sequencer, sessions, effects and fade and restores the field snapshot without storing any outcome.</p>
 </section>
 
-<section class="doc-section" id="capture">
+<section class="doc-section" id="capture" data-doc="seru-capture--spell-learning">
   <h2>Seru capture</h2>
   <p>The killing-blow absorb is decided inside the hit resolver <code>FUN_801EC3E4</code> at the moment a physical hit resolves: killing blows only, by a party attacker, on a monster whose record carries a Seru id. The chance is a percent byte in the monster record, plus a flat 30 points when the attacker holds the Magic Boost passive, rolled as <code>rand() % 100 &lt; chance</code>. The roll is drawn on every Seru kill, before the check for whether the character already knows the spell. The grant lands in the same action: the Done band of the action SM reads the captured id, prepends the spell to the character's list and holds the learn banner.</p>
+  <p><strong>Which hit rolls.</strong> The kill compare runs once per landing, on the hit that lands the combo&rsquo;s accumulated total: a combo that crosses the target&rsquo;s HP on its second hit rolls once, after every damage draw of the chain. The &ldquo;already known&rdquo; check also answers yes outright for a slot without its Ra-Seru and in a no-reward battle.</p>
+  <p>The capture <em>spells</em> and capture items are a separate mechanism. The port models them with a per-character capture-point accumulator that banks points for every eligible party member and teaches the spell when a threshold is crossed, with a banner that plays out over the field; those thresholds are engine-side approximations, while the killing-blow absorb above is retail&rsquo;s own roll. The catch-rate byte is a <a href="../tooling/randomizer.html">randomizer</a> target.</p>
 </section>
 
-<section class="doc-section" id="see-also">
+<section class="doc-section" id="port-modules" data-doc="port-modules">
+  <h2>Port modules</h2>
+  <p>Small modules the loop composes, each mirroring one retail piece:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Module</th><th>What it is</th><th>Retail anchor</th></tr></thead>
+    <tbody>
+      <tr><td><code>engine-battle::encounter</code></td><td>transition bracket and region roll</td><td><code>FUN_801D9E1C</code></td></tr>
+      <tr><td><code>engine-core::battle_round</code></td><td>round sweep and the two bands</td><td><code>FUN_801D88CC</code></td></tr>
+      <tr><td><code>engine-battle::monster_ai</code></td><td>per-monster scripted AI</td><td><code>FUN_801E9FD4</code></td></tr>
+      <tr><td><code>engine-battle-vm::status_effects</code></td><td>typed statuses and the packed status word</td><td><code>FUN_801E752C</code></td></tr>
+      <tr><td><code>engine-battle::ap_gauge</code></td><td>per-slot AP budget</td><td>record <code>+0xC9</code> / <code>+0xCA</code></td></tr>
+      <tr><td><code>engine-battle::arts_command_input</code></td><td>per-press arts entry</td><td>actor queue <code>+0x1DF</code></td></tr>
+      <tr><td><code>engine-battle::battle_stats</code></td><td>equipment, passive and status fold into battle stats</td><td><code>FUN_80042558</code></td></tr>
+      <tr><td><code>engine-battle::seru_learning</code></td><td>capture-point accumulator and banner</td><td>-</td></tr>
+      <tr><td><code>engine-battle::levelup</code></td><td>XP curve and growth (<a href="level-up.html">level-up</a>)</td><td><code>FUN_801E9504</code></td></tr>
+      <tr><td><code>engine-menus::inventory_use</code></td><td>item-use session shared by the field menu and the Item arm</td><td>flow states <code>0x64</code>, <code>0x5B</code> / <code>0x5D</code></td></tr>
+      <tr><td><code>engine-audio::sfx</code></td><td>cue ids to SPU one-shots, scheduled per tick</td><td>descriptor table <code>DAT_8006F198</code></td></tr>
+      <tr><td><code>engine-menus::game_over</code></td><td>title hand-off after a wipe</td><td>stores at <code>0x8003B5D4</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Battle sound cues touch only the SPU and draw no random numbers, so battle determinism does not depend on audio; a missing bank, VAB or free voice drops the cue silently.</p>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="-">
   <h2>See also</h2>
   <p>The full write-up - encounter session phases, the port's host flags, the status-word writer inventory, the AP gauge, the charm softlock analysis and the port module map - is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-round-loop.md" target="_blank" rel="noopener"><code>docs/subsystems/battle-round-loop.md</code></a>.</p>
   <div class="see-also">

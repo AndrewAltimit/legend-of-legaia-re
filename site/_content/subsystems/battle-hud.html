@@ -4,7 +4,7 @@
   <p class="lede">Everything the battle screen draws around the fight: the actor-name plaque, the party status readout, the command chips, banners, status and element badges, the item and magic windows. Retail does not draw this per frame from game state. It keeps a list of retained text actors, rebuilds that list from <strong>disc data</strong> at every state transition, and frames each actor with sprites looked up in two static tables. Knowing those two tables is enough to derive every seat, plate and palette on the screen.</p>
 </header>
 
-<section class="doc-section" id="at-a-glance">
+<section class="doc-section" id="at-a-glance" data-doc="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Placement table</dt><dd><code>SCUS_942.54</code> <code>0x80076C10</code>, 24-byte records, 103 initialised; parser <code>legaia_ui_formats::screen_elements</code></dd>
@@ -17,7 +17,7 @@
   </dl>
 </section>
 
-<section class="doc-section" id="layout">
+<section class="doc-section" id="layout" data-doc="-">
   <h2>Screen layout</h2>
   <figure class="diagram">
     <svg viewBox="0 0 880 660" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Battle screen layout on the 320 by 228 display: the actor-name plaque or the full-width message banner at the top left; the command diamond of Item, Attack, magic and Spirit chips centred near the upper right, with the Begin and Run prompt pair in the screen centre; the move name centred lower down; the target-select plaque on the right; three roster panels along the bottom at y 164, with the combo cluster and AP plate above the active-actor bar that replaces the panels during an action.">
@@ -51,18 +51,70 @@
   </figure>
 </section>
 
-<section class="doc-section" id="pipeline">
+<section class="doc-section" id="pipeline" data-doc="draw-pipeline">
   <h2>How an element reaches the screen</h2>
-  <ol class="steps">
-    <li><b>State edge</b><span>the <a href="battle-command-flow.html">command flow</a> changes state, or the <a href="battle-action.html">action SM</a> seeds or finishes an action</span></li>
-    <li><b>Sub-draw step</b><span>a script step lists <code>(placement record, mode)</code> pairs; a step flagged to reset first clears the handle list, so afterwards the live elements are exactly those pairs</span></li>
-    <li><b>Raise</b><span><code>FUN_801D8DE8</code> reads the record and spawns a text actor at one seat, then arms a glide to the other</span></li>
-    <li><b>Frame</b><span>the per-frame draw dispatcher frames the actor with sprites from the widget-class record its frame-style byte names</span></li>
-  </ol>
-  <p>The action SM opens its per-action elements in its seed arms and closes every one of them in the <code>0x51</code> band of the Done states.</p>
+  <p>Retail&rsquo;s battle HUD is a list of retained text actors - <code>ctx[+0x1074]</code>, forty handles - that the two battle state machines rebuild at every transition. Three pieces of disc data decide everything the list holds and how it looks.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Battle HUD draw pipeline. A state edge of the menu state machine runs one step of the sub-draw script, which lists placement-record and mode pairs. The action state machine opens per-action records in its seed arms and closes them in the 0x51 band. Both call the one raiser FUN_801D8DE8, which reads the placement record, spawns a text actor at one seat and arms a glide to the other. Every frame the draw dispatcher frames each actor through the frame emitter, which reads the widget-class record its frame-style byte names: sprites, palette and seat bias.">
+      <defs><marker id="bh-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="20" width="200" height="56" rx="4"/>
+      <text class="dg-label" x="120" y="44">Menu SM edge</text><text class="dg-sub" x="120" y="62">FUN_801D0748, ctx+0x06</text>
+      <rect class="dg-node-accent" x="20" y="120" width="200" height="56" rx="4"/>
+      <text class="dg-label" x="120" y="144">Sub-draw script step</text><text class="dg-sub" x="120" y="162">(record, mode) pairs</text>
+      <rect class="dg-node" x="20" y="230" width="200" height="56" rx="4"/>
+      <text class="dg-label" x="120" y="254">Action SM</text><text class="dg-sub" x="120" y="272">seed opens, 0x51 closes</text>
+      <rect class="dg-node-accent" x="300" y="170" width="220" height="56" rx="4"/>
+      <text class="dg-label" x="410" y="194">Raise FUN_801D8DE8</text><text class="dg-sub" x="410" y="212">spawn at one seat</text>
+      <rect class="dg-node" x="300" y="40" width="220" height="56" rx="4"/>
+      <text class="dg-label" x="410" y="64">Placement record</text><text class="dg-sub" x="410" y="82">0x80076C10 + id * 24</text>
+      <rect class="dg-node" x="300" y="300" width="220" height="56" rx="4"/>
+      <text class="dg-label" x="410" y="324">Glide to other seat</text><text class="dg-sub" x="410" y="342">16 vsyncs, linear</text>
+      <rect class="dg-node" x="600" y="170" width="250" height="56" rx="4"/>
+      <text class="dg-label" x="725" y="194">Text actor, per frame</text><text class="dg-sub" x="725" y="212">draw dispatcher</text>
+      <rect class="dg-node-ok" x="600" y="300" width="250" height="56" rx="4"/>
+      <text class="dg-label" x="725" y="324">Widget-class record</text><text class="dg-sub" x="725" y="342">sprites, CLUT, seat bias</text>
+      <path class="dg-edge" d="M120 76 L120 118" marker-end="url(#bh-arrow)"/>
+      <path class="dg-edge" d="M220 148 L260 148 L260 190 L298 190" marker-end="url(#bh-arrow)"/>
+      <path class="dg-edge" d="M220 258 L260 258 L260 206 L298 206" marker-end="url(#bh-arrow)"/>
+      <path class="dg-edge-dim" d="M410 168 L410 98" marker-end="url(#bh-arrow)"/>
+      <text class="dg-edge-label" x="418" y="138">reads</text>
+      <path class="dg-edge" d="M410 226 L410 298" marker-end="url(#bh-arrow)"/>
+      <path class="dg-edge" d="M520 198 L598 198" marker-end="url(#bh-arrow)"/>
+      <path class="dg-edge" d="M725 226 L725 298" marker-end="url(#bh-arrow)"/>
+      <text class="dg-edge-label" x="733" y="266">frame style</text>
+    </svg>
+    <figcaption>A step flagged to reset first clears the handle list, so after it the live elements are exactly the pairs it lists. The placement record supplies the seats, content box, frame style and string; the frame style indexes the widget-class table.</figcaption>
+  </figure>
+  <ul>
+    <li><strong>Mode bits.</strong> Bit 0 picks the spawn seat (A for 0, B for 1) and the glide runs to the other; bit 1 suppresses the glide. Which seat is on screen is per record, so mode 0 means <em>appear</em> for the bar and <em>unfold</em> for a chip.</li>
+    <li><strong>The glide counts vsyncs.</strong> Its elapsed counter grows by the frame step each battle pass, so the sixteen-frame raise lasts sixteen vsyncs at any cadence. The port steps every tracked glide by one a tick.</li>
+  </ul>
 </section>
 
-<section class="doc-section" id="placement">
+<section class="doc-section" id="phases" data-doc="-">
+  <h2>Who holds the screen in each phase</h2>
+  <p>The menu state machine runs one sub-draw step per state edge. The steps decide which of the four HUD surfaces is up - and because they are disc data, the table below is read straight off them and agrees, element for element, with the handle lists of the catalogued save states.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Transition</th><th>Roster panels</th><th>Active-actor bar</th><th>Breadcrumb tab + plaque</th><th>AP plate</th></tr></thead>
+    <tbody>
+      <tr><td>round prompt opens</td><td>up</td><td>-</td><td>-</td><td>-</td></tr>
+      <tr><td>command ring opens</td><td>park</td><td>up</td><td>both slide in</td><td>slides in</td></tr>
+      <tr><td>item / magic window</td><td>back up</td><td>park</td><td>snap</td><td>leaves</td></tr>
+      <tr><td>item / magic target step</td><td>park</td><td>up, pointed member</td><td>snap</td><td>-</td></tr>
+      <tr><td>attack-mode prompt (<em>Auto</em> / <em>Command</em>)</td><td>-</td><td>snap</td><td>snap</td><td>snap</td></tr>
+      <tr><td>target cursor cancelled back to the prompt</td><td>-</td><td>up</td><td>snap</td><td>slides in</td></tr>
+      <tr><td>attack target cursor</td><td>-</td><td>park</td><td>snap</td><td>leaves</td></tr>
+      <tr><td>arts entry</td><td>-</td><td>park (the AP bar takes the seat)</td><td>snap</td><td>snap</td></tr>
+      <tr><td>all members committed</td><td>-</td><td>-</td><td>tab only</td><td>leaves</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The roster panels belong to the round prompt and the browsed windows; the full-width bar to the ring, the attack-mode prompt and the target steps; the AP plate to the ring, the attack-mode prompt and the arts entry. The attack-mode prompt is the ring with its arms swapped: its step opens the <em>Auto</em> and <em>Command</em> chips on the left and right arm seats, sends the other three arms off and keeps everything else where it stands.</p>
+  <p><strong>Parked is below the screen, not gone.</strong> When the bar takes over, retail moves the whole panel cluster to <code>y = 230</code>, just under the 228-line display window. The port&rsquo;s stage is 240 lines tall, so it simply emits no panel draws while retail parks them. Inside an action the panels come back for a party-wide target, and a cast module can raise them itself - Orb&rsquo;s heal glides them up so its HP readout counts up in them.</p>
+</section>
+
+<section class="doc-section" id="placement" data-doc="screen-element-placement-table-0x80076c10-and-its-copy-helpers">
   <h2>The placement record</h2>
   <p>Each record is one element's <strong>pair of seats</strong> plus a shared content box. The two seats are the element's from and to: which one is the parked seat is per record, so some elements slide in from the right and others from the left or the top.</p>
   <div class="byte-map" role="img" aria-label="Placement record, 24 bytes: two element id bytes, seat A x and y, content width, box height, seat B x and y, two frame-style bytes, node kind, three zero bytes, content string pointer">
@@ -96,7 +148,7 @@
   <p>The commit log uses all three: each committed member's name, command and target are landed into a row of three records, and earlier rows are launched off as the party commits.</p>
 </section>
 
-<section class="doc-section" id="widgets">
+<section class="doc-section" id="widgets" data-doc="the-widget-class-table">
   <h2>The widget-class table</h2>
   <p>Every sprite the chrome draws comes out of one array. A placement record's frame-style bytes are indices into it: style <code>0x01</code> is the blue plate body, style <code>0x02</code> the carved-gold one. The join holds for all 103 placement records.</p>
   <div class="byte-map" role="img" aria-label="Widget-class record, 12 bytes: frame class, tile-set index, chain delta, palette byte, source rectangle u v w h, seat bias dx and dy">
@@ -115,20 +167,73 @@
   <p>The table's end is structural: it runs exactly up to the frame tile-set pool the class arms read next.</p>
 </section>
 
-<section class="doc-section" id="chrome">
+<section class="doc-section" id="chrome" data-doc="battle-screen-chrome">
   <h2>Chrome facts worth knowing</h2>
   <ul>
     <li><strong>One sheet, one three-slice, two palettes.</strong> The name plaque, the party bar and every command chip are the same three tiles (left cap, body, right cap) at two sheet rows: blue for the bar and chips, carved gold for the plaque. The gold row is the same art as the pause menu's title tab.</li>
     <li><strong>Numbers are cells, names are glyphs.</strong> Every number is a run of fixed 8&times;12 cells; only names use the proportional <a href="../formats/dialog-font.html">dialog font</a>. Both halves of a current / maximum pair are right-aligned.</li>
     <li><strong>Status and element badges</strong> are widget records too: 48&times;16 word cells for the status element, 20&times;12 cells for the element badge, which is selected by markup in the name string rather than a placement record.</li>
     <li><strong>Four badge ids are not on the sheet at all</strong> - they resolve to the <a href="../formats/save-icon.html">save-slot portraits</a>.</li>
-    <li><strong>The intro enemy-name banner</strong> uses immediate geometry, not a placement record.</li>
+    <li><strong>No gauge anywhere.</strong> Neither the roster panels nor the active-actor bar draws an HP or MP meter, for the party or for monsters: a label sprite, numerals and a separator, nothing else. Retail draws no monster readout at all, so the acting monster&rsquo;s name on the plaque is everything an enemy contributes to the HUD.</li>
+    <li><strong>The plaques slide.</strong> An action&rsquo;s name plaque and its target plaque are raised by the action seed in mode 0, so they glide in over sixteen frames - the plaque from above the screen, the target plaque from the right. A frame saved on the step the seed ran shows neither.</li>
+    <li><strong>The breadcrumb trail.</strong> From the command ring on, the round prompt&rsquo;s <em>Begin</em> chip glides to the top-left as a gold tab, the plaque rests beside it, and choosing a ring arm glides that arm&rsquo;s chip on as a third tab - <em>Attack</em>, the member&rsquo;s Ra-Seru name for magic, or <em>Item</em>.</li>
+    <li><strong>The ring&rsquo;s magic arm is a name.</strong> Its chip reads the member&rsquo;s Ra-Seru when the party battle-actor init found Ra-Seru equipment on the record, and a lone <code>-</code> otherwise. An unavailable command still gets its chip; a <em>forbidden</em> one wears a red cross-out mark instead.</li>
+    <li><strong>The selection cue is the plate, not a tint.</strong> Every chip draws at neutral grey. Only under the Battle Command option&rsquo;s cross-button setting does the highlighted arm switch frame style, to the carved-gold run; on the default directional setting all chips stay blue.</li>
   </ul>
 </section>
 
-<section class="doc-section" id="see-also">
+<section class="doc-section" id="banners" data-doc="message-and-intro-banners">
+  <h2>Message and intro banners</h2>
+  <ul>
+    <li><strong>The message banner</strong> is a class-0 window at <code>(8, 4)</code>, 296 wide and 28 tall, with a fixed 280-pixel content box - it is not measured from the message. The frame is <em>filled</em>: under the border sprites the frame emitter <code>FUN_8002BDC4</code> tiles a blue-marbled 32&times;32 patch in columns, with a top-to-bottom grey ramp. It shares its seat with the actor-name plaque; the two are alternatives, not layers.</li>
+    <li><strong>The bottom message bar</strong> (record <code>0x5B</code>) carries the steal captions and the petrify result line on the active-actor bar&rsquo;s seat. It has the bar&rsquo;s content box but the banner&rsquo;s frame style, so it is a framed window rather than a plate run.</li>
+    <li><strong>The intro enemy-name labels</strong> are not placement records. The battle-open composer <code>FUN_801D9D3C</code> lays them out itself with immediate geometry: one label per run of identical monsters (the second member turns the name into <em>name * 2</em>, each further one bumps the digit), centred over the group&rsquo;s average battle X, then relaxed apart pair by pair and clamped to the screen until a pass moves nothing. They spawn at their final seat - no slide - and retail sweeps them on the pass the intro timer expires, so no action ever runs under the names. The port does not hold the round prompt back for that span, and sweeps the labels when it hands a round to the action SM early.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="windows" data-doc="the-battle-item-window-0x3c,the-battle-magic-window-0x46">
+  <h2>The item and magic windows</h2>
+  <p>State <code>0x3C</code> opens a list window on the right and a description window below-left, both drawn from the system-UI window skin, with a pointing-hand cursor on a 14-pixel row pitch, eight rows a page and a <em>PAGE n/m</em> header. The breadcrumb trail replaces the actor plaque while it is up.</p>
+  <ul>
+    <li><strong>A battle row is enabled on one bit.</strong> The shared list builder branches on the menu context: in the field, a usable item is enabled only if some member would benefit; in battle, the descriptor&rsquo;s battle-usable bit alone decides. A Healing Leaf with the party at full HP is pickable in a fight and greyed in the pause menu.</li>
+    <li><strong>Target confirm is the bar.</strong> Picking an item closes both windows and the target strip at the foot of the screen appears. It is not a widget of its own: it is the active-actor bar, re-opened by the target step and re-pointed per cursor move.</li>
+    <li><strong>The magic window</strong> (<code>0x46</code>) is the same frame with spell content: a leading element icon per row, a two-line description (name, then scope), and two gold tabs top right for the highlighted spell&rsquo;s level and MP cost.</li>
+  </ul>
+  <p>Both are composed by <code>engine-ui::battle_item_ui</code> through the shared menu-window chrome and drawn by both hosts. The port does not yet draw the element and Ra-Seru icon cells, the world-anchored target name tag or the magic target step&rsquo;s <em>All</em> plate.</p>
+</section>
+
+<section class="doc-section" id="arts-banner" data-doc="arts-announcement-banner-fun_801e2524--fun_801e2650">
+  <h2>The Arts announcement banner</h2>
+  <p><em>NEW ARTS!!</em>, <em>HYPER ARTS!!</em>, <em>MIRACLE ARTS!!</em> and <em>SUPER ARTS!!</em> are one banner: two textured quads from the value-readout glyph sheet - a position-selected first word and the shared <em>ARTS!!</em> - whose halves march toward a seam as a slide clock runs. Each live frame draws it four times at four points of its own travel, at 5 / 10 / 20 / 50 percent brightness, so the word arrives trailing ghosts that switch off as it lands.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Stage byte <code>ctx[+0x28B]</code></th><th>Banner</th><th>Raised when</th></tr></thead>
+    <tbody>
+      <tr><td><code>1</code></td><td>NEW</td><td>the queue builder<td>the queue builder marks a newly learned art</td>rsquo;s build loop leaves its mark in the side array</td></tr>
+      <tr><td><code>2</code></td><td>HYPER</td><td>the default: the byte is still zero after the other two writes</td></tr>
+      <tr><td><code>3</code></td><td>MIRACLE</td><td>the queue builder raised the seat&rsquo;s Miracle flag</td></tr>
+      <tr><td><code>4</code></td><td>SUPER</td><td>the Super tail-replace leaves its mark in the side array</td></tr>
+      <tr><td><code>5..=8</code></td><td>none</td><td>a commit on the running actor retires a live banner</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The raises sit in the executable&rsquo;s anim commit <code>FUN_8004AD80</code> and fire only for a party actor committing the SpecialStarter clip. The three writes run in sequence and the later one wins - they are not an if / else chain. Each raise restarts the slide and queues the character&rsquo;s Arts fanfare. Port: <code>engine-battle-vm::battle_action::flash_ramp</code>, stepped once per battle frame and drawn by both hosts.</p>
+</section>
+
+<section class="doc-section" id="port" data-doc="engine-port-the-battle-hud-model">
+  <h2>In the port</h2>
+  <p><code>engine-battle-hud</code> is the renderer-agnostic model: per-slot HP / MP / AP and status, damage popups and log lines, fed by the world&rsquo;s strike, status and round events. <code>engine-ui::battle_hud::battle_hud_draws_for</code> turns one frame of it into two draw lists - glyphs off the dialog-font atlas and sprites off the resident system-UI sheet - which both hosts composite in the slot they already use for menu chrome.</p>
+  <ul>
+    <li><strong>The surface samples the disc&rsquo;s own cells</strong>: the marbled panel plate, the blue plate three-slice, the separator and the numerals are baked into the shared atlas and drawn 1:1. Without the atlas the plates degrade to solid rects and the numerals to font glyphs on the same cells - letterforms change, layout does not.</li>
+    <li><strong>Numerals follow the displayed HP</strong>, the value retail ramps down over frames, through the ports of retail&rsquo;s readout-tint laws; a dead member&rsquo;s row dims.</li>
+    <li><strong>Slot indices are absolute actor-table indices</strong>, so a host passes inactive slots through as empty rows rather than compacting the list.</li>
+    <li><strong>A diagnostic surface</strong> (monster HP rows and gauge bars, K.O. tags, an encounter banner) exists for development behind <code>LEGAIA_DIAG_HUD</code>; it is off on both hosts, and retail draws none of it.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="-">
   <h2>See also</h2>
-  <p>The full write-up - each plate's derivation, the per-phase sub-draw rule, the opening glides, the badge sheet, banners, the item and magic windows, the Arts announcement banner and the port's HUD model - is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-hud.md" target="_blank" rel="noopener"><code>docs/subsystems/battle-hud.md</code></a>.</p>
+  <p>The full write-up - each plate's packet-pinned derivation, the opening glides, the badge sheet and per-badge palettes, the commit log, the record-41/42 shift and every capture behind them - is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-hud.md" target="_blank" rel="noopener"><code>docs/subsystems/battle-hud.md</code></a>.</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="battle.html">Battle</a>

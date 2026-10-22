@@ -4,7 +4,7 @@
   <p class="lede">What happens, every frame, between holding a d-pad direction and Vahn taking a step in a town, a dungeon or on the overworld. The controller reads the pad relative to the camera, inches the player forward two units at a time against a per-scene wall grid, settles the height afterwards, and fires doors and story beats on the tile it lands on.</p>
 </header>
 
-<section class="doc-section" id="at-a-glance">
+<section class="doc-section" id="at-a-glance" data-doc="at-a-glance,contents">
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Controller</dt><dd><code>FUN_801D01B0</code> in the <strong>field overlay</strong> (PROT <code>0897</code>), shared by towns, dungeons and the overworld walk. Not the tile-board puzzle mode that shares the overlay.</dd>
@@ -16,7 +16,7 @@
   </dl>
 </section>
 
-<section class="doc-section" id="per-frame">
+<section class="doc-section" id="per-frame" data-doc="per-frame-flow">
   <h2>How walking works</h2>
   <p>One pass of the controller, in order. Everything below the second step is about one question: may the player move two more units this way?</p>
   <ol class="steps">
@@ -36,7 +36,7 @@
   </ul>
 </section>
 
-<section class="doc-section" id="collision-tile">
+<section class="doc-section" id="collision-tile" data-doc="collision---fun_801cfe4c">
   <h2>A walkability tile</h2>
   <p>The world is cut into 128-unit tiles, and each tile is split again into four 64-unit sub-cells. One byte per tile carries both a wall bit for each sub-cell and the tile's floor height.</p>
   <figure class="diagram">
@@ -85,7 +85,7 @@
   </ul>
 </section>
 
-<section class="doc-section" id="frame-denomination">
+<section class="doc-section" id="frame-denomination" data-doc="the-frame-denomination-law">
   <h2>How fast is a frame?</h2>
   <p>Retail runs two clocks: the <strong>vsync</strong> (60/s) and the <strong>game tick</strong>, one pass of the master frame driver. A scratchpad byte, the frame scalar, says how many vsyncs the last tick spanned (1..4, floored at 2 in field scenes and 3 on the overworld). Every duration and velocity inside the tick is multiplied by it, so a cadence change moves the sample rate, never the speed.</p>
   <table class="data-table">
@@ -100,7 +100,7 @@
   <p>The overworld step comes from a per-scene MAN flag set on exactly the three kingdom maps, and each kingdom's entry script also sets the player's multiplier to <code>0xC00</code>, so the overworld walk is <code>(5 &times; 0xC00) &gt;&gt; 12 = 3</code> units per vsync. Reading a per-frame number in the wrong clock is where "the player moves 1.67&times; too fast" comes from; the port ticks once per vsync with the scalar at 1.</p>
 </section>
 
-<section class="doc-section" id="grid-source">
+<section class="doc-section" id="grid-source" data-doc="where-the-collision-grid-comes-from">
   <h2>The field buffer: where walls come from</h2>
   <p>Nothing in a town's script says "this is a wall". The scene loader streams the scene's <code>.MAP</code> file into a per-scene buffer, and the collision grid is one region of it.</p>
   <div class="byte-map">
@@ -124,7 +124,7 @@
   <p>Pressing the action button runs a separate probe: a radius-64 compass point in the facing sector against a &plusmn;72 NPC box. A hit engages the NPC's script and turns the player toward it. Props divide into two classes on one authored bit: doors open on body contact, cupboards (which run <code>31 1E</code> in their spawn prologue) only on the button.</p>
 </section>
 
-<section class="doc-section" id="vertical-settle">
+<section class="doc-section" id="vertical-settle" data-doc="vertical-settle--ledge-hop---fun_801d1ba0--fun_801d1878">
   <h2>Height: two floor models</h2>
   <p>The walk controller only writes X and Z. After it commits, a second controller re-samples the floor under the new position and glides Y toward it; a third probes ahead along the last step and starts a scripted hop when the floor rises a ledge.</p>
   <table class="data-table">
@@ -137,7 +137,7 @@
   <p id="floor-two-models">The kind-2 record <em>replaces</em> the bilinear branch; it is not a fast path on top of it. Rim Elm's shore ramps sit on sea-level nibbles and hold their whole elevation in kind-2 records; interpolating their nibbles walks the player under the drawn stairs.</p>
 </section>
 
-<section class="doc-section" id="trigger-block">
+<section class="doc-section" id="trigger-block" data-doc="intra-scene-doorways---the-walk-touch-teleport-family">
   <h2>Triggers: doors, beats and teleports</h2>
   <p>Crossing onto a new tile (<code>tile = (world &minus; 0x40) &gt;&gt; 7</code>, compared against last frame's) looks the tile up in the trigger block. Scene entry marks the compare stale, so the arrival tile fires on the first tick.</p>
   <table class="data-table">
@@ -162,11 +162,43 @@
     </tbody>
   </table>
   <p>Map doors are the larger class, and a MAN-only census cannot see them. Vahn's house is the mixed case: script door in, map door out.</p>
+  <p><strong>A door teleport re-centres the placed-object window.</strong> The sub-area sweep keeps a list of the window-owned placements around the camera&rsquo;s latched region box, and only a re-centre rebuilds it. A script door&rsquo;s player arm (<code>0x23</code> or <code>4C 51</code> aimed at the player) calls the re-centre on the landing tile, as do the kind-0 warp landing and the leader swap. Without it, leaving a house keeps the interior&rsquo;s box and the street&rsquo;s window-owned scenery stays hidden until something else re-centres. The port re-centres from the same arms, including the walk-touch teleport it decodes for a door with no prop.</p>
+  <h3 id="prop-door-rides">Prop-door rides: lifts and swinging doors</h3>
+  <p>A lift or door whose object has an animated prop rides on its own record: contact hands the touch to the prop runner, which executes the whole record - both doors, both walks and the jump between them. Sol Tower&rsquo;s floor lifts show the shape; every pair is the same record with the partner id, the walk tiles and the landing changed.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A prop-door ride in six steps. One: the near door opens on its own clip and drops its collision. Two: the player walks in, and the record parks until the player lands. Three: the near door shuts, the player is hidden, and the screen fades and glides. Four: the player jumps to a tile beside the partner door. Five: the partner door opens, through ops aimed at the partner object's id. Six: the player walks out and the partner door shuts.">
+      <defs><marker id="fl-ride-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-group" x="10" y="10" width="420" height="190" rx="6"/>
+      <text class="dg-sub dg-start" x="22" y="28">near door (the touched object)</text>
+      <rect class="dg-group" x="450" y="10" width="420" height="190" rx="6"/>
+      <text class="dg-sub dg-start" x="462" y="28">partner door, one floor away</text>
+      <rect class="dg-node" x="24" y="40" width="190" height="60" rx="4"/>
+      <text class="dg-label" x="119" y="64">1 &#183; Door opens</text><text class="dg-sub" x="119" y="84">own clip, collision off</text>
+      <rect class="dg-node" x="226" y="40" width="190" height="60" rx="4"/>
+      <text class="dg-label" x="321" y="64">2 &#183; Walk in</text><text class="dg-sub" x="321" y="84">parks until landed</text>
+      <rect class="dg-node" x="226" y="126" width="190" height="60" rx="4"/>
+      <text class="dg-label" x="321" y="150">3 &#183; Door shuts</text><text class="dg-sub" x="321" y="170">hide player, fade</text>
+      <rect class="dg-node-accent" x="464" y="126" width="190" height="60" rx="4"/>
+      <text class="dg-label" x="559" y="150">4 &#183; Jump</text><text class="dg-sub" x="559" y="170">A3 F8 beside partner</text>
+      <rect class="dg-node" x="666" y="126" width="190" height="60" rx="4"/>
+      <text class="dg-label" x="761" y="150">5 &#183; Partner opens</text><text class="dg-sub" x="761" y="170">ops aimed at its id</text>
+      <rect class="dg-node-ok" x="666" y="40" width="190" height="60" rx="4"/>
+      <text class="dg-label" x="761" y="64">6 &#183; Walk out</text><text class="dg-sub" x="761" y="84">partner door shuts</text>
+      <path class="dg-edge" d="M214 70 L224 70" marker-end="url(#fl-ride-arrow)"/>
+      <path class="dg-edge" d="M321 100 L321 124" marker-end="url(#fl-ride-arrow)"/>
+      <path class="dg-edge" d="M416 156 L462 156" marker-end="url(#fl-ride-arrow)"/>
+      <path class="dg-edge" d="M654 156 L664 156" marker-end="url(#fl-ride-arrow)"/>
+      <path class="dg-edge" d="M761 126 L761 102" marker-end="url(#fl-ride-arrow)"/>
+    </svg>
+    <figcaption>Each cross-object op names its target by id, and a bound object&rsquo;s id is its flat record index, so step 5 lands on the partner door. The prop runner steps those ops on a context seeded from the target prop and writes the words back.</figcaption>
+  </figure>
+  <p>Two engine shortcuts used to hide both doors: applying the record&rsquo;s decoded teleport on the first contact frame put the player on the far floor before the near door moved, and stepping the partner ops on the record&rsquo;s own context swung the near door twice and the partner never. A prop door&rsquo;s record is now left to the runner; an interact-gated object, such as a lever, waits for the confirm press instead.</p>
+  <p>A door with no prop still takes the decoded teleport at contact, and the engine keeps the effect of the record&rsquo;s own arrival bracket for it: the touch dispatch and the collision probe skip the partner until the player has stepped clear of it, and a landing the walls seal on every side carries the player past the platform. The same cross-object ops drive lifts, gondolas and gates in several other dungeons.</p>
   <h3 id="talk-proxies">Talking through a stand-in</h3>
   <p>Pressing the action button probes a point ahead of the player against every actor's box, and the hit is a conversation when the actor carries the talk flag. An undrawn placement can stand in for a speaker the probe cannot reach: its record only marks another actor as touched, and the context runner then plays that actor's conversation. Conkram's gate guards (<code>concnow</code>) are spoken to this way. The port reads such stand-ins at scene entry and answers a hit on one with its target.</p>
 </section>
 
-<section class="doc-section" id="hop-arc">
+<section class="doc-section" id="hop-arc" data-doc="-">
   <h2>The ledge hop is its own little machine</h2>
   <p>When the floor ahead rises a ledge, the walk does not climb it: a setup routine spawns two helper actors, raises the movement lock and hands the player to an arc controller with its own cursor, separate from the clip system.</p>
   <figure class="diagram dg-fit">
@@ -203,7 +235,7 @@
   </ul>
 </section>
 
-<section class="doc-section" id="touch-interact">
+<section class="doc-section" id="touch-interact" data-doc="field-vm-actor-placement--motion-opcodes">
   <h2>Touching and talking</h2>
   <p>Collision asks two questions at once: is there a wall, and is there somebody. Before the wall probes, each step tests three points against every other actor - a wider sweep than the wall edge, 64 units ahead and 32 to either side, because actors block with a body box. The same step then decides whether the contact means anything.</p>
   <div class="table-wrap">
@@ -222,7 +254,7 @@
   </ul>
 </section>
 
-<section class="doc-section" id="spawn-seat">
+<section class="doc-section" id="spawn-seat" data-doc="spawn-position-on-scene-entry">
   <h2>Where you stand when a scene starts</h2>
   <p>The locomotion controller never places the player. The scene initializer does, and it picks between two behaviours from a one-shot word the <em>departing</em> mode leaves behind and the initializer clears on its way out.</p>
   <div class="table-wrap">
@@ -235,14 +267,14 @@
     </tbody>
   </table>
   </div>
-  <p>Retail never enters a scene without a door operand, but the port's scene picker can. For that case it synthesises a seat: retail's own fallback coordinate when it is standable, inside the scene's main walkable region and not on a teleport pad; otherwise a door-arrival anchor, then the region's centroid.</p>
+  <p>Retail never enters a scene without a door operand, but the port's scene picker can. A picker entry first tries the scene&rsquo;s door arrivals - where other scenes&rsquo; scene-change ops land the party (<a href="engine.html#browser-host">engine</a>) - and only when none qualifies does it synthesise a seat: retail's own fallback coordinate when it is standable, inside the scene's main walkable region and not on a teleport pad; otherwise a door-arrival anchor, then the region's centroid.</p>
   <ul class="bullets">
     <li><strong>The main region is not simply the largest.</strong> On the three kingdom maps the collision grid leaves the sea open - the coast is a closed wall ring and retail only arrives by door onto land - and the sea is about four times the continent. The rule excludes a region that reaches three or more map edges, which is exactly those three seas.</li>
     <li><strong>A door arrival is never nudged.</strong> A standable tile is taken exactly as given, so every authored arrival lands byte-exact on its operand; only a derived tile the grid does not cover is moved to the nearest open sub-cell.</li>
   </ul>
 </section>
 
-<section class="doc-section" id="authored-octant">
+<section class="doc-section" id="authored-octant" data-doc="-">
   <h2>The camera turn is authored, not computed</h2>
   <p>The pad remap rotates the held direction by an eighth-turn index. Nothing in retail derives that index from the camera. Its writers across the whole disc are two, and both are content: a field-VM op that sets it to a literal, and the tile-board walker. A scene author picks the octant to match the fixed camera the same script installs; a bare tile crossing never changes it.</p>
   <ul class="bullets">
@@ -257,7 +289,7 @@
     <tbody>
       <tr><td>5</td><td>Forced slow: the per-scene flag set on exactly the three kingdom maps. With the overworld's three-quarter scale that is 3 units per vsync, and the player never runs there</td></tr>
       <tr><td>12</td><td>Run</td></tr>
-      <tr><td>24</td><td>A debug turbo behind two dev flags; never taken in retail</td></tr>
+      <tr><td>24</td><td>A debug turbo behind the debug-mode word, a dev word and a pad bit. Retail boots the dev word to zero and only ever clears it, so the turbo is unreachable on a retail disc even with the debug-mode byte poked; the port carries the arm behind the same mirrors</td></tr>
       <tr><td>8</td><td>Plain walk</td></tr>
     </tbody>
   </table>
@@ -265,7 +297,7 @@
   <p>The walk clip is chosen the same way the step is: no direction held is the idle base, a direction under the plain walk step is the walk base, and any other step is the run base. The run button word is one of four button masks the new-game init seeds into the save block; that init is their only writer anywhere, so retail has no way to rebind them.</p>
 </section>
 
-<section class="doc-section" id="npc-motion">
+<section class="doc-section" id="npc-motion" data-doc="npc-initial-facing,npc-dynamic-facing,npc-glide-speed">
   <h2>NPCs: facing and glide speed</h2>
   <h3 id="npc-initial-facing">Initial facing</h3>
   <p>The placement record has no facing byte. At spawn the installer pre-runs the record's leading ops (a <code>0x24</code> / <code>0x25</code> marker up to the first <code>0x21</code>), and two of them write the heading from the 8-direction LUT at SCUS <code>0x80073F04</code>: the NPC move-to-tile op <code>4C 51</code> (operand +3, low nibble) and op <code>0x38</code>'s simple path. Town prologues route that leg through story-flag tests, so the fall-through branch is the fresh-game facing. Rim Elm's side-by-side villagers at tiles (29,22) / (30,22) derive indices 6 and 2 - they face each other.</p>
@@ -285,7 +317,7 @@
   <p>Base steps run 32 / 16 / 8 / 4 / 2 / 1 for <code>bits</code> 0..5. There is no synthesised motion bytecode: the field VM parks the op's address on the actor and the walk kernel reads the record bytes in place each frame.</p>
 </section>
 
-<section class="doc-section" id="engine-port">
+<section class="doc-section" id="engine-port" data-doc="engine-port">
   <h2>In the port</h2>
   <ul class="bullets">
     <li><strong>Faithful path.</strong> <code>World::step_field_locomotion</code> rings the held pad around the same eight-direction compass, hands the remapped mask to the wall-slide resolver and walks the result through the same per-axis 2-unit collision with the three-probe edge and the actor boxes. Wall-press captures rest byte-exact. Retail picks its rotation step from scene data; a free-orbiting camera has none, so the port rounds the live camera azimuth to the nearest eighth.</li>
@@ -295,7 +327,7 @@
   </ul>
 </section>
 
-<section class="doc-section" id="how-we-know">
+<section class="doc-section" id="how-we-know" data-doc="provenance,open">
   <h2>How we know</h2>
   <table class="data-table">
     <thead><tr><th>Function / data</th><th>Address</th><th>What it proves</th><th>Dump</th></tr></thead>
@@ -318,7 +350,7 @@
   <p class="hint">Full write-up, including the hop-arc controller, the door-swing clip binding, the timed warp and the scripted-scene actor programs: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/field-locomotion.md" target="_blank" rel="noopener"><code>docs/subsystems/field-locomotion.md</code></a>.</p>
 </section>
 
-<section class="doc-section" id="details">
+<section class="doc-section" id="details" data-doc="player-actor-fields-used,the-scripted-scene-actor---fun_801d4a60,the-submode-return-state---a-parked-word-nothing-reads">
   <h2>Details</h2>
 
   <details class="disclosure">
@@ -378,6 +410,27 @@
   </details>
 
   <details class="disclosure">
+    <summary>The submode return state: a parked word nothing reads</summary>
+    <div class="disclosure-body">
+      <p>Opening a field sub-screen (op <code>0x49</code>) parks a state in the scene struct: the pre-enter handler slot, then the submode return constant <code>7</code>, into <code>scene[+0x40]</code>. Nothing reads it. A disassembly sweep of the executable and every overlay image finds no load of <code>+0x40</code> through the scene pointer, and a read watch across a field-to-minigame transition sees neither word read while the pointer still names the scene. The return is carried by the driver&rsquo;s own handler slot, so the port collapses enter and return into one step and keeps no copy of the parked word.</p>
+    </div>
+  </details>
+
+  <details class="disclosure">
+    <summary>Open: what the port does not model yet</summary>
+    <div class="disclosure-body">
+      <ul>
+        <li><strong>Touch counters</strong> that keep the engaged flag raised until every overlapping touch is dismissed; the engaged flag, the parked-script resume and the facing save / restore are modelled.</li>
+        <li><strong>Terrain slow</strong> - the controller&rsquo;s half-speed test on a cell flag under one scene control byte.</li>
+        <li><strong>NPC walk clips</strong> - a script-walked scene NPC glides in its current pose.</li>
+        <li><strong>Static facing fallback</strong> - a placement whose prologue the entry pre-run does not execute takes the fall-through leg&rsquo;s facing.</li>
+        <li><strong>A prop that seats itself still draws where it stood</strong>: the hosts hide placed objects by bind record, and one record binds many placements, so the per-placement seat moves only the collider.</li>
+        <li><strong>Travel-art part stages</strong> are counted, not drawn.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="disclosure">
     <summary>History: readings this page replaced</summary>
     <div class="disclosure-body">
       <p>Walls were once thought to be authored entirely by scripts (a static search for CPU stores cannot see the DMA load). The <code>+0x8000</code> region was read as a terrain-flag grid; it is the object map. The object table was read as NPC spawns rather than buildings. Base step 5 was read as a scripted slow-walk; it is the kingdom overworld's step. The <code>4C 51</code> operand was read as a glide speed; it is a facing nibble. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
@@ -385,7 +438,7 @@
   </details>
 </section>
 
-<section class="doc-section" id="see-also">
+<section class="doc-section" id="see-also" data-doc="see-also">
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>

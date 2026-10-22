@@ -4,7 +4,7 @@
   <p class="lede">The overworld: the kingdom-sized map you walk between towns and dungeons, where random battles interrupt the trip. Under the hood it is the same field engine as a town - same walk controller, same collision grid, same script VM, same follow camera - plus a small state machine that turns a step into a battle, its own ground and horizon renderers, and the developers' fly-over camera and debug menu, both shipped on the retail disc. This page is the tour; addresses and register detail live on <a href="world-map-internals.html">world map internals</a>.</p>
 </header>
 
-<section class="doc-section" id="at-a-glance">
+<section class="doc-section" id="at-a-glance" data-doc="at-a-glance,contents">
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Scenes</dt><dd>Three kingdoms: <code>map01</code> / <code>map02</code> / <code>map03</code> (Drake / Sebucus / Karisto). Kingdom bundles PROT 0086 / 0245 / 0392; the walk <code>.MAP</code> is the first entry of each scene block.</dd>
@@ -14,11 +14,11 @@
     <dt>Encounters</dt><dd>A region-keyed roll on every 128-unit tile crossing; a carrier entity installs the formation and launches the battle in one tick (<a href="../formats/encounter.html">encounter record</a>).</dd>
     <dt>Entrances</dt><dd>Walk-on tile triggers spawn scene-script records, each with its own story-flag gates and a named scene change.</dd>
     <dt>Ground</dt><dd>A heightfield from the <code>.MAP</code>'s floor nibbles, textured per cell; landmarks from the bundle's slot-1 mesh pack; the horizon bends through a curvature table; the sea shimmers by palette animation from slot 5.</dd>
-    <dt>In the port</dt><dd><code>engine-field::world_map_entity</code> (carrier), <code>engine-core</code> (walk, regions, portals, top view). Browser twin: <a href="../world-overview.html">world overview</a>.</dd>
+    <dt>In the port</dt><dd><code>engine-field::world_map_entity</code> (carrier), <code>engine-core</code>&rsquo;s <code>World</code> (walk, regions, the L1 display), <code>engine-scene-host</code> (scene entry and portals), <code>engine-world-views</code> (camera, markers, sky gate). Both play hosts run it; the static <a href="../world-overview.html">world overview</a> is a separate viewer.</dd>
   </dl>
 </section>
 
-<section class="doc-section" id="how-it-works">
+<section class="doc-section" id="how-it-works" data-doc="how-a-world-map-frame-runs">
   <h2>How a step on the map is handled</h2>
   <figure class="diagram">
     <svg viewBox="0 0 820 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Per-frame overworld chain: the field frame driver runs the walk tick and the locomotion controller, which moves the player. Crossing into a new 128-unit tile triggers two checks: the region roll, which can arm the carrier entity, install a formation and switch to battle mode; and the walk-on trigger tables, which spawn a gated script record that ends in a scene change.">
@@ -65,7 +65,7 @@
   </figure>
 </section>
 
-<section class="doc-section" id="entity-sm">
+<section class="doc-section" id="entity-sm" data-doc="entity-tick-and-encounters">
   <h2>How a step becomes a battle</h2>
   <p>On each tile crossing the player's tile selects the first <strong>region</strong> whose box contains it; the region's rate drains a step counter, and when the counter reaches zero a formation is rolled from the region's slice of rows. The roll does not start the battle itself. It hands the formation to a <strong>carrier entity</strong> - one script-placed entity per scene, distinct from the player - that runs a five-state machine every frame:</p>
   <figure class="diagram">
@@ -109,7 +109,7 @@
   <p id="encounter-installation">The formation cells are what the <a href="battle.html">battle loader</a> reads. While an <strong>Incense</strong> window is open the roll is skipped and the step counter does not move; the field walk tick drains the window and shows the wear-off notice, exactly as in a town. Scene and town transitions are <em>not</em> in this machine - they are the field VM's scene-change op (<a href="#entrances">entrances</a>). Install sequence and the scripted arming ops: <a href="world-map-internals.html#install">internals</a>.</p>
 </section>
 
-<section class="doc-section" id="walking">
+<section class="doc-section" id="walking" data-doc="walking-the-overworld">
   <h2>Walking and the camera</h2>
   <p>Everything on <a href="field-locomotion.html">field locomotion</a> applies: the same held-pad remap, the same 2-unit stepping, the same per-axis collision against the walkability grid. The camera is the same follow camera a town has, too - the kingdom MAN's camera-region records, composed per region and eased between them.</p>
   <figure class="diagram">
@@ -127,7 +127,7 @@
       <path class="dg-edge-dim" d="M260 60 A 110 110 0 0 1 252 92"/>
       <text class="dg-edge-label" x="272" y="84">pitch 360..476</text>
       <text class="dg-edge-label" x="272" y="100">(about 32 to 42 deg)</text>
-      <text class="dg-edge-label" x="200" y="200">eye distance along the sight line: about 8,900 to 11,000</text>
+      <text class="dg-edge-label" x="20" y="256">eye distance along the sight line: about 8,900 to 11,000</text>
       <text class="dg-edge-label" x="20" y="130">H = 368</text>
       <text class="dg-edge-label" x="20" y="148">world scale 6x</text>
       <text class="dg-edge-label" x="20" y="166">(battle uses 4x)</text>
@@ -141,7 +141,7 @@
   </ul>
 </section>
 
-<section class="doc-section" id="entrances">
+<section class="doc-section" id="entrances" data-doc="scenes-and-entrances">
   <h2>Where the towns are: entrances and story gates</h2>
   <p>How does stepping on a tile mean "enter Rim Elm"? The kingdom <code>.MAP</code> holds walk-on tile triggers. Each points at a partition-2 record in the scene MAN, and that record is a small script: a named scene change (op <code>0x3F</code>), a one-shot cutscene beat, or both, behind two story-flag lists - <strong>C1</strong> blocks the record if <em>any</em> listed flag is set, <strong>C2</strong> requires <em>all</em> of them.</p>
   <ol class="steps">
@@ -183,7 +183,39 @@
   <p><code>uru</code> is the hub of that chain, with six sidecar doors - the two above plus one dream entrance per room at tiles (110..112, 35), (10..12, 98) and (80..82, 99). <code>jouine</code> has no named scene change anywhere: its record fires a movie, and the movie player picks the next scene. Why three decoders read these scenes as sealed: <a href="world-map-internals.html#sidecar-instruments">internals</a>.</p>
 </section>
 
-<section class="doc-section" id="render-pipeline">
+<section class="doc-section" id="terrain" data-doc="terrain-and-geometry">
+  <h2>What the continent is built from</h2>
+  <p>The walk view is four layers over one <code>.MAP</code> object grid. Each grid cell is a 16-bit word: the low nine bits index a <code>0x20</code>-byte object record, bit <code>0x1000</code> says the cell is ground you can stand on, bit <code>0x2000</code> says it carries a mesh. The two are independent - a river cell is ground with no mesh, an enterable mountain is a mesh with no ground.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One .MAP cell word feeds three of the four walk-view layers. The ground bit and the floor-nibble grid give the heightfield ground quad; the draw bit with an unplaced record gives a decoration mesh from the kingdom pack; a record carrying the placed flag and a MAN bind for its cell spawns a landmark actor. The fourth layer, scene actors, comes from the MAN's partition-1 placements and script spawns, not from the grid.">
+      <defs><marker id="wmt-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-accent" x="20" y="96" width="190" height="56" rx="5"/>
+      <text class="dg-label" x="115" y="120">.MAP cell word</text><text class="dg-sub" x="115" y="138">record + 0x1000 + 0x2000</text>
+      <rect class="dg-node" x="300" y="14" width="250" height="56" rx="5"/>
+      <text class="dg-label" x="425" y="38">Ground quad</text><text class="dg-sub" x="425" y="56">0x1000 + floor nibbles</text>
+      <rect class="dg-node" x="300" y="96" width="250" height="56" rx="5"/>
+      <text class="dg-label" x="425" y="120">Decoration mesh</text><text class="dg-sub" x="425" y="138">0x2000, record not placed</text>
+      <rect class="dg-node" x="300" y="178" width="250" height="56" rx="5"/>
+      <text class="dg-label" x="425" y="202">Landmark actor</text><text class="dg-sub" x="425" y="220">placed flag + MAN bind</text>
+      <rect class="dg-node-ok" x="630" y="96" width="210" height="56" rx="5"/>
+      <text class="dg-label" x="735" y="120">Kingdom slot-1 pack</text><text class="dg-sub" x="735" y="138">mesh = record +0x10</text>
+      <path class="dg-edge" d="M210 112 L298 46" marker-end="url(#wmt-arrow)"/>
+      <path class="dg-edge" d="M210 124 L298 124" marker-end="url(#wmt-arrow)"/>
+      <path class="dg-edge" d="M210 136 L298 202" marker-end="url(#wmt-arrow)"/>
+      <path class="dg-edge-dim" d="M550 124 L628 124" marker-end="url(#wmt-arrow)"/>
+      <path class="dg-edge-dim" d="M550 202 L600 202 L600 140 L628 140" marker-end="url(#wmt-arrow)"/>
+    </svg>
+    <figcaption>The fourth layer, scene actors, is not on the grid: the kingdom MAN&rsquo;s partition-1 placements and script spawns, drawn like any town&rsquo;s actors.</figcaption>
+  </figure>
+  <ul class="bullets">
+    <li><strong>The ground is a heightfield.</strong> The executable&rsquo;s floor sampler (<code>FUN_80019278</code>) bilinearly interpolates the four corner nibbles of the <code>.MAP</code>&rsquo;s floor grid through a height table, so the continent is a smooth surface; the port builds one quad per cell with the same corner heights.</li>
+    <li><strong>The mesh resolver runs inside the allocator.</strong> Spawning a placed actor reads its object record and picks <code>record[+0x10]</code> plus the scene pack&rsquo;s base index out of the global mesh table; a placed spawn is also gated on the MAN interaction record for its cell.</li>
+    <li><strong>An overworld actor&rsquo;s height is the actor driver&rsquo;s, as in a town.</strong> The driver&rsquo;s height arm runs on every mode-3 actor with no world-map exception: a culled actor keeps its Y, one carrying a hover bit holds a scripted height, and the rest settle on the floor sample. Zora&rsquo;s Floating Castle is the case: its <code>map03</code> placement picks one of four seats on the story word, raises the hover bit and sets a height of 900, and its motion stream drifts it across the kingdom. The Karisto cart holds its height the same way. The port runs the same per-tick height pass on the overworld as in a field.</li>
+    <li><strong>The sky band</strong> is five 128&times;128 sprites linked into the farthest ordering-table bucket, scrolled by the player&rsquo;s X and the camera yaw and dimmed once a story flag is set. It shows only where the coast or the visible-tile window leaves the top of the frame open.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="render-pipeline" data-doc="render-pipeline">
   <h2>What you see: the render pipeline</h2>
   <p>The ground, the landmarks, the horizon and the shimmering sea come from four different mechanisms. The frame starts in the always-resident executable and calls into the overlay only for the horizon plane and, in the top view, for the terrain renderers.</p>
   <ol class="steps">
@@ -208,10 +240,10 @@
   </div>
   <p>Cells with no object record have no ground quad in retail either - an environment mesh covers them, so a hole there means a missing mesh, not a texturing bug. No overworld mesh carries a light-source row, so nothing on the continent is lit; colour is all baked. Slot 4 of the kingdom bundle holds no geometry: it is the scene's animation bank (<a href="../formats/world-map-overlay.html">slot-4 records</a>).</p>
   <h3 id="bulk-continent-terrain-emit-mechanism-pinned">Overlay-replaced terrain renderers</h3>
-  <p>With the world-map overlay paged in, a scratchpad flag swaps the per-primitive dispatcher onto the overlay's own table, whose eight depth-cued slots point at overlay copies of the executable's renderers with two additions: the curvature bend and a distance-cue fog pass between the projection and the packet write. That is why a breakpoint sweep of the executable's own handlers sees nothing on a kingdom overworld. Per-slot table on <a href="world-map-internals.html#overlay-leaves">internals</a>; the fog look itself is reproduced by the <a href="world-overview-viewer.html">world-overview viewer</a>.</p>
+  <p>With the world-map overlay paged in, a scratchpad flag swaps the per-primitive dispatcher onto the overlay's own table, whose eight depth-cued slots point at overlay copies of the executable's renderers with one insertion between the projection and the packet write: a depth-cue pass (<code>dpcs</code> / <code>dpct</code> toward the far colour) plus a per-depth screen-Y nudge read from the curvature table. That table is the horizon bend, not a fog ramp. That is why a breakpoint sweep of the executable's own handlers sees nothing on a kingdom overworld. Per-slot table on <a href="world-map-internals.html#overlay-leaves">internals</a>; the <a href="world-overview-viewer.html">world-overview viewer</a> draws its own stand-in for the distance cue.</p>
 </section>
 
-<section class="doc-section" id="ambient">
+<section class="doc-section" id="ambient" data-doc="-">
   <h2>Ambient effects: why the ocean shimmers</h2>
   <p>Nothing moves on the overworld but you, yet the sea glitters. A table in the kingdom bundle's slot 5 tells a walker to copy 16-pixel palette strips onto the water and shoreline palette cells on a fixed cadence, so the same texels cycle through a ring of colours. The ocean head steps every 9 vsyncs and completes its cycle in about 2.7 seconds.</p>
   <div class="table-wrap">
@@ -226,7 +258,7 @@
   <p>The same type-6 table drives ambient walks in twelve carriers, not only kingdoms. Format and cadence arithmetic: <a href="world-map-internals.html#clut-walk">internals</a>.</p>
 </section>
 
-<section class="doc-section" id="map-display">
+<section class="doc-section" id="map-display" data-doc="overlay-structure">
   <h2>The map on L1</h2>
   <p>Press L1 on a kingdom map and the view lifts into a top-down survey with the names of the places you have found. That is not a camera trick inside the walk frame: it is a separate game mode with its own small code image (PROT 0981, a <code>0x1000</code>-byte module of one function and three leaves) swapped in over the head of the field overlay. While it is up the walk frame does not run - the player, the field VM and the encounter roll all stand still.</p>
   <figure class="diagram">
@@ -258,13 +290,14 @@
     <li><strong>The place cursor snaps.</strong> Square steps the cursor back through this kingdom's places and the camera jumps to each. The forward step on Circle is unreachable, because the leave test consumes the same button first. The stepper does not read the discovery flag, so the cursor visits a place whose label is still hidden.</li>
     <li><strong>Triangle or Select</strong> cycles three overlay modes: mini-map with labels, labels only, bare map.</li>
   </ul>
+  <p><strong>Two occupants of one slot.</strong> The world map has no overlay of its own: the walk is the field overlay (PROT 0897) running a kingdom scene. PROT 0981 holds one framed function - the display tick, a six-arm dispatcher on its own mode word - and three leaves: enter / reset (which snapshots the walk camera into the module&rsquo;s own block), the place-record stepper and the camera clamp. All four are ported in <code>legaia_engine_field::map_display</code>.</p>
   <h3 id="map-display-panel">The mini-map panel and the labels</h3>
   <p>The corner panel is five pieces at fixed screen seats: a subtractive grey backing, the kingdom's own 96&times;96 mini-map drawn additively, a 48&times;48 view box that follows the camera, a 3&times;3 player dot, and four compass letters each on a small plate. The mini-map texture belongs to the kingdom's scene pack and is resident for the whole overworld.</p>
   <p>The labels come from one table: 29 fixed-size records trailing every kingdom's scene file, each holding a name, a map cell, a kingdom number and a discovery flag (<a href="../formats/place-names.html">place names</a>). All three kingdoms carry the whole table and filter it by kingdom. A visible record is projected from its cell, half a tile-height above the plane, and its name is drawn in an ordinary dialog-style window as wide as the text. A marker's label, position and visibility are therefore one record - renaming a place is a same-size overwrite, which the randomizer does in all three kingdoms at once.</p>
   <p>Both play hosts open the display on L1 with its labels and panel through one shared module (<code>legaia_engine_field::map_display</code>). Not ported: the player's map pointer, a move-VM effect the module spawns; and the port draws the kingdom whole instead of applying the survey's visible tile window.</p>
 </section>
 
-<section class="doc-section" id="compass-ring">
+<section class="doc-section" id="compass-ring" data-doc="-">
   <h2>Which way is up</h2>
   <p>Retail's pad remap is not a trigonometric rotation. It looks the held direction up in an eight-entry compass ring, adds a whole number of 45-degree steps for the camera, and writes the ring entry back over the pad's direction bits. With a step count of zero it is the identity: Up walks world <code>Z+</code>, Right walks world <code>X+</code>.</p>
   <div class="table-wrap">
@@ -283,17 +316,23 @@
   <p>Two tests pin the convention, one of which fails on a single-axis sign flip because a reflection and a rotation project differently.</p>
 </section>
 
-<section class="doc-section" id="controller">
+<section class="doc-section" id="controller" data-doc="key-functions">
   <h2>The developers' tooling: top view and debug menu</h2>
   <p>The shipped game carries the tooling the designers used to fly over the map: a top-down camera behind a pad combo, and a scrolling dev menu with entries such as <code>MAP CHANGE</code>, <code>ENCOUNT</code> and <code>BGM CALL</code>. Both need a debug flag retail leaves clear, so no player reaches them, but the code is all there. The top-down view a player <em>does</em> reach is a different thing - the <a href="#map-display">map display</a> on L1, whose image is PROT 0981.</p>
   <ul class="bullets">
     <li><strong>Only a camera.</strong> With the view flag clear the top-view controller returns immediately; the overworld's real per-frame update is the ordinary field chain, the same one a town runs.</li>
     <li><strong>Toggle and controls.</strong> Debug flag + pad combo flips the view flag and snapshots the camera; the d-pad scrolls X/Z by 8 a frame, Circle/Square turn the azimuth, R1/L1 zoom.</li>
     <li><strong>Dev menu.</strong> At least 24 rows; <code>MAP CHANGE</code> and <code>CARD OPTION</code> read <code>CLOSED</code> on a retail flag; <code>CAMERA</code>, <code>ENCOUNT</code> and <code>BGM CALL</code> show live readouts. <code>CAMERA</code> is the follow-camera switch, drawn <code>OFF</code> or <code>ON</code> plus the walk region's centre tile; the port's dev menu carries it on both hosts.</li>
+    <li><strong>In the port.</strong> The dev-menu bodies - row model, list picker, value steps and the row-action dispatcher <code>FUN_801EA9B0</code> - live in <code>engine-dev-menu</code>, one crate below both the field kernels and the pause-menu front end that opens it. The panel window system stays in <code>engine-field::world_map_panel</code>. The cheat arms&rsquo; global pokes are not modelled.</li>
   </ul>
 </section>
 
-<section class="doc-section" id="see-also">
+<section class="doc-section" id="details" data-doc="globals-used,world-overview-viewer">
+  <h2>Where the detail lives</h2>
+  <p>The globals the overworld reads - the debug and view-mode flags, the map-display fade ramp, the per-scene kingdom byte, the camera translation pair, the horizon emitter&rsquo;s gate and angle - are tabulated with addresses on <a href="world-map-internals.html">world map internals</a>. The site&rsquo;s own 3D <a href="../world-overview.html">world overview</a>, which lays out each kingdom from your disc in WebGL, is documented on the <a href="world-overview-viewer.html">world-overview viewer</a> page.</p>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="see-also">
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>

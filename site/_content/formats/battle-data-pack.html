@@ -4,7 +4,7 @@
   <p class="lede">Equip a new sword and, in the next battle, your character is holding it. These four files - one each for Vahn, Noa, Gala and Terra - carry everything a character needs in battle: mesh pieces keyed by item id, textures, palette and the battle animations. At battle load the game picks the piece matching each equipped item and splices the winners into one model.</p>
 </header>
 
-<section class="doc-section" id="at-a-glance">
+<section class="doc-section" id="at-a-glance" data-doc="at-a-glance,contents">
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Where</dt><dd>PROT extraction entries <strong>0863..0866</strong> (Vahn / Noa / Gala / Terra); in-RAM TOC index <code>char_id + 0x360</code>. The <code>edstati3</code> filename labels on 0863/0864 are the <a href="cdname.html#numbering-space">CDNAME +2 label shift</a>.</dd>
@@ -17,7 +17,45 @@
   <p class="hint">Not to be confused with the <a href="#not-the-monster-archive">monster archive</a> (entry 0867), the <a href="tim-pack.html">TIM-pack</a>, the <a href="data-field.html">DATA_FIELD</a> stream or the <a href="field-pack.html">field-pack</a> - all nearby, all different containers.</p>
 </section>
 
-<section class="doc-section" id="file-layout">
+<section class="doc-section" id="load-chain" data-doc="load-chain--index-space">
+  <h2>Load chain and index space</h2>
+  <p><code>FUN_80052770</code> points each party character's asset-table entry at the dev path <code>data\battle\PLAYER&lt;n&gt;</code> and opens it through the dual-mode wrapper <code>FUN_800558FC</code>. The retail ISO9660 branch is a trap stub on this build, so the open always resolves through the PROT reader with the <strong>raw in-RAM TOC index</strong> <code>char_id + 0x360</code> - extraction entry <code>char_id + 0x35E</code> (<a href="prot.html">PROT.DAT</a>). <code>FUN_80052FA0</code> then assembles the character.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Battle load chain. The loader FUN_80052770 opens the player file by raw TOC index char_id plus 0x360 and reads a 16-sector prologue holding the header, record 0 and the descriptor table. For each of the five equipment sections it matches the character record's equipped item id against the section's entries, falling back to the id 0 default, and streams that slot by seeking a gap forward from the previous one. The assembler FUN_80052FA0 decodes record 0 into the party palette and action table, decodes the five chosen slots, splices their bone objects into one battle TMD, uploads each flagged slot's texture pool into the member's VRAM band, and installs the swing records into action slots 0xC to 0xF.">
+      <defs><marker id="bdp-load-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="10" y="20" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="105" y="44">Open PLAYER&lt;n&gt;</text><text class="dg-sub" x="105" y="62">TOC char_id + 0x360</text>
+      <rect class="dg-node" x="230" y="20" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="325" y="44">Prologue</text><text class="dg-sub" x="325" y="62">16 sectors: header, table</text>
+      <rect class="dg-node-accent" x="450" y="20" width="200" height="56" rx="4"/>
+      <text class="dg-label" x="550" y="44">Pick 5 sections</text><text class="dg-sub" x="550" y="62">equip id, else id 0</text>
+      <rect class="dg-node" x="680" y="20" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="775" y="44">Stream slots</text><text class="dg-sub" x="775" y="62">seek gap from previous</text>
+      <path class="dg-edge" d="M200 48 L228 48" marker-end="url(#bdp-load-arrow)"/>
+      <path class="dg-edge" d="M420 48 L448 48" marker-end="url(#bdp-load-arrow)"/>
+      <path class="dg-edge" d="M650 48 L678 48" marker-end="url(#bdp-load-arrow)"/>
+      <rect class="dg-node-accent" x="330" y="110" width="220" height="50" rx="4"/>
+      <text class="dg-label" x="440" y="132">Assembler</text><text class="dg-sub" x="440" y="149">FUN_80052FA0, per member</text>
+      <path class="dg-edge" d="M775 76 L775 94 L440 94 L440 108" marker-end="url(#bdp-load-arrow)"/>
+      <rect class="dg-node-ok" x="10" y="190" width="200" height="50" rx="4"/>
+      <text class="dg-label" x="110" y="212">Battle TMD</text><text class="dg-sub" x="110" y="229">bone objects spliced</text>
+      <rect class="dg-node-ok" x="230" y="190" width="200" height="50" rx="4"/>
+      <text class="dg-label" x="330" y="212">VRAM band</text><text class="dg-sub" x="330" y="229">flagged pools + CLUT</text>
+      <rect class="dg-node-ok" x="450" y="190" width="200" height="50" rx="4"/>
+      <text class="dg-label" x="550" y="212">Action table</text><text class="dg-sub" x="550" y="229">record[0] + swings</text>
+      <rect class="dg-node-ok" x="670" y="190" width="200" height="50" rx="4"/>
+      <text class="dg-label" x="770" y="212">Party palette</text><text class="dg-sub" x="770" y="229">rows 481..483</text>
+      <path class="dg-edge" d="M380 160 L120 188" marker-end="url(#bdp-load-arrow)"/>
+      <path class="dg-edge" d="M420 160 L340 188" marker-end="url(#bdp-load-arrow)"/>
+      <path class="dg-edge" d="M460 160 L540 188" marker-end="url(#bdp-load-arrow)"/>
+      <path class="dg-edge" d="M500 160 L760 188" marker-end="url(#bdp-load-arrow)"/>
+    </svg>
+    <figcaption>The loader never bounds a file by its TOC span: after the prologue it streams each chosen slot by seeking forward from the previous one. That is what lets a rebuilt file park its slot region elsewhere (<a href="#parking-the-records-in-dmydat">below</a>).</figcaption>
+  </figure>
+  <p><strong>The footprint is the file.</strong> The sector gap to the next TOC entry is the true size: the slot region tiles each file&rsquo;s footprint exactly. An extracted <code>0865</code> of about 16 MB is Gala&rsquo;s file followed by its neighbours (Terra&rsquo;s file and most of the monster archive), the read window of the superseded entry-size expression - not a &ldquo;16 MB battle_data container&rdquo;.</p>
+</section>
+
+<section class="doc-section" id="file-layout" data-doc="file-layout">
   <h2>File layout</h2>
   <div class="byte-map" role="img" aria-label="One player battle file: 16-byte header, LZS record 0, descriptor table, zero padding to 0x8000, then the slot region">
     <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x00</span><span class="bm-name">header</span><span class="bm-size">16 B</span></div>
@@ -95,7 +133,7 @@
   </table>
 </section>
 
-<section class="doc-section" id="descriptor-table">
+<section class="doc-section" id="descriptor-table" data-doc="descriptor-table">
   <h2>Descriptor table: one section per equipment slot</h2>
   <div class="byte-map" role="img" aria-label="Descriptor entry: item id, slot offset from 0x8000, slot size">
     <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">id</span><span class="bm-size">u32 item id</span></div>
@@ -139,7 +177,9 @@
       </table>
       <ul class="bullets">
         <li>A positional set-difference does not find added geometry (the armed hand shares as few as one vertex with the bare hand). The diff highlight uses a radius envelope around the bare object (<code>battle_char_assembly::equip_diff</code>).</li>
-        <li><strong>Item-alone</strong> export (<code>equip_isolate</code>, rules in <code>crates/actor-formats/data/equip-isolation.toml</code>): colour diff against the bare counterpart for head / held items, identity test for body / feet, plus per-record overrides.</li>
+        <li><strong>Item-alone</strong> export (<code>equip_isolate</code>, rules in <code>crates/actor-formats/data/equip-isolation.toml</code>): colour diff against the bare counterpart for head / held items, identity test for body / feet, plus per-record overrides. A keep by object, column or <code>whole</code> mode still drops flesh: those overrides say &ldquo;this object is the item&rdquo;, not &ldquo;this skin is&rdquo;. Only an explicit <code>"tag:ordinal"</code> keep is absolute.</li>
+        <li><strong>Skin inside a kept primitive</strong> (<code>equip_skin_mask</code>). Some quads paint the item <em>and</em> the flesh beside it - a clip band and the forehead around it, a collar and the neck inside it - with too small a skin share to drop.
+        A primitive that is at least 4% flesh and 25% clearly not is <em>mixed</em>: its flesh texels (a narrow hue / saturation band, or within one 5-bit step of the character&rsquo;s own face colours) are grouped into patches, grown into their shadowed edge, and written as the transparent word <code>0x0000</code> into a masked 15-bit copy of the footprint in an unused page of the loadout VRAM. The mixed primitives&rsquo; TSB points at the copy; UVs do not change. Only the item-alone mesh (export, preview, thumbnail) is re-pointed - the full character never samples the copy.</li>
         <li><strong>Grip repair</strong> (<code>equip_repair</code>) lofts a tube between the two rims of a straight shaft on one object; nine of the 81 held items take a bridge, all Vahn's.</li>
         <li>Most <code>0xFF</code> (tag <code>200+</code>) surplus objects are byte-copies of their attach bone, drawn only through the <a href="#equipment-variant-track">variant track</a>. Sixteen are not (all of Noa's section-2 records, four of her section-3, three of Gala's section-3); <code>AssembledCharacter::duplicate_objects</code> tests by byte comparison.</li>
       </ul>
@@ -147,7 +187,7 @@
   </details>
 </section>
 
-<section class="doc-section" id="slot-region">
+<section class="doc-section" id="slot-region" data-doc="slot-region,decompressed-slot-layout">
   <h2>Inside a slot</h2>
   <p>Each slot is <code>[u32 dec_size][LZS stream]</code>; the decoder stops on the output count, so give it a generous input slice. Decoded, every slot is a 32-byte header, a loader frame wrapping a <a href="tmd.html">Legaia TMD</a>, and a texture pool.</p>
   <p><strong>On disc</strong>, at <code>0x8000 + offset</code>:</p>
@@ -190,7 +230,7 @@
   <p>The assembler reads one bone-id byte per object while <code>obj_index &lt; attach_count</code>, then tags surplus objects <code>0xFF</code> (per-clip swap variant) or <code>0xFE</code> (extra animated part). Assembled objects are also <em>effect-read</em>: the Spirit charge samples authored vertex indices of specific objects, so a rebuild must keep a real vertex pool in every slot even when it draws nothing.</p>
 </section>
 
-<section class="doc-section" id="texture-pool-vram-placement">
+<section class="doc-section" id="texture-pool-vram-placement" data-doc="texture-pool-vram-placement,vram-byte-match-corpus">
   <h2>Where the textures land in VRAM</h2>
   <p>The assembler runs once per present party member, with <code>p</code> the member's 0-based ordinal (not the character id). It uploads up to seven blocks: the two <code>record[0]</code> image blocks at fixed rects, plus one block per flagged section at the rect from a static SCUS table. Pixels go to <code>(x0 + 0x200 + p&times;0x80, y0 + 0x100)</code>, the CLUT to row <code>0x1E1 + p</code> with the STP bit set on every non-zero colour. The seven rects tile the member's 128&times;256 band exactly - texpages <code>0x18 + 2p</code> / <code>0x19 + 2p</code>, the pages the <a href="character-mesh.html#battle-render">mesh relocation</a> retargets.</p>
   <table>
@@ -205,10 +245,11 @@
       <tr><td>section 4 feet</td><td><code>0x60</code></td><td><code>0x80</code></td><td><code>0x20</code></td><td><code>0x80</code></td></tr>
     </tbody>
   </table>
-  <p>Port: <code>battle_char_assembly::{SECTION_TEXTURE_RECTS, RECORD0_TEXTURE_RECTS, character_texture_uploads}</code>. It matches captured battle VRAM per member except for the facial animator's current frame.</p>
+  <p>Port: <code>battle_char_assembly::{SECTION_TEXTURE_RECTS, RECORD0_TEXTURE_RECTS, character_texture_uploads}</code>. It matches captured battle VRAM per member except for the facial animator's current frame. <code>mednafen-state clut-trace</code> confirms placement from the other side: sliding each decoded slot&rsquo;s pool over captured VRAM finds every hit inside its section&rsquo;s banded rect, consecutive pool offsets stepping one VRAM row per <code>0x40</code> bytes.</p>
+  <p><strong>One unflagged record is a stripped pool, not an empty one.</strong> Noa&rsquo;s Force Blade (<code>0x25</code>, section 3) is her Short Sword record up to the pool - same attach list, TMD and pool offset - with the upload flag cleared and the decode ending at the pool. Its blade samples a rect only that missing pool fills, so under retail&rsquo;s loader it draws whatever the rect last held, in a fresh VRAM nothing at all. Retail never reaches the record: the <a href="equipment-table.html">equipment table</a> makes the Force Blade Vahn&rsquo;s alone. The port uploads the Short Sword&rsquo;s pool for it (<code>battle_char_assembly::stripped_pool_donor</code>); it is the only such record in the four files.</p>
 </section>
 
-<section class="doc-section" id="battle-animations">
+<section class="doc-section" id="battle-animations" data-doc="battle-animations-record0">
   <h2>Battle animations (<code>record[0]</code>)</h2>
   <p>The player files are also the party's in-battle <strong>pose source</strong>. <code>record[0]</code> opens with a u32 action-offset table (12 disc slots) of action entries in the same family as the <a href="monster-animation.html">monster archive</a>'s: the first byte is the action tag, the rate byte sits at <code>+0x78</code>, and the packed <code>[u8 parts][u8 frames][9-byte TRS]</code> keyframe stream at <code>+0xAC</code> (monsters keep theirs at <code>+0x8C</code>). Frame 0 of the idle is the combat-stance rest pose the assembled mesh is socketed into.</p>
   <table>
@@ -228,7 +269,7 @@
     <li><strong>Swing records</strong> are per-equipment animations: each selected section's record at slot-header <code>+0x04</code> (and <code>+0x08</code> for section 4) is installed at action slot <code>0xC + section &minus; 2</code>. Its first byte is the per-strike power run head, not a runtime slot (<a href="art-data.html">art-data</a>).</li>
     <li><strong>Art bank</strong> (<code>record[0] +0x58</code>): <code>[u32 count]</code> then <code>0xD0</code>-stride records - a <code>0x24</code>-byte matcher head (command combo, stream index, inline art name) followed by a standard action entry. Keyframes live outside the file, in the <code>"ME"</code> archives of <a href="summon-readef.html"><code>readef.DAT</code></a>; win poses (<code>0x11..=0x18</code>) decode from the <em>base</em> archive, everything else from <em>main</em>.</li>
     <li><strong>Facial tracks</strong> (entry <code>+0x8C</code> eyes, <code>+0x98</code> mouth) are stamped over the head section's texture rows per frame; during the victory quote the mouth comes from a static SCUS table instead.</li>
-    <li id="equipment-variant-track"><strong>Equipment-variant track</strong> (entry <code>+0xA4</code>): two <code>[start, end]</code> frame windows that swap a <code>0xFF</code> variant onto its attach-bone channel - a mesh swap, not a stamp. Live windows exist only in Noa's file.</li>
+    <li id="equipment-variant-track"><strong>Equipment-variant track</strong> (entry <code>+0xA4</code>): two <code>[start, end]</code> frame windows that swap a <code>0xFF</code> variant onto its attach-bone channel - a mesh swap, not a stamp. Live windows exist only in Noa's file. The port keeps retail&rsquo;s per-channel model table (<code>legaia_engine_battle::battle_attach_swap</code>): the world steps a party seat&rsquo;s table on every battle pose, and both play hosts draw only the objects it names for the playing stream&rsquo;s channels, which also hides the <code>0xFE</code> extras outside surplus-channel streams. The after-image walk re-runs the swap per ghost, so on a ghosted frame the live body draws the table the last ghost left, as retail&rsquo;s does.</li>
   </ul>
   <details class="disclosure">
     <summary>Two container encodings, one pose format</summary>
@@ -239,7 +280,7 @@
   </details>
 </section>
 
-<section class="doc-section" id="weapon-transplant">
+<section class="doc-section" id="weapon-transplant" data-doc="-">
   <h2>Editing: carrying a weapon into another character's file</h2>
   <p>A file only holds records for the items its character can equip, so a weapon handed to another character through the owner mask alone lands on that character's bare-hand default. The patcher's <code>--equip-owner</code> builds the missing record (<code>legaia_patcher::equip_transplant</code>):</p>
   <ol class="bullets">
@@ -260,7 +301,7 @@
   </details>
 </section>
 
-<section class="doc-section" id="not-the-monster-archive">
+<section class="doc-section" id="not-the-monster-archive" data-doc="not-the-monster-archive">
   <h2>Not the monster archive</h2>
   <p>The monster stat archive (extraction 0867, <code>legaia_actor_formats::monster_archive</code>) shares the <code>[dec_size][LZS] &rarr; mesh + texture pool</code> shape but nothing else:</p>
   <table>
@@ -273,7 +314,7 @@
   </table>
 </section>
 
-<section class="doc-section" id="how-we-know">
+<section class="doc-section" id="how-we-know" data-doc="parser-status,open-questions">
   <h2>How we know</h2>
   <details class="disclosure">
     <summary>Provenance: the loader, assembler and animation routines</summary>
@@ -304,6 +345,32 @@
     </div>
   </details>
   <details class="disclosure">
+    <summary>Parser modules (<code>legaia_actor_formats</code>)</summary>
+    <div class="disclosure-body">
+      <table>
+        <thead><tr><th>Module</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td><code>battle_data_pack</code></td><td>The slot walker. Detection checks the chain invariant (entry 0 at offset 0, contiguous sector-aligned slots, zero terminator) and the header ordering; it accepts the four player files, Terra&rsquo;s all-default table included, and rejects every other PROT entry. The table starts at <code>desc_off</code> itself - read four bytes later and Terra&rsquo;s file looks empty.</td></tr>
+          <tr><td><code>battle_char_palette</code></td><td>Header words, descriptor chain, <code>record[0]</code> palette assembly; byte-exact against live battle VRAM.</td></tr>
+          <tr><td><code>battle_char_assembly</code></td><td>Section selection, mesh splice, TSB/CBA relocation, texture uploads.</td></tr>
+          <tr><td><code>::equip_diff</code>, <code>::equip_item</code>, <code>::equip_isolate</code>, <code>::equip_skin_mask</code>, <code>::equip_repair</code></td><td>The presentation cuts: loadout diff, exact palette cut, opinionated item-alone cut, texel skin mask, grip bridging.</td></tr>
+          <tr><td><code>battle_texture_catalog</code></td><td>The pool blocks as a texture tier (also the patcher&rsquo;s <code>--tier battle</code>).</td></tr>
+          <tr><td><code>me_archive</code>, <code>face_anim</code></td><td>The <code>"ME"</code> archive codec; facial tracks and stamp selection.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </details>
+  <details class="disclosure">
+    <summary>Open questions</summary>
+    <div class="disclosure-body">
+      <ul class="bullets">
+        <li><strong>Why Noa&rsquo;s sections 2 and 3 are swapped</strong> relative to Vahn&rsquo;s and Gala&rsquo;s. The grouping is measured; the cause is not traced.</li>
+        <li><strong>The victory counter&rsquo;s incrementer.</strong> <code>gp[+0x9EA]</code> is reset when the win pose is staged; the routine that advances it is not in the dumped corpus.</li>
+        <li><strong>A pre-biased <code>+0x5C</code> reader</strong> is the one shape the no-reader sweep cannot exclude by scanning; a read watchpoint on the word would settle it.</li>
+      </ul>
+    </div>
+  </details>
+  <details class="disclosure">
     <summary>Not here: the NPC palettes at row 479</summary>
     <div class="disclosure-body">
       <p>The town NPC CLUTs byte-match no player-file slot. They are plain TIMs in each scene's own bundle, uploaded at battle init - see <a href="npc-palette.html">npc-palette</a>.</p>
@@ -311,7 +378,7 @@
   </details>
 </section>
 
-<section class="doc-section" id="cli">
+<section class="doc-section" id="cli" data-doc="cli">
   <h2>CLI</h2>
 <pre><code># Inspect one player file's slot table.
 asset battle-data-pack extracted/PROT/0865_battle_data.BIN
@@ -324,7 +391,7 @@ asset battle-data-pack-scan extracted/PROT --cdname extracted/CDNAME.TXT</code><
   <p>Full reference, including the texture-block catalog and replacement commands: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/battle-data-pack.md">docs/formats/battle-data-pack.md</a>.</p>
 </section>
 
-<section class="doc-section" id="see-also">
+<section class="doc-section" id="see-also" data-doc="see-also">
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
