@@ -143,20 +143,45 @@ far end of the table. The floor is therefore painted before anything else on
 the frame and hides nothing drawn after it, including geometry that reaches
 below the floor plane.
 
-The port draws the grid as ordinary depth-tested geometry, so a primitive
-under the floor plane loses to it. PROT 0946's Call Wave rays are the visible
-case: `zeto_call_wave_mid_cast` holds sixteen ray parts (record `0x801F7970`,
-`+0x52 = 0x380`, so each is a screen-aligned billboard rolled by `+0x28`),
-and retail's frame fans them all the way round Zeto over the floor where the
-port shows only the half pointing up.
+The port seats the grid the same way on both hosts. Every grid fragment
+takes one depth just in front of the clear and behind everything else on the
+frame, so the grid still covers the cleared background but loses every depth
+test, in either draw order. On the native renderer that is
+`legaia_engine_render::pin_to_far_bucket`, which folds a constant depth into
+the draw's matrix (`FAR_BUCKET_DEPTH`) and leaves the screen position and `w`
+alone. The play page sets the same constant in the fragment shader for a
+`farBucket` placement (`u_far_slice`). The depth must be a constant: a slice
+scaled by the fragment's own depth (as the field ground's sloped far-bucket
+cells use) is a difference that `f32` rounds away under reversed-Z, and
+the grid then fails the clear test on whole frames.
 
-Seating the grid in a far depth bucket (every fragment on one depth behind
-the scene, on both hosts) reproduces retail's full fan, but it also shows
-what the depth test was hiding elsewhere: `rim_elm_gimard_seru_capture_before`'s
-rising Gimard (no floor clip in retail, node `+0x42 = 0`) draws an additive
-patch at its base that retail's frame does not show. Across the battle
-states the image channel moves `-0.006..+0.005`, so the change waits on
-that second difference.
+PROT 0946's Call Wave rays show the difference. `zeto_call_wave_mid_cast`
+holds sixteen ray parts (record `0x801F7970`, `+0x52 = 0x380`, so each is a
+screen-aligned billboard rolled by `+0x28`). Retail's frame fans them all the
+way round Zeto over the floor, which a depth-tested grid cut to the half
+pointing up.
+
+Retail's grid hides nothing, so engine geometry that a depth-tested floor
+covered now shows. `rim_elm_gimard_seru_capture_before` showed this at the
+Gimard's feet: a bright patch was eight live effect-pool dust puffs.
+The replay reaches the capture with the Gimard still on its approach clip.
+Retail's body is fourteen keyframes into the next clip, and its pool holds no
+live child (master 0 spent, all eight records). The capture harness now seats
+an empty pool too
+([retail-compare](../tooling/retail-compare.md#the-effect-pools-billboards-are-stream-history)).
+
+The other battle captures that score lower with the grid seated far are in
+the same position. The geometry that now shows below the floor plane sits
+somewhere retail's does not:
+
+- `battle_vahn_tri_somersault_super`: the arts after-image ghosts. Pushed
+  past their body about the eye, they keep their screen footprint, and that
+  footprint trails lower-left of retail's.
+- `delilas_gi_spirit_artifact`: the two VDF-morphed Spirit aura cones, which
+  stand on the floor at the body's position with their lower halves under it.
+
+In both, the floor had been hiding a placement difference rather than
+reproducing retail.
 
 #### The two culls
 

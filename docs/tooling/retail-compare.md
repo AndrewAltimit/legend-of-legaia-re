@@ -1291,9 +1291,8 @@ words. A volley the module has spent reads its length channel `+0xC8` at
 `0` with the rate still set; taken back past zero it would draw backwards,
 so a growing length channel that rewinds below zero is seated at `0` (it was
 restarted inside the lag). `zeto_call_wave_mid_cast` holds two volleys of
-eight; seeded, the upper half of the fan lands on retail's rays. The lower
-half stays under the floor, which the port depth-tests where retail paints
-it first
+eight; seeded, the whole fan lands on retail's rays, the lower half over the
+floor that both retail and the port paint first
 ([battle-stage-camera](../subsystems/battle-stage-camera.md#where-the-grid-sorts)).
 
 ### A turning effect part's banks are a clock
@@ -1357,6 +1356,13 @@ the sweep and steps back onto the previous one at wait `0`, any other gains
 `8`, each takes back one motion step, and a child on its first frame within
 `8` of its first delay was seeded inside the window and is dropped. The
 masters stay the replay's; a frame draws only children.
+
+A readable pool with no live child is seated too, as an empty set
+(`RetailBattle::effect_children` is `None` only when the state holds no
+pool). A replay that reaches the capture behind retail's clock still carries
+children retail's walker has retired. In `rim_elm_gimard_seru_capture_before`
+the replayed Gimard is still on its approach clip. That clip's eight dust
+puffs drew a glow at its feet, while retail's pool held only the spent master.
 
 The fire clouds were the largest single difference on the enemy-attack
 states: `battle_gimard_tail_fire_a` rose from `.822` to `.925`, `_b` from
