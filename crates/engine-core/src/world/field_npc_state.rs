@@ -327,6 +327,14 @@ impl FieldNpcState {
         self.headings.get(&slot).copied().unwrap_or(SPAWN_HEADING)
     }
 
+    /// Does placement `slot` have a compass-walk leg in flight
+    /// ([`Self::glide_legs`]): a `37` / `41` its own spawn section or a talk
+    /// record armed, which the walk kernel is still stepping? That motion is
+    /// the script's, not the ambient stream's.
+    pub fn glide_leg_active(&self, slot: u8) -> bool {
+        self.glide_legs.contains_key(&slot)
+    }
+
     pub fn new() -> Self {
         Self {
             solid: false,
