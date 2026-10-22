@@ -63,6 +63,7 @@ mod baseline_report;
 mod corpus_run;
 mod engine_run;
 mod pause_menu_drive;
+pub mod resident_disc;
 mod retail_obs;
 mod save_flags;
 #[cfg(test)]
@@ -202,6 +203,9 @@ pub struct CorpusEntry {
     /// The scenario's `resident_patch` - the patch family whose executable
     /// the state replays, when it was made on a patched disc.
     pub resident_patch: Option<String>,
+    /// The scenario's `resident_disc` - the patched image's file name, which
+    /// the engine side runs on when it is found ([`resident_disc`]).
+    pub resident_disc: Option<String>,
     /// The scenario's `ram_injected` - combatant fields its capture probe
     /// wrote after battle init, which the battle channels do not score.
     pub ram_injected: Vec<String>,
@@ -228,6 +232,7 @@ pub fn enumerate_corpus(manifest: &ScenarioManifest, library: &Path) -> Vec<Corp
                     path,
                     fingerprint: fp.to_string(),
                     resident_patch: sc.resident_patch.clone(),
+                    resident_disc: sc.resident_disc.clone(),
                     ram_injected: sc.ram_injected.clone(),
                 });
             }

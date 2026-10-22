@@ -119,7 +119,42 @@ pub fn run_corpus(opts: &RunOptions<'_>) -> Result<Vec<StateReport>> {
         {
             continue;
         }
-        out.push(run_one(opts, &entry, &scus, &cdname));
+        // A state made on a known patched image runs the engine on that
+        // image's files (`resident_disc`); one whose image is not on this
+        // machine runs on the retail disc and says so.
+        let resident = entry.resident_disc.as_deref().map(|name| {
+            let dirs = super::resident_disc::resident_disc_dirs();
+            let image = super::resident_disc::locate_resident_disc(name, &dirs)
+                .with_context(|| format!("{name} not found in {dirs:?}"))?;
+            let cache = opts
+                .out_dir
+                .map(|d| d.join("resident-discs"))
+                .context("no report directory to extract into")?;
+            let root = super::resident_disc::extract_resident_disc(&image, &cache)?;
+            let scus = std::fs::read(root.join("SCUS_942.54"))?;
+            let cdname = legaia_prot::cdname::parse(&root.join("CDNAME.TXT"))?;
+            anyhow::Ok((root, scus, cdname))
+        });
+        let mut report = match &resident {
+            Some(Ok((root, scus, cdname))) => {
+                let opts = RunOptions {
+                    extracted: root,
+                    ..*opts
+                };
+                run_one(&opts, &entry, scus, cdname)
+            }
+            _ => run_one(opts, &entry, &scus, &cdname),
+        };
+        if let (Some(name), Some(r)) = (&entry.resident_disc, &resident) {
+            report.detail.insert(
+                "resident_disc".into(),
+                match r {
+                    Ok(_) => format!("engine ran the capture's own image {name}"),
+                    Err(e) => format!("engine ran the retail disc: {e:#}"),
+                },
+            );
+        }
+        out.push(report);
     }
     Ok(out)
 }

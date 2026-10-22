@@ -145,6 +145,17 @@ own in the report, and a drop on one prints as `[patched-drift]` for review
 instead of failing the check. A difference on a patched-disc state is a lead
 to confirm against a retail capture, not a measured engine defect.
 
+A patched-disc scenario that also names the image it was made on
+(`resident_disc`, the file name `legaia-patcher` wrote) runs the engine on
+that image's own files, so a party-swap capture's fighter is the same mesh on
+both sides. The image is looked up by name in the directories
+`LEGAIA_PATCHED_DISCS` lists, else beside `LEGAIA_DISC_BIN` and one directory
+up; its `PROT.DAT`, `CDNAME.TXT` and `SCUS_942.54` are extracted once under
+the report directory (`resident-discs/`). Each such state's JSON detail says
+which disc the engine ran (`resident_disc`); an image missing from the
+machine falls back to the retail disc and says so. The images are never
+committed.
+
 The test is disc-gated (`LEGAIA_DISC_BIN`) and finds the library and the
 extracted disc through `LEGAIA_SAVES_LIBRARY` / `LEGAIA_EXTRACTED_DIR`
 before the repo-relative defaults - in a git worktree the data lives in the
@@ -1035,7 +1046,12 @@ case the heading. The capture holds each combatant's live pair and heading
 exactly, so once the drive holds the phase, both the headless channel and the
 image child stand them there before the camera is aligned
 (`legaia_engine_capture::ground_snap`, `LEGAIA_BATTLE_GROUND_SNAP`; the
-ground drift the undrift search reads is measured first).
+ground drift the undrift search reads is measured first). That holds for
+menu drives as well as action drives: a menu capture's close-up (case 0) is
+yawed `0x8F0 - actor[+0x46]`, and the member's heading is the one an earlier
+round's turn left, which the replay never runs. Che in
+`delilas_che_hammer_gaps_v3` stands at heading `113`, so his ring framing
+reads yaw `2175`, against the `2288` of an unturned member.
 
 - **A reacting monster stands on its body pair.** A body on a reaction clip
   (`2`..`5`, `0x0B`) the replay strikes at another keyframe than retail's
@@ -1959,9 +1975,11 @@ side's opening window runs long enough to wait it out. A battle capture whose
 retail frame is a fade is not imaged, and its reason is in the report.
 
 A capture made on a patched disc is imaged like any other, and its `image`
-detail names the resident patch: a party-swap build draws its own battle
-models, so the Delilas captures' fighter is the patch's mesh where the engine
-draws the unpatched member, and that part of the distance is the patch's.
+detail names the resident patch. A party-swap build draws its own battle
+models, so on the retail disc the Delilas captures' fighter is the patch's
+mesh where the engine draws the unpatched member; with the capture's
+`resident_disc` found, the engine assembles the same swapped mesh from the
+patched player files and that part of the distance is gone.
 
 A replayed cast is one frame of a cast that runs for hundreds of vsyncs, and
 on most summons that frame is the white flash. The
