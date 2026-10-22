@@ -21,13 +21,13 @@
 //!
 //! # Engine mapping, disclosed
 //!
-//! * **Placement/projection are the host camera's.** The hosts transform
-//!   the ring-sampled local control points with the same model matrix
-//!   their live battle body draws with (which subsumes retail's
-//!   yaw + slot-base arithmetic under the engine's battle framing) and
-//!   project with their battle MVP into the 320x240 stage -
-//!   [`project_stage_point`], the same mapping the move-FX streak pass
-//!   uses. The **packet** (vertex order, edge colours, blend) is retail.
+//! * **One placement, one projection.** The yaw turn and ground base are
+//!   retail's integer arithmetic ([`trail_world_point`]); the point then
+//!   goes through the battle placement both hosts give a body (frame flip,
+//!   world scale) and the shared battle view-projection
+//!   ([`project_battle_point`]) into the 320x240 stage. Neither host
+//!   projects a trail point of its own. The **packet** (vertex order, edge
+//!   colours, blend) is retail.
 //! * **Blend**: the `POLY_G4` packet carries no texpage, so its ABR comes
 //!   from the GPU state the OT walk left active; the trail draws inside
 //!   the battle FX group whose draw wrapper arms ABR 1
@@ -85,6 +85,55 @@ pub fn project_stage_point_cols(vp: &[f32; 16], p: [f32; 3]) -> Option<(i16, i16
     let cy = (0.5 - ndc_y * 0.5) * crate::streak_pass::STAGE_H;
     let clamp = |v: f32| v.clamp(-4096.0, 4096.0) as i16;
     Some((clamp(cx), clamp(cy)))
+}
+
+/// One sweep control point in retail battle space (Y down): the first two
+/// steps of `FUN_800485BC`'s per-vertex walk. The decoded object position
+/// `local` is yaw-turned by the anim node's `+0x26` against the sin / cos
+/// LUTs (`_DAT_8007B81C` / `_DAT_8007B7F8`) and the slot's ground base
+/// `+0x34` / `+0x38` is added to X / Z; Y is the object's own, with no base
+/// height (`0x8004864C..0x80048768`). Each product rounds toward zero (the
+/// `+0xFFF` bias before `>> 12`) and the sums are 16-bit stores.
+///
+/// ```text
+/// x' = base.x + sin[a]  * z / 4096 + cos[-a] * x / 4096
+/// z' = base.z + sin[-a] * x / 4096 + cos[a]  * z / 4096
+/// ```
+///
+/// PORT: FUN_800485BC (the vertex transform; the packet is
+/// [`weapon_trail_prims`])
+pub fn trail_world_point(base_xz: [i16; 2], yaw: u16, local: [i16; 3]) -> [i16; 3] {
+    use crate::gte::{psx_cos, psx_sin};
+    let a = yaw & 0xFFF;
+    let na = yaw.wrapping_neg() & 0xFFF;
+    let q = |lut: i32, v: i16| ((lut * i32::from(v)) / 4096) as i16;
+    let [x, y, z] = local;
+    [
+        base_xz[0]
+            .wrapping_add(q(psx_sin(a), z))
+            .wrapping_add(q(psx_cos(na), x)),
+        y,
+        base_xz[1]
+            .wrapping_add(q(psx_sin(na), x))
+            .wrapping_add(q(psx_cos(a), z)),
+    ]
+}
+
+/// A retail battle point (Y down) on the 320x240 stage under a host's
+/// battle view-projection `vp` (`legaia_engine_camera::projection::battle_vp`,
+/// which the native window's glam composition is pinned to): the point
+/// takes the placement frame flip `F = diag(1, -1, 1)` and the battle world
+/// scale, exactly as a body's translation and mesh do, so the trail lands on
+/// the blade the body draws. `None` behind the near plane.
+pub fn project_battle_point(vp: &[f32; 16], world_scale: f32, p: [i16; 3]) -> Option<(i16, i16)> {
+    project_stage_point_cols(
+        vp,
+        [
+            f32::from(p[0]) * world_scale,
+            -f32::from(p[1]) * world_scale,
+            f32::from(p[2]) * world_scale,
+        ],
+    )
 }
 
 /// Emit the weapon-trail screen primitives for one actor's projected sweep.
@@ -190,6 +239,27 @@ mod tests {
         };
         let g = last.gouraud.unwrap();
         assert_eq!(g[1], [0, 0, 0, 0xFF], "trailing edge vanishes");
+    }
+
+    /// `FUN_800485BC`'s vertex transform: a zero yaw adds the ground base
+    /// to X / Z and leaves Y alone (no base height); a quarter turn takes
+    /// `+X` to `-Z` and `+Z` to `+X`, glam's `Ry` sense, which is the turn
+    /// the hosts give the body mesh.
+    #[test]
+    fn trail_points_turn_with_the_body_and_sit_on_the_ground_base() {
+        assert_eq!(
+            trail_world_point([100, -800], 0, [10, -300, 20]),
+            [110, -300, -780]
+        );
+        // Quarter turn: x' = base.x + z, z' = base.z - x.
+        assert_eq!(trail_world_point([0, 0], 0x400, [40, -5, 0]), [0, -5, -40]);
+        assert_eq!(trail_world_point([0, 0], 0x400, [0, 0, 40]), [40, 0, 0]);
+        let r = glam::Mat3::from_rotation_y(0x400 as f32 / 4096.0 * std::f32::consts::TAU);
+        let g = r * glam::Vec3::new(40.0, 0.0, 0.0);
+        assert!((g.x - 0.0).abs() < 1e-3 && (g.z + 40.0).abs() < 1e-3);
+        // Products round toward zero, as the `+0xFFF` bias does.
+        let p = trail_world_point([0, 0], 0x200, [-3, 0, 0]);
+        assert_eq!(p[0], ((crate::gte::psx_cos(0xE00) * -3) / 4096) as i16);
     }
 
     #[test]

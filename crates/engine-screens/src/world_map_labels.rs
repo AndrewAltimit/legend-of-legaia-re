@@ -24,11 +24,11 @@
 //!
 //! REF: FUN_801CE850, FUN_8003D368, FUN_8003CE64
 
-use legaia_engine_core::camera_view;
 use legaia_engine_core::world::World;
 use legaia_engine_field::camera_frame;
 use legaia_engine_field::camera_frame::FieldCameraFrame;
 use legaia_engine_field::map_display::LABEL_WORLD_Y;
+use legaia_engine_world_views::camera_view;
 use legaia_render_kernels::screen_prim;
 
 /// PSX display size the label pens are authored in.

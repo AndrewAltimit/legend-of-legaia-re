@@ -181,6 +181,11 @@ pub struct AudioDirector<S: AudioSink> {
     /// silent; the next track that fits the BGM region clears it and
     /// re-stages the resident banks.
     sfx_evicted: bool,
+    /// Whether the world was in battle at the last
+    /// [`Self::route_world_sfx`]: the edge into or out of a battle is a
+    /// retail mode init (`FUN_8001DCF8`), which tears down the held
+    /// sustained cue run (`FUN_80017910` at `0x8001DDA8`).
+    sfx_in_battle: Option<bool>,
     /// The command record ([`Self::commands`]).
     commands: AudioCommandLog,
 }
@@ -246,6 +251,7 @@ impl<S: AudioSink> AudioDirector<S> {
             shared_region_base: legaia_engine_audio::spu_layout::SFX_REGION_BASE,
             resident_slot0: None,
             sfx_evicted: false,
+            sfx_in_battle: None,
             commands: AudioCommandLog::default(),
         }
     }

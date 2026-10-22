@@ -14,7 +14,7 @@
   </ol>
   <div class="notice">
     <div class="notice-title">Just want to play?</div>
-    <p>Start <code>legaia-engine</code> with no arguments - or double-click <code>Legend of Legaia.exe</code> on Windows, <code>Legend of Legaia.app</code> on macOS. A window asks for your disc image once, remembers it, and opens the title screen; see <a href="playing-and-viewing.html#launcher">the launcher</a>. The rest of this page is about the extraction tools.</p>
+    <p>Start <code>legaia-engine</code> with no arguments - or double-click <code>Legend of Legaia.exe</code> on Windows, <code>Legend of Legaia.app</code> on macOS. Its launcher asks for your disc image once, remembers it, sets the display options, and <em>Play</em> opens the title screen; see <a href="playing-and-viewing.html#launcher">the launcher</a>. The rest of this page is about the extraction tools.</p>
   </div>
   <div class="notice">
     <div class="notice-title">Rather use buttons than a terminal?</div>
@@ -129,7 +129,7 @@
 ├── font/                    - dialog-font atlas + widths (engine + viewer read this)
 ├── prot_tim_catalog.tsv     - texture inventory (raw TIMs)
 └── prot_tim_deep_catalog.tsv - texture inventory (TIMs inside LZS)</code></pre>
-  <p>The final summary points at the texture path: bulk texture export is a separate two-command step (<code>asset tim-scan</code> + <code>tim convert-dir</code>) covered in <a href="extracting-assets.html">extracting assets</a>. Everything downstream - the <a href="extracting-assets.html">asset scenarios</a>, the <a href="playing-and-viewing.html">engine and viewers</a>, the <a href="modding-and-translation.html">modding tools</a> - reads either this <code>extracted/</code> tree or the disc image directly.</p>
+  <p>Bulk texture export is not one of the eight steps: <code>--all-textures</code> adds it as a ninth (every TIM, raw and LZS-compressed, as <code>.tim</code> + <code>.png</code> under <code>tim_scan/</code>), and without it the final summary points at the equivalent two-command step (<code>asset tim-scan</code> + <code>tim convert-dir</code>) covered in <a href="extracting-assets.html">extracting assets</a>. Everything downstream - the <a href="extracting-assets.html">asset scenarios</a>, the <a href="playing-and-viewing.html">engine and viewers</a>, the <a href="modding-and-translation.html">modding tools</a> - reads either this <code>extracted/</code> tree or the disc image directly.</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="../formats/disc.html">Disc layout</a>

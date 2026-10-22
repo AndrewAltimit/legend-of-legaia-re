@@ -68,6 +68,31 @@ Readings a re-audit against the disassembly or a capture overturned. They are
 listed here as well as in the registers, because a claim that was wrong once is
 the cheapest place to look for a claim that is still wrong.
 
+- **The commit's "counter / guard window" is a sound-cue skip.** The anim
+  commit's read of the juggle byte at `0x8004AFD4` seeds the cue-track
+  cursor `+0x1F6` at `1` for a flinch (or block) re-staged inside its own
+  window, so the restarted clip skips its first cue; nothing there parries
+  or guards, and it reads the same `+0x1F7` as the juggle counter
+  ([settled](re-settled-threads/battle.md),
+  [falsified](re-do-not-re-walk.md#battle--arts--level-up)).
+- **The ability-bit rebuild walks all three character records.** The stat
+  aggregator `FUN_80042558` loops `k < 3` over `0x80084708 + k*0x414`
+  (`0x80042D8C`) with no membership test, so a member who has left the
+  party still feeds the global passive mask; the format page had said
+  "each active party member", and the port walked only the active party
+  ([settled](re-settled-threads/battle.md)).
+- **The action seed's "camera bounds" walk moves the combatants.**
+  `FUN_801EFE44` recentres the formation on the action's box - an
+  Attack's target alone - so a melee opens with its target on the stage
+  origin, and state `0x14` steps the bystanders out of the attacker's lane;
+  the port had carried the routine as an inert event
+  ([settled](re-settled-threads/battle.md),
+  [falsified](re-do-not-re-walk.md#battle--arts--level-up)).
+- **The party body radius is the seat stager's `0x280`.** `FUN_800513F0`
+  writes it, `0x400` for Terra (`0x8005151C..0x80051538`); the port had
+  used a guessed `448`, and ran the separation pass on every vsync where
+  retail runs it once a battle frame
+  ([settled](re-settled-threads/rendering-camera.md)).
 - **The prologue's gold CLUTs are effect-script cyclers, and the law bends at
   the top.** Four mode-3 CLUT-cell cyclers grey and re-tint the CLUT rects
   `(0, 473, 320, 2)` / `(0, 476, 320, 34)`; green is `(L * 247) >> 8`, not
@@ -160,7 +185,7 @@ Answered questions: [settled field / locomotion](re-settled-threads/field.md), [
 
 | Thread | Status | What would close it |
 |---|---|---|
-| What is left of the juggle window? | partial (the per-frame law is pinned; the four-slot read is narrowed) | Three residuals ([battle-formulas.md](../subsystems/battle-formulas.md#the-juggle-window---what-makes-a-monster-juggleable)): a four-slot list reads `entry[0x23 + 4k]` with `k` set by the monster block's heap address: both measured fights read `0` (the port's value); a `0xFF` slot would hold the window open ([monster-animation.md](../formats/monster-animation.md#event-frame-list-entry-0x100x13)); the measured window runs 1-2 ticks past `32 * beat / (speed * rate)` because the cursor's sub-frame carry at the commit is unmodelled; and whether the counter / guard window at `0x8004AFC0..` uses the same beat for a parry is untraced. A capture of the commit's carry closes the second. |
+| What is left of the juggle window? | partial (the per-frame law is pinned; the four-slot read is narrowed) | Two residuals ([battle-formulas.md](../subsystems/battle-formulas.md#the-juggle-window---what-makes-a-monster-juggleable)): a four-slot list reads `entry[0x23 + 4k]` with `k` set by the monster block's heap address: both measured fights read `0` (the port's value); a `0xFF` slot would hold the window open ([monster-animation.md](../formats/monster-animation.md#event-frame-list-entry-0x100x13)); the measured window runs 1-2 ticks past `32 * beat / (speed * rate)` because the cursor's sub-frame carry at the commit is unmodelled. A capture of the commit's carry closes the second. |
 
 Answered questions: [settled battle / arts / level-up](re-settled-threads/battle.md), [settled rendering / camera](re-settled-threads/rendering-camera.md), [settled world map](re-settled-threads/world-map.md); falsified readings: [battle](re-do-not-re-walk.md#battle--arts--level-up), [rendering / camera](re-do-not-re-walk.md#rendering--camera).
 

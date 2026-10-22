@@ -22,6 +22,15 @@ pub struct BattleCamPose {
 // Projection: the retail GTE battle camera as one view-projection matrix.
 // ---------------------------------------------------------------------------
 
+/// The battle world scale: retail's base matrix `DAT_8007BF10` holds
+/// `16384 * I` in battle mode (GTE `4096` = 1.0), a **4x uniform scale**
+/// composed under the camera rotation for every drawn battle object - the
+/// actors (`FUN_80048A08`), the backdrop (registered as an ordinary
+/// background actor by `FUN_800513F0`) and the effect sprites, whose centres
+/// `FUN_800195A8` transforms through the same camera matrix. The
+/// `world_scale` every host hands [`battle_vp`] in battle.
+pub const BATTLE_WORLD_SCALE: f32 = 4.0;
+
 /// GTE projection focal length the battle camera runs on (`_DAT_8007B6F4`).
 pub const GTE_H: f32 = 256.0;
 

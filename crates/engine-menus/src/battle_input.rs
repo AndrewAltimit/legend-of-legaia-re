@@ -411,6 +411,72 @@ impl BattleCommandSession {
 
     /// The command currently under the ring cursor, or `None` once the
     /// session has left the ring.
+    /// The cross-button entry's highlight walk (option `0x800846C8 != 0`):
+    /// the pre-dispatch block `0x801D07FC..0x801D0B08` that runs ahead of the
+    /// flow's handlers while a chip cluster is up. A direction press moves
+    /// the highlight onto that arm - tested Left, Right, Down, Up in that
+    /// order, Down only with four arms and Up with three or more - and keys
+    /// cue `0x22` when the arm differs from the one already lit (`beq` on
+    /// `ctx[+0x880]` at `0x801D0824` / `0x801D08C8` / `0x801D0980` /
+    /// `0x801D0A38`). The block then rewrites the pad word: a direction never
+    /// reaches a handler, the confirm takes the lit arm (which the session's
+    /// own confirm does off the cursor) and the cancel passes through.
+    ///
+    /// The cursor of each prompt phase is the lit arm. Returns whether the
+    /// highlight moved; other phases leave `ev` untouched.
+    ///
+    /// PORT: FUN_801D0748 (`0x801D07FC..0x801D0B08`)
+    pub fn walk_highlight(&mut self, ev: &mut BattleCommandInput) -> bool {
+        let (cursor, arms) = match &mut self.phase {
+            CommandPhase::Menu { cursor } => (cursor, 4u8),
+            CommandPhase::RoundPrompt { cursor }
+            | CommandPhase::AttackMode { cursor }
+            | CommandPhase::CommitConfirm { cursor } => (cursor, 2),
+            _ => return false,
+        };
+        let pressed = if ev.left {
+            Some(BattleCommandInput {
+                left: true,
+                ..Default::default()
+            })
+        } else if ev.right {
+            Some(BattleCommandInput {
+                right: true,
+                ..Default::default()
+            })
+        } else if ev.down && arms >= 4 {
+            Some(BattleCommandInput {
+                down: true,
+                ..Default::default()
+            })
+        } else if ev.up && arms >= 3 {
+            Some(BattleCommandInput {
+                up: true,
+                ..Default::default()
+            })
+        } else {
+            None
+        };
+        ev.left = false;
+        ev.right = false;
+        ev.up = false;
+        ev.down = false;
+        let seat = pressed.and_then(|p| {
+            if arms == 4 {
+                ring_seat(p)
+            } else {
+                pair_seat(p)
+            }
+        });
+        match seat {
+            Some(seat) if seat != *cursor => {
+                *cursor = seat;
+                true
+            }
+            _ => false,
+        }
+    }
+
     pub fn menu_command(&self) -> Option<BattleCommand> {
         match self.phase {
             CommandPhase::Menu { cursor } => BattleCommand::MENU.get(cursor as usize).copied(),
@@ -916,6 +982,60 @@ mod tests {
 
     fn party3() -> [SlotState; 3] {
         [alive(true), alive(true), alive(true)]
+    }
+
+    /// The cross-button entry walks a highlight: a new arm moves it (and
+    /// would cue), the lit arm does not, a direction never reaches the
+    /// handler, and the two-chip prompts ignore Up / Down.
+    #[test]
+    fn the_cross_button_entry_walks_a_highlight() {
+        let mut s = BattleCommandSession {
+            actor: 0,
+            party_slot: 0,
+            no_escape: false,
+            phase: CommandPhase::Menu {
+                cursor: RING_OPEN_CURSOR,
+            },
+        };
+        let mut ev = BattleCommandInput {
+            left: true,
+            ..Default::default()
+        };
+        assert!(!s.walk_highlight(&mut ev), "Left is already lit");
+        assert!(!ev.left, "the direction is swallowed");
+        let mut ev = BattleCommandInput {
+            up: true,
+            ..Default::default()
+        };
+        assert!(s.walk_highlight(&mut ev));
+        assert_eq!(s.menu_command(), Some(BattleCommand::Item));
+        s.input(ev, party3(), one_monster());
+        assert!(matches!(s.phase, CommandPhase::Menu { .. }), "no commit");
+        // Confirm takes the lit arm.
+        let ev = BattleCommandInput {
+            cross: true,
+            ..Default::default()
+        };
+        s.input(ev, party3(), one_monster());
+        assert!(matches!(s.phase, CommandPhase::OpenItemMenu));
+
+        let mut p = BattleCommandSession {
+            actor: 0,
+            party_slot: 0,
+            no_escape: false,
+            phase: CommandPhase::RoundPrompt { cursor: 0 },
+        };
+        let mut ev = BattleCommandInput {
+            down: true,
+            ..Default::default()
+        };
+        assert!(!p.walk_highlight(&mut ev), "two arms: no Down");
+        let mut ev = BattleCommandInput {
+            right: true,
+            ..Default::default()
+        };
+        assert!(p.walk_highlight(&mut ev));
+        assert!(matches!(p.phase, CommandPhase::RoundPrompt { cursor: 1 }));
     }
 
     fn one_monster() -> [SlotState; 5] {

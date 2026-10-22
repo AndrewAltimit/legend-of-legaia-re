@@ -104,10 +104,10 @@ pub trait BattleActionHost {
 
     /// Write the slot's live position pair (`+0x34`/`+0x38`) - the mutation
     /// half of [`BattleActionHost::actor_position`]. The SM needs it for
-    /// exactly one arm: state `0x16`'s arrival shove
-    /// ([`motion::arrival_shove_step`]), which displaces the *target* when
-    /// the walker arrives. Default no-op (a positionless host stays
-    /// positionless).
+    /// state `0x16`'s arrival shove ([`motion::arrival_shove_step`]), which
+    /// displaces the *target* when the walker arrives, and for the tail's
+    /// make-way step ([`crate::battle_action::make_way_step`]). Default
+    /// no-op (a positionless host stays positionless).
     fn set_actor_position(&mut self, _slot: u8, _x: i16, _z: i16) {}
 
     /// The slot's **seat** (anchor) pair - retail `actor[+0x3C]`/`+0x40`,
@@ -123,9 +123,32 @@ pub trait BattleActionHost {
     /// `0x801E3444..0x801E3490` stores all four halfwords). Default no-op.
     fn set_actor_anchor(&mut self, _slot: u8, _x: i16, _z: i16) {}
 
-    /// Equivalent of `FUN_801EFE44` - battle camera bounds. Walks the 8-slot
-    /// table for min/max. Default no-op.
-    fn camera_bounds(&mut self) {}
+    /// `FUN_801EFE44`, the action seed's **formation recentre** on the acting
+    /// slot `actor`: squash an axis whose span exceeds `0x800`, then move
+    /// every combatant so the box the action frames - the target alone for
+    /// an Attack - is centred on the origin
+    /// ([`crate::battle_action::seed_formation_recentre`]). Default no-op (a
+    /// positionless host stays positionless).
+    fn seed_formation_recentre(&mut self, _actor: u8) {}
+
+    /// The live pair of retail **pool** slot `pool` (`0..3` party seats,
+    /// `3..7` monster seats) - the walk the SM tail's make-way step runs
+    /// ([`crate::battle_action::make_way_step`]). Retail's pool has a struct
+    /// behind every slot, an empty party seat included, and the step moves
+    /// it; a host that models those seats answers for them here. The default
+    /// maps the pool slot back to its engine slot and reads
+    /// [`Self::actor_position`]; an empty seat reads `None`.
+    fn pool_position(&self, pool: u8) -> Option<(i16, i16)> {
+        let e = crate::battle_slot::engine_slot_for_retail(self.party_count(), pool)?;
+        self.actor_position(e)
+    }
+
+    /// The mutation half of [`Self::pool_position`].
+    fn set_pool_position(&mut self, pool: u8, x: i16, z: i16) {
+        if let Some(e) = crate::battle_slot::engine_slot_for_retail(self.party_count(), pool) {
+            self.set_actor_position(e, x, z);
+        }
+    }
 
     /// Body-size / bulk class of the monster seated in `actor_slot` - the
     /// monster record's `+0x1F` byte that retail reads through the per-enemy

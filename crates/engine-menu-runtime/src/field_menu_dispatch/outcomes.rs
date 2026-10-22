@@ -206,7 +206,7 @@ pub fn apply_pause_items_outcome(
     // `0x100`. The field walk tick drains it and the region encounter roll
     // skips while it is non-zero (`World::on_field_step`).
     for _ in 0..session.incense_uses() {
-        world.locomotion.walk_regen_window = legaia_engine_field::incense_window::top_up_cooldown(
+        world.locomotion.walk_regen_window = legaia_engine_system::incense_window::top_up_cooldown(
             world.locomotion.walk_regen_window,
         );
     }

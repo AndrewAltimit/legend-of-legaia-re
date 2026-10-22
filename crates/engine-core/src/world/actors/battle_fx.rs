@@ -5,6 +5,11 @@
 use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
+/// The entry counter `gp+0x330` from which the frame driver loads the
+/// fight's stage (`sltiu v0,a0,0x84` at `0x80046F04`, then
+/// `jal 0x800513F0` at `0x80046F74` while `ctx[+0x11]` is clear).
+pub(crate) const ENTRY_STAGE_LOAD_COUNTER: u32 = 0x84;
+
 impl World {
     /// Walk actor `i`'s committed effect script for one frame and queue the
     /// resulting spawn requests (drained via
@@ -238,6 +243,44 @@ impl World {
                 }
                 AnimCueEmit::Suppressed { .. } => {}
             }
+        }
+    }
+
+    /// One call into the cue dispatcher `FUN_8004FCC8(id)` - the SCUS entry
+    /// every battle-overlay and stage-module site uses for a plain "play
+    /// this". An id `>= 0x100` is a CD-XA voice: the two gates and the
+    /// starter's triple ([`legaia_engine_battle_vm::battle_cast_cue::admit_voice_cue`])
+    /// onto [`AudioState::battle_xa_cues`]. Below it the id goes on the SFX
+    /// ring as the drainer's descriptor index: `id - 1` under `0x40`
+    /// (`addiu a1,s0,-0x1` / `sh a1` at `0x8004FD9C..0x8004FE28`), `id`
+    /// itself from there to `0x100` (`sh s0` at `0x8004FDE4`). The de-dup
+    /// word `0x8007B724` is `-1` from the mode init and never matches.
+    // PORT: FUN_8004FCC8 (the whole dispatch; the voice arm's kernel is
+    // `admit_voice_cue`, the ring arm's `anim_cue::dispatch_ring_id`)
+    pub(in crate::world) fn dispatch_battle_cue(&mut self, id: u16) {
+        if id >= 0x100 {
+            let raw = self
+                .audio
+                .xa_cue_durations
+                .as_deref()
+                .and_then(|t| t.get(usize::from(id - 0x100)).copied());
+            let gates = legaia_engine_battle_vm::battle_cast_cue::VoiceCueGates {
+                side_band_stage: 0,
+                clip_span_left: self.audio.battle_xa_busy_frames,
+            };
+            if let legaia_engine_battle_vm::battle_cast_cue::VoiceCueVerdict::Play(req) =
+                legaia_engine_battle_vm::battle_cast_cue::admit_voice_cue(id, gates, raw)
+            {
+                self.push_battle_xa_cue(legaia_engine_system::sound_state::XaVoiceClip {
+                    clip: req.clip_slot,
+                    channel: req.channel,
+                    duration_sectors: req.duration_sectors,
+                });
+            }
+            return;
+        }
+        if let Some(ring) = legaia_engine_battle::anim_cue::dispatch_ring_id(id) {
+            self.audio.sfx_ring_ops.push(SfxRingOp::Push(ring as i16));
         }
     }
 
@@ -570,6 +613,25 @@ impl World {
         if dt == 0 {
             return;
         }
+        // The stage loader `FUN_800513F0` seeds the floor (`0x80051C84`) on
+        // the frame driver's first pass at entry counter `0x84` or more
+        // (`0x80046F04` / `0x80046F74`) and the ramp below runs later in that
+        // same pass. Until then the fight has no stage to colour: the floor
+        // holds, so the fade-in starts four counter units into the sweep -
+        // `s5_tetsu_battle`, at counter `0xAF`, holds base `0x76`, 43 units
+        // of ramp. The camera reads here as last tick left it, which is the
+        // counter the retail pass tests before its own advance; no camera
+        // yet is the flip tick, before the driver's first sweep pass.
+        if self.battle.stage_registration_pending {
+            match self.battle.camera.as_ref().map(|c| c.entry_sweep_counter()) {
+                None => return,
+                Some(Some(c)) if c < ENTRY_STAGE_LOAD_COUNTER => return,
+                _ => {
+                    self.battle.stage_registration_pending = false;
+                    self.battle_ctx.ambient_base = grid::AMBIENT_BASE_FLOOR;
+                }
+            }
+        }
         let ctx = &mut self.battle_ctx;
         ctx.ambient_base =
             grid::ambient_base_step(ctx.ambient_base, ctx.gauge_rearm_latch != 0, dt);
@@ -671,11 +733,11 @@ impl World {
     /// (`target[+0x36] != 0` takes the ramped shot):
     /// `player_steal_skeleton_banner` reads its killed skeleton `183` down.
     ///
+    /// The pass also runs the sustained-cue teardown for every fading seat,
+    /// ahead of those gates (`0x8005040C`).
+    ///
     /// PORT: FUN_80050120 (arm 2's monster sink and its `ctx[+0x288]` latch)
     pub(super) fn tick_battle_defeat_sink(&mut self) {
-        if self.battle_ctx.absorbed_seru != 0 {
-            return;
-        }
         // One sink step a battle frame: the pass multiplies the size by the
         // frame step before the shift (`mult v1,v0` over `0x1F800393`,
         // `sra 2`, `0x80050480..0x800504A0`), so a step-`2` frame sinks
@@ -685,10 +747,30 @@ impl World {
             return;
         }
         self.battle.defeat_sink_frame = Some(frame);
+        // The sustained-cue teardown (`jal 0x80017910` at `0x8005040C`) sits
+        // ahead of every sink gate: a fading monster seat with its colour
+        // word still lit releases the held sustained run each pass, absorb,
+        // capture and scripted fight alike - so a looping cue the dying
+        // monster keyed cannot outlive its fade.
+        // REF: FUN_80017910
+        let first = self.party.party_count as usize;
+        let fading = (first..(first + 4).min(self.actors.len())).any(|slot| {
+            let a = &self.actors[slot];
+            a.active
+                && a.battle_monster_id.is_some()
+                && a.battle.render_flag
+                    == legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE
+                && a.battle.render_color & 0x00FF_FFFF != 0
+        });
+        if fading {
+            self.audio.sfx_ring_ops.push(SfxRingOp::ReleaseSustained);
+        }
+        if self.battle_ctx.absorbed_seru != 0 {
+            return;
+        }
         let step = i32::from(self.battle.frame_clock.step.max(1));
         let lone_scripted =
             self.battle_ctx.scripted_fight != 0 && self.battle_monster_slots().len() <= 1;
-        let first = self.party.party_count as usize;
         for slot in first..(first + 4).min(self.actors.len()) {
             let a = &self.actors[slot];
             if !a.active

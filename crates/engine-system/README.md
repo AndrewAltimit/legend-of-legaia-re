@@ -45,8 +45,7 @@ code spans, since rustdoc cannot resolve a link into a dependent crate.
   `movie::movie_audio` (what a movie does to the score, one policy both hosts
   consult) and `movie::cutscene_trigger` (every retail FMV trigger site).
 - **Sound + music** - `sound_state` (the global sound-system state the
-  frame-begin driver services), `sustained_sfx` (the held sustained-SFX
-  voices and their `FUN_80017910` teardown) and `music_labels` (a global BGM id /
+  frame-begin driver services) and `music_labels` (a global BGM id /
   `music_01` bank slot resolved to its curated sound-test label; see
   [`docs/reference/music-tracks.md`](../../docs/reference/music-tracks.md)).
 - **Screen fades** - `fade` (the retail fade-state primitive), `fade_ramp`
@@ -63,6 +62,8 @@ code spans, since rustdoc cannot resolve a link into a dependent crate.
   sound-source arm, the sound-stream request pair, the scene control block's
   reset values, the boot offset table, the identity index-list init and the
   dialog line count). The reset's body over a `World` is in `engine-core`.
+  `incense_window` is the Incense top-up `FUN_80046870`, the item applier's
+  selector-`0x82` arm the pause Items screen runs.
 - **Story flags** - `story_flag_state` (the retail system / story flag
   arrays and the story-flag bit image the scripts test and set, held as one
   unit on `World`).

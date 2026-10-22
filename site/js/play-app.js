@@ -500,8 +500,8 @@ void main() { o_color = texture(u_layer, v_uv); }
       /* Camera-occlusion fade (see-through walls) - the browser twin of the
        * native play-window's default-on enhancement: field geometry between
        * the camera and the player screen-doors open around the character
-       * (per-fragment, in the shared FS - NOT the abandoned per-body
-       * OCCLUDER_CULL above). The page's checkbox drives setOcclusionFade;
+       * (per-fragment, in the shared FS - not a per-body cull, which
+       * blinked neighbouring bodies out). The page's checkbox drives setOcclusionFade;
        * the focus itself is staged per field frame in `_frame` and never
        * during battle or VR first-person. */
       this.occlusionFade = true;

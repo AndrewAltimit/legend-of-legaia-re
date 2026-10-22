@@ -535,13 +535,55 @@ impl Pool {
         catalog: &EffectCatalog,
         frame_skip: u8,
     ) {
+        self.walk_retail(host, catalog, frame_skip, None);
+    }
+
+    /// Run the walker's sweeps for master `mi` alone, and for the children it
+    /// seeds in them: the sweeps a master spawned **ahead of** the frame's
+    /// walker owes, when the host could only seat it after the walker had
+    /// already run.
+    ///
+    /// Retail's spawn and walk sit in one frame in that order: the per-actor
+    /// anim tick `FUN_80047430` steps the action effect script `FUN_801DEA50`
+    /// (`jal` at `0x800478B8` / `0x80047C08`), whose direct arm spawns into
+    /// the pool through `FUN_801DFDF0`, and the draw tick `FUN_800480D8`,
+    /// reached from the render dispatcher `FUN_8001ADA4` (`jal` at
+    /// `0x8001AEF4`) after the tick pass, runs the walker (`jal 0x801E0080`
+    /// at `0x80048128`). So a script spawn has its first batch seeded, and
+    /// that batch its first child step, on the frame it fires. Other masters
+    /// and their children are left alone - this frame's walker has stepped
+    /// them already.
+    ///
+    /// REF: FUN_801E0080, FUN_80047430, FUN_800480D8
+    pub fn catch_up_master<H: EffectHost + ?Sized>(
+        &mut self,
+        host: &mut H,
+        catalog: &EffectCatalog,
+        mi: usize,
+        sweeps: u8,
+    ) {
+        if mi < MAX_MASTER_SLOTS && sweeps > 0 {
+            self.walk_retail(host, catalog, sweeps, Some(mi));
+        }
+    }
+
+    fn walk_retail<H: EffectHost + ?Sized>(
+        &mut self,
+        host: &mut H,
+        catalog: &EffectCatalog,
+        frame_skip: u8,
+        only: Option<usize>,
+    ) {
         let motion_scale = self.head.motion_scale as i16 as i32;
+        // The children seeded by `only`'s master in this call - the only
+        // children such a call walks.
+        let mut seeded_here = [false; MAX_CHILD_SLOTS];
 
         // Port-side aging aid (retail leaves master +0x14 unwritten): bump
         // once per call per active master so age-based render fades keep
         // working for hosts that read `field_14`.
-        for m in &mut self.master_slots {
-            if m.child_count != 0 {
+        for (mi, m) in self.master_slots.iter_mut().enumerate() {
+            if m.child_count != 0 && only.is_none_or(|o| o == mi) {
                 m.field_14 = m.field_14.saturating_add(1);
             }
         }
@@ -555,7 +597,7 @@ impl Pool {
 
             // --- master walk: spawn cadence over the pack1 records -------
             for mi in 0..MAX_MASTER_SLOTS {
-                if self.master_slots[mi].child_count == 0 {
+                if self.master_slots[mi].child_count == 0 || only.is_some_and(|o| o != mi) {
                     continue;
                 }
                 live_slots += 1;
@@ -597,6 +639,7 @@ impl Pool {
                         {
                             let mirror_rand = host.next_random();
                             let master = &self.master_slots[mi];
+                            seeded_here[alloc] = true;
                             Self::seed_child(
                                 &mut self.children[alloc],
                                 mirror_rand,
@@ -628,7 +671,9 @@ impl Pool {
 
             // --- child walk: anim frame advance + motion integration -----
             for ci in 0..MAX_CHILD_SLOTS {
-                if self.children[ci].frame_count == 0 {
+                if self.children[ci].frame_count == 0
+                    || (only.is_some() && seeded_here.get(ci) != Some(&true))
+                {
                     continue;
                 }
                 live_slots += 1;

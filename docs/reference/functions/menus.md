@@ -42,7 +42,7 @@ list readers are three views of the same two fields.
 
 Ports: the layout + the record reader are `engine-ui::menu::screens::records_screen`
 (`record_counters`, `records_screen_draws_for`); the clamps and the H:MM:SS
-split are `engine-field::dev_menu_leaves::records_screen`. The three block-level
+split are `engine-dev-menu::dev_menu_leaves::records_screen`. The three block-level
 values (battles, escapes, the 1/60 s play clock) and the treasure census
 (`DAT_801C6460` / `DAT_801C6462`, a world-map overlay global rather than save
 data) have no engine-side counter yet.

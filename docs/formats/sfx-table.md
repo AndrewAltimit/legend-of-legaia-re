@@ -198,6 +198,10 @@ names, with no fallback bank. The ring ages by the vsyncs one host tick spans.
   sequencer note that held the voice no longer matches it and its note-off does
   not reach the cue.
 - While `_DAT_8007BA88` is non-zero every cue is forced onto channel `6`.
+- A sustained run loops until something keys it off: the next sustained cue,
+  or the teardown `FUN_80017910`, which the mode init and the battle anim
+  commit call
+  ([`audio.md`](../subsystems/audio.md#sustained-cues-loop-until-the-teardown-releases-them)).
 
 Port: `legaia_engine_audio::SfxBank` carries the cursor, limit and held count
 (`set_field_family` selects the limit, called per tick from the world's mode);
@@ -561,7 +565,7 @@ Tests (disc-gated): `sfx_cue_resident_bank` (engine-session) - routed cues key a
 voice via the tone-index path and both banks pack inside the reserved region.
 `sfx_shared_region` (engine-session) - walks the residency through field, battle
 and three minigames, checks every named bank fits above slot 0, and keys
-`0x2E` / `0x2F` out of PROT 0876. `play_sfx_channel` (web-viewer) - in town a
+`0x2E` / `0x2F` out of PROT 0876. `play_sfx_channel` (web-play) - in town a
 category-`0` cue sounds out of PROT 0868 and a category-`6` cue out of PROT
 0876 while a category-`2` cue has no bank; a forced battle swaps the region to
 PROT 0869.

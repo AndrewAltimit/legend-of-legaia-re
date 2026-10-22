@@ -65,6 +65,9 @@ pub(super) fn attack_face<H: BattleActionHost + ?Sized>(
     let target_slot = host.actor(actor_slot).map(|a| a.active_target).unwrap_or(0);
     host.pose(actor_slot, Pose::Idle);
     update_attack_facing(host, actor_slot, target_slot);
+    // Every bystander's make-way heading and the countdown, ahead of the
+    // range poll (`0x801E30CC..0x801E31E8`).
+    arm_make_way(host, ctx, actor_slot, target_slot);
     let range = host.range_check(actor_slot, target_slot);
     let party_count = host.party_count();
     let next = if range == 0 {

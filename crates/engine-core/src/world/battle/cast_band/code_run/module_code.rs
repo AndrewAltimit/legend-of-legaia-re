@@ -25,6 +25,7 @@ impl World {
         if entry == legaia_engine_cast::cast_fatal_decision::FATAL_DECISION_ENTRY {
             return Some(self.run_fatal_decision(entry));
         }
+        self.casting.module_running_entry = Some(entry);
         let mut ctx = self.cast_module_ctx();
         // The phase the tick enters on, before a state-touching stager below
         // steps it (PROT 0909's arm 0 is its stager's).
@@ -135,7 +136,13 @@ impl World {
                     });
                 // PROT 0916's arm `0x14` settle poll on the latched victim.
                 st.victim_settled = self.chain_seat_settled(usize::from(latched), true);
+                // The applier stage `ctx[+0x276]` a side-band wait arm polls:
+                // up while the engine's stand-in for its reads runs, or while
+                // a capture replay holds it.
+                let held = st.sideband_busy;
+                st.sideband_busy |= self.battle_ctx.menu_open != 0;
                 let d = direct(&mut st, ctx.phase, seats);
+                st.sideband_busy = held;
                 self.store_module_cam(st);
                 d
             })
@@ -1258,6 +1265,9 @@ impl World {
             if entry == 915 {
                 self.apply_mushura_writes(phase_in, victim_slot);
             }
+            if entry == 929 {
+                self.apply_mule_writes(phase_in, ctx.phase != phase_in);
+            }
             self.apply_summon_pre_hits(
                 entry,
                 phase_in,
@@ -1307,6 +1317,15 @@ impl World {
         }
         if entry == 911 {
             self.orb_arm_writes(phase_in, ctx.phase);
+        }
+        self.late_creature_stager_words(entry, phase_in, ctx.phase != phase_in);
+        if entry == 928
+            && let Some(v) = legaia_engine_cast::cast_module_camera::palma_stage_byte(
+                phase_in,
+                self.casting.module_cam.countdown.0,
+            )
+        {
+            ctx.ctx_278 = v;
         }
         self.casting.module_ctx_278 = ctx.ctx_278;
         self.casting.module_ring_angle = ctx.ctx_6d8;

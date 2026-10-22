@@ -79,12 +79,25 @@ impl EngineWindow {
     ///
     /// Returns `false` immediately (no-op) if the window is already open.
     pub fn open(&mut self, evl: &ActiveEventLoop, title: &str) -> bool {
+        self.open_with(evl, title, WindowSetup::default())
+    }
+
+    /// [`Self::open`] with a chosen window size and fullscreen state
+    /// ([`WindowSetup`]). Presentation only: the renderer draws at whatever
+    /// surface the window gets, exactly as after a manual resize.
+    pub fn open_with(&mut self, evl: &ActiveEventLoop, title: &str, setup: WindowSetup) -> bool {
         if self.window.is_some() {
             return false;
         }
+        let (w, h) = setup.logical_size;
         let attrs = WindowAttributes::default()
             .with_title(title)
-            .with_inner_size(winit::dpi::LogicalSize::new(960.0_f64, 720.0_f64));
+            .with_inner_size(winit::dpi::LogicalSize::new(w, h))
+            .with_fullscreen(
+                setup
+                    .fullscreen
+                    .then_some(winit::window::Fullscreen::Borderless(None)),
+            );
         let window = match evl.create_window(attrs) {
             Ok(w) => Arc::new(w),
             Err(e) => {
@@ -168,6 +181,54 @@ impl EngineWindow {
     pub fn request_redraw(&self) {
         if let Some(w) = &self.window {
             w.request_redraw();
+        }
+    }
+
+    /// Whether the window is fullscreen now.
+    pub fn is_fullscreen(&self) -> bool {
+        self.window
+            .as_ref()
+            .is_some_and(|w| w.fullscreen().is_some())
+    }
+
+    /// Enter or leave borderless fullscreen on the window's current monitor.
+    /// The `Resized` event that follows resizes the surface as usual.
+    pub fn set_fullscreen(&self, on: bool) {
+        if let Some(w) = &self.window {
+            w.set_fullscreen(on.then_some(winit::window::Fullscreen::Borderless(None)));
+        }
+    }
+}
+
+/// The window [`EngineWindow::open_with`] creates.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WindowSetup {
+    /// Inner size in logical pixels (the OS scales it for HiDPI).
+    pub logical_size: (f64, f64),
+    /// Open as a borderless fullscreen window on the current monitor.
+    pub fullscreen: bool,
+}
+
+impl Default for WindowSetup {
+    /// The 960x720 window every engine binary has always opened.
+    fn default() -> Self {
+        Self::scaled(Self::DEFAULT_SCALE, false)
+    }
+}
+
+impl WindowSetup {
+    /// The window scales offered: 640x480 up to 1920x1440.
+    pub const SCALES: std::ops::RangeInclusive<u8> = 2..=6;
+    /// 960x720.
+    pub const DEFAULT_SCALE: u8 = 3;
+
+    /// The PlayStation's 320x240 display times `scale` (clamped to
+    /// [`Self::SCALES`]).
+    pub fn scaled(scale: u8, fullscreen: bool) -> Self {
+        let k = f64::from(scale.clamp(*Self::SCALES.start(), *Self::SCALES.end()));
+        Self {
+            logical_size: (320.0 * k, 240.0 * k),
+            fullscreen,
         }
     }
 }
@@ -532,6 +593,19 @@ mod camera_tests {
             assert!(near < distance * 0.5, "distance {distance}: near {near}");
             assert_eq!(far, SCENE_FAR);
         }
+    }
+
+    /// The default window is the 960x720 one every binary always opened;
+    /// scales clamp into the offered range.
+    #[test]
+    fn window_setup_default_and_clamp() {
+        assert_eq!(WindowSetup::default().logical_size, (960.0, 720.0));
+        assert!(!WindowSetup::default().fullscreen);
+        assert_eq!(WindowSetup::scaled(0, true).logical_size, (640.0, 480.0));
+        assert_eq!(
+            WindowSetup::scaled(99, false).logical_size,
+            (1920.0, 1440.0)
+        );
     }
 
     /// GUARD: the far plane clears the overworld walk camera's 6x world scale.

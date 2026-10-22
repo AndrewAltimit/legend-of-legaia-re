@@ -1,6 +1,6 @@
 //! Phase-scripted retail battle camera (game mode `0x15`) - the ONE model
 //! both hosts run: the native play-window (`engine-shell`'s `window/battle_cam`
-//! adapter) and the browser play page (`web-viewer::play_battle_render`) drive
+//! adapter) and the browser play page (`web-play::play_battle_render`) drive
 //! this same state machine and project through [`battle_vp`], so the browser
 //! battle frames exactly like the native window instead of approximating it.
 //!
@@ -236,7 +236,7 @@ use legaia_engine_camera::projection::*;
 
 pub use action::*;
 pub use camera::*;
-pub use camera_step::action_yaw_pass_increment;
+pub use camera_step::{action_yaw_pass_increment, retake_align_target};
 pub use entry_sweep::*;
 pub use module_shot::*;
 pub use phase::*;

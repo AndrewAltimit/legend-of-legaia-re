@@ -32,8 +32,10 @@ floor's step markers (`minigame_floor`, `dance_marker`) are
 The split line is `World` (and, for scene assembly, `engine-scene`):
 
 - **World glue** - `World::enter_dance` / `tick_fishing` / the hub and
-  exchange methods, `minigame_entry` (mode-24 door warps),
-  `World::minigame_caption`, `casino_coin_bank`, `fishing_exchange_input`, `timed_fight`.
+  exchange methods, `World::minigame_caption`, `casino_coin_bank` and
+  `fishing_exchange_input` (`engine-core`). The mode-24 door warps
+  (`minigame_entry`) are `engine-mode`'s, the timed fight's gate and numbers
+  `engine-world-views::timed_fight`.
 - **Scene assembly and the minigame seat** - `dance_venue`,
   `dance_cast_scene`, `fishing_scene`, `fishing_venue` (meshes and cameras
   out of a loaded `Scene` / `SceneResources`), the duel and arena surfaces,
@@ -41,9 +43,10 @@ The split line is `World` (and, for scene assembly, `engine-scene`):
   live in [`legaia-engine-minigame-scenes`](../engine-minigame-scenes/README.md),
   which needs `engine-scene` and `engine-menus` and so cannot sit in this
   crate. The pure kernels those modules run on (the duel camera, the dance
-  camera track) are in this crate. `engine-core` keeps only the `World` /
-  `SceneHost` halves (`dance_venue::sync_dance_venue`,
-  `fishing_venue::tick_fishing_venue_on_host`) and `fishing_hub`.
+  camera track) are in this crate. `engine-core` keeps only the `World`
+  half (`dance_venue::sync_dance_venue`) and `engine-scene-host` the
+  `SceneHost` one (`fishing_venue::tick_fishing_venue_on_host`); the fishing
+  hub screen is `engine-fishing::fishing_hub`.
 - **The Muscle Dome leg** - a leg is an ordinary battle under the hood
   (spells, the battle command menu, the arts input), so `MuscleDomeSession`,
   its command menu, the ring / magic gates and the loadouts built off a live
@@ -60,7 +63,7 @@ The pure leaves these engines share with the rest of the engine (the BIOS
 `rand()` LCG, both pad-word layouts, the `.MAP` region tables, the field clip
 step, the retail camera globals, the camera-relative glide and the menu cursor
 navigator `menu_input`) live lower: pad words, `rand` and `menu_input` in
-`legaia-engine-system`, the camera kernels in `legaia-engine-battle-vm` and
+`legaia-engine-system`, the camera kernels in `legaia-engine-camera` and
 the clip step in `legaia-engine-vm` (`actor_tick`). The `.MAP` region tables
 are `legaia-engine-field`'s, read by the shared minigame floor there; this
 crate reaches `legaia-engine-field` for that floor's step markers only, and

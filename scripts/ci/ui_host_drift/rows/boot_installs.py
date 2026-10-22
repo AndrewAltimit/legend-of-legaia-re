@@ -32,4 +32,4 @@ from ui_host_drift.roots import REPO
 # ---------------------------------------------------------------------------
 
 BOOT_NATIVE = REPO / "crates/engine-session/src/session.rs"
-BOOT_WEB_ROOT = REPO / "crates/web-viewer/src"
+BOOT_WEB_ROOT = REPO / "crates/web-play/src"

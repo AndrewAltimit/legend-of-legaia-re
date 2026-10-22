@@ -325,6 +325,7 @@ mod battle_status;
 mod battle_stone_gaze;
 mod battle_turns_items;
 mod battle_tutorial_flow;
+mod battle_ui_cue_routing;
 mod battle_xp_attack;
 mod camera_offset_ease;
 mod cast_band;
@@ -383,4 +384,5 @@ mod worldmap;
 
 mod battle_auto_attack;
 mod battle_formation_span;
+mod battle_make_way;
 mod battle_target_ring;

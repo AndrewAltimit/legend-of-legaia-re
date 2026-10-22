@@ -88,7 +88,7 @@ fn finishing_the_movie_returns_to_the_menu_with_the_countdown_re_armed() {
 
 #[test]
 fn the_browser_shape_finishes_on_the_same_frame_and_loops() {
-    // What `web-viewer::boot_title_step` does: claim it, finish it, count the
+    // What `web-play::boot_title_step` does: claim it, finish it, count the
     // skip. Two full cycles, to prove the countdown really re-arms.
     let mut s = armed();
     for cycle in 0..2 {

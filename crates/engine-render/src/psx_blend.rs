@@ -126,8 +126,29 @@ pub struct BlendListEntry {
     pub first_index: u32,
 }
 
+/// A depth key snapped to the GTE's depth resolution: the nearest whole
+/// `SZ` unit (clip `w` is the eye-space depth, one unit per `SZ` on the
+/// field and battle cameras - `prim_near_reject::shader_params`).
+///
+/// Retail bins a primitive by an integer `OTZ` (the mean corner `SZ`, an
+/// integer, shifted by the table's shift), so two primitives at one depth
+/// share a bucket and draw in insertion order. The port's key is an `f32`
+/// computed through the frame's matrix chain, and the same depth reached
+/// through two different model matrices can come out a thousandth apart:
+/// `opdeene`'s "It was the Seru." caption is two camera-locked sprite-arm
+/// quads at view depth `792` (`+0x52 & 0x400`, PROT 0749 stager records 21 /
+/// 22, the shadow one unit right and down), and the shadow's key read
+/// `791.999`. Ordered by that noise, the subtractive shadow (`ABR 2`) drew
+/// over the additive face (`ABR 1`) and the white text came out black; one
+/// bucket, the LIFO order puts the face on top as retail's ordering table
+/// does (`new_game_cutscene_intro_a`).
+pub fn snap_depth_key(key: f32) -> f32 {
+    if key.is_finite() { key.round() } else { key }
+}
+
 /// Append one draw's semi prims to the per-frame blend ordering list,
-/// keying each prim by [`prim_depth_key`] under the draw's `mvp`.
+/// keying each prim by [`prim_depth_key`] under the draw's `mvp`, snapped to
+/// a whole `SZ` ([`snap_depth_key`]).
 /// `prims` must be in original mesh order (as recorded by
 /// [`append_semi_tail`]) so `seq` reflects submission order.
 pub fn push_draw_prims(
@@ -139,7 +160,7 @@ pub fn push_draw_prims(
 ) {
     for p in prims {
         list.push(BlendListEntry {
-            key: prim_depth_key(mvp, p.centroid),
+            key: snap_depth_key(prim_depth_key(mvp, p.centroid)),
             seq: list.len() as u32,
             untextured,
             draw_index,

@@ -16,6 +16,7 @@ fn the_phase_gate_round_trips_through_its_env_form() {
             accum_align: None,
             camera_pass: false,
             stream_wait: false,
+            sideband_wait: false,
         },
         PhaseGate {
             action_state: 0x35,
@@ -31,6 +32,7 @@ fn the_phase_gate_round_trips_through_its_env_form() {
             accum_align: None,
             camera_pass: false,
             stream_wait: false,
+            sideband_wait: false,
         },
         PhaseGate {
             action_state: 0x36,
@@ -43,6 +45,7 @@ fn the_phase_gate_round_trips_through_its_env_form() {
             accum_align: Some(640),
             camera_pass: false,
             stream_wait: false,
+            sideband_wait: false,
         },
         PhaseGate {
             action_state: 0x35,
@@ -58,6 +61,23 @@ fn the_phase_gate_round_trips_through_its_env_form() {
             accum_align: None,
             camera_pass: false,
             stream_wait: true,
+            sideband_wait: false,
+        },
+        PhaseGate {
+            action_state: 0x35,
+            fade: Some(RetailFade {
+                to_white: true,
+                age: 31,
+            }),
+            module_phase: Some(2),
+            cam_accum: None,
+            walk_yaw: None,
+            done_hold: None,
+            module_countdown: None,
+            accum_align: None,
+            camera_pass: false,
+            stream_wait: false,
+            sideband_wait: true,
         },
         PhaseGate {
             action_state: 0x51,
@@ -70,6 +90,7 @@ fn the_phase_gate_round_trips_through_its_env_form() {
             accum_align: None,
             camera_pass: false,
             stream_wait: false,
+            sideband_wait: false,
         },
         PhaseGate {
             action_state: 0x32,
@@ -82,6 +103,7 @@ fn the_phase_gate_round_trips_through_its_env_form() {
             accum_align: None,
             camera_pass: true,
             stream_wait: false,
+            sideband_wait: false,
         },
     ] {
         assert_eq!(PhaseGate::from_env(&g.to_env()), Some(g));
@@ -96,4 +118,15 @@ fn a_stream_wait_gate_is_met_on_the_arm_regardless_of_the_flash_age() {
     assert!(g.stream_wait);
     assert_eq!(g.module_phase, Some(2));
     assert_eq!(g.fade.map(|f| f.age), Some(20));
+}
+
+/// A capture inside a side-band wait keeps the flash's age as its clock:
+/// the replay holds the arm instead of taking its first tick.
+#[test]
+fn a_sideband_wait_gate_keeps_the_flash_clock() {
+    let g = PhaseGate::from_env("53,white,31,m2,h").expect("parses");
+    assert!(g.sideband_wait);
+    assert!(!g.stream_wait);
+    assert_eq!(g.module_phase, Some(2));
+    assert_eq!(g.fade.map(|f| f.age), Some(31));
 }

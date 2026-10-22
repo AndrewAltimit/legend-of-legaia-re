@@ -11,6 +11,7 @@
 use anyhow::{Context, Result, anyhow, bail};
 use legaia_actor_formats::battle_char_assembly::{self as bca, loadout};
 use legaia_actor_formats::monster_archive::{self, MonsterAnimation, PartPose};
+use legaia_font::cell_text::{display_name, level_mark};
 use legaia_game_tables::equip_stats::EquipStatTable;
 use legaia_game_tables::item_names::ItemNameTable;
 
@@ -78,34 +79,6 @@ pub struct MonsterRow {
 pub const BADGE_NAMES: [&str; 8] = [
     "Fire", "Thunder", "Wind", "Water", "Earth", "Light", "Dark", "Evil",
 ];
-
-/// A monster name as the game draws it. The archive names are ASCII bytes
-/// read through the dialog font, whose cells do not all draw their ASCII
-/// character: cell `0x24` (`$`) draws the level mark ([`level_mark`]), so
-/// the variant suffix `Gilium $3` reads `Gilium Lv3`, and cell `0x2A` (`*`)
-/// draws a multiplication sign. The leading `^X` element escape is already
-/// split off into the record's badge by the archive reader.
-pub fn display_name(raw: &str, level_mark: &str) -> String {
-    let mut out = String::with_capacity(raw.len() + 2);
-    for c in raw.chars() {
-        match c {
-            '$' => out.push_str(level_mark),
-            '*' => out.push('\u{00D7}'),
-            c => out.push(c),
-        }
-    }
-    out
-}
-
-/// What font cell `0x24` draws on build `exe`: `Lv` on the USA, German and
-/// Italian pages, `Nv` (niveau) on the French one - the one cell the three
-/// PAL font pages differ in (`docs/formats/dialog-font.md`).
-pub fn level_mark(exe: Option<&str>) -> &'static str {
-    match exe {
-        Some("SCES_019.44") => "Nv",
-        _ => "Lv",
-    }
-}
 
 /// Every populated monster record, by archive id.
 pub fn monster_rows(lib: &Library) -> Result<Vec<MonsterRow>> {
@@ -330,19 +303,4 @@ pub fn character_label(cslot: usize) -> String {
         .get(cslot)
         .map(|s| s.to_ascii_lowercase())
         .unwrap_or_else(|| format!("party{cslot}"))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn names_read_the_way_the_font_draws_them() {
-        let usa = level_mark(Some("SCUS_942.54"));
-        assert_eq!(display_name("Gilium $3", usa), "Gilium Lv3");
-        let fr = level_mark(Some("SCES_019.44"));
-        assert_eq!(display_name("Gimard $2", fr), "Gimard Nv2");
-        assert_eq!(display_name("Killer Bee * 2", usa), "Killer Bee \u{d7} 2");
-        assert_eq!(display_name("Gola Gola", usa), "Gola Gola");
-    }
 }

@@ -33,6 +33,7 @@
      "crates": [
       "engine-shell",
       "web-viewer",
+      "web-play",
       "asset-viewer",
       "studio",
       "patcher",
@@ -113,8 +114,7 @@
      "crates": [
       "engine-fishing",
       "engine-minigames",
-      "engine-scene",
-      "engine-ui"
+      "engine-scene"
      ]
     },
     {
@@ -123,7 +123,8 @@
       "engine-battle",
       "engine-cast",
       "engine-effects",
-      "engine-field"
+      "engine-field",
+      "engine-ui"
      ]
     },
     {
@@ -137,6 +138,7 @@
      "label": "rank 1",
      "crates": [
       "engine-camera",
+      "engine-dev-menu",
       "engine-mode",
       "engine-motion-vm"
      ]
@@ -296,6 +298,7 @@
     "studio",
     "texture-replace",
     "translate",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/actor-formats/README.md"
@@ -371,6 +374,7 @@
     "patcher",
     "studio",
     "translate",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/art/README.md"
@@ -610,6 +614,7 @@
     "studio",
     "translate",
     "ui-formats",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/container-formats/README.md"
@@ -813,6 +818,7 @@
     "engine-shell",
     "parity",
     "studio",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-audio/README.md"
@@ -905,6 +911,7 @@
     "engine-shell",
     "engine-world-views",
     "parity",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-battle/README.md"
@@ -938,7 +945,7 @@
     "engine-session",
     "engine-shell",
     "parity",
-    "web-viewer"
+    "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-battle-hud/README.md"
   },
@@ -1022,7 +1029,7 @@
     "engine-shell",
     "engine-ui",
     "parity",
-    "web-viewer"
+    "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-battle-vm/README.md"
   },
@@ -1036,6 +1043,7 @@
    "lib": true,
    "modules": [
     "battle_camera",
+    "camera_distance",
     "camera_mover",
     "camera_rel_actor",
     "camera_rel_glide",
@@ -1046,22 +1054,26 @@
    "band": "kernels",
    "track": "engine",
    "rank": 1,
-   "role": "the shared GTE camera: build, projection, mover, shake, camera-relative glide",
-   "scope": "The shared retail GTE camera below the battle VM, the field and the draw kernels: <code>psx_camera</code> build + projection, <code>BattleCamPose</code> and the GTE constants, the op-<code>0x45</code> mover, tween + shake, the camera-relative glide.",
+   "role": "the shared GTE camera: build, projection, mover, shake, camera-relative glide, distance preset",
+   "scope": "The shared retail GTE camera below the battle VM, the field and the draw kernels: <code>psx_camera</code> build + projection, <code>BattleCamPose</code> and the GTE constants, the op-<code>0x45</code> mover, tween + shake, the camera-relative glide, the follow camera's distance preset.",
    "dependents": [
     "engine-battle-vm",
     "engine-capture",
     "engine-cast",
     "engine-core",
     "engine-field",
+    "engine-menus",
     "engine-minigame-scenes",
     "engine-minigames",
     "engine-render",
+    "engine-scene",
+    "engine-screens",
+    "engine-session",
     "engine-shell",
     "engine-world-views",
     "parity",
     "render-kernels",
-    "web-viewer"
+    "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-camera/README.md"
   },
@@ -1097,6 +1109,7 @@
     "formation_cell",
     "ground_snap",
     "hud_glide",
+    "melee_hits",
     "phase_gate",
     "script_gate"
    ],
@@ -1116,7 +1129,8 @@
     "engine-camera",
     "engine-system",
     "game-tables",
-    "overlay-images"
+    "overlay-images",
+    "render-kernels"
    ],
    "dev_deps": [
     "actor-formats",
@@ -1140,7 +1154,6 @@
     "engine-battle-hud",
     "engine-capture",
     "engine-core",
-    "engine-ui",
     "parity"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-cast/README.md"
@@ -1172,7 +1185,7 @@
    "scope": "Cheats applied to a running <code>World</code>: the one player cheat list both play hosts expose (<code>PlayerCheat</code> through the <code>WorldCheats</code> extension trait) and the GameShark code applier behind <code>--cheat-file</code>. Above <code>engine-core</code>.",
    "dependents": [
     "engine-shell",
-    "web-viewer"
+    "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-cheats/README.md"
   },
@@ -1186,6 +1199,7 @@
     "engine-battle-vm",
     "engine-camera",
     "engine-cast",
+    "engine-dev-menu",
     "engine-dialog",
     "engine-effects",
     "engine-field",
@@ -1222,7 +1236,6 @@
     "battle_party_form",
     "battle_round",
     "battle_sideband_textures",
-    "camera_view",
     "dance_venue",
     "fishing_exchange_input",
     "frame_step",
@@ -1254,9 +1267,40 @@
     "engine-shell",
     "engine-world-views",
     "parity",
-    "web-viewer"
+    "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-core/README.md"
+  },
+  "engine-dev-menu": {
+   "package": "legaia-engine-dev-menu",
+   "deps": [
+    "engine-system",
+    "overlay-images"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "dev_equip_commit",
+    "dev_menu_action",
+    "dev_menu_adjust",
+    "dev_menu_flags",
+    "dev_menu_leaves"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 1,
+   "role": "the field overlay's dev-menu bodies: row model, value steps, flag editor, equip applier",
+   "scope": "The field overlay's developer-menu bodies below both <code>engine-field</code> and <code>engine-menus</code>: dev-menu row model and list picker, value steps, EVENT FLAG editor, the equip applier the pause menu's equip session shares, the row-action dispatcher.",
+   "dependents": [
+    "engine-core",
+    "engine-field",
+    "engine-menu-runtime",
+    "engine-menus",
+    "engine-scene-host",
+    "engine-screens"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-dev-menu/README.md"
   },
   "engine-dialog": {
    "package": "legaia-engine-dialog",
@@ -1291,7 +1335,7 @@
     "engine-screens",
     "engine-shell",
     "parity",
-    "web-viewer"
+    "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-dialog/README.md"
   },
@@ -1376,6 +1420,7 @@
     "actor-formats",
     "anm",
     "engine-camera",
+    "engine-dev-menu",
     "engine-dialog",
     "engine-mode",
     "engine-motion-vm",
@@ -1411,10 +1456,6 @@
     "cutscene_narration",
     "cutscene_timeline",
     "dance_marker",
-    "dev_equip_commit",
-    "dev_menu_adjust",
-    "dev_menu_flags",
-    "dev_menu_leaves",
     "dialog_state",
     "escape_timer",
     "field_actor_clone",
@@ -1441,7 +1482,6 @@
     "field_warp_tile",
     "float_tween",
     "fog_particles",
-    "incense_window",
     "inline_dialogue",
     "leader_swap",
     "man_field_scripts",
@@ -1450,6 +1490,7 @@
     "morph_weight_apply",
     "motion_pause",
     "move_vm_globals",
+    "object_tint",
     "overworld_draw_order",
     "overworld_ground_cue",
     "packet_color",
@@ -1462,6 +1503,7 @@
     "submode_hub_actors",
     "travel_art_actor",
     "vdf_pulse",
+    "vram_scroll",
     "walk_regen",
     "world_map",
     "world_map_dim",
@@ -1477,7 +1519,7 @@
    "track": "engine",
    "rank": 3,
    "role": "World-free field kernels",
-   "scope": "The <code>World</code>-free field kernels: actor programs and per-actor field-overlay bodies, region queries and the shared minigame floor (<code>minigame_floor</code>, <code>dance_marker</code>), follow-camera parameters and eases, player clip playback, op-<code>0x49</code> submode and its hub actors, panel windows and dev-menu leaves, world-map controller + entity SM (<code>FUN_801DA51C</code>), inline-dialogue / cutscene-timeline context state, CLUT effects, the fog particle pool, MAN field-script decoders, field camera (<code>CameraWorld</code>).",
+   "scope": "The <code>World</code>-free field kernels: actor programs and per-actor field-overlay bodies, region queries and the shared minigame floor (<code>minigame_floor</code>, <code>dance_marker</code>), follow-camera parameters and eases, player clip playback, op-<code>0x49</code> submode and its hub actors, panel windows, world-map controller + entity SM (<code>FUN_801DA51C</code>), inline-dialogue / cutscene-timeline context state, CLUT effects, the fog particle pool, MAN field-script decoders, field camera (<code>CameraWorld</code>).",
    "dependents": [
     "asset-viewer",
     "engine-capture",
@@ -1485,7 +1527,6 @@
     "engine-export",
     "engine-fishing",
     "engine-menu-runtime",
-    "engine-menus",
     "engine-minigame-scenes",
     "engine-minigames",
     "engine-scene",
@@ -1495,6 +1536,7 @@
     "engine-shell",
     "engine-world-views",
     "parity",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-field/README.md"
@@ -1530,7 +1572,7 @@
     "engine-scene-host",
     "engine-screens",
     "engine-shell",
-    "web-viewer"
+    "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-fishing/README.md"
   },
@@ -1541,6 +1583,7 @@
     "engine-battle",
     "engine-battle-vm",
     "engine-core",
+    "engine-dev-menu",
     "engine-field",
     "engine-menus",
     "engine-minigames",
@@ -1573,7 +1616,7 @@
     "engine-session",
     "engine-shell",
     "parity",
-    "web-viewer"
+    "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-menu-runtime/README.md"
   },
@@ -1584,8 +1627,9 @@
     "art",
     "engine-battle",
     "engine-battle-vm",
+    "engine-camera",
+    "engine-dev-menu",
     "engine-dialog",
-    "engine-field",
     "engine-minigames",
     "engine-system",
     "engine-vm",
@@ -1671,6 +1715,7 @@
     "engine-shell",
     "engine-world-views",
     "parity",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-menus/README.md"
@@ -1726,7 +1771,7 @@
     "engine-screens",
     "engine-session",
     "engine-shell",
-    "web-viewer"
+    "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-minigame-scenes/README.md"
   },
@@ -1780,7 +1825,7 @@
     "engine-screens",
     "engine-shell",
     "engine-world-views",
-    "web-viewer"
+    "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-minigames/README.md"
   },
@@ -1820,7 +1865,7 @@
     "engine-shell",
     "engine-world-views",
     "parity",
-    "web-viewer"
+    "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-mode/README.md"
   },
@@ -1901,6 +1946,7 @@
     "anm",
     "container-formats",
     "disc-audit",
+    "engine-camera",
     "engine-dialog",
     "engine-field",
     "engine-system",
@@ -1970,6 +2016,7 @@
     "engine-world-views",
     "parity",
     "studio",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-scene/README.md"
@@ -1983,6 +2030,7 @@
     "engine-battle",
     "engine-battle-vm",
     "engine-core",
+    "engine-dev-menu",
     "engine-dialog",
     "engine-effects",
     "engine-field",
@@ -2038,6 +2086,7 @@
     "engine-session",
     "engine-shell",
     "parity",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-scene-host/README.md"
@@ -2048,7 +2097,9 @@
     "engine-battle",
     "engine-battle-hud",
     "engine-battle-vm",
+    "engine-camera",
     "engine-core",
+    "engine-dev-menu",
     "engine-dialog",
     "engine-effects",
     "engine-field",
@@ -2075,6 +2126,7 @@
    "lib": true,
    "modules": [
     "battle_command",
+    "battle_fx",
     "battle_value_readout",
     "dev_menu",
     "field_frame",
@@ -2083,6 +2135,7 @@
     "world_map_labels",
     "minigame_hud",
     "screen_layers",
+    "title_screens",
     "battle_screens",
     "dialog_screens",
     "field_screens",
@@ -2093,7 +2146,7 @@
    "scope": "The shop / prize-exchange / inn / banner screens both play hosts draw: projects engine-core state into engine-ui builders once (<code>shop_overlay_frame</code>); hosts keep only input assembly, stage scale and upload.",
    "dependents": [
     "engine-shell",
-    "web-viewer"
+    "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-screens/README.md"
   },
@@ -2107,6 +2160,7 @@
     "engine-battle",
     "engine-battle-hud",
     "engine-battle-vm",
+    "engine-camera",
     "engine-core",
     "engine-effects",
     "engine-field",
@@ -2118,6 +2172,7 @@
     "engine-scene-host",
     "engine-system",
     "engine-vm",
+    "engine-world-views",
     "font",
     "game-tables",
     "iso",
@@ -2133,7 +2188,6 @@
    "dev_deps": [
     "engine-cheats",
     "engine-minigames",
-    "engine-world-views",
     "lzs",
     "mes",
     "minigame-formats",
@@ -2163,7 +2217,7 @@
    "dependents": [
     "engine-shell",
     "parity",
-    "web-viewer"
+    "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-session/README.md"
   },
@@ -2221,7 +2275,7 @@
    ],
    "dev_deps": [
     "pcsx-redux",
-    "web-viewer"
+    "web-play"
    ],
    "bins": [
     "legaia-engine",
@@ -2260,6 +2314,7 @@
     "fade",
     "fade_ramp",
     "gamepad",
+    "incense_window",
     "input",
     "menu_input",
     "mode_entry_init",
@@ -2275,7 +2330,6 @@
     "scus_leaf_kernels",
     "sound_state",
     "story_flag_state",
-    "sustained_sfx",
     "trig"
    ],
    "band": "kernels",
@@ -2292,6 +2346,7 @@
     "engine-cast",
     "engine-cheats",
     "engine-core",
+    "engine-dev-menu",
     "engine-effects",
     "engine-field",
     "engine-fishing",
@@ -2307,6 +2362,7 @@
     "engine-session",
     "engine-shell",
     "parity",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-system/README.md"
@@ -2315,7 +2371,6 @@
    "package": "legaia-engine-ui",
    "deps": [
     "engine-battle-vm",
-    "engine-cast",
     "font",
     "game-tables",
     "minigame-formats",
@@ -2359,7 +2414,7 @@
    ],
    "band": "kernels",
    "track": "engine",
-   "rank": 4,
+   "rank": 3,
    "role": "renderer-agnostic draw-list builders",
    "scope": "Renderer-agnostic UI draw-list builders over the wgpu-free kernels of <code>render-kernels</code> and the battle HUD model in <code>engine-battle-vm</code> - the draw layer both the native renderer and the browser play page use.",
    "dependents": [
@@ -2368,7 +2423,7 @@
     "engine-screens",
     "engine-shell",
     "parity",
-    "web-viewer"
+    "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-ui/README.md"
   },
@@ -2425,7 +2480,7 @@
     "engine-session",
     "parity",
     "render-kernels",
-    "web-viewer"
+    "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-vm/README.md"
   },
@@ -2448,7 +2503,9 @@
    ],
    "dev_deps": [
     "container-formats",
+    "engine-dev-menu",
     "engine-system",
+    "engine-vm",
     "lzs",
     "save",
     "tim"
@@ -2456,6 +2513,7 @@
    "bins": [],
    "lib": true,
    "modules": [
+    "camera_view",
     "effect_draws",
     "field_view_window",
     "muscle_dome",
@@ -2466,15 +2524,18 @@
     "timed_fight",
     "world_map_markers",
     "world_map_panel_host",
-    "world_map_sky"
+    "world_map_sky",
+    "screen_passes"
    ],
    "band": "drivers",
    "track": "engine",
-   "scope": "The hosts' reads of a running <code>World</code> outside battle: the visible-tile crop policy, scene staging, world-map markers and sky, the field party HUD, the effect draw lists, and the shop / pause / tile-board / timed-fight / Muscle Dome view models. Above <code>engine-core</code>.",
+   "scope": "The hosts' reads of a running <code>World</code> outside battle: the per-frame camera resolution, the visible-tile crop policy, scene staging, world-map markers and sky, the field party HUD, the effect draw lists, and the shop / pause / tile-board / timed-fight / Muscle Dome view models. Above <code>engine-core</code>.",
    "dependents": [
     "engine-scene-host",
     "engine-screens",
+    "engine-session",
     "engine-shell",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-world-views/README.md"
@@ -2519,6 +2580,7 @@
    "modules": [
     "accent_font",
     "builtin",
+    "cell_text",
     "escape_icons",
     "glyph_count",
     "latin",
@@ -2545,6 +2607,7 @@
     "render-kernels",
     "studio",
     "translate",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/font/README.md"
@@ -2617,10 +2680,12 @@
     "engine-session",
     "engine-shell",
     "engine-ui",
+    "parity",
     "patcher",
     "studio",
     "texture-replace",
     "translate",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/game-tables/README.md"
@@ -2648,6 +2713,7 @@
     "engine-system",
     "patcher",
     "studio",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/gamedata/README.md"
@@ -2681,6 +2747,7 @@
     "patcher",
     "studio",
     "texture-replace",
+    "web-play",
     "web-viewer",
     "xa"
    ],
@@ -2748,6 +2815,7 @@
     "disc-audit",
     "engine-shell",
     "studio",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/mdec/README.md"
@@ -2881,6 +2949,7 @@
     "engine-ui",
     "engine-vm",
     "patcher",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/minigame-formats/README.md"
@@ -2916,6 +2985,7 @@
     "engine-battle-vm",
     "engine-cast",
     "engine-core",
+    "engine-dev-menu",
     "engine-effects",
     "engine-field",
     "engine-minigame-scenes",
@@ -2925,7 +2995,7 @@
     "game-tables",
     "render-kernels",
     "scene-formats",
-    "web-viewer"
+    "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/overlay-images/README.md"
   },
@@ -2954,6 +3024,7 @@
     "engine-system",
     "engine-ui",
     "engine-vm",
+    "game-tables",
     "mednafen",
     "pcsx-redux",
     "prot",
@@ -2968,7 +3039,7 @@
     "actor-formats",
     "arts-patch",
     "disc-patch",
-    "game-tables",
+    "engine-world-views",
     "iso",
     "lzs",
     "mdec",
@@ -3185,6 +3256,7 @@
     "studio",
     "translate",
     "ui-formats",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/prot/README.md"
@@ -3248,6 +3320,7 @@
     "cast_colour_wash",
     "cast_rain",
     "cast_swordie",
+    "cast_theeder_packet",
     "display_mirror",
     "drop_shadow",
     "effect_billboard",
@@ -3276,6 +3349,7 @@
    "scope": "The wgpu-free render kernels both hosts share: GTE math, <code>screen_prim</code> + its CPU rasteriser, <code>vram_capture</code>, the effect emitters, the battle-intro model + emitter, enhanced <code>scene_lighting</code>.",
    "dependents": [
     "engine-battle",
+    "engine-cast",
     "engine-core",
     "engine-effects",
     "engine-field",
@@ -3290,6 +3364,7 @@
     "engine-shell",
     "engine-ui",
     "engine-world-views",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/render-kernels/README.md"
@@ -3326,7 +3401,7 @@
     "engine-session",
     "engine-shell",
     "parity",
-    "web-viewer"
+    "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/save/README.md"
   },
@@ -3404,6 +3479,7 @@
     "render-kernels",
     "studio",
     "translate",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/scene-formats/README.md"
@@ -3428,6 +3504,7 @@
     "engine-shell",
     "parity",
     "studio",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/seq/README.md"
@@ -3473,10 +3550,12 @@
     "launch",
     "library",
     "media",
+    "placement",
     "player",
     "raster",
     "scene_vram",
-    "settings"
+    "settings",
+    "theme"
    ],
    "band": "hosts",
    "track": "preservation",
@@ -3560,6 +3639,7 @@
     "texture-replace",
     "tmd",
     "ui-formats",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/tim/README.md"
@@ -3608,6 +3688,7 @@
     "render-kernels",
     "scene-formats",
     "studio",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/tmd/README.md"
@@ -3703,6 +3784,7 @@
     "engine-world-views",
     "patcher",
     "texture-replace",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/ui-formats/README.md"
@@ -3732,22 +3814,17 @@
     "minigame-formats",
     "parity",
     "studio",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/vab/README.md"
   },
-  "web-viewer": {
-   "package": "legaia-web-viewer",
+  "web-play": {
+   "package": "legaia-web-play",
    "deps": [
     "actor-formats",
     "art",
-    "arts-patch",
-    "code-hooks",
     "container-formats",
-    "delilas-challenge",
-    "delilas-party",
-    "disc-audit",
-    "disc-patch",
     "engine-audio",
     "engine-battle",
     "engine-battle-hud",
@@ -3756,7 +3833,6 @@
     "engine-cheats",
     "engine-core",
     "engine-dialog",
-    "engine-effects",
     "engine-field",
     "engine-fishing",
     "engine-menu-runtime",
@@ -3776,23 +3852,16 @@
     "game-tables",
     "gamedata",
     "iso",
-    "lzs",
     "mdec",
-    "mednafen",
-    "mes",
     "minigame-formats",
     "overlay-images",
-    "patcher",
     "prot",
-    "ram-image",
     "render-kernels",
     "save",
     "scene-formats",
     "seq",
-    "texture-replace",
     "tim",
     "tmd",
-    "translate",
     "ui-formats",
     "vab",
     "xa"
@@ -3801,16 +3870,13 @@
    "bins": [],
    "lib": true,
    "modules": [
-    "arts_view",
-    "audio",
     "boot_title",
     "cards",
     "disc",
-    "equipment_view",
+    "field_actors",
     "field_npc",
-    "field_scene",
+    "field_scene_anim",
     "minigames",
-    "npc_dialog",
     "pad_bindings",
     "play",
     "play_battle",
@@ -3846,15 +3912,82 @@
     "play_toggles",
     "play_world_map_markers",
     "play_xa",
-    "player_anm",
     "resume",
-    "rom_patcher",
     "runtime",
+    "session_save"
+   ],
+   "band": "hosts",
+   "track": "engine",
+   "scope": "The browser hosts of the port: the play page's <code>LegaiaRuntime</code> (the native window's <code>BootSession</code>) and the minigames page's <code>LegaiaMinigames</code>, plus the field actor layer and in-memory disc access the viewer shares. An rlib; its exports ship in <code>web-viewer</code>'s bundle.",
+   "dependents": [
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/web-play/README.md"
+  },
+  "web-viewer": {
+   "package": "legaia-web-viewer",
+   "deps": [
+    "actor-formats",
+    "art",
+    "arts-patch",
+    "code-hooks",
+    "container-formats",
+    "delilas-challenge",
+    "delilas-party",
+    "disc-audit",
+    "disc-patch",
+    "engine-audio",
+    "engine-battle",
+    "engine-effects",
+    "engine-field",
+    "engine-menus",
+    "engine-scene",
+    "engine-scene-host",
+    "engine-system",
+    "engine-world-views",
+    "font",
+    "game-tables",
+    "gamedata",
+    "iso",
+    "lzs",
+    "mdec",
+    "mednafen",
+    "mes",
+    "minigame-formats",
+    "patcher",
+    "prot",
+    "ram-image",
+    "render-kernels",
+    "scene-formats",
+    "seq",
+    "texture-replace",
+    "tim",
+    "tmd",
+    "translate",
+    "ui-formats",
+    "vab",
+    "web-play",
+    "xa"
+   ],
+   "dev_deps": [
+    "engine-minigames",
+    "engine-ui"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "arts_view",
+    "audio",
+    "equipment_view",
+    "field_npc",
+    "field_scene",
+    "npc_dialog",
+    "player_anm",
+    "rom_patcher",
     "sentinel_placements",
-    "session_save",
     "sfx_view",
-    "shop_vendors",
     "shop_items",
+    "shop_vendors",
     "summon_view",
     "texture_pack",
     "texture_registry",
@@ -3863,7 +3996,7 @@
    ],
    "band": "hosts",
    "track": "engine",
-   "scope": "WASM target serving three products: the asset inspectors (disc browser, viewers, <code>.glb</code> export), the play / minigames runtime (the browser hosts of the port), and the client-side ROM patcher (nothing is uploaded).",
+   "scope": "The WASM bundle the site loads (<code>cdylib</code> over <code>web-play</code>), and its own two products: the asset inspectors (disc browser, viewers, <code>.glb</code> export) and the client-side ROM patcher (nothing is uploaded).",
    "dependents": [],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/web-viewer/README.md"
   },
@@ -3892,6 +4025,7 @@
     "extract",
     "mdec",
     "studio",
+    "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/README.md"
@@ -3913,19 +4047,6 @@
     "battle_intro_styles::INTRO_DURATION_FRAMES"
    ],
    "reason": "the encounter session's default transition length is the battle-intro model's, which sits with its draw half"
-  },
-  {
-   "from": "engine-menus",
-   "to": "engine-field",
-   "items": [
-    "dev_equip_commit",
-    "dev_menu_leaves",
-    "dev_menu_adjust",
-    "dev_menu_flags",
-    "world_map_panel::{SFX_CURSOR_MOVE, dev_menu_action}",
-    "incense_window::top_up_cooldown"
-   ],
-   "reason": "the equip commit and the dev menu's row kernels are field-overlay dev-menu bodies; the pause menu's equip session and the dev menu screen share them"
   },
   {
    "from": "engine-fishing",
@@ -3954,15 +4075,7 @@
     "battle_value_readout",
     "battle_action::FlashQuad"
    ],
-   "reason": "the battle HUD model and the numeral readout the draw-list builders project are defined with the battle kernels that fill them"
-  },
-  {
-   "from": "engine-ui",
-   "to": "engine-cast",
-   "items": [
-    "seru_magic_ticks::TheederPacket"
-   ],
-   "reason": "the Theeder packet the cast draw-list builder projects is defined with the PROT 0904 tick body that fills it"
+   "reason": "the battle HUD model and the numeral readout the draw-list builders project are defined with the battle kernels that fill them: the action SM's flash ramp stamps the readout's glyph page and the commit log stages off the cursor pose, so the model cannot move below the action SM; the edge points down a rank"
   }
  ],
  "hosts": [
@@ -3973,12 +4086,12 @@
   },
   {
    "name": "Browser play page",
-   "crate": "web-viewer",
+   "crate": "web-play",
    "how": "The same BootSession compiled to WebAssembly; site/js/play-app.js draws it through WebGL and WebAudio."
   },
   {
    "name": "Browser minigames page",
-   "crate": "web-viewer",
+   "crate": "web-play",
    "how": "Drives the World-free minigame rules engines directly; it holds no World."
   }
  ],
@@ -4052,9 +4165,9 @@
    "crates": [
     "engine-render",
     "engine-shell",
-    "web-viewer"
+    "web-play"
    ],
-   "text": "Natively, engine-render draws into a software PSX VRAM through wgpu inside play-window. In the browser, web-viewer hands the same frame to WebGL on the play page."
+   "text": "Natively, engine-render draws into a software PSX VRAM through wgpu inside play-window. In the browser, web-play hands the same frame to WebGL on the play page."
   }
  ]
 }

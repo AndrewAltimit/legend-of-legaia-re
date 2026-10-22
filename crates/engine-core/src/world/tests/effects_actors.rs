@@ -446,7 +446,7 @@ fn a_battle_effect_part_in_render_mode_4_scrolls_the_battle_vram() {
     world.enter_battle(1, 1);
     world.clock.frame_step = 1;
     let mut state = legaia_engine_vm::move_vm::ActorState {
-        move_submode: crate::world::ambient::vram_scroll::RENDER_MODE_SCROLL,
+        move_submode: legaia_engine_field::vram_scroll::RENDER_MODE_SCROLL,
         ..Default::default()
     };
     // `+0xC4` period 0, `+0xCE` = 1, rect (0x1F8, 0x70, 8, 0x80).

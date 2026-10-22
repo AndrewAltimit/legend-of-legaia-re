@@ -35,13 +35,13 @@
   <p>The port is a stack of small crates with one rule running through it: the lower a crate sits, the fewer things it may link. Format parsers know nothing about engines; the VMs know nothing about GPUs or speakers; the simulation draws nothing; and only the hosts at the top touch a window, a browser or an audio device. That is what lets the browser run the same engine as the native window - it simply links a different top row.</p>
   <p>The <a href="../crates.html">crate map</a> draws the same stack interactively: every crate in its band, what it uses and what uses it, its scope and modules, and the path a scene takes from the disc to the screen. Its data is generated from the workspace's own manifests, so it cannot drift from them.</p>
   <figure class="diagram">
-    <svg viewBox="0 0 900 898" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Crate dependency layers, top to bottom. Hosts: engine-shell (native window and the legaia-engine binary), web-viewer (browser pages), asset-viewer. Host glue: parity (oracles, native only), and engine-session (BootSession and the BGM director) with engine-screens (shop, prize, inn and banner screens), both written once and ticked by both play hosts. Engine: engine-render (wgpu), engine-audio (SPU and sequencer) and engine-core (World, the tick, battle loop) with engine-scene-host (SceneHost) and engine-menu-runtime (the pause menu) directly above it, over engine-scene (scene resolution and loading, no World, also linked by engine-minigame-scenes for the dance and fishing venues). Below them the World-free kernel crates in ranks, each linking only lower-ranked ones: engine-minigame-scenes over engine-menus over engine-minigames over engine-fishing; then engine-effects, engine-ui, engine-field and engine-battle; then engine-cast (the slot-B cast module bodies), render-kernels and engine-battle-vm; then engine-camera, engine-motion-vm and engine-mode; then engine-vm, engine-dialog and engine-system at the bottom. Under the kernels sit the format-family crates and under those the per-format parser crates.">
+    <svg viewBox="0 0 900 898" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Crate dependency layers, top to bottom. Hosts: engine-shell (native window and the legaia-engine binary), web-play (browser play and minigames pages, shipped in the web-viewer WASM bundle), asset-viewer. Host glue: parity (oracles, native only), and engine-session (BootSession and the BGM director) with engine-screens (shop, prize, inn and banner screens), both written once and ticked by both play hosts. Engine: engine-render (wgpu), engine-audio (SPU and sequencer) and engine-core (World, the tick, battle loop) with engine-scene-host (SceneHost) and engine-menu-runtime (the pause menu) directly above it, over engine-scene (scene resolution and loading, no World, also linked by engine-minigame-scenes for the dance and fishing venues). Below them the World-free kernel crates in ranks, each linking only lower-ranked ones: engine-minigame-scenes over engine-menus over engine-minigames, beside engine-fishing (ranks 6 to 4); then engine-ui, engine-field, engine-effects, engine-battle and engine-cast (the slot-B cast module bodies) at rank 3; then render-kernels and engine-battle-vm at rank 2; then engine-camera, engine-motion-vm, engine-mode and engine-dev-menu (the developer-menu bodies) at rank 1; then engine-vm, engine-dialog and engine-system at the bottom. Under the kernels sit the format-family crates and under those the per-format parser crates.">
       <defs><marker id="en-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       <text class="dg-edge-label" x="888" y="22" text-anchor="end">hosts</text>
       <rect class="dg-node-accent" x="60" y="30" width="230" height="56" rx="5"/>
       <text class="dg-label" x="175" y="54">engine-shell</text><text class="dg-sub" x="175" y="72">native window + legaia-engine CLI</text>
       <rect class="dg-node-accent" x="335" y="30" width="230" height="56" rx="5"/>
-      <text class="dg-label" x="450" y="54">web-viewer</text><text class="dg-sub" x="450" y="72">browser pages (WASM)</text>
+      <text class="dg-label" x="450" y="54">web-play</text><text class="dg-sub" x="450" y="72">browser hosts (in web-viewer WASM)</text>
       <rect class="dg-node" x="610" y="30" width="230" height="56" rx="5"/>
       <text class="dg-label" x="725" y="54">asset-viewer</text><text class="dg-sub" x="725" y="72">standalone format viewer</text>
       <rect class="dg-group" x="330" y="112" width="552" height="86" rx="6"/>
@@ -62,7 +62,7 @@
       <text class="dg-label" x="765" y="350">engine-scene</text><text class="dg-sub" x="765" y="368">scene loading, no World</text>
       <rect class="dg-group" x="20" y="416" width="862" height="300" rx="6"/>
       <text class="dg-edge-label" x="34" y="434">World-free kernels: every edge in here is a row of crate-layering.toml</text>
-      <text class="dg-sub dg-start" x="34" y="471">rank 7-4</text>
+      <text class="dg-sub dg-start" x="34" y="471">rank 6-4</text>
       <rect class="dg-node" x="100" y="446" width="180" height="40" rx="5"/>
       <text class="dg-label" x="190" y="471">engine-minigame-scenes</text>
       <rect class="dg-node" x="295" y="446" width="180" height="40" rx="5"/>
@@ -71,23 +71,22 @@
       <text class="dg-label" x="580" y="471">engine-minigames</text>
       <rect class="dg-node" x="685" y="446" width="180" height="40" rx="5"/>
       <text class="dg-label" x="775" y="471">engine-fishing</text>
-      <text class="dg-sub dg-start" x="34" y="523">rank 4-3</text>
-      <rect class="dg-node" x="100" y="498" width="180" height="40" rx="5"/>
-      <text class="dg-label" x="190" y="523">engine-ui</text>
-      <rect class="dg-node" x="295" y="498" width="180" height="40" rx="5"/>
-      <text class="dg-label" x="385" y="523">engine-field</text>
-      <rect class="dg-node" x="490" y="498" width="180" height="40" rx="5"/>
-      <text class="dg-label" x="580" y="523">engine-effects</text>
-      <rect class="dg-node" x="685" y="498" width="180" height="40" rx="5"/>
-      <text class="dg-label" x="775" y="523">engine-battle</text>
-      <text class="dg-sub dg-start" x="34" y="575">rank 3-2</text>
+      <text class="dg-sub dg-start" x="34" y="523">rank 3</text>
+      <rect class="dg-node" x="100" y="498" width="145" height="40" rx="5"/>
+      <text class="dg-label" x="172" y="523">engine-ui</text>
+      <rect class="dg-node" x="253" y="498" width="145" height="40" rx="5"/>
+      <text class="dg-label" x="325" y="523">engine-field</text>
+      <rect class="dg-node" x="406" y="498" width="145" height="40" rx="5"/>
+      <text class="dg-label" x="478" y="523">engine-effects</text>
+      <rect class="dg-node" x="559" y="498" width="145" height="40" rx="5"/>
+      <text class="dg-label" x="631" y="523">engine-battle</text>
+      <rect class="dg-node" x="712" y="498" width="145" height="40" rx="5"/>
+      <text class="dg-label" x="784" y="523">engine-cast</text>
+      <text class="dg-sub dg-start" x="34" y="575">rank 2</text>
       <rect class="dg-node" x="100" y="550" width="180" height="40" rx="5"/>
       <text class="dg-label" x="190" y="575">render-kernels</text>
       <rect class="dg-node" x="295" y="550" width="180" height="40" rx="5"/>
       <text class="dg-label" x="385" y="575">engine-battle-vm</text>
-      <rect class="dg-node" x="490" y="550" width="180" height="40" rx="5"/>
-      <text class="dg-label" x="580" y="575">engine-cast</text>
-      <path class="dg-edge" d="M490 570 L477 570" marker-end="url(#en-arrow)"/>
       <text class="dg-sub dg-start" x="34" y="627">rank 1</text>
       <rect class="dg-node" x="100" y="602" width="180" height="40" rx="5"/>
       <text class="dg-label" x="190" y="627">engine-camera</text>
@@ -95,6 +94,8 @@
       <text class="dg-label" x="385" y="627">engine-motion-vm</text>
       <rect class="dg-node" x="490" y="602" width="180" height="40" rx="5"/>
       <text class="dg-label" x="580" y="627">engine-mode</text>
+      <rect class="dg-node" x="685" y="602" width="180" height="40" rx="5"/>
+      <text class="dg-label" x="775" y="627">engine-dev-menu</text>
       <text class="dg-sub dg-start" x="34" y="679">rank 0</text>
       <rect class="dg-node" x="100" y="654" width="180" height="40" rx="5"/>
       <text class="dg-label" x="190" y="679">engine-vm</text>
@@ -104,7 +105,6 @@
       <text class="dg-label" x="580" y="679">engine-system</text>
       <path class="dg-edge" d="M280 466 L293 466" marker-end="url(#en-arrow)"/>
       <path class="dg-edge" d="M475 466 L488 466" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M670 466 L683 466" marker-end="url(#en-arrow)"/>
       <path class="dg-edge-dim" d="M875 544 L875 690" marker-end="url(#en-arrow)"/>
       <text class="dg-edge-label" x="865" y="566" text-anchor="end">a crate links only</text>
       <text class="dg-edge-label" x="865" y="581" text-anchor="end">lower-ranked crates</text>
@@ -248,12 +248,13 @@
     <tbody>
       <tr><td>Enhanced lighting (<code>I</code>; <code>F8</code> cycles time of day)</td><td><strong>on</strong></td><td>a time-of-day mood over the baked shading, point lights at lamps and glowing props, emissive surfaces, lit windows at night and soft halos - one shared kernel on both hosts</td></tr>
       <tr><td>Lamp shadows (<code>Y</code>)</td><td>on</td><td>shadow maps for the lighting&rsquo;s point lights; inert while lighting is off</td></tr>
-      <tr><td>Volumetric ground fog (<code>F9</code>)</td><td><strong>on</strong></td><td>a drifting mist bank over misty and night scenes, parted by every character walking through it</td></tr>
+      <tr><td>Volumetric ground fog (<code>F9</code>)</td><td>off while the look matures</td><td>a drifting mist bank over misty and night scenes, parted by every character walking through it</td></tr>
       <tr><td>Bloom (<code>F10</code>)</td><td>off</td><td>bright pixels - lamp halos, glowing props, lit windows, sunlit sky - bleed a soft glow, stronger at night; the HUD never blooms</td></tr>
       <tr><td>See-through walls (<code>F4</code>)</td><td><strong>on</strong></td><td>geometry that <em>completely</em> hides the player dissolves to a dither circle around them</td></tr>
       <tr><td>Leading-edge wall probes, solid NPCs, live NPCs</td><td><strong>on</strong></td><td>retail&rsquo;s three-probe collision footprint, NPC collision and the villagers&rsquo; ambient wander</td></tr>
       <tr><td>Ledge-hop landing guard</td><td><strong>on</strong> (off under <code>--retail</code>)</td><td>refuses a field ledge hop whose landing the walk could not leave; retail tests no landing, and a diagonal step-up can box the player in for good</td></tr>
       <tr><td>Entry pulse</td><td>on (off under <code>--retail</code>)</td><td>a rolling vertex-morph envelope at scene entry over the packs it is authored for (jou&rsquo;s flesh ground, Rim Elm&rsquo;s shoreline)</td></tr>
+      <tr><td>Retail static-object window</td><td><strong>on</strong></td><td>a sub-area&rsquo;s placed props draw only while the camera&rsquo;s region box holds them, as retail&rsquo;s windowed object list does; off draws every placement for the whole map</td></tr>
       <tr><td>Visible-tile crop</td><td><strong>on</strong> at retail framing</td><td>retail draws only the cells the camera&rsquo;s tile window reaches; any wider or re-aimed view draws the whole map instead of opening black edges</td></tr>
       <tr><td>Reduce flashing</td><td><strong>on</strong></td><td>slew-limits the ambient palette cyclers (retail&rsquo;s casino dance floor strobes at 15 Hz); simulation identical either way</td></tr>
       <tr><td>Music / sound-effect level (<code>bgm_volume</code> / <code>sfx_volume</code> in the options file)</td><td><code>8</code> / <code>8</code></td><td>two engine-only mixer buses, <code>0..=10</code> with 8 the retail mix; voice and movie audio ride neither, and at the default the mix is bit-identical to retail&rsquo;s single bus</td></tr>
@@ -262,6 +263,7 @@
       <tr><td>Camera distance (<code>T</code>), debug orbit (<code>F3</code>), drag / tilt / zoom</td><td><code>Far</code> / off / identity</td><td>framing only; the follow-camera knobs lock while a cutscene owns the camera and reset to the retail shot on a double-click</td></tr>
       <tr><td>Retail battle cadence</td><td>off</td><td>the whole battle pass once a battle frame, retail&rsquo;s cadence, instead of once a vsync; the faithful model, staged off while comparison rows still fall</td></tr>
       <tr><td>Saved-chain Arts list</td><td>off</td><td>the command ring&rsquo;s Arts arm opens the port&rsquo;s saved-chain list instead of retail&rsquo;s per-press directional input</td></tr>
+      <tr><td>Smart monsters</td><td>off</td><td>a monster&rsquo;s single-target attack goes to the weakest living party member instead of retail&rsquo;s random pick; the RNG stream is unchanged</td></tr>
       <tr><td>PSX rasterisation</td><td>off</td><td>sub-pixel vertex snap + 15-bit ordered dither</td></tr>
       <tr><td>Semi-transparency blend</td><td><strong>on</strong></td><td>retail ABE blending - on because it <em>is</em> retail</td></tr>
       <tr><td><a href="vr-mode.html">WebXR VR</a></td><td>off</td><td>stereo presentation on the site&rsquo;s WebGL pages</td></tr>

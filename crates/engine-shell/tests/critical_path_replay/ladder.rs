@@ -54,7 +54,7 @@ pub(super) fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
     }
 
     // Run the collision model **both shipped hosts run**. `play-window`
-    // (`window/run.rs`) and the browser play page (`web-viewer/runtime.rs`)
+    // (`window/run.rs`) and the browser play page (`web-play/runtime.rs`)
     // each set this pair; a bare `World` defaults both off, so a ladder that
     // left them alone would be scoring a third model no player ever meets.
     //

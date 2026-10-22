@@ -19,9 +19,9 @@
 //! that's easy to drive from `legaia_engine_scene_host::scene_host::SceneHost`.
 
 use crate::field_events::FieldEvent;
+use legaia_engine_camera::camera_distance::CameraDistance;
 use legaia_engine_camera::camera_mover::{AXIS_COUNT, CameraMover};
 use legaia_engine_motion_vm::motion_vm::{MotionState, MotionTarget, StepResult, step};
-use serde::{Deserialize, Serialize};
 
 use legaia_engine_camera::retail_cam::RetailCamGlobals;
 
@@ -48,7 +48,7 @@ pub const CUTSCENE_WORLD_SCALE: f32 = 6.0;
 /// vocabulary both hosts steer from: the play-window's left-mouse drag and
 /// wheel, and the browser play page's `pointermove` / `wheel` handlers on the
 /// canvas. The knobs compose onto the retail zone-driven follow camera
-/// (`legaia_engine_core::camera_view::field_follow_view`) and stay centred on the
+/// (`legaia_engine_world_views::camera_view::field_follow_view`) and stay centred on the
 /// character; every one is identity at its default, so the untouched camera
 /// is the retail shot bit for bit.
 ///

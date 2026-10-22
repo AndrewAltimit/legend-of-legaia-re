@@ -29,11 +29,11 @@
     <li><b>Equipped item</b><span>eight slot bytes per character, record <code>+0x196</code></span></li>
     <li><b>Index byte</b><span>descriptor <code>+3</code> (Goods) or equip row <code>+5</code></span></li>
     <li><b>Ability bit</b><span>set bit <code>index</code> in <code>char +0xF4</code>; <code>&gt;= 0x40</code> sets nothing</span></li>
-    <li><b>Global mask</b><span>all three members OR'd together</span></li>
+    <li><b>Global mask</b><span>all three character records OR'd together, joined or not</span></li>
     <li><b>Point of use</b><span>each mechanic tests its own bit</span></li>
   </ol>
   <p>The stat aggregator rebuilds this chain on every equipment change (it is event-driven, not per-frame), so un-equipping takes effect immediately.</p>
-  <p>The stat aggregator walks each active party member's eight equipment-slot bytes
+  <p>The stat aggregator walks the eight equipment-slot bytes of each of the three character records, with no test for who is in the party
   (<a href="save-record.html">record</a> <code>+0x196</code>) and resolves each item to an index:</p>
   <pre><code>kind = item_table[id].byte(+0)
 if kind == 1: index = equip_bonus[sub].byte(+5)
@@ -48,7 +48,7 @@ if index &lt; 0x40:
   </div>
   <ul class="bullets">
     <li><code>char +0xF4..+0x103</code> is the per-character 4&times;u32 ability bitfield - the home of the MP-cost bits (indices <code>0x04</code>/<code>0x05</code>).</li>
-    <li>All three members' bitfields are then OR'd into a <strong>global</strong> 4&times;u32 mask - how party-wide passives are consumed.</li>
+    <li>All three records' bitfields are then OR'd into a <strong>global</strong> 4&times;u32 mask - how party-wide passives are consumed. A member who has left the party still contributes: their accessory's party-wide passive stays in force.</li>
     <li>An index of <code>0x40</code> or above grants nothing. In retail every equipment row carries the <code>0x40</code> sentinel (no equipment grants a passive) and every consumable carries <code>0x41</code>; only accessory and quest-item rows carry live indices.</li>
   </ul>
   <p>The same gate is read by the pause menu's Goods detail panel and the description resolver to fetch the

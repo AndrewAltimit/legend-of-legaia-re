@@ -31,6 +31,17 @@ pub struct InflightCastSeed {
     /// actions left them - the caster included - and a fresh entry's
     /// authored seats frame the cast somewhere else. `None` keeps the seat.
     pub ground: [Option<[i16; 2]>; INFLIGHT_GROUND_SLOTS],
+    /// The node cursor `+0x68` (sixteenths of a keyframe) each combatant's
+    /// idle loop (entry `0`) stands on at the dispatch, by engine battle
+    /// slot. An idle loop is a clock the replay reaches on its own, and the
+    /// pose it shows moves the body pair `+0x3C..+0x40` the separation pass
+    /// `FUN_80050BB8` measures, so a bystander swaying at another phase than
+    /// retail's is pushed where retail's was not
+    /// (`theeder_summon_mid_cast`). The retail comparison sets it to the
+    /// capture's cursor less the advance the replay's own loop makes between
+    /// the dispatch and the capture's phase. `None` keeps the replay's
+    /// phase.
+    pub idle: [Option<i32>; INFLIGHT_GROUND_SLOTS],
 }
 
 /// Battle slots an [`InflightCastSeed`] places: three party seats and five
@@ -439,6 +450,26 @@ pub struct BattleState {
     /// staged): the next party killing blow's absorb roll lands. Drawn and
     /// consumed like [`Self::forced_steal`].
     pub forced_absorb: bool,
+    /// The same kind of seed for a capture inside a melee action: the
+    /// pushes its landed hits left on the damage-number ring
+    /// (`ctx[+0x83C + i*4]`, struck slot at `ctx[+0x318 + i*2]`), as
+    /// `(engine battle slot, amount)` in push order, `0` for an amount the
+    /// ring no longer holds. Each party melee hit the replay lands on the
+    /// front entry's slot pops it and takes a known amount instead of its
+    /// own roll (the rolls still draw). A capture inside a monster's cast
+    /// seeds the same ring, and the cast's hit on the front slot pops it
+    /// (`World::cast_spell_on_slots`). Empty on every ordinary fight.
+    pub forced_melee_hits: std::collections::VecDeque<(u8, u16)>,
+    /// The string's total on its victim (`DAT_8007BD14`), `(engine slot,
+    /// total)`: the replayed hit that lands the total (`kill_check`) takes
+    /// whatever brings the string to it, and an earlier hit of unknown
+    /// amount leaves room for it. The total decides more than the bar: the
+    /// closing hit commits the knockdown `+0x1F1` when the string passes a
+    /// quarter of the survivor's maximum, and a knockdown's get-up ends on a
+    /// root step of hundreds of units. `noa_levelup_fight_pre` totals `19`
+    /// against Gobu Gobu's `76`, no more than the quarter, and a replay that
+    /// rolled `21` knocked him down and stood the fight 300 units off.
+    pub forced_melee_total: Option<(u8, u32)>,
     /// The commit log's launch glide - retail's `0x35 + i` clones gliding the
     /// log off the left edge when the member leaves the ring for a sub-screen
     /// and back when they return
@@ -567,6 +598,10 @@ pub struct BattleState {
     pub backdrop_slot_1_yaw: u16,
     /// The battle frame [`Self::backdrop_slot_1_yaw`] last advanced on.
     pub backdrop_spin_frame: Option<u64>,
+    /// The battle frame the separation pass last ran on
+    /// ([`World::tick_battle_separation`]): retail runs it once a battle
+    /// frame, so a per-vsync replay runs it on the frame's first tick.
+    pub separation_frame: Option<u64>,
     /// Battle VRAM `MoveImage`s a stage module issued this frame, in order.
     /// Applied to the host's battle VRAM by
     /// [`crate::world::World::apply_battle_vram_moves`]; cleared at battle
@@ -578,7 +613,18 @@ pub struct BattleState {
     /// band this way). Applied with [`Self::vram_moves`] by
     /// [`crate::world::World::apply_battle_vram_moves`]; cleared at battle
     /// entry.
-    pub vram_scrolls: Vec<crate::world::ambient::vram_scroll::VramScrollFx>,
+    pub vram_scrolls: Vec<legaia_engine_field::vram_scroll::VramScrollFx>,
+    /// The CLUT-cell recolours the live effect parts' mode-3 render tail
+    /// wrote this frame - `FUN_80019D50` on a `0x4000` part that captured a
+    /// VRAM rect with op `0x2C` (Mule's backdrop CLUT `0x7A00` hue cycle).
+    /// Applied with [`Self::vram_moves`] by
+    /// [`crate::world::World::apply_battle_vram_moves`]; cleared at battle
+    /// entry.
+    pub cell_fx: Vec<legaia_engine_field::clut_cell_fx::ClutCellFx>,
+    /// Each live mode-3 rect's texels as op `0x2C` captured them - the
+    /// buffer every frame's recolour reads from. Dropped once no live part
+    /// recolours the rect.
+    pub cell_captures: std::collections::BTreeMap<(u16, u16, u16, u16), Vec<u16>>,
     /// How the engine's one-vsync ticks group into battle frames - the unit
     /// the root-motion carry truncates over and the camera steps on
     /// ([`crate::world::World::set_battle_frame_step`]).
@@ -837,6 +883,14 @@ pub struct BattleState {
     /// a cast that holds `ctx[+0x278]` bit 0 once the ambient sits on its
     /// floor (PROT 0927's `3`) takes the grid off the screen.
     pub(crate) ground_grid_drawn: bool,
+    /// Whether the frame driver has yet to register this fight's stage. The
+    /// stage loader `FUN_800513F0` - the call that seeds the ambient base's
+    /// floor (`sw v1,0x890(v0)` at `0x80051C84`) - runs from `FUN_80046A20`
+    /// on the first pass whose entry counter `gp+0x330` reads `0x84` or more
+    /// (`sltiu v0,a0,0x84` at `0x80046F04`, `jal 0x800513F0` at
+    /// `0x80046F74`), four counter units into the entry sweep, so the floor
+    /// starts its fade there rather than at the mode flip.
+    pub(crate) stage_registration_pending: bool,
     /// Whether the stage is one of `DAT_80078C1C`'s outdoor stages - the
     /// `0x8007BDA8` byte the backdrop ramp's ceiling reads. The host that
     /// resolved the stage sets it when it enters battle rendering.
@@ -852,6 +906,32 @@ pub struct BattleState {
     /// so two fights with no field tick between them still install twice.
     /// Not a retail word.
     pub entry_serial: u32,
+    /// The live pair of every retail pool slot the engine seats no actor in,
+    /// indexed by pool slot (`0..3` party seats, `3..7` monster seats).
+    ///
+    /// Retail has a struct behind every pool slot, a battle's empty party
+    /// seats included; each starts the fight at the origin, and the walks
+    /// that skip no slot move it - the round-start and action-seed recentres
+    /// take pool slots `0..3` unconditionally, the melee make-way step all
+    /// seven. Those seats then weigh in the next recentre's box, so a solo
+    /// or duo fight's formation depends on where they stand (a solo capture
+    /// reads its two empty seats on the mirror of the lone member's pair).
+    /// Reset by [`crate::world::World::enter_battle`].
+    pub empty_seat_ground: [(i16, i16); 7],
+    /// A capture seed stood the combatants on ground that already holds the
+    /// action seed's formation recentre (`FUN_801EFE44`): retail ran it on
+    /// the ground the fight stood on before the captured action (and every
+    /// action of the round ahead of it) moved anyone, and the seed has only
+    /// the ground after. The recentre's result does not depend on where the
+    /// formation starts, only on its shape, so replaying it over the
+    /// captured shape lands the fight somewhere retail never stood - a
+    /// summon capture whose stager has walked the party forward is thrown
+    /// six hundred units back - and no undrift pass can take it back. A
+    /// fight seeded this way skips the seed recentre. Set by
+    /// `legaia_engine_capture::bar_seeds::apply_bar_seeds` whenever a seed
+    /// places ground; never in play. Reset by
+    /// [`crate::world::World::enter_battle`].
+    pub seed_recentre_held: bool,
 }
 
 /// One frame's tag-`0x67` ribbon source: the `8`-byte seat vector the
@@ -928,6 +1008,8 @@ impl BattleState {
             forced_monster_cast: None,
             forced_monster_target: None,
             forced_steal: false,
+            forced_melee_hits: Default::default(),
+            forced_melee_total: None,
             forced_absorb: false,
             commit_log_launch: None,
             action_plaque_glide: None,
@@ -950,8 +1032,11 @@ impl BattleState {
             sparring_round_pending: false,
             backdrop_slot_1_yaw: 0,
             backdrop_spin_frame: None,
+            separation_frame: None,
             vram_moves: Vec::new(),
             vram_scrolls: Vec::new(),
+            cell_fx: Vec::new(),
+            cell_captures: Default::default(),
             frame_clock: Default::default(),
             pass_draw_frame: None,
             sm_pass_frame: None,
@@ -988,9 +1073,12 @@ impl BattleState {
             ambient_stored: legaia_engine_battle_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL,
             backdrop_cue: 0,
             ground_grid_drawn: true,
+            stage_registration_pending: false,
             stage_outdoor: false,
             message_banner: None,
             entry_serial: 0,
+            empty_seat_ground: [(0, 0); 7],
+            seed_recentre_held: false,
         }
     }
 

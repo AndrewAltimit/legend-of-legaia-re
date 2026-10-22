@@ -127,7 +127,7 @@ fn tims_in(bytes: &[u8]) -> Vec<legaia_tim::Tim> {
 #[test]
 fn pochi_leftovers_never_reach_the_ground_atlas_page() {
     let Some(index) = open_index() else {
-        eprintln!("LEGAIA_DISC_BIN unset - skipping");
+        eprintln!("LEGAIA_DISC_BIN unset or extracted/PROT.DAT missing - skipping");
         return;
     };
 
@@ -240,7 +240,7 @@ fn pochi_leftovers_never_reach_the_ground_atlas_page() {
 #[test]
 fn every_field_scene_ground_cell_resolves_to_a_resident_page() {
     let Some(index) = open_index() else {
-        eprintln!("LEGAIA_DISC_BIN unset - skipping");
+        eprintln!("LEGAIA_DISC_BIN unset or extracted/PROT.DAT missing - skipping");
         return;
     };
     for name in SCENES {

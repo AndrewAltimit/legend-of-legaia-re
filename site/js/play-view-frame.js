@@ -11,8 +11,7 @@
   'use strict';
 
   const {
-    padMaskOf, azimuthUnits, OCCLUDER_CULL, HALF_CHAR_HEIGHT,
-    segmentHitsBox, PLAYER_MESH_ID, A2R, TILE_MESH_BASE,
+    padMaskOf, azimuthUnits, PLAYER_MESH_ID, A2R, TILE_MESH_BASE,
     DYN_ACTOR_MESH_BASE, BATTLE_FX_BILLBOARD_MESH, IDENTITY_MODEL,
     FIELD_FX_PACK_MESH_BASE, BATTLE_FX_MODEL_BASE,
   } = window.LegaiaPlayShared;
@@ -260,17 +259,10 @@
           if (pos.length) this.renderer.updateSceneMeshPositions(morphSlots[i], pos);
         }
       }
-      /* Occluder cull, DISABLED (`OCCLUDER_CULL = false`; see the note at its
-       * definition). Even the exact segment-vs-world-AABB form culled legit
-       * bodies: the boxes are axis-aligned over whole terrain tiles / walls /
-       * buildings, so as the camera orbited or the player walked, the
-       * lens->player segment pierced a neighbour's box and blinked it out. The
-       * native renderer draws the whole scene unconditionally, and this page
-       * matches it - the branch stays for reference but is never taken. */
       const pt = rt.player_transform();
       let draws;
       /* In VR first-person there is no third-person lens: the eye IS the
-       * player, so nothing can "sit between" them - draw everything. */
+       * player, so nothing can "sit between" them - the fade stays off. */
       const fpLive = this._vrFp && this.vr && this.vr.isActive();
       /* Camera-occlusion fade (see-through walls): the engine's
        * `play_occlusion_fade` runs the whole frame - the shared arming
@@ -300,15 +292,9 @@
           this.renderer.setOcclusionFocus([f[1], f[2], f[3]], f[0], [f[4], f[5], f[6]]);
         }
       }
-      if (OCCLUDER_CULL && !fpLive) {
-        const eye = this._eye();
-        const px = pt[0], py = -pt[1] + HALF_CHAR_HEIGHT, pz = pt[2];
-        const ex = eye[0] - px, ey = eye[1] - py, ez = eye[2] - pz;
-        draws = this.staticDraws.filter(
-          d => !d.hidden && !segmentHitsBox(px, py, pz, ex, ey, ez, d.box));
-      } else {
-        draws = this.staticDraws.filter(d => !d.hidden);
-      }
+      /* Every body the scene loads draws every frame, as natively: no
+       * per-body occlusion cull (docs/subsystems/renderer.md). */
+      draws = this.staticDraws.filter(d => !d.hidden);
 
       /* Player: the engine's live posed vertices + its world transform. The
        * world frame is retail's (+Y down), so the draw negates Y the way every
@@ -902,7 +888,7 @@
 
     /* Battle effect layer: append this frame's FX draws to `draws`.
      *
-     * Two engine-composed seams, both from `crates/web-viewer/play_battle_fx`:
+     * Two engine-composed seams, both from `crates/web-play/play_battle_fx`:
      *
      *  - the effect POOL, as one batched mesh of camera-facing textured quads
      *    (the retail FUN_801E0088 pass-2 billboards, sampling the flame atlas

@@ -17,8 +17,8 @@ use std::path::PathBuf;
         by `legaia-extract` (the `--extracted-root` default `extracted` resolves \
         against the current directory).\n\n\
         Start here:\n  \
-        legaia-engine            (no subcommand: the launcher asks for the disc once, \
-        remembers it, and opens the title screen)\n  \
+        legaia-engine            (no subcommand: the launcher - pick the disc once, \
+        set display options, press Play for the title screen)\n  \
         legaia-engine play-window --disc \"Legend of Legaia (USA).bin\"\n  \
         legaia-engine list-scenes --disc \"Legend of Legaia (USA).bin\"\n\n\
         Config and saves (`legaia-input.toml`, `legaia-options.toml`, `saves/`) \
@@ -36,7 +36,7 @@ use std::path::PathBuf;
 )]
 pub(crate) struct Cli {
     /// Omit to run the launcher: it asks for the disc image once, remembers
-    /// it, and boots the game.
+    /// it, offers the display options, and starts the game on Play.
     #[command(subcommand)]
     pub(crate) cmd: Option<Cmd>,
 }
@@ -1216,6 +1216,19 @@ pub(crate) enum Cmd {
         /// the same). Off by default - clean modern output.
         #[arg(long, default_value_t = false)]
         psx_render: bool,
+        /// Open borderless fullscreen for this session, whatever the options
+        /// file says. `F11` or `Alt+Enter` toggles fullscreen at runtime (and
+        /// remembers it). Window chrome only: the frame is the same.
+        #[arg(long, default_value_t = false, conflicts_with = "windowed")]
+        fullscreen: bool,
+        /// Open windowed for this session, whatever the options file says.
+        #[arg(long, default_value_t = false)]
+        windowed: bool,
+        /// Windowed size as a multiple of the PlayStation's 320x240 display,
+        /// 2..=6 (3 = 960x720, the default), for this session; the launcher's
+        /// Window size row stores it.
+        #[arg(long, value_name = "N", value_parser = clap::value_parser!(u8).range(2..=6))]
+        window_scale: Option<u8>,
         /// Run retail-faithful: every enhancement off (enhanced lighting and
         /// its shadows, the volumetric fog, the occlusion fade, the entry
         /// pulse) and every persisted engine-only option pinned to its retail

@@ -11,6 +11,7 @@ name = "legaia_engine_menu_runtime"
 path = "src/lib.rs"
 
 [dependencies]
+legaia-engine-dev-menu.workspace = true
 legaia-engine-core.workspace = true
 legaia-engine-scene-host.workspace = true
 legaia-engine-battle.workspace = true

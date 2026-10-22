@@ -883,3 +883,35 @@ fn tick_retail_ages_active_masters() {
         assert_eq!(pool.master_slots[0].field_14, want);
     }
 }
+
+/// A master seated after the frame's walker takes that frame's sweeps alone:
+/// its first record spawns and the child it seeds takes its first step,
+/// while a master and child the walker already stepped hold.
+#[test]
+fn catch_up_walks_only_the_new_master_and_its_children() {
+    let records = [rec(0, 2), rec(0, 2)];
+    let catalog = walker_catalog(&[(0, &records)], &[&[(0, 4, 0), (0, 4, 0)]], &[]);
+    let mut pool = Pool::new();
+    let mut host = RecHost::default();
+    let old = pool
+        .spawn_by_ui_id(&mut host, 0, [0, 0, 0], 0, &catalog)
+        .expect("spawn");
+    pool.tick_retail(&mut host, &catalog, 1);
+    let old_master = pool.master_slots[old].state;
+    let old_child = (pool.children[0].frame_cursor, pool.children[0].wait);
+
+    let new = pool
+        .spawn_by_ui_id(&mut host, 0, [0, 0, 0], 0, &catalog)
+        .expect("spawn");
+    pool.catch_up_master(&mut host, &catalog, new, 1);
+    assert_eq!(pool.master_slots[new].spawn_cursor, 1);
+    assert_eq!(pool.master_slots[new].state, 16);
+    assert_eq!(pool.master_slots[old].state, old_master);
+    assert_eq!(
+        (pool.children[0].frame_cursor, pool.children[0].wait),
+        old_child
+    );
+    // The new child was seeded (wait 4 << 3) and stepped once (-8).
+    assert_eq!(pool.children[1].frame_count, 2);
+    assert_eq!(pool.children[1].wait, 24);
+}

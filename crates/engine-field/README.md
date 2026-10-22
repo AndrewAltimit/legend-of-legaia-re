@@ -20,8 +20,8 @@ this crate, `legaia-engine-system` (pad input, fades, mode-entry
 initialisers), `legaia-engine-mode` (the game-mode seat), `legaia-engine-vm`
 or the other `World`-free crates below `engine-core`. The field-overlay
 kernels the field VM itself does not import live here rather than in
-`legaia-engine-vm`, and `legaia-engine-fishing`, `legaia-engine-minigames`
-and `legaia-engine-menus` sit above this crate. The slot-A minigame overlays'
+`legaia-engine-vm`, and `legaia-engine-fishing` and `legaia-engine-minigames`
+sit above this crate; `legaia-engine-menus` does not name it. The slot-A minigame overlays'
 shared scene floor (`minigame_floor`: ground height, polar tables, the floor
 sweep) and the dance floor's step-marker flipbook (`dance_marker`) live here
 because both the fishing and the dance engines stand on them and the floor is
@@ -58,6 +58,11 @@ a dependent crate.
 - **Colour + render policy** - `clut_fx` (the `4C` n6 sub-`0x61` CLUT-cell
   write and cross-fade), `clut_cell_fx` (the move-VM-driven HSV cycler; see
   [`docs/subsystems/field-ambient-fx.md`](../../docs/subsystems/field-ambient-fx.md)),
+  `vram_scroll` (its render-mode-4 sibling, the cyclic VRAM-rect scroller:
+  the period integrator and the texel rotation),
+  `object_tint` (the op-`4C 42` / `4C 81` word ramps, the parked object
+  walk leg, the actor draw tint and its depth-cue form `tint_cue`; the
+  scheduling over the field channels is `engine-core`'s),
   `vdf_pulse` (an enhancement arm of the vertex-morph substitution),
   `field_lit_mesh` (the light-source TMD rows' shading; see
   [`docs/subsystems/shading.md`](../../docs/subsystems/shading.md)),
@@ -67,8 +72,8 @@ a dependent crate.
   the free stack, and the render step that projects each particle through a
   `FogView` into `FogQuad`s).
 - **Field camera** - `camera` (`Camera`, the follow / zone / scripted
-  camera both hosts tick, with `CameraDistance` and the camera-zone request
-  and cull-view types). Generic over `CameraWorld`, the slice of the world it
+  camera both hosts tick, with the camera-zone request and cull-view types;
+  its eye-back preset `CameraDistance` is `legaia-engine-camera`'s). Generic over `CameraWorld`, the slice of the world it
   reads and publishes; engine-core implements it for `World`. See
   [`docs/subsystems/world-map.md`](../../docs/subsystems/world-map.md) and
   [`docs/subsystems/cutscene.md`](../../docs/subsystems/cutscene.md) for the
@@ -104,13 +109,16 @@ a dependent crate.
   `field_actor_timers` (the shutter envelope, the eased move and the floor
   ladder; the shutter's two quads are `render-kernels::shutter_bars`),
   `field_passive_hud`, `field_state_pick`, `field_subsystem_enter`,
-  `pooled_actor_seed`, `code_lock_actor`, `escape_timer`, `motion_pause`,
-  `clut_fade_actor` and `incense_window` (the Incense top-up `FUN_80046870`).
-- **Submode, panels and the dev menu** - `submode_hub_actors` (the op-`0x49`
+  `pooled_actor_seed`, `code_lock_actor`, `escape_timer`, `motion_pause`
+  and `clut_fade_actor`.
+- **Submode and panels** - `submode_hub_actors` (the op-`0x49`
   submode system-actor handler family), `world_map_panel` /
   `world_map_panel_actors` (the panel window system and its actor state
-  machines), `dev_menu_leaves`, `dev_menu_adjust`, `dev_menu_flags` (the
-  EVENT FLAG editor kernels) and `dev_equip_commit`.
+  machines). The developer-menu bodies the hub and panel code run
+  (`dev_menu_leaves`, `dev_menu_adjust`, `dev_menu_flags`, `dev_equip_commit`,
+  `dev_menu_action`) sit one crate down, in
+  [`legaia-engine-dev-menu`](../engine-dev-menu/README.md), so the menu front
+  end shares them without naming this crate.
 - **World map** - `world_map_entity` (the entity state machine
   `FUN_801DA51C`), `world_map_dim`, `world_map_horizon`,
   `travel_art_actor` (Riremito and Rula) and `world_map_markers` (the port's
@@ -165,7 +173,7 @@ a dependent crate.
   its matrix / eye / curvature factor (`frame_vp`, `frame_eye`,
   `frame_curve_scale`), the overworld walk poses, the per-pass NCLIP and
   near-reject words both hosts arm, and the pinned fallback poses.
-  engine-core's `camera_view::resolve_field_camera` picks the arm from the
+  engine-world-views' `camera_view::resolve_field_camera` picks the arm from the
   live world.
 - `camera_ease` - the field camera's smoothed **vertical-offset** step
   (`FUN_801DA390`; `player[+0x16]` is the middle slot of the `+0x14/+0x16/+0x18`

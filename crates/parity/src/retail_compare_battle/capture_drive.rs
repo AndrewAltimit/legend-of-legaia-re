@@ -4,6 +4,45 @@
 use super::*;
 
 impl RetailBattle {
+    /// The hits a party **melee** capture's action had landed, in push order
+    /// ([`RetailBattle::action_hit_sequence`]), for the replay to deal again
+    /// at retail's amounts (`legaia_engine_capture::melee_hits`), and the
+    /// same for a monster's cast. Empty for any other plan: a party cast's
+    /// hits come from its module, not the melee kernel.
+    ///
+    /// The total is `DAT_8007BD14` on the action's target, read only when
+    /// the ring holds pushes (so it is this action's).
+    pub fn melee_hit_seeds(&self) -> legaia_engine_capture::melee_hits::MeleeHitSeed {
+        match self.seed_plan() {
+            SeedPlan::Action { seat, .. }
+                if seat < 3
+                    && self.queued_category == 3
+                    && !self.action_hit_sequence.is_empty() =>
+            {
+                legaia_engine_capture::melee_hits::MeleeHitSeed {
+                    hits: self.action_hit_sequence.clone(),
+                    total: (self.target_code >= 3 && self.combo_total > 0)
+                        .then_some((self.target_code, self.combo_total)),
+                }
+            }
+            // A monster's cast (`+0x1DE == 2`) pushes its hits on the same
+            // ring; the replay's cast rolls them on its own stream
+            // (`battle_gimard_tail_fire_*`: retail's `16` on Vahn, the replay
+            // `14` / `17`).
+            SeedPlan::Action { seat, .. }
+                if seat >= 3
+                    && self.queued_category == 2
+                    && !self.action_hit_sequence.is_empty() =>
+            {
+                legaia_engine_capture::melee_hits::MeleeHitSeed {
+                    hits: self.action_hit_sequence.clone(),
+                    total: None,
+                }
+            }
+            _ => Default::default(),
+        }
+    }
+
     /// Monster indices that read `0` HP on a capture of a **party** action in
     /// flight: the swing's victims, which [`run_engine_battle`] can seed at
     /// `1` HP so the replay makes the kill rather than ending the fight at
@@ -218,19 +257,39 @@ impl RetailBattle {
             // a knockdown carries the whole body in that time
             // (`battle_gimard_tail_fire_b`'s Vahn). A cursor below zero is a
             // displayed frame from before the hit, left alone.
+            //
+            // A monster target is seated on one reaction only: the get-up a
+            // killed monster rises on for the absorb, with a Seru staged in
+            // `ctx[+0x269]` (the commit's death arm, `0x8004B688..0x8004B6A0`).
+            // Its knockdown ran on the replay's clock too, and the replay's
+            // may still be falling where retail's has ended - the world
+            // carries it on to the get-up (`World::seat_battle_clip_cursor`,
+            // `rim_elm_gimard_seru_capture_before`). A monster's other
+            // reactions stay on the replay's clock: seated on its knockdown,
+            // `rim_elm_gimard_victory`'s Gimard read `.888` to `.883`.
             .filter(|&&(slot, clip, cursor)| {
                 let staged = !(self.action_state == 0x0C
                     || self.action_state == 0x14 && self.walk_yaw_base == 0x200);
                 let in_flight =
                     self.action_state != 0 && staged && !(0x50..=0x5A).contains(&self.action_state);
                 let capture_band_idle = clip == 0 && (0x6F..=0x71).contains(&self.action_state);
-                let party_reaction = slot < 3
-                    && slot == self.target_code
-                    && matches!(clip, 2..=5 | 0x0B)
-                    && cursor >= 0;
+                // So is a seat idling through a summon's invoke and freeze
+                // (`0x32..=0x34`): the band stages no clip on the victim
+                // before the module's hit, so its idle cursor is time since
+                // the loop began - a clock the replay reaches on its own
+                // (`gimard_summon_start`'s Gobu Gobu).
+                let summon_band_idle = clip == 0 && (0x32..=0x34).contains(&self.action_state);
+                let target_reaction = slot == self.target_code
+                    && cursor >= 0
+                    && if slot < 3 {
+                        matches!(clip, 2..=5 | 0x0B)
+                    } else {
+                        clip != 0 && self.absorbed_seru != 0
+                    };
                 !in_flight
                     || capture_band_idle
-                    || party_reaction
+                    || summon_band_idle
+                    || target_reaction
                     || (slot != self.active_actor && slot != self.target_code)
             })
             .filter_map(|&(slot, clip, cursor)| {
@@ -453,19 +512,30 @@ pub(super) fn run_drive(
         }
         if std::env::var_os("LEGAIA_RC_POS_TRACE").is_some() && world.mode == SceneMode::Battle {
             eprintln!(
-                "[pos] t={t} act={} st=0x{:02X} {}",
+                "[pos] t={t} act={} st=0x{:02X} yawc={:?} {}",
                 world.battle_ctx.active_actor,
                 world.battle_ctx.action_state,
-                (0..world.actors.len().min(4))
+                world.battle.camera.as_ref().map(|c| (
+                    c.action_yaw_base(),
+                    c.framing_pose().focus,
+                    c.glide_target().focus,
+                    c.framing_pose().yaw,
+                    c.close_up_accum(),
+                    c.glide_target().tr,
+                )),
+                (0..world.actors.len().min(8))
                     .map(|i| {
                         let a = &world.actors[i];
                         format!(
-                            "| {i}: ({}, {}) b{:?} f{} c{:#04X} tgt{} ",
+                            "| {i}: ({}, {}) b{:?} f{} c{:#04X} k{:?} r{} t{} tgt{} ",
                             a.move_state.world_x,
                             a.move_state.world_z,
                             a.battle.seat,
                             a.battle.facing_angle & 0xFFF,
                             world.battle_current_anim(i),
+                            a.battle_animation.as_ref().map(|p| p.current_frame()),
+                            a.battle.anim_rate.get(),
+                            a.battle.render_flag,
                             a.battle.active_target
                         )
                     })

@@ -1,15 +1,16 @@
 # Getting started with the release tools
 
 This guide is for someone who downloaded a release archive from the project's
-GitHub Releases page: a directory of prebuilt command-line binaries, the two
-license files, `README-PLAY.txt` and a short `README.txt`. No Rust toolchain,
-no source checkout.
+GitHub Releases page: a directory of prebuilt binaries (the command-line
+tools, the engine and Legaia Studio), the two license files,
+`README-PLAY.txt` and a short `README.txt`. No Rust toolchain, no source
+checkout.
 
 Pick your path:
 
 | You want to | Do this |
 |---|---|
-| **Play the game** | Start `legaia-engine` with no arguments - double-click it (`Legend of Legaia.exe` on Windows, `Legend of Legaia.app` on macOS). It asks for your disc image once, remembers it, and opens the title screen. [Playing and viewing](playing-and-viewing.md#0-the-launcher) has the controls. |
+| **Play the game** | Start `legaia-engine` with no arguments - double-click it (`Legend of Legaia.exe` on Windows, `Legend of Legaia.app` on macOS). It asks for your disc image once and remembers it; the launcher also sets the display options, then *Play* opens the title screen. [Playing and viewing](playing-and-viewing.md#0-the-launcher) has the controls. |
 | **Play without installing anything** | Open the project site's play page and pick your disc image there; it runs the same engine in the browser. |
 | **Get the assets out** | Follow sections 1-3 below, then [extracting-assets.md](extracting-assets.md). |
 | **Randomize, mod or translate** | Sections 1-2 below, then [modding-and-translation.md](modding-and-translation.md) or [translating.md](translating.md). |
@@ -109,8 +110,10 @@ extracted/
 └── prot_tim_deep_catalog.tsv - texture inventory (TIMs inside LZS)
 ```
 
-The final summary points at the texture path: bulk texture export is a
-separate two-command step (`asset tim-scan` + `tim convert-dir`) covered in
+Bulk texture export is not one of the eight steps: `--all-textures` adds it
+as a ninth (every TIM, raw and LZS-compressed, as `.tim` + `.png` under
+`tim_scan/`), and without it the final summary points at the equivalent
+two-command step (`asset tim-scan` + `tim convert-dir`) covered in
 [extracting-assets.md](extracting-assets.md).
 
 Everything downstream - the [asset scenarios](extracting-assets.md), the
@@ -142,6 +145,7 @@ Game-data, playing, and modding:
 | Binary | What it's for |
 |---|---|
 | `legaia-engine` | The from-scratch engine: play scenes, FMVs, record/replay, export scenes to `.glb` - straight from your disc. |
+| `legaia-studio` | Desktop app (no terminal): open the disc, browse it by scene, preview and export textures, models, audio, dialog and movies, run the full extraction. |
 | `asset-viewer` | Windowed browser for textures, meshes, audio banks, and scene demos. |
 | `legaia-patcher` | Disc patcher: randomizer, translation toolchain, and manual record edits; emits shareable PPF patches. |
 | `save-tool` | PSX memory-card / save inspector: character records, save-block diffs. |
@@ -158,7 +162,7 @@ Reverse-engineering aids (useful once you go deeper):
 | `mdt` | Layout classifier for retail's "MOVE" buffer (the scene's animation clip bank). |
 | `art` | Tactical Arts tables: action constants, arts names, Super/Miracle Art triggers. |
 | `mednafen-state` | Mednafen save-state inspector: RAM diffs, VRAM dumps, SPU snapshots. |
-| `pcsxr-state` | PCSX-Redux save-state reader: scene, game mode and player position; RAM windows; VRAM. |
+| `pcsxr-state` | PCSX-Redux save-state reader: scene, game mode and player position; RAM windows; VRAM. Source build only - not in the release archive. |
 
 ## Related docs
 

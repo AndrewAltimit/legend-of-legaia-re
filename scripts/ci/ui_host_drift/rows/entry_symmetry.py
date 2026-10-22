@@ -71,6 +71,7 @@ SHARED_CALLER_ROOTS = [
     REPO / "crates" / "engine-motion-vm" / "src",
     REPO / "crates" / "engine-ui" / "src",
     REPO / "crates" / "render-kernels" / "src",
+    REPO / "crates" / "web-play" / "src",
     REPO / "crates" / "web-viewer" / "src",
 ]
 

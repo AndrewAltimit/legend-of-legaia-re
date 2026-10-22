@@ -45,7 +45,7 @@
 //! They are NOT the trigger-scene set. The actual `0x4C 0xE2` trigger
 //! ops live LZS-compressed inside each trigger scene's MAN (which is
 //! why a raw bytewise PROT scan misses them);
-//! `man_field_scripts::scene_fmv_triggers` (engine-core) recovers the
+//! `man_field_scripts::scene_fmv_triggers` (engine-field) recovers the
 //! literal `fmv_id` operands for all eight trigger scenes (`town01`,
 //! `garmel`, `deroa`, `chitei2`, `dohaty`, `town0d`, `uru`, `jouine`),
 //! pinned by the disc-gated `scene_fmv_triggers_disc` test.

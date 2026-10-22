@@ -774,10 +774,9 @@ impl LegaiaViewer {
                 &mut k.vram,
             ) {
                 // Overworld game tick = 3 vsyncs (`DAT_1F800393`).
-                k.clut_anim = Some(crate::field_scene::FieldSceneAnim::clut_only(
-                    install.anim,
-                    3,
-                ));
+                k.clut_anim = Some(
+                    legaia_web_play::field_scene_anim::FieldSceneAnim::clut_only(install.anim, 3),
+                );
             }
             break;
         }

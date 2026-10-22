@@ -4,7 +4,8 @@ The engine ships the same game UI through more than one framebuffer:
 
 * **native** - `legaia-engine play-window` (`crates/engine-shell`, wgpu via
   `crates/engine-render`),
-* **web** - the browser pages built from `crates/web-viewer`. That is two
+* **web** - the browser pages built from `crates/web-play` (shipped in
+  `crates/web-viewer`'s bundle). That is two
   surfaces, not one: the **play page** (`runtime.rs` + `play_*.rs`, driven by
   `site/js/play-app.js`) and the **minigames page** (`minigames*.rs`,
   `LegaiaMinigames`), which calls `engine-core` session types directly and

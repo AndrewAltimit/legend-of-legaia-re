@@ -15,8 +15,8 @@ use legaia_engine_audio::spu::ram::SpuAllocator;
 use legaia_engine_audio::{Spu, VabBank, render_bgm_to_pcm};
 use legaia_seq::Seq;
 use legaia_vab::parse as parse_vab;
+use legaia_web_play::disc::{extract_prot_dat, parse_prot_toc};
 use legaia_web_viewer::audio::enumerate_bgm_pairs;
-use legaia_web_viewer::disc::{extract_prot_dat, parse_prot_toc};
 use std::env;
 use std::fs;
 

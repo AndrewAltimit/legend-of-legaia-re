@@ -36,12 +36,12 @@ fn spirit_seed_bumps_the_latch_and_folds_its_draw() {
 }
 
 /// The spirit band stages the committed clip, holds `0x20` steps, waits on
-/// the clip, then drains the `0x300` flush eight units a step before the Done
-/// band - and a timer that went negative earlier never strands it (the hold
-/// is level-triggered, not an edge).
+/// the clip, then spends the `0x300` flush hold on the flush's first pass
+/// and leaves for the Done band - and a timer that went negative earlier
+/// never strands it (the hold is level-triggered, not an edge).
 #[test]
 fn the_spirit_band_holds_its_clip_and_both_timers() {
-    use crate::battle_action::spirit::{SPIRIT_BAND_HOLD, SPIRIT_FLUSH_HOLD, SPIRIT_FLUSH_STEP};
+    use crate::battle_action::spirit::SPIRIT_BAND_HOLD;
     let (mut ctx, mut host) = fresh(ActionCategory::Spirit, 0);
     host.actors[0].queued_anim_b = 0x10;
     ctx.frame_timer = -5;
@@ -69,11 +69,34 @@ fn the_spirit_band_holds_its_clip_and_both_timers() {
         "held for the clip, {steps}"
     );
     assert_eq!(ctx.action_state, ActionState::SpiritArtsFlush.as_byte());
-    let flush_steps = (SPIRIT_FLUSH_HOLD / SPIRIT_FLUSH_STEP) as usize;
-    for _ in 0..flush_steps {
+    // Only the plate's climb holds the flush now: the hold is spent at once.
+    let climb = (ctx.hp_bar_target - ctx.spirit_plate_value).max(0) as usize;
+    step(&mut host, &mut ctx);
+    assert!(
+        ctx.frame_timer <= 0,
+        "the 0x300 hold is spent the first pass"
+    );
+    for _ in 0..climb {
+        if ctx.action_state != ActionState::SpiritArtsFlush.as_byte() {
+            break;
+        }
         step(&mut host, &mut ctx);
     }
     assert_eq!(ctx.action_state, ActionState::DoneCleanup.as_byte());
+}
+
+/// `0x48`'s compare runs the other way from a drain: a timer at or above
+/// `8 * step` is zeroed (`beq v0,zero,0x801E5760` -> `sh zero,0x2(s7)`), and
+/// only one below it is stepped down, past zero.
+#[test]
+fn the_flush_spends_its_hold_on_the_first_pass() {
+    use crate::battle_action::spirit::{SPIRIT_FLUSH_HOLD, spirit_flush_timer};
+    assert_eq!(spirit_flush_timer(SPIRIT_FLUSH_HOLD, 1), 0);
+    assert_eq!(spirit_flush_timer(SPIRIT_FLUSH_HOLD, 2), 0);
+    assert_eq!(spirit_flush_timer(16, 2), 0);
+    assert_eq!(spirit_flush_timer(15, 2), -1);
+    assert_eq!(spirit_flush_timer(0, 2), 0);
+    assert_eq!(spirit_flush_timer(-3, 2), -3);
 }
 
 /// A Spirit turn's whole presentation, seed to Done: the seed raises the AP

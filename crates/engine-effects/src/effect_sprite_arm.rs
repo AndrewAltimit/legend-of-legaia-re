@@ -49,9 +49,11 @@ pub fn sprite_arm_vram_mesh(s: &ActorState) -> Option<legaia_tmd::mesh::VramMesh
     let quad = sprite_arm_quad(s.field_9e, s)?;
     let colour = ColourWord::of(s);
     let rgb = colour.cue(quad.rgb);
+    // A draw-time packet, not a resident TMD word: the prologue grade's
+    // packet rewrite never reaches it (`TSB_RUNTIME_PACKET_BIT`).
     let tsb = {
         let t = quad.tpage | (u16::from(colour.abr) << 5);
-        legaia_tmd::mesh::pack_tsb_semi(t, colour.semi)
+        legaia_tmd::mesh::pack_tsb_semi(t, colour.semi) | legaia_tmd::mesh::TSB_RUNTIME_PACKET_BIT
     };
     let k = f32::from(s.field_72) / 4096.0;
     let mut mesh = legaia_tmd::mesh::VramMesh {
@@ -194,6 +196,11 @@ mod tests {
             tsb & legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT,
             0,
             "ABE on"
+        );
+        assert_ne!(
+            tsb & legaia_tmd::mesh::TSB_RUNTIME_PACKET_BIT,
+            0,
+            "a draw-time packet, outside the prologue grade's TMD-word rewrite"
         );
         // `+0x78` bit 0 is forced on a non-zero mode byte, so the cue moves
         // the colour by less than one step toward black.

@@ -43,6 +43,7 @@ legaia-engine-mode.workspace = true
 legaia-engine-system.workspace = true
 legaia-engine-ui.workspace = true
 legaia-engine-vm.workspace = true
+legaia-game-tables.workspace = true
 legaia-ram-image.workspace = true
 legaia-scene-formats.workspace = true
 png.workspace = true
@@ -51,13 +52,13 @@ serde_json.workspace = true
 sha2.workspace = true
 
 [dev-dependencies]
+legaia-engine-world-views.workspace = true
 legaia-actor-formats.workspace = true
 legaia-iso.workspace = true
 legaia-mdec.workspace = true
 legaia-render-kernels.workspace = true
 legaia-tmd.workspace = true
 flate2.workspace = true
-legaia-game-tables.workspace = true
 legaia-overlay-images.workspace = true
 tempfile.workspace = true
 # The randomizer runtime oracles patch a scratch disc image in memory and drive

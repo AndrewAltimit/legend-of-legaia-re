@@ -1278,7 +1278,7 @@ Two functions carry the screen:
 - **Both hosts reach it.** The browser play page runs the same state machine
   and the same shared [`legaia_engine_ui`](../../crates/engine-ui/README.md)
   builders (`name_entry_draws_for` + `name_entry_chrome_sprite_draws_for`)
-  through [`legaia_web_viewer::play_name_entry`](../../crates/web-viewer/README.md).
+  through [`legaia_web_play::play_name_entry`](../../crates/web-play/README.md).
   Neither host owns name logic - only the pad bridge and the draw target
   (`scripts/ci/check-ui-host-drift.py`). The native window also has a dev `N` key
   that opens the prompt outside the new-game flow.

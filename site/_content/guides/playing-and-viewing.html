@@ -7,7 +7,7 @@
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <ol class="steps">
-    <li><b>Start the game</b><span>No arguments: the launcher asks for your disc once and opens the title screen.</span></li>
+    <li><b>Start the game</b><span>No arguments: the launcher remembers your disc, sets the display options, and <em>Play</em> opens the title screen.</span></li>
     <li><b>Jump somewhere</b><span><code>play-window --scene</code>, <code>--battle</code>, <code>--party</code>, cheats.</span></li>
     <li><b>Watch the movies</b><span><code>play-str</code> plays an FMV with its XA audio in sync.</span></li>
     <li><b>Minigames</b><span>Fishing, dance, slots, Baka Fighter, Muscle Dome - one key from any scene.</span></li>
@@ -21,16 +21,41 @@
 <section class="doc-section" id="launcher">
   <h2>0 &middot; The launcher</h2>
   <p class="hint">New to the release archive? <a href="desktop-apps.html">Desktop apps</a> covers the download, the first start past SmartScreen or Gatekeeper, the controls and the toggles, with screenshots; this page is the full reference.</p>
-  <p>Started with <strong>no subcommand</strong> - a double-click, a desktop shortcut, the macOS app - <code>legaia-engine</code> runs a small launcher instead of printing help:</p>
+  <p>Started with <strong>no subcommand</strong> - a double-click, a desktop shortcut, the macOS app - <code>legaia-engine</code> opens its launcher instead of printing help:</p>
   <div class="cli"><code>./legaia-engine</code></div>
+  <figure class="screenshot">
+    <img src="../img/desktop/port-launcher.jpg" width="960" height="720" alt="The launcher: a disc card saying Legend of Legaia (USA) is ready, the Play, Change disc, Controls, Open saves folder and Quit buttons with a help box, and the option list - fullscreen, window size, enhanced lighting, time of day, lamp shadows, see-through walls, ground fog, bloom, PlayStation pixel look, camera distance, free-angle movement, reduce flashing, volumes, Original game only" loading="lazy">
+    <figcaption>The launcher, lettered in the game's own font once your disc is known.</figcaption>
+  </figure>
   <ol class="steps">
-    <li><b>Pick the disc</b><span>Press <kbd>Enter</kbd> or click for the file dialog, drag the <code>.bin</code> / <code>.cue</code> onto the window, or type its path. <kbd>Esc</kbd> quits.</span></li>
-    <li><b>It is checked</b><span>Raw Mode 2/2352, <code>SYSTEM.CNF</code> boots <code>SCUS_942.54</code>, <code>PROT.DAT</code> present.</span></li>
-    <li><b>It is remembered</b><span>Saved to <code>launcher.toml</code> in your config directory.</span></li>
-    <li><b>Title screen</b><span>The game opens as <code>play-window --disc &lt;bin&gt; --boot-ui</code>. Later starts skip the window.</span></li>
+    <li><b>Pick the disc</b><span><em>Choose disc...</em> (<kbd>Ctrl</kbd>+<kbd>O</kbd>) opens the file dialog; dragging the <code>.bin</code> / <code>.cue</code> onto the window, or typing its path, works too.</span></li>
+    <li><b>It is checked</b><span>Raw Mode 2/2352, <code>SYSTEM.CNF</code> boots <code>SCUS_942.54</code>, <code>PROT.DAT</code> present. A wrong disc is named, with the fix.</span></li>
+    <li><b>It is remembered</b><span>Saved to <code>launcher.toml</code>; next time it is ready with <em>Play</em> focused. <em>Change disc...</em> switches.</span></li>
+    <li><b>Play</b><span>The game opens as <code>play-window --disc &lt;bin&gt; --boot-ui</code>; the launcher closes, and comes back with the error if the game fails.</span></li>
   </ol>
   <p>The check reads a few sectors through the same reader the game boots from; it is not the SHA-256 fingerprint <code>disc-extract verify</code> computes. A PAL or Japanese disc is refused with the executable it boots. A randomized or translated USA disc is accepted, since it still boots the USA executable.</p>
-  <p>The window comes back only when the remembered file is gone or no longer validates, and it says which. To switch discs, delete <code>launcher.toml</code>, or run <code>play-window --disc</code> directly.</p>
+  <p>Arrow keys move between every control, <kbd>Tab</kbd> jumps between the buttons and the options, <kbd>Left</kbd> / <kbd>Right</kbd> change an option, <kbd>Enter</kbd> presses, <kbd>Esc</kbd> quits; the mouse hovers and clicks (right-click steps an option back). The help box under the buttons explains whatever is focused.</p>
+  <h3 id="launcher-options">Options</h3>
+  <table>
+    <thead><tr><th>Row</th><th>Stored in</th><th>In game</th><th>Default</th></tr></thead>
+    <tbody>
+      <tr><td>Fullscreen (borderless)</td><td><code>legaia-options.toml</code></td><td><kbd>F11</kbd>, <kbd>Alt</kbd>+<kbd>Enter</kbd></td><td>off</td></tr>
+      <tr><td>Window size (640x480 .. 1920x1440)</td><td><code>legaia-options.toml</code></td><td>-</td><td>960x720</td></tr>
+      <tr><td>Enhanced lighting</td><td><code>legaia-options.toml</code></td><td><kbd>I</kbd></td><td>on</td></tr>
+      <tr><td>Time of day (auto, day, dusk, night)</td><td><code>legaia-options.toml</code></td><td><kbd>F8</kbd></td><td>auto</td></tr>
+      <tr><td>Lamp shadows</td><td><code>legaia-options.toml</code></td><td><kbd>Y</kbd></td><td>on</td></tr>
+      <tr><td>See-through walls</td><td><code>legaia-options.toml</code></td><td><kbd>F4</kbd></td><td>on</td></tr>
+      <tr><td>Ground fog</td><td><code>legaia-options.toml</code></td><td><kbd>F9</kbd></td><td>off</td></tr>
+      <tr><td>Bloom</td><td><code>legaia-options.toml</code></td><td><kbd>F10</kbd></td><td>off</td></tr>
+      <tr><td>PlayStation pixel look (<code>--psx-render</code>)</td><td><code>launcher.toml</code></td><td>-</td><td>off</td></tr>
+      <tr><td>Camera distance (retail, far, farther)</td><td><code>legaia-options.toml</code></td><td><kbd>T</kbd></td><td>far</td></tr>
+      <tr><td>Free-angle movement</td><td><code>legaia-options.toml</code></td><td><kbd>R</kbd></td><td>off</td></tr>
+      <tr><td>Reduce flashing</td><td><code>legaia-options.toml</code></td><td>-</td><td>on</td></tr>
+      <tr><td>Music / sound effects volume (0..10, 8 = the original mix)</td><td><code>legaia-options.toml</code></td><td>-</td><td>8</td></tr>
+      <tr><td>Original game only (<code>--retail</code>)</td><td><code>launcher.toml</code></td><td>-</td><td>off</td></tr>
+    </tbody>
+  </table>
+  <p>The <code>legaia-options.toml</code> rows are the game's own options: the launcher and the in-game keys change the same value. The two <code>launcher.toml</code> rows are launch switches. <em>Original game only</em> starts the game retail-faithful - every enhancement off for that session, your saved options untouched. <em>Controls</em> shows the current key bindings. When the game stops with an error, the launcher shows its error lines; the whole log is <code>legaia-engine-game.log</code> in the saves folder (<em>Open saves folder</em>). <code>LEGAIA_LAUNCHER_DIRECT=1</code> skips the screen and boots a remembered disc straight away.</p>
   <table>
     <thead><tr><th>Platform</th><th>Settings (<code>launcher.toml</code>)</th><th>Game data (bindings, options, <code>saves/</code>)</th></tr></thead>
     <tbody>
@@ -296,7 +321,7 @@
   <div class="cli"><code>scripts/ci/build-wasm.sh</code></div>
   <div class="cli"><code>python3 -m http.server -d site</code></div>
   <p>Nothing is uploaded: the disc image you pick stays in the tab.</p>
-  <p>Rebuild after changing anything the page compiles - which is most of the workspace, not just <code>crates/web-viewer</code>. To check whether the bundle you built still matches your sources:</p>
+  <p>Rebuild after changing anything the page compiles - which is most of the workspace, not just <code>crates/web-play</code> and <code>crates/web-viewer</code>. To check whether the bundle you built still matches your sources:</p>
   <div class="cli"><code>python3 scripts/ci/check-wasm-freshness.py</code></div>
   <p class="hint">Worth running before concluding a change did or didn't work in the browser: a stale bundle looks exactly like a fix that had no effect. Background: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/shipped-bundle-freshness.md" target="_blank" rel="noopener"><code>tooling/shipped-bundle-freshness.md</code></a>.</p>
 </section>

@@ -1008,6 +1008,8 @@ impl BattleDrive {
         {
             let pc = world.party.party_count.clamp(1, 3);
             let state = world.battle_ctx.action_state;
+            let pass_next = world.battle_sm_pass_due_next_tick();
+            let step = world.battle_frame_step();
             if let Some(yaw) = steer.yaw
                 && world.mode == SceneMode::Battle
                 && world.battle_ctx.active_actor == engine_seat(seat, pc)
@@ -1026,7 +1028,20 @@ impl BattleDrive {
                 if state == want && !matches!(end, SpanGate::CaptureFade { .. }) {
                     let d = (cam.action_yaw_base() - i32::from(yaw)).rem_euclid(0x1000);
                     if d.min(0x1000 - d) <= YAW_CLOCK_SLACK {
-                        cam.set_action_yaw_base(i32::from(yaw));
+                        // Retail's word is the one its last pass left, after
+                        // that pass's prologue drift. On retail's cadence the
+                        // pin lands ahead of a tick whose pass adds the drift
+                        // again, so it stands one pass short there.
+                        let drift = if pass_next {
+                            i32::from(
+                                legaia_engine_battle_vm::battle_cam_script::action_yaw_pass_increment(
+                                    step,
+                                ),
+                            )
+                        } else {
+                            0
+                        };
+                        cam.set_action_yaw_base(i32::from(yaw) - drift);
                     }
                 }
                 if let Some(coin) = steer.coin {
@@ -1085,8 +1100,39 @@ impl BattleDrive {
         world.audio.sound_bank_ready = !(ours
             && state == 0x6E
             && !(capture_accum_done(world, height, accum) && capture_yaw_done(world, height, yaw)));
+        // `0x6F` ramps the depth before it polls (`0x801E4FFC..0x801E5014`,
+        // then `FUN_8003F2B8(1)`), so the pass that leaves the state has
+        // ramped too: retail's depth on entering `0x70` is the exit pass's.
+        // A capture past `0x6F` releases the poll on the pass whose ramp lands
+        // the capture's depth, not on the one after it (which took one more
+        // ramp step, `16` a vsync - `48` at a frame step of `3` - off the
+        // depth every `0x70` shot is cut at). A capture in `0x6F` itself is
+        // sampled on that landing tick, so it keeps the state held.
+        let per_pass = CAPTURE_RAMP_PER_TICK
+            * if world.toggles.battle_sm_frame_cadence {
+                u32::from(world.battle_frame_step().max(1))
+            } else {
+                1
+            };
+        let release_at = if want == 0x6F { 0 } else { per_pass };
         world.battle.prev_action_cleared =
-            !(ours && state == 0x6F && !capture_ramp_done(world, height));
+            !(ours && state == 0x6F && u32::from(capture_ramp_left(world, height)) > release_at);
+        // Retail's ramp ran on its own frame steps (2 and 3 vsyncs a pass,
+        // as each frame's cost set them), so the depth it left `0x6F` on
+        // sits on a lattice the replay's passes need not share: at a fixed
+        // step the engine's last ramp can land up to a pass short of it.
+        // Before the module's arm 0 cuts its shot on that depth (`0x70`,
+        // the module phase still `0`), stand it on retail's.
+        let short = i32::from(height as i16) - i32::from(world.battle.camera_frame_height);
+        if ours
+            && want == 0x70
+            && state == 0x70
+            && world.casting.module_phase == 0
+            && short > 0
+            && (short as u32) < per_pass
+        {
+            world.battle.camera_frame_height = height as i16;
+        }
         // `0x6F` ramps `ctx[+0x6D0]` and then arms case 6 on the new depth in
         // the same pass (`sh a0,0x6d0(v0)` at `0x801E5014`, `jal 0x801D5854`
         // at `0x801E501C`), so the pass that lands the capture's depth also
@@ -1343,16 +1389,25 @@ pub(crate) fn aim_alive(world: &legaia_engine_core::world::World, row: u8) -> bo
 /// Whether the engine's battle-entry sweep
 /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::start_entry_sweep`])
 /// has run as far as retail's frame-driver counter `entry` reads: a counter
-/// inside the sweep (`0x80..=0xC0`) is met once the engine's has reached it,
-/// one past it (`0xFF`) once the engine's sweep is over, and one below it
-/// (the fight still loading) at once.
+/// inside the sweep (`0x80..=0xC0`) is met on the engine pass whose counter
+/// lies nearest it, one past it (`0xFF`) once the engine's sweep is over, and
+/// one below it (the fight still loading) at once.
+///
+/// The counter advances by the frame step a pass (`0x80046FE0..0x80046FF4`),
+/// and retail's step varies with load, so its counter need not share the
+/// engine's parity: `s5_tetsu_battle` reads `0xAF` on a step of `2`, where the
+/// engine's even counter passes `0xAE` and then `0xB0`. Its case-2 glide has
+/// run six two-vsync passes there (eye Y and Z `0.34` / `0.32` of the way
+/// from where the drift left them, `(10/12)^6 = 0.33`), the pass at `0xAE`;
+/// waiting for `0xB0` sampled a seventh. So a pass within half a step short of
+/// `entry` meets it, the earlier one on a tie.
 pub fn entry_sweep_reached(world: &legaia_engine_core::world::World, entry: u8) -> bool {
     if entry < 0x80 {
         return true;
     }
     world.battle.camera.as_ref().is_some_and(|c| {
         c.entry_sweep_counter()
-            .is_none_or(|n| entry != 0xFF && n >= u32::from(entry))
+            .is_none_or(|n| entry != 0xFF && n + u32::from(c.frame_step()) / 2 >= u32::from(entry))
     })
 }
 

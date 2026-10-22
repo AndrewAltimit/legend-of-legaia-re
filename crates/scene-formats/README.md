@@ -110,11 +110,19 @@ most scenes is a placeholder variant - see
 `man_edit` - **variable-length editing of a decompressed MAN.**
 
 - `scene_change_sites` enumerates the field-VM `0x3F` named-scene-change ("door")
-  ops via a clean partition walk (they're partition-2 records).
+  ops via a clean partition walk (they're partition-2 records); `site_p2_slots`
+  joins each site to the partition-2 slot a `.MAP` kind-1 walk-on tile names,
+  `scene_destinations` is the full (P1 and P2) destination set, and
+  `move_to_sites` the `0x23 MOVE_TO` sites.
 - `apply_dest_edits` resizes a door's inline destination name and rebuilds the
   buffer, fixing the partition record-offset tables + header section-0 offset +
   intra-record relative-jump deltas, with a `validate` re-parse backstop. Powers the
   door randomizer.
+- `apply_text_edits` resizes dialog text inside record script bodies (refusing
+  records with an absolute-reference op), checked by
+  `text_edits_preserve_scripts`; `apply_insertions` inserts bytes at
+  instruction boundaries. The first powers the language-pack dialog import,
+  the second the starting-bag and Delilas Challenge script rewrites.
 
 See [`man-relocation.md`](../../docs/formats/man-relocation.md). The per-scene asset
 slot table `scene_asset_table` and its `scene_v12_table` variant are in the

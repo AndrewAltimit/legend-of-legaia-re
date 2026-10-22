@@ -142,20 +142,16 @@ fn overworld_flat_depth(clip: vec4<f32>, fa: vec4<f32>, fb: vec4<f32>, sz_scale:
 // while keeping the cell's own per-pixel order inside the slice. Off the
 // field (`sz_scale > 0`, the overworld's key) and on every unmarked vertex
 // nothing moves.
-// A flat far-bucket cell (`fa.y > fa.w`, its z pair swapped) keeps its real
-// depth to within `FIELD_FLAT_FAR_BUCKET_PUSH` of it, pushed back so a decal
-// on the floor plane paints over it (`field_ground::FLAT_FAR_BUCKET_PUSH`).
+// A flat far-bucket cell (`fa.y > fa.w`, its z pair swapped) goes into the
+// same slice: a decal authored under the floor plane (`conc`'s shadow strips,
+// six units down) paints over it, as it does over retail's far bucket.
 const FIELD_FAR_BUCKET_DEPTH_SCALE: f32 = 0.001;
-const FIELD_FLAT_FAR_BUCKET_PUSH: f32 = 0.005;
 fn field_far_bucket_depth(clip: vec4<f32>, fa: vec4<f32>, sz_scale: f32) -> vec4<f32> {
     if (sz_scale > 0.0 || clip.w <= 0.0) {
         return clip;
     }
-    if (fa.x > fa.z) {
+    if (fa.x > fa.z || fa.y > fa.w) {
         return vec4<f32>(clip.x, clip.y, clip.z * FIELD_FAR_BUCKET_DEPTH_SCALE, clip.w);
-    }
-    if (fa.y > fa.w) {
-        return vec4<f32>(clip.x, clip.y, clip.z * (1.0 - FIELD_FLAT_FAR_BUCKET_PUSH), clip.w);
     }
     return clip;
 }
@@ -361,7 +357,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     // word (retail grades the loaded TMD colour words alongside the CLUTs;
     // runtime-emitted neutral words stay neutral).
     var prim = in.prim_color;
-    if palette_on {
+    if palette_on && (tsb & 0x0800u) == 0u {
         prim = palette_collapse_prim(prim);
     }
     let lit = psx_modulate(color.rgb, prim);
@@ -458,7 +454,7 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     // applies here too, and the opt-in dynamic light matches the opaque pass
     // (identity when disabled) so lit water/glass composites consistently.
     var prim = in.prim_color;
-    if palette_on {
+    if palette_on && (tsb & 0x0800u) == 0u {
         prim = palette_collapse_prim(prim);
     }
     let lit = psx_modulate(color.rgb, prim);

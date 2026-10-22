@@ -244,6 +244,7 @@ pub const DITHER_BOOT_VALUE: bool = true;
 /// | [`Self::Push`] | `FUN_80035B50(id)` | `push_ring_cue` |
 /// | [`Self::SetLastDelay`] | `FUN_80035BAC(delay)` | `set_ring_cue_delay` |
 /// | [`Self::ReplaceLast`] | `FUN_80035BD0(id)` | `replace_ring_cue` |
+/// | [`Self::ReleaseSustained`] | `FUN_80017910()` | `SfxBank::release_sustained` |
 ///
 /// The id is the **resolved** ring id the drainer `FUN_80016B6C` consumes:
 /// below `0x200` a row of the static `DAT_8006F198` table, at or above it a
@@ -269,6 +270,15 @@ pub enum SfxRingOp {
     /// cursor pair: the Muscle Dome hub's INTERVAL arm, which fills all four
     /// slots at once (`0x801CFCAC..0x801CFCEC`).
     ArmSlot(u8, i16, i16),
+    /// `FUN_80017910` - key off the held **sustained** cue run (voices
+    /// `7 .. 7 + gp+0x5D0`) and clear the held count. Not a ring write: it
+    /// rides this queue because the held run lives with the drainer's voice
+    /// bookkeeping on the host side, and it must land in call order against
+    /// the ring writes - ahead of the frame's drain, as retail's callers run
+    /// ahead of `FUN_80016B6C`. The battle anim commit `FUN_8004AD80` raises
+    /// it whenever an actor's staged clip differs from its latched one
+    /// (`0x8004AE54..0x8004AE68`).
+    ReleaseSustained,
 }
 
 /// One CD-XA voice clip request (the `FUN_8003D53C` call, decoded): the

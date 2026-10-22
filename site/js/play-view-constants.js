@@ -83,70 +83,6 @@
     return (u + 4096) % 4096;
   }
 
-  /* ---------- occluder cull (see the note in `_frame`) ---------- */
-
-  /* Occluder cull, DISABLED. The native renderer draws the whole scene every
-   * frame with no distance / frustum / occlusion culling (docs/subsystems/
-   * renderer.md), and the browser matches it. The per-frame lens->player slab
-   * test below bounded each body by an axis-aligned box over whole terrain
-   * tiles / walls / buildings, so neighbouring bodies blinked out as the camera
-   * orbited or the player walked (the reported "meshes cull while walking"
-   * symptom). Leave this `false`; every body a scene loads is drawn every
-   * frame, unconditionally. */
-  const OCCLUDER_CULL = false;
-
-  /* Half a character's standing height, in world units. Paired with
-   * HALF_CHAR_HEIGHT in crates/web-viewer/src/play.rs, which is the point
-   * the occlusion gate (`field_player_occluded`) tests - the fade focus has
-   * to be staged at that same point or the hole lands off the character. */
-  const HALF_CHAR_HEIGHT = 65;
-
-  /* World AABB of one placement: the mesh's local box carried through the draw
-   * model `T(x, y, z) . Ry(rotY) . diag(sc, -sc, sc)` (`placementModelScaledY`).
-   * Baked once per placement so the per-frame occluder test is a slab
-   * intersection against the body's REAL box - not a bounding sphere of its
-   * longest axis, which for a floor slab or a staircase is hundreds of units of
-   * empty space and is what used to blink them out. */
-  function placementWorldBox(aabb, d) {
-    if (!aabb) return null;
-    const sc = (d.scale != null) ? d.scale : 1.0;
-    const c = Math.cos(d.rotY || 0), s = Math.sin(d.rotY || 0);
-    const ax = Math.abs(c), az = Math.abs(s);
-    const cx = d.x + sc * (c * aabb.cx + s * aabb.cz);
-    const cy = d.y - sc * aabb.cy;               /* the model flips Y */
-    const cz = d.z + sc * (-s * aabb.cx + c * aabb.cz);
-    const hx = sc * (ax * aabb.sx + az * aabb.sz) * 0.5;
-    const hy = sc * aabb.sy * 0.5;
-    const hz = sc * (az * aabb.sx + ax * aabb.sz) * 0.5;
-    return [cx - hx, cy - hy, cz - hz, cx + hx, cy + hy, cz + hz];
-  }
-
-  /* Does the segment `p + t*e`, `t in (OCC_T_MIN, OCC_T_MAX)`, pierce the world
-   * box? Standard slab test. `t = 0` is the PLAYER and `t = 1` is the LENS, so
-   * the trims are asymmetric: the first `OCC_T_MIN` of the segment is skipped so
-   * the body the player stands on / walks past is never an occluder, while the
-   * lens end runs all the way to `1` - a body the camera is *inside* (a cliff
-   * face, a cave roof) is exactly what has to go. */
-  const OCC_T_MIN = 0.12, OCC_T_MAX = 1.0;
-  function segmentHitsBox(px, py, pz, ex, ey, ez, box) {
-    if (!box) return false;
-    let t0 = OCC_T_MIN, t1 = OCC_T_MAX;
-    const p = [px, py, pz], e = [ex, ey, ez];
-    for (let i = 0; i < 3; i++) {
-      const lo = box[i], hi = box[i + 3];
-      if (Math.abs(e[i]) < 1e-6) {
-        if (p[i] < lo || p[i] > hi) return false;   /* parallel and outside */
-        continue;
-      }
-      let ta = (lo - p[i]) / e[i], tb = (hi - p[i]) / e[i];
-      if (ta > tb) { const s = ta; ta = tb; tb = s; }
-      if (ta > t0) t0 = ta;
-      if (tb < t1) t1 = tb;
-      if (t0 > t1) return false;
-    }
-    return true;
-  }
-
   /* Pose an object-local mesh into `out` from one frame of a clip - the
    * shared actor animator (js/field-actors.js), the one the map viewer's
    * actor layer runs too. */
@@ -158,7 +94,6 @@
     BATTLE_FX_MODEL_BASE, FIELD_FX_PACK_MESH_BASE, DYN_ACTOR_MESH_BASE,
     IDENTITY_MODEL, VR_UNITS_PER_METER, VAHN_HEIGHT_M, VR_FP_EYE_HEIGHT_M,
     VR_FP_FALLBACK_MESH_HEIGHT, adoptPadBindings, padMaskOf, padTable,
-    azimuthUnits, OCCLUDER_CULL, HALF_CHAR_HEIGHT, placementWorldBox,
-    OCC_T_MIN, OCC_T_MAX, segmentHitsBox, poseInto,
+    azimuthUnits, poseInto,
   };
 })();

@@ -2,8 +2,8 @@
 
 The shared retail GTE camera: the camera build and projection, the op-`0x45`
 cutscene glide, the battle camera's tween step table and shake, the ten live
-camera globals as one value, and the camera-relative effect-actor spawn and
-its glide tick. Ported from the routines' disassembly, with no bytes from the
+camera globals as one value, the camera-relative effect-actor spawn and
+its glide tick, and the field follow camera's eye-back distance preset. Ported from the routines' disassembly, with no bytes from the
 original executable.
 
 The battle camera script (`legaia-engine-battle-vm::battle_cam_script`), the
@@ -25,6 +25,7 @@ builds for native and `wasm32` alike.
 | `battle_camera` | The camera-angle tween step table (`FUN_801D829C`) and the shake jitter (`FUN_801D9D30`). |
 | `retail_cam` | The ten live camera globals as one value. |
 | `camera_rel_actor` / `camera_rel_glide` | The camera-relative effect-actor spawn `FUN_80021248` and its glide tick `FUN_8002149C`. |
+| `camera_distance` | `CameraDistance`, the field follow camera's eye-back preset (retail / far / farther): an engine enhancement knob the field camera scales by and the options screen persists. |
 
 The pose builders that pick a `BattleCamPose` per battle phase stay with the
 battle camera script in `legaia-engine-battle-vm`.
@@ -55,7 +56,7 @@ the browser play page ease a scripted shot instead of snapping every
 
 Which camera owns a given frame, and what its inputs are, is one layer up:
 the frame type and its matrix in `engine-field::camera_frame`, the resolver
-that reads the live world in `engine-core::camera_view`.
+that reads the live world in `engine-world-views::camera_view`.
 
 ## Tests
 

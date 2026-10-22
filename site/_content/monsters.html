@@ -29,8 +29,8 @@ table.enemy-table.show-inbattle tbody td.col-boosted { color: var(--accent); }
   background: var(--bg-code); color: var(--text); border: 1px solid var(--border);
   padding: 0.3rem 0.5rem; font-family: var(--font-mono); font-size: 0.82rem; min-width: 0; max-width: 100%;
 }
-/* Fight class the disc's formation rows put the enemy in. */
-table.enemy-table tbody td.col-fight { text-align: center; }
+/* Fight class the disc's formation rows put the enemy in: a tag beside the
+   name, shown only when it is not the common case (a random encounter). */
 .fight-tag {
   display: inline-block; padding: 0 0.4rem; border-radius: 3px; font-size: 0.72rem;
   letter-spacing: 0.04em; text-transform: uppercase; border: 1px solid var(--border);
@@ -40,7 +40,6 @@ table.enemy-table tbody td.col-fight { text-align: center; }
 /* Seru-magic side-effect chips: one per debuff the game can inflict, in one
    of three looks (solid = stacks, dashed = once, struck = never). The legend
    in the toolbar shows the same three chips with their words. */
-table.enemy-table tbody td.col-debuffs { text-align: left; white-space: nowrap; }
 .debuff-chip {
   display: inline-block; min-width: 2.2em; text-align: center; margin-right: 0.1rem;
   padding: 0 0.2rem; border-radius: 3px; font-size: 0.72rem; line-height: 1.5;
@@ -79,30 +78,91 @@ table.enemy-table tbody .mesh-side-effects td {
 /* Carries `table-wrap` too, so layout.js does not nest a second scroller inside it (the
    detail row is pinned to this one). The shared rule's outer margin is dropped: the shell gap spaces it. */
 .enemy-table-table-wrap { border: 1px solid var(--border); border-radius: 4px; background: var(--bg-card); overflow-x: auto; margin: 0; }
+/* One line per enemy: every cell is nowrap, long text cells (magic, drop,
+   steal) are capped and ellipsised, and the full text sits in the row's
+   detail panel. Column groups (vitals | combat stats | rewards | loot) are
+   split by a faint rule rather than by spacing alone. */
 table.enemy-table {
-  border-collapse: collapse; width: 100%;
-  font-family: var(--font-mono); font-size: 0.8rem;
+  border-collapse: separate; border-spacing: 0; width: 100%;
+  font-family: var(--font-mono); font-size: 0.8rem; font-variant-numeric: tabular-nums;
 }
 table.enemy-table thead th {
-  position: sticky; top: 0; background: var(--bg-raised); color: var(--text);
-  text-align: right; padding: 0.5rem 0.45rem; border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 2; background: var(--bg-raised); color: var(--text-muted);
+  font-weight: 600; font-size: 0.74rem; letter-spacing: 0.03em;
+  text-align: right; padding: 0.5rem 0.35rem; border-bottom: 1px solid var(--border);
   cursor: pointer; user-select: none; white-space: nowrap;
 }
-table.enemy-table thead th.col-name { text-align: left; }
-table.enemy-table thead th .arrow { color: var(--accent); font-size: 0.7rem; margin-left: 0.2rem; }
-table.enemy-table tbody td { padding: 0.35rem 0.45rem; border-bottom: 1px solid var(--border); text-align: right; }
+table.enemy-table thead th:hover { color: var(--text); }
+table.enemy-table thead th.is-sorted { color: var(--accent); }
+table.enemy-table thead th.col-name,
+table.enemy-table thead th.col-text { text-align: left; }
+table.enemy-table thead th.col-elem,
+table.enemy-table thead th.col-mesh { text-align: center; }
+table.enemy-table thead th .arrow { color: var(--accent); font-size: 0.66rem; margin-left: 0.2rem; }
+table.enemy-table tbody td {
+  padding: 0.4rem 0.35rem; border-bottom: 1px solid var(--border); text-align: right;
+  white-space: nowrap; vertical-align: middle;
+}
+table.enemy-table .grp { border-left: 1px solid var(--border); }
+table.enemy-table tbody td.col-id { color: var(--text-dim); }
+table.enemy-table .col-id { width: 2.6em; min-width: 2.6em; max-width: 2.6em; box-sizing: border-box; }
 table.enemy-table tbody td.col-name { text-align: left; color: var(--text); }
-table.enemy-table tbody td.col-id { color: var(--accent); }
-table.enemy-table tbody tr:hover { background: var(--bg-raised); cursor: pointer; }
-table.enemy-table tbody tr.selected { background: var(--bg-raised); outline: 1px solid var(--accent); }
-table.enemy-table tbody td.dim { color: var(--text-dim); }
-table.enemy-table tbody td.col-mesh { color: var(--accent); text-align: center; }
-table.enemy-table tbody tr.selected td.col-mesh { color: var(--accent); }
+table.enemy-table tbody td.col-elem { text-align: center; }
+table.enemy-table tbody td.col-text { text-align: left; }
+/* A table cell ignores max-width under auto layout, so the cap sits on an
+   inner box: the name ellipsises, the chance figure never does. */
+.cell-clip { display: inline-flex; align-items: baseline; max-width: 9.5em; min-width: 0; vertical-align: middle; }
+.cell-clip > .clip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.cell-clip > .loot-pct { flex: none; }
+.col-magic .cell-clip { max-width: 11em; }
+table.enemy-table tbody td.col-hp { color: var(--text); font-weight: 600; }
+/* The id and the name stay pinned while the stat columns scroll under them. */
+table.enemy-table .col-id, table.enemy-table .col-name { position: sticky; z-index: 1; background: var(--bg-card); }
+table.enemy-table thead .col-id, table.enemy-table thead .col-name { z-index: 3; background: var(--bg-raised); }
+table.enemy-table .col-id { left: 0; }
+table.enemy-table .col-name { left: 2.6em; box-shadow: inset -1px 0 0 var(--border); }
+table.enemy-table tbody tr:hover td { background: var(--bg-raised); cursor: pointer; }
+table.enemy-table tbody tr.selected td { background: var(--bg-raised); }
+table.enemy-table tbody tr.selected td.col-id { box-shadow: inset 2px 0 0 var(--accent); color: var(--accent); }
+table.enemy-table tbody td.dim, table.enemy-table tbody .dim { color: var(--text-dim); }
+table.enemy-table tbody td.col-mesh { color: var(--accent); text-align: center; width: 1.6em; }
+.en-name { margin-right: 0.4rem; }
+.en-id-inline { display: none; color: var(--text-dim); margin-right: 0.4rem; }
+table.enemy-table .enemy-elem { font-size: 0.62rem; letter-spacing: 0.02em; padding: 0.05em 0.3em; }
+table.enemy-table .fight-tag { font-size: 0.64rem; vertical-align: 1px; }
+/* Loot: item name, then the chance as a small right-hand figure. */
+.loot-pct { color: var(--text-dim); margin-left: 0.4rem; font-size: 0.72rem; }
+.spell-list .clip-text { color: var(--text-muted); }
+/* Magic is the widest optional column; below this width it lives only in
+   the detail panel so the core stats fit without a sideways scroll. */
+@media (max-width: 1500px) { table.enemy-table .col-magic { display: none; } }
+/* Laptop widths: loot names take the squeeze (the full name is the cell's
+   tooltip and in the panel), so the stat columns still fit unscrolled. */
+@media (max-width: 1320px) {
+  table.enemy-table thead th, table.enemy-table tbody td { padding-left: 0.28rem; padding-right: 0.28rem; }
+  .cell-clip { max-width: 7.2em; }
+}
+.enemy-table-sort { display: none; }
+.enemy-table-sort select,
+.enemy-table-sort button {
+  background: var(--bg-code); color: var(--text); border: 1px solid var(--border);
+  padding: 0.3rem 0.5rem; font-family: var(--font-mono); font-size: 0.82rem; cursor: pointer;
+}
+/* Detail panel: the long-tail facts as a two-column spec list. */
+.enemy-facts {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.3rem 0.9rem;
+  margin: 0.7rem 0 0.2rem; font-size: 0.8rem; line-height: 1.45;
+}
+.enemy-facts dt { color: var(--text-dim); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; padding-top: 0.12rem; }
+.enemy-facts dd { color: var(--text); margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.enemy-facts dd .dim { color: var(--text-dim); }
+.enemy-facts .debuff-legend { display: flex; margin-top: 0.3rem; }
+
 
 /* Inline per-row 3D mesh viewer: an expanded detail row injected right
    beneath the clicked row. */
 /* Specificity beats the enemy table's right-aligned td rule, which would otherwise reach every line of the panel. */
-table.enemy-table tbody tr.mesh-detail-row > td { padding: 0 !important; background: var(--bg-code); border-bottom: 1px solid var(--border); text-align: left; }
+table.enemy-table tbody tr.mesh-detail-row > td { padding: 0 !important; background: var(--bg-code); border-bottom: 1px solid var(--border); text-align: left; white-space: normal; }
 .mesh-detail-inner {
   display: flex; gap: 1rem 1.5rem; flex-wrap: wrap; align-items: flex-start;
   padding: 0.85rem 0.9rem; box-sizing: border-box;
@@ -139,6 +199,45 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
 }
 .mesh-anim-btn:hover { border-color: var(--accent); color: var(--text); }
 .mesh-anim-btn.is-active { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+/* Phone: each enemy is a card - name line, a 4-up stat grid with labels,
+   rewards, then loot. The header row gives way to the Sort control. */
+@media (max-width: 620px) {
+  .enemy-table-sort { display: inline-flex; gap: 0.4rem; align-items: center; color: var(--text-muted); font-family: var(--font-mono); font-size: 0.82rem; }
+  .enemy-table-toolbar input[type="search"] { min-width: 0; flex: 1 1 100%; }
+  .enemy-table-table-wrap { overflow: visible; background: transparent; border: 0; }
+  table.enemy-table, table.enemy-table tbody { display: block; width: 100%; }
+  table.enemy-table thead { display: none; }
+  table.enemy-table tbody tr[data-id] {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.35rem 0.6rem;
+    padding: 0.65rem 0.75rem; margin-bottom: 0.5rem;
+    border: 1px solid var(--border); border-radius: 4px; background: var(--bg-card);
+  }
+  table.enemy-table tbody tr[data-id].selected { border-color: var(--accent); margin-bottom: 0; border-radius: 4px 4px 0 0; }
+  table.enemy-table tbody tr[data-id] > td {
+    display: block; position: static; padding: 0; border: 0; background: transparent !important;
+    box-shadow: none !important; text-align: left; max-width: none; min-width: 0; width: auto;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  table.enemy-table tbody tr[data-id] > td[data-label]::before {
+    content: attr(data-label); display: block; color: var(--text-dim);
+    font-size: 0.62rem; letter-spacing: 0.06em; text-transform: uppercase;
+  }
+  table.enemy-table tbody tr[data-id] > td.col-id,
+  table.enemy-table tbody tr[data-id] > td.col-mesh { display: none; }
+  table.enemy-table tbody td.col-name { grid-column: 1 / 4; font-size: 0.9rem; white-space: normal; padding-bottom: 0.2rem; }
+  table.enemy-table tbody td.col-elem { grid-column: 4; text-align: right; }
+  .en-id-inline { display: inline; }
+  .cell-clip, .col-magic .cell-clip { display: flex; max-width: 100%; }
+  table.enemy-table .col-magic { display: block; }
+  table.enemy-table tbody td.col-magic,
+  table.enemy-table tbody td.col-drop,
+  table.enemy-table tbody td.col-steal { grid-column: span 2; }
+  table.enemy-table tbody tr.mesh-detail-row { display: block; margin-bottom: 0.5rem; }
+  table.enemy-table tbody tr.mesh-detail-row > td { display: block; border: 1px solid var(--accent); border-top: 0; border-radius: 0 0 4px 4px; }
+  .mesh-detail-inner { position: static; padding: 0.75rem; }
+  canvas.mesh-viewer-canvas { width: 100%; height: auto; aspect-ratio: 9 / 8; }
+  .mesh-viewer-side { flex-basis: 100%; }
+}
 </style>
 <script src="js/rom-cache.js"></script>
 <script src="js/disc-info.js"></script>
@@ -159,20 +258,52 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
 <section class="doc-section">
   <div class="enemy-table-shell">
     <div class="enemy-table-toolbar" id="enemy-table-toolbar" style="display: none;">
-      <input type="search" id="enemy-table-filter" placeholder="Filter by name or id…">
-      <label class="enemy-table-statview" title="The raw record on the disc is not what you fight: the battle loader boosts ATK / UDF / LDF / INT as it installs each enemy. A boss fight (one the game will not let you run from) gets ATK ×5/4, UDF/LDF ×2, INT ×9/8; a random encounter gets ATK ×1, UDF/LDF ×7/4, INT ×5/4. 'In battle' shows each enemy the way it is met (its Met column).">
+      <input type="search" id="enemy-table-filter" placeholder="Filter by name, id, item or spell…">
+      <label class="enemy-table-statview" title="How the disc's formation rows meet the enemy. Random encounters are the common case and carry no tag in the table; boss, story and both-ways enemies are tagged beside their name.">
+        Met
+        <select id="enemy-table-fight">
+          <option value="all" selected>any fight</option>
+          <option value="0">random encounter</option>
+          <option value="3">boss fight</option>
+          <option value="1">story (switch off)</option>
+          <option value="2">both ways</option>
+        </select>
+      </label>
+      <label class="enemy-table-statview">
+        Element
+        <select id="enemy-table-elem">
+          <option value="all" selected>any</option>
+        </select>
+      </label>
+      <label class="enemy-table-statview" title="The raw record on the disc is not what you fight: the battle loader boosts ATK / UDF / LDF / INT as it installs each enemy. A boss fight (one the game will not let you run from) gets ATK ×5/4, UDF/LDF ×2, INT ×9/8; a random encounter gets ATK ×1, UDF/LDF ×7/4, INT ×5/4. 'In battle' shows each enemy the way it is met (its boss / story tag, or none for a random encounter).">
         Stats
         <select id="enemy-table-statview">
           <option value="battle" selected>in battle</option>
           <option value="raw">raw disc record</option>
         </select>
       </label>
+      <label class="enemy-table-sort">
+        Sort
+        <select id="enemy-table-sortkey">
+          <option value="id">#</option>
+          <option value="name">name</option>
+          <option value="hp">HP</option>
+          <option value="mp">MP</option>
+          <option value="s1">ATK</option>
+          <option value="s2">UDF</option>
+          <option value="s3">LDF</option>
+          <option value="s4">INT</option>
+          <option value="s5">SPD</option>
+          <option value="s0">AGL</option>
+          <option value="element">element</option>
+          <option value="exp">EXP</option>
+          <option value="gold">gold</option>
+          <option value="drop_chance">drop chance</option>
+          <option value="steal_chance">steal chance</option>
+        </select>
+        <button type="button" id="enemy-table-sortdir" title="Reverse the sort">▲</button>
+      </label>
       <span class="enemy-table-count" id="enemy-table-count"></span>
-      <span class="debuff-legend" title="Seru side-effect chips. Solid: every cast lands and the drops stack. Dashed: the first cast lands, every later cast of that element prints 'No effect.'. Struck through: never lands. The Seru side-effects column and the section below the table explain why.">
-        <span><span class="debuff-chip">DEF</span>stacks</span>
-        <span><span class="debuff-chip is-once">SPD</span>once, then "No effect."</span>
-        <span><span class="debuff-chip is-never">ATK</span>never</span>
-      </span>
     </div>
 
     <div class="table-wrap enemy-table-table-wrap" id="enemy-table-table-wrap" style="display: none;">
@@ -180,24 +311,22 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
         <thead>
           <tr id="enemy-table-head">
             <th class="col-id"   data-key="id">#</th>
-            <th class="col-name" data-key="name">Name</th>
-            <th data-key="hp">HP</th>
+            <th class="col-name" data-key="name" title="Enemy name. A tag beside it marks a boss, story or both-ways enemy; random encounters carry none.">Name</th>
+            <th data-key="element" class="col-elem" title="Element - shifts elemental damage dealt and taken. Blank: neutral.">Elem</th>
+            <th data-key="hp" class="grp">HP</th>
             <th data-key="mp">MP</th>
-            <th data-key="s1" title="Attack - the enemy's physical offense.">ATK</th>
+            <th data-key="s1" class="grp" title="Attack - the enemy's physical offense.">ATK</th>
             <th data-key="s2" title="Upper defense - reduces most (non-low) attacks.">UDF</th>
             <th data-key="s3" title="Lower defense - reduces low attacks.">LDF</th>
             <th data-key="s4" title="Intelligence - magical damage and magic defense.">INT</th>
             <th data-key="s5" title="Speed - battle turn order.">SPD</th>
             <th data-key="s0" title="Agility - the action gauge the enemy spends to act.">AGL</th>
-            <th data-key="element" title="Element - shifts elemental damage dealt and taken.">Elem</th>
-            <th data-key="fight" class="col-fight" title="How the disc's formation rows meet this enemy: a boss fight (the game's no-escape switch is on - its formation row sets it, or the story starts the fight from script), a random encounter, or both. The same switch picks the stat-boost profile and which Seru side-effects can land.">Met</th>
-            <th data-key="debuffs" class="col-debuffs" title="Which Seru-magic stat debuffs can land on this enemy in the fight it is met in. Solid: every cast lands and the drops stack. Dashed: the first cast lands, every later cast of that element prints 'No effect.'. Struck through: never lands. Hover a chip for the reason; open the row for the full breakdown.">Seru side-effects</th>
-            <th data-key="castable" class="col-name" title="The enemy's named magic attacks and their MP cost.">Magic attacks (MP)</th>
-            <th data-key="exp" title="Base EXP reward on the disc record. NTSC-U pays 3/4 of it, split among the living party; JP and PAL pay all of it, split the same way. Open the row for the paid numbers.">EXP</th>
+            <th data-key="exp" class="grp" title="Base EXP reward on the disc record. NTSC-U pays 3/4 of it, split among the living party; JP and PAL pay all of it, split the same way. Open the row for the paid numbers.">EXP</th>
             <th data-key="gold" title="Base gold reward on the disc record. NTSC-U pays a quarter of it (5/16 with the Golden Book); JP and PAL pay half (5/8 with the book). Open the row for the paid numbers.">Gold</th>
-            <th data-key="drop_chance" title="Item the enemy can drop, and the chance.">Drop</th>
-            <th data-key="steal_chance" title="Item stolen with the Evil God Icon, and the chance.">Steal</th>
-            <th class="col-mesh" title="Click a row to view the enemy's 3D battle model">3D</th>
+            <th data-key="castable" class="col-text col-magic grp" title="The enemy's named magic attacks. Open the row for their MP costs.">Magic</th>
+            <th data-key="drop_chance" class="col-text grp" title="Item the enemy can drop, and the chance.">Drop</th>
+            <th data-key="steal_chance" class="col-text" title="Item stolen with the Evil God Icon, and the chance.">Steal</th>
+            <th class="col-mesh" title="Click a row to open its 3D battle model and the full breakdown"></th>
           </tr>
         </thead>
         <tbody id="enemy-table-body"></tbody>
@@ -208,7 +337,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
 
 <section class="doc-section" id="how-to-read">
   <h2>How to read the table</h2>
-  <p>Click a column header to sort, type in the filter box to narrow by name or id, and click a row to open its battle model. The stat columns show what you actually fight - see the note on the international release below.</p>
+  <p>Click a column header to sort (on a phone, use the <strong>Sort</strong> control), type in the filter box to narrow by name, id, drop / steal item or spell, and narrow further by how the enemy is met or by element. Each row keeps to the numbers you compare; click it to open its battle model and the long-tail facts - magic attacks with their MP cost, the Seru side-effects that can land, and what the victory banner actually pays. The stat columns show what you actually fight - see the note on the international release below.</p>
   <dl class="kv">
     <dt><strong>ATK</strong></dt>
     <dd>Physical offense.</dd>
@@ -222,24 +351,24 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     <dd>The action gauge the enemy spends to act each round (the in-game "Power Up" buff raises it).</dd>
     <dt><strong>Elem</strong></dt>
     <dd>The monster's element. Its effect on damage is small: same element 96%, opposed element 104%, anything else 100% - and an Art applies it twice.</dd>
-    <dt><strong>Met</strong></dt>
-    <dd>The game keeps <strong>one switch per fight</strong>, read off the formation row on the disc (or set outright when the story starts the fight from its own script). When it is on, three things follow: <strong>you cannot run away</strong>, the enemies get the stronger stat boost, and the side-effect checks below apply. Every boss and story fight captured so far has it on (Gaza, Cort), every random encounter has it off - so the quick test in play is whether the game lets you escape. This page calls fights with the switch on <em>boss</em> fights. <em>boss</em>: met only in rows with the switch on, or started from script. <em>random</em>: in rows a region can roll. <em>story</em>: started by the story, but on a row whose switch is off - a handful of fights sit there and run under the random-encounter rules (not yet confirmed in play). <em>both</em>: appearances of each kind. There is no per-monster boss byte; the switch belongs to the fight.</dd>
-    <dt><strong>Seru side-effects</strong></dt>
-    <dd>Which of the six stat debuffs your Seru magic can put on this enemy, in the fight it is met in. A <strong>solid</strong> chip: every cast lands and the drops stack. A <strong>dashed</strong> chip: the first cast lands, and every later cast of that element prints "No effect." for the rest of the battle. A <strong>struck-through</strong> chip never lands. Hover a chip for the reason; open the row for both fight classes side by side. The rules are in the section below.</dd>
+    <dt><strong>Boss / story / both tag</strong></dt>
+    <dd>The game keeps <strong>one switch per fight</strong>, read off the formation row on the disc (or set outright when the story starts the fight from its own script). When it is on, three things follow: <strong>you cannot run away</strong>, the enemies get the stronger stat boost, and the side-effect checks below apply. Every boss and story fight captured so far has it on (Gaza, Cort), every random encounter has it off - so the quick test in play is whether the game lets you escape. This page calls fights with the switch on <em>boss</em> fights. <em>boss</em>: met only in rows with the switch on, or started from script. <em>random</em>: in rows a region can roll. <em>story</em>: started by the story, but on a row whose switch is off - a handful of fights sit there and run under the random-encounter rules (not yet confirmed in play). <em>both</em>: appearances of each kind. A random-only enemy is the common case and carries no tag; the <strong>Met</strong> filter in the toolbar picks out any one kind. There is no per-monster boss byte; the switch belongs to the fight.</dd>
+    <dt><strong>Seru side-effects</strong> (row panel)</dt>
+    <dd>Which of the six stat debuffs your Seru magic can put on this enemy, in the fight it is met in. Every random-encounter enemy shows the same set (all stack, AGL lands once), so the chips live in the row panel rather than on every row. A <strong>solid</strong> chip: every cast lands and the drops stack. A <strong>dashed</strong> chip: the first cast lands, and every later cast of that element prints "No effect." for the rest of the battle. A <strong>struck-through</strong> chip never lands. Hover a chip for the reason; the panel also sets both fight classes side by side. The rules are in the section below.</dd>
     <dt><strong>EXP / Gold</strong></dt>
     <dd>Base rewards as stored on the disc record - the same bytes on the USA and PAL discs. What the victory banner pays is smaller, and by how much depends on the executable, not the disc data. <strong>NTSC-U</strong>: EXP is summed over the dead enemies, cut to 3/4, then split evenly among the living party (rounded up); gold is summed as half of each record value, +25% if a living member carries the Golden Book, then halved again - so a lone enemy pays a quarter of its record gold (5/16 with the book). <strong>JP and PAL</strong> (the Japanese original and the FR/DE/IT executables): the EXP cut and the second gold halving are absent - the party splits the whole EXP and receives half the record gold (5/8 with the book). Zeto (8000 G, 9000 EXP): NTSC-U banner 2000 G and 2250 EXP each for three, JP and PAL 4000 G and 3000 EXP each. Open a row for its paid numbers; formulas in <a href="subsystems/battle-formulas.html#victory-spoils">battle formulas</a>.</dd>
     <dt><strong>Drop</strong></dt>
     <dd>The item the enemy can leave behind, and the chance.</dd>
     <dt><strong>Steal</strong></dt>
     <dd>What the Evil God Icon takes (item + chance). Steals come from a separate table in the game executable, not from the monster's record - which is why a monster's steal and drop usually differ.</dd>
-    <dt><strong>Magic attacks</strong></dt>
-    <dd>The enemy's named spells and their MP cost.</dd>
+    <dt><strong>Magic</strong></dt>
+    <dd>The enemy's named spells; their MP costs are in the row panel. On narrower screens the column gives way and the spells are listed in the panel only.</dd>
   </dl>
   <p class="hint">Names for spells, drops and steals resolve from a full disc image; a raw <code>PROT.DAT</code> shows raw ids instead, and no steal column - that table lives in the executable, not in PROT.DAT.</p>
 
   <div class="notice">
     <div class="notice-title">The stats you fight depend on the kind of fight</div>
-    <p>The <strong>ATK / UDF / LDF / INT</strong> columns default to <em>in-battle</em> values, because the raw record on the disc is not what you fight: the battle loader boosts those four stats as it installs each enemy, and it has two profiles. A <strong>boss fight</strong> (the no-escape switch on, see <strong>Met</strong> above) installs ATK ×5/4, UDF ×2, LDF ×2, INT ×9/8; a <strong>random encounter</strong> installs ATK ×1, UDF ×7/4, LDF ×7/4, INT ×5/4 (HP, MP, AGL and SPD are never changed). Both are pinned from save states - Gaza and Cort carry the switch and the first profile, every random-encounter capture the second. The table shows each enemy the way it is met (its <strong>Met</strong> column); the <strong>Stats</strong> selector switches to the raw record. Only one enemy on the disc is met both ways (Kemaro, in four boss rows and eight random rows): its row shows the random-encounter values, and its expanded panel shows both. Walkthrough bestiaries list the boss-fight numbers for every enemy, which overstates a random native's defence by 8/7. The boost is an <strong>NTSC-U</strong> addition: the Japanese original and the three PAL executables (FR/DE/IT) copy the record into the fight untouched - no boss switch, no profile - so a JP or PAL Zeto fights at the raw 108 / 95 / 76 / 117 while the USA disc's Zeto fights at 135 / 190 / 152 / 131. The cross-region difficulty difference itself (NTSC-U retail hitting harder than the raw record) was first surfaced by <strong>Zetopheonix</strong>.</p>
+    <p>The <strong>ATK / UDF / LDF / INT</strong> columns default to <em>in-battle</em> values, because the raw record on the disc is not what you fight: the battle loader boosts those four stats as it installs each enemy, and it has two profiles. A <strong>boss fight</strong> (the no-escape switch on, see the <strong>boss / story / both tag</strong> above) installs ATK ×5/4, UDF ×2, LDF ×2, INT ×9/8; a <strong>random encounter</strong> installs ATK ×1, UDF ×7/4, LDF ×7/4, INT ×5/4 (HP, MP, AGL and SPD are never changed). Both are pinned from save states - Gaza and Cort carry the switch and the first profile, every random-encounter capture the second. The table shows each enemy the way it is met (its tag beside the name, or none for a random encounter); the <strong>Stats</strong> selector switches to the raw record. Only one enemy on the disc is met both ways (Kemaro, in four boss rows and eight random rows): its row shows the random-encounter values, and its expanded panel shows both. Walkthrough bestiaries list the boss-fight numbers for every enemy, which overstates a random native's defence by 8/7. The boost is an <strong>NTSC-U</strong> addition: the Japanese original and the three PAL executables (FR/DE/IT) copy the record into the fight untouched - no boss switch, no profile - so a JP or PAL Zeto fights at the raw 108 / 95 / 76 / 117 while the USA disc's Zeto fights at 135 / 190 / 152 / 131. The cross-region difficulty difference itself (NTSC-U retail hitting harder than the raw record) was first surfaced by <strong>Zetopheonix</strong>.</p>
   </div>
 </section>
 
@@ -433,7 +562,9 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     const se = r.side_effects || {};
     const elementName = r.element_name || 'neutral';
     return {
-      id: r.id, name: r.name, hp: r.hp, mp: r.mp,
+      // `name` is as the battle font draws it (`Gimard Lv2`); `raw_name` the
+      // disc text (`Gimard $2`), kept so a search for either form hits.
+      id: r.id, name: r.name, raw_name: r.raw_name || r.name, hp: r.hp, mp: r.mp,
       rs0: s[0] ?? 0, rs1: s[1] ?? 0, rs2: s[2] ?? 0,
       rs3: s[3] ?? 0, rs4: s[4] ?? 0, rs5: s[5] ?? 0,
       bs0: b[0] ?? 0, bs1: b[1] ?? 0, bs2: b[2] ?? 0,
@@ -487,9 +618,26 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     return label + ' @ ' + r.steal_chance + '%';
   }
 
+  // Loot cell HTML: the item name, then the chance as a small figure.
+  function lootCell(item, name, pct) {
+    if (!item) return '<span class="dim">-</span>';
+    return `<span class="cell-clip"><span class="clip-text">${escapeHtml(name || ('#' + item))}</span><span class="loot-pct">${pct}%</span></span>`;
+  }
+
   // Element cell text: resolved element name, falling back to the raw id.
   function fmtElement(r) {
     return r.element_name || ('#' + r.element);
+  }
+  // Element chip (the shared .enemy-elem palette); neutral stays blank so the
+  // coloured chips stand out.
+  function elemChip(r) {
+    if (r.element === 7) return '';
+    const nm = fmtElement(r);
+    return `<span class="enemy-elem enemy-elem-${escapeHtml(String(nm).toLowerCase())}">${escapeHtml(nm)}</span>`;
+  }
+  // Magic cell: spell names only; MP costs are in the panel.
+  function magicNames(r) {
+    return r.magicAttacks.map(m => m.name || ('0x' + m.id.toString(16).toUpperCase().padStart(2, '0'))).join(', ');
   }
 
   // The verdict set the table shows: the fight class this enemy is met in.
@@ -594,6 +742,40 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     }).join(', ');
   }
 
+  // The row panel's spec list: the per-enemy facts the table row leaves out
+  // or shortens (full magic list with MP, loot, how it is met, side-effects).
+  function factsPanel(r) {
+    const dim = (s) => `<span class="dim">${s}</span>`;
+    const metText = { 0: 'random encounter', 1: 'story fight, switch off (random-encounter rules)', 2: 'both ways (random and boss)', 3: 'boss fight (no escape)' }[r.fight];
+    return `<dl class="enemy-facts">
+      <dt>Element</dt><dd>${r.element === 7 ? dim('neutral') : elemChip(r)}</dd>
+      <dt>Met as</dt><dd>${escapeHtml(metText || '-')}</dd>
+      <dt>Magic</dt><dd>${r.castable ? escapeHtml(fmtMagic(r.magicAttacks)) : dim('none')}</dd>
+      <dt>Drop</dt><dd>${r.drop_item ? escapeHtml(fmtDrop(r)) : dim('none')}</dd>
+      <dt>Steal</dt><dd>${r.steal_item ? escapeHtml(fmtSteal(r)) : dim('none')}</dd>
+      <dt>Seru debuffs</dt><dd>${fmtDebuffs(r)}
+        <span class="debuff-legend" title="Seru side-effect chips. Solid: every cast lands and the drops stack. Dashed: the first cast lands, every later cast of that element prints 'No effect.'. Struck through: never lands.">
+          <span><span class="debuff-chip">DEF</span>stacks</span>
+          <span><span class="debuff-chip is-once">SPD</span>once, then "No effect."</span>
+          <span><span class="debuff-chip is-never">ATK</span>never</span>
+        </span></dd>
+    </dl>`;
+  }
+
+  // Toolbar filters beyond the text box.
+  const fightSel = document.getElementById('enemy-table-fight');
+  const elemSel = document.getElementById('enemy-table-elem');
+  const sortSel = document.getElementById('enemy-table-sortkey');
+  const sortDirBtn = document.getElementById('enemy-table-sortdir');
+  function fillElementFilter() {
+    if (!elemSel) return;
+    const seen = new Map();
+    for (const r of records) if (!seen.has(r.element)) seen.set(r.element, fmtElement(r));
+    elemSel.innerHTML = '<option value="all">any</option>' +
+      [...seen.entries()].sort((a, b) => a[0] - b[0])
+        .map(([id, nm]) => `<option value="${id}">${escapeHtml(nm)}</option>`).join('');
+  }
+
   function render() {
     const tableEl = tableWrap.querySelector('table.enemy-table');
     if (tableEl) tableEl.classList.toggle('show-inbattle', statView !== 'raw');
@@ -601,9 +783,16 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     const q = (filterInput.value || '').trim().toLowerCase();
     let rows = records;
     if (q) {
+      const has = (s) => !!s && String(s).toLowerCase().includes(q);
       rows = rows.filter(r =>
-        r.name.toLowerCase().includes(q) || String(r.id) === q);
+        has(r.name) || has(r.raw_name) || String(r.id) === q ||
+        has(r.drop_item_name) || has(r.steal_item_name) ||
+        r.magicAttacks.some(m => has(m.name)));
     }
+    const fightF = fightSel ? fightSel.value : 'all';
+    if (fightF !== 'all') rows = rows.filter(r => r.fight === Number(fightF));
+    const elemF = elemSel ? elemSel.value : 'all';
+    if (elemF !== 'all') rows = rows.filter(r => r.element === Number(elemF));
     rows = rows.slice().sort((a, b) => {
       const av = a[sortKey], bv = b[sortKey];
       if (sortKey === 'name') return sortDir * av.localeCompare(bv);
@@ -613,33 +802,32 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     body.innerHTML = rows.map(r => `
       <tr data-id="${r.id}" class="${r.id === selectedId ? 'selected' : ''}">
         <td class="col-id">${r.id}</td>
-        <td class="col-name">${escapeHtml(r.name)}</td>
-        <td>${r.hp}</td>
-        <td class="${r.mp ? '' : 'dim'}">${r.mp}</td>
-        <td class="col-boosted">${r.s1}</td>
-        <td class="col-boosted">${r.s2}</td>
-        <td class="col-boosted">${r.s3}</td>
-        <td class="col-boosted">${r.s4}</td>
-        <td>${r.s5}</td>
-        <td>${r.s0}</td>
-        <td class="${r.element === 7 ? 'dim' : ''}">${escapeHtml(fmtElement(r))}</td>
-        <td class="col-fight">${fmtFight(r)}</td>
-        <td class="col-debuffs">${fmtDebuffs(r)}</td>
-        <td class="col-name ${r.castable ? '' : 'dim'}">${escapeHtml(fmtMagic(r.magicAttacks))}</td>
-        <td>${r.exp}</td>
-        <td>${r.gold}</td>
-        <td class="col-name ${r.drop_item ? '' : 'dim'}">${escapeHtml(fmtDrop(r))}</td>
-        <td class="col-name ${r.steal_item ? '' : 'dim'}">${escapeHtml(fmtSteal(r))}</td>
-        <td class="col-mesh" title="View 3D model">${r.id === selectedId ? '▾' : '▸'}</td>
+        <td class="col-name"><span class="en-id-inline">${r.id}</span><span class="en-name">${escapeHtml(r.name)}</span>${r.fight ? fmtFight(r) : ''}</td>
+        <td class="col-elem">${elemChip(r)}</td>
+        <td class="col-hp grp" data-label="HP">${r.hp}</td>
+        <td class="${r.mp ? '' : 'dim'}" data-label="MP">${r.mp}</td>
+        <td class="col-boosted grp" data-label="ATK">${r.s1}</td>
+        <td class="col-boosted" data-label="UDF">${r.s2}</td>
+        <td class="col-boosted" data-label="LDF">${r.s3}</td>
+        <td class="col-boosted" data-label="INT">${r.s4}</td>
+        <td data-label="SPD">${r.s5}</td>
+        <td data-label="AGL">${r.s0}</td>
+        <td class="grp" data-label="EXP">${r.exp}</td>
+        <td data-label="Gold">${r.gold}</td>
+        <td class="col-text col-magic grp" data-label="Magic" title="${escapeHtml(fmtMagic(r.magicAttacks))}">${r.castable ? `<span class="cell-clip spell-list"><span class="clip-text">${escapeHtml(magicNames(r))}</span></span>` : '<span class="dim">-</span>'}</td>
+        <td class="col-text col-drop grp" data-label="Drop" title="${escapeHtml(fmtDrop(r))}">${lootCell(r.drop_item, r.drop_item_name, r.drop_chance)}</td>
+        <td class="col-text col-steal" data-label="Steal" title="${escapeHtml(fmtSteal(r))}">${lootCell(r.steal_item, r.steal_item_name, r.steal_chance)}</td>
+        <td class="col-mesh" title="Open the 3D model and full breakdown">${r.id === selectedId ? '▾' : '▸'}</td>
       </tr>`).join('');
 
-    countEl.textContent = q
+    countEl.textContent = rows.length !== records.length
       ? `${rows.length} of ${records.length} enemies`
       : `${records.length} enemies`;
 
     head.querySelectorAll('th').forEach(th => {
       const arrow = th.querySelector('.arrow');
       if (arrow) arrow.remove();
+      th.classList.toggle('is-sorted', th.dataset.key === sortKey);
       if (th.dataset.key === sortKey) {
         const span = document.createElement('span');
         span.className = 'arrow';
@@ -647,20 +835,26 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
         th.appendChild(span);
       }
     });
+    if (sortSel && sortSel.value !== sortKey && [...sortSel.options].some(o => o.value === sortKey)) sortSel.value = sortKey;
+    if (sortDirBtn) sortDirBtn.textContent = sortDir > 0 ? '▲' : '▼';
 
     // Re-attach the persistent expanded mesh row beneath the selected row.
     placeDetailRow();
   }
 
-  head.querySelectorAll('th').forEach(th => {
-    th.addEventListener('click', () => {
-      const key = th.dataset.key;
-      if (sortKey === key) { sortDir = -sortDir; }
-      else { sortKey = key; sortDir = (key === 'name') ? 1 : -1; }
-      render();
-    });
+  function setSort(key) {
+    if (sortKey === key) { sortDir = -sortDir; }
+    else { sortKey = key; sortDir = (key === 'name' || key === 'id') ? 1 : -1; }
+    render();
+  }
+  head.querySelectorAll('th[data-key]').forEach(th => {
+    th.addEventListener('click', () => setSort(th.dataset.key));
   });
   filterInput.addEventListener('input', render);
+  if (fightSel) fightSel.addEventListener('change', render);
+  if (elemSel) elemSel.addEventListener('change', render);
+  if (sortSel) sortSel.addEventListener('change', () => setSort(sortSel.value));
+  if (sortDirBtn) sortDirBtn.addEventListener('click', () => { sortDir = -sortDir; render(); });
 
   if (statViewEl) {
     statViewEl.addEventListener('change', () => {
@@ -1156,7 +1350,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     const statsEl = detailRow.querySelector('#mesh-viewer-stats');
     nameEl.textContent = rec ? `${rec.name} (id ${id})` : `id ${id}`;
     const seEl = detailRow.querySelector('#mesh-side-effects');
-    if (seEl) seEl.innerHTML = rec ? sideEffectPanel(rec) : '';
+    if (seEl) seEl.innerHTML = rec ? factsPanel(rec) + sideEffectPanel(rec) : '';
 
     const positions = viewer.monster_mesh_positions(id);
     const normals = viewer.monster_mesh_normals(id);
@@ -1345,6 +1539,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       }
       records = (parsed.records || []).map(normalize);
       applyView();
+      fillElementFilter();
       if (records.length === 0) {
         status.textContent = `Loaded: ${f.name} - no enemy data found (PROT entry 867 absent). Is this a full Legaia disc / PROT.DAT?`;
         prog.fail('No enemy data found in this file.');

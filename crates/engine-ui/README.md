@@ -2,11 +2,10 @@
 
 Pure, renderer-agnostic UI draw-list builders for the Legaia engine port. The
 wgpu-free draw layer that both the native renderer (`legaia-engine-render`)
-and the browser play page (`legaia-web-viewer`) share. Inside the engine it
+and the browser play page (`legaia-web-play`) share. Inside the engine it
 depends on `legaia-render-kernels` and, for the battle HUD model its builders
 project (`battle_party_panel`, `battle_commit_log`, the value readout), on
-`legaia-engine-battle-vm`, and for the Theeder packet on `legaia-engine-cast`;
-it links no other kernel crate and not `legaia-engine-core`.
+`legaia-engine-battle-vm`; it links no other kernel crate and not `legaia-engine-core`.
 
 ## Scope
 
@@ -107,6 +106,9 @@ navigation logic depends on the GPU backend.
   (`FUN_801F1E48` / `FUN_801F1B64`) and the tile board's quit prompt (walk-SM
   state `5`); geometry arrives from `engine-core::incense_notice` /
   `engine-world-views::tile_board`.
+- `world_map_labels` - the overworld map display's place labels and compass
+  letters (PROT 0981's label pass): each label's dialog-skin box and name;
+  the gate and projection arrive from `engine-screens::world_map_labels`.
 - `battle_timed_fight_strip` - the `Turns Left / HP Left` strip of the one
   turn-limited boss fight; gate and numbers are `engine-world-views::timed_fight`.
 - `baka_strips` - the Baka Fighter HUD's digit strips (`FUN_801d69e4`,
@@ -140,7 +142,7 @@ Several modules are not UI at all but live here for the same structural reason -
 they are wgpu-free draw kernels both hosts must share, and this crate is the
 shared leaf:
 
-- `minigame_fx` - the draw builder for `engine-core`'s effect-part pool and
+- `minigame_fx` - the draw builder for `engine-minigames::minigame_fx`'s effect-part pool and
   for the dance run's own sprite-part emits: one placeholder-cell
   materialisation, so a part looks the same on the native HUD, the play
   page's overlay and the minigames page's canvas.
@@ -160,7 +162,7 @@ depends on this crate for the draw types it uploads. The GPU-resident batch wrap
 `legaia-engine-render` because they hold wgpu handles.
 
 Depends only on `legaia-game-tables`, `legaia-ui-formats`,
-`legaia-minigame-formats`, `legaia-engine-battle-vm`, `legaia-engine-cast`,
+`legaia-minigame-formats`, `legaia-engine-battle-vm`,
 `legaia-render-kernels`, `legaia-font`, `legaia-tim`, `glam`, `serde`, `serde_json`, and `bytemuck` -
 no wgpu, no winit, and not `legaia-engine-core` - so it links into the lean
 WASM play build. The projection from live `engine-core` state into these
@@ -197,4 +199,4 @@ read its prose.
 What the gate cannot see is drift *inside* a shared builder's inputs - two
 hosts calling the same function with different models. The gaps of that
 shape found by reading the hosts side by side are recorded in the
-[web-viewer README](../../docs/subsystems/browser-host.md#platform-drift-against-the-native-window).
+[browser-host page](../../docs/subsystems/browser-host.md#platform-drift-against-the-native-window).

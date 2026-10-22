@@ -43,6 +43,11 @@ over its `AudioOut`); a `wasm32` build never links cpal.
   hosts take in their per-tick effect step: `spawn_pending_move_fx` seats a
   pending move effect and resolves its sound cue through the retail dispatch
   decode.
+- [`battle_vram`](src/battle_vram.rs) - the battle VRAM's per-tick
+  re-stamps both hosts run (`stamp_battle_faces`, `step_battle_vram_edits`):
+  the party's facial animation, the status CLUT recolour, the effect CLUT
+  stages and the stage module's queued `MoveImage`s. Each host keeps only
+  its upload.
 - [`xa_banks`](src/xa_banks.rs) - the CD-XA voice banks' staging: which
   files the arts shouts and the battle one-shot clips come from, and how a
   file's demuxed channels become bank entries. The native boot reads the
@@ -89,7 +94,7 @@ suspends the field, the field. It runs the parts the session can do itself
 and returns a `TickOwner` the host matches on.
 
 Both play hosts run it. The browser play page holds a `BootSession` over its
-WebAudio output (`crates/web-viewer/src/host_slot.rs`), built with
+WebAudio output (`crates/web-play/src/host_slot.rs`), built with
 `from_host` over the scene host it assembles in memory, and its `tick_frame`
 calls `BootSession::tick`. A host declares what it does itself:
 `set_host_drains_queues` (the per-tick presentation queues) and

@@ -13,10 +13,10 @@
 use legaia_engine_battle::battle_stats::{
     EquipmentTable, ItemModifier, StatRecord, StatusModifiers,
 };
-use legaia_engine_field::dev_equip_commit::{
+use legaia_engine_dev_menu::dev_equip_commit::{
     BAG_MISS, EQUIP_SFX_CUE, EquipCommitHost, commit_equip,
 };
-use legaia_engine_field::dev_menu_leaves::resolve_equip_slot;
+use legaia_engine_dev_menu::dev_menu_leaves::resolve_equip_slot;
 use legaia_engine_menus::equip_session::{
     EQUIP_SLOTS, EquipEvent, EquipInput, EquipSession, RETAIL_EQUIP_BYTE_TO_ENGINE_SLOT,
     RETAIL_WEAPON_EQUIP_BYTE, retail_slot_row_for_engine_slot,

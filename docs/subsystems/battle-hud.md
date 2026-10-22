@@ -1551,7 +1551,7 @@ status state plus a queue of damage popups and battle-event log lines.
 `engine-ui::battle_hud::battle_hud_draws_for` turns one `BattleHudFrame` into
 draw lists. The native window folds the live actor table into the model each
 tick in `engine-shell`'s `window/battle.rs::sync_battle_hud_rows`; the browser
-play page runs the same fold in `web-viewer`'s `play_battle.rs`.
+play page runs the same fold in `web-play`'s `play_battle.rs`.
 
 The HUD is fed by `World` events:
 

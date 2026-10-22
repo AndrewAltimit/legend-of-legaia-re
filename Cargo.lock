@@ -2022,6 +2022,7 @@ name = "legaia-engine-camera"
 version = "0.1.0"
 dependencies = [
  "legaia-engine-system",
+ "serde",
  "serde_json",
 ]
 
@@ -2057,6 +2058,7 @@ dependencies = [
  "legaia-game-tables",
  "legaia-overlay-images",
  "legaia-prot",
+ "legaia-render-kernels",
 ]
 
 [[package]]
@@ -2090,6 +2092,7 @@ dependencies = [
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
  "legaia-engine-cast",
+ "legaia-engine-dev-menu",
  "legaia-engine-dialog",
  "legaia-engine-effects",
  "legaia-engine-field",
@@ -2115,6 +2118,14 @@ dependencies = [
  "legaia-tmd",
  "legaia-ui-formats",
  "log",
+]
+
+[[package]]
+name = "legaia-engine-dev-menu"
+version = "0.1.0"
+dependencies = [
+ "legaia-engine-system",
+ "legaia-overlay-images",
 ]
 
 [[package]]
@@ -2164,6 +2175,7 @@ dependencies = [
  "legaia-actor-formats",
  "legaia-anm",
  "legaia-engine-camera",
+ "legaia-engine-dev-menu",
  "legaia-engine-dialog",
  "legaia-engine-mode",
  "legaia-engine-motion-vm",
@@ -2177,7 +2189,6 @@ dependencies = [
  "legaia-save",
  "legaia-scene-formats",
  "legaia-tmd",
- "serde",
 ]
 
 [[package]]
@@ -2202,6 +2213,7 @@ dependencies = [
  "legaia-engine-battle",
  "legaia-engine-battle-vm",
  "legaia-engine-core",
+ "legaia-engine-dev-menu",
  "legaia-engine-field",
  "legaia-engine-menus",
  "legaia-engine-minigames",
@@ -2226,8 +2238,9 @@ dependencies = [
  "legaia-art",
  "legaia-engine-battle",
  "legaia-engine-battle-vm",
+ "legaia-engine-camera",
+ "legaia-engine-dev-menu",
  "legaia-engine-dialog",
- "legaia-engine-field",
  "legaia-engine-minigames",
  "legaia-engine-system",
  "legaia-engine-vm",
@@ -2342,6 +2355,7 @@ dependencies = [
  "legaia-container-formats",
  "legaia-disc-audit",
  "legaia-engine-battle",
+ "legaia-engine-camera",
  "legaia-engine-dialog",
  "legaia-engine-field",
  "legaia-engine-menus",
@@ -2381,6 +2395,7 @@ dependencies = [
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
  "legaia-engine-core",
+ "legaia-engine-dev-menu",
  "legaia-engine-dialog",
  "legaia-engine-effects",
  "legaia-engine-field",
@@ -2417,10 +2432,13 @@ dependencies = [
 name = "legaia-engine-screens"
 version = "0.1.0"
 dependencies = [
+ "glam",
  "legaia-engine-battle",
  "legaia-engine-battle-hud",
  "legaia-engine-battle-vm",
+ "legaia-engine-camera",
  "legaia-engine-core",
+ "legaia-engine-dev-menu",
  "legaia-engine-dialog",
  "legaia-engine-effects",
  "legaia-engine-field",
@@ -2454,6 +2472,7 @@ dependencies = [
  "legaia-engine-battle",
  "legaia-engine-battle-hud",
  "legaia-engine-battle-vm",
+ "legaia-engine-camera",
  "legaia-engine-cheats",
  "legaia-engine-core",
  "legaia-engine-effects",
@@ -2545,7 +2564,7 @@ dependencies = [
  "legaia-tmd",
  "legaia-ui-formats",
  "legaia-vab",
- "legaia-web-viewer",
+ "legaia-web-play",
  "legaia-xa",
  "libc",
  "log",
@@ -2579,7 +2598,6 @@ dependencies = [
  "glam",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
- "legaia-engine-cast",
  "legaia-engine-field",
  "legaia-font",
  "legaia-game-tables",
@@ -2608,10 +2626,12 @@ dependencies = [
 name = "legaia-engine-world-views"
 version = "0.1.0"
 dependencies = [
+ "glam",
  "legaia-container-formats",
  "legaia-engine-battle",
  "legaia-engine-camera",
  "legaia-engine-core",
+ "legaia-engine-dev-menu",
  "legaia-engine-effects",
  "legaia-engine-field",
  "legaia-engine-menus",
@@ -2619,6 +2639,7 @@ dependencies = [
  "legaia-engine-mode",
  "legaia-engine-scene",
  "legaia-engine-system",
+ "legaia-engine-vm",
  "legaia-lzs",
  "legaia-render-kernels",
  "legaia-save",
@@ -2827,6 +2848,7 @@ dependencies = [
  "legaia-engine-system",
  "legaia-engine-ui",
  "legaia-engine-vm",
+ "legaia-engine-world-views",
  "legaia-game-tables",
  "legaia-iso",
  "legaia-lzs",
@@ -3031,6 +3053,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "toml",
+ "winit",
 ]
 
 [[package]]
@@ -3115,7 +3138,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "legaia-web-viewer"
+name = "legaia-web-play"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -3124,13 +3147,7 @@ dependencies = [
  "js-sys",
  "legaia-actor-formats",
  "legaia-art",
- "legaia-arts-patch",
- "legaia-code-hooks",
  "legaia-container-formats",
- "legaia-delilas-challenge",
- "legaia-delilas-party",
- "legaia-disc-audit",
- "legaia-disc-patch",
  "legaia-engine-audio",
  "legaia-engine-battle",
  "legaia-engine-battle-hud",
@@ -3139,7 +3156,6 @@ dependencies = [
  "legaia-engine-cheats",
  "legaia-engine-core",
  "legaia-engine-dialog",
- "legaia-engine-effects",
  "legaia-engine-field",
  "legaia-engine-fishing",
  "legaia-engine-menu-runtime",
@@ -3159,17 +3175,65 @@ dependencies = [
  "legaia-game-tables",
  "legaia-gamedata",
  "legaia-iso",
+ "legaia-mdec",
+ "legaia-minigame-formats",
+ "legaia-overlay-images",
+ "legaia-prot",
+ "legaia-render-kernels",
+ "legaia-save",
+ "legaia-scene-formats",
+ "legaia-seq",
+ "legaia-tim",
+ "legaia-tmd",
+ "legaia-ui-formats",
+ "legaia-vab",
+ "legaia-xa",
+ "serde_json",
+ "toml",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
+name = "legaia-web-viewer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "console_error_panic_hook",
+ "js-sys",
+ "legaia-actor-formats",
+ "legaia-art",
+ "legaia-arts-patch",
+ "legaia-code-hooks",
+ "legaia-container-formats",
+ "legaia-delilas-challenge",
+ "legaia-delilas-party",
+ "legaia-disc-audit",
+ "legaia-disc-patch",
+ "legaia-engine-audio",
+ "legaia-engine-battle",
+ "legaia-engine-effects",
+ "legaia-engine-field",
+ "legaia-engine-menus",
+ "legaia-engine-minigames",
+ "legaia-engine-scene",
+ "legaia-engine-scene-host",
+ "legaia-engine-system",
+ "legaia-engine-ui",
+ "legaia-engine-world-views",
+ "legaia-font",
+ "legaia-game-tables",
+ "legaia-gamedata",
+ "legaia-iso",
  "legaia-lzs",
  "legaia-mdec",
  "legaia-mednafen",
  "legaia-mes",
  "legaia-minigame-formats",
- "legaia-overlay-images",
  "legaia-patcher",
  "legaia-prot",
  "legaia-ram-image",
  "legaia-render-kernels",
- "legaia-save",
  "legaia-scene-formats",
  "legaia-seq",
  "legaia-texture-replace",
@@ -3178,6 +3242,7 @@ dependencies = [
  "legaia-translate",
  "legaia-ui-formats",
  "legaia-vab",
+ "legaia-web-play",
  "legaia-xa",
  "serde_json",
  "sha2",

@@ -155,7 +155,7 @@ The hosts use different channels. The native window draws a bounded HUD line (`W
 
 ## Live gameplay loop - Field ↔ Battle in `tick`
 
-`World::tick` drives the whole Field -> Battle -> Field round trip. Both hosts arm it through one kernel, `World::arm_live_loop` (`crates/engine-core/src/live_loop.rs`): scene label, the synthetic encounter fallback for scenes whose MAN carries no table, the loop / player-battle flags, the Seru registry and the battle-BGM swap. The native `BootSession::enter_field_live` (`crates/engine-session`) and the browser's `LegaiaRuntime::arm_live_battles` (`crates/web-viewer/src/play_battle.rs`) are callers of it.
+`World::tick` drives the whole Field -> Battle -> Field round trip. Both hosts arm it through one kernel, `World::arm_live_loop` (`crates/engine-core/src/live_loop.rs`): scene label, the synthetic encounter fallback for scenes whose MAN carries no table, the loop / player-battle flags, the Seru registry and the battle-BGM swap. The native `BootSession::enter_field_live` (`crates/engine-session`) and the browser's `LegaiaRuntime::arm_live_battles` (`crates/web-play/src/play_battle.rs`) are callers of it.
 
 Per frame:
 
@@ -609,7 +609,7 @@ Context fields: `ctx[+0]` = party count, `ctx[+1]` = monster count, `ctx[+0x13]`
 
 **Not ported** (listed in `monster_ai`'s module docs): the `'O'` (`0x4F`) boss post-amble that rewrites another actor slot's action queue, and the capture-archive preload for spell ids `0x2E` / `0x2F`.
 
-**Faithful default = uniform-random single target.** Retail's `OneEnemy` / physical target is a uniform random living party member (`rand % party_count`, re-rolled past downed slots). An opt-in, non-faithful toggle (`World::toggles.smarter_monster_targeting`, off by default; `play-window` reads `LEGAIA_SMART_MONSTERS=1`) redirects a single-target attack to the lowest-HP living member. It is RNG-neutral: the faithful pick is still rolled in full (magic roll, target roll + re-roll loop, scripted override, anti-repeat ring) and only the resolved single party slot is replaced, so the RNG stream is byte-identical and all-party / monster-band / self targets are untouched.
+**Faithful default = uniform-random single target.** Retail's `OneEnemy` / physical target is a uniform random living party member (`rand % party_count`, re-rolled past downed slots). An opt-in, non-faithful toggle (`World::toggles.smarter_monster_targeting`, off by default; `play-window` reads `LEGAIA_SMART_MONSTERS=1`, the browser play page has a "Smart monsters" checkbox) redirects a single-target attack to the lowest-HP living member. It is RNG-neutral: the faithful pick is still rolled in full (magic roll, target roll + re-roll loop, scripted override, anti-repeat ring) and only the resolved single party slot is replaced, so the RNG stream is byte-identical and all-party / monster-band / self targets are untouched.
 
 ### The two AI gates
 
@@ -714,7 +714,7 @@ The bank maps cue ids (the `kind` byte the art-record `HitCue` and the overlay s
 | `0x80..=0xFE` | Reserved per-character / per-art SFX ids. |
 
 - The bank is decoded from the user's `SCUS_942.54` descriptor table `DAT_8006F198` at boot (`SfxTable::from_scus` -> `SfxBank::from_descriptors`, see [`sfx-table.md`](../formats/sfx-table.md)) and plays through the per-scene music VAB. `SfxBank::play_one_shot` delegates to `VabBank::play_note` for tone lookup, pitch math and ADSR.
-- The live battle loop drives it: each `BattleSfxCue` drained from `World::drain_battle_sfx_cues` is enqueued at its `timing_frames` delay, and one `tick_sfx_frame` per simulation tick keys matured cues on. The host side is `AudioDirector::{set_sfx_bank, enqueue_sfx, tick_sfx_frame}` in `crates/engine-session`, used by both the native window and the browser page (`crates/web-viewer/src/play_sfx.rs`).
+- The live battle loop drives it: each `BattleSfxCue` drained from `World::drain_battle_sfx_cues` is enqueued at its `timing_frames` delay, and one `tick_sfx_frame` per simulation tick keys matured cues on. The host side is `AudioDirector::{set_sfx_bank, enqueue_sfx, tick_sfx_frame}` in `crates/engine-session`, used by both the native window and the browser page (`crates/web-play/src/play_sfx.rs`).
 - Cues touch only the SPU (no RNG), so battle determinism is unaffected. A missing bank / VAB / free voice drops the cue silently.
 
 ### Item catalog

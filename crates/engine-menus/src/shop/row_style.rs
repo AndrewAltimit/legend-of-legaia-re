@@ -160,7 +160,7 @@ pub fn shop_root_command_rows(
 /// and is not evidence about what it does.
 ///
 /// Wired: its own screen. Both hosts' prize-exchange draw
-/// (`engine-shell`'s `prize_window_draws`, `web-viewer::play_shop`) resolve
+/// (`engine-shell`'s `prize_window_draws`, `web-play::play_shop`) resolve
 /// each window-44 row's `PrizeRow::ink` through it over the coin bank and the
 /// prize record's `+2` marker. The shop buy list used to borrow it with the
 /// marker pinned at `0`, reasoning that the shop builder had "no `0x400`

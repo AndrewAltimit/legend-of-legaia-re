@@ -1,0 +1,495 @@
+//! Disc-gated oracle for the browser play page's **sound-effect channel**
+//! (`LegaiaRuntime::play_sfx_*`).
+//!
+//! The page had BGM and nothing else. What this pins is the part that can be
+//! checked without a speaker:
+//!
+//! 1. **The descriptor table decodes** off the visitor's own executable, into
+//!    the id space `docs/formats/sfx-table.md` documents.
+//! 2. **Cues actually produce sound.** `play_sfx_probe_peak` renders a cue
+//!    through a throwaway SPU and a fresh upload of the program bank **its own
+//!    category names**; a non-zero peak is the evidence that the descriptor
+//!    resolves to a real sample rather than to silence. This is the assertion
+//!    that would have caught "the channel is wired and every cue is inaudible".
+//!    The bank routing itself is measured separately - a cue keying the wrong
+//!    bank is audible, so a peak alone cannot catch it.
+//! 3. **Provenance is declared.** Every advertised event says whether its cue id
+//!    is traced to retail (`disc`) or is a port pick (`site`), so the page can
+//!    never quietly claim a sound is the game's.
+//!
+//! The *live* half (keying a voice in the page's running SPU) needs a
+//! `WebAudioOut`, which only exists on wasm32 in a browser - that half is
+//! covered by the headless run, not here.
+//!
+//! No Sony bytes are asserted, only structural facts. Skips + passes when
+//! `LEGAIA_DISC_BIN` is unset.
+
+#![cfg(not(target_arch = "wasm32"))]
+
+use legaia_web_play::runtime::LegaiaRuntime;
+
+fn loaded_in_town() -> Option<LegaiaRuntime> {
+    let disc = std::env::var("LEGAIA_DISC_BIN").ok()?;
+    let bytes = std::fs::read(&disc).ok()?;
+    let mut rt = LegaiaRuntime::new();
+    rt.load_disc(bytes, String::new()).ok()?;
+    rt.enter_field("town01").ok()?;
+    Some(rt)
+}
+
+/// The descriptor bank installs from the executable at `load_disc`, before any
+/// audio device exists - which is what lets the page decide about sound later
+/// without re-reading the disc.
+#[test]
+fn descriptor_bank_installs_from_the_executable() {
+    let Some(rt) = loaded_in_town() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let v: serde_json::Value =
+        serde_json::from_str(&rt.play_sfx_state_json()).expect("sfx state json");
+    let n = v["descriptors"].as_u64().expect("descriptors");
+    assert!(
+        n > 0,
+        "the SCUS sound-effect table (DAT_8006F198) must decode: {v}"
+    );
+    assert!(
+        n <= 100,
+        "the static table is 100 entries (0x00..=0x63); got {n}"
+    );
+}
+
+/// Rendering through a throwaway SPU proves each **pinned retail** cue id's
+/// program and sample resolve in the bank its category selects.
+///
+/// It probes `cue` - the id retail fires - and every menu row's `fires` equals
+/// it, so this is also what the page plays. A pass means "the id resolves to a
+/// real sample in the bank the page routes it to": program 0 of both pinned
+/// banks is a one-VAG-per-semitone SFX key map whose single-note windows line
+/// up with these descriptors' notes. The pitch is retail's own law
+/// (`legaia_engine_audio::vab_bind::compute_pitch`), pinned by unit test
+/// against values captured out of retail's driver state.
+#[test]
+fn advertised_cues_render_a_non_silent_buffer() {
+    let Some(mut rt) = loaded_in_town() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let events: Vec<serde_json::Value> =
+        serde_json::from_str(&rt.play_sfx_events_json()).expect("events json");
+    assert!(!events.is_empty(), "the host must advertise some events");
+
+    // A quarter second is far longer than any retail one-shot.
+    let window = legaia_engine_audio::SPU_INTERNAL_RATE / 4;
+    let mut audible = 0;
+    for ev in &events {
+        let cue = ev["cue"].as_u64().expect("cue id") as u32;
+        let name = ev["event"].as_str().unwrap_or("?");
+        let peak = rt.play_sfx_probe_peak(cue, window);
+        if peak > 0 {
+            audible += 1;
+        } else {
+            eprintln!("[note] event {name} (cue {cue:#x}) rendered silence on this disc");
+        }
+    }
+    assert!(
+        audible > 0,
+        "at least one advertised cue must render audible PCM - a channel whose \
+         every cue is silent is not a channel"
+    );
+
+    // In the field the shared slot-2 / slot-6 region holds the field bank:
+    // retail's field init loads PROT 0876 into slot 6 (`FUN_801D6704`).
+    let v: serde_json::Value =
+        serde_json::from_str(&rt.play_sfx_state_json()).expect("sfx state json");
+    assert_eq!(v["bank_prot"].as_u64(), Some(876), "field region bank: {v}");
+    assert_eq!(v["shared_slot"].as_u64(), Some(6), "field region slot: {v}");
+    // Both field slots must stage - a page with only slot 0 is the state
+    // where every field cue is silent, and a page holding the class-2 bank
+    // here is the old wrong-sample state; asserting the pair catches both.
+    let banks = v["banks"].as_array().expect("staged bank list");
+    let mut pairs: Vec<(u64, u64)> = banks
+        .iter()
+        .map(|b| (b["slot"].as_u64().unwrap(), b["prot"].as_u64().unwrap()))
+        .collect();
+    pairs.sort_unstable();
+    assert_eq!(
+        pairs,
+        vec![(0, 868), (6, 876)],
+        "the field stages the system bank and the field bank"
+    );
+}
+
+/// **The bank-routing oracle.** A category-`0` cue and a category-`2` cue must
+/// come out of *different* PROT entries.
+///
+/// This is the assertion the pause-menu thump needed and no other test could
+/// give. Staging one bank and firing every cue through it does not error and
+/// does not go silent: both banks carry a one-VAG-per-semitone UI key map at
+/// program 0, so a category-0 id resolved to a sibling sample - a real retail
+/// blip, about twice as long and a fifth lower, because PROT 0869's `center`
+/// bytes are authored higher than PROT 0868's. Peak, duration and "did a voice
+/// key" all pass in that state. Only the entry the samples came from tells the
+/// two apart.
+#[test]
+fn a_category0_cue_and_a_category2_cue_come_from_different_banks() {
+    let Some(mut rt) = loaded_in_town() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    // The three pause-menu blips + the arts strike are category 0; the Baka
+    // duel hit is category 2. Slots come straight off the disc descriptors.
+    for id in [0x1Au32, 0x20, 0x21, 0x37] {
+        assert_eq!(rt.play_sfx_cue_slot(id), 0, "cue {id:#x} is category 0");
+    }
+    assert_eq!(rt.play_sfx_cue_slot(0x09), 2, "the duel hit is category 2");
+
+    let ui = rt.play_sfx_cue_bank_prot(0x21);
+    assert_eq!(
+        ui, 868,
+        "a category-0 cue sounds out of the slot-0 system bank"
+    );
+    // Slot 2 is closed in the field (`FUN_801D6704` closes it), and a closed
+    // slot is silent in retail rather than rerouted.
+    assert_eq!(
+        rt.play_sfx_cue_bank_prot(0x09),
+        0,
+        "a category-2 cue has no resident bank in the field"
+    );
+
+    // Category 6 is the field bank, PROT 0876 in slot 6 - resident here in
+    // town, which is the proof the field cues no longer key the class-2 bank.
+    // 0x2E / 0x2F are the field script cues.
+    for id in [0x2Eu32, 0x2F] {
+        assert_eq!(rt.play_sfx_cue_slot(id), 6, "cue {id:#x} is category 6");
+        assert_eq!(
+            rt.play_sfx_cue_bank_prot(id),
+            876,
+            "a field cue keys the field bank"
+        );
+        assert!(
+            rt.play_sfx_probe_peak(id, legaia_engine_audio::SPU_INTERNAL_RATE / 4) > 0,
+            "cue {id:#x} renders audible PCM out of PROT 0876"
+        );
+    }
+    eprintln!("[ok] field cues 0x2E / 0x2F key PROT 0876 in slot 6");
+
+    // The routed cue still sounds - a bank swap that resolved to silence would
+    // be a different bug wearing the same fix.
+    let rate = legaia_engine_audio::SPU_INTERNAL_RATE;
+    let window = rate / 4;
+    assert!(
+        rt.play_sfx_probe_peak(0x21, window) > 0,
+        "cue 0x21 must still render audible PCM from its routed bank"
+    );
+
+    // Report the routed durations. The confirm blip `0x20` is the clearest
+    // case: program 0 tone 0 is `center` 72 in PROT 0868 against 83 in
+    // PROT 0869, so the same descriptor note (60) keys ~x0.53 there against
+    // ~x0.28 - the routed cue is about half as long as the one the page used
+    // to play, which is what the thump was.
+    for id in [0x20u32, 0x21, 0x37] {
+        let s = rt.play_sfx_probe_active_samples(id, rate);
+        eprintln!(
+            "[note] cue {id:#04x} from PROT {} sounds {:.3} s",
+            rt.play_sfx_cue_bank_prot(id),
+            s as f64 / rate as f64
+        );
+    }
+}
+
+/// A nonexistent cue is silent rather than a panic, and an id outside the
+/// table's byte space is rejected.
+#[test]
+fn unknown_cues_are_silent_not_fatal() {
+    let Some(mut rt) = loaded_in_town() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    assert_eq!(rt.play_sfx_probe_peak(0xFF, 1024), 0, "0xFF is unassigned");
+    assert_eq!(
+        rt.play_sfx_probe_peak(0x1_0000, 1024),
+        0,
+        "an id past the byte space must be rejected"
+    );
+    assert!(!rt.play_sfx_event("no_such_event"));
+}
+
+/// Every advertised event declares its provenance, and the note explains the
+/// choice. This is the honesty contract the page renders.
+#[test]
+fn every_event_declares_disc_or_site_provenance() {
+    let Some(rt) = loaded_in_town() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let events: Vec<serde_json::Value> =
+        serde_json::from_str(&rt.play_sfx_events_json()).expect("events json");
+    for ev in &events {
+        let src = ev["source"].as_str().unwrap_or("");
+        assert!(
+            src == "disc" || src == "site",
+            "event {ev} must declare source disc or site"
+        );
+        assert!(
+            ev["why"].as_str().is_some_and(|s| !s.is_empty()),
+            "event {ev} must carry a provenance note"
+        );
+        // Retail's id and what the host plays are separate fields, and both
+        // must be present: reporting only `cue` would claim a sound the host
+        // withholds, reporting only `fires` would hide a pinned fact.
+        assert!(
+            ev["cue"].as_u64().is_some(),
+            "event {ev} must report retail's cue id"
+        );
+        assert!(
+            ev.get("fires").is_some(),
+            "event {ev} must report what the host fires (null when withheld)"
+        );
+        // A fired cue must be retail's own id, never a stand-in sample.
+        if let Some(f) = ev["fires"].as_u64() {
+            assert_eq!(
+                f,
+                ev["cue"].as_u64().unwrap(),
+                "event {ev}: a fired cue must be retail's id"
+            );
+        }
+    }
+    // The three pause-menu rows are traced ring writes, not port picks. This
+    // is the corrected claim: they come from the SCUS list kernel FUN_80032A44,
+    // not from the Baka Fighter overlay they were previously attributed to.
+    for name in ["menu_cursor", "menu_confirm", "menu_cancel"] {
+        let ev = events
+            .iter()
+            .find(|e| e["event"] == name)
+            .unwrap_or_else(|| panic!("{name} must be advertised"));
+        assert_eq!(ev["source"], "disc", "{name} is a traced ring write");
+    }
+    // The footstep must NOT appear here. Its cadence is the retail kernel but
+    // its cue id is unpinned, and an id resolves through the descriptor table
+    // to a *program index* whose sample differs per resident bank - so a
+    // guessed id is arbitrary, not approximate. It played an impact sample in
+    // the field. This row's absence is the fix; advertising an id the host no
+    // longer fires would be worse than either firing it or omitting it.
+    assert!(
+        events.iter().all(|e| e["event"] != "footstep"),
+        "the footstep must stay out of the advertised cue list while its id is \
+         unpinned - see CUE_FOOTSTEP"
+    );
+}
+
+/// The menu firing site has to be *wired end to end*: a request is counted and
+/// it reaches the scheduler.
+///
+/// Both counters are asserted, and deliberately. `menu_cue_requests` is
+/// incremented before the `fires` lookup, so it alone cannot distinguish "the
+/// cue enqueued" from "the row is silent" - that is what it is for, and it is
+/// the counter that kept this site measurable while the cues were withheld
+/// pending the key-on pitch. `queued` is the other half: it only moves for a
+/// row that actually reaches [`SfxScheduler`], so asserting it climbs by the
+/// same three is what proves the cues are no longer withheld. `fired` stays
+/// out - off wasm there is no `WebAudioOut` and so no SPU voice to key, which
+/// makes it unconditionally zero here and any assertion on it vacuous.
+#[test]
+fn a_menu_cue_is_requested_counted_and_queued() {
+    let Some(mut rt) = loaded_in_town() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let state = |rt: &LegaiaRuntime| -> (u64, u64) {
+        let v: serde_json::Value =
+            serde_json::from_str(&rt.play_sfx_state_json()).expect("sfx state json");
+        (
+            v["menu_cue_requests"].as_u64().unwrap_or(0),
+            v["queued"].as_u64().unwrap_or(0),
+        )
+    };
+
+    let (r0, q0) = state(&rt);
+    assert_eq!(r0, 0, "no cue requested before the page fires one");
+
+    // Exactly what site/js/play-app.js does on a pad edge in the pause menu.
+    for name in ["menu_cursor", "menu_confirm", "menu_cancel"] {
+        rt.play_sfx_event(name);
+    }
+    let (r1, q1) = state(&rt);
+    assert_eq!(r1, r0 + 3, "each menu cue request must be counted");
+    assert_eq!(
+        q1,
+        q0 + 3,
+        "each menu cue must reach the scheduler - a row that stops at the \
+         `fires` lookup is withheld, and none of these are any more"
+    );
+
+    // An unknown event is still rejected without counting - the counter tracks
+    // real wiring, not every string the page passes in.
+    assert!(!rt.play_sfx_event("no_such_event"));
+    assert_eq!(state(&rt).0, r1, "an unknown event is not a cue request");
+    assert_eq!(state(&rt).1, q1, "an unknown event must not enqueue");
+}
+
+/// The three menu cues must render at retail's own pitch, not an octave below
+/// it - the defect that turned each blip into a low thud and got them withheld.
+///
+/// This is the disc-side half of the unit test in
+/// `legaia_engine_audio::vab_bind`: it goes through the real descriptor table
+/// and the real program bank, so it also catches a wrong bank or a wrong
+/// descriptor field feeding an otherwise-correct pitch law. The bound is a
+/// *duration*, which is what the rendering exposes: at the octave-low pitch
+/// every one of these cues ran past 0.6 s (the confirm ran to the envelope's
+/// own end at ~0.74 s), and at retail's pitch the short ones finish inside
+/// 0.35 s. A regression that halves the pitch again cannot pass this.
+#[test]
+fn menu_cues_render_at_retail_pitch_not_an_octave_low() {
+    let Some(mut rt) = loaded_in_town() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let rate = legaia_engine_audio::SPU_INTERNAL_RATE;
+    // Long enough that a correct rendering ends well inside the window and an
+    // octave-low one does not.
+    let window = rate;
+    for (name, cue, max_secs) in [("menu_cursor", 0x21u32, 0.45), ("menu_cancel", 0x37, 0.45)] {
+        let samples = rt.play_sfx_probe_active_samples(cue, window);
+        assert!(samples > 0, "{name} (cue {cue:#x}) must render audible PCM");
+        let secs = samples as f64 / rate as f64;
+        assert!(
+            secs < max_secs,
+            "{name} (cue {cue:#x}) rendered {secs:.3} s; at retail's key-on pitch \
+             it is ~0.3 s, and twice that means the pitch is an octave low again"
+        );
+    }
+}
+
+/// The footstep cadence has to be *reachable from the host tick* and has to
+/// discriminate: walking steps the cadence, standing still does not.
+///
+/// Assert on `cadence_steps`, not `queued` or `fired`. `CUE_FOOTSTEP` is
+/// `None` while retail's cue id is unpinned, so no cue is enqueued and no
+/// voice is keyed - but the ported kernel still runs, and this is the only
+/// counter that can tell a wired-but-silent cadence from an unwired one. That
+/// distinction is not academic: this cadence once ran every frame and fired
+/// zero steps over 274 units of walking, because it was fed the wrong speed
+/// quantity, while every unit test in the kernel passed.
+///
+/// `fired` would be worse still: off wasm there is no SPU to key a voice into,
+/// so it is unconditionally zero here, and a "standing still fires nothing"
+/// assertion written against it passes without exercising anything - exactly
+/// the vacuous shape this file exists to avoid.
+#[test]
+fn walking_steps_the_cadence_and_standing_still_does_not() {
+    let Some(mut rt) = loaded_in_town() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let steps = |rt: &LegaiaRuntime| -> u64 {
+        let v: serde_json::Value =
+            serde_json::from_str(&rt.play_sfx_state_json()).expect("sfx state json");
+        v["cadence_steps"].as_u64().unwrap_or(0)
+    };
+
+    // Idle: the retail gate parks the countdown above `0xB`, so a stationary
+    // player is silent however long it stands there.
+    rt.set_pad(0);
+    for _ in 0..240 {
+        rt.tick_frame().expect("tick");
+    }
+    let idle = steps(&rt);
+    assert_eq!(idle, 0, "a stationary player must not step the cadence");
+
+    // Walk: hold Up. Four seconds of sim is far more than the cadence's
+    // interval, so several steps must mature.
+    const UP: u16 = 0x0010;
+    rt.set_pad(UP);
+    for _ in 0..240 {
+        rt.tick_frame().expect("tick");
+    }
+    let walked = steps(&rt);
+    assert!(
+        walked > 0,
+        "walking must step the cadence - the retail gate has to open for a \
+         moving player, or the whole source is inert"
+    );
+
+    // Stop again: the count must stop growing, which proves the cues track the
+    // walk rather than a free-running timer.
+    rt.set_pad(0);
+    for _ in 0..240 {
+        rt.tick_frame().expect("tick");
+    }
+    assert_eq!(
+        steps(&rt),
+        walked,
+        "standing still again must step the cadence no further"
+    );
+}
+
+/// Seed the party, walk to map01, force a fight and tick into it.
+fn enter_forced_battle(rt: &mut LegaiaRuntime) -> Result<(), String> {
+    rt.debug_enter_town01_opening()
+        .map_err(|e| format!("enter town01 opening: {e}"))?;
+    for _ in 0..8 {
+        let _ = rt.tick_frame();
+    }
+    rt.enter_field("map01")
+        .map_err(|_| "enter_field(map01) failed".to_string())?;
+    for _ in 0..5 {
+        let _ = rt.tick_frame();
+    }
+    if !rt.debug_force_battle(-1) {
+        return Err("debug_force_battle(-1) resolved no formation on map01".into());
+    }
+    for _ in 0..400 {
+        let _ = rt.tick_frame();
+        if rt.play_battle_active() {
+            return Ok(());
+        }
+    }
+    Err("forced encounter never reached battle".into())
+}
+
+/// **The per-mode residency oracle.** Retail gives VAB slots 2 and 6 one SPU
+/// region (`FUN_800265E8`) and refills it per mode: the field init loads PROT
+/// 0876 into slot 6, the battle mode init closes slot 6 and the battle scene
+/// loader puts PROT 0869 in slot 2. So the same page, in the field and then in
+/// a battle, must key a category-6 cue out of 0876 and then not at all, and a
+/// category-2 cue not at all and then out of 0869.
+#[test]
+fn battle_swaps_the_shared_region_to_the_class2_bank() {
+    let Ok(disc) = std::env::var("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let Ok(bytes) = std::fs::read(&disc) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unreadable");
+        return;
+    };
+    let mut rt = LegaiaRuntime::new();
+    rt.load_disc(bytes, String::new()).expect("load disc");
+    if let Err(e) = enter_forced_battle(&mut rt) {
+        panic!("{e}");
+    }
+    assert_eq!(
+        rt.play_sfx_cue_bank_prot(0x09),
+        869,
+        "the duel hit keys the class-2 bank"
+    );
+    assert_eq!(
+        rt.play_sfx_cue_bank_prot(0x2E),
+        0,
+        "slot 6 is closed in battle"
+    );
+    assert_eq!(
+        rt.play_sfx_cue_bank_prot(0x21),
+        868,
+        "slot 0 stays resident"
+    );
+    let v: serde_json::Value =
+        serde_json::from_str(&rt.play_sfx_state_json()).expect("sfx state json");
+    assert_eq!(
+        v["bank_prot"].as_u64(),
+        Some(869),
+        "battle region bank: {v}"
+    );
+    eprintln!("[ok] battle region holds PROT 0869 in slot 2; field cue 0x2E closed");
+}

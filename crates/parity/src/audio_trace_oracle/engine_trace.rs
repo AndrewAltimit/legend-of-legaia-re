@@ -88,7 +88,7 @@ pub fn build_engine_audio_trace(
                 match op {
                     SfxRingOp::Push(id) | SfxRingOp::ReplaceLast(id) => Some(id),
                     SfxRingOp::WriteSlot(_, id) | SfxRingOp::ArmSlot(_, id, _) => Some(id),
-                    SfxRingOp::SetLastDelay(_) => None,
+                    SfxRingOp::SetLastDelay(_) | SfxRingOp::ReleaseSustained => None,
                 }
             })
             .collect();

@@ -99,6 +99,10 @@ pub struct ModuleCamSeats {
     /// * 4` - the monster AI's ability cooldown `dat[m + 4]`, which PROT
     /// 0953 reads as its charge flag. `0` for a party caster.
     pub caster_latch: i32,
+    /// The victim's body radius `*(victim[+0x22C]) + 0x58`, which a shot can
+    /// size its depth by (PROT 0929's arm-16 exit: `10 * r`, at most
+    /// `0x1800`).
+    pub victim_radius: i16,
 }
 
 /// The module-resident state the camera arms carry between ticks: the
@@ -115,6 +119,12 @@ pub struct ModuleCamState {
     /// Whether the creature's walk has reached the victim - the host's
     /// answer to the range test `FUN_8004E2F0(7, victim)` a walk arm polls.
     pub creature_arrived: bool,
+    /// Whether the side-band applier stage `ctx[+0x276]` is still up - the
+    /// per-turn `summon.dat` / `readef.DAT` read a module arm can wait on
+    /// ([`sideband_wait_arm`]). The engine streams are resident, so play
+    /// leaves it clear and the arm passes at once; a capture replay holds
+    /// it for as long as retail's read held its arm.
+    pub sideband_busy: bool,
     /// `ctx[+0x6DA]` as the module drives it: the yaw base the action
     /// framing it hands back to (`FUN_801D5854` case 6) subtracts the
     /// creature's heading from.
@@ -1177,6 +1187,25 @@ impl ModuleProfile {
 pub const fn stream_poll_arm(prot_entry: u32) -> Option<u8> {
     match prot_entry {
         910 | 913 => Some(2),
+        _ => None,
+    }
+}
+
+/// The arm of a summon module's tick body that waits on the side-band
+/// applier stage `ctx[+0x276]` ([`ModuleCamState::sideband_busy`]): PROT
+/// 0930's arm 2 returns busy while the byte is up (`lbu v0,0x276(v0)` /
+/// `bne v0,zero` at `0x801F6D60..0x801F6D68`) and, once it drops, issues its
+/// creature seek `FUN_8003EAE4(0, 0xE)` and steps on. Retail spends as many
+/// vsyncs there as the turn's side-band read takes -
+/// `horn_summon_mid_cast` sits in it 28 vsyncs into the sustain, three
+/// sparkle volleys in - while the engine's read is resident. PROT 0929's
+/// arm 1 makes the same test (`0x801F6D94..0x801F6DA8`) behind its anchor
+/// push, then seeks `FUN_8003EAE4(0, 0xE)`; PROT 0928's arm 1 the same
+/// (`0x801F6D58..0x801F6D60`).
+pub const fn sideband_wait_arm(prot_entry: u32) -> Option<u8> {
+    match prot_entry {
+        928 | 929 => Some(1),
+        930 => Some(2),
         _ => None,
     }
 }

@@ -1322,7 +1322,14 @@ fn a_committed_swing_plays_its_animation_cue_track() {
     let mut ops = Vec::new();
     for _ in 0..12 {
         world.tick_battle_animations();
-        ops.extend(world.take_sfx_ring_ops());
+        // The clip commits along the way raise the sustained teardown
+        // (`FUN_80017910`), which is not a cue of the track.
+        ops.extend(
+            world
+                .take_sfx_ring_ops()
+                .into_iter()
+                .filter(|op| *op != SfxRingOp::ReleaseSustained),
+        );
     }
     assert_eq!(
         ops,
@@ -1454,6 +1461,28 @@ fn a_member_seated_down_kneels_on_entry_8() {
     assert!(world.seat_downed_kneel(0));
     assert_eq!(world.actors[0].battle_reaction, Some(8));
     assert!(world.seat_downed_kneel(0), "already kneeling");
+}
+
+/// `FUN_8004AD80` `0x8004AFC0..0x8004B05C`: a flinch re-committed onto
+/// itself while its juggle byte `+0x1F7` is up seeds the cue cursor `+0x1F6`
+/// at `1`, so the restarted clip does not fire its first cue again; a first
+/// commit, or one after the window has dropped, starts at `0`.
+#[test]
+fn a_juggled_flinch_recommit_seeds_the_cue_cursor_past_its_first_cue() {
+    let mut world = pose_test_world();
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 22];
+    clips[0] = Some(pose_test_clip(0, 2, 0));
+    clips[2] = Some(pose_test_clip(2, 12, 0));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.actors[0].battle.hp = 50;
+    world.actors[0].battle_juggle_window = true;
+    assert!(world.commit_battle_reaction_entry(0, 2));
+    assert_eq!(world.actors[0].battle_anim_cue_cursor, 0, "first commit");
+    assert!(world.commit_battle_reaction_entry(0, 2));
+    assert_eq!(world.actors[0].battle_anim_cue_cursor, 1, "juggled re-hit");
+    world.actors[0].battle_juggle_window = false;
+    assert!(world.commit_battle_reaction_entry(0, 2));
+    assert_eq!(world.actors[0].battle_anim_cue_cursor, 0, "window down");
 }
 
 /// A struck body's reaction - a one-shot on the reaction channel - takes the

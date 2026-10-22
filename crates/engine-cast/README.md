@@ -11,8 +11,10 @@ The crate sits one rank above
 call the action SM's bearing and target helpers, the battle formulas, the
 damage wrappers and the battle camera script, and nothing in that crate names
 a module here. Its other engine dependencies are
-[`legaia-engine-system`](../engine-system/README.md) (trig, BIOS `rand`) and
-[`legaia-engine-camera`](../engine-camera/README.md). `World`-free; the
+[`legaia-engine-system`](../engine-system/README.md) (trig, BIOS `rand`),
+[`legaia-engine-camera`](../engine-camera/README.md) and
+[`legaia-render-kernels`](../render-kernels/README.md), which holds the draw
+packets a module body records for the hosts (PROT 0904's `TheederPacket`). `World`-free; the
 caller is `engine-core`'s cast band (`World::run_cast_module_code` and the
 cast-band directors). Consumers name the modules here directly
 (`legaia_engine_cast::cast_module_ticks`). Free of wgpu, winit and cpal, so it

@@ -12,6 +12,7 @@ path = "src/lib.rs"
 
 [dependencies]
 legaia-engine-system.workspace = true
+serde.workspace = true
 
 [dev-dependencies]
 # The camera-mover recomp oracle parses the external frame-tagged JSONL

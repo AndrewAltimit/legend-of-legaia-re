@@ -17,10 +17,12 @@ pub mod extract_job;
 pub mod launch;
 pub mod library;
 pub mod media;
+pub mod placement;
 pub mod player;
 pub mod raster;
 pub mod scene_vram;
 pub mod settings;
+pub mod theme;
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, channel};

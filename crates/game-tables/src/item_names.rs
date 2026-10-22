@@ -285,6 +285,26 @@ impl ItemNameTable {
         Self { names, descs }
     }
 
+    /// A copy whose names and descriptions read the way the dialog font
+    /// draws them (`Ra-Seru Meta $3` -> `Ra-Seru Meta Lv3`; see
+    /// [`legaia_font::cell_text`]). For hosts that show the text in a system
+    /// font; anything that re-packs or draws through the font atlas keeps
+    /// the raw table.
+    pub fn drawn(&self, level_mark: &str) -> Self {
+        let map = |v: &[Option<String>]| {
+            v.iter()
+                .map(|s| {
+                    s.as_deref()
+                        .map(|s| legaia_font::cell_text::display_name(s, level_mark))
+                })
+                .collect()
+        };
+        Self {
+            names: map(&self.names),
+            descs: map(&self.descs),
+        }
+    }
+
     /// Display name for item `id`, or `None` for a reserved / empty slot (and
     /// for `id == 0`, which the game uses as "no item").
     pub fn name(&self, id: u8) -> Option<&str> {

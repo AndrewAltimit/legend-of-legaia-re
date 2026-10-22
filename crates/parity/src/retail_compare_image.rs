@@ -366,13 +366,18 @@ pub fn engine_frame_with(
     // A child that names an earlier tick (`LEGAIA_CAPTURE_DISPLAY_LAG`: the
     // frame retail's display shows) is run again and takes its frame there;
     // the child is tick-locked, so the re-run walks the same frames.
-    if let Some(t) = std::fs::read_to_string(&retake)
-        .ok()
-        .and_then(|t| t.trim().parse::<u64>().ok())
-    {
+    // Its second line, when present, is the framing the battle camera armed
+    // on the gate tick, which the re-run's glide alignment tests retail's
+    // endpoints against (`LEGAIA_BATTLE_CAM_GATE_TARGET`).
+    let note = std::fs::read_to_string(&retake).unwrap_or_default();
+    let mut lines = note.lines();
+    if let Some(t) = lines.next().and_then(|t| t.trim().parse::<u64>().ok()) {
         let _ = std::fs::remove_file(&retake);
         let _ = std::fs::remove_file(&shot);
         cmd.env("LEGAIA_DIAG_CAPTURE_TICK", t.to_string());
+        if let Some(target) = lines.next().map(str::trim).filter(|l| !l.is_empty()) {
+            cmd.env("LEGAIA_BATTLE_CAM_GATE_TARGET", target);
+        }
         out = cmd.output().context("spawn play-window")?;
     }
     let retries = String::from_utf8_lossy(&out.stderr)

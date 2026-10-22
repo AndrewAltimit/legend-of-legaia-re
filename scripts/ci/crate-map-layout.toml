@@ -39,7 +39,7 @@ id = "hosts"
 title = "Hosts and front ends"
 blurb = "The programs people run. Each one is a thin shell over the crates below."
 track = "engine"
-crates = ["engine-shell", "web-viewer", "asset-viewer", "studio", "patcher", "extract", "asset"]
+crates = ["engine-shell", "web-viewer", "web-play", "asset-viewer", "studio", "patcher", "extract", "asset"]
 
 [[bands]]
 id = "top"
@@ -125,12 +125,12 @@ how = "legaia-engine play-window: winit + wgpu + cpal, ticking engine-session's 
 
 [[hosts]]
 name = "Browser play page"
-crate = "web-viewer"
+crate = "web-play"
 how = "The same BootSession compiled to WebAssembly; site/js/play-app.js draws it through WebGL and WebAudio."
 
 [[hosts]]
 name = "Browser minigames page"
-crate = "web-viewer"
+crate = "web-play"
 how = "Drives the World-free minigame rules engines directly; it holds no World."
 
 # --- Disc to pixels -------------------------------------------------------
@@ -179,8 +179,8 @@ text = "The wgpu-free half of drawing: GTE math, screen primitives, effect emitt
 
 [[walk]]
 title = "Pixels"
-crates = ["engine-render", "engine-shell", "web-viewer"]
-text = "Natively, engine-render draws into a software PSX VRAM through wgpu inside play-window. In the browser, web-viewer hands the same frame to WebGL on the play page."
+crates = ["engine-render", "engine-shell", "web-play"]
+text = "Natively, engine-render draws into a software PSX VRAM through wgpu inside play-window. In the browser, web-play hands the same frame to WebGL on the play page."
 
 # --- README pipeline diagram ----------------------------------------------
 # The "disc in, everything out" flow at the top of the README.

@@ -338,7 +338,9 @@ impl PlayWindowApp {
                 // the rules engine spawns), faded by its `+0x78` prologue.
                 out.extend(legaia_engine_ui::minigame_fx::dance_sprite_part_draws(
                     &self.font,
-                    &minigame_fx::dance_sprite_part_views(&g.sprite_part_emits()),
+                    &legaia_engine_screens::minigame_hud::dance_sprite_part_views(
+                        &g.sprite_part_emits(),
+                    ),
                     stage_origin,
                     stage_scale,
                 ));
@@ -425,7 +427,9 @@ impl PlayWindowApp {
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
             out.extend(legaia_engine_ui::minigame_fx::fx_part_draws(
                 &self.font,
-                &minigame_fx::fx_part_views(&self.session.host.world.minigames.fx),
+                &legaia_engine_screens::minigame_hud::fx_part_views(
+                    &self.session.host.world.minigames.fx,
+                ),
                 stage_origin,
                 stage_scale,
             ));
@@ -696,28 +700,11 @@ impl PlayWindowApp {
         // every window size (scaling only the row Y drew 1x glyphs at ~3x the
         // pitch).
         {
-            let world = &self.session.host.world;
-            let lines = world
-                .cutscene
-                .narration
-                .as_ref()
-                .map(|n| n.visible_lines())
-                .unwrap_or_default();
-            let crawl: Vec<(&str, i32)> = lines.iter().map(|l| (l.text, l.y)).collect();
-            let card: Vec<&str> = world
-                .cutscene
-                .card
-                .iter()
-                .flatten()
-                .map(String::as_str)
-                .collect();
-            if !crawl.is_empty() || !card.is_empty() {
-                let mut draws = legaia_engine_ui::cutscene_text_stage_draws(
-                    &self.font,
-                    &crawl,
-                    &card,
-                    [1.0, 1.0, 1.0, 1.0],
-                );
+            let mut draws = legaia_engine_screens::field_screens::cutscene_narration_stage_draws(
+                &self.session.host.world,
+                &self.font,
+            );
+            if !draws.is_empty() {
                 let (stage_origin, stage_scale) = self.save_select_stage(w, h);
                 legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
                 out.extend(draws);

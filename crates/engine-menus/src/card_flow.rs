@@ -62,7 +62,7 @@
 //! screen owns one (`save_screen`'s `io`, both hosts) for the "Now checking"
 //! read beat - but nothing feeds its poll results into the write side's
 //! [`CardWriteMachine`] and [`CardHealth::fold_poll`], and nothing is owed. Both card-image backends are synchronous. The browser
-//! card rack (`web-viewer::cards`) does write real `0x2000`-byte blocks, and
+//! card rack (`web-play::cards`) does write real `0x2000`-byte blocks, and
 //! it patches the container bytes synchronously through `legaia_save`; the
 //! native window mounts a real `.mcr` in save-select port 2 (`MountedCard`,
 //! `play-window --card`) but **reads** it only - a Save into a mounted card
@@ -82,7 +82,7 @@
 //!   [`SAVE_HEADER_MAGIC`] - `"SC"`, the icon-frame descriptor `0x11`, block
 //!   count `1` - at block `+0`, not just the two magic bytes;
 //! * `legaia_save::card::write_retail_block_identity`, which
-//!   `web-viewer::cards::write_session_into_card` calls immediately after,
+//!   `web-play::cards::write_session_into_card` calls immediately after,
 //!   writes the slot's two title digits through
 //!   `legaia_save::card::save_title_digits` (the live twin of
 //!   [`block_title_digits`], biased by [`SAVE_TITLE_DIGIT_BASE`] so the BIOS

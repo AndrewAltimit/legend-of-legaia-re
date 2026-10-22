@@ -472,7 +472,7 @@ fn venue_draws(index: &ProtIndex, scene: &Scene, res: &SceneResources) -> Vec<Ve
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DanceVenueStage {
     /// The record's camera ([`venue_camera`]); the dance arm of
-    /// `legaia_engine_core::camera_view::resolve_field_camera` frames with it.
+    /// `legaia_engine_world_views::camera_view::resolve_field_camera` frames with it.
     pub camera: FieldCameraView,
     /// `_DAT_80084540` as the walked-in scene had it (`0x801CF0D8` saves it
     /// to `DAT_801D5180`; `0x801D4184` restores it).

@@ -16,7 +16,7 @@ impl<'m> DrawCtx<'_, 'm> {
         let store = &self.store;
         let cam = self.cam;
         let player_tint_cue = cues.player_tint_cue;
-        let effect_clip = |key: legaia_engine_core::world::ActorTintKey, model: &Mat4| {
+        let effect_clip = |key: legaia_engine_field::object_tint::ActorTintKey, model: &Mat4| {
             cues.effect_clip(key, model)
         };
         let player_color_posed = &store.posed.player_color_posed;
@@ -39,7 +39,7 @@ impl<'m> DrawCtx<'_, 'm> {
                 .or_else(|| store.color_meshes.get(cidx))
         {
             if let Some(c) = effect_clip(
-                legaia_engine_core::world::ActorTintKey::Player,
+                legaia_engine_field::object_tint::ActorTintKey::Player,
                 &app.actor_model(slot),
             ) {
                 color_clip_marks.push((color_draws.len(), c));
@@ -102,7 +102,7 @@ impl<'m> DrawCtx<'_, 'm> {
                 .field_npc_draw_tint(d.slot as usize)
                 .and_then(tint_draw_cue);
             let npc_clip = effect_clip(
-                legaia_engine_core::world::ActorTintKey::Npc(d.slot as usize),
+                legaia_engine_field::object_tint::ActorTintKey::Npc(d.slot as usize),
                 &model,
             );
             if let Some(c) = npc_clip {
@@ -204,7 +204,7 @@ impl<'m> DrawCtx<'_, 'm> {
         let store = &self.store;
         let cam = self.cam;
         let player_tint_cue = cues.player_tint_cue;
-        let effect_clip = |key: legaia_engine_core::world::ActorTintKey, model: &Mat4| {
+        let effect_clip = |key: legaia_engine_field::object_tint::ActorTintKey, model: &Mat4| {
             cues.effect_clip(key, model)
         };
         let posed_overrides = &store.posed.posed_overrides;
@@ -278,6 +278,12 @@ impl<'m> DrawCtx<'_, 'm> {
                 let basis = Mat4::from_mat3(glam::Mat3::from_cols_array_2d(&rows).transpose());
                 let mvp = cam * PlayWindowApp::battle_stage_model() * basis;
                 if let Some(mesh) = app.battle_stage_spun_mesh.and_then(|i| store.meshes.get(i)) {
+                    // Copy A culls its back faces, the mirrored copy B
+                    // draws both sides (`backdrop_copy_nclip`).
+                    nclip_marks.push((
+                        draws.len(),
+                        legaia_engine_scene_host::scene_host::backdrop_copy_nclip(*second, copy_b),
+                    ));
                     draws.push(SceneDraw { mesh, mvp, cue });
                 }
                 if let Some(mesh) = app
@@ -471,8 +477,10 @@ impl<'m> DrawCtx<'_, 'm> {
                 // the battle stage.
                 if !in_battle
                     && app.session.host.world.player_actor_slot == Some(i as u8)
-                    && let Some(c) =
-                        effect_clip(legaia_engine_core::world::ActorTintKey::Player, &model)
+                    && let Some(c) = effect_clip(
+                        legaia_engine_field::object_tint::ActorTintKey::Player,
+                        &model,
+                    )
                 {
                     clip_marks.push((draws.len(), c));
                 }

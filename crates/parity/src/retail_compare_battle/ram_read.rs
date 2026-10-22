@@ -43,9 +43,14 @@ const PART_TICK: u32 = 0x8002_1DF4;
 /// A part seated once is left to the replay, whose own state is aligned to
 /// the displayed frame - the RAM runs one frame-pair ahead of it, and a
 /// growing channel seated from the RAM overshoots the frame on screen.
+///
+/// The seeds are taken back to the displayed frame the same way
+/// ([`displayed_part_halfword`]): each integrated word less the
+/// [`display_lag_vsyncs`] the part tick ran on it since.
 pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon::CastPartSeed> {
     let per_pass: Vec<u32> =
         legaia_engine_cast::cast_module_camera::per_pass_spawn_records().collect();
+    let lag = i32::from(display_lag_vsyncs(ram));
     crate::retail_compare_script::actor_nodes(ram)
         .into_iter()
         .filter(|&n| {
@@ -59,10 +64,97 @@ pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon
             tag: game_anchors::u32_at(ram, n + 0x48),
             pokes: legaia_engine_effects::summon::CAST_PART_SEED_OFFSETS
                 .iter()
-                .map(|&o| (o, game_anchors::u16_at(ram, n + u32::from(o))))
+                .map(|&o| (o, displayed_part_halfword(ram, n, o, lag)))
                 .collect(),
         })
         .collect()
+}
+
+/// The render banks an effect-script table part's seed carries: its
+/// rotation trio `+0x24..+0x28`.
+const ACTION_FX_SEED_OFFSETS: [u16; 3] = [0x24, 0x26, 0x28];
+
+/// Every live effect-script table part (`FUN_80021DF4` nodes whose record
+/// `+0x48` lies in the resident battle overlay below the slot-B image -
+/// the `0x801F6324` prototypes `FUN_801DEA50`'s table arm seats) that is
+/// turning (a non-zero rate in `+0x80..+0x84`), in actor-list order, as a
+/// [`CastPartSeed`](legaia_engine_effects::summon::CastPartSeed) of its
+/// rotation trio as the displayed frame held it ([`displayed_part_halfword`]).
+///
+/// A turning part's banks are a clock of its age in vsyncs: the part tick
+/// adds the rate times the frame step every pass, so a part seated on a
+/// step-`2` pass has turned two vsyncs' worth by its first draw, where the
+/// replay's per-vsync seat has turned one. The summon invoke clip's ray fan
+/// (record `0x801F5A04`, `-56` a vsync about Y) reads that way: one vsync
+/// ahead of the displayed frame in the replay (`freed_summon_mid_cast`
+/// `+0x26` `812` against the displayed `868`), every ray standing a few
+/// degrees off retail's. Only the banks are seated - the part's program
+/// words (wait, PC, level ramp) may have been rewritten inside the display
+/// lag and are not recovered.
+pub(super) fn retail_action_fx_parts(
+    ram: &[u8],
+) -> Vec<legaia_engine_effects::summon::CastPartSeed> {
+    let lag = i32::from(display_lag_vsyncs(ram));
+    let overlay = legaia_game_tables::move_power::BATTLE_OVERLAY_BASE..SLOT_B.start;
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| {
+            let rec = game_anchors::u32_at(ram, n + 0x48);
+            game_anchors::u32_at(ram, n + 0x0C) == PART_TICK
+                && game_anchors::u32_at(ram, n + 0x10) & 0x8 == 0
+                && overlay.contains(&rec)
+                && (0x80..=0x84)
+                    .step_by(2)
+                    .any(|o| game_anchors::u16_at(ram, n + o) != 0)
+        })
+        .map(|n| legaia_engine_effects::summon::CastPartSeed {
+            tag: game_anchors::u32_at(ram, n + 0x48),
+            pokes: ACTION_FX_SEED_OFFSETS
+                .iter()
+                .map(|&o| (o, displayed_part_halfword(ram, n, o, lag)))
+                .collect(),
+        })
+        .collect()
+}
+
+/// Part `node`'s halfword `+off` as the displayed frame held it, `lag`
+/// vsyncs before the RAM: the part tick `FUN_80021DF4` integrates, a frame
+/// at a time and scaled by the frame step times the rate byte `8` (`>> 6`),
+/// so one vsync's worth is the rate `>> 3`.
+///
+/// - the render banks `+0x24..+0x28` by `+0x80..+0x84` (`0x80022918..`);
+/// - the position `+0x14..+0x18` by the velocity `+0x3C..+0x40` and, on X
+///   / Z, the speed `+0x98` along the heading `+0x96` (`0x800229B4..`);
+///   both skipped for render modes `3` and `5` (`0x800228A0..0x800228B0`);
+/// - the channels `+0xB4..+0xBA` and `+0xC8` by `+0xC0..+0xC6` / `+0xCA` in
+///   render modes `2` and `6` (`0x80021E78..0x80021FA0`);
+/// - the wait `+0x54`, drained by the same product (`8` a vsync).
+///
+/// A word the part's program rewrote inside the lag is not recovered.
+pub(super) fn displayed_part_halfword(ram: &[u8], node: u32, off: u16, lag: i32) -> u16 {
+    let h = |o: u32| i32::from(game_anchors::u16_at(ram, node + o) as i16);
+    let now = h(u32::from(off));
+    let mode = h(0x5A);
+    let moves = mode != 3 && mode != 5;
+    let per_vsync = match off {
+        0x24 | 0x26 | 0x28 if moves => h(u32::from(off) + 0x5C) >> 3,
+        0x14 | 0x16 | 0x18 if moves => {
+            let heading = (h(0x96) & 0xFFF) as u16;
+            let (sin, cos) = legaia_engine_system::trig::trig12(heading);
+            let speed = h(0x98);
+            let along = match off {
+                0x14 => i32::from(sin) * speed,
+                0x18 => i32::from(cos) * speed,
+                _ => 0,
+            };
+            (along + (h(u32::from(off) + 0x28) << 12)) >> 15
+        }
+        0xB4 | 0xB6 | 0xB8 | 0xBA if mode == 2 || mode == 6 => h(u32::from(off) + 0x0C) >> 3,
+        0xC8 if mode == 2 || mode == 6 => h(0xCA) >> 3,
+        0x54 => -8,
+        _ => 0,
+    };
+    (now - per_vsync * lag) as u16
 }
 
 /// `ctx[+0x273]` - the pushes the damage-number ring took this action.
@@ -73,6 +165,8 @@ const RING_VALUE: u32 = 0x83C;
 const RING_SEAT: u32 = 0x318;
 /// The ring's entry count (`FUN_801F44A0` folds its cursor `mod 8`).
 const RING_LEN: u8 = 8;
+/// The string's running total `DAT_8007BD14` (`0x801EEA64..0x801EEA78`).
+const COMBO_TOTAL: u32 = 0x8007_BD14;
 
 /// The hits the action in flight has landed on each pool slot's HP, off the
 /// damage-number ring `FUN_801F44A0` pushes (inlined at `0x801E1898..0x801E1918`
@@ -94,6 +188,29 @@ const RING_LEN: u8 = 8;
 /// mid-combo shows the hits on the ring and the victim's HP untouched
 /// (`battle_vahn_tri_somersault_super`: `242` pushed, `442` banked, full
 /// HP). What the bank still holds is taken off the slot's sum.
+/// The ring's pushes in order, `(pool slot, amount)` - the hits the action
+/// in flight resolved, each as the melee kernel landed it, `0` where the
+/// number has left the screen and the ring no longer holds it. Empty where
+/// [`action_hits`] is (outside an action, or a ring that has wrapped).
+pub(super) fn action_hit_sequence(ram: &[u8], ctx: u32) -> Vec<(u8, u16)> {
+    let state = game_anchors::u8_at(ram, ctx + 7);
+    let count = game_anchors::u8_at(ram, ctx + RING_PUSHES);
+    if game_anchors::u8_at(ram, ctx + 6) != 0xFF
+        || PRE_SEED_STATES.contains(&state)
+        || state == 0x0C
+        || count > RING_LEN
+    {
+        return Vec::new();
+    }
+    (0..u32::from(count))
+        .filter_map(|i| {
+            let value = game_anchors::u16_at(ram, ctx + RING_VALUE + i * 4) as i16;
+            let seat = game_anchors::u16_at(ram, ctx + RING_SEAT + i * 2);
+            (seat < 8).then_some((seat as u8, value.max(0) as u16))
+        })
+        .collect()
+}
+
 pub(super) fn action_hits(ram: &[u8], ctx: u32) -> Vec<(u8, u16)> {
     let state = game_anchors::u8_at(ram, ctx + 7);
     let count = game_anchors::u8_at(ram, ctx + RING_PUSHES);
@@ -174,6 +291,7 @@ impl RetailBattle {
             keep_backdrop_object_1: game_anchors::u8_at(ram, KEEP_BACKDROP_OBJECT_1) != 0,
             mystic_shield: game_anchors::u32_at(ram, MYSTIC_SHIELD_HANDLE) != 0,
             cast_parts: retail_cast_parts(ram),
+            action_fx_parts: retail_action_fx_parts(ram),
             backdrop_slot_1_yaw: game_anchors::u16_at(ram, BACKDROP_SLOT_1_YAW),
             monster_ids,
             seat_chars: (0..u32::from(party_count))
@@ -272,7 +390,10 @@ impl RetailBattle {
                 .flatten(),
             module_phase: game_anchors::u8_at(ram, ctx + 0x279),
             action_hits: action_hits(ram, ctx),
+            action_hit_sequence: action_hit_sequence(ram, ctx),
+            combo_total: u32::from(game_anchors::u16_at(ram, COMBO_TOTAL)),
             entry_latches: Vec::new(),
+            inflight_idle: [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
             clip_cursors: (0..8u32)
                 .filter_map(|slot| {
                     let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);

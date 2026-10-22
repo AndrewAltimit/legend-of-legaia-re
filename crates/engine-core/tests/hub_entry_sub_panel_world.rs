@@ -8,8 +8,8 @@
 //! session ever asks it to.
 
 use legaia_engine_core::world::World;
+use legaia_engine_dev_menu::dev_menu_leaves::EquipPanelDraw;
 use legaia_engine_field::actor_handler::ActorHandler;
-use legaia_engine_field::dev_menu_leaves::EquipPanelDraw;
 use legaia_engine_field::submode_hub_actors::{HubDraw, HubPainter, slot};
 
 /// Panel-window record the entry list paints. Taken from `submode_hub_actors`
@@ -84,7 +84,7 @@ fn a_live_frame_loop_paints_the_per_entry_equipment_panel() {
 /// populated world prints.
 #[test]
 fn the_painted_rows_carry_retails_column_geometry() {
-    use legaia_engine_field::dev_menu_leaves::{
+    use legaia_engine_dev_menu::dev_menu_leaves::{
         EQUIP_COL_CURRENT, EQUIP_COL_LABEL, EQUIP_LABEL_VAS, EQUIP_ROW_PITCH,
     };
 

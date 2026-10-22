@@ -120,7 +120,10 @@ HOSTS = {
         REPO / "crates" / "parity" / "src",
         REPO / "crates" / "engine-render" / "src",
     ],
-    "web": [REPO / "crates" / "web-viewer" / "src"],
+    "web": [
+        REPO / "crates" / "web-play" / "src",
+        REPO / "crates" / "web-viewer" / "src",
+    ],
 }
 
 LINE_COMMENT_RE = re.compile(r"//.*$", re.MULTILINE)

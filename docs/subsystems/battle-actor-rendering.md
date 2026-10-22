@@ -43,7 +43,7 @@ All retail routines here are resident in `SCUS_942.54` unless marked as battle-o
 | Staged clip commit, ladder, rate arms | `engine-core` `world/actors/battle_anim.rs`, `world/battle/clip_ladder.rs`; `engine-battle-vm::battle_anim_rate` |
 | Tint pass, draw tick, ghost pass | `engine-battle-vm::{battle_actor_tint, battle_actor_tick, battle_action::camera_ghost}`, `engine-battle::battle_body_blend` |
 | Trails, streaks, after-images | `render-kernels::battle_trail`, `engine-battle::battle_afterimage`, `render-kernels::{battle_trail, streak_pass, afterimage}` |
-| Hosts | `crates/engine-shell/src/window/battle.rs`; `crates/web-viewer/src/play_battle_render.rs`, `play_battle.rs`, `play_battle_fx.rs` |
+| Hosts | `crates/engine-shell/src/window/battle.rs`; `crates/web-play/src/play_battle_render.rs`, `play_battle.rs`, `play_battle_fx.rs` |
 
 ## Draw pipeline
 
@@ -350,6 +350,8 @@ Facts pinned by capture and data:
 
 The capture / defeat fade (`+0x21C == 2`, arm 2) additionally ORs `0x81000000` into the node's mode word, so the fading actor draws additive (ABR 1, `B + F`). `BattleActorDrawPlan::semi_mode` decodes that top byte and `apply_body_blend` (`engine-battle::battle_body_blend`) raises the blend on every stream the body draws, on both hosts. The fade takes the tint cue only while its word raises ABE (`tint_cue_applies`), so it is never drawn as an opaque black silhouette, and the body drops out once its lanes reach zero.
 
+The near-camera ghost pass writes the same top byte: it clears `0x83000000` on every seated body it does not ghost. Retail's frame driver runs it first and the presentation tick after it (`jal 0x8004DC68` at `0x80047124`, `jal 0x80050120` at `0x8004712C`), so arm 2's OR is what the draw reads. The port's tint pass runs inside the tick, ahead of its ghost pass, so `World::tick_battle_camera_ghost` puts the fade's bits back on every body in arm 2 - without that the fading body drew opaque (`rim_elm_gimard_seru_capture_before`'s Gimard, rising for the absorb, drew solid and dark where retail's shows additive).
+
 A killed monster also **sinks** while it fades: the same arm adds `(record[+0x1F] * step) >> 2` to its height `+0x36` each pass and stores `1` into its render node's `+0x42` (`0x800504AC`). That halfword sends every object of the body through `FUN_80048A08`'s clipping arm (`FUN_8001C204` then `FUN_8002735C`, `0x80048E84..0x80048FE4`) under object-effect row 0, which battle setup seeds as the floor's half space (`lo = -0x7FFF`, `hi = 0`; [renderer](renderer.md#what-a-raised-0x42-draws)). So the body goes down through the stage floor and is gone once it is wholly below.
 
 Both hosts stage the clip per draw from `World::battle_actor_floor_clip` (the page through `play_battle_actor_floor_clips`), and both place a body's height with the frame flip (`T(F pos)`), so the sink lowers it.
@@ -433,7 +435,11 @@ The swept `POLY_G4` streak an ordinary arts swing leaves behind a party characte
 3. Projects each vertex through `FUN_800195A8`.
 4. Drops `0x3B808080` packets into the OT - a `POLY_G4`: four-point gouraud, semi-transparent, untextured. `0x808080` is a placeholder the per-vertex fill overwrites; `v0/v2` are the leading step's pair carrying the band's lead colour, `v1/v3` trailing. The OT slot is the average of the four corner depths with the same rounding fixup.
 
-**Port.** Trigger table and sweep / band schedule: `render-kernels::battle_trail`. Projected band packets: `render-kernels::battle_trail` (a gouraud `FlatQuad` through the shared screen-prim pass, ABR 1). `World::battle_weapon_trail_draws` samples the sweep off the pose-history ring (step `k` = the pose `2k` frames ago, the retail rewind under a constant rate), bounded by the ring's per-frame clip key. Both hosts project with their own battle camera and composite the bands over the scene; retail's OT interleave with scene depth is not reproduced.
+**Port.** Trigger table and sweep / band schedule: `render-kernels::battle_trail`. Projected band packets: `render-kernels::battle_trail` (a gouraud `FlatQuad` through the shared screen-prim pass, ABR 1). `World::battle_weapon_trail_draws` samples the sweep off the pose-history ring (step `k` = the pose `2k` frames ago, the retail rewind under a constant rate), bounded by the ring's per-frame clip key.
+
+**Placement.** Each control point is turned by the body's facing and set on its slot's ground base with retail's integer arithmetic (`battle_trail::trail_world_point`: products rounding toward zero, no base height), then placed as the hosts place a battle body - frame flip, the 4x world scale - and projected through the battle view-projection (`battle_trail::project_battle_point`).
+The kernel is `engine-world-views::screen_passes::weapon_trail_prims`; both hosts reach it through one caller, `engine-screens::battle_fx::battle_fx_prims`, which builds the battle VP itself (`battle_fx_vp`: `battle_vp` at the stage's 4:3, which `battle_vp_matches_the_native_glam_composition` pins to the native window's glam composition). `the_weapon_trail_lands_on_the_body_it_trails` pins a trail point onto the body's own drawn point under both compositions.
+PROT 0904's Theeder beam projects through the same `project_battle_point`, from `engine-screens::battle_fx::theeder_prims`. The bands composite over the scene; retail's OT interleave with scene depth is not reproduced.
 
 <a id="weapon-trail-afterimage-streak"></a>
 
@@ -447,7 +453,7 @@ The launch position is not the bare actor position. Retail re-seeds its stack pa
 
 **Port.** `engine-effects::action_effect_script::MoveFxStreak` (file `crates/engine-effects/src/action_effect_script.rs`) is the block: record id rather than pointer, one shared launch point rather than four identical copies. The live per-frame walk `World::step_actor_effect_script` installs it and `World::move_fx_streak` reads it back. `render-kernels::streak_pass` projects it once per frame and hands the corners to the packet builder `afterimage::build_afterimage_quad`, whose jitter law, brightness band, UVs, CLUT (`0x7700 + trail id`) and texpage (`0x0027`) are retail's.
 
-Both hosts draw it: the native window appends the quads to its screen-space textured batch (`move_fx_streak_quads` in `redraw_passes.rs`), the play page emits them as screen prims at `streak_pass::MOVE_FX_STREAK_OT` (`play_battle.rs`).
+Both hosts draw it through one function, `engine-screens::battle_fx::battle_fx_prims`: the packets as semi-transparent screen prims at `streak_pass::MOVE_FX_STREAK_OT`, projected through the battle VP with the 4x world scale composed.
 
 Differences from retail:
 
@@ -516,7 +522,7 @@ The same entry replays the party forms' `VramWriteLog`, draws the stage the sess
 
 ### Browser play-page battle render
 
-The browser play page runs the same `Field → Battle` edge through `legaia_web_viewer::play_battle_render` (`LegaiaRuntime::enter_battle_render` / `exit_battle_render`), reusing the shared kernels:
+The browser play page runs the same `Field → Battle` edge through `legaia_web_play::play_battle_render` (`LegaiaRuntime::enter_battle_render` / `exit_battle_render`), reusing the shared kernels:
 
 - **Stage.** The scene's battle-kind resource build (`SceneLoadKind::Battle`) makes the stage dome and its textures resident. The dome takes `drawn_objects_tmd` plus the `MirrorXTable` second copy, pre-appended via `VramMesh::append_scaled` so the page uploads one mesh. The ground grid comes from `build_ground_grid` with the `DAT_80078C1C` far colour.
 - **VRAM.** The flame atlas, per-slot monster injection and assembled party bands land in a throwaway battle VRAM the page swaps in for the fight; battle exit re-uploads the untouched field VRAM.

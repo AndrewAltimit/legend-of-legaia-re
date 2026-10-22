@@ -1216,17 +1216,19 @@ Not `4C 88`: op0 `0x88` (nibble-8 sub-8) is a different op that writes
 `_DAT_80084628/80084624/8008462C`. `FUN_8003CF04` is a list **finder** (walks `0x8007C34C`
 matching `node[+0xC] == handler && !(node[+0x10] & 8)`), not a kill function.
 
-**Seed meaning** (from the roller's reads, `see ghidra/scripts/funcs/80037174.txt`):
+**Seed meaning** (from the roller `FUN_80037174`'s reads; `_DAT_801C6EA4` holds a **pointer** to the seed block, re-loaded with `lw 0x6ea4` before each read):
 
 | offset | role | default |
 |---|---|---|
-| `+0x4C` | window **top Y**. Slot `i` draws at `Y = (+0x4C) - subscroll + 16*i`. | `0x40` (64) |
-| `+0x4E` | **line-slot count** `n`. The roller keeps `n + 1` slot states at `actor+0x80…` (`0xFF` empty, `0xFE` blank page, `1` text). | `0x08` (8) |
-| `+0x50` | scroll **divisor**. A per-actor accumulator gains the frame step `DAT_1F800393` each frame (not while paused); on reaching `+0x50` it resets to zero and the sub-scroll `actor+0x9E` (0..15) steps. | `0x04` (4) |
-| `+0x52` | **release line count**. With it non-zero and slot 1 occupied, the roller pauses itself (`actor+0x10 \|= 0x80000`) and clears `+0x52` when the pages retired so far (`actor+0x6A`, plus one if slot 0 is occupied) equal it. Written only by the `word3 == 1` sub-mode. | `0` |
+| `+0x4C` | window **top Y**. Slot `i` draws at `Y = (+0x4C) - subscroll + 16*i` (`0x80037554..0x80037564`, `+0x10` per slot at `0x8003760C`), centred at `X = (0x140 - width) >> 1` past its lead byte (`0x80037588..0x800375AC`). | `0x40` (64) |
+| `+0x4E` | **line-slot count** `n`. The roller keeps `n + 1` slot states at `actor+0x80…` (`0xFF` empty, `0xFE` blank page, `1` text; written at `0x800373A8`). | `0x08` (8) |
+| `+0x50` | scroll **divisor**. A per-actor accumulator (`actor+0x50`) gains the frame step `DAT_1F800393` each frame unless `+0x10 & 0x80000` (`0x80037228..0x80037250`); on reaching `+0x50` it resets to zero and the sub-scroll `actor+0x9E` (0..15) steps (`0x80037254..0x8003727C`). The first pass primes the sub-scroll at `0xF` and the accumulator at the divisor (`0x800371C4..0x800371DC`), so the first page enters at once. | `0x04` (4) |
+| `+0x52` | **release line count**. With it non-zero and slot 1 occupied, the roller pauses itself (`actor+0x10 \|= 0x80000`) and clears `+0x52` when the pages retired so far (`actor+0x6A`, plus one if slot 0 is occupied) equal it (`0x800373BC..0x80037428`). Written only by the `word3 == 1` sub-mode. | `0` |
 
 The **clip window** is `Y` from `(+0x4C) + 4` to `min((+0x4C) + 16*n - 1, 0xE8)`, `X` from `0` to
-`0x13F`, so lines enter and leave it a pixel at a time. A full 16-pixel climb shifts the slot
+`0x13F`, so lines enter and leave it a pixel at a time: a `DR_AREA` pair the roller links after its
+lines (`0x80037610..0x800376D4`), so it executes before them, and a second pair restoring the draw
+environment's area linked ahead of them (`0x80037434..0x800374D4`). A full 16-pixel climb shifts the slot
 states up one, counts a retired page when slot 0 held one, and admits the next page at slot `n`.
 The block ends when the retired count reaches the page count: the roller clears its parent's
 `+0x10` bit `0x400` and kills itself.
@@ -1257,6 +1259,20 @@ palettes - the fade steps) in the `opdeene` geometry pack **PROT entry 0749** at
 offset `0x01EC30`, VRAM `fb=(384,0)`, among that pack's scene textures
 (`tim-scan extracted/PROT/0749_opdeene.BIN`). The scene renderer draws it as a screen-space
 textured quad.
+
+**Who draws it.** Two move-VM stager parts, records 21 and 22 of `opdeene`'s stager bundle,
+spawned as children (`25 15`, `25 16`) of record 20, itself a child (`25 14`) of record 4, which
+the opening timeline `P2[18]` installs at `+0x65D` (`34 30 03`). Both programs open
+`07 (0, 0, 792)` / `(1, 1, 792)`, `15 0400` (camera-locked, [renderer](renderer.md#camera-relative-nodes-fun_8001cf50)),
+`23` (the draw-kind-4 sprite arm: the 112x32 rect at tpage `6`, CLUT `0x40` = `(0, 1)`), then
+`0C` with colour word `0xC9..` / `0xCA..` - ABR `1` for the face, ABR `2` for the shadow one
+pixel down-right - and level `0xFFF` (fully cued to black), and `0D FFBC` ramps the level to `0`:
+the fade-in. The `new_game_cutscene_intro_a` capture holds both nodes on the actor lists
+(`+0x56 = 4`, `+0x9E = 0x4000`, `+0x52 = 0x400`) and their two `GT4` packets in the ordering
+table, shadow first. The engine spawns and draws the same two parts
+([`effect_sprite_arm`](../../crates/engine-effects/src/effect_sprite_arm.rs)); the image-blit
+overlay below predates that and still draws its own fade on a beat of its own, about 160 frames
+ahead of the parts.
 
 Evidence (cold-boot probes in `scripts/pcsx-redux/`):
 
@@ -1969,7 +1985,7 @@ OT bucket, not a quad family.
 Both hosts composite the frame's pushes through one emitter - `World::screen_tint_push_args`
 into `legaia_render_kernels::screen_prim::screen_effect_push_prims`, which applies the floor, the
 two-bit mask and the red/blue swap. The page-side consumer is pinned by
-`crates/web-viewer/tests/screen_effect_page_prims.rs` (the `town0e` entry script issues the
+`crates/web-play/tests/screen_effect_page_prims.rs` (the `town0e` entry script issues the
 instruction), the native call site by the `SIM_PAIRS` row in
 `scripts/ci/check-ui-host-drift.py`.
 
@@ -2104,6 +2120,10 @@ the mesh shaders instead - equivalent, because a 4/8bpp texel *is* a palette ent
 - each decoded texel word goes through the 5-bit law;
 - each non-neutral packet colour takes the `4C E6` curve of its `max` (`prologue_sepia_word`;
   the page shader carries the twin);
+- a runtime-emitted packet keeps its colour: the draw-kind-4 sprite and default arms build their
+  words at draw time from the node's `+0xA0` block, after the rewrite and outside the resident
+  TMDs it walks, so their meshes carry `TSB_RUNTIME_PACKET_BIT` (`0x0800`) and both shaders skip
+  the packet half for them (the caption quads' `0x7F7F7F` word drew amber without it);
 - exact-neutral words stay neutral (the ground tile kernel's runtime word);
 - the view-depth cue ramp is inert;
 - the law reaches only a 4/8bpp prim whose CLUT base sits inside the two cycler rects
@@ -2754,7 +2774,7 @@ the field-VM opcode's own literals are per-scene MAN data, named by their decode
 | IDCT + dequantize formula | `crates/mdec/src/lib.rs`; PSX-SPX §MDEC |
 | BT.601 coefficients | `crates/mdec/src/lib.rs` |
 | XA sector layout + demux | `crates/xa/src/demux.rs`; [`formats/xa.md`](../formats/xa.md) |
-| Interleaved STR A/V decode + sync clock | `crates/engine-shell/src/cutscene_av.rs`; browser twin `crates/web-viewer/src/play_fmv.rs` |
+| Interleaved STR A/V decode + sync clock | `crates/engine-shell/src/cutscene_av.rs`; browser twin `crates/web-play/src/play_fmv.rs` |
 | Audio-cursor playback clock | `crates/engine-audio/src/lib.rs` (`AudioOut::xa_cursor_secs`) |
 | Game modes 26 / 27 | `crates/engine-mode/src/mode.rs` |
 | `play-str` frame loop | `crates/engine-shell/src/window/str_player.rs` (`cmd_play_str` / `StrPlayerApp`) |

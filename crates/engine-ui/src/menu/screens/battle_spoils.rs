@@ -80,14 +80,53 @@ pub const SPOILS_REPORT_RECT: (i32, i32, i32, i32) = (8, 152, 304, 58);
 /// is `(+8, +8)` off the rects above.
 pub const SPOILS_TEXT_INSET: (i32, i32) = (8, 8);
 
-/// Column the experience figure's last digit ends on, and the column the
-/// gold figure's does, both relative to the text pen. Retail right-aligns
-/// both numbers inside the sentence rather than letting it reflow - the
-/// capture's `12` ends at `100` and its `13` at `236`.
-pub const SPOILS_XP_RIGHT: i32 = 84;
+/// The two figures' number records on the report window's text actor
+/// (`0x27`), registered by the results frame `FUN_8004E568` through the
+/// record-queue append `FUN_8003563C`: the EXP share at x `0x2E`
+/// (`li a3,0x2e` at `0x8004F674`) and the gold at `0xB6` (`0x8004F6A8`),
+/// both at y `0x0E` in a `5`-cell field (`li s1,0x5`, the stack word
+/// `0x14(sp)`) under CLUT `7`. The actor-list draw `FUN_80031D00` renders a
+/// record in the menu numeral cells (`8 x 12` at `v = 0xD0`, one 8-px cell
+/// per digit, blank cells for the leading zeros - the cell kernel of
+/// `FUN_80034B78`), so each figure right-aligns in its field, in the
+/// numeral face rather than the dialog font: the capture's `12` ends at
+/// column `100` and its `13` at `236`. Offsets are from the text pen, the
+/// actor's content origin.
+pub const SPOILS_XP_FIELD_X: i32 = 0x2E;
+pub const SPOILS_GOLD_FIELD_X: i32 = 0xB6;
+/// The records' y (`0x0E`), which is the sentence's second row.
+pub const SPOILS_FIGURE_Y: i32 = 0x0E;
+/// The records' field width in 8-px cells.
+pub const SPOILS_FIGURE_CELLS: i32 = 5;
+/// Pitch of the numeral cells.
+const SPOILS_FIGURE_CELL: i32 = 8;
 pub const SPOILS_TAIL_X: i32 = 91;
-pub const SPOILS_GOLD_RIGHT: i32 = 220;
 pub const SPOILS_GOLD_TAIL_X: i32 = 228;
+
+/// A number record's draws: `value` right-aligned in a `cells`-wide field
+/// of 8-px numeral cells at `(x, y)`, leading zeros blank and a zero value
+/// drawn in the last cell (`FUN_80031D00`, `0x80031F00..0x80032150`).
+fn number_record_draws(
+    font: &legaia_font::Font,
+    value: u32,
+    (x, y): (i32, i32),
+    cells: i32,
+    color: [f32; 4],
+) -> Vec<TextDraw> {
+    let s = value.to_string();
+    let len = s.len() as i32;
+    let mut out = Vec::new();
+    for (i, ch) in s.chars().enumerate() {
+        let cell = (cells - len + i as i32).max(0);
+        out.extend(crate::numeral_cell_draws(
+            font,
+            ch,
+            (x + cell * SPOILS_FIGURE_CELL, y),
+            color,
+        ));
+    }
+    out
+}
 
 /// One window of the post-battle report: its stage rect and the lines in it.
 pub struct SpoilsWindow {
@@ -159,10 +198,10 @@ pub fn battle_spoils_windows(view: &BattleSpoilsView<'_>) -> Vec<SpoilsWindow> {
 /// The arithmetic behind every number is `World::apply_battle_loot` /
 /// `apply_battle_xp` (see `docs/subsystems/level-up.md`). The report window
 /// is screen element `0x41` (`FUN_801D8DE8(0x41, 0)` in the results frame
-/// `FUN_8004E568`), whose placement record agrees with the framebuffer rect;
-/// the sentence columns are still read off the framebuffer rather than off
-/// the two digit registrations (`FUN_8003563C` at `0x8004F690` /
-/// `0x8004F6B4`).
+/// `FUN_8004E568`), whose placement record agrees with the framebuffer rect.
+/// The two figures are its number records (`FUN_8003563C` at `0x8004F690` /
+/// `0x8004F6B4`, [`SPOILS_XP_FIELD_X`]); the sentence's text columns are read
+/// off the framebuffer.
 pub fn battle_spoils_draws_for(
     font: &legaia_font::Font,
     view: &BattleSpoilsView<'_>,
@@ -185,11 +224,11 @@ pub fn battle_spoils_draws_for(
             if is_report && row == 1 {
                 let head = font.layout_ascii("Gained");
                 out.extend(text_draws_for(&head, (pen.0, y), white));
-                let xp = view.xp.to_string();
-                let xp_w = font.layout_ascii(&xp).advance_x as i32;
-                out.extend(text_draws_for(
-                    &font.layout_ascii(&xp),
-                    (pen.0 + SPOILS_XP_RIGHT - xp_w, y),
+                out.extend(number_record_draws(
+                    font,
+                    view.xp,
+                    (pen.0 + SPOILS_XP_FIELD_X, pen.1 + SPOILS_FIGURE_Y),
+                    SPOILS_FIGURE_CELLS,
                     white,
                 ));
                 out.extend(text_draws_for(
@@ -197,11 +236,11 @@ pub fn battle_spoils_draws_for(
                     (pen.0 + SPOILS_TAIL_X, y),
                     white,
                 ));
-                let gold = view.gold.to_string();
-                let gold_w = font.layout_ascii(&gold).advance_x as i32;
-                out.extend(text_draws_for(
-                    &font.layout_ascii(&gold),
-                    (pen.0 + SPOILS_GOLD_RIGHT - gold_w, y),
+                out.extend(number_record_draws(
+                    font,
+                    view.gold,
+                    (pen.0 + SPOILS_GOLD_FIELD_X, pen.1 + SPOILS_FIGURE_Y),
+                    SPOILS_FIGURE_CELLS,
                     white,
                 ));
                 out.extend(text_draws_for(

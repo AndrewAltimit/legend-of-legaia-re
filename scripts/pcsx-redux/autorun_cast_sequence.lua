@@ -22,7 +22,8 @@
 --                module phase ctx[+0x279], the acting seat, the adaptive
 --                frame step *(0x1F800393), the countdown / camera words the
 --                capture gates use, every seat's HP, and the main loop's
---                frame counter `frame` (gp+0x480). `shot` names the frame
+--                frame counter `frame` (gp+0x480), the side-band applier
+--                stage `c276` (ctx[+0x276]). `shot` names the frame
 --                taken on that vsync, if any.
 --   r_<vsync>.raw  PCSX.GPU.takeScreenShot() pixels (BGR555, or BGR888 when
 --                `bpp` says 24); width / height / bpp are on the meta row.
@@ -172,7 +173,7 @@ probe.run({
         })
         meta = probe.csv_open(probe.out_path("meta.csv"),
             "vsync,st7,phase,acting,step,flow,c6d8,c6da,c87c,cd7960,loader," ..
-            "hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,w,h,bpp,frame")
+            "hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,w,h,bpp,frame,c276")
         if FORCE_ROW ~= "" then
             -- FUN_801DA600 returns the formation row in v0; rewriting its
             -- bytes on the return seats the forced monsters.
@@ -276,11 +277,11 @@ probe.run({
             local a = actor(s)
             hp[#hp + 1] = a and u16(a + 0x14C) or -1
         end
-        meta:row("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%d,%d,%d",
+        meta:row("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%d,%d,%d,%d",
             elapsed, st7, u8(cx + 0x279), acting, probe.read_scratch_u8(0x1F800393),
             u8(cx + 6), u16(cx + 0x6D8), u16(cx + 0x6DA), u32(cx + 0x87C), s32(GIMARD_CD),
             u8(LOADER_ID), hp[1], hp[2], hp[3], hp[4], hp[5], hp[6], hp[7], hp[8],
-            shot, w, h, bpp, u32(FRAME_COUNTER))
+            shot, w, h, bpp, u32(FRAME_COUNTER), u8(cx + 0x276))
         -- The module phase counts as movement: a slot-B module runs every
         -- arm inside one band state.
         local park_key = st7 * 256 + u8(cx + 0x279)

@@ -148,7 +148,6 @@ mod unseeded_battle_wipe_guard;
 mod walk_regen_and_actor_collision_wiring;
 mod world_map_axis_convention;
 // --- lane V ---
-mod world_map_render_ladder;
 mod world_trig_lut;
 mod worldmap_save_screen_handoff;
 // --- lane K ---

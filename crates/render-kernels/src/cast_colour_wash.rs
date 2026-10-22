@@ -46,12 +46,39 @@
 //! [`CornerDepth`] for the same reason: it lands only where the scene left
 //! the depth clear.
 //!
-//! The scanline modes (`0x801F2958..0x801F2D20`) build per-line textured
-//! `POLY_FT4` strips that resample texture page `0xA8` through CLUT `0x7A00`
-//! with a sine wobble read off two per-line arrays at `ctx[+0x32E]` /
-//! `ctx[+0x4EE]`. They are not ported: [`band_prims`] draws nothing for them.
+//! # The scanline modes (`0x801F2958..0x801F2D20`)
+//!
+//! Modes `1` and `2` draw a textured backdrop instead: for every screen line
+//! `y` in `0..0xE0`, one-line `POLY_FT4`s (`0x2C`, opaque, colour
+//! `(alpha, alpha, alpha)`, so each texel is `texel * alpha / 128`) that
+//! resample texture page `0xA8` (8bpp at VRAM `(512, 0)`) through CLUT
+//! `0x7A00` (`(0, 488)`) - the image the module uploaded there. Line `y`
+//! reads texture row `v = v_base + y + hi(row_v[y])` and starts at
+//! `u = wobble(y) + u_base + hi(row_u[y])`, where `hi` is the signed high
+//! byte of the line's halfword in the two per-line arrays `ctx[+0x32E]` /
+//! `ctx[+0x4EE]`, and the wobble is a sine over the band
+//! (`m = (scroll + y) % h`):
+//!
+//! ```text
+//! m <  h/2:  wobble = !trunc(sin[(m << 12) / h]         * amp / 0x2000)
+//! m >= h/2:  wobble =  trunc(sin[((m - h/2) << 12) / h] * amp / 0x2000)
+//! ```
+//!
+//! The 256-texel row wraps across the 320-pixel line in two or three strips:
+//! `[0, 0xFF - u]` over `u..=0xFF`, then from `s = 0xFF - u` either the
+//! whole row again and a third strip to `0x13F` (`s < 0x40`), or the row's
+//! head out to `0x13F`. Mode `2` mirrors the second strip's `u` (the
+//! `0x801F2C34..0x801F2C50` swap). Every strip is linked at `ot + 0x3FFC`,
+//! the farthest bucket, like the bands. No routine on the disc stores into
+//! the two per-line arrays, so the port reads them as zero
+//! ([`scanline_prims`]).
 
-use crate::screen_prim::{CornerDepth, FlatQuad, ScreenPrim};
+use crate::screen_prim::{CornerDepth, FlatQuad, ScreenPrim, ScreenQuad};
+
+/// The scanline modes' texture page (`li t0, 0xa8`): 8bpp at `(512, 0)`.
+pub const SCANLINE_TPAGE: u16 = 0xA8;
+/// The scanline modes' CLUT (`li s8, 0x7a00`): `(0, 488)`.
+pub const SCANLINE_CLUT: u16 = 0x7A00;
 
 /// The ordering-table bucket both band quads link at (`ot + 0x3FFC`).
 pub const WASH_OT: u32 = 0xFFF;
@@ -197,6 +224,70 @@ pub fn band_prims(w: &CastColourWash) -> Vec<ScreenPrim> {
     out
 }
 
+/// The scanline modes' start offset for line `y`: the band wobble
+/// (`0x801F298C..0x801F2AA4`), before the bases and the per-line arrays.
+pub fn scanline_wobble(w: &CastColourWash, y: i32) -> u8 {
+    let h = i32::from(w.height);
+    if h == 0 {
+        return 0;
+    }
+    let m = (i32::from(w.scroll) + y) % h;
+    let half = h >> 1;
+    let amp = i32::from(w.amplitude);
+    let sin = |t: i32| crate::gte::psx_sin(t as u16);
+    if m < half {
+        !((sin((m << 12) / h) * amp) / 0x2000) as u8
+    } else {
+        ((sin(((m - half) << 12) / h) * amp) / 0x2000) as u8
+    }
+}
+
+/// The scanline modes' strips for this frame (module docs), in link order.
+/// Empty for an unarmed wash, a band mode or a zero band height (whose
+/// divide traps in retail). The per-line arrays read as zero.
+pub fn scanline_prims(w: &CastColourWash) -> Vec<ScreenPrim> {
+    let mut out = Vec::new();
+    if !w.armed() || !matches!(w.mode, 1 | 2) || w.height == 0 {
+        return out;
+    }
+    let a = u32::from(w.alpha);
+    let color = a << 16 | a << 8 | a;
+    let strip = |x0: i16, x1: i16, y: i16, u0: u8, u1: u8, v: u8| {
+        ScreenPrim::Textured(ScreenQuad {
+            xy: [(x0, y), (x1, y), (x0, y + 1), (x1, y + 1)],
+            uv: [(u0, v), (u1, v), (u0, v), (u1, v)],
+            clut: SCANLINE_CLUT,
+            tpage: SCANLINE_TPAGE,
+            color,
+            gouraud: None,
+            semi_transparent: false,
+            ot_index: WASH_OT,
+            depth: Some(CornerDepth::new([1.0; 4])),
+        })
+    };
+    for y in 0..WASH_BOTTOM {
+        let u = scanline_wobble(w, y).wrapping_add(w.u_base);
+        let v = w.v_base.wrapping_add(y as u8);
+        let s = 0xFF - i16::from(u);
+        let yy = y as i16;
+        out.push(strip(0, s, yy, u, 0xFF, v));
+        let (x1, u1) = if s < 0x40 {
+            (s + 0xFF, 0xFF)
+        } else {
+            (WASH_RIGHT, (0x3F - s) as u8)
+        };
+        out.push(if w.mode == 2 {
+            strip(s, x1, yy, u1, 0, v)
+        } else {
+            strip(s, x1, yy, 0, u1, v)
+        });
+        if s < 0x40 {
+            out.push(strip(s + 0xFF, WASH_RIGHT, yy, 0, (0x3F - s) as u8, v));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -220,6 +311,74 @@ mod tests {
         let mut w = kemaro();
         w.mode = 1;
         assert!(band_prims(&w).is_empty());
+        assert!(scanline_prims(&kemaro()).is_empty(), "a band mode");
+    }
+
+    fn mule() -> CastColourWash {
+        // PROT 0929's block (`0x801F6EC0..0x801F6F1C`): mode 1, amplitude 8,
+        // band 0x80, rate 1, u 0, v 0x20.
+        CastColourWash {
+            alpha: 0x80,
+            amplitude: 8,
+            height: 0x80,
+            mode: 1,
+            u_base: 0,
+            v_base: 0x20,
+            scroll_rate: 1,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn the_scanline_wobble_is_a_sine_over_the_band() {
+        let w = mule();
+        // m = 0: !(0) = 0xFF; m = h/4: !(trunc(sin(0x800) * 8 / 0x2000)) -
+        // sin of a half turn truncates to 0.
+        assert_eq!(scanline_wobble(&w, 0), 0xFF);
+        // m = 0x20: sin[0x400] = 4096 -> 4096 * 8 / 0x2000 = 4 -> !4.
+        assert_eq!(scanline_wobble(&w, 0x20), !4u8);
+        // m = 0x60: the second half, sin[(0x20 << 12) / 0x80] = 4096 -> 4.
+        assert_eq!(scanline_wobble(&w, 0x60), 4);
+    }
+
+    #[test]
+    fn each_line_wraps_the_row_across_the_screen() {
+        let p = scanline_prims(&mule());
+        // Line 0: u = 0xFF, s = 0 -> [0, 0] then [0, 0xFF] then [0xFF, 0x13F].
+        let quad = |i: usize| match p[i] {
+            ScreenPrim::Textured(q) => q,
+            _ => panic!("textured"),
+        };
+        let a = quad(0);
+        assert_eq!(a.xy, [(0, 0), (0, 0), (0, 1), (0, 1)]);
+        assert_eq!(a.uv[0], (0xFF, 0x20));
+        let b = quad(1);
+        assert_eq!((b.xy[0].0, b.xy[1].0), (0, 0xFF));
+        assert_eq!((b.uv[0].0, b.uv[1].0), (0, 0xFF));
+        let c = quad(2);
+        assert_eq!((c.xy[0].0, c.xy[1].0), (0xFF, 0x13F));
+        assert_eq!((c.uv[0].0, c.uv[1].0), (0, 0x3F));
+        assert_eq!(a.tpage, SCANLINE_TPAGE);
+        assert_eq!(a.clut, SCANLINE_CLUT);
+        assert_eq!(a.color, 0x808080);
+        assert!(!a.semi_transparent);
+        // Every line is covered, two or three strips each.
+        let lines: std::collections::BTreeSet<i16> = p
+            .iter()
+            .map(|q| match q {
+                ScreenPrim::Textured(q) => q.xy[0].1,
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(lines.len(), 0xE0);
+        // Mode 2 mirrors the second strip.
+        let mut w2 = mule();
+        w2.mode = 2;
+        let p2 = scanline_prims(&w2);
+        let ScreenPrim::Textured(m) = p2[1] else {
+            panic!("textured")
+        };
+        assert_eq!((m.uv[0].0, m.uv[1].0), (0xFF, 0));
     }
 
     #[test]

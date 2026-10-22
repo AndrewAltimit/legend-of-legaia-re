@@ -627,6 +627,9 @@ mod tests {
         let mut world = World::default();
         world.enter_battle(3, 1);
         world.actors[3].battle_monster_id = Some(4);
+        // Past the entry sweep's stage load: the ramp tests below start
+        // from the loader's floor.
+        world.battle.stage_registration_pending = false;
         world
     }
 
@@ -767,6 +770,42 @@ mod tests {
         world.battle_ctx.gauge_rearm_latch = 0;
         world.tick_battle_ambient();
         assert_eq!(world.battle_ambient_base(), [0x22; 3]);
+    }
+
+    /// The floor's fade-in starts on the stage load, four entry-counter
+    /// units into the sweep, not at the mode flip: before it the base holds
+    /// the floor; on the load pass the loader re-seeds the floor and the
+    /// pass ramps it once.
+    #[test]
+    fn the_ambient_ramp_waits_for_the_stage_load() {
+        let mut world = World::default();
+        world.enter_battle(3, 1);
+        // The flip tick: no camera yet, no stage.
+        world.tick_battle_ambient();
+        assert_eq!(world.battle_ambient_base(), [0x20; 3]);
+        let mut loaded_at = None;
+        for _ in 0..64 {
+            world.clock.display_frames += 2;
+            world.tick_battle_camera();
+            let counter = world
+                .battle
+                .camera
+                .as_ref()
+                .and_then(|c| c.entry_sweep_counter());
+            world.tick_battle_ambient();
+            match counter {
+                Some(c) if c < 0x84 => assert_eq!(world.battle_ambient_base(), [0x20; 3]),
+                _ => {
+                    loaded_at.get_or_insert(counter);
+                    break;
+                }
+            }
+        }
+        assert!(loaded_at.is_some(), "the sweep reaches the stage load");
+        // The load pass re-seeds the floor and ramps it once.
+        assert_eq!(world.battle_ambient_base(), [0x22; 3]);
+        world.tick_battle_ambient();
+        assert_eq!(world.battle_ambient_base(), [0x24; 3]);
     }
 
     /// Through `0x33` / `0x34` the band's `ctx[+0x278] = 1` skips the store

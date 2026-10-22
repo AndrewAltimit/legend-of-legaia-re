@@ -52,11 +52,11 @@ authoritative list; the broad groups are:
 | Group | Subcommands | What they do |
 |---|---|---|
 | Scene inspection | `info`, `list-scenes`, `clut-trace`, `man-scripts`, `xa-cue`, `config dump-cutscene-map` | Headless reports on a scene's resolved asset chain / dropped CLUTs / MAN field-VM scripts / XA voice-cue slots, plus the CDNAME→`MV*` map as an editable TOML. |
-| Launch | *(no subcommand)* | First-run launcher: asks for the disc image once (native picker, drag-and-drop, typed path), remembers it, boots `play-window --boot-ui`. |
+| Launch | *(no subcommand)* | The launcher screen: disc status and picker (native dialog, drag-and-drop, typed path), the enhancement options and controls, *Play* boots `play-window --boot-ui` in a child process. |
 | Run | `play`, `play-window`, `play-str`, `record` | Boot a scene headless (`play`) or in a wgpu window (`play-window`); play an MDEC movie (`play-str`); capture pad input to a replay (`record`). |
 | Asset export | `export-glb` | Bake a scene (or `--all-scenes`) into textured world / NPC / animated-prop `.glb`s + a placement manifest for Unity/VRChat or Blender; `--items` exports every equipment item as animated item-alone / with-limb `.glb`s, `--party` the party's field forms as villager-shaped `.glb`s ([`docs/tooling/vrchat-world-export.md`](../../docs/tooling/vrchat-world-export.md)). |
 | Save / config | `save`, `load`, `config` | Disk-save smoke round-trip + the keyboard→pad input mapping. The window's own Save writes a block of `saves/memcard1.mcr` with the loaded scene as its resume point, and Continue / Load re-enter that scene before hydrating the world, as retail does; `save` / `load` / `--resume-save` still read and write LGSF slot files. `load --card <image>` reads a block out of a real PSX memory-card image instead ([below](#memory-card-images)). |
-| Parity oracles | `vram-oracle`, `mode-trace`, `audio-trace`, `pcm-trace`, `sim-trace`, `replay`, `scenarios`, `retail-compare` | The harnesses above, plus the recomp differential's engine-side emitter, deterministic replay, the scenario-hash suite and the [retail comparison corpus](../../docs/tooling/retail-compare.md). |
+| Parity oracles | `vram-oracle`, `mode-trace`, `audio-trace`, `pcm-trace`, `sim-trace`, `replay`, `scenarios`, `retail-compare`, `cast-sequence-score` | The harnesses above, plus the recomp differential's engine-side emitter, deterministic replay, the scenario-hash suite, the [retail comparison corpus](../../docs/tooling/retail-compare.md) and the [cast-sequence oracle](../../docs/tooling/cast-sequence-oracle.md). |
 | Synthetic sessions | `inventory`, `equip`, `title`, `save-select`, `encounter`, `target-pick`, `chain-editor`, `seru-capture`, `gte-replay` | Drive one engine subsystem's state machine headless from a scripted input string - no disc required. |
 
 ### Memory-card images
@@ -118,6 +118,11 @@ function keys on purpose: a letter is a pad-bindable key name, so binding one
 to a toggle costs the player that pad button (`V` is Square in the default
 table, which is what an earlier mute binding took away).
 
+`F11` or `Alt+Enter` toggles borderless fullscreen (`Enter` alone stays
+Start) and remembers it in `legaia-options.toml` beside the window size, a
+multiple of 320x240. `--fullscreen` / `--windowed` / `--window-scale N`
+override both for one session; a `--screenshot` run ignores them.
+
 In `play-window`, five minigames run as suspending scene modes driven by their
 from-scratch rules engines. Each shows its own HUD and restores the interrupted
 scene when it ends; press the same key again to quit.
@@ -161,8 +166,8 @@ with the headless subcommands. The binary is split into modules under
   (`info`, `run`, `replay`, `trace`, `vram`, `sessions`, `export_glb`: scene
   inspection, the oracle drivers, save/load, and the synthetic-session
   drivers).
-- `launcher_window.rs` - the no-subcommand launcher's picker window (engine
-  text overlay + `rfd` native file dialog). Its settings / validation /
+- `launcher_window.rs` - the no-subcommand launcher screen (engine
+  text overlay + `rfd` native file dialog). Its settings / validation / option rows /
   decision logic is the library module `launcher` (`src/launcher.rs`), unit
   tested without a display or a disc; the user-facing description is
   [`playing-and-viewing.md`](../../docs/guides/playing-and-viewing.md#0-the-launcher).

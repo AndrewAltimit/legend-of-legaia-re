@@ -157,11 +157,11 @@ mod bag_rows;
 pub use bag_rows::BagRow;
 mod battle;
 pub use battle::{
-    ABSORB_BANNER_ELEMENT, BattleActorDrawPlan, BattleDefeatBanner, BattleFrameClock,
-    BattleMessageBanner, BattleSpoilsBanner, COUNTER_MESSAGE_HOLD, COUNTER_MESSAGE_VA,
-    DEFAULT_BATTLE_FRAME_STEP, MAGIC_LEVEL_BANNER_ELEMENT, PARTY_BODY_RADIUS, PendingCast,
-    RoutedEffectSpawn, SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND, SummonPhase, SummonStager,
-    TIMED_MESSAGE_ELEMENT,
+    ABSORB_BANNER_ELEMENT, BATTLE_BODY_NCLIP, BattleActorDrawPlan, BattleDefeatBanner,
+    BattleFrameClock, BattleMessageBanner, BattleSpoilsBanner, COUNTER_MESSAGE_HOLD,
+    COUNTER_MESSAGE_VA, DEFAULT_BATTLE_FRAME_STEP, MAGIC_LEVEL_BANNER_ELEMENT, PARTY_BODY_RADIUS,
+    PendingCast, RoutedEffectSpawn, SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND, SummonPhase,
+    SummonStager, TIMED_MESSAGE_ELEMENT,
 };
 pub use battle::{AutoComboInputs, AutoComboState};
 pub use battle::{CASTER_STAGE_TICK_LIMIT, CasterStagePhase, CasterStageRun};
@@ -200,8 +200,8 @@ pub use narration::FrameGrade;
 mod npc_morph;
 pub use npc_morph::MorphOwner;
 mod object_actor_height;
-pub use object_actor_height::{
-    ActorTint, ActorTintKey, ObjectGlideLeg, ObjectRampSlot, ObjectSlotRamp, TintRamp, tint_cue,
+use legaia_engine_field::object_tint::{
+    ActorTint, ActorTintKey, ObjectGlideLeg, ObjectRampSlot, ObjectSlotRamp,
 };
 pub mod pause_session;
 mod prop_interact;

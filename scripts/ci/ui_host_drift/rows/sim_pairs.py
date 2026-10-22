@@ -59,6 +59,71 @@ from ui_host_drift.rows.host_files import (
 # injection is a call made from a place the pairing should not pin.
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "environment-switch world toggles, native vs play page - the "
+        "native window read `LEGAIA_SMART_MONSTERS` and "
+        "`LEGAIA_WORLD_MAP_MARKERS` inline in its launch code, outside the one "
+        "place a native session raises its switches; the page's boxes write "
+        "the same `WorldToggles` fields through `apply_page_toggles`. The two "
+        "appliers must name the same set",
+        "sites": {
+            "native": ("crates/engine-session/src/native.rs", "apply_env_world_toggles"),
+            "web": ("crates/web-play/src/play_toggles.rs", "apply_page_toggles"),
+        },
+        "mode": "symbols_all",
+        "symbols": [
+            "smarter_monster_targeting",
+            "overworld_marker_overlay",
+            "battle_sm_frame_cadence",
+            "arts_saved_list",
+        ],
+    },
+    {
+        "what": "field party readout on a claimed tick, native vs play page - "
+        "the native window stepped `FUN_801D0D38`'s countdown on every tick "
+        "whose owner is not the field (a host screen, the naming prompt, the "
+        "prologue hand-off, the pause menu's spawn and press) while the page's "
+        "tick loop skipped it there, so its countdown froze under the menu "
+        "and the scene-change rearm landed a tick late. Both claim arms step "
+        "it now; the frame-body trace compares the readout state per frame "
+        "(`host_frame_parity`, `party_hud`)",
+        "sites": {
+            "native": ("crates/engine-shell/src/window/event_handler/redraw_tick.rs", "sim_tick"),
+            "web": ("crates/web-play/src/runtime/frame_ticks.rs", "frame_ticks"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["tick_field_party_hud"],
+    },
+    {
+        "what": "slot machine paylines, native vs play page - the page folded "
+        "the paylines into its cabinet list ahead of the cash-out box, which "
+        "shares their OT bucket, so the lines drew over the box there and "
+        "under it natively. Both hosts take the cabinet and the paylines as "
+        "two layers from `engine-screens::minigame_hud`",
+        "sites": {
+            "native": ("crates/engine-shell/src/window/minigames/slot_machine.rs", None),
+            "web": ("crates/web-play/src/play_minigame_slots.rs", None),
+        },
+        "mode": "symbols_all",
+        "symbols": ["slot_cabinet_prims", "slot_payline_prims"],
+    },
+    {
+        "what": "battle screen FX, native vs play page - the weapon trail, "
+        "the move-FX streak and ribbons and the Theeder beam were projected "
+        "by each host through its own battle camera, and the two drifted "
+        "(the native streak dropped the world scale and the packet's "
+        "semi-transparency). Each host's screen-prim assembly now takes "
+        "both layers from `engine-screens::battle_fx`",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/window/event_handler/redraw_overlay.rs",
+                "build_screen_prims",
+            ),
+            "web": ("crates/web-play/src/play_battle/screen_prims.rs", "tick_battle_intro"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["battle_fx_prims", "theeder_prims"],
+    },
+    {
         "what": "shop / prize-counter opening, native vs play page - each host "
         "drained the field VM's op-`0x49` shop and prize-counter requests "
         "itself and spelled the opening tick's no-edge rule (the Cross that "
@@ -68,7 +133,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "`poll_field_shop` step calls",
         "sites": {
             "native": ("crates/engine-shell/src/window/session_steps.rs", "poll_field_shop"),
-            "web": ("crates/web-viewer/src/play_shop.rs", "poll_field_shop"),
+            "web": ("crates/web-play/src/play_shop.rs", "poll_field_shop"),
         },
         "mode": "symbols_all",
         "symbols": ["poll_field_overlay"],
@@ -81,7 +146,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "`BootSession::step_dance_tail`",
         "sites": {
             "native": ("crates/engine-shell/src/window/minigames/dance.rs", "sync_dance_venue"),
-            "web": ("crates/web-viewer/src/play_minigames.rs", "tick_minigame_ui"),
+            "web": ("crates/web-play/src/play_minigames.rs", "tick_minigame_ui"),
         },
         "mode": "symbols_all",
         "symbols": ["step_dance_tail"],
@@ -97,7 +162,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "`BootSession::step_battle_presentation`",
         "sites": {
             "native": ("crates/engine-shell/src/window/battle.rs", "drain_and_log_battle_events"),
-            "web": ("crates/web-viewer/src/play_battle.rs", "tick_battle_presentation"),
+            "web": ("crates/web-play/src/play_battle.rs", "tick_battle_presentation"),
         },
         "mode": "symbols_all",
         "symbols": ["step_battle_presentation"],
@@ -110,7 +175,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "`battle_intro::step_battle_intro`; each keeps only its capture",
         "sites": {
             "native": ("crates/engine-shell/src/window/battle/intro.rs", "take_battle_intro_frame"),
-            "web": ("crates/web-viewer/src/play_battle/screen_prims.rs", "tick_battle_intro_prims"),
+            "web": ("crates/web-play/src/play_battle/screen_prims.rs", "tick_battle_intro_prims"),
         },
         "mode": "symbols_all",
         "symbols": ["step_battle_intro"],
@@ -124,7 +189,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "`battle_presentation::battle_mode_edge` and run its two edge steps",
         "sites": {
             "native": ("crates/engine-shell/src/window/battle.rs", "sync_battle_render"),
-            "web": ("crates/web-viewer/src/play_battle.rs", "tick_battle_presentation"),
+            "web": ("crates/web-play/src/play_battle.rs", "tick_battle_presentation"),
         },
         "mode": "symbols_all",
         "symbols": ["battle_mode_edge", "on_battle_entered", "on_battle_left"],
@@ -136,7 +201,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "same two session steps",
         "sites": {
             "native": ("crates/engine-shell/src/window/boot_cutscene.rs", "tick_sfx"),
-            "web": ("crates/web-viewer/src/play_sfx.rs", "tick_sfx"),
+            "web": ("crates/web-play/src/play_sfx.rs", "tick_sfx"),
         },
         "mode": "symbols_all",
         "symbols": ["step_footstep_cadence", "step_audio_frame"],
@@ -148,7 +213,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "`BootSession::sound_muscle_hub`",
         "sites": {
             "native": ("crates/engine-shell/src/window/minigames/muscle_dome.rs", "tick_muscle_hub"),
-            "web": ("crates/web-viewer/src/play_minigame_arena.rs", "tick_muscle_hub"),
+            "web": ("crates/web-play/src/play_minigame_arena.rs", "tick_muscle_hub"),
         },
         "mode": "symbols_all",
         "symbols": ["sound_muscle_hub"],
@@ -160,7 +225,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "`BootSession::sound_baka_announcer`",
         "sites": {
             "native": ("crates/engine-shell/src/window/minigames/baka_fighter.rs", "tick_baka_chrome"),
-            "web": ("crates/web-viewer/src/play_minigame_arena.rs", "tick_baka_ui"),
+            "web": ("crates/web-play/src/play_minigame_arena.rs", "tick_baka_ui"),
         },
         "mode": "symbols_all",
         "symbols": ["sound_baka_announcer"],
@@ -175,7 +240,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "`minigame_hud::baka_screen_prims`",
         "sites": {
             "native": ("crates/engine-shell/src/window/minigames/baka_fighter.rs", "baka_hud_prims"),
-            "web": ("crates/web-viewer/src/play_minigame_arena.rs", "baka_hud_prims"),
+            "web": ("crates/web-play/src/play_minigame_arena.rs", "baka_hud_prims"),
         },
         "mode": "symbols_all",
         "symbols": ["baka_screen_prims"],
@@ -186,7 +251,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "place the digits through `minigame_hud::baka_digit_placements`",
         "sites": {
             "native": ("crates/engine-shell/src/window/hud/text_list.rs", "build_hud"),
-            "web": ("crates/web-viewer/src/play_minigame_arena.rs", "baka_hud_text_draws"),
+            "web": ("crates/web-play/src/play_minigame_arena.rs", "baka_hud_text_draws"),
         },
         "mode": "symbols_all",
         "symbols": ["baka_digit_placements"],
@@ -200,7 +265,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "`World::actor_hidden_by_scene`",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
-            "web": ("crates/web-viewer/src/play/player_mesh.rs", "play_player_drawn"),
+            "web": ("crates/web-play/src/play/player_mesh.rs", "play_player_drawn"),
         },
         "mode": "symbols_all",
         "symbols": ["actor_hidden_by_scene"],
@@ -217,7 +282,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "compose through `field_env::live_placed_model`",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
-            "web": ("crates/web-viewer/src/play/placements.rs", "field_placement_models"),
+            "web": ("crates/web-play/src/play/placements.rs", "field_placement_models"),
         },
         "mode": "symbols_all",
         "symbols": ["placed_model_swaps"],
@@ -232,7 +297,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "Both key on `ActorLook::pose_key_bits`",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
-            "web": ("crates/web-viewer/src/field_actors.rs", "clip_states"),
+            "web": ("crates/web-play/src/field_actors.rs", "clip_states"),
         },
         "mode": "symbols_all",
         "symbols": ["pose_key_bits"],
@@ -246,7 +311,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "build the model from `World::field_npc_draw_pose`",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
-            "web": ("crates/web-viewer/src/field_actors.rs", "draw_poses"),
+            "web": ("crates/web-play/src/field_actors.rs", "draw_poses"),
         },
         "mode": "symbols_all",
         "symbols": ["field_npc_draw_pose"],
@@ -260,7 +325,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "natively. Both ask `field_frame::frame_clear_color`",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
-            "web": ("crates/web-viewer/src/play_battle_render/stage_exports.rs", "play_scene_clear_color"),
+            "web": ("crates/web-play/src/play_battle_render/stage_exports.rs", "play_scene_clear_color"),
         },
         "mode": "symbols_all",
         "symbols": ["frame_clear_color"],
@@ -272,7 +337,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "Both take the one mapping `World::frame_grade`",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
-            "web": ("crates/web-viewer/src/play_cutscene.rs", "play_cutscene_state_json"),
+            "web": ("crates/web-play/src/play_cutscene.rs", "play_cutscene_state_json"),
         },
         "mode": "symbols_all",
         "symbols": ["frame_grade"],
@@ -286,10 +351,33 @@ SIM_PAIRS: list[dict[str, object]] = [
         "Both ask `field_frame::field_scene_lights`",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
-            "web": ("crates/web-viewer/src/play_lighting.rs", "play_lighting_frame"),
+            "web": ("crates/web-play/src/play_lighting.rs", "play_lighting_frame"),
         },
         "mode": "symbols_all",
         "symbols": ["field_scene_lights"],
+    },
+    {
+        "what": "enhanced lighting's mood, native vs play page - each host "
+        "looked up the running scene's name and its held scripted grade and "
+        "graded the persisted time of day over them itself, and each tinted "
+        "the fog bank by the mood behind its own toggle test. Both ask "
+        "`field_frame::lighting_mood` and `field_frame::fog_volume_color`",
+        "sites": {
+            "native": (NATIVE_REDRAW_PASSES, "lighting_mood"),
+            "web": ("crates/web-play/src/play_lighting.rs", "lighting_mood"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["field_frame::lighting_mood"],
+    },
+    {
+        "what": "the fog bank's mood tint, native vs play page - see the "
+        "mood row above. Both ask `field_frame::fog_volume_color`",
+        "sites": {
+            "native": (NATIVE_REDRAW_PASSES, "stage_fog_volume"),
+            "web": ("crates/web-play/src/play_fog_volume.rs", "play_fog_volume_header"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["fog_volume_color"],
     },
     {
         "what": "move-FX spawn to sound, native vs play page - each host "
@@ -303,7 +391,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "`tick_world_effects` step calls",
         "sites": {
             "native": ("crates/engine-shell/src/window/session_steps.rs", "tick_world_effects"),
-            "web": ("crates/web-viewer/src/runtime/frame.rs", "tick_world_effects"),
+            "web": ("crates/web-play/src/runtime/frame.rs", "tick_world_effects"),
         },
         "mode": "symbols_all",
         "symbols": ["step_effect_scene_graphs"],
@@ -324,7 +412,7 @@ SIM_PAIRS: list[dict[str, object]] = [
                 "crates/engine-shell/src/window/boot_cutscene.rs",
                 "render_windowed_cutscene",
             ),
-            "web": ("crates/web-viewer/src/play_fmv.rs", "play_fmv_due_frame"),
+            "web": ("crates/web-play/src/play_fmv.rs", "play_fmv_due_frame"),
         },
         "mode": "symbols_all",
         "symbols": ["due_frame"],
@@ -337,7 +425,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "display. Both entries ask `World::arm_picker_world_map_debug`",
         "sites": {
             "native": (NATIVE_RUN, "enter_launch_scene"),
-            "web": ("crates/web-viewer/src/runtime/scene_setup.rs", "enter_field_core"),
+            "web": ("crates/web-play/src/runtime/scene_setup.rs", "enter_field_core"),
         },
         "mode": "symbols_all",
         "symbols": ["arm_picker_world_map_debug"],
@@ -350,7 +438,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "file through `xa_banks::install_shout_file`",
         "sites": {
             "native": (NATIVE_XA_DISC, "read_arts_shout_bank"),
-            "web": ("crates/web-viewer/src/play_xa.rs", "play_xa_install"),
+            "web": ("crates/web-play/src/play_xa.rs", "play_xa_install"),
         },
         "mode": "symbols_all",
         "symbols": ["install_shout_file"],
@@ -362,7 +450,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "through `xa_banks::install_clip_file`",
         "sites": {
             "native": (NATIVE_XA_DISC, "read_battle_xa_clip_bank"),
-            "web": ("crates/web-viewer/src/play_xa.rs", "play_xa_install"),
+            "web": ("crates/web-play/src/play_xa.rs", "play_xa_install"),
         },
         "mode": "symbols_all",
         "symbols": ["install_clip_file"],
@@ -382,7 +470,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "learned how to leave or reach the exchange)",
         "sites": {
             "native": ("crates/engine-shell/src/window/minigames.rs", "minigame_caption"),
-            "web": ("crates/web-viewer/src/play_minigames.rs", "minigame_caption"),
+            "web": ("crates/web-play/src/play_minigames.rs", "minigame_caption"),
         },
         "mode": "symbols_all",
         "symbols": ["StatusHost", "FishingKeys", "slot_machine_drawn", "prizes"],
@@ -402,8 +490,8 @@ SIM_PAIRS: list[dict[str, object]] = [
                 "crates/engine-shell/src/window/event_handler/redraw_passes.rs",
                 "build_effect_billboards",
             ),
-            "web_battle": ("crates/web-viewer/src/play_battle_fx.rs", "build_battle_fx"),
-            "web_field": ("crates/web-viewer/src/play_battle_fx.rs", "build_field_fx"),
+            "web_battle": ("crates/web-play/src/play_battle_fx.rs", "build_battle_fx"),
+            "web_field": ("crates/web-play/src/play_battle_fx.rs", "build_field_fx"),
         },
         "mode": "symbols_all",
         "symbols": ["effect_billboards"],
@@ -422,8 +510,8 @@ SIM_PAIRS: list[dict[str, object]] = [
                 "crates/engine-shell/src/window/event_handler/redraw_passes.rs",
                 "build_effect_draws",
             ),
-            "web_battle": ("crates/web-viewer/src/play_battle_fx.rs", "build_battle_fx"),
-            "web_field": ("crates/web-viewer/src/play_battle_fx.rs", "build_field_fx"),
+            "web_battle": ("crates/web-play/src/play_battle_fx.rs", "build_battle_fx"),
+            "web_field": ("crates/web-play/src/play_battle_fx.rs", "build_field_fx"),
         },
         "mode": "symbols_all",
         "symbols": ["effect_model_draws"],
@@ -441,7 +529,7 @@ SIM_PAIRS: list[dict[str, object]] = [
                 "crates/engine-shell/src/window/event_handler/redraw_overlay.rs",
                 "build_fx_frame",
             ),
-            "web": ("crates/web-viewer/src/play_battle_fx.rs", "build_battle_fx"),
+            "web": ("crates/web-play/src/play_battle_fx.rs", "build_battle_fx"),
         },
         "mode": "symbols_all",
         "symbols": ["battle_world_scale"],
@@ -455,7 +543,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "never by a host's mesh build",
         "sites": {
             "native": ("crates/engine-shell/src/window/battle.rs", "sync_battle_render"),
-            "web": ("crates/web-viewer/src/play_battle.rs", "tick_battle_presentation"),
+            "web": ("crates/web-play/src/play_battle.rs", "tick_battle_presentation"),
         },
         "mode": "symbols_all",
         "symbols": ["stage_battle_world"],
@@ -471,7 +559,7 @@ SIM_PAIRS: list[dict[str, object]] = [
                 "crates/engine-shell/src/window/event_handler/redraw_passes.rs",
                 "stage_fog_volume",
             ),
-            "web": ("crates/web-viewer/src/play_fog_volume.rs", "fog_volume_frame"),
+            "web": ("crates/web-play/src/play_fog_volume.rs", "fog_volume_frame"),
         },
         "mode": "symbols_all",
         "symbols": ["fog_volume_frame"],
@@ -488,7 +576,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "assertion is that each host's shop step routes through it",
         "sites": {
             "native": (NATIVE_REDRAW, "tick_menu_runtime_session"),
-            "web": ("crates/web-viewer/src/play_shop.rs", "play_shop_input"),
+            "web": ("crates/web-play/src/play_shop.rs", "play_shop_input"),
         },
         "mode": "symbols_all",
         "symbols": ["step_field_session"],
@@ -516,7 +604,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "(`BattleActorDrawPlan::body_cue`), which this row pins",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
-            "web": ("crates/web-viewer/src/play_battle_fx.rs", "play_battle_actor_cursor"),
+            "web": ("crates/web-play/src/play_battle_fx.rs", "play_battle_actor_cursor"),
         },
         "mode": "symbols_all",
         "symbols": ["body_cue"],
@@ -531,7 +619,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "sites": {
             "native": (NATIVE_REDRAW_PASSES, "build_posed_actor_overrides"),
             "web": (
-                "crates/web-viewer/src/play_battle_body_blend.rs",
+                "crates/web-play/src/play_battle_body_blend.rs",
                 "play_battle_actor_blend_cba_tsb",
             ),
         },
@@ -546,7 +634,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "`BattleActorDrawPlan::body_cue`, which both draw passes take",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
-            "web": ("crates/web-viewer/src/play_battle_fx.rs", "play_battle_actor_cursor"),
+            "web": ("crates/web-play/src/play_battle_fx.rs", "play_battle_actor_cursor"),
         },
         "mode": "symbols_all",
         "symbols": ["body_cue"],
@@ -889,13 +977,15 @@ SIM_PAIRS: list[dict[str, object]] = [
         "cutscene params onto it - so the two hosts' cameras, their cutscene "
         "shots and the azimuth each fed the locomotion compass all diverged "
         "with no shared symbol to notice it. Both sites must reach the "
-        "resolver, not a camera of their own",
+        "resolver, not a camera of their own - through the host seam "
+        "`engine-world-views::screen_passes::HostView::frame`, which is the "
+        "resolver on the host's scene-box centre",
         "sites": {
             "native": (NATIVE_REDRAW_PASSES, "compute_scene_camera"),
             "web": (WEB_PLAY_CAMERA, "resolve_camera_frame"),
         },
         "mode": "symbols_all",
-        "symbols": ["resolve_field_camera"],
+        "symbols": ["frame"],
     },
     {
         "what": "direct scene entry's camera reset, native vs play page - a "
@@ -927,7 +1017,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "raised the scene's pre-bound actor slots)",
         "sites": {
             "native": (NATIVE_BOOT_SCENE_ENTRY, "resume_save"),
-            "web": ("crates/web-viewer/src/resume.rs", "resume_parked_save"),
+            "web": ("crates/web-play/src/resume.rs", "resume_parked_save"),
         },
         "mode": "symbols_all",
         "symbols": ["resume_card_load"],
@@ -940,7 +1030,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "the seed entirely",
         "sites": {
             "native": (NATIVE_BOOT_SCENE_ENTRY, "start_new_game"),
-            "web": ("crates/web-viewer/src/resume.rs", "start_new_game"),
+            "web": ("crates/web-play/src/resume.rs", "start_new_game"),
         },
         "mode": "symbols_all",
         "symbols": ["enter_new_game", "begin_new_game"],
@@ -1134,10 +1224,10 @@ SIM_PAIRS: list[dict[str, object]] = [
         "where the four scenes that script a re-bind keep all of their models",
         "sites": {
             "native": (NATIVE_ASSETS_ACTORS, "upload_field_npc"),
-            # The page's actor layer (`web-viewer::field_actors`, shared
+            # The page's actor layer (`web-play::field_actors`, shared
             # with the map viewer) is the body that reads the world field;
             # `play_npc_live_model` and the mesh build both go through it.
-            "web": ("crates/web-viewer/src/field_actors.rs", "live_model"),
+            "web": ("crates/web-play/src/field_actors.rs", "live_model"),
         },
         "mode": "symbols_all",
         "symbols": ["field_npc_live_model"],
@@ -1321,7 +1411,7 @@ SIM_PAIRS: list[dict[str, object]] = [
                 "crates/engine-shell/src/window/field_render.rs",
                 "rebuild_field_lit_meshes",
             ),
-            "web": ("crates/web-viewer/src/play/field_mesh.rs", "field_mesh_posed_lit"),
+            "web": ("crates/web-play/src/play/field_mesh.rs", "field_mesh_posed_lit"),
         },
         "mode": "symbols_all",
         "symbols": ["field_lit_mesh", "field_light"],
@@ -1334,7 +1424,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "rows on the grade: the grade is the palette's and the baked words'",
         "sites": {
             "native": ("crates/engine-shell/src/window/assets/scene_geometry.rs", None),
-            "web": ("crates/web-viewer/src/play/field_mesh.rs", None),
+            "web": ("crates/web-play/src/play/field_mesh.rs", None),
         },
         "mode": "symbols_same",
         "symbols": ["scene_color_grade", "frame_grade"],
@@ -1351,7 +1441,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
             "web": (
-                "crates/web-viewer/src/play/placements.rs",
+                "crates/web-play/src/play/placements.rs",
                 "field_placement_live_models",
             ),
         },
@@ -1375,7 +1465,7 @@ SIM_PAIRS: list[dict[str, object]] = [
                 "crates/engine-shell/src/window/event_handler/redraw_tick.rs",
                 "tick_frame_tail_effects",
             ),
-            "web": ("crates/web-viewer/src/play_field_fx.rs", "tick_field_fog_prims"),
+            "web": ("crates/web-play/src/play_field_fx.rs", "tick_field_fog_prims"),
         },
         "mode": "symbols_all",
         "symbols": ["step_field_fog"],

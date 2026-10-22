@@ -246,7 +246,7 @@ fn mode4_scene_entry_carrier_census_or_skip() {
     let Some(root) = extracted_root() else { return };
     let index = ProtIndex::open_extracted(&root).expect("prot index");
 
-    type Seat = legaia_engine_core::world::ambient::vram_scroll::ScrollSeat;
+    type Seat = legaia_engine_field::vram_scroll::ScrollSeat;
     let mut carriers: Vec<(String, Vec<Seat>)> = Vec::new();
     for name in index.cdname_scene_names() {
         let Ok(scene) = Scene::load(&index, &name) else {

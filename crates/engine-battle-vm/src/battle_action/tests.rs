@@ -139,7 +139,7 @@ impl BattleActionHost for RecHost {
     fn range_check(&self, a: u8, t: u8) -> u16 {
         self.ranges.get(&(a, t)).copied().unwrap_or(0)
     }
-    fn camera_bounds(&mut self) {
+    fn seed_formation_recentre(&mut self, _actor: u8) {
         self.record(Event::Camera);
     }
     fn party_setup(&mut self, s: u8) {

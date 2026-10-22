@@ -42,7 +42,7 @@
 //! the INTERVAL heading, records 0/1 the ROUND word + hub digit strip.
 //! Both hosts consume the parsed records as their geometry source: the
 //! site's Muscle Dome page through
-//! `legaia-web-viewer::minigames_muscle::muscle_hud_json` /
+//! `legaia-web-play::minigames_muscle::muscle_hud_json` /
 //! `muscle_hub_quads_json`, and the native play-window through its
 //! `muscle_hub_sprite_draws` builder (intro card + ROUND banner over an
 //! open leg, INTERVAL + score tally between legs).

@@ -256,6 +256,22 @@ frame (`World::tick` calls it on the retail-frame sub-clock), and
 `World::active_effect_sprites` maps `child_billboards` one-for-one. This
 walker is the engine's only per-frame effect path.
 
+**A script spawn is walked on the frame it fires.** Retail's spawn and walk
+share a frame in that order: the per-actor anim tick `FUN_80047430` steps the
+action effect script `FUN_801DEA50` (`jal` at `0x800478B8` / `0x80047C08`),
+whose direct arm spawns through `FUN_801DFDF0`, and the walker runs afterwards
+from the draw tick `FUN_800480D8` (`jal 0x801E0080` at `0x80048128`), which
+the render dispatcher `FUN_8001ADA4` reaches after the tick pass (`jal` at
+`0x8001AEF4`). The engine walks the pool inside `World::tick` and routes the
+queued script and homing spawns in the frame tail, after it, so
+`World::route_battle_effect_spawns` gives each direct spawn the sweeps this
+frame's walker gave the rest (`Pool::catch_up_master`: that master and the
+children it seeds, nothing else). Without it the master's first batch landed
+a sweep late; Tail Fire's ground ring on `battle_gimard_tail_fire_a` read
+cursor `8` / wait `8` against retail's `12` / `8`, and reads `8` / `0` with
+it. The pass that remains is Vahn's reaction clip itself, `100` sixteenths
+on the engine's frame against retail's `104`.
+
 Two deliberate port-side deltas, both invisible to retail behaviour: the
 retirement overrun is cut at retirement, and `master.field_14` (a retail dead
 lane) is bumped once per call per active master as an age counter for
@@ -269,7 +285,7 @@ age-based render fades.
 Both hosts draw each `EffectSprite` as a **camera-facing textured quad**: the
 native window through the VRAM-mesh pipeline (`upload_vram_mesh`, sampling the
 scene VRAM at the sprite's atlas page / CLUT / UV as a `SceneDraw`), the play
-page through the same shape in `web-viewer::play_battle_fx`.
+page through the same shape in `web-play::play_battle_fx`.
 
 `World::spawn_debug_effect` seats a synthetic marker by hand (the `E` key in
 `play-window`). It is not a retail path; dev spawns keep a fixed budget and

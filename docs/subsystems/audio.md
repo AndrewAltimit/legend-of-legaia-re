@@ -76,7 +76,7 @@ separate retail chunks.
 - **Music**: [BGM dispatch](#bgm-dispatch) · [which track a scene plays](#which-track-a-scene-plays) · [swap handshake](#the-track-swap-handshake-fun_800243f0--op-0x35-sub-op-0xa) · [stop / pause / replay](#the-control-words-stop-pause-replay) · [movies](#movies-and-the-score) · [cold scene entry](#the-cold-scene-entry-sequence-and-what-each-missing-step-sounds-like) · [battle track](#the-battle-sound-set-picks-the-fights-track) · [`music_01` bank](#global-pool-bgm-the-music_01-bank)
 - **libsnd**: [SsAPI sequencer](#ssapi-sequencer-0x80061-0x80067-cluster) · [tempo](#where-wall-clock-tempo-becomes-an-integer-tick-step) · [event decode](#the-decoder-does-not-consume-a-whole-event) · [key-on pitch law](#the-key-on-pitch-law---note-against-the-tones-center) · [voice allocator](#voice-allocator--key-onoff-flush-the-middle-tier)
 - **libspu**: [SPU control](#libspu--spu-control-0x80068-0x8006d-cluster) · [DMA transfer engine](#spu-dma-transfer-engine) · [reverb](#reverb-model-engine-audio) · [Gaussian resampler](#voice-resampler---4-point-gaussian-interpolation-engine-audio) · [seq-management layer](#ssapi-seq-management-layer-above-libspu)
-- **Port**: [Sequencer](#engine-audio-model---sequencer-port) · [SPU](#engine-audio-model---from-scratch-spu-port) · [SFX bank + scheduler](#sfx-bank--scheduler) · [XA-ADPCM](#xa-adpcm)
+- **Port**: [Sequencer](#engine-audio-model---sequencer-port) · [SPU](#engine-audio-model---from-scratch-spu-port) · [SFX bank + scheduler](#sfx-bank--scheduler) · [battle command blips](#the-battle-command-surfaces-blips) · [sustained cues](#sustained-cues-loop-until-the-teardown-releases-them) · [XA-ADPCM](#xa-adpcm)
 - **Voice**: [arts shout](#battle-arts-voice-shout-path-engine) · [animation cue track](#the-second-shout-trigger---the-animation-cue-track-fun_800508dc) · [XA dispatchers and census](#cd-xa-voice-clip-dispatchers-and-static-cue-census) · [a normal attack](#what-a-normal-attack-sounds-like)
 - **Measurement**: [audio-trace parity oracle](#audio-trace-parity-oracle) · [open items](#open-items)
 
@@ -730,7 +730,7 @@ installer walk's type-0 bank and type-2 score - rather than hunting it for the t
 the disc-gated test pins that the two readings agree on every slot, including which six
 have no pair.
 
-The site's minigame pages take exactly this path per game (`crates/web-viewer/src/minigames/bgm.rs`): `render_music01_bgm` / `render_music01_loop` split the pair, `VabBank::upload` the VAB, and render through the from-scratch `Spu` + `Sequencer` - the same components the live `AudioDirector` uses. Minigame BGM sources are disc-pinned extraction constants (base-independent): the Baka Fighter init loads extraction 1043 (#55 `M112` "Sol disco fever"); the dance overlay loads extraction 1048/1054 (#60/#66, the Sol disco finals, mode-selected, see [`minigame-dance.md`](minigame-dance.md)); the slot machine and fishing/Muscle Dome start **no** track and inherit their host scene's op-`0x35` BGM. The `music01_bgm_render` WASM surface renders any bank slot for the dance's Sol-disco jukebox.
+The site's minigame pages take exactly this path per game (`crates/web-play/src/minigames/bgm.rs`): `render_music01_bgm` / `render_music01_loop` split the pair, `VabBank::upload` the VAB, and render through the from-scratch `Spu` + `Sequencer` - the same components the live `AudioDirector` uses. Minigame BGM sources are disc-pinned extraction constants (base-independent): the Baka Fighter init loads extraction 1043 (#55 `M112` "Sol disco fever"); the dance overlay loads extraction 1048/1054 (#60/#66, the Sol disco finals, mode-selected, see [`minigame-dance.md`](minigame-dance.md)); the slot machine and fishing/Muscle Dome start **no** track and inherit their host scene's op-`0x35` BGM. The `music01_bgm_render` WASM surface renders any bank slot for the dance's Sol-disco jukebox.
 
 #### The ending theme: two entries on sound slot 10
 
@@ -1707,6 +1707,86 @@ category-`6` cue keys PROT 0876 in the field and is silent in battle, where
 retail's slot 6 is closed; the latch, the writers and the closed-slot rule are
 in [`sfx-table.md`](../formats/sfx-table.md#one-region-per-mode-slot-2-and-slot-6).
 
+### The battle command surfaces' blips
+
+Every press the battle command flow takes sounds a blip, and two producers
+write them. The flow SM `FUN_801D0748` calls the cue dispatcher `FUN_8004FCC8`,
+which stores `id - 1` on the ring for an id below `0x40`
+(`0x8004FD9C..0x8004FE28`), so its three ids key descriptors one lower:
+
+| Dispatcher id | Ring id | Meaning | Sites |
+|---|---|---|---|
+| `0x21` | `0x20` | a commit | the shared tail `0x801D20D4` (round prompt `Begin` / `Run`, the ring's `Item`, magic and Spirit arms, the arts entry's confirm), the `Attack` arm `0x801D15D0`, the attack-mode prompt `0x801D175C` / `0x801D17CC`, the target cursor's confirm `0x801D22B0`, the commit screen's `Begin` `0x801D31A4` |
+| `0x22` | `0x21` | a cursor step | the target cursor's move `0x801D263C`; the highlight walk at `0x801D082C..0x801D0A40` under the cross-button command option |
+| `0x23` | `0x22` | a cancel or a refused arm | the shared tail `0x801D2968` (the ring's cancel, its refused arms, the attack-mode cancel), the target cursor's cancel `0x801D2320`, the arts entry's refused directions `0x801D1EA0..0x801D1F78` and its cancel `0x801D2104`, the commit screen's `Reselect` `0x801D3054` |
+
+The item and magic windows are list windows paged by the SCUS list kernel
+`FUN_80032A44`, which writes the ring itself: `0x21` a step, `0x20` a confirm,
+`0x23` a disabled row, `0x37` a cancel ([`field-menu.md`](field-menu.md)). The
+item window's flow state reads the kernel's mode word `0x8007BB94` (`3`
+cancelled, `2` chosen) at `0x801D17F8`. The press that exhausts the arts gauge
+leaves the entry silently: `bne s0,zero,0x801D3290` at `0x801D20CC` steps over
+the tail's cue.
+
+The dispatcher's de-dup word `0x8007B724` is `-1` from the mode init
+(`0x8001DDA4`) and no other dumped routine stores it, so it never suppresses
+one of these.
+
+Every caller's id goes through the same split: `id >= 0x100` takes the
+dispatcher's CD-XA arm whoever calls it. The Cort stage modules' cues `0x20A`
+(968, `0x801F6AC4`) and `0x20B` (969, `0x801F6A70`) are therefore voice clips -
+slot `0x21`, channels `2` / `3` - not SFX rows. Port: `World::dispatch_battle_cue`
+is the whole dispatcher; the action SM's one-shots and the stage modules call
+it.
+
+The cross-button command entry (option `0x800846C8 != 0`) walks a highlight
+instead of committing on a direction: `BattleCommandSession::walk_highlight`
+moves the lit arm with cue `0x22` and swallows the direction, and the confirm
+takes the lit arm.
+
+The sparring tutorial adds no cue of its own. Its hook `FUN_801F6B70` runs on
+the flow state a press has already committed, and neither it nor its box
+emitter `FUN_801F747C` calls a cue routine, so a wrong-lesson pick sounds the
+commit and nothing else.
+
+Port: `engine-core::world::battle::command_flow::ui_cues` derives one blip per
+frame from each surface's state before and after its input (the command
+session, the spell and item windows, the arts entry) and pushes its ring id,
+which both hosts drain through `AudioDirector::route_world_sfx`. Measured by
+`engine-shell/tests/battle_ui_sfx_disc.rs` on the play window's frame body:
+`Begin`, the `Item` arm, the item list's cancel and the ring's cancel each come
+due on the ring and key a voice on the tick of the press.
+
+### Sustained cues loop until the teardown releases them
+
+A descriptor with `+3 & 0x20` is a sustained cue: the drainer keys it on voices
+`7 .. 7 + n` and records `n` in `gp+0x5D0`
+([`sfx-table.md`](../formats/sfx-table.md#voice-allocation-one-shots-descend-from-23-sustained-cues-ascend-from-7)).
+Its sample loops (the VAG repeat flag) under a held ADSR sustain, so nothing in
+the voice ends it. Two things do: the drainer's own release of the old run when
+the next sustained cue keys, and the teardown `FUN_80017910`, which keys off
+voices `7 .. 7 + gp+0x5D0`, clears the count and writes `-1` to `gp+0x40C`.
+Its callers:
+
+| Caller | Site | When |
+|---|---|---|
+| mode init `FUN_8001DCF8` | `0x8001DDA8` | every mode entry - a battle's start and the field init after it |
+| battle anim commit `FUN_8004AD80` | `0x8004AE68` | any actor's commit whose staged clip `+0x1DA` differs from its latched clip `+0x1DB` (`0x8004AE54..0x8004AE60`); a re-commit of the same clip leaves the run sounding |
+| battle tint pass `FUN_80050120` | `0x8005040C` | a monster seat (`3..=6`) in its fade arm, while the low 24 bits of its render node's `+0x74` word are non-zero |
+| debug sound test | `overlay_debug_menu` | "stop all" |
+
+So a monster's looping attack sound - the `bse.dat` row a clip's cue track rings
+(cue `0x202` in a `map03` fight) - ends on the frame the next clip commits.
+Port: `SfxBank::release_sustained` is the teardown over the live voices; the
+anim commit raises `SfxRingOp::ReleaseSustained` in call order with the ring
+writes, `AudioDirector::apply_sfx_ring_ops` runs it ahead of the frame's drain,
+`route_world_sfx` runs it on the edge into or out of a battle, a scene load
+queues it (`World::release_sustained_sfx`), and the defeat-fade pass
+(`World::tick_battle_defeat_sink`) queues it for every fading monster seat
+ahead of the sink's absorb / capture gates, as the tint pass's call sits. Measured on the same harness: the `map03` fight keys
+`0x202` on voice 7, the next clip commit keys it off, and no cue voice sounds
+for longer than a clip.
+
 ### Retail capture of the slot-2 / slot-6 residency
 
 The VAB slot records sit at `0x80091508 + slot * 12` (the drainer's `lui t1,
@@ -1961,7 +2041,7 @@ stages art-bank record 0 (`0x10`, installed at dynamic slot `0x11`), whose
 track opens `(0, 0xC8)` - `XA1.XA` channel 0 - and whose effect script
 spawns the aura (`0x07`, `0x08` and the direct `0x14`) on its first frame.
 Both hosts stage those six banks with `XA30` as the battle clip set
-(`BATTLE_XA_CLIP_SLOTS` in `engine-session::boot` and `web-viewer::play_xa`).
+(`BATTLE_XA_CLIP_SLOTS` in `engine-session::boot` and `web-play::play_xa`).
 
 On a **party** seat (battle slot `< 3`) the cue-id band `0xC8..=0xFF`, minus the
 single hole at `0xFA`, is the arts voice: the id is re-based by `+0x38`, which is
@@ -2258,7 +2338,7 @@ modelled busy window of `dur` vsyncs for the router's drive gate, and the
 demuxes `XA27` / `XA30` into a `legaia_engine_audio::XaClipBank` at boot
 (`read_battle_xa_clip_bank`) and `AudioDirector::play_xa_clip` mixes the
 requested `(slot, channel)` PCM, cut at the retail read span, through the same
-XA path as the arts shouts. The browser page's `web-viewer` `play_xa` demuxes
+XA path as the arts shouts. The browser page's `web-play` `play_xa` demuxes
 the raw sectors the page slices out of the visitor's own disc bytes into the
 same banks and plays them through `WebAudioOut::play_xa_shout`. The monster
 leg's `0x2A8` resolves to a `bse.dat` row keyed through the struck monster's

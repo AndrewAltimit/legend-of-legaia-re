@@ -49,6 +49,50 @@ impl World {
         kneels
     }
 
+    /// Carry a body still falling on its knockdown on to the get-up the
+    /// capture shows it rising on: when slot `slot` plays its knockdown
+    /// entry `+0x1F1` on the reaction channel and the capture's `+0x1D9`
+    /// names its get-up entry `+0x1F2`, run the knockdown's natural end - the
+    /// anim tick's end-of-clip path and the commit after it, which for a
+    /// monster at HP `0` is the death arm (`+0x21C = 2`, the spoils, and with
+    /// a Seru staged in `ctx[+0x269]` the get-up `0x8004B688..0x8004B6A0`).
+    /// The reaction starts on the hit, which the replay lands on its own
+    /// clock, so the knockdown the replay struck may still be falling where
+    /// retail's has ended (`rim_elm_gimard_seru_capture_before`: retail's
+    /// Gimard sixteen keyframes into the get-up, the replay's two short of
+    /// the knockdown's end). A no-op on any other pairing.
+    ///
+    /// REF: FUN_80047430 (`0x80047B30..0x80047B58`), FUN_8004AD80
+    fn seat_knockdown_end(&mut self, slot: usize, clip: u8) {
+        let Some(map) = self.battle_reaction_map(slot) else {
+            return;
+        };
+        let (knockdown, getup) = (map[2], map[3]);
+        let Some(a) = self.actors.get(slot) else {
+            return;
+        };
+        if getup == 0
+            || clip != getup
+            || knockdown == getup
+            || a.battle_reaction != Some(4)
+            || a.battle_reaction_entry != Some(knockdown)
+        {
+            return;
+        }
+        self.finish_battle_reaction(slot, 4);
+        // The passes retail ran since then ran the presentation tick's arm 2
+        // on the body each time (`0x80050230..0x80050244`): blend `0x1000`
+        // and `0x81000000` in the mode word, the additive draw the capture
+        // shows. Its lanes hold while the get-up plays (the arm's fade gate
+        // compares the committed entry against the knockdown).
+        if let Some(a) = self.actors.get_mut(slot)
+            && a.battle.render_flag == legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE
+        {
+            a.battle.render_blend = legaia_engine_battle_vm::battle_formulas::TINT_BLEND_FULL;
+            a.battle.flag_word |= 0x8100_0000;
+        }
+    }
+
     /// Land battle slot `slot`'s playing clip on the node cursor `+0x68` a
     /// capture held (12.4 sixteenths of a keyframe), re-posing it there -
     /// when the slot plays the clip the capture's `+0x1D9` names. Returns
@@ -70,6 +114,7 @@ impl World {
         if downed && !self.seat_downed_kneel(slot) {
             return false;
         }
+        self.seat_knockdown_end(slot, clip);
         let Some(a) = self.actors.get_mut(slot) else {
             return false;
         };
@@ -460,6 +505,19 @@ impl World {
     /// retail's cadence it runs on the pass ahead of the action SM; per
     /// vsync it stays at the anim tick's tail.
     pub(in crate::world) fn tick_battle_cast_drive(&mut self, vsyncs: u8) {
+        // On retail's cadence the drive is one call a battle frame with the
+        // frame step folded into every counter and step
+        // (`HomingSlots::step_pass`), not `step` one-vsync calls: the
+        // counters fall `4 * step` and are tested once, so a re-armed list
+        // spawn or a landing waits for the next pass.
+        if self.toggles.battle_sm_frame_cadence {
+            if vsyncs > 0 {
+                let streak_before = self.casting.move_fx_streak.counter_word;
+                self.casting.move_fx_streak.tick_counter_by(vsyncs);
+                self.tick_homing_slots_pass(vsyncs, streak_before);
+            }
+            return;
+        }
         for _ in 0..vsyncs {
             // The move-FX streak counter walk (retail `FUN_801E09F8` phase
             // 1): `ctx[+0x6C6]` falls 4 per frame, shrinking the trail's
@@ -642,6 +700,16 @@ impl World {
         {
             self.battle_ctx.arts_banner_stage = stage;
             self.battle_ctx.arts_banner_level = level;
+        }
+        // The sustained-cue teardown (`lbu v1,0x1db(s1)` / `lbu v0,0x1da(s1)`
+        // / `beq` / `jal 0x80017910` at `0x8004AE54..0x8004AE68`): a commit
+        // whose staged clip differs from the latched one keys off the held
+        // sustained SFX run, whichever actor keyed it. This is what ends a
+        // looping attack sound when its clip gives way to the next; a
+        // re-commit of the same clip leaves it sounding.
+        // REF: FUN_80017910
+        if self.actors[i].battle.latched_anim != q {
+            self.audio.sfx_ring_ops.push(SfxRingOp::ReleaseSustained);
         }
         // The art-name label's close (`0x8004AE70..0x8004AEAC`): a party seat
         // (`sltiu v0,s3,0x3`) whose outgoing clip sits on dynamic slot

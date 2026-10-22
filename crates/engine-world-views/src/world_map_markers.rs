@@ -87,6 +87,21 @@ pub fn marker_quads(
         .collect()
 }
 
+/// [`marker_quads`] wrapped by `screen_prim::world_map_marker_prim` - the
+/// one-pixel quads both hosts' screen-prim passes draw (the page has no line
+/// primitive, which is why the kernel emits quads rather than lines).
+pub fn marker_prims(
+    world: &World,
+    frame: &FieldCameraFrame,
+    aabb: ([f32; 3], [f32; 3]),
+    draw_player: bool,
+) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
+    marker_quads(world, frame, aabb, draw_player)
+        .iter()
+        .map(|q| legaia_render_kernels::screen_prim::world_map_marker_prim(q.xy, q.rgba, q.depth))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -111,7 +126,7 @@ mod tests {
     #[test]
     fn player_marker_projects_on_screen_under_the_walk_camera() {
         let w = world_map_world();
-        let frame = legaia_engine_core::camera_view::resolve_field_camera(
+        let frame = crate::camera_view::resolve_field_camera(
             &w,
             &legaia_engine_field::camera::Camera::default(),
             None,
@@ -134,7 +149,7 @@ mod tests {
     #[test]
     fn no_player_marker_when_the_host_draws_the_mesh() {
         let w = world_map_world();
-        let frame = legaia_engine_core::camera_view::resolve_field_camera(
+        let frame = crate::camera_view::resolve_field_camera(
             &w,
             &legaia_engine_field::camera::Camera::default(),
             None,
@@ -171,7 +186,7 @@ mod tests {
     #[test]
     fn walk_camera_quads_carry_scene_depth() {
         let w = world_map_world();
-        let frame = legaia_engine_core::camera_view::resolve_field_camera(
+        let frame = crate::camera_view::resolve_field_camera(
             &w,
             &legaia_engine_field::camera::Camera::default(),
             None,

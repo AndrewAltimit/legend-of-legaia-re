@@ -215,7 +215,7 @@ impl FmvTable {
 ///
 /// Shared by every host that opens a movie off the disc image: the native
 /// window (`legaia_engine_shell::cutscene_av`) and the browser play page
-/// (`legaia_web_viewer::play_fmv`), so the seek is one implementation.
+/// (`legaia_web_play::play_fmv`), so the seek is one implementation.
 pub fn fmv_segment_window(
     entry: Option<&FmvEntry>,
     file_lba: u32,

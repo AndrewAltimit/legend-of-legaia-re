@@ -1,17 +1,26 @@
 //! The op-`0x20` calls a module's own parts make into its stager, for the
 //! modules whose stager arms only seat more records: PROT 0905 (Vera), 0906
 //! (Gizam), 0907 (Nighto), 0908 (Zenoir), 0910 (Swordie), 0911 (Orb), 0912
-//! (Freed) and 0913 (Nova), and the capture cells PROT 0938, 0944, 0946, 0961 and 0962
+//! (Freed), 0913 (Nova), the summon-creature modules 0914, 0915, 0917, 0921,
+//! 0928..0933, and the capture cells PROT 0938, 0944, 0946, 0961 and 0962
 //! (PROT 0940's stager is a bare `jr ra`). PROT 0909's stager also steps the
 //! module's phase and runs through [`World::run_viguro_stager_calls`].
 
 use super::*;
 use legaia_engine_cast::cast_module_ticks::{
-    CALL_WAVE_WAVE_RECORD, FREED_STAGER_FADE, StagerSpawn, blade_breath_cell_stager_spawns,
-    call_wave_stager_spawns, chaos_breath_cell_stager_spawns, dead_end_crisis_stager_spawns,
-    freed_stager_spawns, gizam_stager_spawns, guilty_cross_cell_stager_spawns,
-    nighto_stager_spawns, nova_stager_spawns, orb_stager_spawns, swordie_stager_spawns,
-    vera_stager_spawns, zenoir_stager_spawns,
+    CALL_WAVE_WAVE_RECORD, FREED_STAGER_FADE, MULE_STAGER_FADE_ARM, MULE_STAGER_FADES, StagerSpawn,
+    blade_breath_cell_stager_spawns, call_wave_stager_spawns, chaos_breath_cell_stager_spawns,
+    dead_end_crisis_stager_spawns, freed_stager_spawns, gizam_stager_spawns,
+    guilty_cross_cell_stager_spawns, horn_stager_spawns, nighto_stager_spawns, nova_stager_spawns,
+    orb_stager_spawns, swordie_stager_spawns, vera_stager_spawns, zenoir_stager_spawns,
+};
+use legaia_engine_cast::cast_module_ticks::{
+    barra_stager_spawns, gola_gola_stager_spawns, iota_stager_spawns, jedo_stager_spawns,
+    meta_stager_spawns, mule_stager_spawns, mushura_stager_spawns, palma_stager_spawns,
+    terra_stager_spawns,
+};
+use legaia_engine_cast::cast_module_ticks::{
+    kemaro_stager_spawns, ozma_stager_spawns, ultimate_rave_stager_spawns,
 };
 
 impl World {
@@ -20,7 +29,33 @@ impl World {
     pub(in crate::world::battle::cast_band) fn runs_part_stager_calls(entry: u32) -> bool {
         matches!(
             entry,
-            905 | 906 | 907 | 908 | 910 | 911 | 912 | 913 | 938 | 940 | 944 | 946 | 961 | 962
+            905 | 906
+                | 907
+                | 908
+                | 910
+                | 911
+                | 912
+                | 913
+                | 914
+                | 915
+                | 917
+                | 918
+                | 921
+                | 924
+                | 925
+                | 928
+                | 929
+                | 930
+                | 931
+                | 932
+                | 933
+                | 934
+                | 938
+                | 940
+                | 944
+                | 946
+                | 961
+                | 962
         )
     }
 
@@ -29,7 +64,8 @@ impl World {
     /// arm seats ([`gizam_stager_spawns`], [`nighto_stager_spawns`],
     /// [`zenoir_stager_spawns`], [`freed_stager_spawns`]). PROT 0906's
     /// arms 0..2 (the flash pair, the creature shown, the phase release)
-    /// stay on its director's phase-5 clock; PROT 0912's arm 6 is a fade.
+    /// stay on its director's phase-5 clock; PROT 0912's arm 6 is a fade,
+    /// PROT 0929's arm 3 two.
     ///
     /// Retail runs the call inside the part's own move-VM step, so its
     /// records are seated on that frame; the engine queues the call
@@ -40,6 +76,11 @@ impl World {
     /// FUN_801F8310 (PROT 0908's), FUN_801F835C (PROT 0912's), each reached
     /// through `gp[+0x714]`
     pub(in crate::world::battle::cast_band) fn run_part_stager_calls(&mut self, entry: u32) {
+        // The seats of the arms run inside their caller's step (PROT
+        // 0925's), in call order.
+        for s in std::mem::take(&mut self.casting.module_stager_seats) {
+            self.seat_stager_spawn(entry, &s);
+        }
         let calls = std::mem::take(&mut self.casting.module_stager_calls);
         // A capture cell's stager runs only for the body whose arms seat
         // per arm; its other bodies keep the pager's whole-set placement,
@@ -72,16 +113,21 @@ impl World {
             })
             .unwrap_or([0; 3]);
         for (arm, caller) in calls {
-            if entry == 912 && arm == 6 {
-                let mut fade = None;
-                legaia_engine_system::fade::spawn_fade(
-                    &mut fade,
-                    &legaia_engine_battle_vm::battle_action::summon_fade_template(
-                        &FREED_STAGER_FADE,
-                    ),
-                    1,
-                );
-                self.presentation.module_fades.extend(fade);
+            let stager_fades: &[_] = match (entry, arm) {
+                (912, 6) => std::slice::from_ref(&FREED_STAGER_FADE),
+                (929, MULE_STAGER_FADE_ARM) => &MULE_STAGER_FADES,
+                _ => &[],
+            };
+            if !stager_fades.is_empty() {
+                for t in stager_fades {
+                    let mut fade = None;
+                    legaia_engine_system::fade::spawn_fade(
+                        &mut fade,
+                        &legaia_engine_battle_vm::battle_action::summon_fade_template(t),
+                        1,
+                    );
+                    self.presentation.module_fades.extend(fade);
+                }
                 continue;
             }
             // PROT 0905's arm 0 first lifts its caller, arm 5's first glow,
@@ -105,6 +151,8 @@ impl World {
                     .count()
             });
             let phase = self.casting.module_phase;
+            let mut barra_counter = self.casting.module_barra_counter;
+            let mut ozma_word = self.casting.module_ozma_word;
             let mut rand = || self.next_rand();
             let spawns = match entry {
                 906 => gizam_stager_spawns(arm, caller, body, &mut rand),
@@ -115,6 +163,19 @@ impl World {
                 911 => orb_stager_spawns(arm, caller),
                 913 => nova_stager_spawns(arm, caller),
                 912 => freed_stager_spawns(arm, caller, &mut rand),
+                930 => horn_stager_spawns(arm, caller, &mut rand),
+                914 => gola_gola_stager_spawns(arm, caller),
+                915 => mushura_stager_spawns(arm, caller),
+                917 => barra_stager_spawns(arm, caller, &mut barra_counter),
+                921 => iota_stager_spawns(arm, caller, &mut rand),
+                928 => palma_stager_spawns(arm, caller, &mut rand),
+                929 => mule_stager_spawns(arm, caller, &mut rand),
+                931 => jedo_stager_spawns(arm, caller),
+                932 => meta_stager_spawns(arm, caller),
+                933 => terra_stager_spawns(arm, caller),
+                918 => kemaro_stager_spawns(arm, caller),
+                924 => ultimate_rave_stager_spawns(arm, caller),
+                934 => ozma_stager_spawns(arm, caller, &mut ozma_word, &mut rand),
                 938 => chaos_breath_cell_stager_spawns(arm, caller),
                 // PROT 0940's stager `FUN_801F82CC` is a bare `jr ra`.
                 940 => Vec::new(),
@@ -124,9 +185,65 @@ impl World {
                 962 => blade_breath_cell_stager_spawns(arm, caller),
                 _ => Vec::new(),
             };
+            self.casting.module_barra_counter = barra_counter;
+            self.casting.module_ozma_word = ozma_word;
             for s in &spawns {
                 self.seat_stager_spawn(entry, s);
             }
+        }
+    }
+
+    /// The module-side writes of the stagers' words and handles, on every
+    /// tick of the arm that makes them (`passed`: the arm handed over).
+    ///
+    /// - PROT 0918's arm 4 lifts its stager's arm-0 part (the handle
+    ///   `0x801F92C4`) `6 * scalar * step` a battle frame up to `-0x800`,
+    ///   on every pass ahead of its countdown gate
+    ///   (`0x801F712C..0x801F718C`).
+    /// - PROT 0925's arm 7 halts every ring part its stager seated (the
+    ///   handle table `0x801F809C`) on the pass it hands over
+    ///   (`0x801F7210..0x801F7254`).
+    /// - PROT 0934's arms 0 and 10 zero the stager word `0x801FA410`
+    ///   (`0x801F6C3C`; `0x801F78F8`, on its pass).
+    ///
+    /// REF: FUN_801F6C70 (PROT 0918), FUN_801F6A00 (PROT 0925),
+    /// FUN_801F6A40 (PROT 0934)
+    pub(in crate::world::battle::cast_band) fn late_creature_stager_words(
+        &mut self,
+        entry: u32,
+        phase: u8,
+        passed: bool,
+    ) {
+        use legaia_engine_cast::cast_module_ticks as t;
+        match entry {
+            918 if phase == 4 => {
+                let lift = (t::KEMARO_LIFT_PER_SCALAR
+                    * legaia_engine_cast::cast_module_camera::SPEED_SCALAR)
+                    as i16;
+                if let Some(part) = self.casting.active_summon.as_mut().and_then(|sc| {
+                    sc.parts
+                        .iter_mut()
+                        .rev()
+                        .find(|p| p.tag == Some(t::KEMARO_LIFTED_RECORD))
+                }) {
+                    let y = part.state.world_y.wrapping_sub(lift);
+                    part.state.world_y = y.max(t::KEMARO_LIFT_CEILING);
+                }
+            }
+            925 if phase == t::SPIKEFISH_RING_ARM && passed => {
+                if let Some(sc) = self.casting.active_summon.as_mut() {
+                    for part in &mut sc.parts {
+                        if part
+                            .tag
+                            .is_some_and(|r| t::SPIKEFISH_RING_RECORDS.contains(&r))
+                        {
+                            part.finished = true;
+                        }
+                    }
+                }
+            }
+            934 if phase == 0 || (phase == 10 && passed) => self.casting.module_ozma_word = 0,
+            _ => {}
         }
     }
 

@@ -1212,7 +1212,7 @@ Specifics:
   `World::drain_staged_menu_warp` resolves the scene on the next tick (a miss
   logs retail's `UNFIND MAP NUMBER %d` and drops the use).
 - **Incense**: each commit tops `FieldLocomotion::walk_regen_window` up through
-  `engine-field::incense_window::top_up_cooldown`; `World::on_field_step` and
+  `engine-system::incense_window::top_up_cooldown`; `World::on_field_step` and
   `World::tick_world_map` skip the region roll while it is open; the zero edge
   raises `World::raise_incense_notice` (the ported `FUN_801F1E48`), drawn by
   `engine-ui::incense_notice_sprites_for` / `incense_notice_text_draws_for`
@@ -1550,7 +1550,7 @@ its `j` targets print correctly - see
   re-ordered before a routine that indexes in retail's space walks it
   (`field_submode_screen::hub_panel_slots`).
 - **Commit**: `EquipSession::commit` runs
-  `engine-field::dev_equip_commit::commit_equip` (the `FUN_801E5A08` body) over
+  `engine-dev-menu::dev_equip_commit::commit_equip` (the `FUN_801E5A08` body) over
   `world_map_overlay::resolve_equip_slot`, staging the record's `+0x196`
   window in retail order; `retail_destination_slot` exposes the routing.
 - **Candidate lists**: Goods slots use
@@ -1768,7 +1768,7 @@ They read the **packed** pad words from `FUN_8001822C` (`_DAT_8007bb84` edge,
 `_DAT_8007b850` held: `0x10` Triangle, `0x1000` Up, `0x2000` Right, `0x4000`
 Down, `0x8000` Left). `FUN_801d3444` and `FUN_801d9bbc` are decompiler
 fragments of the same dispatcher (a PC-delta exit and a row-text emit), not
-functions. Port: `engine-field::dev_menu_flags` (`edit_flag_value`, `flag_list_prev`,
+functions. Port: `engine-dev-menu::dev_menu_flags` (`edit_flag_value`, `flag_list_prev`,
 `flag_list_next`, `EventFlagEditor`); it has no draw code.
 
 ## Prize-exchange (ticket-counter) windows

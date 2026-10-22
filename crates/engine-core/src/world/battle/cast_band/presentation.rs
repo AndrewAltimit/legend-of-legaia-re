@@ -124,6 +124,10 @@ pub struct ModulePresentation {
     /// Arms passed on their first tick although they can hold, this cast -
     /// calls the hook skipped because the port does not pace them.
     pub unpaced_arms: u32,
+    /// The handle slots an arm parked a seated part in, by the spawn record
+    /// it was seated off (`PresentationCall::PartStore`): a later kill of
+    /// the slot halts the parts of that record.
+    pub(crate) part_slots: Vec<(HandleSlot, u32)>,
 }
 
 impl World {
@@ -271,6 +275,10 @@ impl World {
                     for f in fades.iter_mut().filter(|f| f.slot == Some(slot)) {
                         f.slot = None;
                     }
+                    self.casting
+                        .module_pres
+                        .part_slots
+                        .retain(|&(s, _)| s != slot);
                     if let Some(f) = fades.iter_mut().rev().find(|f| f.site == fade) {
                         f.slot = Some(slot);
                     }
@@ -300,6 +308,41 @@ impl World {
                         .module_pres
                         .fades
                         .retain(|f| f.slot != Some(slot));
+                    // A part parked in the slot: the actor list drops it
+                    // (PROT 0923's arms walk their whole handle array this
+                    // way, `0x801F7C5C..0x801F7CB0`).
+                    let mut killed = Vec::new();
+                    self.casting.module_pres.part_slots.retain(|&(s, rec)| {
+                        if s == slot {
+                            killed.push(rec);
+                        }
+                        s != slot
+                    });
+                    if !killed.is_empty()
+                        && let Some(scene) = self.casting.active_summon.as_mut()
+                    {
+                        for part in &mut scene.parts {
+                            if part.tag.is_some_and(|t| killed.contains(&t)) {
+                                part.finished = true;
+                            }
+                        }
+                    }
+                }
+                // The arm parks a part it seats (`sw v0, slot` after the
+                // spawn call).
+                PresentationCall::PartStore { record, slot } if once => {
+                    let ps = &mut self.casting.module_pres.part_slots;
+                    ps.retain(|&(s, _)| s != slot);
+                    ps.push((slot, record));
+                    for f in self
+                        .casting
+                        .module_pres
+                        .fades
+                        .iter_mut()
+                        .filter(|f| f.slot == Some(slot))
+                    {
+                        f.slot = None;
+                    }
                 }
                 PresentationCall::VramMove { rect, dst }
                     if once && !VRAM_MOVES_PORTED_BY_HAND.contains(&entry) =>
@@ -403,6 +446,9 @@ impl World {
         }
         if p.wash_live {
             out.extend(legaia_render_kernels::cast_colour_wash::band_prims(&p.wash));
+            out.extend(legaia_render_kernels::cast_colour_wash::scanline_prims(
+                &p.wash,
+            ));
         }
         out
     }

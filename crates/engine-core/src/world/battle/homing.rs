@@ -131,6 +131,18 @@ impl World {
     /// One battle frame of the homing slots, after the streak's own counter
     /// walk (slot `0`'s phase-`1` word).
     pub(in crate::world) fn tick_homing_slots(&mut self) {
+        let counter = self.casting.move_fx_streak.counter_word;
+        self.tick_homing_slots_with(None, counter);
+    }
+
+    /// [`Self::tick_homing_slots`] as one battle pass of `step` vsyncs
+    /// (`HomingSlots::step_pass`), with slot `0`'s phase-`1` word as the
+    /// pass found it.
+    pub(in crate::world) fn tick_homing_slots_pass(&mut self, step: u8, streak_before: u16) {
+        self.tick_homing_slots_with(Some(step), streak_before);
+    }
+
+    fn tick_homing_slots_with(&mut self, pass_step: Option<u8>, counter: u16) {
         let Some(idx) = self.casting.homing.record else {
             return;
         };
@@ -143,7 +155,6 @@ impl World {
         else {
             return;
         };
-        let counter = self.casting.move_fx_streak.counter_word;
         let actors = &self.actors;
         let target = |child: u8| -> Option<[i32; 3]> {
             let a = actors.get(usize::from(child).checked_sub(1)?)?;
@@ -156,7 +167,10 @@ impl World {
             })
         };
         let mut homing = self.casting.homing;
-        let spawns = homing.step(&raw, counter, target);
+        let spawns = match pass_step {
+            Some(step) => homing.step_pass(&raw, counter, step, target),
+            None => homing.step(&raw, counter, target),
+        };
         self.casting.homing = homing;
         // A landed slot's hit (`0x801E1844..0x801E1A68`): the cast that rides
         // this flight folds onto that slot's victim now.

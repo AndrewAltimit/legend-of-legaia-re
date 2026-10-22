@@ -48,9 +48,14 @@ fn a_seru_cast_runs_the_summon_band_and_the_stager_folds_once_at_its_strike() {
             spawn_requests += 1;
             assert_eq!(id, 0x81);
             // The request carries the stager's spawn point behind the
-            // caster (where an undirected module's parts are staged).
-            assert_eq!(origin[0], 82);
-            assert_eq!(origin[2], -542 - crate::world::battle::SUMMON_SPAWN_BEHIND);
+            // caster (where an undirected module's parts are staged), on
+            // the caster's live pair - which the action seed's formation
+            // recentre (`FUN_801EFE44`) has moved off its fixture seat.
+            assert_eq!(origin[0], world.actors[0].move_state.world_x);
+            assert_eq!(
+                origin[2],
+                world.actors[0].move_state.world_z - crate::world::battle::SUMMON_SPAWN_BEHIND
+            );
             // A host seats it; the world adopts the seat. PROT 0903's band is
             // director-paced, so the creature stands where `FUN_801F19EC`
             // puts it - on the caster - until its arm 3 moves it.
@@ -132,13 +137,14 @@ fn a_seru_cast_runs_the_summon_band_and_the_stager_folds_once_at_its_strike() {
     assert_ne!(world.actors[1].battle.render_flag, RENDER_FLAG_HIDDEN);
     assert!(!world.actors[9].active, "the creature was despawned");
     assert!(world.casting.summon_stager.is_none());
-    // The flash cue rode the SFX queue.
+    // The flash cue went through the dispatcher `FUN_8004FCC8`: `0x63` is
+    // past `0x40`, so the ring carries it unchanged.
     assert!(
         world
-            .audio
-            .battle_sfx_cues
-            .iter()
-            .any(|c| c.kind == legaia_engine_battle_vm::battle_action::SUMMON_FLASH_CUE),
+            .take_sfx_ring_ops()
+            .contains(&legaia_engine_system::sound_state::SfxRingOp::Push(
+                legaia_engine_battle_vm::battle_action::SUMMON_FLASH_CUE as i16
+            )),
         "the 0x33 arm's 0x63 cue"
     );
 }

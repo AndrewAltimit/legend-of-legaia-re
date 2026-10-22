@@ -18,7 +18,7 @@
 //! and none of these kernels' *behaviour* depends on which numbers the disc
 //! carries - only on the shape of the tables, which is what is asserted here.
 //! The real values stay pinned by the disc-gated
-//! `crates/web-viewer/tests/minigames_fishing_pond.rs`.
+//! `crates/web-play/tests/minigames_fishing_pond.rs`.
 //!
 //! Assertions are written from the retail kernels' intent, not from the port's
 //! current output: the cast counter increments **when the lure lands** (the

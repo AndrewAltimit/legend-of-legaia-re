@@ -134,3 +134,32 @@ fn a_dead_monster_with_a_staged_seru_rises_on_its_getup() {
     assert_eq!(world.actors[1].battle_reaction_entry, Some(3));
     assert_eq!(world.actors[1].battle.flag_bits.0, ActorFlags::EXIT);
 }
+
+#[test]
+fn a_capture_of_the_seru_getup_carries_a_falling_knockdown_onto_it() {
+    let mut world = dead_monster_world(1);
+    world.queue_battle_reaction(1, false);
+    assert_eq!(world.actors[1].battle_reaction_entry, Some(2));
+    // The capture shows the get-up (entry 3) a keyframe in; the replay's
+    // knockdown is still falling.
+    assert!(world.seat_battle_clip_cursor(1, 3, 16));
+    assert_eq!(world.actors[1].battle_reaction_entry, Some(3));
+    assert_eq!(
+        world.actors[1].battle.render_flag,
+        legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE
+    );
+    assert_eq!(
+        world.actors[1].battle.render_blend,
+        legaia_engine_battle_vm::battle_formulas::TINT_BLEND_FULL
+    );
+    assert_eq!(world.actors[1].battle.flag_word & 0x8100_0000, 0x8100_0000);
+}
+
+#[test]
+fn a_capture_of_the_knockdown_itself_seats_without_ending_it() {
+    let mut world = dead_monster_world(1);
+    world.queue_battle_reaction(1, false);
+    assert!(world.seat_battle_clip_cursor(1, 2, 8));
+    assert_eq!(world.actors[1].battle_reaction_entry, Some(2));
+    assert_eq!(world.actors[1].battle.render_flag, 0);
+}

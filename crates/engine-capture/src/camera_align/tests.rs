@@ -22,3 +22,18 @@ fn cam_align_env_round_trips() {
     assert_eq!(cam_align_from_env(&env), Some((live, end)));
     assert_eq!(cam_align_from_env("1,2,3"), None);
 }
+
+/// The gate-tick framing a display-lag retake carries survives its env
+/// round trip.
+#[test]
+fn cam_pose_env_round_trips() {
+    use legaia_engine_camera::projection::BattleCamPose;
+    let p = BattleCamPose {
+        pitch: 0.0,
+        yaw: 2919.0,
+        tr: [0.0, 1280.0, 4608.0],
+        focus: [649.0, 0.0, -47.0],
+    };
+    assert_eq!(cam_pose_from_env(&cam_pose_to_env(&p)), Some(p));
+    assert_eq!(cam_pose_from_env("1,2,3"), None);
+}

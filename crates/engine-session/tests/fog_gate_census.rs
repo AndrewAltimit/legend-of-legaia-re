@@ -14,7 +14,6 @@
 //!
 //! Skips (and passes) when `LEGAIA_DISC_BIN` / `extracted/` are missing.
 
-use legaia_engine_core::camera_view::resolve_field_camera;
 use legaia_engine_field::camera_frame::FieldCameraFrame;
 use legaia_engine_field::fog_particles::{
     FOG_CAP_DEFAULT, FOG_CLUT, FOG_LEFT_UV_ROW, FOG_RIGHT_UV_ROW, FOG_TPAGE, FOG_UV_ROWS,
@@ -24,6 +23,7 @@ use legaia_engine_scene::man_census::scene_man_carriers;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_session::native::NativeSession;
 use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
+use legaia_engine_world_views::camera_view::resolve_field_camera;
 use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
 use std::collections::BTreeMap;
 use std::path::PathBuf;

@@ -76,7 +76,7 @@ Three independent checks, because the audit's own graph is one of the suspects:
 1. **Reverse-edge walk** over the audit's graph, to the point where each chain
    stops.
 2. **Textual sweep** for the anchor symbol and every intermediate caller across
-   the host crates (`engine-shell`, `web-viewer`, `asset-viewer`,
+   the host crates (`engine-shell`, `web-play`, `web-viewer`, `asset-viewer`,
    `engine-render`, `engine-ui`). Run it with a positive control - a symbol
    known to have host references - so a zero is a real zero.
 3. **Re-run of the audit** after any correction to the reachability pass,
@@ -89,7 +89,7 @@ Then nothing becomes a newly claimed wiring gap and `--not-live` stays a floor.
 
 `engine-core` has no `[[bin]]` and no `#[wasm_bindgen]` entry point, and neither
 do the other library crates. Reachability is measured from *host* roots
-(`engine-shell`, `web-viewer`, `asset-viewer`), so an anchor in a library crate
+(`engine-shell`, `web-play`, `web-viewer`, `asset-viewer`), so an anchor in a library crate
 becomes live only through an edit in a crate that has a root.
 
 Two consequences for scoping work. A pass limited to library files can produce
@@ -297,7 +297,7 @@ Grouped by the defect that hid the edge. This is the regression set.
 - **Trait default method.** `set_actor_model`, as above.
 - **Type-anchor granularity.** `MapObject` (behaviour in the free
   `parse_map_objects`), `ClutCellFx` (`World::step_clut_fx` plus `read_cell`),
-  `OptionsPhase` (`OptionsSession::tick`, live through the `web-viewer` roots).
+  `OptionsPhase` (`OptionsSession::tick`, live through the `web-play` roots).
 
 The fishing presentation half lives in `crates/engine-ui/src/fishing/hud.rs`
 (`persistent_hud_draws`, called from `window/hud.rs`) and is live the same way.
@@ -352,8 +352,10 @@ Every row is landed. What each wire had to be:
 `DELETE` rows: `symbol_pad_bit` (`801d4040`) duplicated `DanceDir::pad_bit`
 (arms `0x80` / `0x20` / `0x10`), which now carries the tag.
 `camera_height_from_size_class` (`801f0348`) duplicated
-`camera_height_for_frame`, which is the whole of `FUN_801F0348`, is wired
-through `BattleActionHost::camera_bounds` and inlines the `<< 7` + clamp.
+`camera_height_for_frame`, which is the whole of `FUN_801F0348`, is called
+from the action seed (`battle_action/dispatch.rs`, and the magic arm in
+`battle_action/magic.rs`) with `BattleActionHost::monster_size_class`, and
+inlines the `<< 7` + clamp.
 
 <a id="disclose-texts"></a>
 ### `DISCLOSE` and `REPLACE` reasons
@@ -381,7 +383,7 @@ The reason each row carries, in short form. The source tag is authoritative.
 - **`category_check`** (wired) - the item-category favor score behind retail's
   per-character item-menu ordering and greying.
 - **`card_directory_scan` / `card_free_blocks` / `classify_card_directory`**
-  (wired) - the browser card rack (`web-viewer::cards`) mounts raw card images
+  (wired) - the browser card rack (`web-play::cards`) mounts raw card images
   and runs them; see [the card rows](#the-menu--save--memory-card-cluster).
 - **`alloc_list_head` / `alloc_and_append` / `free`** - the engine's actor
   storage is a generational `Vec` pool, not a retail free-stack.
@@ -598,7 +600,7 @@ Reasons that named an existing symbol as missing:
 | `post_touch` (`8003d038`) | `World::field_prop_dir_probe` reports the touched placement; `World::check_field_walk_touch` posts from the locomotion step |
 | `motion_pause_kick` (`8003c9ac`) | both gates and the default-move table are projectable from the per-slot maps |
 | `state_pick` (`801f1f4c`) | `Actor::state_50` / `Actor::state_54`; wired as the subsystem actor's default handler id `7`, run by `World::field_menu_button_state` as the menu-open gate |
-| `field_audio_release_steps` (`801d8450`) | `SustainedSfx::stop_voice` and `SeqResourceTable::release` (the `0x80091508` table) |
+| `field_audio_release_steps` (`801d8450`) | `AudioDirector::stop_sfx_voices` and `SeqResourceTable::release` (the `0x80091508` table) |
 | `submode_panel_rows` (`801e6984`) | `open_submode` seeds `World::field_vm.submode_context`; the installer `FUN_801EF014` is hosted on the field path (slot `0x23`, `engine-field::field_submode_flag_window`), installs record 14 and draws these rows on both hosts |
 | `field_actor_plan` (`8003bc08`) | `move_vm::ActorState::flags` is the `+0x10` flag word |
 | `tick_reflection` (`801e5154`) | `ActorState` carries all the fields but `+0x64`, at retail offsets |
@@ -686,7 +688,7 @@ Remaining gaps, by prerequisite:
   selectors, `centred_panel`: the hosts lay their readouts out at their own pens
   rather than in 320x240 framebuffer coordinates.
 - `dance_face_rig` and `walk_grid_overhead` want a call in
-  `crates/web-viewer/`; `bite_pad_nudge` wants `PondInput` to carry the retail
+  `crates/web-play/`; `bite_pad_nudge` wants `PondInput` to carry the retail
   pressed-pad word instead of a pre-counted `edge_bonus`.
 
 ### The render / GTE cluster
@@ -1028,7 +1030,7 @@ backwards in one direction:
 |---|---|---|
 | `cd_dma`, `stream_file` | `REPLACE` | `crate::scene::ProtIndex` reads a whole PROT entry synchronously; no libcd handle, no DMA channel, no completion to poll, no cursor to position |
 | `overlay_loader` | `REPLACE` | on-demand PROT resolution - the port has no RAM windows to page overlays into, so the cache pair has nothing to cache |
-| `card_bu_io`, `card_flow` | `REPLACE` | `legaia_save::emu::CardView` + `legaia_save::card`, driven synchronously by `web-viewer::cards::write_session_into_card` |
+| `card_bu_io`, `card_flow` | `REPLACE` | `legaia_save::emu::CardView` + `legaia_save::card`, driven synchronously by `web-play::cards::write_session_into_card` |
 | `mdec_dma_sync` | `REPLACE` | the `legaia_mdec` software decoder; a decoded frame is finished when the call returns |
 | `float_tween`, `title_prim` | `REPLACE` | the `engine-ui` draw-list builders, which rebuild screen state each frame instead of tweening or queueing GPU packets |
 | `pooled_actor_seed` | `REPLACE` | `World::open_field_submode_screen`'s side `SubmodeScreen` struct - and both entries are retail-unreachable besides |
@@ -1049,7 +1051,7 @@ bytes, leaves the icon-frame descriptor and block count as found, and writes no
 title - so a block "reads wrong on a real card's Load screen". Neither half
 holds: `SaveFile::write_into_retail_sc_block` copies the whole four-byte
 `SAVE_BLOCK_HEADER`, and `legaia_save::card::write_retail_block_identity` -
-called immediately after by `web-viewer::cards::write_session_into_card` -
+called immediately after by `web-play::cards::write_session_into_card` -
 writes the title digits and the portrait. `engine-core`'s
 `the_composer_writes_the_whole_magic_and_leaves_identity_to_its_owner` pins the
 division. The stale text is what made the module read as a wiring gap; with it
@@ -1108,7 +1110,7 @@ the fields by category, so the player sees the wrong rows today.
   audio host asks `spu_base_for_slot` directly". It does not - that helper's
   only references outside its own module are in the guard test
   `infra_boot_offset_table.rs`, and nothing in `engine-audio`, `engine-shell`
-  or `web-viewer` consults a per-slot SPU base at all. The verdict survives
+  or the browser crates consults a per-slot SPU base at all. The verdict survives
   (the mixer owns one flat `SpuRam` and places a bank at the transfer address
   it is handed), but the blocker is a representation the port does not have,
   not a helper that beat the seeder to the job.

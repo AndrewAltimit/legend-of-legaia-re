@@ -24,6 +24,7 @@ impl RetailBattle {
                 spell_id: self.queued_action,
                 target: self.target_code,
                 ground: self.engine_ground(),
+                idle: self.inflight_idle,
             })
     }
 
@@ -43,6 +44,37 @@ impl RetailBattle {
             }
         }
         out
+    }
+
+    /// The capture's empty party seats, as [`BarSeed`]s on
+    /// [`legaia_engine_capture::bar_seeds::EMPTY_SEAT_SLOT_BASE`]-based
+    /// slots: pool slots `party_count..3`, each with its struct's live pair.
+    ///
+    /// Retail keeps a struct behind an empty party seat, and the round-start
+    /// and action-seed recentres box it with the combatants, so a capture's
+    /// formation is centred with those seats where they stand; seeded on
+    /// the origin instead, the replayed seed recentre would move the fight
+    /// off the capture's ground. None on an opening capture, whose seats are
+    /// still on the origin.
+    pub fn empty_seat_seeds(&self) -> Vec<BarSeed> {
+        if self.seed_plan() == SeedPlan::Opening {
+            return Vec::new();
+        }
+        (usize::from(self.party_count.clamp(1, 3))..3)
+            .filter_map(|r| {
+                let ground = self.ground.get(r).copied().flatten()?;
+                Some(BarSeed {
+                    slot: legaia_engine_capture::bar_seeds::EMPTY_SEAT_SLOT_BASE + r as u8,
+                    hp: 0,
+                    mp: 0,
+                    ground: Some(ground),
+                    facing: None,
+                    defeat_lanes: None,
+                    status: 0,
+                    spent_key: false,
+                })
+            })
+            .collect()
     }
 
     /// The ground pairs the seed puts on its first battle tick, by engine
@@ -103,6 +135,60 @@ impl UndriftActing {
 }
 
 impl RetailBattle {
+    /// This in-flight cast capture with each bystander's idle loop wound back
+    /// to where it stood at the dispatch: the capture's cursor less the
+    /// advance the engine's own replay measured for that slot between the
+    /// dispatch and the phase (`EngineBattle::idle_advance`). `None` when no
+    /// slot has both. The caster is left alone - its clip at the dispatch is
+    /// the cast's own.
+    ///
+    /// The separation pass `FUN_80050BB8` measures **body** pairs
+    /// (`+0x3C..+0x40`, the live pair plus the pose centroid) every battle
+    /// frame (`FUN_80046A20` `jal 0x80051078` straight after the action SM),
+    /// so where a bystander's idle sway stands decides whether a pair comes
+    /// within `(r_a + r_b) / 6` during the cast. A capture's live pairs are
+    /// retail's after any push its own frames dealt; a replay whose sway
+    /// runs at another phase pushes where retail did not
+    /// (`theeder_summon_mid_cast`: the third Gilium's replayed sway stood its
+    /// body some `45` units nearer Vahn than retail's, under the `224`
+    /// threshold, and both were pushed `16` units apart).
+    pub fn with_inflight_idle(
+        &self,
+        advance: &[Option<u32>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+    ) -> Option<Self> {
+        self.inflight_cast()?;
+        let pc = usize::from(self.party_count.clamp(1, 3));
+        let caster = usize::from(engine_seat(self.active_actor, self.party_count));
+        let mut out = self.clone();
+        let mut any = false;
+        for &(pool, clip, cursor) in &self.clip_cursors {
+            let pool = usize::from(pool);
+            let slot = if pool < 3 {
+                if pool >= pc {
+                    continue;
+                }
+                pool
+            } else {
+                let m = pool - 3;
+                if m >= usize::from(self.monster_count) {
+                    continue;
+                }
+                pc + m
+            };
+            if clip != 0 || slot == caster {
+                continue;
+            }
+            let Some(Some(adv)) = advance.get(slot) else {
+                continue;
+            };
+            if let Some(o) = out.inflight_idle.get_mut(slot) {
+                *o = Some(cursor - *adv as i32);
+                any = true;
+            }
+        }
+        any.then_some(out)
+    }
+
     /// This capture with every combatant's ground pair moved back by what
     /// the engine's replay of the action moved it
     /// (`EngineBattle::ground_drift`), or `None` when nothing moved enough
@@ -317,8 +403,16 @@ impl RetailBattle {
         // The camera frames the seed's pass on both SM cadences
         // (`World::battle_camera_state`), so the heading reaches the frame
         // on either.
+        // A Spirit turn (category `4`) never writes it at all: the band
+        // `0x46..=0x48` and its Done tail keep the heading the seat's last
+        // turn left (`nivora_duel_pre_megaton_press`'s Gala at `3980`, which
+        // the Done band's case 6 subtracts from the yaw counter).
+        let spirit_turn = self.queued_category == 4
+            && (self.action_state == 0x0C
+                || (0x46..=0x48).contains(&self.action_state)
+                || (0x50..=0x52).contains(&self.action_state));
         if matches!(self.seed_plan(), SeedPlan::Action { .. })
-            && self.action_state <= 0x14
+            && (self.action_state <= 0x14 || spirit_turn)
             && let Some(a) = spent.get_mut(usize::from(engine_seat(
                 self.active_actor,
                 self.party_count,
@@ -443,6 +537,11 @@ impl RetailBattle {
             && self.caster_clip == SUMMON_INVOKE_CLIP)
             .then_some(self.cam_accum);
         // A frame inside the stream poll's arm is placed by the arm alone.
+        // A frame inside a side-band wait is placed by the band's clocks,
+        // with the engine's arm held busy until they get there.
+        let sideband_wait = module_phase.is_some_and(|p| {
+            legaia_engine_cast::cast_module_camera::sideband_wait_arm(entry) == Some(p)
+        });
         let stream_wait = module_phase.is_some_and(|p| {
             legaia_engine_cast::cast_module_camera::stream_poll_arm(entry) == Some(p)
         });
@@ -458,6 +557,7 @@ impl RetailBattle {
             // The summon head's RAM is a pass in (`PhaseGate::steer`).
             camera_pass: self.action_state == SUMMON_INVOKE_STATE,
             stream_wait,
+            sideband_wait,
         })
     }
 }

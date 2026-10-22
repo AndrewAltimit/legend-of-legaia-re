@@ -12,10 +12,10 @@
 //! What is retail here and what is the port's:
 //!
 //! * **Retail** - every value transform. Row navigation and per-row stepping
-//!   run through [`legaia_engine_field::dev_menu_adjust`]; the flag editor
+//!   run through [`legaia_engine_dev_menu::dev_menu_adjust`]; the flag editor
 //!   through `legaia_engine_core::dev_menu`; the character rows and the end-of-tick
 //!   stat clamp through [`legaia_engine_menus::debug_char_editor`]; the equip write
-//!   through [`legaia_engine_field::dev_equip_commit`].
+//!   through [`legaia_engine_dev_menu::dev_equip_commit`].
 //! * **The port's** - which rows exist. Retail's list is 24 rows of
 //!   world-map debug tooling (`MAP CHANGE`, `CAMERA`, `ENCOUNT`, ...) whose
 //!   backing state is overlay-resident; [`DevMenuRow`] carries the subset
@@ -32,14 +32,15 @@
 //! world's SFX ring, are `legaia_engine_menu_runtime::dev_menu_host::DevMenuWorldExt`.
 
 use crate::debug_char_editor::{DebugEditor, clamp_record_stats};
-use legaia_engine_field::dev_equip_commit::{EquipCommit, EquipCommitHost, commit_equip};
-use legaia_engine_field::dev_menu_adjust::{clamp1_255_step, wrap12_step};
-use legaia_engine_field::dev_menu_flags::EventFlagEditor;
-use legaia_engine_field::dev_menu_leaves::{
-    DevMenuRow as RetailRow, ListPickerPhase, PanelGeometry, decode_camera_readout,
-    dev_menu_cursor_step, format_fixed_decimal, list_body_draws, panel_geometry,
+use legaia_engine_dev_menu::dev_equip_commit::{EquipCommit, EquipCommitHost, commit_equip};
+use legaia_engine_dev_menu::dev_menu_action::dev_menu_action;
+use legaia_engine_dev_menu::dev_menu_adjust::{clamp1_255_step, wrap12_step};
+use legaia_engine_dev_menu::dev_menu_flags::EventFlagEditor;
+use legaia_engine_dev_menu::dev_menu_leaves::{
+    DevMenuRow as RetailRow, ListPickerPhase, PanelGeometry, SFX_CURSOR_MOVE,
+    decode_camera_readout, dev_menu_cursor_step, format_fixed_decimal, list_body_draws,
+    panel_geometry,
 };
-use legaia_engine_field::world_map_panel::{SFX_CURSOR_MOVE, dev_menu_action};
 use legaia_engine_system::pad::{
     PACK_CIRCLE, PACK_CROSS, PACK_DOWN, PACK_LEFT, PACK_RIGHT, PACK_UP,
 };
@@ -116,7 +117,7 @@ impl DevMenuRow {
     /// [`stale-not-wired-triage.md`](../../../docs/tooling/stale-not-wired-triage.md)
     /// for the sibling case on free-function names.
     pub fn retail_row(self) -> Option<RetailRow> {
-        use legaia_engine_field::dev_menu_leaves::DevMenuRow;
+        use legaia_engine_dev_menu::dev_menu_leaves::DevMenuRow;
         DevMenuRow::from_index(self.retail_index())
     }
 }
@@ -483,7 +484,7 @@ impl EquipCommitHost for WorldEquipHost<'_> {
     fn find_in_bag(&self, item_id: u8) -> u16 {
         match self.inventory.get(&item_id) {
             Some(n) if *n > 0 => u16::from(item_id),
-            _ => legaia_engine_field::dev_equip_commit::BAG_MISS,
+            _ => legaia_engine_dev_menu::dev_equip_commit::BAG_MISS,
         }
     }
 

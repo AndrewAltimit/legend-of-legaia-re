@@ -84,7 +84,11 @@ impl World {
             cross: self.input.just_pressed(PadButton::Cross),
             circle: self.input.just_pressed(PadButton::Circle),
         };
+        let phase_before = menu.phase.clone();
         menu.input(ev, &self.tables.spell_catalog, party, monsters);
+        if let Some(cue) = super::ui_cues::spell_phase_cue(&phase_before, &menu.phase, ev.cross) {
+            self.push_battle_ui_cue(cue);
+        }
 
         match menu.resolved() {
             Some(SpellResolution::Confirmed {
@@ -375,13 +379,18 @@ impl World {
         // the `item_cursor` in TargetSelect, so this is the item that a Confirm
         // on a target row resolves to (the Done state no longer exposes it).
         let item_before = menu.current_item().map(|e| e.id);
+        let state_before = menu.state;
         if let Some(ev) = ev {
             menu.input(ev);
         }
-        // Discard the event log; `used_slots` is the authoritative list of
+        // The event log drives the window's blip (`super::ui_cues`) and is
+        // otherwise discarded; `used_slots` is the authoritative list of
         // targets the completed use applied to (one for a single-target item,
         // every healed ally for an all-party item).
-        let _ = menu.drain_events();
+        let events = menu.drain_events();
+        if let Some(cue) = super::ui_cues::item_events_cue(&state_before, &events) {
+            self.push_battle_ui_cue(cue);
+        }
         let used_slots = menu.used_slots.clone();
 
         if !used_slots.is_empty() {

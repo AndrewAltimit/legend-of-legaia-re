@@ -243,10 +243,14 @@ fn battle_special_attack_requests_move_fx_spawn() {
         world.casting.pending_move_fx_spawn
     }
 
-    // FX record -> a move-FX spawn request at the target's position.
+    // FX record -> a move-FX spawn request at the target's position. The
+    // target stood at (100, 200) until the cast's seed recentred the
+    // formation (`FUN_801EFE44`): the box spans it and the origin the two
+    // empty party seats and the monster hold, so everyone moves by the
+    // centroid (50, 100).
     assert_eq!(
         run(true),
-        Some((0x20, [100, -50, 200])),
+        Some((0x20, [50, -50, 100])),
         "Flame with a spawnable effect entry requests move-FX at the target"
     );
     // No FX entry -> no request (the move_has_spawn_fx gate).

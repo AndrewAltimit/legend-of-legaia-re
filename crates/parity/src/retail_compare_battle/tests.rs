@@ -289,6 +289,17 @@ fn spent_combatants_keep_their_heading_until_the_strike_commits() {
     // A combatant whose turn is still to come keeps the engine's.
     b.init_keys[4] = Some(3);
     assert_eq!(b.seeded_facing()[2], None);
+    // A Spirit turn writes no heading, so its Done tail keeps the acting
+    // seat's (`nivora_duel_pre_megaton_press`: Gala at `3980`).
+    b.queued_category = 4;
+    b.action_state = 0x51;
+    assert_eq!(b.seeded_facing()[0], Some(484));
+    b.queued_category = 3;
+    assert_eq!(
+        b.seeded_facing()[0],
+        None,
+        "an attack's Done tail is the replay's"
+    );
 }
 
 /// A counterattack capture - a party seat's strike loop inside a monster's
@@ -427,4 +438,62 @@ fn a_downed_member_keeps_its_heading_and_the_capture_band_seats_idle_loops() {
     assert_eq!(seats(&b), vec![0, 1], "the struck member's knockdown");
     b.clip_cursors = vec![(0, 4, -8)];
     assert!(seats(&b).is_empty(), "before the hit");
+}
+
+/// A seated cast part is taken back over the display lag: its position by
+/// its velocity, its roll by its bank rate, its channels by their rates in
+/// render mode 2, its wait by the drain (`displayed_part_halfword`).
+#[test]
+fn cast_part_seed_walks_back_over_the_display_lag() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let n = 0x8008_1F1C;
+    put16(&mut ram, n + 0x5A, 2);
+    put16(&mut ram, n + 0x14, (-741i16) as u16);
+    put16(&mut ram, n + 0x3C, 152);
+    put16(&mut ram, n + 0x28, 800);
+    put16(&mut ram, n + 0x84, 0x100);
+    put16(&mut ram, n + 0xB6, 300);
+    put16(&mut ram, n + 0xC2, (-64i16) as u16);
+    put16(&mut ram, n + 0x54, 304);
+    let at = |off| ram_read::displayed_part_halfword(&ram, n, off, 6) as i16;
+    assert_eq!(at(0x14), -741 - 6 * 19);
+    assert_eq!(at(0x28), 800 - 6 * 32);
+    assert_eq!(at(0xB6), 300 + 6 * 8);
+    assert_eq!(at(0x54), 304 + 6 * 8);
+    // Render mode 3 neither moves nor turns.
+    put16(&mut ram, n + 0x5A, 3);
+    let at = |off| ram_read::displayed_part_halfword(&ram, n, off, 6) as i16;
+    assert_eq!(at(0x14), -741);
+    assert_eq!(at(0x28), 800);
+    assert_eq!(at(0xB6), 300);
+}
+
+/// A turning effect-script table part is seeded as its rotation trio on the
+/// displayed frame - `freed_summon_mid_cast`'s ray fan: record `0x801F5A04`,
+/// `+0x26 = 644` turning `-0x1C0 >> 3 = -56` a vsync, four vsyncs of lag at
+/// step `2` - while a still part, a slot-B record and a killed node are not.
+#[test]
+fn action_fx_part_seed_is_the_displayed_rotation() {
+    let mut ram = vec![0u8; 0x20_0000];
+    put32(&mut ram, frame_step::FORCED_STEP, 2);
+    let nodes = [0x8008_1F1C, 0x8008_2000, 0x8008_2100, 0x8008_2200];
+    put32(&mut ram, 0x8007_C34C + 4, nodes[0]);
+    for (i, &n) in nodes.iter().enumerate() {
+        put32(&mut ram, n, nodes.get(i + 1).copied().unwrap_or(0));
+        put32(&mut ram, n + 0x0C, 0x8002_1DF4);
+        put32(&mut ram, n + 0x48, 0x801F_5A04);
+        put16(&mut ram, n + 0x5A, 1);
+        put16(&mut ram, n + 0x26, 644);
+        put16(&mut ram, n + 0x82, 0xFE40);
+    }
+    put16(&mut ram, nodes[1] + 0x82, 0);
+    put32(&mut ram, nodes[2] + 0x48, 0x801F_6A00);
+    put32(&mut ram, nodes[3] + 0x10, 0x8);
+    let seeds = ram_read::retail_action_fx_parts(&ram);
+    assert_eq!(seeds.len(), 1);
+    assert_eq!(seeds[0].tag, 0x801F_5A04);
+    assert_eq!(
+        seeds[0].pokes,
+        vec![(0x24, 0), (0x26, 644 + 4 * 56), (0x28, 0)]
+    );
 }

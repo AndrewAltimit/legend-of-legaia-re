@@ -214,6 +214,10 @@ def run_engine(a, out: Path) -> bool:
         "LEGAIA_DIAG_CAST_SEQ": str(edir),
         "LEGAIA_DIAG_CAST_SEQ_SEAT": str(caster),
         "LEGAIA_DIAG_CAST_SEQ_TAIL": str(a.tail),
+        # Past the retail side's own span (1500 grabs, every 2 vsyncs by
+        # default): the recorder's 2000-frame default stops a long summon
+        # (Mule) short of its last arms.
+        "LEGAIA_DIAG_CAST_SEQ_MAX": "4000",
     })
     env.update(dict(kv.split("=", 1) for kv in a.engine_env))
     (out / "engine-cmd.txt").write_text(

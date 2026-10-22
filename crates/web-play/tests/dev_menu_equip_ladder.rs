@@ -1,0 +1,208 @@
+//! Pad ladder for the browser play page's **developer-menu EQUIP row** - the
+//! host half of the `dev-menu` reach cluster in
+//! `docs/tooling/reach-triage.md` (`dev_equip_commit.rs` `801e5a08`,
+//! `world_map_panel.rs` `801ea9b0`).
+//!
+//! `play_compose_ladder`'s dev-menu rung walks the row list and the Records
+//! page but never confirms a row, so neither the row-action dispatcher
+//! (retail's *cancel* leg) nor the EQUIP commit was on any ladder. Both are
+//! reached here the way a visitor reaches them: the page's opt-in, then pad
+//! words through the world's own pump - `LegaiaRuntime::tick_dev_menu` is
+//! called from `tick_frame` and there is no page-side key table
+//! (`docs/tooling/host-drift.md` tier 5).
+//!
+//! What the *kernels* do with the bag and the record is asserted disc-free in
+//! `crates/engine-world-views/tests/world_map_render_ladder.rs`, over the same
+//! `DevMenuSession` wrapper both hosts call. This file's job is narrower and
+//! is the half that file cannot cover: that a pad stream on a real host
+//! reaches them at all.
+//!
+//! Coverage export:
+//!
+//! ```text
+//! cargo llvm-cov clean --profraw-only
+//! cargo llvm-cov -p legaia-web-play \
+//!     --test integration dev_menu_equip_ladder:: --no-report
+//! cargo llvm-cov report --json \
+//!     --output-path target/cov-dev_menu_equip_ladder.json
+//! ```
+//!
+//! No `--release`, and the report step is unscoped: an optimised build leaves
+//! an inlined function's coverage record at zero, which this join cannot tell
+//! from never-called, and `-p` scopes the REPORT to that package's own
+//! sources. Both traps are written up in
+//! `docs/tooling/reach-triage.md`; this recipe is the one
+//! `scripts/ci/replay-port-coverage.py` documents.
+//!
+//! Skips + passes when `LEGAIA_DISC_BIN` is unset.
+
+#![cfg(not(target_arch = "wasm32"))]
+
+use legaia_engine_system::input::PadButton;
+use legaia_web_play::runtime::LegaiaRuntime;
+
+const W: u32 = 960;
+const H: u32 = 720;
+
+/// One press through the world pad: a frame with the bit down, then a frame
+/// at neutral, so the engine's `pad & !pad_prev` edge fires once.
+fn tap(rt: &mut LegaiaRuntime, mask: u16) {
+    rt.set_pad(mask);
+    rt.tick_frame().expect("tick_frame");
+    rt.set_pad(0);
+    rt.tick_frame().expect("tick_frame");
+}
+
+fn dev_draws(rt: &mut LegaiaRuntime) -> serde_json::Value {
+    serde_json::from_str(&rt.play_dev_menu_draws_json(W, H)).unwrap_or(serde_json::Value::Null)
+}
+
+fn text_count(v: &serde_json::Value) -> usize {
+    v["texts"].as_array().map(|a| a.len()).unwrap_or(0)
+}
+
+#[test]
+fn dev_menu_equip_ladder() {
+    let Ok(disc) = std::env::var("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let Ok(bytes) = std::fs::read(&disc) else {
+        eprintln!("[skip] disc unreadable (disc-gated)");
+        return;
+    };
+    let mut rt = LegaiaRuntime::new();
+    rt.load_disc(bytes, String::new()).expect("load_disc");
+    rt.enter_field("town01").expect("enter_field(town01)");
+    for _ in 0..5 {
+        rt.tick_frame().expect("tick_frame");
+    }
+
+    // The opt-in is the only non-pad step, exactly as the page's own control
+    // is the only non-pad step for a visitor.
+    assert_eq!(
+        text_count(&dev_draws(&mut rt)),
+        0,
+        "the dev overlay must draw nothing before the opt-in"
+    );
+    rt.play_dev_menu_set_enabled(true);
+    assert!(rt.play_dev_menu_enabled());
+    rt.tick_frame().expect("tick_frame");
+    let list = dev_draws(&mut rt);
+    assert!(list["open"] == true, "dev overlay closed after the opt-in");
+    assert!(text_count(&list) > 0, "the row list drew nothing");
+
+    // Walk to the last row (`EQUIP`): `rows - 1` Downs land on it from the
+    // top whether the picker clamps or wraps; each press has to move the `>`
+    // cursor, which is what makes this a walk and not a sequence of no-ops.
+    let rows = legaia_engine_menus::dev_menu_host::DevMenuRow::ALL.len();
+    assert_eq!(
+        legaia_engine_menus::dev_menu_host::DevMenuRow::ALL[rows - 1],
+        legaia_engine_menus::dev_menu_host::DevMenuRow::Equip,
+        "EQUIP is the list's last row"
+    );
+    let mut seen = vec![list.to_string()];
+    for i in 0..rows - 1 {
+        tap(&mut rt, PadButton::Down.mask());
+        let now = dev_draws(&mut rt).to_string();
+        assert!(
+            !seen.contains(&now),
+            "Down #{i} did not move the dev-menu cursor"
+        );
+        seen.push(now);
+    }
+
+    // Right/Left step the staged item id on the EQUIP row, so the row's value
+    // column has to change and change back - the proof the cursor really is
+    // on EQUIP rather than on some row that ignores the bits.
+    let at_equip = dev_draws(&mut rt).to_string();
+    tap(&mut rt, PadButton::Right.mask());
+    let stepped = dev_draws(&mut rt).to_string();
+    assert_ne!(
+        at_equip, stepped,
+        "Right did not step the EQUIP row's staged item id"
+    );
+    tap(&mut rt, PadButton::Left.mask());
+    assert_eq!(
+        at_equip,
+        dev_draws(&mut rt).to_string(),
+        "Left did not undo the step"
+    );
+
+    // The confirm. With an empty bag the commit's `find_in_bag` guard makes
+    // it a no-op, which is the property: a dev commit must never conjure an
+    // item the party does not own.
+    let before_name = rt.party_display_name(0);
+    tap(&mut rt, PadButton::Cross.mask());
+    assert!(
+        rt.play_dev_menu_enabled(),
+        "the EQUIP confirm closed the dev menu"
+    );
+    assert!(
+        text_count(&dev_draws(&mut rt)) > 0,
+        "the row list stopped drawing after the confirm"
+    );
+    assert_eq!(
+        rt.party_display_name(0),
+        before_name,
+        "the confirm disturbed the party record"
+    );
+
+    // Cancel: retail's row-action dispatcher runs on this leg, not on the
+    // confirm. The screen stays up and the cursor stays where it was.
+    let at_cancel = dev_draws(&mut rt).to_string();
+    tap(&mut rt, PadButton::Circle.mask());
+    assert_eq!(
+        at_cancel,
+        dev_draws(&mut rt).to_string(),
+        "the cancel leg moved the row cursor"
+    );
+
+    // EVENT FLAG page (`FUN_801DBD04` value editor, `FUN_801DB8F4` list
+    // cursor). Two Ups from EQUIP land on the row; Cross opens the page.
+    let flag_row = legaia_engine_menus::dev_menu_host::DevMenuRow::ALL
+        .iter()
+        .position(|r| *r == legaia_engine_menus::dev_menu_host::DevMenuRow::EventFlag)
+        .expect("EVENT_FLAG row");
+    for _ in flag_row..rows - 1 {
+        tap(&mut rt, PadButton::Up.mask());
+    }
+    tap(&mut rt, PadButton::Cross.mask());
+    // Right nudges the edited value by +1, which the row's 4-digit readout
+    // shows - the value editor ran.
+    let at_zero = dev_draws(&mut rt).to_string();
+    tap(&mut rt, PadButton::Right.mask());
+    let at_one = dev_draws(&mut rt).to_string();
+    assert_ne!(
+        at_zero, at_one,
+        "Right on the EVENT FLAG page did not step the edited value"
+    );
+    // Up walks the flag LIST when the host seeded it off the disc's table,
+    // and only falls through to the value editor (1 - 8 -> clamp 0, a visible
+    // change) when the list is empty. An unchanged readout is therefore the
+    // list branch having taken the press.
+    tap(&mut rt, PadButton::Up.mask());
+    assert_eq!(
+        at_one,
+        dev_draws(&mut rt).to_string(),
+        "Up edited the value: the flag list was not seeded from the field overlay"
+    );
+    tap(&mut rt, PadButton::Down.mask());
+    tap(&mut rt, PadButton::Circle.mask());
+    let back_on_list = dev_draws(&mut rt).to_string();
+    tap(&mut rt, PadButton::Up.mask());
+    assert_ne!(
+        back_on_list,
+        dev_draws(&mut rt).to_string(),
+        "Circle did not return the pad to the row list"
+    );
+
+    rt.play_dev_menu_set_enabled(false);
+    rt.tick_frame().expect("tick_frame");
+    assert_eq!(
+        text_count(&dev_draws(&mut rt)),
+        0,
+        "turning the opt-in off must take the overlay with it"
+    );
+    eprintln!("dev_menu_equip_ladder: cleared");
+}

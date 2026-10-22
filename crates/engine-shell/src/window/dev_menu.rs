@@ -23,7 +23,7 @@
 //! [`legaia_engine_ui::record_counters`], which rebases the retail
 //! save-block displacements onto a bare record; the clamping and the H:MM:SS
 //! decomposition are the ported model
-//! (`legaia_engine_field::dev_menu_leaves::records_screen`).
+//! (`legaia_engine_dev_menu::dev_menu_leaves::records_screen`).
 //!
 //! The lifetime battle / escape counters and the treasure census are state the
 //! engine does not keep, so those read zero and the treasure line stays hidden

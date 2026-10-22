@@ -8,7 +8,9 @@
 //! open and close their windows by running a **command script** through
 //! `FUN_801E9B3C`, they read the pad through the shared list-cursor helper
 //! `FUN_801E9DC8`, and the developer menu's row actions run through
-//! `FUN_801EA9B0`. Those three are what this module ports.
+//! `FUN_801EA9B0`. This module ports the first two; the third is
+//! `legaia_engine_dev_menu::dev_menu_action`, below both this crate and the
+//! menu front end, whose dev-menu screen is its only caller.
 //!
 //! All three live in the field overlay (PROT 0897, base `0x801CE818`). The
 //! capture dumps tagged `overlay_world_map*` / `overlay_cutscene_dialogue` /
@@ -21,17 +23,16 @@
 //! indexed by the panel index the script record carries. The two fields the
 //! script system reads back are `+0x08` (x) and `+0x0A` (y); `+0x0E` is the
 //! height the sizing arms write. That is the same descriptor
-//! [`crate::dev_menu_leaves::panel_geometry`] sizes from the list-picker
+//! `legaia_engine_dev_menu::dev_menu_leaves::panel_geometry` sizes from the list-picker
 //! side.
 //!
 //! ## Source
 //!
 //! - `ghidra/scripts/funcs/overlay_cutscene_dialogue_801e9b3c.txt`
 //! - `ghidra/scripts/funcs/overlay_cutscene_dialogue_801e9dc8.txt`
-//! - `ghidra/scripts/funcs/overlay_cutscene_dialogue_801ea9b0.txt`
 //!
 //! The same-VA dumps under the `overlay_0896_*` / `overlay_0897_*` prefixes
-//! are **not** usable here: at each of these three addresses they print a
+//! are **not** usable here: at each of these addresses they print a
 //! body that resolves against no extracted image, and at `0x801E9B3C` /
 //! `0x801E9DC8` the printed body starts mid-instruction-stream (first word a
 //! delay slot, callee-saved registers read before any write). The bodies used
@@ -39,14 +40,12 @@
 //!
 //! ## Wiring status
 //!
-//! All three leaves are hosted. `legaia_engine_world_views::world_map_panel_host`
+//! Both leaves are hosted. `legaia_engine_world_views::world_map_panel_host`
 //! owns the `0x801F2B98` descriptor array and the live window objects, runs
 //! the command scripts through [`run_panel_script`], and drives the panel
 //! actors that call [`list_cursor_input`]; it hangs off
 //! `WorldMapController::panels` and `World::tick_world_map` steps it once a
-//! frame. [`dev_menu_action`] is hosted by the dev-menu screen
-//! `legaia_engine_menu_runtime::dev_menu_host`, whose cancel leg asks it for the park
-//! phase and the draw-gate factor.
+//! frame.
 //!
 //! Two things that host supplies are the **port's**, not retail's, and both
 //! are named where they are defined: the script table (retail's live at
@@ -338,7 +337,7 @@ impl CursorOutcome {
 /// the destination list (`FUN_801EF014`), the text-box dispatcher
 /// (`FUN_801EE90C`, which calls it as `(cursor, 2, wrap = true)`) and the
 /// dev-menu list picker `FUN_801ECA08`, whose swap-wrap cursor
-/// ([`crate::dev_menu_leaves::dev_menu_cursor_step`]) is the *dev menu's own* copy of
+/// (`legaia_engine_dev_menu::dev_menu_leaves::dev_menu_cursor_step`) is the *dev menu's own* copy of
 /// this behaviour with the range expressed as an inclusive row span.
 ///
 /// Order of business, exactly as retail runs it:
@@ -407,55 +406,6 @@ pub fn list_cursor_input(
         }
     }
     (outcome, sfx)
-}
-
-// ---------------------------------------------------------------------------
-// FUN_801EA9B0 - dev-menu row-action dispatcher
-// ---------------------------------------------------------------------------
-
-/// Row count the dev-menu action dispatcher bounds against
-/// (`sltiu v0,v1,0x18`).
-pub const DEV_MENU_ACTION_ROWS: i16 = 0x18;
-
-/// The phase the out-of-range arm parks the actor in (`ctx[+0x54] = 1`).
-pub const DEV_MENU_ACTION_PARK_PHASE: i16 = 1;
-
-/// The value `FUN_801EA9B0` returns. It is `1` on **every** path: `s1` is
-/// loaded with `1` in the delay slot of the bound check and every arm exits
-/// through `move v0,s1`, including the out-of-range arm. The routine has no
-/// second return value.
-pub const DEV_MENU_ACTION_RESULT: i32 = 1;
-
-/// One frame of the dev-menu row-action dispatcher.
-///
-/// `row` is `ctx[+0x9E]`, the cursor row the list picker maintains. Rows
-/// `0..DEV_MENU_ACTION_ROWS` select one of the 24 jump-table arms (each a
-/// debug cheat: heal the party, cycle the encounter rate at `_DAT_8007B5F8`,
-/// max every stat on the three `0x80084140 + n*0x414` records, grant the
-/// whole item table, cycle the BGM index at `_DAT_801F2E90`, toggle the
-/// `_DAT_8007B606` flag, ...). Out-of-range parks the caller's phase at
-/// [`DEV_MENU_ACTION_PARK_PHASE`].
-///
-/// Returns `(new_phase, result)`: `new_phase` is `Some` only when the arm
-/// writes `ctx[+0x54]`, and `result` is always
-/// [`DEV_MENU_ACTION_RESULT`].
-///
-/// The arms' *effects* are not modelled - they poke globals and party
-/// records that have no engine counterpart, and which arm sits at which
-/// index is a property of the jump table at `0x801CF2E4`, not of the
-/// instruction stream. What is ported is the contract the **caller** depends
-/// on: the bound, the park phase, and the unconditional `1`.
-///
-/// PORT: FUN_801ea9b0 (dispatch head + shared epilogue)
-///
-/// Wired: `legaia_engine_menus::dev_menu_host::DevMenuSession::tick` runs this
-/// on its cancel leg and uses both halves of the result - the park phase and
-/// the factor [`crate::dev_menu_leaves::list_body_draws`] multiplies.
-pub fn dev_menu_action(row: i16) -> (Option<i16>, i32) {
-    if (row as u16 as u32) >= DEV_MENU_ACTION_ROWS as u32 {
-        return (Some(DEV_MENU_ACTION_PARK_PHASE), DEV_MENU_ACTION_RESULT);
-    }
-    (None, DEV_MENU_ACTION_RESULT)
 }
 
 #[cfg(test)]
@@ -667,21 +617,5 @@ mod tests {
         let mut c = 2;
         let (o, _) = list_cursor_input(&mut c, 4, false, &pad(0, PAD_UP | PAD_DOWN));
         assert_eq!((o, c), (CursorOutcome::Moved, 2));
-    }
-
-    #[test]
-    fn dev_menu_action_always_returns_one() {
-        for row in [-1i16, 0, 1, 0x17, 0x18, 0x400] {
-            assert_eq!(dev_menu_action(row).1, DEV_MENU_ACTION_RESULT);
-        }
-    }
-
-    #[test]
-    fn dev_menu_action_parks_out_of_range_rows() {
-        assert_eq!(dev_menu_action(0).0, None);
-        assert_eq!(dev_menu_action(0x17).0, None);
-        assert_eq!(dev_menu_action(0x18).0, Some(DEV_MENU_ACTION_PARK_PHASE));
-        // The bound is `sltiu`, so a negative row folds to a huge unsigned.
-        assert_eq!(dev_menu_action(-1).0, Some(DEV_MENU_ACTION_PARK_PHASE));
     }
 }

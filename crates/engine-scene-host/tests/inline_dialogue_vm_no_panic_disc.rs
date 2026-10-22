@@ -48,7 +48,7 @@ fn mix(state: &mut u64) -> u64 {
 }
 
 /// Mirror the browser per-frame HUD dialogue decode
-/// (`web_viewer::runtime::LegaiaRuntime::dialog_value`): read the live panel's
+/// (`web_play::runtime::LegaiaRuntime::dialog_value`): read the live panel's
 /// glyph page + picker options. Another panic surface.
 fn read_dialog_hud(world: &World) {
     if let Some(id) = world.dialog.inline.as_ref() {

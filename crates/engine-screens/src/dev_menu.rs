@@ -6,7 +6,7 @@
 //! three paired-constant rows and a paired-kernel row of the host-drift gate.
 //! One copy needs no pairing.
 
-use legaia_engine_field::dev_menu_leaves::{CharRecordStats, RecordsScreen, records_screen};
+use legaia_engine_dev_menu::dev_menu_leaves::{CharRecordStats, RecordsScreen, records_screen};
 use legaia_engine_menus::dev_menu_host::{DevMenuRow, DevMenuSession};
 use legaia_engine_ui::{self as ui, RecordsLabels, TextDraw};
 

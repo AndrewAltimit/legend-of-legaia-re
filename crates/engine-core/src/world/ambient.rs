@@ -29,7 +29,7 @@
 //!    software VRAM exactly like the scripted-CLUT sibling
 //!    [`World::step_clut_fx`].
 //!
-//! 3. **The mode-4 render tail.** The scroller sibling ([`vram_scroll`])
+//! 3. **The mode-4 render tail.** The scroller sibling ([`legaia_engine_field::vram_scroll`])
 //!    rotates an authored VRAM rect in place once per fired period. That
 //!    write is *destructive* rather than recomputed-from-capture, so its
 //!    requests are queued per game tick and drained against the same VRAM
@@ -51,12 +51,10 @@
 //! channel and motion blocks around the VM - [`legaia_engine_effects::part_motion`])
 //! REF: FUN_800252EC, FUN_80021DF4, FUN_80019D50, FUN_801DE840
 
-pub mod vram_scroll;
-
 use super::*;
 use legaia_engine_field::clut_cell_fx::{self, ClutCellFx};
+use legaia_engine_field::vram_scroll::{self, VramScrollFx};
 use legaia_engine_vm::move_vm::{self, ActorState, ActorTickOutcome};
-use vram_scroll::VramScrollFx;
 
 /// Per-tick opcode budget for one ambient part (the records are small; the
 /// budget only guards a malformed stream).
@@ -1080,7 +1078,7 @@ pub(crate) fn apply_scroll_fx(vram: &mut legaia_tim::Vram, fx: &vram_scroll::Vra
     true
 }
 
-fn read_rect(vram: &legaia_tim::Vram, x: u16, y: u16, w: u16, h: u16) -> Vec<u16> {
+pub(crate) fn read_rect(vram: &legaia_tim::Vram, x: u16, y: u16, w: u16, h: u16) -> Vec<u16> {
     let mut out = Vec::with_capacity(usize::from(w) * usize::from(h));
     for row in 0..h {
         for col in 0..w {
@@ -1109,7 +1107,7 @@ impl World {
 }
 
 /// Write a `w`-wide halfword rect into the software VRAM.
-fn write_rect(vram: &mut legaia_tim::Vram, x: u16, y: u16, w: u16, texels: &[u16]) {
+pub(crate) fn write_rect(vram: &mut legaia_tim::Vram, x: u16, y: u16, w: u16, texels: &[u16]) {
     for (row, chunk) in texels.chunks(usize::from(w.max(1))).enumerate() {
         let bytes: Vec<u8> = chunk.iter().flat_map(|t| t.to_le_bytes()).collect();
         vram.write_block(x, y + row as u16, w, 1, &bytes);

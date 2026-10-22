@@ -54,8 +54,11 @@ from ui_host_drift.roots import REPO
 # reason about the DATA, not about the schedule.
 
 RENDER_ROOTS = [
-    REPO / "crates" / "engine-shell" / "src" / "bin",
+    REPO / "crates" / "engine-shell" / "src",
     REPO / "crates" / "engine-render" / "src",
+    REPO / "crates" / "engine-world-views" / "src",
+    REPO / "crates" / "engine-screens" / "src",
+    REPO / "crates" / "web-play" / "src",
     REPO / "crates" / "web-viewer" / "src",
     REPO / "site" / "js",
 ]
@@ -92,6 +95,13 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
         "diff and any single screenshot taken from the lucky angle",
         "trigger": r"\bresolve_(?:placed_)?env_draws\b",
         "requires": [r"\bdraw_plane_summaries\b", r"\bcoplanar_draw_offsets\b"],
+        "exempt": {
+            "crates/engine-shell/src/window/field_render/prop_animation.rs":
+                "resolves the placed draws only to read each one's "
+                "`(res_tmd, anim_id)` bake key (`posed_placement_keys`); it "
+                "positions and draws nothing - the native draw list with its "
+                "lifts is `field_render/placements.rs`",
+        },
     },
     {
         "kernel": "walk-ground heightfield sink",
@@ -158,11 +168,15 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
         "and every tier green because both hosts named the kernel. A surface "
         "that resolves the layout must emit through the shared quad builder "
         "(`engine-ui::battle_numerals`), leaving a font path as an explicit "
-        "before-the-atlas fallback rather than as the draw",
-        "trigger": r"\bbattle_value_readout\b",
+        "before-the-atlas fallback rather than as the draw. The emit is one "
+        "function now (`engine-screens::battle_value_readout::"
+        "value_readout_prims`), so a host satisfies the rule by calling it",
+        # A `mod battle_value_readout;` line declares the module; it resolves
+        # nothing.
+        "trigger": r"(?<!mod )\bbattle_value_readout\b",
         "requires": [
-            r"\bbattle_numerals\b",
-            r"\b(?:digit_run_prims|combo_cluster_prims|digit_quad|readout_quad)\b",
+            r"\b(?:battle_numerals|value_readout_prims)\b",
+            r"\b(?:digit_run_prims|combo_cluster_prims|digit_quad|readout_quad|value_readout_prims)\b",
         ],
     },
     {
@@ -205,6 +219,29 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
         # `trigger` and one scan (unanchored, it re-scans per position).
         "trigger": r"(?s)\A(?=.*\buploadGround\s*\().*\bplay_battle_active\b",
         "requires": [r"\bsetGroundEnable\s*\(\s*false\s*\)"],
+    },
+    {
+        "kernel": "battle screen FX through one placement and projection",
+        "why": "the weapon trail, the move-FX streak (and its ribbons) and "
+        "the Theeder beam are packets from shared kernels, and for as long as "
+        "each host built the camera they project through, the two drifted: "
+        "the native window projected the streak without the battle world "
+        "scale and drew it as an opaque scene mesh, the page as an additive "
+        "screen primitive. The camera, the scale and the prim wrap are one "
+        "function now (`engine-screens::battle_fx`); a surface that reads "
+        "the raw battle-FX seams must be that function",
+        "trigger": r"\b(?:theeder_draw|battle_weapon_trail_draws|move_fx_streak_quads|clip_ribbon_quads)\s*\(",
+        "requires": [r"\bbattle_fx_vp\b"],
+        "exempt": {
+            "crates/engine-world-views/src/screen_passes.rs":
+                "the kernels themselves (`weapon_trail_prims`, "
+                "`move_fx_streak_quads`) take the view-projection as an "
+                "argument; `engine-screens::battle_fx` is their one caller "
+                "that builds it",
+            "crates/web-play/src/play_battle/test_probes.rs":
+                "counts the draws (`debug_battle_*` probes for the battle "
+                "ladder) and projects or draws nothing",
+        },
     },
     # RETIRED: "screen-space fade quad" (resolving `intro_fade(...)` requires
     # `fade_prim`). The whole transition emission - fade included - became

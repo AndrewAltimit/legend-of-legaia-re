@@ -443,16 +443,10 @@ impl World {
     /// The calls a stage module makes into the rest of the game.
     fn apply_stage_effect(&mut self, e: StageEffect, seat_idx: usize) {
         match e {
-            StageEffect::Cue(id) => {
-                self.audio.battle_sfx_cues.push(
-                    legaia_engine_battle::battle_events::BattleSfxCue {
-                        kind: id,
-                        timing_frames: 0,
-                        actor_slot: seat_idx as u8,
-                        target_slot: seat_idx as u8,
-                    },
-                );
-            }
+            // `jal 0x8004FCC8` with `0x20A` (968, `0x801F6AC4`) / `0x20B`
+            // (969, `0x801F6A70`): ids past `0x100`, so the dispatcher's
+            // CD-XA arm - clip `0x21`, channels `2` / `3` - not an SFX row.
+            StageEffect::Cue(id) => self.dispatch_battle_cue(id),
             StageEffect::Fade(t) => {
                 self.presentation.fade = Some(legaia_engine_system::fade::FadeState::load(&t));
             }

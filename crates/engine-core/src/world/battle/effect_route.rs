@@ -10,6 +10,7 @@
 //! own copy of this loop; this is the one they now share.
 
 use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// What one routed spawn did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,6 +28,15 @@ impl World {
     pub fn route_battle_effect_spawns(&mut self) -> Vec<RoutedEffectSpawn> {
         let spawns = self.drain_battle_effect_spawns();
         let mut out = Vec::with_capacity(spawns.len());
+        // Retail spawns these ahead of the frame's effect-pool walker (the
+        // anim tick and the action SM precede the draw tick that walks the
+        // pool), so each direct spawn takes the sweeps this tick's walker
+        // already gave the rest (`Pool::catch_up_master`).
+        let owed = if self.mode == SceneMode::Battle {
+            self.battle.anim_pass_vsyncs
+        } else {
+            0
+        };
         for s in spawns {
             let at = [
                 s.at.0.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
@@ -34,7 +44,7 @@ impl World {
                 s.at.2.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
             ];
             let table_staged = if s.direct {
-                self.try_spawn_effect(s.effect, at, s.facing);
+                self.spawn_effect_caught_up(s.effect, at, s.facing, owed);
                 None
             } else {
                 // `FUN_801DEA50`'s table arm: the actor's facing turned half

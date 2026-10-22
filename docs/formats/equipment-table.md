@@ -8,19 +8,26 @@ equip it, and its slot. It is the equipment analogue of the
 the item's `+1` byte, which is overloaded per `kind` (effect subtype for
 consumables, bonus-table index for equipment).
 
-## Indexing (Ghidra-traced)
+## Indexing
 
-From the equip-effect aggregator `FUN_801CF650`
-(`ghidra/scripts/funcs/overlay_menu_801cf650.txt`), which walks a character's
-five equipment slots and sums their bonuses into the equip-screen preview:
+From the equip-effect aggregator `FUN_801CF650` (menu overlay, PROT 0899),
+which walks a character's first five equipment slots and sums their bonuses
+into the equip-screen preview:
 
 ```text
-kind        = item_table[id].byte(+0)            ; DAT_80074368[id*0xC]; 1 = equipment
-bonus_index = item_table[id].byte(+1)            ; DAT_80074369[id*0xC]
-record      = (&DAT_80074F68)[bonus_index * 8]   ; stride-8 record
-; applied only when kind == 1; record[+0..+4] sum into five stat accumulators
-; (DAT_801EF09C / 08C / 090 / 094 / 098).
+// FUN_801CF650
+0x801CF6A4  id = char[+0x196 + slot]              // 0x80084140 + idx*0x414 + 0x75E; slot 0..4
+0x801CF6AC  id == 0 -> next slot
+0x801CF6C0  kind = item_table[id].byte(+0)        // 0x80074368 + id*0xC
+0x801CF6C8  kind != 1 -> next slot
+0x801CF6D0  record = 0x80074F68 + item_table[id].byte(+1) * 8
+0x801CF6E0  record[+0..+4] add into the accumulators at 0x801EF09C / 08C / 090 / 094 / 098
+0x801CF744  slti a2,5 -> loop
 ```
+
+The three accessory slots (`+0x19B..+0x19D`) are not summed here: a
+`kind == 1` item in one would not reach the preview. Retail accessories carry
+`kind == 2`, so nothing is lost.
 
 ## Record layout (8 bytes, stride `0x8`)
 

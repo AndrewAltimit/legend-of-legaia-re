@@ -303,6 +303,16 @@ arming the next surface is a soft-lock, and it does not have to be the command
 itself that breaks - see the readout desync in
 [`battle-action.md`](battle-action-exit-gates.md#the-0x51-exit-gate-and-the-hp-bar-settle-invariant).
 
+### Every press sounds a blip
+
+Each handler raises a cue through the dispatcher `FUN_8004FCC8` as it acts on a
+press: `0x21` for a commit, `0x22` for a target-cursor step, `0x23` for a
+cancel or a refused arm. Most go through two shared tails - `0x801D20D4` keys
+`0x21` and `0x801D2968` keys `0x23` - which is why every ring arm and both
+round-prompt chips commit with one sound and every refusal shares another. The
+item and magic windows sound the list kernel's own cues instead. Site table and
+port: [`audio.md`](audio.md#the-battle-command-surfaces-blips).
+
 ### The ring's cancel steps back a member
 
 The cancel mask is the ring handler's first test (`0x801D11B4`, ahead of the
@@ -545,7 +555,7 @@ A sweep reaches the action SM as retail's target-group code, not a sentinel: the
 
 `engine-menus::battle_input` carries the three phases (`CommandPhase::RoundPrompt`
 / `Menu` / `AttackMode`) and `engine-ui::battle_command_ui::ChipPhase` the
-seating for each; `engine-scene-host::disc_readers::battle_open` composes the banner and
+seating for each; `engine-menus::battle_open` composes the banner and
 `World::raise_battle_open_banner` queues it onto the shared battle message box
 (retail's `ctx[+0x6B2]` surface). The round-scoped prompt is armed from
 `World::arm_round_open_prompt`, keyed on the flow byte parking at
@@ -641,7 +651,7 @@ environment variable in the condition. `World::prime_battle_tutorial` is a
 debug force, and `LEGAIA_BATTLE_TUTORIAL` (`0` suppress / `1` force / `now`
 force and enter a fight) is `play-window`'s hand-testing knob on top of it -
 neither is the port. Browser oracle:
-`crates/web-viewer/tests/battle_tutorial_page.rs`.
+`crates/web-play/tests/battle_tutorial_page.rs`.
 
 The `asset-viewer battle-scene` subcommand drives the engine-side composite end-to-end: loads the same battle bundle TMDs, builds an `engine-core::World` in `SceneMode::Battle`, spawns 3 party + 5 monster actor slots, and ticks the [battle-action state machine](battle-action.md) per frame. HUD shows the current `ActionState` (decoded into the named variant), queued action, per-slot liveness, transition counts, and any `BattleEndCause` the SM emits. Triangle cycles `queued_action`; Cross re-seeds at `ActionState::Begin`.
 

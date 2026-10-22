@@ -86,6 +86,23 @@ pub fn record_disc_for_engine(settings: &Path, disc: &Path) -> anyhow::Result<()
         .with_context(|| format!("writing {}", settings.display()))
 }
 
+/// The `play-window` switches the engine's launcher keeps in `settings`
+/// (`psx_render`, `retail`; `legaia_engine_shell::launcher::LauncherSettings`),
+/// as arguments. A missing or unreadable file gives none.
+pub fn launch_switches(settings: &Path) -> Vec<std::ffi::OsString> {
+    let Some(table) = std::fs::read_to_string(settings)
+        .ok()
+        .and_then(|t| t.parse::<toml::Table>().ok())
+    else {
+        return Vec::new();
+    };
+    [("psx_render", "--psx-render"), ("retail", "--retail")]
+        .into_iter()
+        .filter(|(key, _)| table.get(*key).and_then(|v| v.as_bool()) == Some(true))
+        .map(|(_, flag)| flag.into())
+        .collect()
+}
+
 /// The log file a Studio-started game writes into.
 pub const GAME_LOG: &str = "legaia-studio-game.log";
 
@@ -129,10 +146,15 @@ impl Game {
     /// Start `engine` on `bin`. The working directory is `data_dir` (the
     /// engine's data folder, [`engine_data_dir`]; created when missing);
     /// stdout and stderr go to [`GAME_LOG`] inside it.
-    pub fn start(engine: &Path, bin: &Path, data_dir: Option<&Path>) -> anyhow::Result<Self> {
+    pub fn start(
+        engine: &Path,
+        bin: &Path,
+        extra: &[std::ffi::OsString],
+        data_dir: Option<&Path>,
+    ) -> anyhow::Result<Self> {
         use anyhow::Context;
         let mut cmd = Command::new(engine);
-        cmd.args(play_args(bin)).stdin(Stdio::null());
+        cmd.args(play_args(bin)).args(extra).stdin(Stdio::null());
         let mut log = None;
         if let Some(dir) = data_dir
             && std::fs::create_dir_all(dir).is_ok()
@@ -266,7 +288,7 @@ mod tests {
         .unwrap();
         std::fs::set_permissions(&engine, std::fs::Permissions::from_mode(0o755)).unwrap();
         let data = dir.path().join("data");
-        let mut game = Game::start(&engine, Path::new("/g/l.bin"), Some(&data)).unwrap();
+        let mut game = Game::start(&engine, Path::new("/g/l.bin"), &[], Some(&data)).unwrap();
         let res = loop {
             if let Some(r) = game.poll() {
                 break r;
@@ -307,6 +329,19 @@ mod tests {
         std::fs::write(&file, "not = = toml").unwrap();
         assert!(record_disc_for_engine(&file, Path::new("/g/new.bin")).is_err());
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "not = = toml");
+    }
+
+    #[test]
+    fn launch_switches_follow_the_engine_launcher_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("launcher.toml");
+        assert!(launch_switches(&file).is_empty(), "no file, no switches");
+        std::fs::write(&file, "disc = \"/g/l.bin\"\npsx_render = true\n").unwrap();
+        assert_eq!(launch_switches(&file), vec!["--psx-render"]);
+        std::fs::write(&file, "retail = true\npsx_render = false\n").unwrap();
+        assert_eq!(launch_switches(&file), vec!["--retail"]);
+        std::fs::write(&file, "not = = toml").unwrap();
+        assert!(launch_switches(&file).is_empty());
     }
 
     #[test]

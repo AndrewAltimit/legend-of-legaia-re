@@ -90,20 +90,22 @@ flowchart TD
     end
     subgraph port["The port"]
         vm["engine-vm, engine-battle-vm, engine-cast, engine-motion-vm"]
-        kernels["World-free kernels<br/>engine-system, engine-mode, engine-dialog, engine-camera, engine-battle, engine-effects,<br/>engine-field, engine-fishing, engine-minigames, engine-menus, engine-minigame-scenes"]
+        kernels["World-free kernels<br/>engine-system, engine-mode, engine-dialog, engine-camera, engine-dev-menu, engine-battle,<br/>engine-effects, engine-field, engine-fishing, engine-minigames, engine-menus, engine-minigame-scenes"]
         scene["engine-scene: scene resolution + loading"]
-        core["engine-core: World + scene host"]
+        core["engine-core: World and its tick"]
+        drivers["World drivers<br/>engine-scene-host, engine-menu-runtime, engine-battle-hud,<br/>engine-world-views, engine-cheats"]
         audio["engine-audio: SPU + sequencer"]
         session["engine-session: BootSession"]
         present["engine-screens<br/>over engine-ui + render-kernels"]
         native["engine-shell: legaia-engine<br/>engine-render (winit + wgpu)"]
-        web["web-viewer: WASM site build"]
+        web["web-play: browser hosts<br/>in web-viewer's WASM site build"]
         vm --> kernels
         kernels --> scene
         scene --> core
-        core --> session
+        core --> drivers
+        drivers --> session
         audio --> session
-        core --> present
+        drivers --> present
         session --> native
         session --> web
         present --> native
@@ -126,9 +128,11 @@ An arrow runs from a crate to the crates built on it. The exact edges, and the g
 
 Over them sit the format-family crates: `container-formats` (asset dispatch, chunk stream, pack), `scene-formats` (field and world-map scenes), `actor-formats` (the character and monster model formats), `minigame-formats`, `ui-formats`, `game-tables` (the static data tables) and `overlay-images` (the code-overlay image formats). `disc-audit` measures the whole disc, `asset` is the command-line binary over it and the format families, and `extract` drives the whole pipeline. `mednafen` and `pcsx-redux` read emulator save states over the shared `ram-image`; `gamedata` and `cheats` are curated label sets.
 
-**The port.** `engine-core` holds the `World` and the scene host. Directly below it, `engine-scene` is the disc-facing half: it resolves a scene to its PROT entries and loads what the scene is built from, without naming `World`. Below that sit the kernels that never touch `World` - `engine-battle`, `engine-field`, `engine-menus`, `engine-dialog`, `engine-effects`, `engine-system`, `engine-mode`, `engine-camera` (the shared GTE camera), `engine-minigames` (over `engine-fishing`) and `engine-minigame-scenes` - and the ported VMs in `engine-vm`, `engine-battle-vm` (the battle side, with the slot-B cast / summon modules one rank above it in `engine-cast`) and `engine-motion-vm`. No crate re-exports another, so a path's first segment is the crate that owns the code.
+**The port.** `engine-core` holds the `World` and its tick. Above it, the World drivers hold a running `World` from outside: `engine-scene-host` (scene entry and tick), `engine-menu-runtime` (the pause menu), `engine-battle-hud` and `engine-world-views` (the hosts' reads) and `engine-cheats`.
 
-On the presentation side, `engine-ui` builds renderer-agnostic draw lists over the shared `render-kernels`; `engine-screens` composes the screens both hosts draw (shop family, battle HUD, pause menu) once; `engine-session` is the `BootSession` and BGM director every play host ticks. `engine-render` (winit + wgpu) is the native renderer and `engine-audio` (SPU + sequencer; cpal natively, WebAudio in the browser) the audio stack both hosts link, `engine-shell` is the `legaia-engine` binary, `engine-export` the `.glb` exporter behind `export-glb`, and `parity` holds the retail oracles over the capture seeds in `engine-capture`. `asset-viewer` and the `web-viewer` WASM target sit beside them.
+Directly below `engine-core`, `engine-scene` is the disc-facing half: it resolves a scene to its PROT entries and loads what the scene is built from, without naming `World`. Below that sit the kernels that never touch `World` - `engine-battle`, `engine-field`, `engine-menus`, `engine-dialog`, `engine-effects`, `engine-system`, `engine-mode`, `engine-camera` (the shared GTE camera), `engine-dev-menu` (the developer-menu bodies), `engine-minigames` and `engine-fishing`, and `engine-minigame-scenes` over both - and the ported VMs in `engine-vm`, `engine-battle-vm` (the battle side, with the slot-B cast / summon modules one rank above it in `engine-cast`) and `engine-motion-vm`. No crate re-exports another, so a path's first segment is the crate that owns the code.
+
+On the presentation side, `engine-ui` builds renderer-agnostic draw lists over the shared `render-kernels`; `engine-screens` composes the screens both hosts draw (shop family, battle HUD, pause menu) once; `engine-session` is the `BootSession` and BGM director every play host ticks. `engine-render` (winit + wgpu) is the native renderer and `engine-audio` (SPU + sequencer; cpal natively, WebAudio in the browser) the audio stack both hosts link, `engine-shell` is the `legaia-engine` binary, `engine-export` the `.glb` exporter behind `export-glb`, and `parity` holds the retail oracles over the capture seeds in `engine-capture`. `asset-viewer`, the `web-play` browser hosts and the `web-viewer` WASM bundle that ships them sit beside them.
 
 The port ships three hosts on that one engine: the native `play-window`, the browser play page, and the browser minigames page. `engine-session`, `engine-screens` and `engine-ui` carry no wgpu or winit dependency (and reach cpal only through `engine-audio` on native targets), which is what lets the same session code run natively and in `wasm32`. The gates that keep the hosts in step are in [`tooling/host-drift.md`](tooling/host-drift.md).
 

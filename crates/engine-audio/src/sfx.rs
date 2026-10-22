@@ -327,6 +327,40 @@ impl SfxBank {
         self.play_entry(&entry, spu, vab)
     }
 
+    /// The sustained-cue teardown `FUN_80017910`: when a sustained run is
+    /// held (`gp+0x5D0 != 0`), key off voices `7 .. 7 + held` in ascending
+    /// order (`FUN_800653C8`, the libsnd voice key-off) and clear the held
+    /// count. With nothing held it does nothing. Returns how many voices it
+    /// released.
+    ///
+    /// A sustained cue's sample loops (VAG repeat flag) and holds its ADSR
+    /// sustain, so nothing but this teardown - or the drainer's own release
+    /// when the next sustained cue keys - ever stops it. Retail runs it from
+    /// the mode initialiser `FUN_8001DCF8` (`0x8001DDA8`), from the battle
+    /// anim commit `FUN_8004AD80` whenever an actor's staged clip differs
+    /// from its latched one (`0x8004AE68`), and from the battle tint pass
+    /// `FUN_80050120` over a fading monster (`0x8005040C`).
+    // PORT: FUN_80017910
+    pub fn release_sustained(&self, spu: &mut Spu) -> u8 {
+        let mut st = self.voices.get();
+        let held = st.held;
+        for i in 0..held {
+            let v = (SUSTAINED_BASE_VOICE + i) as usize;
+            if let Some(voice) = spu.voices.get_mut(v) {
+                voice.key_off();
+                spu.record_key_off(v);
+            }
+        }
+        st.held = 0;
+        self.voices.set(st);
+        held
+    }
+
+    /// How many sustained voices the drainer holds (`gp+0x5D0`).
+    pub fn held_sustained(&self) -> u8 {
+        self.voices.get().held
+    }
+
     // PORT: FUN_80016B6C (the two key-on loops' voice choice,
     // 0x80016D0C..0x80016DBC one-shot, 0x80016DC4..0x80016E90 sustained)
     fn play_entry(&self, entry: &SfxEntry, spu: &mut Spu, vab: &VabBank) -> Option<u8> {
@@ -1450,6 +1484,30 @@ mod tests {
             spu.voices[23].adsr.phase,
             Phase::Attack,
             "one-shot untouched"
+        );
+    }
+
+    /// `FUN_80017910`: the teardown keys off the held sustained run and
+    /// clears the count, leaves one-shots alone, and is a no-op with nothing
+    /// held.
+    #[test]
+    fn release_sustained_keys_off_the_held_run_only() {
+        use crate::spu::adsr::Phase;
+        let vab = one_tone_bank();
+        let mut spu = crate::spu::Spu::new();
+        let bank = SfxBank::from_descriptors([(0x1D, 0, 0, 60, 0x23), (0x1A, 0, 0, 60, 1)]);
+        assert_eq!(bank.release_sustained(&mut spu), 0, "nothing held");
+        assert_eq!(bank.play_one_shot(0x1D, &mut spu, &vab), Some(7));
+        assert_eq!(bank.play_one_shot(0x1A, &mut spu, &vab), Some(23));
+        assert_eq!(bank.held_sustained(), 3);
+        assert_eq!(bank.release_sustained(&mut spu), 3);
+        assert!((7..10).all(|v| spu.voices[v].adsr.phase == Phase::Release));
+        assert_eq!(spu.voices[23].adsr.phase, Phase::Attack);
+        assert_eq!(bank.held_sustained(), 0);
+        assert_eq!(
+            bank.release_sustained(&mut spu),
+            0,
+            "a second call is a no-op"
         );
     }
 

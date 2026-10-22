@@ -71,6 +71,11 @@ pub struct EngineBattle {
     /// placed (`[x, z]`, the phase's ground pair less the seeded one), for
     /// a driven action that reached its phase ([`RetailBattle::undrift`]).
     pub ground_drift: [Option<[i32; 2]>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+    /// Per engine slot, how far (sixteenths of a keyframe) a replayed cast's
+    /// idle loop advanced between the dispatch and the capture's phase -
+    /// `None` for a slot that left its idle loop on the way
+    /// ([`RetailBattle::with_inflight_idle`]).
+    pub idle_advance: [Option<u32>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
     /// The camera's phase, glide target and origin-alignment mask set
     /// against the capture's tween endpoints - a diagnostic the `camera`
     /// detail carries under `LEGAIA_RC_CAM_TRACE`.
@@ -408,8 +413,12 @@ pub fn run_engine_battle(
                     spent_key: spent.get(slot).copied().unwrap_or(false),
                 })
             })
-            .collect()
+            .collect::<Vec<_>>()
     };
+    // The empty party seats stand where the capture's structs stand: they
+    // weigh in every recentre's box (`World::seat_empty_battle_seat`).
+    let mut hp_seed = hp_seed;
+    hp_seed.extend(battle.empty_seat_seeds());
     apply_bar_seeds(&mut session.host.world, &hp_seed);
     if battle.mystic_shield {
         session.host.world.raise_mystic_shield();
@@ -460,6 +469,7 @@ pub fn run_engine_battle(
         }
     }
     let mut phase_tick = None;
+    let mut idle_advance = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
     let mut driven = None;
     // A driven capture plays rounds the retail history did not (a Spirit
     // here, a strike there), so its combatant, bag, flag and track channels
@@ -495,11 +505,13 @@ pub fn run_engine_battle(
             }
         }
         (SeedPlan::Cast, Some(gate)) if prompt_tick.is_some() => {
+            let mut idle = IdleClock::default();
             for t in 0..INFLIGHT_TICKS {
+                idle.sample(&session.host.world);
                 if std::env::var_os("LEGAIA_RC_DRIVE_TRACE").is_some() {
                     let w = &session.host.world;
                     eprintln!(
-                        "[cast] t={t} st=0x{:02X} act={} yb={:?} acc={:?} facing={:?} cam={:?}",
+                        "[cast] t={t} st=0x{:02X} act={} yb={:?} acc={:?} facing={:?} bodies={:?} tgt={:?} cam={:?}",
                         w.battle_ctx.action_state,
                         w.battle_ctx.active_actor,
                         w.battle.camera.as_ref().map(|c| c.action_yaw_base()),
@@ -509,6 +521,12 @@ pub fn run_engine_battle(
                             .take(8)
                             .map(|a| a.battle.facing_angle & 0xFFF)
                             .collect::<Vec<_>>(),
+                        w.actors
+                            .iter()
+                            .take(8)
+                            .map(|a| (a.move_state.world_x, a.move_state.world_z, a.battle.seat))
+                            .collect::<Vec<_>>(),
+                        w.battle.camera.as_ref().map(|c| c.glide_target().focus),
                         w.battle
                             .camera
                             .as_ref()
@@ -523,6 +541,7 @@ pub fn run_engine_battle(
                         cam.align_glide_origin(battle.cam_tween.0, battle.cam_tween.1);
                     }
                     phase_tick = Some(t);
+                    idle_advance = idle.advance();
                     break;
                 }
                 gate.steer(&mut session.host.world);
@@ -570,6 +589,10 @@ pub fn run_engine_battle(
                     }
                 }
                 pre_drive = Some(snap);
+                legaia_engine_capture::melee_hits::seed_melee_hits(
+                    &mut session.host.world,
+                    &battle.melee_hit_seeds(),
+                );
                 driven = Some(run_drive(
                     &mut session,
                     &mut director,
@@ -637,6 +660,9 @@ pub fn run_engine_battle(
     // the image child does the same, `LEGAIA_BATTLE_CAM_ALIGN`). Pad drives
     // only: a replayed cast's close-ups and module shots measured worse
     // aligned (`flute_spikefish_midcast` image `.910` to `.828`).
+    if std::env::var_os("LEGAIA_RC_FX_TRACE").is_some() {
+        trace_effect_pool(&session.host.world);
+    }
     let mut cam_trace = None;
     if std::env::var_os("LEGAIA_RC_CAM_TRACE").is_some()
         && let Some(cam) = session.host.world.battle.camera.as_ref()
@@ -766,8 +792,54 @@ pub fn run_engine_battle(
         battle_bgm: snap.battle_bgm,
         save: snap.save,
         ground_drift,
+        idle_advance,
         cam_trace,
     })
+}
+
+/// The advance each battle slot's idle loop (entry `0`) makes over a
+/// replayed cast, sampled once a tick: the cursor's forward steps summed
+/// across its wraps. A slot seen off its idle loop - on another clip, on a
+/// reaction, a one-shot - is dropped for the span.
+#[derive(Default)]
+struct IdleClock {
+    last: [Option<(u16, u32)>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+    sum: [u32; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+    lost: [bool; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+}
+
+impl IdleClock {
+    fn sample(&mut self, w: &legaia_engine_core::world::World) {
+        for slot in 0..legaia_engine_core::world::INFLIGHT_GROUND_SLOTS {
+            if self.lost[slot] {
+                continue;
+            }
+            let looping_idle = w.actors.get(slot).and_then(|a| {
+                let p = a.battle_animation.as_ref()?;
+                (a.battle_reaction.is_none() && w.battle_current_anim(slot) == 0 && p.is_looping())
+                    .then(|| (p.cursor_sixteenths(), (p.frame_count() * 16).max(1)))
+            });
+            let Some((cur, span)) = looping_idle else {
+                self.lost[slot] = true;
+                continue;
+            };
+            if let Some((prev, _)) = self.last[slot] {
+                let step = (u32::from(cur) + span - u32::from(prev)) % span;
+                self.sum[slot] += step;
+            }
+            self.last[slot] = Some((cur, span));
+        }
+    }
+
+    fn advance(&self) -> [Option<u32>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS] {
+        let mut out = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+        for (slot, o) in out.iter_mut().enumerate() {
+            if !self.lost[slot] && self.last[slot].is_some() {
+                *o = Some(self.sum[slot]);
+            }
+        }
+        out
+    }
 }
 
 /// The combatant-side observables a battle state is scored on.
@@ -862,5 +934,63 @@ pub(super) fn combat_snapshot(
         },
         battle_bgm: world.audio.current_bgm,
         save: world.save_full(),
+    }
+}
+
+/// `LEGAIA_RC_FX_TRACE`: the engine's effect-VM pool (`FUN_801E0080`'s
+/// masters and children) at the sampled tick, on stderr, in the units the
+/// retail pool holds them (world position `>> 8`) - the engine half of a
+/// side-by-side against the capture's `_DAT_8007BD30` pool.
+fn trace_effect_pool(world: &legaia_engine_core::world::World) {
+    for (i, a) in world.actors.iter().enumerate() {
+        if !a.active {
+            continue;
+        }
+        eprintln!(
+            "[fx] actor {i} pos ({}, {}, {}) impact {} colour {:#x} monster {:?} flags {:#010x} clip {:#04x} cursor {:?}",
+            a.move_state.world_x,
+            a.move_state.world_y,
+            a.move_state.world_z,
+            a.battle.impact_state,
+            a.battle.render_color,
+            a.battle_monster_id,
+            a.battle.flag_word,
+            world.battle_current_anim(i),
+            a.battle_animation.as_ref().map(|p| p.cursor_sixteenths())
+        );
+    }
+    let pool = &world.effect_pool;
+    for (i, m) in pool.master_slots.iter().enumerate() {
+        if m.child_count == 0 && m.spawn_cursor == 0 {
+            continue;
+        }
+        eprintln!(
+            "[fx] master {i} total {} flags {:#04x} cur {} wait {} ang {} pos ({}, {}, {}) script {:#x}",
+            m.child_count,
+            m.flags,
+            m.spawn_cursor,
+            m.state,
+            m.angle,
+            m.pos_x >> 8,
+            m.pos_y >> 8,
+            m.pos_z >> 8,
+            m.script_offset
+        );
+    }
+    for (i, c) in pool.children.iter().enumerate() {
+        if c.frame_count == 0 {
+            continue;
+        }
+        eprintln!(
+            "[fx] child {i} frames {} cur {} wait {} vel {:?} pos ({}, {}, {}) anim {}",
+            c.frame_count,
+            c.frame_cursor,
+            c.wait,
+            c.velocity,
+            c.pos[0] >> 8,
+            c.pos[1] >> 8,
+            c.pos[2] >> 8,
+            c.anim_id
+        );
     }
 }

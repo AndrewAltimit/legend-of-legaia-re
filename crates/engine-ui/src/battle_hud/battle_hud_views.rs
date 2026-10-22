@@ -181,7 +181,7 @@ pub fn status_element_color(sprite: u8) -> [f32; 4] {
 ///
 // Reached on both hosts through [`battle_hud_draws_for`]: the native window
 // (`engine-shell/.../window/hud.rs`) and the browser play page
-// (`web-viewer/src/play_battle.rs`) call it every battle frame.
+// (`web-play/src/play_battle.rs`) call it every battle frame.
 pub fn hp_bar_color_index(cur: u16, max: u16, status_active: bool) -> u8 {
     if cur == 0 {
         return 2;

@@ -1048,17 +1048,25 @@ Verdicts:
 - **DATA**: an arm switch on `a1` whose arms only call `FUN_80021B04` /
   `FUN_80050ED4` / `FUN_801DFDF0` / `FUN_80024E80` with a module-resident
   record pointer and a scale literal. The spawn pool produces its whole
-  output. Scope rows under `[slot_b_spawn_stagers]` in
-  `scripts/ci/port-catalog-ignore.toml`;
-  `crates/overlay-images/tests/cast_module_data_rows_real.rs` re-derives per row that
-  the routine frame-matches in its owning image, that its spawn count is the
-  one below, and that it calls no damage wrapper.
+  output, so the routine is not a port site: a scope row under
+  `[slot_b_spawn_stagers]` in `scripts/ci/port-catalog-ignore.toml`.
+- **PORT (spawn-only)**: the same shape, hand-ported. The engine runs the
+  arms one by one (`cast_module_ticks`' `*_stager_spawns` modules), seating
+  each spawn call on the arm and pass that makes it instead of seating the
+  module's whole record set at once. The routine still writes no simulation
+  state, but a hand port is a port site: each carries a `// PORT:` tag and
+  none is on the ignore list.
 - **PORT**: reads or writes simulation state (a damage roll with the HP
   clamp, the staged-clip bytes, `ctx+0x279`, `ctx+0x278`, the victim's
   fields). Ported in `cast_module_ticks`.
 - **SCOPE-IGNORE**: nothing there. Scope rows under `[slot_b_cast_module]`: six
-  null stagers, one unreferenced routine, and PROT 0920's per-frame effect
-  updater `0x801F7B88`.
+  null stagers and PROT 0909's three unreferenced routines (the table lists
+  the stager-adjacent one).
+
+`crates/overlay-images/tests/cast_module_data_rows_real.rs` re-derives the
+spawn-only shape off the disc for every DATA and PORT (spawn-only) row, and
+for PROT 0912's stager `0x801F835C`: the routine frame-matches in its owning
+image, its spawn count is the one below, and it calls no damage wrapper.
 
 | VA | Owner | Routine | Verdict |
 |---|---|---|---|
@@ -1071,7 +1079,7 @@ Verdicts:
 | `801F6A0C` | 952 (`cast_bloody_horns`) | cast tick body (`0xB8`, Astral Slash), 5 phase arms; writes `+0x1DA`, `+0x1DC`, anim rate `+0x21D`, `ctx+0x279`, strike cursor `ctx+0x15`; no damage site ([below](#astral-slash-rolls-no-wrapper)) | PORT |
 | `801F6DD8` | 958 (`cast_blazing_slash`) | cast tick body via the trampoline; damage roll (bypass); writes HP `+0x14C`, `+0x1DA`, `+0x1DC`, `ctx+0x278` | PORT |
 | `801F6EDC` | 945 (`cast_water_column`) | cast tick body via the trampoline; damage roll (resist); writes HP `+0x14C`, status `+0x16E`, `+0x1DA`, `+0x1DC` | PORT |
-| `801F7F2C` | 944 (`cast_guilty_cross`) | spawn stager, 3 spawn calls (residue in 945) | DATA |
+| `801F7F2C` | 944 (`cast_guilty_cross`) | spawn stager, 3 spawn calls (residue in 945) | PORT (spawn-only) |
 | `801F8118` | 942 (`cast_power_up`) | spawn stager, 2 spawn calls (residue in 943) | DATA |
 | `801F8504` | 948 (`cast_cross_beam`) | spawn stager, 1 spawn call (residue in 949) | DATA |
 | `801F8578` | 919 (`summon_spoon`) | spawn stager, 4 spawn calls (residue in 920) | DATA |
@@ -1079,54 +1087,55 @@ Verdicts:
 | `801F74B4` | 939 (`cast_spore_gas`) | null stager | SCOPE-IGNORE |
 | `801F75BC` | 949 (`cast_water_crystals`) | frameless stager, `sltiu a1, 8`, 0 spawn calls; writes the **victim**'s `+0x0C` and anim rate `+0x21D` | PORT |
 | `801F769C` | 943 (`cast_curse`) | spawn stager, 3 spawn calls | DATA |
-| `801F76C4` | 946 (`cast_call_wave`) | spawn stager, 5 spawn calls | DATA |
+| `801F76C4` | 946 (`cast_call_wave`) | spawn stager, 5 spawn calls | PORT (spawn-only) |
 | `801F7740` | 906 (`summon_gizam`) | spawn stager, `sltiu a1, 7`, 4 spawn arms; writes `+0x0C`, `ctx+0x279` | PORT |
 | `801F776C` | 945 (`cast_water_column`) | spawn stager, 2 spawn calls | DATA |
-| `801F7820` | 924 (`stager_ultimate_rave`) | spawn stager, 1 spawn call | DATA |
+| `801F7820` | 924 (`stager_ultimate_rave`) | spawn stager, 1 spawn call | PORT (spawn-only) |
 | `801F7850` | 937 (`cast_hyper_lightning`) | spawn stager, 5 spawn calls | DATA |
-| `801F78A4` | 961 (`cast_dead_end_crisis`) | spawn stager, 6 spawn calls | DATA |
+| `801F78A4` | 961 (`cast_dead_end_crisis`) | spawn stager, 6 spawn calls | PORT (spawn-only) |
 | `801F78F8` | 947 (`cast_v_windhash`) | null stager | SCOPE-IGNORE |
 | `801F7948` | 909 (`summon_viguro`) | framed routine no table names and nothing references | SCOPE-IGNORE |
-| `801F7A80` | 914 (`summon_gola_gola`) | spawn stager, `sltiu a1, 6`, 2 spawn calls | DATA |
-| `801F7AB8` | 938 (`cast_chaos_breath`) | spawn stager, 3 spawn calls | DATA |
-| `801F7AE8` | 925 (`summon_spikefish`) | spawn stager, 3 spawn calls | DATA |
+| `801F7A80` | 914 (`summon_gola_gola`) | spawn stager, `sltiu a1, 6`, 2 spawn calls | PORT (spawn-only) |
+| `801F7AB8` | 938 (`cast_chaos_breath`) | spawn stager, 3 spawn calls | PORT (spawn-only) |
+| `801F7AE8` | 925 (`summon_spikefish`) | spawn stager, 3 spawn calls | PORT (spawn-only) |
 | `801F7AF4` | 909 (`summon_viguro`) | spawn stager, `sltiu a1, 7`, 2 spawn calls; writes `+0x0C`, `+0x1DA`, target `+0x1DD`, `ctx+0x279` | PORT |
 | `801F7B74` | 965 (`cast_doomsday`) | spawn stager, 2 spawn calls | DATA |
 | `801F7BA0` | 952 (`cast_bloody_horns`) | null stager | SCOPE-IGNORE |
 | `801F7BD0` | 936 (`cast_hyper_crush`) | spawn stager, 4 spawn calls | DATA |
 | `801F7DB0` | 941 (`cast_steal`) | spawn stager, `sltiu a1, 5`, 2 spawn calls | DATA |
-| `801F7EA4` | 930 (`summon_horn`) | spawn stager, `sltiu a1, 7`, 8 spawn calls | DATA |
+| `801F7EA4` | 930 (`summon_horn`) | spawn stager, `sltiu a1, 7`, 8 spawn calls | PORT (spawn-only) |
 | `801F7EC4` | 956 (`cast_water_hazard`) | spawn stager, 5 spawn calls | DATA |
 | `801F7FA8` | 907 (`summon_nighto`) | spawn stager, 2 spawn calls, called by its own parts; writes into the parts it seats and into a record's bytes | PORT |
-| `801F7FE8` | 911 (`summon_orb`) | spawn stager, 1 spawn call | DATA |
-| `801F800C` | 921 (`summon_iota`) | spawn stager, 2 spawn calls | DATA |
-| `801F8078` | 905 (`summon_stager_x83`) | spawn stager, 2 spawn calls | DATA |
-| `801F813C` | 962 (`cast_blade_breath`) | spawn stager, 3 spawn calls | DATA |
+| `801F7FE8` | 911 (`summon_orb`) | spawn stager, 1 spawn call | PORT (spawn-only) |
+| `801F800C` | 921 (`summon_iota`) | spawn stager, 2 spawn calls | PORT (spawn-only) |
+| `801F8078` | 905 (`summon_stager_x83`) | spawn stager, 2 spawn calls | PORT (spawn-only) |
+| `801F813C` | 962 (`cast_blade_breath`) | spawn stager, 3 spawn calls | PORT (spawn-only) |
 | `801F81A0` | 963 (`cast_genocidal_cannon`) | spawn stager, 4 spawn calls | DATA |
 | `801F81E8` | 920 (`summon_slippery`) | null stager | SCOPE-IGNORE |
 | `801F8208` | 950 (`cast_rolling_flare`) | spawn stager, 1 spawn call | DATA |
 | `801F8250` | 959 (`cast_megaton_press`) | spawn stager, `sltiu a1, 6`, 11 spawn calls | DATA |
 | `801F82CC` | 940 (`cast_glare_divide`) | null stager | SCOPE-IGNORE |
-| `801F82D8` | 917 (`summon_barra`) | spawn stager, `sltiu a1, 5`, 3 spawn calls | DATA |
+| `801F82D8` | 917 (`summon_barra`) | spawn stager, `sltiu a1, 5`, 3 spawn calls | PORT (spawn-only) |
 | `801F8310` | 908 (`summon_zenoir`) | spawn stager, 5 spawn calls, called by its own parts; writes into the parts it seats | PORT |
 | `801F835C` | 912 (`summon_freed`) | spawn stager, 3 spawn arms and a fade, called by its own parts; writes into the parts it seats | PORT |
-| `801F84A4` | 932 (`summon_meta`) | spawn stager, 1 spawn call | DATA |
+| `801F84A4` | 932 (`summon_meta`) | spawn stager, 1 spawn call | PORT (spawn-only) |
 | `801F85A8` | 927 (`summon_juggernaut`) | spawn stager, `sltiu a1, 9`, 7 spawn calls; damage roll (shared); writes HP `+0x14C` | PORT |
 | `801F85D4` | 954 (`cast_fatal_decision`) | null stager | SCOPE-IGNORE |
-| `801F864C` | 913 (`summon_nova`) | spawn stager, `sltiu a1, 6`, 3 spawn calls | DATA |
-| `801F8748` | 933 (`summon_terra`) | spawn stager, 2 spawn calls | DATA |
+| `801F864C` | 913 (`summon_nova`) | spawn stager, `sltiu a1, 6`, 3 spawn calls | PORT (spawn-only) |
+| `801F8748` | 933 (`summon_terra`) | spawn stager, 2 spawn calls | PORT (spawn-only) |
 | `801F88F8` | 916 (`summon_aluru`) | spawn stager, `sltiu a1, 8`, 7 spawn calls | DATA |
-| `801F89D4` | 910 (`summon_swordie`) | spawn stager, `sltiu a1, 5`, 1 spawn call | DATA |
-| `801F8ADC` | 931 (`summon_jedo`) | spawn stager, 1 spawn call | DATA |
+| `801F89D4` | 910 (`summon_swordie`) | spawn stager, `sltiu a1, 5`, 1 spawn call | PORT (spawn-only) |
+| `801F8AB0` | 918 (`summon_kemaro`) | spawn stager, `a1` arms 0..2, 3 spawn calls (the last a 16-iteration loop); keeps arm 0's handle in `0x801F92C4` | PORT (spawn-only) |
+| `801F8ADC` | 931 (`summon_jedo`) | spawn stager, 1 spawn call | PORT (spawn-only) |
 | `801F8B90` | 923 (`summon_gilium`) | spawn stager, 3 spawn calls; writes `ctx+0x278` | PORT |
 | `801F8BF8` | 964 (`cast_element_change`) | spawn stager, 2 spawn calls | DATA |
-| `801F8C30` | 929 (`summon_mule`) | spawn stager, `sltiu a1, 9`, 10 spawn calls | DATA |
+| `801F8C30` | 929 (`summon_mule`) | spawn stager, `sltiu a1, 9`, 10 spawn calls | PORT (spawn-only) |
 | `801F8D30` | 958 (`cast_blazing_slash`) | spawn stager, 7 spawn calls | DATA |
 | `801F8D64` | 966 (`cast_evil_seru_magic`) | spawn stager, `sltiu a1, 9`, 7 spawn calls; damage roll (resist); writes HP `+0x14C`, `+0x1DA`, `+0x1DC` | PORT |
-| `801F8E68` | 928 (`summon_palma`) | spawn stager, `sltiu a1, 7`, 12 spawn calls | DATA |
+| `801F8E68` | 928 (`summon_palma`) | spawn stager, `sltiu a1, 7`, 12 spawn calls | PORT (spawn-only) |
 | `801F90E4` | 922 (`summon_puera`) | spawn stager, 0 spawn calls; writes `ctx+0x278` | PORT |
-| `801F92AC` | 934 (`summon_ozma`) | spawn stager, 11 spawn calls | DATA |
-| `801F7F34` | 915 (`summon_mushura`) | spawn stager, two arms sharing one `jal` and two record pointers | DATA |
+| `801F92AC` | 934 (`summon_ozma`) | spawn stager, 11 spawn calls | PORT (spawn-only) |
+| `801F7F34` | 915 (`summon_mushura`) | spawn stager, two arms sharing one `jal` and two record pointers | PORT (spawn-only) |
 | `801F7FF0` | 935 (`cast_earthquake`) | spawn stager, arm 0 only, 1 spawn call | DATA |
 | `801F9370` | 955 (`cast_white_shield`) | spawn stager, 1 spawn call | DATA |
 | `801F99F4` | 957 (`summon_effect_table`) | spawn stager, `sltiu a1, 5`, 3 spawn calls | DATA |
@@ -2237,19 +2246,105 @@ rampage, Jedo's sparks, Ozma's flames). Three kinds of point are not carried:
 a `rand()` spread (seated at the spread's centre), a height off the victim's
 `+0x3E` (Barra arm `0xB`, seated at `z = 0`), and Mule arm 17's world-anchor
 point and TR z scale (the origin at unit scale). The records only a module's
-own stager seats (reached through a part's op-`0x20` call, which the engine
-does not run for these modules) are seated whole on the stager's first tick.
+own stager seats (reached through a part's op-`0x20` call) are seated whole on
+the stager's first tick, except where the stager is ported and runs off those
+calls.
 
-Palma's arm 1 holds on the band timer: retail's arm returns busy on the
-stream request's token `ctx[+0x276]` past most of the sustain
-(`palma_summon_mid_cast` sits there with the timer at 94), and the engine's
-resident stream would otherwise run the arm-3 / 4 sweep a sustain early.
+**Horn's stager** `FUN_801F7EA4` is the ported one
+(`cast_module_ticks::horn_stager_spawns`). Arm 0's record `0x801F857C` runs
+a `0x4000`-pass loop (op `0x18`) of an op-`0x20` call to arm 0 and a wait of
+`0x0B` (op `0x09`), and each call seats four sparkle triples `0x801F859C` / `0x801F85FC` /
+`0x801F865C`: a base angle `rand % 1024` and, a quarter turn apart, a radius
+`rand % 6 + 20` and a jitter `(rand % 4096) / 5`. Each record's halfwords
+`+6` / `+8` are overwritten with the spoke's `trunc(sin * r / 4096)` /
+`trunc(cos * r / 4096)` before the seat, and the seat stands at `-64` times
+those, depth `0x800`, on a stack trio rather than the caller's point
+(`0x801F7EFC..0x801F80B4`). `horn_summon_mid_cast` (arm 2, the stream wait)
+holds twelve of each live, three calls' worth. Arms 1 and 3 seat three wisps
+each with the Freed-shaped wait / spin / length / radius / roll pokes, arm 3
+three point pairs more; arms 2, 5 and 6 one record each on the caller.
+
+The stagers of PROT 0914, 0915, 0917, 0921, 0928, 0929 and 0931..0933 run
+the same way (`cast_module_ticks::creature_stager_spawns`, arm by arm off
+each image's second dump). Most arms seat one record on the caller; the ones
+with more shape are Gola Gola's arm 3 (thirty-two copies turned `0x80` apart
+about the caller's heading), Barra's arms 0 / 2 (a record per call argument)
+and arm 1 (four records in turn off the module word `0x801F9364`), Iota's
+`rand()` spoke, Palma's arm 4 (forty-eight records scattered off `rand()`
+over a far plane) and arm 5 (an eight-ray fan), and Mule's `rand()`
+scatters (arms 0, 1, 4) and ray fan (arm 8). Mule's arm 3 seats nothing: it
+is two additive screen fades over one rewritten template
+(`0x801F8E30..0x801F8EAC`), black to white over `0x20` frames and then, after
+a `0x20`-frame delay, white to black (`MULE_STAGER_FADES`), carried on the
+same stager-fade seat as PROT 0912's arm 6.
+
+The stagers of PROT 0918, 0924, 0925 and 0934 do more than seat on the
+caller, and run off the same calls
+(`cast_module_ticks::late_creature_stager_spawns`):
+
+- **PROT 0918 (Kemaro)**: arm 0 seats `0x801F8C40` and keeps its handle in
+  `0x801F92C4`; the module's arm 4 lifts that part `6 * scalar * step` a
+  battle frame to `-0x800`, ahead of its countdown gate
+  (`0x801F712C..0x801F718C`). Arm 1 seats one record, arm 2 sixteen copies
+  rolled `k << 8`.
+- **PROT 0924 (Ultimate Rave)**: one record on the caller per arm.
+- **PROT 0925 (Spikefish)**: arm 1 turns its caller's roll to
+  `rand % 1025` plus a quarter turn off the table `0x801F8008` and seats on
+  it. While the module sits in arm 7 with fewer than sixteen ring parts it
+  also moves the caller onto a circle of radius `rand % 129 + 0x40` at
+  `z = 0x200` and seats a ring part there, kept in the handle table
+  `0x801F809C`; arm 7's pass halts every one of them. The arm writes into
+  its caller, so the engine runs it inside the caller's op-`0x20` step and
+  seats what it returns on the module's next tick.
+- **PROT 0934 (Ozma)**: arm 0 seats three records on the caller's `+0x3C`
+  trio. Arms 1..3 scatter sparks `0x801F9E28` and bolts `0x801F9F2C` off
+  `rand()`, each with a random wait `+0x54`; arms 1 and 2 grow their volley
+  with the word `0x801FA410` the module zeroes in arms 0 and 10.
+
+Their records leave the module's whole-set seat.
+
+Palma's arm 1 holds on the side-band token `ctx[+0x276]`
+(`0x801F6D58..0x801F6D60`, [The side-band token](#the-side-band-token)): its
+four-slot read outlasts most of the sustain, and with the stage cleared at
+once the arm-3 / 4 sweep ran a sustain early. Palma's arm 7 holds until the
+creature plays clip `2`, which arm 6 stages bare (`sb v0,0x1da(s4)` at
+`0x801F7828`): retail commits it at the end of clip `1`, so the creature seat
+waits for its clip's boundary there as PROT 0907..0909 and 0913's do. Palma's
+arm 3 stores the stage byte `3` once its word has climbed to `scalar << 7`
+(`sb a1,0x278(v0)` at `0x801F6F1C`, `a1` the phase byte the switch loaded),
+so the stage drops away under the starfield its scanline wash draws from arm
+3 to arm `0x11`; the decoder reads that store with no value
+(`cast_module_camera::palma_stage_byte` carries it). Barra's
+arm `0xD` steps the countdown word by `p / 8` a pass as the creature arcs
+(`0x801F7CB0..0x801F7CE0`), and arm `0xE` climbs on from that value to
+`0x56`, a third of its length from zero; arm `0xE`'s pass puts the creature
+into the defeat fade (`+0x21C = 2`, `+0x225 = 2`, `0x801F7FE4..`), so it is
+gone when arm `0xF` frames the struck row.
 Mushura's arms 0 and 1 show the latched victim the band's freeze hid
 (`World::apply_mushura_writes`). Horn's seat visibility is carried
 (`World::apply_horn_writes`): arm 1 shows
 the party, arm 3 seats the creature hidden and arm 4 shows it, arm 8 hides
 the party for the rise, and the heal arm `0xA` shows it again and hides the
-creature. Otherwise not carried by any of them: the writes to the other
+creature. Mule's monster-row visibility is carried too
+(`World::apply_mule_writes`): arm 1 shows every living monster on each of
+its passes, held or not (`0x801F6D04`, ahead of the stream-token gate),
+arms 5 and 17 hide the row on their passes and arm 11 shows it again, and
+the hit arm 18 shows the monsters it strikes. Mule's arms 1..4 also push the
+anchor `0x80089120` under arm 0's landed cut, which the view builder reads
+every frame, so the director re-arms that cut on the moved anchor each
+pass; without it the row filled the screen where retail frames it small in
+the distance. Mule's arm 1 waits on the side-band applier stage
+`ctx[+0x276]` and arm 2 on the band timer; the stage stays up for the
+engine's stand-in for the applier's reads
+([The side-band token](#the-side-band-token)), so the two arms split their
+sum as retail's do. Mule's part kills are carried by their parked handles
+(`cast_module_camera::mule_arm_kills`): arm 12 halts arm 3's bubble volley,
+arm 14 arm 12's three creature-borne parts, arm 16 arm 15's far parts and
+arm 14's glows, arm 19 arm 17's spray, and arm 16 zeroes the loop counters
+of arm 14's two CLUT-cell cyclers so each runs out its loop and halts
+(`0x801F82A8..0x801F82C0`). Arm 16's exit frames a lone target on its own
+`+0x34` / `+0x38`, unnegated, at ten times its body radius (at most
+`0x1800`). Otherwise not carried by any of them: the writes to the other
 seats (the monster row's re-seat, hiding, orbits and restore, Mushura's walk
 and steering, Barra's seat swaps and arcs), the stage words `ctx[+0x27A..+0x286]` and the camera
 block `0x80083FF8`, and pad rumble. Jedo's kill is the host's
@@ -2733,6 +2828,29 @@ Two live casts confirm the chain: Vera (`0905`) started
 Crush speaks on `XA23.XA` channel 0 or 1 and Hyper Lightning on channel 2 or
 3. A backward scan for `addiu a0, zero, imm` reports no literal on both.
 
+### The side-band token
+
+<a id="the-side-band-token"></a>
+
+The summon invoke `0x32` seeds the applier stage `ctx[+0x276] = 1` with the
+base slot `ctx[+0x277]`, and `FUN_801F12D0` walks it: odd stages request a
+slot of `summon.dat` (`FUN_80055B4C`), even stages wait for the transfer SM
+`FUN_801F17F8` to land it (`ctx[+0x26B]` back to `0`) and upload it. It
+stops after two slots for a `readef` group, three for a summon base below
+`0xCB` and four from `0xCB` up (`battle_action::sideband_slot_count`). A
+PCSX-Redux capture of each read (the cast-sequence probe's `c276` column)
+runs about `30` vsyncs a slot: Mule's four-slot seed drops `119` vsyncs
+after `0x32` stores it, a two-slot turn seed `62`.
+
+The engine's side-band is resident, so it keeps the byte up for that CD
+time alone (`SIDEBAND_SLOT_READ_VSYNCS` a slot, `World::tick_sideband_token`)
+and then drops it. While it is up, a module arm that polls it holds (Horn's
+arm 2, Mule's arm 1; `cast_module_camera::sideband_wait_arm`), the `0x35`
+band word is clamped at `1`, and the Done band's `0x51` exit waits. A
+capture replay standing on a poll arm holds it there as well
+(`PhaseGate::sideband_wait`). The per-turn `readef` seed `FUN_801DABA4`
+makes is not modelled: the engine's turn opens with the byte down.
+
 ### Per-module cue census
 
 The **head** cue of each image: the first dispatcher call inside the image's
@@ -3174,6 +3292,17 @@ and arm 13 kills it before spawning the fade back out. A held fade the module
 never kills is dropped once no cast module is resident, so a band that ends on
 one does not leave its tint over the rest of the battle.
 
+The same slots hold parts. A `sw v0` after a `FUN_80021B04` /
+`FUN_80050ED4` call parks the part it seated (`PartStore`, the spawn record
+read off `a2`), and a kill of that slot halts the engine's parts of that
+record. A kill inside a counted loop over a handle array (`sltiu` on a
+counter, `bne` back to the loop head, the slot pointer stepped in the delay
+slot) reaches every slot the loop walks: PROT 0923's arm 11 halts twelve
+slots from `0x801FA478` and eight from `0x801FA4B4`, among them the blue and
+yellow held fades its arm 10 parked at `0x801FA4C8` / `0x801FA4CC`. Read as
+one slot, those two fades stayed up as a white screen from arm 12 to the
+end of the turn.
+
 **Only where the port paces the arm.** A call is placed in time by its arm,
 so it is as right as the port's pacing of that arm, and many tick ports walk
 their arms one per tick where retail holds each on a countdown or a poll:
@@ -3189,7 +3318,9 @@ fires nothing. An arm that cannot hold fires as it runs. PROT 0910..0913 are
 exempt: their bodies hold every arm retail holds, so an arm they pass at once
 is a stream or CD poll the resident stream answers, and its calls fire.
 
-Two decode details matter for these modules. PROT 0911 spills
+An arm's walk opens with the register the switch loaded the phase byte into
+holding that arm's phase, which is what Barra's arm 3 stores as the stage
+byte (`sb s1,0x278(a1)` at `0x801F6E90`: `3`). Two decode details matter for these modules. PROT 0911 spills
 `ctx + 0x279` to `0x3C(sp)` and its advance tail bumps the phase through the
 reloaded pointer (`lw t6,0x3C(sp)` / `sb v0,0(t6)`), so a register reloaded
 from a spilled alias's slot is an alias too. And a site in a `j`'s delay slot
@@ -3236,10 +3367,27 @@ it, the wash covers every additive part over the sky: PROT 0909's vortex
 (the textured cones `0x801F7E18` / `0x801F7EA0`, the spiral at tpage `0x88`)
 then shows only where it crosses the floor. Seven modules set the band mode (0909,
 0918, 0922, 0930, 0931, 0946, 0950). Six set mode `1` (0917, 0923, 0928,
-0929, 0963, 0965): per-line textured strips that resample texture page `0xA8`
-through CLUT `0x7A00` with a sine wobble off two per-line arrays at
-`ctx[+0x32E]` / `ctx[+0x4EE]`. That mode is not ported, and the hook draws
-nothing for it.
+0929, 0963, 0965): a textured backdrop instead of the bands
+(`0x801F2958..0x801F2D20`, `legaia_render_kernels::cast_colour_wash::scanline_prims`).
+Each screen line `y` in `0..0xE0` is one-line `POLY_FT4` strips, opaque,
+coloured `(alpha, alpha, alpha)`, that resample 8bpp page `0xA8` (VRAM
+`(512, 0)`) through CLUT `0x7A00` (`(0, 488)`): row `v_base + y` from a start
+`u` of `u_base` plus a sine wobble over the band height (`ctx[+0x27C]`,
+amplitude `ctx[+0x27B]`, scrolled by `ctx[+0x32A]`), the 256-texel row
+wrapped across the 320-pixel line in two or three strips. Mode `2` mirrors
+the second strip. The two per-line offset arrays the emitter also adds
+(`ctx[+0x32E]` / `ctx[+0x4EE]`, signed high bytes) have no writer on the
+disc, so the port reads them as zero. It is Mule's underwater backdrop: with
+the mode unported the creature's whole performance played over black. The
+backdrop's colours cycle from Mule's arm 15 on because its CLUT is a part's:
+arm 14 seats `0x801F95A8`, a `0x4000` (render mode `3`) node whose program
+captures row 488 (`2C [0, 488, 256, 1]`), waits `287`, then swings its hue
+rate `+0x96` between `+64` and `-64` every `31` waits; the part tick's
+`FUN_80019D50` recolours the captured row each frame. Its sibling
+`0x801F9468` cycles the 16-entry row 491 the same way. The battle part
+lists run that render tail as the field's ambient parts do
+(`World::queue_battle_part_scrolls` queues the recolour, `apply_battle_vram_moves`
+lands it on the battle VRAM).
 
 **The stage byte.** `ctx[+0x278]` is what darkens the stage under a cast:
 the ambient pass drives the backdrop pair's depth cue to black once the byte
@@ -3269,8 +3417,8 @@ everywhere it is close to invisible in retail too.
 **Not fired.** The 17 fade sites the decoder does not place sit in spawn
 stagers, routines the move VM's op `0x20` calls with an arm of its own rather
 than off `ctx[+0x279]` (PROT 0906, 0909, 0912, 0916, 0923, 0927, 0929, 0948,
-0959, 0963, 0966). PROT 0906's flash pair rides its director's phase-5 clock
-and PROT 0912's blue fade its stager port ([spawn reports](#a-module-that-reports-its-spawns)). The streak ribbon's anchor is a trio the arm builds from a
+0959, 0963, 0966). PROT 0906's flash pair rides its director's phase-5 clock,
+and PROT 0912's blue fade and PROT 0929's arm-3 pair ride their stager ports ([spawn reports](#a-module-that-reports-its-spawns)). The streak ribbon's anchor is a trio the arm builds from a
 seat or the camera plus a random spread, which the constant tracker does not
 fold. The party CLUT reload on a status cure (`LoadImage` of a 240x1 row at
 `y = 0x1E1 + seat` out of a RAM copy) has no source the data names. The

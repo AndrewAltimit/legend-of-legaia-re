@@ -35,22 +35,19 @@ pub(super) struct FxFrame {
     pub effect_model_draws: Vec<(UploadedVramMesh, Mat4)>,
     pub summon_part_draws: Vec<(UploadedVramMesh, Mat4)>,
     pub field_fx_draws: Vec<(UploadedVramMesh, Mat4)>,
-    pub screen_fx_tex: Option<UploadedVramMesh>,
-    pub screen_fx_mvp: Mat4,
 }
 
 impl FxFrame {
     /// Append the effect meshes to the scene's textured draws, in the order
     /// the passes run: billboards, effect models, summon parts, field FX
-    /// parts, the screen-space streak.
+    /// parts. The move-FX streak is a screen primitive
+    /// (`engine-screens::battle_fx`), not a scene draw.
     pub(super) fn push_draws<'x>(&'x self, draws: &mut Vec<SceneDraw<'x>>) {
         let fx_cam = self.fx_cam;
         let effect_billboard = &self.effect_billboard;
         let effect_model_draws = &self.effect_model_draws;
         let summon_part_draws = &self.summon_part_draws;
         let field_fx_draws = &self.field_fx_draws;
-        let screen_fx_tex = &self.screen_fx_tex;
-        let screen_fx_mvp = self.screen_fx_mvp;
         if let Some(mesh) = effect_billboard.as_ref() {
             draws.push(SceneDraw {
                 mesh,
@@ -76,13 +73,6 @@ impl FxFrame {
             draws.push(SceneDraw {
                 mesh,
                 mvp: fx_cam * *model,
-                cue: None,
-            });
-        }
-        if let Some(m) = screen_fx_tex {
-            draws.push(SceneDraw {
-                mesh: m,
-                mvp: screen_fx_mvp,
                 cue: None,
             });
         }
@@ -355,12 +345,6 @@ impl PlayWindowApp {
         let part_cam = self.part_camera_pose(in_world_map, cutscene_cam);
         let (effect_model_draws, summon_part_draws, field_fx_draws) =
             self.build_effect_draws(r, part_cam.as_ref());
-        // The move-FX afterimage streak, under an orthographic
-        // screen-space MVP (PSX 320x240 frame). The PROT-0900
-        // screen-effect widgets (mask / sprite / panel / letterbox) are
-        // screen primitives instead - see `screen_layers::screen_fx_prims`.
-        let screen_fx_tex = self.build_screen_fx_meshes(r);
-        let screen_fx_mvp = Mat4::orthographic_rh(0.0, 320.0, 240.0, 0.0, 0.0, 1.0);
         FxFrame {
             fx_cam,
             effect_billboard,
@@ -369,8 +353,6 @@ impl PlayWindowApp {
             effect_model_draws,
             summon_part_draws,
             field_fx_draws,
-            screen_fx_tex,
-            screen_fx_mvp,
         }
     }
 
@@ -406,14 +388,17 @@ impl PlayWindowApp {
         // or its VRAM residency.
         let host = legaia_engine_screens::screen_layers::HostScreenPrims {
             transition: battle_intro_prims,
-            battle_fx: self.weapon_trail_screen_prims(),
+            // The weapon-trail bands, the move-FX afterimage streak and the
+            // Theeder beam: one placement and projection, the page's too
+            // (`engine-screens::battle_fx`).
+            battle_fx: legaia_engine_screens::battle_fx::battle_fx_prims(&self.session.host.world),
             field_fog: field_fog_prims,
             // The actor drop shadows (`FUN_8001C394`), through the same
             // `World::field_drop_shadows` kernel as the page.
             drop_shadows: self.field_drop_shadow_prims(),
             move_strips: move_strip_prims,
             field_lights: self.field_light_screen_prims(),
-            theeder: self.theeder_screen_prims(),
+            theeder: legaia_engine_screens::battle_fx::theeder_prims(&self.session.host.world),
             // The floating value readout needs the struck actor's projected
             // screen position, which only a host holding the camera has.
             value_readout: self.battle_value_readout_prims(fx_cam),

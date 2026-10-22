@@ -84,6 +84,15 @@ impl World {
         // The pad word of a dispatched pass: a press parked while the
         // prompt's glide was landing stands in for a tick with none.
         let mut ev: BattleCommandInput = self.take_command_pad_buffer();
+        // The cross-button entry walks a highlight ahead of the handlers and
+        // keys `FUN_8004FCC8(0x22)` when it moves (`0x801D082C` / `0x801D08D0`
+        // / `0x801D0988` / `0x801D0A40`).
+        if self.toggles.battle_command
+            == legaia_engine_menus::option_values::BattleCommandOpt::CrossButton
+            && session.walk_highlight(&mut ev)
+        {
+            self.push_battle_ui_cue(super::ui_cues::BattleUiCue::Cursor);
+        }
         // The ring's two status refusals (`ring_arm_refused`): a press on
         // a refused arm is dropped with the buzz cue, and the ring stays up.
         if let CommandPhase::Menu { .. } = session.phase {
@@ -102,19 +111,27 @@ impl World {
                 }
             }
             if refused {
-                self.audio.battle_sfx_cues.push(
-                    legaia_engine_battle::battle_events::BattleSfxCue {
-                        kind: legaia_engine_battle::arts_command_input::ROT_REFUSED_CUE,
-                        timing_frames: 0,
-                        actor_slot: session.actor,
-                        target_slot: session.actor,
-                    },
-                );
+                // `FUN_8004FCC8(0x23)` through the shared tail `0x801D2968`.
+                self.push_battle_ui_cue(super::ui_cues::BattleUiCue::Back);
             }
         }
         let was_round_prompt = matches!(session.phase, CommandPhase::RoundPrompt { .. });
         let phase_before = session.phase.clone();
         session.input(ev, party, monsters);
+        // The surface's blip (`super::ui_cues`). A Ra-Seru arm the special
+        // word forbids is refused below, and retail answers that refusal
+        // with the cancel cue through `0x801D2968` (`0x801D1454`), not the
+        // commit.
+        let refused_magic =
+            matches!(session.phase, CommandPhase::OpenSpellMenu) && self.battle.raseru_forbidden();
+        let cue = if refused_magic {
+            Some(super::ui_cues::BattleUiCue::Back)
+        } else {
+            super::ui_cues::command_phase_cue(&phase_before, &session.phase)
+        };
+        if let Some(cue) = cue {
+            self.push_battle_ui_cue(cue);
+        }
         // A target cursor this press opened starts on the member's current
         // target, as retail's does ([`World::seat_attack_cursor`]).
         if !matches!(phase_before, CommandPhase::Targeting { .. })

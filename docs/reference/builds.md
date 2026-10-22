@@ -156,7 +156,7 @@ for where the records live, and the port in `legaia_engine_core`.
 The Rust port carries all four kernel families, and both play hosts mount
 them behind an explicit opt-in. `legaia-engine`'s `play-window` keys on
 `LEGAIA_DEV_MENU=1`; the browser play page keys on its Dev-menu checkbox
-(`crates/web-viewer/src/play_dev_menu.rs`), which starts unchecked on every
+(`crates/web-play/src/play_dev_menu.rs`), which starts unchecked on every
 load and is deliberately neither persisted nor URL-readable, so it is the
 same shape of opt-in - a deliberate act by the person running the program
 that a shared link cannot carry. With the opt-in taken, a row list is drawn

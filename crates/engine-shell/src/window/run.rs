@@ -181,12 +181,8 @@ fn apply_launch_toggles(session: &mut NativeSession, toggles: LaunchToggles) {
     // melee roll, so it is the default; `--no-damage-finish` keeps the flat
     // pre-finisher path for comparison.
     session.host.world.toggles.use_damage_finish = damage_finish;
-    // Opt-in, NON-FAITHFUL QoL: redirect a monster's single-target attack to
-    // the lowest-HP living party member (the faithful default is a uniform
-    // random target). Enable with `LEGAIA_SMART_MONSTERS=1`. The RNG stream is
-    // unchanged, so determinism within a run is preserved.
-    session.host.world.toggles.smarter_monster_targeting =
-        std::env::var_os("LEGAIA_SMART_MONSTERS").is_some();
+    // `LEGAIA_SMART_MONSTERS` is raised with the other environment switches
+    // at session open (`legaia_engine_session::native::apply_env_world_toggles`).
 }
 
 /// Enter the launch scene: a `--resume-save` landing through the card-load
@@ -240,11 +236,6 @@ fn enter_launch_scene(
             Some(session.host.world.mode)
         }
     };
-    // The overworld's per-placement entity markers are a port debug overlay
-    // (`WorldToggles::overworld_marker_overlay`, off by default): retail
-    // draws nothing over a town entrance.
-    session.host.world.toggles.overworld_marker_overlay =
-        std::env::var_os("LEGAIA_WORLD_MAP_MARKERS").is_some();
     let world_map = match resumed {
         Some(mode) => mode == legaia_engine_mode::mode::SceneMode::WorldMap,
         None => world_map,

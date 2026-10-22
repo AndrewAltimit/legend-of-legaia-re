@@ -83,6 +83,33 @@ pub fn backdrop_slot_1_basis(second: SecondCopy, yaw: u16, copy_b: bool) -> [[f3
     ]
 }
 
+/// The NCLIP word (`Renderer::set_backface_cull` encoding) one backdrop copy
+/// draws its slot-1 object with.
+///
+/// The backdrop arm hands the prim dispatcher `FUN_80043390` the node's
+/// colour word ORed with `0x40000000` for copy A and with `0x48000000` for a
+/// copy whose `+0x5A` reflection bits are up (`lui a1,0x4000` at `0x8001B014`
+/// against `lui a1,0x4800` at `0x8001AFFC`). Bit `0x08000000` lowers the
+/// winding mask to `0x7FFFFFFF` (`0x80043520..0x80043540`), which every
+/// textured leaf's two-half `NCLIP` test then can no longer fail (the
+/// flat-textured quad leaf `FUN_80044DC8` at `0x80044E68..0x80044EAC`). So the
+/// mirrored copy draws both sides - a reflection reverses its winding - and
+/// every other copy draws only its front faces, under the same parity as a
+/// battle body ([`legaia_engine_core::world::BATTLE_BODY_NCLIP`]).
+///
+/// A half-ring layer such as nilboa's horizon mist ribbon is where that shows:
+/// the camera stands outside the ring, so copy A's near quads face away and
+/// retail drops them, leaving the band behind the combatants.
+///
+/// REF: FUN_8001ADA4, FUN_80043390, FUN_80044DC8
+pub fn backdrop_copy_nclip(second: SecondCopy, copy_b: bool) -> u32 {
+    if copy_b && second == SecondCopy::MirrorX {
+        0
+    } else {
+        legaia_engine_core::world::BATTLE_BODY_NCLIP
+    }
+}
+
 impl SceneHost {
     /// The battle-stage backdrop entry for a fight starting now: the entry the
     /// last region setup's stage variant names in the loaded scene, falling
@@ -181,6 +208,15 @@ mod tests {
 
     fn near(a: [f32; 3], b: [f32; 3]) -> bool {
         a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-3)
+    }
+
+    #[test]
+    fn only_the_mirrored_copy_draws_both_sides() {
+        let one_sided = legaia_engine_core::world::BATTLE_BODY_NCLIP;
+        assert_eq!(backdrop_copy_nclip(SecondCopy::MirrorX, true), 0);
+        assert_eq!(backdrop_copy_nclip(SecondCopy::MirrorX, false), one_sided);
+        assert_eq!(backdrop_copy_nclip(SecondCopy::HalfTurn, true), one_sided);
+        assert_eq!(backdrop_copy_nclip(SecondCopy::HalfTurn, false), one_sided);
     }
 
     #[test]

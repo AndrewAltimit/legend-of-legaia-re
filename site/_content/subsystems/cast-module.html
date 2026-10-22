@@ -143,10 +143,38 @@
   <p>A signature cast is half data. Its particle layer is a set of records in the module's tail - the summon part-record shape, a model selector followed by move-VM bytecode - each handed to the pool spawner from a hardcoded call site with a constant pointer and a scale literal. Its lift, timing and camera are module instructions. Editing the look of a cast can therefore be a data edit; changing who it hits or when is a code edit.</p>
 </section>
 
+<section class="doc-section" id="colour-wash">
+  <h2>The colour wash behind a cast</h2>
+  <p>Both cast dispatchers end by calling the battle overlay&rsquo;s colour wash <code>FUN_801F2410</code> whenever the module has armed its alpha (<code>ctx[+0x27A]</code>), so the wash draws on every frame the module ticks. It is a backdrop: retail links it into the farthest ordering-table bucket, so the whole scene, blended parts included, draws over it. A mode byte picks one of two looks.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The two colour wash modes. Band mode: horizontal bands of a fixed line height, each two opaque gouraud quads shading colour A to colour B and back, every colour scaled by the alpha. Scanline mode: every screen line is one or more one-line textured strips that resample a row of an 8-bit texture page through a fixed palette, offset by a sine wobble, so the backdrop ripples. Mule's underwater backdrop is the scanline mode.">
+      <rect class="dg-group" x="10" y="10" width="420" height="200" rx="6"/>
+      <text class="dg-label" x="220" y="34">mode 0: bands</text>
+      <rect class="dg-node-accent" x="40" y="50" width="360" height="22"/>
+      <rect class="dg-node" x="40" y="72" width="360" height="22"/>
+      <rect class="dg-node-accent" x="40" y="94" width="360" height="22"/>
+      <rect class="dg-node" x="40" y="116" width="360" height="22"/>
+      <rect class="dg-node-accent" x="40" y="138" width="360" height="22"/>
+      <text class="dg-sub" x="220" y="184">two opaque POLY_G4 per band, A to B and back</text>
+      <text class="dg-sub" x="220" y="200">0909, 0918, 0922, 0930, 0931, 0946, 0950</text>
+      <rect class="dg-group" x="450" y="10" width="420" height="200" rx="6"/>
+      <text class="dg-label" x="660" y="34">modes 1 and 2: scanlines</text>
+      <path class="dg-edge" d="M480 54 L840 54 M486 62 L846 62 M490 70 L850 70 M492 78 L852 78 M490 86 L850 86 M486 94 L846 94 M480 102 L840 102 M474 110 L834 110 M470 118 L830 118 M468 126 L828 126 M470 134 L830 134 M474 142 L834 142 M480 150 L840 150 M486 158 L846 158"/>
+      <text class="dg-sub" x="660" y="184">one-line POLY_FT4 strips, sine-offset per line</text>
+      <text class="dg-sub" x="660" y="200">0917, 0923, 0928, 0929 (Mule), 0963, 0965</text>
+      <text class="dg-sub" x="440" y="238">both: alpha-scaled, opaque, drawn behind the whole scene</text>
+    </svg>
+    <figcaption>Band mode shades colour bands; the scanline modes resample texture page <code>0xA8</code> (VRAM <code>(512, 0)</code>) through CLUT <code>(0, 488)</code>, one 256-texel row per screen line wrapped across the 320-pixel line. Mode 2 mirrors the second strip.</figcaption>
+  </figure>
+  <p>Both modes are ported whole in <code>render-kernels::cast_colour_wash</code> (<code>scanline_prims</code> for the textured one). Both hosts composite screen primitives after their 3D pass, so they draw the wash as a far-plane primitive ahead of the scene instead. The scanline mode is Mule&rsquo;s underwater backdrop: before it was ported the creature&rsquo;s whole performance played over black. Two per-line offset arrays the emitter also adds have no writer anywhere on the disc, so the port reads them as zero.</p>
+</section>
+
 <section class="doc-section" id="port">
   <h2>What the port runs</h2>
   <p>Both hosts run the band through one seam. The spawn pool indexes all 64 entries and parses each image's spawn records off the user's disc. The tick bodies are ported one function per address: dispatch bound, simulation-state writes, the damage step (baked power, wrapper, clamp shape, accumulate, HP write, reaction stage) and the phase advance. Camera directors exist per module; for the summon creatures whose tick bodies are not ported (Gola Gola through Ozma), the director carries the module's whole phase chain - every countdown gate, shot, camera drift, caption and the creature seat - so the band lasts as long as retail's and the outcome lands on the module's hit arm. Aluru's light bands, Slippery's rain, Swordie's split and Cross Beam's beam are drawn. Left out, per function: the other GPU-packet arms, part spawns and the writes to the other seats in the summon-creature modules, and the camera arms and per-arm frame gating of modules with no director.</p>
-  <p>Most capture-class casts have their whole record set seated at the caster when the band pages the module in. Three boss bodies seat theirs on the arm passes that make the calls instead - Evil Seru Magic, Mystic Circle and Ultra Charge - and the last two also run the stager their own parts call back into, so Mystic Circle's rays and Ultra Charge's rings appear on retail's clock rather than all at once.</p>
+  <p>Most capture-class casts have their whole record set seated at the caster when the band pages the module in. Seven bodies seat theirs on the arm passes that make the calls instead - Evil Seru Magic, Mystic Circle, Ultra Charge, Mystic Shield, Guilty Cross, Call Wave / Big Wave and Final Crisis - and five of them also run the stager their own parts call back into, so Mystic Circle's rays and Ultra Charge's rings appear on retail's clock rather than all at once.</p>
+  <p>Mule's monster-row visibility rides the same per-arm writes: one arm shows every living monster on each of its passes, two hide the row, a later one shows it again, and the hit arm shows the monsters it strikes. Its early arms also move the camera anchor under the opening cut, so the director re-lands that cut on the moved anchor each pass - without it the row filled the screen where retail frames it small in the distance.</p>
+  <p>Two pieces of retail timing and colour sit outside the tick bodies. A summon's opening arms can wait on the <strong>side-band token</strong>, the applier stage <code>ctx[+0x276]</code> that stays up while the cast's slots of <code>summon.dat</code> stream off the disc, about 30 vsyncs a slot. The port's side-band is already in memory, so it keeps the token up for that CD time alone, and Mule's and Horn's opening waits last as long as retail's. And a part can recolour VRAM: Mule's underwater backdrop cycles its colours because one of its parts is a CLUT-cell cycler that captures the backdrop's palette row and swings its hue every frame. Battle parts run that recolour the way field ambient parts do. A module also keeps the handles of the parts and fades it spawns in arrays of its own and later kills them, sometimes a whole array in one loop; the port follows those kills, which is what clears Gilium&rsquo;s screen after its white-out.</p>
   <p>Cort's Mystic Shield is the one module effect retail keeps alive across actions: two records out of the game executable itself, a camera-facing textured sphere and the scroller that animates its texture, seated on Cort by the shield's arm 4 and posed every frame by the actor pass until he is worn to half HP, when a burst replaces it. The port seats, poses and breaks it the same way, in a scene of its own that outlives the cast.</p>
 </section>
 

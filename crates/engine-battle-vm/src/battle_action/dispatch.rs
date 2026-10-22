@@ -196,7 +196,22 @@ pub fn step<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut BattleActionCt
     let Some(state) = ActionState::from_byte(from) else {
         return StepOutcome::UnknownState { state: from };
     };
+    // The pass's attacker and target, as the prologue loads them
+    // (`0x801E2994..0x801E29C0`): the shared tail's make-way step skips
+    // these two whatever the state body does to the context.
+    let tail_attacker = ctx.active_actor;
+    let tail_target = host.actor(tail_attacker).map_or(0xFF, |a| a.active_target);
+    let out = step_state(host, ctx, state);
+    make_way_step(host, ctx, tail_attacker, tail_target);
+    out
+}
 
+/// The `switch (ctx[7])` half of [`step`]: one state body.
+fn step_state<H: BattleActionHost + ?Sized>(
+    host: &mut H,
+    ctx: &mut BattleActionCtx,
+    state: ActionState,
+) -> StepOutcome {
     match state {
         ActionState::Begin => begin(host, ctx),
         ActionState::PreActionWait => pre_action_wait(host, ctx),
@@ -860,9 +875,11 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
     ctx.camera_frame_height = frame_height;
     host.camera_frame_height(frame_height);
 
-    // Camera bounds (skipped for run actions per docs).
+    // The formation recentre `FUN_801EFE44` (`jal 0x801efe44` at
+    // `0x801E2D44`), skipped for Run (`+0x1DE == 5`, `0x801E2D3C`); the
+    // monster Run arm runs it itself below.
     if !matches!(category, ActionCategory::Run) {
-        host.camera_bounds();
+        host.seed_formation_recentre(actor_slot);
     }
 
     // Idle pose.
@@ -905,6 +922,8 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
             if actor_slot < party_count {
                 ActionState::RunBegin
             } else {
+                // `jal 0x801efe44` at `0x801E2DE8`, the monster arm only.
+                host.seed_formation_recentre(actor_slot);
                 ActionState::CaptureStart
             }
         }

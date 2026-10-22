@@ -19,30 +19,10 @@ impl PlayWindowApp {
     /// the code lock. Stage pixels; `build_hud` scales them with the shared
     /// screens' texts.
     pub(super) fn field_window_stage_draws(&self) -> Vec<TextDraw> {
-        let mut stage: Vec<TextDraw> = Vec::new();
-        // The end-of-game soft reset (op-0x49 sub-op 0xC, handler slot 0x33,
-        // `FUN_801EDF00`): the records screen sliding in at the engine's pen.
-        if let Some(pen) = self.session.host.world.soft_reset_records_pen() {
-            stage.extend(self.records_draws_at(pen));
-        }
-        // The field floor window (op-0x49 sub-op 4, handler slot 0x23 - the Uru Mais
-        // warp pads): laid out by the engine off the live picker state, the
-        // legend read off the field overlay, drawn through the shared line
-        // composition the browser play page uses.
-        let mut floor = self.session.host.flag_window_lines();
-        // The code lock (op-0x49 sub-op 2, handler slot 0x21 - doman's
-        // password door): header off the field overlay, one letter per
-        // entered symbol, through the same line composition.
-        floor.extend(self.session.host.code_lock_lines());
-        stage.extend(legaia_engine_ui::text_lines::text_line_draws_for(
+        legaia_engine_screens::field_screens::field_window_stage_draws(
+            &self.session.host,
             &self.font,
-            floor
-                .iter()
-                .map(|l| (&l.text[..], i32::from(l.x), i32::from(l.y), l.marked)),
-            [1.0, 1.0, 1.0, 1.0],
-            legaia_engine_ui::text_lines::FLOOR_WINDOW_MARKED_INK,
-        ));
-        stage
+        )
     }
 }
 

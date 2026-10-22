@@ -1,7 +1,7 @@
 # legaia-engine-fishing
 
-The fishing minigame's rules engine. `legaia-engine-minigames` depends on
-this crate, never the other way round. Hosts and tests name its modules
+The fishing minigame's rules engine. `legaia-engine-minigames` is a
+sibling: neither crate depends on the other. Hosts and tests name its modules
 directly (`legaia_engine_fishing::fishing`).
 
 ## What lives here

@@ -148,6 +148,19 @@ impl World {
             }
             if let Some(a) = engine_of(r).and_then(|e| self.actors.get_mut(e)) {
                 a.battle.flag_word = s.flag_word;
+                // Retail's frame runs the presentation tick after this pass
+                // (`jal 0x8004DC68` at `0x80047124`, `jal 0x80050120` at
+                // `0x8004712C`), and its arm 2 - the capture / defeat fade -
+                // ORs `0x81000000` into the same word on every pass
+                // (`0x80050230..0x80050244`), so a fading body draws
+                // additive whatever the ghost test cleared. The port's tint
+                // pass runs inside the tick, ahead of this one; the fade's
+                // bits are put back here, in retail's order.
+                if a.battle.render_flag
+                    == legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE
+                {
+                    a.battle.flag_word |= 0x8100_0000;
+                }
             }
         }
     }

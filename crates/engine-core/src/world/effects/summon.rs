@@ -105,6 +105,12 @@ impl World {
         self.casting.pending_summon_spawn.take()
     }
 
+    /// The pending summon-spawn request without taking it - for a host that
+    /// takes it only once it has seated the creature.
+    pub fn pending_summon_spawn(&self) -> Option<(u8, [i16; 3])> {
+        self.casting.pending_summon_spawn
+    }
+
     /// Request a summon spawn for `spell_id` at `origin` if it is a player
     /// summon id (`0x81..=0xA0`). Idempotent within a step (last cast wins);
     /// no-op for non-summon ids. The retail cast band's overlay-resolve point.

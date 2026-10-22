@@ -539,4 +539,16 @@ mod tests {
             assert!(id <= 0x63, "cue 0x{id:02X} is a static descriptor");
         }
     }
+
+    /// The Baka Fighter page's menu cues coincide with the pause-menu ids the
+    /// play page pins (`FUN_80032A44`'s list kernel). The two cue sets stay
+    /// independent; this fails loudly if a retrace moves one without the
+    /// other being reviewed.
+    #[test]
+    fn menu_cues_coincide_with_the_play_page_pause_menu_cues() {
+        use legaia_engine_menus::menu_cues::{MENU_CANCEL_CUE, MENU_CONFIRM_CUE, MENU_CURSOR_CUE};
+        assert_eq!(CUE_CONFIRM, MENU_CONFIRM_CUE);
+        assert_eq!(CUE_CURSOR, MENU_CURSOR_CUE);
+        assert_eq!(CUE_CANCEL, MENU_CANCEL_CUE);
+    }
 }

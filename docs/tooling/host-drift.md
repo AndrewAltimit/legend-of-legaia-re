@@ -9,7 +9,7 @@ so a host does not re-spell it.
 | Host | Crate | Driven by |
 |---|---|---|
 | native play-window | [`crates/engine-shell`](../../crates/engine-shell/) | wgpu via [`crates/engine-render`](../../crates/engine-render/README.md) |
-| browser play page | [`crates/web-viewer`](../../crates/web-viewer/README.md) `runtime.rs` + `play_*.rs` | [`site/js/play-app.js`](../../site/js/play-app.js) + the `play-view-*.js` files it names |
+| browser play page | [`crates/web-play`](../../crates/web-play/README.md) `runtime.rs` + `play_*.rs` | [`site/js/play-app.js`](../../site/js/play-app.js) + the `play-view-*.js` files it names |
 | browser minigames page | same crate, `minigames*.rs` (`LegaiaMinigames`) | per-minigame modules under `site/js/` |
 
 Both play hosts tick one `engine-session::BootSession`; the minigames page
@@ -148,7 +148,7 @@ checks (`check-dump-stat-drift.py`, `check-dump-base-integrity.py`,
 Every tier below reads sources. Every cargo gate beside them - `cargo fmt`,
 `cargo clippy --all-targets --workspace`, `cargo test`, `cargo build` - builds
 for the **host** triple, so the `#[cfg(target_arch = "wasm32")]` blocks that
-run through much of `crates/web-viewer/` are code none of those four ever
+run through much of `crates/web-play/` and `crates/web-viewer/` are code none of those four ever
 sees. A page feature written inside one can name a private field, a moved
 method or a deleted type and stay green through the whole ladder; the first
 thing that compiles it is a wasm build, which is where one was found.
@@ -553,7 +553,7 @@ construction - and this tree has **five** render surfaces, not two:
 
 | surface | assembles |
 |---|---|
-| native `play-window` | `field_render.rs` + `geometry.rs` |
+| native `play-window` | `window/field_render/` + `window/geometry.rs` |
 | browser play page | `play.rs` |
 | browser field-scene viewer | `field_scene.rs` (+ `scene_geom.rs` for the world map) |
 | browser dance-hall venue | `minigames_dance.rs` |
@@ -563,6 +563,19 @@ The last two resolve `EnvDraw`s and instance env-pack meshes exactly like the
 first three, and the tier-3 coplanar rows named three of the five. So here the
 surface is **derived**: every non-test source under the render roots. A new
 surface joins the measurement by existing.
+
+That holds only while the roots name where the surfaces live. The native
+window moved out of the binary's `src/bin` into the library's `src/window`
+(`HeadlessPlayWindow` needs it importable), and the root kept pointing at
+`src/bin`: every rule went on reporting green while counting the browser
+surfaces alone - one surface each for the value readout, the markers and the
+lights, two for the coplanar lifts. The roots are now the whole
+`engine-shell/src`, plus `engine-world-views` and `engine-screens`, where the
+single assemblers live (a rule there checks the one copy every host calls).
+A rule whose surface count drops to the shared crate's `1` is the
+[single-assembler](#the-version-of-this-tier-that-needs-no-rule) form, not a
+lost surface; a count that drops to `0` is a rule pointed at a directory
+that no longer holds its draw list.
 
 ### The two rule kinds
 
@@ -582,11 +595,11 @@ naming `coplanar_draw_offsets` is prose, not a wiring, and under-counting
 
 | kernel | rule |
 |---|---|
-| cross-draw coplanar lifts | resolving `EnvDraw`s requires `draw_plane_summaries` + `coplanar_draw_offsets` |
+| cross-draw coplanar lifts | resolving `EnvDraw`s requires `draw_plane_summaries` + `coplanar_draw_offsets`; exempt: the native bake-key enumeration (`prop_animation.rs`), which draws nothing |
 | walk-ground heightfield sink | emitting the heightfield's vertices requires `GROUND_SINK` |
 | packet-colour stream fill | a packet-colour stream may not be filled with white |
 | placement tilt composition | reading `placement_rot_y` requires `rot_x` + `rot_z` |
-| shared value layout -> shared quad emitter | resolving `battle_value_readout` requires `battle_numerals` + one of its prim builders |
+| shared value layout -> shared quad emitter | resolving `battle_value_readout` requires `battle_numerals` + one of its prim builders, or the shared emitter `value_readout_prims` |
 | world-map markers through the shared quad kernel | reading the marker seams (`world_map_entity_markers` / `world_map_player_marker`) or `marker_quads` requires `marker_quads` + `world_map_marker_prim` |
 | field attached lights through the shared prim kernel | reading `field_light_draws` requires `light_pool_prims` |
 | retained field ground pass gated off in battle | a file that both uploads a field ground (`uploadGround`) and drives a battle frame (`play_battle_active`) requires `setGroundEnable(false)` |
@@ -665,7 +678,7 @@ that is the cheaper fix wherever the surfaces are genuinely the same screen.
 
 The pause menu went that way. Its draw-list assembly used to live twice: in
 `engine-shell`'s `window/menu_draws.rs` + `window/title_save_draws.rs` and in
-`web-viewer`'s `play_menu.rs`. Two of the divergences that had already grown
+`web-play`'s `play_menu.rs`. Two of the divergences that had already grown
 there are exactly this tier's shape - one host resolved a title tab through
 the descriptor painter and the other through a pinned-pen label builder, and
 the Items screen's Use-route confirm framed before the screen's window set on
@@ -987,7 +1000,7 @@ work**, in the form the waiver rules above require.
 `[[boot_install]]` rows in `ui-host-drift-waivers.toml`.
 
 The tier takes every `world.install_*` / `world.set_*` call in
-`crates/engine-session/src/session.rs` and requires a shipped `crates/web-viewer`
+`crates/engine-session/src/session.rs` and requires a shipped `crates/web-play`
 source to call the same method, or a waiver.
 
 The case it exists for: the native boot installed six static-SCUS progression
@@ -1000,7 +1013,7 @@ accessory passive, played no melee grunt or cast voice (a zero cue duration),
 and skipped the victory pose's `rand()` - so its RNG stream left the native
 one's after every battle. Both boots now call one entry,
 `World::install_retail_progression_tables`
-(`crates/web-viewer/tests/play_boot_tables_parity.rs`).
+(`crates/web-play/tests/play_boot_tables_parity.rs`).
 
 Blind spot: a table the boot writes as a **field assignment**. Four of the six
 were, which is the argument for the single entry - a table installed through a
@@ -1048,7 +1061,12 @@ field instead (`WorldToggles`), written by each host: the native session from
 its environment in one function
 (`legaia_engine_session::native::apply_env_world_toggles`, run on every native
 session open, so a corpus run's child processes inherit it) and the play page
-from a `LegaiaRuntime` setter ([`play_toggles.rs`](../../crates/web-viewer/src/play_toggles.rs)).
+from a `LegaiaRuntime` setter ([`play_toggles.rs`](../../crates/web-play/src/play_toggles.rs)).
+A tier-3 row pins the two appliers (`apply_env_world_toggles`,
+`apply_page_toggles`) to the same set of toggle fields, so a switch the
+native window reads inline in its launch code - where `LEGAIA_SMART_MONSTERS`
+and `LEGAIA_WORLD_MAP_MARKERS` once sat - shows as a field the native applier
+lacks.
 
 The tier scans every `crates/engine-*` crate a browser host links, plus
 `render-kernels`, for `env::var` / `var_os` / `vars` / `vars_os` (comments
@@ -1135,10 +1153,13 @@ runs both hosts and compares what they leave.
 Each scenario runs at three cadences - one tick per display frame, two (a
 30 Hz display) and one every other frame (120 Hz) - because a clock split
 between the redraw and the tick is invisible at 60 Hz. Each also asserts what
-it exercised (the lead moved, a menu opened and closed, a battle opened, the
-naming prompt came up, a dialogue opened), so agreement on a world that never
-moved fails. A pad that steers off the world comes from the native run and is
-replayed to the page.
+it exercised (the lead moved, a menu opened and closed, a battle opened, a
+fight was won through to the overworld, the naming prompt came up, a dialogue
+opened), so agreement on a world that never moved fails. A pad that steers off
+the world comes from the native run and is replayed to the page; the fight is
+driven off the native world's own command phase and pulsed, because a held
+word is one press to the command screens and a held drive parks on the round
+prompt for good.
 
 | Channel | What it holds | What parted it before the shared step |
 |---|---|---|
@@ -1264,7 +1285,7 @@ decidable per instance, not from a source pattern.
 |---|---|---|
 | <a id="one-decision-two-inputs"></a>**One decision, two inputs.** A predicate both hosts run, fed from different state. | The occlusion-fade arming gate: native excluded boot UI, world map, cutscene camera and debug orbit; the page only battle and minigames. | Split into the half the world can answer (`field_occlusion::fade_armed`, with `player_body_centre` as both ray target and shader focus) and the half only the host can (master toggle, a UI owning the screen, debug vantage, VR eye). |
 | **A rule spelled beside the shared predicate.** A host calls the predicate and adds its own clause. | Native asked `field_menu_open_allowed` *and* `!menu_runtime.is_open()` *and* its narration local; the page asked only the predicate, so Start opened the pause menu over a shop. | Move the clause into the kernel; a copy is two spellings again. |
-| **A shared builder starved by its caller's slice.** The output degrades instead of failing. | Battle HUD status badges: `Stone` / `Rage` / `Faint` decode with the CLUT-only TIM one file *before* the system-UI sheet (`save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET`). Rooted at the sheet, 6 of 9 resolve; rooted at the extension, 9 of 9. | Run the builder both ways and assert they differ (`crates/web-viewer/tests/battle_hud_badges.rs`). |
+| **A shared builder starved by its caller's slice.** The output degrades instead of failing. | Battle HUD status badges: `Stone` / `Rage` / `Faint` decode with the CLUT-only TIM one file *before* the system-UI sheet (`save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET`). Rooted at the sheet, 6 of 9 resolve; rooted at the extension, 9 of 9. | Run the builder both ways and assert they differ (`crates/web-play/tests/battle_hud_badges.rs`). |
 | **An input contract one host does not honour.** | `MenuRuntime::tick` filters no repeats; the native window handed it the *held* word, so one press stepped several rows. | `menu_runtime::menu_input_from_pad_edges` on both. |
 | **A raw word into a packed-mask reader.** | `World::input` holds the raw PSX word (Cross `0x4000`); the op-`0x49` submode family tests the packed masks `FUN_8001822C` builds (Cross `0x0040`). Cross did nothing on a coin cabinet on both hosts, and the tests fed the packed constant so they asserted the defect. | `World::submode_pad_words` through `dev_menu::retail_packed`. |
 | **A typed channel narrowed at one host.** | The web strike-SFX scheduler was `u8` end to end and dropped every cue above `0xFF` through a `try_from`. | Widen to the event's `u16`. |
@@ -1562,7 +1583,7 @@ screens.
 | Decision | Kernel |
 |---|---|
 | retail GTE projection, cutscene glide, frame convention | `legaia_engine_camera::psx_camera` |
-| which camera owns the frame | `legaia_engine_core::camera_view::resolve_field_camera` + `frame_vp` (follow focus written back to `_DAT_80089118/20`) |
+| which camera owns the frame | `legaia_engine_world_views::camera_view::resolve_field_camera` + `frame_vp` (follow focus written back to `_DAT_80089118/20`) |
 | compass azimuth | `compass_azimuth_units` |
 | drag / wheel / double-click | `engine-field::camera::follow_knobs` |
 | `F3` debug orbit | `Camera::debug_orbit_by` (un-gated by cutscenes, field-only) |
@@ -1588,11 +1609,15 @@ screens.
 | shop-family draw | `legaia_engine_screens::shop_overlay_frame`; frame rect from `shop_panel_rows` + `shop_panel_frame_rect`; labels `menu_runtime::shop_root_labels`, `MenuState::item_label` |
 | Seru-trade text | `seru_trade::trade_screen_text` |
 | save-select | `engine-screens::pause_screens::save_select_overlay_draws` over `SaveScreenFlow::overlay_model` and `engine-ui`'s `save_select_overlay_draws`, `title_band_sprites` + `TitleBandState` (page backdrop: `boot_title_backdrop_draws_json`) |
+| title card | `engine-screens::title_screens::title_band_state` (fade ramp, prompt, menu rows) and `title_menu_glyph_draws` (the no-title-art rows and their anchor); a host answers only which atlas is resident |
+| Options rows without a pause menu | the page's Reduce flashing box and Music / SFX sliders (`set_reduce_flashing`, `set_bgm_volume`, `set_sfx_volume`) are the native launcher's rows over the same `OptionsState` fields and store |
 | Load / New Game | `engine-scene-host::resume` (`resume_card_load`, `enter_new_game`), `TitleSession::for_front_end`, `SceneHost::current_resume` ([`save-screen.md`](../subsystems/save-screen.md#where-a-load-lands-and-when-continue-is-live)) |
 | card write | `engine-menu-runtime::card_write::write_save_into_card`, `MountedCard::persist` |
 | menu blips | `menu_cues::menu_edge_blip`; a blip is a one-cue batch (`SfxFireBatch::immediate`) and ages no other cue |
 | name entry | `NameEntryInput::from_pad_edge`; view `engine-screens::field_screens::name_entry_view` (`NameEntry::cursor_cells`, `name_entry::caret_on`) |
 | dev menu | `DevMenuWorldExt::tick_host` (CAMERA row, EQUIP commit), `DevMenuWorldExt::route_sfx` |
+| records screen, floor window, code lock | `engine-screens::field_screens::field_window_stage_draws` |
+| opening narration crawl and title card | `engine-screens::field_screens::cutscene_narration_stage_draws` (`FUN_80037174`) |
 | coin counter (op `0x49` sub-op 6) | `field_submode_screen::coin_counter_lines` through `engine-ui::text_lines::pen_line_draws_for`: the field overlay's entry panel `FUN_801E6F70` (record 10) and confirm panel (record 11) |
 | place-name banner | `engine-scene-host::place_name_banner` from `SceneHost::load_scene` (a text balloon, not the slot-`0x2E` actor whose script `0x801F32B4` only closes panels) |
 | minigame purses in a save | `World::save_full` / `load_full`, `LGSF` block `LGX7` ([`save-screen.md`](../subsystems/save-screen.md#the-minigame-purses-are-live-state-words-too)) |
@@ -1624,6 +1649,7 @@ skips the picker's story baseline, which would otherwise clear system flags
 | CLUT-walk shimmer | `engine-scene::clut_walk_anim` (`ClutWalkAnim::install`); parser `legaia_scene_formats::clut_walk` |
 | occlusion fade | `field_occlusion::host_fade_armed`, `FadeRamp`, `player_body_centre` |
 | scene lights | `engine-screens::field_frame::field_scene_lights` |
+| lighting mood, fog-bank tint | `engine-screens::field_frame::lighting_mood`, `fog_volume_color` |
 | clear colour | `engine-screens::field_frame::frame_clear_color`, `battle_stage_clear::scene_clear` |
 | prologue grade | `World::frame_grade` |
 | object-effect clip (field-VM `4C C2 1`) | `World::object_effect_mesh_clip` ([`renderer.md`](../subsystems/renderer.md#what-a-raised-0x42-draws)) |
@@ -1635,7 +1661,7 @@ skips the picker's story baseline, which would otherwise clear system flags
 
 The site's full-map viewer is a fifth consumer of the same kernels:
 `engine-scene-host::scene_live::LiveScene` enters the scene through `SceneHost` and
-ticks it headless, and `web-viewer::field_actors::FieldActors` +
+ticks it headless, and `web-play::field_actors::FieldActors` +
 `site/js/field-actors.js` are the one actor path both pages use. The disc-gated
 `crates/web-viewer/tests/field_scene_anim.rs` runs the viewer and
 `LegaiaRuntime` side by side and requires floor-wave offsets, ground positions,
@@ -1719,7 +1745,7 @@ angle. `World` publishes the pair as `FieldNpcState::tilts`
 (`World::field_npc_tilt`), and each host composes through the builder the
 placement-tilt rule already ties together (`battle_intro::placement_rotation`,
 `placementModelEuler`). Disc-wide, op `0x15` has no authored site and op `0x16`
-has 45, all in `juui1` (`crates/web-viewer/tests/play_npc_tilt_parity.rs`).
+has 45, all in `juui1` (`crates/web-play/tests/play_npc_tilt_parity.rs`).
 
 ### Screen-space PSX primitives across the two hosts
 
@@ -1767,9 +1793,11 @@ the dialogue, the party readout and the menu at full brightness.
 | battle transition (confetti, shatter, curtain, swirl, ring, backdrop, fade) | `render-kernels::battle_intro` | Per host: turning the drawn frame into RGBA (`Renderer::capture_rgba`; `gl.readPixels` into `play_intro_land_capture`). The page has one VRAM texture, so `field_vram_bytes` returns the captured clone while one is live. |
 | field fog sheets | `BootSession::step_field_fog` (per sim tick, over `World::fog_render_step`) + `screen_prim::fog_puff_prim` | Retail's `FUN_8003F348` ages and emits in the render pass, once per game frame with the frame step as `dt` ([`renderer.md`](../subsystems/renderer.md#field-fog-sheets-fun_8003f348)). Both resolve the camera without the cutscene view; gate `World::fog.gate`. Depth through `World::field_fx_view` ([`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#the-fog-pool-spawner-records-render-pass)). |
 | screen-effect wash (op `0x34` sub-0) | `screen_prim::screen_effect_push_prims`, `_split` | `FUN_80024EE4(a0, a1, packed)`: `a0` is an OT bucket, `a1` an ABR equation, `packed` a GP0 colour word with red in the low byte. Glyphs sit at bucket `1`; a push at bucket `0` draws over them ([`cutscene.md`](../subsystems/cutscene.md#a-push-in-front-of-the-text-or-behind-it)). |
+| fog sheets (draw), drop shadow, move strips, attached lights, world-map markers, sky band | `engine-world-views::screen_passes::HostView` | One method each over the host seam (`World` + scene camera + scene box): the mode gate, the resolver's non-scripted frame on the box's centre, the kernel and its prim wrap. A host adds only what it holds alone - the window's boot-title gate on the overworld pair, each host's "is the leader's mesh resident" answer for the player marker. The scene camera (`HostView::frame`), the overworld curve scale and the move-VM part camera resolve through the same seam. |
+| weapon trail, move-FX streak, clip ribbon, Theeder beam | `engine-screens::battle_fx` (`battle_fx_prims`, `theeder_prims`, `battle_fx_vp`) over `screen_passes::weapon_trail_prims` / `move_fx_streak_quads` | The camera, the world scale and the prim wrap are one function; a host passes only the `World`. Pinned by a tier-3 row and a tier-7 rule (a surface reading the raw seams must be the one that builds `battle_fx_vp`). |
 | drop shadow | `render-kernels::drop_shadow`, `World::field_drop_shadows`, `screen_prim::drop_shadow_prim` | `FUN_8001C394`, called from `FUN_8001B964`; matched to retail on three captured frames (`drop_shadow_retail_capture_disc.rs`). |
-| world-map markers | `marker_quads` + `world_map_marker_prim` | A port marker, not a retail draw; `MarkerQuad::depth` restores occlusion. |
-| battle numerals | `engine-battle-vm::battle_value_readout` + `engine-ui::battle_numerals` | 24x24 cells off page `0x27` / CLUT `0x7703`; the font builders are the mutually exclusive before-the-atlas fallback on both hosts. |
+| world-map markers | `world_map_markers::marker_prims` (`marker_quads` + `world_map_marker_prim`) | A port marker, not a retail draw; `MarkerQuad::depth` restores occlusion. |
+| battle numerals | `engine-screens::battle_value_readout`: the layout, `value_readout_prims` and `value_readout_fallback_draws` | 24x24 cells off page `0x27` / CLUT `0x7703` through `engine-ui::battle_numerals`; the font builders are the mutually exclusive before-the-atlas fallback. Each host supplies only its camera and its atlas-residency answer. |
 | effect billboards | `EffectSprite::packet_tsb` | Retail sends prim code `0x2E` (semi-transparency bit set); the port forces TSB bit 15. |
 | dance HUD | `engine-ui::dance::dance_hud_prims`, `dance_countin_prims` | `DanceGame::hud_draw_quads` emits in `FUN_801d231c`'s order: digits, frames, gauges. |
 
@@ -2096,7 +2124,7 @@ inside it. Tier 12 measures the inside, and the pair carries a
 | Baka Fighter | `BakaFight::frame`; `baka_cabinet::BakaCabinet` (`FUN_801CF388`), `with_attract`, `cabinet_cells`, `install_rung`; `StrikeClock` (`FUN_801D6E5C`), `roster_clip_headers`; `engine-minigame-scenes::baka_duel_scene` (`BakaDuelSurface`, `DuelCamera::vp_raw`); labels `choice_sheet_labels`, `chrome_labels`, `glyph_u`, `hud_digit_placements`; `engine-minigames::baka_impact_fx` | Native resolves each glyph's cell rect without sampling it. |
 | dance | `World::enter_dance` (arms `dance_countin`), `dance::CountIn`, `FinishCountdown`, `DanceTutorial`; `DanceGame::advance_body_clips`, `DanceCastSurface::frame`; `dance_venue::DanceVenue::build`, `sync_dance_venue` and `World::finish_dance_if_over` (both inside `BootSession::step_dance_tail`); `stage_dance_hud_vram`, with `World::minigames.dance_hud_art_staged` as the one residency predicate | Mesh build and instance transform. |
 | Muscle Dome | `MuscleDomeSession::select_input`; `muscle_dome_scene::MuscleDomeSurface` (`frame_at`, `sim_ticks`, `DomeCamera::vp_raw`); `muscle_ringside::HubTimers::tick`, `HubBackdrop`, `FirstVisitHub`; `ringside_backdrop::ringside_still_quads`, `first_visit_hub_draw`; `SceneHost::dome_lead_fighter`; `World::leave_muscle_dome` | The minigames page keeps its own dome panel (`minigame-muscle.js`). |
-| effect parts | `legaia_engine_minigames::minigame_fx::MinigameFxPool` on `World::minigames.fx`, drawn by `engine-ui::minigame_fx::fx_part_draws` | The minigames page keeps its own instance of the type. |
+| effect parts | `legaia_engine_minigames::minigame_fx::MinigameFxPool` on `World::minigames.fx`, drawn by `engine-ui::minigame_fx::fx_part_draws` over `engine-screens::minigame_hud::fx_part_views` (the dance run's own parts: `dance_sprite_part_views`) | The minigames page keeps its own instance of the type. |
 | status rows | `engine-minigame-scenes::minigame_status::caption` (rows as data: kind + clauses, no stage position) | where the caption shows, and `StatusHost` |
 
 **The status rows are a caption, not a draw.** They are the port's readout of

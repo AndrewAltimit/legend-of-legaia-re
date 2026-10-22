@@ -246,11 +246,27 @@ impl World {
     /// `FUN_801DFDF0` as the effect-script walk `FUN_801DEA50` reaches it
     /// ([`Self::route_battle_effect_spawns`]).
     pub fn try_spawn_effect(&mut self, ui_id: u8, world_pos: [i16; 3], angle: u16) {
+        self.spawn_effect_caught_up(ui_id, world_pos, angle, 0);
+    }
+
+    /// [`Self::try_spawn_effect`] for a spawn retail makes **ahead of** the
+    /// frame's walker that the engine seats after it: the new master then
+    /// takes the `sweeps` this frame's walker gave every other
+    /// ([`legaia_engine_vm::effect_vm::Pool::catch_up_master`]).
+    pub(crate) fn spawn_effect_caught_up(
+        &mut self,
+        ui_id: u8,
+        world_pos: [i16; 3],
+        angle: u16,
+        sweeps: u8,
+    ) {
         // Same hand-off as [`Self::tick_effects`].
         let mut pool = std::mem::take(&mut self.effect_pool);
         let catalog = std::mem::take(&mut self.effect_catalog);
         let mut host = EffectHostImpl { world: self };
-        let _ = pool.spawn_by_ui_id(&mut host, ui_id, world_pos, angle, &catalog);
+        if let Some(mi) = pool.spawn_by_ui_id(&mut host, ui_id, world_pos, angle, &catalog) {
+            pool.catch_up_master(&mut host, &catalog, mi, sweeps);
+        }
         self.effect_pool = pool;
         self.effect_catalog = catalog;
     }

@@ -1,12 +1,17 @@
 //! The arts entry's Rot direction gate (`FUN_801D0748`,
 //! `0x801D1E60..0x801D1F7C`) on the live World: a rotted limb's direction is
-//! refused with cue `0x23`, every rolled limb counts, and the other
-//! directions still enter.
+//! refused with cue `0x23` - which the dispatcher `FUN_8004FCC8` stores on
+//! the ring as `0x22` - every rolled limb counts, and the other directions
+//! still enter.
 
 use super::*;
 use legaia_engine_battle_vm::status_effects::StatusKind;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::input::PadButton;
+use legaia_engine_system::sound_state::SfxRingOp;
+
+/// `FUN_8004FCC8(0x23)` on the ring: `id - 1`.
+const REFUSED_RING: SfxRingOp = SfxRingOp::Push(0x22);
 
 fn arts_world() -> World {
     let mut world = World {
@@ -27,7 +32,7 @@ fn arts_world() -> World {
 fn press(world: &mut World, button: PadButton) -> usize {
     world.input.set_pad(0);
     world.input.set_pad(button.mask());
-    world.audio.battle_sfx_cues.clear();
+    world.audio.sfx_ring_ops.clear();
     world.tick_battle_arts_input();
     world
         .battle
@@ -44,11 +49,10 @@ fn rotted_legs_refuse_up_and_down_with_the_buzz() {
     world.battle.status_effects.apply(0, StatusKind::Rot);
     world.battle.status_effects.set_rot_limb(0, 2);
     assert_eq!(press(&mut world, PadButton::Up), 0, "Up refused");
-    assert_eq!(world.audio.battle_sfx_cues.len(), 1);
-    assert_eq!(world.audio.battle_sfx_cues[0].kind, 0x23);
+    assert_eq!(world.audio.sfx_ring_ops, vec![REFUSED_RING]);
     assert_eq!(press(&mut world, PadButton::Down), 0, "Down refused");
     assert_eq!(press(&mut world, PadButton::Left), 1, "an arm still enters");
-    assert!(world.audio.battle_sfx_cues.is_empty());
+    assert!(world.audio.sfx_ring_ops.is_empty());
 }
 
 #[test]
@@ -75,7 +79,7 @@ fn ring_press(
 ) -> legaia_engine_menus::battle_input::CommandPhase {
     world.input.set_pad(0);
     world.input.set_pad(button.mask());
-    world.audio.battle_sfx_cues.clear();
+    world.audio.sfx_ring_ops.clear();
     world.tick_battle_command();
     world
         .battle
@@ -99,7 +103,7 @@ fn a_fully_rotted_body_cannot_open_attack() {
         ring_press(&mut world, PadButton::Left),
         CommandPhase::Menu { .. }
     ));
-    assert_eq!(world.audio.battle_sfx_cues.len(), 1);
+    assert_eq!(world.audio.sfx_ring_ops, vec![REFUSED_RING]);
 
     let mut two = ring_world();
     two.battle.status_effects.apply(0, StatusKind::Rot);
@@ -109,7 +113,8 @@ fn a_fully_rotted_body_cannot_open_attack() {
         ring_press(&mut two, PadButton::Left),
         CommandPhase::AttackMode { .. }
     ));
-    assert!(two.audio.battle_sfx_cues.is_empty());
+    // The arm opens with the commit cue (`0x801D15D0`), not the buzz.
+    assert_eq!(two.audio.sfx_ring_ops, vec![SfxRingOp::Push(0x20)]);
 }
 
 /// `0x801D1434..0x801D1440`: Curse refuses the Magic arm with the buzz.
@@ -122,6 +127,5 @@ fn curse_refuses_the_magic_arm() {
         ring_press(&mut world, PadButton::Right),
         CommandPhase::Menu { .. }
     ));
-    assert_eq!(world.audio.battle_sfx_cues.len(), 1);
-    assert_eq!(world.audio.battle_sfx_cues[0].kind, 0x23);
+    assert_eq!(world.audio.sfx_ring_ops, vec![REFUSED_RING]);
 }

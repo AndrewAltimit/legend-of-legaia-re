@@ -12,10 +12,10 @@
 use legaia_engine_core::field_submode_screen::RETAIL_WEAPON_SLOTS;
 use legaia_engine_core::new_game::starting_record;
 use legaia_engine_core::world::World;
-use legaia_engine_field::actor_handler::ActorHandler;
-use legaia_engine_field::dev_menu_leaves::{
+use legaia_engine_dev_menu::dev_menu_leaves::{
     EQUIP_INK_REJECT, EQUIP_MODE_DIRECT, EQUIP_REJECT_VA, EquipPanelDraw,
 };
+use legaia_engine_field::actor_handler::ActorHandler;
 use legaia_engine_field::submode_hub_actors::{HubDraw, slot};
 use legaia_engine_menus::equipment::{DiscEquipInfo, equip_modifier_table_from_disc};
 use legaia_engine_scene::vfs::Vfs;

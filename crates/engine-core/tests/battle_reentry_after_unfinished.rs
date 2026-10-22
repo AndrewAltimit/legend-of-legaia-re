@@ -83,6 +83,7 @@ fn seed_dispatches(w: &mut World) -> bool {
         spell_id: 0x82,
         target: 9,
         ground: Default::default(),
+        idle: Default::default(),
     });
     for _ in 0..4_000 {
         let on_prompt = w.battle.command.is_some() && w.battle.flow == BattleFlowState::TurnPrompt;

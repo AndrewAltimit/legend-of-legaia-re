@@ -44,7 +44,52 @@ impl PlayWindowApp {
             }
             return;
         }
+        if self.fullscreen_key(code, state) {
+            return;
+        }
         self.handle_key(code, state);
+    }
+
+    /// `F11`, or `Alt+Enter`: borderless fullscreen on or off, remembered
+    /// in the options file. Window chrome on keys outside the pad bindings
+    /// (Enter alone stays Start). Only the leading edge toggles.
+    fn fullscreen_key(&mut self, code: KeyCode, state: ElementState) -> bool {
+        let enter = matches!(code, KeyCode::Enter | KeyCode::NumpadEnter);
+        let ours = code == KeyCode::F11 || (enter && (self.alt_held || self.fullscreen_key_held));
+        if !ours {
+            return false;
+        }
+        match state {
+            ElementState::Pressed if !self.fullscreen_key_held => {
+                self.fullscreen_key_held = true;
+                let on = !self.win.is_fullscreen();
+                self.win.set_fullscreen(on);
+                self.options_state.fullscreen = on;
+                self.persist_and_apply_options();
+                self.show_notice(format!("Fullscreen: {}", if on { "on" } else { "off" }));
+            }
+            ElementState::Released => self.fullscreen_key_held = false,
+            ElementState::Pressed => {}
+        }
+        true
+    }
+
+    /// The window to open: the launch flags over the persisted options. A
+    /// `--screenshot` run ignores the persisted pair, so a capture's surface
+    /// never depends on what a player last chose.
+    pub(in crate::window) fn window_setup(&self) -> legaia_engine_render::window::WindowSetup {
+        use legaia_engine_render::window::WindowSetup;
+        let persisted = self.screenshot.is_none();
+        let fullscreen = self
+            .window_launch
+            .fullscreen
+            .unwrap_or(persisted && self.options_state.fullscreen);
+        let scale = self.window_launch.scale.unwrap_or(if persisted {
+            self.options_state.window_scale
+        } else {
+            WindowSetup::DEFAULT_SCALE
+        });
+        WindowSetup::scaled(scale, fullscreen)
     }
 
     /// Every key arm except the `Escape` quit, which is the only one that

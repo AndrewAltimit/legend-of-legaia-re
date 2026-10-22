@@ -13,7 +13,7 @@
     <dt>Clip channel</dt><dd>Staged <code>actor[+0x1DA]</code>, playing <code>+0x1D9</code>, camera key <code>+0x1DB</code>, commit flags <code>+0x1DC</code></dd>
     <dt>Rate</dt><dd><code>actor[+0x21D]</code>, normal <code>8</code></dd>
     <dt>Colour</dt><dd>Tint lanes <code>+0x04</code>, blend weight <code>+0x0C</code>, mode word <code>+0x08</code> (top byte = semi-transparency)</dd>
-    <dt>Port</dt><dd><code>actor-formats</code> (assembly), <code>engine-core::world::battle::clip_ladder</code>, <code>engine-battle-vm::battle_actor_tint</code>, <code>battle_trail</code>; hosts <code>engine-shell</code> and <code>web-viewer::play_battle_render</code></dd>
+    <dt>Port</dt><dd><code>actor-formats</code> (assembly), <code>engine-core::world::battle::clip_ladder</code>, <code>engine-battle-vm::battle_actor_tint</code>, <code>battle_trail</code>; hosts <code>engine-shell</code> and <code>web-play::play_battle_render</code></dd>
   </dl>
 </section>
 
@@ -167,7 +167,7 @@
 <pre><code>baked + (tint - baked) * blend / 0x1000</code></pre>
   <p>and the GPU still multiplies the texel through it. With no blend weight set, the same word is derived from depth instead: the distance fade. A colour word of zero is the summon-hide&rsquo;s &ldquo;not drawn&rdquo; value, not a black tint.</p>
   <ul class="bullets">
-    <li>The <strong>capture / defeat fade</strong> ORs additive blending into the node&rsquo;s mode word, so the fading body is never an opaque black silhouette.</li>
+    <li>The <strong>capture / defeat fade</strong> ORs additive blending into the node&rsquo;s mode word, so the fading body is never an opaque black silhouette. It runs after the near-camera ghost pass, which clears the same bits, so the fade&rsquo;s OR is what the draw reads.</li>
     <li>The <strong>near-camera ghost pass</strong> (<code>FUN_8004DC68</code>) makes a body that crowds the lens translucent.</li>
     <li>Shading itself is on <a href="shading.html">shading and palettes</a>.</li>
   </ul>
@@ -186,6 +186,8 @@
     </tbody>
   </table>
   </div>
+  <p><strong>Where the weapon trail lands.</strong> The sweep is sampled off the pose-history ring: step <code>k</code> is the pose <code>2k</code> frames ago, retail&rsquo;s rewind at a constant rate. Each control point is turned by the body&rsquo;s facing and set on its slot&rsquo;s ground base with retail&rsquo;s integer arithmetic (products round toward zero, no base height), then placed the way the hosts place a battle body - the frame flip and the 4x world scale - and projected through the battle view-projection.</p>
+  <p>Both hosts call one kernel for that, <code>engine-world-views::screen_passes::weapon_trail_prims</code>, and hand it nothing but their battle view-projection, so a trail cannot land in one place on the page and another in the window. Tests pin the native composition to the page&rsquo;s matrix and a trail point onto the body&rsquo;s own drawn point under both. PROT 0904&rsquo;s Theeder beam projects through the same point kernel (<code>render-kernels::battle_trail::project_battle_point</code>). The bands composite over the scene; retail&rsquo;s ordering-table interleave with scene depth is not reproduced.</p>
 </section>
 
 <section class="doc-section" id="see-also">

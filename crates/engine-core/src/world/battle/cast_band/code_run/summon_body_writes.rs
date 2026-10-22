@@ -56,6 +56,8 @@ impl World {
     /// - PROT 0916's arm `0x11`, kill path, on its passing tick: the victim's
     ///   HP to `0` (`sh zero,0x14C(s3)` at `0x801F7E14`), and the band's fold
     ///   owes nothing - the damage path is the only one that reaches the hit.
+    /// - PROT 0917's arm `0xE` pass: the creature into the defeat fade
+    ///   (`+0x21C = 2`, [`cam::BARRA_CREATURE_FADE_ARM`]).
     /// - PROT 0931 on a fight that is not scripted: arm 29 makes no damage
     ///   call (the fold is waived), arm 30 adds `delta << 2` to every living
     ///   monster's `+0x1BA` a pass (`0x801F86E0..0x801F874C`) and its exit
@@ -93,6 +95,13 @@ impl World {
             && let Some(a) = self.actors.get_mut(usize::from(seat_slot))
         {
             a.battle.shatter = w;
+        }
+        if entry == 917
+            && phase_in == cam::BARRA_CREATURE_FADE_ARM
+            && passed
+            && let Some(a) = self.actors.get_mut(usize::from(seat_slot))
+        {
+            a.battle.render_flag = 2;
         }
         if entry == JEDO_ENTRY && self.battle_ctx.scripted_fight == 0 {
             if phase_in == cam::JEDO_HIT_ARM && passed {
@@ -228,6 +237,51 @@ impl World {
             for a in self.actors.iter_mut().take(pc) {
                 set(a, hidden);
             }
+        }
+    }
+
+    /// PROT 0929's (Mule) monster-row visibility. Arm 1 shows every living
+    /// monster on each of its passes, held or not (`+0x04 = 0x20080200`,
+    /// `+0x21C = 0`, `0x801F6D04..0x801F6D50`, ahead of the stream-token
+    /// gate), so the row stands in the underwater backdrop while the bubbles
+    /// rise; arm 5's pass hides it for the creature's entrance
+    /// (`+0x04 = 0`, `+0x21C = 0xFF`, `0x801F7040..`), arm 11's shows it
+    /// again for the attack (`0x801F7590..`), arm 17's hides it
+    /// (`0x801F8454..`) and the hit arm 18 shows each struck monster
+    /// (`0x801F87C4..`). The engine's shown word is its resting `0` under a
+    /// lowered flag. Each pass also halts the parts the arm kills by their
+    /// parked handles and runs out the loops arm 16 ends
+    /// ([`legaia_engine_cast::cast_module_camera::mule_arm_kills`],
+    /// [`legaia_engine_cast::cast_module_camera::mule_arm_loop_ends`]).
+    pub(in crate::world::battle::cast_band) fn apply_mule_writes(
+        &mut self,
+        phase_in: u8,
+        passed: bool,
+    ) {
+        use legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN;
+        if passed && let Some(scene) = self.casting.active_summon.as_mut() {
+            let kills = legaia_engine_cast::cast_module_camera::mule_arm_kills(phase_in);
+            let ends = legaia_engine_cast::cast_module_camera::mule_arm_loop_ends(phase_in);
+            for part in &mut scene.parts {
+                if part.tag.is_some_and(|t| kills.contains(&t)) {
+                    part.finished = true;
+                } else if part.tag.is_some_and(|t| ends.contains(&t)) {
+                    part.state.field_8c = 0;
+                }
+            }
+        }
+        let hidden = match (phase_in, passed) {
+            (1, _) | (11 | 18, true) => false,
+            (5 | 17, true) => true,
+            _ => return,
+        };
+        let pc = usize::from(self.party.party_count);
+        for a in self.actors.iter_mut().skip(pc) {
+            if a.battle_monster_id.is_none() || a.battle.hp == 0 {
+                continue;
+            }
+            a.battle.render_flag = if hidden { RENDER_FLAG_HIDDEN } else { 0 };
+            a.battle.render_color = 0;
         }
     }
 

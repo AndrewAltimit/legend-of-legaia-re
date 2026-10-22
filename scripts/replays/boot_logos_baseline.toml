@@ -1,4 +1,4 @@
-# Ratchet for `crates/web-viewer/tests/boot_logos_ladder.rs`.
+# Ratchet for `crates/web-play/tests/boot_logos_ladder.rs`.
 #
 # `reached` is the highest rung the publisher-logo boot ladder has cleared.
 # The test asserts `score >= reached` and never writes this file: raising it

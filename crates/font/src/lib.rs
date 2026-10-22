@@ -22,6 +22,7 @@ use std::path::{Path, PathBuf};
 
 pub mod accent_font;
 pub mod builtin;
+pub mod cell_text;
 mod disc_source;
 pub mod escape_icons;
 mod escape_table;

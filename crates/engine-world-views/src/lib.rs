@@ -13,6 +13,7 @@
 //! names it, so a change to a view rebuilds the hosts but not `World`. The
 //! battle screen's reads are the sibling crate `legaia-engine-battle-hud`.
 
+pub mod camera_view;
 pub mod effect_draws;
 pub mod field_view_window;
 pub mod muscle_dome;
@@ -24,3 +25,5 @@ pub mod timed_fight;
 pub mod world_map_markers;
 pub mod world_map_panel_host;
 pub mod world_map_sky;
+// --- lane D ---
+pub mod screen_passes;

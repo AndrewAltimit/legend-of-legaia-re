@@ -11,7 +11,7 @@
 //!
 //! This pins the carrier: `field_menu_dispatch::status_snapshots` must publish
 //! that word on every snapshot, because both hosts fill their view structs
-//! from it (`engine-shell`'s `menu_draws` and `web-viewer`'s `play_menu`), and
+//! from it (`engine-shell`'s `menu_draws` and `web-play`'s `play_menu`), and
 //! `engine-ui::menu_hp_ink_with_status` is what consumes it.
 //!
 //! Disc-free: the roster is seeded synthetically.

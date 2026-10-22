@@ -49,7 +49,7 @@
 //!   through the software OT; the fixed entries keep their relative order and
 //!   the depth-averaged ones sit at [`THEEDER_DEPTH_OT`].
 
-use legaia_engine_cast::seru_magic_ticks::TheederPacket;
+use legaia_render_kernels::cast_theeder_packet::TheederPacket;
 use legaia_render_kernels::screen_prim::{FlatQuad, ScreenPrim, ScreenQuad};
 
 /// Projected screen point.

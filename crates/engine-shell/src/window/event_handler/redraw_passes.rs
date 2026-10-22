@@ -5,16 +5,50 @@
 
 use super::super::*;
 
-/// The 320x240 stage's aspect: every stage-projected battle pass's camera.
-const STAGE_ASPECT: f32 =
-    legaia_engine_ui::BOOT_UI_STAGE_W as f32 / legaia_engine_ui::BOOT_UI_STAGE_H as f32;
-
 /// Decoded cutscene camera inputs to the retail PSX GTE model:
 /// `(focus, pitch_radians, yaw_radians, roll_radians, h, tr_eye)`. See
 /// [`PlayWindowApp::cutscene_view`].
 pub(in crate::window) type CutsceneCam = ([f32; 3], f32, f32, f32, f32, [f32; 3]);
 
+/// The scripted shot as the resolver's view type.
+fn cutscene_view(cam: CutsceneCam) -> legaia_engine_camera::psx_camera::FieldCameraView {
+    let (focus, pitch, yaw, roll, h, tr_eye) = cam;
+    legaia_engine_camera::psx_camera::FieldCameraView {
+        focus,
+        pitch,
+        yaw,
+        roll,
+        h,
+        tr_eye,
+    }
+}
+
 impl PlayWindowApp {
+    /// The world, scene camera and scene box this frame's projections read
+    /// (`legaia_engine_world_views::screen_passes::HostView`, the seam the
+    /// browser play page reads through too).
+    pub(in crate::window) fn host_view(
+        &self,
+    ) -> legaia_engine_world_views::screen_passes::HostView<'_> {
+        legaia_engine_world_views::screen_passes::HostView::new(
+            &self.session.host.world,
+            &self.session.camera,
+            self.scene_aabb,
+        )
+    }
+
+    /// The mood enhanced lighting lights this frame under
+    /// (`legaia_engine_screens::field_frame::lighting_mood`, the answer the
+    /// browser play page reads too).
+    pub(in crate::window) fn lighting_mood(
+        &self,
+    ) -> legaia_render_kernels::scene_lighting::LightingMood {
+        legaia_engine_screens::field_frame::lighting_mood(
+            Some(&self.session.host),
+            &self.options_state.lighting_time_of_day,
+        )
+    }
+
     /// Stage this frame's volumetric ground-fog bank on the renderer, or
     /// clear it - the browser play page's `_drawFogVolume` twin.
     ///
@@ -27,26 +61,6 @@ impl PlayWindowApp {
     /// map and the in-world minigame venues (their own VRAM and camera) draw
     /// none; a scripted shot and the `F3` debug vantage do - the bank is world
     /// geometry, and `cam` is that frame's own matrix.
-    /// The mood enhanced lighting lights this frame under: the persisted
-    /// time of day over the loaded scene and its held scripted grade
-    /// (`scene_lighting::TimeOfDay::mood_graded` - the same call the browser
-    /// play page makes).
-    pub(in crate::window) fn lighting_mood(
-        &self,
-    ) -> legaia_render_kernels::scene_lighting::LightingMood {
-        use legaia_render_kernels::scene_lighting::TimeOfDay;
-        let scene_name = self
-            .session
-            .host
-            .scene
-            .as_ref()
-            .map(|s| s.name.as_str())
-            .unwrap_or("");
-        TimeOfDay::from_name(&self.options_state.lighting_time_of_day)
-            .unwrap_or_default()
-            .mood_graded(scene_name, self.session.host.world.held_scene_grade())
-    }
-
     pub(in crate::window) fn stage_fog_volume(
         &self,
         r: &legaia_engine_render::Renderer,
@@ -95,11 +109,11 @@ impl PlayWindowApp {
             mesh_positions: &positions,
             ground_gen: f.ground_gen,
             // Enhanced lighting: the mist sits in the scene's mood light.
-            color: if self.dynamic_lighting {
-                legaia_render_kernels::scene_lighting::fog_tint(f.color, &self.lighting_mood())
-            } else {
-                f.color
-            },
+            color: legaia_engine_screens::field_frame::fog_volume_color(
+                f.color,
+                self.dynamic_lighting,
+                &self.lighting_mood(),
+            ),
             opacity: f.opacity,
             height: f.height,
             layers: FOG_LAYERS,
@@ -167,25 +181,7 @@ impl PlayWindowApp {
             // one-world-negation field frame as the follow camera.
             return self.camera_mvp(aspect) * FIELD_WORLD_FLIP;
         }
-        let cutscene = cutscene_cam.map(|(focus, pitch, yaw, roll, h, tr_eye)| {
-            legaia_engine_camera::psx_camera::FieldCameraView {
-                focus,
-                pitch,
-                yaw,
-                roll,
-                h,
-                tr_eye,
-            }
-        });
-        let frame = legaia_engine_core::camera_view::resolve_field_camera(
-            world,
-            &self.session.camera,
-            cutscene,
-            [
-                (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
-                (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
-            ],
-        );
+        let frame = self.host_view().frame(cutscene_cam.map(cutscene_view));
         let vp = legaia_engine_field::camera_frame::frame_vp(
             &frame,
             (self.scene_aabb.0, self.scene_aabb.1),
@@ -222,28 +218,8 @@ impl PlayWindowApp {
         if cutscene_cam.is_none() && !in_world_map && self.field_debug_camera {
             return None;
         }
-        let cutscene = cutscene_cam.map(|(focus, pitch, yaw, roll, h, tr_eye)| {
-            legaia_engine_camera::psx_camera::FieldCameraView {
-                focus,
-                pitch,
-                yaw,
-                roll,
-                h,
-                tr_eye,
-            }
-        });
-        let frame = legaia_engine_core::camera_view::resolve_field_camera(
-            world,
-            &self.session.camera,
-            cutscene,
-            [
-                (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
-                (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
-            ],
-        );
-        frame
-            .field_view()
-            .map(|v| PartCameraPose::from_field_view(&v))
+        self.host_view()
+            .part_camera_pose(cutscene_cam.map(cutscene_view))
     }
 
     /// The overworld curvature's `clip.w`-to-`SZ` factor for this frame's
@@ -255,30 +231,8 @@ impl PlayWindowApp {
         &self,
         cutscene_cam: Option<CutsceneCam>,
     ) -> f32 {
-        let world = &self.session.host.world;
-        if !world.overworld_bit() {
-            return 0.0;
-        }
-        let cutscene = cutscene_cam.map(|(focus, pitch, yaw, roll, h, tr_eye)| {
-            legaia_engine_camera::psx_camera::FieldCameraView {
-                focus,
-                pitch,
-                yaw,
-                roll,
-                h,
-                tr_eye,
-            }
-        });
-        let frame = legaia_engine_core::camera_view::resolve_field_camera(
-            world,
-            &self.session.camera,
-            cutscene,
-            [
-                (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
-                (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
-            ],
-        );
-        legaia_engine_field::camera_frame::frame_curve_scale(true, &frame)
+        self.host_view()
+            .curve_scale(cutscene_cam.map(cutscene_view))
     }
 
     /// Battle body `ai`'s draw plan under the camera the battle actor pass
@@ -520,7 +474,7 @@ impl PlayWindowApp {
                 continue;
             }
             // Rot limb dimming (`FUN_80048A08`), the browser page's twin in
-            // `web-viewer::play_battle_limb_dim`.
+            // `web-play::play_battle_limb_dim`.
             if actor.battle_animation.is_some() {
                 self.session
                     .host
@@ -531,7 +485,7 @@ impl PlayWindowApp {
             // pass `FUN_8004DC68`, the capture / defeat fade): the colour
             // word's ABE + ABR onto every prim's TSB, as `FUN_80043390` ORs
             // them into each packet. The browser play page's twin is
-            // `web-viewer::play_battle_body_blend`.
+            // `web-play::play_battle_body_blend`.
             if let Some(plan) = self.body_draw_plan(ai) {
                 plan.apply_body_blend(&mut vmesh.cba_tsb);
             }
@@ -661,29 +615,16 @@ impl PlayWindowApp {
     pub(super) fn world_map_marker_prims(
         &self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        let world = &self.session.host.world;
-        if world.mode != SceneMode::WorldMap || self.boot_ui.is_active() {
+        if self.boot_ui.is_active() {
             return Vec::new();
         }
-        let aabb = (self.scene_aabb.0, self.scene_aabb.1);
-        let frame = legaia_engine_core::camera_view::resolve_field_camera(
-            world,
-            &self.session.camera,
-            None,
-            [(aabb.0[0] + aabb.1[0]) * 0.5, (aabb.0[2] + aabb.1[2]) * 0.5],
-        );
-        let player_mesh_drawn = world
+        let player_mesh_drawn = self
+            .session
+            .host
+            .world
             .player_actor_slot
             .is_some_and(|pslot| self.drained_spawn_slots.contains(&pslot));
-        legaia_engine_world_views::world_map_markers::marker_quads(
-            world,
-            &frame,
-            aabb,
-            !player_mesh_drawn,
-        )
-        .iter()
-        .map(|q| legaia_render_kernels::screen_prim::world_map_marker_prim(q.xy, q.rgba, q.depth))
-        .collect()
+        self.host_view().world_map_marker_prims(!player_mesh_drawn)
     }
 
     /// The overworld sky band (`FUN_801F73E4`) as screen primitives, through
@@ -694,20 +635,10 @@ impl PlayWindowApp {
     pub(super) fn world_map_sky_prims(
         &self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        let world = &self.session.host.world;
-        if world.mode != SceneMode::WorldMap || self.boot_ui.is_active() {
+        if self.boot_ui.is_active() {
             return Vec::new();
         }
-        let aabb = (self.scene_aabb.0, self.scene_aabb.1);
-        let frame = legaia_engine_core::camera_view::resolve_field_camera(
-            world,
-            &self.session.camera,
-            None,
-            [(aabb.0[0] + aabb.1[0]) * 0.5, (aabb.0[2] + aabb.1[2]) * 0.5],
-        );
-        let sprites =
-            legaia_engine_world_views::world_map_sky::sky_band(world, &self.session.camera, &frame);
-        legaia_render_kernels::screen_prim::sky_band_prims(&sprites)
+        self.host_view().world_map_sky_prims()
     }
 
     /// The live effect layer's 3D draws, uploaded: the `etmd` effect
@@ -809,109 +740,6 @@ impl PlayWindowApp {
         (effect_model_draws, part_draws, field_fx_draws)
     }
 
-    /// This frame's move-FX afterimage streak, as screen-space quads on the
-    /// retail 320x240 stage.
-    ///
-    /// The pass retail runs once per move-FX frame: project the launch point
-    /// the action effect script's terminator staged
-    /// (`legaia_engine_effects::action_effect_script::MoveFxStreak`), fan a
-    /// camera-facing billboard out at the staged half-width, and emit the
-    /// jittered semi-transparent `POLY_FT4` the ported `FUN_801E1AB0` builds.
-    ///
-    /// Gated on the move-FX scene being live: the trail texpage is
-    /// scene-scoped (`World::spawn_move_fx` sets it, `tick_move_fx` drops it
-    /// when the scene drains), so the streak lasts exactly as long as the
-    /// effect it trails. Empty outside a move.
-    // PORT: FUN_801E1AB0 (per-frame emission; the packet + the projection
-    // live in `legaia_engine_render::{afterimage, streak_pass}`)
-    fn move_fx_streak_quads(&self) -> Vec<legaia_render_kernels::afterimage::AfterimageQuad> {
-        use legaia_render_kernels::streak_pass::{
-            StreakSource, clip_ribbon_quads, streak_quads_scheduled,
-        };
-        let world = &self.session.host.world;
-        // The quads project into the 320x240 stage (`project_stage_point`),
-        // so the camera is the stage's 4:3 - the aspect the scene pass draws
-        // at inside its stage viewport (`scene_viewport_for`) and the page's
-        // `battle_vp` hard-codes. The surface's own aspect put the trail and
-        // the streak off the bodies on any window that is not 4:3 (the
-        // runner's 960x699 among them).
-        let mvp = self.battle_scene_mvp(STAGE_ASPECT);
-        // The clip-tag ribbon (`FUN_8004CE2C` tag `0x67` ->
-        // `FUN_801E1D98(&target[+0x3C], 0xC)`) is independent of the move-FX
-        // scene: it rides a physical art's clip, not a staged effect.
-        let mut clip = world
-            .battle
-            .clip_ribbon
-            .map(|c| {
-                let seat = c.seat.map(f32::from);
-                clip_ribbon_quads(seat, c.trail_id, &mvp, world.clock.display_frames as u32)
-            })
-            .unwrap_or_default();
-        let trail = world.active_move_fx_trail_texpage();
-        if trail.is_none() {
-            return clip;
-        }
-        let block = world.move_fx_streak();
-        let Some(src) = StreakSource::from_block(block.launch, block.half_width(), trail) else {
-            return clip;
-        };
-        // The retail emitter schedule keys on the counter word and on the
-        // acting side: party = afterimage shrinking toward the ribbon,
-        // monster = ribbon throughout (`FUN_801E09F8`).
-        // `ctx[+0x13] < 3` is a pool-slot test (`0x801E0C78`): a small
-        // party's first monster sits below engine slot `3`.
-        let party = world
-            .battle_seat_map()
-            .is_party(world.battle_ctx.active_actor);
-        // The schedule's own clock is the world's display-frame counter, the
-        // same one the browser play page feeds it. It used to be this
-        // window's redraw counter, which advances on frames the simulation
-        // did not take - so the emitter phase was a property of how fast the
-        // host happened to be drawing.
-        let frame = world.clock.display_frames as u32;
-        let mut quads = streak_quads_scheduled(&src, &mvp, frame, block.counter_word, party);
-        quads.append(&mut clip);
-        log::debug!(
-            "move-FX streak: launch {:?} counter {:#x} half-width {} -> {} quad(s)",
-            block.launch,
-            block.counter_word,
-            block.half_width(),
-            quads.len()
-        );
-        quads
-    }
-
-    /// This frame's weapon-trail bands, as screen-space gouraud quads on
-    /// the retail 320x240 stage - the projection seat of the swept
-    /// `POLY_G4` trail. The trigger + sweep come from
-    /// `World::battle_weapon_trail_draws` (retail `FUN_8005112C` /
-    /// `FUN_80048310`); the band packets from
-    /// `legaia_render_kernels::battle_trail::weapon_trail_prims`
-    /// (`FUN_800485BC`). Placement is the live body's model law (party
-    /// battle arm: translation + the Y-flip), so the bands land exactly on
-    /// the weapon as drawn.
-    // REF: FUN_800485BC (packet + band order live in
-    // `legaia_render_kernels::battle_trail`; this is the per-host projection)
-    /// PROT 0904's (Theeder) beam packets this frame
-    /// ([`legaia_engine_core::world::World::theeder_draw`] through
-    /// `legaia_engine_ui::cast_theeder::theeder_prims`, the kernel the browser
-    /// play page draws them with), projected with the battle camera at the
-    /// stage's 4:3 - the weapon trail's projection. Retail points are Y-down;
-    /// this host's battle space is Y-up, so Y is negated on the way in.
-    pub(super) fn theeder_screen_prims(
-        &self,
-    ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_render_kernels::battle_trail as bt;
-        let world = &self.session.host.world;
-        let Some(packet) = world.theeder_draw() else {
-            return Vec::new();
-        };
-        let mvp = self.battle_scene_mvp(STAGE_ASPECT);
-        legaia_engine_ui::cast_theeder::theeder_prims(&packet, world.theeder_trail(), |p| {
-            bt::project_stage_point(&mvp, [f32::from(p[0]), -f32::from(p[1]), f32::from(p[2])])
-        })
-    }
-
     /// This frame's field fog sheets (`legaia_engine_field::fog_particles`):
     /// the quads the last sim tick's render step left
     /// (`BootSession::step_field_fog`, `FUN_8003F348` / `FUN_8003F3FC`, run
@@ -930,183 +758,44 @@ impl PlayWindowApp {
     pub(super) fn take_field_fog_prims(
         &mut self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_render_kernels::screen_prim::fog_puff_prim;
         if let Some(sc) = self.screenshot.as_ref()
             && sc.seat_fog_due.take()
             && let Some(fog) = sc.seat_fog.take()
         {
-            let centre = [
-                (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
-                (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
-            ];
+            let centre = self.host_view().centre();
             self.session.seat_field_fog(&fog, centre);
         }
-        let world = &self.session.host.world;
-        if !legaia_engine_core::world::World::fog_mode(world.mode) || !world.fog.gate {
-            return Vec::new();
-        }
-        world
-            .fog_quads()
-            .iter()
-            .map(|q| fog_puff_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth))
-            .collect()
+        self.host_view().fog_prims()
     }
 
-    /// This frame's actor drop shadows (`legaia_render_kernels::drop_shadow`,
-    /// retail's `FUN_8001C394` blob): `World::field_drop_shadows` through the
-    /// same follow camera as the fog sheets, wrapped by the shared
-    /// `drop_shadow_prim` so the blend class and vertex order are the browser
-    /// play page's too. Each cell is depth-tested against the scene already
-    /// drawn, which keeps it under the actor standing on it and over the
-    /// ground - retail's `+0xA0` OT bias and far-bucket ground, in depth-buffer
-    /// terms. Empty outside game mode 3.
+    /// This frame's actor drop shadows (retail's `FUN_8001C394` blob), the
+    /// shared pass both hosts draw
+    /// (`legaia_engine_world_views::screen_passes::HostView::drop_shadow_prims`).
+    /// Each cell is depth-tested against the scene already drawn, which keeps
+    /// it under the actor standing on it and over the ground - retail's
+    /// `+0xA0` OT bias and far-bucket ground, in depth-buffer terms.
     pub(super) fn field_drop_shadow_prims(
         &self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_engine_core::camera_view::resolve_field_camera;
-        use legaia_render_kernels::screen_prim::drop_shadow_prim;
-        let world = &self.session.host.world;
-        if !legaia_engine_core::world::World::fog_mode(world.mode) {
-            return Vec::new();
-        }
-        let center = [
-            (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
-            (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
-        ];
-        let frame = resolve_field_camera(world, &self.session.camera, None, center);
-        let Some(view) = frame.field_view() else {
-            return Vec::new();
-        };
-        world
-            .field_drop_shadows(&view)
-            .iter()
-            .map(|q| drop_shadow_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth))
-            .collect()
+        self.host_view().drop_shadow_prims()
     }
 
-    /// This frame's move-VM strip spans: every extension sub-op `0x2C`
-    /// execution of the most recent tick (the scanline strip emitter
-    /// `FUN_801D31B0`, `MoveVmGlobals::strip_frame`), projected through the
-    /// same follow camera as the fog sheets by the shared `move_strip_prims`
-    /// kernel the browser play page draws them with. Drawn only in a field
-    /// scene - the extension dispatcher exists only in the field overlay.
+    /// This frame's move-VM strip spans (`FUN_801D31B0`), the shared pass
+    /// both hosts draw
+    /// (`legaia_engine_world_views::screen_passes::HostView::move_strip_prims`).
     pub(super) fn take_move_strip_prims(
         &mut self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_engine_core::camera_view::resolve_field_camera;
-        use legaia_engine_field::camera_frame::FieldCameraFrame;
-        let world = &self.session.host.world;
-        // The latest tick's set, not drained: an idle redraw draws it again
-        // (`MoveVmGlobals::strip_frame`).
-        let requests = world.move_vm.strip_frame();
-        if requests.is_empty() || world.mode != SceneMode::Field {
-            return Vec::new();
-        }
-        let center = [
-            (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
-            (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
-        ];
-        let frame = resolve_field_camera(world, &self.session.camera, None, center);
-        let (FieldCameraFrame::Follow(view) | FieldCameraFrame::Cutscene(view)) = frame else {
-            return Vec::new();
-        };
-        legaia_render_kernels::move_strip::move_strip_prims(requests, &view)
+        self.host_view().move_strip_prims()
     }
 
-    /// This frame's attached lights - the field VM's op `0x34` sub-1 light
-    /// pools (`World::field_light_draws`, the `FUN_801E4470` draw feeding
-    /// `FUN_801E3984`) - through the same follow camera as the fog sheets and
-    /// the shared `light_pool_prims` wrapper the browser play page uses.
-    /// Empty outside a field scene or with no light live.
+    /// This frame's attached lights (op `0x34` sub-1, `FUN_801E3984`), the
+    /// shared pass both hosts draw
+    /// (`legaia_engine_world_views::screen_passes::HostView::light_prims`).
     pub(super) fn field_light_screen_prims(
         &self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_engine_core::camera_view::resolve_field_camera;
-        use legaia_engine_field::camera_frame::FieldCameraFrame;
-        let world = &self.session.host.world;
-        if world.mode != SceneMode::Field || world.script_actors.lights.is_empty() {
-            return Vec::new();
-        }
-        let center = [
-            (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
-            (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
-        ];
-        let frame = resolve_field_camera(world, &self.session.camera, None, center);
-        let (FieldCameraFrame::Follow(view) | FieldCameraFrame::Cutscene(view)) = frame else {
-            return Vec::new();
-        };
-        world
-            .field_light_draws(&view)
-            .iter()
-            .flat_map(|d| legaia_render_kernels::screen_prim::light_pool_prims(d.abr, &d.polys))
-            .collect()
-    }
-
-    pub(super) fn weapon_trail_screen_prims(
-        &self,
-    ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_render_kernels::battle_trail as bt;
-        use legaia_render_kernels::battle_trail::TRAIL_POINTS;
-        let world = &self.session.host.world;
-        if world.mode != SceneMode::Battle {
-            return Vec::new();
-        }
-        let draws = world.battle_weapon_trail_draws();
-        if draws.is_empty() {
-            return Vec::new();
-        }
-        // The quads project into the 320x240 stage (`project_stage_point`),
-        // so the camera is the stage's 4:3 - the aspect the scene pass draws
-        // at inside its stage viewport (`scene_viewport_for`) and the page's
-        // `battle_vp` hard-codes. The surface's own aspect put the trail and
-        // the streak off the bodies on any window that is not 4:3 (the
-        // runner's 960x699 among them).
-        let mvp = self.battle_scene_mvp(STAGE_ASPECT);
-        let mut out = Vec::new();
-        for d in draws {
-            let Some(actor) = world.actors.get(d.actor_slot as usize) else {
-                continue;
-            };
-            let pos = [
-                f32::from(actor.move_state.world_x),
-                f32::from(actor.move_state.world_y),
-                f32::from(actor.move_state.world_z),
-            ];
-            let mut steps = Vec::with_capacity(d.steps.len());
-            'draw: for s in &d.steps {
-                let mut pts = [(0i16, 0i16); TRAIL_POINTS];
-                for (i, t) in s.iter().enumerate() {
-                    // The live body's battle model: translation *
-                    // scale(1, -1, 1) about the actor origin (the party
-                    // arm of `actor_model`; retail anchors every sweep
-                    // step at the CURRENT slot base - `FUN_800485BC`
-                    // reads `ctx[+0x34]/[+0x38]` fresh per band).
-                    let p = [
-                        pos[0] + f32::from(t[0]),
-                        pos[1] - f32::from(t[1]),
-                        pos[2] + f32::from(t[2]),
-                    ];
-                    match bt::project_stage_point(&mvp, p) {
-                        Some(xy) => pts[i] = xy,
-                        // Truncate the sweep at the near plane rather
-                        // than smearing a wrapped vertex.
-                        None => break 'draw,
-                    }
-                }
-                steps.push(pts);
-            }
-            let prims = bt::weapon_trail_prims(&steps, d.rgb, bt::WEAPON_TRAIL_OT);
-            if !prims.is_empty() {
-                log::debug!(
-                    "weapon trail: actor {} {} step(s) -> {} band quad(s)",
-                    d.actor_slot,
-                    steps.len(),
-                    prims.len()
-                );
-            }
-            out.extend(prims);
-        }
-        out
+        self.host_view().light_prims()
     }
 
     /// Build this frame's arts after-image ghost meshes - the render half of
@@ -1236,53 +925,5 @@ impl PlayWindowApp {
             }
         }
         out
-    }
-
-    /// Build this frame's move-FX afterimage streak mesh. The PROT-0900
-    /// screen-effect widgets it used to batch with ride the screen-prim pass
-    /// (`screen_layers::screen_fx_prims`), where they sort against the fog
-    /// sheets by their retail OT slots.
-    pub(super) fn build_screen_fx_meshes(
-        &self,
-        r: &legaia_engine_render::Renderer,
-    ) -> Option<UploadedVramMesh> {
-        let mut screen_fx_tex = None;
-        let streak = self.move_fx_streak_quads();
-        if streak.is_empty() {
-            return None;
-        }
-        let mut pos: Vec<[f32; 3]> = Vec::new();
-        let mut uvs: Vec<[u8; 2]> = Vec::new();
-        let mut cba_tsb: Vec<[u16; 2]> = Vec::new();
-        let mut idx: Vec<u32> = Vec::new();
-        // Move-FX afterimage streak. Unlike the widget quads these are not
-        // axis-aligned rects - the packet carries four independent corners in
-        // the retail `xy0..xy3` order (TL, TR, BL, BR) - so they are pushed
-        // vertex-by-vertex. Depth `0.0` puts them in front of every widget:
-        // retail links each streak packet at the projected billboard's own OT
-        // bucket (inside the scene), which this screen-space batch cannot
-        // express, so the engine draws them over the actors instead.
-        for q in &streak {
-            let base = pos.len() as u32;
-            for (x, y) in q.xy {
-                pos.push([x as f32, y as f32, 0.0]);
-            }
-            idx.extend_from_slice(&[base, base + 1, base + 2, base + 1, base + 3, base + 2]);
-            for (u, v) in q.uv {
-                uvs.push([u, v]);
-            }
-            cba_tsb.extend(std::iter::repeat_n([q.clut, q.tpage], q.xy.len()));
-        }
-        if !idx.is_empty() {
-            let normals = vec![[0.0f32; 3]; pos.len()];
-            // Screen-FX sprites are engine-synthesised: no baked colour word,
-            // so the neutral colour draws the texel unchanged.
-            let colors = vec![[legaia_tmd::legaia_prims::MODULATION_NEUTRAL; 3]; pos.len()];
-            match r.upload_vram_mesh(&pos, &uvs, &cba_tsb, &normals, &colors, &idx) {
-                Ok(m) => screen_fx_tex = Some(m),
-                Err(e) => log::warn!("screen-fx textured mesh upload: {e:#}"),
-            }
-        }
-        screen_fx_tex
     }
 }

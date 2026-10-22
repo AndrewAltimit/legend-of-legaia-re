@@ -107,7 +107,8 @@ Consumers:
 - the anim commit `FUN_8004AD80` stages behind a committed knockdown
   (record tag 4) the get-up `+0x1F2` while the actor lives, or anim id 7 for a
   downed party member (whose own commit stages 8), and tests the queued id
-  against `+0x1EF/+0x1F0/+0x1F3` for the counter/guard window;
+  against `+0x1EF/+0x1F0/+0x1F3` to seed the sound-cue cursor `+0x1F6`
+  ([below](#sound-cue-track-entry-0x540x73));
 - the battle-action SM (`FUN_801E295C`) resolves monster attack anims by
   **first-byte search** over the entry table (`FUN_80050E2C` with tags
   `0x20`/`1`/`0x21`/`0x22`), staging the returned *index*.
@@ -262,10 +263,10 @@ itself, whose low byte then indexes the list. The tick reads
   `actor[+0x1F7] = (frame < event_frame)`. That byte is the battle's
   **juggle window**: the damage kernel grows the juggle counter while the
   *defender's* byte is up ([battle-formulas.md](../subsystems/battle-formulas.md#the-juggle-window---what-makes-a-monster-juggleable)),
-  the commit `FUN_8004AD80` gates `actor[+0x1F6]` on it (the counter / guard
-  window, which additionally requires the staged id to be one of the
-  `+0x1EF`/`+0x1F0`/`+0x1F3` reaction entries), and it paces the arts-input
-  band. Live-pinned by a write-watch: these two stores are the byte's only
+  the commit `FUN_8004AD80` reads it (`0x8004AFD4`) to seed the sound-cue
+  cursor `actor[+0x1F6]` at `1` on a juggled re-commit
+  ([sound-cue track](#sound-cue-track-entry-0x540x73)), and it paces the
+  arts-input band. Live-pinned by a write-watch: these two stores are the byte's only
   writers, and the flinch's beat over its rate is the window (Gobu Gobu
   `8` at rate `2` = 16 ticks at the normal speed scale `8`).
 
@@ -373,6 +374,15 @@ element-tinted; the full band table is on the
 `>= 0x100` bypasses the ring for the XA-direct player (busy-guarded).
 The ring itself is the scheduled-delay pair documented in
 [`sfx-table.md`](sfx-table.md#the-ring-is-two-arrays-aged-by-one-function-and-drained-by-another).
+
+The anim commit `FUN_8004AD80` seeds the cursor. Every commit stores `0`
+(`0x8004AFD0`); a commit that re-stages the clip already playing
+(`+0x1DA == +0x1D9`, `0x8004AFCC`) while the juggle byte `+0x1F7` is up
+stores `1` instead (`0x8004B05C`) when the entry is the light flinch
+`+0x1EF` / `+0x1F0`, or the block `+0x1F3` on a party seat or with a first
+cue id `entry[+0x56] >= 0x64` (`0x8004B048..0x8004B050`). A juggled re-hit
+therefore restarts its reaction without the track's first cue. Port:
+`clip_ladder::recommit_cue_cursor`.
 
 Capture-pinned (retail Lu Plasma Strike, FE5C-arg probe): each punch
 volley is three fires - the VICTIM's reaction-clip track fires `0xAD`

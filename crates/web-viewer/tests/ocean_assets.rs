@@ -9,7 +9,7 @@
 use legaia_scene_formats::ocean::{
     OCEAN_ANIM_FRAME_COUNT, OCEAN_ANIM_FRAME0_HEAD, find_ocean_assets,
 };
-use legaia_web_viewer::disc::{extract_prot_dat, parse_prot_toc};
+use legaia_web_play::disc::{extract_prot_dat, parse_prot_toc};
 use sha2::{Digest, Sha256};
 use std::env;
 use std::fs;

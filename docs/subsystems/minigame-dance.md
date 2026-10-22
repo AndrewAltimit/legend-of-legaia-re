@@ -422,7 +422,7 @@ The clip index is the record's `record` byte plus one:
 
 - Kernel: `legaia_engine_field::dance_marker::step_marker`, with `MarkerActor` carrying the three fields the retail actor does (`+0x50` class, `+0x9C` script cursor, `+0x54` countdown). `DanceGame::advance` steps one cursor per class.
 - Pool: `minigame_floor::MarkerFloor` runs the `floor_tile_spawns` sweep over a venue's floor rect, keeps the cells `marker_template` classes as markers, advances every tile in `MarkerFloor::step`, and reports the staged meshes through `draws`.
-- Both browser pages draw the tiles. `bake_dance_markers` in `web-viewer::minigames_dance` bakes every candidate mesh of every tile into the page's static-topology buffer; each frame `dance_marker_step` (`play_mg_dance_marker_step` on the play page) returns positions with the non-current meshes collapsed to a point, so the index buffer stays static.
+- Both browser pages draw the tiles. `bake_dance_markers` in `web-play::minigames_dance` bakes every candidate mesh of every tile into the page's static-topology buffer; each frame `dance_marker_step` (`play_mg_dance_marker_step` on the play page) returns positions with the non-current meshes collapsed to a point, so the index buffer stays static.
 - The native play window builds and draws the hall but does not draw the marker tiles. See [`host-drift.md`](../tooling/host-drift.md).
 
 The marker lookup is the read side of the step data in *floor space* ("is there a marker at cell (x, z)"); the chart read in [Input judging](#input-judging--timing-windows) is the *beat-space* side.
@@ -842,7 +842,7 @@ The dance is fully playable in the port on all three surfaces. The rules, the ca
 | World wiring | `engine-core`: `World::enter_dance` / `tick_dance` / `exit_dance`, `SceneMode::Dance` | suspending scene mode, flag writes, count-in, SFX |
 | Venue | `engine-minigame-scenes::dance_venue`, `dance_cast_scene`; `engine-core::dance_venue::sync_dance_venue` | hall build, staging, camera, face stamps, posed cast surface |
 | Draw builders | `engine-ui::dance` | HUD / count-in / tutorial screen primitives |
-| Hosts | `engine-shell` (`window/minigames.rs`, `window/hud.rs`), `web-viewer` (`minigames_dance.rs`, `play_minigame_arena.rs`) | upload and input |
+| Hosts | `engine-shell` (`window/minigames.rs`, `window/hud.rs`), `web-play` (`minigames_dance.rs`, `play_minigame_arena.rs`) | upload and input |
 
 **Rules.** `DanceGame::press` returns the full event (Miss / Hit / Sequence with its points / Groovy with its landed flag, lock frames and remaining stock / NoCharge / Ignored-while-spinning) and applies the score, gauge and latch side effects. `judge_press` folds it to a three-way Miss / Hit / Sequence result. `advance` steps the clock and runs the competitors' auto-fed presses through the same award path; `dancer_score(i)` / `dancer_triangles(i)` expose their runs.
 
@@ -861,7 +861,7 @@ The HUD kernels kept in the rules crate: `dance_number_digits` / `dance_score_di
 
 - **Native `play-window`.** Reached by the door warp, or from the debug keys: `K` starts a qualifier (and aborts a running one), `U` starts the how-to floor with the tutorial runner. It judges the three retail pad bits, draws the hall and the cast surface under the venue camera, and draws the HUD.
 - **Browser play page.** The same world session; it poses the run through the same cast surface (`play_mg_dance_scene_*`), re-bases the positions onto its baked hall, and draws the marker tiles.
-- **Browser minigames page.** Runs its own qualifier-only session and poses it in its own script (`crates/web-viewer/src/minigames_dance.rs` `dance_body_*` / `dance_cast_json`; `site/js/minigame-dance.js`): the retail cast at the spawn-table offsets, the descriptor-named clips, the dance loop synced to the beat clock, Noa's judge-triggered moves, and the two competitors scoring their own runs. It bakes the hall once at disc load (`dance_env_*`: the same `field_env` placement / terrain resolution the play page runs, bound props posed at frame 0 of their clip), re-based on the human dancer's spawn, with the hall's semi-transparent prims (spotlight glows, smoke) on an additive second pass.
+- **Browser minigames page.** Runs its own qualifier-only session and poses it in its own script (`crates/web-play/src/minigames_dance.rs` `dance_body_*` / `dance_cast_json`; `site/js/minigame-dance.js`): the retail cast at the spawn-table offsets, the descriptor-named clips, the dance loop synced to the beat clock, Noa's judge-triggered moves, and the two competitors scoring their own runs. It bakes the hall once at disc load (`dance_env_*`: the same `field_env` placement / terrain resolution the play page runs, bound props posed at frame 0 of their clip), re-based on the human dancer's spawn, with the hall's semi-transparent prims (spotlight glows, smoke) on an additive second pass.
 
 ## Two descriptor / atlas questions that are closed as negatives
 

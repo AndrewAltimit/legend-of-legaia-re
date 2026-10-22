@@ -32,7 +32,7 @@ impl EquipSession {
         let Some(cat) = info.category(item_id) else {
             return browse_slot;
         };
-        let byte = legaia_engine_field::dev_menu_leaves::resolve_equip_slot(
+        let byte = legaia_engine_dev_menu::dev_menu_leaves::resolve_equip_slot(
             slot_bits_of_category(cat),
             self.active_party_slot as usize,
             &RETAIL_WEAPON_EQUIP_BYTE,
@@ -48,7 +48,7 @@ impl EquipSession {
     ///
     /// The destination is [`Self::retail_destination_slot`], not the browse
     /// row, and the bag / refund / confirm-cue half runs through the ported
-    /// body [`legaia_engine_field::dev_equip_commit::commit_equip`] so the
+    /// body [`legaia_engine_dev_menu::dev_equip_commit::commit_equip`] so the
     /// field-menu equip screen and the dev menu's `EQUIP` row share one
     /// kernel. A pick the bag cannot pay for leaves the record untouched
     /// and emits [`EquipEvent::InvalidConfirm`], which is retail's
@@ -82,7 +82,7 @@ impl EquipSession {
         // stage the eight bytes in retail order, run the ported body over
         // them, and fold the result back into the engine's slot order. The
         // Hand Guard byte has no retail home and is carried across untouched.
-        let base = legaia_engine_field::dev_equip_commit::EQUIP_SLOT_BASE;
+        let base = legaia_engine_dev_menu::dev_equip_commit::EQUIP_SLOT_BASE;
         let mut record = vec![0u8; base + 8];
         {
             let win = &mut record[base..];
@@ -98,7 +98,7 @@ impl EquipSession {
             inventory: &mut self.inventory,
             sfx: None,
         };
-        let committed = legaia_engine_field::dev_equip_commit::commit_equip(
+        let committed = legaia_engine_dev_menu::dev_equip_commit::commit_equip(
             &mut host,
             &mut record,
             item_id,
@@ -135,7 +135,7 @@ impl EquipSession {
     /// Commit a swap the retail applier cannot address - the engine's own
     /// Hand Guard row, and any pick whose `+7` class byte is not on the disc
     /// (a synthetic session). Same order of effects as
-    /// [`legaia_engine_field::dev_equip_commit::commit_equip`]: take one from
+    /// [`legaia_engine_dev_menu::dev_equip_commit::commit_equip`]: take one from
     /// the bag, refund the prior occupant, write, cue.
     fn commit_engine_only(&mut self, slot: u8, item_id: u8) {
         let owned = self.inventory.get(&item_id).copied().unwrap_or(0);
@@ -153,7 +153,7 @@ impl EquipSession {
             slot,
             removed,
             item_id,
-            Some(legaia_engine_field::dev_equip_commit::EQUIP_SFX_CUE),
+            Some(legaia_engine_dev_menu::dev_equip_commit::EQUIP_SFX_CUE),
         );
     }
 

@@ -12,7 +12,7 @@ window.MgMuscleSound = (function () {
     /* ---------------- sound ----------------
      *
      * The dome's own cue set, decoded once from the visitor's disc through
-     * the WASM API (crates/web-viewer/src/minigames_muscle.rs):
+     * the WASM API (crates/web-play/src/minigames_muscle.rs):
      *   - the match SM's UI blips: FUN_801d0748 fires 34 immediate
      *     FUN_8004fcc8(0x21/0x22/0x23) calls, whose < 0x40 leg enqueues
      *     id-1 - static descriptor rows 0x20/0x21/0x22, category 0 ->

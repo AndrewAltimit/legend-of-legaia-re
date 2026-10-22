@@ -10,7 +10,7 @@
 //! runs at the pen the caller left, once per drawn entry, over the character
 //! the caller published - not the list position.
 
-use legaia_engine_field::dev_menu_leaves::{
+use legaia_engine_dev_menu::dev_menu_leaves::{
     EQUIP_COL_CURRENT, EQUIP_COL_LABEL, EQUIP_LABEL_VAS, EQUIP_ROW_PITCH, EquipPanelDraw,
     EquipProps, ItemProps,
 };

@@ -311,6 +311,12 @@ pub struct RetailBattle {
     /// image child seats over the replay's part of the same record on the
     /// capture frame (`LEGAIA_SEAT_CAST_PARTS`).
     pub cast_parts: Vec<legaia_engine_effects::summon::CastPartSeed>,
+    /// The state's turning effect-script table parts (`FUN_80021DF4` nodes
+    /// whose record lies in the battle overlay's prototype band), each as
+    /// its displayed rotation trio, which the image child seats over the
+    /// replay's part of the same record on the capture frame
+    /// (`LEGAIA_SEAT_ACTION_FX_PARTS`).
+    pub action_fx_parts: Vec<legaia_engine_effects::summon::CastPartSeed>,
     /// `0x800891D2` - the Y angle the backdrop draw turns its slot 1 by, in
     /// 4096ths of a turn. Time spent in keeping fights since boot, so a
     /// replay carries it over rather than winding its own.
@@ -432,6 +438,14 @@ pub struct RetailBattle {
     /// replay re-deals them, so the seed takes them back off the bars
     /// ([`Self::pre_action_hp`]).
     pub action_hits: Vec<(u8, u16)>,
+    /// The same ring in push order ([`action_hit_sequence`]): a party melee
+    /// replay lands these amounts rather than its own rolls
+    /// ([`Self::melee_hit_seeds`]).
+    pub action_hit_sequence: Vec<(u8, u16)>,
+    /// The string's running total `DAT_8007BD14` (the `TOTAL` the combo
+    /// cluster draws; the melee kernel's HP write stores it,
+    /// `0x801EEA64..0x801EEA78`).
+    pub combo_total: u32,
     /// Each pool slot's live `+0x34` / `+0x38` pair (party `0..=2`,
     /// monsters `3..=7`), `None` for an empty slot.
     pub ground: Vec<Option<[i16; 2]>>,
@@ -453,6 +467,11 @@ pub struct RetailBattle {
     /// clip wraps). The frame the capture shows each body on
     /// ([`legaia_engine_capture::clip_cursors`]).
     pub clip_cursors: Vec<(u8, u8, i32)>,
+    /// The idle-loop cursor each engine battle slot takes at an in-flight
+    /// cast's dispatch ([`legaia_engine_core::world::InflightCastSeed::idle`]):
+    /// empty on the RAM read, filled from a first replay's measured advance
+    /// ([`Self::with_inflight_idle`]).
+    pub inflight_idle: [Option<i32>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
     /// Each pool slot's heading `+0x46` (12-bit), beside [`Self::ground`]:
     /// the attack band's facing recompute stores it every frame of a
     /// swing and nothing turns the actor back, so a member stands facing

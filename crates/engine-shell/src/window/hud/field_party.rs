@@ -31,10 +31,6 @@ impl PlayWindowApp {
     /// above stage `y = 0x30`. `None` is retail's own staged-load path, which
     /// also forces the low row.
     pub(super) fn field_hud_projected_player_y(&self) -> Option<i16> {
-        let (sw, sh) = self.win.surface_size();
-        if sh == 0 {
-            return None;
-        }
         let world = &self.session.host.world;
         let slot = world.player_actor_slot.map(usize::from).unwrap_or(0);
         let p = world
@@ -43,7 +39,16 @@ impl PlayWindowApp {
             .filter(|a| a.active || a.tmd_binding.is_some())?;
         // The projection the 3D pass draws with, into the stage rect whose
         // NDC `y` is exactly the 240-line stage row.
-        let (_, aspect) = scene_viewport_for(sw, sh);
+        // The band test reads the stage row, which no surface aspect moves:
+        // with no surface (headless, minimised) it projects at the stage's
+        // own 4:3, as the browser play page's `play_field_hud_project` does,
+        // rather than reporting retail's staged-load `None` (the low row).
+        let (sw, sh) = self.win.surface_size();
+        let aspect = if sh == 0 {
+            4.0 / 3.0
+        } else {
+            scene_viewport_for(sw, sh).1
+        };
         let in_world_map = world.mode == SceneMode::WorldMap;
         let cam = self.compute_scene_camera(aspect, in_world_map, None);
         let v = cam

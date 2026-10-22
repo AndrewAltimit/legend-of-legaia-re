@@ -1,6 +1,15 @@
 # The browser host, module by module
 
-What [`legaia-web-viewer`](../../crates/web-viewer/README.md) exports to the site, one section per module family: the play runtime, the minigames page, the viewer pages and the ROM patcher. The architecture the browser host shares with the native window is in [`engine.md`](engine.md#the-browser-host); the gates that keep the two in step are in [`host-drift.md`](../tooling/host-drift.md).
+What the site's wasm bundle exports, one section per module family: the play runtime, the minigames page, the viewer pages and the ROM patcher. The architecture the browser host shares with the native window is in [`engine.md`](engine.md#the-browser-host); the gates that keep the two in step are in [`host-drift.md`](../tooling/host-drift.md).
+
+## Two crates, one bundle
+
+The browser side is two crates:
+
+- [`legaia-web-play`](../../crates/web-play/README.md) - the browser hosts of the port: `runtime`, `play` and every `play_*` module, `boot_title`, `cards`, `resume`, `session_save`, `host_slot`, `pad_bindings`, the minigames page (`minigames*`), the field actor layer (`field_actors`, `field_npc`, `field_scene_anim`) and in-memory disc access (`disc`).
+- [`legaia-web-viewer`](../../crates/web-viewer/README.md) - the asset inspectors and the ROM patcher, and the `cdylib` the site loads.
+
+`web-viewer` depends on `web-play`, never the reverse. wasm-bindgen collects the `#[wasm_bindgen]` exports of every crate the `cdylib` links, so `LegaiaRuntime` and `LegaiaMinigames` reach the page from the same `legaia_web_viewer.js` as `LegaiaViewer`: which crate an export lives in is invisible to the site's JS. A module name below is unique across the two crates, except `field_npc`, which each crate has - `web-play`'s holds the catalog and its builders, `web-viewer`'s the NPC page's exports over them.
 
 ## Playing the port in the browser (`runtime` + `play`)
 
@@ -47,7 +56,7 @@ The split is deliberate:
   `SceneModelBank::tmd_bytes`.
 
 The map + NPC layers make the **native play-window's exact resolver calls**,
-pinned by the disc-gated parity test `crates/web-viewer/tests/play_parity.rs`:
+pinned by the disc-gated parity test `crates/web-play/tests/play_parity.rs`:
 
 - the placed-object layer goes through
   `field_env::resolve_placed_env_draws` **with the scene's object binds**, so
@@ -79,7 +88,7 @@ pinned by the disc-gated parity test `crates/web-viewer/tests/play_parity.rs`:
   without moving the playhead - so clip cadence is refresh-rate-independent
   and scripted actors perform their cued beats.
 
-The disc-gated `crates/web-viewer/tests/play_page_presentation_parity.rs` pins the hide-box contract, the
+The disc-gated `crates/web-play/tests/play_page_presentation_parity.rs` pins the hide-box contract, the
 sim-tick clip cadence, and the opening-chain staging below.
 
 ## Scene BGM (`runtime`)
@@ -165,7 +174,7 @@ the frames over the GL view paced by `play_fmv_due_frame` (the shared
 The retail skip rule is engine-side (`fmv_id 0` only, on the packed
 face-button mask). A page that never declares support still auto-finishes the
 beat with the hand-off applied, which is what a cached bundle does. Disc-gated
-oracle: `crates/web-viewer/tests/play_fmv_real.rs`.
+oracle: `crates/web-play/tests/play_fmv_real.rs`.
 
 Two things the browser host has to do that the native one gets for free:
 
@@ -193,7 +202,7 @@ Two things the browser host has to do that the native one gets for free:
 ## The camera (`play_camera`)
 
 The engine's, not the page's. `play_camera_vp(w, h)` resolves which camera owns
-the frame through the shared `engine-core::camera_view::resolve_field_camera` -
+the frame through the shared `engine-world-views::camera_view::resolve_field_camera` -
 the retail field follow view, an op-`0x45` cutscene shot with its between-beat
 glide, the overworld walk view, or the world map's top-view debug camera - and
 returns the column-major view-projection the play page's script uploads.
@@ -273,7 +282,7 @@ tick to the owner `BootSession::claim_tick` names - the order the native
 window's `sim_tick` uses too: a Start edge (or a script's save point) opens the
 menu and takes the tick (a Start open queues the confirm blip), the field keeps
 ticking under the wipe until the menu spawns, the hand-over takes one tick,
-and from then on each tick is one menu step (`play_menu_input`). A tick after the menu closes goes back to the field. Parity is asserted by the disc-gated `crates/web-viewer/tests/menu_parity.rs`
+and from then on each tick is one menu step (`play_menu_input`). A tick after the menu closes goes back to the field. Parity is asserted by the disc-gated `crates/web-play/tests/menu_parity.rs`
 oracle, which walks the whole card flow.
 
 ## Live battles (`play_battle`)
@@ -289,7 +298,7 @@ the shared `BattleHud` model via `engine_battle_hud::sync_battle_hud_rows`
 edge, and mirrors the native window's battle HUD block - `battle_hud_draws_for`
 rows (retail HP/MP colour law), `encounter_banner_draws_for`, and the submenu
 text - into `play_overlay_draws_json`, in surface pixels. Disc-gated oracle:
-`crates/web-viewer/tests/battle_overlay_parity.rs`.
+`crates/web-play/tests/battle_overlay_parity.rs`.
 
 It also arms the **field-to-battle intro emitter** - the same
 `legaia_render_kernels::battle_intro::BattleIntro` the native window ticks, so all
@@ -395,7 +404,7 @@ quantity, sell detail, the equipment-buy recipient list - through the same
 [`engine-screens` README](../../crates/engine-screens/README.md)). They draw only when the menu-overlay window table
 parsed: a `renderer_va` is not something the pinned-rect fallback can invent,
 so without the real table the windows are absent rather than mislocated.
-`crates/web-viewer/tests/shop_overlay_parity.rs` asserts content lands inside window 32's and
+`crates/web-play/tests/shop_overlay_parity.rs` asserts content lands inside window 32's and
 34's rects, keyed off the table re-parsed from the disc in the test rather than
 off any constant this crate carries.
 
@@ -459,7 +468,7 @@ and it drops every glyph and gauge fill, so native's fishing HUD is digits and
 captions only. The gauges are the functional half of the tension tug-of-war, so
 this host also emits their resolved frames (the ported cap/body/cap geometry) as
 a `bars` channel the page fills as rects. Disc-gated oracle:
-`crates/web-viewer/tests/play_fishing_host.rs`.
+`crates/web-play/tests/play_fishing_host.rs`.
 
 ## Sound effects (`play_sfx`)
 
@@ -509,7 +518,7 @@ word is what would retire the pick.
 `play_sfx_probe_peak` is the measurement that keeps this honest: it renders a cue
 through a throwaway SPU and reports its peak sample, so "wired but every cue is
 inaudible" fails a test instead of shipping. Disc-gated oracle:
-`crates/web-viewer/tests/play_sfx_channel.rs`.
+`crates/web-play/tests/play_sfx_channel.rs`.
 
 ## Keeping the two hosts in step
 
@@ -611,7 +620,7 @@ shows them in the strip under the canvas
 ([site-shell](../tooling/site-shell.md#the-play-pages-minigame-status-rows-sit-under-the-canvas)).
 `site/js/play-minigames.js` also carries the fishing prize-exchange panel
 over `play_fishing_prizes_json` / `play_fishing_prize_buy`. Disc-gated oracle:
-`crates/web-viewer/tests/play_minigames_host.rs`. The overlays' own BGM tracks start through the
+`crates/web-play/tests/play_minigames_host.rs`. The overlays' own BGM tracks start through the
 shared scene host's warp (`World::swap_to_minigame_bgm`), and the dance
 count-in banner and how-to draw through `legaia_engine_ui::dance` on this host too.
 
@@ -657,7 +666,7 @@ failure an unclosable field shop produces. Retail behaviours inherited from
 the SM: the middle control button **restores the template default** (it is not
 a space key), the confirm prompt opens on **No**, and Vahn's scripted walk-out
 (scene-ANM records 47/48) plays post-confirm. Disc-gated oracle:
-`crates/web-viewer/tests/new_game_flow_parity.rs`.
+`crates/web-play/tests/new_game_flow_parity.rs`.
 
 ## Battle-stage backdrops in the entry viewer
 
@@ -751,7 +760,7 @@ through the play page's own kernels, so there is no second animation path:
 | `field_scene_placement_anim_ids` / `_frames`, `field_scene_mesh_posed` / `_posed_frame_positions` | `PropAnimBank::pose_key`, `field_env::posed_prop_offsets` | clip-bound props, posed (multi-object props assemble instead of heaping on the origin) and re-posed per frame |
 | `field_scene_anim_tick` | `World::step_field_vram_effects`, `clut_walk_anim` | the VRAM effects and the CLUT walker |
 | `field_scene_morph_slots` / `_positions` | `World::morphed_env_tmd` | VDF morphs |
-| `field_scene_npc_*` | `web-viewer::field_actors::FieldActors` | the MAN-placed actors (NPCs, chests, story actors): posed off the world's clip cursors, placed at its live positions, re-bound and re-cut as the scripts direct |
+| `field_scene_npc_*` | `web-play::field_actors::FieldActors` | the MAN-placed actors (NPCs, chests, story actors): posed off the world's clip cursors, placed at its live positions, re-bound and re-cut as the scripts direct |
 
 A ladder is a property of the **room**, not of the map: `concnow`'s system
 script tests the region-type mask (op `0x42` mode 0) and installs a different
@@ -1049,8 +1058,8 @@ the fishing species table out of 0972, and the Muscle Dome hand command-id
 table out of the battle overlay 0898. Nothing is shipped with the site.
 
 Per game: `<g>_start` / a step or input method
-(`dance_press` / `baka_choose` / `slot_spin` + `slot_stop` +
-`slot_collect` / `fishing_pond_start` + `fishing_pond_tick` / `muscle_commit` +
+(`dance_press` / `baka_choose` / `slot_step`, one packed pad word a frame /
+`fishing_pond_start` + `fishing_pond_tick` / `muscle_commit` +
 `muscle_end_selection` + `muscle_resolve` + `muscle_next_turn`) /
 `<g>_state_json`. The dome adds a second tier for the contest above a leg
 (`muscle_contest_start` / `muscle_report_leg` / `muscle_contest_settle` /
@@ -1061,7 +1070,7 @@ others. `dance_state_json` deliberately surfaces **both** halves of retail's
 split chart lookup - `judged` (what the hit judge matches, the step to
 press) and `displayed` (the display half's held-sequence substitution); see
 `docs/subsystems/minigame-dance.md`. Disc-gated oracle:
-`crates/web-viewer/tests/minigames_wasm_api.rs`.
+`crates/web-play/tests/minigames_wasm_api.rs`.
 
 `minigames_fishing.rs` and `minigames_muscle.rs` are the fishing / Muscle
 Dome shells. Fishing drives [`legaia_engine_fishing::fishing::PondSession`] -
@@ -1101,7 +1110,7 @@ the PROT 1231 sample VAB - a TOC-tail entry) plus the direct-keyed hit
 stings (`dance_sting_pcm`), and the real BGM pair rendered through the
 from-scratch SPU (`dance_bgm_pcm_i16`). Consumed by
 `site/js/minigame-dance.js`; see `docs/subsystems/minigame-dance.md`.
-Disc-gated oracle: `crates/web-viewer/tests/minigames_dance_api.rs`.
+Disc-gated oracle: `crates/web-play/tests/minigames_dance_api.rs`.
 
 ## Session saves + retail cards (`session_save`)
 
@@ -1326,21 +1335,21 @@ reference TIMs sitting in other PROT entries.
 | [`prot_locate`](../../crates/web-viewer/src/prot_locate.rs) | `PROT.DAT` offset to owning-entry lookup, the browser twin of `prot-extract locate`. |
 | [`player_anm`](../../crates/web-viewer/src/player_anm.rs) | Player-ANM corpus + record decode exports. |
 | [`packet_color`](../../crates/web-viewer/src/packet_color.rs) | Per-vertex packet-colour streams for the WebGL renderer, over `engine-field::packet_color`. |
-| [`pad_bindings`](../../crates/web-viewer/src/pad_bindings.rs) | The keyboard-to-pad binding table, read from the engine rather than typed into each page. |
+| [`pad_bindings`](../../crates/web-play/src/pad_bindings.rs) | The keyboard-to-pad binding table, read from the engine rather than typed into each page. |
 | [`summon_view`](../../crates/web-viewer/src/summon_view.rs) | `LegaiaSummons` - the Seru-magic summon viewer. |
 | [`translate_workbench`](../../crates/web-viewer/src/translate_workbench.rs) | `Workbench` - the in-browser language-pack editor over the visitor's own disc. |
-| [`minigames_fishing_scene`](../../crates/web-viewer/src/minigames_fishing_scene.rs) | The fishing venue's 3D field scene and the player's body for the minigames page. |
-| [`play_minigame_arena`](../../crates/web-viewer/src/play_minigame_arena.rs) / [`play_minigame_slots`](../../crates/web-viewer/src/play_minigame_slots.rs) / [`play_dance_art`](../../crates/web-viewer/src/play_dance_art.rs) | The play page's in-world Muscle Dome / Baka Fighter / dance and slot-machine read-outs and art. |
-| [`play_battle_body_blend`](../../crates/web-viewer/src/play_battle_body_blend.rs) / [`play_battle_limb_dim`](../../crates/web-viewer/src/play_battle_limb_dim.rs) | Browser seats of the battle body's whole-mesh semi-transparency and the Rot limb dimming. |
-| [`play_field_fx`](../../crates/web-viewer/src/play_field_fx.rs) | Field fog sheets, actor drop shadows and op `0x34` sub-1 attached lights. |
-| [`play_field_hud`](../../crates/web-viewer/src/play_field_hud.rs) | The field party-status HUD (name / `LV` / `HP` / `MP`). |
-| [`play_tile_board`](../../crates/web-viewer/src/play_tile_board.rs) | Tile-board (op `0x49`) rendering on the play page. |
-| [`play_world_map_markers`](../../crates/web-viewer/src/play_world_map_markers.rs) | The overworld's kind-coded entity and player markers (a port marker, not a retail draw). |
-| [`play_frame_step`](../../crates/web-viewer/src/play_frame_step.rs) | The shared wall-clock to sim-tick rule (`engine-core::frame_step::SimStepper`). |
-| [`host_slot`](../../crates/web-viewer/src/host_slot.rs) | The page's slot for its `BootSession` over `play_sfx::PageSink`; every page module reaches the scene host through it. |
-| [`play_hotkeys`](../../crates/web-viewer/src/play_hotkeys.rs) | `play_host_hotkey`: the native window's option / cheat / camera keys, resolved through the shared `engine-session::hotkeys` table; the page half is `window.__playHotkeyActions` in `play.html`. |
-| [`play_lighting`](../../crates/web-viewer/src/play_lighting.rs) / [`play_fog_volume`](../../crates/web-viewer/src/play_fog_volume.rs) | The enhanced-lighting and volumetric-fog enhancements (twins of the native `I` / `F8` and `F9`), from the shared engine-side sources. |
-| [`play_cheats`](../../crates/web-viewer/src/play_cheats.rs) | The play page's Cheats panel, thin bindings over `engine-cheats::cheats`. |
-| [`play_toggles`](../../crates/web-viewer/src/play_toggles.rs) | Runtime twins of native launch switches: `--retail` (session-only `OptionsState::pin_retail`; the store is not written while it holds), `--set-flag`, `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS`. |
+| [`minigames_fishing_scene`](../../crates/web-play/src/minigames_fishing_scene.rs) | The fishing venue's 3D field scene and the player's body for the minigames page. |
+| [`play_minigame_arena`](../../crates/web-play/src/play_minigame_arena.rs) / [`play_minigame_slots`](../../crates/web-play/src/play_minigame_slots.rs) / [`play_dance_art`](../../crates/web-play/src/play_dance_art.rs) | The play page's in-world Muscle Dome / Baka Fighter / dance and slot-machine read-outs and art. |
+| [`play_battle_body_blend`](../../crates/web-play/src/play_battle_body_blend.rs) / [`play_battle_limb_dim`](../../crates/web-play/src/play_battle_limb_dim.rs) | Browser seats of the battle body's whole-mesh semi-transparency and the Rot limb dimming. |
+| [`play_field_fx`](../../crates/web-play/src/play_field_fx.rs) | Field fog sheets, actor drop shadows and op `0x34` sub-1 attached lights. |
+| [`play_field_hud`](../../crates/web-play/src/play_field_hud.rs) | The field party-status HUD (name / `LV` / `HP` / `MP`). |
+| [`play_tile_board`](../../crates/web-play/src/play_tile_board.rs) | Tile-board (op `0x49`) rendering on the play page. |
+| [`play_world_map_markers`](../../crates/web-play/src/play_world_map_markers.rs) | The overworld's kind-coded entity and player markers (a port marker, not a retail draw). |
+| [`play_frame_step`](../../crates/web-play/src/play_frame_step.rs) | The shared wall-clock to sim-tick rule (`engine-core::frame_step::SimStepper`). |
+| [`host_slot`](../../crates/web-play/src/host_slot.rs) | The page's slot for its `BootSession` over `play_sfx::PageSink`; every page module reaches the scene host through it. |
+| [`play_hotkeys`](../../crates/web-play/src/play_hotkeys.rs) | `play_host_hotkey`: the native window's option / cheat / camera keys, resolved through the shared `engine-session::hotkeys` table; the page half is `window.__playHotkeyActions` in `play.html`. |
+| [`play_lighting`](../../crates/web-play/src/play_lighting.rs) / [`play_fog_volume`](../../crates/web-play/src/play_fog_volume.rs) | The enhanced-lighting and volumetric-fog enhancements (twins of the native `I` / `F8` and `F9`), from the shared engine-side sources. |
+| [`play_cheats`](../../crates/web-play/src/play_cheats.rs) | The play page's Cheats panel, thin bindings over `engine-cheats::cheats`. |
+| [`play_toggles`](../../crates/web-play/src/play_toggles.rs) | Runtime twins of native launch switches: `--retail` (session-only `OptionsState::pin_retail`; the store is not written while it holds), `--set-flag`, `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS`. |
 | [`audio_api`](../../crates/web-viewer/src/audio_api.rs) | `LegaiaAudio`, the media page's audio bindings. |
-| [`play_host_parity`](../../crates/web-viewer/src/play_host_parity.rs) | Read-only probes over the live `World` for the tests pairing this host against the native window; not wasm exports. |
+| [`play_host_parity`](../../crates/web-play/src/play_host_parity.rs) | Read-only probes over the live `World` for the tests pairing this host against the native window; not wasm exports. |

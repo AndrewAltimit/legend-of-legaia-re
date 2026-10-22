@@ -1,0 +1,13 @@
+[package]
+name = "legaia-engine-dev-menu"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_engine_dev_menu"
+path = "src/lib.rs"
+
+[dependencies]
+legaia-engine-system.workspace = true
+legaia-overlay-images.workspace = true

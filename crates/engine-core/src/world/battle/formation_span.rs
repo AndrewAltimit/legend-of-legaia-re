@@ -24,10 +24,14 @@
 //! position to the extents. Those actors are at the origin in every catalogued
 //! capture of a fresh small-party battle (five solo / duo states), and the
 //! origin lies inside every authored formation's box - so the engine passes
-//! them as `(0, 0)` and the phantom slots cannot move the result. Two
-//! later-fight captures show a small party's empty slots carrying non-zero
-//! positions left behind by other actors that borrowed the struct; the engine
-//! allocates no combatant struct there, so that residue is not modelled.
+//! them as `(0, 0)` and the phantom slots cannot move the result - at the
+//! first round. Each empty seat is a struct of its own (a solo capture's
+//! table holds distinct pointers at slots `1` and `2`, `HP 0`), which this
+//! walk, the action seed's recentre and the melee make-way step all move, so
+//! later in a fight the empty seats stand off the origin and weigh in the
+//! box (`gimard_summon_start` reads both at `(-82, 543)` against the lone
+//! member's `(82, -542)`, which centres that box on the origin). The engine keeps them in
+//! [`BattleState::empty_seat_ground`] and moves them with the rest.
 //!
 //! ## What it does to a fight
 //!
@@ -61,11 +65,17 @@
 //! ([`crate::battle_cam_inputs::battle_formation_box`]).
 
 use super::*;
-use legaia_engine_battle_vm::battle_action::{FormationPos, normalize_formation_span};
+use legaia_engine_battle_vm::battle_action::{
+    FormationPos, normalize_formation_span, seed_formation_recentre,
+};
 
 /// Retail's pool width the kernel walks (`sltiu v0,v0,0x7` at `0x801DB3D4`):
 /// party slots `0..3`, monster slots `3..7`.
 const RETAIL_POOL_WALK: usize = 7;
+
+/// The action category whose recentre frames the target alone (`+0x1DE ==
+/// 3`, Attack; `li v0,0x3` in `FUN_801EFE44`'s box loop).
+const ATTACK_CATEGORY: u8 = 3;
 
 impl World {
     /// The retail pool slot an engine battle slot occupies, or `None` for a
@@ -74,10 +84,12 @@ impl World {
     pub fn retail_battle_pool_slot(&self, engine_slot: usize) -> Option<usize> {
         let seats = self.battle_seat_map();
         let e = u8::try_from(engine_slot).ok()?;
-        let monster = self
-            .actors
-            .get(engine_slot)
-            .is_some_and(|a| a.battle_monster_id.is_some());
+        // A monster seat carries its id; one a fixture seated without an id
+        // (`World::enter_battle` alone) is still a live seated body.
+        let monster = engine_slot < 8
+            && self.actors.get(engine_slot).is_some_and(|a| {
+                a.battle_monster_id.is_some() || (a.active && a.battle.liveness != 0)
+            });
         if !seats.is_party(e) && !monster {
             return None;
         }
@@ -92,7 +104,58 @@ impl World {
     /// `0x801D3908`; the `FUN_801D5854(0, 9)` re-frame that follows is the
     /// engine's per-pass far framing)
     pub(in crate::world) fn normalize_battle_formation(&mut self) {
-        let mut pos = [FormationPos::default(); RETAIL_POOL_WALK];
+        self.move_battle_pool(|pos, alive| {
+            // The camera-focus pair: see the module docs for why it is local.
+            let (mut focus_x, mut focus_z) = (0i32, 0i32);
+            normalize_formation_span(pos, alive, &mut focus_x, &mut focus_z);
+        });
+    }
+
+    /// Run the action seed's formation recentre `FUN_801EFE44` for the
+    /// acting engine slot `actor`: the round-start squash, then the formation
+    /// moved so the action's box - the target alone for an Attack - sits on
+    /// the stage origin. Retail runs it at state `0x0C` for every category
+    /// but Run (`0x801E2D44`) and on the monster Run arm (`0x801E2DE8`).
+    ///
+    /// The camera-focus shift is dropped as the round-start one is: the
+    /// seed's next call is the action framing `FUN_801D5854(actor, 6)`,
+    /// which frames the acting actor's live position.
+    ///
+    /// REF: FUN_801EFE44
+    pub(in crate::world) fn seed_battle_formation_recentre(&mut self, actor: u8) {
+        if self.battle.seed_recentre_held {
+            return;
+        }
+        let Some(a) = self.actors.get(usize::from(actor)) else {
+            return;
+        };
+        let attack = a.battle.action_category == ATTACK_CATEGORY;
+        let target_engine = a.battle.active_target;
+        let target = if target_engine >= 8 {
+            target_engine
+        } else {
+            match self.retail_battle_pool_slot(usize::from(target_engine)) {
+                Some(r) => r as u8,
+                // A target off the pool frames nothing: the box is empty and
+                // the recentre is zero.
+                None => 0xFF,
+            }
+        };
+        self.move_battle_pool(|pos, alive| {
+            let (mut focus_x, mut focus_z) = (0i32, 0i32);
+            seed_formation_recentre(pos, alive, attack, target, &mut focus_x, &mut focus_z);
+        });
+    }
+
+    /// Lift the live battle positions onto retail's seven-slot pool, let
+    /// `f` move them, and write the result back, carrying each actor's seat
+    /// pair along by the same delta (the module docs' "The seat follows").
+    fn move_battle_pool(&mut self, f: impl FnOnce(&mut [FormationPos], &[bool])) {
+        // An empty seat stands where the walks left its struct.
+        let mut pos = self
+            .battle
+            .empty_seat_ground
+            .map(|(x, z)| FormationPos { x, z });
         let mut alive = [false; RETAIL_POOL_WALK];
         let mut owner = [None::<usize>; RETAIL_POOL_WALK];
         for (slot, a) in self.actors.iter().enumerate().take(8) {
@@ -106,10 +169,11 @@ impl World {
             alive[r] = a.battle.liveness != 0;
             owner[r] = Some(slot);
         }
-        // The camera-focus pair: see the module docs for why it is local.
-        let (mut focus_x, mut focus_z) = (0i32, 0i32);
-        normalize_formation_span(&mut pos, &alive, &mut focus_x, &mut focus_z);
+        f(&mut pos, &alive);
         for (r, slot) in owner.iter().enumerate() {
+            if slot.is_none() {
+                self.battle.empty_seat_ground[r] = (pos[r].x, pos[r].z);
+            }
             if let Some(slot) = *slot
                 && let Some(a) = self.actors.get_mut(slot)
             {
@@ -126,6 +190,52 @@ impl World {
             }
         }
     }
+    /// The live pair of retail pool slot `pool`: its engine actor's, or the
+    /// empty seat's ([`BattleState::empty_seat_ground`]).
+    pub fn battle_pool_position(&self, pool: u8) -> Option<(i16, i16)> {
+        if usize::from(pool) >= RETAIL_POOL_WALK {
+            return None;
+        }
+        match self.battle_pool_owner(pool) {
+            Some(slot) => self
+                .actors
+                .get(slot)
+                .map(|a| (a.move_state.world_x, a.move_state.world_z)),
+            None => Some(self.battle.empty_seat_ground[usize::from(pool)]),
+        }
+    }
+
+    /// The mutation half of [`Self::battle_pool_position`].
+    pub fn set_battle_pool_position(&mut self, pool: u8, x: i16, z: i16) {
+        if usize::from(pool) >= RETAIL_POOL_WALK {
+            return;
+        }
+        match self.battle_pool_owner(pool) {
+            Some(slot) => {
+                if let Some(a) = self.actors.get_mut(slot) {
+                    a.move_state.world_x = x;
+                    a.move_state.world_z = z;
+                }
+            }
+            None => self.battle.empty_seat_ground[usize::from(pool)] = (x, z),
+        }
+    }
+
+    /// Stand empty pool seat `pool` at `(x, z)` - a capture seed's hand-off
+    /// of where retail's struct stands. A seat an actor occupies is left to
+    /// the actor.
+    pub fn seat_empty_battle_seat(&mut self, pool: u8, x: i16, z: i16) {
+        if usize::from(pool) < RETAIL_POOL_WALK && self.battle_pool_owner(pool).is_none() {
+            self.battle.empty_seat_ground[usize::from(pool)] = (x, z);
+        }
+    }
+
+    /// The engine actor seated in retail pool slot `pool`, if any.
+    fn battle_pool_owner(&self, pool: u8) -> Option<usize> {
+        let e = usize::from(self.battle_seat_map().engine(pool)?);
+        (self.retail_battle_pool_slot(e) == Some(usize::from(pool))).then_some(e)
+    }
+
     /// Re-seat the monster block on seat family `family` of the table at
     /// `0x80077608`.
     ///

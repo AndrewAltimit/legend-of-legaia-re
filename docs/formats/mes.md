@@ -134,6 +134,13 @@ Reads source bytecode from `param_2` and writes expanded bytecode to `param_1`. 
 | `0x5E XX` | `0xCE (XX - 0x2D)` |
 | `0xFF` | `0xCF` |
 
+The rewrite lands in the **source** string, not the output: the first pass
+(`0x80036550..0x800365AC`) stores `0xCE` and the rebased operand over the
+`0x5E XX` pair (`0x80036560` / `0x80036568`) and `0xCF` over an `0xFF`
+(`0x8003657C`), counting the output length as it goes, with any byte in
+`0xC0..0xCF` taking one operand byte. A string drawn once therefore holds the
+runtime form afterwards; drawing it again is the same.
+
 Then it walks the input and inlines `0xC1..0xC5` / `0xC7` substitutions: each substitution opcode is replaced by the bytes of the substituted name, copied character-by-character.
 
 ## Dialog window pager - `FUN_801D84D0`

@@ -61,7 +61,7 @@ fn a_raising_beat_writes_row_zero_and_clips_its_actors() {
         assert!(
             clips
                 .iter()
-                .any(|c| c.0 == legaia_engine_core::world::ActorTintKey::Player),
+                .any(|c| c.0 == legaia_engine_field::object_tint::ActorTintKey::Player),
             "{name}: the player steps through the plane with the NPCs"
         );
         // The raised actors stand just short of the plane at the beat's

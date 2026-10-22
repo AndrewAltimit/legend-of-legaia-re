@@ -455,7 +455,7 @@ pub struct FloorTileSpawn {
 // globals it writes and in the `x0/z0/x1/z1` debug print it opens with)
 // WIRED, through [`MarkerFloor`]: the pool this pass's output was missing is
 // the per-cell step-marker actor list, and the browser minigames page's dance
-// venue draws it - `bake_dance_markers` in `crates/web-viewer` walks this
+// venue draws it - `bake_dance_markers` in `crates/web-play` walks this
 // sweep over `other7`'s `.MAP`, keeps the cells [`marker_template`] classes as
 // markers, and the page flips each one's mesh per frame.
 //

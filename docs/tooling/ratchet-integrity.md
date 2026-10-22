@@ -65,7 +65,11 @@ the log:
 
 The tally depends on the skip line. A test that returns early without printing
 one is invisible to it, so a gated test prints `[skip] <what was missing>`
-before it returns.
+before it returns, and names *every* input it lacked: a test that needs
+`extracted/PROT.DAT` says so, or a fresh runner checkout (which has the disc but
+no extraction) reads as a disc skip. Only `LEGAIA_DISC_BIN` itself is the disc;
+another disc's variable (`LEGAIA_DISC_BIN_JP`, `LEGAIA_FANPATCH_BASE_BIN`) is
+another input.
 
 The suite runs through this script in two places: the `disc-test` job of
 `main-ci.yml` (manual dispatch, or a `disc-test` label on a pull request) and

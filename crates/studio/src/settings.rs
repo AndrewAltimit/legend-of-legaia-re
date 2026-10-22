@@ -25,6 +25,9 @@ pub struct Settings {
     pub all_textures: bool,
     /// The window's inner size (logical points) when it last closed.
     pub window_size: Option<[f32; 2]>,
+    /// The window's outer top-left corner (physical pixels) when it last
+    /// closed; restored only onto a connected monitor (`placement`).
+    pub window_pos: Option<[i32; 2]>,
     /// The view (`browse`, `actors`, `media`, `extract`) and preview tab
     /// (`overview`, `textures`, ...) open when the app last closed.
     pub mode: Option<String>,

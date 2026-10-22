@@ -35,7 +35,7 @@ The VM-side modules live in `crates/engine-battle-vm`. Camera inputs and the per
 `engine-core::battle_cam_inputs` (`World::tick_battle_camera`,
 `World::battle_cam_pose`). Both hosts - the native `play-window`
 (`crates/engine-shell/src/window/`) and the browser play page
-(`crates/web-viewer/src/play_battle_render.rs`) - only read the pose.
+(`crates/web-play/src/play_battle_render.rs`) - only read the pose.
 
 Camera globals:
 
@@ -174,8 +174,15 @@ the ambient beside the far colour on every stage class
 `step` is the frame step `0x1F800393`. Settled, the base is `0x808080`, so the
 floor's **near** colour is `0xC0` per channel: the texel is lifted by half
 before the cue blends it toward the far colour. Every catalogued battle capture
-outside a cast holds `0x8007B7B0 = 0xC0C0C0`. Battle init seeds the floor value
-(`0x80051C84`), so every fight's floor fades in over its first 48 vsyncs. A
+outside a cast holds `0x8007B7B0 = 0xC0C0C0`. The stage loader `FUN_800513F0`
+seeds the floor value (`0x80051C84`), so every fight's floor fades in over 48
+vsyncs from the stage load. The frame driver calls that loader on its first
+pass at entry counter `gp+0x330 >= 0x84` (`0x80046F04`, `jal 0x800513F0` at
+`0x80046F74`), four units into the [entry sweep](#the-battle-entry-sweep),
+and runs `FUN_80050120` later in the same pass, so the load pass already
+ramps once: `s5_tetsu_battle`, at counter `0xAF`, holds base `0x76` - 43 units
+of ramp - and near colour `0xB6`. The port holds the floor until its sweep
+counter reaches `0x84` (`World::tick_battle_ambient`). A
 cast pulls the near colour from `0xC0` toward `0x60`. The far colour
 `0x8007BB48` derives from the same word (`0x800507FC..0x80050834`).
 
@@ -524,6 +531,20 @@ The ribbon needs no special place in the ordering table. Its quads are
 linked at their own mean depth like every other backdrop packet, and a
 depth-tested mesh draws the same band once the arc stands where retail's
 does.
+
+**Which side of the ribbon draws.** The backdrop arm hands the prim
+dispatcher `FUN_80043390` the node's colour word ORed with `0x40000000` for
+copy A and with `0x48000000` for a copy whose `+0x5A` reflection bits are up
+(`lui a1,0x4000` at `0x8001B014`, `lui a1,0x4800` at `0x8001AFFC`). Bit
+`0x08000000` lowers the winding mask `0x1F80003C` to `0x7FFFFFFF`
+(`0x80043520..0x80043540`), which the flat-textured quad leaf's two-half
+`NCLIP` test (`FUN_80044DC8`, `0x80044E68..0x80044EAC`) can then no longer
+fail. So the mirrored copy draws both sides and every other copy only its
+front faces. The ribbon faces the arena's centre and the battle camera stands
+outside its ring, so copy A's near quads - those between the camera and the
+combatants - face away and drop out
+(`legaia_engine_scene_host::scene_host::backdrop_copy_nclip`, both hosts'
+per-draw NCLIP word on the spun draws).
 
 The spin is `World::tick_battle_backdrop_spin` (once a battle frame) and
 `legaia_engine_scene_host::scene_host::backdrop_slot_1_basis`; both play hosts draw
@@ -1196,6 +1217,20 @@ between holds:
   step lands on the pass that entered its state, and that pass's frame takes
   the new length under the same id (`BattleFrameClock::retime_frame`). A new
   id there opened a second pass on the next tick.
+- **A pass's work is one call with the step folded in, not `step`
+  one-vsync calls.** Retail tests every counter and range once a pass, so a
+  threshold a pass's first vsync would cross does not stop its second:
+  - the cast tick's effect-child drive (`FUN_801E09F8`,
+    `HomingSlots::step_pass`) moves each homing slot
+    `(lut * speed * step) << 3 >> 15` (`mult` by `0x1F800393` at
+    `0x801E103C` / `0x801E1098`), drops every slot counter and the streak
+    word by `4 * step` (`0x801E0C1C`, `0x801E1110`, `0x801E17A8`), takes the
+    phase-`1` hand-over only on a pass that opens with the word at zero
+    (`0x801E0C14`), and counts a phase-`2` landing's counter down on the
+    landing pass itself (`0x801E1338` falls into the phase-`3` arm);
+  - the anim tick's root motion (`FUN_80047430`,
+    `World::tick_battle_locomotion_dt`) steps
+    `trig * speed * step * scale >> 15` behind one range poll.
 - **The paged modules run inside the pass** (`World::module_pass`). Retail
   enters the summon stager `FUN_801F1ED4` and the capture tick `FUN_801F2160`
   once a pass, and each counted arm drains `scalar * delta`, drifts `k * delta`
@@ -1212,7 +1247,11 @@ between holds:
   `0x32..=0x37` keeps the live state: `0x29`'s summon-route arm falls through
   into the entered state's case-6 call (`0x801E4604`, `0x801E4748`).
 - **The retail-compare seed** starts the yaw-coin steer at `0x14`, since the
-  seed's `0x800` value is no coin. A replay's summon flash is re-run to the
+  seed's `0x800` value is no coin. A capture's yaw counter is the word its
+  last pass left, after that pass's prologue drift, so ahead of a tick that
+  runs a pass the steer pins it one pass's drift short
+  (`World::battle_sm_pass_due_next_tick`); pinned whole, every pass framed
+  `rim_elm_gimard_victory` four units round (`image` `.821`, then `.887`). A replay's summon flash is re-run to the
   capture's age once the gate holds (`PhaseGate::align_fade`): retail's own
   frame step varies frame to frame, so its flash can sit between two of the
   replay's passes ([retail-compare](../tooling/retail-compare.md#driving-to-the-phase)).
@@ -1222,22 +1261,27 @@ between holds:
   display lag back.
 
 Measured with `LEGAIA_BATTLE_FRAME_CADENCE=1` against the per-vsync run of
-the same build, the retail-disc battle rows that rise most are
-`theeder_summon_mid_cast` `image` `.779` to `.900`, `vera_summon_mid_cast`
-`.834` to `.968`, `battle_noa_miracle_art_combo` `.636` to `.665`, `battle_gimard_tail_fire_a`
-`.777` to `.801`, `cort_mystic_shield_mid_cast` `.972` to `.996`, and
-`camera` on `gimard_burning_attack`, `gola_gola_summon_mid_cast` and
-`cort_mystic_shield_mid_cast`. The battle class's image mean is `.881`
-against the per-vsync `.887`. Rows still fall, so the toggle stays off:
+the same build, the retail-disc rows that rise are `theeder_summon_mid_cast`
+`image` `.874` to `.996`, `zeto_call_wave_mid_cast` `.960` to `.973`,
+`horn_summon_mid_cast` `.979` to `.984`, and `camera` on
+`gimard_burning_attack` (`.963` to `.999`), `vera_summon_mid_cast` and
+`aluru_summon_mid_cast`. Over the retail-disc rows the falls sum to about
+`.19` against `.19` of rises, and the falls are not yet shown to be
+retail's, so the toggle stays off:
 
 | Capture | Falls | Cause |
 |---|---|---|
-| `noa_levelup_fight_pre` | `camera` `.981` to `.944`, `image` `.817` to `.494` | the replayed round draws its rolls at the pass cadence, and on the drive's stream the struck Gobu Gobu takes a knockdown (clips `4` / `5`) where it reeled before; the stream is the seed search's, not retail's |
-| `rim_elm_gimard_victory`, `battle_melee_hit_spark` | `image` `.908` to `.801`, `.692` to `.687` | the RAM phase matches (`camera` `.996`); the displayed frame two passes back frames the swing's clip `0x0F` eight sixteenths on and draws the hit-spark rays a pass younger than retail's |
-| `flute_lippian_midcast` | `image` `.740` to `.705` | taken the `0x29` pass back (which lifts `flute_spikefish_midcast` from `.910` to `.950`), its summon-route chase frames off retail's: the RAM's ease into the close-up matches (TR z `4279` on both), the pass before it does not |
-| `nivora_duel_pre_plasma_strike`, `nivora_duel_pre_megaton_press` | `image` `.877` to `.815`, `.888` to `.875` | the stage's mist band and ground differ at the Done hold; the clocks behind them are not traced yet |
-| `rim_elm_gimard_seru_capture_before`, `cort_evil_seru_magic_mid_cast`, `battle_gimard_tail_fire_b`, `gimard_summon_start`, `freed_summon_mid_cast`, `juggernaut_summon_mid_cast`, `noa_levelup_banner`, `player_steal_skeleton_banner` | `image` by `.01` to `.035`; `cort_evil_seru_magic_mid_cast` `camera` `1.0` to `.988` | the focus and the caster's pose sit a pass from the per-vsync frame; `gimard_summon_start` holds retail's stored ambient (`48` against the per-vsync `40`, the near colour `0x70` its RAM holds) and still falls on the caster's pose |
-| `cort_evolved_final_crisis_mid_cast`, `nivora_duel_mid_blazing_slash`, `zeto_call_wave_mid_cast` | `camera` `.999` to `.992`, `1.0` to `.995`, `.932` to `.928` image | the capture-module drifts land a few vsyncs off retail's at the gate's countdown |
+| `battle_gimard_tail_fire_a`, `battle_gimard_tail_fire_b` | `image` `.822` to `.784`, `.807` to `.789` | the flight runs late on both cadences: at the gate the engine's flame head stands some `300` units short of retail's, where retail's pool already holds flame children at the target band that neither engine run has; the cadence's head stands a further pass short |
+| `gimard_burning_attack` | `image` `.786` to `.763` | the fire cloud stands detached from the mouth; the camera itself lands (`.999`) |
+| `rim_elm_gimard_seru_capture_before` | `image` `.971` to `.953` | the frames differ in ground blocks at the tolerance's edge: the two cadences' cameras stand within a unit of each other, both with focus `z` `1102` against retail's `1124` |
+| `noa_levelup_banner` | `image` `.962` to `.945` | the posing bodies' blocks; on both cadences the Results script's `TR.y` (`-5 * actor[+0x3E]` plus the accumulator term) reads Vahn's display height at `-191` where retail's reads `-183` |
+| `freed_summon_mid_cast`, `juggernaut_summon_mid_cast`, `gimard_summon_start`, `gizam_summon_mid_cast` | `image` by `.004` to `.016` | the caster's body still moves some `7` units a pass where retail's has nearly stopped (Juggernaut's body `64` beside focus `63`), and case `0x12`'s chase on the cadence trails one pass of it: at the RAM's gate the focus `x` stands at `59` (per vsync `61`); the frozen ambient is retail's (`0x70`) only on this cadence |
+| `cort_guilty_cross_mid_cast`, `cort_evolved_ultra_charge_mid_cast` | `image` `.961` to `.952`, `.894` to `.888` | the capture band's drifts and holds land a few vsyncs off retail's at the gate |
+
+Taking the displayed frame (the gate's tick less the two-frame display lag)
+on the cadence does not recover them: the Tail Fire pair falls to `.721` and
+`.725`, and on the replayed casts the summon flash moves off retail's
+(`juggernaut_summon_mid_cast` `.788`, `freed_summon_mid_cast` `.023`).
 
 ### Screen shake
 

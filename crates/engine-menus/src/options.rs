@@ -75,6 +75,11 @@ use crate::option_values::{
     AudioMode, BattleCameraOpt, BattleCommandOpt, FieldMoveOpt, HpDisplayOpt, SelectAttackOpt,
 };
 
+/// The top of the `0..=10` range of [`OptionsState::bgm_volume`] and
+/// [`OptionsState::sfx_volume`] (10 = a 1.25x boost over the retail mix at 8),
+/// the bound every host's control clamps to.
+pub const VOLUME_MAX: u8 = 10;
+
 /// Full set of user-editable options. Engines round-trip via
 /// [`OptionsState::load_or_default`] / [`OptionsState::save`] (TOML,
 /// mirroring `input::Mapping`).
@@ -124,7 +129,7 @@ pub struct OptionsState {
     /// of the scene than retail. Pure render framing: never feeds the
     /// world simulation, so replays / oracles are unaffected (headless
     /// hosts don't read options and keep the engine-core `Retail` default).
-    pub camera_distance: legaia_engine_field::camera::CameraDistance,
+    pub camera_distance: legaia_engine_camera::camera_distance::CameraDistance,
     /// Opt-in precise-movement toggle (engine-only, non-retail): mirrors
     /// into `legaia_engine_core::world::FieldLocomotion::precise_movement`
     /// by windowed hosts. Default off = retail's quantised 4/8-way remap.
@@ -202,6 +207,15 @@ pub struct OptionsState {
     /// look matures. Pure presentation: the screen-space layers and the HUD
     /// never bloom, and nothing reaches the simulation.
     pub bloom: bool,
+    /// Native window: open borderless fullscreen (`F11` / `Alt+Enter` in
+    /// `play-window`, `--fullscreen`; the launcher's row). Window chrome,
+    /// not a render knob: the frame is drawn the same at any surface, and a
+    /// `--screenshot` run ignores it.
+    pub fullscreen: bool,
+    /// Native window: the windowed size as a multiple of the PlayStation's
+    /// 320x240 display, `2..=6` (`--window-scale`; the launcher's row).
+    /// Default 3 = 960x720. Window chrome like [`Self::fullscreen`].
+    pub window_scale: u8,
 }
 
 impl Default for OptionsState {
@@ -220,7 +234,7 @@ impl Default for OptionsState {
             sfx_volume: 8,
             message_speed: 5,
             muted: false,
-            camera_distance: legaia_engine_field::camera::CameraDistance::Far,
+            camera_distance: legaia_engine_camera::camera_distance::CameraDistance::Far,
             precise_movement: false,
             reduce_flashing: true,
             retail_static_window: true,
@@ -231,6 +245,8 @@ impl Default for OptionsState {
             light_shadows: true,
             occlusion_fade: true,
             bloom: false,
+            fullscreen: false,
+            window_scale: 3,
         }
     }
 }
@@ -245,7 +261,7 @@ impl OptionsState {
     /// options; [`Self::retail_deviations`] is its reading. A knob added to
     /// this struct that changes what a frame or a tick does belongs in both.
     pub fn pin_retail(&mut self) {
-        self.camera_distance = legaia_engine_field::camera::CameraDistance::Retail;
+        self.camera_distance = legaia_engine_camera::camera_distance::CameraDistance::Retail;
         self.precise_movement = false;
         self.reduce_flashing = false;
         self.retail_static_window = true;
@@ -331,7 +347,7 @@ impl OptionsState {
     /// name. Empty after [`Self::pin_retail`].
     pub fn retail_deviations(&self) -> Vec<&'static str> {
         let mut out = Vec::new();
-        if self.camera_distance != legaia_engine_field::camera::CameraDistance::Retail {
+        if self.camera_distance != legaia_engine_camera::camera_distance::CameraDistance::Retail {
             out.push("camera_distance");
         }
         if self.precise_movement {
@@ -373,7 +389,9 @@ impl OptionsState {
     /// a cycle that wrote only the camera was undone by the next apply and
     /// never reached the store. The native window's `T` and the page's
     /// camera-distance control both step through here.
-    pub fn cycle_camera_distance(&mut self) -> legaia_engine_field::camera::CameraDistance {
+    pub fn cycle_camera_distance(
+        &mut self,
+    ) -> legaia_engine_camera::camera_distance::CameraDistance {
         self.camera_distance = self.camera_distance.cycle();
         self.camera_distance
     }
@@ -1351,7 +1369,7 @@ mod tests {
     /// on its camera and persists agrees with the next apply.
     #[test]
     fn camera_distance_cycle_steps_the_stored_option() {
-        use legaia_engine_field::camera::CameraDistance;
+        use legaia_engine_camera::camera_distance::CameraDistance;
         let mut o = OptionsState::default();
         assert_eq!(o.camera_distance, CameraDistance::Far);
         assert_eq!(o.cycle_camera_distance(), CameraDistance::Farther);

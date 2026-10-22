@@ -85,11 +85,44 @@ impl World {
         for fx in std::mem::take(&mut self.battle.vram_scrolls) {
             scrolled |= super::super::ambient::apply_scroll_fx(vram, &fx);
         }
+        let recoloured = self.apply_battle_cell_fx(vram);
         // Capture alignment (empty outside a retail-compare child): a
         // retail state's live scroller rects, written after the engine's own
         // rotations as the field VRAM pass writes them.
         let seeded = self.apply_vram_rect_seed(vram);
-        moved || loaded || scrolled || seeded
+        moved || loaded || scrolled || recoloured || seeded
+    }
+
+    /// The mode-3 recolours the battle parts queued this frame
+    /// ([`crate::world::BattleState::cell_fx`]), in order: each rewrites its
+    /// rect from the texels captured when the part first surfaced, through
+    /// the `FUN_80019D50` HSV kernel, and lands the result where the retail
+    /// `LoadImage` does. A part's first armed tick drops its rect's capture
+    /// ([`Self::queue_battle_part_scrolls`]), so each op `0x2C` captures
+    /// the rect afresh, as retail's `StoreImage` does.
+    ///
+    /// PORT: FUN_80019D50 (on the battle effect lists; the texel kernel is
+    /// `legaia_engine_field::clut_cell_fx::apply_hsv_cell`)
+    fn apply_battle_cell_fx(&mut self, vram: &mut legaia_tim::Vram) -> bool {
+        use super::super::ambient::{read_rect, write_rect};
+        let mut wrote = false;
+        for f in std::mem::take(&mut self.battle.cell_fx) {
+            let (x, y, w, h) = f.rect;
+            if w == 0 || h == 0 || w > 256 || h > 64 {
+                continue;
+            }
+            let src = self
+                .battle
+                .cell_captures
+                .entry(f.rect)
+                .or_insert_with(|| read_rect(vram, x, y, w, h));
+            let out = legaia_engine_field::clut_cell_fx::apply_hsv_cell(src, &f);
+            if read_rect(vram, x, y, w, h) != out {
+                write_rect(vram, x, y, w, &out);
+                wrote = true;
+            }
+        }
+        wrote
     }
 
     /// The mode-4 render tail of the part tick for every live part of an
@@ -97,7 +130,7 @@ impl World {
     /// scroller after the VM call on any part whose `+0x5A` is `4`
     /// (`0x80022CB8`), whatever list the part sits on, so a battle effect's
     /// scroller animates its rect exactly as a field ambient one does
-    /// ([`super::super::ambient::vram_scroll`]). The fired rotations queue on
+    /// ([`legaia_engine_field::vram_scroll`]). The fired rotations queue on
     /// [`crate::world::BattleState::vram_scrolls`] for the hosts' battle VRAM.
     ///
     /// PORT: FUN_80021DF4 (the mode-4 arm, `0x80022CB8..0x80022EE0`, on the
@@ -111,11 +144,29 @@ impl World {
         }
         let step = self.clock.frame_step.max(1);
         for part in parts.iter_mut().filter(|p| !p.finished) {
-            if part.state.move_submode != super::super::ambient::vram_scroll::RENDER_MODE_SCROLL {
+            // The mode-3 arm: a `0x4000` part's HSV adds integrate every
+            // tick, and from its second armed frame on it recolours the rect
+            // its op `0x2C` captured (PROT 0929's arm-14 part `0x801F95A8`
+            // hue-cycles the scanline backdrop's CLUT row 488).
+            if part.state.move_submode == legaia_engine_effects::summon::RenderMode::Particle.raw()
+            {
+                let delta = self.move_vm.ramp_ratio.max(1);
+                if part.state.field_9c == 1 {
+                    let d = &part.state.keyframe_desc;
+                    self.battle.cell_captures.remove(&(d[0], d[1], d[2], d[3]));
+                }
+                if let Some(fx) =
+                    legaia_engine_field::clut_cell_fx::mode3_integrate(&mut part.state, delta)
+                {
+                    self.battle.cell_fx.push(fx);
+                }
+                continue;
+            }
+            if part.state.move_submode != legaia_engine_field::vram_scroll::RENDER_MODE_SCROLL {
                 continue;
             }
             if let Some(fx) =
-                super::super::ambient::vram_scroll::mode4_integrate(&mut part.state, step)
+                legaia_engine_field::vram_scroll::mode4_integrate(&mut part.state, step)
             {
                 self.battle.vram_scrolls.push(fx);
             }
@@ -127,6 +178,7 @@ impl World {
     pub fn discard_battle_vram_edits(&mut self) {
         self.battle.vram_moves.clear();
         self.battle.vram_scrolls.clear();
+        self.battle.cell_fx.clear();
         self.battle.vram_loads = Default::default();
     }
 }

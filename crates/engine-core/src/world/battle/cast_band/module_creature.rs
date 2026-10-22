@@ -30,8 +30,11 @@ const ZENOIR_OVER_VICTIM_ARM: u8 = 10;
 /// bit (`sb v0,0x1da(s8)` at `0x801F6EC8`) over the long emergence clip `0`.
 /// Retail RAM through arms 3..7 holds `+0x1D9 = 0`, `+0x1DA = 1` and the
 /// installer's rate `2`: the creature climbs out of the vortex on clip `0`
-/// until arm 9's stage-bit commit of clip `2`.
-const CLIP_GATED_MODULES: [u32; 4] = [907, 908, 909, 913];
+/// until arm 9's stage-bit commit of clip `2`. PROT 0928's arm 6 stages
+/// clip `2` bare (`sb v0,0x1da(s4)` at `0x801F7828`) and arm 7 holds until
+/// it plays (`lbu v1,0x1d9(s4)` / `bne v1,2` at `0x801F7890..0x801F7898`):
+/// in retail that is the end of clip `1`, ~300 vsyncs on.
+const CLIP_GATED_MODULES: [u32; 5] = [907, 908, 909, 913, 928];
 
 /// The animation rate `+0x21D` the creature seat installer `FUN_801F19EC`
 /// gives the creature it seats (`li s3,0x2` at `0x801F1CFC`, stored at

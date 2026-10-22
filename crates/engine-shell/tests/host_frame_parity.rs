@@ -29,7 +29,7 @@
 use legaia_engine_session::host_trace::{self, HostTraceFrame};
 use legaia_engine_shell::window::HeadlessPlayWindow;
 use legaia_engine_system::input::PadButton;
-use legaia_web_viewer::runtime::LegaiaRuntime;
+use legaia_web_play::runtime::LegaiaRuntime;
 
 /// How many sim ticks each display frame runs, cycled.
 #[derive(Clone, Copy, Debug)]
@@ -73,6 +73,10 @@ struct Scenario {
     /// the page through `play_host_hotkey` plus the page action that key
     /// runs.
     hotkeys: &'static [(u32, &'static str)],
+    /// While the native world is in battle, a pad read off the battle's own
+    /// command phase replaces [`Self::pad`]'s word (the native word is
+    /// recorded and replayed to the page like any other).
+    battle_pad: Option<fn(&legaia_engine_core::world::World) -> u16>,
 }
 
 const UP: u16 = 0x0010;
@@ -162,6 +166,10 @@ fn visited_battle(tr: &[HostTraceFrame]) -> Result<(), String> {
 /// display frame, and the frame the shop was staged ahead of.
 struct NativeRun {
     trace: Vec<HostTraceFrame>,
+    /// The field party readout's state after every display frame - a host
+    /// holding, not a session one, so outside `HostTraceFrame`: each host
+    /// steps it on every tick, the early-exit ticks included.
+    hud: Vec<String>,
     /// The director's last commands, for a divergence report.
     audio_recent: Vec<String>,
     pads: Vec<u16>,
@@ -176,6 +184,7 @@ fn native_trace(disc: &str, sc: &Scenario, cadence: Cadence) -> NativeRun {
         w.session(),
         w.menu_runtime(),
     )];
+    let mut hud = vec![format!("{:?}", w.field_party_hud())];
     let mut pads = Vec::new();
     let mut arm_frame = None;
     let mut key_frames = Vec::new();
@@ -200,7 +209,13 @@ fn native_trace(disc: &str, sc: &Scenario, cadence: Cadence) -> NativeRun {
             );
             arm_frame = Some(f);
         }
-        let pad = (sc.pad)(t + 1, out.last().expect("sampled"));
+        let world = &w.session().host.world;
+        let pad = match sc.battle_pad {
+            Some(fight) if world.mode == legaia_engine_mode::mode::SceneMode::Battle => {
+                fight(world)
+            }
+            _ => (sc.pad)(t + 1, out.last().expect("sampled")),
+        };
         pads.push(pad);
         w.display_frame(pad, n);
         t += n;
@@ -209,10 +224,12 @@ fn native_trace(disc: &str, sc: &Scenario, cadence: Cadence) -> NativeRun {
             w.session(),
             w.menu_runtime(),
         ));
+        hud.push(format!("{:?}", w.field_party_hud()));
     }
     NativeRun {
         audio_recent: audio_recent(w.session()),
         trace: out,
+        hud,
         pads,
         arm_frame,
         key_frames,
@@ -269,6 +286,10 @@ impl PageDriver {
         // The draw: the engine camera the page draws through, which advances
         // the cutscene glide.
         let _ = self.rt.play_camera_vp(320.0, 240.0);
+        // The party readout's band test: the lead projected through the
+        // follow camera (`play_field_hud_project`, which `_frame` calls on
+        // every drawn frame).
+        self.rt.play_field_hud_project(320.0, 240.0);
     }
 }
 
@@ -287,7 +308,7 @@ fn page_trace(
     sc: &Scenario,
     cadence: Cadence,
     run: &NativeRun,
-) -> (Vec<HostTraceFrame>, Vec<String>) {
+) -> (Vec<HostTraceFrame>, Vec<String>, Vec<String>) {
     let mut rt = LegaiaRuntime::new();
     rt.load_disc(disc, String::new()).expect("load_disc");
     // Audio up from the start, as the native window's director is: the page
@@ -304,6 +325,7 @@ fn page_trace(
         d.rt.debug_session().expect("session"),
         d.rt.debug_menu_runtime(),
     )];
+    let mut hud = vec![format!("{:?}", d.rt.debug_field_party_hud())];
     let (mut t, mut f) = (0u32, 0u32);
     while t < sc.ticks {
         let n = cadence.ticks(f).min(sc.ticks - t);
@@ -324,9 +346,10 @@ fn page_trace(
             d.rt.debug_session().expect("session"),
             d.rt.debug_menu_runtime(),
         ));
+        hud.push(format!("{:?}", d.rt.debug_field_party_hud()));
     }
     let recent = audio_recent(d.rt.debug_session().expect("session"));
-    (out, recent)
+    (out, recent, hud)
 }
 
 /// Run `sc` at each cadence on both hosts; the lines name every channel that
@@ -343,10 +366,18 @@ fn run(sc: &Scenario, cadences: &[Cadence]) -> Vec<String> {
     let mut all = Vec::new();
     for &c in cadences {
         let run = native_trace(&disc, sc, c);
-        let (p, page_audio) = page_trace(bytes.clone(), sc, c, &run);
+        let (p, page_audio, page_hud) = page_trace(bytes.clone(), sc, c, &run);
+        let label = format!("{} {:?}", sc.scene, c);
+        assert_eq!(run.hud.len(), page_hud.len());
+        if let Some(i) = run.hud.iter().zip(&page_hud).position(|(a, b)| a != b) {
+            eprintln!(
+                "[host-frame] {label}: party readout parts at frame {i}\n  native = {}\n  page   = {}",
+                run.hud[i], page_hud[i]
+            );
+            all.push(format!("{label}: `party_hud` parts at frame {i}"));
+        }
         let n = run.trace;
         assert_eq!(n.len(), p.len());
-        let label = format!("{} {:?}", sc.scene, c);
         if let Err(e) = (sc.exercised)(&n) {
             eprintln!(
                 "[host-frame] {label}: vacuous ({e}); last native sample {:?}",
@@ -397,6 +428,7 @@ fn town01_walk_frames_match_across_hosts() {
         exercised: moved,
         arm_shop: None,
         hotkeys: &[],
+        battle_pad: None,
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -411,6 +443,7 @@ fn town01_pause_menu_frames_match_across_hosts() {
         exercised: visited_menu,
         arm_shop: None,
         hotkeys: &[],
+        battle_pad: None,
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -425,6 +458,7 @@ fn fogged_field_frames_match_across_hosts() {
         exercised: moved,
         arm_shop: None,
         hotkeys: &[],
+        battle_pad: None,
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -439,6 +473,7 @@ fn encounter_and_battle_frames_match_across_hosts() {
         exercised: visited_battle,
         arm_shop: None,
         hotkeys: &[],
+        battle_pad: None,
     };
     let parted = run(&sc, &[Cadence::Hz60, Cadence::Hz30]);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -517,6 +552,7 @@ fn prologue_skip_and_naming_frames_match_across_hosts() {
         exercised: left_the_prologue,
         arm_shop: None,
         hotkeys: &[],
+        battle_pad: None,
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -531,6 +567,7 @@ fn village_dialogue_frames_match_across_hosts() {
         exercised: opened_a_dialogue,
         arm_shop: None,
         hotkeys: &[],
+        battle_pad: None,
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -569,6 +606,7 @@ fn shop_frames_match_across_hosts() {
         exercised: opened_the_shop,
         arm_shop: Some((30, 0)),
         hotkeys: &[],
+        battle_pad: None,
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -615,6 +653,61 @@ fn option_hotkey_frames_match_across_hosts() {
         exercised: switches_moved,
         arm_shop: None,
         hotkeys: OPTION_HOTKEYS,
+        battle_pad: None,
+    };
+    let parted = run(&sc, ALL);
+    assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
+}
+
+/// Drive a live fight off its command phase: Left through the command ring
+/// and its confirm prompts (the attack row), Cross on a target, Circle out of
+/// an item list - the pad the disc-gated fight ladders use, pulsed.
+fn fight_pad(w: &legaia_engine_core::world::World) -> u16 {
+    use legaia_engine_menus::battle_input::CommandPhase;
+    // A held word is one press: the command screens step on edges, so the
+    // drive releases every other pair of ticks.
+    if w.frame % 4 >= 2 {
+        return 0;
+    }
+    if w.battle.item_menu.is_some() {
+        return CIRCLE;
+    }
+    match w.battle.command.as_ref().map(|c| &c.phase) {
+        Some(
+            CommandPhase::RoundPrompt { .. }
+            | CommandPhase::Menu { .. }
+            | CommandPhase::AttackMode { .. }
+            | CommandPhase::CommitConfirm { .. },
+        ) => LEFT,
+        Some(CommandPhase::Targeting { .. }) | None => CROSS,
+        Some(_) => 0,
+    }
+}
+
+/// A battle opened and the run left it again: the spoils and the field
+/// return, or the party wipe's game-over hand-off.
+fn fought_and_left(tr: &[HostTraceFrame]) -> Result<(), String> {
+    let Some(open) = tr.iter().position(|f| f.mode == "Battle") else {
+        return Err("no encounter opened a battle".into());
+    };
+    if let Some(after) = tr[open..].iter().find(|f| f.mode != "Battle") {
+        eprintln!("[host-frame] the battle handed over to {}", after.mode);
+        Ok(())
+    } else {
+        Err("the battle never ended".into())
+    }
+}
+
+#[test]
+fn battle_to_exit_frames_match_across_hosts() {
+    let sc = Scenario {
+        scene: "map01",
+        pad: encounter_pad,
+        ticks: 6000,
+        exercised: fought_and_left,
+        arm_shop: None,
+        hotkeys: &[],
+        battle_pad: Some(fight_pad),
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");

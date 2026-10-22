@@ -367,6 +367,15 @@ mod tests {
         assert!(src.contains("((l >> 1u) << 10u)"));
         // The neutral fixed point on the packet side.
         assert!(src.contains("prim.r == 128.0 && prim.g == 128.0 && prim.b == 128.0"));
+        // A runtime-emitted packet (`TSB_RUNTIME_PACKET_BIT`) skips the
+        // packet half in both mesh passes.
+        let mesh = crate::shaders::VRAM_MESH_SHADER_SRC;
+        assert_eq!(
+            mesh.matches("if palette_on && (tsb & 0x0800u) == 0u {")
+                .count(),
+            2,
+            "opaque and blend passes"
+        );
     }
 
     /// The WGSL and the CPU mirror must not drift: the shader has to carry the

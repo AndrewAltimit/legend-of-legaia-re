@@ -169,6 +169,60 @@ FAIL iff  not forced  and  (roll_p &lt; roll_e  or  ctx[+0x287] != 0)</code></pr
   <p><code>FUN_801D5854</code> is the pose driver: one presentation program per pose id <code>0..9</code>, called with the acting slot. Three of its arms read the per-action style byte <code>ctx[+0xD]</code> through the same compare ladder: values <code>1</code> and <code>3</code> add half a turn of yaw, <code>2</code> and <code>3</code> tilt the pitch by <code>0x80</code> and store <code>TR.y = 0x400</code>. <code>FUN_801D829C</code> arms the eased tween every framing change goes through. The framings themselves are on <a href="battle-stage-camera.html">battle stage and camera</a>.</p>
 </section>
 
+<section class="doc-section" id="spacing">
+  <h2>Keeping the party apart</h2>
+  <p>Nothing walks a combatant home after an action. Three helpers, plus the round start&rsquo;s recentre, are what keep a formation in frame and its members out of each other&rsquo;s way.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three top-down stage sketches. One, the action seed's recentre: the attack target's box is moved onto the stage origin and the whole formation translates with it. Two, the make-way step: while the attacker walks in toward its target, every bystander steps a quarter turn off the attack heading, for a countdown seeded from the melee monster's size class. Three, the separation pass: two actors whose body pairs are closer than a sixth of their summed radii are nudged apart along the line between them, once a battle frame.">
+      <defs><marker id="bah-sp-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-group" x="10" y="10" width="280" height="240" rx="6"/>
+      <text class="dg-label" x="150" y="34">1. Seed recentre</text>
+      <text class="dg-sub" x="150" y="52">FUN_801EFE44, every action</text>
+      <path class="dg-edge-dim" d="M40 170 L260 170 M150 70 L150 240"/>
+      <text class="dg-sub dg-start" x="156" y="234">origin</text>
+      <circle class="dg-node-warn" cx="150" cy="96" r="12"/>
+      <circle class="dg-node-accent" cx="150" cy="170" r="12"/>
+      <text class="dg-sub" x="186" y="100">target</text>
+      <path class="dg-edge" d="M150 110 L150 154" marker-end="url(#bah-sp-arrow)"/>
+      <circle class="dg-node" cx="90" cy="150" r="10"/>
+      <circle class="dg-node" cx="210" cy="150" r="10"/>
+      <path class="dg-edge" d="M90 162 L90 214" marker-end="url(#bah-sp-arrow)"/>
+      <path class="dg-edge" d="M210 162 L210 214" marker-end="url(#bah-sp-arrow)"/>
+      <text class="dg-sub" x="150" y="270">the formation moves with it</text>
+      <rect class="dg-group" x="300" y="10" width="280" height="240" rx="6"/>
+      <text class="dg-label" x="440" y="34">2. Make-way step</text>
+      <text class="dg-sub" x="440" y="52">state 0x14 + the SM tail, melee</text>
+      <circle class="dg-node-warn" cx="440" cy="84" r="12"/>
+      <text class="dg-sub" x="490" y="88">target</text>
+      <circle class="dg-node-accent" cx="440" cy="214" r="12"/>
+      <text class="dg-sub" x="492" y="218">attacker</text>
+      <path class="dg-edge" d="M440 200 L440 100" marker-end="url(#bah-sp-arrow)"/>
+      <circle class="dg-node" cx="452" cy="150" r="10"/>
+      <path class="dg-edge" d="M464 150 L530 150" marker-end="url(#bah-sp-arrow)"/>
+      <circle class="dg-node" cx="428" cy="132" r="10"/>
+      <path class="dg-edge" d="M416 132 L350 132" marker-end="url(#bah-sp-arrow)"/>
+      <text class="dg-sub" x="440" y="270">heading h &#177; 0x400, about size &#215; 8 units</text>
+      <rect class="dg-group" x="590" y="10" width="280" height="240" rx="6"/>
+      <text class="dg-label" x="730" y="34">3. Separation pass</text>
+      <text class="dg-sub" x="730" y="52">FUN_80050BB8, once a battle frame</text>
+      <circle class="dg-node" cx="712" cy="150" r="40"/>
+      <circle class="dg-node" cx="752" cy="150" r="40"/>
+      <path class="dg-edge" d="M700 150 L640 150" marker-end="url(#bah-sp-arrow)"/>
+      <path class="dg-edge" d="M764 150 L824 150" marker-end="url(#bah-sp-arrow)"/>
+      <text class="dg-sub" x="730" y="220">gap &lt; (r1 + r2) / 6: nudge both</text>
+      <text class="dg-sub" x="730" y="270">r = 0x280 party, 0x400 Terra</text>
+    </svg>
+    <figcaption>Top-down stage, party at the bottom. Each sketch is one helper; the round start runs the first one&rsquo;s whole-formation form as well.</figcaption>
+  </figure>
+  <ul class="bullets">
+    <li><strong>The seed recentre</strong> (<code>FUN_801EFE44</code>) runs for every category but Run. It squashes a span over <code>0x800</code>, then boxes only an Attack&rsquo;s target (or its whole side for the group codes) and subtracts the box&rsquo;s centre from every included actor, so a melee opens with its target on the stage origin. The round start&rsquo;s <code>FUN_801DB318</code> does the same over the whole formation.</li>
+    <li><strong>Empty party seats count.</strong> Retail keeps a struct behind every pool slot, so in a solo fight the two empty party seats move with the formation and weigh in every later box. The port keeps their ground positions for exactly that reason.</li>
+    <li><strong>The make-way step</strong>: state <code>0x14</code> gives each bystander a heading a quarter turn off the attack line, on whichever side it already stands, and seeds a countdown from the melee monster&rsquo;s size class. The action SM&rsquo;s shared tail then steps those actors each pass until the countdown drains. Without it, an approach runs straight through a partner standing in the lane.</li>
+    <li><strong>The separation pass</strong> (<code>FUN_80050BB8</code>, driven by <code>FUN_80051078</code> after the action SM) reads each pair&rsquo;s radii - the seat stager writes <code>0x280</code> on a party seat, <code>0x400</code> on Terra&rsquo;s, a monster&rsquo;s size class <code>&lt;&lt; 5</code> - and nudges both live positions apart when their body pairs sit closer than a sixth of the summed radii. Neither routine reads the frame step, so the port runs it once a battle frame on either cadence.</li>
+  </ul>
+  <p>Ports: <code>battle_action::seed_formation_recentre</code>, <code>arm_make_way</code> and <code>make_way_step</code> in <code>engine-battle-vm</code>, and <code>battle_separation::push_apart</code> driven by <code>World::tick_battle_separation</code>.</p>
+</section>
+
 <section class="doc-section" id="audio">
   <h2>Audio and voice</h2>
   <ul class="bullets">

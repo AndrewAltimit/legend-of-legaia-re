@@ -65,7 +65,7 @@ Battle context (`ctx = *0x8007BD24`):
 | `+0x20` | Acting slot | seed (`sb t2,0xf(s5)` at `0x801E2F44`) |
 | `+0x26` | Level-up banner element id (`0` or `0x65`) | [three writers](#ctx0x26---the-level-up-banner-tail) |
 | `+0x269` | Spell id granted by a Seru capture | capture path |
-| `+0x276` | Menu-open flag | command flow |
+| `+0x276` | Side-band applier stage (`FUN_801F12D0`) | summon invoke `0x32`, per-turn seed |
 | `+0x6D2` / `+0x6D4` | Facing delta from `0x14` / approach stall counter | `0x14`; stall label `0x801E35D0` |
 | `+0x6D8` | Done-band countdown | seeded by `0x50`, decremented by `0x51` |
 
@@ -112,8 +112,8 @@ The test details (`0x801E60B8..0x801E6148`):
 
 - **The seed.** State `0x50` stores `0x3C` on all three of its paths (`0x801E5EE8` / `0x801E5EFC` / `0x801E5F24` converge on the store at `0x801E5F28`). One override: `lbu v0,0x15(s5)` at `0x801E5F2C` re-seeds `0x96` when `ctx[+0x26]` is non-zero (`s5 = ctx + 0x11`).
 - **The decrement stops at the sign change.** `bltz v0,0x801E60C4` at `0x801E605C` skips the store once the timer is negative, so the value parks just below zero.
-- **`ctx[+0x276]` pins a floor of `0xC`.** `slti v0,v0,0xc` / `li v0,0xc` / `sh v0,0x2(s7)` at `0x801E60C0..0x801E60E4` re-raise the countdown to twelve while the menu flag is up. The teardown block runs *below* `0xC`, so it cannot start early, and the last twelve frames still run after the flag drops.
-- **The exit tests the value, not the crossing.** `bgez v0,0x801E6158` at `0x801E60F0` reads `ctx[+0x6D8]` fresh every pass; `bne v0,zero,0x801E614C` at `0x801E610C` holds the transition while `ctx[+0x276]` is up. Nothing records "the countdown crossed zero this frame". An exit conditioned on the crossing loses the exit for good if the menu flag is up on that one frame.
+- **`ctx[+0x276]` pins a floor of `0xC`.** `slti v0,v0,0xc` / `li v0,0xc` / `sh v0,0x2(s7)` at `0x801E60C0..0x801E60E4` re-raise the countdown to twelve while the side-band stage is up. The teardown block runs *below* `0xC`, so it cannot start early, and the last twelve frames still run after the stage drops.
+- **The exit tests the value, not the crossing.** `bgez v0,0x801E6158` at `0x801E60F0` reads `ctx[+0x6D8]` fresh every pass; `bne v0,zero,0x801E614C` at `0x801E610C` holds the transition while `ctx[+0x276]` is up. Nothing records "the countdown crossed zero this frame". An exit conditioned on the crossing loses the exit for good if the side-band stage is up on that one frame.
 - **The `0x52` branch re-seeds.** Taking it stores `0xB4` (`li v0,0xb4` / `sh v0,0x2(s7)` at `0x801E6134` / `0x801E6138`) before stamping the state. Its only entry condition is the absorbed Seru in `ctx[+0x269]`; the port names the state `DoneSeruAbsorb`. Without the re-seed that state would start on an expired timer.
 
 Port: `done::done_fade_down`, written against the value; the `0x96` override rides on `BattleActionCtx::levelup_banner_element`.

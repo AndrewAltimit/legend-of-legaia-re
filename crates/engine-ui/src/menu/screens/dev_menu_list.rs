@@ -1,7 +1,7 @@
 //! World-map dev-menu scrolling list-body renderer - the layout skeleton of
 //! `FUN_801EAD98`. The row model, the CLOSED gating, the fixed-width decimal
 //! formatter and the camera-word decode are ported renderer-free in
-//! `legaia_engine_field::dev_menu_leaves` (`DevMenuRow`, `format_fixed_decimal`,
+//! `legaia_engine_dev_menu::dev_menu_leaves` (`DevMenuRow`, `format_fixed_decimal`,
 //! `decode_camera_readout`); this module ports the *draw* half: the vertical
 //! list geometry every one of the 24 switch arms funnels through.
 //!
@@ -35,7 +35,7 @@
 //! `legaia_engine_menu_runtime::dev_menu_host`: `legaia-engine`'s native window
 //! behind `LEGAIA_DEV_MENU=1` (host module `window/dev_menu.rs`) and the
 //! browser play page behind its session-only Dev-menu checkbox
-//! (`web-viewer/src/play_dev_menu.rs`). That screen carries the subset of
+//! (`web-play/src/play_dev_menu.rs`). That screen carries the subset of
 //! retail's 24 rows whose backing state the engine owns; the rest of the
 //! retail list (party warps, story-flag pokes, the equip pager) still has no
 //! engine counterpart, so the geometry here is exercised by fewer rows than

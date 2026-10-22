@@ -680,6 +680,9 @@ impl World {
                 },
             ) as u16;
         }
+        if attacker < self.party.party_count {
+            raw = self.forced_melee_amount(target, raw, kill_check);
+        }
         let dmg = raw;
         // Spirit accrues from the pre-nullify hit: retail's finisher fills the
         // gauge before the nullify/absorb stage zeroes the HP loss, so a Stone
@@ -835,6 +838,40 @@ impl World {
     ///
     /// PORT: FUN_801EC3E4 (`0x801EDE18..0x801EDEBC`, `0x801EE1C0..0x801EE3B8`,
     /// the reaction pick)
+    /// The retail-compare seed's amount for a party swing on `target`
+    /// ([`crate::world::BattleState::forced_melee_hits`] /
+    /// `forced_melee_total`), or `rolled` when no seed covers it.
+    fn forced_melee_amount(&mut self, target: u8, rolled: u16, kill_check: bool) -> u16 {
+        let known = if self
+            .battle
+            .forced_melee_hits
+            .front()
+            .is_some_and(|&(slot, _)| slot == target)
+        {
+            self.battle
+                .forced_melee_hits
+                .pop_front()
+                .map(|(_, a)| a)
+                .filter(|&a| a != 0)
+        } else {
+            None
+        };
+        let Some((_, total)) = self.battle.forced_melee_total.filter(|&(s, _)| s == target) else {
+            return known.unwrap_or(rolled);
+        };
+        let accum = self
+            .actors
+            .get(usize::from(target))
+            .map_or(0, |a| a.battle.damage_accum);
+        let left = total.saturating_sub(accum);
+        if kill_check {
+            return left.min(u32::from(u16::MAX)) as u16;
+        }
+        let amount = known.unwrap_or(rolled);
+        // Leave the closing hit at least one point of the total.
+        u32::from(amount).min(left.saturating_sub(1)) as u16
+    }
+
     pub(super) fn melee_reaction_entry(
         &self,
         attacker: usize,

@@ -55,16 +55,36 @@ fn the_cast_cue_band_reaches_the_xa_channel() {
     assert!(world.drain_battle_xa_cues().is_empty());
 }
 
-/// An id below `0x100` keeps the SFX queue.
+/// An id below `0x100` goes on the SFX ring as `FUN_8004FCC8` stores it:
+/// itself from `0x40`, `id - 1` below.
 #[test]
-fn a_sub_voice_cast_cue_keeps_the_sfx_queue() {
+fn a_sub_voice_cast_cue_rings_the_dispatchers_index() {
+    use legaia_engine_system::sound_state::SfxRingOp;
     let mut world = World::new();
     world.party.party_count = 1;
     {
         let mut host = BattleHostImpl { world: &mut world };
         host.one_shot_sfx(0xF8);
+        host.one_shot_sfx(0x21);
     }
-    assert_eq!(world.audio.battle_sfx_cues.len(), 1);
-    assert_eq!(world.audio.battle_sfx_cues[0].kind, 0xF8);
+    assert_eq!(
+        world.take_sfx_ring_ops(),
+        vec![SfxRingOp::Push(0xF8), SfxRingOp::Push(0x20)]
+    );
+    assert!(world.audio.battle_sfx_cues.is_empty());
     assert!(world.drain_battle_xa_cues().is_empty());
+}
+
+/// The Cort stage modules' cues (`0x20A`, `0x20B`) are past `0x100`: the
+/// dispatcher starts a CD-XA clip (slot `0x21`, channel `id & 7`), it never
+/// keys an SFX row.
+#[test]
+fn a_stage_module_cue_is_a_voice_clip() {
+    let mut world = World::new();
+    world.audio.xa_cue_durations = Some(vec![10; 0x200]);
+    world.dispatch_battle_cue(legaia_engine_battle::battle_stage_module::ARRIVAL_CUE);
+    assert!(world.take_sfx_ring_ops().is_empty());
+    let xa = world.drain_battle_xa_cues();
+    assert_eq!(xa.len(), 1);
+    assert_eq!((xa[0].clip, xa[0].channel), (0x21, 2));
 }

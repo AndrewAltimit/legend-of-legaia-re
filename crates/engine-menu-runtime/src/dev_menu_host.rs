@@ -6,7 +6,7 @@
 //! `World` and its camera, and the routing of the screen's cues onto the
 //! world's SFX ring.
 
-use legaia_engine_field::dev_equip_commit::EquipCommit;
+use legaia_engine_dev_menu::dev_equip_commit::EquipCommit;
 use legaia_engine_menus::dev_menu_host::{DevMenuRow, DevMenuSession, WorldEquipHost};
 use legaia_engine_system::pad::PACK_CROSS;
 
@@ -107,8 +107,8 @@ impl DevMenuWorldExt for DevMenuSession {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_engine_field::dev_menu_leaves::DevMenuRow as RetailRow;
-    use legaia_engine_field::world_map_panel::SFX_CURSOR_MOVE;
+    use legaia_engine_dev_menu::dev_menu_leaves::DevMenuRow as RetailRow;
+    use legaia_engine_dev_menu::dev_menu_leaves::SFX_CURSOR_MOVE;
     use legaia_engine_system::pad::{PACK_DOWN, PACK_LEFT, PACK_RIGHT};
 
     fn records() -> Vec<Vec<u8>> {

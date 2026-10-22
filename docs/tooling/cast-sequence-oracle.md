@@ -60,8 +60,9 @@ caster's cast begin (`0x28`) it grabs `PCSX.GPU.takeScreenShot()` every
 `--every` vsyncs. From the inject it writes one `meta.csv` row per vsync:
 `ctx[+0x07]`, `ctx[+0x279]`, the acting seat, the frame step `*(0x1F800393)`,
 the `ctx[+0x6D8]` / `+0x6DA` / `+0x87C` words, PROT 0903's countdown, every
-seat's HP, and the main loop's frame counter `gp+0x480` (`frame`, read at
-`0x8007B798`). At cast begin it also logs each pool slot's ground pair
+seat's HP, the main loop's frame counter `gp+0x480` (`frame`, read at
+`0x8007B798`) and the side-band applier stage `ctx[+0x276]` (`c276`, the
+token a module's stream-wait arm polls). At cast begin it also logs each pool slot's ground pair
 `+0x34` / `+0x38` (`done.txt`). The run uses the recompiler (`--fast`) unless a
 formation is forced, and `run_probe.sh` stages the disc in a private directory,
 so no `.ppf` beside the image reaches it.
@@ -78,7 +79,7 @@ seeded, and the recorder on:
 | `LEGAIA_BATTLE_MONSTER_CAST` | `seat,spell` instead, for a monster caster |
 | `LEGAIA_DIAG_CAST_SEQ` | the recording directory |
 | `LEGAIA_DIAG_CAST_SEQ_SEAT` | only a cast by this seat (retail numbering) starts the recording |
-| `LEGAIA_DIAG_CAST_SEQ_EVERY` / `_TAIL` / `_MAX` | frame cadence in ticks (`1`), ticks past the Done band before exit (`60`), frame cap (`2000`) |
+| `LEGAIA_DIAG_CAST_SEQ_EVERY` / `_TAIL` / `_MAX` | frame cadence in ticks (`1`), ticks past the Done band before exit (`60`), frame cap (`2000`; the driver passes `4000`, past the retail side's span) |
 
 The child is a `--screenshot` run, so it is tick-locked, and the recording is
 deterministic. The recorder starts on cast begin `0x28` and writes the frame

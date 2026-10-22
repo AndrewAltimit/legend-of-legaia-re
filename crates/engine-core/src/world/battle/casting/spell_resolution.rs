@@ -255,6 +255,23 @@ impl World {
                     ),
                 );
             }
+            // A retail-compare seed of a monster cast's landed hit
+            // ([`crate::world::BattleState::forced_melee_hits`]): the cast on
+            // the ring's front slot takes the amount the capture's ring
+            // pushed instead of the replay's own roll (which still drew).
+            if caster >= self.party.party_count
+                && let legaia_engine_battle::spells::SpellOutcome::Damage { amount, .. } =
+                    &mut outcome
+                && self
+                    .battle
+                    .forced_melee_hits
+                    .front()
+                    .is_some_and(|&(slot, _)| slot == t)
+                && let Some((_, known)) = self.battle.forced_melee_hits.pop_front()
+                && known != 0
+            {
+                *amount = known;
+            }
             let damaged = matches!(
                 outcome,
                 legaia_engine_battle::spells::SpellOutcome::Damage { .. }

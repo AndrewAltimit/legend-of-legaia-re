@@ -231,6 +231,15 @@ fn palma_sweep(phase: u8, t: i32) -> ArmDirection {
     cut([pitch, yaw], [0, tr_y, raw_tr_z(tr_z)], [0; 3], 1)
 }
 
+/// The stage byte `ctx[+0x278]` PROT 0928's arm 3 stores once its word `T`
+/// has climbed to `scalar << 7` (`slt` / `bne` at `0x801F6F04..0x801F6F0C`,
+/// `sb a1,0x278(v0)` at `0x801F6F1C`, `a1` the phase byte the switch loaded:
+/// `3`). It darkens and drops the stage under the arm's starfield wash, and
+/// no later arm touches it before arm `0x11`'s `0`.
+pub fn palma_stage_byte(phase: u8, countdown: i32) -> Option<u8> {
+    (phase == 3 && countdown >= S << 7).then_some(3)
+}
+
 /// PROT 0928 (Palma): the word `T` at `0x801FA0D0` drives arms 3 and 4
 /// upwards (`T += p` to `scalar * 256` / `128`), where the module stores the
 /// camera globals straight from sines of `T` every pass; the port lands each
@@ -240,7 +249,7 @@ fn palma_sweep(phase: u8, t: i32) -> ArmDirection {
 /// | arm | gate | camera / writes |
 /// |---|---|---|
 /// | 0 | - | a cut on the origin |
-/// | 1, 2 | the stream token (held on the band timer); the CD poll | arm 2: `T = 0`, two fades |
+/// | 1, 2 | the side-band applier stage `ctx[+0x276]`; the CD poll | arm 2: `T = 0`, two fades |
 /// | 3, 4 | `T` up to `scalar * 256` / `* 128` | the per-pass stores; arm 4's exit a `0x160`-frame pan, the creature seated on the origin, `T = scalar * 384` |
 /// | 5 | `T` | a `0x10`-frame shot, the spell name, clip `1`, `T = scalar * 64` |
 /// | 6 | `T`, that shot re-armed each pass | a `0x60`-frame shot, clip `2`, `T = scalar * 180` |
@@ -256,7 +265,7 @@ fn palma_sweep(phase: u8, t: i32) -> ArmDirection {
 /// | 0xFF | - | `ctx[+0x6DA] = 0`; the loop counter cleared; the caption cleared; done |
 ///
 /// PORT: FUN_801F69F4 (PROT 0928; the whole phase chain's gates, camera writes and stores, captions, creature seat and clips - the roll store, the monster-row lift and seats, part spawns, the arm-0xF sweep and the stage and lighting words not carried)
-pub fn palma_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
+pub fn palma_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -> ArmDirection {
     let gated = |st: &mut ModuleCamState, set: i32| -> bool {
         if counted(st, P) {
             return true;
@@ -270,13 +279,11 @@ pub fn palma_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
     let shot_10 = || cut([-0x140, 0xA00], [0x2710, 0x1388, 0x4E20], [0; 3], 0x80);
     match phase {
         0 => cut([0x80, 0], [0, 0x200, 0x2000], [0; 3], 1),
-        // Arm 1 returns busy while the stream request's token `ctx[+0x276]`
-        // is up (`0x801F6CFC..`), and retail's read outlasts the sustain:
-        // `palma_summon_mid_cast` still sits here with the band timer at 94.
-        // The engine's stream is resident, so the port holds the arm on the
-        // band timer instead - without it the sweep of arms 3 and 4 ran a
-        // sustain early.
-        1 => gate(seats.band_timer != 0),
+        // Arm 1 returns busy while the side-band applier stage
+        // `ctx[+0x276]` is up (`0x801F6D58..0x801F6D60`, [`super::sideband_wait_arm`]):
+        // four slots of `summon.dat` for Palma's base `0xCB`, which a fresh
+        // cast clears 29 vsyncs into the sustain.
+        1 => gate(st.sideband_busy),
         2 => {
             st.countdown.0 = 0;
             ArmDirection::PASS
@@ -454,7 +461,8 @@ pub const HORN_LAST_ARM: u8 = 0xB;
 /// | arm | gate | camera / writes |
 /// |---|---|---|
 /// | 0, 1 | - | a cut on the origin, then a `0x100`-frame rise |
-/// | 2, 3 | - (the load) | arm 3: a white fade in after `0x100`, word `= 0x180`, the creature seated at `(0, 0x800)` facing `0x800` |
+/// | 2 | the side-band applier stage `ctx[+0x276]` ([`super::sideband_wait_arm`]) | the creature seek |
+/// | 3 | - (the stream poll) | a white fade in after `0x100`, word `= 0x180`, the creature seated at `(0, 0x800)` facing `0x800` |
 /// | 4 | word | a fade out, the spell name; `+= 0x114` |
 /// | 5, 6 | one drain each | - |
 /// | 7 | word | a cut, the attack name; `+= 0x100` |
@@ -478,7 +486,9 @@ pub fn horn_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
     match phase {
         0 => cut([0, 0], [0, 0x400, 0x400], [0; 3], 1),
         1 => cut([0, 0], [0, 0x1500, 0], [0, 0, -0x200], 0x100),
-        2 => ArmDirection::PASS,
+        // Arm 2 returns busy while the side-band applier stage `ctx[+0x276]`
+        // is up (`0x801F6D60..0x801F6D68`; `sideband_wait_arm`).
+        2 => gate(st.sideband_busy),
         3 => {
             st.countdown.0 = 0x180;
             st.creature = Some(ModuleSeat {

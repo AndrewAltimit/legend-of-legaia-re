@@ -44,6 +44,11 @@ impl World {
         // starts from zero for the same reason.
         self.casting.module_nighto_outcome = None;
         self.casting.module_stager_calls.clear();
+        self.casting.module_barra_counter = 0;
+        self.casting.module_running_entry = None;
+        self.casting.module_spikefish_words = Default::default();
+        self.casting.module_ozma_word = 0;
+        self.casting.module_stager_seats.clear();
         self.casting.module_record_clocks.clear();
         self.casting.module_ring_angle = 0;
         self.casting.module_theeder = Default::default();

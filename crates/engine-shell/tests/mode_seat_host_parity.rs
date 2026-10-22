@@ -2,7 +2,7 @@
 //! the native one does.
 //!
 //! The open thread this answers is "the browser play page holds no mode
-//! seat". It does now (`legaia_web_viewer::runtime::LegaiaRuntime` owns a
+//! seat". It does now (`legaia_web_play::runtime::LegaiaRuntime` owns a
 //! [`ModeSeat`](legaia_engine_mode::mode::ModeSeat) and reconciles it once
 //! per frame), but holding a seat is not the same as driving it: the native
 //! session also **enters** two INIT modes by hand - `MAIN INIT` at field
@@ -35,7 +35,7 @@
 
 use legaia_engine_session::native::NativeSession;
 use legaia_engine_session::session::BootConfig;
-use legaia_web_viewer::runtime::LegaiaRuntime;
+use legaia_web_play::runtime::LegaiaRuntime;
 
 const SCENE: &str = "town01";
 

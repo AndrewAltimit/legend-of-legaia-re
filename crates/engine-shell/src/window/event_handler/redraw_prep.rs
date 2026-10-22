@@ -66,6 +66,14 @@ impl PlayWindowApp {
             {
                 scene.install_part_snapshot(&parts);
             }
+            // ... and the effect-script table parts' rotation clocks
+            // (`LEGAIA_SEAT_ACTION_FX_PARTS`).
+            if due && let Some(parts) = sc.seat_action_fx_parts.take() {
+                self.session
+                    .host
+                    .world
+                    .install_action_fx_part_snapshot(&parts);
+            }
             // A capture taken mid-glide shows the shot as far along as
             // retail's mover had come (its frame-skip history, which no
             // replay reproduces): the gate carries the frames it had left on
@@ -194,7 +202,29 @@ impl PlayWindowApp {
                 .map(|sc| sc.battle_ground_snap.clone())
                 .unwrap_or_default();
             let world = &mut self.session.host.world;
-            let target = legaia_engine_capture::ground_snap::snap_battle_ground(world, &snaps);
+            let armed = legaia_engine_capture::ground_snap::snap_battle_ground(world, &snaps);
+            // On a display-lag retake the frame is two game frames older than
+            // the RAM the endpoints were read from, and the framing armed
+            // here may stand a step of yaw drift or depth ramp short of them;
+            // a component the gate tick's framing agrees on (the first run
+            // carried it over, `LEGAIA_BATTLE_CAM_GATE_TARGET`) takes the
+            // gate's (`retake_align_target`). The gate tick keeps its own for
+            // the retake it names.
+            let gate_target = self
+                .screenshot
+                .as_ref()
+                .and_then(|sc| sc.battle_cam_gate_target);
+            if let Some(sc) = self.screenshot.as_ref()
+                && gate_target.is_none()
+            {
+                sc.gate_cam_target.set(armed);
+            }
+            let target = match (armed, gate_target) {
+                (Some(a), Some(g)) => {
+                    Some(legaia_engine_battle_vm::battle_cam_script::retake_align_target(a, g, end))
+                }
+                (a, _) => a,
+            };
             // A Done-band capture's displayed pose, where the glide walks
             // retail's own table (`LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED`).
             let displayed = self
@@ -217,6 +247,26 @@ impl PlayWindowApp {
             // when every component took retail's value: a partly aligned
             // pose is neither retail's camera nor the engine's own.
             if mask == 0xFF {
+                // Every component took retail's pose, so the framing no
+                // longer reads the engine's bodies: the body pairs a seat
+                // stood a pose-mismatched body on served the framing law
+                // only, and the frame draws each body where retail's live
+                // pair puts it - its pose drawn from the live pair, as
+                // `FUN_80048A08` draws it - not shifted by the gap between
+                // the two poses' centroids (`battle_vahn_tri_somersault_super`:
+                // Vahn `62` and the reacting monster `76` units off retail's
+                // pairs on their body snaps).
+                if snaps.iter().any(|s| s.body.is_some()) {
+                    let live: Vec<_> = snaps
+                        .iter()
+                        .copied()
+                        .map(|mut s| {
+                            s.body = None;
+                            s
+                        })
+                        .collect();
+                    let _ = legaia_engine_capture::ground_snap::snap_battle_ground(world, &live);
+                }
                 world.refresh_battle_camera_ghost();
             }
         }
@@ -359,7 +409,7 @@ impl PlayWindowApp {
         // staged param (`camera_view::cutscene_owns_camera`) so a beat record
         // WITHOUT camera beats - a field taunt, the Drake mist-wall
         // force-walk bands - keeps the ordinary field / walk camera.
-        if legaia_engine_core::camera_view::cutscene_owns_camera(&self.session.host.world) {
+        if legaia_engine_world_views::camera_view::cutscene_owns_camera(&self.session.host.world) {
             let (focus, pitch, yaw, roll, h, tr_eye) = self.cutscene_view();
             // Glide pacing from the op-`0x45` `apply_trigger` (retail
             // `FUN_801DE084` → `FUN_801DB510`): a Configure with `apply == 0`

@@ -8,6 +8,7 @@ mod arts_input;
 mod command_ring;
 mod party_dispatch;
 mod spell_item_menus;
+pub mod ui_cues;
 
 /// The first **normal**-art action constant (art ordinal `4`). The queue
 /// builder `FUN_801EED1C` tokenizes only ordinals `>= 4`: the Miracle Art

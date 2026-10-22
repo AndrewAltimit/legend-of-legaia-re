@@ -92,6 +92,11 @@ advance = widths[c] + DAT_800740E8 + 1
 
 where `DAT_800740E8` is a per-call padding override, reset to zero at the end of each render call. Menus and battle draw with it at zero; the field dialog pager `FUN_801D84D0` stores `1` before every row it draws (`0x801D97D8`) and before every option-picker label (`0x801D9B78`), so dialogue runs one pixel wider per glyph than the same text in a menu (see [Line width and wrapping](#line-width-and-wrapping)). The trailing `+1` is a fixed inter-character gap. The port lays a dialogue row out through `Font::layout_padded` at `measure::DIALOG_GLYPH_PAD` in the builders both play hosts draw with (`engine_ui::dialog_reading_box_text_draws_for`, `dialog_picker_label_draws_for`).
 
+A string whose first byte is below `0x20` draws nothing: `FUN_80036888` tests
+it before the expander runs (`sltiu v0,v0,0x20` at `0x800368C4`) and returns
+`0`. That is what a `0x1F` dialogue lead hits, and why `FUN_8003CD00` steps past
+the lead before drawing a segment.
+
 The advance is applied by the **common tail** of `FUN_80036888`'s per-byte loop
 (body `0x80036B9C`), which every byte reaches except the four control bytes
 `0x00` / `0x7C` / `0xCE` / `0xCF`. The space byte `0x20` branches around the
@@ -150,7 +155,9 @@ struct EscapeEntry {
 There are 38 entries (table indices `0x00..=0x25`). An operand past `0x25` reads whatever follows the table.
 
 - **Sprite escapes** (`string_id != 0`): `FUN_80036888` calls `FUN_8002C488(x, y + y_offset, string_id)`. The `string_id` is not a string: it is a **UI-icon sprite id** into the 12-byte records at `0x800732A4` (U/V/W/H and a CLUT byte; the record layout and the CLUT-byte encoding are in [`field-menu.md`](../subsystems/field-menu.md)). None of the ids here takes the special `0x86..=0x88` / `0x8A` path.
-- **Number escapes** (`string_id == 0`): the renderer prints the signed halfword at `0x801C6460 + y_offset * 2` through `FUN_80034B78` (`0x80036A54..0x80036A94`). That array is the field VM's script-counter slot table, written by `4C CA/CB/CC` ([`script-vm-menuctrl.md`](../subsystems/script-vm-menuctrl.md)). The writer is called with a minimum width of `0`, suppresses leading zeros and always draws the units digit, so any value `<= 0` prints a single `0`. On the disc only `0x0B` and `0x0E` occur, in the `koin1` and `koin3` dialogue. The port resolves them when a box opens (`World::dialog_substitutions` -> `dialog::script_counter_digits`) and types the number as the escape's one reveal unit.
+- **Number escapes** (`string_id == 0`): the renderer prints the signed halfword at `0x801C6460 + y_offset * 2` through `FUN_80034B78` (`0x80036A54..0x80036A94`),
+  only for `y_offset < 4` (`slti v0,v1,0x4` at `0x80036A6C`); a larger operand draws nothing and advances nothing.
+  The pen then moves `8` px per digit, the digit count taken from a threshold ladder on the value (`0x80036A9C..0x80036B0C`). That array is the field VM's script-counter slot table, written by `4C CA/CB/CC` ([`script-vm-menuctrl.md`](../subsystems/script-vm-menuctrl.md)). The writer is called with a minimum width of `0`, suppresses leading zeros and always draws the units digit, so any value `<= 0` prints a single `0`. On the disc only `0x0B` and `0x0E` occur, in the `koin1` and `koin3` dialogue. The port resolves them when a box opens (`World::dialog_substitutions` -> `dialog::script_counter_digits`) and types the number as the escape's one reveal unit.
 
 The sprites decode against the **system-UI sheet** at VRAM `(896, 256)`: its UVs land on the icons there and on accent-glyph cells in the font page. The sprite carries no texture page of its own, and the `DR_MODE` for the font page (tpage `0xE`) that `FUN_80036888` links at `0x800369B8` goes into the same OT slot *before* the sprite, which the slot's head insertion makes execute after it. Every texel and palette sits in the boot-resident TIMs at the head of `PROT.DAT` (the system-UI sheet at `0x018E0`, a one-palette TIM at `0x07B00` for CLUT byte `0x13`, and the four row-498..501 palette TIMs at `0x10178` / `0x100D0` / `0x10028` / `0x0FF80`). Decoder `legaia_font::escape_icons`.
 
@@ -220,14 +227,14 @@ The texture page is set earlier by a separate GP0 0xE1 (DRAWMODE) primitive - it
 
 | Subject | Source |
 |---|---|
-| Width table location + indexing | `ghidra/scripts/funcs/80036888.txt` line 345 (`+ (uint)*(byte *)((int)&DAT_80073f1c + (uint)bVar1)`) |
-| Glyph U/V formula | `ghidra/scripts/funcs/80036888.txt` lines 332-335 (`*pbVar4 << 4` for U, `(bVar1 & 0xf0) - 0x20` for V) |
+| Width table location + indexing | `FUN_80036888` `0x80036BA8..0x80036BCC`: base `0x80073F3C`, `lbu v1,-0x20(v1)`, plus the word `0x800740E8` plus `1` |
+| Glyph U/V formula | `FUN_80036888` `0x80036B44..0x80036B70`: `andi 0xf` / `sll 4` -> `sb 0xc` (U); `andi 0xf0` / `addiu -0x20` -> `sb 0xd` (V); `W = 0xE` at `0x80036B5C`, `H = 0xF` at `0x80036B78` |
 | GP0 packet shape | `ghidra/scripts/funcs/8003c11c.txt` (the simpler text-actor renderer with the same packet layout) |
-| Escape table location + entry layout | `ghidra/scripts/funcs/80036888.txt` lines 282-321 |
-| Escape sprite draw + number branch | `ghidra/scripts/funcs/80036888.txt` (`0x8003696C..0x800369EC` sprite call, `0x80036A54..0x80036A94` counter read at `0x801C6460`); sprite records + CLUT byte `ghidra/scripts/funcs/8002c488.txt` |
-| CLUT base | `ghidra/scripts/funcs/80036888.txt` lines 195-196 (`addiu v1,v1,0x7f86`) |
-| Color-change escape | `ghidra/scripts/funcs/80036888.txt` lines 278-280 (case `0xCF`) |
-| Author-time `^X` preprocessor | `ghidra/scripts/funcs/80036514.txt` lines 246-249 |
+| Escape table location + entry layout | `FUN_80036888` `0x80036968..0x80036984`: base `0x80074050`, `index * 4`, `lh` `+0` (sprite id); `lb` `+3` (`0x800369E4`), `lbu` `+2` advance (`0x80036A04`) |
+| Escape sprite draw + number branch | `FUN_80036888` (`0x8003696C..0x800369EC` sprite call, `0x80036A54..0x80036A94` counter read at `0x801C6460`, digit advance `0x80036A9C..0x80036B0C`); sprite records + CLUT byte `ghidra/scripts/funcs/8002c488.txt` |
+| CLUT base | `FUN_80036888` `0x80036B74..0x80036B84` (`lhu` `0x8007B454`, `addiu v1,v1,0x7f86`, `sh 0xe`) |
+| Color-change escape | `FUN_80036888` `0x80036944..0x8003695C` (`0xCF`: operand `sw` to `0x8007B454`, no unit counted) |
+| Author-time `^X` preprocessor | `FUN_80036514` `0x80036550..0x8003657C` (`0x5E` -> `sb 0xce`, operand `+0xD3`; `0xFF` -> `sb 0xcf`) |
 | Draw-and-count wrapper | `ghidra/scripts/funcs/8003cc98.txt` |
 
 This renderer chain draws **field dialogue**, which has no dedicated opcode: a
@@ -309,7 +316,8 @@ A description line is drawn in full from the info window's left edge, like every
 
 - **Item info** (window 17). `FUN_801D0F1C` hands the item-table `+8` string to `FUN_800337B0` at `(WX, WY+0x10)` (`0x801D0F94..0x801D0FB8`). `FUN_800337B0` draws a non-empty description through `FUN_8003CD00` (`0x80033818`, and `0x8003388C` on the equipment arm, which then prints its stat block).
 - **Spell info** (window 20). `FUN_801D2E74` draws the `0x80075DB0` description through `FUN_8003CD00` at `(WX, WY+0xE)` (`0x801D3004..0x801D3018`), then "MP Used" at `WY+0x2A` (`0x801D3020`), so two rows fit above it.
-- **`FUN_8003CD00` is not a wrapper.** Its only comparisons are `slt v0,s2,v1` at `0x8003CD50`, which keeps the widest `FUN_80036888` result it returns, and `sltiu v0,v0,0x20` at `0x8003CD68`: a string whose first byte is a `0x1F` lead is drawn as consecutive segments `0xD` lower; any other string is drawn once. Breaks inside a segment are the author's `0x7C` (`0xE` lower, in `FUN_80036888`).
+- **`FUN_8003CD00` is not a wrapper.** Its only comparisons are `slt v0,s2,v1` at `0x8003CD50`, which keeps the widest `FUN_80036888` result it returns, and `sltiu v0,v0,0x20` at `0x8003CD68`: when the string's first byte is below `0x20` it steps the pointer by the `FUN_80036044` unit count (`0x8003CD74..0x8003CD7C`) and draws again `0xD` lower (`0x8003CD84`); any other string is drawn once.
+  The loop never draws a `0x1F`-lead string, though: `FUN_80036888` refuses a first byte below `0x20` (`0x800368C4`), and the unit count of a `0x1F` segment counts the lead, so the step lands on the segment's own terminator and the next count is `0`. No retail item or spell description starts below `0x20`, so every description is one draw. Breaks inside it are the author's `0x7C` (`0xE` lower, in `FUN_80036888`).
 
 Both windows' content rects are **144 px** (`0x90`) wide from `WX` - the descriptor rects `(14,108,144,40)` and `(14,152,144,52)` in [`field-menu.md`](../subsystems/field-menu.md#window-descriptor-table), and the same `0x90` as the box `FUN_801D0F1C` frames at `(WX, WY+0x38)` - so a description line fits when it measures at most 144 px at pad `0`. The shop's description box `FUN_801D4A80` reaches the same `FUN_800337B0` / `FUN_8003CD00` pair.
 

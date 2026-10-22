@@ -66,11 +66,29 @@ pub fn settings_path() -> Option<PathBuf> {
 }
 
 /// The launcher's persisted state.
+///
+/// Only what the game has no option of its own for lives here: the disc,
+/// and the two `play-window` launch switches with no persisted option
+/// behind them (`--psx-render`, `--retail`). The enhancement knobs the game
+/// itself remembers (lighting, fog, see-through walls, ...) are edited in
+/// the game's own [`OPTIONS_FILE`], so the launcher and the in-game keys
+/// change one value.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LauncherSettings {
     /// The disc image the user picked (`.bin`, or the `.cue` they chose).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disc: Option<PathBuf>,
+    /// Start with PSX-faithful rasterisation (`play-window --psx-render`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub psx_render: bool,
+    /// Start retail-faithful (`play-window --retail`): every enhancement
+    /// off for the session, nothing written back to the options file.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub retail: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 impl LauncherSettings {
@@ -163,6 +181,12 @@ pub fn validate_disc(path: &Path) -> std::result::Result<DiscInfo, DiscProblem> 
     if !path.exists() {
         return Err(DiscProblem::Missing(path.to_path_buf()));
     }
+    // A typed relative path is made absolute against the directory it was
+    // typed in: the game runs in the data directory, where it would not
+    // resolve, and the remembered path must survive a different start
+    // directory.
+    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let path = absolute.as_path();
     let unreadable = |reason: String| DiscProblem::Unreadable {
         path: path.to_path_buf(),
         reason,
@@ -257,6 +281,310 @@ pub fn play_args(info: &DiscInfo) -> Vec<std::ffi::OsString> {
     ]
 }
 
+/// [`play_args`] plus the launch switches `settings` turns on.
+pub fn play_args_with(info: &DiscInfo, settings: &LauncherSettings) -> Vec<std::ffi::OsString> {
+    let mut args = play_args(info);
+    if settings.psx_render {
+        args.push("--psx-render".into());
+    }
+    if settings.retail {
+        args.push("--retail".into());
+    }
+    args
+}
+
+/// The game's options file, cwd-relative the way `play-window` reads it; the
+/// launcher runs in [`data_dir`], so this is the per-user one.
+pub const OPTIONS_FILE: &str = "legaia-options.toml";
+/// The game's key-binding file, beside [`OPTIONS_FILE`].
+pub const INPUT_FILE: &str = "legaia-input.toml";
+/// The log a launcher-started game writes, in [`data_dir`].
+pub const GAME_LOG: &str = "legaia-engine-game.log";
+
+/// One row of the launcher's option list: a game option (persisted in
+/// [`OPTIONS_FILE`], the same value the in-game key toggles) or a launch
+/// switch (persisted in [`LauncherSettings`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OptionRow {
+    Fullscreen,
+    WindowSize,
+    EnhancedLighting,
+    TimeOfDay,
+    LampShadows,
+    SeeThroughWalls,
+    GroundFog,
+    Bloom,
+    PsxRender,
+    CameraDistance,
+    PreciseMovement,
+    ReduceFlashing,
+    MusicVolume,
+    SfxVolume,
+    Retail,
+}
+
+/// The option rows in screen order, with the heading each group starts
+/// under (`Some` on a group's first row).
+pub const OPTION_ROWS: [(Option<&str>, OptionRow); 15] = [
+    (Some("Display"), OptionRow::Fullscreen),
+    (None, OptionRow::WindowSize),
+    (None, OptionRow::EnhancedLighting),
+    (None, OptionRow::TimeOfDay),
+    (None, OptionRow::LampShadows),
+    (None, OptionRow::SeeThroughWalls),
+    (None, OptionRow::GroundFog),
+    (None, OptionRow::Bloom),
+    (None, OptionRow::PsxRender),
+    (None, OptionRow::CameraDistance),
+    (Some("Play and sound"), OptionRow::PreciseMovement),
+    (None, OptionRow::ReduceFlashing),
+    (None, OptionRow::MusicVolume),
+    (None, OptionRow::SfxVolume),
+    (None, OptionRow::Retail),
+];
+
+const TIMES_OF_DAY: [&str; 4] = ["auto", "day", "dusk", "night"];
+
+/// `OptionsState::window_scale`'s range
+/// (`legaia_engine_render::window::WindowSetup::SCALES`).
+const WINDOW_SCALES: (u8, u8) = (2, 6);
+
+fn on_off(b: bool) -> String {
+    if b { "On" } else { "Off" }.into()
+}
+
+fn capitalise(s: &str) -> String {
+    let mut c = s.chars();
+    c.next()
+        .map(|f| f.to_uppercase().chain(c).collect())
+        .unwrap_or_default()
+}
+
+impl OptionRow {
+    /// The row's label.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Fullscreen => "Fullscreen",
+            Self::WindowSize => "Window size",
+            Self::EnhancedLighting => "Enhanced lighting",
+            Self::TimeOfDay => "Time of day",
+            Self::LampShadows => "Lamp shadows",
+            Self::SeeThroughWalls => "See-through walls",
+            Self::GroundFog => "Ground fog",
+            Self::Bloom => "Bloom",
+            Self::PsxRender => "PlayStation pixel look",
+            Self::CameraDistance => "Camera distance",
+            Self::PreciseMovement => "Free-angle movement",
+            Self::ReduceFlashing => "Reduce flashing",
+            Self::MusicVolume => "Music volume",
+            Self::SfxVolume => "Sound effects volume",
+            Self::Retail => "Original game only",
+        }
+    }
+
+    /// One or two sentences on what the row does, for the help line.
+    pub fn help(self) -> &'static str {
+        match self {
+            Self::Fullscreen => {
+                "Fill the screen with a borderless window. In game: F11 or Alt+Enter."
+            }
+            Self::WindowSize => {
+                "The game window's size when not fullscreen, in steps of the \
+                 PlayStation's 320x240 picture. The game still draws at any size you \
+                 drag the window to."
+            }
+            Self::EnhancedLighting => {
+                "A time-of-day mood, real light at lamps and glowing props. Off draws the \
+                 game's own baked shading. In game: I."
+            }
+            Self::TimeOfDay => {
+                "The mood enhanced lighting uses: Auto follows the scene, or force day, \
+                 dusk or night. In game: F8."
+            }
+            Self::LampShadows => "Shadows cast by the enhanced lamp lights. In game: Y.",
+            Self::SeeThroughWalls => {
+                "Walls between the camera and your character fade, so you never lose \
+                 sight of them. In game: F4."
+            }
+            Self::GroundFog => "A low drifting mist in misty and night scenes. In game: F9.",
+            Self::Bloom => "Bright lights and lit windows glow softly. In game: F10.",
+            Self::PsxRender => {
+                "The PlayStation's wobbling vertices and colour dithering, for a CRT-era \
+                 look. Off gives clean modern edges."
+            }
+            Self::CameraDistance => {
+                "How far the field camera sits behind your character. Retail is the \
+                 original framing. In game: T."
+            }
+            Self::PreciseMovement => {
+                "Walk at any angle instead of the original eight directions. In game: R."
+            }
+            Self::ReduceFlashing => {
+                "Softens fast-flashing light effects (a photosensitivity guard). Off shows \
+                 them exactly as the original does."
+            }
+            Self::MusicVolume => "Music level, 0 to 10; 8 is the original mix.",
+            Self::SfxVolume => "Sound effect level, 0 to 10; 8 is the original mix.",
+            Self::Retail => {
+                "Play exactly as the original looks and moves: every enhancement off for \
+                 the session. The settings above are kept for next time."
+            }
+        }
+    }
+
+    /// Whether the row lives in the game's options file (else in
+    /// [`LauncherSettings`]).
+    pub fn is_game_option(self) -> bool {
+        !matches!(self, Self::PsxRender | Self::Retail)
+    }
+
+    /// Whether `--retail` overrides the row for the session (its value is
+    /// kept, but has no effect while [`OptionRow::Retail`] is on).
+    pub fn overridden_by_retail(self) -> bool {
+        !matches!(
+            self,
+            Self::Retail
+                | Self::PsxRender
+                | Self::MusicVolume
+                | Self::SfxVolume
+                | Self::Fullscreen
+                | Self::WindowSize
+        )
+    }
+
+    /// The row's value as shown.
+    pub fn value(
+        self,
+        opts: &legaia_engine_menus::options::OptionsState,
+        s: &LauncherSettings,
+    ) -> String {
+        match self {
+            Self::Fullscreen => on_off(opts.fullscreen),
+            Self::WindowSize => {
+                let k = u32::from(opts.window_scale.clamp(WINDOW_SCALES.0, WINDOW_SCALES.1));
+                format!("{}x{}", 320 * k, 240 * k)
+            }
+            Self::EnhancedLighting => on_off(opts.enhanced_lighting),
+            Self::TimeOfDay => capitalise(&opts.lighting_time_of_day),
+            Self::LampShadows => on_off(opts.light_shadows),
+            Self::SeeThroughWalls => on_off(opts.occlusion_fade),
+            Self::GroundFog => on_off(opts.volumetric_fog),
+            Self::Bloom => on_off(opts.bloom),
+            Self::PsxRender => on_off(s.psx_render),
+            Self::CameraDistance => capitalise(opts.camera_distance.label()),
+            Self::PreciseMovement => on_off(opts.precise_movement),
+            Self::ReduceFlashing => on_off(opts.reduce_flashing),
+            Self::MusicVolume => opts.bgm_volume.to_string(),
+            Self::SfxVolume => opts.sfx_volume.to_string(),
+            Self::Retail => on_off(s.retail),
+        }
+    }
+
+    /// Step the row's value: `dir >= 0` forward, `dir < 0` back. A switch
+    /// flips either way, a volume clamps to `0..=10`, a list wraps.
+    pub fn adjust(
+        self,
+        opts: &mut legaia_engine_menus::options::OptionsState,
+        s: &mut LauncherSettings,
+        dir: i8,
+    ) {
+        let step = |v: u8| -> u8 {
+            if dir < 0 {
+                v.saturating_sub(1)
+            } else {
+                v.saturating_add(1)
+                    .min(legaia_engine_menus::options::VOLUME_MAX)
+            }
+        };
+        match self {
+            Self::Fullscreen => opts.fullscreen ^= true,
+            Self::WindowSize => {
+                let (lo, hi) = WINDOW_SCALES;
+                let cur = opts.window_scale.clamp(lo, hi);
+                // Wraps, like the other lists.
+                opts.window_scale = if dir < 0 {
+                    if cur == lo { hi } else { cur - 1 }
+                } else if cur == hi {
+                    lo
+                } else {
+                    cur + 1
+                };
+            }
+            Self::EnhancedLighting => opts.enhanced_lighting ^= true,
+            Self::TimeOfDay => {
+                let cur = TIMES_OF_DAY
+                    .iter()
+                    .position(|t| t.eq_ignore_ascii_case(&opts.lighting_time_of_day))
+                    .unwrap_or(0);
+                let n = TIMES_OF_DAY.len();
+                let next = if dir < 0 {
+                    (cur + n - 1) % n
+                } else {
+                    (cur + 1) % n
+                };
+                opts.lighting_time_of_day = TIMES_OF_DAY[next].to_string();
+            }
+            Self::LampShadows => opts.light_shadows ^= true,
+            Self::SeeThroughWalls => opts.occlusion_fade ^= true,
+            Self::GroundFog => opts.volumetric_fog ^= true,
+            Self::Bloom => opts.bloom ^= true,
+            Self::PsxRender => s.psx_render ^= true,
+            Self::CameraDistance => {
+                // A three-step cycle: back one is forward two.
+                let c = opts.camera_distance.cycle();
+                opts.camera_distance = if dir < 0 { c.cycle() } else { c };
+            }
+            Self::PreciseMovement => opts.precise_movement ^= true,
+            Self::ReduceFlashing => opts.reduce_flashing ^= true,
+            Self::MusicVolume => opts.bgm_volume = step(opts.bgm_volume),
+            Self::SfxVolume => opts.sfx_volume = step(opts.sfx_volume),
+            Self::Retail => s.retail ^= true,
+        }
+    }
+}
+
+/// The retail dialog font of the disc at `bin`, so the launcher can letter
+/// its screen the way the game does: the font TIM inside `PROT.DAT` and the
+/// advance table in the boot executable (the same two reads a `--disc` boot
+/// makes). `None` when either is unreachable; the launcher then keeps its
+/// built-in font. Read at runtime from the user's disc; nothing is written.
+pub fn disc_font(bin: &Path) -> Option<legaia_font::Font> {
+    let mut raw = legaia_iso::raw::RawDisc::open(bin).ok()?;
+    let volume = legaia_iso::iso9660::read_volume(&mut raw).ok()?;
+    let files = legaia_iso::iso9660::walk_files(&mut raw, &volume.root).ok()?;
+    let find = |name: &str| {
+        files
+            .iter()
+            .find(|(p, _)| {
+                let p = p.trim_start_matches(['/', '\\']);
+                let p = p.split(';').next().unwrap_or(p);
+                p.eq_ignore_ascii_case(name)
+            })
+            .map(|(_, rec)| rec.clone())
+    };
+    let prot = find("PROT.DAT")?;
+    let scus_rec = find(USA_EXECUTABLE)?;
+    let sector = legaia_iso::raw::USER_DATA_SIZE as u64;
+    let mut scus = Vec::new();
+    raw.read_user_data(
+        scus_rec.lba,
+        scus_rec.size.div_ceil(sector as u32),
+        &mut scus,
+    )
+    .ok()?;
+    scus.truncate(scus_rec.size as usize);
+    let start = legaia_font::FONT_TIM_PROT_DAT_OFFSET;
+    let end = start + legaia_font::FONT_TIM_LEN as u64;
+    let first = start / sector;
+    let count = end.div_ceil(sector) - first;
+    let mut buf = Vec::new();
+    raw.read_user_data(prot.lba + first as u32, count as u32, &mut buf)
+        .ok()?;
+    let skip = (start - first * sector) as usize;
+    let tim = buf.get(skip..skip + legaia_font::FONT_TIM_LEN)?;
+    legaia_font::Font::from_disc_tim_and_scus(tim, &scus).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -279,6 +607,7 @@ mod tests {
     fn valid_saved_disc_plays() {
         let s = LauncherSettings {
             disc: Some("/games/legaia.bin".into()),
+            ..Default::default()
         };
         let d = decide(Ok(s), |p| Ok(ok_info(p)));
         assert_eq!(
@@ -291,6 +620,7 @@ mod tests {
     fn invalid_saved_disc_reprompts_with_reason() {
         let s = LauncherSettings {
             disc: Some("/games/other.bin".into()),
+            ..Default::default()
         };
         let d = decide(Ok(s), |p| {
             Err(DiscProblem::WrongDisc {
@@ -323,6 +653,7 @@ mod tests {
         // Through `decide` with the real validator: the remembered-but-moved case.
         let s = LauncherSettings {
             disc: Some(p.clone()),
+            ..Default::default()
         };
         assert_eq!(
             decide(Ok(s), validate_disc),
@@ -393,6 +724,79 @@ mod tests {
         assert_eq!(a[0], "play-window");
         assert_eq!(a[2], "/g/l.bin");
         assert!(a.iter().any(|s| s == "--boot-ui"));
+    }
+
+    #[test]
+    fn launch_switches_ride_the_play_args_and_round_trip() {
+        let info = ok_info(Path::new("/g/l.bin"));
+        let off = LauncherSettings::default();
+        assert_eq!(play_args_with(&info, &off), play_args(&info));
+        let on = LauncherSettings {
+            psx_render: true,
+            retail: true,
+            ..Default::default()
+        };
+        let a = play_args_with(&info, &on);
+        assert!(a.iter().any(|s| s == "--psx-render"));
+        assert!(a.iter().any(|s| s == "--retail"));
+        // Off switches are not written; on ones are read back.
+        assert_eq!(toml::to_string(&off).unwrap().trim(), "");
+        let back: LauncherSettings = toml::from_str(&toml::to_string(&on).unwrap()).unwrap();
+        assert_eq!(back, on);
+        // A pre-switch file (disc only) still loads.
+        let old: LauncherSettings = toml::from_str("disc = \"/g/l.bin\"").unwrap();
+        assert!(!old.psx_render && !old.retail);
+    }
+
+    #[test]
+    fn option_rows_step_and_wrap() {
+        use legaia_engine_camera::camera_distance::CameraDistance;
+        use legaia_engine_menus::options::OptionsState;
+        let mut o = OptionsState::default();
+        let mut s = LauncherSettings::default();
+        // Every row changes its shown value when stepped either way, and a
+        // switch / list returns to the start after a full cycle.
+        for (_, row) in OPTION_ROWS {
+            let before = row.value(&o, &s);
+            row.adjust(&mut o, &mut s, 1);
+            assert_ne!(row.value(&o, &s), before, "{row:?} forward");
+            row.adjust(&mut o, &mut s, -1);
+            assert_eq!(row.value(&o, &s), before, "{row:?} back");
+            assert!(!row.label().is_empty() && !row.help().is_empty());
+        }
+        assert_eq!(o, OptionsState::default());
+        // Camera distance cycles three ways; volumes clamp.
+        o.camera_distance = CameraDistance::Retail;
+        OptionRow::CameraDistance.adjust(&mut o, &mut s, -1);
+        assert_eq!(o.camera_distance, CameraDistance::Farther);
+        o.bgm_volume = 10;
+        OptionRow::MusicVolume.adjust(&mut o, &mut s, 1);
+        assert_eq!(o.bgm_volume, 10);
+        o.sfx_volume = 0;
+        OptionRow::SfxVolume.adjust(&mut o, &mut s, -1);
+        assert_eq!(o.sfx_volume, 0);
+        // The two launch switches live in the launcher's file, not the game's.
+        assert!(!OptionRow::PsxRender.is_game_option());
+        assert!(!OptionRow::Retail.is_game_option());
+        assert!(OptionRow::GroundFog.is_game_option());
+    }
+
+    /// The disc's own font loads (disc-gated: skips and passes without
+    /// `LEGAIA_DISC_BIN`).
+    #[test]
+    fn real_disc_font_loads() {
+        let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN").map(PathBuf::from) else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        if !disc.exists() {
+            eprintln!("[skip] LEGAIA_DISC_BIN does not exist");
+            return;
+        }
+        let font = disc_font(&disc).expect("the retail dialog font builds from the disc");
+        // Proportional: an 'i' is narrower than an 'M'.
+        assert!(font.advance_of(b'i') < font.advance_of(b'M'));
+        eprintln!("[ran] dialog font from {}", disc.display());
     }
 
     /// The real disc validates (disc-gated: skips and passes without

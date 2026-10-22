@@ -84,7 +84,7 @@ flowchart TD
 | wgpu-free kernels both hosts link: GTE math, `screen_prim`, `vram_capture`, `battle_intro`, `scene_lighting`, `prim_near_reject` | `crates/render-kernels` |
 | Scene VRAM build, culls, lifts, per-frame draw plans | `crates/engine-core` and the kernel crates under it |
 | Native draw-list assembly | `crates/engine-shell` (`window/`) |
-| Browser draw-list assembly and WebGL shaders | `crates/web-viewer`, `site/js/webgl-*.js` |
+| Browser draw-list assembly and WebGL shaders | `crates/web-play` (play and minigames pages), `crates/web-viewer` (viewer pages), `site/js/webgl-*.js` |
 
 ## Which mesh leaf a frame actually enters
 
@@ -381,8 +381,9 @@ fragment discard ([below](#what-a-raised-0x42-draws)).
   output slot, two vertices and a q12 fraction `a3`, it lerps X/Y/Z
   (`out = b + ((a-b)*frac >> 12)`) and, by flag word `a2`, the packed
   attributes: bit `0x1` the UV pair at `+0x18/0x19`, bit `0x2` the RGB triple
-  at `+0x14..0x16`, bit `0x800` selects the trailing endpoint. It carries a
-  `[render_pipeline]` scope row in `scripts/ci/port-catalog-ignore.toml`. See
+  at `+0x14..0x16`, bit `0x800` selects the trailing endpoint. Ported as
+  `legaia_render_kernels::gte::raster`'s clipped-vertex lerp, `REPLACED-BY`
+  the graphics backend's own clipper. See
   `ghidra/scripts/funcs/80029724.txt`.
 
 ## The shatter renderer (`FUN_80029888` + `FUN_80029DD8`)
@@ -723,7 +724,7 @@ and carried as a scope row in `scripts/ci/port-catalog-ignore.toml`:
 | Routine | What it is | Port |
 |---|---|---|
 | `FUN_80028158` | Procedural ring / crown / fan builder: a Legaia TMD object of `GT4` packets ([`effect-vm.md`](effect-vm.md#the-default-arms-draw)) | **Ported and drawn** - `legaia_engine_effects::effect_default_arm`, a byte-exact builder behind every default-arm node and every battle ground shadow |
-| `FUN_8002A5A4` | One textured billboard quad into a caller buffer | Scope row (`render_pipeline`) |
+| `FUN_8002A5A4` | One textured billboard quad into a caller buffer | **Ported** - `legaia_render_kernels::sprite_arm`, the dispatcher's sprite arm |
 | `FUN_801CFA48` | Lightning effect-ribbon random walk ([`battle-action.md`](battle-action.md#overlay-local-prng-fun_801d0290)) | **Ported and drawn** - `legaia_engine_effects::effect_ribbon`, the geometry and the TMD packet chain it installs as the actor's model |
 | `FUN_80019D50` | CLUT-cell HSV cycler ([`field-ambient-fx.md`](field-ambient-fx.md)) | **Ported** - `legaia_engine_field::clut_cell_fx`, live through `world::ambient` |
 | `FUN_800351C0` | Full-screen `320x224` backdrop quad (tag `0x08000000`) | Scope row (`render_pipeline`) |
@@ -828,17 +829,21 @@ flat-depth references both hosts upload beside the ground, and the ground
 shaders - `field_far_bucket_depth` in `engine-render`, `fieldFarBucket` in
 `site/js/webgl-shaders.js` - act on the mark:
 
-- **Sloped far-bucket cells** (`x0` / `x1` pair swapped) have their depth
-  scaled into the thin slice at the far end of the range, keeping their own
-  per-pixel order inside it.
-- **Flat far-bucket cells** (`z0` / `z1` pair swapped) are pushed back by
-  `field_ground::FLAT_FAR_BUCKET_PUSH` of their depth - within half a
-  percent of real. Post passes that read the depth buffer (the volumetric
-  fog's soft edge, the lamp halos) still see the floor where it is, while a
-  decal authored on the floor plane paints over it. Without the push the two
-  tie at float rounding: `doman`'s subtractive shadow strips (CLUT `0x7F84`,
-  tpage `0x5F`), a tenth of a unit above the sunk ground at view depth near
-  1700, lose every pixel.
+- **Sloped far-bucket cells** (`x0` / `x1` pair swapped) and **flat** ones
+  (`z0` / `z1` pair swapped) have their depth scaled into the thin slice at
+  the far end of the range, keeping their own per-pixel order inside it.
+
+The flat cells need the slice as much as the sloped ones. The subtractive
+wall-base shadow strips (CLUT `0x7F84`, tpage `0x5F`, ABR 2) are decals, and
+where they lie is per scene: `doman`'s sit a tenth of a unit above the sunk
+ground, while `conc`, `conc2`, `conc3`, `concnow` and `urudre2` author theirs
+six units **below** the floor plane. Retail draws them over the far bucket
+either way. Pushed back by half a percent of its depth, a flat cell still hid
+every `conc` strip from the blend pass, which tests against the opaque depth
+without writing it (`conc_field_card_boot`, the dark band along the back
+wall). The cost falls on the one post pass that reads the depth buffer, the
+volumetric fog's soft edge, which no longer fades a sheet against a far-bucket
+floor.
 
 Disc-gated pin: `crates/engine-scene/tests/field_ground_far_bucket_disc.rs`.
 
@@ -1002,7 +1007,7 @@ a blue-black. No other per-object colour rule exists in the draw.
 Port: `legaia_engine_battle_vm::battle_actor_draw` (`LimbDimPlan`), resolved by
 `World::battle_limb_dim_plan`. The native window applies it to the per-frame
 posed mesh; the browser play page re-uploads the actor's packet-colour stream
-when the plan's key changes (`web-viewer::play_battle_limb_dim`). One
+when the plan's key changes (`web-play::play_battle_limb_dim`). One
 deliberate difference: the port's tint flash is a per-draw cue over the whole
 mesh, so a limb dimmed during a flash also takes the flash, where retail's
 override replaces it.
@@ -1166,7 +1171,7 @@ Details that matter to a port:
   clamp `FUN_801DAA50`), and the Y global measures `0` on every sampled field
   frame while the player's footing is not `0`. The camera's vertical framing
   rides the composed eye Y. The port ships the zeroed focus wherever a zone
-  camera is active (`engine-core::camera_view`) and falls back to the
+  camera is active (`engine-world-views::camera_view`) and falls back to the
   player's sampled floor only in a world with no terrain to compose an eye
   trio from.
 - **The staging descriptor at `0x801F3580` is not in this chain.** The
@@ -1262,7 +1267,7 @@ at the first `HALT` misses it. It is live content: `urudre1` is Vahn's dream
 at Uru Mais, its walk-on band at tile `(97, 10)` starts cutscene record
 `P2[1]`, whose `34 30 05` installs stager record 6, whose op `0x25` spawns
 record 14 as a run of `0x4000` sprite-arm quads
-(`crates/web-viewer/tests/dream_yaw_part_page_ladder.rs` plays it).
+(`crates/web-play/tests/dream_yaw_part_page_ladder.rs` plays it).
 
 **A `0x400` node's `+0x14` is an eye-space offset.** It comes from the part's
 own op `0x07` WORLD_SET, moved on by the part tick's motion block
@@ -2151,7 +2156,7 @@ frame. Pinned by
 `crates/engine-scene-host/tests/field_unspawned_actor_draw_disc.rs`.
 
 **The site play page** (`site/js/play-view-frame.js`) applies the same crop and
-actor cull and adds nothing: `OCCLUDER_CULL = false`. A per-body occlusion
+actor cull and adds nothing; the per-body occluder cull it once carried is deleted. A per-body occlusion
 cull (drop a body the eye-to-player segment pierces) is the wrong tool even
 in exact segment-vs-AABB form, because placement boxes are axis-aligned over
 whole terrain tiles, walls and buildings, so the segment sweeps through a
@@ -2463,10 +2468,10 @@ instance env-pack meshes exactly as the field hosts do.
 | # | Surface | Draw-list assembly |
 |---|---|---|
 | 1 | native `play-window` | `engine-shell` `window/field_render.rs` + `window/geometry.rs` |
-| 2 | browser play page | `web-viewer` `play.rs` + `play_battle_render.rs` |
+| 2 | browser play page | `web-play` `play.rs` + `play_battle_render.rs` |
 | 3 | browser field-scene viewer | `web-viewer` `field_scene.rs`; `scene_geom.rs` for the world map |
-| 4 | browser dance-hall venue | `web-viewer` `minigames_dance.rs` |
-| 5 | browser fishing venue | `web-viewer` `minigames_fishing_scene.rs` |
+| 4 | browser dance-hall venue | `web-play` `minigames_dance.rs` |
+| 5 | browser fishing venue | `web-play` `minigames_fishing_scene.rs` |
 
 A kernel wired into one and not another is invisible in a diff, because no
 file holds two of the columns. Host-drift
@@ -2475,7 +2480,7 @@ is the gate that measures it.
 
 ### The structural split: what a browser surface *can* share
 
-`engine-render` links wgpu, so `web-viewer` cannot depend on it. Every kernel
+`engine-render` links wgpu, so neither `web-play` nor `web-viewer` can depend on it. Every kernel
 that lives there - `psx_dither`, `psx_blend`, `dyn_light`, the shadow half of
 `scene_lights`, `occlusion_fade` - is native-only as code, and its browser
 twin is a second implementation in GLSL or JS. Kernels in `engine-core`,
@@ -2536,7 +2541,7 @@ axes, so each knob states both:
 | `Renderer::set_dynamic_lighting` | off | on (`I`, `--no-dynamic-lighting`, the page's "Enhanced lighting" box) | *off*, pixel-identical | enhanced lighting: mood, point lights, emissives, glow |
 | `Renderer::set_dyn_shadows` | on | on (`Y`, `--no-dyn-shadows`, "Lamp shadows") | inert while dynamic lighting is off | the point-light shadow maps only |
 | `Renderer::set_occlusion_fade` | off | on (`F4`, `--no-occlusion-fade`, "See-through walls") | *off*, pixel-identical | the camera-occlusion fade |
-| `Renderer::set_fog_volume` | nothing staged | on (`F9`, `--no-volumetric-fog`) | nothing staged, pixel-identical | the [volumetric ground fog](#volumetric-ground-fog-enhancement) |
+| `Renderer::set_fog_volume` | nothing staged | off while the look matures (`F9`, `--no-volumetric-fog`, the page's "Ground fog" box; persisted) | nothing staged, pixel-identical | the [volumetric ground fog](#volumetric-ground-fog-enhancement) |
 
 Replays and `retail-compare` captures force the enhancements off, so recorded
 sessions and the parity oracles stay on the faithful render.
@@ -3098,8 +3103,11 @@ prim's depth key is its model-space centroid's clip-space `w` under the draw
 MVP (`psx_blend::prim_depth_key`) - equal, by MVP linearity, to the average
 of its vertices' clip `w`, which is the GTE avg-Z the OT bins on. All semi
 prims across all of a scene's draws (textured + untextured in one list)
-blend far to near regardless of draw boundaries. Equal keys form one bucket
-and draw later-submitted-first, the retail LIFO bucket order. Per-prim
+blend far to near regardless of draw boundaries. Keys are snapped to a whole
+`SZ` (`psx_blend::snap_depth_key`; retail's `OTZ` is an integer, the port's
+key an `f32` that two matrix chains can land a thousandth apart), and equal
+keys form one bucket and draw later-submitted-first, the retail LIFO bucket
+order. Per-prim
 metadata (`psx_blend::SemiPrim`) is recorded once at mesh upload; the
 per-frame ordering list reuses one renderer-owned buffer, and contiguous
 same-draw, same-mode tail runs coalesce into single indexed draws

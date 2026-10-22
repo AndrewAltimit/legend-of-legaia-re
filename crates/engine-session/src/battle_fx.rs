@@ -33,14 +33,11 @@ pub fn spawn_pending_move_fx(world: &mut World) -> Option<u16> {
     }
 }
 
-/// The battle world scale: retail's base matrix `DAT_8007BF10` holds
-/// `16384 * I` in battle mode (GTE `4096` = 1.0), a **4x uniform scale**
-/// composed under the camera rotation for every drawn battle object - the
-/// actors (`FUN_80048A08`), the backdrop (registered as an ordinary
-/// background actor by `FUN_800513F0`) and the effect sprites, whose centres
-/// `FUN_800195A8` transforms through the same camera matrix
+/// The battle world scale (retail's base matrix `DAT_8007BF10`, a 4x uniform
+/// scale under the battle camera) - one value, held beside the battle camera
+/// it scales (`legaia_engine_camera::projection::BATTLE_WORLD_SCALE`)
 /// ([`docs/subsystems/battle-stage-camera.md`](../../../docs/subsystems/battle-stage-camera.md#the-4-world-scale)).
-pub const BATTLE_WORLD_SCALE: f32 = 4.0;
+pub const BATTLE_WORLD_SCALE: f32 = legaia_engine_camera::projection::BATTLE_WORLD_SCALE;
 
 /// The world scale a battle draw - actor, backdrop or effect layer - composes
 /// under the camera this frame: [`BATTLE_WORLD_SCALE`] in battle, `1` in every

@@ -70,7 +70,7 @@ The hook is scoped to what you staged, so a docs-only commit doesn't pay for a c
 | any docs | `check-doc-density.py --staged` (legibility linter), `check-md-links.py --staged` (intra-repo links + heading anchors) |
 | `site/` | internal links + anchors, CSS cascade order, the JS syntax / case-fold / play-page state checks, generated-page freshness |
 | `scripts/vrc-diorama/` | `codegen.py --check` (generated register drift) |
-| every commit | shell observer traps, integration-test declarations, and the disc-coverage / byte-accounting / dump-integrity / port-catalog ratchets (each self-skips when its gitignored input is absent) |
+| every commit | baseline loosening, shell observer traps, integration-test declarations, crate layering, crate-map freshness, and the disc-coverage / byte-accounting / dump-integrity / port-catalog ratchets (each self-skips when its gitignored input is absent) |
 | `Cargo.toml`, `Cargo.lock`, `crates/`, `rust-toolchain*`, `.cargo/` | `cargo fmt --check`, `cargo clippy -D warnings`, UI host drift, trait-override symmetry, `check-port-tags.py` (warn-only) |
 | the wasm-sensitive crates | the wasm32 type-check (`scripts/ci/check-wasm-target.sh`) |
 

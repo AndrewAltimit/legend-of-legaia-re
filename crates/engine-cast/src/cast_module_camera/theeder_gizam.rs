@@ -512,6 +512,7 @@ mod tests {
             action: 0,
             depth_raw: 0,
             caster_latch: 0,
+            victim_radius: 0,
         }
     }
 

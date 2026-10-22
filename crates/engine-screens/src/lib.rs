@@ -6,7 +6,7 @@
 //! and draws nothing. Something has to project the one into the other, and
 //! that projection used to live twice - once in the native window
 //! (`engine-shell/src/window/`) and once on the browser play page
-//! (`web-viewer/src/play_shop.rs`), line for line. This crate is that
+//! (`web-play/src/play_shop.rs`), line for line. This crate is that
 //! projection: [`ScreenInputs`] in, [`ShopOverlayFrame`] out.
 //!
 //! What stays with a host: assembling [`ScreenInputs`] from its own holders,
@@ -25,6 +25,7 @@ use legaia_game_tables::menu_windows::MenuWindowTable;
 
 mod banners;
 pub mod battle_command;
+pub mod battle_fx;
 // --- lane B ---
 pub mod battle_value_readout;
 // --- end lane B ---
@@ -43,6 +44,7 @@ mod panel;
 mod prize;
 pub mod screen_layers;
 mod shop;
+pub mod title_screens;
 
 pub use banners::banner_stage_draws;
 pub use battle_item::{with_battle_item_frame, with_battle_spell_frame};

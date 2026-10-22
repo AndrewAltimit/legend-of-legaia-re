@@ -4,7 +4,7 @@
  * the play page (over `LegaiaRuntime`'s `play_npc_*` exports) and the map
  * viewer's FieldSceneView (over `LegaiaViewer`'s `field_scene_npc_*` exports).
  * Both export families are thin delegates of the one Rust type
- * `web-viewer::field_actors::FieldActors`, so the two pages differ only in
+ * `web-play::field_actors::FieldActors`, so the two pages differ only in
  * which world they read.
  *
  *   const api = LegaiaFieldActors.api(rt, 'play_npc_');

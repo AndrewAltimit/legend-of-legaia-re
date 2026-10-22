@@ -8,8 +8,8 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
+use legaia_web_play::disc::{extract_prot_dat, parse_prot_toc};
 use legaia_web_viewer::audio::{decode_vag_sample, enumerate_vabs};
-use legaia_web_viewer::disc::{extract_prot_dat, parse_prot_toc};
 use std::env;
 use std::fs;
 

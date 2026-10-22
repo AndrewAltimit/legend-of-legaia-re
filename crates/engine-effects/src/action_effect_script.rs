@@ -545,8 +545,15 @@ impl MoveFxStreak {
     /// per battle frame; no-op while unarmed.
     // REF: FUN_801E09F8 (the move-FX phase driver's counter walk)
     pub fn tick_counter(&mut self) {
+        self.tick_counter_by(1);
+    }
+
+    /// [`Self::tick_counter`] over one battle frame of `step` vsyncs, as
+    /// retail's pass makes it: `4 * step` off the word at once, floored at
+    /// zero (`lbu 0x393; sll 2; subu; bgez` at `0x801E0C1C..0x801E0C40`).
+    pub fn tick_counter_by(&mut self, step: u8) {
         if self.phase != 0 {
-            self.counter_word = self.counter_word.saturating_sub(4);
+            self.counter_word = self.counter_word.saturating_sub(4 * u16::from(step));
         }
     }
 
@@ -677,7 +684,43 @@ impl HomingSlots {
         streak_counter: u16,
         target: impl Fn(u8) -> Option<[i32; 3]>,
     ) -> Vec<HomingSpawn> {
+        self.run(record, streak_counter, 1, false, target)
+    }
+
+    /// One battle **pass** of `step` vsyncs, as retail's `FUN_801E09F8`
+    /// makes it once a battle frame: the flight advances
+    /// `(lut * speed * step) << 3 >> 15` (`mult` by the frame step byte
+    /// `0x1F800393` at `0x801E103C` / `0x801E1098`), every counter falls by
+    /// `4 * step` and floors at zero (`0x801E1110..0x801E1140`,
+    /// `0x801E17A8..0x801E17CC`), and a slot that lands in phase `2` falls
+    /// through to the phase-`3` arm on the same pass (`0x801E1338` to
+    /// `0x801E1560`), so its first countdown is that pass's.
+    /// `streak_counter` is slot `0`'s phase-`1` word as the pass found it,
+    /// before that pass's own walk ([`MoveFxStreak::tick_counter_by`]): the
+    /// arm takes the hand-over only on a pass that opens on zero
+    /// (`beq v0,zero,0x801E0CF8` at `0x801E0C14`).
+    ///
+    /// PORT: FUN_801E09F8 (the per-slot phases on retail's battle-frame cadence)
+    pub fn step_pass(
+        &mut self,
+        record: &[u8],
+        streak_counter: u16,
+        step: u8,
+        target: impl Fn(u8) -> Option<[i32; 3]>,
+    ) -> Vec<HomingSpawn> {
+        self.run(record, streak_counter, i32::from(step.max(1)), true, target)
+    }
+
+    fn run(
+        &mut self,
+        record: &[u8],
+        streak_counter: u16,
+        delta: i32,
+        landing_counts: bool,
+        target: impl Fn(u8) -> Option<[i32; 3]>,
+    ) -> Vec<HomingSpawn> {
         let mut out = Vec::new();
+        let fall = 4 * delta as i16;
         self.hits = [0; HOMING_SLOTS];
         let byte = |o: usize| record.get(o).copied().unwrap_or(0);
         let speed = i32::from(byte(0x08));
@@ -720,11 +763,11 @@ impl HomingSlots {
                 2 => {
                     s.heading = heading_to(s.pos, t);
                     let (sin, cos) = legaia_engine_system::trig::trig12(s.heading);
-                    // `(lut * speed * delta) << 3 >> 15`, delta one vsync.
-                    s.pos[2] += (i32::from(cos) * speed * 8) >> 15;
-                    s.pos[0] += (i32::from(sin) * speed * 8) >> 15;
+                    // `(lut * speed * delta) << 3 >> 15`.
+                    s.pos[2] += (i32::from(cos) * speed * delta * 8) >> 15;
+                    s.pos[0] += (i32::from(sin) * speed * delta * 8) >> 15;
                     if s.counter != 0 {
-                        s.counter = (s.counter - 4).max(0);
+                        s.counter = (s.counter - fall).max(0);
                     } else {
                         for e in list(0x12) {
                             if e != 0xFF {
@@ -739,11 +782,14 @@ impl HomingSlots {
                     }
                     if (s.pos[0] - t[0]).abs() + (s.pos[2] - t[2]).abs() <= HOMING_ARRIVAL {
                         land(s, t, record, &list, &mut out);
+                        if landing_counts && s.counter != 0 {
+                            s.counter = (s.counter - fall).max(0);
+                        }
                     }
                 }
                 3 => {
                     if s.counter != 0 {
-                        s.counter = (s.counter - 4).max(0);
+                        s.counter = (s.counter - fall).max(0);
                     } else {
                         // `0x801E1844..0x801E1A68`: the hit, then the free.
                         self.hits[i] = s.child;
@@ -1390,6 +1436,35 @@ mod tests {
         assert_eq!(h.slots[0].pos, [500, 0, 500]);
         assert_eq!(out.len(), 1, "the `+0x16` list only");
         assert_eq!(h.hits[0], 1);
+    }
+
+    /// On retail's cadence a pass moves `step` vsyncs' worth and drains
+    /// every counter `4 * step` at once: the flight's re-arm (`0x40 - 0x20`
+    /// = `32`) fires again after four step-`2` passes and one more to read
+    /// zero, not after nine one-vsync calls; the landing pass counts its
+    /// counter down once (`0x801E1338` falls into the phase-3 arm).
+    #[test]
+    fn a_pass_drains_and_moves_a_whole_frame_step() {
+        let rec = tail_fire_like(300, 8);
+        let target = [0, 0, -2000];
+        let mut h = HomingSlots::default();
+        h.seed(Some(18), (0, -300, 0), &[Some(target)], |_| 1);
+        let first = h.step_pass(&rec, 0, 2, |_| Some(target));
+        assert_eq!(first.len(), 1);
+        assert_eq!(h.slots[0].pos[2], -0x40, "two vsyncs of speed 0x20");
+        assert_eq!(h.slots[0].counter, 0x20);
+        let mut passes = 0;
+        while h.step_pass(&rec, 0, 2, |_| Some(target)).is_empty() {
+            passes += 1;
+        }
+        assert_eq!(passes, 4, "32 drains in four passes of 8, then fires");
+        // Land: the landing pass already takes 8 off the landing counter.
+        while h.slots[0].phase == 2 {
+            h.step_pass(&rec, 0, 2, |_| Some(target));
+        }
+        assert_eq!(h.slots[0].counter, 0);
+        h.step_pass(&rec, 0, 2, |_| Some(target));
+        assert_eq!(h.hits, [1, 0, 0, 0]);
     }
 
     #[test]

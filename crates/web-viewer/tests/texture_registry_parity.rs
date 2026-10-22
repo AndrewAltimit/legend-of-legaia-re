@@ -476,7 +476,7 @@ fn the_browsers_own_disc_reader_reaches_the_equipment_name_table() {
     // The two readers, side by side. They must agree byte for byte: the page
     // and the CLI label the same block from the same table or they are two
     // catalogs wearing one name.
-    let browser = legaia_web_viewer::disc::extract_scus(&image).expect("browser ISO walk");
+    let browser = legaia_web_play::disc::extract_scus(&image).expect("browser ISO walk");
     let cli = legaia_iso::iso9660::read_file_in_image(&image, "SCUS_942.54").expect("CLI ISO walk");
     drop(image);
     assert_eq!(browser, cli, "the two hosts must read the same executable");

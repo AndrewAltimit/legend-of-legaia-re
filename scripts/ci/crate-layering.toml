@@ -13,7 +13,7 @@
 #             "takes nothing but X" carries it.
 #
 # "Engine-layer" means every crates/engine-*, plus render-kernels, parity,
-# asset-viewer, studio and web-viewer. Format, tool and patcher crates are outside
+# asset-viewer, studio, web-play and web-viewer. Format, tool and patcher crates are outside
 # the layer: any kernel crate may depend on them, and none of them may depend
 # on an engine-layer crate.
 #
@@ -35,6 +35,10 @@ foreign = ["cheats", "gamedata"]
 role = "dialog pager and text balloon"
 deps = []
 
+[crates.engine-dev-menu]
+role = "the field overlay's dev-menu bodies: row model, value steps, flag editor, equip applier"
+deps = ["engine-system"]
+
 [crates.engine-vm]
 role = "window-widget, field, move and effect VMs, the actor tick"
 deps = []
@@ -44,7 +48,7 @@ role = "game-mode seat and the 28-mode driver"
 deps = ["engine-system"]
 
 [crates.engine-camera]
-role = "the shared GTE camera: build, projection, mover, shake, camera-relative glide"
+role = "the shared GTE camera: build, projection, mover, shake, camera-relative glide, distance preset"
 deps = ["engine-system"]
 
 [crates.engine-battle-vm]
@@ -53,7 +57,7 @@ deps = ["engine-camera", "engine-system"]
 
 [crates.engine-cast]
 role = "slot-B cast / summon module ticks, their camera and countdown, cast-arm kernels"
-deps = ["engine-battle-vm", "engine-camera", "engine-system"]
+deps = ["engine-battle-vm", "engine-camera", "engine-system", "render-kernels"]
 
 [crates.engine-motion-vm]
 role = "the two per-actor motion VMs"
@@ -69,7 +73,7 @@ deps = ["engine-camera", "engine-vm"]
 
 [crates.engine-ui]
 role = "renderer-agnostic draw-list builders"
-deps = ["engine-battle-vm", "engine-cast", "render-kernels"]
+deps = ["engine-battle-vm", "render-kernels"]
 dev = ["engine-camera", "engine-field"]
 
 [crates.engine-effects]
@@ -85,6 +89,7 @@ deps = [
 role = "World-free field kernels"
 deps = [
     "engine-camera",
+    "engine-dev-menu",
     "engine-dialog",
     "engine-mode",
     "engine-motion-vm",
@@ -113,8 +118,9 @@ role = "menu, title and memory-card front end"
 deps = [
     "engine-battle",
     "engine-battle-vm",
+    "engine-camera",
+    "engine-dev-menu",
     "engine-dialog",
-    "engine-field",
     "engine-minigames",
     "engine-system",
     "engine-vm",
@@ -123,6 +129,7 @@ deps = [
 [crates.engine-scene]
 role = "scene resolution and loading, environment draws, virtual filesystem"
 deps = [
+    "engine-camera",
     "engine-dialog",
     "engine-field",
     "engine-system",
@@ -167,12 +174,6 @@ items = ["battle_intro_styles::INTRO_DURATION_FRAMES"]
 reason = "the encounter session's default transition length is the battle-intro model's, which sits with its draw half"
 
 [[coupling]]
-from = "engine-menus"
-to = "engine-field"
-items = ["dev_equip_commit", "dev_menu_leaves", "dev_menu_adjust", "dev_menu_flags", "world_map_panel::{SFX_CURSOR_MOVE, dev_menu_action}", "incense_window::top_up_cooldown"]
-reason = "the equip commit and the dev menu's row kernels are field-overlay dev-menu bodies; the pause menu's equip session and the dev menu screen share them"
-
-[[coupling]]
 from = "engine-fishing"
 to = "engine-field"
 items = ["minigame_floor", "field_regions"]
@@ -188,10 +189,4 @@ reason = "the dance floor's step markers are tile actors the shared minigame flo
 from = "engine-ui"
 to = "engine-battle-vm"
 items = ["battle_party_panel", "battle_commit_log", "panel_backread_loader", "battle_value_readout", "battle_action::FlashQuad"]
-reason = "the battle HUD model and the numeral readout the draw-list builders project are defined with the battle kernels that fill them"
-
-[[coupling]]
-from = "engine-ui"
-to = "engine-cast"
-items = ["seru_magic_ticks::TheederPacket"]
-reason = "the Theeder packet the cast draw-list builder projects is defined with the PROT 0904 tick body that fills it"
+reason = "the battle HUD model and the numeral readout the draw-list builders project are defined with the battle kernels that fill them: the action SM's flash ramp stamps the readout's glyph page and the commit log stages off the cursor pose, so the model cannot move below the action SM; the edge points down a rank"

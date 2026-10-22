@@ -20,6 +20,7 @@ fn seats() -> ModuleCamSeats {
         action: 0,
         depth_raw: 0,
         caster_latch: 0,
+        victim_radius: 0,
     }
 }
 
@@ -1061,4 +1062,58 @@ fn a_summon_pre_hit_leaves_the_target_at_one_hp() {
     assert_eq!((applied, v.hp, v.hp_bar_delta), (49, 1, 49));
     assert_eq!(v.staged_anim, 3);
     assert_eq!(v.restage & 0x05, 0x05);
+}
+
+/// Mule's arm 1 waits on the side-band applier stage, not on the band timer.
+#[test]
+fn mule_arm_1_waits_on_the_sideband_stage() {
+    let mut s = seats();
+    s.band_timer = 5;
+    let mut st = ModuleCamState {
+        sideband_busy: true,
+        ..Default::default()
+    };
+    assert!(mule_direct(&mut st, 1, s).hold);
+    st.sideband_busy = false;
+    assert!(
+        !mule_direct(&mut st, 1, s).hold,
+        "the band timer alone does not hold arm 1"
+    );
+    assert_eq!(sideband_wait_arm(929), Some(1));
+}
+
+/// Mule's arm-16 exit frames a lone target on its own `+0x34` / `+0x38`
+/// and ten times its body radius, capped at `0x1800`.
+#[test]
+fn mule_arm_16_frames_a_lone_target_on_its_radius() {
+    let mut s = seats();
+    s.victim_radius = 0x100;
+    let mut st = ModuleCamState::default();
+    let shot = mule_direct(&mut st, 16, s)
+        .shot
+        .expect("arm 16 lands a cut on its pass");
+    assert_eq!(shot.tr[2], 0xA00);
+    assert_eq!(shot.focus, [0, 0, 800]);
+    s.victim_radius = 0x400;
+    let mut st = ModuleCamState::default();
+    let shot = mule_direct(&mut st, 16, s).shot.unwrap();
+    assert_eq!(shot.tr[2], 0x1800, "capped");
+}
+
+/// Mule's arm kills follow the module's parked handles.
+#[test]
+fn mule_arm_kills_follow_the_parked_handles() {
+    assert_eq!(mule_arm_kills(12), &[0x801F_917C]);
+    assert_eq!(mule_arm_kills(14).len(), 3);
+    assert!(mule_arm_kills(16).contains(&0x801F_9398));
+    assert_eq!(mule_arm_loop_ends(16), &[0x801F_9468, 0x801F_95A8]);
+    assert!(mule_arm_kills(15).is_empty());
+}
+
+/// Palma's arm 3 drops the stage once its word passes `scalar << 7`.
+#[test]
+fn palma_arm_3_drops_the_stage_halfway() {
+    assert_eq!(palma_stage_byte(3, (SPEED_SCALAR << 7) - 1), None);
+    assert_eq!(palma_stage_byte(3, SPEED_SCALAR << 7), Some(3));
+    assert_eq!(palma_stage_byte(4, SPEED_SCALAR << 8), None);
 }

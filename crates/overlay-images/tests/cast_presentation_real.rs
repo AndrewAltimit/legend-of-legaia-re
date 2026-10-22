@@ -114,6 +114,34 @@ fn decode_every_module() {
     // PROT 0905's arm 2 rise and arm 4 pair - the fades Vera's director
     // carries by hand (`cast_module_camera::seru::VERA_RISE_FADE` /
     // `VERA_CUT_FADES`).
+    // PROT 0923's arm 11 walks its handle array in two counted loops
+    // (`0x801F7C5C..0x801F7CB0`): twelve slots from `0x801FA478`, eight from
+    // `0x801FA4B4`, among them the blue and yellow held fades arm 10 parked
+    // at `0x801FA4C8` / `0x801FA4CC`. Its arm 4 parks a seated part.
+    let gilium = &by_entry[&923];
+    let kills: BTreeSet<u32> = gilium
+        .arm_sites(None, 11)
+        .filter_map(|s| match s.call {
+            PresentationCall::ActorKill {
+                slot: cast_presentation::HandleSlot::Abs(a),
+            } => Some(a),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(kills.len(), 20, "arm 11 kills {kills:X?}");
+    assert!(kills.contains(&0x801F_A4C8) && kills.contains(&0x801F_A4CC));
+    assert!(
+        !kills.contains(&0x801F_A4A8),
+        "slots 12..14 are the stager's"
+    );
+    assert!(gilium.arm_sites(None, 4).any(|s| matches!(
+        s.call,
+        PresentationCall::PartStore {
+            slot: cast_presentation::HandleSlot::Abs(0x801F_A478),
+            ..
+        }
+    )));
+
     let vera = &by_entry[&905];
     assert_eq!(
         fades_of(vera, 2),

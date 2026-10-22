@@ -601,3 +601,29 @@ fn psx_blend_append_semi_tail_words_all_opaque_is_identity() {
     assert_eq!(ranges, [(6, 0); 4]);
     assert!(prims.is_empty());
 }
+
+/// Two prims at one depth reached through two matrix chains share a
+/// bucket: the key is snapped to a whole `SZ`, so a thousandth of float
+/// noise does not reorder them, and the bucket's LIFO order puts the first
+/// submitted on top (`opdeene`'s caption face over its shadow).
+#[test]
+fn psx_blend_snapped_keys_share_a_bucket() {
+    assert_eq!(psx_blend::snap_depth_key(791.999), 792.0);
+    assert_eq!(psx_blend::snap_depth_key(792.0), 792.0);
+    assert_eq!(psx_blend::snap_depth_key(10.6), 11.0);
+    assert!(psx_blend::snap_depth_key(f32::NAN).is_nan());
+    let entry = |key: f32, seq: u32, mode: u8| psx_blend::BlendListEntry {
+        key: psx_blend::snap_depth_key(key),
+        seq,
+        untextured: false,
+        draw_index: seq,
+        mode,
+        first_index: seq * 3,
+    };
+    // Face (additive) first, shadow (subtractive) second, the shadow's key
+    // a hair nearer.
+    let mut list = vec![entry(792.0, 0, 1), entry(791.999, 1, 2)];
+    psx_blend::sort_blend_list(&mut list);
+    let order: Vec<u8> = list.iter().map(|e| e.mode).collect();
+    assert_eq!(order, vec![2, 1], "shadow first, face on top");
+}

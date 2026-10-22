@@ -13,7 +13,7 @@ impl World {
     /// Mirrors the retail aggregator's bitfield pass: each member's record
     /// `+0xF4` 4×u32 field is zeroed and re-derived from the eight equipment
     /// slots ([`legaia_engine_battle::accessory_passives::AccessoryPassives::bits_for_equipment`]),
-    /// then all members' words OR into the global mask (the engine's
+    /// then all three records' words - joined or not - OR into the global mask (the engine's
     /// [`legaia_engine_menus::party_state::PartyState::party_ability_mask`], mirroring `DAT_80074358`). The rebuilt
     /// word 0 also lands in [`legaia_engine_menus::party_state::PartyState::character_ability_bits`] - the mask the
     /// MP-cost consumers read (`Self::build_battle_spell_session` /
@@ -34,20 +34,21 @@ impl World {
             return;
         }
         let pc = (self.party.party_count.min(3) as usize).min(self.party.roster.members.len());
-        let mut own = [[0u32; ABILITY_WORDS]; 3];
+        // Retail walks the three character records `0x80084708 + k*0x414`,
+        // `k = 0..3` (`slti v0,s1,0x3` / `addiu s3,s3,0x414` at
+        // `0x80042D8C..0x80042D94`), with no active-member test: a record
+        // that has left the party is still rebuilt, and its passives still
+        // OR into the global mask (`0x80042D38..0x80042D88`).
+        let records = self.party.roster.members.len().min(3);
+        let mut by_record = [[0u32; ABILITY_WORDS]; 3];
         let mut global = [0u32; ABILITY_WORDS];
-        for (slot, own_words) in own.iter_mut().enumerate().take(pc) {
-            // `slot` is the battle ordinal; the equipment that sources the
-            // bits belongs to the character occupying it.
-            let rslot = self.party_roster_slot(slot);
-            let Some(member) = self.party.roster.members.get(rslot) else {
-                continue;
-            };
-            let equip = member.equipment().slots;
+        for (rslot, own_words) in by_record.iter_mut().enumerate().take(records) {
+            let equip = self.party.roster.members[rslot].equipment().slots;
             let words = self.tables.accessory_passives.bits_for_equipment(&equip);
             // Rebuild the record-side bitfield (retail zeroes `+0xF4..+0x103`
-            // and re-derives it from equipment on every pass). Bytes past the
-            // four words stay zero - passive indices live below 0x40.
+            // at `0x800425EC..0x800425F8` and re-derives it from the eight
+            // equipment bytes `+0x196..`, `0x80042620..0x8004270C`). Bytes
+            // past the four words stay zero - passive indices live below 0x40.
             let mut bytes = [0u8; legaia_save::ABILITY_BITS_LEN];
             for (w, word) in words.iter().enumerate() {
                 bytes[w * 4..w * 4 + 4].copy_from_slice(&word.to_le_bytes());
@@ -64,6 +65,24 @@ impl World {
                 *g |= *w;
             }
             *own_words = words;
+        }
+        // `slot` is the battle ordinal; the bits belong to the character
+        // occupying it.
+        let mut own = [[0u32; ABILITY_WORDS]; 3];
+        for (slot, own_words) in own.iter_mut().enumerate().take(pc) {
+            let rslot = self.party_roster_slot(slot);
+            if let Some(words) = by_record.get(rslot) {
+                *own_words = *words;
+            } else if let Some(member) = self.party.roster.members.get(rslot) {
+                // A record past the three the pass walks keeps whatever its
+                // `+0xF4` words already hold.
+                let bytes = member.ability_bits();
+                for (w, word) in own_words.iter_mut().enumerate() {
+                    if let Some(b) = bytes.get(w * 4..w * 4 + 4) {
+                        *word = u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+                    }
+                }
+            }
         }
         self.party.party_ability_mask = global;
         // Effective per-member mask for the u32 consumers: own bits plus the

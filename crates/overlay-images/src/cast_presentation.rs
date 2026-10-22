@@ -196,6 +196,10 @@ pub enum PresentationCall {
     /// The actor parked in `slot` is killed (`lw; lw +0x10; ori 0x8; sw`
     /// on its flag word - the done bit the actor list drops it on).
     ActorKill { slot: HandleSlot },
+    /// The effect part a `FUN_80021B04` / `FUN_80050ED4` call seated off
+    /// spawn record `record` is parked in `slot` (`sw v0, slot`), the handle
+    /// a later [`Self::ActorKill`] of that slot halts it by.
+    PartStore { record: u32, slot: HandleSlot },
     /// A store into the colour-wash block (`ctx[+0x27A..+0x286]`,
     /// `ctx[+0x32A]`, `ctx[+0x32C]`), by field offset and width in bytes.
     WashField {
@@ -881,6 +885,8 @@ enum V {
     CtxTaint(u16),
     /// The fade actor a `FUN_80024E80` call at this VA returned.
     Handle(u32),
+    /// The effect part a spawn call seated off this record.
+    PartHandle(u32),
     /// A word read out of a handle slot: an actor pointer.
     SlotPtr(HandleSlot),
     /// That actor's flag word `+0x10`, possibly with bits or-ed in.
@@ -1216,6 +1222,16 @@ fn site_call(i: &Ins, t_before: &Tracker, t_call: &Tracker) -> Option<Presentati
                     return Some(PresentationCall::FadeStore { fade, slot });
                 }
             }
+            V::PartHandle(record) => {
+                let slot = match base {
+                    V::Ctx => Some(HandleSlot::Ctx(i.imm())),
+                    V::C(c) => Some(HandleSlot::Abs(c.wrapping_add(i.simm() as u32))),
+                    _ => None,
+                };
+                if let Some(slot) = slot {
+                    return Some(PresentationCall::PartStore { record, slot });
+                }
+            }
             V::ActorFlags(slot, bits)
                 if bits & 8 != 0 && i.imm() == 0x10 && base == V::SlotPtr(slot) =>
             {
@@ -1300,9 +1316,22 @@ fn scan_range(
             {
                 out.push((ci.va, call));
             }
+            let record = match t.r[6] {
+                V::C(rec) => Some(rec),
+                _ => None,
+            };
             t.call_clobber();
             if ci.is_jal() && ci.jump_target() == FADE_SPAWN {
                 t.r[2] = V::Handle(ci.va);
+            }
+            if ci.is_jal()
+                && matches!(
+                    ci.jump_target(),
+                    crate::summon_overlay::SPAWN_HELPER | crate::summon_overlay::POOL_SPAWN_HELPER
+                )
+                && let Some(rec) = record
+            {
+                t.r[2] = V::PartHandle(rec);
             }
         }
         if i.is_jal() || i.is_jalr() {
@@ -1311,10 +1340,60 @@ fn scan_range(
             && let Some(call) = site_call(&i, &before, &t)
         {
             out.push((va, call));
+            if let PresentationCall::ActorKill {
+                slot: HandleSlot::Abs(a),
+            } = call
+            {
+                for slot in kill_loop_slots(img, va, &t, a) {
+                    out.push((va, PresentationCall::ActorKill { slot }));
+                }
+            }
         }
         va += 4;
     }
     out
+}
+
+/// The further handles a kill at `va` reaches when it sits in a counted loop
+/// over a handle array: `sltiu rX, rC, N` / `bne rX, $zero, <loop head at or
+/// before va>` with `addiu rP, rP, step` in the delay slot, a few
+/// instructions on. PROT 0923's arms walk its parked handles this way
+/// (`0x801F7C5C..0x801F7CB0`: twelve from `0x801FA478`, then eight from
+/// `0x801FA4B4`), fades among the parts, so a straight-line walk that sees
+/// only the first slot leaves the rest of the array alive. The counter's
+/// value at the compare comes off the tracker run on from the kill; an
+/// unknown counter adds nothing.
+fn kill_loop_slots(img: &Image, va: u32, after_kill: &Tracker, first: u32) -> Vec<HandleSlot> {
+    let mut t = after_kill.clone();
+    let mut at = va + 4;
+    while at <= va + 16 {
+        let Some(i) = img.ins(at) else { break };
+        if i.op() == 0x0B {
+            let (Some(b), Some(d)) = (img.ins(at + 4), img.ins(at + 8)) else {
+                break;
+            };
+            let head = b.branch_target();
+            let loops = b.op() == 0x05
+                && b.rs() == i.rt()
+                && b.rt() == 0
+                && head <= va
+                && va - head <= 0x40;
+            let step = (d.op() == 0x09 && d.rs() == d.rt()).then(|| d.simm());
+            let (true, Some(step), V::C(n)) = (loops, step, t.r[i.rs()]) else {
+                break;
+            };
+            // `n` is the counter as the compare sees it on the first pass;
+            // the loop runs while it is below the bound.
+            let bound = u32::from(i.imm());
+            let more = bound.saturating_sub(n);
+            return (1..=more.min(0x40))
+                .map(|k| HandleSlot::Abs(first.wrapping_add((step as u32).wrapping_mul(k))))
+                .collect();
+        }
+        t.exec(&i);
+        at += 4;
+    }
+    Vec::new()
 }
 
 /// Every candidate site VA in `[lo, hi)`: a `jal` to one of the helpers, or a
@@ -1467,6 +1546,15 @@ pub fn decode(bytes: &[u8], own_end: usize) -> CastPresentation {
             // An arm entered through a `j` stub runs the stub's delay slot
             // and then the code at its target.
             let mut seed = s2.clone();
+            // The register the switch loaded the phase byte into still holds
+            // the arm's own phase on entry: PROT 0917 / 0928 store it as the
+            // stage byte (`sb s1,0x278(a1)` at `0x801F6E90`, `sb a1,0x278(v0)`
+            // at `0x801F6F1C`).
+            if let Some(li) = img.ins(d.load)
+                && li.op() == 0x24
+            {
+                seed.r[li.rt()] = V::C(u32::from(phase));
+            }
             let entry = match img.ins(entry) {
                 Some(i) if i.is_j() => {
                     if let Some(d) = img.ins(entry + 4) {

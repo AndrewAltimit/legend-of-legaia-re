@@ -24,6 +24,7 @@ rfd.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml = { workspace = true, features = ["display"] }
+winit.workspace = true
 legaia-actor-formats.workspace = true
 legaia-art.workspace = true
 legaia-container-formats.workspace = true

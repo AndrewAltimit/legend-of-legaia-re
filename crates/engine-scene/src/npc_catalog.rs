@@ -9,7 +9,7 @@
 //! already-built [`SceneResources`] (see `docs/subsystems/script-vm.md`
 //! § placement header and `docs/formats/anm.md` § per-scene bundle).
 //!
-//! Shared by the browser NPC page + play page (`web-viewer::field_npc` wraps
+//! Shared by the browser NPC page + play page (`web-play::field_npc` wraps
 //! this with its render caches) and the native `legaia-engine export-glb`
 //! NPC exporter (`legaia_engine_export::glb_export`).
 
