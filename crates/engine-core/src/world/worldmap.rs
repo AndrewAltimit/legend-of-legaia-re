@@ -1296,7 +1296,13 @@ impl World {
             self.face_field_npc(slot);
             return;
         }
-        if self.world_map.entity_positions.is_empty() {
+        // The rest is the simplified-dialogue fallback: an NPC entity's inline
+        // text, keyed to its static spawn tile. With the runner on, the probe
+        // above is the only talk path, as in retail - a placement whose spawn
+        // section parked it in the hide box is not there to be talked to, and
+        // one its spawn seated elsewhere (`map02` `P1[6]`'s `23 53 49`) is
+        // found at that seat.
+        if self.toggles.use_vm_dialogue || self.world_map.entity_positions.is_empty() {
             return;
         }
         let Some(slot) = self.player_actor_slot else {

@@ -505,6 +505,11 @@ fn signboard(session: &NativeSession) -> Signboard {
 /// probe (64 units ahead, a ±72 box) finds it. `false` when none of the four
 /// cardinal approaches puts the board in the probe.
 fn seat_facing(session: &mut NativeSession, board: &Signboard) -> bool {
+    seat_facing_slot(session, board.slot, board.pos)
+}
+
+/// [`seat_facing`] for any placement `slot` standing at `pos`.
+fn seat_facing_slot(session: &mut NativeSession, slot: u8, pos: (i16, i16)) -> bool {
     let world = &mut session.host.world;
     let Some(p) = world.player_actor_slot else {
         return false;
@@ -512,10 +517,10 @@ fn seat_facing(session: &mut NativeSession, board: &Signboard) -> bool {
     for (dx, dz) in [(0i16, -96i16), (0, 96), (-96, 0), (96, 0)] {
         for heading in [0i16, 0x400, 0x800, 0xC00] {
             let a = &mut world.actors[p as usize];
-            a.move_state.world_x = board.pos.0 + dx;
-            a.move_state.world_z = board.pos.1 + dz;
+            a.move_state.world_x = pos.0 + dx;
+            a.move_state.world_z = pos.1 + dz;
             a.move_state.render_26 = heading;
-            if world.field_interact_probe_slot() == Some(board.slot) {
+            if world.field_interact_probe_slot() == Some(slot) {
                 world.world_map.last_tile = None;
                 return true;
             }
@@ -928,4 +933,71 @@ fn save_load_on_an_overworld_label_resumes_in_world_map_mode() {
         .expect("enter_field_live_from_save town01");
     assert_ne!(mode, SceneMode::WorldMap);
     eprintln!("[ok] map03 save resumes in WorldMap; town01 in {mode:?}");
+}
+
+/// Every overworld talk placement standing on the map at entry talks through
+/// its own record on the action button, at the seat the record put it on.
+/// `map02` `P1[6]` (a direction sign) is the case: its spawn section seats it
+/// with `23 xb zb`, while its static spawn is the off-map hide box - which is
+/// where the simplified overworld talk looked for it, so the sign could not
+/// be read at all.
+#[test]
+fn world_map_seated_talk_placements_run_their_records() {
+    /// The off-map hide box a parked placement spawns in (tile `0x7F`).
+    const PARKED: (i16, i16) = (0x7F * 128 + 0x40, 0x7F * 128 + 0x40);
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let mut talked = 0usize;
+    for scene in ["map01", "map02", "map03"] {
+        let probe = open_world_map_disc(scene).expect("disc session");
+        let npcs = &probe.host.world.npcs;
+        let mut seated: Vec<(u8, (i16, i16))> = npcs
+            .dialog
+            .keys()
+            .filter(|s| npcs.dialog_prologue.contains_key(s))
+            .filter_map(|s| npcs.positions.get(s).map(|p| (*s, *p)))
+            .filter(|(_, p)| *p != PARKED)
+            .collect();
+        seated.sort_unstable();
+        drop(probe);
+        for (slot, pos) in seated {
+            let mut session = open_world_map_disc(scene).expect("disc session");
+            assert!(
+                seat_facing_slot(&mut session, slot, pos),
+                "[{scene}] P1[{slot}] at {pos:?}: no approach puts it in the action probe"
+            );
+            session.host.world.set_pad(0);
+            session.host.tick().expect("tick");
+            let mut boxed = false;
+            let mut ended = false;
+            for f in 0..900 {
+                let pad = if f % 6 == 0 {
+                    PadButton::Cross.mask()
+                } else {
+                    0
+                };
+                session.host.world.set_pad(pad);
+                session.host.tick().expect("tick");
+                let w = &session.host.world;
+                if w.dialog.inline.as_ref().is_some_and(|r| r.panel.is_some()) {
+                    boxed = true;
+                }
+                if boxed && !w.dialogue_owns_input() {
+                    ended = true;
+                    break;
+                }
+            }
+            eprintln!("[{scene}] P1[{slot}] at {pos:?}: boxed={boxed} ended={ended}");
+            assert!(boxed, "[{scene}] P1[{slot}]: the record opens its box");
+            assert!(ended, "[{scene}] P1[{slot}]: the conversation ends");
+            assert_eq!(session.host.world.mode, SceneMode::WorldMap);
+            talked += 1;
+        }
+    }
+    assert!(
+        talked > 0,
+        "no seated overworld talk placement was exercised"
+    );
 }
