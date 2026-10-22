@@ -296,7 +296,7 @@ pub fn cmd_spu(save: &Path, all: bool) -> Result<()> {
         println!();
     }
 
-    println!("  voices (idx: active reverb vol_l vol_r pitch):");
+    println!("  voices (idx: active reverb vol_l vol_r pitch adsr phase env):");
     let voices = spu.voices();
     for (i, v) in voices.iter().enumerate() {
         let active = v.is_active();
@@ -305,12 +305,19 @@ pub fn cmd_spu(save: &Path, all: bool) -> Result<()> {
         }
         let rev = reverb_mask.map(|m| m & (1 << i) != 0).unwrap_or(false);
         println!(
-            "    {i:>2}: {} {} vol=({:>6},{:>6}) pitch={}",
+            "    {i:>2}: {} {} vol=({:>6},{:>6}) pitch={} adsr={} phase={} env={}",
             if active { "ON " } else { "off" },
             if rev { "REV" } else { "-  " },
             v.vol_left.unwrap_or(0),
             v.vol_right.unwrap_or(0),
             v.pitch.map(|p| format!("0x{p:04X}")).unwrap_or_default(),
+            v.adsr_control
+                .map(|a| format!("0x{a:08X}"))
+                .unwrap_or_default(),
+            v.adsr_phase.map(|p| p.to_string()).unwrap_or_default(),
+            v.adsr_env_level
+                .map(|e| format!("0x{e:04X}"))
+                .unwrap_or_default(),
         );
     }
     Ok(())

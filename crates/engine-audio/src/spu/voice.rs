@@ -325,10 +325,10 @@ mod tests {
     /// drain the voice during a streaming-loop test.
     fn hold_forever_adsr() -> AdsrConfig {
         AdsrConfig {
-            sustain_level: 0x8000,   // sustain at peak
+            sustain_level: 0x8000,   // SL 15: (15 + 1) * 0x800
             sustain_decrease: false, // not strictly needed at peak
             sustain_shift: 0x1F,     // huge shift -> tiny step
-            decay_shift: 0,
+            decay_shift: 0xF,        // one -8 step off the peak, then sustain
             ..AdsrConfig::default()
         }
     }

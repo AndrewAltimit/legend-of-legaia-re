@@ -1684,6 +1684,15 @@ tests named above run it over real scores.
 | [`vab_bind::VabBank`](../../crates/engine-audio/src/vab_bind.rs) | Bridges `legaia_vab::VabReport` into the SPU: `upload(spu, alloc, report, buf)` drops every VAG body into SPU RAM through the allocator - resolving the body origin off the stream first, see [`vab.md`](../formats/vab.md#two-wrongs-that-cancel-and-the-six-entries-where-they-do-not) - and `play_note(spu, voice, prog, note, velocity)` translates a MIDI key into voice config + key-on. Pitch is the [key-on pitch law](#the-key-on-pitch-law---note-against-the-tones-center); key-on volume and pans are the `FUN_80067550` chain ([above](#voice--mixer-audible-output-critical-path)). |
 | [`AudioOut`](../../crates/engine-audio/src/lib.rs) | Owns a single cpal output stream that drains the `Spu` at 44.1 kHz and resamples to the host device rate (linear). Engines call `with_spu(|spu| ...)` from outside the audio thread to push voice attributes / key-on masks. |
 
+Decay ends on the step that takes the envelope below `(SL + 1) * 0x800`
+(`level >> 11 <= SL`), and the envelope keeps the level that step left: it is
+not raised to the sustain level. The mednafen save-state library pins it -
+every sustaining voice sits one partial step below its line: `0x7FF7` for the
+dominant `0x80FF` tones (SL 15, one `-8` decay step off the `0x7FFF` peak),
+`0x3FFF` for SL 7, `0x4FFE` for SL 9, `0x57FC` for SL 10. Every Legaia tone
+that sounds in the library decays at shift `11..=15`, so the overshoot is at
+most a few units.
+
 Not modelled:
 
 - Pitch modulation, noise, FM. None of these are used by Legaia (verified
