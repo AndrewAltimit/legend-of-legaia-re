@@ -1070,6 +1070,17 @@ impl BattleDrive {
         // arm `0x14` to the poll, its walk is held where it stands.
         world.battle.approach_hold =
             (steer.park && ours && (0x14..=want).contains(&state)).then(|| engine_seat(seat, pc));
+        // ... and in the poll its walk clip is the dead one: the flinch's
+        // stale `+0x1DC` bit 2 turns the Move clip's natural end into idle
+        // (`sb zero,0x1da` at `0x80047B44`), so the park shows the idle loop,
+        // not the walk.
+        if steer.park
+            && ours
+            && state == want
+            && let Some(a) = world.actors.get_mut(usize::from(engine_seat(seat, pc)))
+        {
+            a.battle.queued_anim = 0;
+        }
         // The capture's counterattack HUD, on the frame the engine holds its
         // state ([`ActionSteer::message`] / [`ActionSteer::plate_cleared`]).
         if ours && state == want {
