@@ -45,6 +45,7 @@ pub mod field_anim;
 pub mod field_audio_release;
 pub mod field_carrier_state;
 pub mod field_channels;
+pub mod field_elevation;
 pub mod field_events;
 pub mod field_lit_mesh;
 pub mod field_overlay;

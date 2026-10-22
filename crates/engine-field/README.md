@@ -108,6 +108,8 @@ a dependent crate.
 
 - **Field-overlay kernels** -
   `field_regions` (the `.MAP` region-table scan and zone queries),
+  `field_elevation` (the `.MAP` kind-2 floor-elevation override records
+  the floor sampler reads for ramp and stair tiles),
   `field_player_clip`, `field_warp_tile`, `field_actor_reflect`,
   `field_actor_timers` (the shutter envelope, the eased move and the floor
   ladder; the shutter's two quads are `render-kernels::shutter_bars`),

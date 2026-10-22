@@ -3,6 +3,7 @@
 //! queries.
 
 use super::*;
+use legaia_engine_field::field_elevation::CELL_ELEVATION_OVERRIDE;
 use legaia_engine_mode::mode::SceneMode;
 
 impl World {
@@ -93,11 +94,9 @@ impl World {
     /// PORT: FUN_801D5630 (kind 2) / FUN_801D5AE0
     pub fn load_field_elevation_overrides(&mut self, primary: &[u8], fallback: &[u8]) {
         self.terrain.elevation_overrides =
-            crate::world::field_elevation::parse_elevation_overrides(primary)
+            legaia_engine_field::field_elevation::parse_elevation_overrides(primary)
                 .into_iter()
-                .chain(crate::world::field_elevation::parse_elevation_overrides(
-                    fallback,
-                ))
+                .chain(legaia_engine_field::field_elevation::parse_elevation_overrides(fallback))
                 .collect();
     }
 
@@ -238,7 +237,7 @@ impl World {
     ///
     /// - **Ramp / stair tiles** (bit set) do **not** interpolate at all. Their
     ///   height is the *flat mean* of the four corner tiers (`sum >> 2`) plus
-    ///   the tile's kind-2 [`ElevationOverride`] delta - a whole-tile step plus
+    ///   the tile's kind-2 [`ElevationOverride`](legaia_engine_field::field_elevation::ElevationOverride) delta - a whole-tile step plus
     ///   a per-64-unit-sub-cell step, i.e. an authored staircase. A tile with
     ///   the bit but no record keeps just the mean. This is the model Rim Elm's
     ///   shore ramps are built from: their collision nibbles are sea-level `0`,
@@ -304,7 +303,7 @@ impl World {
         // Ramp / stair tile: flat tile mean + the authored elevation override.
         if self.field_tile_has_elevation_override(tile_x, tile_z) {
             let mean = (l00 + l01 + l10 + l11) >> 2;
-            let delta = crate::world::field_elevation::lookup_elevation_override(
+            let delta = legaia_engine_field::field_elevation::lookup_elevation_override(
                 &self.terrain.elevation_overrides,
                 tile_x as u8,
                 tile_z as u8,

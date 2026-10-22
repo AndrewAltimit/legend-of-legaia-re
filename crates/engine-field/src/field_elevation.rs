@@ -3,9 +3,8 @@
 //!
 //! A field tile's floor height normally comes from the collision grid's
 //! low-nibble elevation tier, bilinearly interpolated across the tile's four
-//! corner tiles (see [`World::sample_field_floor_height`]
-//! (crate::world::World::sample_field_floor_height)). **Ramps and staircases
-//! do not use that surface at all.** Their tiles set bit
+//! corner tiles (engine-core's `World::sample_field_floor_height`). **Ramps
+//! and staircases do not use that surface at all.** Their tiles set bit
 //! [`CELL_ELEVATION_OVERRIDE`] (`0x800`) in the object-grid cell word
 //! (`.MAP` `+0x8000`), and for those tiles retail replaces the whole bilinear
 //! branch with
