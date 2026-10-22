@@ -1285,26 +1285,31 @@ between holds:
   display lag back.
 
 Measured with `LEGAIA_BATTLE_FRAME_CADENCE=1` against the per-vsync run of
-the same build, the retail-disc rows that rise are `theeder_summon_mid_cast`
-`image` `.874` to `.996`, `zeto_call_wave_mid_cast` `.960` to `.973`,
-`horn_summon_mid_cast` `.979` to `.984`, and `camera` on
+the same build over every battle state, the retail-disc rows that rise are
+`theeder_summon_mid_cast` `image` `.867` to `.996`, `zeto_call_wave_mid_cast`
+`.960` to `.973`, `horn_summon_mid_cast` `.979` to `.984`, and `camera` on
 `gimard_burning_attack` (`.963` to `.999`), `vera_summon_mid_cast` and
-`aluru_summon_mid_cast`. Over the retail-disc rows the falls sum to about
-`.19` against `.19` of rises, and the falls are not yet shown to be
-retail's, so the toggle stays off:
+`aluru_summon_mid_cast`. Over the retail-disc rows the `image` falls sum to
+`.170` against `.150` of rises (`camera` nets `+.035`), and the falls are not
+yet shown to be retail's, so the toggle stays off:
 
 | Capture | Falls | Cause |
 |---|---|---|
-| `battle_gimard_tail_fire_a`, `battle_gimard_tail_fire_b` | `image` `.822` to `.784`, `.807` to `.789` | the flight runs late on both cadences: at the gate the engine's flame head stands some `300` units short of retail's, where retail's pool already holds flame children at the target band that neither engine run has; the cadence's head stands a further pass short |
-| `gimard_burning_attack` | `image` `.786` to `.763` | the fire cloud stands detached from the mouth; the camera itself lands (`.999`) |
-| `rim_elm_gimard_seru_capture_before` | `image` `.971` to `.953` | the frames differ in ground blocks at the tolerance's edge: the two cadences' cameras stand within a unit of each other, both with focus `z` `1102` against retail's `1124` |
+| `gimard_burning_attack` | `image` `.817` to `.783` | the fire cloud stands detached from the mouth: the breath's youngest parts are missing at the jaw, where retail's frame holds them; the camera itself lands (`.999`) |
+| `battle_gimard_tail_fire_a`, `battle_gimard_tail_fire_b` | `image` `.925` to `.915`, `.897` to `.870` | the flight's flame children stand a pass further along than retail's at the gate |
 | `noa_levelup_banner` | `image` `.962` to `.945` | the posing bodies' blocks; on both cadences the Results script's `TR.y` (`-5 * actor[+0x3E]` plus the accumulator term) reads Vahn's display height at `-191` where retail's reads `-183` |
-| `freed_summon_mid_cast`, `juggernaut_summon_mid_cast`, `gimard_summon_start`, `gizam_summon_mid_cast` | `image` by `.004` to `.016` | the caster's body still moves some `7` units a pass where retail's has nearly stopped (Juggernaut's body `64` beside focus `63`), and case `0x12`'s chase on the cadence trails one pass of it: at the RAM's gate the focus `x` stands at `59` (per vsync `61`); the frozen ambient is retail's (`0x70`) only on this cadence |
+| `freed_summon_mid_cast`, `juggernaut_summon_mid_cast`, `gimard_summon_start`, `gizam_summon_mid_cast` | `image` `.954` to `.938`, `.999` to `.988`, `.989` to `.979`, `.957` to `.953` | the summon close-up's focus: on the cadence case `0x12` frames the body pair the last pass drew, as retail's does, but the engine's body still moves some `7` units a pass on clip `9`'s last keyframes where retail's has nearly stopped (Juggernaut's endpoint `64` beside its live `63`, the engine's `59`); the frame lands two or three pixels off. Freed's frame also stands on the flash age the pass grid offers (`22` against `23`), and one vsync either way loses a fifth of the blocks |
+| `battle_melee_hit_spark` | `image` `.758` to `.746` | the hit's spark and the swing's ghosts a pass on |
 | `cort_guilty_cross_mid_cast`, `cort_evolved_ultra_charge_mid_cast` | `image` `.961` to `.952`, `.894` to `.888` | the capture band's drifts and holds land a few vsyncs off retail's at the gate |
+| `rim_elm_gimard_seru_capture_before`, `rim_elm_gimard_victory` | `image` `.981` to `.975`, `.891` to `.887` | ground blocks at the tolerance's edge |
+
+On the patched-disc rows `battle_gaza2_park_0x19` and
+`battle_gaza2_park_0x19_target_vahn` lose their frame: the image child's
+drive parks in `0x5A` short of the phase on the cadence.
 
 Taking the displayed frame (the gate's tick less the two-frame display lag)
-on the cadence does not recover them: the Tail Fire pair falls to `.721` and
-`.725`, and on the replayed casts the summon flash moves off retail's
+on the cadence does not recover them: the Tail Fire pair falls further, and
+on the replayed casts the summon flash moves off retail's
 (`juggernaut_summon_mid_cast` `.788`, `freed_summon_mid_cast` `.023`).
 
 ### Screen shake
