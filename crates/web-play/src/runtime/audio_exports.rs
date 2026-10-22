@@ -2,6 +2,35 @@
 
 use super::*;
 
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::*;
+
+    /// The title theme starts through the session's `start_title_bgm` on the
+    /// page's headless director, twice in a row (the stop ahead of the start
+    /// lets a re-opened title restart it).
+    #[test]
+    fn play_title_bgm_starts_the_title_theme_through_the_session() {
+        let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+            return;
+        };
+        let Ok(bytes) = std::fs::read(&disc) else {
+            eprintln!("[skip] disc unreadable (disc-gated)");
+            return;
+        };
+        let mut rt = LegaiaRuntime::new();
+        rt.load_disc(bytes, String::new()).expect("load_disc");
+        assert!(rt.play_title_bgm(), "the title theme starts");
+        assert!(rt.play_title_bgm(), "and starts again after its own stop");
+        let id = legaia_engine_system::music_labels::TITLE_THEME_BGM_ID;
+        assert_eq!(
+            rt.scene_host.director().and_then(|d| d.last_started),
+            Some(id)
+        );
+    }
+}
+
 #[wasm_bindgen]
 impl LegaiaRuntime {
     /// Attempt to start the WebAudio backend. Must be called from a user-gesture
@@ -70,6 +99,9 @@ impl LegaiaRuntime {
     /// outlives the battle. `false` when audio is down or the disc entry
     /// doesn't resolve - the stop still ran, leaving silence rather than
     /// the stale track.
+    ///
+    /// The start is the session's (`BootSession::start_title_bgm`, the
+    /// native window's call too); only the stop ahead of it is this page's.
     pub fn play_title_bgm(&mut self) -> bool {
         use legaia_engine_scene_host::scene_host::BgmDirector;
         let id = legaia_engine_system::music_labels::TITLE_THEME_BGM_ID;
@@ -77,15 +109,10 @@ impl LegaiaRuntime {
             return false;
         };
         d.stop();
-        let Some(Ok(Some(entry))) = self.scene_host.host().map(|h| h.music_bank_entry_bytes(id))
-        else {
+        let Some(session) = self.scene_host.session_mut() else {
             return false;
         };
-        let Some(d) = self.scene_host.director_mut() else {
-            return false;
-        };
-        d.start_owned_vab(id, &entry);
-        d.last_started == Some(id)
+        session.start_title_bgm() && session.bgm.as_ref().and_then(|d| d.last_started) == Some(id)
     }
 
     /// Set the BGM output gain in page-slider units: `1.0` is the page
