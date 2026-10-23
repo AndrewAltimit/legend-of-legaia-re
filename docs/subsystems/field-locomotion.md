@@ -1510,7 +1510,7 @@ All three default to 0, so headless hosts keep the identity remap. A host that r
 Two non-retail, opt-in knobs (play-window keybinds, persisted in `legaia-options.toml`):
 
 - **Camera distance** (`Camera::distance`, presets retail / far / farther; `T` cycles) - a framing scale on the follow camera's eye-back depth that never feeds the simulation. The engine-core default stays `retail` so oracle / replay paths are bit-identical; the windowed host defaults to `far`.
-- **Precise movement** (`World::locomotion.precise_movement`; `R` toggles, default off) - swaps the quantised remap for a continuous decode (`decode_field_direction_precise`): the azimuth rotates the screen vector at full angular resolution, key diagonals walk true 45-degree vectors at normalised speed (no x0.75 cut), and a deflected analog stick (`InputState::lstick`) passes its angle through. The step still routes through the same 2-unit per-axis collision probes (`advance_with_collision_vector`, Z before X per sub-step), with a sub-step remainder carried across frames.
+- **Free-angle movement** (`World::locomotion.precise_movement`; `R` toggles, default off) - swaps the quantised remap for a continuous decode (`decode_field_direction_precise`): the azimuth rotates the screen vector at full angular resolution, key diagonals walk true 45-degree vectors at normalised speed (no x0.75 cut), and a deflected analog stick (`InputState::lstick`) passes its angle through. The step still routes through the same 2-unit per-axis collision probes (`advance_with_collision_vector`, Z before X per sub-step), with a sub-step remainder carried across frames.
 
 ## Open
 

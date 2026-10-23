@@ -100,13 +100,10 @@ impl PlayWindowApp {
     }
 
     /// The hotkey help panel: every host hotkey with its key and current
-    /// state, read off the shared table so a new hotkey lists itself. Stage
-    /// pixels.
+    /// state, read off the shared table so a new hotkey lists itself, laid
+    /// out by [`help_panel_layout`]. Stage pixels.
     fn hotkey_help_stage_draws(&self) -> Vec<TextDraw> {
         use legaia_engine_session::hotkeys::{HOST_HOTKEYS, HostHotkey};
-        let head = HEADING;
-        let key = KEY;
-        let text = TEXT;
         let entries: Vec<(&str, String)> = HOST_HOTKEYS
             .iter()
             .map(|&(hk, _)| {
@@ -118,60 +115,31 @@ impl PlayWindowApp {
                 (hk.key_label(), line)
             })
             .collect();
-        let width = |s: &str| self.font.layout_ascii(s).advance_x as i32;
-        let line_h = self.font.layout_ascii("Ag").advance_y as i32 + 1;
-        let per_col = entries.len().div_ceil(2);
-        let key_w = entries
-            .iter()
-            .map(|(k, _)| width(k))
-            .chain([width("Esc"), width("F12")])
-            .max()
-            .unwrap_or(0)
-            + 5;
-        // Each column as wide as its widest row; the panel centred on the
-        // stage.
-        let col_w = |rows: &[(&str, String)], extra: &str| {
-            rows.iter()
-                .map(|(_, l)| width(l))
-                .chain([width(extra)])
-                .max()
-                .unwrap_or(0)
-                + key_w
-        };
-        let left_w = col_w(&entries[..per_col], "Quit (press twice)") + 10;
-        let right_w = col_w(&entries[per_col..], "This help (also ?)");
-        let per_col = per_col as i32;
-        let stage_w = legaia_engine_ui::BOOT_UI_STAGE_W as i32;
-        let x0 = ((stage_w - left_w - right_w) / 2).max(4);
-        let col_w = left_w;
-        let height = (per_col + 3) * line_h + 12;
-        let y0 = ((legaia_engine_ui::BOOT_UI_STAGE_H as i32 - height) / 2).max(4);
+        let l = help_panel_layout(&self.font, &entries);
         let mut out = Vec::new();
         self.push_scrim(
             &mut out,
-            (x0 - 4, y0 - 4),
-            ((left_w + right_w + 8) as u32, height as u32),
+            (l.x0 - 4, l.y0 - 4),
+            ((l.width + 8) as u32, l.height as u32),
             0.85,
         );
         let mut put = |s: &str, at: (i32, i32), color: [f32; 4]| {
             out.extend(text_draws_for(&self.font.layout_ascii(s), at, color));
         };
-        put("Keys", (x0, y0), head);
-        let mut y = y0 + line_h + 2;
-        put("Esc", (x0, y), key);
-        put("Quit (press twice)", (x0 + key_w, y), text);
-        put("F12", (x0 + col_w, y), key);
-        put("This help (also ?)", (x0 + col_w + key_w, y), text);
-        y += line_h + 2;
-        for (i, (k, line)) in entries.iter().enumerate() {
-            let col = i as i32 / per_col;
-            let row = i as i32 % per_col;
-            let at = (x0 + col * col_w, y + row * line_h);
-            put(k, at, key);
-            put(line, (at.0 + key_w, at.1), text);
+        put("Keys", (l.x0, l.y0), HEADING);
+        let mut y = l.y0 + l.line_h + 2;
+        put("Esc", (l.x0, y), KEY);
+        put(HELP_QUIT, (l.x0 + l.key_w, y), TEXT);
+        put("F12", (l.x0 + l.col_w, y), KEY);
+        put(HELP_SELF, (l.x0 + l.col_w + l.key_w, y), TEXT);
+        y += l.line_h + 2;
+        for ((k, line), &(col, row)) in entries.iter().zip(&l.cells) {
+            let at = (l.x0 + col * l.col_w, y + row as i32 * l.line_h);
+            put(k, at, KEY);
+            put(line, (at.0 + l.key_w, at.1), TEXT);
         }
-        y += per_col * line_h + 2;
-        put("Pad keys: Options > Key Config", (x0, y), head);
+        y += l.rows as i32 * l.line_h + 2;
+        put(HELP_FOOTER, (l.x0, y), HEADING);
         out
     }
 
@@ -764,5 +732,217 @@ impl PlayWindowApp {
             out.extend(dev);
         }
         out
+    }
+}
+
+/// The help panel's fixed rows.
+const HELP_QUIT: &str = "Quit (press twice)";
+const HELP_SELF: &str = "This help (also ?)";
+const HELP_FOOTER: &str = "Pad keys: Options > Key Config";
+
+/// Where the hotkey help panel's two columns go, in stage pixels.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::window) struct HelpPanelLayout {
+    pub x0: i32,
+    pub y0: i32,
+    /// The panel's text extent (the scrim adds 4 px each side).
+    pub width: i32,
+    pub height: i32,
+    pub line_h: i32,
+    /// Offset of a row's text from its key.
+    pub key_w: i32,
+    /// Offset of the right column from the left.
+    pub col_w: i32,
+    /// Each entry's `(column, row)`, in entry order.
+    pub cells: Vec<(i32, usize)>,
+    /// Rows in the taller column.
+    pub rows: usize,
+}
+
+/// Lay the hotkey help out on the 320x240 stage.
+///
+/// Two columns, each in table order. The table's own halves come first,
+/// which is what a narrow font gets. When their widest rows land in opposite
+/// columns and the pair is wider than the stage (the disc's dialog font,
+/// with "Camera distance: farther" and "Free-angle movement: off" both in
+/// the second half, ran the panel off the right edge), the widest entries
+/// share one column instead - the most even such split that fits. A single
+/// column is the last candidate.
+pub(in crate::window) fn help_panel_layout(
+    font: &legaia_font::Font,
+    entries: &[(&str, String)],
+) -> HelpPanelLayout {
+    help_panel_layout_with(
+        &|s: &str| font.layout_ascii(s).advance_x as i32,
+        font.layout_ascii("Ag").advance_y as i32 + 1,
+        entries,
+    )
+}
+
+/// [`help_panel_layout`] over any text metric.
+fn help_panel_layout_with(
+    width: &dyn Fn(&str) -> i32,
+    line_h: i32,
+    entries: &[(&str, String)],
+) -> HelpPanelLayout {
+    let stage_w = legaia_engine_ui::BOOT_UI_STAGE_W as i32;
+    let stage_h = legaia_engine_ui::BOOT_UI_STAGE_H as i32;
+    let key_w = entries
+        .iter()
+        .map(|(k, _)| width(k))
+        .chain([width("Esc"), width("F12")])
+        .max()
+        .unwrap_or(0)
+        + 5;
+    let n = entries.len();
+    // A candidate is a right-column flag per entry.
+    let candidate = |right: &[bool]| {
+        let col = |want: bool, extra: &str| {
+            entries
+                .iter()
+                .zip(right)
+                .filter(|(_, r)| **r == want)
+                .map(|((_, l), _)| width(l))
+                .chain([width(extra)])
+                .max()
+                .unwrap_or(0)
+                + key_w
+        };
+        let left_w = col(false, HELP_QUIT) + 10;
+        let right_w = col(true, HELP_SELF);
+        let in_right = right.iter().filter(|r| **r).count();
+        let rows = in_right.max(n - in_right);
+        let body = (left_w + right_w).max(width(HELP_FOOTER));
+        let height = (rows as i32 + 3) * line_h + 12;
+        (left_w, body, rows, height)
+    };
+    let even = n.div_ceil(2);
+    let mut candidates: Vec<Vec<bool>> = vec![(0..n).map(|i| i >= even).collect()];
+    // The `m` widest entries (ties to the earlier entry) in the right
+    // column, most even first.
+    let mut by_width: Vec<usize> = (0..n).collect();
+    by_width.sort_by_key(|&i| (std::cmp::Reverse(width(&entries[i].1)), i));
+    let mut ms: Vec<usize> = (1..n).collect();
+    ms.sort_by_key(|&m| (m.abs_diff(n - m), std::cmp::Reverse(m)));
+    for m in ms {
+        let mut right = vec![false; n];
+        for &i in &by_width[..m] {
+            right[i] = true;
+        }
+        candidates.push(right);
+    }
+    // One column: `F12` still sits beside `Esc`.
+    candidates.push(vec![false; n]);
+    let scored: Vec<_> = candidates.iter().map(|c| (c, candidate(c))).collect();
+    let fits = |c: &(i32, i32, usize, i32)| c.1 + 8 <= stage_w && c.3 + 4 <= stage_h;
+    let (right, (col_w, body, rows, height)) = scored
+        .iter()
+        .find(|(_, c)| fits(c))
+        .or_else(|| scored.iter().min_by_key(|(_, c)| c.1))
+        .map(|(r, c)| (*r, *c))
+        .expect("at least the even split");
+    let mut next = [0usize; 2];
+    let cells = right
+        .iter()
+        .map(|r| {
+            let col = usize::from(*r);
+            next[col] += 1;
+            (col as i32, next[col] - 1)
+        })
+        .collect();
+    HelpPanelLayout {
+        x0: ((stage_w - body) / 2).max(4),
+        y0: ((stage_h - height) / 2).max(4),
+        width: body,
+        height,
+        line_h,
+        key_w,
+        col_w,
+        cells,
+        rows,
+    }
+}
+
+#[cfg(test)]
+mod help_panel_tests {
+    use super::*;
+    use legaia_engine_session::hotkeys::{HOST_HOTKEYS, HostHotkey};
+
+    /// Every hotkey in its widest state.
+    fn worst_entries() -> Vec<(&'static str, String)> {
+        HOST_HOTKEYS
+            .iter()
+            .map(|&(hk, _)| {
+                let state = match hk {
+                    HostHotkey::AudioMute => "muted",
+                    HostHotkey::TimeOfDay => "night",
+                    HostHotkey::CameraDistance => "farther",
+                    _ => "off",
+                };
+                let line = if hk == HostHotkey::CheatMaxAp {
+                    hk.label().to_string()
+                } else {
+                    format!("{}: {state}", hk.label())
+                };
+                (hk.key_label(), line)
+            })
+            .collect()
+    }
+
+    fn assert_fits(width: &dyn Fn(&str) -> i32, line_h: i32, what: &str) -> HelpPanelLayout {
+        let entries = worst_entries();
+        let l = help_panel_layout_with(width, line_h, &entries);
+        let stage_w = legaia_engine_ui::BOOT_UI_STAGE_W as i32;
+        let stage_h = legaia_engine_ui::BOOT_UI_STAGE_H as i32;
+        // The scrim reaches 4 px past the text on every side.
+        assert!(
+            l.x0 - 4 >= 0 && l.x0 + l.width + 4 <= stage_w,
+            "{what}: the panel {l:?} leaves the {stage_w} px stage"
+        );
+        assert!(l.y0 - 4 >= 0 && l.y0 + l.height <= stage_h, "{what}: {l:?}");
+        // Every row's text ends inside the panel.
+        for ((_, line), &(col, _)) in entries.iter().zip(&l.cells) {
+            let x = l.x0 + col * l.col_w + l.key_w;
+            assert!(
+                x + width(line) <= l.x0 + l.width,
+                "{what}: {line:?} runs past the panel"
+            );
+        }
+        l
+    }
+
+    /// Disc-free: a proportional metric at the dialog font's typical
+    /// advance (6 px a character, 13 px a line - retail advances 4..10).
+    /// The panel never leaves the stage; a narrow metric keeps the even
+    /// split.
+    #[test]
+    fn help_panel_fits_the_stage_at_dialog_font_metrics() {
+        assert_fits(&|s: &str| 6 * s.len() as i32, 13, "6 px metric");
+        let l = assert_fits(&|s: &str| 4 * s.len() as i32, 13, "4 px metric");
+        let even = HOST_HOTKEYS.len().div_ceil(2);
+        assert!(
+            l.cells
+                .iter()
+                .enumerate()
+                .all(|(i, c)| c.0 == i32::from(i >= even))
+        );
+    }
+
+    /// The disc's own dialog font, which the window letters the panel in
+    /// once a disc is known.
+    #[test]
+    fn help_panel_fits_the_stage_in_the_disc_font() {
+        let Some(bin) = std::env::var_os("LEGAIA_DISC_BIN") else {
+            eprintln!("skip: LEGAIA_DISC_BIN unset");
+            return;
+        };
+        let font = crate::launcher::disc_font(std::path::Path::new(&bin))
+            .expect("the disc's dialog font loads");
+        let l = assert_fits(
+            &|s: &str| font.layout_ascii(s).advance_x as i32,
+            font.layout_ascii("Ag").advance_y as i32 + 1,
+            "disc font",
+        );
+        eprintln!("disc font help layout: {l:?}");
     }
 }

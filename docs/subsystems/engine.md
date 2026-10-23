@@ -395,8 +395,13 @@ one that reads back what is off it:
 | world toggles | `WorldToggles::pin_retail` | `WorldToggles::retail_deviations` |
 | `play-window` launch | `--retail` (`LaunchFidelity::retail`) | - |
 
-`--retail` turns every enhancement off and applies the options pin for the
-session, writing nothing back. It is what the retail-compare image child
+`--retail` turns every enhancement off and applies both pins for the session,
+writing nothing back: the options pin, and the world pin through the
+session switch set both hosts share
+(`legaia_engine_session::session_switches::SessionSwitches::apply`, which the
+browser's retail mode calls too). The window logs
+`WorldToggles::retail_deviations` once the launch has landed, and under
+`--retail` the list is empty. It is what the retail-compare image child
 runs under, so a new enhancement that is added to `LaunchFidelity::retail`
 is off in the comparison without anyone remembering a `--no-*` flag.
 
@@ -423,7 +428,7 @@ options is safe by default. A headless comparison against retail calls
 | `Renderer::set_occlusion_fade` (`--no-occlusion-fade` disables for the session, `F4` on both hosts; "See-through walls" checkbox on the browser play page; persisted `OptionsState::occlusion_fade`) | **on** in `play-window` + browser play page | Camera-occlusion fade: when a ray-cast visibility gate finds the character **completely** hidden, the covering geometry dissolves to a screen-door dither in a circle around them, above the line of their feet so the ground in front of them never fades - a partially visible character never fades ([renderer](renderer.md#camera-occlusion-fade-see-through-walls-enhancement)). Presentation-only; replays force it off. |
 | `OptionsState::volumetric_fog` -> `World::toggles.volumetric_fog` (`--no-volumetric-fog` disables, `F9` in `play-window`; "Ground fog" checkbox on the browser play page) | **off** on every host while the look matures (the toggle persists) | Volumetric ground fog: a low drifting mist bank over the outdoor areas of the scenes that read as misty or night (never inside a door-reached room), parted by every character walking through it, with wakes that refill; it lies on the drawn ground and spills off its rims, and a battle inherits its field scene's bank as a thin, ankle-high haze ([renderer](renderer.md#volumetric-ground-fog-enhancement)). The engine simulates it once per tick; off draws the frame without it. Presentation-only; replays and the retail comparison corpus force it off. |
 | `Renderer::set_bloom` (`F10` on both hosts; "Bloom" checkbox on the browser play page; persisted `OptionsState::bloom`) | off | The 3D frame's bright pixels - lamp halos, emissive props, lit windows, sunlit sky - bleed a soft glow, stronger under a darker enhanced-lighting mood; the HUD never blooms ([renderer-port](renderer-port.md#bloom-enhancement-not-retail)). Off draws the frame without it, pixel for pixel; `--retail` and `pin_retail` force it off. Presentation-only. |
-| `World::locomotion.precise_movement` (`R` in `play-window`; "Precise movement" checkbox on the browser play page; persisted `OptionsState::precise_movement`) | off | Free-angle locomotion instead of retail's 4/8-way quantisation. |
+| `World::locomotion.precise_movement` (`R` in `play-window`; "Free-angle movement" checkbox on the browser play page; persisted `OptionsState::precise_movement`) | off | Free-angle locomotion instead of retail's 4/8-way quantisation. |
 | `World::locomotion.leading_edge_wall_probes` (`--no-edge-collision` disables) | **on** in `play-window` + browser play page | Retail's three-probe leading-edge wall footprint (`FUN_801cfe4c`'s `DAT_801f2214` table): the player rests ~47 units off a wall plane ([field-locomotion](field-locomotion.md#collision---fun_801cfe4c)). Off = the single candidate-centre test the locomotion oracles and BFS nav drivers run on, which is why the `World` field itself still defaults off. |
 | `World::toggles.hop_landing_guard` | **on** (off under `pin_retail` / `--retail`) | Refuses a field ledge hop whose landing the walk could not leave in any direction. Retail tests no landing, and a diagonal step-up hop can set the player boxed in a raised pocket for good ([field-locomotion](field-locomotion.md#vertical-settle--ledge-hop---fun_801d1ba0--fun_801d1878)). |
 | `World::npcs.solid` (`--no-solid-npcs` disables) | **on** in `play-window` + browser play page | Retail's actor-collision probes (`FUN_801cfc40`'s `DAT_801f21b4` table) make field NPCs solid. Placed props are solid either way; this gates the NPC arm only. |

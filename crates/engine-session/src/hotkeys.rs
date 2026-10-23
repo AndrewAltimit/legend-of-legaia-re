@@ -127,7 +127,7 @@ impl HostHotkey {
             HostHotkey::EnhancedLighting => "Enhanced lighting",
             HostHotkey::LightShadows => "Lamp shadows",
             HostHotkey::CameraDistance => "Camera distance",
-            HostHotkey::PreciseMovement => "Precise movement",
+            HostHotkey::PreciseMovement => "Free-angle movement",
             HostHotkey::Bloom => "Bloom",
         }
     }

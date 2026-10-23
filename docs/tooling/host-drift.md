@@ -1069,9 +1069,9 @@ Both hosts then hand one switch set,
 `legaia_engine_session::session_switches::SessionSwitches`, to its `apply`:
 the native window from `apply_launch_toggles` (the environment's raises, its
 `--smart-monsters` / `--no-entry-pulse` flags and `--retail`), the page from
-`apply_page_toggles`. `apply` is where retail-faithful mode masks the port-only
-switches, the same ones `WorldToggles::pin_retail` lowers, so the two hosts'
-retail modes cannot disagree about them. A tier-3 row pins both sites to the
+`apply_page_toggles`. `apply` is where retail-faithful mode becomes the whole
+`WorldToggles::pin_retail` - the port-only switches, the hop landing guard and
+the retail battle kernels - so the two hosts' retail modes cannot disagree. A tier-3 row pins both sites to the
 full set, so a switch the native window reads inline in its launch code -
 where `LEGAIA_SMART_MONSTERS` and `LEGAIA_WORLD_MAP_MARKERS` once sat - shows
 as a field one site lacks.

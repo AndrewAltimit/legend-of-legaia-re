@@ -200,10 +200,6 @@ fn apply_launch_toggles(session: &mut NativeSession, toggles: LaunchToggles) {
         retail,
     };
     switches.apply(&mut session.host.world.toggles);
-    log::info!(
-        "world: toggles off their retail value before the options apply: {:?}",
-        session.host.world.toggles.retail_deviations()
-    );
 }
 
 /// Enter the launch scene: a `--resume-save` landing through the card-load
@@ -637,6 +633,13 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
         disc,
     });
     app.apply_launch_options(fidelity);
+    // Which fidelity toggles this session runs off retail, once the launch
+    // switches and the (possibly pinned) options have both landed: empty
+    // under `--retail`.
+    log::info!(
+        "world: toggles off their retail value: {:?}",
+        app.session.host.world.toggles.retail_deviations()
+    );
     // The spell / seru display names off the boot SCUS, for the shop's Trade
     // row: read once here, as the browser play page reads them at disc load.
     app.ensure_seru_names();

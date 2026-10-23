@@ -321,7 +321,7 @@
   <h2>In the port</h2>
   <ul class="bullets">
     <li><strong>Faithful path.</strong> <code>World::step_field_locomotion</code> rings the held pad around the same eight-direction compass, hands the remapped mask to the wall-slide resolver and walks the result through the same per-axis 2-unit collision with the three-probe edge and the actor boxes. Wall-press captures rest byte-exact. Retail picks its rotation step from scene data; a free-orbiting camera has none, so the port rounds the live camera azimuth to the nearest eighth.</li>
-    <li><strong>Enhancements.</strong> Precise movement (<code>options::precise_movement</code>, default off): continuous azimuth, true 45&deg; diagonals at unit speed, analog stick angle. <code>--no-edge-collision</code> / <code>--no-solid-npcs</code> fall back to a centre test and walk-through NPCs.</li>
+    <li><strong>Enhancements.</strong> Free-angle movement (<code>options::precise_movement</code>, default off): continuous azimuth, true 45&deg; diagonals at unit speed, analog stick angle. <code>--no-edge-collision</code> / <code>--no-solid-npcs</code> fall back to a centre test and walk-through NPCs.</li>
     <li><strong>Floor.</strong> <code>World::sample_field_floor_height</code> carries both height models.</li>
     <li><strong>Run button.</strong> The run mask defaults to the retail <code>Cross | R1</code> plus Square; which key is which pad button is a host binding (<code>legaia-engine config set --binding W=R1</code>).</li>
   </ul>

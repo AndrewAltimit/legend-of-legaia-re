@@ -37,6 +37,15 @@ pub struct SessionSwitches {
 
 impl SessionSwitches {
     /// Write the set onto `toggles`.
+    ///
+    /// While `retail` holds this is the engine's whole retail definition,
+    /// [`WorldToggles::pin_retail`]: besides the switches above it lowers
+    /// the port's own guards (the hop landing guard) and restores the
+    /// retail kernels (the damage finisher, the battle pass's RNG draw), so
+    /// [`WorldToggles::retail_deviations`] comes back empty once the options
+    /// (pinned by the host's own retail mode) have been applied. Released,
+    /// the guard `pin_retail` lowered returns to the engine default; the
+    /// kernels it restored are already their defaults.
     pub fn apply(&self, toggles: &mut WorldToggles) {
         let port = !self.retail;
         toggles.smarter_monster_targeting = self.smart_monsters && port;
@@ -44,6 +53,11 @@ impl SessionSwitches {
         toggles.entry_pulse_enabled = self.entry_pulse && port;
         toggles.battle_sm_frame_cadence = self.battle_frame_cadence;
         toggles.arts_saved_list = self.arts_saved_list && port;
+        if self.retail {
+            toggles.pin_retail();
+        } else {
+            toggles.hop_landing_guard = WorldToggles::new().hop_landing_guard;
+        }
     }
 }
 
@@ -90,5 +104,26 @@ mod tests {
         assert_eq!(t.entry_pulse_enabled, pinned.entry_pulse_enabled);
         assert_eq!(t.arts_saved_list, pinned.arts_saved_list);
         assert!(t.battle_sm_frame_cadence);
+    }
+
+    /// Retail mode is the whole `pin_retail`: nothing off its retail value,
+    /// whatever the switches and the port's guards said. Released, the hop
+    /// guard comes back.
+    #[test]
+    fn retail_is_the_whole_retail_definition_and_releases() {
+        let mut t = WorldToggles::new();
+        t.use_damage_finish = false;
+        t.battle_pass_rand_draw = false;
+        all_on(true).apply(&mut t);
+        assert!(
+            t.retail_deviations().is_empty(),
+            "{:?}",
+            t.retail_deviations()
+        );
+        let mut t = WorldToggles::new();
+        all_on(true).apply(&mut t);
+        assert!(!t.hop_landing_guard);
+        all_on(false).apply(&mut t);
+        assert_eq!(t.hop_landing_guard, WorldToggles::new().hop_landing_guard);
     }
 }
