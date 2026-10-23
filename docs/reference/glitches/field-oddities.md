@@ -1449,15 +1449,17 @@ The room also carries three reflection controllers installed at scene entry (`4C
    runs for about 400 vsyncs from the commit, during the waits before the first page.
 3. **The effect's allocations scale with the frame rate** (capture; why is inference). While the
    crossing runs, the scene's effect parts each take heap blocks: a `0x9C`-byte render node
-   (`FUN_80020F88`, `jal` at `0x80021184`) and a keyframe buffer for the move VM's
-   `KEYFRAME_LOAD` (op `0x0A`). Sampling the rendered frames: at console speed the field draws 15
+   (`FUN_80020F88`, `jal` at `0x80021184`) and a keyframe-pose block for the move VM's
+   keyframe-pose seat (op `0x3C`, jump-table entry `0x80023CA4`). Sampling the rendered frames: at console speed the field draws 15
    frames per 30 vsyncs before the scene and 10 during it; at double CPU speed it draws 20 before
    it. With the faster CPU the free heap falls faster and further: at 100 % its low point is about
    6 KB, and at the faster settings below it runs out.
-4. **`KEYFRAME_LOAD` does not check its allocation** (disassembly). At `0x80023CD0..0x80023CE0`
-   in the move VM `FUN_80023070` it calls `FUN_80017888(0, count * 32 | 8)` and stores the result
-   at `actor+0x4C` with no NULL test, then copies the lane data through it (`sh` at `0x80023D30`,
-   `0x80023D3C`, and later `0x80023EF4`). The malloc wrapper's failure arm (`0x800178B8`) only
+4. **The keyframe-pose seat does not check its allocation** (disassembly). At
+   `0x80023CD0..0x80023CE0` in the move VM `FUN_80023070`, op `0x3C` calls
+   `FUN_80017888(0, count * 32 | 8)` and stores the result at `actor+0x4C` with no NULL test, then
+   copies each part's keyframe through it (`sh` at `0x80023D30`, `0x80023D3C`); its retarget op
+   `0x3D` writes through the same pointer untested (`sh` at `0x80023EF4`). The part tick's mode-6
+   pack does test it (`beqz` at `0x80022F14`). The malloc wrapper's failure arm (`0x800178B8`) only
    adds `0x20000` to the `PRG ERR` counter `0x8007B828` and returns NULL. `FUN_80020F88` does test
    its own `0x9C` allocation (`bne` at `0x8002118C`) but still stores the NULL at `actor+0x44`,
    and the draw path writes through it later (`sw` at `0x8001B098` in `FUN_8001ADA4`).
@@ -1523,14 +1525,35 @@ box64 cannot wrap. pSX and the PS3 were not available.
 The port does not freeze here: the full-game ladder's pad tier walks `taiku`, `map03`, `concnow`,
 `conc2` and `conc` and reaches the `conkram_past` milestone
 ([`full-game-ladder.md`](../../tooling/full-game-ladder.md)). The port allocates from its own
-memory, not the game's 16 KB arena.
+memory, not the game's 16 KB arena: its op-`0x3C` keeps the pose in a Rust `Vec`, so there is no
+NULL block to write through, and an allocation failure would abort the process.
+
+### The fix
+
+The patcher's `--conkram-freeze-fix`
+([`randomizer.md`](../../tooling/randomizer.md#conkram-freeze-fix)) adds the missing test. Nine
+words of op `0x3C`'s handler are rearranged in place so that the word after the `jal` becomes
+`beq v0,zero` to op `0x08`'s HALT arm: a failed allocation ends the part the way a script's own
+halt does, the list walk releases it and frees its render node, and `+0x4C` stays NULL, which the
+release path skips. No write through NULL happens, and the effect loses one particle. Every
+allocation that succeeds runs the retail instructions. The `PRG ERR` counter still counts the
+failure, so on a fast emulator the readout can appear where the game used to freeze.
+
+With the fix, the played and late-game saves both pass the scene on SwanStation at 200 % and on
+PCSX-ReARMed's default, the settings that froze above (capture, cold boots of a patched scratch
+disc). At SwanStation's 100 % the patched run reaches `conc2` on the same vsync as retail's, with
+RAM identical apart from the nine words. The design,
+and why halting beats skipping the install, is under
+[`randomizer-internals.md`](../../tooling/randomizer-internals.md#conkram-freeze-fix).
 
 ### Addresses
 
 | Address | Image | What | Evidence |
 |---|---|---|---|
 | `concnow` `P2[17]`, `P2[18]` | MAN, extraction 0363 | the mirror walk-on and the crossing | disc data |
-| `0x80023CD0..0x80023CE0`, `0x80023D30`, `0x80023D3C`, `0x80023EF4` | `SCUS_942.54` | `KEYFRAME_LOAD`: unchecked malloc, then the lane copy through the result | disassembly, capture |
+| `0x80023CD0..0x80023CE0`, `0x80023D30`, `0x80023D3C` | `SCUS_942.54` | move-VM op `0x3C`: unchecked malloc, then the pose copy through the result | disassembly, capture |
+| `0x80023EF4` | `SCUS_942.54` | move-VM op `0x3D`: the retarget's store through the same block | disassembly |
+| `0x800232B8` | `SCUS_942.54` | move-VM op `0x08` HALT arm, the fix's failure exit | disassembly |
 | `0x80017888`, failure arm `0x800178B8` | `SCUS_942.54` | malloc wrapper: on NULL adds `0x20000` to `PRG ERR` and returns NULL | disassembly |
 | `0x8002B468` | `SCUS_942.54` | allocator: best-fit over the free list at `*(gp+0x840) + 0xC` | disassembly |
 | `0x80021184..0x80021190` | `SCUS_942.54` | `FUN_80020F88`: `0x9C` render-node malloc, NULL stored at `actor+0x44` | disassembly |
@@ -1543,7 +1566,7 @@ memory, not the game's 16 KB arena.
 
 This scene on any emulator that runs the CPU fast enough; how fast is enough depends on the party.
 Any other place where the free heap gets this low behaves the same way, and the unchecked
-`KEYFRAME_LOAD` allocation serves every move-VM effect in the game, but no other report of this
+keyframe-pose allocation serves every move-VM effect in the game, but no other report of this
 kind is known. On a console the allocation does not fail in either captured party. The
 [WORK ERR](#work-err-on-mt-rikuroa) section is the sibling limit: the fixed actor pool, not the
 heap.

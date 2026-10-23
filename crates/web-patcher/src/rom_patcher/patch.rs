@@ -99,6 +99,7 @@ pub(super) struct PatchOptions<'a> {
     pub(super) equip_owners: &'a str,
     pub(super) enemy_hp_bar: bool,
     pub(super) fortress_encounter_fix: bool,
+    pub(super) conkram_freeze_fix: bool,
 }
 
 impl PatchOptions<'_> {
@@ -367,6 +368,10 @@ const STAGES: &[Stage] = &[
         steps: &[world::fortress_encounter_fix],
     },
     Stage {
+        label: "Conkram freeze fix",
+        steps: &[world::conkram_freeze_fix],
+    },
+    Stage {
         label: "Delilas Challenge",
         steps: &[delilas::delilas_challenge],
     },
@@ -583,6 +588,12 @@ async fn run_stages<'a>(
 /// Floating Castle's stale "no battles" flag - a save that left the castle
 /// with under a minute on the escape clock gets its Fortress battles (and the
 /// Door of Light there) back; a healthy save is unaffected (seedless).
+/// `conkram_freeze_fix` adds the missing NULL test to the move VM's
+/// keyframe-pose allocation, so the Room of Mirrors scene in present-day
+/// Conkram no longer locks up on an emulator that runs the CPU faster than a
+/// console: a failed allocation drops one effect part instead of overwriting
+/// the CPU's exception vector; every successful allocation runs as retail
+/// (seedless).
 /// `fishing_prices` is a
 /// comma/space-separated list of `item=points` pairs that set the
 /// fishing-exchange point cost of prizes (e.g. `0x6F=500` for the Water Egg).
@@ -753,6 +764,7 @@ pub async fn patch_rom(
     equip_owners: &str,
     enemy_hp_bar: bool,
     fortress_encounter_fix: bool,
+    conkram_freeze_fix: bool,
     progress: Option<js_sys::Function>,
 ) -> Result<JsValue, JsValue> {
     let opts = PatchOptions {
@@ -819,6 +831,7 @@ pub async fn patch_rom(
         equip_owners,
         enemy_hp_bar,
         fortress_encounter_fix,
+        conkram_freeze_fix,
     };
     let mut prog = Progress::new(progress, PATCH_ROM_STAGES);
     let run = run_stages(image, &opts, &mut prog).await.map_err(err)?;

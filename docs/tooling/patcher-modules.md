@@ -342,6 +342,22 @@ the retail shape and the fixed shape and refuses anything else; the `apply`
 entry plans and re-packs both scenes before it writes either. See
 [`docs/tooling/randomizer.md` § Fortress encounter fix](randomizer.md#fortress-encounter-fix).
 
+## Conkram freeze fix (`conkram_freeze_fix` module)
+
+`--conkram-freeze-fix` closes the lock-up in present-day Conkram's Room of
+Mirrors on a fast emulated CPU. The move VM's keyframe-pose seat (op `0x3C`,
+`0x80023CA4` in `SCUS_942.54`) stores its heap allocation with no NULL test and
+copies the pose through it; a failed allocation puts the pose over the
+exception vector at `0x80000080`. The module, in `legaia-code-hooks`, rewrites
+the handler's first sixteen words in place: the load-delay `nop` takes an
+independent store, the five instructions after it move up one word, and the
+freed word after the `jal` becomes `beq v0,zero` to op `0x08`'s HALT arm, so a
+failed allocation ends the part. Nine words change; the stock window, the HALT
+arm and both jump-table entries are checked first, an unrecognized build is
+refused and an already-fixed image is a no-op. `apply::apply_conkram_freeze_fix`
+writes it. See
+[`docs/tooling/randomizer.md` § Conkram freeze fix](randomizer.md#conkram-freeze-fix).
+
 ## Fishing prize prices (`fishing_price` module)
 
 `--fishing-price ITEM=POINTS` sets the fishing-point cost of a fishing-exchange

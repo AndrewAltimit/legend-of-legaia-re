@@ -95,7 +95,7 @@ A status of *explained* means the cause is located in the code and accounts for 
 | Spikefish Flute escape can freeze the game | explained | The flute's escape skips the end of its attack, so its caption stays up after the battle frees its text; redrawn over field data, the text routine can loop forever. |
 | Gaza 2 softlock | explained | A walking monster is carried only by its Move animation; a leftover flinch flag swaps it for idle and the wait for range never ends. |
 | Dialogue inconsistencies | explained | The English script renders one thing two ways; in the bath scene it turns a question and answer about the researcher into ones about Vahn. |
-| Conkram mirror freeze (emulators) | explained | The scene runs on a nearly full heap; an emulated CPU faster than a console's keeps more effect parts alive, an allocation fails, and the move VM writes through the NULL pointer over the CPU's exception vector. |
+| Conkram mirror freeze (emulators) | explained | The scene runs on a nearly full heap; an emulated CPU faster than a console's keeps more effect parts alive, an allocation fails, and the move VM writes through the NULL pointer over the CPU's exception vector. Fixed on disc by `--conkram-freeze-fix`. |
 
 ## Related pages
 

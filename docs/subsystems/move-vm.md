@@ -406,6 +406,15 @@ The block is an 8-byte clip header, `count` packed 8-byte clip entries, then
 `count` 24-byte keyframe records: six halfwords of the current keyframe and
 six of the target. Each part's six operands seed both halves.
 
+**The allocation is unchecked.** The result of `FUN_80017888` is stored and
+copied through with no NULL test, and `0x3D` writes through `+0x4C` untested
+too; only the tick's mode-`6` pack checks it (`0x80022F14`). A NULL block puts
+the pose over the exception vector at `0x80000080`: the
+[Conkram mirror freeze](../reference/glitches/field-oddities.md#conkram-mirror-freeze),
+which the patcher's `--conkram-freeze-fix` closes by halting the part. An
+existing block is reused whatever its size, so a re-seat with more parts than
+the first would overrun it; no case of that is known.
+
 **`0x3D`** (`0x80023D64..0x80023F18`) retargets it. `+0xD0 = v1` is the cursor
 rate and `v2` the part count. When a keyframe is already latched
 (`+0xCE != 0`), every part's current keyframe first moves to where the cursor
@@ -433,6 +442,10 @@ sends a `+0x5A == 6` actor to the animated renderer `FUN_8001B964`
 sprite-arm node every slot is the one built quad, so the pose places `count`
 copies of it - `map01`'s mist puffs
 ([world-map.md](world-map.md#per-actor-render-dispatcher---fun_8001ada4)).
+
+The port keeps the pose in `keyframe_pose`, a `Vec` rebuilt at each seat, not
+in the game's heap, so neither the NULL block nor the overrun has a
+counterpart; an allocation failure there aborts the process.
 
 Port: `move_vm::step` (ops), `advance_keyframe_cursor`,
 `keyframe_pose_entries`; the draw is

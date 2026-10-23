@@ -101,6 +101,7 @@ fn cases() -> Vec<(&'static str, PatchOptions<'static>)> {
         equip_owners: "0xBA=VNG",
         enemy_hp_bar: true,
         fortress_encounter_fix: true,
+        conkram_freeze_fix: true,
         ..Default::default()
     };
     // The Delilas Challenge with its custom-item reward, over the other
@@ -186,43 +187,43 @@ fn cases() -> Vec<(&'static str, PatchOptions<'static>)> {
 const PINS: &[(&str, &str, &str)] = &[
     (
         "everything",
-        "cefdd4da3847109ef3eddb6e3beb64f8a256bacfa7c27f554cd9770cbb7e095e",
-        "6f5a7d90c2c0d9fa0b79e6ff878aa35a599592ba5b1ae1f9b754147ce882a446",
+        "1f7463508e30e2649e7b4f658bb1945fdf5428177e7916d6d47c3bc3aafc8f5a",
+        "c06db4a6650e82e462184907fb53e41388d7a6d5d282b4a8052d92a29f50d39c",
     ),
     (
         "challenge",
         "bf4f9a36c831eefc3b3e1b7a4b577bc6a0933dd58fcdf3e05f9b7d295119c3cb",
-        "81cab9feaff9280dbbfe9a1120aff1eb9d175d4100271d7eb80da528676cd939",
+        "0a2da7d07cb4f35441eb966dbac85b49a0805e222b29d87b1fe78cf3b2156225",
     ),
     (
         "party",
         "d296295ad2040947d9a1da7cd9290f26f28c609738abdb5ea2417fe940de2a0d",
-        "cd094185039698c08415cc157948d48f212a73f7749ddf7a6f0fe9276e4c3699",
+        "80ff46489e9aaa69e765ef196e3d917b33161e716acb8d385eb6e445e2654a2b",
     ),
     (
         "party_arena_taken",
         "3e90183f0610ad62d02c55273b798eb95b88fb1b4959f38432a62baa960d9bf2",
-        "0aecfc7b4d11bacdc2a9ac4aa2aa10b869f7364f45f868a821abd2c1238507b3",
+        "bdf3f423eab0fc38df81abf5da582514b41027823eeb4047962223b33d56794a",
     ),
     (
         "pack",
         "edd9ebee1b01eb0f8e10039158627093df35d38a1c6b8ac0511632d5c0284aba",
-        "88ee14f35f06377b187db513cc90f31da5afa8d5ce50ac9376c09e0b1a80dd9c",
+        "95be6887b15ab7b520ee233ea8a9cba16e0f8f70c28fb8c0c47dc5c0e2637597",
     ),
     (
         "arts_ap",
         "cd44254c017bc499cbce39dde8643f908d344e3d8de432b00b3a8ae653506086",
-        "a1b4de3336d9653ec64ec8c247f05f648cbd4263938c6fa4721f85deccc8c38d",
+        "1c714f2302453e15cc1efa5b80ff59e5c3f2d5984ddf03302151e0bb116817df",
     ),
     (
         "oscillating",
         "ccb7988a1b62945639ba39ccc75be7627c24c178c4662c1f29f5cab6d84f2ac8",
-        "e636c2ef11671060f48a16d698e98c7916b56b292eac387bf00dfafac0a563f2",
+        "9906d19b5655a3b2f023f608402feb4fc77b1816a72d40c04adde0de51a58c74",
     ),
     (
         "untouched",
         "e6120a5d70716dd2f026a2da32d0171d52651971b52c4347a68541299f75258c",
-        "3903c7cb9526577808a7ff95ffd168aec5f41e3eccc391156c977f1ba024d4e9",
+        "31d7f42fff596f7e9dbe96a3920437e5660f279a3f21c15aec3ab3d789eb70e1",
     ),
 ];
 

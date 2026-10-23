@@ -180,6 +180,7 @@ may occupy is listed once, with its owner, in `legaia_disc_patch::space_ledger`.
 | `--jewel-fix` | thirteen `jal` words in PROT 944 / 952 / 953 / 958 / 959 / 960 | in place | [Jewel fix](#jewel-fix) |
 | `--approach-softlock-fix` | nine words at PROT 0898 `0x801E3568` | in place | [Approach-softlock fix](#approach-softlock-fix) |
 | `--fortress-encounter-fix` | 14 decoded bytes in each of the `deroa` (PROT 606) and `chitei2` (PROT 706) scene MANs | in place (data edit, no code) | [Fortress encounter fix](#fortress-encounter-fix) |
+| `--conkram-freeze-fix` | SCUS `0x80023CAC..0x80023CDC`, 9 words of move-VM op `0x3C` | in place | [Conkram freeze fix](#conkram-freeze-fix) |
 | `--show-super-arts` | SCUS `0x800343C4`, `0x80034450`; PROT 0898 `0x801EFBCC`, `0x801D3748`; four PROT 0899 detours | all four arena regions + PROT 0899 dead band | [Show Super Arts](#show-super-arts-on-the-in-battle-move-list) |
 | `--super-arts-pack` | fourteen words over ten sites + the banner fix at `0x8004BC3C` | `DMY.DAT` annex, streamed to `0x801FD000`; loader stub in `ARENA1` | [Super Arts Pack](#super-arts-pack-by-zetaphoenix) |
 | `--arts-ap-grant` / `--arts-ap-cost` | three detours in PROT 0898 `FUN_801EED1C` | arena regions | [Arts AP override](#arts-ap-override) |
@@ -859,6 +860,79 @@ randomizers in both orders, and a clean refusal) and at **runtime** by
 bank, the port of the retail roll `FUN_801D9E1C` is silent on the retail tables
 and rolls a battle on step 55 of a rate-18 room on the patched ones, with the
 Door of Light gate following.
+
+### Conkram freeze fix
+
+`--conkram-freeze-fix` stops the Room of Mirrors lock-up in present-day Conkram
+on a fast emulated CPU (`conkram_freeze_fix` module in `legaia-code-hooks`).
+Seedless, in place, no injected routine.
+
+- **The defect.** The move VM's keyframe-pose seat (op `0x3C`, jump-table entry
+  `0x80023CA4` in `FUN_80023070`) allocates its pose block with
+  `FUN_80017888(0, count << 5 | 8)` when `actor+0x4C` is empty, stores the
+  result with no test, and copies each part's keyframe through it. When the
+  heap is dry the block is NULL and a four-part pose lands on
+  `0x80000028..0x8000008C`, over the exception vector. Full trace:
+  [field-oddities.md](../reference/glitches/field-oddities.md#conkram-mirror-freeze).
+- **The edit.** The handler's sixteen words `0x80023CA4..0x80023CE0` hold one
+  load-delay `nop` (`0x80023CAC`, after `lw v0,0x44(s2)`). The independent
+  `sh zero,0x22(s2)` moves into it, the five instructions after it move up one
+  word, and the word after the `jal` becomes `beq v0,zero,0x800232B8`, with the
+  handler's own `sw v0,0x4c(s2)` as its delay slot. Nine words change.
+- **The failure exit.** `0x800232B8` is op `0x08`'s HALT arm: `a2 = 0`,
+  `s6 = 0`, `+0x10 |= 8`, `j 0x80024150`. The VM returns with a zero PC delta;
+  the part tick sees the halt bit at `0x80022BB4` and skips the mode-6 pack; the
+  list walk `FUN_8002519C` marks the part on its next pass and releases it on
+  the one after, freeing the render node (`+0x10 & 0x800`) and skipping
+  `+0x4C` because it is NULL (`0x80025264`). The delay-slot store writes the
+  NULL into a word that was already 0.
+- **The success path is retail's.** The same instructions run in the same
+  order except the `+0x22` store, which now precedes the count-word store
+  through `+0x44`: two stores to unrelated memory, the node being its own heap
+  block. No image holds a branch, jump or address word into
+  `0x80023CA8..0x80023CE4` (five-form scan; the two `j` hits are scene data
+  in PROT 0647 and 0816).
+- **Why halting.** Skipping the install leaves a part with a NULL block that op
+  `0x3D` writes through untested (`0x80023D90`, `0x80023EC0`), so two more
+  sites would need guards. Retrying next frame keeps the part and its node
+  alive on a heap that may not recover. A static fallback block would be passed
+  to `free` by the list walk. Making the allocator never fail needs a reserve
+  the free path knows about. Deferring the `PLAYER1..3` pre-stage in
+  `FUN_800243F0` moves the CD schedule of every music swap and still leaves the
+  NULL copy for any other dry heap. Halting is the one choice that fits in
+  place, leaves no later writer behind and gives memory back.
+- **What it does not change.** The `PRG ERR` counter `0x8007B828` still counts
+  the failure, so the top-left readout can appear on a fast emulator. The
+  render-node allocation in `FUN_80020F88` already tests its result; the NULL
+  it leaves at `+0x44` (a store through it at `0x80023CB0` and in the draw path
+  at `0x8001B098`) is a separate, smaller hazard this fix does not cover.
+- **Guard.** The stock window, the HALT arm, the jump-table entries for ops
+  `0x3C` and `0x08` and the copy entry `0x80023CE4` are checked first; an
+  unrecognized build is refused and an already-fixed image is a no-op.
+
+**Verified by** the `conkram_freeze_fix_real` disc oracle (retail baseline of
+the handler, HALT arm and jump table; exactly the nine planned words change and
+only SCUS sectors move, all EDC/ECC-valid; determinism and idempotence; the
+disc's whole op-`0x3C` handler run on the R3000 model, which copies the same
+pose as retail on success and writes nothing below `0x80000100` on failure,
+where retail reaches `0x80000080`), unit tests of the window on the same model,
+and **emulator runs** on the settings that freeze. Each run cold-boots a disc
+from an edited memory-card save that starts the mirror walk-on, checkpoints at
+field load, and presses Cross every 100 vsyncs; the patched disc is a scratch
+copy in its own directory:
+
+| Emulator, setting | Save | Retail disc | Patched disc |
+|---|---|---|---|
+| SwanStation, 200 % CPU | played, level 27 | vector overwritten, stops in `concnow` | reaches `conc2` 2,730 vsyncs after field load |
+| SwanStation, 200 % CPU | late-game, level 37 | vector overwritten, hangs | reaches `conc2` at 2,730 |
+| PCSX-ReARMed, its default for this game | played | vector overwritten, hangs | reaches `conc2` at 3,230 |
+| PCSX-ReARMed, its default | late-game | vector overwritten, hangs | reaches `conc2` at 3,230 |
+| SwanStation, 100 % CPU | played | reaches `conc2` at 3,240 | reaches `conc2` at 3,240; final RAM identical to the retail run's except the nine words |
+
+On the fast settings many allocations fail during the crossing (`PRG ERR`
+records them, render-node failures included) and the scene still plays to the
+end, with the readout on screen. At console speed nothing fails, so the fixed
+branch never runs and the run is byte-identical to retail's.
 
 ### Show Super Arts on the in-battle move list
 
@@ -1544,6 +1618,8 @@ counter stay zero on disc; the roll fills them per battle.
 | `crates/patcher` `shiny_seru_real` | disc-gated | inject shiny Seru: assert all nine hook sites match the known US build and the SCUS regions (`0x80077728` gap 1 / `0x8007AE00` arena 1 / `0x8007AFF8` arena 2 / `0x80078A88` slot 6) are all-zero dead space outside every live table - incl. the `0x80079xxx` SsAPI sound tables the old arena3/4/5 squatted in (routine VAs 4-byte aligned), and the victory mouth-override row at `0x800781B0` keeps the clean keyframes; then off the patched image: every detour became `j routine` + nop, the bitmap has Gimard set / gobu clear, bytes outside the planned edits are untouched, the disc stays EDC/ECC-valid, it composes with enemy-ally, is byte-deterministic, and the guards refuse a corrupted / non-dead / in-table region |
 | `crates/patcher` `approach_fix_real` | disc-gated | apply the approach-softlock fix: assert the baseline window at PROT 898 `+0x14D50` holds the stock nine facing-recompute words (and the pose/range-check context around it matches the documented disassembly), then off the patched image that exactly the nine window words changed, the image still parses, the edit is byte-deterministic, and a second application is a clean no-op |
 | `crates/patcher` `fortress_encounter_fix_real` | disc-gated | apply the Fortress encounter fix: assert both scene MANs (PROT 606 / 706) open with the retail flag-`0x15` group and that outside the Floating Castle they are the only condition lists naming that flag, then off the patched image that neither tests it, that every tile reads a healthy file's row under every flag state, that only the 14 targeted bytes moved, every changed sector is EDC/ECC-valid, the edit is deterministic and idempotent, composes with the MAN-rewriting randomizers in both orders, and a non-retail table is refused with nothing written |
+| `crates/patcher` `conkram_freeze_fix_real` | disc-gated | apply the Conkram freeze fix: assert the retail op-`0x3C` handler, HALT arm and jump-table entries, then off the patched image that exactly the nine planned SCUS words changed, only SCUS sectors moved and each is EDC/ECC-valid, the edit is deterministic and idempotent, and the disc's own handler on the R3000 model copies like retail on success and writes nothing below `0x80000100` on a NULL allocation |
+| `crates/code-hooks` `conkram_freeze_fix` | unit | the stock words against the encoders, the nine-word diff, both branch targets, load delays, retail-identical success on the model, the halt on NULL, plan / idempotence / refusal on a synthetic EXE |
 | `crates/parity` `fortress_encounter_fix_runtime_e2e` | disc-gated | walk a rate-18 tile of each Fortress scene through the engine's region roll with flag `0x15` set: silent on the retail MAN, a battle on step 55 on the patched one, Door of Light gate following; a flag-clear baseline keeps it non-vacuous |
 | `crates/patcher` `jewel_fix_real` | disc-gated | apply the jewel fix: assert all thirteen cast-module call sites across PROT 944 / 952 / 953 / 958 / 959 / 960 hold the stock `jal FUN_801DD6B4` word, then off the patched image that every site reads `jal FUN_801DD4B0` and that per touched window exactly the planned words changed - the 09xx extents tile exactly, so each window is asserted to hold no other module's head and each site to lie inside its own extent - plus the image still parses, the edit is byte-deterministic, and re-application / an unrecognized build is refused |
 | `crates/patcher` `fishing_price_real` | disc-gated | apply a fishing-exchange price edit: assert the Buma Water Egg row is at PROT 972 offset 0x9874 (20000 points), then off the patched image that the price becomes the target as a same-size u32, exactly the targeted price words changed, the overlay re-parses, re-applying is a no-op, and an absent item is refused |

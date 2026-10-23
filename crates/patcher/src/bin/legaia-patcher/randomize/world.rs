@@ -76,6 +76,30 @@ pub(super) fn fortress_encounter_fix(run: &mut Run<'_>) -> Result<()> {
     Ok(())
 }
 
+/// Conkram mirror freeze fix: the move VM's keyframe-pose seat tests its heap
+/// allocation and drops the effect part on a failure, instead of copying
+/// through NULL over the exception vector. Seedless - nine SCUS words.
+pub(super) fn conkram_freeze_fix(run: &mut Run<'_>) -> Result<()> {
+    let args = run.args;
+    let patcher = &mut run.patcher;
+    let manifest = &mut run.manifest;
+    if args.conkram_freeze_fix {
+        let report = apply::apply_conkram_freeze_fix(patcher)?;
+        println!(
+            "conkram-freeze-fix: {}",
+            if report.changed {
+                "move VM patched (a failed keyframe allocation drops the effect part instead of overwriting the exception vector)"
+            } else {
+                "already applied (no change)"
+            }
+        );
+        manifest.push("conkram_freeze_fix = true".to_string());
+    } else {
+        manifest.push("conkram_freeze_fix = false".to_string());
+    }
+    Ok(())
+}
+
 /// Place renames: the SCUS landmark cell, the world-map label records, and
 /// every scene MAN whose entry banner carries the name.
 pub(super) fn rename_location(run: &mut Run<'_>) -> Result<()> {

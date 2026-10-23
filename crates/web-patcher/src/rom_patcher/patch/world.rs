@@ -169,6 +169,28 @@ pub(super) fn fortress_encounter_fix(run: &mut PatchRun<'_>) -> StepResult {
     Ok(())
 }
 
+/// Conkram mirror freeze fix: the move VM's keyframe-pose seat tests its heap
+/// allocation and drops the effect part when it fails, instead of copying the
+/// pose through NULL over the exception vector (the Room of Mirrors lock-up on
+/// a fast emulated CPU). Seedless; nine `SCUS_942.54` words.
+pub(super) fn conkram_freeze_fix(run: &mut PatchRun<'_>) -> StepResult {
+    let PatchOptions {
+        conkram_freeze_fix, ..
+    } = *run.opts;
+    if conkram_freeze_fix {
+        let rep = apply::apply_conkram_freeze_fix(&mut run.patcher)
+            .map_err(|e| format!("conkram-freeze-fix: {e:#}"))?;
+        run.summary.push_str(if rep.changed {
+            "conkram-freeze-fix: move VM patched (a failed effect allocation drops the part instead of freezing the game)\n"
+        } else {
+            "conkram-freeze-fix: already applied\n"
+        });
+    } else {
+        run.summary.push_str("conkram-freeze-fix: untouched\n");
+    }
+    Ok(())
+}
+
 /// Place renames: newline-separated `target=name` lines (a name may contain
 /// spaces, so only the newline splits entries). `target` is a landmark index
 /// or the place's current name. Each rename propagates to all three carriers -

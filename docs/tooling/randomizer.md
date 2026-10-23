@@ -161,6 +161,7 @@ legaia-patcher randomize --input DISC.bin --seed swap --seru-trade              
 legaia-patcher randomize --input DISC.bin --seed fair --jewel-fix                         # boss cinematic casts respect elemental guards
 legaia-patcher randomize --input DISC.bin --seed fair --approach-softlock-fix              # dead approach animations re-stage instead of wedging
 legaia-patcher randomize --input DISC.bin --seed fair --fortress-encounter-fix             # Jette's Absolute Fortress rolls battles on a save with the stale castle flag
+legaia-patcher randomize --input DISC.bin --conkram-freeze-fix                            # the Room of Mirrors in Conkram no longer locks up on a fast emulated CPU
 legaia-patcher randomize --input DISC.bin --seed fair --delilas-challenge                  # Muscle Dome option: a new 2-round Delilas course
 legaia-patcher fishing   --input DISC.bin                                                 # read-only: list fishing-exchange prizes + prices
 legaia-patcher randomize --input DISC.bin --seed fish --fishing-price 0x6F=500            # Buma Water Egg costs 500 fishing points
@@ -252,6 +253,7 @@ unless asked for:
 | `--jewel-fix` | the boss cinematic casts (Xain, Cort, the Delilas trio) respect elemental guards like every other special | - | [Jewel fix](#jewel-fix) |
 | `--approach-softlock-fix` | a monster whose approach animation dies mid-walk is re-staged and resumes walking instead of parking the battle forever (the "endless camera orbit") | - | [Approach-softlock fix](#approach-softlock-fix) |
 | `--fortress-encounter-fix` | Jette's Absolute Fortress stops obeying the Floating Castle's stale "no battles" flag, so a save that left the castle with under a minute on the clock gets its random battles (and the Door of Light there) back | - | [Fortress encounter fix](#fortress-encounter-fix) |
+| `--conkram-freeze-fix` | the Room of Mirrors scene in present-day Conkram no longer locks up on an emulator that runs the CPU faster than a console; a failed effect allocation drops one particle instead | - | [Conkram freeze fix](#conkram-freeze-fix) |
 | `--delilas-challenge` | a fourth Muscle Dome enrollment option: a new 2-round arena course (Che & Lu double-team, then Gi; a clear pays 5000 coins + a Honey); unlocks after the Koru event | - | [Delilas Challenge](#delilas-challenge) |
 | `--delilas-party V,N,G` | play as the Delilas siblings: the party wears Gi / Lu / Che battle models (any permutation over Vahn, Noa, Gala) while the ravine duels + dome Master legs field Vahn / Noa / Gala models | - | [Delilas party swap](#delilas-party-swap) |
 | `--delilas-arts-voice MODE` | with the swap: what the arts shout AND Super/Hyper fanfare banks carry - `original` (default; the retail hero shouts stay), `adjusted` (re-voiced toward the siblings), `removed` | `original` | [Delilas party swap](#delilas-party-swap) |
@@ -1569,6 +1571,35 @@ scene's own post-Jette group, so the Fortress never tests flag `0x15`:
 
 Seedless, and it combines with every other option. On in the web Balanced / Full
 Chaos presets. [Internals](randomizer-internals.md#fortress-encounter-fix).
+
+### Conkram freeze fix
+
+`--conkram-freeze-fix` stops the lock-up in present-day Conkram's Room of
+Mirrors, the scene that sends the party into the past. It happens on emulators
+that run the CPU faster than a console - PCSX-ReARMed's default for this game,
+or a SwanStation / DuckStation overclock - and not on a console. The scene runs
+with almost no free memory; with the faster CPU the mirror effect keeps more
+particles alive, one particle's request for memory fails, and the effect code
+copies its animation through the failed request's empty pointer onto the CPU's
+exception vector. The next interrupt jumps into that data and the game stops.
+The cause is traced in
+[field-oddities.md](../reference/glitches/field-oddities.md#conkram-mirror-freeze).
+
+The fix adds the missing test to that request:
+
+- **On a failure, one particle is dropped.** The effect part that asked for the
+  memory ends the way a part ends normally, and the memory it already held goes
+  back to the game. The scene plays on.
+- **Every request that succeeds runs as retail.** At console speed no request
+  fails in this scene, so the scene and every other effect in the game play
+  exactly as before.
+- **The game's own error counter still counts.** A failure still adds to the
+  `PRG ERR` counter the game prints in the top-left corner, so the text can
+  appear on a fast emulator where the game would otherwise have frozen.
+
+Seedless, nine words of `SCUS_942.54`, and it combines with every other option.
+On in the web Balanced / Full Chaos presets.
+[Internals](randomizer-internals.md#conkram-freeze-fix).
 
 ### Delilas Challenge
 

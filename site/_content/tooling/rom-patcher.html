@@ -536,6 +536,12 @@
       </label>
 
       <label class="rom-check-row">
+        <input type="checkbox" id="rom-conkram-fix">
+        <span>Conkram freeze fix <span class="rom-opt-note">- no lock-up at the Room of Mirrors on fast emulators (bug fix)</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">On an emulator that runs the CPU faster than a console (PCSX-ReARMed's default for this game, or an overclock), the mirror scene in present-day Conkram runs out of memory and the effect code overwrites the CPU's exception vector, freezing the game. With the fix a failed allocation drops one effect particle instead. Console-speed play is unchanged. Unaffected by the seed; <a href="../writeups/glitches/field-oddities.html#conkram-mirror-freeze">full write-up</a>.</span></span></span>
+      </label>
+
+      <label class="rom-check-row">
         <input type="checkbox" id="rom-delilas-challenge">
         <span>Delilas Challenge <span class="rom-opt-note">- a new Delilas dome course at the Muscle Dome</span>
           <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The Muscle Dome clerk gains a fourth option: a new course where Che and Lu Delilas fight you <strong>together</strong>, then Gi finishes the gauntlet. Unlocks after the Koru event in Nivora Ravine; a full clear pays 5,000 coins plus a Honey (or the three custom items, below). Repeatable, and a loss just returns you to Sol.</p><p>Gi brings two borrowed moves - Spore Gas, and Divide once his health drops below half (he splits in two, at the cost of Blazing Slash).</p><p>Unaffected by the seed. <a href="randomizer.html#delilas-challenge">Details</a>.</p></span></span></span>

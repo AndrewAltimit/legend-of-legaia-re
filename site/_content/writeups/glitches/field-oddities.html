@@ -865,7 +865,7 @@ caption reads scene_data[sectors * 0x800 - 0x2E344]   (reached only from 93 sect
   <dl class="kv">
     <dt>Reported as</dt><dd>The game freezes in present-day Conkram, in the Room of Mirrors scene that sends the party into the past, on many emulators; pressing Cross very fast through the scene's text avoids it (community reports: pSX 1.13 logging <code>r3000: executed illegal opcode</code> in a <a href="https://psxemulator.proboards.com/thread/2041/legend-legaia">pSX forum thread</a>, which also reports the PAL release unaffected; ePSXe versions other than 1.7.0; the PS3's PS1 emulation every time; a <a href="https://beforeiplay.com/wiki/Legend_of_Legaia">play guide</a> that moves DuckStation saves to ePSXe for this scene). Nobody reports it on a PS1 or PS2</dd>
     <dt>Cause</dt><dd>The scene runs with almost no free heap. An emulated CPU faster than a console's gives the game more frames per second and keeps more effect parts alive; an allocation fails, the move VM writes animation data through the NULL pointer over the bottom of RAM, and the CPU's exception vector is gone</dd>
-    <dt>Where</dt><dd><code>concnow</code> records <code>P2[17]</code> (the walk-on at the mirror) and <code>P2[18]</code> (the crossing); the unchecked allocation in the move VM's <code>KEYFRAME_LOAD</code> at <code>0x80023CD0..0x80023CE0</code>, <code>SCUS_942.54</code></dd>
+    <dt>Where</dt><dd><code>concnow</code> records <code>P2[17]</code> (the walk-on at the mirror) and <code>P2[18]</code> (the crossing); the unchecked allocation in the move VM's keyframe-pose seat (op <code>0x3C</code>) at <code>0x80023CD0..0x80023CE0</code>, <code>SCUS_942.54</code></dd>
     <dt>Affects</dt><dd>This scene on any emulator that runs the CPU fast enough; how fast depends on the party</dd>
     <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - reproduced on two emulators by changing only the emulated CPU speed; why a faster CPU keeps more parts alive is inference</dd>
   </dl>
@@ -876,7 +876,7 @@ caption reads scene_data[sectors * 0x800 - 0x2E344]   (reached only from 93 sect
       <li><strong>What you see.</strong> The picture stops during the mirror scene, on some emulators; nobody reports it on a PS1 or PS2.</li>
       <li><strong>Why.</strong> The room leaves the game's heap almost full. An emulated CPU faster than a console's draws more frames and keeps more effect parts alive, and an allocation fails. The code that asked for it never checks, and copies animation data to address zero - over the CPU's exception vector. The next interrupt loops forever.</li>
       <li><strong>Why some emulators.</strong> It depends on CPU speed alone: SwanStation passes at 100 % and froze from 125 % with one save; PCSX-ReARMed freezes at the faster clock it applies to this game by default and passed at the lower clocks tried (30 to 50).</li>
-      <li><strong>What to do.</strong> Set the emulator's CPU speed to 100 % (on PCSX-ReARMed, a lower CPU clock) for this scene, then put it back.</li>
+      <li><strong>What to do.</strong> Patch the disc with <code>--conkram-freeze-fix</code> (a checkbox in the <a href="../../tooling/rom-patcher.html">browser patcher</a>). Without it, set the emulator's CPU speed to 100 % (on PCSX-ReARMed, a lower CPU clock) for this scene, then put it back.</li>
     </ul>
   </div>
 
@@ -928,9 +928,13 @@ caption reads scene_data[sectors * 0x800 - 0x2E344]   (reached only from 93 sect
     <li><b>Heap nearly full</b><span>About 16.6 KB free in <code>concnow</code>; the allocator <code>FUN_8002B468</code> is best-fit over one free list.</span></li>
     <li><b>Battle data pre-staged</b><span>After the music swap the poller <code>FUN_800243F0</code> (<code>0x80024BB0..0x80024C64</code>) reads 8 sectors through <code>FUN_8003E360</code>, then <code>FUN_80052770</code> loads the party battle files <code>PLAYER1..3</code>, about 316 KiB in twenty chunks.</span></li>
     <li><b>Allocation fails</b><span>An effect part's keyframe buffer (<code>FUN_80017888(0, count*32|8)</code>, 0x88 bytes for four lanes) returns NULL; the failure arm only adds <code>0x20000</code> to the <code>PRG ERR</code> counter <code>0x8007B828</code>.</span></li>
-    <li><b>NULL write</b><span><code>KEYFRAME_LOAD</code> stores the pointer with no test and copies through it (<code>sh</code> at <code>0x80023D30</code>, <code>0x80023D3C</code>, later <code>0x80023EF4</code>).</span></li>
+    <li><b>NULL write</b><span>Move-VM op <code>0x3C</code> stores the pointer with no test and copies through it (<code>sh</code> at <code>0x80023D30</code>, <code>0x80023D3C</code>); its retarget op <code>0x3D</code> writes through it too (<code>0x80023EF4</code>).</span></li>
     <li><b>Exception loop</b><span>Cause <code>0x428</code> (reserved instruction), EPC <code>0x80000084</code>, on every interrupt.</span></li>
   </ol>
+
+  <h3>The fix</h3>
+  <p>The patcher's <code>--conkram-freeze-fix</code> (<a href="../../tooling/randomizer.html#conkram-freeze-fix">details</a>) adds the missing test. Nine words of the move VM's op-<code>0x3C</code> handler in <code>SCUS_942.54</code> are rearranged in place so the word after the allocation becomes a branch to the VM's own halt when it comes back NULL. The particle that asked for the memory ends the way a script ends one, its render node goes back to the heap, and nothing is written through NULL; every allocation that succeeds runs the retail instructions. The <code>PRG ERR</code> counter still records each failure, so its readout can appear in the corner on a fast emulator.</p>
+  <p>Run on the settings that froze, the patched disc passes: both saves reach past Conkram on SwanStation at 200 % and on PCSX-ReARMed's default. At SwanStation's 100 % the patched run reaches past Conkram on the same vsync as the retail disc, with RAM identical apart from the nine words.</p>
 
   <h3>What was captured</h3>
   <p>All runs use the retail disc, staged away from the <code>.ppf</code> beside it, entered through a poked state (PCSX-Redux) or one of two edited memory-card saves booted cold: one with a level-37 late-game party, and the played save from Zora's Castle just before Conkram (level 27), edited only to start on the mirror walk-on.</p>
@@ -952,7 +956,7 @@ caption reads scene_data[sectors * 0x800 - 0x2E344]   (reached only from 93 sect
   <table>
     <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
     <tbody>
-      <tr><td><code>0x80023CD0..0x80023CE0</code></td><td>SCUS_942.54</td><td><code>KEYFRAME_LOAD</code>: unchecked malloc</td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x80023CD0..0x80023CE0</code></td><td>SCUS_942.54</td><td>move-VM op <code>0x3C</code>: unchecked malloc</td><td>disassembly, capture</td></tr>
       <tr><td><code>0x80017888</code>, <code>0x800178B8</code></td><td>SCUS_942.54</td><td>malloc wrapper and its failure arm</td><td>disassembly</td></tr>
       <tr><td><code>0x80021184..0x80021190</code>, <code>0x8001B098</code></td><td>SCUS_942.54</td><td>render-node malloc stores NULL; the draw path writes through it</td><td>disassembly, capture</td></tr>
       <tr><td><code>0x80024BB0..0x80024C64</code></td><td>SCUS_942.54</td><td>post-swap battle pre-stage</td><td>disassembly, capture</td></tr>
