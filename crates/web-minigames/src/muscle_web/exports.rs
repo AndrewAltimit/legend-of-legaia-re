@@ -29,10 +29,9 @@ impl LegaiaMinigames {
     /// archive id), on PsyQ RNG seed `seed`.
     ///
     /// The player fighter's stats are the disc's own progression: the
-    /// new-game template record leveled through the growth curves (the
-    /// deterministic core gain per level - retail adds a `rand()` jitter of
-    /// mean 0 on top, so the core is the expected retail stat line), then
-    /// battle-load initialised (`FUN_80053CB8`). The opponent's stats are its
+    /// new-game template record leveled through the growth curves with the
+    /// retail per-level `rand()` spread (`FUN_801E9504`, on a stream seeded by
+    /// `seed`), then battle-load initialised (`FUN_80053CB8`). The opponent's stats are its
     /// monster record's boosted battle profile (`FUN_80054CB0`). Both round
     /// budgets seed from the fighters' AGL - the `+0x154` pool the dome's
     /// budget `ctx+0x6dc` reads. Returns `false` when the tables or the
@@ -44,6 +43,11 @@ impl LegaiaMinigames {
         monster_id: u16,
         seed: u32,
     ) -> bool {
+        // The last leg's saved command strings go back into this page's
+        // stand-in record before the next leg reads them.
+        if let Some(m) = self.muscle.as_ref() {
+            self.muscle_auto_strings = m.session.auto_command_strings();
+        }
         self.muscle = None;
         let Some(tables) = self.muscle_tables.as_ref() else {
             return false;
@@ -53,25 +57,25 @@ impl LegaiaMinigames {
         let Some((opponent, opp_name)) = self.muscle_monster_fighter(monster_id) else {
             return false;
         };
-        let (player, player_name, stats_source) = match self.muscle_player_fighter(char_slot, level)
-        {
-            Some((f, n)) => (f, n, "disc"),
-            None => (
-                // No SCUS (raw PROT.DAT load): documented fallback
-                // constants, surfaced as "fallback" in the state JSON.
-                MuscleFighter {
-                    hp_max: 500,
-                    mp_max: 50,
-                    budget_pool: 120,
-                    int: 60,
-                    udf: 40,
-                    ldf: 40,
-                    element: ELEMENT_NEUTRAL,
-                },
-                ["Vahn", "Noa", "Gala"][char_slot].to_string(),
-                "fallback",
-            ),
-        };
+        let (player, player_name, stats_source) =
+            match self.muscle_player_fighter(char_slot, level, seed) {
+                Some((f, n)) => (f, n, "disc"),
+                None => (
+                    // No SCUS (raw PROT.DAT load): documented fallback
+                    // constants, surfaced as "fallback" in the state JSON.
+                    MuscleFighter {
+                        hp_max: 500,
+                        mp_max: 50,
+                        budget_pool: 120,
+                        int: 60,
+                        udf: 40,
+                        ldf: 40,
+                        element: ELEMENT_NEUTRAL,
+                    },
+                    ["Vahn", "Noa", "Gala"][char_slot].to_string(),
+                    "fallback",
+                ),
+            };
         let player_costs = self
             .muscle_swing_costs(char_slot)
             .unwrap_or([FAVORED_COST; 4]);
@@ -112,6 +116,44 @@ impl LegaiaMinigames {
         let catalog = self.muscle_art_catalog_rows(char_slot);
         if !catalog.is_empty() {
             session.install_art_catalog(0, catalog);
+        }
+        // The Auto attack: the saved command strings the entry opens over and
+        // the disc inputs the round's `FUN_801F0450` rebuild reads, through
+        // the reader the session owns. This page models no arts learning, so
+        // every bank art counts as learned, as its arts list shows them all.
+        {
+            use legaia_engine_battle_menus::muscle_dome_session::DomeAutoInputs;
+            let (primary, secondary) = self.muscle_auto_strings;
+            session.set_auto_command_strings(
+                primary,
+                secondary,
+                legaia_save::AutoCommandBand::for_gauge(player.budget_pool, player.budget_pool),
+            );
+            let mut inputs = DomeAutoInputs {
+                char_id: char_slot as u8 + 1,
+                opponent_swing_class: self
+                    .monster_archive_entry()
+                    .and_then(|a| {
+                        legaia_actor_formats::monster_archive::record(a, monster_id).ok()?
+                    })
+                    .map_or(0, |r| r.swing_class),
+                ..Default::default()
+            };
+            if let Some(raw) = self.muscle_player_file(char_slot as u32) {
+                inputs.read_player_file(raw, &[0u8; 5]);
+            }
+            inputs.learned = (0..inputs.art_count.saturating_sub(0xB)).collect();
+            if let Some(loaded) = overlay_image(
+                &self.prot,
+                &self.entries,
+                md::MUSCLE_OVERLAY_PROT_INDEX as u32,
+            ) {
+                inputs.read_guards(
+                    &loaded,
+                    legaia_minigame_formats::muscle_dome::MUSCLE_OVERLAY_BASE_VA,
+                );
+            }
+            session.install_auto_inputs(inputs);
         }
         // Damage resolves through the shared retail kernel - the same
         // `DomeDamageModel` the native play-window host installs, so neither

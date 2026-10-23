@@ -235,6 +235,10 @@ pub struct LegaiaMinigames {
     /// The player's casino coin bank, so a settled contest has somewhere to
     /// pay into (the native host banks into `World::minigames.casino_coins`).
     muscle_coins: u32,
+    /// The dome fighter's two saved command strings (record `+0x1A7` /
+    /// `+0x1B7`): this page holds no record, so it keeps them across legs
+    /// here - each leg opens over them and banks its review confirms back.
+    muscle_auto_strings: ([u8; 16], [u8; 16]),
     /// The **special-battle word** `0x8007BAC0` the next leg opens on - the
     /// value retail's arena entry seeds from the three course-unlock story
     /// flags (`legaia_engine_minigames::muscle_dome::contest_entry_word`). The
@@ -467,6 +471,7 @@ impl LegaiaMinigames {
             muscle: None,
             muscle_run: None,
             muscle_coins: 0,
+            muscle_auto_strings: ([0; 16], [0; 16]),
             muscle_special: 0,
             muscle_settlement: None,
             muscle_surface: Default::default(),

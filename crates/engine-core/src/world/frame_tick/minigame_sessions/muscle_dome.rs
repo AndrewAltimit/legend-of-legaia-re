@@ -137,6 +137,12 @@ impl World {
             let fought = s.hp(0).clamp(0, i32::from(u16::MAX)) as u16;
             let (hp_cur, hp_max) = match self.party.roster.members.first_mut() {
                 Some(rec) => {
+                    // The two saved command strings live in the record:
+                    // the review confirm's `FUN_801DA59C` wrote the leg's
+                    // into them (`MuscleDomeSession::auto_command_strings`).
+                    let (primary, secondary) = s.auto_command_strings();
+                    rec.set_auto_command_string(legaia_save::AutoCommandBand::Primary, primary);
+                    rec.set_auto_command_string(legaia_save::AutoCommandBand::Secondary, secondary);
                     let mut hms = rec.hp_mp_sp();
                     // A hand-built record with no maximum has nothing to
                     // write back into; the pick reads the fight's HP.

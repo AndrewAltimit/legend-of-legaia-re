@@ -18,18 +18,15 @@
 //! What the session itself still owns is the dome bookkeeping those screens
 //! write into: the fighter's queue / budget / spent triple
 //! (`actor+0x1DF`, `ctx+0x6DC`, `ctx+0x6D8`), which the entry session is
-//! mirrored into after every press, and the cast the Ra-Seru list commits.
+//! mirrored into after every press, the cast the Ra-Seru list commits, and
+//! the Auto state - the saved command strings the entry opens over and the
+//! review writes back, and the flag the round's rebuild reads (`auto.rs`).
 //!
 //! Disclosed host models, each where the port has nothing to run:
 //!
 //! * **Item** refuses. The ring's Item arm opens the battle item window; the
 //!   dome session carries no bag, so the press is refused like a forbidden
 //!   chip (every dome course's special word forbids items anyway).
-//! * **Auto** fills the string greedily in deal order (the opponent's own
-//!   selection rule). Retail's Auto reloads the character's saved string and
-//!   the round's pool arm rebuilds it (`FUN_801F0450`; see
-//!   `docs/subsystems/minigame-muscle-dome.md`, "The Auto arm reloads a saved
-//!   string").
 //! * **Spirit** commits an empty string: the session has no guard stance or
 //!   Spirit charge to apply, so the fighter simply does not swing.
 
@@ -153,7 +150,10 @@ impl MuscleDomeSession {
             .min(u8::MAX as usize) as u8
     }
 
-    /// Open the direction entry over the fighter's live budget.
+    /// Open the direction entry over the fighter's live budget, preseeded
+    /// with the saved command string the opening `FUN_801DA34C` loads
+    /// (`0x801D1734`): its pennants stand on the bar until the first press,
+    /// and a bare confirm replays it.
     fn open_entry(&self) -> ArtsCommandInputSession {
         ArtsCommandInputSession::new(
             0,
@@ -162,6 +162,7 @@ impl MuscleDomeSession {
             self.entry_costs(),
             self.arts_list_pages(),
         )
+        .with_preseed(self.auto_preseed())
     }
 
     /// Mirror the entry session's buffer into the fighter's queue / budget /
@@ -177,11 +178,34 @@ impl MuscleDomeSession {
             .take(QUEUE_CAP)
             .map(|b| b + HAND_COMMAND_BASE)
             .collect();
-        let spent: u16 = entry.spent.iter().sum();
+        let spent: u16 = if entry.replay {
+            entry.preseed_spent.iter().sum()
+        } else {
+            entry.spent.iter().sum()
+        };
         let f = &mut self.f[0];
         f.queue = queue;
         f.spent = spent;
         f.budget = f.budget_pool.saturating_sub(spent);
+    }
+
+    /// `Auto` on the attack-mode prompt: the flow goes straight to the queue
+    /// review (`0x78 -> 0x5A`, flag `1` at `0x801D17D0`) over the string the
+    /// Attack confirm loaded - the review's pennants are the saved string's,
+    /// and its confirm commits that string as a replay does.
+    fn open_auto_review(&mut self) {
+        let f = &mut self.f[0];
+        f.queue.clear();
+        f.budget = f.budget_pool;
+        f.spent = 0;
+        self.auto.flag = true;
+        // The gauge build cuts the loaded string at the first command a full
+        // pool cannot pay (`ArtsCommandInputSession::with_preseed`).
+        let mut entry = self.open_entry();
+        entry.replay = true;
+        entry.phase = legaia_engine_battle::arts_command_input::ArtsInputPhase::Review;
+        self.menu = DomeMenu::Input(entry);
+        self.sync_entry();
     }
 
     /// The `Begin | Reselect` confirm, raised after the fighter's commit.
@@ -212,10 +236,16 @@ impl MuscleDomeSession {
     }
 
     fn command_step(&mut self, mut cmd: BattleCommandSession, pad: DomeSelectPad) -> DomeMenuEvent {
+        // The ring's arm clears the Auto flag every frame it is up
+        // (`0x801D11A8`).
+        if matches!(cmd.phase, CommandPhase::Menu { .. }) {
+            self.clear_auto_flag();
+        }
         let before = command_cursor(&cmd.phase);
         let before_screen = std::mem::discriminant(&cmd.phase);
         let was_ring = matches!(cmd.phase, CommandPhase::Menu { .. });
         let was_prompt = matches!(cmd.phase, CommandPhase::RoundPrompt { .. });
+        let was_attack_mode = matches!(cmd.phase, CommandPhase::AttackMode { .. });
         let (party, monsters) = self.picker_rows();
         cmd.input(
             BattleCommandInput {
@@ -246,6 +276,22 @@ impl MuscleDomeSession {
         if attack_arm && !self.chip_enabled(0, DomeRingChip::Attack) {
             self.menu = DomeMenu::Command(ring_at(ring_cursor(DomeRingChip::Attack)));
             return DomeMenuEvent::Refused;
+        }
+        // `Auto` on the attack-mode prompt runs straight into the review
+        // (`0x78 -> 0x5A`): the dome fields one opponent and retail opens no
+        // target cursor there, so a picker the battle session opens is taken
+        // as the pick.
+        if was_attack_mode
+            && matches!(
+                cmd.phase,
+                CommandPhase::Targeting {
+                    command: BattleCommand::Attack,
+                    ..
+                }
+            )
+        {
+            self.open_auto_review();
+            return DomeMenuEvent::Confirm;
         }
         if was_prompt && matches!(cmd.phase, CommandPhase::Menu { .. }) {
             // Begin: the ring opens with its highlight on the Left arm - the
@@ -280,14 +326,15 @@ impl MuscleDomeSession {
                 }
             },
             Some(Resolution::OpenArtsMenu) => {
+                // `Command` lowers the Auto flag (`0x801D1760`).
+                self.clear_auto_flag();
                 self.menu = DomeMenu::Input(self.open_entry());
                 DomeMenuEvent::Confirm
             }
             Some(Resolution::Confirmed { .. }) => {
-                // Auto: the string is filled for the player (host model,
-                // see the module docs) and the confirm comes up.
-                self.ai_commit_all(0);
-                self.raise_commit_confirm();
+                // Auto: the review shows the saved string and the flag goes
+                // up (`0x801D17D0`); the round rebuilds the queue at Begin.
+                self.open_auto_review();
                 DomeMenuEvent::Confirm
             }
             Some(Resolution::SpiritGuard) => {
@@ -296,6 +343,9 @@ impl MuscleDomeSession {
             }
             Some(Resolution::BeginRound) => {
                 self.ai_commit_all(1);
+                // The round's state `0x00` runs `FUN_801F0450`, which
+                // rebuilds a flagged Attack seat's queue.
+                self.run_auto_rebuild();
                 self.end_selection();
                 self.menu = DomeMenu::default();
                 DomeMenuEvent::Fight
@@ -342,6 +392,18 @@ impl MuscleDomeSession {
             entry.phase,
             legaia_engine_battle::arts_command_input::ArtsInputPhase::Review
         );
+        // The review's cancel arm reads the Auto flag (`0x801D23A0`): set,
+        // it returns to the `Auto | Command` prompt rather than the entry.
+        if reviewing && pad.cancel && self.auto_flag() {
+            self.clear_auto_flag();
+            self.f[0].queue.clear();
+            self.f[0].budget = self.f[0].budget_pool;
+            self.f[0].spent = 0;
+            let mut cmd = BattleCommandSession::new(0, 0);
+            cmd.phase = CommandPhase::AttackMode { cursor: 0 };
+            self.menu = DomeMenu::Command(cmd);
+            return DomeMenuEvent::Cursor;
+        }
         entry.input(
             ArtsCommandPad {
                 up: pad.up,
@@ -367,12 +429,16 @@ impl MuscleDomeSession {
             _ if targeting => {
                 self.menu = DomeMenu::Input(entry);
                 self.sync_entry();
+                self.save_auto_string();
                 self.raise_commit_confirm();
                 DomeMenuEvent::Confirm
             }
             Some(ArtsInputResolution::Confirmed { .. }) => {
                 self.menu = DomeMenu::Input(entry);
                 self.sync_entry();
+                // The review confirm writes the string back into the
+                // fighter's band (`FUN_801DA59C` at `0x801D22BC`).
+                self.save_auto_string();
                 self.raise_commit_confirm();
                 DomeMenuEvent::Confirm
             }
@@ -509,6 +575,7 @@ impl MuscleDomeSession {
             list_pages: s.list_pages,
             phase: (&s.phase).into(),
             status: self.ring(0).status,
+            pennant_glides: &s.pennant_glides,
         })
     }
 

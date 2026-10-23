@@ -219,6 +219,43 @@ impl LegaiaMinigames {
         format!("[{}]", out.join(","))
     }
 
+    /// Where committed pennant `slot` draws `elapsed` frames after its press,
+    /// as `[x, y]` (its drawn left edge, retail 320x240 stage): the shared
+    /// `legaia_engine_ui::arts_input::ArtsInputFrame::pennant_seat`, the
+    /// glide the play hosts draw - from the pressed chip's anchor to the bar
+    /// seat over `PENNANT_GLIDE_FRAMES` frames, the `FUN_801D9BBC` step. The
+    /// page keeps its own frame clock, because it calls the selection only on
+    /// a key press. `null` outside the direction entry.
+    pub fn muscle_pennant_seat_json(&self, slot: u32, elapsed: u32) -> String {
+        use legaia_engine_battle::arts_command_input::PENNANT_GLIDE_FRAMES;
+        let Some(view) = self
+            .muscle
+            .as_ref()
+            .and_then(|m| m.session.arts_input_view())
+        else {
+            return "null".to_string();
+        };
+        let glides = [(
+            slot as usize,
+            elapsed.min(u32::from(PENNANT_GLIDE_FRAMES)) as u8,
+            PENNANT_GLIDE_FRAMES,
+        )];
+        let frame = legaia_engine_ui::arts_input::ArtsInputFrame {
+            buffer: view.buffer,
+            spent: view.spent,
+            chip_costs: view.costs,
+            chip_icons: view.chip_icons,
+            pool: view.pool,
+            pool_max: view.pool_max,
+            plate_value: view.plate_value,
+            list_page: view.list_page,
+            phase: legaia_engine_ui::arts_input::ArtsInputScreen::Entering,
+            glides: &glides,
+        };
+        let (x, y) = frame.pennant_seat(slot as usize);
+        format!("[{x},{y}]")
+    }
+
     /// The retail Triangle-list rows for the contest fighter: the character's
     /// arts out of the disc's own SCUS arts-name table (`DAT_80075EC4` -
     /// name, `+2` AP byte, directional command string), the exact source the

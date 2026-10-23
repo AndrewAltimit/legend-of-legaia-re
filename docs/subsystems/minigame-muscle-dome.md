@@ -571,7 +571,8 @@ The fighter's four selectable actions are its four direction commands, laid out 
 - **Commit** (`FUN_801D388C` case `0xB`): rejects when the remaining budget is smaller than the direction's cost (`ctx[ctx+0x1A + 0x14]`); otherwise spawns the pennant sprite, writes the id to `actor+0x1DF + ctx+0x19`, debits `ctx+0x6DC`, adds to `ctx+0x6D8` and increments `ctx+0x19`.
 - Case `3` clears `+0x1E7` / `+0x1DE` at the start of each round.
 
-The opponent's selection runs through the same deal / commit paths keyed on its own `ctx+0x13`; no dome-specific AI table exists in the overlay *(inference from the symmetric use of `ctx+0x13`)*.
+The opponent never reaches these paths. Its action is the ordinary battle's **monster AI**: the action SM's turn-order pass `FUN_801DABA4` (called from `FUN_801E295C` at `0x801E5AE8` / `0x801E5D58`) calls the picker `FUN_801E9FD4(ctx[+0x274] - 3)` for every actor slot at or past `3` (`sltiu v0,v0,0x3` at `0x801DAF2C`, `jal 0x801e9fd4` at `0x801DAF48`), then the dead-target redirect `FUN_801DB124`. The picker's physical branch fills the monster's `+0x1DF` stream out of its AGL budget from its own PROT 867 action entries ([`battle-action-helpers.md`](battle-action-helpers.md#enemy-agl-action-budget-fun_801e9fd4)), and its per-monster `switch` on `DAT_8007BD0C[slot]` applies to a dome opponent as to any.
+There is no dome-specific AI table *(disassembly: the call chain and slot gate in `overlay_muscle_dome_801daba4.txt`, the PROT 0898 image the arena runs)*.
 
 <a id="round-resolution"></a>
 
@@ -613,7 +614,8 @@ Its numeric work is four `func_0x8003563c` registrations at `0x801D959C..0x801D9
 Per-frame helpers the driver also calls:
 
 - `FUN_801D3444` - a 0..`0xC` meter counter `DAT_801F4E0A`, ramped up by the frame delta while `ctx+6 == 0x50` and an enable flag is set, drained otherwise, mapped to a bar Y of `counter * 160 / 12 - 0x92`. Port: `muscle_dome::time_meter_step`, ticked by the session.
-- `FUN_801D9BBC` - advances every active sprite handle (`ctx+0x1074[]`, up to `0x28`) one linear-ease step toward its target over a per-handle frame count (`ctx+0x11B4 + i*0xC` records: total / elapsed frames + target / start positions; arrival snaps and deactivates). Port: `muscle_dome::SpriteGlide::step`. The kernel has **no producer** in the engine - no host spawns the pennant / chip sprites this table animates; its contract is pinned by `crates/engine-scene-host/tests/dome_leg_ladder.rs`.
+- `FUN_801D9BBC` - advances every active sprite handle (`ctx+0x1074[]`, up to `0x28`) one linear-ease step toward its target over a per-handle frame count (`ctx+0x11B4 + i*0xC` records: total / elapsed frames + target / start positions; arrival snaps and deactivates). The total is `ctx[+0x1C]` at registration (`FUN_801D8DE8` passes it to `FUN_801DB7B0`): `0x10` from the round reset, `0x18` for a pennant ([pennant geometry](#pennant-and-chip-geometry)).
+  Port: the committed pennants' glide is `ArtsCommandInputSession::pennant_glides` (one step per frame's input call) drawn through `ArtsInputFrame::pennant_seat`, on every host; `muscle_dome::SpriteGlide::step` is the same step as a standalone record, its contract pinned by `crates/engine-scene-host/tests/dome_leg_ladder.rs`. The direction chips' own slide from seat A is not run.
 
 ## Retail presentation
 
@@ -670,7 +672,7 @@ A gap TIM's 16-row CLUT block uploads **packed into one VRAM row** as 16 side-by
 
 **The AP meter has no source rect.** Retail draws it as two untextured 3-px gouraud strips - the `FUN_8002C0B0` fill the status screen's AP gauge uses, dark `(0x80,0x20,0x10)` to gold `(0xC0,0xA0,0x40)` and back. Only the value is art: the 6-px digit strip has no 3-digit seat, so the sheet carries one baked "100" tile for the end box. That tile is not a fill tile. Both callers of the plate (command menu, direction entry) take their fill from `legaia_engine_ui::arts_input`'s span + gouraud endpoints.
 
-**Minigames page.** `web-minigames::muscle_web` (`muscle_hud_json` + `muscle_hud_sheet_rgba`) decodes these sources per sheet / sub-palette; the disc-gated oracle is `crates/web-minigames/tests/muscle_web_real.rs` (`muscle_hud_chrome_decodes_from_the_disc`). Fitted rather than pinned on that page: the banner's speed-line rays (retail draws untextured polys), the SUPER / MIRACLE word composition, and the chips' glide-in motion.
+**Minigames page.** `web-minigames::muscle_web` (`muscle_hud_json` + `muscle_hud_sheet_rgba`) decodes these sources per sheet / sub-palette; the disc-gated oracle is `crates/web-minigames/tests/muscle_web_real.rs` (`muscle_hud_chrome_decodes_from_the_disc`). Fitted rather than pinned on that page: the banner's speed-line rays (retail draws untextured polys), the SUPER / MIRACLE word composition, and the direction chips' slide-in. The pennant glide is the engine's (`muscle_pennant_seat_json` over `ArtsInputFrame::pennant_seat`, on the page's own frame clock), and so are the `Begin | Reselect` plates (placement records `0x10` / `0x13`).
 
 <a id="arts-command-input-packet-pinned"></a>
 
@@ -747,7 +749,8 @@ The array's `+0` halfword goes to the record's seat A `x` (`sh v0,0x2(a1)` at `0
 
 Inferred, not measured: the bar's record is anchored at seat-B `y = 194` and the pennant lands on `192`, so with the captured `BAR_Y = 188` the pennant top edge should be 186. Confirming it (and off-class widths) wants a placement-table read on `arts_bar_offclass_gala_nail` / `arts_bar_astral_sword_vahn` diffed against `arts_bar_ideal_gala_club`.
 
-Port: `engine-ui::arts_input` (`ArtsInputFrame::chip_anchor` / `chip_w` / `pennant_w`, `CHIP_WIDEN_K`, `COST_WIDTH_BIAS`), fed the per-(character, weapon) cost row both hosts resolve through `legaia_actor_formats::battle_char_assembly::swing_command_costs` ([`arts-command-gauge.md`](arts-command-gauge.md#reading-it)).
+Port: `engine-ui::arts_input` (`ArtsInputFrame::chip_anchor` / `chip_w` / `pennant_w`, `CHIP_WIDEN_K`, `COST_WIDTH_BIAS`), fed the per-(character, weapon) cost row both hosts resolve through `legaia_actor_formats::battle_char_assembly::swing_command_costs` ([`arts-command-gauge.md`](arts-command-gauge.md#reading-it)). The spawn is `0x801D3D3C..0x801D3D5C`: `ctx[+0x1B] = 0` (spawn at seat A) and `ctx[+0x1C] = 0x18` for `FUN_801D8DE8`, then `1` / `0x10` restored.
+`ArtsInputFrame::pennant_seat` runs the glide (`legaia_engine_battle::arts_command_input::PENNANT_GLIDE_FRAMES`) from the pressed chip's anchor to `(ctx[+0x6D8], 0xC0)`; both ends draw with the landing's record-to-bar offset, which puts the start `4` px above the chip's anchor *(inference: the chip record's `y` is read as its drawn anchor)*.
 
 <a id="the-auto-arm-reloads-a-saved-string-and-the-round-rebuilds-it"></a>
 
@@ -764,6 +767,9 @@ Auto is not a picker. The string the review screen shows was already in the acto
 - **Whether the pick is shown.** The option global `*(0x800846C4)` at `0x801D15DC`: `0` opens the `0x78` menu, `1` goes straight to review, `2` takes a third arm.
 
 Both halves are the battle system's command-block restore / persist pair ([`functions/battle.md`](../reference/functions/battle.md)).
+
+Port (`crates/engine-battle-menus/src/muscle_dome_session/auto.rs`): the session holds the two bands (`set_auto_command_strings`, read back by `auto_command_strings`), loads the band through the shared `preseed_action_queue` and saves through `save_action_queue`. The entry opens preseeded (a bare confirm replays), the review confirm writes the string back, `Auto` shows the loaded string and raises the flag, and `Begin` runs `run_auto_rebuild`: the pool arm and the art tail of `legaia_engine_battle_vm::battle_arts_auto_combo`, over `DomeAutoInputs` (command heads, guard masks, the art bank, the learned list) on the damage model's `rand()` stream.
+The play hosts seed the bands from the lead's record and bank them back at the leg's end (`World::end_muscle_leg`), with the inputs the field scene staged for the battle's Auto; the minigames page keeps the bands across legs and reads the inputs off the player battle file and PROT 0898 (`DomeAutoInputs::read_player_file` / `read_guards`), counting every bank art as learned. The dome's gauge pair is one value, so the band is the secondary one *(inference)*; the Miracle marker the tail reads is passed clear.
 
 <a id="three-marks-for-you-cannot-pick-this-and-the-gates-that-raise-them"></a>
 <a id="what-makes-a-ra-seru-chip-render"></a>
@@ -1028,6 +1034,7 @@ The port models the same two layers and shares every rule between the native `pl
 | Hub envelopes | `engine-minigames::muscle_dome` (`hub.rs`), `engine-minigames::muscle_ringside` | `HubScreen`, `HubTimers`, `HubBackdrop`, `FirstVisitHub` |
 | Leg session | `engine-battle-menus::muscle_dome_session` (`session.rs`) | `MuscleDomeSession`: deal, budget-gated commit, queue, tokenizer, cast, KO-only ending |
 | Command flow | `engine-battle-menus::muscle_dome_session` (`menu.rs`, `ring.rs`, `loadout.rs`) | `DomeMenu`, `DomeRing`, `ChipMark`, `DomeMagic`, `art_catalog_for`; world loadout via `engine-world-views::muscle_dome::magic_loadout_for` |
+| Auto | `engine-battle-menus::muscle_dome_session` (`auto.rs`) | saved command strings, the Auto flag, the round's pool-arm rebuild (`DomeAutoInputs`) |
 | World | `engine-core` (`world/frame_tick/minigame_sessions/muscle_dome.rs`, `scene/host/minigame_warp.rs`) | `SceneMode::MuscleDome`, `World::enter_muscle_dome` / `tick_muscle_dome` / `leave_muscle_dome` / `report_muscle_leg` / `settle_muscle_contest` |
 | Play-out | `engine-battle-menus::muscle_dome_session::choreo` | `DomeChoreo`, `ChoreoBody`: clips at the battle rate, range-law approach, root motion, reaction pick |
 | 3D surface | `engine-minigame-scenes::muscle_dome_scene` | `MuscleDomeSurface`, `arena_ring`, `DomeCamera` |
@@ -1079,12 +1086,11 @@ The HUD kernels read the hold as an action frame (`battle_hud::battle_hud_phase`
 
 **Host models** (where the port runs something other than retail's mechanism):
 
-- The opponent commits greedily in deal order out of the player's own direction deck. Only the monster's stats are real; its own action stream is not modelled.
-- **Auto** fills the string greedily in deal order rather than reloading the saved string and rebuilding it per round.
+- The opponent commits greedily in deal order out of the player's own direction deck, where retail runs the battle's monster AI ([the deck](#hand-deck-decoded)). Only the monster's stats are real; its own picker is not modelled.
 - The ring's **Item** arm always refuses (the session carries no bag). **Spirit** commits an empty string.
 - The **Ra-Seru list** is a row of the status caption (`engine-minigame-scenes::minigame_status::muscle_status_rows`), shown outside the game picture - the native title bar, the play page's strip under the canvas; its window's pieces are not pinned.
 - **Run** ends the leg on the press; the escape roll is not modelled.
-- The opponent's swings cycle the picker's strike candidates (entries tagged `0x0C..=0x1F` with a `+0x74` AGL cost other than `0xFF`, the set `FUN_801E9FD4`'s physical branch budgets) over its committed directions; retail draws them through the AGL budget (`enemy_action_budget`) and the per-monster AI.
+- The opponent's swings cycle the picker's strike candidates (entries tagged `0x0C..=0x1F` with a `+0x74` AGL cost other than `0xFF`, the set `FUN_801E9FD4`'s physical branch budgets) over its committed directions; retail draws them through that picker's AGL budget (`enemy_action_budget`) and its per-monster `switch`.
 
 **Tests.** `engine-scene-host/tests/muscle_dome_minigame_real.rs` (real deck + real swing costs drive a leg to a decision), `dome_leg_ends_on_ko_real.rs` (the arena's sole game-mode write is `BattleInit`; the formation cell's only writer is the arena; the ladder tops out below the timed fight's id), `muscle_contest_real.rs` / `muscle_contest_world.rs`, `muscle_hub_tally_cues_disc.rs`, `muscle_dome_lead_max_hp_disc.rs`, and `web-minigames/tests/dome_ladder_and_hub_real.rs` (29 real monster records, round counts agree with the score table, every hub draw row's cited call site still holds a `jal` to its emitter).
 

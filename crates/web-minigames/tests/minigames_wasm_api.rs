@@ -787,8 +787,10 @@ fn the_baka_chrome_glyph_draws_carry_the_engine_stamp() {
 /// The page's Muscle Dome selection is the engine's command flow
 /// (`muscle_select` over `MuscleDomeSession::select_input`, the play hosts'
 /// call): every turn opens on the round prompt, Begin opens the ring, the
-/// ring's Attack arm raises `Auto | Command`, Auto fills the string and
-/// raises `Begin | Reselect`, and Begin closes both fighters' selections.
+/// ring's Attack arm raises `Auto | Command`, Auto runs straight into the
+/// queue review (`0x78 -> 0x5A`, no target cursor), the review's confirm
+/// raises `Begin | Reselect`, and Begin closes both fighters' selections -
+/// the round rebuilding the Auto string through the pool arm.
 #[test]
 fn the_dome_selection_runs_the_engines_command_flow() {
     let Some((mut mg, _)) = loaded() else {
@@ -808,19 +810,12 @@ fn the_dome_selection_runs_the_engines_command_flow() {
     mg.muscle_select(LEFT);
     assert_eq!(screen(&mg), "attackmenu", "the ring's Attack arm");
     mg.muscle_select(LEFT);
-    // Under the default "Select" attack option, Auto opens the target
-    // cursor over the one opponent; Cross takes it.
-    assert_eq!(screen(&mg), "target", "Auto opens the target cursor");
+    assert_eq!(screen(&mg), "review", "Auto runs straight into the review");
     mg.muscle_select(CROSS);
     assert_eq!(
         screen(&mg),
         "confirm",
-        "Auto fills the string and raises Begin | Reselect"
-    );
-    let st: serde_json::Value = serde_json::from_str(&mg.muscle_state_json()).unwrap();
-    assert!(
-        !st["queue"][0].as_array().unwrap().is_empty(),
-        "Auto committed directions"
+        "the review's confirm raises Begin | Reselect"
     );
     assert_eq!(
         mg.muscle_select(CROSS),
@@ -829,5 +824,9 @@ fn the_dome_selection_runs_the_engines_command_flow() {
     );
     let st: serde_json::Value = serde_json::from_str(&mg.muscle_state_json()).unwrap();
     assert_eq!(st["phase"], "resolve");
+    assert!(
+        !st["queue"][0].as_array().unwrap().is_empty(),
+        "the round's pool arm rebuilt the Auto string"
+    );
     eprintln!("[ran] dome selection through the engine's command flow");
 }

@@ -190,8 +190,22 @@ pub struct ArtsCommandInputSession {
     /// turn's string (`0x801D1FA0..0x801D2044`). The resolved session then
     /// commits the preseed rather than [`Self::buffer`].
     pub replay: bool,
+    /// Committed pennants still gliding from their chip to the bar, as
+    /// `(slot, elapsed frames)`: case `0xB` spawns each one on a
+    /// [`PENNANT_GLIDE_FRAMES`]-frame glide and `FUN_801D9BBC` steps it once
+    /// a frame. One step per [`Self::input`] call, which every host makes
+    /// once a frame while the entry is up.
+    pub pennant_glides: Vec<(usize, u8)>,
     pub phase: ArtsInputPhase,
 }
+
+/// Frames a committed pennant glides from its pressed chip to its bar seat:
+/// case `0xB` stamps the glide count `ctx[+0x1C] = 0x18` and mode
+/// `ctx[+0x1B] = 0` for the spawn (`li v0,0x18` / `sb zero,0xa(s4)` /
+/// `sb v0,0xb(s4)` at `0x801D3D3C..0x801D3D48`), which `FUN_801D8DE8` hands
+/// `FUN_801DB7B0` as the record's total, and restores `1` / `0x10` after
+/// (`0x801D3D4C..0x801D3D5C`).
+pub const PENNANT_GLIDE_FRAMES: u8 = 0x18;
 
 /// Outcome of a resolved session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -264,6 +278,7 @@ impl ArtsCommandInputSession {
             preseed: Vec::new(),
             preseed_spent: Vec::new(),
             replay: false,
+            pennant_glides: Vec::new(),
             phase: ArtsInputPhase::Entering,
         }
     }
@@ -377,6 +392,13 @@ impl ArtsCommandInputSession {
     /// Advance one frame. `party` / `monsters` describe slot occupancy for
     /// the Begin target picker. A no-op once the session has resolved.
     pub fn input(&mut self, ev: ArtsCommandPad, party: [SlotState; 3], monsters: [SlotState; 5]) {
+        // `FUN_801D9BBC`: every gliding pennant steps one frame; the step
+        // that reaches the total snaps it home and frees the handle.
+        // PORT: FUN_801d9bbc (the pennant handles' per-frame step)
+        self.pennant_glides.retain_mut(|g| {
+            g.1 = g.1.saturating_add(1);
+            g.1 < PENNANT_GLIDE_FRAMES
+        });
         // Triangle cycles the learned-arts list in the entry phases
         // (closed -> page 0 -> .. -> last page -> closed); inert with no
         // pages, matching retail's no-learned-art case.
@@ -422,6 +444,7 @@ impl ArtsCommandInputSession {
                         self.pool -= cost;
                         self.buffer.push(cmd.as_byte());
                         self.spent.push(cost);
+                        self.pennant_glides.push((self.buffer.len() - 1, 0));
                     }
                     // Auto-end on the exhausting press (retail 0x50 ->
                     // 0x5A: entry ends by itself, no confirm).
@@ -475,6 +498,7 @@ impl ArtsCommandInputSession {
                     } else {
                         self.buffer.clear();
                         self.spent.clear();
+                        self.pennant_glides.clear();
                         self.pool = self.pool_max;
                         self.phase = ArtsInputPhase::Entering;
                     }
@@ -492,6 +516,7 @@ impl ArtsCommandInputSession {
                     self.replay = false;
                     self.buffer.clear();
                     self.spent.clear();
+                    self.pennant_glides.clear();
                     self.pool = self.pool_max;
                     self.phase = ArtsInputPhase::Entering;
                 } else if ev.cross || ev.up || ev.down || ev.left || ev.right {
@@ -671,6 +696,9 @@ pub struct ArtsInputView<'a> {
     /// which chips wear the Rot stamp during entry ([`rot_blocks`] refuses
     /// the same directions).
     pub status: u16,
+    /// Committed pennants still gliding in, `(slot, elapsed)` over
+    /// [`PENNANT_GLIDE_FRAMES`] ([`ArtsCommandInputSession::pennant_glides`]).
+    pub pennant_glides: &'a [(usize, u8)],
 }
 
 impl ArtsInputView<'_> {

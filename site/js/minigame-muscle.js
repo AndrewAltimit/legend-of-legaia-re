@@ -99,12 +99,15 @@
  * SUPER/MIRACLE banner word composition (atlas layout, only the HYPER
  * strip's draw is packet-pinned), the interval panel's caption and key
  * hint (its heading, six tally rows and ringside-still backdrop are the
- * retail emitters'), the glide-in motion
- * (retail slides chips between the element table's two endpoints; the page
- * draws them parked at the arrived endpoint), the pennant spawn anchor +
- * pennant width off the captured 30-cost pitch, the Auto picker (greedy
- * here, unpinned in retail), and the review/confirm screens' geometry
- * (screenshot-read, not packet-pinned). The arts LIST rows show every
+ * retail emitters'), the command chips' own slide-in (retail slides them
+ * between the element table's two endpoints; the page draws them parked at
+ * the arrived endpoint), and the review screen's geometry (screenshot-read,
+ * not packet-pinned). TRACED AND RUN through the engine: each committed
+ * pennant's 24-frame glide from the pressed chip (`muscle_pennant_seat_json`,
+ * the `FUN_801d9bbc` step), the Begin|Reselect plates (placement records
+ * 0x10 / 0x13), and Auto - the session reloads the character's saved command
+ * string for the review and the round rebuilds the queue through the pool
+ * arm, as the play hosts do. The arts LIST rows show every
  * table art - the page does not model arts learning; retail gates rows on
  * the learned-art constant. Without a disc image the chrome falls back to
  * the old canvas approximation.
@@ -690,7 +693,7 @@ window.MgMuscle = (function () {
       /* A direction that went onto the AP gauge glides its pennant in. */
       const q0 = (before.queue && before.queue[0]) || [];
       const q1 = (state.queue && state.queue[0]) || [];
-      if (q1.length > q0.length) spawnPennant(q1[q1.length - 1], q1.length - 1, state);
+      if (q1.length > q0.length) spawnPennant(q1[q1.length - 1], q1.length - 1);
       if (q1.length < q0.length) pennantFx = [];
       if (ev === 'cursor') playCue('cursor', 0.4);
       else if (ev === 'confirm' || ev === 'fight') playCue('confirm', 0.5);
@@ -1211,11 +1214,14 @@ window.MgMuscle = (function () {
       return x;
     }
 
-    /* Spawn the committed pennant near the fighter and glide it into its
-     * bar slot (retail spawns it at the fighter's projected position and
-     * FUN_801d9bbc glides it in; the spawn anchor here is fitted). */
-    function spawnPennant(cmd, slot, state) {
-      pennantFx.push({ cmd, slot, t: 0, life: 14, sx: 110, sy: 148 });
+    /* A committed pennant glides from the chip that was pressed into its bar
+     * slot over 24 frames (case 0xB's spawn, stepped by FUN_801d9bbc). The
+     * seat for each frame is the engine's (`muscle_pennant_seat_json`, the
+     * glide the play hosts draw); the page only counts the frames, since it
+     * calls the selection on key presses alone. */
+    const PENNANT_GLIDE_FRAMES = 24;
+    function spawnPennant(cmd, slot) {
+      pennantFx.push({ cmd, slot, t: 0, life: PENNANT_GLIDE_FRAMES });
     }
 
     /* Committed pennants: settled ones in the bar, in-flight ones gliding. */
@@ -1227,12 +1233,14 @@ window.MgMuscle = (function () {
       for (let i = 0; i < state.queue[0].length; i++) {
         const cmd = state.queue[0][i];
         const f = flying[i];
-        if (f) {
-          const k = f.t / f.life;
-          const tx = pennantSeat(state, i);
-          drawPennant(cmd, Math.round(f.sx + (tx - f.sx) * k),
-            Math.round(f.sy + (188 - f.sy) * k));
-          f.t++;
+        let seat = null;
+        if (f && api.muscle_pennant_seat_json) {
+          try { seat = JSON.parse(api.muscle_pennant_seat_json(i, f.t)); }
+          catch (_) { seat = null; }
+        }
+        if (f) f.t++;
+        if (seat) {
+          drawPennant(cmd, seat[0], seat[1]);
         } else {
           drawPennant(cmd, pennantSeat(state, i), 188);
         }
@@ -1378,13 +1386,27 @@ window.MgMuscle = (function () {
       }
     }
 
-    /* The queue-review / Begin|Reselect confirm (phases 0x5a / 0x6e;
-     * screenshot-read geometry - these two screens are not packet-pinned). */
+    /* The queue-review / Begin|Reselect confirm (phases 0x5a / 0x6e). The
+     * confirm is the battle's commit-confirm screen: the `0x6E` arm seats
+     * placement records 0x10 (Begin, content (92, 88), width 48) and 0x13
+     * (Reselect, (180, 88)) through the plate law, with the D-pad glyph at
+     * (152, 84) between them (`FUN_801DB8F4(0x98, 0x58)`) - the plates a
+     * retail capture holds at (84, 82) / (172, 82), and the cluster the play
+     * hosts draw (`battle_command_ui::CLUSTER_COMMIT_CONFIRM`). The review
+     * screen's geometry stays screenshot-read. */
     function drawConfirmMenu(state) {
       if (selectSub === 'confirm') {
         if (hudOk()) {
-          rChip('Begin', 96, 84, confirmSel === 0 ? 'gold' : 'blue', 40);
-          rChip('Reselect', 176, 84, confirmSel === 1 ? 'gold' : 'blue', 56);
+          const el = (i, dx, dy) => {
+            const e = hudMeta.elements[i];
+            return e ? { x: e.b[0], y: e.b[1], w: e.w } : { x: dx, y: dy, w: 48 };
+          };
+          const begin = el(0x10, 92, 88);
+          const resel = el(0x13, 180, 88);
+          rChip('Begin', begin.x, begin.y - 6, confirmSel === 0 ? 'gold' : 'blue', begin.w);
+          rChip('Reselect', resel.x, resel.y - 6, confirmSel === 1 ? 'gold' : 'blue', resel.w);
+          blit(0, hudMeta.pieces.dpad.pal,
+            hudMeta.pieces.dpad.r[0], hudMeta.pieces.dpad.r[1], 16, 16, 152, 84);
           const w0 = rChip(state.names[0], 16, 164, 'gold');
           rChip('Attack', 24 + w0 + 8, 164, 'gold');
           const fname = state.names[1] || '';

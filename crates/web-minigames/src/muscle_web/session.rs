@@ -112,11 +112,14 @@ impl LegaiaMinigames {
     }
 
     /// The player fighter's record stats: SCUS new-game template leveled
-    /// through the growth curves (jitter-free core), battle-load initialised.
+    /// through the growth curves with the retail per-level `rand()` spread
+    /// (`legaia_engine_battle::levelup::jittered_level_gains`, on a BIOS-rand
+    /// stream seeded by `seed`), battle-load initialised.
     pub(super) fn muscle_player_fighter(
         &self,
         char_slot: usize,
         level: u32,
+        seed: u32,
     ) -> Option<(MuscleFighter, String)> {
         let scus = self.scus.as_ref()?;
         let party = legaia_game_tables::new_game::StartingParty::from_scus(scus)?;
@@ -130,10 +133,13 @@ impl LegaiaMinigames {
         ];
         let mut stats = base.map(u32::from);
         let level = level.clamp(1, legaia_game_tables::level_up_tables::MAX_LEVEL as u32);
+        let mut rng = legaia_engine_system::rand::BiosRand::new(seed);
         for from_level in 1..level as usize {
+            let gains = legaia_engine_battle::levelup::jittered_level_gains(
+                &growth, &params, from_level, &mut rng,
+            );
             for (i, p) in params.stats.iter().enumerate() {
-                let gain = growth.level_gain_core(p, from_level).unwrap_or(0);
-                stats[i] = (stats[i] + gain).min(p.max as u32);
+                stats[i] = (stats[i] + u32::from(gains[i])).min(p.max as u32);
             }
         }
         let record = RecordStats {

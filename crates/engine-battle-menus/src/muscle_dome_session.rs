@@ -93,12 +93,14 @@
 #[cfg(test)]
 use legaia_game_tables::move_power;
 
+mod auto;
 pub mod choreo;
 mod loadout;
 mod menu;
 mod ring;
 mod session;
 
+pub use auto::{AUTO_GUARD_TABLE_VA, DomeAutoInputs};
 pub use loadout::*;
 pub use menu::*;
 pub use ring::*;

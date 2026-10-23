@@ -456,7 +456,19 @@ pub fn arts_input_chrome_draws(
     let s = scale.max(1) as i32;
     let bar_origin = (origin.0, origin.1 + bar_dy * s);
     let plate_origin = (origin.0 + plate_dx * s, origin.1);
+    let glides: Vec<(usize, u8, u8)> = view
+        .pennant_glides
+        .iter()
+        .map(|&(slot, elapsed)| {
+            (
+                slot,
+                elapsed,
+                legaia_engine_battle::arts_command_input::PENNANT_GLIDE_FRAMES,
+            )
+        })
+        .collect();
     let frame = ai::ArtsInputFrame {
+        glides: &glides,
         buffer: view.pennants,
         spent: view.pennant_spent,
         chip_costs: view.costs,

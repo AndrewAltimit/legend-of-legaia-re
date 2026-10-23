@@ -1315,3 +1315,94 @@ fn prize_awards_once_at_the_master_course_final() {
     let s = settle_contest(100, true, false, 2, 13, 40, true);
     assert!(!s.award_prize);
 }
+
+/// One turn's selection off the ring: Begin on the round prompt when it is
+/// up, then the ring's Attack arm.
+fn walk_to_prompt(s: &mut MuscleDomeSession) {
+    if matches!(
+        s.menu(),
+        DomeMenu::Command(c) if matches!(c.phase, crate::battle_input::CommandPhase::RoundPrompt { .. })
+    ) {
+        s.select_input(pad(|p| p.confirm = true));
+    }
+    s.select_input(pad(|p| p.left = true));
+}
+
+/// The review confirm writes the committed string into the fighter's band
+/// (`FUN_801DA59C`); the next entry opens over it and a bare confirm replays
+/// it (`FUN_801DA34C` at `0x801D1734`, the `0x801D1FA0` replay arm).
+#[test]
+fn the_entry_saves_its_string_and_the_next_entry_replays_it() {
+    let mut s = session();
+    s.select_input(pad(|p| p.left = true)); // Attack
+    s.select_input(pad(|p| p.right = true)); // Command
+    s.select_input(pad(|p| p.up = true));
+    s.select_input(pad(|p| p.left = true)); // exhausts -> review
+    s.select_input(pad(|p| p.confirm = true)); // review -> confirm
+    let (_, second) = s.auto_command_strings();
+    assert_eq!(
+        &second[..3],
+        &[0x0F, 0x0C, 0],
+        "saved into the gauge's band"
+    );
+    s.select_input(pad(|p| p.left = true)); // Begin
+    s.resolve_turn(|_, _| 0);
+    s.next_turn();
+    walk_to_prompt(&mut s);
+    s.select_input(pad(|p| p.right = true)); // Command
+    assert!(s.queue(0).is_empty(), "nothing entered yet");
+    s.select_input(pad(|p| p.confirm = true)); // bare confirm replays
+    assert_eq!(s.queue(0), &[0x0F, 0x0C]);
+    assert_eq!(s.budget(0), 100 - 0x2A - 0x1E);
+}
+
+/// `Auto` shows the saved string and raises the flag; Begin runs the pool
+/// arm, which rebuilds the queue out of the gauge (`FUN_801F0450`).
+#[test]
+fn auto_shows_the_saved_string_and_the_round_rebuilds_it() {
+    let mut s = session();
+    let mut saved = [0u8; 16];
+    saved[..2].copy_from_slice(&[0x0D, 0x0D]);
+    s.set_auto_command_strings([0; 16], saved, legaia_save::AutoCommandBand::Secondary);
+    s.select_input(pad(|p| p.left = true)); // Attack -> prompt
+    s.select_input(pad(|p| p.left = true)); // Auto
+    assert!(s.auto_flag());
+    assert_eq!(
+        s.arts_input_view().map(|v| v.phase),
+        Some(legaia_engine_battle::arts_command_input::ArtsInputScreen::Review),
+        "Auto runs straight into the review"
+    );
+    assert_eq!(
+        s.queue(0),
+        &[0x0D, 0x0D],
+        "the review shows the saved string"
+    );
+    s.select_input(pad(|p| p.confirm = true)); // review -> confirm
+    assert!(is_confirm(&s));
+    s.select_input(pad(|p| p.left = true)); // Begin
+    assert_eq!(s.phase(), MusclePhase::Resolve);
+    let q = s.queue(0).to_vec();
+    assert!(!q.is_empty(), "the pool arm spent the gauge");
+    assert!(q.iter().all(|b| (0x0C..=0x0F).contains(b)));
+    assert!(s.spent(0) <= 100);
+    // The next turn opens with the flag down.
+    s.resolve_turn(|_, _| 0);
+    s.next_turn();
+    assert!(!s.auto_flag());
+}
+
+/// The review's cancel under Auto returns to the `Auto | Command` prompt
+/// (`0x801D23A0`) and lowers the flag.
+#[test]
+fn the_auto_review_cancels_back_to_the_prompt() {
+    let mut s = session();
+    s.select_input(pad(|p| p.left = true)); // Attack -> prompt
+    s.select_input(pad(|p| p.left = true)); // Auto -> review
+    s.select_input(pad(|p| p.cancel = true));
+    assert!(!s.auto_flag());
+    assert!(matches!(
+        s.menu(),
+        DomeMenu::Command(c) if matches!(c.phase, crate::battle_input::CommandPhase::AttackMode { .. })
+    ));
+    assert!(s.queue(0).is_empty());
+}
