@@ -215,7 +215,10 @@ fn pad_word_and_tick_frame_drive_the_cast() {
 /// kernel (`fishing_venue::tick_fishing_venue_on_host`) the native window's
 /// minigame frame calls. With the page's `tick_fishing_actors` unwired the
 /// wander actor is never armed, the held D-pad steers nothing and no retarget
-/// ripple reaches the world's effect pool.
+/// ripple is seated. A ripple is the overlay's own move-VM ring part
+/// (`FishingVenue::ripple_fx`), not an effect-pool part, and the page draws
+/// it in the pond's pass from `play_mg_fishing_ripple_*`: a seated ripple
+/// that never reached those accessors would be one the page never draws.
 #[test]
 fn the_venue_actors_run_on_the_play_page() {
     let Some(mut rt) = loaded_in_town() else {
@@ -233,13 +236,31 @@ fn the_venue_actors_run_on_the_play_page() {
         .as_i64()
         .unwrap_or_else(|| panic!("the wander actor was never armed: {st}"));
     // Hold D-pad right at the idle shore: the fish turns, and its retarget
-    // rolls spawn ripples into the shared pool.
+    // rolls seat ripple parts.
     const RIGHT: u16 = 0x0020;
     rt.set_pad(RIGHT);
     let mut peak_parts = 0;
+    let mut peak_drawn = 0;
     for _ in 0..600 {
         rt.tick_frame().expect("tick");
-        peak_parts = peak_parts.max(state(&rt)["fx_parts"].as_i64().unwrap_or(0));
+        peak_parts = peak_parts.max(state(&rt)["ripple_parts"].as_i64().unwrap_or(0));
+        let verts = rt.play_mg_fishing_ripple_vertex_count();
+        if verts > 0 {
+            let idx = rt.play_mg_fishing_ripple_indices();
+            assert!(
+                !idx.is_empty() && idx.iter().all(|&i| i < verts),
+                "the ripple mesh indexes its own {verts} vertices"
+            );
+            assert_eq!(
+                rt.play_mg_fishing_ripple_positions().len(),
+                verts as usize * 3
+            );
+            assert_eq!(
+                rt.play_mg_fishing_ripple_flat_rgba().len(),
+                verts as usize * 4
+            );
+        }
+        peak_drawn = peak_drawn.max(verts);
     }
     let st = state(&rt);
     assert_ne!(
@@ -247,9 +268,10 @@ fn the_venue_actors_run_on_the_play_page() {
         Some(facing0),
         "the held D-pad did not steer the wander: {st}"
     );
+    assert!(peak_parts > 0, "no retarget ripple part was seated");
     assert!(
-        peak_parts > 0,
-        "no retarget ripple reached the world's effect pool"
+        peak_drawn > 0,
+        "seated ripples never reached the page's ripple mesh (peak {peak_parts} parts)"
     );
 }
 

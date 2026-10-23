@@ -241,9 +241,18 @@ subsection under the table.
 Across every image, in both addressing forms (`0x37d(lui 0x1f80)` and
 `0x69(0x1F800314)`), it is written only by:
 
-- `FUN_80025CB4`'s core-state reset (`sb a2,0x69(v1)` at `0x80025D70`);
+- `FUN_80025CB4`'s core-state reset (`sb a2,0x69(v1)` at `0x80025D70`), which reloads it from the saved copy `DAT_8007B7BE` (`lbu a2,-0x4842(a2)` at `0x80025CE4`);
 - one SCUS init that plants the literal `8` (`addiu v0,zero,8` / `sb v0,0x37d(at)` at `0x80055FB4` / `0x80055FBC`);
 - the Baka Fighter and DEBUG MODE overlays.
+
+The saved copy `DAT_8007B7BE` has one SCUS writer, the boot init
+`FUN_8001D424` (`li v0,0x8` / `sh v0,-0x4842(at)` at `0x8001D594` /
+`0x8001D5A4`, which also stores the byte to `0x69(0x1F800314)` at
+`0x8001D5C0`); outside SCUS only the DEBUG MODE overlay (0971) references
+it. So the reset re-installs `8` on every mode change, and the byte is a
+constant of the running game rather than a per-scene or per-mode value: every
+library save state, field, world map and battle alike, reads `8` at both
+`0x1F80037D` and `0x8007B7BE`, across frame steps `1..4`.
 
 The byte that moves every frame is `DAT_1F800393` (`= 0x7f(0x1F800314)`),
 rewritten by the frame pacer at `0x80017068` and clamped to `1..4` against the
