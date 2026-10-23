@@ -113,6 +113,7 @@ impl World {
             })
             .unwrap_or([0; 3]);
         for (arm, caller) in calls {
+            self.casting.stager_arm_calls_run = self.casting.stager_arm_calls_run.wrapping_add(1);
             let stager_fades: &[_] = match (entry, arm) {
                 (912, 6) => std::slice::from_ref(&FREED_STAGER_FADE),
                 (929, MULE_STAGER_FADE_ARM) => &MULE_STAGER_FADES,

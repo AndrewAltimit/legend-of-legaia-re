@@ -30,9 +30,10 @@
 //! | 5 | target ring, property | the ring builder + cursor step + the sweep-group aim, pinned against the disassembly's stated intent |
 //! | 6 | weapon trail, clip-seated | a second forced encounter on the play page, with Vahn's one trail clip (`+0x77 == 0x29`) committed through the page's staging probe and the page left to sweep, emit and compose |
 //! | 7 | Theeder beam, cast-seated | a third forced encounter, with a Theeder cast (spell `0x82`, PROT 0904) dispatched through the page's in-flight seam and the page left to tick the module and project its beam packets (`FUN_801F815C` / `FUN_801F83A4` / `FUN_801F8634` / `FUN_801F8B84`) |
+//! | 8 | shatter renderer, cast-seated | a fourth forced encounter, with a Gimard cast (spell `0x81`, PROT 0903) seated the same way; its settle arm raises the creature's `+0x1BA` and the page's `play_battle_actor_shatter` breaks the bound mesh (`FUN_80029888` / `FUN_80029DD8`) |
 //!
 //! Rung 4 is the host rung: it is the browser play page, fed pad words, with
-//! every frame composed. Rungs 6 and 7 are the page too, but **seated**: the
+//! every frame composed. Rungs 6, 7 and 8 are the page too, but **seated**: the
 //! clip or the cast is the driver's choice, everything downstream of it is the
 //! page's. Rungs 1-3
 //! and 5 are *kernel* rungs - they call the
@@ -768,6 +769,66 @@ fn rung7_theeder_beam_seated(rt: &mut LegaiaRuntime) -> Result<(), String> {
 }
 
 // ---------------------------------------------------------------------------
+// Rung 8 - the shatter renderer, cast-seated
+// ---------------------------------------------------------------------------
+
+/// Gimard, the Seru spell (PROT 0903) whose settle arm breaks its creature
+/// up: `+0x1BA += 2 * frame * scalar` on the summon seat on every pass of
+/// that arm (`0x801F76A4..0x801F76C4`).
+const GIMARD_SPELL: u8 = 0x81;
+
+/// Rung 8. The shatter renderer (`FUN_80029888` per object, `FUN_80029DD8`
+/// per triangle) runs only in a host's draw: the world raises the `+0x1BA`
+/// word and the page's `play_battle_actor_shatter` export hands the bound
+/// mesh to `legaia_render_kernels::shatter`. The cast is seated the way rung
+/// 7's is; the word, the creature's mesh and its draw are the page's.
+fn rung8_gimard_shatter_seated(rt: &mut LegaiaRuntime) -> Result<(), String> {
+    enter_forced_battle(rt)?;
+    let slots = rt.debug_battle_party_slots();
+    let Some(&lead) = slots.first() else {
+        return Err("the forced battle registered no party actor".into());
+    };
+    let shattered = |rt: &LegaiaRuntime| -> usize {
+        (0..rt.play_battle_actor_count())
+            .map(|i| rt.play_battle_actor_shatter(i).len())
+            .max()
+            .unwrap_or(0)
+    };
+    for _ in 0..30 {
+        let _ = rt.tick_frame();
+        if shattered(rt) != 0 {
+            return Err("a body drew shattered before any cast was seeded".into());
+        }
+    }
+    if !rt.debug_seed_inflight_cast(lead as u8, GIMARD_SPELL, TARGET_ENEMY_GROUP) {
+        return Err("the in-flight cast seam found no live world".into());
+    }
+    let (mut frames, mut peak, mut idle_after) = (0u32, 0usize, 0u32);
+    for _ in 0..20_000 {
+        let _ = rt.tick_frame();
+        let n = shattered(rt);
+        if n > 0 {
+            frames += 1;
+            peak = peak.max(n);
+            idle_after = 0;
+        } else if frames > 0 {
+            idle_after += 1;
+            if idle_after > 120 {
+                break;
+            }
+        }
+        if !rt.play_battle_active() {
+            break;
+        }
+    }
+    if frames == 0 {
+        return Err("the seeded Gimard cast never drew a shattered body".into());
+    }
+    eprintln!("[rung 8] a body drew shattered on {frames} frames ({peak} floats at peak)");
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Rung 5 - the target kernels, property-shaped
 // ---------------------------------------------------------------------------
 
@@ -1006,7 +1067,7 @@ fn battle_render_ladder() {
     let mut score = 0u32;
     let mut fail: Option<(u32, &str, String)> = None;
     type Rung = Box<dyn Fn(&mut LegaiaRuntime, &ProtIndex) -> Result<(), String>>;
-    let rungs: [(&str, Rung); 7] = [
+    let rungs: [(&str, Rung); 8] = [
         (
             "selector-census",
             Box::new(|_rt, _ix| rung1_selector_census()),
@@ -1035,6 +1096,10 @@ fn battle_render_ladder() {
             "theeder-beam-seated",
             Box::new(|rt, _ix| rung7_theeder_beam_seated(rt)),
         ),
+        (
+            "gimard-shatter-seated",
+            Box::new(|rt, _ix| rung8_gimard_shatter_seated(rt)),
+        ),
     ];
     for (name, rung) in rungs {
         match rung(&mut rt, &index) {
@@ -1048,7 +1113,7 @@ fn battle_render_ladder() {
             }
         }
     }
-    eprintln!("battle_render_ladder: score {score}/7");
+    eprintln!("battle_render_ladder: score {score}/8");
     if let Some((n, name, why)) = fail {
         panic!("rung {n} ({name}): {why}");
     }

@@ -151,6 +151,13 @@ pub struct CastFxState {
     /// (`World::run_cast_module_code`); PROT 0909's phase rendezvous are two
     /// of them.
     pub(crate) module_stager_calls: Vec<(u8, legaia_engine_cast::cast_module_ticks::StagerCaller)>,
+    /// How many op-`0x20` calls have reached a module's stager arm
+    /// (wrapping): the ones `World::run_part_stager_calls` drains, and PROT
+    /// 0925's, whose arm runs inside the calling part's step. Nothing in the
+    /// engine reads it: it is the observable a reach ladder holds its casts
+    /// to, since a stager arm that seats nothing new looks the same as one
+    /// that never ran.
+    pub stager_arm_calls_run: u32,
     /// PROT 0917's stager counter word `0x801F9364`
     /// ([`legaia_engine_cast::cast_module_ticks::BARRA_STAGER_COUNTER`]),
     /// `0` in the image the band pages in for each cast.
@@ -392,6 +399,7 @@ impl CastFxState {
             module_settle_ticks: 0,
             module_nighto_outcome: None,
             module_stager_calls: Vec::new(),
+            stager_arm_calls_run: 0,
             module_barra_counter: 0,
             module_running_entry: None,
             module_spikefish_words: Default::default(),
