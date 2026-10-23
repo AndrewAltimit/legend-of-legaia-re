@@ -191,7 +191,13 @@ pub enum DiscProblem {
     /// The remembered disc's file is gone (moved, renamed, drive unplugged).
     Moved(PathBuf),
     /// The file exists but is not a readable Mode2/2352 PlayStation image.
-    Unreadable { path: PathBuf, reason: String },
+    /// `fix` says what to choose instead when the file was recognised (a
+    /// 2048-byte `.iso`, a `.chd`, an archive: `legaia_iso::sniff`).
+    Unreadable {
+        path: PathBuf,
+        reason: String,
+        fix: Option<String>,
+    },
     /// A readable PlayStation disc, but not Legend of Legaia (USA).
     WrongDisc { path: PathBuf, reason: String },
 }
@@ -212,8 +218,12 @@ impl fmt::Display for DiscProblem {
                 "The disc image used last time is no longer there: {}",
                 p.display()
             ),
-            DiscProblem::Unreadable { path, reason } => {
-                write!(f, "{} is not a usable disc image: {reason}", path.display())
+            DiscProblem::Unreadable { path, reason, fix } => {
+                write!(f, "{} is not a usable disc image: {reason}", path.display())?;
+                match fix {
+                    Some(fix) => write!(f, " {fix}"),
+                    None => Ok(()),
+                }
             }
             DiscProblem::WrongDisc { path, reason } => {
                 write!(
@@ -244,6 +254,7 @@ pub fn validate_disc(path: &Path) -> std::result::Result<DiscInfo, DiscProblem> 
     let unreadable = |reason: String| DiscProblem::Unreadable {
         path: path.to_path_buf(),
         reason,
+        fix: None,
     };
     let wrong = |reason: String| DiscProblem::WrongDisc {
         path: path.to_path_buf(),
@@ -254,6 +265,17 @@ pub fn validate_disc(path: &Path) -> std::result::Result<DiscInfo, DiscProblem> 
             "it is a folder; choose the .bin (or .cue) file".into(),
         ));
     }
+    // A file the reader would refuse is named for what it is (a 2048-byte
+    // .iso, a .chd, a zip, a .cue whose .bin was renamed) rather than with
+    // the reader's terminal message, which repeats the path and talks
+    // sector layouts.
+    if let Some(d) = legaia_iso::sniff::diagnose_path(path) {
+        return Err(DiscProblem::Unreadable {
+            path: path.to_path_buf(),
+            reason: d.what,
+            fix: Some(d.fix),
+        });
+    }
     let bin = legaia_iso::raw::resolve_disc_path(path).map_err(|e| unreadable(e.to_string()))?;
     let vfs =
         legaia_engine_scene::vfs::DiscVfs::open(&bin).map_err(|e| unreadable(format!("{e:#}")))?;
@@ -263,9 +285,9 @@ pub fn validate_disc(path: &Path) -> std::result::Result<DiscInfo, DiscProblem> 
     let detected = legaia_iso::region::parse(&cnf).map_err(|e| wrong(format!("{e:#}")))?;
     if !detected.executable.eq_ignore_ascii_case(USA_EXECUTABLE) {
         return Err(wrong(format!(
-            "it boots {} ({}); the engine needs the USA disc, which boots {USA_EXECUTABLE}",
+            "it is the {} release ({}); the engine runs the USA disc ({USA_EXECUTABLE})",
+            detected.region.name(),
             detected.executable,
-            detected.region.name()
         )));
     }
     if !vfs.exists("PROT.DAT") {
@@ -996,7 +1018,10 @@ mod tests {
         let cue = dir.path().join("game.cue");
         std::fs::write(&cue, "FILE \"game.bin\" BINARY\n  TRACK 01 MODE2/2352\n").unwrap();
         match validate_disc(&cue) {
-            Err(DiscProblem::Unreadable { reason, .. }) => assert!(reason.contains("game.bin")),
+            Err(DiscProblem::Unreadable { reason, fix, .. }) => {
+                assert!(reason.contains("\"game.bin\""), "{reason}");
+                assert!(fix.is_some());
+            }
             other => panic!("expected Unreadable, got {other:?}"),
         }
     }

@@ -792,22 +792,34 @@ impl LauncherApp {
             None => vec![(self.help_text(), DIM)],
         };
         let inner = help.w - 12;
-        'outer: for (text, ink) in &lines {
-            for l in c.wrap(text, inner) {
-                if y + 12 > help.y + help.h - 14 {
+        let wrapped: Vec<(Vec<String>, [f32; 4])> = lines
+            .iter()
+            .map(|(text, ink)| (c.wrap(text, inner), *ink))
+            .collect();
+        // The key reminder gives its line up to a message that needs it (a
+        // disc problem's reason and fix): cutting the fix off mid-sentence
+        // would leave the one line that says what to do unread.
+        let needed: i32 = wrapped.iter().map(|(l, _)| l.len() as i32 * 12 + 3).sum();
+        let footer = needed <= help.h - 6 - 14;
+        let bottom = help.y + help.h - if footer { 14 } else { 4 };
+        'outer: for (wrapped, ink) in &wrapped {
+            for l in wrapped {
+                if y + 12 > bottom {
                     break 'outer;
                 }
-                c.text(help.x + 6, y, &l, *ink);
+                c.text(help.x + 6, y, l, *ink);
                 y += 12;
             }
             y += 3;
         }
-        c.text(
-            help.x + 6,
-            help.y + help.h - 14,
-            "Arrows, Enter, Tab, Esc",
-            FAINT,
-        );
+        if footer {
+            c.text(
+                help.x + 6,
+                help.y + help.h - 14,
+                "Arrows, Enter, Tab, Esc",
+                FAINT,
+            );
+        }
 
         // Right column.
         let panel = Rect::new(RIGHT_X, COLUMNS_Y, RIGHT_W, STAGE_H - PAD - COLUMNS_Y);
@@ -1020,7 +1032,7 @@ impl LauncherApp {
         y += 4;
         for line in [
             "A gamepad works too. Key Config on the in-game Options screen rebinds keys.",
-            "Esc twice quits the game; F12 lists the display keys.",
+            "Esc twice quits the game; F12 in the game lists every key.",
         ] {
             for l in c.wrap(line, panel.w - 20) {
                 c.text(panel.x + 10, y, &l, DIM);
@@ -1596,23 +1608,35 @@ fn problem_path(p: &DiscProblem) -> Option<&Path> {
 
 /// The help-box explanation of `p`, with what to do about it.
 fn problem_message(p: &DiscProblem) -> Vec<Message> {
-    let (why, hint) = match p {
+    let (why, hint): (String, String) = match p {
         DiscProblem::NotSet => return Vec::new(),
-        DiscProblem::BadSettings(why) => (why.clone(), "Choose the disc again."),
+        DiscProblem::BadSettings(why) => (why.clone(), "Choose the disc again.".into()),
         DiscProblem::Missing(_) | DiscProblem::Moved(_) => (
             "It may have been moved, renamed, or be on a drive that is not connected.".into(),
-            "Choose it again where it is now.",
+            "Choose it again where it is now.".into(),
         ),
-        DiscProblem::Unreadable { reason, .. } => (
-            format!("{}.", capitalise_first(reason)),
-            "Choose the .bin of a raw Mode2/2352 dump, or the .cue beside it.",
+        DiscProblem::Unreadable { reason, fix, .. } => (
+            sentence(reason),
+            fix.clone().unwrap_or_else(|| {
+                "Choose the .bin of a raw Mode2/2352 dump, or the .cue beside it.".into()
+            }),
         ),
         DiscProblem::WrongDisc { reason, .. } => (
-            format!("{}.", capitalise_first(reason)),
-            "A randomized or translated USA disc works too.",
+            sentence(reason),
+            "A randomized or translated USA disc works too.".into(),
         ),
     };
-    vec![(why, WARN), (hint.into(), DIM)]
+    vec![(why, WARN), (hint, DIM)]
+}
+
+/// `s` as a sentence: capitalised, ending in one full stop.
+fn sentence(s: &str) -> String {
+    let s = capitalise_first(s.trim());
+    if s.ends_with(['.', '!', '?']) {
+        s
+    } else {
+        format!("{s}.")
+    }
 }
 
 fn capitalise_first(s: &str) -> String {

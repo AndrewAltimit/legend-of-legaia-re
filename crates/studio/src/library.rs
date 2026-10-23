@@ -76,6 +76,16 @@ pub fn validate(path: &Path) -> Result<Source> {
         }
         return Ok(Source::Extracted(path.to_path_buf()));
     }
+    // A file the reader would refuse (a 2048-byte .iso, a .chd, a zip, a
+    // .cue whose .bin was renamed) is named for what it is, with what to
+    // pick instead; the path is already in the path bar.
+    if let Some(d) = legaia_iso::sniff::diagnose_path(path) {
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string());
+        bail!("{name} can't be opened. {d}");
+    }
     let bin = legaia_iso::raw::resolve_disc_path(path)
         .with_context(|| format!("resolving {}", path.display()))?;
     // The reader's own message names the file and says what is wrong with

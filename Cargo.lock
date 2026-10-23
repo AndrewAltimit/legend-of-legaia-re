@@ -2794,6 +2794,7 @@ dependencies = [
  "clap",
  "libc",
  "sha2",
+ "tempfile",
 ]
 
 [[package]]

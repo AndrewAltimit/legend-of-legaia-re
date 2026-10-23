@@ -83,7 +83,11 @@ randomized or translated USA disc is accepted, since it still boots the USA
 executable. The check reads a few sectors, not the whole image - it is not the
 SHA-256 fingerprint `disc-extract verify` computes. The disc card says what is
 wrong in one line (the file moved, is not a disc image, is another region's
-disc) and the help box gives the reason and the fix.
+disc) and the help box gives the reason and the fix. A file that is not a raw
+dump is named for what it is (`legaia_iso::sniff`): a 2048-byte `.iso` (it
+leaves out the streamed movie and voice sectors), a compressed `.chd`, an
+EBOOT `.pbp`, an ECM image, an archive, a patch file, or a `.cue` whose `.bin`
+was renamed - in which case the one `.bin` beside it is named.
 
 A disc that passes is remembered in `launcher.toml` in the platform config
 directory (`~/.config/legaia-engine` on Linux, `%APPDATA%\legaia-engine` on
@@ -245,8 +249,9 @@ In the native window each press shows the toggle's new state at the bottom
 left for a moment (*Ground fog: off*); holding a key toggles once, not
 repeatedly. A key that only acts while you walk
 around (`F3`, `T`, `R`) says so when pressed on the title screen or in a menu.
-`F12` (or `?`) opens a panel listing every toggle key with its current state;
-press it again to close it. A player's window says so for its first few
+`F12` (or `?`) opens a panel listing every toggle key with its current state,
+and under it the key each pad button is on (Cross, Circle, Start, ...), read
+from the live Key Config table; press it again to close it. A player's window says so for its first few
 seconds (*F12 or ? lists the keys*, bottom left) until the panel is opened. A
 `--screenshot` capture leaves that line, the toggle notices and the quit
 prompt out, so it shows only what the game draws; `--screenshot-chrome` keeps
