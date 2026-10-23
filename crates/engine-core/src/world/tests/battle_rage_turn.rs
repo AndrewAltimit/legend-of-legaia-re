@@ -146,3 +146,35 @@ fn a_rage_seats_dead_target_is_redirected() {
     let other = if rolled == 3 { 4 } else { 3 };
     assert_eq!(w.actors[0].battle.active_target, other);
 }
+
+/// The fill runs at state `0x00`, after the round's commits, and overwrites
+/// the seat's category and stream (`0x801F0528`, `0x801F06B8`): a commit the
+/// engine still holds for a Rage seat is dropped, not played.
+#[test]
+fn the_delegated_fill_wins_over_a_held_commit() {
+    use crate::battle_round::PendingPartyAction;
+    let mut w = rage_battle(&[0], &[7, 11, 10, 6]);
+    w.rng_state = 5;
+    w.run_round_state_zero();
+    let filled = w.actors[0].battle.params;
+    w.battle.round_flow.pending[0] = Some(PendingPartyAction::Spirit);
+    w.dispatch_battle_turn(0);
+    assert_eq!(w.actors[0].battle.params, filled);
+    assert_eq!(w.actors[0].battle.action_category, 3);
+    assert!(w.battle.round_flow.pending[0].is_none());
+}
+
+/// Every party dispatch runs the builder, whose head clears the
+/// special-trigger flag `0x801F696C` (`0x801EED88`).
+#[test]
+fn every_party_dispatch_clears_the_special_trigger_flag() {
+    use crate::battle_round::PendingPartyAction;
+    let mut w = rage_battle(&[], &[]);
+    w.battle.round_flow.pending[1] = Some(PendingPartyAction::Spirit);
+    w.battle_ctx.super_trigger = true;
+    w.dispatch_battle_turn(1);
+    assert!(!w.battle_ctx.super_trigger, "a Spirit commit");
+    w.battle_ctx.super_trigger = true;
+    w.dispatch_battle_turn(2);
+    assert!(!w.battle_ctx.super_trigger, "a member with no commit");
+}

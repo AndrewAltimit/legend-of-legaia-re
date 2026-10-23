@@ -24,7 +24,8 @@
 --                  +0x1DE, +0x1DD and stream, plus the latched clip +0x1DB
 --
 -- Knobs (env):
---   LEGAIA_RAGE_SEATS   comma list of party seats to poke (default "0")
+--   LEGAIA_RAGE_SEATS   comma list of party seats to poke (default "0"; "" = none)
+--   LEGAIA_STATUS_SEATS comma list of seats whose actor +0x16E takes 0x380
 --   LEGAIA_PAD_SCRIPT   ";"-separated "vsync:BUTTON[:hold]" (probe.pad names)
 --   LEGAIA_FRAMES       capture length in vsyncs
 --
@@ -41,6 +42,10 @@ local SSTATE = probe.getenv("LEGAIA_SSTATE", "")
 local FRAMES = probe.getenv_num("LEGAIA_FRAMES", 2400)
 local SCRIPT = probe.getenv("LEGAIA_PAD_SCRIPT", "")
 local SEATS  = probe.getenv("LEGAIA_RAGE_SEATS", "0")
+-- LEGAIA_STATUS_SEATS: party seats whose ACTOR +0x16E takes `|= 0x380` once,
+-- with no record bit - the status-confused shape (the charm roll at
+-- 0x8004D118 and the slot-B images' `ori 0x380` write the actor word only).
+local STATUS_SEATS = probe.getenv("LEGAIA_STATUS_SEATS", "")
 
 local CTX_PTR   = 0x8007BD24
 local ACTORS    = 0x801C9370
@@ -56,6 +61,8 @@ local function in_ram(a) return a >= 0x80000000 and a < 0x80200000 end
 
 local rage_seats = {}
 for s in SEATS:gmatch("%d+") do rage_seats[#rage_seats + 1] = tonumber(s) end
+local status_seats = {}
+for s in STATUS_SEATS:gmatch("%d+") do status_seats[#status_seats + 1] = tonumber(s) end
 
 local pad_events = {}
 for item in SCRIPT:gmatch("[^;]+") do
@@ -106,6 +113,18 @@ local function poke_records()
     end
 end
 
+local function poke_status()
+    for _, seat in ipairs(status_seats) do
+        local a = actor_of(seat)
+        if a ~= 0 then
+            local before = u16(a + 0x16E)
+            probe.write_u16(a + 0x16E, bit.bor(before, 0x380))
+            PCSX.log(string.format("[rage] seat %d actor+0x16E %04X -> %04X",
+                seat, before, u16(a + 0x16E)))
+        end
+    end
+end
+
 local function arm_watches()
     for seat = 0, 2 do
         local a = actor_of(seat)
@@ -142,7 +161,7 @@ probe.run({
     on_capture = function(_, elapsed)
         g_elapsed = elapsed
         if not poked and elapsed >= 2 then
-            poke_records(); poked = true
+            poke_records(); poke_status(); poked = true
         end
         if not watched and elapsed >= 2 then
             arm_watches(); watched = true

@@ -129,7 +129,7 @@
     <li><strong>Lost turns.</strong> An actor carrying Numb, Sleep, Stone or Faint loses its turn when it comes up. A party member whose raw status word carries Stone / Numb / Sleep committed no command, since the ring refuses it; its turn arms category <code>0</code>, which the action seed sends straight to Done. It is never auto-armed as a strike.</li>
     <li><strong>On-hit strip.</strong> A landed melee hit clears the target&rsquo;s delegation bits, Numb and Sleep (<code>FUN_801EC3E4</code>), unless the target is Stone; a Stone target takes no damage.</li>
     <li><strong>Magic blocked.</strong> A cursed or fainted monster caster falls back to a physical strike; a party caster in that state finds the Magic arm bouncing back to the command menu.</li>
-    <li><strong>Confuse</strong> retargets to a random living member of the other side. <strong>Stone</strong> lifts when the party escapes: retail&rsquo;s run band floors every 0-HP member at 1.</li>
+    <li><strong>Confuse</strong> retargets a monster&rsquo;s action to a random living member of the other side; a confused party member gets no command and loses its turn. <strong>Stone</strong> lifts when the party escapes: retail&rsquo;s run band floors every 0-HP member at 1.</li>
   </ul>
 </section>
 

@@ -313,7 +313,9 @@ One delegated pick is observed in the library (`evil_medallion_rage_battle`; dis
 - The strike loop latches the stream's bytes in order into `+0x1DB` (`0x01` for the approach, then `0x23`, `0x28` for the stream `[0x23,0x28]`). The empty-stream seat approaches and returns with no swing.
 - The round-boundary clear `FUN_801D88CC` (`0x801D89D8` / `0x801D8A60`) wipes the streams, and the next round opens on the prompt again.
 
-Port: `battle_action::round_state_zero` runs the arm and records its seats in `BattleActionCtx::delegated_seats`; `World::arm_party_delegated` plays the stream as it stands, with the turn picker's dead-target redirect on its target and the builder's head clears (the `0x801F6990` side array, the `0x801F696C` flag). A seat the arm did not take keeps the engine's plain strike. Tests: `world::tests::battle_rage_turn`, `battle_rage_party_live`.
+Port: `battle_action::round_state_zero` runs the arm and records its seats in `BattleActionCtx::delegated_seats`; `World::arm_party_delegated` plays the stream as it stands, with the turn picker's dead-target redirect on its target and the builder's head clears (the `0x801F6990` side array, the `0x801F696C` flag).
+
+The fill wins over a commit the engine still holds for the seat, since retail's state `0x00` overwrites the category and stream after the round's commits. Every party dispatch clears `0x801F696C`, as the builder's head does; an arts commit's tokenizer raises it again. A seat the arm did not take dispatches its commit, passes its turn when the ring refused it (a status-confused member among them), and otherwise keeps the engine's plain strike. Tests: `world::tests::battle_rage_turn`, `battle_rage_party_live`.
 
 **Pool arm (Auto).** Gated per slot on `ctx[+0x266 + slot] != 0` and category `actor[+0x1DE] == 3` (Attack). `ctx[+0x266 + slot]` is the per-fighter **Auto** flag the command SM's Auto pick writes (see [minigame-muscle-dome.md](minigame-muscle-dome.md)), so this arm and its tail are the Auto command's queue builder.
 

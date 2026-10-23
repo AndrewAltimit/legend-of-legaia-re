@@ -134,8 +134,10 @@ fn confuse_retargets_a_monster_strike_to_its_own_band() {
     );
 }
 
+/// `FUN_801E7320` is reached only for a seat `>= 3` (`0x801E2C70`): a
+/// confused party member's strike keeps the monster it targeted.
 #[test]
-fn confuse_retargets_a_party_strike_to_a_living_ally() {
+fn confuse_leaves_a_party_strike_on_its_target() {
     use legaia_engine_battle_vm::status_effects::StatusKind;
     let mut world = World::new();
     world.party.party_count = 3;
@@ -145,45 +147,56 @@ fn confuse_retargets_a_party_strike_to_a_living_ally() {
         world.actors[i].battle.hp = 100;
         world.actors[i].battle.max_hp = 100;
     }
-    // A confused party member (slot 1) whose action targeted a monster (slot 3)
-    // flips to a random living member of its own (party) side.
     world.actors[1].battle.active_target = 3;
     world
         .battle
         .status_effects
         .apply_with_duration(1, StatusKind::Confuse, 3);
     world.maybe_confuse_retarget(1);
-    let t = world.actors[1].battle.active_target;
-    assert!(t < 3, "confused party member targets an ally, got slot {t}");
-    assert!(world.actors[t as usize].battle.liveness != 0);
+    assert_eq!(world.actors[1].battle.active_target, 3);
 }
 
+/// A confused party member with no commit passes its turn (category `0`,
+/// the seed's Done arm) - whether the group came through the status tracker
+/// or straight into `+0x16E` (the charm roll at `0x8004D118`) - and one that
+/// committed before it was confused plays that commit on its own target.
 #[test]
-fn confused_party_member_auto_acts_instead_of_opening_the_command_menu() {
+fn a_confused_party_member_passes_or_keeps_its_commit() {
+    use crate::battle_round::PendingPartyAction;
     use legaia_engine_battle_vm::status_effects::StatusKind;
-    let mut world = World::new();
-    world.party.party_count = 3;
-    world.battle.player_driven = true;
-    for i in 0..5 {
-        world.actors[i].active = true;
-        world.actors[i].battle.liveness = 1;
-        world.actors[i].battle.hp = 100;
-        world.actors[i].battle.max_hp = 100;
-    }
-    world
+    let world = || {
+        let mut world = World::new();
+        world.party.party_count = 3;
+        world.battle.player_driven = true;
+        for i in 0..5 {
+            world.actors[i].active = true;
+            world.actors[i].battle.liveness = 1;
+            world.actors[i].battle.hp = 100;
+            world.actors[i].battle.max_hp = 100;
+        }
+        world
+    };
+    let mut tracked = world();
+    tracked
         .battle
         .status_effects
         .apply_with_duration(0, StatusKind::Confuse, 3);
-    // The confused party member auto-arms a physical strike (no command session)
-    // aimed at a living ally.
-    world.arm_party_physical(0);
-    assert!(
-        world.battle.command.is_none(),
-        "a confused party member never opens the command menu"
-    );
-    assert_eq!(world.actors[0].battle.action_category, 3, "physical armed");
-    let t = world.actors[0].battle.active_target;
-    assert!(t < 3, "retargeted onto an ally, got slot {t}");
+    tracked.actors[0].battle.action_category = 3;
+    tracked.dispatch_battle_turn(0);
+    assert_eq!(tracked.actors[0].battle.action_category, 0, "turn passes");
+    assert_eq!(tracked.battle_ctx.queued_action, 0);
+
+    let mut raw = world();
+    raw.actors[0].battle.field_flags = 0x380;
+    raw.dispatch_battle_turn(0);
+    assert_eq!(raw.actors[0].battle.action_category, 0, "turn passes");
+
+    let mut committed = world();
+    committed.actors[0].battle.field_flags = 0x380;
+    committed.battle.round_flow.pending[0] = Some(PendingPartyAction::Attack { target: 4 });
+    committed.dispatch_battle_turn(0);
+    assert_eq!(committed.actors[0].battle.action_category, 3);
+    assert_eq!(committed.actors[0].battle.active_target, 4, "no re-target");
 }
 
 #[test]
