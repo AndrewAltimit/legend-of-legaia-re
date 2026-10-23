@@ -2303,6 +2303,23 @@ creature in arm 4 that the engine does not draw, arm 9's blades drawn wider),
 the difference is in what those parts draw, not in which are live or where
 the camera stands.
 
+Their draw state matches too, part for part, once each is paired by age (its
+wait word): the `+0x9C..+0xCC` block, draw kind `+0x56`, render mode `+0x5A`
+and the camera-relative word `+0x52 = 0x580` (op `0x15`). Arm 9's crowns
+`0x801F8BEC` (mode `0x18`: shape 3, thirty-two columns, phase `4`) grow
+their radii `+0xB4` / `+0xB6` twelve units apart from crown to crown on
+both sides, and its fans `0x801F8B0C` / `0x801F8B68` (mode `0x10`: shape 2,
+eight columns, radii `0x100` / `0x2000`) sit `0x2000` ahead of the eye on
+both. Retail's ordering tables draw those fans as eight packets each running
+off every edge of the screen, the crowns as rings of thin spokes over the
+whole frame. The engine draws the crowns (hiding them changes its whole
+frame) but dimmer than retail's, under fans that read wider. The parts' own
+words reach the draw intact, so what is left is in the draw of a
+camera-relative default-arm mesh (`FUN_80028158` and the `+0x52` placement),
+not in the module or the part programs. Some parts with draw kind `0` carry
+a non-zero block in retail and a zero one in the engine; nothing draws from
+it, and it reads as words a previous actor left in the reused slot.
+
 The stagers of PROT 0914, 0915, 0917, 0921, 0928, 0929 and 0931..0933 run
 the same way (`cast_module_ticks::creature_stager_spawns`, arm by arm off
 each image's second dump). Most arms seat one record on the caller; the ones

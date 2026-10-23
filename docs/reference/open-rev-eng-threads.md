@@ -207,9 +207,15 @@ back, as assumed (`cort_mystic_shield_mid_cast` reads the same way,
 record). Nor is it the module's pacing: a seat-0 Big Wave recorded on both
 sides (`LEGAIA_POKE32` sends the cast down Big Wave's branch) holds arms 0 and
 4 one pass each and arms 5 to 8 within two vsyncs of retail's game clock.
-What is left is the pose the frame drew: `LEGAIA_RAM_AT` beside the grabbed
-frames, with the caster's cursor and the ordering tables' body packets, shows
-which pass it belongs to.
+What is left is the pose the frame drew, and the obvious reading of it does
+not hold across states: `battle_gimard_tail_fire_b`, saved mid-pass too, draws
+its knockdown exactly two advances behind the RAM's cursor (`72` against
+`56`), where Zeto's idle needs three. A per-pass RAM sequence of a seat-0 Big
+Wave around arm 0 cannot separate the two either: the arm-0 cut moves the
+camera on the same pass the rate halves, so the body packets' motion between
+tables is mostly the camera's. A stretch where the camera holds still and a
+body's rate or clip changes (a commit that zeroes the cursor) would show
+which advance the drawn pose stands on.
 
 Answered questions: [settled battle / arts / level-up](re-settled-threads/battle.md), [settled rendering / camera](re-settled-threads/rendering-camera.md), [settled world map](re-settled-threads/world-map.md); falsified readings: [battle](re-do-not-re-walk.md#battle--arts--level-up), [rendering / camera](re-do-not-re-walk.md#rendering--camera).
 
