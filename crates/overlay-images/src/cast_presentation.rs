@@ -68,6 +68,19 @@ pub const STREAK_RIBBON: u32 = 0x801E_1D98;
 pub const MOVE_IMAGE: u32 = 0x8005_8490;
 /// `FUN_800583C8` - `LoadImage`.
 pub const LOAD_IMAGE: u32 = 0x8005_83C8;
+/// `FUN_80050E74` - the part-pool flush: every non-null word of the pool at
+/// [`PART_POOL`] gets the actor-list done bit (`+0x10 |= 8`) and is zeroed
+/// (`0x80050E80..0x80050EC8`).
+pub const PART_POOL_FLUSH: u32 = 0x8005_0E74;
+/// The part pool `FUN_80050ED4` seats into (its first `0x60` words) and
+/// [`PART_POOL_FLUSH`] walks (all [`PART_POOL_WORDS`]).
+pub const PART_POOL: u32 = 0x801C_90F0;
+/// Words the flush walks (`slti v0,a1,0x80` at `0x80050EC0`).
+pub const PART_POOL_WORDS: u32 = 0x80;
+/// `FUN_80050ED4` - the pool wrapper over the part spawn `FUN_80021B04`: it
+/// parks the part in the first free word of [`PART_POOL`], which is how a
+/// later [`PART_POOL_FLUSH`] reaches it.
+pub const PART_POOL_SPAWN: u32 = 0x8005_0ED4;
 /// `FUN_801D8DE8` (PROT 0898) - the battle HUD's screen-element spawner,
 /// `(element, mode)`: mode bit 0 clear raises the element on its glide from
 /// seat A, set unloads it.
@@ -181,6 +194,17 @@ pub enum HandleSlot {
     Abs(u32),
 }
 
+impl HandleSlot {
+    /// Whether the slot is a word of the part pool [`PART_POOL_FLUSH`]
+    /// walks. The allocator seats into the first `0x60` only, but a module
+    /// may park an actor of its own in the tail: PROT 0930 (Horn) and 0931
+    /// (Jedo) park their held fades in the last word, `0x801C92EC`, and the
+    /// next flush halts them with the parts.
+    pub fn in_part_pool(self) -> bool {
+        matches!(self, Self::Abs(a) if (PART_POOL..PART_POOL + 4 * PART_POOL_WORDS).contains(&a) && a % 4 == 0)
+    }
+}
+
 /// What one site does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PresentationCall {
@@ -201,6 +225,14 @@ pub enum PresentationCall {
     },
     /// `FUN_800583C8(&rect, src)`: the rect only.
     VramLoad { rect: [Option<i16>; 4] },
+    /// `FUN_80050E74()`: the part-pool flush, which halts every actor parked
+    /// in the pool's words - a fade a module parked there included
+    /// ([`HandleSlot::in_part_pool`]).
+    PoolFlush,
+    /// `FUN_80050ED4(pos, rot, record, scale)`: a part seated through the
+    /// pool wrapper, `record` the spawn record (`a2`) when it folded. The
+    /// parts a [`Self::PoolFlush`] halts are these.
+    PoolSpawn { record: Option<u32> },
     /// The fade the `FUN_80024E80` call at `fade` spawned is parked in
     /// `slot` (`sw v0, 0x102C(ctx)` after the call).
     FadeStore { fade: u32, slot: HandleSlot },
@@ -316,6 +348,21 @@ impl CastPresentation {
             None => (self.dispatches.len() == 1).then(|| &self.dispatches[0]),
         };
         d.is_some_and(|d| d.holding.contains(&arm))
+    }
+
+    /// Every spawn record the image seats through the pool wrapper
+    /// ([`PresentationCall::PoolSpawn`]), placed on an arm or not: the parts
+    /// a [`PresentationCall::PoolFlush`] reaches.
+    pub fn pool_records(&self) -> BTreeSet<u32> {
+        let placed = self.sites.iter().map(|s| s.call);
+        let unplaced = self.unplaced.iter().map(|s| s.call);
+        placed
+            .chain(unplaced)
+            .filter_map(|c| match c {
+                PresentationCall::PoolSpawn { record } => record,
+                _ => None,
+            })
+            .collect()
     }
 
     /// Whether `body` is one of this image's phase switches.
@@ -1177,8 +1224,10 @@ impl Tracker {
 // Site decode
 // ---------------------------------------------------------------------------
 
-const SITE_CALLS: [u32; 6] = [
+const SITE_CALLS: [u32; 8] = [
     FADE_SPAWN,
+    PART_POOL_FLUSH,
+    PART_POOL_SPAWN,
     ARMED_WASH,
     STREAK_RIBBON,
     MOVE_IMAGE,
@@ -1225,6 +1274,8 @@ fn site_call(i: &Ins, t_before: &Tracker, t_call: &Tracker) -> Option<Presentati
                 },
                 exit: None,
             },
+            PART_POOL_FLUSH => PresentationCall::PoolFlush,
+            PART_POOL_SPAWN => PresentationCall::PoolSpawn { record: rv(6) },
             ARMED_WASH => PresentationCall::ArmedWash {
                 rgb: rv(4).map(|v| v & 0x00FF_FFFF),
             },
@@ -1796,4 +1847,20 @@ fn site_exit_phase(img: &Image, alias: &BTreeSet<usize>, va: u32) -> Option<Phas
         at += 4;
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The flush walks `0x80` words from `0x801C90F0`: the last one,
+    /// `0x801C92EC`, is the word PROT 0930 and 0931 park their held fades in.
+    #[test]
+    fn the_part_pool_spans_the_flush_walk() {
+        assert!(HandleSlot::Abs(PART_POOL).in_part_pool());
+        assert!(HandleSlot::Abs(0x801C_92EC).in_part_pool());
+        assert!(!HandleSlot::Abs(0x801C_92F0).in_part_pool());
+        assert!(!HandleSlot::Abs(0x801C_90EC).in_part_pool());
+        assert!(!HandleSlot::Ctx(0x102C).in_part_pool());
+    }
 }

@@ -178,3 +178,35 @@ fn an_unpaced_arm_fires_nothing() {
     assert!(w.casting.module_pres.fades.is_empty());
     assert_eq!(w.casting.module_pres.unpaced_arms, 1);
 }
+
+/// PROT 0930 (Horn): arm 3's pass spawns the held white (`-1` hold) and
+/// parks it in the part pool's last word `0x801C92EC`; arm 4's pass flushes
+/// the pool (`jal 0x80050E74` at `0x801F6EE8`) before it spawns its own
+/// fade-out, and the flush is what ends the white. Without it the additive
+/// white stayed up for the rest of the cast.
+#[test]
+fn horn_arm_4_flush_ends_the_held_white() {
+    let Some(mut w) = band_world() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
+        return;
+    };
+    w.casting.capture_spell = None;
+    w.fire_cast_presentation(930, None, None, 3, 4, false);
+    let pool = legaia_overlay_images::cast_presentation::HandleSlot::Abs(0x801C_92EC);
+    assert!(
+        w.casting
+            .module_pres
+            .fades
+            .iter()
+            .any(|f| f.slot == Some(pool)),
+        "arm 3 parks its held white in the pool"
+    );
+    w.fire_cast_presentation(930, None, None, 4, 4, false);
+    w.fire_cast_presentation(930, None, None, 4, 5, false);
+    let fades = &w.casting.module_pres.fades;
+    assert!(
+        fades.iter().all(|f| f.slot != Some(pool)),
+        "the flush halted it"
+    );
+    assert_eq!(fades.len(), 1, "arm 4's own fade-out is live");
+}

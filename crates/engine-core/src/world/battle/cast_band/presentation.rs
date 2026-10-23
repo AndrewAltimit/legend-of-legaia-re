@@ -332,6 +332,32 @@ impl World {
                         }
                     }
                 }
+                // The part-pool flush `FUN_80050E74` halts whatever sits in
+                // the pool's `0x80` words, and a module may park its own fade
+                // in the tail the allocator never fills: PROT 0930's arm 3
+                // parks its held white at `0x801C92EC` (`sw v0,-0x6D14(v1)`
+                // at `0x801F6E8C`), and arm 4's flush (`0x801F6EE8`) is what
+                // ends it as the arm's own fade-out takes over. Left alive,
+                // the held additive white whited out the rest of the cast.
+                PresentationCall::PoolFlush if once => {
+                    self.casting
+                        .module_pres
+                        .fades
+                        .retain(|f| !f.slot.is_some_and(|s| s.in_part_pool()));
+                    // The parts the flush reaches are the ones the image
+                    // seated through the pool wrapper `FUN_80050ED4`; a part
+                    // seated straight through `FUN_80021B04` is in no pool
+                    // word and lives on (PROT 0930's arm-9 record
+                    // `0x801F8F44`, parked in its own image).
+                    let pooled = pres.pool_records();
+                    if let Some(scene) = self.casting.active_summon.as_mut() {
+                        for part in &mut scene.parts {
+                            if part.tag.is_some_and(|t| pooled.contains(&t)) {
+                                part.finished = true;
+                            }
+                        }
+                    }
+                }
                 // The arm parks a part it seats (`sw v0, slot` after the
                 // spawn call).
                 PresentationCall::PartStore { record, slot } if once => {

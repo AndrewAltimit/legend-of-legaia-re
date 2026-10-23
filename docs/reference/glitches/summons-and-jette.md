@@ -366,8 +366,9 @@ white-out. That is the reported symptom.
   cost one mote, not the creature's pose.
 - **The pool flush overrunning the pool.** `FUN_80050E74` walks `0x80` words where the allocator
   fills `0x60`. The array really is `0x80` words: battle init `FUN_80055B6C` zeroes `0x80`
-  (`0x8005603C..0x80056050`) and the per-frame release walks `0x80`. No code on the disc
-  references the last 32 words, so they stay zero and the flush skips them.
+  (`0x8005603C..0x80056050`) and the per-frame release walks `0x80`. The allocator never
+  fills the last 32 words; the only actors in them are the ones modules park there by hand
+  (Horn's and Jedo's held fades at `0x801C92EC`), which the flush is meant to halt.
 - **Rogue's Tower itself.** One Orb cast in a Rogue's Tower random battle, with screenshots through
   the whole animation, matches a reference cast on the plains frame for frame at the sampled rate.
   A single clean cast does not clear a location for a fault that happens "sometimes".

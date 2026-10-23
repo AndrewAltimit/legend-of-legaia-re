@@ -3332,6 +3332,27 @@ yellow held fades its arm 10 parked at `0x801FA4C8` / `0x801FA4CC`. Read as
 one slot, those two fades stayed up as a white screen from arm 12 to the
 end of the turn.
 
+**The pool flush is a kill too.** `FUN_80050E74` walks all `0x80` words of
+the part pool at `0x801C90F0`, sets the done bit on every actor it finds and
+zeroes the word (`0x80050E80..0x80050EC8`). The pool wrapper `FUN_80050ED4`
+only fills the first `0x60`, but modules park actors of their own in the top
+words, and a module that parks a held fade at `0x801C92EC` ends it with its
+next flush, not with a kill of the slot. PROT 0930 (Horn) does it three
+times: arm 3 parks a held white (delay `0x100`, ramp `0x80`) that lands as arm
+4's countdown runs out, and arm 4's pass flushes (`0x801F6EE8`) before it
+spawns its own `0x20`-frame fade back out; arm 9 parks another and arm 10's
+pass flushes it; arm 10 parks two more (`0x801C92E8`, `0x801C92EC`) and the
+last arm's pass flushes them (`0x801F7CBC`) under its `0x40`-frame fade-out.
+The decoder places each flush (`PoolFlush`) and each pool-wrapper spawn
+(`PoolSpawn`, the record off `a2`). On a flush the hook drops the fades
+parked in the pool's words and halts the engine's parts of every record the
+image seats through the wrapper; a part seated straight through
+`FUN_80021B04` is in no pool word and lives on. Without it Horn's cast reads
+as a white screen from arm 4 to the end of the Done band in the cast-sequence
+oracle. The last arm has no phase write, so its
+sites read as `Every`; its countdown gate (`summon_holds::gate_va`,
+`0x801F7CAC`) keeps the flush on the pass that ends the module.
+
 **Only where the port paces the arm.** A call is placed in time by its arm,
 so it is as right as the port's pacing of that arm, and many tick ports walk
 their arms one per tick where retail holds each on a countdown or a poll:
