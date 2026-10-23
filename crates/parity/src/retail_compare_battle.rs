@@ -485,6 +485,9 @@ pub struct RetailBattle {
     /// replay lands these amounts rather than its own rolls
     /// ([`Self::melee_hit_seeds`]).
     pub action_hit_sequence: Vec<(u8, u16)>,
+    /// How many of [`Self::action_hit_sequence`]'s newest pushes the acting
+    /// body's playing clip landed ([`clip_own_pushes`]).
+    pub clip_pushes: u8,
     /// The string's running total `DAT_8007BD14` (the `TOTAL` the combo
     /// cluster draws; the melee kernel's HP write stores it,
     /// `0x801EEA64..0x801EEA78`).

@@ -23,6 +23,8 @@ impl RetailBattle {
                     hits: self.action_hit_sequence.clone(),
                     total: (self.target_code >= 3 && self.combo_total > 0)
                         .then_some((self.target_code, self.combo_total)),
+                    own_clip: (self.clip_pushes > 0)
+                        .then_some((self.caster_clip, self.clip_pushes)),
                 }
             }
             // A monster's cast (`+0x1DE == 2`) pushes its hits on the same
@@ -37,6 +39,7 @@ impl RetailBattle {
                 legaia_engine_capture::melee_hits::MeleeHitSeed {
                     hits: self.action_hit_sequence.clone(),
                     total: None,
+                    own_clip: None,
                 }
             }
             _ => Default::default(),

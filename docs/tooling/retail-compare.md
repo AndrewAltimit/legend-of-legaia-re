@@ -1692,6 +1692,16 @@ the phase on another count is kept as the fallback while the rest are tried,
 and the first such run is kept when none matches. On the matching stream the
 frame draws `15` and Gimard stands on his captured `(-6, 405)`.
 
+The ring's timers also say which pushes the capture's own clip landed: an
+entry's timer gains `0x10` a vsync and the close-up accumulator `ctx[+0x87C]`
+`8` since the acting clip's commit, so a push under twice the accumulator is
+the clip's (`battle_melee_hit_spark`: accumulator `256`, the `15` at `288`,
+the two expired pushes at `608`). The seed carries that count with the clip
+id (`MeleeHitSeed::own_clip`, `@clip:pushes` on the env form), and a hit from
+another clip that reaches those entries takes an unknown amount instead
+(`BattleState::forced_melee_own_clip`). So where the image child's stream
+connects a swing retail's Gimard blocked, the Somersault still lands its `15`.
+
 A monster's cast (`+0x1DE == 2` on a monster seat) pushes its hits on the
 same ring, and its replay seeds them the same way: the cast's hit on the
 ring's front slot takes the pushed amount (`World::cast_spell_on_slots`).

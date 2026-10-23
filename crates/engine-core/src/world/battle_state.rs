@@ -476,6 +476,13 @@ pub struct BattleState {
     /// against Gobu Gobu's `76`, no more than the quarter, and a replay that
     /// rolled `21` knocked him down and stood the fight 300 units off.
     pub forced_melee_total: Option<(u8, u32)>,
+    /// `(clip, pushes)`: the newest `pushes` entries of
+    /// [`Self::forced_melee_hits`] belong to the acting body's clip `clip`
+    /// (`+0x1D9`). A party hit from another clip that reaches them - a
+    /// swing the replay landed where retail's defender blocked - leaves
+    /// them for that clip and takes an unknown amount, so the capture's
+    /// own numeral lands its captured value.
+    pub forced_melee_own_clip: Option<(u8, u8)>,
     /// A retail-comparison seed: the engine slot of an attacker held where
     /// it stands for its approach. Retail can park a monster in state
     /// `0x19` with its Move clip dead (`+0x1DC` bit 2 left set by a flinch
@@ -1058,6 +1065,7 @@ impl BattleState {
             forced_steal: false,
             forced_melee_hits: Default::default(),
             forced_melee_total: None,
+            forced_melee_own_clip: None,
             approach_hold: None,
             party_melee_pushes: 0,
             forced_absorb: false,

@@ -708,7 +708,8 @@ impl World {
             ) as u16;
         }
         if attacker < self.party.party_count {
-            raw = self.forced_melee_amount(target, raw, kill_check);
+            let clip = self.actors[attacker_i].battle.current_anim;
+            raw = self.forced_melee_amount(target, clip, raw, kill_check);
         }
         let dmg = raw;
         // Spirit accrues from the pre-nullify hit: retail's finisher fills the
@@ -868,12 +869,19 @@ impl World {
     /// The retail-compare seed's amount for a party swing on `target`
     /// ([`crate::world::BattleState::forced_melee_hits`] /
     /// `forced_melee_total`), or `rolled` when no seed covers it.
-    fn forced_melee_amount(&mut self, target: u8, rolled: u16, kill_check: bool) -> u16 {
-        let known = if self
-            .battle
-            .forced_melee_hits
-            .front()
-            .is_some_and(|&(slot, _)| slot == target)
+    fn forced_melee_amount(&mut self, target: u8, clip: u8, rolled: u16, kill_check: bool) -> u16 {
+        // The newest pushes are the capture clip's own: a hit from another
+        // clip that reaches them is one retail's string did not land
+        // (`BattleState::forced_melee_own_clip`).
+        let reserved = self.battle.forced_melee_own_clip.is_some_and(|(own, n)| {
+            own != clip && self.battle.forced_melee_hits.len() <= usize::from(n)
+        });
+        let known = if !reserved
+            && self
+                .battle
+                .forced_melee_hits
+                .front()
+                .is_some_and(|&(slot, _)| slot == target)
         {
             self.battle
                 .forced_melee_hits

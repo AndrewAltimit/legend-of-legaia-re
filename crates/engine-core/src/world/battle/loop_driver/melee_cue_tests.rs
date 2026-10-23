@@ -611,3 +611,37 @@ fn a_known_closing_push_keeps_its_amount() {
     assert_eq!(w.actors[1].battle.damage_accum, 29);
     assert_eq!(w.battle.party_melee_pushes, pushes + 3);
 }
+
+/// The capture clip's own pushes stay its own: a replay that lands one
+/// more swing earlier in the string than retail did (a hit retail's
+/// defender blocked) does not spend the closing `15` on it, so the
+/// capture's clip still lands its captured amount on the total
+/// (`battle_melee_hit_spark` replayed on retail's step `3`).
+#[test]
+fn an_extra_early_swing_leaves_the_capture_clips_push() {
+    let mut w = absorb_duel();
+    w.actors[1].battle.hp = 500;
+    w.actors[1].battle.max_hp = 500;
+    w.battle.forced_melee_hits = [(1u8, 0u16), (1, 0), (1, 15)].into_iter().collect();
+    w.battle.forced_melee_total = Some((1, 29));
+    w.battle.forced_melee_own_clip = Some((0x11, 1));
+    w.actors[0].battle.current_anim = 0x0D;
+    for _ in 0..3 {
+        w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, false);
+    }
+    assert_eq!(
+        w.actors[1].battle.damage_accum, 14,
+        "the extra swing fills the room the closing push leaves"
+    );
+    assert_eq!(
+        w.battle.forced_melee_hits.len(),
+        1,
+        "the clip's push is kept"
+    );
+    w.actors[0].battle.current_anim = 0x11;
+    w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, true);
+    assert_eq!(
+        w.actors[1].battle.damage_accum, 29,
+        "and the clip lands its 15"
+    );
+}

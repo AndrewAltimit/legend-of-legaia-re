@@ -491,6 +491,32 @@ pub(super) fn action_hit_sequence(ram: &[u8], ctx: u32) -> Vec<(u8, u16)> {
         .collect()
 }
 
+/// `ctx[+0x85C + i * 4]` - ring entry `i`'s timer, `0x10 * step` a pass
+/// (`0x801DF7B8..0x801DF7C8`).
+const RING_TIMER: u32 = 0x85C;
+/// The close-up accumulator `ctx[+0x87C]`: `8 * step` a pass since the
+/// acting actor's last clip commit (`0x801D5900..0x801D5914`, zeroed at
+/// `0x8004BF74`).
+const CLOSE_UP_ACCUM: u32 = 0x87C;
+
+/// How many of the ring's newest pushes ([`action_hit_sequence`]) the acting
+/// body's playing clip landed: those whose timer is younger than the clip.
+/// The timer gains `0x10` a vsync and the accumulator `8`, so a push the
+/// clip made reads under twice the accumulator.
+/// `battle_melee_hit_spark`'s Somersault holds accumulator `256` and its
+/// closing `15` timer `288`, the string's two expired pushes `608`: one.
+pub(super) fn clip_own_pushes(ram: &[u8], ctx: u32) -> u8 {
+    let count = game_anchors::u8_at(ram, ctx + RING_PUSHES);
+    if count > RING_LEN {
+        return 0;
+    }
+    let age = 2 * game_anchors::u32_at(ram, ctx + CLOSE_UP_ACCUM);
+    (0..u32::from(count))
+        .rev()
+        .take_while(|&i| game_anchors::u32_at(ram, ctx + RING_TIMER + i * 4) < age)
+        .count() as u8
+}
+
 pub(super) fn action_hits(ram: &[u8], ctx: u32) -> Vec<(u8, u16)> {
     let state = game_anchors::u8_at(ram, ctx + 7);
     let count = game_anchors::u8_at(ram, ctx + RING_PUSHES);
@@ -716,6 +742,7 @@ impl RetailBattle {
             module_phase: game_anchors::u8_at(ram, ctx + 0x279),
             action_hits: action_hits(ram, ctx),
             action_hit_sequence: action_hit_sequence(ram, ctx),
+            clip_pushes: clip_own_pushes(ram, ctx),
             combo_total: u32::from(game_anchors::u16_at(ram, COMBO_TOTAL)),
             entry_latches: Vec::new(),
             resident_shiny_seru: false,
