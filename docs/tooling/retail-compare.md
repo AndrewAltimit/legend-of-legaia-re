@@ -1328,6 +1328,18 @@ PC and the level ramp stay the replay's. `freed_summon_mid_cast` rose from
 the level as well measured no better. The fan's angles are this clock, not a
 `rand()` draw.
 
+A growing default-arm node is the same clock on another block. A draw-kind-4
+node on the default emitter (`+0x56 == 4`, `+0x9E & 0x6000 == 0`) in render
+mode `2` or `6` grows its radii `+0xB4 / +0xB6`, heights `+0xB8 / +0xBA` and
+length `+0xC8` off their rates every pass, so those words are seated with the
+banks, taken back the display lag, whether or not the node turns
+(`is_growing_default_arm`). Tail Fire's floor ring (record `0x801F5EB0`,
+seated by `FUN_80050ED4` on the struck body's pair through
+`World::spawn_battle_record_posed`, which tags its parts like the table arm)
+holds radii `224 / 320` at rates `224 / 320` on `battle_gimard_tail_fire_a`;
+the displayed frame drew it at half that, almost wholly behind Vahn's boots,
+where the replay's ring, on its own clock, stood a white band around them.
+
 A battle-burst child is the other case, and its words **are** draws. The
 move VM's op `0x17` (`FUN_801F30C4`) seats twelve children on one of two
 records (`0x801F5DA4` wide, `0x801F5D0C` narrow), each with a heading, a

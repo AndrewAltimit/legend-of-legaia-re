@@ -323,6 +323,13 @@ impl World {
             crate::world::EFFECT_MODEL_LIBRARY_BASE,
             origin,
         );
+        // Tagged with the record's address like a table-form part, so a
+        // capture's snapshot finds it: Tail Fire's floor ring (record
+        // `0x801F5EB0`, seated here on the struck body's pair) went untagged
+        // and kept the replay's own clock under every seed.
+        for (part, p) in scene.parts.iter_mut().zip(&parts) {
+            part.tag = Some(move_power::BATTLE_OVERLAY_BASE + p.record_off as u32);
+        }
         scene.pose_parts(rot, scale);
         self.casting.active_action_fx.push(scene);
         true

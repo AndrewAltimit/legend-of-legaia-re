@@ -106,6 +106,28 @@ pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon
 /// rotation trio `+0x24..+0x28`.
 const ACTION_FX_SEED_OFFSETS: [u16; 3] = [0x24, 0x26, 0x28];
 
+/// What a growing default-arm node's seed carries on top of
+/// [`ACTION_FX_SEED_OFFSETS`]: the radii `+0xB4 / +0xB6`, the heights
+/// `+0xB8 / +0xBA` and the length `+0xC8` the emitter `FUN_80028158` reads
+/// (`src = node + 0x9C`, so `src[+0x18..+0x1E]`; `+0xC8 >> 3` is the
+/// phase). The part tick grows them off `+0xC0..+0xC6` / `+0xCA` every
+/// pass in render modes `2` and `6`, so like the banks they are a clock of
+/// the node's age: Tail Fire's floor ring (record `0x801F5EB0`) on
+/// `battle_gimard_tail_fire_a` holds radii `224 / 320` at rates
+/// `224 / 320` in RAM, and the displayed frame drew it a lag smaller -
+/// mostly hidden behind Vahn's boots, where the replay's ring, seated on
+/// its own clock, stood a white band around them.
+const DEFAULT_ARM_CHANNEL_OFFSETS: [u16; 5] = [0xB4, 0xB6, 0xB8, 0xBA, 0xC8];
+
+/// Whether part `node` is a draw-kind-4 node on the default arm
+/// (`+0x56 == 4`, `+0x9E & 0x6000 == 0`, `0x8001B128..0x8001B134`) in a
+/// render mode whose channel block grows (`+0x5A` `2` or `6`,
+/// `0x80021E78..0x80021FA0`).
+fn is_growing_default_arm(ram: &[u8], node: u32) -> bool {
+    let h = |o: u32| game_anchors::u16_at(ram, node + o);
+    h(0x56) == 4 && h(0x9E) & 0x6000 == 0 && matches!(h(0x5A), 2 | 6)
+}
+
 /// What a burst child's seed carries on top of [`CAST_PART_SEED_OFFSETS`]
 /// (position, banks, wait, channel block): the three words the burst
 /// `FUN_801F30C4` rolls off `rand()` for it - spread `+0x3E`, tail `+0x98`
@@ -131,7 +153,9 @@ const BURST_CHILD_EXTRA_OFFSETS: [u16; 4] = [0x3E, 0x72, 0x96, 0x98];
 /// `+0x26` `812` against the displayed `868`), every ray standing a few
 /// degrees off retail's. Only the banks are seated - the part's program
 /// words (wait, PC, level ramp) may have been rewritten inside the display
-/// lag and are not recovered.
+/// lag and are not recovered - plus, on a growing default-arm node (seated
+/// whether or not it turns), its channel block
+/// ([`DEFAULT_ARM_CHANNEL_OFFSETS`]), the same clock.
 pub(super) fn retail_action_fx_parts(
     ram: &[u8],
 ) -> Vec<legaia_engine_effects::summon::CastPartSeed> {
@@ -145,6 +169,7 @@ pub(super) fn retail_action_fx_parts(
                 && game_anchors::u32_at(ram, n + 0x10) & 0x8 == 0
                 && overlay.contains(&rec)
                 && (is_burst_child(rec)
+                    || is_growing_default_arm(ram, n)
                     || (0x80..=0x84)
                         .step_by(2)
                         .any(|o| game_anchors::u16_at(ram, n + o) != 0))
@@ -155,6 +180,12 @@ pub(super) fn retail_action_fx_parts(
                 legaia_engine_effects::summon::CAST_PART_SEED_OFFSETS
                     .iter()
                     .chain(&BURST_CHILD_EXTRA_OFFSETS)
+                    .copied()
+                    .collect()
+            } else if is_growing_default_arm(ram, n) {
+                ACTION_FX_SEED_OFFSETS
+                    .iter()
+                    .chain(&DEFAULT_ARM_CHANNEL_OFFSETS)
                     .copied()
                     .collect()
             } else {

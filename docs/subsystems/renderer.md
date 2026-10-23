@@ -1014,8 +1014,15 @@ override replaces it.
 
 ### The ground shadow
 
-Unless `actor+0x6A` is set, the draw ends with a shadow disc under the actor.
-The position is projected with its height `+0x16` zeroed, and the procedural
+Unless `actor+0x6A` is set, the draw ends with a shadow disc under the actor's
+body. The disc's translation is the node position `+0x14` with its height
+`+0x16` zeroed (`0x80049044..0x800490AC`), moved by the GTE `MVMVA`
+(`0x80049104`) through the actor's rotation onto the pose centroid the decoder
+`FUN_8004998C` has just left in the pose pool (`gp[0xA0C] + 0x6F4`, `+0x120` /
+`+0x124`, read with its height forced to `0` at `0x800490B0..0x800490F8`): the
+point under the body pair, not under the node. A clip that carries the body off
+its node - Vahn knocked back by Tail Fire, some 470 units on
+`battle_gimard_tail_fire_a` - keeps its shadow under the body. The procedural
 builder `FUN_80028158` builds a 24-column ring of inner radius `0` and outer
 radius `actor+0x58 * 4 / 10` into `_DAT_8007B85C + 0x62400`. Its mode word is
 `1`, which is shape `0` laid in the XZ plane, not a separate "disc" shape
@@ -1045,7 +1052,8 @@ Port: `battle_actor_draw::shadow_plan` models the numbers and
 ground-shadow block in the capture library is reproduced byte for byte
 (`effect_default_arm_retail_capture.rs`). `World::battle_ground_shadows`
 lists one per battle body, gated on the same draw plan the host's actor pass
-uses, and both hosts draw that list in their battle FX pass. The disc sits
+uses, centred on the drawn pose's centroid turned by the facing (the body-pair
+store's rotation), and both hosts draw that list in their battle FX pass. The disc sits
 `BATTLE_SHADOW_DEPTH_LIFT` above the floor so a depth test draws it over the
 coplanar stage floor; retail has no depth buffer to tie. The after-image
 bracket is `battle_actor_draw::body_shadow_skip`, and the after-image pass
