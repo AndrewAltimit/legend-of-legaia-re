@@ -514,21 +514,23 @@ pub fn apply_approach_fix(patcher: &mut DiscPatcher) -> Result<ApproachFixReport
 /// Outcome of applying the Conkram mirror freeze fix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConkramFreezeFixReport {
-    /// Whether the handler window was rewritten (`false` = already fixed).
+    /// Whether the sites were rewritten (`false` = already fixed).
     pub changed: bool,
 }
 
 /// Apply the **Conkram mirror freeze fix** (see
 /// [`legaia_code_hooks::conkram_freeze_fix`]): the move VM's keyframe-pose
-/// seat (op `0x3C`) tests its heap allocation and, when it fails, halts the
-/// part through op `0x08`'s own arm instead of copying the pose through the
-/// NULL pointer over the CPU's exception vector. Every allocation that
-/// succeeds runs as retail.
+/// seat (op `0x3C`) and the render-node allocation in `FUN_80020F88` survive
+/// a failed heap allocation without writing through NULL - the first halts
+/// the part through op `0x08`'s own arm, the second installs a shared
+/// stand-in node - and both allocate through a quiet entry, so a failure
+/// leaves the `PRG ERR` counter and its on-screen readout untouched. Every
+/// allocation that succeeds runs as retail.
 ///
-/// One same-size sixteen-word window rewrite in `SCUS_942.54` (nine words
-/// change). The stock handler, the HALT arm and the jump-table entries are
-/// verified before writing; an unrecognized build is refused without touching
-/// the disc, and an already-fixed image is a no-op.
+/// Four same-size edits in `SCUS_942.54`. Each site and the surrounding
+/// words are verified before writing; an unrecognized or partly patched
+/// build is refused without touching the disc, and an already-fixed image is
+/// a no-op.
 pub fn apply_conkram_freeze_fix(patcher: &mut DiscPatcher) -> Result<ConkramFreezeFixReport> {
     let scus = patcher
         .read_named_file(SCUS_NAME)
@@ -536,14 +538,13 @@ pub fn apply_conkram_freeze_fix(patcher: &mut DiscPatcher) -> Result<ConkramFree
     match legaia_code_hooks::conkram_freeze_fix::plan(&scus)? {
         None => Ok(ConkramFreezeFixReport { changed: false }),
         Some(fix) => {
-            patcher
-                .patch_named_file(SCUS_NAME, fix.window_off as u64, &fix.bytes)
-                .with_context(|| {
-                    format!(
-                        "write Conkram freeze fix window at SCUS +{:#x}",
-                        fix.window_off
-                    )
-                })?;
+            for edit in &fix.edits {
+                patcher
+                    .patch_named_file(SCUS_NAME, edit.file_off as u64, &edit.bytes)
+                    .with_context(|| {
+                        format!("write Conkram freeze fix at SCUS +{:#x}", edit.file_off)
+                    })?;
+            }
             Ok(ConkramFreezeFixReport { changed: true })
         }
     }

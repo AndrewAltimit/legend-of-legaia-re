@@ -253,7 +253,7 @@ unless asked for:
 | `--jewel-fix` | the boss cinematic casts (Xain, Cort, the Delilas trio) respect elemental guards like every other special | - | [Jewel fix](#jewel-fix) |
 | `--approach-softlock-fix` | a monster whose approach animation dies mid-walk is re-staged and resumes walking instead of parking the battle forever (the "endless camera orbit") | - | [Approach-softlock fix](#approach-softlock-fix) |
 | `--fortress-encounter-fix` | Jette's Absolute Fortress stops obeying the Floating Castle's stale "no battles" flag, so a save that left the castle with under a minute on the clock gets its random battles (and the Door of Light there) back | - | [Fortress encounter fix](#fortress-encounter-fix) |
-| `--conkram-freeze-fix` | the Room of Mirrors scene in present-day Conkram no longer locks up on an emulator that runs the CPU faster than a console; a failed effect allocation drops one particle instead | - | [Conkram freeze fix](#conkram-freeze-fix) |
+| `--conkram-freeze-fix` | the Room of Mirrors scene in present-day Conkram no longer locks up on an emulator that runs the CPU faster than a console; a failed effect allocation drops one particle or gets a stand-in node, with no `PRG ERR` readout | - | [Conkram freeze fix](#conkram-freeze-fix) |
 | `--delilas-challenge` | a fourth Muscle Dome enrollment option: a new 2-round arena course (Che & Lu double-team, then Gi; a clear pays 5000 coins + a Honey); unlocks after the Koru event | - | [Delilas Challenge](#delilas-challenge) |
 | `--delilas-party V,N,G` | play as the Delilas siblings: the party wears Gi / Lu / Che battle models (any permutation over Vahn, Noa, Gala) while the ravine duels + dome Master legs field Vahn / Noa / Gala models | - | [Delilas party swap](#delilas-party-swap) |
 | `--delilas-arts-voice MODE` | with the swap: what the arts shout AND Super/Hyper fanfare banks carry - `original` (default; the retail hero shouts stay), `adjusted` (re-voiced toward the siblings), `removed` | `original` | [Delilas party swap](#delilas-party-swap) |
@@ -1585,20 +1585,25 @@ exception vector. The next interrupt jumps into that data and the game stops.
 The cause is traced in
 [field-oddities.md](../reference/glitches/field-oddities.md#conkram-mirror-freeze).
 
-The fix adds the missing test to that request:
+Each effect particle asks for two blocks of memory - its animation and its
+render node - and the fix makes both requests safe:
 
-- **On a failure, one particle is dropped.** The effect part that asked for the
-  memory ends the way a part ends normally, and the memory it already held goes
-  back to the game. The scene plays on.
+- **A failed animation block drops the particle.** The part that asked ends the
+  way a part ends normally, and the memory it already held goes back to the
+  game. The scene plays on.
+- **A failed render node gets a stand-in.** Retail already tolerates this
+  failure but leaves an empty pointer that later code writes through; the fix
+  hands the part a shared spare node instead, kept in otherwise unused RAM.
+- **No `PRG ERR` on screen.** Both requests go through a copy of the game's
+  allocation routine without its error counter, so a failure the fix absorbs
+  does not leave the `PRG ERR` readout in the top-left corner for the rest of
+  the session.
 - **Every request that succeeds runs as retail.** At console speed no request
   fails in this scene, so the scene and every other effect in the game play
   exactly as before.
-- **The game's own error counter still counts.** A failure still adds to the
-  `PRG ERR` counter the game prints in the top-left corner, so the text can
-  appear on a fast emulator where the game would otherwise have frozen.
 
-Seedless, nine words of `SCUS_942.54`, and it combines with every other option.
-On in the web Balanced / Full Chaos presets.
+Seedless, four same-size edits of `SCUS_942.54`, and it combines with every
+other option. On in the web Balanced / Full Chaos presets.
 [Internals](randomizer-internals.md#conkram-freeze-fix).
 
 ### Delilas Challenge

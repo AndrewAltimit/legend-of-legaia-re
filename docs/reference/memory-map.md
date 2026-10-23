@@ -562,7 +562,7 @@ Because the band starts inside PROT 0898's extent, a module paged during battle 
 
 Above the largest slot-B image nothing is loaded. The largest slot-B modules (0923, 0934, 0957, 0966) are exactly `0x4000` bytes and end at `0x801FA9D8`. PROT 0900 and 0901, the field-time modules, end lower, at `0x801F91D8`. No instruction in `SCUS_942.54` or any PROT entry forms an address from `0x801FA9D8` up, except the initial stack pointer.
 
-The stack pointer starts at `0x801FFFF0` (the EXE header's `s_addr`) and grows down. The deepest stack use observed reaches `0x801FE420`, the same figure in every one of 275 library states (field, battle, menu, minigame, boot; no FMV state exists). `0x801FA9D8..0x801FE000` reads all-zero in all of them, battles included. That is why the patcher parks injected code at `0x801FD000` ([`randomizer.md`](../tooling/randomizer.md)).
+The stack pointer starts at `0x801FFFF0` (the EXE header's `s_addr`) and grows down. The deepest stack use observed reaches `0x801FE420`, the same figure in every one of 275 library states (field, battle, menu, minigame, boot; no FMV state exists). `0x801FA9D8..0x801FE000` reads all-zero in all of them, battles included. That is why the patcher parks injected code at `0x801FD000` ([`randomizer.md`](../tooling/randomizer.md)). The Conkram freeze fix keeps its stand-in render node at `0x801FAA00..0x801FAA9C` ([`randomizer-internals.md`](../tooling/randomizer-internals.md#conkram-freeze-fix)); it stays zero until a render-node allocation fails.
 
 Three ranges could be filled with no hook at all, because the loader streams exactly the TOC's sector count (`FUN_8003EC70` passes the resolver's count straight to the CD read):
 

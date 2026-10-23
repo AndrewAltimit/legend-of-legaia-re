@@ -76,9 +76,9 @@ pub(super) fn fortress_encounter_fix(run: &mut Run<'_>) -> Result<()> {
     Ok(())
 }
 
-/// Conkram mirror freeze fix: the move VM's keyframe-pose seat tests its heap
-/// allocation and drops the effect part on a failure, instead of copying
-/// through NULL over the exception vector. Seedless - nine SCUS words.
+/// Conkram mirror freeze fix: the move-VM parts' pose-block and render-node
+/// allocations survive a failure without writing through NULL or bumping
+/// `PRG ERR`. Seedless - four same-size SCUS edits.
 pub(super) fn conkram_freeze_fix(run: &mut Run<'_>) -> Result<()> {
     let args = run.args;
     let patcher = &mut run.patcher;
@@ -88,7 +88,7 @@ pub(super) fn conkram_freeze_fix(run: &mut Run<'_>) -> Result<()> {
         println!(
             "conkram-freeze-fix: {}",
             if report.changed {
-                "move VM patched (a failed keyframe allocation drops the effect part instead of overwriting the exception vector)"
+                "move VM patched (a failed effect allocation drops or stands in for the part instead of writing through NULL; PRG ERR stays clear)"
             } else {
                 "already applied (no change)"
             }

@@ -1531,20 +1531,29 @@ NULL block to write through, and an allocation failure would abort the process.
 ### The fix
 
 The patcher's `--conkram-freeze-fix`
-([`randomizer.md`](../../tooling/randomizer.md#conkram-freeze-fix)) adds the missing test. Nine
-words of op `0x3C`'s handler are rearranged in place so that the word after the `jal` becomes
-`beq v0,zero` to op `0x08`'s HALT arm: a failed allocation ends the part the way a script's own
-halt does, the list walk releases it and frees its render node, and `+0x4C` stays NULL, which the
-release path skips. No write through NULL happens, and the effect loses one particle. Every
-allocation that succeeds runs the retail instructions. The `PRG ERR` counter still counts the
-failure, so on a fast emulator the readout can appear where the game used to freeze.
+([`randomizer.md`](../../tooling/randomizer.md#conkram-freeze-fix)) makes both of a part's
+allocations safe, with four same-size edits of `SCUS_942.54`:
+
+- **Op `0x3C`.** Nine words of the handler are rearranged in place so the word after the `jal`
+  becomes `beq v0,zero` to op `0x08`'s HALT arm: a failed pose block ends the part the way a
+  script's own halt does, the list walk releases it and frees its render node, and `+0x4C` stays
+  NULL, which the release path skips. The effect loses one particle.
+- **The render node.** `FUN_80020F88`'s failure block stores a shared stand-in node, kept in free
+  RAM above the slot-B images, instead of leaving NULL at `actor+0x44`. Its `0x800` flag stays
+  clear, so nothing ever frees the stand-in.
+- **The readout.** Both calls go through a quiet copy of the malloc wrapper, placed over an
+  unreferenced thunk, that counts the allocation and calls the allocator but has no failure arm,
+  and the render-node block no longer ORs `0x4000` in. A failure the fix absorbs leaves `PRG ERR`
+  at 0, so the readout never appears for it.
+
+Every allocation that succeeds runs the retail instructions.
 
 With the fix, the played and late-game saves both pass the scene on SwanStation at 200 % and on
-PCSX-ReARMed's default, the settings that froze above (capture, cold boots of a patched scratch
-disc). At SwanStation's 100 % the patched run reaches `conc2` on the same vsync as retail's, with
-RAM identical apart from the nine words, and on PCSX-Redux at console speed it reaches `conc2` on
-the same vsync as retail with no failed allocation. The design,
-and why halting beats skipping the install, is under
+PCSX-ReARMed's default, the settings that froze above, with `PRG ERR` 0 at the end (capture, cold
+boots of a patched scratch disc). A write watch on the bottom 256 bytes of RAM in PCSX-ReARMed's
+interpreter records no store at all through the scene, where the retail disc records 72. At
+console speed nothing fails and the scene loads `conc2` on the same vsync as retail. The design,
+and why halting and a stand-in beat the alternatives, is under
 [`randomizer-internals.md`](../../tooling/randomizer-internals.md#conkram-freeze-fix).
 
 ### Addresses
@@ -1555,6 +1564,8 @@ and why halting beats skipping the install, is under
 | `0x80023CD0..0x80023CE0`, `0x80023D30`, `0x80023D3C` | `SCUS_942.54` | move-VM op `0x3C`: unchecked malloc, then the pose copy through the result | disassembly, capture |
 | `0x80023EF4` | `SCUS_942.54` | move-VM op `0x3D`: the retarget's store through the same block | disassembly |
 | `0x800232B8` | `SCUS_942.54` | move-VM op `0x08` HALT arm, the fix's failure exit | disassembly |
+| `0x80025B10` | `SCUS_942.54` | unreferenced thunk, the fix's quiet malloc entry | disassembly |
+| `0x801FAA00` | RAM | the fix's stand-in render node | capture |
 | `0x80017888`, failure arm `0x800178B8` | `SCUS_942.54` | malloc wrapper: on NULL adds `0x20000` to `PRG ERR` and returns NULL | disassembly |
 | `0x8002B468` | `SCUS_942.54` | allocator: best-fit over the free list at `*(gp+0x840) + 0xC` | disassembly |
 | `0x80021184..0x80021190` | `SCUS_942.54` | `FUN_80020F88`: `0x9C` render-node malloc, NULL stored at `actor+0x44` | disassembly |

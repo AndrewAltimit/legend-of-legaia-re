@@ -22,7 +22,7 @@ in this crate embeds game data.
 | `flee_exp` | The run-away EXP reward spliced into the escape teardown. |
 | `approach_fix` | The attack-approach softlock fix. |
 | `jewel_fix` | Boss cinematic casts made to respect elemental guards. |
-| `conkram_freeze_fix` | The move VM's keyframe-pose allocation made NULL-safe (the Conkram mirror freeze). |
+| `conkram_freeze_fix` | The move-VM parts' pose-block and render-node allocations made NULL-safe and quiet (the Conkram mirror freeze). |
 
 The techniques are described in
 [`docs/tooling/randomizer-internals.md`](../../docs/tooling/randomizer-internals.md).

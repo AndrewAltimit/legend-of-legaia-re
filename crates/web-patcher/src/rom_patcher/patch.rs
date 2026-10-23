@@ -588,12 +588,12 @@ async fn run_stages<'a>(
 /// Floating Castle's stale "no battles" flag - a save that left the castle
 /// with under a minute on the escape clock gets its Fortress battles (and the
 /// Door of Light there) back; a healthy save is unaffected (seedless).
-/// `conkram_freeze_fix` adds the missing NULL test to the move VM's
-/// keyframe-pose allocation, so the Room of Mirrors scene in present-day
-/// Conkram no longer locks up on an emulator that runs the CPU faster than a
-/// console: a failed allocation drops one effect part instead of overwriting
-/// the CPU's exception vector; every successful allocation runs as retail
-/// (seedless).
+/// `conkram_freeze_fix` makes the move-VM parts' two heap allocations
+/// NULL-safe, so the Room of Mirrors scene in present-day Conkram no longer
+/// locks up on an emulator that runs the CPU faster than a console: a failed
+/// pose block drops the part, a failed render node gets a shared stand-in,
+/// and the failure leaves the `PRG ERR` readout clear; every successful
+/// allocation runs as retail (seedless).
 /// `fishing_prices` is a
 /// comma/space-separated list of `item=points` pairs that set the
 /// fishing-exchange point cost of prizes (e.g. `0x6F=500` for the Water Egg).

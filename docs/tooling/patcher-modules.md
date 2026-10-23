@@ -345,17 +345,19 @@ entry plans and re-packs both scenes before it writes either. See
 ## Conkram freeze fix (`conkram_freeze_fix` module)
 
 `--conkram-freeze-fix` closes the lock-up in present-day Conkram's Room of
-Mirrors on a fast emulated CPU. The move VM's keyframe-pose seat (op `0x3C`,
-`0x80023CA4` in `SCUS_942.54`) stores its heap allocation with no NULL test and
-copies the pose through it; a failed allocation puts the pose over the
-exception vector at `0x80000080`. The module, in `legaia-code-hooks`, rewrites
-the handler's first sixteen words in place: the load-delay `nop` takes an
-independent store, the five instructions after it move up one word, and the
-freed word after the `jal` becomes `beq v0,zero` to op `0x08`'s HALT arm, so a
-failed allocation ends the part. Nine words change; the stock window, the HALT
-arm and both jump-table entries are checked first, an unrecognized build is
-refused and an already-fixed image is a no-op. `apply::apply_conkram_freeze_fix`
-writes it. See
+Mirrors on a fast emulated CPU. Both heap allocations a move-VM part makes can
+end in a write through NULL: the keyframe-pose seat (op `0x3C`, `0x80023CA4`)
+copies its pose through an untested block, over the exception vector, and
+`FUN_80020F88` leaves a failed render node's NULL at `actor+0x44` for later
+stores. The module, in `legaia-code-hooks`, plans four same-size `SCUS_942.54`
+edits: a quiet malloc entry over the unreferenced thunk `0x80025B10` (the
+wrapper's count and allocator call without its `PRG ERR` failure arm), op
+`0x3C` rearranged so a NULL block branches to op `0x08`'s HALT arm, the
+render-node `jal` retargeted to the quiet entry, and the render-node failure
+block rewritten to install a shared stand-in node in free RAM at `0x801FAA00`.
+Each site and its surroundings are checked first; an unrecognized or partly
+patched build is refused and a fixed image is a no-op.
+`apply::apply_conkram_freeze_fix` writes it. See
 [`docs/tooling/randomizer.md` § Conkram freeze fix](randomizer.md#conkram-freeze-fix).
 
 ## Fishing prize prices (`fishing_price` module)

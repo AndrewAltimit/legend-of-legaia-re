@@ -538,7 +538,7 @@
       <label class="rom-check-row">
         <input type="checkbox" id="rom-conkram-fix">
         <span>Conkram freeze fix <span class="rom-opt-note">- no lock-up at the Room of Mirrors on fast emulators (bug fix)</span>
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">On an emulator that runs the CPU faster than a console (PCSX-ReARMed's default for this game, or an overclock), the mirror scene in present-day Conkram runs out of memory and the effect code overwrites the CPU's exception vector, freezing the game. With the fix a failed allocation drops one effect particle instead. Console-speed play is unchanged. Unaffected by the seed; <a href="../writeups/glitches/field-oddities.html#conkram-mirror-freeze">full write-up</a>.</span></span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">On an emulator that runs the CPU faster than a console (PCSX-ReARMed's default for this game, or an overclock), the mirror scene in present-day Conkram runs out of memory and the effect code overwrites the CPU's exception vector, freezing the game. With the fix a failed allocation drops one effect particle or gives it a spare node, and no PRG ERR text appears. Console-speed play is unchanged. Unaffected by the seed; <a href="../writeups/glitches/field-oddities.html#conkram-mirror-freeze">full write-up</a>.</span></span></span>
       </label>
 
       <label class="rom-check-row">

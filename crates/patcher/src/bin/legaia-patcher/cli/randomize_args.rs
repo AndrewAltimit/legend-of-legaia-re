@@ -227,11 +227,13 @@ pub(crate) struct RandomizeArgs {
     /// SwanStation / DuckStation overclock), the Room of Mirrors scene in
     /// present-day Conkram runs the heap dry, and the effect code copies an
     /// animation through the failed allocation's NULL pointer over the CPU's
-    /// exception vector - the game locks up. This adds the missing NULL test
-    /// to that one allocation (nine words of `SCUS_942.54`, same size): on a
-    /// failure the effect part is dropped instead, and its memory goes back
-    /// to the heap. Every allocation that succeeds runs exactly as retail, so
-    /// play at console speed is unchanged.
+    /// exception vector - the game locks up. This makes both of the effect
+    /// parts' allocations safe (four same-size edits in `SCUS_942.54`): a
+    /// failed animation block drops the part, a failed render node gets a
+    /// shared stand-in, nothing is written through NULL, and the failure no
+    /// longer leaves the `PRG ERR` readout on screen. Every allocation that
+    /// succeeds runs exactly as retail, so play at console speed is
+    /// unchanged.
     #[arg(long, default_value_t = false)]
     pub(crate) conkram_freeze_fix: bool,
     /// Set how much **AP the Spirit command charges** into the battle AP
