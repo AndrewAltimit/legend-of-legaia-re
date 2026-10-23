@@ -2935,6 +2935,22 @@ re-entry's `P2[50]` set the flag: the state holds every lane at `0x1000` with `0
 A card load of that save seats the objects with the flag already set, so the
 engine draws the full tree where retail's frame shows the withered one.
 
+### A view-window zone flag the battle seat raises
+
+`battle_gimard_tail_fire_a` / `_b` and `battle_melee_hit_spark` read `flags`
+`.963` on one bit, `+sys 0x19D`. It is not story state. Flags `0x19B..0x1AA`
+are a one-hot view-window selector: `town0b`'s system script `P1[0]` lowers the
+whole band on entry (`+0x18..`), then each pass of its zone loop tests the
+player's tile box and, on a zone change, lowers the band again, raises the
+zone's flag (`51 9D` at `+0x553`, `51 9E` at `+0x580`, `51 9F` at `+0x5AD`) and
+installs that zone's tile window (op `0x46`). The same toggles open the system
+script of nearly every town (`--system-flag-census` lists 436 sites for
+`0x19D`). The three captures hold the band all clear: the fight began before
+the loop ran a pass. The image child resumes the save in `town0b`, whose loop
+raises the zone the seat stands in before `--battle` enters the fight.
+`rim_elm_gimard_victory`, a later visit, holds `0x19D` up on both sides. The
+divergence is the path into the fight, not a battle defect.
+
 ### A dark wall is a lit row, not a missing one
 
 `cave01_attached_light`'s right-hand cave wall is darker in retail, which in a
