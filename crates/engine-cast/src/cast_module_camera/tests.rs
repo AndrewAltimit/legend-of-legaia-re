@@ -1131,3 +1131,22 @@ fn palma_arm_3_drops_the_stage_halfway() {
     assert_eq!(palma_stage_byte(3, SPEED_SCALAR << 7), Some(3));
     assert_eq!(palma_stage_byte(4, SPEED_SCALAR << 8), None);
 }
+
+#[test]
+fn horn_arm_8_stages_its_clip_with_the_bump_and_arm_9_bare() {
+    // Arm 8 passes on a spent word: clip `1` with the `+0x1DC` bump
+    // (`0x801F750C..0x801F7524`), which cuts the idle at once.
+    let mut st = ModuleCamState::default();
+    let d = horn_direct(&mut st, 8, seats());
+    assert!(!d.hold);
+    assert_eq!(st.creature_stage, Some(1));
+    assert!(st.creature_restage);
+    // Arm 9 stores `2` bare on every pass, held or not (`0x801F7590`):
+    // the creature plays clip `1` out before clip `2` commits.
+    let mut st = ModuleCamState::default();
+    st.countdown.0 = 0x1000;
+    let d = horn_direct(&mut st, 9, seats());
+    assert!(d.hold);
+    assert_eq!(st.creature_stage, Some(2));
+    assert!(!st.creature_restage);
+}

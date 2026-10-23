@@ -523,7 +523,9 @@ pub fn horn_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             if gated(st, 0xC0) {
                 return held(d);
             }
+            // `+0x1DA += 1` with the `+0x1DC` bump: clip `1` cuts in at once.
             st.creature_stage = Some(1);
+            st.creature_restage = true;
             with_drift(cut([0, 0], [0, 0x158C, 0x200], [0, 0, -0x800], 1), d)
         }
         9 => {

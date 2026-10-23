@@ -171,6 +171,13 @@ pub struct ModuleCamState {
     /// while it held - a write the phase-chain body, which does not run on
     /// a held pass, cannot make. The host takes it once.
     pub creature_stage: Option<u8>,
+    /// The [`Self::creature_stage`] store came with the `+0x1DC` bump (the
+    /// paired `lbu; addiu 1; sb` on both bytes), whose bit 0 cuts the
+    /// playing clip at once; without it the staged byte waits for the
+    /// clip's natural end. PROT 0930's arm 8 bumps both
+    /// (`0x801F750C..0x801F7524`); its arm 9's store of `2` is bare
+    /// (`0x801F7590`). The host takes it with the stage.
+    pub creature_restage: bool,
     /// An arm cleared the creature's loop counter on this pass, held or not
     /// (`sb zero,0x21b` / `sh zero,0x176`): the park of the playing clip is
     /// released. The host takes it once.

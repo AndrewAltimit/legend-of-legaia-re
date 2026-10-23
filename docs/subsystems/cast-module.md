@@ -2298,10 +2298,22 @@ three sparkle records twenty or fourteen each, arm 3's six pool parts and a
 dozen wisps `0x801F8900`; in arm 9 the nine records arm 4 and arm 8 seated,
 `0x801F8BEC` ten or eleven times. Arm 9's camera matches too (pitch `0`, yaw
 `0`, TR y `0x158C`, TR z from `0x200` scaled, `+16` a vsync). Where Horn's
-frames still part from retail's in those arms (a ring of glows round the
-creature in arm 4 that the engine does not draw, arm 9's blades drawn wider),
-the difference is in what those parts draw, not in which are live or where
-the camera stands.
+frames still part from retail's in arm 4 (a ring of glows round the
+creature that the engine does not draw), the difference is in what those
+parts draw, not in which are live or where the camera stands.
+
+Arm 9's close-up is filled by the creature itself: the crystal blades are
+its mesh (CLUTs `0x7980..0x798B`, texture page `0x37` in the ordering
+tables), not the fans. Which pose they stand in is a clip commit. Arm 8
+stages clip `1` with the `+0x1DC` bump (`+0x1DA` and `+0x1DC` both `+1`,
+`0x801F750C..0x801F7524`), so it cuts the idle at once; arm 9 then stores
+`2` into `+0x1DA` bare on every pass (`sb v0,0x1da(s4)` at `0x801F7590`),
+and a bare byte waits for the playing clip's natural end. Retail RAM
+through arm 9 holds `+0x1D9 = 1`, `+0x1DA = 2`, `+0x1DC = 0`, rate `4`,
+the cursor climbing `8` to `280`: the close-up is clip `1`'s wing spread,
+and clip `2` takes over in arm `0xA`. The engine carries both
+(`ModuleCamState::creature_restage`, PROT 0930 among the clip-gated modules
+of `module_creature.rs`).
 
 Their draw state matches too, part for part, once each is paired by age (its
 wait word): the `+0x9C..+0xCC` block, draw kind `+0x56`, render mode `+0x5A`
