@@ -231,7 +231,9 @@ fn plan_scus_cell(
 /// wrong-disc guard) but keyed by VA into the overlay at `va - base_va`. The
 /// returned bytes fully cover the old string's span so a shorter translation
 /// leaves no stale tail behind for the pool scanner to pick up.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn plan_ui(
+    prot: usize,
     entry: &[u8],
     base_va: u32,
     e: &Entry,
@@ -242,6 +244,10 @@ pub(super) fn plan_ui(
 ) -> Option<ScusStrPlan> {
     let source = encode_source(e, Target::CString, report).ok()?;
     let translated = encode_translation(e, Target::CString, report)?;
+    if let Some(why) = ui::patched_operand_violation(prot, va, &translated) {
+        report.issue_as(&e.key, IssueKind::Refused, why);
+        return None;
+    }
     let Some(off) = va.checked_sub(base_va).map(|d| d as usize) else {
         report.issue(&e.key, "VA is before the overlay load base");
         return None;
