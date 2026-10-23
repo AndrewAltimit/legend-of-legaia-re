@@ -1065,11 +1065,16 @@ its environment in one function
 (`legaia_engine_session::native::apply_env_world_toggles`, run on every native
 session open, so a corpus run's child processes inherit it) and the play page
 from a `LegaiaRuntime` setter ([`play_toggles.rs`](../../crates/web-play/src/play_toggles.rs)).
-A tier-3 row pins the two appliers (`apply_env_world_toggles`,
-`apply_page_toggles`) to the same set of toggle fields, so a switch the
-native window reads inline in its launch code - where `LEGAIA_SMART_MONSTERS`
-and `LEGAIA_WORLD_MAP_MARKERS` once sat - shows as a field the native applier
-lacks.
+Both hosts then hand one switch set,
+`legaia_engine_session::session_switches::SessionSwitches`, to its `apply`:
+the native window from `apply_launch_toggles` (the environment's raises, its
+`--smart-monsters` / `--no-entry-pulse` flags and `--retail`), the page from
+`apply_page_toggles`. `apply` is where retail-faithful mode masks the port-only
+switches, the same ones `WorldToggles::pin_retail` lowers, so the two hosts'
+retail modes cannot disagree about them. A tier-3 row pins both sites to the
+full set, so a switch the native window reads inline in its launch code -
+where `LEGAIA_SMART_MONSTERS` and `LEGAIA_WORLD_MAP_MARKERS` once sat - shows
+as a field one site lacks.
 
 The tier scans every `crates/engine-*` crate a browser host links, plus
 `render-kernels`, for `env::var` / `var_os` / `vars` / `vars_os` (comments
@@ -1207,9 +1212,9 @@ table; a switch with no page twin is a host difference, not a world default.
 | `--no-live-loop` | `set_live_battles` |
 | `--party` | `set_active_party_spec` |
 | `--card`, `--resume-save`, `--boot-ui`, `--world-map` | the card rack, a card Load, the boot title, the scene picker |
-| `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS` | `set_smart_monsters`, `set_world_map_markers` |
+| `--smart-monsters` (the launcher's Smarter monsters row), `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS` | `set_smart_monsters`, `set_world_map_markers`; the retail mode holds all three off on both hosts |
 | `LEGAIA_BATTLE_FRAME_CADENCE` (`0` lowers it), `LEGAIA_ARTS_SAVED_LIST` | `set_battle_frame_cadence`, `set_arts_saved_list`. The cadence has one default, `DEFAULT_BATTLE_SM_FRAME_CADENCE`, that `WorldToggles::new`, the page's `PageToggles` and its box all start from (`the_cadence_default_is_single_sourced`); the saved-chain list is off on both hosts |
-| `--no-entry-pulse` | `set_entry_pulse(false)`, the "Entry pulse" box; the retail box also holds it off |
+| `--no-entry-pulse` (the launcher's Living ground pulse row) | `set_entry_pulse(false)`, the "Entry pulse" box; the retail box also holds it off |
 | `--simple-dialogue`, `--flat-y`, `--no-edge-collision`, `--no-solid-npcs`, `--no-live-npcs`, `--no-damage-finish`, `--no-player-battle`, `--seed-party`, `--battle` | none: comparison and debug opt-outs from the retail default, which is the page's only setting (`--battle` has the wasm `debug_force_battle`) |
 | `--screenshot*`, `--pad-script`, `--key-script`, `--str-file`, `--cutscene-map` | none: native capture tooling |
 

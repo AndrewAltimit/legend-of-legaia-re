@@ -258,7 +258,7 @@ A related invariant: the monster-AI picker writes the chosen spell id into the a
 - `--no-player-battle` turns off the command menu and auto-attacks each party turn. By default the HUD renders party / monster HP, the command menu, the target cursor and the arts / spell / item submenus. The host installs the boot spell catalog (the disc table) and the vanilla item catalog.
 - `LEGAIA_DEMO_BATTLE_SEED=1` seeds demo items (Healing Leaf + Bomb), saved chains and a demo `Art1B` record into an empty save. Without it an empty save stays empty, as on retail.
 - `--battle-bgm <id>` overrides the Battle <-> Field music swap track. The swap is on by default with retail's standard battle theme, global BGM `2026` (`music_labels::BATTLE_THEME_1_BGM_ID`, installed by `LiveLoopOpts::playable()`); `0` disables it. Ids route through the same director as field op-`0x35` starts: scene-local ids via the scene's BGM table, `>= 2000` via the global `music_01` pool. Browser twin: `LegaiaRuntime::set_battle_bgm`.
-- `LEGAIA_SMART_MONSTERS=1` enables the [non-faithful targeting toggle](#monster-ai-fun_801e9fd4-action-picker--fun_801e7320-target-resolver).
+- `--smart-monsters` (or `LEGAIA_SMART_MONSTERS=1`) enables the [non-faithful targeting toggle](#monster-ai-fun_801e9fd4-action-picker--fun_801e7320-target-resolver).
 
 ## Battle end
 
@@ -609,7 +609,7 @@ Context fields: `ctx[+0]` = party count, `ctx[+1]` = monster count, `ctx[+0x13]`
 
 **Not ported** (listed in `monster_ai`'s module docs): the `'O'` (`0x4F`) boss post-amble that rewrites another actor slot's action queue, and the capture-archive preload for spell ids `0x2E` / `0x2F`.
 
-**Faithful default = uniform-random single target.** Retail's `OneEnemy` / physical target is a uniform random living party member (`rand % party_count`, re-rolled past downed slots). An opt-in, non-faithful toggle (`World::toggles.smarter_monster_targeting`, off by default; `play-window` reads `LEGAIA_SMART_MONSTERS=1`, the browser play page has a "Smart monsters" checkbox) redirects a single-target attack to the lowest-HP living member. It is RNG-neutral: the faithful pick is still rolled in full (magic roll, target roll + re-roll loop, scripted override, anti-repeat ring) and only the resolved single party slot is replaced, so the RNG stream is byte-identical and all-party / monster-band / self targets are untouched.
+**Faithful default = uniform-random single target.** Retail's `OneEnemy` / physical target is a uniform random living party member (`rand % party_count`, re-rolled past downed slots). An opt-in, non-faithful toggle (`World::toggles.smarter_monster_targeting`, off by default; `play-window --smart-monsters` or `LEGAIA_SMART_MONSTERS=1`, the page's "Smart monsters" box; retail mode holds it off) redirects a single-target attack to the lowest-HP living member. It is RNG-neutral: the faithful pick is still rolled in full (magic roll, target roll + re-roll loop, scripted override, anti-repeat ring) and only the resolved single party slot is replaced, so the RNG stream is byte-identical and all-party / monster-band / self targets are untouched.
 
 ### The two AI gates
 

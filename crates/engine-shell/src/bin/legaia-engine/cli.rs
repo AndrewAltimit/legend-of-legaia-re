@@ -1119,6 +1119,15 @@ pub(crate) enum Cmd {
         /// morphs retail itself arms (rikuroa) are unaffected either way.
         #[arg(long, default_value_t = false)]
         no_entry_pulse: bool,
+        /// Smarter monsters: a monster's single-target attack picks the
+        /// lowest-HP living party member instead of retail's uniform random
+        /// pick (the random stream is unchanged). Not retail; `--retail`
+        /// holds it off. The `LEGAIA_SMART_MONSTERS` environment switch
+        /// raises the same toggle; the play page's twin is its "Smart
+        /// monsters" box, and the launcher stores it as its Smarter monsters
+        /// row.
+        #[arg(long, default_value_t = false)]
+        smart_monsters: bool,
         /// DEBUG affordance, not a player surface: teach the lead party
         /// member a spell id (at level 1) before the first world tick, so a
         /// capture run can open the battle Magic arm without playing to the
@@ -1246,7 +1255,7 @@ pub(crate) enum Cmd {
             long,
             default_value_t = false,
             conflicts_with_all = ["dynamic_lighting", "no_dynamic_lighting", "no_dyn_shadows",
-                "no_entry_pulse", "no_occlusion_fade", "no_volumetric_fog"]
+                "no_entry_pulse", "no_occlusion_fade", "no_volumetric_fog", "smart_monsters"]
         )]
         retail: bool,
     },

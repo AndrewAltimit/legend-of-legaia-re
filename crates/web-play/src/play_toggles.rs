@@ -65,13 +65,19 @@ impl LegaiaRuntime {
     /// and from every scene entry.
     pub(crate) fn apply_page_toggles(&mut self) {
         let t = self.page_toggles;
+        // The native window's launch applies the same set
+        // (`legaia_engine_session::session_switches`), so retail mode masks
+        // the same switches on both hosts.
+        let switches = legaia_engine_session::session_switches::SessionSwitches {
+            smart_monsters: t.smart_monsters,
+            world_map_markers: t.world_map_markers,
+            entry_pulse: t.entry_pulse,
+            battle_frame_cadence: t.battle_frame_cadence,
+            arts_saved_list: t.arts_saved_list,
+            retail: t.retail,
+        };
         if let Some(host) = self.scene_host.host_mut() {
-            let toggles = &mut host.world.toggles;
-            toggles.smarter_monster_targeting = t.smart_monsters;
-            toggles.overworld_marker_overlay = t.world_map_markers;
-            toggles.entry_pulse_enabled = t.entry_pulse && !t.retail;
-            toggles.battle_sm_frame_cadence = t.battle_frame_cadence;
-            toggles.arts_saved_list = t.arts_saved_list && !t.retail;
+            switches.apply(&mut host.world.toggles);
         }
     }
 }

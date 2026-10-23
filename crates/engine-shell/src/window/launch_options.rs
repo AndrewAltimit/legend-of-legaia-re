@@ -17,6 +17,9 @@ pub struct LaunchFidelity {
     pub dyn_shadows: bool,
     /// The scene-entry VDF pulse over packs retail never arms.
     pub entry_pulse: bool,
+    /// Smarter monster targeting (`--smart-monsters`,
+    /// `WorldToggles::smarter_monster_targeting`). Not retail.
+    pub smart_monsters: bool,
     /// The camera-occlusion fade around the player.
     pub occlusion_fade: bool,
     /// The volumetric ground fog.
@@ -70,6 +73,7 @@ impl LaunchFidelity {
             dynamic_lighting: None,
             dyn_shadows: true,
             entry_pulse: true,
+            smart_monsters: false,
             occlusion_fade: true,
             volumetric_fog: true,
             retail: false,
@@ -85,6 +89,7 @@ impl LaunchFidelity {
             dynamic_lighting: Some(false),
             dyn_shadows: false,
             entry_pulse: false,
+            smart_monsters: false,
             occlusion_fade: false,
             volumetric_fog: false,
             retail: true,

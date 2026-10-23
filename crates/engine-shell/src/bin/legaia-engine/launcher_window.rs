@@ -15,9 +15,12 @@
 //!   itself in the game's own font, read from that disc.
 //! - **Options.** The engine's enhancement knobs the game remembers
 //!   (written to its own `legaia-options.toml`, the value the in-game keys
-//!   toggle) and the two launch switches with no option behind them
-//!   (`--psx-render`, `--retail`, kept in `launcher.toml`). Every row says
-//!   what it does in the help box.
+//!   toggle) and the launch switches with no option behind them
+//!   (`--psx-render`, `--retail`, `--no-entry-pulse`, `--smart-monsters`,
+//!   kept in `launcher.toml`), in five groups. The list scrolls when it is
+//!   longer than the panel: focus keeps the selected row in view, and a bar
+//!   on the panel's edge shows where the view is. Every row says what it
+//!   does in the help box.
 //! - **Controls.** The current key bindings (`legaia-input.toml`), so a
 //!   player sees them before the game starts.
 //! - **Play** starts the game in a child process (winit allows one event
@@ -26,8 +29,9 @@
 //!   the end of the game's log (`legaia-engine-game.log`).
 //!
 //! The screen is keyboard-first: arrows move, Enter activates, Left / Right
-//! change a value, Tab jumps between the columns, Esc quits; the mouse
-//! hovers, clicks (right-click steps a value back) and scrolls nothing.
+//! change a value, Tab jumps between the columns, Page Up / Page Down / Home
+//! / End move through the option list, Esc quits; the mouse hovers, clicks
+//! (right-click steps a value back) and its wheel scrolls the option list.
 //!
 //! The game runs with its working directory set to [`launcher::data_dir`],
 //! so key bindings, options and saves always land in the same per-user
@@ -59,6 +63,9 @@ use winit::window::WindowId;
 const SCREENSHOT_ENV: &str = "LEGAIA_LAUNCHER_SCREENSHOT";
 /// With [`SCREENSHOT_ENV`]: open the right panel on `controls`.
 const PANEL_ENV: &str = "LEGAIA_LAUNCHER_PANEL";
+/// With [`SCREENSHOT_ENV`]: focus option row N (0-based, clamped), so a
+/// capture can show the list scrolled.
+const FOCUS_ENV: &str = "LEGAIA_LAUNCHER_FOCUS_ROW";
 /// Skip the screen when the remembered disc is good (the older behaviour).
 const DIRECT_ENV: &str = "LEGAIA_LAUNCHER_DIRECT";
 const TITLE: &str = "Legend of Legaia";
@@ -236,6 +243,48 @@ const COLUMNS_Y: i32 = 108;
 const BUTTON_H: i32 = 20;
 const BUTTON_PITCH: i32 = 24;
 const ROW_PITCH: i32 = 13;
+/// The option list's inset from the panel's top and bottom edges.
+const LIST_INSET: i32 = 5;
+/// How many option-list lines (rows and group headings) the panel shows.
+const VISIBLE_LINES: usize = ((STAGE_H - PAD - COLUMNS_Y - 2 * LIST_INSET) / ROW_PITCH) as usize;
+
+/// One line of the option list: a group heading or a row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Line {
+    Heading(&'static str),
+    Row(OptionRow),
+}
+
+/// The option list's lines in screen order.
+fn option_lines() -> Vec<Line> {
+    let mut v = Vec::with_capacity(OPTION_ROWS.len() + 5);
+    for (heading, row) in OPTION_ROWS {
+        if let Some(h) = heading {
+            v.push(Line::Heading(h));
+        }
+        v.push(Line::Row(row));
+    }
+    v
+}
+
+/// The first visible line that keeps line `idx` in view from `scroll`,
+/// together with its group heading when `idx` opens a group.
+fn scroll_to_reveal(lines: &[Line], scroll: usize, idx: usize) -> usize {
+    let top = if idx > 0 && matches!(lines[idx - 1], Line::Heading(_)) {
+        idx - 1
+    } else {
+        idx
+    };
+    let max = lines.len().saturating_sub(VISIBLE_LINES);
+    let s = if top < scroll {
+        top
+    } else if idx >= scroll + VISIBLE_LINES {
+        idx + 1 - VISIBLE_LINES
+    } else {
+        scroll
+    };
+    s.min(max)
+}
 
 /// A focusable control.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -287,6 +336,8 @@ struct LauncherApp {
     options: OptionsState,
     focus: Item,
     panel: Panel,
+    /// The option list's first visible line (see [`option_lines`]).
+    opt_scroll: usize,
     /// A message that outranks the focused row's help (an error, a result).
     status: Option<Vec<Message>>,
     /// Path typed into the window (fallback when no file dialog is available).
@@ -330,6 +381,7 @@ impl LauncherApp {
             options,
             focus,
             panel,
+            opt_scroll: 0,
             status: None,
             typed: String::new(),
             modifiers: ModifiersState::empty(),
@@ -344,6 +396,13 @@ impl LauncherApp {
             .as_ref()
             .map(problem_message)
             .filter(|m| !m.is_empty());
+        if let Some(n) = std::env::var(FOCUS_ENV)
+            .ok()
+            .and_then(|v| v.trim().parse::<i32>().ok())
+        {
+            app.focus = Item::Play;
+            app.step_option(n + 1);
+        }
         app
     }
 
@@ -607,6 +666,39 @@ impl LauncherApp {
         let cur = order.iter().position(|i| *i == self.focus).unwrap_or(0) as i32;
         self.focus = order[((cur + delta).rem_euclid(n)) as usize];
         self.status = None;
+        self.reveal_focus();
+    }
+
+    /// Move the focus `delta` option rows, stopping at the list's ends
+    /// (Page Up / Page Down / Home / End).
+    fn step_option(&mut self, delta: i32) {
+        if self.panel != Panel::Options {
+            return;
+        }
+        let n = OPTION_ROWS.len() as i32;
+        let cur = match self.focus {
+            Item::Opt(r) => OPTION_ROWS.iter().position(|(_, o)| *o == r).unwrap_or(0) as i32,
+            _ if delta < 0 => n,
+            _ => -1,
+        };
+        self.focus = Item::Opt(OPTION_ROWS[(cur + delta).clamp(0, n - 1) as usize].1);
+        self.status = None;
+        self.reveal_focus();
+    }
+
+    /// Scroll the option list so the focused row is in view.
+    fn reveal_focus(&mut self) {
+        let Item::Opt(row) = self.focus else { return };
+        let lines = option_lines();
+        if let Some(idx) = lines.iter().position(|l| *l == Line::Row(row)) {
+            self.opt_scroll = scroll_to_reveal(&lines, self.opt_scroll, idx);
+        }
+    }
+
+    /// Scroll the option list by `lines` (negative is up), clamped.
+    fn scroll_options(&mut self, lines: i32) {
+        let max = option_lines().len().saturating_sub(VISIBLE_LINES) as i32;
+        self.opt_scroll = (self.opt_scroll as i32 + lines).clamp(0, max) as usize;
     }
 
     /// Tab: jump between the button column and the option rows.
@@ -616,6 +708,7 @@ impl LauncherApp {
             _ if self.panel == Panel::Options => Item::Opt(OPTION_ROWS[0].1),
             f => f,
         };
+        self.reveal_focus();
     }
 
     // --- Drawing --------------------------------------------------------
@@ -812,17 +905,26 @@ impl LauncherApp {
     }
 
     fn options_panel(&self, c: &mut Canvas, panel: Rect, hits: &mut Vec<(Item, Rect)>) {
-        let mut y = panel.y + 2; // 16 rows + 2 headings fill the 238 px panel exactly
         let retail = self.settings.retail;
-        for (heading, row) in OPTION_ROWS {
-            if let Some(h) = heading {
-                if y > panel.y + 3 {
-                    y += 3;
+        let lines = option_lines();
+        let scroll = self
+            .opt_scroll
+            .min(lines.len().saturating_sub(VISIBLE_LINES));
+        let mut y = panel.y + LIST_INSET;
+        for line in lines.iter().skip(scroll).take(VISIBLE_LINES) {
+            let row = match *line {
+                Line::Heading(h) => {
+                    // A heading sits on a band of the header's colour, so a
+                    // group reads as one block without a rule crowding the
+                    // row above it.
+                    c.rect(Rect::new(panel.x + 4, y, panel.w - 14, ROW_PITCH - 1), BAND);
+                    c.text(panel.x + 8, y, h, GOLD);
+                    y += ROW_PITCH;
+                    continue;
                 }
-                c.text(panel.x + 8, y, h, GOLD);
-                y += ROW_PITCH;
-            }
-            let r = Rect::new(panel.x + 4, y - 1, panel.w - 8, ROW_PITCH);
+                Line::Row(r) => r,
+            };
+            let r = Rect::new(panel.x + 4, y - 1, panel.w - 14, ROW_PITCH);
             hits.push((Item::Opt(row), r));
             let focused = self.focus == Item::Opt(row);
             if focused {
@@ -849,8 +951,23 @@ impl LauncherApp {
                 value
             };
             let w = c.width(&shown);
-            c.text(panel.x + panel.w - 10 - w, y, &shown, vink);
+            c.text(panel.x + panel.w - 16 - w, y, &shown, vink);
             y += ROW_PITCH;
+        }
+        // The scroll bar: the whole list is the track, the view the thumb.
+        if lines.len() > VISIBLE_LINES {
+            let track = Rect::new(
+                panel.x + panel.w - 6,
+                panel.y + LIST_INSET,
+                2,
+                VISIBLE_LINES as i32 * ROW_PITCH,
+            );
+            c.rect(track, RULE);
+            let n = lines.len() as i32;
+            let thumb_h = (track.h * VISIBLE_LINES as i32 / n).max(8);
+            let max = n - VISIBLE_LINES as i32;
+            let thumb_y = track.y + (track.h - thumb_h) * scroll as i32 / max.max(1);
+            c.rect(Rect::new(track.x, thumb_y, track.w, thumb_h), DIM);
         }
     }
 
@@ -941,7 +1058,7 @@ impl LauncherApp {
             Item::Opt(row) => {
                 let mut s = row.help().to_string();
                 if self.settings.retail && row.overridden_by_retail() {
-                    s.push_str(" Original game only is on, so this is off for now.");
+                    s.push_str(" Original game only is on, so this plays as the original for now.");
                 }
                 s
             }
@@ -1031,6 +1148,9 @@ impl ApplicationHandler for LauncherApp {
             WindowEvent::RedrawRequested => self.redraw(evl),
             WindowEvent::DroppedFile(p) => self.try_disc(&p),
             WindowEvent::ModifiersChanged(m) => self.modifiers = m.state(),
+            // A scripted capture shows the scripted focus, not whatever row
+            // the display's resting pointer happens to sit over.
+            WindowEvent::CursorMoved { .. } if self.screenshot.is_some() => {}
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor = Some((position.x, position.y));
                 if let Some(item) = self.hit()
@@ -1041,6 +1161,22 @@ impl ApplicationHandler for LauncherApp {
                 }
             }
             WindowEvent::CursorLeft { .. } => self.cursor = None,
+            WindowEvent::MouseWheel { delta, .. } if self.panel == Panel::Options => {
+                let lines = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(_, y) => -y.round() as i32,
+                    winit::event::MouseScrollDelta::PixelDelta(p) => {
+                        -(p.y / f64::from(ROW_PITCH * self.stage().scale)).round() as i32
+                    }
+                };
+                if lines != 0 {
+                    self.scroll_options(lines);
+                    // The row under a resting cursor has changed.
+                    if let Some(item) = self.hit() {
+                        self.focus = item;
+                    }
+                    self.win.request_redraw();
+                }
+            }
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
                 button,
@@ -1108,6 +1244,18 @@ impl ApplicationHandler for LauncherApp {
                     Key::Named(NamedKey::ArrowUp) if !typing => self.step_focus(-1),
                     Key::Named(NamedKey::ArrowDown) if !typing => self.step_focus(1),
                     Key::Named(NamedKey::Tab) if !typing => self.switch_column(),
+                    Key::Named(NamedKey::PageUp) if !typing => {
+                        self.step_option(-(VISIBLE_LINES as i32 - 2));
+                    }
+                    Key::Named(NamedKey::PageDown) if !typing => {
+                        self.step_option(VISIBLE_LINES as i32 - 2);
+                    }
+                    Key::Named(NamedKey::Home) if !typing => {
+                        self.step_option(-(OPTION_ROWS.len() as i32));
+                    }
+                    Key::Named(NamedKey::End) if !typing => {
+                        self.step_option(OPTION_ROWS.len() as i32);
+                    }
                     Key::Named(NamedKey::ArrowLeft) | Key::Named(NamedKey::ArrowRight)
                         if !typing =>
                     {
@@ -1532,12 +1680,16 @@ mod tests {
 
     #[test]
     fn layout_hits_every_control_inside_the_stage() {
-        let app = LauncherApp::new(None, Some(DiscProblem::NotSet), Default::default(), None);
+        let mut app = LauncherApp::new(None, Some(DiscProblem::NotSet), Default::default(), None);
         let font = legaia_font::Font::placeholder();
-        let mut c = canvas(&font);
         let mut hits = Vec::new();
-        app.layout(&mut c, &mut hits);
         for item in app.order() {
+            // Focusing a control scrolls it into view.
+            app.focus = item;
+            app.reveal_focus();
+            let mut c = canvas(&font);
+            hits.clear();
+            app.layout(&mut c, &mut hits);
             let (_, r) = hits
                 .iter()
                 .find(|(i, _)| *i == item)
@@ -1610,6 +1762,51 @@ mod tests {
             }
             other => panic!("expected play-window, got {other:?}"),
         }
+        // The gameplay switches parse too (without `--retail`, which clap
+        // refuses them beside).
+        let settings = LauncherSettings {
+            no_entry_pulse: true,
+            smart_monsters: true,
+            ..Default::default()
+        };
+        let mut argv = vec![OsString::from("legaia-engine")];
+        argv.extend(launcher::play_args_with(&info, &settings));
+        match Cli::try_parse_from(argv).unwrap().cmd {
+            Some(Cmd::PlayWindow {
+                no_entry_pulse,
+                smart_monsters,
+                retail,
+                ..
+            }) => assert!(no_entry_pulse && smart_monsters && !retail),
+            other => panic!("expected play-window, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn option_scroll_reveals_rows_and_their_headings() {
+        let lines = option_lines();
+        assert!(
+            lines.len() > VISIBLE_LINES,
+            "the list is longer than the panel"
+        );
+        let last = lines.len() - 1;
+        let max = lines.len() - VISIBLE_LINES;
+        // The last row scrolls the view to the end; back at the first row
+        // the first heading shows again.
+        let s = scroll_to_reveal(&lines, 0, last);
+        assert_eq!(s, max);
+        assert_eq!(scroll_to_reveal(&lines, s, 1), 0);
+        // A row already in view leaves the scroll alone.
+        assert_eq!(scroll_to_reveal(&lines, 2, 5), 2);
+        // A group's first row brings its heading with it.
+        let sound = lines
+            .iter()
+            .position(|l| *l == Line::Row(OptionRow::MusicVolume))
+            .unwrap();
+        assert_eq!(lines[sound - 1], Line::Heading("Sound"));
+        assert_eq!(scroll_to_reveal(&lines, max, sound), (sound - 1).min(max));
+        // Every row is reachable and visible within the panel height.
+        assert!(VISIBLE_LINES as i32 * ROW_PITCH + 2 * LIST_INSET <= STAGE_H - PAD - COLUMNS_Y);
     }
 
     #[test]

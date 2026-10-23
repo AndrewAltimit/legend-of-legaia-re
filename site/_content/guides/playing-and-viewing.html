@@ -24,7 +24,7 @@
   <p>Started with <strong>no subcommand</strong> - a double-click, a desktop shortcut, the macOS app - <code>legaia-engine</code> opens its launcher instead of printing help:</p>
   <div class="cli"><code>./legaia-engine</code></div>
   <figure class="screenshot">
-    <img src="../img/desktop/port-launcher.jpg" width="960" height="720" alt="The launcher: a disc card saying Legend of Legaia (USA) is ready, the Play, Change disc, Controls, Open saves folder and Quit buttons with a help box, and the option list - fullscreen, window size, enhanced lighting, time of day, lamp shadows, see-through walls, ground fog, bloom, PlayStation pixel look, camera distance, free-angle movement, reduce flashing, volumes, Original game only" loading="lazy">
+    <img src="../img/desktop/port-launcher.jpg" width="960" height="720" alt="The launcher: a disc card saying Legend of Legaia (USA) is ready, the Play, Change disc, Controls, Open saves folder and Quit buttons with a help box, and the grouped option list with its scroll bar - Display (fullscreen, window size, camera distance, PlayStation pixel look), Enhancements (enhanced lighting, time of day, lamp shadows, bloom, ground fog, see-through walls, living ground pulse) and Play (free-angle movement, smarter monsters, reduce flashing)" loading="lazy">
     <figcaption>The launcher, lettered in the game's own font once your disc is known.</figcaption>
   </figure>
   <ol class="steps">
@@ -36,26 +36,32 @@
   <p>The check reads a few sectors through the same reader the game boots from; it is not the SHA-256 fingerprint <code>disc-extract verify</code> computes. A PAL or Japanese disc is refused with the executable it boots. A randomized or translated USA disc is accepted, since it still boots the USA executable.</p>
   <p>Arrow keys move between every control, <kbd>Tab</kbd> jumps between the buttons and the options, <kbd>Left</kbd> / <kbd>Right</kbd> change an option, <kbd>Enter</kbd> presses, <kbd>Esc</kbd> quits; the mouse hovers and clicks (right-click steps an option back). The help box under the buttons explains whatever is focused.</p>
   <h3 id="launcher-options">Options</h3>
+  <p>The list is grouped and scrolls when it is longer than the panel: the selected row stays in view, a bar on the right edge shows where you are, and the mouse wheel, <kbd>Page Up</kbd> / <kbd>Page Down</kbd> and <kbd>Home</kbd> / <kbd>End</kbd> move through it.</p>
   <table>
-    <thead><tr><th>Row</th><th>Stored in</th><th>In game</th><th>Default</th></tr></thead>
+    <thead><tr><th>Group</th><th>Row</th><th>Stored in</th><th>In game</th><th>Default</th></tr></thead>
     <tbody>
-      <tr><td>Fullscreen (borderless)</td><td><code>legaia-options.toml</code></td><td><kbd>F11</kbd>, <kbd>Alt</kbd>+<kbd>Enter</kbd></td><td>off</td></tr>
-      <tr><td>Window size (640x480 .. 1920x1440)</td><td><code>legaia-options.toml</code></td><td>-</td><td>960x720</td></tr>
-      <tr><td>Enhanced lighting</td><td><code>legaia-options.toml</code></td><td><kbd>I</kbd></td><td>on</td></tr>
-      <tr><td>Time of day (auto, day, dusk, night)</td><td><code>legaia-options.toml</code></td><td><kbd>F8</kbd></td><td>auto</td></tr>
-      <tr><td>Lamp shadows</td><td><code>legaia-options.toml</code></td><td><kbd>Y</kbd></td><td>on</td></tr>
-      <tr><td>See-through walls</td><td><code>legaia-options.toml</code></td><td><kbd>F4</kbd></td><td>on</td></tr>
-      <tr><td>Ground fog</td><td><code>legaia-options.toml</code></td><td><kbd>F9</kbd></td><td>off</td></tr>
-      <tr><td>Bloom</td><td><code>legaia-options.toml</code></td><td><kbd>F10</kbd></td><td>off</td></tr>
-      <tr><td>PlayStation pixel look (<code>--psx-render</code>)</td><td><code>launcher.toml</code></td><td>-</td><td>off</td></tr>
-      <tr><td>Camera distance (retail, far, farther)</td><td><code>legaia-options.toml</code></td><td><kbd>T</kbd></td><td>far</td></tr>
-      <tr><td>Free-angle movement</td><td><code>legaia-options.toml</code></td><td><kbd>R</kbd></td><td>off</td></tr>
-      <tr><td>Reduce flashing</td><td><code>legaia-options.toml</code></td><td>-</td><td>on</td></tr>
-      <tr><td>Music / sound effects volume (0..10, 8 = the original mix)</td><td><code>legaia-options.toml</code></td><td>-</td><td>8</td></tr>
-      <tr><td>Original game only (<code>--retail</code>)</td><td><code>launcher.toml</code></td><td>-</td><td>off</td></tr>
+      <tr><td>Display</td><td>Fullscreen (borderless)</td><td><code>legaia-options.toml</code></td><td><kbd>F11</kbd>, <kbd>Alt</kbd>+<kbd>Enter</kbd></td><td>off</td></tr>
+      <tr><td>Display</td><td>Window size (640x480 .. 1920x1440)</td><td><code>legaia-options.toml</code></td><td>-</td><td>960x720</td></tr>
+      <tr><td>Display</td><td>Camera distance (retail, far, farther)</td><td><code>legaia-options.toml</code></td><td><kbd>T</kbd></td><td>far</td></tr>
+      <tr><td>Display</td><td>PlayStation pixel look (<code>--psx-render</code>)</td><td><code>launcher.toml</code></td><td>-</td><td>off</td></tr>
+      <tr><td>Enhancements</td><td>Enhanced lighting</td><td><code>legaia-options.toml</code></td><td><kbd>I</kbd></td><td>on</td></tr>
+      <tr><td>Enhancements</td><td>Time of day (auto, day, dusk, night)</td><td><code>legaia-options.toml</code></td><td><kbd>F8</kbd></td><td>auto</td></tr>
+      <tr><td>Enhancements</td><td>Lamp shadows</td><td><code>legaia-options.toml</code></td><td><kbd>Y</kbd></td><td>on</td></tr>
+      <tr><td>Enhancements</td><td>Bloom</td><td><code>legaia-options.toml</code></td><td><kbd>F10</kbd></td><td>off</td></tr>
+      <tr><td>Enhancements</td><td>Ground fog</td><td><code>legaia-options.toml</code></td><td><kbd>F9</kbd></td><td>off</td></tr>
+      <tr><td>Enhancements</td><td>See-through walls</td><td><code>legaia-options.toml</code></td><td><kbd>F4</kbd></td><td>on</td></tr>
+      <tr><td>Enhancements</td><td>Living ground pulse (off = <code>--no-entry-pulse</code>)</td><td><code>launcher.toml</code></td><td>-</td><td>on</td></tr>
+      <tr><td>Play</td><td>Free-angle movement</td><td><code>legaia-options.toml</code></td><td><kbd>R</kbd></td><td>off</td></tr>
+      <tr><td>Play</td><td>Smarter monsters (<code>--smart-monsters</code>)</td><td><code>launcher.toml</code></td><td>-</td><td>off</td></tr>
+      <tr><td>Play</td><td>Reduce flashing</td><td><code>legaia-options.toml</code></td><td>-</td><td>on</td></tr>
+      <tr><td>Sound</td><td>Music / sound effects volume (0..10, 8 = the original mix)</td><td><code>legaia-options.toml</code></td><td>-</td><td>8</td></tr>
+      <tr><td>Sound</td><td>Mono output</td><td><code>legaia-options.toml</code></td><td>-</td><td>off</td></tr>
+      <tr><td>Original game</td><td>Original ground culling</td><td><code>legaia-options.toml</code></td><td>-</td><td>on</td></tr>
+      <tr><td>Original game</td><td>Original prop culling</td><td><code>legaia-options.toml</code></td><td>-</td><td>on</td></tr>
+      <tr><td>Original game</td><td>Original game only (<code>--retail</code>)</td><td><code>launcher.toml</code></td><td>-</td><td>off</td></tr>
     </tbody>
   </table>
-  <p>The <code>legaia-options.toml</code> rows are the game's own options: the launcher and the in-game keys change the same value. The two <code>launcher.toml</code> rows are launch switches. <em>Original game only</em> starts the game retail-faithful - every enhancement off for that session, your saved options untouched. <em>Controls</em> shows the current key bindings. When the game stops with an error, the launcher shows its error lines; the whole log is <code>legaia-engine-game.log</code> in the saves folder (<em>Open saves folder</em>). <code>LEGAIA_LAUNCHER_DIRECT=1</code> skips the screen and boots a remembered disc straight away.</p>
+  <p>The <code>legaia-options.toml</code> rows are the game's own options: the launcher and the in-game keys change the same value. The <code>launcher.toml</code> rows are launch switches; the browser play page has a box for each. <em>Original game only</em> starts the game retail-faithful - every enhancement off for that session, your saved options untouched. <em>Controls</em> shows the current key bindings. When the game stops with an error, the launcher shows its error lines; the whole log is <code>legaia-engine-game.log</code> in the saves folder (<em>Open saves folder</em>). <code>LEGAIA_LAUNCHER_DIRECT=1</code> skips the screen and boots a remembered disc straight away.</p>
   <table>
     <thead><tr><th>Platform</th><th>Settings (<code>launcher.toml</code>)</th><th>Game data (bindings, options, <code>saves/</code>)</th></tr></thead>
     <tbody>

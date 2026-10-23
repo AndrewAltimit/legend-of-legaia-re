@@ -94,38 +94,47 @@ start shows it ready, with *Play* focused, so `Enter` starts the game.
 ### Options
 
 The option list holds the engine's enhancement knobs, so none of them needs a
-terminal flag:
+terminal flag. It is grouped, and scrolls when it is longer than the panel:
+the selected row stays in view, a bar on the panel's right edge shows where the
+view is, the mouse wheel scrolls it, and `Page Up` / `Page Down` / `Home` /
+`End` move through it.
 
-| Row | Stored in | In game | Default |
-|---|---|---|---|
-| Fullscreen (borderless) | `legaia-options.toml` | `F11`, `Alt+Enter` | off |
-| Window size (640x480 .. 1920x1440, steps of 320x240) | `legaia-options.toml` | - | 960x720 |
-| Enhanced lighting | `legaia-options.toml` | `I` | on |
-| Time of day (auto, day, dusk, night) | `legaia-options.toml` | `F8` | auto |
-| Lamp shadows | `legaia-options.toml` | `Y` | on |
-| See-through walls | `legaia-options.toml` | `F4` | on |
-| Ground fog | `legaia-options.toml` | `F9` | off |
-| Bloom | `legaia-options.toml` | `F10` | off |
-| PlayStation pixel look (`--psx-render`) | `launcher.toml` | - | off |
-| Camera distance (retail, far, farther) | `legaia-options.toml` | `T` | far |
-| Free-angle movement | `legaia-options.toml` | `R` | off |
-| Reduce flashing | `legaia-options.toml` | - | on |
-| Music / sound effects volume (0..10, 8 = the original mix) | `legaia-options.toml` | - | 8 |
-| Original game only (`--retail`) | `launcher.toml` | - | off |
+| Group | Row | Stored in | In game | Default |
+|---|---|---|---|---|
+| Display | Fullscreen (borderless) | `legaia-options.toml` | `F11`, `Alt+Enter` | off |
+| Display | Window size (640x480 .. 1920x1440, steps of 320x240) | `legaia-options.toml` | - | 960x720 |
+| Display | Camera distance (retail, far, farther) | `legaia-options.toml` | `T` | far |
+| Display | PlayStation pixel look (`--psx-render`) | `launcher.toml` | - | off |
+| Enhancements | Enhanced lighting | `legaia-options.toml` | `I` | on |
+| Enhancements | Time of day (auto, day, dusk, night) | `legaia-options.toml` | `F8` | auto |
+| Enhancements | Lamp shadows | `legaia-options.toml` | `Y` | on |
+| Enhancements | Bloom | `legaia-options.toml` | `F10` | off |
+| Enhancements | Ground fog | `legaia-options.toml` | `F9` | off |
+| Enhancements | See-through walls | `legaia-options.toml` | `F4` | on |
+| Enhancements | Living ground pulse (off = `--no-entry-pulse`) | `launcher.toml` | - | on |
+| Play | Free-angle movement | `legaia-options.toml` | `R` | off |
+| Play | Smarter monsters (`--smart-monsters`) | `launcher.toml` | - | off |
+| Play | Reduce flashing | `legaia-options.toml` | - | on |
+| Sound | Music / sound effects volume (0..10, 8 = the original mix) | `legaia-options.toml` | - | 8 |
+| Sound | Mono output | `legaia-options.toml` | - | off |
+| Original game | Original ground culling (`retail_view_window`) | `legaia-options.toml` | - | on |
+| Original game | Original prop culling (`retail_static_window`) | `legaia-options.toml` | - | on |
+| Original game | Original game only (`--retail`) | `launcher.toml` | - | off |
 
 The rows stored in `legaia-options.toml` are the game's own options: the
 launcher writes the same file the in-game keys change, so a toggle made in
-either place is the one the other shows. The two `launcher.toml` rows are
-launch switches with no option behind them. *Original game only* starts the
-game retail-faithful (`play-window --retail`): every enhancement off for that
-session, the saved options untouched; the rows it overrides read *Original*
-while it is on. *Controls* swaps the option list for the current key bindings
-(`legaia-input.toml`).
+either place is the one the other shows. The `launcher.toml` rows are launch
+switches with no option behind them; the browser play page has a box for each.
+*Original game only* starts the game retail-faithful (`play-window --retail`):
+every enhancement off for that session, the saved options untouched; the rows
+it overrides read *Original* while it is on. *Controls* swaps the option list
+for the current key bindings (`legaia-input.toml`).
 
 ### Playing
 
 *Play* starts the game on the title screen (`play-window --disc <bin>
---boot-ui`, plus `--psx-render` / `--retail` when those are on) in a child
+--boot-ui`, plus `--psx-render`, `--retail`, `--no-entry-pulse` or
+`--smart-monsters` when those rows ask for them) in a child
 process, and the launcher window closes. When the game exits normally the
 launcher ends with it. When it stops with an error, the launcher comes back
 with the error lines of the game's log; the whole log is

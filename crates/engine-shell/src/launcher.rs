@@ -68,8 +68,8 @@ pub fn settings_path() -> Option<PathBuf> {
 /// The launcher's persisted state.
 ///
 /// Only what the game has no option of its own for lives here: the disc,
-/// and the two `play-window` launch switches with no persisted option
-/// behind them (`--psx-render`, `--retail`). The enhancement knobs the game
+/// and the `play-window` launch switches with no persisted option behind
+/// them (`--psx-render`, `--retail`, `--no-entry-pulse`, `--smart-monsters`). The enhancement knobs the game
 /// itself remembers (lighting, fog, see-through walls, ...) are edited in
 /// the game's own [`OPTIONS_FILE`], so the launcher and the in-game keys
 /// change one value.
@@ -85,6 +85,14 @@ pub struct LauncherSettings {
     /// off for the session, nothing written back to the options file.
     #[serde(default, skip_serializing_if = "is_false")]
     pub retail: bool,
+    /// Start without the scene-entry pulse enhancement
+    /// (`play-window --no-entry-pulse`). Stored inverted so the shipped
+    /// default (pulse on) writes nothing.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub no_entry_pulse: bool,
+    /// Start with smarter monster targeting (`play-window --smart-monsters`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub smart_monsters: bool,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -288,7 +296,16 @@ pub fn play_args_with(info: &DiscInfo, settings: &LauncherSettings) -> Vec<std::
         args.push("--psx-render".into());
     }
     if settings.retail {
+        // `--retail` holds the two switches below off itself, and clap
+        // refuses them beside it.
         args.push("--retail".into());
+        return args;
+    }
+    if settings.no_entry_pulse {
+        args.push("--no-entry-pulse".into());
+    }
+    if settings.smart_monsters {
+        args.push("--smart-monsters".into());
     }
     args
 }
@@ -321,27 +338,35 @@ pub enum OptionRow {
     MusicVolume,
     SfxVolume,
     MonoDownmix,
+    EntryPulse,
+    SmartMonsters,
+    RetailTileCrop,
+    RetailObjectWindow,
     Retail,
 }
 
 /// The option rows in screen order, with the heading each group starts
 /// under (`Some` on a group's first row).
-pub const OPTION_ROWS: [(Option<&str>, OptionRow); 16] = [
+pub const OPTION_ROWS: [(Option<&str>, OptionRow); 20] = [
     (Some("Display"), OptionRow::Fullscreen),
     (None, OptionRow::WindowSize),
-    (None, OptionRow::EnhancedLighting),
+    (None, OptionRow::CameraDistance),
+    (None, OptionRow::PsxRender),
+    (Some("Enhancements"), OptionRow::EnhancedLighting),
     (None, OptionRow::TimeOfDay),
     (None, OptionRow::LampShadows),
-    (None, OptionRow::SeeThroughWalls),
-    (None, OptionRow::GroundFog),
     (None, OptionRow::Bloom),
-    (None, OptionRow::PsxRender),
-    (None, OptionRow::CameraDistance),
-    (Some("Play and sound"), OptionRow::PreciseMovement),
+    (None, OptionRow::GroundFog),
+    (None, OptionRow::SeeThroughWalls),
+    (None, OptionRow::EntryPulse),
+    (Some("Play"), OptionRow::PreciseMovement),
+    (None, OptionRow::SmartMonsters),
     (None, OptionRow::ReduceFlashing),
-    (None, OptionRow::MusicVolume),
+    (Some("Sound"), OptionRow::MusicVolume),
     (None, OptionRow::SfxVolume),
     (None, OptionRow::MonoDownmix),
+    (Some("Original game"), OptionRow::RetailTileCrop),
+    (None, OptionRow::RetailObjectWindow),
     (None, OptionRow::Retail),
 ];
 
@@ -381,6 +406,10 @@ impl OptionRow {
             Self::MusicVolume => "Music volume",
             Self::SfxVolume => "Sound effects volume",
             Self::MonoDownmix => "Mono output",
+            Self::EntryPulse => "Living ground pulse",
+            Self::SmartMonsters => "Smarter monsters",
+            Self::RetailTileCrop => "Original ground culling",
+            Self::RetailObjectWindow => "Original prop culling",
             Self::Retail => "Original game only",
         }
     }
@@ -433,6 +462,22 @@ impl OptionRow {
                  single-speaker setups. The in-game Monaural setting is the original's own \
                  mono mode."
             }
+            Self::EntryPulse => {
+                "Keeps the living-flesh ground of a few scenes rolling, which the original \
+                 leaves still. Applies from the next scene you enter."
+            }
+            Self::SmartMonsters => {
+                "Monsters aim single-target attacks at your weakest party member instead \
+                 of picking at random. Harder than the original."
+            }
+            Self::RetailTileCrop => {
+                "Draw only the ground the PlayStation's camera would see, as the original \
+                 does. Off draws the whole map."
+            }
+            Self::RetailObjectWindow => {
+                "Hide props outside the camera's area, as the original does. Off draws \
+                 every prop in the map."
+            }
             Self::Retail => {
                 "Play exactly as the original looks and moves: every enhancement off for \
                  the session. The settings above are kept for next time."
@@ -443,7 +488,10 @@ impl OptionRow {
     /// Whether the row lives in the game's options file (else in
     /// [`LauncherSettings`]).
     pub fn is_game_option(self) -> bool {
-        !matches!(self, Self::PsxRender | Self::Retail)
+        !matches!(
+            self,
+            Self::PsxRender | Self::Retail | Self::EntryPulse | Self::SmartMonsters
+        )
     }
 
     /// Whether `--retail` overrides the row for the session (its value is
@@ -486,6 +534,10 @@ impl OptionRow {
             Self::MusicVolume => opts.bgm_volume.to_string(),
             Self::SfxVolume => opts.sfx_volume.to_string(),
             Self::MonoDownmix => on_off(opts.downmix_mono),
+            Self::EntryPulse => on_off(!s.no_entry_pulse),
+            Self::SmartMonsters => on_off(s.smart_monsters),
+            Self::RetailTileCrop => on_off(opts.retail_view_window),
+            Self::RetailObjectWindow => on_off(opts.retail_static_window),
             Self::Retail => on_off(s.retail),
         }
     }
@@ -549,6 +601,10 @@ impl OptionRow {
             Self::MusicVolume => opts.bgm_volume = step(opts.bgm_volume),
             Self::SfxVolume => opts.sfx_volume = step(opts.sfx_volume),
             Self::MonoDownmix => opts.downmix_mono ^= true,
+            Self::EntryPulse => s.no_entry_pulse ^= true,
+            Self::SmartMonsters => s.smart_monsters ^= true,
+            Self::RetailTileCrop => opts.retail_view_window ^= true,
+            Self::RetailObjectWindow => opts.retail_static_window ^= true,
             Self::Retail => s.retail ^= true,
         }
     }
@@ -757,6 +813,28 @@ mod tests {
         // A pre-switch file (disc only) still loads.
         let old: LauncherSettings = toml::from_str("disc = \"/g/l.bin\"").unwrap();
         assert!(!old.psx_render && !old.retail);
+        // The two gameplay switches ride the args, unless `--retail` holds
+        // them off (clap refuses them beside it).
+        let port = LauncherSettings {
+            no_entry_pulse: true,
+            smart_monsters: true,
+            ..Default::default()
+        };
+        let a = play_args_with(&info, &port);
+        assert!(a.iter().any(|s| s == "--no-entry-pulse"));
+        assert!(a.iter().any(|s| s == "--smart-monsters"));
+        let a = play_args_with(
+            &info,
+            &LauncherSettings {
+                retail: true,
+                ..port
+            },
+        );
+        assert!(a.iter().any(|s| s == "--retail"));
+        assert!(
+            !a.iter()
+                .any(|s| s == "--no-entry-pulse" || s == "--smart-monsters")
+        );
     }
 
     #[test]
