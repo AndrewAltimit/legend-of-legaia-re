@@ -181,7 +181,7 @@ pub fn build_pause_items_session(world: &World) -> PauseItemsSession {
     let slots = inner.bag_slots.clone();
     // The dim / alt-ink bits each list build gives a slot - the row ink the
     // list kernel stages from them is per list (`list_row_ink`).
-    let ink_bits = |rows: Option<Vec<legaia_engine_core::world::BagRow>>| {
+    let ink_bits = |rows: Option<Vec<crate::bag_rows::BagRow>>| {
         rows.unwrap_or_default()
             .into_iter()
             .map(|r| {
