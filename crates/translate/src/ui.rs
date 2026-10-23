@@ -452,6 +452,25 @@ pub fn qualifies(chunk: &[u8]) -> bool {
     letters >= 1 && printable >= 2
 }
 
+/// Strings shorter than [`qualifies`] accepts that code nonetheless draws as
+/// text, as `(PROT entry, VA)`: a pool scan keeps any glyph run that starts
+/// at one of these, so the pack carries it and a translation of it can move.
+///
+/// - PROT 0898 `0x801F4C28`: the Seru-absorb caption's suffix, appended
+///   after the Seru's spell name (`lui a1,0x801f ; addiu a1,a1,0x4c28` at
+///   `0x801D91C0` / `0x801D91C8`, `legaia_game_tables::absorb_caption`).
+pub const SHORT_STRINGS: &[(usize, u32)] = &[(898, 0x801F_4C28)];
+
+/// `true` when `chunk`, starting at `va` in PROT entry `prot`, is one of the
+/// [`SHORT_STRINGS`] and reads as glyphs.
+fn is_short_string(prot: usize, va: u32, chunk: &[u8]) -> bool {
+    SHORT_STRINGS.contains(&(prot, va))
+        && !chunk.is_empty()
+        && chunk
+            .iter()
+            .all(|&b| (0x20..0x7f).contains(&b) || b >= 0x80)
+}
+
 /// Zero alignment padding usable past a string's terminator. The overlay pools
 /// are 4-byte aligned, so a string of length `n` occupies `align4(n + 1)` bytes
 /// and the 0..3 bytes after its NUL are zero filler. Those bytes are dead
@@ -617,6 +636,7 @@ pub fn scan_pool(entry: &[u8], pool: &UiStringPool) -> Vec<UiString> {
             is_ui_text(&entry[start..e])
         } else {
             qualifies(&entry[pos..e])
+                || is_short_string(pool.prot_index, pool.base_va + pos as u32, &entry[pos..e])
         };
         if keep {
             raw.push((start, &entry[start..e]));
@@ -659,6 +679,32 @@ mod tests {
         assert!(!qualifies(&[0xce]));
         assert!(!qualifies(&[0x40, 0xc1]));
         assert!(!qualifies(b"."));
+    }
+
+    #[test]
+    fn a_listed_short_string_is_kept_and_no_other() {
+        // `.` at the absorb suffix's VA, and `.` four bytes on.
+        let mut entry = vec![0u8; 0x40];
+        entry[0x28..0x2A].copy_from_slice(b".\0");
+        entry[0x2C..0x2E].copy_from_slice(b".\0");
+        let pool = UiStringPool {
+            prot_index: 898,
+            base_va: 0x801F_4C00,
+            va_start: 0x801F_4C20,
+            va_end: 0x801F_4C40,
+            label: "t",
+            strict: false,
+        };
+        let out = scan_pool(&entry, &pool);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].va, 0x801F_4C28);
+        assert_eq!(out[0].bytes, b".");
+        // The same bytes in another entry are junk.
+        let other = UiStringPool {
+            prot_index: 899,
+            ..pool
+        };
+        assert!(scan_pool(&entry, &other).is_empty());
     }
 
     #[test]

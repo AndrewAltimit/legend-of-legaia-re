@@ -66,6 +66,7 @@ translation of any of these reaches retail and the port alike:
 |---|---|---|
 | menu overlay, PROT 0899 | the pause menu's rows and tab titles, the Items / Equip / Status / Magic labels, the Options rows and values, the shop strings, the Throw Out / Door of Light / Incense confirms, Yes / No, the two templates above | `legaia_game_tables::menu_pool`, `engine-menus::pause_screens`, `engine-menus::shop::ShopLabels` |
 | battle overlay, PROT 0898 | `Spirit`, the commit chip's `Begin` / `Escape`, the formation banners, the victory report, the loss window's line | `legaia_ui_formats::battle_ui_strings`, `battle_party_panel::{VictoryText, DefeatText}` |
+| battle overlay, PROT 0898 | the Seru-absorb caption's three prefixes and its suffix | `legaia_game_tables::absorb_caption` |
 | `SCUS_942.54` | the command chips, `Reselect`, the steal captions, the sparring opener | `legaia_ui_formats::battle_ui_strings` |
 | field overlay, PROT 0897 | the name-entry prompts and its Yes / No | `legaia_ui_formats::name_entry_prompts` |
 | field overlay, PROT 0897 | the code lock's header, the flag window's legend, the coin counter's labels, the Incense wear-off notice, the tile board's quit prompt | `legaia_engine_field::field_overlay::field_overlay_cstr` |
@@ -108,27 +109,33 @@ Every field-overlay string the port reads is loaded by one private `lui a0`
 / `addiu a0` pair in the routine that draws it, so a move may take any
 address in the image. `Yes` / `No` have three sites each - the tile board's
 render tail, the three-line panel painter and the name-entry pointer table -
-and a move rewrites all three. What limits a move is room: the field overlay
-has no translation region, so a longer field string finds space only where
-shorter strings in its own pools give some up
-([`space-and-budgets.md`](space-and-budgets.md#moving-a-label)). A pack that
-lengthens every field string keeps them all in English and reports `no free
-run`; the field oracle shortens the strings the port does not read and
-checks that every string it does read then moves or fits.
+and a move rewrites all three. A longer field string goes into room
+shorter strings in its pools give up, or into the field overlay's
+translation region past the panel-window table
+([`space-and-budgets.md`](space-and-budgets.md#the-translation-regions)).
+The field oracle runs two passes: one that shortens every string the port
+does not read, and one that shortens nothing, where every move lands in the
+region.
+
+The Seru-absorb caption's suffix is a single `.` (`0x801F4C28`), shorter
+than the pool scan keeps as text; `translation::ui::SHORT_STRINGS` names it
+so the pack carries it and a translation of it can move. The caption's
+reader follows the suffix through the `lui` / `addiu` pair that loads it
+(`0x801D91C0` / `0x801D91C8`) and the prefixes through their pointer words,
+and the oracle reads a moved suffix back off the caption the host installs
+at field entry.
 
 ## English the port draws that a pack cannot reach
 
 These lines are drawn from literals in the port, or read where a moved string
 no longer is. Most visible first:
 
-1. **The Seru-absorb caption** (`legaia_game_tables::absorb_caption`,
-   PROT 0898 `0x801F4DFC` / `0x801F4C28`): the same fixed-VA read.
-2. **Port-only screens and captions**: the arts editor, key rebind, `PRESS
+1. **Port-only screens and captions**: the arts editor, key rebind, `PRESS
    START`, `ENCOUNTER!`, `K.O.`, `(no usable items)`, `(no targets)`, `No
    prizes remain.`, the `PAGE` tag, the dance minigame's `READY` / `GO!`.
    Retail has no string for them, so a pack has no key; they need a port-side
    string table of their own.
-3. **The fallbacks for a load without the disc** (each reader's English
+2. **The fallbacks for a load without the disc** (each reader's English
    default): drawn only when the image is absent, never on a disc load.
 
 On a PAL disc the port reads the USA coordinates of differently laid-out

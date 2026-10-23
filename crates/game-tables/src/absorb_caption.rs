@@ -32,7 +32,13 @@
 //! (`docs/subsystems/minigame-muscle-dome.md`).
 //!
 //! No bytes of the strings are carried here: [`parse`] reads them off the
-//! caller's PROT 0898 image.
+//! caller's PROT 0898 image. Both pieces follow a string a language pack
+//! moved: a prefix through its pointer word in the table, the suffix through
+//! the `lui` / `addiu` pair at `0x801D91C0` / `0x801D91C8` that loads it
+//! ([`SUFFIX_REF`], decoded on the image at hand by
+//! `legaia_overlay_images::string_refs`).
+
+use legaia_overlay_images::string_refs::{self, StrRef};
 
 /// CDNAME / PROT index of the battle-action overlay.
 pub const BATTLE_ACTION_OVERLAY_PROT_INDEX: usize =
@@ -47,6 +53,15 @@ pub const PREFIX_TABLE_VA: u32 = 0x801F_4DFC;
 
 /// Runtime VA of the suffix string (`addiu a1,a1,0x4c28` at `0x801D91C8`).
 pub const SUFFIX_VA: u32 = 0x801F_4C28;
+
+/// The site that forms [`SUFFIX_VA`]: `lui a1,0x801f` at `0x801D91C0`,
+/// completed by `addiu a1,a1,0x4c28` at `0x801D91C8` (the translation
+/// pipeline's reference scan of the retail image; the other site, at
+/// `0x801DBB08` / `0x801DBB10`, is rewritten with it on a move).
+pub const SUFFIX_REF: StrRef = StrRef::Pair {
+    lui: 0x801D_91C0,
+    lo: 0x801D_91C8,
+};
 
 /// Prefix rows the table carries - one per playable character id `1..=3`.
 /// The fourth word is zero on the disc, so a character id past Gala reads a
@@ -85,11 +100,14 @@ fn c_string(image: &[u8], va: u32) -> Option<String> {
     let tail = &image[off..];
     let end = tail.iter().take(MAX_STRING_LEN).position(|&b| b == 0)?;
     let bytes = &tail[..end];
-    // Printable ASCII only: a mis-based read lands in code or table words.
-    if !bytes.iter().all(|&b| (0x20..0x7F).contains(&b)) {
+    // Glyph bytes only: a mis-based read lands in code or table words. A
+    // high byte is a glyph cell (an accent a language pack wrote) and comes
+    // back as the Latin-1 `char` of its value, the way the font layout takes
+    // it.
+    if !bytes.iter().all(|&b| b >= 0x20 && b != 0x7F) {
         return None;
     }
-    Some(String::from_utf8_lossy(bytes).into_owned())
+    Some(bytes.iter().map(|&b| char::from(b)).collect())
 }
 
 /// Read the caption pieces out of a PROT 0898 image. `None` when a pointer
@@ -108,7 +126,13 @@ pub fn parse(overlay_0898: &[u8]) -> Option<AbsorbCaption> {
         }
         prefixes.push(s);
     }
-    let suffix = c_string(overlay_0898, SUFFIX_VA)?;
+    let suffix_va = string_refs::resolve(
+        &[(SUFFIX_VA, SUFFIX_REF)],
+        overlay_0898,
+        OVERLAY_LINK_BASE,
+        SUFFIX_VA,
+    );
+    let suffix = c_string(overlay_0898, suffix_va)?;
     Some(AbsorbCaption { prefixes, suffix })
 }
 
@@ -143,6 +167,23 @@ mod tests {
         assert_eq!(cap.compose(2, "X").as_deref(), Some("P1 X!"));
         assert_eq!(cap.compose(0, "X"), None);
         assert_eq!(cap.compose(4, "X"), None);
+    }
+
+    #[test]
+    fn a_moved_suffix_is_read_where_its_pair_points() {
+        let mut img = synthetic();
+        let put = |img: &mut Vec<u8>, va: u32, b: &[u8]| {
+            let o = (va - OVERLAY_LINK_BASE) as usize;
+            img[o..o + b.len()].copy_from_slice(b);
+        };
+        // The retail pair forms SUFFIX_VA.
+        put(&mut img, 0x801D_91C0, &0x3C05_801Fu32.to_le_bytes());
+        put(&mut img, 0x801D_91C8, &0x24A5_4C28u32.to_le_bytes());
+        assert_eq!(parse(&img).unwrap().suffix, "!");
+        // Moved: the pair now forms 0x801F_4C40, an accented suffix.
+        put(&mut img, 0x801F_4C40, b" \x82t\0");
+        put(&mut img, 0x801D_91C8, &0x24A5_4C40u32.to_le_bytes());
+        assert_eq!(parse(&img).unwrap().suffix, " \u{82}t");
     }
 
     #[test]
