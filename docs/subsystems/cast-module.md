@@ -2312,11 +2312,17 @@ both sides, and its fans `0x801F8B0C` / `0x801F8B68` (mode `0x10`: shape 2,
 eight columns, radii `0x100` / `0x2000`) sit `0x2000` ahead of the eye on
 both. Retail's ordering tables draw those fans as eight packets each running
 off every edge of the screen, the crowns as rings of thin spokes over the
-whole frame. The engine draws the crowns (hiding them changes its whole
-frame) but dimmer than retail's, under fans that read wider. The parts' own
-words reach the draw intact, so what is left is in the draw of a
-camera-relative default-arm mesh (`FUN_80028158` and the `+0x52` placement),
-not in the module or the part programs. Some parts with draw kind `0` carry
+whole frame. Built from the same RAM words, the engine's meshes project onto
+those packets corner for corner (within a pixel of the GTE's rounding): each
+fan packet is a thin spike, one corner on the eye axis and one `0x2000` out,
+and the crowns' and the `0x801F8964` ring's corners land where retail's do.
+What dimmed them was the arm's armed wash (`FUN_8004695C(0x202020)` every
+pass), composited over the finished frame instead of under it
+([the armed wash](#presentation-calls)). Retail's fans also hold a
+non-zero `+0x22` (the keyframe cursor, `0x1BC0`) that no renderer reads:
+the node matrix is `FUN_80026988` of `+0x24..+0x28` alone, so the port's
+node rotation takes the banks and nothing else
+(`effect_ribbon::node_rotation`). Some parts with draw kind `0` carry
 a non-zero block in retail and a zero one in the engine; nothing draws from
 it, and it reads as words a previous actor left in the reused slot.
 
@@ -3517,8 +3523,15 @@ both (`BattleActionHost::capture_band_exit` / `summon_band_exit`).
 
 **The armed wash** only arms a flag the frame's drain clears, so an arm that
 wants it held re-arms it every pass. The drain draws it subtractive (ABR `2`)
-in the farthest bucket, under the whole scene: on a frame the scene repaints
-everywhere it is close to invisible in retail too.
+in the farthest bucket, under the whole scene: it darkens what the buffer
+still holds from an earlier frame, and everything the frame draws lands on
+top of it at full strength. The engine records the colour
+(`World::cast_armed_wash`) and composites no quad for it, since both hosts
+build each frame from a cleared target and draw screen primitives over the
+scene, where the quad could only darken the frame's own pixels. Composited
+that way, Horn's arm-9 wash (`0x202020` a pass) took that much off every
+additive layer of the arm: its rings and crowns drew a fraction as bright as
+retail's and its white blades topped out near `0xDF`.
 
 **Not fired.** The 17 fade sites the decoder does not place sit in spawn
 stagers, routines the move VM's op `0x20` calls with an arm of its own rather

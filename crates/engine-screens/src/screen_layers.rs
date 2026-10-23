@@ -201,7 +201,9 @@ pub fn compose_screen_prims(
     }
     under.extend(theeder);
     // The cast modules' full-screen washes: PROT 0898's colour wash behind
-    // the scene and the armed subtractive wash, both in the farthest bucket.
+    // the scene, in the farthest bucket. The armed subtractive wash shares
+    // that bucket and so runs before the scene in retail; it is not composited
+    // (`World::cast_wash_prims`).
     under.extend(world.cast_wash_prims());
     // PROT 0920's Deadly Rain streaks (additive, depth-sorted in retail).
     under.extend(legaia_render_kernels::cast_rain::rain_line_prims(
