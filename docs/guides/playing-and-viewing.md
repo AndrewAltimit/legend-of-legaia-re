@@ -518,7 +518,8 @@ speaker - separate from the in-game Monaural setting, which is the original's
 own mono mode and leaves voices and movies in stereo) in
 `legaia-options.toml`, and the save screen's port-1 memory
 card at `saves/memcard1.mcr` - the same raw card image the browser play page
-keeps, which any PSX emulator reads. The first launch that finds no card
+keeps, which any PSX emulator reads, created with its folder on the first
+save. The first launch that finds no card
 there writes any `slot_NN` save files an older build left into it. Run from the same
 directory each time - or pass explicit paths where supported
 (`--save-dir`, `config set --config-file`). A game started from the

@@ -395,8 +395,11 @@ it and on an empty cell under Load.
 **The question.** The arm at `0x801E2540..0x801E2600` asks "Do you wish to
 load?" when the op flag is set. On the save path it runs the slot-mode test
 inline and asks "Do you wish to save?" for mode `3`, "Do you wish to
-overwrite?" for anything else. The box opens on **No**. Port:
-`SaveScreenFlow::confirm_prompt`.
+overwrite?" for anything else. The box opens on **No**, and the `0x4E`
+pointing hand marks the row (`0x801E28A0..0x801E28C4`: `x - 0x1A`,
+`y + 0x24 + row * 0x10`, row `0` = Yes). Port:
+`SaveScreenFlow::confirm_prompt`; the hand is
+`engine-ui::confirm_dialog_hand_draw_for`.
 
 **The transfer panel.** A "Yes" runs the op under a messagebox - "Saving to
 MEMORY CARD" or "Now Loading" over "Do not remove MEMORY CARD"
@@ -752,7 +755,10 @@ host supplies only the bytes:
   (`legaia_save::card::formatted_card_image`) kept in page storage and written
   back on every in-game save. Either port also takes the player's own card
   images (`.mcr` / `.mcd` / `.gme` / `.mcs`). Grid cell `i` is card block
-  `i + 1` (block 0 is the directory). Engine-format `.lgsf` sessions live in
+  `i + 1` (block 0 is the directory). The page's save bar lists the browser
+  card's saves ahead of its stored sessions, each resumable and downloadable
+  as the card image, so a save made at a save point is visible after a
+  reload without opening the title's Continue. Engine-format `.lgsf` sessions live in
   the page's save bar and reach the world through an import, not a rack port.
 - **Native shell**: port 1 is the window's own card, `memcard1.mcr` in the
   save directory (`open_port_one_card`), the twin of the browser card - the
@@ -761,6 +767,15 @@ host supplies only the bytes:
   card yet, the window formats one and writes every LGSF `slot_NN` file an
   older build left there into it, slot `N` into cell `N`, once; the slot
   files stay, and `--resume-save` / `load --save-dir` still read them.
+  Every Save writes the image back (`MountedCard::persist`): it creates the
+  save directory when nothing has yet - the default `saves/` resolves against
+  the working directory, the launcher's per-user data directory in a release,
+  and does not exist before the first save - and writes beside the file and
+  renames over it, so a write cut short keeps the previous card. A
+  `memcard1.mcr` that does not mount is renamed to `memcard1.unreadable.mcr`
+  and a fresh card takes its name; a card with no file to write back to
+  raises the write-failed notice instead of reporting a save that is gone on
+  the next launch.
 
 Both read a card block through `MountedCard::save_at`, which refuses a block
 that does not open a save chain.
@@ -981,6 +996,29 @@ Every byte outside those regions survives, which is right for editing an
 existing save and is the sharp edge for a new one. Write order is records,
 then flags, then inventory, which is what reclaims slot 3's aliased tail.
 `engine-core/tests/save_block_checksum.rs` pins the region list.
+
+**What a fresh block does not carry.** Lifting a retail block and composing
+it into a *free* block of a blank card reproduces everything in the window
+except these spans (SC offsets; RAM = `0x80084140 + offset`), which stay zero
+because no lift field holds them:
+
+| SC span | RAM | Contents |
+|---|---|---|
+| `0x207..0x257` | `0x80084347..` | the banner name's bytes after its NUL (MAN residue), and the party display-name list at `0x254` |
+| `0x260..0x276` | `0x800843A0..` | unnamed |
+| `0x300..0x308`, `0x324` | `0x80084440..`, `0x80084464` | unnamed, beside the fishing words |
+| `0x400` | `0x80084540` | unnamed |
+| `0x418..0x41F` | `0x80084558` | the previous scene's label |
+| `0x430..0x434` | `0x80084570` | the play clock's sub-second ticks (the engine keeps whole seconds) |
+| `0x480`, `0x4A4..0x4D1`, `0x4E4..0x4EC` | `0x800845C0..` | unnamed |
+| `0x564..0x568`, `0x590..0x59C` | `0x800846A4..`, `0x800846D0..` | unnamed, beside the options words |
+
+So a card the engine writes is read by retail's loader (header, checksum and
+every lifted region are retail's), but those words come back zero, where the
+same save written by retail would carry the live values. An overwrite of an
+existing block keeps whatever that block held there, since the composer
+patches in place. Which
+of the unnamed words a resumed retail game reads is open.
 
 The **resume point** has its own writer,
 `SaveResume::write_into_retail_sc_block` (`card::write_retail_resume`): the

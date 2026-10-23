@@ -1182,6 +1182,25 @@ frame (state + product code + XOR checksum) so the emulator's card browser sees
 the new save. A `dirty` flag per port tells the page there are unexported
 writes.
 
+The page's save bar draws the **browser card's** saves as tiles ahead of its
+stored sessions (`browserCardTiles` in `play.html`, through the bar's
+`fixedTiles` hook in `site/js/legaia-saves.js`): one per valid block, listed
+by `card_saves_json`, with Resume landing it through `import_card_save` and
+download handing back the whole card image. A save made at a save point is a
+block of that card, not a stored session, so without these tiles the bar read
+"No saves in this browser yet" after a reload while the save sat on the card.
+The page stores each written card itself, so the save screen only knows the
+Save landed once the page says so: `card_store_handshake(true)` makes the
+"Saving to MEMORY CARD" beat wait after the in-memory write for
+`card_store_result(stored)`, which the page's store poll answers. A browser
+that refuses the store (storage full or blocked) therefore reads "Unable to
+save." in the beat instead of "Save successful." over a save a reload loses,
+and a page that never answers is given up on as failed after
+`CARD_STORE_WAIT_FRAMES`. Without the handshake (the native tests driving the
+runtime) the beat reports the write at once, and a refused store can only
+raise `card_store_failed`'s notice afterwards. Pinned by
+`menu_parity::the_save_beat_waits_for_the_page_to_store_the_card`.
+
 `card_block_snapshots` lifts each block through `SaveFile::from_retail_sc_block`
 to feed the preview grid's portraits and the info panel's name / level / HP /
 MP / location rows - the same fields retail reads into its per-slot buffer.
