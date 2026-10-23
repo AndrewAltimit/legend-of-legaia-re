@@ -2292,6 +2292,17 @@ holds twelve of each live, three calls' worth. Arms 1 and 3 seat three wisps
 each with the Freed-shaped wait / spin / length / radius / roll pokes, arm 3
 three point pairs more; arms 2, 5 and 6 one record each on the caller.
 
+Against a retail Horn cast (PCSX-Redux, RAM written mid-arm), the engine's
+live parts match record for record: in arm 4 the stager's loop record, its
+three sparkle records twenty or fourteen each, arm 3's six pool parts and a
+dozen wisps `0x801F8900`; in arm 9 the nine records arm 4 and arm 8 seated,
+`0x801F8BEC` ten or eleven times. Arm 9's camera matches too (pitch `0`, yaw
+`0`, TR y `0x158C`, TR z from `0x200` scaled, `+16` a vsync). Where Horn's
+frames still part from retail's in those arms (a ring of glows round the
+creature in arm 4 that the engine does not draw, arm 9's blades drawn wider),
+the difference is in what those parts draw, not in which are live or where
+the camera stands.
+
 The stagers of PROT 0914, 0915, 0917, 0921, 0928, 0929 and 0931..0933 run
 the same way (`cast_module_ticks::creature_stager_spawns`, arm by arm off
 each image's second dump). Most arms seat one record on the caller; the ones
