@@ -211,12 +211,12 @@ enhancement has a retail-faithful off position
 | Key | Toggle | Default | Start-up flag |
 |---|---|---|---|
 | `I` | Enhanced lighting: a time-of-day mood, real lights at lamps and glowing props; off is the game's own baked shading | on, remembered | `--no-dynamic-lighting` |
-| `F8` | Lighting time of day: auto, day, dusk, night | auto | - |
-| `Y` | Shadows cast by the enhanced point lights | on | `--no-dyn-shadows` |
-| `F4` | Camera-occlusion fade: walls between the camera and your character dissolve to a dither | on | `--no-occlusion-fade` |
-| `F9` | Volumetric ground fog | off | `--no-volumetric-fog` |
+| `F8` | Lighting time of day: auto, day, dusk, night | auto, remembered | - |
+| `Y` | Shadows cast by the enhanced point lights | on, remembered | `--no-dyn-shadows` |
+| `F4` | Camera-occlusion fade: walls between the camera and your character dissolve to a dither | on, remembered | `--no-occlusion-fade` |
+| `F9` | Volumetric ground fog | off, remembered | `--no-volumetric-fog` |
 | `F10` | Bloom: lamps, glowing props, lit windows and bright sky glow softly, stronger at night | off, remembered | - |
-| `R` | Precise free-angle movement | off (retail-style movement), remembered | - |
+| `R` | Free-angle movement | off (retail 4/8-way movement), remembered | - |
 | `T` | Camera distance preset: retail, far, farther | far, remembered | - |
 | `F3` | Wide debug orbit camera | off | - |
 | `F2` | Mute audio | off | `--no-audio` |
@@ -601,7 +601,7 @@ python3 -m http.server -d site      # then open /play.html
 Nothing is uploaded: the disc image you pick stays in the tab.
 
 Rebuild after changing anything the page compiles - which is most of the
-workspace, not just `crates/web-play` and `crates/web-viewer`. To check whether the bundle you built
+workspace, not just the four `crates/web-*` crates (`web-viewer` over `web-play`, `web-minigames` and `web-patcher`). To check whether the bundle you built
 still matches your sources:
 
 ```bash

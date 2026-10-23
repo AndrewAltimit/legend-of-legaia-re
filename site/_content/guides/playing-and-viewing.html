@@ -108,12 +108,12 @@
     <thead><tr><th>Key</th><th>Toggle</th><th>Default</th></tr></thead>
     <tbody>
       <tr><td><kbd>T</kbd></td><td>Cycle the camera-distance preset: retail, far (1.35x), farther (1.8x)</td><td>far, remembered</td></tr>
-      <tr><td><kbd>R</kbd></td><td>Precise free-angle movement</td><td>off (retail-style movement)</td></tr>
+      <tr><td><kbd>R</kbd></td><td>Free-angle movement</td><td>off (retail 4/8-way movement), remembered</td></tr>
       <tr><td><kbd>I</kbd></td><td>Enhanced lighting: a time-of-day mood, real lights at the scene's lamps and glowing props, the Genesis Tree glowing. Off is the game's own baked shading.</td><td>on, remembered</td></tr>
-      <tr><td><kbd>F8</kbd></td><td>Time of day for enhanced lighting: auto, day, dusk, night</td><td>auto</td></tr>
-      <tr><td><kbd>Y</kbd></td><td>Shadow-casting point lights (<code>--no-dyn-shadows</code> starts off)</td><td>on</td></tr>
-      <tr><td><kbd>F4</kbd></td><td>Camera-occlusion fade: walls between the camera and your character dissolve to a dither (<code>--no-occlusion-fade</code> starts off)</td><td>on</td></tr>
-      <tr><td><kbd>F9</kbd></td><td>Volumetric ground fog (<code>--no-volumetric-fog</code> holds it off)</td><td>off</td></tr>
+      <tr><td><kbd>F8</kbd></td><td>Time of day for enhanced lighting: auto, day, dusk, night</td><td>auto, remembered</td></tr>
+      <tr><td><kbd>Y</kbd></td><td>Shadow-casting point lights (<code>--no-dyn-shadows</code> starts off)</td><td>on, remembered</td></tr>
+      <tr><td><kbd>F4</kbd></td><td>Camera-occlusion fade: walls between the camera and your character dissolve to a dither (<code>--no-occlusion-fade</code> starts off)</td><td>on, remembered</td></tr>
+      <tr><td><kbd>F9</kbd></td><td>Volumetric ground fog (<code>--no-volumetric-fog</code> holds it off)</td><td>off, remembered</td></tr>
       <tr><td><kbd>F10</kbd></td><td>Bloom: lamps, glowing props, lit windows and bright sky glow softly, stronger at night</td><td>off, remembered</td></tr>
       <tr><td><kbd>F1</kbd></td><td>Engine diagnostic text rows</td><td>off</td></tr>
       <tr><td><kbd>F2</kbd></td><td>Mute audio</td><td>off</td></tr>
@@ -122,7 +122,7 @@
   </table>
   <p>In the native window each press shows the toggle's new state at the bottom left for a moment (<em>Ground fog: off</em>); holding a key toggles once, not repeatedly. A key that only acts while you walk around (<kbd>F3</kbd>, <kbd>T</kbd>, <kbd>R</kbd>) says so when pressed on the title screen or in a menu. <kbd>F12</kbd> (or <kbd>?</kbd>) opens a panel listing every toggle key with its current state; press it again to close it.</p>
   <p>The browser play page answers the same keys with the canvas focused. Its presentation toggles sit in one <strong>Visual enhancements</strong> panel under the canvas: each row names its key, says in a line what it does and whether it is a port enhancement or part of the PS1's own drawing, and the panel carries the Retail-faithful switch and a <strong>Reset to defaults</strong> button.</p>
-  <p><code>--retail</code> starts a session with every enhancement off and the remembered engine-only options (camera distance, movement mode, the photosensitivity guard) at their retail values, writing nothing back to the options file - the one switch for a retail-faithful run.</p>
+  <p><code>--retail</code> starts a session with every enhancement off and the remembered engine-only options (camera distance, movement mode, the photosensitivity guard) at their retail values, writing nothing back to the options file - the one switch for a retail-faithful run. It also pins the engine's own deviations to retail: the ledge-hop landing guard, smart monsters, overworld markers and the saved-chain Arts list go off and the battle kernels run retail's. The browser play page's <strong>Retail-faithful</strong> switch applies the same pin.</p>
   <p class="hint">Window toggles and pad bindings cannot collide: a window key is handled <em>before</em> the pad lookup, so one parked on a bindable key would delete that button from the keyboard. Every toggle therefore lives on an F-key or a letter outside the bindable vocabulary (the key table above plus <kbd>C</kbd>, <kbd>V</kbd>, <kbd>D</kbd>, <kbd>E</kbd>).</p>
   <details class="disclosure">
     <summary>Development hand-triggers</summary>
@@ -327,7 +327,7 @@
   <div class="cli"><code>scripts/ci/build-wasm.sh</code></div>
   <div class="cli"><code>python3 -m http.server -d site</code></div>
   <p>Nothing is uploaded: the disc image you pick stays in the tab.</p>
-  <p>Rebuild after changing anything the page compiles - which is most of the workspace, not just <code>crates/web-play</code> and <code>crates/web-viewer</code>. To check whether the bundle you built still matches your sources:</p>
+  <p>Rebuild after changing anything the page compiles - which is most of the workspace, not just the four <code>crates/web-*</code> crates (<code>web-viewer</code> over <code>web-play</code>, <code>web-minigames</code> and <code>web-patcher</code>). To check whether the bundle you built still matches your sources:</p>
   <div class="cli"><code>python3 scripts/ci/check-wasm-freshness.py</code></div>
   <p class="hint">Worth running before concluding a change did or didn't work in the browser: a stale bundle looks exactly like a fix that had no effect. Background: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/shipped-bundle-freshness.md" target="_blank" rel="noopener"><code>tooling/shipped-bundle-freshness.md</code></a>.</p>
 </section>

@@ -778,8 +778,8 @@ equivalent is `damage_finish::bypass_party_resist = false`.
   battle-action state `0x19` - a range poll with **no movement code and no
   timeout** - while its staged tag-`1` "Move" animation drives the actual
   movement (180 of the 186 monsters lack the tag-`0x20` walk chain and use this
-  path for every melee). When that animation dies mid-approach (the reproducible
-  trigger is a summon's staging round-trip immediately before the melee),
+  path for every melee). When that animation dies mid-approach (the retail
+  trigger is Kemaro's put-back on the target directly before its melee),
   nothing re-stages it and the fight waits forever while the idle camera
   orbits. Full anatomy:
   [battle-action.md](../subsystems/battle-action.md#root-cause-the-walk-tag-fallback-in-state-0x14).

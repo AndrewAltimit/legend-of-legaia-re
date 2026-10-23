@@ -629,7 +629,7 @@
     <tbody><tr><td>--approach-softlock-fix</td><td>toggle, seedless</td><td>On in the Balanced / Full Chaos presets. Healthy fights are byte-identical.</td></tr></tbody>
   </table>
   <details class="disclosure"><summary>How it is patched</summary><div class="disclosure-body">
-    <p>A monster approaching an out-of-reach target waits in a range poll with no movement code and no timeout while its staged Move clip carries it; when a summon's staging round-trip precedes the melee, that clip dies and nothing re-stages it. The fix is a nine-word rewrite of the poll's redundant per-frame facing recompute: when the clip reads dead while the poll still fails, the state bounces back to staging and retail's own code resumes the walk. Runtime-verified on both live-caught park states. Full story: <a href="../writeups/gaza-orbit-softlock.html">the endless camera orbit</a>.</p>
+    <p>A monster approaching an out-of-reach target waits in a range poll with no movement code and no timeout while its staged Move clip carries it; when Kemaro's put-back leaves the target's exit-to-idle flag set and its melee follows inside one idle loop, that clip dies and nothing re-stages it. The fix is a nine-word rewrite of the poll's redundant per-frame facing recompute: when the clip reads dead while the poll still fails, the state bounces back to staging and retail's own code resumes the walk. Runtime-verified on both live-caught park states. Full story: <a href="../writeups/gaza-orbit-softlock.html">the endless camera orbit</a>.</p>
   </div></details>
 </section>
 
