@@ -265,7 +265,7 @@ Two channels make a retail art read as an event: the battle clock slowing while 
 
 So the strike loop's first swing, staged under bit 1 over the idle `0x19`'s arrival committed under bit 0 (`0x801E35C0`), waits for idle frame 3 (capture `player_steal_skeleton_pre`: idle cursor `0x20`, `0x0F` staged). Every loop cycle of the acting actor re-zeroes the camera's ramp / accumulator / latch like any other commit (`0x8004BF50..0x8004BF78`). Port: `World::commit_staged_battle_anim` (the looping-clip gate) and the natural-end re-commit in `World::tick_battle_animations`.
 
-**Writers.** The rate is written by arms of the anim commit `FUN_8004AD80`, all on the **party** ladder (the monster path branches clear at `0x8004B6F4`):
+**Writers.** The rate is written by arms of the anim commit `FUN_8004AD80`. The first row runs on every commit, monster or party, ahead of the branch; the staged-id arms are on the **party** ladder (the monster path branches clear at `0x8004B6F4`):
 
 | Trigger (raw staged id `+0x1DA`) | Effect | Site |
 |---|---|---|
@@ -279,7 +279,7 @@ The `0x1A` arm also raises the `ARTS!!` banner byte `ctx[+0x28B]` (from the queu
 
 **Restore.** `FUN_801E93C8` is `jal`ed from the shared tail at `0x801E5F64`, which the Done arm falls into and which states `0x1E`, `0x1F` and `0x20` jump to on nearly every pass (`0x801E39AC`, `0x801E3A68`, `0x801E3A80`, `0x801E3AF8`, `0x801E3B18`, `0x801E56C8`, `0x801E55A0..0x801E5658`). Once the acting actor's materialised art clip has ended (party: `+0x1D9 < 0x10`; monster: committed record flag `+0x87 == 0`), every slot returns to `8` and `ctx[+0x243]` clears. The battle is back at full speed the pass the last art clip ends, so a monster an art killed plays the rest of its knockdown at normal speed.
 
-**Port.** Kernel `legaia_engine_battle_vm::battle_anim_rate` (`BattleActor::anim_rate`, default 8); commit arms in `engine-core`'s `commit_staged_battle_anim`; the rate-scaled advance in `battle_anim::MonsterAnimPlayer::tick_rated`; the restore in `battle_gauge_rearm::restore_anim_rates`.
+**Port.** Kernel `legaia_engine_battle_vm::battle_anim_rate` (`BattleActor::anim_rate`, default 8); commit arms in `engine-core`'s `commit_staged_battle_anim`, and the decay row again in `commit_battle_reaction_entry`, the reaction channel's half of the same commit (PROT 0912's damage arm drops its victims to `2` beside the knockdown it stages, and a retail capture of the cast holds the fallen monster at `4` through it); the rate-scaled advance in `battle_anim::MonsterAnimPlayer::tick_rated`; the restore in `battle_gauge_rearm::restore_anim_rates`.
 
 ### The after-image ghost walk (`FUN_80049348`)
 

@@ -1563,6 +1563,28 @@ fn a_juggled_flinch_recommit_seeds_the_cue_cursor_past_its_first_cue() {
     assert_eq!(world.actors[0].battle_anim_cue_cursor, 0, "window down");
 }
 
+/// The commit's rate decay (`0x8004B080..0x8004B090`) runs for a reaction
+/// install too: a body slowed below normal when its reaction commits plays
+/// it at half speed (PROT 0912's damage arm drops the victim to `2` beside
+/// the knockdown it stages; retail's RAM holds `4` through the knockdown),
+/// and a normal-speed body keeps its rate.
+#[test]
+fn a_reaction_commit_decays_a_slowed_rate_to_half() {
+    use legaia_engine_battle_vm::battle_anim_rate::{AnimRate, RATE_HALF, RATE_NORMAL};
+    let mut world = pose_test_world();
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 22];
+    clips[0] = Some(pose_test_clip(0, 2, 0));
+    clips[4] = Some(pose_test_clip(4, 12, 0));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.actors[0].battle.hp = 50;
+    world.actors[0].battle.anim_rate = AnimRate(2);
+    assert!(world.commit_battle_reaction_entry(0, 4));
+    assert_eq!(world.actors[0].battle.anim_rate.get(), RATE_HALF);
+    world.actors[0].battle.anim_rate = AnimRate(RATE_NORMAL);
+    assert!(world.commit_battle_reaction_entry(0, 4));
+    assert_eq!(world.actors[0].battle.anim_rate.get(), RATE_NORMAL);
+}
+
 /// A struck body's reaction - a one-shot on the reaction channel - takes the
 /// capture's cursor when the capture names that entry.
 #[test]
