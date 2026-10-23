@@ -1,12 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../../index.html">home</a> &middot; <a href="../index.html">write-ups</a> &middot; <a href="index.html">glitches</a> &middot; field oddities</div>
   <h1>WORK ERR, missing encounters and script slips</h1>
-  <p class="lede">Four community-reported oddities that live in the field and battle runtime rather than in one attack or item: a debug counter that reaches the screen on Mt. Rikuroa, the random battles that stop in Jette's Absolute Fortress, the camera orbit that ends the Gaza rematch, and three small slips in the English script. One section is a mechanic rather than a fault: the two springs in Rogue's Tower that change the encounter rate. Each is explained from the game's own code and data, with the addresses to check.</p>
+  <p class="lede">Four community-reported oddities that live in the field and battle runtime rather than in one attack or item: a debug counter that reaches the screen on Mt. Rikuroa, the random battles that stop in Jette's Absolute Fortress, the camera orbit that ends the Gaza rematch, and three small slips in the English script. One section is a mechanic rather than a fault: the two springs in Rogue's Tower that change the encounter rate. One is an emulation fault rather than a game fault: the freeze many emulators show in Conkram's mirror scene. Each is explained from the game's own code and data, with the addresses to check.</p>
 </header>
 
 <div class="notice">
   <div class="notice-title">How this page was made</div>
-  The base of every section is static analysis of the USA disc: disassembly of <code>SCUS_942.54</code> and its overlays, and data decoded from the disc. Two sections also rest on emulator captures, and each says which kind. The Mt. Rikuroa capture is on a poked state: a retail cold boot from a memory-card save, with story flags cleared and the player teleported. The Fortress captures are one played memory-card save and one edited copy of it. The bath scene is read against the Japanese disc (<code>SCPS_100.59</code>) as well. Where a step is inferred rather than read or observed, the text says so. PROT numbers are extraction indices; <code>P1[n]</code> and <code>P2[n]</code> are records of a scene's script partitions 1 and 2.
+  The base of every section is static analysis of the USA disc: disassembly of <code>SCUS_942.54</code> and its overlays, and data decoded from the disc. Several sections also rest on emulator captures, and each says which kind. The Mt. Rikuroa capture is on a poked state: a retail cold boot from a memory-card save, with story flags cleared and the player teleported. The Fortress captures are one played memory-card save and one edited copy of it. The bath scene is read against the Japanese disc (<code>SCPS_100.59</code>) as well. Where a step is inferred rather than read or observed, the text says so. PROT numbers are extraction indices; <code>P1[n]</code> and <code>P2[n]</code> are records of a scene's script partitions 1 and 2.
 </div>
 <section class="doc-section" id="work-err-rikuroa">
   <h2>WORK ERR on Mt. Rikuroa</h2>
@@ -863,6 +863,39 @@ caption reads scene_data[sectors * 0x800 - 0x2E344]   (reached only from 93 sect
 
   <h3>Verifying it</h3>
   <p>Export the disc text with <code>legaia-patcher translate export</code> and search for the words above; each exported key carries the PROT entry and MAN offset. The bath record decodes on either disc with <code>legaia-engine man-scripts --variant 401 --disasm-partition 2 --disasm-record 4</code>. To replay the scene on a save that has seen it, clear flag <code>0x3FB</code> and step onto the record's trigger tile.</p>
+</section>
+<section class="doc-section" id="conkram-mirror-freeze">
+  <h2>Conkram mirror freeze</h2>
+  <dl class="kv">
+    <dt>Reported as</dt><dd>The game freezes in present-day Conkram, in the Room of Mirrors scene that sends the party into the past, on many emulators; pressing Cross very fast through the scene's text avoids it (community reports: pSX 1.13 logging <code>r3000: executed illegal opcode</code> in a <a href="https://psxemulator.proboards.com/thread/2041/legend-legaia">pSX forum thread</a>, which also reports the PAL release unaffected; ePSXe versions other than 1.7.0; the PS3's PS1 emulation every time; a <a href="https://beforeiplay.com/wiki/Legend_of_Legaia">play guide</a> that moves DuckStation saves to ePSXe for this scene). Nobody reports it on a PS1 or PS2</dd>
+    <dt>Cause</dt><dd>Not found. The scene is located, and its music change waits on the CD with no time limit; which emulator timing breaks it is not known</dd>
+    <dt>Where</dt><dd><code>concnow</code> records <code>P2[17]</code> (the walk-on at the mirror) and <code>P2[18]</code> (the crossing to <code>conc2</code>); disc waits <code>FUN_8003DE7C</code> / <code>FUN_8003F2B8</code> and the music poller <code>FUN_800243F0</code> in <code>SCUS_942.54</code></dd>
+    <dt>Affects</dt><dd>This one scene, on some emulators</dd>
+    <dt>Status</dt><dd><span class="tag tag-open">Not confirmed</span> - PCSX-Redux passes the scene on every core and setting tried, slow and fast</dd>
+  </dl>
+
+  <p>The players call it an FMV, but no movie plays here: it is an ordinary in-engine cutscene. After the party sets the Seru Flame down before the mirror (&ldquo;That mirror is the door to the past&rdquo;), the crossing record changes the music, lights a breathing green glow on the mirror, lifts the party off the floor, shows <strong>three pages of text</strong> (&ldquo;...listen! In the world of the past, you will meet your parents when they were young.&rdquo; and two more), fades to white and loads past Conkram.</p>
+  <p>The text pages are the only part whose length the player controls; everything before the first page, the music change included, takes the same time however fast Cross is pressed. So pressing fast shortens one thing: the time spent with the pages open. That is the strongest clue in the reports, and it points away from the most obvious suspect.</p>
+  <p>The obvious suspect is the music change. It reads the new track from the CD in the background, marks it &ldquo;settled&rdquo; on a <strong>timer</strong> rather than on the read finishing, and only once the script commits the change does it wait for the read itself, in a loop with <strong>no time limit</strong>. An emulator that loses or misplaces a CD interrupt would hang there for ever. But that wait runs before the first text page, so fast pressing could not avoid it, and pSX reports a wild jump rather than a spin. The other candidates (something live while the pages are open, such as the new track's sequencer, which runs from a timer interrupt; or the loads of the crossing itself) are untraced.</p>
+
+  <h3>What was captured</h3>
+  <p>The scene was replayed under PCSX-Redux on the retail disc, <strong>on a poked state</strong>: a catalogued late-game world-map state with four story flags cleared and the player placed on the Conkram entrance, then on the mirror's walk-on tile, so that the game's own scripts ran the scene. With Cross pressed every 4, 100 or 300 vsyncs, on the interpreter (debugger on and off) and the dynarec, and with the <code>SpuIrq</code> and <code>RCntFix</code> settings, every run reached past Conkram; none stalled or crashed. The music read and its commit were over within 60 vsyncs of the crossing's start. PCSX-Redux has no CD speed or seek setting, so the timing the reports point at could not be varied.</p>
+  <p>The port does not hang here either: the full-game ladder walks the scene and reaches past Conkram, and the port reads the disc synchronously, so neither music wait can stall.</p>
+
+  <h3>Addresses</h3>
+  <table>
+    <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td><code>concnow</code> <code>P2[17]</code>, <code>P2[18]</code></td><td>MAN, extraction 0363</td><td>the mirror walk-on and the crossing</td><td>disc data</td></tr>
+      <tr><td><code>0x800245C0..0x800247C4</code></td><td>SCUS_942.54</td><td>music swap stages in <code>FUN_800243F0</code>; commit arm at <code>0x80024718</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x8003E008..0x8003E078</code></td><td>SCUS_942.54</td><td>CD read wait in <code>FUN_8003DE7C(0)</code>, no time limit</td><td>disassembly</td></tr>
+      <tr><td><code>0x8003F2CC..0x8003F2EC</code></td><td>SCUS_942.54</td><td>CD command wait in <code>FUN_8003F2B8(0)</code>, no time limit</td><td>disassembly</td></tr>
+      <tr><td><code>0x8003EF14</code></td><td>SCUS_942.54</td><td>per-sector callback: header check and error arm</td><td>disassembly</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Verifying it</h3>
+  <p>On an emulator that freezes here, break once the picture stops and read the PC. Inside either wait loop above, it is a CD wait; read <code>gp+0x980</code>, <code>gp+0x988</code> and <code>gp+0x968</code> (<code>gp</code> = <code>0x8007B318</code>). Elsewhere, read <code>0x8007B750</code>, <code>0x8007BAB8</code> and <code>0x8007BA9C</code>. DuckStation, named by a report and open source, is the next place to look, with its CD read and seek speed-ups off and on.</p>
 </section>
 <section class="doc-section" id="summon-flutes">
   <h2>Appendix: the two summon flutes</h2>

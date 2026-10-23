@@ -4,11 +4,12 @@ Four community-reported oddities that live in the field and battle runtime rathe
 attack or item: a debug counter that reaches the screen on Mt. Rikuroa, the random battles that
 stop in Jette's Absolute Fortress, the camera orbit that ends the Gaza rematch, and three small
 slips in the English script. One section is a mechanic rather than a fault: the two springs in
-Rogue's Tower that change the encounter rate. A closing section records the identity of the two
-summon flutes, as support for the flute pages.
+Rogue's Tower that change the encounter rate. One is an emulation fault rather than a game fault:
+the freeze many emulators show in Conkram's mirror scene. A closing section records the identity of
+the two summon flutes, as support for the flute pages.
 
 The base of every section is static analysis of the USA disc: disassembly of `SCUS_942.54` and its
-overlays, and decoded disc data. Two sections also rest on emulator captures, and each says which
+overlays, and decoded disc data. Several sections also rest on emulator captures, and each says which
 kind. The Mt. Rikuroa capture is on a poked state: a retail cold boot from a memory-card save, with
 story flags cleared and the player teleported. The Fortress captures are one played memory-card
 save and one edited copy of it. The bath scene is read against the Japanese disc (`SCPS_100.59`)
@@ -1372,6 +1373,201 @@ tooling](../../tooling/translation/index.md)) and search for the words above; th
 PROT entry and offset. The bath record decodes on either disc with
 `legaia-engine man-scripts --variant 401 --disasm-partition 2 --disasm-record 4`. To replay the
 scene, clear flag `0x3FB` and step onto the record's trigger tile.
+
+## Conkram mirror freeze
+
+**Status:** not confirmed
+
+**Reported as:** the game freezes in present-day Conkram, in the Room of Mirrors scene that sends
+the party into the past, on many emulators; mashing Cross through the scene's text avoids it
+(community reports). The details differ by teller:
+
+- a pSX 1.13 user logs `sound: underrun` and then repeated `r3000: executed illegal opcode` during
+  the scene ([pSX forum thread](https://psxemulator.proboards.com/thread/2041/legend-legaia));
+  the same thread reports that the PAL release does not freeze, in ePSXe or any pSX version;
+- one ePSXe user reports that version 1.7.0 passes the scene and that 1.8.0 and versions before
+  1.7.0 freeze;
+- a PS3 user reports a freeze every time on the PS3's PS1 emulation; the workaround offered there
+  is to play the scene on a PS1 or PS2 and copy the save back;
+- a play guide ([Before I Play](https://beforeiplay.com/wiki/Legend_of_Legaia)) has players move a
+  DuckStation save to ePSXe for this scene and skip the text by pressing repeatedly, "it may crash
+  if you don't";
+- relayed by a player: older emulators freeze here, and an early PS3 with PS2 hardware may not.
+
+Nobody reports it on a PS1 or PS2. The players call it an "FMV"; the disc plays no movie here (the
+nine movie triggers are listed in [`str-fmv-table.md`](../../formats/str-fmv-table.md#per-scene-trigger-assignment-disc-sourced),
+and none is in a Conkram scene). The scene is drawn by the field engine like any other cutscene.
+
+The cause is not found. What is established is which scene it is, what it runs, and which waits
+in it depend on hardware timing. The rest of this section is that map, the candidate causes it
+leaves, and what was captured.
+
+### The scene
+
+Two partition-2 records of `concnow` (extraction 0363, raw define 362), read with
+`legaia-engine man-scripts --scene concnow --disasm-partition 2 --disasm-record N` (disc data):
+
+- **`P2[17]`** is the walk-on on tiles `(29..32, 103)` (inline records 38..41 of the `.PCH`,
+  extraction 0361). Its header gates are C1 `0x3E1` (blocks once set) and C2 `0x3CE` (King
+  Nebular's Seru Flame scene `P2[16]` has run). The party walks to the mirror at tile `(31, 106)`,
+  places the Seru Flame ("Over here! Put the Seru Flame here!"), and after a white flash one
+  character says "That mirror is the door to the past." Its tail is `34 01 FF FF FF 3C 00` (white
+  glow), `35 3C 00 05` (fade the current score out and stop it in 60 vsyncs), `4A 3C 00` (wait 60
+  frames), `4C 54` and `44 62`, which spawns global record `0x62` = 48 + 32 + 18, `P2[18]`.
+- **`P2[18]`** (C1 `0x423`) is the crossing. In order: `35 DE 07 09` (start track 2014, sound-test
+  14, behind the load barrier); `CFlag` bit 3 on 54 actors; the three party members raised off the
+  floor (`4C 42`, bit 29); system flags `0x0A` and `0x0B` set; `B4 F8 30 01`, which spawns
+  record 2 of the scene's move-VM stager table (extraction 0362); a 60-frame wait; `35 00 00 0A`
+  (the swap commit); camera moves; `B4 32 10 ...`, a breathing green glow on actor `0x32` with a
+  looping keyframe script; `60 0A`; then **three text pages** ("...listen! In the world of the
+  past, you will meet your parents when they were young." and two more); `B4 32 20` (the glow
+  shrinks out over 67 frames); `60 0B`; camera moves and 340 frames of waits; system flag `0x423`
+  set; a white fade; `3F` to `conc2`.
+
+The stager record parks on flag `0x0A` and then on `0x0B` (`2F 13 0A`, `2F 13 0B`), so its
+particle loop (`25 03` four times a pass, record 3, which rewrites its own operands with `2F 05`
+and `2F 1B`) starts after the text, not during it. The room also carries three reflection
+controllers installed at scene entry (`4C 86` in `P1[1]`, `P1[4]`, `P1[5]`), the mirror images of
+the party ([`script-vm-menuctrl.md`](../../subsystems/script-vm-menuctrl.md#4c-86--4c-87-are-the-reflection-controllers-install-and-teardown)).
+
+The text pages are the only part whose length the player controls. Everything before the first
+page, the music swap included, takes the same number of frames however fast Cross is pressed.
+So pressing fast shortens one thing: the time spent with the pages open, the glow looping, the new
+track playing and the particle effect parked.
+
+### Waits that depend on hardware timing
+
+The field script's own waits are frame-counted parks and cannot hang on timing: `4A` counts
+frames, and the two music waits re-run the op each frame until a flag changes
+([`script-vm.md`](../../subsystems/script-vm.md#sub-op-9-is-a-start-not-a-queue)). Below them, the
+music swap reads the disc, and the disc layer has waits that spin with no time limit
+(disassembly):
+
+| Wait | Where | Spins until | Time limit |
+|---|---|---|---|
+| `FUN_8003DE7C(0)` | loop `0x8003E008..0x8003E078`, `VSync(0)` between polls | the read state `gp+0x980` reads `6`, which it is given when `gp+0x988` is negative | none |
+| `FUN_8003F2B8(0)` | loop `0x8003F2CC..0x8003F2EC` | `CdSync(1)` (`FUN_8005BE8C`) returns `CdlComplete` | none |
+| `FUN_8003E800` entry | `0x8003E828..0x8003E83C` | a read still in flight finishes, by the first wait | none |
+| `FUN_800243F0` commit arm | `0x80024730..0x8002473C` | `DrawSync(0)` (`FUN_80058104`), then `FUN_8003DE7C(0)` | none |
+
+The swap is staged by the per-frame poller `FUN_800243F0`
+([`audio.md`](../../subsystems/audio.md#the-track-swap-handshake-fun_800243f0--op-0x35-sub-op-0xa)):
+its first stage polls the drive with the time-limited `FUN_8003DE7C(1)` (`0x800245F0`); the next
+starts the read of the new track with `FUN_8001FC00` -> `FUN_8003E800` (`0x80024678`) and arms a
+settle counter; the next sets the "settled" bit 3 when that counter runs out (`0x800246D0`) and,
+while the script has not committed, stalls. **"Settled" is a timer, not a test of the read**: the
+read is only waited on once the script commits, when the same stage carries on at `0x80024718`
+into `DrawSync(0)` and the unlimited `FUN_8003DE7C(0)`. Each sector arrives in
+the data-ready callback `FUN_8003EF14`, which checks the sector's header against the sector it
+expects (`0x8003EF34..0x8003EF44`); a mismatch takes the error arm, which sets the remaining count
+to `-1` and pauses the drive (`0x8003EFAC..0x8003EFD4`).
+
+On a console the read is long finished when the commit arm runs. If an emulator delivers a sector
+late, from the wrong place, or not at all, the commit arm either waits longer than a console would or forever,
+with the picture stopped. The commit arm runs on the frame after `P2[18]`'s commit at `+0x0108`,
+before the first text page.
+
+### Candidate causes
+
+None of these is shown; each is a hypothesis with what speaks for and against it.
+
+1. **The music read never completes** (inference). An emulator that drops or misplaces a CD
+   interrupt leaves `FUN_8003DE7C(0)` spinning in the commit arm. For: the wait has no limit, and
+   CD timing is where the reported emulators differ most. Against: the commit arm runs before the
+   text, so
+   pressing Cross faster cannot avoid it; and pSX reports an illegal instruction, a wild jump, not a
+   spin.
+2. **Something runs out of time while the text is open** (inference). The pressing workaround says
+   the risk grows with time spent on the pages. Live then: the new track's sequence, the looping
+   glow, the reflection controllers and three raised party members. Of these only the sequencer is
+   driven by an interrupt (the root-counter tick that advances the score), and a sequencer reading
+   past its data would fit both the `sound: underrun` and the illegal-instruction lines. Not traced.
+3. **The crossing's own loads** (inference). The `3F` at the end loads `conc2`; the field loader
+   reads through `FUN_8003E800`, which first waits, without limit, for any read still in flight. A
+   faster crossing could change what is in flight at that moment. Against: no read is known to be
+   in flight there.
+
+Two common explanations do not fit the disc: there is no movie in the scene, and this disc's XA
+streams are battle voices ([`battle-action-helpers.md`](../../subsystems/battle-action-helpers.md#battle-voice-cues),
+repo doc), with no field op documented to start one. The script itself never reads a hardware
+register; every hardware wait is in the disc and music code below it.
+
+### What was captured
+
+The scene was replayed under PCSX-Redux on the retail disc, **on a poked state**: the catalogued
+late-game `map03` save state, with flags `0x3E1`, `0x423`, `0x3F2` and `0x4C8` cleared (the last
+two because `map03` `P2[7]`, the Conkram walk-on at tile `(66, 101)`, skips while `0x3F2` is set
+and goes to `concend` while `0x4C8` is set). The player was then placed on that walk-on tile, so
+the game's own warp loaded `concnow`, and after 120 settled frames onto tile `(30, 103)`, so `P2[17]`
+and `P2[18]` ran by themselves. Cross was pressed by the probe at a fixed period.
+
+| Core | Settings | Cross | Walk-on to `conc2` (vsyncs) |
+|---|---|---|---|
+| interpreter, debugger off | default | every 100 vsyncs | 3266 |
+| interpreter, debugger off | default | every 300 vsyncs | 4365 |
+| interpreter, debugger off | default | every 4 vsyncs | 2373 |
+| interpreter, debugger on | default | every 100 vsyncs | 3266 |
+| interpreter, debugger off | `SpuIrq` on | every 100 vsyncs | 3266 |
+| interpreter, debugger off | `RCntFix` on | every 100 vsyncs | 3266 |
+| dynarec | default | every 100 vsyncs | 3267 |
+| dynarec | default | every 4 vsyncs | 2378 |
+| dynarec | `SpuIrq` on | every 100 vsyncs | 3267 |
+
+Every run reached `conc2` with the party standing in it; none stalled or crashed. PCSX-Redux has
+no CD speed or seek setting, so the timing the reports point at could not be varied. Sampled
+every 30 vsyncs, the music swap behaved the same in the slow and the fast runs: at `P2[18]`'s start
+`0x8007BAB8` held the new index with `0x8007BA9C` still on the old one and bit 0 of `0x8007B750`
+set; 60 vsyncs later both indexes matched and the flag word was clear, so the read and the commit
+were over before the first page. The disc-side cause is therefore not something every emulator
+does; it needs one of the emulators the reports name.
+
+The port does not hang here: the full-game ladder's pad tier walks `taiku`, `map03`, `concnow`,
+`conc2` and `conc` and reaches the `conkram_past` milestone
+([`full-game-ladder.md`](../../tooling/full-game-ladder.md)), and `P2[18]`'s `3F` is the only
+scripted crossing from `concnow` to `conc2` on the disc. The port reads the disc synchronously, so
+neither music wait can stall
+([`script-vm.md`](../../subsystems/script-vm.md#sub-op-9-is-a-start-not-a-queue)).
+
+### Addresses
+
+| Address | Image | What | Evidence |
+|---|---|---|---|
+| `concnow` `P2[17]`, `P2[18]` | MAN, extraction 0363 | the mirror walk-on and the crossing | disc data |
+| `.PCH` records 38..41 | extraction 0361 | walk-on tiles `(29..32, 103)` -> `P2[17]` | disc data |
+| stager records 2, 3 | extraction 0362 | the crossing's particle effect | disc data |
+| `0x801E0224..0x801E0258`, `0x801E0264..0x801E02B8` | PROT entry 0897 | op `0x35` sub-ops 9 and `0xA`, the two music waits | repo doc |
+| `0x800245C0..0x800247C4` | `SCUS_942.54` | `FUN_800243F0` swap stages; commit arm at `0x80024718` | disassembly |
+| `0x8003DE7C` | `SCUS_942.54` | CD read wait; unlimited loop `0x8003E008..0x8003E078` | disassembly |
+| `0x8003F2B8` | `SCUS_942.54` | CD command wait; unlimited loop `0x8003F2CC..0x8003F2EC` | disassembly |
+| `0x8003E800`, `0x8003F128` | `SCUS_942.54` | read start (waits first for a read in flight); the drive kick | disassembly |
+| `0x8003EF14` | `SCUS_942.54` | per-sector callback; header check and error arm | disassembly |
+| `0x8005FB84`, `0x80058104`, `0x8005BE8C` | `SCUS_942.54` | `VSync`, `DrawSync`, `CdSync` wrappers | disassembly |
+
+### Scope
+
+One scene. `P2[18]` cannot be re-entered once `0x423` is set; the past is left by other routes.
+The same swap code runs at every scripted music change on the disc, which is why a cause in the
+swap alone would be expected to show elsewhere too; no other scene is reported.
+
+### Verifying it
+
+On an emulator that freezes here, break in the debugger once the picture stops and read the PC.
+In `0x8003E008..0x8003E078` or `0x8003F2CC..0x8003F2EC` it is a CD wait (candidate 1 or 3); read
+`gp+0x980`, `gp+0x988` and `gp+0x968` (`gp` = `0x8007B318`) for the read's state. Elsewhere, read
+`0x8007B750` (bit 3 settled, bit 4 committed), `0x8007BAB8` and `0x8007BA9C`. On a console or a
+passing emulator, a watch on `gp+0x988` from the commit shows when the read really ends relative
+to the commit arm.
+
+### Open questions
+
+- Where the freeze is, in frames, on an emulator that shows it; no report gives a PC. DuckStation
+  is open source and named by a report, so it is the next place to look, with its CD read and seek
+  speed-ups both off and on.
+- Whether it happens before the first page (candidate 1) or while the pages are open (candidate
+  2); the pressing workaround says the second.
+- Why the PAL release would not show it. Its `PROT.DAT` is laid out like the USA one
+  ([`pal-localizations.md`](../../tooling/pal-localizations.md)); the frame rate and the text
+  lengths differ.
 
 ## The two summon flutes
 
