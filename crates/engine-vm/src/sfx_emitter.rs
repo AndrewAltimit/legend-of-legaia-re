@@ -66,7 +66,7 @@ pub struct EmitterListener {
     pub release_all: bool,
     /// The frame step `DAT_1F800393`.
     pub frame_step: i32,
-    /// The speed scalar `DAT_1F80037D` (`0x10`).
+    /// The speed scalar `DAT_1F80037D` (`8`, planted by SCUS at boot).
     pub speed: i32,
 }
 
@@ -266,7 +266,7 @@ mod tests {
             stream_settled: true,
             release_all: false,
             frame_step: 1,
-            speed: 0x10,
+            speed: 8,
         }
     }
 

@@ -50,9 +50,15 @@
 
 use legaia_engine_vm::move_vm::{ActorState, hsv_to_rgb, rgb_to_hsv};
 
-/// The retail startup value of the game-speed multiplier `DAT_1F80037D`
-/// (see `MoveHost::keyframe_curve_multiplier`).
-pub const SPEED_SCALAR: u32 = 0x10;
+/// The game-speed rate byte `DAT_1F80037D` the part tick multiplies the frame
+/// step by (`lbu 0x69(0x1F800314)` beside `lbu 0x7f`, `0x80022704`). SCUS
+/// plants `8` at boot (`0x80055FB4` / `0x80055FBC`) and only the Baka Fighter
+/// and DEBUG MODE overlays write another value (`docs/subsystems/move-vm.md`);
+/// field captures read `8` there (`town01`, `koin1`). A wait the casino cone
+/// cycler set to `5 << 3 = 40` reads `16` one tick later at frame step 3:
+/// one drain of `3 * 8`. The same byte `MoveHost::keyframe_curve_multiplier`
+/// returns.
+pub const SPEED_SCALAR: u32 = 8;
 
 /// One live CLUT-cell effect, snapshot from a mode-3 part's actor state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -201,7 +207,7 @@ mod tests {
         // Not armed: integrates but never emits.
         st.tween_scale_z = -0x100;
         assert!(mode3_integrate(&mut st, 2).is_none());
-        assert_eq!(st.tween_src_z, -((0x100 * 2 * 0x10) >> 6) as i16);
+        assert_eq!(st.tween_src_z, -((0x100 * 2 * 8) >> 6) as i16);
         // Arm the gate the way op 0x2C does.
         st.field_9c = 1;
         st.keyframe_desc = [0x70, 0x1F8, 0x10, 1];
@@ -215,6 +221,24 @@ mod tests {
         st.field_6a = 0x7FFF;
         mode3_integrate(&mut st, 2);
         assert_eq!(st.field_68, 0x100);
+    }
+
+    /// `koin1`'s cone cycler (CLUT cell `(16, 507)`) in two retail captures:
+    /// adds `v = -12`, velocity `+0x9A = 16` (op `0x2E` `2 << 3`), frame step
+    /// 3, wait `16` one tick after a `WAIT_SET 5` (`40 - 3 * 8`). Its last two
+    /// uploads are `v = -18` (the older packet buffer) and `v = -12` (VRAM):
+    /// one tick integrates `16 * 3 * 8 >> 6 = 6`, the rate byte being `8`.
+    #[test]
+    fn the_rate_byte_is_eight_as_the_cone_cycler_captures_show() {
+        let mut st = ActorState::new();
+        st.tween_src_z = -18;
+        st.tween_scale_z = 2 << 3;
+        mode3_integrate(&mut st, 3);
+        assert_eq!(st.tween_src_z, -12);
+        let mut w = ActorState::new();
+        w.wait_timer = 5 << 3;
+        legaia_engine_vm::move_vm::decrement_wait_timer(&mut w, (3 * SPEED_SCALAR) as u16);
+        assert_eq!(w.wait_timer, 16);
     }
 
     #[test]

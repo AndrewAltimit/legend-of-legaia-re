@@ -626,8 +626,9 @@ impl World {
         // Retail's walk frees the halted parts before ticking the rest.
         self.retire_finished_ambient_parts();
         // The wait-timer drain per game tick: retail decrements `+0x54` by
-        // `DAT_1F800393 * DAT_1F80037D` (frame step x the pinned 0x10 speed
-        // scalar) per tick.
+        // `DAT_1F800393 * DAT_1F80037D` (frame step x the rate byte `8`,
+        // `clut_cell_fx::SPEED_SCALAR`) per tick, so `WAIT_SET v` holds `v`
+        // vsyncs.
         let drain = u16::from(self.clock.frame_step.max(1)) * clut_cell_fx::SPEED_SCALAR as u16;
         let count = self.ambient.fx.len();
         let emitter_listener = self.sfx_emitter_listener();

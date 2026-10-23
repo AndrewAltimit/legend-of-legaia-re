@@ -263,6 +263,17 @@ So the "pulsating flesh" never moves a vertex: it is **palette-space HSV
 cycling on the texture's CLUT rows**, re-uploaded every frame from the
 original capture.
 
+`DAT_1F80037D` is the game-speed rate byte, `8` in the field (SCUS plants it
+at boot; `town01` and `koin1` captures read `8`), so the adds move
+`velocity * frame_step / 8` a tick and the part's `WAIT_SET v` holds `v`
+vsyncs (`+0x54` drains `frame_step * 8`). `koin1`'s spotlight-cone cycler
+(cell `(16, 507)`) shows both: a loop of op `0x2E` (V velocity `-2 << 3`),
+`WAIT_SET 5`, op `0x2E` (`+2 << 3`), `WAIT_SET 5`, whose capture holds `v = -12`, velocity `16`, wait `16` one tick
+after a `WAIT_SET 5` at frame step 3, with its two previous uploads still in
+RAM at `v = -18` and `v = -12` - a triangle wave between `-24` and `-12`,
+two ticks a side. The port's ambient tick and the cycler integrator take the
+byte from `legaia_engine_field::clut_cell_fx::SPEED_SCALAR`.
+
 ### The self-modifying spawn stepper
 
 jou's cycler record opens with ext op `0x2F 0x1E` - the in-place add
