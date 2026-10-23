@@ -935,9 +935,16 @@ case aims at those positions - case 6 on a caster, case 0 on a member, case
   seed's formation recentre (`jal 0x801EFE44` at `0x801E2D44`) has moved
   every combatant since that frame was built, and the image child stands
   them on the ring's slot instead (`RetailBattle::engine_image_ground_snaps`;
-  `super_queue_replace_*` `.938` to `.996`). Elsewhere the live pair
-  stands: a body carried by its own clip's root motion reads better on it
-  (`battle_melee_hit_spark` `.760` against `.743`).
+  `super_queue_replace_*` `.938` to `.996`). Elsewhere the RAM's pair
+  stands for a body carried by its own clip's root motion, which the
+  replay poses at the displayed tick: `battle_melee_hit_spark`'s Vahn reads
+  better on it. A struck monster stood on its body pair (reaction clip
+  `2..=5` / `0x0B`, not the acting seat) is the exception. The hit's push
+  carries it and its pose centroid holds across the two frames, so it
+  stands on the RAM's body pair moved by the ring's delta. That
+  capture's Gimard is pushed `+11` a frame, and his body pair `(-2, 492)`
+  stands at `(-2, 470)` on the frame on screen (`image` `.814` to `.847`;
+  `rim_elm_gimard_victory` `.916` to `.931`).
 - **After-image ghosts on the displayed frame.** The ghost walk
   ([`FUN_80049348`](../subsystems/battle-actor-rendering.md#the-after-image-ghost-walk-fun_80049348))
   re-poses each ghost from the history ring's cursor `+0x17A` and live pair

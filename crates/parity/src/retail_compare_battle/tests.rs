@@ -713,6 +713,68 @@ fn the_seed_pass_image_ground_is_the_displayed_ring_slot() {
     );
 }
 
+/// A struck monster stood on its body pair takes the displayed frame's
+/// ground even past the seed's pass: the push carries it, so the body pair
+/// the screen drew is the RAM's moved by the ring's delta
+/// (`battle_melee_hit_spark`'s Gimard, `+11` a frame). The acting seat keeps
+/// the RAM's.
+#[test]
+fn a_struck_monsters_image_ground_is_the_displayed_ring_slot() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 1);
+    put8(&mut ram, ctx + 1, 1);
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x20);
+    put16(&mut ram, ctx + 0x6DA, 0x298);
+    put8(&mut ram, FORMATION_CELL, 0x04);
+    for (slot, base, live, shown, body, clip) in [
+        (
+            0u32,
+            0x800E_C9E8u32,
+            [-21i16, 136i16],
+            [-21i16, 126i16],
+            [-24i16, 95i16],
+            0x11u8,
+        ),
+        (3, 0x800E_D264, [-6, 405], [-6, 383], [-2, 492], 3),
+    ] {
+        put32(&mut ram, ACTOR_TABLE + slot * 4, base);
+        put16(&mut ram, base + 0x14C, 50);
+        put16(&mut ram, base + 0x14E, 50);
+        put16(&mut ram, base + 0x34, live[0] as u16);
+        put16(&mut ram, base + 0x38, live[1] as u16);
+        put16(&mut ram, base + 0x3C, body[0] as u16);
+        put16(&mut ram, base + 0x40, body[1] as u16);
+        put8(&mut ram, base + 0x1D9, clip);
+        put32(&mut ram, base + 0x4C, live[0] as u16 as u32);
+        put32(&mut ram, base + 0x50, live[1] as u16 as u32);
+        for k in 1..3u32 {
+            put32(&mut ram, base + 0x4C + 8 * k, shown[0] as u16 as u32);
+            put32(&mut ram, base + 0x50 + 8 * k, shown[1] as u16 as u32);
+        }
+    }
+    let b = RetailBattle::from_ram(&ram).expect("seedable");
+    let snap = |s: Vec<legaia_engine_capture::ground_snap::GroundSnap>, slot: u8| {
+        s.into_iter()
+            .find(|g| g.slot == slot)
+            .map(|g| (g.x, g.z, g.body))
+    };
+    assert_eq!(
+        snap(b.engine_image_ground_snaps(), 1),
+        Some((-6, 383, Some([-2, 470])))
+    );
+    assert_eq!(
+        snap(b.engine_ground_snaps(), 1),
+        Some((-6, 405, Some([-2, 492])))
+    );
+    assert_eq!(
+        snap(b.engine_image_ground_snaps(), 0).map(|(x, z, _)| (x, z)),
+        Some((-21, 136))
+    );
+}
+
 /// One cleared 64-bucket ordering table at `ot` whose head bucket chains
 /// `SPRT` packets (CLUT `0x7FCC`, `16 x 20`) at `pool` drawn on `seats`.
 fn put_sprite_table(ram: &mut [u8], ot: u32, pool: u32, seats: &[(i16, i16)], uvs: &[(u8, u8)]) {

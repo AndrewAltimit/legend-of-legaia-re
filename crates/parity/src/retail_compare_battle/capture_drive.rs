@@ -196,7 +196,7 @@ impl RetailBattle {
     /// may have moved) - for the phase's ground seat
     /// ([`legaia_engine_capture::ground_snap`]).
     pub fn engine_ground_snaps(&self) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
-        self.ground_snaps(false)
+        self.ground_snaps(false, false)
     }
 
     /// [`Self::engine_ground_snaps`] for the image child, whose frame is the
@@ -210,15 +210,32 @@ impl RetailBattle {
     /// `(+36, +52)` off the pairs that frame drew them on (`.938` to
     /// `.996`).
     ///
-    /// Elsewhere the RAM's pairs stay: a body moving on its own clip's
-    /// root motion is drawn from the replay's pose at the displayed tick,
-    /// and `battle_melee_hit_spark` (Vahn `+5`, the struck monster `+11` a
-    /// frame) reads `.760` on the RAM's pairs against `.743` on the ring's.
+    /// Elsewhere the RAM's pairs stay for a body moving on its own clip's
+    /// root motion, which is drawn from the replay's pose at the displayed
+    /// tick: `battle_melee_hit_spark`'s Vahn (`+5` a frame on Somersault)
+    /// reads better on the RAM's body pair than on the ring's.
+    ///
+    /// A struck monster stood on its body pair (a reaction clip `2..=5` /
+    /// `0x0B`, not the acting seat) is the exception: the hit's push carries
+    /// it, so its pose centroid holds across the two frames and the body
+    /// pair the screen drew is the RAM's moved by the ring's delta.
+    /// `battle_melee_hit_spark`'s Gimard is pushed `+11` a frame: his RAM
+    /// body pair `(-2, 492)` stands at `(-2, 470)` on the displayed frame
+    /// (`image` `.814` to `.847`).
     pub fn engine_image_ground_snaps(&self) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
-        self.ground_snaps(self.action_state == 0x14 && self.walk_yaw_base == 0x200)
+        self.ground_snaps(
+            self.action_state == 0x14 && self.walk_yaw_base == 0x200,
+            true,
+        )
     }
 
-    fn ground_snaps(&self, displayed: bool) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
+    /// `displayed` stands every combatant on the displayed frame's pair,
+    /// `displayed_struck` only a struck monster stood on its body pair.
+    fn ground_snaps(
+        &self,
+        displayed: bool,
+        displayed_struck: bool,
+    ) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
         // Past the end signal the sequencer poses the winners and the results
         // framing reads poses the replay's clips do not share; the ground
         // stays the replay's.
@@ -237,7 +254,11 @@ impl RetailBattle {
                     let m = pool - 3;
                     (m < usize::from(self.monster_count)).then_some(pc + m)?
                 };
-                if displayed && let Some(Some(then)) = self.displayed_ground.get(pool) {
+                let active = pool == usize::from(self.active_actor);
+                let struck = !active && pool >= 3 && matches!(clip, 2..=5 | 0x0B);
+                if (displayed || (displayed_struck && struck))
+                    && let Some(Some(then)) = self.displayed_ground.get(pool)
+                {
                     let d = [then[0].wrapping_sub(live[0]), then[1].wrapping_sub(live[1])];
                     body = [body[0].wrapping_add(d[0]), body[1].wrapping_add(d[1])];
                     live = *then;
@@ -247,10 +268,10 @@ impl RetailBattle {
                     x: live[0],
                     z: live[1],
                     facing: self.facing.get(pool).copied().flatten(),
-                    body: (if pool == usize::from(self.active_actor) {
+                    body: (if active {
                         (0x1E..=0x20).contains(&self.action_state)
                     } else {
-                        pool >= 3 && matches!(clip, 2..=5 | 0x0B)
+                        struck
                     })
                     .then_some(body),
                 })
