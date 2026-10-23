@@ -42,7 +42,10 @@ pub(crate) fn run_battle_scene(extracted_root: &Path, queued_action: u8) -> Resu
 
     let prot_path = extracted_root.join("PROT.DAT");
     if !prot_path.exists() {
-        anyhow::bail!("missing {} (run legaia-extract first)", prot_path.display());
+        anyhow::bail!(
+            "missing {} (run legaia-extract first, or point --extracted-root at its output folder)",
+            prot_path.display()
+        );
     }
     let font = Font::load_from_extracted(extracted_root).with_context(|| {
         format!(

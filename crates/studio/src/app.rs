@@ -698,7 +698,13 @@ impl App {
                             ui.ctx().copy_text(e.clone());
                         }
                         dismiss = ui.small_button("Dismiss").clicked();
-                        ui.add(egui::Label::new(RichText::new(e).color(red)).wrap());
+                        // In a vertical child the wrapped lines count
+                        // toward the banner's height; laid straight into
+                        // the horizontal row, every line past the first
+                        // spilled out of the frame and off the panel.
+                        ui.vertical(|ui| {
+                            ui.add(egui::Label::new(RichText::new(e).color(red)).wrap());
+                        });
                     });
                 });
         } else if let Some(s) = &self.studio.status {
@@ -1087,7 +1093,7 @@ impl App {
                                 let class =
                                     self.studio.class_of(pos).map(|c| c.name()).unwrap_or("...");
                                 let text = format!(
-                                    "{:04} {:>8}  {}",
+                                    "{:04}  {:>8}  {}",
                                     e.index,
                                     human_size(e.size_bytes),
                                     class
@@ -1905,7 +1911,8 @@ impl App {
                 ui.horizontal(|ui| {
                     ui.add_enabled(
                         !running,
-                        egui::TextEdit::singleline(&mut self.out_text).desired_width(420.0),
+                        egui::TextEdit::singleline(&mut self.out_text)
+                            .desired_width((ui.available_width() - 90.0).clamp(420.0, 900.0)),
                     );
                     if ui
                         .add_enabled(!running, egui::Button::new("Choose..."))
