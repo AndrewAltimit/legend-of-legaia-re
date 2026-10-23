@@ -224,6 +224,18 @@ pub struct ScreenshotConfig {
     /// (`World::seat_battle_hud_glide`, the combo cluster's age). Set by the
     /// retail-compare image channel.
     pub seat_hud_glides: Vec<legaia_engine_capture::hud_glide::HudGlideSeat>,
+    /// `LEGAIA_SEAT_POPUP_AGE=<engine slot>:<age>`: the newest damage
+    /// numeral's age as the retail capture's displayed frame drew it; the
+    /// captured frame ages the engine's newest popup on that slot to it.
+    /// Set by the retail-compare image channel.
+    pub seat_popup_age: Option<(u8, u16)>,
+    /// The readout trios of the frames before this one, newest last, kept
+    /// while [`Self::seat_popup_age`] is set: a popup aged back `d` frames
+    /// is anchored on the trio it was drawn over `d` frames ago.
+    pub popup_trio_history: std::cell::RefCell<std::collections::VecDeque<Vec<Option<[f32; 3]>>>>,
+    /// `(slot, frames)`: the seated popup's anchor taken that many frames
+    /// back in [`Self::popup_trio_history`].
+    pub popup_trio_rewind: std::cell::Cell<Option<(u8, u16)>>,
     /// `LEGAIA_SEAT_SPIRIT_GAUGE=<bar width>,<plate value>`: a Spirit turn's
     /// AP bar width and AP plate value as the retail capture's displayed
     /// frame shows them; the captured frame seats the engine's on them.
@@ -666,6 +678,10 @@ impl ScreenshotConfig {
             seat_hud_glides: std::env::var("LEGAIA_SEAT_HUD_GLIDES")
                 .map(|v| legaia_engine_capture::hud_glide::HudGlideSeat::list_from_env(&v))
                 .unwrap_or_default(),
+            seat_popup_age: std::env::var("LEGAIA_SEAT_POPUP_AGE").ok().and_then(|v| {
+                let (s, a) = v.split_once(':')?;
+                Some((s.trim().parse().ok()?, a.trim().parse().ok()?))
+            }),
             script_gate: std::env::var("LEGAIA_SCRIPT_GATE")
                 .ok()
                 .and_then(|v| legaia_engine_capture::script_gate::ScriptGate::from_env(&v)),
@@ -675,6 +691,8 @@ impl ScreenshotConfig {
                     .map(|v| legaia_engine_capture::field_seeds::fog_from_env(&v)),
             ),
             seat_fog_due: std::cell::Cell::new(false),
+            popup_trio_history: Default::default(),
+            popup_trio_rewind: std::cell::Cell::new(None),
             seat_sprite_arms: std::cell::Cell::new(
                 std::env::var("LEGAIA_SEAT_SPRITE_ARMS")
                     .ok()

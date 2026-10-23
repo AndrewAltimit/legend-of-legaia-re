@@ -128,6 +128,35 @@ impl PlayWindowApp {
                     }
                 }
             }
+            // The newest numeral on the struck slot, aged to the rise
+            // retail's displayed frame drew (`LEGAIA_SEAT_POPUP_AGE`).
+            // The popup and its anchor are both rewound: the trio it rose
+            // over that many frames ago (`popup_trio_history`).
+            if let Some((slot, age)) = sc.seat_popup_age {
+                let world = &self.session.host.world;
+                let trios: Vec<Option<[f32; 3]>> = (0..world.actors.len())
+                    .map(|i| world.battle_readout_trio(i))
+                    .collect();
+                let mut history = sc.popup_trio_history.borrow_mut();
+                history.push_back(trios);
+                if history.len() > 16 {
+                    history.pop_front();
+                }
+                if due
+                    && sc.popup_trio_rewind.get().is_none()
+                    && let Some(p) = self
+                        .battle_hud
+                        .popups
+                        .iter_mut()
+                        .filter(|p| p.slot == slot && p.status.is_none())
+                        .min_by_key(|p| p.frames_total.saturating_sub(p.frames_remaining))
+                {
+                    let now = p.frames_total.saturating_sub(p.frames_remaining);
+                    p.frames_remaining = p.frames_total.saturating_sub(age);
+                    sc.popup_trio_rewind
+                        .set(Some((slot, now.saturating_sub(age))));
+                }
+            }
             if due && let Some((width, plate)) = sc.seat_spirit_gauge {
                 let ctx = &mut self.session.host.world.battle_ctx;
                 ctx.spirit_bar_width = width;

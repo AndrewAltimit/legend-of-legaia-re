@@ -43,6 +43,20 @@ pub fn battle_value_readout_layout(
     vp: &[f32; 16],
     world_scale: f32,
 ) -> Option<ValueReadoutLayout> {
+    battle_value_readout_layout_with(world, hud, vp, world_scale, |slot| {
+        world.battle_readout_trio(usize::from(slot))
+    })
+}
+
+/// [`battle_value_readout_layout`] with the anchor trio of each struck slot
+/// taken from `trio_of` - the capture harness's seam for a popup it rewinds.
+pub fn battle_value_readout_layout_with(
+    world: &World,
+    hud: &BattleHud,
+    vp: &[f32; 16],
+    world_scale: f32,
+    trio_of: impl Fn(u8) -> Option<[f32; 3]>,
+) -> Option<ValueReadoutLayout> {
     if world.mode != SceneMode::Battle {
         return None;
     }
@@ -66,7 +80,7 @@ pub fn battle_value_readout_layout(
     }
     let mut runs = Vec::new();
     for p in newest {
-        let Some(trio) = world.battle_readout_trio(usize::from(p.slot)) else {
+        let Some(trio) = trio_of(p.slot) else {
             continue;
         };
         let age = p.frames_total.saturating_sub(p.frames_remaining);

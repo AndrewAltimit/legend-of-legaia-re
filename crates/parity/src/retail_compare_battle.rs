@@ -431,6 +431,10 @@ pub struct RetailBattle {
     /// surface on a pass the display has not shown yet
     /// ([`Self::displayed_menu_flow`]).
     pub hud_glides_unseen: bool,
+    /// The newest damage numeral as the displayed frame drew it: its struck
+    /// pool slot and the engine popup age whose rise matches retail's
+    /// (`hud_glide::popup_age_seat`); `None` with no live numeral.
+    pub popup_age: Option<(u8, u16)>,
     /// A Spirit turn's AP bar width and AP plate value as the displayed
     /// frame shows them (`spirit_gauge::retail_spirit_gauge`); `None`
     /// outside one.

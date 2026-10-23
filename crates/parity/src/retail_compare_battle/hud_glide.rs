@@ -78,6 +78,44 @@ pub(super) fn combo_cluster_timer_seat(ram: &[u8], ctx: u32, lag: u16) -> Option
     })
 }
 
+/// The newest damage numeral as the **displayed** frame drew it: the struck
+/// pool slot and the engine popup age
+/// (`legaia_engine_battle_vm::battle_value_readout::popup_anchor`, which
+/// rises on `16 * age`) whose rise is the one retail drew.
+///
+/// The readout `FUN_801DF6B8` runs once a pass, in the first body's draw
+/// tick ahead of every pose decode: it lifts the numeral by `3/2` of the
+/// ring timer as it stood **before** the pass's step
+/// (`0x801DF784..0x801DF7B4`), then steps the timer by `0x10 * step`
+/// (`0x801DF7B8..0x801DF7C8`). A capture saved after its pass's readout
+/// holds the stepped timer, so the frame on screen - drawn the display lag
+/// earlier - rose on that timer less the lag's vsyncs and its own pass's
+/// step. A PCSX-Redux film of `rim_elm_gimard_victory`
+/// (`autorun_drawn_pose_film.lua`) logs the read, the stepped timer and the
+/// trio of the previous pass's decode on every pass.
+///
+/// The replay lands the hit on its own clock, so its popup's age on the
+/// captured frame need not be retail's: `battle_melee_hit_spark`'s RAM
+/// timer `288` at step `3` puts the frame's rise on `144` (age `9`), where
+/// the replay had aged its `15` to `11`, eighteen pixels higher. The hit
+/// that pushed the numeral started the struck body's reaction too, so the
+/// image child takes the popup's anchor back by the same frames
+/// (`ScreenshotConfig::popup_trio_rewind`): the replay's age-`9` frame
+/// rose over trio Y `-335` and stood on retail's row.
+pub(super) fn popup_age_seat(ram: &[u8], ctx: u32, lag: u16, step: u8) -> Option<(u8, u16)> {
+    let newest = u32::from(game_anchors::u8_at(ram, ctx + 0x262).wrapping_sub(1) & 7);
+    if game_anchors::u32_at(ram, ctx + 0x83C + newest * 4) == 0 {
+        return None;
+    }
+    let seat = game_anchors::u16_at(ram, ctx + 0x318 + newest * 2);
+    if seat >= 8 {
+        return None;
+    }
+    let vsyncs = game_anchors::u32_at(ram, ctx + 0x85C + newest * 4) >> 4;
+    let age = vsyncs.checked_sub(u32::from(lag) + u32::from(step.max(1)))?;
+    Some((seat as u8, age.min(u32::from(u16::MAX)) as u16))
+}
+
 /// The round prompt's `Begin` chip (placement record 0): it spawns on
 /// `x = 142` and lands on `x = 104` over [`ROUND_PROMPT_TOTAL`] vsyncs, and
 /// its left cap is an `8`-wide `SPRT` (CLUT `0x7FC4`, texel `(208, 0)`)

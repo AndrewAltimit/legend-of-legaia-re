@@ -620,6 +620,13 @@ pub(super) fn battle_image(
             legaia_engine_capture::hud_glide::HudGlideSeat::to_env(&battle.hud_glides),
         ));
     }
+    // The newest numeral's rise as the displayed frame drew it
+    // (`popup_age_seat`), on the engine seat of its struck pool slot.
+    if let Some((slot, age)) = battle.popup_age {
+        let seat =
+            legaia_engine_capture::battle_drive::engine_seat(slot, battle.party_count.clamp(1, 3));
+        env.push(("LEGAIA_SEAT_POPUP_AGE", format!("{seat}:{age}")));
+    }
     // A Spirit turn's bar and plate, sized as retail sized them.
     if let Some((width, plate)) = battle.spirit_gauge {
         env.push(("LEGAIA_SEAT_SPIRIT_GAUGE", format!("{width},{plate}")));

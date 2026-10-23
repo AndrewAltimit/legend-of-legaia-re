@@ -1096,6 +1096,26 @@ fn a_retired_combo_cluster_is_timed_off_the_numeral_ring() {
     assert_eq!(combo_cluster_timer_seat(&ram, ctx, 4), None, "live record");
 }
 
+/// The newest numeral's displayed age: `battle_melee_hit_spark`'s ring
+/// entry 2 (`15` on pool slot 3, timer `288`) at step 3 and a six-vsync lag
+/// rose on the timer `144` - age 9. A zeroed value or an out-of-range seat
+/// seats nothing.
+#[test]
+fn the_newest_numeral_is_aged_to_the_displayed_readout() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put8(&mut ram, ctx + 0x262, 3);
+    put32(&mut ram, ctx + 0x83C + 2 * 4, 15);
+    put32(&mut ram, ctx + 0x85C + 2 * 4, 288);
+    put16(&mut ram, ctx + 0x318 + 2 * 2, 3);
+    assert_eq!(popup_age_seat(&ram, ctx, 6, 3), Some((3, 9)));
+    put16(&mut ram, ctx + 0x318 + 2 * 2, 9);
+    assert_eq!(popup_age_seat(&ram, ctx, 6, 3), None, "no seat");
+    put16(&mut ram, ctx + 0x318 + 2 * 2, 3);
+    put32(&mut ram, ctx + 0x83C + 2 * 4, 0);
+    assert_eq!(popup_age_seat(&ram, ctx, 6, 3), None, "expired");
+}
+
 /// A ray burst's level and lane weight taken back over the display lag:
 /// `rim_elm_gimard_victory`'s RAM level `0x400` (rate `0x800`, `0x100` a
 /// vsync) and lane `0xFFC` (`0x155` a vsync) read `0` and `2728` four
