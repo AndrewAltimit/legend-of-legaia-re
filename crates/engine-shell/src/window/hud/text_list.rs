@@ -115,7 +115,8 @@ impl PlayWindowApp {
                 (hk.key_label(), line)
             })
             .collect();
-        let l = help_panel_layout(&self.font, &entries);
+        let pad = pad_key_rows(&self.mapping);
+        let l = help_panel_layout(&self.font, &entries, &pad);
         let mut out = Vec::new();
         self.push_scrim(
             &mut out,
@@ -139,7 +140,19 @@ impl PlayWindowApp {
             put(line, (at.0 + l.key_w, at.1), TEXT);
         }
         y += l.rows as i32 * l.line_h + 2;
-        put(HELP_FOOTER, (l.x0, y), HEADING);
+        // The pad buttons' keys: what Cross / Circle / Start are on this
+        // keyboard, read off the live binding table so a rebind shows.
+        for row in &pad {
+            let mut x = l.x0;
+            for (button, key) in row {
+                put(button, (x, y), TEXT);
+                x += self.font.layout_ascii(button).advance_x as i32 + PAD_KEY_GAP;
+                put(key, (x, y), KEY);
+                x += self.font.layout_ascii(key).advance_x as i32 + PAD_PAIR_GAP;
+            }
+            y += l.line_h;
+        }
+        put(HELP_FOOTER, (l.x0, y + 2), HEADING);
         out
     }
 
@@ -738,7 +751,36 @@ impl PlayWindowApp {
 /// The help panel's fixed rows.
 const HELP_QUIT: &str = "Quit (press twice)";
 const HELP_SELF: &str = "This help (also ?)";
-const HELP_FOOTER: &str = "Pad keys: Options > Key Config";
+const HELP_FOOTER: &str = "Rebind pad keys: Options > Key Config";
+
+/// The pad buttons the help panel names a key for, one panel line each. The
+/// arrow keys' D-pad is left out: it is the one binding a player guesses.
+const PAD_ROWS: [&[&str]; 2] = [
+    &["Cross", "Circle", "Triangle", "Square"],
+    &["Start", "Select", "L1", "R1", "L2", "R2"],
+];
+/// Between a pad button's name and its key, and between two such pairs
+/// (stage pixels).
+const PAD_KEY_GAP: i32 = 3;
+const PAD_PAIR_GAP: i32 = 9;
+
+/// The help panel's pad rows: each button with the key bound to it (the
+/// alphabetically first when several are; `-` when none is).
+pub(in crate::window) fn pad_key_rows(
+    mapping: &legaia_engine_system::input::Mapping,
+) -> Vec<Vec<(&'static str, String)>> {
+    PAD_ROWS
+        .iter()
+        .map(|row| {
+            row.iter()
+                .map(|&b| {
+                    let key = mapping.key_label_for_button(b).unwrap_or("-");
+                    (b, key.to_string())
+                })
+                .collect()
+        })
+        .collect()
+}
 
 /// Where the hotkey help panel's two columns go, in stage pixels.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -771,12 +813,23 @@ pub(in crate::window) struct HelpPanelLayout {
 pub(in crate::window) fn help_panel_layout(
     font: &legaia_font::Font,
     entries: &[(&str, String)],
+    pad: &[Vec<(&str, String)>],
 ) -> HelpPanelLayout {
     help_panel_layout_with(
         &|s: &str| font.layout_ascii(s).advance_x as i32,
         font.layout_ascii("Ag").advance_y as i32 + 1,
         entries,
+        pad,
     )
+}
+
+/// The drawn width of one pad row.
+fn pad_row_width(width: &dyn Fn(&str) -> i32, row: &[(&str, String)]) -> i32 {
+    let pairs: i32 = row
+        .iter()
+        .map(|(b, k)| width(b) + PAD_KEY_GAP + width(k))
+        .sum();
+    pairs + PAD_PAIR_GAP * (row.len() as i32 - 1).max(0)
 }
 
 /// [`help_panel_layout`] over any text metric.
@@ -784,7 +837,13 @@ fn help_panel_layout_with(
     width: &dyn Fn(&str) -> i32,
     line_h: i32,
     entries: &[(&str, String)],
+    pad: &[Vec<(&str, String)>],
 ) -> HelpPanelLayout {
+    let pad_w = pad
+        .iter()
+        .map(|r| pad_row_width(width, r))
+        .max()
+        .unwrap_or(0);
     let stage_w = legaia_engine_ui::BOOT_UI_STAGE_W as i32;
     let stage_h = legaia_engine_ui::BOOT_UI_STAGE_H as i32;
     let key_w = entries
@@ -812,8 +871,8 @@ fn help_panel_layout_with(
         let right_w = col(true, HELP_SELF);
         let in_right = right.iter().filter(|r| **r).count();
         let rows = in_right.max(n - in_right);
-        let body = (left_w + right_w).max(width(HELP_FOOTER));
-        let height = (rows as i32 + 3) * line_h + 12;
+        let body = (left_w + right_w).max(width(HELP_FOOTER)).max(pad_w);
+        let height = (rows as i32 + 3 + pad.len() as i32) * line_h + 12;
         (left_w, body, rows, height)
     };
     let even = n.div_ceil(2);
@@ -891,7 +950,8 @@ mod help_panel_tests {
 
     fn assert_fits(width: &dyn Fn(&str) -> i32, line_h: i32, what: &str) -> HelpPanelLayout {
         let entries = worst_entries();
-        let l = help_panel_layout_with(width, line_h, &entries);
+        let pad = pad_key_rows(&legaia_engine_system::input::Mapping::default());
+        let l = help_panel_layout_with(width, line_h, &entries, &pad);
         let stage_w = legaia_engine_ui::BOOT_UI_STAGE_W as i32;
         let stage_h = legaia_engine_ui::BOOT_UI_STAGE_H as i32;
         // The scrim reaches 4 px past the text on every side.
@@ -908,7 +968,37 @@ mod help_panel_tests {
                 "{what}: {line:?} runs past the panel"
             );
         }
+        for row in &pad {
+            assert!(
+                pad_row_width(width, row) <= l.width,
+                "{what}: pad row {row:?} runs past the panel"
+            );
+        }
         l
+    }
+
+    /// The pad rows name the default keyboard layout's keys, and follow a
+    /// rebind.
+    #[test]
+    fn pad_rows_read_the_binding_table() {
+        use legaia_engine_system::input::Mapping;
+        let rows = pad_key_rows(&Mapping::default());
+        let flat: Vec<(&str, &str)> = rows
+            .iter()
+            .flatten()
+            .map(|(b, k)| (*b, k.as_str()))
+            .collect();
+        assert!(flat.contains(&("Cross", "Z")));
+        assert!(flat.contains(&("Circle", "S")));
+        // Start takes Enter and Space; the first by name is shown.
+        assert!(flat.contains(&("Start", "Enter")));
+        let mut m = Mapping::default();
+        m.bindings.retain(|_, b| b != "Cross");
+        m.bindings.insert("C".into(), "Cross".into());
+        m.bindings.retain(|_, b| b != "Select");
+        let rows = pad_key_rows(&m);
+        assert!(rows[0].contains(&("Cross", "C".to_string())));
+        assert!(rows[1].contains(&("Select", "-".to_string())));
     }
 
     /// Disc-free: a proportional metric at the dialog font's typical
