@@ -243,6 +243,31 @@ party one advance further from the screen than the monsters: Vahn two
 back and Zora one, the reverse of the fits, and no split puts a seat three
 back as Zeto's `48` needs.
 
+Nor is it the decode. `FUN_8004998C` builds its pose in the battle
+context's scratch block (`s2 = *(gp+0xA0C) + 0x6F4`, twelve bytes a part,
+the centroid at `+0x120`), and Zeto is the last body the state's pass
+decoded: all sixteen parts there are the blend of cursor `60` (frame `3`,
+fraction `12`) to the halfword, angles through the short-arc guards, and
+the body pair `(-1, 912)` is that pose's centroid turned by the heading.
+The port's blend gives the same pose at the same cursor. Which pass the
+RAM's body pair belongs to also tells where in the pass a state was cut:
+Zeto's is the live cursor's (saved after the draw), and the frame driver's
+order - ticks, the view build `FUN_800172C0`, the render passes, then
+`FUN_80016B6C`'s `VSync`, `PutDispEnv`, `PutDrawEnv` and `DrawOTag` of the
+table just built (`0x800171C0..0x80017288`) - puts the screen two tables
+behind the cursor at either instant. The fit itself is sharp: Zeto seated
+at `36` / `42` / `46` / `48` / `50` / `52` / `56` reads `.877` / `.948` /
+`.963` / `.980` / `.970` / `.962` / `.929`, and moving the camera's depth
+(the Big Wave pan's `26` a vsync) does not trade against it - at `52` the
+best depth is thirteen units out (`.966`), at `48` the RAM's walk-back
+stays best. The near plate filling the close-up is in both ordering tables
+the RAM holds, drawn last over the chest. The other framebuffer (the draw
+area, `(0, 4)`) holds a wide shot with no HUD that matches neither table,
+so it is no witness to the lag. What is left is the draw of a surface a
+few units from the eye: a frame rasterised from the newest table in
+retail's bucket order, against the port's depth-tested draw at the same
+cursor and camera, would show whether the plate's coverage parts there.
+
 Answered questions: [settled battle / arts / level-up](re-settled-threads/battle.md), [settled rendering / camera](re-settled-threads/rendering-camera.md), [settled world map](re-settled-threads/world-map.md); falsified readings: [battle](re-do-not-re-walk.md#battle--arts--level-up), [rendering / camera](re-do-not-re-walk.md#rendering--camera).
 
 ## Audio / BGM

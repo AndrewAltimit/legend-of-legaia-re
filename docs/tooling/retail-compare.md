@@ -3750,6 +3750,29 @@ every pass, so it moves with the phase of both clips):
   frames under any step, a replayed cast in the module states `0x35` /
   `0x36` measured mixed (`gimard_burning_attack` `image` `+.022`, `camera`
   `-.026`), so those stay at the default step too.
+- **The close-up's focus is three passes behind the cursor.** Case `0x12`
+  focuses on the caster's body pair `+0x3C` / `+0x40`, and the action SM
+  ticks before the draw, so a pass frames the pair the previous pass's
+  decode (`FUN_8004998C`) left. The displayed frame is two passes behind the
+  RAM's cursor, so its framing stood on the pose three passes back: slot `3`
+  of the caster's cursor ring `+0x17A`, not the live pair. That holds at
+  either save instant. A state saved after the draw holds the live pose's
+  pair (`gimard_summon_start`: body pair `(117, -446)` is the decode of
+  ring slot `0`, the live focus `(115, -449)` slot `1`'s); one saved
+  between the ticks and the draw holds the previous pose's
+  (`gizam_summon_mid_cast`: Noa's `(597, -795)` is slot `1`'s while the
+  cursor reads `124`). The harness decodes the slot-`3` pose straight from
+  the caster's RAM stream (`framing_body`) and the image child stands the
+  close-up's focus on it (`LEGAIA_BATTLE_SUMMON_FOCUS`,
+  `BattleCamera::align_summon_focus`) wherever the tween lands inside a
+  pass: `gizam_summon_mid_cast` `image` `.965` to `1.000`, two or three
+  units of focus that drew Noa two pixels right.
+- **A table no state re-arms walks at its own increment.** The magic-capture
+  fade `0x6F` calls no framing, so the table the `0x6E` branch armed
+  (`FUN_801D5854(actor, 6)` every pass) walks on unchanged: the displayed
+  frame stood `increment * step` a pass further out, not the widening
+  share the re-arm walk-back takes (`zora_glare_petrify_pre`: TR z `4910` on
+  the re-arm's walk, `.971`; `4883` on the table's, `.996`).
 - **A park lasts as long as retail sat in it.**
   `battle_gaza2_park_0x19_summon_melee` is a live-caught park: Gaza's
   fallback Move clip dies short of its target and the action holds in `0x19`
