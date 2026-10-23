@@ -352,6 +352,100 @@ fn older_buffer_cell_rects_come_from_the_other_packet_buffer() {
     assert!(retail_older_buffer_cell_rects(&ram).is_empty());
 }
 
+/// A cycler parked on a `WAIT_SET` reads how many ticks its program has sat
+/// out off the wait's drain, and one that sat out the display lag is taken
+/// back along its velocities alone.
+#[test]
+fn an_idle_cycler_is_taken_back_along_its_velocities() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let put16 = |ram: &mut Vec<u8>, va: u32, v: u16| {
+        let o = (va & 0x1F_FFFF) as usize;
+        ram[o..o + 2].copy_from_slice(&v.to_le_bytes());
+    };
+    let node = 0x8009_0000;
+    let buf: u32 = 0x800A_0000;
+    let o = (node + 0x48 - 0x8000_0000) as usize;
+    ram[o..o + 4].copy_from_slice(&buf.to_le_bytes());
+    // `... 09 05 | <pc>`: parked behind `WAIT_SET 5` (`5 << 3 = 40`).
+    put16(&mut ram, buf + 8, 0x09);
+    put16(&mut ram, buf + 10, 5);
+    put16(&mut ram, node + 0x70, 6);
+    // One drain of `3 * 8` at frame step 3: the program ran one tick ago
+    // (`koin1`'s spotlight cone).
+    put16(&mut ram, node + 0x54, 16);
+    assert_eq!(cell_fx_idle_ticks(&ram, node, 3), Some(1));
+    put16(&mut ram, node + 0x54, 40);
+    assert_eq!(cell_fx_idle_ticks(&ram, node, 3), Some(0));
+    put16(&mut ram, node + 0x54, (-8i16) as u16);
+    assert_eq!(cell_fx_idle_ticks(&ram, node, 3), Some(2));
+    // Not parked on a wait.
+    put16(&mut ram, buf + 8, 0x2E);
+    assert_eq!(cell_fx_idle_ticks(&ram, node, 3), None);
+
+    let fx = legaia_engine_field::clut_cell_fx::ClutCellFx {
+        rect: (80, 505, 3, 1),
+        h_add: -4160,
+        s_add: 0,
+        v_add: -12,
+        mode: 0,
+        white: 0x100,
+    };
+    // A hue velocity of `-128` moves `-48` a step-3 tick; `+16` on V, `+6`.
+    let back = cell_fx_displayed(fx, [-128, 0, 16], 16, 3, 2);
+    assert_eq!((back.h_add, back.s_add, back.v_add), (-4064, 0, -24));
+    assert_eq!(back.white, 0x100);
+    let ramping = cell_fx_displayed(
+        legaia_engine_field::clut_cell_fx::ClutCellFx { white: 78, ..fx },
+        [0; 3],
+        16,
+        2,
+        2,
+    );
+    assert_eq!(ramping.white, 70);
+}
+
+/// The loop walker undoes the runs inside the lag: a velocity flip run one
+/// tick ago lands a triangle wave back on the RAM's phase, and a strobe of
+/// absolute sets steps back one set per run.
+#[test]
+fn the_cycler_walker_undoes_the_runs_inside_the_lag() {
+    // `1A 4000 | 2E 0 0 -3 | 09 4 | 2E 0 0 3 | 09 4 | 1B`, parked on the
+    // loop-back one tick after the `+3` run, at frame step 2.
+    let wave: Vec<i16> = vec![
+        0x4000, 0, 0x1A, 0x4000, 0x2E, 0, 0, -3, 0x09, 4, 0x2E, 0, 0, 3, 0x09, 4, 0x1B, 0x08,
+    ];
+    assert_eq!(
+        cycler_displayed_adds(&wave, 16, 1, [0, 0, 0], [0, 0, 24], 2, 2),
+        Some([0, 0, 0])
+    );
+    // Two ticks after the run, the same program has only integrated.
+    assert_eq!(
+        cycler_displayed_adds(&wave, 16, 2, [0, 0, 12], [0, 0, 24], 2, 2),
+        Some([0, 0, 0])
+    );
+    // A strobe of three absolute sets, one run a tick: parked after the
+    // `-20` set on the RAM's own tick, the frame on screen uploaded `-20`.
+    let strobe: Vec<i16> = vec![
+        0x4000, 0, 0x1A, 0x4000, 0x2B, 0, 0, -10, 0x09, 1, 0x2B, 0, 0, -20, 0x09, 1, 0x2B, 0, 0,
+        -30, 0x09, 1, 0x1B, 0x08,
+    ];
+    assert_eq!(
+        cycler_displayed_adds(&strobe, 16, 0, [0, 0, -20], [0; 3], 3, 2),
+        Some([0, 0, -20])
+    );
+    // An op outside the cycler set, or a PC outside the loop, is not read.
+    let mut ext = strobe.clone();
+    ext[4] = 0x2F;
+    assert_eq!(
+        cycler_displayed_adds(&ext, 16, 0, [0, 0, -20], [0; 3], 3, 2),
+        None
+    );
+    assert_eq!(
+        cycler_displayed_adds(&strobe, 3, 0, [0, 0, -20], [0; 3], 3, 2),
+        None
+    );
+}
+
 /// A pair both sides park scores its exact coordinates: a park seat and the
 /// one `41` step short of it are distinct placements (town01 `P1[36]`).
 #[test]

@@ -379,27 +379,55 @@ engine verdict:
   Those adds are the newest frame's, or the next one's where the move
   program re-keys them after the upload, and a strobe record re-keys them
   every frame or two. The frame on screen is two frames older and its own
-  uploads are gone, so the child also gets the nearest record left: the
-  cells as the frame **after** the displayed one uploaded them
-  (`retail_older_buffer_cell_rects`, in the `LEGAIA_SEAT_VRAM_RECTS` file,
-  written after the engine's cycler output). `FUN_80019D50` builds each
-  repacked row as a `[x, y, w, h]` block at the packet cursor
-  `*(0x1F8003A0)` (`0x80019DA0..0x80019DD4`) and `LoadImage`s it from there
-  (`0x8001A004..0x8001A030`), so each of the two frames a state holds keeps
-  its uploads in its own packet buffer (`DAT_8007B728[gp+0x434]` for the
-  newest, which VRAM matches, the other for the one before). It is one frame
-  off by construction, which is the limit it leaves.
+  uploads are gone, so the seed derives its phase from the part itself
+  (`cell_fx_displayed_phase`). The part tick runs in a fixed order - drain
+  the wait `+0x54` by `frame step * 8`, integrate `(velocity * frame step * 8) >> 6`
+  into each add, upload, and only then enter the move VM, while the wait has
+  drained below zero - so the state carries enough to walk back two ticks:
 
-  Which side of the displayed frame that one frame falls on is the cycler's.
+  - **Ticks since the last run.** A program parked on a `WAIT_SET v` holds
+    `v << 3` on the tick it ran and `frame step * 8` less on each tick after
+    (`cell_fx_idle_ticks`), and a run ending on `WAIT_SET v` follows the one
+    before by `(v << 3) / (frame step * 8) + 1` ticks.
+  - **A program that sat out the lag.** No op ran inside it, so each add
+    moved by its velocity alone (`cell_fx_displayed`): the RAM's less two
+    integrations. The white amount `+0x68` steps back by its own rate unless
+    it sits on its `0x100` clamp.
+  - **Runs inside the lag.** A loop body of the cycler ops alone - `0x2B`
+    absolute adds, `0x2D` add, `0x2E` velocities, `0x09` waits, inside a
+    never-retiring `0x18` / `0x1A` loop - is undone run by run
+    (`cycler_displayed_adds`): an add subtracted, a velocity or an absolute
+    set restored from the program's previous op of the kind (a set only on a
+    channel no velocity moves), each tick's integration undone with the
+    velocity in force on it.
+
+  A cycler neither rule reads (an `0x2F` extension op, a counted loop) falls
+  back on the nearest record left: the cells as the frame **after** the
+  displayed one uploaded them (`retail_older_buffer_cell_rects`, in the
+  `LEGAIA_SEAT_VRAM_RECTS` file, written after the engine's cycler output).
+  `FUN_80019D50` builds each repacked row as a `[x, y, w, h]` block at the
+  packet cursor `*(0x1F8003A0)` (`0x80019DA0..0x80019DD4`) and `LoadImage`s
+  it from there (`0x8001A004..0x8001A030`), so each of the two frames a state
+  holds keeps its uploads in its own packet buffer (`DAT_8007B728[gp+0x434]`
+  for the newest, which VRAM matches, the other for the one before). It is
+  one frame off by construction. `LEGAIA_RC_CELL_PHASE=off` seeds the RAM's
+  adds and that record for every cycler, the comparison arm.
+
+  No single buffer is right for every cycler, and the derivation is why.
   `koin1`'s spotlight cones (`casino_ticket_counter*`, cell `(16, 507)`) ride
   a triangle wave two ticks a side
   ([field-ambient-fx](../subsystems/field-ambient-fx.md#the-clut-cell-hsv-cycler-the-pulsating-flesh)):
   the newest upload is `v = -12`, the older buffer's `-18`, and the displayed
-  framebuffer, two ticks back, is back at `-12` - its cones measure brighter
-  than the draw buffer's. So the older-buffer seed draws them one palette step
-  dark; seeding VRAM's newest cells instead lifts the casino frame from
-  `0.992` to `0.996`, where on `minigame_dance_pcsx`'s strobe it drops `0.834`
-  to `0.814`. No one rule picks the displayed phase for every cycler.
+  framebuffer, two ticks back, is back at `-12` - the walk undoes tick `N`
+  (`+6`), the `+2` velocity run, and tick `N - 1` (`-6`). Seeding VRAM's
+  newest cells for every cycler lifted the casino but dropped
+  `minigame_dance_pcsx` (`0.834` to `0.814`), whose strobes and fades are on
+  other phases. Derived per cycler, the casino reads `0.991` / `0.992` to
+  `0.997` / `0.996`, the dance hall `0.847`, `baka_fighter_entry_pretransition`
+  `0.975` to `0.988` (its hue rows sit out long waits), and the retail
+  `rugi_field_card_boot` `0.992` to `0.995`; no field state with a cycler
+  drops. The casino, dance and Baka states run on a patched disc, so they
+  confirm the harness rule and nothing in the engine.
 
   `minigame_dance_pcsx` measures all three. Its newest buffer holds the fade
   push at grey `170`, the older one at `141` with the cycler rows right
@@ -3068,6 +3096,26 @@ GTE light against its normal. Under the scene-load light (back colour
 of its texel and the left wall rises past neutral. Drawing the lit rows at the
 neutral `0x80` paints both walls at their raw texel
 ([`renderer.md`](../subsystems/renderer.md#the-light-source-rows)).
+
+### A floor follower stands on the floor where it stands
+
+A placed object whose bind raised the floor-follow class bit (`31 11`) takes
+its height from the floor under its actor on every tick it is in view
+([renderer](../subsystems/renderer.md#field-static-object-placement-town01)),
+and a script that walks the actor off its `.MAP` seat carries it onto the
+floor at its new place. `town01`'s record 8, the cliff-top sky strip
+(pack 25), is seated at `(3648, 32)`, where the floor reads `16`, and stands
+at `(5312, 4032)` in `rim_elm_zoom_intro`, where retail holds it at `-256`.
+Drawn on the seat's floor plus the script's displacement, the strip sat
+about `270` units low, and the sky behind the cliff rim read as a scripted
+camera caught mid-move. The displacement of a floor follower is the floor's
+rise between seat and stand (`World::object_draw_displacements`); the frame
+scores `0.981` to `1.000`.
+
+The tell is in the per-draw comparison
+([above](#comparing-a-frame-draw-by-draw)): one draw's corners sit a constant
+view-space height off retail's packets while every other draw of the same
+texture family lands exactly.
 
 ### A translucent wall drawn from both sides
 
