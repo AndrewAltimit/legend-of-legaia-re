@@ -753,14 +753,14 @@ all, so `RodLureSelect`'s owned-count probe has nothing to count. Both kernels
 say so in their own doc blocks. Read the converted row as reach, and the host
 gap as still owed.
 
-Five rows left this table through the scene-session ladder
-(`crates/engine-scene-host/tests/scene_bgm_transition_ladder.rs`): the four BGM
-plumbing addresses (`80019898` `800266e0` `80026520` `800243f0`) and the
-scripted CLUT-cell cross-fade arm (`801e4c58`). The BGM four needed a
+Rows left this table through the scene-session ladder
+(`crates/engine-scene-host/tests/scene_bgm_transition_ladder.rs`): the BGM
+plumbing addresses (`80019898` `800243f0`) and the
+scripted CLUT-cell cross-fade arm (`801e4c58`). The BGM rows needed a
 `BgmDirector` more than they needed a scene - see the structural exclusion
 above - and driving the sub-ops the scenes' own MANs carry, in the order a
 transition performs them, is what makes the pause/resume pair falsifiable
-rather than four independent hook calls.
+rather than independent hook calls.
 
 Driving them surfaced a wiring gap the reach number cannot show, because the
 gap is on the far side of the trait. `BgmDirector::reattach_volume` has a
@@ -1281,8 +1281,7 @@ No row. The ocean-animation row (`8001ada4`) was the worked example of the
 actually bounds: `native_minigame_ladder` covers it several thousand times
 per run, because `advance_ocean_animation` is on the window's per-tick path
 and a spawned `play-window` writes its own profile. "Unreachable by call" and
-"unreachable by coverage" were never the same claim. `xa_clip.rs`'s
-`8003d53c` went with `arts_swing_ladder`.
+"unreachable by coverage" were never the same claim.
 
 ### prot
 
