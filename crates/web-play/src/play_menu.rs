@@ -150,6 +150,12 @@ pub struct PlayMenu {
     /// runs (the boot title's rows). Until then the field ticks under the
     /// wipe, as it does in the native window.
     owns_frame: bool,
+    /// A card Save written into the rack and handed to the page to store,
+    /// waiting for the page's answer ([`LegaiaRuntime::card_store_result`]):
+    /// the frames waited so far. The beat's result line reports the store,
+    /// not just the in-memory write, once the page has opted in
+    /// ([`LegaiaRuntime::card_store_handshake`]).
+    store_wait: Option<u16>,
 }
 
 /// The open sub-screen. Every row runs the real [`FieldMenuSubsession`] the
@@ -169,6 +175,7 @@ impl PlayMenu {
             pending_load_scene: None,
             from_title: false,
             owns_frame: false,
+            store_wait: None,
         }
     }
 }

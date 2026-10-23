@@ -2026,6 +2026,60 @@ div.play-vis-head { cursor: default; }
     });
   }
 
+  /* The saves on the BROWSER CARD (the port-1 card the in-game Save screen
+   * writes) as tiles at the head of the bar. They are not stored sessions -
+   * the card is - so without this a save made at a save point lived only
+   * behind the title's Continue and the in-game Load row, and the bar told
+   * a player who had just saved "No saves in this browser yet". */
+  const BROWSER_TILE_PREFIX = '@browser-block-';
+  let browserToolsAsked = false;
+  let savesWasm = null;
+  function browserCardTiles() {
+    const bytes = LegaiaSaves.getBrowserCard();
+    if (!bytes) return [];
+    if (!wasm) {
+      /* The listing needs the WASM card reader; draw the bar again once the
+       * module is in (it is cached, so this pulls nothing twice). */
+      if (!browserToolsAsked) {
+        browserToolsAsked = true;
+        saveTools().then((mod) => { if (mod) { savesWasm = mod; renderSavesStrip(); } })
+          .catch(() => {});
+      }
+      if (!savesWasm) return [];
+    }
+    const mod = wasm || savesWasm;
+    let listing;
+    try { listing = JSON.parse(mod.card_saves_json(bytes)); }
+    catch (e) { return []; }
+    return (listing.saves || []).filter(s => s.valid).map(s => ({
+      id: BROWSER_TILE_PREFIX + s.block,
+      kind: 'card', format: 'mcr', fixed: true, bytes,
+      block: s.block,
+      name: `${BROWSER_CARD_NAME} - block ${s.block}`,
+      party: s.party || [], level: s.level, money: s.money,
+      location: s.location || s.scene || '',
+    }));
+  }
+
+  /* Resume a save off the browser card: the same lift the in-game Load
+   * screen does, then the one landing call every load path takes. */
+  function resumeBrowserCardSave(meta) {
+    if (!runtime) {
+      saveMsg('Load your disc image first - it is picked up from the browser cache automatically.', true);
+      return;
+    }
+    const bytes = LegaiaSaves.getBrowserCard();
+    if (!bytes) { saveMsg('The browser memory card is no longer stored in this browser.', true); return; }
+    try {
+      const sum = JSON.parse(runtime.import_card_save(bytes, meta.block));
+      saveMsg(`Loaded block ${meta.block} of the browser memory card${sum.location ? ` (${sum.location})` : ''}.`);
+      resumeLoadedSave();
+    } catch (err) {
+      saveMsg(`Load failed: ${err.message || err}`, true);
+      console.warn(err);
+    }
+  }
+
   let savesBar = null;
   function renderSavesStrip() {
     if (!savesBar) {
@@ -2035,15 +2089,18 @@ div.play-vis-head { cursor: default; }
         harvest: harvestPortraits,
         acceptExts: '.lgsf,.mcr,.mcd,.gme,.mcs',
         onAdd: addSaveFile,
+        fixedTiles: browserCardTiles,
         primaryButton: (meta) => ({
           text: 'Resume', cls: 'lgrb-primary',
           title: 'Load this save into the running engine',
-          onClick: resumeSession,
+          onClick: meta.fixed ? resumeBrowserCardSave : resumeSession,
         }),
         emptyText:
-          'No saves in this browser yet. Import an engine <b>.lgsf</b> or an emulator '
-          + 'memory-card save (<b>.mcr / .gme / .mcs</b>) to pick up your party - it persists '
-          + 'here and resumes straight into the running engine. Nothing is uploaded.',
+          'No saves in this browser yet. Save in game at a save point or on the world map '
+          + '(it goes on this browser\'s memory card and shows up here), or import an engine '
+          + '<b>.lgsf</b> or an emulator memory-card save (<b>.mcr / .gme / .mcs</b>) to pick up '
+          + 'your party - it persists here and resumes straight into the running engine. '
+          + 'Nothing is uploaded.',
       });
     }
     savesBar.render();
@@ -2094,6 +2151,9 @@ div.play-vis-head { cursor: default; }
    * which must not silently pull the cards out from under the player. */
   function remountCards() {
     if (!runtime) return;
+    /* This page stores every written card and answers the Save beat
+     * (`card_store_result`, in the store poll below). */
+    if (typeof runtime.card_store_handshake === 'function') runtime.card_store_handshake(true);
     for (let p = 0; p < CARD_PORTS; p++) {
       if (portSaveIds[p]) insertCard(p, portSaveIds[p], true);
     }
@@ -2316,13 +2376,33 @@ div.play-vis-head { cursor: default; }
     for (let p = 0; p < CARD_PORTS; p++) {
       if (!runtime.card_take_written(p)) continue;
       const bytes = runtime.card_bytes(p);
-      if (bytes && bytes.length && storeCardBytes(p, bytes) === null) {
+      const stored = !!(bytes && bytes.length) && storeCardBytes(p, bytes) !== null;
+      if (!stored) {
         saveMsg(`Could not store the card in port ${p + 1} in this browser - export it to keep the save.`, true);
-        if (typeof runtime.card_store_failed === 'function') runtime.card_store_failed();
+      }
+      /* The Save beat waits on this answer (`card_store_handshake`), so its
+       * result line is the store's outcome: "Unable to save." when the
+       * browser refused the card, not "Save successful." over a save a
+       * reload would lose. No beat waiting: raise the notice instead. */
+      const answered = typeof runtime.card_store_result === 'function'
+        && runtime.card_store_result(stored);
+      if (!stored && !answered && typeof runtime.card_store_failed === 'function') {
+        runtime.card_store_failed();
       }
       renderCardRack();
     }
   }, 100);
+  /* Another tab of this page saved onto the browser card: remount it, so a
+   * save made here next writes over the card as it now stands rather than
+   * over this tab's older copy (which would drop the other tab's save). */
+  window.addEventListener('storage', (e) => {
+    if (e.key !== 'legaia.card.v1.browser' || !runtime) return;
+    for (let p = 0; p < CARD_PORTS; p++) {
+      if (portSaveIds[p] === BROWSER_CARD) insertCard(p, BROWSER_CARD, true);
+    }
+    renderSavesStrip();
+    renderCardRack();
+  });
   window.addEventListener('legaia-saves-change', () => {
     renderSavesStrip();
     /* A deleted card must not stay in a port. */

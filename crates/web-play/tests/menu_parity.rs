@@ -420,6 +420,68 @@ fn save_screen_writes_the_session_into_the_inserted_card() {
     assert!(escaped.is_empty(), "writes escaped block 3: {escaped:?}");
 }
 
+/// Walk a Save of the live session into free block 1 of a blank card in
+/// port 1, up to the confirmed Yes.
+fn confirm_a_save_into_a_blank_card(rt: &mut LegaiaRuntime) {
+    rt.insert_card(0, legaia_save::card::formatted_card_image(), "blank".into())
+        .expect("insert");
+    rt.play_menu_open();
+    rt.play_menu_settle();
+    open_row(rt, ROW_SAVE);
+    rt.play_menu_input(CROSS); // pick SLOT 1
+    for _ in 0..200 {
+        rt.play_menu_input(0); // "Now checking" beat
+    }
+    rt.play_menu_input(CROSS); // cell 0 = block 1, free
+    rt.play_menu_input(UP); // the prompt opens on No -> Yes
+    rt.play_menu_input(CROSS);
+}
+
+/// The page that stores its cards (`card_store_handshake`) holds the Save
+/// beat until it has answered for the store, so the result line is the
+/// store's outcome: a browser that refused the card answers `false` and the
+/// beat takes it, rather than "Save successful." over a save a reload loses.
+/// A page that never answers is given up on; the beat does not hang.
+#[test]
+fn the_save_beat_waits_for_the_page_to_store_the_card() {
+    let Some(mut rt) = loaded_in(SAVE_ALLOWED_SCENE) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    rt.card_store_handshake(true);
+    confirm_a_save_into_a_blank_card(&mut rt);
+    let mut written = false;
+    for _ in 0..200 {
+        rt.play_menu_input(0);
+        if rt.card_take_written(0) {
+            written = true;
+            break;
+        }
+    }
+    assert!(written, "the Save wrote the card and handed it to the page");
+    for _ in 0..10 {
+        rt.play_menu_input(0);
+    }
+    assert!(
+        rt.card_store_result(false),
+        "the beat was still waiting on the page's store"
+    );
+    assert!(!rt.card_store_result(true), "answered once");
+    run_commit_beat(&mut rt);
+
+    // No answer at all: the beat gives up instead of holding the screen.
+    let Some(mut rt) = loaded_in(SAVE_ALLOWED_SCENE) else {
+        return;
+    };
+    rt.card_store_handshake(true);
+    confirm_a_save_into_a_blank_card(&mut rt);
+    run_commit_beat(&mut rt);
+    assert!(
+        !rt.card_store_result(true),
+        "the beat stopped waiting for a page that never answered"
+    );
+}
+
 /// With no card in either port the Load screen still renders retail's panel +
 /// pills, and confirming an empty port blips rather than loading anything.
 #[test]

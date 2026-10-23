@@ -272,6 +272,11 @@ pub struct LegaiaRuntime {
     /// ([`Self::card_take_written`]). Distinct from the card's own `dirty`
     /// bit, which means "not exported to the emulator yet".
     pub(crate) cards_written: [bool; crate::cards::CARD_SLOTS],
+    /// The page stores each written card and answers with
+    /// [`Self::card_store_result`] before the save screen reports the Save
+    /// ([`Self::card_store_handshake`]). Off for a host that never answers -
+    /// the native tests driving this runtime - which report the write itself.
+    pub(crate) card_store_handshake: bool,
     /// Fishing HUD one-shot banner timers (hook / reel-in / miss / auxiliary /
     /// strike splash), serviced once per sim tick by
     /// [`Self::tick_fishing_banners`] - the browser twin of the native window's
@@ -487,6 +492,7 @@ impl LegaiaRuntime {
             menu_glyph_atlas: None,
             cards: [const { None }; crate::cards::CARD_SLOTS],
             cards_written: [false; crate::cards::CARD_SLOTS],
+            card_store_handshake: false,
             fishing_banners: Default::default(),
             fishing_banner_draws: Vec::new(),
             equip_stats: None,

@@ -18,7 +18,44 @@ impl LegaiaRuntime {
         menu.save_flow.refuse(SaveRefusal::CardWriteFailed);
         true
     }
+
+    /// Opt in to reporting card Saves only once the page has stored them.
+    ///
+    /// With it on, a Save's "Saving to MEMORY CARD" beat waits after the
+    /// in-memory write for [`Self::card_store_result`], so the result line
+    /// is the store's real outcome - "Unable to save." when the browser
+    /// refused the card. Off, the beat reports the write at once and a
+    /// refused store could only raise a notice after "Save successful." had
+    /// already been shown. A page that opts in and never answers gets
+    /// "Unable to save." after [`CARD_STORE_WAIT_FRAMES`]: nothing stored the
+    /// card.
+    pub fn card_store_handshake(&mut self, on: bool) {
+        self.card_store_handshake = on;
+    }
+
+    /// The page's answer to a written card: `true` when it stored the card
+    /// image (browser storage accepted it). Finishes a Save beat waiting on
+    /// the store; `false` when none was waiting.
+    pub fn card_store_result(&mut self, stored: bool) -> bool {
+        let Some(m) = self.play_menu.as_mut() else {
+            return false;
+        };
+        if m.store_wait.take().is_none() {
+            return false;
+        }
+        if let Some(PlaySub::Session(session)) = m.sub.as_mut()
+            && let FieldMenuSubsession::Save(s) = session.as_mut()
+        {
+            m.save_flow.finish_save_request(s, stored);
+            return true;
+        }
+        false
+    }
 }
+
+/// Frames a Save beat waits for [`LegaiaRuntime::card_store_result`] before
+/// it reports the Save failed. The page answers within its 100 ms store poll.
+pub const CARD_STORE_WAIT_FRAMES: u16 = 120;
 
 impl LegaiaRuntime {
     /// Answer the card read [`SaveScreenFlow`] is waiting on, if any.
@@ -59,6 +96,24 @@ impl LegaiaRuntime {
         let Some(request) = request else {
             return;
         };
+        // A write already handed to the page: wait for its store, and give
+        // up as failed if the page never answers.
+        if let Some(m) = self.play_menu.as_mut()
+            && let Some(waited) = m.store_wait.as_mut()
+        {
+            *waited += 1;
+            if *waited < CARD_STORE_WAIT_FRAMES {
+                return;
+            }
+            m.store_wait = None;
+            crate::console_log("play menu: the page never stored the written card");
+            if let Some(PlaySub::Session(session)) = m.sub.as_mut()
+                && let FieldMenuSubsession::Save(s) = session.as_mut()
+            {
+                m.save_flow.finish_save_request(s, false);
+            }
+            return;
+        }
         let ok = match self.write_session_into_card(request.port as usize, request.cell + 1) {
             Ok(()) => true,
             Err(e) => {
@@ -66,6 +121,12 @@ impl LegaiaRuntime {
                 false
             }
         };
+        if ok && self.card_store_handshake {
+            if let Some(m) = self.play_menu.as_mut() {
+                m.store_wait = Some(0);
+            }
+            return;
+        }
         if let Some(m) = self.play_menu.as_mut()
             && let Some(PlaySub::Session(session)) = m.sub.as_mut()
             && let FieldMenuSubsession::Save(s) = session.as_mut()
