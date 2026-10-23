@@ -35,6 +35,14 @@ pub(super) const SAVE_ENTRY_ARTIFACTS: &[(&str, &str)] = &[
         "other7's field MAN is a draft no retail path runs; its `49 0B` opens the Incense notice, whose close clears _DAT_8007B450 (0x801F1F20), so op 0x49 re-arms on the next frame, as in retail",
     ),
     (
+        "timeline_cap|other7|helper@0xd9:49",
+        "other7's field MAN is a draft no retail path runs; its `49 0B` Incense notice re-arms itself in retail too, and the anti-hang cap ends it before the softlock window does when the window is longer",
+    ),
+    (
+        "timeline_cap|other7|helper@0x389:49",
+        "other7's field MAN is a draft no retail path runs; its `49 0E` parks for good in retail too, and the anti-hang cap ends it before the softlock window does when the window is longer",
+    ),
+    (
         "softlock|other7|helper@0x0389:op49",
         "other7's field MAN is a draft no retail path runs; its `49 0E` is past op 0x49's sub-op bound, and the Idle arm returns the same PC (0x801E0990), as in retail",
     ),
