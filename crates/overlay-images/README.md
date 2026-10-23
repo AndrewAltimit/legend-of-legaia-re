@@ -21,6 +21,7 @@ band reader call each other.
 | `mips_overlay` | Per-PROT MIPS-code-likelihood detection. See [`mips-overlay.md`](../../docs/formats/mips-overlay.md). |
 | `overlay_ptr_table` | The sister detector for pointer-table-led overlay entries. See [`overlay-ptr-table.md`](../../docs/formats/overlay-ptr-table.md). |
 | `static_overlay` | The static-overlay map (which PROT entry loads at which base), the named slot-A images, base recovery, and extraction of each clean-copy overlay. See [`static-overlay-pipeline.md`](../../docs/tooling/static-overlay-pipeline.md). |
+| `string_refs` | Where a code image forms a string's address (a `lui` / `addiu` pair or a pointer word), decoded on the image at hand so a reader follows a string a language pack moved. See [`ui-strings.md`](../../docs/tooling/translation/ui-strings.md#what-the-port-reads). |
 | `boot_overlay` | The loaders' index arithmetic: overlay parameter to PROT entry, the slot-B default, the effect side-band choice. CLI `asset boot-overlay`. See [`boot.md`](../../docs/subsystems/boot.md). |
 | `slot_b_module` | File layout of the slot-B cast / summon images: head table, code, spawn-record band, inherited tail. See [`slot-b-module-layout.md`](../../docs/formats/slot-b-module-layout.md). |
 | `summon_overlay` | The spawn-record band of a slot-B module: the spawn-call scan and the part records it names. See [`cast-module.md`](../../docs/subsystems/cast-module.md). |

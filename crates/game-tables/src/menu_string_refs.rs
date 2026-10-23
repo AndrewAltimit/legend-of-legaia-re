@@ -21,46 +21,9 @@
 
 use crate::menu_windows::MENU_OVERLAY_BASE_VA;
 
-/// One site that forms a pool string's address.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PoolRef {
-    /// `lui rX, %hi` at `lui`, completed by `addiu rX, rX, %lo` (or `ori`)
-    /// at `lo`.
-    Pair { lui: u32, lo: u32 },
-    /// An aligned pointer word at this VA.
-    Word(u32),
-}
-
-impl PoolRef {
-    /// The address this site forms in `overlay` as it reads now, or `None`
-    /// when the bytes there are not the site's shape (another build, or a
-    /// code mod over the same instructions).
-    pub fn address(self, overlay: &[u8]) -> Option<u32> {
-        let word = |va: u32| -> Option<u32> {
-            let off = va.checked_sub(MENU_OVERLAY_BASE_VA)? as usize;
-            overlay
-                .get(off..off + 4)
-                .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
-        };
-        match self {
-            Self::Word(va) => word(va),
-            Self::Pair { lui, lo } => {
-                let (l, c) = (word(lui)?, word(lo)?);
-                let rt = (l >> 16) & 0x1F;
-                if l >> 26 != 0x0F || rt == 0 || (c >> 21) & 0x1F != rt {
-                    return None;
-                }
-                let hi = (l & 0xFFFF) << 16;
-                let imm = c & 0xFFFF;
-                match c >> 26 {
-                    0x09 => Some(hi.wrapping_add(imm as u16 as i16 as i32 as u32)),
-                    0x0D => Some(hi | imm),
-                    _ => None,
-                }
-            }
-        }
-    }
-}
+/// One site that forms a pool string's address
+/// (`legaia_overlay_images::string_refs`).
+pub use legaia_overlay_images::string_refs::StrRef as PoolRef;
 
 /// Retail VA -> one site that forms it, sorted by VA.
 pub const POOL_REFS: &[(u32, PoolRef)] = &[
@@ -559,10 +522,7 @@ pub const POOL_REFS: &[(u32, PoolRef)] = &[
 
 /// The site [`POOL_REFS`] names for a retail VA.
 pub fn pool_ref(retail_va: u32) -> Option<PoolRef> {
-    POOL_REFS
-        .binary_search_by_key(&retail_va, |&(va, _)| va)
-        .ok()
-        .map(|i| POOL_REFS[i].1)
+    legaia_overlay_images::string_refs::lookup(POOL_REFS, retail_va)
 }
 
 /// Where the string retail keeps at `retail_va` lives in `overlay`: the
@@ -570,13 +530,7 @@ pub fn pool_ref(retail_va: u32) -> Option<PoolRef> {
 /// unmodified image. A VA with no site, a site whose bytes no longer read as
 /// one, or an address outside the image answers `retail_va`.
 pub fn resolve_va(overlay: &[u8], retail_va: u32) -> u32 {
-    pool_ref(retail_va)
-        .and_then(|site| site.address(overlay))
-        .filter(|&a| {
-            a.checked_sub(MENU_OVERLAY_BASE_VA)
-                .is_some_and(|off| (off as usize) < overlay.len())
-        })
-        .unwrap_or(retail_va)
+    legaia_overlay_images::string_refs::resolve(POOL_REFS, overlay, MENU_OVERLAY_BASE_VA, retail_va)
 }
 
 #[cfg(test)]

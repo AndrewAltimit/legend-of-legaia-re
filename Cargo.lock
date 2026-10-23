@@ -2030,12 +2030,15 @@ version = "0.1.0"
 dependencies = [
  "legaia-actor-formats",
  "legaia-art",
+ "legaia-disc-patch",
  "legaia-engine-camera",
  "legaia-engine-system",
  "legaia-game-tables",
  "legaia-overlay-images",
  "legaia-prot",
  "legaia-scene-formats",
+ "legaia-translate",
+ "legaia-ui-formats",
  "serde_json",
 ]
 
@@ -2506,6 +2509,7 @@ dependencies = [
  "legaia-minigame-formats",
  "legaia-render-kernels",
  "legaia-save",
+ "legaia-ui-formats",
 ]
 
 [[package]]
@@ -3192,6 +3196,7 @@ dependencies = [
  "anyhow",
  "legaia-container-formats",
  "legaia-game-tables",
+ "legaia-overlay-images",
  "legaia-prot",
  "legaia-tim",
 ]
