@@ -123,7 +123,7 @@ stateDiagram-v2
 | `0x1e` | Clears `DAT_801d90bc`, waits for the rod swing word `DAT_801d91ac` to reach `0x14`, then jumps to `0x20`. |
 | `0x20..0x22` | Lure-landing / line-sink sequence (camera + line-actor setup), each advancing to the next; `0x21` / `0x22` read the result-accept word `DAT_801d90bc`. |
 | `0x28` | Waits on the converging banner (`DAT_801d9164`, `FUN_801d7528`), then returns to `10`. |
-| `0x2d` | Miss / retry bookkeeping: runs the `DAT_801d9268` timer through `FUN_801d6f10`, then back to `0x32`. |
+| `0x2d` | Miss / retry bookkeeping: runs the `DAT_801d9268` timer through `FUN_801d6f10`, then back to `0x32`. No store on the disc sets this state ([Open](#open)). |
 | `0x64..0x66`, `0x6e`, `0x78..0x7a` | The [hub menu](#the-hub-menu) and its sub-screens. |
 | `0x96` | "You have lost the lure" / no-rod end screen; a button edge advances to `200`. |
 | `200` (`0xc8`) | Exit: ramps the fade to white and, once full, plays the leaving XA cue and tears the mode down. |
@@ -904,5 +904,5 @@ The retail tables, kernels and screens above are pinned. What remains is the glu
 - **Fight pacing.** The line-record reel-down rates, the fish-AI branch order and re-roll interval, and the pull bias literal are engine-side readings of `FUN_801d4004`. The held-reel operand order (`pull * step / divisor`) is the natural integer reading, not separately pinned.
 - **Cast.** The power meter's per-frame step (hosts use `0x80`), the flight timing, and the mapping from locked power to the line record are approximations; retail's line-projection vector math is not decoded.
 - **Result plate.** The fish's lift before the plate and the `DAT_801d90bc` recast gate are not modelled.
-- **State `0x2d`.** No writer of this state has been identified.
+- **State `0x2d` has no writer on the disc.** The driver's state word `0x801D926C` is referenced only from the fishing overlay, and every one of its stores resolves: literal `0`, `1`, `0xA`, `0x14`, `0x19`, `0x1E`, `0x20`, `0x28`, `0x32`, `0x64`, `0x66`, `0x78..0x7A`, `0x96`, `0xC8`, and `state + 1` in cases `0xA`, `0xB`, `0xC`, `0x14`, `0x21`, `0x22`. None yields `0x2D`. Its timer `0x801D9268` is stored only inside case `0x2D` itself (the advance at `0x801CFF70` and the zero at `0x801CFF78`), so the miss / retry banner `FUN_801d6f10` is unreachable in retail. The port matches: `FishingBanners::miss` has no starter.
 - **Mode states `0`, `0xb`, `0x96`, `200`.** The tackle grant, the fade ramps, the no-lure screen and the exit fade are not session phases; the hosts' leave affordance replaces the exit.

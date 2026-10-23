@@ -542,6 +542,11 @@ CANONICAL_LADDERS = [
     # The casino prize counter's Yes/No confirm (window 46, `801d603c`):
     # coins and the clerk's `49 07` arm seeded, the pad walks a prize to it.
     ("prize_confirm_page", "legaia-web-play"),
+    # The Point Card toast (window 31, `801dce20`): gated on holding item
+    # `0xFE`, which a cold bag never does. The card is seeded through the
+    # page's item cheat and the pad buys into the bag off the equipment
+    # shop's recipient picker; scored against the same walk with no card.
+    ("point_card_toast_page", "legaia-web-play"),
     # A promoted oracle (record-seated, not pad-driven - the L3 members'
     # disclosure): the effect ribbon (`801cfa48`, `effect_ribbon.rs`) and its
     # RNG (`801d0290`) are built only for a summon whose move program issues
