@@ -62,7 +62,7 @@
 //!    array** and a per-row ink bit; the array exists now
 //!    (`crate::item_bag::ItemBag` is retail's 256-slot physical array, indexed
 //!    by slot, bounded by the same active window), so
-//!    [`build_use_list_rows`] is **wired**: `World::bag_use_rows` walks the
+//!    [`build_use_list_rows`] is **wired**: `WorldBagRows::bag_use_rows` walks the
 //!    window and `legaia_engine_menu_runtime::field_menu_dispatch::build_pause_items_session`
 //!    takes its row order, which is what both hosts' Items screen draws.
 //!    The dim / alt-ink bits survive too: `crate::pause_screens::PauseItemRow`
@@ -435,11 +435,11 @@ pub struct UseListCtx<'a> {
 /// Items **Use** list row build; `see ghidra/scripts/funcs/80030628.txt`
 /// and `docs/subsystems/field-menu.md#use-list-row-build-content-id-3-fun_80030628`).
 ///
-/// Wired through `World::bag_use_rows`, which supplies the window's slot
+/// Wired through `WorldBagRows::bag_use_rows`, which supplies the window's slot
 /// array and the applicability probe;
 /// `legaia_engine_menu_runtime::field_menu_dispatch::build_pause_items_session` takes the
 /// resulting row order for the Items screen on both hosts. The dim bit
-/// survives as far as `legaia_engine_core::world::BagRow` and is dropped at the draw -
+/// survives as far as `legaia_engine_menu_runtime::bag_rows::BagRow` and is dropped at the draw -
 /// see family 3 in the module heading.
 ///
 /// Walks the bag slots (`bag_ids[i]` = the item-id byte at
@@ -516,7 +516,7 @@ pub fn build_use_list_rows(
 /// the Items **Throw Out** list row build; `see
 /// ghidra/scripts/funcs/80030628.txt`).
 ///
-/// Wired through `World::bag_throw_out_rows`. The Items screen takes the
+/// Wired through `WorldBagRows::bag_throw_out_rows`. The Items screen takes the
 /// resulting bag-slot order and permutes its rows into it when the command
 /// window dispatches Throw Out, restoring on the way back the order it found -
 /// which is the Use build unless the player ran Arrange first, and is why the
@@ -575,7 +575,7 @@ pub fn build_throw_out_rows(
 /// PORT: FUN_80030628 (content-id-2 case, `0x80030694..0x80030824` - the
 /// price-gated bag list; `see ghidra/scripts/funcs/80030628.txt`).
 ///
-/// Wired through `World::bag_sell_rows` and
+/// Wired through `WorldBagRows::bag_sell_rows` and
 /// `legaia_engine_menu_runtime::menu_runtime::MenuRuntime::sell_list_rows`, which both the shop's
 /// sell-list draw and its sell commit read on both hosts. The price source is
 /// `crate::shop_catalog::ShopItemData` - the item record's `+2` halfword for

@@ -153,8 +153,6 @@ pub use cutscene_elements::{
     ElementKind, WorldRng,
 };
 mod assets_events;
-mod bag_rows;
-pub use bag_rows::BagRow;
 mod battle;
 pub use battle::{
     ABSORB_BANNER_ELEMENT, BATTLE_BODY_NCLIP, BattleActorDrawPlan, BattleDefeatBanner,
@@ -175,9 +173,7 @@ pub use encounters::FieldBossStager;
 mod field_carriers;
 mod field_frame_tail;
 pub use field_frame_tail::{EFFECT_SCENE_GRAPH_STEP, NpcClipRetarget, WorldFrameTail};
-mod field_hud;
 pub(crate) mod field_xa;
-pub use field_hud::PassiveHudPoints;
 pub use field_xa::{scene_minigame_door_xa_prestage, scene_xa_prestage};
 mod field_loop;
 mod field_movement;

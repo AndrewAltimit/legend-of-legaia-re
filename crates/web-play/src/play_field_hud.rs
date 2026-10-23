@@ -36,6 +36,7 @@
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
+use legaia_engine_world_views::passive_hud::WorldPassiveHud;
 
 impl LegaiaRuntime {
     /// Retail's `_DAT_8007B868` suppress gate, asked of the shared kernel

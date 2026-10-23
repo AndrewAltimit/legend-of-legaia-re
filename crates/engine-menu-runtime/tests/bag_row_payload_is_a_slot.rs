@@ -13,6 +13,7 @@
 //! synthetic `PS-X EXE` image.
 
 use legaia_engine_core::world::World;
+use legaia_engine_menu_runtime::bag_rows::WorldBagRows;
 use legaia_engine_menus::item_bag::ItemBag;
 use legaia_game_tables::item_effect::{
     HEAL_AMOUNT_TABLE_VA, ItemEffectTable, RECORD_COUNT, RECORD_STRIDE, TABLE_VA,

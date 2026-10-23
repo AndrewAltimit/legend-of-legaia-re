@@ -89,7 +89,7 @@ pub(super) fn build_spell_session(world: &World, catalog: &SpellCatalog) -> Spel
 fn build_inventory_session(world: &World) -> InventoryUseSession {
     let names = world.party.roster_names();
     // Retail's Use-list row order when the on-disc effect table is installed
-    // (`World::bag_use_rows`, the SCUS content-id-3 builder over the bag's
+    // (`WorldBagRows::bag_use_rows`, the SCUS content-id-3 builder over the bag's
     // active window): slot walk, three-buffer grouping, field context. The
     // id-sorted fallback is what a disc-free host gets - with no descriptors
     // there is nothing to group by. The paired PauseItemRow list is built in

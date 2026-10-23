@@ -1099,7 +1099,7 @@ Engine: `region_encounter::region_battle_setup` over the bytes
 `World::encounters.region_setup` (a short record would leave `_DAT_8007B64B`
 and the return triple as they were, and the store does too).
 `SceneHost::battle_stage_entry` and `battle_stage_keeps_object_1` are what
-both play hosts build the battle backdrop from; `World::bag_use_rows` reads
+both play hosts build the battle backdrop from; `WorldBagRows::bag_use_rows` reads
 the Door gates. Not modelled: the world-map return triple's consumer
 (the world map keeps its own visit table) and the world-map region tracker's
 setup half. Tests `engine-scene-host/tests/region_battle_setup_disc.rs`.

@@ -6,6 +6,7 @@
 //! `cargo test -p legaia-engine-menu-runtime --test integration <name>::`.
 
 mod bag_row_payload_is_a_slot;
+mod bag_use_list_rows;
 mod field_menu_subsession_e2e;
 mod incense_encounter_window;
 mod inn_cost_scene_disc;

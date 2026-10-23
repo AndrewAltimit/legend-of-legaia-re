@@ -9,6 +9,7 @@
 //! `World`; the `World` they edit is `legaia-engine-core`'s. This crate is the
 //! seam between the two, above `engine-core` and below the play hosts.
 
+pub mod bag_rows;
 pub mod card_write;
 pub mod dev_menu_host;
 pub mod field_menu_dispatch;

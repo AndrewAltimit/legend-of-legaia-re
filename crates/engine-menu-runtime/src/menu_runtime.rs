@@ -16,6 +16,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::bag_rows::WorldBagRows;
 use anyhow::{Context, Result};
 use legaia_engine_menus::menu::{MenuCtx, MenuHost, open, step};
 use legaia_engine_menus::menu::{MenuInput, MenuState};

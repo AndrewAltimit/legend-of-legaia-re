@@ -56,6 +56,7 @@
 
 use legaia_engine_scene::scene::ProtIndex;
 use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
+use legaia_engine_world_views::minigame_caption::WorldMinigameCaption;
 
 use crate::runtime::LegaiaRuntime;
 use legaia_web_minigames::LegaiaMinigames;

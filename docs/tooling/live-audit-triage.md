@@ -605,7 +605,7 @@ Reasons that named an existing symbol as missing:
 | `field_actor_plan` (`8003bc08`) | `move_vm::ActorState::flags` is the `+0x10` flag word |
 | `tick_reflection` (`801e5154`) | `ActorState` carries all the fields but `+0x64`, at retail offsets |
 | `refresh_object_grid_marks` (`80017bec`) | three of four `.MAP` regions are resident, and the collision grid is mutated live |
-| `passive_hud_icons` (`801d095c`) | `Camera::transform`; the glue is per host, over `World::passive_hud_points` |
+| `passive_hud_icons` (`801d095c`) | `Camera::transform`; the glue is per host, over `WorldPassiveHud::passive_hud_points` |
 | `step_scene_program` (`801d4a60`) | `_DAT_8007BC20` is modelled by four ports; live source `AudioOut::xa_active()` |
 
 Rows with their own findings:

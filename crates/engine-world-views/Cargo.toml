@@ -18,6 +18,7 @@ legaia-engine-effects.workspace = true
 legaia-engine-field.workspace = true
 legaia-engine-battle-menus.workspace = true
 legaia-engine-menus.workspace = true
+legaia-engine-minigame-scenes.workspace = true
 legaia-engine-minigames.workspace = true
 legaia-engine-mode.workspace = true
 legaia-engine-scene.workspace = true

@@ -115,7 +115,7 @@ pub struct HudIcon {
 /// the third is **arithmetic** (`sra`), which only diverges for a height past
 /// `0x8000 / 43`; retail heights are far below that, so the port keeps the
 /// widths honest rather than pretending the three agree.
-// Wired through `engine-core`'s `World::passive_hud_points`, which lifts the
+// Wired through `engine-world-views`'s `WorldPassiveHud::passive_hud_points`, which lifts the
 // player's world Y by each of the three fractions; each host then projects
 // points 0 and 2 and mixes their screen X / Y into the anchor.
 pub fn hud_anchor_offsets(height: u16) -> [i32; 3] {
@@ -134,7 +134,7 @@ pub fn hud_anchor_offsets(height: u16) -> [i32; 3] {
 /// `FUN_800431D0`.
 ///
 /// PORT: FUN_801d095c
-// Wired through `engine-core`'s `World::passive_hud_icons`, whose bit source
+// Wired through `engine-world-views`'s `WorldPassiveHud::passive_hud_icons`, whose bit source
 // is `World::party_has_ability` - the engine's `FUN_800431D0`, the passive
 // bitfield rebuilt from equipment, and the same source the encounter-rate
 // scaler reads for bits `0x3B` / `0x3C`. The projection between the lifts and

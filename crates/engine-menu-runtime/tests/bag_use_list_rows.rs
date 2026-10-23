@@ -1,11 +1,12 @@
 //! The Items screen's row order is the SCUS content-id-3 builder's, not an id
-//! sort: `World::bag_use_rows` walks the bag's active window and splits the
+//! sort: `WorldBagRows::bag_use_rows` walks the bag's active window and splits the
 //! slots into retail's three buffers.
 //!
 //! Disc-free - the item-effect table is a synthetic `PS-X EXE` image, which is
 //! what lets the test put a chosen `(kind, class, flags)` behind a chosen id.
 
 use legaia_engine_core::world::World;
+use legaia_engine_menu_runtime::bag_rows::WorldBagRows;
 use legaia_engine_menus::item_bag::ItemBag;
 use legaia_game_tables::item_effect::{
     HEAL_AMOUNT_TABLE_VA, ItemEffectTable, RECORD_COUNT, RECORD_STRIDE, TABLE_VA,

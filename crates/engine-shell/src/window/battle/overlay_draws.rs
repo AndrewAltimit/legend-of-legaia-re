@@ -53,9 +53,9 @@ impl PlayWindowApp {
     /// retail floats over the player's head while an accessory passive is
     /// active (`FUN_801d095c`).
     ///
-    /// The engine's half is `World::passive_hud_points` (three head-relative
+    /// The engine's half is `WorldPassiveHud::passive_hud_points` (three head-relative
     /// world points, lifted by fractions of the player's `+0x72`) and
-    /// `World::passive_hud_icons` (the icon list for a resolved anchor); the
+    /// `WorldPassiveHud::passive_hud_icons` (the icon list for a resolved anchor); the
     /// projection between them is this host's, because the camera is. Retail
     /// takes the **X of the first** projected point and the **Y of the
     /// third** - a mixed pair, not one point's.

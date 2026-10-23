@@ -32,8 +32,9 @@ floor's step markers (`minigame_floor`, `dance_marker`) are
 The split line is `World` (and, for scene assembly, `engine-scene`):
 
 - **World glue** - `World::enter_dance` / `tick_fishing` / the hub and
-  exchange methods, `World::minigame_caption`, `casino_coin_bank` and
-  `fishing_exchange_input` (`engine-core`). The mode-24 door warps
+  exchange methods, `casino_coin_bank` and `fishing_exchange_input`
+  (`engine-core`); the status caption is `engine-world-views`'
+  `WorldMinigameCaption`. The mode-24 door warps
   (`minigame_entry`) are `engine-mode`'s, the timed fight's gate and numbers
   `engine-world-views::timed_fight`.
 - **Scene assembly and the minigame seat** - `dance_venue`,

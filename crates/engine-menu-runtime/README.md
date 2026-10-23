@@ -29,6 +29,11 @@ sub-session from the world, and writes each outcome back.
   (`DevMenuWorldExt` on `engine-menus`' `DevMenuSession`): one frame of the
   screen against the live world and its camera, and its cues routed onto the
   world's SFX ring. Both hosts' dev menus call it.
+- **`bag_rows`** - the bag's retail list rows (the SCUS content builder
+  `FUN_80030628`) as the `WorldBagRows` extension trait: the Items screen's
+  Use and Throw Out lists, the shop's sell list, and the by-slot spends their
+  confirms make (`discard_bag_slot`, `consume_bag_slot`). The row builders
+  themselves are `engine-menus::menu_list_rows`.
 - **`menu_validator`** - the out-of-battle host of the action validator
   `FUN_8003FB10` (`RosterValidator`, over the roster records) and the Magic
   screen's "would this spell do anything" question (`spell_affects_anyone`).

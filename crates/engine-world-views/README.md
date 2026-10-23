@@ -57,6 +57,14 @@ Each module is named for the kernel module whose types it fills in.
   (`engine-battle-menus::timed_fight`).
 - **`muscle_dome`** - the Muscle Dome magic loadout off a roster slot
   (`engine-battle-menus::muscle_dome_session`).
+- **`passive_hud`** - the field's passive-ability badge column
+  (`FUN_801d095c`) as the `WorldPassiveHud` extension trait: the three
+  head-relative world points, the icon list for a projected anchor, and the
+  skip test (`engine-field::field_passive_hud`). `engine-screens` does the
+  projection between them for both hosts.
+- **`minigame_caption`** - the line above a live minigame as the
+  `WorldMinigameCaption` extension trait
+  (`engine-minigame-scenes::minigame_status`).
 
 ## Place in the layering
 

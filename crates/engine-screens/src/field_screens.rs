@@ -7,6 +7,7 @@ use legaia_engine_menus::name_entry::NameEntry;
 use legaia_engine_menus::save_menu_atlas::SaveMenuAtlas;
 use legaia_engine_ui::battle_hud_chrome::BattleBadgeRects;
 use legaia_engine_ui::{BattleHudDraws, NameEntryView, SaveMenuAtlasRects};
+use legaia_engine_world_views::passive_hud::WorldPassiveHud;
 
 /// The save-menu atlas' sprite rects, as the menus and the battle HUD name
 /// them - one field per band of the built atlas.
@@ -161,8 +162,8 @@ pub fn field_party_hud_draws(
 /// anchor does not project.
 ///
 /// `World` answers the three head-relative world points
-/// (`World::passive_hud_points`, lifted by fractions of the player's `+0x72`)
-/// and the icon list for a resolved anchor (`World::passive_hud_icons`); the
+/// (`WorldPassiveHud::passive_hud_points`, lifted by fractions of the player's `+0x72`)
+/// and the icon list for a resolved anchor (`WorldPassiveHud::passive_hud_icons`); the
 /// projection between them is this function, so both play hosts seat the
 /// column the same way. Retail takes the anchor's **X from the first**
 /// projected point and its **Y from the third** - a mixed pair, not one

@@ -19,6 +19,7 @@ legaia-engine-system.workspace = true
 legaia-save.workspace = true
 
 [dev-dependencies]
+legaia-engine-world-views.workspace = true
 # `finish_battle` for the capture round-trips (`world::test_drivers`).
 legaia-engine-core = { workspace = true, features = ["test-drivers"] }
 legaia-engine-battle-vm.workspace = true

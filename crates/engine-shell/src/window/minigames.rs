@@ -1,6 +1,7 @@
 //! Extracted from `window.rs` (mechanical split; behavior-preserving).
 
 use super::*;
+use legaia_engine_world_views::minigame_caption::WorldMinigameCaption;
 
 #[path = "minigames/baka_fighter.rs"]
 mod baka_fighter;

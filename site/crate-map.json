@@ -1696,6 +1696,7 @@
    "bins": [],
    "lib": true,
    "modules": [
+    "bag_rows",
     "card_write",
     "dev_menu_host",
     "field_menu_dispatch",
@@ -1704,7 +1705,7 @@
    ],
    "band": "drivers",
    "track": "engine",
-   "scope": "The pause menu over a running <code>World</code>: <code>MenuRuntime</code> (save slots, shop and inn flow, notices), the field-menu sub-session dispatcher, the out-of-battle action validator host, the memory-card Save writer, the dev menu's <code>World</code> seam. Above <code>engine-core</code>.",
+   "scope": "The pause menu over a running <code>World</code>: <code>MenuRuntime</code> (save slots, shop and inn flow, notices), the field-menu sub-session dispatcher, the bag's retail list rows (<code>WorldBagRows</code>), the out-of-battle action validator host, the memory-card Save writer, the dev menu's <code>World</code> seam. Above <code>engine-core</code>.",
    "dependents": [
     "engine-screens",
     "engine-session",
@@ -1851,6 +1852,7 @@
     "engine-screens",
     "engine-session",
     "engine-shell",
+    "engine-world-views",
     "web-minigames",
     "web-play"
    ],
@@ -2037,6 +2039,7 @@
    "dev_deps": [
     "engine-battle-vm",
     "engine-field",
+    "engine-world-views",
     "prot",
     "scene-formats"
    ],
@@ -2667,6 +2670,7 @@
     "engine-effects",
     "engine-field",
     "engine-menus",
+    "engine-minigame-scenes",
     "engine-minigames",
     "engine-mode",
     "engine-scene",
@@ -2690,7 +2694,9 @@
     "camera_view",
     "effect_draws",
     "field_view_window",
+    "minigame_caption",
     "muscle_dome",
+    "passive_hud",
     "pause_screens",
     "scene_staging",
     "shop",
@@ -2703,7 +2709,7 @@
    ],
    "band": "drivers",
    "track": "engine",
-   "scope": "The hosts' reads of a running <code>World</code> outside battle: the per-frame camera resolution, the visible-tile crop policy, scene staging, world-map markers and sky, the field party HUD, the effect draw lists, and the shop / pause / tile-board / timed-fight / Muscle Dome view models. Above <code>engine-core</code>.",
+   "scope": "The hosts' reads of a running <code>World</code> outside battle: the per-frame camera resolution, the visible-tile crop policy, scene staging, world-map markers and sky, the field party HUD and passive-ability badges (<code>WorldPassiveHud</code>), the minigame caption (<code>WorldMinigameCaption</code>), the effect draw lists, and the shop / pause / tile-board / timed-fight / Muscle Dome view models. Above <code>engine-core</code>.",
    "dependents": [
     "engine-scene-host",
     "engine-screens",

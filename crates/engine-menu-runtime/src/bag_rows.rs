@@ -1,5 +1,6 @@
-//! The bag's **retail row order**: `World`'s seat at the SCUS list-content
-//! builder `FUN_80030628`.
+//! The bag's **retail row order**: the menu runtime's seat at the SCUS
+//! list-content builder `FUN_80030628`, as [`WorldBagRows`] methods on a
+//! running `World`.
 //!
 //! [`legaia_engine_menus::menu_list_rows`] ports the builder's per-content-id cases; this
 //! module is what hands them a bag and turns their class-tagged `u16` entry
@@ -15,8 +16,12 @@
 //! (equipment) rows, then the effect-flag-`0x8` tail - and it dims rows it will
 //! not let you confirm. Sorting by id instead produces a list whose rows are in
 //! an order no retail screen ever shows.
+//!
+//! Only the menu runtime reads these rows (the Items screen's Use / Throw
+//! Out lists, the shop's sell list) and spends a slot through them, so the
+//! seat lives here rather than in `engine-core`: the tick never names it.
 
-use crate::world::World;
+use legaia_engine_core::world::World;
 use legaia_engine_menus::menu_list_rows::{
     EFFECT_FLAG_BATTLE_USABLE, ITEM_DOOR_OF_LIGHT, ITEM_DOOR_OF_WIND, ItemRowTables, ROW_ALT_INK,
     ROW_DISABLED, ROW_NAME_PAYLOAD_MASK, UseListCtx, build_price_gated_rows, build_throw_out_rows,
@@ -84,15 +89,13 @@ impl ItemRowTables for WorldRowTables<'_> {
     }
 }
 
-impl World {
-    /// The row tables every builder in [`legaia_engine_menus::menu_list_rows`] reads.
-    fn row_tables(&self) -> Option<WorldRowTables<'_>> {
-        Some(WorldRowTables {
-            effects: self.tables.item_effects.as_ref()?,
-            prices: self.shops.item_shop_data.as_ref(),
-            equip: self.tables.equip_stats.as_ref(),
-        })
-    }
+/// The row tables every builder in [`legaia_engine_menus::menu_list_rows`] reads.
+fn row_tables(world: &World) -> Option<WorldRowTables<'_>> {
+    Some(WorldRowTables {
+        effects: world.tables.item_effects.as_ref()?,
+        prices: world.shops.item_shop_data.as_ref(),
+        equip: world.tables.equip_stats.as_ref(),
+    })
 }
 
 /// Decode one builder's entry words back into rows against the bag.
@@ -113,78 +116,98 @@ fn decode(world: &World, words: &[u16]) -> Vec<BagRow> {
         .collect()
 }
 
-impl World {
-    /// The item-id byte of every slot in the bag's **active window**, plus the
-    /// window's first slot index - the `(bag_ids, slot_base)` pair every
-    /// [`legaia_engine_menus::menu_list_rows`] builder walks.
-    ///
-    /// Retail bounds the walk with `gp+0x2D2..gp+0x2D4`, which is exactly what
-    /// [`legaia_engine_menus::item_bag::ItemBag::window_bounds`] answers.
-    fn bag_window_ids(&self) -> (Vec<u8>, u16) {
-        let (start, end) = self.party.inventory.window_bounds();
-        let slots = self.party.inventory.slots();
-        let ids = slots[start.min(slots.len())..end.min(slots.len())]
+/// The item-id byte of every slot in the bag's **active window**, plus the
+/// window's first slot index - the `(bag_ids, slot_base)` pair every
+/// [`legaia_engine_menus::menu_list_rows`] builder walks.
+///
+/// Retail bounds the walk with `gp+0x2D2..gp+0x2D4`, which is exactly what
+/// [`legaia_engine_menus::item_bag::ItemBag::window_bounds`] answers.
+fn bag_window_ids(world: &World) -> (Vec<u8>, u16) {
+    let (start, end) = world.party.inventory.window_bounds();
+    let slots = world.party.inventory.slots();
+    let ids = slots[start.min(slots.len())..end.min(slots.len())]
+        .iter()
+        .map(|&(id, _)| id)
+        .collect();
+    (ids, start as u16)
+}
+
+/// Whether using `id` on *anybody* would do something - the applicability
+/// probe the Use-list builder dims a row on.
+///
+/// Retail is the party scan `FUN_8003043C`, which runs the action validator
+/// `FUN_8003FB10` over each member and dims when no member accepts (every
+/// ally at full HP for a heal, nobody poisoned for an antidote). The port
+/// scans the same set through the engine's own effect resolver, so the
+/// answer tracks whatever the catalog says the item does.
+///
+/// An item with no catalog entry is **not** dimmed: retail's validator
+/// answers for a descriptor, and a catalog gap is the port's, not the
+/// player's.
+fn item_applies_to_anyone(world: &World, id: u8) -> bool {
+    let Some(entry) = world.tables.item_catalog.get(id) else {
+        return true;
+    };
+    // The marker effects resolve against live state at use time, so the
+    // table-less probe cannot answer for them; retail's validator does let
+    // them through.
+    if matches!(
+        entry.effect,
+        legaia_engine_menus::items::ItemEffect::StatUp
+            | legaia_engine_menus::items::ItemEffect::BattleBuff
+            | legaia_engine_menus::items::ItemEffect::ActionGauge
+            | legaia_engine_menus::items::ItemEffect::ArtsBook
+            | legaia_engine_menus::items::ItemEffect::PointCardStrike
+    ) {
+        return true;
+    }
+    let members = world.party.roster.members.len();
+    (0..members).any(|i| {
+        let hms = world.party.roster.members[i].hp_mp_sp();
+        let status_mask = world
+            .battle
+            .status_effects
+            .statuses(i as u8)
             .iter()
-            .map(|&(id, _)| id)
-            .collect();
-        (ids, start as u16)
-    }
-
-    /// Whether using `id` on *anybody* would do something - the applicability
-    /// probe the Use-list builder dims a row on.
-    ///
-    /// Retail is the party scan `FUN_8003043C`, which runs the action validator
-    /// `FUN_8003FB10` over each member and dims when no member accepts (every
-    /// ally at full HP for a heal, nobody poisoned for an antidote). The port
-    /// scans the same set through the engine's own effect resolver, so the
-    /// answer tracks whatever the catalog says the item does.
-    ///
-    /// An item with no catalog entry is **not** dimmed: retail's validator
-    /// answers for a descriptor, and a catalog gap is the port's, not the
-    /// player's.
-    fn item_applies_to_anyone(&self, id: u8) -> bool {
-        let Some(entry) = self.tables.item_catalog.get(id) else {
-            return true;
+            .fold(0u8, |m, s| {
+                m | legaia_engine_menus::items::status_bit(s.kind)
+            });
+        let snap = legaia_engine_menus::items::TargetSnapshot {
+            hp: hms.hp_cur,
+            hp_max: hms.hp_max,
+            mp: hms.mp_cur,
+            mp_max: hms.mp_max,
+            is_dead: hms.hp_cur == 0 && hms.hp_max > 0,
+            status_mask,
         };
-        // The marker effects resolve against live state at use time, so the
-        // table-less probe cannot answer for them; retail's validator does let
-        // them through.
-        if matches!(
-            entry.effect,
-            legaia_engine_menus::items::ItemEffect::StatUp
-                | legaia_engine_menus::items::ItemEffect::BattleBuff
-                | legaia_engine_menus::items::ItemEffect::ActionGauge
-                | legaia_engine_menus::items::ItemEffect::ArtsBook
-                | legaia_engine_menus::items::ItemEffect::PointCardStrike
-        ) {
-            return true;
-        }
-        let members = self.party.roster.members.len();
-        (0..members).any(|i| {
-            let hms = self.party.roster.members[i].hp_mp_sp();
-            let status_mask = self
-                .battle
-                .status_effects
-                .statuses(i as u8)
-                .iter()
-                .fold(0u8, |m, s| {
-                    m | legaia_engine_menus::items::status_bit(s.kind)
-                });
-            let snap = legaia_engine_menus::items::TargetSnapshot {
-                hp: hms.hp_cur,
-                hp_max: hms.hp_max,
-                mp: hms.mp_cur,
-                mp_max: hms.mp_max,
-                is_dead: hms.hp_cur == 0 && hms.hp_max > 0,
-                status_mask,
-            };
-            !matches!(
-                legaia_engine_menus::items::apply_effect(entry.effect, &snap),
-                legaia_engine_menus::items::ItemOutcome::NoEffect
-            )
-        })
-    }
+        !matches!(
+            legaia_engine_menus::items::apply_effect(entry.effect, &snap),
+            legaia_engine_menus::items::ItemOutcome::NoEffect
+        )
+    })
+}
 
+/// The bag's retail list rows and the slot writes their confirms make, as
+/// methods on [`World`]. Bring the trait into scope to call them.
+pub trait WorldBagRows {
+    /// The Items screen's **Use** list, in retail's row order (`battle` =
+    /// the menu context word `gp+0x85C`). `None` with no item-effect table.
+    fn bag_use_rows(&self, battle: bool) -> Option<Vec<BagRow>>;
+    /// The shop **sell** list, in retail's row order. `None` when either disc
+    /// table is absent.
+    fn bag_sell_rows(&self) -> Option<Vec<BagRow>>;
+    /// The Items screen's **Throw Out** list, in retail's row order. `None`
+    /// with no item-effect table.
+    fn bag_throw_out_rows(&self) -> Option<Vec<BagRow>>;
+    /// Whether the descriptor for `id` carries the battle-usability flag.
+    fn item_battle_usable(&self, id: u8) -> bool;
+    /// Discard the whole stack at a physical bag slot; returns the id, or `0`.
+    fn discard_bag_slot(&mut self, slot: u8) -> u8;
+    /// Take one unit off a physical bag slot; returns the id, or `0`.
+    fn consume_bag_slot(&mut self, slot: u8) -> u8;
+}
+
+impl WorldBagRows for World {
     /// The Items screen's **Use** list, in retail's row order.
     ///
     /// `battle` is the menu context word `gp+0x85C`: the field context dims an
@@ -198,10 +221,10 @@ impl World {
     ///
     /// REF: FUN_80030628 (content id 3; the builder itself is
     /// `legaia_engine_menus::menu_list_rows::build_use_list_rows`)
-    pub fn bag_use_rows(&self, battle: bool) -> Option<Vec<BagRow>> {
-        let tables = self.row_tables()?;
-        let (ids, slot_base) = self.bag_window_ids();
-        let applicable = |id: u8| self.item_applies_to_anyone(id);
+    fn bag_use_rows(&self, battle: bool) -> Option<Vec<BagRow>> {
+        let tables = row_tables(self)?;
+        let (ids, slot_base) = bag_window_ids(self);
+        let applicable = |id: u8| item_applies_to_anyone(self, id);
         // The two scratchpad scene gates (`0x1F800394` bits `0x100000` /
         // `0x200000`) are the region reader's: every region hit raises both
         // and the long record layout drops them per `region[+8]` bits 7 / 6
@@ -231,10 +254,10 @@ impl World {
     ///
     /// REF: FUN_80030628 (content id 2; the builder itself is
     /// `legaia_engine_menus::menu_list_rows::build_price_gated_rows`)
-    pub fn bag_sell_rows(&self) -> Option<Vec<BagRow>> {
+    fn bag_sell_rows(&self) -> Option<Vec<BagRow>> {
         self.shops.item_shop_data.as_ref()?;
-        let tables = self.row_tables()?;
-        let (ids, slot_base) = self.bag_window_ids();
+        let tables = row_tables(self)?;
+        let (ids, slot_base) = bag_window_ids(self);
         Some(decode(
             self,
             &build_price_gated_rows(&ids, slot_base, &tables),
@@ -255,9 +278,9 @@ impl World {
     ///
     /// REF: FUN_80030628 (content id `0x22`; the builder itself is
     /// `legaia_engine_menus::menu_list_rows::build_throw_out_rows`)
-    pub fn bag_throw_out_rows(&self) -> Option<Vec<BagRow>> {
-        let tables = self.row_tables()?;
-        let (ids, slot_base) = self.bag_window_ids();
+    fn bag_throw_out_rows(&self) -> Option<Vec<BagRow>> {
+        let tables = row_tables(self)?;
+        let (ids, slot_base) = bag_window_ids(self);
         Some(decode(
             self,
             &build_throw_out_rows(&ids, slot_base, &tables),
@@ -266,7 +289,7 @@ impl World {
 
     /// Whether the descriptor for `id` carries the battle-usability flag - the
     /// gate the battle item list applies before the row order even runs.
-    pub fn item_battle_usable(&self, id: u8) -> bool {
+    fn item_battle_usable(&self, id: u8) -> bool {
         self.tables
             .item_effects
             .as_ref()
@@ -297,7 +320,7 @@ impl World {
     ///
     /// REF: FUN_801D8734 (Throw Out confirm, the `bag[cursor*2]` zeroing),
     /// FUN_80043048 (the by-slot consume this spends the whole stack through)
-    pub fn discard_bag_slot(&mut self, slot: u8) -> u8 {
+    fn discard_bag_slot(&mut self, slot: u8) -> u8 {
         let (id, count) = self.party.inventory.slot(slot);
         if id == 0 {
             return 0;
@@ -311,14 +334,14 @@ impl World {
     /// Take one unit off a physical bag slot, clearing it when the stack
     /// empties - what a Use spends.
     ///
-    /// Same reason as [`Self::discard_bag_slot`] for addressing the slot: the
+    /// Same reason as [`WorldBagRows::discard_bag_slot`] for addressing the slot: the
     /// row's payload is a slot, so the unit comes off the stack the player
     /// pointed at.
     ///
     /// Returns the id spent, or `0` when the slot was already empty.
     ///
     /// REF: FUN_80043048 (ported as `RetailInventory::consume_slot`)
-    pub fn consume_bag_slot(&mut self, slot: u8) -> u8 {
+    fn consume_bag_slot(&mut self, slot: u8) -> u8 {
         let (id, _) = self.party.inventory.slot(slot);
         if id == 0 {
             return 0;
@@ -326,10 +349,10 @@ impl World {
         self.party.inventory.consume_slot(slot, 1);
         id
     }
+}
 
-    /// `true` when `id` is one of the two scene-gated Door rows the Use-list
-    /// builder tests by id.
-    pub fn is_door_item(id: u8) -> bool {
-        id == ITEM_DOOR_OF_LIGHT || id == ITEM_DOOR_OF_WIND
-    }
+/// `true` when `id` is one of the two scene-gated Door rows the Use-list
+/// builder tests by id.
+pub fn is_door_item(id: u8) -> bool {
+    id == ITEM_DOOR_OF_LIGHT || id == ITEM_DOOR_OF_WIND
 }

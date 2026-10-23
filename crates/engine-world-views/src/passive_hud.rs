@@ -9,8 +9,10 @@
 //! pictogram primitive all existed. What was missing was the pass that puts
 //! them in a line. This module is that pass, split the way every other
 //! renderer-free World seat is: `World` answers the **world points** and the
-//! **icon list**, and each host does its own projection between the two,
-//! because the camera is the host's.
+//! **icon list** (as [`WorldPassiveHud`] methods), and each host does its own
+//! projection between the two, because the camera is the host's. Only the
+//! hosts (through `engine-screens::field_screens::passive_hud_icons`) read it,
+//! so it sits above `engine-core` with the other host reads.
 //!
 //! Retail's own shape, kept exactly:
 //!
@@ -23,13 +25,24 @@
 
 use legaia_engine_field::field_passive_hud::{HudIcon, hud_anchor_offsets, passive_hud_icons};
 
-use crate::world::World;
+use legaia_engine_core::world::World;
 
 /// The three world points the badge anchor is projected from, in retail's
 /// order: point `0` supplies the anchor's X and point `2` its Y.
 pub type PassiveHudPoints = [[f32; 3]; 3];
 
-impl World {
+/// The passive-ability HUD's two halves, as methods on [`World`]. Bring the
+/// trait into scope to call them.
+pub trait WorldPassiveHud {
+    /// The three head-relative world points, or `None` with no player actor.
+    fn passive_hud_points(&self) -> Option<PassiveHudPoints>;
+    /// The icon list for an already-projected anchor.
+    fn passive_hud_icons(&self, anchor: (i32, i32)) -> Vec<HudIcon>;
+    /// `true` when at least one of the six bits the HUD tests is set.
+    fn passive_hud_active(&self) -> bool;
+}
+
+impl WorldPassiveHud for World {
     /// The three head-relative world points, or `None` when no player actor
     /// is seated (the title screen, a cutscene with the party unloaded).
     ///
@@ -41,7 +54,7 @@ impl World {
     ///
     /// REF: FUN_801d095c (`0x801D098C..0x801D09F4`, ported as
     /// `legaia_engine_field::field_passive_hud::hud_anchor_offsets`)
-    pub fn passive_hud_points(&self) -> Option<PassiveHudPoints> {
+    fn passive_hud_points(&self) -> Option<PassiveHudPoints> {
         let slot = self.player_actor_slot? as usize;
         let a = self.actors.get(slot)?;
         let lifts = hud_anchor_offsets(a.move_state.field_72);
@@ -60,21 +73,21 @@ impl World {
     /// The icon list for an already-projected anchor - the pair
     /// `(point 0's screen X, point 2's screen Y)`.
     ///
-    /// The bit source is [`Self::party_has_ability`], the engine's
+    /// The bit source is [`World::party_has_ability`], the engine's
     /// `FUN_800431D0`: the passive bitfield rebuilt from equipment, which is
     /// the same source the encounter-rate scaler reads for bits `0x3B` /
     /// `0x3C`.
     ///
     /// REF: FUN_801d095c (ported as
     /// `legaia_engine_field::field_passive_hud::passive_hud_icons`)
-    pub fn passive_hud_icons(&self, anchor: (i32, i32)) -> Vec<HudIcon> {
+    fn passive_hud_icons(&self, anchor: (i32, i32)) -> Vec<HudIcon> {
         passive_hud_icons(anchor, |bit| self.party_has_ability(bit))
     }
 
     /// `true` when at least one of the six bits the HUD tests is set, so a
     /// host can skip the projection entirely on a frame that would draw
     /// nothing.
-    pub fn passive_hud_active(&self) -> bool {
+    fn passive_hud_active(&self) -> bool {
         use legaia_engine_field::field_passive_hud::ability_bit as b;
         [
             b::STACK_A,
