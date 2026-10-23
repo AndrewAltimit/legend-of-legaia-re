@@ -3717,7 +3717,16 @@ every pass, so it moves with the phase of both clips):
   The image child seats both words taken back over the two-pass lag (the
   part tick writes them, not the draw); a lane on its `0x1000` clamp names
   no age and is left alone, and other morphing parts are left to the replay
-  (`image` `.907` to `.916`).
+  (`image` `.907` to `.916`). The burst also stands where its program put
+  it, with no velocity, so its position `+0x14..+0x18` and banks are the
+  RAM's once the level ramp is older than the lag: the replay seats it on
+  its own strike point. `battle_melee_hit_spark`'s burst, level `0x900`
+  against a six-vsync lag, stands at `(-5, -330, 368)` where the replay's
+  stood at `(-4, -330, 378)` (`image` `.847` to `.876`;
+  `battle_gimard_tail_fire_b` `.953` to `.963`). A ramp no older than the
+  lag began inside it, and the position stays the replay's:
+  `rim_elm_gimard_victory`'s level `0x400` on a four-vsync lag, seated,
+  fell `.931` to `.920`.
 - **A combo cluster that landed early.** The cluster's glide record
   retires on the pass that snaps it and keeps its last `elapsed`, so a
   capture saved a pass or more later reads a landed table while its frame

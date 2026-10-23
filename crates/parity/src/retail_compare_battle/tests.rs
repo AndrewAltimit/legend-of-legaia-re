@@ -1115,3 +1115,21 @@ fn a_ray_burst_level_and_lane_come_back_over_the_lag() {
     );
     assert_eq!(ram_read::displayed_morph_halfword(&ram, node, 0x78, 6), 0);
 }
+
+/// A ray burst's position is the screen's only when its level ramp began
+/// before the displayed frame: `battle_melee_hit_spark`'s level `0x900`
+/// (`0x100` a vsync) is nine vsyncs old against a six-vsync lag;
+/// `rim_elm_gimard_victory`'s `0x400` began on its four-vsync lag's
+/// displayed frame itself, and a level on its clamp names no age.
+#[test]
+fn a_ray_burst_position_stands_only_through_the_lag() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let node = 0x8008_227C;
+    put16(&mut ram, node + 0x90, 0x800);
+    put16(&mut ram, node + 0x78, 0x900);
+    assert!(ram_read::ray_burst_stood_through_lag(&ram, node, 6));
+    put16(&mut ram, node + 0x78, 0x400);
+    assert!(!ram_read::ray_burst_stood_through_lag(&ram, node, 4));
+    put16(&mut ram, node + 0x78, 0x1000);
+    assert!(!ram_read::ray_burst_stood_through_lag(&ram, node, 4));
+}

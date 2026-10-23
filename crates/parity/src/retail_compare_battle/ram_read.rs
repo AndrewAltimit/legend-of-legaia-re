@@ -150,11 +150,10 @@ const MORPH_SEED_OFFSETS: [u16; 2] = [0x78, 0xA0];
 /// (`0x801F6324[0]` / `[9]`, pool meshes `8` / `9`).
 const RAY_BURST_RECORDS: [u32; 2] = [0x801F_5484, 0x801F_54B4];
 
-/// Whether part `node` is a ray burst still growing its morph lane: the
-/// part tick's envelope gate `+0x10` bit `0x1000` (op `0x0A`) up, and the
-/// lane short of its `0x1000` clamp - a clamped lane names no age. Other
+/// Only the ray bursts are seeded this way ([`is_ray_burst`]). Other
 /// morphing parts are left to the replay: seeded the same way, Ultra
 /// Charge's (`cort_evolved_ultra_charge_mid_cast`) lost half its frame.
+///
 /// A ray burst's level `+0x78` or lane weight `+0xA0` as the displayed
 /// frame held it: the level gains `(+0x90 * 8) >> 6` a vsync
 /// (`part_motion::level_block`), the lane its up rate `+0xB8` a vsync
@@ -166,10 +165,45 @@ pub(super) fn displayed_morph_halfword(ram: &[u8], node: u32, off: u16, lag: i32
     (h(u32::from(off)) - per_vsync * lag).clamp(0, 0x1000) as u16
 }
 
-fn is_growing_morph(ram: &[u8], node: u32) -> bool {
+/// Whether part `node` is a melee ray burst under its envelope gate (`+0x10`
+/// bit `0x1000`, op `0x0A`), lane clamped or not.
+fn is_ray_burst(ram: &[u8], node: u32) -> bool {
     RAY_BURST_RECORDS.contains(&game_anchors::u32_at(ram, node + 0x48))
         && game_anchors::u32_at(ram, node + 0x10) & 0x1000 != 0
-        && game_anchors::u16_at(ram, node + 0xA0) < 0x1000
+}
+
+/// The ray burst's position `+0x14..+0x18`. The burst stands where its
+/// program put it (no velocity, no speed), so once that program has run
+/// its level ramp longer than the display lag the RAM's position is the
+/// displayed frame's ([`ray_burst_stood_through_lag`]). The replay's strike
+/// point is its own: `battle_melee_hit_spark`'s burst (level `0x900`, nine
+/// vsyncs into its ramp) stands at `(-5, -330, 368)` in the RAM and
+/// `(-4, -330, 378)` in the replay, its banks at `4132` against `4144`
+/// (`image` `.847` to `.876`).
+const RAY_BURST_POSITION_OFFSETS: [u16; 3] = [0x14, 0x16, 0x18];
+
+/// Whether the burst's level ramp `+0x78` (`(+0x90 * 8) >> 6` a vsync)
+/// began before the displayed frame, `lag` vsyncs back: the words its
+/// program wrote by then are the screen's. A ramp no older than the lag
+/// started inside it (its displayed level reads `0`), with whatever the
+/// program rewrote alongside: `rim_elm_gimard_victory`'s level reads
+/// `0x400` (four vsyncs) against a four-vsync lag, and seated on the RAM's
+/// position its frame fell `.931` to `.920`.
+pub(super) fn ray_burst_stood_through_lag(ram: &[u8], node: u32, lag: i32) -> bool {
+    let h = |o: u32| i32::from(game_anchors::u16_at(ram, node + o) as i16);
+    let per_vsync = h(0x90) >> 3;
+    let level = h(0x78);
+    per_vsync > 0 && level < 0x1000 && level > per_vsync * lag
+}
+
+/// [`MORPH_SEED_OFFSETS`] a ray burst can still be seeded on: a level or
+/// lane on its `0x1000` clamp names no age and is left to the replay.
+fn ray_burst_morph_offsets(ram: &[u8], node: u32) -> Vec<u16> {
+    MORPH_SEED_OFFSETS
+        .iter()
+        .copied()
+        .filter(|&o| game_anchors::u16_at(ram, node + u32::from(o)) < 0x1000)
+        .collect()
 }
 
 /// Every live effect-script table part (`FUN_80021DF4` nodes whose record
@@ -205,7 +239,7 @@ pub(super) fn retail_action_fx_parts(
                 && overlay.contains(&rec)
                 && (is_burst_child(rec)
                     || is_growing_default_arm(ram, n)
-                    || is_growing_morph(ram, n)
+                    || is_ray_burst(ram, n)
                     || (0x80..=0x84)
                         .step_by(2)
                         .any(|o| game_anchors::u16_at(ram, n + o) != 0))
@@ -224,16 +258,18 @@ pub(super) fn retail_action_fx_parts(
                     .chain(&DEFAULT_ARM_CHANNEL_OFFSETS)
                     .copied()
                     .collect()
-            } else if is_growing_morph(ram, n) {
+            } else if is_ray_burst(ram, n) {
                 return legaia_engine_effects::summon::CastPartSeed {
                     tag,
-                    pokes: ACTION_FX_SEED_OFFSETS
+                    pokes: RAY_BURST_POSITION_OFFSETS
                         .iter()
+                        .filter(|_| ray_burst_stood_through_lag(ram, n, lag))
+                        .chain(&ACTION_FX_SEED_OFFSETS)
                         .map(|&o| (o, displayed_part_halfword(ram, n, o, lag)))
                         .chain(
-                            MORPH_SEED_OFFSETS
-                                .iter()
-                                .map(|&o| (o, displayed_morph_halfword(ram, n, o, lag))),
+                            ray_burst_morph_offsets(ram, n)
+                                .into_iter()
+                                .map(|o| (o, displayed_morph_halfword(ram, n, o, lag))),
                         )
                         .collect(),
                 };
