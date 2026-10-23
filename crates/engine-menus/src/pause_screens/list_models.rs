@@ -57,7 +57,8 @@ pub struct SpecialConfirmModel {
     /// Which route raised the window - it picks the descriptor rect and
     /// the one-line vs three-line renderer.
     pub route: UseRoute,
-    /// Name of the item being used, staged as the prompt's first line.
+    /// Name of the item being used. The prompt lines themselves are the
+    /// overlay's (`UseRoutePrompts`, installed on the world).
     pub item_name: String,
     /// 0 = Yes, 1 = No. Retail seeds these two windows to **Yes**,
     /// unlike the Throw Out confirm.

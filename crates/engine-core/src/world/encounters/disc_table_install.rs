@@ -110,6 +110,13 @@ impl World {
         if labels.is_installed() {
             self.menu.context_labels = labels;
         }
+        // The special Use routes' confirm prompts (`FUN_801D1DAC` /
+        // `FUN_801D1F10` draw them out of the same pool).
+        let prompts =
+            legaia_engine_menus::pause_screens::UseRoutePrompts::from_menu_overlay(overlay);
+        if prompts.is_installed() {
+            self.menu.use_route_prompts = prompts;
+        }
         // The shop windows' label strings live in the same pool
         // (`FUN_801D4868` .. `FUN_801DCE20` load them by VA).
         let shop = legaia_engine_menus::shop::ShopLabels::from_menu_overlay(overlay);

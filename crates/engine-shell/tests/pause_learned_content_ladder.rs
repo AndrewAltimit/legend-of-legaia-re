@@ -676,3 +676,97 @@ fn list_rows_take_their_build_time_ink_once_the_hand_is_in_the_list() {
     eprintln!("[ink] heal {heal:#04X} white, attack grey; leaf white, item {dimmed:#04X} grey");
     close_to_root(&mut s);
 }
+
+/// The Incense confirm (window 12, `FUN_801D1F10`) draws the route's own
+/// two prompt lines out of the menu overlay's string pool - the first at
+/// the window pen with its `0xC2` token spliced to the item's disc name,
+/// the second `0xC` right and one row down - not port-composed text.
+#[test]
+fn the_incense_confirm_draws_the_overlay_prompt_lines() {
+    const INCENSE: u8 = 0x8A;
+    let Some(mut s) = booted(&[], &[INCENSE]) else {
+        return;
+    };
+    assert!(
+        s.host.world.menu.use_route_prompts.is_installed(),
+        "the menu overlay install read no Use-route prompts"
+    );
+    open_row(&mut s, FieldMenuRow::Items);
+    // Use -> the list -> the hand onto the Incense row (the new-game bag
+    // already holds other items) -> its confirm window.
+    tap(&mut s, PadButton::Cross);
+    let row = match s.field_menu_sub.as_ref() {
+        Some(FieldMenuSubsession::Items(items)) => items
+            .rows
+            .iter()
+            .position(|r| r.id == INCENSE)
+            .expect("Incense is in the bag"),
+        _ => panic!("Items did not open the item screen"),
+    };
+    for _ in 0..row {
+        tap(&mut s, PadButton::Down);
+    }
+    tap(&mut s, PadButton::Cross);
+    let Some(FieldMenuSubsession::Items(items)) = s.field_menu_sub.as_ref() else {
+        panic!("Items did not open the item screen");
+    };
+    assert!(
+        items.special_use().is_some(),
+        "the Incense row did not open its confirm route: focus {:?}, rows {:?}, blocked {}",
+        items.focus,
+        items
+            .rows
+            .iter()
+            .map(|r| (r.id, r.use_bits))
+            .collect::<Vec<_>>(),
+        items.incense_blocked()
+    );
+    let font = s.dialog_font.clone().expect("disc dialog font");
+    let ctx = legaia_engine_ui::pause_menu::PauseMenuCtx {
+        font: &font,
+        rects: legaia_engine_ui::pause_menu::MenuRects::new(None),
+        chrome: None,
+        origin: (0, 0),
+        scale: 1,
+    };
+    let draws = legaia_engine_screens::pause_screens::field_menu_sub_draws(
+        &ctx,
+        s.field_menu_sub.as_ref().unwrap(),
+        Some(&s.host.world),
+        None,
+    );
+    let w = &s.host.world;
+    let name = legaia_engine_menu_runtime::field_menu_dispatch::item_display_text(w, INCENSE).name;
+    let lines = w.menu.use_route_prompts.lines(
+        legaia_engine_menus::pause_screens::UseRoute::Incense,
+        |t, op| {
+            (t == 0xC2).then(|| {
+                legaia_engine_menu_runtime::field_menu_dispatch::item_display_text(w, op).name
+            })
+        },
+    );
+    assert_eq!(lines.len(), 2, "window 12 carries two prompt lines");
+    assert!(
+        lines[0].contains(&name),
+        "the first line splices the Incense name ({name:?}): {:?}",
+        lines[0]
+    );
+    let (px, py) = ctx.rects.pen(12);
+    let glyph_at = |x: i32, y: i32| draws.texts.iter().any(|d| d.dst.0 == x && d.dst.1 == y);
+    // Each line starts with the pool's blank `@` (width 0, a one-pixel
+    // advance), at the pen and at `+0xC`; the first visible glyph follows
+    // one pixel on.
+    assert!(
+        glyph_at(px, py) && glyph_at(px + 1, py),
+        "line 1 at the window pen"
+    );
+    assert!(
+        glyph_at(px + 0x0C, py + 0x0E) && glyph_at(px + 0x0D, py + 0x0E),
+        "line 2 at (+0xC, +0xE)"
+    );
+    eprintln!(
+        "[incense] prompt lines: {} / {} chars",
+        lines[0].len(),
+        lines[1].len()
+    );
+}

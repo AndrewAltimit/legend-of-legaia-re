@@ -24,6 +24,11 @@ pub struct MenuState {
     /// without the overlay, and an empty set is what keeps the panels from
     /// drawing invented text.
     pub context_labels: legaia_engine_menus::pause_screens::ContextLockedLabels,
+    /// The Door of Light / Incense confirm windows' prompt lines (windows
+    /// `10` / `12`), read out of the same PROT 0899 image
+    /// ([`legaia_engine_menus::pause_screens::UseRoutePrompts`]). Empty on a
+    /// load without the overlay.
+    pub use_route_prompts: legaia_engine_menus::pause_screens::UseRoutePrompts,
     /// The shop windows' labels (picker rows, compare notes, quantity
     /// prompts, recipient rows, sell detail, Point Card toast), read out of
     /// the same PROT 0899 image ([`legaia_engine_menus::shop::ShopLabels`]).
@@ -89,6 +94,7 @@ impl MenuState {
             text: None,
             arrange_rank: None,
             context_labels: Default::default(),
+            use_route_prompts: Default::default(),
             shop_labels: Default::default(),
             widget_scripts: None,
             item_category: Vec::new(),

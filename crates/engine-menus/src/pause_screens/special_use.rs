@@ -45,6 +45,87 @@ pub const INCENSE_ITEM_ID: u8 = 0x8A;
 pub const MENU_EXIT_CODE_FIELD_ESCAPE: u32 = 4;
 pub const MENU_EXIT_CODE_WORLD_MAP_WARP: u32 = 5;
 
+/// VA of the Door of Light prompt `FUN_801D1DAC` (window 10) draws at
+/// `(WX, WY)` (`lui a0,0x801d; addiu a0,a0,-0x156c` at `0x801D1DB8`).
+pub const DOOR_OF_LIGHT_PROMPT_VA: u32 = 0x801C_EA94;
+/// VAs of the Incense prompt's two lines `FUN_801D1F10` (window 12) draws
+/// at `(WX, WY)` and `(WX + 0xC, WY + 0xE)` (`0x801D1F1C` / `0x801D1F50`).
+/// The first carries a `0xC2` item-name token naming Incense.
+pub const INCENSE_PROMPT_VAS: [u32; 2] = [0x801C_EAB4, 0x801C_EAC8];
+
+/// One menu-overlay pool string as bytes: from `va` to its NUL, the
+/// two-byte `0xC0..=0xCF` tokens kept whole so a substitution survives for
+/// the caller to expand. `None` when `va` is outside the image.
+///
+/// The pool's leading `@` is kept: neither the expander `FUN_80036514` nor
+/// the renderer `FUN_80036888` treats it specially, and it is a blank glyph
+/// of width `0`, so retail draws it as a one-pixel advance
+/// (`widths[c] + pad + 1`) before the first visible glyph.
+pub fn menu_overlay_bytes(overlay: &[u8], va: u32) -> Option<Vec<u8>> {
+    let off = va.checked_sub(MENU_OVERLAY_BASE_VA)? as usize;
+    let body = overlay.get(off..)?;
+    let mut out = Vec::new();
+    let mut i = 0;
+    while let Some(&b) = body.get(i) {
+        if b == 0 {
+            break;
+        }
+        out.push(b);
+        if b & 0xF0 == 0xC0 {
+            out.extend(body.get(i + 1).copied());
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+    Some(out)
+}
+
+/// The special Use routes' own prompt lines, read off one PROT 0899 image:
+/// the strings `FUN_801D1DAC` (Door of Light, window 10) and `FUN_801D1F10`
+/// (Incense, window 12) draw above their Yes / No rows. Kept as raw bytes
+/// so the Incense line's `0xC2` item-name token can be expanded against the
+/// item table at draw time ([`Self::lines`]). Empty until a host installs
+/// the overlay - the windows then draw no prompt text rather than invented
+/// text.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct UseRoutePrompts {
+    pub door_light: Vec<u8>,
+    pub incense: [Vec<u8>; 2],
+}
+
+impl UseRoutePrompts {
+    /// Read both routes' lines out of a PROT 0899 image.
+    pub fn from_menu_overlay(overlay: &[u8]) -> Self {
+        let s = |va: u32| menu_overlay_bytes(overlay, va).unwrap_or_default();
+        Self {
+            door_light: s(DOOR_OF_LIGHT_PROMPT_VA),
+            incense: [s(INCENSE_PROMPT_VAS[0]), s(INCENSE_PROMPT_VAS[1])],
+        }
+    }
+
+    /// `true` once a host has installed real disc text.
+    pub fn is_installed(&self) -> bool {
+        !self.door_light.is_empty() || !self.incense[0].is_empty()
+    }
+
+    /// `route`'s prompt lines with each `0xC1..=0xC7` token expanded by
+    /// `name(token, operand)` (retail's `FUN_80036514` splice; the Incense
+    /// line's `0xC2 0x8A` is the item name). The Door of Wind route has no
+    /// prompt window. Empty when nothing is installed.
+    pub fn lines(&self, route: UseRoute, name: impl Fn(u8, u8) -> Option<String>) -> Vec<String> {
+        let raw: Vec<&[u8]> = match route {
+            UseRoute::DoorOfLight => vec![&self.door_light],
+            UseRoute::Incense => vec![&self.incense[0], &self.incense[1]],
+            _ => Vec::new(),
+        };
+        raw.into_iter()
+            .filter(|l| !l.is_empty())
+            .map(|l| crate::shop::expand_name_escapes(l, &name))
+            .collect()
+    }
+}
+
 /// The item-effect **class byte** (`0x800752C0 + eff*4 + 0`) of the three
 /// special Use items. These three ids are the only ones retail's dispatch
 /// (`FUN_801D7E50`) sends to a dedicated submenu, and each one's class is

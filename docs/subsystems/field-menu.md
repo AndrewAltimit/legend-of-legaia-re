@@ -1235,12 +1235,18 @@ Specifics:
 - The **Door of Wind** rows are class `0x8000`, which the kernel draws as a
   bare name: `ItemsScreenModel::show_counts` is `false` there and the row
   draws no count column.
-
-Known differences from retail on this screen:
-
-- The Door of Light / Incense prompt strings are not recovered from the
-  overlay, so the port stages the item name and its own question in the retail
-  line slots (geometry is exact).
+- The **Door of Light / Incense prompts** are the overlay's own strings:
+  `FUN_801D1DAC` draws the pool string at `0x801CEA94` at `(WX, WY)`;
+  `FUN_801D1F10` draws `0x801CEAB4` at `(WX, WY)` and `0x801CEAC8` at
+  `(WX+0xC, WY+0xE)`; both then draw Yes / No (`0x801CEA84` / `0x801CEA8C`,
+  ink 5) at `WX+0x44` with the hand at `WX+0x30`. The Incense line carries a
+  `0xC2 0x8A` item-name token. The pool strings open with `@`, a width-0
+  blank glyph neither the expander nor the renderer special-cases, so each
+  line's first visible glyph sits one pixel past the pen. Port:
+  `pause_screens::UseRoutePrompts` (installed by
+  `World::install_menu_overlay_tables`), expanded against the disc item
+  table in `engine-screens`. Disc-gated oracle:
+  `pause_learned_content_ladder::the_incense_confirm_draws_the_overlay_prompt_lines`.
 
 ## Magic screen
 
@@ -2076,7 +2082,6 @@ Where the port differs from retail today:
 
 | Area | Difference |
 |---|---|
-| Special-route prompts | Door of Light / Incense prompt text is the port's own |
 | Armament candidate lists | id-sorted, without retail's leading rows on an empty slot ([Equip screen](#port-of-the-equip-screen)) |
 | Money box | no casino coin row |
 | Spell level-up notice | port-composed sentence, shown over the resumed menu |

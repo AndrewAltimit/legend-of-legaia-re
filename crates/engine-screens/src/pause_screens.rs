@@ -555,25 +555,33 @@ pub fn items_draws(
             cursor: c.cursor,
             text_cursor: !ctx.chrome_present(),
         });
-    // Retail's own Use-route prompt strings live in the menu overlay's data
-    // segment (the `0x801CEA94` block the renderer's `lui`/`addiu` pairs point
-    // at) and are not recovered, so the port stages the item name and its own
-    // question in the retail line slots; the geometry - which is what the
-    // renderer actually is - is exact.
-    let special_one_line = model
-        .special_confirm
-        .as_ref()
-        .map(|sc| format!("Use {}?", sc.item_name));
-    let special_lines: Vec<&str> = match (model.special_confirm.as_ref(), &special_one_line) {
-        (Some(sc), Some(one)) => {
-            if matches!(sc.route, ps::UseRoute::Incense) {
-                vec![sc.item_name.as_str(), "Use it?"]
+    // The routes' own prompt lines, out of the menu overlay's string pool
+    // (`FUN_801D1DAC` / `FUN_801D1F10`), with the Incense line's `0xC2`
+    // item-name token spliced from the disc item table. Without the
+    // overlay installed the window draws no prompt text, but keeps the
+    // route's row count (one line for window 10, two for window 12), which
+    // is what places the window and its Yes / No rows.
+    let special_owned: Vec<String> = match model.special_confirm.as_ref() {
+        Some(sc) => {
+            let mut lines = world
+                .map(|w| {
+                    w.menu.use_route_prompts.lines(sc.route, |token, op| {
+                        matches!(token, 0xC2 | 0xC4)
+                            .then(|| field_menu_dispatch::item_display_text(w, op).name)
+                    })
+                })
+                .unwrap_or_default();
+            let rows = if matches!(sc.route, ps::UseRoute::Incense) {
+                2
             } else {
-                vec![one.as_str()]
-            }
+                1
+            };
+            lines.resize(rows, String::new());
+            lines
         }
-        _ => Vec::new(),
+        None => Vec::new(),
     };
+    let special_lines: Vec<&str> = special_owned.iter().map(String::as_str).collect();
     pause_screen_draws(
         ctx,
         PauseScreen::Items(ItemsScreenView {
