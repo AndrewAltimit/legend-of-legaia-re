@@ -493,6 +493,48 @@ fn confirm_options_rect(slide_y: i32) -> (i32, i32, i32, i32) {
     messagebox_rect(CONFIRM_DIALOG_CENTER_X, slide_y + CONFIRM_OPTIONS_DY, w, h)
 }
 
+/// The confirm's pointing-hand cursor, left of the stacked `Yes` / `No`
+/// rows: `FUN_8002C488(x - 0x1A, y + 0x24 + row * 0x10, 0x4E)` with
+/// `row = (_DAT_801F01FC + 1) & 1` (`0x801E28A0..0x801E28C4` in
+/// `FUN_801E1C1C` mode 3) - the same `0x4E` hand the slot grid points with,
+/// top-left at the call's pen. Row 0 is `Yes`; the session's cursor `0` is
+/// `Yes`, so its cursor is the row. At the parked `y = 88` the hand sits at
+/// `(134, 124)` on `Yes` and `(134, 140)` on `No`.
+///
+/// The row highlight alone (bright ink against dim) was all the port drew,
+/// so the box's default `No` read as a plain menu: a confirm pressed straight
+/// through backed out to the grid and nothing was written.
+pub fn confirm_dialog_hand_draw_for(
+    rects: &SaveMenuAtlasRects,
+    cursor: u8,
+    slide_y: i32,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> SpriteDraw {
+    let scale = stage_scale.max(1) as i32;
+    let row = i32::from(cursor.min(1));
+    let x = CONFIRM_DIALOG_CENTER_X - CONFIRM_HAND_DX;
+    let y = slide_y + CONFIRM_HAND_DY + row * CONFIRM_HAND_ROW_PITCH;
+    SpriteDraw {
+        dst: (
+            stage_origin.0 + x * scale,
+            stage_origin.1 + y * scale,
+            16 * scale as u32,
+            16 * scale as u32,
+        ),
+        src: rects.cursor,
+        color: [1.0, 1.0, 1.0, 1.0],
+    }
+}
+
+/// The confirm hand's x offset left of the dialog centre (`addiu a0,s7,-0x1a`).
+const CONFIRM_HAND_DX: i32 = 0x1A;
+/// The confirm hand's y offset from the slide y on the `Yes` row
+/// (`s8 + 0x10` then `+ 0x14`).
+const CONFIRM_HAND_DY: i32 = 0x24;
+/// One option row down (`sll a1,a1,0x4`).
+const CONFIRM_HAND_ROW_PITCH: i32 = 0x10;
+
 /// Build the [`SpriteDraw`]s for the confirm dialog's two 9-slice panels.
 /// `slide_y` is the dialog's live y (interpolate
 /// [`CONFIRM_DIALOG_SLIDE_START_Y`] -> [`CONFIRM_DIALOG_SLIDE_TARGET_Y`]

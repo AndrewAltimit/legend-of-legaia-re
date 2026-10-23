@@ -348,6 +348,13 @@ pub fn save_select_overlay_draws(
                     stage_scale,
                 ));
             }
+            out.sprites.push(confirm_dialog_hand_draw_for(
+                rects,
+                cursor,
+                y,
+                stage_origin,
+                stage_scale,
+            ));
         }
         out.texts.extend(confirm_dialog_text_draws_for(
             font,
@@ -403,6 +410,70 @@ mod tests {
             out.texts.len() > title_only.texts.len(),
             "caption + confirm text drew"
         );
+    }
+
+    /// The confirm points at its row with the save screen's hand, as retail's
+    /// mode 3 does: on `No` (the box's default) at `(134, 140)` once parked,
+    /// on `Yes` one row up. Without it a confirm pressed straight through the
+    /// default backed out with nothing saved and nothing on screen to say why.
+    #[test]
+    fn the_confirm_draws_the_hand_on_its_row() {
+        let font = legaia_font::Font::placeholder();
+        // Every panel tile needs a size: the 9-slice walks its edges in
+        // tile-width steps.
+        let t = (0, 0, 8, 8);
+        let rects = SaveMenuAtlasRects {
+            cursor: (7, 9, 16, 16),
+            panel_tl: t,
+            panel_tr: t,
+            panel_bl: t,
+            panel_br: t,
+            panel_top: t,
+            panel_bot: t,
+            panel_left: t,
+            panel_right: t,
+            panel_interior: t,
+            panel_filigree: t,
+            slot1: t,
+            slot2: t,
+            dialog_fill: t,
+            ..SaveMenuAtlasRects::default()
+        };
+        let cells = [SlotGridCell::default(); 15];
+        let view = |cursor| SaveSelectOverlayView {
+            title: "Save",
+            rows: &[],
+            cursor: 0,
+            single_pill: true,
+            pills: &[0],
+            pill_cursor: None,
+            slide_t: 0x1000,
+            info_t: 0x1000,
+            now_checking: false,
+            banner: None,
+            preview: Some(SaveSelectPreviewView {
+                cells: &cells,
+                cell: 3,
+                info: None,
+                caption: Some("Able to save."),
+                panel_y_offset: 0,
+            }),
+            confirm: Some(("Do you wish to save?", cursor)),
+        };
+        let hands = |cursor| -> Vec<(i32, i32)> {
+            save_select_overlay_draws(&font, Some(&rects), &view(cursor), (0, 0), 1)
+                .sprites
+                .iter()
+                .filter(|s| s.src == rects.cursor)
+                .map(|s| (s.dst.0, s.dst.1))
+                .collect()
+        };
+        // One hand on the grid's focused cell, one on the confirm's row.
+        let no = hands(1);
+        assert!(no.contains(&(134, 140)), "hand on No: {no:?}");
+        let yes = hands(0);
+        assert!(yes.contains(&(134, 124)), "hand on Yes: {yes:?}");
+        assert_eq!(no.len(), 2);
     }
 
     /// A parked write panel is drawn alone: the header, pills and grid stop
