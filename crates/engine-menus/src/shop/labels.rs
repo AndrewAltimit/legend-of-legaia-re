@@ -70,6 +70,8 @@ impl ShopLabel {
     /// Read the label at `va` out of a PROT 0899 image; empty when the VA is
     /// outside it.
     pub fn read(overlay: &[u8], va: u32) -> Self {
+        // A label a language pack moved is read where the code now finds it.
+        let va = legaia_game_tables::menu_string_refs::resolve_va(overlay, va);
         let Some(rest) = va
             .checked_sub(MENU_OVERLAY_BASE_VA)
             .and_then(|o| overlay.get(o as usize..))

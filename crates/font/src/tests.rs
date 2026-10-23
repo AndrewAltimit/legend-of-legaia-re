@@ -61,6 +61,17 @@ fn glyph_origin_last_char() {
 }
 
 #[test]
+fn layout_ascii_hands_a_latin1_char_back_as_its_byte() {
+    // A disc string reader returns an accent cell `0x82` as `U+0082`; the
+    // font must lay out the one byte, not its two UTF-8 bytes.
+    let f = synthetic_for_tests();
+    let via_str = f.layout_ascii("@B\u{82}g");
+    let via_bytes = f.layout(b"@B\x82g");
+    assert_eq!(via_str.glyphs.len(), via_bytes.glyphs.len());
+    assert_eq!(via_str.advance_x, via_bytes.advance_x);
+}
+
+#[test]
 fn synthetic_font_layout_advances_per_char() {
     let f = synthetic_for_tests();
     // Three chars with the synthetic width formula; advances accumulate.

@@ -9,3 +9,4 @@ mod equip_applier;
 mod menu_suite_e2e;
 mod pause_menu_kernel_wiring;
 mod save_subscreen_ladder;
+mod translated_menu_strings_disc;

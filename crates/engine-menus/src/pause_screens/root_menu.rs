@@ -269,25 +269,32 @@ pub const CHOICE_NO_VA: u32 = 0x801C_EA8C;
 /// on a retail capture, against the `WX + 0x14` pen). Keeping it makes the
 /// host font place the line the same way.
 ///
-/// Stops at the first byte outside printable ASCII as well as at the NUL,
-/// so an entry that is really a one-byte control code comes back empty
-/// rather than as mojibake (a lone `@` counts as empty). `None` means the
-/// VA is outside the image.
+/// Stops at the first byte that is not a glyph
+/// ([`legaia_game_tables::menu_pool::is_glyph`]) as well as at the NUL, so
+/// an entry that is really a one-byte control code comes back empty rather
+/// than as mojibake (a lone `@` counts as empty). A high glyph byte (an
+/// accent cell) comes back as the Latin-1 `char` of its value. `None` means
+/// the VA is outside the image.
+///
+/// `va` is the retail coordinate; the string is read where the overlay's own
+/// code finds it ([`legaia_game_tables::menu_string_refs::resolve_va`]), so a
+/// label a language pack moved still reads.
 ///
 /// No text is committed anywhere in this crate: the VAs above are the
 /// coordinates and this reads the bytes from the image the user supplied.
 pub fn menu_overlay_string(overlay: &[u8], va: u32) -> Option<String> {
+    let va = legaia_game_tables::menu_string_refs::resolve_va(overlay, va);
     let off = va.checked_sub(MENU_OVERLAY_BASE_VA)? as usize;
     let rest = overlay.get(off..)?;
     let end = rest
         .iter()
-        .position(|&b| !(0x20..0x7F).contains(&b))
+        .position(|&b| !legaia_game_tables::menu_pool::is_glyph(b))
         .unwrap_or(rest.len());
     let text = &rest[..end];
     if text.strip_prefix(b"@").unwrap_or(text).is_empty() {
         return Some(String::new());
     }
-    Some(String::from_utf8_lossy(text).into_owned())
+    Some(text.iter().map(|&b| char::from(b)).collect())
 }
 
 /// The two prompt VAs the Throw Out confirm (`FUN_801D1B20`, window 9)

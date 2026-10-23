@@ -7,7 +7,8 @@
 //! into the string primitive (`lui a0,0x801d` + `addiu a0,a0,-0x....`), and
 //! the bytes are read from the image the user supplied - no text is
 //! committed here. A host keeps a fallback only for a load without the
-//! overlay.
+//! overlay. A label a language pack moved is read where the overlay's code
+//! now finds it ([`crate::menu_string_refs`]).
 //!
 //! **The `@` lead is kept.** Most pool strings open with `0x40`, which
 //! neither the expander `FUN_80036514` nor the renderer `FUN_80036888` tests
@@ -288,21 +289,33 @@ impl MenuPoolLabels {
     }
 }
 
-/// One NUL-terminated pool string at `va`, kept whole (`@` included). `None`
-/// outside the image, or when the string is empty, a lone `@`, or carries a
-/// byte outside printable ASCII (a substitution token belongs to a
-/// different reader).
+/// One NUL-terminated pool string at `va`, kept whole (`@` included), read
+/// where the overlay's own code finds it
+/// ([`crate::menu_string_refs::resolve_va`]: a translated label may have
+/// moved). `None` outside the image, or when the string is empty, a lone
+/// `@`, or carries a byte that is not a glyph (a substitution token belongs
+/// to a different reader).
+///
+/// The text is the font's byte space as Latin-1: a byte `0x80..` (an accent
+/// cell a language pack's accent font draws, or a PAL glyph) comes back as
+/// the `char` of the same value, which is how the hosts hand bytes back to
+/// the font.
 fn pool_string(overlay: &[u8], va: u32) -> Option<String> {
+    let va = crate::menu_string_refs::resolve_va(overlay, va);
     let off = va.checked_sub(MENU_OVERLAY_BASE_VA)? as usize;
     let rest = overlay.get(off..)?;
     let end = rest.iter().position(|&b| b == 0)?;
     let text = &rest[..end];
-    if text.strip_prefix(b"@").unwrap_or(text).is_empty()
-        || !text.iter().all(|b| (0x20..0x7F).contains(b))
-    {
+    if text.strip_prefix(b"@").unwrap_or(text).is_empty() || !text.iter().all(|&b| is_glyph(b)) {
         return None;
     }
-    Some(String::from_utf8_lossy(text).into_owned())
+    Some(text.iter().map(|&b| char::from(b)).collect())
+}
+
+/// A byte the string primitive draws as one glyph: printable ASCII or a
+/// high cell, never a two-byte control token's lead (`0xC0..=0xCF`, `0xFF`).
+pub fn is_glyph(b: u8) -> bool {
+    (0x20..0x7F).contains(&b) || (0x80..0xC0).contains(&b) || (0xD0..0xFF).contains(&b)
 }
 
 #[cfg(test)]
@@ -319,11 +332,17 @@ mod tests {
         put(&mut img, MenuLabel::Items.va(), b"@Bag\0");
         put(&mut img, MenuLabel::Far.va(), b"Far\0");
         put(&mut img, MenuLabel::Use.va(), b"@\0");
+        put(&mut img, MenuLabel::Magic.va(), b"@Mag\x82\0");
+        put(&mut img, MenuLabel::Equip.va(), b"@\xC2\x01\0");
         let l = MenuPoolLabels::from_menu_overlay(&img);
         assert!(l.is_installed());
         assert_eq!(l.get(MenuLabel::Items), Some("@Bag"));
         assert_eq!(l.get(MenuLabel::Far), Some("Far"));
         assert_eq!(l.get(MenuLabel::Use), None, "a lone @ is no label");
+        // An accent cell survives as the Latin-1 char of its byte; a token
+        // is not a label.
+        assert_eq!(l.get(MenuLabel::Magic), Some("@Mag\u{82}"));
+        assert_eq!(l.get(MenuLabel::Equip), None);
         assert_eq!(MenuPoolLabels::default().get(MenuLabel::Items), None);
     }
 

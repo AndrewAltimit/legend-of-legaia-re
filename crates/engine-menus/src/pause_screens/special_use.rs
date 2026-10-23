@@ -62,6 +62,8 @@ pub const INCENSE_PROMPT_VAS: [u32; 2] = [0x801C_EAB4, 0x801C_EAC8];
 /// of width `0`, so retail draws it as a one-pixel advance
 /// (`widths[c] + pad + 1`) before the first visible glyph.
 pub fn menu_overlay_bytes(overlay: &[u8], va: u32) -> Option<Vec<u8>> {
+    // A string a language pack moved is read where the code now finds it.
+    let va = legaia_game_tables::menu_string_refs::resolve_va(overlay, va);
     let off = va.checked_sub(MENU_OVERLAY_BASE_VA)? as usize;
     let body = overlay.get(off..)?;
     let mut out = Vec::new();

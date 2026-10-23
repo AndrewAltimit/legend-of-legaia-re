@@ -195,6 +195,12 @@ addresses (the menu overlay reloads from the disc when the menu opens; the
 executable's edits need `legaia-patcher scus-pokes` over a save state, which
 `autorun_menu_screen_dump.lua` applies from `LEGAIA_POKES`).
 
+The port's menu-overlay readers follow a move the same way retail does, by
+decoding a reference site on the patched image
+([`ui-strings.md`](ui-strings.md#what-the-port-reads)); its battle-overlay and
+executable string readers still read the retail VA, so there a moved string
+shows its new text in retail only.
+
 ## Where the text lives
 
 The memory map of every translatable category, and what room it has:

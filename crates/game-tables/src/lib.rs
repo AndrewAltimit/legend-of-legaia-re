@@ -31,6 +31,7 @@ pub mod item_effect;
 pub mod item_names;
 pub mod level_up_tables;
 pub mod menu_pool;
+pub mod menu_string_refs;
 pub mod menu_windows;
 pub mod mode_table;
 pub mod move_power;

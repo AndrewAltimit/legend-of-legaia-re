@@ -77,7 +77,10 @@ pub const NOTIFY_TEMPLATE_VA: u32 = 0x801E_4700;
 /// No text is committed: the VA is the coordinate and this reads the bytes
 /// from the image the user supplied.
 pub fn notify_template_from_menu_overlay(overlay: &[u8]) -> Option<Vec<u8>> {
-    let off = NOTIFY_TEMPLATE_VA.checked_sub(MENU_OVERLAY_BASE_VA)? as usize;
+    // A template a language pack moved is read where `FUN_801DCD58` now
+    // finds it.
+    let va = legaia_game_tables::menu_string_refs::resolve_va(overlay, NOTIFY_TEMPLATE_VA);
+    let off = va.checked_sub(MENU_OVERLAY_BASE_VA)? as usize;
     let rest = overlay.get(off..)?;
     let mut out = Vec::new();
     let mut i = 0usize;
