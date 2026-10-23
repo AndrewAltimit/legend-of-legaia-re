@@ -24,8 +24,10 @@ pub(super) const STARVE_TAG: &str = "# soak-starve-frames = ";
 /// the window that made it.
 pub(super) const BATTLE_FRAMES_TAG: &str = "# soak-battle-frames = ";
 /// The session configuration a replay was recorded under: `"host"` (the play
-/// hosts' arming, [`Tunables::host_arming`]) or `"bare"`. A replay without
-/// the tag predates the arming and replays bare.
+/// hosts' arming, [`Tunables::arming`]) or `"bare"`. A replay without
+/// the tag predates the arming and replays bare. Either can carry a
+/// `"-retail"` suffix: the run held the hosts' retail mode
+/// ([`Arming::retail`]).
 pub(super) const ARMING_TAG: &str = "# soak-arming = ";
 
 pub(super) fn replay_text(
@@ -33,7 +35,7 @@ pub(super) fn replay_text(
     pads: &[u16],
     finding: Option<&Finding>,
     min_distinct: Option<usize>,
-    host_arming: bool,
+    arming: Arming,
 ) -> String {
     let mut rf = ReplayFile::new(
         ReplayMeta::new(pads.len() as u64)
@@ -68,7 +70,11 @@ pub(super) fn replay_text(
     if let Some(n) = env_u64("LEGAIA_SOAK_BATTLE_FRAMES") {
         let _ = writeln!(out, "{BATTLE_FRAMES_TAG}{n}");
     }
-    let arming = if host_arming { "host" } else { "bare" };
+    let arming = format!(
+        "{}{}",
+        if arming.host { "host" } else { "bare" },
+        if arming.retail { "-retail" } else { "" }
+    );
     let _ = writeln!(out, "{ARMING_TAG}{arming:?}");
     let _ = writeln!(
         out,
@@ -86,7 +92,7 @@ pub(super) struct LoadedReplay {
     pub(super) min_distinct: Option<usize>,
     pub(super) starve_frames: Option<u64>,
     pub(super) battle_frames: Option<u64>,
-    pub(super) host_arming: bool,
+    pub(super) arming: Arming,
 }
 
 impl LoadedReplay {
@@ -102,7 +108,7 @@ impl LoadedReplay {
         if let Some(n) = self.battle_frames {
             t.battle_frames = n;
         }
-        t.host_arming = self.host_arming;
+        t.arming = self.arming;
         t
     }
 }
@@ -134,7 +140,7 @@ pub(super) fn load_replay(path: &Path) -> LoadedReplay {
         min_distinct: parse_tag(&text, MIN_DISTINCT_TAG).and_then(|s| s.parse().ok()),
         starve_frames: parse_tag(&text, STARVE_TAG).and_then(|s| s.parse().ok()),
         battle_frames: parse_tag(&text, BATTLE_FRAMES_TAG).and_then(|s| s.parse().ok()),
-        host_arming: parse_tag(&text, ARMING_TAG).as_deref() == Some("host"),
+        arming: Arming::from_tag(parse_tag(&text, ARMING_TAG).as_deref()),
     }
 }
 

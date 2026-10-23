@@ -59,9 +59,9 @@ pub(super) struct RunOutcome {
     pub(super) pads: Vec<u16>,
     pub(super) stats: RunStats,
     pub(super) enter_ok: bool,
-    /// The run's [`Tunables::host_arming`]: a confirmation or reduction
+    /// The run's [`Tunables::arming`]: a confirmation or reduction
     /// replays in the same configuration.
-    pub(super) host_arming: bool,
+    pub(super) arming: Arming,
 }
 
 pub(super) struct Tunables {
@@ -85,8 +85,9 @@ pub(super) struct Tunables {
     /// ([`environment::arm_host_play_defaults`]). Off under
     /// `LEGAIA_SOAK_BARE=1`, and for a replay recorded before the soak armed
     /// it (no `# soak-arming` header): such a replay is judged in the
-    /// configuration that recorded it.
-    pub(super) host_arming: bool,
+    /// configuration that recorded it. `LEGAIA_SOAK_RETAIL=1` adds the
+    /// hosts' retail mode on top ([`Arming::retail`]).
+    pub(super) arming: Arming,
 }
 
 /// Frames between two re-entries of a `+mg` run's minigame, counted on the
@@ -177,7 +178,10 @@ impl Tunables {
             trace_every: env_u64("LEGAIA_SOAK_TRACE").unwrap_or(0),
             min_distinct: env_u64("LEGAIA_SOAK_MIN_DISTINCT").unwrap_or(3) as usize,
             starve_frames: env_u64("LEGAIA_SOAK_STARVE_FRAMES").unwrap_or(5400),
-            host_arming: std::env::var_os("LEGAIA_SOAK_BARE").is_none(),
+            arming: Arming {
+                host: std::env::var_os("LEGAIA_SOAK_BARE").is_none(),
+                retail: env_flag("LEGAIA_SOAK_RETAIL"),
+            },
         }
     }
 }
@@ -417,7 +421,7 @@ pub(super) fn run_one(
     t: &Tunables,
     status: Option<(&StatusBoard, usize)>,
 ) -> RunOutcome {
-    let mut session = open_session_armed(src, t.host_arming);
+    let mut session = open_session_armed(src, t.arming);
     session.begin_new_game();
     // `<label>@<save>`: the run plays the scene with a library card save's
     // party, bag and story flags instead of the New Game party's.
@@ -444,7 +448,7 @@ pub(super) fn run_one(
                     pads: Vec::new(),
                     stats: RunStats::default(),
                     enter_ok: false,
-                    host_arming: t.host_arming,
+                    arming: t.arming,
                 };
             }
         }
@@ -487,6 +491,7 @@ pub(super) fn run_one(
     // `<venue>+mg<sub_id>`: enter the venue, then request the mode-24 door
     // warp the op-`0x3E` arm makes (`World::request_minigame_warp`), so the
     // host's next tick loads the minigame overlay through the retail path.
+    let (label, rage) = split_rage(label);
     let (label, shop_visits) = split_shop(label);
     let (label, talk_visits) = split_talk(label);
     let (label, round_trip) = split_round_trip(label);
@@ -508,7 +513,7 @@ pub(super) fn run_one(
             pads,
             stats,
             enter_ok: false,
-            host_arming: t.host_arming,
+            arming: t.arming,
         };
     }
     let entered = catch_unwind(AssertUnwindSafe(|| {
@@ -561,7 +566,7 @@ pub(super) fn run_one(
             pads,
             stats,
             enter_ok,
-            host_arming: t.host_arming,
+            arming: t.arming,
         };
     }
 
@@ -620,6 +625,8 @@ pub(super) fn run_one(
     let mut battle_sites: BTreeMap<String, u32> = BTreeMap::new();
     let mut prev_pad = 0u16;
 
+    // `timeline_cap`: entries of `CutsceneState::capped` already reported.
+    let mut capped_seen = 0usize;
     // Pads a run mode queued ahead of the policy (a talk visit's action
     // press). They land in the recorded stream like any other pad.
     let mut forced_pads: std::collections::VecDeque<u16> = std::collections::VecDeque::new();
@@ -634,6 +641,9 @@ pub(super) fn run_one(
             },
         };
         pads.push(pad);
+        if rage {
+            give_party_rage(&mut session.host.world);
+        }
         let was_menu_open = session.field_menu.is_some();
         let was_shop_open = session.host.world.shops.shop_open;
         // While a shop / prize counter is up the pad drives it, not the
@@ -1020,6 +1030,27 @@ pub(super) fn run_one(
                 ));
             }
         }
+        // Timeline cap: the engine's anti-hang frame cap ended a script
+        // context (`CutsceneState::capped`). Retail has no such cap, so each
+        // entry is a record the port cut short - a wait that never cleared,
+        // or a retail-length wait the cap stands below.
+        if w.cutscene.capped.len() > capped_seen {
+            for cap in &w.cutscene.capped[capped_seen..] {
+                findings.push(mk(
+                    &session,
+                    "timeline_cap",
+                    frame,
+                    format!(
+                        "{}@{:#x}:{:02X}",
+                        if cap.modal { "timeline" } else { "helper" },
+                        cap.pc,
+                        cap.op
+                    ),
+                    format!("anti-hang cap ended a {}-byte record: {cap:?}", cap.len),
+                ));
+            }
+        }
+        capped_seen = w.cutscene.capped.len();
         let scene_changed_this_frame = scene_changed;
         if scene_changed {
             door_prev = std::mem::replace(&mut prev_scene, w.active_scene_label.clone());
@@ -1476,6 +1507,6 @@ pub(super) fn run_one(
         pads,
         stats,
         enter_ok,
-        host_arming: t.host_arming,
+        arming: t.arming,
     }
 }

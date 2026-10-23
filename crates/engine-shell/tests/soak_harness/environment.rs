@@ -77,12 +77,46 @@ pub(super) fn source() -> Option<Source> {
 }
 
 pub(super) fn open_session(src: &Source) -> NativeSession {
-    open_session_armed(src, true)
+    open_session_armed(
+        src,
+        Arming {
+            host: true,
+            retail: false,
+        },
+    )
+}
+
+/// The session configuration a run plays under.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Arming {
+    /// The hosts' faithful-play arming ([`arm_host_play_defaults`]).
+    pub(super) host: bool,
+    /// The hosts' retail mode (`--retail` / the play page's retail mode):
+    /// the persisted options pinned (`OptionsState::pin_retail`, pushed
+    /// through `options::apply_to_world`) and then every fidelity toggle
+    /// (`WorldToggles::pin_retail`), as `SessionSwitches::apply` does - the
+    /// hop landing guard down, the retail tile windows, no flash slew.
+    pub(super) retail: bool,
+}
+
+impl Arming {
+    /// Read back a replay's `# soak-arming` value.
+    pub(super) fn from_tag(tag: Option<&str>) -> Self {
+        let tag = tag.unwrap_or("bare");
+        let (base, retail) = match tag.strip_suffix("-retail") {
+            Some(b) => (b, true),
+            None => (tag, false),
+        };
+        Self {
+            host: base == "host",
+            retail,
+        }
+    }
 }
 
 /// [`open_session`], with the hosts' faithful-play arming applied only when
-/// `arm` is set.
-pub(super) fn open_session_armed(src: &Source, arm: bool) -> NativeSession {
+/// `arm.host` is set, and their retail mode when `arm.retail` is.
+pub(super) fn open_session_armed(src: &Source, arm: Arming) -> NativeSession {
     let cfg = BootConfig {
         scene: legaia_engine_session::session::DEFAULT_BOOT_SCENE.to_string(),
         enable_audio: false,
@@ -93,10 +127,24 @@ pub(super) fn open_session_armed(src: &Source, arm: bool) -> NativeSession {
         }
         Source::Disc(p) => NativeSession::open_disc(p, &cfg).expect("open NativeSession (disc)"),
     };
-    if arm {
+    if arm.host {
         arm_host_play_defaults(&mut session);
     }
+    if arm.retail {
+        pin_host_retail_mode(&mut session);
+    }
     session
+}
+
+/// The hosts' retail mode on a session: the options screen's engine knobs
+/// pinned and pushed into the world, then the fidelity toggles pinned.
+pub(super) fn pin_host_retail_mode(session: &mut NativeSession) {
+    let mut opts = legaia_engine_menus::options::OptionsState::default();
+    opts.pin_retail();
+    let w = &mut session.host.world;
+    legaia_engine_core::options::apply_to_world(&opts, w);
+    w.toggles.pin_retail();
+    debug_assert!(w.toggles.retail_deviations().is_empty());
 }
 
 /// The faithful-play arming both play hosts apply on top of a bare

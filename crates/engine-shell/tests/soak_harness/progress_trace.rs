@@ -445,8 +445,14 @@ pub(super) fn trace_line(s: &NativeSession, pad: u16) -> String {
     if sub.open {
         let _ = write!(
             out,
-            " submode(slot {:#04x} soft-reset {:?})",
-            sub.actor.state, sub.soft_reset
+            " submode(slot {:#04x} sub {} owner {:?} driver {:?} soft-reset {:?})",
+            sub.actor.state,
+            sub.actor.sub,
+            sub.owner,
+            w.find_actor_by_handler(
+                legaia_engine_field::actor_handler::ActorHandler::SubmodeDriver
+            ),
+            sub.soft_reset
         );
     }
     // `LEGAIA_SOAK_TRACE_NPC=<slot>`: that slot's position on every line,

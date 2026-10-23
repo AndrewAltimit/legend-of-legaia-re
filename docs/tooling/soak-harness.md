@@ -100,6 +100,18 @@ Game party too (the `0x35B..0x35E` flag tests fall through to the default
 record), so a plain run that starts there ends on the same hidden party and
 counts as the artifact as well.
 
+`other7` is listed in `NEVER_RUN_FIELD_SCENES`: the block is an earlier
+revision of `koin3`'s MAN ([`cdname.md`](../formats/cdname.md)), and the one
+retail path that loads it, the dance minigame's init, takes its map, trigger
+sidecar and art pack and never runs its MAN as a field
+([`minigame-dance.md`](../subsystems/minigame-dance.md#the-staging-chain-in-the-init)).
+Two of its records park for good, and both parks are retail's own. A `49 0B`
+opens the Incense notice (handler slot `0x32`), whose close stores
+`_DAT_8007B450 = 0` (`0x801F1F20`), so the op's next pass finds the park Idle
+and opens the notice again. A `49 0E` is past the op's sub-op bound
+(`sltiu v0,v0,0xe` at `0x801E098C`), and the Idle arm returns the same PC
+(`0x801E0990`).
+
 `opurud+rt` once failed its save / load round trip on the party records
 (records 1 and 2 read zero at their first byte after the resume). That one
 was an engine defect, not an entry artifact: a field save folded actor slots
@@ -160,6 +172,15 @@ handful of a scene's conversations and almost none of its props, and a
 conversation that cannot be left is invisible to it until someone opens that
 one. A talk run leaves the random encounter roll disarmed: a New Game party
 loses a dungeon's first fight, and the run is there for the records.
+
+A Rage run is a pseudo-scene `<label>+rage`, the outermost suffix
+(`jou+talk+rage@PRO-10`). Every frame it raises the Evil Medallion's Rage
+passive (character record `+0xF8` bit `0x2000`) on every roster member, so
+the anim tick's Rage arm delegates the whole party in every battle
+(`+0x16E |= 0x380`, [`battle-round-loop.md`](../subsystems/battle-round-loop.md)):
+the command ring refuses every member, and the round must still open, take
+`Begin` and play out. It is re-applied each frame because an equipment change
+rebuilds the ability bits from what is worn.
 
 ### Front-end runs
 
@@ -241,6 +262,7 @@ on one frame and neutral on the next.
 | `unbounded_growth` | an engine queue grows past a cap |
 | `effect_residue` | on the first field or world-map frame after a battle exit or a scene load, `World::battle_effect_residue` names a battle effect still live (the `efect.dat` pool, a move-FX / effect-script / summon scene-graph, the streak block, a cast-band request) - retail resets the whole actor pool at both points ([`effect-vm.md`](../subsystems/effect-vm.md#battle-effects-die-with-the-battle)) |
 | `wipe_continue` | after a party wipe, the hold never resolves, leaves the world in Battle, or the Continue does not land in the saved scene or leaves the wipe raised. What the wipe leaves live past the resume is the `effect_residue` check's, on the next frame |
+| `timeline_cap` | the engine's anti-hang frame cap ended a script context (`CutsceneState::capped`); retail has no such cap, so the record was cut short - a wait that never cleared, or a retail-length wait the cap stands below. The location is the context and its PC / opcode |
 | `save_roundtrip` | in a `+rt` run, the save taken after a resume disagrees with the save it resumed; the location names the first differing field (`party[i]+offset`, `ext.money`, `ext_v2.field_position`, ...) |
 
 The **progress digest** hashes everything a player could see move: mode and
@@ -334,7 +356,8 @@ header comments (`# soak-scene`, `# soak-seed`, `# soak-signature`) that
 TOML ignores. A replay recorded under a non-default starve window carries it
 too (`# soak-starve-frames`), and is judged by it; so does one recorded under
 a non-default endless-battle threshold (`# soak-battle-frames`). Every replay names the
-session configuration it ran under (`# soak-arming = "host"` or `"bare"`);
+session configuration it ran under (`# soak-arming = "host"` or `"bare"`,
+with a `-retail` suffix for a run under the hosts' retail mode);
 one without the tag predates the hosts' arming and replays bare, so a fixed
 finding recorded before it still replays the input that once raised it.
 
@@ -368,6 +391,7 @@ LEGAIA_SOAK_SEEDS=30 LEGAIA_SOAK_FRAMES=18000 LEGAIA_SOAK_JOBS=8 LEGAIA_SOAK_TAG
 | `LEGAIA_SOAK_MINIMIZE` / `LEGAIA_SOAK_CONFIRM_MAX` / `LEGAIA_SOAK_NO_CONFIRM` | reduction budget per signature / signatures confirmed / skip confirmation |
 | `LEGAIA_SOAK_SAVE` / `LEGAIA_SOAK_CARD` | play every run from that card save / read saves from that library card |
 | `LEGAIA_SOAK_NO_ENCOUNTERS` | disarm the random-encounter roll (a triage control: a battle that still starts is scripted) |
+| `LEGAIA_SOAK_RETAIL` | soak under the hosts' retail mode (`--retail`, the play page's retail mode): the options screen's engine knobs pinned (`OptionsState::pin_retail`) and every fidelity toggle pinned (`WorldToggles::pin_retail`), so `retail_deviations` is empty |
 | `LEGAIA_SOAK_BARE` | skip the hosts' faithful-play arming and soak a bare `BootSession` (simplified talk, candidate-centre walls, walk-through NPCs) |
 | `LEGAIA_SOAK_REDUCE` / `LEGAIA_SOAK_REDUCE_SIG` / `LEGAIA_SOAK_REDUCE_OUT` | `soak_reduce`: reduce a saved replay again, towards that signature (default: its recorded one), into that file |
 

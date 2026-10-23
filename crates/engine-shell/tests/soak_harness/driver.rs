@@ -166,7 +166,7 @@ pub(super) fn confirm(
         o.spec.seed,
         f.signature(),
     );
-    let host_arming = o.host_arming;
+    let arming = o.arming;
     let softlock = matches!(f.detector, "softlock");
     // A `control_starved` window is evidence only as the policy pressed it:
     // every way out a player would try, tried. Zeroing inside it leaves a
@@ -186,7 +186,7 @@ pub(super) fn confirm(
         .spawn(move || {
             let reproduces = |pads: &[u16], relaxed: bool| -> bool {
                 let mut t = Tunables::from_env();
-                t.host_arming = host_arming;
+                t.arming = arming;
                 if relaxed {
                     t.min_distinct = 1;
                 }
