@@ -137,15 +137,21 @@ impl RetailBattle {
     /// the bodies, and walking the camera back moved `noa_levelup_fight_pre`
     /// off retail's. Elsewhere it rose wherever it moved - with the frame
     /// itself left at the RAM's instant too (`battle_gimard_tail_fire_b`
-    /// `0.745` to `0.772`).
+    /// `0.745` to `0.772`). A command-menu drive takes it too: the menu's
+    /// close-up is still easing in on most captures, and on the displayed
+    /// pose `cort_evolved_battle_first_menu` reads `0.988` against `0.947`,
+    /// `koru_strip_forced` `0.945` against `0.904`, `battle_gaza2_prompt`
+    /// `0.998` against `0.984`, with no menu capture falling.
     ///
     /// A Done-band capture takes the displayed pose only where the engine's
     /// glide heads for retail's framing on every component
     /// ([`Self::displayed_camera_on_agreement`]): it then walks retail's own
     /// step table, and the displayed pose is one it passes through.
     pub fn displayed_camera(&self) -> bool {
-        matches!(self.seed_plan(), SeedPlan::Action { .. })
-            && !matches!(self.span_gate, SpanGate::DoneHold { .. })
+        matches!(
+            self.seed_plan(),
+            SeedPlan::Action { .. } | SeedPlan::Menu { .. }
+        ) && !matches!(self.span_gate, SpanGate::DoneHold { .. })
     }
 
     /// The Done band's conditional twin of [`Self::displayed_camera`]: the

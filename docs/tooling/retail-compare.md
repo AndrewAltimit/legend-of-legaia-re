@@ -1413,7 +1413,8 @@ children (slots 8 and 9) retire before the RAM's pass and are not recovered:
 an after-flip state's older table is already cleared for the next pass, so
 nothing in RAM says when a dead slot retired. They are worth `.001`. What
 remains on the frame is the creature and camera, which the image gate still
-places two passes back (see [Open](#open-the-double-buffers-phase-for-the-rest-of-the-frame)).
+places two passes back - correctly, since its logic words are a pass
+further on ([below](#the-double-buffers-phase-is-a-draw-tick-phase)).
 
 A child the walker retired inside the window is the other edge, and it is
 still on screen. Retirement zeroes only the slot's frame count: the mirror,
@@ -1446,17 +1447,33 @@ states: `battle_gimard_tail_fire_a` rose from `.822` to `.925`, `_b` from
 `.807` to `.897`, `gimard_burning_attack` from `.786` to `.817` and
 `rim_elm_gimard_victory` from `.888` to `.891`.
 
-### Open: the double buffer's phase for the rest of the frame
+### The double buffer's phase is a draw-tick phase
 
-The effect children read the double buffer's phase; every other lag consumer
-(the camera walk-back, the part and scroller seeds, the HUD glides, the image
-retake) still takes the two-pass law and `frame_step`. On an after-flip
-capture they place the frame a pass too far back, and on a clamped history
-with a step too short. `gimard_burning_attack` shows it on the creature,
-whose head and tail stand a pass off retail's. The phase reader
-(`displayed_passes_back`) needs a newest-table test that does not lean on
-effect quads before it can serve them all - the battle floor's lattice fit
-(`camera_pool`) is one, absent inside a summon tunnel.
+The phase reader lives in one place, `retail_compare_battle::display_lag`
+(`display_phase`): the newest ordering table, from the effect pool's live
+children or from the battle floor under the live camera, set against the
+record the frame-end flip has moved to. Only the effect children read it,
+because only state the draw tick writes is one pass behind the screen on an
+after-flip capture. The render dispatcher runs the tick pass (the actors'
+anim ticks, the camera walker, the module ticks, the HUD glides) before the
+draw tick, and an after-flip state is saved inside the next pass's draw:
+`gimard_burning_attack`'s current table holds 242 packets of the next pass
+while its pool still holds the pass the screen follows. So the logic words of
+such a capture already belong to the next pass, and they stand two passes
+past the displayed frame, as on a capture saved mid-pass.
+
+Routing every consumer through the phase measured that way: over 86 retail
+battle states and six field states it moved six images, one up
+(`cort_evolved_ultra_charge_mid_cast` `.988` to `.990`) and five down -
+`gimard_burning_attack` `.872` to `.712` (its module walk yaw taken back one
+pass instead of two), `battle_vahn_tri_somersault_super` `.948` to `.912`,
+`cort_evolved_final_crisis_mid_cast` `.997` to `.970`,
+`cort_mystic_circle_mid_cast` `.991` to `.970`, `s5_tetsu_battle` `.996` to
+`.995`. The last but one moved on the step alone: reading a clamped history
+entry as a step-`4` pass for every consumer (the frame driver's own rule for
+that pass) lengthened a lag the consumers were measured on at the
+history-max step `3`. The routing is reverted; the two-pass law and
+`frame_step` stand for every logic consumer.
 
 ### The keyframe each body stands on
 
@@ -2664,7 +2681,14 @@ yaw still has `589` to go: two passes back the camera stands some `250`
 units round, the far ice crystals swing across the screen while the two
 duellists hold still, and the frame read `0.611` against retail's with the
 crystals `70` to `90` px off. Every action drive but a `DoneHold` takes the
-displayed pose, also where its frame stays at the RAM's instant.
+displayed pose, also where its frame stays at the RAM's instant, and so does
+every command-menu drive, whose close-up is usually still easing in
+(`cort_evolved_battle_first_menu` `.947` to `.988`, `koru_strip_forced`
+`.904` to `.945`, `evil_medallion_rage_battle` `.972` to `.992`, the four
+`overworld_battle_bg_angle_*` frames to `.999`-`1.000`; no menu capture
+fell). The idle orbit that owns the yaw on the round prompt is the same
+clock: it turns `-4` a pass, and the child seats it the two passes back
+(`v0_1_battle_command_menu` `.976` to `1.000`).
 
 **Each pass on its own step.** The two passes the walk-back undoes need not
 share a step. The frame driver stores a duration of `0x2D0` hsyncs or more in

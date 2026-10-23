@@ -1,7 +1,16 @@
 //! Which frame a capture's screen shows: the double buffer's phase at the
 //! instant the state was saved ([`display_phase`]), and the vsyncs that
-//! frame lags the RAM by ([`displayed_lag_vsyncs`]). Every consumer that takes
-//! a capture back to its displayed frame reads it here.
+//! frame lags the RAM by ([`displayed_lag_vsyncs`]).
+//!
+//! It is a **draw-tick** phase. The render dispatcher runs the tick pass
+//! (anim ticks, camera walker, module ticks, HUD glides) before the draw
+//! tick, and an after-flip state is saved inside the next pass's draw: its
+//! logic words already belong to that pass and stand two passes past the
+//! displayed frame like a mid-pass capture's. Only state the draw tick
+//! writes - the effect pool - is one pass short, so only the effect
+//! children read this; every logic consumer keeps the two-pass law
+//! (`display_lag_vsyncs`). Routing them all through it dropped
+//! `gimard_burning_attack` from `.872` to `.712`.
 //!
 //! Retail keeps two records from `0x8007BF30` (`0x74` bytes each,
 //! `FUN_8001DAF8` builds them): a display environment at `+0x00`, a draw

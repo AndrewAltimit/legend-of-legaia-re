@@ -12,6 +12,10 @@ const SHINY_SERU_PATCH: &str = "shiny-seru";
 const SHINY_BOOST_NUM: u32 = 135;
 const SHINY_BOOST_DEN: u32 = 100;
 
+/// The idle orbit's turn a camera pass (`-4` yaw units,
+/// `BattleCamera::align_orbit_yaw`), taken back over the display lag.
+const ORBIT_YAW_PER_PASS: i32 = 4;
+
 /// `LEGAIA_RC_SEED_TRACE=1`: one stderr line per stream the search tried
 /// (what it reached, and the ground drift it measured) and one for the
 /// undrift re-run's verdict.
@@ -522,8 +526,13 @@ pub(super) fn battle_image(
     // The idle orbit is a clock: phase-align it to the retail instant when
     // retail's own orbit owns the yaw (the battle tick's prologue store,
     // gated on these command-flow bytes - `0x801D07AC..0x801D07CC`).
+    // The frame on screen is two passes older, and the orbit turns `-4` a
+    // pass (`v0_1_battle_command_menu`: the RAM's yaw reads `.976`, eight
+    // units back `1.000`).
     if battle.orbit_owns_yaw() {
-        env.push(("LEGAIA_BATTLE_ORBIT_YAW", retail.camera.yaw.to_string()));
+        let back = i32::from(crate::retail_compare_battle::DISPLAY_LAG_PASSES);
+        let yaw = (i32::from(retail.camera.yaw) + ORBIT_YAW_PER_PASS * back).rem_euclid(4096);
+        env.push(("LEGAIA_BATTLE_ORBIT_YAW", yaw.to_string()));
     }
     // The captured phase's glide starts where retail's stood, as the
     // headless channel aligns it (`BattleCamera::align_glide_origin`).
