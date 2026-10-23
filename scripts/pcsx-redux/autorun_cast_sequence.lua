@@ -23,7 +23,8 @@
 --                frame step *(0x1F800393), the countdown / camera words the
 --                capture gates use, every seat's HP, and the main loop's
 --                frame counter `frame` (gp+0x480), the side-band applier
---                stage `c276` (ctx[+0x276]). `shot` names the frame
+--                stage `c276` (ctx[+0x276]), and the read-span poll's words
+--                `xaspan` / `cdbusy` / `cdmode` / `cdread`. `shot` names the frame
 --                taken on that vsync, if any.
 --   r_<vsync>.raw  PCSX.GPU.takeScreenShot() pixels (BGR555, or BGR888 when
 --                `bpp` says 24); width / height / bpp are on the meta row.
@@ -104,6 +105,19 @@ local function u32(a) return probe.read_u32(a) or 0 end
 -- bumps it once per pass (`sw v0,0x480(gp)` at 0x80016BA8), so the vsyncs
 -- between two of its values are what one game frame really took.
 local FRAME_COUNTER = 0x8007B798
+-- The words FUN_8003DE7C(1) (the read-span poll state 0x32 waits on) reads:
+-- the XA read-span countdown gp+0x91C (`xaspan`), the gate halfwords at
+-- 0x8007BA70 (`cdbusy`) and 0x8007B8C2 (`cdread`), and the mode halfword at
+-- 0x8007B83C (`cdmode`, bit 0 the debug print).
+local XA_SPAN = 0x8007BC34
+local CD_BUSY = 0x8007BA70
+local CD_MODE = 0x8007B83C
+local CD_READ = 0x8007B8C2
+local function s16(a)
+    local v = probe.read_u16(a) or 0
+    if v >= 0x8000 then v = v - 0x10000 end
+    return v
+end
 local function s32(a)
     local v = u32(a)
     if v >= 0x80000000 then v = v - 0x100000000 end
@@ -183,7 +197,7 @@ probe.run({
         })
         meta = probe.csv_open(probe.out_path("meta.csv"),
             "vsync,st7,phase,acting,step,flow,c6d8,c6da,c87c,cd7960,loader," ..
-            "hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,w,h,bpp,frame,c276")
+            "hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,w,h,bpp,frame,c276,xaspan,cdbusy,cdmode,cdread")
         -- The acting seat's body against the camera that frames it: clip,
         -- node cursor, live pair +0x34/+0x38, body pair +0x3C/+0x40, and the
         -- camera focus (stored negated) with its tween endpoints.
@@ -293,11 +307,12 @@ probe.run({
             local a = actor(s)
             hp[#hp + 1] = a and u16(a + 0x14C) or -1
         end
-        meta:row("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%d,%d,%d,%d",
+        meta:row("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d",
             elapsed, st7, u8(cx + 0x279), acting, probe.read_scratch_u8(0x1F800393),
             u8(cx + 6), u16(cx + 0x6D8), u16(cx + 0x6DA), u32(cx + 0x87C), s32(GIMARD_CD),
             u8(LOADER_ID), hp[1], hp[2], hp[3], hp[4], hp[5], hp[6], hp[7], hp[8],
-            shot, w, h, bpp, u32(FRAME_COUNTER), u8(cx + 0x276))
+            shot, w, h, bpp, u32(FRAME_COUNTER), u8(cx + 0x276),
+            s32(XA_SPAN), s16(CD_BUSY), u16(CD_MODE), s16(CD_READ))
         local ba = actor(math.min(acting, 7))
         if ba ~= nil then
             local node = u32(ba + 0x22C)

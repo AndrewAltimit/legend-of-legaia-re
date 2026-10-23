@@ -104,7 +104,11 @@ impl World {
                 // (`World::settle_cast_band` / the stager's strike). An
                 // escape spell's success ends the encounter from the live
                 // loop the frame it folds, through the escape teardown.
-                match self.tables.spell_catalog.get(spell_id).cloned() {
+                // Retail resolves any id off the spell table, a capture-class
+                // special from a party seat included (a probe-injected `0x56`
+                // runs PROT 0946 from seat 0), so the party seam takes the
+                // same disc fallback the monster seam does.
+                match self.monster_cast_def(spell_id) {
                     Some(def) => {
                         let targets = self.spell_targets_for(&def, target_row, target_slot);
                         self.arm_player_cast(actor, &def, targets);

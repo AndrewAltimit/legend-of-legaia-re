@@ -197,9 +197,19 @@ lag put the shown frame at `52`. The image reads `.962` with Zeto seated there
 and `.980` seated at `48`, while a display lag one pass longer wrecks the
 pan's framing (`.462`). The same extra pass costs `cort_mystic_shield_mid_cast`
 and moves the other Cort capture-band states by under `.002`, so it is not a
-corpus-wide lag. The cast-sequence probe can take the capture: `LEGAIA_POKE32`
-sends a seat-0 cast down Big Wave's branch and `LEGAIA_RAM_AT` writes the RAM
-beside the grabbed frames, which shows which pass the drawn pose belongs to.
+corpus-wide lag.
+
+It is not the double buffer's phase: the floor grid of the table under the
+current record index (`0x8007BF30 + i * 0x74`, index `gp+0x434`) fits the
+RAM's camera, so the state was saved mid-pass and the screen is two passes
+back, as assumed (`cort_mystic_shield_mid_cast` reads the same way,
+`horn_summon_mid_cast` the other: its newest floor sits under the other
+record). Nor is it the module's pacing: a seat-0 Big Wave recorded on both
+sides (`LEGAIA_POKE32` sends the cast down Big Wave's branch) holds arms 0 and
+4 one pass each and arms 5 to 8 within two vsyncs of retail's game clock.
+What is left is the pose the frame drew: `LEGAIA_RAM_AT` beside the grabbed
+frames, with the caster's cursor and the ordering tables' body packets, shows
+which pass it belongs to.
 
 Answered questions: [settled battle / arts / level-up](re-settled-threads/battle.md), [settled rendering / camera](re-settled-threads/rendering-camera.md), [settled world map](re-settled-threads/world-map.md); falsified readings: [battle](re-do-not-re-walk.md#battle--arts--level-up), [rendering / camera](re-do-not-re-walk.md#rendering--camera).
 

@@ -62,8 +62,10 @@ caster's cast begin (`0x28`) it grabs `PCSX.GPU.takeScreenShot()` every
 `ctx[+0x07]`, `ctx[+0x279]`, the acting seat, the frame step `*(0x1F800393)`,
 the `ctx[+0x6D8]` / `+0x6DA` / `+0x87C` words, PROT 0903's countdown, every
 seat's HP, the main loop's frame counter `gp+0x480` (`frame`, read at
-`0x8007B798`) and the side-band applier stage `ctx[+0x276]` (`c276`, the
-token a module's stream-wait arm polls). A second file, `body.csv`, holds
+`0x8007B798`), the side-band applier stage `ctx[+0x276]` (`c276`, the
+token a module's stream-wait arm polls) and the words the read-span poll
+`FUN_8003DE7C(1)` reads (`xaspan` `gp+0x91C`, `cdbusy` `0x8007BA70`,
+`cdmode` `0x8007B83C`, `cdread` `0x8007B8C2`). A second file, `body.csv`, holds
 per vsync the acting seat's clip `+0x1D9`, node cursor `+0x68`, live pair,
 body pair `+0x3C` / `+0x40` and the camera focus with its tween endpoints:
 the series a summon close-up's framing is read off. At cast begin it also logs each pool slot's ground pair
@@ -228,30 +230,34 @@ alone. The corpus's `*_summon_mid_cast` states are mednafen captures that
 PCSX-Redux cannot load, but their child commands seed the cast. That is
 enough to read the engine's own segment lengths for a cast in the fight the
 corpus scores it in.
-- **A party seat's Big Wave does not start on the engine side.** The engine
-  half of a seat-0 `0x56` sits on the Begin prompt to the engine timeout (no
-  `0x28`), with or without the caster's MP raised through
-  `LEGAIA_BATTLE_BARS`, where PROT 0944's `0x37` from the same seat runs; why
-  the seed is not taken is not traced.
 - **An item cast (the flutes) is not injectable.** The probe writes category
   `2` (Magic). An item summon needs the item category and its own id space.
 
 ## Waits the engine does not run
 
-Three waits in a summon band are I/O, which the engine's resident streams
-answer at once, so their segments part on length without any engine error.
-The pairing keys each segment on its own, so they do not shift the rest of
-the cast's pairs; they do move the band's flash against the module's arms.
+Three waits in a summon band are CD reads, which the engine's resident
+streams answer at once, so their segments part on length without any engine
+error. The pairing keys each segment on its own, so they do not shift the
+rest of the cast's pairs; they do move the band's flash against the module's
+arms. Measured on the `party_basic_attack_vs_gobu_gobu` casts (Horn, Jedo,
+Freed), each a frame-step-`2` run:
 
-| Wait | Retail (one PCSX-Redux cast) | Engine |
-|---|---|---|
-| `0x32`, the read-span poll `FUN_8003DE7C(1)` | `16` vsyncs | one pass |
-| a module arm that polls the side-band applier stage `ctx[+0x276]` (Horn's and Jedo's arm 2) | about `25` vsyncs | one pass |
-| a module arm that polls the creature stream (`FUN_8003F2B8(1)`) | a few vsyncs | one pass |
+| Wait | What it polls | Retail | Engine |
+|---|---|---|---|
+| `0x32` | `FUN_8003DE7C(1)`: with `0x8007B8C2` set, the pending-read word `gp+0x988` and the CD sync `FUN_8003F2B8(1)` (`0x8003DF70..0x8003DFFC`), the read the cast trigger started in `0x29` | `16` vsyncs, ending about `38` after `0x29` begins | one pass |
+| the side-band arm (below) | `ctx[+0x276]`: the applier `FUN_801F12D0` requests and consumes one `0x10800`-byte slot per stage pair, from the `1` state `0x32` stores | `28` to `30` vsyncs a request, `1` or `2` a consume; four slots for Horn and Jedo (the stage drops at `8`), three for Freed (at `6`) | the byte is never raised |
+| a stream-poll arm | `FUN_8003F2B8(1)`, the creature's own read | a few vsyncs | one pass |
 
-Jedo's band flash-out therefore reads about `25` vsyncs younger in the
-engine at the same module arm, which is most of that cast's low score in
-arms 2 to 4.
+The read-span words themselves (`xaspan`, `cdbusy`, `cdmode`, `cdread`) hold
+still through the whole band in these casts, so the `0x32` wait is the
+pending read, not a voice clip's span.
+
+Every summon module `0903..=0934` polls `ctx[+0x276]` once, on one arm
+([cast-module.md](../subsystems/cast-module.md#the-side-band-poll-arm)), so
+in retail that arm holds while the applier runs on past the band head.
+Horn's arm 2 ends on the pass the byte drops. Jedo's band flash-out reads
+about `25` vsyncs younger in the engine at the same arm, which is most of
+that cast's low score in arms 2 to 4.
 
 ## See also
 

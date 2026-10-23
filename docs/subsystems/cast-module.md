@@ -2125,6 +2125,34 @@ up to twice their countdown in vsyncs: a frame that takes longer than four
 vsyncs still drains four vsyncs' worth, so those arms carry the lag of a
 scene the hardware cannot draw at speed, and the port keeps the countdown.
 
+### The side-band poll arm
+
+<a id="the-side-band-poll-arm"></a>
+
+Every summon image `0903..=0934` reads the side-band applier stage
+`ctx[+0x276]` once (`lbu v0,0x276(..)`, then `bne v0,zero` to the busy
+return) and, once it reads zero, issues its creature seek
+`FUN_8003EAE4(0, n)` and moves on. The arm that holds the read, from each
+image's phase switch (a `beq` on the register holding `1` counted as phase
+`1`):
+
+| Arm | Modules |
+|---|---|
+| 0 | 0923 Gilium (after its arm-0 drain) |
+| 1 | 0904, 0909, 0910, 0911, 0912, 0913, 0916, 0917, 0919, 0920, 0921, 0922, 0925, 0927, 0928, 0929, 0933 |
+| 2 | 0903, 0905, 0906, 0907, 0908, 0914, 0915, 0918, 0930, 0931, 0932, 0934 |
+
+(0924 has no dump; 0926 is the null image.) In retail the byte is up from
+state `0x32` until the applier has read the cast's last slot, about `30`
+vsyncs a slot ([cast-sequence oracle](../tooling/cast-sequence-oracle.md#waits-the-engine-does-not-run)),
+so the arm holds for whatever of that the band head did not cover. The
+engine's side-band is resident and never raises the byte, so the arm passes
+at once in play. `cast_module_camera::sideband_wait_arm` names the arms
+whose directors gate on `ModuleCamState::sideband_busy` (0928, 0929, 0930,
+0931); that flag is raised only by a capture replay standing on the arm, and
+among the corpus's summon states only `jedo_summon_mid_cast` sits in a poll
+arm with the byte still up (`8`, one pass into the sustain).
+
 ### PROT 0918, 0922 and 0927 directors
 
 <a id="prot-0918-0922-and-0927-directors"></a>
