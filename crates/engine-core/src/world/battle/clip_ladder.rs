@@ -328,6 +328,7 @@ impl World {
         actor.battle_effect_script = Some(clip.effect_script).filter(|s| !s.is_empty());
         actor.battle_effect_cursor = 0;
         actor.battle_anim_cue_cursor = cue_cursor;
+        actor.battle_clip_commits = actor.battle_clip_commits.wrapping_add(1);
         true
     }
 

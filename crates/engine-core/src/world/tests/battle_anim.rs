@@ -650,6 +650,36 @@ fn an_art_clip_turns_effect_code_zero_into_nine() {
     }
 }
 
+/// On retail's cadence a clip the pass commits fires its frame-0 records on
+/// that pass: `FUN_80047430` walks the new clip again after its commits
+/// (`0x80047BC4..0x80047C38`), so the effect does not wait a battle frame.
+#[test]
+fn a_clip_committed_on_the_cadence_pass_walks_its_first_frame_at_once() {
+    let mut world = World::new();
+    world.enter_battle(1, 1);
+    world.toggles.battle_sm_frame_cadence = true;
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 16];
+    clips[0] = Some(pose_test_clip(0, 2, 0));
+    // Gate `1`: the walker fires a record once `frame + 1` reaches it, so
+    // this one is due at the clip's first frame.
+    clips[0x0C] = Some(scripted_clip(0x0C, (1, 0x86, 0, 300, 250)));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.actors[0].battle.queued_anim = 0x0C;
+    world.battle.anim_pass_vsyncs = 2;
+    world.tick_battle_anim_pass();
+    assert_eq!(world.actors[0].battle.current_anim, 0x0C, "committed");
+    let spawns = world.drain_battle_effect_spawns();
+    assert_eq!(
+        spawns.len(),
+        1,
+        "the frame-0 record fires on the commit pass"
+    );
+    assert_eq!(world.actors[0].battle_effect_cursor, 1);
+    // The next pass walks on from the cursor and fires nothing again.
+    world.tick_battle_anim_pass();
+    assert!(world.drain_battle_effect_spawns().is_empty());
+}
+
 #[test]
 fn monster_facing_rotates_the_spawn_offset_half_a_turn() {
     let mut world = World::new();

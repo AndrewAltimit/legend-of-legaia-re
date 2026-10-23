@@ -1447,6 +1447,26 @@ only from the per-frame anim-node tick `FUN_80047430` (`jal` sites
 arguments). A five-form reference scan finds no other caller in the corpus -
 in particular none inside the battle-action overlay itself.
 
+The two sites are two walks of one tick, not alternatives. The first runs
+after the cursor advance, over the clip that was playing. The tick then takes
+its commits (the `+0x1DC` bit-0 / bit-1 cut at `0x80047A3C`, the natural end
+at `0x80047B54`, each counted in `s4`), and when any landed
+(`beq s4,zero,0x80047c3c` at `0x80047BC4`) it walks again - `FUN_801EC3E4`,
+this walker and the cue walk `FUN_800508DC` - over the clip just installed,
+at the cursor `FUN_8004AD80` zeroed. So a clip's frame-0 records fire on the
+pass that commits it. A struck monster shows it: the melee kernel stages the
+reaction on the attacker's tick, the monster's own tick later in the same pass
+commits it, and the reaction's ray burst (code `0` / `9` below) is seated on
+the pass the blow lands - the same pass the damage numeral is pushed
+(`battle_melee_hit_spark` holds the burst's ramp level `0x900` and the numeral
+timer `0x120`, both six step-`3` passes old). A reaction staged on a seat
+whose tick already ran waits for that seat's next tick. Port:
+`World::tick_battle_anim_pass` walks every actor that committed inside its
+own tick again at its new clip's frame (the advance's commits, and the hit
+walk's in seat order, `World::tick_battle_hit_events`); before it, the
+reaction's burst seated a pass late and drew some three vsyncs short of
+retail's growth.
+
 Its inputs resolve entirely out of state this page already names:
 
 - **block** = the committed anim record (`node[+0x4C]`, shadowed from

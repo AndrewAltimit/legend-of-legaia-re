@@ -363,12 +363,50 @@ impl World {
         {
             return;
         }
+        let commits_before: Vec<u32> = self.actors.iter().map(|a| a.battle_clip_commits).collect();
         self.tick_battle_animations();
+        // Every commit the advance made is the committing actor's own.
+        let mut rewalk: Vec<usize> = commits_before
+            .into_iter()
+            .enumerate()
+            .filter(|&(k, before)| {
+                self.actors.get(k).map(|a| a.battle_clip_commits) != Some(before)
+            })
+            .map(|(k, _)| k)
+            .collect();
         if self.battle.anim_slot_reached {
             let events_before = self.pending_battle_events.len();
             self.tick_battle_locomotion_dt(self.battle.anim_pass_vsyncs);
             self.tick_battle_hit_events();
             self.fold_new_battle_events(events_before);
+            for k in std::mem::take(&mut self.battle.hit_commit_rewalk) {
+                if !rewalk.contains(&k) {
+                    rewalk.push(k);
+                }
+            }
+        }
+        // A commit inside an actor's own anim tick is followed, in the same
+        // tick, by a second hit / effect-script / cue walk of the clip it
+        // installed, at that clip's first frame (`beq s4,zero,0x80047c3c`,
+        // then `jal 0x801ec3e4` / `jal 0x801dea50` / `jal 0x800508dc` at
+        // `0x80047BF0..0x80047C34`, the cursor `FUN_8004AD80` just zeroed).
+        // So a struck monster's reaction throws its frame-0 effects - the
+        // melee ray burst - on the pass the blow lands, not a pass later.
+        // The hit walk of the new clip is not repeated here: the pass's hit
+        // walk already reads the clips the advance committed.
+        // PORT: FUN_80047430 (`0x80047BC4..0x80047C38`, the post-commit walk)
+        rewalk.sort_unstable();
+        for k in rewalk {
+            let Some(frame) = self
+                .actors
+                .get(k)
+                .and_then(|a| a.battle_animation.as_ref())
+                .map(|p| p.current_frame())
+            else {
+                continue;
+            };
+            self.step_actor_effect_script(k, frame);
+            self.step_actor_anim_cues(k, frame);
         }
         // A commit this pass zeroed `ctx[+0x87C]` and its ramps on the spot
         // (`FUN_8004AD80`, `0x8004BF68..0x8004BF78`); the camera holds the

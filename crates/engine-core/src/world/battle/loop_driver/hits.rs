@@ -36,9 +36,7 @@ impl World {
     /// REF: FUN_801EC3E4 (head guard chain ported as
     /// `legaia_engine_battle_vm::battle_action::hit_event_admits`)
     pub(in crate::world) fn tick_battle_hit_events(&mut self) {
-        use legaia_engine_battle_vm::battle_action::{
-            ActionState, ActorFlags, event_commit_due, hit_event_admits,
-        };
+        use legaia_engine_battle_vm::battle_action::ActionState;
         let state = self.battle_ctx.action_state;
         // A fresh action starts a fresh combo total on every target.
         if state == ActionState::Begin.as_byte() {
@@ -46,77 +44,103 @@ impl World {
                 a.battle.damage_accum = 0;
             }
         }
+        self.battle.hit_commit_rewalk.clear();
         for i in 0..self.actors.len() {
-            let (source, rewound) = {
-                let a = &mut self.actors[i];
-                match (a.battle_staged_anim, a.battle_animation.as_mut()) {
-                    (Some(_), Some(p)) => (
-                        p.hit_source().map(|src| (src, p.current_frame())),
-                        p.take_loop_rewound(),
-                    ),
-                    _ => (None, false),
-                }
-            };
-            let Some((src, frame)) = source else {
-                continue;
-            };
-            // The loop-window arm's re-zero (`0x80047840..0x80047878`): on a
-            // rewind, a party slot playing dynamic slot `0x11` under a latched
-            // Hyper / Super constant restarts its hit index and effect cursor,
-            // so the windowed clip re-fires its hits each cycle.
-            // PORT: FUN_80047430 (`0x80047840..0x80047878`)
-            if rewound {
-                let a = &mut self.actors[i];
-                if a.battle_monster_id.is_none()
-                    && a.battle.current_anim == vm::anim_vm::DYNAMIC_ART_SLOT_B
-                    && a.battle.latched_anim
-                        >= legaia_engine_battle_vm::battle_action::LOOP_REZERO_LATCHED_MIN
+            let commits_before: Vec<u32> =
+                self.actors.iter().map(|a| a.battle_clip_commits).collect();
+            self.tick_battle_hit_events_for(i);
+            // Retail runs this walk inside actor `i`'s own anim tick, so a
+            // commit it lands on `i` itself or on a seat whose tick comes
+            // later in the pass is that seat's own-tick commit - walked
+            // again at the new clip's first frame (`0x80047BC4..0x80047C38`).
+            // One landed on an earlier seat waits for that seat's next tick.
+            for (k, before) in commits_before.into_iter().enumerate() {
+                if k >= i
+                    && self.actors.get(k).map(|a| a.battle_clip_commits) != Some(before)
+                    && !self.battle.hit_commit_rewalk.contains(&k)
                 {
-                    a.battle.input_cursor = 0;
-                    a.battle_effect_cursor = 0;
-                    a.battle_anim_cue_cursor = 0;
+                    self.battle.hit_commit_rewalk.push(k);
                 }
             }
-            let frame_u8 = frame.clamp(0, 255) as u8;
-            let hit_index = self.actors[i].battle.input_cursor;
-            if let Some(hit) = hit_event_admits(
-                state,
-                &src.power_run,
-                &src.event_frames,
-                hit_index,
-                frame_u8,
-            ) {
-                // The epilogue bump (`0x801EECDC..0x801EECE8`), on every
-                // resolved call.
-                self.actors[i].battle.input_cursor = hit_index.wrapping_add(1);
-                self.resolve_hit_event(i as u8, hit, src.power_run, src.event_frames);
+        }
+    }
+
+    /// One actor's slice of [`Self::tick_battle_hit_events`]: the hit walk
+    /// of actor `i`'s committed clip and its event-path commit.
+    fn tick_battle_hit_events_for(&mut self, i: usize) {
+        use legaia_engine_battle_vm::battle_action::{
+            ActorFlags, event_commit_due, hit_event_admits,
+        };
+        let state = self.battle_ctx.action_state;
+        let (source, rewound) = {
+            let a = &mut self.actors[i];
+            match (a.battle_staged_anim, a.battle_animation.as_mut()) {
+                (Some(_), Some(p)) => (
+                    p.hit_source().map(|src| (src, p.current_frame())),
+                    p.take_loop_rewound(),
+                ),
+                _ => (None, false),
             }
-            // The event-path commit: only with a byte staged behind this clip.
-            let staged_behind = self.actors[i]
-                .battle
-                .flag_bits
-                .has(ActorFlags::ADVANCE_DONE);
-            if staged_behind && event_commit_due(&src.event_frames, src.event_lock, frame) {
-                // The cut takes the entry's `+0x0E` displacement pro-rated by
-                // how far the clip got - no HP test on this path, unlike the
-                // natural end (`+0x228` taken as clear, as there).
-                // PORT: FUN_80047430 (`0x80047950..0x80047A28`)
-                let a = &mut self.actors[i];
-                if let Some(p) = a.battle_animation.as_ref() {
-                    let step = p.end_root_step();
-                    if step != 0 {
-                        let frames = p.frame_count().min(255) as u8;
-                        let (sin, cos) = legaia_engine_system::trig::trig12(a.battle.facing_angle);
-                        let (dx, dz) =
-                            legaia_engine_battle_vm::battle_action::motion::event_cut_root_step(
-                                sin, cos, step, frame, frames,
-                            );
-                        a.move_state.world_x = a.move_state.world_x.wrapping_add(dx as i16);
-                        a.move_state.world_z = a.move_state.world_z.wrapping_add(dz as i16);
-                    }
+        };
+        let Some((src, frame)) = source else {
+            return;
+        };
+        // The loop-window arm's re-zero (`0x80047840..0x80047878`): on a
+        // rewind, a party slot playing dynamic slot `0x11` under a latched
+        // Hyper / Super constant restarts its hit index and effect cursor,
+        // so the windowed clip re-fires its hits each cycle.
+        // PORT: FUN_80047430 (`0x80047840..0x80047878`)
+        if rewound {
+            let a = &mut self.actors[i];
+            if a.battle_monster_id.is_none()
+                && a.battle.current_anim == vm::anim_vm::DYNAMIC_ART_SLOT_B
+                && a.battle.latched_anim
+                    >= legaia_engine_battle_vm::battle_action::LOOP_REZERO_LATCHED_MIN
+            {
+                a.battle.input_cursor = 0;
+                a.battle_effect_cursor = 0;
+                a.battle_anim_cue_cursor = 0;
+            }
+        }
+        let frame_u8 = frame.clamp(0, 255) as u8;
+        let hit_index = self.actors[i].battle.input_cursor;
+        if let Some(hit) = hit_event_admits(
+            state,
+            &src.power_run,
+            &src.event_frames,
+            hit_index,
+            frame_u8,
+        ) {
+            // The epilogue bump (`0x801EECDC..0x801EECE8`), on every
+            // resolved call.
+            self.actors[i].battle.input_cursor = hit_index.wrapping_add(1);
+            self.resolve_hit_event(i as u8, hit, src.power_run, src.event_frames);
+        }
+        // The event-path commit: only with a byte staged behind this clip.
+        let staged_behind = self.actors[i]
+            .battle
+            .flag_bits
+            .has(ActorFlags::ADVANCE_DONE);
+        if staged_behind && event_commit_due(&src.event_frames, src.event_lock, frame) {
+            // The cut takes the entry's `+0x0E` displacement pro-rated by
+            // how far the clip got - no HP test on this path, unlike the
+            // natural end (`+0x228` taken as clear, as there).
+            // PORT: FUN_80047430 (`0x80047950..0x80047A28`)
+            let a = &mut self.actors[i];
+            if let Some(p) = a.battle_animation.as_ref() {
+                let step = p.end_root_step();
+                if step != 0 {
+                    let frames = p.frame_count().min(255) as u8;
+                    let (sin, cos) = legaia_engine_system::trig::trig12(a.battle.facing_angle);
+                    let (dx, dz) =
+                        legaia_engine_battle_vm::battle_action::motion::event_cut_root_step(
+                            sin, cos, step, frame, frames,
+                        );
+                    a.move_state.world_x = a.move_state.world_x.wrapping_add(dx as i16);
+                    a.move_state.world_z = a.move_state.world_z.wrapping_add(dz as i16);
                 }
-                self.commit_staged_battle_anim_at_boundary(i);
             }
+            self.commit_staged_battle_anim_at_boundary(i);
         }
     }
 

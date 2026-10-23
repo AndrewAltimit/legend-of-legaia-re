@@ -680,6 +680,12 @@ pub struct BattleState {
     /// root motion and hit walk), which on retail's cadence run after the
     /// pass ([`crate::world::World::tick_battle_anim_pass`]).
     pub anim_slot_reached: bool,
+    /// The actors this pass's hit walk committed a clip on inside their own
+    /// anim tick in retail's order: the attacker's own event cut, and a
+    /// reaction landed on a seat the actor walk reaches after the
+    /// attacker's (`World::tick_battle_hit_events` records them,
+    /// `World::tick_battle_anim_pass` walks them again).
+    pub hit_commit_rewalk: Vec<usize>,
     /// The action state the SM's last pass ran (its state on entry), which
     /// the camera frames on retail's cadence
     /// ([`crate::world::World::battle_camera_state`]).
@@ -1080,6 +1086,7 @@ impl BattleState {
             anim_pass_frame: None,
             anim_pass_vsyncs: 1,
             anim_slot_reached: false,
+            hit_commit_rewalk: Vec::new(),
             sm_ran_state: None,
             defeat_sink_frame: None,
             vram_loads: Default::default(),

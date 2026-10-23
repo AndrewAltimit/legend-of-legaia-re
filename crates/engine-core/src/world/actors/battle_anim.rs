@@ -754,6 +754,7 @@ impl World {
             actor.battle_effect_cursor = 0;
             actor.battle_anim_cue_cursor = 0;
             actor.battle.input_cursor = 0;
+            actor.battle_clip_commits = actor.battle_clip_commits.wrapping_add(1);
             actor
                 .battle
                 .flag_bits
@@ -1016,6 +1017,7 @@ impl World {
                     .filter(|s| !s.is_empty());
                 a.battle_effect_cursor = 0;
                 a.battle_anim_cue_cursor = 0;
+                a.battle_clip_commits = a.battle_clip_commits.wrapping_add(1);
             }
             None => {
                 // No usable clip: a zero-length swing - nothing plays, the
