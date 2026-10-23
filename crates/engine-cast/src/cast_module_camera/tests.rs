@@ -1082,6 +1082,20 @@ fn mule_arm_1_waits_on_the_sideband_stage() {
     assert_eq!(sideband_wait_arm(929), Some(1));
 }
 
+/// Jedo's arm 2 holds while the side-band applier stage is up
+/// (`0x801F6D18..0x801F6D20`), and passes once it drops.
+#[test]
+fn jedo_arm_2_waits_on_the_sideband_stage() {
+    let mut st = ModuleCamState {
+        sideband_busy: true,
+        ..Default::default()
+    };
+    assert!(jedo_direct(&mut st, 2, seats()).hold);
+    st.sideband_busy = false;
+    assert!(!jedo_direct(&mut st, 2, seats()).hold);
+    assert_eq!(sideband_wait_arm(931), Some(2));
+}
+
 /// Mule's arm-16 exit frames a lone target on its own `+0x34` / `+0x38`
 /// and ten times its body radius, capped at `0x1800`.
 #[test]

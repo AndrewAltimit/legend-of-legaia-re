@@ -48,7 +48,7 @@ pub const JEDO_LAST_ARM: u8 = 31;
 /// | arm | gate | camera / writes |
 /// |---|---|---|
 /// | 0, 1 | - | a cut, then a `0xAA`-frame pull-back |
-/// | 2, 3 | - (the load) | word `= 0x80` |
+/// | 2, 3 | the side-band applier stage `ctx[+0x276]` ([`super::sideband_wait_arm`]), then the stream poll | word `= 0x80` |
 /// | 4 | word | the creature seated at `(0, -0x800)`; `+= 0x80` |
 /// | 5, 6 | word; TR z `+= 8 d` (6: `+= 30 d`, TR y `-= 10 d`) | a cut (5); `+= 0x80` / `0xC0` |
 /// | 7 | word | a cut, clip `1`; `+= 0x20` |
@@ -81,7 +81,10 @@ pub fn jedo_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
     match phase {
         0 => cut([-0x80, 0xA00], [0, 0x800, 0x1000], at6, 1),
         1 => cut([-0x80, 0xA00], [0, 0xC00, 0x1800], at6, 0xAA),
-        2 => ArmDirection::PASS,
+        // Arm 2 returns busy while the side-band applier stage `ctx[+0x276]`
+        // is up (`lbu v0,0x276(v0)` / `bne v0,zero` at `0x801F6D18..0x801F6D20`;
+        // `sideband_wait_arm`), then requests the creature stream.
+        2 => gate(st.sideband_busy),
         3 => {
             st.countdown.0 = 0x80;
             ArmDirection::PASS

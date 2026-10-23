@@ -46,6 +46,11 @@
 --   LEGAIA_PARTY_SPD     write this SPD into every party seat while in battle
 --                        so the party acts first (0 = leave)
 --   LEGAIA_MP_TOPUP      caster MP at the inject (999)
+--   LEGAIA_POKE32        comma list of `addr=value` words written at the
+--                        inject (hex or decimal), e.g. the per-seat
+--                        choreography latch PROT 0946's arm 0 forks on
+--                        (`0x801C8FE4=1` sends a seat-0 cast of 0x56 down
+--                        Big Wave's branch instead of Call Wave's)
 --   LEGAIA_SHOT_EVERY    vsyncs between frames (2)
 --   LEGAIA_MAX_SHOTS     frame cap (1500)
 --   LEGAIA_TAIL          vsyncs to keep going past the Done band (60)
@@ -73,6 +78,11 @@ local PRESS_UNTIL  = probe.getenv_num("LEGAIA_PRESS_UNTIL", 600)
 local PRESS_PERIOD = probe.getenv_num("LEGAIA_PRESS_PERIOD", 60)
 local PARTY_SPD    = probe.getenv_num("LEGAIA_PARTY_SPD", 0)
 local MP_TOPUP     = probe.getenv_num("LEGAIA_MP_TOPUP", 999)
+local POKE32 = {}
+for kv in string.gmatch(probe.getenv("LEGAIA_POKE32", ""), "[^,]+") do
+    local a, v = string.match(kv, "^%s*([^=]+)=(.+)$")
+    if a ~= nil then POKE32[#POKE32 + 1] = { tonumber(a), tonumber(v) } end
+end
 local SHOT_EVERY   = probe.getenv_num("LEGAIA_SHOT_EVERY", 2)
 local MAX_SHOTS    = probe.getenv_num("LEGAIA_MAX_SHOTS", 1500)
 local TAIL         = probe.getenv_num("LEGAIA_TAIL", 60)
@@ -239,6 +249,7 @@ probe.run({
                     probe.write_u8(a + 0x1DD, TARGET_SEAT)
                 end
             end
+            for _, pv in ipairs(POKE32) do probe.write_u32(pv[1], pv[2]) end
             PCSX.log(string.format("[inject t%d] spell=0x%02X target=%d acting=%d",
                 elapsed, SPELL, TARGET_SEAT, acting))
         end

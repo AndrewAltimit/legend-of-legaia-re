@@ -47,6 +47,7 @@ Flags worth knowing:
 | `--recapture` / `--reseed` | Re-run the retail capture / the retail-compare seed instead of using the cache |
 | `--formation <bytes>` | Retail only: overwrite the formation row `FUN_801DA600` returns. The engine has no seam to seat the same monsters, so a forced formation compares different fights |
 | `--engine-env K=V` | Extra environment for the engine child |
+| `LEGAIA_POKE32=addr=value,...` (environment) | Retail only: words the probe writes at the inject. A capture-class module that forks its choreography off RAM rather than the action id needs it: PROT 0946's arm 0 takes Big Wave's branch only while the caster's latch `0x801C8FE0 + (seat + 1) * 4` is set, so a seat-0 cast of `0x56` needs `0x801C8FE4=1` and otherwise records Call Wave |
 
 ## What each side records
 
@@ -227,8 +228,30 @@ alone. The corpus's `*_summon_mid_cast` states are mednafen captures that
 PCSX-Redux cannot load, but their child commands seed the cast. That is
 enough to read the engine's own segment lengths for a cast in the fight the
 corpus scores it in.
+- **A party seat's Big Wave does not start on the engine side.** The engine
+  half of a seat-0 `0x56` sits on the Begin prompt to the engine timeout (no
+  `0x28`), with or without the caster's MP raised through
+  `LEGAIA_BATTLE_BARS`, where PROT 0944's `0x37` from the same seat runs; why
+  the seed is not taken is not traced.
 - **An item cast (the flutes) is not injectable.** The probe writes category
   `2` (Magic). An item summon needs the item category and its own id space.
+
+## Waits the engine does not run
+
+Three waits in a summon band are I/O, which the engine's resident streams
+answer at once, so their segments part on length without any engine error.
+The pairing keys each segment on its own, so they do not shift the rest of
+the cast's pairs; they do move the band's flash against the module's arms.
+
+| Wait | Retail (one PCSX-Redux cast) | Engine |
+|---|---|---|
+| `0x32`, the read-span poll `FUN_8003DE7C(1)` | `16` vsyncs | one pass |
+| a module arm that polls the side-band applier stage `ctx[+0x276]` (Horn's and Jedo's arm 2) | about `25` vsyncs | one pass |
+| a module arm that polls the creature stream (`FUN_8003F2B8(1)`) | a few vsyncs | one pass |
+
+Jedo's band flash-out therefore reads about `25` vsyncs younger in the
+engine at the same module arm, which is most of that cast's low score in
+arms 2 to 4.
 
 ## See also
 

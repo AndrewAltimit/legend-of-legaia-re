@@ -1201,11 +1201,13 @@ pub const fn stream_poll_arm(prot_entry: u32) -> Option<u8> {
 /// sparkle volleys in - while the engine's read is resident. PROT 0929's
 /// arm 1 makes the same test (`0x801F6D94..0x801F6DA8`) behind its anchor
 /// push, then seeks `FUN_8003EAE4(0, 0xE)`; PROT 0928's arm 1 the same
-/// (`0x801F6D58..0x801F6D60`).
+/// (`0x801F6D58..0x801F6D60`), and PROT 0931's arm 2
+/// (`0x801F6D18..0x801F6D20`): `jedo_summon_mid_cast` holds that arm one
+/// pass into the sustain with the byte at `8`.
 pub const fn sideband_wait_arm(prot_entry: u32) -> Option<u8> {
     match prot_entry {
         928 | 929 => Some(1),
-        930 => Some(2),
+        930 | 931 => Some(2),
         _ => None,
     }
 }
