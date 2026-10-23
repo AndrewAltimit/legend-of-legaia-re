@@ -1,12 +1,17 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">write-ups</a> &middot; the endless orbit</div>
   <h1>The endless camera orbit</h1>
-  <p class="lede">Some Legend of Legaia battles simply stop: mid-fight, usually against the Gaza rematch, the next action never comes and the camera circles the party forever. It happens on every regional release and under every emulator, and it has eaten saves since 1998. This page shows what stalls, why, and the nine-word patch that lets the game repair itself - shipped in the <a href="../tooling/rom-patcher.html">browser ROM patcher</a>.</p>
+  <p class="lede">Some Legend of Legaia battles simply stop: mid-fight, almost always in the Gaza rematch, the next action never comes and the camera circles the party forever. It is a fault in the game's own code, not in an emulator - it reproduces from pad input on the retail disc under both PCSX-Redux CPU cores, frame for frame. This page shows what stalls, why, and the nine-word patch that lets the game repair itself, shipped in the <a href="../tooling/rom-patcher.html">browser ROM patcher</a>.</p>
 </header>
 
 <div class="notice">
-  <div class="notice-title">The finding in one box</div>
-  A monster approaching an out-of-reach target waits in a range-check poll that has <strong>no movement code and no timeout</strong>; its staged &ldquo;Move&rdquo; animation is what actually carries it forward. Kemaro cast on the boss immediately before his melee leaves a stale &ldquo;exit to idle&rdquo; flag on him, the Move clip dies about 12 frames in, nothing re-stages it, and the fight waits forever. The fix rewrites nine redundant words inside the poll so a dead clip bounces the state machine back to its own staging state and the attacker resumes walking. Enable it with the <em>Approach-softlock fix</em> toggle.
+  <div class="notice-title">In short</div>
+  <ul class="bullets">
+    <li><strong>What you see.</strong> Gaza starts a melee from across the arena, takes a step or two, stops short and never strikes. The camera keeps orbiting because it never asks the battle whether anything is happening.</li>
+    <li><strong>Why.</strong> A monster with no walk animation - 180 of the 186 - is moved to its target only by its looping &ldquo;Move&rdquo; clip, and the state that waits for it to arrive has <strong>no movement code and no timeout</strong>. Kemaro, the Seru spell that carries its target off the stage, leaves an &ldquo;exit to idle at the next clip end&rdquo; flag on Gaza when it puts him back. If his very next action is a melee from out of reach, that flag ends the Move clip after one loop, about 12 frames in, and the wait never ends.</li>
+    <li><strong>Why Gaza 2.</strong> He has the longest idle loop (the flag's lifetime) and the shortest Move loop of the walk-less roster, and enough HP to survive Kemaro again and again.</li>
+    <li><strong>The fix.</strong> Nine redundant words inside the wait are rewritten so a dead clip sends the state machine back to its own staging state, and the attacker resumes walking. Enable the <em>Approach-softlock fix</em> toggle.</li>
+  </ul>
 </div>
 
 <section class="doc-section" id="at-a-glance">
@@ -149,6 +154,52 @@
 <section class="doc-section" id="trigger">
   <h2>The trigger: Kemaro, then the melee</h2>
   <p>The second capture logs the actor's animation pair - staged clip versus playing clip - every frame, which pins what kills the clip. Kemaro carries its target ~2,500 units off-arena and stages his hit reaction there, which sets the &ldquo;exit to idle at clip end&rdquo; flag. Its put-back starts his idle pose through the mid-clip commit, which keeps that flag, so the flag waits for the end of his idle loop - 360 vsyncs. When his next action inside that window is the melee, the Move clip carries the flag and is swapped for idle at its first loop end, about 12 frames in.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 350" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Timeline of one parked approach, in vsyncs, from a pad-driven retail run. At v2932 Kemaro stages Gaza's hit reaction off-arena, pinned on frame 3, and raises bit 2 of his anim event flags. At about v3169 the put-back starts his idle pose through the commit that keeps bit 2; the bit would expire at the end of his first idle loop, 360 vsyncs later. At v3269 his melee starts out of reach and enters the wait state 0x19 with the Move clip staged and the bit still set. At v3281 the Move clip reaches its first loop end, the bit swaps it for idle, and Gaza stands frozen out of reach while state 0x19 polls forever.">
+      <path class="dg-edge-dim" d="M150 236 L850 236"/>
+      <path class="dg-edge-dim" d="M150.0 232 L150.0 240"/><text x="150.0" y="254" class="dg-sub">v2900</text>
+      <path class="dg-edge-dim" d="M256.1 232 L256.1 240"/><text x="256.1" y="254" class="dg-sub">v3000</text>
+      <path class="dg-edge-dim" d="M362.1 232 L362.1 240"/><text x="362.1" y="254" class="dg-sub">v3100</text>
+      <path class="dg-edge-dim" d="M468.2 232 L468.2 240"/><text x="468.2" y="254" class="dg-sub">v3200</text>
+      <path class="dg-edge-dim" d="M574.2 232 L574.2 240"/><text x="574.2" y="254" class="dg-sub">v3300</text>
+      <path class="dg-edge-dim" d="M680.3 232 L680.3 240"/><text x="680.3" y="254" class="dg-sub">v3400</text>
+      <path class="dg-edge-dim" d="M786.4 232 L786.4 240"/><text x="786.4" y="254" class="dg-sub">v3500</text>
+      <text x="16" y="62" class="dg-label dg-start">Gaza's clip</text>
+      <text x="16" y="122" class="dg-label dg-start">+0x1DC bit 2</text>
+      <text x="16" y="196" class="dg-label dg-start">battle action</text>
+      <rect x="183.9" y="46" width="251.4" height="28" rx="3" class="dg-node-warn"/>
+      <text x="309.6" y="64.0" class="dg-sub">reaction, pinned on frame 3</text>
+      <rect x="435.3" y="46" width="106.1" height="28" rx="3" class="dg-node"/>
+      <text x="488.4" y="64.0" class="dg-sub">idle</text>
+      <rect x="541.4" y="46" width="12.7" height="28" rx="3" class="dg-node-ok"/>
+      <rect x="554.1" y="46" width="295.9" height="28" rx="3" class="dg-node-warn"/>
+      <text x="702.0" y="64.0" class="dg-sub">idle - frozen out of reach</text>
+      <rect x="183.9" y="112" width="370.2" height="16" rx="3" class="dg-node-accent"/>
+      <text x="369.0" y="124.0" class="dg-sub">set: swap to idle at the next clip end</text>
+      <path class="dg-edge" d="M435.3 146 L817.1 146 M435.3 141 L435.3 151 M817.1 141 L817.1 151"/>
+      <text x="562.1" y="164" class="dg-sub dg-start">window: one idle loop, 360 vsyncs</text>
+      <rect x="183.9" y="182" width="251.4" height="24" rx="3" class="dg-node"/>
+      <text x="309.6" y="198.0" class="dg-sub">Noa's Kemaro</text>
+      <rect x="435.3" y="182" width="106.1" height="24" rx="3" class="dg-group"/>
+      <text x="488.4" y="198.0" class="dg-sub">cast ends</text>
+      <rect x="541.4" y="182" width="308.6" height="24" rx="3" class="dg-node-warn"/>
+      <text x="695.7" y="198.0" class="dg-sub">Gaza's melee: state 0x19 polls forever</text>
+      <path class="dg-edge-dim" d="M183.9 32 L183.9 226"/>
+      <path class="dg-edge-dim" d="M435.3 32 L435.3 226"/>
+      <path class="dg-edge-dim" d="M541.4 32 L541.4 226"/>
+      <path class="dg-edge-dim" d="M554.1 32 L554.1 226"/>
+      <text x="183.9" y="26" class="dg-label">1</text>
+      <text x="435.3" y="26" class="dg-label">2</text>
+      <text x="535.4" y="26" class="dg-label">3</text>
+      <text x="560.1" y="26" class="dg-label">4</text>
+      <text x="150" y="284" class="dg-sub dg-start">1  Kemaro stages his hit reaction off-arena and raises bit 2</text>
+      <text x="150" y="302" class="dg-sub dg-start">2  put-back: idle starts through the commit that keeps bit 2</text>
+      <text x="150" y="320" class="dg-sub dg-start">3  melee from out of reach: Move clip staged, bit 2 still set</text>
+      <text x="150" y="338" class="dg-sub dg-start">4  first Move loop ends ~12 vsyncs in: bit 2 swaps it for idle</text>
+    </svg>
+    <figcaption>One parked approach on the retail disc, from the pad driver, with Gaza's HP and MP poked lower so that he melees (scale: vsyncs). The bit goes up with Kemaro and, but for the melee, would have come down harmlessly at the end of his idle loop. The melee started inside that window, so the Move clip carried the bit and died at its first loop end. Any other action in the window ends its own clip and spends the bit.</figcaption>
+  </figure>
+
   <ul>
     <li><strong>The window is one idle loop.</strong> Kemaro &rarr; another combatant's turn &rarr; melee runs the same clip 64 frames to a clean hit: the turn in between outlasted the loop. A cast by the boss in the window spends the flag harmlessly.</li>
     <li><strong>It reproduces on demand.</strong> Cast Kemaro with the caster acting directly before the boss, and the approach parks whenever his next action is the melee. A scripted run did exactly that on the first Kemaro, with the boss's HP and MP poked lower so that he melees; the patch's guard, poked into that park, unparked it.</li>

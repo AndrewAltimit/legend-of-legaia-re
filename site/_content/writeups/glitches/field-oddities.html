@@ -874,6 +874,16 @@ caption reads scene_data[sectors * 0x800 - 0x2E344]   (reached only from 93 sect
     <dt>Status</dt><dd><span class="tag tag-open">Not confirmed</span> - PCSX-Redux passes the scene on every core and setting tried, slow and fast</dd>
   </dl>
 
+  <div class="notice">
+    <div class="notice-title">In short</div>
+    <ul class="bullets">
+      <li><strong>Not a movie, and not yet a found bug.</strong> The scene is an ordinary in-engine cutscene; under PCSX-Redux it passes on every core and setting tried.</li>
+      <li><strong>Where it can hang.</strong> Its music change, and the disc code below it, wait on the CD drive with no time limit. On a console those waits finish long before they matter.</li>
+      <li><strong>What the workaround says.</strong> Pressing fast shortens only the time the three text pages are open, so whatever fails is most likely live while the pages are open: the new track's sequencer, or - on a slower emulated drive - the second CD stream in the timeline below. Neither is shown to fail.</li>
+      <li><strong>What would settle it.</strong> The program counter read from an emulator that actually freezes here.</li>
+    </ul>
+  </div>
+
   <p>The players call it an FMV, but no movie plays here: it is an ordinary in-engine cutscene. After the party sets the Seru Flame down before the mirror (&ldquo;That mirror is the door to the past&rdquo;), the crossing record changes the music, lights a breathing green glow on the mirror, lifts the party off the floor, shows <strong>three pages of text</strong> (&ldquo;...listen! In the world of the past, you will meet your parents when they were young.&rdquo; and two more), fades to white and loads past Conkram.</p>
   <p>The text pages are the only part whose length the player controls; everything before the first page, the music change included, takes the same time however fast Cross is pressed. So pressing fast shortens one thing: the time spent with the pages open. That is the strongest clue in the reports, and it points away from the most obvious suspect.</p>
   <p>The obvious suspect is the music change. It reads the new track from the CD in the background, marks it &ldquo;settled&rdquo; on a <strong>timer</strong> rather than on the read finishing, and only once the script commits the change does it wait for the read itself, in a loop with <strong>no time limit</strong>. An emulator that loses or misplaces a CD interrupt would hang there for ever. But that wait runs before the first text page, so fast pressing could not avoid it, and pSX reports a wild jump rather than a spin. The other candidates are something live while the pages are open, such as the new track's sequencer (driven by a timer interrupt), and the CD stream described below; neither is shown to fail.</p>
@@ -881,6 +891,46 @@ caption reads scene_data[sectors * 0x800 - 0x2E344]   (reached only from 93 sect
   <h3>What was captured</h3>
   <p>The scene was replayed under PCSX-Redux on the retail disc, <strong>on a poked state</strong>: a catalogued late-game world-map state with four story flags cleared and the player placed on the Conkram entrance, then on the mirror's walk-on tile, so that the game's own scripts ran the scene. With Cross pressed every 4 to 300 vsyncs, on the interpreter (debugger on and off) and the dynarec, and with the <code>SpuIrq</code>, <code>RCntFix</code>, PAL-video and 8 MB settings, every run reached past Conkram; none stalled or crashed. Holding Cross down only parks on a page, because a page advances on a fresh press. PCSX-Redux has no CD speed or seek setting, so the timing the reports point at could not be varied.</p>
   <p>A breakpoint run timed the disc traffic. The music read was over 62 vsyncs into the crossing, before the commit. But right after the commit a <strong>second stream</strong> starts: one 8-sector read, then twenty small reads, about 316 KiB in all, through the stream-file read <code>FUN_800559EC</code>, ending roughly 480 vsyncs in, about when the first text page opens. Neither caller reads anything at the music swap or the next scene's load, and which op starts it and what it loads is not traced. On an emulated drive that is slower, or times its sectors differently, this stream would still be running while the pages are open: the one asynchronous job the text can overlap.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Timeline of the mirror crossing record P2[18], in vsyncs from its start, captured under PCSX-Redux on a poked retail state. The music swap starts at 0; the new track's 105-sector read runs from vsync 5 to 62; the swap settles at 64 and the script commits at 65, when the music code waits for the read with no time limit, but the read is already done. From vsync 74 a second CD stream of twenty small reads, about 316 KiB, runs to vsync 480, about when the first of three text pages opens. The pages last as long as the player takes. The next scene, conc2, starts loading at vsync 1671. On a slower emulated drive the second stream would still be running under the text pages.">
+      <path class="dg-edge-dim" d="M150 236 L600 236 M640 236 L860 236"/>
+      <text x="620" y="240" class="dg-sub">//</text>
+      <path class="dg-edge-dim" d="M150.0 232 L150.0 240"/><text x="150.0" y="254" class="dg-sub">0</text>
+      <path class="dg-edge-dim" d="M240.0 232 L240.0 240"/><text x="240.0" y="254" class="dg-sub">100</text>
+      <path class="dg-edge-dim" d="M330.0 232 L330.0 240"/><text x="330.0" y="254" class="dg-sub">200</text>
+      <path class="dg-edge-dim" d="M420.0 232 L420.0 240"/><text x="420.0" y="254" class="dg-sub">300</text>
+      <path class="dg-edge-dim" d="M510.0 232 L510.0 240"/><text x="510.0" y="254" class="dg-sub">400</text>
+      <path class="dg-edge-dim" d="M600.0 232 L600.0 240"/><text x="600.0" y="254" class="dg-sub">500</text>
+      <path class="dg-edge-dim" d="M830 232 L830 240"/><text x="830" y="254" class="dg-sub">1671</text>
+      <text x="16" y="62" class="dg-label dg-start">script</text>
+      <text x="16" y="122" class="dg-label dg-start">music swap</text>
+      <text x="16" y="182" class="dg-label dg-start">CD reads</text>
+      <rect x="150.0" y="44" width="432.0" height="26" rx="3" class="dg-node"/>
+      <text x="366.0" y="61.0" class="dg-sub">music change, glow, party lifted, camera (fixed length)</text>
+      <rect x="582.0" y="44" width="228.0" height="26" rx="3" class="dg-node-accent"/>
+      <text x="696.0" y="61.0" class="dg-sub">three text pages</text>
+      <rect x="810" y="44" width="20" height="26" rx="3" class="dg-group"/>
+      <text x="830" y="36" class="dg-sub" style="text-anchor:end">conc2 load</text>
+      <text x="696.0" y="86" class="dg-sub">length set by the player</text>
+      <rect x="154.5" y="104" width="51.3" height="26" rx="3" class="dg-node-ok"/>
+      <text x="154.5" y="98" class="dg-sub dg-start">track read, 105 sectors</text>
+      <path class="dg-edge" d="M207.6 100 L207.6 134"/>
+      <text x="213.6" y="114" class="dg-sub dg-start">settled 64 (a timer), script commits 65:</text>
+      <text x="213.6" y="130" class="dg-sub dg-start">the no-limit wait finds the read done</text>
+      <rect x="216.6" y="164" width="5.4" height="26" rx="3" class="dg-node"/>
+      <rect x="238.2" y="164" width="343.8" height="26" rx="3" class="dg-node-accent"/>
+      <text x="410.1" y="181.0" class="dg-sub">second stream: 20 reads, ~316 KiB</text>
+      <rect x="582.0" y="164" width="228.0" height="26" rx="3" class="dg-group"/>
+      <text x="696.0" y="181" class="dg-sub">slower drive: still running?</text>
+      <text x="216.6" y="206" class="dg-sub dg-start">8-sector read at 74</text>
+      <path class="dg-edge-dim" d="M582.0 32 L582.0 226"/>
+      <text x="582.0" y="272" class="dg-sub">first page opens (~480, estimated)</text>
+      <text x="150" y="300" class="dg-sub dg-start">PCSX-Redux, interpreter, Cross every 100 vsyncs; poked late-game state; the run reached conc2.</text>
+      <text x="150" y="318" class="dg-sub dg-start">Before the break the axis is to scale (vsyncs from the record's start); the pages and what follows are not.</text>
+    </svg>
+    <figcaption>The crossing record's disc traffic, timed with breakpoints from its start. The music read is over before the script commits, so the no-limit wait at the commit returns at once here. The second stream ends about when the first page opens - an estimate from the record's waits, since the pages were not instrumented - and it is the one CD job a slower drive would push under the text.</figcaption>
+  </figure>
+
   <p>The port does not hang here either: the full-game ladder walks the scene and reaches past Conkram, and the port reads the disc synchronously, so neither music wait can stall.</p>
 
   <h3>Addresses</h3>

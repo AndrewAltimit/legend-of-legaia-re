@@ -746,15 +746,15 @@ section.doc-summary > h2 {
   color: var(--accent);
 }
 
-.doc-section ul.bullets,
-.doc-section ol.bullets {
+:is(.doc-section, .notice) ul.bullets,
+:is(.doc-section, .notice) ol.bullets {
   list-style: none;
   margin: 0.6rem 0;
   padding: 0;
 }
 
-.doc-section ul.bullets li,
-.doc-section ol.bullets li {
+:is(.doc-section, .notice) ul.bullets li,
+:is(.doc-section, .notice) ol.bullets li {
   position: relative;
   padding-left: 1.2rem;
   margin: 0.3rem 0;
@@ -763,7 +763,7 @@ section.doc-summary > h2 {
   font-size: 0.95rem;
 }
 
-.doc-section ul.bullets li::before {
+:is(.doc-section, .notice) ul.bullets li::before {
   content: "·";
   position: absolute;
   left: 0.3rem;
@@ -771,16 +771,16 @@ section.doc-summary > h2 {
   font-weight: 700;
 }
 
-.doc-section ol.bullets {
+:is(.doc-section, .notice) ol.bullets {
   counter-reset: step;
 }
 
-.doc-section ol.bullets li {
+:is(.doc-section, .notice) ol.bullets li {
   counter-increment: step;
   padding-left: 1.7rem;
 }
 
-.doc-section ol.bullets li::before {
+:is(.doc-section, .notice) ol.bullets li::before {
   content: counter(step) ".";
   position: absolute;
   left: 0;
