@@ -23,9 +23,10 @@ use legaia_minigame_formats::fishing_species;
 use legaia_engine_ui as ui_fishing;
 use legaia_engine_ui::{BarAxis, CatchHudState, HudCaption, HudDraw};
 
-/// The bag count this page's hub tackle screen sees for every tackle item: it
-/// models no inventory, and 99 is the lure count its HUD already shows.
-const MINIGAMES_TACKLE_HELD: i32 = 99;
+/// The bag count each tackle item opens at on this page: it models no
+/// inventory, so every lure row and rod starts at the bag's stack cap. Lure
+/// rows are then debited by line breaks (`fishing_lures_held`).
+pub(crate) const MINIGAMES_TACKLE_HELD: i32 = 99;
 
 /// Packed spread argument the strike splash fans its three parts by - the
 /// same value the other two hosts pass in `World::tick_fishing`.
@@ -349,6 +350,9 @@ impl LegaiaMinigames {
         }
         self.fishing_banners = Default::default();
         self.fishing_prizes.clear();
+        self.fishing_lures_held = [MINIGAMES_TACKLE_HELD; 3];
+        self.fishing_venue_actors = Default::default();
+        self.fx.clear();
         true
     }
 
@@ -499,15 +503,18 @@ impl LegaiaMinigames {
         self.fx.tick(1);
         // The venue hub (Triangle / Select on the idle shore): the same
         // session-side kernel the two world hosts run through
-        // `World::tick_fishing_hub`. This page models no tackle inventory -
-        // lure and rod are start arguments and lures are not consumed - so
-        // the tackle screen sees every tackle item as held
-        // ([`MINIGAMES_TACKLE_HELD`]), the same stand-in the HUD's lure count
-        // uses. Row 3 has no world exchange sub-screen to open here: this
-        // page's prize list is its side panel, so the hub hands straight back
-        // to the menu and the page brings the panel into view.
+        // `World::tick_fishing_hub`. This page models no bag: the tackle
+        // screen sees each lure row's page-side stock (`fishing_lures_held`,
+        // debited by line breaks) and every rod as held. Row 3 has no world
+        // exchange sub-screen to open here: this page's prize list is its
+        // side panel, so the hub hands straight back to the menu and the
+        // page brings the panel into view.
         let mut hub_events = Vec::new();
-        let hub = p.hub_step(pressed_mask, |_| MINIGAMES_TACKLE_HELD);
+        let lures = self.fishing_lures_held;
+        let hub = p.hub_step(pressed_mask, |id| match id {
+            0x9D..=0x9F => lures[(id - 0x9D) as usize],
+            _ => MINIGAMES_TACKLE_HELD,
+        });
         match hub.exit {
             Some(legaia_engine_fishing::fishing_hub::HubExit::Leave) => {
                 hub_events.push(r#"{"e":"hub_leave"}"#.to_string());
@@ -528,6 +535,30 @@ impl LegaiaMinigames {
             0x80,
         );
         let events = p.take_events();
+        // The venue's shore actors, the play hosts' own step: the lead's
+        // ambient ripple and the catch bursts, seated through the venue
+        // camera this page draws with. The page aims the lead with no D-pad,
+        // so the held word carries none.
+        let scene = &self.fishing_scene;
+        legaia_engine_minigame_scenes::fishing_venue::tick_venue_actors(
+            &mut self.fishing_venue_actors,
+            p,
+            &events,
+            false,
+            0,
+            &mut self.fx,
+            || scene.as_ref().and_then(|s| s.map.clone()),
+        );
+        // A broken line spends the equipped lure (the break arm's
+        // `FUN_80042310(lure + 0x9D, 1)`), off this page's stand-in stock.
+        for id in p.take_spent_lures() {
+            if let Some(n) = id
+                .checked_sub(0x9D)
+                .and_then(|row| self.fishing_lures_held.get_mut(row as usize))
+            {
+                *n = (*n - 1).max(0);
+            }
+        }
         let mut out = hub_events;
         // The hook and catch cues, through the kernel `World::tick` queues
         // them with for the two play hosts. This page keyed neither.
@@ -664,7 +695,11 @@ impl LegaiaMinigames {
             p.record.points,
             p.record.best_points,
             p.lure,
-            99, // the browser session has no live inventory; lures aren't consumed
+            // This page's stand-in stock of the equipped lure row.
+            self.fishing_lures_held
+                .get(p.lure as usize)
+                .copied()
+                .unwrap_or(0),
         );
         // The same catch-HUD derivation the two play hosts read
         // (`PondSession::catch_hud`).

@@ -9,7 +9,7 @@
 //! - the free-swimming fish wander (`FUN_801D2278`,
 //!   [`legaia_engine_fishing::fishing_actors::FishWander`]) at the shore while the cast is
 //!   idle, steered by the held D-pad, with its **retarget ripple**
-//!   ([`legaia_engine_fishing::fishing_chrome::ripple_spawn`]) on every new wander target;
+//!   (the `FUN_801D2278` spawn at `0x801D23FC`) on every new wander target, seated through the venue camera;
 //! - the wander actor settled onto the venue floor through the shared ground
 //!   solver ([`legaia_engine_fishing::fishing_chrome::float_actor_tick`]) and its retail
 //!   camera publish;
@@ -277,15 +277,45 @@ pub fn tick_fishing_venue(
     held_packed: u16,
     floor: impl FnOnce() -> Option<Vec<u8>>,
 ) -> VenueCameraWrites {
-    let mut out = VenueCameraWrites::default();
-    let v = &mut mg.fishing_venue;
     if !in_fishing {
-        *v = FishingVenue::default();
-        return out;
+        mg.fishing_venue = FishingVenue::default();
+        return VenueCameraWrites::default();
     }
     let Some(session) = mg.fishing.as_ref() else {
-        return out;
+        return VenueCameraWrites::default();
     };
+    tick_venue_actors(
+        &mut mg.fishing_venue,
+        session,
+        &mg.fishing_events,
+        mg.fishing_exchange.is_some(),
+        held_packed,
+        &mut mg.fx,
+        floor,
+    )
+}
+
+/// One venue frame over the pieces it touches, for a host that holds a
+/// [`PondSession`](legaia_engine_fishing::fishing::PondSession) and an effect
+/// pool but no [`MinigameState`] - the minigames page. [`tick_fishing_venue`]
+/// is this over the world's own fields, so the two run one step.
+///
+/// `events` is this tick's session events and `exchange_open` whether the
+/// point-exchange list is up. The retarget ripples and the catch bursts are
+/// world points; each is seated in `fx` at its projection through the venue
+/// camera over the lead ([`venue_camera_view`], the camera this frame
+/// publishes) by [`project_to_retail_screen`]. A point that does not project
+/// spawns nothing.
+pub fn tick_venue_actors(
+    v: &mut FishingVenue,
+    session: &legaia_engine_fishing::fishing::PondSession,
+    events: &[PondEvent],
+    exchange_open: bool,
+    held_packed: u16,
+    fx: &mut legaia_engine_minigames::minigame_fx::MinigameFxPool,
+    floor: impl FnOnce() -> Option<Vec<u8>>,
+) -> VenueCameraWrites {
+    let mut out = VenueCameraWrites::default();
     let phase = session.phase();
     // One-time venue arm: the wander actor, the floor buffer, and the venue
     // camera reset.
@@ -298,7 +328,8 @@ pub fn tick_fishing_venue(
         out.reset = Some(fc::venue_camera_reset());
     }
     // The wander runs while the cast is idle (retail's shore states `0xc` /
-    // `0xd` / `0x14`, before the lure flies); the D-pad steers the fish.
+    // `0xd` / `0x14`, before the lure flies); the D-pad steers the lead.
+    let mut ripple = None;
     if matches!(
         phase,
         PondPhase::Idle | PondPhase::WindUp | PondPhase::Power
@@ -315,16 +346,12 @@ pub fn tick_fishing_venue(
             })
         });
         v.rng = rng;
-        // Retail spawns the ripple at the rolled point (the on-stack copy
-        // the roll offsets, `FUN_80021B04(sp+0x10, ..)` at `0x801D23FC`);
-        // the actor itself never moves.
-        if let Some(t) = rolled
-            && let Some(r) = fc::ripple_spawn(t.x as i16, t.z as i16, 0)
-        {
-            let (x, y) = r.fx_seat();
-            mg.fx
-                .spawn(x, y, legaia_engine_minigames::minigame_fx::RIPPLE_SPRITE_ID);
-        }
+        // Retail spawns the ripple at the rolled point: an on-stack copy of
+        // the lead's `+0x14..+0x18` trio with `x` / `z` offset and `y` kept
+        // (`0x801D22A4..0x801D23C8`), handed to `FUN_80021B04(sp+0x10, ..)`
+        // at `0x801D23FC`; the actor itself never moves.
+        let y = v.wander.as_ref().map_or(0, |w| i32::from(w.y));
+        ripple = rolled.map(|t| [t.x, y, t.z]);
     }
     // Settle the actor onto the venue floor (the `.MAP` height grid through
     // the shared ground solver) and publish its camera.
@@ -337,9 +364,21 @@ pub fn tick_fishing_venue(
     if let Some(w) = v.wander.as_ref() {
         out.publish = Some(w.camera());
     }
+    // The camera the frame draws with seats this frame's world-space spawns.
+    let view = v
+        .wander
+        .as_ref()
+        .map(|w| venue_camera_view(w.x, w.y, w.z, w.facing));
+    let seat = |p: [i32; 3]| {
+        view.as_ref()
+            .and_then(|view| project_to_retail_screen(view, p))
+    };
+    if let Some((x, y)) = ripple.and_then(seat) {
+        fx.spawn(x, y, legaia_engine_minigames::minigame_fx::RIPPLE_SPRITE_ID);
+    }
     // The line actor: armed on the hook event, landed on the catch event,
     // dropped on a snap.
-    for e in &mg.fishing_events {
+    for e in events {
         match *e {
             PondEvent::Hooked(_) => {
                 v.line = Some(legaia_engine_fishing::fishing_actors::LineActorSim::hooked())
@@ -366,16 +405,16 @@ pub fn tick_fishing_venue(
         // `World::tick_fishing` off the session's own events, where every
         // host drains them. Firing them here as well would play each twice.
         for b in &f.bursts {
-            let (x, y) = b.fx_seat(origin);
-            mg.fx
-                .spawn(x, y, legaia_engine_minigames::minigame_fx::BURST_SPRITE_ID);
+            if let Some((x, y)) = seat(b.world_point(origin)) {
+                fx.spawn(x, y, legaia_engine_minigames::minigame_fx::BURST_SPRITE_ID);
+            }
         }
         if !f.done {
             v.line = Some(line);
         }
     }
     // Sub-screen idle sway while the point-exchange list is up.
-    if mg.fishing_exchange.is_some() {
+    if exchange_open {
         let (sv, next) = fc::sway_vector(sway_sine_table(), v.sway_angle, 1);
         v.sway_angle = next;
         v.sway_offset = (sv.x, sv.y);
@@ -483,6 +522,15 @@ mod tests {
             }
         }
         assert!(spawned, "no retarget ripple reached the shared pool");
+        // The ripple is a world point out in the water ahead of the lead,
+        // seated through the venue camera: it lands on the 320x240 stage.
+        let f = mg.fx.frames()[0];
+        assert!(
+            (0..320).contains(&f.x) && (0..240).contains(&f.y),
+            "ripple seated off the stage at ({}, {})",
+            f.x,
+            f.y
+        );
         let facing = mg.fishing_venue.wander.as_ref().unwrap().facing;
         assert_ne!(facing, 0, "the held D-pad did not steer the wander");
     }

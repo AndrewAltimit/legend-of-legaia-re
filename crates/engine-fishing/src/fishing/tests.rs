@@ -903,6 +903,69 @@ fn pond_snaps_when_tension_pins() {
     assert!(g.at_max());
 }
 
+/// The line breaks on a one-in-ten roll per frame at the tension ceiling
+/// (`FUN_801D26CC`, `0x801D3B9C..0x801D3BE4`), not on the first frame it
+/// pins, and the break spends one of the equipped lure (`0x801D3C20`).
+#[test]
+fn the_line_breaks_on_a_roll_at_the_ceiling_and_spends_the_lure() {
+    let mut p = pond();
+    p.fight_species = Some(9);
+    p.phase = PondPhase::Hooked;
+    p.line_record = 0x7FFF_0000; // far from the reel-in gate
+    let mut frames = 0;
+    while p.phase() == PondPhase::Hooked && frames < 1000 {
+        // Pin the gauge each frame, as a fish out-pulling the reel does.
+        p.gauge.tension = TENSION_MAX;
+        p.tick(
+            PondInput {
+                reel_mask: 0x40,
+                ..Default::default()
+            },
+            1,
+            0x80,
+        );
+        frames += 1;
+    }
+    assert_eq!(
+        p.phase(),
+        PondPhase::Snapped,
+        "the ceiling roll breaks the line"
+    );
+    assert_eq!(
+        p.take_spent_lures(),
+        vec![lure_item_id(1)],
+        "one lure spent"
+    );
+    assert!(p.take_spent_lures().is_empty(), "drained");
+    // Over many pinned frames the break is a roll, not the first frame:
+    // across seeds the mean frame count sits near ten.
+    let mut total = 0u32;
+    let runs = 200u32;
+    for seed in 0..runs {
+        let mut p = pond();
+        p.rng = BiosRand::new(seed * 7919 + 1);
+        p.fight_species = Some(9);
+        p.phase = PondPhase::Hooked;
+        p.line_record = 0x7FFF_0000;
+        let mut n = 0;
+        while p.phase() == PondPhase::Hooked && n < 1000 {
+            p.gauge.tension = TENSION_MAX;
+            p.tick(
+                PondInput {
+                    reel_mask: 0x40,
+                    ..Default::default()
+                },
+                1,
+                0x80,
+            );
+            n += 1;
+        }
+        total += n;
+    }
+    let mean = total / runs;
+    assert!((5..=20).contains(&mean), "mean frames to break {mean}");
+}
+
 #[test]
 fn entry_rod_scan_keeps_a_held_rod_and_falls_back_to_zero() {
     // The saved rod is held: the scan keeps it and probes nothing else.

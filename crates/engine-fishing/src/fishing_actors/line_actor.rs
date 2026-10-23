@@ -57,13 +57,16 @@ pub struct CelebrationBurst {
 }
 
 impl CelebrationBurst {
-    /// The stage seat a minigame effect pool spawns this burst at: its X / Z
-    /// offset from the catch point `origin`, `>> 3`.
-    pub fn fx_seat(&self, origin: (i16, i16)) -> (i16, i16) {
-        (
-            ((origin.0 as i32 + self.offset.0 as i32) >> 3) as i16,
-            ((origin.1 as i32 + self.offset.2 as i32) >> 3) as i16,
-        )
+    /// The burst's world point for a catch at world `(x, z)` `origin`: the
+    /// spawn offset added to the origin's `x` / `z`, its `y` taken as is
+    /// (the on-stack trio `FUN_801D4948` hands each `FUN_80021B04`). A host
+    /// projects it through the venue camera to seat the part.
+    pub fn world_point(&self, origin: (i16, i16)) -> [i32; 3] {
+        [
+            origin.0 as i32 + self.offset.0 as i32,
+            self.offset.1 as i32,
+            origin.1 as i32 + self.offset.2 as i32,
+        ]
     }
 }
 

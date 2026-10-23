@@ -104,7 +104,7 @@ pub enum PondEvent {
 /// Composes the pinned kernels ([`CastPower`], [`ReelCadence`], [`BandCheck`],
 /// [`band4_gate`], [`spawn_species`], [`TensionGauge`] via the fight,
 /// [`FishingRecord`]) with the reconstruction glue each doc-comment marks
-/// (flight timing, the record reel-down rate, the snap-at-max-tension loss).
+/// (flight timing, the record reel-down rate).
 #[derive(Debug, Clone)]
 pub struct PondSession {
     /// The 10-record species table (disc rodata).
@@ -175,6 +175,10 @@ pub struct PondSession {
     pub(super) creak_timer: i32,
     /// Creak cues raised since the last [`Self::take_rod_creaks`].
     pub(super) rod_creaks: u32,
+    /// Lure items the line breaks consumed since the last
+    /// [`Self::take_spent_lures`] (`FUN_80042310(lure + 0x9D, 1)` at
+    /// `0x801D3C20`), one item id per break.
+    pub(super) spent_lures: Vec<u32>,
 }
 
 /// The venue bytes a host attaches so the cast lure has a world to land in.

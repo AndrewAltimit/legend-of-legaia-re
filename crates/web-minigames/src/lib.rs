@@ -210,6 +210,15 @@ pub struct LegaiaMinigames {
     /// The angler's facing (retail's actor `+0x26`), the angle the next cast
     /// offsets its lure along.
     fishing_angler_facing: i16,
+    /// This page's lure stock per lure row (`0x9D..=0x9F`): it holds no
+    /// bag, so each row opens at the stand-in count and a broken line
+    /// debits the equipped row, as retail's break arm consumes one lure.
+    fishing_lures_held: [i32; 3],
+    /// The venue's shore actors (the lead's ambient ripple roll, the
+    /// reeling-line actor and its catch bursts) - the step the play hosts
+    /// run on `World::minigames.fishing_venue`, here over this page's own
+    /// session and effect pool.
+    fishing_venue_actors: legaia_engine_minigame_scenes::fishing_venue::FishingVenue,
     /// SCUS item-name table (present on full-disc loads only), naming the
     /// point-exchange prize rows.
     item_names: Option<legaia_game_tables::item_names::ItemNameTable>,
@@ -452,6 +461,8 @@ impl LegaiaMinigames {
             fishing_scene: None,
             // The lead's rest facing (`0x800`, into the water).
             fishing_angler_facing: 0x800,
+            fishing_lures_held: [fishing_web::MINIGAMES_TACKLE_HELD; 3],
+            fishing_venue_actors: Default::default(),
             item_names: None,
             muscle: None,
             muscle_run: None,

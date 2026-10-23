@@ -28,9 +28,11 @@
  * The HUD's sprite half (plates, digits, gauge caps, banners) is the
  * overlay's own sprite table cut from the venue's HUD page, rasterised by
  * the engine; without it, glyph ids fall back to labelled text.
- * Approximated (the page's note says so): the lure/ripple overlay is drawn as projected 2D
- * geometry. The LINE is the engine's: `fishing_line_json` hands back
- * retail's packet (the rod end is the rod actor's projected tip, the pair is
+ * Approximated (the page's note says so): the lure is drawn as projected 2D
+ * geometry, and each effect part as a placeholder mark at the seat the engine
+ * gives it (the venue's ambient ripples and catch bursts come from the shared
+ * shore-actor step, `fishing_venue::tick_venue_actors`). The LINE is the
+ * engine's: `fishing_line_json` hands back retail's packet (the rod end is the rod actor's projected tip, the pair is
  * clipped by the ported FUN_801D56E4, the Gouraud end colours are the
  * packet's) given this page's projection of the lure as the fish end.
  */
@@ -61,7 +63,6 @@ window.MgFishing = (function () {
     g.imageSmoothingEnabled = false;
 
     let scene = null;      /* the 3D stage (null = flat fallback) */
-    let ripples = [];      /* {x, z, t} world-space ripple rings */
     let splashT = 0;       /* splash burst frames left */
     let jumpT = 0;         /* landed-fish jump arc frames left */
 
@@ -348,12 +349,8 @@ window.MgFishing = (function () {
       for (const e of events) {
         if (e.e === 'splash') {
           splashT = 40;
-          const lw = lureWorld(st);
-          if (lw) ripples.push({ x: lw[0], z: lw[2], t: 0 });
         } else if (e.e === 'hooked') {
           splashT = 24;
-          const lw = lureWorld(st);
-          if (lw) ripples.push({ x: lw[0], z: lw[2], t: 0 });
         } else if (e.e === 'landed') {
           jumpT = 50;
         }
@@ -471,28 +468,13 @@ window.MgFishing = (function () {
       }
     }
 
-    /* The projected line / lure / ripple / fish overlay. */
+    /* The projected line / lure / fish overlay. */
     function drawWaterOverlay(st) {
       if (!scene || !st || !st.live) return;
       const active = st.phase === 'flight' || st.phase === 'waiting'
         || st.phase === 'hooked';
       const lw = active ? lureWorld(st) : null;
       const lp = lw ? project(lw) : null;
-
-      /* Ripples (splash + wander) expand and fade in world space. */
-      ripples = ripples.filter(r => r.t < 46);
-      for (const r of ripples) {
-        r.t++;
-        const p = project([r.x, (scene.anchor.y - 30), r.z]);
-        if (!p) continue;
-        g.save();
-        g.strokeStyle = 'rgba(220,240,255,' + (0.55 * (1 - r.t / 46)) + ')';
-        g.lineWidth = 1.5;
-        g.beginPath();
-        g.ellipse(p[0], p[1], 3 + r.t * 1.6, (3 + r.t * 1.6) * 0.38, 0, 0, Math.PI * 2);
-        g.stroke();
-        g.restore();
-      }
 
       /* The line: retail's LINE_G2 packet from the engine, in 320x240
        * screen space - fish end = this page's lure projection, rod end = the
@@ -637,6 +619,20 @@ window.MgFishing = (function () {
     function drawFxParts(parts) {
       if (!parts || !parts.length) return;
       for (const p of parts) {
+        if (p.sprite === 257) {
+          /* The ambient ripple (RIPPLE_SPRITE_ID): a ring that widens as the
+           * part's fade ramp runs down, centred on the engine's seat. */
+          const a = Math.max(0, Math.min(1, p.fade / 255));
+          const r = (3 + (1 - a) * 70) * SCALE;
+          g.save();
+          g.strokeStyle = 'rgba(220,240,255,' + (0.55 * a) + ')';
+          g.lineWidth = 1.5;
+          g.beginPath();
+          g.ellipse(p.x * SCALE, p.y * SCALE, r, r * 0.38, 0, 0, Math.PI * 2);
+          g.stroke();
+          g.restore();
+          continue;
+        }
         const glyph = FX_GLYPH[p.sprite] || '+';
         hudText(glyph, p.x, p.y, {
           color: 'rgba(255,255,204,' + Math.max(0, Math.min(1, p.fade / 255)) + ')',

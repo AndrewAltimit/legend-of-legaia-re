@@ -57,9 +57,17 @@ pub struct FxPartFrame {
 }
 
 /// The minigame effect-part pool: spawn, age, resolve.
-#[derive(Default)]
 pub struct MinigameFxPool {
     parts: MinigameActorPool,
+}
+
+/// The bounded pool [`MinigameFxPool::new`] builds. A derived default would
+/// hand the inner pool a capacity of zero, whose first spawn evicts from an
+/// empty array.
+impl Default for MinigameFxPool {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MinigameFxPool {
@@ -180,6 +188,13 @@ mod tests {
         assert_eq!(f.len(), 1);
         assert_eq!((f[0].x, f[0].y, f[0].sprite), (160, 120, 0xb));
         assert_eq!(f[0].fade, 0xFF);
+    }
+
+    #[test]
+    fn a_default_pool_takes_a_spawn() {
+        let mut pool = MinigameFxPool::default();
+        pool.spawn(160, 120, 0xb);
+        assert_eq!(pool.len(), 1);
     }
 
     #[test]

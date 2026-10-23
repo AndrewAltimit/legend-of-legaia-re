@@ -262,7 +262,7 @@ impl World {
             return;
         }
         let pond_input = PondInput::from_engine_pad(self.input.pad(), self.input.pad_prev());
-        let (events, lure_down) = match self.minigames.fishing.as_mut() {
+        let (events, lure_down, spent_lures) = match self.minigames.fishing.as_mut() {
             Some(s) => {
                 let casts = s.persist().casts;
                 s.tick(pond_input, 1, FISHING_CAST_STEP);
@@ -272,10 +272,22 @@ impl World {
                         legaia_engine_system::sound_state::SfxRingOp::WriteSlot(1, 0x201),
                     );
                 }
-                (s.take_events(), s.persist().casts != casts)
+                (
+                    s.take_events(),
+                    s.persist().casts != casts,
+                    s.take_spent_lures(),
+                )
             }
-            None => (Vec::new(), false),
+            None => (Vec::new(), false, Vec::new()),
         };
+        // A broken line spends the equipped lure: the break arm's
+        // `FUN_80042310(lure + 0x9D, 1)` (`0x801D3C20`), the bag's
+        // window-bounded consume-by-id.
+        for id in spent_lures {
+            if let Ok(id) = u8::try_from(id) {
+                let _ = self.party.inventory.consume_returning_slot(id, 1);
+            }
+        }
         // The lure landing: the arm of the lure tick that bumps the
         // persistent cast counter stores cue `0x204` straight into ring
         // slot 2 (`sh v0,-0x4924(v1)` at `0x801D2950`, `FUN_801d26cc`). A
