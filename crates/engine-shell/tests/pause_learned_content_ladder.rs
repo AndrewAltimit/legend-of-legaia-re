@@ -1081,3 +1081,81 @@ fn the_weapon_candidate_list_is_remove_worn_then_bag_order() {
         .expect("the low-id weapon is listed");
     assert!(hi < lo, "bag order, not id order: {bag:02X?}");
 }
+
+/// The pause menu's root rows, the Items tab and its command window draw the
+/// menu overlay's own pool strings (`0x801CE9D0` and siblings), `@` lead
+/// included: the blank lead at each pen, the first visible glyph one pixel
+/// on - where a retail capture of the root menu inks its rows (`WX + 0x15`).
+/// Composed over the disc window table, which carries the pool labels.
+#[test]
+fn the_root_rows_tab_and_item_commands_are_the_overlay_pool_strings() {
+    use legaia_game_tables::menu_pool::MenuLabel;
+    use legaia_game_tables::menu_windows::window_ids;
+    let Some(mut s) = booted(&[], &[]) else {
+        return;
+    };
+    let overlay = s
+        .host
+        .index
+        .entry_bytes_extended(legaia_game_tables::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
+        .expect("PROT 0899");
+    let table = legaia_game_tables::menu_windows::parse(&overlay).expect("menu window table");
+    assert!(
+        table.labels.is_installed(),
+        "the table read the pool labels"
+    );
+    for l in MenuLabel::ROOT_ROWS {
+        assert!(
+            table.labels.get(l).is_some_and(|t| t.starts_with('@')),
+            "{l:?} keeps its @ lead"
+        );
+    }
+    let font = s.dialog_font.clone().expect("disc dialog font");
+    let ctx = legaia_engine_ui::pause_menu::PauseMenuCtx {
+        font: &font,
+        rects: legaia_engine_ui::pause_menu::MenuRects::new(Some(&table)),
+        chrome: None,
+        origin: (0, 0),
+        scale: 1,
+    };
+    let at = |draws: &[legaia_engine_ui::TextDraw], x: i32, y: i32| {
+        draws.iter().any(|d| d.dst.0 == x && d.dst.1 == y)
+    };
+
+    tap(&mut s, PadButton::Start);
+    let root = legaia_engine_screens::pause_screens::field_menu_root_draws(
+        &ctx,
+        s.field_menu.as_ref().expect("the pause menu is open"),
+        &s.host.world,
+        None,
+    );
+    let (lx, ly) = ctx.rects.pen(window_ids::TOP_COMMAND_LIST);
+    for row in 0..7 {
+        let y = ly + row * 14;
+        assert!(
+            at(&root.texts, lx + 0x14, y) && at(&root.texts, lx + 0x15, y),
+            "root row {row}: the @ at the pen, its first glyph one pixel on"
+        );
+    }
+
+    open_row(&mut s, FieldMenuRow::Items);
+    let items = legaia_engine_screens::pause_screens::field_menu_sub_draws(
+        &ctx,
+        s.field_menu_sub.as_ref().expect("the Items screen is open"),
+        Some(&s.host.world),
+        None,
+    );
+    let (tx, ty) = ctx.rects.pen(window_ids::TAB_ITEMS);
+    assert!(
+        at(&items.texts, tx, ty) && at(&items.texts, tx + 1, ty),
+        "the Items tab draws the pool string with its lead"
+    );
+    let (cx, cy) = ctx.rects.pen(window_ids::ITEMS_COMMAND);
+    for row in 0..3 {
+        let y = cy + row * 14;
+        assert!(
+            at(&items.texts, cx + 0x14, y) && at(&items.texts, cx + 0x15, y),
+            "command row {row} is the pool's @Use / @Throw Out / @Arrange"
+        );
+    }
+}

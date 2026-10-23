@@ -65,6 +65,19 @@ pub(crate) fn num_field_draws(
     out
 }
 
+/// [`status_screen_draws_for_with`] without the menu overlay's pool labels: the
+/// engine's names stand in.
+#[allow(clippy::too_many_arguments)]
+pub fn status_screen_draws_for(
+    font: &legaia_font::Font,
+    panel: &StatusPanelView<'_>,
+    nav_hint: Option<&str>,
+    pen: (i32, i32),
+    label_icons: bool,
+) -> Vec<TextDraw> {
+    status_screen_draws_for_with(font, None, panel, nav_hint, pen, label_icons)
+}
+
 /// Build [`TextDraw`]s for the status panel of one character, at the
 /// byte-pinned `FUN_801D33D8` status-page offsets
 /// (docs/subsystems/field-menu.md). `pen` is the caller window's content
@@ -89,8 +102,9 @@ pub(crate) fn num_field_draws(
 /// PORT: FUN_801d33d8 (the status / party panel content renderer - every
 /// pen below is its instruction-pinned offset; the submenu list pages it
 /// also serves draw through the sibling builders in this module)
-pub fn status_screen_draws_for(
+pub fn status_screen_draws_for_with(
     font: &legaia_font::Font,
+    labels: Option<&legaia_game_tables::menu_pool::MenuPoolLabels>,
     panel: &StatusPanelView<'_>,
     nav_hint: Option<&str>,
     pen: (i32, i32),
@@ -222,7 +236,14 @@ pub fn status_screen_draws_for(
     }
 
     // Experience / Next Level rows.
-    str_at(&mut out, "Experience", wx + 0x18, wy + 0xa5, white);
+    use legaia_game_tables::menu_pool::MenuLabel;
+    str_at(
+        &mut out,
+        crate::menu::window_painters::pool_label(labels, MenuLabel::Experience, "Experience"),
+        wx + 0x18,
+        wy + 0xa5,
+        white,
+    );
     out.extend(num_field_draws(
         font,
         panel.xp as u64,
@@ -231,7 +252,13 @@ pub fn status_screen_draws_for(
         8,
         white,
     ));
-    str_at(&mut out, "Next Level", wx + 0x18, wy + 0xb2, white);
+    str_at(
+        &mut out,
+        crate::menu::window_painters::pool_label(labels, MenuLabel::NextLevel, "Next Level"),
+        wx + 0x18,
+        wy + 0xb2,
+        white,
+    );
     out.extend(num_field_draws(
         font,
         panel.xp_to_next as u64,
@@ -418,6 +445,28 @@ pub struct StatusSatelliteView<'a> {
     pub level: u8,
 }
 
+/// [`status_satellite_draws_for_with`] without the menu overlay's pool labels: the
+/// engine's names stand in.
+#[allow(clippy::too_many_arguments)]
+pub fn status_satellite_draws_for(
+    font: &legaia_font::Font,
+    view: &StatusSatelliteView<'_>,
+    list_pen: (i32, i32),
+    condition_pen: (i32, i32),
+    summary_pen: (i32, i32),
+    label_icons: bool,
+) -> Vec<TextDraw> {
+    status_satellite_draws_for_with(
+        font,
+        None,
+        view,
+        list_pen,
+        condition_pen,
+        summary_pen,
+        label_icons,
+    )
+}
+
 /// Build [`TextDraw`]s for the status screen's three satellite windows
 /// (party list id 26, "Condition" pager id 27, character summary id 30),
 /// at their pinned descriptor-rect content origins.
@@ -435,8 +484,9 @@ pub struct StatusSatelliteView<'a> {
 /// PORT: FUN_801D31EC - summary window (name at `+0`, LV icon at
 /// `(+0x1c, +0xf)`, 2-digit level field at `(+0x2c, +0xd)`, "ATR:" at
 /// `(+0, +0x1a)` with the element icon at `+0x20`).
-pub fn status_satellite_draws_for(
+pub fn status_satellite_draws_for_with(
     font: &legaia_font::Font,
+    labels: Option<&legaia_game_tables::menu_pool::MenuPoolLabels>,
     view: &StatusSatelliteView<'_>,
     list_pen: (i32, i32),
     condition_pen: (i32, i32),
@@ -472,7 +522,11 @@ pub fn status_satellite_draws_for(
     }
     str_at(
         &mut out,
-        "Condition",
+        crate::menu::window_painters::pool_label(
+            labels,
+            legaia_game_tables::menu_pool::MenuLabel::Condition,
+            "Condition",
+        ),
         condition_pen.0 + 6,
         condition_pen.1,
         white,
@@ -498,7 +552,17 @@ pub fn status_satellite_draws_for(
         2,
         white,
     ));
-    str_at(&mut out, "ATR:", summary_pen.0, summary_pen.1 + 0x1a, white);
+    str_at(
+        &mut out,
+        crate::menu::window_painters::pool_label(
+            labels,
+            legaia_game_tables::menu_pool::MenuLabel::Atr,
+            "ATR:",
+        ),
+        summary_pen.0,
+        summary_pen.1 + 0x1a,
+        white,
+    );
 
     out
 }

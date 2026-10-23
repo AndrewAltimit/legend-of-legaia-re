@@ -32,6 +32,7 @@
 
 use super::{MENU_TEXT_GOLD, MENU_TEXT_WHITE, menu_ink_color, menu_mp_ink, num_field_draws};
 use crate::*;
+use legaia_game_tables::menu_pool::MenuLabel;
 
 /// Retail grey text ink - CLUT staging index 0, the non-focused-list row
 /// ink (VRAM row-510 CLUT entry 15 reads `(132,132,132)`).
@@ -351,6 +352,19 @@ fn list_page_header_draws(
     out
 }
 
+/// [`items_screen_draws_for_with`] without the menu overlay's pool labels: the
+/// engine's names stand in.
+#[allow(clippy::too_many_arguments)]
+pub fn items_screen_draws_for(
+    font: &legaia_font::Font,
+    view: &PauseItemsView<'_>,
+    cmd_pen: (i32, i32),
+    list_pen: (i32, i32),
+    info_pen: (i32, i32),
+) -> Vec<TextDraw> {
+    items_screen_draws_for_with(font, None, view, cmd_pen, list_pen, info_pen)
+}
+
 /// Build [`TextDraw`]s for the retail Items screen's window contents.
 ///
 /// `cmd_pen` / `list_pen` / `info_pen` are the content origins of the
@@ -380,8 +394,9 @@ fn list_page_header_draws(
 /// to it at `0x801d0fd0` and jumps past this routine's passive block, and
 /// the Point Card's own `0x41` no-passive sentinel means that block draws
 /// nothing on that row anyway.)
-pub fn items_screen_draws_for(
+pub fn items_screen_draws_for_with(
     font: &legaia_font::Font,
+    labels: Option<&legaia_game_tables::menu_pool::MenuPoolLabels>,
     view: &PauseItemsView<'_>,
     cmd_pen: (i32, i32),
     list_pen: (i32, i32),
@@ -399,7 +414,14 @@ pub fn items_screen_draws_for(
     } else {
         MENU_TEXT_WHITE
     };
-    for (i, label) in ["Use", "Throw Out", "Arrange"].iter().enumerate() {
+    // The overlay pool's `@Use` / `@Throw Out` / `@Arrange` (`FUN_801D0D18`
+    // loads `0x801CEA10` and its two siblings).
+    let commands = [
+        crate::menu::window_painters::pool_label(labels, MenuLabel::Use, "Use"),
+        crate::menu::window_painters::pool_label(labels, MenuLabel::ThrowOut, "Throw Out"),
+        crate::menu::window_painters::pool_label(labels, MenuLabel::Arrange, "Arrange"),
+    ];
+    for (i, label) in commands.iter().enumerate() {
         let y = cy + i as i32 * PAUSE_LIST_ROW_PITCH;
         if view.text_cursor
             && view.phase == PauseItemsPhase::Command
@@ -493,6 +515,17 @@ pub fn item_info_panel_draws_for(
     out
 }
 
+/// [`item_points_panel_draws_with`] without the menu overlay's pool labels: the
+/// engine's names stand in.
+#[allow(clippy::too_many_arguments)]
+pub fn item_points_panel_draws(
+    font: &legaia_font::Font,
+    info_pen: (i32, i32),
+    points: u32,
+) -> Vec<TextDraw> {
+    item_points_panel_draws_with(font, None, info_pen, points)
+}
+
 /// The item-info panel's **Point Card** arm: the "Points Left" label and
 /// the 8-digit bank, both inside the extra widget box
 /// ([`ITEMS_INFO_EXTRA_BOX_RECT`]) that the id-17 renderer emits under its
@@ -512,8 +545,9 @@ pub fn item_info_panel_draws_for(
 /// (`engine-core::World::point_card`).
 ///
 /// PORT: FUN_801d0f1c (the id-`0xFE` arm at `0x801d0fd8..0x801d1018`)
-pub fn item_points_panel_draws(
+pub fn item_points_panel_draws_with(
     font: &legaia_font::Font,
+    labels: Option<&legaia_game_tables::menu_pool::MenuPoolLabels>,
     info_pen: (i32, i32),
     points: u32,
 ) -> Vec<TextDraw> {
@@ -521,7 +555,11 @@ pub fn item_points_panel_draws(
     let (lx, ly) = ITEMS_INFO_POINTS_LABEL_OFFSET;
     let (vx, vy) = ITEMS_INFO_POINTS_VALUE_OFFSET;
     let mut out = text_draws_for(
-        &font.layout_ascii(ITEMS_INFO_POINTS_LABEL),
+        &font.layout_ascii(crate::menu::window_painters::pool_label(
+            labels,
+            MenuLabel::PointsLeft,
+            ITEMS_INFO_POINTS_LABEL,
+        )),
         (ix + lx, iy + ly),
         MENU_TEXT_WHITE,
     );
@@ -773,6 +811,19 @@ pub struct PauseMagicView<'a> {
     pub text_cursor: bool,
 }
 
+/// [`magic_screen_draws_for_with`] without the menu overlay's pool labels: the
+/// engine's names stand in.
+#[allow(clippy::too_many_arguments)]
+pub fn magic_screen_draws_for(
+    font: &legaia_font::Font,
+    view: &PauseMagicView<'_>,
+    caster_pen: (i32, i32),
+    list_pen: (i32, i32),
+    info_pen: (i32, i32),
+) -> Vec<TextDraw> {
+    magic_screen_draws_for_with(font, None, view, caster_pen, list_pen, info_pen)
+}
+
 /// Build [`TextDraw`]s for the retail Magic screen's window contents.
 ///
 /// `caster_pen` / `list_pen` / `info_pen` are the content origins of the
@@ -797,8 +848,9 @@ pub struct PauseMagicView<'a> {
 ///   from `(X, Y+0xE)` at the 0xE line pitch, "MP Used" (staging 4
 ///   green) at `(X+0x18, Y+0x2A)` with the 3-digit cost - also green -
 ///   at `X+0x74` (PORT: FUN_801d2e74).
-pub fn magic_screen_draws_for(
+pub fn magic_screen_draws_for_with(
     font: &legaia_font::Font,
+    labels: Option<&legaia_game_tables::menu_pool::MenuPoolLabels>,
     view: &PauseMagicView<'_>,
     caster_pen: (i32, i32),
     list_pen: (i32, i32),
@@ -903,7 +955,13 @@ pub fn magic_screen_draws_for(
                 MENU_TEXT_WHITE,
             );
         }
-        str_at(&mut out, "MP Used", ix + 0x18, iy + 0x2a, MENU_TEXT_GREEN);
+        str_at(
+            &mut out,
+            crate::menu::window_painters::pool_label(labels, MenuLabel::MpUsed, "MP Used"),
+            ix + 0x18,
+            iy + 0x2a,
+            MENU_TEXT_GREEN,
+        );
         out.extend(num_field_draws(
             font,
             info.mp_cost as u64,

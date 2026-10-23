@@ -93,7 +93,10 @@ fn synthetic_table() -> MenuWindowTable {
             d.renderer_va = va;
         }
     }
-    MenuWindowTable { windows }
+    MenuWindowTable {
+        windows,
+        ..Default::default()
+    }
 }
 
 /// The chrome atlas' band rects. The real one is baked from the disc's

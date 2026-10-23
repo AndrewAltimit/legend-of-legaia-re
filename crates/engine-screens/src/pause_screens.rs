@@ -22,6 +22,7 @@ use legaia_engine_ui::pause_menu::{
     OptionsScreenView, PauseMenuCtx, PauseMenuDraws, PauseScreen, SpecialConfirmView,
     StatusScreenView, TopLevelView, equip_screen_compose, pause_screen_draws,
 };
+use legaia_game_tables::menu_pool::MenuLabel;
 
 /// Heading the list-reorder page prints. Retail's page carries the record
 /// screen's own chrome, which the port does not draw yet; the label names the
@@ -83,11 +84,18 @@ pub fn field_menu_root_draws(
     refusal: Option<&str>,
 ) -> PauseMenuDraws {
     let view = root.view();
+    // The root rows are the overlay pool's strings (`FUN_801CFD68` loads
+    // `0x801CE9D0` and its six siblings); the engine's names stand in only
+    // without the overlay.
     let rows: Vec<ui::FieldMenuRowView<'_>> = view
         .rows
         .iter()
-        .map(|r| ui::FieldMenuRowView {
-            label: r.label,
+        .enumerate()
+        .map(|(i, r)| ui::FieldMenuRowView {
+            label: match MenuLabel::ROOT_ROWS.get(i) {
+                Some(&l) if view.rows.len() == MenuLabel::ROOT_ROWS.len() => ctx.label(l, r.label),
+                _ => r.label,
+            },
             enabled: r.enabled,
         })
         .collect();
@@ -210,12 +218,26 @@ pub fn status_draws(
     let Some(snap) = s.current() else {
         return PauseMenuDraws::default();
     };
+    // The stat cells are the overlay pool's (`0x801CE9A0..`, bare 4-byte
+    // cells in ATK / UDF / LDF / SPD / INT / AGL order).
+    const STAT_CELLS: [MenuLabel; 6] = [
+        MenuLabel::Atk,
+        MenuLabel::Udf,
+        MenuLabel::Ldf,
+        MenuLabel::Spd,
+        MenuLabel::Int,
+        MenuLabel::Agl,
+    ];
     let stat_rows: Vec<ui::StatusStatRow<'_>> = snap
         .stats
         .iter()
         .zip(snap.stat_labels.iter())
-        .map(|((live, growth), l)| ui::StatusStatRow {
-            label: l,
+        .enumerate()
+        .map(|(i, ((live, growth), l))| ui::StatusStatRow {
+            label: match STAT_CELLS.get(i) {
+                Some(&cell) => ctx.label(cell, l),
+                None => l,
+            },
             value: *live as u32,
             growth: *growth as u32,
         })
@@ -278,6 +300,45 @@ pub fn options_popup_rect(
     )
 }
 
+/// The Options screen's row / value text off the menu overlay's pool
+/// (`FUN_801DCEF0` and the popup `FUN_801D2B44` draw these VAs, the rows and
+/// values carrying no `@`), keyed by the engine's own name for the setting,
+/// which stands in without the overlay. A name with no pool cell keeps the
+/// engine's text - the Battle Command's second value, whose retail form is
+/// the controller-button escape `0xCE 0x00` before " button", is one.
+fn options_pool_text<'s>(ctx: &PauseMenuCtx<'s>, fallback: &'s str) -> &'s str {
+    let label = match fallback {
+        "Battle Camera" => MenuLabel::BattleCamera,
+        "Battle Select Attack" => MenuLabel::BattleSelectAttack,
+        "Battle Command" => MenuLabel::BattleCommand,
+        "Field Move" => MenuLabel::FieldMove,
+        "Field HP Display" => MenuLabel::FieldHpDisplay,
+        "Sound" => MenuLabel::Sound,
+        "Dual Shock" => MenuLabel::DualShock,
+        "  Battles" => MenuLabel::Battles,
+        "  Events" => MenuLabel::Events,
+        "  Encounters" => MenuLabel::Encounters,
+        "Close" => MenuLabel::Close,
+        "Normal" => MenuLabel::Normal,
+        "Far" => MenuLabel::Far,
+        "Select" => MenuLabel::SelectMode,
+        "Automatic" => MenuLabel::Automatic,
+        "Command" => MenuLabel::CommandMode,
+        "Directional Buttons" => MenuLabel::DirectionalButtons,
+        "Walk" => MenuLabel::Walk,
+        "Run" => MenuLabel::Run,
+        "Immediate" => MenuLabel::Immediate,
+        "Gradual" => MenuLabel::Gradual,
+        "Display Off" => MenuLabel::DisplayOff,
+        "Stereo" => MenuLabel::Stereo,
+        "Monaural" => MenuLabel::Monaural,
+        "Vibration On" => MenuLabel::VibrationOn,
+        "Vibration Off" => MenuLabel::VibrationOff,
+        _ => return fallback,
+    };
+    ctx.label(label, fallback)
+}
+
 /// Options sub-screen: the settings rows + value popup + the hand cursor, with
 /// the options window frame + tab. The screen's model is the engine's
 /// (`OptionsSession::screen_model`); this only borrows it into the renderer's
@@ -291,15 +352,25 @@ pub fn options_draws(
         .rows
         .iter()
         .map(|r| ui::OptionsRowView {
-            label: r.label,
-            value: r.value,
+            label: options_pool_text(ctx, r.label),
+            value: r.value.map(|v| options_pool_text(ctx, v)),
             teal: r.teal,
             advance: r.advance,
         })
         .collect();
+    let popup_choices: Vec<&str> = m
+        .popup
+        .as_ref()
+        .map(|p| {
+            p.choices
+                .iter()
+                .map(|c| options_pool_text(ctx, c))
+                .collect()
+        })
+        .unwrap_or_default();
     let popup = m.popup.map(|p| ui::OptionsPopupDraw {
         rect: options_popup_rect(ctx, &p),
-        choices: p.choices,
+        choices: &popup_choices,
         cursor: p.cursor,
     });
     let rebind_pairs: Vec<(&str, &str)> = m

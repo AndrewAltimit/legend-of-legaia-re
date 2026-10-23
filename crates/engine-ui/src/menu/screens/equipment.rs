@@ -100,6 +100,19 @@ pub struct EquipScreenView<'a> {
     pub text_cursor: bool,
 }
 
+/// [`equip_screen_draws_for_with`] without the menu overlay's pool labels: the
+/// engine's names stand in.
+#[allow(clippy::too_many_arguments)]
+pub fn equip_screen_draws_for(
+    font: &legaia_font::Font,
+    view: &EquipScreenView<'_>,
+    party_pen: (i32, i32),
+    list_pen: (i32, i32),
+    main_pen: (i32, i32),
+) -> Vec<TextDraw> {
+    equip_screen_draws_for_with(font, None, view, party_pen, list_pen, main_pen)
+}
+
 /// Build [`TextDraw`]s for the retail equip screen's window contents.
 ///
 /// `party_pen` / `list_pen` / `main_pen` are the content origins of the
@@ -120,8 +133,9 @@ pub struct EquipScreenView<'a> {
 /// - item-list window: engine-styled candidate rows at the retail `0xD`
 ///   list pitch (the retail picker's content renderer is untraced; only
 ///   the window rect is pinned).
-pub fn equip_screen_draws_for(
+pub fn equip_screen_draws_for_with(
     font: &legaia_font::Font,
+    labels: Option<&legaia_game_tables::menu_pool::MenuPoolLabels>,
     view: &EquipScreenView<'_>,
     party_pen: (i32, i32),
     list_pen: (i32, i32),
@@ -161,14 +175,20 @@ pub fn equip_screen_draws_for(
         // (`DAT_801E46C0`), so it takes the hand cursor like any slot row.
         let (mx, my) = main_pen;
         let best_row_active = view.phase == EquipDrawPhase::SlotPicker && view.cursor == 0;
+        let best = crate::menu::window_painters::pool_label(
+            labels,
+            legaia_game_tables::menu_pool::MenuLabel::BestEquipment,
+            "Best Equipment",
+        );
         if view.text_cursor && best_row_active {
             str_at(&mut out, ">", mx + 4, my, gold);
         }
         str_at(
             &mut out,
-            "Best Equipment",
-            // The literal is `"@Best Equipment"`: the blank lead costs a pad.
-            mx + 0x10 + crate::menu::window_painters::menu_string_lead(font),
+            best,
+            // The pool string is `"@Best Equipment"`: drawn with its blank
+            // lead, which costs one pad; the stand-in adds the pad itself.
+            mx + 0x10 + crate::menu::window_painters::pool_lead_pad(font, best),
             my,
             // CLUT 7 like the slot rows: the hand marks the row, the tint only
             // backs the text-cursor fallback.

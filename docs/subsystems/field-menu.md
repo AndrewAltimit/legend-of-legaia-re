@@ -2114,6 +2114,19 @@ Screens are placed on the shared 320x240 stage via
 element icons are UI-icon sprites whose source rects are the `0x800732a4`
 records, staged into the menu atlas (`engine-menus::save_menu_atlas`).
 
+Text labels the menu overlay draws out of its string pool come off the user's
+disc: `legaia_game_tables::menu_pool::MenuPoolLabels` reads them by VA, and
+`menu_windows::parse` carries them on the `MenuWindowTable` both hosts already
+parse, so `MenuRects::label` / `PauseMenuCtx::label` answer wherever the table
+is present and the engine's names stand in only without it. Covered: the root
+rows and the five tab titles (`0x801CE9D0..`), the Items commands, the Point
+Card line, Best Equipment, MP Used, Condition, `ATR:`, Experience / Next Level,
+the stat cells (status page and window 25), the Exchange tab, and the Options
+rows and values. Each keeps its `@` lead, so the title-tab painter adds the
+lead pad only to a stand-in (`window_painters::pool_lead_pad`). Disc-gated
+oracle:
+`pause_learned_content_ladder::the_root_rows_tab_and_item_commands_are_the_overlay_pool_strings`.
+
 Where the port differs from retail today:
 
 | Area | Difference |

@@ -23,7 +23,10 @@ fn table_with(id: usize, renderer_va: u32) -> MenuWindowTable {
         renderer_va,
         ..blank
     };
-    MenuWindowTable { windows }
+    MenuWindowTable {
+        windows,
+        ..Default::default()
+    }
 }
 
 fn inputs<'a>(
