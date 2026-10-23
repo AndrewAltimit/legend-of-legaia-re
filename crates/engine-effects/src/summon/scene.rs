@@ -378,8 +378,6 @@ impl SummonScene {
     /// nodes (`model_sel == -1`) carry no mesh and are skipped. The transform is
     /// the engine's interpretation (see module docs).
     pub fn part_draws(&self) -> Vec<SummonPartDraw> {
-        // PSX 12-bit angle (4096 = 360°) → radians.
-        const A: f32 = std::f32::consts::TAU / 4096.0;
         // A halted part (`+0x10 |= 8`, op `0x08`) is killed by retail's list
         // walk and never draws again: `gimard_burning_attack` holds no node
         // for PROT 0903's breath once its program halts, where the engine
@@ -392,11 +390,7 @@ impl SummonScene {
                 SummonPartDraw {
                     model_index: self.model_base.wrapping_add(p.model_sel as usize),
                     world_pos: [s.world_x as f32, s.world_y as f32, s.world_z as f32],
-                    rot: [
-                        (s.render_24 as f32) * A,
-                        (s.y_rot.wrapping_add(s.render_26) as f32) * A,
-                        (s.render_28 as f32) * A,
-                    ],
+                    rot: crate::effect_ribbon::node_rotation(s),
                     flags_52: s.field_52,
                     morph: PartMorph::of(s),
                     scale: s.field_72,
@@ -414,7 +408,6 @@ impl SummonScene {
     /// render dispatcher points the actor's model list at the emitter's own
     /// output (`FUN_8001ADA4` case 4, `0x8001B08C..0x8001B0B4`).
     pub fn ribbon_draws(&self) -> Vec<crate::effect_ribbon::RibbonDraw> {
-        const A: f32 = std::f32::consts::TAU / 4096.0;
         self.parts
             .iter()
             .filter(|p| !p.finished)
@@ -430,11 +423,7 @@ impl SummonScene {
                 (!mesh.indices.is_empty()).then(|| crate::effect_ribbon::RibbonDraw {
                     mesh,
                     world_pos: [s.world_x as f32, s.world_y as f32, s.world_z as f32],
-                    rot: [
-                        (s.render_24 as f32) * A,
-                        (s.y_rot.wrapping_add(s.render_26) as f32) * A,
-                        (s.render_28 as f32) * A,
-                    ],
+                    rot: crate::effect_ribbon::node_rotation(s),
                     flags_52: s.field_52,
                 })
             })

@@ -780,9 +780,44 @@ pub struct RibbonDraw {
     pub flags_52: u16,
 }
 
+/// A move-VM node's model rotation, radians X / Y / Z: its rotation banks
+/// `+0x24 / +0x26 / +0x28` and nothing else.
+///
+/// Every node renderer builds the node matrix with `FUN_80026988` on
+/// `actor + 0x24` (`0x8001B2A4` / `0x8001B2C8` in the render dispatcher
+/// `FUN_8001ADA4`), which reads halfwords `+0`, `+2` and `+4` of that trio
+/// alone (`0x80026998..0x800269F8`); neither it nor the animated renderer
+/// `FUN_8001B964` reads `+0x22`. That word is the keyframe cursor the part
+/// tick steps by `+0xD0` (ops `0x3D` / `0x3F`), not a yaw: folding it into
+/// the Y bank tipped Horn's arm-9 fans (`0x801F8B0C`, cursor `0x1BC0`) out of
+/// the view plane, so their spikes drew foreshortened or stretched where
+/// retail's lie flat `0x2000` ahead of the eye.
+pub fn node_rotation(s: &legaia_engine_vm::move_vm::ActorState) -> [f32; 3] {
+    const A: f32 = std::f32::consts::TAU / 4096.0;
+    [
+        f32::from(s.render_24) * A,
+        f32::from(s.render_26) * A,
+        f32::from(s.render_28) * A,
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_keyframe_cursor_is_not_a_rotation() {
+        let mut s = legaia_engine_vm::move_vm::ActorState {
+            render_24: 0x100,
+            render_26: 0x200,
+            render_28: 0x300,
+            ..Default::default()
+        };
+        let base = node_rotation(&s);
+        s.y_rot = 0x1BC0;
+        assert_eq!(node_rotation(&s), base);
+        assert!((base[1] - std::f32::consts::FRAC_PI_4).abs() < 1e-6);
+    }
 
     fn params() -> RibbonParams {
         RibbonParams {

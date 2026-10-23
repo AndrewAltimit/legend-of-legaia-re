@@ -83,18 +83,13 @@ pub fn sprite_arm_vram_mesh(s: &ActorState) -> Option<legaia_tmd::mesh::VramMesh
 /// in the keyframe-mesh mode draws one quad per posed part instead
 /// ([`sprite_arm_draws`]).
 pub fn sprite_arm_draw(s: &ActorState) -> Option<crate::effect_ribbon::RibbonDraw> {
-    const A: f32 = std::f32::consts::TAU / 4096.0;
     let mut mesh = sprite_arm_vram_mesh(s)?;
     // The model draw's `+0x7A` gate ([`crate::part_shatter`]).
     crate::part_shatter::apply_part_shatter(&mut mesh, crate::part_shatter::part_shatter_word(s));
     Some(crate::effect_ribbon::RibbonDraw {
         mesh,
         world_pos: [s.world_x as f32, s.world_y as f32, s.world_z as f32],
-        rot: [
-            (s.render_24 as f32) * A,
-            (s.render_26 as f32) * A,
-            (s.render_28 as f32) * A,
-        ],
+        rot: crate::effect_ribbon::node_rotation(s),
         flags_52: s.field_52,
     })
 }
