@@ -928,6 +928,7 @@ copy in its own directory:
 | PCSX-ReARMed, its default for this game | played | vector overwritten, hangs | reaches `conc2` at 3,230 |
 | PCSX-ReARMed, its default | late-game | vector overwritten, hangs | reaches `conc2` at 3,230 |
 | SwanStation, 100 % CPU | played | reaches `conc2` at 3,240 | reaches `conc2` at 3,240; final RAM identical to the retail run's except the nine words |
+| PCSX-Redux, dynarec, console speed | late-game | reaches `conc2` 3,267 vsyncs after field load, `PRG ERR` 0 | the same vsync, `PRG ERR` 0, vector intact |
 
 On the fast settings many allocations fail during the crossing (`PRG ERR`
 records them, render-node failures included) and the scene still plays to the

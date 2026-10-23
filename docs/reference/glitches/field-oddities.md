@@ -1542,7 +1542,8 @@ failure, so on a fast emulator the readout can appear where the game used to fre
 With the fix, the played and late-game saves both pass the scene on SwanStation at 200 % and on
 PCSX-ReARMed's default, the settings that froze above (capture, cold boots of a patched scratch
 disc). At SwanStation's 100 % the patched run reaches `conc2` on the same vsync as retail's, with
-RAM identical apart from the nine words. The design,
+RAM identical apart from the nine words, and on PCSX-Redux at console speed it reaches `conc2` on
+the same vsync as retail with no failed allocation. The design,
 and why halting beats skipping the install, is under
 [`randomizer-internals.md`](../../tooling/randomizer-internals.md#conkram-freeze-fix).
 
