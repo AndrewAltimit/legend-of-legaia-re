@@ -358,7 +358,9 @@ to spare is unaffected.
 
 The flag is one bit in the save and can be cleared; the check and the save-side fix are in a table
 below. On the disc side the patcher's `--fortress-encounter-fix` makes the Fortress ignore the
-flag, which also repairs a file that already has it.
+flag, which also repairs a file that already has it. The port does the same at runtime with its
+Fortress battles fix, on unless retail-faithful mode holds it off
+([gameplay tweaks](../../subsystems/gameplay-tweaks.md#fortress-battles-fix)).
 
 Two other quiet states exist and are intended. The boss room, the room before it, the council and
 Mist Generator rooms, the elevators and the bridge never roll. And a second flag, `0x521`,

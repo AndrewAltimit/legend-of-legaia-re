@@ -15,7 +15,7 @@ This page documents both gates, the invariant each relies on, the mechanism that
 | Caught in unmodified play | no capture; a pad-reachable trigger is read from the code (the Point Card aimed at a party member) | yes - Gaza 2, scenario `battle_gaza2_park_0x19` |
 | Self-recovers | on a poison / regen tick of the affected member | never |
 | Disc patch | none | `legaia-patcher --approach-softlock-fix` |
-| Port | same conventions, seeds paired at every call site | approach drive runs in every approach state |
+| Port | same conventions, seeds paired at every call site; the HP-readout guard (on by default, off in retail mode) re-seeds an absorbing readout | approach drive runs in every approach state |
 
 Key routines:
 
@@ -179,7 +179,7 @@ Two retail quirks sit in the non-party arms. Nothing draws the values they corru
 | **Reproduction** | Offset one party slot's `+0x172` by a single point and clear its `+0x10`: the next party-targeted action hangs. Probe `scripts/pcsx-redux/autorun_gaza2_hpbar_settle.lua`. |
 | **Retail status** | Reachable on paper two ways: the Final Heal race below, and the Point Card used on a party member, whose discharge arm (`0x8004209C`) writes live HP and seeds neither `+0x10` nor `+0x172` ([`glitches/items-and-equipment.md`](../reference/glitches/items-and-equipment.md)). Not captured from unmodified play: every recorded `0x51` park needed an external HP write. |
 | **Disc patch** | None. |
-| **Port** | Reproduces both seeding conventions; keeps live-HP writes and readout seeds paired per call site ([below](#port-the-seed-is-per-call-site)). |
+| **Port** | Reproduces both seeding conventions; keeps live-HP writes and readout seeds paired per call site ([below](#port-the-seed-is-per-call-site)). The HP-readout guard (`WorldToggles::hp_readout_guard`, on by default, off in retail mode) re-seeds the accumulator of a party slot found in the broken state, so the park cannot hold ([gameplay tweaks](gameplay-tweaks.md#battle-freeze-guard)). |
 
 <a id="where-the-desync-comes-from-two-seeding-conventions"></a>
 ### The two seeding conventions

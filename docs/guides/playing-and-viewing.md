@@ -115,6 +115,12 @@ view is, the mouse wheel scrolls it, and `Page Up` / `Page Down` / `Home` /
 | Play | Free-angle movement | `legaia-options.toml` | `R` | off |
 | Play | Smarter monsters (`--smart-monsters`) | `launcher.toml` | - | off |
 | Play | Reduce flashing | `legaia-options.toml` | - | on |
+| Gameplay tweaks | Shiny Seru (off = `--no-shiny-seru`) | `launcher.toml` | - | on |
+| Gameplay tweaks | Run-away EXP (`--flee-exp`) | `launcher.toml` | - | off |
+| Gameplay tweaks | EXP rate (`--exp-rate`: 1x, 1.5x, 2x, 3x, 5x, 0.5x) | `launcher.toml` | - | 1x |
+| Gameplay tweaks | Fortress battles fix (off = `--no-fortress-encounter-fix`) | `launcher.toml` | - | on |
+| Gameplay tweaks | Boss casts respect jewels (`--jewel-fix`) | `launcher.toml` | - | off |
+| Gameplay tweaks | Battle freeze guard (off = `--no-hp-readout-guard`) | `launcher.toml` | - | on |
 | Sound | Music / sound effects volume (0..10, 8 = the original mix) | `legaia-options.toml` | - | 8 |
 | Sound | Mono output | `legaia-options.toml` | - | off |
 | Original game | Original ground culling (`retail_view_window`) | `legaia-options.toml` | - | on |
@@ -130,11 +136,17 @@ every enhancement off for that session, the saved options untouched; the rows
 it overrides read *Original* while it is on. *Controls* swaps the option list
 for the current key bindings (`legaia-input.toml`).
 
+The *Gameplay tweaks* rows are disc-patcher features the engine runs itself,
+so they need no patched disc: each matches one `legaia-patcher` flag, except
+the freeze guard, which is the engine's own fix for a battle softlock the
+original can reach. [Gameplay tweaks](../subsystems/gameplay-tweaks.md) says
+what each does and which patcher features stay with the patcher.
+
 ### Playing
 
 *Play* starts the game on the title screen (`play-window --disc <bin>
---boot-ui`, plus `--psx-render`, `--retail`, `--no-entry-pulse` or
-`--smart-monsters` when those rows ask for them) in a child
+--boot-ui`, plus `--psx-render`, `--retail`, `--no-entry-pulse`,
+`--smart-monsters` or a gameplay-tweak flag when those rows ask for them) in a child
 process, and the launcher window closes. When the game exits normally the
 launcher ends with it. When it stops with an error, the launcher comes back
 with the error lines of the game's log; the whole log is

@@ -272,6 +272,12 @@
       <tr><td>Retail battle cadence</td><td>on</td><td>the whole battle pass once a battle frame, retail&rsquo;s cadence, instead of once a vsync; off runs the per-vsync pass</td></tr>
       <tr><td>Saved-chain Arts list</td><td>off</td><td>the command ring&rsquo;s Arts arm opens the port&rsquo;s saved-chain list instead of retail&rsquo;s per-press directional input</td></tr>
       <tr><td>Smart monsters</td><td>off</td><td>a monster&rsquo;s single-target attack goes to the weakest living party member instead of retail&rsquo;s random pick; the RNG stream is unchanged</td></tr>
+      <tr><td>Shiny Seru</td><td><strong>on</strong> (off under <code>--retail</code>)</td><td>a rare capturable enemy spawns shiny, with +35% stats and a Seru that deals +35% damage - the patcher&rsquo;s <code>--shiny-seru</code>; off skips the roll and the random draw it takes</td></tr>
+      <tr><td>Run-away EXP</td><td>off</td><td>a successful escape banks 5% of the fled fight&rsquo;s EXP into every party member - the patcher&rsquo;s <code>--flee-exp</code></td></tr>
+      <tr><td>EXP rate</td><td><code>1x</code></td><td>scales every monster&rsquo;s EXP reward, <code>0.5x</code> to <code>5x</code> - the patcher&rsquo;s <code>--exp-scale</code></td></tr>
+      <tr><td>Fortress battles fix</td><td><strong>on</strong> (off under <code>--retail</code>)</td><td>Jette&rsquo;s Absolute Fortress ignores the Floating Castle&rsquo;s stale &ldquo;no battles&rdquo; flag; a save without the flag plays the same either way</td></tr>
+      <tr><td>Boss casts respect jewels</td><td>off</td><td>the boss cinematic casts honour elemental jewels and guards - the patcher&rsquo;s <code>--jewel-fix</code></td></tr>
+      <tr><td>Battle freeze guard</td><td><strong>on</strong> (off under <code>--retail</code>)</td><td>a party HP readout stuck short of live HP is re-seeded, so the battle&rsquo;s wait on it (the state-<code>0x51</code> softlock) cannot hold</td></tr>
       <tr><td>PSX rasterisation</td><td>off</td><td>sub-pixel vertex snap + 15-bit ordered dither</td></tr>
       <tr><td>Semi-transparency blend</td><td><strong>on</strong></td><td>retail ABE blending - on because it <em>is</em> retail</td></tr>
       <tr><td><a href="vr-mode.html">WebXR VR</a></td><td>off</td><td>stereo presentation on the site&rsquo;s WebGL pages</td></tr>
@@ -280,6 +286,7 @@
   </table>
   </div>
   <p>One switch pins all of it: <code>play-window --retail</code> turns every enhancement off and sets the persisted engine-only options to their retail values for the session, writing nothing back (<code>OptionsState::pin_retail</code>, <code>WorldToggles::pin_retail</code>). The retail-compare capture runs under it, so a new enhancement added there is off in the comparison without anyone remembering a <code>--no-*</code> flag.</p>
+  <p>The six gameplay rows from Shiny Seru down are disc-patcher features the engine runs itself, so a player of the port needs no patched disc. The patcher&rsquo;s other features either cannot occur in the port (the approach softlock, the Conkram freeze), are still open as engine switches (enemy HP bars, the bonus drop, the tuning sliders), or are disc-content randomizers and mods whose patched disc the engine plays as data.</p>
   <ul class="bullets">
     <li><strong>Shading defaults to retail.</strong> Retail&rsquo;s textured and colour mesh paths draw the mesh&rsquo;s baked colour word through the GTE depth cue with no light source, as <code>texel &times; colour / 128</code>; the exception is the light-source rows (TMD group flags <code>0x10..=0x17</code>), which shade through the GTE light (<a href="shading.html">shading</a>). The engine draws exactly that; enhanced lighting is layered over it and is an identity when off (every parity capture turns it off).</li>
     <li><strong>Rasterisation defaults to clean.</strong> The default image is sharper than a PlayStation&rsquo;s; here faithfulness is opt-in.</li>

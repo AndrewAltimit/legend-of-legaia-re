@@ -1490,6 +1490,13 @@ data. All are off unless asked for. The user-visible behaviour is below; the
 hook sites, register contracts and placement are on
 [`randomizer-internals.md`](randomizer-internals.md#code-injection-features).
 
+The port runs none of these hooks, since it executes no MIPS. Several are
+carried as engine switches instead (Shiny Seru, run-away EXP, the jewel fix,
+the Fortress encounter fix, plus `--exp-scale` among the data edits), and two
+retail defects fixed here cannot occur in the port at all.
+[Gameplay tweaks](../subsystems/gameplay-tweaks.md#classification) classifies
+every feature.
+
 ### Run-away EXP
 
 `--flee-exp` banks a slice of a fight's experience into the party whenever they
