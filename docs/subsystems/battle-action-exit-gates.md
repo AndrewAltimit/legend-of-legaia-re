@@ -531,6 +531,8 @@ The engine walks, and cannot reproduce this park.
 - **Monster routing.** Every `FUN_80050E2C` call site in the action state machine - the `0x20` / `1` pair in `0x14`, the walk in `0x15`, the close-in in `0x16`, the capture takedown's walk, the `0x22` knockout taunt - runs the tag search over the monster's installed action table (`battle_action::monster_action_by_tag`, fed by `World::battle_monster_action_tags`). The 180 records without tag `0x20` take `0x19` as in retail; the six that carry one play their own pre-approach and close-in clips.
 - **Positions are re-derived every frame.** The separation pass measures overlap on each actor's `+0x3C` / `+0x40` pair, so that pair must track the live position as retail's does. Holding it still for the length of an action pushes overlapping party members apart indefinitely and leaves a monster's approach measured against a stale target (seen on Zora in `taiku` and Rogue in `rugi`).
 
+- **Replaying a park.** The retail comparison replays a capture of the park (a monster in `0x19` with `+0x1D9 == 0`) with that seat's walk held for the action (`BattleState::approach_hold`, set by the drive's `park` steer) and the yaw counter pinned to the capture's word, since the orbit has run for as long as retail sat parked. In the poll itself the seat's queued clip is set to idle, the dead Move clip's natural end, so the frame shows the idle loop retail parks on rather than the walk. Nothing else sets the hold, so play keeps the anti-softlock walk.
+
 Tests: the disc-gated `boss_approach_disc` (`engine-shell`) fights both of those bosses, and `monster_approach_sweep_disc` (`engine-core`) fights every one of the 186 archive records.
 
 ### The knockout taunt

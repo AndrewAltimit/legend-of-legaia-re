@@ -56,6 +56,11 @@ pub enum XaRingStep {
     Finish {
         /// The `a0` retail hands `FUN_8003EE7C` - `0x75` from state `6`'s
         /// ready branch, `0` from state `8`'s end-of-clip branch.
+        /// `FUN_8003EE7C(v)` is libsnd `SsSetSerialVol(0, v, v)` plus the CD
+        /// mix-on attribute, so this is the SPU CD-input volume: `0x75`
+        /// raises it to register `0x75EA` as the voice starts, `0` mutes it
+        /// at the clip's end. The mixer applies the same level as
+        /// `legaia_engine_session::audio_director::XA_CUE_GAIN`.
         arg: u8,
     },
     /// State `10`: `FUN_8005BECC(0)` then `FUN_8003EE00` - the teardown.

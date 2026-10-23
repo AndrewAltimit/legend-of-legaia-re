@@ -331,6 +331,11 @@ pub(super) fn cmd_play_window_with_record(
     // share this one: the movie runs on it on demand and hands it back, then
     // the scene window runs on it to the end.
     let mut event_loop = EventLoop::new().context("create event loop")?;
+    // A capture driver reads this line as "past the X11 startup race": a
+    // child that dies of SIGSEGV without it died inside `EventLoop::new`
+    // (libXi's first-use race) and is retried once
+    // (`legaia_parity::window_child`).
+    log::info!("{}", legaia_parity::window_child::EVENT_LOOP_OPEN_MARKER);
     play_intro_movie(
         &mut event_loop,
         scene,
@@ -373,8 +378,14 @@ pub(super) fn cmd_play_window_with_record(
 
     // A player's window reads controllers; a scripted capture's pad word
     // belongs to its script.
+    // Its window chrome too: the start-up key hint is for a player, and a
+    // capture must not draw it.
+    // `--screenshot-chrome` keeps the hint in a capture on purpose.
     if app.screenshot.is_none() {
         app.gamepad = super::gamepad::GamepadHost::open();
+    }
+    if app.screenshot.as_ref().is_none_or(|s| s.chrome) {
+        app.startup_hint.arm();
     }
 
     // On demand, not `run_app`: only `run_app_on_demand` clears the exit
@@ -578,6 +589,7 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
         boot_ui,
         publisher_logos_atlas_data.is_some(),
         [port1_card.as_ref(), mounted_card.as_ref()],
+        &session.mode_seat,
     );
 
     // The window, then the loop.

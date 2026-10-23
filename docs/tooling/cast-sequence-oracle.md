@@ -62,7 +62,10 @@ caster's cast begin (`0x28`) it grabs `PCSX.GPU.takeScreenShot()` every
 the `ctx[+0x6D8]` / `+0x6DA` / `+0x87C` words, PROT 0903's countdown, every
 seat's HP, the main loop's frame counter `gp+0x480` (`frame`, read at
 `0x8007B798`) and the side-band applier stage `ctx[+0x276]` (`c276`, the
-token a module's stream-wait arm polls). At cast begin it also logs each pool slot's ground pair
+token a module's stream-wait arm polls). A second file, `body.csv`, holds
+per vsync the acting seat's clip `+0x1D9`, node cursor `+0x68`, live pair,
+body pair `+0x3C` / `+0x40` and the camera focus with its tween endpoints:
+the series a summon close-up's framing is read off. At cast begin it also logs each pool slot's ground pair
 `+0x34` / `+0x38` (`done.txt`). The run uses the recompiler (`--fast`) unless a
 formation is forced, and `run_probe.sh` stages the disc in a private directory,
 so no `.ppf` beside the image reaches it.
@@ -164,7 +167,16 @@ before it reads:
 | `0x8B` Nova | 495 | 4 (+131), 16 (+105), 7 (+60), 15 (+57) |
 | `0x90` | 190 | 8 (+116), 12 (+32) |
 | `0x94` | 298 | 19 (+64), 18 (+37), 20 (+37) |
+| `0x95` Gilium | 211 | 5 (+71), 21 (+48), 6 (+36) |
 | `0x99` | 568 | 24 (+191), 25 (+90), 19 (+74), 23 (+61) |
+| `0x37` Guilty Cross (party seat) | 147 | capture phase 4 (+145) |
+
+The game clock is what the engine's lengths match. Gilium's summon band
+(`0x35` / `0x36`) is 2423 wall vsyncs and 2240 on the game clock; the engine
+runs it in 2244 ticks. Guilty Cross's capture run (`0x70`, phases `1..5` at
+`128 / 128 / 128 / 256 / 195`) is 982 wall vsyncs and 835 on the clock; the
+engine's Cort casts it in 835 ticks. A soak trace that reads a summon or a
+boss cast as "long" is reading the cast's own length.
 
 ## Reading the report
 

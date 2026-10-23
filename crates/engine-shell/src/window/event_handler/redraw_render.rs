@@ -177,9 +177,9 @@ impl PlayWindowApp {
         let scene_clear = self.frame_clear_color(game_over_hold);
 
         // Slot 1: logos OR title-art bands (title still
-        // emits during SaveSelect, dimmed). Slot 2: either
+        // emits during Continue, dimmed). Slot 2: either
         // the save-menu chrome (panel + slot pills) when
-        // SaveSelect is active, or the menu-glyph atlas
+        // Continue is active, or the menu-glyph atlas
         // (deprecated no-disc title-menu fallback) otherwise.
         // The opdeene caption takes slot 1 when active: during the opening
         // cutscene the boot-UI logo / title overlays are inactive (their

@@ -235,11 +235,39 @@ fn the_displayed_camera_stands_two_passes_short() {
     put32(&mut ram, 0x8008_40C0, 4368);
     put16(&mut ram, rec(5), 55);
     put16(&mut ram, rec(5) + 2, 4915);
-    let p = camera_align::displayed_cam_live(&ram, ctx, 2, 2);
+    let p = camera_align::displayed_cam_live(&ram, ctx, 2, 2, [None; 9]);
     assert_eq!(p.yaw, (544 + 118 + 142) as f32);
     assert_eq!(p.tr[2], (4368 - 110 - 2 * 66) as f32);
     // No lag, no walk back.
-    assert_eq!(camera_align::displayed_cam_live(&ram, ctx, 0, 2).yaw, 544.0);
+    assert_eq!(
+        camera_align::displayed_cam_live(&ram, ctx, 0, 2, [None; 9]).yaw,
+        544.0
+    );
+}
+
+/// A `0x32` capture on the summon route's first pass: the eye depth walks
+/// back one pass along the close-up table (`2 * 183`) and then one `0x29`
+/// step short of that table's endpoint `prescale(0xC00)`, not on past it.
+/// The yaw, whose endpoint the arm did not move, walks back both passes.
+#[test]
+fn a_fresh_summon_route_table_walks_back_onto_the_seed_depth() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let rec = |k: u32| ctx + camera_align::TWEEN_TABLE + k * 4;
+    put16(&mut ram, 0x8007_B792, 2104);
+    put16(&mut ram, rec(1), 12);
+    put16(&mut ram, rec(1) + 2, 1990);
+    put32(&mut ram, 0x8008_40C0, 4279);
+    put16(&mut ram, rec(5), 183);
+    put16(&mut ram, rec(5) + 2, 2457);
+    let mut prior = [None; 9];
+    prior[5] = Some(4915);
+    let p = camera_align::displayed_cam_live(&ram, ctx, 2, 2, prior);
+    assert_eq!(p.tr[2], (4279 + 366 - 2 * 27) as f32);
+    assert_eq!(p.yaw, (2104 + 24 + 28) as f32);
+    // Without the prior endpoint both passes stay on the close-up table.
+    let p = camera_align::displayed_cam_live(&ram, ctx, 2, 2, [None; 9]);
+    assert_eq!(p.tr[2], (4279 + 366 + 2 * 219) as f32);
 }
 
 /// A spent combatant takes its captured heading into a running fight, and
@@ -496,4 +524,362 @@ fn action_fx_part_seed_is_the_displayed_rotation() {
         seeds[0].pokes,
         vec![(0x24, 0), (0x26, 644 + 4 * 56), (0x28, 0)]
     );
+}
+
+/// The ghosts on screen are the walk's slots read from the displayed frame,
+/// two ring slots down: `battle_melee_hit_spark`'s Vahn (rate `4`, step `2`)
+/// shows ring slots 4 and 6 - cursors `80` / `56` on `(-21, 116)` /
+/// `(-21, 106)` - and a slot of another clip is left out.
+#[test]
+fn the_ghost_ring_seed_is_the_displayed_frames_walk() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let p = 0x800E_C9E8;
+    put32(&mut ram, ACTOR_TABLE, p);
+    put8(&mut ram, p + 0x21D, 4);
+    let cursors = [128u16, 116, 104, 92, 80, 68, 56, 44];
+    for (i, &c) in cursors.iter().enumerate() {
+        let i = i as u32;
+        put8(&mut ram, p + 0x1FB + i, 0x11);
+        put16(&mut ram, p + 0x17A + 2 * i, c);
+        put32(
+            &mut ram,
+            p + POSITION_RING + 8 * i,
+            (-21i32) as u32 & 0xFFFF,
+        );
+        put32(&mut ram, p + POSITION_RING + 8 * i + 4, 136 - 5 * i);
+    }
+    let seeds = ram_read::retail_ghost_ring(&ram, 1);
+    let got: Vec<_> = seeds
+        .iter()
+        .map(|s| (s.slot, s.clip, s.depth, s.drawn, s.cursor, s.x, s.z))
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            (0, 0x11, 2, true, 80, -21, 116),
+            (0, 0x11, 4, true, 56, -21, 106)
+        ]
+    );
+    // A slot the gate closes (ring id `0x10` or below) is seeded undrawn,
+    // as `battle_vahn_tri_somersault_super`'s depth 4 ...
+    put8(&mut ram, p + 0x1FB + 6, 0x00);
+    let seeds = ram_read::retail_ghost_ring(&ram, 1);
+    assert_eq!(seeds.len(), 2);
+    assert!(seeds[0].drawn && !seeds[1].drawn);
+    // ... and a slot of another art clip is left to the replay.
+    put8(&mut ram, p + 0x1FB + 6, 0x12);
+    assert_eq!(ram_read::retail_ghost_ring(&ram, 1).len(), 1);
+}
+
+/// A burst child (the narrow arm's record `0x801F5D0C`) is seeded whole,
+/// turning or not: its `rand()`-rolled spread `+0x3E`, scale `+0x72`,
+/// heading `+0x96` and tail `+0x98` ride beside the position and channels.
+#[test]
+fn a_burst_child_seeds_its_rolled_words() {
+    let mut ram = vec![0u8; 0x20_0000];
+    put32(&mut ram, frame_step::FORCED_STEP, 2);
+    let n = 0x8008_1F1C;
+    put32(&mut ram, 0x8007_C34C + 4, n);
+    put32(&mut ram, n + 0x0C, 0x8002_1DF4);
+    put32(&mut ram, n + 0x48, 0x801F_5D0C);
+    put16(&mut ram, n + 0x5A, 2);
+    put16(&mut ram, n + 0x3E, 44);
+    put16(&mut ram, n + 0x72, 0x800);
+    put16(&mut ram, n + 0x96, 64);
+    put16(&mut ram, n + 0x98, 72);
+    let seeds = ram_read::retail_action_fx_parts(&ram);
+    assert_eq!(seeds.len(), 1);
+    let poke = |o: u16| seeds[0].pokes.iter().find(|p| p.0 == o).map(|p| p.1);
+    assert_eq!(poke(0x3E), Some(44));
+    assert_eq!(poke(0x72), Some(0x800));
+    assert_eq!(poke(0x96), Some(64));
+    assert_eq!(poke(0x98), Some(72));
+    assert!(poke(0x14).is_some() && poke(0xC8).is_some());
+}
+
+/// The effect pool's children are read back to the displayed frame: a
+/// child holding its frame takes the lag back off its wait, one that just
+/// entered a frame steps back onto the previous one, and one seeded inside
+/// the lag is dropped. The batch index is the entry's place in the pack0
+/// pointer table at the head's `+0x08`.
+#[test]
+fn effect_children_are_the_displayed_frames() {
+    let mut ram = vec![0u8; 0x20_0000];
+    put32(&mut ram, frame_step::FORCED_STEP, 1); // lag 2 sweeps
+    let pool = 0x800E_6A5C;
+    put32(&mut ram, 0x8007_BD30, pool);
+    put16(&mut ram, pool, 0x1000);
+    let table = 0x800E_46E8;
+    put32(&mut ram, pool + 8, table);
+    // Batch 1 at `entry`: three frames, delays 2 / 4 / 4, speed 1.
+    let entry = 0x800E_4782;
+    put32(&mut ram, table + 4, entry);
+    for (k, d) in [2u8, 4, 4].iter().enumerate() {
+        let f = entry + 2 + 6 * k as u32;
+        ram[(f + 1 - 0x8000_0000) as usize] = *d;
+        ram[(f + 2 - 0x8000_0000) as usize] = 1;
+    }
+    let child = |slot: u32, cursor: u8, wait: u8, vy: i16| {
+        let c = pool + 0x10 + slot * 0x20;
+        (c, cursor, wait, vy)
+    };
+    for (c, cursor, wait, vy) in [
+        child(0, 2, 16, -4), // holding frame 2: wait 16 -> 32
+        child(1, 1, 32, 0),  // just entered frame 1 -> frame 0, then +8
+        child(2, 0, 8, 0),   // seeded inside the lag -> dropped
+    ] {
+        ram[(c - 0x8000_0000) as usize] = 3;
+        ram[(c + 2 - 0x8000_0000) as usize] = cursor;
+        ram[(c + 3 - 0x8000_0000) as usize] = wait;
+        ram[(c + 1 - 0x8000_0000) as usize] = 2;
+        put16(&mut ram, c + 6, vy as u16);
+        put32(&mut ram, c + 0x10, (-300i32 << 8) as u32);
+        put32(&mut ram, c + 0x1C, entry + 2 + 6 * u32::from(cursor));
+    }
+    let seeds = ram_read::retail_effect_children(&ram).expect("a pool");
+    assert_eq!(seeds.len(), 2);
+    assert_eq!(seeds[0].anim_id, 1);
+    assert_eq!((seeds[0].frame_cursor, seeds[0].wait), (2, 32));
+    // Two motion steps of `-4 * 1` taken back off Y.
+    assert_eq!(seeds[0].pos[1], (-300 << 8) + 8);
+    assert_eq!((seeds[1].frame_cursor, seeds[1].wait), (0, 8));
+    assert_eq!(seeds[1].mirror, 2);
+}
+
+/// A readable pool with no live child reads as an empty seat, not as no
+/// pool: the image child must retire the billboards its replay still
+/// carries. A state with no pool pointer reads as `None`.
+#[test]
+fn an_empty_effect_pool_is_still_a_seat() {
+    let mut ram = vec![0u8; 0x20_0000];
+    assert!(ram_read::retail_effect_children(&ram).is_none());
+    let pool = 0x800E_6A5C;
+    put32(&mut ram, 0x8007_BD30, pool);
+    put16(&mut ram, pool, 0x1000);
+    put32(&mut ram, pool + 8, 0x800E_46E8);
+    assert_eq!(ram_read::retail_effect_children(&ram), Some(Vec::new()));
+}
+
+/// On the action seed's own pass the image child stands each combatant on
+/// the displayed frame's ring slot - the seed's formation recentre moved
+/// them after that frame was built - and elsewhere on the RAM's live pair.
+#[test]
+fn the_seed_pass_image_ground_is_the_displayed_ring_slot() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 1);
+    put8(&mut ram, ctx + 1, 1);
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x14);
+    put16(&mut ram, ctx + 0x6DA, 0x200);
+    put8(&mut ram, FORMATION_CELL, 0x04);
+    for (slot, base, live, shown) in [
+        (0u32, 0x800E_C9E8u32, [-7i16, -338i16], [-43i16, -383i16]),
+        (3, 0x800E_D264, [0, 0], [-36, -52]),
+    ] {
+        put32(&mut ram, ACTOR_TABLE + slot * 4, base);
+        put16(&mut ram, base + 0x14C, 50);
+        put16(&mut ram, base + 0x14E, 50);
+        put16(&mut ram, base + 0x34, live[0] as u16);
+        put16(&mut ram, base + 0x38, live[1] as u16);
+        put32(&mut ram, base + 0x4C, live[0] as u16 as u32);
+        put32(&mut ram, base + 0x50, live[1] as u16 as u32);
+        for k in 1..3u32 {
+            put32(&mut ram, base + 0x4C + 8 * k, shown[0] as u16 as u32);
+            put32(&mut ram, base + 0x50 + 8 * k, shown[1] as u16 as u32);
+        }
+    }
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    let pairs = |s: Vec<legaia_engine_capture::ground_snap::GroundSnap>| {
+        s.iter().map(|g| (g.slot, g.x, g.z)).collect::<Vec<_>>()
+    };
+    assert_eq!(
+        pairs(b.engine_image_ground_snaps()),
+        vec![(0, -43, -383), (1, -36, -52)]
+    );
+    assert_eq!(
+        pairs(b.engine_ground_snaps()),
+        vec![(0, -7, -338), (1, 0, 0)]
+    );
+    // Past the seed's pass the RAM's pairs stand.
+    b.walk_yaw_base = 0x202;
+    assert_eq!(
+        pairs(b.engine_image_ground_snaps()),
+        vec![(0, -7, -338), (1, 0, 0)]
+    );
+}
+
+/// One cleared 64-bucket ordering table at `ot` whose head bucket chains
+/// `SPRT` packets (CLUT `0x7FCC`, `16 x 20`) at `pool` drawn on `seats`.
+fn put_sprite_table(ram: &mut [u8], ot: u32, pool: u32, seats: &[(i16, i16)], uvs: &[(u8, u8)]) {
+    const N: u32 = 64;
+    put32(ram, ot, 0x00FF_FFFF);
+    for i in 1..N {
+        put32(ram, ot + i * 4, (ot + (i - 1) * 4) & 0x00FF_FFFF);
+    }
+    let tail = (ot + (N - 2) * 4) & 0x00FF_FFFF;
+    put32(ram, ot + (N - 1) * 4, pool & 0x00FF_FFFF);
+    for (i, (&(x, y), &(u, v))) in seats.iter().zip(uvs).enumerate() {
+        let p = pool + i as u32 * 20;
+        let next = if i + 1 == seats.len() {
+            tail
+        } else {
+            (p + 20) & 0x00FF_FFFF
+        };
+        put32(ram, p, (4 << 24) | next);
+        put32(ram, p + 4, 0x6480_8080);
+        put32(
+            ram,
+            p + 8,
+            (u32::from(y as u16) << 16) | u32::from(x as u16),
+        );
+        put32(
+            ram,
+            p + 12,
+            (0x7FCC << 16) | (u32::from(v) << 8) | u32::from(u),
+        );
+        put32(ram, p + 16, (20 << 16) | 16);
+    }
+}
+
+/// `delilas_gi_spirit_artifact`'s actor plaque: the record retired on the
+/// pass the capture froze (`total` cleared, `elapsed` left on its last
+/// in-flight `13`), the table being built draws the plaque at rest and the
+/// older one eight pixels above it - the offset the glide had at `13` of
+/// `16` (`-26 + 38 * 13 / 16 = 4`, target `12`). The displayed frame is one
+/// step of `3` older: `10`. A plaque the two tables draw on the same seat
+/// landed earlier and yields no seat.
+#[test]
+fn a_glide_retired_on_the_frozen_pass_is_read_off_the_tables() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let rec = ctx + HUD_GLIDE_TABLE;
+    put8(&mut ram, rec + 1, 13);
+    put16(&mut ram, rec + 4, 16);
+    put16(&mut ram, rec + 6, 12);
+    put16(&mut ram, rec + 8, 16);
+    put16(&mut ram, rec + 10, (-26i16) as u16);
+    put32(&mut ram, ctx + 0x1074, 0x8009_E4C0);
+    let uvs = [(0, 0), (16, 0)];
+    put_sprite_table(
+        &mut ram,
+        0x800F_0000,
+        0x8010_0000,
+        &[(16, 8), (32, 8)],
+        &uvs,
+    );
+    put_sprite_table(
+        &mut ram,
+        0x800F_1000,
+        0x8010_1000,
+        &[(16, 0), (32, 0)],
+        &uvs,
+    );
+    assert_eq!(
+        landed_glide_pool_seats(&ram, ctx, [3, 3]),
+        vec![HudGlideSeat {
+            target: [16, 12],
+            elapsed: 10,
+            total: 16
+        }]
+    );
+    put_sprite_table(
+        &mut ram,
+        0x800F_1000,
+        0x8010_1000,
+        &[(16, 8), (32, 8)],
+        &uvs,
+    );
+    assert_eq!(landed_glide_pool_seats(&ram, ctx, [3, 3]), vec![]);
+}
+
+/// A Spirit turn's bar and plate come off the widgets the glide records name:
+/// the bar's width `+0x0E`, taken back across the display lag while it grows
+/// past the AGL seed, and the plate's value `+0x10`.
+#[test]
+fn the_spirit_gauge_is_read_off_its_widgets() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let actor = 0x800E_CCBC;
+    put8(&mut ram, ctx + 7, 0x47);
+    put8(&mut ram, actor + 0x1DE, 4);
+    put16(&mut ram, actor + 0x154, 194);
+    let seat = |ram: &mut Vec<u8>, slot: u32, seats: [i16; 4], widget: u32| {
+        let r = ctx + HUD_GLIDE_TABLE + slot * HUD_GLIDE_STRIDE;
+        for (i, s) in seats.iter().enumerate() {
+            put16(ram, r + 4 + i as u32 * 2, *s as u16);
+        }
+        put32(ram, ctx + 0x1074 + slot * 4, widget);
+    };
+    seat(&mut ram, 0, [16, 192, 16, 234], 0x8009_E540);
+    seat(&mut ram, 1, [208, 172, 328, 172], 0x8009_E500);
+    put16(&mut ram, 0x8009_E540 + 0x0E, 188);
+    put16(&mut ram, 0x8009_E500 + 0x10, 100);
+    assert_eq!(
+        retail_spirit_gauge(&ram, ctx, Some(actor), 6),
+        Some((188, 100))
+    );
+    put16(&mut ram, 0x8009_E540 + 0x0E, 200);
+    assert_eq!(
+        retail_spirit_gauge(&ram, ctx, Some(actor), 6),
+        Some((194, 100))
+    );
+    put8(&mut ram, actor + 0x1DE, 1);
+    assert_eq!(retail_spirit_gauge(&ram, ctx, Some(actor), 6), None);
+}
+
+/// A pass whose own history entry reads the `0x2BC` clamp stepped `4`
+/// (the raw duration past `0x2D0` sets the step, `0x800170F8..0x80017104`),
+/// whatever the history's largest entry says: `delilas_gi_spirit_artifact`'s
+/// newest entry is the clamp and the one before it `0x2CF`, so its last two
+/// passes stepped `4` and `3` while [`frame_step`] reads `3`.
+#[test]
+fn a_clamped_history_entry_is_a_step_four_pass() {
+    let mut ram = vec![0u8; 0x20_0000];
+    put16(&mut ram, STEP_MODE, 0x10);
+    let hist = [
+        566u16, 700, 660, 719, 700, 588, 574, 583, 560, 564, 567, 561, 567, 562, 559, 559,
+    ];
+    for (i, d) in hist.into_iter().enumerate() {
+        put16(&mut ram, FRAME_HISTORY + i as u32 * 2, d);
+    }
+    put32(&mut ram, 0x8007_B758, 5);
+    assert_eq!(frame_step(&ram), 3);
+    assert_eq!(pass_steps(&ram), [4, 3]);
+    put32(&mut ram, 0x8007_B758, 6);
+    assert_eq!(pass_steps(&ram), [3, 4]);
+    put32(&mut ram, 0x8007_B758, 4);
+    assert_eq!(pass_steps(&ram), [3, 3]);
+    put32(&mut ram, FORCED_STEP, 2);
+    assert_eq!(pass_steps(&ram), [2, 2]);
+}
+
+/// Without two ordering tables drawing the battle floor the step stays
+/// unconfirmed, and the walk-back keeps the history's single step.
+#[test]
+fn no_floor_tables_leave_the_pass_step_unconfirmed() {
+    let ram = vec![0u8; 0x20_0000];
+    assert_eq!(older_table_step(&ram, 0x800E_B654), None);
+}
+
+/// The history's per-pass steps are taken only where the battle floor
+/// confirms them: a clamped newest entry with no ordering tables to check it
+/// against leaves both passes on the history's largest entry, and the lag on
+/// two of them.
+#[test]
+fn unconfirmed_pass_steps_keep_the_history_max() {
+    let mut ram = vec![0u8; 0x20_0000];
+    put16(&mut ram, STEP_MODE, 0x10);
+    let hist = [
+        566u16, 700, 660, 719, 700, 588, 574, 583, 560, 564, 567, 561, 567, 562, 559, 559,
+    ];
+    for (i, d) in hist.into_iter().enumerate() {
+        put16(&mut ram, FRAME_HISTORY + i as u32 * 2, d);
+    }
+    put32(&mut ram, 0x8007_B758, 5);
+    put32(&mut ram, BATTLE_CTX, 0x800E_B654);
+    assert_eq!(pass_steps(&ram), [4, 3]);
+    assert_eq!(display_pass_steps(&ram), [3, 3]);
+    assert_eq!(display_lag_vsyncs(&ram), 6);
 }

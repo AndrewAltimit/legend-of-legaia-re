@@ -4,19 +4,20 @@
   <p class="lede">How Legaia runs a fight, from the flash of an encounter to the spoils screen. The town logic is paged out of RAM, the <strong>battle overlay</strong> (a chunk of code streamed in on demand) is paged in, and the field you were standing on stays loaded underneath as the 3D backdrop. This page is the guided tour; the per-field tables live on <a href="battle-internals.html">battle internals</a>, the measurements on <a href="history-battle.html">capture notes</a>.</p>
 </header>
 
-<section class="doc-section" id="at-a-glance">
+<section class="doc-section" id="at-a-glance" data-doc="where-things-live,at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Where</dt><dd>Battle overlay = PROT entry 0898, loaded at <code>0x801CE818</code> (the slot the town overlay also uses, so the two never coexist); scene loader, seats and archive streamers are static <code>SCUS_942.54</code> code.</dd>
     <dt>Battle state</dt><dd>One context struct reached through the global pointer <code>0x8007BD24</code> (resolves to <code>0x800EB654</code>); two byte cursors inside it drive the menu half (<code>+0x06</code>) and the action half (<code>+0x07</code>).</dd>
     <dt>Roster</dt><dd>8-slot actor pointer table at <code>0x801C9370</code> - slots 0..2 party, 3..7 monsters.</dd>
+    <dt>Per-frame tick</dt><dd><code>FUN_80046A20</code> (SCUS) drives one fixed order every battle frame: scene loader, seat stager, party-file loader, menu dispatcher, action state machine, separation pass, actor presentation (<a href="#per-frame">below</a>).</dd>
     <dt>Monster data</dt><dd>Monster archive, PROT entry 867: one LZS slot per species (stats, mesh, textures, spells, rewards).</dd>
     <dt>Confidence</dt><dd>Loader, roster, seats, flow states, wipe path: Confirmed (disassembly + live captures). Some actor-struct fields: Inferred.</dd>
     <dt>Used by</dt><dd><a href="battle-action.html">Action state machine</a> &middot; <a href="battle-formulas.html">Battle formulas</a> &middot; <a href="arts-command-gauge.html">Arts gauge</a> &middot; <a href="../formats/encounter.html">Encounter record</a> &middot; <a href="../monsters.html">Monster viewer</a></dd>
   </dl>
 </section>
 
-<section class="doc-section" id="how-it-works">
+<section class="doc-section" id="how-it-works" data-doc="-">
   <h2>How a battle works</h2>
   <figure class="diagram">
     <svg viewBox="0 0 880 310" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Flow of one battle: encounter, load, seat the roster, then a round loop of prompt, command ring, action state machine and end-of-action gate, ending in victory, escape or wipe and a return to the field">
@@ -58,7 +59,7 @@
   <p>Three systems share the battle overlay. The <strong>scene loader</strong> pulls the stage, effect and monster assets off the disc. The <strong>menu state machine</strong> walks the player through Begin / Run, the command ring and the target cursor. The <strong>action state machine</strong> plays each committed command out over many frames - wind-up, strike, damage popup, recovery - and hands the turn on. The <a href="effect-vm.html">effect VM</a> draws sparks and spell visuals but never decides anything; the <a href="move-vm.html">move VM</a> turns a Tactical Arts input into keyframes one layer below the action machine.</p>
 </section>
 
-<section class="doc-section" id="encounter-trigger-runtime">
+<section class="doc-section" id="encounter-trigger-runtime" data-doc="-">
   <h2>Getting into a fight</h2>
   <p>Three doors lead into the same loader:</p>
   <ul class="bullets">
@@ -84,7 +85,7 @@
   </details>
 </section>
 
-<section class="doc-section" id="scene-loader">
+<section class="doc-section" id="scene-loader" data-doc="battle-scene-loader-fun_800520f0,battle-archive-loaders-fun_80052fa0--fun_800542c8">
   <h2>Loading the fight</h2>
   <p>Before the first prompt the loader ticks through an asynchronous ladder, one <code>PROT.DAT</code> entry per state:</p>
   <ol class="steps">
@@ -101,11 +102,12 @@
     <li><strong>Party meshes are assembled, not loaded whole.</strong> The player battle files (<code>data\battle\PLAYER1..4</code>) carry per-equipment sections; the loader splices the equipped pieces into one mesh per member and relocates its textures into the seat's VRAM band. Details: <a href="../formats/battle-data-pack.html">battle data pack</a>, <a href="../formats/character-mesh.html">character mesh</a>.</li>
     <li><strong>The heap is the real formation limit.</strong> Everything the loader places comes from one ~1.23 MB best-fit heap, and the monster streamer copies through the returned pointer unchecked. About 145 KB is left for distinct monster blocks; retail never authors more than two distinct species per formation and the randomizer enforces the same cap. Ledger on <a href="battle-internals.html#heap-budget">internals</a>.</li>
     <li><strong>Duplicates are free.</strong> Only the first occurrence of a species id streams; repeated seats share the record and mesh.</li>
+    <li><strong>Each seat owns its VRAM band</strong> - a texture-page column and a palette row per slot - so distinct enemies never contend for video memory. One upload breaks the pattern: for the late boss formations the monster loader reads one more archive slot after the block, a bare TIM, and uploads it into the seat-1 column and the next palette row whatever its own header says. Cort&rsquo;s two forms are the fights that sample it; the Mystic Shield&rsquo;s sphere draws from it (<a href="cast-module.html">cast modules</a>). Both hosts upload it beside the monster mesh.</li>
     <li><strong>A stage overlay takes the fight over.</strong> Only the Tetsu sparring tutorial and the Cort fight page one in. The evolved-Cort intro leaves the command-flow byte on a value the menu has no handler for, so the menu idles while the module runs its own camera move, banner and countdown, then writes the flow byte back with the intro timer already zeroed. No button press hurries it.</li>
   </ul>
 </section>
 
-<section class="doc-section" id="battle-background">
+<section class="doc-section" id="battle-background" data-doc="stage-seats-fun_800513f0-placement-tables,range--line-of-sight-fun_8004e2f0">
   <h2>The arena: backdrop, camera and seats</h2>
   <p>There is no arena. The fight happens on the ground you were walking on; the camera swaps from the walk camera to a slow orbit around the midpoint between the rows, and the actors and HUD are layered on top. An overworld fight adds two layers so the horizon reads complete from every angle: a flat procedural grass grid under the actors and the map's sky dome, drawn twice (a half turn or an X mirror, chosen per stage by an authored table).</p>
   <p>The orbit camera is pinned exactly: pitch 32 (of 4096), a fixed translation 7680 deep, a 4x world scale composed under each actor. Constants on <a href="battle-internals.html#camera">internals</a>; the per-phase framing (far shot for the menu, close-up for arts input) is on <a href="battle-action.html">battle action</a>.</p>
@@ -120,9 +122,11 @@
     </tbody>
   </table>
   <p>An alternate monster family (used by the pincer and scripted seatings) is selected by the same flag bit that marks a fight no-escape.</p>
+  <p><strong>The formation recentres every round.</strong> Nothing walks a combatant home after an action. Instead, at every round start (and when the ring&rsquo;s first member cancels back to the prompt) <code>FUN_801DB318</code> boxes the party and the living monsters, squashes an axis wider than <code>0x800</code>, and shifts everyone so the box is centred on the origin - that is what pulls a wandered formation back into frame, and the far framing re-derives its focus from it. Every action&rsquo;s seed runs a sibling that boxes only the target of an Attack, so a melee opens with its target on the stage origin, and the action machine steps a melee&rsquo;s bystanders out of the attacker&rsquo;s lane (<a href="battle-action-helpers.html">action helpers</a>).</p>
+  <p><strong>Range.</strong> <code>FUN_8004E2F0</code> is the range check the action machine calls over and over: the distance between two actors against the sum of their size bytes, clamped per actor. It answers &ldquo;out of range&rdquo; outright once the battle-end byte has been raised, before it reads either slot.</p>
 </section>
 
-<section class="doc-section" id="actor-table">
+<section class="doc-section" id="actor-table" data-doc="battle-context-struct,battle-actor-record,monster-init-fun_80054cb0,character-record-layout,stat-aggregator-fun_80042558">
   <h2>Who is fighting</h2>
   <p>Every combatant is one <strong>actor struct</strong> reached through an 8-entry pointer table, and the slot number is identity for the rest of the fight: the action machine, the range check, the AI and the HUD all say "slot 4" rather than "the Gimard". Four records feed those structs:</p>
   <table class="data-table">
@@ -137,7 +141,7 @@
   <p>The party side is read straight out of the character record and written back (HP / MP and the Spirit gauge) when the fight ends. The monster side is decoded once per species: the loader keeps the record pointer in a side table so the spoils routine can read gold, EXP and the drop roll without copying them into the actor. Each monster's mesh is a <a href="../formats/tmd.html">Legaia TMD</a> inside the same block, textured from a 15-palette pool that the loader relocates into the seat's own VRAM column - which is what the <a href="../monsters.html">monster viewer</a> reproduces.</p>
 </section>
 
-<section class="doc-section" id="round-flow">
+<section class="doc-section" id="round-flow" data-doc="battle-main-dispatcher-fun_801d0748,battle-action-state-machine-fun_801e295c,hottest-battle-utility-fun_801d8de8,per-frame-actor-maintenance-fun_8004ce2c,additional-scus-battle-band-helpers">
   <h2>A round, turn by turn</h2>
   <p>The command UI is not one menu. The menu machine walks a byte cursor through three small D-pad surfaces - each a cluster of plate chips around a D-pad glyph - and every round opens on the same prompt:</p>
   <table class="data-table">
@@ -160,9 +164,52 @@
     <li id="inventory"><strong>Items</strong> come from the same 256-slot bag the field menu uses - there is no battle inventory. The bag and its "split bag" window are on <a href="inventory.html">inventory</a>.</li>
     <li><strong>Capture-class casts</strong> (Seru capture, the Amulet, the Delilas signature attacks) page a small dedicated module into the side overlay window and tick it every frame until it reports done. See <a href="battle-internals.html#cast-modules">internals</a> and <a href="cast-module.html">cast modules</a>.</li>
   </ul>
+  <p><strong>One menu dispatcher, four modes.</strong> <code>FUN_801D0748</code> is byte-identical in the battle, capture, level-up and Muscle Dome captures - &ldquo;the capture dispatcher&rdquo;, &ldquo;the level-up tick&rdquo; and &ldquo;the dome match controller&rdquo; are this one routine. Its most-called helper, <code>FUN_801D8DE8</code>, is the HUD element renderer: one case per on-screen element through an 80-entry jump table, shared by the battle HUD and the dome plate (<a href="battle-hud.html">battle HUD</a>).</p>
+
+  <h3 id="per-frame">What runs every battle frame</h3>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The battle tick FUN_80046A20 runs one order every battle frame: the scene loader, the seat stager and the party-file loader while the fight loads; then the menu dispatcher on the flow byte, the action state machine on the action byte, the pairwise separation pass, and the actor presentation tick. Beside it, the SCUS sweep FUN_8004CE2C walks every actor in four passes: status reconcile, clip-tag impact arms, per-boss hooks, and the palette-row status recolour.">
+      <defs><marker id="bt-pf-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-group" x="10" y="10" width="860" height="130" rx="6"/>
+      <text class="dg-sub dg-start" x="24" y="30">FUN_80046A20, once a battle frame</text>
+      <rect class="dg-node" x="24" y="44" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="99" y="67">Load + seat</text><text class="dg-sub" x="99" y="85">loader, stager, party</text>
+      <rect class="dg-node-accent" x="196" y="44" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="271" y="67">Menu dispatcher</text><text class="dg-sub" x="271" y="85">flow byte ctx+0x06</text>
+      <rect class="dg-node-accent" x="368" y="44" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="443" y="67">Action SM</text><text class="dg-sub" x="443" y="85">action byte ctx+0x07</text>
+      <rect class="dg-node" x="540" y="44" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="615" y="67">Separation</text><text class="dg-sub" x="615" y="85">push pairs apart</text>
+      <rect class="dg-node" x="712" y="44" width="144" height="56" rx="4"/>
+      <text class="dg-label" x="784" y="67">Presentation</text><text class="dg-sub" x="784" y="85">tint and fade SM</text>
+      <path class="dg-edge" d="M174 72 L194 72" marker-end="url(#bt-pf-arrow)"/>
+      <path class="dg-edge" d="M346 72 L366 72" marker-end="url(#bt-pf-arrow)"/>
+      <path class="dg-edge" d="M518 72 L538 72" marker-end="url(#bt-pf-arrow)"/>
+      <path class="dg-edge" d="M690 72 L710 72" marker-end="url(#bt-pf-arrow)"/>
+      <rect class="dg-group" x="10" y="160" width="860" height="128" rx="6"/>
+      <text class="dg-sub dg-start" x="24" y="180">FUN_8004CE2C, a sweep over every actor</text>
+      <rect class="dg-node" x="24" y="196" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="119" y="219">1. Status reconcile</text><text class="dg-sub" x="119" y="237">clear expired bits</text>
+      <rect class="dg-node" x="236" y="196" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="331" y="219">2. Clip-tag arms</text><text class="dg-sub" x="331" y="237">tint / freeze / status</text>
+      <rect class="dg-node-warn" x="448" y="196" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="543" y="219">3. Boss hooks</text><text class="dg-sub" x="543" y="237">four formation ids</text>
+      <rect class="dg-node" x="660" y="196" width="196" height="56" rx="4"/>
+      <text class="dg-label" x="758" y="219">4. Palette recolour</text><text class="dg-sub" x="758" y="237">Stone grey, blue tint</text>
+      <path class="dg-edge" d="M214 224 L234 224" marker-end="url(#bt-pf-arrow)"/>
+      <path class="dg-edge" d="M426 224 L446 224" marker-end="url(#bt-pf-arrow)"/>
+      <path class="dg-edge" d="M638 224 L658 224" marker-end="url(#bt-pf-arrow)"/>
+    </svg>
+    <figcaption>The separation pass is the action machine&rsquo;s neighbour: it nudges any two living actors whose bodies overlap apart, once a pass. The tween, tint and separation cluster is presentation only - it touches no HP, MP or stat field.</figcaption>
+  </figure>
+  <ul class="bullets">
+    <li><strong>Clip-tag arms</strong> key on the acting actor&rsquo;s committed clip tag and its keyframe cursor and write to its target: an impact tint, a pose freeze, a ribbon at the target, or (one Noa art) the AI-delegation bits, re-rolled on every frame the cursor sits in its window.</li>
+    <li><strong>Boss hooks</strong> apply hand-written camera, pose and scale overrides to the first monster for four boss formations. The ramp they write to actor <code>+0x1BA</code> is the <strong>shatter amount</strong>: non-zero draws the body as flying triangles (Jette&rsquo;s arm adds spin and shrink); the cast modules write it too.</li>
+    <li><strong>Status recolour</strong> rewrites the actor&rsquo;s 240-entry palette row, not its texels - Stone averages to grey, the limb ailments tint blue - latched once per affliction rather than flashed. The port ports the Stone arm; the blue tint&rsquo;s per-character index window has no parser yet.</li>
+  </ul>
 </section>
 
-<section class="doc-section" id="battle-end">
+<section class="doc-section" id="battle-end" data-doc="-">
   <h2>Ending the fight</h2>
   <table class="data-table">
     <thead><tr><th>Outcome</th><th>Trigger</th><th>What happens</th></tr></thead>
@@ -183,20 +230,22 @@
   </details>
 </section>
 
-<section class="doc-section" id="live-gameplay-loop">
+<section class="doc-section" id="live-gameplay-loop" data-doc="-">
   <h2>In the port</h2>
-  <p>The engine keeps the battle simulation renderer-free - the action machine and formulas in <code>engine-battle-vm</code>, the <code>World</code>-free kernels (AI, catalogs, encounters, level-up, pickers) in <code>engine-battle</code>, the round loop and command flow on <code>World</code> in <code>engine-core</code> - and drives it from one per-frame <code>World::tick</code>, so walking, being ambushed, fighting and returning to the field all happen from a single call on both hosts. Where to look:</p>
+  <p>The engine keeps the battle simulation renderer-free - the action machine and formulas in <code>engine-battle-vm</code>, the <code>World</code>-free kernels (AI, catalogs, encounters, level-up, pickers) in <code>engine-battle</code>, the round loop and command flow on <code>World</code> in <code>engine-core</code>, the slot-B cast modules in <code>engine-cast</code>, the HUD&rsquo;s reads of a running battle in <code>engine-battle-hud</code> - and drives it from one per-frame <code>World::tick</code>, so walking, being ambushed, fighting and returning to the field all happen from a single call on both hosts. Where to look:</p>
   <ul class="bullets">
     <li><strong>Encounters and entry:</strong> <code>engine-battle::encounter</code>, <code>World::begin_encounter_battle</code>, <code>battle_seats</code>.</li>
     <li><strong>Menu half:</strong> <code>battle_input</code>, <code>battle_flow</code>, with the submenus in <code>battle_arts</code>, <code>battle_magic</code>, <code>inventory_use</code>, <code>target_picker</code>.</li>
     <li><strong>Action half:</strong> <code>battle_action</code> (the state machine) and <code>battle_formulas</code> (the arithmetic).</li>
     <li><strong>Monsters, spoils, wipe:</strong> <code>monster_ai</code>, <code>World::apply_battle_loot</code>, <code>LevelUpTracker</code>, <code>game_over::GameOverSession</code>.</li>
   </ul>
-  <p>Retail's render and animation systems clear two gates the action machine waits on - the advance-done flag at attack recovery and the caster's spell iterator at magic sustain - so a renderer-free port has to retire them itself. Post-battle HP / MP is written into the character records before the field snapshot is restored. The battle entry seats each member's HP and MP from its character record, as retail's init does, never from a field actor a scene script may have blanked. A killing blow's Seru absorb reads the monster record's own Seru id and catch chance, as retail does; the separate registry the capture spells feed teaches the pinned retail spell ids (<code>SeruRegistry::retail</code>), but its per-monster Seru attachment is an engine-side approximation, Inferred, not Confirmed.</p>
-  <p id="slot-numbering"><strong>Two slot numberings.</strong> Retail seats the party at slots <code>0..2</code> and monster <code>k</code> at <code>3 + k</code> whatever the party size, so every <code>slot &lt; 3</code> test in the battle code means "a party member". The port seats the monsters straight after the party instead, so for a party of one or two its slot numbers and retail's disagree. Every place a retail slot test or a retail slot-indexed table meets an engine slot goes through one map (<code>battle_slot::SeatMap</code>), and the kernels whose test is on retail's numbering take a <code>RetailSlot</code> type that an unconverted slot cannot pass for. The one crossing a real party reached before the map was Terra's: as the AI companion of the Noa + Terra pair, she aimed one seat past the monster she meant to hit, and against a lone monster she stood by every turn. Per-character tables are a second, related split - they key on which character sits in a seat, not on the seat number. The full list is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle.md#slot-numbering-in-the-port" target="_blank" rel="noopener">the reference</a>.</p>
+  <p>Retail's render and animation systems clear two gates the action machine waits on - the advance-done flag at attack recovery and the caster's spell iterator at magic sustain - so a renderer-free port has to retire them itself. Post-battle HP / MP is written into the character records before the field snapshot is restored. The battle entry seats each member's HP and MP from its character record, as retail's init does, never from a field actor a scene script may have blanked.
+    A killing blow's Seru absorb reads the monster record's own Seru id and catch chance, as retail does; the separate registry the capture spells feed teaches the pinned retail spell ids (<code>SeruRegistry::retail</code>), but its per-monster Seru attachment is an engine-side approximation, Inferred, not Confirmed.</p>
+  <p id="slot-numbering"><strong>Two slot numberings.</strong> Retail seats the party at slots <code>0..2</code> and monster <code>k</code> at <code>3 + k</code> whatever the party size, so every <code>slot &lt; 3</code> test in the battle code means "a party member". The port seats the monsters straight after the party instead, so for a party of one or two its slot numbers and retail's disagree. Every place a retail slot test or a retail slot-indexed table meets an engine slot goes through one map (<code>battle_slot::SeatMap</code>), and the kernels whose test is on retail's numbering take a <code>RetailSlot</code> type that an unconverted slot cannot pass for.
+    The one crossing a real party reached before the map was Terra's: as the AI companion of the Noa + Terra pair, she aimed one seat past the monster she meant to hit, and against a lone monster she stood by every turn. Per-character tables are a second, related split - they key on which character sits in a seat, not on the seat number. The full list is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle.md#slot-numbering-in-the-port" target="_blank" rel="noopener">the reference</a>.</p>
 </section>
 
-<section class="doc-section" id="how-we-know">
+<section class="doc-section" id="how-we-know" data-doc="runtime-residency-windows">
   <h2>How we know</h2>
   <div class="table-wrap">
   <table class="data-table">
@@ -220,15 +269,16 @@
     </tbody>
   </table>
   </div>
-  <p>Save-state diffs (overlay residency, actor-table window, stat-growth deltas) are on <a href="history-battle.html">capture notes</a>. Falsified readings are on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
+  <p>Two save-state pairs that bracket a transition are pinned as constants with disc-gated tests: battle scene init (the battle-bundle residency window, the overlay scratch slice reset on entry, and the per-frame actor-tick pointer slot switching to <code>FUN_80021DF4</code>) and a mid-battle item use (the field-pack base pointer flipping and the script-VM context block rewritten). Save-state diffs (overlay residency, actor-table window, stat-growth deltas) are on <a href="history-battle.html">capture notes</a>. Falsified readings are on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
 </section>
 
-<section class="doc-section" id="full-reference">
+<section class="doc-section" id="full-reference" data-doc="see-also,moved-sections">
   <h2>Full reference</h2>
-  <p>Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle.md" target="_blank" rel="noopener"><code>docs/subsystems/battle.md</code></a>. It also covers the sparring-tutorial prompt machine, the post-strike two-shot camera, the staged-anim channel, the HUD chrome and widget-class table, the weapon-trail builder, per-frame actor maintenance, the SFX scheduler and the field-to-battle intro curtain.</p>
+  <p>Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle.md" target="_blank" rel="noopener"><code>docs/subsystems/battle.md</code></a> - the loader, context struct, actor record, seats, monster record and archive, heap budget, character record and the per-frame actor passes.
+    The rest of the battle set is split across sibling pages, each mirrored here: the <a href="battle-command-flow.html">command flow</a> (sparring tutorial, boss stage modules, commit log), the <a href="battle-action.html">action state machine</a> and its <a href="battle-action-helpers.html">helpers</a> and <a href="battle-action-queue.html">queue</a>, the <a href="battle-stage-camera.html">stage and camera</a> (ground grid, backdrop, entry sweep, intro curtain), <a href="battle-actor-rendering.html">actor rendering</a> (staged-anim channel, tint pixel path, weapon trails), the <a href="battle-hud.html">HUD</a>, and the <a href="battle-round-loop.html">round loop</a> (encounters, status, AI, capture, results, wipe).</p>
 </section>
 
-<section class="doc-section" id="see-also">
+<section class="doc-section" id="see-also" data-doc="-">
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>

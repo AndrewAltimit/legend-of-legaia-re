@@ -29,10 +29,10 @@
 //! REF: FUN_801DABA4 (the per-turn base-byte seed), FUN_801F12D0 (the
 //! applier's two texture uploads)
 
-use crate::battle_party_form::VramSink;
 use legaia_actor_formats::summon_readef::{
     READEF_PROT_INDEX, SLOT_BYTES, SlotKind, TEXTURE_SLOT_VRAM_TARGETS, aux_slot_is_texture_upload,
 };
+use legaia_engine_battle::battle_party_form::VramSink;
 use legaia_engine_scene::scene::ProtIndex;
 
 /// The monster archive's PROT entry, which carries each record's group byte.

@@ -20,6 +20,9 @@
 //!   the census over every CDNAME field scene records which do (none, on the
 //!   retail disc) - the sites sit behind interactions, walk-ons and timeline
 //!   branches a no-input run does not take.
+//! - A scene entry queues one op of its own ahead of every script's: the
+//!   sustained-cue teardown `FUN_80017910` that mode init `FUN_8001DCF8`
+//!   runs on every mode entry (`0x8001DDA8`).
 //! - Every pushed id resolves: below `0x200` into the static table's 100
 //!   rows, at or above it into a populated row of the scene's own prescript
 //!   record 0 (`World::runtime_sfx_descriptor`).
@@ -110,6 +113,14 @@ fn run_record(
     let (start, pc0, len) =
         census::partition_record_span(&man_file, &man, partition, record).expect("record span");
     let code = man[start + pc0..start + len].to_vec();
+    // The scene entry's own ring op: mode init `FUN_8001DCF8` tears the held
+    // sustained run down on every mode entry (`jal 0x80017910` at
+    // `0x8001DDA8`), ahead of anything the record issues.
+    assert_eq!(
+        host.world.take_sfx_ring_ops(),
+        vec![SfxRingOp::ReleaseSustained],
+        "{scene}: the entry releases the sustained run"
+    );
     host.world.load_field_script(code);
     let mut ops = Vec::new();
     for _ in 0..ticks {
@@ -243,7 +254,13 @@ fn every_scripted_cue_resolves_in_its_own_scene() {
                 }
             }
         }
-        // One id, end to end through the field VM.
+        // One id, end to end through the field VM. The entry's sustained
+        // release (mode init's `FUN_80017910`) is not the VM's push.
+        let entry = host.world.take_sfx_ring_ops();
+        assert!(
+            entry.contains(&SfxRingOp::ReleaseSustained),
+            "{scene}: the entry releases the sustained run, got {entry:x?}"
+        );
         let id = ids[0];
         let [lo, hi] = (id as u16).to_le_bytes();
         host.world

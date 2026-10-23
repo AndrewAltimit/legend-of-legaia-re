@@ -50,8 +50,8 @@ use super::*;
 use legaia_actor_formats::battle_char_assembly as bca;
 use legaia_actor_formats::monster_archive;
 use legaia_art::queue::{Character as ArtCharacter, Command as ArtCommand};
+use legaia_engine_battle_menus::muscle_dome_session::{MuscleCard, MuscleDomeSession, MusclePhase};
 use legaia_engine_battle_vm::battle_formulas::{RecordStats, init_party_battle_stats};
-use legaia_engine_menus::muscle_dome_session::{MuscleCard, MuscleDomeSession, MusclePhase};
 use legaia_engine_minigames::muscle_dome::{DomeCombatant, DomeDamageModel};
 use legaia_game_tables::element_affinity::ElementAffinity;
 use legaia_game_tables::move_power;
@@ -228,9 +228,9 @@ const PLAYER_SERU_IDS: std::ops::RangeInclusive<u8> = 0x81..=0x8b;
 
 /// The refusal name the page shows for a rejected Ra-Seru pick.
 fn muscle_refusal_name(
-    e: legaia_engine_menus::muscle_dome_session::DomeCastRefusal,
+    e: legaia_engine_battle_menus::muscle_dome_session::DomeCastRefusal,
 ) -> &'static str {
-    use legaia_engine_menus::muscle_dome_session::DomeCastRefusal as R;
+    use legaia_engine_battle_menus::muscle_dome_session::DomeCastRefusal as R;
     match e {
         R::NoLoadout => "no_loadout",
         R::NoRaSeru => "no_raseru",

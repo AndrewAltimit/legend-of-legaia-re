@@ -34,6 +34,7 @@ omissions. The harness does what the hosts do:
 | name entry | while the overlay is up, routes the pad edge into `step_name_entry` and skips the field tick, as both hosts' modal arms do |
 | shop / prize counter | a shop or prize counter the tick staged opens in a `MenuRuntime`; while it is up the field gets a neutral pad (or is frozen whole, for a session that suspends it), the session steps on the frame's edges, and a closed one unparks the field script (`finish_field_shop` / `finish_prize_exchange`) - the play window's `tick_menu_runtime_session` |
 | save screen | a Save pick writes `save_full` into an in-memory card and refreshes the grid's snapshot; a Load pick resumes that block's file through `resume_save` - the play window's `apply_save_commit`, with the card held in memory |
+| party wipe | runs the return-to-title hold both hosts run (`take_party_wipe`, then `step_party_wipe_hold` to its resolve) and, when the run has written a save, resumes the latest one the way the title's Continue -> Load does; the title screen itself is not driven. A run with no save on its card ends at the wipe |
 
 The L1 map display on a kingdom map needs no duty of the harness - the tick
 runs it - but it is a modal the pad drives, so it is in the progress digest
@@ -45,6 +46,13 @@ then `World::request_minigame_warp` arms the same mode-24 door warp the
 cabinet's op-`0x3E` makes, so the next tick loads the minigame overlay
 through the retail path. The venue's coin compare is satisfied by giving the
 party casino coins first - the one non-pad precondition the harness sets.
+The policy's random face buttons leave most minigames within a few hundred
+frames (a cancel on a hub, a lost round), so every `MINIGAME_REVISIT_EVERY`
+frames that the party stands free in the venue the run requests the warp
+again, coins topped up for the door: a minigame run spends most of its budget
+in the minigame, and the re-entry path is soaked with it. The report counts
+frames ticked per mode, which is how a mode that runs reach but never stay
+in shows up.
 
 A round-trip run is a pseudo-scene `<scene>+rt`. Every `ROUND_TRIP_EVERY`
 frames, on a frame a player could save on (free field roam: no menu,
@@ -153,13 +161,44 @@ conversation that cannot be left is invisible to it until someone opens that
 one. A talk run leaves the random encounter roll disarmed: a New Game party
 loses a dungeon's first fight, and the run is there for the records.
 
+### Front-end runs
+
+Every other run enters its scene by name. Two labels enter through the boot
+front end instead (`soak_harness/front_end.rs`), stepping the same
+`engine-session::front_end::FrontEnd` both play hosts step:
+
+- `title` cold-boots on the publisher logos, takes the mode seat's hand-off
+  to the title card and picks New Game, which enters the opening
+  (`BootSession::start_new_game`).
+- `title+continue[@<save>]` mounts the library card in port 1, opens the
+  title with Continue live, picks it, and walks the retail save-select
+  (the session's `ContinueScreen`, the screen both play hosts step) onto the
+  named save's block, then
+  resumes it through `BootSession::resume_save`. With no `@<save>` it takes
+  the card's first save.
+
+The front-end leg is scripted from the run's own state, not drawn from the
+policy, so a replay of the recorded pads lands where the run did. The library
+is `LEGAIA_SAVES_LIBRARY`, else the first `saves/library` found walking up
+from the crate, so a worktree reads its main checkout's.
+
+Two deterministic tests pin each chain end to end:
+`front_end_new_game_reaches_free_roam` (title, New Game, the prologue, the
+`town01` naming prompt confirmed through its retail Yes / No, the controls
+handed back in `town01`) and `front_end_continue_lands_a_library_save` (the
+save resumes in its own scene with its money, and keeps ticking). The native
+window's own boot-UI arm is checked through its headless frame path in
+`native_front_end.rs`, New Game and a Continue over a library card mounted
+in port 2 (`HeadlessPlayWindow::open_boot_ui`'s card).
+
 ### The scene set
 
 Every CDNAME label that resolves to a playable scene (a kingdom overworld, or
 a scene whose field MAN resolves), unioned with the decoded `0x3F`
 destinations of those scenes, plus the five minigame pseudo-scenes, a `+rt`
-round-trip twin of every scene, a `+talk` twin of every field scene, and a
-`+shop` twin of every scene with a shop. Nothing is hand-listed.
+round-trip twin of every scene, a `+talk` twin of every field scene, a
+`+shop` twin of every scene with a shop, and the two front-end runs. Nothing
+else is hand-listed.
 
 ## Policies
 
@@ -174,7 +213,7 @@ what holds the frame:
 | a script polls the held pad | the face button it polls, held - op `0x42` mode 1 reads the held word on one frame of its loop (`edlast`'s credits end on `4A 08 00 42 01 08`: wait eight frames, test a held Circle or Cross), which a tap reaches only by luck |
 | a picker is up | a random number of Down taps, then Cross - mashing confirm only ever takes a picker's first rows, and a conversation whose way out is its last option then reads as one that cannot be left. The plan waits for the box's slide to come to rest (`picker_takes_input`): a press during the slide moves nothing, and taps spent there biased every pick toward the first row. The row a plan aims at steps on by one each time the same picker comes back, from a random first row, so a quiz that asks again after a wrong answer (`cave01`'s Mist question) gets every answer within its option count |
 | pause menu | random taps for a random budget, then Circle until it closes |
-| battle | mostly the route ladder's fighter (Begin, Attack, Auto, confirm the target, Cross any message box), otherwise random taps. In the sparring tutorial it follows the lesson - Item, Spirit, then the `Up Down Up` drill in Command mode - since any other pick rewinds the lesson for as long as the player keeps making it, in retail as in the port |
+| battle | mostly a fighter (Begin, Attack, Auto, confirm the target, Cross any message box) that now and then takes Item, Magic, Spirit, a typed Command art or Run instead and goes through with the pick; otherwise random taps. The report lists the battle surfaces runs reached (command phases, item / spell pickers, arts entry). In the sparring tutorial it follows the lesson - Item, Spirit, then the `Up Down Up` drill in Command mode - since any other pick rewinds the lesson for as long as the player keeps making it, in retail as in the port |
 | minigame / other | random face buttons and held directions, and rarely Start - the minigames' escape |
 
 Every UI surface reads `just_pressed`, so a press is a tap: the wanted mask
@@ -191,7 +230,7 @@ on one frame and neutral on the next.
 | `script_stall` | the modal timeline (or first helper context) sits at one PC for a whole window of field frames, even while something else moves - except that a record whose scripted walkers are still stepping is progressing (a `0xC7` walk, or the `B3 <id> 0A` wait on one: `bylon`'s Zopu walks some 2400 frames), and so is a walk-on record under the re-poll bit (`2E 13`), re-run from its top every tick while the player, free to walk off, stands on its tile |
 | `battle_loop` | three battles open from one parked timeline PC |
 | `menu_stuck` | the pause menu stays open through the Circle back-out |
-| `battle_endless` | one battle outlasts `LEGAIA_SOAK_BATTLE_FRAMES` |
+| `battle_endless` | one battle outlasts `LEGAIA_SOAK_BATTLE_FRAMES` - except a long fight (below) and a command prompt the pad has left alone for the window's last quarter, which waits on the player |
 | `control_starved` | the field refuses the pad for `LEGAIA_SOAK_STARVE_FRAMES` with no free-roam frame, the script reaches no PC it has not already been at, and the window holds the confirm presses that would page a conversation through |
 | `confined` | from the frame the field hands the player back, 900 direction-held frames, each of the four directions among them, never carry them 48 units |
 | `door_loop` | six scene changes inside 600 frames with no direction pressed between them |
@@ -201,6 +240,7 @@ on one frame and neutral on the next.
 | `value` | roster HP / MP over max, a live HP / MP maximum that is not the stat aggregator's rebuild of the base window, a level outside `1..=99`, battle HP over max, money out of range, a bag stack over 99, a count on a free slot, or two stacks of one id inside the active window |
 | `unbounded_growth` | an engine queue grows past a cap |
 | `effect_residue` | on the first field or world-map frame after a battle exit or a scene load, `World::battle_effect_residue` names a battle effect still live (the `efect.dat` pool, a move-FX / effect-script / summon scene-graph, the streak block, a cast-band request) - retail resets the whole actor pool at both points ([`effect-vm.md`](../subsystems/effect-vm.md#battle-effects-die-with-the-battle)) |
+| `wipe_continue` | after a party wipe, the hold never resolves, leaves the world in Battle, or the Continue does not land in the saved scene or leaves the wipe raised. What the wipe leaves live past the resume is the `effect_residue` check's, on the next frame |
 | `save_roundtrip` | in a `+rt` run, the save taken after a resume disagrees with the save it resumed; the location names the first differing field (`party[i]+offset`, `ext.money`, `ext_v2.field_position`, ...) |
 
 The **progress digest** hashes everything a player could see move: mode and
@@ -215,7 +255,11 @@ A softlock is **located** by what holds the frame: `pause-menu:<row>:<phase>`,
 `helper@pc:op`, `dialogue`, `shop`, `name-entry`, `mode:<minigame>`, or
 `free-roam:immobile@tile(x,z)`. The pond names its sub-screen
 (`mode:Fishing:<phase>`, `:hub-<screen>`, `:exchange`), so a reduction cannot
-trade a park on one screen for an idle shore that merely waits for a cast. A battle park whose HP-bar pair is absorbing
+trade a park on one screen for an idle shore that merely waits for a cast.
+The arena names its leg phase or, between legs, its contest state
+(`mode:MuscleDome:leg-Select`, `:contest-Tally`), and its digest hashes the leg
+and contest whole: hashing only their presence read a cursor walk on the
+selection grid as a frozen screen. A battle park whose HP-bar pair is absorbing
 (`hp != hp_display` with a zero accumulator - the shape that holds the
 `0x51` bar-drain gate for good, see `BattleActor::set_hp_synced`) carries a
 `:hp-bar-absorbing` suffix.
@@ -223,6 +267,16 @@ trade a park on one screen for an idle shore that merely waits for a cast. A bat
 `script_stall` does not count frames spent in battle, the pause menu or a
 minigame (they suspend the field VM by design), nor frames under a
 player-owned modal (name entry, a shop).
+
+A **long fight** is not an endless one. A battle actor's HP or MP moving
+is progress, and a fight in which none moved for a whole window is endless
+however it started. A fight with one moving in the window's last quarter,
+against a monster side holding more than `LEGAIA_SOAK_BATTLE_HP_POOL`, runs
+on: a random pad chips about 200 a round off Cort's 50000 HP, and every such
+soak of `chitei2` read as a hang at whatever state the clock hit. The
+end-of-action gate `0x5A` is no progress signal, since mid-round it passes
+inside one tick. Below the pool the clock alone decides, because a fight
+that runs long on wrong damage (a summon hitting for 1) still moves HP.
 
 `control_starved` is the detector for a script going round. The softlock and
 script-stall clocks restart whenever anything moves, so a conversation that
@@ -252,7 +306,7 @@ a direction held across the arrival walks straight back in.
 A finding's **signature** is `detector|scene|location`. Findings are
 deduplicated by signature and ranked: panics, hangs and tick errors first;
 softlocks, battle loops, door loops, stuck menus, endless battles, drops to
-title and unknown scenes next; free-roam immobility, script stalls, starved
+title, unknown scenes and failed wipe continues next; free-roam immobility, script stalls, starved
 control and confinement after; value, non-finite, queue-growth and save
 round-trip checks last.
 
@@ -298,7 +352,8 @@ LEGAIA_SOAK_SEEDS=30 LEGAIA_SOAK_FRAMES=18000 LEGAIA_SOAK_JOBS=8 LEGAIA_SOAK_TAG
 | variable | meaning |
 |---|---|
 | `LEGAIA_DISC_BIN` | required; every disc-gated test skips and passes without it |
-| `LEGAIA_EXTRACTED_DIR` | extracted tree to read (falls back to `<repo>/extracted`, then to the disc image itself) |
+| `LEGAIA_EXTRACTED_DIR` | extracted tree to read (falls back to `extracted/` in the workspace or the nearest ancestor that has one - a worktree finds its enclosing checkout's - then to the disc image itself) |
+| `LEGAIA_SAVES_LIBRARY` | save library the `@<save>` runs and replays read (falls back to `saves/library/` up the tree the same way) |
 | `LEGAIA_SOAK_SEEDS` / `LEGAIA_SOAK_SEED_BASE` | seed count and first seed |
 | `LEGAIA_SOAK_FRAMES` | frames per run |
 | `LEGAIA_SOAK_SCENES` | comma list of scenes / pseudo-scenes instead of the full set |
@@ -308,6 +363,7 @@ LEGAIA_SOAK_SEEDS=30 LEGAIA_SOAK_FRAMES=18000 LEGAIA_SOAK_JOBS=8 LEGAIA_SOAK_TAG
 | `LEGAIA_SOAK_SOFTLOCK_FRAMES` | softlock and script-stall window |
 | `LEGAIA_SOAK_STARVE_FRAMES` | `control_starved` window (default 5400) |
 | `LEGAIA_SOAK_BATTLE_FRAMES` | endless-battle threshold |
+| `LEGAIA_SOAK_BATTLE_HP_POOL` | monster HP left above which a fight still landing actions is long, not endless (default 20000) |
 | `LEGAIA_SOAK_HANG_SECS` | single-tick watchdog |
 | `LEGAIA_SOAK_MINIMIZE` / `LEGAIA_SOAK_CONFIRM_MAX` / `LEGAIA_SOAK_NO_CONFIRM` | reduction budget per signature / signatures confirmed / skip confirmation |
 | `LEGAIA_SOAK_SAVE` / `LEGAIA_SOAK_CARD` | play every run from that card save / read saves from that library card |
@@ -340,7 +396,7 @@ LEGAIA_SOAK_REPLAY=target/soak/big/replays/<slug>.replay.toml LEGAIA_SOAK_TRACE=
 prints a state line every `N` frames - mode, scene, holder, player position,
 the bytes at every live script context's PC, scripted NPC glides with their
 targets, and in battle the action state, frame timer and every actor's HP /
-display / accumulator - plus each distinct script body a timeline or helper
+display / accumulator / target / playing clip `+0x1D9` (`C`) - plus each distinct script body a timeline or helper
 runs, once, as hex (the first `LEGAIA_SOAK_TRACE_BYTES` bytes, `0x400` by
 default). `LEGAIA_SOAK_TRACE_NPC=<slot>` adds that placement's position to
 every line, walking or not, which is how to find where an actor stood before a
@@ -379,7 +435,10 @@ to `fixed/`.
 
 [`scripts/replays/soak/fixed/`](../../scripts/replays/soak/fixed/) holds the
 closed findings as regressions. `soak_fixed_fixtures` replays each and fails
-if its recorded signature fires again; a `# soak-expect-max-battles = N`
+if its recorded signature fires again. An `@<save>` replay whose card save does
+not load runs no frames and so proves nothing: with no save library found at
+all it is reported as a skip and listed at the end, and with a library that
+lacks its card or save it fails. A `# soak-expect-max-battles = N`
 header also bounds the battles the replay may open, since a loop that stops
 signing as `battle_loop` could still fight twice. A fixed replay's `frames`
 may run past the finding frame, so the check covers what happens after it -
@@ -420,6 +479,7 @@ regression.
 | `edlast_ending_unequip_live_max_stale` | `edbalden+rt@...:PRO-00`: the ending's scripted unequip left a Max HP +10% on a record whose accessory was gone | the aggregator pass every equipment change runs rebuilds the live maxima with the ability bits |
 | `map01_door_of_wind_carries_cupboard_run` / `map02_door_of_light_carries_conversation` | `chitei2+talk@PRO-03` / `ropeway2+talk@...:PRO-02`: a cupboard or a conversation opened while a Door's travel art ran, and its record parked in the overworld for good | a scene load drops the departing scene's conversation and prop runs with its actor list |
 | `jouind_ledge_hop_walled_landing` | a diagonal step-up hop under Right+Down set the player in the corner of a raised pocket at (2880, 2886), every direction walled and no step left to hop out | retail tests no landing (`FUN_801d1878` checks only `2s` / `3s`, the arc runs no collision); the port's landing guard (`WorldToggles::hop_landing_guard`, an enhancement, off under `pin_retail`) refuses a hop no step could leave |
+| `chitei2_cort_long_fight` | `chitei2@...:PRO-02`: a random-pad fight against Cort (50000 HP) outlasted the 18000-frame window and signed as a hang at whatever state the clock hit | harness: a fight still moving HP / MP against a monster side above the HP pool is long, not endless |
 | `edlast_credits_end_takes_a_held_confirm` | `edbylon@...:PRO-01`: the credits ended parked on their last loop for 1800 frames | not an engine defect: the loop polls a held Circle / Cross and the policy only tapped; the policy now holds a polled button, and the replay (holding Cross) pins that the engine leaves on it, into the `49 0C` soft reset |
 | `jou_level_up_bakes_accessory_into_base` | `jou@...:PRO-01`: Noa, wearing Max HP / MP +25%, levelled to base 2691 / 446 - her boosted live maxima plus the growth - and the live maxima no longer matched the aggregator's rebuild | a level-up grows the base window and the aggregator rebuilds the live maxima from it |
 | `jouina_terra_summon_hits_for_one` | `jouina@PRO-10` under a 7200-frame battle window: Noa's Terra summon hit each Bio Castle Freed for 1, and the fight outlasted the window | every player cast's summon body is its own `summon.dat` record (`FUN_80054CB0(record, 4)` from `FUN_801F19EC`); the big summons had no body and rolled the MP-scaled placeholder - see [summon-readef.md](../formats/summon-readef.md#the-stat-head-is-the-summon-body) |

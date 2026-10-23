@@ -44,13 +44,34 @@ const PART_TICK: u32 = 0x8002_1DF4;
 /// the displayed frame - the RAM runs one frame-pair ahead of it, and a
 /// growing channel seated from the RAM overshoots the frame on screen.
 ///
+/// Ultra Charge's camera-locked shot discs
+/// ([`ULTRA_CHARGE_SHOT_DISCS`](legaia_engine_cast::cast_module_camera::ULTRA_CHARGE_SHOT_DISCS))
+/// are seated too: their growth channel is a clock of the frames since arm
+/// 0, and taken back over the two passes' steps it lands on the frame on
+/// screen (`cort_evolved_ultra_charge_mid_cast` `.901` to `.918`; Ultra
+/// Charge's rings, seated the same way, measured no better and are left to
+/// the replay).
+///
 /// The seeds are taken back to the displayed frame the same way
-/// ([`displayed_part_halfword`]): each integrated word less the
-/// [`display_lag_vsyncs`] the part tick ran on it since.
+/// ([`displayed_part_halfword`]): each integrated word less the vsyncs the
+/// part tick ran on it since - the two passes' own steps ([`pass_steps`]),
+/// not twice the history's [`frame_step`]. A history of clamped entries
+/// (`cort_evolved_ultra_charge_mid_cast` holds sixteen `0x2BC`s) reads step
+/// `3` off the clamp where every pass ran step `4`, and the rays stood two
+/// vsyncs' turn off the frame on screen.
+///
+/// The parts a capture-cell stager seats with `rand()` rolls
+/// ([`ROLLED_STAGER_RECORDS`](legaia_engine_cast::cast_module_ticks::ROLLED_STAGER_RECORDS))
+/// are seated the same way, their lean rate `+0x84` with them: Call Wave's
+/// rays fan at angles the replay's own stream does not deal.
 pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon::CastPartSeed> {
+    use legaia_engine_cast::cast_module_camera::ULTRA_CHARGE_SHOT_DISCS;
+    use legaia_engine_cast::cast_module_ticks::{
+        ROLLED_STAGER_EXTRA_OFFSETS, ROLLED_STAGER_RECORDS,
+    };
     let per_pass: Vec<u32> =
         legaia_engine_cast::cast_module_camera::per_pass_spawn_records().collect();
-    let lag = i32::from(display_lag_vsyncs(ram));
+    let lag = pass_steps(ram).iter().map(|&s| i32::from(s)).sum::<i32>();
     crate::retail_compare_script::actor_nodes(ram)
         .into_iter()
         .filter(|&n| {
@@ -58,14 +79,25 @@ pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon
             game_anchors::u32_at(ram, n + 0x0C) == PART_TICK
                 && game_anchors::u32_at(ram, n + 0x10) & 0x8 == 0
                 && SLOT_B.contains(&rec)
-                && per_pass.contains(&rec)
+                && (per_pass.contains(&rec)
+                    || ROLLED_STAGER_RECORDS.contains(&rec)
+                    || ULTRA_CHARGE_SHOT_DISCS.contains(&rec))
         })
-        .map(|n| legaia_engine_effects::summon::CastPartSeed {
-            tag: game_anchors::u32_at(ram, n + 0x48),
-            pokes: legaia_engine_effects::summon::CAST_PART_SEED_OFFSETS
-                .iter()
-                .map(|&o| (o, displayed_part_halfword(ram, n, o, lag)))
-                .collect(),
+        .map(|n| {
+            let tag = game_anchors::u32_at(ram, n + 0x48);
+            let extra: &[u16] = if ROLLED_STAGER_RECORDS.contains(&tag) {
+                &ROLLED_STAGER_EXTRA_OFFSETS
+            } else {
+                &[]
+            };
+            legaia_engine_effects::summon::CastPartSeed {
+                tag,
+                pokes: legaia_engine_effects::summon::CAST_PART_SEED_OFFSETS
+                    .iter()
+                    .chain(extra)
+                    .map(|&o| (o, displayed_part_halfword(ram, n, o, lag)))
+                    .collect(),
+            }
         })
         .collect()
 }
@@ -73,6 +105,15 @@ pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon
 /// The render banks an effect-script table part's seed carries: its
 /// rotation trio `+0x24..+0x28`.
 const ACTION_FX_SEED_OFFSETS: [u16; 3] = [0x24, 0x26, 0x28];
+
+/// What a burst child's seed carries on top of [`CAST_PART_SEED_OFFSETS`]
+/// (position, banks, wait, channel block): the three words the burst
+/// `FUN_801F30C4` rolls off `rand()` for it - spread `+0x3E`, tail `+0x98`
+/// and, through the seater's `rot[1] & 0xFFF`, heading `+0x96` - and the
+/// scale `+0x72` it writes beside them.
+///
+/// [`CAST_PART_SEED_OFFSETS`]: legaia_engine_effects::summon::CAST_PART_SEED_OFFSETS
+const BURST_CHILD_EXTRA_OFFSETS: [u16; 4] = [0x3E, 0x72, 0x96, 0x98];
 
 /// Every live effect-script table part (`FUN_80021DF4` nodes whose record
 /// `+0x48` lies in the resident battle overlay below the slot-B image -
@@ -103,18 +144,245 @@ pub(super) fn retail_action_fx_parts(
             game_anchors::u32_at(ram, n + 0x0C) == PART_TICK
                 && game_anchors::u32_at(ram, n + 0x10) & 0x8 == 0
                 && overlay.contains(&rec)
-                && (0x80..=0x84)
-                    .step_by(2)
-                    .any(|o| game_anchors::u16_at(ram, n + o) != 0)
+                && (is_burst_child(rec)
+                    || (0x80..=0x84)
+                        .step_by(2)
+                        .any(|o| game_anchors::u16_at(ram, n + o) != 0))
         })
-        .map(|n| legaia_engine_effects::summon::CastPartSeed {
-            tag: game_anchors::u32_at(ram, n + 0x48),
-            pokes: ACTION_FX_SEED_OFFSETS
-                .iter()
-                .map(|&o| (o, displayed_part_halfword(ram, n, o, lag)))
-                .collect(),
+        .map(|n| {
+            let tag = game_anchors::u32_at(ram, n + 0x48);
+            let offsets: Vec<u16> = if is_burst_child(tag) {
+                legaia_engine_effects::summon::CAST_PART_SEED_OFFSETS
+                    .iter()
+                    .chain(&BURST_CHILD_EXTRA_OFFSETS)
+                    .copied()
+                    .collect()
+            } else {
+                ACTION_FX_SEED_OFFSETS.to_vec()
+            };
+            legaia_engine_effects::summon::CastPartSeed {
+                tag,
+                pokes: offsets
+                    .iter()
+                    .map(|&o| (o, displayed_part_halfword(ram, n, o, lag)))
+                    .collect(),
+            }
         })
         .collect()
+}
+
+/// A battle actor's ring-id history `+0x1FB`: one byte a battle frame,
+/// slot 0 the live frame (`FUN_80049348` reads `+0x1FB + s0`).
+const RING_ID: u32 = 0x1FB;
+/// Its anim-cursor history `+0x17A`: one halfword a battle frame.
+const RING_CURSOR: u32 = 0x17A;
+/// The ring's depth (`0x1F` shifts and slot 0).
+const RING_SLOTS: u32 = 32;
+/// The lowest ring id the ghost walk draws (`sltiu v0,v0,0x11` at
+/// `0x80049460`).
+const GHOST_RING_ID_MIN: u8 = 0x11;
+
+/// Every after-image ghost the **displayed** frame drew, as the history
+/// ring holds it ([`legaia_engine_capture::ghost_ring`]).
+///
+/// The walk `FUN_80049348` reads ring slots `step` and `2 * step` back from
+/// the frame it draws, `step = 8 / +0x21D` (`1` for a zero rate), doubled on
+/// a monster seat (`0x800493F0..0x80049428`), and skips a slot whose ring id
+/// is `0x10` or below. The displayed frame was drawn
+/// [`DISPLAYED_FRAMES_BACK`] slots before the RAM's, so each ghost on
+/// screen is that many slots further down. Only a ghost of the clip the
+/// displayed frame shows (the same ring id) is seated: the engine re-poses
+/// it from the body's playing clip. A depth the gate closed is seeded as
+/// undrawn, so a replay whose art committed earlier on its own clock draws
+/// no ghost there either (`battle_vahn_tri_somersault_super`: the art's
+/// first slot is 5, so the walk's depth 4 from the displayed slot 2 reads a
+/// ring id of `0` and retail draws one ghost, the replay two).
+///
+/// Party seats only. A party seat's ring id is its committed dynamic slot
+/// `+0x1D9` (`0x80047FCC`), which names the clip the engine must be
+/// playing; a monster's is `record[+0x77] + 0x10` (`0x80048044..0x80048060`),
+/// which does not, and the Tail Fire captures' Gimard ghosts read worse
+/// seated on a replay standing elsewhere (`battle_gimard_tail_fire_a`
+/// `.925` to `.920`).
+pub(super) fn retail_ghost_ring(
+    ram: &[u8],
+    party_count: u8,
+) -> Vec<legaia_engine_capture::ghost_ring::GhostRingSeed> {
+    let mut out = Vec::new();
+    for pool in 0..u32::from(party_count.clamp(1, 3)) {
+        let slot = pool;
+        let p = game_anchors::u32_at(ram, ACTOR_TABLE + pool * 4);
+        if !in_ram(p) {
+            continue;
+        }
+        let rate = u32::from(game_anchors::u8_at(ram, p + 0x21D));
+        let step = (8u32.checked_div(rate).unwrap_or(0)).max(1);
+        let shown = game_anchors::u8_at(ram, p + RING_ID + DISPLAYED_FRAMES_BACK);
+        for depth in [step, 2 * step] {
+            let at = DISPLAYED_FRAMES_BACK + depth;
+            if at >= RING_SLOTS {
+                continue;
+            }
+            let id = game_anchors::u8_at(ram, p + RING_ID + at);
+            let (Ok(slot), Ok(depth)) = (u8::try_from(slot), u8::try_from(depth)) else {
+                continue;
+            };
+            // The walk drew nothing here: the replay must not either.
+            if id < GHOST_RING_ID_MIN {
+                out.push(legaia_engine_capture::ghost_ring::GhostRingSeed {
+                    slot,
+                    clip: id,
+                    depth,
+                    drawn: false,
+                    cursor: 0,
+                    x: 0,
+                    z: 0,
+                });
+                continue;
+            }
+            if id != shown {
+                continue;
+            }
+            out.push(legaia_engine_capture::ghost_ring::GhostRingSeed {
+                slot,
+                clip: id,
+                depth,
+                drawn: true,
+                cursor: game_anchors::u16_at(ram, p + RING_CURSOR + at * 2),
+                x: i32::from(game_anchors::u32_at(ram, p + POSITION_RING + at * 8) as i16),
+                z: i32::from(game_anchors::u32_at(ram, p + POSITION_RING + at * 8 + 4) as i16),
+            });
+        }
+    }
+    out
+}
+
+/// `_DAT_8007BD30` - the effect pool's base pointer (`FUN_801E0080`).
+const EFFECT_POOL_PTR: u32 = 0x8007_BD30;
+/// The pool's child slots: `0x80` of `0x20` bytes from `+0x10`.
+const EFFECT_CHILD_SLOTS: u32 = 0x80;
+/// Most pack0 batches the pointer table at head `+0x08` is searched over.
+const PACK0_SEARCH: u32 = 0x100;
+
+/// Every live effect-pool child of the state, as the displayed frame held
+/// it ([`rewind_effect_child`]), in slot order. A child's anim cursor
+/// `+0x1C` points into its pack0 batch (`entry + 2 + 6 * frame_cursor`);
+/// the batch index the engine keys on is the entry's place in the pointer
+/// table at the pool head's `+0x08`. A child whose batch is not found is
+/// left out.
+///
+/// `None` when the state holds no pool to read; an empty list is a read
+/// pool with no live child, which the image child seats too: a replay that
+/// reached the capture behind retail's clock still carries billboards
+/// retail's walker had already retired (`rim_elm_gimard_seru_capture_before`:
+/// the replayed Gimard is still on its approach clip, whose eight dust
+/// puffs retail had drawn out a dozen frames before).
+pub(super) fn retail_effect_children(
+    ram: &[u8],
+) -> Option<Vec<legaia_engine_core::world::EffectChildSeed>> {
+    let pool = game_anchors::u32_at(ram, EFFECT_POOL_PTR);
+    if !in_ram(pool) {
+        return None;
+    }
+    let table = game_anchors::u32_at(ram, pool + 8);
+    if !in_ram(table) {
+        return None;
+    }
+    let motion_scale = i32::from(game_anchors::i16_at(ram, pool));
+    let lag = display_lag_vsyncs(ram);
+    let mut out = Vec::new();
+    for slot in 0..EFFECT_CHILD_SLOTS {
+        let c = pool + 0x10 + slot * 0x20;
+        let frame_count = game_anchors::u8_at(ram, c);
+        if frame_count == 0 {
+            continue;
+        }
+        let frame_cursor = game_anchors::u8_at(ram, c + 2);
+        let entry =
+            game_anchors::u32_at(ram, c + 0x1C).wrapping_sub(2 + 6 * u32::from(frame_cursor));
+        let Some(anim_id) =
+            (0..PACK0_SEARCH).find(|&i| game_anchors::u32_at(ram, table + 4 * i) == entry)
+        else {
+            continue;
+        };
+        let pos = [0x0C, 0x10, 0x14].map(|o| game_anchors::u32_at(ram, c + o) as i32);
+        let velocity = [4, 6, 8].map(|o| game_anchors::i16_at(ram, c + o));
+        let seed = legaia_engine_core::world::EffectChildSeed {
+            anim_id: anim_id as u16,
+            frame_count,
+            frame_cursor,
+            wait: game_anchors::u8_at(ram, c + 3),
+            mirror: game_anchors::u8_at(ram, c + 1),
+            pos,
+            velocity,
+        };
+        let frame = |k: u8, b: u32| game_anchors::u8_at(ram, entry + 2 + 6 * u32::from(k) + b);
+        if let Some(seed) = rewind_effect_child(seed, lag, motion_scale, frame) {
+            out.push(seed);
+        }
+    }
+    Some(out)
+}
+
+/// Child `seed` taken back `sweeps` walker sweeps - the display lag, since
+/// `FUN_801E0080` sweeps once a vsync. `frame(k, b)` reads byte `b` of the
+/// batch's frame `k` (`+1` hold delay, `+2` motion speed). `None` for a
+/// child the walker seeded inside the window, which the displayed frame
+/// does not hold yet.
+///
+/// The inverse of one sweep (`0x801E0088` pass 1): a child whose wait still
+/// holds its frame's whole delay entered that frame on the sweep, so it
+/// stood on the previous frame at wait `0`; any other took `8` off its wait.
+/// Either way it took one motion step, `vel * speed * scale * 8 >> 15`, on
+/// the frame it ended the sweep on. A child on frame `0` within `8` of its
+/// first delay was seeded on the sweep (the seed's batch is walked in the
+/// same sweep, so it starts one decrement down).
+pub(super) fn rewind_effect_child(
+    mut seed: legaia_engine_core::world::EffectChildSeed,
+    sweeps: u16,
+    motion_scale: i32,
+    frame: impl Fn(u8, u32) -> u8,
+) -> Option<legaia_engine_core::world::EffectChildSeed> {
+    for _ in 0..sweeps {
+        let speed = i32::from(frame(seed.frame_cursor, 2));
+        for (p, v) in seed.pos.iter_mut().zip(seed.velocity) {
+            let step = i32::from(v)
+                .wrapping_mul(speed)
+                .wrapping_mul(motion_scale)
+                .wrapping_shl(3)
+                >> 15;
+            *p = p.wrapping_sub(step);
+        }
+        let held = (u32::from(frame(seed.frame_cursor, 1)) << 3) as u8;
+        if seed.frame_cursor == 0 {
+            if seed.wait >= held.saturating_sub(8) {
+                return None;
+            }
+            seed.wait += 8;
+        } else if seed.wait == held {
+            seed.frame_cursor -= 1;
+            seed.wait = 0;
+        } else {
+            seed.wait = seed.wait.saturating_add(8);
+        }
+    }
+    Some(seed)
+}
+
+/// Whether `record` is one of the two stager records the battle burst
+/// `FUN_801F30C4` seats its twelve children on (the wide arm's
+/// `0x801F5DA4`, the narrow arm's `0x801F5D0C`). Each child's heading,
+/// spread and tail are three `rand()` draws, so where a burst's rays and
+/// puffs point is the stream's history since the fight began, which no
+/// replay re-deals: `battle_melee_hit_spark`'s Somersault holds twelve
+/// narrow-arm rays fanned at headings no seed reproduces.
+fn is_burst_child(record: u32) -> bool {
+    [
+        legaia_engine_vm::battle_burst::BurstMode::Wide,
+        legaia_engine_vm::battle_burst::BurstMode::Narrow,
+    ]
+    .iter()
+    .any(|m| m.record_addr() == record)
 }
 
 /// Part `node`'s halfword `+off` as the displayed frame held it, `lag`
@@ -154,7 +422,15 @@ pub(super) fn displayed_part_halfword(ram: &[u8], node: u32, off: u16, lag: i32)
         0x54 => -8,
         _ => 0,
     };
-    (now - per_vsync * lag) as u16
+    let then = now - per_vsync * lag;
+    // The length channel `+0xC8` grows from zero off op `0x1C`'s rate: one
+    // that rewinds past zero was (re)started inside the lag and stood at
+    // zero on screen. Call Wave's spent volley reads `0` at rate `96`; taken
+    // back eight vsyncs it would read `-96`, a ray drawn backwards.
+    if off == 0xC8 && now >= 0 && per_vsync > 0 && then < 0 {
+        return 0;
+    }
+    then as u16
 }
 
 /// `ctx[+0x273]` - the pushes the damage-number ring took this action.
@@ -292,6 +568,8 @@ impl RetailBattle {
             mystic_shield: game_anchors::u32_at(ram, MYSTIC_SHIELD_HANDLE) != 0,
             cast_parts: retail_cast_parts(ram),
             action_fx_parts: retail_action_fx_parts(ram),
+            effect_children: retail_effect_children(ram),
+            ghost_ring: retail_ghost_ring(ram, party_count),
             backdrop_slot_1_yaw: game_anchors::u16_at(ram, BACKDROP_SLOT_1_YAW),
             monster_ids,
             seat_chars: (0..u32::from(party_count))
@@ -319,6 +597,7 @@ impl RetailBattle {
             queued_category: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DE)),
             summon_fade: summon_fade(ram),
             display_lag: display_lag_vsyncs(ram),
+            display_pass_lag: display_pass_steps(ram).iter().map(|&s| u16::from(s)).sum(),
             frame_step: frame_step(ram),
             cam_accum: game_anchors::u32_at(ram, ctx + 0x87C),
             caster_clip: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1D9)),
@@ -330,33 +609,61 @@ impl RetailBattle {
             ) as i32,
             cam_style: game_anchors::u8_at(ram, ctx + 0xD),
             cam_tween: retail_cam_tween(ram, ctx),
-            displayed_cam_live: displayed_cam_live(
-                ram,
-                ctx,
-                tween_passes_back(
+            displayed_cam_live: {
+                let passes = tween_passes_back(
                     action_state,
                     game_anchors::u16_at(ram, ctx + 0x6DA),
-                    display_lag_vsyncs(ram) / u16::from(frame_step(ram).max(1)),
-                ),
-                frame_step(ram),
-            ),
+                    DISPLAY_LAG_PASSES,
+                );
+                // Each pass on its own step where the older ordering table's
+                // floor confirms the newest one; the history's largest entry
+                // for every pass otherwise.
+                let steps = display_pass_steps(ram);
+                let confirmed = steps != [frame_step(ram); 2];
+                let steps: Vec<u8> = (0..usize::from(passes))
+                    .map(|n| steps.get(n).copied().unwrap_or(frame_step(ram)))
+                    .collect();
+                displayed_cam_live_steps(
+                    ram,
+                    ctx,
+                    &steps,
+                    confirmed,
+                    summon_route_prior_end(ram, ctx, action_state),
+                )
+            },
             camera_option: game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION),
             battle_id: game_anchors::u8_at(ram, BATTLE_ID_WORD),
             hud_glides_landed: (0..HUD_GLIDE_SLOTS).all(|s| {
                 game_anchors::u8_at(ram, ctx + HUD_GLIDE_TABLE + s * HUD_GLIDE_STRIDE) == 0
             }),
             hud_glides: {
-                let mut seats = hud_glide_seats(ram, ctx, display_lag_vsyncs(ram));
+                // Taken back over the two passes' own steps, as the
+                // round-prompt and landed seats below are: a glide's
+                // `elapsed` advances by each pass's step.
+                // `zeto_call_wave_mid_cast`'s message bar reads `11` in the
+                // RAM, `7` in the older ordering table (a step-`4` pass) and
+                // `3` on screen, where twice the history's step-`3` word
+                // would put it at `5`.
+                let lag: u16 = pass_steps(ram).iter().map(|&s| u16::from(s)).sum();
+                let mut seats = hud_glide_seats(ram, ctx, lag);
                 // A round prompt whose open glide the table has already
                 // cleared can still be unfolding on screen.
                 if game_anchors::u8_at(ram, ctx + 6) == 0x1E
                     && seats.is_empty()
-                    && let Some(seat) = round_prompt_pool_seat(ram, frame_step(ram))
+                    && let Some(seat) = round_prompt_pool_seat(ram, display_pass_steps(ram)[1])
                 {
                     seats.push(seat);
                 }
+                // Retired records that landed on the frozen pass, still
+                // mid-glide on screen.
+                for seat in landed_glide_pool_seats(ram, ctx, display_pass_steps(ram)) {
+                    if !seats.iter().any(|s| s.target == seat.target) {
+                        seats.push(seat);
+                    }
+                }
                 seats
             },
+            spirit_gauge: retail_spirit_gauge(ram, ctx, active, display_lag_vsyncs(ram)),
             hud_glides_unseen: {
                 let lag = display_lag_vsyncs(ram);
                 let live: Vec<u8> = (0..HUD_GLIDE_SLOTS)
@@ -427,19 +734,24 @@ impl RetailBattle {
                         & legaia_engine_battle_vm::battle_anim_rate::FROZEN_IDLE_STATUS_BITS
                         != 0
                         && clip == 0;
-                    let prod = i32::from(frame_step(ram))
-                        * i32::from(game_anchors::u8_at(ram, p + 0x21D))
-                        * entry_rate;
-                    let advance = if frozen {
-                        0
-                    } else if slowed {
-                        prod >> 2
-                    } else {
-                        prod >> 1
-                    };
-                    let frames_back =
-                        i32::from(display_lag_vsyncs(ram) / u16::from(frame_step(ram).max(1)));
-                    Some((slot as u8, clip, cursor - frames_back * advance))
+                    // Each of the lag's passes on its own step
+                    // (`display_pass_steps`).
+                    let back: i32 = display_pass_steps(ram)
+                        .iter()
+                        .map(|&step| {
+                            let prod = i32::from(step)
+                                * i32::from(game_anchors::u8_at(ram, p + 0x21D))
+                                * entry_rate;
+                            if frozen {
+                                0
+                            } else if slowed {
+                                prod >> 2
+                            } else {
+                                prod >> 1
+                            }
+                        })
+                        .sum();
+                    Some((slot as u8, clip, cursor - back))
                 })
                 .collect(),
             captured: (0..8u32)
@@ -462,6 +774,18 @@ impl RetailBattle {
                                 0
                             },
                         )
+                    })
+                })
+                .collect(),
+            displayed_ground: (0..8u32)
+                .map(|slot| {
+                    let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
+                    let at = p + POSITION_RING + DISPLAYED_FRAMES_BACK * 8;
+                    in_ram(p).then(|| {
+                        [
+                            game_anchors::u32_at(ram, at) as i32 as i16,
+                            game_anchors::u32_at(ram, at + 4) as i32 as i16,
+                        ]
                     })
                 })
                 .collect(),

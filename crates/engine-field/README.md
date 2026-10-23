@@ -74,7 +74,10 @@ a dependent crate.
 - **Field camera** - `camera` (`Camera`, the follow / zone / scripted
   camera both hosts tick, with the camera-zone request and cull-view types;
   its eye-back preset `CameraDistance` is `legaia-engine-camera`'s). Generic over `CameraWorld`, the slice of the world it
-  reads and publishes; engine-core implements it for `World`. See
+  reads and publishes; engine-core implements it for `World`. The host
+  frame-loop rules sit beside it in `frame_step` (`SimStepper`, the camera's
+  place around the world tick, `CutsceneGlide`), over `FrameStepWorld`, a
+  `CameraWorld` extension `World` also implements. See
   [`docs/subsystems/world-map.md`](../../docs/subsystems/world-map.md) and
   [`docs/subsystems/cutscene.md`](../../docs/subsystems/cutscene.md) for the
   retail globals it mirrors.
@@ -105,6 +108,8 @@ a dependent crate.
 
 - **Field-overlay kernels** -
   `field_regions` (the `.MAP` region-table scan and zone queries),
+  `field_elevation` (the `.MAP` kind-2 floor-elevation override records
+  the floor sampler reads for ramp and stair tiles),
   `field_player_clip`, `field_warp_tile`, `field_actor_reflect`,
   `field_actor_timers` (the shutter envelope, the eased move and the floor
   ladder; the shutter's two quads are `render-kernels::shutter_bars`),

@@ -470,7 +470,7 @@ impl World {
     /// gate check and the VM writes share one store. It also sits at offset
     /// `0x158` of the `0x80085600..0x80085800` save-bitmap window
     /// ([`legaia_engine_system::story_flag_state::StoryFlagState::story_flag_bits`]); the save/load paths sync that overlap so
-    /// gate state persists (see [`Self::save_full`] / [`Self::load_full`]).
+    /// gate state persists (see `WorldSaveState::save_full` (`legaia-engine-save-state`) / `WorldSaveState::load_full` (`legaia-engine-save-state`)).
     // REF: FUN_8003BDE0
     pub fn p2_gate_flag_set(&self, flag: u16) -> bool {
         self.system_flag_test(flag)

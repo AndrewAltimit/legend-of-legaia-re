@@ -287,7 +287,7 @@ impl LegaiaMinigames {
     /// **not** on the playback. Returns `0` with no contest up.
     ///
     /// PORT: FUN_801d3444, through
-    /// [`MuscleDomeSession::tick_time_meter`](legaia_engine_menus::muscle_dome_session::MuscleDomeSession::tick_time_meter)
+    /// [`MuscleDomeSession::tick_time_meter`](legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession::tick_time_meter)
     pub fn muscle_tick_time_meter(&mut self, dt: u8) -> i32 {
         self.muscle
             .as_mut()

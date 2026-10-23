@@ -40,7 +40,9 @@ fn steal_world(cells: &[(usize, u8, u8)], rng_seed: u32) -> World {
 /// slot is the draw's low byte - seed 0 -> draw `0x0000`, seed 316 ->
 /// `0x30C8`, seed 31 -> `0x7703`.
 const SEED_DRAWS_SLOT_0: u32 = 0;
+
 const SEED_DRAWS_SLOT_200: u32 = 316;
+
 const SEED_DRAWS_SLOT_3: u32 = 31;
 
 #[test]
@@ -151,42 +153,6 @@ fn the_consume_sentinel_is_the_retail_value() {
     assert_eq!(bag.consume_returning_slot(0x99, 1), NOT_IN_WINDOW);
     assert_ne!(bag.consume_returning_slot(0x77, 1), NOT_IN_WINDOW);
     assert_eq!(bag.get(&0x77), Some(&1));
-}
-
-#[test]
-fn the_slot_array_survives_a_world_save_and_load() {
-    // A bag with holes and a high slot: the two shapes a compacted save
-    // silently normalises away.
-    let mut w = steal_world(&[(3, 0x77, 5), (200, 0x78, 4)], 1);
-    let before: Vec<(u8, u8)> = w.party.inventory.slots().to_vec();
-    let sf = w.save_full();
-    assert_eq!(sf.ext.item_slots, before, "the save carries the array");
-    // Through the file bytes, not just the struct.
-    let bytes = sf.write();
-    let back = legaia_save::SaveFile::parse(&bytes).expect("parse LGSF");
-    let mut w2 = World::new();
-    w2.load_full(back);
-    assert_eq!(
-        w2.party.inventory.slots(),
-        before.as_slice(),
-        "slot order and holes came back"
-    );
-    assert_eq!(w2.party.inventory.slot(200), (0x78, 4));
-    assert_eq!(w2.party.inventory.slot(0), (0, 0));
-}
-
-#[test]
-fn a_save_with_no_slot_array_still_loads_densely() {
-    // The pre-`LGX6` shape: the compact list alone. A loader that required
-    // the array would drop every legacy save's bag.
-    let mut sf = World::new().save_full();
-    sf.ext.item_slots.clear();
-    sf.ext.inventory = vec![(0x77, 5), (0x78, 4)];
-    let mut w = World::new();
-    w.load_full(sf);
-    assert_eq!(w.party.inventory.slot(0), (0x77, 5));
-    assert_eq!(w.party.inventory.slot(1), (0x78, 4));
-    assert_eq!(w.party.inventory.len(), 2);
 }
 
 impl World {

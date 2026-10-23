@@ -1,6 +1,7 @@
 //! Save slots: slot paths, save / load to a slot or a memory card, and the path-level world save.
 
 use super::*;
+use legaia_engine_save_state::WorldSaveState;
 
 impl MenuRuntime {
     /// Build the `<save_dir>/slot_NN.bin` path for `slot`.

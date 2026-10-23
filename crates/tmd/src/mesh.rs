@@ -10,6 +10,7 @@
 //! silently. Validated against the full TMD corpus, where this hasn't been
 //! observed in practice.
 
+mod baked;
 mod basic;
 mod color;
 mod coplanar;
@@ -18,6 +19,7 @@ mod vram;
 mod vram_filtered;
 mod vram_posed;
 
+pub use baked::*;
 pub use basic::*;
 pub use color::*;
 pub use coplanar::*;

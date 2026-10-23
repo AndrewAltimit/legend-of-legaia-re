@@ -1,18 +1,18 @@
 //! The timed fight's `World` seam.
 //!
 //! The gate id, the turn bound and the strip's readout kernels live in
-//! [`legaia_engine_menus::timed_fight`]. This module holds the two queries
+//! [`legaia_engine_battle_menus::timed_fight`]. This module holds the two queries
 //! that read a live battle off the world: whether the strip is up, and the
 //! strip itself.
 
-use legaia_engine_menus::timed_fight::*;
+use legaia_engine_battle_menus::timed_fight::*;
 
 /// `true` while the battle's command phase is up - from the round start to
 /// the `Begin` that plays the round out - which is the strip's lifetime (see
 /// the module docs).
 pub fn strip_visible(world: &legaia_engine_core::world::World) -> bool {
     world.mode == legaia_engine_mode::mode::SceneMode::Battle
-        && world.battle.flow != legaia_engine_menus::battle_flow::BattleFlowState::Idle
+        && world.battle.flow != legaia_engine_battle_menus::battle_flow::BattleFlowState::Idle
 }
 
 /// The strip for this frame, or `None` when this is not Koru's fight, the

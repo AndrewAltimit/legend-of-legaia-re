@@ -12,8 +12,8 @@
 
 use legaia_engine_battle::battle_hud_state::BattleHud;
 use legaia_engine_battle_hud as bh;
+use legaia_engine_battle_menus::battle_flow::ActiveTutorialBox;
 use legaia_engine_core::world::World;
-use legaia_engine_menus::battle_flow::ActiveTutorialBox;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_ui::battle_hud_chrome::BattleBadgeRects;
 use legaia_engine_ui::{
@@ -303,6 +303,7 @@ pub fn battle_hud_frame_draws(
             panels_dy: bh::battle_round_prompt_panels_dy(w),
             target_select: target_select.as_ref().map(|(n, b)| (n.as_str(), *b)),
             message_bar: message_bar.as_deref(),
+            message_bar_dy: bh::battle_message_bar_dy(w),
             ap_plate_value: bh::battle_ring_ap_plate_value(w),
             ap_plate_dx: bh::battle_ring_ap_plate_dx(w),
             commit_log: &commit_log,
@@ -439,12 +440,20 @@ pub fn arts_input_chrome_draws(
     if world.mode == SceneMode::MuscleDome && !dome_battle_chrome_up(world) {
         return Vec::new();
     }
-    let Some(view) = world
-        .arts_input_view()
-        .or_else(|| world.spirit_gauge_view())
-    else {
+    let entry = world.arts_input_view();
+    // A Spirit turn's bar and plate glide in on their raise; the entry
+    // session's draw at rest.
+    let (bar_dy, plate_dx) = if entry.is_none() {
+        world.spirit_gauge_glide_offsets()
+    } else {
+        (0, 0)
+    };
+    let Some(view) = entry.or_else(|| world.spirit_gauge_view()) else {
         return Vec::new();
     };
+    let s = scale.max(1) as i32;
+    let bar_origin = (origin.0, origin.1 + bar_dy * s);
+    let plate_origin = (origin.0 + plate_dx * s, origin.1);
     let frame = ai::ArtsInputFrame {
         buffer: view.pennants,
         spent: view.pennant_spent,
@@ -457,7 +466,7 @@ pub fn arts_input_chrome_draws(
         phase: arts_input_screen(view.phase),
     };
     let mut out =
-        ai::arts_input_chrome_draws(&ai::ArtsInputAtlasRects::BAKED, &frame, origin, scale);
+        ai::arts_input_chrome_draws(&ai::ArtsInputAtlasRects::BAKED, &frame, bar_origin, scale);
     // The Rot stamp over each direction the caster's rotted limbs refuse, on
     // top of the chips (retail draws it right after the D-pad glyph).
     if let Some(rot) = chrome.and_then(|r| r.battle).and_then(|b| b.rot_stamp) {
@@ -483,7 +492,7 @@ pub fn arts_input_chrome_draws(
                 full_mark: r.gauge_100,
             },
             &frame,
-            origin,
+            plate_origin,
             scale,
         ));
     }
@@ -699,7 +708,7 @@ pub fn battle_text_draws(
             }));
         }
     } else if let Some(cmd) = &w.battle.command {
-        use legaia_engine_menus::battle_input::CommandPhase;
+        use legaia_engine_battle_menus::battle_input::CommandPhase;
         match &cmd.phase {
             CommandPhase::RoundPrompt { .. }
             | CommandPhase::Menu { .. }

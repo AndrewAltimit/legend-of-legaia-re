@@ -27,21 +27,19 @@ impl LegaiaRuntime {
     /// a card import or a picker visit a "New game" kept the old roster,
     /// gold and story flags.
     pub fn begin_new_game(&mut self) {
-        // The title theme hands the score to the field: stop it so the
-        // prologue's own BGM (or its scripted silence) owns the audio.
+        // With a disc loaded this is the session's own slate
+        // (`BootSession::begin_new_game_slate`: the seeded world, and the
+        // title theme stopped so the prologue's own BGM or its scripted
+        // silence owns the audio).
+        if let Some(session) = self.scene_host.session_mut() {
+            session.begin_new_game_slate();
+            return;
+        }
         if let Some(d) = self.scene_host.director_mut() {
             use legaia_engine_scene_host::scene_host::BgmDirector;
             d.stop();
         }
-        let Some(host) = self.scene_host.host_mut() else {
-            self.world.begin_new_game();
-            return;
-        };
-        let defaults = host.new_game_defaults.as_ref();
-        host.world.begin_new_game_seeded(
-            defaults.map(|d| &d.party),
-            defaults.and_then(|d| d.inventory.as_ref()),
-        );
+        self.world.begin_new_game();
     }
 }
 
@@ -126,7 +124,7 @@ impl LegaiaRuntime {
             let plan = self.seat_enter(legaia_engine_mode::mode::GameMode::MainInit);
             debug_assert!(
                 matches!(plan, Some(legaia_engine_mode::mode::ModeInitPlan::Stage(st))
-                    if st.overlay_entry == legaia_engine_menus::title_overlay::FIELD_SCENE_INIT_PC),
+                    if st.overlay_entry == legaia_engine_title::title_overlay::FIELD_SCENE_INIT_PC),
                 "MAIN INIT's plan should name the per-scene initializer"
             );
         }

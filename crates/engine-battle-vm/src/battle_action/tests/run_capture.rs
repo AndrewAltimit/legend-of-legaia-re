@@ -424,3 +424,134 @@ fn run_wait_press_skips_only_the_failed_run_message() {
     assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
     assert_eq!(ctx.frame_timer, 0x3B);
 }
+
+// ---------------------------------------------------------------------------
+// The capture band's settle test - `0x71` (`0x801E50FC..0x801E5200`)
+// ---------------------------------------------------------------------------
+
+/// A monster caster on slot 3 casting at `target`, in state `0x71`.
+fn finalize_at(target: u8) -> (BattleActionCtx, RecHost) {
+    let (mut ctx, mut host) = fresh(ActionCategory::Magic, 3);
+    ctx.action_state = ActionState::MagicCaptureFinalize.as_byte();
+    host.actors[3].active_target = target;
+    (ctx, host)
+}
+
+fn finalized(ctx: &BattleActionCtx) -> bool {
+    ctx.action_state == ActionState::DoneCleanup.as_byte()
+}
+
+/// Neither arm reads the caster: a boss still on its cast clip (Cort's `8`
+/// through Guilty Cross) does not hold the band once the seat it hit has
+/// settled. The port used to wait for every live seat to leave clip `8`,
+/// which held each such cast in `0x71` for the length of the caster's clip.
+#[test]
+fn capture_finalize_does_not_wait_out_the_casters_clip() {
+    for target in [0u8, 8] {
+        let (mut ctx, mut host) = finalize_at(target);
+        host.actors[3].current_anim = 8;
+        step(&mut host, &mut ctx);
+        assert!(finalized(&ctx), "target {target}: the caster is not read");
+    }
+}
+
+/// `target < 7`: that seat alone. A live seat holds on any clip but `0`.
+#[test]
+fn capture_finalize_single_target_waits_for_the_target_to_go_idle() {
+    let (mut ctx, mut host) = finalize_at(1);
+    host.actors[1].current_anim = 0x0C;
+    host.actors[2].current_anim = 0x0C; // not the target: not read
+    for _ in 0..3 {
+        step(&mut host, &mut ctx);
+        assert!(!finalized(&ctx), "the target is still on its reaction");
+    }
+    host.actors[1].current_anim = 0;
+    step(&mut host, &mut ctx);
+    assert!(finalized(&ctx));
+}
+
+/// A dead seat: clip `0` or the down clip `8` has settled; otherwise a party
+/// seat holds and a monster seat holds until its prim word reads `0`.
+#[test]
+fn capture_finalize_single_target_dead_seat_rules() {
+    // Dead party seat mid-knockdown, then on the down clip.
+    let (mut ctx, mut host) = finalize_at(0);
+    host.actors[0].liveness = 0;
+    host.actors[0].current_anim = 7;
+    host.actors[0].render_color = 0;
+    step(&mut host, &mut ctx);
+    assert!(!finalized(&ctx), "a dead party seat waits for clip 8");
+    host.actors[0].current_anim = CAPTURE_SETTLE_DOWN_CLIP;
+    step(&mut host, &mut ctx);
+    assert!(finalized(&ctx));
+
+    // Dead monster seat on its knockdown: settled once the fade ran out.
+    let (mut ctx, mut host) = finalize_at(4);
+    host.actors[4].liveness = 0;
+    host.actors[4].current_anim = 5;
+    host.actors[4].render_color = 0x0040_1004;
+    step(&mut host, &mut ctx);
+    assert!(!finalized(&ctx), "the defeat fade is still drawing");
+    host.actors[4].render_color = 0;
+    step(&mut host, &mut ctx);
+    assert!(finalized(&ctx));
+}
+
+/// `target >= 7`: party seats `0 .. ctx[+0x00]`, live ones on clip `0`, dead
+/// ones on clip `8` - a dead seat back on clip `0` holds here, unlike the
+/// single-target arm. Monster seats are not read.
+#[test]
+fn capture_finalize_party_wide_walks_the_party_row_only() {
+    let (mut ctx, mut host) = finalize_at(8);
+    host.actors[5].current_anim = 0x0C; // a monster mid-clip: not read
+    host.actors[2].liveness = 0;
+    host.actors[2].current_anim = 0;
+    step(&mut host, &mut ctx);
+    assert!(!finalized(&ctx), "a dead party seat on clip 0 holds");
+    host.actors[2].current_anim = CAPTURE_SETTLE_DOWN_CLIP;
+    step(&mut host, &mut ctx);
+    assert!(finalized(&ctx));
+
+    // Slot 7 is not a single-target code (`sltiu v0,s0,0x7`).
+    let (mut ctx, mut host) = finalize_at(7);
+    host.actors[7].current_anim = 0x0C;
+    host.actors[0].current_anim = 0x0C;
+    step(&mut host, &mut ctx);
+    assert!(!finalized(&ctx), "target 7 walks the party row");
+    host.actors[0].current_anim = 0;
+    step(&mut host, &mut ctx);
+    assert!(finalized(&ctx), "slot 7's own clip is not read");
+}
+
+/// The port bounds the unbounded retail wait.
+#[test]
+fn capture_finalize_lets_go_after_the_pass_limit() {
+    let (mut ctx, mut host) = finalize_at(0);
+    host.actors[0].current_anim = 0x0C;
+    for _ in 0..CAPTURE_SETTLE_PASS_LIMIT {
+        step(&mut host, &mut ctx);
+        assert!(!finalized(&ctx));
+    }
+    step(&mut host, &mut ctx);
+    assert!(finalized(&ctx));
+    assert_eq!(ctx.capture_settle_passes, 0, "the count resets on the exit");
+}
+
+/// The exit walk (`0x801E524C..0x801E5294`) clears `+0x21C` on seats `0..7`
+/// that are alive or party seats: a dead monster keeps its defeat-fade state.
+#[test]
+fn capture_finalize_exit_keeps_a_dead_monsters_fade_state() {
+    let (mut ctx, mut host) = finalize_at(0);
+    for a in &mut host.actors {
+        a.render_flag = 2;
+    }
+    host.actors[4].liveness = 0;
+    host.actors[1].liveness = 0;
+    host.actors[1].current_anim = CAPTURE_SETTLE_DOWN_CLIP;
+    step(&mut host, &mut ctx);
+    assert!(finalized(&ctx));
+    assert_eq!(host.actors[4].render_flag, 2, "dead monster: untouched");
+    assert_eq!(host.actors[1].render_flag, 0, "dead party seat: cleared");
+    assert_eq!(host.actors[5].render_flag, 0, "live monster: cleared");
+    assert_eq!(host.actors[7].render_flag, 2, "slot 7 is outside the walk");
+}

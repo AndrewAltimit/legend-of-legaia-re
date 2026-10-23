@@ -50,7 +50,11 @@ session exercises every record in order.
 Renders Legaia TMDs spinning. Uploads every sibling TIM into the shared
 software VRAM model so meshes that reference textures across multiple VRAM
 pages render correctly; the textured path draws the TMD's baked colour words
-through the retail texture blend and depth cue, with no light source.
+through the retail texture blend and depth cue, with no light source. A mesh
+whose surface is mostly baked near black on the disc
+(`legaia_tmd::mesh::tmd_dark_baked_share`, e.g. `town01`'s dark-sky shell in
+PROT 6) says so in the window title; `--no-textures` draws the bare geometry
+under the viewer light, which ignores baked colours and shows the shape.
 
 Useful flags:
 
@@ -108,6 +112,14 @@ supported via `asset stage` proper.
 Walks `PROT.DAT` end-to-end and pages through every entry, showing
 classifier output (TIM hits, TMD hits, scene-bundle membership) and
 naming each entry from `CDNAME.TXT`.
+
+Keys (the same in the `tmd` and `stage` directory walks): `N` / `P` or the
+arrows step, `PgDn` / `PgUp` step 10, `Home` / `End` go to the first and last
+item, and digits followed by `Enter` jump straight to a number (`goto`): a
+PROT index here, the 1-based position the title shows in a directory walk.
+The window title is the only text these views draw, so it carries the key
+list and, while a number is typed, the number; an out-of-range number says
+the valid range there. `Esc` cancels a typed number, and otherwise quits.
 
 A `scene_tmd_stream` entry is previewed the way retail *places* it rather than
 drawn raw: object 1 dropped, and a second copy under the stage's transform

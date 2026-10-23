@@ -16,6 +16,7 @@ use legaia_engine_audio::AudioSink;
 use legaia_engine_field::field_anim::FieldClipPlayer;
 use legaia_engine_menus::game_over::GameOverSession;
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_save_state::WorldSaveState;
 
 use super::BootSession;
 use crate::audio_director::SfxFrameReport;
@@ -454,8 +455,11 @@ impl<S: AudioSink> BootSession<S> {
                 g.passed()
             );
         }
-        let edge = legaia_engine_core::dance_venue::sync_dance_venue(
-            &mut self.host.world,
+        let world = &mut self.host.world;
+        let edge = legaia_engine_minigame_scenes::dance_venue::sync_dance_venue(
+            world.mode,
+            &mut world.minigames,
+            &mut world.battle.map_id,
             &mut self.camera,
         );
         (edge, finished.is_some())
@@ -475,9 +479,11 @@ impl<S: AudioSink> BootSession<S> {
     // REF: FUN_801D1288, FUN_8003D53C
     pub fn sound_muscle_hub(&mut self) {
         let frame = self.host.world.take_muscle_hub_sounds();
+        let cd_reverb = self.host.world.cd_input_reverb();
         let Some(bgm) = self.bgm.as_mut() else {
             return;
         };
+        bgm.set_cd_reverb(cd_reverb);
         if let Some(c) = frame.xa {
             let fired = bgm
                 .play_xa_clip(
@@ -522,9 +528,11 @@ impl<S: AudioSink> BootSession<S> {
         else {
             return;
         };
+        let cd_reverb = self.host.world.cd_input_reverb();
         let Some(bgm) = self.bgm.as_mut() else {
             return;
         };
+        bgm.set_cd_reverb(cd_reverb);
         let fired = bgm
             .play_xa_clip(u32::from(xa.clip), u32::from(xa.chan), u32::from(xa.dur))
             .is_some();
@@ -609,7 +617,9 @@ impl<S: AudioSink> BootSession<S> {
         // A field script's duck (op `4C 4D`) re-targets the same ramp the
         // battle's summon / capture arms drive.
         let duck = self.host.world.take_field_audio_duck();
+        let cd_reverb = self.host.world.cd_input_reverb();
         let bgm = self.bgm.as_mut()?;
+        bgm.set_cd_reverb(cd_reverb);
         if let Some(pct) = duck {
             bgm.set_duck_pct(pct);
         }

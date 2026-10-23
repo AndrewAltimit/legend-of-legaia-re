@@ -4,8 +4,25 @@
 
 use super::*;
 
-/// Unity XA gain (Q1.14), what every XA voice the director plays is mixed at.
+/// Unity XA gain (Q1.14): the level of a stream the CD input passes at full
+/// volume (a movie's audio - the STR overlay sets libsnd's serial volume to
+/// `127`, register `0x7FFE`).
 pub const XA_GAIN_UNITY: u16 = 0x4000;
+
+/// The SPU CD-input volume retail plays every one-shot CD-XA cue at, as the
+/// Q1.14 gain the mixer takes: register `0x75EA` (Q15) `= 0x3AF5` (Q1.14),
+/// about `0.921` (-0.71 dB).
+///
+/// The one-shot cue player `FUN_8003D53C` mutes the CD input
+/// (`FUN_8003EE7C(0)`) before it seeks; its CD-ready state machine
+/// `FUN_8003D764` raises it with `li a0,0x75` / `FUN_8003EE7C` at
+/// `0x8003D92C` once the drive reports a read in progress (status bit `0x20`),
+/// and mutes it again when the read passes the clip's end. `FUN_8003EE7C(v)`
+/// is libsnd `SsSetSerialVol(0, v, v)` (`FUN_800643C4`, register `= v *
+/// 0x102`), so `117` lands as `0x75EA`, the value the battle save states hold
+/// while a voice is up. Arts shouts, battle grunts, cast voices, field voice
+/// lines and the minigame announcers all play through that player.
+pub const XA_CUE_GAIN: u16 = 0x3AF5;
 
 /// Where the director reads a CD-XA channel it has not staged: one channel
 /// of `XA<slot + 1>.XA` over the clip starter's read span for
@@ -133,7 +150,7 @@ impl<S: AudioSink> AudioDirector<S> {
             pcm,
             sample_rate,
             legaia_xa::Channels::Mono,
-            XA_GAIN_UNITY,
+            XA_CUE_GAIN,
             SHOUT_CD_RESPONSE_DELAY,
         );
         self.xa_stats.shouts_fired += 1;
@@ -294,7 +311,7 @@ impl<S: AudioSink> AudioDirector<S> {
             clip.pcm,
             clip.sample_rate,
             channels,
-            XA_GAIN_UNITY,
+            XA_CUE_GAIN,
             SHOUT_CD_RESPONSE_DELAY,
         );
         self.xa_stats.clips_fired += 1;

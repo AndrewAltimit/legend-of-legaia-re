@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::battle_round::PendingPartyAction;
-use legaia_engine_menus::battle_input::{BattleCommand, BattleCommandSession, CommandPhase};
+use legaia_engine_battle_menus::battle_input::{BattleCommand, BattleCommandSession, CommandPhase};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::input::PadButton;
 

@@ -38,11 +38,11 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
+use legaia_engine_battle_menus::battle_flow::BattleFlowState;
 use legaia_engine_capture::bar_seeds::*;
 use legaia_engine_capture::battle_drive::*;
 use legaia_engine_capture::hud_glide::*;
 use legaia_engine_capture::phase_gate::*;
-use legaia_engine_menus::battle_flow::BattleFlowState;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_ram_image::game_anchors;
 use serde::{Deserialize, Serialize};
@@ -52,11 +52,14 @@ use legaia_engine_session::native::NativeSession;
 use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 
 mod camera_align;
+mod camera_pool;
 mod capture_drive;
 mod engine_run;
 mod frame_step;
 mod hud_glide;
+mod hud_glide_pool;
 mod inflight_seeds;
+mod spirit_gauge;
 pub use inflight_seeds::UndriftActing;
 mod ram_read;
 mod scoring;
@@ -64,13 +67,16 @@ mod seed_plan;
 mod summon_fade;
 
 use camera_align::*;
+use camera_pool::*;
 use capture_drive::*;
 pub use engine_run::*;
 pub use frame_step::*;
 use hud_glide::*;
+use hud_glide_pool::*;
 use ram_read::*;
 pub use scoring::*;
 pub use seed_plan::*;
+use spirit_gauge::*;
 pub use summon_fade::*;
 
 /// Battle context pointer.
@@ -111,6 +117,12 @@ const BATTLE_CAMERA_OPTION: u32 = 0x8008_46C0;
 const SELECT_ATTACK_OPTION: u32 = 0x8008_46C4;
 /// Eight-slot battle actor pointer table.
 const ACTOR_TABLE: u32 = 0x801C_9370;
+/// A battle actor's position history ring: 32 `(i32 X, i32 Z)` slots
+/// (`FUN_80047430`, `0x80047E58..0x80048060`).
+const POSITION_RING: u32 = 0x4C;
+/// The ring slot the displayed frame was drawn on: the display lag is two
+/// game frames ([`display_lag_vsyncs`]), one ring slot each.
+const DISPLAYED_FRAMES_BACK: u32 = 2;
 /// The tint-state byte `actor[+0x21C]`'s defeat-fade value.
 const DEFEAT_FADE_STATE: u8 = legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE;
 /// The SCUS frame driver's battle-entry counter `gp+0x330`: below `0x80`
@@ -317,6 +329,15 @@ pub struct RetailBattle {
     /// replay's part of the same record on the capture frame
     /// (`LEGAIA_SEAT_ACTION_FX_PARTS`).
     pub action_fx_parts: Vec<legaia_engine_effects::summon::CastPartSeed>,
+    /// The state's live effect-pool children (`_DAT_8007BD30 + 0x10`) as
+    /// the displayed frame held them, which the image child stands in its
+    /// own pool on the capture frame (`LEGAIA_SEAT_EFFECT_CHILDREN`) -
+    /// an empty pool included. `None` when the state holds no pool.
+    pub effect_children: Option<Vec<legaia_engine_core::world::EffectChildSeed>>,
+    /// The after-image ghosts the displayed frame drew, as each body's
+    /// history ring held them, which the image child seats over the
+    /// replay's ring on the capture frame (`LEGAIA_SEAT_GHOST_RING`).
+    pub ghost_ring: Vec<legaia_engine_capture::ghost_ring::GhostRingSeed>,
     /// `0x800891D2` - the Y angle the backdrop draw turns its slot 1 by, in
     /// 4096ths of a turn. Time spent in keeping fights since boot, so a
     /// replay carries it over rather than winding its own.
@@ -349,6 +370,9 @@ pub struct RetailBattle {
     /// Vsyncs the capture's displayed frame lags its RAM
     /// ([`display_lag_vsyncs`]).
     pub display_lag: u16,
+    /// Vsyncs the two passes the displayed frame lags by spanned, each on
+    /// its own step ([`display_pass_steps`]).
+    pub display_pass_lag: u16,
     /// `ctx[+0x87C]` - the close-up accumulator the active actor's clip
     /// commit zeroes.
     pub cam_accum: u32,
@@ -396,6 +420,10 @@ pub struct RetailBattle {
     /// surface on a pass the display has not shown yet
     /// ([`Self::displayed_menu_flow`]).
     pub hud_glides_unseen: bool,
+    /// A Spirit turn's AP bar width and AP plate value as the displayed
+    /// frame shows them (`spirit_gauge::retail_spirit_gauge`); `None`
+    /// outside one.
+    pub spirit_gauge: Option<(i16, i16)>,
     /// The options screen's Select Attack word `0x800846C4` (Select `0` /
     /// Automatic `1` / Command `2`): whether the ring's Attack arm opens
     /// the `Auto | Command` prompt `0x78`.
@@ -460,6 +488,14 @@ pub struct RetailBattle {
     /// places and [`Self::undrift`] moves it; this is what the capture
     /// held. The post-strike framings read the body pair (cases 7 and 8).
     pub captured: Vec<Option<CapturedActor>>,
+    /// Each pool slot's live pair on the **displayed** frame: slot
+    /// [`DISPLAYED_FRAMES_BACK`] of the position history ring `+0x4C` (an
+    /// `i32` X / Z pair every 8 bytes, slot 0 the live pair, shifted one
+    /// slot a battle frame by the anim tick `FUN_80047430`,
+    /// `0x80047E58..0x80048060`). The frame on screen is the one built two
+    /// game frames before the RAM's ([`display_lag_vsyncs`]), and a seat
+    /// that moved inside those two frames drew where the ring says.
+    pub displayed_ground: Vec<Option<[i16; 2]>>,
     /// Each pool slot's playing clip `+0x1D9` and the cursor of its anim
     /// node (`*(+0x22C) + 0x68`, 12.4 sixteenths of a keyframe) taken back
     /// to the **displayed** frame, two game frames before the RAM's: as

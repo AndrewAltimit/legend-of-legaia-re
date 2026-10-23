@@ -20,6 +20,7 @@
 //! Skip-passes without `LEGAIA_DISC_BIN`, an extracted tree or the save
 //! library.
 
+use legaia_engine_save_state::WorldSaveState;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
@@ -64,7 +65,7 @@ fn card_sc(library: &std::path::Path, card: &str, save: &str) -> Option<Vec<u8>>
 }
 
 fn fight_pad(session: &NativeSession) -> u16 {
-    use legaia_engine_menus::battle_input::CommandPhase;
+    use legaia_engine_battle_menus::battle_input::CommandPhase;
     let w = &session.host.world;
     if w.battle.item_menu.is_some() {
         return PadButton::Circle.mask();

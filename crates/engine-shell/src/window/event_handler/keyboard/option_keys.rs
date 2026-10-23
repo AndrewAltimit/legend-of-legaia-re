@@ -30,9 +30,9 @@ impl PlayWindowApp {
             return false;
         };
         let screens = legaia_engine_session::hotkeys::FrontEndScreens {
-            boot_logos: matches!(self.boot_ui, BootUiState::PublisherLogos(_)),
-            title: matches!(self.boot_ui, BootUiState::Title(_)),
-            save_select: matches!(self.boot_ui, BootUiState::SaveSelect(_)),
+            boot_logos: self.boot_ui.logos_session().is_some(),
+            title: self.boot_ui.title_session().is_some(),
+            save_select: matches!(self.boot_ui, BootUiState::Continue(_)),
             pause_menu: matches!(self.boot_ui, BootUiState::FieldMenu { .. }),
             game_over: matches!(self.boot_ui, BootUiState::GameOver(_)),
         };
@@ -137,6 +137,7 @@ impl PlayWindowApp {
             ElementState::Pressed if self.help_key_held != Some(code) => {
                 self.help_key_held = Some(code);
                 self.hotkey_help = !self.hotkey_help;
+                self.startup_hint.dismiss();
             }
             ElementState::Released if self.help_key_held == Some(code) => {
                 self.help_key_held = None;

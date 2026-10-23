@@ -12,6 +12,18 @@ over its `AudioOut`); a `wasm32` build never links cpal.
   one over the native cpal output from an extracted tree or a disc image;
   `BootSession::from_host` builds one over any `SceneHost` and the disc's
   `SCUS_942.54` bytes, for a host that assembled its scene host in memory.
+- [`front_end`](src/front_end.rs) - the boot front end both play hosts and
+  the soak harness step (`FrontEnd`): the publisher logos and their skip,
+  the mode seat's `boot_handoff` to the title with the Continue scan at that
+  moment, the title tick and its row counter, and the attract hand-off with
+  its skip edge. A host supplies its movie lane (`AttractLane`) and acts on
+  the `FrontEndStep` it gets back.
+- [`title_continue`](src/title_continue.rs) - the title's Continue screen
+  both play hosts and the soak harness step (`ContinueScreen`): the
+  save-select, its `SaveScreenFlow` and the frame order over two
+  `MountedCard` ports, plus the rack, port read and Continue scan
+  (`card_port_rack`, `card_port_blocks`, `rack_has_save`). A host supplies
+  the ports and lands the `ContinueStep::Loaded` save.
 - [`AudioDirector`](src/audio_director.rs) - the `legaia_engine_scene_host::scene_host::BgmDirector`
   that turns field-VM BGM events into sequencers and fires SFX cues, VAB
   slot residency and the battle duck, generic over the audio output

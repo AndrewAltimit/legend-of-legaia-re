@@ -143,6 +143,14 @@ pub struct ScriptGate {
     /// record on its PC for the whole clip, so the PC alone meets the gate
     /// on the clip's first frame.
     pub latch: Option<i16>,
+    /// A gate parked on a cross-context op whose target placement is still
+    /// walking a compass leg the record armed (`B7` / `C1 <id> b0 b1`): the
+    /// target byte and the leg's spent units (`+0x54`) at the capture. The
+    /// arm runs the record on past the walk and the dispatcher prologue
+    /// holds the next op on that actor at its PC until the leg lands
+    /// (`0x801DE90C..0x801DE944`), so the PC alone meets the gate on the
+    /// leg's first frame.
+    pub walk: Option<(u8, i16)>,
 }
 
 impl ScriptGate {
@@ -157,8 +165,12 @@ impl ScriptGate {
             .map(|(r, c)| format!(":t{r}.{c}"))
             .unwrap_or_default();
         let latch = self.latch.map(|c| format!(":l{c}")).unwrap_or_default();
+        let walk = self
+            .walk
+            .map(|(t, a)| format!(":w{t}.{a}"))
+            .unwrap_or_default();
         format!(
-            "{}:{hex}:{}:{}:{}{glide}{system}{typing}{latch}",
+            "{}:{hex}:{}:{}:{}{glide}{system}{typing}{latch}{walk}",
             self.flat_index, self.pc, self.wait, self.op
         )
     }
@@ -175,8 +187,12 @@ impl ScriptGate {
         let mut system_pc = None;
         let mut typing = None;
         let mut latch = None;
+        let mut walk = None;
         for tail in it {
-            if let Some(c) = tail.strip_prefix('l') {
+            if let Some(w) = tail.strip_prefix('w') {
+                let (t, a) = w.split_once('.')?;
+                walk = Some((t.parse().ok()?, a.parse().ok()?));
+            } else if let Some(c) = tail.strip_prefix('l') {
                 latch = Some(c.parse().ok()?);
             } else if let Some(p) = tail.strip_prefix('s') {
                 system_pc = Some(p.parse().ok()?);
@@ -206,6 +222,7 @@ impl ScriptGate {
             resumed_early: std::cell::Cell::new(false),
             typing,
             latch,
+            walk,
         })
     }
 
@@ -275,6 +292,17 @@ impl ScriptGate {
             world
                 .player_script_clip_cursor()
                 .is_some_and(|c| c >= cursor)
+        }) && self.walk_reached(world)
+    }
+
+    /// The target's compass leg has spent as many units as the capture's,
+    /// for a gate held behind a walking placement ([`Self::walk`]); `true`
+    /// for any other gate, and once the engine's leg has landed.
+    fn walk_reached(&self, world: &legaia_engine_core::world::World) -> bool {
+        self.walk.is_none_or(|(target, accum)| {
+            world
+                .npc_compass_walk_accum(target)
+                .is_none_or(|a| a as i16 >= accum)
         })
     }
 
@@ -888,12 +916,14 @@ mod tests {
             resumed_early: std::cell::Cell::new(false),
             typing: None,
             latch: None,
+            walk: None,
         };
         assert_eq!(ScriptGate::from_env(&g.to_env()), Some(g.clone()));
         let g = ScriptGate {
             glide_left: Some(277),
             typing: Some((1, 15)),
             latch: Some(-3),
+            walk: Some((59, 8)),
             ..g
         };
         assert_eq!(ScriptGate::from_env(&g.to_env()), Some(g));

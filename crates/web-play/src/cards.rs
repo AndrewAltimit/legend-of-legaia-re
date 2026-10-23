@@ -29,6 +29,7 @@
 //! Nothing here is uploaded; the bytes live in the tab for the session.
 
 use legaia_engine_menus::save_select::SlotSnapshot;
+use legaia_engine_save_state::WorldSaveState;
 use legaia_save::SaveResume;
 use legaia_save::emu;
 use wasm_bindgen::prelude::*;
@@ -70,29 +71,7 @@ use legaia_save::emu::MountedCard;
 impl LegaiaRuntime {
     /// The card in rack slot `slot`, if one is inserted.
     pub(crate) fn card(&self, slot: usize) -> Option<&MountedCard> {
-        self.cards.get(slot).and_then(|c| c.as_ref())
-    }
-
-    /// Per-**card-slot** snapshots: the pill row of the retail save screen.
-    /// `present` means "a card is inserted here", not "this holds a save" -
-    /// in card-slots mode that is what the session gates its confirm on
-    /// (see `SaveRack::CardPorts` and `save_screen::SaveScreenFlow`).
-    ///
-    /// The label carries the card's own name so the page can surface which
-    /// image is in which port.
-    pub(crate) fn card_slot_snapshots(&self) -> Vec<SlotSnapshot> {
-        (0..CARD_SLOTS)
-            .map(|i| match self.card(i) {
-                Some(c) => SlotSnapshot {
-                    slot: i as u8,
-                    present: true,
-                    damaged: false,
-                    label: c.label.clone(),
-                    ..SlotSnapshot::empty(i as u8)
-                },
-                None => SlotSnapshot::empty(i as u8),
-            })
-            .collect()
+        card_in(&self.cards, slot)
     }
 
     /// Per-**block** snapshots for the card in rack slot `slot`: the fifteen
@@ -104,13 +83,11 @@ impl LegaiaRuntime {
     /// location rows come off the real save, exactly as retail reads them
     /// out of its per-slot buffer at `0x801EF1B8 + N * 0x100`.
     /// The card's fifteen blocks as the 5x3 preview grid reads them, through
-    /// the shared `legaia_engine_menus::save_select::card_block_snapshots` kernel the
+    /// the session's port read
+    /// ([`legaia_engine_session::title_continue::card_port_blocks`]) the
     /// native window calls too.
     pub(crate) fn card_block_snapshots(&self, slot: usize) -> Vec<SlotSnapshot> {
-        match self.card(slot) {
-            Some(card) => legaia_engine_menus::save_select::card_block_snapshots(card),
-            None => (0..CARD_BLOCKS).map(SlotSnapshot::empty).collect(),
-        }
+        legaia_engine_session::title_continue::card_port_blocks(self.card_ports(), slot as u8)
     }
 
     /// Write the live session into `block` of the card in rack slot `slot`.
@@ -334,6 +311,21 @@ impl LegaiaRuntime {
     }
 }
 
+/// The card in rack slot `slot`, off the rack field alone (so a caller can
+/// hold it beside other runtime fields).
+fn card_in(cards: &[Option<MountedCard>; CARD_SLOTS], slot: usize) -> Option<&MountedCard> {
+    cards.get(slot).and_then(|c| c.as_ref())
+}
+
+/// Whether any inserted card holds a readable save block - the title's
+/// Continue-enable scan over this host's rack, the session's one scan
+/// ([`legaia_engine_session::title_continue::rack_has_save`]) the native
+/// window runs over its two ports too. Takes the rack field alone so a
+/// caller can hold it beside other runtime fields.
+pub(crate) fn rack_has_save(cards: &[Option<MountedCard>; CARD_SLOTS]) -> bool {
+    legaia_engine_session::title_continue::rack_has_save([cards[0].as_ref(), cards[1].as_ref()])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -418,13 +410,14 @@ mod tests {
 
     #[test]
     fn card_slot_snapshots_track_insertion() {
+        use legaia_engine_session::title_continue::card_port_rack;
         let mut rt = rt_with_card(0, blank_card());
-        let snaps = rt.card_slot_snapshots();
+        let snaps = card_port_rack(rt.card_ports()).slots().to_vec();
         assert_eq!(snaps.len(), CARD_SLOTS, "one pill per console card port");
         assert!(snaps[0].present, "slot 1 holds a card");
         assert!(!snaps[1].present, "slot 2 is empty");
         rt.eject_card(0);
-        assert!(!rt.card_slot_snapshots()[0].present);
+        assert!(!card_port_rack(rt.card_ports()).slots()[0].present);
     }
 
     #[test]

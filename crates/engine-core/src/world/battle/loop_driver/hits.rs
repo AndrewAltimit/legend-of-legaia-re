@@ -599,6 +599,9 @@ impl World {
             self.commit_melee_reaction(target_i, attacker_i, block_entry);
             return 0;
         }
+        if attacker < self.party.party_count {
+            self.battle.party_melee_pushes = self.battle.party_melee_pushes.wrapping_add(1);
+        }
         let defense = self.physical_defense_of(target, power_byte);
         // Spirit guard stance on the defender (a party slot that picked
         // Spirit and hasn't started its next turn).
@@ -867,9 +870,26 @@ impl World {
         if kill_check {
             return left.min(u32::from(u16::MAX)) as u16;
         }
+        // What the ring still knows of this victim's later hits is theirs:
+        // an unknown hit leaves it room, and the last unknown one ahead of
+        // a known tail takes what the total leaves after it, so a string
+        // whose closing amount the ring still holds lands that amount
+        // (`battle_melee_hit_spark`: two expired pushes, then the art's
+        // `15` of `29`).
+        let later: Vec<u16> = self
+            .battle
+            .forced_melee_hits
+            .iter()
+            .filter(|&&(slot, _)| slot == target)
+            .map(|&(_, a)| a)
+            .collect();
+        let known_later: u32 = later.iter().map(|&a| u32::from(a)).sum();
+        if known.is_none() && !later.is_empty() && later.iter().all(|&a| a != 0) {
+            return left.saturating_sub(known_later).min(u32::from(u16::MAX)) as u16;
+        }
         let amount = known.unwrap_or(rolled);
         // Leave the closing hit at least one point of the total.
-        u32::from(amount).min(left.saturating_sub(1)) as u16
+        u32::from(amount).min(left.saturating_sub(known_later + 1)) as u16
     }
 
     pub(super) fn melee_reaction_entry(

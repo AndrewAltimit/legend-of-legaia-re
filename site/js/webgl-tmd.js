@@ -180,6 +180,8 @@ class TmdRenderer {
     this.locPsx      = gl.getUniformLocation(this.program, 'u_psx');
     this.locDynDir   = gl.getUniformLocation(this.program, 'u_dyn_dir');
     this.locLogDepthOn = gl.getUniformLocation(this.program, 'u_log_depth_on');
+    /* Whole-draw far bucket (a placement's `farBucket`, the battle grid). */
+    this.locFarSlice = gl.getUniformLocation(this.program, 'u_far_slice');
     /* Opt-in log-depth write (setLogDepth); off on every page but play. */
     this.logDepth = false;
     this.lastLogDepth = false;

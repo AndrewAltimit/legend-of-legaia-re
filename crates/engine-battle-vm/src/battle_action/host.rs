@@ -73,6 +73,23 @@ pub trait BattleActionHost {
         })
     }
 
+    /// The three per-seat reads state `0x71`'s settle test makes
+    /// (`0x801E5108..0x801E5200`): the seat's playing clip `+0x1D9` as the
+    /// anim system holds it (a hit reaction included, as for
+    /// [`Self::reaction_hold_view`]), whether its HP `+0x14C` is non-zero,
+    /// and whether its prim word `+0x04` reads zero. `None` for an empty
+    /// slot, which the test passes.
+    ///
+    /// The default reads the actor's own `current_anim`, `liveness` and
+    /// `render_color`.
+    fn capture_settle_view(&self, slot: u8) -> Option<CaptureSettleSeat> {
+        self.actor(slot).map(|a| CaptureSettleSeat {
+            clip: a.current_anim,
+            alive: a.liveness != 0,
+            prim_zero: a.render_color == 0,
+        })
+    }
+
     /// Equivalent of `FUN_8004E2F0(actor, target)` - battle range / LOS
     /// check. Returns 0 = "in range," non-zero = distance metric. Default
     /// returns 0 (always in range - useful for unit tests).

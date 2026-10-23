@@ -160,7 +160,7 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
     use legaia_engine_battle::arts_command_input::ArtsInputPhase;
     use legaia_engine_battle::battle_magic::SpellPhase;
     use legaia_engine_battle::battle_tutorial::TutorialLesson;
-    use legaia_engine_menus::battle_input::CommandPhase;
+    use legaia_engine_battle_menus::battle_input::CommandPhase;
     use legaia_engine_menus::inventory_use::InventoryUseState;
     let w = &session.host.world;
     check_aimed_dispatch(w);
@@ -786,7 +786,7 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
         let window = session.host.world.battle.command.as_ref().is_some_and(|c| {
             matches!(
                 c.phase,
-                legaia_engine_menus::battle_input::CommandPhase::RoundPrompt { .. }
+                legaia_engine_battle_menus::battle_input::CommandPhase::RoundPrompt { .. }
             )
         });
         let mut run = ROUND_LOSS.with(std::cell::Cell::get);

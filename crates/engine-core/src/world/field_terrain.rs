@@ -98,7 +98,7 @@ pub struct FieldTerrain {
     pub placed_spawn_lut: [i16; 16],
     /// The `.MAP` **object-grid** cell words (`+0x8000`, one `u16` per tile,
     /// `0x80 x 0x80`). [`crate::world::World::sample_field_floor_height`] tests each tile's
-    /// [`crate::world::CELL_ELEVATION_OVERRIDE`] (`0x800`) bit to pick the
+    /// [`legaia_engine_field::field_elevation::CELL_ELEVATION_OVERRIDE`] (`0x800`) bit to pick the
     /// floor model: bilinear corner-nibble surface, or the flat tile mean plus
     /// the tile's [`crate::world::FieldTerrain::elevation_overrides`] record (ramps / stairs).
     /// Empty until a field scene supplies it - then every tile reads as a
@@ -134,8 +134,8 @@ pub struct FieldTerrain {
     /// (`+0x10000`) table followed by the fallback (`+0x12000`) one, so a
     /// linear first-match scan reproduces `FUN_801D5630`'s order. Consumed by
     /// [`crate::world::World::sample_field_floor_height`] on
-    /// [`crate::world::CELL_ELEVATION_OVERRIDE`] tiles.
-    pub elevation_overrides: Vec<crate::world::ElevationOverride>,
+    /// [`legaia_engine_field::field_elevation::CELL_ELEVATION_OVERRIDE`] tiles.
+    pub elevation_overrides: Vec<legaia_engine_field::field_elevation::ElevationOverride>,
     /// Live floor-height-ladder oscillators (field-VM op `0x4C` nibble-9
     /// sub-`0..2`, retail template `0x801F27EC` / tick `FUN_801DA930`). Each
     /// drives one rung of [`crate::world::FieldTerrain::floor_height_lut`].

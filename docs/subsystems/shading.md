@@ -274,6 +274,15 @@ bits (`B` = framebuffer, `F` = the new pixel):
 | 2 | `B - F` |
 | 3 | `B + 0.25*F` |
 
+The GPU computes the equation on 5-bit channels. `F` for a textured
+primitive is the step-4 modulate truncated to 5 bits, `texel5 * colour / 128`
+floored, so a faint additive layer loses up to one step per channel and a
+large dim one adds nothing at all. The port's textured blend pass reads `F`
+the same way on both hosts (`psx_blend_foreground`), whatever the dither
+setting: in `cort_evolved_ultra_charge_mid_cast` the full-precision sum of the
+camera-locked discs washed the lower frame about ten levels brighter than
+retail.
+
 A PNG export cannot express this; the viewer notes when a palette carries STP
 entries. Port detail: [`renderer.md`](renderer.md#set_semi_blend---semi-transparency-blend-modes).
 

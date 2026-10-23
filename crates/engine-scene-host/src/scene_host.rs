@@ -224,7 +224,7 @@ pub struct SceneHost {
     /// the actors by [`SceneHost::ensure_battle_party_forms`] once per
     /// [`legaia_engine_core::world::BattleState::entry_serial`]; kept for the renderers
     /// until the battle ends. `None` outside battle.
-    battle_party_forms: Option<legaia_engine_core::battle_party_form::BattlePartyForms>,
+    battle_party_forms: Option<legaia_engine_battle::battle_party_form::BattlePartyForms>,
     /// What the last **mode-24 minigame door-warp** drain did, if one has run.
     ///
     /// Deliberately a host field rather than a [`SceneTickEvent`] variant: the
@@ -311,7 +311,7 @@ pub struct SceneHost {
     /// scene entered with no party / save loaded - so the pause menu always
     /// reads valid party data. `None` (the default) leaves the world's
     /// scaffold party untouched, which is what disc-free tests expect.
-    pub new_game_defaults: Option<legaia_engine_core::new_game::NewGameDefaults>,
+    pub new_game_defaults: Option<legaia_engine_menus::new_game::NewGameDefaults>,
     /// Field BGM volume global - mirrors `DAT_8007B6EC`. Boot value `-1`
     /// (set by the game-state initializer `FUN_8001FFA4`). Consumed by
     /// the op `0x35` sub-op `8` route ([`bgm_reattach_volume`]).

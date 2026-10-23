@@ -665,7 +665,7 @@ pub struct SeededHalfword {
 /// halfword store and is reported separately by [`seeded_name_offset`].
 ///
 /// This is the specification the engine's record builder
-/// (`legaia_engine_core::new_game::starting_record`) applies, rather than
+/// (`legaia_engine_menus::new_game::starting_record`) applies, rather than
 /// re-deriving the template-field -> live-cell mapping itself: slot 0's stores
 /// less [`LIVE_RECORD_0_XP_OFFSET`] are the record-relative offsets.
 ///

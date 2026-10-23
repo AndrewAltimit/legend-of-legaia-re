@@ -183,8 +183,8 @@ pub const SIDEBAND_SLOT_READ_VSYNCS: u16 = 30;
 /// base (bit 7 set, or `0x36`; the stage-4 tests at `0x801F163C..`), and a
 /// fourth when that base is `0xCB` or above (stage 6, `sltiu 0xcb`).
 ///
-/// PORT: FUN_801F12D0 (the stage chain's slot count; the uploads are
-/// `legaia_actor_formats::summon_readef`'s)
+/// PORT: FUN_801F12D0 (the stage chain's slot count only - partial; the
+/// uploads are `legaia_actor_formats::summon_readef`'s)
 pub fn sideband_slot_count(base: u8) -> u8 {
     if base & 0x80 == 0 && base != 0x36 {
         2

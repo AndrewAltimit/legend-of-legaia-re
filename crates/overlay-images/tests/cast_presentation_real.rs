@@ -200,4 +200,36 @@ fn decode_every_module() {
     // Gimard's cut and tunnel (`GIMARD_CUT_CTX_278` / `GIMARD_TUNNEL_CTX_278`).
     assert_eq!(stage(903, 0x801F_6F2C), Some((4, Some(3))));
     assert_eq!(stage(903, 0x801F_7170), Some((6, Some(2))));
+
+    // The message bar a module raises with a line of its own image: Call
+    // Wave's arm 0 points the bar's content word `0x800774AC` at
+    // `0x801F7EF4` ("Expect a powerful attack on the next turn!") in the
+    // `jal` delay slot and raises element `0x5B` on mode `0`
+    // (`0x801F6CAC..0x801F6CE0`), the bar `zeto_call_wave_mid_cast` holds
+    // mid-glide. It sits on the way into arm 1 (`0x801F6CF0..0x801F6D00`
+    // bump the phase); Big Wave leaves the same arm for arm 4 without it.
+    let bars: Vec<(u32, u32, u8, PresentationCall)> = by_entry
+        .iter()
+        .flat_map(|(&e, p)| p.sites.iter().map(move |s| (e, s.va, s.arm, s.call)))
+        .filter(|(_, _, _, c)| matches!(c, PresentationCall::HudElement { .. }))
+        .collect();
+    if verbose {
+        for b in &bars {
+            eprintln!(
+                "HUD element site: PROT {} {:08X} arm {} {:?}",
+                b.0, b.1, b.2, b.3
+            );
+        }
+    }
+    assert!(bars.contains(&(
+        946,
+        0x801F_6CDC,
+        0,
+        PresentationCall::HudElement {
+            element: Some(cast_presentation::MESSAGE_BAR_ELEMENT),
+            mode: Some(0),
+            text: Some(0x801F_7EF4),
+            exit: Some(cast_presentation::PhaseExit::Rel(1)),
+        }
+    )));
 }

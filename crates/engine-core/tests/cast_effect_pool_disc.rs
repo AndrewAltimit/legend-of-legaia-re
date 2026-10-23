@@ -373,7 +373,7 @@ fn a_live_cast_stages_its_module_records() {
         }
         if matches!(
             w.battle.command.as_ref().map(|s| &s.phase),
-            Some(legaia_engine_menus::battle_input::CommandPhase::RoundPrompt { .. })
+            Some(legaia_engine_battle_menus::battle_input::CommandPhase::RoundPrompt { .. })
         ) {
             press(&mut w, PadButton::Cross);
         }
@@ -415,9 +415,9 @@ fn a_live_cast_stages_its_module_records() {
         for _ in 0..4 {
             match w.battle.command.as_ref().map(|c| &c.phase) {
                 None => break,
-                Some(legaia_engine_menus::battle_input::CommandPhase::CommitConfirm { .. }) => {
-                    press(&mut w, PadButton::Cross)
-                }
+                Some(legaia_engine_battle_menus::battle_input::CommandPhase::CommitConfirm {
+                    ..
+                }) => press(&mut w, PadButton::Cross),
                 Some(_) => press(&mut w, PadButton::Down),
             }
         }

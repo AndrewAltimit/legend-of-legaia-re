@@ -13,7 +13,7 @@
     <dt>Hand-back</dt><dd>The action SM's round end stores <code>ctx[+0x06] = 0x14</code> and bumps the round index <code>ctx[+0x28A]</code></dd>
     <dt>Input</dt><dd>The <em>packed</em> pad word: Left <code>0x8000</code>, Right <code>0x2000</code>, Down <code>0x4000</code>, Up <code>0x1000</code>; confirm and cancel masks at <code>0x800846D0</code> / <code>0x800846D4</code></dd>
     <dt>Stage overlays</dt><dd>PROT 967 (tutorial hook <code>FUN_801F6B70</code>), 968 (Cort arrival), 969 (Cort form change), all ticked by the SCUS side-band <code>FUN_80056208</code></dd>
-    <dt>Port</dt><dd><code>engine-menus::battle_input</code>, <code>battle_flow</code>, <code>battle_tutorial</code>, <code>battle_stage_module</code>; draw side <code>engine-ui::battle_command_ui</code></dd>
+    <dt>Port</dt><dd><code>engine-battle-menus::battle_input</code>, <code>battle_flow</code>, <code>battle_tutorial</code>, <code>battle_stage_module</code>; draw side <code>engine-ui::battle_command_ui</code></dd>
     <dt>Confidence</dt><dd>Confirmed - every edge is a constant store read from the disassembly; the D-pad map is capture-checked</dd>
   </dl>
 </section>

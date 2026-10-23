@@ -100,7 +100,7 @@ pub(super) struct WindowedCutscene {
 /// to sample one logo per frame.
 pub(super) struct PublisherLogosAssets {
     /// Per-logo source rects in atlas pixels.
-    pub(super) rects: [(u32, u32, u32, u32); legaia_engine_menus::publisher_logos::LOGO_COUNT],
+    pub(super) rects: [(u32, u32, u32, u32); legaia_engine_title::publisher_logos::LOGO_COUNT],
     /// GPU-resident sprite atlas (vertically stacked logos).
     pub(super) atlas: legaia_engine_render::UploadedSpriteAtlas,
 }
@@ -132,7 +132,7 @@ pub(super) struct MenuGlyphAssets {
 /// when the disc has both a readable PROT 0899 (carries the SLOT 1 /
 /// SLOT 2 pill sprites with CLUT 7) AND a readable PROT.DAT (carries
 /// the system-UI sprite sheet at offset `0x018E0` with the 9-slice
-/// panel chrome under CLUT row 2). Reused by [`BootUiState::SaveSelect`]
+/// panel chrome under CLUT row 2). Reused by [`BootUiState::Continue`]
 /// to compose the retail 81×29 "Load" panel from 14 byte-pinned
 /// textured-sprite primitives + the 2 slot pills over the dimmed
 /// title background.
@@ -226,6 +226,55 @@ pub(in crate::window) fn escape_quits(
     armed.is_some_and(|t| now.saturating_duration_since(t) <= QUIT_CONFIRM_WINDOW)
 }
 
+/// How long the start-up key hint stays up once the window first draws.
+pub(in crate::window) const STARTUP_HINT_DURATION: std::time::Duration =
+    std::time::Duration::from_secs(12);
+
+/// The start-up key hint's line: a player who opens the window from Studio
+/// or a file manager is told nowhere else that `F12` lists the keys.
+pub(in crate::window) const STARTUP_HINT_TEXT: &str = "F12 or ? lists the keys - Esc twice quits";
+
+/// The one-line key hint a player's window shows when it opens. Armed only
+/// for an interactive window (`cmd_play_window_with_record`, no
+/// `--screenshot` harness),
+/// so a parity capture, a periodic sweep and the headless window never draw
+/// it. Its clock starts on the first frame that asks, not at launch, so a
+/// slow disc load or the intro movie does not eat it.
+#[derive(Debug, Default)]
+pub(in crate::window) struct StartupHint {
+    armed: bool,
+    shown_at: std::cell::Cell<Option<std::time::Instant>>,
+    dismissed: bool,
+}
+
+impl StartupHint {
+    pub(in crate::window) fn arm(&mut self) {
+        self.armed = true;
+    }
+
+    /// The player has found the keys (opened the help panel): the hint is
+    /// done.
+    pub(in crate::window) fn dismiss(&mut self) {
+        self.dismissed = true;
+    }
+
+    /// Whether the hint draws on a frame at `now`; the first call that
+    /// answers yes starts its clock.
+    pub(in crate::window) fn visible(&self, now: std::time::Instant) -> bool {
+        if !self.armed || self.dismissed {
+            return false;
+        }
+        let at = match self.shown_at.get() {
+            Some(t) => t,
+            None => {
+                self.shown_at.set(Some(now));
+                now
+            }
+        };
+        now.saturating_duration_since(at) <= STARTUP_HINT_DURATION
+    }
+}
+
 pub(super) struct PlayWindowApp {
     pub(super) session: NativeSession,
     pub(super) font: Font,
@@ -240,14 +289,14 @@ pub(super) struct PlayWindowApp {
     /// CPU-side atlas data waiting for renderer upload. Moved into
     /// `publisher_logos` on the first frame the renderer is available.
     pub(super) pending_publisher_logos_atlas:
-        Option<legaia_engine_menus::publisher_logos::LogosAtlas>,
+        Option<legaia_engine_title::publisher_logos::LogosAtlas>,
     /// Title-screen atlas (built once from PROT 0888). `None` if the
     /// disc isn't loaded or the title TIM doesn't parse.
     pub(super) title_screen: Option<TitleScreenAssets>,
     /// CPU-side title atlas waiting for renderer upload. Moved into
     /// `title_screen` on the first frame the renderer is available.
     pub(super) pending_title_screen_atlas:
-        Option<legaia_engine_menus::title_screen_atlas::TitleScreenAtlas>,
+        Option<legaia_engine_title::title_screen_atlas::TitleScreenAtlas>,
     /// Menu-glyph atlas (built once from raw `PROT.DAT` at 0x11218).
     /// `None` if the disc isn't loaded or the TIM doesn't parse.
     pub(super) menu_glyphs: Option<MenuGlyphAssets>,
@@ -834,7 +883,7 @@ pub(super) struct PlayWindowApp {
     /// re-used slots re-upload their new templates.
     pub(super) tile_slots_queued: std::collections::HashSet<u8>,
     /// Boot-UI state. `BootUiState::Inactive` means the legacy
-    /// "go straight to the scene" path; `Title` / `SaveSelect` route
+    /// "go straight to the scene" path; `Title` / `Continue` route
     /// player input through the boot sessions until the player picks
     /// New Game / Continue and the scene becomes interactive.
     pub(super) boot_ui: BootUiState,
@@ -956,6 +1005,8 @@ pub(super) struct PlayWindowApp {
     pub(super) notice: Option<(String, std::time::Instant)>,
     /// The hotkey help panel (`F12` / `?`) is up.
     pub(super) hotkey_help: bool,
+    /// The start-up line pointing at that panel ([`StartupHint`]).
+    pub(super) startup_hint: StartupHint,
     /// The help key held down, so its auto-repeat does not flip the panel.
     pub(super) help_key_held: Option<KeyCode>,
     /// The title bar text last written (`sync_minigame_caption_title`): the
@@ -995,10 +1046,10 @@ pub(super) struct PlayWindowApp {
     /// retail-display-frame clock (`frame_step::CutsceneGlide`, the browser
     /// page's twin). Reset (snaps) while no cutscene timeline is active and
     /// on every scene entry.
-    pub(super) cutscene_glide: legaia_engine_core::frame_step::CutsceneGlide,
+    pub(super) cutscene_glide: legaia_engine_field::frame_step::CutsceneGlide,
     /// Wall-clock to sim-tick accumulator: the shared frame-step rule
     /// (`frame_step::SimStepper`) the browser page drains through too.
-    pub(super) sim_stepper: legaia_engine_core::frame_step::SimStepper,
+    pub(super) sim_stepper: legaia_engine_field::frame_step::SimStepper,
     /// Active dialog box, mirroring `World::dialog.current`. Opened from the
     /// scene's MES container the frame a dialog request appears (field-VM
     /// op `0x3F` or the overworld talk-to), ticked for its typewriter reveal,
@@ -1018,15 +1069,17 @@ pub(super) struct PlayWindowApp {
 pub(super) enum BootUiState {
     /// No boot UI - engine ticks the scene normally.
     Inactive,
-    /// Boot publisher logos (PROT 0895). Runs before the title screen.
-    /// The atlas + per-logo rects live on [`PlayWindowApp`] so the
-    /// renderer can sample one quad per frame.
-    PublisherLogos(legaia_engine_menus::publisher_logos::PublisherLogosSession),
-    /// Title screen is active. Pad input drives the
-    /// [`legaia_engine_menus::title::TitleSession`].
-    Title(legaia_engine_menus::title::TitleSession),
-    /// Save-select panel is active.
-    SaveSelect(legaia_engine_menus::save_select::SaveSelectSession),
+    /// The boot front end: the publisher logos (PROT 0895), then the title
+    /// card and its attract movie - the session's one front end
+    /// ([`legaia_engine_session::FrontEnd`]), which the browser play page
+    /// steps too. The logo atlas + per-logo rects live on [`PlayWindowApp`]
+    /// so the renderer can sample one quad per frame.
+    FrontEnd(legaia_engine_session::FrontEnd),
+    /// The title's Continue screen: the retail save-select over the two
+    /// card ports, the session's one owner
+    /// ([`legaia_engine_session::ContinueScreen`]), which the browser play
+    /// page steps too. This arm supplies the ports and lands a loaded save.
+    Continue(legaia_engine_session::ContinueScreen),
     /// Field (pause) menu is active. The menu session itself is hosted by
     /// the [`NativeSession`]
     /// (`session.field_menu`, the retail CARD mode pair / `game_mode 0x17`;

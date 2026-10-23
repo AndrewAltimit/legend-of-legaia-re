@@ -116,7 +116,7 @@ local function tou32(v)
     return v
 end
 
-local meta
+local meta, body
 local injected, cast_seen, done_seen = false, false, false
 local inject_vsync, cast_vsync, done_vsync = -1, -1, -1
 local forced_row = false
@@ -174,6 +174,11 @@ probe.run({
         meta = probe.csv_open(probe.out_path("meta.csv"),
             "vsync,st7,phase,acting,step,flow,c6d8,c6da,c87c,cd7960,loader," ..
             "hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,w,h,bpp,frame,c276")
+        -- The acting seat's body against the camera that frames it: clip,
+        -- node cursor, live pair +0x34/+0x38, body pair +0x3C/+0x40, and the
+        -- camera focus (stored negated) with its tween endpoints.
+        body = probe.csv_open(probe.out_path("body.csv"),
+            "vsync,st7,acting,clip,cursor,lx,lz,bx,bz,fx,fz,ex,ez,c87c")
         if FORCE_ROW ~= "" then
             -- FUN_801DA600 returns the formation row in v0; rewriting its
             -- bytes on the return seats the forced monsters.
@@ -282,6 +287,20 @@ probe.run({
             u8(cx + 6), u16(cx + 0x6D8), u16(cx + 0x6DA), u32(cx + 0x87C), s32(GIMARD_CD),
             u8(LOADER_ID), hp[1], hp[2], hp[3], hp[4], hp[5], hp[6], hp[7], hp[8],
             shot, w, h, bpp, u32(FRAME_COUNTER), u8(cx + 0x276))
+        local ba = actor(math.min(acting, 7))
+        if ba ~= nil then
+            local node = u32(ba + 0x22C)
+            local function s16(a)
+                local v = u16(a)
+                if v >= 0x8000 then v = v - 0x10000 end
+                return v
+            end
+            body:row("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
+                elapsed, st7, acting, u8(ba + 0x1D9), ptr_ok(node) and u16(node + 0x68) or -1,
+                s16(ba + 0x34), s16(ba + 0x38), s16(ba + 0x3C), s16(ba + 0x40),
+                -s32(0x80089118), -s32(0x80089120),
+                -s16(cx + 0x118C + 6 * 4 + 2), -s16(cx + 0x118C + 8 * 4 + 2), u32(cx + 0x87C))
+        end
         -- The module phase counts as movement: a slot-B module runs every
         -- arm inside one band state.
         local park_key = st7 * 256 + u8(cx + 0x279)
@@ -299,6 +318,7 @@ probe.run({
         PCSX.log(string.format("[cast-seq] inject=%d cast=%d done=%d shots=%d",
             inject_vsync, cast_vsync, done_vsync, shots))
         if meta then meta:close() end
+        if body then body:close() end
         local fh = io.open(probe.out_path("done.txt"), "w")
         if fh then
             fh:write(string.format("inject=%d\ncast=%d\ndone=%d\nshots=%d\ncaster=%d\nspell=%d\ntarget=%d\nground=%s\nparked=%d\n",

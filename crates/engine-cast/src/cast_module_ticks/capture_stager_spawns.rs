@@ -103,6 +103,18 @@ pub fn guilty_cross_cell_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<Sta
     }
 }
 
+/// The records a capture-cell stager seats with words rolled off `rand()`
+/// stored over the seat: PROT 0946's Call Wave rays (`0x801F7970`, arm 0 of
+/// [`call_wave_stager_spawns`]) and PROT 0961's shards (`0x801F7E80`, arm 2
+/// of [`dead_end_crisis_stager_spawns`]). Each part's wait, lean rate
+/// `+0x84`, spread, length and roll are draws on the stream's history since
+/// the fight began, which a replay does not re-deal; a capture reads them
+/// back off the part.
+pub const ROLLED_STAGER_RECORDS: [u32; 2] = [0x801F_7970, 0x801F_7E80];
+/// The rolled words of a [`ROLLED_STAGER_RECORDS`] part beyond a seated
+/// part's position, banks, wait and channel block: the lean rate `+0x84`.
+pub const ROLLED_STAGER_EXTRA_OFFSETS: [u16; 1] = [0x84];
+
 /// PROT 0946's wave record the stager's arm 1 seats.
 pub const CALL_WAVE_WAVE_RECORD: u32 = 0x801F_7BF8;
 /// The handle table `0x801F7F30` arm 1 fills: sixteen slots, and arm 1 seats

@@ -169,7 +169,7 @@ pub struct AudioState {
     /// sub-`5` arms the release.
     ///
     /// REF: FUN_800267A8
-    pub(crate) sound_arm: Option<legaia_engine_system::scus_leaf_kernels::TimedSoundArm>,
+    pub sound_arm: Option<legaia_engine_system::scus_leaf_kernels::TimedSoundArm>,
     /// The per-slot SFX-cue delay table (`DAT_8007C338`) the field VM's op
     /// `0x36` sub-`4` writes.
     ///
@@ -231,8 +231,8 @@ pub struct AudioState {
     /// loader resets the live level `_DAT_8007B910` to on every scene load
     /// and the battle duck takes its percentage of - and the voice / SFX
     /// volume `_DAT_80084580` each voice-attr key-on halves. Cold reset
-    /// `(0xD7, 200)`; [`crate::world::World::load_full`] installs a save's
-    /// pair and [`crate::world::World::save_full`] writes it back.
+    /// `(0xD7, 200)`; `WorldSaveState::load_full` (`legaia-engine-save-state`) installs a save's
+    /// pair and `WorldSaveState::save_full` (`legaia-engine-save-state`) writes it back.
     pub levels: legaia_save::card::RetailAudioLevels,
     /// A field script's audio duck (op `4C 4D`, `_DAT_8007B910 =
     /// (value * _DAT_8008457C) >> 12`) as a percentage of the configured

@@ -74,6 +74,22 @@ impl PlayWindowApp {
                     .world
                     .install_action_fx_part_snapshot(&parts);
             }
+            // ... and the after-image ghosts where the capture's history
+            // ring stood them (`LEGAIA_SEAT_GHOST_RING`).
+            if due && let Some(ghosts) = sc.seat_ghost_ring.take() {
+                legaia_engine_capture::ghost_ring::apply_ghost_ring(
+                    &mut self.session.host.world,
+                    &ghosts,
+                );
+            }
+            // ... and the effect pool's billboards where retail's walker had
+            // put them (`LEGAIA_SEAT_EFFECT_CHILDREN`).
+            if due && let Some(children) = sc.seat_effect_children.take() {
+                self.session
+                    .host
+                    .world
+                    .install_effect_child_snapshot(&children);
+            }
             // A capture taken mid-glide shows the shot as far along as
             // retail's mover had come (its frame-skip history, which no
             // replay reproduces): the gate carries the frames it had left on
@@ -111,6 +127,11 @@ impl PlayWindowApp {
                             .seat_battle_hud_glide(g.target, g.elapsed);
                     }
                 }
+            }
+            if due && let Some((width, plate)) = sc.seat_spirit_gauge {
+                let ctx = &mut self.session.host.world.battle_ctx;
+                ctx.spirit_bar_width = width;
+                ctx.spirit_plate_value = plate;
             }
             if due && let Some(rgb) = sc.seat_clear {
                 self.session.host.world.presentation.clear_rgb = rgb;

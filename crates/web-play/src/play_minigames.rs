@@ -2,8 +2,9 @@
 //! sessions the shared scene host installs.
 //!
 //! Entry is already host-agnostic: the field-VM op-`0x3E` `op0 >= 100` arm
-//! and the world-map `MinigameDoor` walk-on publish `World::minigames
-//! .pending_warp`, and `SceneHost::tick` drains it into
+//! (reached from a town door's or an overworld signboard's own interaction
+//! record) publishes `World::minigames.pending_warp`, and `SceneHost::tick`
+//! drains it into
 //! `enter_fishing / enter_slot / enter_baka / enter_muscle / enter_dance`
 //! on both hosts. Fishing has its own module ([`crate::play_fishing`]); this
 //! one is the surface for the other four `SceneMode`s, which the page used

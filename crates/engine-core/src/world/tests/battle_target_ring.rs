@@ -331,7 +331,7 @@ fn an_art_inside_the_innate_band_is_never_learned() {
 /// there, so a bare confirm strikes last round's foe again while it stands.
 #[test]
 fn attack_cursor_opens_on_the_current_target() {
-    use legaia_engine_menus::battle_input::{BattleCommandSession, CommandPhase};
+    use legaia_engine_battle_menus::battle_input::{BattleCommandSession, CommandPhase};
     let mut w = seated_battle();
     w.battle_ctx.active_actor = 0;
     // Monster row 2 (engine slot 3) is the member's standing target.

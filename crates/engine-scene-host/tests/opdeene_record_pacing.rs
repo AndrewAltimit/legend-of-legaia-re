@@ -12,8 +12,9 @@
 //! ramps that do not yield, and a `3F` that does not wait for the crawl - so
 //! a regression in any of them moves it by tens to hundreds of frames. The
 //! record's `0x4A` waits hold for retail's count at its three-frame step
-//! (`DAT_1F800393 == 3` in the capture); the band allows for what the engine
-//! still paces a vsync at a time - the clip end latches and the actor turns.
+//! (`DAT_1F800393 == 3` in the capture), and its actor legs, turns and clip
+//! end latches advance on the same game-frame grid, so both spans are held
+//! to within one game frame of retail's.
 //!
 //! Skip-passes without disc data (CLAUDE.md convention).
 
@@ -73,12 +74,14 @@ fn opdeene_record_reaches_its_scene_change_at_retail_pace() {
         "[opdeene] dolly {dolly} vs retail {RETAIL_WAIT_TO_DOLLY}; \
          scene change {change} vs retail {RETAIL_WAIT_TO_SCENE_CHANGE}"
     );
+    // One game frame at the capture's step.
+    const BAND: f64 = 3.0;
     assert!(
-        (dolly - RETAIL_WAIT_TO_DOLLY).abs() / RETAIL_WAIT_TO_DOLLY < 0.03,
+        (dolly - RETAIL_WAIT_TO_DOLLY).abs() <= BAND,
         "the record reaches the apply-4800 wait {dolly} frames in, retail {RETAIL_WAIT_TO_DOLLY}"
     );
     assert!(
-        (change - RETAIL_WAIT_TO_SCENE_CHANGE).abs() / RETAIL_WAIT_TO_SCENE_CHANGE < 0.03,
+        (change - RETAIL_WAIT_TO_SCENE_CHANGE).abs() <= BAND,
         "the record runs its SceneChange {change} frames in, retail \
          {RETAIL_WAIT_TO_SCENE_CHANGE}"
     );

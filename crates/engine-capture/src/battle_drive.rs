@@ -1,4 +1,4 @@
-use legaia_engine_menus::battle_flow::BattleFlowState;
+use legaia_engine_battle_menus::battle_flow::BattleFlowState;
 use legaia_engine_mode::mode::SceneMode;
 
 /// Ticks the pad path may take to reach a menu capture's surface.
@@ -200,6 +200,14 @@ pub struct ActionSteer {
     /// The capture shows the death-spoils caption (HUD element `0x5B`): the
     /// phase is met only on a stream whose kill rolled the steal too.
     pub spoils: bool,
+    /// The capture is a monster parked in the approach poll `0x19` with its
+    /// walk clip dead (`+0x1D9 == 0`; `docs/subsystems/battle-action-exit-gates.md`,
+    /// the `0x19` park). The engine always walks an approach, so the replay
+    /// holds that seat where it stands for the action
+    /// (`BattleState::approach_hold`), and the yaw counter, which runs on
+    /// through the park for as long as retail sat in it, takes the capture's
+    /// word outright rather than only within the clock's slack.
+    pub park: bool,
 }
 
 /// Where inside a state that spans many frames a capture sits.
@@ -572,6 +580,9 @@ impl BattleDrive {
                 if steer.spoils {
                     s.push_str(",s");
                 }
+                if steer.park {
+                    s.push_str(",h");
+                }
                 if let Some(q) = steer.queue {
                     s.push_str(",q");
                     for b in q {
@@ -625,6 +636,8 @@ impl BattleDrive {
                 steer.arts = true;
             } else if last == "s" {
                 steer.spoils = true;
+            } else if last == "h" {
+                steer.park = true;
             } else if let Some(g) = last.strip_prefix('g') {
                 steer.gauge = Some(g.parse().ok()?);
             } else if let Some(k) = last.strip_prefix('k') {
@@ -1027,7 +1040,7 @@ impl BattleDrive {
                 // capture band gates on the counter instead.
                 if state == want && !matches!(end, SpanGate::CaptureFade { .. }) {
                     let d = (cam.action_yaw_base() - i32::from(yaw)).rem_euclid(0x1000);
-                    if d.min(0x1000 - d) <= YAW_CLOCK_SLACK {
+                    if steer.park || d.min(0x1000 - d) <= YAW_CLOCK_SLACK {
                         // Retail's word is the one its last pass left, after
                         // that pass's prologue drift. On retail's cadence the
                         // pin lands ahead of a tick whose pass adds the drift
@@ -1053,6 +1066,21 @@ impl BattleDrive {
         let ours = world.mode == SceneMode::Battle
             && world.battle_ctx.active_actor == engine_seat(seat, pc);
         let state = world.battle_ctx.action_state;
+        // The parked approach ([`ActionSteer::park`]): from the seat's Attack
+        // arm `0x14` to the poll, its walk is held where it stands.
+        world.battle.approach_hold =
+            (steer.park && ours && (0x14..=want).contains(&state)).then(|| engine_seat(seat, pc));
+        // ... and in the poll its walk clip is the dead one: the flinch's
+        // stale `+0x1DC` bit 2 turns the Move clip's natural end into idle
+        // (`sb zero,0x1da` at `0x80047B44`), so the park shows the idle loop,
+        // not the walk.
+        if steer.park
+            && ours
+            && state == want
+            && let Some(a) = world.actors.get_mut(usize::from(engine_seat(seat, pc)))
+        {
+            a.battle.queued_anim = 0;
+        }
         // The capture's counterattack HUD, on the frame the engine holds its
         // state ([`ActionSteer::message`] / [`ActionSteer::plate_cleared`]).
         if ours && state == want {
@@ -1092,11 +1120,40 @@ impl BattleDrive {
             return;
         }
         let SpanGate::CaptureFade {
-            height, accum, yaw, ..
+            height,
+            accum,
+            yaw,
+            arm,
         } = end
         else {
             return;
         };
+        // A directed module's countdown drains `scalar * step` a pass, so on
+        // retail's cadence the replay's countdown moves on a lattice of whole
+        // passes from the arm's own start. Retail's frames do not all share
+        // a step (`FUN_80016B6C` measures each one's cost), and the paging
+        // and stream-in that open the band run long: Guilty Cross's arm-1
+        // word `456` sits half a step-2 pass off the replay's `464` / `448`,
+        // as does Cort's clip cursor (`142` at rate `4`, with the two counted
+        // from the same pass). A pass a step longer moves both onto
+        // retail's; the replay takes it on the arm's first pass, the gate
+        // then lands on retail's word, and the display lag's frame two passes
+        // back on retail's displayed one.
+        if let Some((phase, countdown)) = arm
+            && ours
+            && want == 0x70
+            && state == 0x70
+            && world.casting.module_phase == phase
+            && world.battle_sm_pass_due_next_tick()
+        {
+            let step = i32::from(world.battle_frame_step().max(1));
+            let per_vsync = legaia_engine_cast::cast_module_camera::MODULE_DRAIN_PER_TICK;
+            let ahead = world.casting.module_cam.countdown.0 - countdown;
+            let off = ahead.rem_euclid(per_vsync * step);
+            if ahead > per_vsync * step && off != 0 && off % per_vsync == 0 {
+                world.stretch_battle_frame((step + off / per_vsync) as u8);
+            }
+        }
         world.audio.sound_bank_ready = !(ours
             && state == 0x6E
             && !(capture_accum_done(world, height, accum) && capture_yaw_done(world, height, yaw)));
@@ -1164,7 +1221,7 @@ impl BattleDrive {
         &self,
         world: &legaia_engine_core::world::World,
     ) -> Option<legaia_engine_system::input::PadButton> {
-        use legaia_engine_menus::battle_input::CommandPhase;
+        use legaia_engine_battle_menus::battle_input::CommandPhase;
         use legaia_engine_system::input::PadButton;
         if world.mode != SceneMode::Battle || matches!(self, Self::Opening { .. }) {
             return None;

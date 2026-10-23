@@ -60,7 +60,7 @@ pub fn battle_action_in_flight(state: u8) -> bool {
 /// own phase (retail's windows are states below the ring), and the command
 /// session wins over the action SM (it opens between actions).
 pub fn battle_hud_phase(world: &legaia_engine_core::world::World) -> BattleHudPhase {
-    use legaia_engine_menus::battle_input::CommandPhase;
+    use legaia_engine_battle_menus::battle_input::CommandPhase;
     if world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
         // A dome leg is a battle whose only command surfaces are the
         // fighter's selection screens (`muscle_dome::DomeMenu`); the play-out
@@ -73,10 +73,10 @@ pub fn battle_hud_phase(world: &legaia_engine_core::world::World) -> BattleHudPh
             return BattleHudPhase::Idle;
         }
         if s.is_some_and(|s| {
-            s.phase() == legaia_engine_menus::muscle_dome_session::MusclePhase::Select
+            s.phase() == legaia_engine_battle_menus::muscle_dome_session::MusclePhase::Select
                 && matches!(
                     s.menu(),
-                    legaia_engine_menus::muscle_dome_session::DomeMenu::Command(c)
+                    legaia_engine_battle_menus::muscle_dome_session::DomeMenu::Command(c)
                         if matches!(c.phase, CommandPhase::RoundPrompt { .. })
                 )
         }) {
@@ -84,10 +84,10 @@ pub fn battle_hud_phase(world: &legaia_engine_core::world::World) -> BattleHudPh
             return BattleHudPhase::RoundPrompt;
         }
         return match s.map(|s| s.phase()) {
-            Some(legaia_engine_menus::muscle_dome_session::MusclePhase::Select) => {
+            Some(legaia_engine_battle_menus::muscle_dome_session::MusclePhase::Select) => {
                 BattleHudPhase::CommandEntry
             }
-            Some(legaia_engine_menus::muscle_dome_session::MusclePhase::TurnOver)
+            Some(legaia_engine_battle_menus::muscle_dome_session::MusclePhase::TurnOver)
                 if world.muscle_playback_tally().is_some() =>
             {
                 BattleHudPhase::Action
@@ -175,12 +175,12 @@ pub enum CommandSurface {
 /// [`BattleHudPhase::CommandEntry`].
 pub fn battle_command_surface(world: &legaia_engine_core::world::World) -> Option<CommandSurface> {
     use legaia_engine_battle::target_picker::{CursorRow, PickerState};
-    use legaia_engine_menus::battle_input::CommandPhase;
+    use legaia_engine_battle_menus::battle_input::CommandPhase;
     if battle_hud_phase(world) != BattleHudPhase::CommandEntry {
         return None;
     }
     if world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
-        use legaia_engine_menus::muscle_dome_session::DomeMenu;
+        use legaia_engine_battle_menus::muscle_dome_session::DomeMenu;
         return Some(match world.minigames.muscle_dome.as_ref()?.menu() {
             DomeMenu::Command(c) => match c.phase {
                 CommandPhase::Menu { .. } => CommandSurface::Ring,

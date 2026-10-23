@@ -13,8 +13,8 @@ use legaia_engine_menu_runtime::menu_runtime::MenuRuntime;
 use legaia_engine_menus::save_select::{
     SaveSelectMode, SaveSelectSession, SelectInput, SelectOutcome, SlotContent, SlotSnapshot,
 };
-use legaia_engine_menus::title::{TitleInput, TitleOutcome, TitleSession};
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_title::title::{TitleInput, TitleOutcome, TitleSession};
 
 fn build_world_with_party() -> World {
     let mut w = World::new();

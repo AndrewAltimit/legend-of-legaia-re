@@ -363,6 +363,26 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
+    /// Ghost `g` of battle actor `i`'s NCLIP word, in
+    /// `TmdRenderer.setNclipCull`'s encoding (the page's placement
+    /// `nclip`): the shared `BattleGhostDraw::nclip_mode`, single-sided as
+    /// the walk's draw word leaves it - the native window stages the same
+    /// word per draw. `0` (the frame's word) when the ghost is not active.
+    pub fn play_battle_actor_ghost_nclip(&self, i: u32, g: u32) -> u32 {
+        let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.host()) else {
+            return 0;
+        };
+        let Some(a) = br.actors.get(i as usize) else {
+            return 0;
+        };
+        host.world
+            .battle_ghost_draws()
+            .iter()
+            .filter(|d| d.actor_slot as usize == a.actor_idx)
+            .nth(g as usize)
+            .map_or(0, |d| d.nclip_mode())
+    }
+
     /// Ghost `g` of battle actor `i`'s pose, in the
     /// [`Self::play_battle_actor_pose`] shape (6 `i32` per part). Empty when
     /// the ghost is not active this frame.

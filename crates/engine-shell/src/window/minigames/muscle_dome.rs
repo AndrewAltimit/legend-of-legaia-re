@@ -172,7 +172,7 @@ impl PlayWindowApp {
     /// measured literal, fade out - and the two card holds end early on a
     /// pad press, the way `FUN_801CF870`'s `& 0xF4` test lets them.
     ///
-    /// [`MusclePhase::ends_turn`]: legaia_engine_menus::muscle_dome_session::MusclePhase::ends_turn
+    /// [`MusclePhase::ends_turn`]: legaia_engine_battle_menus::muscle_dome_session::MusclePhase::ends_turn
     pub(in crate::window) fn tick_muscle_hub(&mut self) {
         // A dome leg the player WALKED into (the mode-24 door warp, drained
         // by the shared scene host) already carries its contest: the warp

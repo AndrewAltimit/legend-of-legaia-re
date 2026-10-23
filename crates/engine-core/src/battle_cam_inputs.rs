@@ -183,7 +183,7 @@ fn battle_cursor_framing(
     actor_at: &dyn Fn(u8, Option<u8>) -> Option<script::BattleCamActor>,
 ) -> Option<script::CursorFraming> {
     use legaia_engine_battle::target_picker::{CursorRow, PickerState};
-    use legaia_engine_menus::battle_input::CommandPhase;
+    use legaia_engine_battle_menus::battle_input::CommandPhase;
     let party_count = world.party.party_count.clamp(1, 3);
     let enemy_at = |slot: u8| -> Option<script::CursorFraming> {
         let a = world.actors.get(usize::from(slot))?;
@@ -238,7 +238,7 @@ fn battle_cursor_framing(
 /// way it was reached (`FUN_801D388C`'s step table at `0x801CE880`).
 /// `arts_input_start_gala_nail` shows the prompt on that framing.
 fn member_surface_open(world: &World) -> bool {
-    use legaia_engine_menus::battle_input::CommandPhase;
+    use legaia_engine_battle_menus::battle_input::CommandPhase;
     let b = &world.battle;
     b.arts_menu.is_some()
         || b.arts_input.is_some()
@@ -812,7 +812,7 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_engine_menus::battle_input::BattleCommandSession;
+    use legaia_engine_battle_menus::battle_input::BattleCommandSession;
     use legaia_engine_mode::mode::SceneMode;
     use script::BattleCamPhase;
 
@@ -911,7 +911,7 @@ mod tests {
     #[test]
     fn the_attack_cursor_frames_the_member_toward_its_target() {
         use legaia_engine_battle::target_picker::{SlotState, TargetKind, TargetPickerSession};
-        use legaia_engine_menus::battle_input::{BattleCommand, CommandPhase};
+        use legaia_engine_battle_menus::battle_input::{BattleCommand, CommandPhase};
         let mut world = World {
             mode: SceneMode::Battle,
             ..World::default()

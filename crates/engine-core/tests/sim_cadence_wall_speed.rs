@@ -2,7 +2,7 @@
 //!
 //! **One `World::tick` is one retail display frame (vsync).** Both hosts drive
 //! it at exactly 60 Hz wall - both drain wall time through the shared
-//! fixed-timestep kernel `legaia_engine_core::frame_step::SimStepper`
+//! fixed-timestep kernel `legaia_engine_field::frame_step::SimStepper`
 //! (`TICK_SECS = 1/60`; the page through `play_drain_sim_steps`) - so a tick
 //! count is a retail frame count and `ticks / 60` is seconds.
 //!

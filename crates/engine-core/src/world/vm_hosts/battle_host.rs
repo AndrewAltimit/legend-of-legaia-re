@@ -56,6 +56,36 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         }
         Some((self.world.battle_current_anim(usize::from(slot)), !gone))
     }
+    /// The clip is the merged id [`Self::reaction_hold_view`] reads, frozen
+    /// slots included. A downed party seat holds the engine's defeat pose
+    /// rather than entry `8`, so one with no reaction left to play reads as
+    /// the down clip - the seat the cast band's settle waits (`chain_seat_settled`)
+    /// call downed. The prim word is the colour word, which a monster's
+    /// defeat fade walks to `0`.
+    fn capture_settle_view(
+        &self,
+        slot: u8,
+    ) -> Option<legaia_engine_battle_vm::battle_action::CaptureSettleSeat> {
+        let a = self.world.actors.get(usize::from(slot))?;
+        if !a.active {
+            return None;
+        }
+        let alive = a.battle.hp != 0;
+        let mut clip = if a.battle.anim_rate.get() == 0 {
+            0
+        } else {
+            self.world.battle_current_anim(usize::from(slot))
+        };
+        let party_seat = a.battle_monster_id.is_none();
+        if !alive && party_seat && a.battle_reaction.is_none() {
+            clip = legaia_engine_battle_vm::battle_action::CAPTURE_SETTLE_DOWN_CLIP;
+        }
+        Some(legaia_engine_battle_vm::battle_action::CaptureSettleSeat {
+            clip,
+            alive,
+            prim_zero: a.battle.render_color == 0,
+        })
+    }
     fn rng(&mut self) -> u32 {
         // Every draw the state machine takes is a retail `jal 0x80056798`.
         self.world.next_rand()

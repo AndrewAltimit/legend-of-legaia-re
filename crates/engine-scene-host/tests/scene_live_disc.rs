@@ -109,21 +109,30 @@ fn jouina_ground_pulses() {
     let a = assemble_field_scene(&index, "jouina").expect("assemble");
     let hf = a.ground.as_ref().expect("jouina has a walk ground");
     let mut live = LiveScene::enter(index, "jouina").expect("enter");
+    // The wave is the path room's: its block spawns the oscillators when the
+    // player stands in it. A picker entry seats the party at `jou`'s door,
+    // in a room whose ladder is a static ramp, so the wave shows on the
+    // ground through the path room's own ladder - the per-cell read the
+    // viewer draws ([`LiveScene::ground_positions`]), not the player's.
+    assert!(
+        live.rooms().iter().any(|r| !r.bobs.is_empty()),
+        "a jouina room other than the arrival room carries the oscillators"
+    );
+    let cells = legaia_engine_scene::field_ground::vertex_cells(hf);
     let baked = legaia_engine_scene::field_ground::render_positions(hf);
     let mut ground_moved = false;
     let mut prev = None;
     let mut frames_changed = 0;
     for _ in 0..180 {
         live.tick();
-        let pos =
-            legaia_engine_scene::field_ground::live_render_positions(hf, &live.live_floor_lut());
+        let pos = live.ground_positions(hf, &cells);
         ground_moved |= pos != baked;
         if prev.as_ref() != Some(&pos) {
             frames_changed += 1;
         }
         prev = Some(pos);
     }
-    assert!(ground_moved, "the walk ground follows the live ladder");
+    assert!(ground_moved, "the walk ground follows the live ladders");
     assert!(frames_changed > 10, "and keeps moving ({frames_changed})");
 }
 

@@ -10,10 +10,10 @@
 //! player's ease never moved it off.
 
 use super::*;
-use crate::frame_step::camera_after_world_tick;
 use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
 use legaia_engine_battle_vm::battle_action::BattleEndCause;
 use legaia_engine_field::camera::Camera;
+use legaia_engine_field::frame_step::camera_after_world_tick;
 use legaia_engine_mode::mode::SceneMode;
 
 const FIELD_POS: (i16, i16) = (0x1040, 0x2040);

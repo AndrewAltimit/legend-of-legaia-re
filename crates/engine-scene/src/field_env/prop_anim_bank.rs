@@ -218,11 +218,17 @@ impl PropAnimBank {
     /// (`World::start_prop_interaction` runs the touched prop's record through
     /// the field VM); this only steps the cursors.
     pub fn tick_anims(&mut self) {
+        self.tick_anims_scaled(1);
+    }
+
+    /// [`Self::tick_anims`] for a game frame `scale` vsyncs long
+    /// ([`PropAnim::tick_scaled`]).
+    pub fn tick_anims_scaled(&mut self, scale: u16) {
         for p in self.props.values_mut() {
-            p.anim.tick();
+            p.anim.tick_scaled(scale);
         }
         for a in self.actor_clips.values_mut() {
-            a.tick();
+            a.tick_scaled(scale);
         }
         self.ticked_this_frame = true;
     }
@@ -238,11 +244,21 @@ impl PropAnimBank {
     /// zero times would leave a script's end-latch spin waiting on a clip that
     /// never moves, so exactly one of the two ticks each frame.
     pub fn tick_actor_clips_for_frame(&mut self) -> bool {
+        self.tick_actor_clips_for_frame_scaled(1)
+    }
+
+    /// [`Self::tick_actor_clips_for_frame`] for a game frame `scale` vsyncs
+    /// long; `scale` `0` (a vsync between game frames) ticks nothing and
+    /// leaves the once-per-frame guard as it is.
+    pub fn tick_actor_clips_for_frame_scaled(&mut self, scale: u16) -> bool {
+        if scale == 0 {
+            return false;
+        }
         if std::mem::take(&mut self.ticked_this_frame) {
             return false;
         }
         for a in self.actor_clips.values_mut() {
-            a.tick();
+            a.tick_scaled(scale);
         }
         true
     }

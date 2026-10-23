@@ -10,8 +10,8 @@ use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
 use legaia_engine_battle::battle_tutorial::{BattleTutorialScript, TutorialLesson, msg};
-use legaia_engine_menus::battle_flow::BattleFlowState;
-use legaia_engine_menus::battle_input::{BattleCommandSession, CommandPhase};
+use legaia_engine_battle_menus::battle_flow::BattleFlowState;
+use legaia_engine_battle_menus::battle_input::{BattleCommandSession, CommandPhase};
 
 /// A stand-in overlay blob: every message VA the machine can emit gets a short
 /// ASCII marker naming its own address, so a queued box is traceable back to the
@@ -326,7 +326,7 @@ fn committing_the_taught_category_is_accepted_and_advances_the_lesson() {
         party_slot: 0,
         no_escape: false,
         phase: CommandPhase::Confirmed {
-            command: legaia_engine_menus::battle_input::BattleCommand::Attack,
+            command: legaia_engine_battle_menus::battle_input::BattleCommand::Attack,
             target_row: legaia_engine_battle::target_picker::CursorRow::Enemy,
             target_slot: 0,
         },
@@ -456,7 +456,7 @@ fn the_drill_matches_one_leading_arrow() {
 /// is the wrong-lesson rewind at the target cursor (`0x801F6F98`).
 #[test]
 fn an_auto_attack_in_the_drill_lesson_rewinds() {
-    use legaia_engine_menus::battle_input::BattleCommand;
+    use legaia_engine_battle_menus::battle_input::BattleCommand;
     let mut world = tutorial_battle_world();
     world.battle.tutorial.as_mut().unwrap().lesson = TutorialLesson::HyperArts.raw();
     world.open_battle_command(0);
@@ -739,7 +739,7 @@ fn replay_scripted_battle_arm_keys_on_the_records_entry_row() {
 #[test]
 fn the_sparring_caption_waits_for_the_enemy_names_to_go() {
     let mut world = tutorial_battle_world();
-    world.battle.intro_names_frames = legaia_engine_menus::battle_open::PLAIN_OPEN_FRAMES;
+    world.battle.intro_names_frames = legaia_engine_battle_menus::battle_open::PLAIN_OPEN_FRAMES;
     assert!(world.sparring_open_held());
     world.begin_battle_round();
     assert!(world.battle.sparring_round_pending, "round start held");
@@ -747,7 +747,7 @@ fn the_sparring_caption_waits_for_the_enemy_names_to_go() {
     assert!(!world.battle_tutorial_box_up());
     let state = world.battle_ctx.action_state;
     // The names drain one a tick; nothing else moves under them.
-    for _ in 0..legaia_engine_menus::battle_open::PLAIN_OPEN_FRAMES {
+    for _ in 0..legaia_engine_battle_menus::battle_open::PLAIN_OPEN_FRAMES {
         assert!(world.battle.sparring_round_pending);
         world.live_battle_tick();
         assert_eq!(world.battle_ctx.action_state, state);
@@ -770,7 +770,7 @@ fn an_ordinary_fight_is_not_held_by_its_enemy_names() {
     world.toggles.live_gameplay_loop = true;
     world.battle.player_driven = true;
     world.enter_battle(3, 2);
-    world.battle.intro_names_frames = legaia_engine_menus::battle_open::PLAIN_OPEN_FRAMES;
+    world.battle.intro_names_frames = legaia_engine_battle_menus::battle_open::PLAIN_OPEN_FRAMES;
     assert!(!world.sparring_open_held());
     world.begin_battle_round();
     assert!(!world.battle.sparring_round_pending);
@@ -854,10 +854,8 @@ fn a_self_dismissing_prompt_stands_until_the_next_one_replaces_it() {
 fn only_a_967_prompt_stands() {
     let mut world = tutorial_battle_world();
     world.battle.tutorial_boxes.clear();
-    world
-        .battle
-        .tutorial_boxes
-        .push_back(legaia_engine_menus::battle_flow::ActiveTutorialBox {
+    world.battle.tutorial_boxes.push_back(
+        legaia_engine_battle_menus::battle_flow::ActiveTutorialBox {
             text: "caption".to_string(),
             style: legaia_engine_battle::battle_tutorial::SPARRING_CAPTION_STYLE,
             waits_for_input: false,
@@ -866,7 +864,8 @@ fn only_a_967_prompt_stands() {
             any_press_dismisses: true,
             placed: Some(legaia_engine_battle::battle_tutorial::SPARRING_CAPTION_RECT),
             stands: false,
-        });
+        },
+    );
     world.tick_battle_tutorial_boxes();
     world.tick_battle_tutorial_boxes();
     assert!(world.battle.tutorial_boxes.is_empty());

@@ -198,6 +198,20 @@ fn psx_modulate(texel: vec3<f32>, colour: vec3<f32>) -> vec3<f32> {
     return clamp(texel * colour / 128.0, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
+// The foreground a semi-transparent textured prim hands the GPU's blend
+// equation, truncated to its 5-bit channel: the modulate
+// `texel5 * colour / 128` is floored to a 5-bit value before `B + F` reads
+// it. `rgb` is `texel5 / 31 * colour / 128`, so `rgb * 31` is the GPU's
+// pre-truncation value. A dim additive layer loses up to one 5-bit step per
+// channel to the floor, so a large faint layer (Ultra Charge's
+// camera-locked discs) adds nothing where a full-precision sum would wash
+// the frame. Ordered dithering, where enabled, takes the same mean: its
+// offsets `-4..3` average out to the floor's loss.
+// Reference: nocash PSX-SPX "GPU - Texture Color / Blending".
+fn psx_blend_foreground(rgb: vec3<f32>) -> vec3<f32> {
+    return floor(clamp(rgb, vec3<f32>(0.0), vec3<f32>(1.0)) * 31.0 + 0.001) / 31.0;
+}
+
 // GTE depth cue (DPCS, cop2 0x780010) - the one colour op the retail TMD
 // renderers run. Blends the shaded colour toward a far term by IR0:
 //     out = c + (fc - c) * ir0

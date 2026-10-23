@@ -1117,6 +1117,10 @@ pub struct BattleActionCtx {
     /// [`crate::battle_ground_grid::AMBIENT_BASE_CAST_EXIT`]. A zero here is
     /// the port's "no battle yet", not a retail value.
     pub ambient_base: u32,
+    /// How many passes state `0x71` has held on its settle test - the port's
+    /// bound on a wait retail leaves unbounded
+    /// ([`crate::battle_action::CAPTURE_SETTLE_PASS_LIMIT`]). Not a retail byte.
+    pub capture_settle_passes: u16,
     /// How many clips the **active** actor has committed - a counter the
     /// port keeps for the commit's camera-counter reset, not a retail byte.
     /// `FUN_8004AD80`'s install path zeroes `ctx[+0x26E]` / `+0x87C` /

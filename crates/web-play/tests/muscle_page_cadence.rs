@@ -3,7 +3,7 @@
 //!
 //! The rule is retail's and lives in the engine
 //! (`legaia_engine_minigames::muscle_dome::leg_boundary_raises_interval`, locked by
-//! `engine-menus/tests/muscle_intermission_cadence.rs`): the INTERVAL +
+//! `engine-battle-menus/tests/muscle_intermission_cadence.rs`): the INTERVAL +
 //! score-tally screen is the arena hub's between-LEGS beat (`FUN_801CF870`
 //! state `0x0A`), and a turn boundary never reaches the hub at all - the
 //! battle SM writes `ctx[6] = 0x14` and re-enters its own command cluster

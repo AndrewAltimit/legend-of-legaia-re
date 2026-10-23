@@ -10,7 +10,8 @@
 //! same per-user data folder (`launcher::data_dir`), so saves, key bindings
 //! and options are shared with a game started by double-clicking it. Its log
 //! goes to a file in that folder, which the error line names when the game
-//! exits with a failure.
+//! exits with a failure. A game that dies in the X11 startup race (`SIGSEGV`
+//! before its event loop opens) is started once more ([`Game::poll`]).
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -140,7 +141,26 @@ pub struct Game {
     child: Child,
     /// Where its log goes, when a log file could be created.
     pub log: Option<PathBuf>,
+    engine: PathBuf,
+    args: Vec<std::ffi::OsString>,
+    data_dir: Option<PathBuf>,
+    /// The startup race was already retried once.
+    relaunched: bool,
 }
+
+/// The line `play-window` logs once its event loop exists
+/// (`legaia_parity::window_child::EVENT_LOOP_OPEN_MARKER`, repeated here
+/// because Studio does not link the parity crate). A game that dies of
+/// `SIGSEGV` before writing it died inside `winit`'s `EventLoop::new`, in
+/// libXi's first-use race against XInput2 raw events: pointer motion on the
+/// display at the wrong moment (`docs/tooling/host-drift.md`). Studio starts
+/// such a game once more.
+pub const EVENT_LOOP_OPEN_MARKER: &str = "play-window: event loop open";
+
+/// The error line's reason when the game died in the startup race twice.
+pub const STARTUP_RACE_FAILURE: &str = "the game crashed twice while opening its window, \
+     inside the X11 input library (libXi). Moving the mouse while the game starts can \
+     trigger this; start it again.";
 
 impl Game {
     /// Start `engine` on `bin`. The working directory is `data_dir` (the
@@ -152,47 +172,122 @@ impl Game {
         extra: &[std::ffi::OsString],
         data_dir: Option<&Path>,
     ) -> anyhow::Result<Self> {
-        use anyhow::Context;
-        let mut cmd = Command::new(engine);
-        cmd.args(play_args(bin)).args(extra).stdin(Stdio::null());
-        let mut log = None;
-        if let Some(dir) = data_dir
-            && std::fs::create_dir_all(dir).is_ok()
-        {
-            cmd.current_dir(dir);
-            let path = dir.join(GAME_LOG);
-            if let Ok(f) = std::fs::File::create(&path) {
-                let err = f.try_clone().ok();
-                cmd.stdout(f);
-                if let Some(e) = err {
-                    cmd.stderr(e);
-                }
-                log = Some(path);
-            }
-        }
-        #[cfg(windows)]
-        {
-            // legaia-engine.exe is a console program; started from this
-            // GUI program it would open a console window of its own.
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            cmd.creation_flags(CREATE_NO_WINDOW);
-        }
-        let child = cmd
-            .spawn()
-            .with_context(|| format!("starting {}", engine.display()))?;
-        Ok(Self { child, log })
+        let mut args = play_args(bin);
+        args.extend(extra.iter().cloned());
+        let (child, log) = spawn(engine, &args, data_dir, false)?;
+        Ok(Self {
+            child,
+            log,
+            engine: engine.to_path_buf(),
+            args,
+            data_dir: data_dir.map(Path::to_path_buf),
+            relaunched: false,
+        })
     }
 
     /// `None` while the game runs; its exit once it has ended (an error
-    /// reading the status counts as a failed exit).
+    /// reading the status counts as a failed exit). A first death in the X11
+    /// startup race ([`EVENT_LOOP_OPEN_MARKER`]) starts the game once more
+    /// and reads as still running; a second one is reported with
+    /// [`STARTUP_RACE_FAILURE`].
     pub fn poll(&mut self) -> Option<Result<(), String>> {
-        match self.child.try_wait() {
-            Ok(None) => None,
-            Ok(Some(status)) if status.success() => Some(Ok(())),
-            Ok(Some(status)) => Some(Err(status.to_string())),
-            Err(e) => Some(Err(e.to_string())),
+        let status = match self.child.try_wait() {
+            Ok(None) => return None,
+            Ok(Some(status)) => status,
+            Err(e) => return Some(Err(e.to_string())),
+        };
+        if status.success() {
+            return Some(Ok(()));
         }
+        if !died_in_startup_race(&status, self.log.as_deref()) {
+            return Some(Err(status.to_string()));
+        }
+        if self.relaunched {
+            return Some(Err(format!("{status}; {STARTUP_RACE_FAILURE}")));
+        }
+        self.relaunched = true;
+        if let Some(log) = &self.log
+            && let Ok(mut f) = std::fs::OpenOptions::new().append(true).open(log)
+        {
+            use std::io::Write;
+            let _ = writeln!(
+                f,
+                "[studio] the game died of SIGSEGV before its window opened \
+                 (libXi startup race); starting it once more"
+            );
+        }
+        match spawn(&self.engine, &self.args, self.data_dir.as_deref(), true) {
+            Ok((child, _)) => {
+                self.child = child;
+                None
+            }
+            Err(e) => Some(Err(format!("{status}; restarting it failed: {e:#}"))),
+        }
+    }
+}
+
+/// Start `engine` with `args` in `data_dir`, its output in [`GAME_LOG`]
+/// there: a fresh file, or appended to on a relaunch.
+fn spawn(
+    engine: &Path,
+    args: &[std::ffi::OsString],
+    data_dir: Option<&Path>,
+    append: bool,
+) -> anyhow::Result<(Child, Option<PathBuf>)> {
+    use anyhow::Context;
+    let mut cmd = Command::new(engine);
+    cmd.args(args).stdin(Stdio::null());
+    let mut log = None;
+    if let Some(dir) = data_dir
+        && std::fs::create_dir_all(dir).is_ok()
+    {
+        cmd.current_dir(dir);
+        let path = dir.join(GAME_LOG);
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .append(append)
+            .truncate(!append)
+            .open(&path);
+        if let Ok(f) = file {
+            let err = f.try_clone().ok();
+            cmd.stdout(f);
+            if let Some(e) = err {
+                cmd.stderr(e);
+            }
+            log = Some(path);
+        }
+    }
+    #[cfg(windows)]
+    {
+        // legaia-engine.exe is a console program; started from this
+        // GUI program it would open a console window of its own.
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let child = cmd
+        .spawn()
+        .with_context(|| format!("starting {}", engine.display()))?;
+    Ok((child, log))
+}
+
+/// A game killed by `SIGSEGV` whose log never reached
+/// [`EVENT_LOOP_OPEN_MARKER`]. With no log to read, any `SIGSEGV` counts.
+fn died_in_startup_race(status: &std::process::ExitStatus, log: Option<&Path>) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        const SIGSEGV: i32 = 11;
+        status.signal() == Some(SIGSEGV)
+            && !log
+                .and_then(|l| std::fs::read_to_string(l).ok())
+                .is_some_and(|t| t.contains(EVENT_LOOP_OPEN_MARKER))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (status, log);
+        false
     }
 }
 
@@ -305,6 +400,47 @@ mod tests {
         );
         assert!(text.contains(&format!("cwd {}", data.display())), "{text}");
         assert_eq!(log_tail(&log, 1), vec!["boom".to_string()]);
+    }
+
+    /// Poll `game` until it ends.
+    fn wait(game: &mut Game) -> Result<(), String> {
+        loop {
+            if let Some(r) = game.poll() {
+                return r;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+
+    /// A game that dies of SIGSEGV before its event loop opens is started
+    /// once more; a second such death is reported as the startup race, and
+    /// a SIGSEGV after the marker is an ordinary failure with no relaunch.
+    #[cfg(unix)]
+    #[test]
+    fn a_startup_race_death_is_relaunched_once() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let engine = dir.path().join(engine_file_name());
+        let data = dir.path().join("data");
+        let write_engine = |body: &str| {
+            std::fs::write(&engine, format!("#!/bin/sh\necho launched\n{body}")).unwrap();
+            std::fs::set_permissions(&engine, std::fs::Permissions::from_mode(0o755)).unwrap();
+        };
+
+        write_engine("kill -SEGV $$\n");
+        let mut game = Game::start(&engine, Path::new("/g/l.bin"), &[], Some(&data)).unwrap();
+        let err = wait(&mut game).unwrap_err();
+        assert!(err.contains(STARTUP_RACE_FAILURE), "{err}");
+        let text = std::fs::read_to_string(game.log.as_ref().unwrap()).unwrap();
+        assert_eq!(text.matches("launched").count(), 2, "{text}");
+        assert!(text.contains("[studio]"), "{text}");
+
+        write_engine(&format!("echo '{EVENT_LOOP_OPEN_MARKER}'\nkill -SEGV $$\n"));
+        let mut game = Game::start(&engine, Path::new("/g/l.bin"), &[], Some(&data)).unwrap();
+        let err = wait(&mut game).unwrap_err();
+        assert!(!err.contains(STARTUP_RACE_FAILURE), "{err}");
+        let text = std::fs::read_to_string(game.log.as_ref().unwrap()).unwrap();
+        assert_eq!(text.matches("launched").count(), 1, "{text}");
     }
 
     /// The engine's launcher file gains the disc and keeps every other key;

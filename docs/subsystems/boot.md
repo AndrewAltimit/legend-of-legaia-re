@@ -20,8 +20,8 @@ virtual address; **SCUS** is the main executable `SCUS_942.54`.
 | Entry + init | `FUN_80026C28` → `main()` `FUN_80015E90` | SCUS | `engine-session`'s `BootSession` construction |
 | TOC load | `FUN_8003E4E8` → RAM `0x801C70F0` | SCUS | `legaia_prot` reads the disc image directly |
 | Mode dispatch | table at `0x8007078C`, word `_DAT_8007B83C` | SCUS | `engine-mode::mode` (`ModeSeat`, `GameMode`); parser `legaia_game_tables::mode_table` |
-| Publisher logos | `FUN_801CE9C0` + sequencer `FUN_801CEFD4` | PROT 0895 (`init.pak`) | `engine-menus::publisher_logos` |
-| Title screen | tick `FUN_801DD35C`, modes 22/23 | PROT 0899 (menu overlay) | `engine-menus::title` (`TitleSession`) over `engine-menus::title_overlay` |
+| Publisher logos | `FUN_801CE9C0` + sequencer `FUN_801CEFD4` | PROT 0895 (`init.pak`) | `engine-title::publisher_logos` |
+| Title screen | tick `FUN_801DD35C`, modes 22/23 | PROT 0899 (menu overlay) | `engine-title::title` (`TitleSession`) over `engine-title::title_overlay` |
 | New-game seed | `FUN_80034A6C` → `FUN_800560B4` | SCUS | `World::begin_new_game`, `legaia_game_tables::new_game` |
 | Field entry | mode 2 `FUN_80025B64` → `FUN_801D6704` | SCUS + PROT 0897 | `BootSession::enter_field_live` |
 | Opening chain | scene scripts; skip in `FUN_801D1344` | PROT 0897 + scene MANs | `engine-core` `world/narration.rs` |
@@ -472,7 +472,7 @@ apart; Noa (`120`) and Gala (`80`) seed the cap at `100` while their agility
 cells carry the per-character value.
 
 **Port.** The control flow is mirrored in
-`crates/engine-menus/src/title_overlay/state_layout.rs`
+`crates/engine-title/src/title_overlay/state_layout.rs`
 (`MASTER_GAME_MODE_FIELD_LAUNCH` = 2, `MASTER_GAME_MODE_FIELD_RUN` = 3,
 `FIELD_SCENE_INIT_PC`, `MENU_INDEX_NEW_GAME`) and `World::begin_new_game`
 (`crates/engine-core/src/world/state.rs`), which clears the story flags and
@@ -490,7 +490,7 @@ data and a loaded save is never clobbered.
 
 On a scene-picker host (`NewGameDefaults::picker_party`) the party half is
 `World::seed_picker_party`: Vahn, Noa and Gala as the present battle party, each
-from their own template row and in a starter loadout (`new_game::starter_loadout`
+from their own template row and in a starter loadout (`engine-menus::new_game::starter_loadout`
 - the weakest gear the `DAT_80074F68` equipment table lets the character wear
 per slot, exclusive weapon family first). The loadout is the port's choice;
 retail's New Game leaves the equipment bytes zero. Headless sessions keep the
@@ -1033,14 +1033,14 @@ counter has three stepping writers in the title tick and two more in `init.pak`
 never reset, so a later title (after a party wipe or a backed-out Continue)
 opens on whichever row it last held this power-on.
 
-**Port.** `legaia_engine_menus::title_overlay`
-([source](../../crates/engine-menus/src/title_overlay.rs)) pins the jump table,
+**Port.** `legaia_engine_title::title_overlay`
+([source](../../crates/engine-title/src/title_overlay.rs)) pins the jump table,
 the state-struct offsets, every handler body and all 56 `state[+0x204] = N`
 stores; `TitleTickState::step` executes the graph one arm per sub-mode plus the
 shared epilogue. Exported launch constants: `MASTER_GAME_MODE_FIELD_LAUNCH`,
 `PHASE06_LAUNCH_GAME_PC`, `PHASE16_LOAD_LAUNCH_PC`.
 
-`engine-menus::title::TitleSession` owns the title tick both hosts run. Its menu
+`engine-title::title::TitleSession` owns the title tick both hosts run. Its menu
 half steps `title_overlay::TitleMenuState`, the port of the `0x10` block, so
 both hosts get retail's cursor step + wrap, confirm mask, cue pair and attract
 countdown from one kernel. Three things around it are the port's own:
@@ -1287,10 +1287,10 @@ Two functions carry the screen:
 
 The title tick reaches three SCUS-side helpers to emit GPU primitives:
 
-| Helper | Role | Port (`legaia_engine_menus::title_prim`) |
+| Helper | Role | Port (`legaia_engine_title::title_prim`) |
 |---|---|---|
-| `FUN_80058298` | `ClearImage` rect-fill queue (37 instructions) | `exec_clear_image(host, rect, r, g, b)` |
-| `FUN_80058490` | `MoveImage` VRAM-to-VRAM copy (49 instructions) | `exec_move_image(host, src, dst_x, dst_y)`, early-out on zero extent like the original's `li v0, -1` path |
+| `FUN_80058298` | `ClearImage` rect-fill queue (37 instructions) | Not ported: a libgpu wrapper on the catalog's ignore list. `exec_clear_image(host, rect, r, g, b)` forwards to a `PrimHost` hook. |
+| `FUN_80058490` | `MoveImage` VRAM-to-VRAM copy (49 instructions) | `exec_move_image(host, src, dst_x, dst_y)` forwards to a `PrimHost` hook, early-out on zero extent like the original's `li v0, -1` path. The copy itself is ported once, as `legaia_tim::Vram::move_image`. |
 | `FUN_800198E0` | Sprite-descriptor dispatcher (146 instructions) | `exec_sprite_descriptor(host, &SpriteDescriptor)`: tag-`0x11` simple variant + complex variant (alpha-OR pre-pass under `flags & 8`, four width-divisor variants from `flags & 3`) |
 
 `FUN_800198E0` accepts a packed struct with custom magic `0x11` **or** a real
@@ -1302,7 +1302,7 @@ logging). `init.pak` uses the same helper for its logo uploads.
 `Rect12 { x, y, w, h }` capture the wire shapes; the `PrimHost` trait abstracts
 the engine callbacks (`queue_clear_rect`, `queue_move_image`, `emit_sprite`,
 `stp_or_gate_set`, plus the defaulted `stp_or_pixels`). The module
-([source](../../crates/engine-menus/src/title_prim.rs)) also carries ports of the
+([source](../../crates/engine-title/src/title_prim.rs)) also carries ports of the
 menu overlay's box / centred-text drawers `FUN_801E36C4`, `FUN_801E3EE0` and
 `FUN_801E373C`.
 
@@ -1400,7 +1400,7 @@ parses the entry: `extract_title_tim(&prot_0890_bytes, TITLE_TIM_OFFSET)`
 returns a zero-copy slice + decoded VRAM rects, and the `TITLE_BAND_*` constants
 pin the sub-rects above (disc-gated `extracts_real_title_tim_when_disc_extracted`).
 The RGBA decoder is
-[`title_screen_atlas::build_atlas_from_prot_888`](../../crates/engine-menus/src/title_screen_atlas.rs)
+[`title_screen_atlas::build_atlas_from_prot_888`](../../crates/engine-title/src/title_screen_atlas.rs)
 (it reads 0890; the `888` in the name is kept for call-site stability). The
 native window uploads it as a sprite atlas and emits one `SpriteDraw` per active
 band each frame (`title_screen_sprite_draws`), with the press-start band gated
@@ -1615,7 +1615,7 @@ extents, with its blend mode set by `FUN_80059010`. The sequencer's tail
 (`0x801CF490..0x801CF4E8`) leaves game mode `0x16` (CARD INIT) when
 `_DAT_8007BB00` is set and `0` otherwise.
 
-**Port.** [`engine-menus::publisher_logos`](../../crates/engine-menus/src/publisher_logos.rs):
+**Port.** [`engine-title::publisher_logos`](../../crates/engine-title/src/publisher_logos.rs):
 `LOGO_QUADS` holds the quad table, `RETAIL_SEQUENCE` the order and frame counts,
 `LEVEL_FULL` the `0x80` neutral point. One deviation: state 10 is modelled as a
 fade-down of the logo over the same 65 frames rather than compositing the white

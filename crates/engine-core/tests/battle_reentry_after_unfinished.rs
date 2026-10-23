@@ -12,8 +12,8 @@
 //! Disc-free: synthetic party + the vanilla monster / formation tables.
 
 use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
+use legaia_engine_battle_menus::battle_flow::BattleFlowState;
 use legaia_engine_core::world::{Actor, InflightCastSeed, World};
-use legaia_engine_menus::battle_flow::BattleFlowState;
 use legaia_engine_mode::mode::SceneMode;
 
 fn field_world() -> World {

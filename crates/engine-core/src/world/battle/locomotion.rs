@@ -64,9 +64,14 @@ const DEFAULT_SPEED_SCALE: u8 = 4;
 const BACKOFF_CATEGORY: u8 = 3;
 
 /// The in-range back-off as a root speed: its `>> 13` (`0x80047CCC` /
-/// `0x80047D14`) over the root term's `>> 15` is a factor of four, and the
-/// step runs against the facing (`subu`).
-const BACKOFF_SPEED: i16 = -4;
+/// `0x80047D14`) over the root term's `>> 15` is a factor of four. The
+/// product is the forward one; the step subtracts it (`subu`).
+const BACKOFF_SPEED: i16 = 4;
+
+/// Bound on [`World::commit_reach_snap`]'s walk: retail's loops have none.
+/// At `trig >> 10` a step (four units) this covers a gap of `16384` units,
+/// more than the stage.
+const REACH_SNAP_MAX_STEPS: usize = 4096;
 
 /// Separation body radius of a party seat: the `+0x58` word of the actor's
 /// node (`*(actor+0x22C)`) that `FUN_80050BB8` reads. The seat stager
@@ -109,6 +114,27 @@ pub(crate) fn pose_centroid_y(parts: &[([i16; 3], [i16; 3])]) -> i16 {
     (i32::from(sy) / n as i32) as i16
 }
 
+/// The channels of a battle actor's decoded pose the body-pair store
+/// averages: the playing stream's **own** parts. `FUN_8004998C` sums one
+/// translation per stream part and divides by the stream's part count, the
+/// byte at `*(entry + 0x88)` (`lbu v1,0x0(s4)` / `div` at
+/// `0x8004A3DC..0x8004A42C`). A party clip expanded per assembled object
+/// (`expand_animation_for_objects`) carries further channels past those -
+/// equipment objects that copy their attach bone's channel - and averaged in
+/// they pulled Vahn's invoke-clip centroid some nine units off retail's
+/// (`x` `30` against `39` on keyframes 2..5, the summon close-up's focus).
+/// `None` for an actor with no clip or no pose.
+pub(in crate::world) fn stream_pose(a: &crate::world::Actor) -> Option<&[([i16; 3], [i16; 3])]> {
+    let player = a.battle_animation.as_ref()?;
+    let parts = &a.pose_frame.as_ref()?.bone_outputs;
+    let n = usize::from(player.variant_track().stream_parts);
+    Some(if n != 0 && n < parts.len() {
+        &parts[..n]
+    } else {
+        parts
+    })
+}
+
 /// The body-pair offset (`FUN_8004998C`): the shared kernel
 /// [`motion::body_offset`].
 pub(crate) fn body_offset(facing: u16, cx: i16, cz: i16, scale: i32) -> (i16, i16) {
@@ -127,11 +153,7 @@ impl World {
             .battle
             .seat
             .unwrap_or((a.move_state.world_x, a.move_state.world_z));
-        let cy = a
-            .battle_animation
-            .as_ref()
-            .and(a.pose_frame.as_ref())
-            .map_or(0, |p| pose_centroid_y(&p.bone_outputs));
+        let cy = stream_pose(a).map_or(0, pose_centroid_y);
         let y = a.move_state.world_y.wrapping_add(cy);
         Some([f32::from(x), f32::from(y), f32::from(z)])
     }
@@ -485,13 +507,7 @@ impl World {
             if a.battle.seat.is_none() {
                 continue;
             }
-            let centroid = if a.battle_animation.is_some() {
-                a.pose_frame
-                    .as_ref()
-                    .map(|p| pose_centroid_xz(&p.bone_outputs))
-            } else {
-                None
-            };
+            let centroid = stream_pose(a).map(pose_centroid_xz);
             let (dx, dz) = centroid
                 .map(|(cx, cz)| body_offset(a.battle.facing_angle, cx, cz, BATTLE_RENDER_SCALE))
                 .unwrap_or((0, 0));
@@ -553,7 +569,7 @@ impl World {
     /// its reach drifts back toward the edge of it for as long as its attack
     /// runs - the counterweight to its strike clips' positive root speed,
     /// which steps it forward only while out of range. The shift is `13`
-    /// against the root term's `15`: a speed of `-4` on the same law.
+    /// against the root term's `15`: a speed of `4` on the same law, subtracted.
     // PORT: FUN_80047430 (`0x80047C3C..0x80047D1C`, the in-range back-off)
     fn drive_in_range_backoff(&mut self, slot: usize, dt: u8) {
         use crate::battle_round::RoundPhase;
@@ -576,6 +592,14 @@ impl World {
             return;
         }
         // A frozen actor (`+0x21D == 0`) multiplies the step to nothing.
+        //
+        // Retail shifts the **forward** product and subtracts it
+        // (`sra v1,t1,0xd` / `subu` at `0x80047CCC..0x80047CD0`), so the
+        // step is `-floor(trig * dt * scale / 8192)`. Shifting the negated
+        // product instead floors the other way: a unit further back, every
+        // in-range frame, on every axis whose step carries a fraction, which
+        // over a strike string parks the attacker outside where retail's
+        // law leaves it.
         let (sin, cos) = legaia_engine_system::trig::trig12(facing);
         let raw = motion::root_motion_raw(sin, cos, BACKOFF_SPEED, dt, rate);
         let frame = self.battle_frame_id();
@@ -584,8 +608,69 @@ impl World {
             .backoff_carry
             .step_in_frame(frame, raw);
         let ms = &mut self.actors[slot].move_state;
-        ms.world_x = ms.world_x.wrapping_add(dx as i16);
-        ms.world_z = ms.world_z.wrapping_add(dz as i16);
+        ms.world_x = ms.world_x.wrapping_sub(dx as i16);
+        ms.world_z = ms.world_z.wrapping_sub(dz as i16);
+    }
+
+    /// The clip commit's reach snap (`FUN_8004AD80`, `0x8004BF7C..0x8004C118`).
+    ///
+    /// When the acting actor commits a clip while the action SM sits in the
+    /// strike loop `0x1E`, the commit's tail measures it against its target
+    /// with the range law and walks its live pair onto the edge of its reach
+    /// in one go: out of range, it steps **forward** along the bearing to
+    /// the target's body pair until the law reads in range; in range, it
+    /// steps **back** until the law reads out of range. Each step re-faces
+    /// the actor (`+0x46 = (bearing(target +0x40/+0x3C -> actor
+    /// +0x38/+0x34) + 0x800) & 0xFFF`) and moves the pair by `trig >> 10`
+    /// (`sll 0x10` / `sra 0x1A`, four units at full scale), and both loops
+    /// run at least once (`do`-`while`). So every swing of a string opens
+    /// with the attacker one step either side of the boundary, whatever the
+    /// previous clip's root motion and the target's knockback did to the
+    /// gap: a retail trace of Vahn's `0x0D` -> `0x0F` commit steps him 60
+    /// units forward in one frame (`autorun_melee_string_trace.lua`, the
+    /// range poll's return address `0x8004C05C` repeating down to `0`).
+    ///
+    /// The engine had no counterpart, so a string's gap was set by root
+    /// motion alone and drifted outside retail's.
+    ///
+    /// Retail's loops are unbounded: a target the law can never reach (the
+    /// all-target sentinel, a slot `>= 8`) hangs them. The port bounds them
+    /// at [`REACH_SNAP_MAX_STEPS`] and skips a target `>= 8`.
+    // PORT: FUN_8004AD80 (`0x8004BF7C..0x8004C118`, the strike-loop reach snap)
+    pub(in crate::world) fn commit_reach_snap(&mut self, slot: usize) {
+        let Some(a) = self.actors.get(slot) else {
+            return;
+        };
+        let target = a.battle.active_target;
+        if target >= 8 || self.actors.get(usize::from(target)).is_none() {
+            return;
+        }
+        let forward = self.battle_range_metric(slot as u8, target) != 0;
+        for _ in 0..REACH_SNAP_MAX_STEPS {
+            let (tx, tz) = self.battle_seat_of(usize::from(target));
+            let ms = &self.actors[slot].move_state;
+            let facing = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
+                tz, tx, ms.world_z, ms.world_x,
+            )
+            .wrapping_add(0x800)
+                & 0xFFF;
+            let (sin, cos) = legaia_engine_system::trig::trig12(facing);
+            let (dx, dz) = (sin >> 10, cos >> 10);
+            let a = &mut self.actors[slot];
+            a.battle.facing_angle = facing;
+            let ms = &mut a.move_state;
+            if forward {
+                ms.world_x = ms.world_x.wrapping_add(dx);
+                ms.world_z = ms.world_z.wrapping_add(dz);
+            } else {
+                ms.world_x = ms.world_x.wrapping_sub(dx);
+                ms.world_z = ms.world_z.wrapping_sub(dz);
+            }
+            let in_range = self.battle_range_metric(slot as u8, target) == 0;
+            if in_range == forward {
+                break;
+            }
+        }
     }
 
     /// Approach leg: facing recompute + range-gated root-motion step toward
@@ -608,6 +693,11 @@ impl World {
         self.actors[slot].battle.facing_angle = facing;
         // The positive-speed gate: no step once in range.
         if self.battle_range_metric(slot as u8, target) == 0 {
+            return;
+        }
+        // A replayed retail park holds this seat's walk
+        // ([`BattleState::approach_hold`]).
+        if self.battle.approach_hold == Some(slot as u8) {
             return;
         }
         let (speed, scale) = self.battle_root_motion_of(slot);
@@ -721,9 +811,13 @@ mod tests {
     use legaia_engine_battle_vm::battle_action::{ActionState, StepOutcome};
 
     /// A world in battle mode with 1 party member and 1 monster at the
-    /// authored solo seats (0,-800) vs (0,+800).
+    /// authored solo seats (0,-800) vs (0,+800), on the per-vsync cadence:
+    /// these drive the locomotion seat a tick at a time, which re-takes the
+    /// body pairs at the head of each call (on retail's cadence the anim
+    /// pass's draw takes them instead, `World::tick_battle_anim_pass`).
     fn battle_world() -> World {
         let mut w = World::new();
+        w.toggles.battle_sm_frame_cadence = false;
         w.enter_battle(1, 1);
         w
     }
@@ -811,6 +905,146 @@ mod tests {
             z_other,
             tz_other - 100,
             "a non-Attack category stands still"
+        );
+    }
+
+    /// `FUN_8004AD80`'s strike-loop tail: a commit by the acting actor in
+    /// `0x1E` walks it in `trig >> 10` steps onto the edge of its reach -
+    /// forward until the range law reads in range when it starts out of
+    /// range, back until it reads out of range when it starts inside - and
+    /// faces it at the target. Outside `0x1E`, or for another actor, a
+    /// commit leaves the pair alone.
+    #[test]
+    fn a_strike_loop_commit_snaps_the_attacker_to_its_reach() {
+        let setup = |z: i16, state: ActionState| {
+            let mut w = battle_world();
+            w.actors[0].battle.active_target = 1;
+            w.actors[0].battle.action_category = 3;
+            w.actors[1].battle.liveness = 1;
+            w.battle_ctx.active_actor = 0;
+            w.battle_ctx.action_state = state.as_byte();
+            w.seed_battle_seats();
+            w.actors[0].move_state.world_x = 0;
+            w.actors[0].move_state.world_z = z;
+            w
+        };
+        // Far out of range: one commit walks it in, to the first step that
+        // reads in range.
+        let mut w = setup(-800, ActionState::AttackChain);
+        assert_ne!(w.battle_range_metric(0, 1), 0);
+        w.note_active_clip_commit(0);
+        let z_in = w.actors[0].move_state.world_z;
+        assert!(z_in > -800);
+        assert_eq!(w.battle_range_metric(0, 1), 0);
+        let mut back = setup(z_in - 4, ActionState::AttackChain);
+        assert_ne!(back.battle_range_metric(0, 1), 0, "one step short is out");
+        assert_eq!(w.actors[0].battle.facing_angle, 0, "faced along +Z");
+        // Deep inside: it backs out to the first step that reads out.
+        back.actors[0].move_state.world_z = 700;
+        assert_eq!(back.battle_range_metric(0, 1), 0);
+        back.note_active_clip_commit(0);
+        let z_out = back.actors[0].move_state.world_z;
+        assert!(z_out < 700);
+        assert_ne!(back.battle_range_metric(0, 1), 0);
+        // Another state: no snap.
+        let mut idle = setup(-800, ActionState::AttackWindup);
+        idle.note_active_clip_commit(0);
+        assert_eq!(idle.actors[0].move_state.world_z, -800);
+        // Another actor's commit: no snap.
+        let mut other = setup(-800, ActionState::AttackChain);
+        other.note_active_clip_commit(1);
+        assert_eq!(other.actors[0].move_state.world_z, -800);
+    }
+
+    /// A seat named by `approach_hold` (a replayed retail park) turns onto
+    /// its target but takes no approach step; any other seat walks.
+    #[test]
+    fn a_held_approach_turns_but_does_not_walk() {
+        let run = |hold: Option<u8>| {
+            let mut w = battle_world();
+            w.actors[0].battle.active_target = 1;
+            w.actors[0].battle.action_category = 3;
+            w.actors[1].battle.liveness = 1;
+            w.battle_ctx.active_actor = 0;
+            w.battle_ctx.action_state = ActionState::AttackShortStep.as_byte();
+            w.battle.approach_hold = hold;
+            let start = (
+                w.actors[0].move_state.world_x,
+                w.actors[0].move_state.world_z,
+            );
+            for _ in 0..20 {
+                w.tick_battle_locomotion();
+            }
+            (
+                start,
+                (
+                    w.actors[0].move_state.world_x,
+                    w.actors[0].move_state.world_z,
+                ),
+            )
+        };
+        let (start, held) = run(Some(0));
+        assert_eq!(held, start);
+        let (start, walked) = run(Some(1));
+        assert_ne!(walked, start);
+        let (start, free) = run(None);
+        assert_eq!(free, walked);
+        assert_ne!(free, start);
+    }
+
+    /// The back-off's rounding: retail shifts the forward product and
+    /// subtracts it (`sra v1,t1,0xd` / `subu`, `0x80047CCC..0x80047CD0`), so
+    /// one battle frame moves the pair by `-floor(trig * step * scale /
+    /// 8192)` per axis - never the floor of the negated product, which steps
+    /// a unit further back on every fractional axis.
+    #[test]
+    fn the_back_off_floors_the_forward_product() {
+        let mut w = battle_world();
+        w.actors[0].battle.active_target = 1;
+        w.actors[0].battle.action_category = 3;
+        w.actors[1].battle.liveness = 1;
+        w.battle_ctx.active_actor = 0;
+        w.battle_ctx.action_state = ActionState::AttackChain.as_byte();
+        w.battle.round_flow.phase = crate::battle_round::RoundPhase::Execute;
+        w.tick_battle_locomotion(); // seed seats
+        let (tx, tz) = (
+            w.actors[1].move_state.world_x,
+            w.actors[1].move_state.world_z,
+        );
+        w.actors[0].move_state.world_x = tx;
+        w.actors[0].move_state.world_z = tz - 100;
+        // A heading whose sine and cosine both leave a fraction.
+        let facing = 100u16;
+        w.actors[0].battle.facing_angle = facing;
+        let scale = w.actors[0].battle.anim_rate.get();
+        let scale = if scale == 0 {
+            DEFAULT_SPEED_SCALE
+        } else {
+            scale
+        };
+        let (sin, cos) = legaia_engine_system::trig::trig12(facing);
+        let step = |trig: i16| -((i32::from(trig) * 2 * i32::from(scale)) >> 13);
+        // One battle frame of two vsyncs, on a fresh frame (the carry starts
+        // over), with the attacker still inside its reach.
+        let frame = w.battle_frame_id();
+        while w.battle_frame_id() == frame {
+            w.clock.display_frames += 1;
+        }
+        assert_eq!(w.battle_range_metric(0, 1), 0);
+        let (x0, z0) = (
+            w.actors[0].move_state.world_x,
+            w.actors[0].move_state.world_z,
+        );
+        w.tick_battle_locomotion();
+        w.tick_battle_locomotion();
+        let (x1, z1) = (
+            w.actors[0].move_state.world_x,
+            w.actors[0].move_state.world_z,
+        );
+        assert_eq!(w.actors[0].battle.facing_angle, facing);
+        assert_eq!(
+            (i32::from(x1 - x0), i32::from(z1 - z0)),
+            (step(sin), step(cos))
         );
     }
 
@@ -906,6 +1140,39 @@ mod tests {
         assert_eq!(pose_centroid_xz(&[]), (0, 0));
     }
 
+    /// The body pair averages the playing stream's own parts: a clip
+    /// expanded per assembled object carries equipment channels past them,
+    /// and those stay out of the centroid.
+    #[test]
+    fn the_body_pair_averages_only_the_streams_parts() {
+        use legaia_actor_formats::monster_archive::{MonsterAnimation, PartPose};
+        let pose = |x: i16| PartPose {
+            tx: x,
+            ..PartPose::default()
+        };
+        let mut anim = MonsterAnimation {
+            variant_track: Default::default(),
+            action_id: 0,
+            rate: 1,
+            attach_key: 0,
+            solo_flag: 0,
+            impact_class: 0,
+            effect_script: Vec::new(),
+            part_count: 3,
+            frame_count: 2,
+            frames: vec![vec![pose(10), pose(20), pose(300)]; 2],
+        };
+        anim.variant_track.stream_parts = 2;
+        let mut a = crate::world::Actor::default();
+        a.battle_animation = legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(&anim);
+        a.pose_frame = Some(a.battle_animation.as_mut().unwrap().seat_cursor(0));
+        assert_eq!(stream_pose(&a).map(pose_centroid_xz), Some((15, 0)));
+        // An unrecorded count (a synthetic clip) keeps every channel.
+        anim.variant_track.stream_parts = 0;
+        a.battle_animation = legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(&anim);
+        assert_eq!(stream_pose(&a).map(pose_centroid_xz), Some((110, 0)));
+    }
+
     #[test]
     fn overlapping_pairs_separate_instead_of_running_away() {
         // The taiku / rugi boss park: two party members whose pairs overlap.
@@ -915,6 +1182,7 @@ mod tests {
         // overlap nudged the live pairs every frame for the whole action and
         // flung both members tens of thousands of units off the stage.
         let mut w = World::new();
+        w.toggles.battle_sm_frame_cadence = false;
         w.enter_battle(2, 1);
         for i in 0..3 {
             w.actors[i].battle.liveness = 1;
@@ -963,6 +1231,7 @@ mod tests {
     #[test]
     fn overlapping_party_members_part_to_the_retail_gap() {
         let mut w = World::new();
+        w.toggles.battle_sm_frame_cadence = false;
         w.enter_battle(2, 1);
         w.party.active_party = vec![0, 1];
         // Monster out of play; the two party seats 40 apart on X.
@@ -1078,9 +1347,12 @@ mod tests {
             w.actors[0].move_state.world_z,
         );
         let end_dist = i32::from(end.1) - i32::from(seat0.1);
-        assert_eq!(
-            end_dist, max_dist,
-            "the attacker must hold the ground it closed to"
+        // The strike clip's commit in `0x1E` backs it out of its reach by
+        // whole `trig >> 10` steps (`World::commit_reach_snap`), so it ends
+        // a few units short of the deepest point, never back home.
+        assert!(
+            end_dist <= max_dist && max_dist - end_dist <= 32,
+            "the attacker must hold the ground it closed to: {end_dist} vs {max_dist}"
         );
         // ... and its body pair stands on that ground.
         w.tick_battle_locomotion();

@@ -344,11 +344,14 @@ is reached at runtime.
 | feature | assertion |
 |---|---|
 | Muscle Dome damage | `pattern_same` over the `resolve_turn*` family each host names. |
-| save-select model | `pattern_same` over the `SaveRack` variant each host builds. |
+| save-select model | `symbols_all` on the session's `card_port_rack` at both pause menus' Load / Save sub-session build. |
 | live-loop arming | `symbols_all` on the shared `World::arm_live_loop`. |
 | pause-menu press | `symbols_all` on `press_field_menu` at every host's press site. |
 | pause-menu open with no press | `symbols_all` on `open_field_menu` (the title's Continue / Options rows). |
 | party wipe | `symbols_all` on `GameOverOutcome::ReturnToTitle` across the two routing sites. |
+| title card | `symbols_all` on `FrontEndStep` + `AttractStart` + `AttractEnded` + `Picked` across the native boot UI and the page's `boot_title_step`: the session's front end steps the title, the host acts on the step. |
+| logos to title | `symbols_all` on `FrontEndStep` + `TitleOpened` across the native boot UI and the page's `boot_logos_step`: both take the seat's `boot_handoff` through the front end. |
+| title Continue | `symbols_all` on `ContinueScreen` (the open) and on `ContinueStep` + `blip` + `Loaded` + `BackedOut` (the frame) across the native boot UI and the page's `open_boot_continue` / `boot_continue_step`. |
 | dev-menu tick | `symbols_all` on `retail_packed` + `commit_equip_row` + the records-page toggle. |
 | dev-records model | `symbols_all` on `record_counters` + `records_screen` across the two model builders. |
 | play clock | `symbols_same` on `advance_play_time` across the two menu draw sites. |
@@ -1247,6 +1250,66 @@ Traps, each of which has produced a false drift report:
 | play clock | `World::tick_play_clock` is wall time, so a tick-stepped page and a free-running window show different `TIME` values. |
 | battle backdrop | `SceneHost::battle_stage_entry` picks the stage variant the region reader stored on the last field step (`_DAT_8007BD60`), else the scene default. Compare two hosts' battles only from the same region state (`LEGAIA_BATTLE_STAGE` forces one natively). |
 | headless GPU | `--use-angle=swiftshader` runs a few frames a second; `--use-angle=vulkan` keeps a run to minutes. |
+| startup `SIGSEGV` | A native child killed by `SIGSEGV` with empty stdout and stderr died in libXi before its event loop opened; spawn it through `legaia_parity::window_child`, which retries exactly that death once ([below](#a-native-child-that-dies-before-its-event-loop-opens)). |
+
+### A native child that dies before its event loop opens
+
+On an X11 display, `play-window` can die of `SIGSEGV` inside
+`EventLoop::new`, before it has written a byte to stdout or stderr. The fault
+is in libXi's lazy per-display setup, raced by `winit` 0.30's own ordering:
+
+1. `EventLoop::new` selects XInput2 raw pointer and key events on the root
+   window (`update_listen_device_events`), then makes its first libXi call,
+   `XIQueryDevice` (`init_device`).
+2. That first call runs `_XiCheckExtInit`, which `malloc`s libXi's extension
+   record and fills its `vers` pointer only when an `XGetExtensionVersion`
+   round trip returns.
+3. A raw event read off the socket during that round trip is converted on the
+   spot: `_XReply` -> `_XEnq` -> `XInputWireToCookie` -> `wireToRawEvent`,
+   which asks `_XiCheckVersion` whether to copy the event's flags. That
+   dereferences the unwritten `vers`; when the allocator recycled the chunk,
+   the pointer is garbage.
+
+Every frame of that chain is in the backtrace of a caught crash, and the
+libXi offsets resolve by disassembly to the `malloc` in `_XiCheckExtInit` and
+the `_XiCheckVersion` call in the raw-event converter. The trigger is anything
+that moves the pointer or presses a key on the shared display while a child is
+inside those few hundred microseconds: a person at the desktop or a
+remote-desktop input device. That is why rungs launched together die
+together. On a private `Xvfb` with pointer motion flooded through XTest, about
+half of all launches die this way; with no input on the display, none do.
+Flooding `XI_HierarchyChanged` instead does not reproduce it, because the
+hierarchy converter never asks for the version.
+
+Nothing in the engine can close the window. The `Display` is opened, the raw
+events are selected and the first libXi call is made all inside
+`EventLoop::new`, and the latest `winit` 0.30 release keeps this order. The
+builder takes no device-event filter, and `listen_device_events` only exists
+once `new` has returned, after the race. The pointer read at the fault is
+ASCII text left in a recycled heap chunk, and running the child with
+`GLIBC_TUNABLES=glibc.malloc.tcache_count=0:glibc.malloc.perturb=255` (every
+`malloc` zero-filled, so the unwritten `vers` reads as null and the version
+check fails safely) removes the crash under the same flood. That confirms
+the mechanism, but it trades allocator speed in the whole process for one
+startup window, so no host sets it.
+
+The upstream fix belongs in `winit`'s X11 `EventLoop::new`: make the first
+libXi call before any XInput2 selection on the root window, or query devices
+over its XCB connection (`xinput_xi_query_device`) instead of Xlib's
+`XIQueryDevice`, which takes libXi's lazy setup off the path. On the libXi
+side, `_XiCheckExtInit` would need to clear `vers` before its round trip.
+
+Until then, everything that launches `play-window` and waits on it relaunches
+exactly this death once. The child logs `play-window: event loop open` as
+soon as `EventLoop::new` returns, and a `SIGSEGV` without that line is the
+startup race:
+
+| Launcher | Where | On a second startup death |
+|---|---|---|
+| `native_minigame_ladder`, the retail-compare image channel | `legaia_parity::window_child::output_retrying_startup_race`, reading the child's stderr | returns the failure; a `[retry]` line names the first |
+| Legaia Studio's Play button | `legaia_studio::launch::Game::poll`, reading the game's log file | an error line saying the game crashed twice while opening its window and can be started again |
+
+A `SIGSEGV` after the line is a different crash and is never relaunched.
 
 Paired tick-locked and matching frame for frame: field walk and camera, the
 dialogue box (typewriter, page hand, row scroll), the pause menu's Items /
@@ -1550,6 +1613,23 @@ its HUD bar for `F1`, through `window.__playHotkeyActions`. The table's test
 holds every key off the bindable set, and a `SIM_PAIRS` row pins both sites
 to the shared calls.
 
+A press also owes the player a word. The native window shows a notice line
+after every hotkey (`toggle_notice`: `Ground fog: off`) and the refusal
+(`refused_notice`: `Camera distance: only while walking around`); the page
+showed neither, so `F2`, `F7` and a refused `T` were dead keys there - the
+mute and the encounter switch change nothing else on screen. The page now
+asks `play_host_hotkey_notice(id, page_state)` after the action (the options
+state read engine-side, the HUD bar, debug vantage and encounter box passed
+from the page) and `play_host_hotkey_refusal(code)` when the press was
+refused, and draws the line over the canvas's bottom-left corner as the
+window does. Its Controls card lists the table from `host_hotkeys_json`
+(`id`, `code`, `key`, `label`) rather than a second list, so a new hotkey
+names itself on both hosts. A second `SIM_PAIRS` row pins both Rust sites to
+the two notice kernels; the JavaScript half is pinned by
+`play_hotkeys::tests::the_page_shows_hotkey_notices`. The native window's
+`F12` panel (every hotkey with its current state) has no page twin beyond
+that list: the page's own checkboxes already show the state.
+
 ### Controllers
 
 A gamepad binds buttons to buttons by position, so the Key Config table never
@@ -1593,13 +1673,52 @@ screens.
 | script-arc follow (`FUN_801DB510` / `FUN_801DAA50`) | `World::script_arc_follow_camera` |
 | scene viewport | Native hands the renderer its stage rect (`Renderer::set_scene_viewport`), so 3D draws inside the integer-scaled 4:3 stage as on the page's canvas. |
 
+<a id="the-title-continue-screen"></a>
+
+### The title Continue screen
+
+Continue is hosted the same way on both play hosts: one
+`legaia_engine_session::ContinueScreen`, opened over the host's two card
+ports when the title picks the row, stepped once per tick on the raw pad
+edge. The step owns every rule the screen has - the refusal notice takes the
+pad first, the port read is answered off the ports, the block grid filters
+the edge (an empty-block Load is swallowed) before the session ticks, and a
+confirmed block is read off its card (one that will not read raises
+`CardReadFailed` over a fresh screen). It reports `Running`, `BackedOut` or
+`Loaded` with the frame's blip.
+
+The shapes it replaced, each a one-host reading:
+
+- **Two frame orders.** The window ran the grid filter before the refusal
+  notice, so the press that dismissed a notice also moved the grid; the
+  page's sub-screen took the notice first.
+- **Blips on one host.** The window's standalone screen fired no menu cues
+  (its cue pass ran only under the pause menu); the page's sub-screen did.
+- **Two hosting shapes.** The window held a bare `SaveSelectSession` beside
+  its pause-menu `save_flow`; the page stood a pause menu up (`PlayMenu` with
+  a Load sub-session) that the title opened and its close tore down.
+
+What stays a host's: the ports it mounts (the window's `memcard1.mcr` and
+`--card`, the page's card rack), sounding the blip, and the landing - the
+window resumes through `BootSession::resume_save` and hands the score to the
+scene, the page parks the save for `play_resume_save`. The page's draws are
+`boot_continue_draws_json` (the shared save-select composition over the
+screen's flow) under `boot_title_backdrop_draws_json`.
+
+Tests: `engine-session` unit tests (`title_continue::tests`), the window's
+`native_front_end::boot_ui_continue_loads_the_port_two_card` (title ->
+Continue -> a library card's block 1 in port 2 -> its scene, through the
+window's frame path), the soak's `front_end_continue_lands_a_library_save`,
+and the page's `menu_parity` / `title_backdrop_parity` Continue runs.
+
 <a id="the-boot-options-screen-is-the-pause-menus-on-both-hosts"></a>
 
 ### Menus, shops and saves
 
 | Decision | Kernel |
 |---|---|
-| title Continue | `SaveSelectSession::title_continue`: retail's title card manager, no pause-menu gate (window: `BootUiState::SaveSelect`; page: `play_menu_open_title_continue`, a title-opened save sub-screen). The page once opened the pause menu's Load row, whose field gates could bounce a Continue back to the title |
+| boot front end | `engine-session::front_end::FrontEnd` (logos, `ModeSeat::boot_handoff`, title tick and row counter, attract hand-off and skip edge); per host: the movie lane (`AttractLane`), the rack scan, the outcome's action. The soak harness steps the same object headless ([`soak-harness.md`](soak-harness.md#front-end-runs)) |
+| title Continue | `engine-session::title_continue::ContinueScreen`: retail's title card manager, no pause-menu gate, with its own `SaveScreenFlow` and frame order (refusal pre-empt, port read, grid filter, tick, block read); the rack and the Continue scan (`card_port_rack`, `card_port_blocks`, `rack_has_save`) beside it. Per host: the ports, the blip, the landing (window `BootUiState::Continue`; page `boot_continue_step`). See [below](#the-title-continue-screen) |
 | pause-menu press and open | `BootSession::press_field_menu`, `World::field_menu_open_allowed` (dialogue engagement, narration, title card, locks, shop), `open_field_menu`, `close_field_menu` |
 | pause-menu stack | `field_menu_dispatch::tick_root_list`, `tick_open_subsession`, `finish_subsession`; per host: rack I/O, key table, options store (`SubsessionHandoff`) |
 | pause-menu draw assembly | `engine-ui::pause_menu` (`engine-ui/tests/pause_menu_compose.rs`); the session-to-view projection `engine-screens::pause_screens` |
@@ -1611,7 +1730,7 @@ screens.
 | save-select | `engine-screens::pause_screens::save_select_overlay_draws` over `SaveScreenFlow::overlay_model` and `engine-ui`'s `save_select_overlay_draws`, `title_band_sprites` + `TitleBandState` (page backdrop: `boot_title_backdrop_draws_json`) |
 | title card | `engine-screens::title_screens::title_band_state` (fade ramp, prompt, menu rows) and `title_menu_glyph_draws` (the no-title-art rows and their anchor); a host answers only which atlas is resident |
 | Options rows without a pause menu | the page's Reduce flashing box and Music / SFX sliders (`set_reduce_flashing`, `set_bgm_volume`, `set_sfx_volume`) are the native launcher's rows over the same `OptionsState` fields and store |
-| Load / New Game | `engine-scene-host::resume` (`resume_card_load`, `enter_new_game`), `TitleSession::for_front_end`, `SceneHost::current_resume` ([`save-screen.md`](../subsystems/save-screen.md#where-a-load-lands-and-when-continue-is-live)) |
+| Load / New Game | `engine-scene-host::resume` (`resume_card_load`, `enter_new_game`), `engine-session::start_new_game_on` (the slate, the score hand-off and the landing check; a host hands in only its scene entry through `NewGameHost`), `TitleSession::for_front_end`, `SceneHost::current_resume` ([`save-screen.md`](../subsystems/save-screen.md#where-a-load-lands-and-when-continue-is-live)) |
 | card write | `engine-menu-runtime::card_write::write_save_into_card`, `MountedCard::persist` |
 | menu blips | `menu_cues::menu_edge_blip`; a blip is a one-cue batch (`SfxFireBatch::immediate`) and ages no other cue |
 | name entry | `NameEntryInput::from_pad_edge`; view `engine-screens::field_screens::name_entry_view` (`NameEntry::cursor_cells`, `name_entry::caret_on`) |

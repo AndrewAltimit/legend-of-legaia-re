@@ -40,6 +40,45 @@ pub(super) fn reverse_z(mvp: glam::Mat4) -> glam::Mat4 {
     ) * mvp
 }
 
+/// The depth [`pin_to_far_bucket`] seats a draw on, after the central
+/// [`reverse_z`] fold: above the reversed-Z clear `0.0` the `Greater`
+/// compares reject, and under the depth `PSX_NEAR / w` of anything the
+/// battle projection (`psx_projection`, near `4`) draws nearer than some
+/// `4e6` - several times every battle frame's extent.
+///
+/// One constant rather than the field ground's depth-scaled far bucket
+/// (`FIELD_FAR_BUCKET_DEPTH_SCALE` in the mesh shader): reversed-Z depth
+/// falls as `near / w`, so a scaled slice deep enough to sit behind a far
+/// backdrop wall from the grid's nearest cell is a difference the `f32`
+/// fold rounds away, and the grid fails the clear test. The grid is one flat
+/// layer, so it has no order of its own to keep.
+pub const FAR_BUCKET_DEPTH: f32 = 1.0e-6;
+
+/// Seat a whole draw in the far bucket, the way retail links a primitive
+/// into the ordering table's far end: every fragment takes the depth
+/// [`FAR_BUCKET_DEPTH`], so the draw still covers the cleared background but
+/// anything else drawn on the frame, in either order, lands in front of it.
+/// `x`, `y` and `w` - the screen position, the perspective divide and every
+/// `clip_pos.w` read - are untouched.
+///
+/// The battle ground grid is the one user: `FUN_801D02C0` links every one of
+/// its quads into the single entry `0x3FEC >> otshift`
+/// (`ori t3,zero,0x3fec` / `srav` / `sll` / `add` at `0x801D02D4..0x801D02E0`),
+/// so retail paints it first and never lets it hide what stands in front of
+/// it or reaches below the floor plane: PROT 0946's Call Wave rays fan out
+/// round Zeto over the floor, where a depth-tested grid hid every ray
+/// pointing down.
+pub fn pin_to_far_bucket(mvp: glam::Mat4) -> glam::Mat4 {
+    // Forward clip `z = (1 - d) * w`; `reverse_z`'s `z' = w - z` is then
+    // `d * w`, a product of `w` alone, so no cancellation reaches it.
+    glam::Mat4::from_cols(
+        glam::Vec4::new(1.0, 0.0, 0.0, 0.0),
+        glam::Vec4::new(0.0, 1.0, 0.0, 0.0),
+        glam::Vec4::new(0.0, 0.0, 0.0, 0.0),
+        glam::Vec4::new(0.0, 0.0, 1.0 - FAR_BUCKET_DEPTH, 1.0),
+    ) * mvp
+}
+
 /// Fold a constant screen-row offset into a clip matrix: `rows` PSX stage
 /// rows down the screen (negative is up), `240` rows to the NDC span of `2`.
 ///
@@ -111,6 +150,42 @@ mod reverse_z_tests {
         let near_pt = rz * glam::Vec4::new(0.0, 0.0, -10.0, 1.0);
         let far_pt = rz * glam::Vec4::new(0.0, 0.0, -1000.0, 1.0);
         assert!(near_pt.z / near_pt.w > far_pt.z / far_pt.w);
+    }
+
+    /// A far-bucket draw sits on [`FAR_BUCKET_DEPTH`] at every view depth -
+    /// behind a far backdrop wall, still in front of the clear - with its
+    /// screen position and `w` unchanged, under the folded `f32` matrix the
+    /// renderer uploads (a turned, translated camera on the battle frame's
+    /// `PSX_NEAR = 4` projection, whose depth at a view depth `w` is about
+    /// `4 / w`: the pin stands behind everything nearer than some `4e6`).
+    #[test]
+    fn a_far_bucket_draw_sits_behind_the_scene() {
+        let near = 4.0f32;
+        let proj = glam::Mat4::perspective_rh(1.0, 4.0 / 3.0, near, 1_000_000.0);
+        let view = glam::Mat4::look_at_rh(
+            glam::Vec3::new(1234.5, 2900.0, -5600.25),
+            glam::Vec3::new(37.0, 0.0, 1.0),
+            glam::Vec3::Y,
+        );
+        let plain = reverse_z(proj * view);
+        let pinned = reverse_z(pin_to_far_bucket(proj * view));
+        let wall = plain * glam::Vec4::new(30_000.0, 4_000.0, 60_000.0, 1.0);
+        for p in [
+            [0.0f32, 0.0, 0.0],
+            [-9000.0, 0.0, 9000.0],
+            [3000.0, 0.0, -4000.0],
+        ] {
+            let p = glam::Vec4::new(p[0], p[1], p[2], 1.0);
+            let (a, b) = (plain * p, pinned * p);
+            let depth = b.z / b.w;
+            assert!(depth > DEPTH_CLEAR, "near {near} {p}");
+            assert!(
+                (depth - FAR_BUCKET_DEPTH).abs() < 1e-7,
+                "near {near} {p}: {depth}"
+            );
+            assert!(depth < wall.z / wall.w, "near {near} {p}");
+            assert_eq!((a.x, a.y, a.w), (b.x, b.y, b.w));
+        }
     }
 
     /// The curvature table's build offset moves every vertex the same number

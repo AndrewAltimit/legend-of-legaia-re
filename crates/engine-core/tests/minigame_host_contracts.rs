@@ -93,6 +93,21 @@ fn the_baka_exit_runs_the_mode24_return_warp() {
     assert!(world.minigames.scene_backup.is_none(), "backup consumed");
 }
 
+/// The duel routes the CD input into the reverb send for its whole mode
+/// (`FUN_801CF00C` raises `SPUCNT` bit 2, the shared exit clears it), so the
+/// announcer lines ring through Studio C and nothing outside does.
+#[test]
+fn the_duel_routes_the_cd_input_into_the_reverb_send() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    assert!(!world.cd_input_reverb());
+    world.enter_baka_fighter(baka_fight_for_test());
+    assert!(world.cd_input_reverb());
+    world.exit_baka_fighter();
+    assert_eq!(world.mode, SceneMode::Field);
+    assert!(!world.cd_input_reverb());
+}
+
 fn baka_fight_for_test() -> legaia_engine_minigames::baka_fighter::BakaFight {
     use legaia_engine_minigames::baka_fighter::{BakaFight, FighterConfig};
     let cfg = |roster_id: usize| FighterConfig {
@@ -144,7 +159,9 @@ fn a_new_machine_seeds_its_display_strips_from_the_permuted_symbol_strips() {
 
 #[test]
 fn the_time_meter_climbs_through_selection_and_drains_once_it_ends() {
-    use legaia_engine_menus::muscle_dome_session::{MuscleCard, MuscleDomeSession, MusclePhase};
+    use legaia_engine_battle_menus::muscle_dome_session::{
+        MuscleCard, MuscleDomeSession, MusclePhase,
+    };
     use legaia_engine_minigames::muscle_dome::TIME_METER_MAX;
     let hand = || {
         [0u8, 1, 2, 3].map(|i| MuscleCard {

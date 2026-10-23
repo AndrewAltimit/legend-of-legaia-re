@@ -82,6 +82,10 @@ const BODY_PACED: [u32; 4] = [910, 911, 912, 913];
 
 /// Modules whose fades a hand port already spawns.
 const FADES_PORTED_BY_HAND: [u32; 3] = [905, 954, 966];
+/// Modules whose message-bar raise a hand port already makes: PROT 0940
+/// (Glare's caption, raised as the roll resolves), 0941 (the enemy Steal's
+/// composed line) and 0954 (Fatal Decision, ported whole).
+const MESSAGE_BARS_PORTED_BY_HAND: [u32; 3] = [940, 941, 954];
 /// Modules whose CLUT copy a hand port already issues.
 const VRAM_MOVES_PORTED_BY_HAND: [u32; 1] = [903];
 /// Modules whose tick ports (or chain-body tables) store the stage byte
@@ -344,6 +348,30 @@ impl World {
                         f.slot = None;
                     }
                 }
+                // A message bar raised with a line of the module's own image
+                // (`0x800774AC = line; FUN_801D8DE8(0x5B, 0)`), on the pass
+                // that leaves the arm the way the raise sits on: Call Wave's
+                // arm 0 raises it on its way into arm 1, while Big Wave
+                // leaves the same arm for arm 4 without it. A raise whose way
+                // out did not fold, or one of several on the same way out
+                // (a branch the decode cannot tell apart), is left alone.
+                PresentationCall::HudElement {
+                    element: Some(legaia_overlay_images::cast_presentation::MESSAGE_BAR_ELEMENT),
+                    mode: Some(0),
+                    text: Some(text),
+                    exit: Some(exit),
+                } if passed
+                    && paced
+                    && exit.from_arm(phase_in) == phase_out
+                    && !MESSAGE_BARS_PORTED_BY_HAND.contains(&entry)
+                    && sites
+                        .iter()
+                        .filter(|o| message_bar_exit(&o.call) == Some(exit))
+                        .count()
+                        == 1 =>
+                {
+                    self.raise_module_message_bar(entry, text);
+                }
                 PresentationCall::VramMove { rect, dst }
                     if once && !VRAM_MOVES_PORTED_BY_HAND.contains(&entry) =>
                 {
@@ -374,6 +402,22 @@ impl World {
                         ) =>
                 {
                     self.casting.module_ctx_278 = v;
+                    // Big Wave's branch halves the caster's animation rate
+                    // `+0x21D` beside the store (`lbu; srl 1; sb` at
+                    // `0x801F6BFC..0x801F6C08`): Zeto sways at half speed
+                    // through the band, until the Done arm's restore
+                    // (`FUN_801E93C8`).
+                    if entry == 946
+                        && s.va == legaia_engine_cast::cast_module_camera::WAVE_BIG_STAGE_STORE
+                        && passed
+                        && let Some(a) = self
+                            .actors
+                            .get_mut(usize::from(self.battle_ctx.active_actor))
+                    {
+                        a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(
+                            a.battle.anim_rate.get() >> 1,
+                        );
+                    }
                 }
                 PresentationCall::ArmedWash { rgb: Some(rgb) } if each => {
                     self.casting.module_pres.armed_wash = Some(rgb);
@@ -451,6 +495,53 @@ impl World {
             ));
         }
         out
+    }
+}
+
+/// The way out of its arm a message-bar raise sits on.
+fn message_bar_exit(
+    call: &PresentationCall,
+) -> Option<legaia_overlay_images::cast_presentation::PhaseExit> {
+    match *call {
+        PresentationCall::HudElement {
+            element: Some(legaia_overlay_images::cast_presentation::MESSAGE_BAR_ELEMENT),
+            mode: Some(0),
+            exit,
+            ..
+        } => exit,
+        _ => None,
+    }
+}
+
+impl World {
+    /// Raise the message bar (HUD element `0x5B`) with the line at `va` in
+    /// module `entry`'s resident image, its name escapes spliced with the
+    /// roster's names, under the acting seat. The bar spawns at seat A and
+    /// glides to seat B ([`crate::world::BattleState::message_bar_glide`]).
+    /// A line that is empty in the image is a buffer the module composes at
+    /// run time, which this does not model; nothing is raised for it.
+    ///
+    /// PORT: FUN_801D8DE8 (element `0x5B` raised by a cast module arm, mode `0`)
+    pub(crate) fn raise_module_message_bar(&mut self, entry: u32, va: u32) {
+        let Some(raw) = self
+            .casting
+            .effect_pool
+            .as_ref()
+            .and_then(|p| p.module(entry))
+            .and_then(|m| crate::world::battle::monster_ai::module_line(&m.bytes, va))
+            .filter(|l| !l.is_empty())
+        else {
+            return;
+        };
+        let text = self.expand_name_escapes(&raw);
+        self.battle_ctx.message_id = legaia_overlay_images::cast_presentation::MESSAGE_BAR_ELEMENT;
+        self.battle.steal_caption = Some(legaia_engine_battle::battle_steal::StealCaption {
+            text,
+            owner: self.battle_ctx.active_actor,
+        });
+        self.battle.message_bar_glide = Some(
+            legaia_engine_battle_vm::battle_commit_log::LogLaunch::new(false),
+        );
     }
 }
 

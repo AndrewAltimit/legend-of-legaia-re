@@ -38,7 +38,10 @@ const WRAPPERS: [u32; 3] = [0x801D_D0AC, 0x801D_D4B0, 0x801D_D6B4];
 /// `(routine VA, owning PROT entry, `jal`s into a spawn primitive)` - the
 /// **DATA** and **PORT (spawn-only)** rows of
 /// `docs/subsystems/cast-module.md`'s verdict table, plus PROT 0912's
-/// stager `0x801F835C`, which the table grades PORT.
+/// stager `0x801F835C`. The table grades that one PORT, not spawn-only: it
+/// also stores six randomised fields into each shard it seats and writes the
+/// fade template at `0x801C9070` (arm 6). Only its spawn-call shape - the
+/// `jal` count and the absence of a damage wrapper - is checked here.
 ///
 /// The count is `jal` sites, not records: PROT 0915's stager reaches one
 /// shared call from two arms with two different record pointers.
@@ -184,7 +187,11 @@ fn every_data_row_is_a_spawn_stager_the_pool_covers() {
         return;
     };
 
-    assert_eq!(DATA_ROWS.len(), 46, "the doc's spawn-only stager count");
+    assert_eq!(
+        DATA_ROWS.len(),
+        46,
+        "the doc's DATA / spawn-only rows plus PROT 0912's stager"
+    );
     let mut pool = CastEffectPool::new();
     let mut total_spawn = 0usize;
 

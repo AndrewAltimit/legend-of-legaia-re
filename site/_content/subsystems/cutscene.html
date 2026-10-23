@@ -4,7 +4,7 @@
   <p class="lede">Legaia has two kinds of cutscene. The six pre-rendered movies on the disc are STR files - the PlayStation's standard movie container, video frames for the MDEC video-decompressor chip interleaved with XA audio the CD drive plays by itself. The famous creation-myth opening is not one of them: it is the ordinary field engine running scripts with the controller ignored. This page covers how a movie is started, streamed and decoded, then how the scripted opening is built; the register-level detail lives on <a href="cutscene-internals.html">cutscene internals</a>.</p>
 </header>
 
-<section class="doc-section" id="at-a-glance">
+<section class="doc-section" id="at-a-glance" data-doc="at-a-glance,contents">
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Movie player</dt><dd>PROT 0970 (<code>cutscene_str</code>), an overlay loaded at slot A <code>0x801CE818</code>; game modes 26 (<code>StrInit</code>) and 27 (<code>StrMode</code>)</dd>
@@ -61,7 +61,7 @@
   </figure>
 </section>
 
-<section class="doc-section" id="what-is-this">
+<section class="doc-section" id="what-is-this" data-doc="game-modes">
   <h2>Two kinds of cutscene</h2>
   <table>
     <thead><tr><th>Kind</th><th>Examples</th><th>Runs in</th><th>Skippable</th></tr></thead>
@@ -74,7 +74,7 @@
   <p>Function names of the form <code>FUN_80xxxxxx</code> are RAM addresses of routines traced in the original executable. The movie player is an <em>overlay</em> - code streamed from the disc into a shared RAM window on demand - which is why its addresses sit in the <code>0x801C0000+</code> band alongside the field, battle and menu overlays.</p>
 </section>
 
-<section class="doc-section" id="fmv-trigger-op">
+<section class="doc-section" id="fmv-trigger-op" data-doc="field-vm-fmv-trigger-op">
   <h2>How a movie starts</h2>
   <p>Every route into a movie ends the same way: two globals are written, and on the next frame the main mode dispatcher boots mode 26. Scene scripts do it with a 7-byte field-VM instruction; the title screen does it from its idle countdown.</p>
   <table class="layout">
@@ -106,7 +106,7 @@
   <p>Slots 9 and above name dev files (<code>MOV15.STR</code>, <code>MV1A.STR</code>, <code>\DATA\MOV.STR</code>) that are not on the disc. Retail writes the return-scene globals whether or not the picture played, so the port moves the player on even when a movie is skipped or cannot be decoded.</p>
 </section>
 
-<section class="doc-section" id="retail-playback">
+<section class="doc-section" id="retail-playback" data-doc="retail-playback-engine-str-overlay--scus-st-streaming-library,strmdec-fmv-overlay-residency">
   <h2>Playing a movie: the retail path</h2>
   <ol class="steps">
     <li><b>Mode 26</b><span>Pick the 32-byte slot <code>0x801D0A6C + fmv_id &times; 0x20</code>, clear the letterbox bands, select the Iki decoder (<code>FUN_801CEA3C</code>).</span></li>
@@ -116,10 +116,10 @@
     <li><b>Decode</b><span>The Iki bitstream becomes MDEC codes, DMA'd to the chip; each 32-px strip is blitted to VRAM as it comes out.</span></li>
     <li><b>Exit</b><span>End of stream, or a pad press when <code>fmv_id == 0</code>: mute the CD mix, pause, write the return scene.</span></li>
   </ol>
-  <p>Only the intro is skippable - the mid-game movies ignore the pad. Every retail movie takes the Iki path; the overlay also carries an STRv2/v3 decoder that only the dev slots select. The demux state machine, ring layout and MDEC feed are on <a href="cutscene-internals.html#demux">cutscene internals</a>.</p>
+  <p>Only the intro is skippable - the mid-game movies ignore the pad. Every retail movie takes the Iki path; the overlay also carries an STRv2/v3 decoder that only the dev slots select. The demux state machine, ring layout and MDEC feed are on <a href="cutscene-internals.html#demux">cutscene internals</a>. While a movie plays, RAM also holds the CD library&rsquo;s cache of the <code>MOV</code> directory, the overlay&rsquo;s path-string table (including the dev paths that do not ship) and its return-scene label table.</p>
 </section>
 
-<section class="doc-section" id="str-sector">
+<section class="doc-section" id="str-sector" data-doc="str-sector-format,mdec-decoder-iki-bitstream">
   <h2>What is on the disc: STR sectors and the Iki frame</h2>
   <p>A movie is a run of 2048-byte Mode 2 Form 1 sectors, each tagged with the frame it belongs to and its position within that frame. Concatenating the payloads of one frame's sectors in arrival order gives the demuxed bitstream.</p>
   <div class="byte-map">
@@ -148,7 +148,7 @@
   <p>Formulas for every step are on <a href="cutscene-internals.html#mdec-steps">cutscene internals</a>; the port's decoder is <code>legaia_mdec::MdecDecoder</code>.</p>
 </section>
 
-<section class="doc-section" id="xa">
+<section class="doc-section" id="xa" data-doc="xa-audio,xa-channel-selection">
   <h2>XA audio and the sync clock</h2>
   <p>The soundtrack never touches the CPU in retail: the drive decodes the XA-ADPCM sectors as they stream past and feeds the SPU. The port decodes them itself and uses the result as the clock the picture follows.</p>
   <ul class="bullets">
@@ -169,7 +169,7 @@
   <p>The clip-side arithmetic (slot/channel mapping, the duration scale, the end-LBA clamp) is ported in <code>legaia_engine_shell::xa_clip</code>; the CD-control state machines stay hardware-side. Per-channel content extracts with <code>xa demux-disc-all</code>; the cue census lives on <a href="audio.html">audio</a>.</p>
 </section>
 
-<section class="doc-section" id="playback">
+<section class="doc-section" id="playback" data-doc="playback-loop-play-str,cli-reference,cdname--str-override-map">
   <h2>The engine player</h2>
   <p><code>legaia-engine play-str</code> is the from-scratch player on its own. It decodes the video (and, from a disc image, the audio) up front, stages the PCM on the first redraw so cursor and picture start together, and on each redraw shows the frame due at the current position. The movie plays at its real rate, not the display refresh rate. Inside a game session <code>play-window</code> uses the same <code>cutscene_av</code> module: it pauses the scene BGM, suspends world ticks, shows one frame per redraw, then calls <code>finish_cutscene()</code>.</p>
   <pre class="cli"><code># Frame inventory + detected frame rate
@@ -183,7 +183,7 @@ legaia-engine play-str MOV/MV1.STR --disc "Legend of Legaia (USA).bin"</code></p
   <p id="cutscene-map">A TOML map (<code>legaia-engine config dump-cutscene-map</code>, then <code>--cutscene-map</code> on <code>play</code> / <code>play-window</code>) overrides the scene-to-movie resolver per scene; explicit entries win, missing keys fall through to the disc-decoded table.</p>
 </section>
 
-<section class="doc-section" id="opdeene">
+<section class="doc-section" id="opdeene" data-doc="in-engine-3d-opening-the-five-scene-new-game-chain">
   <h2>The 3D opening: five scenes, zero input</h2>
   <p>Start a new game and the creation myth scrolls over a rendered grove, then the Seru, then the Mist, then a fly-in to Rim Elm. It looks like a movie; it is field scenes in the ordinary field mode, each carrying a <strong>timeline record</strong> - a field-VM script that stages the camera, pokes the background actors and ends with a scene change. There is no dedicated cutscene executor.</p>
   <table>
@@ -200,26 +200,27 @@ legaia-engine play-str MOV/MV1.STR --disc "Legend of Legaia (USA).bin"</code></p
   <h3 id="narration-format">The narration crawl</h3>
   <ul class="bullets">
     <li><strong>Text.</strong> Inline ASCII pages inside the timeline record, each framed <code>0x1F &hellip; 0x00</code>, introduced by <code>CC F8 80 N</code> (<code>N</code> = page count). A sibling op <code>CC F8 89</code> shows a static title card while the script continues. Parser <code>legaia_scene_formats::cutscene_text</code>; no text is committed.</li>
-    <li><strong>Presentation.</strong> A bottom-up roller actor (handler <code>FUN_80037174</code>) spawned as a child, so the camera cuts authored between crawl blocks play <em>under</em> the text. Retail's per-scene geometry (window top, visible lines, scroll cadence) comes from a 10-byte config op and is tabulated on <a href="cutscene-internals.html#roller">internals</a>.</li>
-    <li><strong>&ldquo;It was the Seru.&rdquo;</strong> is not text at all: a pre-rendered 112&times;32 TIM in the <code>opdeene</code> geometry pack (PROT 0749), blitted as a screen-space quad.</li>
+    <li><strong>Presentation.</strong> A bottom-up roller actor (handler <code>FUN_80037174</code>) spawned as a child, so the camera cuts authored between crawl blocks play <em>under</em> the text. Retail's per-scene geometry (window top, visible lines, scroll cadence) comes from a 10-byte config op and is tabulated on <a href="cutscene-internals.html#roller">internals</a>. Lines are centred and enter and leave a clip window a pixel at a time: the roller links a draw-area pair after its lines, which runs before them, and a second pair restoring the full area ahead of them.</li>
+    <li><strong>&ldquo;It was the Seru.&rdquo;</strong> is not text at all: a pre-rendered 112&times;32 image in the <code>opdeene</code> geometry pack (PROT 0749). Two move-VM stager parts draw it, spawned as children down a chain the opening timeline installs: both camera-locked sprites over the same rect, one the face and one a shadow a pixel down-right in a different blend mode, each starting fully cued to black and ramping to full colour - the fade-in. A cold-boot capture holds both nodes on the actor lists and their two packets in the ordering table, shadow first. The engine spawns and draws the same two parts (<code>engine-effects::effect_sprite_arm</code>).</li>
     <li><strong>Pacing.</strong> Retail counts every wait in display frames at 60 Hz, through the adaptive frame-skip factor: a logic tick that spans two or three display frames credits two or three. One engine tick is one vsync, and the script's frame delta is the game frame's length on the vsyncs that are game frames and zero between them, so a wait's sum moves exactly as retail's does (<a href="cutscene-internals.html#pacing">the wait law</a>).</li>
   </ul>
   <h3 id="timeline-execution-engine-port">Camera, actors and the engine port</h3>
-  <p>Camera Configure (op <code>0x45</code>) writes up to ten masked parameters - pitch, yaw, roll, an eye-space offset trio, the focus point and the GTE projection distance <code>H</code> - and either snaps or hands a mover actor a glide over <code>apply</code> display frames with one of four easing curves. The vignette actors are per-placement script channels the timeline halt-acquires and pokes beat by beat, waiting on a completion flag each raises. The port runs the record as a second field-VM context, merges each beat's parameters into a persistent camera state, spawns the channels (<code>field_channels</code>) and renders through the exact retail GTE model. The full model - record header, parameter table, mover curves, channel handshake and the engine's completion rules - is on <a href="cutscene-internals.html#timeline">cutscene internals</a>.</p>
+  <p>Camera Configure (op <code>0x45</code>) writes up to ten masked parameters - pitch, yaw, roll, an eye-space offset trio, the focus point and the GTE projection distance <code>H</code> - and either snaps or hands a mover actor a glide over <code>apply</code> display frames with one of four easing curves.
+  The vignette actors are per-placement script channels the timeline halt-acquires and pokes beat by beat, waiting on a completion flag each raises. The port runs the record as a second field-VM context, merges each beat's parameters into a persistent camera state, spawns the channels (<code>field_channels</code>) and renders through the exact retail GTE model. The full model - record header, parameter table, mover curves, channel handshake and the engine's completion rules - is on <a href="cutscene-internals.html#timeline">cutscene internals</a>.</p>
   <h3 id="color-fade">Fades and the gold grade</h3>
   <ul class="bullets">
     <li><strong>Screen fade</strong> (op <code>0x4C 0x12</code>): a global multiply tint, optionally ramped over N frames. Every scene's entry script arms an instant black then a 68-frame ramp to neutral - the fade-in that opens the prologue. It darkens the 3D scene only; the crawl stays white. Engine <code>fade::SceneTintRamp</code>.</li>
     <li><strong>Effect colour</strong> (op <code>0x34</code> sub-0): a separate ramp on the effect layer, driven in the crawl gaps. It is <em>not</em> a screen fade - the capture holds the lit tableau across it.</li>
-    <li id="sepia-grade"><strong>Sepia grade.</strong> <code>opdeene</code> / <code>opstati</code> / <code>opurud</code> render gold because every uploaded palette entry is rewritten <code>L = max(r,g,b) &rarr; (L, L&minus;1, L&gt;&gt;1)</code> at load - a palette-space luminance collapse, not a per-frame tint and not a depth cue. The engine applies the same law in its mesh shaders (<code>Renderer::set_palette_grade</code>), pixel-matched on the villager tableau. Detail on <a href="cutscene-internals.html#grade">internals</a>.</li>
+    <li id="sepia-grade"><strong>Sepia grade.</strong> <code>opdeene</code> / <code>opstati</code> / <code>opurud</code> render gold because every uploaded palette entry is rewritten <code>L = max(r,g,b) &rarr; (L, L&minus;1, L&gt;&gt;1)</code> at load - a palette-space luminance collapse, not a per-frame tint and not a depth cue. The engine applies the same law in its mesh shaders (<code>Renderer::set_palette_grade</code>), pixel-matched on the villager tableau. A packet built at draw time keeps its colour, because it is made after the rewrite and outside the resident meshes it walks: the caption sprites above are such packets, so both hosts&rsquo; shaders skip the grade for them. Detail on <a href="cutscene-internals.html#grade">internals</a>.</li>
   </ul>
 </section>
 
-<section class="doc-section" id="battle-intro">
+<section class="doc-section" id="battle-intro" data-doc="script-cutscene-helpers-overlay_cutscene_dialogue">
   <h2>Battle intro and script helpers</h2>
   <p>The shatter or swirl before a fight is a third overlay, <strong>PROT 0979</strong>, sharing the movie player's slot. Its init picks a style from the battle flags byte, the formation's first monster id and (two arms) the scene index - style 2 is the ordinary shatter, 3 and 4 are reached by a handful of formations - and its per-frame tick owns the whole frame until the battle scene takes over. Port <code>render-kernels::battle_intro_styles</code> + <code>render-kernels::battle_intro</code>. The scripted <code>op*</code> / <code>ed*</code> scenes also lean on five shared per-frame helpers in the dialogue overlay (party-leader swap, position tween, teardown, particle emitter, colour rotate); both are tabulated on <a href="cutscene-internals.html#battle-intro">internals</a>.</p>
 </section>
 
-<section class="doc-section" id="battle-transition">
+<section class="doc-section" id="battle-transition" data-doc="field-to-battle-transition-the-battle-intro-overlay">
   <h2>From field to battle: one overlay owns the frame</h2>
   <p>Between the encounter and the battle scene the screen shatters, scatters or swirls. For those two to four seconds nothing else is drawn: the transition overlay's init captures the field's last frame, switches the game to its own mode, and from then on every visible pixel is a transition primitive sampling that capture.</p>
   <figure class="diagram">
@@ -276,7 +277,13 @@ legaia-engine play-str MOV/MV1.STR --disc "Legend of Legaia (USA).bin"</code></p
   <p>Port: the state machine is the encounter session's transition phase (<code>battle_intro_transition::tick_transition</code>); the per-record simulation of each style and the packet builders are shared by both hosts. Two retail nuances are not carried, because the port's screen-overlay path has no depth-cue channel: a moving tile's opaque faces and the late swirl fade toward a far colour in retail and keep their packet colours in the port. Both sides drop a quad whose projected corners outrun the GPU polygon-size limit, which is what removes a swirl band flying into the lens.</p>
 </section>
 
-<section class="doc-section" id="see-also">
+<section class="doc-section" id="open-items" data-doc="open-items,provenance">
+  <h2>What is still open, and how it is known</h2>
+  <p>One port difference remains: the engine&rsquo;s cutscene camera arms its glides per component, where retail re-seeds all ten camera axes on every apply beat. The XA clip-table writer and the clip-cue census are settled on <a href="audio.html">audio</a>; the dev movie paths in the overlay do not ship on the disc.</p>
+  <p>Every claim here traces to the PROT 0970 disassembly, save-state captures taken during playback, and cold-boot probes of the opening; the per-claim source list (decoder formulas, the XA layout, the playback clock, the mode handlers) is on <a href="cutscene-internals.html#how-we-know">cutscene internals</a> and in the full doc.</p>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="see-also">
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>

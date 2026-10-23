@@ -422,7 +422,7 @@ arm (`0x80033548..0x800335A0`), last rule wins - ink `7`; the dim bit makes it
 `0` unless the list is parked (`_DAT_8007BB94 == 4`); class `0xA000` then makes
 it `5` **even over a dim row**. Ink `5` is the teal pen (the CLUT row staging
 value 5 selects). Port: `engine-menus::shop::shop_buy_row_ink` - not the casino
-renderer's `shop_stock_row_ink`, which has no class arm.
+renderer's `engine-ui::prize_exchange::prize_row_ink`, which has no class arm.
 
 #### The last rows come first
 
@@ -512,9 +512,9 @@ verdict, so the ink is not a priority list:
    -> `6`, the accent pen - **even when the stack is full**;
 4. `_DAT_800845A4 < price` -> `0`, grey - **even when the marker set `6`**.
 
-Ported with the geometry constants as
-`engine-menus::shop::{shop_stock_row_ink, shop_cursor_mode}`. The prize
-screen's `PrizeRow` is the caller of `shop_stock_row_ink`; the gold shop's buy
+Ported as `engine-ui::prize_exchange::prize_row_ink`, beside the prize
+screen's `PrizeRow` whose ink it resolves; the cursor word is
+`engine-menus::shop::shop_cursor_mode`. The gold shop's buy
 list inks its rows through `shop_buy_row_ink` (the `0x3000` / `0xA000` row-ink
 arm of `FUN_80032A44`) inside `legaia_engine_screens::gold_shop_screen`.
 

@@ -140,7 +140,7 @@ pub fn init_successor(mode: GameMode) -> Option<GameMode> {
 /// route: it writes `CONFIG INIT`, the debug menu, instead.
 ///
 /// The chain's last two steps are the title dispatcher's own NEW GAME store
-/// (`0x801DFC00`, `legaia_engine_menus::title_overlay`) and mode 2's hand-off.
+/// (`0x801DFC00`, `legaia_engine_title::title_overlay`) and mode 2's hand-off.
 pub const BOOT_MODE_CHAIN: &[ModeWordStore] = &[
     ModeWordStore {
         store_pc: 0x8001_D5B8,
@@ -357,8 +357,8 @@ impl ModeSeat {
     }
 
     /// Record the row the running title holds
-    /// (`legaia_engine_menus::title::TitleSession::row_counter`); the next title opens
-    /// there (`legaia_engine_menus::title::TitleSession::for_front_end_at`).
+    /// (`legaia_engine_title::title::TitleSession::row_counter`); the next title opens
+    /// there (`legaia_engine_title::title::TitleSession::for_front_end_at`).
     pub fn set_title_row(&mut self, row: u8) {
         self.title_row = row;
     }

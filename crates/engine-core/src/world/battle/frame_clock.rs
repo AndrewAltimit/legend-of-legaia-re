@@ -127,6 +127,51 @@ impl World {
         self.clock.battle_frame_step_seed = Some((step.max(1), state));
     }
 
+    /// Stretch the battle frame the current tick falls in to `vsyncs`,
+    /// keeping its id, so the next pass waits that long from the frame's
+    /// opening tick and runs with `vsyncs` as its step; the frame that pass
+    /// opens returns to the current step
+    /// (`World::settle_battle_frame_stretch`). One retail frame whose cost
+    /// ran a step past the rest, at a point the replay picks: retail's step
+    /// is the frame's measured cost (`FUN_80016B6C`), so a capture's clocks
+    /// can sit on a lattice the replay's fixed step never lands on. A no-op
+    /// on the per-vsync cadence, or while a stretch is pending.
+    pub fn stretch_battle_frame(&mut self, vsyncs: u8) {
+        if !self.toggles.battle_sm_frame_cadence || self.battle.frame_stretch.is_some() {
+            return;
+        }
+        let tick = self.clock.display_frames;
+        let clock = self.battle.frame_clock;
+        let start = tick - clock.ticks_into_frame(tick);
+        let id = clock.frame_of(tick);
+        self.battle.frame_clock.retime_frame(start, vsyncs);
+        self.battle.frame_stretch = Some((id, clock.step));
+        if let Some(cam) = self.battle.camera.as_mut() {
+            cam.set_frame_step(vsyncs);
+        }
+    }
+
+    /// Return a stretched clock ([`Self::stretch_battle_frame`]) to its
+    /// step once the pass after the stretched frame has run: that pass's
+    /// own frame takes the old step, under the same id.
+    pub(in crate::world) fn settle_battle_frame_stretch(&mut self) {
+        let Some((id, step)) = self.battle.frame_stretch else {
+            return;
+        };
+        let tick = self.clock.display_frames;
+        let clock = self.battle.frame_clock;
+        let now = clock.frame_of(tick);
+        if now <= id || self.battle.sm_pass_frame != Some(now) {
+            return;
+        }
+        let start = tick - clock.ticks_into_frame(tick);
+        self.battle.frame_clock.retime_frame(start, step);
+        self.battle.frame_stretch = None;
+        if let Some(cam) = self.battle.camera.as_mut() {
+            cam.set_frame_step(step);
+        }
+    }
+
     /// Install a seeded step while the action SM sits in its state, and the
     /// default outside it. Called after every action-SM step.
     pub(in crate::world) fn apply_battle_frame_step_seed(&mut self) {
@@ -242,6 +287,7 @@ impl World {
         if !self.toggles.battle_sm_frame_cadence {
             return true;
         }
+        self.settle_battle_frame_stretch();
         let frame = self.battle_frame_id();
         if self.battle.sm_pass_frame == Some(frame) {
             return false;
@@ -341,6 +387,12 @@ impl World {
         // has not seeded yet included (the draw stores every drawn actor's).
         self.seed_battle_seats();
         self.refresh_battle_body_pairs();
+        // The same draw sheds the burning bodies' puffs (the tail of
+        // `FUN_8004998C`, `0x8004A5FC..0x8004A8D8`) at the pose and ground
+        // the pass left, on the frame driver's accumulator `ctx[+0x328]`,
+        // which gained `step << 3` this frame (`0x8004713C..0x80047160`).
+        let vsyncs = self.battle.anim_pass_vsyncs;
+        self.emit_battle_burn_sprites(8 * u16::from(vsyncs));
     }
 
     /// The action state the battle camera frames. Retail's framing calls
@@ -457,7 +509,7 @@ mod tests {
     use super::*;
 
     /// On retail's cadence the action SM takes one pass a battle frame and
-    /// drains its timers by the step; on the staged-off per-vsync cadence
+    /// drains its timers by the step; on the per-vsync cadence
     /// it takes every tick and drains by one.
     #[test]
     fn the_sm_pass_runs_once_a_battle_frame_on_retail_cadence() {
@@ -479,6 +531,33 @@ mod tests {
         w.toggles.battle_sm_frame_cadence = false;
         assert!(w.battle_sm_pass_due() && w.battle_sm_pass_due());
         assert_eq!(w.battle_sm_frame_dt(), 1);
+    }
+
+    /// A stretched frame holds its pass `vsyncs` from the frame's opening
+    /// tick, that pass drains the stretched step, and the frame it opens
+    /// returns to the old step.
+    #[test]
+    fn a_stretched_battle_frame_spans_one_longer_pass() {
+        let mut w = World::new();
+        w.toggles.battle_sm_frame_cadence = true;
+        let mut passes = Vec::new();
+        for t in 10..22u64 {
+            w.clock.display_frames = t;
+            if t == 13 {
+                w.stretch_battle_frame(3);
+            }
+            if w.battle_sm_pass_due() {
+                passes.push((t, w.battle_sm_frame_dt()));
+            }
+        }
+        assert_eq!(
+            passes,
+            [(10, 2), (12, 2), (15, 3), (17, 2), (19, 2), (21, 2)]
+        );
+        assert!(w.battle.frame_stretch.is_none());
+        w.toggles.battle_sm_frame_cadence = false;
+        w.stretch_battle_frame(3);
+        assert!(w.battle.frame_stretch.is_none());
     }
 
     /// On retail's cadence the camera frames the state the last pass ran -

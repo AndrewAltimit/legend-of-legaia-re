@@ -3,6 +3,7 @@
 //! every detector armed.
 
 use super::*;
+use legaia_engine_save_state::WorldSaveState;
 
 // ---------------------------------------------------------------------------
 // Run
@@ -21,8 +22,19 @@ pub(super) struct RunStats {
     pub(super) battles: u32,
     pub(super) battles_won: u32,
     pub(super) wiped: bool,
+    /// Party wipes the run played on from: the return-to-title hold ran to
+    /// its resolve and the card's latest save was resumed (Continue).
+    pub(super) wipe_continues: u32,
+    /// `+mg` runs: door warps back into the minigame after it was left.
+    pub(super) minigame_revisits: u32,
     pub(super) scenes_entered: BTreeSet<String>,
     pub(super) modes: BTreeSet<String>,
+    /// Frames ticked in each world mode: whether a run that reached a mode
+    /// also stayed in it long enough to soak it.
+    pub(super) mode_frames: BTreeMap<String, u64>,
+    /// Battle surfaces a run reached: each command-session phase it saw,
+    /// and the item / spell / arts pickers it opened.
+    pub(super) battle_surfaces: BTreeSet<String>,
     pub(super) menu_opens: u32,
     pub(super) fmvs: u32,
     pub(super) save_commits: u32,
@@ -57,6 +69,9 @@ pub(super) struct Tunables {
     pub(super) digest_every: u64,
     pub(super) menu_close_frames: u64,
     pub(super) battle_frames: u64,
+    /// `LEGAIA_SOAK_BATTLE_HP_POOL`: the monster HP left above which a fight
+    /// still landing actions outlasts `battle_frames` without being endless.
+    pub(super) battle_hp_pool: u32,
     pub(super) queue_cap: usize,
     /// `LEGAIA_SOAK_TRACE=N`: print a state line every N frames (replay
     /// triage; 0 = off).
@@ -74,6 +89,75 @@ pub(super) struct Tunables {
     pub(super) host_arming: bool,
 }
 
+/// Frames between two re-entries of a `+mg` run's minigame, counted on the
+/// run clock; a re-entry waits for free roam in the venue.
+pub(super) const MINIGAME_REVISIT_EVERY: u64 = 300;
+
+/// Hold frames a party wipe may take before `wipe_continue` fires: the
+/// hold's own length is a short fixed fade (`GameOverSession::new`).
+const WIPE_HOLD_MAX_FRAMES: u32 = 600;
+
+/// After a party wipe: run the return-to-title hold both hosts run
+/// (`BootSession::take_party_wipe`, then `step_party_wipe_hold` until it
+/// resolves), check the world it leaves is no longer a battle, and resume the
+/// card save at `key` the way the title's Continue -> Load does. The title
+/// screen itself is the hosts' (`boot_ui`) and is not driven.
+fn continue_after_wipe(
+    session: &mut NativeSession,
+    card: &SoakCard,
+    key: (u8, u8),
+    opts: &FieldLiveOpts,
+) -> Result<(), (String, String)> {
+    let Some(mut hold) = session.take_party_wipe(false) else {
+        return Err((
+            "no-hold".into(),
+            "game over raised but the session handed back no wipe hold".into(),
+        ));
+    };
+    let resolved = (0..WIPE_HOLD_MAX_FRAMES).any(|_| session.step_party_wipe_hold(&mut hold));
+    let w = &session.host.world;
+    if !resolved {
+        return Err((
+            "hold-never-resolves".into(),
+            format!("wipe hold still running after {WIPE_HOLD_MAX_FRAMES} frames"),
+        ));
+    }
+    if w.game_over_hold || w.mode == SceneMode::Battle {
+        return Err((
+            "hold-left-battle".into(),
+            format!(
+                "after the hold resolved: mode {:?}, game_over_hold {}",
+                w.mode, w.game_over_hold
+            ),
+        ));
+    }
+    let (sf, resume) = card
+        .get(&key)
+        .cloned()
+        .expect("the latest save is on the card");
+    let landing = session.resume_save(sf, &resume.scene, opts);
+    if !matches!(
+        landing,
+        legaia_engine_scene_host::resume::ResumeLanding::SavedScene(_)
+    ) {
+        return Err((
+            "resume-landing".into(),
+            format!("Continue into {:?} landed {landing:?}", resume.scene),
+        ));
+    }
+    let w = &session.host.world;
+    if w.game_over || w.game_over_hold || w.mode == SceneMode::Battle {
+        return Err((
+            "resume-still-wiped".into(),
+            format!(
+                "after Continue: mode {:?}, game_over {}, game_over_hold {}",
+                w.mode, w.game_over, w.game_over_hold
+            ),
+        ));
+    }
+    Ok(())
+}
+
 /// Confirm presses a `control_starved` window must contain.
 const STARVE_MIN_PRESSES: usize = 60;
 
@@ -88,6 +172,7 @@ impl Tunables {
             digest_every: 15,
             menu_close_frames: 900,
             battle_frames: env_u64("LEGAIA_SOAK_BATTLE_FRAMES").unwrap_or(18_000),
+            battle_hp_pool: env_u64("LEGAIA_SOAK_BATTLE_HP_POOL").unwrap_or(20_000) as u32,
             queue_cap: 4096,
             trace_every: env_u64("LEGAIA_SOAK_TRACE").unwrap_or(0),
             min_distinct: env_u64("LEGAIA_SOAK_MIN_DISTINCT").unwrap_or(3) as usize,
@@ -336,8 +421,12 @@ pub(super) fn run_one(
     session.begin_new_game();
     // `<label>@<save>`: the run plays the scene with a library card save's
     // party, bag and story flags instead of the New Game party's.
+    // `title` / `title+continue[@save]`: the run enters through the boot
+    // front end instead of a scene (`front_end.rs`); a Continue's save is
+    // loaded off the card by the save-select, not seeded here.
+    let front_end = split_front_end(&spec.scene);
     let (label, save) = split_save(&spec.scene);
-    if let Some(save) = save {
+    if let Some(save) = save.filter(|_| front_end.is_none()) {
         match card_save(save) {
             Ok(sf) => session.host.world.load_full(sf),
             Err(e) => {
@@ -405,7 +494,7 @@ pub(super) fn run_one(
     // A label the scene set does not hold names no scene: entering it by
     // name loads an empty field (no MAN, no player) that then reads as a
     // softlock. Report it as the entry failure it is.
-    if !known_scenes.contains(scene) {
+    if front_end.is_none() && !known_scenes.contains(scene) {
         findings.push(mk(
             &session,
             "unknown_scene",
@@ -423,7 +512,13 @@ pub(super) fn run_one(
         };
     }
     let entered = catch_unwind(AssertUnwindSafe(|| {
-        let r = session.enter_scene_live(scene, &opts);
+        if let Some(route) = &front_end {
+            return enter_through_front_end(&mut session, route, &opts).map(|_| ());
+        }
+        let r = session
+            .enter_scene_live(scene, &opts)
+            .map(|_| ())
+            .map_err(|e| format!("{e:#}"));
         if let Some(id) = minigame {
             // The casino doors refuse a player with no coins (the cabinet
             // record's coin compare), so a run arriving through the door
@@ -473,11 +568,15 @@ pub(super) fn run_one(
     // A round-trip run starts with one save on the card, so the pause
     // menu's Load row (open in every scene; Save is per-scene) has a file
     // to resume - an empty card refuses before any commit.
+    // The card cell the run last wrote: what a Continue after a party wipe
+    // resumes.
+    let mut latest_save: Option<(u8, u8)> = None;
     if round_trip {
         let sf = session.host.world.save_full();
         let resume = session.current_resume();
         card.insert((0, 0), (sf, resume));
         refresh_rack(&mut session, &card);
+        latest_save = Some((0, 0));
     }
     let mut policy = Policy::new(run_seed(&spec.scene, spec.seed));
     let mut menu_rt = MenuRuntime::new(std::env::temp_dir().join("legaia-soak-menu"));
@@ -488,6 +587,10 @@ pub(super) fn run_one(
     let mut park: Option<(String, u64, u64)> = None;
     let mut menu_open_since: Option<u64> = None;
     let mut battle_since: Option<u64> = None;
+    // Endless battle: the frame a battle actor's HP / MP last moved, and what
+    // it moved to.
+    let mut battle_progress: Option<(u64, Vec<(u16, u16)>)> = None;
+    let mut battle_pressed = 0u64;
     let mut prev_mode = session.host.world.mode;
     let mut prev_scene = session.host.world.active_scene_label.clone();
     let mut reported: BTreeSet<String> = BTreeSet::new();
@@ -679,6 +782,12 @@ pub(super) fn run_one(
         // run reads back what an earlier Save wrote.
         if let Some(commit) = session.last_save_commit.take() {
             stats.save_commits += 1;
+            if matches!(
+                commit.kind,
+                legaia_engine_menus::save_screen::SaveCommitKind::Save
+            ) {
+                latest_save = Some((commit.port, commit.cell));
+            }
             let r = catch_unwind(AssertUnwindSafe(|| {
                 apply_save_commit(&mut session, &mut card, commit, &opts)
             }));
@@ -715,6 +824,24 @@ pub(super) fn run_one(
                 menu_rt.open_shop_menu(shop);
                 stats.shop_opens += 1;
             }
+        }
+        // `<venue>+mg<sub_id>`: back through the cabinet door every
+        // `MINIGAME_REVISIT_EVERY` frames the party stands free in the venue.
+        // The policy's random face buttons leave most minigames within a few
+        // hundred frames (a cancel in a hub, a lost round), so without this a
+        // minigame run spends most of its budget on the casino floor. Coins
+        // are topped up for the door's compare, as at entry.
+        if let Some(id) = minigame
+            && frame % MINIGAME_REVISIT_EVERY == MINIGAME_REVISIT_EVERY - 1
+            && session.host.world.mode == SceneMode::Field
+            && session.host.world.active_scene_label == scene
+            && round_trip_ready(&session)
+            && !menu_rt.is_open()
+        {
+            let w = &mut session.host.world;
+            w.minigames.casino_coins = w.minigames.casino_coins.max(500);
+            w.request_minigame_warp(id);
+            stats.minigame_revisits += 1;
         }
         // `<scene>+talk`: stand in front of the scene's next talk target
         // every `TALK_VISIT_EVERY` free field frames and press the action
@@ -810,12 +937,64 @@ pub(super) fn run_one(
             }
         }
 
-        let w = &session.host.world;
-        stats.modes.insert(format!("{:?}", w.mode));
-        if w.game_over || w.game_over_hold {
-            stats.wiped = true;
-            break;
+        let mode = format!("{:?}", session.host.world.mode);
+        *stats.mode_frames.entry(mode.clone()).or_default() += 1;
+        if session.host.world.mode == SceneMode::Battle {
+            let b = &session.host.world.battle;
+            if let Some(c) = b.command.as_ref() {
+                stats
+                    .battle_surfaces
+                    .insert(variant(&format!("{:?}", c.phase)));
+            }
+            for (open, name) in [
+                (b.item_menu.is_some(), "item-menu"),
+                (b.spell_menu.is_some(), "spell-menu"),
+                (b.arts_menu.is_some(), "arts-menu"),
+                (b.arts_input.is_some(), "arts-input"),
+            ] {
+                if open {
+                    stats.battle_surfaces.insert(name.into());
+                }
+            }
         }
+        stats.modes.insert(mode);
+        if session.host.world.game_over || session.host.world.game_over_hold {
+            stats.wiped = true;
+            // A wipe with a save on the card plays on the way a player does:
+            // the hosts' return-to-title hold, then Continue into that save.
+            // With no save there is nothing to continue from and the run ends.
+            let Some(key) = latest_save else { break };
+            let r = catch_unwind(AssertUnwindSafe(|| {
+                continue_after_wipe(&mut session, &card, key, &opts)
+            }));
+            match r {
+                Ok(Ok(())) => {
+                    stats.wipe_continues += 1;
+                    // What the wipe left that the resume did not reset is
+                    // checked on the next frame by the residue detector
+                    // (`prev_mode` is still Battle).
+                    continue;
+                }
+                Ok(Err((loc, detail))) => {
+                    findings.push(mk(&session, "wipe_continue", frame, loc, detail));
+                    break;
+                }
+                Err(_) => {
+                    let (loc, msg, frames) = LAST_PANIC
+                        .with(|p| p.borrow_mut().take())
+                        .unwrap_or_default();
+                    findings.push(mk(
+                        &session,
+                        "panic",
+                        frame,
+                        loc,
+                        format!("[wipe continue] {msg} | {frames}"),
+                    ));
+                    break;
+                }
+            }
+        }
+        let w = &session.host.world;
         // Effect residue: a battle-scoped effect (the `efect.dat` pool, a
         // move-FX / effect-script / summon scene-graph, the streak block)
         // still live on the first frame past a battle exit or a scene load.
@@ -885,21 +1064,67 @@ pub(super) fn run_one(
             }
             prev_mode = w.mode;
         }
-        // Battle that never ends.
+        // Battle that never ends: one battle outlasts the window. Two things
+        // move that line. A fight in which no HP / MP moved for the whole
+        // window is endless however it started. And a fight still landing
+        // actions in the window's last quarter, against a monster side
+        // holding more than the HP pool, is long, not endless: a random pad
+        // chips about 200 a round off Cort's 50000, and a round of three
+        // Gilium summons runs past 6000 frames. Below the pool a long fight
+        // stays a finding - a summon hitting for 1 reads as progress, and
+        // only the clock catches it.
         if w.mode == SceneMode::Battle {
             let since = *battle_since.get_or_insert(frame);
-            if frame - since > t.battle_frames {
+            let resources: Vec<(u16, u16)> = w
+                .actors
+                .iter()
+                .take(8)
+                .map(|a| (a.battle.hp, a.battle.mp))
+                .collect();
+            let (last, seen) = battle_progress.get_or_insert_with(|| (frame, resources.clone()));
+            if resources != *seen {
+                *last = frame;
+                *seen = resources;
+            }
+            let idle = frame - *last;
+            let pool: u32 = w
+                .actors
+                .iter()
+                .take(8)
+                .filter(|a| a.battle_monster_id.is_some())
+                .map(|a| u32::from(a.battle.hp))
+                .sum();
+            if pad != 0 {
+                battle_pressed = frame;
+            }
+            let long_fight = idle <= t.battle_frames / 4 && pool > t.battle_hp_pool;
+            let due = idle > t.battle_frames || (frame - since > t.battle_frames && !long_fight);
+            // A command prompt the pad has left alone for the window's last
+            // quarter waits on the player, as retail's does.
+            let at = if due {
+                held_by(&session)
+            } else {
+                String::new()
+            };
+            let player_idle =
+                at.starts_with("battle:command:") && frame - battle_pressed > t.battle_frames / 4;
+            if due && !player_idle {
                 findings.push(mk(
                     &session,
                     "battle_endless",
                     frame,
-                    held_by(&session),
-                    format!("in Battle for {} frames", frame - since),
+                    at,
+                    format!(
+                        "in Battle for {} frames, {idle} since an HP / MP moved, monster HP {pool}",
+                        frame - since
+                    ),
                 ));
                 break;
             }
         } else {
             battle_since = None;
+            battle_progress = None;
+            battle_pressed = frame;
         }
         // Pause menu that cannot be closed: the policy starts backing out
         // after at most 420 frames, so a menu open past the close budget

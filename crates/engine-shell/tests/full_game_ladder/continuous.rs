@@ -14,6 +14,7 @@
 //! sit well under part B's: the distance between the two is the measurement.
 
 use super::*;
+use legaia_engine_save_state::WorldSaveState;
 
 /// Reloads a continuous run gets at one milestone's stretch after a party
 /// wipe, the guard retry included - the pad pass's allowance.
@@ -111,6 +112,18 @@ pub(super) fn worth_fighting(w: &legaia_engine_core::world::World) -> bool {
         return false;
     }
     let n = w.party.party_count.clamp(1, 3) as usize;
+    // A member a quarter of the way to empty falls to the first round that
+    // finds it, and the sum over the party hides that: `concnow` after
+    // Zora's fight took a pair of foes on 443 + 366 + 2040 HP, and again on
+    // 1 + 1 + 1708 once that fight's revive had set the fallen at 1 HP,
+    // until a surprise round dropped the last member too. A player runs
+    // with a member that low.
+    if (0..n).any(|i| {
+        let b = &w.actors[i].battle;
+        b.max_hp > 0 && u32::from(b.hp) * 4 < u32::from(b.max_hp)
+    }) {
+        return false;
+    }
     let party: u64 = (0..n).map(|i| u64::from(w.actors[i].battle.hp)).sum();
     let foes: Vec<u64> = w
         .actors

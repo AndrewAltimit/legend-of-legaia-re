@@ -178,7 +178,8 @@ impl RetailBattle {
     /// pass into the ease, and the frame on screen is older than it. Aligned
     /// to the RAM's pose the frame lands on the wrong side of it
     /// (`flute_spikefish_midcast` `.910` to `.810`); to the displayed one
-    /// both flute captures rise (`.910` to `.929`, `.740` to `.942`). The
+    /// both flute captures rise, once the walk-back steps onto the `0x29`
+    /// table the route arm replaced ([`summon_route_prior_end`]). The
     /// summon close-up and the module shots keep the replay's own pose.
     pub fn cast_glide_aligned(&self) -> bool {
         matches!(self.seed_plan(), SeedPlan::Cast) && self.action_state == 0x32
@@ -189,6 +190,29 @@ impl RetailBattle {
     /// may have moved) - for the phase's ground seat
     /// ([`legaia_engine_capture::ground_snap`]).
     pub fn engine_ground_snaps(&self) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
+        self.ground_snaps(false)
+    }
+
+    /// [`Self::engine_ground_snaps`] for the image child, whose frame is the
+    /// **displayed** one. On the action seed's own pass - `0x14` with the
+    /// yaw counter still on the seed's `0x200` rung ([`tween_passes_back`]) -
+    /// each combatant stands on the pair the position ring holds for that
+    /// frame ([`Self::displayed_ground`]), a body pair moved with it: the
+    /// seed recentres the formation (`jal 0x801EFE44` at `0x801E2D44`) on
+    /// the RAM's pass, after the frame on screen was built.
+    /// `super_queue_replace_*` hold Vahn `(+36, +45)` and Gobu Gobu
+    /// `(+36, +52)` off the pairs that frame drew them on (`.938` to
+    /// `.996`).
+    ///
+    /// Elsewhere the RAM's pairs stay: a body moving on its own clip's
+    /// root motion is drawn from the replay's pose at the displayed tick,
+    /// and `battle_melee_hit_spark` (Vahn `+5`, the struck monster `+11` a
+    /// frame) reads `.760` on the RAM's pairs against `.743` on the ring's.
+    pub fn engine_image_ground_snaps(&self) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
+        self.ground_snaps(self.action_state == 0x14 && self.walk_yaw_base == 0x200)
+    }
+
+    fn ground_snaps(&self, displayed: bool) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
         // Past the end signal the sequencer poses the winners and the results
         // framing reads poses the replay's clips do not share; the ground
         // stays the replay's.
@@ -200,13 +224,18 @@ impl RetailBattle {
             .iter()
             .enumerate()
             .filter_map(|(pool, c)| {
-                let (live, body, clip, _) = (*c)?;
+                let (mut live, mut body, clip, _) = (*c)?;
                 let slot = if pool < 3 {
                     (pool < pc).then_some(pool)?
                 } else {
                     let m = pool - 3;
                     (m < usize::from(self.monster_count)).then_some(pc + m)?
                 };
+                if displayed && let Some(Some(then)) = self.displayed_ground.get(pool) {
+                    let d = [then[0].wrapping_sub(live[0]), then[1].wrapping_sub(live[1])];
+                    body = [body[0].wrapping_add(d[0]), body[1].wrapping_add(d[1])];
+                    live = *then;
+                }
                 Some(legaia_engine_capture::ground_snap::GroundSnap {
                     slot: u8::try_from(slot).ok()?,
                     x: live[0],
@@ -226,6 +255,16 @@ impl RetailBattle {
     /// [`Self::clip_cursors`] on engine slots: the party's pool slots
     /// `0..party_count` as they are, the monster row `3..` packed behind
     /// the party, as the engine seats it.
+    /// A monster parked in the approach poll with its walk clip dead: a live
+    /// approach in `0x19` always plays its Move clip, so `+0x1D9 == 0` there
+    /// is the park.
+    fn parked_approach(&self) -> bool {
+        self.active_actor >= 3
+            && self.action_state == 0x19
+            && self.queued_category == 3
+            && self.caster_clip == 0
+    }
+
     pub fn engine_clip_cursors(&self) -> Vec<legaia_engine_capture::clip_cursors::ClipCursorSeed> {
         let pc = self.party_count.clamp(1, 3);
         self.clip_cursors
@@ -270,8 +309,13 @@ impl RetailBattle {
             .filter(|&&(slot, clip, cursor)| {
                 let staged = !(self.action_state == 0x0C
                     || self.action_state == 0x14 && self.walk_yaw_base == 0x200);
-                let in_flight =
-                    self.action_state != 0 && staged && !(0x50..=0x5A).contains(&self.action_state);
+                // `0xFD` / `0xFF` (idle hold, round boundary) are where the
+                // action SM sits through the command flow: no action runs,
+                // so the commanding member's idle loop is a clock like any
+                // other seat's (`delilas_che_hammer_gaps_v3`'s Che).
+                let in_flight = !matches!(self.action_state, 0 | 0xFD | 0xFF)
+                    && staged
+                    && !(0x50..=0x5A).contains(&self.action_state);
                 let capture_band_idle = clip == 0 && (0x6F..=0x71).contains(&self.action_state);
                 // So is a seat idling through a summon's invoke and freeze
                 // (`0x32..=0x34`): the band stages no clip on the victim
@@ -286,8 +330,14 @@ impl RetailBattle {
                     } else {
                         clip != 0 && self.absorbed_seru != 0
                     };
+                // So is a monster parked in the approach poll on its idle
+                // ([`ActionSteer::park`]): the flinch's stale bit turned its
+                // walk into the idle loop, which has run on its own clock
+                // since (`battle_gaza2_park_0x19_target_vahn`'s Gaza).
+                let parked_idle = clip == 0 && slot == self.active_actor && self.parked_approach();
                 !in_flight
                     || capture_band_idle
+                    || parked_idle
                     || summon_band_idle
                     || target_reaction
                     || (slot != self.active_actor && slot != self.target_code)
@@ -366,6 +416,7 @@ impl RetailBattle {
                 end: self.span_gate,
                 style: Some(self.cam_style),
                 steer: ActionSteer {
+                    park: seat >= 3 && self.parked_approach(),
                     // A party killing blow on its victim, or a monster
                     // action (a cast or a strike) on the party seat it
                     // aimed at: the monster's pick is a draw, and a run on

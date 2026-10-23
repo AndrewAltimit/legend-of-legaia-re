@@ -670,6 +670,8 @@ stateDiagram-v2
 
 - **Phase 1** waits out the streak word, then every slot takes `2` when the record's `+0x12` list is non-empty, else `3` (`0x801E0CF8..0x801E0D34`).
 - **Phase 2** (`0x801E0FB8..0x801E1430`) turns onto the child's live seat and steps `record[+0x08]` units along that heading. It spawns the `+0x12` list each time its counter is out and re-arms the counter to `0x40 - record[+0x08]`. It lands inside `|dx| + |dz| <= 0x100`: phase `3`, counter `record[+0x06]`, the slot on the seat raised by `record[+0x02]`, the `+0x16` list spawned there.
+- **The slot's handle.** A table-form list spawn (`FUN_80050ED4`) is seated at the slot's position with the slot's own rotation trio `ctx[+0x1164 + slot * 8]` - the heading at `+0x1166`, the other two angles never written - at scale `0x1000` (`0x801E1204..0x801E1228`, `0x801E14A0..0x801E14C8`), not at the effect-script walk's facing turned half a circle. The actor it returns becomes the slot's handle `ctx[+0x1018 + slot * 4]` (`0x801E1238`, `0x801E14DC`); a 2D spawn leaves the handle alone.
+- **The drag.** On a phase-2 pass that finds the counter running, a record whose `+0x09` byte is set copies the slot's fresh position octet `+0x1144..+0x114B` into the handle's `+0x14..+0x1B` (`0x801E10CC..0x801E1108`), so the node the flight last seated rides its head until the next spawn. Tail Fire's record (`0x12`) carries it.
 - **Phase 3** drains and frees the slot. The transition falls straight into the per-slot pass in the same call, so a zero landing counter frees the slot on the frame it lands.
 
 Hit-arm details (`0x801E1844..0x801E1A6C`) that differ from the slot-B cast modules:
@@ -684,7 +686,7 @@ Port, piece by piece:
 |---|---|
 | Census head, including the `+0x24D` early-out ordering | `engine-battle-vm::battle_cast_census::cast_census` |
 | Hit arm | `battle_cast_census::effect_child_hit`, driven from the cast fold by `World::apply_effect_child_hit`; it is the caller of `battle_hp_bar::clamp_damage_against_live_hp` |
-| Per-slot staging arms | `engine-effects::action_effect_script::HomingSlots`, seeded by the terminator (`World::seed_homing_slots`) and stepped each battle frame (`World::tick_homing_slots`) |
+| Per-slot staging arms | `engine-effects::action_effect_script::HomingSlots`, seeded by the terminator (`World::seed_homing_slots`) and stepped each battle frame (`World::tick_homing_slots`); the handle drag is `HomingSlots::follows` over the scene the router tags (`SummonScene::homing_slot`) |
 | Per-effect spawn | `World::try_spawn_effect` (direct form) and `World::spawn_action_table_effect` (table form), drained by `World::drain_battle_effect_spawns` |
 | GTE homing transform | render-track: the engine transforms effect positions through its own wgpu path; the retail primitives are scope rows under `[libgte]` |
 
@@ -887,7 +889,7 @@ Every reader of the cell is a volume setter. Across the dumped corpus it has 26 
 |---|---|
 | `FUN_800267A8` | halves it (`<< 15`, then arithmetic `>> 16`) into `FUN_80062004`, which is `SsSeqSetVol(slot, channel 0, vol, ...)` via `FUN_80061EDC` |
 | `FUN_80026478` | hands the same halved value to `FUN_8002657C`, which writes it as **both** channels of `FUN_80064890(slot, vol_l, vol_r)` (symmetric, so not a pan) |
-| four `SpuSetCommonAttr` sites (`FUN_8006BCB4`) | build an `SpuCommonAttr` on the stack with the cell in the CD-volume pair |
+| the minigame overlays' `SpuSetCommonAttr` sites (`FUN_8006BCB4`) | stack the cell in the `cd.volume` pair under mask `0x300`, which applies only CD reverb and CD mix, so the volume is not written ([`audio.md`](audio.md#the-cd-input-enable-volume-and-reverb-send)) |
 | cold reset `FUN_8001FFA4` | seeds it `0xD7` beside its persistent reference, then calls the audio-context volume re-apply `FUN_8002614C(0)` |
 
 The **screen fade is a different scalar**: `_DAT_8007B440`, drawn each frame by the wipe / curtain emitter `FUN_8003479C` (clamped `0xF2`). It is ramped by the function at VA `0x801ED308` in the menu / cutscene overlay family (see `ghidra/scripts/funcs/801ed308.txt`: own prologue, `jal 0x8003479c` at `0x801ED3F0` / `0x801ED4BC` / `0x801ED510`). Name the overlay when citing that VA: in the **battle** image `0x801ED308` is interior to `FUN_801EC3E4` (the underdog-rewrite arm's power-scalar read), which touches `_DAT_8007B440` nowhere. The two scalars ramp together, because a summon dims the screen and ducks the music.

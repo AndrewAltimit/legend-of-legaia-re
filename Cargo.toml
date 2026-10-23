@@ -5,6 +5,7 @@ members = [
     "crates/prot",
     "crates/lzs",
     "crates/bytes",
+    "crates/app-theme",
     "crates/game-tables",
     "crates/actor-formats",
     "crates/overlay-images",
@@ -49,6 +50,8 @@ members = [
     "crates/engine-dev-menu",
     "crates/engine-dialog",
     "crates/engine-menus",
+    "crates/engine-battle-menus",
+    "crates/engine-title",
     "crates/engine-mode",
     "crates/engine-export",
     "crates/engine-field",
@@ -59,6 +62,7 @@ members = [
     "crates/engine-battle-hud",
     "crates/engine-cheats",
     "crates/engine-world-views",
+    "crates/engine-save-state",
     "crates/engine-scene-host",
     "crates/engine-effects",
     "crates/engine-fishing",
@@ -130,6 +134,7 @@ winit = "0.30"
 # default features off: their default `cli` feature exists only for their own
 # binary, and a library dependent never needs it.
 legaia-bytes = { path = "crates/bytes" }
+legaia-app-theme = { path = "crates/app-theme" }
 legaia-anm = { path = "crates/anm", default-features = false }
 legaia-art = { path = "crates/art", default-features = false }
 legaia-game-tables = { path = "crates/game-tables" }
@@ -152,6 +157,7 @@ legaia-engine-menu-runtime = { path = "crates/engine-menu-runtime" }
 legaia-engine-battle-hud = { path = "crates/engine-battle-hud" }
 legaia-engine-cheats = { path = "crates/engine-cheats" }
 legaia-engine-world-views = { path = "crates/engine-world-views" }
+legaia-engine-save-state = { path = "crates/engine-save-state" }
 legaia-engine-scene-host = { path = "crates/engine-scene-host" }
 legaia-engine-effects = { path = "crates/engine-effects" }
 legaia-engine-export = { path = "crates/engine-export" }
@@ -161,6 +167,8 @@ legaia-engine-scene = { path = "crates/engine-scene" }
 legaia-engine-dev-menu = { path = "crates/engine-dev-menu" }
 legaia-engine-dialog = { path = "crates/engine-dialog" }
 legaia-engine-menus = { path = "crates/engine-menus" }
+legaia-engine-battle-menus = { path = "crates/engine-battle-menus" }
+legaia-engine-title = { path = "crates/engine-title" }
 legaia-engine-system = { path = "crates/engine-system" }
 legaia-engine-fishing = { path = "crates/engine-fishing" }
 legaia-engine-motion-vm = { path = "crates/engine-motion-vm" }

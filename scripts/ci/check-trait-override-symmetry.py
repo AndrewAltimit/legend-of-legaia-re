@@ -103,6 +103,8 @@ SPLIT_SRCS = [
     REPO / "crates" / "engine-field" / "src",
     REPO / "crates" / "engine-scene" / "src",
     REPO / "crates" / "engine-menus" / "src",
+    REPO / "crates" / "engine-title" / "src",
+    REPO / "crates" / "engine-battle-menus" / "src",
     REPO / "crates" / "engine-dialog" / "src",
     REPO / "crates" / "engine-system" / "src",
 ]

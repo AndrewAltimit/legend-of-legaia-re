@@ -138,8 +138,8 @@ impl LegaiaMinigames {
             spells.sort_by_key(|s| s.id);
             session.install_magic(
                 0,
-                legaia_engine_menus::muscle_dome_session::DomeMagic {
-                    ring: legaia_engine_menus::muscle_dome_session::DomeRing {
+                legaia_engine_battle_menus::muscle_dome_session::DomeMagic {
+                    ring: legaia_engine_battle_menus::muscle_dome_session::DomeRing {
                         special,
                         status: 0,
                         has_raseru: true,
@@ -164,7 +164,7 @@ impl LegaiaMinigames {
         // installs them (`SceneHost::dome_choreo_bodies`).
         let bodies = self.muscle_player_file(char_slot as u32).and_then(|raw| {
             let archive = entry_bytes(&self.prot, &self.entries, 867)?;
-            use legaia_engine_menus::muscle_dome_session::choreo::ChoreoBody;
+            use legaia_engine_battle_menus::muscle_dome_session::choreo::ChoreoBody;
             Some([
                 ChoreoBody::fighter(raw, char_slot as u32)?,
                 ChoreoBody::monster(archive, monster_id)?,
@@ -205,7 +205,7 @@ impl LegaiaMinigames {
         let Some(c) = self.muscle.as_mut() else {
             return "idle".to_string();
         };
-        let pad = legaia_engine_menus::muscle_dome_session::DomeSelectPad {
+        let pad = legaia_engine_battle_menus::muscle_dome_session::DomeSelectPad {
             left: bits & 1 != 0,
             right: bits & 2 != 0,
             up: bits & 4 != 0,
@@ -216,7 +216,7 @@ impl LegaiaMinigames {
             select_attack: legaia_engine_menus::options::OptionsState::default()
                 .battle_select_attack,
         };
-        use legaia_engine_menus::muscle_dome_session::DomeMenuEvent as E;
+        use legaia_engine_battle_menus::muscle_dome_session::DomeMenuEvent as E;
         match c.session.select_input(pad) {
             E::Idle => "idle",
             E::Cursor => "cursor",
@@ -240,8 +240,8 @@ impl LegaiaMinigames {
     /// entry screen's open Triangle arts-list page (`-1` closed).
     pub fn muscle_menu_json(&self) -> String {
         use legaia_engine_battle::arts_command_input::ArtsInputPhase;
-        use legaia_engine_menus::battle_input::CommandPhase;
-        use legaia_engine_menus::muscle_dome_session::DomeMenu;
+        use legaia_engine_battle_menus::battle_input::CommandPhase;
+        use legaia_engine_battle_menus::muscle_dome_session::DomeMenu;
         let Some(c) = self.muscle.as_ref() else {
             return r#"{"screen":null}"#.to_string();
         };
@@ -422,7 +422,7 @@ impl LegaiaMinigames {
     ///
     /// It is not a *turn* question. A turn boundary keeps the leg open and the
     /// arena hub unreached, so the page must go straight back to the command
-    /// cluster there ([`legaia_engine_menus::muscle_dome_session::MusclePhase::ends_turn`]).
+    /// cluster there ([`legaia_engine_battle_menus::muscle_dome_session::MusclePhase::ends_turn`]).
     pub fn muscle_leg_shows_interval(&self) -> bool {
         legaia_engine_minigames::muscle_dome::leg_boundary_raises_interval(
             self.muscle_run.as_ref().map(|r| r.state()),
@@ -668,7 +668,7 @@ impl LegaiaMinigames {
     /// screen rect, `u`/`v`/`w`/`h` the texels on the `etim` page, `pal` the
     /// sub-palette its CLUT word names.
     pub(super) fn muscle_chip_json(s: &MuscleDomeSession) -> Vec<serde_json::Value> {
-        use legaia_engine_menus::muscle_dome_session::{ChipMark, DomeRingChip};
+        use legaia_engine_battle_menus::muscle_dome_session::{ChipMark, DomeRingChip};
         DomeRingChip::RING
             .iter()
             .map(|chip| {

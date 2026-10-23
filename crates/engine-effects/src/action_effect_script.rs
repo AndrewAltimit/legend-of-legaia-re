@@ -592,6 +592,10 @@ pub struct HomingSpawn {
     pub effect: u8,
     pub at: [i32; 3],
     pub heading: u16,
+    /// The homing slot that made the spawn. A table-form spawn's actor is
+    /// that slot's handle `ctx[+0x1018 + slot * 4]` (`sw v0,0x1018(v1)` at
+    /// `0x801E1238` / `0x801E14DC`), the one [`HomingSlots::follows`] drags.
+    pub slot: u8,
 }
 
 /// The four homing slots a move's projectile flies on - the per-slot half of
@@ -632,6 +636,14 @@ pub struct HomingSlots {
     /// The child bytes (target actor index plus one) of the slots the last
     /// [`Self::step`] hit and freed, `0` for none. Slot-indexed.
     pub hits: [u8; HOMING_SLOTS],
+    /// Where the last [`Self::step`] dragged each slot's handle actor: on a
+    /// record whose `+0x09` byte is set, a phase-`2` slot between two list
+    /// spawns copies its fresh position into the actor its last table-form
+    /// spawn returned (`0x801E10CC..0x801E1108`: `lbu v0,0x9(v0)`, then the
+    /// `+0x1144..+0x114B` octet into handle `+0x14..+0x1B`). So the node the
+    /// flight last seated rides the flight's head until the next spawn; a
+    /// slot that spawned this step, or does not track, reads `None`.
+    pub follows: [Option<[i32; 3]>; HOMING_SLOTS],
 }
 
 impl HomingSlots {
@@ -722,6 +734,8 @@ impl HomingSlots {
         let mut out = Vec::new();
         let fall = 4 * delta as i16;
         self.hits = [0; HOMING_SLOTS];
+        self.follows = [None; HOMING_SLOTS];
+        let tracks = record.get(0x09).copied().unwrap_or(0) != 0;
         let byte = |o: usize| record.get(o).copied().unwrap_or(0);
         let speed = i32::from(byte(0x08));
         let list = |base: usize| -> Vec<u8> {
@@ -735,13 +749,13 @@ impl HomingSlots {
                 return out;
             }
             let next = if byte(0x12) != 0 { 2 } else { 3 };
-            for s in self.slots.iter_mut() {
+            for (i, s) in self.slots.iter_mut().enumerate() {
                 s.phase = next;
                 if next == 3
                     && s.child != 0
                     && let Some(t) = target(s.child)
                 {
-                    land(s, t, record, &list, &mut out);
+                    land(s, i as u8, t, record, &list, &mut out);
                 }
             }
         }
@@ -767,6 +781,9 @@ impl HomingSlots {
                     s.pos[2] += (i32::from(cos) * speed * delta * 8) >> 15;
                     s.pos[0] += (i32::from(sin) * speed * delta * 8) >> 15;
                     if s.counter != 0 {
+                        if tracks {
+                            self.follows[i] = Some(s.pos);
+                        }
                         s.counter = (s.counter - fall).max(0);
                     } else {
                         for e in list(0x12) {
@@ -775,15 +792,28 @@ impl HomingSlots {
                                     effect: e,
                                     at: s.pos,
                                     heading: s.heading,
+                                    slot: i as u8,
                                 });
                             }
                         }
                         s.counter = (0x40 - speed) as i16;
                     }
                     if (s.pos[0] - t[0]).abs() + (s.pos[2] - t[2]).abs() <= HOMING_ARRIVAL {
-                        land(s, t, record, &list, &mut out);
-                        if landing_counts && s.counter != 0 {
-                            s.counter = (s.counter - fall).max(0);
+                        land(s, i as u8, t, record, &list, &mut out);
+                        // The landing falls into the phase-3 arm on the
+                        // same pass (`0x801E13D8` / `0x801E1558` to
+                        // `0x801E1560`): a counter the landing armed
+                        // non-zero takes the pass's drain, and a zero one
+                        // hits and frees the slot there and then
+                        // (`beq v0,zero,0x801E1844` at `0x801E17A0`).
+                        if landing_counts {
+                            if s.counter != 0 {
+                                s.counter = (s.counter - fall).max(0);
+                            } else {
+                                self.hits[i] = s.child;
+                                s.phase = 0;
+                                s.child = 0;
+                            }
                         }
                     }
                 }
@@ -819,6 +849,7 @@ fn heading_to(a: [i32; 3], b: [i32; 3]) -> u16 {
 /// `+0x16` list spawned there.
 fn land(
     s: &mut HomingSlot,
+    slot: u8,
     t: [i32; 3],
     record: &[u8],
     list: &impl Fn(usize) -> Vec<u8>,
@@ -839,6 +870,7 @@ fn land(
                 effect: e,
                 at: s.pos,
                 heading: s.heading,
+                slot,
             });
         }
     }
@@ -1465,6 +1497,43 @@ mod tests {
         assert_eq!(h.slots[0].counter, 0);
         h.step_pass(&rec, 0, 2, |_| Some(target));
         assert_eq!(h.hits, [1, 0, 0, 0]);
+    }
+
+    /// Tail Fire's record arms no landing counter (`+0x06 == 0`): the pass
+    /// that lands runs the phase-3 arm on a zero counter and hits there
+    /// (`0x801E1560` -> `0x801E17A0` -> `0x801E1844`), not a pass later.
+    #[test]
+    fn a_zero_counter_landing_hits_on_its_pass() {
+        let rec = tail_fire_like(0, 0);
+        let target = [100, 0, 100];
+        let mut h = HomingSlots::default();
+        h.seed(Some(18), (0, 0, 0), &[Some(target)], |_| 1);
+        h.step_pass(&rec, 0, 2, |_| Some(target));
+        assert_eq!(h.hits, [1, 0, 0, 0]);
+        assert_eq!(h.slots[0].phase, 0);
+    }
+
+    /// A record with `+0x09` set drags its handle between spawns: the pass
+    /// that spawns reports no follow, every pass after it until the counter
+    /// next runs out reports the slot's fresh position
+    /// (`0x801E10CC..0x801E1108`). A record without it never does.
+    #[test]
+    fn a_tracking_record_drags_the_handle_between_spawns() {
+        let mut rec = tail_fire_like(300, 8);
+        rec[0x09] = 1;
+        let target = [0, 0, -2000];
+        let mut h = HomingSlots::default();
+        h.seed(Some(18), (0, -300, 0), &[Some(target)], |_| 1);
+        let spawns = h.step(&rec, 0, |_| Some(target));
+        assert_eq!(spawns.len(), 1);
+        assert_eq!(spawns[0].slot, 0);
+        assert_eq!(h.follows, [None; 4], "the spawning pass drags nothing");
+        h.step(&rec, 0, |_| Some(target));
+        assert_eq!(h.follows[0], Some(h.slots[0].pos));
+        assert_eq!(h.follows[0].map(|p| p[2]), Some(-0x40));
+        rec[0x09] = 0;
+        h.step(&rec, 0, |_| Some(target));
+        assert_eq!(h.follows, [None; 4], "an untracked record never drags");
     }
 
     #[test]

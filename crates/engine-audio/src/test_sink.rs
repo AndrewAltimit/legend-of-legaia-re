@@ -482,4 +482,31 @@ mod tests {
             );
         }
     }
+
+    /// The CD input's reverb send, measured at the output: a short XA burst
+    /// ends in silence with `SPUCNT` bit 2 clear, and rings on through the
+    /// Studio C network the mixer installs once the bit is set - the
+    /// Baka Fighter / Muscle Dome hub routing.
+    #[test]
+    fn xa_rings_through_the_reverb_only_with_cd_reverb_set() {
+        let tail = |cd_reverb: bool| {
+            let sink = TestAudioSink::new(crate::SPU_INTERNAL_RATE);
+            sink.set_cd_reverb(cd_reverb);
+            sink.play_xa(
+                vec![12_000i16; 2_000],
+                crate::SPU_INTERNAL_RATE,
+                legaia_xa::Channels::Mono,
+                false,
+                0x4000,
+            );
+            let burst = sink.render_frames(2_000);
+            assert!(!burst.is_silent(), "the burst itself is audible");
+            // The resampler hands the burst's last sample out one frame
+            // late; the tail starts past it.
+            sink.render_frames(16);
+            sink.render_frames(4_410)
+        };
+        assert!(tail(false).is_silent(), "no send, no tail");
+        assert!(!tail(true).is_silent(), "the send leaves a reverb tail");
+    }
 }

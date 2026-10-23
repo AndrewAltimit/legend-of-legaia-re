@@ -322,7 +322,7 @@ impl World {
     /// roster's names; it rides the steal caption's seat and closes the
     /// same way.
     ///
-    /// PORT: FUN_801F69F8 (PROT 0940; the caption raise)
+    /// PORT: overlay_cast_glare_divide_0940_801f69f8 (PROT 0940; the caption raise)
     fn raise_glare_caption(&mut self, petrified: Option<u8>) {
         const NOTHING_HAPPENED: u32 = 0x801F_8630;
         const TURNED_TO_STONE: [u32; 3] = [0x801F_85E8, 0x801F_8600, 0x801F_8618];
@@ -464,7 +464,7 @@ const GLARE_ENTRY: u32 = 940;
 /// A zero-terminated line out of a slot-B module image at `va`, with the
 /// dialog escapes `0xC0..=0xCF` taken as two bytes (their operand may be
 /// `0`: `0xC1 0x00` names the first party member).
-fn module_line(image: &[u8], va: u32) -> Option<Vec<u8>> {
+pub(in crate::world) fn module_line(image: &[u8], va: u32) -> Option<Vec<u8>> {
     let off = va.checked_sub(legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE)?;
     let tail = image.get(off as usize..)?;
     let mut i = 0;

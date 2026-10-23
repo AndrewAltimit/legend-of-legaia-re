@@ -31,7 +31,7 @@
 //! ## The command model is three phases, not one menu
 //!
 //! Retail's `FUN_801D0748` walks `ctx[+0x06]` through three selection
-//! surfaces ([`legaia_engine_menus::battle_input`]), and a driver that assumes
+//! surfaces ([`legaia_engine_battle_menus::battle_input`]), and a driver that assumes
 //! a single flat menu never reaches half the ladder:
 //!
 //! | `ctx[+0x06]` | phase | chips |
@@ -118,7 +118,9 @@
 use std::path::PathBuf;
 
 use legaia_engine_battle::arts_command_input::ArtsInputScreen;
-use legaia_engine_menus::battle_input::{AttackMode, BattleCommand, CommandPhase, RoundChoice};
+use legaia_engine_battle_menus::battle_input::{
+    AttackMode, BattleCommand, CommandPhase, RoundChoice,
+};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_session::native::NativeSession;
 use legaia_engine_session::session::{BootConfig, FieldLiveOpts};

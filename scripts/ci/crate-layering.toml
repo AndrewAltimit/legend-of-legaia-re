@@ -18,7 +18,7 @@
 # on an engine-layer crate.
 #
 # An engine-layer crate with no row here (engine-core, the battle HUD reads,
-# the cheats, the session, the screens, the renderer, the audio stack, the
+# the cheats, the LGSF saves, the session, the screens, the renderer, the audio stack, the
 # hosts) is above the kernels. It
 # may depend on anything, and no kernel crate may depend on it.
 #
@@ -113,8 +113,12 @@ deps = [
     "render-kernels",
 ]
 
+[crates.engine-title]
+role = "publisher logos, the title state machine and the title overlay tick"
+deps = ["engine-system"]
+
 [crates.engine-menus]
-role = "menu, title and memory-card front end"
+role = "menu and memory-card front end"
 deps = [
     "engine-battle",
     "engine-battle-vm",
@@ -124,6 +128,15 @@ deps = [
     "engine-minigames",
     "engine-system",
     "engine-vm",
+]
+
+[crates.engine-battle-menus]
+role = "battle command flow and input, the open banner, the timed fight, the Muscle Dome match session"
+deps = [
+    "engine-battle",
+    "engine-battle-vm",
+    "engine-minigames",
+    "engine-system",
 ]
 
 [crates.engine-scene]
@@ -142,11 +155,11 @@ dev = ["engine-battle", "engine-menus", "engine-mode"]
 role = "the minigames' 3D scene surfaces, venues and the World's minigame seat"
 deps = [
     "engine-battle",
+    "engine-battle-menus",
     "engine-battle-vm",
     "engine-camera",
     "engine-field",
     "engine-fishing",
-    "engine-menus",
     "engine-minigames",
     "engine-mode",
     "engine-scene",

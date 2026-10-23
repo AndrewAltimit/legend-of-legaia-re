@@ -55,6 +55,10 @@ impl World {
         self.casting
             .homing
             .seed(record, launch, &seats, |i| children[i]);
+        // A new flight's slots own no handle until they spawn one.
+        for scene in &mut self.casting.active_action_fx {
+            scene.homing_slot = None;
+        }
         // A cast's fold would stage the move's two lists at the target in one
         // go (`World::request_move_fx_spawn`); it leaves them to this flight
         // when the caster's script still had this terminator ahead
@@ -172,6 +176,19 @@ impl World {
             None => homing.step(&raw, counter, target),
         };
         self.casting.homing = homing;
+        // A tracking record drags each slot's handle onto the slot's fresh
+        // position between spawns (`0x801E10CC..0x801E1108`).
+        for (slot, pos) in homing.follows.iter().enumerate() {
+            let Some(p) = pos else {
+                continue;
+            };
+            let p = p.map(|v| v.clamp(i16::MIN as i32, i16::MAX as i32) as i16);
+            for scene in &mut self.casting.active_action_fx {
+                if scene.homing_slot == Some(slot as u8) {
+                    scene.drag_handle(p);
+                }
+            }
+        }
         // A landed slot's hit (`0x801E1844..0x801E1A68`): the cast that rides
         // this flight folds onto that slot's victim now.
         let caster = self.battle_ctx.active_actor;
@@ -205,6 +222,7 @@ impl World {
                         != 0,
                     at: (s.at[0], s.at[1], s.at[2]),
                     facing: s.heading,
+                    homing_slot: Some(s.slot),
                 },
             );
         }

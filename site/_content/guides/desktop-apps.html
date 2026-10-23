@@ -81,7 +81,7 @@
     <img src="../img/desktop/studio-browse.jpg" width="1280" height="800" alt="The Browse view filtered by the search rim elm: the archive tree lists the Rim Elm scene blocks with their entries, categories and sizes, and the selected entry's Overview on the right" loading="lazy">
     <figcaption>Every word of the search must match: <code>rim elm</code> keeps just the Rim Elm scenes, <code>town tmd</code> the town meshes.</figcaption>
   </figure>
-  <p>The left panel is the game's main archive (<code>PROT.DAT</code>), grouped by the name each block carries on the disc and by the place a scene is (<code>town01 - Rim Elm</code>). Each entry shows what kind of data it holds and its size. The search (<kbd>Ctrl</kbd>+<kbd>F</kbd>, <kbd>Esc</kbd> clears it) matches the block name, the place name, the kind of data and the entry number; the category menu narrows the list further, and the arrow keys, <kbd>Page Up</kbd> / <kbd>Page Down</kbd>, <kbd>Home</kbd> and <kbd>End</kbd> walk it. <em>Disc files</em> at the bottom lists the disc's own file system, each file with a save button.</p>
+  <p>The left panel is the game's main archive (<code>PROT.DAT</code>), grouped by the name each block carries on the disc and by the place a scene is (<code>town01 - Rim Elm</code>). Each entry shows what kind of data it holds and its size. The search (<kbd>Ctrl</kbd>+<kbd>F</kbd>, <kbd>Esc</kbd> or its <em>x</em> clears it) matches the block name, the place name, the kind of data and the entry number, and says how many entries match; the category menu narrows the list further, <em>Show all</em> drops both, and the arrow keys, <kbd>Page Up</kbd> / <kbd>Page Down</kbd>, <kbd>Home</kbd> and <kbd>End</kbd> walk it. <em>Disc files</em> at the bottom lists the disc's own file system, each file with a save button.</p>
 
   <h3 id="studio-preview">Preview and export</h3>
   <p>The tabs above the preview show what the selected entry holds:</p>
@@ -119,7 +119,7 @@
     <img src="../img/desktop/studio-extract.jpg" width="1280" height="800" alt="The Extract tab after a finished run: output folder, skip options, a full progress bar, the step-by-step log and an Open output folder button" loading="lazy">
     <figcaption>The <em>Extract</em> tab writes exactly what the <code>legaia-extract</code> command line produces.</figcaption>
   </figure>
-  <p>Choose an output folder (Studio proposes one beside the disc image), tick any steps to skip, and start. The tab shows progress and the log, can be cancelled, and offers <em>Open output folder</em> when it ends. Tick <em>Export all textures as PNG</em> to also get every texture on the disc as a PNG. What the folder holds is described in <a href="getting-started.html#one-shot-extract">Getting started</a>.</p>
+  <p>Choose an output folder (Studio proposes one beside the disc image), tick any steps to skip, and start; a note under the folder warns when it already holds files. The tab shows the step, the time so far and, once a step has a steady rate, about how long it has left; the log can be cut down to its warnings, the run can be cancelled, and <em>Open output folder</em> is there whenever the folder exists. The run goes on while you browse, and its end (or its error) shows on the status line of whatever view is open. Tick <em>Export all textures as PNG</em> to also get every texture on the disc as a PNG. What the folder holds is described in <a href="getting-started.html#one-shot-extract">Getting started</a>.</p>
 
   <h3 id="studio-play">Play, and the rest of the window</h3>
   <p><strong>Play</strong> - the gold button in the top bar, or <kbd>F5</kbd> - starts the game on the open disc, at the title screen. Saves, key bindings and options are the same ones the game uses when you start it directly, and the disc is remembered for the game too: starting <em>Legend of Legaia</em> later finds it ready. The display options you set in the game's launcher (below) apply to a game started from Studio too. Play needs the USA disc image and <code>legaia-engine</code> in the same folder; when it is greyed out, hover it to see why. If the game stops with an error, the status line shows the end of its log and where the full log is.</p>
@@ -189,7 +189,7 @@
     <img src="../img/desktop/port-help.jpg" width="960" height="720" alt="The native window with the F12 panel open, listing every toggle key with its current state" loading="lazy">
     <figcaption><kbd>F12</kbd> (or <kbd>?</kbd>) lists every toggle key with its current state; press it again to close.</figcaption>
   </figure>
-  <p>The port adds a few enhancements over the original, each on its own key (and on the <a href="#port-launcher">launcher</a>), each with the original look one press away. A press shows the toggle's new state at the bottom left for a moment.</p>
+  <p>The port adds a few enhancements over the original, each on its own key (and on the <a href="#port-launcher">launcher</a>), each with the original look one press away. A press shows the toggle's new state at the bottom left for a moment. For its first few seconds the window says <em>F12 or ? lists the keys</em> in the same place, until you open the panel.</p>
   <table>
     <thead><tr><th>Key</th><th>Toggle</th><th>Starts</th></tr></thead>
     <tbody>

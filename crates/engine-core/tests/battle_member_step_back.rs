@@ -12,8 +12,8 @@
 use legaia_engine_battle::monster_catalog::{
     FormationDef, FormationSlot, FormationTable, MonsterCatalog, MonsterDef,
 };
+use legaia_engine_battle_menus::battle_input::CommandPhase;
 use legaia_engine_core::world::{Actor, World};
-use legaia_engine_menus::battle_input::CommandPhase;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::input::{InputState, PadButton};
 

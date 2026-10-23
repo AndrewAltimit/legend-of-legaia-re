@@ -9,6 +9,8 @@ mod status_procs;
 mod targeting;
 mod turn_arming;
 
+pub(in crate::world) use status_procs::module_line;
+
 #[cfg(test)]
 use status_procs::{ImpactStatusProc, MASTER_GUARD_BIT, ROT_GUARD_BIT, enemy_impact_status_proc};
 

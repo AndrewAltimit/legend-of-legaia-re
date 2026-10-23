@@ -71,7 +71,7 @@ use legaia_engine_system::input::{Mapping, PadButton};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-use crate::option_values::{
+use legaia_engine_system::option_values::{
     AudioMode, BattleCameraOpt, BattleCommandOpt, FieldMoveOpt, HpDisplayOpt, SelectAttackOpt,
 };
 

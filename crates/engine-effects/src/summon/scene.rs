@@ -36,9 +36,31 @@ pub struct SummonScene {
     /// The `frame_delta` the last [`Self::tick`] ran with - the drain a part
     /// [`Self::seat_run`] seats after that tick takes on its first frame.
     pub last_frame_delta: u16,
+    /// The homing slot whose handle this scene's first part is - the actor
+    /// `FUN_801E09F8` stored at `ctx[+0x1018 + slot * 4]` when its flight
+    /// spawned it, and drags along the flight while the move-power record's
+    /// `+0x09` byte is set. `None` for a scene no flight addresses.
+    pub homing_slot: Option<u8>,
 }
 
 impl SummonScene {
+    /// Drag the scene's handle part onto `pos` - the flight's copy of its
+    /// slot position into the handle's `+0x14..+0x18`
+    /// (`0x801E10E4..0x801E1108`). The origin moves with it, so a part whose
+    /// translation glides off the origin rides along too.
+    pub fn drag_handle(&mut self, pos: [i16; 3]) {
+        self.origin = pos;
+        if let Some(p) = self.parts.first_mut() {
+            p.state.world_x = pos[0];
+            p.state.world_y = pos[1];
+            p.state.world_z = pos[2];
+            p.state.world_y_mirror = pos[1];
+            if p.origin.is_some() {
+                p.origin = Some(pos);
+            }
+        }
+    }
+
     /// Spawn every part of a parsed summon overlay at `origin`, seeding each
     /// part's move-VM state from its record (PC = 2 → bytecode at `record+4`,
     /// mirroring `FUN_80021B04`). `record_bytes` is the stager overlay's raw
@@ -79,6 +101,7 @@ impl SummonScene {
             channel_delta: RETAIL_CHANNEL_DELTA,
             retail_wait_drain: false,
             last_frame_delta: RETAIL_CHANNEL_DELTA,
+            homing_slot: None,
         }
     }
 

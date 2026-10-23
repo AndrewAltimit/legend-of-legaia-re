@@ -6,12 +6,6 @@
 
 use super::*;
 
-/// Memory-card ports the console has, and so the pill rows this shell draws.
-/// Retail's save screen is `SLOT 1` / `SLOT 2` and nothing else; the sprite
-/// chrome has always clamped to two, which is what made a 15-entry pill row
-/// draw fifteen text rows under two pills.
-pub(crate) const CARD_PORTS: u8 = 2;
-
 /// The mounted-card type, shared with the browser rack.
 ///
 /// Both hosts hold the same struct: it caches the detected
@@ -115,44 +109,13 @@ pub(crate) fn import_legacy_slots(
     imported
 }
 
-/// The window's save rack: retail's two console ports, each pill built
-/// through [`legaia_engine_menus::save_screen::card_port_snapshot`], the one
-/// place a port's pill fields are decided (the browser rack's too).
-pub(crate) fn card_save_rack(
-    cards: [Option<&MountedCard>; 2],
-) -> legaia_engine_menus::save_select::SaveRack {
-    use legaia_engine_menus::save_screen::card_port_snapshot;
-    legaia_engine_menus::save_select::SaveRack::CardPorts(
-        (0..CARD_PORTS)
-            .map(|port| card_port_snapshot(port, cards[port as usize].map(|c| c.label.as_str())))
-            .collect(),
-    )
-}
-
-/// The fifteen blocks behind `port` - the answer to
-/// [`legaia_engine_menus::save_screen::SaveScreenFlow::pending_read`]. A port
-/// with nothing in it still reads fifteen free cells rather than the other
-/// port's - the grid previews the port the player picked.
-pub(crate) fn card_port_blocks(
-    cards: [Option<&MountedCard>; 2],
-    port: u8,
-) -> Vec<legaia_engine_menus::save_select::SlotSnapshot> {
-    use legaia_engine_menus::save_screen::SLOT_GRID_CELLS;
-    use legaia_engine_menus::save_select::SlotSnapshot;
-    match cards.get(port as usize).copied().flatten() {
-        Some(card) => legaia_engine_menus::save_select::card_block_snapshots(card),
-        None => (0..SLOT_GRID_CELLS).map(SlotSnapshot::empty).collect(),
-    }
-}
-
-/// Does any port hold a save? Continue on the title is live exactly then.
-pub(crate) fn rack_has_save(cards: [Option<&MountedCard>; 2]) -> bool {
-    cards.iter().flatten().any(|c| {
-        legaia_engine_menus::save_select::card_block_snapshots(c)
-            .iter()
-            .any(|s| s.present)
-    })
-}
+/// The window's save rack, the block read behind a port and the
+/// Continue-enable scan are the session's
+/// ([`legaia_engine_session::title_continue`]), decided once for both play
+/// hosts: each port is a [`MountedCard`] on either.
+pub(crate) use legaia_engine_session::title_continue::{
+    card_port_blocks, card_port_rack, rack_has_save,
+};
 
 /// Path of `slot`'s LGSF file under `save_dir` - the shape
 /// `MenuRuntime::slot_path` writes (`slot_NN.<SAVE_EXT>`, zero-padded).
@@ -380,8 +343,8 @@ mod save_scan_tests {
 #[cfg(test)]
 mod save_rack_tests {
     use super::{
-        CARD_PORTS, MountedCard, PORT_ONE_CARD_FILE, card_port_blocks, card_save_rack,
-        open_port_one_card, scan_save_dir,
+        MountedCard, PORT_ONE_CARD_FILE, card_port_blocks, card_port_rack, open_port_one_card,
+        scan_save_dir,
     };
     use legaia_engine_menu_runtime::menu_runtime::SAVE_EXT;
     use legaia_engine_menus::save_screen::{
@@ -390,6 +353,7 @@ mod save_rack_tests {
     use legaia_engine_menus::save_select::{
         SaveRack, SaveSelectMode, SaveSelectSession, SelectInput, SelectPhase,
     };
+    use legaia_engine_session::title_continue::CARD_PORTS;
     use legaia_save::{CharacterRecord, Party, SaveFile};
 
     fn seeded_dir(slots: &[u8]) -> tempfile::TempDir {
@@ -437,12 +401,12 @@ mod save_rack_tests {
     fn the_rack_is_two_ports_with_the_window_card_in_port_one() {
         let dir = seeded_dir(&[0]);
         let card = port_one(&dir);
-        let rack = card_save_rack([Some(&card), None]);
+        let rack = card_port_rack([Some(&card), None]);
         assert!(
             rack.is_card_ports(),
             "the shell runs retail's two-stage flow"
         );
-        assert_eq!(rack.slots().len(), CARD_PORTS as usize);
+        assert_eq!(rack.slots().len(), CARD_PORTS);
         assert!(rack.slots()[0].present, "port 1 is the window's card");
         assert_eq!(rack.slots()[0].label, PORT_ONE_CARD_FILE);
         assert!(!rack.slots()[1].present, "port 2 holds no card");
@@ -518,7 +482,7 @@ mod save_rack_tests {
         let dir = seeded_dir(&[0, 3]);
         let card = port_one(&dir);
         let cards = [Some(&card), None];
-        let mut session = SaveSelectSession::for_rack(SaveSelectMode::Load, &card_save_rack(cards));
+        let mut session = SaveSelectSession::for_rack(SaveSelectMode::Load, &card_port_rack(cards));
         let mut flow = SaveScreenFlow::new();
         let step = |session: &mut SaveSelectSession, flow: &mut SaveScreenFlow, edge: u16| {
             if let Some(port) = flow.pending_read(session) {
@@ -598,7 +562,7 @@ mod save_rack_tests {
         assert_eq!(flat.slots().len(), SLOT_GRID_CELLS as usize);
         let card = port_one(&dir);
         assert_ne!(
-            card_save_rack([Some(&card), None]).slots().len(),
+            card_port_rack([Some(&card), None]).slots().len(),
             flat.slots().len()
         );
     }
@@ -689,9 +653,10 @@ mod slot_model_tests {
 
 #[cfg(test)]
 mod mounted_card_tests {
-    use super::{CARD_PORTS, MountedCard, card_port_blocks, card_save_rack};
+    use super::{MountedCard, card_port_blocks, card_port_rack};
     use legaia_engine_menus::save_screen::SLOT_GRID_CELLS;
     use legaia_engine_menus::save_select::SlotContent;
+    use legaia_engine_session::title_continue::CARD_PORTS;
     use legaia_save::{CharacterRecord, HpMpSp, Party, SaveFile, SaveResume};
 
     /// A card image built in memory: the `MC` header, one block claimed for a
@@ -761,9 +726,9 @@ mod mounted_card_tests {
     #[test]
     fn a_mounted_card_fills_port_two_with_its_own_name() {
         let (_dir, card) = mount("player.mcr", 3);
-        let rack = card_save_rack([None, Some(&card)]);
+        let rack = card_port_rack([None, Some(&card)]);
         assert!(rack.is_card_ports());
-        assert_eq!(rack.slots().len(), CARD_PORTS as usize);
+        assert_eq!(rack.slots().len(), CARD_PORTS);
         assert!(rack.slots()[1].present, "port 2 holds the mounted card");
         assert_eq!(rack.slots()[1].label, "player.mcr");
     }
@@ -775,7 +740,7 @@ mod mounted_card_tests {
         use legaia_engine_menus::save_screen::SaveScreenFlow;
         use legaia_engine_menus::save_select::{SaveSelectMode, SaveSelectSession, SelectInput};
         let (_dir, card) = mount("player.mcr", 3);
-        let rack = card_save_rack([None, Some(&card)]);
+        let rack = card_port_rack([None, Some(&card)]);
         let mut session = SaveSelectSession::for_rack(SaveSelectMode::Load, &rack);
         let mut flow = SaveScreenFlow::new();
         for edge in [0x0040u16, 0] {
@@ -834,7 +799,7 @@ mod mounted_card_tests {
     /// existed - an empty port previewing fifteen free cells, never port 1's.
     #[test]
     fn port_two_reads_empty_with_no_card_mounted() {
-        let rack = card_save_rack([None, None]);
+        let rack = card_port_rack([None, None]);
         assert!(!rack.slots()[1].present);
         let blocks = card_port_blocks([None, None], 1);
         assert_eq!(blocks.len(), SLOT_GRID_CELLS as usize);

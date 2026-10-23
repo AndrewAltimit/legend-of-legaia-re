@@ -121,9 +121,9 @@ pub struct MinigameState {
     pub baka_return_mode: SceneMode,
     /// Muscle Dome contest state. `Some` while `mode ==
     /// SceneMode::MuscleDome`; the hand-select / commit / resolve loop runs
-    /// each tick. See [`legaia_engine_menus::muscle_dome_session::MuscleDomeSession`] and
+    /// each tick. See [`legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession`] and
     /// `World::enter_muscle_dome`.
-    pub muscle_dome: Option<legaia_engine_menus::muscle_dome_session::MuscleDomeSession>,
+    pub muscle_dome: Option<legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession>,
     /// The scene mode to restore when the Muscle Dome contest ends
     /// (`World::enter_muscle_dome` snapshots the interrupted mode).
     pub muscle_return_mode: SceneMode,
@@ -237,7 +237,7 @@ pub struct MinigameState {
     /// upload work", which is the shape a silent one-host regression hides in.
     pub dance_hud_art_staged: bool,
     /// What the dance entry staged over the walked-in scene's globals, `Some`
-    /// exactly while a dance runs - see `legaia_engine_core::dance_venue::sync_dance_venue`.
+    /// exactly while a dance runs - see `crate::dance_venue::sync_dance_venue`.
     pub dance_venue: Option<crate::dance_venue::DanceVenueStage>,
     /// Staging counter behind [`crate::dance_venue::DanceVenueStage::generation`].
     pub dance_venue_generation: u32,

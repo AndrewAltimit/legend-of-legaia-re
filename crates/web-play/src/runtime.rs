@@ -119,7 +119,7 @@ pub struct LegaiaRuntime {
     /// shared kernel (`frame_step::CutsceneGlide`) the native window owns
     /// one of too. Without it every `apply > 0` Camera Configure beat snapped
     /// on this host.
-    pub(crate) cutscene_glide: legaia_engine_core::frame_step::CutsceneGlide,
+    pub(crate) cutscene_glide: legaia_engine_field::frame_step::CutsceneGlide,
     /// The engine camera [`Self::play_camera_vp`] last handed the page: the
     /// matrix and the frame it was built from. The field FX pass reads the
     /// frame back only when the page draws through that exact matrix, so the
@@ -132,7 +132,7 @@ pub struct LegaiaRuntime {
     /// Wall-clock to sim-tick accumulator (`frame_step::SimStepper`), the
     /// native window's frame-step rule. The page's animation loop asks it
     /// how many ticks each display frame runs ([`Self::play_drain_sim_steps`]).
-    pub(crate) sim_stepper: legaia_engine_core::frame_step::SimStepper,
+    pub(crate) sim_stepper: legaia_engine_field::frame_step::SimStepper,
     /// This tick's explicit camera-azimuth override (the VR first-person
     /// gaze), drained by the camera tick. `None` = the engine camera's own
     /// compass azimuth drives the d-pad remap, exactly as it does natively.
@@ -235,28 +235,27 @@ pub struct LegaiaRuntime {
     pub(crate) menu_assets: Option<crate::play_menu::PlayMenuAssets>,
     /// Live pause-menu navigation state; `Some` while the menu is up.
     pub(crate) play_menu: Option<crate::play_menu::PlayMenu>,
-    /// Boot-chain title-screen session; `Some` while the title runs before a
-    /// scene is entered ([`crate::boot_title`]).
-    pub(crate) boot_title: Option<legaia_engine_menus::title::TitleSession>,
-    /// The title session **parked as a backdrop** while the boot Continue
-    /// hand-off's save-select owns the screen. Retail keeps the title art up
-    /// behind the Load panel at a dim; this page used to release the session
-    /// at the hand-off and compose the panel over black
+    /// The boot front end (publisher logos, then the title card) - the
+    /// session's one front end ([`legaia_engine_session::FrontEnd`]), which
+    /// the native window steps too. `Some` while the logos or the title run
+    /// before a scene is entered ([`crate::boot_title`]).
+    pub(crate) boot_front_end: Option<legaia_engine_session::FrontEnd>,
+    /// The title's Continue screen while it owns the frame - the session's
+    /// one owner ([`legaia_engine_session::ContinueScreen`]), the native
+    /// window's too ([`crate::boot_continue`]). Retail keeps the title art up
+    /// behind it at a dim
     /// ([`crate::boot_title::LegaiaRuntime::boot_title_backdrop_draws_json`]).
-    pub(crate) boot_title_backdrop: Option<legaia_engine_menus::title::TitleSession>,
+    pub(crate) boot_continue: Option<legaia_engine_session::ContinueScreen>,
     /// How many attract hand-offs the title has skipped this session. The
     /// countdown fires the same way it does natively, but this page has no
     /// STR/MDEC playback on the play path, so the movie is skipped and the
     /// count is what the page discloses instead of showing it.
     pub(crate) boot_title_attract_skips: u32,
     /// Disc-sourced title-screen art (PROT 0888), built with the title flow.
-    pub(crate) title_atlas: Option<legaia_engine_menus::title_screen_atlas::TitleScreenAtlas>,
-    /// Publisher-logo boot phase, the stage **ahead** of the title card
-    /// ([`crate::boot_title`]). `Some` while the logos play.
-    pub(crate) boot_logos: Option<legaia_engine_menus::publisher_logos::PublisherLogosSession>,
+    pub(crate) title_atlas: Option<legaia_engine_title::title_screen_atlas::TitleScreenAtlas>,
     /// Disc-sourced publisher-logo atlas (PROT 0895 `init.pak`), built on the
     /// first logo run and kept for the page load.
-    pub(crate) boot_logos_atlas: Option<legaia_engine_menus::publisher_logos::LogosAtlas>,
+    pub(crate) boot_logos_atlas: Option<legaia_engine_title::publisher_logos::LogosAtlas>,
     /// The atlas build was attempted and failed (no disc, or `init.pak` did
     /// not parse), so it is not retried every frame.
     pub(crate) boot_logos_failed: bool,
@@ -479,11 +478,10 @@ impl LegaiaRuntime {
             menu_font: None,
             menu_assets: None,
             play_menu: None,
-            boot_title: None,
-            boot_title_backdrop: None,
+            boot_front_end: None,
+            boot_continue: None,
             boot_title_attract_skips: 0,
             title_atlas: None,
-            boot_logos: None,
             boot_logos_atlas: None,
             boot_logos_failed: false,
             menu_glyph_atlas: None,

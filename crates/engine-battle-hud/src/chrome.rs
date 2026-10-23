@@ -43,7 +43,7 @@ pub fn battle_begin_tab_visible(world: &legaia_engine_core::world::World) -> boo
 /// `0x801D3968..0x801D3974` for `0x0E`), i.e. abutting the plaque. The item
 /// window draws its own trail (record `0x0C`), so it is not named here.
 pub fn battle_breadcrumb_third_tab(world: &legaia_engine_core::world::World) -> Option<String> {
-    use legaia_engine_menus::battle_input::BattleCommand;
+    use legaia_engine_battle_menus::battle_input::BattleCommand;
     match battle_command_surface(world)? {
         CommandSurface::AttackMode
         | CommandSurface::Targeting

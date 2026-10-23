@@ -496,7 +496,7 @@ impl LegaiaRuntime {
             });
         }
         let tex_slots_used =
-            legaia_engine_core::battle_party_form::monster_tex_slots_used(bound_slots);
+            legaia_engine_battle::battle_party_form::monster_tex_slots_used(bound_slots);
 
         // Party battle forms per present-party ordinal: the CHARACTER picks
         // the content (player file 863 + cslot), the ORDINAL picks the
@@ -620,7 +620,7 @@ impl LegaiaRuntime {
 /// animator poses it per frame); a PROT 1204 fallback uploads pre-posed from
 /// its PROT 1203 record and is never re-posed.
 fn party_actor_render(
-    form: &legaia_engine_core::battle_party_form::PartyBattleForm,
+    form: &legaia_engine_battle::battle_party_form::PartyBattleForm,
 ) -> Option<BattleActorRender> {
     let (vmesh, object_ids, rest_pose) = if form.assembled {
         let (vmesh, object_ids) =

@@ -24,7 +24,7 @@
 use legaia_engine_audio::AudioSink;
 use legaia_engine_audio::note_trace::{NoteEvent, NoteEventKind, NoteTrace};
 use legaia_engine_audio::spu::voice::VoiceBus;
-use legaia_engine_menus::battle_input::CommandPhase;
+use legaia_engine_battle_menus::battle_input::CommandPhase;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_session::audio_director::AudioCommand;
 use legaia_engine_shell::window::HeadlessPlayWindow;

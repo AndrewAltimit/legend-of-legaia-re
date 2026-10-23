@@ -89,6 +89,43 @@ fn the_message_bar_takes_the_active_actor_bars_seat() {
     assert_eq!(on_pen[0].dst.0, 16 * STAGE_SCALE);
 }
 
+/// A message bar still gliding up (`FUN_801D8DE8(0x5B, 0)` spawns it at
+/// seat A) draws its caption `message_bar_dy` below the pen, and leaves the
+/// target plaque on the row above it in view until its frame reaches the
+/// plaque (`zeto_call_wave_mid_cast`: the plaque on its row, the bar's top
+/// edge under it).
+#[test]
+fn a_gliding_message_bar_rides_below_its_seat_and_spares_the_target_plaque() {
+    let font = legaia_font::synthetic_for_tests();
+    let frame = |dy: i32| BattleHudFrame {
+        solid_src: Some(SOLID),
+        surface: SURFACE,
+        message_bar: Some("Line"),
+        message_bar_dy: dy,
+        target_plaque: Some(("Zeto", None)),
+        ..Default::default()
+    };
+    let rising = battle_hud_draws_for(&font, &frame(27), PEN).text;
+    assert!(
+        rising.iter().any(|d| d.src != SOLID
+            && d.dst.0 == 16 * STAGE_SCALE
+            && d.dst.1 == (BAR_NAME_Y + 27) * STAGE_SCALE),
+        "the caption rides the glide"
+    );
+    let plaque_glyphs = |d: &[TextDraw]| {
+        d.iter()
+            .filter(|t| t.src != SOLID && t.dst.0 > 200 * STAGE_SCALE)
+            .count()
+    };
+    assert_eq!(
+        plaque_glyphs(&rising),
+        4,
+        "the plaque stays up under a rising bar"
+    );
+    let landed = battle_hud_draws_for(&font, &frame(0), PEN).text;
+    assert_eq!(plaque_glyphs(&landed), 0, "a landed bar hides the plaque");
+}
+
 /// The two party surfaces are **mutually exclusive**. While the acting
 /// member's bar owns the screen retail parks the whole roster cluster at
 /// `y = 230`, under its 228-line display window; the port's stage is 240

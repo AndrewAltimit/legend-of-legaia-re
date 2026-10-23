@@ -14,6 +14,7 @@
 //! | `FUN_80058490` | `(&rect, x, y)` | a `MoveImage` whose rect the arm builds at the packet cursor `*(0x1F8003A0)` |
 //! | `FUN_801F2410` (0898) | none - the dispatchers' tail | the arm stores the wash parameters into `ctx[+0x27A..+0x286]` / `ctx[+0x32A..+0x32C]` |
 //! | `FUN_80050120` | none - the battle frame's ambient pass | the arm stores the stage byte `ctx[+0x278]`, which darkens the backdrop pair and takes the ground grid off the screen |
+//! | `FUN_801D8DE8` (0898) | `(element, mode)` | a battle HUD element raised or unloaded; for the message bar `0x5B`, the line pointer the arm stores into `0x800774AC` first |
 //!
 //! Each of those is a call (or a store) whose arguments are literals the arm
 //! computes in a few straight-line instructions, so the wiring is **data**:
@@ -67,6 +68,16 @@ pub const STREAK_RIBBON: u32 = 0x801E_1D98;
 pub const MOVE_IMAGE: u32 = 0x8005_8490;
 /// `FUN_800583C8` - `LoadImage`.
 pub const LOAD_IMAGE: u32 = 0x8005_83C8;
+/// `FUN_801D8DE8` (PROT 0898) - the battle HUD's screen-element spawner,
+/// `(element, mode)`: mode bit 0 clear raises the element on its glide from
+/// seat A, set unloads it.
+pub const HUD_ELEMENT: u32 = 0x801D_8DE8;
+/// The content word of placement record 91 (HUD element `0x5B`, the
+/// full-width message bar): the text pointer an arm stores before raising
+/// the bar.
+pub const MESSAGE_BAR_TEXT: u32 = 0x8007_74AC;
+/// HUD element `0x5B`, the full-width message bar.
+pub const MESSAGE_BAR_ELEMENT: u8 = 0x5B;
 
 /// The fade template block every module arm writes before `FUN_80024E80`.
 pub const FADE_TEMPLATE_BLOCK: u32 = 0x801C_9070;
@@ -209,6 +220,38 @@ pub enum PresentationCall {
     },
     /// `sb rt, 0x278(ctx)`: the stage byte, the literal when it folded.
     StageByte { value: Option<u8> },
+    /// `FUN_801D8DE8(element, mode)`: a battle HUD element raised (mode bit 0
+    /// clear) or unloaded. `text` is the word the arm stored into the
+    /// message bar's content word [`MESSAGE_BAR_TEXT`] on its way to the call,
+    /// when it folded - for element [`MESSAGE_BAR_ELEMENT`], the VA of the
+    /// line the bar shows.
+    HudElement {
+        element: Option<u8>,
+        mode: Option<u8>,
+        text: Option<u32>,
+        /// The phase the code after the call stores ([`site_exit_phase`]):
+        /// which way out of its arm the raise sits on, where an arm forks.
+        exit: Option<PhaseExit>,
+    },
+}
+
+/// The phase a straight-line run stores into `ctx[+0x279]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PhaseExit {
+    /// The arm's own phase plus `k` (`lbu; addiu k; sb`).
+    Rel(i32),
+    /// A literal.
+    Abs(u8),
+}
+
+impl PhaseExit {
+    /// The phase this exit stores from arm `phase_in`.
+    pub fn from_arm(self, phase_in: u8) -> u8 {
+        match self {
+            Self::Rel(k) => (i32::from(phase_in) + k) as u8,
+            Self::Abs(v) => v,
+        }
+    }
 }
 
 /// One decoded site.
@@ -1134,12 +1177,13 @@ impl Tracker {
 // Site decode
 // ---------------------------------------------------------------------------
 
-const SITE_CALLS: [u32; 5] = [
+const SITE_CALLS: [u32; 6] = [
     FADE_SPAWN,
     ARMED_WASH,
     STREAK_RIBBON,
     MOVE_IMAGE,
     LOAD_IMAGE,
+    HUD_ELEMENT,
 ];
 
 fn is_wash_field(off: u16) -> bool {
@@ -1172,6 +1216,15 @@ fn site_call(i: &Ins, t_before: &Tracker, t_call: &Tracker) -> Option<Presentati
                     id: rv(5).map(|v| v as i16),
                 })
             }
+            HUD_ELEMENT => PresentationCall::HudElement {
+                element: rv(4).map(|v| v as u8),
+                mode: rv(5).map(|v| v as u8),
+                text: match t_call.load(Mem::Abs(MESSAGE_BAR_TEXT), 4, false) {
+                    V::C(v) => Some(v),
+                    _ => None,
+                },
+                exit: None,
+            },
             ARMED_WASH => PresentationCall::ArmedWash {
                 rgb: rv(4).map(|v| v & 0x00FF_FFFF),
             },
@@ -1643,6 +1696,104 @@ pub fn decode(bytes: &[u8], own_end: usize) -> CastPresentation {
             out.unplaced.push(UnplacedSite { va, call });
         }
     }
+    // A HUD element raise names the way out of its arm it sits on.
+    for site in &mut out.sites {
+        if let PresentationCall::HudElement { exit, .. } = &mut site.call
+            && let Some(f) = fns
+                .iter()
+                .find(|f| (img.base + f.start as u32..img.base + f.end as u32).contains(&site.va))
+        {
+            *exit = site_exit_phase(&img, &phase_alias_regs(&img, f), site.va);
+        }
+    }
     out.sites.sort_by_key(|s| (s.body, s.arm, s.va));
     out
+}
+
+/// The phase the straight-line run after the call at `va` stores, if it
+/// stores one before any branch: the phase byte loaded (`lbu`, read as the
+/// arm's own phase) and stepped by `addiu`, or a literal. The run stops at a
+/// conditional branch or a `jr`; a `j` is followed after its delay slot.
+/// Call Wave's arm 0 raises its message bar and then bumps the phase
+/// (`0x801F6CF0..0x801F6D00`); Big Wave, forked off the same arm, never
+/// reaches the raise.
+fn site_exit_phase(img: &Image, alias: &BTreeSet<usize>, va: u32) -> Option<PhaseExit> {
+    #[derive(Clone, Copy)]
+    enum P {
+        Unk,
+        C(i32),
+        Ph(i32),
+    }
+    let mut r = [P::Unk; 32];
+    r[0] = P::C(0);
+    let mut at = va + 4;
+    // What happens after the delay slot of the control transfer just met:
+    // a call's clobber, a jump's target, or the end of the run.
+    enum After {
+        Clobber,
+        Jump(u32),
+        Stop,
+    }
+    let mut pending: Option<After> = None;
+    for _ in 0..96 {
+        let i = img.ins(at)?;
+        if is_phase_store(&i, alias) {
+            return match r[i.rt()] {
+                P::Ph(k) => Some(PhaseExit::Rel(k)),
+                P::C(c) => u8::try_from(c).ok().map(PhaseExit::Abs),
+                P::Unk => None,
+            };
+        }
+        let out = if is_phase_load(&i, alias) {
+            P::Ph(0)
+        } else {
+            match i.op() {
+                0x09 => match r[i.rs()] {
+                    P::C(c) => P::C(c + i.simm()),
+                    P::Ph(k) => P::Ph(k + i.simm()),
+                    P::Unk => P::Unk,
+                },
+                0x0D => match r[i.rs()] {
+                    P::C(c) => P::C(c | i32::from(i.imm())),
+                    _ => P::Unk,
+                },
+                0x00 if i.funct() == 0x25 || i.funct() == 0x21 => match (r[i.rs()], r[i.rt()]) {
+                    (x, P::C(0)) | (P::C(0), x) => x,
+                    _ => P::Unk,
+                },
+                _ => P::Unk,
+            }
+        };
+        if let Some(d) = i.dest() {
+            r[d] = out;
+        }
+        r[0] = P::C(0);
+        match pending.take() {
+            Some(After::Clobber) => {
+                // The callee clobbers the temporaries; `s` registers survive.
+                for n in [
+                    1usize, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 24, 25, 31,
+                ] {
+                    r[n] = P::Unk;
+                }
+            }
+            Some(After::Jump(t)) => {
+                at = t;
+                continue;
+            }
+            Some(After::Stop) => return None,
+            None => {}
+        }
+        pending = if i.is_jal() || i.is_jalr() {
+            Some(After::Clobber)
+        } else if i.is_j() {
+            Some(After::Jump(i.jump_target()))
+        } else if i.is_branch() || i.is_jr() {
+            Some(After::Stop)
+        } else {
+            None
+        };
+        at += 4;
+    }
+    None
 }

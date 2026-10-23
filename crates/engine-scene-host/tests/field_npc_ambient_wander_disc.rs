@@ -178,6 +178,17 @@ fn town01_villagers_wander_inside_their_authored_boxes() {
         "town01 binds ambient motion streams to placements"
     );
 
+    // A spawn section can end on a compass walk of its own actor (`41 00 01`
+    // on the parked `P1[36]`), which the walk kernel steps until it lands -
+    // script motion, run whatever liveliness says. The seats are where those
+    // legs land.
+    let slots: Vec<u8> = world.npcs.positions.keys().copied().collect();
+    let mut settle = 0;
+    while slots.iter().any(|&s| world.npcs.glide_leg_active(s)) {
+        assert!(settle < 120, "the spawn sections' compass legs land");
+        let _ = world.tick();
+        settle += 1;
+    }
     let anchors = world.npcs.positions.clone();
 
     // Control: liveliness off holds every seat exactly. The walk ops read

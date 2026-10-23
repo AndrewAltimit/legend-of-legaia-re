@@ -510,7 +510,7 @@ impl World {
         use legaia_engine_battle::battle_tutorial::{
             SPARRING_CAPTION_FRAMES, SPARRING_CAPTION_RECT, SPARRING_CAPTION_STYLE,
         };
-        use legaia_engine_menus::battle_flow::ActiveTutorialBox;
+        use legaia_engine_battle_menus::battle_flow::ActiveTutorialBox;
         let Some(text) = self
             .battle
             .ui_strings

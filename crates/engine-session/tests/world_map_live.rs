@@ -10,6 +10,7 @@
 //! Skip-passes without disc data / extracted assets (the `LEGAIA_DISC_BIN`
 //! convention) so CI works without Sony bytes.
 
+use legaia_engine_save_state::WorldSaveState;
 use std::path::PathBuf;
 
 use legaia_engine_mode::mode::SceneMode;
@@ -406,98 +407,284 @@ fn world_map_scene_transition_auto_enters_world_map() {
     );
 }
 
-/// A real overworld **minigame door** auto-engages when the player walks onto
-/// its tile: teleport the player onto the classified entity's tile and confirm
-/// the next world-map ticks arm the mode-24 door warp with the placement's
-/// sub-id - no host `engage_world_map_entity` call.
-///
-/// This used to assert a `WorldMapTransition` carrying the same number, which
-/// is the defect it now guards: `map02` / `map03`'s only genuine `0x3E`
-/// placements are the fishing signboards (`sub_id 0`), so the payload is a
-/// code-overlay selector and surfacing it as a map id put it through the
-/// CDNAME-ordinal resolver - i.e. walking onto the signboard warped the player
-/// to an unrelated scene instead of opening the fishing minigame.
-#[test]
-fn world_map_walking_onto_real_minigame_door_arms_the_warp() {
-    use legaia_engine_field::field_events::FieldEvent;
-    use legaia_engine_field::world_map_entity_config::WorldMapEntityConfig;
+/// The fishing signboard's record, decoded off the disc: its placement slot,
+/// world anchor, and the record-relative PCs the tests key on.
+struct Signboard {
+    /// Index into `world_map.entity_configs`.
+    entity: usize,
+    /// Partition-1 placement index (the interaction record's key).
+    slot: u8,
+    sub_id: u8,
+    pos: (i16, i16),
+    /// The `0x2A` picker.
+    picker_pc: usize,
+    /// The first `4C DC` holdings test (the rod check).
+    first_holding_pc: usize,
+    /// The `SysFlag.Test` ahead of the holdings tests, if the record has one
+    /// (`map03`'s frozen-lake gate).
+    gate_flag: Option<u16>,
+}
 
+/// Open `scene` straight off the disc image (no `extracted/` needed) and
+/// enter it as the overworld, armed the way both play hosts arm it.
+fn open_world_map_disc(scene: &str) -> Option<NativeSession> {
+    let disc = std::env::var_os("LEGAIA_DISC_BIN").map(PathBuf::from)?;
+    let cfg = BootConfig {
+        scene: scene.into(),
+        enable_audio: false,
+    };
+    let mut session = NativeSession::open_disc(&disc, &cfg).expect("open boot session");
+    session
+        .enter_world_map_live(scene, &FieldLiveOpts::default())
+        .expect("enter_world_map_live");
+    session.host.world.toggles.use_vm_dialogue = true;
+    // No region roll may interrupt the talk.
+    session.host.world.world_map.region_tracker = None;
+    // Let the entry frames settle (the arrival seat and the entry fade
+    // reposition and turn the player) before a test seats it.
+    session.host.world.set_pad(0);
+    for _ in 0..8 {
+        session.host.tick().expect("settle tick");
+    }
+    Some(session)
+}
+
+fn signboard(session: &NativeSession) -> Signboard {
+    use legaia_engine_field::world_map_entity_config::WorldMapEntityConfig;
+    use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, LinearWalker};
+
+    let world = &session.host.world;
+    let (entity, sub_id, slot) = world
+        .world_map
+        .entity_configs
+        .iter()
+        .enumerate()
+        .find_map(|(i, c)| match c {
+            WorldMapEntityConfig::MinigameDoor { sub_id, slot } => Some((i, *sub_id, *slot)),
+            _ => None,
+        })
+        .expect("the overworld installs its fishing signboard");
+    let record = world
+        .npcs
+        .dialog_prologue
+        .get(&slot)
+        .expect("the signboard installs its interaction record");
+    let mut picker_pc = None;
+    let mut first_holding_pc = None;
+    let mut gate_flag = None;
+    for insn in LinearWalker::new(&record.body, record.entry_pc).map_while(Result::ok) {
+        let b = &record.body[insn.pc..];
+        if b.first() == Some(&0x2A) && picker_pc.is_none() {
+            picker_pc = Some(insn.pc);
+        }
+        if b.starts_with(&[0x4C, 0xDC]) && first_holding_pc.is_none() {
+            first_holding_pc = Some(insn.pc);
+        }
+        if first_holding_pc.is_none()
+            && gate_flag.is_none()
+            && let InsnInfo::SystemFlag {
+                kind: FlagKind::Test,
+                idx,
+                ..
+            } = insn.info
+        {
+            gate_flag = Some(idx);
+        }
+    }
+    Signboard {
+        entity,
+        slot,
+        sub_id,
+        pos: world.world_map.entity_positions[entity],
+        picker_pc: picker_pc.expect("the signboard record carries a picker"),
+        first_holding_pc: first_holding_pc.expect("the signboard record tests holdings"),
+        gate_flag,
+    }
+}
+
+/// Seat the player beside the signboard, facing it, so the retail action
+/// probe (64 units ahead, a ±72 box) finds it. `false` when none of the four
+/// cardinal approaches puts the board in the probe.
+fn seat_facing(session: &mut NativeSession, board: &Signboard) -> bool {
+    seat_facing_slot(session, board.slot, board.pos)
+}
+
+/// [`seat_facing`] for any placement `slot` standing at `pos`.
+fn seat_facing_slot(session: &mut NativeSession, slot: u8, pos: (i16, i16)) -> bool {
+    let world = &mut session.host.world;
+    let Some(p) = world.player_actor_slot else {
+        return false;
+    };
+    for (dx, dz) in [(0i16, -96i16), (0, 96), (-96, 0), (96, 0)] {
+        for heading in [0i16, 0x400, 0x800, 0xC00] {
+            let a = &mut world.actors[p as usize];
+            a.move_state.world_x = pos.0 + dx;
+            a.move_state.world_z = pos.1 + dz;
+            a.move_state.render_26 = heading;
+            if world.field_interact_probe_slot() == Some(slot) {
+                world.world_map.last_tile = None;
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Run the talk a confirm press opens: Cross on a 6-frame cadence (one edge
+/// per press, so "Yes" - the picker's first row - is the answer) through
+/// `SceneHost::tick`, whose minigame drain is the one both play hosts run.
+/// Returns the furthest record PC the runner reached, whether a talk ever
+/// ran, and the mode the run ended in.
+fn run_talk(session: &mut NativeSession, frames: usize) -> (usize, bool, SceneMode) {
+    let mut max_pc = 0usize;
+    let mut ran = false;
+    for f in 0..frames {
+        let pad = if f % 6 == 0 {
+            PadButton::Cross.mask()
+        } else {
+            0
+        };
+        session.host.world.set_pad(pad);
+        session.host.tick().expect("scene host tick");
+        if let Some(r) = session.host.world.dialog.inline.as_ref() {
+            ran = true;
+            max_pc = max_pc.max(r.pc);
+        }
+        if session.host.world.mode != SceneMode::WorldMap {
+            break;
+        }
+        // The talk ended: stop before the next press opens it again.
+        if ran && !session.host.world.dialogue_owns_input() && f % 6 == 5 {
+            break;
+        }
+    }
+    (max_pc, ran, session.host.world.mode)
+}
+
+/// The overworld **fishing signboard** is talk-to, not walk-onto. Standing on
+/// its tile does nothing; the confirm press runs the placement's own
+/// interaction record through the field's talk runner - holdings checks, the
+/// "fish?" picker, the white fade and the wait - and that record's `0x3E` puts
+/// the party in the pond.
+///
+/// This used to assert the opposite, that walking onto the board armed the
+/// warp. That was the port's shortcut: the `MinigameDoor` entity warped on
+/// the walk-over tile and the record never ran.
+#[test]
+fn world_map_fishing_signboard_runs_its_record_into_fishing() {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return;
     }
-    let Some(extracted) = extracted_dir() else {
-        eprintln!("[skip] extracted/ missing");
-        return;
-    };
-
-    // map02 / map03 each classify one genuine door placement from their
-    // placement scripts.
-    let mut tested_any = false;
     for scene in ["map02", "map03"] {
-        let cfg = BootConfig {
-            scene: scene.into(),
-            enable_audio: false,
-        };
-        let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
-        let opts = FieldLiveOpts::default();
-        session
-            .enter_world_map_live(scene, &opts)
-            .expect("enter_world_map_live");
+        let mut session = open_world_map_disc(scene).expect("disc session");
+        let board = signboard(&session);
+        assert_eq!(
+            board.sub_id, 0,
+            "[{scene}] the signboard is the fishing door"
+        );
 
+        // A party that can fish: a rod, a lure and (map03) a thawed lake.
         let world = &mut session.host.world;
-        // Find the first installed door entity and its placement position.
-        let door = world
-            .world_map
-            .entity_configs
-            .iter()
-            .enumerate()
-            .find_map(|(i, c)| match c {
-                WorldMapEntityConfig::MinigameDoor { sub_id } => Some((i, *sub_id)),
-                _ => None,
-            });
-        let Some((idx, sub_id)) = door else {
-            eprintln!("[{scene}] no minigame-door entity installed");
-            continue;
-        };
-        let (px, pz) = world.world_map.entity_positions[idx];
-        // Teleport the player onto the door tile, then tick: auto-engage
-        // should arm the warp within a couple of frames.
-        if let Some(slot) = world.player_actor_slot {
-            let a = &mut world.actors[slot as usize];
-            a.move_state.world_x = px;
-            a.move_state.world_z = pz;
+        world.party.inventory.add(0xA0, 1);
+        world.party.inventory.add(0x9D, 1);
+        if let Some(flag) = board.gate_flag {
+            world.system_flag_set(flag);
         }
-        let mut armed = false;
-        for _ in 0..4 {
-            let _ = world.tick();
-            if world.minigames.pending_warp == Some(sub_id) {
-                armed = true;
-                break;
-            }
+
+        // Standing on the board's tile is not an interaction.
+        if let Some(p) = world.player_actor_slot {
+            let a = &mut world.actors[p as usize];
+            a.move_state.world_x = board.pos.0;
+            a.move_state.world_z = board.pos.1;
         }
-        eprintln!("[{scene}] door #{idx} -> minigame sub_id {sub_id}: armed={armed}");
+        world.world_map.last_tile = None;
+        world.set_pad(0);
+        for _ in 0..8 {
+            session.host.tick().expect("tick");
+        }
+        assert_eq!(
+            session.host.world.minigames.pending_warp, None,
+            "[{scene}] walking onto the signboard must not warp"
+        );
+        assert_eq!(session.host.world.mode, SceneMode::WorldMap);
+        assert!(session.host.world.dialog.inline.is_none());
+
         assert!(
-            armed,
-            "[{scene}] standing on the door tile auto-arms its minigame warp"
+            seat_facing(&mut session, &board),
+            "[{scene}] no approach puts the signboard in the action probe"
+        );
+        session.host.world.set_pad(0);
+        session.host.tick().expect("tick");
+        let (max_pc, ran, mode) = run_talk(&mut session, 900);
+        eprintln!(
+            "[{scene}] signboard P1[{}] entity #{}: ran={ran} max_pc=0x{max_pc:X} \
+             picker=0x{:X} mode={mode:?}",
+            board.slot, board.entity, board.picker_pc
+        );
+        assert!(
+            ran,
+            "[{scene}] the confirm press runs the signboard's record"
+        );
+        assert!(
+            max_pc >= board.picker_pc,
+            "[{scene}] the talk reaches the picker (max pc 0x{max_pc:X})"
         );
         assert_eq!(
-            world.pending_scene_transition, None,
-            "[{scene}] a door sub-id must not reach the map-id resolver"
+            mode,
+            SceneMode::Fishing,
+            "[{scene}] answering yes lands in the fishing minigame"
         );
-        assert!(
-            !world
-                .drain_field_events()
-                .iter()
-                .any(|e| matches!(e, FieldEvent::WorldMapTransition { .. })),
-            "[{scene}] a minigame door is not a scene transition"
-        );
-        tested_any = true;
     }
+}
+
+/// `map03`'s board refuses with the lake frozen: flag clear, the record takes
+/// its first text branch and the talk ends before it ever tests the party's
+/// tackle. With the lake thawed but no rod it reaches the holdings tests and
+/// still refuses ahead of the picker. Neither opens the minigame.
+#[test]
+fn world_map_fishing_signboard_refuses_frozen_lake_and_no_rod() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    // Frozen lake, full tackle.
+    let mut session = open_world_map_disc("map03").expect("disc session");
+    let board = signboard(&session);
+    let flag = board
+        .gate_flag
+        .expect("map03's signboard gates on the frozen-lake flag");
+    session.host.world.party.inventory.add(0xA0, 1);
+    session.host.world.party.inventory.add(0x9D, 1);
+    session.host.world.system_flag_clear(flag);
+    assert!(seat_facing(&mut session, &board), "seat at the signboard");
+    session.host.world.set_pad(0);
+    session.host.tick().expect("tick");
+    let (max_pc, ran, mode) = run_talk(&mut session, 600);
+    eprintln!("[frozen] ran={ran} max_pc=0x{max_pc:X} mode={mode:?}");
+    assert!(ran, "the confirm press runs the record");
     assert!(
-        tested_any,
-        "at least one overworld minigame door must be exercised"
+        max_pc < board.first_holding_pc,
+        "a frozen lake refuses before the tackle tests (max pc 0x{max_pc:X})"
     );
+    assert_eq!(mode, SceneMode::WorldMap, "a frozen lake opens no minigame");
+    assert_eq!(session.host.world.minigames.pending_warp, None);
+
+    // Thawed lake, no rod.
+    let mut session = open_world_map_disc("map03").expect("disc session");
+    let board = signboard(&session);
+    session.host.world.system_flag_set(flag);
+    assert!(seat_facing(&mut session, &board), "seat at the signboard");
+    session.host.world.set_pad(0);
+    session.host.tick().expect("tick");
+    let (max_pc, ran, mode) = run_talk(&mut session, 600);
+    eprintln!("[no rod] ran={ran} max_pc=0x{max_pc:X} mode={mode:?}");
+    assert!(ran, "the confirm press runs the record");
+    assert!(
+        max_pc >= board.first_holding_pc && max_pc < board.picker_pc,
+        "no rod refuses after the holdings tests, ahead of the picker (max pc 0x{max_pc:X})"
+    );
+    assert_eq!(mode, SceneMode::WorldMap, "no rod opens no minigame");
 }
 
 /// A real overworld NPC carrying inline dialog text opens AND renders its
@@ -747,4 +934,71 @@ fn save_load_on_an_overworld_label_resumes_in_world_map_mode() {
         .expect("enter_field_live_from_save town01");
     assert_ne!(mode, SceneMode::WorldMap);
     eprintln!("[ok] map03 save resumes in WorldMap; town01 in {mode:?}");
+}
+
+/// Every overworld talk placement standing on the map at entry talks through
+/// its own record on the action button, at the seat the record put it on.
+/// `map02` `P1[6]` (a direction sign) is the case: its spawn section seats it
+/// with `23 xb zb`, while its static spawn is the off-map hide box - which is
+/// where the simplified overworld talk looked for it, so the sign could not
+/// be read at all.
+#[test]
+fn world_map_seated_talk_placements_run_their_records() {
+    /// The off-map hide box a parked placement spawns in (tile `0x7F`).
+    const PARKED: (i16, i16) = (0x7F * 128 + 0x40, 0x7F * 128 + 0x40);
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let mut talked = 0usize;
+    for scene in ["map01", "map02", "map03"] {
+        let probe = open_world_map_disc(scene).expect("disc session");
+        let npcs = &probe.host.world.npcs;
+        let mut seated: Vec<(u8, (i16, i16))> = npcs
+            .dialog
+            .keys()
+            .filter(|s| npcs.dialog_prologue.contains_key(s))
+            .filter_map(|s| npcs.positions.get(s).map(|p| (*s, *p)))
+            .filter(|(_, p)| *p != PARKED)
+            .collect();
+        seated.sort_unstable();
+        drop(probe);
+        for (slot, pos) in seated {
+            let mut session = open_world_map_disc(scene).expect("disc session");
+            assert!(
+                seat_facing_slot(&mut session, slot, pos),
+                "[{scene}] P1[{slot}] at {pos:?}: no approach puts it in the action probe"
+            );
+            session.host.world.set_pad(0);
+            session.host.tick().expect("tick");
+            let mut boxed = false;
+            let mut ended = false;
+            for f in 0..900 {
+                let pad = if f % 6 == 0 {
+                    PadButton::Cross.mask()
+                } else {
+                    0
+                };
+                session.host.world.set_pad(pad);
+                session.host.tick().expect("tick");
+                let w = &session.host.world;
+                if w.dialog.inline.as_ref().is_some_and(|r| r.panel.is_some()) {
+                    boxed = true;
+                }
+                if boxed && !w.dialogue_owns_input() {
+                    ended = true;
+                    break;
+                }
+            }
+            eprintln!("[{scene}] P1[{slot}] at {pos:?}: boxed={boxed} ended={ended}");
+            assert!(boxed, "[{scene}] P1[{slot}]: the record opens its box");
+            assert!(ended, "[{scene}] P1[{slot}]: the conversation ends");
+            assert_eq!(session.host.world.mode, SceneMode::WorldMap);
+            talked += 1;
+        }
+    }
+    assert!(
+        talked > 0,
+        "no seated overworld talk placement was exercised"
+    );
 }

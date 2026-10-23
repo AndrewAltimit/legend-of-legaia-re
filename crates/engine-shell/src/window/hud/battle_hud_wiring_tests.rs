@@ -314,7 +314,7 @@ fn engine_ui_command_chips_mirror_the_packet_pinned_battle_chrome() {
     // arm - there is no invented seating left on this screen.
     assert_eq!(
         bcu::MENU_SEATS.len(),
-        legaia_engine_menus::battle_input::BattleCommand::MENU.len(),
+        legaia_engine_battle_menus::battle_input::BattleCommand::MENU.len(),
         "the seating table and the command ring disagree on entry count"
     );
     assert_eq!(
@@ -330,7 +330,7 @@ fn engine_ui_command_chips_mirror_the_packet_pinned_battle_chrome() {
     // left / right.
     assert_eq!(
         bcu::ROUND_PROMPT_SEATS.len(),
-        legaia_engine_menus::battle_input::RoundChoice::PROMPT.len()
+        legaia_engine_battle_menus::battle_input::RoundChoice::PROMPT.len()
     );
     assert!(
         bcu::ROUND_PROMPT_SEATS
@@ -339,7 +339,7 @@ fn engine_ui_command_chips_mirror_the_packet_pinned_battle_chrome() {
     );
     assert_eq!(
         bcu::ATTACK_MODE_SEATS.len(),
-        legaia_engine_menus::battle_input::AttackMode::PROMPT.len()
+        legaia_engine_battle_menus::battle_input::AttackMode::PROMPT.len()
     );
     assert_eq!(bcu::ATTACK_MODE_SEATS[0], bcu::MENU_SEATS[1]);
     assert_eq!(bcu::ATTACK_MODE_SEATS[1], bcu::MENU_SEATS[2]);
@@ -347,7 +347,7 @@ fn engine_ui_command_chips_mirror_the_packet_pinned_battle_chrome() {
     // the engine's `Begin`, `Reselect` order.
     assert_eq!(
         bcu::COMMIT_CONFIRM_SEATS.len(),
-        legaia_engine_menus::battle_input::CommitChoice::PROMPT.len()
+        legaia_engine_battle_menus::battle_input::CommitChoice::PROMPT.len()
     );
     assert_eq!(
         bcu::COMMIT_CONFIRM_SEATS,
@@ -370,7 +370,7 @@ fn engine_ui_command_chips_mirror_the_packet_pinned_battle_chrome() {
 #[test]
 fn direction_presses_land_on_the_chip_drawn_on_that_side() {
     use legaia_engine_battle::target_picker::SlotState;
-    use legaia_engine_menus::battle_input::{
+    use legaia_engine_battle_menus::battle_input::{
         BattleCommand, BattleCommandInput, BattleCommandSession, CommandPhase, Resolution,
     };
     use legaia_engine_ui::battle_command_ui as bcu;

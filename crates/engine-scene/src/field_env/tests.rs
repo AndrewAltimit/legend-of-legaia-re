@@ -409,3 +409,19 @@ fn no_lut_lands_on_ground_plane() {
     let (draws, _) = resolve_env_draws(&env_tmds, &placements, None);
     assert_eq!(draws[0].world_y, 0);
 }
+
+/// One game frame of the anim tick moves the cursor `step * frame step`
+/// (`FUN_800204F8` multiplies by `DAT_1F800393`), so short of a wrap a clip
+/// ticked once at scale 3 stands where three scale-1 ticks put it.
+#[test]
+fn a_scaled_tick_is_the_frame_steps_worth_of_unit_ticks() {
+    let mut a = PropAnim::cross_context(9, 15);
+    let mut b = a;
+    for _ in 0..7 {
+        a.tick_scaled(3);
+        for _ in 0..3 {
+            b.tick();
+        }
+        assert_eq!(a.cursor, b.cursor);
+    }
+}

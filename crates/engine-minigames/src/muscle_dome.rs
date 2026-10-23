@@ -7,7 +7,7 @@
 //! The leg session itself (`MuscleDomeSession`), its command menu and the
 //! fighter loadouts read live `World` state and the battle command screen,
 //! so they live above this crate: the session in
-//! `legaia_engine_menus::muscle_dome_session`, the `World` entry in
+//! `legaia_engine_battle_menus::muscle_dome_session`, the `World` entry in
 //! `legaia_engine_world_views::muscle_dome`. See
 //! [`docs/subsystems/minigame-muscle-dome.md`](../../../docs/subsystems/minigame-muscle-dome.md).
 

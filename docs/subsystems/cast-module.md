@@ -2735,7 +2735,10 @@ exit yaw store `ctx[+0x6DA] = 0x780` is applied as the module finishes
   `z` (arms 1..3); Big Wave cuts to `z/2` and pans to `2z` over `0x100` frames
   (arms 4, 5), then cuts to pitch `0x180`, yaw `0xF00 - facing`,
   TR `(0, 0x600, 3z/2)` (arm 6) and spins the yaw `delta * scalar / 4` a frame
-  through arms 7 and 8.
+  through arms 7 and 8. Big Wave's arm-0 branch also halves the caster's
+  animation rate `+0x21D` beside its stage store (`0x801F6BFC..0x801F6C08`;
+  `zeto_big_wave_mid_cast` holds Zeto at `4`), so Zeto sways at half speed
+  until the Done arm's restore; the port halves it on the same store.
 - **0953** arm 0 forks on the caster's battle-scoped latch word
   `0x801C8FE0 + (ctx[+0x13] + 1) * 4` (the monster AI's cooldown
   `dat[m + 4]`). Zero takes the **charge**: the body sets the latch and leaves
@@ -3188,6 +3191,23 @@ without the commit, so the creature starts with whatever `+0x21B` /
 `+0x176` the seat last held - the zeros the previous cast's `0xFF` arm left.
 Its window first applies at the clip's first commit.
 
+The seat's presentation words it does reset: colour `+0x04 = -1`
+(`0x801F1D5C`), mode word `+0x08 = 0` (`0x801F1D68`), tint state
+`+0x21C = 0` (`0x801F1E7C`), impact selector `+0x21F = 0` (`0x801F1E88`),
+the shatter word `+0x1BA = 0` (`0x801F1E94`), and the 32-byte
+committed-anim-id ring `+0x1FB..+0x21A` (`0x801F1E98..0x801F1EB0`) that
+`FUN_80047430` shifts each frame and the after-image walk `FUN_80049348`
+gates on (`0x10 < id`). The position, cursor and entry rings beside it keep
+their bytes.
+A previous creature can leave the seat in the defeat fade (`+0x21C = 2`), and
+the tint pass `FUN_80050120` keeps running on seat 7 like any other. Its
+party fade-done reset (`+0x21C = 0`, `+0x1DA = 0`, `+0x1DC = 1`) is gated on
+the seat index (`sltiu v0,s2,0x3` at `0x80050330`), so it never touches the
+creature. Both matter to a clip-gated module: an engine seat that kept the
+stale fade and took the party reset lost the clip PROT 0907's arm 7 staged,
+arm 8 bumped `0` to `1` instead of `1` to `2`, and arm 10 held the band's
+`0x36` for good. Port: `World::seat_summon_actor`, `World::tick_battle_impact_fx`.
+
 Module stores in the Seru band (PROT 0903..0913):
 
 | Module | Address | Arm | Store |
@@ -3254,6 +3274,7 @@ instructions before the call:
 | PROT 0898 `FUN_801F2410` colour wash | stores into `ctx[+0x27A..+0x286]`, `ctx[+0x32A]`, `ctx[+0x32C]` | 14 |
 | `FUN_801E1D98` streak ribbon | a stack trio anchor and a trail id | 6 |
 | stage byte `ctx[+0x278]` (no call: a `sb` the battle frame's ambient pass `FUN_80050120` reads) | a literal | 45 |
+| PROT 0898 `FUN_801D8DE8` HUD element spawn | the element and mode; for the message bar `0x5B`, the line pointer stored into `0x800774AC` | 16 |
 
 `legaia_overlay_images::cast_presentation::decode` recovers them as data.
 Each tick body opens on a switch over `ctx[+0x279]` - a jump table bounded by
@@ -3271,6 +3292,14 @@ fades, Evil Seru Magic's arm 2 / 4 / 10 / 26 / 27 fades (all three of arm
 26's), and Gimard's arm 8 CLUT copy
 (`crates/overlay-images/tests/cast_presentation_real.rs`). Of the band's 258
 `FUN_80024E80` sites, 241 sit on a phase arm and 239 of those resolve whole.
+
+A HUD element site also carries the phase the straight-line code after the
+call stores (`PhaseExit`), since an arm that forks raises its bar on one way
+out only: Call Wave's arm 0 raises the message bar and bumps the phase to `1`,
+Big Wave leaves the same arm for `4` without it. The engine raises the bar
+(`World::raise_module_message_bar`) on the pass whose phase change matches,
+for a line the image holds, and leaves PROT 0940, 0941 and 0954 to their hand
+ports ([battle-hud.md](battle-hud.md#the-bottom-message-bar-record-0x5b)).
 
 `World::fire_cast_presentation` fires them after `World::run_cast_module_code`
 has run the tick, keyed by `(module, tick body, phase)`. A call that leaves

@@ -2,7 +2,8 @@
 
 Where the engine's kernels meet. This crate owns `World` - the one struct
 that holds a running game - and everything that has to read or write it: the
-VM host implementations, the tick, the battle loop and the save round-trip.
+VM host implementations, the tick, the battle loop and the party-record
+half of a save.
 It draws nothing and plays nothing. The two layers that drive a `World` from
 outside sit directly above it: the scene host
 ([`engine-scene-host`](../engine-scene-host/README.md)) and the pause-menu
@@ -16,8 +17,8 @@ runtime ([`engine-menu-runtime`](../engine-menu-runtime/README.md)).
   ([layout](../../docs/subsystems/engine.md#how-world-is-laid-out)).
 - **The tick.** `World::tick` is one retail vsync: the effect pool, the
   per-actor move-VM pass, then the scene mode's own step. The rules that
-  turn a host's display frames into ticks (`frame_step`) are here too, so
-  every host paces the simulation the same way.
+  turn a host's display frames into ticks are `legaia_engine_field::frame_step`,
+  over the `FrameStepWorld` seat this crate implements for `World`.
 - **The VM hosts.** Each interpreter in `engine-vm`, `engine-motion-vm` and
   `engine-battle-vm` reaches the game through a host trait; this crate
   implements those traits over `World`.
@@ -34,9 +35,12 @@ runtime ([`engine-menu-runtime`](../engine-menu-runtime/README.md)).
   `engine-minigame-scenes`. What the battle screen reads back off that state
   is [`engine-battle-hud`](../engine-battle-hud/README.md), above this
   crate.
-- **Saves.** `World::save_full` / `load_full` over the LGSF container in
-  `legaia-save`. Writing a save into a mounted memory-card image is
-  `engine-menu-runtime::card_write`, above this crate.
+- **Saves.** The party-record half (`World::save_party` / `load_party`),
+  which the tick and New Game run too. The full LGSF round trip over it
+  (`save_full` / `load_full`) is
+  [`engine-save-state`](../engine-save-state/README.md), and writing a save
+  into a mounted memory-card image is `engine-menu-runtime::card_write`, both
+  above this crate.
 - **What the hosts read back** is not here. The host-facing reads of a
   `World` - the per-frame camera resolution (`camera_view`), the
   visible-tile crop policy, scene staging, the world-map markers and sky, the

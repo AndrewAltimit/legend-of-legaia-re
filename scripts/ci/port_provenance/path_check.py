@@ -4,14 +4,16 @@
 `SPLIT_MODULES` row whose directory was renamed or moved matches no file and
 says nothing: its tags fall back to one module per file, their finding keys
 change, and the waivers keyed on the parent file stop matching - all without
-an error. A row is live exactly when its directory exists and the parent file
-`<row>.rs` sits beside it.
+an error. A row is live exactly when its directory exists and its parent file
+(`<row>.rs` beside it, or `src/lib.rs` for a row naming a crate's `src`)
+exists.
 """
 
 from __future__ import annotations
 
 from port_provenance.paths import REPO
 from port_provenance.rows import DEFINING_DOC_ROOTS, SPLIT_MODULES
+from port_provenance.tags import split_parent
 
 
 def check_declared_paths() -> list[str]:
@@ -23,10 +25,10 @@ def check_declared_paths() -> list[str]:
                 f"SPLIT_MODULES names `{stem}`, which is not a directory - no "
                 f"file folds into it. Point the row at where the module is."
             )
-        elif not (REPO / f"{stem}.rs").is_file():
+        elif not (REPO / split_parent(stem)).is_file():
             problems.append(
                 f"SPLIT_MODULES names `{stem}`, but its parent file "
-                f"`{stem}.rs` does not exist - the findings would be keyed on "
+                f"`{split_parent(stem)}` does not exist - the findings would be keyed on "
                 f"a file that is not there."
             )
     for root in DEFINING_DOC_ROOTS:

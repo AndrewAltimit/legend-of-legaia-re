@@ -152,7 +152,7 @@ struct Swing {
 /// `Command` chip (the directional entry) -> `Up` -> Cross, then the target.
 /// Later party turns fall back to `Auto` so exactly one arts entry is driven.
 fn drive_the_swing(w: &mut World) -> Swing {
-    use legaia_engine_menus::battle_input::{AttackMode, BattleCommand, CommandPhase};
+    use legaia_engine_battle_menus::battle_input::{AttackMode, BattleCommand, CommandPhase};
 
     let up = InputState::mask_of([PadButton::Up]);
     let mut entered = false;

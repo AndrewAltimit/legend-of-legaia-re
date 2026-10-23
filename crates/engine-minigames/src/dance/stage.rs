@@ -454,7 +454,7 @@ pub struct DanceSceneEntry {
 /// `legaia_engine_core::world::World::enter_dance`: the actor this entry spawns from the
 /// template at `0x801D42E4` is the beat clock (`FUN_801cf470` is that
 /// template's tick word), which is [`DanceGame`] + [`CountIn`] there. The
-/// **venue** half is `legaia_engine_core::dance_venue`: `sync_dance_venue` stages the
+/// **venue** half is `legaia_engine_minigame_scenes::dance_venue`: `sync_dance_venue` stages the
 /// record's globals over the walked-in scene on the first dance frame -
 /// [`DanceSceneEntry::scene_block_base`] into the `_DAT_80084540` mirror,
 /// [`DanceSceneEntry::view_window`] into the camera's visible-tile window, and
@@ -522,7 +522,7 @@ pub struct DanceSceneStage {
 
 // PARTIALLY WIRED: `World::enter_dance` / `World::exit_dance` apply the record's
 // `clear_pad_latch` through `InputState::clear_edges`, and
-// `legaia_engine_core::dance_venue::sync_dance_venue` runs the block-base restore
+// `legaia_engine_minigame_scenes::dance_venue::sync_dance_venue` runs the block-base restore
 // (`restores_scene_block_base`) on the first frame after the dance, together
 // with the view-window restore. `restores_caller_scene` needs no write: the
 // port never unloads the walked-in scene, so there is no name to copy back.

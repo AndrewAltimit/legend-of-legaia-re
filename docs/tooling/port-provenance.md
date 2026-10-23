@@ -13,8 +13,9 @@ the wrong retail bytes as covered. The gate that asks the third question is
 
 ## The defect this exists for
 
-`engine-menus::shop::shop_stock_row_ink` carried `PORT: FUN_801D5DE0` while live
-on both hosts. That routine is the **casino prize list's** row renderer: it
+The prize list's ink kernel (`engine-ui::prize_exchange::prize_row_ink`, filed
+then as `engine-menus::shop::shop_stock_row_ink`) carried `PORT: FUN_801D5DE0`
+while live on both hosts. That routine is the **casino prize list's** row renderer: it
 indexes the prize table `0x801E4518` at `base + block*0x60 + row*8`, takes the
 block byte from the entry-context pointer `_DAT_8007B450[1]`, and gates
 affordability on `_DAT_800845A4`, the coin bank. The party gold purse
@@ -280,10 +281,18 @@ reading as evidence:
 matches no file: every child falls back to being a module of its own, each is
 judged against a fraction of its siblings, and the waivers keyed on the parent
 file stop matching. Nothing errors. `path_check.py` requires each row's
-directory and its parent `<row>.rs` to exist, and each `DEFINING_DOC_ROOTS`
-entry to be a directory; a miss prints the rows and exits 1 before the corpus
+directory and its parent `<row>.rs` to exist - or, for a row naming a crate's
+`src` directory (a module split out into a crate of its own), the crate root
+`src/lib.rs` - and each `DEFINING_DOC_ROOTS` entry to be a directory; a miss prints the rows and exits 1 before the corpus
 is read, so it also fires in a worktree, which has no corpus. A module that
 moves is one edit in `rows.py`.
+
+A module that became a whole crate is a row naming the crate's `src`
+directory (`crates/engine-battle-hud/src`). Its parent is the crate root
+`src/lib.rs`, since no `src.rs` sits beside it, and its findings key on that
+file. Before that form was accepted, the row failed the check above and the
+checker exited 1 on every run - which reads, from a script that only looks for
+findings, like a run that found none.
 
 ## Reading a report
 
@@ -293,13 +302,17 @@ moves is one edit in `rows.py`.
     python3 scripts/ci/check-port-provenance.py --signal dual-label
     python3 scripts/ci/check-port-provenance.py --emit-waivers
     python3 scripts/ci/check-port-provenance.py \
-        --funcs     /path/to/checkout/ghidra/scripts/funcs \
-        --extracted /path/to/checkout/extracted          # from a worktree
+        --funcs /path/to/checkout/ghidra/scripts/funcs   # from a worktree
 
 Both corpora are gitignored, so a worktree has neither and the run there would
 otherwise examine nothing. `--funcs` / `--extracted` rebind them to another
 checkout's copies by path - which is the supported way to run the checker from
 a worktree, because *copying* either corpus in would stage Sony bytes.
+`--extracted` defaults to the `extracted/` of the checkout `--funcs` names: a
+worktree run that rebound only the dumps used to read its own absent
+`extracted/`, switch off both byte tests, and report about ninety rows those
+tests settle - every caller-site citation as a `doc-citation`, every
+image-qualified tag as a `non-entry` - as a worklist.
 `--live-only` needs `target/port-catalog/catalog.csv`, which
 `port-catalog.py --live-only` writes. Prefer it: a wrong tag on an inert port is
 a doc bug, while a wrong tag on a live one also mis-credits disc coverage.
@@ -436,6 +449,60 @@ finding for a reader. Two ignore rows this surfaced were filed as phantoms off
 an unbased dump at `0x801F7624` / `0x801F76F4` while the capture trampolines
 of PROT `0943` and `0945` open there; both are VA-aliased rows now.
 
+### An address named on a tag line is not a port of it
+
+The reader takes every `FUN_<addr>` on a `PORT:` line as a claim, so a tag
+that mentions a second routine in its prose ports that routine too, as far
+as the catalog can tell. Two shapes did this, and both were settled by
+reading the Rust beside the routine's disassembly:
+
+- **The address in passing.** A parenthetical listing what the port does
+  *not* carry, a step in another routine's narration, a subsumption note on a
+  call site. The tag is right about its own routine and wrong about the one it
+  names. Spell the second address `0x<addr>`, or move it to a `REF:` line.
+- **The sliver.** One arithmetic tail of a routine whose real work is a drive,
+  a device or a library tier the port replaces, or a function that only
+  forwards to a trait method no host implements. The Rust is a faithful
+  copy of a fragment, and `PORT:` claims the routine. Write `REF:` naming the
+  instruction range it mirrors, and file the routine in
+  `port-catalog-ignore.toml` on what it *is*, so the worklist does not grow.
+
+A partial port keeps its `PORT:` tag and says which arms it lacks, with their
+addresses, on the tag line or in the block under it. The catalog cannot tell
+a partial from a whole port, so that text is the only place the gap is
+recorded.
+
+| Address | Routine | Verdict | Evidence |
+|---|---|---|---|
+| `801D5A24` | scripted-scene actor spawner (field image) | keep | The field image's own bytes at base `0x801CE818` hold the 17-instruction spawner: `jal 0x80020DE0` with `a0 = 0x801F26D8`, then `sh zero,0x54(v0)` / `sh s0,0x50(v0)`. Two `jal`s reach it in that image and two in SCUS. The `overlay_0897_801d5a24.txt` dump is mis-based and prints a 31-instruction fragment. |
+| `801F835C` | PROT 0912's stager | keep | Arms 3..5 seat records (`jal 0x80021B04` at `0x801F83C8` / `0x801F84BC`) and arm 3 stores six randomised fields into each shard; arm 6 writes the fade template at `0x801C9070` (`0x801F84CC..0x801F850C`), which `FREED_STAGER_FADE` carries. The spawn-only shape the stager test checks still holds. |
+| `8004695C` | screen-wash latch arm | REF | Three stores (`DAT_8007B6CC`, `gp+0x9D4`, `gp+0x9D0`). PROT 0933's director named it only in its "not carried" list. |
+| `8003D53C` | CD-XA clip starter | REF, ignored | A libcd sequence (`8003ED04`, `8005C42C`, `8005BECC`, `8005C034`); only the stop-LBA sum `0x8003D698..0x8003D6D8` and the `0x2A30` clamp are mirrored. |
+| `80058298` | `ClearImage` | REF, ignored | RECT validate (`jal 0x80058170`) and a GPU-queue add through the vtable at `0x80078D4C`; the Rust forwards to a `PrimHost` hook no host implements. |
+| `80058490` | `MoveImage` | keep, once | `legaia_tim::Vram::move_image` performs the copy and the zero-extent reject (`beq v0,zero` on `+4` / `+6`); the three caller and forwarding sites carry `REF:`. |
+| `80061954`, `80062410` | tempo meta handler, `_SsSeqInit` | REF, ignored | `tempo_set_budget` is the budget tail of each (`0x800619D4..0x80061AF4`, `0x8006265C..0x80062738`); the tempo read, BPM store, record init and header checks are the engine `Sequencer`'s. |
+| `80068D94` | VAB header open | REF, ignored | Only the program-to-tone-page running count (`0x80068F70..0x80068F90`) is reproduced; the slot pick, checks and SPU allocation are the engine binder's own. |
+| `80062F98`, `80065034`, `80066B00`, `80066E50`, `80067E9C` | libsnd calc tier, voice key-on, voice chooser, cue pitch, sequence volume | keep, partial | Each tag now names the missing arms: the per-frame voice flush `jal 0x80065BAC`, the `vag == 0xFF` arm and the record stores, the flag-2 winner call and `+0x2A` clear, the caller's `fine`, the independent left / right volumes. |
+| `80056798`, `8003D344`, `800583C8`, `8005842C`, `80026520`, `800266E0` | `rand`, `ApplyMatrix`, `LoadImage`, `StoreImage`, two actor sound releases | REF | Each was named in passing on another routine's tag; all were already on the ignore list. |
+
+The libsnd partials stay partial on purpose. The calc tier's missing voice
+flush has nothing to act on - the tier is the `note-trace` differential host,
+and playback's flush is `Sequencer::flush_key_ons` - and the key-on record
+stores `80065034` skips are reached only by the minigames' direct voice cues,
+whose states already match retail's key-on census exactly.
+
+#### The standing findings, read the same way
+
+| Finding | Verdict | Evidence |
+|---|---|---|
+| `801DB124` module-orphan | waived, full | the battle image's bytes: `+0x1DD < 8`, HP `+0x14C`, the spell-tier gate through `0x800754C8` (`sltiu 0xa` at `0x801DB1C8`), item ids `0xFE` / `0x98`, two `rand` rerolls |
+| `801F12D0` module-orphan (summon.rs) | waived, partial | the stage-4 `0x36` / sign test and stage-6 `sltiu 0xcb` are `sideband_slot_count`; the uploads are not this module's |
+| `801F12D0` module-orphan (loop_driver.rs) | `REF` | `tick_sideband_token` counts down a measured read cost; it models the stage byte's lifetime, not the routine's code |
+| `801F76C4`, `801F7F34` module-orphans | waived, full | each stager's seats and `rand` stores match its own image (PROT 0946, PROT 0915); slot-B records are image-local by construction |
+| `801D5DE0` module-orphan | waived, partial | the casino prize list's renderer; the shop module ports two scoped slices, the cursor decode `0x801D5E40..0x801D5E9C` and the row ink |
+| `801CECD0` dual-label | resolved | both pages describe the boot asset-load machine; the functions table now links the boot page |
+| `801F69F8` non-entry | image-qualified | PROT 0940 opens `addiu sp,sp,-0x58` there; the tag names `overlay_cast_glare_divide_0940_801f69f8` |
+
 ### A waiver can check the operands and miss the owner
 
 `0x801F90DC` had a `module-orphan` finding, and the signal was right: the code
@@ -497,7 +564,9 @@ Three properties are worth stating plainly, because each is a limit:
   image's name and is not by itself proof the row meant that image.
 - **Without `extracted/` the test is silent**, and the run says so in its
   header rather than printing a clean count - those rows come back as
-  unsupported, which is the honest degradation and not a pass.
+  unsupported, which is the honest degradation and not a pass. The run then
+  exits **2**, as a corpus-blind one does
+  ([below](#an-empty-corpus-is-not-a-clean-run)).
 
 Do not re-add a waiver of this shape. If the citation really is a caller site
 the test says so and names the image; if it does not, the citation is worth
@@ -606,6 +675,11 @@ in and the `--funcs` flag that fixes it. `--allow-vacuous` restores the old exit
 0 for a caller that genuinely wants the no-op. Nothing in CI or pre-commit runs
 this checker, so the new exit code cannot turn a passing gate red; it only stops
 a hand-run from reading as a pass.
+
+A run with the dumps and without the extracted images is the same failure in
+the other direction: it reports too much rather than nothing, and the excess
+looks like work. It exits **2** too, after printing its report, and
+`--allow-vacuous` accepts it the same way.
 
 ## The sibling question for the register: does a `disassembly` row cite an address
 

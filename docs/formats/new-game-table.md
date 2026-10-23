@@ -257,7 +257,7 @@ the party template + the code-built starting inventory).
 
 `legaia_game_tables::new_game::seed_live_records` ports the seed routine's halfword
 stores, and the engine's record builder
-(`legaia_engine_core::new_game::starting_record`) applies them rather than
+(`legaia_engine_menus::new_game::starting_record`) applies them rather than
 restating the template-field → live-cell mapping, so the two cannot drift.
 
 ## See also

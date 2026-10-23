@@ -1747,6 +1747,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-app-theme"
+version = "0.1.0"
+
+[[package]]
 name = "legaia-art"
 version = "0.1.0"
 dependencies = [
@@ -1981,6 +1985,7 @@ dependencies = [
  "legaia-tim",
  "legaia-tmd",
  "legaia-ui-formats",
+ "log",
  "serde",
 ]
 
@@ -1991,6 +1996,7 @@ dependencies = [
  "legaia-actor-formats",
  "legaia-art",
  "legaia-engine-battle",
+ "legaia-engine-battle-menus",
  "legaia-engine-battle-vm",
  "legaia-engine-cast",
  "legaia-engine-core",
@@ -1998,6 +2004,22 @@ dependencies = [
  "legaia-engine-mode",
  "legaia-engine-system",
  "legaia-font",
+ "legaia-save",
+ "legaia-ui-formats",
+]
+
+[[package]]
+name = "legaia-engine-battle-menus"
+version = "0.1.0"
+dependencies = [
+ "legaia-actor-formats",
+ "legaia-art",
+ "legaia-engine-battle",
+ "legaia-engine-battle-vm",
+ "legaia-engine-minigames",
+ "legaia-engine-system",
+ "legaia-game-tables",
+ "legaia-minigame-formats",
  "legaia-save",
  "legaia-ui-formats",
 ]
@@ -2032,6 +2054,7 @@ version = "0.1.0"
 dependencies = [
  "legaia-art",
  "legaia-engine-battle",
+ "legaia-engine-battle-menus",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
  "legaia-engine-cast",
@@ -2039,7 +2062,6 @@ dependencies = [
  "legaia-engine-dialog",
  "legaia-engine-effects",
  "legaia-engine-field",
- "legaia-engine-menus",
  "legaia-engine-mode",
  "legaia-engine-scene-host",
  "legaia-engine-system",
@@ -2089,6 +2111,7 @@ dependencies = [
  "legaia-art",
  "legaia-container-formats",
  "legaia-engine-battle",
+ "legaia-engine-battle-menus",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
  "legaia-engine-cast",
@@ -2218,9 +2241,11 @@ dependencies = [
  "legaia-engine-menus",
  "legaia-engine-minigames",
  "legaia-engine-mode",
+ "legaia-engine-save-state",
  "legaia-engine-scene",
  "legaia-engine-scene-host",
  "legaia-engine-system",
+ "legaia-engine-title",
  "legaia-engine-vm",
  "legaia-game-tables",
  "legaia-prot",
@@ -2246,8 +2271,6 @@ dependencies = [
  "legaia-engine-vm",
  "legaia-font",
  "legaia-game-tables",
- "legaia-minigame-formats",
- "legaia-prot",
  "legaia-save",
  "legaia-scene-formats",
  "legaia-tim",
@@ -2263,11 +2286,11 @@ dependencies = [
  "legaia-actor-formats",
  "legaia-container-formats",
  "legaia-engine-battle",
+ "legaia-engine-battle-menus",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
  "legaia-engine-field",
  "legaia-engine-fishing",
- "legaia-engine-menus",
  "legaia-engine-minigames",
  "legaia-engine-mode",
  "legaia-engine-scene",
@@ -2346,6 +2369,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-engine-save-state"
+version = "0.1.0"
+dependencies = [
+ "legaia-engine-battle",
+ "legaia-engine-battle-vm",
+ "legaia-engine-core",
+ "legaia-engine-field",
+ "legaia-engine-menus",
+ "legaia-engine-mode",
+ "legaia-engine-system",
+ "legaia-prot",
+ "legaia-save",
+ "legaia-scene-formats",
+]
+
+[[package]]
 name = "legaia-engine-scene"
 version = "0.1.0"
 dependencies = [
@@ -2392,6 +2431,7 @@ dependencies = [
  "legaia-disc-audit",
  "legaia-engine-battle",
  "legaia-engine-battle-hud",
+ "legaia-engine-battle-menus",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
  "legaia-engine-core",
@@ -2404,6 +2444,7 @@ dependencies = [
  "legaia-engine-minigame-scenes",
  "legaia-engine-minigames",
  "legaia-engine-mode",
+ "legaia-engine-save-state",
  "legaia-engine-scene",
  "legaia-engine-system",
  "legaia-engine-vm",
@@ -2435,6 +2476,7 @@ dependencies = [
  "glam",
  "legaia-engine-battle",
  "legaia-engine-battle-hud",
+ "legaia-engine-battle-menus",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
  "legaia-engine-core",
@@ -2451,6 +2493,7 @@ dependencies = [
  "legaia-engine-scene",
  "legaia-engine-scene-host",
  "legaia-engine-system",
+ "legaia-engine-title",
  "legaia-engine-ui",
  "legaia-engine-world-views",
  "legaia-font",
@@ -2471,6 +2514,7 @@ dependencies = [
  "legaia-engine-audio",
  "legaia-engine-battle",
  "legaia-engine-battle-hud",
+ "legaia-engine-battle-menus",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
  "legaia-engine-cheats",
@@ -2482,9 +2526,11 @@ dependencies = [
  "legaia-engine-minigame-scenes",
  "legaia-engine-minigames",
  "legaia-engine-mode",
+ "legaia-engine-save-state",
  "legaia-engine-scene",
  "legaia-engine-scene-host",
  "legaia-engine-system",
+ "legaia-engine-title",
  "legaia-engine-vm",
  "legaia-engine-world-views",
  "legaia-font",
@@ -2517,11 +2563,13 @@ dependencies = [
  "gilrs",
  "glam",
  "legaia-actor-formats",
+ "legaia-app-theme",
  "legaia-art",
  "legaia-container-formats",
  "legaia-engine-audio",
  "legaia-engine-battle",
  "legaia-engine-battle-hud",
+ "legaia-engine-battle-menus",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
  "legaia-engine-capture",
@@ -2538,11 +2586,13 @@ dependencies = [
  "legaia-engine-minigames",
  "legaia-engine-mode",
  "legaia-engine-render",
+ "legaia-engine-save-state",
  "legaia-engine-scene",
  "legaia-engine-scene-host",
  "legaia-engine-screens",
  "legaia-engine-session",
  "legaia-engine-system",
+ "legaia-engine-title",
  "legaia-engine-ui",
  "legaia-engine-world-views",
  "legaia-font",
@@ -2591,6 +2641,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-engine-title"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-engine-system",
+ "legaia-prot",
+ "legaia-tim",
+ "legaia-ui-formats",
+]
+
+[[package]]
 name = "legaia-engine-ui"
 version = "0.1.0"
 dependencies = [
@@ -2629,6 +2690,7 @@ dependencies = [
  "glam",
  "legaia-container-formats",
  "legaia-engine-battle",
+ "legaia-engine-battle-menus",
  "legaia-engine-camera",
  "legaia-engine-core",
  "legaia-engine-dev-menu",
@@ -2831,6 +2893,7 @@ dependencies = [
  "legaia-engine-audio",
  "legaia-engine-battle",
  "legaia-engine-battle-hud",
+ "legaia-engine-battle-menus",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
  "legaia-engine-capture",
@@ -2842,6 +2905,7 @@ dependencies = [
  "legaia-engine-menu-runtime",
  "legaia-engine-menus",
  "legaia-engine-mode",
+ "legaia-engine-save-state",
  "legaia-engine-scene",
  "legaia-engine-scene-host",
  "legaia-engine-session",
@@ -3025,6 +3089,7 @@ dependencies = [
  "eframe",
  "env_logger",
  "legaia-actor-formats",
+ "legaia-app-theme",
  "legaia-art",
  "legaia-container-formats",
  "legaia-disc-audit",
@@ -3151,6 +3216,7 @@ dependencies = [
  "legaia-engine-audio",
  "legaia-engine-battle",
  "legaia-engine-battle-hud",
+ "legaia-engine-battle-menus",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
  "legaia-engine-cheats",
@@ -3163,11 +3229,13 @@ dependencies = [
  "legaia-engine-minigame-scenes",
  "legaia-engine-minigames",
  "legaia-engine-mode",
+ "legaia-engine-save-state",
  "legaia-engine-scene",
  "legaia-engine-scene-host",
  "legaia-engine-screens",
  "legaia-engine-session",
  "legaia-engine-system",
+ "legaia-engine-title",
  "legaia-engine-ui",
  "legaia-engine-vm",
  "legaia-engine-world-views",

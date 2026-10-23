@@ -106,6 +106,10 @@ impl World {
                 .then(|| LogLaunch::new(false));
         } else if element == READOUT_BAR_ELEMENT {
             self.battle.readout_bar_glide = Some(LogLaunch::new(false));
+        } else if element == legaia_engine_battle_vm::battle_action::SPIRIT_AP_BAR_ELEMENT {
+            // The Spirit arm's raise of the AP bar and, on the same pass,
+            // the AP plate (`0x801E2FD4` / `0x801E2FE0`): one glide.
+            self.battle.spirit_gauge_glide = Some(LogLaunch::new(false));
         } else if element == HUD_TARGET_BANNER {
             self.battle.target_plaque_glide = Some(LogLaunch::new(false));
             self.battle.target_plate_cleared = false;
@@ -164,6 +168,8 @@ impl World {
             self.battle.action_plaque_glide.as_mut(),
             self.battle.target_plaque_glide.as_mut(),
             self.battle.readout_bar_glide.as_mut(),
+            self.battle.message_bar_glide.as_mut(),
+            self.battle.spirit_gauge_glide.as_mut(),
             self.battle.module_panels_glide.as_mut(),
             self.battle.result_windows_glide.as_mut(),
             self.battle.round_prompt_glide.as_mut(),
@@ -212,8 +218,20 @@ impl World {
     /// engine holds took the seat. The retail-compare capture seats this
     /// from a capture whose glides were in flight; no game path calls it.
     pub fn seat_battle_hud_glide(&mut self, target: [i16; 2], elapsed: u8) -> bool {
+        // A Spirit turn raises no readout bar and no ring: its AP bar and AP
+        // plate are the records landing on the bar's seat and the ring
+        // plate's.
+        let spirit = self.spirit_gauge_view().is_some();
         let glide = match target {
             [16, 12] => self.battle.action_plaque_glide.as_mut(),
+            [16, 192] | [208, 172] if spirit => Some(self.battle.spirit_gauge_glide.get_or_insert(
+                legaia_engine_battle_vm::battle_commit_log::LogLaunch::new(false),
+            )),
+            // The message bar takes the readout bar's seat (record 91 over
+            // record 7) while a caption is up.
+            [16, 192] if self.battle.steal_caption.is_some() => {
+                self.battle.message_bar_glide.as_mut()
+            }
             [16, 192] => self.battle.readout_bar_glide.as_mut(),
             [_, 192] => self.battle.target_plaque_glide.as_mut(),
             [104 | 180, 86] => self.battle.round_prompt_glide.as_mut(),
@@ -258,6 +276,8 @@ impl World {
             self.battle.action_plaque_glide.as_mut(),
             self.battle.target_plaque_glide.as_mut(),
             self.battle.readout_bar_glide.as_mut(),
+            self.battle.message_bar_glide.as_mut(),
+            self.battle.spirit_gauge_glide.as_mut(),
             self.battle.module_panels_glide.as_mut(),
             self.battle.round_prompt_glide.as_mut(),
             self.battle.ring_open_glide.as_mut(),
@@ -319,7 +339,7 @@ impl World {
     ///
     /// PORT: FUN_801D0748 (`0x801D0B2C..0x801D0BCC`)
     pub(in crate::world) fn battle_command_glide_gate(&mut self) -> bool {
-        use legaia_engine_menus::option_values::BattleCommandOpt;
+        use legaia_engine_system::option_values::BattleCommandOpt;
         let ret = self.battle.widget_glide_return;
         if ret != 0 {
             let pressed = self.input.pad() & !self.input.pad_prev() != 0;
@@ -351,6 +371,8 @@ impl World {
             self.battle.action_plaque_glide.as_ref(),
             self.battle.target_plaque_glide.as_ref(),
             self.battle.readout_bar_glide.as_ref(),
+            self.battle.message_bar_glide.as_ref(),
+            self.battle.spirit_gauge_glide.as_ref(),
             self.battle.module_panels_glide.as_ref(),
             self.battle.round_prompt_glide.as_ref(),
             self.battle.ring_open_glide.as_ref(),
@@ -365,9 +387,9 @@ impl World {
     /// This tick's command pad edges.
     pub(in crate::world) fn battle_command_pad_edges(
         &self,
-    ) -> legaia_engine_menus::battle_input::BattleCommandInput {
+    ) -> legaia_engine_battle_menus::battle_input::BattleCommandInput {
         use legaia_engine_system::input::PadButton;
-        legaia_engine_menus::battle_input::BattleCommandInput {
+        legaia_engine_battle_menus::battle_input::BattleCommandInput {
             up: self.input.just_pressed(PadButton::Up),
             down: self.input.just_pressed(PadButton::Down),
             left: self.input.just_pressed(PadButton::Left),
@@ -387,12 +409,12 @@ impl World {
     /// PORT: FUN_801D0748 (`0x801D0C1C..0x801D0C58`)
     pub(in crate::world) fn take_command_pad_buffer(
         &mut self,
-    ) -> legaia_engine_menus::battle_input::BattleCommandInput {
+    ) -> legaia_engine_battle_menus::battle_input::BattleCommandInput {
         let live = self.battle_command_pad_edges();
         let parked = self.battle.command_pad_buffer.take();
         let pressed = self.input.pad() & !self.input.pad_prev() != 0;
         match parked {
-            Some(p) if !pressed => legaia_engine_menus::battle_input::BattleCommandInput {
+            Some(p) if !pressed => legaia_engine_battle_menus::battle_input::BattleCommandInput {
                 select_attack: live.select_attack,
                 ..p
             },
@@ -404,10 +426,10 @@ impl World {
     /// was on before the frame and the one it is on after.
     pub(in crate::world) fn launch_commit_log_for(
         &mut self,
-        before: &legaia_engine_menus::battle_input::CommandPhase,
-        after: &legaia_engine_menus::battle_input::CommandPhase,
+        before: &legaia_engine_battle_menus::battle_input::CommandPhase,
+        after: &legaia_engine_battle_menus::battle_input::CommandPhase,
     ) {
-        use legaia_engine_menus::battle_input::{BattleCommand, CommandPhase as P};
+        use legaia_engine_battle_menus::battle_input::{BattleCommand, CommandPhase as P};
         let leaves_ring = matches!(before, P::Menu { .. })
             && matches!(
                 after,

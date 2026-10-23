@@ -276,7 +276,15 @@ impl CardIoState {
     /// state as typed world/party data rather than behind a pointer, so
     /// there is nothing to re-point here.
     ///
-    /// PORT: FUN_801E0598
+    /// PORT: FUN_801E0598 (partial: the two failure-latch clears at
+    /// `0x801E05CC` / `0x801E05D4` and the cold-path name-cache loop
+    /// `0x801E0680..0x801E06AC`)
+    ///
+    /// Retail zeroes about twenty further card globals here that this state
+    /// does not model, and it does not touch the phase word or the open
+    /// handle - the callers clear the phase (`0x801E16C4` in
+    /// `FUN_801E13B8`). The `phase` / `fd_open` resets below are the port's.
+    ///
     /// REPLACED-BY: `legaia_save::emu::CardView` synchronous block I/O - see the
     /// module heading; nothing services a [`CardOp`] because nothing needs to.
     pub fn reset(&mut self, keep_directory: bool) {

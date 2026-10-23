@@ -267,7 +267,7 @@ pub const TERRA_LAST_ARM: u8 = 0x15;
 /// | 0x14 | `0x80` | TR z `+1` | a fade out |
 /// | 0x15 | - | - | the word spent: the caption cleared, `ctx[+0x6DA] = 0`; done |
 ///
-/// PORT: overlay_summon_terra_0933_801f6a30 (PROT 0933; the whole phase chain's gates, camera writes, captions, creature seat and clips - the monster orbit and its seats, part spawns and their pool loop, the colour pulses `FUN_8004695C` and the arm-0xC sweep not carried)
+/// PORT: overlay_summon_terra_0933_801f6a30 (PROT 0933; the whole phase chain's gates, camera writes, captions, creature seat and clips - the monster orbit and its seats, part spawns and their pool loop, the colour pulses (`0x8004695C` washes) and the arm-0xC sweep not carried)
 pub fn terra_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -> ArmDirection {
     let d = |pitch: i32, yaw: i32, tr_x: i32, tr_y: i32, tr_z: i32| {
         Some(drift(pitch, yaw, tr_x, tr_y, tr_z))

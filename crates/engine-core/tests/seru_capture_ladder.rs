@@ -208,7 +208,7 @@ fn a_captured_seru_banks_at_teardown_and_commits_the_learn_to_the_record() {
         }
         if matches!(
             w.battle.command.as_ref().map(|s| &s.phase),
-            Some(legaia_engine_menus::battle_input::CommandPhase::RoundPrompt { .. })
+            Some(legaia_engine_battle_menus::battle_input::CommandPhase::RoundPrompt { .. })
         ) {
             press(&mut w, PadButton::Cross); // Begin -> the command ring
         }
@@ -231,9 +231,9 @@ fn a_captured_seru_banks_at_teardown_and_commits_the_learn_to_the_record() {
         for _ in 0..4 {
             match w.battle.command.as_ref().map(|c| &c.phase) {
                 None => break,
-                Some(legaia_engine_menus::battle_input::CommandPhase::CommitConfirm { .. }) => {
-                    press(&mut w, PadButton::Cross)
-                }
+                Some(legaia_engine_battle_menus::battle_input::CommandPhase::CommitConfirm {
+                    ..
+                }) => press(&mut w, PadButton::Cross),
                 Some(_) => press(&mut w, PadButton::Down),
             }
         }

@@ -33,7 +33,7 @@
 //!
 //! Start leaves any of the three (`World::poll_minigame_escape`).
 
-use legaia_engine_menus::muscle_dome_session::{MuscleDomeSession, MusclePhase};
+use legaia_engine_battle_menus::muscle_dome_session::{MuscleDomeSession, MusclePhase};
 use legaia_engine_minigames::dance::DanceGame;
 use legaia_engine_minigames::muscle_dome::DomeContest;
 use legaia_engine_ui::TextDraw;

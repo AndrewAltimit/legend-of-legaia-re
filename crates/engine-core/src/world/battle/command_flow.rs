@@ -42,9 +42,9 @@ const ART_RECORD_ID_BIAS: u8 = 0x1B;
 /// PORT: FUN_801D0748 (the ring's status refusals, `0x801D1434..0x801D1440` / `0x801D1560..0x801D156C`)
 pub(crate) fn ring_arm_refused(
     status: u16,
-    arm: legaia_engine_menus::battle_input::BattleCommand,
+    arm: legaia_engine_battle_menus::battle_input::BattleCommand,
 ) -> bool {
-    use legaia_engine_menus::battle_input::BattleCommand;
+    use legaia_engine_battle_menus::battle_input::BattleCommand;
     match arm {
         BattleCommand::Attack => status & 0x38 == 0x38,
         BattleCommand::Magic => status & 0x1000 != 0,

@@ -13,6 +13,7 @@ path = "src/lib.rs"
 [dependencies]
 legaia-engine-dev-menu.workspace = true
 legaia-engine-core.workspace = true
+legaia-engine-save-state.workspace = true
 legaia-engine-scene-host.workspace = true
 legaia-engine-battle.workspace = true
 legaia-engine-battle-vm.workspace = true
@@ -29,6 +30,7 @@ anyhow.workspace = true
 
 [dev-dependencies]
 legaia-engine-mode.workspace = true
+legaia-engine-title.workspace = true
 legaia-engine-vm.workspace = true
 legaia-prot.workspace = true
 tempfile.workspace = true

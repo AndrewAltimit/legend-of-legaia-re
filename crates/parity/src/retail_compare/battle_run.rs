@@ -61,6 +61,23 @@ pub(super) fn run_battle(
     // the phase on another one is kept as the fallback while the remaining
     // streams are tried (`RetailBattle::win_pose`).
     let mut off_pose = None;
+    // A party melee capture also wants retail's landed swings: the ring
+    // holds one push per hit that reached the damage body, and a blocked
+    // swing pushes none, so a stream whose block rolls landed another count
+    // replays another string - another total, another knockback, another
+    // number on screen (`battle_melee_hit_spark`: three of four landed).
+    let ring_pushes = {
+        let seed = battle.melee_hit_seeds();
+        let party_swing = matches!(
+            battle.seed_plan(),
+            crate::retail_compare_battle::SeedPlan::Action { seat, .. } if seat < 3
+        );
+        // A capture past the end signal is placed by the results sequence,
+        // not inside the string, and already searches on its win pose.
+        (party_swing && battle.win_pose.is_none() && !seed.hits.is_empty())
+            .then_some(seed.hits.len() as u32)
+    };
+    let mut off_hits = None;
     let opening = battle.seed_plan() == crate::retail_compare_battle::SeedPlan::Opening;
     // A replayed cast tries its victims revived first: unlike a pad-driven
     // swing, a cast onto a corpse still reaches its phase, so the HP-as-read
@@ -142,6 +159,10 @@ pub(super) fn run_battle(
                         off_pose.get_or_insert(e);
                         continue;
                     }
+                    if ring_pushes.is_some() && e.action_pushes != ring_pushes {
+                        off_hits.get_or_insert((e, victims));
+                        continue;
+                    }
                     reached = Some(e);
                     reached_victims = victims;
                     break 'search;
@@ -155,6 +176,14 @@ pub(super) fn run_battle(
                 }
             }
         }
+    }
+    // No stream landed retail's count: the first that reached the phase is
+    // kept, as it was before the count was asked for.
+    if reached.is_none()
+        && let Some((e, victims)) = off_hits.take()
+    {
+        reached = Some(e);
+        reached_victims = victims;
     }
     // A driven action replays the pushes its capture already holds; run the
     // same stream once more from the ground the replay says retail started
@@ -455,6 +484,25 @@ pub(super) fn battle_image(
             legaia_engine_capture::cast_parts::cast_parts_env(&battle.action_fx_parts),
         ));
     }
+    // The effect pool's billboards as the displayed frame held them: where a
+    // burning body's sheds and a master's randomized legs put each child is
+    // the stream's history. An empty pool is seated too, which retires the
+    // billboards a replay running behind retail's clock still carries.
+    if let Some(children) = &battle.effect_children {
+        env.push((
+            "LEGAIA_SEAT_EFFECT_CHILDREN",
+            legaia_engine_capture::effect_children::effect_children_env(children),
+        ));
+    }
+    // ... and the after-image ghosts at the keyframes and ground the
+    // capture's history ring held: the replay's ring runs on its own frame
+    // step, so the walk's depths reach other keyframes of the swing.
+    if !battle.ghost_ring.is_empty() {
+        env.push((
+            "LEGAIA_SEAT_GHOST_RING",
+            legaia_engine_capture::ghost_ring::ghost_ring_to_env(&battle.ghost_ring),
+        ));
+    }
     // The live effect scrollers' rects as the displayed frame held them: a
     // scroller's rotation count is time since its effect was seated.
     if let Some(kv) = retail.vram_rects_env(opts.out_dir, &entry.label) {
@@ -490,9 +538,16 @@ pub(super) fn battle_image(
             )),
         ));
     }
+    // Every pad drive, as the headless seed snaps and aligns every driven
+    // capture: a menu capture's case-0 close-up subtracts its member's
+    // heading (`0x8F0 - actor[+0x46]`), which only the ground snap carries -
+    // the replay never ran the earlier turn that left it.
     if matches!(
         battle.battle_drive(),
-        Some(legaia_engine_capture::battle_drive::BattleDrive::Action { .. })
+        Some(
+            legaia_engine_capture::battle_drive::BattleDrive::Action { .. }
+                | legaia_engine_capture::battle_drive::BattleDrive::Menu { .. }
+        )
     ) {
         env.push((
             "LEGAIA_BATTLE_CAM_ALIGN",
@@ -504,7 +559,13 @@ pub(super) fn battle_image(
         ));
         env.push((
             "LEGAIA_BATTLE_GROUND_SNAP",
-            legaia_engine_capture::ground_snap::ground_snaps_to_env(&battle.engine_ground_snaps()),
+            legaia_engine_capture::ground_snap::ground_snaps_to_env(
+                &if battle.displayed_camera() {
+                    battle.engine_image_ground_snaps()
+                } else {
+                    battle.engine_ground_snaps()
+                },
+            ),
         ));
         if battle.displayed_camera_on_agreement() {
             env.push((
@@ -537,6 +598,10 @@ pub(super) fn battle_image(
             "LEGAIA_SEAT_HUD_GLIDES",
             legaia_engine_capture::hud_glide::HudGlideSeat::to_env(&battle.hud_glides),
         ));
+    }
+    // A Spirit turn's bar and plate, sized as retail sized them.
+    if let Some((width, plate)) = battle.spirit_gauge {
+        env.push(("LEGAIA_SEAT_SPIRIT_GAUGE", format!("{width},{plate}")));
     }
     // A capture taken mid-cast replays its cast and is captured on its phase
     // (the gate), with the fixed tick as the deadline.

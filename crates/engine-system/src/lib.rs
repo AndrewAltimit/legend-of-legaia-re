@@ -2,7 +2,8 @@
 //! MDEC DMA sync, the streaming-chunk installer, the RAM-cell registry,
 //! global sound state and the movie score policy, FMV helpers, BGM labels,
 //! codified capture observations, the per-draw census, scene-name sync,
-//! the fade actor and ramp, the pause wipe and the mode-entry initialisers:
+//! the fade actor and ramp, the pause wipe, the mode-entry initialisers and
+//! the options screen's config-word value enums:
 //! the `World`-free system layer under the engine.
 //!
 //! Every module's whole dependency closure inside the engine is in this
@@ -24,6 +25,7 @@ pub mod menu_input;
 pub mod mode_entry_init;
 pub mod movie;
 pub mod music_labels;
+pub mod option_values;
 pub mod pad;
 pub mod pause_wipe;
 pub mod ram_map;

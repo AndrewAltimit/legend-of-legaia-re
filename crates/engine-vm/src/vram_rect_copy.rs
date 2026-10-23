@@ -139,7 +139,7 @@ const fn pack_yx(x: i16, y: i16) -> u32 {
 ///
 /// The length byte is `5` for a real copy and `0` when **either** extent
 /// is zero (`w == 0 || h == 0`). The sibling `MoveImage` queue
-/// `FUN_80058490` in [`legaia_engine_menus::title_prim`] kills on the *same* predicate -
+/// `FUN_80058490` in [`legaia_engine_title::title_prim`] kills on the *same* predicate -
 /// its disassembly is the same `beq w,0` / `bne h,0` branch pair, only
 /// spelled as nested `if`s by the decompiler. What differs is the
 /// failure behaviour: this builder writes the packet body anyway and

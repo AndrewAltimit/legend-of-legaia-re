@@ -51,6 +51,7 @@ fn spawn(effect: u8, direct: bool) -> BattleEffectSpawn {
         direct,
         at: (100, -20, 300),
         facing: 0x200,
+        homing_slot: None,
     }
 }
 

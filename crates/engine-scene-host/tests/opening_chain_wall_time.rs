@@ -30,6 +30,17 @@
 //! a *unit* regression (a leg running at sim-tick rate is 67 % fast, far
 //! outside it), not to freeze the current numbers.
 //!
+//! A leg is bounded where retail's label global `0x8007050C` flips, and
+//! retail writes it in the scene-change packet itself (`FUN_8001FD44` copies
+//! the destination name there at `0x8001FD94..0x8001FDB8`, before it spawns
+//! the streaming actor), so the departing scene's fade-out hold - the
+//! actor's `0x46`-frame countdown - is charged to the *destination's* leg.
+//! The engine's `active_scene_label` instead flips when the destination
+//! loads, at the end of its `SceneTransitionHold`; reading legs off it put
+//! that ~71-tick hold into the departing leg and made `opdeene`, whose own
+//! start carries no hold, read ~1.1 s long against an exact record. The
+//! harness therefore ends a leg on the tick the hold is parked.
+//!
 //! The errors are **one-sided**: each retail leg span includes the scene's
 //! load + mode-transition window (label flip -> the record's first world
 //! tick), which the engine does not model - its scene loads are instant. The
@@ -102,17 +113,24 @@ fn opening_chain_legs_run_at_retail_wall_time() {
         .expect("enter opdeene");
 
     // Drive the chain with zero input, recording the tick count each leg
-    // occupies until the run reaches Rim Elm.
+    // occupies until the run reaches Rim Elm. A leg ends where retail's label
+    // global flips - on the tick the scene change is requested (the hold is
+    // parked), not the tick the destination loads (see the module doc).
     let mut legs: Vec<(String, u32)> = Vec::new();
     let mut label = host.world.active_scene_label.clone();
     let (mut start, mut ticks) = (0u32, 0u32);
+    let mut requested_at: Option<u32> = None;
     while ticks < 120_000 {
         let _ = host.tick();
         ticks += 1;
+        if requested_at.is_none() && host.world.scene_transition_hold.is_some() {
+            requested_at = Some(ticks);
+        }
         if host.world.active_scene_label != label {
-            legs.push((label, ticks - start));
+            let end = requested_at.take().unwrap_or(ticks);
+            legs.push((label, end - start));
             label = host.world.active_scene_label.clone();
-            start = ticks;
+            start = end;
             if label == "town01" {
                 break;
             }
@@ -135,7 +153,8 @@ fn opening_chain_legs_run_at_retail_wall_time() {
         let signed = (engine_s - retail_s) / retail_s;
         let err_pct = signed.abs() * 100.0;
         eprintln!(
-            "[pacing] {scene}: engine {engine_s:.1}s vs retail {retail_s:.1}s ({err_pct:.1}%)"
+            "[pacing] {scene}: engine {observed} ticks {engine_s:.1}s vs retail \
+             {retail_frames} frames {retail_s:.1}s ({err_pct:.1}%)"
         );
         if scene == "map01" {
             // Asymmetric band (see the module doc): the engine skips the
@@ -158,6 +177,14 @@ fn opening_chain_legs_run_at_retail_wall_time() {
                  teardown window accounts for"
             );
         } else {
+            // A record leg plays its authored frames 1:1 and the engine only
+            // drops load time, so a leg must not run long by more than about
+            // one game frame's worth of rounding.
+            assert!(
+                signed < 0.01,
+                "{scene} leg runs {err_pct:.1}% LONG (engine {engine_s:.1}s vs retail \
+                 {retail_s:.1}s) - the engine adds frames retail does not spend"
+            );
             assert!(
                 signed.abs() < 0.25,
                 "{scene} leg is {err_pct:.1}% off retail wall-time \

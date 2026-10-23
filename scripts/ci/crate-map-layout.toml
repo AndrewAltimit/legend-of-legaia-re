@@ -51,9 +51,9 @@ crates = ["engine-session", "engine-screens", "engine-render", "engine-audio", "
 [[bands]]
 id = "drivers"
 title = "World drivers"
-blurb = "Layers that hold a running World from outside: scene entry and tick, the pause menu, the battle HUD's and the field screens' reads, the cheats."
+blurb = "Layers that hold a running World from outside: scene entry and tick, the pause menu, the battle HUD's and the field screens' reads, the cheats, the LGSF saves."
 track = "engine"
-crates = ["engine-scene-host", "engine-menu-runtime", "engine-battle-hud", "engine-world-views", "engine-cheats"]
+crates = ["engine-scene-host", "engine-menu-runtime", "engine-battle-hud", "engine-world-views", "engine-cheats", "engine-save-state"]
 
 [[bands]]
 id = "core"
@@ -98,7 +98,7 @@ blurb = "The foundation: sector reader, the PROT archive, LZS, and one small cra
 track = "preservation"
 crates = [
     "iso", "prot", "lzs", "bytes", "tim", "tmd", "vab", "seq", "xa", "mdec",
-    "mes", "anm", "mdt", "art", "font", "save", "gamedata", "cheats",
+    "mes", "anm", "mdt", "art", "font", "save", "gamedata", "cheats", "app-theme",
 ]
 
 # --- Per-crate overrides --------------------------------------------------
@@ -115,6 +115,7 @@ mednafen = { track = "tooling" }
 pcsx-redux = { track = "tooling" }
 gamedata = { track = "tooling" }
 cheats = { track = "tooling" }
+app-theme = { track = "tooling" }
 
 # --- The three hosts on one engine ----------------------------------------
 

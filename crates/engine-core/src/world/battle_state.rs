@@ -320,6 +320,12 @@ pub struct BattleState {
     pub steal: legaia_engine_battle::battle_steal::StealBand,
     /// The death-spoils caption on screen (HUD element `0x5B`), if any.
     pub steal_caption: Option<legaia_engine_battle::battle_steal::StealCaption>,
+    /// The message bar's raise glide (placement record 91, `(16, 234)` ->
+    /// `(16, 192)`): `FUN_801D8DE8(0x5B, 0)` spawns the bar at seat A and
+    /// `FUN_801D9BBC` glides it to seat B. Started by a cast module's raise
+    /// ([`crate::world::World::raise_module_message_bar`];
+    /// `legaia_engine_battle_hud::battle_message_bar_dy`).
+    pub message_bar_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
     /// The party art-name label (element `0x4C`, records 76 / 77) has been
     /// taken down: the commit that replaces a party member's art clip on
     /// dynamic slot `0x11` destroys widget `0x21`
@@ -350,7 +356,7 @@ pub struct BattleState {
     /// `false` (the default) the live loop auto-resolves each party turn with
     /// a physical Attack on the first living monster (the historical spine
     /// behaviour). When `true`, every party turn pauses the action SM and runs
-    /// a [`legaia_engine_menus::battle_input::BattleCommandSession`] that reads
+    /// a [`legaia_engine_battle_menus::battle_input::BattleCommandSession`] that reads
     /// [`crate::world::World::input`]: the player selects a command from the battle command
     /// menu and a target before the strike commits. Requires
     /// [`crate::world::WorldToggles::live_gameplay_loop`]; hosts that want a playable battle
@@ -366,12 +372,12 @@ pub struct BattleState {
     /// is parked meanwhile); `None` when the SM is running or outside battle.
     /// Managed by the live loop; hosts read it to draw the command menu /
     /// target cursor.
-    pub command: Option<legaia_engine_menus::battle_input::BattleCommandSession>,
+    pub command: Option<legaia_engine_battle_menus::battle_input::BattleCommandSession>,
     /// Active inventory submenu for the player-driven battle, opened when the
     /// player picks **Item** from the command menu. `Some` while the player
     /// browses items / picks a target (both the action SM and
     /// [`crate::world::BattleState::command`] are parked meanwhile); `None` otherwise. The
-    /// World owns it - not [`legaia_engine_menus::battle_input::BattleCommandSession`] -
+    /// World owns it - not [`legaia_engine_battle_menus::battle_input::BattleCommandSession`] -
     /// because it needs the live inventory + party stats. Hosts read it to
     /// draw the item overlay.
     pub item_menu: Option<legaia_engine_menus::inventory_use::InventoryUseSession>,
@@ -411,9 +417,9 @@ pub struct BattleState {
     /// The battle **command-flow** cursor - retail `ctx[+0x06]`, the byte the
     /// menu-half SM `FUN_801D0748` runs on and the key the sparring-tutorial
     /// hook table indexes. Recomposed each frame from the live command session
-    /// plus submenus by [`legaia_engine_menus::battle_flow::flow_state_for`]; the turn-start
+    /// plus submenus by [`legaia_engine_battle_menus::battle_flow::flow_state_for`]; the turn-start
     /// prompt is raised directly by `World::open_battle_command`.
-    pub flow: legaia_engine_menus::battle_flow::BattleFlowState,
+    pub flow: legaia_engine_battle_menus::battle_flow::BattleFlowState,
     /// The live loop's round state - which of retail's two round bands the
     /// battle is in (the command band collects every party member's command
     /// before the execution band dispatches anyone by initiative), the
@@ -470,6 +476,20 @@ pub struct BattleState {
     /// against Gobu Gobu's `76`, no more than the quarter, and a replay that
     /// rolled `21` knocked him down and stood the fight 300 units off.
     pub forced_melee_total: Option<(u8, u32)>,
+    /// A retail-comparison seed: the engine slot of an attacker held where
+    /// it stands for its approach. Retail can park a monster in state
+    /// `0x19` with its Move clip dead (`+0x1DC` bit 2 left set by a flinch
+    /// turns the clip's natural end into idle, `0x80047B44`); the engine's
+    /// approach always walks, its anti-softlock design, so a capture of the
+    /// park is replayed with this seat's walk held instead. `None` on every
+    /// ordinary fight.
+    pub approach_hold: Option<u8>,
+    /// Party melee hits that reached the damage body this battle - each one
+    /// a push of retail's damage-number ring (`ctx[+0x273]`, the push at
+    /// `0x801EDDE4`), which a blocked hit skips (`bne s7,zero,0x801EE6D4` at
+    /// `0x801ECB60`). A running count the retail-compare drive differences
+    /// across an action to tell a replayed string from retail's.
+    pub party_melee_pushes: u32,
     /// The commit log's launch glide - retail's `0x35 + i` clones gliding the
     /// log off the left edge when the member leaves the ring for a sub-screen
     /// and back when they return
@@ -492,6 +512,13 @@ pub struct BattleState {
     /// the item pre-arm for a party actor (`0x801E3DA0..0x801E3DC0`)
     /// (`legaia_engine_battle_hud::battle_readout_bar_dy`).
     pub readout_bar_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
+    /// The Spirit turn's AP bar and AP plate raise glide. The Spirit arm of
+    /// the action seed raises placement records `0x0F` (the AP bar,
+    /// `(16, 234)` -> `(16, 192)`) and `0x52` (the AP plate, `(328, 172)` ->
+    /// `(208, 172)`) with mode `0` on the same pass (`jal 0x801D8DE8` at
+    /// `0x801E2FD4` / `0x801E2FE0`), so both walk one sixteen-vsync step
+    /// together (`World::spirit_gauge_glide_offsets`).
+    pub spirit_gauge_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
     /// The roster panels' raise glide when a cast module raises them
     /// itself: PROT 0911 (Orb) arm 9's pass calls `FUN_801D8DE8(6, 0)`, then
     /// `(0x4E + i, 0)` for each further member, and stores `ctx[+0x18] = 6`
@@ -532,7 +559,8 @@ pub struct BattleState {
     /// `ctx[+0x884]`: the press parked while the stepper's return was under
     /// `World::GLIDE_PAD_BUFFER_BELOW`, handed to the first dispatched pass
     /// that reads no press of its own.
-    pub(crate) command_pad_buffer: Option<legaia_engine_menus::battle_input::BattleCommandInput>,
+    pub(crate) command_pad_buffer:
+        Option<legaia_engine_battle_menus::battle_input::BattleCommandInput>,
     /// The result windows' raise glide: the results frame spawns the report
     /// (`0x41`) or loss (`0x42`) window and the level-up window
     /// (`0x44 + mask`) at their seat A, off screen, and `FUN_801D9BBC` walks
@@ -629,6 +657,10 @@ pub struct BattleState {
     /// the root-motion carry truncates over and the camera steps on
     /// ([`crate::world::World::set_battle_frame_step`]).
     pub frame_clock: crate::world::battle::BattleFrameClock,
+    /// A one-frame stretch of the battle frame clock a replay installed
+    /// ([`crate::world::World::stretch_battle_frame`]): the stretched
+    /// frame's id and the step the frame after its pass returns to.
+    pub frame_stretch: Option<(u64, u8)>,
     /// The battle frame the frame driver's discarded `rand()` draw last ran
     /// on ([`crate::world::World::tick_battle_pass_draw`]) - one draw a
     /// battle frame, however many vsyncs it spans.
@@ -663,7 +695,7 @@ pub struct BattleState {
     /// Applied with [`Self::vram_moves`] by
     /// [`crate::world::World::apply_battle_vram_moves`]; cleared at battle
     /// entry.
-    pub vram_loads: crate::battle_party_form::VramWriteLog,
+    pub vram_loads: legaia_engine_battle::battle_party_form::VramWriteLog,
     /// PROT 0969's own data words while it runs.
     pub(crate) form_transition: legaia_engine_battle::battle_stage_module::FormTransitionState,
     /// The camera globals a stage module owns while it runs; `None` when the
@@ -708,7 +740,7 @@ pub struct BattleState {
     /// than the tutorial: the battle-open formation banner
     /// ([`crate::world::World::raise_battle_open_banner`]) rides it too.
     pub tutorial_boxes:
-        std::collections::VecDeque<legaia_engine_menus::battle_flow::ActiveTutorialBox>,
+        std::collections::VecDeque<legaia_engine_battle_menus::battle_flow::ActiveTutorialBox>,
     /// The sparring tutorial's **standing prompt**: the last self-dismissing
     /// box to leave [`Self::tutorial_boxes`]. Retail registers such a prompt
     /// as a text actor under sort key `1` (`FUN_801F747C` -> `FUN_8003541C`
@@ -721,7 +753,7 @@ pub struct BattleState {
     /// category ring). It holds nothing: the battle loop parks on the queue
     /// alone. Hosts draw it with the queue's front group
     /// ([`crate::world::World::battle_tutorial_boxes_on_screen`]).
-    pub tutorial_standing: Option<legaia_engine_menus::battle_flow::ActiveTutorialBox>,
+    pub tutorial_standing: Option<legaia_engine_battle_menus::battle_flow::ActiveTutorialBox>,
     /// The battle screen's chip / banner labels, read off the user's own disc
     /// ([`legaia_ui_formats::battle_ui_strings`]). Empty when the host had no disc
     /// to read - the port's own wording is used then, so the surfaces still
@@ -830,7 +862,7 @@ pub struct BattleState {
     pub return_mode: SceneMode,
     /// Raised by [`crate::world::World::finish_battle`] on every return to
     /// the field or the overworld, taken by the host's camera half
-    /// ([`crate::frame_step::camera_after_world_tick`]): the field camera
+    /// ([`legaia_engine_field::frame_step::camera_after_world_tick`]): the field camera
     /// re-seats on the player as a scene entry does.
     ///
     /// Retail leaves a battle through MAIN INIT back into field mode 3, whose
@@ -1002,7 +1034,7 @@ impl BattleState {
             arts_menu: None,
             arts_input: None,
             swing_costs: [[legaia_engine_battle::arts_command_input::FAVORED_COST; 4]; 3],
-            flow: legaia_engine_menus::battle_flow::BattleFlowState::Idle,
+            flow: legaia_engine_battle_menus::battle_flow::BattleFlowState::Idle,
             round_flow: crate::battle_round::RoundFlow::default(),
             inflight_seed: None,
             forced_monster_cast: None,
@@ -1010,11 +1042,15 @@ impl BattleState {
             forced_steal: false,
             forced_melee_hits: Default::default(),
             forced_melee_total: None,
+            approach_hold: None,
+            party_melee_pushes: 0,
             forced_absorb: false,
             commit_log_launch: None,
             action_plaque_glide: None,
             target_plaque_glide: None,
             readout_bar_glide: None,
+            message_bar_glide: None,
+            spirit_gauge_glide: None,
             module_panels_glide: None,
             round_prompt_glide: None,
             ring_open_glide: None,
@@ -1038,6 +1074,7 @@ impl BattleState {
             cell_fx: Vec::new(),
             cell_captures: Default::default(),
             frame_clock: Default::default(),
+            frame_stretch: None,
             pass_draw_frame: None,
             sm_pass_frame: None,
             anim_pass_frame: None,

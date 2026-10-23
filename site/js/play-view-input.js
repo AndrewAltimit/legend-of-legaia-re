@@ -62,8 +62,38 @@
         if (typeof this.rt.play_host_hotkey !== 'function') return;
         let id = '';
         try { id = this.rt.play_host_hotkey(e.code); } catch (_) { return; }
-        if (!id) return;
+        if (!id) {
+          /* A field-only key under a front-end screen: say why nothing
+           * changed (`refused_notice`), as the native window does. */
+          if (typeof this.rt.play_host_hotkey_refusal === 'function') {
+            let why = '';
+            try { why = this.rt.play_host_hotkey_refusal(e.code); } catch (_) {}
+            if (why) { e.preventDefault(); this._hotkeyNotice(why); }
+          }
+          return;
+        }
         e.preventDefault();
+        this._afterHotkey(id);
+      };
+      /* The notice line after a press (`"Ground fog: off"`), worded by the
+       * engine's `toggle_notice` - the line the native window shows, so a
+       * press of a key that changes nothing else on screen (`F2`, `F7`)
+       * does not read as dead. The page-held states (its HUD bar, the debug
+       * vantage, the encounter box) come from `__playHotkeyPageState`. */
+      this._afterHotkey = (id) => {
+        this._runHotkey(id);
+        if (typeof this.rt.play_host_hotkey_notice !== 'function') return;
+        const own = id === 'debug_camera'
+          ? () => (this.debugCamera ? 'on' : 'off')
+          : (window.__playHotkeyPageState || {})[id];
+        let text = '';
+        try { text = this.rt.play_host_hotkey_notice(id, own ? own() : ''); } catch (_) {}
+        if (text) this._hotkeyNotice(text);
+      };
+      this._hotkeyNotice = (text) => {
+        if (typeof window.__playShowNotice === 'function') window.__playShowNotice(text);
+      };
+      this._runHotkey = (id) => {
         if (id === 'debug_camera') {
           /* `F3`: the debug orbit vantage (`PlayWindowApp::field_debug_camera`
            * natively). Off is the default on both hosts, which is the ENGINE

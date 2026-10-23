@@ -4,7 +4,7 @@
   <p class="lede">How the battle monsters move. Legaia's enemies are rigid-body puppets: each body part is a separate object of the monster's <a href="tmd.html">TMD</a> mesh, and every action - idle, walk, attack, knockdown - is a stream of per-part position + rotation keyframes stored next to the mesh in the monster archive. This is a different system from the <a href="anm.html">ANM container</a> that drives player and field actors. Mesh, texture and every animation export together as a standard <code>.glb</code>.</p>
 </header>
 
-<section class="doc-section" id="at-a-glance">
+<section class="doc-section" id="at-a-glance" data-doc="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Where</dt><dd>The monster archive, extraction PROT 0867 (CDNAME block <code>monster_data</code>), one block per enemy; per-action entries reached through the monster record's <code>+0x4C</code> offset array. The <a href="battle-data-pack.html">player battle files</a> carry the same entry family</dd>
@@ -15,7 +15,7 @@
   </dl>
 </section>
 
-<section class="doc-section" id="where-it-lives">
+<section class="doc-section" id="where-it-lives" data-doc="where-it-lives">
   <h2>Where it lives</h2>
   <p>Each monster's decoded archive block is: stat record with its <code>+0x4C</code> action-offset array, name, TMD mesh, the per-action entries, then the texture pool. The <code>+0x4A</code> count says how many entries there are. Each entry is an action descriptor - not just a spell - with a semantic tag, costs, effect and sound cue scripts, and a packed keyframe stream at <code>+0x8C</code>.</p>
   <figure class="diagram">
@@ -83,7 +83,7 @@
   <p>The archive is a flat array of fixed <code>0x14000</code>-byte slots, <code>slot = (id - 1) &times; 0x14000</code>. The loader reads the slot's full <code>0x28</code> sectors whatever the block costs, then LZS-decodes from <code>slot + 4</code> until the stream's own terminator. The run between a block's compressed stream and the slot end is transferred and never interpreted - declared slack, not a hidden format. Slots whose head word is <code>0x10</code> hold a raw PSX TIM instead of a monster. The loader reads one eight slots past any formation id above <code>0xB2</code> - Cort's two forms - and uploads it to texture page <code>0x16</code> and CLUT row 485 whatever its header says: the page the Mystic Shield's sphere is drawn from.</p>
 </section>
 
-<section class="doc-section" id="packed-stream">
+<section class="doc-section" id="packed-stream" data-doc="packed-stream-entry-0x8c">
   <h2>Keyframe records</h2>
   <p>Each part record is 9 bytes holding six 12-bit fields. Low bytes sit at <code>[0,1,3,4,6,7]</code>; the high nibbles pack into <code>[2,5,8]</code>:</p>
   <div class="byte-map" role="img" aria-label="Nine-byte keyframe record: tx low, ty low, high nibbles of tx and ty, tz low, rx low, their high nibbles, ry low, rz low, their high nibbles">
@@ -108,7 +108,7 @@ ry = b6 | (b8 &amp; 0x0f) &lt;&lt; 8      rz = b7 | (b8 &amp; 0xf0) &lt;&lt; 4</
   </ul>
 </section>
 
-<section class="doc-section" id="action-tags">
+<section class="doc-section" id="action-tags" data-doc="action-tags-and-the-0x1ef-reaction-map,anim-selection-actor-0x1d90x1da--entry">
   <h2>Action tags and the reaction map</h2>
   <p>When a monster takes a hit, the game must find "the flinch" or "the knockdown" without knowing which entry index that is for this monster. The first byte of every entry is a semantic tag that makes the lookup possible:</p>
   <table>
@@ -142,7 +142,7 @@ ry = b6 | (b8 &amp; 0x0f) &lt;&lt; 8      rz = b7 | (b8 &amp; 0xf0) &lt;&lt; 4</
       <tr><td>capture band <code>0x28 &rarr; 0x6E</code></td><td>class <code>0x63</code> - most monster specials</td><td>neither: the <a href="../subsystems/cast-module.html">cast module</a> stages literal entry indices of its own</td></tr>
     </tbody>
   </table>
-  <p>Because the capture modules hard-code entry indices, a module only lines up with the monsters built for it; some stage nothing on the caster, which then holds its idle through the cast in retail too.</p>
+  <p>Because the capture modules hard-code entry indices, a module only lines up with the monsters built for it; some stage nothing on the caster, which then holds its idle through the cast in retail too. Melee bodies first walk the caster into reach and hold on the range poll; nothing walks it home afterwards. The port replays each body&rsquo;s staged clips at the head of the capture band, except where a body places its stores inside its arms - those clips go in on the tick the arm passes, as retail stages them (<code>legaia_engine_cast::cast_module_ticks::CAPTURE_CASTER_STAGES</code>).</p>
   <h3 id="anim-selection">The anim id is the entry index</h3>
   <p>Per actor, <code>+0x1DA</code> is the queued anim id and <code>+0x1D9</code> the current one. The id <em>is</em> the entry index - the commit routine installs <code>entry = offsets[id]</code> with no remap table. Retail's idle id is 0. Party ids <code>&ge; 0x10</code> take the dynamic-slot path of the <a href="battle-data-pack.html">player battle files</a>.</p>
   <details class="disclosure">
@@ -162,10 +162,31 @@ ry = b6 | (b8 &amp; 0x0f) &lt;&lt; 8      rz = b7 | (b8 &amp; 0xf0) &lt;&lt; 4</
   </details>
 </section>
 
-<section class="doc-section" id="entry-head">
+<section class="doc-section" id="entry-head" data-doc="event-frame-list-entry-0x100x13,effect-script-records-entry-0x140x53,sound-cue-track-entry-0x540x73">
   <h2>Beats, effects and sound cues</h2>
   <h3 id="event-frames">Event frames (<code>+0x10..+0x13</code>)</h3>
   <p>Up to four ascending clip frame indices - the action's significant beats. The per-frame anim tick uses the <strong>first</strong> beat for two things: a queued clip commits mid-clip once <code>beat + 2 &lt; frame</code>, and the actor byte <code>+0x1F7</code> latches <code>frame &lt; beat</code> - the battle's <strong>juggle window</strong>. Every flinch and block entry carries exactly one early beat; the attack band carries one to four. Reader <code>monster_archive::juggle_windows</code>.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The first event-frame beat feeds the anim tick, which latches actor byte 0x1F7 as frame less than beat: the juggle window. Two readers consume that byte. The damage kernel grows the juggle counter while the defender's byte is up. The anim commit FUN_8004AD80 seeds the sound-cue cursor at 1 instead of 0 when it re-stages the clip already playing while the byte is up, so a juggled re-hit restarts its reaction without the track's first cue. The same beat also lets a queued clip commit mid-clip once beat plus 2 is below the frame.">
+      <defs><marker id="ma-jw-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="10" y="75" width="180" height="56" rx="4"/>
+      <text class="dg-label" x="100" y="99">First beat</text><text class="dg-sub" x="100" y="117">entry +0x10</text>
+      <rect class="dg-node-accent" x="240" y="75" width="200" height="56" rx="4"/>
+      <text class="dg-label" x="340" y="99">Juggle window</text><text class="dg-sub" x="340" y="117">+0x1F7 = frame &lt; beat</text>
+      <path class="dg-edge" d="M190 103 L238 103" marker-end="url(#ma-jw-arrow)"/>
+      <rect class="dg-node" x="500" y="10" width="370" height="56" rx="4"/>
+      <text class="dg-label" x="685" y="34">Damage kernel</text><text class="dg-sub" x="685" y="52">juggle counter grows while it is up</text>
+      <rect class="dg-node" x="500" y="75" width="370" height="56" rx="4"/>
+      <text class="dg-label" x="685" y="99">Anim commit FUN_8004AD80</text><text class="dg-sub" x="685" y="117">re-stage while up: cue cursor = 1</text>
+      <rect class="dg-node" x="500" y="140" width="370" height="56" rx="4"/>
+      <text class="dg-label" x="685" y="164">Mid-clip commit</text><text class="dg-sub" x="685" y="182">queued clip cuts in once beat + 2 &lt; frame</text>
+      <path class="dg-edge" d="M440 95 L470 95 L470 38 L498 38" marker-end="url(#ma-jw-arrow)"/>
+      <path class="dg-edge" d="M440 103 L498 103" marker-end="url(#ma-jw-arrow)"/>
+      <path class="dg-edge-dim" d="M100 131 L100 168 L498 168" marker-end="url(#ma-jw-arrow)"/>
+    </svg>
+    <figcaption>The window byte has exactly two writers (both in the anim tick, pinned by a write watch) and these readers; it also paces the arts-input band. A flinch&rsquo;s beat over its rate is the window: Gobu Gobu&rsquo;s beat <code>8</code> at rate <code>2</code> is 16 ticks at the normal speed scale.</figcaption>
+  </figure>
+  <p><strong>Four-slot lists read a heap-dependent byte.</strong> The routine returns the beat as an index taken from the low byte of <code>entry + 0x13</code>, so for every list shorter than four entries - every reaction entry - the beat is simply the first byte. A full four-slot list, which only some attack-band entries carry, hands the tick a byte at <code>entry[0x23 + 4k]</code> where <code>k</code> depends on where the battle heap placed the monster block, so no disc byte decides it. Both fights measured from save states read <code>0</code>, which keeps the window down for the whole clip; the port takes that measured value (<code>battle_action::FOUR_SLOT_GATE_FRAME</code>).</p>
   <h3 id="effect-script">Effect script (<code>+0x14..+0x53</code>)</h3>
   <p>Up to eight 8-byte records walked once per frame to place dust, impact flashes and emitter trains:</p>
   <table class="layout">
@@ -179,11 +200,13 @@ ry = b6 | (b8 &amp; 0x0f) &lt;&lt; 8      rz = b7 | (b8 &amp; 0xf0) &lt;&lt; 4</
   <p>Port <code>engine-effects::action_effect_script::step_effect_script</code>.</p>
   <h3 id="sound-cues">Sound cues (<code>+0x54..+0x73</code>)</h3>
   <p>Eight <code>[u16 frame][u16 cue]</code> pairs, truncated at the first zero cue - footsteps, swing whooshes, the per-punch impacts of the Delilas flurries. The per-frame player resumes at the actor's cue cursor and hands each cue to the sound ring (layout on <a href="sfx-table.html">sfx-table</a>); cue ids <code>&ge; 0x100</code> bypass the ring for the XA player. Reader <code>monster_archive::animation_cue_tracks</code>.</p>
+  <p>The anim commit seeds the cursor. Every commit stores <code>0</code>; a commit that re-stages the clip already playing while the juggle byte is up stores <code>1</code> instead when the entry is the light flinch (<code>+0x1EF</code> / <code>+0x1F0</code>), or the block (<code>+0x1F3</code>) on a party seat or with a first cue id of <code>0x64</code> or more. A juggled re-hit therefore restarts its reaction without the track&rsquo;s first cue. Port: <code>clip_ladder::recommit_cue_cursor</code>.</p>
 </section>
 
-<section class="doc-section" id="playback">
+<section class="doc-section" id="playback" data-doc="playback,engine-playback">
   <h2>Playback</h2>
-  <p>The battle draw keeps a 12.4 fixed-point phase per actor: frame index = <code>phase &gt;&gt; 4</code>, sub-frame fraction = <code>phase &amp; 0xF</code>. The decoder interpolates between frame <code>i</code> and the next entry (<code>i+1</code>, the loop window's start, or the queued clip's frame 0) - <strong>linear</strong> for translation, <strong>shortest-path wrap</strong> for rotation - into a pose buffer of six shorts per object. When a part's three angle steps total more than <code>0xC00</code> it blends the angles again against the next frame's equivalent Euler triple <code>(x+0x800, -(y+0x800), z+0x800)</code>, the same retry the field blender runs; about one blended part sample in ninety on the disc takes it, which the draw loop applies per object through the GTE. Each tick advances <code>phase += (frame_dt &times; speed_scale &times; rate) &gt;&gt; 1</code>, where the actor's speed scale is normally 8 and <code>rate</code> is the entry's <code>+0x78</code> byte.</p>
+  <p>The battle draw keeps a 12.4 fixed-point phase per actor: frame index = <code>phase &gt;&gt; 4</code>, sub-frame fraction = <code>phase &amp; 0xF</code>. The decoder interpolates between frame <code>i</code> and the next entry (<code>i+1</code>, the loop window's start, or the queued clip's frame 0) - <strong>linear</strong> for translation, <strong>shortest-path wrap</strong> for rotation - into a pose buffer of six shorts per object.
+  When a part's three angle steps total more than <code>0xC00</code> it blends the angles again against the next frame's equivalent Euler triple <code>(x+0x800, -(y+0x800), z+0x800)</code>, the same retry the field blender runs; about one blended part sample in ninety on the disc takes it, which the draw loop applies per object through the GTE. Each tick advances <code>phase += (frame_dt &times; speed_scale &times; rate) &gt;&gt; 1</code>, where the actor's speed scale is normally 8 and <code>rate</code> is the entry's <code>+0x78</code> byte.</p>
   <p>On the last frame of a clip the decoder cross-blends toward frame 0 of the <em>queued</em> entry, so transitions tween rather than snap. A clip with a loop window (<code>+0x85..+0x86</code>) parks or replays inside it before the natural-end test runs; the hold is a finite budget seeded from <code>+0x84</code>, and a cast module can end a park early - timing choreography, not a terminal hold. The decoder also leaves the pose <strong>centroid</strong> on the actor: the average part translation, rotated by the facing and scaled, is added to the live position to give the body position the range checks measure.</p>
   <h3 id="end-step">The end-of-clip step (<code>+0x0E</code>)</h3>
   <p>A lunge ends one step forward without a snap. The decoder adds <code>+0x0E</code> to the Z delta of the last frame's blend into the queued frame 0, carrying the body forward in model space; at the natural end the anim tick moves the actor by the same step along its facing (<code>+0x34 += sin &middot; step &gt;&gt; 12</code>, <code>+0x38 += cos &middot; step &gt;&gt; 12</code>) and the pose snaps back to frame 0 at the new position. An event-cut clip moves it pro-rated by <code>frame / frames</code>. The tick skips the move while the root latch is up or a dead actor has no Seru staged.</p>
@@ -217,19 +240,19 @@ ry = b6 | (b8 &amp; 0x0f) &lt;&lt; 8      rz = b7 | (b8 &amp; 0xf0) &lt;&lt; 4</
   <p class="caption">In the port: <code>legaia_actor_formats::monster_archive::{clip_morph_table, clip_morph_weight, apply_clip_morphs}</code>; <code>World::battle_morphed_tmd</code> blends the playing clip's lanes, and both the native window and the browser play page draw the blended mesh.</p>
 </section>
 
-<section class="doc-section" id="texture-pool">
+<section class="doc-section" id="texture-pool" data-doc="-">
   <h2>Texture pool</h2>
   <p>The same archive block carries the model's colours: a <code>0x1E0</code>-byte region of <strong>fifteen 16-colour palettes</strong> followed by a <strong>4bpp index page</strong> (256 rows tall, 128 or 256 texels wide). Each TMD primitive picks its palette from the low six bits of its CBA and samples the page at its UVs - the same index-then-palette lookup the PSX GPU performs from VRAM (<a href="tim.html">TIM</a>, <a href="../subsystems/renderer.html">renderer</a>). 186 of the 194 archive slots carry a clean mesh + pool; the rest are filler ids.</p>
 </section>
 
-<section class="doc-section" id="export">
+<section class="doc-section" id="export" data-doc="export">
   <h2>Export (glTF)</h2>
   <p><code>legaia_actor_formats::monster_gltf::export_glb</code> packs mesh, baked texture and <strong>every</strong> action into one <code>.glb</code>. The rigid-per-object model maps straight onto glTF node animation: each TMD object becomes a node, the keyframe translation and Euler rotation (recomposed as a quaternion in <code>Rz&middot;Ry&middot;Rx</code> order) drive its channels, and a root node rotates the rig 180&deg; about X for glTF's Y-up. The per-primitive palettes are baked into a vertical atlas with each vertex's V remapped into its band.</p>
   <div class="cli"><code>asset monster-archive &hellip; --id N --glb enemy.glb</code></div>
   <p class="caption">The <a href="../monsters.html">enemy table</a> exposes the same export as a per-enemy download button.</p>
 </section>
 
-<section class="doc-section" id="how-we-know">
+<section class="doc-section" id="how-we-know" data-doc="provenance">
   <h2>How we know</h2>
   <details class="disclosure">
     <summary>Decoder, installer and commit routines</summary>
@@ -258,7 +281,7 @@ ry = b6 | (b8 &amp; 0x0f) &lt;&lt; 8      rz = b7 | (b8 &amp; 0xf0) &lt;&lt; 4</
   <p>Open: the caller of the anim-node tick is not in the dump corpus. Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/monster-animation.md" target="_blank" rel="noopener"><code>docs/formats/monster-animation.md</code></a>.</p>
 </section>
 
-<section class="doc-section" id="see-also">
+<section class="doc-section" id="see-also" data-doc="see-also">
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>

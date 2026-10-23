@@ -189,7 +189,7 @@ impl TutorialLesson {
         self as u8
     }
 
-    /// The [`ActionCategory`](legaia_engine_menus::battle_input) byte (`actor[+0x1DE]`) the
+    /// The [`ActionCategory`](legaia_engine_battle_menus::battle_input) byte (`actor[+0x1DE]`) the
     /// player is expected to commit for this lesson - the flow-state `110`
     /// validator at `0x801F7088`.
     ///

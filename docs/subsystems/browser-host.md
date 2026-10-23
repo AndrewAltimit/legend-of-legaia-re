@@ -592,6 +592,21 @@ Cross skips, and the quads come out of the shared
 window draws through, so the 640x480 boot stage letterboxes identically on
 both. The title theme starts when the card comes up, not under the logos.
 
+Neither stage is stepped here. Both exports step the session's one front end,
+`legaia_engine_session::FrontEnd`, which the native window's boot UI steps
+too: the logo skip and tick, the mode seat's `boot_handoff` to `CARD INIT`
+with the Continue scan at that moment, the title tick, the row counter onto
+the seat, and the attract hand-off with its skip edge. The page supplies the
+movie lane (`PageAttractLane` over `play_fmv`, settled again in the arming
+frame so an unplayable movie never outlives it), the rack scan
+(`cards::rack_has_save`) and what each outcome does. Continue hands the
+frame to the session's `ContinueScreen` (`boot_continue.rs`:
+`boot_continue_step` reports `"loaded"` with the save parked for
+`play_resume_save`, or `"back"`; `boot_continue_draws_json` draws it),
+the native window's screen too. The page calls
+`boot_title_start` before `boot_logos_start`; the logos replace that title, and
+the front end raises a fresh one when they hand off.
+
 One start owns the page at a time. Every user-initiated start - New Game, a
 scene picked from the list, a save imported over a live title - bumps a page
 start generation and calls `play_cancel_start` first, which drops the logo and
@@ -1079,7 +1094,7 @@ the persistent words the page reads off the visitor's memory card, and
 resolves species names against the loaded PROT 0972 overlay image; the
 cast-meter sweep rate and the flight / reel-down / snap glue are the module's
 engine-side reconstruction (`docs/subsystems/minigame-fishing.md`). Muscle Dome drives
-[`legaia_engine_menus::muscle_dome_session::MuscleDomeSession`] on the disc's dealt
+[`legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession`] on the disc's dealt
 hand with the native launcher's flat favored per-card cost (the browser has
 no player battle file for the per-command `+0x74` swing bytes) and a
 battle-path damage stand-in matching the native `tick_muscle_dome`
@@ -1345,9 +1360,9 @@ reference TIMs sitting in other PROT entries.
 | [`play_field_hud`](../../crates/web-play/src/play_field_hud.rs) | The field party-status HUD (name / `LV` / `HP` / `MP`). |
 | [`play_tile_board`](../../crates/web-play/src/play_tile_board.rs) | Tile-board (op `0x49`) rendering on the play page. |
 | [`play_world_map_markers`](../../crates/web-play/src/play_world_map_markers.rs) | The overworld's kind-coded entity and player markers (a port marker, not a retail draw). |
-| [`play_frame_step`](../../crates/web-play/src/play_frame_step.rs) | The shared wall-clock to sim-tick rule (`engine-core::frame_step::SimStepper`). |
+| [`play_frame_step`](../../crates/web-play/src/play_frame_step.rs) | The shared wall-clock to sim-tick rule (`engine-field::frame_step::SimStepper`). |
 | [`host_slot`](../../crates/web-play/src/host_slot.rs) | The page's slot for its `BootSession` over `play_sfx::PageSink`; every page module reaches the scene host through it. |
-| [`play_hotkeys`](../../crates/web-play/src/play_hotkeys.rs) | `play_host_hotkey`: the native window's option / cheat / camera keys, resolved through the shared `engine-session::hotkeys` table; the page half is `window.__playHotkeyActions` in `play.html`. |
+| [`play_hotkeys`](../../crates/web-play/src/play_hotkeys.rs) | `play_host_hotkey`: the native window's option / cheat / camera keys, resolved through the shared `engine-session::hotkeys` table; `play_host_hotkey_notice` / `play_host_hotkey_refusal` word the notice line; `host_hotkeys_json` lists the table. The page half is `window.__playHotkeyActions` in `play.html`. |
 | [`play_lighting`](../../crates/web-play/src/play_lighting.rs) / [`play_fog_volume`](../../crates/web-play/src/play_fog_volume.rs) | The enhanced-lighting and volumetric-fog enhancements (twins of the native `I` / `F8` and `F9`), from the shared engine-side sources. |
 | [`play_cheats`](../../crates/web-play/src/play_cheats.rs) | The play page's Cheats panel, thin bindings over `engine-cheats::cheats`. |
 | [`play_toggles`](../../crates/web-play/src/play_toggles.rs) | Runtime twins of native launch switches: `--retail` (session-only `OptionsState::pin_retail`; the store is not written while it holds), `--set-flag`, `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS`. |

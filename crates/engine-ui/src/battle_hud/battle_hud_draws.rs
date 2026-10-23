@@ -813,9 +813,22 @@ pub fn battle_hud_draws_for(
     // at 312, rising to the bar's row; the name payload carries the
     // element-badge escape in front of the name, so the interior follows
     // the same badge law as the top-left plaque.
+    //
+    // Retail queues the plaque ahead of the message bar, so a bar that has
+    // risen over it hides it; one still gliding up from below leaves it in
+    // view (`zeto_call_wave_mid_cast`: the plaque on its row, the bar's top
+    // edge under it). The plaque's name rides the text layer, which draws
+    // over every sprite, so the port drops the plaque once the bar's frame
+    // has reached its top.
+    let plaque_hidden_by_bar = message_bar.is_some()
+        && BAR_NAME.1
+            - crate::battle_hud_chrome::BANNER_PEN_INSET
+            - crate::battle_hud_chrome::BANNER_BORDER
+            + frame.message_bar_dy
+            <= BAR_Y + frame.target_plaque_dy;
     if let Some((name, badge_index)) = frame
         .target_plaque
-        .filter(|(n, _)| !n.is_empty() && message_bar.is_none())
+        .filter(|(n, _)| !n.is_empty() && !plaque_hidden_by_bar)
     {
         let name_w = font.layout_ascii(name).advance_x as i32;
         let badge = badge_index.and_then(|i| frame.badges.and_then(|b| b.element_badge(i)));
@@ -947,16 +960,28 @@ pub fn battle_hud_draws_for(
     // `player_steal_skeleton_banner` shows it: the blue marble fill inside
     // the gold border over `(8, 184)..(312, 212)`, the pen's 8-px inflation.
     // A host without the system-UI atlas keeps the plate run.
+    //
+    // `FUN_801D8DE8(0x5B, 0)` spawns it at seat A and glides it up to seat B
+    // (`frame.message_bar_dy`).
     if let Some(message) = message_bar.filter(|_| !bar_covered) {
+        let dy = frame.message_bar_dy;
+        let pen = (BAR_NAME.0, BAR_NAME.1 + dy);
         match frame.chrome {
             Some(rects) => sprites.extend(crate::battle_hud_chrome::class0_frame_draws_at(
                 rects,
-                BAR_NAME,
+                pen,
                 (BAR_INTERIOR_W, crate::battle_hud_chrome::BANNER_INTERIOR_H),
                 origin,
                 scale as u32,
             )),
-            None => plate_run(&mut text, &mut sprites, BAR_X, BAR_Y, BAR_INTERIOR_W, false),
+            None => plate_run(
+                &mut text,
+                &mut sprites,
+                BAR_X,
+                BAR_Y + dy,
+                BAR_INTERIOR_W,
+                false,
+            ),
         }
         // The bar's text can carry a `0xCE` button escape (PROT 0954's stop
         // prompt), parked at `U+E000 + byte`, and the steal captions carry
@@ -970,7 +995,7 @@ pub fn battle_hud_draws_for(
                 _ => b'?',
             })
             .collect();
-        let mut draws = text_draws_for(&font.layout(&bytes), BAR_NAME, ink);
+        let mut draws = text_draws_for(&font.layout(&bytes), pen, ink);
         scale_stage_text_draws(&mut draws, origin, scale as u32);
         text.extend(draws);
     }

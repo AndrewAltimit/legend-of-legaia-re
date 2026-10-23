@@ -30,6 +30,20 @@ impl HeadlessPlayWindow {
     /// ignored (the options start at their defaults,
     /// as a fresh browser profile's do).
     pub fn open(disc: &Path, scene: &str) -> Result<Self> {
+        Self::open_with(disc, scene, false, None)
+    }
+
+    /// [`Self::open`] as `play-window --boot-ui [--card <card>]` launches:
+    /// the boot front end (publisher logos, then the title card) owns the
+    /// frames until the title resolves, over the pre-booted `scene`. `card`
+    /// is the memory-card image mounted in **port 2**, the one `--card`
+    /// names; port 1 is the window's own card in a scratch save directory.
+    /// Nothing this window saves reaches either file.
+    pub fn open_boot_ui(disc: &Path, scene: &str, card: Option<&Path>) -> Result<Self> {
+        Self::open_with(disc, scene, true, card)
+    }
+
+    fn open_with(disc: &Path, scene: &str, boot_ui: bool, card: Option<&Path>) -> Result<Self> {
         let save_dir = std::env::temp_dir().join("legaia-headless-window-saves");
         let mut app = assemble_play_window(PlayWindowLaunch {
             scene,
@@ -38,9 +52,9 @@ impl HeadlessPlayWindow {
             enable_audio: true,
             audio_detached: true,
             world_map: false,
-            boot_ui: false,
+            boot_ui,
             save_dir: &save_dir,
-            card: None,
+            card,
             cheat_file: None,
             cheat_strict: false,
             live_loop: true,
@@ -147,6 +161,30 @@ impl HeadlessPlayWindow {
     /// countdown, cached position and last decision).
     pub fn field_party_hud(&self) -> &legaia_engine_field::world_map_panel_host::FieldPartyHud {
         &self.app.field_party_hud
+    }
+
+    /// The boot front end, while it owns the frame (`open_boot_ui`).
+    pub fn front_end(&self) -> Option<&legaia_engine_session::FrontEnd> {
+        match &self.app.boot_ui {
+            BootUiState::FrontEnd(fe) => Some(fe),
+            _ => None,
+        }
+    }
+
+    /// The title's Continue screen, while it owns the frame.
+    pub fn continue_screen(&self) -> Option<&legaia_engine_session::ContinueScreen> {
+        match &self.app.boot_ui {
+            BootUiState::Continue(c) => Some(c),
+            _ => None,
+        }
+    }
+
+    /// The title's Continue screen, mutably (a test shortening its beats).
+    pub fn continue_screen_mut(&mut self) -> Option<&mut legaia_engine_session::ContinueScreen> {
+        match &mut self.app.boot_ui {
+            BootUiState::Continue(c) => Some(c),
+            _ => None,
+        }
     }
 
     /// Whether the window's pause menu owns the frame (the boot-UI arm).

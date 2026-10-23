@@ -293,10 +293,10 @@ pub struct LegaiaMinigames {
     /// it rose on: every replayed step at or past it runs boosted.
     muscle_tally_boost_from: Option<i32>,
     /// The shared wall-clock to sim-tick rule
-    /// ([`legaia_engine_core::frame_step::SimStepper`]) the native window and
+    /// ([`legaia_engine_field::frame_step::SimStepper`]) the native window and
     /// the play page drain through: the page's animation loop asks it how
     /// many 60 Hz game frames each display frame runs.
-    sim_stepper: legaia_engine_core::frame_step::SimStepper,
+    sim_stepper: legaia_engine_field::frame_step::SimStepper,
 }
 
 impl Default for LegaiaMinigames {
@@ -340,7 +340,7 @@ fn jstr(s: &str) -> String {
 impl LegaiaMinigames {
     /// How many 60 Hz game frames this display frame runs, given the wall
     /// time since the previous call in **milliseconds** - the shared
-    /// [`legaia_engine_core::frame_step::SimStepper`], the play page's
+    /// [`legaia_engine_field::frame_step::SimStepper`], the play page's
     /// `play_drain_sim_steps` and the native window's redraw drain. A gap
     /// longer than the stepper's backlog cap is dropped, not carried.
     ///
@@ -383,7 +383,7 @@ impl LegaiaMinigames {
         Self {
             prot: Vec::new(),
             entries: Vec::new(),
-            sim_stepper: legaia_engine_core::frame_step::SimStepper::new(),
+            sim_stepper: legaia_engine_field::frame_step::SimStepper::new(),
             dance: None,
             dance_countin: None,
             dance_tutorial: None,

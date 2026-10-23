@@ -15,6 +15,26 @@ pub(super) fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// `rel` under the workspace root or the nearest ancestor that has it. A
+/// worktree under `.claude/worktrees/` carries none of the gitignored data
+/// (`extracted/`, `saves/library/`), and its enclosing checkout does - the
+/// same walk up the tree `full_game_ladder` and `retail-compare.py` take.
+pub(super) fn up_the_tree(rel: &str, probe: impl Fn(&Path) -> bool) -> Option<PathBuf> {
+    repo_root()
+        .ancestors()
+        .map(|root| root.join(rel))
+        .find(|p| probe(p))
+}
+
+/// The save library the `@<save>` runs read: `$LEGAIA_SAVES_LIBRARY`, else
+/// `saves/library/` up the tree.
+pub(super) fn saves_library() -> Option<PathBuf> {
+    match std::env::var_os("LEGAIA_SAVES_LIBRARY") {
+        Some(p) => Some(PathBuf::from(p)).filter(|p| p.is_dir()),
+        None => up_the_tree("saves/library", Path::is_dir),
+    }
+}
+
 pub(super) fn env_u64(key: &str) -> Option<u64> {
     let v = std::env::var(key).ok()?;
     let v = v.trim();
@@ -46,9 +66,10 @@ pub(super) fn source() -> Option<Source> {
     if let Some(d) = std::env::var_os("LEGAIA_EXTRACTED_DIR") {
         candidates.push(PathBuf::from(d));
     }
-    candidates.push(repo_root().join("extracted"));
+    let complete = |d: &Path| d.join("PROT.DAT").exists() && d.join("CDNAME.TXT").exists();
+    candidates.extend(up_the_tree("extracted", complete));
     for d in candidates {
-        if d.join("PROT.DAT").exists() && d.join("CDNAME.TXT").exists() {
+        if complete(&d) {
             return Some(Source::Extracted(d));
         }
     }

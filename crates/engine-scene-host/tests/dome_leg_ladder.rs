@@ -27,8 +27,8 @@
 //! Disc-gated: the course ladder and the damage model both come off the
 //! disc. Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
+use legaia_engine_battle_menus::muscle_dome_session::{MuscleCard, MuscleDomeSession, MusclePhase};
 use legaia_engine_core::world::World;
-use legaia_engine_menus::muscle_dome_session::{MuscleCard, MuscleDomeSession, MusclePhase};
 use legaia_engine_minigames::muscle_dome::{
     ContestState, DomeCombatant, DomeDamageModel, GlideStep, SpriteGlide,
 };
@@ -353,7 +353,7 @@ fn a_resolved_turn_holds_for_its_playback_and_tallies_it() {
         assert!(s.last_turn_closes_in(), "the leg's first plays walk in");
         (
             plays.len(),
-            legaia_engine_menus::muscle_dome_session::choreo::turn_playback_ticks(
+            legaia_engine_battle_menus::muscle_dome_session::choreo::turn_playback_ticks(
                 plays,
                 s.last_turn_closes_in(),
             ),

@@ -319,13 +319,15 @@ impl FieldHostImpl<'_> {
                 .insert(slot, (1, move_id, Vec::new()));
             let party_bank =
                 ctx.flags & legaia_engine_field::field_player_clip::PARTY_BANK_FLAG != 0;
-            self.world.bind_npc_scene_clip(
+            if let Some(flags) = self.world.bind_npc_scene_clip(
                 slot,
                 move_id,
                 party_bank,
                 ctx.local_flags,
                 ctx.field_6a,
-            );
+            ) {
+                ctx.local_flags = flags;
+            }
         }
         self.world
             .pending_field_events

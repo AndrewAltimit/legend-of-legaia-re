@@ -1,11 +1,12 @@
 # legaia-engine-menus
 
-The engine's menu, title and memory-card front end, minus `World`: the item
+The engine's menu and memory-card front end, minus `World`: the item
 and equipment catalogs, the inventory-use and spell-menu sessions, the SCUS
 list-row model every pause-menu list window shares, the menu overlay's widget
-choreography and tables, the title and boot screens, the card write flow and
+choreography and tables, the card write flow and
 `bu` I/O layer. The field dialog pager sits one crate down, in
-[`legaia-engine-dialog`](../engine-dialog/README.md). Free of
+[`legaia-engine-dialog`](../engine-dialog/README.md); the publisher logos and
+the title screen are a sibling, [`legaia-engine-title`](../engine-title/README.md). Free of
 wgpu, winit and cpal, so it builds for native and `wasm32` alike.
 
 `legaia-engine-menu-runtime` owns the composition - `MenuRuntime`, the
@@ -54,17 +55,12 @@ link into a dependent crate.
   picker's rows and labels, the list page lengths, and the UI cue each shop
   input raises); see
   [`docs/subsystems/shop.md`](../../docs/subsystems/shop.md).
-- **Battle command input** - `battle_input` (`BattleCommandSession`, the
-  player-driven command picker the live battle loop opens per party turn,
-  and the chip-cluster model both it and the dome project), `battle_open`
-  (the formation open banner and its hold timers), `battle_flow` (the
-  command-flow state byte `ctx[+0x06]` as a projection of the session's
-  phases, and the tutorial box the flow state is showing), `timed_fight` (Koru's
-  turn-limit gate and strip readout) and `muscle_dome_session` (one Muscle Dome leg:
-  `MuscleDomeSession`, its command menu, ring and loadout kernels, over the
-  contest ladder `legaia-engine-minigames` carries)
-  and `option_values` (the options screen's value enums - Select Attack,
-  battle camera, field HP display, ...).
+- **Battle command input** - not in this crate. The command picker, the
+  open banner, the command-flow byte, the timed fight and the Muscle Dome
+  match session are
+  [`legaia-engine-battle-menus`](../engine-battle-menus/README.md), a
+  sibling; the options screen's value enums they key on (`option_values`)
+  are `legaia-engine-system`'s.
 - **Options** - `options`: `OptionsState` and its TOML persistence, the
   options screen session and its row model, the key-rebind flow over
   `key_rebind`, and the retail-deviation report. The push of the simulation
@@ -83,9 +79,9 @@ link into a dependent crate.
   developer character editor), `dev_menu_host` (the developer menu screen
   it sits on; engine-menu-runtime's `DevMenuWorldExt` runs it against a `World`) and
   `key_rebind`.
-- **Title + boot** - `publisher_logos`, `title` (title state machine),
-  `title_screen_atlas`, `name_entry` (the `town01` naming screen) and
-  `game_over` (party wipe to the title).
+- **Naming + game over** - `name_entry` (the `town01` naming screen) and
+  `game_over` (party wipe to the title). The publisher logos and the title
+  screen are [`legaia-engine-title`](../engine-title/README.md).
 - **Memory card + save screen** - `card_flow` (the write / format flow over
   the card I/O machine), `card_bu_io` (the `bu` device wrappers),
   `save_select` (the slot-select session, card directory and card I/O
@@ -106,19 +102,16 @@ link into a dependent crate.
   money, inventory, arts, level-up tracking, name entry) and `shop_state`
   (the gold-shop and prize-exchange sessions), each one subsystem's state
   held as a unit on the composite `World`.
+- **New Game record seeding** - `new_game` (the live record a starting-party
+  template row seeds, the scene-picker party's starter loadout, the
+  cold-boot defaults bundle `NewGameDefaults` and the game-state cold-reset
+  values `GAME_STATE_COLD_RESET`). engine-core's `new_game` applies them to
+  a `World`.
 
-## Title overlay, game-over banner and menu state machine
+## Game-over banner and menu state machine
 
-- `title_overlay` - the title-screen tick `FUN_801DD35C` (the sub-mode
-  dispatcher, its menu and transitions) and `title_overlay::title_draw_list`,
-  the sub-mode -> screen selector both hosts ask.
-- `title_prim` - the SCUS-side GPU primitive helpers the title overlay calls.
 - `gameover_banner` - the game-over banner letter stager `FUN_801CE844`.
 - `menu` - the engine's pause / shop / inn menu state machine.
-
-`muscle_dome_session` is the Muscle Dome match session (the deal, the commit
-and the ring) over this crate's battle-input and arts-input models; the
-World-free ladder and contest tables are `legaia_engine_minigames::muscle_dome`.
 
 ## See also
 

@@ -43,6 +43,100 @@ fn state_builds_without_a_window() {
     );
 }
 
+/// The model tab's texture-source default reads coverage. Two `town01`
+/// scene_tmd_stream entries each carry two TIMs: PROT 6's cover every CLUT
+/// and texel its mesh reads (it opens on the entry), PROT 7's miss a few
+/// prims (it opens on the scene's VRAM).
+#[test]
+fn texture_coverage_separates_self_contained_meshes_from_scene_meshes() {
+    let Some(bin) = disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN not set; skipping texture-coverage test");
+        return;
+    };
+    let out = scratch("coverage");
+    let mut s = Studio::new(Some(out.join("settings.json")));
+    s.open_blocking(&bin).expect("load disc");
+    let lib = s.library.clone().unwrap();
+    let mut coverage = |index: u32| {
+        let pos = lib.position_of(index).expect("entry");
+        let a = s.select_blocking(pos).expect("analyse");
+        assert!(!a.tims.is_empty(), "PROT {index} carries TIMs of its own");
+        let m = Model::from_tmd(a.tmd_bytes(&a.tmds[0])).expect("mesh builds");
+        m.texture_coverage(&a.vram())
+    };
+    // PROT 7: three triangles read a page the scene uploads.
+    let (covered, textured) = coverage(7);
+    assert!(
+        textured > 0 && covered < textured,
+        "PROT 7: {covered}/{textured}"
+    );
+    // PROT 6: its two TIMs hold everything its mesh reads.
+    let (covered, textured) = coverage(6);
+    assert!(
+        textured > 0 && covered == textured,
+        "PROT 6: {covered}/{textured}"
+    );
+}
+
+/// PROT 6 (`town01`'s dark-sky shell and island) draws almost black with
+/// retail shading although its own TIMs cover every page it reads: its sky
+/// dome is untextured gouraud authored `(0, 0, 0)` at every corner and most
+/// of the island's colour words sit near black over a dim palette. The
+/// model tab says so (`dark_baked_share`), and the Lit aid still shows its
+/// shape. PROT 7, the daytime twin with a blue dome, carries none.
+#[test]
+fn a_mesh_baked_black_on_the_disc_is_named_and_lit_shows_its_shape() {
+    let Some(bin) = disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN not set; skipping baked-dark test");
+        return;
+    };
+    let out = scratch("baked-dark");
+    let mut s = Studio::new(Some(out.join("settings.json")));
+    s.open_blocking(&bin).expect("load disc");
+    let lib = s.library.clone().unwrap();
+    let mut probe = |index: u32| {
+        let a = s
+            .select_blocking(lib.position_of(index).expect("entry"))
+            .expect("analyse");
+        let m = Model::from_tmd(a.tmd_bytes(&a.tmds[0])).expect("mesh builds");
+        let near_black = |shading| {
+            let img = raster::render(&m, &a.vram(), Camera::default(), shading, 160, 120);
+            let px: Vec<_> = img
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .filter(|p| p[..3] != [30, 32, 36])
+                .map(|p| p[0].max(p[1]).max(p[2]) < 16)
+                .collect();
+            (px.iter().filter(|&&b| b).count(), px.len().max(1))
+        };
+        // The asset viewer measures the raw TMD; both tools read one number.
+        let bytes = a.tmd_bytes(&a.tmds[0]);
+        let whole = legaia_tmd::mesh::tmd_dark_baked_share(
+            &legaia_tmd::parse(bytes).expect("parse"),
+            bytes,
+        );
+        assert!((whole - m.dark_baked_share()).abs() < 1e-6, "PROT {index}");
+        (
+            m.dark_baked_share(),
+            near_black(Shading::Textured),
+            near_black(Shading::Lit),
+        )
+    };
+    let (dark6, (tex_black, tex_drawn), (lit_black, _)) = probe(6);
+    assert!(
+        dark6 >= legaia_tmd::mesh::MOSTLY_DARK_SHARE,
+        "PROT 6 dark share {dark6}"
+    );
+    assert!(
+        tex_black * 2 > tex_drawn,
+        "PROT 6 draws mostly black with retail shading ({tex_black}/{tex_drawn})"
+    );
+    assert_eq!(lit_black, 0, "the Lit aid floors black prims to a grey");
+    let (dark7, _, _) = probe(7);
+    assert!(dark7 < 0.05, "PROT 7 dark share {dark7}");
+}
+
 #[test]
 fn extraction_of_a_missing_image_fails_cleanly() {
     let dir = scratch("missing");

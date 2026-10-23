@@ -1,0 +1,24 @@
+[package]
+name = "legaia-engine-title"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
+
+[lib]
+name = "legaia_engine_title"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+legaia-engine-system.workspace = true
+legaia-tim.workspace = true
+legaia-ui-formats.workspace = true
+
+[dev-dependencies]
+legaia-prot.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

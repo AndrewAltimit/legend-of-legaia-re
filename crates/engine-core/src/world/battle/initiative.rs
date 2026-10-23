@@ -373,7 +373,9 @@ impl World {
     /// PORT: FUN_801D9D3C (the `ctx+0x290` banner arm; the party-plate layout
     /// stays with the HUD)
     pub fn raise_battle_open_banner(&mut self) {
-        use legaia_engine_menus::battle_open::{BANNER_BOX_STYLE, BANNER_FRAMES, FormationBanner};
+        use legaia_engine_battle_menus::battle_open::{
+            BANNER_BOX_STYLE, BANNER_FRAMES, FormationBanner,
+        };
         let Some(banner) =
             FormationBanner::for_formation(self.battle_formation(), self.party.party_count)
         else {
@@ -396,9 +398,8 @@ impl World {
             .get(banner.disc_label())
             .map(str::to_string);
         let group = self.next_battle_tutorial_group();
-        self.battle
-            .tutorial_boxes
-            .push_back(legaia_engine_menus::battle_flow::ActiveTutorialBox {
+        self.battle.tutorial_boxes.push_back(
+            legaia_engine_battle_menus::battle_flow::ActiveTutorialBox {
                 text: banner.line(&leader, template.as_deref()),
                 style: BANNER_BOX_STYLE,
                 waits_for_input: false,
@@ -407,7 +408,8 @@ impl World {
                 any_press_dismisses: false,
                 placed: None,
                 stands: false,
-            });
+            },
+        );
     }
 
     /// Next combatant by SPD-seeded initiative - the port of

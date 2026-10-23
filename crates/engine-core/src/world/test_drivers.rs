@@ -2,7 +2,8 @@
 //!
 //! `legaia-engine-battle-hud`'s tests seat a battle at one phase and step the
 //! glide and command state machines a frame at a time, then assert what the
-//! HUD reads back. Those steps are internal to the battle loop (`World::tick`
+//! HUD reads back; `legaia-engine-save-state`'s tests settle a fight
+//! (`finish_battle`) before they round-trip what it banked through a save. Those steps are internal to the battle loop (`World::tick`
 //! runs them in its own order) and stay `pub(crate)` / `pub(in crate::world)`
 //! for every other caller; this trait re-exposes them under the same names,
 //! and only when the `test-drivers` feature is on, which only that crate's
@@ -12,8 +13,8 @@
 
 use super::World;
 use crate::battle_round::PendingPartyAction;
+use legaia_engine_battle_menus::battle_input::BattleCommandInput;
 use legaia_engine_battle_vm::battle_action::StepOutcome;
-use legaia_engine_menus::battle_input::BattleCommandInput;
 
 pub trait BattleTestDrivers {
     /// The flag `World::step_action_plate_glides` holds the stepper's return
@@ -32,6 +33,9 @@ pub trait BattleTestDrivers {
     fn commit_party_command(&mut self, actor: u8, action: PendingPartyAction);
     /// The press the round prompt's gate parked (`ctx[+0x884]`).
     fn command_pad_buffer(&self) -> Option<BattleCommandInput>;
+    /// The battle exit's settle (`World::finish_battle`): capture banking,
+    /// spoils and the field restore, run once at the end of a fight.
+    fn finish_battle(&mut self);
 }
 
 impl BattleTestDrivers for World {
@@ -71,5 +75,8 @@ impl BattleTestDrivers for World {
     }
     fn command_pad_buffer(&self) -> Option<BattleCommandInput> {
         self.battle.command_pad_buffer
+    }
+    fn finish_battle(&mut self) {
+        World::finish_battle(self)
     }
 }

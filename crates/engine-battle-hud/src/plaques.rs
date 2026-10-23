@@ -4,8 +4,8 @@
 //! marks.
 
 use super::*;
+use legaia_engine_battle_menus::battle_input::CommandChipPhase;
 use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
-use legaia_engine_menus::battle_input::CommandChipPhase;
 
 /// The party member whose full-width readout bar (placement record 7) is
 /// up this frame, or `None`.
@@ -218,6 +218,25 @@ pub fn battle_message_bar(world: &legaia_engine_core::world::World) -> Option<St
         return None;
     }
     world.battle.steal_caption.as_ref().map(|c| c.text.clone())
+}
+
+/// Seat A / seat B rows of the message bar's glide record (placement record
+/// 91): `y = 234` -> `192`, the record `zeto_call_wave_mid_cast` holds
+/// mid-raise.
+pub(super) const MESSAGE_BAR_SEATS_Y: (i32, i32) = (234, 192);
+
+/// How far the message bar sits below its rest seat this frame - the raise
+/// glide `FUN_801D8DE8(0x5B, 0)` starts
+/// ([`legaia_engine_core::world::BattleState::message_bar_glide`]). `0` with
+/// no bar up or once it has landed.
+pub fn battle_message_bar_dy(world: &legaia_engine_core::world::World) -> i32 {
+    if world.mode != legaia_engine_mode::mode::SceneMode::Battle
+        || world.battle.steal_caption.is_none()
+    {
+        return 0;
+    }
+    let (a, b) = MESSAGE_BAR_SEATS_Y;
+    LogLaunch::seat_dy(world.battle.message_bar_glide.as_ref(), a, b)
 }
 
 /// Seat A / seat B rows of a roster panel (records 6 / `0x4E` / `0x4F`:
@@ -683,7 +702,7 @@ pub fn battle_magic_chip(world: &legaia_engine_core::world::World, ordinal: u8) 
             if idx == 4 {
                 "-".to_string()
             } else {
-                legaia_engine_menus::battle_input::BattleCommand::Magic
+                legaia_engine_battle_menus::battle_input::BattleCommand::Magic
                     .label()
                     .to_string()
             }
@@ -692,7 +711,7 @@ pub fn battle_magic_chip(world: &legaia_engine_core::world::World, ordinal: u8) 
 }
 
 /// The mark the Ra-Seru chip wears in a regular battle: the red cross-out
-/// ([`legaia_engine_menus::muscle_dome_session::ChipMark::Forbidden`], `FUN_801DBC30`) while the
+/// ([`legaia_engine_battle_menus::muscle_dome_session::ChipMark::Forbidden`], `FUN_801DBC30`) while the
 /// special word forbids it, else none. The phase-`0x28` arm draws the mark
 /// before it tests the pad (`0x801D12DC..0x801D12F4`).
 ///
@@ -700,11 +719,11 @@ pub fn battle_magic_chip(world: &legaia_engine_core::world::World, ordinal: u8) 
 /// [`battle_raseru_cross_out`])
 pub fn battle_magic_chip_mark(
     world: &legaia_engine_core::world::World,
-) -> Option<legaia_engine_menus::muscle_dome_session::ChipMark> {
+) -> Option<legaia_engine_battle_menus::muscle_dome_session::ChipMark> {
     world
         .battle
         .raseru_forbidden()
-        .then_some(legaia_engine_menus::muscle_dome_session::ChipMark::Forbidden)
+        .then_some(legaia_engine_battle_menus::muscle_dome_session::ChipMark::Forbidden)
 }
 
 /// Whether this frame draws the red cross-out X over the command ring's

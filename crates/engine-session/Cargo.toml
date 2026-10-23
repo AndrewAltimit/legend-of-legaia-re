@@ -12,6 +12,7 @@ path = "src/lib.rs"
 
 [dependencies]
 legaia-engine-menus.workspace = true
+legaia-engine-title.workspace = true
 anyhow.workspace = true
 log.workspace = true
 serde.workspace = true
@@ -26,6 +27,7 @@ legaia-tmd.workspace = true
 legaia-art.workspace = true
 legaia-engine-audio.workspace = true
 legaia-engine-core.workspace = true
+legaia-engine-save-state.workspace = true
 legaia-engine-battle-hud.workspace = true
 legaia-engine-scene-host.workspace = true
 legaia-engine-world-views.workspace = true
@@ -47,6 +49,7 @@ legaia-engine-vm.workspace = true
 legaia-game-tables.workspace = true
 
 [dev-dependencies]
+legaia-engine-battle-menus.workspace = true
 legaia-engine-cheats.workspace = true
 legaia-lzs.workspace = true
 legaia-mes.workspace = true

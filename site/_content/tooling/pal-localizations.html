@@ -1,0 +1,256 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; official PAL localizations</div>
+  <h1>Official PAL localizations</h1>
+  <p class="lede">Legend of Legaia shipped official French, German and Italian translations on PAL discs. Their <code>PROT.DAT</code> archives line up entry for entry with the USA disc, which is what lets <code>legaia-patcher translate lift-official</code> re-key an official translation onto USA coordinates and hand it to the <a href="translation.html">translation pipeline</a> as an ordinary language pack. This page covers how the PAL discs are built, how they align to the USA coordinate space, how their accented text is encoded, and how well a lifted translation fits. It carries no game text - byte values, offsets and encodings only.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>What it does</dt><dd>Turns your own PAL disc's official script into a filled language pack keyed for your own USA disc</dd>
+    <dt>Why it works</dt><dd>The containers are 1:1: a USA PROT coordinate names the same logical asset on every PAL disc</dd>
+    <dt>Lift</dt><dd><code>legaia-patcher translate lift-official --from &lt;PAL.bin&gt; --target &lt;USA.bin&gt; -o fr.yaml</code></dd>
+    <dt>Measure</dt><dd><code>translate diff-disc --input &lt;USA.bin&gt; --other &lt;PAL.bin&gt;</code> (alignment counts), <code>translate fit-report</code> (budgets)</dd>
+    <dt>Accents</dt><dd>One high byte per letter on a CP437-aligned layout; drawn on NTSC by the accent font, or folded to ASCII</dd>
+    <dt>Fit</dt><dd>Same-size in place for part of the corpus; <code>--allow-relayout</code> grows scene MANs by whole sectors and imports the rest byte-faithfully</dd>
+    <dt>In the browser</dt><dd>The <a href="rom-patcher.html">ROM patcher</a> runs the same lift in the tab; neither disc is uploaded</dd>
+    <dt>Code</dt><dd><code>legaia_translate::lift</code>, <code>legaia_translate::diff</code>; disc-level relayout <code>legaia_iso::relayout</code></dd>
+  </dl>
+  <div class="cli"><code>legaia-patcher translate lift-official --from &lt;PAL-FR.bin&gt; --target &lt;USA.bin&gt; -o fr.yaml</code></div>
+  <div class="callout callout-warn">
+    <p class="callout-title">A lifted pack is Sony text</p>
+    <p>The working pack carries both the USA source text and the official translation. Keep it local; <code>translate strip</code> removes the source side before anything is shared.</p>
+  </div>
+</section>
+
+<section class="doc-section" id="pipeline" data-doc="-">
+  <h2>The lift, end to end</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The PAL lift pipeline. The PAL disc's build is detected from SYSTEM.CNF. Its PROT.DAT aligns one to one with the USA disc by entry index. Name tables are located in the PAL executable and paired id for id; dialog is paired by walking each MAN record by record, with scan order as a fallback; string pools pair by anchors and in-order alignment. Accent bytes are either kept for the accent font or folded to ASCII. Everything is re-keyed onto USA coordinates as a filled language pack. Import then fits each line in place, or with the relayout grows scene MANs by whole sectors.">
+      <defs><marker id="pal-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="20" width="200" height="56" rx="4"/>
+      <text class="dg-label" x="120" y="44">PAL disc (yours)</text><text class="dg-sub" x="120" y="62">build from SYSTEM.CNF</text>
+      <rect class="dg-node-accent" x="340" y="20" width="200" height="56" rx="4"/>
+      <text class="dg-label" x="440" y="44">PROT 1:1 alignment</text><text class="dg-sub" x="440" y="62">same 1233-entry index space</text>
+      <rect class="dg-node" x="660" y="20" width="200" height="56" rx="4"/>
+      <text class="dg-label" x="760" y="44">USA disc (yours)</text><text class="dg-sub" x="760" y="62">the coordinate space</text>
+      <path class="dg-edge" d="M220 48 L338 48" marker-end="url(#pal-arrow)"/>
+      <path class="dg-edge-dim" d="M660 48 L542 48" marker-end="url(#pal-arrow)"/>
+      <rect class="dg-group" x="20" y="110" width="840" height="110" rx="6"/>
+      <text class="dg-sub dg-start" x="34" y="128">pairing, per kind of text</text>
+      <rect class="dg-node" x="40" y="140" width="250" height="64" rx="4"/>
+      <text class="dg-label" x="165" y="164">Name tables</text><text class="dg-sub" x="165" y="182">locate base by meta bytes, id for id</text>
+      <rect class="dg-node" x="315" y="140" width="250" height="64" rx="4"/>
+      <text class="dg-label" x="440" y="164">Dialog</text><text class="dg-sub" x="440" y="182">MAN walk (record, lead); scan fallback</text>
+      <rect class="dg-node" x="590" y="140" width="250" height="64" rx="4"/>
+      <text class="dg-label" x="715" y="164">String pools</text><text class="dg-sub" x="715" y="182">anchors, in-order alignment, references</text>
+      <path class="dg-edge" d="M440 76 L440 108" marker-end="url(#pal-arrow)"/>
+      <rect class="dg-node-warn" x="40" y="250" width="250" height="56" rx="4"/>
+      <text class="dg-label" x="165" y="274">Accent bytes</text><text class="dg-sub" x="165" y="292">keep (accent font) or fold to ASCII</text>
+      <rect class="dg-node-accent" x="315" y="250" width="250" height="56" rx="4"/>
+      <text class="dg-label" x="440" y="274">Re-key onto USA coordinates</text><text class="dg-sub" x="440" y="292">filled working pack</text>
+      <rect class="dg-node" x="590" y="250" width="250" height="56" rx="4"/>
+      <text class="dg-label" x="715" y="274">fit-report</text><text class="dg-sub" x="715" y="292">per-string and per-MAN budgets</text>
+      <path class="dg-edge" d="M440 220 L440 248" marker-end="url(#pal-arrow)"/>
+      <path class="dg-edge" d="M315 278 L292 278" marker-end="url(#pal-arrow)"/>
+      <path class="dg-edge-dim" d="M565 278 L588 278" marker-end="url(#pal-arrow)"/>
+      <rect class="dg-node-ok" x="190" y="330" width="250" height="56" rx="4"/>
+      <text class="dg-label" x="315" y="354">Import in place</text><text class="dg-sub" x="315" y="372">same-size; over-budget lines reported</text>
+      <rect class="dg-node-ok" x="460" y="330" width="250" height="56" rx="4"/>
+      <text class="dg-label" x="585" y="354">--allow-relayout</text><text class="dg-sub" x="585" y="372">MANs grow by whole sectors</text>
+      <path class="dg-edge" d="M400 306 L330 328" marker-end="url(#pal-arrow)"/>
+      <path class="dg-edge" d="M480 306 L570 328" marker-end="url(#pal-arrow)"/>
+    </svg>
+    <figcaption>Every stage reads the two discs you supply. The pairing differs by kind of text because each kind is laid out differently: tables carry ids, dialog follows the script's program order, and string pools repack by length.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="region-ids" data-doc="region-ids">
+  <h2>Region ids</h2>
+  <table>
+    <thead><tr><th>Region</th><th>Boot exe (<code>SYSTEM.CNF</code>)</th><th>exe <code>t_addr</code></th><th>Name-table bases</th></tr></thead>
+    <tbody>
+      <tr><td>USA (NTSC, reference)</td><td><code>SCUS_942.54</code></td><td><code>0x80010000</code></td><td>the coordinate space itself</td></tr>
+      <tr><td>France (PAL)</td><td><code>SCES_019.44</code></td><td><code>0x80010000</code></td><td>measured, pinned</td></tr>
+      <tr><td>Germany (PAL)</td><td><code>SCES_019.45</code></td><td><code>0x80010000</code></td><td>measured, pinned</td></tr>
+      <tr><td>Italy (PAL)</td><td><code>SCES_019.46</code></td><td><code>0x80010000</code></td><td>measured, pinned</td></tr>
+      <tr><td>Spain (PAL)</td><td><code>SCES_019.47</code></td><td>-</td><td>located at run time</td></tr>
+      <tr><td>Europe, English (PAL)</td><td><code>SCES_017.52</code></td><td>-</td><td>located at run time</td></tr>
+    </tbody>
+  </table>
+  <p>All measured builds are <code>PS-X EXE</code>. The PAL executables are 2-4 KB larger (extra code), so <code>pc0</code> and the data segment shift up relative to USA. Unpinned builds are accepted and their tables found by search, and a fan-patched disc of any of these builds - the USA disc included - lifts the same way. The JP discs (<code>SCPS_*</code>) are refused: their text is not the Latin codec.</p>
+  <h3 id="mastering-metadata-quirks">Mastering-metadata quirks</h3>
+  <ul>
+    <li><strong>The PAL executables carry the North America region mark.</strong> The <code>PS-X EXE</code> header string at <code>+0x4C</code> names the North America area on all three PAL discs. The system-area licence text (sectors 0..15) is the authority - it names Europe, and it is what the console validates. Region identification must not trust the exe header string.</li>
+    <li><strong>France's PVD creation date has a zeroed year</strong> (<code>0000</code>). A parser treats a <code>0000</code> year as absent, not as data.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="structural-parity" data-doc="structural-parity-with-usa">
+  <h2>Structural parity with USA</h2>
+  <p>The PAL discs are <strong>1:1 with USA at the container level</strong>:</p>
+  <ul>
+    <li>identical ISO 9660 file tree (<code>SYSTEM.CNF</code>, the boot exe, <code>PROT.DAT</code>, <code>DMY.DAT</code>, <code>CDNAME.TXT</code>, the <code>MOV</code> movies and <code>XA</code> streams);</li>
+    <li>identical <code>PROT.DAT</code> header (<code>file_num=1236</code>, <code>header_sectors=3</code>, 1233 usable entries), identical TOC head, the same scene-block boundaries;</li>
+    <li><code>CDNAME.TXT</code> byte-identical between USA and Germany; France and Italy differ only in a few in-place label bytes, with the same <code>#define</code> block structure;</li>
+    <li>about 95% of PROT entries have the USA size. Nearly every difference is exactly <strong>+1 sector</strong> - a scene whose localized MAN recompresses slightly larger - with a few larger deltas in the audio, <code>battle_data</code> and overlay carriers. No entry is added, removed or reordered.</li>
+  </ul>
+  <div class="callout callout-tip">
+    <p class="callout-title">Consequence</p>
+    <p>A USA PROT coordinate names the same logical asset on every PAL disc: entry <code>i</code> (scene block, MAN, overlay) is the same thing on all four. Absolute LBAs are <em>not</em> a parity signal - the sector growth of the differing entries shifts every later LBA even though the index space is identical.</p>
+  </div>
+  <h3 id="disc-size-delta">Disc size delta</h3>
+  <p>The PAL discs are about 34 MB larger than USA, almost entirely in <strong>XA streamed audio</strong> (PAL 50 Hz re-timing). The movies and <code>DMY.DAT</code> are byte-identical, <code>PROT.DAT</code> grows about 150 KB and the executable about 4 KB. The localization did not restructure or re-author assets.</p>
+</section>
+
+<section class="doc-section" id="executables" data-doc="what-the-executables-do-not-share">
+  <h2>What the executables do not share</h2>
+  <p>Container parity says nothing about code. The boot executable differs, and two of the differences change play:</p>
+  <ul>
+    <li><strong>No battle-load stat boost.</strong> <code>SCUS_942.54</code>'s <code>FUN_80054CB0</code> multiplies ATK / UDF / LDF / INT as it installs each enemy (two profiles keyed on the boss switch). Every PAL executable copies the record in untouched - see <a href="../subsystems/battle.html">battle</a>.</li>
+    <li><strong>Larger victory spoils.</strong> The PAL spoils routine has neither the second gold halving nor the 3/4 EXP cut of the USA build: half the record gold and the whole record EXP reach the party - see <a href="../subsystems/battle-formulas.html">battle formulas</a>.</li>
+  </ul>
+  <p>Both are code-only: the monster archive (PROT 0867) carries the same stats and rewards on all four discs. The JP original behaves like PAL on both counts, so both are USA additions rather than PAL removals. Anything that fingerprints a disc by its executable bytes (<code>scus-pokes</code>, the static-overlay map, the port-catalog denominators) is USA-only by construction.</p>
+</section>
+
+<section class="doc-section" id="name-tables" data-doc="name-table-alignment-sces-data-segment">
+  <h2>Name-table alignment</h2>
+  <p>The five executable name tables exist in each <code>SCES</code> executable at shifted, language-specific addresses. The pointer region shifts by roughly a constant per language with small local drift, so each table is <strong>located</strong> - its language-independent stats and meta columns fingerprinted against USA - rather than shift-computed.</p>
+  <table>
+    <thead><tr><th>Table (USA VA)</th><th>France</th><th>Germany</th><th>Italy</th></tr></thead>
+    <tbody>
+      <tr><td><a href="../formats/item-table.html">item names</a> <code>0x8007436C</code></td><td class="hex">0x80074C4C</td><td class="hex">0x80075360</td><td class="hex">0x80075130</td></tr>
+      <tr><td><a href="../formats/spell-table.html">spell / magic</a> <code>0x800754C8</code></td><td class="hex">0x80075DA8</td><td class="hex">0x800764BC</td><td class="hex">0x8007628C</td></tr>
+      <tr><td><a href="../formats/art-data.html">Tactical Arts</a> <code>0x80075EC4</code></td><td class="hex">0x800767A4</td><td class="hex">0x80076EB8</td><td class="hex">0x80076C88</td></tr>
+      <tr><td><a href="../formats/accessory-passive-table.html">accessory passive</a> <code>0x8007625C</code></td><td class="hex">0x80076B3C</td><td class="hex">0x80077250</td><td class="hex">0x80077020</td></tr>
+      <tr><td><a href="../formats/new-game-table.html">new-game party</a> <code>0x80078C4C</code></td><td class="hex">0x80079508</td><td class="hex">0x80079C78</td><td class="hex">0x80079A14</td></tr>
+    </tbody>
+  </table>
+  <p>Record layout (stride, count, field order) is unchanged, and each record carries the address of its own string, so once the base is located <strong>id <var>N</var> maps to the localized name for id <var>N</var></strong>. The string pool itself repacks per language, so only the pointer tables are followed - never a constant string offset.</p>
+</section>
+
+<section class="doc-section" id="dialog" data-doc="dialog-corpus-alignment">
+  <h2>Dialog-corpus alignment</h2>
+  <p>The <code>0x1F</code>-segment <a href="../formats/mes.html">dialog corpus</a> (scene-bundle MANs plus raw event-script carriers) is walked by PROT entry index - the same index space on every disc. Segment byte offsets never match, because a localized line has a different length and the MAN repacks. Line <em>order</em> is the script's, not the text's, so <strong>lines pair by position</strong>: the <var>N</var>th qualifying segment of entry <var>i</var> on USA is the <var>N</var>th on the PAL disc.</p>
+  <p>Measured with <code>diff-disc</code>, corpus totals match within about 1% and about 99% of lines are order-pairable per entry. The rest needs reconciliation: scanner-marginal short runs, coincidental hits, the occasional localizer line split or merge. A strict "whole entry must match exactly" metric reads far lower and is only a lower bound.</p>
+</section>
+
+<section class="doc-section" id="accents" data-doc="accented-text-encoding">
+  <h2>Accented-text encoding</h2>
+  <p>The PAL discs keep the USA markup framing: <code>0x1F</code> segment lead, <code>0x00</code> terminator, the same two-byte opcodes (<code>0xC1..0xC5</code> substitution, <code>0xCE</code> spacing, <code>0xCF</code> colour). Only the glyph atlas is extended above <code>0x7E</code>.</p>
+  <p><strong>Accented Latin is a single high byte on a CP437-aligned layout</strong> for the lowercase accents and the capitals CP437 carries:</p>
+  <table class="compact">
+    <thead><tr><th>byte</th><th>glyph</th><th>byte</th><th>glyph</th><th>byte</th><th>glyph</th></tr></thead>
+    <tbody>
+      <tr><td class="hex">0x80</td><td>Ç</td><td class="hex">0x8A</td><td>è</td><td class="hex">0x94</td><td>ö</td></tr>
+      <tr><td class="hex">0x81</td><td>ü</td><td class="hex">0x8B</td><td>ï</td><td class="hex">0x95</td><td>ò</td></tr>
+      <tr><td class="hex">0x82</td><td>é</td><td class="hex">0x8C</td><td>î</td><td class="hex">0x96</td><td>û</td></tr>
+      <tr><td class="hex">0x83</td><td>â</td><td class="hex">0x8D</td><td>ì</td><td class="hex">0x97</td><td>ù</td></tr>
+      <tr><td class="hex">0x84</td><td>ä</td><td class="hex">0x8E</td><td>Ä</td><td class="hex">0x99</td><td>Ö</td></tr>
+      <tr><td class="hex">0x85</td><td>à</td><td class="hex">0x90</td><td>É</td><td class="hex">0x9A</td><td>Ü</td></tr>
+      <tr><td class="hex">0x87</td><td>ç</td><td class="hex">0x93</td><td>ô</td><td class="hex">0xE1</td><td>ß</td></tr>
+    </tbody>
+  </table>
+  <p>The accented capitals CP437 lacks sit at their <strong>CP850</strong> positions: <code>Â</code> <code>0xB6</code>, <code>È</code> <code>0xD4</code>, <code>Î</code> <code>0xD7</code>, <code>Ì</code> <code>0xDE</code>, <code>Ô</code> <code>0xE2</code>. Two of these bytes draw a placeholder box on the PAL disc itself - its font page has no <code>Î</code> at <code>0xD7</code> and no <code>°</code> at <code>0xF8</code>, and no PAL executable remaps either - so retail French shows a box for every <code>Î</code> and retail Italian one for every <code>°</code> (<a href="../formats/dialog-font.html">dialog font</a>). The French executable also folds <code>oe</code> / <code>OE</code> to its ligature cells at draw time; the script itself spells both letters.</p>
+  <p>No accent byte falls in the <code>0xC0..0xCF</code> two-byte-opcode window, so glyph space and control space stay disjoint. German needs 7 cells, French about 14, Italian about 10; the union is about 40.</p>
+  <h3 id="font-patch-scope-for-ntsc">Font-patch scope for NTSC</h3>
+  <p>The dialog font is one 4bpp TIM at <code>PROT.DAT</code> offset <code>0x7F40</code> (uploaded to VRAM <code>(896, 0)</code>) plus the 256-byte width table at <code>0x80073F1C</code>; the PAL discs carry theirs at the same offset. The USA page already holds some accented glyphs in the high cells but with zero widths, so they overprint the next letter. Rendering PAL text on NTSC therefore needs no structural change - only glyphs in the layout's cells and a width for each. The <strong>accent font</strong> does exactly that at patch time, from your own disc; a pack asks for it with <code>accents: font</code>. It is not the <code>0xCE</code> escape table at <code>0x80074050</code> and not the menu atlas at <code>PROT.DAT</code> <code>0x11218</code>.</p>
+</section>
+
+<section class="doc-section" id="lifting" data-doc="lifting-an-official-translation">
+  <h2>Lifting an official translation</h2>
+  <p><code>translate lift-official</code> re-keys the official text onto the USA coordinate space the importer patches (<code>legaia_translate::lift</code>):</p>
+  <ol class="steps">
+    <li><strong>Detect the source build</strong> from <code>SYSTEM.CNF</code>'s <code>BOOT</code> line. A measured build brings pinned bases; an unmeasured one none.</li>
+    <li><strong>Locate each name-table base.</strong> A pinned base is accepted when it validates against the USA-populated id set (the same ids resolve to name-shaped strings), else a window around it is searched. Pointer validity alone does not pick a base - the item table's records read as the accessory table's four bytes in - so candidates are ranked by how many <strong>meta bytes</strong> (stats, ids, scope) equal the USA table's. The unpinned search lands on every pinned base of the measured discs. The party template is found by the same fingerprint.</li>
+    <li><strong>Re-key.</strong> Name tables id for id; party names by fixed field; dialog <strong>structurally</strong>: each MAN is walked record by record with the field-VM disassembler, and a line's coordinate is <code>(record ordinal, ordinal among the record's text leads)</code> - the same on every build, because the script is one program with different strings. The scan-ordinal pairing is only the fallback for a line the walk does not place.</li>
+  </ol>
+  <div class="callout callout-trap">
+    <p class="callout-title">Why the walk, not the scan</p>
+    <p>A scan gates segments on prose quality. Where one build reduces a line to a bare item token and the gate drops it on that side only, every later scan ordinal names the <em>previous</em> line - a shift the pair counts never show. The lift report counts lines placed <code>structural</code>, <code>by scan ordinal</code> and <code>shifted</code>. A walked MAN lead skips the gate entirely.</p>
+  </div>
+  <p>Narration <strong>crawls</strong> are the one place the program itself differs: the page count is part of the script, and the PAL builds reflow a block into more pages with blank pages between paragraphs. A crawl page is keyed <code>(record, block, page)</code> apart from the record's other lines; an equal-length block pairs page for page, a reflowed one pairs its text pages in order when both builds carry the same number, and anything else pairs nothing.</p>
+  <p>The output is a <strong>filled working pack</strong> (source = USA text, translation = official text, USA byte budgets). Across French, German and Italian, every pooled table locates at full validity with no unmapped string, and the dialog corpus pairs at 98.5-99.8% per PROT entry.</p>
+  <h3 id="accent-folding">Accent folding</h3>
+  <p>By default the pack keeps the accent bytes verbatim (as <code>{82}</code>-style escapes the codec round-trips) and is stamped <code>accents: font</code>, so import writes the accent font and they draw - <code>0xD7</code> and <code>0xF8</code> included, which the PAL disc they came from draws as boxes. <code>--fold-accents</code> (the default in the browser) instead folds accent cells onto ASCII: <code>é</code> to <code>e</code>, <code>ß</code> to <code>ss</code>, <code>Ü</code> to <code>U</code>, via <code>legaia_font::latin</code>. Folding is one byte for one except <code>ß</code>, <code>æ</code> / <code>Æ</code> and <code>œ</code> / <code>Œ</code>, which can push a line over budget. Non-accent high cells are left alone, and both counts - folded and left raw - are reported.</p>
+  <h3 id="how-the-string-pools-pair">How the string pools pair</h3>
+  <p>Menu, system and place-name pools are lifted by their own pairing. A pool is pinned by a USA-coordinate window, and the same pool on the other build sits near the same offset but not at it. Both windows are cut into NUL-delimited chunks; chunks byte-identical and unique on both sides are <strong>anchors</strong> that partition the lists. Inside a partition chunks pair by ordinal when the counts match, otherwise by an in-order alignment that lets the source carry extra chunks anywhere and requires each pair to agree in shape. A head or tail alignment is the wrong model: one extra label variant in the middle of a pool slides every later label by one.</p>
+  <p>A pool string is also paired through the <strong>code and data that reference it</strong> (<code>translation::refpair</code>). A localized build lays its pools out by length - short strings in the <code>$gp</code> small-data pool, longer ones in read-only data - so a translation can sit in a different pool from the USA string while the record pointing at it is the same record. Each reference's surrounding words, with every address masked out, form a signature, and a USA reference pairs with the closest source reference. An unpaired label stays vanilla. Monster names pair record for record.</p>
+  <h3 id="lifting-a-fan-translation">Lifting a fan translation</h3>
+  <p>A fan translation shipped as a binary patch (xdelta, PPF) cannot become a pack by reading the patch - a patch is bytes, not text. The disc it produces can:</p>
+  <div class="cli"><code>legaia-patcher translate lift-official --from &lt;patched.bin&gt; --baseline &lt;retail.bin&gt; --target &lt;USA.bin&gt; --language pt-BR --fold-accents -o &lt;pack.yaml&gt;</code></div>
+  <ul>
+    <li><code>--language</code> stamps the pack, since a patch's language is not on the disc.</li>
+    <li><code>--baseline</code> names the retail disc the patch was built on and blanks every line that disc also carries, so lines the patch left untranslated stay vanilla on import instead of lifting the underlying build's text. A line with no prose of its own (control tokens and punctuation only) is kept even when the baseline carries it.</li>
+    <li>The baseline compare runs on raw bytes before the fold, so a line the patch only re-accented survives as the translator's work. Trailing pad spaces are dropped; a cell outside the fold tables stays a raw <code>{xx}</code> escape and is reported.</li>
+    <li>A translation that moved PROT entries or re-laid the ISO still lifts as long as the patched disc's TOC is consistent: the walk is by entry index, with sizes from that disc's own TOC.</li>
+  </ul>
+  <p>The Spanish disc, measured this way, locates every table at full pointer validity and pairs its dialog in the same band as the measured three.</p>
+</section>
+
+<section class="doc-section" id="fit" data-doc="fit-rate-against-the-usa-target">
+  <h2>Fit rate against the USA target</h2>
+  <p><code>translate fit-report --from &lt;PAL.bin&gt; --target &lt;USA.bin&gt;</code> measures fit under two budgets, counts only:</p>
+  <dl class="kv">
+    <dt>Per string</dt><dd>A line fits when its encoded bytes are within its own USA segment span: about half the MAN dialog lines, 36-60% of name-table entries (Italian lowest)</dd>
+    <dt>Per MAN</dt><dd>A whole scene MAN fits when all its lines, grown to full length, relocate, validate and recompress within the MAN's on-disc footprint at the same LBA (<a href="../formats/man-relocation.html">MAN relocation</a>)</dd>
+  </dl>
+  <div class="callout callout-provenance">
+    <p class="callout-title">The constraint is sector alignment, not string length</p>
+    <p>USA scene-bundle entries are sector-aligned with <strong>zero</strong> compressed slack, so growing any line overflows and whole-MAN growth in place fits only a small fraction. The residual is the large scene MANs, each needing a <strong>sub-sector</strong> amount of extra room - every residual deficit is under one 2048-byte sector. That is exactly the +1-sector-per-entry growth the PAL discs applied at mastering.</p>
+  </div>
+  <h3 id="full-iso-relayout">Full-ISO relayout</h3>
+  <p><code>translate import --allow-relayout</code> grows each sector-crossing scene MAN by whole sectors so its full-length dialog imports byte-faithfully - the operation the official discs did at mastering. Two structural facts make it safe:</p>
+  <ul>
+    <li>The <code>PROT.DAT</code> TOC stores <strong>PROT-relative</strong> LBAs, so growing an interior entry shifts only later entries' internal start LBAs.</li>
+    <li><strong>No file is located by a hardcoded absolute LBA</strong>: every file is found by ISO 9660 directory lookup, so files after <code>PROT.DAT</code> can move once the directory records, path tables and PVD are fixed.</li>
+  </ul>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The relayout cascade. Growing PROT.DAT by G sectors: every ISO 9660 LBA greater than PROT.DAT's start gains G; PROT.DAT's directory-record size gains G times 2048; the PVD volume-space size gains G. Inside PROT.DAT, entries after the grown one shift their PROT-relative start LBA. Every sector after PROT.DAT is relocated with a rewritten header; EDC and ECC are recomputed only where user data changes.">
+      <defs><marker id="pal-arrow2" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-accent" x="20" y="20" width="240" height="60" rx="4"/>
+      <text class="dg-label" x="140" y="45">Scene MAN grows</text><text class="dg-sub" x="140" y="63">ceil(deficit / 2048) sectors</text>
+      <rect class="dg-node" x="320" y="20" width="240" height="60" rx="4"/>
+      <text class="dg-label" x="440" y="45">PROT.DAT rebuilt</text><text class="dg-sub" x="440" y="63">later entries' relative LBAs + G</text>
+      <rect class="dg-node" x="620" y="20" width="240" height="60" rx="4"/>
+      <text class="dg-label" x="740" y="45">ISO 9660 refs</text><text class="dg-sub" x="740" y="63">every LBA &gt; PROT start gains G</text>
+      <path class="dg-edge" d="M260 50 L318 50" marker-end="url(#pal-arrow2)"/>
+      <path class="dg-edge" d="M560 50 L618 50" marker-end="url(#pal-arrow2)"/>
+      <rect class="dg-node" x="170" y="120" width="240" height="60" rx="4"/>
+      <text class="dg-label" x="290" y="145">Path tables, dir records, PVD</text><text class="dg-sub" x="290" y="163">size + G*2048, volume + G</text>
+      <rect class="dg-node-ok" x="470" y="120" width="240" height="60" rx="4"/>
+      <text class="dg-label" x="590" y="145">Sectors after PROT.DAT move</text><text class="dg-sub" x="590" y="163">header rewritten; ECC only if data changed</text>
+      <path class="dg-edge" d="M700 80 L320 118" marker-end="url(#pal-arrow2)"/>
+      <path class="dg-edge" d="M760 80 L620 118" marker-end="url(#pal-arrow2)"/>
+    </svg>
+    <figcaption>The whole reference graph reduces to one rule, so the relayout is a mechanical cascade rather than a search. The PROT entry index space is preserved, so every index-keyed randomizer edit still resolves afterwards.</figcaption>
+  </figure>
+  <p>The disc layer is <code>legaia_iso::relayout::grow_prot_dat</code> (generic ISO 9660 + ECMA-130), driven by <code>DiscPatcher::grow_prot_entries</code>. Above it the importer inserts the sectors after the MAN, shifts the later sub-assets and bumps their descriptor offsets. What the rewriter still refuses is a handful of keyed lines whose <code>0x1F &hellip; 0x00</code> framing is a coincidence inside an instruction's operands; the importer skips them with a diagnostic.</p>
+  <p>The raw corpus has no residual: every raw line lives in the uncompressed MAN leading one of the ten <a href="../formats/data-field.html">streaming dungeon scenes</a>, which the importer rewrites with the same relocator. Growth lands in the entry's trailing sector slack when it fits (a same-size write) and otherwise in the relayout, bounded by the loader's <code>0x62C00</code>-byte asset arena with 64 KiB of headroom.</p>
+  <h3 id="in-the-browser">In the browser</h3>
+  <p>The <a href="rom-patcher.html">ROM patcher</a> offers the lift as a second language path: pick the official translation from your own PAL disc, supply it beside your USA disc, and <code>lift_official_pack(usa, pal, fold_accents)</code> runs in the tab. Neither disc is uploaded; the lifted pack lives in page memory and feeds straight into the patch with the same coverage report every pack gets. Folding is on by default there, and the relayout is the page's <em>give translated dialog more room</em> checkbox. Without it, roughly a third of the dialog corpus lands in place; the rest is reported, never dropped quietly.</p>
+  <h3 id="recommended-path">Recommended path to a distributable pack</h3>
+  <ol class="steps">
+    <li><code>translate lift-official --from &lt;PAL.bin&gt; --target &lt;USA.bin&gt; -o &lt;pack.yaml&gt;</code> - the working pack, kept local.</li>
+    <li><code>translate fit-report --from &lt;PAL.bin&gt; --target &lt;USA.bin&gt;</code> - the residual budget picture.</li>
+    <li><code>translate import --input &lt;USA.bin&gt; --pack &lt;pack.yaml&gt; --allow-relayout --output &lt;patched.bin&gt;</code> - byte-faithful dialog for every scene MAN. No <code>--patch</code>: a relayout grows the image, so it is not a same-size PPF overlay.</li>
+    <li>The accent font, so accents render instead of folding to ASCII.</li>
+    <li><code>translate strip --pack &lt;pack.yaml&gt; -o &lt;lang&gt;.yaml</code> - a source-free, distributable pack.</li>
+  </ol>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="-">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="translation.html">Translation / language packs</a>
+    <a href="translation-workbench.html">Translation workbench</a>
+    <a href="../guides/translating.html">Guide: translating the game</a>
+    <a href="rom-patcher.html">ROM patcher</a>
+    <a href="../formats/dialog-font.html">Dialog font</a>
+    <a href="../formats/mes.html">MES dialog</a>
+    <a href="../formats/man-relocation.html">MAN relocation</a>
+    <a href="../formats/disc.html">PSX disc geometry</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/pal-localizations.md" target="_blank" rel="noopener">Full doc</a>
+  </div>
+</section>

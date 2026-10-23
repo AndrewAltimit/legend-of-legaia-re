@@ -348,7 +348,7 @@ impl<S: AudioSink> BootSession<S> {
     /// One display frame under the prompt and the camera's half of it.
     fn pass_name_entry_frame(&mut self) {
         self.host.world.name_entry_display_frames(1);
-        legaia_engine_core::frame_step::camera_after_world_tick(
+        legaia_engine_field::frame_step::camera_after_world_tick(
             &mut self.camera,
             &mut self.host.world,
             false,
@@ -427,7 +427,7 @@ impl<S: AudioSink> BootSession<S> {
         // the d-pad remap ~180deg off the on-screen camera - then publish the
         // compass azimuth (scripted yaw + the user's drag-orbit + the host
         // framing bias) the field controller reads THIS tick.
-        legaia_engine_core::frame_step::camera_before_world_tick(
+        legaia_engine_field::frame_step::camera_before_world_tick(
             &mut self.camera,
             &mut self.host.world,
             self.camera_azimuth_override.take(),
@@ -442,7 +442,7 @@ impl<S: AudioSink> BootSession<S> {
         // advance the globals, and reset them on a scene entry
         // (`frame_step::camera_after_world_tick`).
         let scene_entered = matches!(event, SceneTickEvent::SceneEntered { .. });
-        legaia_engine_core::frame_step::camera_after_world_tick(
+        legaia_engine_field::frame_step::camera_after_world_tick(
             &mut self.camera,
             &mut self.host.world,
             scene_entered,

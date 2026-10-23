@@ -171,7 +171,7 @@ fn options_session_round_trip_persists_changes() {
     assert_eq!(s.outcome(), Some(OptionsOutcome::Closed));
     assert_eq!(
         s.state().battle_camera,
-        legaia_engine_menus::option_values::BattleCameraOpt::Normal
+        legaia_engine_system::option_values::BattleCameraOpt::Normal
     );
 }
 
@@ -312,7 +312,7 @@ fn options_session_popup_cancel_leaves_value() {
     assert!(!s.is_done());
     assert_eq!(
         s.state().battle_camera,
-        legaia_engine_menus::option_values::BattleCameraOpt::Close
+        legaia_engine_system::option_values::BattleCameraOpt::Close
     );
 }
 

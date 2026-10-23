@@ -18,7 +18,7 @@
 //! through [`CardLoadHost`], and [`resume_card_load`] runs the card load:
 //! the saved story flags ahead of the entry (retail's card load fills the
 //! game-state window before the field init), the landing, then the whole
-//! save ([`legaia_engine_core::world::World::load_full`] runs *after* the entry, because scene
+//! save ([`WorldSaveState::load_full`](legaia_engine_save_state::WorldSaveState::load_full) runs *after* the entry, because scene
 //! entry resets per-scene world state).
 //!
 //! # Resume order
@@ -38,6 +38,7 @@
 //! The prologue cutscene scene, then the opening town when the cutscene
 //! scene will not enter ([`NEW_GAME_SCENES`]).
 
+use legaia_engine_save_state::WorldSaveState;
 use legaia_game_tables::new_game::{OPENING_CUTSCENE_SCENE, OPENING_SCENE};
 
 /// The scenes a New Game tries, in order: the prologue cutscene chain's
@@ -171,11 +172,11 @@ pub trait CardLoadHost {
 /// bind-time prologues read the saved story (a `rikuroa` loaded after the
 /// Genesis tree's revival, flag `0x142`, does not re-arm the withered tree's
 /// morph lanes). Only the flags go in ahead
-/// ([`legaia_engine_core::world::World::load_story_flags`]): the party records raise actor
+/// ([`WorldSaveState::load_story_flags`](legaia_engine_save_state::WorldSaveState::load_story_flags)): the party records raise actor
 /// slots off a field ([`legaia_engine_core::world::World::load_party`]), and a slot raised
 /// before the entry survives it - a four-member save landed on `uru` drew
 /// the scene-pack meshes pre-bound to slots 1..3. The full
-/// [`legaia_engine_core::world::World::load_full`] follows the landing, whatever the landing.
+/// [`WorldSaveState::load_full`](legaia_engine_save_state::WorldSaveState::load_full) follows the landing, whatever the landing.
 pub fn resume_card_load(
     host: &mut impl CardLoadHost,
     save: legaia_save::SaveFile,

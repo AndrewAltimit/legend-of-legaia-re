@@ -132,7 +132,9 @@ pub fn voice_clip_duration_sectors(len_field: u16) -> u32 {
 /// offset is `(duration * 150 + 149) / 60` - a ceiling scale by `2.5` (150 CD
 /// sectors per second over the 60-unit duration granularity). The drive polls
 /// `CdlGetlocP` against `start_lba + offset` to stop the clip.
-// PORT: FUN_8003d53c
+///
+/// REF: FUN_8003d53c (`0x8003d698..0x8003d6d8` only: the rest of the starter
+/// is the libcd drive sequence, which no engine path models)
 pub fn clip_end_lba_offset(duration_sectors: u32) -> u32 {
     let d = duration_sectors.min(MAX_CLIP_DURATION_SECTORS);
     (d * 150 + 149) / 60
@@ -140,7 +142,8 @@ pub fn clip_end_lba_offset(duration_sectors: u32) -> u32 {
 
 /// Whether a `duration_sectors` value would be clamped by the clip starter
 /// (which also latches `_DAT_8007B828 = 0xD431` when it clamps).
-// PORT: FUN_8003d53c
+///
+/// REF: FUN_8003d53c (the `slti v0,s0,0x2a31` clamp test at `0x8003d5c8`)
 pub fn clip_duration_is_clamped(duration_sectors: u32) -> bool {
     duration_sectors > MAX_CLIP_DURATION_SECTORS
 }

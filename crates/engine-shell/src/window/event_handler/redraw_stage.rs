@@ -29,6 +29,9 @@ pub(super) struct BattleGhostUpload {
     pub body_pos: [f32; 3],
     /// The ghost colour word's RGB - the DPCS far colour at full weight.
     pub color: [u8; 3],
+    /// The ghost's NCLIP word (`BattleGhostDraw::nclip_mode`): single-sided,
+    /// as the walk's draw word leaves it.
+    pub nclip: u32,
 }
 
 /// The frame's skinned and re-posed meshes, owned by the frame.

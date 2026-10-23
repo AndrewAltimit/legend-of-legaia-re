@@ -1,14 +1,15 @@
-//! Menu, title and memory-card front-end kernels: the save / title / glyph
+//! Menu and memory-card front-end kernels: the save and glyph
 //! atlases, the SCUS list-row model, the equipment and item catalogs, the
 //! item bag, the inventory-use, spell-menu and Equip sessions, the pause
 //! root, pause screens and shop screens, the save screen family, the menu
 //! overlay's widget
 //! choreography, category / arrange tables and open sequence, name entry,
-//! the title and publisher-logo phases, the card write flow and `bu` I/O,
+//! the card write flow and `bu` I/O,
 //! the debug character editor, key rebinding, game over and the inn: the
 //! `World`-free half of the engine's menu layer. The field dialog pager and
 //! the inline-dialogue / cutscene-timeline context state live one crate
-//! down, in `legaia-engine-dialog`.
+//! down, in `legaia-engine-dialog`; the publisher-logo and title phases
+//! are `legaia-engine-title`, a sibling.
 //!
 //! Every module's whole dependency closure inside the engine is in this
 //! crate or below it, so it sits strictly below `legaia-engine-core`. Doc
@@ -18,9 +19,6 @@
 
 #![forbid(unsafe_code)]
 
-pub mod battle_flow;
-pub mod battle_input;
-pub mod battle_open;
 pub mod card_bu_io;
 pub mod card_flow;
 pub mod debug_char_editor;
@@ -44,13 +42,11 @@ pub mod menu_item_category;
 pub mod menu_list_rows;
 pub mod menu_open_sequence;
 pub mod menu_widget;
-pub mod muscle_dome_session;
 pub mod name_entry;
-pub mod option_values;
+pub mod new_game;
 pub mod options;
 pub mod party_state;
 pub mod pause_screens;
-pub mod publisher_logos;
 pub mod save_menu_atlas;
 pub mod save_screen;
 pub mod save_select;
@@ -62,8 +58,3 @@ pub mod shop_state;
 pub mod spell_menu;
 pub mod spell_party_broadcast;
 pub mod status_screen;
-pub mod timed_fight;
-pub mod title;
-pub mod title_overlay;
-pub mod title_prim;
-pub mod title_screen_atlas;

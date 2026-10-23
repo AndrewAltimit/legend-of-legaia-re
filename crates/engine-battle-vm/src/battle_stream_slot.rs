@@ -57,7 +57,8 @@ impl StreamFile {
 /// bits (`andi v0,v0,0x7f` at `0x801F1914`) while the readef arm uses
 /// `request - 1` whole. A request of `0` is idle and has no target.
 ///
-/// PORT: FUN_801F17F8 (the request-byte decode)
+/// REF: FUN_801F17F8 (the request-byte decode at `0x801F18CC..0x801F1914`; the
+/// routine's port anchor is `StreamSlotSm::step`)
 /// REPLACED-BY: `legaia_actor_formats::summon_readef::stream_target`, which resolves
 /// the same pair (which side-band file, and which slot in it) straight from
 /// the action id, with no request byte in between. The request byte only
@@ -160,7 +161,13 @@ impl StreamSlotSm {
     /// byte (`bne v0,zero,<epilogue>` at `0x801F1880` / `0x801F199C`), so a
     /// busy drive costs a frame rather than a stage.
     ///
-    /// PORT: FUN_801F17F8 (the `ctx[+0x26C]` stage machine)
+    /// PORT: FUN_801F17F8 (the `ctx[+0x26C]` stage machine; partial)
+    ///
+    /// Not carried: the routine's first branch, which runs the side-band
+    /// applier `0x801F12D0` every frame while `ctx[+0x276]` is set
+    /// (`0x801F180C..0x801F181C`; that routine has its own port), and the
+    /// open's return value retail stores into `0x314` (`0x801F1908`), where
+    /// this sets the handle flag unconditionally.
     /// REPLACED-BY: the synchronous disc reader behind
     /// `legaia_actor_formats::summon_readef::parse`. Every stage this machine walks is
     /// a libcd step - release the previous handle, seek, start the DMA, wait

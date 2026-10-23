@@ -12,8 +12,8 @@
 //! | 46 (`0x2E`) | `FUN_801D603C` | the Yes/No confirm ([`choice_panel_draws_for`]) |
 //!
 //! Window 44's ink rule is retail's list rule, resolved by the host through
-//! `legaia_engine_menus::shop::shop_stock_row_ink` (the port of
-//! `FUN_801D5DE0`'s ink arm) and carried on [`PrizeRow::ink`]: a stack at the
+//! [`prize_row_ink`] (the port of `FUN_801D5DE0`'s ink arm) and carried on
+//! [`PrizeRow::ink`]: a stack at the
 //! 99 cap greys, a non-zero record marker re-inks to the accent pen, and a
 //! coin bank short of the price greys again - last rule wins. The confirm panel (46) draws
 //! only while the session is in its Yes/No phase, cursor seeded to No -
@@ -49,6 +49,57 @@ pub const PRIZE_INK_GREY: u8 = 0;
 /// [`crate::MENU_TEXT_GOLD`], the CLUT row staging id 6 decodes to.
 pub const PRIZE_INK_MARKED: u8 = 6;
 
+/// Row ink `7`: the normal pen, the arm's starting verdict.
+pub const PRIZE_INK_NORMAL: u8 = 7;
+/// The held-count cap the ink arm greys at (a full stack of 99).
+pub const PRIZE_HELD_CAP: i16 = 99;
+
+/// Last-rule-wins row ink for one prize-list row.
+///
+/// **`FUN_801D5DE0` is the casino prize list's row renderer, not the shop's.**
+/// Read off its disassembly (`ghidra/scripts/funcs/overlay_menu_801d5de0.txt`),
+/// it indexes the casino prize table `0x801E4518` at `base + block*0x60 +
+/// row*8` with the block byte from the entry-context pointer `_DAT_8007B450[1]`,
+/// and its affordability compare is against `_DAT_800845A4`, the **coin bank**.
+/// The party gold purse `_DAT_8008459C` appears nowhere in its 151 instructions.
+/// The `overlay_shop_save_801d5de0.txt` dump filename names the *image* the
+/// routine was dumped from - that overlay carries menu and casino code too -
+/// and is not evidence about what it does.
+///
+/// Wired: both hosts' prize-exchange draw (`legaia_engine_screens::prize`)
+/// resolves each window-44 row's [`PrizeRow::ink`] through it over the coin
+/// bank and the prize record's `+2` marker. The gold shop's buy list has its
+/// own kernel, `legaia_engine_menus::shop::shop_buy_row_ink` (the list
+/// kernel's class arm inks the hoisted band `5`, which this arm has no test
+/// for).
+///
+/// `held` is the held count of the row's item (retail's bag scan
+/// `FUN_80042F4C`), `marker` the record's `+2` halfword, `coins` the currency
+/// the caller gates on, and `price` the record's `+4` word.
+///
+/// The three tests are applied in a fixed order and each **overwrites** the
+/// previous verdict, so the precedence is not the "first rule wins" reading
+/// the bullet list of colours suggests: a full stack greys, a non-zero marker
+/// then re-inks it to `6` *even though the stack is full*, and an
+/// unaffordable price finally greys it again regardless of the marker.
+///
+/// PORT: FUN_801d5de0 (prize/stock row ink selection, `0x801D5EA0..0x801D5F6C`)
+/// REF: FUN_80042f4c (the held-count bag scan whose result `held` carries)
+/// REF: FUN_80030628 (the shop's own list builder, case `0x0B`)
+pub fn prize_row_ink(held: i16, marker: i16, coins: i32, price: i32) -> u8 {
+    let mut ink = PRIZE_INK_NORMAL;
+    if held >= PRIZE_HELD_CAP {
+        ink = PRIZE_INK_GREY;
+    }
+    if marker != 0 {
+        ink = PRIZE_INK_MARKED;
+    }
+    if coins < price {
+        ink = PRIZE_INK_GREY;
+    }
+    ink
+}
+
 /// Grey ink for a row the redeem gate would refuse.
 pub const PRIZE_TEXT_GREY: [f32; 4] = [0.45, 0.45, 0.45, 1.0];
 
@@ -63,7 +114,7 @@ pub struct PrizeRow {
     /// Party's held count of the item (the 99-cap ink input).
     pub held: u8,
     /// Retail row ink: `FUN_801D5DE0`'s last-rule-wins selection, which the
-    /// host resolves with `legaia_engine_menus::shop::shop_stock_row_ink`
+    /// host resolves with [`prize_row_ink`]
     /// (held cap, the record's `+2` marker, the coin bank against the price).
     /// `0` greys the row, `6` is the marker's accent pen, anything else the
     /// normal pen.
@@ -177,3 +228,25 @@ pub fn prize_exchange_draws_for(
 // and `11`, not menu-overlay descriptor windows, and the engine lays them out
 // (`legaia_engine_core::field_submode_screen::coin_counter_lines`). Both hosts
 // draw those lines through `crate::text_lines::pen_line_draws_for`.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prize_row_ink_precedence_is_last_rule_wins() {
+        // Plain affordable row.
+        assert_eq!(prize_row_ink(0, 0, 1000, 100), PRIZE_INK_NORMAL);
+        // Full stack greys.
+        assert_eq!(prize_row_ink(99, 0, 1000, 100), PRIZE_INK_GREY);
+        // ...but a non-zero marker re-inks it even at a full stack.
+        assert_eq!(prize_row_ink(99, 1, 1000, 100), PRIZE_INK_MARKED);
+        // ...and an unaffordable price greys it again, marker or not.
+        assert_eq!(prize_row_ink(0, 1, 50, 100), PRIZE_INK_GREY);
+        assert_eq!(prize_row_ink(0, 0, 50, 100), PRIZE_INK_GREY);
+        // Exactly affordable is affordable (`coins < price` is strict).
+        assert_eq!(prize_row_ink(0, 0, 100, 100), PRIZE_INK_NORMAL);
+        // 98 held is still under the cap.
+        assert_eq!(prize_row_ink(98, 0, 1000, 100), PRIZE_INK_NORMAL);
+    }
+}

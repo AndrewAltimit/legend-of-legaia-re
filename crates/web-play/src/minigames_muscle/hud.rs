@@ -290,7 +290,7 @@ impl LegaiaMinigames {
     /// victory-message pointer table at `0x801F4DFC` indexed `char_id - 1`,
     /// the reward spell's name from the shared spell-name table, and a fixed
     /// suffix at `0x801F4C28`. The index half is
-    /// [`MuscleDomeSession::reward_banner`](legaia_engine_menus::muscle_dome_session::MuscleDomeSession::reward_banner);
+    /// [`MuscleDomeSession::reward_banner`](legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession::reward_banner);
     /// this resolves the two overlay strings off the as-loaded PROT 0898
     /// image and the spell name off `SCUS_942.54`.
     ///
@@ -572,7 +572,7 @@ impl LegaiaMinigames {
             return false;
         };
         let tick = tick.max(0);
-        let volume_word = legaia_engine_core::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
+        let volume_word = legaia_engine_menus::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
         let mut interval = interval_screen();
         let (mut ramp, _) = run.tally_roll();
         let mut rolling = true;
@@ -630,7 +630,7 @@ impl LegaiaMinigames {
         let mut interval = Some(interval_screen());
         let (mut ramp, _) = run.tally_roll();
         let mut backdrop = HubBackdrop::reentry(still);
-        let volume_word = legaia_engine_core::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
+        let volume_word = legaia_engine_menus::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
         for step_idx in 0..tick.max(0) {
             if backdrop.stage() == BackdropStage::Card {
                 break;
@@ -706,7 +706,7 @@ impl LegaiaMinigames {
                     return r#"{"ok":false}"#.to_string();
                 };
                 let volume_word =
-                    legaia_engine_core::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
+                    legaia_engine_menus::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
                 let (mut ramp, mut tally) = run.tally_roll();
                 for step_idx in 0..round.max(0) {
                     let step = ramp.tick(1, self.muscle_tally_boost_at(step_idx), volume_word);

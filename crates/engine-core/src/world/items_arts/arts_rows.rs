@@ -16,7 +16,7 @@ impl World {
     /// chain ends with ([`legaia_engine_battle::battle_arts::chain_matches_record`]) supplies
     /// the real power profile; chains with no matching record fall back to a
     /// synthetic profile derived from the directional commands.
-    pub(crate) fn build_battle_arts_rows(
+    pub fn build_battle_arts_rows(
         &self,
         caster: u8,
     ) -> Vec<legaia_engine_battle::battle_arts::ArtRow> {
@@ -251,7 +251,7 @@ impl World {
 
     /// Record one use of `art_id` by `char_id` (roster index).
     ///
-    /// Delegates to [`TacticalArtsTracker::notify_art_used`]. When the use
+    /// Delegates to [`TacticalArtsTracker::notify_art_used`](legaia_engine_battle::tactical_arts::TacticalArtsTracker::notify_art_used). When the use
     /// count first crosses the learn threshold, this method:
     ///
     /// 1. Pushes [`BattleEvent::TacticalArtLearned`] onto

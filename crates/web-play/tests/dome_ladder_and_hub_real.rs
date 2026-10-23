@@ -127,9 +127,9 @@ fn the_course_ladder_pins_a_real_monster_per_round() {
     // monster id, and no dome round is that monster - which is the whole
     // reason the four-turn strip is not this minigame's.
     assert!(
-        !ids.contains(&legaia_engine_menus::muscle_dome_session::TIMED_FIGHT_MONSTER_ID),
+        !ids.contains(&legaia_engine_battle_menus::muscle_dome_session::TIMED_FIGHT_MONSTER_ID),
         "no arena round fields monster {:#04x}",
-        legaia_engine_menus::muscle_dome_session::TIMED_FIGHT_MONSTER_ID
+        legaia_engine_battle_menus::muscle_dome_session::TIMED_FIGHT_MONSTER_ID
     );
 }
 

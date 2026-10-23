@@ -171,6 +171,24 @@ pub const DOUBLE_SIDED_BIT: u32 = 0x0800_0000;
 /// ([`legaia_engine_field::camera_frame::nclip_cull_mode`]).
 pub const BATTLE_BODY_NCLIP: u32 = 2;
 
+impl crate::world::BattleGhostDraw {
+    /// The ghost's NCLIP word for the hosts' per-draw backface rule, from
+    /// its draw word ([`legaia_engine_battle::battle_afterimage::ghost_draw_word`])
+    /// by the live body's rule ([`BattleActorDrawPlan::nclip_mode`]):
+    /// the walk's word never carries the double-sided bit, so a ghost keeps
+    /// only its front faces. Drawn both-sided, an additive ghost adds its
+    /// far shell over its near one and reads about twice retail's
+    /// (`battle_melee_hit_spark`'s Vahn).
+    pub fn nclip_mode(&self) -> u32 {
+        let word = legaia_engine_battle::battle_afterimage::ghost_draw_word(self.color);
+        if word & DOUBLE_SIDED_BIT != 0 {
+            0
+        } else {
+            BATTLE_BODY_NCLIP
+        }
+    }
+}
+
 impl World {
     /// The Rot limb dimming battle actor `actor_idx` draws with this frame,
     /// for a mesh of `object_count` objects - `None` when nothing on it dims

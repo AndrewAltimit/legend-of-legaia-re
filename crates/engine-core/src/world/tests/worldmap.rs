@@ -499,6 +499,7 @@ fn world_map_minigame_door_engage_arms_the_door_warp() {
     world.enter_world_map();
     world.install_world_map_entities_with_configs(vec![WorldMapEntityConfig::MinigameDoor {
         sub_id: 5,
+        slot: 0,
     }]);
     // Encounters off so only the transition path can fire.
     world.set_world_map_encounter(false, 50, 0, 64);
@@ -535,7 +536,7 @@ fn world_map_walking_onto_minigame_door_auto_engages() {
     world.set_world_map_encounter(false, 50, 0, 64);
     // A door at tile (3,3) -> world (3*128 + 64 = 448, 448).
     world.install_world_map_entities_at(vec![(
-        WorldMapEntityConfig::MinigameDoor { sub_id: 3 },
+        WorldMapEntityConfig::MinigameDoor { sub_id: 3, slot: 0 },
         (448, 448),
     )]);
 
@@ -656,7 +657,10 @@ fn world_map_entity_markers_pair_position_and_kind() {
     // Put the player on a known plane so the marker `y` is deterministic.
     world.actors[0].move_state.world_y = -200;
     world.install_world_map_entities_at(vec![
-        (WorldMapEntityConfig::MinigameDoor { sub_id: 3 }, (448, 320)),
+        (
+            WorldMapEntityConfig::MinigameDoor { sub_id: 3, slot: 0 },
+            (448, 320),
+        ),
         (
             WorldMapEntityConfig::Npc {
                 interact_id: 4,
@@ -990,5 +994,54 @@ fn a_diagonal_split_across_one_game_tick_drains_one_step() {
         c1 - world.encounter_step_counter(),
         straight,
         "the split diagonal is one step"
+    );
+}
+
+/// The overworld action button does not open a talk while a script context
+/// engages the player. A scripted overworld beat parks the player in the
+/// off-map hide box, the same box the parked talk placements spawn in, so an
+/// ungated probe found one of them on the pad presses that advance the beat:
+/// `map01` `P1[2]` is a flag-setting picker, and the presses picked rows on
+/// it (`0x19A` among them, which shuts the Garmel entrance).
+#[test]
+fn world_map_talk_probe_waits_out_an_engaging_script() {
+    let mut world = World::default();
+    world.enter_world_map();
+    world.install_field_player(0);
+    world.toggles.use_vm_dialogue = true;
+    world.npcs.dialog_prologue.insert(
+        2,
+        legaia_engine_field::man_field_scripts::InlineDialogPrologue {
+            body: vec![0x25, 0x21, 0x1F, b'A', 0x00, 0x21],
+            entry_pc: 2,
+            first_segment: 2,
+        },
+    );
+    let p = world.player_actor_slot.expect("player") as usize;
+    let mut hit = false;
+    'seat: for (dx, dz) in [(0i16, -96i16), (0, 96), (-96, 0), (96, 0)] {
+        for heading in [0i16, 0x400, 0x800, 0xC00] {
+            world.npcs.positions.insert(2, (1000 + dx, 1000 + dz));
+            world.actors[p].move_state.world_x = 1000;
+            world.actors[p].move_state.world_z = 1000;
+            world.actors[p].move_state.render_26 = heading;
+            if world.world_map_record_talk_slot() == Some(2) {
+                hit = true;
+                break 'seat;
+            }
+        }
+    }
+    assert!(hit, "an idle player's probe finds the placement");
+    world.cutscene.timeline = Some(
+        legaia_engine_field::cutscene_timeline::CutsceneTimeline::new(
+            vec![0x25, 0x26, 0xFE, 0xFF],
+            0,
+        ),
+    );
+    assert!(world.cutscene_timeline_active());
+    assert_eq!(
+        world.world_map_record_talk_slot(),
+        None,
+        "a running beat engages the player: no talk opens under it"
     );
 }

@@ -12,8 +12,8 @@
 //! only structural facts. Skips + passes when `LEGAIA_DISC_BIN` is absent.
 
 use legaia_actor_formats::battle_char_assembly;
+use legaia_engine_battle_menus::muscle_dome_session::{MuscleCard, MuscleDomeSession, MusclePhase};
 use legaia_engine_core::world::World;
-use legaia_engine_menus::muscle_dome_session::{MuscleCard, MuscleDomeSession, MusclePhase};
 use legaia_engine_minigames::muscle_dome::{DomeCombatant, DomeDamageModel};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene_host::scene_host::SceneHost;

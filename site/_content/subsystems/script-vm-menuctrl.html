@@ -4,7 +4,7 @@
   <p class="lede"><code>0x4C</code> is the field script's grab-bag opcode. It carries the name MENU_CTRL and is not a menu: the byte after it picks one of sixteen small sub-dispatchers, and between them they paint walls into the walkability grid, steer the camera, tint and clone actors, wobble the floor, take items from the bag, spend casino coins, start movies and schedule escape timers. This is the reference for all sixteen; the rest of the VM is on the <a href="script-vm.html">field / event VM</a> page.</p>
 </header>
 
-<section class="doc-section" id="at-a-glance">
+<section class="doc-section" id="at-a-glance" data-doc="-">
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Form</dt><dd><code>[4C, op0, operands&hellip;]</code>; the <strong>high nibble</strong> of <code>op0</code> selects the dispatcher</dd>
@@ -15,7 +15,7 @@
   </dl>
 </section>
 
-<section class="doc-section" id="map">
+<section class="doc-section" id="map" data-doc="how-it-works">
   <h2>The sixteen nibbles</h2>
   <figure class="diagram">
     <svg viewBox="0 0 880 390" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The sixteen outer nibbles of field opcode 0x4C laid out as a four by four grid: 0 party leader change; 1 globals, screen tint, clear colour and actor clone; 2 pad rotation octant; 3 ambient particle gate and camera-zone arms; 4 write or ramp a slot; 5 model set, move to tile, take item, dialog polls; 6 VRAM moves and CLUT cell write; 7 wall paint; 8 heal, tint, shake, face-turn, reflection; 9 floor-height ladder; A skip on a flag bit; B error printer; C camera focus, glide wait, counters, teleport; D sound effect, morph spawn, timed flags, STP bits; E text balloon, movie, box branch, coins; F error printer except 4C FF.">
@@ -64,7 +64,7 @@
   </ul>
 </section>
 
-<section class="doc-section" id="nibble-3">
+<section class="doc-section" id="nibble-3" data-doc="nibble-reference">
   <h2>Nibble 3: the ambient gate and the camera-zone arms</h2>
   <p><code>4C 30</code> and <code>4C 31</code> raise and clear one word, <code>_DAT_8007B854</code>. It is the <strong>ambient-particle master gate, not an input lock</strong>. Its six references disc-wide are two clears in the executable, the field render pass that stages the particle table, the ambient particle emitter, and these two stores - none of them is pad state. A field script decides, per scene, whether ambience emits at all.</p>
   <p>Four arms are the script's only grip on the field camera's parameter block:</p>
@@ -82,7 +82,7 @@
   </div>
 </section>
 
-<section class="doc-section" id="nibble-7">
+<section class="doc-section" id="nibble-7" data-doc="-">
   <h2>Nibble 7: wall paint</h2>
   <p><code>[4C, 0x7s, col0, row0, col1, row1 (, mask)]</code> edits the walkability grid the <a href="field-locomotion.html#collision-tile">locomotion collision check</a> reads - one byte per 128-unit tile, whose high nibble is four sub-cell wall bits.</p>
   <div class="table-wrap">
@@ -99,7 +99,7 @@
   <p><strong>The row bounds carry an extra <code>+1</code> the column bounds do not.</strong> The painted rectangle is columns <code>[col0, col1 + 1)</code> and rows <code>[row0 + 1, row1 + 2)</code>. These edits layer over the disc-streamed base grid and are commonly gated behind story-flag tests: story-conditional terrain, such as a gate that opens after a boss.</p>
 </section>
 
-<section class="doc-section" id="nibble-8">
+<section class="doc-section" id="nibble-8" data-doc="-">
   <h2>Nibble 8: the multi-purpose dispatcher</h2>
   <div class="table-wrap">
   <table>
@@ -121,7 +121,7 @@
   <p><strong>The halt-acquire is not a freeze.</strong> The bytes it hands the target are a face-target leg of the <a href="motion-vm.html">walk kernel</a>: the target turns toward a named actor over a frame budget, and the leg's last frame releases it. Cutscene records issue over a thousand of these - &ldquo;one character turns to another&rdquo; is exactly this op. Aimed at the player, the arm also holds the caller, so a cutscene waits on the player's turn.</p>
 </section>
 
-<section class="doc-section" id="nibble-9">
+<section class="doc-section" id="nibble-9" data-doc="nibble-9-is-the-floor-height-ladder-not-a-fade">
   <h2>Nibble 9: the floor-height ladder, not a fade</h2>
   <p>The scene keeps a 16-entry ladder of floor elevations: the one ground height is interpolated from, and the one added to every placed object's height. Nibble 9 writes it.</p>
   <ul>
@@ -130,9 +130,49 @@
     <li><code>4C 9F</code> retires every oscillator.</li>
   </ul>
   <p>The organic Seru interior's undulating floor is the clean example: its entry script installs a linear ramp, then issues <code>4C 90</code> over consecutive rungs with a rising phase - a travelling wave across the ladder. Two of the three oscillator sub-ops are dead code: <code>4C 91</code> and <code>4C 92</code> land on phases whose loop never terminates, and no shipped scene uses them.</p>
+  <h3>What a moving ladder moves</h3>
+  <p>Three readers see the live rungs, and placed objects are not among them:</p>
+  <ul>
+    <li><strong>The ground pass</strong> takes each ground cell&rsquo;s four corner tiers through the ladder every frame, so the ground deforms per vertex - the pulsing path and the flesh floors.</li>
+    <li><strong>The decoration sweep</strong> places each terrain or decoration cell at its floor term once a frame, so a whole mesh rides up and down. It skips placed-object records.</li>
+    <li><strong>The floor sampler</strong>, so the player walks the same shape and rides it while standing.</li>
+  </ul>
+  <p>A placed object&rsquo;s Y is written once, when it is spawned (at scene init or by the window sweep&rsquo;s re-plan), as its rung plus its own offset; its actor template sets neither height-arm bit that would make the per-frame driver re-sample the floor. When a scene&rsquo;s system script lifts rungs after spawn, the objects on those rungs stay where they were placed.</p>
 </section>
 
-<section class="doc-section" id="nibble-cd">
+<section class="doc-section" id="nibble-45" data-doc="-">
+  <h2>Nibbles 4 and 5: ramps, held heights and the seat</h2>
+  <p>Nibble 4 is one pattern, <code>[4C, 4s, value:u16, ticks:u16]</code>: with <code>ticks</code> zero the slot <code>s</code> is written at once; otherwise a scheduled actor ramps it from its current value over <code>ticks</code> frames and <strong>the script never waits on it</strong>. The slots cover the actor&rsquo;s speed and draw scale, its held height, its position halves, its drawn heading, the floor ladder, three globals and an audio duck (a fraction of the configured level, which the port runs as its BGM duck). Sub 5 is the one 11-byte form.</p>
+  <p><strong>Held height.</strong> Sub 2 writes the actor&rsquo;s height slot <code>+0x8E</code>. An actor with flag bit <code>0x20000000</code> takes <code>Y = -(+0x8E)</code> every frame in the per-actor tick&rsquo;s height arm instead of the ground sample, and the arm sits ahead of both floor arms, so the held height follows the actor wherever it moves. A placed object is drawn at its actor, and the height is absolute rather than an offset from its map seat - this is how a script lifts or drops scenery (a collapsing dungeon&rsquo;s boulders tween down to the stairs) and how a walking boss can stay at a fixed altitude while its motion stream walks it. The port runs the arm for its placement NPCs (<code>World::tick_field_npc_heights</code>), and both play hosts draw from it.</p>
+  <h3>Sub 1 of nibble 5: the seat binds its move clip</h3>
+  <p><code>[4C, 51, x, z, depth, move_id]</code> is a seat, not a walk: no walk kernel is armed. On the actor the op resolves (the executing context, or a cross-context target), the arm writes four things in order:</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The four writes of op 4C 51. One: the depth byte's bit 7 sets or clears the party-bank bit, which routes clip ids through the party locomotion bank. Two: the anim control drops hold, clamp and reverse so the new clip loops forward. Three: the actor is teleported to the tile centre, its heading taken from the compass table, with a floor re-sample when its flags ask for one. Four: the move id binds as a clip; on the player it becomes the clip base, on anyone else the clip is re-bound and restarted whatever was playing.">
+      <defs><marker id="mc-seat-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="10" y="30" width="190" height="64" rx="4"/>
+      <text class="dg-label" x="105" y="56">1 &#183; Party-bank bit</text><text class="dg-sub" x="105" y="76">depth bit 7 &#8594; +0x10</text>
+      <rect class="dg-node" x="232" y="30" width="190" height="64" rx="4"/>
+      <text class="dg-label" x="327" y="56">2 &#183; Anim control</text><text class="dg-sub" x="327" y="76">drop hold, clamp, reverse</text>
+      <rect class="dg-node" x="454" y="30" width="190" height="64" rx="4"/>
+      <text class="dg-label" x="549" y="56">3 &#183; Seat</text><text class="dg-sub" x="549" y="76">tile centre, compass heading</text>
+      <rect class="dg-node-accent" x="676" y="30" width="190" height="64" rx="4"/>
+      <text class="dg-label" x="771" y="56">4 &#183; Clip</text><text class="dg-sub" x="771" y="76">move_id binds and loops</text>
+      <path class="dg-edge" d="M200 62 L230 62" marker-end="url(#mc-seat-arrow)"/>
+      <path class="dg-edge" d="M422 62 L452 62" marker-end="url(#mc-seat-arrow)"/>
+      <path class="dg-edge" d="M644 62 L674 62" marker-end="url(#mc-seat-arrow)"/>
+      <rect class="dg-node-ok" x="560" y="130" width="140" height="56" rx="4"/>
+      <text class="dg-label" x="630" y="153">Player</text><text class="dg-sub" x="630" y="171">clip base, bound now</text>
+      <rect class="dg-node-ok" x="726" y="130" width="140" height="56" rx="4"/>
+      <text class="dg-label" x="796" y="153">Anyone else</text><text class="dg-sub" x="796" y="171">re-bind, restart</text>
+      <path class="dg-edge" d="M740 94 L650 128" marker-end="url(#mc-seat-arrow)"/>
+      <path class="dg-edge" d="M790 94 L796 128" marker-end="url(#mc-seat-arrow)"/>
+    </svg>
+    <figcaption>The clip binds on every path that reaches the op - the install pre-run, a cutscene&rsquo;s cross-context poke and a live channel alike. A party member is seated with a depth byte in <code>0x8_</code>, so its clip id resolves through the party locomotion bank; any other depth plays a scene-bank clip.</figcaption>
+  </figure>
+  <p>Two shipped consequences: a monster seated beside its tree on its pre-fight arm loops its tree-eating clip instead of its header clip, and party members seated at a bridge get their walk clips before the compass legs walk them up it. The port writes the bit, the mask and the clip slot on every NPC arm (<code>FieldHostImpl::run_to_tile</code>) and raises the clip cue on the cross-context arm; one difference remains - the port&rsquo;s cue skips a re-request of the clip already playing, where retail&rsquo;s restarts it.</p>
+</section>
+
+<section class="doc-section" id="nibble-cd" data-doc="-">
   <h2>Nibbles C and D: camera, counters, timers</h2>
   <div class="table-wrap">
   <table>
@@ -142,7 +182,7 @@
       <tr><td><code>4C C1</code></td><td>fog-region enable reset</td></tr>
       <tr><td><code>4C C3</code></td><td>script-table teleport and spawn-section re-run</td></tr>
       <tr><td><code>4C C4 x z</code></td><td>camera-zone query at an explicit tile: frames a shot from a region the player is not standing in</td></tr>
-      <tr><td><code>4C C5</code> / <code>C6</code></td><td>wait until a system flag is set / cleared. The flag is flipped by a move-VM part the record itself just spawned (ext sub-op <code>0x1C</code> / <code>0x1D</code> in the scene's stager record), so the wait lasts as long as that part takes to reach it</td></tr>
+      <tr><td><code>4C C5</code> / <code>C6</code></td><td>wait until a system flag is set / cleared. The flag is flipped by a move-VM part the record itself just spawned (ext sub-op <code>0x1C</code> / <code>0x1D</code> in the scene's stager record), so the wait lasts as long as that part takes to reach it. Those parts tick in the frame tail, not in the scene tick, so a headless driver that skips the tail leaves the wait to the cutscene timeline&rsquo;s anti-hang cap, and the record&rsquo;s tail never runs</td></tr>
       <tr><td><code>4C C7 char art</code></td><td><strong>teach a Hyper Art</strong>: inserts <code>art</code> into roster slot <code>char</code>'s learned list - the masters' lessons</td></tr>
       <tr><td><code>4C CA</code> / <code>CB</code> / <code>CC</code></td><td>script counter set / add / subtract</td></tr>
       <tr><td><code>4C CD</code></td><td>wait for the camera glide</td></tr>
@@ -159,13 +199,12 @@
   <p><code>4C D2</code>, <code>D6</code> and <code>D7</code> all <em>advance</em> in retail. A VM that halts on them holds a cross-context record forever.</p>
 </section>
 
-<section class="doc-section" id="others">
+<section class="doc-section" id="others" data-doc="-">
   <h2>The rest, briefly</h2>
   <ul>
     <li><strong>Nibble 1</strong> - global write, screen tint, the field clear colour, and an actor clone.</li>
     <li><strong>Nibble 2</strong> - one arm: the camera-octant setter that rotates what the D-pad means.</li>
-    <li><strong>Nibble 4</strong> - write a context slot or a global at once, or ramp it over frames.</li>
-    <li><strong>Nibble 5</strong> - model select (which re-stages the actor), move-to-tile, <strong>TAKE_ITEM</strong> (sub-2 removes an item from the bag; it is not a menu poll), and two dialog polls.</li>
+    <li><strong>Nibble 5</strong> - besides the seat <a href="#nibble-45">above</a>: model select (which re-stages the actor), <strong>TAKE_ITEM</strong> (sub-2 removes an item from the bag; it is not a menu poll), and two dialog polls.</li>
     <li><strong>Nibble 6</strong> - VRAM image moves and a CLUT-cell write.</li>
     <li><strong>Nibble A</strong> - conditional skip on a flag bit: a set bit steps over the bytes its halfword names, counted from the end of the instruction (the shared exit <code>LAB_801E360C</code> adds the halfword less two), not an absolute target. <code>4C DC</code> / <code>4C DE</code> skip the same way when the party holds or wears an item, and so do <code>4C 8B</code>..<code>8D</code> (spell known, a context word zero, art learned), <code>4C D1</code> (a camera glide running) and <code>4C EB</code> (an actor missing).</li>
     <li><strong>Nibble E</strong> - text balloon, movie trigger, a position-copy teleport, a box-test branch, camera animate and zoom, and the casino coin delta. <code>4C E0</code> formats the reading box: a row capacity, or a latch that loads the next page whole (the help pages use twelve-row boxes loaded at once).</li>
@@ -173,7 +212,13 @@
   </ul>
 </section>
 
-<section class="doc-section" id="see-also">
+<section class="doc-section" id="port" data-doc="port-notes,evidence">
+  <h2>In the port, and how it is known</h2>
+  <p>The dispatcher lives in <code>legaia_engine_vm::field</code> (<code>step/menu_ctrl/</code>), with one <code>FieldHost</code> hook per sub-cluster implemented over the world by <code>FieldHostImpl</code>. Feature homes include the reflection controller, the actor clone, the morph-weight apply, the casino coin bank, the escape timer, the step-counter reroll and the camera-zone requests.</p>
+  <p>Every arm address and width on this page comes from the disassembly of the field VM, not the decompiled C - which rendered several arms wrongly: absolute jumps that are relative skips, halts that advance from a branch delay slot, and <code>TAKE_ITEM</code> as a menu poll. Disc usage comes from the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/field-op-census.md" target="_blank" rel="noopener">field-op census</a>, taken at decoded instruction boundaries. Live captures confirm the reflection controllers and the clear colour.</p>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="-">
   <h2>See also</h2>
   <p>Every sub-op's body, arm address and width is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm-menuctrl.md" target="_blank" rel="noopener"><code>docs/subsystems/script-vm-menuctrl.md</code></a>.</p>
   <div class="see-also">

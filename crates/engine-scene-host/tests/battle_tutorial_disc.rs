@@ -182,8 +182,8 @@ fn the_prot_index_loader_returns_the_same_corpus() {
 /// lesson walks the machine forward.
 #[test]
 fn a_live_battle_shows_the_real_prompts_in_order() {
+    use legaia_engine_battle_menus::battle_flow::BattleFlowState;
     use legaia_engine_core::world::World;
-    use legaia_engine_menus::battle_flow::BattleFlowState;
     use legaia_engine_system::input::PadButton;
 
     let Some(bytes) = overlay_967() else {
@@ -256,12 +256,14 @@ fn a_live_battle_shows_the_real_prompts_in_order() {
         world.tick();
     }
     world.battle.tutorial_boxes.clear();
-    world.battle.command = Some(legaia_engine_menus::battle_input::BattleCommandSession {
-        actor: 0,
-        party_slot: 0,
-        no_escape: false,
-        phase: legaia_engine_menus::battle_input::CommandPhase::RunAway,
-    });
+    world.battle.command = Some(
+        legaia_engine_battle_menus::battle_input::BattleCommandSession {
+            actor: 0,
+            party_slot: 0,
+            no_escape: false,
+            phase: legaia_engine_battle_menus::battle_input::CommandPhase::RunAway,
+        },
+    );
     world.tick();
     assert_eq!(
         world.battle_tutorial_box().map(|b| b.text.as_str()),

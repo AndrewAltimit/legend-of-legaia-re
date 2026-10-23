@@ -207,8 +207,15 @@ impl AdsrState {
                 }
             }
             Phase::Decay => {
-                if self.level <= cfg.sustain_level {
-                    self.level = cfg.sustain_level.min(0x7FFF);
+                // Decay ends on the step that takes the level below
+                // `(SL + 1) * 0x800` (`level >> 11 <= SL`), and the level
+                // stays where that step left it - it is not raised to the
+                // sustain level. Every sustaining voice in the mednafen
+                // save-state library sits one partial step below its
+                // `(SL + 1) * 0x800`: `0x7FF7` for SL 15 (one `-8` decay
+                // step off the attack peak), `0x3FFF` for SL 7, `0x57FC`
+                // for SL 10.
+                if u32::from(self.level) < u32::from(cfg.sustain_level) {
                     self.phase = Phase::Sustain;
                     self.wait = 0;
                 }
@@ -327,7 +334,32 @@ mod tests {
             }
         }
         assert_eq!(s.phase, Phase::Sustain);
-        assert_eq!(s.level, 0x4000);
+        // The step that crossed the line is kept: the level sits below
+        // 0x4000 by less than one decay step (at shift 4: 8 << 7 scaled by
+        // the level, under 0x200 here).
+        assert!(
+            s.level < 0x4000 && s.level > 0x4000 - 0x200,
+            "{:#x}",
+            s.level
+        );
+    }
+
+    /// The retail capture shape: SL 15 with a slow decay (`0x80FF`, shift
+    /// 15) sustains at `0x7FF7` - one `-8` decay step off the attack peak,
+    /// the level every such voice in the mednafen save-state library holds.
+    #[test]
+    fn full_sustain_level_holds_one_decay_step_below_the_peak() {
+        let cfg = AdsrConfig::from_words(0x80FF, 0x5FCB);
+        let mut s = AdsrState::default();
+        s.key_on();
+        for _ in 0..200_000 {
+            s.tick(&cfg);
+            if s.phase == Phase::Sustain {
+                break;
+            }
+        }
+        assert_eq!(s.phase, Phase::Sustain);
+        assert_eq!(s.level, 0x7FF7);
     }
 
     /// KeyOff during sustain transitions to release and eventually goes off.

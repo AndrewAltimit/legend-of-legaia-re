@@ -65,7 +65,8 @@ fn web_camera_reads_the_battle_heading_not_the_field_heading() {
     tetsu.battle_monster_id = Some(1);
     tetsu.tmd_binding = Some(0);
     world.actors = vec![vahn, tetsu];
-    world.battle.command = Some(legaia_engine_menus::battle_input::BattleCommandSession::new(0, 0));
+    world.battle.command =
+        Some(legaia_engine_battle_menus::battle_input::BattleCommandSession::new(0, 0));
     // The **arts input** picker is what arms retail's case-0 close-up;
     // the command chooser alone keeps the far framing (see
     // `script::phase_for_state`). Same recipe as the native mirror.
@@ -156,7 +157,8 @@ fn web_pose_matches_the_native_recipe() {
     tetsu.battle_monster_id = Some(1);
     tetsu.tmd_binding = Some(0);
     world.actors = vec![vahn, tetsu];
-    world.battle.command = Some(legaia_engine_menus::battle_input::BattleCommandSession::new(0, 0));
+    world.battle.command =
+        Some(legaia_engine_battle_menus::battle_input::BattleCommandSession::new(0, 0));
     // The **arts input** picker is what arms retail's case-0 close-up;
     // the command chooser alone keeps the far framing (see
     // `script::phase_for_state`). Same recipe as the native mirror.

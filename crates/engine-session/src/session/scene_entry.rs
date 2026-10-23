@@ -2,6 +2,7 @@
 //! the save resume and the native half of a card load.
 
 use super::*;
+use legaia_engine_save_state::WorldSaveState;
 
 impl<S: AudioSink> BootSession<S> {
     /// Begin a New Game: clear the world to a fresh slate
@@ -34,14 +35,21 @@ impl<S: AudioSink> BootSession<S> {
     /// The browser play page's `play_new_game` is the paired entry: both
     /// hosts' title New Game and post-wipe New Game go through one of the two.
     pub fn start_new_game(&mut self, opts: &FieldLiveOpts) -> Option<&'static str> {
+        start_new_game_on(&mut SessionNewGame {
+            session: self,
+            opts,
+        })
+    }
+
+    /// Begin the New Game slate and hand the score over: the seeded world
+    /// ([`Self::begin_new_game`]) and the title theme stopped so the
+    /// prologue's own BGM (or its scripted silence) owns the audio. The
+    /// first half of [`start_new_game_on`].
+    pub fn begin_new_game_slate(&mut self) {
         self.begin_new_game();
         if let Some(bgm) = self.bgm.as_mut() {
             bgm.stop();
         }
-        legaia_engine_scene_host::resume::enter_new_game(|scene| {
-            self.enter_field_live(scene, opts)?;
-            self.confirm_scene_landed(scene)
-        })
     }
 
     /// `Ok` when the host's loaded scene is `scene`. [`Self::enter_field_live`]
@@ -90,7 +98,7 @@ impl<S: AudioSink> BootSession<S> {
                 .enter(GameMode::MainInit, &mut self.host.world);
             debug_assert!(
                 matches!(plan, Some(ModeInitPlan::Stage(st))
-                    if st.overlay_entry == legaia_engine_menus::title_overlay::FIELD_SCENE_INIT_PC),
+                    if st.overlay_entry == legaia_engine_title::title_overlay::FIELD_SCENE_INIT_PC),
                 "MAIN INIT's plan should name the per-scene initializer"
             );
         }
@@ -258,7 +266,7 @@ impl<S: AudioSink> BootSession<S> {
     ///
     /// [`Self::enter_field_live`] cold-boots the scene at record 0 (a fresh
     /// party, no story progress). This variant runs that path and then
-    /// hydrates the world from `save` via [`legaia_engine_core::World::load_full`]
+    /// hydrates the world from `save` via [`WorldSaveState::load_full`](legaia_engine_save_state::WorldSaveState::load_full)
     /// (party records, story flags, money, inventory) so the field VM sees the
     /// saved story state on its first tick. It is the building block for
     /// "continue a saved game" and for the story-gated paths that a cold boot
@@ -330,6 +338,60 @@ impl<S: AudioSink> BootSession<S> {
     /// derivation the page's card and LGSF writers call too).
     pub fn current_resume(&self) -> legaia_save::SaveResume {
         self.host.current_resume()
+    }
+}
+
+/// A host's half of a New Game ([`start_new_game_on`]): the session it runs
+/// and the way it enters a scene. The native window and every headless
+/// driver enter through [`BootSession::enter_field_live`]
+/// ([`BootSession::start_new_game`]); the browser play page enters through
+/// its own field entry, which also rebuilds what it draws.
+pub trait NewGameHost {
+    /// The audio output the host's session runs over.
+    type Sink: AudioSink;
+    /// The host's session, once one exists.
+    fn new_game_session(&mut self) -> Option<&mut BootSession<Self::Sink>>;
+    /// Enter `scene` as an opening leg (not a picker visit, not a resume).
+    fn enter_opening_scene(&mut self, scene: &str) -> std::result::Result<(), String>;
+}
+
+/// Start a New Game end to end, on any host: the seeded slate and the score
+/// handed over ([`BootSession::begin_new_game_slate`]), then the opening
+/// through the shared order
+/// ([`legaia_engine_scene_host::resume::enter_new_game`]: the prologue
+/// cutscene `opdeene`, else `town01`), each leg entered through the host and
+/// confirmed by the scene the session then holds. `None` when the host has
+/// no session or neither scene would enter.
+pub fn start_new_game_on<H: NewGameHost>(host: &mut H) -> Option<&'static str> {
+    host.new_game_session()?.begin_new_game_slate();
+    legaia_engine_scene_host::resume::enter_new_game(|scene| {
+        host.enter_opening_scene(scene)
+            .map_err(anyhow::Error::msg)?;
+        let session = host
+            .new_game_session()
+            .ok_or_else(|| anyhow::anyhow!("the session went away entering '{scene}'"))?;
+        session.confirm_scene_landed(scene)
+    })
+}
+
+/// The session's own half of a New Game: the live field entry.
+struct SessionNewGame<'a, S: AudioSink> {
+    session: &'a mut BootSession<S>,
+    opts: &'a FieldLiveOpts,
+}
+
+impl<S: AudioSink> NewGameHost for SessionNewGame<'_, S> {
+    type Sink = S;
+
+    fn new_game_session(&mut self) -> Option<&mut BootSession<S>> {
+        Some(self.session)
+    }
+
+    fn enter_opening_scene(&mut self, scene: &str) -> std::result::Result<(), String> {
+        self.session
+            .enter_field_live(scene, self.opts)
+            .map(|_| ())
+            .map_err(|e| format!("{e:#}"))
     }
 }
 

@@ -663,7 +663,7 @@ fn option_hotkey_frames_match_across_hosts() {
 /// and its confirm prompts (the attack row), Cross on a target, Circle out of
 /// an item list - the pad the disc-gated fight ladders use, pulsed.
 fn fight_pad(w: &legaia_engine_core::world::World) -> u16 {
-    use legaia_engine_menus::battle_input::CommandPhase;
+    use legaia_engine_battle_menus::battle_input::CommandPhase;
     // A held word is one press: the command screens step on edges, so the
     // drive releases every other pair of ticks.
     if w.frame % 4 >= 2 {

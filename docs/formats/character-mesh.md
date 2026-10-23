@@ -853,7 +853,7 @@ and uploads its own palette
 Baka Fighter VRAM too and collide with battle rects: atlas 7 lands at
 `(448, 256)`, monster texture slot 2's page. The engine therefore uploads
 them in a battle only for a member that falls back to the 1204 mesh
-(`engine-core::battle_party_form`).
+(`engine-battle::battle_party_form`).
 
 Chunk type `0x09` (TMD2) is a distinct dispatcher tag from regular TMD
 (`0x02`) in [`AssetType`](../../crates/container-formats/src/lib.rs); the body shape is

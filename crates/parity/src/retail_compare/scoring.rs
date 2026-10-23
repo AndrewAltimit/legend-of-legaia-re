@@ -68,6 +68,13 @@ pub struct StateReport {
     /// patched disc, so it replays that build's executable, not retail's.
     #[serde(default)]
     pub resident_patch: Option<String>,
+    /// Set when the scenario names its patched image (`resident_disc`) but
+    /// the run could not use it, so the engine ran the retail disc: why.
+    /// The committed baseline was cut on the state's own image, so such a
+    /// run is neither compared against it nor written into it
+    /// ([`Baseline::fallback_skips`]).
+    #[serde(default)]
+    pub resident_disc_missing: Option<String>,
 }
 
 pub(crate) fn round3(v: f64) -> f64 {
@@ -314,19 +321,20 @@ pub(crate) fn facing_score(retail: &RetailObs, engine: &EngineObs) -> Option<(f6
 ///
 /// * `0` when one side has it on the off-map park seat and the other draws
 ///   it - an NPC retail hid that the engine shows, or the reverse;
-/// * nothing when both park it;
+/// * when both park it, `1` on the exact retail coordinates and `0`
+///   anywhere else: a park seat is a script literal (`4C 51 7F 7F`), and a
+///   spawn section's `41` compass step after it lands the node one step
+///   short on an axis (`town01` `P1[36]` at `(16320, 16256)`), so a
+///   one-step miss is a real placement difference, not jitter;
 /// * otherwise its `(X, Z)` distance, 1 within 8 units, 0 at 128.
 ///
 /// The facing channel only scores a placement within 96 units of its seat,
 /// so without this channel a placement in the wrong place, or one the
 /// engine draws while retail has parked it, scored nowhere.
 pub(crate) fn npc_seat_score(retail: &RetailObs, engine: &EngineObs) -> Option<(f64, String)> {
-    let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
-    // Retail parks at the seat itself or half a tile short of it on an axis
-    // (a spawn section's `41` compass step after its park seat).
-    let parked = |x: i16, z: i16| x >= hide - 64 && z >= hide - 64;
     let mut parts = Vec::new();
     let mut miss = Vec::new();
+    let mut both_parked = 0usize;
     for a in &retail.actor_facings {
         if a.ambient {
             continue;
@@ -334,16 +342,9 @@ pub(crate) fn npc_seat_score(retail: &RetailObs, engine: &EngineObs) -> Option<(
         let Some(&(_, ex, ez)) = engine.npc_facings.get(&a.flat) else {
             continue;
         };
-        let (rp, ep) = (parked(a.x, a.z), parked(ex, ez));
-        let score = match (rp, ep) {
-            (true, true) => continue,
-            (true, false) | (false, true) => 0.0,
-            (false, false) => {
-                let dx = f64::from(i32::from(ex) - i32::from(a.x));
-                let dz = f64::from(i32::from(ez) - i32::from(a.z));
-                falloff((dx * dx + dz * dz).sqrt(), 8.0, 128.0)
-            }
-        };
+        let (rp, ep) = (npc_parked(a.x, a.z), npc_parked(ex, ez));
+        both_parked += usize::from(rp && ep);
+        let score = npc_pair_score((a.x, a.z), (ex, ez));
         if score < 1.0 {
             miss.push(format!(
                 "flat {} model {} r=({}, {}){} e=({}, {}){}",
@@ -365,8 +366,38 @@ pub(crate) fn npc_seat_score(retail: &RetailObs, engine: &EngineObs) -> Option<(
     let n = parts.len();
     Some((
         parts.iter().sum::<f64>() / n as f64,
-        format!("{n} placements scored; misses: [{}]", miss.join("; ")),
+        format!(
+            "{n} placements scored ({both_parked} parked on both sides); misses: [{}]",
+            miss.join("; ")
+        ),
     ))
+}
+
+/// Is `(x, z)` on the off-map park seat? Retail parks at the seat itself or
+/// one `41` compass step short of it on an axis (a spawn section's step after
+/// its park seat). This window only classifies a node; a pair both sides
+/// park still scores its exact coordinates ([`npc_pair_score`]).
+pub(crate) fn npc_parked(x: i16, z: i16) -> bool {
+    let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
+    x >= hide - 64 && z >= hide - 64
+}
+
+/// One placement's `npcs` score from its retail and engine `(X, Z)`
+/// ([`npc_seat_score`]): `0` when exactly one side parks it, the exact
+/// coordinates when both do, else the distance falloff (1 within 8, 0 at 128).
+pub(crate) fn npc_pair_score(retail: (i16, i16), engine: (i16, i16)) -> f64 {
+    match (
+        npc_parked(retail.0, retail.1),
+        npc_parked(engine.0, engine.1),
+    ) {
+        (true, true) => f64::from(u8::from(retail == engine)),
+        (true, false) | (false, true) => 0.0,
+        (false, false) => {
+            let dx = f64::from(i32::from(engine.0) - i32::from(retail.0));
+            let dz = f64::from(i32::from(engine.1) - i32::from(retail.1));
+            falloff((dx * dx + dz * dz).sqrt(), 8.0, 128.0)
+        }
+    }
 }
 
 /// The camera channel: mean of pitch, yaw (wrapped), `H` and the three eye

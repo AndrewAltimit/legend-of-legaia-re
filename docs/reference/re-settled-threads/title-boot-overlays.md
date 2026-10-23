@@ -1067,7 +1067,7 @@ Owning page: [`boot.md`](../../subsystems/boot.md#the-per-logo-quads).
 - **Entry:** a cold boot reaches `0x10` through `0x11`
   ([above](#a-cold-boot-always-shows-title-sub-mode-0x10)).
 
-Port: `legaia_engine_menus::title_overlay`'s executable half, driven by `engine-menus::title` on both
+Port: `legaia_engine_title::title_overlay`'s executable half, driven by `engine-title::title` on both
 hosts.
 
 ### `FUN_801E5A08`, the per-slot equip applier

@@ -7,10 +7,10 @@
 //! read only the `World` stay in engine-core's `world::tests::spirit_gauge`.
 
 use legaia_engine_battle_hud::battle_readout_bar_slot;
+use legaia_engine_battle_menus::battle_input::{BattleCommandSession, CommandPhase};
 use legaia_engine_battle_vm::battle_action::ActionState;
 use legaia_engine_core::world::test_drivers::BattleTestDrivers;
 use legaia_engine_core::world::*;
-use legaia_engine_menus::battle_input::{BattleCommandSession, CommandPhase};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::input::PadButton;
 
@@ -83,8 +83,19 @@ fn a_spirit_turn_draws_a_growing_ap_bar_and_no_readout_bar() {
     }
     assert!(!bars.is_empty(), "the Spirit band ran");
     assert_eq!(bars.first().copied(), Some(194), "opens on the live gauge");
-    // 194 * 7 / 5 + 8 = 279: the bar grows to the extended gauge.
-    assert_eq!(bars.last().copied(), Some(279));
+    // 194 * 7 / 5 + 8 = 279: the bar grows to the extended gauge, a frame
+    // step a pass and unclamped (`addu` of `0x1F800393` at `0x801E54A0`),
+    // so on the battle-frame cadence it can land one pass's odd vsync past.
+    let step = if world.toggles.battle_sm_frame_cadence {
+        u16::from(world.battle_frame_step().max(1))
+    } else {
+        1
+    };
+    let last = bars.last().copied().unwrap_or(0);
+    assert!(
+        (279..279 + step).contains(&last),
+        "the bar lands on the extended gauge: {last}"
+    );
     assert!(bars.windows(2).all(|w| w[1] >= w[0]));
     assert_eq!(plates.last().copied(), Some(0x20), "the plate climbs +0x20");
 }

@@ -111,6 +111,7 @@ fn the_battle_drive_round_trips_through_its_env_form() {
                 cursor: Some(5),
                 fading: Some((3, 0xF0)),
                 spoils: true,
+                park: true,
                 ..ActionSteer::default()
             },
         },
@@ -169,4 +170,49 @@ fn a_monster_pool_slot_maps_onto_the_engine_seating() {
     assert_eq!(engine_seat(3, 1), 1);
     assert_eq!(engine_seat(4, 2), 3);
     assert_eq!(engine_seat(3, 3), 3);
+}
+
+/// A parked-approach capture ([`ActionSteer::park`]) holds the acting
+/// monster's walk from the Attack arm to the poll and, in the poll, stages
+/// idle over the walk - the dead Move clip retail parks on. Without the
+/// flag neither happens.
+#[test]
+fn a_park_steer_holds_the_walk_and_stages_idle_in_the_poll() {
+    let run = |park: bool, state: u8| {
+        let mut w = legaia_engine_core::world::World::new();
+        w.enter_battle(1, 1);
+        let monster = usize::from(engine_seat(3, 1));
+        w.battle_ctx.active_actor = monster as u8;
+        w.battle_ctx.action_state = state;
+        w.actors[monster].battle.queued_anim = 1;
+        let drive = BattleDrive::Action {
+            seat: 3,
+            state: 0x19,
+            category: 3,
+            queued: 0x08,
+            spare: false,
+            absorbed: 0,
+            end: SpanGate::Age { accum: 552 },
+            style: None,
+            steer: ActionSteer {
+                park,
+                ..ActionSteer::default()
+            },
+        };
+        drive.steer(&mut w);
+        (
+            w.battle.approach_hold,
+            w.actors[monster].battle.queued_anim,
+            monster as u8,
+        )
+    };
+    let (hold, queued, monster) = run(true, 0x19);
+    assert_eq!(hold, Some(monster));
+    assert_eq!(queued, 0, "the poll shows the dead clip's idle");
+    let (hold, queued, monster) = run(true, 0x14);
+    assert_eq!(hold, Some(monster), "the Attack arm already holds the walk");
+    assert_eq!(queued, 1, "the walk is staged ahead of the poll");
+    let (hold, queued, _) = run(false, 0x19);
+    assert_eq!(hold, None);
+    assert_eq!(queued, 1);
 }

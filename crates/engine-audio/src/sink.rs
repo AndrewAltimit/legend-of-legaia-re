@@ -64,6 +64,13 @@ pub trait AudioSink {
         });
     }
 
+    /// Route the CD input (the XA stream) into the reverb send - `SPUCNT`
+    /// bit 2, which the Baka Fighter and Muscle Dome hub overlays raise
+    /// ([`Spu::cd_reverb`]). Off is the default and the rest of the game.
+    fn set_cd_reverb(&self, on: bool) {
+        self.with_core(|s| s.spu.cd_reverb = on);
+    }
+
     /// Current state of the master mute gate.
     fn is_muted(&self) -> bool {
         self.with_core(|s| s.muted)
@@ -99,6 +106,7 @@ pub trait AudioSink {
                 gain,
                 cursor: 0.0,
                 start_delay: 0,
+                rate_conv: Default::default(),
             });
         });
     }
@@ -129,6 +137,7 @@ pub trait AudioSink {
             gain,
             cursor: 0.0,
             start_delay: start_delay_frames,
+            rate_conv: Default::default(),
         };
         self.with_core(|s| crate::stage_xa_shout(s, shout));
     }

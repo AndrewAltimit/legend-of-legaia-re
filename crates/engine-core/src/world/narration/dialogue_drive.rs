@@ -63,7 +63,8 @@ impl World {
         // ticks. Runs before the slice below for the same reason retail's
         // actor tick runs before the dialog SM: the spin must see the latch the
         // clip earned on *this* frame, not last frame's.
-        self.props.bank.tick_actor_clips_for_frame();
+        let grid = self.clock.script_frame_delta();
+        self.props.bank.tick_actor_clips_for_frame_scaled(grid);
         // The halt window a talk's `CC F8 85` acquire opened: one walk-kernel
         // visit a frame on the player's face-the-speaker turn, closing the
         // window on its terminal frame. The acquire's own frame took its
@@ -372,6 +373,12 @@ impl World {
                 id.pc = next_pc;
                 id.park_frames = 0;
                 if id.player_walk.is_some() || id.player_turn.is_some() {
+                    // The kernel takes the leg's first step in the arming
+                    // frame, after the talk's slice.
+                    if host.world.clock.game_tick_live && host.world.clock.script_frame_delta() > 0
+                    {
+                        host.world.step_talk_player_legs(&mut id);
+                    }
                     break;
                 }
                 continue;
@@ -389,11 +396,19 @@ impl World {
             // cross-context op aimed at it at its own PC: the talk retries
             // next frame. `town0c` `P1[21]` (the queen-bee beat) sends
             // `C1 3B 02 46` then `C1 3B 02 41`, and the second leg starts
-            // where the first one landed.
+            // where the first one landed. A turn the talk set going holds
+            // its placement the same way: the halt-acquire arm of `B8 <id>`
+            // and the `CC <id> 85` face-at raise the same `0x400`.
             // REF: FUN_801DE840 (0x801DE90C..0x801DE944)
             let walking_target = ext_target
                 .and_then(|t| host.world.placement_slot_for_target(t))
-                .filter(|slot| host.world.npcs.glide_legs.contains_key(slot));
+                .filter(|slot| {
+                    let n = &host.world.npcs;
+                    n.glide_legs.contains_key(slot)
+                        || n.rotate_legs.contains_key(slot)
+                        || n.face_legs.contains_key(slot)
+                        || host.world.leg_landed_this_frame(*slot)
+                });
             if walking_target.is_some() {
                 break;
             }
@@ -409,17 +424,27 @@ impl World {
                     super::field_channels::compass_walk_operands(&id.bytecode, id.pc)
             {
                 host.world.npcs.motions.remove(&slot);
-                host.world.npcs.glide_legs.insert(
+                let mut leg = legaia_engine_field::cutscene_timeline::TimelineNpcGlide {
                     slot,
-                    legaia_engine_field::cutscene_timeline::TimelineNpcGlide {
-                        slot,
-                        state: legaia_engine_motion_vm::motion_vm::MotionState::default(),
-                        body0,
-                        body1,
-                        rate,
-                        frames: 0,
-                    },
-                );
+                    state: legaia_engine_motion_vm::motion_vm::MotionState::default(),
+                    body0,
+                    body1,
+                    rate,
+                    frames: 0,
+                };
+                // The kernel takes the leg's first step in the arming frame,
+                // after the talk's slice (the target ticks behind the talk).
+                let grid = host.world.clock.script_frame_delta();
+                if grid > 0 && host.world.clock.game_tick_live {
+                    leg.state.speed = grid;
+                    if !host.world.step_npc_glide(&mut leg) {
+                        host.world.land_npc_leg(slot);
+                    } else {
+                        host.world.npcs.glide_legs.insert(slot, leg);
+                    }
+                } else {
+                    host.world.npcs.glide_legs.insert(slot, leg);
+                }
                 if id.pc < id.visited.len() {
                     id.visited[id.pc] = true;
                 }
@@ -949,6 +974,18 @@ impl World {
         &mut self,
         ramp: &mut legaia_engine_field::inline_dialogue::TalkFaceRamp,
     ) -> bool {
+        let speed = self.clock.display_frame_step.max(1);
+        self.step_player_face_leg_by(ramp, speed)
+    }
+
+    /// [`Self::step_player_face_leg`] spending `speed` vsyncs of the leg: a
+    /// cutscene record's legs advance one game frame at a time, by the
+    /// frame step (`DAT_1F800393`).
+    pub fn step_player_face_leg_by(
+        &mut self,
+        ramp: &mut legaia_engine_field::inline_dialogue::TalkFaceRamp,
+        speed: u16,
+    ) -> bool {
         let target = self.talk_face_target(ramp.program[4]);
         let player = self
             .player_actor_slot
@@ -963,7 +1000,6 @@ impl World {
         let (Some((tx, tz)), Some((px, pz, yaw))) = (target, player) else {
             return true;
         };
-        let speed = self.clock.display_frame_step.max(1);
         let (yaw, done) = ramp.step(px, pz, yaw as u16, tx, tz, speed);
         if let Some(slot) = self.player_actor_slot
             && let Some(actor) = self.actors.get_mut(usize::from(slot))
@@ -985,6 +1021,18 @@ impl World {
         slot: u8,
         ramp: &mut legaia_engine_field::inline_dialogue::TalkFaceRamp,
     ) -> bool {
+        let speed = self.clock.display_frame_step.max(1);
+        self.step_npc_face_leg_by(slot, ramp, speed)
+    }
+
+    /// [`Self::step_npc_face_leg`] spending `speed` vsyncs of the leg (see
+    /// [`Self::step_player_face_leg_by`]).
+    pub fn step_npc_face_leg_by(
+        &mut self,
+        slot: u8,
+        ramp: &mut legaia_engine_field::inline_dialogue::TalkFaceRamp,
+        speed: u16,
+    ) -> bool {
         let bind = ramp.program[4];
         let target = if bind == 0xF8 {
             self.player_actor_slot
@@ -999,7 +1047,6 @@ impl World {
         // A never-posed NPC stands at the retail spawn default `0` (engine
         // `0x800`).
         let yaw = self.npcs.headings.get(&slot).copied().unwrap_or(0x800);
-        let speed = self.clock.display_frame_step.max(1);
         let (yaw, done) = ramp.step(x, z, yaw as u16, tx, tz, speed);
         self.set_timeline_facing(Some(slot), yaw as i16);
         done
@@ -1017,6 +1064,30 @@ impl World {
             .map(|ci| &view[ci])
             .filter(|ch| !ch.object_bind)
             .and_then(|ch| u8::try_from(ch.placement_index).ok())
+    }
+
+    /// How far the compass-walk leg (`B7` / `C1 <t> b0 b1`) a script armed on
+    /// the placement target byte `t` names has run: the spent units the walk
+    /// kernel keeps on the actor's `+0x54` (one per vsync, the frame step a
+    /// tick). `None` while no such leg is live - before the arm, or after
+    /// the landing clears the halt. Searches the talk runner's legs, the
+    /// modal timeline's and every concurrent helper's.
+    ///
+    /// REF: FUN_8003774C (the 0x37 / 0x41 arm)
+    pub fn npc_compass_walk_accum(&self, t: u8) -> Option<u16> {
+        let slot = self.placement_slot_for_target(t)?;
+        let in_timeline = |tl: &legaia_engine_field::cutscene_timeline::CutsceneTimeline| {
+            tl.npc_glides
+                .iter()
+                .find(|g| g.slot == slot)
+                .map(|g| g.state.op_accum)
+        };
+        self.npcs
+            .glide_legs
+            .get(&slot)
+            .map(|g| g.state.op_accum)
+            .or_else(|| self.cutscene.timeline.as_ref().and_then(in_timeline))
+            .or_else(|| self.field_vm.helper_contexts.iter().find_map(in_timeline))
     }
 
     /// A facing op aimed at another placement from a context that is not a
@@ -1052,19 +1123,22 @@ impl World {
                     }
                 } else {
                     let cur = self.npcs.headings.get(&slot).copied().unwrap_or(0x800);
+                    let grid = self.clock.script_frame_delta();
                     let mut leg = legaia_engine_field::cutscene_timeline::TimelineFacing {
                         slot: Some(slot),
                         state: legaia_engine_motion_vm::motion_vm::MotionState {
                             yaw: (cur as u16) & 0x0FFF,
-                            speed: 1,
+                            speed: grid,
                             ..Default::default()
                         },
                         program: [0x38, op0, op1],
                         resume_pc: pc + 4,
                         frames: 0,
                     };
-                    if !self.step_npc_rotate_leg(&mut leg) {
+                    if grid == 0 || !self.step_npc_rotate_leg(&mut leg) {
                         self.npcs.rotate_legs.insert(slot, leg);
+                    } else {
+                        self.land_npc_leg(slot);
                     }
                 }
                 Some(pc + 4)
@@ -1159,21 +1233,64 @@ impl World {
         &mut self,
         id: &mut legaia_engine_field::inline_dialogue::InlineDialogue,
     ) -> bool {
+        // The talk's legs advance on the game-frame grid, as a record's do:
+        // the walk kernel spends the frame step once a game frame and
+        // nothing between (`FUN_8003774C`, `lbu s2,0x393` at `0x80037864`).
+        let grid = self.clock.script_frame_delta();
+        // A leg that landed holds the talk through the rest of its game
+        // frame: the kernel ran after the talk's slice on that frame.
+        if let Some(t) = self.npcs.talk_player_landed {
+            if t == self.frame || grid == 0 {
+                return true;
+            }
+            self.npcs.talk_player_landed = None;
+        }
+        if grid == 0 && (id.player_walk.is_some() || id.player_turn.is_some()) {
+            return true;
+        }
+        let had_leg = id.player_walk.is_some() || id.player_turn.is_some();
         if let Some(mut walk) = id.player_walk.take() {
             walk.frames += 1;
-            let arrived = self.step_player_walk_leg(walk.target, walk.speed);
+            let arrived = self.step_player_walk_leg(walk.target, walk.speed.saturating_mul(grid));
             if !arrived && walk.frames < WALK_PARK_TIMEOUT {
                 id.player_walk = Some(walk);
                 return true;
             }
         }
         if let Some(mut leg) = id.player_turn.take()
-            && !self.step_npc_rotate_leg(&mut leg)
+            && {
+                leg.state.speed = grid;
+                !self.step_npc_rotate_leg(&mut leg)
+            }
         {
             id.player_turn = Some(leg);
             return true;
         }
+        if had_leg && self.clock.game_tick_live {
+            self.npcs.talk_player_landed = Some(self.frame);
+            return true;
+        }
         false
+    }
+
+    /// Note that a free-standing leg on placement `slot` landed this tick
+    /// ([`crate::world::FieldNpcState::landed_ticks`]); a no-op while the
+    /// game-tick clock is down, where every tick is a frame.
+    pub(crate) fn land_npc_leg(&mut self, slot: u8) {
+        if self.clock.game_tick_live {
+            self.npcs.landed_ticks.insert(slot, self.frame);
+        }
+    }
+
+    /// Whether a leg on placement `slot` landed on the current game frame:
+    /// this tick, or an earlier one with no game frame since. Retail's
+    /// kernel lands it after the slice of the context that armed it, so the
+    /// next op aimed at the placement runs on the following game frame.
+    pub(crate) fn leg_landed_this_frame(&self, slot: u8) -> bool {
+        self.npcs
+            .landed_ticks
+            .get(&slot)
+            .is_some_and(|&t| t == self.frame || self.clock.script_frame_delta() == 0)
     }
 
     /// One frame of a free-standing `0x38` rotate leg; `true` once it snaps.
@@ -1204,8 +1321,11 @@ impl World {
     ) {
         self.npcs.face_legs.remove(&slot);
         self.npcs.rotate_legs.remove(&slot);
-        if !self.step_npc_face_leg(slot, &mut ramp) {
+        let grid = self.clock.script_frame_delta();
+        if grid == 0 || !self.step_npc_face_leg_by(slot, &mut ramp, grid) {
             self.npcs.face_legs.insert(slot, ramp);
+        } else {
+            self.land_npc_leg(slot);
         }
     }
 
@@ -1213,14 +1333,25 @@ impl World {
     /// compass-walk leg.
     /// REF: FUN_8003774C (the 0x4C arm), FUN_8003BC08
     pub(crate) fn tick_field_npc_face_legs(&mut self) {
+        // On the game-frame grid: a vsync between two game frames moves no
+        // leg, and a game frame spends the frame step.
+        let grid = self.clock.script_frame_delta();
+        if grid == 0 {
+            return;
+        }
         for (slot, mut ramp) in std::mem::take(&mut self.npcs.face_legs) {
-            if !self.step_npc_face_leg(slot, &mut ramp) {
+            if !self.step_npc_face_leg_by(slot, &mut ramp, grid) {
                 self.npcs.face_legs.insert(slot, ramp);
+            } else {
+                self.land_npc_leg(slot);
             }
         }
         for (slot, mut leg) in std::mem::take(&mut self.npcs.rotate_legs) {
+            leg.state.speed = grid;
             if !self.step_npc_rotate_leg(&mut leg) {
                 self.npcs.rotate_legs.insert(slot, leg);
+            } else {
+                self.land_npc_leg(slot);
             }
         }
         // A compass walk a placement's load-frame slice armed: the kernel
@@ -1230,11 +1361,12 @@ impl World {
         // poked again.
         // REF: FUN_8003BC08 (the 0x400 kernel visit), FUN_8003774C (the 0x37 / 0x41 arm)
         for (slot, mut leg) in std::mem::take(&mut self.npcs.glide_legs) {
-            leg.state.speed = self.clock.display_frame_step.max(1);
+            leg.state.speed = grid;
             if self.step_npc_glide(&mut leg) {
                 self.npcs.glide_legs.insert(slot, leg);
                 continue;
             }
+            self.land_npc_leg(slot);
             let pos = self.npcs.positions.get(&slot).copied();
             if let Some(c) = self
                 .field_vm
@@ -1276,7 +1408,10 @@ impl World {
             id.face_ramp = None;
             return;
         };
-        let speed = self.clock.display_frame_step.max(1);
+        let speed = self.clock.script_frame_delta();
+        if speed == 0 {
+            return;
+        }
         let (yaw, done) = ramp.step(px, pz, yaw as u16, tx, tz, speed);
         if let Some(slot) = self.player_actor_slot
             && let Some(actor) = self.actors.get_mut(usize::from(slot))

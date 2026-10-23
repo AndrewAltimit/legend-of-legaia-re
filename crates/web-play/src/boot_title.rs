@@ -44,13 +44,34 @@
 
 use super::*;
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_menus::title::{TitleInput, TitlePhase, TitleSession};
-use legaia_engine_menus::title_screen_atlas::build_atlas_from_prot_888;
+use legaia_engine_session::{AttractLane, FrontEnd, FrontEndStep};
+use legaia_engine_title::title::{TitleOutcome, TitlePhase, TitleSession};
+use legaia_engine_title::title_screen_atlas::build_atlas_from_prot_888;
 use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
 
-/// `(edge & mask)` test on a PSX-encoded pad-edge word.
-fn hit(edge: u16, mask: u16) -> bool {
-    edge & mask != 0
+/// The page's movie lane for the title's attract movie
+/// ([`legaia_engine_session::AttractLane`]): the play page's FMV lane
+/// ([`crate::play_fmv`]). A skip asks the lane to finish; the movie runs
+/// until the lane reports it finished, played or not.
+struct PageAttractLane<'a> {
+    fmv: &'a mut crate::play_fmv::FmvState,
+    /// `Some(played)` once the lane reported the end this step.
+    ended: Option<bool>,
+}
+
+impl AttractLane for PageAttractLane<'_> {
+    fn request_skip(&mut self) {
+        self.fmv.request_finish();
+    }
+    fn running(&mut self) -> bool {
+        match self.fmv.poll() {
+            crate::play_fmv::FmvPoll::Hold => true,
+            crate::play_fmv::FmvPoll::Finished { played } => {
+                self.ended = Some(played);
+                false
+            }
+        }
+    }
 }
 
 /// Same quad JSON shape as the pause menu: `dst` / `src` rect + RGBA tint.
@@ -113,7 +134,7 @@ impl LegaiaRuntime {
             crate::console_log("boot logos: PROT 0895 (init.pak) unavailable");
             return;
         };
-        match legaia_engine_menus::publisher_logos::build_atlas_from_init_pak(&bytes) {
+        match legaia_engine_title::publisher_logos::build_atlas_from_init_pak(&bytes) {
             Ok(a) => {
                 self.boot_logos_failed = false;
                 self.boot_logos_atlas = Some(a);
@@ -151,9 +172,9 @@ impl LegaiaRuntime {
     /// `play_menu_open_row("Options")` fails when the menu will not open on
     /// this world, and this page used to answer a failed row with
     /// `"new_game"`. The native window's Options row has the same door and
-    /// the same answer (`open_menu_row_from_title`). Continue no longer goes
-    /// through a pause row on either host (`SaveSelectSession::title_continue`),
-    /// so it reaches this only when the menu art is missing.
+    /// the same answer (`open_menu_row_from_title`). Continue goes through no
+    /// pause row on either host (`legaia_engine_session::ContinueScreen`), so
+    /// it reaches this only when the menu art is missing.
     ///
     /// Returns `""` (the "title still running" answer), having put a fresh
     /// title session back up with its attract countdown armed.
@@ -161,11 +182,37 @@ impl LegaiaRuntime {
         crate::console_log(&format!(
             "boot title: the {row} row would not open on this world; returning to the title"
         ));
-        self.boot_title = Some(TitleSession::for_front_end_at(
-            self.boot_title_has_save_data(),
-            self.scene_host.seat().title_row(),
-        ));
+        self.open_front_end_title();
         String::new()
+    }
+
+    /// The attract movie ended (`ended` = `Some(played)` off the lane):
+    /// give the score back and count an unplayed movie as a skip.
+    fn attract_ended(&mut self, ended: Option<bool>) {
+        // Retail re-enters the front end through `CARD INIT`, which streams
+        // the title theme again from its first beat - played or not, the
+        // attract released it.
+        self.fmv_end_audio();
+        if ended != Some(true) {
+            self.boot_title_attract_skips = self.boot_title_attract_skips.saturating_add(1);
+            crate::console_log(
+                "title attract: the movie finished unplayed; returning to the title",
+            );
+        }
+    }
+
+    /// Put the title card up through the session's one constructor
+    /// ([`FrontEnd::title`]) with a fresh scan of the card rack.
+    fn open_front_end_title(&mut self) {
+        let any_save = crate::cards::rack_has_save(&self.cards);
+        self.boot_front_end = Some(FrontEnd::title(self.scene_host.seat(), any_save));
+    }
+
+    /// The title session, while the front end shows the title card.
+    pub(crate) fn boot_title_session(&self) -> Option<&TitleSession> {
+        self.boot_front_end
+            .as_ref()
+            .and_then(FrontEnd::title_session)
     }
 }
 
@@ -191,10 +238,7 @@ impl LegaiaRuntime {
         // The front-end constructor both hosts open every title through
         // (fresh rack scan, attract armed - the movie plays through the FMV
         // lane, see `boot_title_step`).
-        self.boot_title = Some(TitleSession::for_front_end_at(
-            self.boot_title_has_save_data(),
-            self.scene_host.seat().title_row(),
-        ));
+        self.open_front_end_title();
         self.boot_title_attract_skips = 0;
     }
 
@@ -213,12 +257,11 @@ impl LegaiaRuntime {
     /// native boot's `scan_save_dir(..).any(|s| s.present)`. Public so the
     /// page can label the Continue row honestly before the title even opens.
     pub fn boot_title_has_save_data(&self) -> bool {
-        (0..crate::cards::CARD_SLOTS)
-            .any(|port| self.card_block_snapshots(port).iter().any(|b| b.present))
+        crate::cards::rack_has_save(&self.cards)
     }
 
     pub fn boot_title_is_active(&self) -> bool {
-        self.boot_title.is_some()
+        self.boot_title_session().is_some()
     }
 
     /// The retail sub-mode of `FUN_801DD35C` the title is in, or `0xFF` when
@@ -226,8 +269,7 @@ impl LegaiaRuntime {
     /// value a cold-boot capture sees - the `0x02` text menu is unreachable.
     /// The native window logs the same value on the same transitions.
     pub fn boot_title_submode(&self) -> u8 {
-        self.boot_title
-            .as_ref()
+        self.boot_title_session()
             .map_or(0xFF, |s| s.retail_submode())
     }
 
@@ -242,100 +284,77 @@ impl LegaiaRuntime {
     /// the outcome (seed + enter the opening scene for New Game) and the title
     /// clears itself.
     pub fn boot_title_step(&mut self, edge: u16) -> String {
-        let input = TitleInput {
-            up: hit(edge, 0x0010),
-            down: hit(edge, 0x0040),
-            cross: hit(edge, 0x4000),
-            start: hit(edge, 0x0008),
-            circle: hit(edge, 0x2000),
-        };
-        // The attract hand-off, browser side. Retail's `AttractIdle` arm
-        // gives the screen to `fmv_id 0` and returns to the title; the
-        // native window plays that movie through its MDEC path
-        // (`service_title_attract`). Here the movie is armed on the play
-        // page's FMV lane the frame the countdown fires, and the session
-        // stays frozen in `Attract` until that lane reports the end.
-        let (attract_fmv, attract_playing, title_row) = {
-            let Some(session) = self.boot_title.as_mut() else {
-                return String::new();
-            };
-            let _ = session.tick(input);
-            let pending = session.attract_pending();
-            if pending.is_some() {
-                session.mark_attract_started();
-            }
-            (pending, session.attract_playing(), session.row_counter())
-        };
-        // Retail's row counter outlives this title (`ModeSeat::title_row`).
-        self.scene_host.seat_mut().set_title_row(title_row);
-        if let Some(fmv_id) = attract_fmv {
-            self.fmv_arm(fmv_id, crate::play_fmv::FmvOrigin::Attract);
-        }
-        if attract_playing {
-            let fmv_id = self.fmv.armed_for().map_or(
-                legaia_engine_menus::title_overlay::ATTRACT_FMV_ID,
-                |(_, id)| id,
-            );
-            // Retail's abort: `fmv_id 0` on a face button / Select
-            // (`FUN_801CF098`'s `_DAT_8007B850 & 0x1F0` test).
-            if legaia_engine_system::movie::cutscene::fmv_skip_edge_hit(fmv_id, edge) {
-                self.fmv.request_finish();
-            }
-            match self.fmv.poll() {
-                crate::play_fmv::FmvPoll::Hold => return String::new(),
-                crate::play_fmv::FmvPoll::Finished { played } => {
-                    if let Some(session) = self.boot_title.as_mut() {
-                        session.finish_attract();
-                    }
-                    // Retail re-enters the front end through `CARD INIT`,
-                    // which streams the title theme again from its first
-                    // beat - played or not, the attract released it.
-                    self.fmv_end_audio();
-                    if !played {
-                        self.boot_title_attract_skips =
-                            self.boot_title_attract_skips.saturating_add(1);
-                        crate::console_log(&format!(
-                            "title attract: fmv_id={fmv_id} finished unplayed; returning to the title"
-                        ));
-                    }
-                    return String::new();
-                }
-            }
-        }
-        let Some(session) = self.boot_title.as_mut() else {
+        // The session's one front end steps the title: the tick, the row
+        // counter onto the seat, the attract hand-off and its skip edge
+        // (`legaia_engine_session::front_end`), the native window's step
+        // too. This page supplies the movie lane - retail's `AttractIdle`
+        // arm gives the screen to `fmv_id 0`, which the play page's FMV lane
+        // plays - and acts on the step.
+        let Some(front_end) = self.boot_front_end.as_mut() else {
             return String::new();
         };
-        use legaia_engine_menus::title::TitleOutcome;
-        match session.outcome() {
-            Some(o) => {
-                // The session is not simply dropped at the hand-off: retail
-                // keeps the title art on screen behind the save-select, so
-                // Continue parks it as the backdrop
-                // (`boot_title_backdrop_draws_json`) and only New Game /
-                // Options release it. Retail composes the boot options screen
-                // against black, so Options takes the drop.
-                let parked = self.boot_title.take();
-                match o {
+        if front_end.title_session().is_none() {
+            // The logos still own the screen (`boot_logos_step`).
+            return String::new();
+        }
+        let mut lane = PageAttractLane {
+            fmv: &mut self.fmv,
+            ended: None,
+        };
+        // The Continue scan is the logos' hand-off's; a title already up
+        // never asks it.
+        let step = front_end.step(self.scene_host.seat_mut(), edge, || false, &mut lane);
+        let ended = lane.ended;
+        match step {
+            FrontEndStep::AttractStart(fmv_id) => {
+                self.fmv_arm(fmv_id, crate::play_fmv::FmvOrigin::Attract);
+                // The lane settles in the arming frame too: a page without
+                // FMV support (or a movie not on the image) finishes it
+                // here, so an unplayable movie never outlives its frame.
+                let mut lane = PageAttractLane {
+                    fmv: &mut self.fmv,
+                    ended: None,
+                };
+                let settled = self
+                    .boot_front_end
+                    .as_mut()
+                    .and_then(|fe| fe.service_attract(edge, &mut lane));
+                let ended = lane.ended;
+                if settled == Some(FrontEndStep::AttractEnded) {
+                    self.attract_ended(ended);
+                }
+                String::new()
+            }
+            FrontEndStep::AttractEnded => {
+                self.attract_ended(ended);
+                String::new()
+            }
+            // The title session is dropped at the hand-off. Retail keeps
+            // the title art behind the save-select, which the Continue
+            // screen answers for itself (`boot_title_backdrop_draws_json`);
+            // the boot options screen is composed against black.
+            FrontEndStep::Picked(outcome) => {
+                self.boot_front_end = None;
+                match outcome {
                     TitleOutcome::NewGame => "new_game".to_string(),
-                    // Continue and Options route to the same two screens the
-                    // native window routes them to - the retail save-select
-                    // and the retail options screen - reached here through
-                    // the pause menu's own rows rather than through a second
-                    // copy of either. The page then drives `play_menu_input`
-                    // / `play_menu_draws_json` until the menu closes.
                     // Continue is retail's title card manager, not a pause
-                    // row: `SaveSelectSession::title_continue`, the native
-                    // window's call too, with no field gate in front of it.
-                    // Backing out returns to the title card (the menu is
-                    // title-opened).
+                    // row: the session's one Continue screen
+                    // (`legaia_engine_session::ContinueScreen`), the native
+                    // window's too, with no field gate in front of it. The
+                    // page then drives `boot_continue_step` /
+                    // `boot_continue_draws_json` until it reports "loaded"
+                    // or "back" (`crate::boot_continue`).
                     TitleOutcome::Continue => {
-                        if self.play_menu_open_title_continue() {
-                            self.boot_title_backdrop = parked;
+                        if self.open_boot_continue() {
                             "continue".to_string()
                         } else {
-                            self.reopen_title_after_failed_row("Load")
+                            self.reopen_title_after_failed_row("Continue")
                         }
                     }
+                    // Options routes to the retail options screen through
+                    // the pause menu's own row, the native window's route
+                    // too; the page drives `play_menu_input` /
+                    // `play_menu_draws_json` until the menu closes.
                     TitleOutcome::Options => {
                         if self.play_menu_open_row("Options") {
                             self.play_menu_mark_from_title();
@@ -346,14 +365,17 @@ impl LegaiaRuntime {
                     }
                 }
             }
-            None => String::new(),
+            FrontEndStep::Logos
+            | FrontEndStep::TitleOpened(_)
+            | FrontEndStep::Title(_)
+            | FrontEndStep::AttractPlaying => String::new(),
         }
     }
 
     /// Abort the title flow (page navigated away / cancelled).
     pub fn boot_title_close(&mut self) {
-        self.boot_title = None;
-        self.boot_title_backdrop = None;
+        self.boot_front_end = None;
+        self.boot_continue = None;
     }
 
     /// Tear down every start in flight before the page begins another one: a
@@ -366,7 +388,6 @@ impl LegaiaRuntime {
     /// brings up its own music. A pause-menu row the title handed off to is
     /// the page's to close (`play_menu_close`).
     pub fn play_cancel_start(&mut self) {
-        self.boot_logos = None;
         self.boot_title_close();
         let _ = self.play_abandon_opening_chain();
         // A world parked under a story movie leaves the mode without its
@@ -391,7 +412,7 @@ impl LegaiaRuntime {
     /// which case the caller goes straight to the title, exactly as the
     /// native `--boot-ui` chain does with an unbuildable atlas.
     ///
-    /// Only the native window used to play these: `legaia_engine_menus::publisher_logos`
+    /// Only the native window used to play these: `legaia_engine_title::publisher_logos`
     /// and its atlas builder were shared, and the browser play page entered
     /// the boot chain one stage late, at the title.
     pub fn boot_logos_start(&mut self) -> bool {
@@ -402,13 +423,15 @@ impl LegaiaRuntime {
         if self.boot_logos_atlas.is_none() {
             return false;
         }
-        self.boot_logos = Some(legaia_engine_menus::publisher_logos::PublisherLogosSession::new());
+        self.boot_front_end = Some(FrontEnd::logos());
         true
     }
 
     /// `true` while the logo phase owns the screen.
     pub fn boot_logos_is_active(&self) -> bool {
-        self.boot_logos.is_some()
+        self.boot_front_end
+            .as_ref()
+            .is_some_and(|fe| fe.logos_session().is_some())
     }
 
     /// Advance the logo sequencer one frame with an edge-triggered PSX pad
@@ -416,15 +439,25 @@ impl LegaiaRuntime {
     /// title card). Start / Cross skip the rest of the sequence, which is the
     /// same request the native boot chain honours.
     pub fn boot_logos_step(&mut self, edge: u16) -> bool {
-        let Some(session) = self.boot_logos.as_mut() else {
+        // The session's one front end: the Start / Cross skip, the
+        // sequencer tick, and on the last frame the mode table's hand-off
+        // (`ModeSeat::boot_handoff`) raising the title card with a fresh
+        // Continue scan - the native window's step too.
+        let Some(front_end) = self.boot_front_end.as_mut() else {
             return true;
         };
-        if hit(edge, 0x0008) || hit(edge, 0x4000) {
-            session.request_skip();
+        if front_end.logos_session().is_none() {
+            return true;
         }
-        session.tick();
-        if session.is_done() {
-            self.boot_logos = None;
+        let cards = &self.cards;
+        let step = front_end.step(
+            self.scene_host.seat_mut(),
+            edge,
+            || crate::cards::rack_has_save(cards),
+            &mut legaia_engine_session::NoMovieLane,
+        );
+        if let FrontEndStep::TitleOpened(_) = step {
+            self.boot_title_attract_skips = 0;
             return true;
         }
         false
@@ -457,11 +490,14 @@ impl LegaiaRuntime {
     /// so the two hosts letterbox the logos identically and a fade level is
     /// the same alpha in both.
     pub fn boot_logos_draws_json(&self, surface_w: u32, surface_h: u32) -> String {
-        use legaia_engine_menus::publisher_logos::{LOGO_COUNT, STAGE};
+        use legaia_engine_title::publisher_logos::{LOGO_COUNT, STAGE};
         use legaia_engine_ui::boot_logos::{LogoQuadView, publisher_logo_sprite_draws};
-        let (Some(session), Some(atlas)) =
-            (self.boot_logos.as_ref(), self.boot_logos_atlas.as_ref())
-        else {
+        let (Some(session), Some(atlas)) = (
+            self.boot_front_end
+                .as_ref()
+                .and_then(FrontEnd::logos_session),
+            self.boot_logos_atlas.as_ref(),
+        ) else {
             return r#"{"active":false,"sprites":[]}"#.to_string();
         };
         let idx = session.current_logo();
@@ -544,7 +580,7 @@ impl LegaiaRuntime {
     /// `title_menu_glyph_sprite_draws` serves - and only if that atlas is
     /// missing too does the font stand-in (`texts`) draw.
     pub fn boot_title_draws_json(&self, surface_w: u32, surface_h: u32) -> String {
-        let Some(session) = self.boot_title.as_ref() else {
+        let Some(session) = self.boot_title_session() else {
             return r#"{"active":false,"sprites":[],"glyphs":[],"texts":[]}"#.to_string();
         };
         let (origin, scale) = stage_transform(surface_w.max(1), surface_h.max(1));
@@ -565,7 +601,7 @@ impl LegaiaRuntime {
                 TitlePhase::MainMenu { cursor } => (true, cursor),
                 _ => (false, 0u8),
             };
-            let phase = legaia_engine_menus::title_overlay::title_text_phase(
+            let phase = legaia_engine_title::title_overlay::title_text_phase(
                 session.retail_submode(),
                 menu_open,
             );
@@ -603,13 +639,11 @@ impl LegaiaRuntime {
     /// Save chrome at retail's dim, rather than the screen being composed
     /// over black.
     ///
-    /// The page reaches retail's save-select through the pause menu's own
-    /// Load row, and used to drop its title session at that hand-off, so the
-    /// art went with it. The session is parked in `boot_title_backdrop`
-    /// instead and drawn through the same `ui::title_band_sprites` kernel the
-    /// live card uses, with `ui::TitleBandState::backdrop`'s dim. Retail
-    /// pivots to pure black once a slot is confirmed, which is why the
-    /// confirm phases draw nothing.
+    /// Drawn while the title's Continue screen is up, through the same
+    /// `ui::title_band_sprites` kernel the live card uses, with
+    /// `ui::TitleBandState::backdrop`'s dim. Retail pivots to pure black once
+    /// a slot is confirmed, which is why the confirm phases draw nothing
+    /// (`ContinueScreen::shows_title_backdrop`).
     pub fn boot_title_backdrop_draws_json(&self, surface_w: u32, surface_h: u32) -> String {
         if !self.boot_title_backdrop_visible() {
             return r#"{"active":false,"sprites":[]}"#.to_string();
@@ -665,15 +699,15 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
-    /// Whether the parked backdrop session owns the frame behind the menu.
-    ///
-    /// Alive only while the Load row's save-select is the open sub-screen,
-    /// and suppressed for the two phases retail composes against black
-    /// (`NowChecking` / `SlotPreview`) - the same test the native window's
-    /// `title_screen_sprite_draws` makes.
+    /// Whether the title art stands behind the Continue screen this frame:
+    /// the screen's own rule (`ContinueScreen::shows_title_backdrop`, off for
+    /// the phases retail composes against black), the native window's
+    /// `title_screen_sprite_draws` test too, and the title art resolved.
     pub(crate) fn boot_title_backdrop_visible(&self) -> bool {
-        self.boot_title_backdrop.is_some()
-            && self.title_atlas.is_some()
-            && self.play_menu_save_select_over_title()
+        self.title_atlas.is_some()
+            && self
+                .boot_continue
+                .as_ref()
+                .is_some_and(legaia_engine_session::ContinueScreen::shows_title_backdrop)
     }
 }

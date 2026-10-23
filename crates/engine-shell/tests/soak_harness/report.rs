@@ -102,6 +102,7 @@ pub(super) fn write_report(
     let battles: u32 = r.outcomes.iter().map(|o| o.stats.battles).sum();
     let wins: u32 = r.outcomes.iter().map(|o| o.stats.battles_won).sum();
     let wipes = r.outcomes.iter().filter(|o| o.stats.wiped).count();
+    let continues: u32 = r.outcomes.iter().map(|o| o.stats.wipe_continues).sum();
     let menus: u32 = r.outcomes.iter().map(|o| o.stats.menu_opens).sum();
     let fmvs: u32 = r.outcomes.iter().map(|o| o.stats.fmvs).sum();
     let enter_fail = r.outcomes.iter().filter(|o| !o.enter_ok).count();
@@ -135,7 +136,7 @@ pub(super) fn write_report(
     );
     let _ = writeln!(
         md,
-        "- battles entered {battles}, left to field {wins}, party wipes {wipes}, menu opens {menus}, FMVs skipped {fmvs}, entry failures {enter_fail}"
+        "- battles entered {battles}, left to field {wins}, party wipes {wipes} (continued from the card {continues}), menu opens {menus}, FMVs skipped {fmvs}, entry failures {enter_fail}"
     );
     let _ = writeln!(
         md,
@@ -151,6 +152,24 @@ pub(super) fn write_report(
     );
     let _ = writeln!(md, "- pause-menu sub-screens entered: {menu_rows:?}");
     let _ = writeln!(md, "- runs that reached each mode: {modes:?}");
+    let mut mode_frames: BTreeMap<&String, u64> = BTreeMap::new();
+    for (m, n) in r.outcomes.iter().flat_map(|o| o.stats.mode_frames.iter()) {
+        *mode_frames.entry(m).or_default() += n;
+    }
+    let mut surfaces: BTreeMap<&String, u32> = BTreeMap::new();
+    for name in r
+        .outcomes
+        .iter()
+        .flat_map(|o| o.stats.battle_surfaces.iter())
+    {
+        *surfaces.entry(name).or_default() += 1;
+    }
+    let _ = writeln!(md, "- runs that reached each battle surface: {surfaces:?}");
+    let revisits: u32 = r.outcomes.iter().map(|o| o.stats.minigame_revisits).sum();
+    let _ = writeln!(
+        md,
+        "- frames ticked in each mode: {mode_frames:?}; minigame re-entries {revisits}"
+    );
     let moved = r
         .outcomes
         .iter()

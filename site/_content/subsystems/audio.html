@@ -162,6 +162,7 @@
 <section class="doc-section" id="xa">
   <h2>CD-XA streaming <span class="tag tag-done">Confirmed</span></h2>
   <p>Cutscene audio and voice clips are streamed CD-XA: the drive plays them directly, interleaved with video sectors, without the CPU or the SPU voices in the loop. <code>crates/xa</code> decodes the 4-bit ADPCM bit-exactly against an external lossless reference; the demuxer splits raw 2352-byte sectors by <code>(file, channel)</code>, which a 2048-byte ISO view strips. Format on <a href="../formats/xa.html">xa</a>.</p>
+  <p>Two stages sit between the decoded PCM and the speaker. The CD decoder converts 37.8 kHz to 44.1 kHz with a fixed 29-tap "zig-zag" filter (seven outputs per six inputs), which passes the band at about 0.906 and suppresses the image a linear interpolator would leave. Then the SPU scales the stream by its CD-input volume: every voice cue plays at register <code>0x75EA</code> (libsnd level 117, about 0.921), set by the clip player's CD callback once the drive starts reading, while a movie plays at full scale. The port runs both stages.</p>
   <details class="disclosure">
     <summary>History: the &ldquo;non-standard interleave&rdquo; reading</summary>
     <div class="disclosure-body"><p>An earlier reading had most XA sound groups failing validation and inferred a bespoke interleave. That was Form-1 truncation damage in the old extractor, not the format. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p></div>

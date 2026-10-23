@@ -212,6 +212,35 @@ impl<'a> PsxSpu<'a> {
         Some(self.spu_control()? & 0x0080 != 0)
     }
 
+    /// `SPUCNT` bit 0, CD audio enable: the CD input (XA) reaches the mix.
+    pub fn cd_audio_enabled(&self) -> Option<bool> {
+        Some(self.spu_control()? & 0x0001 != 0)
+    }
+
+    /// `SPUCNT` bit 2, CD audio reverb: the CD input also feeds the reverb
+    /// send. libspu writes it from `SpuCommonAttr.cd.reverb`.
+    pub fn cd_reverb_enabled(&self) -> Option<bool> {
+        Some(self.spu_control()? & 0x0004 != 0)
+    }
+
+    /// CD input volume `(left, right)` - SPU `0x1F801DB0` / `0x1F801DB2`,
+    /// the register libspu's `SpuSetCommonAttr` writes from `cd.volume`.
+    /// Unlike the voice and master volumes this register has no sweep mode:
+    /// it is a plain signed Q15 gain, `0x7FFF` full scale. libsnd's
+    /// `SsSetSerialVol` (`FUN_800643C4`) writes `v * 0x102` for a `0..=127`
+    /// argument, so a register value names the libsnd level it came from.
+    /// Read from the named `CDVol` entry (two `i32`), which equals the `Regs`
+    /// shadow.
+    pub fn cd_volume(&self) -> Option<(i16, i16)> {
+        let b = self.entry_bytes("CDVol")?;
+        if b.len() < 8 {
+            return None;
+        }
+        let l = i32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+        let r = i32::from_le_bytes([b[4], b[5], b[6], b[7]]);
+        Some((l as i16, r as i16))
+    }
+
     /// Raw SPU register shadow file. Mednafen stores the 0x1F801C00..0x1F801E00
     /// register window as 256 `u16` (512 bytes) under the `Regs` sub-entry,
     /// indexed `Regs[(addr & 0x1FF) >> 1]`. Most named globals

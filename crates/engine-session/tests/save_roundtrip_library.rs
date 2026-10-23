@@ -28,6 +28,7 @@
 //! library cards. No Sony bytes are asserted - only equalities between two
 //! readings of the same save.
 
+use legaia_engine_save_state::WorldSaveState;
 use std::path::{Path, PathBuf};
 
 use legaia_engine_menu_runtime::card_write::write_save_into_card;

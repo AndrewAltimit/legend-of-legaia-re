@@ -1,0 +1,241 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; soak harness</div>
+  <h1>Soak harness: random play that hunts softlocks</h1>
+  <p class="lede">The route ladders walk a path someone chose and score how far it gets. The soak harness does the opposite: it drives the headless engine with seeded, game-shaped random pad input across every playable scene and every minigame, and reports whatever breaks - a confirm pressed during a door fade, the pause menu opened on the frame a battle starts, a direction held into a picker. Every finding is saved as a <code>j-replay-v1</code> pad script that reproduces it deterministically, reduced to the input that matters.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Test</dt><dd><code>crates/engine-shell/tests/soak_harness.rs</code> - disc-gated, skips and passes without <code>LEGAIA_DISC_BIN</code></dd>
+    <dt>One run</dt><dd><code>(scene, seed, frames)</code> - nothing else; the input is a pure function of the seed and the observed session</dd>
+    <dt>Actuator</dt><dd><code>World::set_pad</code>, once per frame</dd>
+    <dt>Scene set</dt><dd>every playable CDNAME scene, the <code>0x3F</code> destinations of those scenes, the five minigames, plus <code>+rt</code>, <code>+talk</code> and <code>+shop</code> twins - nothing hand-listed</dd>
+    <dt>Output</dt><dd><code>target/soak/&lt;tag&gt;/</code>: <code>report.md</code>, <code>findings.json</code>, one reduced replay per signature</dd>
+    <dt>Regressions</dt><dd><code>scripts/replays/soak/fixed/</code> - closed findings that must never fire again</dd>
+  </dl>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The soak loop. A seeded policy reads what holds the frame and chooses a pad mask; the pad goes into one engine tick plus the host duties; detectors check the tick for panic, softlock, script stall, battle loop and value errors. A firing detector produces a finding keyed by its signature detector, scene and location. The first occurrence is confirmed by replaying it, then reduced by zeroing pad chunks while it still fires, giving a j-replay-v1 file. When a fix lands, the replay stops reproducing and moves to the fixed directory, where it runs as a regression that fails if the signature fires again.">
+      <defs><marker id="soak-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="30" width="180" height="56" rx="4"/>
+      <text class="dg-label" x="110" y="53">Seeded policy</text><text class="dg-sub" x="110" y="71">reads what holds the frame</text>
+      <rect class="dg-node" x="250" y="30" width="170" height="56" rx="4"/>
+      <text class="dg-label" x="335" y="53">Pad mask</text><text class="dg-sub" x="335" y="71">World::set_pad</text>
+      <rect class="dg-node-accent" x="470" y="30" width="180" height="56" rx="4"/>
+      <text class="dg-label" x="560" y="53">Engine tick</text><text class="dg-sub" x="560" y="71">+ the hosts' duties</text>
+      <rect class="dg-node-warn" x="690" y="20" width="170" height="160" rx="4"/>
+      <text class="dg-label" x="775" y="44">Detectors</text>
+      <text class="dg-sub" x="775" y="70">panic / hang</text>
+      <text class="dg-sub" x="775" y="92">softlock</text>
+      <text class="dg-sub" x="775" y="114">script_stall</text>
+      <text class="dg-sub" x="775" y="136">battle_loop</text>
+      <text class="dg-sub" x="775" y="158">value, ...</text>
+      <path class="dg-edge" d="M200 58 L248 58" marker-end="url(#soak-arrow)"/>
+      <path class="dg-edge" d="M420 58 L468 58" marker-end="url(#soak-arrow)"/>
+      <path class="dg-edge" d="M650 58 L688 58" marker-end="url(#soak-arrow)"/>
+      <path class="dg-edge-dim" d="M560 86 L560 120 L110 120 L110 88" marker-end="url(#soak-arrow)"/>
+      <text class="dg-edge-label" x="335" y="138">next frame: the policy sees the new state</text>
+      <rect class="dg-node" x="620" y="230" width="240" height="56" rx="4"/>
+      <text class="dg-label" x="740" y="253">Finding signature</text><text class="dg-sub" x="740" y="271">detector | scene | location</text>
+      <path class="dg-edge" d="M775 180 L775 228" marker-end="url(#soak-arrow)"/>
+      <rect class="dg-node-accent" x="330" y="230" width="240" height="56" rx="4"/>
+      <text class="dg-label" x="450" y="253">Confirm, then reduce</text><text class="dg-sub" x="450" y="271">j-replay-v1, minimal pads</text>
+      <path class="dg-edge" d="M620 258 L572 258" marker-end="url(#soak-arrow)"/>
+      <rect class="dg-node-ok" x="20" y="230" width="260" height="56" rx="4"/>
+      <text class="dg-label" x="150" y="253">fixed/ regression</text><text class="dg-sub" x="150" y="271">fails if the signature fires again</text>
+      <path class="dg-edge" d="M330 258 L282 258" marker-end="url(#soak-arrow)"/>
+      <text class="dg-edge-label" x="306" y="306">after the fix</text>
+    </svg>
+    <figcaption>The policy and the detectors both read the session each frame, so <code>(scene, seed, frames)</code> regenerates a run exactly. A finding leaves the loop as a reduced replay; once a fix stops it reproducing, it becomes a regression.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="driver" data-doc="the-driver">
+  <h2>The driver</h2>
+  <p>Each run opens a fresh <code>BootSession</code>, seeds the retail New Game party, mounts an empty two-port card rack, seeds the world RNG from the run seed and enters the scene live with the random encounter loop and player-driven battles armed. Then it ticks.</p>
+  <p><strong><code>BootSession::tick</code> is not a whole host.</strong> Both play hosts do several things around it every frame, and a driver that skipped them would measure its own omissions. The harness does what the hosts do:</p>
+  <table>
+    <thead><tr><th>Host duty</th><th>What the harness does</th></tr></thead>
+    <tbody>
+      <tr><td>faithful-play arming</td><td>what both hosts set on a bare session: inline field-VM talk, the leading-edge wall footprint, solid NPCs, terrain follow, the NPC ambient walk</td></tr>
+      <tr><td>presentation queues</td><td>drains the field-event, battle-event, hit, SFX, shout, XA, CLUT-stage and minigame-cue queues after every tick</td></tr>
+      <tr><td>FMV playback</td><td>skips the movie and runs the shared post-play hand-off</td></tr>
+      <tr><td>name entry</td><td>routes the pad edge into name entry and skips the field tick while the overlay is up</td></tr>
+      <tr><td>shop / prize counter</td><td>opens a staged shop in a <code>MenuRuntime</code>, steps it on the frame's edges, and unparks the field script when it closes</td></tr>
+      <tr><td>save screen</td><td>a Save writes into an in-memory card; a Load resumes that block through <code>resume_save</code></td></tr>
+    </tbody>
+  </table>
+  <h3>Pseudo-scenes</h3>
+  <dl class="kv">
+    <dt><code>&lt;venue&gt;+mg&lt;id&gt;</code></dt><dd>A minigame: the venue is entered, then the same mode-24 door warp the cabinet's op <code>0x3E</code> makes is armed. The party is given casino coins first - the one non-pad precondition.</dd>
+    <dt><code>&lt;scene&gt;+rt</code></dt><dd>A save / load round trip on every free-roam frame a player could save on, at a fixed interval: save, resume that file as a Load does, save again - the two must agree field for field. The run starts with one save on the card, so the pause menu's Load row has a file to resume.</dd>
+    <dt><code>&lt;scene&gt;+shop</code></dt><dd>Every scene with a priced gold shop: the scene's shops are handed to the menu runtime as the merchant's op <code>0x49</code> would, since random walking almost never reaches a merchant and picks Buy.</dd>
+    <dt><code>&lt;scene&gt;+talk</code></dt><dd>Every field scene: the player is stood in front of the next action-button target - NPCs first, then interact-gated props that carry a record - facing it, and the button is pressed. Encounters are disarmed; the run is there for the records.</dd>
+    <dt><code>...@&lt;save&gt;</code></dt><dd>Any label can lift a library-card save (<code>town01+rt@PRO-14</code>) and play the scene with that save's party, bag and story flags, so late-game scenes are soaked with the party they are reached with.</dd>
+  </dl>
+  <p>A talk seat is taken only where play could put the player: on authored walk-visible floor in an open component, somewhere the walk controller's own probes let the player walk a tile away <em>and</em> come back. An actor is faced from 112 units where it can be (a face-on walk stops 104 short of a standing NPC), a prop from 128. The seat is a function of the frame and the world, so a replay takes the same seats.</p>
+  <aside class="callout callout-warn">
+    <p class="callout-title">An <code>@&lt;save&gt;</code> finding is first a question about the entry</p>
+    <p>A save run still enters its scene by name, not through a door the save's story opens. Three shapes of that are known - Rim Elm's overworld footprint walled in from <code>PRO-04</code> on, <code>korb3</code>'s default seat walled once the arrival cutscene is gated off, and <code>dream</code>'s vignettes, which pick their return scene by a flag the sleep leading there sets. They are listed in the harness's <code>SAVE_ENTRY_ARTIFACTS</code> and reported on a "known entry artifact" line rather than in the findings table.</p>
+  </aside>
+  <p>Round trips caught a real defect this way: a field save folded actor slots 1 and 2 back into the party records, but in a field those slots belong to the scene, so <code>opurud+rt</code> lost two party records on resume. <code>World::save_party</code> now folds actor mirrors back only in a battle. The library-wide sibling, <code>engine-session/tests/save_roundtrip_library.rs</code>, round-trips every save on the library cards through the card path both hosts take.</p>
+</section>
+
+<section class="doc-section" id="policies" data-doc="policies">
+  <h2>Policies</h2>
+  <p>What the policy presses depends on what holds the frame. Every UI surface reads <code>just_pressed</code>, so a press is a tap: the wanted mask on one frame, neutral on the next.</p>
+  <table>
+    <thead><tr><th>State</th><th>Policy</th></tr></thead>
+    <tbody>
+      <tr><td>field / overworld</td><td>segments of held walks (straight or diagonal, sometimes with Cross taps), Cross / Circle mashing, a Start tap, idle, and chaos (random masks of everything but Start)</td></tr>
+      <tr><td>dialogue, or a script holding the player</td><td>mostly Cross, some directions, some Circle</td></tr>
+      <tr><td>a script polling the held pad</td><td>the face button it polls, held - op <code>0x42</code> mode 1 reads the held word on one frame of its loop, which a tap hits only by luck</td></tr>
+      <tr><td>a picker</td><td>a random number of Down taps, then Cross, once the box's slide has come to rest; the aimed row steps on each time the same picker returns, so a quiz that asks again gets every answer</td></tr>
+      <tr><td>pause menu</td><td>random taps for a random budget, then Circle until it closes</td></tr>
+      <tr><td>battle</td><td>mostly the route ladder's fighter (Begin, Attack, Auto, confirm); in the sparring tutorial it follows the lesson, since any other pick rewinds it</td></tr>
+      <tr><td>minigame / other</td><td>random face buttons and held directions, rarely Start - the minigames' escape</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="detectors" data-doc="detectors">
+  <h2>Detectors</h2>
+  <table>
+    <thead><tr><th>Detector</th><th>Fires when</th></tr></thead>
+    <tbody>
+      <tr><td><code>panic</code> / <code>tick_error</code></td><td>a tick, scene entry or FMV hand-off panics or returns an error</td></tr>
+      <tr><td><code>hang</code></td><td>one tick runs past the wall-time watchdog; it writes <code>HANG.txt</code> and exits</td></tr>
+      <tr><td><code>softlock</code></td><td>the progress digest is unchanged for a whole window while the pad took at least three distinct masks</td></tr>
+      <tr><td><code>script_stall</code></td><td>the modal timeline or first helper sits on one PC for a window of field frames - unless its scripted walkers are still stepping, or it is a walk-on record re-polled every tick</td></tr>
+      <tr><td><code>battle_loop</code></td><td>three battles open from one parked timeline PC</td></tr>
+      <tr><td><code>menu_stuck</code> / <code>battle_endless</code></td><td>the pause menu survives the Circle back-out; one battle outlasts its threshold</td></tr>
+      <tr><td><code>control_starved</code></td><td>the field refuses the pad with no free-roam frame, the script reaches no new PC, and confirm presses are still arriving</td></tr>
+      <tr><td><code>confined</code></td><td>900 direction-held frames, all four directions among them, never carry the player 48 units</td></tr>
+      <tr><td><code>door_loop</code></td><td>six scene changes inside 600 frames with no direction pressed between them</td></tr>
+      <tr><td><code>dropped_to_title</code> / <code>unknown_scene</code></td><td>the mode becomes Title without a game over; a transition names no scene in the set</td></tr>
+      <tr><td><code>non_finite</code></td><td>a camera float or the caption alpha is NaN or infinite</td></tr>
+      <tr><td><code>value</code></td><td>HP / MP over max, live maxima that are not the stat aggregator's rebuild, a level outside <code>1..=99</code>, a bag stack over 99, a count on a free slot, a duplicated stack</td></tr>
+      <tr><td><code>unbounded_growth</code></td><td>an engine queue grows past a cap</td></tr>
+      <tr><td><code>effect_residue</code></td><td>a battle effect is still live on the first field frame after a battle exit or scene load - retail resets the whole pool there (<a href="../subsystems/effect-vm.html">effect VM</a>)</td></tr>
+      <tr><td><code>save_roundtrip</code></td><td>in a <code>+rt</code> run, the post-resume save disagrees; the location names the first differing field</td></tr>
+    </tbody>
+  </table>
+  <p>The <strong>progress digest</strong> hashes everything a player could see move: mode, scene, position and heading, every script PC, dialogue, menu, shop and name-entry state, scripted NPC glides, the battle session and every actor's HP, the minigame session, money and bag size. It is deliberately broad: a false "frozen" costs a triage, a false "moving" only a missed finding.</p>
+  <p>A softlock is <strong>located</strong> by what holds the frame - <code>pause-menu:&lt;row&gt;:&lt;phase&gt;</code>, <code>battle:state:&lt;action state&gt;</code>, <code>timeline@pc:op</code>, <code>mode:&lt;minigame&gt;</code>, <code>free-roam:immobile@tile(x,z)</code> and so on. A battle park on an absorbing HP-bar pair (the shape that holds the <a href="../subsystems/battle-action-exit-gates.html">bar-drain gate</a> for good) carries a <code>:hp-bar-absorbing</code> suffix.</p>
+  <ul>
+    <li><strong><code>control_starved</code> catches a script going round.</strong> The softlock and stall clocks restart whenever anything moves, so a conversation that reopens its own question passes both forever. Its clock restarts only on free roam, a scene change, or a PC this stretch has not seen.</li>
+    <li><strong><code>confined</code> is measured, not predicted.</strong> It uses the walk controller: the leading-edge probes let a player rest where a flood of the grid says walled, and an actor can shut a seat the grid calls open.</li>
+    <li><strong><code>door_loop</code> ignores a held direction.</strong> A two-way stair sets the player one tile from the door back, so a held direction walks straight back in.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="findings" data-doc="findings-signatures-and-reports">
+  <h2>Findings, signatures and reports</h2>
+  <p>A finding's <strong>signature</strong> is <code>detector|scene|location</code>. Findings are deduplicated by signature and ranked: panics, hangs and tick errors first; softlocks, loops, stuck menus, endless battles, title drops and unknown scenes next; immobility, stalls, starvation and confinement after; value, non-finite, growth and round-trip checks last.</p>
+  <ol class="steps">
+    <li><b>Confirm</b><span>the first occurrence is replayed from its pads, truncated to the finding frame, and must fire again</span></li>
+    <li><b>Reduce</b><span>chunks of the pad stream are zeroed while the signature still fires - a bounded delta-debugging pass</span></li>
+    <li><b>Write</b><span><code>replays/&lt;slug&gt;.replay.toml</code>, with scene, seed and signature in header comments TOML ignores</span></li>
+  </ol>
+  <p>A softlock is reduced under the neutral-pad control, so input that only fed the frozen window drops out; the replay records that in a <code># soak-min-distinct</code> header. A <code>control_starved</code> finding is reduced only ahead of its window, because a stream cut down to one looping option would starve a healthy conversation too. Every replay names the session configuration it ran under (<code># soak-arming = "host"</code> or <code>"bare"</code>).</p>
+</section>
+
+<section class="doc-section" id="running" data-doc="running">
+  <h2>Running</h2>
+  <p>The fixed-budget gate runs a few scenes plus the five minigames and asserts no panic:</p>
+  <div class="cli"><code>cargo test -p legaia-engine-shell --profile release-test --test integration soak_harness::soak_smoke</code></div>
+  <p>A long soak is report-only unless <code>LEGAIA_SOAK_STRICT=1</code>:</p>
+  <div class="cli"><code>LEGAIA_SOAK_SEEDS=30 LEGAIA_SOAK_FRAMES=18000 LEGAIA_SOAK_JOBS=8 LEGAIA_SOAK_TAG=big cargo test -p legaia-engine-shell --profile release-test --test integration soak_harness::soak_long -- --nocapture</code></div>
+  <table>
+    <thead><tr><th>Variable</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>LEGAIA_DISC_BIN</code></td><td>required; without it every disc-gated test skips</td></tr>
+      <tr><td><code>LEGAIA_SOAK_SEEDS</code> / <code>_SEED_BASE</code> / <code>_FRAMES</code></td><td>seed count, first seed, frames per run</td></tr>
+      <tr><td><code>LEGAIA_SOAK_SCENES</code> / <code>_SHARD</code></td><td>an explicit scene list; <code>i/n</code> to chunk a long soak across invocations</td></tr>
+      <tr><td><code>LEGAIA_SOAK_JOBS</code> / <code>_TAG</code> / <code>_OUT</code></td><td>worker threads; report directory name and base</td></tr>
+      <tr><td><code>LEGAIA_SOAK_SOFTLOCK_FRAMES</code> / <code>_STARVE_FRAMES</code> / <code>_BATTLE_FRAMES</code> / <code>_HANG_SECS</code></td><td>detector windows and the single-tick watchdog</td></tr>
+      <tr><td><code>LEGAIA_SOAK_MINIMIZE</code> / <code>_CONFIRM_MAX</code> / <code>_NO_CONFIRM</code></td><td>reduction budget per signature; how many to confirm; skip confirmation</td></tr>
+      <tr><td><code>LEGAIA_SOAK_SAVE</code> / <code>_CARD</code></td><td>play every run from a library-card save</td></tr>
+      <tr><td><code>LEGAIA_SOAK_NO_ENCOUNTERS</code></td><td>disarm the encounter roll - a battle that still starts is scripted</td></tr>
+      <tr><td><code>LEGAIA_SOAK_BARE</code></td><td>soak a bare <code>BootSession</code> without the hosts' arming</td></tr>
+      <tr><td><code>LEGAIA_SOAK_REDUCE</code> / <code>_REDUCE_SIG</code> / <code>_REDUCE_OUT</code></td><td>re-reduce a saved replay, optionally toward a different signature</td></tr>
+    </tbody>
+  </table>
+  <p>The headless engine ticks far faster than real time, so a soak is bounded by the minimiser, not by the runs. Overflow and debug-assertion coverage comes from building the same test with those checks on, into its own target directory.</p>
+</section>
+
+<section class="doc-section" id="triage" data-doc="reproducing-and-triaging-a-finding">
+  <h2>Reproducing and triaging a finding</h2>
+  <div class="cli"><code>LEGAIA_SOAK_REPLAY=target/soak/big/replays/&lt;slug&gt;.replay.toml LEGAIA_SOAK_TRACE=60 cargo test -p legaia-engine-shell --profile release-test --test integration soak_harness::soak_replay -- --nocapture</code></div>
+  <p><code>LEGAIA_SOAK_TRACE=N</code> prints a state line every <code>N</code> frames - mode, scene, holder, position, the bytes at every live script PC, scripted glides, and in battle the action state and every actor's HP / display / accumulator - plus each distinct script body once, as hex. <code>LEGAIA_SOAK_TRACE_NPC=&lt;slot&gt;</code> follows one placement; <code>LEGAIA_SOAK_TRACE_WALLS=1</code> draws the wall bits around the player. The trace goes to the terminal only.</p>
+  <aside class="callout callout-tip">
+    <p class="callout-title">First question: does the input matter at all?</p>
+    <p>For any <code>softlock</code> or <code>script_stall</code>, run the all-neutral control with <code>LEGAIA_SOAK_MIN_DISTINCT=1</code>.</p>
+  </aside>
+  <p>A fix is checked both ways: the replay must stop firing on the fixed engine, and must still fire on the engine without the fix under the harness as it now stands - a detector that changed since the replay was written can leave it passing for the wrong reason.</p>
+</section>
+
+<section class="doc-section" id="fixtures" data-doc="fixtures">
+  <h2>Fixtures</h2>
+  <dl class="kv">
+    <dt><code>scripts/replays/soak/</code></dt><dd>Reduced replays of <strong>open</strong> findings, pad input only. <code>soak_fixtures</code> parses each without a disc and, with one, reports whether it still reproduces. It never fails on one that stopped: that is the signal a fix landed, and the fixture moves to <code>fixed/</code>.</dd>
+    <dt><code>scripts/replays/soak/fixed/</code></dt><dd>Closed findings as <strong>regressions</strong>. <code>soak_fixed_fixtures</code> fails if a recorded signature fires again; a <code># soak-expect-max-battles</code> header also bounds the battles a replay may open. Only the recorded signature is asserted.</dd>
+  </dl>
+  <details class="disclosure">
+    <summary>What the fixed replays pinned</summary>
+    <div class="disclosure-body">
+      <table class="compact">
+        <thead><tr><th>Fixed replay</th><th>Finding</th><th>What closed it</th></tr></thead>
+        <tbody>
+          <tr><td><code>town0c_scripted_battle_loop</code></td><td>the Rim Elm bee fight re-fired on every return</td><td>the touch-resumed beat ends at its <code>0x21</code>; the system script sits out a held player and the battle intro</td></tr>
+          <tr><td><code>town0d_dual_player_walk</code></td><td>two first-talk records walked the player at once</td><td>a playing timeline steps only the placements it addresses</td></tr>
+          <tr><td><code>rugi_</code> / <code>urudre3_npc_walk_from_hide_box</code></td><td>a placed NPC walked in from the off-map hide box</td><td>a seat poke that moves an actor is published at once</td></tr>
+          <tr><td><code>bylon_party_actor_from_hide_box</code></td><td>a party actor walked in from the hide box</td><td><code>4C 37</code> copies the player onto the actor</td></tr>
+          <tr><td><code>urudre1_player_seat_dropped</code></td><td>a scripted player walk ran 8000 units</td><td>a record's player seat takes the player arm</td></tr>
+          <tr><td><code>vell_attack_short_step_park</code></td><td>an attack approach parked a short step from its target</td><td><code>+0x3C</code> is the per-frame body pair</td></tr>
+          <tr><td><code>taiku2_hp_bar_absorbing_park</code></td><td>the <code>0x51</code> bar-drain gate parked on an absorbing HP-bar pair</td><td>the restaged action clip replays</td></tr>
+          <tr><td><code>station3_</code> / <code>conc3_door_of_light_head_define</code></td><td>a Door of Light with an all-zero return triple warped to <code>init_data</code></td><td>a travel word inside the TOC header rows is a miss</td></tr>
+          <tr><td><code>ropeway_player_parked_on_gondola</code></td><td>Octam's arrival cutscene left the player seated on the gondola</td><td>only the scene-init sweep's placements collide (<code>FUN_801CF754</code> walks the <code>+0x0C</code> list)</td></tr>
+          <tr><td><code>edlast_ending_soft_reset</code></td><td>after the credits the party stood with no way out</td><td><code>49 0C</code> runs the return-to-title soft reset</td></tr>
+          <tr><td><code>koin2_fatal_decision_stone_party</code></td><td>a fight sat in Fatal Decision's capture band for good</td><td>the <code>0x5A</code> wipe scan reads the packed status word, so a petrified party wipes</td></tr>
+          <tr><td><code>map01_overworld_beat_walk_never_steps</code></td><td>an overworld hand-off beat parked on its walk wait</td><td>the world-map arm steps cross-context walk legs</td></tr>
+          <tr><td><code>opurud_field_save_zeroes_party_records</code></td><td>a round trip lost party records 1 and 2</td><td>actor mirrors fold back only in a battle</td></tr>
+          <tr><td><code>balden_fishing_exchange_pad_dead</code></td><td>the pond's prize list answered no pad input</td><td>the list steps off the pad edge</td></tr>
+          <tr><td><code>bubu2_bag_stack_past_99</code></td><td>a battle grant raised a stack of 99 to 100</td><td>every bag grant goes through the retail add, capped at 99</td></tr>
+          <tr><td><code>jouina_final_heal_readout_overshoot</code></td><td>a Final-Healed member parked the bar-drain gate</td><td>the Final Heal sweep re-syncs the readout first</td></tr>
+          <tr><td><code>retockin_monster_curse_folded_as_capture</code></td><td>a monster's Curse took a party member off the field</td><td>a capture roll downs only a monster seat</td></tr>
+          <tr><td><code>town0d_tetsu_talk_never_ends</code> / <code>izumi_spring_question_never_ends</code></td><td>a conversation or prop restarted on every way out</td><td>a touch-resumed context ends at the parking byte after a dismissed box</td></tr>
+          <tr><td><code>map01_life_water_live_max_stale</code> / <code>jou_level_up_bakes_accessory_into_base</code></td><td>live maxima drifted from the aggregator's rebuild</td><td>stat-ups and level-ups grow the base window; the live maxima are rebuilt from it</td></tr>
+          <tr><td><code>jouind_ledge_hop_walled_landing</code></td><td>a diagonal step-up hop boxed the player in a raised pocket</td><td>retail tests no landing; the port's landing guard (an enhancement, off under <code>--retail</code>) refuses it</td></tr>
+          <tr><td><code>edlast_credits_end_takes_a_held_confirm</code></td><td>the credits parked on their last loop</td><td>not an engine defect: the loop polls a held button; the policy now holds it</td></tr>
+          <tr><td><code>jouina_terra_summon_hits_for_one</code></td><td>Noa's Terra summon hit for 1</td><td>every player summon body is its own <a href="../formats/summon-readef.html">summon.dat</a> record</td></tr>
+        </tbody>
+      </table>
+      <p>The full list, with every fixed replay, is in the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/soak-harness.md#fixtures" target="_blank" rel="noopener">source doc</a>.</p>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="limits" data-doc="what-it-cannot-detect">
+  <h2>What it cannot detect</h2>
+  <ul>
+    <li><strong>Visual or audio wrongness.</strong> No frame is rendered and no sample mixed; garbage on screen reads as healthy while the state advances.</li>
+    <li><strong>Retail divergence.</strong> Every detector is an internal-consistency check. Wrong damage, a wrong landing tile, a script branch retail does not take - all look like progress. The parity oracles own that question.</li>
+    <li><strong>Anything past the first fatal finding</strong> in a run, or past a game over.</li>
+    <li><strong>Deep progression.</strong> A plain run starts from a New Game party, which loses most late-game fights; an <code>@&lt;save&gt;</code> run reaches only the states the library card holds.</li>
+    <li><strong>Host drift.</strong> A duty a real host performs that the harness does not mirror is invisible here, and one the harness performs that a host has dropped is masked.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="-">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="determinism-replay.html">Determinism + replay</a>
+    <a href="../subsystems/engine.html">Engine reimplementation</a>
+    <a href="../subsystems/script-vm.html">Field / event VM</a>
+    <a href="../subsystems/battle-action-exit-gates.html">Battle exit gates</a>
+    <a href="full-game-ladder.html">Full-game ladder</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/soak-harness.md" target="_blank" rel="noopener">Full doc</a>
+  </div>
+</section>

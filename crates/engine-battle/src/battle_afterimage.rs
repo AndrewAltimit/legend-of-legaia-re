@@ -80,6 +80,22 @@ pub const GHOST_COLOR_DECAY: u8 = 0x10;
 /// (`lui v0,0x8100` at `0x800494AC`).
 pub const GHOST_ABR: u8 = 1;
 
+/// The bits the walk ORs over the base colour word for a ghost's draw:
+/// `0x81000000` (ABE, ABR 1) at `0x800494AC` and `0x04000000` (prim bank 2)
+/// at `0x800494B4`, stored to the node's `+0x74` at `0x800494C4`.
+pub const GHOST_WORD_MODE: u32 = 0x8500_0000;
+
+/// The ghost's draw word: the per-character base word (SCUS `0x80076908`,
+/// top byte clear in every row) stepped down per drawn ghost, with
+/// [`GHOST_WORD_MODE`] ORed over it. The draw wrapper `FUN_80043390` reads
+/// its winding rule from this word as from a live body's
+/// (`0x80043520..0x80043540`): with bit `0x08000000` clear the prim leaves
+/// skip a back-facing primitive (`bltz` on the masked `NCLIP` at
+/// `0x8004586C`), so a ghost is single-sided.
+pub fn ghost_draw_word(color: [u8; 3]) -> u32 {
+    u32::from(color[0]) | (u32::from(color[1]) << 8) | (u32::from(color[2]) << 16) | GHOST_WORD_MODE
+}
+
 /// A ghost colour as the hosts' per-draw cue far colour (display `0..1`).
 /// The walk stores weight `0x1000` (`0x800493D8`), so the DPCS output - the
 /// packet's modulation colour - is this colour whatever the prim baked, and
@@ -266,6 +282,18 @@ pub const GHOST_EYE_PUSH_MARGIN: f32 = 400.0;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The walk's draw word is the base RGB with `0x85` over it: ABE, ABR 1,
+    /// prim bank 2 - and never the double-sided bit `0x08000000`, whatever
+    /// the colour (`0x800494AC..0x800494C4`).
+    #[test]
+    fn the_ghost_draw_word_is_semi_bank_2_and_single_sided() {
+        assert_eq!(ghost_draw_word([0x60, 0x30, 0x30]), 0x8530_3060);
+        for c in [GHOST_COLOR_PARTY[0], GHOST_COLOR_MONSTER, [0xFF; 3]] {
+            assert_eq!(ghost_draw_word(c) & 0x0800_0000, 0);
+            assert_eq!(ghost_draw_word(c) >> 24, 0x85);
+        }
+    }
 
     /// A body sunk into the floor (`+0x36 > 0`, retail Y-down) is placed
     /// below the battle camera's floor plane, a raised one above; the

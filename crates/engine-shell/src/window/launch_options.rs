@@ -106,6 +106,10 @@ pub struct ScreenshotConfig {
     /// sweep is requested.
     pub path: Option<std::path::PathBuf>,
     pub capture_tick: u64,
+    /// `--screenshot-chrome`: keep the window's timed chrome (the start-up
+    /// key hint, a toggle's notice line) in the capture. Off by default, so
+    /// a parity capture shows only what the game draws.
+    pub chrome: bool,
     /// Periodic capture sweep (`--screenshot-every` + `--screenshot-dir`).
     pub sweep: Option<ScreenshotSweep>,
     /// tick -> pad button mask pressed for exactly that tick.
@@ -197,6 +201,11 @@ pub struct ScreenshotConfig {
     /// (`World::seat_battle_hud_glide`, the combo cluster's age). Set by the
     /// retail-compare image channel.
     pub seat_hud_glides: Vec<legaia_engine_capture::hud_glide::HudGlideSeat>,
+    /// `LEGAIA_SEAT_SPIRIT_GAUGE=<bar width>,<plate value>`: a Spirit turn's
+    /// AP bar width and AP plate value as the retail capture's displayed
+    /// frame shows them; the captured frame seats the engine's on them.
+    /// Set by the retail-compare image channel.
+    pub seat_spirit_gauge: Option<(i16, i16)>,
     /// `LEGAIA_SCRIPT_GATE=<flat>:<head hex>:<pc>:<wait>`: the field twin of
     /// [`Self::phase_gate`] - capture the first frame the engine's context
     /// for a retail capture's running record holds its PC
@@ -324,10 +333,21 @@ pub struct ScreenshotConfig {
     /// (`World::install_action_fx_part_snapshot`); taken once.
     pub seat_action_fx_parts:
         std::cell::Cell<Option<Vec<legaia_engine_effects::summon::CastPartSeed>>>,
+    /// `LEGAIA_SEAT_EFFECT_CHILDREN`: a captured state's live effect-pool
+    /// children as the displayed frame held them, stood in the engine's
+    /// pool on the capture frame (`World::install_effect_child_snapshot`);
+    /// taken once.
+    pub seat_effect_children:
+        std::cell::Cell<Option<Vec<legaia_engine_core::world::EffectChildSeed>>>,
     /// `LEGAIA_SEAT_BATTLE_CLIPS=slot:clip:cursor,...`: each body's playing
     /// clip cursor as the capture held it, landed on the capture frame
     /// ([`legaia_engine_capture::clip_cursors`]).
     pub seat_battle_clips: Vec<legaia_engine_capture::clip_cursors::ClipCursorSeed>,
+    /// `LEGAIA_SEAT_GHOST_RING=slot:clip:depth:drawn:cursor:x:z,...`: each after-image
+    /// ghost as the capture's history ring holds it, seated on the capture
+    /// frame ([`legaia_engine_capture::ghost_ring`]); taken once.
+    pub seat_ghost_ring:
+        std::cell::Cell<Option<Vec<legaia_engine_capture::ghost_ring::GhostRingSeed>>>,
 }
 
 /// Debug state `play-window` seeds before the first world tick, so a capture
@@ -481,6 +501,12 @@ pub struct ScreenshotSweep {
 }
 
 impl ScreenshotConfig {
+    /// `--screenshot-chrome` ([`Self::chrome`]).
+    pub fn with_chrome(mut self, chrome: bool) -> Self {
+        self.chrome = chrome;
+        self
+    }
+
     /// Parse the CLI flags into a config. `None` when none of `--screenshot`,
     /// `--screenshot-every` and `--key-script` is present. Errors on an
     /// unparseable `--pad-script` / `--key-script` entry or a half-specified
@@ -567,6 +593,7 @@ impl ScreenshotConfig {
         Ok(Some(Self {
             path,
             capture_tick,
+            chrome: false,
             sweep,
             pad_script: script,
             key_script: keys,
@@ -604,6 +631,12 @@ impl ScreenshotConfig {
                 .ok()
                 .and_then(|v| legaia_engine_capture::camera_align::cam_pose_from_env(&v)),
             seat_hud_glides_landed: std::env::var_os("LEGAIA_SEAT_HUD_GLIDES_LANDED").is_some(),
+            seat_spirit_gauge: std::env::var("LEGAIA_SEAT_SPIRIT_GAUGE")
+                .ok()
+                .and_then(|v| {
+                    let (w, p) = v.split_once(',')?;
+                    Some((w.trim().parse().ok()?, p.trim().parse().ok()?))
+                }),
             seat_hud_glides: std::env::var("LEGAIA_SEAT_HUD_GLIDES")
                 .map(|v| legaia_engine_capture::hud_glide::HudGlideSeat::list_from_env(&v))
                 .unwrap_or_default(),
@@ -692,6 +725,16 @@ impl ScreenshotConfig {
                 std::env::var("LEGAIA_SEAT_ACTION_FX_PARTS")
                     .ok()
                     .map(|v| legaia_engine_capture::cast_parts::cast_parts_from_env(&v)),
+            ),
+            seat_effect_children: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_EFFECT_CHILDREN")
+                    .ok()
+                    .map(|v| legaia_engine_capture::effect_children::effect_children_from_env(&v)),
+            ),
+            seat_ghost_ring: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_GHOST_RING")
+                    .ok()
+                    .map(|v| legaia_engine_capture::ghost_ring::ghost_ring_from_env(&v)),
             ),
         }))
     }
@@ -1017,6 +1060,25 @@ mod key_script_tests {
                 .is_none(),
             "no capture and no script is still no config"
         );
+    }
+
+    /// A capture leaves the window's timed chrome out unless
+    /// `--screenshot-chrome` asks for it.
+    #[test]
+    fn captures_leave_timed_chrome_out_by_default() {
+        let cfg = ScreenshotConfig::from_args(
+            Some(std::path::PathBuf::from("x.png")),
+            60,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("parses")
+        .expect("a capture builds a config");
+        assert!(!cfg.chrome);
+        assert!(cfg.with_chrome(true).chrome);
     }
 
     /// An unparseable entry is an error, not a silently empty script.

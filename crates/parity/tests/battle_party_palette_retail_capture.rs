@@ -19,9 +19,8 @@
 //! `saves/library`); skips and passes without either.
 
 use legaia_actor_formats::battle_char_assembly as bca;
-use legaia_engine_core::battle_party_form::{
-    PartyFormSources, VramWriteLog, build_party_battle_form,
-};
+use legaia_engine_battle::battle_party_form::{PartyFormSources, VramWriteLog};
+use legaia_engine_core::battle_party_form::{ProtFormDisc, build_party_battle_form};
 use legaia_engine_core::world::World;
 use legaia_engine_scene::scene::ProtIndex;
 use legaia_mednafen::SaveState;
@@ -101,7 +100,8 @@ fn party_clut_rows_are_the_equipped_sections_palettes() {
             })
             .collect();
         let mut log = VramWriteLog::default();
-        let sources = PartyFormSources::load(&index).expect("PROT 1204 fallback pack");
+        let sources =
+            PartyFormSources::load(&ProtFormDisc(&index)).expect("PROT 1204 fallback pack");
         for member in 0..3usize {
             let form = build_party_battle_form(&index, &world, &sources, &mut log, member)
                 .expect("battle form");

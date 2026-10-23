@@ -10,8 +10,9 @@
 //!
 //! Skips silently when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_engine_core::new_game::NewGameDefaults;
 use legaia_engine_core::world::NEW_GAME_STARTING_GOLD;
+use legaia_engine_menus::new_game::NewGameDefaults;
+use legaia_engine_save_state::WorldSaveState;
 use legaia_engine_scene::vfs::Vfs;
 use legaia_engine_scene_host::scene_host::SceneHost;
 

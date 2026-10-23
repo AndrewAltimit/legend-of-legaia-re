@@ -146,7 +146,7 @@ impl PlayWindowApp {
 
     /// The dance entry's venue, once a frame: stage or restore the entry's
     /// globals through the shared kernel
-    /// ([`legaia_engine_core::dance_venue::sync_dance_venue`] - block base,
+    /// ([`legaia_engine_minigame_scenes::dance_venue::sync_dance_venue`] - block base,
     /// the session camera's view window, the venue camera the frame resolves
     /// through), then keep the GPU copy of the venue in step with the staging:
     /// built from [`legaia_engine_minigame_scenes::dance_venue::DanceVenue::build`] on a

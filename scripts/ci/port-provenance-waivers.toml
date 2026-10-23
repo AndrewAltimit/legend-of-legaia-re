@@ -876,18 +876,6 @@ Identity is not in doubt: three doc carriers and the row rewritten this pass all
 read it as the type-0x02-terminated chunk walker.
 """
 
-[[waiver]]
-key = "module-orphan:crates/engine-audio/src/vab_bind.rs:80068d94"
-reason = """
-FUN_80068D94 is a libsnd VAB-open worker: a 0x438-byte stack frame, four
-arguments moved into s3/s0/s4/s5 and an immediate call to the libsnd helper
-0x8006BC9C. Its module siblings (80066d8c, 80066e50, 80067550) are the other
-libsnd entries, and what they share with it is the bank-pointer pair
-0x801CE334 / 0x801CE340 - which THIS routine writes through a walked pointer
-rather than forming, so the shared-address test cannot see the link. The tag's
-claim (it writes the running used-program count into each ProgAtr's +8, read
-back by FUN_80068B98) is a claim about that walk, not about a global.
-"""
 
 [[waiver]]
 key = "module-orphan:crates/engine-field/src/actor_handler.rs:8003aeb0"
@@ -1240,18 +1228,6 @@ range / root-motion siblings form - they read the pair it writes.
 """
 
 
-[[waiver]]
-key = "module-orphan:crates/engine-audio/src/sfx.rs:8004fcc8"
-reason = """
-Read against FUN_8004FCC8's disassembly and the tag holds: `sltiu s0,0x100`
-splits the voice arm (`addiu a1,s0,-0x100`, `srl a3,a1,3`, remap 1/3/5 to
-0x1A/0x1B/0x1C at 0x8004FD10..0x8004FD30) from the ring arm, which takes
-`id - 1` under 0x40 and compares `id + 0x19C` against `_DAT_8007B724`
-(`lw v1,-0x48DC(v1)` at 0x8004FDA4) - the decode `classify_cue` ports. The
-module's other tags (the cue drainer 80016B6C, the SPU 80065034) are its
-scheduler and sink, not data siblings; the routine's distinctive data is
-shared with FUN_8004FE5C, tagged one crate over in engine-core's sfx_cue.rs.
-"""
 
 [[waiver]]
 key = "module-orphan:crates/engine-battle/src/battle_tutorial.rs:801da51c"
@@ -1303,4 +1279,72 @@ arm 1 stores `+0xB4 - 0x20` to 0x801F8388 / 0x801F838A before spawning
 Band-structural: each slot-B module is its own image with private tables at
 its own VAs and no callee a sibling image can share beyond the BIOS-level
 spawner and rand, which the corpus counts as non-distinctive.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-battle-vm/src/battle_formulas.rs:800402f4"
+reason = """
+Read against FUN_800402F4's disassembly and the tag holds for one arm:
+selector 9 of the jump table at 0x80014FA0 is 0x80041C70, which calls `rand`
+(`jal 0x80056798` at 0x80041C90), takes `div` / `mfhi` of the draw by the
+summed stats at 0x80041CD4 and compares the target's `+0x168` against the
+remainder (`slt` at 0x80041CE0) - the roll `accuracy_roll` (basic.rs) ports.
+The module's siblings are the separate damage routines, so no data address is
+shared; the corroboration it used to get came from the PsyQ `rand` thunk,
+which this module now cites as a REF rather than claiming as a port.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-battle-vm/src/battle_formulas.rs:8004e568"
+reason = """
+The tag names the arithmetic of FUN_8004E568's spoils block, which
+battle_formulas/victory.rs reproduces function by function with the dump line
+of each step (gold accumulate `enemy_gold >> 1`, the Golden Book +25% and the
+halving, the 3/4 EXP cut and ceiling split, the drop roll at
+0x8004F3D8..0x8004F5A0); engine-core victory.rs ports the presentation half.
+Its distinctive data (the 0x800768xx actor tables, the purse 0x8008459C) is
+shared with no sibling here because the siblings are the damage routines; the
+corroboration it used to get came from the PsyQ `rand` thunk, now a REF.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-battle-vm/src/battle_action/pool_ops.rs:801db124"
+reason = """
+Read against the battle overlay's own bytes (PROT 0898, base 0x801CE818) and
+the tag holds: the target byte `+0x1DD` bounded `sltiu 8` (0x801DB164), the
+HP test `lhu +0x14C` (0x801DB17C), the spell-tier gate through the spell
+table 0x800754C8 (`sltiu 0xa` at 0x801DB1C8), the item ids 0xFE / 0x98, and
+the two `rand` rerolls (`jal 0x80056798` at 0x801DB210 / 0x801DB290) are
+`redirect_dead_target`. Its one distinctive datum is the static spell table,
+which the pool helpers beside it never read.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-battle-vm/src/battle_action/summon.rs:801f12d0"
+reason = """
+Read against PROT 0898's bytes: the stage-4 test (`lb +0x277` sign, `== 0x36`,
+else `sb zero,0x276` at 0x801F1644..0x801F1660) and the stage-6 `sltiu 0xcb`
+(0x801F16A0) are `sideband_slot_count`. The tag is scoped to that slice; the
+routine's `LoadImage` uploads are summon_readef's, so its data (the side-band
+addresses) is shared with nothing in the action-SM module.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-cast/src/cast_module_ticks.rs:801f76c4"
+reason = """
+Read against PROT 0946's bytes: three seats `0x801F7928` / `0x801F79C0` /
+`0x801F7A08` (`jal 0x80021B04` at 0x801F7710 / 0x801F7728 / 0x801F7740), the
+ray `0x801F7970` with its `rand` stores into `+0x54`, `+0x84`, `+0xBA`, `+0xB6`
+in order (0x801F7764..0x801F780C), and arm 1's wave `0x801F7BF8`. A slot-B
+stager's records are image-local, so no sibling in this module (other images'
+routines) can share them.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-cast/src/cast_module_ticks.rs:801f7f34"
+reason = """
+Read against PROT 0915's bytes: arm 0 seats `0x801F8004` (`addiu a2,a2,-0x7ffc`
+at 0x801F7F6C), arm 1 `0x801F80A4` (0x801F7F7C), each `FUN_80021B04` on the
+caller with scale `lhu +0x72`. Image-local records, as for every slot-B
+stager in this module.
 """

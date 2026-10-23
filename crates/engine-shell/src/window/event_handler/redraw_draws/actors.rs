@@ -244,7 +244,10 @@ impl<'m> DrawCtx<'_, 'm> {
             let flip = PlayWindowApp::battle_stage_model();
             draws.push(SceneDraw {
                 mesh: gmesh,
-                mvp: cam * flip,
+                // Retail links every grid quad into one far ordering-table
+                // entry (`0x3FEC >> otshift`, `0x801D02D4..0x801D02E0`): the
+                // floor never hides what is drawn after it.
+                mvp: legaia_engine_render::pin_to_far_bucket(cam * flip),
                 cue: app
                     .battle_ground_cue_far
                     .map(|far| legaia_engine_render::DrawCue {

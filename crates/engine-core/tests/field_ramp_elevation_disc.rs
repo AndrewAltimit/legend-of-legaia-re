@@ -7,7 +7,7 @@
 //! nibble is `0` - sea level. Their real elevation lives entirely in the
 //! `.MAP` trigger block's kind-2 sub-table, which `FUN_80019278` consults for
 //! any tile whose object-grid cell word carries bit `0x800`
-//! (`legaia_engine_core::world::CELL_ELEVATION_OVERRIDE`).
+//! (`legaia_engine_field::field_elevation::CELL_ELEVATION_OVERRIDE`).
 //!
 //! The regression this guards: a sampler that only bilinear-interpolates the
 //! corner nibbles reads the whole ramp as sea level, so a walking actor drops
@@ -22,7 +22,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_engine_core::world::{CELL_ELEVATION_OVERRIDE, World};
+use legaia_engine_core::world::World;
+use legaia_engine_field::field_elevation::CELL_ELEVATION_OVERRIDE;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 /// `.MAP` object-grid offset (one `u16` cell per tile).

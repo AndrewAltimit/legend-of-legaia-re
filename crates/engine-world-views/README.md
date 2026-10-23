@@ -54,9 +54,9 @@ Each module is named for the kernel module whose types it fills in.
 - **`tile_board`** - the tile-board minigame's per-cell actor draws
   (`engine-minigames::tile_board`).
 - **`timed_fight`** - the turn-limited fight's strip gate and numbers
-  (`engine-menus::timed_fight`).
+  (`engine-battle-menus::timed_fight`).
 - **`muscle_dome`** - the Muscle Dome magic loadout off a roster slot
-  (`engine-menus::muscle_dome_session`).
+  (`engine-battle-menus::muscle_dome_session`).
 
 ## Place in the layering
 

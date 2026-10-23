@@ -17,6 +17,15 @@ pub enum WorldMapEntityConfig {
     /// `World::engage_world_map_entity`) arms the same door warp the field
     /// VM's op-`0x3E` arm does ([`legaia_engine_mode::minigame_entry::MinigameSubId`]).
     ///
+    /// Engaging is the fallback, not the retail trigger. Retail reaches the
+    /// door through the action-button probe, which runs the placement's own
+    /// interaction record (the fishing signboard's frozen-lake / rod / lure
+    /// checks, "Do you want to fish?", a 48-frame white fade) and lets that
+    /// record's `0x3E` do the warp. The world map takes that path whenever
+    /// the placement installed a record (keyed by [`Self::MinigameDoor::slot`])
+    /// and the field-VM dialogue runner is on; only a door without one, or
+    /// the simplified-dialogue mode with no runner, still warps on walk-over.
+    ///
     /// `sub_id` is the op's `op0 - 100`, which selects a *code overlay*, not a
     /// scene - so this variant never reaches a
     /// [`legaia_engine_scene::scene::MapIdResolver`]. It is sourced from the placement
@@ -28,7 +37,13 @@ pub enum WorldMapEntityConfig {
     /// [`Self::OverworldPortal`], sourced from the `0x3F` named-scene-change
     /// bridge below, and they are the only producer of
     /// [`crate::field_events::FieldEvent::WorldMapTransition`].
-    MinigameDoor { sub_id: u8 },
+    MinigameDoor {
+        /// The op's `op0 - 100`: the mode-24 overlay selector.
+        sub_id: u8,
+        /// The placement's partition-1 index - the `slot` its interaction
+        /// record is installed under (`World::npcs.dialog_prologue`).
+        slot: u8,
+    },
     /// An overworld town / dungeon entrance sourced from the disc's `.MAP`
     /// walk-on tile-trigger → MAN partition-2 record → `0x3F`
     /// named-scene-change bridge (pinned on the `map01` hub: each gate-1

@@ -10,7 +10,7 @@
 //! underneath (its actors, VM and field state are not torn down), so the
 //! save / restore pair becomes two halves here:
 //!
-//! * `legaia_engine_core::dance_venue::sync_dance_venue` - the **globals**: on the first frame the world is
+//! * [`sync_dance_venue`] - the **globals**: on the first frame the world is
 //!   in [`SceneMode::Dance`](legaia_engine_mode::mode::SceneMode::Dance) it writes the record's block base into the
 //!   `_DAT_80084540` mirror, the view window into the camera's visible-tile
 //!   window, and publishes the record's camera pose; on the first frame it is
@@ -24,6 +24,9 @@
 //!   the same call.
 //!
 //! See `docs/subsystems/minigame-dance.md` § Entering and leaving the hall.
+
+mod sync;
+pub use sync::sync_dance_venue;
 
 use legaia_actor_formats::player_anm::PlayerAnmBundle;
 use legaia_engine_camera::psx_camera::FieldCameraView;
@@ -484,7 +487,7 @@ pub struct DanceVenueStage {
     pub generation: u32,
 }
 
-/// Which edge `legaia_engine_core::dance_venue::sync_dance_venue` took this
+/// Which edge [`sync_dance_venue`] took this
 /// frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DanceVenueEdge {

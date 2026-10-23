@@ -99,6 +99,7 @@ Capture, diff and the retail side are documented in
 | [`bgm_tail`](src/bgm_tail.rs) | `BgmTail` - the reward (slot 11) and field side-band (slot 3) banks parked in the BGM region's free tail, and the residency rule that drops a borrower a new track overruns. |
 | [`duck`](src/duck.rs) | The battle BGM duck (`_DAT_8007B910`): target, per-vsync step and `SsSeqSetVol` re-apply, one kernel for both play hosts. |
 | [`xa_clip_bank`](src/xa_clip_bank.rs) | `XaClipBank` - pre-decoded CD-XA clips standing in for the one-shot clip starter `FUN_8003D53C`, with the retail stop point. |
+| [`xa_resample`](src/xa_resample.rs) | The CD decoder's 37.8 / 18.9 kHz to 44.1 kHz zig-zag converter (seven 29-tap rows, seven outputs per six inputs), which every XA stream at a CD-XA rate plays through. |
 | [`xa_transport`](src/xa_transport.rs) | The shape of the one-shot XA clip's CD-callback ring (`FUN_8003D764`), kept as a reference model; the engine has no drive. |
 | [`test_sink`](src/test_sink.rs) | `TestAudioSink` - the device-free stand-in for `AudioOut`, so a headless test can drive the BGM/SFX plumbing. See below. |
 

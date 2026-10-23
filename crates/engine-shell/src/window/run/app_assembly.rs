@@ -8,9 +8,9 @@ pub(super) struct WindowParts<'a> {
     pub(super) session: NativeSession,
     pub(super) font: Font,
     pub(super) scene_res: SceneResources,
-    pub(super) publisher_logos_atlas_data: Option<legaia_engine_menus::publisher_logos::LogosAtlas>,
+    pub(super) publisher_logos_atlas_data: Option<legaia_engine_title::publisher_logos::LogosAtlas>,
     pub(super) title_screen_atlas_data:
-        Option<legaia_engine_menus::title_screen_atlas::TitleScreenAtlas>,
+        Option<legaia_engine_title::title_screen_atlas::TitleScreenAtlas>,
     pub(super) menu_glyph_atlas_data: Option<legaia_engine_menus::menu_glyph_atlas::MenuGlyphAtlas>,
     pub(super) save_menu_atlas_data: Option<legaia_engine_menus::save_menu_atlas::SaveMenuAtlas>,
     pub(super) menu_window_table: Option<legaia_game_tables::menu_windows::MenuWindowTable>,
@@ -203,8 +203,8 @@ impl PlayWindowApp {
             disc_path: disc.map(|d| d.to_path_buf()),
             cutscene: None,
             movie_score: legaia_engine_system::movie::movie_audio::MovieScore::new(),
-            cutscene_glide: legaia_engine_core::frame_step::CutsceneGlide::new(),
-            sim_stepper: legaia_engine_core::frame_step::SimStepper::new(),
+            cutscene_glide: legaia_engine_field::frame_step::CutsceneGlide::new(),
+            sim_stepper: legaia_engine_field::frame_step::SimStepper::new(),
             active_dialog: None,
             seru_names: None,
             // Resolved against the persisted option right below, once the
@@ -233,6 +233,9 @@ impl PlayWindowApp {
             quit_prompt: None,
             notice: None,
             hotkey_help: false,
+            // Armed by `cmd_play_window_with_record` for an interactive
+            // window only.
+            startup_hint: Default::default(),
             help_key_held: None,
             caption_title: crate::window::minigames::WINDOW_TITLE.to_string(),
         }
@@ -307,7 +310,7 @@ impl PlayWindowApp {
                 legaia_engine_menus::options::OptionsSetting::BattleCamera.pin_bit(),
             );
             self.options_state.battle_camera =
-                legaia_engine_menus::option_values::BattleCameraOpt::from_word(v);
+                legaia_engine_system::option_values::BattleCameraOpt::from_word(v);
         }
         // Push the loaded options into their live consumers (audio downmix)
         // before the loop starts.

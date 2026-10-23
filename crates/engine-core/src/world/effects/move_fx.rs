@@ -446,6 +446,10 @@ impl World {
                     [b.rot[0], req.yaw, b.rot[2]],
                 );
                 if let Some(child) = scene.parts.last_mut() {
+                    // The record's battle-overlay address, as a retail
+                    // child's `+0x48` reads, so a capture's live children
+                    // find theirs ([`Self::install_action_fx_part_snapshot`]).
+                    child.tag = Some(mode.record_addr());
                     child.state.field_72 = req.scale as u16;
                     child.state.anim_3e = req.spread;
                     child.state.tween_scale_y = req.tail;

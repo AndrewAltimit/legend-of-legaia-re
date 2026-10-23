@@ -125,31 +125,6 @@ impl LegaiaRuntime {
             .is_some_and(|m| matches!(m.sub, Some(PlaySub::Session(_))))
     }
 
-    /// The title's CONTINUE: stand the Load screen up over the card rack as a
-    /// title-opened save sub-screen
-    /// ([`SaveSelectSession::title_continue`], the native window's call too).
-    ///
-    /// Retail runs Continue inside the title overlay's own card manager, with
-    /// no field under it, so no pause menu opens and no pause-menu gate is
-    /// asked: this page used to open the Load row through
-    /// `play_menu_open_row`, whose field gates (a dialogue, a lock, an
-    /// op-`0x49` park) could refuse a Continue and send it back to the title.
-    /// `false` only when the menu art is missing or a menu is already up.
-    pub(crate) fn play_menu_open_title_continue(&mut self) -> bool {
-        if !self.ensure_menu_assets() || self.play_menu.is_some() {
-            return false;
-        }
-        let rack = SaveRack::CardPorts(self.card_slot_snapshots());
-        let mut menu = PlayMenu::new();
-        menu.owns_frame = true;
-        menu.from_title = true;
-        menu.sub = Some(PlaySub::Session(Box::new(FieldMenuSubsession::Save(
-            SaveSelectSession::title_continue(&rack),
-        ))));
-        self.play_menu = Some(menu);
-        true
-    }
-
     /// Mark the open menu as a boot-title row's (see `PlayMenu::from_title`).
     pub(crate) fn play_menu_mark_from_title(&mut self) {
         if let Some(m) = self.play_menu.as_mut() {
@@ -157,35 +132,10 @@ impl LegaiaRuntime {
         }
     }
 
-    /// Whether the open sub-screen is the save-select **and** it is in a
-    /// phase retail composes over the title art rather than over black.
-    ///
-    /// Retail pivots to black once a slot is confirmed (`NowChecking` /
-    /// `SlotPreview`): the dialog, the portrait grid and the info panel are
-    /// drawn against black, never the title card. The native window makes the
-    /// same test inside `title_screen_sprite_draws`; this is the page's half,
-    /// kept here because `PlaySub` is private to this module.
-    pub(crate) fn play_menu_save_select_over_title(&self) -> bool {
-        let Some(menu) = self.play_menu.as_ref() else {
-            return false;
-        };
-        match &menu.sub {
-            Some(PlaySub::Session(sub)) => match sub.as_ref() {
-                FieldMenuSubsession::Save(s) => s.phase().shows_title_backdrop(),
-                _ => false,
-            },
-            _ => false,
-        }
-    }
-
     /// Close the menu (and any open sub-screen), restoring the scene mode the
     /// world ran when it opened - the browser twin of
     /// `BootSession::close_field_menu`.
     pub fn play_menu_close(&mut self) {
-        // The boot Continue hand-off parks its title session as the
-        // save-select backdrop; the menu closing is what ends it, whether the
-        // player loaded a save or backed out to the title card.
-        self.boot_title_backdrop = None;
         if self.play_menu.take().is_none() {
             return;
         }

@@ -48,7 +48,7 @@ use legaia_actor_formats::monster_archive::MonsterAnimation;
 use legaia_anm::{AnimPlayer, PoseFrame};
 use legaia_engine_battle::battle_events::{BattleEvent, BattleHitEvent, BattleHitFx, BattleSfxCue};
 use legaia_engine_battle::levelup::{LevelUpBanner, LevelUpResult, LevelUpTracker};
-use legaia_engine_battle::tactical_arts::{ArtLearnedBanner, TacticalArtsTracker};
+use legaia_engine_battle::tactical_arts::ArtLearnedBanner;
 use legaia_engine_battle_vm::battle_action::{
     BattleActionCtx, BattleActor, BattleEndCause, StepOutcome,
 };
@@ -168,17 +168,15 @@ pub use battle::{CASTER_STAGE_TICK_LIMIT, CasterStagePhase, CasterStageRun};
 mod effects;
 pub use effects::{
     ClutBlendFx, ClutCellFx, ClutCellFxPhase, DEBUG_EFFECT_LIFETIME_FRAMES,
-    EFFECT_MODEL_LIBRARY_BASE, MAX_DEBUG_EFFECTS, ScriptVramMove,
+    EFFECT_MODEL_LIBRARY_BASE, EffectChildSeed, MAX_DEBUG_EFFECTS, ScriptVramMove,
 };
 mod encounters;
 pub use encounters::FieldBossStager;
 mod field_carriers;
 mod field_frame_tail;
 pub use field_frame_tail::{EFFECT_SCENE_GRAPH_STEP, NpcClipRetarget, WorldFrameTail};
-pub mod field_elevation;
 mod field_hud;
 pub(crate) mod field_xa;
-pub use field_elevation::{CELL_ELEVATION_OVERRIDE, ElevationOverride};
 pub use field_hud::PassiveHudPoints;
 pub use field_xa::{scene_minigame_door_xa_prestage, scene_xa_prestage};
 mod field_loop;

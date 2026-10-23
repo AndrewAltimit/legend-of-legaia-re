@@ -119,6 +119,7 @@ impl World {
                     direct: s.direct,
                     at: s.at,
                     facing: script_actor.facing,
+                    homing_slot: None,
                 },
             );
         }
@@ -459,6 +460,75 @@ impl World {
             }
         }
         out
+    }
+
+    /// Close the ghost walk's slot for `depth` battle frames back (its
+    /// ring-id gate fails): the capture's walk drew no ghost there - the art
+    /// had not committed that far back on retail's clock - so the replay
+    /// draws none either. No-op past the history. A debug seam beside
+    /// [`Self::seat_battle_ghost_ring`].
+    pub fn close_battle_ghost_ring(&mut self, slot: usize, depth: usize) {
+        let at = self.ghost_ring_slots_per_frame() * depth;
+        if let Some(f) = self
+            .actors
+            .get_mut(slot)
+            .and_then(|a| a.battle_pose_history.get_mut(at))
+        {
+            f.ghost_eligible = false;
+        }
+    }
+
+    /// Stand one after-image ghost where a capture's history ring holds it:
+    /// the pose-history slot the ghost walk reads for `depth` battle frames
+    /// back ([`Self::battle_ghost_draws`]) becomes the actor's playing clip
+    /// posed at `cursor` (12.4 sixteenths) on the ground pair `pos`
+    /// (`[x, z]`), ghost-eligible. Retail's ring keeps, per battle frame,
+    /// the cursor `+0x17A`, the live pair `+0x4C` and the ring id `+0x1FB`
+    /// the walk `FUN_80049348` re-poses each ghost from; a replay's ring is
+    /// the replay's own clock - another frame step, another strike tick -
+    /// so its ghosts stand at other keyframes than the capture's.
+    ///
+    /// `false` (nothing written) when the actor has no playing clip or no
+    /// history to seat into. A debug seam: the retail-comparison image
+    /// child is its caller.
+    pub fn seat_battle_ghost_ring(
+        &mut self,
+        slot: usize,
+        depth: usize,
+        cursor: u16,
+        pos: [i32; 2],
+    ) -> bool {
+        let at = self.ghost_ring_slots_per_frame() * depth;
+        let Some(actor) = self.actors.get_mut(slot) else {
+            return false;
+        };
+        let Some(player) = actor.battle_animation.as_ref() else {
+            return false;
+        };
+        let Some(template) = actor
+            .battle_pose_history
+            .get(at)
+            .or_else(|| actor.battle_pose_history.back())
+            .cloned()
+        else {
+            return false;
+        };
+        let mut seated = player.clone();
+        let pose = seated.seat_cursor(cursor);
+        let frame = crate::world::BattleGhostFrame {
+            pose,
+            pos: [pos[0], template.pos[1], pos[1]],
+            ghost_eligible: true,
+            clip_key: player.attach_key(),
+            variant_track: player.variant_track(),
+            frame: (cursor >> 4) as i16,
+        };
+        let hist = &mut actor.battle_pose_history;
+        while hist.len() <= at {
+            hist.push_back(template.clone());
+        }
+        hist[at] = frame;
+        true
     }
 
     /// The objects actor `i`'s live body draws this frame, indexed by TMD
@@ -808,18 +878,18 @@ impl World {
     /// (`gimard_burning_attack` holds two of its effect-`0x0B` puffs at the
     /// creature's mouth) and a Tail-Fire-struck party member.
     ///
-    /// The accumulator is the frame driver's: low nibble kept, `+8` a frame
-    /// (`FUN_80046A20`, `0x8004713C..0x80047160`, `DAT_1F800393 << 3` at one
-    /// step a tick).
+    /// The accumulator is the frame driver's: low nibble kept, `+8` a vsync
+    /// (`FUN_80046A20`, `0x8004713C..0x80047160`, `DAT_1F800393 << 3` a
+    /// frame); `add` is that gain since the last call.
     ///
     /// Not ported: selector `2`'s screen-shake globals (`_DAT_8007B92C` /
     /// `_DAT_8007B930`, `gp+0xA30..0xA34`, `0x8004A838..0x8004A8BC`).
     ///
     /// PORT: FUN_8004998C (`0x8004A5FC..0x8004A8D8`, the selector emit loop)
-    pub(in crate::world) fn emit_battle_burn_sprites(&mut self) {
+    pub(in crate::world) fn emit_battle_burn_sprites(&mut self, add: u16) {
         use legaia_engine_battle_vm::battle_impact_fx as ifx;
         use legaia_engine_system::rotation_lut::RotationLut;
-        let acc = (self.battle.burn_emit_accum & 0xF) + 8;
+        let acc = (self.battle.burn_emit_accum & 0xF) + add;
         self.battle.burn_emit_accum = acc;
         let emits = acc / ifx::BURN_EMIT_QUANTUM;
         if emits == 0 {
@@ -831,10 +901,12 @@ impl World {
             if !a.active || selector == 0 {
                 continue;
             }
-            let Some(objects) = a
-                .pose_frame
-                .as_ref()
-                .map(|p| p.bone_outputs.iter().map(|(t, _)| *t).collect::<Vec<_>>())
+            // `rand() % *(entry + 0x88)` (`lbu v1,0x0(s4)` / `div` at
+            // `0x8004A634..0x8004A640`): the object is drawn among the
+            // playing stream's own parts, not a party clip's expanded
+            // equipment channels.
+            let Some(objects) = crate::world::battle::stream_pose(a)
+                .map(|p| p.iter().map(|(t, _)| *t).collect::<Vec<_>>())
                 .filter(|o| !o.is_empty())
             else {
                 continue;
@@ -938,7 +1010,7 @@ impl World {
         }
     }
 
-    pub(super) fn tick_battle_impact_fx(&mut self) {
+    pub(in crate::world) fn tick_battle_impact_fx(&mut self) {
         use legaia_engine_battle_vm::battle_formulas::{FadeInputs, TintWords, tint_sm_step};
         use legaia_engine_battle_vm::battle_impact_fx as ifx;
         // The tag-`0x67` ribbon is a per-frame call in retail: re-derived
@@ -958,12 +1030,19 @@ impl World {
                 (entry.is_some() && entry == cached, cached)
             })
             .collect();
-        for (a, (on_knockdown, cached_knockdown)) in self.actors.iter_mut().zip(knockdown) {
+        let creature_seat = self.casting.summon_actor_slot.map(usize::from);
+        for (i, (a, (on_knockdown, cached_knockdown))) in
+            self.actors.iter_mut().zip(knockdown).enumerate()
+        {
             // `+0x22C == 0` (no battle record) skips the slot.
             if !a.active {
                 continue;
             }
-            let party = a.battle_monster_id.is_none();
+            // Retail's party test is the seat index (`sltiu v0,s2,0x3` at
+            // `0x80050250` / `0x80050330`), so the summon creature - seat 7,
+            // no monster record either - is not a party seat: its defeat
+            // fade ends without the party fade-done reset of `+0x1DA`.
+            let party = a.battle_monster_id.is_none() && creature_seat != Some(i);
             // A monster standing dead and idle outside the defeat fade - no
             // reaction playing, state `0`, its lanes still lit - is a body the
             // death arm (`0x8004B66C`, the knockdown's natural end on HP 0)
@@ -973,7 +1052,7 @@ impl World {
             // waits on its lanes draining (`+0x04 == 0`), so the engine puts
             // such a body into the fade rather than let it stand lit for
             // good.
-            if !party
+            if a.battle_monster_id.is_some()
                 && a.battle.hp == 0
                 && a.battle.render_flag == 0
                 && a.battle_reaction.is_none()
@@ -1029,7 +1108,11 @@ impl World {
             }
         }
         self.tick_battle_defeat_sink();
-        self.emit_battle_burn_sprites();
+        // On retail's cadence the draw that closes the pass sheds the puffs
+        // (`World::tick_battle_anim_pass`), after the advance and the walk.
+        if !self.toggles.battle_sm_frame_cadence {
+            self.emit_battle_burn_sprites(8);
+        }
         self.tick_jette_shatter_hook();
         // The per-clip arms: the acting actor's committed record key + cursor
         // window select the writes onto it and its target.

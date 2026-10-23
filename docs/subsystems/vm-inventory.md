@@ -174,7 +174,7 @@ the title menu lives:
 | Input freeze | whole block skipped while countdown `< 0x11` (`0x801DDB84`) | `ATTRACT_INPUT_FREEZE_BELOW` |
 | Attract countdown | `0x5DC`, re-armed on any held pad, `-= frame scalar` (`0x801DDC74..0x801DDCC8`) | `TitleMenuState::countdown` |
 
-`engine-menus::title::TitleSession` owns one and steps it every frame, so the
+`engine-title::title::TitleSession` owns one and steps it every frame, so the
 native window and the browser play page share it without either host
 changing. One thing around it is still the port's own and says so in the
 module docs: the `continue_enabled` row skip, which retail does not have.
@@ -210,8 +210,9 @@ faithful and tested, and nothing outside its own crate calls it.
 
 Still inert:
 
-- **`title_prim`** (`engine-menus::title_prim`) - the SCUS sprite-emit
-  primitives (`FUN_80058298`, `FUN_80058490`, `FUN_800198E0`). No caller
+- **`title_prim`** (`engine-title::title_prim`) - the SCUS sprite-emit
+  dispatcher `FUN_800198E0`, beside two forwarding shims for the libgpu
+  wrappers `FUN_80058298` / `FUN_80058490` that carry `REF:` only. No caller
   outside its own module; tagged `REPLACED-BY:` the `engine-ui` title / save
   draw-list builders, so no host is owed it.
 - **`move_vm_overlay_ext::step` / `walk`** - a standalone walker over
@@ -238,7 +239,7 @@ Live, and worth knowing why:
   (`engine-menus::menu_widget`) on the transitions retail's `FUN_801DAFD4`
   drives. Triage:
   [`reach-triage.md`](../tooling/reach-triage.md#the-actor-vm-a-resolved-bytecode-source).
-- **`title_overlay`**. `TitleSession` (`engine-menus::title`) owns both the
+- **`title_overlay`**. `TitleSession` (`engine-title::title`) owns both the
   menu half ([`TitleMenuState`](#what-of-the-tick-runs-on-both-hosts)) and a
   `TitleTickState`.
 - **`vram_rect_copy`** (called from `engine-core::world::vram_rect_fx`).

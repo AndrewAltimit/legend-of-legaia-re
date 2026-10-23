@@ -1,0 +1,557 @@
+//! SCUS-side GPU primitive helpers the title overlay calls directly.
+//!
+//! Each of the three helpers is tagged on the function that ports it -
+//! [`exec_clear_image`], [`exec_move_image`], [`exec_sprite_descriptor`] -
+//! rather than on this module. A module-level `PORT:` tag makes the whole file
+//! the anchor, and the file is read as live whenever *any* function in it is
+//! reachable, which cannot distinguish these three from `Rect12`'s accessors.
+//!
+//! The title-overlay per-frame tick `FUN_801DD35C` (modelled in
+//! [`crate::title_overlay`]) reaches into three SCUS-side helpers to
+//! emit GPU primitives:
+//!
+//! | Helper             | Purpose                                      |
+//! | ------------------ | -------------------------------------------- |
+//! | `FUN_80058298`     | Queue a `ClearImage` (GP0 fill-rect) for one |
+//! |                    | 8-byte rect, color = `(r, g, b)`.            |
+//! | `FUN_80058490`     | Queue a `MoveImage` (VRAM-to-VRAM copy) for  |
+//! |                    | an 8-byte source rect to a destination point.|
+//! | `FUN_800198E0`     | Dispatch a "sprite descriptor" - a header    |
+//! |                    | record that selects between a simple sprite  |
+//! |                    | emit (tag `0x11`) and a multi-pass variant   |
+//! |                    | (alpha-OR + sprite emit).                    |
+//!
+//! All three call a fourth helper `FUN_800583C8` that actually issues
+//! the GPU primitive. From the perspective of the title-overlay tick,
+//! `FUN_800583C8` is the leaf - so this module's [`PrimHost`] trait
+//! exposes the queue-a-sprite call as a single method
+//! ([`PrimHost::emit_sprite`]) and the engine implementation wires
+//! that to whatever GPU back-end it has.
+//!
+//! ## Why this lives in `engine-vm` rather than `engine-render`
+//!
+//! Port boundary: the *protocol* (descriptor struct shape, tag
+//! routing, alpha-OR pass) is a faithful port of the disassembled
+//! control flow; the *implementation* (real wgpu draws) lives in the
+//! engine layer that owns VRAM. Same pattern as
+//! [`legaia_engine_vm::actor_tick`] / [`legaia_engine_vm::field`] / etc. - the VM defines
+//! shapes and dispatch; the engine fulfils the host trait.
+//!
+//! ## What's deferred
+//!
+//! - `FUN_801E1C1C`, the largest of the overlay-side draw helpers
+//!   (`overlay_801e1c1c.txt` is 8160 lines alone) and shared across the
+//!   menu / battle / shop / save UI overlays. Its three siblings
+//!   `FUN_801E373C` / `FUN_801E3EE0` / `FUN_801E36C4` **are** ported here,
+//!   as [`exec_card_init`] / [`exec_centered_text`] / [`exec_centered_bar`]
+//!   over the same [`PrimHost`].
+//! - The TPage-cache write at the tail of `FUN_800198E0` (writes
+//!   `desc[+0x0E]` into a LUT indexed by `(x >> 6, tpage_byte)`).
+//!   That's a deduplication optimisation - the host can replay every
+//!   sprite emit without it.
+//! - The `flags & 3` sub-dispatch inside the non-`0x11` descriptor
+//!   path that picks a width-divisor variant (div-2 / div-4 / raw /
+//!   skip). The default raw path is the only one the title tick is
+//!   observed using; the others are gated for future tracing.
+//!
+//! ## Provenance
+//!
+//! - `FUN_80058298` decomp: `ghidra/scripts/funcs/80058298.txt`
+//!   (37 instructions, 148 bytes).
+//! - `FUN_80058490` decomp: `ghidra/scripts/funcs/80058490.txt`
+//!   (49 instructions, 196 bytes).
+//! - `FUN_800198E0` decomp: `ghidra/scripts/funcs/800198e0.txt`
+//!   (146 instructions, 584 bytes).
+//!
+//! ## REPLACED-BY: `legaia_engine_ui`'s `ui_title_save` draw-list builders
+//!
+//! Nothing implements [`PrimHost`], and nothing is expected to. The engine's
+//! title and save screens are drawn from typed text / sprite draws emitted
+//! straight from screen state, so retail's GPU-packet descriptors are never
+//! materialised and there is no queue for a `PrimHost` to push a
+//! `ClearImage` / `MoveImage` / sprite record onto. That covers every `exec_*`
+//! entry point here - the title tick's own three (`exec_clear_image` /
+//! `exec_move_image` / `exec_sprite_descriptor`) and the save/card-screen
+//! anchors (`FUN_801E36C4`, `FUN_801E373C`, `FUN_801E3EE0`).
+//!
+//! Giving the renderer a packet-level ingest alongside the draw-list one is
+//! the only thing that would put these on a live path, and that is a second
+//! rendering front end rather than a call insertion - the screens themselves
+//! already draw. What the module keeps is the decoded protocol: the
+//! descriptor shape, the tag routing and the alpha-OR pass, each of which the
+//! draw-list builders answer in their own terms.
+//!
+//! No Sony bytes are stored in this module - only call shapes, struct
+//! layouts (numeric offsets), and the dispatch control flow.
+//! REF: FUN_800583C8, FUN_801DD35C, FUN_801E1C1C, FUN_801E36C4, FUN_801E373C, FUN_801E3EE0
+//! REF: FUN_8002C69C, FUN_80035F04, FUN_80036888, FUN_8003CA38, FUN_801E0598
+//! REF: FUN_801E435C
+
+#![forbid(unsafe_code)]
+
+/// 8-byte source/destination rectangle, matching the layout the title
+/// overlay tick builds on its stack frame at `sp+0x38..+0x40` and the
+/// layout the SCUS helpers consume.
+///
+/// All four fields are signed 16-bit. The width / height fields are
+/// `i16` because the dispatch path inside [`SpriteDescriptor`] uses
+/// signed compares (`bgez`) and signed-divide adjustments.
+///
+/// Disassembly source: `FUN_80058298` reads x/y at `sp+0x38, +0x3A`
+/// and w/h at `sp+0x3C, +0x3E` (16-bit fields).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Rect12 {
+    pub x: i16,
+    pub y: i16,
+    pub w: i16,
+    pub h: i16,
+}
+
+impl Rect12 {
+    pub const fn new(x: i16, y: i16, w: i16, h: i16) -> Self {
+        Self { x, y, w, h }
+    }
+
+    /// Decode from an 8-byte little-endian slice. Returns `None` if
+    /// `bytes.len() < 8`.
+    pub fn from_le_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() < 8 {
+            return None;
+        }
+        Some(Self {
+            x: i16::from_le_bytes([bytes[0], bytes[1]]),
+            y: i16::from_le_bytes([bytes[2], bytes[3]]),
+            w: i16::from_le_bytes([bytes[4], bytes[5]]),
+            h: i16::from_le_bytes([bytes[6], bytes[7]]),
+        })
+    }
+
+    /// Encode as 8 little-endian bytes.
+    pub fn to_le_bytes(self) -> [u8; 8] {
+        let [x0, x1] = self.x.to_le_bytes();
+        let [y0, y1] = self.y.to_le_bytes();
+        let [w0, w1] = self.w.to_le_bytes();
+        let [h0, h1] = self.h.to_le_bytes();
+        [x0, x1, y0, y1, w0, w1, h0, h1]
+    }
+}
+
+/// Result code mirrored from `FUN_80058490` (`MoveImage` queue). The
+/// retail return value is `0xFFFFFFFF` on early-out and the queue
+/// helper's own return value otherwise; this module reduces that to a
+/// boolean since the engine layer doesn't propagate the underlying
+/// libgpu handle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MoveImageOutcome {
+    /// `w == 0` or `h == 0` - the original returns `0xFFFFFFFF`
+    /// without queueing.
+    SkippedZeroExtent,
+    /// The MoveImage was queued. The retail tail returns the queue
+    /// helper's own return value here; this port only reports the
+    /// dispatch.
+    Queued,
+}
+
+/// Sprite descriptor record consumed by [`exec_sprite_descriptor`].
+///
+/// On-disc / in-RAM, the descriptor is a variable-length byte stream;
+/// this struct captures just the fields the dispatcher reads. Two
+/// shape variants share the leading u32 `tag`:
+///
+/// - **Simple** (`tag == 0x11`): exactly one sprite. Inline rect at
+///   bytes `+0x0C..+0x14`; pixel-data pointer at `+0x14..`.
+/// - **Complex** (`tag != 0x11`): up to two sprites. `flags` (bytes
+///   `+0x04..+0x08`):
+///   - bit 3 set: the dispatcher emits a **strip** sprite of extent
+///     `(w * h, 1)` from the `+0x0C..+0x14` rect (`0x800199EC`), having
+///     first ORed `0x8000` (the PSX semi-transparency bit) into each
+///     non-zero u16 of the pixel array at `+0x14`. Only that OR pass is
+///     gated on `_DAT_8007B998` - the strip emit itself is **not**; when
+///     the global is zero, `0x80019998` branches past the loop and lands
+///     directly on the emit.
+///   - bit 3 clear: no strip, no OR pass.
+///   - low 2 bits of `flags` select a width divisor - and retail then
+///     throws the result away, so they change nothing. See
+///     [`SpriteEmitVariant`].
+///
+/// The **main** emit's source record is not always this descriptor. With
+/// bit 3 clear it is `desc + 8`, so the `+0x0C..+0x14` rect and the
+/// `+0x14` pointer are what it draws. With bit 3 set, `0x800199F8..
+/// 0x80019A10` computes `desc + ((u32 @ desc[+0x08] & !3) + 8)` and
+/// draws that record's rect / pointer instead - a different sub-record
+/// of the same blob. [`main_rect`] / [`main_pixel_data_ptr`] carry the
+/// resolved result, because this struct is a flattened view and cannot
+/// walk the blob itself.
+///
+/// [`main_rect`]: SpriteDescriptor::main_rect
+/// [`main_pixel_data_ptr`]: SpriteDescriptor::main_pixel_data_ptr
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpriteDescriptor {
+    /// `desc[0]` (u32). `0x11` selects the simple sprite variant;
+    /// every other value selects the complex variant.
+    pub tag: u32,
+    /// `desc[+0x04]` (u32). Bit 3 (`& 8`) gates the alpha-OR pre-pass;
+    /// the low 2 bits select a width-divisor variant on the main
+    /// sprite. Ignored when [`tag`] == `0x11`.
+    ///
+    /// [`tag`]: SpriteDescriptor::tag
+    pub flags: u32,
+    /// `desc[+0x0C..+0x14]` - the inline 8-byte sprite rect. Both
+    /// variants emit at least one sprite from this rect.
+    pub rect: Rect12,
+    /// `desc[+0x14..]` - the pixel-data pointer the dispatcher passes
+    /// as the second arg of `FUN_800583C8`. Represented here as a
+    /// `u32` (the PSX virtual address); the host translates it to
+    /// real bytes / texture handles as it sees fit.
+    pub pixel_data_ptr: u32,
+    /// Rect of the record the **main** emit draws from - `s0[+0x04..+0x0C]`
+    /// at `0x80019A18`/`0x80019A24`, re-read raw at `0x80019AAC`/`0x80019AB8`.
+    ///
+    /// Equal to [`rect`] whenever `flags & 8` is clear (`0x80019A14` sets
+    /// `s0 = desc + 8`). When it is set, retail resolves a different
+    /// sub-record and this is that one's rect.
+    ///
+    /// [`rect`]: SpriteDescriptor::rect
+    pub main_rect: Rect12,
+    /// Pixel-data pointer of the same record - `s0 + 0x0C` at
+    /// `0x80019ABC`. Equal to [`pixel_data_ptr`] when `flags & 8` is clear.
+    ///
+    /// [`pixel_data_ptr`]: SpriteDescriptor::pixel_data_ptr
+    pub main_pixel_data_ptr: u32,
+}
+
+/// The four-way branch `FUN_800198E0` takes on `flags & 3` at
+/// `0x80019A30..0x80019A4C`.
+///
+/// **Retail computes this and then discards it, so it selects nothing.**
+/// Each arm stores its width into `0x14(sp)` (`0x80019A9C` div-4,
+/// `0x80019A90` div-2, `0x80019A9C` raw) and the `== 3` arm stores
+/// nothing at all - and then the common tail at `0x80019AAC` reloads
+/// the **raw** `lhu s0[+0x08]` into that same slot, and `0x80019AB8`
+/// reloads the raw height, in the two instructions immediately before
+/// `jal 0x800583C8`. Every arm therefore emits the raw extents.
+///
+/// The `== 3` arm is likewise not a skip: `0x80019A4C` jumps straight
+/// to that common tail, so it emits exactly like the others.
+///
+/// The type survives as provenance for a branch that really is in the
+/// instruction stream, and because a reader who finds the four arms
+/// deserves to be told they are dead rather than left to re-derive it.
+/// It is deliberately **not** a parameter of [`PrimHost::emit_sprite`] -
+/// passing it there is what let an earlier port turn a dead computation
+/// into live behaviour, including a main-sprite skip retail never does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpriteEmitVariant {
+    /// `flags & 3 == 2`: width read back verbatim.
+    Raw,
+    /// `flags & 3 == 1`: width halved with signed rounding
+    /// (`0x80019A70..0x80019A8C`). Overwritten before use.
+    HalfWidth,
+    /// `flags & 3 == 0`: width divided by 4 with signed rounding
+    /// (`0x80019A54..0x80019A6C`). Overwritten before use.
+    QuarterWidth,
+    /// `flags & 3 == 3`: the arm stores no width
+    /// (`0x80019A4C` jumps to the common tail). Emits raw, like the rest.
+    NoWidthStore,
+}
+
+impl SpriteEmitVariant {
+    /// Decode from the low 2 bits of [`SpriteDescriptor::flags`].
+    ///
+    /// Decoding is all this is good for - see the type's note for why
+    /// the result must not reach an emit.
+    pub const fn from_flags(flags: u32) -> Self {
+        match flags & 0b11 {
+            0 => Self::QuarterWidth,
+            1 => Self::HalfWidth,
+            2 => Self::Raw,
+            _ => Self::NoWidthStore, // 0b11
+        }
+    }
+}
+
+/// Engine-side callbacks the SCUS helpers dispatch into.
+///
+/// Implementations live in the engine layer (e.g. `engine-core` /
+/// `engine-render`) and are free to back the primitive queue with any
+/// GPU back-end. The trait methods deliberately mirror the helper
+/// call shapes - one method per disassembled helper.
+pub trait PrimHost {
+    /// Equivalent of `FUN_80058298` - queue a `ClearImage`
+    /// (GP0 fill-rect) for `rect` with color `(r, g, b)`.
+    fn queue_clear_rect(&mut self, rect: Rect12, r: u8, g: u8, b: u8);
+
+    /// Equivalent of `FUN_80058490` - queue a `MoveImage` (GP0
+    /// VRAM-to-VRAM copy). The dispatch behaviour (early-out on
+    /// zero extent) is handled by [`exec_move_image`]; this method
+    /// only fires on the queue path.
+    fn queue_move_image(&mut self, src: Rect12, dst_x: u16, dst_y: i16);
+
+    /// Equivalent of `FUN_800583C8` - queue a sprite primitive
+    /// described by `rect` with pixel data at `pixel_data_ptr`.
+    ///
+    /// `is_strip_pass`: `true` when this emit is the `(w * h, 1)` strip
+    /// `FUN_800198E0` runs under `flags & 8` (`0x800199EC`), `false` for
+    /// the main emit and the tag-`0x11` path.
+    ///
+    /// `rect` is always the extent retail passes - it takes no width
+    /// divisor, because the `flags & 3` arms are overwritten before the
+    /// call. See [`SpriteEmitVariant`].
+    fn emit_sprite(&mut self, rect: Rect12, pixel_data_ptr: u32, is_strip_pass: bool);
+
+    /// OR `0x8000` (the PSX STP / semi-transparency bit) into each
+    /// non-zero `u16` of the `count`-pixel array at `pixel_data_ptr` -
+    /// the loop at `0x800199B0..0x800199E8`.
+    ///
+    /// This is the **only** thing `_DAT_8007B998` gates
+    /// ([`Self::stp_or_gate_set`]); the strip emit that follows runs
+    /// either way. Default: no-op, for hosts that do not own the pixel
+    /// bytes.
+    fn stp_or_pixels(&mut self, _pixel_data_ptr: u32, _count: i32) {}
+
+    /// Read the global `_DAT_8007B998` (`lui 0x8008` + `lw -0x4668` at
+    /// `0x80019984`/`0x80019988`).
+    ///
+    /// It gates only [`Self::stp_or_pixels`], not any emit. Its purpose
+    /// is to force every non-transparent pixel to gain the STP bit -
+    /// effectively a "make non-transparent pixels semi-transparent"
+    /// toggle - and the engine port has to decide whether to enable it.
+    fn stp_or_gate_set(&self) -> bool;
+
+    // ------------------------------------------------------------------
+    // Overlay-side helpers consumed by [`exec_centered_bar`] /
+    // [`exec_centered_text`] / [`exec_card_init`]. These mirror the menu
+    // / shop / save UI overlays' primitive emitters - they live behind
+    // the same PrimHost so engines can wire them through a single GPU
+    // back-end. Default impls are no-ops where the leaf is purely a
+    // side-effect-free emit; engines override to wire to the renderer.
+    // ------------------------------------------------------------------
+
+    /// Allocate a GPU primitive packet of the given type tag, called
+    /// by `FUN_801E36C4` with `packet_type = 0x44` before emitting its
+    /// horizontal bar.
+    ///
+    /// (The retail allocator entry point for this is not yet pinned;
+    /// `FUN_80034B6C` was an earlier mis-guess - that address is a
+    /// one-instruction tail fragment of the number formatter
+    /// `FUN_80034B78`, not a packet allocator.)
+    fn prim_packet_alloc(&mut self, _packet_type: u8) {}
+
+    /// Equivalent of `FUN_8002c69c(x, y, w, color)` - queue a horizontal
+    /// bar at `(x, y)` of width `w` with the supplied color/style word.
+    /// Consumed by [`exec_centered_bar`].
+    fn queue_horizontal_bar(&mut self, _x: i16, _y: i16, _w: i16, _color: u32) {}
+
+    /// Equivalent of `FUN_8003ca38()` - read the menu-text block height
+    /// in pixel units. Consumed by [`exec_centered_text`].
+    fn menu_text_block_height(&self) -> i32 {
+        0
+    }
+
+    /// Equivalent of `FUN_80035f04(label_ptr)` - measure the text
+    /// label's width in pixels. Consumed by [`exec_centered_text`].
+    fn menu_text_label_width(&self, _label_ptr: u32) -> i32 {
+        0
+    }
+
+    /// Equivalent of `FUN_80036888(label_ptr, mode_a, mode_b, x, y)` -
+    /// queue a centered text label. Consumed by [`exec_centered_text`].
+    fn queue_centered_text(
+        &mut self,
+        _label_ptr: u32,
+        _mode_a: u16,
+        _mode_b: u16,
+        _x: i16,
+        _y: i16,
+    ) {
+    }
+
+    /// Equivalent of [`FUN_801E373C`] in full - the "card init"
+    /// composite that clears three overlay globals
+    /// (`DAT_801ef134`, `DAT_801ef148`, `_DAT_801f0218 = 1`), debug-
+    /// prints `"init_card"`, calls `FUN_801E0598(arg)` for the
+    /// card-specific pre-init, sets two timer globals
+    /// (`_DAT_801f0228 = 0x78`, `_DAT_801f0224 = 1`), calls
+    /// `FUN_801E435C` for the per-card finalize, and zeroes the
+    /// 15-byte status buffer at `DAT_801F2A76` (rewinding from
+    /// `+0xE` to `+0x0`).
+    ///
+    /// PORT: FUN_801E373C
+    ///
+    /// The retail body is a flat sequence of opaque global writes; the
+    /// engine owns the UI state and rewires whatever
+    /// representation it uses for the "card init" lifecycle. The trait
+    /// method captures the spec; engine impls are free to map the
+    /// sub-helpers (FUN_801E0598 / FUN_801E435C) to their own card
+    /// state machine.
+    fn init_card_state(&mut self, _arg: u32) {}
+}
+
+/// Port of `FUN_80058298` (`ClearImage` rect-fill queue).
+///
+/// Always queues - there is no early-out in the original.
+///
+/// REF: FUN_80058298 - a libgpu wrapper (RECT validate, then a GPU-queue add
+/// through the vtable at `0x80078D4C`). This forwards to
+/// [`PrimHost::queue_clear_rect`]; no host implements that outside the tests,
+/// so the routine is on the catalog's ignore list rather than ported here.
+pub fn exec_clear_image<H: PrimHost>(host: &mut H, rect: Rect12, r: u8, g: u8, b: u8) {
+    host.queue_clear_rect(rect, r, g, b);
+}
+
+/// Port of `FUN_80058490` (`MoveImage` VRAM-copy queue).
+///
+/// Returns [`MoveImageOutcome::SkippedZeroExtent`] when either
+/// dimension is zero, matching the original's `li v0, -0x1` early-out
+/// path (`*(short *)(rect + 4) == 0 || *(short *)(rect + 6) == 0`).
+///
+/// REF: FUN_80058490 - ported once, as `legaia_tim::Vram::move_image`; this
+/// forwards to [`PrimHost::queue_move_image`].
+pub fn exec_move_image<H: PrimHost>(
+    host: &mut H,
+    src: Rect12,
+    dst_x: u16,
+    dst_y: i16,
+) -> MoveImageOutcome {
+    if src.w == 0 || src.h == 0 {
+        return MoveImageOutcome::SkippedZeroExtent;
+    }
+    host.queue_move_image(src, dst_x, dst_y);
+    MoveImageOutcome::Queued
+}
+
+/// Port of `FUN_800198E0` (sprite-descriptor dispatcher).
+///
+/// Routes between the simple (tag `0x11`) and complex variants. Under
+/// `flags & 8` the complex variant runs an STP-OR pass over the pixel
+/// array and emits a `(w * h, 1)` strip; then, either way, it emits the
+/// main sprite from [`SpriteDescriptor::main_rect`].
+///
+/// Read the whole of `0x800198E0` before changing this - three of its
+/// properties are counter-intuitive and an earlier port got all three
+/// backwards. The gate does not gate the emit, the `flags & 3` arms are
+/// dead, and the main emit's source record moves. Each is pinned in the
+/// doc of the item it affects.
+///
+/// PORT: FUN_800198E0
+pub fn exec_sprite_descriptor<H: PrimHost>(host: &mut H, desc: &SpriteDescriptor) {
+    if desc.tag == 0x11 {
+        // Simple variant: one sprite emit, straight to the epilogue
+        // (`0x80019938` then `j 0x80019B0C`).
+        host.emit_sprite(desc.rect, desc.pixel_data_ptr, false);
+        return;
+    }
+
+    if (desc.flags & 0x08) != 0 {
+        // The strip treats the pixel array as one row whose width is the
+        // total pixel count: `mult v1,v0` at `0x80019980` feeds
+        // `sh a0,0x14(sp)`, and `0x16(sp)` is the literal 1 stored at
+        // `0x80019990`.
+        let count = i32::from(desc.rect.w) * i32::from(desc.rect.h);
+        // Only the OR loop is gated - on the global AND on a positive
+        // pixel count (`beq` at `0x80019998`, `blez` at `0x800199A8`).
+        // Both branches land on the emit at `0x800199EC`, not past it.
+        if host.stp_or_gate_set() && count > 0 {
+            host.stp_or_pixels(desc.pixel_data_ptr, count);
+        }
+        let strip = Rect12 {
+            x: desc.rect.x,
+            y: desc.rect.y,
+            w: desc.rect.w.saturating_mul(desc.rect.h),
+            h: 1,
+        };
+        host.emit_sprite(strip, desc.pixel_data_ptr, true);
+    }
+
+    // Main emit. Always runs, always at the raw extents of the resolved
+    // record - `flags & 3` selects nothing (see `SpriteEmitVariant`), and
+    // the `== 3` arm is not a skip.
+    host.emit_sprite(desc.main_rect, desc.main_pixel_data_ptr, false);
+}
+
+/// Y-axis viewport gate used by [`exec_centered_bar`] / [`exec_centered_text`]
+/// to short-circuit emits that would land past the bottom of the title /
+/// menu drawable area. Retail tests `param_2 < 0xF1` (signed) at both call
+/// sites.
+pub const TITLE_PRIM_Y_GATE: i16 = 0xF1;
+
+/// Port of `FUN_801E36C4` - emit a centered horizontal bar at
+/// `(x - w/2 - 2, y + 6)` of width `w` with the supplied color/style
+/// word. The Y-axis viewport gate short-circuits when `y >= 0xF1`,
+/// matching retail's `slti v0,s1,0xf1; beq v0,zero,...` guard.
+///
+/// PORT: FUN_801E36C4
+///
+/// Sequence:
+///
+/// 1. Gate on `y < TITLE_PRIM_Y_GATE` (else no-op).
+/// 2. Allocate a primitive packet of type `0x44` via
+///    [`PrimHost::prim_packet_alloc`].
+/// 3. Emit the bar at `(x - w/2 - 2, y + 6, w, color)` via
+///    [`PrimHost::queue_horizontal_bar`].
+///
+/// The `w / 2` term is C-style signed-divide rounding toward zero
+/// (retail uses the `srl + addu + sra` idiom for signed division).
+pub fn exec_centered_bar<H: PrimHost + ?Sized>(host: &mut H, x: i16, y: i16, w: i16, color: u32) {
+    if y >= TITLE_PRIM_Y_GATE {
+        return;
+    }
+    host.prim_packet_alloc(0x44);
+    // Signed-divide-toward-zero matches retail's `srl+addu+sra` idiom:
+    // `(w + (w >> 31)) >> 1`. Rust's i16 `/` already rounds toward
+    // zero so a direct division is byte-equivalent.
+    let half_w = w / 2;
+    let bar_x = x.wrapping_sub(half_w).wrapping_sub(2);
+    let bar_y = y.wrapping_add(6);
+    host.queue_horizontal_bar(bar_x, bar_y, w, color);
+}
+
+/// Port of `FUN_801E3EE0` - emit a centered text label at
+/// `(x - text_width/2, y + 7)` and return `(text_height + 1) / 2`
+/// (half the text block height, useful for vertical-layout callers).
+///
+/// PORT: FUN_801E3EE0
+///
+/// Sequence:
+///
+/// 1. Gate on `y < TITLE_PRIM_Y_GATE` (else return `0`).
+/// 2. Read the menu text block height via
+///    [`PrimHost::menu_text_block_height`] (saved as `iVar1`).
+/// 3. Measure the label width via
+///    [`PrimHost::menu_text_label_width(label_ptr)`].
+/// 4. Emit the label via
+///    [`PrimHost::queue_centered_text(label, 0, 0, x - width/2, y + 7)`].
+/// 5. Return `(iVar1 + 1) / 2`.
+pub fn exec_centered_text<H: PrimHost + ?Sized>(
+    host: &mut H,
+    label_ptr: u32,
+    x: i16,
+    y: i16,
+) -> i32 {
+    if y >= TITLE_PRIM_Y_GATE {
+        return 0;
+    }
+    let block_height = host.menu_text_block_height();
+    let width = host.menu_text_label_width(label_ptr);
+    // Signed-divide-toward-zero for the width.
+    let half_w = (width / 2) as i16;
+    let text_x = x.wrapping_sub(half_w);
+    let text_y = y.wrapping_add(7);
+    host.queue_centered_text(label_ptr, 0, 0, text_x, text_y);
+    (block_height + 1) / 2
+}
+
+/// Port-thunk for `FUN_801E373C` (card-init composite).
+///
+/// PORT: FUN_801E373C
+///
+/// The retail body is a flat sequence of opaque global writes whose
+/// representation is engine-specific, so the port is a single
+/// trait-method dispatch into [`PrimHost::init_card_state`]. The
+/// trait method's docstring carries the full retail spec.
+pub fn exec_card_init<H: PrimHost + ?Sized>(host: &mut H, arg: u32) {
+    host.init_card_state(arg);
+}
+
+#[cfg(test)]
+mod tests;

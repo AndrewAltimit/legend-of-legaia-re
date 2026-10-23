@@ -59,12 +59,21 @@ impl World {
     ///
     /// REF: FUN_800204F8
     pub fn tick_actor_anims(&mut self) {
-        self.props.bank.tick_anims();
+        // The clip cursors move on the game-frame grid: the actor tick runs
+        // once a game frame and multiplies each step by the frame step
+        // (`FUN_800204F8`, `mult a0,v0` at `0x80020660`), so a vsync between
+        // two game frames moves none of them.
+        let grid = self.clock.script_frame_delta();
+        if grid > 0 {
+            self.props.bank.tick_anims_scaled(grid);
+        }
         // The same tick over the NPC actors: the morph envelope first
         // (`FUN_800204F8` runs `FUN_80020740` before its cursor step), then
         // the clip cursors (a treasure chest's lid, every NPC's idle loop).
         self.tick_npc_morphs();
-        self.tick_npc_clips();
+        if grid > 0 {
+            self.tick_npc_clips_scaled(grid);
+        }
         // The height arm of the same actor tick over the placed objects: a
         // `4C 42` tween's `+0x8E` step and the `0x20000000` Y pin.
         self.tick_object_actor_heights();

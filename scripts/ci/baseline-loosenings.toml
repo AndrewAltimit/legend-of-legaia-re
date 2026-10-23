@@ -231,3 +231,65 @@ changes = [
   ["states/delilas_gi_spirit_distortion_v3/image", 0.718, 0.717],
   ["states/shiny_refactor_gimard_plus35/camera", 0.999, 0.998],
 ]
+
+[[loosening]]
+file = "scripts/ci/port-catalog-baseline.json"
+reason = "Port-tag honesty audit against the disassembly: twelve PORT tags claimed routines the Rust does not implement and are now REF. Seven named a routine only in passing or as a subsumption note (8004695C, 800583C8, 8005842C, 80056798, 8003D344, 80026520, 800266E0, all already on the ignore list); 8003D53C, 80061954, 80062410 and 80068D94 port one arithmetic tail of a CD or libsnd routine the engine replaces; 80058298 (ClearImage) only forwards to a trait no host implements. The four not already ignored joined the ignore list, so the port worklist is unchanged."
+changes = [
+  ["totals/ported", 1026, 1014],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The battle body pair now averages the playing stream's own part count, as FUN_8004998C does (lbu v1,0x0(s4) then div at 0x8004A3DC..0x8004A42C), instead of every expanded equipment channel; recomputed from retail RAM it reproduces the stored body pairs to the unit for summon invoke, melee and monster reaction clips. The fix lifts freed .954 -> .994, noa_levelup_banner .962 -> .999 and the swordie / meta / mule / nighto close-ups. Three close-ups fall because the old wrong centroid cancelled a cadence-off 2 px lead: with the battle frame cadence on, juggernaut reads 1.000 and gimard_summon_start .998 on the same build. The shiny Gimard precast is the same close-up on a patched disc."
+changes = [
+  ["states/gimard_summon_start/image", 0.989, 0.981],
+  ["states/juggernaut_summon_mid_cast/image", 0.999, 0.981],
+  ["states/shiny_refactor_gimard_precast/image", 0.954, 0.94],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The strike loop's clip commit now snaps the attacker to its reach in 4-unit steps, re-facing each step (FUN_8004AD80's tail, 0x8004BF7C..0x8004C118, confirmed by a per-frame PCSX-Redux trace of Vahn's 0D 0F 0E string). battle_melee_hit_spark rises .699 -> .765; two Vahn states lose one 8x8 block or one camera unit at the tolerance edge."
+changes = [
+  ["states/battle_vahn_tri_somersault_super/image", 0.931, 0.93],
+  ["states/rim_elm_gimard_seru_capture_before/camera", 0.999, 0.998],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The blend pass now cuts the semi-transparent foreground (texel * colour / 128) to the GPU's 5-bit precision before it adds to the frame, on both hosts; full precision over-brightened large dim additive layers. It lifts cort_evolved_ultra_charge .921 -> .988, the Megaton Press duel .962 -> .982 and vera .968 -> .985. The casino spotlight cones were already darker than retail and darken further (an existing cone error the fix unmasks, confirmed against the pre-fix binary); the other rows here move one 8x8 block or less on additive sprites at the tolerance edge."
+changes = [
+  ["states/baka_fighter_entry_pretransition/image", 0.976, 0.975],
+  ["states/casino_ticket_counter/image", 0.997, 0.991],
+  ["states/casino_ticket_counter_dialog/image", 0.996, 0.992],
+  ["states/evil_medallion_rage_battle/image", 0.973, 0.971],
+  ["states/minigame_baka_pcsx/image", 0.998, 0.995],
+  ["states/minigame_dance_pcsx/image", 0.835, 0.834],
+  ["states/nivora_duel_mid_blazing_slash/image", 0.997, 0.996],
+  ["states/rugi_field_card_boot/image", 0.993, 0.992],
+  ["states/s5_tetsu_battle/image", 0.996, 0.994],
+  ["states/v0_1_battle_command_menu/image", 0.978, 0.976],
+  ["states/v0_1_battle_command_submenu/image", 1.0, 0.999],
+  ["states/zora_glare_petrify_post/image", 0.996, 0.995],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The battle action SM now runs once per battle frame by default (retail's VSync(2) cadence, FUN_801E295C). Over the battle corpus the flip nets image +.265 / -.065 (theeder .880 -> .994, juggernaut 1.000, Burning Attack .817 -> .846). Three summon close-ups trail their target by up to four camera units at the capture tick because the cast replay's pass grid sits half a pass off retail's there."
+changes = [
+  ["states/cort_mystic_shield_mid_cast/camera", 0.993, 0.991],
+  ["states/horn_summon_mid_cast/camera", 1.0, 0.996],
+  ["states/jedo_summon_mid_cast/camera", 1.0, 0.997],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Patched-disc rows (our own mods, not retail ground truth) under the battle frame cadence and the 5-bit blend: the two Gaza park frames end their fight before the image child reaches the captured phase on the cadence's pass grid, and the shiny Gimard frames carry a recoloured Seru the blend change shifts. Kept as mod regression checks, not engine defects."
+changes = [
+  ["states/battle_gaza2_park_0x19/image", 0.74, "absent"],
+  ["states/battle_gaza2_park_0x19_target_vahn/image", 0.824, "absent"],
+  ["states/shiny_refactor_gimard_levelup/camera", 0.987, 0.984],
+  ["states/shiny_refactor_gimard_levelup/image", 0.847, 0.842],
+  ["states/shiny_refactor_gimard_plus35/image", 0.948, 0.921],
+]

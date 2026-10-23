@@ -119,7 +119,7 @@ fn walk_into_battle(w: &mut World) {
 /// arm (a plain two-swing attack); otherwise take `Command` and type the
 /// combo, then confirm.
 fn spirit_drops_over_one_turn(w: &mut World, combo: &[PadButton]) -> (Vec<i32>, Vec<u8>) {
-    use legaia_engine_menus::battle_input::{AttackMode, BattleCommand, CommandPhase};
+    use legaia_engine_battle_menus::battle_input::{AttackMode, BattleCommand, CommandPhase};
 
     w.actors[0].battle.spirit_gauge = SPIRIT_SEED;
     let mut prev = i32::from(w.actors[0].battle.spirit_gauge);

@@ -10,11 +10,42 @@ use anyhow::{Context, Result, bail};
 use crate::analyze::{Analysis, TimRef, TmdRef, VabRef};
 
 /// Decode TIM `t` with palette `clut` to `(width, height, rgba)`.
+///
+/// A 4 / 8 bpp TIM that carries no CLUT of its own (its palette is another
+/// upload's VRAM cell) decodes through [`grey_ramp`], so it previews and
+/// exports as its index image rather than failing.
 pub fn tim_rgba(a: &Analysis, t: &TimRef, clut: usize) -> Result<(usize, usize, Vec<u8>)> {
     let tim = legaia_tim::parse(a.tim_bytes(t)).context("TIM parse")?;
-    let clut = clut.min(tim.palette_count().saturating_sub(1));
-    let rgba = legaia_tim::decode_rgba8(&tim, clut).context("TIM decode")?;
+    let rgba = if needs_grey_ramp(&tim) {
+        legaia_tim::decode_rgba8_with_palette(&tim, &grey_ramp(&tim))
+    } else {
+        let clut = clut.min(tim.palette_count().saturating_sub(1));
+        legaia_tim::decode_rgba8(&tim, clut)
+    }
+    .context("TIM decode")?;
     Ok((tim.pixel_width(), tim.pixel_height(), rgba))
+}
+
+/// Whether `tim` is indexed but carries no CLUT.
+pub fn needs_grey_ramp(tim: &legaia_tim::Tim) -> bool {
+    use legaia_tim::PixelMode;
+    matches!(tim.mode, PixelMode::Bpp4 | PixelMode::Bpp8) && tim.clut.is_none()
+}
+
+/// An opaque black-to-white BGR555 ramp as long as `tim`'s index range
+/// (STP set, so index 0 is not read as transparent black).
+pub fn grey_ramp(tim: &legaia_tim::Tim) -> Vec<u16> {
+    let n: u16 = if tim.mode == legaia_tim::PixelMode::Bpp4 {
+        16
+    } else {
+        256
+    };
+    (0..n)
+        .map(|i| {
+            let v = i * 31 / (n - 1);
+            0x8000 | (v << 10) | (v << 5) | v
+        })
+        .collect()
 }
 
 pub fn tim_png(a: &Analysis, t: &TimRef, clut: usize, out: &Path) -> Result<()> {
@@ -142,4 +173,37 @@ pub fn vab_all_wavs(a: &Analysis, v: &VabRef, dir: &Path, stem: &str) -> Result<
 
 pub fn bytes(data: &[u8], out: &Path) -> Result<()> {
     std::fs::write(out, data).with_context(|| format!("write {}", out.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn grey_ramp_spans_black_to_white_and_is_opaque() {
+        let mut tim = legaia_tim::Tim {
+            flags: 0,
+            mode: legaia_tim::PixelMode::Bpp4,
+            clut: None,
+            image: legaia_tim::Image {
+                fb_x: 0,
+                fb_y: 0,
+                fb_w: 1,
+                h: 1,
+                data: vec![0x10, 0xF0],
+            },
+        };
+        assert!(needs_grey_ramp(&tim));
+        let ramp = grey_ramp(&tim);
+        assert_eq!(ramp.len(), 16);
+        assert_eq!(ramp[0], 0x8000);
+        assert_eq!(ramp[15], 0xFFFF);
+        let rgba = legaia_tim::decode_rgba8_with_palette(&tim, &ramp).unwrap();
+        // Index 0 is opaque black, not transparent.
+        assert_eq!(&rgba[0..4], &[0, 0, 0, 255]);
+        tim.mode = legaia_tim::PixelMode::Bpp8;
+        assert_eq!(grey_ramp(&tim).len(), 256);
+        tim.mode = legaia_tim::PixelMode::Bpp16;
+        assert!(!needs_grey_ramp(&tim));
+    }
 }

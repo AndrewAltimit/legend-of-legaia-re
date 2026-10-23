@@ -185,7 +185,7 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
     // execution band walks the party in slot order, so slot 0's item lands
     // first.
     {
-        use legaia_engine_menus::battle_input::{
+        use legaia_engine_battle_menus::battle_input::{
             BattleCommand, BattleCommandSession, CommandPhase,
         };
         let next = world
@@ -275,7 +275,7 @@ fn battle_item_menu_cancel_reopens_command_menu() {
 /// state retail stores as the window opens (`FUN_801D0748`'s `0x28` arms).
 #[test]
 fn opening_the_item_window_moves_the_flow_byte_onto_it() {
-    use legaia_engine_menus::battle_flow::BattleFlowState;
+    use legaia_engine_battle_menus::battle_flow::BattleFlowState;
     use legaia_engine_system::input::PadButton;
 
     let mut world = World {

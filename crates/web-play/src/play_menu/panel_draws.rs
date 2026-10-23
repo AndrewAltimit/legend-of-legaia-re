@@ -57,7 +57,7 @@ impl LegaiaRuntime {
                     darken = self.build_save_select(
                         assets,
                         s,
-                        menu,
+                        &menu.save_flow,
                         &mut sprites,
                         &mut texts,
                         origin,

@@ -19,9 +19,8 @@
 //! Both return the landing as JSON; the page rebuilds its render state when
 //! `entered` is set and otherwise leaves the scene it has up.
 
-use legaia_engine_scene_host::resume::{
-    CardLoadHost, ResumeLanding, enter_new_game, resume_card_load,
-};
+use legaia_engine_scene_host::resume::{CardLoadHost, ResumeLanding, resume_card_load};
+use legaia_engine_session::{NewGameHost, start_new_game_on};
 use legaia_save::SaveFile;
 use wasm_bindgen::prelude::*;
 
@@ -85,8 +84,18 @@ impl LegaiaRuntime {
     pub(crate) fn start_new_game(&mut self) -> Option<&'static str> {
         self.pending_card_resume = None;
         self.play_abandon_opening_chain();
-        self.begin_new_game();
-        enter_new_game(|scene| self.enter_field_core(scene, false).map(|_| ()))
+        if self.scene_host.session_mut().is_none() {
+            // No disc: the scaffold world still takes the fresh slate, and
+            // there is no scene to enter.
+            self.begin_new_game();
+            return None;
+        }
+        // The session's New Game (`start_new_game_on`, the native
+        // `BootSession::start_new_game`'s body): the seeded slate and the
+        // score handed over, then the shared opening order, each leg
+        // entered through this page's field entry and confirmed by the
+        // scene the session then holds.
+        start_new_game_on(&mut PageNewGame(self))
     }
 
     fn landing_json(&self, kind: &str, scene: Option<&str>, entered: bool) -> String {
@@ -99,6 +108,23 @@ impl LegaiaRuntime {
             "state": state,
         })
         .to_string()
+    }
+}
+
+/// The play page's half of a New Game
+/// ([`legaia_engine_session::start_new_game_on`]): its session, and its
+/// field entry, which rebuilds the page's render state with the scene.
+struct PageNewGame<'a>(&'a mut LegaiaRuntime);
+
+impl NewGameHost for PageNewGame<'_> {
+    type Sink = crate::play_sfx::PageSink;
+
+    fn new_game_session(&mut self) -> Option<&mut crate::host_slot::PageSession> {
+        self.0.scene_host.session_mut()
+    }
+
+    fn enter_opening_scene(&mut self, scene: &str) -> Result<(), String> {
+        self.0.enter_field_core(scene, false).map(|_| ())
     }
 }
 
@@ -189,6 +215,7 @@ impl LegaiaRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use legaia_engine_save_state::WorldSaveState;
     use legaia_save::SaveResume;
 
     fn disc_runtime() -> Option<LegaiaRuntime> {

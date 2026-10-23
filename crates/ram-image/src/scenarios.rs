@@ -118,6 +118,12 @@ pub struct Scenario {
     /// anything the patch writes is not retail behaviour.
     #[serde(default)]
     pub resident_patch: Option<String>,
+    /// File name of the patched disc image the state was made on, when the
+    /// image is known (`legaia-patcher` names its output
+    /// `<input>.legaia-patcher-<stamp>.bin`). The retail comparison runs the
+    /// engine on that image's files; the image itself is never committed.
+    #[serde(default)]
+    pub resident_disc: Option<String>,
     /// Battle combatant fields the capture probe wrote **after** battle init,
     /// named the way the retail-compare corpus names them (`p0.mp_max`,
     /// `m1.hp`). Such a field holds the probe's value, not anything the game

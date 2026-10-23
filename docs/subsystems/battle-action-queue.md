@@ -636,7 +636,7 @@ Still divergent:
 
 ### Spirit / Run in the live command menu
 
-The live player-driven command menu (`legaia_engine_menus::battle_input::BattleCommand`) carries
+The live player-driven command menu (`legaia_engine_battle_menus::battle_input::BattleCommand`) carries
 all six commands: Attack (target cursor + physical strike), Arts / Magic / Item (host-submenu
 hand-offs), **Spirit** and **Run**. Spirit resolves without a target: the live loop charges the
 caster's AP gauge (`ApGauge::charge_spirit`, the retail Square-press +5) and raises a per-slot

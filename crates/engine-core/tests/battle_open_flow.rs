@@ -24,13 +24,13 @@
 //! These are disc-free: `World::default()` + `enter_battle` is enough, because
 //! the flow byte and the box queue are engine state.
 
-use legaia_engine_battle_vm::battle_formulas::FormationAdvantage;
-use legaia_engine_core::world::World;
-use legaia_engine_menus::battle_flow::BattleFlowState;
-use legaia_engine_menus::battle_input::{
+use legaia_engine_battle_menus::battle_flow::BattleFlowState;
+use legaia_engine_battle_menus::battle_input::{
     BattleCommand, BattleCommandSession, CommandPhase, RoundChoice,
 };
-use legaia_engine_menus::battle_open::{BANNER_FRAMES, FormationBanner};
+use legaia_engine_battle_menus::battle_open::{BANNER_FRAMES, FormationBanner};
+use legaia_engine_battle_vm::battle_formulas::FormationAdvantage;
+use legaia_engine_core::world::World;
 use legaia_engine_system::input::{InputState, PadButton};
 
 /// A 3-party / 2-monster battle with the player driving.
@@ -65,7 +65,7 @@ fn tap(world: &mut World, button: PadButton) {
 /// beginning (`0x6E -> 0xFE`). Nothing the earlier members committed lands
 /// before that.
 fn commit_attacks_for_rest_of_round(world: &mut World) {
-    use legaia_engine_menus::battle_input::{BattleCommand, CommandPhase};
+    use legaia_engine_battle_menus::battle_input::{BattleCommand, CommandPhase};
     for _ in 0..64 {
         let Some(session) = world.battle.command.as_ref() else {
             break;

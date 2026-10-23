@@ -150,7 +150,7 @@ impl Rig for World {
 }
 
 fn drive_art(rig: &mut dyn Rig) -> Vec<legaia_engine_battle::battle_events::BattleShoutCue> {
-    use legaia_engine_menus::battle_input::BattleCommand;
+    use legaia_engine_battle_menus::battle_input::BattleCommand;
 
     let up = InputState::mask_of([PadButton::Up]);
     let mut entered = false;
@@ -196,7 +196,7 @@ fn drive_art(rig: &mut dyn Rig) -> Vec<legaia_engine_battle::battle_events::Batt
             // Retail's open flow: `Begin` on the round prompt, the ring's
             // `Attack` arm, then the `Auto | Command` prompt - `Command` is
             // the directional arts entry, `Auto` the plain swing.
-            use legaia_engine_menus::battle_input::{AttackMode, CommandPhase};
+            use legaia_engine_battle_menus::battle_input::{AttackMode, CommandPhase};
             match cmd.phase {
                 CommandPhase::Menu { .. } if cmd.menu_command() != Some(BattleCommand::Attack) => {
                     // Spatial seating: Left is the `Attack` arm's own side.

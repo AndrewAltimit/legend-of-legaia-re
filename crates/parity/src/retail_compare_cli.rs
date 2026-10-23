@@ -122,6 +122,9 @@ pub fn run(args: RetailCompareArgs) -> Result<()> {
         for r in b.patched_drift(&reports, allow) {
             eprintln!("[patched-drift] {r}");
         }
+        for r in b.fallback_skips(&reports) {
+            eprintln!("[skip] {r}");
+        }
         anyhow::ensure!(
             regs.is_empty(),
             "{} score(s) dropped below the baseline",

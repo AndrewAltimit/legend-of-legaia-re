@@ -187,6 +187,7 @@ pub fn write_save_into_card(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use legaia_engine_save_state::WorldSaveState;
     use legaia_save::card::{BLOCK_SIZE, CARD_MAGIC, CARD_SIZE, DIR_FRAME_SIZE, DIR_FRAMES, state};
 
     fn blank_card() -> MountedCard {

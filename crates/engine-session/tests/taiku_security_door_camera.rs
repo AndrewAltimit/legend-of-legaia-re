@@ -22,6 +22,7 @@
 //!
 //! Skip-passes without `LEGAIA_DISC_BIN` / `extracted/` / the save library.
 
+use legaia_engine_save_state::WorldSaveState;
 use std::path::{Path, PathBuf};
 
 use legaia_engine_session::native::NativeSession;

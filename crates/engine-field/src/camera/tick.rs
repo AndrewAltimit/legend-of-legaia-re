@@ -6,7 +6,7 @@ impl Camera {
     /// [`Self::tick`] on the world's `rand()` stream: the follow ease's shake
     /// pair draws from `World::rng_state` in tick order, as retail's
     /// `FUN_801DB510` draws from the one BIOS seed. The shared
-    /// `legaia_engine_core::frame_step::camera_after_world_tick` runs this one.
+    /// `crate::frame_step::camera_after_world_tick` runs this one.
     pub fn tick_on_stream<W: CameraWorld + ?Sized>(&mut self, world: &mut W) {
         self.zone.shake_seed = world.rng_state();
         self.tick(world);

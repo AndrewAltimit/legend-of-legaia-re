@@ -12,6 +12,13 @@
 //! emulators, across the whole chapter) has placement 32 on its seat
 //! `(12864, 1856)`, and 33 on one seat or another per story state.
 //!
+//! A spawn section that ends on a compass walk of its own actor (`37` /
+//! `41 b0 b1`) is the other scripted source: the walk kernel steps the leg
+//! from the first tick until it lands, so `dolk`'s vendors end half a tile
+//! off their `MOVE_TO` tile and town01's parked `P1[36]` one step short of
+//! its park, `(16320, 16256)` - the node every catalogued town01 field-run
+//! state holds. Those frames are scripted, not free roam.
+//!
 //! Assertions are structural (slots, world coordinates) - no Sony bytes.
 //! Skip-passes without `LEGAIA_DISC_BIN` / `extracted/` (CLAUDE.md
 //! convention).
@@ -38,7 +45,9 @@ fn extracted_dir() -> Option<PathBuf> {
 /// Enter `scene` with the play hosts' liveliness on, tick `ticks` frames,
 /// and return each placement's entry position and its summed free-roam
 /// travel: only frames with no cutscene timeline running count (a
-/// timeline's cross-context walks are scripted legs retail runs too).
+/// timeline's cross-context walks are scripted legs retail runs too), and a
+/// placement's own frames count only once its spawn section's compass leg
+/// has landed (the same kind of leg, armed by the pre-run).
 fn run_scene(
     extracted: &std::path::Path,
     scene: &str,
@@ -56,6 +65,14 @@ fn run_scene(
     let mut prev = host.world.npcs.positions.clone();
     let mut out: Excursions = prev.iter().map(|(&k, &p)| (k, (p, 0))).collect();
     for _ in 0..ticks {
+        // A compass leg the spawn section armed (`37` / `41`, stepped by the
+        // walk kernel until it lands) is the script's motion, not free roam:
+        // read which slots carry one before the tick that steps it.
+        let scripted: std::collections::BTreeSet<u8> = prev
+            .keys()
+            .copied()
+            .filter(|&k| host.world.npcs.glide_leg_active(k))
+            .collect();
         let stepped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             host.world.tick();
         }));
@@ -64,7 +81,8 @@ fn run_scene(
         }
         let free_roam = !host.world.cutscene_timeline_active();
         for (k, &(x, z)) in &host.world.npcs.positions {
-            if let (true, Some(&(px, pz)), Some((_, d))) = (free_roam, prev.get(k), out.get_mut(k))
+            if let (true, false, Some(&(px, pz)), Some((_, d))) =
+                (free_roam, scripted.contains(k), prev.get(k), out.get_mut(k))
             {
                 *d += (x as i32 - px as i32)
                     .abs()

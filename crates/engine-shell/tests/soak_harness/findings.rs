@@ -37,7 +37,7 @@ impl Finding {
                     1
                 }
             }
-            "unknown_scene" | "door_loop" => 1,
+            "unknown_scene" | "door_loop" | "wipe_continue" => 1,
             "script_stall" | "control_starved" | "confined" => 2,
             "battle_loop" => 1,
             _ => 3,

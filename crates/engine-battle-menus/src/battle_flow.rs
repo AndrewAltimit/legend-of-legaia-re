@@ -1,0 +1,359 @@
+//! The battle **command-flow** state byte - retail `ctx[+0x06]`.
+//!
+//! PORT: FUN_801D0748
+//! REF: FUN_801E295C, FUN_801D9BBC, FUN_801F747C
+//!
+//! Retail runs two independent battle state machines over the same context
+//! struct (`ctx = _DAT_8007BD24`):
+//!
+//! * `ctx[+0x07]` - the per-actor **action** SM `FUN_801E295C`, ported as
+//!   [`legaia_engine_battle_vm::battle_action`]. It executes an already-chosen action
+//!   (swing, cast, flee).
+//! * `ctx[+0x06]` - the **command flow** SM `FUN_801D0748`, ported here. It is
+//!   the menu/UI half: whose turn it is, which window is open, what the player
+//!   has picked so far.
+//!
+//! The two are easy to confuse because both are byte cursors into a `jr` table
+//! and both use values in `0x00..=0xFF`. They are not the same space:
+//! `ctx[7] == 0x64` is `RunBegin`, while `ctx[6] == 0x64` is *target confirm*.
+//!
+//! ## The command-flow state space
+//!
+//! Below `0x1E` the flow is battle entry and round setup (`0x00` init, `0x0A`
+//! the party plates + formation banner, `0x0B` the intro timer at
+//! `ctx[+0x6D6]`, `0x14` round start, which falls into `0x1E`). From `0x1E` up
+//! it is the player's command selection, and the states are **regular decimal
+//! multiples of ten**. The sequencing is documented in
+//! [`battle.md`](../../../docs/subsystems/battle.md); the surfaces are
+//! [`crate::battle_input`]'s three phases:
+//!
+//! | `ctx[+0x06]` | State | What is on screen |
+//! |---|---|---|
+//! | `0x1E` = 30 | [`BattleFlowState::TurnPrompt`] | Round start: the `[Begin]` / `[Run]` prompt. |
+//! | `0x28` = 40 | [`BattleFlowState::CategoryMenu`] | The four-arm command ring (Item / Attack / magic / Spirit). |
+//! | `0x32` = 50 | [`BattleFlowState::EscapePrompt`] | `[Escape]` chosen - the flee confirm. |
+//! | `0x3C` = 60 | [`BattleFlowState::ItemWindow`] | The item window. |
+//! | `0x46` = 70 | [`BattleFlowState::MagicWindow`] | The magic window. |
+//! | `0x50` = 80 | [`BattleFlowState::ArtsCommandEntry`] | The arts command-entry screen. |
+//! | `0x5A` = 90 | [`BattleFlowState::TargetSelect`] | The target cursor. |
+//! | `0x64` = 100 | [`BattleFlowState::TargetConfirm`] | Target confirmed. |
+//! | `0x6E` = 110 | [`BattleFlowState::CommitBegin`] | Every member has committed - begin the round. |
+//! | `0x78` = 120 | [`BattleFlowState::AttackModePrompt`] | The Auto / Command attack-mode prompt. |
+//!
+//! Above the selection band sit the resolution states (`0x5B..=0x67` per-window
+//! target sub-cursors, `0xFE` "round armed, run the action SM", `0xFF` idle).
+//!
+//! ## Why this byte matters beyond the menus
+//!
+//! It is the key the **sparring-tutorial** hook table indexes
+//! ([`legaia_engine_battle::battle_tutorial`]). Overlay 967's tick subtracts `0x1E` from it
+//! and jumps a 91-entry table; the nine live slots are exactly the nine
+//! selection states above **minus** [`BattleFlowState::MagicWindow`] - the
+//! tutorial teaches attacks, items, spirit and hyper arts, and never magic.
+//! That the live hook set is `{30,40,50,60,80,90,100,110,120}` and the flow
+//! band is `{30,40,50,60,70,80,90,100,110,120}` is the cross-check that pins
+//! the mapping.
+
+use crate::battle_input::CommandPhase;
+
+/// The battle command-flow cursor, retail `ctx[+0x06]`.
+///
+/// Only the states the engine's command flow can be in are modelled; retail's
+/// entry / resolution states outside the selection band collapse into
+/// [`BattleFlowState::Idle`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[repr(u8)]
+pub enum BattleFlowState {
+    /// No command selection in flight - the action SM owns the frame.
+    /// Stands in for retail's entry (`0x00..=0x14`) and resolution
+    /// (`0xFE`/`0xFF`) states, none of which carry a tutorial hook.
+    #[default]
+    Idle = 0,
+    /// Round start - the `[Begin]` / `[Run]` prompt (retail `0x1E`). Raised
+    /// once per round, ahead of the round's first party command.
+    TurnPrompt = 30,
+    /// The four-arm command ring - Item / Attack / magic / Spirit (retail
+    /// `0x28`).
+    CategoryMenu = 40,
+    /// `[Escape]` chosen - the flee confirm (retail `0x32`).
+    EscapePrompt = 50,
+    /// The item window (retail `0x3C`).
+    ItemWindow = 60,
+    /// The magic window (retail `0x46`). No tutorial hook.
+    MagicWindow = 70,
+    /// The arts command-entry screen (retail `0x50`).
+    ArtsCommandEntry = 80,
+    /// The target cursor (retail `0x5A`).
+    TargetSelect = 90,
+    /// Target confirmed (retail `0x64`).
+    TargetConfirm = 100,
+    /// Every party member has committed - begin the round (retail `0x6E`).
+    CommitBegin = 110,
+    /// The Auto / Command attack-mode prompt (retail `0x78`).
+    AttackModePrompt = 120,
+}
+
+impl BattleFlowState {
+    /// The raw `ctx[+0x06]` byte.
+    pub fn raw(self) -> u8 {
+        self as u8
+    }
+
+    /// Decode a raw `ctx[+0x06]` byte. Values outside the modelled selection
+    /// band (retail's entry / resolution states) decode to
+    /// [`BattleFlowState::Idle`].
+    pub fn from_raw(raw: u8) -> Self {
+        match raw {
+            30 => Self::TurnPrompt,
+            40 => Self::CategoryMenu,
+            50 => Self::EscapePrompt,
+            60 => Self::ItemWindow,
+            70 => Self::MagicWindow,
+            80 => Self::ArtsCommandEntry,
+            90 => Self::TargetSelect,
+            100 => Self::TargetConfirm,
+            110 => Self::CommitBegin,
+            120 => Self::AttackModePrompt,
+            _ => Self::Idle,
+        }
+    }
+}
+
+/// Which host-owned battle submenu is open, if any. The engine splits the
+/// windows retail drives from inside `FUN_801D0748` into separate sessions
+/// (`legaia_engine_menus::inventory_use` / [`legaia_engine_battle::battle_magic`] /
+/// [`legaia_engine_battle::battle_arts`]), so the flow state has to be recomposed from them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BattleMenuKind {
+    /// No submenu open.
+    #[default]
+    None,
+    /// The inventory submenu - retail's item window.
+    Item,
+    /// The spell submenu - retail's magic window.
+    Magic,
+    /// The saved-chain submenu - retail's arts command-entry screen.
+    Arts,
+}
+
+/// Map the engine's live command-selection state onto retail `ctx[+0x06]`.
+///
+/// `menu` wins over `phase`: an open submenu is exactly the window state retail
+/// would be sitting in, and the command session that spawned it has already
+/// resolved. When neither is live the flow is [`BattleFlowState::Idle`].
+///
+/// The command session now models retail's round prompt (`0x1E`) and
+/// attack-mode prompt (`0x78`) as phases of its own, so both map straight
+/// across instead of being synthesised by the World.
+pub fn flow_state_for(phase: Option<&CommandPhase>, menu: BattleMenuKind) -> BattleFlowState {
+    match menu {
+        BattleMenuKind::Item => return BattleFlowState::ItemWindow,
+        BattleMenuKind::Magic => return BattleFlowState::MagicWindow,
+        BattleMenuKind::Arts => return BattleFlowState::ArtsCommandEntry,
+        BattleMenuKind::None => {}
+    }
+    match phase {
+        Some(CommandPhase::RoundPrompt { .. }) => BattleFlowState::TurnPrompt,
+        Some(CommandPhase::AttackMode { .. }) => BattleFlowState::AttackModePrompt,
+        Some(CommandPhase::Menu { .. }) => BattleFlowState::CategoryMenu,
+        Some(CommandPhase::Targeting { .. }) => BattleFlowState::TargetSelect,
+        // A confirmed target commits the action: retail's target cursor (0x5A)
+        // goes straight to the commit state (0x6E) once the last member has
+        // picked. Its 0x64 "target confirm" is the *item window's* own target
+        // step, which the engine runs inside `legaia_engine_menus::inventory_use` - so
+        // nothing here produces `TargetConfirm` yet.
+        Some(CommandPhase::Confirmed { .. }) => BattleFlowState::CommitBegin,
+        // The commit-confirm screen itself, and the two exits it resolves to
+        // (both leave the state the same frame).
+        Some(CommandPhase::CommitConfirm { .. })
+        | Some(CommandPhase::BeginRound)
+        | Some(CommandPhase::Reselect) => BattleFlowState::CommitBegin,
+        Some(CommandPhase::OpenItemMenu) => BattleFlowState::ItemWindow,
+        Some(CommandPhase::OpenSpellMenu) => BattleFlowState::MagicWindow,
+        Some(CommandPhase::OpenArtsMenu) => BattleFlowState::ArtsCommandEntry,
+        Some(CommandPhase::RunAway) => BattleFlowState::EscapePrompt,
+        Some(CommandPhase::SpiritGuard) | Some(CommandPhase::Aborted) => {
+            BattleFlowState::CommitBegin
+        }
+        // The cancel resolves on the ring it was pressed on.
+        Some(CommandPhase::StepBack) => BattleFlowState::CategoryMenu,
+        None => BattleFlowState::Idle,
+    }
+}
+
+/// A tutorial box the World has resolved to text and queued for display.
+///
+/// The queue is the engine's re-host of retail's single on-screen message box
+/// plus its `ctx[+0x6B2]` busy flag: while any box is queued the battle loop is
+/// parked, exactly as `FUN_801D0748` returns early when `FUN_801D9BBC` reports
+/// a box up.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActiveTutorialBox {
+    /// The prompt text, disc-sourced. `'|'` hard breaks are already newlines.
+    pub text: String,
+    /// Raw style index `0..=9` as passed to the retail emitter `FUN_801F747C`.
+    pub style: u8,
+    /// Styles `2..=7` wait for the player to acknowledge; `0`, `1`, `8`, `9`
+    /// dismiss on their own.
+    pub waits_for_input: bool,
+    /// Frames left before a non-waiting box dismisses itself. Unused when
+    /// [`Self::waits_for_input`].
+    pub frames_remaining: u16,
+    /// Dispatch group: every box one hook dispatch registered shares a
+    /// value, and the whole front group is on screen at once (each box is
+    /// its own retail text actor). Boxes of a later dispatch wait behind it.
+    pub group: u32,
+    /// Any pad press dismisses this box, not only Cross - the sparring
+    /// caption's `FUN_80056208` phase-1 test is on the whole packed pad
+    /// word. Meaningless for a waiting box.
+    pub any_press_dismisses: bool,
+    /// A box whose rect is a placement record's rather than the emitter's
+    /// measured one: the sparring caption (HUD element `0x5A`,
+    /// [`legaia_engine_battle::battle_tutorial::SPARRING_CAPTION_RECT`]). `None` for every
+    /// `FUN_801F747C` emission.
+    pub placed: Option<(i16, i16, i16, i16)>,
+    /// A self-dismissing prompt of the 967 emitter - the text actor it
+    /// registers under sort key `1`. Retail never times that node out: it
+    /// stands until the next key-`1` registration reuses it or the hook
+    /// unregisters it, so when this box leaves the queue it becomes the
+    /// world's standing prompt
+    /// (`legaia_engine_core::world::BattleState::tutorial_standing`). `false` for a
+    /// waiting box (key `2`), the sparring caption and the battle-open
+    /// banner, which are other actors.
+    pub stands: bool,
+}
+
+impl ActiveTutorialBox {
+    /// Number of rendered lines - the `'|'` hard breaks the overlay strings
+    /// carry, already folded to newlines.
+    pub fn lines(&self) -> i16 {
+        (self.text.lines().count().max(1)) as i16
+    }
+
+    /// Top-left corner for this box, given the width its text measures in the
+    /// host's font. Engine-core has no glyph metrics, so the host supplies the
+    /// measured width and this applies the retail placement arithmetic
+    /// ([`legaia_engine_battle::battle_tutorial::BoxStyle::position`]).
+    pub fn position(&self, text_width: i16) -> Option<(i16, i16)> {
+        if let Some((x, y, _, _)) = self.placed {
+            return Some((x, y));
+        }
+        legaia_engine_battle::battle_tutorial::BoxStyle::from_raw(self.style)
+            .map(|s| s.position(text_width, self.lines()))
+    }
+
+    /// The whole box rect `(x, y, w, h)` in 320x240 stage pixels - the rect
+    /// retail's emitter registers the prompt's text actor with
+    /// ([`legaia_engine_battle::battle_tutorial::BoxStyle::box_rect`]). Hosts frame the box
+    /// with the standard window skin at this rect and draw the text at its
+    /// origin on a 14-px row pitch.
+    ///
+    /// A [`Self::placed`] box answers its record's rect whatever the text
+    /// measures.
+    pub fn rect(&self, text_width: i16) -> Option<(i16, i16, i16, i16)> {
+        if self.placed.is_some() {
+            return self.placed;
+        }
+        legaia_engine_battle::battle_tutorial::BoxStyle::from_raw(self.style)
+            .map(|s| s.box_rect(text_width, self.lines()))
+    }
+}
+
+/// How long a non-waiting tutorial box holds the battle loop, in frames.
+///
+/// Retail's self-dismissing prompt holds nothing and is never timed out: its
+/// text actor stands until the next one replaces it. The engine's box queue
+/// parks the loop on every box, so a non-waiting one needs a duration - the
+/// dialog layer's standard auto-advance dwell - after which it leaves the
+/// queue and stands on screen as retail's does
+/// ([`ActiveTutorialBox::stands`]).
+pub const TUTORIAL_BOX_AUTO_FRAMES: u16 = 150;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use legaia_engine_battle::battle_tutorial::HOOK_STATES;
+
+    /// The sparring caption is a placement record's fixed box, so its rect
+    /// does not move with the measured line; an emitter box still does.
+    #[test]
+    fn a_placed_box_keeps_its_records_rect_whatever_the_text_measures() {
+        use legaia_engine_battle::battle_tutorial::{
+            SPARRING_CAPTION_RECT, SPARRING_CAPTION_STYLE,
+        };
+        let mut b = ActiveTutorialBox {
+            text: "one\ntwo".to_string(),
+            style: SPARRING_CAPTION_STYLE,
+            waits_for_input: false,
+            frames_remaining: 1,
+            group: 0,
+            any_press_dismisses: true,
+            placed: Some(SPARRING_CAPTION_RECT),
+            stands: false,
+        };
+        assert_eq!(b.rect(120), Some((56, 176, 208, 28)));
+        assert_eq!(b.rect(194), Some((56, 176, 208, 28)));
+        assert_eq!(b.position(194), Some((56, 176)));
+        // The frame is the box inflated by 8 on every side - retail's
+        // `(48, 168)..(272, 212)`.
+        let (x, y, w, h) = b.rect(0).unwrap();
+        assert_eq!((x - 8, y - 8, x + w + 8, y + h + 8), (48, 168, 272, 212));
+        // Without the record the same style measures: centred, on the
+        // `0xCC` anchor.
+        b.placed = None;
+        assert_eq!(b.rect(194), Some((0xA0 - 97, 0xCC - 24, 194, 24)));
+    }
+
+    #[test]
+    fn selection_band_is_regular_tens() {
+        let band = [
+            BattleFlowState::TurnPrompt,
+            BattleFlowState::CategoryMenu,
+            BattleFlowState::EscapePrompt,
+            BattleFlowState::ItemWindow,
+            BattleFlowState::MagicWindow,
+            BattleFlowState::ArtsCommandEntry,
+            BattleFlowState::TargetSelect,
+            BattleFlowState::TargetConfirm,
+            BattleFlowState::CommitBegin,
+            BattleFlowState::AttackModePrompt,
+        ];
+        for (i, s) in band.iter().enumerate() {
+            assert_eq!(s.raw(), 30 + 10 * i as u8);
+            assert_eq!(BattleFlowState::from_raw(s.raw()), *s);
+        }
+    }
+
+    /// The tutorial's nine live hook slots are the selection band minus the
+    /// magic window - the cross-check that pins `ctx[+0x06]` as the table key.
+    #[test]
+    fn tutorial_hooks_are_the_selection_band_without_magic() {
+        let mut expected: Vec<u8> = (0..10).map(|i| 30 + 10 * i).collect();
+        expected.retain(|&s| s != BattleFlowState::MagicWindow.raw());
+        assert_eq!(expected, HOOK_STATES.to_vec());
+    }
+
+    #[test]
+    fn entry_and_resolution_states_are_idle() {
+        for raw in [0u8, 0x0A, 0x0B, 0x14, 0x5B, 0x66, 0xFE, 0xFF] {
+            assert_eq!(BattleFlowState::from_raw(raw), BattleFlowState::Idle);
+        }
+    }
+
+    #[test]
+    fn an_open_submenu_wins_over_the_command_phase() {
+        let phase = CommandPhase::Menu { cursor: 0 };
+        assert_eq!(
+            flow_state_for(Some(&phase), BattleMenuKind::Item),
+            BattleFlowState::ItemWindow
+        );
+        assert_eq!(
+            flow_state_for(Some(&phase), BattleMenuKind::None),
+            BattleFlowState::CategoryMenu
+        );
+        assert_eq!(
+            flow_state_for(None, BattleMenuKind::None),
+            BattleFlowState::Idle
+        );
+    }
+}

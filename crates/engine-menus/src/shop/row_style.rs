@@ -29,7 +29,8 @@ pub const SHOP_INK_FEATURED: u8 = 5;
 ///
 /// Read off `FUN_80032A44`'s shared `0x3000` / `0xA000` arm
 /// (`0x80033548..0x800335A0`), which is last-rule-wins like
-/// [`shop_stock_row_ink`] but with a different rule set:
+/// the prize list's `legaia_engine_ui::prize_exchange::prize_row_ink` but
+/// with a different rule set:
 ///
 /// 1. ink starts at `7`;
 /// 2. the row word's dim bit `0x800` -> `0`, **unless** the list is parked
@@ -79,7 +80,9 @@ pub const SHOP_PRICE_DIGITS: u8 = 6;
 ///   inverted blink bit (`1` animated / `0` static).
 ///
 /// PORT: FUN_801d4868 (per-row cursor gate, `0x801D48B4..0x801D4910`)
-/// PORT: FUN_801d5de0 (same decode, `0x801D5E40..0x801D5E9C`)
+/// REF: FUN_801d5de0 - the casino prize list's renderer, which inlines the
+/// same decode over `_DAT_8007BB98` at `0x801D5E40..0x801D5E9C`; the shop
+/// shares the idiom, not the routine.
 pub fn shop_cursor_mode(word: u32, row: u16) -> Option<u8> {
     if word & 0x4000 != 0 {
         return None;
@@ -145,54 +148,6 @@ pub fn shop_root_command_rows(
         out.cursor = shop_cursor_mode(cursor_word, row).map(|mode| (mode, (wx, y)));
     }
     rows
-}
-
-/// Last-rule-wins row ink for a priced list row.
-///
-/// **`FUN_801D5DE0` is the casino prize list's row renderer, not the shop's.**
-/// Read off its disassembly (`ghidra/scripts/funcs/overlay_menu_801d5de0.txt`),
-/// it indexes the casino prize table `0x801E4518` at `base + block*0x60 +
-/// row*8` with the block byte from the entry-context pointer `_DAT_8007B450[1]`,
-/// and its affordability compare is against `_DAT_800845A4`, the **coin bank**.
-/// The party gold purse `_DAT_8008459C` appears nowhere in its 151 instructions.
-/// The `overlay_shop_save_801d5de0.txt` dump filename names the *image* the
-/// routine was dumped from - that overlay carries menu and casino code too -
-/// and is not evidence about what it does.
-///
-/// Wired: its own screen. Both hosts' prize-exchange draw
-/// (`engine-shell`'s `prize_window_draws`, `web-play::play_shop`) resolve
-/// each window-44 row's `PrizeRow::ink` through it over the coin bank and the
-/// prize record's `+2` marker. The shop buy list used to borrow it with the
-/// marker pinned at `0`, reasoning that the shop builder had "no `0x400`
-/// alt-ink at all"; the list kernel's class arm does ink the shop rows (the
-/// hoisted band's `5`), so the shop has its own kernel now,
-/// [`shop_buy_row_ink`].
-///
-/// `held` is the held count of the row's item (retail's bag scan
-/// `FUN_80042F4C`), `marker` the record's `+2` halfword, `gold` the currency the
-/// caller gates on, and `price` the record's `+4` word.
-///
-/// The three tests are applied in a fixed order and each **overwrites** the
-/// previous verdict, so the precedence is not the "first rule wins" reading
-/// the bullet list of colours suggests: a full stack greys, a non-zero marker
-/// then re-inks it to `6` *even though the stack is full*, and an
-/// unaffordable price finally greys it again regardless of the marker.
-///
-/// PORT: FUN_801d5de0 (prize/stock row ink selection, `0x801D5EA0..0x801D5F6C`)
-/// REF: FUN_80042f4c (the held-count bag scan whose result `held` carries)
-/// REF: FUN_80030628 (the shop's own list builder, case `0x0B`)
-pub fn shop_stock_row_ink(held: i16, marker: i16, gold: i32, price: i32) -> u8 {
-    let mut ink = SHOP_INK_NORMAL;
-    if held >= SHOP_HELD_CAP as i16 {
-        ink = SHOP_INK_GREY;
-    }
-    if marker != 0 {
-        ink = SHOP_INK_MARKED;
-    }
-    if gold < price {
-        ink = SHOP_INK_GREY;
-    }
-    ink
 }
 
 /// The two quantity windows' **content** - the pens, the digit ladder and

@@ -93,7 +93,8 @@ impl<'a> FieldScreenHost for FieldHostImpl<'a> {
     /// stamps onto the player texture atlas (town01's opening record stamps
     /// the Noa blink/mouth cells - see `docs/formats/character-mesh.md`).
     ///
-    /// PORT: FUN_80058490 (consumer: `jal` at 0x801E1B84)
+    /// REF: FUN_80058490 (consumer: `jal` at 0x801E1B84; ported as
+    /// `legaia_tim::Vram::move_image`)
     /// REF: FUN_801DE840 (sub-0x60 handler arm 0x801E1B28..0x801E1B90),
     /// FUN_8003CE9C (misaligned-u16 operand reads)
     fn vram_move_image(&mut self, words: [i16; 6]) {

@@ -568,6 +568,25 @@ round prompt's confirm arm (`jal 0x801D388C` at `0x801D109C`):
 | `0x1A` | the plaque behind the tab | `y = -24 -> 14` |
 | `0x52` | the AP plate | `x = 328 -> 208` |
 
+#### A Spirit turn raises its gauge on a glide
+
+The Spirit arm of the action seed sizes the AP bar (record `0x0F`) off the
+acting member's AGL less 6 and raises it with the AP plate (record `0x52`),
+both with mode `0` on the seed pass (`jal 0x801D8DE8` at `0x801E2FD4` and
+`0x801E2FE0`). The bar rises `y = 234 -> 192` and the plate slides
+`x = 328 -> 208` over the same sixteen vsyncs as the actor plaque raised
+beside them. The port runs both on one glide
+(`BattleState::spirit_gauge_glide`, `World::spirit_gauge_glide_offsets`),
+which the arts-entry chrome builder offsets the Spirit view by.
+
+#### A retired record keeps its last `elapsed`
+
+The stepper snaps a record whose remaining `total - elapsed` is within the
+frame step without writing `elapsed` (`0x801D9C20` branches to the snap,
+which jumps to the retire at `0x801D9D1C` past the `sb v0,0x1(a1)` at
+`0x801D9C44`). A retired record therefore still holds its target, its start
+and the `elapsed` of its last in-flight pass, and only `total` reads zero.
+
 #### The stepper's return holds the pad
 
 `FUN_801D9BBC` returns a value the menu SM reads as "a glide is still up":
@@ -1049,7 +1068,38 @@ Style `0x44` is widget record `0x44`, byte-identical to the banner's record
 the gold border over `(8, 184)..(312, 212)`, the pen `(16, 192)` inflated by
 the class-0 frame's 8 pixels, with the caption on the pen. Port:
 `BattleHudFrame::message_bar` draws `class0_frame_draws_at` on the bar's name
-pen; while it is up neither the bar nor the target plaque on that row draws.
+pen; while it is up the readout bar does not draw.
+
+**It rises on a glide.** `FUN_801D8DE8(0x5B, 0)` spawns the bar at seat A and
+registers a glide record to seat B like any mode-`0` raise. The record
+`zeto_call_wave_mid_cast` holds reads start `(16, 234)`, target `(16, 192)`,
+total `16`, elapsed `11`; the older ordering table draws the frame's top edge at
+`y = 208` (elapsed `7`, a step-`4` pass) and the displayed frame at `y = 219`
+(elapsed `3`). Port: `BattleState::message_bar_glide`, stepped with the action
+plates' glides, read by `battle_hud::battle_message_bar_dy` into
+`BattleHudFrame::message_bar_dy`; started by a cast module's raise
+(`World::raise_module_message_bar`). The steal, Glare and Fatal Decision raises
+still draw at rest.
+
+**It is queued after the target plaque.** The same capture's ordering table
+links the target plaque's sprites ahead of the bar's, so a bar risen over the
+plaque hides it and a bar still gliding up from below leaves it in view. The
+port's plaque name rides the text layer, which draws over every sprite, so the
+builder drops the plaque once the bar's frame top reaches the plaque's top.
+
+**Cast modules raise it with their own lines.** Sites across the band
+store a pointer into the module image at `0x800774AC` and call
+`FUN_801D8DE8(0x5B, 0)`: Call Wave's "Expect a powerful attack on the next
+turn!" (`0x801F7EF4`, PROT 0946 arm 0, `0x801F6CAC..0x801F6CE0`), Power Up's
+"Agility increased!", 0945's "All status increased.", Xain's "Xain is saving up
+his strength." and the PROT 0955 cell's outcome lines among them. The
+[presentation decode](cast-module.md#presentation-calls) reads each as a
+`HudElement` site with the line's VA and the phase the code after the call
+stores, and the engine raises the bar on the pass that leaves the arm that way
+(Big Wave leaves Call Wave's arm 0 for arm 4 without the raise). A site whose
+exit does not fold (PROT 0953's charge branch, the 0955 cell's conditional
+outcomes), and a line empty in the image (a buffer the module composes at run
+time: PROT 0916, 0943), are not raised.
 
 Glare (PROT 0940, body `0x801F69F8`) raises the same element with its own
 line: the module image's `0xC1 k` " has turned to stone." for the petrified

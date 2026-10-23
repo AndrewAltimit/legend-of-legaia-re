@@ -245,7 +245,7 @@ pub enum ModeInitBare {
 /// whatever image is resident in overlay slot A. That does **not** make it a
 /// dead jump: in PROT 0895 (`init.pak`) the VA is a real entry with a clean
 /// `addiu sp,sp,-0x230` prologue, and it is the publisher-logo boot pass -
-/// see [`READ_INIT_TARGET`] and `legaia_engine_menus::publisher_logos`.
+/// see [`READ_INIT_TARGET`] and `legaia_engine_title::publisher_logos`.
 ///
 /// **Mode 20 is the one live row.** `FUN_80055B6C` is the battle-scene setup
 /// entry, resident in `SCUS_942.54`, so BATTLE INIT is a real call and not a

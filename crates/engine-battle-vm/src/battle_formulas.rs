@@ -7,8 +7,8 @@
 //! [`crate::battle_action`]. This module is the **arithmetic kernel** that
 //! every selector eventually feeds into.
 //!
-//! PORT: FUN_80056798 (PsyQ rand; full per-formula attribution lives on
-//! the individual `pub fn` docs below).
+//! REF: FUN_80056798 (PsyQ `rand`, the draw every roll here consumes; the
+//! BIOS LCG behind it is `legaia_engine_system::rand`).
 //! PORT: FUN_800402F4 (selector-dispatch lives in battle_action; this
 //! module ports the arithmetic kernel the dispatch feeds into).
 //! PORT: FUN_801DD0AC (PROT 0898; damage roll - both branches. Summon branch

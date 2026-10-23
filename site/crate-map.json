@@ -65,7 +65,7 @@
   {
    "id": "drivers",
    "title": "World drivers",
-   "blurb": "Layers that hold a running World from outside: scene entry and tick, the pause menu, the battle HUD's and the field screens' reads, the cheats.",
+   "blurb": "Layers that hold a running World from outside: scene entry and tick, the pause menu, the battle HUD's and the field screens' reads, the cheats, the LGSF saves.",
    "rows": [
     {
      "label": "",
@@ -74,7 +74,8 @@
       "engine-menu-runtime",
       "engine-battle-hud",
       "engine-world-views",
-      "engine-cheats"
+      "engine-cheats",
+      "engine-save-state"
      ]
     }
    ]
@@ -106,6 +107,7 @@
     {
      "label": "rank 5",
      "crates": [
+      "engine-battle-menus",
       "engine-menus"
      ]
     },
@@ -140,7 +142,8 @@
       "engine-camera",
       "engine-dev-menu",
       "engine-mode",
-      "engine-motion-vm"
+      "engine-motion-vm",
+      "engine-title"
      ]
     },
     {
@@ -221,7 +224,8 @@
       "font",
       "save",
       "gamedata",
-      "cheats"
+      "cheats",
+      "app-theme"
      ]
     }
    ]
@@ -279,6 +283,7 @@
     "disc-audit",
     "disc-patch",
     "engine-battle",
+    "engine-battle-menus",
     "engine-battle-vm",
     "engine-core",
     "engine-effects",
@@ -328,6 +333,25 @@
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/anm/README.md"
   },
+  "app-theme": {
+   "package": "legaia-app-theme",
+   "deps": [],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "spacing",
+    "chrome"
+   ],
+   "band": "leaves",
+   "track": "tooling",
+   "scope": "The desktop programs' one palette (dark and light) and spacing values: Studio's egui theme, the game launcher, the play window's own chrome. No dependencies.",
+   "dependents": [
+    "engine-shell",
+    "studio"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/app-theme/README.md"
+  },
   "art": {
    "package": "legaia-art",
    "deps": [],
@@ -362,6 +386,7 @@
     "delilas-party",
     "engine-battle",
     "engine-battle-hud",
+    "engine-battle-menus",
     "engine-battle-vm",
     "engine-capture",
     "engine-core",
@@ -807,6 +832,7 @@
     "test_sink",
     "vab_bind",
     "xa_clip_bank",
+    "xa_resample",
     "xa_transport"
    ],
    "band": "top",
@@ -861,6 +887,7 @@
     "battle_events",
     "battle_hud_state",
     "battle_magic",
+    "battle_party_form",
     "battle_return_flags",
     "battle_seats",
     "battle_sideband",
@@ -899,12 +926,14 @@
    "scope": "The battle kernels that never touch <code>World</code>: monster AI, spoils, AP gauge, stats, catalogs, encounters, level-up, Seru learning, arts tracking, the sparring-tutorial prompt machine, per-frame animation passes.",
    "dependents": [
     "engine-battle-hud",
+    "engine-battle-menus",
     "engine-capture",
     "engine-cheats",
     "engine-core",
     "engine-menu-runtime",
     "engine-menus",
     "engine-minigame-scenes",
+    "engine-save-state",
     "engine-scene-host",
     "engine-screens",
     "engine-session",
@@ -921,17 +950,18 @@
    "deps": [
     "art",
     "engine-battle",
+    "engine-battle-menus",
     "engine-battle-vm",
     "engine-cast",
     "engine-core",
-    "engine-menus",
     "engine-mode",
+    "engine-system",
     "font",
     "ui-formats"
    ],
    "dev_deps": [
     "actor-formats",
-    "engine-system",
+    "engine-menus",
     "save"
    ],
    "bins": [],
@@ -948,6 +978,49 @@
     "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-battle-hud/README.md"
+  },
+  "engine-battle-menus": {
+   "package": "legaia-engine-battle-menus",
+   "deps": [
+    "actor-formats",
+    "art",
+    "engine-battle",
+    "engine-battle-vm",
+    "engine-minigames",
+    "engine-system",
+    "game-tables",
+    "minigame-formats",
+    "save",
+    "ui-formats"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "battle_flow",
+    "battle_input",
+    "battle_open",
+    "muscle_dome_session",
+    "timed_fight"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 5,
+   "role": "battle command flow and input, the open banner, the timed fight, the Muscle Dome match session",
+   "scope": "The <code>World</code>-free battle side of the menu front end, beside <code>engine-menus</code>: battle command input, the command-flow byte (<code>FUN_801D0748</code>), the open banner, the timed fight, the Muscle Dome match session.",
+   "dependents": [
+    "engine-battle-hud",
+    "engine-capture",
+    "engine-core",
+    "engine-minigame-scenes",
+    "engine-scene-host",
+    "engine-screens",
+    "engine-shell",
+    "engine-world-views",
+    "parity",
+    "web-play"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-battle-menus/README.md"
   },
   "engine-battle-vm": {
    "package": "legaia-engine-battle-vm",
@@ -1014,6 +1087,7 @@
     "asset-viewer",
     "engine-battle",
     "engine-battle-hud",
+    "engine-battle-menus",
     "engine-capture",
     "engine-cast",
     "engine-cheats",
@@ -1082,6 +1156,7 @@
    "deps": [
     "art",
     "engine-battle",
+    "engine-battle-menus",
     "engine-battle-vm",
     "engine-camera",
     "engine-cast",
@@ -1089,7 +1164,6 @@
     "engine-dialog",
     "engine-effects",
     "engine-field",
-    "engine-menus",
     "engine-mode",
     "engine-scene-host",
     "engine-system",
@@ -1105,8 +1179,10 @@
     "camera_align",
     "cast_parts",
     "clip_cursors",
+    "effect_children",
     "field_seeds",
     "formation_cell",
+    "ghost_ring",
     "ground_snap",
     "hud_glide",
     "melee_hits",
@@ -1196,6 +1272,7 @@
     "anm",
     "art",
     "engine-battle",
+    "engine-battle-menus",
     "engine-battle-vm",
     "engine-camera",
     "engine-cast",
@@ -1236,9 +1313,7 @@
     "battle_party_form",
     "battle_round",
     "battle_sideband_textures",
-    "dance_venue",
     "fishing_exchange_input",
-    "frame_step",
     "live_loop",
     "move_buffer_host",
     "new_game",
@@ -1253,7 +1328,7 @@
    ],
    "band": "core",
    "track": "engine",
-   "scope": "The renderer-free simulation half: <code>World</code> and its tick, the frame-step rules, battle loop, New Game seeding, LGSF saves, and the <code>World</code> entry points of the sessions that live in the kernel crates below it.",
+   "scope": "The renderer-free simulation half: <code>World</code> and its tick, battle loop, New Game seeding, LGSF saves, and the <code>World</code> entry points of the sessions that live in the kernel crates below it.",
    "dependents": [
     "asset-viewer",
     "engine-battle-hud",
@@ -1261,6 +1336,7 @@
     "engine-cheats",
     "engine-export",
     "engine-menu-runtime",
+    "engine-save-state",
     "engine-scene-host",
     "engine-screens",
     "engine-session",
@@ -1466,6 +1542,7 @@
     "field_audio_release",
     "field_carrier_state",
     "field_channels",
+    "field_elevation",
     "field_events",
     "field_lit_mesh",
     "field_overlay",
@@ -1482,6 +1559,7 @@
     "field_warp_tile",
     "float_tween",
     "fog_particles",
+    "frame_step",
     "inline_dialogue",
     "leader_swap",
     "man_field_scripts",
@@ -1519,7 +1597,7 @@
    "track": "engine",
    "rank": 3,
    "role": "World-free field kernels",
-   "scope": "The <code>World</code>-free field kernels: actor programs and per-actor field-overlay bodies, region queries and the shared minigame floor (<code>minigame_floor</code>, <code>dance_marker</code>), follow-camera parameters and eases, player clip playback, op-<code>0x49</code> submode and its hub actors, panel windows, world-map controller + entity SM (<code>FUN_801DA51C</code>), inline-dialogue / cutscene-timeline context state, CLUT effects, the fog particle pool, MAN field-script decoders, field camera (<code>CameraWorld</code>).",
+   "scope": "The <code>World</code>-free field kernels: actor programs and per-actor field-overlay bodies, region queries and the shared minigame floor (<code>minigame_floor</code>, <code>dance_marker</code>), follow-camera parameters and eases, player clip playback, op-<code>0x49</code> submode and its hub actors, panel windows, world-map controller + entity SM (<code>FUN_801DA51C</code>), inline-dialogue / cutscene-timeline context state, CLUT effects, the fog particle pool, MAN field-script decoders, field camera (<code>CameraWorld</code>) and the host frame-step rules (<code>frame_step</code>).",
    "dependents": [
     "asset-viewer",
     "engine-capture",
@@ -1587,6 +1665,7 @@
     "engine-field",
     "engine-menus",
     "engine-minigames",
+    "engine-save-state",
     "engine-scene",
     "engine-scene-host",
     "engine-system",
@@ -1596,6 +1675,7 @@
    ],
    "dev_deps": [
     "engine-mode",
+    "engine-title",
     "engine-vm",
     "prot"
    ],
@@ -1635,21 +1715,15 @@
     "engine-vm",
     "font",
     "game-tables",
-    "minigame-formats",
     "save",
     "scene-formats",
     "tim",
     "ui-formats"
    ],
-   "dev_deps": [
-    "prot"
-   ],
+   "dev_deps": [],
    "bins": [],
    "lib": true,
    "modules": [
-    "battle_flow",
-    "battle_input",
-    "battle_open",
     "card_bu_io",
     "card_flow",
     "debug_char_editor",
@@ -1673,13 +1747,11 @@
     "menu_list_rows",
     "menu_open_sequence",
     "menu_widget",
-    "muscle_dome_session",
     "name_entry",
-    "option_values",
+    "new_game",
     "options",
     "party_state",
     "pause_screens",
-    "publisher_logos",
     "save_menu_atlas",
     "save_screen",
     "save_select",
@@ -1690,25 +1762,18 @@
     "shop_state",
     "spell_menu",
     "spell_party_broadcast",
-    "status_screen",
-    "timed_fight",
-    "title",
-    "title_overlay",
-    "title_prim",
-    "title_screen_atlas"
+    "status_screen"
    ],
    "band": "kernels",
    "track": "engine",
    "rank": 5,
-   "role": "menu, title and memory-card front end",
-   "scope": "The <code>World</code>-free menu front end: item / equipment catalogs, inventory-use and spell-menu sessions, list-row model, window-widget host, title + boot screens, memory-card flow, inn, item bag + equip session, save / status / pause / shop screens, the options state + screen session, the battle command-flow byte, Muscle Dome loadout. The dialog layer is <code>engine-dialog</code>.",
+   "role": "menu and memory-card front end",
+   "scope": "The <code>World</code>-free menu front end: item / equipment catalogs, inventory-use and spell-menu sessions, list-row model, window-widget host, memory-card flow, inn, item bag + equip session, save / status / pause / shop screens, the options state + screen session. The dialog layer is <code>engine-dialog</code>, the title front end <code>engine-title</code>, the battle command picker <code>engine-battle-menus</code>.",
    "dependents": [
-    "engine-battle-hud",
-    "engine-capture",
     "engine-cheats",
     "engine-core",
     "engine-menu-runtime",
-    "engine-minigame-scenes",
+    "engine-save-state",
     "engine-scene-host",
     "engine-screens",
     "engine-session",
@@ -1726,11 +1791,11 @@
     "actor-formats",
     "container-formats",
     "engine-battle",
+    "engine-battle-menus",
     "engine-battle-vm",
     "engine-camera",
     "engine-field",
     "engine-fishing",
-    "engine-menus",
     "engine-minigames",
     "engine-mode",
     "engine-scene",
@@ -1817,6 +1882,7 @@
    "role": "minigame rules engines",
    "scope": "The minigame rules engines (slot machine, Baka Fighter, dance, prize exchange, Muscle Dome ladder and contest hub), with no world, scene or renderer. Fishing is <code>engine-fishing</code>.",
    "dependents": [
+    "engine-battle-menus",
     "engine-core",
     "engine-menu-runtime",
     "engine-menus",
@@ -1859,6 +1925,7 @@
     "engine-core",
     "engine-field",
     "engine-minigame-scenes",
+    "engine-save-state",
     "engine-scene-host",
     "engine-screens",
     "engine-session",
@@ -1938,6 +2005,38 @@
     "engine-shell"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-render/README.md"
+  },
+  "engine-save-state": {
+   "package": "legaia-engine-save-state",
+   "deps": [
+    "engine-battle",
+    "engine-core",
+    "engine-menus",
+    "engine-mode",
+    "engine-system",
+    "save"
+   ],
+   "dev_deps": [
+    "engine-battle-vm",
+    "engine-field",
+    "prot",
+    "scene-formats"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [],
+   "band": "drivers",
+   "track": "engine",
+   "scope": "LGSF saves over a running <code>World</code>: the full save-file round trip (<code>save_full</code> / <code>load_full</code>) and the option words a save carries, through the <code>WorldSaveState</code> extension trait. Above <code>engine-core</code>.",
+   "dependents": [
+    "engine-menu-runtime",
+    "engine-scene-host",
+    "engine-session",
+    "engine-shell",
+    "parity",
+    "web-play"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-save-state/README.md"
   },
   "engine-scene": {
    "package": "legaia-engine-scene",
@@ -2028,6 +2127,7 @@
     "art",
     "container-formats",
     "engine-battle",
+    "engine-battle-menus",
     "engine-battle-vm",
     "engine-core",
     "engine-dev-menu",
@@ -2039,6 +2139,7 @@
     "engine-minigame-scenes",
     "engine-minigames",
     "engine-mode",
+    "engine-save-state",
     "engine-scene",
     "engine-system",
     "engine-vm",
@@ -2096,6 +2197,7 @@
    "deps": [
     "engine-battle",
     "engine-battle-hud",
+    "engine-battle-menus",
     "engine-battle-vm",
     "engine-camera",
     "engine-core",
@@ -2112,6 +2214,7 @@
     "engine-scene",
     "engine-scene-host",
     "engine-system",
+    "engine-title",
     "engine-ui",
     "engine-world-views",
     "font",
@@ -2168,9 +2271,11 @@
     "engine-menus",
     "engine-minigame-scenes",
     "engine-mode",
+    "engine-save-state",
     "engine-scene",
     "engine-scene-host",
     "engine-system",
+    "engine-title",
     "engine-vm",
     "engine-world-views",
     "font",
@@ -2186,6 +2291,7 @@
     "xa"
    ],
    "dev_deps": [
+    "engine-battle-menus",
     "engine-cheats",
     "engine-minigames",
     "lzs",
@@ -2202,6 +2308,7 @@
     "battle_presentation",
     "battle_stage",
     "battle_vram",
+    "front_end",
     "host_trace",
     "hotkeys",
     "mode_trace",
@@ -2209,6 +2316,7 @@
     "party_spec",
     "scene_actors",
     "session",
+    "title_continue",
     "xa_banks"
    ],
    "band": "top",
@@ -2225,11 +2333,13 @@
    "package": "legaia-engine-shell",
    "deps": [
     "actor-formats",
+    "app-theme",
     "art",
     "container-formats",
     "engine-audio",
     "engine-battle",
     "engine-battle-hud",
+    "engine-battle-menus",
     "engine-battle-vm",
     "engine-camera",
     "engine-capture",
@@ -2246,11 +2356,13 @@
     "engine-minigames",
     "engine-mode",
     "engine-render",
+    "engine-save-state",
     "engine-scene",
     "engine-scene-host",
     "engine-screens",
     "engine-session",
     "engine-system",
+    "engine-title",
     "engine-ui",
     "engine-world-views",
     "font",
@@ -2320,6 +2432,7 @@
     "mode_entry_init",
     "movie",
     "music_labels",
+    "option_values",
     "pad",
     "pause_wipe",
     "ram_map",
@@ -2336,10 +2449,12 @@
    "track": "engine",
    "rank": 0,
    "role": "pad input, BIOS rand, fades, FMV, sound state, RAM-cell map",
-   "scope": "The <code>World</code>-free runtime system at the bottom of the engine stack: pad words + pad input + retail pad pump, menu cursor primitive, BIOS <code>rand</code>, stream chunk installer, the FMV modules (<code>movie/</code>), sound state, the SCUS leaf kernels, fades, mode-entry initialisers, RAM-cell map.",
+   "scope": "The <code>World</code>-free runtime system at the bottom of the engine stack: pad words + pad input + retail pad pump, menu cursor primitive, options value enums, BIOS <code>rand</code>, stream chunk installer, the FMV modules (<code>movie/</code>), sound state, the SCUS leaf kernels, fades, mode-entry initialisers, RAM-cell map.",
    "dependents": [
     "asset-viewer",
     "engine-battle",
+    "engine-battle-hud",
+    "engine-battle-menus",
     "engine-battle-vm",
     "engine-camera",
     "engine-capture",
@@ -2356,16 +2471,51 @@
     "engine-minigames",
     "engine-mode",
     "engine-motion-vm",
+    "engine-save-state",
     "engine-scene",
     "engine-scene-host",
     "engine-screens",
     "engine-session",
     "engine-shell",
+    "engine-title",
+    "engine-world-views",
     "parity",
     "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-system/README.md"
+  },
+  "engine-title": {
+   "package": "legaia-engine-title",
+   "deps": [
+    "engine-system",
+    "tim",
+    "ui-formats"
+   ],
+   "dev_deps": [
+    "prot"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "publisher_logos",
+    "title",
+    "title_overlay",
+    "title_prim",
+    "title_screen_atlas"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 1,
+   "role": "publisher logos, the title state machine and the title overlay tick",
+   "scope": "The <code>World</code>-free boot front end beside <code>engine-menus</code>: publisher-logos phase, title state machine, the title overlay tick (<code>FUN_801DD35C</code>), its SCUS primitive helpers and the title-art atlas.",
+   "dependents": [
+    "engine-screens",
+    "engine-session",
+    "engine-shell",
+    "web-play"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-title/README.md"
   },
   "engine-ui": {
    "package": "legaia-engine-ui",
@@ -2488,6 +2638,7 @@
    "package": "legaia-engine-world-views",
    "deps": [
     "engine-battle",
+    "engine-battle-menus",
     "engine-camera",
     "engine-core",
     "engine-effects",
@@ -2496,6 +2647,7 @@
     "engine-minigames",
     "engine-mode",
     "engine-scene",
+    "engine-system",
     "render-kernels",
     "scene-formats",
     "tmd",
@@ -2504,7 +2656,6 @@
    "dev_deps": [
     "container-formats",
     "engine-dev-menu",
-    "engine-system",
     "engine-vm",
     "lzs",
     "save",
@@ -2663,6 +2814,7 @@
     "delilas-party",
     "disc-audit",
     "engine-battle",
+    "engine-battle-menus",
     "engine-battle-vm",
     "engine-cast",
     "engine-cheats",
@@ -2937,10 +3089,10 @@
    "dependents": [
     "asset",
     "disc-audit",
+    "engine-battle-menus",
     "engine-core",
     "engine-field",
     "engine-fishing",
-    "engine-menus",
     "engine-minigame-scenes",
     "engine-minigames",
     "engine-scene-host",
@@ -3007,6 +3159,7 @@
     "engine-audio",
     "engine-battle",
     "engine-battle-hud",
+    "engine-battle-menus",
     "engine-battle-vm",
     "engine-camera",
     "engine-capture",
@@ -3018,6 +3171,7 @@
     "engine-menu-runtime",
     "engine-menus",
     "engine-mode",
+    "engine-save-state",
     "engine-scene",
     "engine-scene-host",
     "engine-session",
@@ -3063,7 +3217,8 @@
     "retail_compare_image",
     "retail_compare_script",
     "sim_trace",
-    "vram_oracle"
+    "vram_oracle",
+    "window_child"
    ],
    "band": "top",
    "track": "tooling",
@@ -3390,6 +3545,7 @@
    "scope": "Per-character record schema (typed accessors + round-trip parse/write for the 0x414-byte record) plus a PSX memory-card walker. <code>Party::from_retail_sc_block</code> lifts a real SC block into a typed <code>Party</code>; <code>SaveExt</code> / <code>SaveFile</code> (LGSF) cover full engine save round-trips.",
    "dependents": [
     "engine-battle",
+    "engine-battle-menus",
     "engine-capture",
     "engine-cheats",
     "engine-core",
@@ -3397,6 +3553,7 @@
     "engine-menu-runtime",
     "engine-menus",
     "engine-minigames",
+    "engine-save-state",
     "engine-scene-host",
     "engine-session",
     "engine-shell",
@@ -3513,6 +3670,7 @@
    "package": "legaia-studio",
    "deps": [
     "actor-formats",
+    "app-theme",
     "art",
     "container-formats",
     "disc-audit",
@@ -3627,6 +3785,7 @@
     "engine-scene-host",
     "engine-session",
     "engine-shell",
+    "engine-title",
     "engine-ui",
     "extract",
     "minigame-formats",
@@ -3775,11 +3934,13 @@
     "disc-audit",
     "engine-battle",
     "engine-battle-hud",
+    "engine-battle-menus",
     "engine-core",
     "engine-menu-runtime",
     "engine-menus",
     "engine-scene",
     "engine-shell",
+    "engine-title",
     "engine-ui",
     "engine-world-views",
     "patcher",
@@ -3828,6 +3989,7 @@
     "engine-audio",
     "engine-battle",
     "engine-battle-hud",
+    "engine-battle-menus",
     "engine-battle-vm",
     "engine-camera",
     "engine-cheats",
@@ -3840,11 +4002,13 @@
     "engine-minigame-scenes",
     "engine-minigames",
     "engine-mode",
+    "engine-save-state",
     "engine-scene",
     "engine-scene-host",
     "engine-screens",
     "engine-session",
     "engine-system",
+    "engine-title",
     "engine-ui",
     "engine-vm",
     "engine-world-views",
@@ -3870,6 +4034,7 @@
    "bins": [],
    "lib": true,
    "modules": [
+    "boot_continue",
     "boot_title",
     "cards",
     "disc",

@@ -95,7 +95,7 @@ use run::{PlayWindowLaunch, assemble_play_window};
 // that `use super::*` still resolve them unqualified.
 pub(in crate::window) use run::{build_window_scene_resources, cmd_play_window_with_record};
 pub(crate) use save_rack_disk::{
-    MountedCard, card_port_blocks, card_save_rack, open_port_one_card, rack_has_save,
+    MountedCard, card_port_blocks, card_port_rack, open_port_one_card, rack_has_save,
 };
 pub use str_player::cmd_play_str;
 pub(crate) use str_player::{play_str_in, resolve_iso_file};
@@ -179,7 +179,7 @@ impl PlayWindowApp {
         if let Some(audio) = self.session.audio.as_ref() {
             audio.set_mono(matches!(
                 self.options_state.audio,
-                legaia_engine_menus::option_values::AudioMode::Mono
+                legaia_engine_system::option_values::AudioMode::Mono
             ));
             // Master mute (engine-only knob; `F2` toggles it live). The
             // mixer gate zeroes the output while the sequencer / SPU keep

@@ -33,6 +33,10 @@ form in both directions.
 - [`clip_cursors`](src/clip_cursors.rs) - `ClipCursorSeed`, where each
   combatant's playing clip stood in the capture (the anim node's cursor
   `+0x68`), so a seated fight draws its combatants at retail's keyframe.
+- [`ghost_ring`](src/ghost_ring.rs) - `GhostRingSeed`, a party seat's
+  after-image ghosts as the capture's history ring held them
+  (`LEGAIA_SEAT_GHOST_RING`), seated on the replay's ring on the capture
+  frame.
 - [`ground_snap`](src/ground_snap.rs) - the combatants' ground positions at
   the captured phase (`LEGAIA_BATTLE_GROUND_SNAP`), which a replayed push or
   approach lands near rather than on.

@@ -24,6 +24,8 @@
 //!   glides and camera tween at the capture instant.
 //! - [`cast_parts`] - a captured cast's live parts, seated over the replay's
 //!   own on the capture frame.
+//! - [`ghost_ring`] - a captured body's after-image ghosts, seated on its
+//!   history ring on the capture frame.
 //! - [`formation_cell`] - [`FormationCell`](formation_cell::FormationCell), a
 //!   fight named by its formation cell where no MAN row carries it.
 //! - [`field_seeds`] - the field-side seeds: object clips, walkers, morphs,
@@ -34,8 +36,10 @@ pub mod battle_drive;
 pub mod camera_align;
 pub mod cast_parts;
 pub mod clip_cursors;
+pub mod effect_children;
 pub mod field_seeds;
 pub mod formation_cell;
+pub mod ghost_ring;
 pub mod ground_snap;
 pub mod hud_glide;
 pub mod melee_hits;

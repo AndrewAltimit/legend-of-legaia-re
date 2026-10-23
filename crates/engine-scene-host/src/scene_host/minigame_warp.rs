@@ -288,7 +288,7 @@ impl SceneHost {
     }
 
     /// The battle overlay's hand command-id table -> a live
-    /// [`legaia_engine_menus::muscle_dome_session::MuscleDomeSession`].
+    /// [`legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession`].
     ///
     /// `loaded` here is PROT **0977** (the arena door/init slot the warp
     /// selects), but the contest's own tables live in the battle overlay
@@ -297,7 +297,7 @@ impl SceneHost {
     /// resolves without one when it does not (the same disclosed fallback the
     /// native launcher takes).
     fn enter_muscle_from_overlay(&mut self, _loaded: &[u8]) -> bool {
-        use legaia_engine_menus::muscle_dome_session::{MuscleCard, MuscleDomeSession};
+        use legaia_engine_battle_menus::muscle_dome_session::{MuscleCard, MuscleDomeSession};
         use legaia_engine_minigames::muscle_dome::{DomeCombatant, DomeDamageModel};
         use legaia_minigame_formats::muscle_dome as md;
         use legaia_overlay_images::static_overlay;
@@ -458,8 +458,8 @@ impl SceneHost {
         &self,
         char_slot: u32,
         monster_id: Option<u16>,
-    ) -> Option<[legaia_engine_menus::muscle_dome_session::choreo::ChoreoBody; 2]> {
-        use legaia_engine_menus::muscle_dome_session::choreo::ChoreoBody;
+    ) -> Option<[legaia_engine_battle_menus::muscle_dome_session::choreo::ChoreoBody; 2]> {
+        use legaia_engine_battle_menus::muscle_dome_session::choreo::ChoreoBody;
         let player = self
             .index
             .entry_bytes_extended(
@@ -479,7 +479,7 @@ impl SceneHost {
     /// plain swings - retail's own answer for a character with no arts.
     fn dome_art_catalog(&self) -> Vec<(legaia_art::ActionConstant, Vec<legaia_art::Command>)> {
         let character = self.world.caster_character(0);
-        legaia_engine_menus::muscle_dome_session::art_catalog_for(
+        legaia_engine_battle_menus::muscle_dome_session::art_catalog_for(
             &self.world.tables.art_records,
             character,
         )

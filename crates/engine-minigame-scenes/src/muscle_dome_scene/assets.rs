@@ -3,7 +3,7 @@
 use super::*;
 use legaia_actor_formats::battle_char_assembly as bca;
 use legaia_actor_formats::monster_archive;
-use legaia_engine_menus::muscle_dome_session::choreo;
+use legaia_engine_battle_menus::muscle_dome_session::choreo;
 use legaia_scene_formats::scene_tmd_stream;
 use legaia_tmd::mesh::VramMesh;
 use std::sync::Arc;

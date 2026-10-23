@@ -163,7 +163,8 @@ scenario as `backup_fingerprint`. The library directory is **gitignored**
 `backup_fingerprint` field. When a scenario has one, both
 `scripts/manage-states.py` and `run_probe.sh --scenario` resolve the
 **library copy in preference** to the live slot - so probes keep working
-after you've saved over the original slot. See the field schema +
+after you've saved over the original slot. From a git worktree, which has no
+library of its own, `run_probe.sh` looks in the main checkout's next. See the field schema +
 workflow at the top of [`scripts/scenarios.toml`](../../scripts/scenarios.toml).
 
 ## The harness
@@ -1150,6 +1151,7 @@ instrument produced them.
 | [`autorun_results_window_emitter.lua`](../../scripts/pcsx-redux/autorun_results_window_emitter.lua) | Exec-bp on the OT linker `AddPrim` = `FUN_8003D2C4`, folded by `$ra` with first / last vsync; two full-detail windows (`LEGAIA_FULL_A_LO/HI`, `LEGAIA_FULL_B_LO/HI`) record each packet's GP0 command, colour, XY | interp; `LEGAIA_FRAMES` | `results_window_emitter.csv`. The SCUS window emitter `FUN_8002C69C` runs in battle ([`level-up.md`](../subsystems/level-up.md)) | |
 | [`autorun_victory_timeline.lua`](../../scripts/pcsx-redux/autorun_victory_timeline.lua) | Battle END sequence per vsync: `0xFE` signal, cause / phase word `_DAT_8007BD2C`, `DAT_8007BD60`, results hold `0x8007BD6C`, pose actor `+0x1DA` / `+0x1D9`, fade template, `game_mode` | a state that resolves on its own; `--fast` | The results-sequencer timeline in [`battle.md`](../subsystems/battle.md) | |
 | [`autorun_w4d_cort_flow_writer.lua`](../../scripts/pcsx-redux/autorun_w4d_cort_flow_writer.lua) | What moves the command-flow byte off the evolved-Cort park value `0x0C` | see detail | [detail](#autorun_w4d_cort_flow_writerlua) | |
+| [`autorun_melee_string_trace.lua`](../../scripts/pcsx-redux/autorun_melee_string_trace.lua) | Per vsync: attacker and target live / body pairs, facing, committed / queued clip, `+0x1DC`, anim cursor; every `FUN_8004E2F0` return with its caller; every `FUN_80050BB8` push | a mid-fight state; `interp`; `LEGAIA_QUEUE=0d0f0e` injects a swing string at the attacker's `0x0A`, `LEGAIA_TARGET_HP` keeps the target standing until then (`gimard_burning_attack`) | The strike loop's commit reach snap in [`battle-action.md`](../subsystems/battle-action.md) |
 | [`autorun_w4d_melee_grunt_gate.lua`](../../scripts/pcsx-redux/autorun_w4d_melee_grunt_gate.lua) | Which `s7` definition an ordinary party swing carries into the melee grunt gate | see detail | [detail](#autorun_w4d_melee_grunt_gatelua) | |
 | [`autorun_w7c_steal_oracle.lua`](../../scripts/pcsx-redux/autorun_w7c_steal_oracle.lua) | Optional synthetic gates (steal passive bit, Items Up bit, enemy HP, forced `rand() % 100`); every step of the death-commit steal arm of `FUN_8004AD80`, every steal-table reader, every bag writer | battle state | [`steal-table.md`](../formats/steal-table.md#retail-steal-capture) | |
 | [`autorun_juggle_window.lua`](../../scripts/pcsx-redux/autorun_juggle_window.lua) | 1-byte Write watch on `+0x1F7` of each populated actor in `&DAT_801C9370[0..11]` (writer `pc` + anim-tick registers) + exec-bp on juggle store `0x801ECA80` | `battle_noa_miracle_art_combo`, `party_basic_attack_vs_gobu_gobu` (with `LEGAIA_PRESS_X=1`), `rim_elm_queen_bee_battle` | [`battle-formulas.md`](../subsystems/battle-formulas.md#the-juggle-window---what-makes-a-monster-juggleable) | |

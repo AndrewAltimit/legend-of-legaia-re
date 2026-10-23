@@ -418,7 +418,7 @@ impl SceneHost {
     /// [`Self::ensure_battle_party_forms`] ran for this fight.
     pub fn battle_party_forms(
         &self,
-    ) -> Option<&legaia_engine_core::battle_party_form::BattlePartyForms> {
+    ) -> Option<&legaia_engine_battle::battle_party_form::BattlePartyForms> {
         self.battle_party_forms
             .as_ref()
             .filter(|f| f.battle_serial == self.world.battle.entry_serial)

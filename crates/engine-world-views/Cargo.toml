@@ -16,10 +16,12 @@ legaia-engine-battle.workspace = true
 legaia-engine-camera.workspace = true
 legaia-engine-effects.workspace = true
 legaia-engine-field.workspace = true
+legaia-engine-battle-menus.workspace = true
 legaia-engine-menus.workspace = true
 legaia-engine-minigames.workspace = true
 legaia-engine-mode.workspace = true
 legaia-engine-scene.workspace = true
+legaia-engine-system.workspace = true
 legaia-render-kernels.workspace = true
 legaia-scene-formats.workspace = true
 legaia-ui-formats.workspace = true
@@ -28,7 +30,6 @@ glam.workspace = true
 
 [dev-dependencies]
 legaia-engine-dev-menu.workspace = true
-legaia-engine-system.workspace = true
 legaia-engine-vm.workspace = true
 legaia-save.workspace = true
 # Named only by the disc-gated scene-assembly tests.

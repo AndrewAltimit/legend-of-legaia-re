@@ -68,7 +68,7 @@ fn monster_0xb5_opens_without_names() {
 /// past the prompt: the ring, a picker, or the Begin / Reselect confirm.
 #[test]
 fn the_labels_never_share_a_frame_with_a_command_surface() {
-    use legaia_engine_menus::battle_input::BattleCommandSession;
+    use legaia_engine_battle_menus::battle_input::BattleCommandSession;
     let font = legaia_font::synthetic_for_tests();
     let mut world = intro_world();
     world.arm_battle_intro_names();
@@ -94,7 +94,7 @@ fn the_labels_never_share_a_frame_with_a_command_surface() {
 /// covers the leg.
 #[test]
 fn a_dome_leg_opens_on_the_opponents_name() {
-    use legaia_engine_menus::muscle_dome_session::{MuscleCard, MuscleDomeSession};
+    use legaia_engine_battle_menus::muscle_dome_session::{MuscleCard, MuscleDomeSession};
     let font = legaia_font::synthetic_for_tests();
     let card = MuscleCard {
         command_id: 0x0C,

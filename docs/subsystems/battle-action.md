@@ -161,7 +161,7 @@ One line per handled state; the full per-state behaviour is under [State detail]
 | `0x6E` | Capture module - load | Waits for the drive, pages the cast module in | `0x6F` |
 | `0x6F` | Capture module - fade | Audio duck, waits for the load | `0x70` |
 | `0x70` | Capture module - run | Ticks the paged [cast module](cast-module.md) every frame until it returns zero | `0x71` |
-| `0x71` | Capture module - finalize | Waits for every slot to settle, resets render flags | `0x50` |
+| `0x71` | Capture module - finalize | Waits for the seat the cast targeted (or the party row) to settle, resets render flags | `0x50` |
 | `0xFD` | Idle hold | Action-end pose only | stays |
 | `0xFF` | Round boundary | `ctx[+0x06] = 0x14`, bumps the round counter | back to the command flow |
 
@@ -542,7 +542,14 @@ Same audio duck as `0x6F`, behind the same `ctx[+0x287]` gate. Pins `ctx[+0xD] =
 
 #### State `0x71` - Magic-capture - finalize
 
-`FUN_801D5854(actor, 6)`; checks all 8 slots are settled (alive with non-zero `+0x4`, or non-`8` `+0x1D9`). Once stable: clears ctx buffers, writes the 4-byte fade sentinel (`84 10 42 08`), iterates resetting per-actor `+0x21C = 0` and `+0x8 = 0x81000000`.
+`FUN_801D5854(actor, 6)`, then a settle test keyed on the acting actor's target byte `+0x1DD` (`sp+0x20`, loaded at the SM's entry). The caster is not read on either arm, so the band does not wait out its own cast clip:
+
+- **Target below `7`** (`sltiu v0,s0,0x7` at `0x801E50FC`): that seat alone. Clip `+0x1D9 == 0` has settled whatever the HP (`0x801E5124`); a live seat on any other clip holds (`0x801E5134`); a dead seat has settled on the down clip `8` (`0x801E513C`), and otherwise holds while its prim word `+0x04` is non-zero (`0x801E514C`) or it is a party seat (`0x801E5154`). A dead monster settles once its defeat fade has run out.
+- **Any other code** (`0x801E516C..0x801E5200`, slot `7` included): the party seats `0 .. ctx[+0x00]`, a live one on clip `0`, a dead one on clip `8`. No monster seat is read.
+
+Once settled: re-runs the target-size framing `FUN_801F0348` (`jal` at `0x801E520C`, as `0x70`'s exit did), stores `0x50`, clears `ctx[+0x243]` / `ctx[+0x278]`, writes the 4-byte fade sentinel (`84 10 42 08`) to `ctx[+0x890]`, and walks seats `0..7` clearing `+0x21C` on every live seat and every party seat (`0x801E5254..0x801E526C`) and setting `+0x8 = 0x81000000` where `+0x04` is zero. A dead monster keeps its defeat-fade `+0x21C`.
+
+**Port.** `magic::magic_capture_finalize` over `capture_finalize_settled` and `BattleActionHost::capture_settle_view`. The engine holds a downed party seat on its defeat pose, not on entry `8`, so `World`'s view reads a dead party seat with no reaction left to play as clip `8`. Retail's wait has no bound; the port lets go after `CAPTURE_SETTLE_PASS_LIMIT` passes, as the cast band's settle waits do. The `+0x8 = 0x81000000` store is not ported: the engine's colour word rests at `0` where retail's rests at the neutral `0x20080200`, so it cannot carry the `+0x04 == 0` test, and an additive mode word on a resting seat would draw it full-bright. The port used to wait for every live seat to leave clip `8`, which held each of Cort's capture-class casts here for the length of his own cast clip.
 
 **Next:** `0x50`.
 
@@ -1266,13 +1273,21 @@ That ~110 is the pose centroid: `+0x3C`/`+0x40` is the actor's **body pair**, no
 
 (`sin` = `*0x8007B81C`, `cos` = `*0x8007B7F8`; a non-zero pitch `+0x44` re-derives `z` through a longer arm, `0x8004A534..0x8004A5F8`.) Everything that measures an actor from outside reads this pair: the target side of the range law `FUN_8004E2F0` and both sides of the separation pass `FUN_80050BB8`. Because it follows the live pair, an overlap the separation nudge resolves stays resolved, and the next attacker walks at where its target actually stands.
 
-The port's `World::refresh_battle_body_pairs` makes the same store at the head of the locomotion pass, from the pose the actor's clip player last produced (a zero centroid for an actor with no clip player, so its pair is its live pair). The live pairs it reads are the ones retail's draw reads - nothing moves them between the draw and the next anim tick - so only the pose is one frame newer; the render scale is the allocator's `0x1000`, and the pitch arm is not taken (no battle actor the port models carries a pitch).
+The part count is the playing stream's own, the byte at `*(entry + 0x88)` (`lbu v1,0x0(s4)` before each `div`), so the average runs over the stream's channels only. A party clip the port expands per assembled object carries equipment channels past them that copy their attach bone's translation; averaged in, they held Vahn's invoke-clip centroid some nine units short in `x` on keyframes 2..5 (`30` against the stream's `39`), which the summon close-up's focus reads. The melee streams take the same count: recomputed from `battle_melee_hit_spark`'s RAM, Vahn's Somersault (`+0x1D9 = 0x11`, a 15-part stream the port draws over 17 channels) at cursor `128` and Gimard's reaction (an 11-part stream) at cursor `60` both reproduce the stored body pairs to the unit, `(-24, 95)` and `(-2, 492)`.
+
+The port's `World::refresh_battle_body_pairs` makes the same store at the head of the locomotion pass, from the stream's channels of the pose the actor's clip player last produced (a zero centroid for an actor with no clip player, so its pair is its live pair). The live pairs it reads are the ones retail's draw reads - nothing moves them between the draw and the next anim tick - so only the pose is one frame newer; the render scale is the allocator's `0x1000`, and the pitch arm is not taken (no battle actor the port models carries a pitch).
 
 `tick_battle_locomotion` drives every playing clip's own `+0x0C` root speed (`drive_playing_root_motion`, the signed `0x80047D20..0x80047E18` term: `bltz` routes a negative speed straight to the step with no range test, a positive one steps only while the range poll fails, and the `+0x1DC` bit-3 latch blocks both).
 
 Just ahead of that term the same tick runs an **in-range back-off** (`0x80047C3C..0x80047D1C`). It measures each actor against its own target `+0x1DD` (`jal 0x8004E2F0` at `0x80047C40`) and, when the range law reads in range, the command flow `ctx[+0x06]` is `0xFF`, the category `+0x1DE` is `3` (Attack) and the actor is the acting seat `ctx[+0x13]`, steps the live pair back along the heading: `+0x38 -= (cos[f] * DAT_1F800393 * +0x21D) >> 13`, `+0x34` the same with `sin`.
 
-The shift is two less than the root term's, so it is a speed of `-4` on the same law, and it holds an attacker whose strikes carry it into its target at the edge of its reach for as long as the attack runs: `player_steal_skeleton_pre` captures Vahn in the strike loop with the range law reading `361` against the skeleton's `352`, just outside. Port: `World::drive_in_range_backoff`, with its own truncation carry (`BattleActor::backoff_carry`).
+The shift is two less than the root term's, so it is a speed of `4` on the same law, subtracted - and the subtraction comes after the shift: the forward product is floored (`sra`) and then taken off, so a fractional step rounds toward the target, where flooring a negated product would round one unit further away on every fractional axis, every in-range frame. It holds an attacker whose strikes carry it into its target at the edge of its reach for as long as the attack runs: `player_steal_skeleton_pre` captures Vahn in the strike loop with the range law reading `361` against the skeleton's `352`, just outside. Port: `World::drive_in_range_backoff`, with its own truncation carry (`BattleActor::backoff_carry`).
+
+The clip commit `FUN_8004AD80` closes the gap a swing at a time (`0x8004BF7C..0x8004C118`). When the acting actor commits any clip while the SM sits in the strike loop `0x1E`, the commit's tail polls the range law against the actor's target. Out of range, it steps the live pair **forward** by `trig >> 10` (four units at full scale) along the bearing to the target's body pair, re-facing the actor on every step, until the law reads in range. In range, it steps **back** the same way until it reads out of range.
+
+Both loops run at least once and neither is bounded. So every swing of a string opens with the attacker one step either side of the edge of its reach, whatever the previous clip's root motion and the target's knockback did to the gap.
+
+A retail trace of Vahn's `0x0D` -> `0x0F` commit against Gimard steps him 60 units forward inside one frame: the range poll's return address `0x8004C05C` repeats, its metric falling `393 -> 337 -> 0` (`scripts/pcsx-redux/autorun_melee_string_trace.lua`). Port: `World::commit_reach_snap`, from the commit's camera-reset point (`World::note_active_clip_commit`); the port bounds the loops at 4096 steps and skips a target slot `>= 8`, which retail would hang on.
 
 The negative speeds in the player files are the reactions' - knockdown, block, some flinches - so a struck actor slides back; there is no recover backstep. Entry 8 carries speed `0` in every file and is the downed party member's kneel ([battle.md](battle-actor-rendering.md#the-commits-clip-tag-ladder)); the SM's pose `8` is a camera program.
 

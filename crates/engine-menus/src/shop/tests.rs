@@ -502,23 +502,6 @@ fn root_command_cursor_sits_at_the_window_origin() {
 }
 
 #[test]
-fn stock_row_ink_precedence_is_last_rule_wins() {
-    // Plain affordable row.
-    assert_eq!(shop_stock_row_ink(0, 0, 1000, 100), SHOP_INK_NORMAL);
-    // Full stack greys.
-    assert_eq!(shop_stock_row_ink(99, 0, 1000, 100), SHOP_INK_GREY);
-    // ...but a non-zero marker re-inks it even at a full stack.
-    assert_eq!(shop_stock_row_ink(99, 1, 1000, 100), SHOP_INK_MARKED);
-    // ...and an unaffordable price greys it again, marker or not.
-    assert_eq!(shop_stock_row_ink(0, 1, 50, 100), SHOP_INK_GREY);
-    assert_eq!(shop_stock_row_ink(0, 0, 50, 100), SHOP_INK_GREY);
-    // Exactly affordable is affordable (`gold < price` is strict).
-    assert_eq!(shop_stock_row_ink(0, 0, 100, 100), SHOP_INK_NORMAL);
-    // 98 held is still under the cap.
-    assert_eq!(shop_stock_row_ink(98, 0, 1000, 100), SHOP_INK_NORMAL);
-}
-
-#[test]
 fn passive_index_picks_its_table_off_the_class_byte() {
     let equip = |i: u8| i + 1;
     let effect = |i: u8| i + 2;

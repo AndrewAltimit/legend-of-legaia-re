@@ -71,7 +71,7 @@ sub-screen handler in `save_subscreen.rs`.
 gate fires only where the name is ambiguous, so a name with exactly one in-tree
 definition is never gated - and if `std` also defines it on a common type, every
 call site in the workspace becomes an in-edge. `Rect12::to_le_bytes` in
-`crates/engine-menus/src/title_prim.rs` was the case: it was the only in-tree
+`crates/engine-title/src/title_prim.rs` was the case: it was the only in-tree
 `fn to_le_bytes`, so each `x.to_le_bytes()` on an integer anywhere in a
 reachable function linked to it. Uniqueness reads like precision here and is the
 opposite.
@@ -294,7 +294,7 @@ Nothing in either audit looks at whether the body under the tag matches the
 instruction stream, and nothing ever will: reachability and fidelity are
 independent properties.
 
-`exec_sprite_descriptor` (`800198e0`, `crates/engine-menus/src/title_prim.rs`) is
+`exec_sprite_descriptor` (`800198e0`, `crates/engine-title/src/title_prim.rs`) is
 the worked example. Its disclosure held exactly as written - no host implements
 `PrimHost`, every `exec_*` in the file is test-only - and re-reading
 `FUN_800198E0` against the disassembly turned up three divergences in the port
@@ -345,7 +345,7 @@ recognisable: match the mechanism, apply the same fix.
 | `801da6b4` | `engine-battle-vm/src/battle_action/target_cursor.rs` | FALSE-EDGE | Module `PORT:` / `REPLACED-BY:` pair moved onto `target_cursor_highlight`; the module was live through the cursor constants and `cursor_cue`, which both battle hosts use and which are not the port. The replacement verdict stands. |
 | `80018db0` | `engine-audio/src/footstep.rs` | FALSE-EDGE | `FootstepCadence::tick` renamed `tick_cadence`; the crate's own `lib.rs` re-exports the type and calls `spu.tick()`, so the gate passed. |
 | `801e0080` | `engine-vm/src/battle_scatter.rs` (since deleted - the routine is the effect-VM walker) | FALSE-EDGE | `rotate_offset` renamed `scatter_rotate_offset`; the live `rotate_offset` is `engine-effects::action_effect_script`'s same-named free function, which gained its first host caller when the effect-script walk was wired into the battle tick. |
-| `800198e0`, `80058298`, `80058490` | `engine-menus/src/title_prim.rs` | FALSE-EDGE | Module tag moved onto `exec_sprite_descriptor` / `exec_clear_image` / `exec_move_image`; the file was live through `Rect12::to_le_bytes`. |
+| `800198e0`, `80058298`, `80058490` | `engine-title/src/title_prim.rs` | FALSE-EDGE | Module tag moved onto `exec_sprite_descriptor` / `exec_clear_image` / `exec_move_image`; the file was live through `Rect12::to_le_bytes`. |
 | `800468a4`, `80057914` | `engine-vm/src/vram_rect_copy.rs` | FALSE-EDGE | Module tag moved onto `enqueue` / `build_packet`, each with its own tag; the file was live through `op43_sub12_calls`, which no tag covered. Both helpers have a host now (`World::apply_vram_rect_copies`), so the split no longer hides an unwired half. |
 | `80053cb8` | `engine-battle-vm/src/battle_formulas/stat_init.rs` | STALE-TAG | `LegaiaMinigames::muscle_player_fighter`, under a `#[wasm_bindgen]` root, calls `init_party_battle_stats`, which calls `equip_stat_bonuses`. |
 | `801d0750` | `engine-minigames/src/dance_tutorial.rs` | FALSE-EDGE | `countdown_frame` renamed `tutorial_countdown_frame`; the live `countdown_frame` is the Baka chrome's same-named free function. |

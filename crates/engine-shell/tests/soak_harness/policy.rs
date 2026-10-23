@@ -285,7 +285,7 @@ impl Policy {
         match w.mode {
             SceneMode::Battle => {
                 if self.rng.chance(75) {
-                    let want = fight_pad(s);
+                    let want = fight_pad(s, &mut self.rng);
                     if want != 0 {
                         return self.tap(want);
                     }
@@ -455,10 +455,16 @@ impl Policy {
 /// way `full_game_ladder::fight_turn` does: Item for the items lesson, Spirit
 /// for the spirit lesson, and the `Up Down Up` drill in Command mode for the
 /// hyper-arts lesson.
-pub(super) fn fight_pad(s: &NativeSession) -> u16 {
+/// The fighter's pad for one battle frame. In the sparring tutorial it
+/// follows the lesson; otherwise it mostly attacks (Begin, Attack, Auto,
+/// confirm the target) and now and then takes the other ring commands -
+/// Item, Magic, Spirit, a typed Command art, Run at the round prompt - and
+/// goes through with an item or spell pick, so the battle pickers and their
+/// resolutions are soaked as well as the strike.
+pub(super) fn fight_pad(s: &NativeSession, rng: &mut Rng) -> u16 {
     use legaia_engine_battle::arts_command_input::ArtsInputPhase;
     use legaia_engine_battle::battle_tutorial::TutorialLesson;
-    use legaia_engine_menus::battle_input::CommandPhase;
+    use legaia_engine_battle_menus::battle_input::CommandPhase;
     use legaia_engine_menus::inventory_use::InventoryUseState;
     let w = &s.host.world;
     if !w.battle.tutorial_boxes.is_empty() {
@@ -471,6 +477,15 @@ pub(super) fn fight_pad(s: &NativeSession) -> u16 {
                 if lesson == Some(TutorialLesson::Items) && !menu.filtered_items.is_empty() =>
             {
                 b(PadButton::Cross)
+            }
+            InventoryUseState::Browsing { .. }
+                if lesson.is_none() && !menu.filtered_items.is_empty() && rng.chance(60) =>
+            {
+                if rng.chance(30) {
+                    b(PadButton::Down)
+                } else {
+                    b(PadButton::Cross)
+                }
             }
             InventoryUseState::Browsing { .. } => b(PadButton::Circle),
             InventoryUseState::TargetSelect { .. } => b(PadButton::Cross),
@@ -491,6 +506,37 @@ pub(super) fn fight_pad(s: &NativeSession) -> u16 {
             }
         }
         return b(PadButton::Cross);
+    }
+    if lesson.is_none()
+        && let Some(arts) = w.battle.arts_input.as_ref()
+        && let ArtsInputPhase::Entering = arts.phase
+    {
+        // A typed Command art: a few random directions, then commit.
+        return if arts.buffer.len() < rng.range(1, 6) as usize {
+            DIRS[rng.below(4) as usize]
+        } else {
+            b(PadButton::Cross)
+        };
+    }
+    if let Some(session) = w.battle.command.as_ref()
+        && lesson.is_none()
+    {
+        match &session.phase {
+            CommandPhase::RoundPrompt { .. } if rng.below(100) < 3 => {
+                return b(PadButton::Right);
+            }
+            CommandPhase::Menu { .. } => {
+                // The ring: Item up, Attack left, Magic right, Spirit down.
+                return match rng.below(100) {
+                    0..=64 => LEFT,
+                    65..=76 => b(PadButton::Up),
+                    77..=90 => b(PadButton::Right),
+                    _ => b(PadButton::Down),
+                };
+            }
+            CommandPhase::AttackMode { .. } if rng.chance(20) => return b(PadButton::Right),
+            _ => {}
+        }
     }
     if let Some(session) = w.battle.command.as_ref() {
         return match &session.phase {

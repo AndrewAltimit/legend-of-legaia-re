@@ -173,8 +173,18 @@ impl PropAnim {
     /// cursor unless held, then wrap (loop) or clamp (one-shot) at either end,
     /// latching [`ANIM_END`] when an end is hit.
     ///
-    /// PORT: FUN_800204F8
+    /// REF: FUN_800204F8
     pub fn tick(&mut self) {
+        self.tick_scaled(1);
+    }
+
+    /// [`Self::tick`] for a game frame `scale` vsyncs long: the anim tick
+    /// multiplies its step by the frame-step scalar `DAT_1F800393` before it
+    /// adds it (`mult a0,v0` at `0x80020660` / `0x80020680`), so one retail
+    /// tick moves the cursor `step * scale` units.
+    ///
+    /// PORT: FUN_800204F8
+    pub fn tick_scaled(&mut self, scale: u16) {
         if self.anim_id == 0 || self.frames == 0 {
             return;
         }
@@ -188,7 +198,8 @@ impl PropAnim {
             self.rate as u16,
             self.scaled_step,
             self.step_div,
-        ) as i16;
+        )
+        .wrapping_mul(scale.max(1)) as i16;
         if self.flags & ANIM_RESTART != 0 {
             self.flags &= !ANIM_RESTART;
             self.cursor = if self.flags & ANIM_REVERSE == 0 {

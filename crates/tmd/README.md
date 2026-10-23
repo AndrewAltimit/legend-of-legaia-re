@@ -73,6 +73,13 @@ the caller can pair it with `legaia_tim::Vram::prim_has_texture_data`
 (or any other heuristic) so the mesh upload doesn't include prims that
 would rasterise as solid `CLUT[0]` over correctly-textured geometry.
 
+`mesh::dark_baked_share` / `mesh::tmd_dark_baked_share` measure how much of
+a mesh's surface (by triangle area) carries near-black colour words. Retail
+scales every texel by that word, so such a mesh draws black however its
+textures resolve; the desktop tools (Studio's model tab, the asset viewer's
+`tmd` title) read one number and say the darkness is the disc's once it
+reaches `MOSTLY_DARK_SHARE`.
+
 `Mesh::append_scaled` / `VramMesh::append_scaled` append a second,
 per-axis-scaled instance of a mesh to itself. A negative-determinant scale
 reverses triangle winding, so the appended indices go in reversed corner order

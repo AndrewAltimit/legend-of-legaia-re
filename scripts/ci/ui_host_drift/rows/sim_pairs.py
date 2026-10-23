@@ -23,6 +23,7 @@ from ui_host_drift.rows.host_files import (
     NATIVE_SAVE_HELPERS,
     NATIVE_TITLE_SAVE,
     NATIVE_XA_DISC,
+    WEB_BOOT_CONTINUE,
     WEB_BOOT_TITLE,
     WEB_FIELD_SCENE,
     WEB_MINIGAMES_DANCE,
@@ -717,13 +718,15 @@ SIM_PAIRS: list[dict[str, object]] = [
         "the browser. Both resolve the key through the shared table "
         "(`HostHotkey::from_dom_code`), refuse the field-only keys under a "
         "front-end screen (`HostHotkey::refused` over a `FrontEndScreens` "
-        "each host fills field by field - the page once tested `needs_field` "
+        "each host fills field by field - the page's fill is "
+        "`hotkey_screens`, shared by the press and its refusal notice, so "
+        "its site is the whole file - the page once tested `needs_field` "
         "against the title and logos alone, so `T` / `R` persisted options "
         "behind its pause menu), and make the options edit through "
         "`apply_options_hotkey` before persisting",
         "sites": {
             "native": (NATIVE_KEYBOARD_OPTION, "option_key"),
-            "web": (WEB_PLAY_HOTKEYS, "play_host_hotkey"),
+            "web": (WEB_PLAY_HOTKEYS, None),
         },
         "mode": "symbols_all",
         "symbols": [
@@ -739,20 +742,49 @@ SIM_PAIRS: list[dict[str, object]] = [
         ],
     },
     {
-        "what": "title Continue, native vs play page - retail runs CONTINUE "
-        "inside the title overlay's own card manager (`FUN_801DDCCC`: row 1 "
-        "of sub-mode `0x10` stores `0x18` at `0x801DDC5C`, the card path runs "
-        "to `LaunchFade`'s load-route master-mode write at `0x801DFAFC`), with "
-        "no field under it. The native window opened a standalone save "
-        "select; the page opened the pause menu's Load row, whose field gates "
-        "could bounce a Continue back to the title. Both open "
-        "`SaveSelectSession::title_continue`",
+        "what": "host hotkey notices, native vs play page - the transient "
+        "line after a hotkey press (`Ground fog: off`) and the refusal line "
+        "for a field-only key under a front-end screen. The native window "
+        "showed both; the page showed neither, so `F2`, `F7` and a refused "
+        "`T` read as dead keys there. Both word them through the shared "
+        "`toggle_notice` / `refused_notice` (the page's JS half is pinned by "
+        "`play_hotkeys::tests::the_page_shows_hotkey_notices`)",
         "sites": {
-            "native": (NATIVE_BOOT_CUTSCENE, "tick_boot_ui"),
-            "web": (WEB_PLAY_MENU_OPEN_CLOSE, "play_menu_open_title_continue"),
+            "native": (NATIVE_KEYBOARD_OPTION, None),
+            "web": (WEB_PLAY_HOTKEYS, None),
         },
         "mode": "symbols_all",
-        "symbols": ["title_continue"],
+        "symbols": ["toggle_notice", "refused_notice"],
+    },
+    {
+        "what": "title Continue open, native vs play page - retail runs "
+        "CONTINUE inside the title overlay's own card manager (`FUN_801DDCCC`: "
+        "row 1 of sub-mode `0x10` stores `0x18` at `0x801DDC5C`, the card path "
+        "runs to `LaunchFade`'s load-route master-mode write at `0x801DFAFC`), "
+        "with no field under it. The page once opened the pause menu's Load "
+        "row, whose field gates could bounce a Continue back to the title, and "
+        "later a title-opened pause sub-screen beside the window's standalone "
+        "screen. Both open the session's one `ContinueScreen`",
+        "sites": {
+            "native": (NATIVE_BOOT_CUTSCENE, "tick_boot_ui"),
+            "web": (WEB_BOOT_CONTINUE, "open_boot_continue"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["ContinueScreen"],
+    },
+    {
+        "what": "title Continue frame, native vs play page - the refusal "
+        "pre-empt, the card read, the block-grid filter and the confirmed "
+        "block's read are `ContinueScreen::step`'s; each host only sounds the "
+        "step's blip and acts on `Loaded` / `BackedOut`. The window's "
+        "standalone screen once ran the grid filter ahead of the refusal "
+        "notice and fired no blips, where the page's sub-screen did both",
+        "sites": {
+            "native": (NATIVE_BOOT_CUTSCENE, "tick_boot_ui"),
+            "web": (WEB_BOOT_CONTINUE, "boot_continue_step"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["ContinueStep", "blip", "Loaded", "BackedOut"],
     },
     {
         "what": "options persistence, native vs play page - what a save "
@@ -1025,15 +1057,17 @@ SIM_PAIRS: list[dict[str, object]] = [
     {
         "what": "starting a New Game, native vs play page - the seeded slate "
         "(`begin_new_game_seeded`) and the opening order (opdeene, else "
-        "town01) are one engine entry per host. The page used to seed and "
-        "enter from play.html callbacks, and its post-wipe title skipped "
-        "the seed entirely",
+        "town01) are one session function, `start_new_game_on`, each host "
+        "handing in only its scene entry (`NewGameHost`). The page used to "
+        "seed and enter from play.html callbacks, its post-wipe title "
+        "skipped the seed entirely, and its entry later skipped the landing "
+        "check the native one makes",
         "sites": {
             "native": (NATIVE_BOOT_SCENE_ENTRY, "start_new_game"),
             "web": ("crates/web-play/src/resume.rs", "start_new_game"),
         },
         "mode": "symbols_all",
-        "symbols": ["enter_new_game", "begin_new_game"],
+        "symbols": ["start_new_game_on"],
     },
     {
         "what": "coplanar draw lifts, native vs play page - every host that "
@@ -1073,21 +1107,35 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["draw_plane_summaries", "coplanar_draw_offsets"],
     },
     {
-        "what": "title attract hand-off, native vs play page - retail's "
-        "`AttractIdle` (`0x10`) arm hands the screen to `fmv_id 0` and comes "
-        "back to the menu, so a host that arms the countdown must also drive "
-        "the session out of `TitlePhase::Attract` or the title freezes there "
-        "forever. Both hosts go through the same three session calls; what "
-        "they do between `mark_attract_started` and `finish_attract` is "
-        "theirs (the window decodes the movie, the play page has no "
-        "STR/MDEC playback and says so), and pinning the calls is what stops "
-        "one host arming a countdown it cannot return from",
+        "what": "title card, native vs play page - the session's one front "
+        "end (`engine-session::front_end::FrontEnd`) steps the title: the "
+        "tick, the row counter onto the seat, retail's `AttractIdle` "
+        "(`0x10`) hand-off to `fmv_id 0` and its skip edge, the return to "
+        "the menu. Each host supplies only its movie lane and acts on the "
+        "step; a host that ticked the `TitleSession` itself could arm a "
+        "countdown it never returns from, or order the hand-off against the "
+        "tick differently from the other host",
         "sites": {
-            "native": (NATIVE_BOOT_CUTSCENE, "service_title_attract"),
+            "native": (NATIVE_BOOT_CUTSCENE, "tick_boot_ui"),
             "web": (WEB_BOOT_TITLE, "boot_title_step"),
         },
         "mode": "symbols_all",
-        "symbols": ["attract_pending", "mark_attract_started", "finish_attract"],
+        "symbols": ["FrontEndStep", "AttractStart", "AttractEnded", "Picked"],
+    },
+    {
+        "what": "publisher logos to title, native vs play page - `init.pak`'s "
+        "phase-3 arm (`FUN_801CEFD4`) branches on the entry word to "
+        "`CARD INIT` through `ModeSeat::boot_handoff`, and the title's "
+        "Continue scan runs at that hand-off. The page used to keep a title "
+        "it opened before the logos and never took the seat's hand-off, so "
+        "its mode word stayed short of `CARD INIT`. Both step the logos "
+        "through `FrontEnd::step` and raise the title on its `TitleOpened`",
+        "sites": {
+            "native": (NATIVE_BOOT_CUTSCENE, "tick_boot_ui"),
+            "web": (WEB_BOOT_TITLE, "boot_logos_step"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["FrontEndStep", "TitleOpened"],
     },
     {
         "what": "ground-heightfield sink, native vs play page - the walk-ground "
@@ -1238,17 +1286,18 @@ SIM_PAIRS: list[dict[str, object]] = [
         "hosts must declare the same kind. No host sets the card-slots flag "
         "any more: `SaveSelectSession::for_rack` derives it from the "
         "`SaveRack` variant, and the driver around the second stage is the "
-        "shared `save_screen::SaveScreenFlow` - so the assertion is on the "
-        "rack kind each host builds, which is the one thing left that a host "
-        "still chooses",
+        "shared `save_screen::SaveScreenFlow`. No host builds the rack "
+        "either: the pause menu's Load / Save rows take the session's "
+        "`card_port_rack` over the two ports (the title's Continue screen "
+        "builds it inside `ContinueScreen::open`)",
         "sites": {
-            # The rack builder over the window's two cards (port 1 its own
-            # `memcard1.mcr`, port 2 `--card`'s image).
-            "native": (NATIVE_SAVE_HELPERS, "card_save_rack"),
-            "web": (WEB_PLAY_MENU_INPUT, None),
+            # The pause menu's sub-session build, over the window's two
+            # cards (port 1 its own `memcard1.mcr`, port 2 `--card`'s image).
+            "native": (NATIVE_BOOT_CUTSCENE, "tick_boot_ui"),
+            "web": (WEB_PLAY_MENU_INPUT, "play_menu_input"),
         },
-        "mode": "pattern_same",
-        "pattern": r"SaveRack::(\w+)",
+        "mode": "symbols_all",
+        "symbols": ["card_port_rack"],
     },
     {
         "what": "enemy Steal table - PROT 0941's `0x51` arm resolves a MONSTER "
