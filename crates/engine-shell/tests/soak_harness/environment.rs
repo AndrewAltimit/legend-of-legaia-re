@@ -149,7 +149,8 @@ pub(super) fn pin_host_retail_mode(session: &mut NativeSession) {
 
 /// The faithful-play arming both play hosts apply on top of a bare
 /// `BootSession` (`play-window`'s defaults in `window/run.rs`, the browser
-/// page's `enter_field_core`): field talk through the inline field-VM runner,
+/// page's `enter_field_core`): the default options' world knobs, field talk
+/// through the inline field-VM runner,
 /// retail's leading-edge wall footprint, solid NPC bodies and per-step
 /// terrain follow. `BootSession` already sets the NPCs' ambient walk.
 ///
@@ -159,6 +160,16 @@ pub(super) fn pin_host_retail_mode(session: &mut NativeSession) {
 /// sub-cells the retail footprint never reaches (`town0d`'s cupboard nook at
 /// (94, 17), reported `confined`).
 pub(super) fn arm_host_play_defaults(session: &mut NativeSession) {
+    // Both hosts push their persisted options' simulation knobs onto the
+    // world every tick (`BootSession::apply_option_knobs`); a fresh options
+    // file is `OptionsState::default()`. A bare `World` keeps its own
+    // defaults instead - `retail_static_window` off among them, while both
+    // hosts start with it on - so the soak pushes the hosts' defaults once.
+    // Nothing a run does reseeds these knobs (they live on `World` from its
+    // construction), and a run never opens the options screen, so one push
+    // stands for the hosts' per-tick re-assert.
+    let defaults = legaia_engine_menus::options::OptionsState::default();
+    session.apply_option_knobs(&defaults, None);
     let w = &mut session.host.world;
     w.toggles.use_vm_dialogue = true;
     w.locomotion.leading_edge_wall_probes = true;
