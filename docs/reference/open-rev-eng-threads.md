@@ -186,6 +186,20 @@ Answered questions: [settled field / locomotion](re-settled-threads/field.md), [
 | Thread | Status | What would close it |
 |---|---|---|
 | What is left of the juggle window? | partial (the per-frame law is pinned; the four-slot read is narrowed) | Two residuals ([battle-formulas.md](../subsystems/battle-formulas.md#the-juggle-window---what-makes-a-monster-juggleable)): a four-slot list reads `entry[0x23 + 4k]` with `k` set by the monster block's heap address: both measured fights read `0` (the port's value); a `0xFF` slot would hold the window open ([monster-animation.md](../formats/monster-animation.md#event-frame-list-entry-0x100x13)); the measured window runs 1-2 ticks past `32 * beat / (speed * rate)` because the cursor's sub-frame carry at the commit is unmodelled. A capture of the commit's carry closes the second. |
+| Why does Zeto's idle in `zeto_big_wave_mid_cast` show one pass older than the display lag says? | open (measured) | A retail capture of Big Wave's arms 4 and 5 with the caster's cursor and ordering tables beside each frame ([detail](#zetos-big-wave-idle-one-pass-older)). |
+
+
+### Zeto's Big Wave idle, one pass older
+
+The RAM holds Zeto's idle cursor at `60` (rate `+0x21D` `4`, Big Wave's
+halving; all sixteen frame-history entries step `2`), so two passes of display
+lag put the shown frame at `52`. The image reads `.962` with Zeto seated there
+and `.980` seated at `48`, while a display lag one pass longer wrecks the
+pan's framing (`.462`). The same extra pass costs `cort_mystic_shield_mid_cast`
+and moves the other Cort capture-band states by under `.002`, so it is not a
+corpus-wide lag. The cast-sequence probe can take the capture: `LEGAIA_POKE32`
+sends a seat-0 cast down Big Wave's branch and `LEGAIA_RAM_AT` writes the RAM
+beside the grabbed frames, which shows which pass the drawn pose belongs to.
 
 Answered questions: [settled battle / arts / level-up](re-settled-threads/battle.md), [settled rendering / camera](re-settled-threads/rendering-camera.md), [settled world map](re-settled-threads/world-map.md); falsified readings: [battle](re-do-not-re-walk.md#battle--arts--level-up), [rendering / camera](re-do-not-re-walk.md#rendering--camera).
 
