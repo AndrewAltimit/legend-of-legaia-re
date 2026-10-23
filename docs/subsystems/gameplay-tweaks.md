@@ -85,7 +85,9 @@ The encounter condition walk (`FUN_801D9E1C`, `RegionEncounterTable::select_grou
 
 ### Boss casts respect jewels
 
-The capture-class boss casts whose modules call the resist-bypass wrapper `FUN_801DD6B4` (Guilty Cross, Bloody Horns, Terio Punch, Bull Charge, Blazing Slash, Megaton Press, Plasma Strike) roll through the respecting wrapper `FUN_801DD4B0` instead (`enemy_move_predamage`, `casting/predamage.rs`). That is what the patch's `jal` retarget does, so the engine swaps the whole roll, not only the finisher's resist flag. The engine's ports of the two wrappers roll different attacker and defender terms (`engine-battle-vm` `battle_damage_wrappers`, [battle-formulas](battle-formulas.md)), where the patch's module header (`code-hooks` `jewel_fix`) reads the retarget as changing only the finisher's `param_5`; the switch follows the wrapper ports.
+The capture-class boss casts whose modules call the resist-bypass wrapper `FUN_801DD6B4` (Guilty Cross, Bloody Horns, Terio Punch, Bull Charge, Blazing Slash, Megaton Press, Plasma Strike) roll through the respecting wrapper `FUN_801DD4B0` instead (`enemy_move_predamage`, `casting/predamage.rs`).
+
+That is what the patch's `jal` retarget does, and it swaps the whole roll, not only the finisher's resist flag: the two wrappers roll different attacker and defender terms ([battle-formulas](battle-formulas.md#capture-class-wrappers---fun_801dd4b0--fun_801dd6b4)). `FUN_801DD4B0` reads the caster's INT `+0x168` with two draws and folds the defender's UDF / LDF at `>> 4`; `FUN_801DD6B4` reads ATK `+0x158` with one draw and folds them at `>> 1` (see `ghidra/scripts/funcs/overlay_battle_action_801dd4b0.txt` and `..._801dd6b4.txt`). A fixed cast's damage therefore moves even against a defender with no guard.
 
 ### Battle freeze guard
 

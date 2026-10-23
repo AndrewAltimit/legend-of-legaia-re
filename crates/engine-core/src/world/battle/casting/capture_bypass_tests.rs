@@ -447,6 +447,13 @@ fn jewel_fix_makes_a_bypass_cast_respect_the_resist_ladder() {
         jewel_fix_damage(BYPASS_MOVE_ID, false, false),
         "unfixed, the resist bit changes nothing"
     );
+    // The retarget swaps the whole roll (INT and the `>> 4` fold for ATK and
+    // the `>> 1` fold), so the hit moves even with no resist to apply.
+    assert_ne!(
+        fixed_unresisted,
+        jewel_fix_damage(BYPASS_MOVE_ID, false, false),
+        "the fixed cast rolls FUN_801DD4B0's terms, not FUN_801DD6B4's"
+    );
     // A move outside the census is untouched by the toggle.
     assert_eq!(
         jewel_fix_damage(RESPECT_MOVE_ID, true, true),

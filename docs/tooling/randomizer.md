@@ -1542,7 +1542,9 @@ engine reads the same embedded config and runs the same offer kernel
 `--jewel-fix` makes the boss cinematic casts - Xain's Bloody Horns / Terio Punch
 / Bull Charge, Cort's Guilty Cross and the Delilas trio's signatures - respect
 Jewels, elemental guards and All Guard like every other special. In retail those
-six cast modules skip the party-defender resist block.
+six cast modules skip the party-defender resist block. The fix sends them
+through the damage roll every other boss cast uses, which reads the caster's
+INT rather than its ATK, so the hits change size as well as respecting guards.
 [Internals](randomizer-internals.md#jewel-fix).
 
 ### Approach-softlock fix

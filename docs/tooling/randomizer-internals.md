@@ -767,8 +767,16 @@ hardware-confirmed (render -> slide -> cursor -> confirm -> swap).
 `jal FUN_801DD6B4` word; exactly the planned words change (the 09xx extents tile
 exactly, so each window is asserted to contain no other module's bytes and
 every site to lie inside its own extent); the patched image still parses; the
-edit is byte-deterministic; re-application is refused. The engine-side
-equivalent is `damage_finish::bypass_party_resist = false`.
+edit is byte-deterministic; re-application is refused.
+
+The retarget swaps the whole roll, not only the finisher flag: `FUN_801DD4B0`
+rolls the caster's INT and an INT-weighted defence fold, `FUN_801DD6B4` the
+caster's ATK and a heavy UDF / LDF fold
+([battle-formulas.md](../subsystems/battle-formulas.md#capture-class-wrappers---fun_801dd4b0--fun_801dd6b4)),
+so a fixed cast's damage moves even against an unguarded defender. The
+engine-side equivalent is `WorldToggles::jewel_fix`, which routes the same
+casts to the port of `FUN_801DD4B0`
+([gameplay tweaks](../subsystems/gameplay-tweaks.md#boss-casts-respect-jewels)).
 
 ### Approach-softlock fix
 

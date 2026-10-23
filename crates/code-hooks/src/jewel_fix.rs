@@ -11,12 +11,20 @@
 //! - `FUN_801DD4B0` ([`RESPECT_WRAPPER_VA`]) - calls the finisher
 //!   `FUN_801DDB30` with `param_5 = 0`: the party-defender resist ladder runs
 //!   (elemental jewels / guards / All Guard apply).
-//! - `FUN_801DD6B4` ([`BYPASS_WRAPPER_VA`]) - same roll shape but finisher
-//!   `param_5 = 1`: the **entire** resist block is skipped.
+//! - `FUN_801DD6B4` ([`BYPASS_WRAPPER_VA`]) - calls the finisher with
+//!   `param_5 = 1` (`li v0,0x1` / `sw v0,0x10(sp)` at `0x801DD824`): the
+//!   **entire** resist block is skipped.
 //!
-//! Both wrappers pass the caster's seat, so the affinity scale reads the
-//! caster's true record element either way - the bypass is purely the
-//! finisher's `param_5 == 0` gate. The full wrapper census over every
+//! The two are **not** one roll with a flag flipped. `FUN_801DD4B0` rolls
+//! the attacker off INT `+0x168` (`rand % ((INT >> 1) + 1) + INT * 2`, two
+//! draws, `0x801DD52C..0x801DD588`) and folds the defender's UDF / LDF at
+//! `>> 4` with an INT modulus (`0x801DD594..0x801DD614`). `FUN_801DD6B4`
+//! rolls the attacker off ATK `+0x158` (`lhu v0,0x158(s0)` at `0x801DD738`,
+//! one draw, no `+0x168` read) and folds UDF / LDF at `>> 1` with the
+//! modulus `((UDF + LDF) >> 3) + 1` (`0x801DD74C..0x801DD7C0`). Both pass
+//! the caster's seat to the scale `FUN_801DD864`, so the affinity reads the
+//! caster's true record element either way; the resist skip is the
+//! finisher's `param_5` gate. The full wrapper census over every
 //! capture-class module (`docs/subsystems/battle-formulas.md`) finds the
 //! bypass wrapper in exactly six modules - the boss signature-move set:
 //!
@@ -40,8 +48,13 @@
 //! `jal FUN_801DD4B0` - a same-size in-place PROT edit. The wrappers share
 //! the argument contract (`a0` = power, `a1` = attacker slot, `a2` = defender
 //! slot; both roll internally and return the damage margin), so the retarget
-//! changes nothing but the finisher's `param_5`, and the resist ladder
-//! engages exactly as it does for every ordinary monster special. Shared
+//! is safe at every site. It swaps the **whole roll**, not only the
+//! finisher's `param_5`: the resist ladder engages exactly as it does for
+//! every ordinary monster special, and the hit is rolled off the caster's
+//! INT and the defender's INT-weighted fold instead of ATK and the heavy
+//! defence fold, so its magnitude moves too. The engine's twin
+//! (`WorldToggles::jewel_fix`) routes the same casts to its port of
+//! `FUN_801DD4B0`. Shared
 //! modules dispatch per spell at a module-head id switch, so
 //! respecting-spell paths (Neo Star Slash) are untouched, and PROT 952's
 //! unreachable template respect call (`+0x15B0`) is left alone.
