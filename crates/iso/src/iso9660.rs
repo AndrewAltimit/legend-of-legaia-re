@@ -118,103 +118,49 @@ pub fn list_directory(disc: &mut RawDisc, dir: &DirectoryRecord) -> Result<Vec<D
     Ok(entries)
 }
 
-/// Locate a top-level file in an **in-memory** Mode 2/2352 disc image by name,
-/// returning its `(lba, size_bytes)`. Unlike [`walk_files`] (which streams from
-/// a [`RawDisc`] file handle), this works on a byte slice - what an in-memory
-/// patcher holds. Only the root directory is searched, which is where the disc's
-/// data files (`PROT.DAT`, `SCUS_942.54`, …) live.
-///
-/// Returns `None` if the image isn't ISO 9660, the root directory can't be read,
-/// or no root entry matches `name` (case-sensitive, version suffix stripped).
-/// Like [`find_file_in_image`], but takes a `/`-separated path and walks
-/// subdirectories (`"XA/XA2.XA"`). A bare filename degrades to the root
-/// walk.
-pub fn find_path_in_image(image: &[u8], path: &str) -> Option<(u32, u32)> {
-    let user = |lba: usize| -> Option<&[u8]> {
-        let base = lba * SECTOR_SIZE + USER_DATA_OFFSET;
-        image.get(base..base + USER_DATA_SIZE)
-    };
-    let pvd = user(16)?;
-    if pvd[0] != 1 || &pvd[1..6] != b"CD001" {
-        return None;
-    }
-    let mut dir = parse_record(&pvd[156..156 + 34]).ok()?;
-    let components: Vec<&str> = path.split('/').filter(|c| !c.is_empty()).collect();
-    'component: for (ci, comp) in components.iter().enumerate() {
-        if !dir.is_dir || dir.size > MAX_DIRECTORY_BYTES {
-            return None;
-        }
-        let sector_count = dir.size.div_ceil(USER_DATA_SIZE as u32) as usize;
-        let mut buf = Vec::with_capacity(sector_count * USER_DATA_SIZE);
-        for i in 0..sector_count {
-            buf.extend_from_slice(user(dir.lba as usize + i)?);
-        }
-        buf.truncate(dir.size as usize);
-        let mut offset = 0usize;
-        while offset < buf.len() {
-            let len = buf[offset] as usize;
-            if len == 0 {
-                let next = offset.div_ceil(USER_DATA_SIZE) * USER_DATA_SIZE;
-                let next = if next == offset {
-                    offset + USER_DATA_SIZE
-                } else {
-                    next
-                };
-                if next >= buf.len() {
-                    break;
-                }
-                offset = next;
-                continue;
-            }
-            if offset + len > buf.len() {
-                break;
-            }
-            if let Ok(rec) = parse_record(&buf[offset..offset + len]) {
-                let stem = rec.name.split(';').next().unwrap_or(&rec.name);
-                if stem.eq_ignore_ascii_case(comp) {
-                    if ci + 1 == components.len() {
-                        return if rec.is_dir {
-                            None
-                        } else {
-                            Some((rec.lba, rec.size))
-                        };
-                    }
-                    dir = rec;
-                    continue 'component;
-                }
-            }
-            offset += len;
-        }
-        return None;
-    }
-    None
+/// The 2048-byte user-data payload of sector `lba` of an **in-memory**
+/// Mode 2/2352 image, or `None` past the image's end.
+fn image_user_data(image: &[u8], lba: usize) -> Option<&[u8]> {
+    let base = lba * SECTOR_SIZE + USER_DATA_OFFSET;
+    image.get(base..base + USER_DATA_SIZE)
 }
 
-pub fn find_file_in_image(image: &[u8], name: &str) -> Option<(u32, u32)> {
-    let user = |lba: usize| -> Option<&[u8]> {
-        let base = lba * SECTOR_SIZE + USER_DATA_OFFSET;
-        image.get(base..base + USER_DATA_SIZE)
-    };
-
-    // Primary Volume Descriptor at LBA 16.
-    let pvd = user(16)?;
+/// The root directory record of an **in-memory** Mode 2/2352 image, read off
+/// the primary volume descriptor at LBA 16. `None` when the image is not
+/// ISO 9660.
+pub fn root_in_image(image: &[u8]) -> Option<DirectoryRecord> {
+    let pvd = image_user_data(image, 16)?;
     if pvd[0] != 1 || &pvd[1..6] != b"CD001" {
         return None;
     }
-    let root = parse_record(&pvd[156..156 + 34]).ok()?;
-    if !root.is_dir || root.size > MAX_DIRECTORY_BYTES {
+    parse_record(&pvd[156..156 + 34]).ok()
+}
+
+/// The entries of directory `dir` in an **in-memory** Mode 2/2352 image,
+/// without `.` and `..` - the byte-slice twin of [`list_directory`], and the
+/// one directory walk every in-memory reader in this crate goes through
+/// ([`find_path_in_image`], [`find_file_in_image`] and
+/// [`crate::image::walk_iso_files`]).
+///
+/// `None` when `dir` is not a directory, its extent is past
+/// [`MAX_DIRECTORY_BYTES`], or a sector of it runs past the image. A record
+/// that does not parse is skipped rather than failing the listing.
+pub fn list_directory_in_image(
+    image: &[u8],
+    dir: &DirectoryRecord,
+) -> Option<Vec<DirectoryRecord>> {
+    if !dir.is_dir || dir.size > MAX_DIRECTORY_BYTES {
         return None;
     }
-
-    // Read the root directory extent into a contiguous buffer.
-    let sector_count = root.size.div_ceil(USER_DATA_SIZE as u32) as usize;
+    let sector_count = dir.size.div_ceil(USER_DATA_SIZE as u32) as usize;
     let mut buf = Vec::with_capacity(sector_count * USER_DATA_SIZE);
     for i in 0..sector_count {
-        buf.extend_from_slice(user(root.lba as usize + i)?);
+        buf.extend_from_slice(image_user_data(image, dir.lba as usize + i)?);
     }
-    buf.truncate(root.size as usize);
+    buf.truncate(dir.size as usize);
 
-    // Walk records (same boundary rules as `list_directory`).
+    // Same boundary rules as `list_directory`.
+    let mut entries = Vec::new();
     let mut offset = 0usize;
     while offset < buf.len() {
         let len = buf[offset] as usize;
@@ -235,14 +181,49 @@ pub fn find_file_in_image(image: &[u8], name: &str) -> Option<(u32, u32)> {
             break;
         }
         if let Ok(rec) = parse_record(&buf[offset..offset + len])
-            && !rec.is_dir
-            && rec.name == name
+            && rec.name != "."
+            && rec.name != ".."
         {
-            return Some((rec.lba, rec.size));
+            entries.push(rec);
         }
         offset += len;
     }
-    None
+    Some(entries)
+}
+
+/// Locate a file in an **in-memory** Mode 2/2352 disc image by a
+/// `/`-separated path (`"XA/XA2.XA"`), returning its `(lba, size_bytes)`.
+/// Unlike [`walk_files`] (which streams from a [`RawDisc`] file handle), this
+/// works on a byte slice - what an in-memory patcher holds. A bare filename
+/// searches the root directory, which is where the disc's data files
+/// (`PROT.DAT`, `SCUS_942.54`, …) live.
+///
+/// Each component matches case-insensitively with the `;1` version suffix
+/// stripped. Returns `None` if the image isn't ISO 9660, a directory on the
+/// way can't be read, or the path does not name a file.
+pub fn find_path_in_image(image: &[u8], path: &str) -> Option<(u32, u32)> {
+    let mut dir = root_in_image(image)?;
+    let components: Vec<&str> = path.split('/').filter(|c| !c.is_empty()).collect();
+    let (last, parents) = components.split_last()?;
+    for comp in parents {
+        dir = list_directory_in_image(image, &dir)?
+            .into_iter()
+            .find(|rec| rec.name.eq_ignore_ascii_case(comp))?;
+    }
+    list_directory_in_image(image, &dir)?
+        .into_iter()
+        .find(|rec| rec.name.eq_ignore_ascii_case(last))
+        .and_then(|rec| (!rec.is_dir).then_some((rec.lba, rec.size)))
+}
+
+/// Locate a top-level file in an **in-memory** Mode 2/2352 disc image by name,
+/// returning its `(lba, size_bytes)`: [`find_path_in_image`] on a bare name,
+/// so the match is case-insensitive with the version suffix stripped.
+pub fn find_file_in_image(image: &[u8], name: &str) -> Option<(u32, u32)> {
+    if name.contains('/') {
+        return None;
+    }
+    find_path_in_image(image, name)
 }
 
 /// Read a top-level file's logical bytes out of an **in-memory** Mode 2/2352
@@ -256,8 +237,7 @@ pub fn read_file_in_image(image: &[u8], name: &str) -> Option<Vec<u8>> {
     let sector_count = (size as usize).div_ceil(USER_DATA_SIZE);
     let mut out = Vec::with_capacity(sector_count * USER_DATA_SIZE);
     for i in 0..sector_count {
-        let base = (lba as usize + i) * SECTOR_SIZE + USER_DATA_OFFSET;
-        out.extend_from_slice(image.get(base..base + USER_DATA_SIZE)?);
+        out.extend_from_slice(image_user_data(image, lba as usize + i)?);
     }
     out.truncate(size as usize);
     Some(out)

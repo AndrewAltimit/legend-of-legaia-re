@@ -460,9 +460,10 @@ fn battle_equipment_labels_carry_the_equipment_name() {
 ///
 /// [`battle_equipment_labels_carry_the_equipment_name`] hands the scan an
 /// executable it read with `legaia_iso` - the CLI's ISO walker. The WASM
-/// binding cannot use that path: `scan_textures` reads the disc with the
-/// browser's in-memory walker (`legaia_iso::image::extract_scus`) and hands the result
-/// to `ScanCtx::with_scus`. Two walkers, one claim, and only one of them was
+/// binding reaches the disc through the browser's entry point
+/// (`legaia_iso::image::extract_scus`, which adds the Mode2/2352 image check)
+/// and hands the result to `ScanCtx::with_scus`. Both entry points share one
+/// in-memory directory walk and one name rule, but only one of them was
 /// measured - so a browser that silently found no executable would have shown
 /// `Gala - equip 0x13` with the whole suite green. This is the missing half:
 /// the same anchor, joined through the browser's own reader.

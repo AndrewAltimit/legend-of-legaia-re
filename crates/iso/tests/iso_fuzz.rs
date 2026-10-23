@@ -244,3 +244,67 @@ fn full_synthetic_volume_round_trips() {
     assert_eq!(files.len(), 2);
     let _ = std::fs::remove_file(&path);
 }
+
+impl DiscBuilder {
+    /// The image as one in-memory byte slice, what the browser and the
+    /// patcher hold.
+    fn bytes(&self) -> Vec<u8> {
+        self.sectors.iter().flatten().copied().collect()
+    }
+}
+
+#[test]
+fn the_in_memory_readers_share_one_walk_and_one_name_rule() {
+    // Root: a mixed-case versioned file, an upper-case file and a
+    // subdirectory holding one more file. The patcher's lookups
+    // (`iso9660::*_in_image`) and the browser's (`image::*`) must resolve
+    // every name the same way: case-insensitive, `;1` stripped.
+    let mut disc = DiscBuilder::new(40);
+    disc.user_data(16, &make_pvd(18, USER_DATA_SIZE as u32));
+    let mut root_buf = Vec::new();
+    root_buf.extend_from_slice(&dir_record(30, 5, false, b"Prot.Dat;1"));
+    root_buf.extend_from_slice(&dir_record(31, 3, false, b"SCUS_942.54;1"));
+    root_buf.extend_from_slice(&dir_record(20, USER_DATA_SIZE as u32, true, b"XA"));
+    disc.user_data(18, &root_buf);
+    disc.user_data(20, &dir_record(32, 4, false, b"XA1.XA;1"));
+    disc.user_data(30, b"hello");
+    disc.user_data(31, b"exe");
+    let image = disc.bytes();
+
+    use legaia_iso::image;
+    assert_eq!(
+        iso9660::find_file_in_image(&image, "PROT.DAT"),
+        Some((30, 5))
+    );
+    assert_eq!(
+        iso9660::find_file_in_image(&image, "prot.dat"),
+        Some((30, 5))
+    );
+    assert_eq!(
+        iso9660::find_file_in_image(&image, "XA"),
+        None,
+        "a directory is not a file"
+    );
+    assert_eq!(
+        iso9660::find_file_in_image(&image, "XA/XA1.XA"),
+        None,
+        "root names only"
+    );
+    assert_eq!(
+        iso9660::find_path_in_image(&image, "xa/xa1.xa"),
+        Some((32, 4))
+    );
+    assert_eq!(
+        image::extract_prot_dat(&image).as_deref(),
+        Some(&b"hello"[..])
+    );
+    assert_eq!(
+        image::extract_scus(&image),
+        iso9660::read_file_in_image(&image, "SCUS_942.54")
+    );
+    let paths: Vec<String> = image::walk_iso_files(&image)
+        .into_iter()
+        .map(|f| f.path)
+        .collect();
+    assert_eq!(paths, ["Prot.Dat", "SCUS_942.54", "XA/XA1.XA"]);
+}
