@@ -352,7 +352,187 @@ pub(super) fn retail_effect_children(
             out.push(seed);
         }
     }
+    out.extend(retired_effect_children(ram, pool, table, motion_scale, lag));
     Some(out)
+}
+
+/// A pool child slot the walker retired on the newest sweep, still on
+/// screen in the displayed frame.
+///
+/// The displayed frame lags the RAM by two passes, so a child that ran out
+/// on the last pass is drawn there although its slot reads dead
+/// (`frame_count` `0`). Retirement leaves the rest of the slot in place:
+/// the mirror, the position, and an anim cursor run past the batch end by
+/// the retirement overrun (`FUN_801E0088` pass 1: the frame-advance loop
+/// keeps striding while the delay byte it lands on is zero, a motion step
+/// each), so the batch is still `+0x1C - 2 - 6 * cursor`. What the slot
+/// cannot say is when it retired. The older ordering table can: it is the
+/// pass before the RAM's, and a child alive on it drew its final frame
+/// there, a `0x2E` quad of that frame's atlas rect, CLUT, page and
+/// brightness in the slot's mirror order. A dead slot is taken as retired
+/// on the newest sweep when some table holds more such quads than the live
+/// children account for on that pass (each live one taken back a frame
+/// step); it is then seeded on its final frame one sweep before the
+/// retirement and taken back the rest of the lag like the live ones.
+///
+/// `battle_gimard_tail_fire_a`'s slot 6 is one: a flame puff at
+/// `(133, -233, -811)` the older table draws at `x 148..238` with
+/// brightness `18`, gone from the newer one; the displayed frame shows it on
+/// frame 6, the faint haze left of the flame.
+fn retired_effect_children(
+    ram: &[u8],
+    pool: u32,
+    table: u32,
+    motion_scale: i32,
+    lag: u16,
+) -> Vec<legaia_engine_core::world::EffectChildSeed> {
+    use legaia_ram_image::extract::PSX_RAM_KSEG0;
+    use legaia_ram_image::prim_pool::{self, Prim};
+    let atlas = game_anchors::u32_at(ram, pool + 4);
+    let step = u16::from(frame_step(ram)).max(1);
+    if lag == 0 || !in_ram(atlas) {
+        return Vec::new();
+    }
+    let batch_of = |ptr: u32, cursor: u8| -> Option<(u16, u32)> {
+        let entry = ptr.wrapping_sub(2 + 6 * u32::from(cursor));
+        (0..PACK0_SEARCH)
+            .find(|&i| game_anchors::u32_at(ram, table + 4 * i) == entry)
+            .map(|i| (i as u16, entry))
+    };
+    // The quad a child on `entry`'s frame `k` draws: (clut, page, colour,
+    // corner UVs in the mirror's order) - `Pool::child_billboards`.
+    let quad_of = |entry: u32, count: u8, k: u8, mirror: u8| {
+        let idx = game_anchors::u8_at(ram, entry + 2 + 6 * u32::from(k));
+        let a = atlas + 8 * u32::from(idx);
+        let (u, v) = (game_anchors::u8_at(ram, a), game_anchors::u8_at(ram, a + 1));
+        let (w, h) = (
+            game_anchors::u8_at(ram, a + 2),
+            game_anchors::u8_at(ram, a + 3),
+        );
+        let (mut u0, mut u1) = (u, u.wrapping_add(w.saturating_sub(1)));
+        let (mut v0, mut v1) = (v, v.wrapping_add(h.saturating_sub(1)));
+        if mirror & 1 == 0 {
+            std::mem::swap(&mut u0, &mut u1);
+        }
+        if mirror & 2 == 0 {
+            std::mem::swap(&mut v0, &mut v1);
+        }
+        (
+            game_anchors::u16_at(ram, a + 4),
+            game_anchors::u16_at(ram, a + 6),
+            legaia_engine_vm::effect_vm::pass2_brightness(count, k),
+            [(u0, v0), (u1, v0), (u0, v1), (u1, v1)],
+        )
+    };
+    // Dead slots with a batch behind them, by their final frame's quad.
+    let mut dead = Vec::new();
+    let mut live_quads = Vec::new();
+    for slot in 0..EFFECT_CHILD_SLOTS {
+        let c = pool + 0x10 + slot * 0x20;
+        let count = game_anchors::u8_at(ram, c);
+        let cursor = game_anchors::u8_at(ram, c + 2);
+        let mirror = game_anchors::u8_at(ram, c + 1);
+        let ptr = game_anchors::u32_at(ram, c + 0x1C);
+        let Some((anim_id, entry)) = batch_of(ptr, cursor) else {
+            continue;
+        };
+        let pos = [0x0C, 0x10, 0x14].map(|o| game_anchors::u32_at(ram, c + o) as i32);
+        let velocity = [4, 6, 8].map(|o| game_anchors::i16_at(ram, c + o));
+        let frame = |k: u8, b: u32| game_anchors::u8_at(ram, entry + 2 + 6 * u32::from(k) + b);
+        if count != 0 {
+            // The live child as the older table's pass held it.
+            let seed = legaia_engine_core::world::EffectChildSeed {
+                anim_id,
+                frame_count: count,
+                frame_cursor: cursor,
+                wait: game_anchors::u8_at(ram, c + 3),
+                mirror,
+                pos,
+                velocity,
+            };
+            if let Some(then) = rewind_effect_child(seed, step, motion_scale, frame) {
+                live_quads.push(quad_of(entry, count, then.frame_cursor, mirror));
+            }
+            continue;
+        }
+        let total = game_anchors::u16_at(ram, entry);
+        let Ok(total) = u8::try_from(total) else {
+            continue;
+        };
+        if total == 0 || cursor < total {
+            continue;
+        }
+        // Undo the overrun's motion steps (frames `total..=cursor`).
+        let mut pos = pos;
+        for k in total..=cursor {
+            let speed = i32::from(frame(k, 2));
+            for (p, v) in pos.iter_mut().zip(velocity) {
+                let d = i32::from(v)
+                    .wrapping_mul(speed)
+                    .wrapping_mul(motion_scale)
+                    .wrapping_shl(3)
+                    >> 15;
+                *p = p.wrapping_sub(d);
+            }
+        }
+        let seed = legaia_engine_core::world::EffectChildSeed {
+            anim_id,
+            frame_count: total,
+            frame_cursor: total - 1,
+            wait: 0,
+            mirror,
+            pos,
+            velocity,
+        };
+        dead.push((quad_of(entry, total, total - 1, mirror), seed, entry));
+    }
+    if dead.is_empty() {
+        return Vec::new();
+    }
+    let tables: Vec<Vec<_>> = prim_pool::find_ot_arrays(ram, PSX_RAM_KSEG0, 64)
+        .iter()
+        .filter_map(|ot| {
+            let head = ot.head.checked_sub(PSX_RAM_KSEG0)? as usize;
+            Some(
+                prim_pool::chain_walk(ram, PSX_RAM_KSEG0, head)
+                    .into_iter()
+                    .filter_map(|c| match c.prim {
+                        Prim::PolyFt4 {
+                            cmd: 0x2E,
+                            color,
+                            uvs,
+                            clut,
+                            tpage,
+                            ..
+                        } if color[0] == color[1] && color[1] == color[2] => {
+                            Some((clut, tpage, color[0], uvs))
+                        }
+                        _ => None,
+                    })
+                    .collect(),
+            )
+        })
+        .collect();
+    let mut out = Vec::new();
+    let mut taken: Vec<_> = Vec::new();
+    for (quad, seed, entry) in dead {
+        let drawn = tables
+            .iter()
+            .map(|t| t.iter().filter(|q| **q == quad).count())
+            .max()
+            .unwrap_or(0);
+        let accounted = live_quads.iter().filter(|q| **q == quad).count()
+            + taken.iter().filter(|q| **q == quad).count();
+        if drawn <= accounted {
+            continue;
+        }
+        taken.push(quad);
+        let frame = |k: u8, b: u32| game_anchors::u8_at(ram, entry + 2 + 6 * u32::from(k) + b);
+        if let Some(seed) = rewind_effect_child(seed, lag - 1, motion_scale, frame) {
+            out.push(seed);
+        }
+    }
+    out
 }
 
 /// Child `seed` taken back `sweeps` walker sweeps - the display lag, since

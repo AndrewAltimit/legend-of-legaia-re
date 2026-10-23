@@ -1374,6 +1374,32 @@ the sweep and steps back onto the previous one at wait `0`, any other gains
 `8` of its first delay was seeded inside the window and is dropped. The
 masters stay the replay's; a frame draws only children.
 
+A child the walker retired inside the window is the other edge, and it is
+still on screen. Retirement zeroes only the slot's frame count: the mirror,
+the position and the batch survive, the anim cursor run past the batch end by
+the retirement overrun (the frame loop keeps striding while the delay byte it
+lands on is zero). The slot does not say when it retired; the older ordering
+table does. It is the pass before the RAM's, and a child alive there drew its
+final frame as a `0x2E` quad of that frame's atlas rect, CLUT, page and
+brightness in the slot's mirror order. A dead slot is seeded as retired on the
+newest sweep when a table holds more such quads than the live children
+account for on that pass (each taken back one frame step), on its final frame
+one sweep before the retirement and taken back the rest of the lag
+(`retired_effect_children`). `battle_gimard_tail_fire_a`'s slot 6, a flame puff
+the older table draws at `x 148..238` with brightness `18` and the newer one
+not at all, is the faint haze left of the flame on the displayed frame (image
+`.941` to `.962`).
+
+Every billboard the image child draws lands where retail's packet does:
+`LEGAIA_DIAG_FX_ALL` prints each quad's screen bounds, and on
+`battle_gimard_tail_fire_a` the near puff spans `x 138..241, y 101..203`
+against the older table's `138..240, 101..203`, the rest within a pixel or two
+of the quads they pair with one frame step later. `gimard_burning_attack`'s
+breath cloud is ten such children, and the lag holds there too: seated as the
+RAM holds them instead of taken back, the frame scores `.805` against `.838`,
+and with no billboards at all `.804`. Its residual is the cloud's shape inside
+the quads, not where the quads stand.
+
 A readable pool with no live child is seated too, as an empty set
 (`RetailBattle::effect_children` is `None` only when the state holds no
 pool). A replay that reaches the capture behind retail's clock still carries
@@ -2540,8 +2566,8 @@ member's equipment, each actor's seat, heading, mode word and tint, and every
 live effect sprite. `LEGAIA_DIAG_CAPTURE_VRAM=<path>` beside it writes the
 battle VRAM for a byte comparison against `mednafen-state vram-dump
 --out-bin`, and `LEGAIA_DIAG_FX_ALL=1` prints every effect sprite's projected
-screen centre each frame, the engine side of the display list's effect
-packets.
+screen centre and quad bounds each frame, the engine side of the display
+list's effect packets.
 
 ### The frames either side of a gated capture
 
