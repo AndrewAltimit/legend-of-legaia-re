@@ -23,6 +23,7 @@ legaia-engine-ui.workspace = true
 legaia-font.workspace = true
 legaia-engine-battle.workspace = true
 legaia-engine-battle-vm.workspace = true
+legaia-ui-formats.workspace = true
 legaia-engine-camera.workspace = true
 legaia-engine-effects.workspace = true
 legaia-engine-field.workspace = true

@@ -146,6 +146,14 @@ pub struct DiscTables {
     /// `0x801F4C94`), installed with the move-power table. `None` on a
     /// disc-free host, where the loss window opens empty.
     pub defeat_text: Option<legaia_engine_battle_vm::battle_party_panel::DefeatText>,
+    /// The victory report's text pieces (PROT 0898 `0x801F4C2C` /
+    /// `0x801F4C38`), installed beside [`Self::defeat_text`]. `None` on a
+    /// disc-free host, where the report draws the port's English.
+    pub victory_text: Option<legaia_engine_battle_vm::battle_party_panel::VictoryText>,
+    /// The name-entry screen's prompts (PROT 0897's pointer table at
+    /// `0x801F3324`), installed at field scene entry. `None` on a disc-free
+    /// host, where the screen draws the port's English.
+    pub name_entry_prompts: Option<legaia_ui_formats::name_entry_prompts::NameEntryPrompts>,
     /// Player Seru spell id (`0x81..=0x8B`) -> the **summon creature's**
     /// record element (`+0x1D`), the byte the side-effect stager switches on
     /// and the affinity scale reads as the attacker element.
@@ -255,6 +263,8 @@ impl DiscTables {
             seru_side_effects: None,
             absorb_caption: None,
             defeat_text: None,
+            victory_text: None,
+            name_entry_prompts: None,
             summon_elements: std::collections::HashMap::new(),
             summon_creatures: std::collections::HashMap::new(),
             steal_table: None,

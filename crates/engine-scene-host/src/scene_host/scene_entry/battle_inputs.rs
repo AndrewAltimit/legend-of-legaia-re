@@ -109,6 +109,24 @@ impl SceneHost {
         self.world.set_battle_tutorial_script(script);
     }
 
+    /// Install the name-entry screen's prompts from the field overlay's
+    /// pointer table (PROT 0897,
+    /// [`legaia_ui_formats::name_entry_prompts`]) once a read succeeds. A
+    /// failed read leaves [`legaia_engine_core::world::DiscTables::name_entry_prompts`]
+    /// `None`, where the screen draws the port's English.
+    pub(super) fn ensure_name_entry_prompts(&mut self) {
+        use legaia_ui_formats::name_entry_prompts as nep;
+        if self.world.tables.name_entry_prompts.is_some() {
+            return;
+        }
+        if let Ok(bytes) = self.index.entry_bytes(nep::FIELD_OVERLAY_PROT_INDEX as u32) {
+            self.world.tables.name_entry_prompts = Some(nep::NameEntryPrompts::from_field_overlay(
+                &bytes,
+                nep::FIELD_OVERLAY_BASE_VA,
+            ));
+        }
+    }
+
     /// Install the battle-action move-power table onto the world from PROT
     /// entry 0898 (the battle-action overlay), once per host. The monster
     /// special-attack damage path reads it to roll faithful per-move damage;
@@ -163,6 +181,10 @@ impl SceneHost {
                 // rodata in the same overlay.
                 self.world.tables.defeat_text =
                     legaia_engine_battle_vm::battle_party_panel::DefeatText::parse(&bytes);
+                // The victory report's pieces (0x801F4C2C / 0x801F4C38) sit
+                // beside them.
+                self.world.tables.victory_text =
+                    legaia_engine_battle_vm::battle_party_panel::VictoryText::parse(&bytes);
                 // The Seru side-effect table (0x801F6870) is sibling static
                 // data in the same overlay. A failure leaves the stager off,
                 // so levelled Seru casts carry no secondary debuff.

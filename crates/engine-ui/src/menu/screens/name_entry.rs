@@ -79,6 +79,11 @@ pub struct NameEntryView<'a> {
     /// Caret blink state (the trailing `_` after the name; retail blinks it
     /// at 75% duty from `frame & 0x18`).
     pub caret_on: bool,
+    /// The prompts off the field overlay
+    /// ([`legaia_ui_formats::name_entry_prompts`]), so a language pack's
+    /// wording reaches the screen; `None` (or a slot the image lacks) draws
+    /// the port's English.
+    pub prompts: Option<&'a legaia_ui_formats::name_entry_prompts::NameEntryPrompts>,
 }
 
 /// Build the name-entry overlay's [`TextDraw`]s in **stage pixels** (320x240
@@ -98,6 +103,10 @@ pub fn name_entry_draws_for(font: &legaia_font::Font, view: &NameEntryView<'_>) 
     let white = MENU_TEXT_WHITE;
     let gold = MENU_TEXT_GOLD;
     let teal = MENU_TEXT_TEAL;
+    let prompt = |p: legaia_ui_formats::name_entry_prompts::NamePrompt, english: &'static str| {
+        view.prompts.and_then(|t| t.get(p)).unwrap_or(english)
+    };
+    use legaia_ui_formats::name_entry_prompts::NamePrompt;
 
     let mut out = Vec::new();
 
@@ -105,17 +114,17 @@ pub fn name_entry_draws_for(font: &legaia_font::Font, view: &NameEntryView<'_>) 
     // (retail draws the confirm text + Yes/No where the prompt line was).
     if view.confirming {
         out.extend(text_draws_for(
-            &font.layout_ascii("Is this name okay?"),
+            &font.layout_ascii(prompt(NamePrompt::Confirm, "Is this name okay?")),
             NAME_ENTRY_CONFIRM_PEN,
             white,
         ));
         out.extend(text_draws_for(
-            &font.layout_ascii("Yes"),
+            &font.layout_ascii(prompt(NamePrompt::Yes, "Yes")),
             NAME_ENTRY_YES_PEN,
             teal,
         ));
         out.extend(text_draws_for(
-            &font.layout_ascii("No"),
+            &font.layout_ascii(prompt(NamePrompt::No, "No")),
             (
                 NAME_ENTRY_YES_PEN.0,
                 NAME_ENTRY_YES_PEN.1 + NAME_ENTRY_OPTION_PITCH,
@@ -124,7 +133,7 @@ pub fn name_entry_draws_for(font: &legaia_font::Font, view: &NameEntryView<'_>) 
         ));
     } else {
         out.extend(text_draws_for(
-            &font.layout_ascii("Select your name."),
+            &font.layout_ascii(prompt(NamePrompt::Select, "Select your name.")),
             NAME_ENTRY_PROMPT_PEN,
             white,
         ));

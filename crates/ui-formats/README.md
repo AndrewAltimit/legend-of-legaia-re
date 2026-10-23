@@ -11,6 +11,7 @@ The formats the game's 2D interface is drawn from.
 | `save_icon` | The save-slot portrait sheet. See [`save-icon.md`](../../docs/formats/save-icon.md). |
 | `screen_elements`, `ui_widgets` | The screen-element placement table and the widget-class table in `SCUS_942.54`. See [`battle-hud.md`](../../docs/subsystems/battle-hud.md). |
 | `battle_ui_strings` | The battle screen's command / prompt / banner labels. |
+| `name_entry_prompts` | The new-game name-entry screen's prompts. |
 | `tim_palette_context` | Which palette the game draws a given texture with. |
 
 The proportional dialog font is [`legaia-font`](../font/README.md); the menu
@@ -38,4 +39,5 @@ Entry points, CLI subcommands (`asset ...` is the binary in
 | `save_icon` | The **save-slot portrait sheet**: one 4bpp TIM in PROT 899 (`0x1F908`, image `(960,224)` 64x16, CLUT `(0,1)` 256x1) holding sixteen 16x16 tiles row-interleaved across a 256-px strip, one 16-colour palette per tile. Owns the de-interleave to PSX save-block tile layout. Tile N is the memory-card icon for save number N+1; tile 15 is blank padding. See [`save-icon.md`](../../docs/formats/save-icon.md). |
 | `ui_widgets` | The **widget-class table** (`SCUS_942.54` VA `0x800732A4`, `0x0C` stride, `0x9D` records) the whole 2-D chrome draws itself out of, plus the frame tile-set pool behind it. Per record: layout class, tile-set, signed chain delta, packed CLUT byte, sheet rect and seat bias. A `screen_elements` record's `+0x0E` kind byte is an index into it. See [`battle.md`](../../docs/subsystems/battle.md#the-widget-class-table---where-every-chrome-sprite-comes-from). |
 | `tim_palette_context` | Which palette the game really draws a texture with: the boot-VRAM CLUT state after the system-UI bundle upload (`BootClutVram` - which TIMs lose their own palette at boot, which cells a row holds), the system-UI page's rectangles from the SCUS widget table (`sheet_palette_regions`), the one per-texel palette attribution (`texel_palettes`: overlap precedence, the button-glyph cover), and an "as drawn" composite decode (`composite_rgba`). Drives the asset viewer's palette list and the ROM patcher's texture map; see [`shading.md`](../../docs/subsystems/shading.md). |
-| `battle_ui_strings` | Pinned disc coordinates of the battle command / prompt / banner labels. |
+| `battle_ui_strings` | Pinned disc coordinates of the battle command / prompt / banner labels, each with the code or data site that forms its address (`SCUS_REFS`, `OVERLAY_REFS`) so a label a language pack moved still reads. |
+| `name_entry_prompts` | The name-entry prompts and its `Yes` / `No`, read through the field overlay's (PROT 0897) seven-word pointer table at `0x801F3324`, which is each prompt's only reference. |

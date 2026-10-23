@@ -635,6 +635,85 @@ pub const DEFEAT_TEAM_VA: u32 = 0x801F_4C78;
 /// appended to the lead's name in `ctx+0x129`).
 pub const DEFEAT_SOLO_SUFFIX_VA: u32 = 0x801F_4C94;
 
+/// The roster arm's victory head (`0x801D8618` / `0x801D861C`, copied into
+/// the victory buffer `ctx+0xA9`): the [`NAME_ESCAPE`] pair and the `'s
+/// team` that follows the lead's name.
+pub const VICTORY_TEAM_VA: u32 = 0x801F_4C2C;
+
+/// The victory sentence both arms append to the buffer (`0x801D854C` on the
+/// solo arm, `0x801D8630` on the roster arm): the rest of the opening line,
+/// a `|` line break, and the report line the results frame draws its two
+/// figures into by column.
+pub const VICTORY_REPORT_VA: u32 = 0x801F_4C38;
+
+/// One site in PROT 0898 that forms each result-window string's address
+/// (`legaia_overlay_images::string_refs`), by retail VA: the `lui` /
+/// `addiu` pair of the build arm that copies it. A string a language pack
+/// moved is read where its site now points. Coordinates from the
+/// translation pipeline's reference scan of the retail image.
+pub const RESULT_TEXT_REFS: [(u32, legaia_overlay_images::string_refs::StrRef); 4] = {
+    use legaia_overlay_images::string_refs::StrRef::Pair;
+    [
+        (
+            VICTORY_TEAM_VA,
+            Pair {
+                lui: 0x801D_8618,
+                lo: 0x801D_861C,
+            },
+        ),
+        (
+            VICTORY_REPORT_VA,
+            Pair {
+                lui: 0x801D_8544,
+                lo: 0x801D_854C,
+            },
+        ),
+        (
+            DEFEAT_TEAM_VA,
+            Pair {
+                lui: 0x801D_863C,
+                lo: 0x801D_8644,
+            },
+        ),
+        (
+            DEFEAT_SOLO_SUFFIX_VA,
+            Pair {
+                lui: 0x801D_8580,
+                lo: 0x801D_8588,
+            },
+        ),
+    ]
+};
+
+/// One result-window string out of a PROT 0898 image: read where its site
+/// points ([`RESULT_TEXT_REFS`]), up to its NUL, at most 96 bytes.
+fn result_string(overlay_0898: &[u8], retail_va: u32) -> Option<&[u8]> {
+    const MAX_LEN: usize = 96;
+    let va = legaia_overlay_images::string_refs::resolve(
+        &RESULT_TEXT_REFS,
+        overlay_0898,
+        OVERLAY_0898_LINK_BASE,
+        retail_va,
+    );
+    let off = va.checked_sub(OVERLAY_0898_LINK_BASE)? as usize;
+    let tail = overlay_0898.get(off..)?;
+    let end = tail.iter().take(MAX_LEN).position(|&b| b == 0)?;
+    Some(&tail[..end])
+}
+
+/// A byte the string primitive draws as one glyph: printable ASCII or a high
+/// cell (an accent a language pack's accent font draws), never a two-byte
+/// token's lead.
+fn is_glyph(b: u8) -> bool {
+    (0x20..0x7F).contains(&b) || (0x80..0xC0).contains(&b) || (0xD0..0xFF).contains(&b)
+}
+
+/// Bytes as the Latin-1 `String` the hosts hand back to the font byte for
+/// byte.
+fn latin1(b: &[u8]) -> String {
+    b.iter().map(|&c| char::from(c)).collect()
+}
+
 /// The defeat message's two disc pieces, read off the caller's PROT 0898
 /// image. No bytes of the text are carried here.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -647,27 +726,20 @@ pub struct DefeatText {
 
 impl DefeatText {
     /// Read both pieces. `None` when either leaves the image, runs past a
-    /// short string, carries a non-printable byte outside the name escape, or
-    /// the team string does not open with the escape - the shapes of a wrong
-    /// entry or a wrong base.
+    /// short string, carries a byte that is not a glyph outside the name
+    /// escape, or the team string does not open with the escape - the shapes
+    /// of a wrong entry or a wrong base.
     pub fn parse(overlay_0898: &[u8]) -> Option<Self> {
-        const MAX_LEN: usize = 64;
-        let c_bytes = |va: u32| -> Option<&[u8]> {
-            let off = va.checked_sub(OVERLAY_0898_LINK_BASE)? as usize;
-            let tail = overlay_0898.get(off..)?;
-            let end = tail.iter().take(MAX_LEN).position(|&b| b == 0)?;
-            Some(&tail[..end])
-        };
-        let printable = |b: &[u8]| b.iter().all(|&c| (0x20..0x7F).contains(&c));
-        let solo = c_bytes(DEFEAT_SOLO_SUFFIX_VA)?;
-        let team = c_bytes(DEFEAT_TEAM_VA)?;
+        let glyphs = |b: &[u8]| b.iter().all(|&c| is_glyph(c));
+        let solo = result_string(overlay_0898, DEFEAT_SOLO_SUFFIX_VA)?;
+        let team = result_string(overlay_0898, DEFEAT_TEAM_VA)?;
         let (&[escape, _operand], tail) = team.split_first_chunk::<2>()?;
-        if escape != NAME_ESCAPE || !printable(solo) || !printable(tail) || tail.is_empty() {
+        if escape != NAME_ESCAPE || !glyphs(solo) || !glyphs(tail) || tail.is_empty() {
             return None;
         }
         Some(Self {
-            solo_suffix: String::from_utf8_lossy(solo).into_owned(),
-            team_tail: String::from_utf8_lossy(tail).into_owned(),
+            solo_suffix: latin1(solo),
+            team_tail: latin1(tail),
         })
     }
 
@@ -682,6 +754,85 @@ impl DefeatText {
             ResultSubject::Lead(_) => format!("{lead_name}{}", self.solo_suffix),
             ResultSubject::LeadsTeam { .. } => format!("{lead_name}{}", self.team_tail),
         }
+    }
+}
+
+/// The victory report's disc pieces, read off the caller's PROT 0898 image:
+/// the roster arm's `'s team` and the sentence both arms append. No bytes of
+/// the text are carried here.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct VictoryText {
+    /// The roster arm's head after its leading `0xC1 <id>` name escape.
+    pub team_tail: String,
+    /// The appended sentence up to its `|` line break: the rest of the
+    /// opening line.
+    pub opening_tail: String,
+    /// The report line after the `|`: its words and the blank runs the two
+    /// figures' number records are drawn over.
+    pub report: String,
+}
+
+impl VictoryText {
+    /// Read both pieces. `None` under the shapes [`DefeatText::parse`]
+    /// refuses, or when the sentence has no `|` line break.
+    pub fn parse(overlay_0898: &[u8]) -> Option<Self> {
+        let glyphs = |b: &[u8]| b.iter().all(|&c| is_glyph(c));
+        let team = result_string(overlay_0898, VICTORY_TEAM_VA)?;
+        let sentence = result_string(overlay_0898, VICTORY_REPORT_VA)?;
+        let (&[escape, _operand], tail) = team.split_first_chunk::<2>()?;
+        let bar = sentence.iter().position(|&b| b == b'|')?;
+        let (opening, report) = (&sentence[..bar], &sentence[bar + 1..]);
+        if escape != NAME_ESCAPE
+            || !glyphs(tail)
+            || !glyphs(opening)
+            || !glyphs(report)
+            || report.is_empty()
+        {
+            return None;
+        }
+        Some(Self {
+            team_tail: latin1(tail),
+            opening_tail: latin1(opening),
+            report: latin1(report),
+        })
+    }
+
+    /// The opening line for `subject`: the lead's name, the roster arm's
+    /// `'s team` when the line names the lead's team, then the sentence's
+    /// first line.
+    pub fn opening(&self, subject: ResultSubject, lead_name: &str) -> String {
+        match subject {
+            ResultSubject::Lead(_) => format!("{lead_name}{}", self.opening_tail),
+            ResultSubject::LeadsTeam { .. } => {
+                format!("{lead_name}{}{}", self.team_tail, self.opening_tail)
+            }
+        }
+    }
+
+    /// The report line's words, split at the blank runs the two figures sit
+    /// in (`Gained` / `Experience and` / `G.` on retail): a run of two or
+    /// more spaces ends a word group, a single space stays inside it.
+    pub fn report_runs(&self) -> Vec<String> {
+        let mut runs = Vec::new();
+        let mut cur = String::new();
+        let mut spaces = 0usize;
+        for c in self.report.chars() {
+            if c == ' ' {
+                spaces += 1;
+                continue;
+            }
+            if spaces >= 2 && !cur.is_empty() {
+                runs.push(std::mem::take(&mut cur));
+            } else if !cur.is_empty() {
+                cur.extend(std::iter::repeat_n(' ', spaces));
+            }
+            spaces = 0;
+            cur.push(c);
+        }
+        if !cur.is_empty() {
+            runs.push(cur);
+        }
+        runs
     }
 }
 

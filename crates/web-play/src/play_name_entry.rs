@@ -178,7 +178,11 @@ impl LegaiaRuntime {
         let Some(assets) = self.menu_assets.as_ref() else {
             return CLOSED.to_string();
         };
-        let view = name_entry_view(entry, h.world.frame);
+        let view = name_entry_view(
+            entry,
+            h.world.frame,
+            h.world.tables.name_entry_prompts.as_ref(),
+        );
         let (origin, scale) = crate::play_menu::stage_transform(surface_w, surface_h);
 
         let mut texts = ui::name_entry_draws_for(assets.font_ref(), &view);

@@ -678,6 +678,9 @@ impl SceneHost {
         // no rollable formations - leave the encounter unset here; the host
         // falls back to the synthetic registry (`install_encounter_for_scene`).
         self.world.set_active_scene_label(name);
+        // The name-entry screen's prompts (field overlay, PROT 0897), so a
+        // field VM that opens the screen draws the disc's wording.
+        self.ensure_name_entry_prompts();
         let man_encounter = match self.scene.as_ref() {
             Some(scene) => match crate::disc_readers::encounter_man::field_man_encounter_table(
                 scene,

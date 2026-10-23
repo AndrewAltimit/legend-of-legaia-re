@@ -824,6 +824,7 @@ fn with_battle_result_windows<T: Default>(
         leader: &leader,
         subject: banner.subject,
         slide: banner.slide,
+        victory: world.tables.victory_text.as_ref(),
     };
     let windows = legaia_engine_ui::battle_spoils_windows(&view);
     f(&windows, Some(&view), origin, scale)

@@ -59,66 +59,70 @@ lands on byte 1 as well. Import refuses a translation that breaks either rule
 
 ## What the port reads
 
-The port draws the menu overlay's own strings rather than English of its own:
-the pause menu's root rows and tab titles, the Items / Equip / Status / Magic
-labels, the Options rows and values, the shop strings
-(`legaia_game_tables::menu_pool`, `engine-menus::shop::ShopLabels`), the Throw
-Out / Door of Light / Incense confirms, the Yes / No choices, and the two
-templates above. A translation of any of them reaches retail and the port
-alike.
+The port draws the game's own strings rather than English of its own, so a
+translation of any of these reaches retail and the port alike:
+
+| Image | Strings | Reader |
+|---|---|---|
+| menu overlay, PROT 0899 | the pause menu's rows and tab titles, the Items / Equip / Status / Magic labels, the Options rows and values, the shop strings, the Throw Out / Door of Light / Incense confirms, Yes / No, the two templates above | `legaia_game_tables::menu_pool`, `engine-menus::pause_screens`, `engine-menus::shop::ShopLabels` |
+| battle overlay, PROT 0898 | `Spirit`, the commit chip's `Begin` / `Escape`, the formation banners, the victory report, the loss window's line | `legaia_ui_formats::battle_ui_strings`, `battle_party_panel::{VictoryText, DefeatText}` |
+| `SCUS_942.54` | the command chips, `Reselect`, the steal captions, the sparring opener | `legaia_ui_formats::battle_ui_strings` |
+| field overlay, PROT 0897 | the name-entry prompts and its Yes / No | `legaia_ui_formats::name_entry_prompts` |
 
 Two properties of the readers make that hold for a translated disc:
 
 - **They follow a move.** A label longer than its span moves with its
   references rewritten ([`space-and-budgets.md`](space-and-budgets.md#moving-a-label)),
   so a reader slicing the retail VA would read whatever the compaction left
-  there (with every label lengthened, the Options row `Display Off` read
-  `Immediate`). Each port-read VA has one reference site in
-  `legaia_game_tables::menu_string_refs` - the renderer's `lui` / `addiu`
-  pair, or the Options screen's pointer word - and the readers decode it on
-  the image at hand. On retail every site forms its own VA; a site whose
-  bytes no longer read as one (another build, a code mod) falls back to the
-  retail VA.
+  there (with every menu label lengthened, the Options row `Display Off` read
+  `Immediate`). Each reader keeps one reference site per string - the
+  drawing routine's `lui` / `addiu` pair, a screen-element record's payload
+  word, the Options screen's or the name-entry screen's pointer table - and
+  decodes it on the image at hand (`legaia_overlay_images::string_refs`).
+  On retail every site forms its own VA; a site whose bytes no longer read
+  as one (another build, a code mod) falls back to the retail VA.
 - **They keep high glyph bytes.** An accent cell (`{82}` for `é` under
   `accents: font`, or a PAL glyph) comes back as the Latin-1 `char` of its
   byte, and `Font::layout_ascii` hands such a `char` back to the font as that
   one byte.
 
-The disc oracle `engine-menus/tests/translated_menu_strings_disc.rs` fills
-every one of these strings with a longer, accented translation, imports it in
-memory, and reads the patched overlay back through the readers the hosts
-call: each returns what the import wrote. It also checks the reference table
-against the import's own reference scan of the retail image.
+The victory report's second line is drawn by column: retail draws the whole
+line and the two figures' number records over its blank runs, and the port
+draws the line's word groups (split at runs of two or more spaces) at the
+three measured columns. A translation that keeps three word groups lands on
+those columns; any other shape is drawn whole from the pen, the way retail
+draws it.
+
+The disc oracles `engine-menus/tests/translated_menu_strings_disc.rs` and
+`engine-battle-vm/tests/translated_battle_strings_disc.rs` fill these strings
+with longer, accented translations, import them in memory, and read the
+patched images back through the readers the hosts call: each returns what
+the import wrote. Both check their reference tables against the import's own
+reference scan of the retail images.
 
 ## English the port draws that a pack cannot reach
 
-These lines are drawn from literals in the port, so a language pack changes
-retail's text and leaves the port's English. Most visible first:
+These lines are drawn from literals in the port, or read where a moved string
+no longer is. Most visible first:
 
-1. **The victory report** (`engine-ui::battle_spoils`): `<leader> won the
-   battle!` / `<leader>'s team won the battle!` and `Gained N Experience and
-   M G.`. Retail draws the battle overlay's line `ui:898:0x801F4C38` with the
-   figures placed by column; the port lays out the three runs from literals.
-2. **Name entry** (`engine-ui::menu::screens::name_entry`): `Select your
-   name.`, `Is this name okay?`, `Yes` / `No`. The two prompts are
-   field-overlay strings in the pack (`ui:897:0x801CF704`,
-   `ui:897:0x801CF698`).
-3. **The battle and SCUS strings read at a fixed VA**
-   (`legaia_ui_formats::battle_ui_strings`: command chips, `Reselect`, the
-   steal lines). They are read off the disc, so an in-place translation
-   shows, but a translation long enough to move is read at the retail VA:
-   these readers have no reference table yet.
-4. **Port-only screens and captions**: the arts editor, key rebind, `PRESS
+1. **Field-overlay strings read at a fixed VA**: the Incense wear-off
+   notice, the code-lock header, the flag window legend, the coin counter's
+   labels, the tile board's quit prompt (`engine-field::field_overlay`,
+   `engine-minigames::tile_board`,
+   `engine-core::incense_notice`). An in-place translation shows; one long
+   enough to move is read at the retail VA.
+2. **The Seru-absorb caption** (`legaia_game_tables::absorb_caption`,
+   PROT 0898 `0x801F4DFC` / `0x801F4C28`): the same fixed-VA read.
+3. **Port-only screens and captions**: the arts editor, key rebind, `PRESS
    START`, `ENCOUNTER!`, `K.O.`, `(no usable items)`, `(no targets)`, `No
    prizes remain.`, the `PAGE` tag, the dance minigame's `READY` / `GO!`.
    Retail has no string for them, so a pack has no key; they need a port-side
    string table of their own.
-5. **The fallbacks for a load without the overlay** (each `label(...,
-   "fallback")` call): drawn only when the menu overlay is absent, never on a
-   disc load.
+4. **The fallbacks for a load without the disc** (each reader's English
+   default): drawn only when the image is absent, never on a disc load.
 
-On a PAL disc the port reads the USA coordinates of a differently laid-out
-menu overlay ([`pal-localizations.md`](../pal-localizations.md#how-the-string-pools-pair));
+On a PAL disc the port reads the USA coordinates of differently laid-out
+overlays ([`pal-localizations.md`](../pal-localizations.md#how-the-string-pools-pair));
 the supported route to a PAL language is a lifted pack imported onto the USA
 disc.
 
