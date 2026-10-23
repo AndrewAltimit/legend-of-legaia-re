@@ -231,6 +231,9 @@ pub struct ZoneFollow {
     /// An eye translation the next snap lands instead of the composed one
     /// - [`Self::seat_eye_after_snap`].
     pub(super) seat_eye: Option<[i32; 3]>,
+    /// A pitch / yaw / `H` the next snap lands instead of the composed
+    /// ones - [`Self::seat_angles_after_snap`].
+    pub(super) seat_angles: Option<[i32; 3]>,
     /// What the seat's snap landed ([`SeatHold`]), kept while the player
     /// stands on the seat.
     pub(super) seat_hold: Option<SeatHold>,
@@ -251,6 +254,7 @@ pub(super) struct SeatHold {
     pub(super) target: crate::camera_zone::CameraTarget,
     pub(super) focus: Option<[i32; 2]>,
     pub(super) eye: Option<[i32; 3]>,
+    pub(super) angles: Option<[i32; 3]>,
 }
 
 impl Default for ZoneFollow {
@@ -278,6 +282,7 @@ impl Default for ZoneFollow {
             follow_enabled: true,
             seat_focus: None,
             seat_eye: None,
+            seat_angles: None,
             seat_hold: None,
         }
     }
@@ -338,6 +343,17 @@ impl ZoneFollow {
     /// as retail's would, the next frame the player moves.
     pub fn seat_eye_after_snap(&mut self, eye: [i32; 3]) {
         self.seat_eye = Some(eye);
+    }
+
+    /// Land `[pitch, yaw, h]` (`_DAT_8007B790` / `_DAT_8007B792` /
+    /// `_DAT_8007B6F4`) as the angles of the next snap. A debug-seat aid like
+    /// [`Self::seat_eye_after_snap`]: the follow ease steps the three on the
+    /// same moved-frame legs as the eye (`FUN_801DB510`'s descriptor list at
+    /// `0x801F2798`), so a retail state whose player stopped mid-glide - a
+    /// mode-1 / 2 yaw sweep the walk left short of its target - holds angles
+    /// the snap would otherwise replace.
+    pub fn seat_angles_after_snap(&mut self, angles: [i32; 3]) {
+        self.seat_angles = Some(angles);
     }
 
     /// Arm a scene-entry / arrival snap: re-query the tile and copy the

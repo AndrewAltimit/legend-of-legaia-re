@@ -286,15 +286,20 @@ impl Camera {
             zone.seat_hold = None;
         }
         if snapped {
-            let seat = (zone.seat_focus.take(), zone.seat_eye.take());
+            let seat = (
+                zone.seat_focus.take(),
+                zone.seat_eye.take(),
+                zone.seat_angles.take(),
+            );
             let landed = match seat {
-                (None, None) => zone.seat_hold.filter(|h| h.target == t),
-                (focus, eye) => {
+                (None, None, None) => zone.seat_hold.filter(|h| h.target == t),
+                (focus, eye, angles) => {
                     let h = super::state::SeatHold {
                         player: [x, y, z],
                         target: t,
                         focus,
                         eye,
+                        angles,
                     };
                     zone.seat_hold = Some(h);
                     Some(h)
@@ -307,6 +312,11 @@ impl Camera {
                 }
                 if let Some(eye) = h.eye {
                     g[3..6].copy_from_slice(&eye);
+                }
+                if let Some([p, yw, hh]) = h.angles {
+                    g[0] = p;
+                    g[1] = yw;
+                    g[9] = hh;
                 }
             }
         }

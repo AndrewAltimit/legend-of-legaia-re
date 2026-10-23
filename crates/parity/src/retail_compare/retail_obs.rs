@@ -96,6 +96,13 @@ pub struct RetailObs {
     /// pose the snap composes `1444`). The headless `camera` channel keeps
     /// the snap's eye, so it goes on scoring the compose.
     pub seat_eye: Option<[i32; 3]>,
+    /// Pitch / yaw / `H` on a walkable state, which the image child lands
+    /// after its seat's snap (`LEGAIA_SEAT_ANGLES`) for the reason it lands
+    /// the eye: the follow ease steps all six descriptor-list globals on the
+    /// same moved-frame legs, so a player who stopped mid-sweep leaves them
+    /// short of the target (`rimelm_wall_press_left`: yaw `220`, the snap's
+    /// `233`). The headless `camera` channel keeps the snap's angles.
+    pub seat_angles: Option<[i32; 3]>,
     /// The displayed frame, when the state carries VRAM + display registers.
     pub frame: Option<Frame>,
     /// Battle observables for a battle-class state; `Err` names why the
@@ -284,6 +291,13 @@ impl RetailObs {
             seat_eye: (matches!(class, StateClass::Field | StateClass::WorldMap)
                 && player.is_some())
             .then_some(camera.eye),
+            seat_angles: (matches!(class, StateClass::Field | StateClass::WorldMap)
+                && player.is_some())
+            .then_some([
+                i32::from(camera.pitch),
+                i32::from(camera.yaw),
+                i32::from(camera.h),
+            ]),
             frame,
             battle,
             menu,
@@ -495,6 +509,9 @@ impl RetailObs {
         if let Some([x, y, z]) = self.seat_eye {
             env.push(("LEGAIA_SEAT_EYE", format!("{x},{y},{z}")));
         }
+        if let Some([p, y, h]) = self.seat_angles {
+            env.push(("LEGAIA_SEAT_ANGLES", format!("{p},{y},{h}")));
+        }
         if let Some(bias) = self.curve_bias.filter(|&b| b != 0) {
             env.push(("LEGAIA_SEAT_CURVE_BIAS", bias.to_string()));
         }
@@ -596,6 +613,7 @@ impl RetailObs {
             self.camera_block = None;
             self.seat_focus = None;
             self.seat_eye = None;
+            self.seat_angles = None;
         }
     }
 }

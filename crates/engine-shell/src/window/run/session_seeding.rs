@@ -363,6 +363,17 @@ pub(super) fn apply_debug_seat_env(session: &mut NativeSession) {
             }) {
                 session.camera.zone.seat_eye_after_snap(eye);
             }
+            // `LEGAIA_SEAT_ANGLES=P,Y,H`: the state's pitch / yaw / `H`,
+            // eased on the same moved-frame legs as the eye.
+            if let Some(angles) = std::env::var("LEGAIA_SEAT_ANGLES").ok().and_then(|f| {
+                let v: Vec<i32> = f
+                    .split(',')
+                    .filter_map(|v| v.trim().parse::<i32>().ok())
+                    .collect();
+                <[i32; 3]>::try_from(v).ok()
+            }) {
+                session.camera.zone.seat_angles_after_snap(angles);
+            }
             // `LEGAIA_SEAT_HEADING=H` (retail space, `0` = -Z): stand the
             // seated player in the state's own heading, which is walk
             // history like the position - as the arrival facing too, so an

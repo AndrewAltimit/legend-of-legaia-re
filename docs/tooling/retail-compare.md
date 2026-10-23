@@ -3177,6 +3177,16 @@ the next frame the player moves. The two chest frames read `.958` to `.994`
 and `.966` to `.998`. The headless `camera` channel keeps the snap's eye, so
 it goes on scoring the compose.
 
+Pitch, yaw and `H` sit on the same descriptor list and the same moved-frame
+legs, so they freeze with the eye. `rimelm_wall_press_left` walked a mode-1
+yaw sweep left into a wall: its staging descriptor reads yaw `233`, which the
+engine composes to the unit, and the live yaw `220`, where the last moving
+frame left it. The image child lands retail's three angles after its snap as
+well (`RetailObs::seat_angles`, `LEGAIA_SEAT_ANGLES`,
+`ZoneFollow::seat_angles_after_snap`); the frame reads `.979` to `1.000`.
+The `camera` channel's yaw tolerance absorbs a 13-unit miss, which is why it
+read `1.000` against a frame that did not.
+
 The staging descriptor `0x801F3580` holds the pose the ease is heading for,
 and it settles which side a remaining `camera` miss is on. In
 `drake_castle_to_worldmap` it reads eye Z `16784` against the live `16687`,
