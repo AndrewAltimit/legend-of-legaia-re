@@ -452,7 +452,7 @@ give the same verdicts as a per-section summary.
 ### In the browser: the translation workbench
 
 The site's translation workbench page runs the same kernel in the browser tab
-on the user's own disc (`crates/web-viewer/src/translate_workbench.rs`, a
+on the user's own disc (`crates/web-patcher/src/translate_workbench.rs`, a
 resident `Workbench` session). It shows the report as a dashboard - coverage
 per section, the room per category (with what your pack leaves once checked),
 the name regions' free bytes, monster rooms, label-pool slack and the scenes

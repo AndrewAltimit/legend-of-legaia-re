@@ -48,7 +48,7 @@ use legaia_engine_minigames::slot_machine::{REEL_COUNT, SlotMachine, SlotPhase};
 use legaia_minigame_formats::minigame_art;
 use legaia_minigame_formats::minigame_slot_scene as slot;
 use legaia_minigame_formats::slot_payout;
-use legaia_web_play::minigames::LegaiaMinigames;
+use legaia_web_minigames::LegaiaMinigames;
 
 const OVERLAY_FILE: &str = "0975_other_game.BIN";
 const ART_FILE: &str = "1200_other4.BIN";

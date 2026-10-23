@@ -108,6 +108,8 @@ DIAG_ROOTS = [
     REPO / "crates" / "engine-cast",
     REPO / "crates" / "engine-motion-vm",
     REPO / "crates" / "web-play",
+    REPO / "crates" / "web-minigames",
     REPO / "crates" / "web-viewer",
+    REPO / "crates" / "web-patcher",
     REPO / "crates" / "parity",
 ]

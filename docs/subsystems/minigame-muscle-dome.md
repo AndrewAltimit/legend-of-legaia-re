@@ -29,7 +29,7 @@ Three things it is **not**:
 | Data file | `data\field\other6.lzs` = extraction 1220..=1225 (hub art, ringside stills, arena backdrop) |
 | Ladder + score tables | PROT 0977: roster `0x801D1920`, course descriptors `0x801D1A08`, score table `0x801D1860` |
 | Ringside still loader | `FUN_801F6B24`, PROT 0978 (`field_back_read`, slot-B base `0x801F69D8`) |
-| Port | [Engine port](#engine-port): `engine-minigames::muscle_dome`, `engine-battle-menus::muscle_dome_session`, `engine-minigames::muscle_ringside`, `engine-minigame-scenes::muscle_dome_scene`, `web-play::minigames_muscle` |
+| Port | [Engine port](#engine-port): `engine-minigames::muscle_dome`, `engine-battle-menus::muscle_dome_session`, `engine-minigames::muscle_ringside`, `engine-minigame-scenes::muscle_dome_scene`, `web-minigames::muscle_web` |
 | Disc parsers | `legaia_minigame_formats::muscle_dome` (deck tables), `muscle_dome::parse_course_ladder` / `parse_score_table` |
 
 Throughout, "ctx" is the shared battle context at `_DAT_8007BD24` and "actor" is a battle actor record reached through `&DAT_801C9370`. Port paths written `muscle_dome::X` resolve as `legaia_engine_minigames::muscle_dome::X`; the leg session is `legaia_engine_battle_menus::muscle_dome_session`.
@@ -195,7 +195,7 @@ No turn boundary reaches the table above. The two boundaries are written by diff
 
 While a leg runs the game is in battle mode, so the hub - the only thing that draws INTERVAL and the tally - is not executing. Retail has no beat between turns: the command cluster comes straight back.
 
-Both boundaries reach a port host as "the turn's playback ended", so the verdict lives in one shared place: `muscle_dome::leg_boundary_raises_interval` (`engine-minigames`), called at the leg boundary by the hub timer kernel both play hosts drive (`engine-minigames::muscle_ringside::HubTimers`) and by the browser dome page (the `muscle_leg_shows_interval` binding). `MusclePhase::ends_turn` / `ends_leg` name the same split on the session side. Locked by `engine-battle-menus/tests/muscle_intermission_cadence.rs` and `web-play/tests/muscle_page_cadence.rs`.
+Both boundaries reach a port host as "the turn's playback ended", so the verdict lives in one shared place: `muscle_dome::leg_boundary_raises_interval` (`engine-minigames`), called at the leg boundary by the hub timer kernel both play hosts drive (`engine-minigames::muscle_ringside::HubTimers`) and by the browser dome page (the `muscle_leg_shows_interval` binding). `MusclePhase::ends_turn` / `ends_leg` name the same split on the session side. Locked by `engine-battle-menus/tests/muscle_intermission_cadence.rs` and `web-minigames/tests/muscle_page_cadence.rs`.
 
 <a id="course-ladder-the-opponent-per-course-round"></a>
 
@@ -670,7 +670,7 @@ A gap TIM's 16-row CLUT block uploads **packed into one VRAM row** as 16 side-by
 
 **The AP meter has no source rect.** Retail draws it as two untextured 3-px gouraud strips - the `FUN_8002C0B0` fill the status screen's AP gauge uses, dark `(0x80,0x20,0x10)` to gold `(0xC0,0xA0,0x40)` and back. Only the value is art: the 6-px digit strip has no 3-digit seat, so the sheet carries one baked "100" tile for the end box. That tile is not a fill tile. Both callers of the plate (command menu, direction entry) take their fill from `legaia_engine_ui::arts_input`'s span + gouraud endpoints.
 
-**Minigames page.** `legaia-web-play::minigames_muscle` (`muscle_hud_json` + `muscle_hud_sheet_rgba`) decodes these sources per sheet / sub-palette; the disc-gated oracle is `crates/web-play/tests/muscle_web_real.rs` (`muscle_hud_chrome_decodes_from_the_disc`). Fitted rather than pinned on that page: the banner's speed-line rays (retail draws untextured polys), the SUPER / MIRACLE word composition, and the chips' glide-in motion.
+**Minigames page.** `web-minigames::muscle_web` (`muscle_hud_json` + `muscle_hud_sheet_rgba`) decodes these sources per sheet / sub-palette; the disc-gated oracle is `crates/web-minigames/tests/muscle_web_real.rs` (`muscle_hud_chrome_decodes_from_the_disc`). Fitted rather than pinned on that page: the banner's speed-line rays (retail draws untextured polys), the SUPER / MIRACLE word composition, and the chips' glide-in motion.
 
 <a id="arts-command-input-packet-pinned"></a>
 
@@ -1031,7 +1031,7 @@ The port models the same two layers and shares every rule between the native `pl
 | World | `engine-core` (`world/frame_tick/minigame_sessions/muscle_dome.rs`, `scene/host/minigame_warp.rs`) | `SceneMode::MuscleDome`, `World::enter_muscle_dome` / `tick_muscle_dome` / `leave_muscle_dome` / `report_muscle_leg` / `settle_muscle_contest` |
 | Play-out | `engine-battle-menus::muscle_dome_session::choreo` | `DomeChoreo`, `ChoreoBody`: clips at the battle rate, range-law approach, root motion, reaction pick |
 | 3D surface | `engine-minigame-scenes::muscle_dome_scene` | `MuscleDomeSurface`, `arena_ring`, `DomeCamera` |
-| Minigames page | `web-play::minigames_muscle` | `muscle_*` wasm bindings; `site/js/minigame-muscle.js` |
+| Minigames page | `web-minigames::muscle_web` | `muscle_*` wasm bindings; `site/js/minigame-muscle.js` |
 
 **Entry.** Both play hosts enter through the mode-24 door warp (the `koin1` arena door, or the native window's `M` key, which requests the same warp). The warp opens the contest off the party's unlock flags (`DomeContest::from_overlay`), resolves `(course, round)` through `parse_course_ladder` to a monster id, reads that monster's PROT 867 record for the stat block, and installs the lead's art catalog, magic loadout and the battle-theme swap. The minigames page fills a foe picker from the ladder (`muscle_course_ladder_json`, `muscle_start_vs`) or runs a contest (`muscle_contest_*`). Stand-in fighter / opponent constants survive only as the fallback for a disc whose ladder or archive does not decode.
 
@@ -1086,7 +1086,7 @@ The HUD kernels read the hold as an action frame (`battle_hud::battle_hud_phase`
 - **Run** ends the leg on the press; the escape roll is not modelled.
 - The opponent's swings cycle the picker's strike candidates (entries tagged `0x0C..=0x1F` with a `+0x74` AGL cost other than `0xFF`, the set `FUN_801E9FD4`'s physical branch budgets) over its committed directions; retail draws them through the AGL budget (`enemy_action_budget`) and the per-monster AI.
 
-**Tests.** `engine-scene-host/tests/muscle_dome_minigame_real.rs` (real deck + real swing costs drive a leg to a decision), `dome_leg_ends_on_ko_real.rs` (the arena's sole game-mode write is `BattleInit`; the formation cell's only writer is the arena; the ladder tops out below the timed fight's id), `muscle_contest_real.rs` / `muscle_contest_world.rs`, `muscle_hub_tally_cues_disc.rs`, `muscle_dome_lead_max_hp_disc.rs`, and `web-play/tests/dome_ladder_and_hub_real.rs` (29 real monster records, round counts agree with the score table, every hub draw row's cited call site still holds a `jal` to its emitter).
+**Tests.** `engine-scene-host/tests/muscle_dome_minigame_real.rs` (real deck + real swing costs drive a leg to a decision), `dome_leg_ends_on_ko_real.rs` (the arena's sole game-mode write is `BattleInit`; the formation cell's only writer is the arena; the ladder tops out below the timed fight's id), `muscle_contest_real.rs` / `muscle_contest_world.rs`, `muscle_hub_tally_cues_disc.rs`, `muscle_dome_lead_max_hp_disc.rs`, and `web-minigames/tests/dome_ladder_and_hub_real.rs` (29 real monster records, round counts agree with the score table, every hub draw row's cited call site still holds a `jal` to its emitter).
 
 ## Open
 

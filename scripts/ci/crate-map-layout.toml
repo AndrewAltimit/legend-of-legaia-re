@@ -39,7 +39,7 @@ id = "hosts"
 title = "Hosts and front ends"
 blurb = "The programs people run. Each one is a thin shell over the crates below."
 track = "engine"
-crates = ["engine-shell", "web-viewer", "web-play", "asset-viewer", "studio", "patcher", "extract", "asset"]
+crates = ["engine-shell", "web-viewer", "web-play", "web-minigames", "web-patcher", "asset-viewer", "studio", "patcher", "extract", "asset"]
 
 [[bands]]
 id = "top"
@@ -131,7 +131,7 @@ how = "The same BootSession compiled to WebAssembly; site/js/play-app.js draws i
 
 [[hosts]]
 name = "Browser minigames page"
-crate = "web-play"
+crate = "web-minigames"
 how = "Drives the World-free minigame rules engines directly; it holds no World."
 
 # --- Disc to pixels -------------------------------------------------------

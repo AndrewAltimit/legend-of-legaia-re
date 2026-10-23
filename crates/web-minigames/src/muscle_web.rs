@@ -59,15 +59,10 @@ use legaia_game_tables::sfx_table;
 use legaia_minigame_formats::muscle_dome as md;
 use legaia_scene_formats::scene_tmd_stream;
 
-#[path = "minigames_muscle/exports.rs"]
 mod exports;
-#[path = "minigames_muscle/hud.rs"]
 mod hud;
-#[path = "minigames_muscle/render.rs"]
 mod render;
-#[path = "minigames_muscle/session.rs"]
 mod session;
-#[path = "minigames_muscle/surface.rs"]
 mod surface;
 
 /// PROT entry of the monster stat archive (`0867_battle_data`).
@@ -261,5 +256,4 @@ pub(crate) struct MuscleContest {
 }
 
 #[cfg(test)]
-#[path = "minigames_muscle/chip_mark_tests.rs"]
 mod chip_mark_tests;

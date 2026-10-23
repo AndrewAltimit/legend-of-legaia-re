@@ -19,10 +19,10 @@ use std::fs;
 use legaia_disc_patch::disc::DiscPatcher;
 use legaia_texture_replace::texture::TextureTarget;
 use legaia_tim::encode::EncodeOptions;
-use legaia_web_viewer::texture_pack::{
+use legaia_web_patcher::texture_pack::{
     EntryStatus, PackEntry, PackMeta, from_json, to_json, verify,
 };
-use legaia_web_viewer::texture_registry::{self as reg, Rgba, ScanCtx, TIER_RAW, TexRow};
+use legaia_web_patcher::texture_registry::{self as reg, Rgba, ScanCtx, TIER_RAW, TexRow};
 
 fn disc() -> Option<Vec<u8>> {
     let path = env::var("LEGAIA_DISC_BIN").ok()?;

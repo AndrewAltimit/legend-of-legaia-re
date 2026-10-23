@@ -308,7 +308,7 @@ fn hybrid_body(tmd_bytes: &[u8]) -> Option<FishingBody> {
     let tmd = legaia_tmd::parse(tmd_bytes).ok()?;
     let part_count = tmd.objects.len();
     let (mesh, object_ids, shading) = tmd_to_vram_mesh_field_hybrid(&tmd, tmd_bytes);
-    let flat = crate::packet_color::hybrid(&mesh, &shading);
+    let flat = legaia_engine_field::packet_color::hybrid(&mesh, &shading);
     Some(FishingBody {
         mesh,
         object_ids,
@@ -677,12 +677,7 @@ impl LegaiaMinigames {
             lead.z,
             lead.facing,
         );
-        crate::minigames::dance_presentation::dance_venue_vp_in_frame(
-            &view,
-            (0.0, 0.0, 0.0),
-            aspect,
-        )
-        .to_vec()
+        crate::dance_presentation::dance_venue_vp_in_frame(&view, (0.0, 0.0, 0.0), aspect).to_vec()
     }
 
     /// The pond's sky backdrop for `venue` under the venue camera (the

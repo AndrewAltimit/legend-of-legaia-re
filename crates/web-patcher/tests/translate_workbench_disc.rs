@@ -10,7 +10,7 @@
 
 use std::collections::BTreeMap;
 
-use legaia_web_viewer::translate_workbench::Core;
+use legaia_web_patcher::translate_workbench::Core;
 use serde_json::Value;
 
 fn open() -> Option<Core> {

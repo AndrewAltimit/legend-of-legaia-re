@@ -1,5 +1,5 @@
 //! Disc-gated: the Baka Fighter duel-presentation WASM surface
-//! (`minigames_baka.rs`) must decode the fighters, animation banks, HUD
+//! (`baka_presentation.rs`) must decode the fighters, animation banks, HUD
 //! widget table and stage set off a real disc through the same calls
 //! `site/js/minigame-baka.js` makes.
 //!
@@ -8,7 +8,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_web_play::minigames::LegaiaMinigames;
+use legaia_web_minigames::LegaiaMinigames;
 
 fn loaded() -> Option<LegaiaMinigames> {
     let disc = std::env::var("LEGAIA_DISC_BIN").ok()?;

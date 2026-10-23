@@ -22,7 +22,7 @@ impl LegaiaMinigames {
     // off the scene's 60-record choreography ANM bundle (PROT 1229): the
     // dance-groove loop synced to the beat clock plus the judge-triggered
     // move clips. This is the browser twin of the Baka Fighter 3D render
-    // (`minigames_baka.rs`): same VramMesh accessors, same per-(frame, bone)
+    // (`baka_presentation.rs`): same VramMesh accessors, same per-(frame, bone)
     // pose format, so `site/js/minigame-dance.js` drives the shared
     // `TmdRenderer` exactly as `minigame-baka.js` does.
 

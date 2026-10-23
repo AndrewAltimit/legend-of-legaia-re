@@ -25,17 +25,11 @@ use legaia_minigame_formats::dance_art::{self, DanceWidget};
 use legaia_minigame_formats::dance_cast::{self, DanceCast, DanceClip};
 use legaia_tmd::mesh::{VramMesh, tmd_to_vram_mesh_field_hybrid};
 
-#[path = "minigames_dance/body_exports.rs"]
 mod body_exports;
-#[path = "minigames_dance/cast_scene_frame.rs"]
 mod cast_scene_frame;
-#[path = "minigames_dance/hud_exports.rs"]
 mod hud_exports;
-#[path = "minigames_dance/markers.rs"]
 mod markers;
-#[path = "minigames_dance/sound_exports.rs"]
 mod sound_exports;
-#[path = "minigames_dance/venue_exports.rs"]
 mod venue_exports;
 pub(crate) use markers::DanceMarkers;
 use markers::bake_dance_markers;
@@ -387,7 +381,7 @@ fn hybrid_body(tmd_bytes: &[u8], kind: usize, spawn: (i16, i16)) -> Option<Dance
     let tmd = legaia_tmd::parse(tmd_bytes).ok()?;
     let part_count = tmd.objects.len();
     let (mesh, object_ids, shading) = tmd_to_vram_mesh_field_hybrid(&tmd, tmd_bytes);
-    let flat = crate::packet_color::hybrid(&mesh, &shading);
+    let flat = legaia_engine_field::packet_color::hybrid(&mesh, &shading);
     Some(DanceBodyMesh {
         mesh,
         object_ids,
@@ -402,7 +396,7 @@ impl LegaiaMinigames {
     /// hall frame. The play page frames its hall through the world's staged
     /// dance camera with this; the standalone page through its own run's
     /// track ([`Self::dance_venue_vp`]). Empty when the cast did not decode.
-    pub(crate) fn dance_venue_vp_with(
+    pub fn dance_venue_vp_with(
         &self,
         camera: &legaia_engine_camera::psx_camera::FieldCameraView,
         aspect: f32,
@@ -417,7 +411,7 @@ impl LegaiaMinigames {
     /// ([`dance_venue::psx_gpu_visible_indices`], the kernel the native
     /// window cuts its hall with): [`Self::dance_env_indices`] less every
     /// triangle whose screen span the GPU refuses. Empty with no hall.
-    pub(crate) fn dance_env_visible_indices_with(
+    pub fn dance_env_visible_indices_with(
         &self,
         camera: &legaia_engine_camera::psx_camera::FieldCameraView,
     ) -> Vec<u32> {
@@ -550,7 +544,7 @@ impl LegaiaMinigames {
 
     /// The engine cast surface's assets off this disc's venue, and the world
     /// point the page's baked hall is re-based on.
-    pub(crate) fn dance_cast_assets(
+    pub fn dance_cast_assets(
         &self,
     ) -> Option<(
         std::sync::Arc<legaia_engine_minigame_scenes::dance_cast_scene::DanceCastAssets>,

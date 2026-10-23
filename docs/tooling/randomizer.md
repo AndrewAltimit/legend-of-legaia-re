@@ -107,7 +107,7 @@ the manual per-record edits of the
 
 ## In the browser
 
-The same patcher runs client-side. `legaia_web_viewer::rom_patcher` (`patch_rom`)
+The same patcher runs client-side. `legaia_web_patcher::rom_patcher` (`patch_rom`)
 compiles the crate to WebAssembly, and the site's `tooling/rom-patcher.html`
 page takes a disc image, offers the randomizer passes, the tuning sliders, the
 code-hook features, the Delilas features, texture replacement and translation

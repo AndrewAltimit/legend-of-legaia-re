@@ -1,5 +1,7 @@
 //! `LegaiaMinigames` WASM bindings for site/minigames.html - the browser twin
-//! of the play-window's minigame entry points (`window/minigames.rs`).
+//! of the play-window's minigame entry points (`window/minigames.rs`). The
+//! play page's runtime (`legaia-web-play`) holds one of these for the
+//! minigame art it draws over a door-warp minigame.
 //!
 //! Three of the game's side-games are ported rules engines in
 //! `legaia-engine-core`, each driven entirely by a table baked into its own
@@ -11,7 +13,7 @@
 //! | Baka Fighter | PROT 0976 | roster + action tables (`legaia_minigame_formats::baka_opponents`) |
 //! | Casino slots | PROT 0975 | per-symbol payout table (`legaia_minigame_formats::slot_payout`) |
 //!
-//! This module is the thin JSON shell over those engines. The load path is
+//! This crate is the thin JSON shell over those engines. The load path is
 //! identical to the play-window's and to the disc-gated `*_minigame_real`
 //! tests: read the raw PROT entry out of the user's own disc, lift it to its
 //! statically-recovered loaded form via [`static_overlay::as_loaded`], and hand
@@ -22,19 +24,17 @@
 //! The engines are the rules; the JS page is the presentation. Everything with
 //! a `// PORT:` provenance tag lives in `legaia-engine-core`, not here.
 
-use super::*;
 #[cfg(target_arch = "wasm32")]
 use legaia_engine_audio::AudioSink;
+use wasm_bindgen::prelude::*;
 
 // Baka Fighter presentation exports (fighter meshes, HUD art, stage, poses)
 // live in a child module so this file stays the rules-engine shell.
-#[path = "minigames_baka.rs"]
 mod baka_presentation;
-pub(crate) use baka_presentation::{baka_state_json_for, duel_surface};
+pub use baka_presentation::{baka_state_json_for, duel_surface};
 
 // Dance presentation exports (PROT 1230 HUD art, the overlay's widget table,
 // the dancer face-stamp rig, SFX + BGM) live in a child module too.
-#[path = "minigames_dance.rs"]
 mod dance_presentation;
 
 // Fishing + Muscle Dome are the other two ported rules engines
@@ -42,13 +42,10 @@ mod dance_presentation;
 // in its own child module, mirroring the dance/baka split above; the session
 // state lives on `LegaiaMinigames` and the wasm-bindgen methods that drive it
 // are in these files.
-#[path = "minigames_fishing.rs"]
 mod fishing_web;
 // The fishing venue's 3D scene + angler body (the browser twin of the dance
 // hall / Baka stage builds) lives in its own child module.
-#[path = "minigames_fishing_scene.rs"]
 mod fishing_scene_web;
-#[path = "minigames_muscle.rs"]
 mod muscle_web;
 
 mod baka_session;
@@ -61,6 +58,14 @@ mod slot_session;
 mod slot_sound;
 pub use bgm::Music01Render;
 pub(crate) use bgm::{music01_pair_ok, render_music01_bgm};
+
+/// Log a line to the browser console. Every caller is a wasm-only path
+/// (`web_sys::console` is a wasm-bindgen import, and calling it off-wasm
+/// aborts the process), so the helper only exists on that target.
+#[cfg(target_arch = "wasm32")]
+fn console_log(s: &str) {
+    web_sys::console::log_1(&JsValue::from_str(s));
+}
 
 use legaia_engine_minigames::baka_fighter::{BakaAttack, BakaFight, MatchPhase};
 use legaia_engine_minigames::dance::{DanceDir, DanceEvent, DanceGame};
@@ -157,11 +162,11 @@ pub struct LegaiaMinigames {
     /// The Baka Fighter roster's fighter names (roster record `+0x00`).
     baka_names: Option<Vec<String>>,
     /// The dance's presentation bundle: PROT 1230 art pack + the overlay's
-    /// HUD widget table + face rigs + SFX bank (see `minigames_dance.rs`).
+    /// HUD widget table + face rigs + SFX bank (see `dance_presentation.rs`).
     dance_pres: Option<dance_presentation::DancePresentation>,
     /// The dance's floor cast: Noa's field-form mesh + the dance-hall scene's
     /// dedicated dancer NPCs, their choreography ANM bundle and the VRAM they
-    /// sample (see `minigames_dance.rs`).
+    /// sample (see `dance_presentation.rs`).
     dance_bodies: Option<dance_presentation::DanceBodies>,
 
     /// Parsed per-species table (PROT 0972 rodata; cached so the roster panel
@@ -171,7 +176,7 @@ pub struct LegaiaMinigames {
     /// (`FishingSpecies::name`) resolve against it.
     fishing_overlay: Option<Vec<u8>>,
     /// Live venue-faithful pond session (the retail cast/band/strike/fight
-    /// loop; see `minigames_fishing.rs`).
+    /// loop; see `fishing_web.rs`).
     fishing_pond: Option<legaia_engine_fishing::fishing::PondSession>,
     /// Parsed per-venue species-spawn tables (PROT 0972 rodata pages).
     fishing_spawn: Option<[Vec<[u32; 8]>; 2]>,
@@ -200,7 +205,7 @@ pub struct LegaiaMinigames {
     /// (`item_id -> qty`; the browser has no live inventory to grant into).
     fishing_prizes: std::collections::HashMap<u32, u32>,
     /// The fishing venue's baked 3D scene + angler body
-    /// (see `minigames_fishing_scene.rs`).
+    /// (see `fishing_scene_web.rs`).
     fishing_scene: Option<fishing_scene_web::FishingScene>,
     /// The angler's facing (retail's actor `+0x26`), the angle the next cast
     /// offsets its lure along.
@@ -209,7 +214,7 @@ pub struct LegaiaMinigames {
     /// point-exchange prize rows.
     item_names: Option<legaia_game_tables::item_names::ItemNameTable>,
 
-    /// Live Muscle Dome **leg** (see `minigames_muscle.rs`): the rules session
+    /// Live Muscle Dome **leg** (see `muscle_web.rs`): the rules session
     /// plus the disc-derived fighter stats, RNG cursor and round play log.
     muscle: Option<muscle_web::MuscleContest>,
     /// The Muscle Dome **contest** the legs belong to - the ladder run that
@@ -236,7 +241,7 @@ pub struct LegaiaMinigames {
     /// per disc so each fresh contest rebuilds without re-decoding.
     muscle_tables: Option<muscle_web::MuscleTables>,
     /// The dome leg's 3D surface - the engine kernel the play hosts draw a
-    /// leg with (`minigames_muscle/surface.rs`).
+    /// leg with (`muscle_web/surface.rs`).
     muscle_surface: legaia_engine_minigame_scenes::muscle_dome_scene::MuscleDomeSurface,
 
     /// `SCUS_942.54` bytes, kept when the input was a full disc image (absent
@@ -338,6 +343,23 @@ fn entry_bytes<'a>(
 /// JSON-escape a string for the hand-rolled object writers below.
 fn jstr(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+impl LegaiaMinigames {
+    /// The slot cabinet's decoded art, once a slot session has loaded it.
+    /// The play page's slot overlay draws the cabinet chrome from it.
+    pub fn slot_cabinet(&self) -> Option<&legaia_engine_ui::slot_cabinet::SlotCabinetAssets> {
+        self.slot_cabinet.as_ref()
+    }
+
+    /// The slot cabinet's art seat, for a host that completes the decoded
+    /// art from a source the minigames page does not hold (the play page's
+    /// full `PROT.DAT` head).
+    pub fn slot_cabinet_mut(
+        &mut self,
+    ) -> &mut Option<legaia_engine_ui::slot_cabinet::SlotCabinetAssets> {
+        &mut self.slot_cabinet
+    }
 }
 
 #[wasm_bindgen]

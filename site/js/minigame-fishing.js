@@ -2,7 +2,7 @@
  *
  * Everything simulated here is the game's own machinery, decoded from the
  * visitor's disc at runtime by `LegaiaMinigames`
- * (crates/web-play/src/minigames_fishing.rs + minigames_fishing_scene.rs):
+ * (crates/web-minigames/src/fishing_web.rs + fishing_scene_web.rs):
  *
  *   - the RULES are the ported retail loop (engine-fishing::fishing): the
  *     casting-power oscillator, the per-frame band roll and its cutoffs, the

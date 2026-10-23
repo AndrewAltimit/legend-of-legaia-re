@@ -1,0 +1,65 @@
+[package]
+name = "legaia-web-minigames"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
+
+# An rlib only: the wasm bundle is `legaia-web-viewer`'s cdylib, which links
+# this crate (through `legaia-web-play`), so its `#[wasm_bindgen]` exports land
+# in the one module the site loads.
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+legaia-actor-formats.workspace = true
+legaia-art.workspace = true
+legaia-container-formats.workspace = true
+legaia-engine-audio = { workspace = true, features = ["audio-webaudio"] }
+legaia-engine-battle.workspace = true
+legaia-engine-battle-menus.workspace = true
+legaia-engine-battle-vm.workspace = true
+legaia-engine-camera.workspace = true
+legaia-engine-field.workspace = true
+legaia-engine-fishing.workspace = true
+legaia-engine-menus.workspace = true
+legaia-engine-minigame-scenes.workspace = true
+legaia-engine-minigames.workspace = true
+legaia-engine-mode.workspace = true
+legaia-engine-scene.workspace = true
+legaia-engine-session.workspace = true
+legaia-engine-system.workspace = true
+legaia-engine-ui.workspace = true
+legaia-font.workspace = true
+legaia-game-tables.workspace = true
+legaia-gamedata.workspace = true
+legaia-iso.workspace = true
+legaia-minigame-formats.workspace = true
+legaia-overlay-images.workspace = true
+legaia-prot.workspace = true
+legaia-render-kernels.workspace = true
+legaia-save.workspace = true
+legaia-scene-formats.workspace = true
+legaia-seq.workspace = true
+legaia-tim.workspace = true
+legaia-tmd.workspace = true
+legaia-ui-formats.workspace = true
+legaia-vab.workspace = true
+legaia-xa.workspace = true
+serde_json.workspace = true
+wasm-bindgen.workspace = true
+js-sys.workspace = true
+console_error_panic_hook.workspace = true
+
+[dependencies.web-sys]
+workspace = true
+features = ["console"]
+
+[dev-dependencies]
+# Named only by the disc-gated Muscle Dome ladder test.
+legaia-engine-scene-host.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

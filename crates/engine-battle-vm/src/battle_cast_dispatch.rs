@@ -73,7 +73,7 @@
 //!
 //! So the rule runs on every dome win, and the port is wired to it:
 //! `MuscleDomeSession::reward_banner` composes through this decode and both
-//! hosts show the result (`minigames_muscle::muscle_reward_banner_json`
+//! hosts show the result (`muscle_web::muscle_reward_banner_json`
 //! resolves the two overlay strings and the spell name). What stays true is
 //! that **this entry point** is dead - a host is running the twin, not
 //! reaching `0x801DBA90`. One residual on the scan: an address assembled in

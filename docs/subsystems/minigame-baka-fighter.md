@@ -596,7 +596,7 @@ The drop shadow `FUN_801D6BB8` is the one piece of the arena the surface does no
 | browser play page | reads the buffers and matrix through the `play_mg_baka_scene_*` exports (`site/js/play-minigames.js`) |
 | minigames page | reads its own fight's surface through the `baka_scene_*` exports (`site/js/minigame-baka.js`) |
 
-Both browser export sets flatten the surface through one reader (the `duel_surface` module in `crates/web-play/src/minigames_baka.rs`), so the two pages cannot lay the same buffers out differently. The same surface draws the cabinet's front end - the select camera and the lineup - on all three hosts. The duel layout is also exposed as data: `baka_duel_facing_json()` returns `{ player: { side: -1, facing: 1 }, opponent: { side: 1, facing: -1 } }` (`side` / `facing` = the sign of the fighter's X placement / heading).
+Both browser export sets flatten the surface through one reader (the `duel_surface` module in `crates/web-minigames/src/baka_presentation.rs`), so the two pages cannot lay the same buffers out differently. The same surface draws the cabinet's front end - the select camera and the lineup - on all three hosts. The duel layout is also exposed as data: `baka_duel_facing_json()` returns `{ player: { side: -1, facing: 1 }, opponent: { side: 1, facing: -1 } }` (`side` / `facing` = the sign of the fighter's X placement / heading).
 
 ## Effects
 
@@ -1144,7 +1144,7 @@ The cabinet takes the live accumulator from the host (`BakaCabinet::set_pot`) an
 |---|---|---|
 | native play window | the casino door warp, or the `B` key (same mode-24 warp; `B` again aborts with no coins) | `SceneMode::BakaFighter`; `engine-shell` `window/minigames.rs` |
 | browser play page | the casino door warp | `crates/web-play/src/play_minigame_arena.rs`, `site/js/play-minigames.js` |
-| minigames page | `baka_start_cabinet`, stepped with `baka_frame` | `crates/web-play/src/minigames/baka_session.rs` + `minigames_baka.rs`, `site/js/minigame-baka.js`; keeps the winnings accumulator the play hosts keep on the world, and no ladder of its own |
+| minigames page | `baka_start_cabinet`, stepped with `baka_frame` | `crates/web-minigames/src/baka_session.rs` + `baka_presentation.rs`, `site/js/minigame-baka.js`; keeps the winnings accumulator the play hosts keep on the world, and no ladder of its own |
 
 The minigames page hands the duel its held Triangle (`baka_set_held_pad`) for the cameo and keeps ticking past the deciding exchange so the cabinet's tally, the result close-up and the pinned win flourish draw.
 
@@ -1160,7 +1160,7 @@ The minigames page hands the duel its held Triangle (`baka_set_held_pad`) for th
 
 **Tests.** World-level oracles in `crates/engine-core/tests/`: `baka_tally_world.rs` (disc-free: the tally, the accumulator and the return warp), `baka_front_end_world.rs`, `baka_ladder_world.rs`, and the disc-gated `baka_minigame_real.rs` (counter-play through the world tick beats a real ladder opponent and banks the parsed prize), `baka_duel_scene_real.rs`, `baka_impact_fx_real.rs`.
 
-`crates/engine-shell/tests/baka_seat_duel_hud.rs` seats the player at a `koin1` cabinet, plays into the duel band and asserts the shared builder emits the bars and the renderer's cells against the disc's art. Format and export oracles: `crates/minigame-formats/tests/baka_opponents_real.rs`, `crates/minigame-formats/tests/baka_presentation_real.rs`, and `crates/web-play/tests/baka_presentation_wasm_api.rs` (`a_cabinet_run_banks_the_rung_prize_on_pay_out`).
+`crates/engine-shell/tests/baka_seat_duel_hud.rs` seats the player at a `koin1` cabinet, plays into the duel band and asserts the shared builder emits the bars and the renderer's cells against the disc's art. Format and export oracles: `crates/minigame-formats/tests/baka_opponents_real.rs`, `crates/minigame-formats/tests/baka_presentation_real.rs`, and `crates/web-minigames/tests/baka_presentation_wasm_api.rs` (`a_cabinet_run_banks_the_rung_prize_on_pay_out`).
 
 ## See also
 

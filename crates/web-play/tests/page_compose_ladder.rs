@@ -39,7 +39,7 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use legaia_save::card;
-use legaia_web_play::minigames::LegaiaMinigames;
+use legaia_web_minigames::LegaiaMinigames;
 use legaia_web_play::runtime::LegaiaRuntime;
 
 /// 320x240 keeps the boot-UI stage transform at identity, so the JSON draw
@@ -858,7 +858,7 @@ fn rung4_the_dance_page_gates_its_clip_driver_and_keys_its_sting() {
 /// this kernel would mean building a packet nothing consumes - a fake wire, and
 /// worse than the gap it hides.
 ///
-/// The **browser** side is real and is what this rung drives: `minigames_baka`'s
+/// The **browser** side is real and is what this rung drives: `baka_presentation`'s
 /// `baka_hud_quad_json` is the page's only HUD-widget surface and it calls this
 /// kernel directly.
 ///

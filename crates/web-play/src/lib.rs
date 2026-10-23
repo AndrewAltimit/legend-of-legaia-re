@@ -1,7 +1,7 @@
-//! The browser hosts of the port: the play page's runtime
-//! ([`runtime::LegaiaRuntime`], the native window's `BootSession` over the
-//! page's WebGL renderer and WebAudio output) and the minigames page's
-//! ([`minigames::LegaiaMinigames`]).
+//! The browser play page's host: [`runtime::LegaiaRuntime`], the native
+//! window's `BootSession` over the page's WebGL renderer and WebAudio output.
+//! The minigames page's runtime is `legaia-web-minigames`; the play page
+//! holds one of its `LegaiaMinigames` for door-warp minigame art.
 //!
 //! An rlib: the wasm module the site loads is `legaia-web-viewer`'s cdylib,
 //! which links this crate, so these `#[wasm_bindgen]` exports ship in the
@@ -15,7 +15,6 @@ pub mod field_actors;
 pub mod field_npc;
 pub mod field_scene_anim;
 mod host_slot;
-pub mod minigames;
 mod packet_color;
 pub mod pad_bindings;
 pub mod play;

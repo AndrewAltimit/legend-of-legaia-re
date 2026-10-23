@@ -46,7 +46,12 @@ def web_toggle_defaults_off(symbol: str) -> tuple[bool, str]:
         r"\b" + re.escape(symbol) + r"\b[^=;]*=\s*([^;]+);",
         re.S,
     )
-    web_roots = (REPO / "crates" / "web-play" / "src", REPO / "crates" / "web-viewer" / "src")
+    web_roots = (
+        REPO / "crates" / "web-play" / "src",
+        REPO / "crates" / "web-minigames" / "src",
+        REPO / "crates" / "web-viewer" / "src",
+        REPO / "crates" / "web-patcher" / "src",
+    )
     for path in (p for root in web_roots for p in sorted(root.rglob("*.rs"))):
         text = path.read_text(encoding="utf-8", errors="replace")
         m = pattern.search(text)
@@ -56,7 +61,7 @@ def web_toggle_defaults_off(symbol: str) -> tuple[bool, str]:
         if initialiser_is_off(init):
             return True, f"{path.relative_to(REPO)}: {init}"
         return False, f"{path.relative_to(REPO)}: initialiser is `{init}`, expected false"
-    return False, f"no `{symbol}` found in crates/web-play/src or crates/web-viewer/src"
+    return False, f"no `{symbol}` found in the browser crates' sources"
 
 
 def check_diag_gates() -> tuple[list[str], int]:

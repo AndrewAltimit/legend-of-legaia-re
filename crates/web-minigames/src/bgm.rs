@@ -151,7 +151,7 @@ const DANCE_JUKEBOX: &[(u16, &str)] = &[
 ///   = `music_01` slot 18, "Sol casino". See
 ///   `docs/subsystems/minigame-slot-machine.md`.
 /// - `dance` is served by its own pair of methods (the overlay picks one of
-///   two songs by mode; see `minigames_dance.rs`).
+///   two songs by mode; see `dance_presentation.rs`).
 fn minigame_bgm_source(game: &str) -> Option<(u32, &'static str)> {
     match game {
         "baka" => Some((

@@ -862,7 +862,7 @@ The rules engine is the crate [`engine-fishing`](../../crates/engine-fishing/REA
 | `FUN_801d1870` / `FUN_801d1a90` / `FUN_801d76e0` | `bar_frame` / `power_bar_frame` / `number_digit_cells` |
 | `FUN_801D63B0` | `engine-ui::fishing::sprite` over `legaia_minigame_formats::fishing_sprites` |
 
-**Session.** `PondSession` composes the kernels into the cast -> wait -> strike -> fight -> score loop. It is the only fishing session: the minigames page drives it directly (`crates/web-play/src/minigames_fishing.rs`), and the native window and the browser play page run it through `World::tick_fishing`. No Sony bytes are baked in; the species, spawn, cadence, sprite, prize and caption tables decode from the user's disc.
+**Session.** `PondSession` composes the kernels into the cast -> wait -> strike -> fight -> score loop. It is the only fishing session: the minigames page drives it directly (`crates/web-minigames/src/fishing_web.rs`), and the native window and the browser play page run it through `World::tick_fishing`. No Sony bytes are baked in; the species, spawn, cadence, sprite, prize and caption tables decode from the user's disc.
 
 **Runtime wiring.** Fishing installs as a suspending scene mode (`SceneMode::Fishing`; `World::enter_fishing_session` / `tick_fishing` / `exit_fishing`). The door warp and both play hosts' launchers (`L` in `play-window`, the Fish button on the browser play page) all reach it through `SceneHost::enter_fishing_from_overlay`.
 

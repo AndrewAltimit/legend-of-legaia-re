@@ -113,7 +113,7 @@ it carries no `cop2` op of its own.
   COP2, not main RAM), solved on the five payline lamps and then verified by
   predicting every other element's rect. No Sony bytes committed (disc-gated
   `the_slot_machines_3d_scene_decodes_and_projects_onto_the_retail_frame` in
-  `crates/web-play/tests/minigames_wasm_api.rs`).
+  `crates/web-minigames/tests/minigames_wasm_api.rs`).
 
 ### `baka_opponents`
 

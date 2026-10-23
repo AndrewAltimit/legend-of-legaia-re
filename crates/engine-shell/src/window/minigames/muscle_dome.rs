@@ -366,7 +366,7 @@ impl PlayWindowApp {
     /// ([`legaia_engine_ui::muscle_dome_hud::hub_screen_quads`] /
     /// [`legaia_engine_ui::muscle_dome_hud::score_tally_quads`] - the browser
     /// dome page reaches the same functions via
-    /// `minigames_muscle::muscle_hub_quads_json`): the hub's first visit
+    /// `muscle_web::muscle_hub_quads_json`): the hub's first visit
     /// (`ringside_backdrop::first_visit_hub_draw` - wall, shade, intro strip,
     /// title zoom, course card, ROUND card) over a fresh contest's first leg,
     /// the INTERVAL heading + six-row score tally between legs. Every quad's extent and screen seat come out of the

@@ -1,7 +1,7 @@
 /* Noa's dance - the retail presentation layer.
  *
  * Everything drawn here is the game's own art, decoded from the visitor's
- * disc at runtime by `LegaiaMinigames` (crates/web-play/src/minigames_dance.rs):
+ * disc at runtime by `LegaiaMinigames` (crates/web-minigames/src/dance_presentation.rs):
  *
  *   - the HUD page is the PROT 1230 pack's (512,0) TIM through its own
  *     row-500 CLUT strip - score boxes, blue digit font, the beat track,

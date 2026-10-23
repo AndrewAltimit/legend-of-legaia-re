@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use legaia_engine_minigames::dance::{
     STING_PROGRAM, STING_RANDOM_VARIANTS, STING_TIER_VARIANT, dance_hit_sting_voices,
 };
-use legaia_web_play::minigames::LegaiaMinigames;
+use legaia_web_minigames::LegaiaMinigames;
 
 fn prot_dat() -> Option<PathBuf> {
     std::env::var_os("LEGAIA_DISC_BIN")?;

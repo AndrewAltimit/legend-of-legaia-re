@@ -286,7 +286,7 @@ pub const fn strip_draws(ctx_6ce: i16) -> bool {
 /// The one surface that wants this mark is the Muscle Dome's command ring,
 /// whose phase-`0x28` arm calls it on a forbidden chip's anchor
 /// (`0x801D12D4` / `0x801D12F0`). The standalone minigames page draws that
-/// ring and places the X from this quad (`minigames_muscle`'s chip rows carry
+/// ring and places the X from this quad (`muscle_web`'s chip rows carry
 /// it as `mark_quad`, sampling the `etim` page through the CLUT's
 /// sub-palette); the two play hosts draw the dome's ring as text rows and
 /// carry no chip sprites to mark.

@@ -1,5 +1,5 @@
 //! Disc-gated coverage for the dance minigame's **presentation** API on
-//! `LegaiaMinigames` (`minigames_dance.rs`) - the same surface the site's
+//! `LegaiaMinigames` (`dance_presentation.rs`) - the same surface the site's
 //! minigames page drives, exercised natively so a schema break fails before
 //! a browser ever sees it.
 //!
@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use legaia_web_play::minigames::LegaiaMinigames;
+use legaia_web_minigames::LegaiaMinigames;
 
 fn prot_dat() -> Option<PathBuf> {
     std::env::var_os("LEGAIA_DISC_BIN")?;

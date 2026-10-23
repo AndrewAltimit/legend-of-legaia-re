@@ -42,7 +42,7 @@ SPLIT_MODULES = frozenset({
     "crates/engine-cast/src/cast_module_ticks",
     "crates/engine-fishing/src/fishing",
     "crates/engine-title/src/title_overlay",
-    "crates/web-play/src/minigames_muscle",
+    "crates/web-minigames/src/muscle_web",
     "crates/engine-core/src/world/vm_hosts",
     "crates/engine-core/src/world/narration",
     "crates/engine-core/src/world/field_movement",

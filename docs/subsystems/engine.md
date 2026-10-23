@@ -79,7 +79,8 @@ flowchart BT
     EXP["engine-export"]
     PAR["parity"]
     SHELL["engine-shell<br/>native host"]
-    WEBP["web-play<br/>browser hosts"]
+    WEBP["web-play<br/>browser play page"]
+    WEBM["web-minigames<br/>browser minigames page"]
     WEB["web-viewer<br/>wasm bundle + site tools"]
 
     FAM --> FMT
@@ -153,6 +154,8 @@ flowchart BT
     WEBP --> ECHT
     WEBP --> ESAV
     WEB --> WEBP
+    WEBP --> WEBM
+    WEBM --> SESS
 ```
 
 The shape to read off it:
@@ -206,6 +209,7 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `delilas-party` | `party-swap`, `arts-patch`, `code-hooks`, `texture-replace`, `translate`, `disc-patch`, `actor-formats`, `game-tables`, `art`, `lzs`, `vab`, `xa` | The play-as-Delilas mod. |
 | `delilas-challenge` | `code-hooks`, `disc-patch`, `game-tables`, `scene-formats`, `lzs`, `mes` | The Delilas Challenge dome course and custom items. |
 | `patcher` | the eight above + format-family and parser crates | The `legaia-patcher` CLI. |
+| `web-patcher` | `patcher`, its layer crates + format-family and parser crates | The site's ROM patcher, texture replacer and language workbench as wasm exports; names no engine crate. |
 | `engine-system` | `cheats`, `gamedata` | Input, fades, streaming, sound state. |
 | `engine-mode` | `engine-system`, `game-tables`, `bytes` | The game-mode seat. |
 | `engine-dialog` | `font`, `mes` | Dialog pager, dialog window, text balloon. |
@@ -242,8 +246,9 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `engine-capture` | `engine-scene-host`, `engine-core`, `engine-battle`, `engine-battle-vm`, `engine-camera`, `engine-cast`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-battle-menus`, `engine-mode`, `engine-system`, `art`, `save`, `scene-formats` | Capture seeds, gates and pad drives shared by `parity` and the native capture child. |
 | `parity` | `engine-capture`, `engine-battle-hud`, `engine-session`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-audio`, `engine-ui`, the kernel crates it measures, `mednafen`, `pcsx-redux`, `ram-image` + parser crates | Parity oracles + retail comparison. |
 | `engine-shell` | `parity`, `engine-capture`, `engine-session`, `engine-screens`, `engine-battle-hud`, `engine-world-views`, `engine-cheats`, `engine-export`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-render`, `engine-ui`, `engine-audio`, the kernel crates + format-family and parser crates | The native host. |
-| `web-play` | `engine-session`, `engine-screens`, `engine-battle-hud`, `engine-world-views`, `engine-cheats`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-ui`, `engine-audio`, the kernel crates + format-family and parser crates | The browser hosts: the play and minigames runtimes. |
-| `web-viewer` | `web-play`, `engine-world-views`, `engine-scene-host`, `engine-scene`, `engine-audio`, the kernel crates the viewer pages read, `patcher` and its layer crates + format-family and parser crates | The wasm bundle (`cdylib` over `web-play`), the asset inspectors and the ROM patcher. |
+| `web-play` | `engine-session`, `engine-screens`, `engine-battle-hud`, `engine-world-views`, `engine-cheats`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-ui`, `engine-audio`, `web-minigames`, the kernel crates + format-family and parser crates | The browser play page's runtime. |
+| `web-minigames` | `engine-session` (one audio constant), `engine-minigame-scenes`, `engine-scene`, `engine-ui`, `engine-audio`, the minigame kernel crates + format-family and parser crates | The browser minigames page's runtime; no `engine-core`. |
+| `web-viewer` | `web-play`, `web-patcher`, `engine-world-views`, `engine-scene-host`, `engine-scene`, `engine-audio`, the kernel crates the viewer pages read + format-family and parser crates | The wasm bundle (`cdylib` over `web-play` and `web-patcher`) and the asset inspectors. |
 | `asset-viewer` | `engine-core`, `engine-scene`, `engine-vm`, `engine-battle-vm`, `engine-dialog`, `engine-field`, `engine-mode`, `engine-system`, `engine-ui`, `engine-render`, `engine-audio`, `disc-audit` + format-family and parser crates | Standalone asset viewer. |
 | `app-theme` | - | The desktop programs' shared palette (dark and light) and spacing: Studio, the launcher, the play window's chrome. |
 
@@ -322,7 +327,7 @@ flowchart LR
 |---|---|---|---|
 | Native window | `engine-shell` (`legaia-engine play-window`) | `engine-render` (wgpu) | With no subcommand, `legaia-engine` runs a launcher that remembers the disc, edits the enhancement options and starts `play-window` on *Play*. |
 | Browser play page | `web-play` (`runtime.rs` + `play_*.rs`) | the site's WebGL renderer | Runs the same `SceneHost`; see [The browser host](#the-browser-host). |
-| Browser minigames page | `web-play` (`minigames*.rs`) | the site's WebGL / canvas modules | Drives the minigame rules engines directly, outside a scene. |
+| Browser minigames page | `web-minigames` | the site's WebGL / canvas modules | Drives the minigame rules engines directly, outside a scene. |
 | Headless | `engine-shell` (`play`, `record` / `replay`, `scenarios`), `parity`, test binaries | none, or an offscreen renderer | Same `BootSession`; this is what the oracles and replays measure. |
 
 A feature wired into one host and not another is a defect class of its own. The [host-drift](../tooling/host-drift.md) gates police it.

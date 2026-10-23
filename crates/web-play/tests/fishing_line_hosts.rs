@@ -14,7 +14,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_web_play::minigames::LegaiaMinigames;
+use legaia_web_minigames::LegaiaMinigames;
 use legaia_web_play::runtime::LegaiaRuntime;
 
 const REEL_A: u32 = 0x40;

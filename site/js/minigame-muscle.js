@@ -45,7 +45,7 @@
  *
  * The RULES are `legaia-engine-core::muscle_dome` + the ported battle
  * formulas, reached through `LegaiaMinigames` (crates/web-play/src/
- * minigames_muscle.rs): every committed command resolves through the real
+ * crates/web-minigames/src/muscle_web.rs): every committed command resolves through the real
  * arts/physical damage roll (FUN_801dd0ac), the element-affinity scale
  * (FUN_801dd864) and the damage finisher (FUN_801ddb30), against fighter
  * stats read off the disc's own records - the monster's PROT 867 stat block

@@ -89,7 +89,7 @@ impl LegaiaMinigames {
     /// arena lighting.
     pub fn muscle_fighter_flat_rgba(&self, char_slot: u32) -> Vec<u8> {
         self.muscle_fighter_build(char_slot)
-            .map(|(_, m, _)| crate::packet_color::textured(&m))
+            .map(|(_, m, _)| legaia_engine_field::packet_color::textured(&m))
             .unwrap_or_default()
     }
 
@@ -358,7 +358,7 @@ impl LegaiaMinigames {
         let Some(mesh) = self.muscle_monster_render_mesh(monster_id) else {
             return Vec::new();
         };
-        crate::packet_color::textured(&mesh)
+        legaia_engine_field::packet_color::textured(&mesh)
     }
 
     /// Per-vertex TMD object index (the rigid part a vertex hangs from).

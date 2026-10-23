@@ -40,9 +40,9 @@ use legaia_engine_ui::TextDraw;
 use legaia_engine_ui::muscle_dome_hud::{self as hud, HudQuad, HudSprite};
 use wasm_bindgen::prelude::*;
 
-use crate::minigames::duel_surface;
 use crate::play_minigames::{DIM, WHITE, row};
 use crate::runtime::LegaiaRuntime;
+use legaia_web_minigames::duel_surface;
 
 /// PROT entry of the arena roster / init overlay (course ladder, score
 /// table, hub sprite table).
@@ -764,12 +764,12 @@ impl LegaiaRuntime {
     // ----------------------------------------------------- Baka Fighter
 
     /// The live duel's state, through the one builder the standalone page's
-    /// `baka_state_json` uses (`crate::minigames::baka_state_json_for`) - so
+    /// `baka_state_json` uses (`legaia_web_minigames::baka_state_json_for`) - so
     /// the play page reads the strike clock, the display clips and the
     /// afterimage passes too.
     pub fn play_mg_baka_state_json(&self) -> String {
         match self.baka_session() {
-            Some(f) => crate::minigames::baka_state_json_for(f),
+            Some(f) => legaia_web_minigames::baka_state_json_for(f),
             None => r#"{"live":false}"#.to_string(),
         }
     }

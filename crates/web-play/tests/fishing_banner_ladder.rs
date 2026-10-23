@@ -40,7 +40,7 @@
 
 use std::collections::BTreeSet;
 
-use legaia_web_play::minigames::LegaiaMinigames;
+use legaia_web_minigames::LegaiaMinigames;
 use legaia_web_play::runtime::LegaiaRuntime;
 
 /// Glyph ids the five banner animators emit, from their retail call sites.

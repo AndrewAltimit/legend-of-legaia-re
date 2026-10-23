@@ -21,7 +21,6 @@ pub mod npc_dialog;
 mod packet_color;
 pub mod player_anm;
 mod prot_locate;
-pub mod rom_patcher;
 mod scene_export;
 mod scene_geom;
 pub mod sentinel_placements;
@@ -29,12 +28,15 @@ pub mod sfx_view;
 pub mod shop_items;
 pub mod shop_vendors;
 pub mod summon_view;
-pub mod texture_pack;
-pub mod texture_registry;
 pub mod tmd3d;
-pub mod translate_workbench;
 mod viewer_render;
 mod world_mist;
+
+// The ROM patcher's exports live in `legaia-web-patcher`. Nothing in this
+// crate names one of its items, and rustc links only the crates a build
+// references, so the bundle names it here: without this line its
+// `#[wasm_bindgen]` exports would drop out of the cdylib.
+extern crate legaia_web_patcher;
 
 use legaia_container_formats::tim_scan;
 use legaia_disc_audit::categorize::{Class, classify};

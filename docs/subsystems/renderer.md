@@ -2478,8 +2478,8 @@ instance env-pack meshes exactly as the field hosts do.
 | 1 | native `play-window` | `engine-shell` `window/field_render.rs` + `window/geometry.rs` |
 | 2 | browser play page | `web-play` `play.rs` + `play_battle_render.rs` |
 | 3 | browser field-scene viewer | `web-viewer` `field_scene.rs`; `scene_geom.rs` for the world map |
-| 4 | browser dance-hall venue | `web-play` `minigames_dance.rs` |
-| 5 | browser fishing venue | `web-play` `minigames_fishing_scene.rs` |
+| 4 | browser dance-hall venue | `web-minigames` `dance_presentation.rs` |
+| 5 | browser fishing venue | `web-minigames` `fishing_scene_web.rs` |
 
 A kernel wired into one and not another is invisible in a diff, because no
 file holds two of the columns. Host-drift

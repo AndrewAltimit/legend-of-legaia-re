@@ -10,7 +10,7 @@ so a host does not re-spell it.
 |---|---|---|
 | native play-window | [`crates/engine-shell`](../../crates/engine-shell/) | wgpu via [`crates/engine-render`](../../crates/engine-render/README.md) |
 | browser play page | [`crates/web-play`](../../crates/web-play/README.md) `runtime.rs` + `play_*.rs` | [`site/js/play-app.js`](../../site/js/play-app.js) + the `play-view-*.js` files it names |
-| browser minigames page | same crate, `minigames*.rs` (`LegaiaMinigames`) | per-minigame modules under `site/js/` |
+| browser minigames page | [`crates/web-minigames`](../../crates/web-minigames/README.md) (`LegaiaMinigames`) | per-minigame modules under `site/js/` |
 
 Both play hosts tick one `engine-session::BootSession`; the minigames page
 drives the `World`-free rules engines directly and holds no `World`.
@@ -559,8 +559,8 @@ construction - and this tree has **five** render surfaces, not two:
 | native `play-window` | `window/field_render/` + `window/geometry.rs` |
 | browser play page | `play.rs` |
 | browser field-scene viewer | `field_scene.rs` (+ `scene_geom.rs` for the world map) |
-| browser dance-hall venue | `minigames_dance.rs` |
-| browser fishing venue | `minigames_fishing_scene.rs` |
+| browser dance-hall venue | `dance_presentation.rs` |
+| browser fishing venue | `fishing_scene_web.rs` |
 
 The last two resolve `EnvDraw`s and instance env-pack meshes exactly like the
 first three, and the tier-3 coplanar rows named three of the five. So here the

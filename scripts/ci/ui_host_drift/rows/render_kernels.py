@@ -59,7 +59,9 @@ RENDER_ROOTS = [
     REPO / "crates" / "engine-world-views" / "src",
     REPO / "crates" / "engine-screens" / "src",
     REPO / "crates" / "web-play" / "src",
+    REPO / "crates" / "web-minigames" / "src",
     REPO / "crates" / "web-viewer" / "src",
+    REPO / "crates" / "web-patcher" / "src",
     REPO / "site" / "js",
 ]
 

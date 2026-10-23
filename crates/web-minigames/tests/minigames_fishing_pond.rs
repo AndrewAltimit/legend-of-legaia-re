@@ -1,6 +1,6 @@
 //! Disc-gated coverage for the fishing minigame's venue-faithful WASM
-//! surface on `LegaiaMinigames` (`minigames_fishing.rs` +
-//! `minigames_fishing_scene.rs`) - the same API the site's minigames page
+//! surface on `LegaiaMinigames` (`fishing_web.rs` +
+//! `fishing_scene_web.rs`) - the same API the site's minigames page
 //! drives, exercised natively so a schema break fails before a browser sees
 //! it. Pins the disc-decoded tables against the documented values
 //! (`docs/subsystems/minigame-fishing.md`): the spawn pages' band-4 species,
@@ -9,7 +9,7 @@
 //!
 //! Skips silently when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_web_play::minigames::LegaiaMinigames;
+use legaia_web_minigames::LegaiaMinigames;
 
 fn disc_bytes() -> Option<Vec<u8>> {
     let p = std::env::var_os("LEGAIA_DISC_BIN")?;

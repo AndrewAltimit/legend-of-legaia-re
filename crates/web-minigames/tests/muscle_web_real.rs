@@ -11,7 +11,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_web_play::minigames::LegaiaMinigames;
+use legaia_web_minigames::LegaiaMinigames;
 
 fn loaded() -> Option<(LegaiaMinigames, serde_json::Value)> {
     let disc = std::env::var("LEGAIA_DISC_BIN").ok()?;

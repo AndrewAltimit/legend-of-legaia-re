@@ -74,7 +74,9 @@ SHARED_CALLER_ROOTS = [
     REPO / "crates" / "engine-ui" / "src",
     REPO / "crates" / "render-kernels" / "src",
     REPO / "crates" / "web-play" / "src",
+    REPO / "crates" / "web-minigames" / "src",
     REPO / "crates" / "web-viewer" / "src",
+    REPO / "crates" / "web-patcher" / "src",
 ]
 
 # A hotkey-only `World` method, with the reason it is one. Each entry is

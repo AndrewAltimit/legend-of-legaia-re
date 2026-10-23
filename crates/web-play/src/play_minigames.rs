@@ -18,7 +18,7 @@
 //!    every one of the four games' art off the disc - the slot machine's
 //!    scene graph + art pack, the dome's arena / fighter / monster meshes and
 //!    hub pages, the Baka roster meshes + stage, the dance hall + dancers -
-//!    through [`crate::minigames::LegaiaMinigames`]. Rather than port those
+//!    through [`legaia_web_minigames::LegaiaMinigames`]. Rather than port those
 //!    builders a second time against the engine's `ProtIndex`, the play page
 //!    hands that same type a **compact PROT image**: the minigame entries
 //!    copied out of the loaded archive behind a synthetic TOC of the retail
@@ -57,8 +57,8 @@
 use legaia_engine_scene::scene::ProtIndex;
 use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
 
-use crate::minigames::LegaiaMinigames;
 use crate::runtime::LegaiaRuntime;
+use legaia_web_minigames::LegaiaMinigames;
 
 /// Which in-world minigame owns the screen: the engine's
 /// [`StatusGame`](legaia_engine_minigame_scenes::minigame_status::StatusGame),
@@ -203,9 +203,10 @@ impl LegaiaRuntime {
         // The compact image carries no pre-TOC head, so the slot machine's
         // resident system-UI sheet (its submenu box border) comes off the
         // real PROT.DAT.
-        if let Some(c) = art.slot_cabinet.take() {
+        let cabinet = art.slot_cabinet_mut();
+        if let Some(c) = cabinet.take() {
             use legaia_ui_formats::title_pak as tp;
-            art.slot_cabinet = Some(
+            *cabinet = Some(
                 match host.index.prot_dat_raw_bytes(
                     tp::OVERLAY_SYSTEM_UI_TIM_OFFSET as u64,
                     tp::OVERLAY_SYSTEM_UI_TIM_SIZE,

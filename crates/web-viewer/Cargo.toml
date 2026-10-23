@@ -11,6 +11,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 legaia-web-play.workspace = true
+legaia-web-patcher.workspace = true
 legaia-engine-menus.workspace = true
 legaia-engine-field.workspace = true
 legaia-render-kernels.workspace = true
@@ -18,7 +19,6 @@ legaia-tim.workspace = true
 legaia-prot.workspace = true
 legaia-lzs.workspace = true
 legaia-iso.workspace = true
-legaia-patcher.workspace = true
 legaia-tmd.workspace = true
 legaia-art.workspace = true
 legaia-gamedata.workspace = true
@@ -34,13 +34,8 @@ legaia-engine-scene.workspace = true
 legaia-engine-audio = { workspace = true, features = ["audio-webaudio"] }
 legaia-mednafen.workspace = true
 legaia-actor-formats.workspace = true
-legaia-arts-patch.workspace = true
-legaia-code-hooks.workspace = true
 legaia-container-formats.workspace = true
-legaia-delilas-challenge.workspace = true
-legaia-delilas-party.workspace = true
 legaia-disc-audit.workspace = true
-legaia-disc-patch.workspace = true
 legaia-engine-battle.workspace = true
 legaia-engine-effects.workspace = true
 legaia-engine-system.workspace = true
@@ -48,13 +43,9 @@ legaia-game-tables.workspace = true
 legaia-minigame-formats.workspace = true
 legaia-ram-image.workspace = true
 legaia-scene-formats.workspace = true
-legaia-texture-replace.workspace = true
-legaia-translate.workspace = true
 legaia-ui-formats.workspace = true
 serde_json.workspace = true
-anyhow.workspace = true
 wasm-bindgen.workspace = true
-wasm-bindgen-futures.workspace = true
 js-sys.workspace = true
 console_error_panic_hook.workspace = true
 

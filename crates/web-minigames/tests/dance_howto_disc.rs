@@ -7,7 +7,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_web_play::minigames::LegaiaMinigames;
+use legaia_web_minigames::LegaiaMinigames;
 
 #[test]
 fn the_howto_mode_runs_the_tutorial_actor() {

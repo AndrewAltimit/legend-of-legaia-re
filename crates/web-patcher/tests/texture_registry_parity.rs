@@ -2,7 +2,7 @@
 //!
 //! The ROM patcher's replacement grid used to be three hand-written loops
 //! inside the WASM `scan_textures` binding. Those loops are now
-//! [`legaia_web_viewer::texture_registry`] tiers. This test carries the
+//! [`legaia_web_patcher::texture_registry`] tiers. This test carries the
 //! **pre-refactor algorithm verbatim** (see [`legacy_rows`]) and asserts the
 //! registry emits exactly the same rows, in exactly the same order, for the
 //! three families that existed before: same coordinates, same dimensions,
@@ -22,7 +22,7 @@
 use std::env;
 use std::fs;
 
-use legaia_web_viewer::texture_registry::{
+use legaia_web_patcher::texture_registry::{
     self as reg, Rgba, ScanCtx, TIER_BATTLE_EQUIP, TIER_LZS, TIER_MONSTER, TIER_RAW,
     TIER_SAVE_ICON, TIER_SUMMON, TexRow,
 };

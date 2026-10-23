@@ -564,7 +564,7 @@ fi
 WASM_CFG_TOUCHED=0
 while IFS= read -r path; do
     case "$path" in
-        crates/web-play/*|crates/web-viewer/*|crates/engine-core/*|crates/engine-audio/*|crates/save/*|crates/engine-shell/*)
+        crates/web-play/*|crates/web-minigames/*|crates/web-patcher/*|crates/web-viewer/*|crates/engine-core/*|crates/engine-audio/*|crates/save/*|crates/engine-shell/*)
             WASM_CFG_TOUCHED=1; break ;;
     esac
 done < <(git diff --cached --name-only --diff-filter=ACMR)

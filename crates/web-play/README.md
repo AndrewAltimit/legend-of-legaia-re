@@ -1,9 +1,10 @@
 # legaia-web-play
 
-The browser hosts of the port: the play page's runtime and the minigames
-page's runtime. `LegaiaRuntime` holds the same
-`legaia_engine_session::BootSession` the native window ticks;
-`LegaiaMinigames` drives the minigame rules engines outside a scene.
+The browser play page's runtime. `LegaiaRuntime` holds the same
+`legaia_engine_session::BootSession` the native window ticks. The minigames
+page's runtime, `LegaiaMinigames`, is
+[`legaia-web-minigames`](../web-minigames/README.md); the play page holds one
+for the art it draws over an in-world minigame.
 
 It is not a second implementation of the game. It links the same engine
 crates as `legaia-engine` and differs only in what draws (the site's WebGL
@@ -16,7 +17,6 @@ Module by module, the exports are in
 | Area | Modules |
 |---|---|
 | The play runtime | `runtime/` (the simulation: disc load, scene setup, the frame), `play/` and every `play_*` module (what the page draws and plays), `boot_title`, `boot_continue`, `cards`, `resume`, `session_save`, `host_slot`, `pad_bindings` |
-| The minigames runtime | `minigames/` and every `minigames_*` module |
 | The field actor layer | `field_actors` (the MAN-placed actors over a live world), `field_npc` (the NPC catalog they draw from), `field_scene_anim` (the CLUT-walk runner) - shared with the field-scene viewer in `legaia-web-viewer` |
 
 A visitor's disc image is read through `legaia_iso::image` (the in-memory
@@ -29,7 +29,7 @@ layer's borrowed-slice readers.
 This crate is an `rlib`. The wasm module the site loads is
 [`legaia-web-viewer`](../web-viewer/README.md)'s `cdylib`, which links this
 crate: wasm-bindgen gathers the `#[wasm_bindgen]` exports of every linked
-crate, so `LegaiaRuntime` and `LegaiaMinigames` reach the page through the
+crate, so `LegaiaRuntime` (and, through this crate, `LegaiaMinigames`) reach the page through the
 same `legaia_web_viewer.js` as the viewer exports, and the site's JS API does
 not depend on which crate an export lives in.
 [`scripts/ci/build-wasm.sh`](../../scripts/ci/build-wasm.sh) builds it.
@@ -56,7 +56,7 @@ the gates that keep it in step with the native window,
 
 ## Tests
 
-`tests/` holds the play and minigames page ladders and parity tests, built
+`tests/` holds the play page ladders and parity tests (with the play page's own minigame rungs), built
 as one `integration` binary; the disc-gated ones skip without
 `LEGAIA_DISC_BIN`. Run one file with
 `cargo test -p legaia-web-play --test integration <name>::`.

@@ -230,7 +230,7 @@ fn a_hub_screen_lands_inside_the_retail_frame() {
 /// archive's first populated monster settles it within the turn budget.
 #[test]
 fn a_won_contest_composes_the_page_reward_banner() {
-    use legaia_web_play::minigames::LegaiaMinigames;
+    use legaia_web_minigames::LegaiaMinigames;
     let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;

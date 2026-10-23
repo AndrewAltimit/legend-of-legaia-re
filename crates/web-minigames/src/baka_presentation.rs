@@ -92,7 +92,7 @@ impl LegaiaMinigames {
         let tmd = legaia_tmd::parse(&tmd_bytes).ok()?;
         let part_count = tmd.objects.len();
         let (mesh, object_ids, shading) = tmd_to_vram_mesh_field_hybrid(&tmd, &tmd_bytes);
-        let flat = crate::packet_color::hybrid(&mesh, &shading);
+        let flat = legaia_engine_field::packet_color::hybrid(&mesh, &shading);
         Some(FighterMesh {
             mesh,
             object_ids,
@@ -532,7 +532,7 @@ impl LegaiaMinigames {
             return Vec::new();
         };
         let (mesh, _, shading) = tmd_to_vram_mesh_field_hybrid(&tmd, &bytes);
-        crate::packet_color::hybrid(&mesh, &shading)
+        legaia_engine_field::packet_color::hybrid(&mesh, &shading)
     }
 
     // ---------------------------------------------------------------- VRAM
@@ -624,7 +624,7 @@ impl LegaiaMinigames {
 /// clip `[action record, whole frame]` (`BakaFight::motion`, the clip the
 /// actor shows - it plays an attack out past the booked exchange, then
 /// idles). `ghosts` are the special's afterimage passes that drew this tick.
-pub(crate) fn baka_state_json_for(f: &legaia_engine_minigames::baka_fighter::BakaFight) -> String {
+pub fn baka_state_json_for(f: &legaia_engine_minigames::baka_fighter::BakaFight) -> String {
     let phase = match f.phase() {
         MatchPhase::Fighting => "fighting",
         MatchPhase::RoundOver(_) => "round_over",
@@ -709,47 +709,47 @@ pub(crate) fn baka_state_json_for(f: &legaia_engine_minigames::baka_fighter::Bak
 /// both browser duel hosts (this page's `baka_scene_*` and the play page's
 /// `play_mg_baka_scene_*`) hand their `TmdRenderer`, so the two pages cannot
 /// read the same `BakaDuelSurface` into different layouts.
-pub(crate) mod duel_surface {
+pub mod duel_surface {
     use legaia_engine_minigame_scenes::baka_duel_scene::BakaDuelSurface;
 
     /// Posed positions, `[x, y, z]` per vertex, raw retail world (Y down).
-    pub(crate) fn positions(s: &BakaDuelSurface) -> Vec<f32> {
+    pub fn positions(s: &BakaDuelSurface) -> Vec<f32> {
         s.scene()
             .map(|s| s.positions.iter().flatten().copied().collect())
             .unwrap_or_default()
     }
 
     /// Per-vertex `[u, v]`.
-    pub(crate) fn uvs(s: &BakaDuelSurface) -> Vec<u8> {
+    pub fn uvs(s: &BakaDuelSurface) -> Vec<u8> {
         s.scene()
             .map(|s| s.uvs.iter().flatten().copied().collect())
             .unwrap_or_default()
     }
 
     /// Per-vertex `[cba, tsb]`.
-    pub(crate) fn cba_tsb(s: &BakaDuelSurface) -> Vec<u16> {
+    pub fn cba_tsb(s: &BakaDuelSurface) -> Vec<u16> {
         s.scene()
             .map(|s| s.cba_tsb.iter().flatten().copied().collect())
             .unwrap_or_default()
     }
 
     /// Per-vertex `[r, g, b, flag]` (the hybrid textured / fill layout).
-    pub(crate) fn flat_rgba(s: &BakaDuelSurface) -> Vec<u8> {
+    pub fn flat_rgba(s: &BakaDuelSurface) -> Vec<u8> {
         s.scene().map(|s| s.flat_rgba.clone()).unwrap_or_default()
     }
 
     /// Triangle indices.
-    pub(crate) fn indices(s: &BakaDuelSurface) -> Vec<u32> {
+    pub fn indices(s: &BakaDuelSurface) -> Vec<u32> {
         s.scene().map(|s| s.indices.clone()).unwrap_or_default()
     }
 
     /// The duel VRAM for the seated pair (with the cameo's wink applied).
-    pub(crate) fn vram(s: &BakaDuelSurface) -> Vec<u8> {
+    pub fn vram(s: &BakaDuelSurface) -> Vec<u8> {
         s.vram().map(|v| v.as_bytes().to_vec()).unwrap_or_default()
     }
 
     /// The scene's attribute generation, `-1` with no scene.
-    pub(crate) fn attr_generation(s: &BakaDuelSurface) -> i32 {
+    pub fn attr_generation(s: &BakaDuelSurface) -> i32 {
         s.scene().map_or(-1, |s| s.attr_generation() as i32)
     }
 }

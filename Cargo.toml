@@ -80,6 +80,8 @@ members = [
     "crates/engine-shell",
     "crates/asset-viewer",
     "crates/studio",
+    "crates/web-minigames",
+    "crates/web-patcher",
     "crates/web-play",
     "crates/web-viewer",
 ]
@@ -208,6 +210,8 @@ legaia-seq = { path = "crates/seq", default-features = false }
 legaia-tim = { path = "crates/tim", default-features = false }
 legaia-tmd = { path = "crates/tmd", default-features = false }
 legaia-vab = { path = "crates/vab", default-features = false }
+legaia-web-minigames = { path = "crates/web-minigames" }
+legaia-web-patcher = { path = "crates/web-patcher" }
 legaia-web-play = { path = "crates/web-play" }
 legaia-web-viewer = { path = "crates/web-viewer" }
 legaia-xa = { path = "crates/xa", default-features = false }
