@@ -672,6 +672,15 @@ impl App {
                         .map(|r| format!(", region {r}"))
                         .unwrap_or_default()
                 ));
+                // Another region's disc browses fine but cannot start the
+                // game; say so where the region is named, not only in the
+                // greyed-out Play button's hover text.
+                if matches!(lib.source, Source::Disc(_))
+                    && let Err(why) = crate::launch::playable_disc(lib)
+                {
+                    ui.label(RichText::new("- Play needs the USA disc").color(crate::theme::warn(ui)))
+                        .on_hover_text(why);
+                }
                 let n = self.studio.classified();
                 if n < lib.entries.len() {
                     ui.spinner();

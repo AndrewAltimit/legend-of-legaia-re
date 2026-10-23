@@ -1031,8 +1031,8 @@ impl LauncherApp {
         }
         y += 4;
         for line in [
-            "A gamepad works too. Key Config on the in-game Options screen rebinds keys.",
-            "Esc twice quits the game; F12 in the game lists every key.",
+            "Gamepad: bottom button Cross, right Circle, left Square, top Triangle.",
+            "Key Config in the in-game Options rebinds keys; F12 in the game lists every key.",
         ] {
             for l in c.wrap(line, panel.w - 20) {
                 c.text(panel.x + 10, y, &l, DIM);

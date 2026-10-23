@@ -78,6 +78,11 @@ pub fn primary_button(text: impl Into<String>) -> egui::Button<'static> {
     .fill(c(DARK.accent_fill))
 }
 
+/// The tint for a warning line.
+pub fn warn(ui: &egui::Ui) -> Color32 {
+    c(palette(ui).warn)
+}
+
 /// The tint for a success line.
 pub fn good(ui: &egui::Ui) -> Color32 {
     c(palette(ui).good)
