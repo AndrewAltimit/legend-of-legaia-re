@@ -18,6 +18,8 @@ fn items_session(ids_counts: &[(u8, u8)]) -> PauseItemsSession {
             count: *count,
             desc: format!("Desc {id:02X}"),
             passive: None,
+            use_bits: 0,
+            throw_bits: 0,
         })
         .collect();
     let targets = vec![TargetRow::new(0, "Vahn").with_stats(50, 100, 10, 30)];

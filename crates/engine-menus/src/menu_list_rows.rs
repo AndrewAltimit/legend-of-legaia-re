@@ -65,9 +65,10 @@
 //!    [`build_use_list_rows`] is **wired**: `World::bag_use_rows` walks the
 //!    window and `legaia_engine_menu_runtime::field_menu_dispatch::build_pause_items_session`
 //!    takes its row order, which is what both hosts' Items screen draws.
-//!    `crate::pause_screens::PauseItemRow` still carries no ink field, so
-//!    the dim bit is computed and dropped at the draw - the *order* is
-//!    retail's, the greying is not yet. The row's **payload** does survive:
+//!    The dim / alt-ink bits survive too: `crate::pause_screens::PauseItemRow`
+//!    keeps each slot's bits from the Use build and the Throw Out build, and
+//!    the Items model inks every row through [`list_row_ink`] for the list
+//!    the hand is in. The row's **payload** survives as well:
 //!    it is a bag slot, and Use / Throw Out / Sell remove from that slot
 //!    rather than by row ordinal or by item id, which diverge as soon as a
 //!    hole sits above the selection or one id occupies two slots
@@ -137,6 +138,51 @@ pub const CLASS_LANDMARK: u16 = 0x8000;
 pub const CLASS_PASSIVE: u16 = 0x9000;
 /// Shop-row class staging ink 5 (payload = item id).
 pub const CLASS_SHOP_ALT: u16 = 0xA000;
+
+/// Ink a row stages by default (white).
+pub const LIST_INK_NORMAL: u8 = 7;
+/// Ink a [`ROW_DISABLED`] row stages (grey).
+pub const LIST_INK_DISABLED: u8 = 0;
+/// Ink a [`ROW_ALT_INK`] bag row stages.
+pub const LIST_INK_ALT: u8 = 1;
+
+/// The ink the kind-4 list kernel stages (`_DAT_8007B454`, `gp+0x13C`)
+/// before drawing one row of a bag or spell list.
+///
+/// Both arms start at ink `7` and leave every row there while the list is
+/// **parked** (list mode `_DAT_8007BB94 == 4`, the list on screen behind
+/// the command or caster window). Otherwise:
+///
+/// - bag rows ([`CLASS_BAG`], `0x8003312C..0x80033154`): [`ROW_DISABLED`]
+///   -> `0`, then [`ROW_ALT_INK`] -> `1`, the later test winning (the
+///   `andi v0,s2,0x400` sits in the first branch's delay slot, so it runs
+///   whatever the dim test found);
+/// - spell rows ([`CLASS_SPELL`] / [`CLASS_SPELL_ALT`],
+///   `0x8003351C..0x80033544`): [`ROW_DISABLED`] -> `0`; no alt-ink test.
+///
+/// Any other class keeps `7` here; its own arm is not modelled by this
+/// function (the shop's is `crate::shop::shop_buy_row_ink`).
+///
+/// PORT: FUN_80032A44 (the bag-row and spell-row ink arms, `0x8003312C..0x80033154` / `0x8003351C..0x80033544`)
+pub fn list_row_ink(entry: u16, parked: bool) -> u8 {
+    if parked {
+        return LIST_INK_NORMAL;
+    }
+    match entry & ROW_CLASS_MASK {
+        CLASS_BAG => {
+            let mut ink = LIST_INK_NORMAL;
+            if entry & ROW_DISABLED != 0 {
+                ink = LIST_INK_DISABLED;
+            }
+            if entry & ROW_ALT_INK != 0 {
+                ink = LIST_INK_ALT;
+            }
+            ink
+        }
+        CLASS_SPELL | CLASS_SPELL_ALT if entry & ROW_DISABLED != 0 => LIST_INK_DISABLED,
+        _ => LIST_INK_NORMAL,
+    }
+}
 
 /// The persisted scroll / selection pair the allocator clamps and re-seeds
 /// each list from: the retail globals `0x8007BB90` (scroll top, `gp+0x878`)
@@ -899,6 +945,23 @@ impl LiveWindowSet {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The kernel's two row-ink arms: a parked list is all white; a live
+    /// one greys a dim row, and the bag arm's alt-ink test overrides the
+    /// dim one (the tail group's `0x1C00` rows stage ink 1).
+    #[test]
+    fn list_row_ink_follows_the_dim_and_alt_bits_unless_parked() {
+        for entry in [0x1003, 0x1803, 0x1C03, 0x5081, 0x5881] {
+            assert_eq!(list_row_ink(entry, true), LIST_INK_NORMAL);
+        }
+        assert_eq!(list_row_ink(0x1003, false), LIST_INK_NORMAL);
+        assert_eq!(list_row_ink(0x1803, false), LIST_INK_DISABLED);
+        assert_eq!(list_row_ink(0x1C03, false), LIST_INK_ALT);
+        assert_eq!(list_row_ink(0x5081, false), LIST_INK_NORMAL);
+        assert_eq!(list_row_ink(0x5881, false), LIST_INK_DISABLED);
+        // The spell arm has no alt-ink test.
+        assert_eq!(list_row_ink(0x5481, false), LIST_INK_NORMAL);
+    }
 
     #[test]
     fn list_alloc_clamps_persisted_selection() {

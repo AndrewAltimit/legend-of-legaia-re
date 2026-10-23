@@ -18,6 +18,14 @@ pub struct PauseItemRow {
     pub desc: String,
     /// Accessory passive lines for the extra widget box.
     pub passive: Option<(String, String)>,
+    /// This slot's [`crate::menu_list_rows::ROW_DISABLED`] /
+    /// [`crate::menu_list_rows::ROW_ALT_INK`] bits in the **Use** list build
+    /// (content id 3, `crate::menu_list_rows::build_use_list_rows`). `0`
+    /// (white) when the host had no row tables.
+    pub use_bits: u16,
+    /// The same bits in the **Throw Out** list build (content id `0x22`,
+    /// `crate::menu_list_rows::build_throw_out_rows`).
+    pub throw_bits: u16,
 }
 
 /// Focus of the Items screen (the retail submenu word `DAT_801E46A4`:
@@ -175,6 +183,13 @@ impl PauseItemsSession {
     /// Incense confirms this screen committed (see [`Self::with_incense_window`]).
     pub fn incense_uses(&self) -> u8 {
         self.incense_uses
+    }
+
+    /// Whether the Use list's Incense row is greyed right now (see
+    /// [`Self::with_incense_window`]): the build-time dim bit, kept current
+    /// across the confirms this screen commits.
+    pub fn incense_blocked(&self) -> bool {
+        self.incense_blocked
     }
 
     /// Attach the **Throw Out** row order (`FUN_80030628` content id `0x22`)

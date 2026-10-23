@@ -318,11 +318,13 @@ fn compose_items(ctx: &PauseMenuCtx<'_>, modal: ItemsModal) -> PauseMenuDraws {
     let rows = [
         PauseItemsRow {
             name: "Healing Leaf",
-            count: 3,
+            count: Some(3),
+            ink: None,
         },
         PauseItemsRow {
             name: "Point Card",
-            count: 1,
+            count: Some(1),
+            ink: None,
         },
     ];
     let view = PauseItemsView {
@@ -415,6 +417,7 @@ fn compose_magic(ctx: &PauseMenuCtx<'_>) -> PauseMenuDraws {
         name: "Meta",
         ra_seru: true,
         icon: Some(0x1D),
+        ink: None,
     }];
     let view = PauseMagicView {
         casters: &casters,

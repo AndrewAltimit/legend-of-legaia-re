@@ -13,10 +13,19 @@ pub const RA_SERU_SPELL_IDS: std::ops::RangeInclusive<u8> = 0x9A..=0xA0;
 pub struct ItemsScreenModel {
     /// The current page's visible rows: `(name, count)`.
     pub page_rows: Vec<(String, u16)>,
+    /// The ink the list kernel stages for each of [`Self::page_rows`]
+    /// ([`crate::menu_list_rows::list_row_ink`] over the open list's row
+    /// word): all `7` while the list is parked behind the command window,
+    /// the per-row dim / alt inks once the hand is in it.
+    pub page_row_inks: Vec<u8>,
+    /// `false` for a list whose rows carry no count column - the Door of
+    /// Wind destination list, whose class-`0x8000` rows the kernel draws as
+    /// a bare name (`0x800336D8..0x80033714`).
+    pub show_counts: bool,
     pub page: u16,
     pub pages: u16,
-    /// `true` = hand inside the list (rows drop to the grey staging-0
-    /// ink); `false` = command-window focus (rows white).
+    /// `true` = hand inside the list; `false` = command-window focus
+    /// (the list parked, every row white).
     pub focus_list: bool,
     pub command_cursor: u8,
     /// List row on the current page.
@@ -91,26 +100,27 @@ pub struct ItemsInfoModel {
 /// (retail submenu `0xC`, window 11) has the screen.
 ///
 /// The rows are the unlocked landmarks and the hand is the list kernel's,
-/// so the page maths is the shared one. Two deliberate residuals, both
-/// stated rather than papered over:
-///
-/// - the row **count column draws `0`**, because the shared list row model
-///   carries a `count` and the port has no window-11 renderer of its own
-///   to drop it; retail's destination rows have no count column;
-/// - the info window stays closed (`info: None`), which is retail - the
-///   staged-id gate `DAT_801E46B0` is not restaged by this submenu.
+/// so the page maths is the shared one. The rows are class `0x8000`, which
+/// the kernel draws as a bare name with no count column
+/// ([`ItemsScreenModel::show_counts`] is `false`) and no ink arm of its own,
+/// so they keep the white the command flow staged. The info window stays
+/// closed (`info: None`), which is retail - the staged-id gate
+/// `DAT_801E46B0` is not restaged by this submenu.
 fn destination_list_model(s: &PauseItemsSession, sp: &SpecialUseSession) -> ItemsScreenModel {
     let n = sp.landmarks.len();
     let cursor = sp.cursor.min(n.saturating_sub(1));
     let start = (cursor / LIST_PAGE_ROWS) * LIST_PAGE_ROWS;
+    let page_rows: Vec<(String, u16)> = sp
+        .landmarks
+        .iter()
+        .skip(start)
+        .take(LIST_PAGE_ROWS)
+        .map(|name| (name.clone(), 0))
+        .collect();
     ItemsScreenModel {
-        page_rows: sp
-            .landmarks
-            .iter()
-            .skip(start)
-            .take(LIST_PAGE_ROWS)
-            .map(|name| (name.clone(), 0))
-            .collect(),
+        page_row_inks: vec![crate::menu_list_rows::LIST_INK_NORMAL; page_rows.len()],
+        show_counts: false,
+        page_rows,
         page: (start / LIST_PAGE_ROWS) as u16 + 1,
         pages: n.div_ceil(LIST_PAGE_ROWS).max(1) as u16,
         focus_list: true,
@@ -145,6 +155,34 @@ pub fn items_screen_model(s: &PauseItemsSession) -> ItemsScreenModel {
         .skip(start)
         .take(LIST_PAGE_ROWS)
         .map(|r| (r.name.clone(), r.count as u16))
+        .collect();
+    // Which list build the hand is in decides the row words: the command
+    // window parks the list (mode 4, `FUN_801D7C00` phase 0), the Use list
+    // and the special routes it opens read the content-id-3 bits, and the
+    // Throw Out list and its confirm read the content-id-0x22 bits.
+    let row_word = |r: &PauseItemRow| -> Option<u16> {
+        let bits = match s.focus {
+            PauseItemsFocus::Command => return None,
+            PauseItemsFocus::List | PauseItemsFocus::SpecialRoute => {
+                let mut b = r.use_bits;
+                if r.id == INCENSE_ITEM_ID && s.incense_blocked() {
+                    b |= crate::menu_list_rows::ROW_DISABLED;
+                }
+                b
+            }
+            PauseItemsFocus::ThrowOutList | PauseItemsFocus::ThrowOutConfirm => r.throw_bits,
+        };
+        Some(crate::menu_list_rows::CLASS_BAG | bits)
+    };
+    let page_row_inks = s
+        .rows
+        .iter()
+        .skip(start)
+        .take(LIST_PAGE_ROWS)
+        .map(|r| match row_word(r) {
+            Some(w) => crate::menu_list_rows::list_row_ink(w, false),
+            None => crate::menu_list_rows::LIST_INK_NORMAL,
+        })
         .collect();
     // Retail gates the info window on the staged id `DAT_801E46B0`: the
     // command SM's init phase zeroes it, the Use / Throw Out list phases
@@ -182,6 +220,8 @@ pub fn items_screen_model(s: &PauseItemsSession) -> ItemsScreenModel {
     });
     ItemsScreenModel {
         page_rows,
+        page_row_inks,
+        show_counts: true,
         page: s.page(),
         pages: s.pages(),
         // The hand sits inside the list for the Use list and both Throw
@@ -212,6 +252,12 @@ pub struct MagicScreenModel {
     /// `icon` being the operand of the `0xCE` element-plate escape the
     /// retail name string opens with ([`spell_icon`]).
     pub page_rows: Vec<(String, bool, Option<u8>)>,
+    /// The ink the list kernel stages for each of [`Self::page_rows`]: all
+    /// `7` in caster focus (the list parked), and in list focus `0` on each
+    /// row the build wrote as `0x5800 | id` - not field-castable, short of
+    /// MP for the discounted cost, or affecting nobody
+    /// ([`crate::spell_menu::SpellRowView::admissible`]).
+    pub page_row_inks: Vec<u8>,
     pub page: u16,
     pub pages: u16,
     /// `true` = hand inside the spell list; `false` = caster-window focus.
@@ -315,6 +361,29 @@ pub fn magic_screen_model(s: &SpellMenuSession, text: Option<&MenuTextTables>) -
             )
         })
         .collect();
+    // Caster focus parks the list; in list focus each row's word is
+    // `0x5000 | id` or `0x5800 | id` by the build's admissibility.
+    let row_views = if focus_list {
+        s.current_spell_rows()
+    } else {
+        Vec::new()
+    };
+    let page_row_inks: Vec<u8> = (start..start + page_rows.len())
+        .map(|i| match row_views.get(i) {
+            Some(v) => {
+                let dim = if v.admissible {
+                    0
+                } else {
+                    crate::menu_list_rows::ROW_DISABLED
+                };
+                crate::menu_list_rows::list_row_ink(
+                    crate::menu_list_rows::CLASS_SPELL_ALT | dim,
+                    false,
+                )
+            }
+            None => crate::menu_list_rows::LIST_INK_NORMAL,
+        })
+        .collect();
 
     // Info: the staged spell (hovered list row) - only while the hand is
     // in the list (retail gates on the staged id `DAT_801E46B0`).
@@ -368,6 +437,7 @@ pub fn magic_screen_model(s: &SpellMenuSession, text: Option<&MenuTextTables>) -
     MagicScreenModel {
         casters,
         page_rows,
+        page_row_inks,
         page: page0 as u16 + 1,
         pages,
         focus_list,

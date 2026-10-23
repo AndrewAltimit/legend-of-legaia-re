@@ -56,6 +56,43 @@ pub const MENU_TEXT_RED: [f32; 4] = [
     1.0,
 ];
 
+/// Retail blue-violet ink - staging id 1, the list kernel's alt-ink row
+/// pen (`0x400` bit, the bag's tail group). CLUT row 510 cell `x = 112`
+/// entry 15 reads 5-bit `(13, 13, 28)` in the golden `menu_status_town`
+/// VRAM.
+pub const MENU_TEXT_BLUE: [f32; 4] = [
+    legaia_render_kernels::ui_tint::ink_component(13),
+    legaia_render_kernels::ui_tint::ink_component(13),
+    legaia_render_kernels::ui_tint::ink_component(28),
+    1.0,
+];
+/// Retail magenta ink - staging id 3, 5-bit `(28, 13, 28)` (same VRAM
+/// decode as [`MENU_TEXT_BLUE`]).
+pub const MENU_TEXT_MAGENTA: [f32; 4] = [
+    legaia_render_kernels::ui_tint::ink_component(28),
+    legaia_render_kernels::ui_tint::ink_component(13),
+    legaia_render_kernels::ui_tint::ink_component(28),
+    1.0,
+];
+
+/// Text tint for a retail ink-staging id (`_DAT_8007B454`, `gp+0x13C`): the
+/// main entry of the string CLUT `16 * (6 + id)` on VRAM row 510, as the
+/// golden `menu_status_town` VRAM holds them for ids `0..=9` (ids `7` and
+/// `8` are the same white). An id past `9` reads as white.
+pub fn menu_ink_color(staging: u8) -> [f32; 4] {
+    match staging {
+        0 => crate::MENU_TEXT_GREY,
+        1 => MENU_TEXT_BLUE,
+        2 => MENU_TEXT_RED,
+        3 => MENU_TEXT_MAGENTA,
+        4 => crate::MENU_TEXT_GREEN,
+        5 => MENU_TEXT_TEAL,
+        6 => MENU_TEXT_GOLD,
+        9 => MENU_TEXT_ORANGE,
+        _ => MENU_TEXT_WHITE,
+    }
+}
+
 /// Menu HP health-tier ink - the retail per-character colour fn
 /// `FUN_800349EC` the status / party panels stage before drawing the
 /// HP current+max number fields:

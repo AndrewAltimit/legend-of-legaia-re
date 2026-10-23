@@ -346,10 +346,12 @@ pub fn magic_draws(
         let rows: Vec<ui::PauseMagicRow<'_>> = model
             .page_rows
             .iter()
-            .map(|(name, ra_seru, icon)| ui::PauseMagicRow {
+            .enumerate()
+            .map(|(i, (name, ra_seru, icon))| ui::PauseMagicRow {
                 name,
                 ra_seru: *ra_seru,
                 icon: *icon,
+                ink: model.page_row_inks.get(i).copied(),
             })
             .collect();
         let info = model.info.as_ref().map(|i| ui::PauseMagicInfo {
@@ -516,9 +518,11 @@ pub fn items_draws(
     let rows: Vec<ui::PauseItemsRow<'_>> = model
         .page_rows
         .iter()
-        .map(|(name, count)| ui::PauseItemsRow {
+        .enumerate()
+        .map(|(i, (name, count))| ui::PauseItemsRow {
             name,
-            count: *count,
+            count: model.show_counts.then_some(*count),
+            ink: model.page_row_inks.get(i).copied(),
         })
         .collect();
     let info = model.info.as_ref().map(|i| ui::PauseItemInfo {

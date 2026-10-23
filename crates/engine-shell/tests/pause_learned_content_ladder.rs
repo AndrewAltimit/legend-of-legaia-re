@@ -518,3 +518,133 @@ fn a_confirmed_field_spell_routes_through_the_state_2_dispatch_and_heals() {
     eprintln!("[magic] spell {spell:#04X} group={group}: HP {hp_before} -> {hp_after}");
     close_to_root(&mut s);
 }
+
+/// The Items and Magic lists ink each row the way the kind-4 list kernel
+/// does (`FUN_80032A44`, `0x8003312C..` / `0x8003351C..`): every row white
+/// while the list is parked behind the command / caster window, and once
+/// the hand is in it a row grey only when its build-time word carries the
+/// dim bit - not every row.
+///
+/// The party is seeded so each list holds both kinds: a hurt lead with full
+/// MP, a learned field heal (castable, so white) beside Gimard (an attack,
+/// greyed in the field), and a Healing Leaf (applies to the hurt lead) beside
+/// a bag item the Use build dims. The screens are composed through the
+/// shared `engine-screens` builder both play hosts call.
+#[test]
+fn list_rows_take_their_build_time_ink_once_the_hand_is_in_the_list() {
+    let Some(mut probe) = booted(&[], &[]) else {
+        return;
+    };
+    let catalog = probe.host.world.tables.spell_catalog.clone();
+    let heal = (0x81u8..=0xA0)
+        .find(|&id| {
+            catalog.get(id).is_some_and(|d| {
+                use legaia_engine_battle::spells::SpellEffect;
+                matches!(
+                    d.effect,
+                    SpellEffect::Heal { .. } | SpellEffect::HealAll { .. }
+                )
+            })
+        })
+        .expect("the disc spell table carries a field heal");
+    // A bag id the Use list build dims: not field-usable (or equipment).
+    const LEAF: u8 = 0x77;
+    let dimmed = (0x1Au8..=0xFF)
+        .filter(|&id| id != LEAF)
+        .find(|&id| {
+            let w = &mut probe.host.world;
+            w.party.inventory.clear();
+            let _ = w.party.inventory.add(id, 1);
+            w.bag_use_rows(false)
+                .is_some_and(|rows| rows.len() == 1 && rows[0].dim && !rows[0].alt_ink)
+        })
+        .expect("some bag item dims in the field Use list");
+    drop(probe);
+
+    let Some(mut s) = booted(&[heal, SPELL], &[LEAF, dimmed]) else {
+        return;
+    };
+    let slot = s.host.world.party_roster_slot(0);
+    {
+        let rec = &mut s.host.world.party.roster.members[slot];
+        let mut hms = rec.hp_mp_sp();
+        hms.hp_cur = (hms.hp_max / 2).max(1);
+        hms.mp_max = hms.mp_max.max(999);
+        hms.mp_cur = hms.mp_max;
+        rec.set_hp_mp_sp(hms);
+    }
+    let font = s.dialog_font.clone().expect("disc dialog font");
+    // Row `i`'s name ink in the list window (content pen `(174, 22)`, rows
+    // from `+0xC` at the `0xE` pitch, name at `+0xC`).
+    let row_inks = |s: &NativeSession, n: usize| -> Vec<[f32; 4]> {
+        let ctx = legaia_engine_ui::pause_menu::PauseMenuCtx {
+            font: &font,
+            rects: legaia_engine_ui::pause_menu::MenuRects::new(None),
+            chrome: None,
+            origin: (0, 0),
+            scale: 1,
+        };
+        let sub = s.field_menu_sub.as_ref().expect("a sub-screen is open");
+        let draws = legaia_engine_screens::pause_screens::field_menu_sub_draws(
+            &ctx,
+            sub,
+            Some(&s.host.world),
+            None,
+        );
+        (0..n)
+            .map(|i| {
+                let y = 22 + 0x0C + 0x0E * i as i32;
+                draws
+                    .texts
+                    .iter()
+                    .filter(|d| d.dst.1 == y && d.dst.0 >= 174 + 0x0C && d.dst.0 < 174 + 0x70)
+                    .find(|d| d.color[..3] != [1.0, 1.0, 1.0])
+                    .map(|d| d.color)
+                    .unwrap_or_else(|| panic!("no name ink on list row {i}"))
+            })
+            .collect()
+    };
+    let white = legaia_engine_ui::MENU_TEXT_WHITE;
+    let grey = legaia_engine_ui::MENU_TEXT_GREY;
+
+    // Magic: caster focus parks the list - both rows white.
+    open_row(&mut s, FieldMenuRow::Magic);
+    assert_eq!(
+        row_inks(&s, 2),
+        [white, white],
+        "a parked spell list is all white"
+    );
+    // Into the list: the heal stays white, the attack greys.
+    tap(&mut s, PadButton::Cross);
+    assert_eq!(
+        row_inks(&s, 2),
+        [white, grey],
+        "list focus inks heal {heal:#04X} / attack {SPELL:#04X} by their build-time words"
+    );
+    close_to_root(&mut s);
+
+    // Items: the command window parks the list; Use opens it.
+    open_row(&mut s, FieldMenuRow::Items);
+    let names: Vec<u8> = match s.field_menu_sub.as_ref() {
+        Some(FieldMenuSubsession::Items(items)) => items.rows.iter().map(|r| r.id).collect(),
+        _ => panic!("Items did not open the item screen"),
+    };
+    assert_eq!(names.len(), 2);
+    assert_eq!(
+        row_inks(&s, 2),
+        [white, white],
+        "a parked bag list is all white"
+    );
+    tap(&mut s, PadButton::Cross);
+    let want: Vec<[f32; 4]> = names
+        .iter()
+        .map(|&id| if id == LEAF { white } else { grey })
+        .collect();
+    assert_eq!(
+        row_inks(&s, 2),
+        want,
+        "Use-list inks for Healing Leaf / item {dimmed:#04X} (rows {names:02X?})"
+    );
+    eprintln!("[ink] heal {heal:#04X} white, attack grey; leaf white, item {dimmed:#04X} grey");
+    close_to_root(&mut s);
+}

@@ -1218,16 +1218,24 @@ Specifics:
   `engine-ui::incense_notice_sprites_for` / `incense_notice_text_draws_for`
   with the line read off the disc.
 
+- **Row ink** follows the kernel's [row-ink rule](#the-kind-4-list-kernel-scus-fun_80032a44):
+  each `PauseItemRow` keeps its slot's dim / alt-ink bits from both builds
+  (`World::bag_use_rows`, `World::bag_throw_out_rows`), and
+  `items_screen_model` inks the page through `menu_list_rows::list_row_ink` -
+  all white in command focus (the list parked), the Use build's bits in the
+  Use list and the special routes, the Throw Out build's in the Throw Out
+  list and its confirm. The Magic list does the same over the spell build's
+  admissibility (`SpellRowView::admissible`). Disc-gated oracle:
+  `pause_learned_content_ladder::list_rows_take_their_build_time_ink_once_the_hand_is_in_the_list`.
+- The **Door of Wind** rows are class `0x8000`, which the kernel draws as a
+  bare name: `ItemsScreenModel::show_counts` is `false` there and the row
+  draws no count column.
+
 Known differences from retail on this screen:
 
-- The list drops **every** row to grey once the hand enters it
-  (`ItemsScreenModel::focus_list`) rather than showing each row's build-time
-  ink; the row words themselves are built correctly by `menu_list_rows`.
 - The Door of Light / Incense prompt strings are not recovered from the
   overlay, so the port stages the item name and its own question in the retail
   line slots (geometry is exact).
-- The Door of Wind list reuses the item-list renderer, so its count column
-  shows `0` where retail draws no count.
 
 ## Magic screen
 
@@ -2064,8 +2072,7 @@ Where the port differs from retail today:
 | Area | Difference |
 |---|---|
 | List PAGE header | UI-icon records `0x76`, `0x79`, `0x7A..=0x83` are not in the baked atlas, so `list_page_header_draws` draws dialog-font glyphs at the measured columns (label `x + 0x4D`, fraction cells `x + 0x68 / 0x74 / 0x78`) |
-| Items list ink | every row greys on list focus instead of per-row build-time ink ([Items screen](#items-screen)) |
-| Special-route prompts | Door of Light / Incense prompt text is the port's own; Door of Wind rows show a `0` count |
+| Special-route prompts | Door of Light / Incense prompt text is the port's own |
 | Armament candidate lists | id-sorted, without retail's leading rows on an empty slot ([Equip screen](#port-of-the-equip-screen)) |
 | Money box | no casino coin row |
 | Spell level-up notice | port-composed sentence, shown over the resumed menu |

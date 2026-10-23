@@ -30,7 +30,7 @@
 //! `engine-menus::pause_screens::list_kernel_navigate`. See
 //! `docs/subsystems/field-menu.md` for the traced kernel.
 
-use super::{MENU_TEXT_GOLD, MENU_TEXT_WHITE, menu_mp_ink, num_field_draws};
+use super::{MENU_TEXT_GOLD, MENU_TEXT_WHITE, menu_ink_color, menu_mp_ink, num_field_draws};
 use crate::*;
 
 /// Retail grey text ink - CLUT staging index 0, the non-focused-list row
@@ -236,7 +236,14 @@ pub enum PauseItemsPhase {
 /// One visible row of the item-list page (the current page's slice).
 pub struct PauseItemsRow<'a> {
     pub name: &'a str,
-    pub count: u16,
+    /// The count column; `None` for a list whose rows carry none (the Door
+    /// of Wind destinations, class `0x8000`).
+    pub count: Option<u16>,
+    /// The ink-staging id the list kernel stages for this row
+    /// (`legaia_engine_menus::menu_list_rows::list_row_ink`), drawn through
+    /// [`menu_ink_color`]. `None` falls back to the phase ink: white in
+    /// command focus, grey in list focus.
+    pub ink: Option<u8>,
 }
 
 /// Item info window content (drawn only while an item is selected -
@@ -335,11 +342,12 @@ fn list_page_header_draws(
 ///   Y + row*0xE)`, staging 7 white - staging 0 grey when the bag is
 ///   empty (PORT: FUN_801d0d18);
 /// - list page: rows from `(X+0xC, Y+0xC)` at the 0xE pitch, count as a
-///   2-digit fixed-cell field at `X+0x74`; the whole page draws white
-///   while the command window has focus (the kernel is parked - mode 4
-///   forces staging 7) and grey once the hand enters the list
-///   (capture-pinned; drawn in retail by the kind-4 list kernel
-///   `FUN_80032A44` - REF: FUN_80032A44);
+///   2-digit fixed-cell field at `X+0x74` (none on a count-less row). Each
+///   row draws in its own staged ink ([`PauseItemsRow::ink`]): the kind-4
+///   list kernel `FUN_80032A44` keeps the page white while it is parked
+///   behind the command window and inks each row from its build-time dim /
+///   alt-ink bits once the hand is in it (REF: FUN_80032A44). A row with no
+///   staged ink falls back to white / grey by focus;
 /// - info window: item name (staging 6 gold) at `(X, Y)`, bag count
 ///   2-digit gold at `X+0x7C`, description white at `(X, Y+0x10)`, and
 ///   the accessory passive lines in the extra widget box at `(X,
@@ -399,15 +407,11 @@ pub fn items_screen_draws_for(
         {
             str_at(&mut out, ">", lx - 8, y, MENU_TEXT_GOLD);
         }
-        str_at(&mut out, row.name, lx + 0x0c, y, row_ink);
-        out.extend(num_field_draws(
-            font,
-            row.count as u64,
-            lx + 0x74,
-            y,
-            2,
-            row_ink,
-        ));
+        let ink = row.ink.map(menu_ink_color).unwrap_or(row_ink);
+        str_at(&mut out, row.name, lx + 0x0c, y, ink);
+        if let Some(count) = row.count {
+            out.extend(num_field_draws(font, count as u64, lx + 0x74, y, 2, ink));
+        }
     }
 
     // Info window (PORT: FUN_801dcb60 / FUN_801d0f1c).
@@ -710,6 +714,9 @@ pub struct PauseMagicRow<'a> {
     /// Operand of the `0xCE` escape the retail name string opens with
     /// (the element plate), `None` when the spell table is not resident.
     pub icon: Option<u8>,
+    /// The row's ink-staging id ([`PauseItemsRow::ink`]); `None` falls back
+    /// to the phase ink.
+    pub ink: Option<u8>,
 }
 
 /// Spell info window content (drawn only while a spell is selected).
@@ -765,9 +772,9 @@ pub struct PauseMagicView<'a> {
 ///   plate at the row pen and advances by its table width, so the name
 ///   lands [`SPELL_ICON_ADVANCE`] right of the pen
 ///   ([`SPELL_ICON_ADVANCE_RA_SERU`] behind a winged Ra-Seru plate). The
-///   plate draws whenever the font carries the escape sprites; white
-///   while the caster window has focus, grey in list focus
-///   (capture-pinned);
+///   plate draws whenever the font carries the escape sprites. Rows take
+///   their staged ink ([`PauseMagicRow::ink`]): white while the caster
+///   window has focus, grey in list focus on each row the build disabled;
 /// - info window: spell name gold at `(X, Y)` (the same leading-plate
 ///   string), "Lv<n>" gold at `X+0x78`, description white
 ///   from `(X, Y+0xE)` at the 0xE line pitch, "MP Used" (staging 4
@@ -852,7 +859,7 @@ pub fn magic_screen_draws_for(
             row.icon,
             row.ra_seru,
             (lx + 0x0c, y),
-            row_ink,
+            row.ink.map(menu_ink_color).unwrap_or(row_ink),
         ));
     }
 
@@ -1135,11 +1142,13 @@ mod pause_list_tests {
         let rows = [
             PauseItemsRow {
                 name: "Medicine",
-                count: 15,
+                count: Some(15),
+                ink: None,
             },
             PauseItemsRow {
                 name: "Antidote",
-                count: 1,
+                count: Some(1),
+                ink: None,
             },
         ];
         let draws = items_screen_draws_for(
@@ -1159,14 +1168,65 @@ mod pause_list_tests {
         assert!(!draw_at(&draws, 174 + 0x74, 22 + 0x0c + 0x0e));
     }
 
-    /// The list page drops from staging-7 white to staging-0 grey when
-    /// the hand enters it (capture-pinned focus behaviour).
+    /// A row carrying its staged ink draws in it, count cells included; a
+    /// row without one keeps the phase ink. A count-less row draws no count
+    /// cells.
+    #[test]
+    fn items_list_rows_take_their_staged_ink() {
+        let font = legaia_font::synthetic_for_tests();
+        let rows = [
+            PauseItemsRow {
+                name: "Medicine",
+                count: Some(15),
+                ink: Some(7),
+            },
+            PauseItemsRow {
+                name: "Key",
+                count: Some(1),
+                ink: Some(0),
+            },
+            PauseItemsRow {
+                name: "Tail",
+                count: Some(2),
+                ink: Some(1),
+            },
+            PauseItemsRow {
+                name: "Rim Elm",
+                count: None,
+                ink: None,
+            },
+        ];
+        let draws = items_screen_draws_for(
+            &font,
+            &items_view(&rows, PauseItemsPhase::List),
+            (32, 44),
+            (174, 22),
+            (14, 108),
+        );
+        let ink_at = |x: i32, y: i32| {
+            draws
+                .iter()
+                .find(|d| d.dst.0 == x && d.dst.1 == y)
+                .map(|d| d.color)
+        };
+        let y0 = 22 + 0x0c;
+        assert_eq!(ink_at(174 + 0x0c, y0), Some(MENU_TEXT_WHITE));
+        assert_eq!(ink_at(174 + 0x74 + 8, y0), Some(MENU_TEXT_WHITE));
+        assert_eq!(ink_at(174 + 0x0c, y0 + 0x0e), Some(MENU_TEXT_GREY));
+        assert_eq!(ink_at(174 + 0x0c, y0 + 0x1c), Some(MENU_TEXT_BLUE));
+        assert_eq!(ink_at(174 + 0x0c, y0 + 0x2a), Some(MENU_TEXT_GREY));
+        assert!(!draw_at(&draws, 174 + 0x74 + 8, y0 + 0x2a));
+    }
+
+    /// Without staged inks the list page drops from staging-7 white to
+    /// staging-0 grey when the hand enters it.
     #[test]
     fn items_list_ink_follows_focus_phase() {
         let font = legaia_font::synthetic_for_tests();
         let rows = [PauseItemsRow {
             name: "Medicine",
-            count: 15,
+            count: Some(15),
+            ink: None,
         }];
         let white = items_screen_draws_for(
             &font,
@@ -1311,11 +1371,13 @@ mod pause_list_tests {
                 name: "Mushura",
                 ra_seru: false,
                 icon: Some(0x18),
+                ink: None,
             },
             PauseMagicRow {
                 name: "Meta",
                 ra_seru: true,
                 icon: Some(0x1D),
+                ink: None,
             },
         ];
         let draws = magic_screen_draws_for(
@@ -1360,6 +1422,7 @@ mod pause_list_tests {
             name: "Meta",
             ra_seru: true,
             icon: Some(0x1D),
+            ink: None,
         }];
         let draws = magic_screen_draws_for(
             &font,

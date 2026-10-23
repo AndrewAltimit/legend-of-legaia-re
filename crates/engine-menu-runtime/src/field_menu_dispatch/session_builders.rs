@@ -179,19 +179,41 @@ pub fn item_display_text(world: &World, id: u8) -> ItemDisplayText {
 pub fn build_pause_items_session(world: &World) -> PauseItemsSession {
     let inner = build_inventory_session(world);
     let slots = inner.bag_slots.clone();
+    // The dim / alt-ink bits each list build gives a slot - the row ink the
+    // list kernel stages from them is per list (`list_row_ink`).
+    let ink_bits = |rows: Option<Vec<legaia_engine_core::world::BagRow>>| {
+        rows.unwrap_or_default()
+            .into_iter()
+            .map(|r| {
+                let mut bits = 0u16;
+                if r.dim {
+                    bits |= legaia_engine_menus::menu_list_rows::ROW_DISABLED;
+                }
+                if r.alt_ink {
+                    bits |= legaia_engine_menus::menu_list_rows::ROW_ALT_INK;
+                }
+                (r.slot, bits)
+            })
+            .collect::<std::collections::HashMap<u8, u16>>()
+    };
+    let use_bits = ink_bits(world.bag_use_rows(false));
+    let throw_bits = ink_bits(world.bag_throw_out_rows());
     let rows: Vec<PauseItemRow> = inner
         .items
         .iter()
         .enumerate()
         .map(|(i, &id)| {
             let t = item_display_text(world, id);
+            let slot = slots.get(i).copied().unwrap_or(0);
             PauseItemRow {
                 id,
-                slot: slots.get(i).copied().unwrap_or(0),
+                slot,
                 name: t.name,
                 count: world.party.inventory.get(&id).copied().unwrap_or(0),
                 desc: t.desc,
                 passive: t.passive,
+                use_bits: use_bits.get(&slot).copied().unwrap_or(0),
+                throw_bits: throw_bits.get(&slot).copied().unwrap_or(0),
             }
         })
         .collect();
