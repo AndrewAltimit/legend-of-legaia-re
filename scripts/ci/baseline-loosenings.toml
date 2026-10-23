@@ -293,3 +293,12 @@ changes = [
   ["states/shiny_refactor_gimard_levelup/image", 0.847, 0.842],
   ["states/shiny_refactor_gimard_plus35/image", 0.948, 0.921],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Three one-thousandth drops that hold on every pinned and unpinned stream since the summon-cast fixes (part-pool flush, reaction-commit rate decay, per-vsync module-shot steps): retail's own frame for these close-ups sits within one camera unit of the replay, and the residual is the half-pass the cast replay's pass grid sits off retail there, not a new divergence."
+changes = [
+  ["states/cort_mystic_shield_mid_cast/image", 0.994, 0.993],
+  ["states/horn_summon_mid_cast/camera", 0.996, 0.995],
+  ["states/nivora_duel_pre_megaton_press/image", 0.969, 0.968],
+]
