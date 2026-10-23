@@ -115,7 +115,12 @@ pub fn run_corpus(opts: &RunOptions<'_>) -> Result<Vec<StateReport>> {
             && !f
                 .split(',')
                 .filter(|alt| !alt.is_empty())
-                .any(|alt| entry.label.contains(alt))
+                .any(|alt| match alt.strip_prefix('=') {
+                    // `=label` names one state exactly (a label that is a
+                    // prefix of its siblings', as the Gaza park states are).
+                    Some(exact) => entry.label == exact,
+                    None => entry.label.contains(alt),
+                })
         {
             continue;
         }

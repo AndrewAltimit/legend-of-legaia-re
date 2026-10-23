@@ -356,6 +356,7 @@ impl<S: AudioSink> BootSession<S> {
     }
 
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
+        crate::host_trace::emit_tick_digest(self);
         // The hosts' per-tick queue duty, for a caller that does not perform
         // it: what the previous tick queued and nobody took is gone before
         // this one runs, as it is in both play hosts.
