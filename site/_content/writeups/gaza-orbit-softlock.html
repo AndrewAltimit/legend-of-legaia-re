@@ -6,7 +6,7 @@
 
 <div class="notice">
   <div class="notice-title">The finding in one box</div>
-  A monster approaching an out-of-reach target waits in a range-check poll that has <strong>no movement code and no timeout</strong>; its staged &ldquo;Move&rdquo; animation is what actually carries it forward. A summon cast immediately before the melee leaves the animation driver stale, the Move clip dies about 12 frames in, nothing re-stages it, and the fight waits forever. The fix rewrites nine redundant words inside the poll so a dead clip bounces the state machine back to its own staging state and the attacker resumes walking. Enable it with the <em>Approach-softlock fix</em> toggle.
+  A monster approaching an out-of-reach target waits in a range-check poll that has <strong>no movement code and no timeout</strong>; its staged &ldquo;Move&rdquo; animation is what actually carries it forward. Kemaro cast on the boss immediately before his melee leaves a stale &ldquo;exit to idle&rdquo; flag on him, the Move clip dies about 12 frames in, nothing re-stages it, and the fight waits forever. The fix rewrites nine redundant words inside the poll so a dead clip bounces the state machine back to its own staging state and the attacker resumes walking. Enable it with the <em>Approach-softlock fix</em> toggle.
 </div>
 
 <section class="doc-section" id="at-a-glance">
@@ -14,8 +14,8 @@
   <dl class="kv">
     <dt>What stalls</dt><dd>The per-action battle state machine, parked in state <code>0x19</code> (attack approach)</dd>
     <dt>Where</dt><dd>Battle-action overlay, PROT entry 0898, load base <code>0x801CE818</code></dd>
-    <dt>Trigger</dt><dd>A summon, then a melee by a monster with no walk animation against an out-of-reach target</dd>
-    <dt>Affected</dt><dd>180 of 186 monsters take the affected path; bosses included</dd>
+    <dt>Trigger</dt><dd>Kemaro, then - inside one idle loop - a melee by its target, a monster with no walk animation, against an out-of-reach target</dd>
+    <dt>Affected</dt><dd>180 of 186 monsters take the affected path, but the clip lengths make Gaza 2 the one fight where the chain lines up in ordinary play</dd>
     <dt>Fix</dt><dd>Nine same-size words at overlay offset <code>+0x14D50</code>; <code>--approach-softlock-fix</code></dd>
     <dt>Confidence</dt><dd><span class="tag tag-done">Confirmed</span> - live captures on two emulator cores, replayed with the fix</dd>
   </dl>
@@ -147,13 +147,14 @@
 </section>
 
 <section class="doc-section" id="trigger">
-  <h2>The trigger: a summon, then the melee</h2>
-  <p>The second capture logs the actor's animation pair - staged clip versus playing clip - every frame, which pins what kills the clip. Summons relocate every combatant for the cinematic: the boss is parked ~2,500 units off-arena while his hit-reaction clip plays, then restored. When his <em>very next action</em> is the melee, the freshly staged Move clip terminates about 12 frames in - the staging round-trip leaves the animation driver holding stale state, so the new clip reaches its end condition almost immediately.</p>
+  <h2>The trigger: Kemaro, then the melee</h2>
+  <p>The second capture logs the actor's animation pair - staged clip versus playing clip - every frame, which pins what kills the clip. Kemaro carries its target ~2,500 units off-arena and stages his hit reaction there, which sets the &ldquo;exit to idle at clip end&rdquo; flag. Its put-back starts his idle pose through the mid-clip commit, which keeps that flag, so the flag waits for the end of his idle loop - 360 vsyncs. When his next action inside that window is the melee, the Move clip carries the flag and is swapped for idle at its first loop end, about 12 frames in.</p>
   <ul>
-    <li><strong>Any intervening action resets it.</strong> Summon &rarr; another combatant's turn &rarr; melee runs the same clip 64 frames to a clean hit.</li>
-    <li><strong>It reproduces on demand.</strong> Cast a summon, stall until the boss's melee is the next action, and the approach parks.</li>
-    <li><strong>It matches the folklore.</strong> Late-game bosses (walk-less, contact attacks, long fights where summons are routine), every region, apparently random - because it needs the summon-then-melee adjacency <em>and</em> an out-of-reach target in the same round.</li>
-    <li><strong>It is not an emulator artifact.</strong> The same recipe parks under both PCSX-Redux CPU cores with an identical onset. It <em>is</em> sensitive to when the summon's restore lands relative to the melee, which follows CD-drive latency - so an emulator that reads ahead may rarely land in the window while hardware does occasionally.</li>
+    <li><strong>The window is one idle loop.</strong> Kemaro &rarr; another combatant's turn &rarr; melee runs the same clip 64 frames to a clean hit: the turn in between outlasted the loop. A cast by the boss in the window spends the flag harmlessly.</li>
+    <li><strong>It reproduces on demand.</strong> Cast Kemaro with the caster acting directly before the boss, and the approach parks whenever his next action is the melee.</li>
+    <li><strong>A plain hit cannot cause it.</strong> Every other hit reaction plays to its end before the action is over, and that end clears the flag. Only Kemaro's put-back keeps it.</li>
+    <li><strong>Gaza 2 is the extreme case.</strong> Of the 180 walk-less monsters he has the longest idle loop and the shortest Move loop, and the HP to survive Kemaro again and again. The few other candidates need a wide gap or die to Kemaro.</li>
+    <li><strong>It is not an emulator artifact.</strong> The same recipe parks under both PCSX-Redux CPU cores with an identical onset, and every length in the chain is counted in game frames. A failed repro elsewhere is most likely the chain not lining up.</li>
   </ul>
 
   <details class="disclosure">
@@ -166,7 +167,7 @@ v26873  boss melee starts DIRECTLY next - 0x14, target ~1022 away -> fallback
 v26876  0x19, pair 1/1: Move clip ENGAGED, sliding ~19 units/vsync
 v26888  pair 0/0: clip DEAD after ~12 vsyncs / ~236 units
         frozen at ~786 (&gt; 416 reach) -> polls forever  = the softlock</code></pre>
-      <p>The pair is <code>actor+0x1DA</code> (staged clip) / <code>actor+0x1D9</code> (playing clip). Which latch in the animation driver goes stale across the staging round-trip - a frame cursor or a clip-length word - is the one detail left open; the fix does not depend on it.</p>
+      <p>The pair is <code>actor+0x1DA</code> (staged clip) / <code>actor+0x1D9</code> (playing clip). The stale latch is bit 2 of the anim event flags <code>actor+0x1DC</code>: a later capture shows it still set after the put-back turns the pair to 0/0. Why the carried reaction clip never reaches its own end is left open; the fix does not depend on it.</p>
     </div>
   </details>
 </section>
@@ -260,7 +261,7 @@ v26888  pair 0/0: clip DEAD after ~12 vsyncs / ~236 units
       <tr><td>Action-table scan / range check</td><td><code>FUN_80050E2C</code> / <code>FUN_8004E2F0</code></td><td>Tag <code>0x20</code> selects the walk chain; reach is size-scaled (~416 for a boss)</td></tr>
       <tr><td>Monster archive sweep</td><td>PROT 867</td><td>180 of 186 monsters lack tag <code>0x20</code>; all 186 carry the tag-1 Move clip</td></tr>
       <tr><td>Two live park captures</td><td>PCSX-Redux poll probe</td><td>Both stall in <code>0x19</code>; animation pair <code>+0x1DA/+0x1D9</code> goes 1/1 &rarr; 0/0 ~12 frames in</td></tr>
-      <tr><td>Reproduction</td><td>recompiler + interpreter cores</td><td>Summon &rarr; melee parks on demand with identical onset</td></tr>
+      <tr><td>Reproduction</td><td>recompiler + interpreter cores</td><td>Kemaro &rarr; melee parks on demand with identical onset</td></tr>
       <tr><td>Disc oracle + replays</td><td><code>+0x14D50</code>, nine words</td><td>Exactly nine words change; both park states replay to a completed round with only those words poked</td></tr>
     </tbody>
   </table></div>

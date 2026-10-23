@@ -716,17 +716,19 @@ caption reads scene_data[sectors * 0x800 - 0x2E344]   (reached only from 93 sect
   <h2>Gaza 2 softlock</h2>
   <dl class="kv">
     <dt>Reported as</dt><dd>In the Gaza rematch the battle stops and the camera circles the party forever (community report)</dd>
-    <dt>Cause</dt><dd>A monster walking to its target is carried only by its Move animation; a leftover flinch flag swaps that animation for idle and the wait never ends</dd>
+    <dt>Cause</dt><dd>A monster walking to its target is carried only by its Move animation; a flinch flag that Kemaro leaves behind swaps that animation for idle and the wait never ends</dd>
     <dt>Where</dt><dd>Battle action state machine <code>FUN_801E295C</code>, PROT entry 0898, state <code>0x19</code></dd>
-    <dt>Affects</dt><dd>Nearly every monster, bosses included, when a melee directly follows a flinch</dd>
+    <dt>Affects</dt><dd>In practice Gaza 2: a walk-less monster attacking out of reach directly after Kemaro hit it, with clip lengths only he has in full</dd>
     <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - traced in full on <a href="../gaza-orbit-softlock.html">its own write-up</a>; the key addresses re-read here</dd>
   </dl>
 
   <p>This one has <a href="../gaza-orbit-softlock.html">a full write-up of its own</a>, with the evidence behind it and the patch. In short: a monster that starts a melee attack out of reach has to walk to its target. Almost no monster has a dedicated approach animation, so the game plays the ordinary Move loop and waits in a state that only re-measures the distance. That state has <strong>no movement code and no timeout</strong>.</p>
-  <p>If the monster is still flinching from a hit when its attack begins - a summon is the usual cause - a leftover &ldquo;go back to idle when this clip ends&rdquo; flag is still set. The Move loop plays one cycle, the flag swaps it for the idle pose, the monster stops short, and the wait never ends. The camera's idle sweep runs on its own, so the screen keeps orbiting.</p>
+  <p>A hit sets a &ldquo;go back to idle when this clip ends&rdquo; flag on the monster it strikes, and normally the flinch plays out and clears it before anyone else acts. Kemaro is the exception: it carries its target off, flinches it there, and puts it back in a way that leaves the flag set until the monster's idle loop ends. If the monster's next move inside that loop is a melee from out of reach, the flag cuts the Move loop off after one cycle, the monster stops short, and the wait never ends. The camera's idle sweep runs on its own, so the screen keeps orbiting.</p>
+  <p>Four things must hold at once: no dedicated walk animation (180 of 186 monsters), the Kemaro flag still set, the melee inside one idle loop (in practice directly after the Kemaro), and a gap one Move loop cannot cover. Gaza 2 has the longest idle loop (360 vsyncs) and the shortest Move loop (five frames) of the walk-less roster and survives Kemaro, which is why the reports are all his. To reproduce it, let the Kemaro caster act directly before Gaza and wait for a round where he answers with a melee.</p>
 
   <ol class="steps steps-vertical">
-    <li><b>Flinch</b><span>The hit-reaction stager in <code>FUN_800402F4</code> queues the flinch clip and raises bit 2 of <code>actor+0x1DC</code> (<code>ori v0,v0,0x4</code> at <code>0x80042140</code>).</span></li>
+    <li><b>Flinch</b><span>Kemaro (PROT 0918) stages its target's hit reaction with <code>+0x1DC |= 5</code> at <code>0x801F80BC</code>, raising bit 2, the same bit every hit-reaction stager raises (for items, <code>ori v0,v0,0x4</code> at <code>0x80042140</code>).</span></li>
+    <li><b>Put-back</b><span>Kemaro stores <code>0</code> to <code>+0x1DA</code> and adds 1 to <code>+0x1DC</code> (<code>0x801F897C..0x801F8984</code>): idle starts through the mid-clip commit and bit 2 survives until the idle loop's first end.</span></li>
     <li><b>Attack setup, state <code>0x14</code></b><span>Out of reach, no tag-<code>0x20</code> walk action (<code>jal 0x80050e2c</code> at <code>0x801E3268</code>, miss tested at <code>0x801E327C</code>): the Move clip is staged at <code>0x801E32B0</code> and state <code>0x19</code> stored at <code>0x801E32D0</code>.</span></li>
     <li><b>Mid-clip commit</b><span>The Move clip is installed by the path that clears bits 0..1 only (<code>andi v0,v0,0xfc</code> at <code>0x80047A38</code>). Bit 2 survives.</span></li>
     <li><b>First natural end</b><span><code>FUN_80047430</code> tests bit 2 (<code>0x80047B38</code>) and queues idle over the Move clip (<code>sb zero,0x1da(s2)</code> at <code>0x80047B44</code>).</span></li>
@@ -742,6 +744,7 @@ caption reads scene_data[sectors * 0x800 - 0x2E344]   (reached only from 93 sect
       <tr><td><code>0x80047B38..0x80047B50</code></td><td>SCUS_942.54</td><td>natural-end test of bit 2 and the idle install</td><td>disassembly</td></tr>
       <tr><td><code>0x80047A38</code></td><td>SCUS_942.54</td><td>mid-clip commit mask <code>0xFC</code></td><td>disassembly</td></tr>
       <tr><td><code>0x80042124..0x80042170</code></td><td>SCUS_942.54</td><td>flinch stager: bit 2, then bit 0</td><td>disassembly</td></tr>
+      <tr><td><code>0x801F80A0..0x801F80BC</code>, <code>0x801F895C..0x801F8984</code></td><td>PROT 0918 (Kemaro)</td><td>target reaction staging; put-back that keeps bit 2</td><td>disassembly, capture</td></tr>
       <tr><td><code>0x8004E2F0</code>, <code>0x80050E2C</code></td><td>SCUS_942.54</td><td>range check; action-tag scan</td><td>repo doc</td></tr>
       <tr><td>actor <code>+0x1D9</code>, <code>+0x1DA</code>, <code>+0x1DC</code></td><td>RAM</td><td>playing clip, queued clip, anim event flags</td><td>disassembly</td></tr>
     </tbody>

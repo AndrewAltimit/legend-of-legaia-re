@@ -11,7 +11,7 @@ This page documents both gates, the invariant each relies on, the mechanism that
 | Waits on | `FUN_801E7250` answering "settled" | range check `FUN_8004E2F0` returning 0 |
 | Invariant | displayed HP minus live HP equals the pending accumulator, on every party slot | a clip with root motion is playing while the poll fails |
 | Broken by | a displayed/live mismatch left with a zero accumulator | a stale exit-to-idle flag (`+0x1DC` bit 2) ending the approach clip |
-| Retail trigger | a restore's assigning seed landing on a drain still in flight | a monster with no walk tag `0x20` starting a melee while its flinch clip still plays |
+| Retail trigger | a restore's assigning seed landing on a drain still in flight | Kemaro putting a walk-less monster back with the flag still set, then that monster's out-of-reach melee inside one idle cycle |
 | Caught in unmodified play | no capture; a pad-reachable trigger is read from the code (the Point Card aimed at a party member) | yes - Gaza 2, scenario `battle_gaza2_park_0x19` |
 | Self-recovers | on a poison / regen tick of the affected member | never |
 | Disc patch | none | `legaia-patcher --approach-softlock-fix` |
@@ -439,9 +439,9 @@ Port: roll kernel `legaia_engine_battle_vm::status_effects::agl_status_inflict_r
 |---|---|
 | **Invariant** | While state `0x19` polls and the range check fails, a clip with non-zero root motion is playing on the attacker. |
 | **Broken state** | The staged Move clip ends and idle is installed instead of a re-loop: `+0x1DA = +0x1D9 = 0`, position frozen out of reach. |
-| **Conditions** | (a) attacker out of reach - the norm for a large monster; (b) its action table has no tag `0x20`, so the walk states `0x15..0x18` never run; (c) `+0x1DC` bit 2 is still set from a flinch when the Move clip is installed. |
-| **Retail trigger** | A summon (or any hit that flinches the monster) immediately followed by that monster's melee. |
-| **Evidence** | Caught in unmodified play on Gaza 2; trigger reproduced; flag causally verified. Scenarios `battle_gaza2_park_0x19`, `battle_gaza2_park_0x19_summon_melee` (`scripts/scenarios.toml`). |
+| **Conditions** | All four: (a) the attacker's action table has no tag `0x20`, so the walk states `0x15..0x18` never run; (b) `+0x1DC` bit 2 is set when state `0x14` installs the Move clip; (c) one Move cycle does not carry it into reach; (d) nothing between the flag going up and the melee ends a clip on that monster. |
+| **Retail trigger** | Kemaro (action `0x90`, PROT 0918) on a single target that survives, followed inside one idle cycle by that monster's melee. An ordinary hit cannot leave the flag behind ([why](#why-a-hit-alone-cannot-arm-it)). |
+| **Evidence** | Caught in unmodified play on Gaza 2; trigger reproduced; flag causally verified; Kemaro's put-back caught leaving the flag on Gaza. Scenarios `battle_gaza2_park_0x19`, `battle_gaza2_park_0x19_summon_melee` (`scripts/scenarios.toml`). Every Gaza 2 state carries the arts AP override in SCUS arena 1, which touches no animation code. |
 | **Recovery** | None. Nothing bounds the poll. |
 | **Disc patch** | `legaia-patcher --approach-softlock-fix`. |
 | **Port** | Cannot park: the approach drive does not depend on a live clip. |
@@ -490,17 +490,51 @@ The Move clip is played by the per-frame tick `FUN_80047430` and its commit `FUN
 - **A looping clip loops by re-committing.** There is no loop counter. When the cursor `node+0x68` passes the stream's frame count, the tick calls the commit, which re-installs the still-queued `+0x1DA` and zeroes the cursor. Gaza's Move stream is 5 frames at rate 2 with speed scale 8: one cycle is ~12 vsyncs.
 - **The two commit paths treat `+0x1DC` differently.** The natural-end path tests bit 2 (`& 0x4`): if set it **stages idle over whatever is queued** (`sb zero,0x1da` at `0x80047B44`), clears bits 0-2 (`andi 0xF8`, `0x80047B50`) and commits. The mid-clip event path (bit 0 = commit now, bit 1 = commit at event frame, `0x80047A38`) clears only bits 0-1 (`andi 0xFC`) and **preserves bit 2**.
 
-Bit 2 is written by `FUN_800402F4`: a surviving target's light flinch is staged as `+0x1DA = +0x1EF`, `+0x1DC |= 4` and `|= 1` (`0x80042124..0x80042170`). Normally the flinch's own natural end consumes the bit and the actor returns to idle. The summon seat routine `FUN_801F19EC` does not reset `+0x1DC` either (it clears `+0x1D9` at `0x801F1DD8` and has no store to `+0x1DC`), so the same bit left on actor slot 7 survives into the next summon; with it set, a clip a cast module stages without a commit flag is replaced by idle at the natural end - the mechanism behind Orb's legs staying folded ([glitch page](../reference/glitches/summons-and-jette.md)).
+Bit 2 is raised wherever a hit reaction is staged. `FUN_800402F4` does it for items and Spirit (`+0x1DA = +0x1EF`, `+0x1DC |= 4` and `|= 1`, `0x80042124..0x80042170`); the battle overlay has a stager of the same shape at `0x801E1964..0x801E1A1C` and a `|= 5` one at `0x801EEC84`; every cast and summon module stages its own (Kemaro's at `0x801F80A0..0x801F80BC`). Melee hits raise it too (captured, below). The acting actor's action-end pose in state `0x50` raises it on the attacker (`0x801E5E9C`). Normally the reaction's own natural end consumes the bit and the actor returns to idle.
 
-The sequence that parks:
+The summon seat routine `FUN_801F19EC` does not reset `+0x1DC` either (it clears `+0x1D9` at `0x801F1DD8` and has no store to `+0x1DC`), so the same bit left on actor slot 7 survives into the next summon; with it set, a clip a cast module stages without a commit flag is replaced by idle at the natural end - the mechanism behind Orb's legs staying folded ([glitch page](../reference/glitches/summons-and-jette.md)).
 
-1. A hit flinches the monster (the damage-reaction clip, pair `2/2`). `+0x1DC` bit 2 is set.
-2. The monster's melee begins while the flinch still plays. State `0x14`'s fallback stages the Move clip (`sb v0,0x1da(s3)` at `0x801E32B0`) with `+0x1DC |= 1` (`0x801E32D4` / `0x801E35C4`).
-3. The Move clip is installed through the **event-path** commit, which preserves bit 2.
-4. The Move clip engages (pair `1/1`, ~19 units/vsync). At its first natural end, ~12 vsyncs in, the natural-end path sees bit 2, stages idle and clears the bit.
-5. Pair `0/0`, drive dead, position frozen beyond reach. State `0x19` re-polls forever.
+The rule that follows: bit 2 lives until the **next natural end of any clip on that actor**. Whatever replaces a clip through the event path inherits it. The sequence that parks:
 
-Any action between the flinch and the melee gives the flinch time to end and consume the bit, which is why only the directly-following melee parks. A parked save reads `+0x1DC == 0`: the commit that killed the clip consumed the bit, so the stale flag is visible only in flight.
+1. Kemaro carries its target off the stage and stages its damage reaction there: `+0x1DA = +0x1EF` (`+0x1F0` when that is zero) and `+0x1DC |= 5` (`0x801F80A0..0x801F80BC`). The target is `actor[caster +0x1DD]` (`0x801F6CC0..0x801F6CDC`).
+2. The reaction clip does not reach its natural end while the target is carried. Every capture shows the pair held at `2/2` for ~240 vsyncs off-arena.
+3. Kemaro's put-back (`0x801F895C..0x801F8984`) restores the target's position and facing, sets its speed scale `+0x21D = 8`, stages idle (`sb zero,0x1da`) and adds 1 to `+0x1DC` - a commit-now request. That commit takes the event path, which clears bits 0-1 and **keeps bit 2**. The monster now idles with the stale bit.
+4. The bit survives until the idle clip's first natural end: one idle cycle, `8 * frame_count / rate` vsyncs at speed scale 8. For Gaza 2's idle (45 frames, rate 1) that is 360 vsyncs.
+5. If the monster's next action inside that window is a melee that starts out of reach, state `0x14`'s fallback stages the Move clip (`sb v0,0x1da(s3)` at `0x801E32B0`) with `+0x1DC |= 1` (`0x801E32D4` / `0x801E35C4`), and the event-path commit installs it with bit 2 still set.
+6. The Move clip engages (pair `1/1`, ~19 units/vsync). At its first natural end, ~12 vsyncs in, the natural-end path sees bit 2, stages idle and clears the bit.
+7. Pair `0/0`, drive dead, position frozen beyond reach. State `0x19` re-polls forever.
+
+Any other action of the monster in the window ends its own clip and consumes the bit harmlessly. A parked save reads `+0x1DC == 0`: the commit that killed the clip consumed the bit, so the stale flag is visible only in flight.
+
+### Why a hit alone cannot arm it
+
+A reaction staged by an ordinary hit always reaches its natural end before the action that caused it is over. State `0x20` holds until the struck actor's committed clip is idle (`+0x1D9 == 0`), and a reaction gets back to idle only through its natural end, which clears the bit. A cast waits the same way in its recovery states, and a summon's verify state `0x37` holds until every living monster's `+0x1D9` is `0`.
+
+Captured with `autorun_approach_hazard.lua` (below): over several rounds of party Attack and Gaza melee, every bit 2 raised on a struck actor came down inside the same action's `0x1E` / `0x20` band, and the action-end pose's bit came down inside `0x51`. No approach started with the bit set.
+
+Kemaro is the one put-back that keeps the bit. Of the stores to `+0x1DC` in the 63 cast and summon images, the only idle put-back on the target that leaves bit 2 alone is Kemaro's increment. Horn's put-back (`0x801F7AF4..0x801F7B00` in PROT 0930) writes `+0x1DC = 1`, clearing it. The other modules leave the target's reaction to end naturally. That makes Kemaro, not summons in general, the retail trigger. Kemaro is also one of the most-cast spells in the game, so the trigger itself is common. What is rare is the rest of the chain.
+
+### Why it is met on Gaza 2
+
+Two clip numbers decide whether a Kemaro target can park. Both come from the monster archive (sweep `crates/asset/examples/monster_approach_exposure.rs`):
+
+- **The window.** How long the stale bit survives: one idle cycle at speed scale 8, `8 * idle_frames / idle_rate` vsyncs. Measured from the put-back to the next action's `0x14`, the shortest tail is ~100 vsyncs (98 and 122 in two captures). A window below that cannot be met even when the monster acts straight after Kemaro.
+- **One Move cycle.** How far the dying Move clip carries the monster: `8 * move_frames * speed / move_rate` units (the speed scale cancels). The approach parks only if that is less than the gap minus the reach. From a standard seat the gap is ~1600 units and the reach 256-512.
+
+| Monster (id) | Move cycle (units) | Window (vsyncs) | Note |
+|---|---|---|---|
+| Gaza 2 (166) | 400 (first cycle measured ~236) | 360 | shortest Move cycle and longest window of the 180 walk-less records; 15000 HP survives Kemaro |
+| Green / Oak / Acid Slime (7-9) | 448 | 120 | short cycle, window barely over the tail; low HP |
+| Songi (179) | 960 | 240 | boss; needs a gap over ~1350 |
+| Drake Ghost / Guardian / Ghost Knight (16-18) | 1152 | 236 | needs a gap over ~1460 |
+| Worms (34-36), Mage family (89-91) | 960 / 1152 | 160 | narrow window |
+| Gaza 1 (165), Swordie (86-88), Lu Delilas (164) | 1056-1232 | 104-116 | window at the edge of the tail |
+
+The formula over-predicts the first cycle (Gaza 2's measured ~236 against 400), so the cycle column ranks rather than measures. Most of the other 151 walk-less records either finish the approach inside one Move cycle (cycles of 1300 to 7500 units) or have a window under ~100 vsyncs.
+
+Gaza 2 is the only monster where all four conditions line up in ordinary play: an idle loop six seconds long at Kemaro's doubled speed, a five-frame Move loop, enough HP to survive Kemaro repeatedly, and melee in his action mix. The rest of the chain is turn order. A 360-vsync window is shorter than a round of command input, so the melee has to come in the same round as the Kemaro, directly after it. A Spirit action by another member in between (~230 vsyncs) was enough to close the window: the approach that followed arrived.
+
+The `+0x21D = 8` Kemaro writes also explains Gaza 2's doubled speed scale: the commit keeps `8` and resets anything else to `4` (`FUN_8004AD80`), so once Kemaro has hit him he stays at 8 for the rest of the fight.
 
 ### Evidence
 
@@ -509,7 +543,8 @@ Any action between the flinch and the melee gives the flinch time to end and con
 - **The action table** (RAM read via `legaia-pcsx-redux`, example `gaza2_walk_tag`). Gaza's seat-3 record holds 12 actions with tags `[00 01 02 03 04 05 0B 0E 13 0C 23 23]` - no `0x20`.
 - **The trigger** (`autorun_gaza2_summon_displacement.lua`, scenario `battle_gaza2_park_0x19_summon_melee`). The summon stages Gaza to `(0, -2048)` and back while his damage-reaction clip plays. His melee starts directly next; the Move clip engages and dies ~12 vsyncs later, ~236 units in. With any other action in between, the same clip runs 28-67 vsyncs and arrives (e.g. 64 vsyncs / 1,260 units). Parked gaps of 556 / 786 units are ordinary formation spacing.
 - **Causal check** (`scripts/pcsx-redux/autorun_gaza2_stale_flag_repro.lua`, write-watchpoints on `+0x1DA` / `+0x1D9` / `+0x1DC`). Control: bounce the state byte to `0x14`. The arm re-stages Move (`0x801E3270` stores the `0xFF` tag-`0x20` miss, `0x801E32B0` the fallback index), the first natural end 12 vsyncs later re-commits with the pair still `1/1` (`0x80047B58` + `0x8004BDE0`), and the boss walks in and strikes. Experiment: the same bounce with `+0x1DC |= 4` re-armed dies at its first natural end via the `0x80047B44` idle write and parks in `0x19`.
-- **Core independence.** The recipe parks under both PCSX-Redux cores (recompiler and interpreter, `run_probe.sh --timing`) with the same onset: Move clip dead ~12-16 vsyncs in. Emulators with a substantially different CD latency model may schedule the summon's streamed staging restore differently and rarely land in the window.
+- **Core independence.** The recipe parks under both PCSX-Redux cores (recompiler and interpreter, `run_probe.sh --timing`) with the same onset: Move clip dead ~12-16 vsyncs in. Nothing in the chain is timed by the emulator: the window and the Move cycle are clip lengths counted in game frames, and the tail is the action state machine's own timers. A failed repro on another emulator is more likely the chain not lining up (Kemaro not directly before Gaza, Gaza picking magic, a short gap) than timing; no other emulator has been tested.
+- **The put-back caught in flight** (`scripts/pcsx-redux/autorun_approach_hazard.lua`, pad-driven, from `battle_gaza2_prompt`). Kemaro raises Gaza's bit with the reaction pair `2/2` off-arena; the pair holds 238 vsyncs; the put-back installs idle (`0/0`) with `+0x1DC` still `0x04`. Gaza's next action, 122 vsyncs later, was a cast: its clip carried the bit and consumed it at its natural end. Melee in that slot is the park.
 - **Drift.** Each summon stages Gaza ~2,500 units off-arena and restores him with a committed ~35-40-unit home drift per cast; his own casts nudge his home 16-26 units without moving him; his melee both approaches and commits the new position.
 
 ### The disc patch

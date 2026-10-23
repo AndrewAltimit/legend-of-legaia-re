@@ -1157,10 +1157,13 @@ a dedicated approach animation, so the game plays the ordinary Move loop and wai
 only re-measures the distance. That state has no movement code and no timeout: the animation's own
 forward motion is what carries the monster in.
 
-If the monster is still flinching from a hit when its attack begins - a summon is the usual cause
-- a leftover "go back to idle when this clip ends" flag is still set. The Move loop plays one
-cycle, the flag swaps it for the idle pose, the monster stops short of its target, and the wait
-never ends. The camera's idle sweep runs on its own, which is why the screen keeps orbiting.
+A hit sets a "go back to idle when this clip ends" flag on the monster it strikes. Normally the
+flinch plays out, the flag does its job and is gone before anyone else acts. The Seru spell Kemaro
+is the exception: it carries its target off, flinches it there, and when it puts the target back
+it starts the idle pose in a way that leaves the flag set. The flag then waits for the next clip
+on that monster to end. If that monster's next move is a melee attack from out of reach, the flag
+cuts the Move loop off after one cycle, the monster stops short of its target, and the wait never
+ends. The camera's idle sweep runs on its own, which is why the screen keeps orbiting.
 
 ### Mechanism
 
@@ -1174,9 +1177,13 @@ never ends. The camera's idle sweep runs on its own, which is why the screen kee
 3. The per-actor tick `FUN_80047430` applies the playing clip's root motion. At a clip's natural
    end it tests bit 2 of `actor+0x1DC`; when set it queues idle and clears bits 0..2. The mid-clip
    commit path clears bits 0..1 only and keeps bit 2.
-4. Bit 2 is raised by the hit-reaction stager in `FUN_800402F4`. A flinch followed directly by a
-   melee installs the Move clip through the mid-clip path with bit 2 still up; the first natural
-   end installs idle; the monster is parked.
+4. Bit 2 is raised by every hit-reaction stager. An ordinary reaction ends naturally before the
+   action is over and takes the bit with it. Kemaro (PROT 0918) stages its target's reaction with
+   `+0x1DC |= 5` at `0x801F80BC`, then puts the target back by storing `0` to `+0x1DA` and adding
+   1 to `+0x1DC` (`0x801F897C..0x801F8984`): idle is installed through the mid-clip path, bit 2
+   survives, and it lasts until the idle loop's first natural end. A melee inside that window
+   installs the Move clip through the mid-clip path with bit 2 still up; the first natural end
+   installs idle; the monster is parked.
 
 The four address claims the explanation rests on, re-read from the disassembly:
 
@@ -1197,15 +1204,34 @@ The four address claims the explanation rests on, re-read from the disassembly:
 | `0x80050E2C` | `SCUS_942.54` | action-tag scan over the monster record | repo doc |
 | `0x80047430` | `SCUS_942.54` | per-actor tick; idle install at `0x80047B44` | disassembly |
 | `0x80042124..0x80042170` | `SCUS_942.54` | hit-reaction stager in `FUN_800402F4` | disassembly |
+| `0x801F80A0..0x801F80BC`, `0x801F895C..0x801F8984` | PROT entry 0918 (Kemaro) | target reaction staging; put-back that keeps bit 2 | disassembly, capture |
 | actor `+0x1D9`, `+0x1DA`, `+0x1DC` | RAM | playing clip, queued clip, anim event flags | disassembly |
 | `*0x8007BD24`, `+0x07` | RAM | battle context, action state byte | repo doc |
 
 ### Scope
 
-Any monster without a tag-`0x20` action - nearly the whole roster, bosses included, by the roster
-sweep on the linked page - attacking an out-of-reach target directly after being flinched. The
-Gaza rematch is where it is met because his formation keeps him out of reach and a summon is the
-usual opening move. The linked page also describes a second, separate park in state `0x51`.
+Narrower than "any flinched monster". 180 of the 186 monster records lack a tag-`0x20` action,
+but that is only the first of four conditions, all of which have to hold:
+
+- the attacker has no tag-`0x20` action (180 records);
+- bit 2 is still set when its approach starts - in retail play that takes Kemaro, whose put-back
+  is the only one that keeps the bit (a hit alone always clears it before the action ends);
+- its melee comes inside one idle cycle of the put-back, which in practice means directly after
+  the Kemaro in the same round;
+- one Move cycle does not carry it into reach.
+
+Gaza 2 is at the extreme on both clip numbers: the shortest Move loop of the walk-less roster (five
+frames) and the longest idle loop (360 vsyncs at the speed Kemaro leaves him), with 15000 HP to
+survive Kemaro repeatedly. The next-closest candidates are Songi (179) and the Drake Ghost family
+(16-18), each needing a wide gap; the slimes have the short Move loop but die to Kemaro. The table
+and the measurements are on the linked page. It also describes a second, separate park in state
+`0x51`.
+
+**Reproducing it on Gaza 2:** have the Kemaro caster act directly before Gaza in the round, with
+nobody else acting in between, and let Gaza survive. If his next action is a melee aimed at a
+party member well out of his reach (the formation usually does this), he walks one short step,
+stops and the round never ends. If he casts instead, the flag is spent harmlessly; try again next
+round.
 
 The fix is the patcher's `--approach-softlock-fix` ([`randomizer.md`](../../tooling/randomizer.md)):
 it replaces the nine words with a guard that sends a dead approach back to state `0x14`, so the
@@ -1215,8 +1241,11 @@ game's own staging runs again.
 
 In a stalled battle read the context state byte: `0x19`, with the attacker's `+0x1D9` and `+0x1DA`
 both zero and its position constant. To provoke it, set bit 2 of a monster's `+0x1DC` while it is
-in state `0x14`; the write of zero to `+0x1DA` then comes from `0x80047B44`. The capture evidence
-is on the linked page.
+in state `0x14`; the write of zero to `+0x1DA` then comes from `0x80047B44`. To see the natural
+trigger, watch the Kemaro target's `+0x1DC`: it still reads `0x04` after the put-back sets the
+pair to `0/0`, and it drops at the next clip end on that monster
+(`scripts/pcsx-redux/autorun_approach_hazard.lua` records both). The capture evidence is on the
+linked page.
 
 ## Dialogue inconsistencies
 
