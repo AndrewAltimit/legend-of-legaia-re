@@ -356,13 +356,31 @@ impl MountedCard {
     /// The bytes are the container exactly as mounted plus the in-place block
     /// writes, never re-encoded, so every save the card held before is still
     /// there byte for byte.
+    ///
+    /// The file's directory is created when missing: a first save on a fresh
+    /// install has a card path under a save directory nothing has made yet,
+    /// and refusing it there failed every save until the player created the
+    /// directory by hand. The image is written beside the file and renamed
+    /// over it, so a write cut short leaves the previous card - every other
+    /// save on it - intact instead of a truncated image.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn persist(&mut self) -> Result<bool> {
         use anyhow::Context;
         let Some(path) = self.path.as_ref().filter(|_| self.dirty) else {
             return Ok(false);
         };
-        std::fs::write(path, &self.bytes)
+        if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+            std::fs::create_dir_all(dir)
+                .with_context(|| format!("create memory-card directory {}", dir.display()))?;
+        }
+        let mut staging = path.as_os_str().to_owned();
+        staging.push(".tmp");
+        let staging = std::path::PathBuf::from(staging);
+        std::fs::write(&staging, &self.bytes)
+            .and_then(|()| std::fs::rename(&staging, path))
+            .inspect_err(|_| {
+                let _ = std::fs::remove_file(&staging);
+            })
             .with_context(|| format!("write memory-card image {}", path.display()))?;
         self.dirty = false;
         Ok(true)
@@ -444,6 +462,27 @@ mod tests {
         loose.dirty = true;
         assert!(!loose.persist().unwrap(), "no file to write back to");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A card whose file sits in a directory that does not exist yet - the
+    /// native window's `saves/memcard1.mcr` on a fresh install - is written
+    /// on its first save, directory and all, and leaves no staging file.
+    #[test]
+    fn persist_creates_the_missing_save_directory() {
+        let root = std::env::temp_dir().join(format!("legaia-card-fresh-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let path = root.join("saves").join("memcard1.mcr");
+        let mut card = MountedCard::from_bytes(raw_card(), "memcard1.mcr").unwrap();
+        card.path = Some(path.clone());
+        card.dirty = true;
+        assert!(card.persist().expect("first save on a fresh install"));
+        assert_eq!(std::fs::read(&path).unwrap(), card.bytes);
+        let names: Vec<_> = std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, vec![std::ffi::OsString::from("memcard1.mcr")]);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// A save-start block whose character records are all zero lists as a

@@ -46,10 +46,23 @@ pub(crate) fn open_port_one_card(
                 path.display()
             ),
         }
-        // A file that does not mount is kept, not overwritten: the blank
-        // card below has no path, so nothing this session saves can clobber
-        // it.
-        return blank_card(None);
+        // A file that does not mount is kept, not overwritten: it is moved
+        // aside and a fresh card takes its name, so the player can save again
+        // and the unreadable image is still there to recover. Only when it
+        // cannot be moved does the blank card stay pathless - nothing this
+        // session saves can clobber it, and a Save into it reports the write
+        // failure (`write_save_commit`) instead of a save that vanishes.
+        return match set_aside_unmountable_card(&path) {
+            Some(kept) => {
+                log::warn!(
+                    "save rack: the unreadable card is kept as {}; saving to a fresh {}",
+                    kept.display(),
+                    PORT_ONE_CARD_FILE
+                );
+                blank_card(Some(path))
+            }
+            None => blank_card(None),
+        };
     }
     let mut card = blank_card(Some(path));
     let imported = import_legacy_slots(save_dir, &mut card, index);
@@ -67,6 +80,32 @@ pub(crate) fn open_port_one_card(
         }
     }
     card
+}
+
+/// Rename a port-1 card that does not mount to the first free
+/// `memcard1.unreadable[-N].mcr` beside it; the new path, or `None` when the
+/// rename failed.
+fn set_aside_unmountable_card(path: &Path) -> Option<std::path::PathBuf> {
+    let dir = path.parent()?;
+    let kept = (0..100u32)
+        .map(|n| {
+            dir.join(if n == 0 {
+                "memcard1.unreadable.mcr".to_string()
+            } else {
+                format!("memcard1.unreadable-{n}.mcr")
+            })
+        })
+        .find(|p| !p.exists())?;
+    match std::fs::rename(path, &kept) {
+        Ok(()) => Some(kept),
+        Err(e) => {
+            log::warn!(
+                "save rack: could not move the unreadable card {} aside ({e}); saves this session are not kept",
+                path.display()
+            );
+            None
+        }
+    }
 }
 
 /// A freshly formatted card, to be written to `path` on its first save.
@@ -470,6 +509,81 @@ mod save_rack_tests {
             card.path.as_deref(),
             Some(dir.path().join(PORT_ONE_CARD_FILE).as_path())
         );
+    }
+
+    /// A party with a named, living lead - what a card block needs to read
+    /// back as a save.
+    fn a_save_file() -> SaveFile {
+        let mut lead = CharacterRecord::zeroed();
+        lead.set_name("Vahn");
+        lead.set_hp_mp_sp(legaia_save::HpMpSp {
+            hp_cur: 40,
+            hp_max: 40,
+            mp_cur: 2,
+            mp_max: 2,
+            sp_cur: 0,
+            sp_max: 0,
+        });
+        SaveFile {
+            party: Party {
+                members: vec![lead],
+            },
+            ..SaveFile::default()
+        }
+    }
+
+    /// A first save on a fresh install, the way the window commits it: the
+    /// default save directory (`saves/`, resolved against the working
+    /// directory) does not exist yet. The Save has to create it and land
+    /// the card file there, and the next launch has to read the save back -
+    /// a card write that refused the missing directory failed every save.
+    #[test]
+    fn a_first_save_creates_the_save_directory_and_survives_a_relaunch() {
+        let root = tempfile::tempdir().unwrap();
+        let save_dir = root.path().join("saves");
+        let mut card = open_port_one_card(&save_dir, None);
+        assert!(!save_dir.exists(), "mounting writes nothing");
+        let resume = legaia_save::SaveResume {
+            scene: "town01".into(),
+            location: "Rim Elm".into(),
+        };
+        legaia_engine_menu_runtime::card_write::write_save_into_card(
+            &mut card,
+            1,
+            &a_save_file(),
+            &resume,
+            None,
+        )
+        .unwrap();
+        assert!(card.persist().expect("the save directory is created"));
+        let relaunch = open_port_one_card(&save_dir, None);
+        let (sf, back) = relaunch.save_at(0).expect("the save is on disk");
+        assert_eq!(sf.party.members[0].name(), "Vahn");
+        assert_eq!(back.scene, "town01");
+    }
+
+    /// A port-1 card file that does not mount is moved aside, not
+    /// overwritten and not left in the way: the fresh card takes its name,
+    /// so saving works again and the unreadable image is kept for recovery.
+    #[test]
+    fn an_unmountable_port_one_card_is_kept_aside_and_saving_still_persists() {
+        let dir = tempfile::tempdir().unwrap();
+        let card_path = dir.path().join(PORT_ONE_CARD_FILE);
+        std::fs::write(&card_path, b"not a memory card").unwrap();
+        let mut card = open_port_one_card(dir.path(), None);
+        let kept = dir.path().join("memcard1.unreadable.mcr");
+        assert_eq!(std::fs::read(&kept).unwrap(), b"not a memory card");
+        assert_eq!(card.path.as_deref(), Some(card_path.as_path()));
+        legaia_engine_menu_runtime::card_write::write_save_into_card(
+            &mut card,
+            1,
+            &a_save_file(),
+            &legaia_save::SaveResume::default(),
+            None,
+        )
+        .unwrap();
+        assert!(card.persist().unwrap());
+        assert!(open_port_one_card(dir.path(), None).save_at(0).is_some());
     }
 
     /// The whole two-stage walk, end to end: pick the port off the pills,

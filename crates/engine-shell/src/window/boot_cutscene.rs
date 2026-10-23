@@ -118,6 +118,12 @@ impl PlayWindowApp {
             // port-1 image that did not mount) has nowhere to go; a harness
             // run writes nothing to the player's directory.
             if !self.persist_disabled {
+                if card.path.is_none() {
+                    // The save would live only in this session's memory and
+                    // be gone on the next launch: say so on the save screen
+                    // rather than report a save that is not kept.
+                    anyhow::bail!("card {} has no file to write back to", card.label);
+                }
                 card.persist()?;
             }
             Ok(w)
