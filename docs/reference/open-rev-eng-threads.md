@@ -217,6 +217,20 @@ tables is mostly the camera's. A stretch where the camera holds still and a
 body's rate or clip changes (a commit that zeroes the cursor) would show
 which advance the drawn pose stands on.
 
+That stretch exists and the drawn pose is not the odd one out. A
+PCSX-Redux film of a seat-0 Big Wave (`autorun_drawn_pose_film.lua` with
+`LEGAIA_SPELL=0x56`, `LEGAIA_POKE32=0x801C8FE4=1`) logs every pass of the
+band `0x6E..0x71`: each seat's anim tick advances its cursor and the same
+pass's decode draws the advanced value, party and monster alike, through
+the caster's rate halving on the `0x70` entry and a monster commit. No pass
+skips a decode or draws an older cursor, so the extra advance is not a
+draw-order effect; what is left is the instant the state was saved inside
+a long pass (a step-`3` pass runs across vsyncs, and a save between the
+party's ticks and the monster's splits the seats) or the image metric
+preferring a neighbouring sway pose. `zora_glare_petrify_pre` reads the
+same way round for one seat only: Vahn fits one advance behind the RAM
+(`96` of `108`), Zora two (`168` of `216`), in band `0x6F`.
+
 Answered questions: [settled battle / arts / level-up](re-settled-threads/battle.md), [settled rendering / camera](re-settled-threads/rendering-camera.md), [settled world map](re-settled-threads/world-map.md); falsified readings: [battle](re-do-not-re-walk.md#battle--arts--level-up), [rendering / camera](re-do-not-re-walk.md#rendering--camera).
 
 ## Audio / BGM
