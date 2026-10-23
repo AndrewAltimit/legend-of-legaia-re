@@ -286,6 +286,7 @@ impl World {
             if frozen_idle {
                 continue;
             }
+            self.stamp_rage_delegation(i);
             // The decoder's last-frame tween reads the clip queued behind
             // this one; recompute it before the step, like the draw that
             // follows the tick in retail.
@@ -1299,6 +1300,55 @@ impl World {
             actor.battle_animation = Some(player);
             actor.pose_frame = None;
         }
+    }
+
+    /// The anim tick's Rage arm: a party seat whose character record carries
+    /// the auto-fight passive (record `+0xF8 & 0x2000`, the Evil Medallion's
+    /// Rage) is stamped every advancing tick with the delegation group
+    /// `+0x16E |= 0x380` - which hands its command to the delegated auto-fill
+    /// and makes the tint pass draw it in the `0xF020F0` status colour - and
+    /// with the tint words `+0x04 = 0x3FF00000`, `+0x0C = 0x1000`. A raised
+    /// impact selector `+0x21F` is cleared. Skipped once the battle-end
+    /// signal is up (`DAT_8007BD71 == 0xFE`) and while a presentation arm
+    /// owns the body (`+0x21C != 0`).
+    ///
+    /// ```text
+    /// 80047f40  andi v0,v0,0x2000      ; record +0xF8 (0x80084140 + id*0x414 + 0x6C0)
+    /// 80047f58  beq v1,0xfe,...        ; DAT_8007BD71: battle over
+    /// 80047f68  bne +0x21C,zero,...    ; presentation arm
+    /// 80047f70  lui v0,0x3ff0 / sw v0,0x4(s2)
+    /// 80047f78  li v0,0x1000 / sw v0,0xc(s2)
+    /// 80047f88  ori v0,v0,0x380        ; the sh in the delay slot always stores
+    /// 80047f94  sb zero,0x21f(s2)      ; only when +0x21F was set
+    /// ```
+    ///
+    /// The frozen-idle exit (Stone / Numb) jumps past it, as the caller does.
+    ///
+    /// PORT: FUN_80047430 (`0x80047F10..0x80047F98`, the Rage arm)
+    pub(in crate::world) fn stamp_rage_delegation(&mut self, slot: usize) {
+        const RAGE_BIT: u32 = 0x2000;
+        if slot >= usize::from(self.party.party_count.min(3)) || self.battle.end.is_some() {
+            return;
+        }
+        let rslot = self.party_roster_slot(slot);
+        let Some(member) = self.party.roster.members.get(rslot) else {
+            return;
+        };
+        let bits = member.ability_bits();
+        if u32::from_le_bytes([bits[4], bits[5], bits[6], bits[7]]) & RAGE_BIT == 0 {
+            return;
+        }
+        let Some(actor) = self.actors.get_mut(slot) else {
+            return;
+        };
+        let b = &mut actor.battle;
+        if b.render_flag != 0 {
+            return;
+        }
+        b.render_color = 0x3FF0_0000;
+        b.render_blend = 0x1000;
+        b.field_flags |= 0x0380;
+        b.impact_state = 0;
     }
 }
 

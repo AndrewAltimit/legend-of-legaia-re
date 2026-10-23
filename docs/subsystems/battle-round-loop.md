@@ -514,7 +514,7 @@ The writer set is fully enumerated in the static images (`SCUS_942.54` plus ever
 
 | kind | bit written | writer PCs (hit leg / special leg) | gate |
 |---|---|---|---|
-| `1`, `2` | none directly - only the `+0x21F` latch | consumed by `FUN_80047430`: `ori 0x380` + `sh` at `0x80047F88` / `0x80047F90`, then `+0x21F` cleared | `+0x21F != 0` |
+| `1`, `2` | none directly - only the `+0x21F` latch | none; `FUN_80047430`'s Rage arm clears the latch (`0x80047F94`) on a Rage seat | - |
 | `3` | `ori v0,v0,0x1` | `0x801EE4C4` / `0x801E1654` | `rng & 7 == 0` |
 | `4` | `ori v0,v0,0x2` | `0x801EE508` / `0x801E1684` | `rng & 7 == 0` |
 | `5` | one random bit of `0x38`: `1 << ((rng % 3) + 3)` via `sllv` / `or` | `0x801EE618` / `0x801EE61C`, `0x801E1738` / `0x801E173C` | target slot `< 3` (`sltiu`), then the accessory-passive immunity bits `0x01000000` / `0x10000000` of char `+0x6BC` skip; the read precedes the roll, so a guarded target draws no RNG |
@@ -614,7 +614,10 @@ Context fields: `ctx[+0]` = party count, `ctx[+1]` = monster count, `ctx[+0x13]`
 ### The two AI gates
 
 - **`ctx+0x28a` (battle mode)** gates the multi-phase boss cases. Its writer is the SM's `case 0xFF`, the round-end arm every battle reaches once per round: the end-of-action gate stores state `0xFF` when the turn cursor reaches the round bound (`0x801E67DC`), and the arm increments the byte (`0x801E6800..0x801E6810`). It is a round counter, `0` during the first round. Advancing it walks a round-scripted boss to its next scripted cast on the following round (`World::battle_mode`; proven by the `0xB6` phase-walk test).
-- **`actor+0x16e & 0x380`** is not a monster flag. `FUN_80047430` sets it only on party slots (`slot < 3`) whose character record carries the Rage passive (`+0xF8 & 0x2000`), delegating that member to `FUN_801E7320`. A normal monster keeps `0x380` clear, so its `!ai380` scripted-cast cases fire and `monster_setup` stays dormant - which is what the port does (monster actors carry `field_flags == 0`).
+- **`actor+0x16e & 0x380`** is not a monster flag. `FUN_80047430` sets it only on party slots (`slot < 3`) whose character record carries the Rage passive (`+0xF8 & 0x2000`), delegating that member to `FUN_801E7320`.
+
+  The Rage arm (`0x80047F10..0x80047F98`) runs on every advancing anim tick, so a landed hit's `andi 0xf07f` strip is undone the next tick. It is skipped once the battle-end signal `DAT_8007BD71 == 0xFE` is up and while `+0x21C != 0`.
+  Otherwise it stores `+0x04 = 0x3FF00000` and `+0x0C = 0x1000` and ORs `0x380` into `+0x16E`; that `sh` sits in the delay slot of the `+0x21F` test, so it always stores, and only the `sb zero,0x21f` behind it is gated. The group also makes the tint pass draw the seat in the `0xF020F0` status colour (`0x8004AC8C`), the magenta of `evil_medallion_rage_battle`. Port: `World::stamp_rage_delegation`, read by the tint through `World::raw_status_word`. A normal monster keeps `0x380` clear, so its `!ai380` scripted-cast cases fire and `monster_setup` stays dormant - which is what the port does (monster actors carry `field_flags == 0`).
 
 ### Enemy-ally charm at the end-of-action gate (the charm battle softlock)
 

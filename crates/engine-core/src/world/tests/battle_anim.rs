@@ -1621,3 +1621,58 @@ fn a_stone_or_numb_body_on_its_idle_holds_its_keyframe() {
         assert_eq!(before, after, "{kind:?} freezes the idle");
     }
 }
+
+// --- the anim tick's Rage arm (`FUN_80047430` `0x80047F10..0x80047F98`) ----
+
+fn rage_world(rage: bool) -> World {
+    let mut w = World {
+        party: legaia_engine_menus::party_state::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
+        ..World::default()
+    };
+    w.mode = SceneMode::Battle;
+    w.load_party(legaia_save::Party::zeroed(1));
+    if let Some(m) = w.party.roster.members.get_mut(0) {
+        let mut bits = m.ability_bits();
+        let word1 = if rage { 0x2000u32 } else { 0 };
+        bits[4..8].copy_from_slice(&word1.to_le_bytes());
+        m.set_ability_bits(bits);
+    }
+    w.actors[0].battle.liveness = 1;
+    w.actors[0].battle.hp = 10;
+    w.actors[0].battle.impact_state = 2;
+    w
+}
+
+/// A Rage seat is stamped with the delegation group and the tint words on
+/// every advancing tick, and its impact selector cleared; a seat without
+/// the passive is left alone.
+#[test]
+fn a_rage_seat_takes_the_delegation_group_every_tick() {
+    let mut w = rage_world(true);
+    w.tick_battle_animations();
+    let b = &w.actors[0].battle;
+    assert_eq!(b.field_flags & 0x380, 0x380);
+    assert_eq!((b.render_color, b.render_blend), (0x3FF0_0000, 0x1000));
+    assert_eq!(b.impact_state, 0);
+    // A landed hit strips the group (`andi 0xf07f`); the next tick restores it.
+    w.actors[0].battle.field_flags &= 0xF07F;
+    w.tick_battle_animations();
+    assert_eq!(w.actors[0].battle.field_flags & 0x380, 0x380);
+
+    let mut plain = rage_world(false);
+    plain.tick_battle_animations();
+    assert_eq!(plain.actors[0].battle.field_flags & 0x380, 0);
+    assert_eq!(plain.actors[0].battle.impact_state, 2);
+}
+
+/// The arm stands down under a presentation arm (`+0x21C != 0`).
+#[test]
+fn a_rage_seat_under_a_presentation_arm_is_not_stamped() {
+    let mut w = rage_world(true);
+    w.actors[0].battle.render_flag = 0xFF;
+    w.tick_battle_animations();
+    assert_eq!(w.actors[0].battle.field_flags & 0x380, 0);
+}

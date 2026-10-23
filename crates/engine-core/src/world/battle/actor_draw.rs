@@ -340,7 +340,10 @@ impl World {
             top: b.flag_word & 0xFF00_0000,
             blend: b.render_blend,
             render_flag: b.render_flag,
-            status: self.battle.status_effects.display_flags(actor_idx as u8),
+            // The whole `+0x16E` word the pass reads (`0x8004AC8C`): the
+            // typed ailments and the raw bits only the raw side carries -
+            // the Rage arm's `0x380` delegation group among them.
+            status: self.raw_status_word(actor_idx as u8),
             fade: 0,
             radius,
             view_z,
