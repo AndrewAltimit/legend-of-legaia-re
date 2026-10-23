@@ -1088,6 +1088,14 @@ pub struct BattleActionCtx {
     /// at `0x801E7AD8`): a pre-emptive strike's assured escape lasts one
     /// round. Reset with the rest of the context at battle entry.
     pub formation_armed: bool,
+    /// The party seats (bit `slot`) the round's **delegated fill** took -
+    /// `FUN_801F0450`'s Rage arm, which stamped category `3`, a target and
+    /// a learned-arts stream at state `0x00`. Not a retail byte: retail
+    /// needs no record because its seed `0x0C` plays whatever `+0x1DE` /
+    /// `+0x1DF` hold, while the port arms each party turn from the round's
+    /// commits and needs to know which seats carry a stream it must leave
+    /// in place. Rewritten by every pass of the fill.
+    pub delegated_seats: u8,
     /// `[+0x269]` - the Seru a killing blow absorbed this action (the
     /// player-magic index, spell `id - 0x80`), staged by the arts resolver
     /// `FUN_801EC3E4` at `0x801EE2E8`. Non-zero routes `DoneFadeDown` to

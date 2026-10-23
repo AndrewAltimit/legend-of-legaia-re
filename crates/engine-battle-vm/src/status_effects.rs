@@ -38,7 +38,7 @@
 //! | `Venom`   | `3`  | DoT `min(max_hp/32, 128)` per round, never lethal; skipped while Toxic is active; rolls scale x9/10 (`FUN_801E752C` + `FUN_801DD864`) | exact (`venom_tick_damage`) |
 //! | `Sleep`   | -    | Asleep; wakes when hit (wiki; no on-disc byte maps here since the 4/5 remap - kept for host-driven effects) | block + clear-on-hit |
 //! | `Rot`     | `5`  | A random body part becomes unusable: the appliers install `1 << (rand%3 + 3)` in `actor+0x16E`, blocked by the Rot Guard / Master Guard passives | the rolled limb's attack command (Left / Right / Low) is refused while active |
-//! | `Confuse` | -    | Acts uncontrollably. Pinned for monsters: the AI keeps its *rolled* action - including Magic casts - but every per-monster scripted-cast override is suppressed (`overlay_battle_action_801e9fd4` gates on `+0x16E & 0x380`), and the target re-rolls to the opposite side at ActionSeed (`FUN_801E7320`). For party members only the delegation flag is pinned (`FUN_80047430`, from the Rage accessory passive); the retail auto-pick for a delegated party member is not in the dumped corpus | monster: physical + casts retarget via the `FUN_801E7320` port; party: auto-physical stand-in (see `engine-core::world::battle`) until the retail party-side pick is captured |
+//! | `Confuse` | -    | Acts uncontrollably. Pinned for monsters: the AI keeps its *rolled* action - including Magic casts - but every per-monster scripted-cast override is suppressed (`overlay_battle_action_801e9fd4` gates on `+0x16E & 0x380`), and the target re-rolls to the opposite side at ActionSeed (`FUN_801E7320`). For a party member the group comes from the Rage accessory passive (`FUN_80047430`); its pick is `FUN_801F0450`'s delegated arm, a learned-arts stream filled at the round's state `0x00` | monster: physical + casts retarget via the `FUN_801E7320` port; party Rage: `battle_action::round_state_zero` fills the stream, `World::arm_party_delegated` plays it |
 //! | `Curse`   | `6`  | Blocks Magic; battle-actor bit `0x1000` (Magic Amulet protects) | blocks Magic (matches) |
 //! | `Stone`   | `7`  | Petrification: cannot act, cannot be damaged, counts as defeated; no in-battle cure. Runtime representation capture-pinned: `+0x16E` bit `0x04` (a Glare before/after pair shows `0 -> 4` with HP untouched + the queued action category at `+0x1DE` cleared). On a successful party escape retail floors every party actor's `+0x14C` at 1 (`FUN_801E295C` case `0x64`), which un-defeats a petrified/KO'd member | block + whole-battle duration + invulnerability (core strikes) + counts-as-defeated + [`StatusEffectTracker::cure_stone_on_escape`] for the escape restore |
 //! | `Faint`   | `8`  | KO at 0 HP: collapse, no actions; revived only by Phoenix / revive Magic | block + `until cured` (matches) |
@@ -94,22 +94,17 @@ pub enum StatusKind {
     /// `overlay_battle_action_801e9fd4` `& 0x380` guards) and the target
     /// re-rolls to the opposite side at ActionSeed (`FUN_801E7320`, ported as
     /// `engine-core::World::resolve_monster_target`). For a party member, the
-    /// `0x380`-delegated *controllable* character (Rage / Evil Medallion, via
-    /// `FUN_80047430`) is the one piece still capture-blocked: the `0x380` flag
-    /// is consumed only in `FUN_801E295C` / `FUN_801E9FD4` / `FUN_801DABA4`
-    /// (+ the charm redirect `FUN_801E7320`), none of which fills a controllable
-    /// character's action stream, so the Rage auto-pick *writer* is upstream
-    /// (the undumped command-menu controller). NB the AI **companion** Terra
-    /// (char id 4) IS dumped - `FUN_801EED1C`'s `== 4` branch picks Magic
-    /// (ids `0x16`/`0x0D`/`0x11`) when its gauge is low or it is statused, else a
-    /// 50/50 short-physical-vs-standby roll (see `docs/subsystems/battle-action.md`
-    /// AI-delegated section) - it is just unported (no engine consumer in the
-    /// playable slice). The engine's auto-physical party behaviour is a stand-in
-    /// for the Rage path. One Rage pick is observed
-    /// (`evil_medallion_rage_battle`, test `rage_delegated_pick`): category
-    /// `+0x1DE == 3` (Attack) with a 5-element `+0x1DF` stream of *art constants*
-    /// `[0x22,0x26,0x25,0x22,0x21]` (an Arts combo, not a plain multi-strike) -
-    /// a single sample, so the stand-in stays a stand-in.
+    /// `0x380` group comes from the Rage passive (Evil Medallion, stamped by
+    /// `FUN_80047430`), and the member's pick is `FUN_801F0450`'s delegated
+    /// arm: at the round's state `0x00` it commits category `3`, rolls a
+    /// monster target and fills `+0x1DF..` with learned arts (`id + 0x1B`),
+    /// which the seat's turn plays as it stands. A write-watched retail round
+    /// pins the writer (`0x801F068C` / `0x801F06B8`) and shows the stream
+    /// untouched by the seed's builder call; ported as
+    /// `battle_action::round_state_zero` + `World::arm_party_delegated`.
+    /// The AI **companion** Terra (char id 4) is a different path:
+    /// `FUN_801EED1C`'s `== 4` branch, ported as
+    /// `battle_action::ai_companion_pick`.
     Confuse,
     /// Rot: a random body part becomes unusable. The pinned appliers
     /// (`overlay_battle_action_801ec3e4` / `801e09f8`) install byte `5` as a

@@ -302,7 +302,18 @@ flowchart TD
 2. loops (`0x801F05C4..0x801F06CC`): stop on `rand() % 7 == 0`, else draw `record[+0x186 + rand() % count]` from the learned-arts list (`record[+0x185]` count);
 3. discards a draw under the per-character floor (`6` for roster id `2`, `4` otherwise), else stores `id + 0x1B`, up to fifteen entries.
 
-One delegated pick is observed (`evil_medallion_rage_battle`; disc + library gated test `rage_delegated_pick`). Exactly the Evil Medallion wearer carries `+0x16E & 0x380 == 0x380` (the other party slots read `+0x16E == 0`), with category `+0x1DE == 3` and the `+0x1DF` stream `[0x22,0x26,0x25,0x22,0x21]`. That is learned arts `7, 11, 10, 7, 6`, all at or above either floor and drawn with replacement, which is this loop's output shape. Confidence: a single sample matched against the disassembly; no runtime write-watch of `+0x1DF` has been taken. In that state the **actor** struct's `+0xF8` bit `0x2000` is set on every party slot, so on the actor it is not the discriminator; the gate reads the character record.
+One delegated pick is observed in the library (`evil_medallion_rage_battle`; disc + library gated test `rage_delegated_pick`). Exactly the Evil Medallion wearer carries `+0x16E & 0x380 == 0x380` (the other party slots read `+0x16E == 0`), with category `+0x1DE == 3` and the `+0x1DF` stream `[0x22,0x26,0x25,0x22,0x21]`. That is learned arts `7, 11, 10, 7, 6`, all at or above either floor and drawn with replacement, which is this loop's output shape. In that state the **actor** struct's `+0xF8` bit `0x2000` is set on every party slot, so on the actor it is not the discriminator; the gate reads the character record.
+
+<a id="what-a-rage-seats-turn-plays"></a>
+**What a Rage seat's turn plays.** A PCSX-Redux write-watch confirms the writer and the playback ([`autorun_rage_delegated_pick.lua`](../../scripts/pcsx-redux/autorun_rage_delegated_pick.lua), the `battle_gaza2_prompt` state with every party record poked to `+0xF8 |= 0x2000` - a poked capture, not a played equip):
+
+- The `0x380` group is on every seat within a few frames of the poke. The round prompt's Begin goes straight to the commit confirm (flow `0x1E` -> `0x6E`): no ring opens, because no seat passes `FUN_801DBA04`'s `0xF84` test.
+- The confirm's Begin runs `FUN_801F0450` from state `0x00` (return address `0x801E2AC0`). Per seat it writes `+0x1DE` at `0x801F0528`, `+0x1DD` at `0x801F0578`, and each stream byte twice: the raw learned id at `0x801F068C`, then `id + 0x1B` at `0x801F06B8`. One seat's first stop roll ended its fill with an empty stream.
+- Each seat's seed `0x0C` calls `FUN_801EED1C` (`a0` = the seat) and writes nothing to `+0x1DD..+0x1E6`: a stream of action constants holds no arrow string for the tokenizer and no direction command for the limb strips.
+- The strike loop latches the stream's bytes in order into `+0x1DB` (`0x01` for the approach, then `0x23`, `0x28` for the stream `[0x23,0x28]`). The empty-stream seat approaches and returns with no swing.
+- The round-boundary clear `FUN_801D88CC` (`0x801D89D8` / `0x801D8A60`) wipes the streams, and the next round opens on the prompt again.
+
+Port: `battle_action::round_state_zero` runs the arm and records its seats in `BattleActionCtx::delegated_seats`; `World::arm_party_delegated` plays the stream as it stands, with the turn picker's dead-target redirect on its target and the builder's head clears (the `0x801F6990` side array, the `0x801F696C` flag). A seat the arm did not take keeps the engine's plain strike. Tests: `world::tests::battle_rage_turn`, `battle_rage_party_live`.
 
 **Pool arm (Auto).** Gated per slot on `ctx[+0x266 + slot] != 0` and category `actor[+0x1DE] == 3` (Attack). `ctx[+0x266 + slot]` is the per-fighter **Auto** flag the command SM's Auto pick writes (see [minigame-muscle-dome.md](minigame-muscle-dome.md)), so this arm and its tail are the Auto command's queue builder.
 

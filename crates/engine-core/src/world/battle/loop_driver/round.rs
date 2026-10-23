@@ -510,6 +510,12 @@ impl World {
             None if self.raw_status_word(next) & NO_COMMAND_STATUS_BITS != 0 => {
                 self.arm_party_no_command(next)
             }
+            // A Rage seat: the ring passed it over for its `0x380` group and
+            // the round's state-`0x00` pass filled its stream with learned
+            // arts. Retail's seed plays that stream; it is not re-seeded.
+            None if self.battle_ctx.delegated_seats & (1 << next) != 0 => {
+                self.arm_party_delegated(next)
+            }
             None => self.arm_party_physical(next),
         }
     }

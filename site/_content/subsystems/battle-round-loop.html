@@ -168,7 +168,7 @@
   <h3>Two gates the AI reads</h3>
   <ul class="bullets">
     <li><strong>The battle-mode byte</strong> <code>ctx[+0x28A]</code> gates multi-phase boss scripts. Its only writer is the action machine&rsquo;s round-end arm, so it is a round counter, zero in the first round; advancing it walks a round-scripted boss to its next scripted cast.</li>
-    <li><strong>The delegation bits</strong> <code>0x380</code> are not a monster flag. They are set only on party members whose record carries the Rage passive, which hands that member to the target resolver. A normal monster keeps them clear, so its scripted-cast cases fire.</li>
+    <li><strong>The delegation bits</strong> <code>0x380</code> are not a monster flag. They are set only on party members whose record carries the Rage passive: the command ring skips that member, and at the round's start the auto assembler fills its turn with a random combo of its learned arts. A normal monster keeps them clear, so its scripted-cast cases fire.</li>
   </ul>
   <p>The cooldown latches behind those scripted casts are cleared only at battle init, so a boss self-heals at most once per fight. In the port the picker&rsquo;s generic core and the per-monster switch are separate (<code>World::pick_monster_action</code>, <code>engine-battle::monster_ai</code>); a scripted cast the active spell catalog cannot fold degrades to a physical strike.</p>
   <p><strong>Targeting stays retail by default.</strong> A single-target monster attack goes to a uniformly random living party member. The <em>Smart monsters</em> toggle redirects it to the lowest-HP member instead, after the faithful pick has been rolled in full, so the random stream is byte-identical either way (<a href="engine.html#fidelity">engine options</a>).</p>

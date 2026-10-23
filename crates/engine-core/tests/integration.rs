@@ -40,6 +40,7 @@ mod battle_member_step_back;
 mod battle_open_flow;
 mod battle_physical_damage;
 mod battle_player_driven;
+mod battle_rage_party_live;
 mod battle_reaction_stage_precedence;
 mod battle_real_data_chain;
 mod battle_reentry_after_unfinished;
