@@ -547,6 +547,42 @@ div.play-vis-head { cursor: default; }
             </li>
           </ul>
         </details>
+        <details class="play-battle-tools" id="play-gameplay-tweaks">
+          <summary>Gameplay tweaks</summary>
+          <div class="play-btn-row">
+            <label class="play-dev-menu"
+                   title="Now and then a capturable Seru spawns shiny: +35% stats, and once caught its magic deals +35% damage (the patcher's --shiny-seru; the desktop launcher's Shiny Seru row, play-window --no-shiny-seru turns it off). Not retail; Retail-faithful holds it off. Starts on the engine's default.">
+              <input type="checkbox" id="play-shiny-seru"> Shiny Seru
+            </label>
+            <label class="play-dev-menu"
+                   title="A successful escape banks 5% of the fled fight's EXP into every party member (the patcher's --flee-exp; play-window --flee-exp). Not retail; Retail-faithful holds it off.">
+              <input type="checkbox" id="play-flee-exp"> Run-away EXP
+            </label>
+            <label title="Multiplies every monster's EXP reward (the patcher's --exp-scale; play-window --exp-rate). 1x is retail; Retail-faithful holds it at 1x.">
+              EXP rate
+              <select id="play-exp-rate">
+                <option value="1000">1x</option>
+                <option value="1500">1.5x</option>
+                <option value="2000">2x</option>
+                <option value="3000">3x</option>
+                <option value="5000">5x</option>
+                <option value="500">0.5x</option>
+              </select>
+            </label>
+            <label class="play-dev-menu"
+                   title="Jette's Absolute Fortress keeps its random battles and its Door of Light on a save that left the Floating Castle with under a minute on the clock (the patcher's --fortress-encounter-fix; play-window --no-fortress-encounter-fix turns it off). A healthy save plays the same either way; Retail-faithful holds it off. Starts on the engine's default.">
+              <input type="checkbox" id="play-fortress-fix"> Fortress battles fix
+            </label>
+            <label class="play-dev-menu"
+                   title="Elemental jewels, guards and All Guard protect against the boss cinematic casts (Xain, Cort, the Delilas trio), which retail lets through (the patcher's --jewel-fix; play-window --jewel-fix). Not retail; Retail-faithful holds it off.">
+              <input type="checkbox" id="play-jewel-fix"> Boss casts respect jewels
+            </label>
+            <label class="play-dev-menu"
+                   title="Stops the retail battle softlock where a party member's HP readout stops short of their live HP and the battle waits on it forever, the camera circling (play-window --no-hp-readout-guard turns it off). A port fix with no patcher twin; Retail-faithful holds it off. Starts on the engine's default.">
+              <input type="checkbox" id="play-hp-readout-guard"> Battle freeze guard
+            </label>
+          </div>
+        </details>
         <details class="play-battle-tools" id="play-battle-tools">
           <summary>Battle tools</summary>
           <div class="play-btn-row">
@@ -2450,6 +2486,27 @@ div.play-vis-head { cursor: default; }
   const entryPulseEl = document.getElementById('play-entry-pulse');
   const cadenceEl = document.getElementById('play-battle-frame-cadence');
   const savedListEl = document.getElementById('play-arts-saved-list');
+  const shinyEl = document.getElementById('play-shiny-seru');
+  const fleeExpEl = document.getElementById('play-flee-exp');
+  const expRateEl = document.getElementById('play-exp-rate');
+  const fortressFixEl = document.getElementById('play-fortress-fix');
+  const jewelFixEl = document.getElementById('play-jewel-fix');
+  const hpGuardEl = document.getElementById('play-hp-readout-guard');
+  /* The gameplay tweaks start on the engine's defaults
+   * (GameplayTweaks::default, the window's too): read them back from the
+   * fresh runtime before the first write, so no box hardcodes a default. */
+  function syncTweakDefaults() {
+    if (shinyEl.dataset.synced === '1') return;
+    const sh = rtCall('shiny_seru');
+    if (sh === undefined) return;
+    shinyEl.checked = !!sh;
+    fleeExpEl.checked = !!rtCall('flee_exp');
+    expRateEl.value = String(rtCall('exp_rate_permille') || 1000);
+    fortressFixEl.checked = !!rtCall('fortress_encounter_fix');
+    jewelFixEl.checked = !!rtCall('jewel_fix');
+    hpGuardEl.checked = !!rtCall('hp_readout_guard');
+    shinyEl.dataset.synced = '1';
+  }
   function rtCall(name, ...args) {
     const rt = window.__playRuntime;
     if (!rt || typeof rt[name] !== 'function') return undefined;
@@ -2477,6 +2534,13 @@ div.play-vis-head { cursor: default; }
     rtCall('set_entry_pulse', !!entryPulseEl.checked);
     rtCall('set_battle_frame_cadence', !!cadenceEl.checked);
     rtCall('set_arts_saved_list', !!savedListEl.checked);
+    syncTweakDefaults();
+    rtCall('set_shiny_seru', !!shinyEl.checked);
+    rtCall('set_flee_exp', !!fleeExpEl.checked);
+    rtCall('set_exp_rate_permille', parseInt(expRateEl.value, 10) || 1000);
+    rtCall('set_fortress_encounter_fix', !!fortressFixEl.checked);
+    rtCall('set_jewel_fix', !!jewelFixEl.checked);
+    rtCall('set_hp_readout_guard', !!hpGuardEl.checked);
     rtCall('set_retail_mode', !!retailModeEl.checked);
   }
   retailModeEl.addEventListener('change', () => {
@@ -2510,6 +2574,12 @@ div.play-vis-head { cursor: default; }
   entryPulseEl.addEventListener('change', () => { rtCall('set_entry_pulse', !!entryPulseEl.checked); canvas.focus(); });
   cadenceEl.addEventListener('change', () => { rtCall('set_battle_frame_cadence', !!cadenceEl.checked); canvas.focus(); });
   savedListEl.addEventListener('change', () => { rtCall('set_arts_saved_list', !!savedListEl.checked); canvas.focus(); });
+  shinyEl.addEventListener('change', () => { rtCall('set_shiny_seru', !!shinyEl.checked); canvas.focus(); });
+  fleeExpEl.addEventListener('change', () => { rtCall('set_flee_exp', !!fleeExpEl.checked); canvas.focus(); });
+  expRateEl.addEventListener('change', () => { rtCall('set_exp_rate_permille', parseInt(expRateEl.value, 10) || 1000); canvas.focus(); });
+  fortressFixEl.addEventListener('change', () => { rtCall('set_fortress_encounter_fix', !!fortressFixEl.checked); canvas.focus(); });
+  jewelFixEl.addEventListener('change', () => { rtCall('set_jewel_fix', !!jewelFixEl.checked); canvas.focus(); });
+  hpGuardEl.addEventListener('change', () => { rtCall('set_hp_readout_guard', !!hpGuardEl.checked); canvas.focus(); });
   window.__playSyncPageToggles = syncPageToggles;
   window.__playApplyPageToggles = applyPageToggles;
 

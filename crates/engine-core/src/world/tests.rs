@@ -349,6 +349,7 @@ mod field_timer_actors;
 mod flash_limiter;
 mod fog_region_reset;
 mod game_over_hold;
+mod gameplay_tweaks;
 mod inline_dialogue;
 mod item_bag_steal;
 mod item_held_query;

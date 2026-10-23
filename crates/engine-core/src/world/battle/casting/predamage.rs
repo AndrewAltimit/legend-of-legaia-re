@@ -69,6 +69,14 @@ impl World {
         }
         if CAPTURE_BYPASS_MOVE_IDS.contains(&move_id) {
             let power = self.baked_module_power(move_id).unwrap_or(power);
+            // The jewel fix (`WorldToggles::jewel_fix`, the `--jewel-fix`
+            // disc patch's twin) retargets these casts at the respecting
+            // wrapper, as the patch retargets their `jal FUN_801DD6B4` words
+            // at `FUN_801DD4B0`: the whole roll becomes that wrapper's, not
+            // only the finisher flag.
+            if self.toggles.jewel_fix {
+                return self.capture_respect_predamage(attacker, target, power);
+            }
             return self.capture_bypass_predamage(attacker, target, power);
         }
         if self.is_capture_class_move(move_id) {

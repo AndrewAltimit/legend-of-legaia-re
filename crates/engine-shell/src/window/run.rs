@@ -133,6 +133,7 @@ fn play_intro_movie(
 struct LaunchToggles {
     entry_pulse: bool,
     smart_monsters: bool,
+    tweaks: legaia_engine_session::session_switches::GameplayTweaks,
     retail: bool,
     vm_dialogue: bool,
     terrain_y: bool,
@@ -147,6 +148,7 @@ fn apply_launch_toggles(session: &mut NativeSession, toggles: LaunchToggles) {
     let LaunchToggles {
         entry_pulse,
         smart_monsters,
+        tweaks,
         retail,
         vm_dialogue,
         terrain_y,
@@ -197,6 +199,7 @@ fn apply_launch_toggles(session: &mut NativeSession, toggles: LaunchToggles) {
         entry_pulse,
         battle_frame_cadence: session.host.world.toggles.battle_sm_frame_cadence,
         arts_saved_list: session.host.world.toggles.arts_saved_list,
+        tweaks,
         retail,
     };
     switches.apply(&mut session.host.world.toggles);
@@ -512,6 +515,7 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
         LaunchToggles {
             entry_pulse: fidelity.entry_pulse,
             smart_monsters: fidelity.smart_monsters,
+            tweaks: fidelity.tweaks,
             retail: fidelity.retail,
             vm_dialogue,
             terrain_y,

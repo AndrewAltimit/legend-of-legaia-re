@@ -20,6 +20,12 @@ pub struct LaunchFidelity {
     /// Smarter monster targeting (`--smart-monsters`,
     /// `WorldToggles::smarter_monster_targeting`). Not retail.
     pub smart_monsters: bool,
+    /// The gameplay tweaks - the patcher features graduated into engine
+    /// switches (Shiny Seru, run-away EXP, the EXP rate, the Fortress
+    /// encounter fix, the jewel fix) and the battle HP-readout guard:
+    /// `--no-shiny-seru`, `--flee-exp`, `--exp-rate`,
+    /// `--no-fortress-encounter-fix`, `--jewel-fix`, `--no-hp-readout-guard`.
+    pub tweaks: legaia_engine_session::session_switches::GameplayTweaks,
     /// The camera-occlusion fade around the player.
     pub occlusion_fade: bool,
     /// The volumetric ground fog.
@@ -74,6 +80,7 @@ impl LaunchFidelity {
             dyn_shadows: true,
             entry_pulse: true,
             smart_monsters: false,
+            tweaks: legaia_engine_session::session_switches::GameplayTweaks::default(),
             occlusion_fade: true,
             volumetric_fog: true,
             retail: false,
@@ -90,6 +97,7 @@ impl LaunchFidelity {
             dyn_shadows: false,
             entry_pulse: false,
             smart_monsters: false,
+            tweaks: legaia_engine_session::session_switches::GameplayTweaks::retail(),
             occlusion_fade: false,
             volumetric_fog: false,
             retail: true,

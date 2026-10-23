@@ -245,7 +245,13 @@ impl World {
             let Some(def) = catalog.get(slot.monster_id) else {
                 continue;
             };
-            xp_total = xp_total.saturating_add(def.exp as u32);
+            // `WorldToggles::exp_rate_permille` (the `--exp-scale` twin)
+            // scales each record's EXP before the sum, as the patch scales
+            // the record field; `1000` is the identity.
+            xp_total = xp_total.saturating_add(u32::from(crate::world::scale_exp_permille(
+                def.exp,
+                self.toggles.exp_rate_permille,
+            )));
             gold_acc = gold_acc.saturating_add(
                 legaia_engine_battle_vm::battle_formulas::victory_gold_per_monster(def.gold),
             );
@@ -353,6 +359,50 @@ impl World {
             level_ups,
             drops,
         }
+    }
+
+    /// Run-away EXP (`WorldToggles::flee_exp`, the engine twin of the
+    /// patcher's `--flee-exp` hook into the escape teardown): bank
+    /// [`crate::world::FLEE_EXP_PCT`] percent of the fled formation's listed
+    /// EXP - every formation seat, at the [`crate::world::WorldToggles::exp_rate_permille`]
+    /// scale - into each party member's cumulative XP. Banked, not levelled,
+    /// as the hook does: the share lands in the XP total the status screen
+    /// shows, and the next won battle's level check crosses any threshold it
+    /// reached. Each total saturates at the game's `9,999,999`. A special
+    /// battle (`_DAT_8007BAC0 != 0`) pays nothing, as its win does not.
+    /// Returns the per-member amount banked (`0` when the toggle is off).
+    pub(in crate::world) fn bank_flee_exp(&mut self) -> u32 {
+        const XP_CAP: u32 = 9_999_999;
+        if !self.toggles.flee_exp || self.special_battle_word() != 0 {
+            return 0;
+        }
+        let Some(formation) = self.battle.active_formation.as_ref() else {
+            return 0;
+        };
+        let rate = self.toggles.exp_rate_permille;
+        let total: u32 = formation
+            .slots
+            .iter()
+            .filter_map(|slot| self.tables.monster_catalog.get(slot.monster_id))
+            .map(|def| u32::from(crate::world::scale_exp_permille(def.exp, rate)))
+            .fold(0u32, u32::saturating_add);
+        let share = total.saturating_mul(crate::world::FLEE_EXP_PCT) / 100;
+        if share == 0 {
+            return 0;
+        }
+        for member in 0..self.party.party_count as usize {
+            let slot = self.party_roster_slot(member);
+            let tracker = &mut self.party.level_up_tracker;
+            let Some(xp) = tracker.xp.get_mut(slot) else {
+                continue;
+            };
+            *xp = xp.saturating_add(share).min(XP_CAP);
+            let banked = *xp;
+            if let Some(rec) = self.party.roster.members.get_mut(slot) {
+                rec.set_cumulative_xp(banked);
+            }
+        }
+        share
     }
 
     /// Resolve a **steal** attempt against `monster_id` using the per-monster

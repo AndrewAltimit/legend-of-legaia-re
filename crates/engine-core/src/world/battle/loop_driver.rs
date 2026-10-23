@@ -69,11 +69,29 @@ impl World {
     ///
     /// REF: FUN_80047430 (kernel + `// PORT:` tags in
     /// `legaia_engine_battle_vm::battle_hp_bar`)
+    ///
+    /// With [`crate::world::WorldToggles::hp_readout_guard`] on, a party
+    /// slot left in the absorbing state - displayed HP off live HP with a
+    /// zero accumulator, which retail's drain never moves - first gets the
+    /// difference re-seeded into the accumulator, restoring
+    /// `display - live == pending`. The ramp then counts the readout to live
+    /// HP and state `0x51`'s settle check opens. Off (retail mode), the ramp
+    /// runs exactly as retail's.
     pub(in crate::world) fn tick_battle_hp_bars(&mut self) {
         let seats = self.battle_seat_map();
+        let guard = self.toggles.hp_readout_guard;
         for (slot, a) in self.actors.iter_mut().enumerate() {
             let slot = u8::try_from(slot).unwrap_or(u8::MAX);
-            a.battle.tick_hp_bar(seats.retail(slot));
+            let retail_slot = seats.retail(slot);
+            if guard
+                && retail_slot.is_party()
+                && a.battle.hp_bar_pending == 0
+                && let Some(shown) = a.battle.hp_display
+                && shown != a.battle.hp
+            {
+                a.battle.hp_bar_pending = i32::from(shown) - i32::from(a.battle.hp);
+            }
+            a.battle.tick_hp_bar(retail_slot);
         }
     }
 

@@ -69,7 +69,8 @@ pub fn settings_path() -> Option<PathBuf> {
 ///
 /// Only what the game has no option of its own for lives here: the disc,
 /// and the `play-window` launch switches with no persisted option behind
-/// them (`--psx-render`, `--retail`, `--no-entry-pulse`, `--smart-monsters`). The enhancement knobs the game
+/// them (`--psx-render`, `--retail`, `--no-entry-pulse`, `--smart-monsters` and the gameplay tweaks
+/// `--no-shiny-seru`, `--flee-exp`, `--exp-rate`, `--no-fortress-encounter-fix`, `--jewel-fix`). The enhancement knobs the game
 /// itself remembers (lighting, fog, see-through walls, ...) are edited in
 /// the game's own [`OPTIONS_FILE`], so the launcher and the in-game keys
 /// change one value.
@@ -93,6 +94,30 @@ pub struct LauncherSettings {
     /// Start with smarter monster targeting (`play-window --smart-monsters`).
     #[serde(default, skip_serializing_if = "is_false")]
     pub smart_monsters: bool,
+    /// Start without Shiny Seru (`play-window --no-shiny-seru`). Stored
+    /// inverted so the shipped default (shiny on) writes nothing.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub no_shiny_seru: bool,
+    /// Start with run-away EXP (`play-window --flee-exp`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub flee_exp: bool,
+    /// The EXP rate in permille (`play-window --exp-rate`); `None` is retail's
+    /// `1x`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exp_rate_permille: Option<u16>,
+    /// Start without the Fortress encounter fix
+    /// (`play-window --no-fortress-encounter-fix`). Stored inverted: the fix
+    /// is on by default.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub no_fortress_encounter_fix: bool,
+    /// Start with the jewel fix (`play-window --jewel-fix`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub jewel_fix: bool,
+    /// Start without the battle HP-readout guard
+    /// (`play-window --no-hp-readout-guard`). Stored inverted: the guard is
+    /// on by default.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub no_hp_readout_guard: bool,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -307,8 +332,30 @@ pub fn play_args_with(info: &DiscInfo, settings: &LauncherSettings) -> Vec<std::
     if settings.smart_monsters {
         args.push("--smart-monsters".into());
     }
+    if settings.no_shiny_seru {
+        args.push("--no-shiny-seru".into());
+    }
+    if settings.flee_exp {
+        args.push("--flee-exp".into());
+    }
+    if let Some(rate) = settings.exp_rate_permille.filter(|&r| r != EXP_RATE_RETAIL) {
+        args.push("--exp-rate".into());
+        args.push(format!("{}", f64::from(rate) / 1000.0).into());
+    }
+    if settings.no_fortress_encounter_fix {
+        args.push("--no-fortress-encounter-fix".into());
+    }
+    if settings.jewel_fix {
+        args.push("--jewel-fix".into());
+    }
+    if settings.no_hp_readout_guard {
+        args.push("--no-hp-readout-guard".into());
+    }
     args
 }
+
+/// The EXP rate the launcher starts from and never passes: retail's `1x`.
+const EXP_RATE_RETAIL: u16 = legaia_engine_core::world::EXP_RATE_RETAIL;
 
 /// The game's options file, cwd-relative the way `play-window` reads it; the
 /// launcher runs in [`data_dir`], so this is the per-user one.
@@ -340,6 +387,12 @@ pub enum OptionRow {
     MonoDownmix,
     EntryPulse,
     SmartMonsters,
+    ShinySeru,
+    FleeExp,
+    ExpRate,
+    FortressFix,
+    JewelFix,
+    HpReadoutGuard,
     RetailTileCrop,
     RetailObjectWindow,
     Retail,
@@ -347,7 +400,7 @@ pub enum OptionRow {
 
 /// The option rows in screen order, with the heading each group starts
 /// under (`Some` on a group's first row).
-pub const OPTION_ROWS: [(Option<&str>, OptionRow); 20] = [
+pub const OPTION_ROWS: [(Option<&str>, OptionRow); 26] = [
     (Some("Display"), OptionRow::Fullscreen),
     (None, OptionRow::WindowSize),
     (None, OptionRow::CameraDistance),
@@ -362,6 +415,12 @@ pub const OPTION_ROWS: [(Option<&str>, OptionRow); 20] = [
     (Some("Play"), OptionRow::PreciseMovement),
     (None, OptionRow::SmartMonsters),
     (None, OptionRow::ReduceFlashing),
+    (Some("Gameplay tweaks"), OptionRow::ShinySeru),
+    (None, OptionRow::FleeExp),
+    (None, OptionRow::ExpRate),
+    (None, OptionRow::FortressFix),
+    (None, OptionRow::JewelFix),
+    (None, OptionRow::HpReadoutGuard),
     (Some("Sound"), OptionRow::MusicVolume),
     (None, OptionRow::SfxVolume),
     (None, OptionRow::MonoDownmix),
@@ -408,6 +467,12 @@ impl OptionRow {
             Self::MonoDownmix => "Mono output",
             Self::EntryPulse => "Living ground pulse",
             Self::SmartMonsters => "Smarter monsters",
+            Self::ShinySeru => "Shiny Seru",
+            Self::FleeExp => "Run-away EXP",
+            Self::ExpRate => "EXP rate",
+            Self::FortressFix => "Fortress battles fix",
+            Self::JewelFix => "Boss casts respect jewels",
+            Self::HpReadoutGuard => "Battle freeze guard",
             Self::RetailTileCrop => "Original ground culling",
             Self::RetailObjectWindow => "Original prop culling",
             Self::Retail => "Original game only",
@@ -470,6 +535,28 @@ impl OptionRow {
                 "Monsters aim single-target attacks at your weakest party member instead \
                  of picking at random. Harder than the original."
             }
+            Self::ShinySeru => {
+                "Now and then a Seru you can capture appears shiny: stronger, and its \
+                 magic deals more damage once caught. The original has no shiny Seru."
+            }
+            Self::FleeExp => {
+                "Running away from a battle still earns a little experience. The \
+                 original gives nothing for fleeing."
+            }
+            Self::ExpRate => "Multiplies the experience every monster gives; 1x is the original.",
+            Self::FortressFix => {
+                "Fixes a bug where Jette's fortress has no battles, and its Door of Light \
+                 does not work, if you escaped the floating castle with under a minute \
+                 left. Other saves play the same either way."
+            }
+            Self::JewelFix => {
+                "Elemental jewels and guards protect against the bosses' signature \
+                 attacks too, which the original lets through."
+            }
+            Self::HpReadoutGuard => {
+                "Stops a rare original bug where a battle freezes with the camera \
+                 circling forever after a party member's HP gauge stops counting."
+            }
             Self::RetailTileCrop => {
                 "Draw only the ground the PlayStation's camera would see, as the original \
                  does. Off draws the whole map."
@@ -490,7 +577,16 @@ impl OptionRow {
     pub fn is_game_option(self) -> bool {
         !matches!(
             self,
-            Self::PsxRender | Self::Retail | Self::EntryPulse | Self::SmartMonsters
+            Self::PsxRender
+                | Self::Retail
+                | Self::EntryPulse
+                | Self::SmartMonsters
+                | Self::ShinySeru
+                | Self::FleeExp
+                | Self::ExpRate
+                | Self::FortressFix
+                | Self::JewelFix
+                | Self::HpReadoutGuard
         )
     }
 
@@ -536,6 +632,16 @@ impl OptionRow {
             Self::MonoDownmix => on_off(opts.downmix_mono),
             Self::EntryPulse => on_off(!s.no_entry_pulse),
             Self::SmartMonsters => on_off(s.smart_monsters),
+            Self::ShinySeru => on_off(!s.no_shiny_seru),
+            Self::FleeExp => on_off(s.flee_exp),
+            Self::ExpRate => {
+                legaia_engine_session::session_switches::GameplayTweaks::exp_rate_label(
+                    s.exp_rate_permille.unwrap_or(EXP_RATE_RETAIL),
+                )
+            }
+            Self::FortressFix => on_off(!s.no_fortress_encounter_fix),
+            Self::JewelFix => on_off(s.jewel_fix),
+            Self::HpReadoutGuard => on_off(!s.no_hp_readout_guard),
             Self::RetailTileCrop => on_off(opts.retail_view_window),
             Self::RetailObjectWindow => on_off(opts.retail_static_window),
             Self::Retail => on_off(s.retail),
@@ -603,6 +709,18 @@ impl OptionRow {
             Self::MonoDownmix => opts.downmix_mono ^= true,
             Self::EntryPulse => s.no_entry_pulse ^= true,
             Self::SmartMonsters => s.smart_monsters ^= true,
+            Self::ShinySeru => s.no_shiny_seru ^= true,
+            Self::FleeExp => s.flee_exp ^= true,
+            Self::ExpRate => {
+                let next = legaia_engine_session::session_switches::GameplayTweaks::step_exp_rate(
+                    s.exp_rate_permille.unwrap_or(EXP_RATE_RETAIL),
+                    dir,
+                );
+                s.exp_rate_permille = (next != EXP_RATE_RETAIL).then_some(next);
+            }
+            Self::FortressFix => s.no_fortress_encounter_fix ^= true,
+            Self::JewelFix => s.jewel_fix ^= true,
+            Self::HpReadoutGuard => s.no_hp_readout_guard ^= true,
             Self::RetailTileCrop => opts.retail_view_window ^= true,
             Self::RetailObjectWindow => opts.retail_static_window ^= true,
             Self::Retail => s.retail ^= true,
@@ -835,6 +953,50 @@ mod tests {
             !a.iter()
                 .any(|s| s == "--no-entry-pulse" || s == "--smart-monsters")
         );
+    }
+
+    /// The gameplay-tweak rows: each stored value becomes its `play-window`
+    /// flag, the defaults write nothing, the EXP rate cycles through the
+    /// engine's list, and `--retail` holds them all off.
+    #[test]
+    fn gameplay_tweak_rows_ride_the_args() {
+        use legaia_engine_menus::options::OptionsState;
+        let info = ok_info(Path::new("/g/l.bin"));
+        let mut o = OptionsState::default();
+        let mut s = LauncherSettings::default();
+        assert_eq!(OptionRow::ShinySeru.value(&o, &s), "On");
+        assert_eq!(OptionRow::FortressFix.value(&o, &s), "On");
+        assert_eq!(OptionRow::FleeExp.value(&o, &s), "Off");
+        assert_eq!(OptionRow::ExpRate.value(&o, &s), "1x");
+        let plain = play_args_with(&info, &s);
+        OptionRow::ShinySeru.adjust(&mut o, &mut s, 1);
+        OptionRow::FleeExp.adjust(&mut o, &mut s, 1);
+        OptionRow::ExpRate.adjust(&mut o, &mut s, 1);
+        OptionRow::FortressFix.adjust(&mut o, &mut s, 1);
+        OptionRow::JewelFix.adjust(&mut o, &mut s, 1);
+        assert_eq!(OptionRow::HpReadoutGuard.value(&o, &s), "On");
+        OptionRow::HpReadoutGuard.adjust(&mut o, &mut s, 1);
+        assert_eq!(OptionRow::ExpRate.value(&o, &s), "1.5x");
+        assert!(!OptionRow::ExpRate.is_game_option());
+        let a = play_args_with(&info, &s);
+        for flag in [
+            "--no-shiny-seru",
+            "--flee-exp",
+            "--exp-rate",
+            "--no-fortress-encounter-fix",
+            "--jewel-fix",
+            "--no-hp-readout-guard",
+        ] {
+            assert!(a.iter().any(|x| x == flag), "{flag}");
+            assert!(!plain.iter().any(|x| x == flag), "{flag} off by default");
+        }
+        assert!(a.iter().any(|x| x == "1.5"));
+        // Back to 1x writes no rate.
+        OptionRow::ExpRate.adjust(&mut o, &mut s, -1);
+        assert_eq!(s.exp_rate_permille, None);
+        let retail = LauncherSettings { retail: true, ..s };
+        let a = play_args_with(&info, &retail);
+        assert!(!a.iter().any(|x| x == "--flee-exp" || x == "--jewel-fix"));
     }
 
     #[test]

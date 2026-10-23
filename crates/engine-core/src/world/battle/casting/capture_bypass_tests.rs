@@ -407,3 +407,49 @@ fn venom_and_toxic_scale_a_special_attack_on_both_sides() {
     assert!(weak_caster < plain, "toxic caster {weak_caster} vs {plain}");
     assert!(soft_target > plain, "toxic target {soft_target} vs {plain}");
 }
+
+/// Damage `move_id` deals to the resisting / non-resisting defender with the
+/// jewel fix (`WorldToggles::jewel_fix`) set as given.
+fn jewel_fix_damage(move_id: u8, jewel_fix: bool, resist: bool) -> u16 {
+    let mut world = world_with_resisting_party();
+    world.toggles.jewel_fix = jewel_fix;
+    if !resist && let Some(m) = world.party.roster.members.get_mut(0) {
+        let mut bits = m.ability_bits();
+        bits[3] &= !0x20;
+        m.set_ability_bits(bits);
+    }
+    let before = world.actors[0].battle.hp;
+    world.cast_spell_on_slots(1, &spell(move_id), &[0]);
+    before - world.actors[0].battle.hp
+}
+
+/// The jewel fix: with the toggle on, a bypass-census cast rolls the
+/// respecting wrapper `FUN_801DD4B0` (the patch's `jal` retarget), so the
+/// defender's resist ladder halves it. Off (retail mode), the hit is the
+/// bypass wrapper's, bit for bit.
+#[test]
+fn jewel_fix_makes_a_bypass_cast_respect_the_resist_ladder() {
+    let fixed_resisted = jewel_fix_damage(BYPASS_MOVE_ID, true, true);
+    let fixed_unresisted = jewel_fix_damage(BYPASS_MOVE_ID, true, false);
+    assert!(fixed_resisted > 0);
+    assert_eq!(
+        fixed_unresisted,
+        fixed_resisted * 2,
+        "the fixed cast is halved by the ladder"
+    );
+    // Retail mode: identical to the unfixed bypass hit.
+    assert_eq!(
+        jewel_fix_damage(BYPASS_MOVE_ID, false, true),
+        damage_from(BYPASS_MOVE_ID)
+    );
+    assert_eq!(
+        jewel_fix_damage(BYPASS_MOVE_ID, false, true),
+        jewel_fix_damage(BYPASS_MOVE_ID, false, false),
+        "unfixed, the resist bit changes nothing"
+    );
+    // A move outside the census is untouched by the toggle.
+    assert_eq!(
+        jewel_fix_damage(RESPECT_MOVE_ID, true, true),
+        jewel_fix_damage(RESPECT_MOVE_ID, false, true)
+    );
+}

@@ -17,7 +17,7 @@
 //!   (written to its own `legaia-options.toml`, the value the in-game keys
 //!   toggle) and the launch switches with no option behind them
 //!   (`--psx-render`, `--retail`, `--no-entry-pulse`, `--smart-monsters`,
-//!   kept in `launcher.toml`), in five groups. The list scrolls when it is
+//!   the gameplay tweaks, kept in `launcher.toml`), in six groups. The list scrolls when it is
 //!   longer than the panel: focus keeps the selected row in view, and a bar
 //!   on the panel's edge shows where the view is. Every row says what it
 //!   does in the help box.
@@ -257,7 +257,7 @@ enum Line {
 
 /// The option list's lines in screen order.
 fn option_lines() -> Vec<Line> {
-    let mut v = Vec::with_capacity(OPTION_ROWS.len() + 5);
+    let mut v = Vec::with_capacity(OPTION_ROWS.len() + 6);
     for (heading, row) in OPTION_ROWS {
         if let Some(h) = heading {
             v.push(Line::Heading(h));
@@ -1778,6 +1778,34 @@ mod tests {
                 retail,
                 ..
             }) => assert!(no_entry_pulse && smart_monsters && !retail),
+            other => panic!("expected play-window, got {other:?}"),
+        }
+        // So do the gameplay-tweak rows.
+        let settings = LauncherSettings {
+            no_shiny_seru: true,
+            flee_exp: true,
+            exp_rate_permille: Some(2000),
+            no_fortress_encounter_fix: true,
+            jewel_fix: true,
+            no_hp_readout_guard: true,
+            ..Default::default()
+        };
+        let mut argv = vec![OsString::from("legaia-engine")];
+        argv.extend(launcher::play_args_with(&info, &settings));
+        match Cli::try_parse_from(argv).unwrap().cmd {
+            Some(Cmd::PlayWindow {
+                no_shiny_seru,
+                flee_exp,
+                exp_rate,
+                no_fortress_encounter_fix,
+                jewel_fix,
+                no_hp_readout_guard,
+                ..
+            }) => {
+                assert!(no_shiny_seru && flee_exp && no_fortress_encounter_fix && jewel_fix);
+                assert!(no_hp_readout_guard);
+                assert_eq!(exp_rate, Some(2000));
+            }
             other => panic!("expected play-window, got {other:?}"),
         }
     }

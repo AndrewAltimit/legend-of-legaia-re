@@ -135,7 +135,10 @@ pub use screen_fx_state::{ClearColourRamp, ScreenFrame, ScreenFxState};
 pub use state::*;
 pub use types::*;
 pub use world_map_state::WorldMapState;
-pub use world_toggles::{DEFAULT_BATTLE_SM_FRAME_CADENCE, WorldToggles};
+pub use world_toggles::{
+    DEFAULT_BATTLE_SM_FRAME_CADENCE, EXP_RATE_RANGE, EXP_RATE_RETAIL, FLEE_EXP_PCT,
+    FORTRESS_ENCOUNTER_SCENES, FORTRESS_STALE_FLAG, WorldToggles, scale_exp_permille,
+};
 
 mod actors;
 pub mod ambient;

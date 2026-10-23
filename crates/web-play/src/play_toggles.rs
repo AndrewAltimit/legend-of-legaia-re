@@ -1,7 +1,9 @@
 //! The play page's twins of the native window's launch switches that were
 //! native-only: `--retail`, `--set-flag`, `--no-entry-pulse`,
 //! `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS`,
-//! `LEGAIA_BATTLE_FRAME_CADENCE` and `LEGAIA_ARTS_SAVED_LIST`.
+//! `LEGAIA_BATTLE_FRAME_CADENCE`, `LEGAIA_ARTS_SAVED_LIST` and the gameplay
+//! tweaks (`--no-shiny-seru`, `--flee-exp`, `--exp-rate`,
+//! `--no-fortress-encounter-fix`, `--jewel-fix`, `--no-hp-readout-guard`).
 //!
 //! Each writes the same engine state the native launch writes - the world's
 //! `WorldToggles`, the system-flag bank, `OptionsState::pin_retail` - so the
@@ -44,6 +46,11 @@ pub struct PageToggles {
     /// (the native `Renderer::set_ui_psx_tint`). On by default: it is retail
     /// behaviour.
     pub ui_psx_tint: bool,
+    /// The patcher features graduated into engine switches
+    /// (`legaia_engine_session::session_switches::GameplayTweaks`), starting
+    /// from the engine's defaults as the window does. Retail mode holds them
+    /// at retail's values whatever this says.
+    pub tweaks: legaia_engine_session::session_switches::GameplayTweaks,
 }
 
 impl Default for PageToggles {
@@ -56,6 +63,7 @@ impl Default for PageToggles {
             battle_frame_cadence: legaia_engine_core::world::DEFAULT_BATTLE_SM_FRAME_CADENCE,
             arts_saved_list: false,
             ui_psx_tint: true,
+            tweaks: legaia_engine_session::session_switches::GameplayTweaks::default(),
         }
     }
 }
@@ -74,6 +82,7 @@ impl LegaiaRuntime {
             entry_pulse: t.entry_pulse,
             battle_frame_cadence: t.battle_frame_cadence,
             arts_saved_list: t.arts_saved_list,
+            tweaks: t.tweaks,
             retail: t.retail,
         };
         if let Some(host) = self.scene_host.host_mut() {
@@ -146,6 +155,80 @@ impl LegaiaRuntime {
     /// Whether [`Self::set_arts_saved_list`] is on.
     pub fn arts_saved_list(&self) -> bool {
         self.page_toggles.arts_saved_list
+    }
+
+    /// Shiny Seru, the native `--no-shiny-seru` inverted (on by default):
+    /// battle entry may roll a rare shiny capturable enemy. Retail mode holds
+    /// it off.
+    pub fn set_shiny_seru(&mut self, on: bool) {
+        self.page_toggles.tweaks.shiny_seru = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_shiny_seru`] is on.
+    pub fn shiny_seru(&self) -> bool {
+        self.page_toggles.tweaks.shiny_seru
+    }
+
+    /// Run-away EXP, the native `--flee-exp`: a successful escape banks a
+    /// share of the fled fight's EXP. Retail mode holds it off.
+    pub fn set_flee_exp(&mut self, on: bool) {
+        self.page_toggles.tweaks.flee_exp = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_flee_exp`] is on.
+    pub fn flee_exp(&self) -> bool {
+        self.page_toggles.tweaks.flee_exp
+    }
+
+    /// The EXP rate in permille, the native `--exp-rate` (`1000` = retail);
+    /// clamped to the engine's range when applied. Retail mode holds `1000`.
+    pub fn set_exp_rate_permille(&mut self, permille: u16) {
+        self.page_toggles.tweaks.exp_rate_permille = permille;
+        self.apply_page_toggles();
+    }
+
+    /// The rate [`Self::set_exp_rate_permille`] set.
+    pub fn exp_rate_permille(&self) -> u16 {
+        self.page_toggles.tweaks.exp_rate_permille
+    }
+
+    /// The Fortress encounter fix, the native `--no-fortress-encounter-fix`
+    /// inverted (on by default). Retail mode holds it off.
+    pub fn set_fortress_encounter_fix(&mut self, on: bool) {
+        self.page_toggles.tweaks.fortress_encounter_fix = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_fortress_encounter_fix`] is on.
+    pub fn fortress_encounter_fix(&self) -> bool {
+        self.page_toggles.tweaks.fortress_encounter_fix
+    }
+
+    /// The jewel fix, the native `--jewel-fix`: the boss cinematic casts
+    /// respect elemental guards. Retail mode holds it off.
+    pub fn set_jewel_fix(&mut self, on: bool) {
+        self.page_toggles.tweaks.jewel_fix = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_jewel_fix`] is on.
+    pub fn jewel_fix(&self) -> bool {
+        self.page_toggles.tweaks.jewel_fix
+    }
+
+    /// The battle HP-readout guard, the native `--no-hp-readout-guard`
+    /// inverted (on by default): the state-`0x51` readout softlock cannot
+    /// hold. Retail mode holds it off.
+    pub fn set_hp_readout_guard(&mut self, on: bool) {
+        self.page_toggles.tweaks.hp_readout_guard = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_hp_readout_guard`] is on.
+    pub fn hp_readout_guard(&self) -> bool {
+        self.page_toggles.tweaks.hp_readout_guard
     }
 
     /// The photosensitivity guard (`OptionsState::reduce_flashing`), the
@@ -341,6 +424,39 @@ mod tests {
         // No scene: the flag write is refused, not dropped silently.
         assert!(!rt.set_system_flag(0x142, true));
         assert!(!rt.system_flag(0x142));
+    }
+
+    /// The gameplay tweaks start at the engine's defaults (the window's too),
+    /// each setter reads back, and the page carries a control for each.
+    #[test]
+    fn gameplay_tweaks_start_at_the_engine_defaults() {
+        let mut rt = LegaiaRuntime::new();
+        assert_eq!(
+            rt.page_toggles.tweaks,
+            legaia_engine_session::session_switches::GameplayTweaks::default()
+        );
+        assert!(rt.shiny_seru() && rt.fortress_encounter_fix() && rt.hp_readout_guard());
+        assert!(!rt.flee_exp() && !rt.jewel_fix());
+        assert_eq!(rt.exp_rate_permille(), 1000);
+        rt.set_shiny_seru(false);
+        rt.set_flee_exp(true);
+        rt.set_exp_rate_permille(2000);
+        rt.set_fortress_encounter_fix(false);
+        rt.set_jewel_fix(true);
+        assert!(!rt.shiny_seru() && rt.flee_exp() && rt.jewel_fix());
+        assert!(!rt.fortress_encounter_fix());
+        assert_eq!(rt.exp_rate_permille(), 2000);
+        let page = include_str!("../../../site/_content/play.html");
+        for call in [
+            "set_shiny_seru",
+            "set_flee_exp",
+            "set_exp_rate_permille",
+            "set_fortress_encounter_fix",
+            "set_jewel_fix",
+            "set_hp_readout_guard",
+        ] {
+            assert!(page.contains(call), "play.html never calls {call}");
+        }
     }
 
     /// The page's cadence starts where `WorldToggles::new` does, and the

@@ -90,7 +90,7 @@ impl World {
             // cosmetic: a scene's regions are several story-state variants
             // laid end to end, so the group choice decides which rates,
             // formations and backdrop the step can see at all.
-            tracker.select_group(|flag| self.system_flag_test(flag));
+            tracker.select_group(|flag| self.encounter_condition_flag_test(flag));
             // The reader's battle-setup half runs on every step that lands in
             // a region, before - and regardless of - the roll.
             if let Some(region) = tracker.table().region_at_world(wx, wz) {

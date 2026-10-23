@@ -616,7 +616,7 @@ impl World {
             // Same per-step condition walk the field path runs: the kingdom
             // MANs carry four story-state variants of the overworld region
             // set, and only one is live.
-            tracker.select_group(|flag| self.system_flag_test(flag));
+            tracker.select_group(|flag| self.encounter_condition_flag_test(flag));
             let roll = tracker.on_step(wx, wz, || self.next_rand());
             self.encounters.step_counter = tracker.counter();
             self.world_map.region_tracker = Some(tracker);

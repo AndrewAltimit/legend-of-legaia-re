@@ -29,8 +29,13 @@ impl World {
     /// marks the learned spell shiny. Mirrors the retail `--shiny-seru` battle
     /// hook (`FUN_800513F0` → cave routine). Idempotent per battle; the slot
     /// sets are cleared by [`Self::enter_battle_from_formation`] first.
+    ///
+    /// Gated on [`crate::world::WorldToggles::shiny_seru`]: retail has no
+    /// shiny roll, so with the toggle off (retail-faithful mode) battle entry
+    /// takes no `rand()` draw here and the shared stream reaches the
+    /// formation-advantage roll exactly where retail's does.
     pub(in crate::world) fn roll_shiny_enemy(&mut self, first_monster: u8) {
-        if self.seru.shiny_chance_pct == 0 {
+        if !self.toggles.shiny_seru || self.seru.shiny_chance_pct == 0 {
             return;
         }
         if (self.next_rand() % 100) as u8 >= self.seru.shiny_chance_pct {

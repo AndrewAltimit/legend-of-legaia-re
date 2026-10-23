@@ -80,6 +80,7 @@ SIM_PAIRS: list[dict[str, object]] = [
             "entry_pulse",
             "battle_frame_cadence",
             "arts_saved_list",
+            "tweaks",
             "retail",
         ],
     },
