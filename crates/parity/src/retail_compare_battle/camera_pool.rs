@@ -31,8 +31,16 @@ const MIN_QUADS: usize = 64;
 /// the RAM's pose.
 const LIVE_FIT_PX: f32 = 1.0;
 
+/// One floor `POLY_GT4`'s screen corners.
+type FloorQuad = [(i16, i16); 4];
+
 /// Every ordering table's floor quads, by table.
-fn ground_tables(ram: &[u8]) -> Vec<Vec<[(i16, i16); 4]>> {
+fn ground_tables(ram: &[u8]) -> Vec<Vec<FloorQuad>> {
+    ground_tables_at(ram).into_iter().map(|(_, q)| q).collect()
+}
+
+/// [`ground_tables`] keyed by each table's bucket-array start.
+fn ground_tables_at(ram: &[u8]) -> Vec<(u32, Vec<FloorQuad>)> {
     prim_pool::find_ot_arrays(ram, PSX_RAM_KSEG0, 64)
         .iter()
         .filter_map(|ot| {
@@ -46,9 +54,27 @@ fn ground_tables(ram: &[u8]) -> Vec<Vec<[(i16, i16); 4]>> {
                     _ => None,
                 })
                 .collect();
-            (quads.len() >= MIN_QUADS).then_some(quads)
+            (quads.len() >= MIN_QUADS).then_some((ot.start, quads))
         })
         .collect()
+}
+
+/// The newest ordering table by the battle floor, for [`display_phase`]: the
+/// one whose floor fits the RAM's live camera pose while the other's does
+/// not. `None` without two floor tables, or when the camera did not move
+/// across the pass (both fit).
+pub(super) fn newest_table_by_ground(ram: &[u8], ctx: u32) -> Option<u32> {
+    let tables = ground_tables_at(ram);
+    if tables.len() < 2 {
+        return None;
+    }
+    let (live, _) = retail_cam_tween(ram, ctx);
+    let fits: Vec<u32> = tables
+        .iter()
+        .filter(|(_, q)| ground_error(&live, q) <= LIVE_FIT_PX)
+        .map(|(start, _)| *start)
+        .collect();
+    (fits.len() == 1).then(|| fits[0])
 }
 
 /// The floor lattice projected under `pose`, screen pixels over 320 x 240.

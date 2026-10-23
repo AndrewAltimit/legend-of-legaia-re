@@ -4,7 +4,7 @@
 //! The pool (`_DAT_8007BD30`, walked by `FUN_801E0080`) holds the children
 //! of the pass the RAM holds; the frame on screen is one or two passes
 //! older, and which one is the double buffer's phase at the instant the state
-//! was saved ([`displayed_passes_back`]). The live children are taken back
+//! was saved ([`display_phase`]). The live children are taken back
 //! that many passes' sweeps ([`rewind_effect_child`]); a child that retired
 //! since is recovered from its dead slot when the older ordering table still
 //! draws it ([`retired_children`]).
@@ -21,52 +21,9 @@ const EFFECT_CHILD_SLOTS: u32 = 0x80;
 /// Most pack0 batches the pointer table at head `+0x08` is searched over.
 const PACK0_SEARCH: u32 = 0x100;
 
-/// The double buffer: two `0x74`-byte records from `0x8007BF30`
-/// (`FUN_8001DAF8` builds them), each a display environment at `+0x00`, a
-/// draw environment at `+0x14` and its ordering table's bucket array at
-/// `+0x70`. Record 0 draws into the `y = 4` buffer and displays `y = 244`,
-/// record 1 the other way round.
-const DOUBLE_BUFFER: u32 = 0x8007_BF30;
-const DOUBLE_BUFFER_STRIDE: u32 = 0x74;
-const DOUBLE_BUFFER_OT: u32 = 0x70;
-/// The current record's index (`gp+0x434`). The frame-end flip
-/// (`0x800171E4..0x80017288` in `FUN_80016E4C`) puts the current record's
-/// display and draw environments, flips the index, and hands the GPU the
-/// ordering table just built.
-const DOUBLE_BUFFER_INDEX: u32 = 0x8007_B74C;
-
 /// One `0x2E` effect quad as an ordering table holds it: `(clut, tpage,
 /// colour, corner UVs)`.
-type EffectQuad = (u16, u16, u8, [(u8, u8); 4]);
-
-/// How many passes the displayed frame is older than the pass the RAM
-/// holds: `2` or `1`, or `None` when the tables do not say.
-///
-/// Retail's frame-end flip hands the GPU the table just built and flips the
-/// buffer index, and the display scans out the buffer the GPU drew the pass
-/// before. A state saved while the CPU is still building its pass has that
-/// pass's table under the current index, and the screen shows the pass two
-/// back - the summon flashes the double-buffer law was measured on, and
-/// `battle_gimard_tail_fire_a`. A state saved after the flip has already
-/// moved the index on: the newest table sits under the other record, the GPU
-/// is drawing it, and the screen shows the pass just before it - the older
-/// table itself. `gimard_burning_attack` is one: a PCSX-Redux film of the
-/// same cast (`scripts/pcsx-redux/autorun_effect_pool_film.lua`) reproduces
-/// the capture's pool and displayed frame exactly, and the frame on screen
-/// drew the previous pass's children.
-///
-/// The newest table is the one that draws the RAM's live children on their
-/// current frames rather than the frames they drew a pass before (`newest`).
-pub(super) fn displayed_passes_back(ram: &[u8], newest: u32) -> u8 {
-    let cur = u32::from(game_anchors::u16_at(ram, DOUBLE_BUFFER_INDEX) & 1);
-    let ot = |i: u32| {
-        game_anchors::u32_at(
-            ram,
-            DOUBLE_BUFFER + i * DOUBLE_BUFFER_STRIDE + DOUBLE_BUFFER_OT,
-        )
-    };
-    if newest == ot(cur ^ 1) { 1 } else { 2 }
-}
+pub(super) type EffectQuad = (u16, u16, u8, [(u8, u8); 4]);
 
 /// Every live effect-pool child of the state, as the displayed frame held
 /// it ([`rewind_effect_child`]), in slot order, then the retired children
@@ -97,14 +54,40 @@ pub(super) fn retail_effect_children(ram: &[u8]) -> Option<Vec<EffectChildSeed>>
         .filter_map(|slot| pool.child(slot))
         .filter(|(seed, _)| seed.frame_count != 0)
         .collect();
-    // The newest table: the one that draws more of the live children's
-    // current quads than of the quads they drew a pass before (a child that
-    // held its frame across the pass tells the tables nothing). Without a
-    // unique winner, the double-buffer law's two.
+    let phase = display_phase(ram);
+    let (back, newest) = (phase.back, phase.newest);
+    let lag = phase.lag_vsyncs();
+    let mut out: Vec<EffectChildSeed> = live
+        .iter()
+        .filter_map(|&(seed, entry)| pool.rewind(seed, entry, lag))
+        .collect();
+    if let Some(newest) = newest {
+        let older: Vec<EffectQuad> = tables
+            .iter()
+            .filter(|(start, _)| *start != newest)
+            .flat_map(|(_, q)| q.iter().copied())
+            .collect();
+        out.extend(retired_children(&pool, &live, &older, steps, back));
+    }
+    Some(out)
+}
+
+/// The newest ordering table by the effect pool, for [`display_phase`]: the
+/// one that draws more of the live children's current quads than of the
+/// quads they drew a pass before (a child that held its frame across the
+/// pass tells the tables nothing). `None` without a unique winner.
+pub(super) fn newest_table_by_children(ram: &[u8]) -> Option<u32> {
+    let pool = Pool::read(ram)?;
+    let step = u16::from(pass_steps(ram)[0].max(1));
+    let tables = effect_tables(ram);
+    let live: Vec<(EffectChildSeed, u32)> = (0..EFFECT_CHILD_SLOTS)
+        .filter_map(|slot| pool.child(slot))
+        .filter(|(seed, _)| seed.frame_count != 0)
+        .collect();
     let prev: Vec<Option<EffectQuad>> = live
         .iter()
         .map(|&(s, e)| {
-            let then = pool.rewind(s, e, steps[0])?;
+            let then = pool.rewind(s, e, step)?;
             Some(pool.quad(e, then.frame_count, then.frame_cursor, then.mirror))
         })
         .collect();
@@ -127,29 +110,7 @@ pub(super) fn retail_effect_children(ram: &[u8]) -> Option<Vec<EffectChildSeed>>
             (n, *start)
         })
         .collect();
-    let best = scores.iter().map(|&(n, _)| n).max().unwrap_or(0);
-    let newest = (best > 0 && scores.iter().filter(|&&(n, _)| n == best).count() == 1)
-        .then(|| scores.iter().find(|&&(n, _)| n == best).map(|&(_, s)| s))
-        .flatten();
-    let back = newest.map_or(2, |n| displayed_passes_back(ram, n));
-    let lag = if back == 1 {
-        steps[0]
-    } else {
-        steps[0] + steps[1]
-    };
-    let mut out: Vec<EffectChildSeed> = live
-        .iter()
-        .filter_map(|&(seed, entry)| pool.rewind(seed, entry, lag))
-        .collect();
-    if let Some(newest) = newest {
-        let older: Vec<EffectQuad> = tables
-            .iter()
-            .filter(|(start, _)| *start != newest)
-            .flat_map(|(_, q)| q.iter().copied())
-            .collect();
-        out.extend(retired_children(&pool, &live, &older, steps, back));
-    }
-    Some(out)
+    unique_best(&scores)
 }
 
 /// A dead pool slot the older table still draws, as the displayed frame held
