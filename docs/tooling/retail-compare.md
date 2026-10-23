@@ -3668,6 +3668,15 @@ every pass, so it moves with the phase of both clips):
   every living combatant but the counterer (`RetailBattle::counter_capture`).
   Left with its key, the third monster walked some `600` units off retail's
   ground before Vahn's turn came up (`image` `.880` to `.927`).
+- **A combo cluster that landed early.** The cluster's glide record
+  retires on the pass that snaps it and keeps its last `elapsed`, so a
+  capture saved a pass or more later reads a landed table while its frame
+  still shows the slide (`battle_gimard_tail_fire_b`: both packet pools draw
+  the `DAMAGE` label at rest on `x = 208`, the frame on `228`). The cluster
+  opens the pass after the damage write that pushes the numeral
+  (`FUN_801E805C`), so the newest numeral's ring timer `ctx[+0x85C]` clocks
+  it: its age less two passes, less the display lag
+  (`combo_cluster_timer_seat`; `image` `.938` to `.953`).
 - **A numeral that sank instead of rising.** Retail's floating value rises
   `3/2` of its ring timer above the struck actor's display trio
   (`FUN_801DF6B8`, `0x801DF780..0x801DF7B4`), toward `-Y`. The hosts project

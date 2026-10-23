@@ -575,6 +575,12 @@ impl RetailBattle {
                 }
                 // Retired records that landed on the frozen pass, still
                 // mid-glide on screen.
+                // The combo cluster, retired in the RAM but gliding on screen.
+                if let Some(seat) = combo_cluster_timer_seat(ram, ctx, display_lag_vsyncs(ram))
+                    && !seats.iter().any(|s| s.target == seat.target)
+                {
+                    seats.push(seat);
+                }
                 for seat in landed_glide_pool_seats(ram, ctx, display_pass_steps(ram)) {
                     if !seats.iter().any(|s| s.target == seat.target) {
                         seats.push(seat);

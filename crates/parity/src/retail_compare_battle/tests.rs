@@ -1001,3 +1001,35 @@ fn retired_effect_children_come_back_from_the_older_table() {
     let after = effect_children::retail_effect_children(&build(1)).expect("a pool");
     assert_eq!(pick(&after), vec![(0, 0, 0), (2, 0, -200)]);
 }
+
+/// A retired combo-cluster record is seated off the newest numeral's ring
+/// timer: `battle_gimard_tail_fire_b`'s timer `0x160` (22 vsyncs) at step 2
+/// puts the cluster `14` of sixteen in on screen; a numeral old enough for
+/// the cluster to have landed seats nothing, and so does a live record.
+#[test]
+fn a_retired_combo_cluster_is_timed_off_the_numeral_ring() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let rec = ctx + HUD_GLIDE_TABLE + 3 * HUD_GLIDE_STRIDE;
+    put8(&mut ram, rec + 1, 14);
+    put16(&mut ram, rec + 4, 168);
+    put16(&mut ram, rec + 6, 168);
+    put16(&mut ram, rec + 8, 328);
+    put16(&mut ram, rec + 10, 168);
+    put8(&mut ram, ctx + 0x262, 1);
+    put32(&mut ram, ctx + 0x83C, 16);
+    put32(&mut ram, ctx + 0x85C, 0x160);
+    assert_eq!(
+        combo_cluster_timer_seat(&ram, ctx, 4),
+        Some(HudGlideSeat {
+            target: [168, 168],
+            elapsed: 14,
+            total: 16
+        })
+    );
+    put32(&mut ram, ctx + 0x85C, 0x200);
+    assert_eq!(combo_cluster_timer_seat(&ram, ctx, 4), None, "landed");
+    put32(&mut ram, ctx + 0x85C, 0x160);
+    put8(&mut ram, rec, 16);
+    assert_eq!(combo_cluster_timer_seat(&ram, ctx, 4), None, "live record");
+}

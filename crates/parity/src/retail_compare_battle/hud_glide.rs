@@ -29,6 +29,55 @@ pub(super) fn hud_glide_seats(ram: &[u8], ctx: u32, lag: u16) -> Vec<HudGlideSea
         .collect()
 }
 
+/// The combo cluster's anchor (placement record 80): seat A `(328, 168)`,
+/// seat B `(168, 168)`, over the round's `ctx[+0x1C] = 0x10` vsyncs.
+const COMBO_START: [i16; 2] = [328, 168];
+const COMBO_TARGET: [i16; 2] = [168, 168];
+const COMBO_TOTAL: u8 = 16;
+
+/// The combo cluster's glide on the **displayed** frame, timed off the
+/// damage numeral's ring timer when its record has already retired.
+///
+/// A landed hit's damage write raises `DAT_8007B64C` and pushes the numeral
+/// (`FUN_801F44A0`, ring timer `ctx[+0x85C]` zeroed, stepped `0x10` a vsync by
+/// the readout `FUN_801DF6B8`); the readout pass `FUN_801E805C` at the head
+/// of the next action-SM pass answers the flag by opening record 80
+/// (`FUN_801D8DE8(0x50, 0)`). The cluster's `elapsed` therefore trails the
+/// newest numeral's age by two passes: `battle_melee_hit_spark` holds the
+/// live record at `12` beside timer `0x120` (18 vsyncs, step `3`).
+///
+/// The record retires on the pass that snaps it and keeps its last `elapsed`
+/// byte, so a table read on a later pass cannot say whether the frame on
+/// screen still showed it gliding; the numeral's timer can.
+/// `battle_gimard_tail_fire_b` (step `2`) reads a retired cluster beside
+/// timer `0x160`: 22 vsyncs, the cluster `18` in the RAM's pass and `14`
+/// on screen, its label at `x = 228` where a landed one stands on `208`.
+pub(super) fn combo_cluster_timer_seat(ram: &[u8], ctx: u32, lag: u16) -> Option<HudGlideSeat> {
+    let retired = (0..HUD_GLIDE_SLOTS).any(|s| {
+        let r = ctx + HUD_GLIDE_TABLE + s * HUD_GLIDE_STRIDE;
+        game_anchors::u8_at(ram, r) == 0
+            && game_anchors::i16_at(ram, r + 4) == COMBO_TARGET[0]
+            && game_anchors::i16_at(ram, r + 6) == COMBO_TARGET[1]
+            && game_anchors::i16_at(ram, r + 8) == COMBO_START[0]
+            && game_anchors::i16_at(ram, r + 10) == COMBO_START[1]
+    });
+    if !retired {
+        return None;
+    }
+    let newest = u32::from(game_anchors::u8_at(ram, ctx + 0x262).wrapping_sub(1) & 7);
+    if game_anchors::u32_at(ram, ctx + 0x83C + newest * 4) == 0 {
+        return None;
+    }
+    let age = game_anchors::u32_at(ram, ctx + 0x85C + newest * 4) >> 4;
+    // Two passes of spawn delay, then the display lag's two.
+    let elapsed = age.checked_sub(2 * u32::from(lag))?;
+    (elapsed < u32::from(COMBO_TOTAL)).then_some(HudGlideSeat {
+        target: COMBO_TARGET,
+        elapsed: elapsed as u8,
+        total: COMBO_TOTAL,
+    })
+}
+
 /// The round prompt's `Begin` chip (placement record 0): it spawns on
 /// `x = 142` and lands on `x = 104` over [`ROUND_PROMPT_TOTAL`] vsyncs, and
 /// its left cap is an `8`-wide `SPRT` (CLUT `0x7FC4`, texel `(208, 0)`)
