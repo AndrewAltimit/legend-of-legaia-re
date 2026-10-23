@@ -176,7 +176,7 @@ mod health_tier_ink_tests {
     use crate::FieldMenuPartyView;
     use crate::StatusPanelView;
     use crate::field_menu_info_draws_for;
-    use crate::status_screen_draws_for;
+    use crate::status_screen_draws_for_with;
 
     /// The ailment arm reaches a real draw list, not just the kernel.
     ///
@@ -242,7 +242,7 @@ mod health_tier_ink_tests {
             status,
         };
         let golds = |status: u16| -> usize {
-            status_screen_draws_for(&font, &panel(status), None, (0, 0), true)
+            status_screen_draws_for_with(&font, None, &panel(status), None, (0, 0), true)
                 .into_iter()
                 .filter(|d| d.color == MENU_TEXT_GOLD)
                 .count()

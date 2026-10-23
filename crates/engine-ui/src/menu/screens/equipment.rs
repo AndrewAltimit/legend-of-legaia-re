@@ -51,7 +51,7 @@ pub struct EquipStatRow<'a> {
     pub preview: u16,
 }
 
-/// Phase tag for [`equip_screen_draws_for`]. Mirrors
+/// Phase tag for [`equip_screen_draws_for_with`]. Mirrors
 /// `engine-menus::equip_session::EquipState` without naming the enum so
 /// the renderer doesn't pull engine-core in as a dependency.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,7 +65,7 @@ pub enum EquipDrawPhase {
 }
 
 /// Plain-data view of the whole equip screen for
-/// [`equip_screen_draws_for`].
+/// [`equip_screen_draws_for_with`].
 pub struct EquipScreenView<'a> {
     /// Party-member names for the id-21 party window rows.
     pub party_names: &'a [&'a str],
@@ -98,19 +98,6 @@ pub struct EquipScreenView<'a> {
     /// Emit ASCII `>` cursors. `false` when the caller draws the retail
     /// pointing-hand sprite instead ([`equip_screen_sprites_for`]).
     pub text_cursor: bool,
-}
-
-/// [`equip_screen_draws_for_with`] without the menu overlay's pool labels: the
-/// engine's names stand in.
-#[allow(clippy::too_many_arguments)]
-pub fn equip_screen_draws_for(
-    font: &legaia_font::Font,
-    view: &EquipScreenView<'_>,
-    party_pen: (i32, i32),
-    list_pen: (i32, i32),
-    main_pen: (i32, i32),
-) -> Vec<TextDraw> {
-    equip_screen_draws_for_with(font, None, view, party_pen, list_pen, main_pen)
 }
 
 /// Build [`TextDraw`]s for the retail equip screen's window contents.
@@ -514,8 +501,9 @@ mod tests {
         ];
         let (mx, my) = MAIN;
 
-        let row0 = equip_screen_draws_for(
+        let row0 = equip_screen_draws_for_with(
             &font,
+            None,
             &view(&slots, &[], EquipDrawPhase::SlotPicker, 0, 0),
             PARTY,
             LIST,
@@ -523,8 +511,9 @@ mod tests {
         );
         assert_eq!(cursor_rows(&row0, mx + 4), vec![my]);
 
-        let row2 = equip_screen_draws_for(
+        let row2 = equip_screen_draws_for_with(
             &font,
+            None,
             &view(&slots, &[], EquipDrawPhase::SlotPicker, 2, 0),
             PARTY,
             LIST,
@@ -551,8 +540,9 @@ mod tests {
             name: "Iron Sword",
             count: 1,
         }];
-        let browse = equip_screen_draws_for(
+        let browse = equip_screen_draws_for_with(
             &font,
+            None,
             &view(&slots, &cands, EquipDrawPhase::SlotPicker, 0, 0),
             PARTY,
             LIST,
@@ -563,8 +553,9 @@ mod tests {
                 .iter()
                 .any(|d| d.dst.1 < LIST.1 + 200 && d.dst.0 < LIST.0)
         );
-        let pick = equip_screen_draws_for(
+        let pick = equip_screen_draws_for_with(
             &font,
+            None,
             &view(&slots, &cands, EquipDrawPhase::ItemPicker, 0, 0),
             PARTY,
             LIST,
@@ -590,7 +581,7 @@ mod tests {
         let changes = [(2u8, "Chain Mail")];
         let mut v = view(&slots, &[], EquipDrawPhase::SlotPicker, 0, 0);
         v.best_changes = &changes;
-        let draws = equip_screen_draws_for(&font, &v, PARTY, LIST, MAIN);
+        let draws = equip_screen_draws_for_with(&font, None, &v, PARTY, LIST, MAIN);
         let (mx, my) = MAIN;
         let row_y = my + EQUIP_ROW_PITCH * 3;
         assert_eq!(cursor_rows(&draws, mx + 0xb8), vec![row_y]);
@@ -628,15 +619,17 @@ mod tests {
             current_name: "",
         }];
 
-        let with_remove = equip_screen_draws_for(
+        let with_remove = equip_screen_draws_for_with(
             &font,
+            None,
             &view(&slots, &with_remove_row, EquipDrawPhase::ItemPicker, 0, 0),
             PARTY,
             LIST,
             MAIN,
         );
-        let without = equip_screen_draws_for(
+        let without = equip_screen_draws_for_with(
             &font,
+            None,
             &view(
                 &slots,
                 &without_remove_row,

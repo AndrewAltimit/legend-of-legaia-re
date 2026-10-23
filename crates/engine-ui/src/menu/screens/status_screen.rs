@@ -65,19 +65,6 @@ pub(crate) fn num_field_draws(
     out
 }
 
-/// [`status_screen_draws_for_with`] without the menu overlay's pool labels: the
-/// engine's names stand in.
-#[allow(clippy::too_many_arguments)]
-pub fn status_screen_draws_for(
-    font: &legaia_font::Font,
-    panel: &StatusPanelView<'_>,
-    nav_hint: Option<&str>,
-    pen: (i32, i32),
-    label_icons: bool,
-) -> Vec<TextDraw> {
-    status_screen_draws_for_with(font, None, panel, nav_hint, pen, label_icons)
-}
-
 /// Build [`TextDraw`]s for the status panel of one character, at the
 /// byte-pinned `FUN_801D33D8` status-page offsets
 /// (docs/subsystems/field-menu.md). `pen` is the caller window's content
@@ -280,7 +267,7 @@ pub fn status_screen_draws_for_with(
 /// at the byte-pinned `FUN_801D33D8` offsets and mapped from the 320x240
 /// menu stage into surface pixels (`stage_origin` + `stage_scale`, matching
 /// [`crate::menu_window_chrome_draws_for`]). Pair with
-/// `status_screen_draws_for(.., label_icons = true)` so the labels / AP
+/// `status_screen_draws_for_with(.., None, label_icons = true)` so the labels / AP
 /// value aren't double-drawn as text. `pen` is the id-28 window's content
 /// origin in stage pixels (the same value passed to
 /// `status_screen_draws_for`); `ap` is the character's current AP (meter
@@ -445,28 +432,6 @@ pub struct StatusSatelliteView<'a> {
     pub level: u8,
 }
 
-/// [`status_satellite_draws_for_with`] without the menu overlay's pool labels: the
-/// engine's names stand in.
-#[allow(clippy::too_many_arguments)]
-pub fn status_satellite_draws_for(
-    font: &legaia_font::Font,
-    view: &StatusSatelliteView<'_>,
-    list_pen: (i32, i32),
-    condition_pen: (i32, i32),
-    summary_pen: (i32, i32),
-    label_icons: bool,
-) -> Vec<TextDraw> {
-    status_satellite_draws_for_with(
-        font,
-        None,
-        view,
-        list_pen,
-        condition_pen,
-        summary_pen,
-        label_icons,
-    )
-}
-
 /// Build [`TextDraw`]s for the status screen's three satellite windows
 /// (party list id 26, "Condition" pager id 27, character summary id 30),
 /// at their pinned descriptor-rect content origins.
@@ -571,9 +536,9 @@ pub fn status_satellite_draws_for_with(
 /// the system-UI atlas: the party-list pointing-hand cursor, the
 /// "Condition" pager triangles, the summary window's LV label and the
 /// per-character ATR element icon. Positions are the traced renderer
-/// offsets (see [`status_satellite_draws_for`]); the stage mapping
+/// offsets (see [`status_satellite_draws_for_with`]); the stage mapping
 /// matches [`crate::menu_window_chrome_draws_for`]. Pair with
-/// `status_satellite_draws_for(.., label_icons = true)`.
+/// `status_satellite_draws_for_with(.., None, label_icons = true)`.
 ///
 /// `cursor` is the highlighted party-list row; `atr_char` indexes
 /// [`SaveMenuAtlasRects::atr_icons`] (roster character id 0=Vahn,

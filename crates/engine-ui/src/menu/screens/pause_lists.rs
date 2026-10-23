@@ -267,7 +267,7 @@ pub struct PauseItemInfo<'a> {
     pub passive: Option<(&'a str, &'a str)>,
 }
 
-/// Plain-data view of the Items screen for [`items_screen_draws_for`].
+/// Plain-data view of the Items screen for [`items_screen_draws_for_with`].
 pub struct PauseItemsView<'a> {
     /// Current page's visible rows (at most
     /// [`PAUSE_LIST_VISIBLE_ROWS`]).
@@ -352,19 +352,6 @@ fn list_page_header_draws(
     out
 }
 
-/// [`items_screen_draws_for_with`] without the menu overlay's pool labels: the
-/// engine's names stand in.
-#[allow(clippy::too_many_arguments)]
-pub fn items_screen_draws_for(
-    font: &legaia_font::Font,
-    view: &PauseItemsView<'_>,
-    cmd_pen: (i32, i32),
-    list_pen: (i32, i32),
-    info_pen: (i32, i32),
-) -> Vec<TextDraw> {
-    items_screen_draws_for_with(font, None, view, cmd_pen, list_pen, info_pen)
-}
-
 /// Build [`TextDraw`]s for the retail Items screen's window contents.
 ///
 /// `cmd_pen` / `list_pen` / `info_pen` are the content origins of the
@@ -390,7 +377,7 @@ pub fn items_screen_draws_for(
 /// PORT: FUN_801d0f1c (info window: name / description at `+0x10` /
 /// passive name+desc at `+0x38`/`+0x48`; the kind-2 scope pictogram
 /// (ICO `0x84`/`0x85` at `X+0x84`) stays undrawn. The id-`0xFE` arm is
-/// [`item_points_panel_draws`], which a host adds on top - retail branches
+/// [`item_points_panel_draws_with`], which a host adds on top - retail branches
 /// to it at `0x801d0fd0` and jumps past this routine's passive block, and
 /// the Point Card's own `0x41` no-passive sentinel means that block draws
 /// nothing on that row anyway.)
@@ -472,7 +459,7 @@ pub fn items_screen_draws_for_with(
 /// disc), which is what makes them one panel opened by two screens rather
 /// than a coincidence.
 ///
-/// It lived inline in [`items_screen_draws_for`] while the Items screen was
+/// It lived inline in [`items_screen_draws_for_with`] while the Items screen was
 /// its only caller, which is why the equip screen had no item panel and why
 /// [`crate::menu::window_painters::count_panel_draws_for`] - the *delta*
 /// over this panel - had nothing to be a delta over.
@@ -483,7 +470,7 @@ pub fn items_screen_draws_for_with(
 /// PORT: FUN_801d0f1c (name / bag count / description at `+0x10` / passive
 /// name + desc at `+0x38` / `+0x48`; the kind-2 scope pictogram
 /// (ICO `0x84`/`0x85` at `X+0x84`) stays undrawn, and the id-`0xFE` arm is
-/// [`item_points_panel_draws`])
+/// [`item_points_panel_draws_with`])
 pub fn item_info_panel_draws_for(
     font: &legaia_font::Font,
     pen: (i32, i32),
@@ -515,17 +502,6 @@ pub fn item_info_panel_draws_for(
     out
 }
 
-/// [`item_points_panel_draws_with`] without the menu overlay's pool labels: the
-/// engine's names stand in.
-#[allow(clippy::too_many_arguments)]
-pub fn item_points_panel_draws(
-    font: &legaia_font::Font,
-    info_pen: (i32, i32),
-    points: u32,
-) -> Vec<TextDraw> {
-    item_points_panel_draws_with(font, None, info_pen, points)
-}
-
 /// The item-info panel's **Point Card** arm: the "Points Left" label and
 /// the 8-digit bank, both inside the extra widget box
 /// ([`ITEMS_INFO_EXTRA_BOX_RECT`]) that the id-17 renderer emits under its
@@ -541,7 +517,7 @@ pub fn item_points_panel_draws(
 /// effect descriptor carries the `0x41` no-passive sentinel.
 ///
 /// `info_pen` is the id-17 window's content origin, the same pen
-/// [`items_screen_draws_for`] takes; `points` is the live bank
+/// [`items_screen_draws_for_with`] takes; `points` is the live bank
 /// (`engine-core::World::point_card`).
 ///
 /// PORT: FUN_801d0f1c (the id-`0xFE` arm at `0x801d0fd8..0x801d1018`)
@@ -791,7 +767,7 @@ pub struct PauseMagicInfo<'a> {
     pub mp_cost: u16,
 }
 
-/// Plain-data view of the Magic screen for [`magic_screen_draws_for`].
+/// Plain-data view of the Magic screen for [`magic_screen_draws_for_with`].
 pub struct PauseMagicView<'a> {
     pub casters: &'a [PauseMagicCaster<'a>],
     /// Current page's visible spell rows.
@@ -809,19 +785,6 @@ pub struct PauseMagicView<'a> {
     /// ASCII stand-ins here.
     pub label_icons: bool,
     pub text_cursor: bool,
-}
-
-/// [`magic_screen_draws_for_with`] without the menu overlay's pool labels: the
-/// engine's names stand in.
-#[allow(clippy::too_many_arguments)]
-pub fn magic_screen_draws_for(
-    font: &legaia_font::Font,
-    view: &PauseMagicView<'_>,
-    caster_pen: (i32, i32),
-    list_pen: (i32, i32),
-    info_pen: (i32, i32),
-) -> Vec<TextDraw> {
-    magic_screen_draws_for_with(font, None, view, caster_pen, list_pen, info_pen)
 }
 
 /// Build [`TextDraw`]s for the retail Magic screen's window contents.
@@ -1197,8 +1160,9 @@ mod pause_list_tests {
     fn items_command_rows_at_pinned_pens() {
         let font = legaia_font::synthetic_for_tests();
         let rows = [];
-        let draws = items_screen_draws_for(
+        let draws = items_screen_draws_for_with(
             &font,
+            None,
             &items_view(&rows, PauseItemsPhase::Command),
             (32, 44),
             (174, 22),
@@ -1226,8 +1190,9 @@ mod pause_list_tests {
                 ink: None,
             },
         ];
-        let draws = items_screen_draws_for(
+        let draws = items_screen_draws_for_with(
             &font,
+            None,
             &items_view(&rows, PauseItemsPhase::Command),
             (32, 44),
             (174, 22),
@@ -1271,8 +1236,9 @@ mod pause_list_tests {
                 ink: None,
             },
         ];
-        let draws = items_screen_draws_for(
+        let draws = items_screen_draws_for_with(
             &font,
+            None,
             &items_view(&rows, PauseItemsPhase::List),
             (32, 44),
             (174, 22),
@@ -1303,15 +1269,17 @@ mod pause_list_tests {
             count: Some(15),
             ink: None,
         }];
-        let white = items_screen_draws_for(
+        let white = items_screen_draws_for_with(
             &font,
+            None,
             &items_view(&rows, PauseItemsPhase::Command),
             (32, 44),
             (174, 22),
             (14, 108),
         );
-        let grey = items_screen_draws_for(
+        let grey = items_screen_draws_for_with(
             &font,
+            None,
             &items_view(&rows, PauseItemsPhase::List),
             (32, 44),
             (174, 22),
@@ -1336,7 +1304,7 @@ mod pause_list_tests {
         let rows = [];
         let mut view = items_view(&rows, PauseItemsPhase::Command);
         view.bag_empty = true;
-        let draws = items_screen_draws_for(&font, &view, (32, 44), (174, 22), (14, 108));
+        let draws = items_screen_draws_for_with(&font, None, &view, (32, 44), (174, 22), (14, 108));
         let use_ink = draws
             .iter()
             .find(|d| d.dst.0 >= 32 + 0x14 && d.dst.1 == 44)
@@ -1358,7 +1326,7 @@ mod pause_list_tests {
             desc: "Cure all status. Ally.",
             passive: Some(("Auto block", "Guards sometimes")),
         });
-        let draws = items_screen_draws_for(&font, &view, (32, 44), (174, 22), (14, 108));
+        let draws = items_screen_draws_for_with(&font, None, &view, (32, 44), (174, 22), (14, 108));
         assert!(draw_at(&draws, 14, 108)); // name
         assert!(draw_at(&draws, 14 + 0x7c, 108)); // count first cell
         assert!(draw_at(&draws, 14, 108 + 0x10)); // description
@@ -1411,8 +1379,9 @@ mod pause_list_tests {
                 mp_max: 435,
             },
         ];
-        let draws = magic_screen_draws_for(
+        let draws = magic_screen_draws_for_with(
             &font,
+            None,
             &magic_view(&casters, &[], PauseMagicPhase::Caster),
             (14, 40),
             (174, 22),
@@ -1455,8 +1424,9 @@ mod pause_list_tests {
                 ink: None,
             },
         ];
-        let draws = magic_screen_draws_for(
+        let draws = magic_screen_draws_for_with(
             &font,
+            None,
             &magic_view(&[], &rows, PauseMagicPhase::List),
             (14, 40),
             (174, 22),
@@ -1494,8 +1464,9 @@ mod pause_list_tests {
             icon: None,
             ink: None,
         }];
-        let draws = magic_screen_draws_for(
+        let draws = magic_screen_draws_for_with(
             &font,
+            None,
             &magic_view(&[], &rows, PauseMagicPhase::List),
             (14, 40),
             (174, 22),
@@ -1536,8 +1507,9 @@ mod pause_list_tests {
             icon: Some(0x1D),
             ink: None,
         }];
-        let draws = magic_screen_draws_for(
+        let draws = magic_screen_draws_for_with(
             &font,
+            None,
             &magic_view(&[], &rows, PauseMagicPhase::List),
             (14, 40),
             (174, 22),
@@ -1574,7 +1546,7 @@ mod pause_list_tests {
             desc: "",
             mp_cost: 60,
         });
-        let draws = magic_screen_draws_for(&font, &view, (14, 40), (174, 22), (14, 152));
+        let draws = magic_screen_draws_for_with(&font, None, &view, (14, 40), (174, 22), (14, 152));
         assert!(
             draws
                 .iter()
@@ -1596,7 +1568,7 @@ mod pause_list_tests {
             desc: "Crazy Driver\nAttack enemies.",
             mp_cost: 60,
         });
-        let draws = magic_screen_draws_for(&font, &view, (14, 40), (174, 22), (14, 152));
+        let draws = magic_screen_draws_for_with(&font, None, &view, (14, 40), (174, 22), (14, 152));
         assert!(draw_at(&draws, 14 + SPELL_ICON_ADVANCE, 152)); // name
         assert!(draw_at(&draws, 14 + 0x78, 152)); // Lv1
         assert!(draw_at(&draws, 14, 152 + 0x0e)); // desc line 1
@@ -1714,7 +1686,7 @@ mod pause_list_tests {
         let font = legaia_font::Font::placeholder();
         let (bx, by, bw, bh) = ITEMS_INFO_EXTRA_BOX_RECT;
         let pen = (14, 108); // window 17's content origin
-        let d = item_points_panel_draws(&font, pen, 1234);
+        let d = item_points_panel_draws_with(&font, None, pen, 1234);
         assert!(!d.is_empty());
         assert!(
             d.iter()
