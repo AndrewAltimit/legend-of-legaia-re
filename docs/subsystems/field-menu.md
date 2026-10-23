@@ -885,7 +885,12 @@ scroll top. All glyphs are UI-icon sprites:
 The tens cell is leading-zero-suppressed. The total is `ceil(rows / visible)`
 over **occupied** rows (the builder skips an empty slot, `beq s0,zero` at
 `0x8003089C`): one held item reads `PAGE 1 / 1`, an empty list draws no
-header.
+header. On the 132-px pause lists (Items, Magic, Equip candidates, all at
+`(174, 22)`) a `sol_to_karisto_worldmap` capture puts the tag's ink at
+x `251..269`, rows `21..25`, the page digit at `282` and the slash at `288`.
+Port: `engine-ui::shop_screen::page_header_draws` over the font's menu sprite
+cells (`save_menu_atlas::menu_font_cells`), shared by the shop lists and the
+pause lists; a font without the cells falls back to dialog-font stand-ins.
 
 **Rows** (`80033050..`): the block is vertically centred -
 `row0_y = WY + (content_h - visible*0xE)/2 + 5`, pitch `0xE` (12 rows from
@@ -2071,7 +2076,6 @@ Where the port differs from retail today:
 
 | Area | Difference |
 |---|---|
-| List PAGE header | UI-icon records `0x76`, `0x79`, `0x7A..=0x83` are not in the baked atlas, so `list_page_header_draws` draws dialog-font glyphs at the measured columns (label `x + 0x4D`, fraction cells `x + 0x68 / 0x74 / 0x78`) |
 | Special-route prompts | Door of Light / Incense prompt text is the port's own |
 | Armament candidate lists | id-sorted, without retail's leading rows on an empty slot ([Equip screen](#port-of-the-equip-screen)) |
 | Money box | no casino coin row |

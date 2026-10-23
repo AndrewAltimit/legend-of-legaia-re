@@ -177,6 +177,11 @@ pub const PAUSE_LIST_ROWS_TOP: i32 = 0x0c;
 /// Rows visible per list page (both captured screens show 12 rows filling
 /// the 182-px content height at the 0xE pitch).
 pub const PAUSE_LIST_VISIBLE_ROWS: usize = 12;
+/// Width of the pause menu's list windows - the Items (15 / 16), Magic (18)
+/// and Equip candidate (23) lists all sit at `(174, 22, 132, 182)` in the
+/// descriptor table. The PAGE header hangs off this right edge
+/// (`FUN_80032A44`, `0x80032E18..0x80032F20`).
+pub const PAUSE_LIST_WINDOW_W: i32 = 132;
 /// Caster-window per-member block pitch (`FUN_801D2C98` steps `+0x23`).
 pub const MAGIC_CASTER_BLOCK_PITCH: i32 = 0x23;
 /// Pen advance of a spell name's leading `0xCE 0x14..=0x1B 0x20` prefix:
@@ -299,9 +304,22 @@ fn list_page_header_draws(
     if pages == 0 {
         return out;
     }
-    // Header ink tops at content y - 1 on the captures; pen y - 3. The
-    // "PAGE" label + fraction digits are small-cap sprite glyphs in
-    // retail - dialog-font stand-ins hold their measured columns
+    // The retail header is UI-icon sprites (tag `0x76`, digits
+    // `0x7A..=0x83`, slash `0x79`) placed off the window's right edge; with
+    // the cells attached to the font it draws exactly as the shop's lists do.
+    if font
+        .sprite_cell(legaia_font::sprite_cell_ids::PAGE_TAG)
+        .is_some()
+    {
+        return crate::shop_screen::page_header_draws(
+            font,
+            (lx, ly, PAUSE_LIST_WINDOW_W),
+            page as usize,
+            pages as usize,
+        );
+    }
+    // Header ink tops at content y - 1 on the captures; pen y - 3. Without
+    // the sprite cells, dialog-font stand-ins hold the measured columns
     // (label x + 0x4D, fraction cells around x + 0x68..0x7C).
     let hy = ly - 3;
     out.extend(text_draws_for(
@@ -1394,6 +1412,43 @@ mod pause_list_tests {
             174 + 0x0c + SPELL_ICON_ADVANCE_RA_SERU,
             y0 + 0x0e
         ));
+    }
+
+    /// With the menu sprite cells attached, the list's PAGE header is the
+    /// kernel's sprite header off the window's right edge: tag at
+    /// `(WX + W - 0x38, WY - 2)`, digits from `WX + W - 0x20`. The columns
+    /// are the ones a `sol_to_karisto_worldmap` Magic-screen capture shows
+    /// (tag ink from x 251, page digit 282, slash 288, total 302).
+    #[test]
+    fn list_page_header_uses_the_sprite_cells_when_attached() {
+        use legaia_font::{SpriteCellSrc, sprite_cell_ids as ids};
+        let cell = |id: u16, w: u32| SpriteCellSrc {
+            id,
+            w,
+            h: 8,
+            rgba: vec![0xFF; (w * 8 * 4) as usize],
+        };
+        let mut cells = vec![cell(ids::PAGE_TAG, 24), cell(ids::PAGE_SLASH, 6)];
+        cells.extend((0..10).map(|d| cell(ids::PAGE_DIGIT + d, 6)));
+        let font = legaia_font::synthetic_for_tests().with_sprite_cells(&cells);
+        let rows = [PauseMagicRow {
+            name: "Gimard",
+            ra_seru: false,
+            icon: None,
+            ink: None,
+        }];
+        let draws = magic_screen_draws_for(
+            &font,
+            &magic_view(&[], &rows, PauseMagicPhase::List),
+            (14, 40),
+            (174, 22),
+            (14, 152),
+        );
+        let at = |x: i32, w: u32| draws.iter().any(|d| d.dst == (x, 20, w, 8));
+        assert!(at(250, 24), "PAGE tag");
+        assert!(at(280, 6), "current page ones digit");
+        assert!(at(287, 6), "slash");
+        assert!(at(300, 6), "page total ones digit");
     }
 
     /// A font with a plate sprite at escape operand `op` (`w` wide, the

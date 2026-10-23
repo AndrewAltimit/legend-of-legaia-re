@@ -253,6 +253,22 @@ fn the_magic_list_draws_each_spells_element_plate() {
         font.escape_cell(0x14).is_some() && font.escape_cell(0x1D).is_some(),
         "the boot font carries no element-plate escape sprites"
     );
+    // The menu sprite cells both play hosts attach at boot (the native
+    // window's `attach_menu_font_cells`, the play page's `play_menu`
+    // assets), off the same PROT.DAT head bytes.
+    let system_ui = s
+        .host
+        .index
+        .prot_dat_raw_bytes(
+            legaia_engine_menus::save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET as u64,
+            legaia_ui_formats::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
+                + legaia_ui_formats::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE
+                - legaia_engine_menus::save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET,
+        )
+        .expect("system-UI sheet bytes");
+    let font = font.with_sprite_cells(&legaia_engine_menus::save_menu_atlas::menu_font_cells(
+        &system_ui, None,
+    ));
     let ctx = legaia_engine_ui::pause_menu::PauseMenuCtx {
         font: &font,
         rects: legaia_engine_ui::pause_menu::MenuRects::new(None),
@@ -291,6 +307,18 @@ fn the_magic_list_draws_each_spells_element_plate() {
         glyph_at(pen_x + 33, wing_y),
         "Meta's name follows its plate"
     );
+    // The PAGE header is the kernel's sprite header: the 24x8 tag at
+    // `(174 + 132 - 0x38, 22 - 2)` and the page digit at
+    // `174 + 132 - 0x20 + 6`, the columns the retail capture of this screen
+    // shows.
+    let cell = |x: i32, w: u32| {
+        draws
+            .texts
+            .iter()
+            .any(|d| d.dst.0 == x && d.dst.1 == 20 && d.dst.2 == w && d.dst.3 == 8)
+    };
+    assert!(cell(250, 24), "the PAGE tag sprite");
+    assert!(cell(280, 6), "the page digit sprite");
     eprintln!("[magic] plates at rows y={fire_y} / y={wing_y}");
 }
 
