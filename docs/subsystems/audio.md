@@ -2841,10 +2841,12 @@ census above covers the battle theme's notes once it is playing.
   ([above](#the-cd-input-enable-volume-and-reverb-send)). A write-watch on
   `0x1F801DB0` across a battle voice cue names it.
 - **Two emitter inputs are constants.** The per-row scale pair `0x80091658`
-  reads `0x80` in every captured state and has no traced writer, and the port
-  folds mono at mix time (`Spu::mono`, the larger side) where the emitter arm
-  averages the two sides before writing them
+  reads `0x80` in every captured state and has no traced writer
   ([above](#positional-sound-emitters)).
+  The arm's other input, the options Sound word, reaches it: in Monaural it
+  averages the two sides (`0x800224D4..0x800224E8`) and the direct voice
+  write keeps that average, so a mono emitter sounds at the mean of its
+  levels, not the larger one `Spu::mono` gives a keyed voice.
 - **The Field↔Battle swap** has no retail audio trace
   ([above](#the-fieldbattle-swap-is-not-on-this-axis)).
 - **`.MAP` / `.PCH` / `.spk` / `.pac`** have no retail carrier to decode; the

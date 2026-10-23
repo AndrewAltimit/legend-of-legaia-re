@@ -677,13 +677,16 @@ impl World {
     /// focus, the voice-volume word, the field-mode and side-band gates, the
     /// frame step. The per-row scale table `0x80091658` reads `0x80` in every
     /// captured state and the port carries no writer of it, so it is that
-    /// constant; mono is the host's (`Spu::mono`).
+    /// constant. Mono is the options screen's Sound word (`0x800846BC`,
+    /// mirrored in [`super::WorldToggles::retail_options`]): the arm averages
+    /// the two sides itself (`0x800224D4..0x800224E8`), and the direct voice
+    /// write `FUN_800657D0` it then feeds never reads libsnd's fold flag.
     fn sfx_emitter_listener(&self) -> legaia_engine_vm::sfx_emitter::EmitterListener {
         use legaia_engine_mode::mode::GameMode;
         legaia_engine_vm::sfx_emitter::EmitterListener {
             focus_stored: self.audio.listener_focus,
             voice_volume: self.audio.levels.voice_volume,
-            mono: false,
+            mono: self.toggles.retail_options.sound != 0,
             scale: (0x80, 0x80),
             field_mode: GameMode::for_scene_mode(self.mode) == Some(GameMode::MainMode),
             stream_settled: self.audio.sound_stream.is_settled(),
@@ -1111,5 +1114,25 @@ pub(crate) fn write_rect(vram: &mut legaia_tim::Vram, x: u16, y: u16, w: u16, te
     for (row, chunk) in texels.chunks(usize::from(w.max(1))).enumerate() {
         let bytes: Vec<u8> = chunk.iter().flat_map(|t| t.to_le_bytes()).collect();
         vram.write_block(x, y + row as u16, w, 1, &bytes);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::world::World;
+
+    /// The emitter arm's mono input is the options screen's Sound word the
+    /// world mirrors (`0x800846BC`), so the in-game Monaural row reaches the
+    /// arm's own `(l + r) >> 1` on both hosts.
+    #[test]
+    fn the_emitter_listener_reads_the_sound_option() {
+        let mut w = World::new();
+        assert!(!w.sfx_emitter_listener().mono, "stereo at cold reset");
+        let opts = legaia_engine_menus::options::OptionsState {
+            audio: legaia_engine_system::option_values::AudioMode::Mono,
+            ..Default::default()
+        };
+        crate::options::apply_to_world(&opts, &mut w);
+        assert!(w.sfx_emitter_listener().mono);
     }
 }

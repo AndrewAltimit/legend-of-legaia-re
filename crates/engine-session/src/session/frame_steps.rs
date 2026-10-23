@@ -148,7 +148,7 @@ impl<S: AudioSink> BootSession<S> {
     /// window: every options-screen row takes the save's value, except a row
     /// the session pinned (`OptionsPins::adopt_saved`). Returns whether the
     /// options changed, so the host can persist them and apply their side
-    /// effects (the Sound row's downmix).
+    /// effects (the Sound row's monaural fold).
     ///
     /// Both play hosts call it on every sim tick, ahead of
     /// [`Self::apply_option_knobs`] - which would otherwise push the host's
