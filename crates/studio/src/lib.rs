@@ -55,12 +55,28 @@ pub fn place_name(label: &str) -> Option<&'static str> {
         .filter(|n| !n.eq_ignore_ascii_case(label))
 }
 
-/// Group a library's entries under their CDNAME block labels (the labels
-/// the extracted filenames carry), in disc order.
+/// Group a library's entries under the CDNAME block each one belongs to on
+/// the disc (the retail block, [`Library::retail_block`]), in disc order.
+///
+/// Not the label the extracted filenames carry: those apply the `#define`
+/// numbers as extraction indices, so every filename block starts two
+/// entries late, and the browse tree would file the first two entries of a
+/// block under the one before it - extraction 0874, the field character
+/// pack, under `befect_data` instead of `player_data`
+/// (`docs/formats/cdname.md`, numbering space).
 pub fn blocks(lib: &Library) -> Vec<Block> {
+    group_blocks(
+        lib.entries
+            .iter()
+            .map(|e| lib.retail_block(e.index).unwrap_or("(unnamed)")),
+    )
+}
+
+/// Runs of equal names, in order, as blocks of positions.
+fn group_blocks<'a>(names: impl Iterator<Item = &'a str>) -> Vec<Block> {
     let mut out: Vec<Block> = Vec::new();
-    for (pos, e) in lib.entries.iter().enumerate() {
-        let name = lib.label(e.index).unwrap_or("(unnamed)").to_string();
+    for (pos, name) in names.enumerate() {
+        let name = name.to_string();
         match out.last_mut() {
             Some(b) if b.name == name => b.entries.push(pos),
             _ => out.push(Block {
@@ -262,8 +278,8 @@ impl Studio {
 
     /// Whether entry `pos` (in a block labelled `block`) passes the browser's
     /// search. Every whitespace-separated term of `query` must match, case
-    /// blind, one of: the CDNAME label the filenames carry, the retail
-    /// CDNAME block (the two differ by the +2 index shift), the entry's
+    /// blind, one of: the retail CDNAME block the tree groups it under, the
+    /// label the filenames carry (the two differ by the +2 index shift), the entry's
     /// category, its PROT index (`865`, `0865` or `0x361`), or the display
     /// name of the scene its block names ([`place_name`]). `class`, when
     /// set, also requires that exact category.
@@ -278,7 +294,9 @@ impl Studio {
         if class.is_some_and(|c| cat != Some(c)) {
             return false;
         }
-        let retail = lib.retail_block(e.index).unwrap_or("");
+        // `block` is the retail block the tree groups under; the filename
+        // label (two entries later in the define space) still finds it.
+        let label = lib.label(e.index).unwrap_or("");
         let index_texts = [
             e.index.to_string(),
             format!("{:04}", e.index),
@@ -289,7 +307,7 @@ impl Studio {
             let t = term.to_lowercase();
             block.to_ascii_lowercase().contains(&t)
                 || place.contains(&t)
-                || retail.to_ascii_lowercase().contains(&t)
+                || label.to_ascii_lowercase().contains(&t)
                 || cat.is_some_and(|c| c.contains(&t))
                 || index_texts.iter().any(|s| s.contains(&t))
         })
