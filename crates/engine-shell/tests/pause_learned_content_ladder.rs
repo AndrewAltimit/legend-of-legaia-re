@@ -840,3 +840,59 @@ fn a_coin_holder_s_root_menu_shows_the_coin_row() {
     );
     assert_eq!(value_rows(&s), [166, 180, 194], "gold, coins, clock");
 }
+
+/// The Throw Out confirm (window 9, `FUN_801D1B20`) draws the overlay's own
+/// labels: the question line at `(WX + 6, WY + 0xE)` and Yes / No at
+/// `WX + 0x3C`. Each pool string keeps its `@` lead - a blank width-0 glyph
+/// - so the first visible glyph sits one pixel past each pen, as retail
+/// draws it.
+#[test]
+fn the_throw_out_confirm_draws_the_overlay_labels() {
+    let Some(mut s) = booted(&[], &[]) else {
+        return;
+    };
+    assert!(
+        s.host.world.menu.throw_confirm_labels.is_installed(),
+        "the menu overlay install read no Throw Out labels"
+    );
+    open_row(&mut s, FieldMenuRow::Items);
+    // Command window: Down to Throw Out, Cross into its list, Cross on the
+    // first stack (the new-game bag holds one).
+    tap(&mut s, PadButton::Down);
+    tap(&mut s, PadButton::Cross);
+    tap(&mut s, PadButton::Cross);
+    let Some(FieldMenuSubsession::Items(items)) = s.field_menu_sub.as_ref() else {
+        panic!("Items did not open the item screen");
+    };
+    assert_eq!(
+        items.focus,
+        legaia_engine_menus::pause_screens::PauseItemsFocus::ThrowOutConfirm,
+        "the Throw Out pick did not open its confirm"
+    );
+    let font = s.dialog_font.clone().expect("disc dialog font");
+    let ctx = legaia_engine_ui::pause_menu::PauseMenuCtx {
+        font: &font,
+        rects: legaia_engine_ui::pause_menu::MenuRects::new(None),
+        chrome: None,
+        origin: (0, 0),
+        scale: 1,
+    };
+    let draws = legaia_engine_screens::pause_screens::field_menu_sub_draws(
+        &ctx,
+        s.field_menu_sub.as_ref().unwrap(),
+        Some(&s.host.world),
+        None,
+    );
+    let (wx, wy) = ctx.rects.pen(9);
+    let glyph_at = |x: i32, y: i32| draws.texts.iter().any(|d| d.dst.0 == x && d.dst.1 == y);
+    for (x, y, what) in [
+        (wx + 6, wy + 0x0E, "the question"),
+        (wx + 0x3C, wy + 0x1C, "Yes"),
+        (wx + 0x3C, wy + 0x2A, "No"),
+    ] {
+        assert!(
+            glyph_at(x, y) && glyph_at(x + 1, y),
+            "{what}: the `@` at the pen, the first visible glyph one pixel on"
+        );
+    }
+}

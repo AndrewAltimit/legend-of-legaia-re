@@ -499,7 +499,14 @@ everywhere but the overworld.
 The seven labels are NUL-terminated strings in the overlay's leading rodata
 pool: `@Items` at `0x801CE9D0`, then `@Magic` / `@Equip` / `@Status` /
 `@Options` / `@Load` / `@Save`. Each pointer targets the leading `0x40` (`@`)
-marker byte `FUN_80036888` consumes. The same pool (`0x801CE81C..0x801CEC78`)
+byte, which nothing strips: neither the expander `FUN_80036514` nor the
+renderer `FUN_80036888` tests for it, and it is a blank glyph of width `0`, so
+it draws as a one-pixel advance (`widths[c] + pad + 1`). Every pool string's
+first visible glyph therefore sits one pixel past its pen - the root rows ink
+from `WX + 0x15` on a `sol_to_karisto_worldmap` capture, against the
+`WX + 0x14` pen. The port's pool readers (`pause_screens::menu_overlay_string`,
+`shop::ShopLabel`, `pause_screens::menu_overlay_bytes`) keep the byte so the
+host font places each line the same way. The same pool (`0x801CE81C..0x801CEC78`)
 holds the options choices, the stat labels (`ATK` / `UDF` / `LDF` / `SPD` /
 `INT` / `AGL`, `Experience`, `Next Level`) and the shop / equip / status
 command strings. The battle overlay (PROT 0898) keeps its own pool at
@@ -1209,7 +1216,10 @@ about to" 8 px past the count (16 px for a 2-digit count); "Throw out?" at
 `(WX+0x3C, WY+0x2A)` with the hand at `WX+0x28`. The name renderer honours a
 `0xF1` second-byte escape that substitutes a character name (`+0x2A7`). The
 strings are in the rodata pool (`@You are about to` at `0x801CEA60`, then
-`@Throw out?` / `@Yes` / `@No`).
+`@Throw out?` at `0x801CEA74` / `@Yes` / `@No`). Port: the confirm draws them
+from `pause_screens::ThrowConfirmLabels` (installed by
+`World::install_menu_overlay_tables`), `@` lead kept; disc-gated oracle
+`pause_learned_content_ladder::the_throw_out_confirm_draws_the_overlay_labels`.
 
 **Port of the Items screen.** Session: `pause_screens::PauseItemsSession`
 (command / list / throw-out focus, page flip, No-default confirm, whole-stack

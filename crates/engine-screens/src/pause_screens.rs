@@ -549,6 +549,9 @@ pub fn items_draws(
         info,
         text_cursor: !ctx.chrome_present(),
     };
+    // The window's labels are the menu overlay's own (`FUN_801D1B20` loads
+    // them out of its pool); none drawn without the overlay installed.
+    let throw_labels = world.map(|w| &w.menu.throw_confirm_labels);
     let throw = model
         .throw_confirm
         .as_ref()
@@ -557,6 +560,9 @@ pub fn items_draws(
             count: c.count,
             cursor: c.cursor,
             text_cursor: !ctx.chrome_present(),
+            prompt: throw_labels.map_or(["", ""], |l| [l.prompt[0].as_str(), l.prompt[1].as_str()]),
+            choices: throw_labels
+                .map_or(["", ""], |l| [l.choices[0].as_str(), l.choices[1].as_str()]),
         });
     // The routes' own prompt lines, out of the menu overlay's string pool
     // (`FUN_801D1DAC` / `FUN_801D1F10`), with the Incense line's `0xC2`

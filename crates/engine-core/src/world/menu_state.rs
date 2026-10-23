@@ -29,6 +29,9 @@ pub struct MenuState {
     /// ([`legaia_engine_menus::pause_screens::UseRoutePrompts`]). Empty on a
     /// load without the overlay.
     pub use_route_prompts: legaia_engine_menus::pause_screens::UseRoutePrompts,
+    /// The Throw Out confirm's labels (window 9), out of the same image
+    /// ([`legaia_engine_menus::pause_screens::ThrowConfirmLabels`]).
+    pub throw_confirm_labels: legaia_engine_menus::pause_screens::ThrowConfirmLabels,
     /// The shop windows' labels (picker rows, compare notes, quantity
     /// prompts, recipient rows, sell detail, Point Card toast), read out of
     /// the same PROT 0899 image ([`legaia_engine_menus::shop::ShopLabels`]).
@@ -95,6 +98,7 @@ impl MenuState {
             arrange_rank: None,
             context_labels: Default::default(),
             use_route_prompts: Default::default(),
+            throw_confirm_labels: Default::default(),
             shop_labels: Default::default(),
             widget_scripts: None,
             item_category: Vec::new(),

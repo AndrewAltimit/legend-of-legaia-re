@@ -609,6 +609,11 @@ pub struct PauseThrowConfirmView<'a> {
     pub cursor: u8,
     /// Emit an ASCII `>` cursor instead of the hand sprite.
     pub text_cursor: bool,
+    /// The window's two prompt lines (`0x801CEA60` after the count,
+    /// `0x801CEA74` below) and the Yes / No labels, as the menu overlay's
+    /// pool holds them, `@` lead included. Empty strings draw nothing.
+    pub prompt: [&'a str; 2],
+    pub choices: [&'a str; 2],
 }
 
 /// Y offset of the "Yes" row from the confirm window's content origin.
@@ -626,10 +631,10 @@ pub const THROW_CONFIRM_HAND_X: i32 = 0x28;
 ///
 /// - item name (staging 7 white) at `(WX, WY)`, the bag count right of
 ///   the name (the retail pen is `WX + 8 + name_glyphs*0xC`; the port
-///   uses the proportional name advance + 8), then "You are about to"
-///   8 px past the count (16 px for a 2-digit count);
-/// - "Throw out?" at `(WX+6, WY+0xE)`;
-/// - "Yes" / "No" (staging 5 teal) at `WX+0x3C` on rows `WY+0x1C` /
+///   uses the proportional name advance + 8), then the first prompt line
+///   (`0x801CEA60`) 8 px past the count (16 px for a 2-digit count);
+/// - the second prompt line (`0x801CEA74`) at `(WX+6, WY+0xE)`;
+/// - Yes / No (staging 5 teal) at `WX+0x3C` on rows `WY+0x1C` /
 ///   `WY+0x2A`, hand cursor at `WX+0x28` on the focused row.
 ///
 /// PORT: FUN_801D1B20
@@ -655,18 +660,12 @@ pub fn items_throw_confirm_draws_for(
         MENU_TEXT_WHITE,
     ));
     let after_count = count_x + if view.count >= 10 { 0x10 } else { 0x8 };
-    str_at(
-        &mut out,
-        "You are about to",
-        after_count,
-        wy,
-        MENU_TEXT_WHITE,
-    );
-    str_at(&mut out, "Throw out?", wx + 6, wy + 0x0e, MENU_TEXT_WHITE);
+    str_at(&mut out, view.prompt[0], after_count, wy, MENU_TEXT_WHITE);
+    str_at(&mut out, view.prompt[1], wx + 6, wy + 0x0e, MENU_TEXT_WHITE);
     let teal = super::system_menus::OPTIONS_INK_TEAL;
     for (label, y, row) in [
-        ("Yes", wy + THROW_CONFIRM_YES_Y, 0u8),
-        ("No", wy + THROW_CONFIRM_NO_Y, 1u8),
+        (view.choices[0], wy + THROW_CONFIRM_YES_Y, 0u8),
+        (view.choices[1], wy + THROW_CONFIRM_NO_Y, 1u8),
     ] {
         if view.text_cursor && view.cursor == row {
             str_at(&mut out, ">", wx + THROW_CONFIRM_HAND_X, y, MENU_TEXT_GOLD);
@@ -1566,10 +1565,12 @@ mod pause_list_tests {
             count: 12,
             cursor: 1,
             text_cursor: true,
+            prompt: ["About", "Drop?"],
+            choices: ["Y", "N"],
         };
         let draws = items_throw_confirm_draws_for(&font, &view, (wx, wy));
         assert!(draw_at(&draws, wx, wy)); // name
-        assert!(draw_at(&draws, wx + 6, wy + 0x0e)); // Throw out?
+        assert!(draw_at(&draws, wx + 6, wy + 0x0e)); // the question
         assert!(draw_at(&draws, wx + 0x3c, wy + 0x1c)); // Yes
         assert!(draw_at(&draws, wx + 0x3c, wy + 0x2a)); // No
         // Hand cursor (ASCII stand-in) on the "No" row (retail default).

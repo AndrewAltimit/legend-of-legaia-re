@@ -117,6 +117,11 @@ impl World {
         if prompts.is_installed() {
             self.menu.use_route_prompts = prompts;
         }
+        let throw =
+            legaia_engine_menus::pause_screens::ThrowConfirmLabels::from_menu_overlay(overlay);
+        if throw.is_installed() {
+            self.menu.throw_confirm_labels = throw;
+        }
         // The shop windows' label strings live in the same pool
         // (`FUN_801D4868` .. `FUN_801DCE20` load them by VA).
         let shop = legaia_engine_menus::shop::ShopLabels::from_menu_overlay(overlay);

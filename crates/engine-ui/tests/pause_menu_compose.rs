@@ -349,6 +349,8 @@ fn compose_items(ctx: &PauseMenuCtx<'_>, modal: ItemsModal) -> PauseMenuDraws {
         count: 3,
         cursor: 1,
         text_cursor: ctx.chrome.is_none(),
+        prompt: ["About", "Drop?"],
+        choices: ["Y", "N"],
     };
     let two_line = ["Incense", "Use it?"];
     let one_line = ["Use Door of Light?"];
