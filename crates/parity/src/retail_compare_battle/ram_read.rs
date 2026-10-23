@@ -5,6 +5,9 @@ use super::*;
 
 /// `ctx[+0x274]` - the next actor the initiative pick `FUN_801DABA4` chose.
 pub(super) const NEXT_ACTOR: u32 = 0x274;
+/// The magic-capture fade (`ctx[+0x07] = 0x6F`): audio duck and a CD wait,
+/// with no framing call of its own (`docs/subsystems/battle-action.md`).
+const CAPTURE_FADE_STATE: u8 = 0x6F;
 
 pub(super) fn in_ram(p: u32) -> bool {
     (0x8000_0000..0x8020_0000).contains(&p)
@@ -653,13 +656,23 @@ impl RetailBattle {
                 let steps: Vec<u8> = (0..usize::from(passes))
                     .map(|n| steps.get(n).copied().unwrap_or(frame_step(ram)))
                     .collect();
-                displayed_cam_live_steps(
-                    ram,
-                    ctx,
-                    &steps,
-                    confirmed,
-                    summon_route_prior_end(ram, ctx, action_state),
-                )
+                // The magic-capture fade `0x6F` arms no framing: the table the
+                // branch `0x6E` left (`FUN_801D5854(actor, 6)` every pass)
+                // walks on at its own increment, so the passes back stood
+                // that increment further out each, not the re-arm's widening
+                // share (`zora_glare_petrify_pre`: TR z `4910` on the re-arm's
+                // walk, `.971`; `4883` on the table's, `.996`).
+                if action_state == CAPTURE_FADE_STATE {
+                    displayed_module_cam_live(ram, ctx, &steps)
+                } else {
+                    displayed_cam_live_steps(
+                        ram,
+                        ctx,
+                        &steps,
+                        confirmed,
+                        summon_route_prior_end(ram, ctx, action_state),
+                    )
+                }
             },
             displayed_module_cam_live: displayed_module_cam_live(
                 ram,
@@ -747,10 +760,20 @@ impl RetailBattle {
             entry_latches: Vec::new(),
             resident_shiny_seru: false,
             inflight_idle: [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+            // Only where the close-up's three-frame tween lands inside a pass
+            // (`SUMMON_CAST_TWEEN_FRAMES`): on a shorter step the focus is
+            // still walking toward the pair when the pass draws, a
+            // position the tween's history decides and this reader does
+            // not walk.
             summon_focus: active
                 .filter(|_| {
-                    legaia_engine_battle_vm::battle_cam_script::SUMMON_CAST_STATES
-                        .contains(&action_state)
+                    use legaia_engine_battle_vm::battle_cam_script::{
+                        SUMMON_CAST_STATES, SUMMON_CAST_TWEEN_FRAMES,
+                    };
+                    SUMMON_CAST_STATES.contains(&action_state)
+                        && display_pass_steps(ram)
+                            .iter()
+                            .all(|&s| u32::from(s) >= SUMMON_CAST_TWEEN_FRAMES)
                 })
                 .and_then(|p| super::framing_body::displayed_framing_body(ram, p)),
             clip_cursors: (0..8u32)
