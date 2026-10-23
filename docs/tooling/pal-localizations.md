@@ -364,6 +364,14 @@ Two more rules keep the alignment from sliding at a pool's tail:
   alike, every in-order alignment of comparable lengths scores the same, and
   the Italian menu pool took the one that slid `@Price` / `@Cannot sell` /
   `@Exchange` onto the next label each.
+- **A fixed-stride table's full slot is cut at the slot edge.** When the USA
+  pool's strings sit at one spacing (three or more), the pool is a table the
+  game indexes by stride, and a source string that fills its slot carries no
+  NUL before the next one. The NUL scan reads the two as one chunk, so a
+  source chunk at least a stride long is cut into stride-sized pieces. The
+  German fatal-decision table (PROT 0954, stride `0x28`) is the case: its
+  recover line fills its slot and runs into `MP Null`, which left `MP zero`
+  pairing with the line before.
 
 The FR / DE / IT menu overlays (PROT 0899) are laid out differently from
 USA's: the entry is `0x800` bytes longer and the pool strings sit at other

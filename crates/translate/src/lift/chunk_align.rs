@@ -59,6 +59,43 @@ pub(super) fn nul_chunks(buf: &[u8], lo: usize, hi: usize) -> Vec<(usize, Vec<u8
     out
 }
 
+/// The stride of a fixed-stride string table: the one spacing every
+/// consecutive pair of `offsets` shares, over at least three strings. `None`
+/// for a pool laid out by length.
+pub(super) fn table_stride(offsets: &[usize]) -> Option<usize> {
+    if offsets.len() < 3 {
+        return None;
+    }
+    let d = offsets[1].checked_sub(offsets[0])?;
+    (d > 0
+        && offsets
+            .windows(2)
+            .all(|w| w[1].checked_sub(w[0]) == Some(d)))
+    .then_some(d)
+}
+
+/// Cut every chunk at least `stride` bytes long into `stride`-byte pieces.
+///
+/// In a fixed-stride table a string that fills its slot carries no NUL: the
+/// game reads the next slot at `+stride` regardless, so the next string
+/// follows with nothing between and a NUL scan reads the two as one chunk.
+/// (The German fatal-decision table's recover line fills its `0x28`-byte
+/// slot and runs straight into `MP Null`.) Cutting at the slot edge gives
+/// back the strings the game's own indexing reads.
+pub(super) fn split_at_stride(chunks: Vec<Chunk>, stride: usize) -> Vec<Chunk> {
+    let mut out = Vec::with_capacity(chunks.len());
+    for (off, b) in chunks {
+        if b.len() < stride || !pool_text(&b) {
+            out.push((off, b));
+            continue;
+        }
+        for (k, piece) in b.chunks(stride).enumerate() {
+            out.push((off + k * stride, piece.to_vec()));
+        }
+    }
+    out
+}
+
 /// Pair two NUL-chunk lists of the *same* string pool on two builds:
 /// `usa offset -> source bytes`.
 ///

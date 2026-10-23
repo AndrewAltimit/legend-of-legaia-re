@@ -219,6 +219,38 @@ fn a_surplus_string_mid_pool_does_not_slide_the_tail() {
 }
 
 #[test]
+fn a_slot_filling_string_splits_at_the_table_stride() {
+    use super::chunk_align::{pair_chunk_lists, split_at_stride, table_stride};
+    // A four-slot table at stride 0x10; the source's second string fills
+    // its slot exactly, so the NUL scan reads it and the third as one chunk.
+    let u: Vec<Chunk> = vec![
+        (0x00, b"Curse".to_vec()),
+        (0x10, b"Recover all".to_vec()),
+        (0x20, b"MP zero".to_vec()),
+        (0x30, b"Items lost".to_vec()),
+    ];
+    assert_eq!(table_stride(&[0x00, 0x10, 0x20, 0x30]), Some(0x10));
+    assert_eq!(table_stride(&[0x00, 0x10, 0x28]), None);
+    assert_eq!(table_stride(&[0x00, 0x10]), None);
+    let merged = b"Alles zurueckhol".to_vec();
+    assert_eq!(merged.len(), 0x10);
+    let mut joined = merged.clone();
+    joined.extend_from_slice(b"MP Null");
+    let s: Vec<Chunk> = vec![
+        (0x00, b"Fluch".to_vec()),
+        (0x10, joined),
+        (0x30, b"Objekte weg".to_vec()),
+    ];
+    let s = split_at_stride(s, 0x10);
+    assert_eq!(s[1], (0x10, merged.clone()));
+    assert_eq!(s[2], (0x20, b"MP Null".to_vec()));
+    let map = pair_chunk_lists(&u, &s);
+    assert_eq!(map.get(&0x10), Some(&merged));
+    assert_eq!(map.get(&0x20).map(Vec::as_slice), Some(&b"MP Null"[..]));
+    assert_eq!(map.get(&0x30).map(Vec::as_slice), Some(&b"Objekte weg"[..]));
+}
+
+#[test]
 fn crawl_pages_pair_across_paragraph_gaps() {
     // Equal counts pair one for one.
     let t: [&[u8]; 2] = [b"a", b"b"];
