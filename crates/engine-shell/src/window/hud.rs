@@ -31,10 +31,15 @@ impl PlayWindowApp {
     /// the engine-ui builders consume (grid vs control cursor split via the
     /// session's own control mapping).
     pub(super) fn name_entry_view<'a>(
-        &self,
+        &'a self,
         entry: &'a legaia_engine_menus::name_entry::NameEntry,
     ) -> legaia_engine_ui::NameEntryView<'a> {
-        legaia_engine_screens::field_screens::name_entry_view(entry, self.session.host.world.frame)
+        let world = &self.session.host.world;
+        legaia_engine_screens::field_screens::name_entry_view(
+            entry,
+            world.frame,
+            world.tables.name_entry_prompts.as_ref(),
+        )
     }
 
     /// Build the name-entry window chrome + hand cursor sprites (the two

@@ -76,6 +76,30 @@ pub(super) fn fortress_encounter_fix(run: &mut Run<'_>) -> Result<()> {
     Ok(())
 }
 
+/// Conkram mirror freeze fix: the move-VM parts' pose-block and render-node
+/// allocations survive a failure without writing through NULL or bumping
+/// `PRG ERR`. Seedless - four same-size SCUS edits.
+pub(super) fn conkram_freeze_fix(run: &mut Run<'_>) -> Result<()> {
+    let args = run.args;
+    let patcher = &mut run.patcher;
+    let manifest = &mut run.manifest;
+    if args.conkram_freeze_fix {
+        let report = apply::apply_conkram_freeze_fix(patcher)?;
+        println!(
+            "conkram-freeze-fix: {}",
+            if report.changed {
+                "move VM patched (a failed effect allocation drops or stands in for the part instead of writing through NULL; PRG ERR stays clear)"
+            } else {
+                "already applied (no change)"
+            }
+        );
+        manifest.push("conkram_freeze_fix = true".to_string());
+    } else {
+        manifest.push("conkram_freeze_fix = false".to_string());
+    }
+    Ok(())
+}
+
 /// Place renames: the SCUS landmark cell, the world-map label records, and
 /// every scene MAN whose entry banner carries the name.
 pub(super) fn rename_location(run: &mut Run<'_>) -> Result<()> {

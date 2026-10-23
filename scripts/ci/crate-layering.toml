@@ -13,7 +13,7 @@
 #             "takes nothing but X" carries it.
 #
 # "Engine-layer" means every crates/engine-*, plus render-kernels, parity,
-# asset-viewer, studio, web-play and web-viewer. Format, tool and patcher crates are outside
+# asset-viewer, studio, web-minigames, web-play and web-viewer. Format, tool and patcher crates are outside
 # the layer: any kernel crate may depend on them, and none of them may depend
 # on an engine-layer crate.
 #
@@ -158,6 +158,7 @@ deps = [
     "engine-battle-menus",
     "engine-battle-vm",
     "engine-camera",
+    "engine-effects",
     "engine-field",
     "engine-fishing",
     "engine-minigames",

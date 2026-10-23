@@ -399,7 +399,8 @@ impl World {
     /// Tick one ambient part: drain the wait timer, run the move VM, flush
     /// bytecode self-writes into the shared bundle + the part's snapshot,
     /// spawn op-`0x25` children (recursively, spawn-time first run), and
-    /// run the mode-3 CLUT-cell integrator on `0x4000` render-mode parts.
+    /// run the mode-4 scroller arm. The mode-3 CLUT-cell arm runs ahead of the
+    /// VM, in [`Self::tick_ambient_fx`], as retail orders it.
     fn tick_ambient_part(&mut self, idx: usize, depth: usize) {
         if depth > MAX_SPAWN_DEPTH {
             return;
@@ -457,14 +458,6 @@ impl World {
             );
         }
 
-        // Mode-3 render tail: the `0x4000` render-mode node's CLUT-cell
-        // integrator runs every game tick regardless of the wait timer.
-        let cell_fx = if model_sel == legaia_overlay_images::summon_overlay::RENDER_NODE_MODE_A {
-            clut_cell_fx::mode3_integrate(&mut state, self.clock.frame_step.max(1))
-        } else {
-            None
-        };
-
         // Mode-4 render tail: the VRAM-rect scroller. Retail gates this arm
         // on `+0x5A == 4` alone (`0x80022CB8`) - no `model_sel` condition,
         // and jou's carrier is a plain transform node (`model_sel = -1`).
@@ -500,9 +493,6 @@ impl World {
             let part = &mut self.ambient.fx[idx];
             part.state = state;
             part.finished = finished;
-            if cell_fx.is_some() {
-                part.cell_fx = cell_fx;
-            }
             if let Some(fx) = scroll_fx
                 && part.scroll_fx.len() < MAX_PENDING_SCROLLS
             {
@@ -626,8 +616,9 @@ impl World {
         // Retail's walk frees the halted parts before ticking the rest.
         self.retire_finished_ambient_parts();
         // The wait-timer drain per game tick: retail decrements `+0x54` by
-        // `DAT_1F800393 * DAT_1F80037D` (frame step x the pinned 0x10 speed
-        // scalar) per tick.
+        // `DAT_1F800393 * DAT_1F80037D` (frame step x the rate byte `8`,
+        // `clut_cell_fx::SPEED_SCALAR`) per tick, so `WAIT_SET v` holds `v`
+        // vsyncs.
         let drain = u16::from(self.clock.frame_step.max(1)) * clut_cell_fx::SPEED_SCALAR as u16;
         let count = self.ambient.fx.len();
         let emitter_listener = self.sfx_emitter_listener();
@@ -655,6 +646,21 @@ impl World {
                 {
                     self.audio.sfx_emitter_ops.push(op);
                 }
+                // The mode-3 arm (`0x800226D8..`, keyed on `+0x5A == 3`): the
+                // CLUT-cell cycler integrates its adds and uploads the cell
+                // **before** the move VM runs (`0x80022B94`), every tick
+                // regardless of the wait timer. So an op `0x2E` that changes
+                // a velocity takes effect on the next tick's integrate, and
+                // the spawn-time first run (`FUN_80021B04`, the VM alone)
+                // does not integrate: an op-`0x2C` capture uploads on the
+                // second part tick after it, when `+0x9C` passes 1.
+                if st.move_submode == 3
+                    && let Some(fx) =
+                        clut_cell_fx::mode3_integrate(st, self.clock.frame_step.max(1))
+                {
+                    self.ambient.fx[idx].cell_fx = Some(fx);
+                }
+                let st = &mut self.ambient.fx[idx].state;
                 if legaia_engine_effects::part_motion::runs_motion_block(st) {
                     legaia_engine_effects::part_motion::motion_block(st, drain);
                 }
@@ -677,13 +683,16 @@ impl World {
     /// focus, the voice-volume word, the field-mode and side-band gates, the
     /// frame step. The per-row scale table `0x80091658` reads `0x80` in every
     /// captured state and the port carries no writer of it, so it is that
-    /// constant; mono is the host's (`Spu::mono`).
+    /// constant. Mono is the options screen's Sound word (`0x800846BC`,
+    /// mirrored in [`super::WorldToggles::retail_options`]): the arm averages
+    /// the two sides itself (`0x800224D4..0x800224E8`), and the direct voice
+    /// write `FUN_800657D0` it then feeds never reads libsnd's fold flag.
     fn sfx_emitter_listener(&self) -> legaia_engine_vm::sfx_emitter::EmitterListener {
         use legaia_engine_mode::mode::GameMode;
         legaia_engine_vm::sfx_emitter::EmitterListener {
             focus_stored: self.audio.listener_focus,
             voice_volume: self.audio.levels.voice_volume,
-            mono: false,
+            mono: self.toggles.retail_options.sound != 0,
             scale: (0x80, 0x80),
             field_mode: GameMode::for_scene_mode(self.mode) == Some(GameMode::MainMode),
             stream_settled: self.audio.sound_stream.is_settled(),
@@ -1111,5 +1120,25 @@ pub(crate) fn write_rect(vram: &mut legaia_tim::Vram, x: u16, y: u16, w: u16, te
     for (row, chunk) in texels.chunks(usize::from(w.max(1))).enumerate() {
         let bytes: Vec<u8> = chunk.iter().flat_map(|t| t.to_le_bytes()).collect();
         vram.write_block(x, y + row as u16, w, 1, &bytes);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::world::World;
+
+    /// The emitter arm's mono input is the options screen's Sound word the
+    /// world mirrors (`0x800846BC`), so the in-game Monaural row reaches the
+    /// arm's own `(l + r) >> 1` on both hosts.
+    #[test]
+    fn the_emitter_listener_reads_the_sound_option() {
+        let mut w = World::new();
+        assert!(!w.sfx_emitter_listener().mono, "stereo at cold reset");
+        let opts = legaia_engine_menus::options::OptionsState {
+            audio: legaia_engine_system::option_values::AudioMode::Mono,
+            ..Default::default()
+        };
+        crate::options::apply_to_world(&opts, &mut w);
+        assert!(w.sfx_emitter_listener().mono);
     }
 }

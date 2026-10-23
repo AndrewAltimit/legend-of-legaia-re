@@ -123,7 +123,7 @@ stateDiagram-v2
 | `0x1e` | Clears `DAT_801d90bc`, waits for the rod swing word `DAT_801d91ac` to reach `0x14`, then jumps to `0x20`. |
 | `0x20..0x22` | Lure-landing / line-sink sequence (camera + line-actor setup), each advancing to the next; `0x21` / `0x22` read the result-accept word `DAT_801d90bc`. |
 | `0x28` | Waits on the converging banner (`DAT_801d9164`, `FUN_801d7528`), then returns to `10`. |
-| `0x2d` | Miss / retry bookkeeping: runs the `DAT_801d9268` timer through `FUN_801d6f10`, then back to `0x32`. |
+| `0x2d` | Miss / retry bookkeeping: runs the `DAT_801d9268` timer through `FUN_801d6f10`, then back to `0x32`. No store on the disc sets this state ([Open](#open)). |
 | `0x64..0x66`, `0x6e`, `0x78..0x7a` | The [hub menu](#the-hub-menu) and its sub-screens. |
 | `0x96` | "You have lost the lure" / no-rod end screen; a button edge advances to `200`. |
 | `200` (`0xc8`) | Exit: ramps the fade to white and, once full, plays the leaving XA cue and tears the mode down. |
@@ -366,7 +366,8 @@ The lure tick `FUN_801d26cc` ends the in-water state from its tail (`0x801D3AFC.
 
 `TensionGauge` ports the divisors, the release decrement and the clamp; `FishAi` ports the per-field pull / dart / sink formulas of the species table. `PondSession` composes them with glue that is an engine-side reconstruction, marked at each call site and listed under [Open](#open).
 
-The port snaps the line on the first frame the gauge reaches `0x1000`, where retail rolls one-in-ten per frame and spends a lure. Under the port's rule the two reel buttons are a risk choice: reel A (Cross) recovers line faster and divides the pull harder. Measured over the whole `PondSession` parameter space (both venues, three lures, three rods, reel held throughout), reel A never reaches the ceiling (peak `2017` of `0x1000`); reel B does, on the hardest-pulling common fish. Ladder: `crates/web-play/tests/fishing_banner_ladder.rs`.
+The line break is retail's: a hooked frame at the ceiling draws one `rand() % 10` off the session's BIOS-rand stream (the draw is made only there), and a zero breaks the line ahead of the reel-in test. The break consumes one of the equipped lure: `PondSession::take_spent_lures` hands the host `lure + 0x9D` per break, which the play hosts consume from the bag (`World::tick_fishing`, the window-bounded consume-by-id) and the minigames page from its per-row stand-in stock. The two reel buttons are a risk choice: reel A (Cross) recovers line faster and divides the pull harder.
+Measured over the whole `PondSession` parameter space (both venues, three lures, three rods, reel held throughout), reel A never reaches the ceiling (peak `2017` of `0x1000`); reel B does, on the hardest-pulling common fish. Pinned by `fishing::tests::the_line_breaks_on_a_roll_at_the_ceiling_and_spends_the_lure`; ladder `crates/web-play/tests/fishing_banner_ladder.rs`.
 
 ## Per-species parameter table
 
@@ -540,7 +541,8 @@ The driver's setup state (`0x801CF59C..0x801CF7D8`) picks the venue's [anchor ti
 
 The models are the global pool's party slots, so the three are the party in order: Vahn in the middle, the second member to his right, the third to his left and a step nearer the camera. The lead's clip resolves against the resident party clip bank (his standing idle); the other two play records `0xA` / `0xB` of the venue scene's own ANM bank, whose rigs match their field bodies bone for bone. The `minigame_fishing` library state holds exactly these three actors at `(4736, -128, 10752)`, `(4832, -128, 10752)` and `(4640, -128, 10688)`; the `-128` is the ground solver's step layer.
 
-**The lead's tick** (`FUN_801d2278`) writes `TR.y = 0x400 - 6 * (+0x16)`, decrements the timer `DAT_801d9060`, and on expiry rolls a dwell and a point out in the water (BIOS `rand`): an offset of an on-stack copy of the actor's position, `z + 0x400` plus a jitter. It spawns a ripple there (`FUN_80021B04(sp+0x10, ..)`, `0x801D23FC`). Nothing writes the position back, so the lead stands still. In the idle state (`DAT_801d926c == 0xc`) the D-pad (`0x8000` / `0x2000`) turns his facing `+0x26` in `0x40` steps clamped `0x700..0x900`, and the camera yaw and focus follow him.
+**The lead's tick** (`FUN_801d2278`) writes `TR.y = 0x400 - 6 * (+0x16)`, decrements the timer `DAT_801d9060`, and on expiry rolls a dwell and a point out in the water (BIOS `rand`): an offset of an on-stack copy of the actor's `+0x14..+0x18` trio, `x` plus a jitter and `z + 0x400` plus a jitter, `y` kept (`0x801D22A4..0x801D23C8`). It spawns a ripple there (`FUN_80021B04(sp+0x10, sp+0x18, record, 0x1000)`, `0x801D23FC`), with record `0x801D8ED8` on `rand() & 1` and `0x801D8F44` otherwise, rotated `(0, rand() & 0xFFF, 0)` by the roll's first draw.
+Both records are move-buffer parts (`[i16 model_sel = 0][u16 0][bytecode]`) whose bytecode makes the part a render-mode-4 default-arm node (op `0x13`): what draws is the procedural ring `FUN_80028158` builds ([`effect_default_arm`](../../crates/engine-effects/src/effect_default_arm.rs)), and the program ends the part. Nothing writes the position back, so the lead stands still. In the idle state (`DAT_801d926c == 0xc`) the D-pad (`0x8000` / `0x2000`) turns his facing `+0x26` in `0x40` steps clamped `0x700..0x900`, and the camera yaw and focus follow him.
 
 **The camera** the same state reads: angles `(0, 0, 0)`, `TR.x = 0` and `TR.z = 0x974` from `FUN_801d78c0`; `TR.y = 0x400 - 6 * y = 0x700`, yaw `-((facing + 0x800) & 0xFFF)` and the focus `(-x, 0, -z)` from `FUN_801d2278`; and `H = 0x140`, which the setup stores at `0x801CF764` in place of the field's `0x200`. Under the field's 6x world scale that is a level camera behind the party, the lead's head just below the centre of the frame and the three cut off at the waist.
 
@@ -687,7 +689,7 @@ Each is pinned to PROT 0972 by content and reached from a fishing-overlay caller
 
 Each form leaves one of the three parts unmoved as the anchor, and the two forms use different rotation-word triples.
 
-Port: `fishing_chrome` (`sway_vector`, `venue_camera_reset`, `float_actor_tick`, `ripple_spawn`, `splash_burst`, `centred_panel`, and the cadence ring reset shared with `ReelCadence`).
+Port: `fishing_chrome` (`sway_vector`, `venue_camera_reset`, `float_actor_tick`, `ripple_spawn`, `splash_burst`, `centred_panel`, and the cadence ring reset shared with `ReelCadence`). `FUN_801d7c30` has no caller in the overlay: the lead's tick `FUN_801d2050` installs it in the slot-B hook `_DAT_8007BA2C` (`0x801D20B0..0x801D20B4`), which the move VM's op `0x20` calls from an effect script ([`move-vm.md`](move-vm.md#0x20---slot-b-module-hook)); the port runs no move VM over the venue's parts, so `ripple_spawn` is unwired.
 
 ## Scene geometry helpers
 
@@ -862,7 +864,7 @@ The rules engine is the crate [`engine-fishing`](../../crates/engine-fishing/REA
 | `FUN_801d1870` / `FUN_801d1a90` / `FUN_801d76e0` | `bar_frame` / `power_bar_frame` / `number_digit_cells` |
 | `FUN_801D63B0` | `engine-ui::fishing::sprite` over `legaia_minigame_formats::fishing_sprites` |
 
-**Session.** `PondSession` composes the kernels into the cast -> wait -> strike -> fight -> score loop. It is the only fishing session: the minigames page drives it directly (`crates/web-play/src/minigames_fishing.rs`), and the native window and the browser play page run it through `World::tick_fishing`. No Sony bytes are baked in; the species, spawn, cadence, sprite, prize and caption tables decode from the user's disc.
+**Session.** `PondSession` composes the kernels into the cast -> wait -> strike -> fight -> score loop. It is the only fishing session: the minigames page drives it directly (`crates/web-minigames/src/fishing_web.rs`), and the native window and the browser play page run it through `World::tick_fishing`. No Sony bytes are baked in; the species, spawn, cadence, sprite, prize and caption tables decode from the user's disc.
 
 **Runtime wiring.** Fishing installs as a suspending scene mode (`SceneMode::Fishing`; `World::enter_fishing_session` / `tick_fishing` / `exit_fishing`). The door warp and both play hosts' launchers (`L` in `play-window`, the Fish button on the browser play page) all reach it through `SceneHost::enter_fishing_from_overlay`.
 
@@ -872,7 +874,10 @@ The session seeds from the persistent words the world keeps between sessions (`W
 
 **Actor-side frame.** Both play hosts run the overlay's actor frame through one kernel, `engine-scene-host::fishing_venue::tick_fishing_venue_on_host` (actors on `World::minigames.fishing_venue`); each host's `tick_fishing_actors` is that call plus applying the returned venue-camera writes to its own engine camera. It covers:
 
-- the lead angler (`FishWander`, spawned by `fishing_venue::lead_spawn`), aimed by the held D-pad while the cast is idle, spawning the rolled ripple (`fishing_chrome::ripple_spawn`) into the shared minigame effect pool (`minigame_fx`, on `World::minigames.fx`);
+- the lead angler (`FishWander`, spawned by `fishing_venue::lead_spawn`), aimed by the held D-pad while the cast is idle, spawning the rolled ripple: the overlay's own record (`fishing_venue::RippleRecords`, cut at the warp) seated as a move-VM part (`engine-effects::summon::SummonScene`) and ticked every frame until its program ends.
+  The native window draws the rings through its effect-mesh pass (`World::active_effect_kind4_draws`).
+  The browser play page draws the venue through its single-mesh path, which has no effect pass, so it draws the rings in the pond's own pass and camera: `FishingVenue::ripple_world_mesh` places every ring in raw world space (`play_mg_fishing_ripple_*`) and the page uploads pond and rings as one mesh while any ring is live. The minigames page, which runs the same step (`fishing_venue::tick_venue_actors`) over its own session, draws them as stage triangles (`FishingVenue::ripple_screen_tris`, `fishing_ripples_json`) with each triangle's mean packet colour.
+  The catch bursts are world points seated in the shared minigame effect pool (`minigame_fx`) at their projection through the venue camera (`fishing_venue::project_to_retail_screen`);
 - the venue floor solve: the pond `.MAP`'s extended footprint is read at entry (the `_DAT_1F8003EC` buffer) and the actor settles onto it each frame through `fishing_chrome::float_actor_tick` -> `minigame_floor::ground_height`;
 - the camera: `venue_camera_reset` on entry and the per-frame `fish_camera` publish, folded into the engine camera's retail global trios (`Camera::globals`: the `_DAT_8007B790..` / `_DAT_800840B8..` / `_DAT_80089118..` axes);
 - the reeling-line actor (`LineActorSim`): armed on the hook (the `HOOK_CUE` arm phase), tracked through the fight, and run through the staged catch celebration on a landed fish - the `CELEBRATION_STAGE_FRAMES` timer firing `CELEBRATE_CUE` plus every unlocked `celebration_bursts` tier into the effect pool and SFX scheduler;
@@ -894,10 +899,10 @@ A renderer that blends every texel of a semi prim puts a stray `m` through the r
 
 The retail tables, kernels and screens above are pinned. What remains is the glue `PondSession` reconstructs, each marked at its call site:
 
-- **Line break.** Retail's rule is in [Fight exits](#fight-exits). The port snaps on the first frame at the ceiling and does not spend a lure. The snap seeds what retail's break arm seeds - the converging `LINE BREAK!` pair, cancelling the hook banner - and the empty reel-in and the recast seed nothing (`FishingBanners::on_snapped` / `on_recast`). The off-screen latch and the far-record tension strain are not ported.
+- **Line break.** The ceiling roll and the lure it spends are ported ([Port fight model](#port-fight-model)); the break seeds what retail's break arm seeds - the converging `LINE BREAK!` pair, cancelling the hook banner (`FishingBanners::on_snapped`). The off-screen latch (`3`) and the far-record tension strain (`tension += step * 300` past record `0x899`, gated on `DAT_801d91b0`) are not ported, and neither is the no-lure screen a spent last lure leads to.
 - **Cast camera.** Retail's cast cuts the view from behind the shore party to a low shot over the water behind the rod, which the line, the lure's flight and the fight play out in (a `minigame_fishing_pcsx` film, `scripts/pcsx-redux/autorun_film.lua`). The camera writes of states `0xd..0x22` are not decoded; the port keeps the shore view throughout and the rod appears at the cast lock.
 - **Fight pacing.** The line-record reel-down rates, the fish-AI branch order and re-roll interval, and the pull bias literal are engine-side readings of `FUN_801d4004`. The held-reel operand order (`pull * step / divisor`) is the natural integer reading, not separately pinned.
 - **Cast.** The power meter's per-frame step (hosts use `0x80`), the flight timing, and the mapping from locked power to the line record are approximations; retail's line-projection vector math is not decoded.
 - **Result plate.** The fish's lift before the plate and the `DAT_801d90bc` recast gate are not modelled.
-- **State `0x2d`.** No writer of this state has been identified.
+- **State `0x2d` has no writer on the disc.** The driver's state word `0x801D926C` is referenced only from the fishing overlay, and every one of its stores resolves: literal `0`, `1`, `0xA`, `0x14`, `0x19`, `0x1E`, `0x20`, `0x28`, `0x32`, `0x64`, `0x66`, `0x78..0x7A`, `0x96`, `0xC8`, and `state + 1` in cases `0xA`, `0xB`, `0xC`, `0x14`, `0x21`, `0x22`. None yields `0x2D`. Its timer `0x801D9268` is stored only inside case `0x2D` itself (the advance at `0x801CFF70` and the zero at `0x801CFF78`), so the miss / retry banner `FUN_801d6f10` is unreachable in retail. The port matches: `FishingBanners::miss` has no starter.
 - **Mode states `0`, `0xb`, `0x96`, `200`.** The tackle grant, the fade ramps, the no-lure screen and the exit fade are not session phases; the hosts' leave affordance replaces the exit.

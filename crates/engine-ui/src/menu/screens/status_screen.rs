@@ -89,8 +89,9 @@ pub(crate) fn num_field_draws(
 /// PORT: FUN_801d33d8 (the status / party panel content renderer - every
 /// pen below is its instruction-pinned offset; the submenu list pages it
 /// also serves draw through the sibling builders in this module)
-pub fn status_screen_draws_for(
+pub fn status_screen_draws_for_with(
     font: &legaia_font::Font,
+    labels: Option<&legaia_game_tables::menu_pool::MenuPoolLabels>,
     panel: &StatusPanelView<'_>,
     nav_hint: Option<&str>,
     pen: (i32, i32),
@@ -222,7 +223,14 @@ pub fn status_screen_draws_for(
     }
 
     // Experience / Next Level rows.
-    str_at(&mut out, "Experience", wx + 0x18, wy + 0xa5, white);
+    use legaia_game_tables::menu_pool::MenuLabel;
+    str_at(
+        &mut out,
+        crate::menu::window_painters::pool_label(labels, MenuLabel::Experience, "Experience"),
+        wx + 0x18,
+        wy + 0xa5,
+        white,
+    );
     out.extend(num_field_draws(
         font,
         panel.xp as u64,
@@ -231,7 +239,13 @@ pub fn status_screen_draws_for(
         8,
         white,
     ));
-    str_at(&mut out, "Next Level", wx + 0x18, wy + 0xb2, white);
+    str_at(
+        &mut out,
+        crate::menu::window_painters::pool_label(labels, MenuLabel::NextLevel, "Next Level"),
+        wx + 0x18,
+        wy + 0xb2,
+        white,
+    );
     out.extend(num_field_draws(
         font,
         panel.xp_to_next as u64,
@@ -253,7 +267,7 @@ pub fn status_screen_draws_for(
 /// at the byte-pinned `FUN_801D33D8` offsets and mapped from the 320x240
 /// menu stage into surface pixels (`stage_origin` + `stage_scale`, matching
 /// [`crate::menu_window_chrome_draws_for`]). Pair with
-/// `status_screen_draws_for(.., label_icons = true)` so the labels / AP
+/// `status_screen_draws_for_with(.., None, label_icons = true)` so the labels / AP
 /// value aren't double-drawn as text. `pen` is the id-28 window's content
 /// origin in stage pixels (the same value passed to
 /// `status_screen_draws_for`); `ap` is the character's current AP (meter
@@ -435,8 +449,9 @@ pub struct StatusSatelliteView<'a> {
 /// PORT: FUN_801D31EC - summary window (name at `+0`, LV icon at
 /// `(+0x1c, +0xf)`, 2-digit level field at `(+0x2c, +0xd)`, "ATR:" at
 /// `(+0, +0x1a)` with the element icon at `+0x20`).
-pub fn status_satellite_draws_for(
+pub fn status_satellite_draws_for_with(
     font: &legaia_font::Font,
+    labels: Option<&legaia_game_tables::menu_pool::MenuPoolLabels>,
     view: &StatusSatelliteView<'_>,
     list_pen: (i32, i32),
     condition_pen: (i32, i32),
@@ -472,7 +487,11 @@ pub fn status_satellite_draws_for(
     }
     str_at(
         &mut out,
-        "Condition",
+        crate::menu::window_painters::pool_label(
+            labels,
+            legaia_game_tables::menu_pool::MenuLabel::Condition,
+            "Condition",
+        ),
         condition_pen.0 + 6,
         condition_pen.1,
         white,
@@ -498,7 +517,17 @@ pub fn status_satellite_draws_for(
         2,
         white,
     ));
-    str_at(&mut out, "ATR:", summary_pen.0, summary_pen.1 + 0x1a, white);
+    str_at(
+        &mut out,
+        crate::menu::window_painters::pool_label(
+            labels,
+            legaia_game_tables::menu_pool::MenuLabel::Atr,
+            "ATR:",
+        ),
+        summary_pen.0,
+        summary_pen.1 + 0x1a,
+        white,
+    );
 
     out
 }
@@ -507,9 +536,9 @@ pub fn status_satellite_draws_for(
 /// the system-UI atlas: the party-list pointing-hand cursor, the
 /// "Condition" pager triangles, the summary window's LV label and the
 /// per-character ATR element icon. Positions are the traced renderer
-/// offsets (see [`status_satellite_draws_for`]); the stage mapping
+/// offsets (see [`status_satellite_draws_for_with`]); the stage mapping
 /// matches [`crate::menu_window_chrome_draws_for`]. Pair with
-/// `status_satellite_draws_for(.., label_icons = true)`.
+/// `status_satellite_draws_for_with(.., None, label_icons = true)`.
 ///
 /// `cursor` is the highlighted party-list row; `atr_char` indexes
 /// [`SaveMenuAtlasRects::atr_icons`] (roster character id 0=Vahn,

@@ -256,6 +256,7 @@ pub fn sample<S: AudioSink>(session: &BootSession<S>) -> HostTraceFrame {
                     l.run_default,
                 ),
                 (world.npcs.solid, world.npcs.animate),
+                crate::session_switches::GameplayTweaks::from_toggles(t),
                 world.ambient.frame_grab.enabled,
                 session.camera.distance,
             ))

@@ -498,7 +498,13 @@ impl World {
             }
             self.actors[mslot].battle_monster_id = Some(fslot.monster_id);
             self.actors[mslot].battle_element = None;
-            if let Some(def) = self.tables.monster_catalog.get(fslot.monster_id) {
+            let stat_permille = self.toggles.enemy_stat_permille;
+            if let Some(def) = self
+                .tables
+                .monster_catalog
+                .get(fslot.monster_id)
+                .map(|d| scale_monster_def(d, stat_permille))
+            {
                 // The installed stat block for THIS fight's class. The catalog
                 // is built at scene entry, before any formation is chosen, so
                 // it carries the scripted profile; a random encounter installs
@@ -1475,4 +1481,37 @@ mod placement_facing_op_tests {
         assert!(w.npcs.rotate_legs.is_empty());
         assert_eq!(w.npcs.headings.get(&5), Some(&0x400));
     }
+}
+
+/// `def` under the enemy stat scale (`WorldToggles::enemy_stat_permille`, the
+/// uniform `--enemy-stat-scale` twin): HP, MP and the record's ATK / UDF /
+/// LDF / INT / SPD scaled with the patcher's `scale_stats` rule
+/// ([`crate::world::scale_stat_permille`]), before the battle loader's boost
+/// re-derives the installed block - the record is where the patch writes. AGL
+/// (the action gauge), the rewards and Tetsu
+/// ([`crate::world::SCALE_PINNED_MONSTER_ID`]) are untouched. A synthetic
+/// monster with no raw block scales its built fields instead.
+pub(in crate::world) fn scale_monster_def(
+    def: &legaia_engine_battle::monster_catalog::MonsterDef,
+    permille: u16,
+) -> std::borrow::Cow<'_, legaia_engine_battle::monster_catalog::MonsterDef> {
+    use crate::world::scale_stat_permille as sc;
+    if permille == crate::world::SCALE_RETAIL || def.id == crate::world::SCALE_PINNED_MONSTER_ID {
+        return std::borrow::Cow::Borrowed(def);
+    }
+    let mut d = def.clone();
+    d.hp = sc(d.hp, permille);
+    d.mp = sc(d.mp, permille);
+    if d.raw_stats == [0u16; 6] {
+        d.attack = sc(d.attack, permille);
+        d.udf = sc(d.udf, permille);
+        d.ldf = sc(d.ldf, permille);
+        d.intel = sc(d.intel, permille);
+        d.speed = sc(d.speed, permille);
+    } else {
+        for v in d.raw_stats.iter_mut().skip(1) {
+            *v = sc(*v, permille);
+        }
+    }
+    std::borrow::Cow::Owned(d)
 }

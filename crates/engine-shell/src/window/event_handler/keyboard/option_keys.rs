@@ -271,8 +271,10 @@ impl PlayWindowApp {
 
     /// `F9`: the volumetric ground-fog enhancement (the
     /// `--no-volumetric-fog` flag's runtime twin, the play page's "Ground
-    /// fog" box). Default ON: misty / night scenes carry a drifting mist
-    /// bank the characters part. The setting is the engine's option
+    /// fog" box). Default **off** while the look matures
+    /// (`OptionsState::volumetric_fog` defaults to `false`); on, misty / night
+    /// scenes carry a drifting mist bank the characters part, and
+    /// `--no-volumetric-fog` pins it off. The setting is the engine's option
     /// (`OptionsState::volumetric_fog` -> `WorldToggles::volumetric_fog`,
     /// pushed by the shared knob step); off resets the bank and draws the
     /// frame without it.

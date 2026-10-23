@@ -34,6 +34,8 @@
       "engine-shell",
       "web-viewer",
       "web-play",
+      "web-minigames",
+      "web-patcher",
       "asset-viewer",
       "studio",
       "patcher",
@@ -303,6 +305,8 @@
     "studio",
     "texture-replace",
     "translate",
+    "web-minigames",
+    "web-patcher",
     "web-play",
     "web-viewer"
    ],
@@ -399,6 +403,8 @@
     "patcher",
     "studio",
     "translate",
+    "web-minigames",
+    "web-patcher",
     "web-play",
     "web-viewer"
    ],
@@ -432,7 +438,7 @@
    "dependents": [
     "delilas-party",
     "patcher",
-    "web-viewer"
+    "web-patcher"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/arts-patch/README.md"
   },
@@ -567,6 +573,7 @@
     "approach_fix",
     "arenas",
     "bonus_drop",
+    "conkram_freeze_fix",
     "enemy_hp_bar",
     "flee_exp",
     "jewel_fix",
@@ -584,7 +591,7 @@
     "delilas-challenge",
     "delilas-party",
     "patcher",
-    "web-viewer"
+    "web-patcher"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/code-hooks/README.md"
   },
@@ -639,7 +646,7 @@
     "studio",
     "translate",
     "ui-formats",
-    "web-play",
+    "web-minigames",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/container-formats/README.md"
@@ -667,7 +674,7 @@
    "scope": "The Delilas Challenge: the Muscle Dome course (<code>dome</code>), its <code>koin1</code> enrollment script (<code>enrollment</code>) and the three custom items. A separate feature from the party swap; sequenced onto a disc by the patcher's <code>apply</code> layer.",
    "dependents": [
     "patcher",
-    "web-viewer"
+    "web-patcher"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/delilas-challenge/README.md"
   },
@@ -706,7 +713,7 @@
    "scope": "The play-as-Delilas mod above the <code>party-swap</code> kernels: the orchestrator that writes the swapped battle and field models onto a disc, plus the arts reskin, movesets, signature attacks and their cast route, effects, voices and the duel field scene.",
    "dependents": [
     "patcher",
-    "web-viewer"
+    "web-patcher"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/delilas-party/README.md"
   },
@@ -760,6 +767,7 @@
     "extract",
     "studio",
     "texture-replace",
+    "web-patcher",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/disc-audit/README.md"
@@ -794,7 +802,7 @@
     "patcher",
     "texture-replace",
     "translate",
-    "web-viewer"
+    "web-patcher"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/disc-patch/README.md"
   },
@@ -844,6 +852,7 @@
     "engine-shell",
     "parity",
     "studio",
+    "web-minigames",
     "web-play",
     "web-viewer"
    ],
@@ -940,6 +949,7 @@
     "engine-shell",
     "engine-world-views",
     "parity",
+    "web-minigames",
     "web-play",
     "web-viewer"
    ],
@@ -1018,6 +1028,7 @@
     "engine-shell",
     "engine-world-views",
     "parity",
+    "web-minigames",
     "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-battle-menus/README.md"
@@ -1034,7 +1045,10 @@
     "scene-formats"
    ],
    "dev_deps": [
-    "prot"
+    "disc-patch",
+    "prot",
+    "translate",
+    "ui-formats"
    ],
    "bins": [],
    "lib": true,
@@ -1103,6 +1117,7 @@
     "engine-shell",
     "engine-ui",
     "parity",
+    "web-minigames",
     "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-battle-vm/README.md"
@@ -1147,6 +1162,7 @@
     "engine-world-views",
     "parity",
     "render-kernels",
+    "web-minigames",
     "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-camera/README.md"
@@ -1290,6 +1306,7 @@
     "engine-system",
     "engine-vm",
     "game-tables",
+    "gamedata",
     "mes",
     "minigame-formats",
     "overlay-images",
@@ -1451,6 +1468,7 @@
    "dependents": [
     "engine-capture",
     "engine-core",
+    "engine-minigame-scenes",
     "engine-scene-host",
     "engine-screens",
     "engine-session",
@@ -1614,6 +1632,7 @@
     "engine-shell",
     "engine-world-views",
     "parity",
+    "web-minigames",
     "web-play",
     "web-viewer"
    ],
@@ -1650,6 +1669,7 @@
     "engine-scene-host",
     "engine-screens",
     "engine-shell",
+    "web-minigames",
     "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-fishing/README.md"
@@ -1682,6 +1702,7 @@
    "bins": [],
    "lib": true,
    "modules": [
+    "bag_rows",
     "card_write",
     "dev_menu_host",
     "field_menu_dispatch",
@@ -1690,7 +1711,7 @@
    ],
    "band": "drivers",
    "track": "engine",
-   "scope": "The pause menu over a running <code>World</code>: <code>MenuRuntime</code> (save slots, shop and inn flow, notices), the field-menu sub-session dispatcher, the out-of-battle action validator host, the memory-card Save writer, the dev menu's <code>World</code> seam. Above <code>engine-core</code>.",
+   "scope": "The pause menu over a running <code>World</code>: <code>MenuRuntime</code> (save slots, shop and inn flow, notices), the field-menu sub-session dispatcher, the bag's retail list rows (<code>WorldBagRows</code>), the out-of-battle action validator host, the memory-card Save writer, the dev menu's <code>World</code> seam. Above <code>engine-core</code>.",
    "dependents": [
     "engine-screens",
     "engine-session",
@@ -1720,7 +1741,10 @@
     "tim",
     "ui-formats"
    ],
-   "dev_deps": [],
+   "dev_deps": [
+    "disc-patch",
+    "translate"
+   ],
    "bins": [],
    "lib": true,
    "modules": [
@@ -1780,6 +1804,7 @@
     "engine-shell",
     "engine-world-views",
     "parity",
+    "web-minigames",
     "web-play",
     "web-viewer"
    ],
@@ -1794,6 +1819,7 @@
     "engine-battle-menus",
     "engine-battle-vm",
     "engine-camera",
+    "engine-effects",
     "engine-field",
     "engine-fishing",
     "engine-minigames",
@@ -1836,6 +1862,8 @@
     "engine-screens",
     "engine-session",
     "engine-shell",
+    "engine-world-views",
+    "web-minigames",
     "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-minigame-scenes/README.md"
@@ -1891,6 +1919,7 @@
     "engine-screens",
     "engine-shell",
     "engine-world-views",
+    "web-minigames",
     "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-minigames/README.md"
@@ -1932,6 +1961,7 @@
     "engine-shell",
     "engine-world-views",
     "parity",
+    "web-minigames",
     "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-mode/README.md"
@@ -2019,6 +2049,7 @@
    "dev_deps": [
     "engine-battle-vm",
     "engine-field",
+    "engine-world-views",
     "prot",
     "scene-formats"
    ],
@@ -2115,6 +2146,7 @@
     "engine-world-views",
     "parity",
     "studio",
+    "web-minigames",
     "web-play",
     "web-viewer"
    ],
@@ -2152,7 +2184,8 @@
     "save",
     "scene-formats",
     "tim",
-    "tmd"
+    "tmd",
+    "ui-formats"
    ],
    "dev_deps": [
     "disc-audit",
@@ -2164,7 +2197,6 @@
     "mdt",
     "mes",
     "seq",
-    "ui-formats",
     "vab"
    ],
    "bins": [],
@@ -2220,7 +2252,8 @@
     "font",
     "game-tables",
     "minigame-formats",
-    "render-kernels"
+    "render-kernels",
+    "ui-formats"
    ],
    "dev_deps": [
     "save"
@@ -2316,6 +2349,7 @@
     "party_spec",
     "scene_actors",
     "session",
+    "session_switches",
     "title_continue",
     "xa_banks"
    ],
@@ -2325,6 +2359,7 @@
    "dependents": [
     "engine-shell",
     "parity",
+    "web-minigames",
     "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-session/README.md"
@@ -2480,6 +2515,7 @@
     "engine-title",
     "engine-world-views",
     "parity",
+    "web-minigames",
     "web-play",
     "web-viewer"
    ],
@@ -2573,6 +2609,7 @@
     "engine-screens",
     "engine-shell",
     "parity",
+    "web-minigames",
     "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-ui/README.md"
@@ -2644,6 +2681,7 @@
     "engine-effects",
     "engine-field",
     "engine-menus",
+    "engine-minigame-scenes",
     "engine-minigames",
     "engine-mode",
     "engine-scene",
@@ -2667,7 +2705,9 @@
     "camera_view",
     "effect_draws",
     "field_view_window",
+    "minigame_caption",
     "muscle_dome",
+    "passive_hud",
     "pause_screens",
     "scene_staging",
     "shop",
@@ -2680,7 +2720,7 @@
    ],
    "band": "drivers",
    "track": "engine",
-   "scope": "The hosts' reads of a running <code>World</code> outside battle: the per-frame camera resolution, the visible-tile crop policy, scene staging, world-map markers and sky, the field party HUD, the effect draw lists, and the shop / pause / tile-board / timed-fight / Muscle Dome view models. Above <code>engine-core</code>.",
+   "scope": "The hosts' reads of a running <code>World</code> outside battle: the per-frame camera resolution, the visible-tile crop policy, scene staging, world-map markers and sky, the field party HUD and passive-ability badges (<code>WorldPassiveHud</code>), the minigame caption (<code>WorldMinigameCaption</code>), the effect draw lists, and the shop / pause / tile-board / timed-fight / Muscle Dome view models. Above <code>engine-core</code>.",
    "dependents": [
     "engine-scene-host",
     "engine-screens",
@@ -2758,6 +2798,8 @@
     "render-kernels",
     "studio",
     "translate",
+    "web-minigames",
+    "web-patcher",
     "web-play",
     "web-viewer"
    ],
@@ -2786,6 +2828,8 @@
     "item_effect",
     "item_names",
     "level_up_tables",
+    "menu_pool",
+    "menu_string_refs",
     "menu_windows",
     "mode_table",
     "move_power",
@@ -2837,6 +2881,8 @@
     "studio",
     "texture-replace",
     "translate",
+    "web-minigames",
+    "web-patcher",
     "web-play",
     "web-viewer"
    ],
@@ -2862,10 +2908,11 @@
    "track": "tooling",
    "scope": "Curated game-data tables (arts, magic, items, weapons, armor, accessories, enemies, shops, casino, fishing, music tracks, scene names) mined from public walkthroughs; the music and scene-name tables contributed by Stann0x. These are <strong>ground-truth labels</strong> for the binary records under RE, not disc data. See <code>docs/reference/gamedata.md</code>.",
    "dependents": [
+    "engine-core",
     "engine-system",
     "patcher",
     "studio",
-    "web-play",
+    "web-minigames",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/gamedata/README.md"
@@ -2879,6 +2926,7 @@
    ],
    "lib": true,
    "modules": [
+    "image",
     "iso9660",
     "raw",
     "region",
@@ -2899,6 +2947,8 @@
     "patcher",
     "studio",
     "texture-replace",
+    "web-minigames",
+    "web-patcher",
     "web-play",
     "web-viewer",
     "xa"
@@ -2935,6 +2985,7 @@
     "studio",
     "texture-replace",
     "translate",
+    "web-patcher",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/lzs/README.md"
@@ -3101,6 +3152,7 @@
     "engine-ui",
     "engine-vm",
     "patcher",
+    "web-minigames",
     "web-play",
     "web-viewer"
    ],
@@ -3126,6 +3178,7 @@
     "overlay_ptr_table",
     "slot_b_module",
     "static_overlay",
+    "string_refs",
     "summon_overlay"
    ],
    "band": "families",
@@ -3147,6 +3200,8 @@
     "game-tables",
     "render-kernels",
     "scene-formats",
+    "ui-formats",
+    "web-minigames",
     "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/overlay-images/README.md"
@@ -3345,7 +3400,7 @@
    "track": "patcher",
    "scope": "Disc-patching toolkit for a user-supplied <code>.bin</code> (in-place PROT edits, MAN relocation, PPF output): randomizer, translation packs, manual edits, MIPS code hooks. Reference: <code>randomizer.md</code>. No Sony bytes.",
    "dependents": [
-    "web-viewer"
+    "web-patcher"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/patcher/README.md"
   },
@@ -3387,7 +3442,8 @@
     "region",
     "runtime_toc",
     "tiling",
-    "timpack"
+    "timpack",
+    "toc_index"
    ],
    "band": "leaves",
    "track": "preservation",
@@ -3411,7 +3467,8 @@
     "studio",
     "translate",
     "ui-formats",
-    "web-play",
+    "web-minigames",
+    "web-patcher",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/prot/README.md"
@@ -3519,6 +3576,7 @@
     "engine-shell",
     "engine-ui",
     "engine-world-views",
+    "web-minigames",
     "web-play",
     "web-viewer"
    ],
@@ -3558,6 +3616,7 @@
     "engine-session",
     "engine-shell",
     "parity",
+    "web-minigames",
     "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/save/README.md"
@@ -3636,6 +3695,7 @@
     "render-kernels",
     "studio",
     "translate",
+    "web-minigames",
     "web-play",
     "web-viewer"
    ],
@@ -3661,7 +3721,7 @@
     "engine-shell",
     "parity",
     "studio",
-    "web-play",
+    "web-minigames",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/seq/README.md"
@@ -3749,7 +3809,7 @@
    "dependents": [
     "delilas-party",
     "patcher",
-    "web-viewer"
+    "web-patcher"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/texture-replace/README.md"
   },
@@ -3798,6 +3858,8 @@
     "texture-replace",
     "tmd",
     "ui-formats",
+    "web-minigames",
+    "web-patcher",
     "web-play",
     "web-viewer"
    ],
@@ -3847,6 +3909,7 @@
     "render-kernels",
     "scene-formats",
     "studio",
+    "web-minigames",
     "web-play",
     "web-viewer"
    ],
@@ -3898,7 +3961,7 @@
     "delilas-party",
     "patcher",
     "studio",
-    "web-viewer"
+    "web-patcher"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/translate/README.md"
   },
@@ -3906,6 +3969,7 @@
    "package": "legaia-ui-formats",
    "deps": [
     "container-formats",
+    "overlay-images",
     "prot",
     "tim"
    ],
@@ -3919,6 +3983,7 @@
     "init_pak",
     "interior_page",
     "menu_glyph_atlas",
+    "name_entry_prompts",
     "save_icon",
     "screen_elements",
     "system_ui_bundle",
@@ -3939,12 +4004,16 @@
     "engine-menu-runtime",
     "engine-menus",
     "engine-scene",
+    "engine-scene-host",
+    "engine-screens",
     "engine-shell",
     "engine-title",
     "engine-ui",
     "engine-world-views",
     "patcher",
     "texture-replace",
+    "web-minigames",
+    "web-patcher",
     "web-play",
     "web-viewer"
    ],
@@ -3975,17 +4044,108 @@
     "minigame-formats",
     "parity",
     "studio",
+    "web-minigames",
     "web-play",
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/vab/README.md"
+  },
+  "web-minigames": {
+   "package": "legaia-web-minigames",
+   "deps": [
+    "actor-formats",
+    "art",
+    "container-formats",
+    "engine-audio",
+    "engine-battle",
+    "engine-battle-menus",
+    "engine-battle-vm",
+    "engine-camera",
+    "engine-field",
+    "engine-fishing",
+    "engine-menus",
+    "engine-minigame-scenes",
+    "engine-minigames",
+    "engine-mode",
+    "engine-scene",
+    "engine-session",
+    "engine-system",
+    "engine-ui",
+    "font",
+    "game-tables",
+    "gamedata",
+    "iso",
+    "minigame-formats",
+    "overlay-images",
+    "prot",
+    "render-kernels",
+    "save",
+    "scene-formats",
+    "seq",
+    "tim",
+    "tmd",
+    "ui-formats",
+    "vab",
+    "xa"
+   ],
+   "dev_deps": [
+    "engine-scene-host"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [],
+   "band": "hosts",
+   "track": "engine",
+   "scope": "The browser minigames page: <code>LegaiaMinigames</code>, a JSON shell over the minigame rules engines with no <code>World</code>. The play page holds one for in-world minigame art. An rlib below <code>web-play</code>.",
+   "dependents": [
+    "web-play"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/web-minigames/README.md"
+  },
+  "web-patcher": {
+   "package": "legaia-web-patcher",
+   "deps": [
+    "actor-formats",
+    "art",
+    "arts-patch",
+    "code-hooks",
+    "delilas-challenge",
+    "delilas-party",
+    "disc-audit",
+    "disc-patch",
+    "font",
+    "game-tables",
+    "iso",
+    "lzs",
+    "patcher",
+    "prot",
+    "texture-replace",
+    "tim",
+    "translate",
+    "ui-formats"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "rom_patcher",
+    "texture_pack",
+    "texture_registry",
+    "translate_workbench"
+   ],
+   "band": "hosts",
+   "track": "engine",
+   "scope": "The site's client-side ROM patcher (randomizer, texture replacer, language-pack workbench; nothing is uploaded) as wasm exports over <code>patcher</code> and its layer crates. Names no engine crate. An rlib.",
+   "dependents": [
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/web-patcher/README.md"
   },
   "web-play": {
    "package": "legaia-web-play",
    "deps": [
     "actor-formats",
     "art",
-    "container-formats",
     "engine-audio",
     "engine-battle",
     "engine-battle-hud",
@@ -4014,34 +4174,32 @@
     "engine-world-views",
     "font",
     "game-tables",
-    "gamedata",
     "iso",
     "mdec",
     "minigame-formats",
     "overlay-images",
-    "prot",
     "render-kernels",
     "save",
     "scene-formats",
-    "seq",
     "tim",
     "tmd",
     "ui-formats",
     "vab",
+    "web-minigames",
     "xa"
    ],
-   "dev_deps": [],
+   "dev_deps": [
+    "prot"
+   ],
    "bins": [],
    "lib": true,
    "modules": [
     "boot_continue",
     "boot_title",
     "cards",
-    "disc",
     "field_actors",
     "field_npc",
     "field_scene_anim",
-    "minigames",
     "pad_bindings",
     "play",
     "play_battle",
@@ -4083,7 +4241,7 @@
    ],
    "band": "hosts",
    "track": "engine",
-   "scope": "The browser hosts of the port: the play page's <code>LegaiaRuntime</code> (the native window's <code>BootSession</code>) and the minigames page's <code>LegaiaMinigames</code>, plus the field actor layer and in-memory disc access the viewer shares. An rlib; its exports ship in <code>web-viewer</code>'s bundle.",
+   "scope": "The browser play page: <code>LegaiaRuntime</code> (the native window's <code>BootSession</code>), plus the field actor layer the viewer shares. An rlib; its exports ship in <code>web-viewer</code>'s bundle.",
    "dependents": [
     "web-viewer"
    ],
@@ -4094,13 +4252,8 @@
    "deps": [
     "actor-formats",
     "art",
-    "arts-patch",
-    "code-hooks",
     "container-formats",
-    "delilas-challenge",
-    "delilas-party",
     "disc-audit",
-    "disc-patch",
     "engine-audio",
     "engine-battle",
     "engine-effects",
@@ -4119,18 +4272,16 @@
     "mednafen",
     "mes",
     "minigame-formats",
-    "patcher",
     "prot",
     "ram-image",
     "render-kernels",
     "scene-formats",
     "seq",
-    "texture-replace",
     "tim",
     "tmd",
-    "translate",
     "ui-formats",
     "vab",
+    "web-patcher",
     "web-play",
     "xa"
    ],
@@ -4148,20 +4299,16 @@
     "field_scene",
     "npc_dialog",
     "player_anm",
-    "rom_patcher",
     "sentinel_placements",
     "sfx_view",
     "shop_items",
     "shop_vendors",
     "summon_view",
-    "texture_pack",
-    "texture_registry",
-    "tmd3d",
-    "translate_workbench"
+    "tmd3d"
    ],
    "band": "hosts",
    "track": "engine",
-   "scope": "The WASM bundle the site loads (<code>cdylib</code> over <code>web-play</code>), and its own two products: the asset inspectors (disc browser, viewers, <code>.glb</code> export) and the client-side ROM patcher (nothing is uploaded).",
+   "scope": "The WASM bundle the site loads (<code>cdylib</code> over <code>web-play</code> and <code>web-patcher</code>), and its own product: the asset inspectors (disc browser, viewers, <code>.glb</code> export).",
    "dependents": [],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/web-viewer/README.md"
   },
@@ -4190,6 +4337,7 @@
     "extract",
     "mdec",
     "studio",
+    "web-minigames",
     "web-play",
     "web-viewer"
    ],
@@ -4256,7 +4404,7 @@
   },
   {
    "name": "Browser minigames page",
-   "crate": "web-play",
+   "crate": "web-minigames",
    "how": "Drives the World-free minigame rules engines directly; it holds no World."
   }
  ],

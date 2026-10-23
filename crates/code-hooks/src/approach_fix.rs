@@ -14,8 +14,9 @@
 //! clip into `actor+0x1DA` and wait in state `0x19`, the in-range poll,
 //! whose arm has **no movement code and no timeout**. Normally the staged
 //! clip's playback slides the monster in (~19 units/vsync, measured); but
-//! when a **summon's staging round-trip immediately precedes the melee**,
-//! the clip dies ~12 vsyncs in (`+0x1DA/+0x1D9` back to `0/0`), nothing
+//! when **Kemaro's put-back on the monster immediately precedes the melee**
+//! (the only cast module whose put-back keeps the exit-to-idle bit 2 of
+//! `+0x1DC` set), the clip dies ~12 vsyncs in (`+0x1DA/+0x1D9` back to `0/0`), nothing
 //! re-stages it, and the fight waits forever (reproduced on the first
 //! directed attempt; scenario `battle_gaza2_park_0x19_summon_melee`). Full
 //! anatomy: `docs/subsystems/battle-action.md`.

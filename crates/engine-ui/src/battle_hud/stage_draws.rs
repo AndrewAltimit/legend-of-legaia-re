@@ -79,7 +79,7 @@ pub fn numeral_cell_draws(
 /// size scaled to match.
 ///
 /// The menu text builders ([`field_menu_draws_for`],
-/// [`status_screen_draws_for`], [`spell_menu_draws_for`], …) lay glyphs
+/// [`status_screen_draws_for_with`], [`spell_menu_draws_for`], …) lay glyphs
 /// out at retail-pinned stage-pixel pens. This is the single transform
 /// that upscales + centers them into the surface, matching the chrome
 /// emitted by [`menu_window_chrome_draws_for`] so text and window frame

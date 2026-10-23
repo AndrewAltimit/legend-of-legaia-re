@@ -157,6 +157,82 @@ pub struct WorldToggles {
     /// at `(2880, 2886)`), with no step left to start another hop. Off is
     /// retail's unguarded hop.
     pub hop_landing_guard: bool,
+    /// Shiny Seru (port gameplay feature, the engine twin of the patcher's
+    /// `--shiny-seru`): each battle entry rolls
+    /// [`legaia_engine_battle::seru_state::SeruState::shiny_chance_pct`] for one
+    /// capturable enemy spawning shiny. On by default; off under
+    /// [`Self::pin_retail`], where the roll - and the `rand()` draw it takes
+    /// at battle entry, which retail never makes - is skipped entirely.
+    pub shiny_seru: bool,
+    /// Run-away EXP (the engine twin of the patcher's `--flee-exp`): a
+    /// successful escape banks [`FLEE_EXP_PCT`] percent of the fled
+    /// formation's listed EXP into every party member's cumulative XP. Off by
+    /// default and under [`Self::pin_retail`]: retail awards nothing for
+    /// running.
+    pub flee_exp: bool,
+    /// EXP multiplier, in permille (the engine twin of the patcher's
+    /// `--exp-scale`): each monster's base EXP reward is scaled by this
+    /// before the victory payout sums it, with the patcher's arithmetic
+    /// ([`scale_exp_permille`]). [`EXP_RATE_RETAIL`] (`1000`) is retail and
+    /// the default; [`Self::pin_retail`] restores it.
+    pub exp_rate_permille: u16,
+    /// Fortress encounter fix (the engine twin of the patcher's
+    /// `--fortress-encounter-fix`): in Jette's Absolute Fortress
+    /// ([`FORTRESS_ENCOUNTER_SCENES`]) the encounter condition walk reads
+    /// system flag [`FORTRESS_STALE_FLAG`] as clear, so a save that left the
+    /// Floating Castle with under a minute on its clock keeps its random
+    /// battles and its Door of Light there. A healthy save never has the flag
+    /// set there, so it plays the same either way. On by default; off under
+    /// [`Self::pin_retail`].
+    pub fortress_encounter_fix: bool,
+    /// Jewel fix (the engine twin of the patcher's `--jewel-fix`): the boss
+    /// cinematic casts that retail rolls through the resist-bypass wrapper
+    /// `FUN_801DD6B4` roll through the respecting one, `FUN_801DD4B0`, so
+    /// elemental jewels, guards and All Guard apply to them like every other
+    /// special. Off by default (it is a balance change) and under
+    /// [`Self::pin_retail`].
+    pub jewel_fix: bool,
+    /// Battle HP-readout guard (port softlock fix, **on** by default): a
+    /// party slot whose displayed HP differs from its live HP with nothing
+    /// left in the readout's pending accumulator - the absorbing state that
+    /// parks the action SM's state `0x51` on every party-targeted action
+    /// (`docs/subsystems/battle-action-exit-gates.md`) - gets the difference
+    /// re-seeded, so the readout counts to live HP and the gate opens. Retail
+    /// re-syncs only on a poison / regen tick (`FUN_801E752C`). The patcher
+    /// has no counterpart. Off under [`Self::pin_retail`]; the invariant holds
+    /// in every state retail itself produces cleanly, so the guard is an
+    /// identity there.
+    pub hp_readout_guard: bool,
+    /// Spirit AP (the engine twin of the patcher's `--spirit-ap`): the AP a
+    /// Spirit turn charges into the gauge, retail [`SPIRIT_AP_RETAIL`]
+    /// (`actor[+0x224] = 0x20` at `0x801E5D84`). Negative drains the gauge,
+    /// floored at zero, with the two AP-Boost bonuses inert, as the patch
+    /// rewrites it. Held to [`SPIRIT_AP_RANGE`]; retail under
+    /// [`Self::pin_retail`].
+    pub spirit_ap: i16,
+    /// Enemy-damage AP (the engine twin of `--damage-ap`): the AP a defender
+    /// gains per 100% of max HP a hit takes, retail [`DAMAGE_AP_RETAIL`].
+    /// Negative drains, with the bonuses inert. Held to [`DAMAGE_AP_RANGE`];
+    /// retail under [`Self::pin_retail`].
+    pub damage_ap: i16,
+    /// Seru catch rate (the engine twin of `--seru-catch-rate`): one flat
+    /// percent in place of every capturable monster's own catch chance.
+    /// `None` (retail, and under [`Self::pin_retail`]) reads each record's.
+    pub seru_catch_pct: Option<u8>,
+    /// Enemy attack count, in permille (the engine twin of
+    /// `--enemy-attack-count`): each affordable attack entry's AGL price is
+    /// divided by it ([`scale_attack_cost`]). `1000` is retail.
+    pub enemy_attack_permille: u16,
+    /// Enemy stat scale, in permille (the engine twin of a uniform
+    /// `--enemy-stat-scale`): every monster's HP / MP / ATK / UDF / LDF / INT /
+    /// SPD record value is scaled before the battle loader's boost
+    /// ([`scale_stat_permille`]). `1000` is retail.
+    pub enemy_stat_permille: u16,
+    /// Bonus equipment drop (the engine twin of `--equipment-drops`): once
+    /// per won battle, after the normal drop, a [`BONUS_DROP_CHANCE_PCT`]
+    /// roll grants one random piece of equipment. Off by default and under
+    /// [`Self::pin_retail`].
+    pub bonus_drop: bool,
     /// The options screen's nine config words as the host last pushed them
     /// (`crate::options::apply_to_world`) or a save last loaded them. The
     /// rows the simulation reads have their own mirrors here and on
@@ -176,6 +252,86 @@ pub struct WorldToggles {
 /// `PageToggles` with its "Retail battle cadence" box, which reads the runtime
 /// before its first write.
 pub const DEFAULT_BATTLE_SM_FRAME_CADENCE: bool = true;
+
+/// [`WorldToggles::exp_rate_permille`] at retail: every reward as authored.
+pub const EXP_RATE_RETAIL: u16 = 1000;
+
+/// The range [`WorldToggles::exp_rate_permille`] is held to: `0.1x..=5x`, the
+/// patcher's `--exp-scale` range.
+pub const EXP_RATE_RANGE: std::ops::RangeInclusive<u16> = 100..=5000;
+
+/// The share of a fled formation's EXP [`WorldToggles::flee_exp`] banks, in
+/// percent: the patcher's `--flee-exp-pct` default.
+pub const FLEE_EXP_PCT: u32 = 5;
+
+/// The scenes [`WorldToggles::fortress_encounter_fix`] applies in: Jette's
+/// Absolute Fortress, entrance and interior - the only scenes outside the
+/// Floating Castle whose encounter condition list names
+/// [`FORTRESS_STALE_FLAG`] (`docs/reference/glitches/field-oddities.md`).
+pub const FORTRESS_ENCOUNTER_SCENES: [&str; 2] = ["deroa", "chitei2"];
+
+/// The Floating Castle's last-minute "no battles" system flag, which the
+/// escape-success record never lowers.
+pub const FORTRESS_STALE_FLAG: u16 = 0x15;
+
+/// [`WorldToggles::spirit_ap`] at retail (`0x20`).
+pub const SPIRIT_AP_RETAIL: i16 = legaia_engine_battle_vm::battle_action::SPIRIT_AP_RETAIL;
+/// The patcher's `--spirit-ap` range.
+pub const SPIRIT_AP_RANGE: std::ops::RangeInclusive<i16> = -100..=100;
+/// [`WorldToggles::damage_ap`] at retail: a full-HP hit fills the gauge.
+pub const DAMAGE_AP_RETAIL: i16 = legaia_engine_battle_vm::battle_formulas::DAMAGE_AP_RETAIL;
+/// The patcher's `--damage-ap` range.
+pub const DAMAGE_AP_RANGE: std::ops::RangeInclusive<i16> = -200..=200;
+/// A permille scale at retail: the identity.
+pub const SCALE_RETAIL: u16 = 1000;
+/// The range the permille sliders are held to: `0.1x..=5x`, the patcher's
+/// `ScalePermille` range.
+pub const SCALE_RANGE: std::ops::RangeInclusive<u16> = 100..=5000;
+/// The bonus equipment drop's per-battle chance, in percent: the patcher's
+/// `--equipment-drop-chance` default.
+pub const BONUS_DROP_CHANCE_PCT: u32 = 5;
+/// The monster the enemy sliders never touch: Tetsu, the Rim Elm sparring
+/// partner (unwinnable by design), as the patcher's
+/// `SCALE_PINNED_MONSTER_IDS` pins him.
+pub const SCALE_PINNED_MONSTER_ID: u16 = 79;
+
+/// Scale one monster stat by `permille` with the patcher's `scale_stats`
+/// rule: round half up, a zero stays zero, a non-zero clamps to
+/// `1..=u16::MAX`. `1000` is the identity.
+pub fn scale_stat_permille(v: u16, permille: u16) -> u16 {
+    if v == 0 || permille == SCALE_RETAIL {
+        return v;
+    }
+    let scaled = (u32::from(v) * u32::from(permille) + 500) / 1000;
+    scaled.clamp(1, u32::from(u16::MAX)) as u16
+}
+
+/// Scale one attack entry's AGL price by an attack-count multiplier with the
+/// patcher's `attack_count::scale_cost` rule: the `0xFF` sentinel, a zero
+/// cost and a retail-unaffordable cost (`> agl`) are left alone; otherwise
+/// `round-half-up(cost * 1000 / permille)` clamped to `1..=min(agl, 0xFE)`,
+/// so a retail attacker keeps at least one strike a turn.
+pub fn scale_attack_cost(cost: u8, agl: u16, permille: u16) -> u8 {
+    if permille == SCALE_RETAIL || cost == 0xFF || cost == 0 || u16::from(cost) > agl {
+        return cost;
+    }
+    let p = u32::from(permille);
+    let scaled = (u32::from(cost) * 1000 + p / 2) / p;
+    let cap = u32::from(agl.min(0xFE));
+    scaled.clamp(1, cap) as u8
+}
+
+/// Scale one monster's base EXP reward by `permille`, with the patcher's
+/// `--exp-scale` arithmetic (`legaia_patcher::rewards::scale_exp_value`):
+/// round half up, a zero reward stays zero, a non-zero one clamps to
+/// `1..=u16::MAX`. `1000` is exactly the identity.
+pub fn scale_exp_permille(exp: u16, permille: u16) -> u16 {
+    if exp == 0 || permille == EXP_RATE_RETAIL {
+        return exp;
+    }
+    let scaled = (u32::from(exp) * u32::from(permille) + 500) / 1000;
+    scaled.clamp(1, u32::from(u16::MAX)) as u16
+}
 
 impl WorldToggles {
     pub fn new() -> Self {
@@ -197,6 +353,18 @@ impl WorldToggles {
             battle_sm_frame_cadence: DEFAULT_BATTLE_SM_FRAME_CADENCE,
             arts_saved_list: false,
             hop_landing_guard: true,
+            shiny_seru: true,
+            flee_exp: false,
+            exp_rate_permille: EXP_RATE_RETAIL,
+            fortress_encounter_fix: true,
+            jewel_fix: false,
+            hp_readout_guard: true,
+            spirit_ap: SPIRIT_AP_RETAIL,
+            damage_ap: DAMAGE_AP_RETAIL,
+            seru_catch_pct: None,
+            enemy_attack_permille: SCALE_RETAIL,
+            enemy_stat_permille: SCALE_RETAIL,
+            bonus_drop: false,
             retail_options: legaia_save::card::RetailOptions::default(),
             loaded_options: None,
         }
@@ -225,6 +393,18 @@ impl WorldToggles {
         self.battle_pass_rand_draw = true;
         self.hop_landing_guard = false;
         self.arts_saved_list = false;
+        self.shiny_seru = false;
+        self.flee_exp = false;
+        self.exp_rate_permille = EXP_RATE_RETAIL;
+        self.fortress_encounter_fix = false;
+        self.jewel_fix = false;
+        self.hp_readout_guard = false;
+        self.spirit_ap = SPIRIT_AP_RETAIL;
+        self.damage_ap = DAMAGE_AP_RETAIL;
+        self.seru_catch_pct = None;
+        self.enemy_attack_permille = SCALE_RETAIL;
+        self.enemy_stat_permille = SCALE_RETAIL;
+        self.bonus_drop = false;
     }
 
     /// The fidelity toggles currently off their retail value, by field name.
@@ -261,6 +441,42 @@ impl WorldToggles {
         if self.arts_saved_list {
             out.push("arts_saved_list");
         }
+        if self.shiny_seru {
+            out.push("shiny_seru");
+        }
+        if self.flee_exp {
+            out.push("flee_exp");
+        }
+        if self.exp_rate_permille != EXP_RATE_RETAIL {
+            out.push("exp_rate_permille");
+        }
+        if self.fortress_encounter_fix {
+            out.push("fortress_encounter_fix");
+        }
+        if self.jewel_fix {
+            out.push("jewel_fix");
+        }
+        if self.hp_readout_guard {
+            out.push("hp_readout_guard");
+        }
+        if self.spirit_ap != SPIRIT_AP_RETAIL {
+            out.push("spirit_ap");
+        }
+        if self.damage_ap != DAMAGE_AP_RETAIL {
+            out.push("damage_ap");
+        }
+        if self.seru_catch_pct.is_some() {
+            out.push("seru_catch_pct");
+        }
+        if self.enemy_attack_permille != SCALE_RETAIL {
+            out.push("enemy_attack_permille");
+        }
+        if self.enemy_stat_permille != SCALE_RETAIL {
+            out.push("enemy_stat_permille");
+        }
+        if self.bonus_drop {
+            out.push("bonus_drop");
+        }
         out
     }
 }
@@ -278,13 +494,17 @@ mod fidelity_tests {
     #[test]
     fn pinned_toggles_report_no_deviation() {
         let mut t = WorldToggles::new();
-        // The bare default keeps three safety / enhancement toggles on.
+        // The bare default keeps three safety / enhancement toggles, the
+        // shiny roll and the Fortress fix on.
         assert_eq!(
             t.retail_deviations(),
             [
                 "entry_pulse_enabled",
                 "reduce_flashing",
-                "hop_landing_guard"
+                "hop_landing_guard",
+                "shiny_seru",
+                "fortress_encounter_fix",
+                "hp_readout_guard"
             ]
         );
         t.pin_retail();
@@ -301,7 +521,16 @@ mod fidelity_tests {
         t.overworld_marker_overlay = true;
         t.battle_pass_rand_draw = false;
         t.arts_saved_list = true;
-        assert_eq!(t.retail_deviations().len(), 10);
+        t.flee_exp = true;
+        t.exp_rate_permille = 2000;
+        t.jewel_fix = true;
+        t.spirit_ap = 64;
+        t.damage_ap = -50;
+        t.seru_catch_pct = Some(100);
+        t.enemy_attack_permille = 2000;
+        t.enemy_stat_permille = 1500;
+        t.bonus_drop = true;
+        assert_eq!(t.retail_deviations().len(), 22);
         t.pin_retail();
         assert!(t.retail_deviations().is_empty());
     }
@@ -318,5 +547,31 @@ mod fidelity_tests {
             super::DEFAULT_BATTLE_SM_FRAME_CADENCE
         );
         assert!(!t.arts_saved_list);
+    }
+
+    #[test]
+    fn exp_scale_matches_the_patcher_arithmetic() {
+        use super::scale_exp_permille as s;
+        assert_eq!(s(37, 1000), 37);
+        assert_eq!(s(0, 3000), 0);
+        assert_eq!(s(1, 100), 1); // never scaled away
+        assert_eq!(s(15, 1500), 23); // 22.5 rounds half up
+        assert_eq!(s(u16::MAX, 5000), u16::MAX);
+    }
+
+    #[test]
+    fn enemy_scales_match_the_patcher_arithmetic() {
+        use super::{scale_attack_cost as c, scale_stat_permille as st};
+        assert_eq!(st(250, 1000), 250);
+        assert_eq!(st(0, 2000), 0);
+        assert_eq!(st(5, 100), 1);
+        assert_eq!(st(15, 1500), 23);
+        // Two-hit enemy at 2x -> four hits: the price halves.
+        assert_eq!(c(44, 88, 2000), 22);
+        // Below 1x the price never passes the AGL: one strike minimum.
+        assert_eq!(c(88, 88, 500), 88);
+        assert_eq!(c(0xFF, 88, 2000), 0xFF);
+        assert_eq!(c(200, 99, 2000), 200, "retail lockouts stay locked");
+        assert_eq!(c(0, 88, 2000), 0);
     }
 }

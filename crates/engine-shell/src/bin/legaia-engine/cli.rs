@@ -1119,6 +1119,86 @@ pub(crate) enum Cmd {
         /// morphs retail itself arms (rikuroa) are unaffected either way.
         #[arg(long, default_value_t = false)]
         no_entry_pulse: bool,
+        /// Smarter monsters: a monster's single-target attack picks the
+        /// lowest-HP living party member instead of retail's uniform random
+        /// pick (the random stream is unchanged). Not retail; `--retail`
+        /// holds it off. The `LEGAIA_SMART_MONSTERS` environment switch
+        /// raises the same toggle; the play page's twin is its "Smart
+        /// monsters" box, and the launcher stores it as its Smarter monsters
+        /// row.
+        #[arg(long, default_value_t = false)]
+        smart_monsters: bool,
+        /// No Shiny Seru: battle entry never rolls the rare shiny capturable
+        /// enemy (+35% stats, its Seru +35% damage) - the engine twin of the
+        /// patcher's `--shiny-seru`, on by default. Retail has no such roll;
+        /// `--retail` holds it off. The launcher's Shiny Seru row; the play
+        /// page's "Shiny Seru" box.
+        #[arg(long, default_value_t = false)]
+        no_shiny_seru: bool,
+        /// Run-away EXP: a successful escape banks 5% of the fled fight's EXP
+        /// into every party member - the engine twin of the patcher's
+        /// `--flee-exp`. Not retail; `--retail` holds it off. The launcher's
+        /// Run-away EXP row; the play page's "Run-away EXP" box.
+        #[arg(long, default_value_t = false)]
+        flee_exp: bool,
+        /// EXP multiplier for every monster's reward (`1` = retail, `0.1` to
+        /// `5`; e.g. `2`, `1.5x`) - the engine twin of the patcher's
+        /// `--exp-scale`. `--retail` holds it at `1`. The launcher's EXP rate
+        /// row; the play page's "EXP rate" selector.
+        #[arg(long, value_name = "MULT", value_parser = parse_exp_rate)]
+        exp_rate: Option<u16>,
+        /// No Fortress encounter fix: Jette's Absolute Fortress obeys the
+        /// Floating Castle's stale "no battles" flag as retail does - the
+        /// engine twin of the patcher's `--fortress-encounter-fix`, on by
+        /// default (a healthy save plays the same either way). `--retail`
+        /// holds it off.
+        #[arg(long, default_value_t = false)]
+        no_fortress_encounter_fix: bool,
+        /// Jewel fix: the boss cinematic casts (Xain, Cort, the Delilas trio)
+        /// respect elemental jewels, guards and All Guard - the engine twin
+        /// of the patcher's `--jewel-fix`. Not retail; `--retail` holds it
+        /// off.
+        #[arg(long, default_value_t = false)]
+        jewel_fix: bool,
+        /// No battle HP-readout guard: a party HP readout left off live HP
+        /// with nothing pending parks the battle, as retail's can (the
+        /// state-`0x51` softlock). The guard re-seeds it and is on by
+        /// default; `--retail` holds it off.
+        #[arg(long, default_value_t = false)]
+        no_hp_readout_guard: bool,
+        /// Spirit AP: how much AP the Spirit command charges (retail 32;
+        /// `0` = defence only, `100` = one press fills the gauge, negative =
+        /// Spirit drains it) - the engine twin of the patcher's `--spirit-ap`.
+        /// `--retail` holds it at 32.
+        #[arg(long, value_name = "AP", allow_negative_numbers = true,
+              value_parser = clap::value_parser!(i16).range(-100..=100))]
+        spirit_ap: Option<i16>,
+        /// Enemy-damage AP: AP a party member gains per 100% of max HP an
+        /// enemy hit takes (retail 100; negative = being hit drains it) - the
+        /// engine twin of `--damage-ap`. `--retail` holds it at 100.
+        #[arg(long, value_name = "AP", allow_negative_numbers = true,
+              value_parser = clap::value_parser!(i16).range(-200..=200))]
+        damage_ap: Option<i16>,
+        /// Seru catch rate: one flat percent for every capturable Seru
+        /// (retail is each Seru's own chance) - the engine twin of
+        /// `--seru-catch-rate`. `--retail` holds the records' chances.
+        #[arg(long, value_name = "PCT", value_parser = clap::value_parser!(u8).range(0..=100))]
+        seru_catch_rate: Option<u8>,
+        /// Enemy attack count multiplier (`0.1` to `5`): divides each enemy
+        /// attack's AGL price, so the same gauge buys more (or fewer) strikes,
+        /// never fewer than one - the engine twin of `--enemy-attack-count`.
+        #[arg(long, value_name = "MULT", value_parser = parse_exp_rate)]
+        enemy_attack_count: Option<u16>,
+        /// Enemy stat multiplier (`0.1` to `5`) for every monster's HP / MP /
+        /// ATK / UDF / LDF / INT / SPD - the engine twin of a uniform
+        /// `--enemy-stat-scale`. EXP, gold and drops stay as they are.
+        #[arg(long, value_name = "MULT", value_parser = parse_exp_rate)]
+        enemy_stat_scale: Option<u16>,
+        /// Bonus equipment drop: a 5% roll after each won battle for one
+        /// extra random piece of equipment - the engine twin of the patcher's
+        /// `--equipment-drops`. Not retail; `--retail` holds it off.
+        #[arg(long, default_value_t = false)]
+        equipment_drops: bool,
         /// DEBUG affordance, not a player surface: teach the lead party
         /// member a spell id (at level 1) before the first world tick, so a
         /// capture run can open the battle Magic arm without playing to the
@@ -1246,7 +1326,10 @@ pub(crate) enum Cmd {
             long,
             default_value_t = false,
             conflicts_with_all = ["dynamic_lighting", "no_dynamic_lighting", "no_dyn_shadows",
-                "no_entry_pulse", "no_occlusion_fade", "no_volumetric_fog"]
+                "no_entry_pulse", "no_occlusion_fade", "no_volumetric_fog", "smart_monsters",
+                "no_shiny_seru", "flee_exp", "exp_rate", "no_fortress_encounter_fix", "jewel_fix",
+                "no_hp_readout_guard", "spirit_ap", "damage_ap", "seru_catch_rate",
+                "enemy_attack_count", "enemy_stat_scale", "equipment_drops"]
         )]
         retail: bool,
     },
@@ -1496,6 +1579,31 @@ pub(crate) enum ConfigCmd {
 /// `--retail-keyon-owner` value: hex with or without a `0x` prefix.
 fn parse_hex_u16(v: &str) -> Result<u16, String> {
     u16::from_str_radix(v.trim_start_matches("0x"), 16).map_err(|e| e.to_string())
+}
+
+/// `--exp-rate` value: a multiplier (`2`, `1.5`, `0.5x`) in `0.1..=5`, as
+/// permille - the patcher's `--exp-scale` grammar.
+fn parse_exp_rate(v: &str) -> Result<u16, String> {
+    let t = v.trim().trim_end_matches(['x', 'X']);
+    let m: f64 = t.parse().map_err(|e| format!("{v:?}: {e}"))?;
+    if !(0.1..=5.0).contains(&m) {
+        return Err(format!("{v:?}: the multiplier is 0.1 to 5"));
+    }
+    Ok((m * 1000.0).round() as u16)
+}
+
+#[cfg(test)]
+mod exp_rate_flag_tests {
+    use super::parse_exp_rate;
+
+    #[test]
+    fn exp_rate_parses_the_multiplier_grammar() {
+        assert_eq!(parse_exp_rate("2"), Ok(2000));
+        assert_eq!(parse_exp_rate("1.5x"), Ok(1500));
+        assert_eq!(parse_exp_rate("0.5"), Ok(500));
+        assert!(parse_exp_rate("9").is_err());
+        assert!(parse_exp_rate("lots").is_err());
+    }
 }
 
 #[cfg(test)]

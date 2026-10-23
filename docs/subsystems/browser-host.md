@@ -2,14 +2,16 @@
 
 What the site's wasm bundle exports, one section per module family: the play runtime, the minigames page, the viewer pages and the ROM patcher. The architecture the browser host shares with the native window is in [`engine.md`](engine.md#the-browser-host); the gates that keep the two in step are in [`host-drift.md`](../tooling/host-drift.md).
 
-## Two crates, one bundle
+## Four crates, one bundle
 
-The browser side is two crates:
+The browser side is four crates:
 
-- [`legaia-web-play`](../../crates/web-play/README.md) - the browser hosts of the port: `runtime`, `play` and every `play_*` module, `boot_title`, `cards`, `resume`, `session_save`, `host_slot`, `pad_bindings`, the minigames page (`minigames*`), the field actor layer (`field_actors`, `field_npc`, `field_scene_anim`) and in-memory disc access (`disc`).
-- [`legaia-web-viewer`](../../crates/web-viewer/README.md) - the asset inspectors and the ROM patcher, and the `cdylib` the site loads.
+- [`legaia-web-play`](../../crates/web-play/README.md) - the browser hosts of the port: `runtime`, `play` and every `play_*` module, `boot_title`, `cards`, `resume`, `session_save`, `host_slot`, `pad_bindings`, the field actor layer (`field_actors`, `field_npc`, `field_scene_anim`). In-memory disc access is the format layer's: `legaia_iso::image` and `legaia_prot::toc_index`.
+- [`legaia-web-minigames`](../../crates/web-minigames/README.md) - the minigames page's `LegaiaMinigames`; the play page holds one for the art it draws over an in-world minigame.
+- [`legaia-web-patcher`](../../crates/web-patcher/README.md) - the ROM patcher, texture replacer and language-pack workbench (`rom_patcher`, `texture_registry`, `texture_pack`, `translate_workbench`); it names no engine crate.
+- [`legaia-web-viewer`](../../crates/web-viewer/README.md) - the asset inspectors, and the `cdylib` the site loads.
 
-`web-viewer` depends on `web-play`, never the reverse. wasm-bindgen collects the `#[wasm_bindgen]` exports of every crate the `cdylib` links, so `LegaiaRuntime` and `LegaiaMinigames` reach the page from the same `legaia_web_viewer.js` as `LegaiaViewer`: which crate an export lives in is invisible to the site's JS. A module name below is unique across the two crates, except `field_npc`, which each crate has - `web-play`'s holds the catalog and its builders, `web-viewer`'s the NPC page's exports over them.
+`web-viewer` depends on `web-play` and `web-patcher`, and `web-play` on `web-minigames`, never the reverse. wasm-bindgen collects the `#[wasm_bindgen]` exports of every crate the `cdylib` links, so `LegaiaRuntime` and `LegaiaMinigames` reach the page from the same `legaia_web_viewer.js` as `LegaiaViewer`: which crate an export lives in is invisible to the site's JS. A module name below is unique across the crates, except `field_npc`, which each crate has - `web-play`'s holds the catalog and its builders, `web-viewer`'s the NPC page's exports over them.
 
 ## Playing the port in the browser (`runtime` + `play`)
 
@@ -1054,7 +1056,7 @@ show its wide side - over a transparent background; the glb is the alone / with-
 download without equipping the piece first. The page builds cards through a
 queue that yields to the orbit view between items.
 
-## Playable minigames (`minigames`)
+## Playable minigames (`legaia-web-minigames`)
 
 `LegaiaMinigames` is a standalone `#[wasm_bindgen]` class (its own
 `load_disc`, no canvas) that runs all five of the game's side-games in the
@@ -1085,9 +1087,9 @@ others. `dance_state_json` deliberately surfaces **both** halves of retail's
 split chart lookup - `judged` (what the hit judge matches, the step to
 press) and `displayed` (the display half's held-sequence substitution); see
 `docs/subsystems/minigame-dance.md`. Disc-gated oracle:
-`crates/web-play/tests/minigames_wasm_api.rs`.
+`crates/web-minigames/tests/minigames_wasm_api.rs`.
 
-`minigames_fishing.rs` and `minigames_muscle.rs` are the fishing / Muscle
+`fishing_web.rs` and `muscle_web.rs` are the fishing / Muscle
 Dome shells. Fishing drives [`legaia_engine_fishing::fishing::PondSession`] -
 the one session all three hosts run - directly, with no `World`, seeded from
 the persistent words the page reads off the visitor's memory card, and
@@ -1104,7 +1106,7 @@ save file to read a flag bank out of, the page passes the course-unlock and
 Master-gate flags it wants open and the shared kernel applies the same rule
 to them.
 
-`minigames_baka.rs` adds the Baka Fighter duel's **presentation** exports so
+`baka_presentation.rs` adds the Baka Fighter duel's **presentation** exports so
 the page draws with the cabinet's own assets: per-side fighter mesh buffers
 (player = PROT 1204 battle pack slot, opponent = its own PROT 1206..=1219
 `[TIM][TMD][anim]` pack), pose-frame decodes from the real animation banks
@@ -1114,7 +1116,7 @@ stage TMD set, and a per-duel 1 MB VRAM build. Consumed by
 `site/js/minigame-baka.js`; see
 `docs/subsystems/minigame-baka-fighter.md` § HUD widget table.
 
-`minigames_dance.rs` adds the dance's **presentation** exports: the PROT
+`dance_presentation.rs` adds the dance's **presentation** exports: the PROT
 1230 art pack's HUD page decoded through its row-500 CLUT strip
 (`dance_hud_page_rgba`), the overlay's 34-record widget table + the traced
 emitter geometry (`dance_widgets_json` / `dance_layout_json`, incl. the
@@ -1125,7 +1127,7 @@ the PROT 1231 sample VAB - a TOC-tail entry) plus the direct-keyed hit
 stings (`dance_sting_pcm`), and the real BGM pair rendered through the
 from-scratch SPU (`dance_bgm_pcm_i16`). Consumed by
 `site/js/minigame-dance.js`; see `docs/subsystems/minigame-dance.md`.
-Disc-gated oracle: `crates/web-play/tests/minigames_dance_api.rs`.
+Disc-gated oracle: `crates/web-minigames/tests/minigames_dance_api.rs`.
 
 ## Session saves + retail cards (`session_save`)
 
@@ -1352,8 +1354,8 @@ reference TIMs sitting in other PROT entries.
 | [`packet_color`](../../crates/web-viewer/src/packet_color.rs) | Per-vertex packet-colour streams for the WebGL renderer, over `engine-field::packet_color`. |
 | [`pad_bindings`](../../crates/web-play/src/pad_bindings.rs) | The keyboard-to-pad binding table, read from the engine rather than typed into each page. |
 | [`summon_view`](../../crates/web-viewer/src/summon_view.rs) | `LegaiaSummons` - the Seru-magic summon viewer. |
-| [`translate_workbench`](../../crates/web-viewer/src/translate_workbench.rs) | `Workbench` - the in-browser language-pack editor over the visitor's own disc. |
-| [`minigames_fishing_scene`](../../crates/web-play/src/minigames_fishing_scene.rs) | The fishing venue's 3D field scene and the player's body for the minigames page. |
+| [`translate_workbench`](../../crates/web-patcher/src/translate_workbench.rs) | `Workbench` - the in-browser language-pack editor over the visitor's own disc. |
+| [`fishing_scene_web`](../../crates/web-minigames/src/fishing_scene_web.rs) (`web-minigames`) | The fishing venue's 3D field scene and the player's body for the minigames page. |
 | [`play_minigame_arena`](../../crates/web-play/src/play_minigame_arena.rs) / [`play_minigame_slots`](../../crates/web-play/src/play_minigame_slots.rs) / [`play_dance_art`](../../crates/web-play/src/play_dance_art.rs) | The play page's in-world Muscle Dome / Baka Fighter / dance and slot-machine read-outs and art. |
 | [`play_battle_body_blend`](../../crates/web-play/src/play_battle_body_blend.rs) / [`play_battle_limb_dim`](../../crates/web-play/src/play_battle_limb_dim.rs) | Browser seats of the battle body's whole-mesh semi-transparency and the Rot limb dimming. |
 | [`play_field_fx`](../../crates/web-play/src/play_field_fx.rs) | Field fog sheets, actor drop shadows and op `0x34` sub-1 attached lights. |
@@ -1365,6 +1367,6 @@ reference TIMs sitting in other PROT entries.
 | [`play_hotkeys`](../../crates/web-play/src/play_hotkeys.rs) | `play_host_hotkey`: the native window's option / cheat / camera keys, resolved through the shared `engine-session::hotkeys` table; `play_host_hotkey_notice` / `play_host_hotkey_refusal` word the notice line; `host_hotkeys_json` lists the table. The page half is `window.__playHotkeyActions` in `play.html`. |
 | [`play_lighting`](../../crates/web-play/src/play_lighting.rs) / [`play_fog_volume`](../../crates/web-play/src/play_fog_volume.rs) | The enhanced-lighting and volumetric-fog enhancements (twins of the native `I` / `F8` and `F9`), from the shared engine-side sources. |
 | [`play_cheats`](../../crates/web-play/src/play_cheats.rs) | The play page's Cheats panel, thin bindings over `engine-cheats::cheats`. |
-| [`play_toggles`](../../crates/web-play/src/play_toggles.rs) | Runtime twins of native launch switches: `--retail` (session-only `OptionsState::pin_retail`; the store is not written while it holds), `--set-flag`, `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS`. |
+| [`play_toggles`](../../crates/web-play/src/play_toggles.rs) | Runtime twins of native launch switches: `--retail` (session-only `OptionsState::pin_retail`; the store is not written while it holds), `--set-flag`, `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS`, and the [gameplay tweaks](gameplay-tweaks.md) (`set_shiny_seru`, `set_flee_exp`, `set_exp_rate_permille`, `set_fortress_encounter_fix`, `set_jewel_fix`, `set_hp_readout_guard`, `set_bonus_drop`, and the battle-tuning setters `set_enemy_stat_permille`, `set_enemy_attack_permille`, `set_spirit_ap`, `set_damage_ap`, `set_seru_catch_rate`). |
 | [`audio_api`](../../crates/web-viewer/src/audio_api.rs) | `LegaiaAudio`, the media page's audio bindings. |
 | [`play_host_parity`](../../crates/web-play/src/play_host_parity.rs) | Read-only probes over the live `World` for the tests pairing this host against the native window; not wasm exports. |

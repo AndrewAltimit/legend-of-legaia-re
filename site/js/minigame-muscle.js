@@ -45,7 +45,7 @@
  *
  * The RULES are `legaia-engine-core::muscle_dome` + the ported battle
  * formulas, reached through `LegaiaMinigames` (crates/web-play/src/
- * minigames_muscle.rs): every committed command resolves through the real
+ * crates/web-minigames/src/muscle_web.rs): every committed command resolves through the real
  * arts/physical damage roll (FUN_801dd0ac), the element-affinity scale
  * (FUN_801dd864) and the damage finisher (FUN_801ddb30), against fighter
  * stats read off the disc's own records - the monster's PROT 867 stat block
@@ -99,22 +99,24 @@
  * SUPER/MIRACLE banner word composition (atlas layout, only the HYPER
  * strip's draw is packet-pinned), the interval panel's caption and key
  * hint (its heading, six tally rows and ringside-still backdrop are the
- * retail emitters'), the glide-in motion
- * (retail slides chips between the element table's two endpoints; the page
- * draws them parked at the arrived endpoint), the pennant spawn anchor +
- * pennant width off the captured 30-cost pitch, the Auto picker (greedy
- * here, unpinned in retail), and the review/confirm screens' geometry
- * (screenshot-read, not packet-pinned). The arts LIST rows show every
+ * retail emitters'), and the review screen's geometry (screenshot-read,
+ * not packet-pinned). TRACED AND RUN through the engine: the direction
+ * chips' 16-frame slide-in from seat A (`muscle_chip_seats_json`), each
+ * committed pennant's 24-frame glide from the pressed chip
+ * (`muscle_pennant_seat_json`,
+ * the `FUN_801d9bbc` step), the Begin|Reselect plates (placement records
+ * 0x10 / 0x13), and Auto - the session reloads the character's saved command
+ * string for the review and the round rebuilds the queue through the pool
+ * arm, as the play hosts do. The arts LIST rows show every
  * table art - the page does not model arts learning; retail gates rows on
  * the learned-art constant. Without a disc image the chrome falls back to
  * the old canvas approximation.
  *
- * HONEST GAPS: the rules engine resolves each committed command as a basic
- * strike - retail expands a recognized art sequence through the art records
- * (more damage), so here the arts banner is presentation over the real
- * recognition, not an arts damage model; and the port has no cast path, so
- * the Ra-Seru (magic) chip renders disabled even though retail's Beginner/
- * Expert courses allow magic.
+ * The rules are the engine's shared session: a committed string resolves
+ * through the retail tokenizer (a matched art plays its own move-power
+ * row), the Ra-Seru chip casts through the battle's cast rule, and the
+ * opponent picks through the ordinary battle's monster AI over its own
+ * record.
  *
  * Requires webgl-math.js + webgl-shaders.js + webgl-tmd.js first.
  * Loaded before this file: canvas-abr.js (the semi-transparency
@@ -163,6 +165,7 @@ window.MgMuscle = (function () {
     let magicRows = null;      /* muscle_magic_json rows (lazy, per open) */
     let magicWhy = '';         /* last Ra-Seru refusal name, '' when none */
     let pennantFx = [];        /* committed-pennant glides {cmd,slot,x,y,t,life} */
+    let chipSlideT = 0;        /* frames since the direction entry opened */
     let introT = 0;            /* ticks into the intro card */
     let introLive = false;     /* the engine steps the first visit */
     let introPress = false;    /* a press this tick, for the live visit */
@@ -670,6 +673,9 @@ window.MgMuscle = (function () {
       try { m = JSON.parse(api.muscle_menu_json()); } catch (e) { m = null; }
       if (!m || !m.screen) return;
       if (m.screen === 'magic' && selectSub !== 'magic') magicRows = readMagicRows();
+      /* The entry opening (or the review handing back to it) restarts the
+       * chips' slide-in. */
+      if (m.screen === 'input' && selectSub !== 'input') chipSlideT = 0;
       selectSub = m.screen;
       confirmSel = m.cursor | 0;
       artsPage = m.list_page;
@@ -690,7 +696,7 @@ window.MgMuscle = (function () {
       /* A direction that went onto the AP gauge glides its pennant in. */
       const q0 = (before.queue && before.queue[0]) || [];
       const q1 = (state.queue && state.queue[0]) || [];
-      if (q1.length > q0.length) spawnPennant(q1[q1.length - 1], q1.length - 1, state);
+      if (q1.length > q0.length) spawnPennant(q1[q1.length - 1], q1.length - 1);
       if (q1.length < q0.length) pennantFx = [];
       if (ev === 'cursor') playCue('cursor', 0.4);
       else if (ev === 'confirm' || ev === 'fight') playCue('confirm', 0.5);
@@ -1142,9 +1148,10 @@ window.MgMuscle = (function () {
     /* One direction chip: 15-wide gold hexagon caps + 24-wide body, the
      * baked label strip (an FT4 in retail), and the two 9x18 diamond
      * arrows at the pointed ends. */
-    function drawCmdChip(cmd) {
+    function drawCmdChip(cmd, seat) {
       const p = ai();
-      const s = CMD_CHIP_SEATS[cmd];
+      const s = seat ? Object.assign({}, CMD_CHIP_SEATS[cmd], { bx: seat.x, by: seat.y })
+        : CMD_CHIP_SEATS[cmd];
       if (!p || !s) return;
       const c = p.cmd_chip;
       blit(0, c.pal, ...c.cap_l, s.bx - 15, s.by);
@@ -1158,9 +1165,21 @@ window.MgMuscle = (function () {
 
     /* The High / Left / Right / Low chip cross + the D-pad glyph (packet:
      * FT4 (220,62)-(235,77) of the pinned 16x16 dpad piece). */
+    /* The chips slide in from seat A over 16 frames each time the entry
+     * opens (step 9 opens records 0x1B..0x1E in mode 0; FUN_801d9bbc steps
+     * them). The seats are the engine's (`muscle_chip_seats_json`, the
+     * cost-shifted anchors the play hosts draw); the page counts the
+     * frames, since it calls the selection only on key presses. */
     function drawInputChips() {
       if (!ai()) return;
-      for (const cmd of [15, 12, 13, 14]) drawCmdChip(cmd);
+      let seats = null;
+      if (api.muscle_chip_seats_json) {
+        try { seats = JSON.parse(api.muscle_chip_seats_json(chipSlideT)); }
+        catch (_) { seats = null; }
+      }
+      chipSlideT++;
+      const seatOf = (cmd) => (seats || []).find(t => t.cmd === cmd) || null;
+      for (const cmd of [15, 12, 13, 14]) drawCmdChip(cmd, seatOf(cmd));
       const d = hudMeta.pieces.dpad;
       blit(0, d.pal, d.r[0], d.r[1], 16, 16, 220, 62, 15, 15);
     }
@@ -1211,11 +1230,14 @@ window.MgMuscle = (function () {
       return x;
     }
 
-    /* Spawn the committed pennant near the fighter and glide it into its
-     * bar slot (retail spawns it at the fighter's projected position and
-     * FUN_801d9bbc glides it in; the spawn anchor here is fitted). */
-    function spawnPennant(cmd, slot, state) {
-      pennantFx.push({ cmd, slot, t: 0, life: 14, sx: 110, sy: 148 });
+    /* A committed pennant glides from the chip that was pressed into its bar
+     * slot over 24 frames (case 0xB's spawn, stepped by FUN_801d9bbc). The
+     * seat for each frame is the engine's (`muscle_pennant_seat_json`, the
+     * glide the play hosts draw); the page only counts the frames, since it
+     * calls the selection on key presses alone. */
+    const PENNANT_GLIDE_FRAMES = 24;
+    function spawnPennant(cmd, slot) {
+      pennantFx.push({ cmd, slot, t: 0, life: PENNANT_GLIDE_FRAMES });
     }
 
     /* Committed pennants: settled ones in the bar, in-flight ones gliding. */
@@ -1227,12 +1249,14 @@ window.MgMuscle = (function () {
       for (let i = 0; i < state.queue[0].length; i++) {
         const cmd = state.queue[0][i];
         const f = flying[i];
-        if (f) {
-          const k = f.t / f.life;
-          const tx = pennantSeat(state, i);
-          drawPennant(cmd, Math.round(f.sx + (tx - f.sx) * k),
-            Math.round(f.sy + (188 - f.sy) * k));
-          f.t++;
+        let seat = null;
+        if (f && api.muscle_pennant_seat_json) {
+          try { seat = JSON.parse(api.muscle_pennant_seat_json(i, f.t)); }
+          catch (_) { seat = null; }
+        }
+        if (f) f.t++;
+        if (seat) {
+          drawPennant(cmd, seat[0], seat[1]);
         } else {
           drawPennant(cmd, pennantSeat(state, i), 188);
         }
@@ -1378,13 +1402,27 @@ window.MgMuscle = (function () {
       }
     }
 
-    /* The queue-review / Begin|Reselect confirm (phases 0x5a / 0x6e;
-     * screenshot-read geometry - these two screens are not packet-pinned). */
+    /* The queue-review / Begin|Reselect confirm (phases 0x5a / 0x6e). The
+     * confirm is the battle's commit-confirm screen: the `0x6E` arm seats
+     * placement records 0x10 (Begin, content (92, 88), width 48) and 0x13
+     * (Reselect, (180, 88)) through the plate law, with the D-pad glyph at
+     * (152, 84) between them (`FUN_801DB8F4(0x98, 0x58)`) - the plates a
+     * retail capture holds at (84, 82) / (172, 82), and the cluster the play
+     * hosts draw (`battle_command_ui::CLUSTER_COMMIT_CONFIRM`). The review
+     * screen's geometry stays screenshot-read. */
     function drawConfirmMenu(state) {
       if (selectSub === 'confirm') {
         if (hudOk()) {
-          rChip('Begin', 96, 84, confirmSel === 0 ? 'gold' : 'blue', 40);
-          rChip('Reselect', 176, 84, confirmSel === 1 ? 'gold' : 'blue', 56);
+          const el = (i, dx, dy) => {
+            const e = hudMeta.elements[i];
+            return e ? { x: e.b[0], y: e.b[1], w: e.w } : { x: dx, y: dy, w: 48 };
+          };
+          const begin = el(0x10, 92, 88);
+          const resel = el(0x13, 180, 88);
+          rChip('Begin', begin.x, begin.y - 6, confirmSel === 0 ? 'gold' : 'blue', begin.w);
+          rChip('Reselect', resel.x, resel.y - 6, confirmSel === 1 ? 'gold' : 'blue', resel.w);
+          blit(0, hudMeta.pieces.dpad.pal,
+            hudMeta.pieces.dpad.r[0], hudMeta.pieces.dpad.r[1], 16, 16, 152, 84);
           const w0 = rChip(state.names[0], 16, 164, 'gold');
           rChip('Attack', 24 + w0 + 8, 164, 'gold');
           const fname = state.names[1] || '';

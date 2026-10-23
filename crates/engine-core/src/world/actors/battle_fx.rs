@@ -25,7 +25,7 @@ impl World {
     /// the `ctx[+0x1014]` / `+0x6C6` / `+0x1144` block the afterimage streak
     /// projects from ([`legaia_engine_effects::action_effect_script::MoveFxStreak`]).
     // REF: FUN_80047430 (the retail caller this substitutes for)
-    pub(super) fn step_actor_effect_script(&mut self, i: usize, frame: i16) {
+    pub(in crate::world) fn step_actor_effect_script(&mut self, i: usize, frame: i16) {
         use legaia_engine_effects::action_effect_script as fx;
         let Some(actor) = self.actors.get(i) else {
             return;
@@ -176,7 +176,7 @@ impl World {
     /// monster's attack sound like: none of those sounds is emitted by the
     /// battle-action SM or the melee kernel.
     // REF: FUN_80047430 (the retail caller this substitutes for)
-    pub(super) fn step_actor_anim_cues(&mut self, i: usize, frame: i16) {
+    pub(in crate::world) fn step_actor_anim_cues(&mut self, i: usize, frame: i16) {
         use legaia_engine_battle::anim_cue::{
             AnimCueActor, AnimCueEmit, AnimCueSlot, walk_anim_cues,
         };

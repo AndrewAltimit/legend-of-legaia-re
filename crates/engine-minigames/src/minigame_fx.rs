@@ -7,7 +7,7 @@
 //! owns one of these pools inside [`crate::dance::DanceGame`] - its
 //! sequence-clear banner and stars spawn into it from the judge, so they are
 //! gameplay and belong to the session. The pools the *other* overlays fill -
-//! the fishing venue's splash, its wander ripples and its catch bursts - have
+//! the fishing venue's splash and its catch bursts - have
 //! no session to live inside, and that is what this module is.
 //!
 //! **Where it lives is the whole point.** Held by a host, a pool ages only on
@@ -57,9 +57,17 @@ pub struct FxPartFrame {
 }
 
 /// The minigame effect-part pool: spawn, age, resolve.
-#[derive(Default)]
 pub struct MinigameFxPool {
     parts: MinigameActorPool,
+}
+
+/// The bounded pool [`MinigameFxPool::new`] builds. A derived default would
+/// hand the inner pool a capacity of zero, whose first spawn evicts from an
+/// empty array.
+impl Default for MinigameFxPool {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MinigameFxPool {
@@ -139,21 +147,17 @@ impl MinigameFxPool {
     }
 }
 
-/// Sprite id the port spawns a fishing wander ripple with.
+/// Sprite id the port spawns a catch-celebration burst with.
 ///
-/// A **port choice**, not a reading: the venue overlay forms the ripple
-/// spawn's `+0x50` in a register the backward scan does not reach, so the port
-/// spawns a distinct id per producer and each host's placeholder table keys on
-/// it. Stated rather than implied - the *geometry* is
-/// `legaia_engine_fishing::fishing_chrome::ripple_spawn`'s.
-pub const RIPPLE_SPRITE_ID: u16 = 0x101;
-
-/// Sprite id the port spawns a catch-celebration burst with (same status as
-/// [`RIPPLE_SPRITE_ID`]).
+/// A **port choice**, not a reading: the overlay's burst parts are move-VM
+/// records the pool does not run, so the port spawns a distinct id per
+/// producer and each host's placeholder table keys on it. (The lead's ambient
+/// ripples are not pool parts: they run their own records through the move
+/// VM, `legaia_engine_minigame_scenes::fishing_venue::FishingVenue::ripple_draws`.)
 pub const BURST_SPRITE_ID: u16 = 0x102;
 
 /// Sprite id the port spawns the fishing strike splash with when the producer
-/// names none (same status as [`RIPPLE_SPRITE_ID`]).
+/// names none (same status as [`BURST_SPRITE_ID`]).
 pub const SPLASH_SPRITE_ID: u16 = 0x100;
 
 #[cfg(test)]
@@ -180,6 +184,13 @@ mod tests {
         assert_eq!(f.len(), 1);
         assert_eq!((f[0].x, f[0].y, f[0].sprite), (160, 120, 0xb));
         assert_eq!(f[0].fade, 0xFF);
+    }
+
+    #[test]
+    fn a_default_pool_takes_a_spawn() {
+        let mut pool = MinigameFxPool::default();
+        pool.spawn(160, 120, 0xb);
+        assert_eq!(pool.len(), 1);
     }
 
     #[test]

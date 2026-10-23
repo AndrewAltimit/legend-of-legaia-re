@@ -332,6 +332,32 @@ impl World {
                         }
                     }
                 }
+                // The part-pool flush `FUN_80050E74` halts whatever sits in
+                // the pool's `0x80` words, and a module may park its own fade
+                // in the tail the allocator never fills: PROT 0930's arm 3
+                // parks its held white at `0x801C92EC` (`sw v0,-0x6D14(v1)`
+                // at `0x801F6E8C`), and arm 4's flush (`0x801F6EE8`) is what
+                // ends it as the arm's own fade-out takes over. Left alive,
+                // the held additive white whited out the rest of the cast.
+                PresentationCall::PoolFlush if once => {
+                    self.casting
+                        .module_pres
+                        .fades
+                        .retain(|f| !f.slot.is_some_and(|s| s.in_part_pool()));
+                    // The parts the flush reaches are the ones the image
+                    // seated through the pool wrapper `FUN_80050ED4`; a part
+                    // seated straight through `FUN_80021B04` is in no pool
+                    // word and lives on (PROT 0930's arm-9 record
+                    // `0x801F8F44`, parked in its own image).
+                    let pooled = pres.pool_records();
+                    if let Some(scene) = self.casting.active_summon.as_mut() {
+                        for part in &mut scene.parts {
+                            if part.tag.is_some_and(|t| pooled.contains(&t)) {
+                                part.finished = true;
+                            }
+                        }
+                    }
+                }
                 // The arm parks a part it seats (`sw v0, slot` after the
                 // spawn call).
                 PresentationCall::PartStore { record, slot } if once => {
@@ -475,9 +501,21 @@ impl World {
 
     /// The cast modules' full-screen washes for this frame, as screen
     /// primitives both hosts composite under the text layer: PROT 0898's
-    /// colour wash (behind the scene, farthest bucket) and the armed wash
-    /// (`FUN_8004695C`, subtractive, farthest bucket). Empty outside a
+    /// colour wash (behind the scene, farthest bucket). Empty outside a
     /// resident cast module.
+    ///
+    /// The armed wash (`FUN_8004695C`, [`Self::cast_armed_wash`]) is not
+    /// among them. Its drain `FUN_80046978` links the subtractive quad at
+    /// `otlen - 1`, the farthest bucket, so retail runs it before every scene
+    /// primitive of the frame: it darkens what the buffer still holds from
+    /// an earlier frame (a decay trail), and everything this frame draws
+    /// lands on top at full strength. Both hosts composite these primitives
+    /// over a scene already drawn into a cleared target, where the quad
+    /// could only subtract from the frame's own pixels: it dimmed every
+    /// additive cast layer by the wash colour (Horn's arm-9 rings and crowns
+    /// drew a fraction as bright as retail's, its white blades topped out
+    /// near `0xDF`). A frame built from scratch holds no earlier pixels, so
+    /// the composite leaves the wash out.
     pub fn cast_wash_prims(&self) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
         let resident = self.casting.summon_stager.is_some() || self.casting.capture_spell.is_some();
         if self.mode != SceneMode::Battle || !resident {
@@ -485,9 +523,6 @@ impl World {
         }
         let p = &self.casting.module_pres;
         let mut out = Vec::new();
-        if let Some(rgb) = p.armed_wash {
-            out.push(legaia_render_kernels::battle_intro::wash_prim(rgb));
-        }
         if p.wash_live {
             out.extend(legaia_render_kernels::cast_colour_wash::band_prims(&p.wash));
             out.extend(legaia_render_kernels::cast_colour_wash::scanline_prims(
@@ -495,6 +530,18 @@ impl World {
             ));
         }
         out
+    }
+
+    /// The armed wash (`FUN_8004695C(rgb)`) the resident module's last tick
+    /// armed, if any: the colour the drain `FUN_80046978` would subtract in
+    /// the farthest bucket before the frame draws ([`Self::cast_wash_prims`]
+    /// says why no host composites it).
+    pub fn cast_armed_wash(&self) -> Option<u32> {
+        let resident = self.casting.summon_stager.is_some() || self.casting.capture_spell.is_some();
+        if self.mode != SceneMode::Battle || !resident {
+            return None;
+        }
+        self.casting.module_pres.armed_wash
     }
 }
 

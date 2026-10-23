@@ -6,10 +6,11 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
+use legaia_iso::image::extract_prot_dat;
+use legaia_prot::toc_index::parse_prot_toc;
 use legaia_scene_formats::ocean::{
     OCEAN_ANIM_FRAME_COUNT, OCEAN_ANIM_FRAME0_HEAD, find_ocean_assets,
 };
-use legaia_web_play::disc::{extract_prot_dat, parse_prot_toc};
 use sha2::{Digest, Sha256};
 use std::env;
 use std::fs;

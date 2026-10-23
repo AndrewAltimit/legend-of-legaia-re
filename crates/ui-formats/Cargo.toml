@@ -14,6 +14,7 @@ path = "src/lib.rs"
 anyhow.workspace = true
 legaia-container-formats.workspace = true
 legaia-prot.workspace = true
+legaia-overlay-images.workspace = true
 legaia-tim.workspace = true
 
 [dev-dependencies]

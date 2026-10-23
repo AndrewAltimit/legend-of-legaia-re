@@ -10,7 +10,7 @@ so a host does not re-spell it.
 |---|---|---|
 | native play-window | [`crates/engine-shell`](../../crates/engine-shell/) | wgpu via [`crates/engine-render`](../../crates/engine-render/README.md) |
 | browser play page | [`crates/web-play`](../../crates/web-play/README.md) `runtime.rs` + `play_*.rs` | [`site/js/play-app.js`](../../site/js/play-app.js) + the `play-view-*.js` files it names |
-| browser minigames page | same crate, `minigames*.rs` (`LegaiaMinigames`) | per-minigame modules under `site/js/` |
+| browser minigames page | [`crates/web-minigames`](../../crates/web-minigames/README.md) (`LegaiaMinigames`) | per-minigame modules under `site/js/` |
 
 Both play hosts tick one `engine-session::BootSession`; the minigames page
 drives the `World`-free rules engines directly and holds no `World`.
@@ -559,8 +559,8 @@ construction - and this tree has **five** render surfaces, not two:
 | native `play-window` | `window/field_render/` + `window/geometry.rs` |
 | browser play page | `play.rs` |
 | browser field-scene viewer | `field_scene.rs` (+ `scene_geom.rs` for the world map) |
-| browser dance-hall venue | `minigames_dance.rs` |
-| browser fishing venue | `minigames_fishing_scene.rs` |
+| browser dance-hall venue | `dance_presentation.rs` |
+| browser fishing venue | `fishing_scene_web.rs` |
 
 The last two resolve `EnvDraw`s and instance env-pack meshes exactly like the
 first three, and the tier-3 coplanar rows named three of the five. So here the
@@ -1065,11 +1065,16 @@ its environment in one function
 (`legaia_engine_session::native::apply_env_world_toggles`, run on every native
 session open, so a corpus run's child processes inherit it) and the play page
 from a `LegaiaRuntime` setter ([`play_toggles.rs`](../../crates/web-play/src/play_toggles.rs)).
-A tier-3 row pins the two appliers (`apply_env_world_toggles`,
-`apply_page_toggles`) to the same set of toggle fields, so a switch the
-native window reads inline in its launch code - where `LEGAIA_SMART_MONSTERS`
-and `LEGAIA_WORLD_MAP_MARKERS` once sat - shows as a field the native applier
-lacks.
+Both hosts then hand one switch set,
+`legaia_engine_session::session_switches::SessionSwitches`, to its `apply`:
+the native window from `apply_launch_toggles` (the environment's raises, its
+`--smart-monsters` / `--no-entry-pulse` flags and `--retail`), the page from
+`apply_page_toggles`. `apply` is where retail-faithful mode becomes the whole
+`WorldToggles::pin_retail` - the port-only switches, the hop landing guard and
+the retail battle kernels - so the two hosts' retail modes cannot disagree. A tier-3 row pins both sites to the
+full set, so a switch the native window reads inline in its launch code -
+where `LEGAIA_SMART_MONSTERS` and `LEGAIA_WORLD_MAP_MARKERS` once sat - shows
+as a field one site lacks.
 
 The tier scans every `crates/engine-*` crate a browser host links, plus
 `render-kernels`, for `env::var` / `var_os` / `vars` / `vars_os` (comments
@@ -1207,9 +1212,9 @@ table; a switch with no page twin is a host difference, not a world default.
 | `--no-live-loop` | `set_live_battles` |
 | `--party` | `set_active_party_spec` |
 | `--card`, `--resume-save`, `--boot-ui`, `--world-map` | the card rack, a card Load, the boot title, the scene picker |
-| `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS` | `set_smart_monsters`, `set_world_map_markers` |
+| `--smart-monsters` (the launcher's Smarter monsters row), `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS` | `set_smart_monsters`, `set_world_map_markers`; the retail mode holds all three off on both hosts |
 | `LEGAIA_BATTLE_FRAME_CADENCE` (`0` lowers it), `LEGAIA_ARTS_SAVED_LIST` | `set_battle_frame_cadence`, `set_arts_saved_list`. The cadence has one default, `DEFAULT_BATTLE_SM_FRAME_CADENCE`, that `WorldToggles::new`, the page's `PageToggles` and its box all start from (`the_cadence_default_is_single_sourced`); the saved-chain list is off on both hosts |
-| `--no-entry-pulse` | `set_entry_pulse(false)`, the "Entry pulse" box; the retail box also holds it off |
+| `--no-entry-pulse` (the launcher's Living ground pulse row) | `set_entry_pulse(false)`, the "Entry pulse" box; the retail box also holds it off |
 | `--simple-dialogue`, `--flat-y`, `--no-edge-collision`, `--no-solid-npcs`, `--no-live-npcs`, `--no-damage-finish`, `--no-player-battle`, `--seed-party`, `--battle` | none: comparison and debug opt-outs from the retail default, which is the page's only setting (`--battle` has the wasm `debug_force_battle`) |
 | `--screenshot*`, `--pad-script`, `--key-script`, `--str-file`, `--cutscene-map` | none: native capture tooling |
 

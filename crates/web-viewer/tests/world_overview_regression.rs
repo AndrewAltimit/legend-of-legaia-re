@@ -25,7 +25,8 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_web_play::disc::{extract_prot_dat, parse_prot_toc};
+use legaia_iso::image::extract_prot_dat;
+use legaia_prot::toc_index::parse_prot_toc;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::env;
@@ -344,7 +345,7 @@ fn world_overview_data_digest_matches_fixture() {
     let disc = fs::read(&disc_path).expect("read disc image");
     let prot = extract_prot_dat(&disc).expect("PROT.DAT");
     let entries = parse_prot_toc(&prot).expect("PROT TOC");
-    let by_index: BTreeMap<u32, &legaia_web_play::disc::EntryMeta> =
+    let by_index: BTreeMap<u32, &legaia_prot::toc_index::EntryMeta> =
         entries.iter().map(|e| (e.index, e)).collect();
 
     let repo = repo_root();

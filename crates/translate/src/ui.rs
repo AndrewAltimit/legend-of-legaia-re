@@ -96,8 +96,13 @@ pub struct UiStringPool {
 ///   Battles` .. `Treasure`), `Give up?`, the name-entry confirmation (`Is
 ///   this name okay?`) ahead of the name-select pool, and `[Nameless]`;
 /// - **Menu overlay** 0899: the Delilas-bout preamble (`@The battle will
-///   begin.` .. `@Forget all hyper arts moves.`) and the memory-card / save
-///   messages (`Now checking MEMORY CARD` .. `Now Loading`).
+///   begin.` .. `@Forget all hyper arts moves.`), the memory-card / save
+///   messages (`Now checking MEMORY CARD` .. `Now Loading`), and the two
+///   notice templates in the overlay's data segment: window 7's spell
+///   level-up sentence (`0x801E46E4`, `{c3:..}'s magic level increased!`,
+///   `FUN_801DCCB4`) and window 8's art-learned line (`0x801E4700`,
+///   `FUN_801DCD58`). Both renderers patch a token's operand before drawing,
+///   which constrains a translation ([`PATCHED_OPERANDS`]).
 pub const UI_STRING_POOLS: &[UiStringPool] = &[
     UiStringPool {
         prot_index: 899,
@@ -251,7 +256,79 @@ pub const UI_STRING_POOLS: &[UiStringPool] = &[
         label: "menu (memory card)",
         strict: true,
     },
+    UiStringPool {
+        prot_index: 899,
+        base_va: 0x801C_E818,
+        va_start: 0x801E_46E4,
+        va_end: 0x801E_4720,
+        label: "menu (spell level-up / art learned notices)",
+        strict: true,
+    },
 ];
+
+/// How a renderer finds the token whose operand byte it patches in a pooled
+/// template before drawing it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PatchedOperand {
+    /// At a fixed offset: the template must open with this token (window 7,
+    /// `FUN_801DCCB4`: `sb v1,0x1(a0)` at `0x801DCD14` writes the leveled
+    /// spell's id one byte past the template's first byte).
+    Leads(u8),
+    /// By a search (`FUN_8003CBF8(template, lead, 1)` per token, then `sb`
+    /// one past the hit): the search steps over each `0xC0..=0xCF` token's
+    /// operand, so the token may sit anywhere, but a template without it
+    /// gets index `0` back and the operand lands on byte 1 (window 8,
+    /// `FUN_801DCD58`: `0xC1` takes the character, `0xC5` the art).
+    Searched(&'static [u8]),
+}
+
+/// The pooled templates whose operands a renderer patches, as `(prot, va,
+/// rule)`. A translation that breaks the rule would have retail write the
+/// operand into a glyph (into byte 1 when a search misses), so import
+/// refuses it.
+pub const PATCHED_OPERANDS: &[(usize, u32, PatchedOperand)] = &[
+    (899, 0x801E_46E4, PatchedOperand::Leads(0xC3)),
+    (899, 0x801E_4700, PatchedOperand::Searched(&[0xC1, 0xC5])),
+];
+
+/// Why `bytes`, the encoded translation of the string at `(prot, va)`,
+/// breaks that template's [`PatchedOperand`] rule; `None` when it keeps it
+/// (or the string has no rule).
+pub fn patched_operand_violation(prot: usize, va: u32, bytes: &[u8]) -> Option<String> {
+    let &(_, _, rule) = PATCHED_OPERANDS
+        .iter()
+        .find(|(p, v, _)| *p == prot && *v == va)?;
+    match rule {
+        PatchedOperand::Leads(t) => (bytes.first() != Some(&t) || bytes.len() < 2).then(|| {
+            format!(
+                "the renderer patches the operand at byte 1, so the line must open with \
+                 the {{{t:02x}:..}} token"
+            )
+        }),
+        PatchedOperand::Searched(ts) => {
+            // The token leads `FUN_8003CBF8` can land on: it steps every
+            // `0xC0..=0xCF` byte together with its operand.
+            let mut leads = BTreeSet::new();
+            let mut i = 0;
+            while i < bytes.len() {
+                if bytes[i] & 0xF0 == 0xC0 {
+                    if i + 1 < bytes.len() {
+                        leads.insert(bytes[i]);
+                    }
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            ts.iter().find(|t| !leads.contains(t)).map(|t| {
+                format!(
+                    "the renderer searches the line for its {{{t:02x}:..}} token and patches \
+                     the operand, so the line must keep that token"
+                )
+            })
+        }
+    }
+}
 
 /// Pseudo load base that maps a `SCUS_942.54` virtual address onto its file
 /// offset (`0x800`-byte PS-X EXE header, text at `0x80010000`): the same
@@ -642,6 +719,26 @@ mod tests {
         );
         assert_eq!(pool_strlen(&e, 0, true), Some(9));
         assert_eq!(pool_strlen(&e, 0, false), Some(1));
+    }
+
+    #[test]
+    fn patched_operand_rules_keep_the_renderers_tokens() {
+        let lvl = 0x801E_46E4;
+        assert_eq!(
+            patched_operand_violation(899, lvl, b"\xC3\x01 a monte!"),
+            None
+        );
+        // Reordered: byte 1 would take the spell id.
+        assert!(patched_operand_violation(899, lvl, b"Niveau de \xC3\x01").is_some());
+        let art = 0x801E_4700;
+        assert_eq!(
+            patched_operand_violation(899, art, b"Le coup \xCF\x06\xC5\x00\xCF\x07 de \xC1\x00!"),
+            None
+        );
+        assert!(patched_operand_violation(899, art, b"\xC1\x00 sait!").is_some());
+        // A lead hidden as another token's operand is not a token.
+        assert!(patched_operand_violation(899, art, b"\xC2\xC5\xC1\x00").is_some());
+        assert_eq!(patched_operand_violation(899, 0x801C_E9D0, b"x"), None);
     }
 
     #[test]

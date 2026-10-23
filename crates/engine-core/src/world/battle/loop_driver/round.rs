@@ -4,11 +4,11 @@
 
 use super::*;
 
-/// The `+0x16E` bits of the command ring's refusal mask `0xF84` that leave
-/// a member with no command of its own: Stone `0x4`, Numb `0x400` and Sleep
-/// `0x800`. The delegation group `0x380` is the other part of the mask, and
-/// its members are filled by the delegated auto-pick instead.
-const NO_COMMAND_STATUS_BITS: u16 = 0x0C04;
+/// The command ring's refusal mask `0xF84` (`FUN_801DBA04` / `FUN_801DB81C`):
+/// Stone `0x4`, the delegation group `0x380`, Numb `0x400` and Sleep `0x800`.
+/// A member it refuses commits nothing, so unless the round's delegated fill
+/// took the seat (Rage) its turn has no command of its own.
+const NO_COMMAND_STATUS_BITS: u16 = 0x0F84;
 
 impl World {
     /// Turn cycling for the live loop - retail's round machine, keyed on the
@@ -453,12 +453,18 @@ impl World {
 
     /// Give `next` its turn in the execution band: age its buffs, then a
     /// blocked actor loses the turn, a monster runs its AI pick, and a party
-    /// member dispatches the command it committed (a member with none - the
-    /// auto-fight party, or one the member walk skipped - strikes, and a
-    /// confused one strikes and re-targets).
+    /// member plays the stream the round's delegated fill built (Rage) or
+    /// dispatches the command it committed. A member with neither passes the
+    /// turn when the ring refused it for its status word (a confused one
+    /// among them) and otherwise - the auto-fight party - strikes.
     ///
-    /// REF: FUN_801E295C (state `0x0C`: `FUN_801EED1C` for a party slot, the
-    /// `0x380` re-target for a delegated one)
+    /// Every party dispatch runs the builder `FUN_801EED1C` in retail
+    /// (`0x801E2C7C`, gated only on seat `< 3`), whose head clears the
+    /// special-trigger flag `0x801F696C` (`0x801EED88`); an arts commit's
+    /// tokenizer raises it again when the queue ends in a Miracle or Super.
+    ///
+    /// REF: FUN_801E295C (state `0x0C`: `FUN_801EED1C` for a party slot; the
+    /// `0x380` re-target `FUN_801E7320` only for a seat `>= 3`)
     pub(in crate::world) fn dispatch_battle_turn(&mut self, next: u8) {
         let party_count = self.party.party_count.max(1);
         // The turn picker's head drops any counter latch the last pick left
@@ -482,30 +488,38 @@ impl World {
             self.take_monster_turn(next);
             return;
         }
-        if self.actor_is_confused(next) {
-            // Confused party member: it "acts uncontrollably", so the player
-            // never got the ring - auto-arm a physical strike, then flip the
-            // target to a random living ally (the retarget runs inside
-            // `arm_party_physical`).
-            self.arm_party_physical(next);
+        // The builder's head clear (`sw zero,0x696c(v1)` at `0x801EED88`).
+        self.battle_ctx.super_trigger = false;
+        // A Rage seat: the round's state-`0x00` pass overwrote its category
+        // and stream (`0x801F0528` / `0x801F06B8`) after any commit, so the
+        // fill is what retail plays; a commit the engine still holds is
+        // dropped.
+        if self.battle_ctx.delegated_seats & (1 << next) != 0 {
+            self.battle.round_flow.pending[usize::from(next)] = None;
+            self.arm_party_delegated(next);
             return;
         }
+        // A confused party member keeps whatever it committed: the seed's
+        // re-target `FUN_801E7320` is reached only for a seat `>= 3`
+        // (`sltiu v0,a0,0x3` at `0x801E2C70`).
         let pending = self.battle.round_flow.pending[usize::from(next)]
             .take()
             .map(|action| self.redirect_pending_off_dead_target(action));
         match pending {
             Some(action) => self.dispatch_pending_party_action(next, action),
             // A member the command ring passed over for its status word -
-            // Stone, Numb or Sleep among the `0xF84` bits `FUN_801DBA04` /
-            // `FUN_801DB81C` refuse - committed nothing, and the round
-            // boundary's sweep left its category `+0x1DE` at `0`. The seed's
-            // category jump table (`0x801CF144`) sends `0` to `0x801E2E0C`,
-            // which only parks the camera depth and stores the Done state
-            // `0x50`: the turn passes without a swing. Armed as an Attack, a
-            // Numb member marked by a missed Kiss of Death (`+0x16E |= 0x400`
-            // with no tracker entry) stood frozen in the strike loop, the
-            // anim tick skipping its idle (`0x80047640`) so the staged swing
-            // never committed.
+            // any `0xF84` bit `FUN_801DBA04` / `FUN_801DB81C` refuse -
+            // committed nothing, and the round boundary's sweep left its
+            // category `+0x1DE` at `0`. The seed's category jump table
+            // (`0x801CF144`) sends `0` to `0x801E2E0C`, which only parks the
+            // camera depth and stores the Done state `0x50`: the turn passes
+            // without a swing. Armed as an Attack, a Numb member marked by a
+            // missed Kiss of Death (`+0x16E |= 0x400` with no tracker entry)
+            // stood frozen in the strike loop, the anim tick skipping its
+            // idle (`0x80047640`) so the staged swing never committed. A
+            // write-watched retail round with the party's `+0x16E |= 0x380`
+            // and no Rage bit shows the same for a confused member: seed
+            // `0x0C`, then `0x50`, no approach.
             // REF: FUN_801E295C (`0x801E2D60..0x801E2D88`, `0x801E2E0C`)
             None if self.raw_status_word(next) & NO_COMMAND_STATUS_BITS != 0 => {
                 self.arm_party_no_command(next)

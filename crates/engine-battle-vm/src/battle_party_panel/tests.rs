@@ -87,6 +87,56 @@ fn defeat_text_refuses_a_team_string_without_the_escape() {
 }
 
 #[test]
+fn defeat_text_keeps_an_accent_cell() {
+    let t = DefeatText::parse(&defeat_image(b"\xC1\x01 \x82quipe", b" SOLO")).expect("parses");
+    assert_eq!(t.team_tail, " \u{82}quipe");
+}
+
+fn victory_image(team: &[u8], sentence: &[u8]) -> Vec<u8> {
+    let mut img = vec![0u8; 0x28800];
+    for (va, b) in [(VICTORY_TEAM_VA, team), (VICTORY_REPORT_VA, sentence)] {
+        let o = (va - OVERLAY_0898_LINK_BASE) as usize;
+        img[o..o + b.len()].copy_from_slice(b);
+        img[o + b.len()] = 0;
+    }
+    img
+}
+
+#[test]
+fn victory_text_splits_the_sentence_and_its_report_runs() {
+    let t = VictoryText::parse(&victory_image(
+        b"\xC1\x01's crew",
+        b" won!|Got     Exp and     G.",
+    ))
+    .expect("parses");
+    assert_eq!(t.opening(ResultSubject::Lead(1), "A"), "A won!");
+    assert_eq!(
+        t.opening(ResultSubject::LeadsTeam { escape_operand: 0 }, "A"),
+        "A's crew won!"
+    );
+    assert_eq!(t.report_runs(), ["Got", "Exp and", "G."]);
+    // No line break, or no escape: not the victory sentence.
+    assert!(VictoryText::parse(&victory_image(b"\xC1\x01's", b" won!")).is_none());
+    assert!(VictoryText::parse(&victory_image(b"xx's", b" won!|G.")).is_none());
+}
+
+#[test]
+fn a_moved_victory_sentence_reads_through_its_site() {
+    let mut img = victory_image(b"\xC1\x01's crew", b"stale|x");
+    let put = |img: &mut Vec<u8>, va: u32, b: &[u8]| {
+        let o = (va - OVERLAY_0898_LINK_BASE) as usize;
+        img[o..o + b.len()].copy_from_slice(b);
+    };
+    // `lui a1,0x801f ; ... ; addiu a1,a1,0x6100`.
+    put(&mut img, 0x801D_8544, &0x3C05_801Fu32.to_le_bytes());
+    put(&mut img, 0x801D_854C, &0x24A5_6100u32.to_le_bytes());
+    put(&mut img, 0x801F_6100, b" gagne !|Obtenu  XP et  Or.\0");
+    let t = VictoryText::parse(&img).expect("parses");
+    assert_eq!(t.opening_tail, " gagne !");
+    assert_eq!(t.report_runs(), ["Obtenu", "XP et", "Or."]);
+}
+
+#[test]
 fn name_pointer_matches_retails_constant() {
     // Retail's literal is `0x8008459B + id * 0x414`.
     for id in 1u8..=4 {

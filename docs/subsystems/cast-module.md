@@ -2125,6 +2125,34 @@ up to twice their countdown in vsyncs: a frame that takes longer than four
 vsyncs still drains four vsyncs' worth, so those arms carry the lag of a
 scene the hardware cannot draw at speed, and the port keeps the countdown.
 
+### The side-band poll arm
+
+<a id="the-side-band-poll-arm"></a>
+
+Every summon image `0903..=0934` reads the side-band applier stage
+`ctx[+0x276]` once (`lbu v0,0x276(..)`, then `bne v0,zero` to the busy
+return) and, once it reads zero, issues its creature seek
+`FUN_8003EAE4(0, n)` and moves on. The arm that holds the read, from each
+image's phase switch (a `beq` on the register holding `1` counted as phase
+`1`):
+
+| Arm | Modules |
+|---|---|
+| 0 | 0923 Gilium (after its arm-0 drain) |
+| 1 | 0904, 0909, 0910, 0911, 0912, 0913, 0916, 0917, 0919, 0920, 0921, 0922, 0925, 0927, 0928, 0929, 0933 |
+| 2 | 0903, 0905, 0906, 0907, 0908, 0914, 0915, 0918, 0930, 0931, 0932, 0934 |
+
+(0924 has no dump; 0926 is the null image.) In retail the byte is up from
+state `0x32` until the applier has read the cast's last slot, about `30`
+vsyncs a slot ([cast-sequence oracle](../tooling/cast-sequence-oracle.md#waits-the-engine-does-not-run)),
+so the arm holds for whatever of that the band head did not cover. The
+engine's side-band is resident and never raises the byte, so the arm passes
+at once in play. `cast_module_camera::sideband_wait_arm` names the arms
+whose directors gate on `ModuleCamState::sideband_busy` (0928, 0929, 0930,
+0931); that flag is raised only by a capture replay standing on the arm, and
+among the corpus's summon states only `jedo_summon_mid_cast` sits in a poll
+arm with the byte still up (`8`, one pass into the sustain).
+
 ### PROT 0918, 0922 and 0927 directors
 
 <a id="prot-0918-0922-and-0927-directors"></a>
@@ -2263,6 +2291,40 @@ those, depth `0x800`, on a stack trio rather than the caller's point
 holds twelve of each live, three calls' worth. Arms 1 and 3 seat three wisps
 each with the Freed-shaped wait / spin / length / radius / roll pokes, arm 3
 three point pairs more; arms 2, 5 and 6 one record each on the caller.
+
+Against a retail Horn cast (PCSX-Redux, RAM written mid-arm), the engine's
+live parts match record for record: in arm 4 the stager's loop record, its
+three sparkle records twenty or fourteen each, arm 3's six pool parts and a
+dozen wisps `0x801F8900`; in arm 9 the nine records arm 4 and arm 8 seated,
+`0x801F8BEC` ten or eleven times. Arm 9's camera matches too (pitch `0`, yaw
+`0`, TR y `0x158C`, TR z from `0x200` scaled, `+16` a vsync). Where Horn's
+frames still part from retail's in those arms (a ring of glows round the
+creature in arm 4 that the engine does not draw, arm 9's blades drawn wider),
+the difference is in what those parts draw, not in which are live or where
+the camera stands.
+
+Their draw state matches too, part for part, once each is paired by age (its
+wait word): the `+0x9C..+0xCC` block, draw kind `+0x56`, render mode `+0x5A`
+and the camera-relative word `+0x52 = 0x580` (op `0x15`). Arm 9's crowns
+`0x801F8BEC` (mode `0x18`: shape 3, thirty-two columns, phase `4`) grow
+their radii `+0xB4` / `+0xB6` twelve units apart from crown to crown on
+both sides, and its fans `0x801F8B0C` / `0x801F8B68` (mode `0x10`: shape 2,
+eight columns, radii `0x100` / `0x2000`) sit `0x2000` ahead of the eye on
+both. Retail's ordering tables draw those fans as eight packets each running
+off every edge of the screen, the crowns as rings of thin spokes over the
+whole frame. Built from the same RAM words, the engine's meshes project onto
+those packets corner for corner (within a pixel of the GTE's rounding): each
+fan packet is a thin spike, one corner on the eye axis and one `0x2000` out,
+and the crowns' and the `0x801F8964` ring's corners land where retail's do.
+What dimmed them was the arm's armed wash (`FUN_8004695C(0x202020)` every
+pass), composited over the finished frame instead of under it
+([the armed wash](#presentation-calls)). Retail's fans also hold a
+non-zero `+0x22` (the keyframe cursor, `0x1BC0`) that no renderer reads:
+the node matrix is `FUN_80026988` of `+0x24..+0x28` alone, so the port's
+node rotation takes the banks and nothing else
+(`effect_ribbon::node_rotation`). Some parts with draw kind `0` carry
+a non-zero block in retail and a zero one in the engine; nothing draws from
+it, and it reads as words a previous actor left in the reused slot.
 
 The stagers of PROT 0914, 0915, 0917, 0921, 0928, 0929 and 0931..0933 run
 the same way (`cast_module_ticks::creature_stager_spawns`, arm by arm off
@@ -2526,7 +2588,16 @@ is the module's, moved with two kernels:
   frames, handed to the tween builder `FUN_801D829C`. What varies per arm is
   where the halfwords come from: immediates, the negated creature seat
   `actor_table[7]`, a yaw `K - facing`, or a heading between caster and victim
-  through `FUN_80019B28`;
+  through `FUN_80019B28`. The builder runs once, on the arm's pass: each
+  component's per-vsync increment is `ceil(|gap| / frames)`
+  (`0x801D845C..0x801D8464`), and the walker adds it times the pass's frame
+  step and lands each component on its own. A shot is therefore not an
+  arrive-together glide over `frames / step` passes: a gap that does not
+  divide by `frames` runs on the rounded-up increment and lands early.
+  PROT 0905's arm-1 shot (yaw `1000` units over `0x60` frames) walks yaw
+  `11` a vsync, which a PCSX-Redux cast's `cam.csv`
+  ([cast-sequence oracle](../tooling/cast-sequence-oracle.md)) and
+  `vera_summon_mid_cast`'s step table both read;
 - **drifts**: values added straight into the pitch / yaw / TR globals every
   pass an arm runs (pitch `0x8007B790`, TR x / y / z `0x800840B8` /
   `0x800840BC` / `0x800840C0`), behind the module countdown. Under a shot
@@ -3332,6 +3403,27 @@ yellow held fades its arm 10 parked at `0x801FA4C8` / `0x801FA4CC`. Read as
 one slot, those two fades stayed up as a white screen from arm 12 to the
 end of the turn.
 
+**The pool flush is a kill too.** `FUN_80050E74` walks all `0x80` words of
+the part pool at `0x801C90F0`, sets the done bit on every actor it finds and
+zeroes the word (`0x80050E80..0x80050EC8`). The pool wrapper `FUN_80050ED4`
+only fills the first `0x60`, but modules park actors of their own in the top
+words, and a module that parks a held fade at `0x801C92EC` ends it with its
+next flush, not with a kill of the slot. PROT 0930 (Horn) does it three
+times: arm 3 parks a held white (delay `0x100`, ramp `0x80`) that lands as arm
+4's countdown runs out, and arm 4's pass flushes (`0x801F6EE8`) before it
+spawns its own `0x20`-frame fade back out; arm 9 parks another and arm 10's
+pass flushes it; arm 10 parks two more (`0x801C92E8`, `0x801C92EC`) and the
+last arm's pass flushes them (`0x801F7CBC`) under its `0x40`-frame fade-out.
+The decoder places each flush (`PoolFlush`) and each pool-wrapper spawn
+(`PoolSpawn`, the record off `a2`). On a flush the hook drops the fades
+parked in the pool's words and halts the engine's parts of every record the
+image seats through the wrapper; a part seated straight through
+`FUN_80021B04` is in no pool word and lives on. Without it Horn's cast reads
+as a white screen from arm 4 to the end of the Done band in the cast-sequence
+oracle. The last arm has no phase write, so its
+sites read as `Every`; its countdown gate (`summon_holds::gate_va`,
+`0x801F7CAC`) keeps the flush on the pass that ends the module.
+
 **Only where the port paces the arm.** A call is placed in time by its arm,
 so it is as right as the port's pacing of that arm, and many tick ports walk
 their arms one per tick where retail holds each on a countdown or a poll:
@@ -3440,8 +3532,15 @@ both (`BattleActionHost::capture_band_exit` / `summon_band_exit`).
 
 **The armed wash** only arms a flag the frame's drain clears, so an arm that
 wants it held re-arms it every pass. The drain draws it subtractive (ABR `2`)
-in the farthest bucket, under the whole scene: on a frame the scene repaints
-everywhere it is close to invisible in retail too.
+in the farthest bucket, under the whole scene: it darkens what the buffer
+still holds from an earlier frame, and everything the frame draws lands on
+top of it at full strength. The engine records the colour
+(`World::cast_armed_wash`) and composites no quad for it, since both hosts
+build each frame from a cleared target and draw screen primitives over the
+scene, where the quad could only darken the frame's own pixels. Composited
+that way, Horn's arm-9 wash (`0x202020` a pass) took that much off every
+additive layer of the arm: its rings and crowns drew a fraction as bright as
+retail's and its white blades topped out near `0xDF`.
 
 **Not fired.** The 17 fade sites the decoder does not place sit in spawn
 stagers, routines the move VM's op `0x20` calls with an arm of its own rather

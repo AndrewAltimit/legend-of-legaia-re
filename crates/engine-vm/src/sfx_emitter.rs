@@ -49,7 +49,11 @@ pub struct EmitterListener {
     pub focus_stored: (i32, i32),
     /// The voice / SFX volume word `_DAT_80084580` (cold reset `200`).
     pub voice_volume: i32,
-    /// libsnd mono (`_DAT_800846BC != 0`).
+    /// The options screen's Sound word reads Monaural (`_DAT_800846BC != 0`,
+    /// `lw v0,0x57c(a1)` off `0x80084140` at `0x800224D4`): the arm writes
+    /// both sides at their average, `(l + r) >> 1`. Not libsnd's fold flag
+    /// `_DAT_801CE330` - the direct voice write never reads that one, so a
+    /// mono emitter sounds at the mean of its two levels, not the larger.
     pub mono: bool,
     /// The per-row scale pair at `0x80091658 + row * 0x10`, clamped
     /// `0..=0x100` by the arm. `(0x80, 0x80)` in every captured state.
@@ -62,7 +66,7 @@ pub struct EmitterListener {
     pub release_all: bool,
     /// The frame step `DAT_1F800393`.
     pub frame_step: i32,
-    /// The speed scalar `DAT_1F80037D` (`0x10`).
+    /// The speed scalar `DAT_1F80037D` (`8`, planted by SCUS at boot).
     pub speed: i32,
 }
 
@@ -262,7 +266,7 @@ mod tests {
             stream_settled: true,
             release_all: false,
             frame_step: 1,
-            speed: 0x10,
+            speed: 8,
         }
     }
 
@@ -278,6 +282,27 @@ mod tests {
             &listener((-1838, -2526)),
         );
         assert_eq!(v, Some((1706, 1706)));
+    }
+
+    /// Monaural (`0x800224D4..0x800224E8`): both sides at `(l + r) >> 1`
+    /// after the clamp, not at the larger side.
+    #[test]
+    fn mono_writes_both_sides_at_their_average() {
+        let mono = EmitterListener {
+            mono: true,
+            ..listener((-5000, 0))
+        };
+        // Zero box (full falloff): 100 * 64 * 128 >> 7 = 6400 and
+        // 100 * 16 * 128 >> 7 = 1600 in stereo.
+        let range = [0, 0, 0, 0];
+        assert_eq!(
+            emitter_volume((0, 0), (64, 16), range, &listener((-5000, 0))),
+            Some((6400, 1600))
+        );
+        assert_eq!(
+            emitter_volume((0, 0), (64, 16), range, &mono),
+            Some((4000, 4000))
+        );
     }
 
     #[test]

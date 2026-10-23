@@ -40,6 +40,14 @@ use crate::pause_screens::{
     root_menu_confirm_route,
 };
 
+/// System flag the menu-open state raises when the casino coin bank is
+/// non-zero, and the money / play-time box's coin row tests
+/// (`FUN_801DC6B4` state 0: `jal 0x8003CE08` with `a0 = 8` at `0x801DC7FC`
+/// behind `lw a0,0x464(v0)` - the bank `0x800845A4`; `FUN_801D0148` tests it
+/// at `0x801D01B0`). Nothing clears it, so once the player has held coins
+/// the row stays, at `0` coins too.
+pub const SYSTEM_FLAG_CASINO_COIN_ROW: u16 = 8;
+
 /// The ready check's Yes row (`DAT_801E46D0 & 0xFFF == 0` at `0x801d6de4`).
 pub const READY_CONFIRM_YES_ROW: u8 = 0;
 /// The row retail seeds the ready check's cursor to - `1`, which is No

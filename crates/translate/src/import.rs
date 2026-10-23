@@ -588,6 +588,7 @@ pub fn import_pack_phase(
         for (va, en) in edits {
             let strict = ui::pool_for(prot, va).is_some_and(|p| p.strict);
             match plan_ui(
+                prot,
                 &buf,
                 base_va,
                 en,

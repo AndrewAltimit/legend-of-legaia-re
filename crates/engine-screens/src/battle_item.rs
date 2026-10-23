@@ -61,10 +61,12 @@ pub fn with_battle_spell_frame<R>(
     let rows: Vec<bii::BattleSpellRowView<'_>> = model
         .rows
         .iter()
-        .map(|(name, admissible, ra_seru)| bii::BattleSpellRowView {
+        .enumerate()
+        .map(|(i, (name, admissible, ra_seru))| bii::BattleSpellRowView {
             name,
             admissible: *admissible,
             ra_seru: *ra_seru,
+            icon: model.icons.get(i).copied().flatten(),
         })
         .collect();
     let description: Vec<&str> = model.description.iter().map(String::as_str).collect();

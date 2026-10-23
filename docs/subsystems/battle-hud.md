@@ -235,7 +235,10 @@ box it draws itself (the sparring-tutorial prompt).
 
 **The breadcrumb trail.** From the command ring on, the plaque sits behind the
 round prompt's `Begin` chip, which has glided to `(16, 14)` as a gold tab
-(record 1); the plaque (record `0x1A`) rests at `(68, 14)`. Choosing a ring arm
+(record 1); the plaque (record `0x1A`) rests at `(68, 14)`. The commit-confirm
+screen `0x6E` keeps the tab and sends the plaque back up
+(`party_basic_attack_vs_gobu_gobu`: record `0x1A` at `(68, -24)`, the `Begin`
+tab alone at the top left; port `battle_begin_tab_alone`). Choosing a ring arm
 glides that arm's chip onto the trail as a third tab abutting the plaque, at
 `x = width(name) + 0x54`:
 
@@ -1328,9 +1331,15 @@ windows, the tabs and the hand through the same 9-slice, tab-banner and hand
 cells the item window uses; `World::battle_spell_menu_model` projects the open
 `BattleSpellSession` (rows, hand row, the disc spell table's info lines, the
 caster's record `+0x161` level, the effective MP cost), and
-`engine-screens::with_battle_spell_frame` hands it to both play hosts. Not
-drawn: the element and Ra-Seru icon cells (the gap is kept), and the
-target step's `All` plate - the target step still draws the port's text line.
+`engine-screens::with_battle_spell_frame` hands it to both play hosts. Each
+row carries its name's `0xCE` plate operand (`BattleSpellMenuModel::icons`)
+and lays the raw `0xCE op 0x20 name` string out through the host font's
+escape sprites, the way the pause Magic list does
+([field-menu.md](field-menu.md#magic-screen)): the plate at the row pen, the
+name `20 + 5` or `28 + 5` px on (the screenshot read of `32` behind the
+winged plate is one pixel short of the table width). Disc-gated oracle:
+`battle_spell_plate_disc`. Not drawn: the target step's `All` plate - the
+target step still draws the port's text line.
 
 ## Screen-element placement table `0x80076C10` and its copy helpers
 

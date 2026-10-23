@@ -15,6 +15,7 @@ mod battle_texture_real;
 mod charm_softlock_fix_real;
 mod chest_patch_real;
 mod chest_quest_items_static_real;
+mod conkram_freeze_fix_real;
 mod cross_table_integrity_real;
 mod custom_items_real;
 mod damage_ap_real;

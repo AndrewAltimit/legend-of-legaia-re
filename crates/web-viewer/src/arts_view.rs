@@ -171,7 +171,7 @@ pub struct LegaiaArts {
     /// Extracted `PROT.DAT` bytes.
     prot: Vec<u8>,
     /// PROT TOC.
-    entries: Vec<disc::EntryMeta>,
+    entries: Vec<legaia_prot::toc_index::EntryMeta>,
     /// Raw 2352-byte sectors of each distinct arts-voice file ([`VOICE_XA_FILE`]
     /// = `XA2.XA` / `XA4.XA` / `XA6.XA`), keyed by upper-case file name. The XA demuxer
     /// needs the CD-XA subheaders, which a 2048-byte ISO file view drops. Empty
@@ -195,7 +195,7 @@ impl Default for LegaiaArts {
 /// honours the extended footprint window).
 fn entry_bytes<'a>(
     prot: &'a [u8],
-    entries: &[disc::EntryMeta],
+    entries: &[legaia_prot::toc_index::EntryMeta],
     prot_index: u32,
 ) -> Option<&'a [u8]> {
     let meta = entries.iter().find(|e| e.index == prot_index)?;
@@ -390,7 +390,7 @@ fn decode_xa_bank(voice_files: &[(String, Vec<u8>)], file_name: &str) -> Vec<aud
 /// `ArtSlot::why` instead (the page falls that art back to the idle pose).
 fn build_character(
     prot: &[u8],
-    entries: &[disc::EntryMeta],
+    entries: &[legaia_prot::toc_index::EntryMeta],
     voice_files: &[(String, Vec<u8>)],
     voice_table: Option<&ArtsVoiceTable>,
     cslot: usize,
@@ -573,19 +573,19 @@ impl LegaiaArts {
     pub fn load_disc(&mut self, bytes: Vec<u8>) -> Result<String, JsValue> {
         let mut voice_files = Vec::new();
         let mut voice_table = None;
-        let prot = if disc::is_mode2_2352_disc(&bytes) {
+        let prot = if legaia_iso::image::is_mode2_2352_disc(&bytes) {
             voice_files = extract_voice_files(&bytes);
             // Arts-voice cue tables (art action constant -> voice channel) live
             // in SCUS_942.54; parse them so each art maps to its real channel.
-            voice_table = disc::extract_scus(&bytes)
+            voice_table = legaia_iso::image::extract_scus(&bytes)
                 .as_deref()
                 .and_then(ArtsVoiceTable::parse_from_scus);
-            disc::extract_prot_dat(&bytes)
+            legaia_iso::image::extract_prot_dat(&bytes)
                 .ok_or_else(|| JsValue::from_str("arts: PROT.DAT not found in this disc image"))?
         } else {
             bytes
         };
-        let entries = disc::parse_prot_toc(&prot)
+        let entries = legaia_prot::toc_index::parse_prot_toc(&prot)
             .ok_or_else(|| JsValue::from_str("arts: PROT.DAT TOC parse failed"))?;
         #[cfg(target_arch = "wasm32")]
         console_log(&format!(

@@ -310,27 +310,49 @@ impl PlayWindowApp {
     /// or an in-frame NDC with texel coordinates that name a page nothing
     /// uploaded (the quad draws, but every texel discards). Off by default -
     /// the log is per-frame per-sprite.
-    pub(super) fn diag_effect_billboards(&self, cam: Mat4) {
+    pub(super) fn diag_effect_billboards(&self, cam: Mat4, view_scale: f32) {
         if std::env::var_os("LEGAIA_DIAG_FX_ALL").is_some() {
-            let battle = self.session.host.world.mode == SceneMode::Battle;
-            for s in self.session.host.world.active_effect_sprites() {
-                let c = if battle {
-                    legaia_render_kernels::effect_billboard::battle_billboard_centre(s.world_pos)
-                } else {
-                    s.world_pos
-                };
+            // The quads the billboard builder draws, on the same basis, as
+            // screen bounds in retail's 320 x 240 space: the side-by-side
+            // against a display list's `0x2E` packets (`mednafen-state
+            // display-list`).
+            let inv = cam.inverse();
+            let right = inv.transform_vector3(Vec3::X).normalize_or_zero();
+            let up = inv.transform_vector3(Vec3::Y).normalize_or_zero();
+            let screen = |c: [f32; 3]| {
                 let p = cam * glam::Vec4::new(c[0], c[1], c[2], 1.0);
-                if p.w > 0.01 {
-                    eprintln!(
-                        "DIAG fx-all: tick {} page {:#04x} centre ({:.0},{:.0}) w {:.0} size {:?}",
-                        self.tick_no,
-                        s.page,
+                (p.w > 0.01).then(|| {
+                    (
                         (p.x / p.w * 0.5 + 0.5) * 320.0,
                         (0.5 - p.y / p.w * 0.5) * 240.0,
                         p.w,
-                        s.size
-                    );
-                }
+                    )
+                })
+            };
+            for b in legaia_engine_world_views::effect_draws::effect_billboards(
+                &self.session.host.world,
+                view_scale,
+            ) {
+                let s = &b.sprite;
+                let Some((cx, cy, w)) = screen(s.world_pos) else {
+                    continue;
+                };
+                let corners: Vec<(f32, f32)> = b
+                    .corners(right.to_array(), up.to_array())
+                    .iter()
+                    .filter_map(|&c| screen(c).map(|(x, y, _)| (x, y)))
+                    .collect();
+                let (x0, x1) = corners
+                    .iter()
+                    .fold((f32::MAX, f32::MIN), |(a, z), p| (a.min(p.0), z.max(p.0)));
+                let (y0, y1) = corners
+                    .iter()
+                    .fold((f32::MAX, f32::MIN), |(a, z), p| (a.min(p.1), z.max(p.1)));
+                eprintln!(
+                    "DIAG fx-all: tick {} page {:#04x} centre ({cx:.0},{cy:.0}) w {w:.0} size {:?} \
+                     quad x[{x0:.0},{x1:.0}] y[{y0:.0},{y1:.0}] bright {} uv {:?}",
+                    self.tick_no, s.page, s.size, s.brightness, b.uv
+                );
             }
         }
         if std::env::var_os("LEGAIA_DIAG_FX").is_none() {
@@ -496,11 +518,54 @@ impl PlayWindowApp {
         &self,
         cam: Mat4,
     ) -> Option<legaia_engine_screens::battle_value_readout::ValueReadoutLayout> {
-        legaia_engine_screens::battle_value_readout::battle_value_readout_layout(
-            &self.session.host.world,
+        let world = &self.session.host.world;
+        // A capture's seated popup rises over the trio of the frame its age
+        // was taken back to (`ScreenshotConfig::popup_trio_rewind`).
+        let rewind = self.screenshot.as_ref().and_then(|sc| {
+            let (slot, back) = sc.popup_trio_rewind.get()?;
+            let history = sc.popup_trio_history.borrow();
+            let at = history.len().checked_sub(1 + usize::from(back))?;
+            Some((slot, *history.get(at)?.get(usize::from(slot))?))
+        });
+        let retail_cells = self.screenshot.as_ref().and_then(|sc| {
+            (sc.popup_cells_due.get() && !sc.seat_popup_cells.is_empty()).then(|| {
+                use legaia_engine_battle_vm::battle_value_readout as vr;
+                sc.seat_popup_cells
+                    .iter()
+                    .map(|&(x, y, w, digit)| vr::ValueCell {
+                        digit,
+                        x,
+                        y,
+                        w,
+                        h: w,
+                        u: vr::digit_cell_u(digit),
+                        v: vr::DIGIT_ROW_V,
+                        cell: vr::DIGIT_CELL,
+                    })
+                    .collect::<Vec<_>>()
+            })
+        });
+        if let Some(cells) = retail_cells {
+            let mut layout =
+                legaia_engine_screens::battle_value_readout::battle_value_readout_layout(
+                    world,
+                    &self.battle_hud,
+                    &cam.to_cols_array(),
+                    self.battle_stage_scale(),
+                )
+                .unwrap_or((None, Vec::new()));
+            layout.1 = vec![cells];
+            return Some(layout);
+        }
+        legaia_engine_screens::battle_value_readout::battle_value_readout_layout_with(
+            world,
             &self.battle_hud,
             &cam.to_cols_array(),
             self.battle_stage_scale(),
+            |slot| match rewind {
+                Some((s, trio)) if s == slot => trio,
+                _ => world.battle_readout_trio(usize::from(slot)),
+            },
         )
     }
 }

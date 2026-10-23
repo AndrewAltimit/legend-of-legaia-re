@@ -54,6 +54,7 @@ impl PondSession {
             line_fish_prev: None,
             creak_timer: 0,
             rod_creaks: 0,
+            spent_lures: Vec::new(),
         }
     }
 
@@ -198,6 +199,14 @@ impl PondSession {
     /// Rod-creak cues (`0x201`, ring slot 1) raised since the last call.
     pub fn take_rod_creaks(&mut self) -> u32 {
         std::mem::take(&mut self.rod_creaks)
+    }
+
+    /// Lure item ids the line breaks consumed since the last call - one
+    /// `lure + 0x9D` per break (`FUN_80042310(_DAT_80084450 + 0x9D, 1)` at
+    /// `0x801D3C14..0x801D3C24`). The session holds no bag, so a host debits
+    /// its own inventory with each.
+    pub fn take_spent_lures(&mut self) -> Vec<u32> {
+        std::mem::take(&mut self.spent_lures)
     }
 
     /// This frame's fishing line - the tail of retail's lure tick
@@ -420,12 +429,20 @@ impl PondSession {
                     ReelInput::Idle => self.line_record += frame.pull >> 6,
                 }
                 self.depth = (self.depth + frame.sink).clamp(0, 0x1000);
-                if self.gauge.at_max() {
-                    // Reconstruction: tension pinned at the ceiling snaps the
-                    // line (doc Open list).
+                // The lure tick's tail: tension at the ceiling is clamped
+                // there and rolls `rand() % 10 == 0` once a frame for the
+                // break latch `DAT_801D91A4 = 2` (`0x801D3B9C..0x801D3BE4`;
+                // the draw is made only at the ceiling). A set latch breaks
+                // the line ahead of the reel-in test (`0x801D3C04`).
+                // PORT: FUN_801d26cc (the tension-ceiling break roll and the break arm)
+                let broke = self.gauge.at_max() && self.rng.next_u15().is_multiple_of(10);
+                if broke {
                     self.events.push(PondEvent::Snapped);
                     self.phase = PondPhase::Snapped;
-                    // The snap arm starts the rod's recover swing
+                    // One lure consumed (`FUN_80042310(lure + 0x9D, 1)`).
+                    self.spent_lures
+                        .push(super::rod_menu::lure_item_id(self.lure));
+                    // The break arm starts the rod's recover swing
                     // (`DAT_801d91ac = 10` at `0x801D3C44`).
                     if let Some(rod) = self.rod_actor.as_mut() {
                         rod.recover();

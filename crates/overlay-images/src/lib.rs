@@ -24,4 +24,5 @@ pub mod mips_overlay;
 pub mod overlay_ptr_table;
 pub mod slot_b_module;
 pub mod static_overlay;
+pub mod string_refs;
 pub mod summon_overlay;

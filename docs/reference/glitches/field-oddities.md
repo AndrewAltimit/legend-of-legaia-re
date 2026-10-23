@@ -1,14 +1,15 @@
 # WORK ERR, missing encounters and script slips
 
-Four community-reported oddities that live in the field and battle runtime rather than in one
+Five community-reported oddities that live in the field and battle runtime rather than in one
 attack or item: a debug counter that reaches the screen on Mt. Rikuroa, the random battles that
-stop in Jette's Absolute Fortress, the camera orbit that ends the Gaza rematch, and three small
-slips in the English script. One section is a mechanic rather than a fault: the two springs in
-Rogue's Tower that change the encounter rate. A closing section records the identity of the two
-summon flutes, as support for the flute pages.
+stop in Jette's Absolute Fortress, the freeze after a Spikefish Flute escape, the camera orbit
+that ends the Gaza rematch, and three small slips in the English script. One section is a mechanic rather than a fault: the two springs in
+Rogue's Tower that change the encounter rate. One is a freeze that needs an emulator to trigger it:
+the heap running out in Conkram's mirror scene when the emulated CPU is too fast. A closing section records the identity of
+the two summon flutes, as support for the flute pages.
 
 The base of every section is static analysis of the USA disc: disassembly of `SCUS_942.54` and its
-overlays, and decoded disc data. Two sections also rest on emulator captures, and each says which
+overlays, and decoded disc data. Several sections also rest on emulator captures, and each says which
 kind. The Mt. Rikuroa capture is on a poked state: a retail cold boot from a memory-card save, with
 story flags cleared and the player teleported. The Fortress captures are one played memory-card
 save and one edited copy of it. The bath scene is read against the Japanese disc (`SCPS_100.59`)
@@ -357,7 +358,9 @@ to spare is unaffected.
 
 The flag is one bit in the save and can be cleared; the check and the save-side fix are in a table
 below. On the disc side the patcher's `--fortress-encounter-fix` makes the Fortress ignore the
-flag, which also repairs a file that already has it.
+flag, which also repairs a file that already has it. The port does the same at runtime with its
+Fortress battles fix, on unless retail-faithful mode holds it off
+([gameplay tweaks](../../subsystems/gameplay-tweaks.md#fortress-battles-fix)).
 
 Two other quiet states exist and are intended. The boss room, the room before it, the council and
 Mist Generator rooms, the elevators and the bridge never roll. And a second flag, `0x521`,
@@ -1144,6 +1147,10 @@ climbing past `0x800740EC`. Escaping the same fight with Run returns to the fiel
 
 **Status:** explained
 
+**Evidence:** two parks caught in human play on Gaza 2 (`capture`, played); one park
+reproduced from scripted pad input with Gaza's HP and MP poked lower (`capture`, poked); the
+mechanism (`disassembly`).
+
 **Reported as:** in the Gaza rematch the battle stops and the camera circles the party forever
 (community report).
 
@@ -1157,10 +1164,13 @@ a dedicated approach animation, so the game plays the ordinary Move loop and wai
 only re-measures the distance. That state has no movement code and no timeout: the animation's own
 forward motion is what carries the monster in.
 
-If the monster is still flinching from a hit when its attack begins - a summon is the usual cause
-- a leftover "go back to idle when this clip ends" flag is still set. The Move loop plays one
-cycle, the flag swaps it for the idle pose, the monster stops short of its target, and the wait
-never ends. The camera's idle sweep runs on its own, which is why the screen keeps orbiting.
+A hit sets a "go back to idle when this clip ends" flag on the monster it strikes. Normally the
+flinch plays out, the flag does its job and is gone before anyone else acts. The Seru spell Kemaro
+is the exception: it carries its target off, flinches it there, and when it puts the target back
+it starts the idle pose in a way that leaves the flag set. The flag then waits for the next clip
+on that monster to end. If that monster's next move is a melee attack from out of reach, the flag
+cuts the Move loop off after one cycle, the monster stops short of its target, and the wait never
+ends. The camera's idle sweep runs on its own, which is why the screen keeps orbiting.
 
 ### Mechanism
 
@@ -1174,9 +1184,15 @@ never ends. The camera's idle sweep runs on its own, which is why the screen kee
 3. The per-actor tick `FUN_80047430` applies the playing clip's root motion. At a clip's natural
    end it tests bit 2 of `actor+0x1DC`; when set it queues idle and clears bits 0..2. The mid-clip
    commit path clears bits 0..1 only and keeps bit 2.
-4. Bit 2 is raised by the hit-reaction stager in `FUN_800402F4`. A flinch followed directly by a
-   melee installs the Move clip through the mid-clip path with bit 2 still up; the first natural
-   end installs idle; the monster is parked.
+4. Bit 2 is raised by every hit-reaction stager. An ordinary reaction ends naturally before the
+   action is over and takes the bit with it. Kemaro (PROT 0918) stages its target's reaction with
+   `+0x1DC |= 5` at `0x801F80BC` and pins that clip on frame 3 by zeroing the target's speed scale
+   `+0x21D` (`0x801F8370..0x801F8380`), so it cannot end while carried. It then puts the target
+   back by storing `0` to `+0x1DA` and adding
+   1 to `+0x1DC` (`0x801F897C..0x801F8984`): idle is installed through the mid-clip path, bit 2
+   survives, and it lasts until the idle loop's first natural end. A melee inside that window
+   installs the Move clip through the mid-clip path with bit 2 still up; the first natural end
+   installs idle; the monster is parked.
 
 The four address claims the explanation rests on, re-read from the disassembly:
 
@@ -1197,15 +1213,36 @@ The four address claims the explanation rests on, re-read from the disassembly:
 | `0x80050E2C` | `SCUS_942.54` | action-tag scan over the monster record | repo doc |
 | `0x80047430` | `SCUS_942.54` | per-actor tick; idle install at `0x80047B44` | disassembly |
 | `0x80042124..0x80042170` | `SCUS_942.54` | hit-reaction stager in `FUN_800402F4` | disassembly |
+| `0x801F80A0..0x801F80BC`, `0x801F895C..0x801F8984` | PROT entry 0918 (Kemaro) | target reaction staging; put-back that keeps bit 2 | disassembly, capture |
 | actor `+0x1D9`, `+0x1DA`, `+0x1DC` | RAM | playing clip, queued clip, anim event flags | disassembly |
 | `*0x8007BD24`, `+0x07` | RAM | battle context, action state byte | repo doc |
 
 ### Scope
 
-Any monster without a tag-`0x20` action - nearly the whole roster, bosses included, by the roster
-sweep on the linked page - attacking an out-of-reach target directly after being flinched. The
-Gaza rematch is where it is met because his formation keeps him out of reach and a summon is the
-usual opening move. The linked page also describes a second, separate park in state `0x51`.
+Narrower than "any flinched monster". 180 of the 186 monster records lack a tag-`0x20` action,
+but that is only the first of four conditions, all of which have to hold:
+
+- the attacker has no tag-`0x20` action (180 records);
+- bit 2 is still set when its approach starts - in retail play that takes Kemaro, whose put-back
+  is the only one that keeps the bit (a hit alone always clears it before the action ends);
+- its melee comes inside one idle cycle of the put-back, which in practice means directly after
+  the Kemaro in the same round;
+- one Move cycle does not carry it into reach.
+
+Gaza 2 is at the extreme on both clip numbers: the shortest Move loop of the walk-less roster (five
+frames) and the longest idle loop (360 vsyncs at the speed Kemaro leaves him), with 15000 HP to
+survive Kemaro repeatedly. The next-closest candidates are Songi (179) and the Drake Ghost family
+(16-18), each needing a wide gap; the slimes have the short Move loop but die to Kemaro. The table
+and the measurements are on the linked page. It also describes a second, separate park in state
+`0x51`.
+
+**Reproducing it on Gaza 2:** have the Kemaro caster act directly before Gaza in the round, with
+nobody else acting in between, and let Gaza survive. If his next action is a melee aimed at a
+party member well out of his reach (the formation usually does this), he walks one short step,
+stops and the round never ends. If he casts instead, the flag is spent harmlessly; try again next
+round. This recipe has been run from scripted pad input, with Gaza's HP and MP poked lower (with
+his MP intact he answered Kemaro with spells every time): it parked on the first Kemaro, and the
+patcher's guard words, poked into the parked state, unparked it.
 
 The fix is the patcher's `--approach-softlock-fix` ([`randomizer.md`](../../tooling/randomizer.md)):
 it replaces the nine words with a guard that sends a dead approach back to state `0x14`, so the
@@ -1215,8 +1252,11 @@ game's own staging runs again.
 
 In a stalled battle read the context state byte: `0x19`, with the attacker's `+0x1D9` and `+0x1DA`
 both zero and its position constant. To provoke it, set bit 2 of a monster's `+0x1DC` while it is
-in state `0x14`; the write of zero to `+0x1DA` then comes from `0x80047B44`. The capture evidence
-is on the linked page.
+in state `0x14`; the write of zero to `+0x1DA` then comes from `0x80047B44`. To see the natural
+trigger, watch the Kemaro target's `+0x1DC`: it still reads `0x04` after the put-back sets the
+pair to `0/0`, and it drops at the next clip end on that monster
+(`scripts/pcsx-redux/autorun_approach_hazard.lua` records both). The capture evidence is on the
+linked page.
 
 ## Dialogue inconsistencies
 
@@ -1335,6 +1375,233 @@ tooling](../../tooling/translation/index.md)) and search for the words above; th
 PROT entry and offset. The bath record decodes on either disc with
 `legaia-engine man-scripts --variant 401 --disasm-partition 2 --disasm-record 4`. To replay the
 scene, clear flag `0x3FB` and step onto the record's trigger tile.
+
+## Conkram mirror freeze
+
+**Status:** explained
+
+**Reported as:** the game freezes in present-day Conkram, in the Room of Mirrors scene that sends
+the party into the past, on many emulators; mashing Cross through the scene's text avoids it
+(community reports). The details differ by teller:
+
+- a pSX 1.13 user logs `sound: underrun` and then repeated `r3000: executed illegal opcode` during
+  the scene ([pSX forum thread](https://psxemulator.proboards.com/thread/2041/legend-legaia));
+  the same thread reports that the PAL release does not freeze, in ePSXe or any pSX version;
+- one ePSXe user reports that version 1.7.0 passes the scene and that 1.8.0 and versions before
+  1.7.0 freeze;
+- a PS3 user reports a freeze every time on the PS3's PS1 emulation; the workaround offered there
+  is to play the scene on a PS1 or PS2 and copy the save back;
+- a play guide ([Before I Play](https://beforeiplay.com/wiki/Legend_of_Legaia)) has players move a
+  DuckStation save to ePSXe for this scene and skip the text by pressing repeatedly, "it may crash
+  if you don't";
+- relayed by a player: older emulators freeze here, and an early PS3 with PS2 hardware may not.
+
+Nobody reports it on a PS1 or PS2. The players call it an "FMV"; the disc plays no movie here (the
+nine movie triggers are listed in [`str-fmv-table.md`](../../formats/str-fmv-table.md#per-scene-trigger-assignment-disc-sourced),
+and none is in a Conkram scene). The scene is drawn by the field engine like any other cutscene.
+
+**The cause is a heap that runs out when the emulated CPU is faster than a console's.** The scene
+runs with almost no free heap. Its effect parts are allocated per frame, so an emulator that
+gives the game more frames per second keeps more of them alive. Past the edge, an allocation
+returns NULL, and the move VM writes animation data through the NULL pointer over the bottom of
+RAM. That wipes the CPU's exception vector, and the next interrupt jumps into data: a
+reserved-instruction exception at the vector itself, raised again on every attempt. The picture
+stops; pSX logs exactly that loop as repeated illegal opcodes. Reproduced on two emulators by
+raising or lowering only the emulated CPU speed (capture, below).
+
+### The scene
+
+Two partition-2 records of `concnow` (extraction 0363, raw define 362), read with
+`legaia-engine man-scripts --scene concnow --disasm-partition 2 --disasm-record N` (disc data):
+
+- **`P2[17]`** is the walk-on on tiles `(29..32, 103)` (inline records 38..41 of the `.PCH`,
+  extraction 0361). Its header gates are C1 `0x3E1` (blocks once set) and C2 `0x3CE` (King
+  Nebular's Seru Flame scene `P2[16]` has run). The party walks to the mirror at tile `(31, 106)`,
+  places the Seru Flame ("Over here! Put the Seru Flame here!"), and after a white flash one
+  character says "That mirror is the door to the past." Its tail fades the score out (`35 3C 00
+  05`), waits 60 frames and spawns global record `0x62` = 48 + 32 + 18, `P2[18]`.
+- **`P2[18]`** (C1 `0x423`) is the crossing. In order: `35 DE 07 09` (start track 2014, sound-test
+  14, behind the load barrier); `CFlag` bit 3 on 54 actors; the three party members raised off the
+  floor (`4C 42`, bit 29); system flags `0x0A` and `0x0B` set; `B4 F8 30 01`, which spawns
+  record 2 of the scene's move-VM stager table (extraction 0362); a 60-frame wait; `35 00 00 0A`
+  (the swap commit); camera moves and 400 frames of waits; `B4 32 10 ...`, a breathing green glow
+  on actor `0x32`; `60 0A`; then **three text pages** spoken by Terra ("...listen! In the world of
+  the past, you will meet your parents when they were young." and two more); `B4 32 20` (the glow
+  shrinks out); `60 0B`; 340 frames of camera moves and waits; system flag `0x423` set; a white
+  fade; `3F` to `conc2`.
+
+The room also carries three reflection controllers installed at scene entry (`4C 86` in `P1[1]`,
+`P1[4]`, `P1[5]`), the mirror images of the party
+([`script-vm-menuctrl.md`](../../subsystems/script-vm-menuctrl.md#4c-86--4c-87-are-the-reflection-controllers-install-and-teardown)).
+
+### Mechanism
+
+1. **The heap is nearly full in this room** (capture). The game's allocator (`FUN_80017888` over
+   `FUN_8002B468`, best-fit over one free list) has about 16.6 KB free in `concnow` before the
+   mirror, the arena from `0x80091800` being otherwise taken by the scene. On PCSX-Redux at console
+   speed the crossing takes the largest free block down to 3,708 bytes and the total to 5,152, the
+   low point coming in the waits after the music commit.
+2. **After the music swap the game pre-stages battle data** (capture, disassembly). The per-frame
+   music poller `FUN_800243F0`, once a swap has committed and the game is in field mode (`*(u16
+   *)0x8007B83C == 3`), steps a small machine at `0x8007BA98` (`0x80024BB0..0x80024C64`): an
+   8-sector read through `FUN_8003E360`, a wait for the drive, then the party battle-file loader
+   `FUN_80052770` (`jal` at `0x80024C50`), which opens `PLAYER1..3` (raw TOC `0x361..0x363` =
+   extraction 863..865, [`battle-data-pack.md`](../../formats/battle-data-pack.md)) through the
+   stream-file API and reads about 316 KiB in twenty chunks into heap buffers. In PCSX-Redux this
+   runs for about 400 vsyncs from the commit, during the waits before the first page.
+3. **The effect's allocations scale with the frame rate** (capture; why is inference). While the
+   crossing runs, the scene's effect parts each take heap blocks: a `0x9C`-byte render node
+   (`FUN_80020F88`, `jal` at `0x80021184`) and a keyframe-pose block for the move VM's
+   keyframe-pose seat (op `0x3C`, jump-table entry `0x80023CA4`). Sampling the rendered frames: at console speed the field draws 15
+   frames per 30 vsyncs before the scene and 10 during it; at double CPU speed it draws 20 before
+   it. With the faster CPU the free heap falls faster and further: at 100 % its low point is about
+   6 KB, and at the faster settings below it runs out.
+4. **The keyframe-pose seat does not check its allocation** (disassembly). At
+   `0x80023CD0..0x80023CE0` in the move VM `FUN_80023070`, op `0x3C` calls
+   `FUN_80017888(0, count * 32 | 8)` and stores the result at `actor+0x4C` with no NULL test, then
+   copies each part's keyframe through it (`sh` at `0x80023D30`, `0x80023D3C`); its retarget op
+   `0x3D` writes through the same pointer untested (`sh` at `0x80023EF4`). The part tick's mode-6
+   pack does test it (`beqz` at `0x80022F14`). The malloc wrapper's failure arm (`0x800178B8`) only
+   adds `0x20000` to the `PRG ERR` counter `0x8007B828` and returns NULL. `FUN_80020F88` does test
+   its own `0x9C` allocation (`bne` at `0x8002118C`) but still stores the NULL at `actor+0x44`,
+   and the draw path writes through it later (`sw` at `0x8001B098` in `FUN_8001ADA4`).
+5. **The NULL write lands on the exception vector** (capture). With a 4-lane keyframe (`0x88`
+   bytes) the copy covers `0x80000028..0x8000008C`. `0x80000080` holds the general exception
+   vector the BIOS installs (`lui k0,0` / `addiu k0,k0,0xC80` / `jr k0`). The next interrupt
+   executes the copied halfwords: the CPU stops with Cause `0x428` (ExcCode `0x0A`, reserved
+   instruction) and EPC `0x80000084`, and every retry enters the same vector. If the copied data
+   happens to decode as harmless instructions the game limps on, which one capture shows (below).
+
+The CD waits the scene leans on are not involved: at the stop the read state words are idle
+(`gp+0x988 = 0`, `gp+0x980 = 0`), the music swap has finished, and the PC is the exception vector,
+not a CD wait loop.
+
+### What was captured
+
+Two routes into the scene, both from the retail disc, staged in a fresh directory away from the
+`.ppf` that sits beside the retail image:
+
+- **a poked state** on PCSX-Redux: the catalogued late-game `map03` state, with flags `0x3E1`,
+  `0x423`, `0x3F2` and `0x4C8` cleared, the player placed on the Conkram walk-on at map tile
+  `(66, 101)` so the game's own warp loads `concnow`, then on tile `(30, 103)`;
+- **two edited memory-card saves**, booted cold on every emulator. One lifts its save body from
+  that poked state's RAM (a level-37 late-game party); the other is the **played** save from Zora's
+  Castle that precedes Conkram (`playthrough-ladder-pro00-14.mcr` PRO-14, a level-27 party), with
+  only the scene label, the position (the `P2[17]` tile) and the five `concnow` vision flags
+  edited. Loading either starts `P2[17]` by itself.
+
+Cross was pressed by the harness, every 100 vsyncs unless noted. The libretro cores ran under a
+small headless host that injects the card, presses the pad and reads RAM; ePSXe ran under box64
+on a virtual X display.
+
+| Emulator | Setting | Card | Result |
+|---|---|---|---|
+| PCSX-Redux | interpreter or dynarec, `SpuIrq`, `RCntFix`, PAL video, 8 MB, Cross every 4..300 vsyncs | poked state, late-game card | passes; no allocation fails |
+| SwanStation (DuckStation core) | 100 % CPU, recompiler | both | passes |
+| SwanStation | 50 % CPU | late-game | passes |
+| SwanStation | 125 %, 150 %, 200 % CPU | played | freezes: `PRG ERR` set, vector overwritten |
+| SwanStation | 200 %, 400 % CPU | late-game | allocation fails and the vector is overwritten; stops in `concnow` |
+| PCSX-ReARMed (current) | its default for this game: dynarec (both cards), interpreter (late-game) | both | freezes; exception loop at `0x80000080` |
+| PCSX-ReARMed | `psxclock` 30, 45 (both cards), 50 (played) | both | passes |
+| PCSX-ReARMed | `psxclock` 62, 80, 100 | late-game | freezes |
+| ePSXe 2.0.5 (Linux x64) | defaults | both | passes |
+
+PCSX-ReARMed's database sets a faster CPU for exactly this game (cycle multiplier 160 against its
+default 175, commented "some attack moves lag"), which is why its default freezes. The edge sits
+close to a console's speed: SwanStation passes at 100 % and freezes at 125 % with the played
+party. The two parties put the edge in different places, since their field data leaves different
+headroom.
+
+**Pressing faster did not save the frozen settings.** At 200 % SwanStation the allocation fails
+about 70 vsyncs into `P2[18]`, before any page, so text speed cannot matter there; on
+PCSX-ReARMed's default it fails about 560 vsyncs in, around the first page. One PCSX-ReARMed run
+that pressed every 4 vsyncs reached `conc2` with the vector already overwritten (the limping case
+above); every other fast-pressing run on a freezing setting froze or stalled. That pressing helps on an emulator that is only marginally too fast, where the
+failure would fall while the pages are open, is inference.
+
+Two emulators named by the reports were not run: ePSXe 1.6.0 reaches its plugin start-up under
+box64's 32-bit mode with plugins written for the test, then crashes as soon as its CPU core runs
+(box64 cannot execute that build's generated code); ePSXe 1.9.0 needs a 32-bit GTK 2 stack that
+box64 cannot wrap. pSX and the PS3 were not available.
+
+The port does not freeze here: the full-game ladder's pad tier walks `taiku`, `map03`, `concnow`,
+`conc2` and `conc` and reaches the `conkram_past` milestone
+([`full-game-ladder.md`](../../tooling/full-game-ladder.md)). The port allocates from its own
+memory, not the game's 16 KB arena: its op-`0x3C` keeps the pose in a Rust `Vec`, so there is no
+NULL block to write through, and an allocation failure would abort the process.
+
+### The fix
+
+The patcher's `--conkram-freeze-fix`
+([`randomizer.md`](../../tooling/randomizer.md#conkram-freeze-fix)) makes both of a part's
+allocations safe, with four same-size edits of `SCUS_942.54`:
+
+- **Op `0x3C`.** Nine words of the handler are rearranged in place so the word after the `jal`
+  becomes `beq v0,zero` to op `0x08`'s HALT arm: a failed pose block ends the part the way a
+  script's own halt does, the list walk releases it and frees its render node, and `+0x4C` stays
+  NULL, which the release path skips. The effect loses one particle.
+- **The render node.** `FUN_80020F88`'s failure block stores a shared stand-in node, kept in free
+  RAM above the slot-B images, instead of leaving NULL at `actor+0x44`. Its `0x800` flag stays
+  clear, so nothing ever frees the stand-in.
+- **The readout.** Both calls go through a quiet copy of the malloc wrapper, placed over an
+  unreferenced thunk, that counts the allocation and calls the allocator but has no failure arm,
+  and the render-node block no longer ORs `0x4000` in. A failure the fix absorbs leaves `PRG ERR`
+  at 0, so the readout never appears for it.
+
+Every allocation that succeeds runs the retail instructions.
+
+With the fix, the played and late-game saves both pass the scene on SwanStation at 200 % and on
+PCSX-ReARMed's default, the settings that froze above, with `PRG ERR` 0 at the end (capture, cold
+boots of a patched scratch disc). A write watch on the bottom 256 bytes of RAM in PCSX-ReARMed's
+interpreter records no store at all through the scene, where the retail disc records 72. At
+console speed nothing fails and the scene loads `conc2` on the same vsync as retail. The design,
+and why halting and a stand-in beat the alternatives, is under
+[`randomizer-internals.md`](../../tooling/randomizer-internals.md#conkram-freeze-fix).
+
+### Addresses
+
+| Address | Image | What | Evidence |
+|---|---|---|---|
+| `concnow` `P2[17]`, `P2[18]` | MAN, extraction 0363 | the mirror walk-on and the crossing | disc data |
+| `0x80023CD0..0x80023CE0`, `0x80023D30`, `0x80023D3C` | `SCUS_942.54` | move-VM op `0x3C`: unchecked malloc, then the pose copy through the result | disassembly, capture |
+| `0x80023EF4` | `SCUS_942.54` | move-VM op `0x3D`: the retarget's store through the same block | disassembly |
+| `0x800232B8` | `SCUS_942.54` | move-VM op `0x08` HALT arm, the fix's failure exit | disassembly |
+| `0x80025B10` | `SCUS_942.54` | unreferenced thunk, the fix's quiet malloc entry | disassembly |
+| `0x801FAA00` | RAM | the fix's stand-in render node | capture |
+| `0x80017888`, failure arm `0x800178B8` | `SCUS_942.54` | malloc wrapper: on NULL adds `0x20000` to `PRG ERR` and returns NULL | disassembly |
+| `0x8002B468` | `SCUS_942.54` | allocator: best-fit over the free list at `*(gp+0x840) + 0xC` | disassembly |
+| `0x80021184..0x80021190` | `SCUS_942.54` | `FUN_80020F88`: `0x9C` render-node malloc, NULL stored at `actor+0x44` | disassembly |
+| `0x8001B098` | `SCUS_942.54` | `FUN_8001ADA4`: draw-path store through `actor+0x44` | disassembly, capture |
+| `0x80024BB0..0x80024C64` | `SCUS_942.54` | `FUN_800243F0`: post-swap battle pre-stage (`FUN_8003E360`, then `FUN_80052770`) | disassembly, capture |
+| `0x80000080` | RAM | the general exception vector the NULL copy overwrites | capture |
+| `0x8007B828` | RAM | `PRG ERR` counter, `0x20000` per failed allocation | disassembly, capture |
+
+### Scope
+
+This scene on any emulator that runs the CPU fast enough; how fast is enough depends on the party.
+Any other place where the free heap gets this low behaves the same way, and the unchecked
+keyframe-pose allocation serves every move-VM effect in the game, but no other report of this
+kind is known. On a console the allocation does not fail in either captured party. The
+[WORK ERR](#work-err-on-mt-rikuroa) section is the sibling limit: the fixed actor pool, not the
+heap.
+
+### Verifying it
+
+On an emulator with a CPU-speed setting, load a save in this room and raise the speed: the freeze
+comes back on demand, and lowering the speed clears it. In a debugger, break at `0x800178B8` (the
+malloc failure arm) during the crossing, and watch `0x80000080`: the vector changes from
+`00001A3C 800C5A27 08004003` to animation data, and the next interrupt ends at
+`0x80000080`/`0x80000084` with Cause `0x428`. `PRG ERR` (`0x8007B828`) reads `0x20000` or more.
+
+### Open questions
+
+- Why the frame rate changes the live part count: whether the spawner (stager record 2, `25 03`
+  four times a pass) and the parts' lifetimes count different clocks. The rendered frame rate and
+  the heap fall are measured; the link between them is inference.
+- Why the PAL release would not freeze. Its 50 Hz field gives the CPU more time per frame, which
+  would help, but no PAL disc was run.
+- Which ePSXe changes the reported 1.7.0 / 1.8.0 split matches; 1.6.0 and 1.9.0 did not run here.
+- Whether pressing fast saves a marginal setting; none of the freezing settings tried was marginal.
 
 ## The two summon flutes
 

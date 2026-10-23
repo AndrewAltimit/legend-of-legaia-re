@@ -31,6 +31,31 @@ pub const SUMMON_CREATURE_SEAT: i16 = 7;
 /// coplanar lifts (the field drop shadow's six units).
 pub const BATTLE_SHADOW_DEPTH_LIFT: f32 = 2.5;
 
+/// Where a battle body's ground shadow sits off its node position: the
+/// drawn pose's centroid, turned onto the ground.
+///
+/// Retail does not centre the disc on the node. `FUN_80048A08` loads the
+/// actor's view rotation and, as translation, the node position `+0x14`
+/// with its height `+0x16` zeroed (`0x80049044..0x800490AC`), then runs
+/// the GTE `MVMVA` (`0x80049104`) on the vector `(pool[0x120], 0,
+/// pool[0x124])` (`0x800490B0..0x800490F8`), where `pool = gp[0xA0C] +
+/// 0x6F4` is the pose pool the decoder `FUN_8004998C` just filled and its
+/// `+0x120 / +0x124` the pose's `(x, z)` centroid
+/// (`0x8004A3DC..0x8004A42C`). The result is the shadow's translation:
+/// the point under the body pair, recomputed from this draw's pose. A clip
+/// that carries its body off the node (Vahn knocked back by Tail Fire on
+/// `battle_gimard_tail_fire_a`) leaves its shadow under the body, not
+/// under the node. The rotation is the facing turn the body-pair store
+/// makes ([`super::locomotion::body_offset`]); the port's battle bodies
+/// carry no pitch, so the centroid's ground projection has no height.
+// PORT: FUN_80048A08 (`0x80049034..0x8004914C`, the shadow's translation)
+fn battle_shadow_offset(actor: &crate::world::Actor) -> (i16, i16) {
+    super::locomotion::stream_pose(actor)
+        .map(super::locomotion::pose_centroid_xz)
+        .map(|(cx, cz)| super::locomotion::body_offset(actor.battle.facing_angle, cx, cz, 0x1000))
+        .unwrap_or((0, 0))
+}
+
 /// One battle body's draw decision for this frame - the retail tint pass
 /// (`FUN_8004A908`) and the draw tick that gates it (`FUN_800480D8`), run
 /// over live world state.
@@ -315,7 +340,10 @@ impl World {
             top: b.flag_word & 0xFF00_0000,
             blend: b.render_blend,
             render_flag: b.render_flag,
-            status: self.battle.status_effects.display_flags(actor_idx as u8),
+            // The whole `+0x16E` word the pass reads (`0x8004AC8C`): the
+            // typed ailments and the raw bits only the raw side carries -
+            // the Rage arm's `0x380` delegation group among them.
+            status: self.raw_status_word(actor_idx as u8),
             fade: 0,
             radius,
             view_z,
@@ -477,12 +505,13 @@ impl World {
             shadow.outer,
             shadow.radius,
         );
+        let (dx, dz) = battle_shadow_offset(actor);
         Some(legaia_engine_effects::effect_ribbon::RibbonDraw {
             mesh,
             world_pos: [
-                f32::from(m.world_x),
+                f32::from(m.world_x.wrapping_add(dx)),
                 -BATTLE_SHADOW_DEPTH_LIFT,
-                f32::from(m.world_z),
+                f32::from(m.world_z.wrapping_add(dz)),
             ],
             rot: [0.0; 3],
             // A battle body's ground shadow is not a move-VM node; it draws
@@ -736,6 +765,51 @@ mod tests {
         assert!(!all.is_empty());
         world.actors[0].move_state.render_24 = 0x100;
         assert!(world.battle_ground_shadow(0, &plan).is_none());
+    }
+
+    /// The disc sits under the drawn pose's centroid, turned by the facing,
+    /// not under the node: a clip whose parts stand 400 units forward of the
+    /// node moves the shadow with them (`FUN_80048A08`'s `MVMVA` of the pose
+    /// pool's `+0x120 / +0x124`).
+    #[test]
+    fn the_ground_shadow_follows_the_pose_centroid() {
+        use legaia_actor_formats::monster_archive::{MonsterAnimation, PartPose};
+        let mut world = battle_world();
+        world.actors[0].move_state.world_x = 100;
+        world.actors[0].move_state.world_z = -700;
+        let plan = world
+            .battle_actor_draw_plan(0, Some(&pose(4000.0)), 4.0, false)
+            .expect("party seat");
+        let anim = MonsterAnimation {
+            variant_track: Default::default(),
+            action_id: 0,
+            rate: 1,
+            attach_key: 0,
+            solo_flag: 0,
+            impact_class: 0,
+            effect_script: Vec::new(),
+            part_count: 2,
+            frame_count: 1,
+            frames: vec![vec![
+                PartPose {
+                    tz: 400,
+                    ..PartPose::default()
+                };
+                2
+            ]],
+        };
+        let a = &mut world.actors[0];
+        a.battle_animation = legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(&anim);
+        a.pose_frame = Some(a.battle_animation.as_mut().unwrap().seat_cursor(0));
+        for (facing, want) in [(0u16, [100.0, -300.0]), (0x800, [100.0, -1100.0])] {
+            world.actors[0].battle.facing_angle = facing;
+            let d = world.battle_ground_shadow(0, &plan).expect("a shadow");
+            assert!(
+                (d.world_pos[0] - want[0]).abs() <= 1.0 && (d.world_pos[2] - want[1]).abs() <= 1.0,
+                "facing {facing:#x}: {:?}",
+                d.world_pos
+            );
+        }
     }
 
     /// The seated summon creature is a tinted body on retail's seat 7: PROT

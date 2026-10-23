@@ -181,6 +181,8 @@ impl World {
         self.battle.empty_seat_ground = [(0, 0); 7];
         self.battle.seed_recentre_held = false;
         self.battle.monster_flee_attempted = false;
+        // No pass has drawn this fight's bodies yet.
+        self.battle.readout_trios.clear();
         // The battle scene setup re-seeds object-effect row 0
         // (`0x80055DDC..0x80055DF8`).
         // REF: FUN_80055B6C

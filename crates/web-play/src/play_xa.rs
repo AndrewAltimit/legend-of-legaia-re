@@ -388,7 +388,7 @@ mod tests {
     /// A runtime whose disc carries `XA7.XA` and whose director knows it.
     fn runtime_with_xa7() -> LegaiaRuntime {
         let mut rt = LegaiaRuntime::new();
-        rt.disc_files.push(crate::disc::FileEntry {
+        rt.disc_files.push(legaia_iso::image::FileEntry {
             path: "XA/XA7.XA;1".into(),
             lba: 1000,
             size: 8 * 2048 * 300,
@@ -469,7 +469,7 @@ mod tests {
         let d = rt.audio_director().unwrap();
         assert!(d.play_xa_clip(6, 4, 686).is_none());
         assert!(d.xa_stage_requests().is_empty());
-        rt.disc_files.push(crate::disc::FileEntry {
+        rt.disc_files.push(legaia_iso::image::FileEntry {
             path: "XA/XA7.XA;1".into(),
             lba: 1000,
             size: 2048 * 10,

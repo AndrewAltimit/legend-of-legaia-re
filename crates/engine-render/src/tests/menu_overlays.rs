@@ -26,7 +26,7 @@ use legaia_engine_ui::StatusSatelliteView;
 use legaia_engine_ui::StatusStatRow;
 use legaia_engine_ui::capture_banner_draws_for;
 use legaia_engine_ui::encounter_banner_draws_for;
-use legaia_engine_ui::equip_screen_draws_for;
+use legaia_engine_ui::equip_screen_draws_for_with;
 use legaia_engine_ui::equip_screen_sprites_for;
 use legaia_engine_ui::field_menu_draws_for;
 use legaia_engine_ui::inventory_use_draws_for;
@@ -36,9 +36,9 @@ use legaia_engine_ui::options_draws_for;
 use legaia_engine_ui::shop_draws_for;
 use legaia_engine_ui::spell_menu_draws_for;
 use legaia_engine_ui::status_icon_sprites_for;
-use legaia_engine_ui::status_satellite_draws_for;
+use legaia_engine_ui::status_satellite_draws_for_with;
 use legaia_engine_ui::status_satellite_icon_sprites_for;
-use legaia_engine_ui::status_screen_draws_for;
+use legaia_engine_ui::status_screen_draws_for_with;
 use legaia_engine_ui::tab_banner_draws;
 use legaia_engine_ui::tactical_arts_editor_draws_for;
 
@@ -145,18 +145,17 @@ fn field_menu_draws_emit_rows_and_footer() {
             enabled: false,
         },
     ];
-    let draws = field_menu_draws_for(&font, &rows, 0, 1234, 90, (24, 24), (24, 178));
+    let draws = field_menu_draws_for(&font, &rows, 0, 1234, 90, None, (24, 24), (24, 178));
     assert!(!draws.is_empty());
     // Retail rows are all-white ink (selection = the hand sprite, drawn
-    // by the sprite pass); a disabled row grays out (the CLUT-0 stand-in
-    // is strictly darker than the CLUT-7 white).
+    // by the sprite pass); a disabled row draws in the CLUT-0 grey.
     let any_white = draws
         .iter()
         .any(|d| (d.color[0] - MENU_TEXT_WHITE[0]).abs() < 1e-5);
     assert!(any_white);
     let any_dim = draws
         .iter()
-        .any(|d| d.color[0] < 0.5 && d.color[0] > 0.05 && d.dst.1 < 178);
+        .any(|d| d.color == legaia_engine_ui::MENU_TEXT_GREY && d.dst.1 < 178);
     assert!(any_dim);
     // Row text starts at the retail label inset (WX + 0x14) and rows sit
     // on the 14-px pitch.
@@ -202,7 +201,8 @@ fn status_screen_draws_pack_panel() {
         equip_rows: &equip_rows,
         status: 0,
     };
-    let draws = status_screen_draws_for(&font, &panel, Some("L1/R1: Switch"), (16, 32), false);
+    let draws =
+        status_screen_draws_for_with(&font, None, &panel, Some("L1/R1: Switch"), (16, 32), false);
     assert!(!draws.is_empty());
 }
 
@@ -315,8 +315,8 @@ fn status_screen_label_icons_suppresses_ap_text_and_empty_equips() {
         equip_rows: &equip_rows,
         status: 0,
     };
-    let with_icons = status_screen_draws_for(&font, &panel, None, (90, 16), true);
-    let without = status_screen_draws_for(&font, &panel, None, (90, 16), false);
+    let with_icons = status_screen_draws_for_with(&font, None, &panel, None, (90, 16), true);
+    let without = status_screen_draws_for_with(&font, None, &panel, None, (90, 16), false);
     // The icons variant emits strictly fewer glyphs: no LV/HP/MP tags,
     // no "AP  4/100" readout, no empty-slot text.
     assert!(with_icons.len() < without.len());
@@ -605,8 +605,9 @@ fn equip_screen_draws_slot_rows_at_retail_offsets() {
         },
     ];
     let view = equip_view(&slots, &[], &[], EquipDrawPhase::SlotPicker);
-    let draws = equip_screen_draws_for(
+    let draws = equip_screen_draws_for_with(
         &font,
+        None,
         &view,
         EQUIP_PARTY_PEN,
         EQUIP_LIST_PEN,
@@ -677,8 +678,9 @@ fn equip_screen_draws_item_picker_fills_list_window_and_stat_compare() {
         &stat_compare,
         EquipDrawPhase::ItemPicker,
     );
-    let draws = equip_screen_draws_for(
+    let draws = equip_screen_draws_for_with(
         &font,
+        None,
         &view,
         EQUIP_PARTY_PEN,
         EQUIP_LIST_PEN,
@@ -707,8 +709,9 @@ fn equip_screen_draws_item_picker_fills_list_window_and_stat_compare() {
         &stat_compare,
         EquipDrawPhase::SlotPicker,
     );
-    let draws = equip_screen_draws_for(
+    let draws = equip_screen_draws_for_with(
         &font,
+        None,
         &browse,
         EQUIP_PARTY_PEN,
         EQUIP_LIST_PEN,
@@ -752,16 +755,18 @@ fn equip_screen_draws_confirm_phase_shows_yes_no_prompt() {
     }];
     let mut view = equip_view(&slots, &candidates, &[], EquipDrawPhase::Confirm);
     view.confirm_label = Some("Equip Steel Sword?");
-    let with_confirm = equip_screen_draws_for(
+    let with_confirm = equip_screen_draws_for_with(
         &font,
+        None,
         &view,
         EQUIP_PARTY_PEN,
         EQUIP_LIST_PEN,
         EQUIP_MAIN_PEN,
     );
     let picker = equip_view(&slots, &candidates, &[], EquipDrawPhase::ItemPicker);
-    let without = equip_screen_draws_for(
+    let without = equip_screen_draws_for_with(
         &font,
+        None,
         &picker,
         EQUIP_PARTY_PEN,
         EQUIP_LIST_PEN,
@@ -1103,8 +1108,10 @@ fn status_satellite_text_uses_retail_pitch_and_suppresses_stand_ins() {
         name: "Vahn",
         level: 1,
     };
-    let with_icons = status_satellite_draws_for(&font, &view, (14, 38), (14, 92), (14, 134), true);
-    let without = status_satellite_draws_for(&font, &view, (14, 38), (14, 92), (14, 134), false);
+    let with_icons =
+        status_satellite_draws_for_with(&font, None, &view, (14, 38), (14, 92), (14, 134), true);
+    let without =
+        status_satellite_draws_for_with(&font, None, &view, (14, 38), (14, 92), (14, 134), false);
     // Names land at x=20 (WX+6) on rows 38 and 52 (pitch 14).
     assert!(with_icons.iter().any(|d| d.dst.0 == 20 && d.dst.1 == 38));
     assert!(with_icons.iter().any(|d| d.dst.0 == 20 && d.dst.1 == 52));
@@ -1141,7 +1148,7 @@ fn status_screen_hp_row_uses_retail_digit_cells_and_teal_parens() {
         equip_rows: &[],
         status: 0,
     };
-    let draws = status_screen_draws_for(&font, &panel, None, (90, 16), true);
+    let draws = status_screen_draws_for_with(&font, None, &panel, None, (90, 16), true);
     let hp_y = 16 + 0x13;
     let hp_row: Vec<i32> = draws
         .iter()

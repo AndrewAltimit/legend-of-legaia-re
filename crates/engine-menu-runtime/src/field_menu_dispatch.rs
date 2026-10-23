@@ -21,6 +21,7 @@
 //! engine - see [`apply_equip_outcome`] / [`apply_inventory_outcome`] /
 //! [`apply_spell_outcome`] / [`apply_arts_outcome`] for the typed helpers.
 
+use crate::bag_rows::WorldBagRows;
 use legaia_engine_battle::battle_stats::{EquipmentTable, StatusModifiers};
 use legaia_engine_battle::magic_xp::SpellLevelNotice;
 use legaia_engine_battle::spells::SpellCatalog;

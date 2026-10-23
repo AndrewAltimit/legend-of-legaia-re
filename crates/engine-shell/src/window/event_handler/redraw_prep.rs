@@ -52,6 +52,7 @@ impl PlayWindowApp {
             };
             if due {
                 sc.seat_fog_due.set(true);
+                sc.popup_cells_due.set(true);
             }
             // ... and the ambient tree's sprite-arm sheets where retail's
             // emitters had put them (`LEGAIA_SEAT_SPRITE_ARMS`).
@@ -126,6 +127,35 @@ impl PlayWindowApp {
                             .world
                             .seat_battle_hud_glide(g.target, g.elapsed);
                     }
+                }
+            }
+            // The newest numeral on the struck slot, aged to the rise
+            // retail's displayed frame drew (`LEGAIA_SEAT_POPUP_AGE`).
+            // The popup and its anchor are both rewound: the trio it rose
+            // over that many frames ago (`popup_trio_history`).
+            if let Some((slot, age)) = sc.seat_popup_age {
+                let world = &self.session.host.world;
+                let trios: Vec<Option<[f32; 3]>> = (0..world.actors.len())
+                    .map(|i| world.battle_readout_trio(i))
+                    .collect();
+                let mut history = sc.popup_trio_history.borrow_mut();
+                history.push_back(trios);
+                if history.len() > 16 {
+                    history.pop_front();
+                }
+                if due
+                    && sc.popup_trio_rewind.get().is_none()
+                    && let Some(p) = self
+                        .battle_hud
+                        .popups
+                        .iter_mut()
+                        .filter(|p| p.slot == slot && p.status.is_none())
+                        .min_by_key(|p| p.frames_total.saturating_sub(p.frames_remaining))
+                {
+                    let now = p.frames_total.saturating_sub(p.frames_remaining);
+                    p.frames_remaining = p.frames_total.saturating_sub(age);
+                    sc.popup_trio_rewind
+                        .set(Some((slot, now.saturating_sub(age))));
                 }
             }
             if due && let Some((width, plate)) = sc.seat_spirit_gauge {
@@ -206,6 +236,19 @@ impl PlayWindowApp {
             && gate.met(&self.session.host.world)
         {
             gate.align_camera(&mut self.session.host.world);
+        }
+        // ... and a module shot still walking, onto the displayed frame's
+        // pose (`LEGAIA_BATTLE_MODULE_CAM_ALIGN`,
+        // `BattleCamera::align_module_shot`).
+        if let Some((live, end)) = self
+            .screenshot
+            .as_ref()
+            .and_then(|sc| sc.battle_module_cam_align)
+            && self.session.host.world.mode == SceneMode::Battle
+            && self.capture_phase_met()
+            && let Some(cam) = self.session.host.world.battle.camera.as_mut()
+        {
+            cam.align_module_shot(live, end);
         }
         // ... and, on the captured phase itself, the glide's origin
         // (`LEGAIA_BATTLE_CAM_ALIGN`, `BattleCamera::align_glide_origin`).

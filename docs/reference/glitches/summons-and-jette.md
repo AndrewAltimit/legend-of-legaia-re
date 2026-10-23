@@ -259,7 +259,7 @@ what the switch does, not who flips it. What turns it on during ordinary play is
 is why this is partially explained and not explained. It is the same stale switch, read by the
 same instructions, that parks a monster in the
 [`0x19` approach softlock](../../subsystems/battle-action-exit-gates.md#the-stale-field-0x1dc-bit-2-the-exit-to-idle-anim-event-flag)
-known from the Gaza fight; there a flinch leaves it set on a monster, here something leaves it set
+known from the Gaza fight; there Kemaro's put-back leaves it set on a monster, here something leaves it set
 on the summon seat.
 
 ### Mechanism
@@ -366,8 +366,9 @@ white-out. That is the reported symptom.
   cost one mote, not the creature's pose.
 - **The pool flush overrunning the pool.** `FUN_80050E74` walks `0x80` words where the allocator
   fills `0x60`. The array really is `0x80` words: battle init `FUN_80055B6C` zeroes `0x80`
-  (`0x8005603C..0x80056050`) and the per-frame release walks `0x80`. No code on the disc
-  references the last 32 words, so they stay zero and the flush skips them.
+  (`0x8005603C..0x80056050`) and the per-frame release walks `0x80`. The allocator never
+  fills the last 32 words; the only actors in them are the ones modules park there by hand
+  (Horn's and Jedo's held fades at `0x801C92EC`), which the flush is meant to halt.
 - **Rogue's Tower itself.** One Orb cast in a Rogue's Tower random battle, with screenshots through
   the whole animation, matches a reference cast on the plains frame for frame at the sampled rate.
   A single clean cast does not clear a location for a fault that happens "sometimes".
@@ -390,7 +391,7 @@ What remains is `inference`: a routine outside the cast modules that stages a re
 actor it is pointed at. After a summon ends, slot 7 keeps a non-zero HP and is no longer animated,
 so a bit set on it then is never consumed by a natural clip end and is still there at the next
 seat. Code outside the cast modules that sets bit `0x4` includes `0x80042144` (the hit flinch of
-`FUN_800402F4`, the setter in the Gaza softlock), `0x8004F8D0` and the commit ladder at
+`FUN_800402F4`, the item and Spirit flinch), `0x8004F8D0` and the commit ladder at
 `0x8004BF08` in `SCUS_942.54`, and `0x801E19DC`, `0x801E4868`, `0x801E5E9C` and `0x801EEC84` in
 PROT entry 0898. That list comes from a pattern scan and is a floor. Which of them can be handed
 slot 7 is not traced.

@@ -57,7 +57,9 @@ pub const ESCAPE_CHARACTER_NAME: u8 = 0xC1;
 /// `0xC2 n`: item `n`'s name.
 pub const ESCAPE_ITEM_NAME: u8 = 0xC2;
 
-/// One label's raw bytes: the string after the `@` lead, up to its NUL, with
+/// One label's raw bytes: the string from its `@` lead (a width-0 blank
+/// glyph retail draws as a one-pixel advance - see
+/// [`crate::pause_screens::menu_overlay_string`]) up to its NUL, with
 /// every `0xC1..=0xC7` escape kept together with its operand byte (an
 /// operand may itself be `0`, which is why a plain C-string read stops
 /// short of a label that opens `[0xC1 0x00]`).
@@ -68,13 +70,15 @@ impl ShopLabel {
     /// Read the label at `va` out of a PROT 0899 image; empty when the VA is
     /// outside it.
     pub fn read(overlay: &[u8], va: u32) -> Self {
+        // A label a language pack moved is read where the code now finds it.
+        let va = legaia_game_tables::menu_string_refs::resolve_va(overlay, va);
         let Some(rest) = va
             .checked_sub(MENU_OVERLAY_BASE_VA)
             .and_then(|o| overlay.get(o as usize..))
         else {
             return Self::default();
         };
-        let body = rest.strip_prefix(b"@").unwrap_or(rest);
+        let body = rest;
         let mut out = Vec::new();
         let mut i = 0;
         while let Some(&b) = body.get(i) {
@@ -98,7 +102,7 @@ impl ShopLabel {
 
     /// `true` when nothing was read.
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.0.strip_prefix(b"@").unwrap_or(&self.0).is_empty()
     }
 
     /// The label as text, with its name escapes expanded through `name`
@@ -258,15 +262,17 @@ mod tests {
     fn an_escape_keeps_its_zero_operand() {
         let img = image_with(0x801C_EC08, b"@\xC1\x00 abc\x00");
         let l = ShopLabel::read(&img, 0x801C_EC08);
-        assert_eq!(l.0, b"\xC1\x00 abc");
+        assert_eq!(l.0, b"@\xC1\x00 abc");
         let s = l.text(|e, op| (e == 0xC1 && op == 0).then(|| "Name".to_string()));
-        assert_eq!(s, "Name abc");
+        assert_eq!(s, "@Name abc");
     }
 
     #[test]
     fn a_plain_label_reads_to_its_nul() {
         let img = image_with(0x801C_EB94, b"@Abc\x00\x00@Def");
-        assert_eq!(ShopLabel::read(&img, 0x801C_EB94).plain(), "Abc");
+        // The `@` lead is kept: retail draws it as a blank one-pixel glyph.
+        assert_eq!(ShopLabel::read(&img, 0x801C_EB94).plain(), "@Abc");
+        assert!(ShopLabel::read(&image_with(0x801C_EB94, b"@\x00"), 0x801C_EB94).is_empty());
     }
 
     #[test]

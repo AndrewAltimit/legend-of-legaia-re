@@ -299,6 +299,7 @@ fn gimard_spell_def() -> legaia_engine_battle::spells::SpellDef {
 
 mod actor_alloc_init;
 mod actor_cadence;
+mod ambient_cell_cycler;
 mod ambient_collision_exempt;
 mod battle_anim;
 mod battle_ap_carry;
@@ -348,6 +349,7 @@ mod field_timer_actors;
 mod flash_limiter;
 mod fog_region_reset;
 mod game_over_hold;
+mod gameplay_tweaks;
 mod inline_dialogue;
 mod item_bag_steal;
 mod item_held_query;
@@ -385,4 +387,5 @@ mod worldmap;
 mod battle_auto_attack;
 mod battle_formation_span;
 mod battle_make_way;
+mod battle_rage_turn;
 mod battle_target_ring;

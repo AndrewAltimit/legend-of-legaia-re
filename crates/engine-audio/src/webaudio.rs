@@ -94,20 +94,11 @@ impl WebAudioOut {
                 let mut right = vec![0.0f32; length];
                 {
                     let mut s = state_cb.borrow_mut();
-                    // The monaural downmix is applied here rather than inside
-                    // `next_frame`, exactly as the cpal callback applies it -
-                    // the mute gate is in `next_frame` and reaches both
-                    // backends for free, but the downmix is a per-callback
-                    // channel decision and each backend has to make it.
-                    let mono = s.mono;
+                    // The host downmix (`downmix_mono`) and the mute gate
+                    // are both inside `next_frame`, shared with the cpal
+                    // backend.
                     for i in 0..length {
                         let (l, r) = s.next_frame();
-                        let (l, r) = if mono {
-                            let m = ((l as i32 + r as i32) / 2) as i16;
-                            (m, m)
-                        } else {
-                            (l, r)
-                        };
                         left[i] = l as f32 / i16::MAX as f32;
                         right[i] = r as f32 / i16::MAX as f32;
                     }

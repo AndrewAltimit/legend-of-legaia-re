@@ -432,12 +432,15 @@ pub fn begin_formation_arm_for<H: BattleActionHost + ?Sized>(
 /// displayed-skill list ([`crate::battle_arts_auto_combo::auto_fill_queue`]).
 ///
 /// The **pool arm** - the AP-budgeted `DAT_801C9360[slot][cmd]` draw the same
-/// function takes when the passive is clear - is not driven from here: its
-/// per-(character, weapon) command records with their `+0x74` costs and the
-/// four-entry status-guard mask table at `0x801F672C` have no parser, so
-/// calling [`crate::battle_arts_auto_combo::build_candidate_pool`] would draw
-/// from an empty pool. `engine-core` keeps driving auto-fighting party members
-/// through its own stand-in physical action on that leg.
+/// function takes when the passive is clear - is not driven from here: it
+/// needs the equipped swing records and the guard masks, which `engine-core`
+/// holds, so `World::run_auto_attack_pool_arms` runs it at the same seam.
+///
+/// The seats this leg takes are recorded in
+/// [`BattleActionCtx::delegated_seats`]; the host's turn dispatch plays their
+/// stream as it stands, which is what retail's seed does (the builder
+/// `FUN_801EED1C` finds no arrow string to tokenize in a stream of action
+/// constants and leaves it alone).
 ///
 /// The target roll consumes one host RNG draw per selected slot and the
 /// fill consumes two per iteration, in retail's own order (stop roll, then
@@ -481,6 +484,7 @@ fn auto_fill_party_queues<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut 
             .unwrap_or(false)
     };
     let monster_standing = (0..monsters).any(|m| retail_alive(RETAIL_FIRST_MONSTER + m));
+    ctx.delegated_seats = 0;
     for slot in 0..party {
         let Some(status) = host.actor(slot).map(|a| a.field_flags) else {
             continue;
@@ -491,10 +495,13 @@ fn auto_fill_party_queues<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut 
         // `li v0,0x1` / `sw v0,0x696c(v1)` at `0x801F0514..0x801F0518`: the
         // first store past the `+0x16E & 0x404` veto raises the builder's
         // special-trigger flag `0x801F696C`, which the strike loop's drift
-        // reads at `0x801E3840`. The player builder `FUN_801EED1C` clears it
-        // at its head (`0x801EED88`), but a delegated member never runs that
-        // builder, so the flag stands for the round.
+        // reads at `0x801E3840`. The builder `FUN_801EED1C` clears it at its
+        // head (`0x801EED88`) and the seed `0x0C` calls that builder for
+        // every party seat, a delegated one included (`jal 0x801eed1c` at
+        // `0x801E2C7C`, gated only on seat `< 3`), so the flag stands until
+        // the round's first party dispatch.
         ctx.super_trigger = true;
+        ctx.delegated_seats |= 1 << slot;
         // Retail's order: category and target are written first
         // (`0x801F0528` / `0x801F0578`), and the learned-arts count gate that
         // can end the slot comes after (`0x801F05AC`) - so a delegated member

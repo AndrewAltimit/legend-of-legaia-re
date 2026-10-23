@@ -47,22 +47,22 @@
 //! address, the brightness / flash / cursor / slide globals the phases read,
 //! and the story-flag bank the picker commits into.
 //!
-//! Three things it supplies are the **port's** rather than retail's, and the
+//! Two things it supplies are the **port's** rather than retail's, and the
 //! host names each where it defines it: the panel-script table (retail's live
-//! at overlay VAs the engine never loads), the pad chords that install an
-//! actor, and the fact that an [`ActorExit`] retires the actor instead of
-//! selecting the next handler.
+//! at overlay VAs the engine never loads) and the pad chords that install an
+//! actor.
 //!
-//! That last one is a *table* gap, not a dispatcher gap. The dispatcher
-//! `FUN_801F159C` **is** ported, as [`crate::submode_hub_actors::hub_dispatch`],
-//! but it takes `PTR_FUN_801F33B4[actor.state]` as a caller-supplied closure -
-//! the 52-entry table itself is what resolves a handler id, and
-//! [`crate::submode_hub_actors::slot`] names seven of its entries. The sub-list,
-//! text-box and flag-window exits all hand back to id `0x1A`, which is one of
-//! the seven ([`crate::submode_hub_actors::slot::DRAW_TICK`]); the fade/flash
-//! exits pick `0x29` and `0x2B`, which are not. Following an exit therefore
-//! needs the rest of that table read out of the overlay image first, so the
-//! host applies the stores and records the pair.
+//! An [`ActorExit`] is followed where the next handler's body is ported. The
+//! dispatcher `FUN_801F159C` **is** ported, as
+//! [`crate::submode_hub_actors::hub_dispatch`], and resolves an id through the
+//! 52-entry `PTR_FUN_801F33B4`, whose slots [`crate::submode_hub_actors::slot`]
+//! names. The fade/flash exits pick `0x29` and `0x2B` - the table's words
+//! there are `FUN_801EE094` (Riremito) and `FUN_801EE328` (Rula) in the PROT
+//! 0897 image - and the host continues as those travel arts. The sub-list,
+//! text-box and flag-window exits hand back to `0x1A`
+//! ([`crate::submode_hub_actors::slot::DRAW_TICK`]), the draw tick
+//! `FUN_801F20B0`, which the host runs next: it installs the panel script at
+//! `0x801F2A88`, pumps, and clears the completion gate so the actor retires.
 
 use crate::world_map_panel::{CursorOutcome, CursorPad, list_cursor_input};
 

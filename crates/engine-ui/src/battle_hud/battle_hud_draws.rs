@@ -790,6 +790,27 @@ pub fn battle_hud_draws_for(
                 ink,
             );
         }
+    } else if frame.begin_tab && !frame.plaque_seat_taken {
+        // The commit-confirm screen `0x6E`: the tab stays on its seat and
+        // the plaque has gone back up behind the top edge, so the tab
+        // stands alone (`party_basic_attack_vs_gobu_gobu`).
+        let (tab_dx, tab_dy) = frame.begin_tab_offset;
+        plate_run(
+            &mut text,
+            &mut sprites,
+            BEGIN_TAB_X + tab_dx,
+            BEGIN_TAB_Y + tab_dy,
+            BEGIN_TAB_INTERIOR_W,
+            true,
+        );
+        stage_text(
+            &mut text,
+            font,
+            BEGIN_TAB_LABEL,
+            BEGIN_TAB_X + tab_dx + PLATE_CAP_W,
+            BEGIN_TAB_Y + tab_dy + PLAQUE_CONTENT_DY,
+            ink,
+        );
     }
 
     // ---- The move-name label ----

@@ -40,11 +40,14 @@ pub(crate) fn run_field(
     let prot_path = extracted_root.join("PROT.DAT");
     let cdname_path = extracted_root.join("CDNAME.TXT");
     if !prot_path.exists() {
-        anyhow::bail!("missing {} (run legaia-extract first)", prot_path.display());
+        anyhow::bail!(
+            "missing {} (run legaia-extract first, or point --extracted-root at its output folder)",
+            prot_path.display()
+        );
     }
     if !cdname_path.exists() {
         anyhow::bail!(
-            "missing {} (run legaia-extract first)",
+            "missing {} (run legaia-extract first, or point --extracted-root at its output folder)",
             cdname_path.display()
         );
     }

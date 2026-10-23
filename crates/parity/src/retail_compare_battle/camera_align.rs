@@ -306,3 +306,62 @@ pub(super) fn displayed_cam_live_steps(
         ],
     }
 }
+
+/// The live pose the displayed frame was drawn at under a **module shot**:
+/// retail's live camera walked back along a tween table built once.
+///
+/// A slot-B arm calls the builder `FUN_801D829C` on the pass it runs and
+/// never again, so the table the RAM holds is the one every pass since has
+/// walked: each pass moved a component `increment * frame_step` toward its
+/// endpoint (`FUN_8002149C`), and the pass before stood exactly that much
+/// further back - not the widening share [`displayed_cam_live_steps`] walks
+/// for a table re-armed every pass. A component already on its endpoint is
+/// left there: when it landed is not in the table.
+///
+/// `steps` are the passes to walk back, each on its own frame step, newest
+/// first.
+pub(super) fn displayed_module_cam_live(
+    ram: &[u8],
+    ctx: u32,
+    steps: &[u8],
+) -> legaia_engine_camera::projection::BattleCamPose {
+    let (live, _) = retail_cam_tween(ram, ctx);
+    let vsyncs: i32 = steps.iter().map(|&s| i32::from(s.max(1))).sum();
+    let raw_live: [i32; 9] = [
+        i32::from(game_anchors::u16_at(ram, 0x8007_B790) as i16),
+        i32::from(game_anchors::u16_at(ram, 0x8007_B792) as i16),
+        0,
+        game_anchors::u32_at(ram, 0x8008_40B8) as i32,
+        game_anchors::u32_at(ram, 0x8008_40BC) as i32,
+        game_anchors::u32_at(ram, 0x8008_40C0) as i32,
+        game_anchors::u32_at(ram, 0x8008_9118) as i32,
+        game_anchors::u32_at(ram, 0x8008_911C) as i32,
+        game_anchors::u32_at(ram, 0x8008_9120) as i32,
+    ];
+    let mut back = [0i32; 9];
+    for k in (0..9u32).filter(|&k| k != 2) {
+        let at = ctx + TWEEN_TABLE + k * 4;
+        let inc = i32::from(game_anchors::u16_at(ram, at) as i16).abs();
+        let end = game_anchors::u16_at(ram, at + 2) as i16;
+        let gap = i32::from(end.wrapping_sub(raw_live[k as usize] as i16));
+        if inc == 0 || gap == 0 {
+            continue;
+        }
+        back[k as usize] = gap.signum() * inc * vsyncs;
+    }
+    let ang = |v: f32, k: usize| (v - back[k] as f32).rem_euclid(4096.0);
+    legaia_engine_camera::projection::BattleCamPose {
+        pitch: ang(live.pitch, 0),
+        yaw: ang(live.yaw, 1),
+        tr: [
+            live.tr[0] - back[3] as f32,
+            live.tr[1] - back[4] as f32,
+            live.tr[2] - back[5] as f32,
+        ],
+        focus: [
+            live.focus[0] + back[6] as f32,
+            live.focus[1] + back[7] as f32,
+            live.focus[2] + back[8] as f32,
+        ],
+    }
+}

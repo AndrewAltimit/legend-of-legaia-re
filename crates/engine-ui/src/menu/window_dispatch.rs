@@ -297,7 +297,10 @@ mod tests {
         for &(id, va) in renderers {
             windows[id].renderer_va = va;
         }
-        MenuWindowTable { windows }
+        MenuWindowTable {
+            windows,
+            ..Default::default()
+        }
     }
 
     #[test]

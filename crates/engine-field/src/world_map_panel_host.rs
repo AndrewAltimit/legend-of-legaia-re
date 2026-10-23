@@ -31,15 +31,14 @@
 //!    handler id into `ctx[+0x50]`, which `FUN_801F159C` turns back into a
 //!    function pointer through the 52-entry `PTR_FUN_801F33B4`. The
 //!    dispatcher itself is ported
-//!    ([`crate::submode_hub_actors::hub_dispatch`]) but takes the
-//!    resolved handler as a closure, and only seven of the table's slots are
-//!    read out ([`crate::submode_hub_actors::slot`]) - `0x1A`, which
-//!    the sub-list / text-box / flag-window exits hand back to, and not the
-//!    `0x29` / `0x2B` the fade/flash exits pick. So [`ActorExit::apply`] makes
-//!    all four stores here and [`PanelActorHost::retire`] drops the actor,
-//!    recording the pair in [`PanelFrame::exits`] rather than following it -
-//!    except for id `0`, the close tick, which it does follow
-//!    ([`PanelActorKind::CloseTick`]).
+//!    ([`crate::submode_hub_actors::hub_dispatch`]) and takes the resolved
+//!    handler as a closure. [`ActorExit::apply`] makes all four stores here;
+//!    [`PanelActorHost::retire`] then follows the ids whose bodies are ported:
+//!    `0`, the close tick ([`PanelActorKind::CloseTick`]), and `0x29` /
+//!    `0x2B`, the fade/flash exits' travel arts (table words `FUN_801EE094` /
+//!    `FUN_801EE328`), and `0x1A`, the draw tick the sub-list / text-box /
+//!    flag-window exits hand back to ([`PanelActorKind::DrawTick`]). It drops
+//!    the actor on any other id, recording the pair in [`PanelFrame::exits`].
 //! 3. **Which pad chord installs which actor.** Retail reaches these from
 //!    debug branches in the world-map controller. The engine's bindings live
 //!    on `World::tick_world_map_panels` and are tabulated there.

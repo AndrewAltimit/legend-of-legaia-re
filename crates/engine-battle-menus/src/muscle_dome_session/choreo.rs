@@ -80,6 +80,10 @@ pub struct ChoreoClips {
     pub reactions: [Option<MonsterAnimation>; 4],
     /// The swing per queued direction `0xC..=0xF`.
     pub swings: [Option<MonsterAnimation>; 4],
+    /// A monster's archive entries by index: the monster AI queues entry
+    /// indices into the stream (`FUN_801E9FD4`'s physical branch), and the
+    /// attack band stages each one as its own clip. Empty for the party.
+    pub by_entry: Vec<Option<MonsterAnimation>>,
 }
 
 /// One fighter as the choreography moves it.
@@ -139,6 +143,7 @@ impl ChoreoBody {
                 walk: clip(1),
                 reactions: PARTY_REACTION_SLOTS.map(clip),
                 swings: [0xC, 0xD, 0xE, 0xF].map(clip),
+                by_entry: Vec::new(),
             },
             party: true,
             reach: motion::PARTY_REACH_OFFSETS
@@ -205,6 +210,7 @@ impl ChoreoBody {
                 walk,
                 reactions,
                 swings,
+                by_entry: entries.clone(),
             },
             party: false,
             reach: 0,
@@ -487,6 +493,12 @@ impl DomeChoreo {
         match act {
             BodyAct::Idle => Some(&c.idle),
             BodyAct::Walk => c.walk.as_ref().or(Some(&c.idle)),
+            BodyAct::Swing(cmd) if !c.by_entry.is_empty() => c
+                .by_entry
+                .get(usize::from(cmd))
+                .and_then(Option::as_ref)
+                .or(c.swings.iter().flatten().next())
+                .or(Some(&c.idle)),
             BodyAct::Swing(cmd) => {
                 let k = usize::from(cmd.wrapping_sub(0xC)).min(3);
                 c.swings[k]
@@ -902,6 +914,7 @@ mod tests {
                     Some(anim(5, 6, 2, 0, 0, 0)),
                 ],
                 swings: [0xC, 0xD, 0xE, 0xF].map(|t| Some(anim(t, 12, 2, 8, 0, 5))),
+                by_entry: Vec::new(),
             },
             party,
             reach: if party {

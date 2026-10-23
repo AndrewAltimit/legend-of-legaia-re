@@ -394,12 +394,19 @@ impl World {
     /// (`field_flags & 0x380`); the engine bridges directly from
     /// [`StatusKind::Confuse`] instead, since the bit-set site is the still-open
     /// capture thread and the engine tracks status by kind. Wired for both the
-    /// monster physical strike ([`Self::take_monster_turn`]) and the party
-    /// physical strike ([`Self::arm_party_physical`], which the live loop routes
-    /// a confused party member through instead of opening the command menu).
+    /// monster physical strike ([`Self::take_monster_turn`]); the party-side
+    /// callers (the plain strike, the AI companion) are no-ops here.
     /// Confused monster *casts* flip via [`Self::confuse_retarget_cast`] (the
     /// cast path resolves a targets `Vec` rather than `active_target`).
+    ///
+    /// Monster seats only: `FUN_801E7320` has one caller in the disc, the
+    /// seed's `jal 0x801e7320` at `0x801E2CA0`, which a party seat never
+    /// reaches (`sltiu v0,a0,0x3` at `0x801E2C70` sends seats `0..=2` to the
+    /// builder instead). A confused party member keeps its target.
     pub(in crate::world) fn maybe_confuse_retarget(&mut self, slot: u8) {
+        if slot < self.party.party_count {
+            return;
+        }
         if self.actor_is_confused(slot) {
             self.resolve_monster_target(slot);
         }
@@ -414,9 +421,13 @@ impl World {
     /// self-only cast is left as-is, and the flip is skipped when the opposite
     /// side has no living member. No-op when `caster` isn't confused.
     ///
-    /// Monster-only in practice: a confused party member never reaches a cast -
-    /// it auto-flails physically (see [`Self::arm_party_physical`]).
+    /// Monster-only: a confused party member's committed cast keeps its
+    /// targets.
     pub(in crate::world) fn confuse_retarget_cast(&mut self, caster: u8, targets: &mut Vec<u8>) {
+        // Monster seats only, as `maybe_confuse_retarget`.
+        if caster < self.party.party_count {
+            return;
+        }
         if !self.actor_is_confused(caster) || targets.is_empty() {
             return;
         }

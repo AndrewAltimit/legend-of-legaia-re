@@ -241,9 +241,18 @@ subsection under the table.
 Across every image, in both addressing forms (`0x37d(lui 0x1f80)` and
 `0x69(0x1F800314)`), it is written only by:
 
-- `FUN_80025CB4`'s core-state reset (`sb a2,0x69(v1)` at `0x80025D70`);
+- `FUN_80025CB4`'s core-state reset (`sb a2,0x69(v1)` at `0x80025D70`), which reloads it from the saved copy `DAT_8007B7BE` (`lbu a2,-0x4842(a2)` at `0x80025CE4`);
 - one SCUS init that plants the literal `8` (`addiu v0,zero,8` / `sb v0,0x37d(at)` at `0x80055FB4` / `0x80055FBC`);
 - the Baka Fighter and DEBUG MODE overlays.
+
+The saved copy `DAT_8007B7BE` has one SCUS writer, the boot init
+`FUN_8001D424` (`li v0,0x8` / `sh v0,-0x4842(at)` at `0x8001D594` /
+`0x8001D5A4`, which also stores the byte to `0x69(0x1F800314)` at
+`0x8001D5C0`); outside SCUS only the DEBUG MODE overlay (0971) references
+it. So the reset re-installs `8` on every mode change, and the byte is a
+constant of the running game rather than a per-scene or per-mode value: every
+library save state, field, world map and battle alike, reads `8` at both
+`0x1F80037D` and `0x8007B7BE`, across frame steps `1..4`.
 
 The byte that moves every frame is `DAT_1F800393` (`= 0x7f(0x1F800314)`),
 rewritten by the frame pacer at `0x80017068` and clamped to `1..4` against the
@@ -406,6 +415,15 @@ The block is an 8-byte clip header, `count` packed 8-byte clip entries, then
 `count` 24-byte keyframe records: six halfwords of the current keyframe and
 six of the target. Each part's six operands seed both halves.
 
+**The allocation is unchecked.** The result of `FUN_80017888` is stored and
+copied through with no NULL test, and `0x3D` writes through `+0x4C` untested
+too; only the tick's mode-`6` pack checks it (`0x80022F14`). A NULL block puts
+the pose over the exception vector at `0x80000080`: the
+[Conkram mirror freeze](../reference/glitches/field-oddities.md#conkram-mirror-freeze),
+which the patcher's `--conkram-freeze-fix` closes by halting the part. An
+existing block is reused whatever its size, so a re-seat with more parts than
+the first would overrun it; no case of that is known.
+
 **`0x3D`** (`0x80023D64..0x80023F18`) retargets it. `+0xD0 = v1` is the cursor
 rate and `v2` the part count. When a keyframe is already latched
 (`+0xCE != 0`), every part's current keyframe first moves to where the cursor
@@ -433,6 +451,10 @@ sends a `+0x5A == 6` actor to the animated renderer `FUN_8001B964`
 sprite-arm node every slot is the one built quad, so the pose places `count`
 copies of it - `map01`'s mist puffs
 ([world-map.md](world-map.md#per-actor-render-dispatcher---fun_8001ada4)).
+
+The port keeps the pose in `keyframe_pose`, a `Vec` rebuilt at each seat, not
+in the game's heap, so neither the NULL block nor the overrun has a
+counterpart; an allocation failure there aborts the process.
 
 Port: `move_vm::step` (ops), `advance_keyframe_cursor`,
 `keyframe_pose_entries`; the draw is

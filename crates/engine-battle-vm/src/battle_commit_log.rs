@@ -70,6 +70,13 @@ pub const RECORD_TARGET_PLAQUE: usize = 0x29;
 pub const RECORD_ALL_ENEMIES: usize = 0x3D;
 /// The whole-party target label (`"All Allies"`).
 pub const RECORD_ALL_ALLIES: usize = 0x3E;
+/// Content width the disc ships in each ring chip record
+/// ([`RECORD_CHIP_SPIRIT`] .. [`RECORD_CHIP_MAGIC`], `+0x06 = 0x30` in
+/// `SCUS_942.54`). Nothing measures a chip's label: `FUN_801D5718` copies the
+/// preset `+0x06` into the log's command element, so `Attack` logs on a
+/// 48-wide plate whatever its glyphs measure
+/// (`party_basic_attack_vs_gobu_gobu` holds record `0x2C` at width `0x30`).
+pub const CHIP_WIDTH: u16 = 0x30;
 /// Content width the disc ships in record [`RECORD_ALL_ENEMIES`].
 pub const ALL_ENEMIES_WIDTH: u16 = 36;
 /// Content width the disc ships in record [`RECORD_ALL_ALLIES`].
@@ -107,7 +114,8 @@ pub struct LogCommit {
     pub name_width: u16,
     /// Record the command element lands from ([`RECORD_CHIP_ATTACK`] etc).
     pub command_record: usize,
-    /// Measured width of that chip's label.
+    /// Content width of that chip's record - [`CHIP_WIDTH`] for every
+    /// ring chip.
     pub command_width: u16,
     pub target: LogTarget,
 }
@@ -170,12 +178,14 @@ impl CommitLogRow {
         }
     }
 
-    /// The row as the layout kernel reads it, given a width measure.
+    /// The row as the layout kernel reads it, given a width measure. The
+    /// name and the target are measured strings; the command chip keeps its
+    /// record's preset width ([`CHIP_WIDTH`]).
     pub fn commit(&self, width: impl Fn(&str) -> u16) -> LogCommit {
         LogCommit {
             name_width: width(&self.name),
             command_record: self.command_record,
-            command_width: width(&self.command),
+            command_width: CHIP_WIDTH,
             target: match &self.target {
                 CommitLogTarget::Single(t) => LogTarget::Single { width: width(t) },
                 CommitLogTarget::AllEnemies => LogTarget::AllEnemies,

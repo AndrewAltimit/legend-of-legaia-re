@@ -93,7 +93,10 @@ fn synthetic_table() -> MenuWindowTable {
             d.renderer_va = va;
         }
     }
-    MenuWindowTable { windows }
+    MenuWindowTable {
+        windows,
+        ..Default::default()
+    }
 }
 
 /// The chrome atlas' band rects. The real one is baked from the disc's
@@ -229,6 +232,7 @@ fn compose_top_level(ctx: &PauseMenuCtx<'_>) -> PauseMenuDraws {
             cursor: 1,
             money: 1234,
             play_time_seconds: 3671,
+            coins: None,
             party: &party,
             party_ap: &[40],
         }),
@@ -318,11 +322,13 @@ fn compose_items(ctx: &PauseMenuCtx<'_>, modal: ItemsModal) -> PauseMenuDraws {
     let rows = [
         PauseItemsRow {
             name: "Healing Leaf",
-            count: 3,
+            count: Some(3),
+            ink: None,
         },
         PauseItemsRow {
             name: "Point Card",
-            count: 1,
+            count: Some(1),
+            ink: None,
         },
     ];
     let view = PauseItemsView {
@@ -346,6 +352,8 @@ fn compose_items(ctx: &PauseMenuCtx<'_>, modal: ItemsModal) -> PauseMenuDraws {
         count: 3,
         cursor: 1,
         text_cursor: ctx.chrome.is_none(),
+        prompt: ["About", "Drop?"],
+        choices: ["Y", "N"],
     };
     let two_line = ["Incense", "Use it?"];
     let one_line = ["Use Door of Light?"];
@@ -414,6 +422,8 @@ fn compose_magic(ctx: &PauseMenuCtx<'_>) -> PauseMenuDraws {
     let rows = [PauseMagicRow {
         name: "Meta",
         ra_seru: true,
+        icon: Some(0x1D),
+        ink: None,
     }];
     let view = PauseMagicView {
         casters: &casters,
@@ -654,7 +664,7 @@ fn every_pause_screen_composes_on_both_chrome_passes() {
             assert!(d.sprites.is_empty(), "{name}: draws no window chrome");
         }
         assert!(
-            !spell_level_notice_draws(&ctx, "Meta reached Lv2!").is_empty(),
+            !spell_level_notice_draws(&ctx, b"Meta reached Lv2!").is_empty(),
             "window 7 notice composed nothing (chrome = {chrome})"
         );
     }
@@ -672,13 +682,13 @@ fn painter_gated_windows_need_the_descriptor_table() {
     let bare = fx.ctx_tableless();
     assert!(compose_context_notice(&bare).texts.is_empty());
     assert!(compose_context_ready(&bare).texts.is_empty());
-    assert!(spell_level_notice_draws(&bare, "Meta reached Lv2!").is_empty());
+    assert!(spell_level_notice_draws(&bare, b"Meta reached Lv2!").is_empty());
     // With the table they all draw - otherwise the assertions above would
     // pass against a composition that is simply broken.
     let full = fx.ctx();
     assert!(!compose_context_notice(&full).texts.is_empty());
     assert!(!compose_context_ready(&full).texts.is_empty());
-    assert!(!spell_level_notice_draws(&full, "Meta reached Lv2!").is_empty());
+    assert!(!spell_level_notice_draws(&full, b"Meta reached Lv2!").is_empty());
 }
 
 /// A screen that is not painter-gated still composes without a table - it

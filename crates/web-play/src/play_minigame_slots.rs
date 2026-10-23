@@ -81,7 +81,7 @@ impl LegaiaRuntime {
         let marquee = self.slot_session().map(|m| (m.marquee(), m.anticipation()));
         let messages = self
             .minigame_art()
-            .and_then(|a| a.slot_cabinet.as_ref())
+            .and_then(|a| a.slot_cabinet())
             .map(|c| c.scene.messages.clone());
         let ui = &mut self.minigame_ui.slot;
         ui.dots = match (marquee, messages) {
@@ -97,7 +97,7 @@ impl LegaiaRuntime {
     pub(crate) fn slot_cabinet_prims(&self) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
         let (Some(m), Some(c)) = (
             self.slot_session(),
-            self.minigame_art().and_then(|a| a.slot_cabinet.as_ref()),
+            self.minigame_art().and_then(|a| a.slot_cabinet()),
         ) else {
             return Vec::new();
         };
@@ -115,11 +115,7 @@ impl LegaiaRuntime {
     /// cash-out box covers them on both hosts. Only with the cabinet art:
     /// the 2D-canvas fallback strokes the lines itself.
     pub(crate) fn slot_payline_prims(&self) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        if self
-            .minigame_art()
-            .and_then(|a| a.slot_cabinet.as_ref())
-            .is_none()
-        {
+        if self.minigame_art().and_then(|a| a.slot_cabinet()).is_none() {
             return Vec::new();
         }
         self.slot_session()
@@ -137,7 +133,7 @@ impl LegaiaRuntime {
             return Vec::new();
         };
         self.minigame_art()
-            .and_then(|a| a.slot_cabinet.as_ref())
+            .and_then(|a| a.slot_cabinet())
             .and_then(|c| c.rules.as_ref())
             .map(|r| {
                 legaia_engine_ui::slot_cabinet::slot_rules_text_draws_for(
@@ -158,14 +154,14 @@ impl LegaiaRuntime {
     /// [`Self::play_mg_slot_vram`]) instead of its 2D-canvas composition.
     pub fn play_mg_slot_cabinet_ready(&self) -> bool {
         self.minigame_art()
-            .is_some_and(|a| a.slot_cabinet.is_some())
+            .is_some_and(|a| a.slot_cabinet().is_some())
     }
 
     /// The machine's VRAM - the art pack at its own framebuffer
     /// destinations - for the page's renderer while the machine is up.
     pub fn play_mg_slot_vram(&self) -> Vec<u8> {
         self.minigame_art()
-            .and_then(|a| a.slot_cabinet.as_ref())
+            .and_then(|a| a.slot_cabinet())
             .map(|c| c.vram.as_bytes().to_vec())
             .unwrap_or_default()
     }

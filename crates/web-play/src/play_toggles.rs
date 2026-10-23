@@ -1,7 +1,9 @@
 //! The play page's twins of the native window's launch switches that were
 //! native-only: `--retail`, `--set-flag`, `--no-entry-pulse`,
 //! `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS`,
-//! `LEGAIA_BATTLE_FRAME_CADENCE` and `LEGAIA_ARTS_SAVED_LIST`.
+//! `LEGAIA_BATTLE_FRAME_CADENCE`, `LEGAIA_ARTS_SAVED_LIST` and the gameplay
+//! tweaks (`--no-shiny-seru`, `--flee-exp`, `--exp-rate`,
+//! `--no-fortress-encounter-fix`, `--jewel-fix`, `--no-hp-readout-guard`).
 //!
 //! Each writes the same engine state the native launch writes - the world's
 //! `WorldToggles`, the system-flag bank, `OptionsState::pin_retail` - so the
@@ -44,6 +46,11 @@ pub struct PageToggles {
     /// (the native `Renderer::set_ui_psx_tint`). On by default: it is retail
     /// behaviour.
     pub ui_psx_tint: bool,
+    /// The patcher features graduated into engine switches
+    /// (`legaia_engine_session::session_switches::GameplayTweaks`), starting
+    /// from the engine's defaults as the window does. Retail mode holds them
+    /// at retail's values whatever this says.
+    pub tweaks: legaia_engine_session::session_switches::GameplayTweaks,
 }
 
 impl Default for PageToggles {
@@ -56,6 +63,7 @@ impl Default for PageToggles {
             battle_frame_cadence: legaia_engine_core::world::DEFAULT_BATTLE_SM_FRAME_CADENCE,
             arts_saved_list: false,
             ui_psx_tint: true,
+            tweaks: legaia_engine_session::session_switches::GameplayTweaks::default(),
         }
     }
 }
@@ -65,13 +73,20 @@ impl LegaiaRuntime {
     /// and from every scene entry.
     pub(crate) fn apply_page_toggles(&mut self) {
         let t = self.page_toggles;
+        // The native window's launch applies the same set
+        // (`legaia_engine_session::session_switches`), so retail mode masks
+        // the same switches on both hosts.
+        let switches = legaia_engine_session::session_switches::SessionSwitches {
+            smart_monsters: t.smart_monsters,
+            world_map_markers: t.world_map_markers,
+            entry_pulse: t.entry_pulse,
+            battle_frame_cadence: t.battle_frame_cadence,
+            arts_saved_list: t.arts_saved_list,
+            tweaks: t.tweaks,
+            retail: t.retail,
+        };
         if let Some(host) = self.scene_host.host_mut() {
-            let toggles = &mut host.world.toggles;
-            toggles.smarter_monster_targeting = t.smart_monsters;
-            toggles.overworld_marker_overlay = t.world_map_markers;
-            toggles.entry_pulse_enabled = t.entry_pulse && !t.retail;
-            toggles.battle_sm_frame_cadence = t.battle_frame_cadence;
-            toggles.arts_saved_list = t.arts_saved_list && !t.retail;
+            switches.apply(&mut host.world.toggles);
         }
     }
 }
@@ -142,6 +157,155 @@ impl LegaiaRuntime {
         self.page_toggles.arts_saved_list
     }
 
+    /// Shiny Seru, the native `--no-shiny-seru` inverted (on by default):
+    /// battle entry may roll a rare shiny capturable enemy. Retail mode holds
+    /// it off.
+    pub fn set_shiny_seru(&mut self, on: bool) {
+        self.page_toggles.tweaks.shiny_seru = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_shiny_seru`] is on.
+    pub fn shiny_seru(&self) -> bool {
+        self.page_toggles.tweaks.shiny_seru
+    }
+
+    /// Run-away EXP, the native `--flee-exp`: a successful escape banks a
+    /// share of the fled fight's EXP. Retail mode holds it off.
+    pub fn set_flee_exp(&mut self, on: bool) {
+        self.page_toggles.tweaks.flee_exp = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_flee_exp`] is on.
+    pub fn flee_exp(&self) -> bool {
+        self.page_toggles.tweaks.flee_exp
+    }
+
+    /// The EXP rate in permille, the native `--exp-rate` (`1000` = retail);
+    /// clamped to the engine's range when applied. Retail mode holds `1000`.
+    pub fn set_exp_rate_permille(&mut self, permille: u16) {
+        self.page_toggles.tweaks.exp_rate_permille = permille;
+        self.apply_page_toggles();
+    }
+
+    /// The rate [`Self::set_exp_rate_permille`] set.
+    pub fn exp_rate_permille(&self) -> u16 {
+        self.page_toggles.tweaks.exp_rate_permille
+    }
+
+    /// The Fortress encounter fix, the native `--no-fortress-encounter-fix`
+    /// inverted (on by default). Retail mode holds it off.
+    pub fn set_fortress_encounter_fix(&mut self, on: bool) {
+        self.page_toggles.tweaks.fortress_encounter_fix = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_fortress_encounter_fix`] is on.
+    pub fn fortress_encounter_fix(&self) -> bool {
+        self.page_toggles.tweaks.fortress_encounter_fix
+    }
+
+    /// The jewel fix, the native `--jewel-fix`: the boss cinematic casts
+    /// respect elemental guards. Retail mode holds it off.
+    pub fn set_jewel_fix(&mut self, on: bool) {
+        self.page_toggles.tweaks.jewel_fix = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_jewel_fix`] is on.
+    pub fn jewel_fix(&self) -> bool {
+        self.page_toggles.tweaks.jewel_fix
+    }
+
+    /// The battle HP-readout guard, the native `--no-hp-readout-guard`
+    /// inverted (on by default): the state-`0x51` readout softlock cannot
+    /// hold. Retail mode holds it off.
+    pub fn set_hp_readout_guard(&mut self, on: bool) {
+        self.page_toggles.tweaks.hp_readout_guard = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_hp_readout_guard`] is on.
+    pub fn hp_readout_guard(&self) -> bool {
+        self.page_toggles.tweaks.hp_readout_guard
+    }
+
+    /// The bonus equipment drop, the native `--equipment-drops`. Retail mode
+    /// holds it off.
+    pub fn set_bonus_drop(&mut self, on: bool) {
+        self.page_toggles.tweaks.bonus_drop = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_bonus_drop`] is on.
+    pub fn bonus_drop(&self) -> bool {
+        self.page_toggles.tweaks.bonus_drop
+    }
+
+    /// Spirit AP, the native `--spirit-ap` (retail `32`; clamped to
+    /// `-100..=100` when applied). Retail mode holds `32`.
+    pub fn set_spirit_ap(&mut self, ap: i16) {
+        self.page_toggles.tweaks.spirit_ap = ap;
+        self.apply_page_toggles();
+    }
+
+    /// The value [`Self::set_spirit_ap`] set.
+    pub fn spirit_ap(&self) -> i16 {
+        self.page_toggles.tweaks.spirit_ap
+    }
+
+    /// Enemy-damage AP, the native `--damage-ap` (retail `100`; clamped to
+    /// `-200..=200`). Retail mode holds `100`.
+    pub fn set_damage_ap(&mut self, ap: i16) {
+        self.page_toggles.tweaks.damage_ap = ap;
+        self.apply_page_toggles();
+    }
+
+    /// The value [`Self::set_damage_ap`] set.
+    pub fn damage_ap(&self) -> i16 {
+        self.page_toggles.tweaks.damage_ap
+    }
+
+    /// The flat Seru catch rate in percent, the native `--seru-catch-rate`;
+    /// a negative value restores each Seru's own chance (retail).
+    pub fn set_seru_catch_rate(&mut self, pct: i16) {
+        self.page_toggles.tweaks.seru_catch_pct = u8::try_from(pct).ok().map(|p| p.min(100));
+        self.apply_page_toggles();
+    }
+
+    /// The catch rate [`Self::set_seru_catch_rate`] set, `-1` for retail.
+    pub fn seru_catch_rate(&self) -> i16 {
+        self.page_toggles
+            .tweaks
+            .seru_catch_pct
+            .map_or(-1, i16::from)
+    }
+
+    /// The enemy attack-count multiplier in permille, the native
+    /// `--enemy-attack-count` (`1000` = retail).
+    pub fn set_enemy_attack_permille(&mut self, permille: u16) {
+        self.page_toggles.tweaks.enemy_attack_permille = permille;
+        self.apply_page_toggles();
+    }
+
+    /// The multiplier [`Self::set_enemy_attack_permille`] set.
+    pub fn enemy_attack_permille(&self) -> u16 {
+        self.page_toggles.tweaks.enemy_attack_permille
+    }
+
+    /// The enemy stat multiplier in permille, the native
+    /// `--enemy-stat-scale` (`1000` = retail).
+    pub fn set_enemy_stat_permille(&mut self, permille: u16) {
+        self.page_toggles.tweaks.enemy_stat_permille = permille;
+        self.apply_page_toggles();
+    }
+
+    /// The multiplier [`Self::set_enemy_stat_permille`] set.
+    pub fn enemy_stat_permille(&self) -> u16 {
+        self.page_toggles.tweaks.enemy_stat_permille
+    }
+
     /// The photosensitivity guard (`OptionsState::reduce_flashing`), the
     /// native launcher's Reduce flashing row: persisted with the other
     /// options and applied through the session's option knobs. Retail mode
@@ -187,6 +351,22 @@ impl LegaiaRuntime {
     /// The sound-effect bus level [`Self::set_sfx_volume`] sets.
     pub fn sfx_volume(&self) -> u8 {
         self.options_state.sfx_volume
+    }
+
+    /// The engine-only full-mono downmix (`OptionsState::downmix_mono`), the
+    /// native launcher's Mono output row: the finished mix, voice and movie
+    /// audio included, averaged into both channels. Separate from the retail
+    /// options screen's Monaural row. Persisted and applied to the mixer.
+    pub fn set_downmix_mono(&mut self, on: bool) {
+        if self.options_state.downmix_mono != on {
+            self.options_state.downmix_mono = on;
+            self.persist_and_apply_options();
+        }
+    }
+
+    /// Whether [`Self::set_downmix_mono`] is on.
+    pub fn downmix_mono(&self) -> bool {
+        self.options_state.downmix_mono
     }
 
     /// Retail-faithful mode, the native `--retail`: pin every persisted
@@ -319,6 +499,80 @@ mod tests {
         // No scene: the flag write is refused, not dropped silently.
         assert!(!rt.set_system_flag(0x142, true));
         assert!(!rt.system_flag(0x142));
+    }
+
+    /// The gameplay tweaks start at the engine's defaults (the window's too),
+    /// each setter reads back, and the page carries a control for each.
+    #[test]
+    fn gameplay_tweaks_start_at_the_engine_defaults() {
+        let mut rt = LegaiaRuntime::new();
+        assert_eq!(
+            rt.page_toggles.tweaks,
+            legaia_engine_session::session_switches::GameplayTweaks::default()
+        );
+        assert!(rt.shiny_seru() && rt.fortress_encounter_fix() && rt.hp_readout_guard());
+        assert!(!rt.flee_exp() && !rt.jewel_fix());
+        assert_eq!(rt.exp_rate_permille(), 1000);
+        rt.set_shiny_seru(false);
+        rt.set_flee_exp(true);
+        rt.set_exp_rate_permille(2000);
+        rt.set_fortress_encounter_fix(false);
+        rt.set_jewel_fix(true);
+        assert!(!rt.shiny_seru() && rt.flee_exp() && rt.jewel_fix());
+        assert!(!rt.fortress_encounter_fix());
+        assert_eq!(rt.exp_rate_permille(), 2000);
+        let page = include_str!("../../../site/_content/play.html");
+        for call in [
+            "set_shiny_seru",
+            "set_flee_exp",
+            "set_exp_rate_permille",
+            "set_fortress_encounter_fix",
+            "set_jewel_fix",
+            "set_hp_readout_guard",
+            "set_bonus_drop",
+            "set_spirit_ap",
+            "set_damage_ap",
+            "set_seru_catch_rate",
+            "set_enemy_attack_permille",
+            "set_enemy_stat_permille",
+        ] {
+            assert!(page.contains(call), "play.html never calls {call}");
+        }
+    }
+
+    /// The page's slider selectors offer exactly the engine's step lists, so
+    /// the page and the launcher cycle the same values.
+    #[test]
+    fn the_page_sliders_offer_the_engine_steps() {
+        use legaia_engine_session::session_switches::GameplayTweaks as T;
+        let page = include_str!("../../../site/_content/play.html");
+        let options = |id: &str| -> Vec<String> {
+            let start = page.find(&format!("id=\"{id}\"")).expect(id);
+            let end = start + page[start..].find("</select>").expect("select end");
+            page[start..end]
+                .split("<option value=\"")
+                .skip(1)
+                .map(|o| o.split('"').next().unwrap_or_default().to_string())
+                .collect()
+        };
+        let s = |v: &[i64]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let i = |v: &[i16]| v.iter().map(|&x| i64::from(x)).collect::<Vec<_>>();
+        let u = |v: &[u16]| v.iter().map(|&x| i64::from(x)).collect::<Vec<_>>();
+        assert_eq!(options("play-exp-rate"), s(&u(&T::EXP_RATES)));
+        assert_eq!(options("play-spirit-ap"), s(&i(&T::SPIRIT_AP_STEPS)));
+        assert_eq!(options("play-damage-ap"), s(&i(&T::DAMAGE_AP_STEPS)));
+        assert_eq!(options("play-enemy-attacks"), s(&u(&T::ENEMY_ATTACK_RATES)));
+        assert_eq!(options("play-enemy-stats"), s(&u(&T::ENEMY_STAT_RATES)));
+        let catch: Vec<i64> = T::CATCH_RATE_STEPS
+            .iter()
+            .map(|p| p.map_or(-1, i64::from))
+            .collect();
+        assert_eq!(options("play-seru-catch-rate"), s(&catch));
+        let mut rt = LegaiaRuntime::new();
+        rt.set_seru_catch_rate(-1);
+        assert_eq!(rt.seru_catch_rate(), -1);
+        rt.set_seru_catch_rate(50);
+        assert_eq!(rt.seru_catch_rate(), 50);
     }
 
     /// The page's cadence starts where `WorldToggles::new` does, and the

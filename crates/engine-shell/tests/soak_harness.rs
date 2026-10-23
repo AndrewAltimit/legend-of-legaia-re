@@ -278,7 +278,7 @@ fn soak_reduce() {
         .or(lr.signature.clone())
         .expect("a signature to reduce towards");
     let t = lr.tunables();
-    let host_arming = t.host_arming;
+    let arming = t.arming;
     let (spec, pads) = (lr.spec, lr.pads);
     let outcome = {
         let (src, known) = (src.clone(), known.clone());
@@ -310,11 +310,8 @@ fn soak_reduce() {
         frames: reduced.len() as u64,
         ..outcome.spec.clone()
     };
-    std::fs::write(
-        &out,
-        replay_text(&spec, &reduced, Some(f), relaxed, host_arming),
-    )
-    .expect("write replay");
+    std::fs::write(&out, replay_text(&spec, &reduced, Some(f), relaxed, arming))
+        .expect("write replay");
     eprintln!(
         "[soak-reduce] `{want}`: {} frames, {} pad changes -> {}",
         reduced.len(),
@@ -517,7 +514,16 @@ fn replay_header_round_trips() {
         location: "dialogue".into(),
         detail: "x".into(),
     };
-    let text = replay_text(&spec, &pads, Some(&f), Some(1), true);
+    let text = replay_text(
+        &spec,
+        &pads,
+        Some(&f),
+        Some(1),
+        Arming {
+            host: true,
+            retail: true,
+        },
+    );
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("a.replay.toml");
     std::fs::write(&p, text).unwrap();
@@ -527,7 +533,81 @@ fn replay_header_round_trips() {
     assert_eq!(lr.pads, pads);
     assert_eq!(lr.signature.as_deref(), Some("softlock|town01|dialogue"));
     assert_eq!(lr.min_distinct, Some(1));
-    assert!(lr.host_arming, "a replay records the arming it ran under");
+    assert!(lr.arming.host, "a replay records the arming it ran under");
+    assert!(lr.arming.retail, "and whether it held retail mode");
+}
+
+/// Every member under the Evil Medallion's Rage: the anim tick's Rage arm
+/// delegates the whole party (`+0x16E |= 0x380`), the command ring refuses
+/// every seat, and each round must still open on `Begin | Run`, go straight
+/// to the commit confirm and play out on the delegated picks - in the default
+/// configuration and under the hosts' retail mode. A deadlocked round reads
+/// as `softlock` / `battle_endless` here, and a ring that opens anyway as the
+/// `Menu` surface.
+#[test]
+fn soak_rage_party_plays_its_rounds() {
+    let Some(src) = source() else { return };
+    if saves_library().is_none() {
+        eprintln!("[skip] soak_rage_party_plays_its_rounds: no save library");
+        return;
+    }
+    install_panic_hook();
+    let probe = open_session(&src);
+    let known: BTreeSet<String> = scene_set(&probe).into_iter().collect();
+    drop(probe);
+    for retail in [false, true] {
+        let (mut battles, mut won) = (0, 0);
+        for seed in 1..=3 {
+            let spec = RunSpec {
+                scene: "keikoku+rage@playthrough-ladder-pro00-14.mcr:PRO-03".into(),
+                seed,
+                frames: 12_000,
+            };
+            let (src, known) = (src.clone(), known.clone());
+            let r = std::thread::Builder::new()
+                .name("soak-rage".into())
+                .stack_size(64 << 20)
+                .spawn(move || {
+                    let mut t = Tunables::from_env();
+                    t.arming = Arming { host: true, retail };
+                    run_one(&src, &known, &spec, None, &t, None)
+                })
+                .unwrap()
+                .join()
+                .expect("rage run");
+            let sigs: Vec<String> = r.findings.iter().map(Finding::signature).collect();
+            assert!(sigs.is_empty(), "retail {retail} seed {seed}: {sigs:?}");
+            assert!(
+                !r.stats.battle_surfaces.contains("Menu"),
+                "retail {retail} seed {seed}: a command ring opened for a delegated member"
+            );
+            battles += r.stats.battles;
+            won += r.stats.battles_won;
+        }
+        assert!(
+            battles > 0 && won > 0,
+            "retail {retail}: {battles} battles, {won} won"
+        );
+    }
+}
+
+/// A replay's `# soak-arming` value reads back to the configuration that
+/// wrote it; no tag is the pre-arming bare session.
+#[test]
+fn arming_tag_reads_back() {
+    let a = |host, retail| Arming { host, retail };
+    assert_eq!(Arming::from_tag(None), a(false, false));
+    assert_eq!(Arming::from_tag(Some("host")), a(true, false));
+    assert_eq!(Arming::from_tag(Some("bare")), a(false, false));
+    assert_eq!(Arming::from_tag(Some("host-retail")), a(true, true));
+    assert_eq!(Arming::from_tag(Some("bare-retail")), a(false, true));
+}
+
+/// `+rage` is the outermost run suffix.
+#[test]
+fn rage_suffix_splits_outermost() {
+    assert_eq!(split_rage("jou+talk+rage"), ("jou+talk", true));
+    assert_eq!(split_rage("jou+talk"), ("jou+talk", false));
 }
 
 #[test]

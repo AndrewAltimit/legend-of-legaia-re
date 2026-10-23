@@ -49,6 +49,11 @@ pub struct BattleSpoilsView<'a> {
     /// `(level_up, report)` rows each window sits below its rest seat this
     /// frame - the raise glide the results frame starts (`0` once landed).
     pub slide: (i32, i32),
+    /// The victory sentence off the battle overlay
+    /// ([`legaia_engine_battle_vm::battle_party_panel::VictoryText`]), so a
+    /// language pack's wording reaches the report. `None` on a disc-free
+    /// host, which draws the port's English.
+    pub victory: Option<&'a legaia_engine_battle_vm::battle_party_panel::VictoryText>,
 }
 
 /// Row pitch of the post-battle report - the dialog font's own line height,
@@ -157,11 +162,12 @@ pub fn battle_spoils_windows(view: &BattleSpoilsView<'_>) -> Vec<SpoilsWindow> {
     }
     // Retail's two build arms word this line differently: a lone lead is
     // named, a party is the lead's team (`FUN_801D84C0`).
-    let opening = match view.subject {
-        legaia_engine_battle_vm::battle_party_panel::ResultSubject::Lead(_) => {
+    let opening = match (view.victory, view.subject) {
+        (Some(v), subject) => v.opening(subject, view.leader),
+        (None, legaia_engine_battle_vm::battle_party_panel::ResultSubject::Lead(_)) => {
             format!("{} won the battle!", view.leader)
         }
-        legaia_engine_battle_vm::battle_party_panel::ResultSubject::LeadsTeam { .. } => {
+        (None, legaia_engine_battle_vm::battle_party_panel::ResultSubject::LeadsTeam { .. }) => {
             format!("{}'s team won the battle!", view.leader)
         }
     };
@@ -170,7 +176,11 @@ pub fn battle_spoils_windows(view: &BattleSpoilsView<'_>) -> Vec<SpoilsWindow> {
         // The two figures are placed by column, not by this string - the
         // builder lays the sentence out in three runs. Kept whole here so a
         // caller that only wants the text reads a sentence.
-        format!("Gained {} Experience and {} G.", view.xp, view.gold),
+        match view.victory.map(|v| v.report_runs()).as_deref() {
+            Some([a, b, c]) => format!("{a} {} {b} {} {c}", view.xp, view.gold),
+            Some(_) => view.victory.map(|v| v.report.clone()).unwrap_or_default(),
+            None => format!("Gained {} Experience and {} G.", view.xp, view.gold),
+        },
     ];
     // The drop line arrives composed (`World::battle_spoils_banner`): the
     // executable's template, appended to the victory buffer as its third row.
@@ -222,7 +232,28 @@ pub fn battle_spoils_draws_for(
         for (row, line) in win.lines.iter().enumerate() {
             let y = pen.1 + row as i32 * SPOILS_LINE_H;
             if is_report && row == 1 {
-                let head = font.layout_ascii("Gained");
+                // The disc's report line, split at the blank runs the
+                // figures sit in; the port's English without a disc. A
+                // translation that keeps three word groups draws them at
+                // retail's three columns, any other shape draws the line
+                // whole from the pen with the figures over it, the way
+                // retail draws the string.
+                let runs = view.victory.map(|v| v.report_runs());
+                let words: [&str; 3] = match runs.as_deref() {
+                    Some([a, b, c]) => [a.as_str(), b.as_str(), c.as_str()],
+                    Some(_) => ["", "", ""],
+                    None => ["Gained", "Experience and", "G."],
+                };
+                if let (Some(v), Some(r)) = (view.victory, runs.as_ref())
+                    && r.len() != 3
+                {
+                    out.extend(text_draws_for(
+                        &font.layout_ascii(&v.report),
+                        (pen.0, y),
+                        white,
+                    ));
+                }
+                let head = font.layout_ascii(words[0]);
                 out.extend(text_draws_for(&head, (pen.0, y), white));
                 out.extend(number_record_draws(
                     font,
@@ -232,7 +263,7 @@ pub fn battle_spoils_draws_for(
                     white,
                 ));
                 out.extend(text_draws_for(
-                    &font.layout_ascii("Experience and"),
+                    &font.layout_ascii(words[1]),
                     (pen.0 + SPOILS_TAIL_X, y),
                     white,
                 ));
@@ -244,7 +275,7 @@ pub fn battle_spoils_draws_for(
                     white,
                 ));
                 out.extend(text_draws_for(
-                    &font.layout_ascii("G."),
+                    &font.layout_ascii(words[2]),
                     (pen.0 + SPOILS_GOLD_TAIL_X, y),
                     white,
                 ));
@@ -311,6 +342,7 @@ mod spoils_subject_tests {
             leader: "Vahn",
             subject,
             slide: (0, 0),
+            victory: None,
         };
         battle_spoils_windows(&view)
             .last()
@@ -341,10 +373,68 @@ mod spoils_subject_tests {
             leader: "Vahn",
             subject: result_subject([1, 0, 0]),
             slide: (-38, 76),
+            victory: None,
         };
         let w = battle_spoils_windows(&view);
         assert_eq!(w[0].rect.1, SPOILS_LEVELUP_RECT.1 - 38);
         assert_eq!(w[1].rect.1, SPOILS_REPORT_RECT.1 + 76);
+    }
+}
+
+#[cfg(test)]
+mod victory_text_tests {
+    use super::*;
+    use legaia_engine_battle_vm::battle_party_panel::{VictoryText, result_subject};
+
+    #[allow(clippy::type_complexity)]
+    fn draws(
+        victory: Option<&VictoryText>,
+    ) -> (
+        Vec<String>,
+        Vec<((i32, i32, u32, u32), (u32, u32, u32, u32))>,
+    ) {
+        let font = legaia_font::synthetic_for_tests();
+        let view = BattleSpoilsView {
+            xp: 120,
+            gold: 34,
+            level_ups: &[],
+            drops: &[],
+            leader: "Vahn",
+            subject: result_subject([1, 2, 0]),
+            slide: (0, 0),
+            victory,
+        };
+        let w = battle_spoils_windows(&view);
+        let d = battle_spoils_draws_for(&font, &view, &w);
+        (
+            w.last().unwrap().lines.clone(),
+            d.iter().map(|t| (t.dst, t.src)).collect(),
+        )
+    }
+
+    /// The retail disc's pieces draw exactly what the port's English drew:
+    /// the same lines, glyph for glyph at the same pens.
+    #[test]
+    fn the_retail_sentence_draws_like_the_english_fallback() {
+        let retail = VictoryText {
+            team_tail: "'s team".into(),
+            opening_tail: " won the battle!".into(),
+            report: "Gained           Experience and           G.".into(),
+        };
+        assert_eq!(draws(Some(&retail)), draws(None));
+    }
+
+    /// A translated sentence reaches both lines.
+    #[test]
+    fn a_translated_sentence_reaches_the_report() {
+        let fr = VictoryText {
+            team_tail: " et son groupe".into(),
+            opening_tail: " gagnent !".into(),
+            report: "Obtenu      points et      Or.".into(),
+        };
+        let (lines, _) = draws(Some(&fr));
+        assert_eq!(lines[0], "Vahn et son groupe gagnent !");
+        assert_eq!(lines[1], "Obtenu 120 points et 34 Or.");
     }
 }
 

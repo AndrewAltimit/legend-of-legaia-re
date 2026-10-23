@@ -361,7 +361,10 @@ The arm at `0x801D3024` draws the D-pad glyph at `(152, 84)`
 round prompt's `Begin` arm at `0x801D1060`) and record `0x13` (`(180, 88)`,
 payload `Reselect` at SCUS `0x800152D4`). The `party_basic_attack_vs_gobu_gobu`
 capture's display list holds exactly those plates, `(84, 82)` and
-`(172, 82)`, `64 x 20` each.
+`(172, 82)`, `64 x 20` each. The round prompt's `Begin` tab stays at `(16, 14)`
+above them and the actor plaque is gone back up (record `0x1A` at
+`(68, -24)`, the frame's `Begin` plate a `36`-wide interior on that seat); both
+hosts draw the tab alone there (`engine-battle-hud::battle_begin_tab_alone`).
 
 It splits the pad as the [`s2` table](#s2-is-not-the-pad-and-how-a-command-commits)
 says: Left or the confirm mask stores `0xFE` and plays the round out;
@@ -441,7 +444,12 @@ log leaves with the command phase, it does not slide.
 The capture `party_basic_attack_vs_gobu_gobu` (solo Vahn at `0x6E`,
 `ctx[+0x1F] = 1`) holds records `0x2B` / `0x2C` / `0x2D` at seat B
 `(16, 170)` / `(59, 170)` / `(123, 170)` - `Vahn` (width 27), `Attack`,
-`Gobu Gobu` - which is the one-row case of the layout above.
+`Gobu Gobu` - which is the one-row case of the layout above. The command
+element's width is not measured: `FUN_801D5718` copies the chip record's
+`+0x06`, and every ring chip (`0x0B..=0x0E`) ships `0x30` in `SCUS_942.54`,
+so `Attack` logs on a 48-wide plate whose right cap meets the target
+element's left cap (record `0x2C` holds width `0x30` in the capture).
+Port: `battle_commit_log::CHIP_WIDTH`.
 
 **Port.** `legaia_engine_battle_vm::battle_commit_log` stages the rows over a
 scratch placement array (`stage_commit_row`, with `FUN_801D5718` as

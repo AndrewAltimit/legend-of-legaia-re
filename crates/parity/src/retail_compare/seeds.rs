@@ -717,7 +717,12 @@ pub(super) fn retail_pose_entries(ram: &[u8], n: u32) -> Vec<[u8; 8]> {
 /// past its first armed frame (`+0x9C > 1`), as the snapshot its next
 /// `FUN_80019D50` write uses - rect `+0xA0..+0xA6`, adds `+0x90/92/94`, mode
 /// `+0x9E`, white amount `+0x68` ([`legaia_engine_field::clut_cell_fx`]).
+///
+/// Each is taken back to the displayed frame where the state says how
+/// ([`cell_fx_displayed_phase`]), so the seed is the phase on screen, not the
+/// RAM's.
 pub fn retail_cell_fx(ram: &[u8]) -> Vec<legaia_engine_field::clut_cell_fx::ClutCellFx> {
+    let step = crate::retail_compare_battle::frame_step(ram);
     crate::retail_compare_script::actor_nodes(ram)
         .into_iter()
         .filter(|&n| {
@@ -725,20 +730,318 @@ pub fn retail_cell_fx(ram: &[u8]) -> Vec<legaia_engine_field::clut_cell_fx::Clut
                 && game_anchors::i16_at(ram, n + 0x5A) == 3
                 && game_anchors::i16_at(ram, n + 0x9C) > 1
         })
-        .map(|n| legaia_engine_field::clut_cell_fx::ClutCellFx {
-            rect: (
-                game_anchors::u16_at(ram, n + 0xA0),
-                game_anchors::u16_at(ram, n + 0xA2),
-                game_anchors::u16_at(ram, n + 0xA4),
-                game_anchors::u16_at(ram, n + 0xA6),
-            ),
-            h_add: game_anchors::i16_at(ram, n + 0x90),
-            s_add: game_anchors::i16_at(ram, n + 0x92),
-            v_add: game_anchors::i16_at(ram, n + 0x94),
-            mode: game_anchors::i16_at(ram, n + 0x9E),
-            white: game_anchors::i16_at(ram, n + 0x68),
+        .map(|n| {
+            let fx = legaia_engine_field::clut_cell_fx::ClutCellFx {
+                rect: (
+                    game_anchors::u16_at(ram, n + 0xA0),
+                    game_anchors::u16_at(ram, n + 0xA2),
+                    game_anchors::u16_at(ram, n + 0xA4),
+                    game_anchors::u16_at(ram, n + 0xA6),
+                ),
+                h_add: game_anchors::i16_at(ram, n + 0x90),
+                s_add: game_anchors::i16_at(ram, n + 0x92),
+                v_add: game_anchors::i16_at(ram, n + 0x94),
+                mode: game_anchors::i16_at(ram, n + 0x9E),
+                white: game_anchors::i16_at(ram, n + 0x68),
+            };
+            cell_fx_displayed_phase(ram, n, step, fx).unwrap_or(fx)
         })
         .collect()
+}
+
+/// Cycler node `n`'s cell as the displayed frame uploaded it, when the state
+/// says: the RAM's `fx` taken back across the display lag by
+/// [`cycler_displayed_adds`] (its program's runs inside the lag undone), or,
+/// for a program that walker cannot read, by [`cell_fx_displayed`] when the
+/// program sat out the whole lag. `None` when neither holds.
+pub(super) fn cell_fx_displayed_phase(
+    ram: &[u8],
+    n: u32,
+    step: u8,
+    fx: legaia_engine_field::clut_cell_fx::ClutCellFx,
+) -> Option<legaia_engine_field::clut_cell_fx::ClutCellFx> {
+    // `LEGAIA_RC_CELL_PHASE=off`: seed the RAM's adds and the older packet
+    // buffer's cells, as before the displayed phase was derived.
+    if std::env::var("LEGAIA_RC_CELL_PHASE").is_ok_and(|v| v == "off") {
+        return None;
+    }
+    let k = cell_fx_idle_ticks(ram, n, step)?;
+    let vel = [
+        game_anchors::i16_at(ram, n + 0x96),
+        game_anchors::i16_at(ram, n + 0x98),
+        game_anchors::i16_at(ram, n + 0x9A),
+    ];
+    let white_rate = game_anchors::i16_at(ram, n + 0x6A);
+    let idle = cell_fx_displayed(fx, vel, white_rate, step, DISPLAY_LAG_FRAMES);
+    let buf = game_anchors::u32_at(ram, n + 0x48);
+    let words: Vec<i16> = (0..CYCLER_PROGRAM_WORDS)
+        .map(|i| game_anchors::i16_at(ram, buf + i * 2))
+        .collect();
+    let pc = usize::try_from(game_anchors::i16_at(ram, n + 0x70)).ok()?;
+    let walked = cycler_displayed_adds(
+        &words,
+        pc,
+        k,
+        [fx.h_add, fx.s_add, fx.v_add],
+        vel,
+        step,
+        DISPLAY_LAG_FRAMES,
+    );
+    match walked {
+        Some([h, s, v]) => Some(legaia_engine_field::clut_cell_fx::ClutCellFx {
+            h_add: h,
+            s_add: s,
+            v_add: v,
+            ..idle
+        }),
+        None => (k >= DISPLAY_LAG_FRAMES).then_some(idle),
+    }
+}
+
+/// How many words of a cycler's record [`cycler_displayed_adds`] reads.
+const CYCLER_PROGRAM_WORDS: u32 = 256;
+
+/// One decoded move-VM instruction of a cycler's loop body.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CyclerOp {
+    /// `0x09 v`: ends the run; the wait holds `v << 3`.
+    Wait(i16),
+    /// `0x2B h s v`: the three adds, absolute.
+    Set([i16; 3]),
+    /// `0x2D h s v`: added to the three adds.
+    Add([i16; 3]),
+    /// `0x2E h s v`: the three velocities, `<< 3`.
+    Vel([i16; 3]),
+}
+
+/// The infinite loop a cycler idles in, decoded from its record (`words`,
+/// from `+0x48`; the program starts past the `[model_sel][reserved]` pair):
+/// the body between a loop-open (`0x18` / `0x1A`) whose count carries the
+/// `0x4000` never-retire bit and its loop-back (`0x19` / `0x1B`), as
+/// `(word index, op)`, with the loop-back's index. `None` when a word before
+/// the loop-back is an op outside the cycler set
+/// (`0x09 / 0x2B / 0x2C / 0x2D / 0x2E`, the loop pair, `0x08`).
+fn cycler_loop(words: &[i16]) -> Option<(Vec<(usize, CyclerOp)>, usize)> {
+    let arg3 = |i: usize| -> Option<[i16; 3]> {
+        Some([*words.get(i + 1)?, *words.get(i + 2)?, *words.get(i + 3)?])
+    };
+    let mut i = 2;
+    let mut body: Option<Vec<(usize, CyclerOp)>> = None;
+    while let Some(&op) = words.get(i) {
+        match op {
+            0x09 => {
+                if let Some(b) = body.as_mut() {
+                    b.push((i, CyclerOp::Wait(*words.get(i + 1)?)));
+                }
+                i += 2;
+            }
+            0x2B | 0x2D | 0x2E => {
+                let a = arg3(i)?;
+                if let Some(b) = body.as_mut() {
+                    b.push((
+                        i,
+                        match op {
+                            0x2B => CyclerOp::Set(a),
+                            0x2D => CyclerOp::Add(a),
+                            _ => CyclerOp::Vel(a),
+                        },
+                    ));
+                }
+                i += 4;
+            }
+            0x2C if body.is_none() => i += 5,
+            0x18 | 0x1A if body.is_none() => {
+                if *words.get(i + 1)? as u16 & 0x4000 == 0 {
+                    return None;
+                }
+                body = Some(Vec::new());
+                i += 2;
+            }
+            0x19 | 0x1B => return body.map(|b| (b, i)),
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// A cycler's adds as the displayed frame uploaded them, `lag` ticks before
+/// the RAM's: the RAM's adds `adds` and velocities `vel` (`+0x96..+0x9A`,
+/// already `<< 3`) walked back through the part tick's order - each tick
+/// integrates `(vel * frame step * 8) >> 6` into the adds, then runs the
+/// program if its wait drained - undoing the runs that fell inside the lag.
+/// The program sits `k` ticks past its last run ([`cell_fx_idle_ticks`]) at
+/// word `pc`, and a run ending on `WAIT_SET v` is followed by the next one
+/// `(v << 3) / (step * 8) + 1` ticks later. An undone velocity or absolute
+/// add takes the value the program's previous op of that kind wrote; an
+/// absolute add is undone only on a channel no velocity moves. `None` when
+/// the program is not one [`cycler_loop`] reads, `pc` is outside its loop,
+/// or an undo needs history the program does not carry.
+///
+/// `koin1`'s spotlight cone (`2E 0 0 -2, 09 5, 2E 0 0 2, 09 5`) one tick
+/// after its `+2` run, at `v = -12`: tick `N` undoes `+6`, the run undoes
+/// the velocity to `-16`, tick `N - 1` undoes `-6`, and the frame on screen
+/// is back at `-12`.
+pub fn cycler_displayed_adds(
+    words: &[i16],
+    pc: usize,
+    k: i32,
+    adds: [i16; 3],
+    vel: [i16; 3],
+    step: u8,
+    lag: i32,
+) -> Option<[i16; 3]> {
+    let (body, back_at) = cycler_loop(words)?;
+    let len = body.len();
+    if len == 0 || !body.iter().any(|(_, op)| matches!(op, CyclerOp::Wait(_))) {
+        return None;
+    }
+    // The run boundary at `pc`: the count of body ops before it (the
+    // loop-back's own index wraps to the body start).
+    let cursor = if pc == back_at {
+        0
+    } else {
+        let at = body.iter().position(|&(i, _)| i >= pc)?;
+        if body[at].0 != pc {
+            return None;
+        }
+        at
+    };
+    let prev = |c: usize| (c + len - 1) % len;
+    // The run that ended on the WAIT before `cursor` must end on one.
+    if !matches!(body[prev(cursor)].1, CyclerOp::Wait(_)) {
+        return None;
+    }
+    let dt = i32::from(step.max(1)) * legaia_engine_field::clut_cell_fx::SPEED_SCALAR as i32;
+    let held = |v: i16| i32::from(v).max(0) * 8 / dt + 1;
+    let channel_moves = |ch: usize, v: &[i32; 3]| {
+        v[ch] != 0
+            || body
+                .iter()
+                .any(|(_, op)| matches!(op, CyclerOp::Vel(a) if a[ch] != 0))
+    };
+    let mut a = adds.map(i32::from);
+    let mut v = vel.map(i32::from);
+    let mut cur = cursor;
+    let mut run_ago = k;
+    for tick in 0..=lag {
+        if tick == run_ago {
+            // Undo the run ending at `cur`: back over its WAIT, then every
+            // op to the previous WAIT.
+            let mut c = prev(cur);
+            let mut steps = 0;
+            loop {
+                c = prev(c);
+                steps += 1;
+                if steps > len {
+                    return None;
+                }
+                match body[c].1 {
+                    CyclerOp::Wait(w) => {
+                        run_ago += held(w);
+                        cur = (c + 1) % len;
+                        break;
+                    }
+                    CyclerOp::Add(d) => {
+                        for ch in 0..3 {
+                            a[ch] -= i32::from(d[ch]);
+                        }
+                    }
+                    CyclerOp::Vel(_) => {
+                        // The velocity before: the previous op that set it.
+                        let mut p = prev(c);
+                        while !matches!(body[p].1, CyclerOp::Vel(_)) {
+                            p = prev(p);
+                        }
+                        let CyclerOp::Vel(old) = body[p].1 else {
+                            unreachable!()
+                        };
+                        v = old.map(|x| i32::from(x) << 3);
+                    }
+                    CyclerOp::Set(_) => {
+                        // Each channel before the set: the previous set's
+                        // value plus the adds between, on a channel no
+                        // velocity moves.
+                        let mut p = prev(c);
+                        let mut between = [0i32; 3];
+                        loop {
+                            match body[p].1 {
+                                CyclerOp::Set(_) => break,
+                                CyclerOp::Add(d) => {
+                                    for ch in 0..3 {
+                                        between[ch] += i32::from(d[ch]);
+                                    }
+                                }
+                                _ => {}
+                            }
+                            p = prev(p);
+                        }
+                        let CyclerOp::Set(old) = body[p].1 else {
+                            unreachable!()
+                        };
+                        for ch in 0..3 {
+                            if channel_moves(ch, &v) {
+                                return None;
+                            }
+                            a[ch] = i32::from(old[ch]) + between[ch];
+                        }
+                    }
+                }
+            }
+        }
+        if tick < lag {
+            for ch in 0..3 {
+                a[ch] -= (v[ch] * dt) >> 6;
+            }
+        }
+    }
+    Some(a.map(|x| x as i16))
+}
+
+/// How many part ticks have passed since cycler node `n`'s move program last
+/// ran, when its program is parked on a `WAIT_SET` (op `0x09`, the two words
+/// before the PC `+0x70` in the buffer `+0x48`): the op stores `v << 3` in
+/// the wait `+0x54`, and each later tick drains `frame step * 8` from it
+/// before the VM gate (`0x80021E40`), so a wait still at `v << 3` was set on
+/// the RAM's own tick (`0`). `None` for a part not parked on a wait.
+pub fn cell_fx_idle_ticks(ram: &[u8], n: u32, step: u8) -> Option<i32> {
+    let buf = game_anchors::u32_at(ram, n + 0x48);
+    let pc = i32::from(game_anchors::i16_at(ram, n + 0x70));
+    if (buf & 0xFFE0_0000) != 0x8000_0000 || pc < 2 {
+        return None;
+    }
+    let word = |i: i32| game_anchors::i16_at(ram, buf + (i as u32) * 2);
+    if word(pc - 2) != 0x09 {
+        return None;
+    }
+    let set = i32::from(word(pc - 1)) << 3;
+    let drain = i32::from(step.max(1)) * legaia_engine_field::clut_cell_fx::SPEED_SCALAR as i32;
+    let left = i32::from(game_anchors::i16_at(ram, n + 0x54));
+    (left <= set).then(|| (set - left) / drain)
+}
+
+/// `fx` taken back `lag` part ticks along its own integration: each tick
+/// added `(velocity * frame step * 8) >> 6` to an add (`+0x96/98/9A` onto
+/// `+0x90/92/94`) and `(rate * frame step * 8) >> 6` to the white amount
+/// (`+0x6A` onto `+0x68`, clamped at `0x100`, so a clamped amount is left
+/// where it stands). Exact while the move program did not run in those
+/// ticks: a velocity or add op inside them is history the state does not
+/// keep.
+pub fn cell_fx_displayed(
+    mut fx: legaia_engine_field::clut_cell_fx::ClutCellFx,
+    vel: [i16; 3],
+    white_rate: i16,
+    step: u8,
+    lag: i32,
+) -> legaia_engine_field::clut_cell_fx::ClutCellFx {
+    let dt = i32::from(step.max(1)) * legaia_engine_field::clut_cell_fx::SPEED_SCALAR as i32;
+    let back = |v: i16, rate: i16| (i32::from(v) - lag * ((i32::from(rate) * dt) >> 6)) as i16;
+    fx.h_add = back(fx.h_add, vel[0]);
+    fx.s_add = back(fx.s_add, vel[1]);
+    fx.v_add = back(fx.v_add, vel[2]);
+    if fx.white < 0x100 {
+        fx.white = back(fx.white, white_rate).max(0);
+    }
+    fx
 }
 
 /// The GPU packet buffers' bases, `DAT_8007B728[2]`, indexed by the buffer
@@ -773,7 +1076,9 @@ const PACKET_BUFFER_SIZE: u32 = 0x8007_B9CC;
 /// them after the upload, the next one's: `koin3`'s dance-floor and cone rows
 /// re-key `+0x90..+0x94` between frames, so seeding the RAM's adds draws a
 /// phase two or three frames from the one on screen. A cycler is taken only
-/// when it had armed (`+0x9C > 1`) by the older frame.
+/// when it had armed (`+0x9C > 1`) by the older frame, and only when the
+/// displayed phase cannot be derived ([`cell_fx_displayed_phase`]): this
+/// record is one tick off by construction, the derived phase is not.
 pub fn retail_older_buffer_cell_rects(ram: &[u8]) -> Vec<SeededVramRect> {
     let index = game_anchors::i16_at(ram, PACKET_BUFFER_INDEX);
     if !(0..=1).contains(&index) {
@@ -787,11 +1092,26 @@ pub fn retail_older_buffer_cell_rects(ram: &[u8]) -> Vec<SeededVramRect> {
     let lo = (base & 0x1F_FFFF) as usize;
     let hi = (lo + size as usize).min(ram.len());
     let window = &ram[lo.min(hi)..hi];
+    let step = crate::retail_compare_battle::frame_step(ram);
     let mut out: Vec<SeededVramRect> = Vec::new();
     for n in crate::retail_compare_script::actor_nodes(ram) {
         if game_anchors::u32_at(ram, n + 0x0C) != PART_TICK
             || game_anchors::i16_at(ram, n + 0x5A) != 3
             || i32::from(game_anchors::i16_at(ram, n + 0x9C)) <= 1 + DISPLAY_LAG_FRAMES
+            || cell_fx_displayed_phase(
+                ram,
+                n,
+                step,
+                legaia_engine_field::clut_cell_fx::ClutCellFx {
+                    rect: (0, 0, 0, 0),
+                    h_add: 0,
+                    s_add: 0,
+                    v_add: 0,
+                    mode: 0,
+                    white: 0,
+                },
+            )
+            .is_some()
         {
             continue;
         }

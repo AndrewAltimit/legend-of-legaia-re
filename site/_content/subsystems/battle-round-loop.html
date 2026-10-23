@@ -129,7 +129,7 @@
     <li><strong>Lost turns.</strong> An actor carrying Numb, Sleep, Stone or Faint loses its turn when it comes up. A party member whose raw status word carries Stone / Numb / Sleep committed no command, since the ring refuses it; its turn arms category <code>0</code>, which the action seed sends straight to Done. It is never auto-armed as a strike.</li>
     <li><strong>On-hit strip.</strong> A landed melee hit clears the target&rsquo;s delegation bits, Numb and Sleep (<code>FUN_801EC3E4</code>), unless the target is Stone; a Stone target takes no damage.</li>
     <li><strong>Magic blocked.</strong> A cursed or fainted monster caster falls back to a physical strike; a party caster in that state finds the Magic arm bouncing back to the command menu.</li>
-    <li><strong>Confuse</strong> retargets to a random living member of the other side. <strong>Stone</strong> lifts when the party escapes: retail&rsquo;s run band floors every 0-HP member at 1.</li>
+    <li><strong>Confuse</strong> retargets a monster&rsquo;s action to a random living member of the other side; a confused party member gets no command and loses its turn. <strong>Stone</strong> lifts when the party escapes: retail&rsquo;s run band floors every 0-HP member at 1.</li>
   </ul>
 </section>
 
@@ -168,7 +168,7 @@
   <h3>Two gates the AI reads</h3>
   <ul class="bullets">
     <li><strong>The battle-mode byte</strong> <code>ctx[+0x28A]</code> gates multi-phase boss scripts. Its only writer is the action machine&rsquo;s round-end arm, so it is a round counter, zero in the first round; advancing it walks a round-scripted boss to its next scripted cast.</li>
-    <li><strong>The delegation bits</strong> <code>0x380</code> are not a monster flag. They are set only on party members whose record carries the Rage passive, which hands that member to the target resolver. A normal monster keeps them clear, so its scripted-cast cases fire.</li>
+    <li><strong>The delegation bits</strong> <code>0x380</code> are not a monster flag. They are set only on party members whose record carries the Rage passive: the command ring skips that member, and at the round's start the auto assembler fills its turn with a random combo of its learned arts. A normal monster keeps them clear, so its scripted-cast cases fire.</li>
   </ul>
   <p>The cooldown latches behind those scripted casts are cleared only at battle init, so a boss self-heals at most once per fight. In the port the picker&rsquo;s generic core and the per-monster switch are separate (<code>World::pick_monster_action</code>, <code>engine-battle::monster_ai</code>); a scripted cast the active spell catalog cannot fold degrades to a physical strike.</p>
   <p><strong>Targeting stays retail by default.</strong> A single-target monster attack goes to a uniformly random living party member. The <em>Smart monsters</em> toggle redirects it to the lowest-HP member instead, after the faithful pick has been rolled in full, so the random stream is byte-identical either way (<a href="engine.html#fidelity">engine options</a>).</p>

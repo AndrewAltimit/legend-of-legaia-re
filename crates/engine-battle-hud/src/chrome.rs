@@ -15,6 +15,12 @@ use super::*;
 /// The arts-entry screen (`0x50`, step 9: `01/3 .. 1A/3`) keeps both, with
 /// the `Attack` tab after them ([`battle_breadcrumb_third_tab`]) - the
 /// `arts_bar_*` captures read `Begin | Vahn | Attack` over the chips.
+///
+/// The commit-confirm screen `0x6E` keeps the tab and nothing behind it: the
+/// plaque has gone back up (`party_basic_attack_vs_gobu_gobu` holds record
+/// `0x1A` at `(68, -24)` and a `Begin` plate at `(16, 14)`, `36` wide, over
+/// the `Begin` / `Reselect` chips), so [`battle_begin_tab_alone`] is the
+/// draw's question there.
 pub fn battle_begin_tab_visible(world: &legaia_engine_core::world::World) -> bool {
     matches!(
         battle_command_surface(world),
@@ -27,7 +33,20 @@ pub fn battle_begin_tab_visible(world: &legaia_engine_core::world::World) -> boo
                 | CommandSurface::SpellBrowse
                 | CommandSurface::SpellTarget(_)
         )
-    )
+    ) || battle_begin_tab_alone(world)
+}
+
+/// Is the frame the commit-confirm screen `0x6E`, where the `Begin` tab
+/// stands at `(16, 14)` with no plaque beside it?
+pub fn battle_begin_tab_alone(world: &legaia_engine_core::world::World) -> bool {
+    use legaia_engine_battle_menus::battle_input::CommandPhase;
+    world.mode == legaia_engine_mode::mode::SceneMode::Battle
+        && battle_command_surface(world) == Some(CommandSurface::Other)
+        && world
+            .battle
+            .command
+            .as_ref()
+            .is_some_and(|c| matches!(c.phase, CommandPhase::CommitConfirm { .. }))
 }
 
 /// The third breadcrumb tab behind `Begin | <name>`, or `None`.

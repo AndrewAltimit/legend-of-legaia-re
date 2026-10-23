@@ -315,7 +315,7 @@ impl PlayWindowApp {
         // derives from the same matrix, so the quads face the camera
         // that actually draws them.
         let (effect_billboard, effect_lines) = self.build_effect_billboards(r, fx_cam, fx_scale);
-        self.diag_effect_billboards(fx_cam);
+        self.diag_effect_billboards(fx_cam, fx_scale);
         let effect_billboard = if std::env::var_os("LEGAIA_DIAG_NOFX").is_some() {
             None
         } else {

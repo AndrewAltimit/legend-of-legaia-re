@@ -169,6 +169,11 @@ impl ExeMap {
         Some(Self { t_addr, t_size })
     }
 
+    /// The VA file byte 0 maps to (`t_addr - 0x800`, past the header).
+    pub(crate) fn base_va(&self) -> u32 {
+        self.t_addr.wrapping_sub(0x800)
+    }
+
     pub(crate) fn off(&self, va: u32) -> Option<usize> {
         if va < self.t_addr || va >= self.t_addr.checked_add(self.t_size)? {
             return None;

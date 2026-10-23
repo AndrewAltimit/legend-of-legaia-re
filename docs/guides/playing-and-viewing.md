@@ -94,38 +94,65 @@ start shows it ready, with *Play* focused, so `Enter` starts the game.
 ### Options
 
 The option list holds the engine's enhancement knobs, so none of them needs a
-terminal flag:
+terminal flag. It is grouped, and scrolls when it is longer than the panel:
+the selected row stays in view, a bar on the panel's right edge shows where the
+view is, the mouse wheel scrolls it, and `Page Up` / `Page Down` / `Home` /
+`End` move through it.
 
-| Row | Stored in | In game | Default |
-|---|---|---|---|
-| Fullscreen (borderless) | `legaia-options.toml` | `F11`, `Alt+Enter` | off |
-| Window size (640x480 .. 1920x1440, steps of 320x240) | `legaia-options.toml` | - | 960x720 |
-| Enhanced lighting | `legaia-options.toml` | `I` | on |
-| Time of day (auto, day, dusk, night) | `legaia-options.toml` | `F8` | auto |
-| Lamp shadows | `legaia-options.toml` | `Y` | on |
-| See-through walls | `legaia-options.toml` | `F4` | on |
-| Ground fog | `legaia-options.toml` | `F9` | off |
-| Bloom | `legaia-options.toml` | `F10` | off |
-| PlayStation pixel look (`--psx-render`) | `launcher.toml` | - | off |
-| Camera distance (retail, far, farther) | `legaia-options.toml` | `T` | far |
-| Free-angle movement | `legaia-options.toml` | `R` | off |
-| Reduce flashing | `legaia-options.toml` | - | on |
-| Music / sound effects volume (0..10, 8 = the original mix) | `legaia-options.toml` | - | 8 |
-| Original game only (`--retail`) | `launcher.toml` | - | off |
+| Group | Row | Stored in | In game | Default |
+|---|---|---|---|---|
+| Display | Fullscreen (borderless) | `legaia-options.toml` | `F11`, `Alt+Enter` | off |
+| Display | Window size (640x480 .. 1920x1440, steps of 320x240) | `legaia-options.toml` | - | 960x720 |
+| Display | Camera distance (retail, far, farther) | `legaia-options.toml` | `T` | far |
+| Display | PlayStation pixel look (`--psx-render`) | `launcher.toml` | - | off |
+| Enhancements | Enhanced lighting | `legaia-options.toml` | `I` | on |
+| Enhancements | Time of day (auto, day, dusk, night) | `legaia-options.toml` | `F8` | auto |
+| Enhancements | Lamp shadows | `legaia-options.toml` | `Y` | on |
+| Enhancements | Bloom | `legaia-options.toml` | `F10` | off |
+| Enhancements | Ground fog | `legaia-options.toml` | `F9` | off |
+| Enhancements | See-through walls | `legaia-options.toml` | `F4` | on |
+| Enhancements | Living ground pulse (off = `--no-entry-pulse`) | `launcher.toml` | - | on |
+| Play | Free-angle movement | `legaia-options.toml` | `R` | off |
+| Play | Smarter monsters (`--smart-monsters`) | `launcher.toml` | - | off |
+| Play | Reduce flashing | `legaia-options.toml` | - | on |
+| Gameplay tweaks | Shiny Seru (off = `--no-shiny-seru`) | `launcher.toml` | - | on |
+| Gameplay tweaks | Run-away EXP (`--flee-exp`) | `launcher.toml` | - | off |
+| Gameplay tweaks | Fortress battles fix (off = `--no-fortress-encounter-fix`) | `launcher.toml` | - | on |
+| Gameplay tweaks | Boss casts respect jewels (`--jewel-fix`) | `launcher.toml` | - | off |
+| Gameplay tweaks | Battle freeze guard (off = `--no-hp-readout-guard`) | `launcher.toml` | - | on |
+| Gameplay tweaks | Bonus equipment drops (`--equipment-drops`) | `launcher.toml` | - | off |
+| Battle tuning | EXP rate (`--exp-rate`: 1x, 1.5x, 2x, 3x, 5x, 0.5x) | `launcher.toml` | - | 1x |
+| Battle tuning | Enemy strength (`--enemy-stat-scale`: 1x to 5x, 0.75x, 0.5x) | `launcher.toml` | - | 1x |
+| Battle tuning | Enemy attack count (`--enemy-attack-count`: 1x to 3x, 0.5x) | `launcher.toml` | - | 1x |
+| Battle tuning | Spirit AP (`--spirit-ap`: 32 is the original, negative drains) | `launcher.toml` | - | 32 |
+| Battle tuning | AP from damage (`--damage-ap`: 100 is the original, negative drains) | `launcher.toml` | - | 100 |
+| Battle tuning | Seru catch rate (`--seru-catch-rate`: Original or 10..100%) | `launcher.toml` | - | Original |
+| Sound | Music / sound effects volume (0..10, 8 = the original mix) | `legaia-options.toml` | - | 8 |
+| Sound | Mono output | `legaia-options.toml` | - | off |
+| Original game | Original ground culling (`retail_view_window`) | `legaia-options.toml` | - | on |
+| Original game | Original prop culling (`retail_static_window`) | `legaia-options.toml` | - | on |
+| Original game | Original game only (`--retail`) | `launcher.toml` | - | off |
 
 The rows stored in `legaia-options.toml` are the game's own options: the
 launcher writes the same file the in-game keys change, so a toggle made in
-either place is the one the other shows. The two `launcher.toml` rows are
-launch switches with no option behind them. *Original game only* starts the
-game retail-faithful (`play-window --retail`): every enhancement off for that
-session, the saved options untouched; the rows it overrides read *Original*
-while it is on. *Controls* swaps the option list for the current key bindings
-(`legaia-input.toml`).
+either place is the one the other shows. The `launcher.toml` rows are launch
+switches with no option behind them; the browser play page has a box for each.
+*Original game only* starts the game retail-faithful (`play-window --retail`):
+every enhancement off for that session, the saved options untouched; the rows
+it overrides read *Original* while it is on. *Controls* swaps the option list
+for the current key bindings (`legaia-input.toml`).
+
+The *Gameplay tweaks* and *Battle tuning* rows are disc-patcher features the engine runs itself,
+so they need no patched disc: each matches one `legaia-patcher` flag, except
+the freeze guard, which is the engine's own fix for a battle softlock the
+original can reach. [Gameplay tweaks](../subsystems/gameplay-tweaks.md) says
+what each does and which patcher features stay with the patcher.
 
 ### Playing
 
 *Play* starts the game on the title screen (`play-window --disc <bin>
---boot-ui`, plus `--psx-render` / `--retail` when those are on) in a child
+--boot-ui`, plus `--psx-render`, `--retail`, `--no-entry-pulse`,
+`--smart-monsters` or a gameplay-tweak flag when those rows ask for them) in a child
 process, and the launcher window closes. When the game exits normally the
 launcher ends with it. When it stops with an error, the launcher comes back
 with the error lines of the game's log; the whole log is
@@ -202,15 +229,15 @@ enhancement has a retail-faithful off position
 | Key | Toggle | Default | Start-up flag |
 |---|---|---|---|
 | `I` | Enhanced lighting: a time-of-day mood, real lights at lamps and glowing props; off is the game's own baked shading | on, remembered | `--no-dynamic-lighting` |
-| `F8` | Lighting time of day: auto, day, dusk, night | auto | - |
-| `Y` | Shadows cast by the enhanced point lights | on | `--no-dyn-shadows` |
-| `F4` | Camera-occlusion fade: walls between the camera and your character dissolve to a dither | on | `--no-occlusion-fade` |
-| `F9` | Volumetric ground fog | off | `--no-volumetric-fog` |
+| `F8` | Lighting time of day: auto, day, dusk, night | auto, remembered | - |
+| `Y` | Shadows cast by the enhanced point lights | on, remembered | `--no-dyn-shadows` |
+| `F4` | Camera-occlusion fade: walls between the camera and your character dissolve to a dither | on, remembered | `--no-occlusion-fade` |
+| `F9` | Volumetric ground fog | off, remembered | `--no-volumetric-fog` |
 | `F10` | Bloom: lamps, glowing props, lit windows and bright sky glow softly, stronger at night | off, remembered | - |
-| `R` | Precise free-angle movement | off (retail-style movement), remembered | - |
+| `R` | Free-angle movement | off (retail 4/8-way movement), remembered | - |
 | `T` | Camera distance preset: retail, far, farther | far, remembered | - |
 | `F3` | Wide debug orbit camera | off | - |
-| `F2` | Mute audio | off | `--no-audio` |
+| `F2` | Mute audio | off, remembered | `--no-audio` |
 | `F1` | The engine's diagnostic text rows | off | - |
 | `F11`, `Alt+Enter` | Borderless fullscreen | off, remembered | `--fullscreen` / `--windowed` |
 
@@ -486,7 +513,10 @@ is the retail cadence - a faster walk steps more often, standing still is silent
 The engine resolves its files against the **current directory**: key bindings
 in `legaia-input.toml`, options (camera preset, movement mode, the
 `bgm_volume` / `sfx_volume` music and sound-effect levels, `0..=10` with `8`
-the retail mix) in `legaia-options.toml`, and the save screen's port-1 memory
+the retail mix, and `downmix_mono`, the full mono downmix for a single
+speaker - separate from the in-game Monaural setting, which is the original's
+own mono mode and leaves voices and movies in stereo) in
+`legaia-options.toml`, and the save screen's port-1 memory
 card at `saves/memcard1.mcr` - the same raw card image the browser play page
 keeps, which any PSX emulator reads. The first launch that finds no card
 there writes any `slot_NN` save files an older build left into it. Run from the same
@@ -589,7 +619,7 @@ python3 -m http.server -d site      # then open /play.html
 Nothing is uploaded: the disc image you pick stays in the tab.
 
 Rebuild after changing anything the page compiles - which is most of the
-workspace, not just `crates/web-play` and `crates/web-viewer`. To check whether the bundle you built
+workspace, not just the four `crates/web-*` crates (`web-viewer` over `web-play`, `web-minigames` and `web-patcher`). To check whether the bundle you built
 still matches your sources:
 
 ```bash

@@ -132,6 +132,8 @@ impl World {
             list_pages: s.list_pages,
             phase: (&s.phase).into(),
             status: self.raw_status_word(s.actor),
+            pennant_glides: &s.pennant_glides,
+            chip_slide: s.chip_slide,
         })
     }
 
@@ -197,6 +199,8 @@ impl World {
             list_pages: 0,
             phase: ArtsInputScreen::Review,
             status: 0,
+            pennant_glides: &[],
+            chip_slide: None,
         })
     }
 

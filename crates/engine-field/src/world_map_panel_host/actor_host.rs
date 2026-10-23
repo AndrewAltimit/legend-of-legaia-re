@@ -26,6 +26,12 @@ pub enum PanelActorKind {
     /// [`PanelActorHost::retire`] follows that one id instead of dropping
     /// the actor.
     CloseTick,
+    /// `FUN_801F20B0` - the panel-install draw tick, slot `0x1A`. The
+    /// sub-list, text-box and flag-window exits hand back to it: its state
+    /// `0` runs the panel script at `0x801F2A88`
+    /// ([`crate::submode_hub_actors::PANEL_DRAW_TICK`]), then it pumps and
+    /// clears the completion gate like the close tick.
+    DrawTick,
 }
 
 impl PanelActorKind {
@@ -359,11 +365,17 @@ impl PanelActorHost {
     /// handler dispatcher to pick back up off the new id, and this host drops
     /// it instead, recording the pair in [`PanelFrame::exits`].
     ///
-    /// The one id this host *does* follow is `0`, the close tick
-    /// ([`PanelActorKind::CloseTick`]): its body is ported
-    /// ([`crate::submode_hub_actors::close_tick`]) and it is the
-    /// handler every such exit names, so the actor stays installed for it and
-    /// retires when the tick clears the completion gate.
+    /// The ids this host *does* follow are the ones whose bodies are ported:
+    /// `0`, the close tick ([`PanelActorKind::CloseTick`],
+    /// [`crate::submode_hub_actors::close_tick`]), which the actor stays
+    /// installed for and retires when the tick clears the completion gate;
+    /// and `0x29` / `0x2B`, the two travel arts the fade / flash's exits name
+    /// (`PTR_FUN_801F33B4[0x29] = FUN_801EE094`, `[0x2B] = FUN_801EE328`,
+    /// read off the PROT 0897 image), which continue as
+    /// [`PanelActorKind::TravelArt`] the way retail's dispatcher would run
+    /// them next; and `0x1A`, the draw tick `FUN_801F20B0`
+    /// ([`PanelActorKind::DrawTick`]) the sub-list, text-box and flag-window
+    /// exits hand back to. Every other id is dropped and recorded.
     fn retire(&mut self, frame: &mut PanelFrame, exit: ActorExit) {
         frame.exits.push(exit);
         exit.apply(
@@ -377,6 +389,14 @@ impl PanelActorHost {
         self.timer = 0;
         if exit.next_handler == crate::submode_hub_actors::slot::CLOSE_TICK {
             self.kind = Some(PanelActorKind::CloseTick);
+            return;
+        }
+        if exit.next_handler == crate::submode_hub_actors::slot::DRAW_TICK {
+            self.kind = Some(PanelActorKind::DrawTick);
+            return;
+        }
+        if let Some(art) = TravelArt::for_handler_id(exit.next_handler) {
+            self.install(PanelActorKind::TravelArt(art), exit.next_handler);
             return;
         }
         frame.retired = true;
@@ -396,7 +416,29 @@ impl PanelActorHost {
     /// only while the input lock `_DAT_8007BB80` is down
     /// (`0x801F2184..0x801F21A0`) - so a locked frame keeps the actor up.
     fn tick_close_tick(&mut self, frame: &mut PanelFrame) {
-        use crate::submode_hub_actors::{self as hub, HubAction, HubActor, HubEnv, HubGrid};
+        self.tick_hub_tail(frame, crate::submode_hub_actors::close_tick);
+    }
+
+    /// One frame of the draw tick (`FUN_801F20B0`), under the same retire
+    /// test as [`Self::tick_close_tick`]; its state `0` installs the panel
+    /// script at `0x801F2A88` instead of closing every panel.
+    fn tick_draw_tick(&mut self, frame: &mut PanelFrame) {
+        self.tick_hub_tail(frame, crate::submode_hub_actors::draw_tick);
+    }
+
+    /// The close / draw tick pair's shared host: run `body` over a hub actor
+    /// mirroring this one, apply its panel actions, and retire when it clears
+    /// the completion gate.
+    fn tick_hub_tail(
+        &mut self,
+        frame: &mut PanelFrame,
+        body: fn(
+            &mut crate::submode_hub_actors::HubActor,
+            &crate::submode_hub_actors::HubEnv,
+            &mut crate::submode_hub_actors::HubGrid,
+        ) -> crate::submode_hub_actors::HubFrame,
+    ) {
+        use crate::submode_hub_actors::{HubAction, HubActor, HubEnv, HubGrid};
         let mut actor = HubActor {
             state: self.handler_id,
             sub: self.phase,
@@ -410,11 +452,14 @@ impl PanelActorHost {
             done_gate: 1,
             ..HubGrid::default()
         };
-        let out = hub::close_tick(&mut actor, &env, &mut grid);
+        let out = body(&mut actor, &env, &mut grid);
         self.phase = actor.sub;
         for action in &out.actions {
             match action {
                 HubAction::CloseAllPanels => self.windows.apply(PanelEffect::CloseAll),
+                HubAction::InstallPanel(va) => {
+                    self.windows.run_script(*va);
+                }
                 HubAction::DrawPump => self.text_actor_ticks += 1,
                 _ => {}
             }
@@ -465,6 +510,7 @@ impl PanelActorHost {
             PanelActorKind::FlagWindow => self.tick_flag_window(pad, flags, &mut frame),
             PanelActorKind::TravelArt(_) => self.tick_travel_art(frame_delta, &mut frame),
             PanelActorKind::CloseTick => self.tick_close_tick(&mut frame),
+            PanelActorKind::DrawTick => self.tick_draw_tick(&mut frame),
         }
         frame
     }

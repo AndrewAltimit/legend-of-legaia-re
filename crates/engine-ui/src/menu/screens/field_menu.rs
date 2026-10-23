@@ -20,12 +20,14 @@ pub struct FieldMenuRowView<'a> {
 /// play-time lines fill the id-49 corner box (`money_pen`). The row
 /// *content* layout (cursor glyph, label inset) is engine-styled - the
 /// retail list renderer `FUN_801CFD68` is untraced.
+#[allow(clippy::too_many_arguments)]
 pub fn field_menu_draws_for(
     font: &legaia_font::Font,
     rows: &[FieldMenuRowView<'_>],
     cursor: u8,
     money: u32,
     play_time_seconds: u32,
+    coins: Option<u32>,
     list_pen: (i32, i32),
     money_pen: (i32, i32),
 ) -> Vec<TextDraw> {
@@ -34,8 +36,8 @@ pub fn field_menu_draws_for(
     const LIST_PITCH: i32 = 14;
     let white: [f32; 4] = MENU_TEXT_WHITE;
     // Disabled rows stage string CLUT 0 (the grayed row ink retail uses
-    // for a blocked Save / Load).
-    let dim: [f32; 4] = [0.28, 0.28, 0.28, 1.0];
+    // for a blocked Save / Load) - 5-bit `(16, 16, 16)` on a retail frame.
+    let dim: [f32; 4] = MENU_TEXT_GREY;
 
     let mut out = Vec::new();
     // Command rows at (WX+0x14, WY + n*0xe), all CLUT-7 white - the
@@ -67,7 +69,21 @@ pub fn field_menu_draws_for(
         8,
         white,
     ));
-    let time_y = money_pen.1 + 0x0e;
+    // The casino coin row (`FUN_8003CE64(8)`, raised at menu open when the
+    // bank is non-zero): the bank `0x800845A4` as a second 8-digit field one
+    // row down (`0x801D01C0..0x801D01E8`), pushing the time row with it.
+    let mut time_y = money_pen.1 + 0x0e;
+    if let Some(coins) = coins {
+        out.extend(num_field_draws(
+            font,
+            coins as u64,
+            money_pen.0 + 0x28,
+            time_y,
+            8,
+            white,
+        ));
+        time_y += 0x0e;
+    }
     let mut h = play_time_seconds / 3600;
     let mut m = (play_time_seconds % 3600) / 60;
     let mut s = play_time_seconds % 60;
@@ -84,9 +100,12 @@ pub fn field_menu_draws_for(
         3,
         white,
     ));
+    // The colons are separator glyph 9 (`FUN_8003C1F8(9, ..)` at
+    // `0x801D029C` / `0x801D02C0`).
     let colon = |out: &mut Vec<TextDraw>, x: i32| {
-        out.extend(text_draws_for(
-            &font.layout_ascii(":"),
+        out.extend(crate::menu::window_painters::separator_glyph_draws(
+            font,
+            crate::menu::window_painters::SEPARATOR_GLYPH_COLON,
             (money_pen.0 + x, time_y),
             white,
         ));
@@ -236,6 +255,7 @@ pub fn field_menu_icon_sprites_for(
     list_pen: (i32, i32),
     money_pen: (i32, i32),
     info_pen: (i32, i32),
+    coin_row: bool,
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
@@ -265,7 +285,13 @@ pub fn field_menu_icon_sprites_for(
         );
         // Money icon + play-time tag in the corner box.
         push(rects.icon_money, money_pen.0, money_pen.1 + 2);
-        push(rects.label_time, money_pen.0, money_pen.1 + 0x10);
+        let mut time_y = money_pen.1 + 0x10;
+        if coin_row {
+            // ICO `0x66` one row down (`0x801D01CC`).
+            push(rects.label_coin, money_pen.0, time_y);
+            time_y += 0x0e;
+        }
+        push(rects.label_time, money_pen.0, time_y);
         // Party rows: LV / HP / MP label sprites per member.
         for i in 0..party_ap.len().min(3) {
             let y = info_pen.1 + i as i32 * BLOCK_PITCH;

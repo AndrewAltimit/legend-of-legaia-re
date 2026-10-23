@@ -77,12 +77,46 @@ pub(super) fn source() -> Option<Source> {
 }
 
 pub(super) fn open_session(src: &Source) -> NativeSession {
-    open_session_armed(src, true)
+    open_session_armed(
+        src,
+        Arming {
+            host: true,
+            retail: false,
+        },
+    )
+}
+
+/// The session configuration a run plays under.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Arming {
+    /// The hosts' faithful-play arming ([`arm_host_play_defaults`]).
+    pub(super) host: bool,
+    /// The hosts' retail mode (`--retail` / the play page's retail mode):
+    /// the persisted options pinned (`OptionsState::pin_retail`, pushed
+    /// through `options::apply_to_world`) and then every fidelity toggle
+    /// (`WorldToggles::pin_retail`), as `SessionSwitches::apply` does - the
+    /// hop landing guard down, the retail tile windows, no flash slew.
+    pub(super) retail: bool,
+}
+
+impl Arming {
+    /// Read back a replay's `# soak-arming` value.
+    pub(super) fn from_tag(tag: Option<&str>) -> Self {
+        let tag = tag.unwrap_or("bare");
+        let (base, retail) = match tag.strip_suffix("-retail") {
+            Some(b) => (b, true),
+            None => (tag, false),
+        };
+        Self {
+            host: base == "host",
+            retail,
+        }
+    }
 }
 
 /// [`open_session`], with the hosts' faithful-play arming applied only when
-/// `arm` is set.
-pub(super) fn open_session_armed(src: &Source, arm: bool) -> NativeSession {
+/// `arm.host` is set, and their retail mode when `arm.retail` is.
+pub(super) fn open_session_armed(src: &Source, arm: Arming) -> NativeSession {
     let cfg = BootConfig {
         scene: legaia_engine_session::session::DEFAULT_BOOT_SCENE.to_string(),
         enable_audio: false,
@@ -93,15 +127,30 @@ pub(super) fn open_session_armed(src: &Source, arm: bool) -> NativeSession {
         }
         Source::Disc(p) => NativeSession::open_disc(p, &cfg).expect("open NativeSession (disc)"),
     };
-    if arm {
+    if arm.host {
         arm_host_play_defaults(&mut session);
+    }
+    if arm.retail {
+        pin_host_retail_mode(&mut session);
     }
     session
 }
 
+/// The hosts' retail mode on a session: the options screen's engine knobs
+/// pinned and pushed into the world, then the fidelity toggles pinned.
+pub(super) fn pin_host_retail_mode(session: &mut NativeSession) {
+    let mut opts = legaia_engine_menus::options::OptionsState::default();
+    opts.pin_retail();
+    let w = &mut session.host.world;
+    legaia_engine_core::options::apply_to_world(&opts, w);
+    w.toggles.pin_retail();
+    debug_assert!(w.toggles.retail_deviations().is_empty());
+}
+
 /// The faithful-play arming both play hosts apply on top of a bare
 /// `BootSession` (`play-window`'s defaults in `window/run.rs`, the browser
-/// page's `enter_field_core`): field talk through the inline field-VM runner,
+/// page's `enter_field_core`): the default options' world knobs, field talk
+/// through the inline field-VM runner,
 /// retail's leading-edge wall footprint, solid NPC bodies and per-step
 /// terrain follow. `BootSession` already sets the NPCs' ambient walk.
 ///
@@ -111,6 +160,16 @@ pub(super) fn open_session_armed(src: &Source, arm: bool) -> NativeSession {
 /// sub-cells the retail footprint never reaches (`town0d`'s cupboard nook at
 /// (94, 17), reported `confined`).
 pub(super) fn arm_host_play_defaults(session: &mut NativeSession) {
+    // Both hosts push their persisted options' simulation knobs onto the
+    // world every tick (`BootSession::apply_option_knobs`); a fresh options
+    // file is `OptionsState::default()`. A bare `World` keeps its own
+    // defaults instead - `retail_static_window` off among them, while both
+    // hosts start with it on - so the soak pushes the hosts' defaults once.
+    // Nothing a run does reseeds these knobs (they live on `World` from its
+    // construction), and a run never opens the options screen, so one push
+    // stands for the hosts' per-tick re-assert.
+    let defaults = legaia_engine_menus::options::OptionsState::default();
+    session.apply_option_knobs(&defaults, None);
     let w = &mut session.host.world;
     w.toggles.use_vm_dialogue = true;
     w.locomotion.leading_edge_wall_probes = true;

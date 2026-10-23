@@ -15,6 +15,36 @@ fn done_cleanup_sets_recoil_per_category() {
     assert_eq!(ctx.frame_timer, 0x3C);
 }
 
+/// A Spirit AP setting (`--spirit-ap`'s twin) replaces the `0x20`: a
+/// positive one is paid like retail's, a negative one drains the gauge
+/// (floored at zero) with the AP-Boost passives inert; retail's own value is
+/// the unmodified band.
+#[test]
+fn done_cleanup_pays_the_spirit_ap_setting() {
+    let gauge_after = |ap: Option<i16>, start: u16, bits: u32| {
+        let (mut ctx, mut host) = fresh(ActionCategory::Spirit, 1);
+        host.spirit_ap = ap;
+        host.actors[1].spirit_gauge = start;
+        host.ability_bits_high.insert(1, bits);
+        ctx.action_state = ActionState::DoneCleanup.as_byte();
+        step(&mut host, &mut ctx);
+        assert_eq!(host.actors[1].action_recoil, 0);
+        host.actors[1].spirit_gauge
+    };
+    assert_eq!(gauge_after(None, 10, 0), 10 + 0x20);
+    assert_eq!(gauge_after(Some(SPIRIT_AP_RETAIL), 10, 0), 10 + 0x20);
+    assert_eq!(gauge_after(Some(64), 10, 0), 74);
+    assert_eq!(gauge_after(Some(100), 10, 0), 100, "capped at 100");
+    assert_eq!(gauge_after(Some(0), 10, 0), 10);
+    // AP Boost 2 (`+0xF8 & 0x200`) adds a quarter of the setting.
+    assert_eq!(gauge_after(Some(64), 0, 0x200), 80);
+    assert_eq!(gauge_after(Some(-16), 30, 0), 14);
+    assert_eq!(gauge_after(Some(-16), 5, 0x200), 0, "floored, boosts inert");
+    // The plate target state `0x46` stages reads the same setting.
+    assert_eq!(spirit_turn_gains(32), (32, 40, 35));
+    assert_eq!(spirit_turn_gains(-20), (-20, -20, -20));
+}
+
 #[test]
 fn done_cleanup_attack_uses_recover_pose() {
     let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);

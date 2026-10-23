@@ -17,6 +17,7 @@ legaia-engine-save-state.workspace = true
 legaia-engine-world-views.workspace = true
 legaia-engine-battle.workspace = true
 legaia-engine-battle-vm.workspace = true
+legaia-ui-formats.workspace = true
 legaia-engine-dialog.workspace = true
 legaia-engine-effects.workspace = true
 legaia-engine-field.workspace = true
@@ -55,7 +56,6 @@ legaia-lzs.workspace = true
 legaia-mdt.workspace = true
 legaia-mes.workspace = true
 legaia-seq.workspace = true
-legaia-ui-formats.workspace = true
 legaia-vab.workspace = true
 
 [[test]]

@@ -259,24 +259,75 @@ pub const CHOICE_YES_VA: u32 = 0x801C_EA84;
 pub const CHOICE_NO_VA: u32 = 0x801C_EA8C;
 
 /// Read one NUL-terminated menu-overlay string at `va` out of a PROT 0899
-/// image, dropping the leading `@` the string primitive uses as its
-/// lead-in marker.
+/// image, keeping the pool's leading `@`.
 ///
-/// Stops at the first byte outside printable ASCII as well as at the NUL,
-/// so an entry that is really a one-byte control code comes back empty
-/// rather than as mojibake. `None` means the VA is outside the image.
+/// The `@` is not a marker the string primitive strips: neither the
+/// expander `FUN_80036514` nor the renderer `FUN_80036888` tests for it, and
+/// it is a blank glyph of width `0`, so retail draws it as a one-pixel
+/// advance (`widths[c] + pad + 1`) - every pool string's first visible glyph
+/// sits one pixel past its pen (the root menu's rows ink from `WX + 0x15`
+/// on a retail capture, against the `WX + 0x14` pen). Keeping it makes the
+/// host font place the line the same way.
+///
+/// Stops at the first byte that is not a glyph
+/// ([`legaia_game_tables::menu_pool::is_glyph`]) as well as at the NUL, so
+/// an entry that is really a one-byte control code comes back empty rather
+/// than as mojibake (a lone `@` counts as empty). A high glyph byte (an
+/// accent cell) comes back as the Latin-1 `char` of its value. `None` means
+/// the VA is outside the image.
+///
+/// `va` is the retail coordinate; the string is read where the overlay's own
+/// code finds it ([`legaia_game_tables::menu_string_refs::resolve_va`]), so a
+/// label a language pack moved still reads.
 ///
 /// No text is committed anywhere in this crate: the VAs above are the
 /// coordinates and this reads the bytes from the image the user supplied.
 pub fn menu_overlay_string(overlay: &[u8], va: u32) -> Option<String> {
+    let va = legaia_game_tables::menu_string_refs::resolve_va(overlay, va);
     let off = va.checked_sub(MENU_OVERLAY_BASE_VA)? as usize;
     let rest = overlay.get(off..)?;
-    let body = rest.strip_prefix(b"@").unwrap_or(rest);
-    let end = body
+    let end = rest
         .iter()
-        .position(|&b| !(0x20..0x7F).contains(&b))
-        .unwrap_or(body.len());
-    Some(String::from_utf8_lossy(&body[..end]).into_owned())
+        .position(|&b| !legaia_game_tables::menu_pool::is_glyph(b))
+        .unwrap_or(rest.len());
+    let text = &rest[..end];
+    if text.strip_prefix(b"@").unwrap_or(text).is_empty() {
+        return Some(String::new());
+    }
+    Some(text.iter().map(|&b| char::from(b)).collect())
+}
+
+/// The two prompt VAs the Throw Out confirm (`FUN_801D1B20`, window 9)
+/// draws: the line after the item name and count (`0x801D1C38`) and the
+/// question at `(WX + 6, WY + 0xE)` (`0x801D1C58`).
+pub const THROW_CONFIRM_PROMPT_VAS: [u32; 2] = [0x801C_EA60, 0x801C_EA74];
+
+/// The Throw Out confirm's labels, read off one PROT 0899 image: its two
+/// prompt lines and the shared Yes / No. Empty until a host installs the
+/// overlay - the window then draws no label text rather than invented text.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ThrowConfirmLabels {
+    pub prompt: [String; 2],
+    pub choices: [String; 2],
+}
+
+impl ThrowConfirmLabels {
+    /// Read every label out of a PROT 0899 image.
+    pub fn from_menu_overlay(overlay: &[u8]) -> Self {
+        let s = |va: u32| menu_overlay_string(overlay, va).unwrap_or_default();
+        Self {
+            prompt: [
+                s(THROW_CONFIRM_PROMPT_VAS[0]),
+                s(THROW_CONFIRM_PROMPT_VAS[1]),
+            ],
+            choices: [s(CHOICE_YES_VA), s(CHOICE_NO_VA)],
+        }
+    }
+
+    /// `true` once a host has installed real disc text.
+    pub fn is_installed(&self) -> bool {
+        !self.prompt[0].is_empty()
+    }
 }
 
 /// Every label the kind-`0x0D` pair needs, read off one PROT 0899 image.

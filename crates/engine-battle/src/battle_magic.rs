@@ -48,6 +48,10 @@ pub struct SpellRow {
 pub struct BattleSpellMenuModel {
     /// `(name, affordable, ra_seru)` per row, in list order.
     pub rows: Vec<(String, bool, bool)>,
+    /// Per row, the operand of the `0xCE` element-plate escape the retail
+    /// name string opens with (`SpellEntry::icon`); `None` without the disc
+    /// spell table. Parallel to [`Self::rows`].
+    pub icons: Vec<Option<u8>>,
     /// Row under the hand.
     pub cursor: Option<usize>,
     /// The highlighted spell's info-window lines.

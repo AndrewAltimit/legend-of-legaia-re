@@ -134,6 +134,13 @@ impl World {
                 self.open_battle_results_frame(&mut seq);
             }
             BattleEndCause::Escaped => {
+                // Run-away EXP (`WorldToggles::flee_exp`): banked once, here,
+                // where every escape path converges. Off is retail's empty
+                // flee.
+                let banked = self.bank_flee_exp();
+                if banked > 0 {
+                    log::info!("battle end: escape banked {banked} XP per member");
+                }
                 // The command-flow escape paths (spell / item) reach here
                 // without the SM's `0x66` arm; give them its fade.
                 if self.presentation.fade.is_none() {

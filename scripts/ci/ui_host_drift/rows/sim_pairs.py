@@ -60,22 +60,28 @@ from ui_host_drift.rows.host_files import (
 # injection is a call made from a place the pairing should not pin.
 SIM_PAIRS: list[dict[str, object]] = [
     {
-        "what": "environment-switch world toggles, native vs play page - the "
+        "what": "session-switch world toggles, native vs play page - the "
         "native window read `LEGAIA_SMART_MONSTERS` and "
-        "`LEGAIA_WORLD_MAP_MARKERS` inline in its launch code, outside the one "
-        "place a native session raises its switches; the page's boxes write "
-        "the same `WorldToggles` fields through `apply_page_toggles`. The two "
-        "appliers must name the same set",
+        "`LEGAIA_WORLD_MAP_MARKERS` inline in its launch code, and its "
+        "`--retail` left the env-raised switches on while the page's retail "
+        "mode masked only two of them. Both hosts now hand one "
+        "`SessionSwitches` set (`engine-session::session_switches`) to its "
+        "`apply`, so the retail mask has one definition; each site must "
+        "build the full set",
         "sites": {
-            "native": ("crates/engine-session/src/native.rs", "apply_env_world_toggles"),
+            "native": ("crates/engine-shell/src/window/run.rs", "apply_launch_toggles"),
             "web": ("crates/web-play/src/play_toggles.rs", "apply_page_toggles"),
         },
         "mode": "symbols_all",
         "symbols": [
-            "smarter_monster_targeting",
-            "overworld_marker_overlay",
-            "battle_sm_frame_cadence",
+            "SessionSwitches",
+            "smart_monsters",
+            "world_map_markers",
+            "entry_pulse",
+            "battle_frame_cadence",
             "arts_saved_list",
+            "tweaks",
+            "retail",
         ],
     },
     {

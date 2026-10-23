@@ -3,18 +3,16 @@
 //!
 //! When a party member wears the Evil Medallion, `FUN_80047430` promotes its
 //! Rage accessory passive to the per-actor AI-delegation bits `+0x16E |= 0x380`,
-//! and the battle SM then auto-picks that member's action. The `0x380` flag is
-//! consumed only in `FUN_801E295C` / `FUN_801E9FD4` / `FUN_801DABA4` (+ the charm
-//! redirect `FUN_801E7320`) - none of which fills a *controllable* character's
-//! action stream - so the Rage auto-pick *writer* is upstream (the undumped
-//! command-menu controller). (The AI **companion** path, char id 4 = Terra, IS
-//! dumped: `FUN_801EED1C`'s `== 4` branch; see
-//! `docs/subsystems/battle-action.md` § AI-delegated party members.) The engine
-//! uses an auto-physical stand-in for Rage. This test pins the lone observed
-//! sample from `evil_medallion_rage_battle` so it is not lost - it does NOT
-//! resolve the writer or the pick variability (still capture-blocked; needs a
-//! write-watch on `+0x1DE`/`+0x1DF` during a Rage command phase, or more
-//! samples).
+//! the command ring passes the member over (`+0x16E & 0xF84`), and the round's
+//! state-`0x00` pass fills its action stream: `FUN_801F0450`'s delegated arm
+//! (gated on the character record's `+0xF8 & 0x2000`) commits category `3`,
+//! rolls a target and draws learned arts (`id + 0x1B`) until a `rand() % 7`
+//! stop. A PCSX-Redux write-watch (`autorun_rage_delegated_pick.lua`) pins the
+//! writer at `0x801F068C` / `0x801F06B8` and shows the seed's builder call
+//! (`FUN_801EED1C` from `0x801E2C7C`) leaving the stream as it is. The engine
+//! port is `battle_action::round_state_zero` + `World::arm_party_delegated`.
+//! This test pins the one mid-Rage library sample, which is that loop's output
+//! shape.
 //!
 //! Pinned facts (battle-actor pool `0x800EC9E8`, stride `0x2D4`, indexed via the
 //! 8-slot pointer table `0x801C9370`):

@@ -148,8 +148,11 @@ fn the_counter_the_menu_side_leaves_selects_the_terminal_arm() {
         );
 
         // Ramp back down, restore the tint, and take the arm `counter - 1`
-        // selects. The actor is dropped on the exit.
-        run_until(&mut world, 400, |w| panels(w).kind.is_none());
+        // selects. The exit names a travel art (`PTR_FUN_801F33B4[0x29]` =
+        // Riremito, `[0x2B]` = Rula), which the host runs next.
+        run_until(&mut world, 400, |w| {
+            matches!(panels(w).kind, Some(PanelActorKind::TravelArt(_)))
+        });
         // `ActorExit::apply` writes the arm's new id into `ctx[+0x50]` and
         // parks the old one in `scene[+0x40]`, so the host's own mirrors are
         // the record of which arm ran.

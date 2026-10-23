@@ -47,6 +47,7 @@ Flags worth knowing:
 | `--recapture` / `--reseed` | Re-run the retail capture / the retail-compare seed instead of using the cache |
 | `--formation <bytes>` | Retail only: overwrite the formation row `FUN_801DA600` returns. The engine has no seam to seat the same monsters, so a forced formation compares different fights |
 | `--engine-env K=V` | Extra environment for the engine child |
+| `LEGAIA_POKE32=addr=value,...` (environment) | Retail only: words the probe writes at the inject. A capture-class module that forks its choreography off RAM rather than the action id needs it: PROT 0946's arm 0 takes Big Wave's branch only while the caster's latch `0x801C8FE0 + (seat + 1) * 4` is set, so a seat-0 cast of `0x56` needs `0x801C8FE4=1` and otherwise records Call Wave |
 
 ## What each side records
 
@@ -61,11 +62,16 @@ caster's cast begin (`0x28`) it grabs `PCSX.GPU.takeScreenShot()` every
 `ctx[+0x07]`, `ctx[+0x279]`, the acting seat, the frame step `*(0x1F800393)`,
 the `ctx[+0x6D8]` / `+0x6DA` / `+0x87C` words, PROT 0903's countdown, every
 seat's HP, the main loop's frame counter `gp+0x480` (`frame`, read at
-`0x8007B798`) and the side-band applier stage `ctx[+0x276]` (`c276`, the
-token a module's stream-wait arm polls). A second file, `body.csv`, holds
+`0x8007B798`), the side-band applier stage `ctx[+0x276]` (`c276`, the
+token a module's stream-wait arm polls) and the words the read-span poll
+`FUN_8003DE7C(1)` reads (`xaspan` `gp+0x91C`, `cdbusy` `0x8007BA70`,
+`cdmode` `0x8007B83C`, `cdread` `0x8007B8C2`). A second file, `body.csv`, holds
 per vsync the acting seat's clip `+0x1D9`, node cursor `+0x68`, live pair,
 body pair `+0x3C` / `+0x40` and the camera focus with its tween endpoints:
-the series a summon close-up's framing is read off. At cast begin it also logs each pool slot's ground pair
+the series a summon close-up's framing is read off. A third, `cam.csv`, holds
+per vsync the live pitch, yaw and TR trio with the yaw and TR z records of the
+tween table `ctx[+0x118C]` (increment, endpoint): the walk of a module's shot.
+At cast begin it also logs each pool slot's ground pair
 `+0x34` / `+0x38` (`done.txt`). The run uses the recompiler (`--fast`) unless a
 formation is forced, and `run_probe.sh` stages the disc in a private directory,
 so no `.ppf` beside the image reaches it.
@@ -89,7 +95,8 @@ deterministic. The recorder starts on cast begin `0x28` and writes the frame
 already cropped and box-filtered to the compared `320 x 224`
 (`Frame::from_engine_capture`, the corpus's alignment). Its `meta.csv` uses
 retail seat numbers: the engine packs the party ahead of the monsters, and the
-recorder maps them back.
+recorder maps them back. Beside it, `cam.csv` holds the live camera pose per
+tick (pitch, yaw, TR trio), the engine half of the retail side's file.
 
 ## The pairing rule
 
@@ -229,6 +236,32 @@ enough to read the engine's own segment lengths for a cast in the fight the
 corpus scores it in.
 - **An item cast (the flutes) is not injectable.** The probe writes category
   `2` (Magic). An item summon needs the item category and its own id space.
+
+## Waits the engine does not run
+
+Three waits in a summon band are CD reads, which the engine's resident
+streams answer at once, so their segments part on length without any engine
+error. The pairing keys each segment on its own, so they do not shift the
+rest of the cast's pairs; they do move the band's flash against the module's
+arms. Measured on the `party_basic_attack_vs_gobu_gobu` casts (Horn, Jedo,
+Freed), each a frame-step-`2` run:
+
+| Wait | What it polls | Retail | Engine |
+|---|---|---|---|
+| `0x32` | `FUN_8003DE7C(1)`: with `0x8007B8C2` set, the pending-read word `gp+0x988` and the CD sync `FUN_8003F2B8(1)` (`0x8003DF70..0x8003DFFC`), the read the cast trigger started in `0x29` | `16` vsyncs, ending about `38` after `0x29` begins | one pass |
+| the side-band arm (below) | `ctx[+0x276]`: the applier `FUN_801F12D0` requests and consumes one `0x10800`-byte slot per stage pair, from the `1` state `0x32` stores | `28` to `30` vsyncs a request, `1` or `2` a consume; four slots for Horn and Jedo (the stage drops at `8`), three for Freed (at `6`) | the byte is never raised |
+| a stream-poll arm | `FUN_8003F2B8(1)`, the creature's own read | a few vsyncs | one pass |
+
+The read-span words themselves (`xaspan`, `cdbusy`, `cdmode`, `cdread`) hold
+still through the whole band in these casts, so the `0x32` wait is the
+pending read, not a voice clip's span.
+
+Every summon module `0903..=0934` polls `ctx[+0x276]` once, on one arm
+([cast-module.md](../subsystems/cast-module.md#the-side-band-poll-arm)), so
+in retail that arm holds while the applier runs on past the band head.
+Horn's arm 2 ends on the pass the byte drops. Jedo's band flash-out reads
+about `25` vsyncs younger in the engine at the same arm, which is most of
+that cast's low score in arms 2 to 4.
 
 ## See also
 

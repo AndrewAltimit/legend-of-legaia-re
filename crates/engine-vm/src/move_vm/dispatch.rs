@@ -581,6 +581,13 @@ pub fn step<H: MoveHost + ?Sized>(
         // bytes) and `+0xCC = PC`, `+0xCE = +0xD0 = +0xD2 = 0`. Each part's
         // six operands seed both its current and its target keyframe.
         //
+        // The pose lives in `keyframe_pose`, a `Vec` sized from `count`, not
+        // in the game's heap: retail's failure arm (a NULL block it copies
+        // through, the Conkram mirror freeze) has no counterpart, and an
+        // out-of-memory here aborts the process rather than writing anywhere.
+        // Retail reuses an existing block whatever its size; the port rebuilds
+        // it at the new count, so a re-seat with more parts cannot overrun.
+        //
         // PORT: FUN_80023070 (op `0x3C`, `0x80023CA4..0x80023D60`)
         0x3C => {
             state.move_submode = 6;

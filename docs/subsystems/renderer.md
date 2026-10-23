@@ -342,9 +342,26 @@ Structural facts, read from the raw table:
   default emitter (`effect_default_arm::vram_mesh`) applies when the colour
   word carries the bit; both hosts draw that emitter's mesh.
 - **`0x80044798` is not a table entry.** It sits between the lit set and the
-  cued banks and is a transform-free `mfc2`-only read-back / packet-pack
-  helper. The cued bodies for kinds 12..19 are full per-kind handlers past
-  it, running to about `0x80045BB4`.
+  cued banks and is the leaves' off-screen reject: a transform-free read of
+  the four projected corners (`SXY0..2` plus the first corner saved in
+  `s3`) that returns `1` only when all four sit past one screen edge - every
+  `y < 0`, every `y >= 0xF0`, every `x <= 0` or every `x >= 0x140`. A quad
+  that straddles an edge is kept, so Horn's arm-9 fan spikes run off every
+  side of retail's frame. The quad leaves call it only when the colour
+  word's top byte carries `0x40` (`lbu -0x2D1(t2)` / `andi 0x40`, kind 19
+  bank 1 at `0x800456EC..0x80045704`). The cued bodies for kinds 12..19 are
+  full per-kind handlers past it, running to about `0x80045BB4`.
+- **A double-sided word culls nothing by winding, not even a degenerate
+  quad.** The quad leaves `and` the `NCLIP` area with the dispatcher's mask
+  and branch on its sign (kind 19 bank 1: `bltz` at `0x80045634` for the
+  first triangle, `bgtz` at `0x80045668` for the second, run only when the
+  first is negative). With the double-sided bit `0x08000000` the mask is
+  `0x7FFFFFFF`, the first area is never negative and the second test never
+  runs, so a zero-area quad is drawn (and rasterises nothing). The
+  draw-kind-4 nodes' word `0xC9000000` carries both that bit and the `0x40`
+  off-screen test: of a crown's thirty-two extrapolated sliver quads retail
+  links the few that reach the screen, and the port, which draws all of
+  them, shows the same pixels.
 - **The world map swaps the handlers.** The bulk-terrain path uses eight
   overlay-resident replacements for kinds 12..19 (`0x801F7644..0x801F8690`,
   PROT 0901), so a sweep bounded to the SCUS span misses them, and on a
@@ -1014,8 +1031,15 @@ override replaces it.
 
 ### The ground shadow
 
-Unless `actor+0x6A` is set, the draw ends with a shadow disc under the actor.
-The position is projected with its height `+0x16` zeroed, and the procedural
+Unless `actor+0x6A` is set, the draw ends with a shadow disc under the actor's
+body. The disc's translation is the node position `+0x14` with its height
+`+0x16` zeroed (`0x80049044..0x800490AC`), moved by the GTE `MVMVA`
+(`0x80049104`) through the actor's rotation onto the pose centroid the decoder
+`FUN_8004998C` has just left in the pose pool (`gp[0xA0C] + 0x6F4`, `+0x120` /
+`+0x124`, read with its height forced to `0` at `0x800490B0..0x800490F8`): the
+point under the body pair, not under the node. A clip that carries the body off
+its node - Vahn knocked back by Tail Fire, some 470 units on
+`battle_gimard_tail_fire_a` - keeps its shadow under the body. The procedural
 builder `FUN_80028158` builds a 24-column ring of inner radius `0` and outer
 radius `actor+0x58 * 4 / 10` into `_DAT_8007B85C + 0x62400`. Its mode word is
 `1`, which is shape `0` laid in the XZ plane, not a separate "disc" shape
@@ -1045,7 +1069,8 @@ Port: `battle_actor_draw::shadow_plan` models the numbers and
 ground-shadow block in the capture library is reproduced byte for byte
 (`effect_default_arm_retail_capture.rs`). `World::battle_ground_shadows`
 lists one per battle body, gated on the same draw plan the host's actor pass
-uses, and both hosts draw that list in their battle FX pass. The disc sits
+uses, centred on the drawn pose's centroid turned by the facing (the body-pair
+store's rotation), and both hosts draw that list in their battle FX pass. The disc sits
 `BATTLE_SHADOW_DEPTH_LIFT` above the floor so a depth test draws it over the
 coplanar stage floor; retail has no depth buffer to tie. The after-image
 bracket is `battle_actor_draw::body_shadow_skip`, and the after-image pass
@@ -1811,7 +1836,12 @@ visibility cull leaves it in view, whenever `+0x10 & 0x20200` is up and
 summit's props, the sky panorama among them: pack 37 carries `y_off = 2080`,
 and every retail capture holds its actor at the `-480` floor tier. Both hosts
 re-seat such draws through `field_env::follow_floor_placed_draws` over
-`World::object_floor_follow_records` when they bake the placed layer.
+`World::object_floor_follow_records` when they bake the placed layer. The
+sample is taken where the actor stands, not at its `.MAP` seat: a script
+that moves a follower carries it onto the floor at its new place, so the
+per-frame displacement of a follower is the floor's rise between the two
+(`World::object_draw_displacements`). `town01`'s record 8 is seated on a
+`16` floor and stands on a `-256` one through the opening.
 
 **A scripted height is absolute, not a lift.** The same sweep stores the seat
 `ladder[nibble] + y_off` in the actor's `+0x16` (`0x8003A62C..0x8003A64C`),
@@ -2470,8 +2500,8 @@ instance env-pack meshes exactly as the field hosts do.
 | 1 | native `play-window` | `engine-shell` `window/field_render.rs` + `window/geometry.rs` |
 | 2 | browser play page | `web-play` `play.rs` + `play_battle_render.rs` |
 | 3 | browser field-scene viewer | `web-viewer` `field_scene.rs`; `scene_geom.rs` for the world map |
-| 4 | browser dance-hall venue | `web-play` `minigames_dance.rs` |
-| 5 | browser fishing venue | `web-play` `minigames_fishing_scene.rs` |
+| 4 | browser dance-hall venue | `web-minigames` `dance_presentation.rs` |
+| 5 | browser fishing venue | `web-minigames` `fishing_scene_web.rs` |
 
 A kernel wired into one and not another is invisible in a diff, because no
 file holds two of the columns. Host-drift

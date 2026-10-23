@@ -22,7 +22,7 @@ impl World {
         let Some(mut tracker) = self.terrain.region_tracker.take() else {
             return;
         };
-        tracker.select_group(|flag| self.system_flag_test(flag));
+        tracker.select_group(|flag| self.encounter_condition_flag_test(flag));
         if let Some(region) = tracker.table().region_at_world(wx, wz) {
             let setup = legaia_engine_battle::region_encounter::region_battle_setup(&region.setup);
             self.store_region_battle_setup(setup);

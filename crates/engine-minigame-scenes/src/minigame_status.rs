@@ -17,7 +17,7 @@
 //! picture**: the browser play page in the strip under its canvas (the
 //! `play_mg_caption_json` export), the native window in its title bar
 //! ([`MinigameCaption::title_line`]). The hosts reach it through
-//! `World::minigame_caption` in engine-core, which supplies the two Muscle
+//! `WorldMinigameCaption::minigame_caption` in engine-world-views, which supplies the two Muscle
 //! Dome answers that read the world ([`MuscleWorld`]).
 
 use crate::minigame_state::MinigameState;
@@ -183,7 +183,7 @@ pub struct MuscleWorld {
 
 /// The status caption for the minigame that owns `mode` this frame, or
 /// `None` outside one. The one entry point every play host reads (through
-/// `World::minigame_caption`): which game is live is the world's mode, and
+/// `WorldMinigameCaption::minigame_caption`): which game is live is the world's mode, and
 /// each game's rows come from its builder below.
 pub fn caption(
     mode: SceneMode,

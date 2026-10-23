@@ -122,12 +122,20 @@ impl Font {
         }
     }
 
-    /// Convenience: lay out a UTF-8 string, lossily decoded to the printable
-    /// ASCII subset of the dialog font. Bytes outside `0x20..=0xFF` are
-    /// dropped. Use [`Font::layout`] directly when you have a pre-encoded
+    /// Convenience: lay out a string whose `char`s up to `U+00FF` are the
+    /// dialog font's bytes (Latin-1): a `char` `U+0080..=U+00FF` is the one
+    /// glyph byte of that value - the form the disc string readers hand back
+    /// an accent cell in - and anything past `U+00FF` is laid out as its
+    /// UTF-8 bytes. Use [`Font::layout`] directly when you have a pre-encoded
     /// dialog string.
     pub fn layout_ascii(&self, text: &str) -> Layout {
-        let bytes: Vec<u8> = text.bytes().collect();
+        let mut bytes = Vec::with_capacity(text.len());
+        for c in text.chars() {
+            match u8::try_from(u32::from(c)) {
+                Ok(b) => bytes.push(b),
+                Err(_) => bytes.extend_from_slice(c.encode_utf8(&mut [0; 4]).as_bytes()),
+            }
+        }
         self.layout(&bytes)
     }
 

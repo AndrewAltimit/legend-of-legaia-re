@@ -190,6 +190,69 @@ fn items_for_slot_filters_by_implied_slot() {
     assert!(slot7.is_empty());
 }
 
+/// The bag candidates of a list, past its leading Remove / equipped rows.
+fn candidates(items: &[EquipItem]) -> Vec<u8> {
+    items
+        .iter()
+        .filter(|i| i.id != REMOVE_ROW_ID && !i.equipped)
+        .map(|i| i.id)
+        .collect()
+}
+
+/// With disc restrictions an armament list is retail's: Remove always
+/// first, the equipped id second when the slot holds one, then the accepted
+/// bag slots in **slot** order (not id order), the equipped id skipped.
+#[test]
+fn armament_lists_take_retails_leading_rows_and_bag_order() {
+    use crate::equipment::{DiscEquipEntry, DiscEquipInfo};
+    use legaia_game_tables::equip_stats::EquipSlot as Disc;
+    let weapon = |mask| DiscEquipEntry {
+        mask,
+        category: Disc::Weapon,
+        is_ra_seru: false,
+        passive_index: None,
+    };
+    let info =
+        DiscEquipInfo::from_entries([(0x30, weapon(7)), (0x20, weapon(7)), (0x28, weapon(7))]);
+    // Bag slot order 0x30, 0x20, 0x28 - not id order.
+    let inv = crate::item_bag::ItemBag::from_slots(&[(0x30, 1), (0x20, 1), (0x28, 1)]);
+    let empty = EquipSession::new_with_restrictions(
+        fresh_record(),
+        inv.clone(),
+        EquipmentTable::new(),
+        StatusModifiers::default(),
+        Vec::new(),
+        info.clone(),
+        0,
+    );
+    let ids: Vec<u8> = empty.items_for_slot(0).iter().map(|i| i.id).collect();
+    assert_eq!(
+        ids,
+        [REMOVE_ROW_ID, 0x30, 0x20, 0x28],
+        "empty slot: Remove, then bag order"
+    );
+
+    let mut rec = fresh_record();
+    rec.equip[0] = 0x20;
+    let worn = EquipSession::new_with_restrictions(
+        rec,
+        inv,
+        EquipmentTable::new(),
+        StatusModifiers::default(),
+        Vec::new(),
+        info,
+        0,
+    );
+    let rows = worn.items_for_slot(0);
+    let ids: Vec<u8> = rows.iter().map(|i| i.id).collect();
+    assert_eq!(
+        ids,
+        [REMOVE_ROW_ID, 0x20, 0x30, 0x28],
+        "worn: Remove, equipped, rest"
+    );
+    assert!(rows[1].equipped && !rows[2].equipped);
+}
+
 #[test]
 fn restrictions_gate_item_list_by_character_mask() {
     use crate::equipment::{DiscEquipEntry, DiscEquipInfo};
@@ -232,7 +295,7 @@ fn restrictions_gate_item_list_by_character_mask() {
         0,
     );
     let v_weapons = vahn.items_for_slot(0);
-    let mut v_ids: Vec<u8> = v_weapons.iter().map(|i| i.id).collect();
+    let mut v_ids: Vec<u8> = candidates(&v_weapons);
     v_ids.sort();
     assert_eq!(v_ids, vec![0x20, 0x30]);
 
@@ -248,7 +311,7 @@ fn restrictions_gate_item_list_by_character_mask() {
         1,
     );
     let n_weapons = noa.items_for_slot(0);
-    let n_ids: Vec<u8> = n_weapons.iter().map(|i| i.id).collect();
+    let n_ids: Vec<u8> = candidates(&n_weapons);
     assert_eq!(n_ids, vec![0x30]);
 }
 
@@ -292,10 +355,10 @@ fn restrictions_gate_unambiguous_slot_by_disc_category() {
     );
     // UI slot 0 = Weapon -> only the weapon.
     let weapons = s.items_for_slot(0);
-    assert_eq!(weapons.iter().map(|i| i.id).collect::<Vec<_>>(), vec![0x20]);
+    assert_eq!(candidates(&weapons), vec![0x20]);
     // UI slot 2 = BodyArmor -> only the armor.
     let body = s.items_for_slot(2);
-    assert_eq!(body.iter().map(|i| i.id).collect::<Vec<_>>(), vec![0x40]);
+    assert_eq!(candidates(&body), vec![0x40]);
     // UI slot 0 must not surface the body armor.
     assert!(!weapons.iter().any(|i| i.id == 0x40));
 }

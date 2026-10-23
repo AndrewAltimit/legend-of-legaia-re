@@ -3,7 +3,7 @@
 
 use super::super::pack::LanguagePack;
 use super::super::{markup, monster_names, refpair, ui};
-use super::chunk_align::{nul_chunks, pair_chunk_lists, pool_text};
+use super::chunk_align::{nul_chunks, pair_chunk_lists, pool_text, split_at_stride, table_stride};
 use super::{LiftReport, PoolStat, key_scus_va};
 use legaia_disc_patch::disc::DiscPatcher;
 use legaia_game_tables::{item_names, worldmap_menu};
@@ -43,7 +43,24 @@ pub(super) fn lift_ui_pools(
             (Vec::new(), same_layout_pairs(&usa_entry, &src_entry, pool))
         } else {
             let usa_chunks = nul_chunks(&usa_entry, lo.saturating_sub(0x40), hi + 0x40);
-            let src_chunks = nul_chunks(&src_entry, lo.saturating_sub(0x40), hi + span + 0x200);
+            let mut src_chunks = nul_chunks(&src_entry, lo.saturating_sub(0x40), hi + span + 0x200);
+            // A fixed-stride table's string that fills its slot has no NUL
+            // before the next slot: cut it where the slot ends.
+            let in_pool: Vec<usize> = usa_chunks
+                .iter()
+                .map(|c| c.0)
+                .filter(|o| (lo..hi).contains(o))
+                .collect();
+            if let Some(stride) = table_stride(&in_pool) {
+                src_chunks = split_at_stride(src_chunks, stride);
+            }
+            if std::env::var("LEGAIA_LIFT_DEBUG_POOL").ok().as_deref()
+                == Some(&pool.prot_index.to_string())
+            {
+                for (o, b) in &src_chunks {
+                    eprintln!("S 0x{o:05x} {:?}", markup::decode(b));
+                }
+            }
             let map = pair_chunk_lists(&usa_chunks, &src_chunks);
             (usa_chunks, map)
         };

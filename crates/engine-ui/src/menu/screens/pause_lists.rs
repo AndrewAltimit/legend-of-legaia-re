@@ -30,8 +30,9 @@
 //! `engine-menus::pause_screens::list_kernel_navigate`. See
 //! `docs/subsystems/field-menu.md` for the traced kernel.
 
-use super::{MENU_TEXT_GOLD, MENU_TEXT_WHITE, menu_mp_ink, num_field_draws};
+use super::{MENU_TEXT_GOLD, MENU_TEXT_WHITE, menu_ink_color, menu_mp_ink, num_field_draws};
 use crate::*;
+use legaia_game_tables::menu_pool::MenuLabel;
 
 /// Retail grey text ink - CLUT staging index 0, the non-focused-list row
 /// ink (VRAM row-510 CLUT entry 15 reads `(132,132,132)`).
@@ -177,15 +178,54 @@ pub const PAUSE_LIST_ROWS_TOP: i32 = 0x0c;
 /// Rows visible per list page (both captured screens show 12 rows filling
 /// the 182-px content height at the 0xE pitch).
 pub const PAUSE_LIST_VISIBLE_ROWS: usize = 12;
+/// Width of the pause menu's list windows - the Items (15 / 16), Magic (18)
+/// and Equip candidate (23) lists all sit at `(174, 22, 132, 182)` in the
+/// descriptor table. The PAGE header hangs off this right edge
+/// (`FUN_80032A44`, `0x80032E18..0x80032F20`).
+pub const PAUSE_LIST_WINDOW_W: i32 = 132;
 /// Caster-window per-member block pitch (`FUN_801D2C98` steps `+0x23`).
 pub const MAGIC_CASTER_BLOCK_PITCH: i32 = 0x23;
-/// Pen advance the leading element-icon token adds before a spell name
-/// (the spell-name strings open with a `0xCE` inline-icon escape; name
-/// ink measures 25 px right of the string pen on the captures).
+/// Pen advance of a spell name's leading `0xCE 0x14..=0x1B 0x20` prefix:
+/// the element plate's escape-table width (`20`, table `0x80074050`) plus
+/// the space (`4 + 1`). Name ink lands 25 px right of the string pen on the
+/// retail captures. Used only when the font carries no escape sprites -
+/// with them attached the prefix lays out through
+/// [`legaia_font::Font::layout`] and draws the plate itself.
 pub const SPELL_ICON_ADVANCE: i32 = 25;
-/// Same advance for the wider winged Ra-Seru-magic icon (22 px - "Meta"'s
-/// name ink sits 3 px left of the regular spells').
-pub const SPELL_ICON_ADVANCE_RA_SERU: i32 = 22;
+/// The same prefix for the winged Ra-Seru plates (`0xCE 0x1D..=0x24`,
+/// table width `28`): `28 + 5`. A `sol_to_karisto_worldmap` Magic-screen
+/// capture puts "Meta"'s name ink 8 px right of the regular spells'.
+pub const SPELL_ICON_ADVANCE_RA_SERU: i32 = 33;
+
+/// One spell-name string the way retail's list kernel and info window draw
+/// it: `FUN_80036888` over the raw name (`FUN_8002FF8C` returns the spell
+/// record's `name_ptr` for a `0x5000 | id` row, drawn at `0x80033738`), so
+/// the leading `0xCE op` escape emits the element plate at the pen and
+/// advances by its table width, then the space and the name follow.
+///
+/// `icon` is the escape operand (`legaia_game_tables::spell_names::SpellEntry::icon`).
+/// Without it, or on a font with no escape sprites attached, the name draws
+/// at the fixed prefix advance and the plate's place stays empty.
+fn spell_name_draws(
+    font: &legaia_font::Font,
+    name: &str,
+    icon: Option<u8>,
+    ra_seru: bool,
+    pen: (i32, i32),
+    color: [f32; 4],
+) -> Vec<TextDraw> {
+    if let Some(op) = icon.filter(|op| font.escape_cell(*op).is_some()) {
+        let mut bytes = vec![0xCE, op, b' '];
+        bytes.extend(name.bytes());
+        return text_draws_for(&font.layout(&bytes), pen, color);
+    }
+    let advance = if ra_seru {
+        SPELL_ICON_ADVANCE_RA_SERU
+    } else {
+        SPELL_ICON_ADVANCE
+    };
+    text_draws_for(&font.layout_ascii(name), (pen.0 + advance, pen.1), color)
+}
 
 /// Focus phase of the Items screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -202,7 +242,14 @@ pub enum PauseItemsPhase {
 /// One visible row of the item-list page (the current page's slice).
 pub struct PauseItemsRow<'a> {
     pub name: &'a str,
-    pub count: u16,
+    /// The count column; `None` for a list whose rows carry none (the Door
+    /// of Wind destinations, class `0x8000`).
+    pub count: Option<u16>,
+    /// The ink-staging id the list kernel stages for this row
+    /// (`legaia_engine_menus::menu_list_rows::list_row_ink`), drawn through
+    /// [`menu_ink_color`]. `None` falls back to the phase ink: white in
+    /// command focus, grey in list focus.
+    pub ink: Option<u8>,
 }
 
 /// Item info window content (drawn only while an item is selected -
@@ -220,7 +267,7 @@ pub struct PauseItemInfo<'a> {
     pub passive: Option<(&'a str, &'a str)>,
 }
 
-/// Plain-data view of the Items screen for [`items_screen_draws_for`].
+/// Plain-data view of the Items screen for [`items_screen_draws_for_with`].
 pub struct PauseItemsView<'a> {
     /// Current page's visible rows (at most
     /// [`PAUSE_LIST_VISIBLE_ROWS`]).
@@ -258,9 +305,22 @@ fn list_page_header_draws(
     if pages == 0 {
         return out;
     }
-    // Header ink tops at content y - 1 on the captures; pen y - 3. The
-    // "PAGE" label + fraction digits are small-cap sprite glyphs in
-    // retail - dialog-font stand-ins hold their measured columns
+    // The retail header is UI-icon sprites (tag `0x76`, digits
+    // `0x7A..=0x83`, slash `0x79`) placed off the window's right edge; with
+    // the cells attached to the font it draws exactly as the shop's lists do.
+    if font
+        .sprite_cell(legaia_font::sprite_cell_ids::PAGE_TAG)
+        .is_some()
+    {
+        return crate::shop_screen::page_header_draws(
+            font,
+            (lx, ly, PAUSE_LIST_WINDOW_W),
+            page as usize,
+            pages as usize,
+        );
+    }
+    // Header ink tops at content y - 1 on the captures; pen y - 3. Without
+    // the sprite cells, dialog-font stand-ins hold the measured columns
     // (label x + 0x4D, fraction cells around x + 0x68..0x7C).
     let hy = ly - 3;
     out.extend(text_draws_for(
@@ -301,11 +361,12 @@ fn list_page_header_draws(
 ///   Y + row*0xE)`, staging 7 white - staging 0 grey when the bag is
 ///   empty (PORT: FUN_801d0d18);
 /// - list page: rows from `(X+0xC, Y+0xC)` at the 0xE pitch, count as a
-///   2-digit fixed-cell field at `X+0x74`; the whole page draws white
-///   while the command window has focus (the kernel is parked - mode 4
-///   forces staging 7) and grey once the hand enters the list
-///   (capture-pinned; drawn in retail by the kind-4 list kernel
-///   `FUN_80032A44` - REF: FUN_80032A44);
+///   2-digit fixed-cell field at `X+0x74` (none on a count-less row). Each
+///   row draws in its own staged ink ([`PauseItemsRow::ink`]): the kind-4
+///   list kernel `FUN_80032A44` keeps the page white while it is parked
+///   behind the command window and inks each row from its build-time dim /
+///   alt-ink bits once the hand is in it (REF: FUN_80032A44). A row with no
+///   staged ink falls back to white / grey by focus;
 /// - info window: item name (staging 6 gold) at `(X, Y)`, bag count
 ///   2-digit gold at `X+0x7C`, description white at `(X, Y+0x10)`, and
 ///   the accessory passive lines in the extra widget box at `(X,
@@ -316,12 +377,13 @@ fn list_page_header_draws(
 /// PORT: FUN_801d0f1c (info window: name / description at `+0x10` /
 /// passive name+desc at `+0x38`/`+0x48`; the kind-2 scope pictogram
 /// (ICO `0x84`/`0x85` at `X+0x84`) stays undrawn. The id-`0xFE` arm is
-/// [`item_points_panel_draws`], which a host adds on top - retail branches
+/// [`item_points_panel_draws_with`], which a host adds on top - retail branches
 /// to it at `0x801d0fd0` and jumps past this routine's passive block, and
 /// the Point Card's own `0x41` no-passive sentinel means that block draws
 /// nothing on that row anyway.)
-pub fn items_screen_draws_for(
+pub fn items_screen_draws_for_with(
     font: &legaia_font::Font,
+    labels: Option<&legaia_game_tables::menu_pool::MenuPoolLabels>,
     view: &PauseItemsView<'_>,
     cmd_pen: (i32, i32),
     list_pen: (i32, i32),
@@ -339,7 +401,14 @@ pub fn items_screen_draws_for(
     } else {
         MENU_TEXT_WHITE
     };
-    for (i, label) in ["Use", "Throw Out", "Arrange"].iter().enumerate() {
+    // The overlay pool's `@Use` / `@Throw Out` / `@Arrange` (`FUN_801D0D18`
+    // loads `0x801CEA10` and its two siblings).
+    let commands = [
+        crate::menu::window_painters::pool_label(labels, MenuLabel::Use, "Use"),
+        crate::menu::window_painters::pool_label(labels, MenuLabel::ThrowOut, "Throw Out"),
+        crate::menu::window_painters::pool_label(labels, MenuLabel::Arrange, "Arrange"),
+    ];
+    for (i, label) in commands.iter().enumerate() {
         let y = cy + i as i32 * PAUSE_LIST_ROW_PITCH;
         if view.text_cursor
             && view.phase == PauseItemsPhase::Command
@@ -365,15 +434,11 @@ pub fn items_screen_draws_for(
         {
             str_at(&mut out, ">", lx - 8, y, MENU_TEXT_GOLD);
         }
-        str_at(&mut out, row.name, lx + 0x0c, y, row_ink);
-        out.extend(num_field_draws(
-            font,
-            row.count as u64,
-            lx + 0x74,
-            y,
-            2,
-            row_ink,
-        ));
+        let ink = row.ink.map(menu_ink_color).unwrap_or(row_ink);
+        str_at(&mut out, row.name, lx + 0x0c, y, ink);
+        if let Some(count) = row.count {
+            out.extend(num_field_draws(font, count as u64, lx + 0x74, y, 2, ink));
+        }
     }
 
     // Info window (PORT: FUN_801dcb60 / FUN_801d0f1c).
@@ -394,7 +459,7 @@ pub fn items_screen_draws_for(
 /// disc), which is what makes them one panel opened by two screens rather
 /// than a coincidence.
 ///
-/// It lived inline in [`items_screen_draws_for`] while the Items screen was
+/// It lived inline in [`items_screen_draws_for_with`] while the Items screen was
 /// its only caller, which is why the equip screen had no item panel and why
 /// [`crate::menu::window_painters::count_panel_draws_for`] - the *delta*
 /// over this panel - had nothing to be a delta over.
@@ -405,7 +470,7 @@ pub fn items_screen_draws_for(
 /// PORT: FUN_801d0f1c (name / bag count / description at `+0x10` / passive
 /// name + desc at `+0x38` / `+0x48`; the kind-2 scope pictogram
 /// (ICO `0x84`/`0x85` at `X+0x84`) stays undrawn, and the id-`0xFE` arm is
-/// [`item_points_panel_draws`])
+/// [`item_points_panel_draws_with`])
 pub fn item_info_panel_draws_for(
     font: &legaia_font::Font,
     pen: (i32, i32),
@@ -452,12 +517,13 @@ pub fn item_info_panel_draws_for(
 /// effect descriptor carries the `0x41` no-passive sentinel.
 ///
 /// `info_pen` is the id-17 window's content origin, the same pen
-/// [`items_screen_draws_for`] takes; `points` is the live bank
+/// [`items_screen_draws_for_with`] takes; `points` is the live bank
 /// (`engine-core::World::point_card`).
 ///
 /// PORT: FUN_801d0f1c (the id-`0xFE` arm at `0x801d0fd8..0x801d1018`)
-pub fn item_points_panel_draws(
+pub fn item_points_panel_draws_with(
     font: &legaia_font::Font,
+    labels: Option<&legaia_game_tables::menu_pool::MenuPoolLabels>,
     info_pen: (i32, i32),
     points: u32,
 ) -> Vec<TextDraw> {
@@ -465,7 +531,11 @@ pub fn item_points_panel_draws(
     let (lx, ly) = ITEMS_INFO_POINTS_LABEL_OFFSET;
     let (vx, vy) = ITEMS_INFO_POINTS_VALUE_OFFSET;
     let mut out = text_draws_for(
-        &font.layout_ascii(ITEMS_INFO_POINTS_LABEL),
+        &font.layout_ascii(crate::menu::window_painters::pool_label(
+            labels,
+            MenuLabel::PointsLeft,
+            ITEMS_INFO_POINTS_LABEL,
+        )),
         (ix + lx, iy + ly),
         MENU_TEXT_WHITE,
     );
@@ -553,6 +623,11 @@ pub struct PauseThrowConfirmView<'a> {
     pub cursor: u8,
     /// Emit an ASCII `>` cursor instead of the hand sprite.
     pub text_cursor: bool,
+    /// The window's two prompt lines (`0x801CEA60` after the count,
+    /// `0x801CEA74` below) and the Yes / No labels, as the menu overlay's
+    /// pool holds them, `@` lead included. Empty strings draw nothing.
+    pub prompt: [&'a str; 2],
+    pub choices: [&'a str; 2],
 }
 
 /// Y offset of the "Yes" row from the confirm window's content origin.
@@ -570,10 +645,10 @@ pub const THROW_CONFIRM_HAND_X: i32 = 0x28;
 ///
 /// - item name (staging 7 white) at `(WX, WY)`, the bag count right of
 ///   the name (the retail pen is `WX + 8 + name_glyphs*0xC`; the port
-///   uses the proportional name advance + 8), then "You are about to"
-///   8 px past the count (16 px for a 2-digit count);
-/// - "Throw out?" at `(WX+6, WY+0xE)`;
-/// - "Yes" / "No" (staging 5 teal) at `WX+0x3C` on rows `WY+0x1C` /
+///   uses the proportional name advance + 8), then the first prompt line
+///   (`0x801CEA60`) 8 px past the count (16 px for a 2-digit count);
+/// - the second prompt line (`0x801CEA74`) at `(WX+6, WY+0xE)`;
+/// - Yes / No (staging 5 teal) at `WX+0x3C` on rows `WY+0x1C` /
 ///   `WY+0x2A`, hand cursor at `WX+0x28` on the focused row.
 ///
 /// PORT: FUN_801D1B20
@@ -599,18 +674,12 @@ pub fn items_throw_confirm_draws_for(
         MENU_TEXT_WHITE,
     ));
     let after_count = count_x + if view.count >= 10 { 0x10 } else { 0x8 };
-    str_at(
-        &mut out,
-        "You are about to",
-        after_count,
-        wy,
-        MENU_TEXT_WHITE,
-    );
-    str_at(&mut out, "Throw out?", wx + 6, wy + 0x0e, MENU_TEXT_WHITE);
+    str_at(&mut out, view.prompt[0], after_count, wy, MENU_TEXT_WHITE);
+    str_at(&mut out, view.prompt[1], wx + 6, wy + 0x0e, MENU_TEXT_WHITE);
     let teal = super::system_menus::OPTIONS_INK_TEAL;
     for (label, y, row) in [
-        ("Yes", wy + THROW_CONFIRM_YES_Y, 0u8),
-        ("No", wy + THROW_CONFIRM_NO_Y, 1u8),
+        (view.choices[0], wy + THROW_CONFIRM_YES_Y, 0u8),
+        (view.choices[1], wy + THROW_CONFIRM_NO_Y, 1u8),
     ] {
         if view.text_cursor && view.cursor == row {
             str_at(&mut out, ">", wx + THROW_CONFIRM_HAND_X, y, MENU_TEXT_GOLD);
@@ -670,14 +739,24 @@ pub struct PauseMagicCaster<'a> {
 pub struct PauseMagicRow<'a> {
     pub name: &'a str,
     /// `true` for Ra-Seru magic (Meta / Ozma / Terra block) - retail
-    /// leads the name with the wider winged icon, shifting the name pen
-    /// left by 3 px.
+    /// leads the name with the wider winged icon. Only the no-sprite
+    /// fallback reads it; [`Self::icon`] carries the plate itself.
     pub ra_seru: bool,
+    /// Operand of the `0xCE` escape the retail name string opens with
+    /// (the element plate), `None` when the spell table is not resident.
+    pub icon: Option<u8>,
+    /// The row's ink-staging id ([`PauseItemsRow::ink`]); `None` falls back
+    /// to the phase ink.
+    pub ink: Option<u8>,
 }
 
 /// Spell info window content (drawn only while a spell is selected).
 pub struct PauseMagicInfo<'a> {
     pub name: &'a str,
+    /// The name's leading `0xCE` escape operand ([`PauseMagicRow::icon`]).
+    pub icon: Option<u8>,
+    /// Winged Ra-Seru plate ([`PauseMagicRow::ra_seru`]).
+    pub ra_seru: bool,
     /// Learned spell level (the single digit after "Lv").
     pub level: u8,
     /// Description - up to two lines split on `\n`, drawn at the 0xE
@@ -688,7 +767,7 @@ pub struct PauseMagicInfo<'a> {
     pub mp_cost: u16,
 }
 
-/// Plain-data view of the Magic screen for [`magic_screen_draws_for`].
+/// Plain-data view of the Magic screen for [`magic_screen_draws_for_with`].
 pub struct PauseMagicView<'a> {
     pub casters: &'a [PauseMagicCaster<'a>],
     /// Current page's visible spell rows.
@@ -721,18 +800,20 @@ pub struct PauseMagicView<'a> {
 ///   slash stays white (PORT: FUN_801d2c98);
 /// - spell list: rows from `(X+0xC, Y+0xC)` at the 0xE pitch. Each retail
 ///   row is one string whose leading `0xCE` escape draws the element
-///   icon, so the name pen sits [`SPELL_ICON_ADVANCE`] right of the row
-///   pen ([`SPELL_ICON_ADVANCE_RA_SERU`] for the winged Ra-Seru icon);
-///   the icon sprites themselves are not yet ported - the gap holds
-///   their place. White while the caster window has focus, grey in list
-///   focus (capture-pinned);
-/// - info window: spell name gold at `(X + icon_advance, Y)` (the same
-///   leading-icon string), "Lv<n>" gold at `X+0x78`, description white
+///   plate at the row pen and advances by its table width, so the name
+///   lands [`SPELL_ICON_ADVANCE`] right of the pen
+///   ([`SPELL_ICON_ADVANCE_RA_SERU`] behind a winged Ra-Seru plate). The
+///   plate draws whenever the font carries the escape sprites. Rows take
+///   their staged ink ([`PauseMagicRow::ink`]): white while the caster
+///   window has focus, grey in list focus on each row the build disabled;
+/// - info window: spell name gold at `(X, Y)` (the same leading-plate
+///   string), "Lv<n>" gold at `X+0x78`, description white
 ///   from `(X, Y+0xE)` at the 0xE line pitch, "MP Used" (staging 4
 ///   green) at `(X+0x18, Y+0x2A)` with the 3-digit cost - also green -
 ///   at `X+0x74` (PORT: FUN_801d2e74).
-pub fn magic_screen_draws_for(
+pub fn magic_screen_draws_for_with(
     font: &legaia_font::Font,
+    labels: Option<&legaia_game_tables::menu_pool::MenuPoolLabels>,
     view: &PauseMagicView<'_>,
     caster_pen: (i32, i32),
     list_pen: (i32, i32),
@@ -804,25 +885,28 @@ pub fn magic_screen_draws_for(
         {
             str_at(&mut out, ">", lx - 8, y, MENU_TEXT_GOLD);
         }
-        let advance = if row.ra_seru {
-            SPELL_ICON_ADVANCE_RA_SERU
-        } else {
-            SPELL_ICON_ADVANCE
-        };
-        str_at(&mut out, row.name, lx + 0x0c + advance, y, row_ink);
+        out.extend(spell_name_draws(
+            font,
+            row.name,
+            row.icon,
+            row.ra_seru,
+            (lx + 0x0c, y),
+            row.ink.map(menu_ink_color).unwrap_or(row_ink),
+        ));
     }
 
     // PORT: FUN_801d2e74 (item/spell description info window)
     // Info window.
     if let Some(info) = &view.info {
         let (ix, iy) = info_pen;
-        str_at(
-            &mut out,
+        out.extend(spell_name_draws(
+            font,
             info.name,
-            ix + SPELL_ICON_ADVANCE,
-            iy,
+            info.icon,
+            info.ra_seru,
+            (ix, iy),
             MENU_TEXT_GOLD,
-        );
+        ));
         let lv = format!("Lv{}", info.level);
         str_at(&mut out, &lv, ix + 0x78, iy, MENU_TEXT_GOLD);
         for (k, line) in info.desc.split('\n').take(2).enumerate() {
@@ -834,7 +918,13 @@ pub fn magic_screen_draws_for(
                 MENU_TEXT_WHITE,
             );
         }
-        str_at(&mut out, "MP Used", ix + 0x18, iy + 0x2a, MENU_TEXT_GREEN);
+        str_at(
+            &mut out,
+            crate::menu::window_painters::pool_label(labels, MenuLabel::MpUsed, "MP Used"),
+            ix + 0x18,
+            iy + 0x2a,
+            MENU_TEXT_GREEN,
+        );
         out.extend(num_field_draws(
             font,
             info.mp_cost as u64,
@@ -1070,8 +1160,9 @@ mod pause_list_tests {
     fn items_command_rows_at_pinned_pens() {
         let font = legaia_font::synthetic_for_tests();
         let rows = [];
-        let draws = items_screen_draws_for(
+        let draws = items_screen_draws_for_with(
             &font,
+            None,
             &items_view(&rows, PauseItemsPhase::Command),
             (32, 44),
             (174, 22),
@@ -1090,15 +1181,18 @@ mod pause_list_tests {
         let rows = [
             PauseItemsRow {
                 name: "Medicine",
-                count: 15,
+                count: Some(15),
+                ink: None,
             },
             PauseItemsRow {
                 name: "Antidote",
-                count: 1,
+                count: Some(1),
+                ink: None,
             },
         ];
-        let draws = items_screen_draws_for(
+        let draws = items_screen_draws_for_with(
             &font,
+            None,
             &items_view(&rows, PauseItemsPhase::Command),
             (32, 44),
             (174, 22),
@@ -1114,24 +1208,78 @@ mod pause_list_tests {
         assert!(!draw_at(&draws, 174 + 0x74, 22 + 0x0c + 0x0e));
     }
 
-    /// The list page drops from staging-7 white to staging-0 grey when
-    /// the hand enters it (capture-pinned focus behaviour).
+    /// A row carrying its staged ink draws in it, count cells included; a
+    /// row without one keeps the phase ink. A count-less row draws no count
+    /// cells.
+    #[test]
+    fn items_list_rows_take_their_staged_ink() {
+        let font = legaia_font::synthetic_for_tests();
+        let rows = [
+            PauseItemsRow {
+                name: "Medicine",
+                count: Some(15),
+                ink: Some(7),
+            },
+            PauseItemsRow {
+                name: "Key",
+                count: Some(1),
+                ink: Some(0),
+            },
+            PauseItemsRow {
+                name: "Tail",
+                count: Some(2),
+                ink: Some(1),
+            },
+            PauseItemsRow {
+                name: "Rim Elm",
+                count: None,
+                ink: None,
+            },
+        ];
+        let draws = items_screen_draws_for_with(
+            &font,
+            None,
+            &items_view(&rows, PauseItemsPhase::List),
+            (32, 44),
+            (174, 22),
+            (14, 108),
+        );
+        let ink_at = |x: i32, y: i32| {
+            draws
+                .iter()
+                .find(|d| d.dst.0 == x && d.dst.1 == y)
+                .map(|d| d.color)
+        };
+        let y0 = 22 + 0x0c;
+        assert_eq!(ink_at(174 + 0x0c, y0), Some(MENU_TEXT_WHITE));
+        assert_eq!(ink_at(174 + 0x74 + 8, y0), Some(MENU_TEXT_WHITE));
+        assert_eq!(ink_at(174 + 0x0c, y0 + 0x0e), Some(MENU_TEXT_GREY));
+        assert_eq!(ink_at(174 + 0x0c, y0 + 0x1c), Some(MENU_TEXT_BLUE));
+        assert_eq!(ink_at(174 + 0x0c, y0 + 0x2a), Some(MENU_TEXT_GREY));
+        assert!(!draw_at(&draws, 174 + 0x74 + 8, y0 + 0x2a));
+    }
+
+    /// Without staged inks the list page drops from staging-7 white to
+    /// staging-0 grey when the hand enters it.
     #[test]
     fn items_list_ink_follows_focus_phase() {
         let font = legaia_font::synthetic_for_tests();
         let rows = [PauseItemsRow {
             name: "Medicine",
-            count: 15,
+            count: Some(15),
+            ink: None,
         }];
-        let white = items_screen_draws_for(
+        let white = items_screen_draws_for_with(
             &font,
+            None,
             &items_view(&rows, PauseItemsPhase::Command),
             (32, 44),
             (174, 22),
             (14, 108),
         );
-        let grey = items_screen_draws_for(
+        let grey = items_screen_draws_for_with(
             &font,
+            None,
             &items_view(&rows, PauseItemsPhase::List),
             (32, 44),
             (174, 22),
@@ -1156,7 +1304,7 @@ mod pause_list_tests {
         let rows = [];
         let mut view = items_view(&rows, PauseItemsPhase::Command);
         view.bag_empty = true;
-        let draws = items_screen_draws_for(&font, &view, (32, 44), (174, 22), (14, 108));
+        let draws = items_screen_draws_for_with(&font, None, &view, (32, 44), (174, 22), (14, 108));
         let use_ink = draws
             .iter()
             .find(|d| d.dst.0 >= 32 + 0x14 && d.dst.1 == 44)
@@ -1178,7 +1326,7 @@ mod pause_list_tests {
             desc: "Cure all status. Ally.",
             passive: Some(("Auto block", "Guards sometimes")),
         });
-        let draws = items_screen_draws_for(&font, &view, (32, 44), (174, 22), (14, 108));
+        let draws = items_screen_draws_for_with(&font, None, &view, (32, 44), (174, 22), (14, 108));
         assert!(draw_at(&draws, 14, 108)); // name
         assert!(draw_at(&draws, 14 + 0x7c, 108)); // count first cell
         assert!(draw_at(&draws, 14, 108 + 0x10)); // description
@@ -1231,8 +1379,9 @@ mod pause_list_tests {
                 mp_max: 435,
             },
         ];
-        let draws = magic_screen_draws_for(
+        let draws = magic_screen_draws_for_with(
             &font,
+            None,
             &magic_view(&casters, &[], PauseMagicPhase::Caster),
             (14, 40),
             (174, 22),
@@ -1256,8 +1405,8 @@ mod pause_list_tests {
         assert_eq!(num_ink(yb1 + 0x0e), MENU_TEXT_ORANGE);
     }
 
-    /// Spell rows leave the element-icon gap: regular names at
-    /// `X+0xC+25`, Ra-Seru names at `X+0xC+22`.
+    /// Without escape sprites a spell row leaves the plate's place empty:
+    /// regular names at `X+0xC+25`, Ra-Seru names at `X+0xC+33`.
     #[test]
     fn magic_list_rows_leave_icon_gap() {
         let font = legaia_font::synthetic_for_tests();
@@ -1265,14 +1414,19 @@ mod pause_list_tests {
             PauseMagicRow {
                 name: "Mushura",
                 ra_seru: false,
+                icon: Some(0x18),
+                ink: None,
             },
             PauseMagicRow {
                 name: "Meta",
                 ra_seru: true,
+                icon: Some(0x1D),
+                ink: None,
             },
         ];
-        let draws = magic_screen_draws_for(
+        let draws = magic_screen_draws_for_with(
             &font,
+            None,
             &magic_view(&[], &rows, PauseMagicPhase::List),
             (14, 40),
             (174, 22),
@@ -1287,6 +1441,119 @@ mod pause_list_tests {
         ));
     }
 
+    /// With the menu sprite cells attached, the list's PAGE header is the
+    /// kernel's sprite header off the window's right edge: tag at
+    /// `(WX + W - 0x38, WY - 2)`, digits from `WX + W - 0x20`. The columns
+    /// are the ones a `sol_to_karisto_worldmap` Magic-screen capture shows
+    /// (tag ink from x 251, page digit 282, slash 288, total 302).
+    #[test]
+    fn list_page_header_uses_the_sprite_cells_when_attached() {
+        use legaia_font::{SpriteCellSrc, sprite_cell_ids as ids};
+        let cell = |id: u16, w: u32| SpriteCellSrc {
+            id,
+            w,
+            h: 8,
+            rgba: vec![0xFF; (w * 8 * 4) as usize],
+        };
+        let mut cells = vec![cell(ids::PAGE_TAG, 24), cell(ids::PAGE_SLASH, 6)];
+        cells.extend((0..10).map(|d| cell(ids::PAGE_DIGIT + d, 6)));
+        let font = legaia_font::synthetic_for_tests().with_sprite_cells(&cells);
+        let rows = [PauseMagicRow {
+            name: "Gimard",
+            ra_seru: false,
+            icon: None,
+            ink: None,
+        }];
+        let draws = magic_screen_draws_for_with(
+            &font,
+            None,
+            &magic_view(&[], &rows, PauseMagicPhase::List),
+            (14, 40),
+            (174, 22),
+            (14, 152),
+        );
+        let at = |x: i32, w: u32| draws.iter().any(|d| d.dst == (x, 20, w, 8));
+        assert!(at(250, 24), "PAGE tag");
+        assert!(at(280, 6), "current page ones digit");
+        assert!(at(287, 6), "slash");
+        assert!(at(300, 6), "page total ones digit");
+    }
+
+    /// A font with a plate sprite at escape operand `op` (`w` wide, the
+    /// table advance equal to the width, as every plate's record has it).
+    fn font_with_plate(op: u8, w: u32) -> legaia_font::Font {
+        use legaia_font::escape_icons::{EscapeIcon, EscapeIcons};
+        let mut icons = vec![None; op as usize + 1];
+        icons[op as usize] = Some(EscapeIcon {
+            index: op,
+            w,
+            h: 12,
+            y_offset: 0,
+            advance: w as u8,
+            rgba: vec![0xFF; (w * 12 * 4) as usize],
+        });
+        legaia_font::synthetic_for_tests().with_escape_icons(&EscapeIcons { icons })
+    }
+
+    /// With the sprites attached, the row is retail's raw name string
+    /// through `FUN_80036888`: the plate untinted at the row pen, the name
+    /// one table width plus a space further on, in the row ink.
+    #[test]
+    fn magic_list_rows_draw_the_element_plate() {
+        let font = font_with_plate(0x1D, 28);
+        let rows = [PauseMagicRow {
+            name: "Meta",
+            ra_seru: true,
+            icon: Some(0x1D),
+            ink: None,
+        }];
+        let draws = magic_screen_draws_for_with(
+            &font,
+            None,
+            &magic_view(&[], &rows, PauseMagicPhase::List),
+            (14, 40),
+            (174, 22),
+            (14, 152),
+        );
+        let y0 = 22 + 0x0c;
+        let plate = draws
+            .iter()
+            .find(|d| d.dst.2 == 28 && d.dst.1 == y0)
+            .expect("the winged plate draws");
+        assert_eq!(plate.dst.0, 174 + 0x0c);
+        assert_eq!(plate.color, [1.0, 1.0, 1.0, MENU_TEXT_GREY[3]]);
+        let space = font.layout(b" ").advance_x as i32;
+        // The first non-plate glyph is the space; the name follows it.
+        let name = draws
+            .iter()
+            .filter(|d| d.dst.1 == y0 && d.dst.2 != 28)
+            .nth(1)
+            .expect("the name draws");
+        assert_eq!(name.dst.0, 174 + 0x0c + 28 + space);
+        assert_eq!(name.color, MENU_TEXT_GREY);
+    }
+
+    /// The info window's name carries the same plate at the window pen.
+    #[test]
+    fn magic_info_name_draws_the_element_plate() {
+        let font = font_with_plate(0x18, 20);
+        let mut view = magic_view(&[], &[], PauseMagicPhase::List);
+        view.info = Some(PauseMagicInfo {
+            name: "Mushura",
+            icon: Some(0x18),
+            ra_seru: false,
+            level: 1,
+            desc: "",
+            mp_cost: 60,
+        });
+        let draws = magic_screen_draws_for_with(&font, None, &view, (14, 40), (174, 22), (14, 152));
+        assert!(
+            draws
+                .iter()
+                .any(|d| d.dst.2 == 20 && d.dst.0 == 14 && d.dst.1 == 152)
+        );
+    }
+
     /// Info window: gold name + level, white description lines at the
     /// 0xE pitch, green "MP Used" + cost at the FUN_801d2e74 pens.
     #[test]
@@ -1295,11 +1562,13 @@ mod pause_list_tests {
         let mut view = magic_view(&[], &[], PauseMagicPhase::List);
         view.info = Some(PauseMagicInfo {
             name: "Mushura",
+            icon: Some(0x18),
+            ra_seru: false,
             level: 1,
             desc: "Crazy Driver\nAttack enemies.",
             mp_cost: 60,
         });
-        let draws = magic_screen_draws_for(&font, &view, (14, 40), (174, 22), (14, 152));
+        let draws = magic_screen_draws_for_with(&font, None, &view, (14, 40), (174, 22), (14, 152));
         assert!(draw_at(&draws, 14 + SPELL_ICON_ADVANCE, 152)); // name
         assert!(draw_at(&draws, 14 + 0x78, 152)); // Lv1
         assert!(draw_at(&draws, 14, 152 + 0x0e)); // desc line 1
@@ -1326,10 +1595,12 @@ mod pause_list_tests {
             count: 12,
             cursor: 1,
             text_cursor: true,
+            prompt: ["About", "Drop?"],
+            choices: ["Y", "N"],
         };
         let draws = items_throw_confirm_draws_for(&font, &view, (wx, wy));
         assert!(draw_at(&draws, wx, wy)); // name
-        assert!(draw_at(&draws, wx + 6, wy + 0x0e)); // Throw out?
+        assert!(draw_at(&draws, wx + 6, wy + 0x0e)); // the question
         assert!(draw_at(&draws, wx + 0x3c, wy + 0x1c)); // Yes
         assert!(draw_at(&draws, wx + 0x3c, wy + 0x2a)); // No
         // Hand cursor (ASCII stand-in) on the "No" row (retail default).
@@ -1415,7 +1686,7 @@ mod pause_list_tests {
         let font = legaia_font::Font::placeholder();
         let (bx, by, bw, bh) = ITEMS_INFO_EXTRA_BOX_RECT;
         let pen = (14, 108); // window 17's content origin
-        let d = item_points_panel_draws(&font, pen, 1234);
+        let d = item_points_panel_draws_with(&font, None, pen, 1234);
         assert!(!d.is_empty());
         assert!(
             d.iter()

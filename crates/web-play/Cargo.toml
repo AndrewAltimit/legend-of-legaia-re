@@ -15,7 +15,6 @@ crate-type = ["rlib"]
 [dependencies]
 legaia-actor-formats.workspace = true
 legaia-art.workspace = true
-legaia-container-formats.workspace = true
 legaia-engine-audio = { workspace = true, features = ["audio-webaudio"] }
 legaia-engine-battle.workspace = true
 legaia-engine-battle-hud.workspace = true
@@ -44,20 +43,18 @@ legaia-engine-vm.workspace = true
 legaia-engine-world-views.workspace = true
 legaia-font.workspace = true
 legaia-game-tables.workspace = true
-legaia-gamedata.workspace = true
 legaia-iso.workspace = true
 legaia-mdec.workspace = true
 legaia-minigame-formats.workspace = true
 legaia-overlay-images.workspace = true
-legaia-prot.workspace = true
 legaia-render-kernels.workspace = true
 legaia-save.workspace = true
 legaia-scene-formats.workspace = true
-legaia-seq.workspace = true
 legaia-tim.workspace = true
 legaia-tmd.workspace = true
 legaia-ui-formats.workspace = true
 legaia-vab.workspace = true
+legaia-web-minigames.workspace = true
 legaia-xa.workspace = true
 glam.workspace = true
 serde_json.workspace = true
@@ -75,6 +72,8 @@ features = [
 ]
 
 [dev-dependencies]
+# Named only by the disc-gated tests that read PROT.DAT directly.
+legaia-prot.workspace = true
 toml.workspace = true
 
 [[test]]

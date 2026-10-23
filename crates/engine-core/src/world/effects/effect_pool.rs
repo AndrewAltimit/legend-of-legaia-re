@@ -251,6 +251,8 @@ impl World {
         }
         out.extend(self.ambient_sprite_arm_draws());
         out.extend(self.ambient_default_arm_draws());
+        // The fishing venue's ambient ripples: default-arm rings too.
+        out.extend(self.minigames.fishing_venue.ripple_draws());
         out
     }
 

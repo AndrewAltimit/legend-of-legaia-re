@@ -283,16 +283,7 @@ impl LevelUpTracker {
             // placeholder, not zero, so must not seed it here.
             let mut acc = StatGain::hp_mp(0, 0);
             for prev in old_level..new_level {
-                let lvl = prev as usize;
-                let mut g = [0u16; 8];
-                for (i, p) in cp.stats.iter().enumerate() {
-                    let raw = tables.level_gain_core_raw(p, lvl).unwrap_or(0) as i32;
-                    // Always draw - retail does too, even for jitter == 0.
-                    let roll = i32::from(rng.next_u15());
-                    let span = 2 * i32::from(p.jitter) + 1;
-                    let jit = roll % span - i32::from(p.jitter);
-                    g[i] = (raw + jit).max(1) as u16;
-                }
+                let g = jittered_level_gains(tables, &cp, prev as usize, rng);
                 acc = acc.saturating_add(StatGain {
                     hp: g[0],
                     mp: g[1],
@@ -457,4 +448,32 @@ impl LevelUpTracker {
 
         record.set_level(result.new_level);
     }
+}
+
+/// One level's eight stat gains (HP, MP, AGL, ATK, UDF, LDF, SPD, INT) with
+/// the retail jitter, for the level `level` is leaving: per stat, one
+/// `rand()` drawn in that order - including for a zero jitter, where
+/// `rand() % 1` is `0` - the spread `rand() % (2 * jitter + 1) - jitter`
+/// added to the **unfloored** core, then floored at `1`.
+///
+/// The one kernel behind [`LevelUpTracker`]'s jitter pass and any host that
+/// levels a record without a tracker (the minigames page's dome fighter).
+///
+/// PORT: FUN_801E9504 (the per-stat gain: raw core, jitter roll, floor)
+pub fn jittered_level_gains(
+    tables: &legaia_game_tables::level_up_tables::GrowthTables,
+    params: &legaia_game_tables::level_up_tables::CharGrowthParams,
+    level: usize,
+    rng: &mut BiosRand,
+) -> [u16; 8] {
+    let mut g = [0u16; 8];
+    for (i, p) in params.stats.iter().enumerate().take(8) {
+        let raw = tables.level_gain_core_raw(p, level).unwrap_or(0) as i32;
+        // Always draw - retail does too, even for jitter == 0.
+        let roll = i32::from(rng.next_u15());
+        let span = 2 * i32::from(p.jitter) + 1;
+        let jit = roll % span - i32::from(p.jitter);
+        g[i] = (raw + jit).max(1) as u16;
+    }
+    g
 }

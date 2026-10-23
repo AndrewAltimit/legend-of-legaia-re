@@ -23,7 +23,8 @@
 --                frame step *(0x1F800393), the countdown / camera words the
 --                capture gates use, every seat's HP, and the main loop's
 --                frame counter `frame` (gp+0x480), the side-band applier
---                stage `c276` (ctx[+0x276]). `shot` names the frame
+--                stage `c276` (ctx[+0x276]), and the read-span poll's words
+--                `xaspan` / `cdbusy` / `cdmode` / `cdread`. `shot` names the frame
 --                taken on that vsync, if any.
 --   r_<vsync>.raw  PCSX.GPU.takeScreenShot() pixels (BGR555, or BGR888 when
 --                `bpp` says 24); width / height / bpp are on the meta row.
@@ -46,6 +47,11 @@
 --   LEGAIA_PARTY_SPD     write this SPD into every party seat while in battle
 --                        so the party acts first (0 = leave)
 --   LEGAIA_MP_TOPUP      caster MP at the inject (999)
+--   LEGAIA_POKE32        comma list of `addr=value` words written at the
+--                        inject (hex or decimal), e.g. the per-seat
+--                        choreography latch PROT 0946's arm 0 forks on
+--                        (`0x801C8FE4=1` sends a seat-0 cast of 0x56 down
+--                        Big Wave's branch instead of Call Wave's)
 --   LEGAIA_SHOT_EVERY    vsyncs between frames (2)
 --   LEGAIA_MAX_SHOTS     frame cap (1500)
 --   LEGAIA_TAIL          vsyncs to keep going past the Done band (60)
@@ -73,6 +79,11 @@ local PRESS_UNTIL  = probe.getenv_num("LEGAIA_PRESS_UNTIL", 600)
 local PRESS_PERIOD = probe.getenv_num("LEGAIA_PRESS_PERIOD", 60)
 local PARTY_SPD    = probe.getenv_num("LEGAIA_PARTY_SPD", 0)
 local MP_TOPUP     = probe.getenv_num("LEGAIA_MP_TOPUP", 999)
+local POKE32 = {}
+for kv in string.gmatch(probe.getenv("LEGAIA_POKE32", ""), "[^,]+") do
+    local a, v = string.match(kv, "^%s*([^=]+)=(.+)$")
+    if a ~= nil then POKE32[#POKE32 + 1] = { tonumber(a), tonumber(v) } end
+end
 local SHOT_EVERY   = probe.getenv_num("LEGAIA_SHOT_EVERY", 2)
 local MAX_SHOTS    = probe.getenv_num("LEGAIA_MAX_SHOTS", 1500)
 local TAIL         = probe.getenv_num("LEGAIA_TAIL", 60)
@@ -94,6 +105,19 @@ local function u32(a) return probe.read_u32(a) or 0 end
 -- bumps it once per pass (`sw v0,0x480(gp)` at 0x80016BA8), so the vsyncs
 -- between two of its values are what one game frame really took.
 local FRAME_COUNTER = 0x8007B798
+-- The words FUN_8003DE7C(1) (the read-span poll state 0x32 waits on) reads:
+-- the XA read-span countdown gp+0x91C (`xaspan`), the gate halfwords at
+-- 0x8007BA70 (`cdbusy`) and 0x8007B8C2 (`cdread`), and the mode halfword at
+-- 0x8007B83C (`cdmode`, bit 0 the debug print).
+local XA_SPAN = 0x8007BC34
+local CD_BUSY = 0x8007BA70
+local CD_MODE = 0x8007B83C
+local CD_READ = 0x8007B8C2
+local function s16(a)
+    local v = probe.read_u16(a) or 0
+    if v >= 0x8000 then v = v - 0x10000 end
+    return v
+end
 local function s32(a)
     local v = u32(a)
     if v >= 0x80000000 then v = v - 0x100000000 end
@@ -116,7 +140,7 @@ local function tou32(v)
     return v
 end
 
-local meta, body
+local meta, body, cam
 local injected, cast_seen, done_seen = false, false, false
 local inject_vsync, cast_vsync, done_vsync = -1, -1, -1
 local forced_row = false
@@ -173,12 +197,17 @@ probe.run({
         })
         meta = probe.csv_open(probe.out_path("meta.csv"),
             "vsync,st7,phase,acting,step,flow,c6d8,c6da,c87c,cd7960,loader," ..
-            "hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,w,h,bpp,frame,c276")
+            "hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,w,h,bpp,frame,c276,xaspan,cdbusy,cdmode,cdread")
         -- The acting seat's body against the camera that frames it: clip,
         -- node cursor, live pair +0x34/+0x38, body pair +0x3C/+0x40, and the
         -- camera focus (stored negated) with its tween endpoints.
         body = probe.csv_open(probe.out_path("body.csv"),
             "vsync,st7,acting,clip,cursor,lx,lz,bx,bz,fx,fz,ex,ez,c87c")
+        -- The live camera pose (pitch / yaw `0x8007B790/92`, TR
+        -- `0x800840B8..C0`) with the yaw and TR z records of the tween
+        -- table `ctx[+0x118C]` (`{step, endpoint}`): a module shot's walk.
+        cam = probe.csv_open(probe.out_path("cam.csv"),
+            "vsync,st7,phase,step,pitch,yaw,trx,try,trz,yaw_inc,yaw_end,trz_inc,trz_end")
         if FORCE_ROW ~= "" then
             -- FUN_801DA600 returns the formation row in v0; rewriting its
             -- bytes on the return seats the forced monsters.
@@ -239,6 +268,7 @@ probe.run({
                     probe.write_u8(a + 0x1DD, TARGET_SEAT)
                 end
             end
+            for _, pv in ipairs(POKE32) do probe.write_u32(pv[1], pv[2]) end
             PCSX.log(string.format("[inject t%d] spell=0x%02X target=%d acting=%d",
                 elapsed, SPELL, TARGET_SEAT, acting))
         end
@@ -282,11 +312,23 @@ probe.run({
             local a = actor(s)
             hp[#hp + 1] = a and u16(a + 0x14C) or -1
         end
-        meta:row("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%d,%d,%d,%d",
+        meta:row("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d",
             elapsed, st7, u8(cx + 0x279), acting, probe.read_scratch_u8(0x1F800393),
             u8(cx + 6), u16(cx + 0x6D8), u16(cx + 0x6DA), u32(cx + 0x87C), s32(GIMARD_CD),
             u8(LOADER_ID), hp[1], hp[2], hp[3], hp[4], hp[5], hp[6], hp[7], hp[8],
-            shot, w, h, bpp, u32(FRAME_COUNTER), u8(cx + 0x276))
+            shot, w, h, bpp, u32(FRAME_COUNTER), u8(cx + 0x276),
+            s32(XA_SPAN), s16(CD_BUSY), u16(CD_MODE), s16(CD_READ))
+        local function sh(a)
+            local v = u16(a)
+            if v >= 0x8000 then v = v - 0x10000 end
+            return v
+        end
+        cam:row("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
+            elapsed, st7, u8(cx + 0x279), probe.read_scratch_u8(0x1F800393),
+            u16(0x8007B790) % 4096, u16(0x8007B792) % 4096,
+            s32(0x800840B8), s32(0x800840BC), s32(0x800840C0),
+            sh(cx + 0x118C + 1 * 4), sh(cx + 0x118C + 1 * 4 + 2),
+            sh(cx + 0x118C + 5 * 4), sh(cx + 0x118C + 5 * 4 + 2))
         local ba = actor(math.min(acting, 7))
         if ba ~= nil then
             local node = u32(ba + 0x22C)
@@ -319,6 +361,7 @@ probe.run({
             inject_vsync, cast_vsync, done_vsync, shots))
         if meta then meta:close() end
         if body then body:close() end
+        if cam then cam:close() end
         local fh = io.open(probe.out_path("done.txt"), "w")
         if fh then
             fh:write(string.format("inject=%d\ncast=%d\ndone=%d\nshots=%d\ncaster=%d\nspell=%d\ntarget=%d\nground=%s\nparked=%d\n",

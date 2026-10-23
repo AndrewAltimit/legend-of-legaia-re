@@ -79,7 +79,8 @@ flowchart BT
     EXP["engine-export"]
     PAR["parity"]
     SHELL["engine-shell<br/>native host"]
-    WEBP["web-play<br/>browser hosts"]
+    WEBP["web-play<br/>browser play page"]
+    WEBM["web-minigames<br/>browser minigames page"]
     WEB["web-viewer<br/>wasm bundle + site tools"]
 
     FAM --> FMT
@@ -153,6 +154,8 @@ flowchart BT
     WEBP --> ECHT
     WEBP --> ESAV
     WEB --> WEBP
+    WEBP --> WEBM
+    WEBM --> SESS
 ```
 
 The shape to read off it:
@@ -206,6 +209,7 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `delilas-party` | `party-swap`, `arts-patch`, `code-hooks`, `texture-replace`, `translate`, `disc-patch`, `actor-formats`, `game-tables`, `art`, `lzs`, `vab`, `xa` | The play-as-Delilas mod. |
 | `delilas-challenge` | `code-hooks`, `disc-patch`, `game-tables`, `scene-formats`, `lzs`, `mes` | The Delilas Challenge dome course and custom items. |
 | `patcher` | the eight above + format-family and parser crates | The `legaia-patcher` CLI. |
+| `web-patcher` | `patcher`, its layer crates + format-family and parser crates | The site's ROM patcher, texture replacer and language workbench as wasm exports; names no engine crate. |
 | `engine-system` | `cheats`, `gamedata` | Input, fades, streaming, sound state. |
 | `engine-mode` | `engine-system`, `game-tables`, `bytes` | The game-mode seat. |
 | `engine-dialog` | `font`, `mes` | Dialog pager, dialog window, text balloon. |
@@ -242,8 +246,9 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `engine-capture` | `engine-scene-host`, `engine-core`, `engine-battle`, `engine-battle-vm`, `engine-camera`, `engine-cast`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-battle-menus`, `engine-mode`, `engine-system`, `art`, `save`, `scene-formats` | Capture seeds, gates and pad drives shared by `parity` and the native capture child. |
 | `parity` | `engine-capture`, `engine-battle-hud`, `engine-session`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-audio`, `engine-ui`, the kernel crates it measures, `mednafen`, `pcsx-redux`, `ram-image` + parser crates | Parity oracles + retail comparison. |
 | `engine-shell` | `parity`, `engine-capture`, `engine-session`, `engine-screens`, `engine-battle-hud`, `engine-world-views`, `engine-cheats`, `engine-export`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-render`, `engine-ui`, `engine-audio`, the kernel crates + format-family and parser crates | The native host. |
-| `web-play` | `engine-session`, `engine-screens`, `engine-battle-hud`, `engine-world-views`, `engine-cheats`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-ui`, `engine-audio`, the kernel crates + format-family and parser crates | The browser hosts: the play and minigames runtimes. |
-| `web-viewer` | `web-play`, `engine-world-views`, `engine-scene-host`, `engine-scene`, `engine-audio`, the kernel crates the viewer pages read, `patcher` and its layer crates + format-family and parser crates | The wasm bundle (`cdylib` over `web-play`), the asset inspectors and the ROM patcher. |
+| `web-play` | `engine-session`, `engine-screens`, `engine-battle-hud`, `engine-world-views`, `engine-cheats`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-ui`, `engine-audio`, `web-minigames`, the kernel crates + format-family and parser crates | The browser play page's runtime. |
+| `web-minigames` | `engine-session` (one audio constant), `engine-minigame-scenes`, `engine-scene`, `engine-ui`, `engine-audio`, the minigame kernel crates + format-family and parser crates | The browser minigames page's runtime; no `engine-core`. |
+| `web-viewer` | `web-play`, `web-patcher`, `engine-world-views`, `engine-scene-host`, `engine-scene`, `engine-audio`, the kernel crates the viewer pages read + format-family and parser crates | The wasm bundle (`cdylib` over `web-play` and `web-patcher`) and the asset inspectors. |
 | `asset-viewer` | `engine-core`, `engine-scene`, `engine-vm`, `engine-battle-vm`, `engine-dialog`, `engine-field`, `engine-mode`, `engine-system`, `engine-ui`, `engine-render`, `engine-audio`, `disc-audit` + format-family and parser crates | Standalone asset viewer. |
 | `app-theme` | - | The desktop programs' shared palette (dark and light) and spacing: Studio, the launcher, the play window's chrome. |
 
@@ -322,7 +327,7 @@ flowchart LR
 |---|---|---|---|
 | Native window | `engine-shell` (`legaia-engine play-window`) | `engine-render` (wgpu) | With no subcommand, `legaia-engine` runs a launcher that remembers the disc, edits the enhancement options and starts `play-window` on *Play*. |
 | Browser play page | `web-play` (`runtime.rs` + `play_*.rs`) | the site's WebGL renderer | Runs the same `SceneHost`; see [The browser host](#the-browser-host). |
-| Browser minigames page | `web-play` (`minigames*.rs`) | the site's WebGL / canvas modules | Drives the minigame rules engines directly, outside a scene. |
+| Browser minigames page | `web-minigames` | the site's WebGL / canvas modules | Drives the minigame rules engines directly, outside a scene. |
 | Headless | `engine-shell` (`play`, `record` / `replay`, `scenarios`), `parity`, test binaries | none, or an offscreen renderer | Same `BootSession`; this is what the oracles and replays measure. |
 
 A feature wired into one host and not another is a defect class of its own. The [host-drift](../tooling/host-drift.md) gates police it.
@@ -395,8 +400,13 @@ one that reads back what is off it:
 | world toggles | `WorldToggles::pin_retail` | `WorldToggles::retail_deviations` |
 | `play-window` launch | `--retail` (`LaunchFidelity::retail`) | - |
 
-`--retail` turns every enhancement off and applies the options pin for the
-session, writing nothing back. It is what the retail-compare image child
+`--retail` turns every enhancement off and applies both pins for the session,
+writing nothing back: the options pin, and the world pin through the
+session switch set both hosts share
+(`legaia_engine_session::session_switches::SessionSwitches::apply`, which the
+browser's retail mode calls too). The window logs
+`WorldToggles::retail_deviations` once the launch has landed, and under
+`--retail` the list is empty. It is what the retail-compare image child
 runs under, so a new enhancement that is added to `LaunchFidelity::retail`
 is off in the comparison without anyone remembering a `--no-*` flag.
 
@@ -423,7 +433,7 @@ options is safe by default. A headless comparison against retail calls
 | `Renderer::set_occlusion_fade` (`--no-occlusion-fade` disables for the session, `F4` on both hosts; "See-through walls" checkbox on the browser play page; persisted `OptionsState::occlusion_fade`) | **on** in `play-window` + browser play page | Camera-occlusion fade: when a ray-cast visibility gate finds the character **completely** hidden, the covering geometry dissolves to a screen-door dither in a circle around them, above the line of their feet so the ground in front of them never fades - a partially visible character never fades ([renderer](renderer.md#camera-occlusion-fade-see-through-walls-enhancement)). Presentation-only; replays force it off. |
 | `OptionsState::volumetric_fog` -> `World::toggles.volumetric_fog` (`--no-volumetric-fog` disables, `F9` in `play-window`; "Ground fog" checkbox on the browser play page) | **off** on every host while the look matures (the toggle persists) | Volumetric ground fog: a low drifting mist bank over the outdoor areas of the scenes that read as misty or night (never inside a door-reached room), parted by every character walking through it, with wakes that refill; it lies on the drawn ground and spills off its rims, and a battle inherits its field scene's bank as a thin, ankle-high haze ([renderer](renderer.md#volumetric-ground-fog-enhancement)). The engine simulates it once per tick; off draws the frame without it. Presentation-only; replays and the retail comparison corpus force it off. |
 | `Renderer::set_bloom` (`F10` on both hosts; "Bloom" checkbox on the browser play page; persisted `OptionsState::bloom`) | off | The 3D frame's bright pixels - lamp halos, emissive props, lit windows, sunlit sky - bleed a soft glow, stronger under a darker enhanced-lighting mood; the HUD never blooms ([renderer-port](renderer-port.md#bloom-enhancement-not-retail)). Off draws the frame without it, pixel for pixel; `--retail` and `pin_retail` force it off. Presentation-only. |
-| `World::locomotion.precise_movement` (`R` in `play-window`; "Precise movement" checkbox on the browser play page; persisted `OptionsState::precise_movement`) | off | Free-angle locomotion instead of retail's 4/8-way quantisation. |
+| `World::locomotion.precise_movement` (`R` in `play-window`; "Free-angle movement" checkbox on the browser play page; persisted `OptionsState::precise_movement`) | off | Free-angle locomotion instead of retail's 4/8-way quantisation. |
 | `World::locomotion.leading_edge_wall_probes` (`--no-edge-collision` disables) | **on** in `play-window` + browser play page | Retail's three-probe leading-edge wall footprint (`FUN_801cfe4c`'s `DAT_801f2214` table): the player rests ~47 units off a wall plane ([field-locomotion](field-locomotion.md#collision---fun_801cfe4c)). Off = the single candidate-centre test the locomotion oracles and BFS nav drivers run on, which is why the `World` field itself still defaults off. |
 | `World::toggles.hop_landing_guard` | **on** (off under `pin_retail` / `--retail`) | Refuses a field ledge hop whose landing the walk could not leave in any direction. Retail tests no landing, and a diagonal step-up hop can set the player boxed in a raised pocket for good ([field-locomotion](field-locomotion.md#vertical-settle--ledge-hop---fun_801d1ba0--fun_801d1878)). |
 | `World::npcs.solid` (`--no-solid-npcs` disables) | **on** in `play-window` + browser play page | Retail's actor-collision probes (`FUN_801cfc40`'s `DAT_801f21b4` table) make field NPCs solid. Placed props are solid either way; this gates the NPC arm only. |
@@ -431,10 +441,19 @@ options is safe by default. A headless comparison against retail calls
 | `World::locomotion.run_button_mask` | **retail + one alternate** | Which pad buttons invert the Field Move option. Defaults to retail's `Cross \| R1` (the config word `0x800846DC` = `0x48`, which retail seeds once and never exposes) plus **Square**, the port's historical binding, kept so it does not break under anyone's hands. A host wanting the retail set exactly assigns `FIELD_RUN_BUTTON_MASK_RETAIL`. Which *key* produces each button is the binding table (`legaia-engine config set --binding W=R1`), not this mask. See [field-locomotion](field-locomotion.md#base-step-selection-walk--run). |
 | `World::toggles.reduce_flashing` (`OptionsState::reduce_flashing`) | **on** | Photosensitivity guard: slew-limits the applied luminance channels of the ambient CLUT-cell palette cyclers ([field-ambient-fx](field-ambient-fx.md#photosensitivity-guard)). Retail's koin3 dance floor strobes bright/black at 15 Hz - far past the 3-flashes-per-second guideline - so the safe presentation is the default; off restores the retail-exact palette steps. Presentation-only: the move-VM simulation is identical either way. |
 | `OptionsState::bgm_volume` / `sfx_volume` (`legaia-options.toml` keys; no in-game row) | `8` / `8` = unity | Engine-only music and sound-effect levels, `0..=10` linear with `8` the retail mix and `10` a 1.25x boost. Each SPU voice is tagged at key-on with the bus of whoever keyed it - a sequencer note is BGM, a cue is SFX - and scaled before the dry sum and the reverb send; XA voice and FMV audio ride neither bus. Both play hosts apply it, and at the default the mix is bit-identical to the single-bus one ([audio](audio.md)). |
+| `OptionsState::downmix_mono` (`legaia-options.toml` key; the launcher's and the browser play page's "Mono output") | off | Engine-only full-mono downmix: the finished mix, XA voice and FMV audio included, averaged into both channels. The in-game "Sound: Monaural" row is separate and retail-exact - libsnd's per-voice fold, the CD input left stereo ([audio](audio.md)). Not pinned by `--retail`, like the volume levels. |
 | `World::toggles.entry_pulse_enabled` (`--no-entry-pulse` disables; "Entry pulse" checkbox on the browser play page) | on (off under `--retail` / the page's Retail-faithful) | Scene-entry VDF pulse: a rolling vertex-morph envelope over the packs it is authored for (jou's flesh ground, Rim Elm's shoreline; every other scene keeps retail's still geometry; [field-ambient-fx](field-ambient-fx.md#mechanism-3---strip-cycling-and-vertex-morphs)). Retail-armed morph scenes are unaffected either way. |
 | `World::toggles.battle_sm_frame_cadence` (`LEGAIA_BATTLE_FRAME_CADENCE`, `0` lowers it, on a native session; "Retail battle cadence" checkbox on the browser play page) | **on** on both hosts | The whole battle pass once a battle frame, retail's cadence, instead of once a vsync: the action SM, the cast tick, the anim tick after them, the fades and the effect pool, each by the frame step. Off runs the per-vsync SM ([battle-stage-camera](battle-stage-camera.md)). |
 | `World::toggles.arts_saved_list` (`LEGAIA_ARTS_SAVED_LIST=1` on a native session; "Saved-chain Arts list" checkbox on the browser play page) | off (off under `pin_retail`) | The command ring's Arts arm opens the port's saved-chain list instead of retail's per-press directional input ([battle-round-loop](battle-round-loop.md)). Not retail. |
-| `World::toggles.smarter_monster_targeting` (`LEGAIA_SMART_MONSTERS=1` in `play-window`; "Smart monsters" checkbox on the browser play page) | off (off under `pin_retail`) | A monster's single-target attack goes to the lowest-HP living party member instead of retail's uniform random pick. The faithful pick is still rolled in full, so the RNG stream is unchanged ([battle-round-loop](battle-round-loop.md)). Not retail. |
+| `World::toggles.smarter_monster_targeting` (`--smart-monsters` or `LEGAIA_SMART_MONSTERS=1` in `play-window`, the launcher's Smarter monsters row; "Smart monsters" checkbox on the browser play page) | off (off under `pin_retail`) | A monster's single-target attack goes to the lowest-HP living party member instead of retail's uniform random pick. The faithful pick is still rolled in full, so the RNG stream is unchanged ([battle-round-loop](battle-round-loop.md)). Not retail. |
+| `World::toggles.shiny_seru` (`--no-shiny-seru` disables, the launcher's Shiny Seru row; "Shiny Seru" box on the browser play page) | **on** (off under `pin_retail`) | A rare capturable enemy spawns shiny (+35% stats, its Seru +35% damage), the patcher's `--shiny-seru` rule. Off skips the roll and the battle-entry `rand()` it takes, which retail never makes ([gameplay tweaks](gameplay-tweaks.md#shiny-seru)). Not retail. |
+| `World::toggles.flee_exp` (`--flee-exp`, the launcher's Run-away EXP row; "Run-away EXP" box on the browser play page) | off (off under `pin_retail`) | A successful escape banks 5% of the fled formation's EXP into every member, the patcher's `--flee-exp` ([gameplay tweaks](gameplay-tweaks.md#run-away-exp)). Not retail. |
+| `World::toggles.exp_rate_permille` (`--exp-rate MULT`, the launcher's EXP rate row; "EXP rate" selector on the browser play page) | `1x` (`1x` under `pin_retail`) | Scales each monster's EXP reward with the patcher's `--exp-scale` arithmetic ([gameplay tweaks](gameplay-tweaks.md#exp-rate)). |
+| `World::toggles.fortress_encounter_fix` (`--no-fortress-encounter-fix` disables, the launcher's Fortress battles fix row; "Fortress battles fix" box on the browser play page) | **on** (off under `pin_retail`) | Jette's Absolute Fortress ignores the Floating Castle's stale "no battles" flag `0x15`, the patcher's `--fortress-encounter-fix`. A save without the flag plays the same either way ([gameplay tweaks](gameplay-tweaks.md#fortress-battles-fix)). |
+| `World::toggles.jewel_fix` (`--jewel-fix`, the launcher's Boss casts respect jewels row; same-named box on the browser play page) | off (off under `pin_retail`) | The boss cinematic casts roll the respecting wrapper, so jewels and guards apply, the patcher's `--jewel-fix` ([gameplay tweaks](gameplay-tweaks.md#boss-casts-respect-jewels)). Not retail. |
+| `World::toggles.hp_readout_guard` (`--no-hp-readout-guard` disables, the launcher's Battle freeze guard row; same-named box on the browser play page) | **on** (off under `pin_retail`) | Re-seeds a party HP readout left off live HP with nothing pending, so the state-`0x51` park cannot hold ([gameplay tweaks](gameplay-tweaks.md#battle-freeze-guard)). An identity while retail's readout invariant holds. |
+| `World::toggles.bonus_drop` (`--equipment-drops`, the launcher's Bonus equipment drops row; same-named box on the browser play page) | off (off under `pin_retail`) | A 5% roll after each won battle grants one random piece of equipment on top of the normal drop, the patcher's `--equipment-drops` ([gameplay tweaks](gameplay-tweaks.md#bonus-equipment-drops)). Not retail. |
+| Battle tuning: `World::toggles.enemy_stat_permille`, `enemy_attack_permille`, `spirit_ap`, `damage_ap`, `seru_catch_pct` (`--enemy-stat-scale`, `--enemy-attack-count`, `--spirit-ap`, `--damage-ap`, `--seru-catch-rate`; the launcher's Battle tuning group; the play page's Battle tuning panel) | retail (`1x`, `1x`, `32`, `100`, each Seru's own), held there by `pin_retail` | Each is one scale at its reader with the patcher's arithmetic for the same flag ([gameplay tweaks](gameplay-tweaks.md#battle-tuning)). |
 | `OptionsState::retail_static_window` -> `StaticObjectWindow::retail_windowing` | **on** | Retail's windowed static-object list (`FUN_801D7B50`): a `.MAP` placement the sub-area window sweep owns draws only while the camera's latched region box holds it. On because it is retail, and because the props it leaves out are other rooms' scenery. Off draws every placement for the whole map ([field-locomotion](field-locomotion.md)). |
 | `OptionsState::retail_view_window` -> `World::toggles.view_window_crop` | **on**, effective at retail framing only | Retail's visible-tile crop: the field ground and decoration cells are drawn only inside the camera's tile window clipped to the walk region ([`field_view_window`](../../crates/engine-scene/src/field_view_window.rs), [encounter.md](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)). Both hosts apply it while the camera is at `CameraDistance::Retail` with the drag / tilt / zoom knobs at identity and `F3` off, so the retail-distance frames the comparison corpus takes are cropped. Any wider or re-aimed view draws the map whole - see [below](#the-visible-tile-crop-follows-the-framing). |
 | `Renderer::set_psx_mode` (`LEGAIA_PSX_RENDER=1`; "PSX rasterisation" checkbox on the browser play page) | off | Strict-PS1 rasterisation artefacts - see below. |
@@ -449,6 +468,10 @@ Two directions are worth having straight, because they are not uniform:
 
 - **Shading defaults to retail.** The game's textured and colour mesh paths have no runtime light source: the TMD's baked colour word goes through the GTE depth cue (`DPCS`) and is applied as `texel * colour / 128`. The exception is the light-source rows (TMD group flags `0x10..=0x17`), which the field dispatcher sends to its `NCCS` / `NCCT` handlers and which shade through the GTE light ([shading](shading.md)). The engine's pipelines draw exactly that. Enhanced lighting is layered *over* it and is an exact identity when disabled - the interactive hosts turn it on, every parity capture turns it off. See [`dyn_light.rs`](../../crates/engine-render/src/dyn_light.rs) and [renderer](renderer.md).
 - **Rasterisation defaults to clean.** `psx_mode` is off, so the default image is sharper than a PlayStation's: no sub-pixel vertex snap and no 15-bit ordered dither. Here faithfulness is the mode you opt into. Affine texture mapping is not gated - it is unconditional, and it is the faithful behaviour.
+
+### Patcher features and the engine
+
+The disc patcher's fixes and gameplay options graduate into engine switches, so the port offers them without a patched disc. The carried ones are one `GameplayTweaks` value in the session switch set both hosts apply (the rows above from `shiny_seru` to the battle tuning sliders). Every patcher feature is classified on [gameplay tweaks](gameplay-tweaks.md#classification): retail defects the port avoids by construction (the approach park, the Conkram freeze, the charm victory freeze, the arts banner width), switches carried or still open, and the disc-content randomizers and mods, which stay with the patcher because the engine plays their output as data.
 
 ### The visible-tile crop follows the framing
 

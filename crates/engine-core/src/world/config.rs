@@ -541,7 +541,7 @@ pub(crate) const CUTSCENE_TIMELINE_STEP_BUDGET: u32 = 256;
 
 /// Frame cap for a cutscene timeline that must return control (the `town01`
 /// opening). If the spawned context never reaches its terminal within this
-/// many frames (≈20 s at 60 fps), the engine forces it complete.
+/// many frames (≈40 s at 60 fps), the engine forces it complete.
 ///
 /// It is an **anti-hang** cap, not a record-length one: the frames a timeline
 /// spends in real authored playout do not count toward it. `World::step_cutscene_timeline`
@@ -558,7 +558,13 @@ pub(crate) const CUTSCENE_TIMELINE_STEP_BUDGET: u32 = 256;
 /// landing, and a counter over the whole ride cut the lap after about
 /// 75000 frames and left the rider on the lap's `MoveTo` seat. Over the
 /// full-game ladder (both passes) the cap ends no record at all.
-pub(crate) const CUTSCENE_TIMELINE_MAX_FRAMES: u32 = 1200;
+///
+/// A record parked on a `4C C5` / `4C C6` system-flag wait holds one PC while
+/// the move-VM part it staged counts its `WAIT_SET`s down in vsyncs (the part
+/// tick drains `frame_step * 8`): `ropeway` `P2[31]` sits on `4C C6 0B` for
+/// about 1200 ticks at frame step 1 before its part clears `0x0B`, so the cap
+/// stands well above that.
+pub(crate) const CUTSCENE_TIMELINE_MAX_FRAMES: u32 = 2400;
 
 /// Frame cap for the `opdeene` prologue timeline. The record arms the
 /// hand-off bit near its TOP (`GFLAG_SET 26` at body `+0x17`) and then plays

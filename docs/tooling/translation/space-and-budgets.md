@@ -195,6 +195,13 @@ addresses (the menu overlay reloads from the disc when the menu opens; the
 executable's edits need `legaia-patcher scus-pokes` over a save state, which
 `autorun_menu_screen_dump.lua` applies from `LEGAIA_POKES`).
 
+The port's string readers for the menu overlay, the battle overlay's labels
+and result lines, the executable's battle labels and the name-entry prompts
+follow a move the same way retail does, by decoding a reference site on the
+patched image ([`ui-strings.md`](ui-strings.md#what-the-port-reads)); the
+field-overlay readers listed there still read the retail VA, so there a
+moved string shows its new text in retail only.
+
 ## Where the text lives
 
 The memory map of every translatable category, and what room it has:
@@ -452,7 +459,7 @@ give the same verdicts as a per-section summary.
 ### In the browser: the translation workbench
 
 The site's translation workbench page runs the same kernel in the browser tab
-on the user's own disc (`crates/web-viewer/src/translate_workbench.rs`, a
+on the user's own disc (`crates/web-patcher/src/translate_workbench.rs`, a
 resident `Workbench` session). It shows the report as a dashboard - coverage
 per section, the room per category (with what your pack leaves once checked),
 the name regions' free bytes, monster rooms, label-pool slack and the scenes

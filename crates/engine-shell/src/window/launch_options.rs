@@ -17,6 +17,15 @@ pub struct LaunchFidelity {
     pub dyn_shadows: bool,
     /// The scene-entry VDF pulse over packs retail never arms.
     pub entry_pulse: bool,
+    /// Smarter monster targeting (`--smart-monsters`,
+    /// `WorldToggles::smarter_monster_targeting`). Not retail.
+    pub smart_monsters: bool,
+    /// The gameplay tweaks - the patcher features graduated into engine
+    /// switches (Shiny Seru, run-away EXP, the EXP rate, the Fortress
+    /// encounter fix, the jewel fix) and the battle HP-readout guard:
+    /// `--no-shiny-seru`, `--flee-exp`, `--exp-rate`,
+    /// `--no-fortress-encounter-fix`, `--jewel-fix`, `--no-hp-readout-guard`.
+    pub tweaks: legaia_engine_session::session_switches::GameplayTweaks,
     /// The camera-occlusion fade around the player.
     pub occlusion_fade: bool,
     /// The volumetric ground fog.
@@ -70,6 +79,8 @@ impl LaunchFidelity {
             dynamic_lighting: None,
             dyn_shadows: true,
             entry_pulse: true,
+            smart_monsters: false,
+            tweaks: legaia_engine_session::session_switches::GameplayTweaks::default(),
             occlusion_fade: true,
             volumetric_fog: true,
             retail: false,
@@ -85,6 +96,8 @@ impl LaunchFidelity {
             dynamic_lighting: Some(false),
             dyn_shadows: false,
             entry_pulse: false,
+            smart_monsters: false,
+            tweaks: legaia_engine_session::session_switches::GameplayTweaks::retail(),
             occlusion_fade: false,
             volumetric_fog: false,
             retail: true,
@@ -190,6 +203,16 @@ pub struct ScreenshotConfig {
         legaia_engine_camera::projection::BattleCamPose,
         legaia_engine_camera::projection::BattleCamPose,
     )>,
+    /// `LEGAIA_BATTLE_MODULE_CAM_ALIGN=<16 numbers>`: the displayed frame's
+    /// live pose and retail's tween endpoints under a slot-B module's shot
+    /// still walking, which the captured frame's shot takes on every
+    /// component whose endpoint agrees
+    /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::align_module_shot`]).
+    /// Set by the retail-compare image channel on a replayed cast.
+    pub battle_module_cam_align: Option<(
+        legaia_engine_camera::projection::BattleCamPose,
+        legaia_engine_camera::projection::BattleCamPose,
+    )>,
     /// `LEGAIA_SEAT_HUD_GLIDES_LANDED=1`: the retail capture's HUD widget
     /// glides had all landed, so the captured frame lands the engine's too
     /// (`World::land_battle_hud_glides`). Set by the retail-compare image
@@ -201,6 +224,24 @@ pub struct ScreenshotConfig {
     /// (`World::seat_battle_hud_glide`, the combo cluster's age). Set by the
     /// retail-compare image channel.
     pub seat_hud_glides: Vec<legaia_engine_capture::hud_glide::HudGlideSeat>,
+    /// `LEGAIA_SEAT_POPUP_AGE=<engine slot>:<age>`: the newest damage
+    /// numeral's age as the retail capture's displayed frame drew it; the
+    /// captured frame ages the engine's newest popup on that slot to it.
+    /// Set by the retail-compare image channel.
+    pub seat_popup_age: Option<(u8, u16)>,
+    /// `LEGAIA_SEAT_POPUP_CELLS=x:y:w:digit,...`: the numeral cells the
+    /// retail capture's displayed frame drew; the captured frame draws them
+    /// in place of the engine's runs.
+    pub seat_popup_cells: Vec<(i32, i32, u32, u8)>,
+    /// Set on the frame the capture is due, for [`Self::seat_popup_cells`].
+    pub popup_cells_due: std::cell::Cell<bool>,
+    /// The readout trios of the frames before this one, newest last, kept
+    /// while [`Self::seat_popup_age`] is set: a popup aged back `d` frames
+    /// is anchored on the trio it was drawn over `d` frames ago.
+    pub popup_trio_history: std::cell::RefCell<std::collections::VecDeque<Vec<Option<[f32; 3]>>>>,
+    /// `(slot, frames)`: the seated popup's anchor taken that many frames
+    /// back in [`Self::popup_trio_history`].
+    pub popup_trio_rewind: std::cell::Cell<Option<(u8, u16)>>,
     /// `LEGAIA_SEAT_SPIRIT_GAUGE=<bar width>,<plate value>`: a Spirit turn's
     /// AP bar width and AP plate value as the retail capture's displayed
     /// frame shows them; the captured frame seats the engine's on them.
@@ -626,6 +667,9 @@ impl ScreenshotConfig {
             battle_cam_align_displayed: std::env::var("LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED")
                 .ok()
                 .and_then(|v| legaia_engine_capture::camera_align::cam_align_from_env(&v)),
+            battle_module_cam_align: std::env::var("LEGAIA_BATTLE_MODULE_CAM_ALIGN")
+                .ok()
+                .and_then(|v| legaia_engine_capture::camera_align::cam_align_from_env(&v)),
             gate_cam_target: std::cell::Cell::new(None),
             battle_cam_gate_target: std::env::var("LEGAIA_BATTLE_CAM_GATE_TARGET")
                 .ok()
@@ -640,6 +684,26 @@ impl ScreenshotConfig {
             seat_hud_glides: std::env::var("LEGAIA_SEAT_HUD_GLIDES")
                 .map(|v| legaia_engine_capture::hud_glide::HudGlideSeat::list_from_env(&v))
                 .unwrap_or_default(),
+            seat_popup_cells: std::env::var("LEGAIA_SEAT_POPUP_CELLS")
+                .map(|v| {
+                    v.split(',')
+                        .filter_map(|e| {
+                            let f: Vec<&str> = e.trim().split(':').collect();
+                            Some((
+                                f.first()?.parse().ok()?,
+                                f.get(1)?.parse().ok()?,
+                                f.get(2)?.parse().ok()?,
+                                f.get(3)?.parse().ok()?,
+                            ))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            popup_cells_due: std::cell::Cell::new(false),
+            seat_popup_age: std::env::var("LEGAIA_SEAT_POPUP_AGE").ok().and_then(|v| {
+                let (s, a) = v.split_once(':')?;
+                Some((s.trim().parse().ok()?, a.trim().parse().ok()?))
+            }),
             script_gate: std::env::var("LEGAIA_SCRIPT_GATE")
                 .ok()
                 .and_then(|v| legaia_engine_capture::script_gate::ScriptGate::from_env(&v)),
@@ -649,6 +713,8 @@ impl ScreenshotConfig {
                     .map(|v| legaia_engine_capture::field_seeds::fog_from_env(&v)),
             ),
             seat_fog_due: std::cell::Cell::new(false),
+            popup_trio_history: Default::default(),
+            popup_trio_rewind: std::cell::Cell::new(None),
             seat_sprite_arms: std::cell::Cell::new(
                 std::env::var("LEGAIA_SEAT_SPRITE_ARMS")
                     .ok()

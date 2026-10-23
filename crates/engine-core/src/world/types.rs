@@ -666,6 +666,14 @@ pub struct Actor {
     /// rewinds it there.
     pub battle_anim_cue_cursor: u8,
 
+    /// How many clip commits (`FUN_8004AD80`: an install, a re-commit, a
+    /// reaction-channel entry) this actor has taken, wrapping. Only its
+    /// changes are read: the battle anim pass compares it across a pass to
+    /// find the actors that committed inside their own anim tick, which
+    /// retail walks again at the new clip's first frame
+    /// ([`crate::world::World::tick_battle_anim_pass`]).
+    pub battle_clip_commits: u32,
+
     /// Per-frame battle pose **history ring** - the engine mirror of the
     /// retail rings `FUN_80047430` shifts every frame (position `+0x4C`,
     /// anim cursor `+0x17A`, clip `+0x234`, committed anim id `+0x1FB`;

@@ -1,0 +1,45 @@
+[package]
+name = "legaia-web-patcher"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
+
+# An rlib only: the wasm bundle is `legaia-web-viewer`'s cdylib, which links
+# this crate, so its `#[wasm_bindgen]` exports land in the one module the site
+# loads.
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+legaia-actor-formats.workspace = true
+legaia-art.workspace = true
+legaia-arts-patch.workspace = true
+legaia-code-hooks.workspace = true
+legaia-delilas-challenge.workspace = true
+legaia-delilas-party.workspace = true
+legaia-disc-audit.workspace = true
+legaia-disc-patch.workspace = true
+legaia-font.workspace = true
+legaia-game-tables.workspace = true
+legaia-iso.workspace = true
+legaia-lzs.workspace = true
+legaia-patcher.workspace = true
+legaia-prot.workspace = true
+legaia-texture-replace.workspace = true
+legaia-tim.workspace = true
+legaia-translate.workspace = true
+legaia-ui-formats.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true
+js-sys.workspace = true
+
+[dev-dependencies]
+sha2.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

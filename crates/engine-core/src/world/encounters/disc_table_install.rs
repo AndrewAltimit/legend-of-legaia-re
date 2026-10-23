@@ -110,6 +110,26 @@ impl World {
         if labels.is_installed() {
             self.menu.context_labels = labels;
         }
+        // The special Use routes' confirm prompts (`FUN_801D1DAC` /
+        // `FUN_801D1F10` draw them out of the same pool).
+        let prompts =
+            legaia_engine_menus::pause_screens::UseRoutePrompts::from_menu_overlay(overlay);
+        if prompts.is_installed() {
+            self.menu.use_route_prompts = prompts;
+        }
+        let throw =
+            legaia_engine_menus::pause_screens::ThrowConfirmLabels::from_menu_overlay(overlay);
+        if throw.is_installed() {
+            self.menu.throw_confirm_labels = throw;
+        }
+        if let Some(t) = legaia_engine_menus::pause_screens::menu_overlay_bytes(
+            overlay,
+            legaia_engine_menus::pause_screens::SPELL_LEVEL_NOTICE_TEMPLATE_VA,
+        )
+        .filter(|t| t.first() == Some(&0xC3))
+        {
+            self.menu.spell_level_template = Some(t);
+        }
         // The shop windows' label strings live in the same pool
         // (`FUN_801D4868` .. `FUN_801DCE20` load them by VA).
         let shop = legaia_engine_menus::shop::ShopLabels::from_menu_overlay(overlay);

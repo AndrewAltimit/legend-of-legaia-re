@@ -159,7 +159,7 @@
       <tr><td>Dual Shock: Battles / Events / Encounters</td><td>Vibration On / Off</td><td><code>0x800845C8 / 0x800845A8 / 0x800845CC</code></td></tr>
     </tbody>
   </table>
-  <p>A hidden "Battle Voices" row (<code>0x800845AC</code>) exists in the descriptor list but not in the layout table. Engine port: <code>engine-menus::options</code> + <code>engine-ui::options_draws_for</code>; the Sound row drives the mixer's monaural downmix.</p>
+  <p>A hidden "Battle Voices" row (<code>0x800845AC</code>) exists in the descriptor list but not in the layout table. Engine port: <code>engine-menus::options</code> + <code>engine-ui::options_draws_for</code>; the Sound row drives libsnd's per-voice monaural fold (movie and voice audio stay stereo, as on the original); the full downmix is the separate Mono output setting.</p>
   <details class="disclosure">
     <summary>Deep dive: popup geometry and the debug flag editor</summary>
     <div class="disclosure-body">

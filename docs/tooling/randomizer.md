@@ -107,7 +107,7 @@ the manual per-record edits of the
 
 ## In the browser
 
-The same patcher runs client-side. `legaia_web_viewer::rom_patcher` (`patch_rom`)
+The same patcher runs client-side. `legaia_web_patcher::rom_patcher` (`patch_rom`)
 compiles the crate to WebAssembly, and the site's `tooling/rom-patcher.html`
 page takes a disc image, offers the randomizer passes, the tuning sliders, the
 code-hook features, the Delilas features, texture replacement and translation
@@ -161,6 +161,7 @@ legaia-patcher randomize --input DISC.bin --seed swap --seru-trade              
 legaia-patcher randomize --input DISC.bin --seed fair --jewel-fix                         # boss cinematic casts respect elemental guards
 legaia-patcher randomize --input DISC.bin --seed fair --approach-softlock-fix              # dead approach animations re-stage instead of wedging
 legaia-patcher randomize --input DISC.bin --seed fair --fortress-encounter-fix             # Jette's Absolute Fortress rolls battles on a save with the stale castle flag
+legaia-patcher randomize --input DISC.bin --conkram-freeze-fix                            # the Room of Mirrors in Conkram no longer locks up on a fast emulated CPU
 legaia-patcher randomize --input DISC.bin --seed fair --delilas-challenge                  # Muscle Dome option: a new 2-round Delilas course
 legaia-patcher fishing   --input DISC.bin                                                 # read-only: list fishing-exchange prizes + prices
 legaia-patcher randomize --input DISC.bin --seed fish --fishing-price 0x6F=500            # Buma Water Egg costs 500 fishing points
@@ -252,6 +253,7 @@ unless asked for:
 | `--jewel-fix` | the boss cinematic casts (Xain, Cort, the Delilas trio) respect elemental guards like every other special | - | [Jewel fix](#jewel-fix) |
 | `--approach-softlock-fix` | a monster whose approach animation dies mid-walk is re-staged and resumes walking instead of parking the battle forever (the "endless camera orbit") | - | [Approach-softlock fix](#approach-softlock-fix) |
 | `--fortress-encounter-fix` | Jette's Absolute Fortress stops obeying the Floating Castle's stale "no battles" flag, so a save that left the castle with under a minute on the clock gets its random battles (and the Door of Light there) back | - | [Fortress encounter fix](#fortress-encounter-fix) |
+| `--conkram-freeze-fix` | the Room of Mirrors scene in present-day Conkram no longer locks up on an emulator that runs the CPU faster than a console; a failed effect allocation drops one particle or gets a stand-in node, with no `PRG ERR` readout | - | [Conkram freeze fix](#conkram-freeze-fix) |
 | `--delilas-challenge` | a fourth Muscle Dome enrollment option: a new 2-round arena course (Che & Lu double-team, then Gi; a clear pays 5000 coins + a Honey); unlocks after the Koru event | - | [Delilas Challenge](#delilas-challenge) |
 | `--delilas-party V,N,G` | play as the Delilas siblings: the party wears Gi / Lu / Che battle models (any permutation over Vahn, Noa, Gala) while the ravine duels + dome Master legs field Vahn / Noa / Gala models | - | [Delilas party swap](#delilas-party-swap) |
 | `--delilas-arts-voice MODE` | with the swap: what the arts shout AND Super/Hyper fanfare banks carry - `original` (default; the retail hero shouts stay), `adjusted` (re-voiced toward the siblings), `removed` | `original` | [Delilas party swap](#delilas-party-swap) |
@@ -1488,6 +1490,15 @@ data. All are off unless asked for. The user-visible behaviour is below; the
 hook sites, register contracts and placement are on
 [`randomizer-internals.md`](randomizer-internals.md#code-injection-features).
 
+The port runs none of these hooks, since it executes no MIPS. Several are
+carried as engine switches instead (Shiny Seru, run-away EXP, the bonus
+equipment drop, the jewel fix, the Fortress encounter fix, Spirit AP and
+enemy-damage AP, plus `--exp-scale`, `--seru-catch-rate`,
+`--enemy-attack-count` and a uniform `--enemy-stat-scale` among the data
+edits), and two retail defects fixed here cannot occur in the port at all.
+[Gameplay tweaks](../subsystems/gameplay-tweaks.md#classification) classifies
+every feature.
+
 ### Run-away EXP
 
 `--flee-exp` banks a slice of a fight's experience into the party whenever they
@@ -1533,7 +1544,9 @@ engine reads the same embedded config and runs the same offer kernel
 `--jewel-fix` makes the boss cinematic casts - Xain's Bloody Horns / Terio Punch
 / Bull Charge, Cort's Guilty Cross and the Delilas trio's signatures - respect
 Jewels, elemental guards and All Guard like every other special. In retail those
-six cast modules skip the party-defender resist block.
+six cast modules skip the party-defender resist block. The fix sends them
+through the damage roll every other boss cast uses, which reads the caster's
+INT rather than its ATK, so the hits change size as well as respecting guards.
 [Internals](randomizer-internals.md#jewel-fix).
 
 ### Approach-softlock fix
@@ -1569,6 +1582,40 @@ scene's own post-Jette group, so the Fortress never tests flag `0x15`:
 
 Seedless, and it combines with every other option. On in the web Balanced / Full
 Chaos presets. [Internals](randomizer-internals.md#fortress-encounter-fix).
+
+### Conkram freeze fix
+
+`--conkram-freeze-fix` stops the lock-up in present-day Conkram's Room of
+Mirrors, the scene that sends the party into the past. It happens on emulators
+that run the CPU faster than a console - PCSX-ReARMed's default for this game,
+or a SwanStation / DuckStation overclock - and not on a console. The scene runs
+with almost no free memory; with the faster CPU the mirror effect keeps more
+particles alive, one particle's request for memory fails, and the effect code
+copies its animation through the failed request's empty pointer onto the CPU's
+exception vector. The next interrupt jumps into that data and the game stops.
+The cause is traced in
+[field-oddities.md](../reference/glitches/field-oddities.md#conkram-mirror-freeze).
+
+Each effect particle asks for two blocks of memory - its animation and its
+render node - and the fix makes both requests safe:
+
+- **A failed animation block drops the particle.** The part that asked ends the
+  way a part ends normally, and the memory it already held goes back to the
+  game. The scene plays on.
+- **A failed render node gets a stand-in.** Retail already tolerates this
+  failure but leaves an empty pointer that later code writes through; the fix
+  hands the part a shared spare node instead, kept in otherwise unused RAM.
+- **No `PRG ERR` on screen.** Both requests go through a copy of the game's
+  allocation routine without its error counter, so a failure the fix absorbs
+  does not leave the `PRG ERR` readout in the top-left corner for the rest of
+  the session.
+- **Every request that succeeds runs as retail.** At console speed no request
+  fails in this scene, so the scene and every other effect in the game play
+  exactly as before.
+
+Seedless, four same-size edits of `SCUS_942.54`, and it combines with every
+other option. On in the web Balanced / Full Chaos presets.
+[Internals](randomizer-internals.md#conkram-freeze-fix).
 
 ### Delilas Challenge
 

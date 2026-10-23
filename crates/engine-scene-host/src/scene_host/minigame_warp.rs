@@ -171,6 +171,12 @@ impl SceneHost {
                 )
                 .with_species_names(loaded)
             });
+        // And the lead's two ambient-ripple part records.
+        self.world.minigames.fishing_venue.ripple_records =
+            legaia_engine_minigame_scenes::fishing_venue::RippleRecords::from_overlay(
+                loaded,
+                legaia_minigame_formats::fishing_species::FISHING_OVERLAY_BASE_VA,
+            );
         true
     }
 
@@ -426,6 +432,43 @@ impl SceneHost {
         if !catalog.is_empty() {
             session.install_art_catalog(0, catalog);
         }
+        // The Auto attack: the record's two saved command strings (the
+        // entry opens over them, the review writes them back) and the disc
+        // inputs the round's `FUN_801F0450` rebuild reads - the same
+        // per-character inputs the field scene staged for the regular
+        // battle's Auto.
+        if let Some(rec) = self
+            .world
+            .party
+            .roster
+            .members
+            .get(DOME_LEAD_CHAR_SLOT as usize)
+        {
+            use legaia_save::AutoCommandBand;
+            session.set_auto_command_strings(
+                rec.auto_command_string(AutoCommandBand::Primary),
+                rec.auto_command_string(AutoCommandBand::Secondary),
+                // The dome's gauge pair is one value (`+0x154 == +0x156`),
+                // so `sltu` reads false: the secondary band.
+                AutoCommandBand::for_gauge(lead.budget, lead.budget),
+            );
+            let staged = &self.world.battle.auto_combo.inputs[DOME_LEAD_CHAR_SLOT as usize];
+            let skills = rec.displayed_skills();
+            let n = (skills.count as usize).min(skills.ids.len());
+            let bits = rec.ability_bits();
+            session.install_auto_inputs(
+                legaia_engine_battle_menus::muscle_dome_session::DomeAutoInputs {
+                    command_heads: staged.command_heads,
+                    guards: self.world.battle.auto_combo.guards,
+                    art_records: staged.art_records.clone(),
+                    art_count: staged.art_count,
+                    learned: skills.ids[..n].to_vec(),
+                    char_id: DOME_LEAD_CHAR_SLOT as u8 + 1,
+                    ability_high: u32::from_le_bytes([bits[4], bits[5], bits[6], bits[7]]),
+                    opponent_swing_class: opponent_record.as_ref().map_or(0, |r| r.swing_class),
+                },
+            );
+        }
         // The special-battle word retail's arena entry (`FUN_801CEA6C`)
         // seeds: `0x101` / `0x111` / `0x321` from story flags `0x536` /
         // `0x537` / `0x538`, `1` with none of them set. It forbids the Item
@@ -439,6 +482,21 @@ impl SceneHost {
             legaia_engine_world_views::muscle_dome::magic_loadout_for(&self.world, 0, special)
         {
             session.install_magic(0, magic);
+        }
+        // The opponent picks through the battle's monster AI
+        // (`FUN_801DABA4` -> `FUN_801E9FD4`) over its own record: its magic
+        // ids against the world's spell catalog, its AGL budget over its own
+        // candidate swings.
+        if let Some(r) = opponent_record.as_ref() {
+            let def = legaia_engine_battle::monster_catalog::monster_def_from_record(r);
+            let spells = def
+                .magic_attacks
+                .iter()
+                .filter_map(|id| self.world.tables.spell_catalog.get(*id).cloned())
+                .collect();
+            session.install_opponent_ai(
+                legaia_engine_battle_menus::muscle_dome_session::DomeOpponentAi::new(def, spells),
+            );
         }
         // The bodies the play-out moves: the lead's battle form and the
         // seated monster, with the clips, reach and size class the battle's

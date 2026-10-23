@@ -1,0 +1,1209 @@
+//! Fishing-minigame methods of [`LegaiaMinigames`] - the browser twin of the
+//! play-window's `start_fishing_minigame` (`window/minigames.rs`).
+//!
+//! The rules are the ported [`legaia_engine_fishing::fishing`] engine - the one
+//! session type, [`PondSession`], that the native window and the browser play
+//! page also run through `World::tick_fishing`. All of it is driven by the
+//! tables decoded from the visitor's own disc (PROT 0972 rodata,
+//! [`legaia_minigame_formats::fishing_species`]). This file is the thin JSON shell over
+//! it - it ticks the session, applies reel input and hands the state to the
+//! page. No table ships with the site.
+//!
+//! This page drives the session directly rather than through a `World`: it has
+//! no field scene to suspend, and its persistent words come from the
+//! visitor's memory card (`card_fishing_json`) instead of a live save window.
+
+use super::*;
+
+use legaia_engine_fishing::fishing::{
+    self, FishingRecord, PondEvent, PondInput, PondPhase, PondSession, PrizeExchange,
+};
+use legaia_minigame_formats::fishing_species;
+// engine-ui re-exports its `fishing::hud` module's items at the crate root.
+use legaia_engine_ui as ui_fishing;
+use legaia_engine_ui::{BarAxis, CatchHudState, HudCaption, HudDraw};
+
+/// The bag count each tackle item opens at on this page: it models no
+/// inventory, so every lure row and rod starts at the bag's stack cap. Lure
+/// rows are then debited by line breaks (`fishing_lures_held`).
+pub(crate) const MINIGAMES_TACKLE_HELD: i32 = 99;
+
+/// Packed spread argument the strike splash fans its three parts by - the
+/// same value the other two hosts pass in `World::tick_fishing`.
+const SPLASH_SPREAD: i32 = 0x40;
+
+impl LegaiaMinigames {
+    /// Decode the fishing overlay (PROT 0972) into the cached species table +
+    /// overlay image (for species-name resolution), returning the status
+    /// object `load_disc` folds into its report.
+    pub(super) fn load_fishing_tables(&mut self) -> String {
+        self.fishing_species = None;
+        self.fishing_overlay = None;
+        let img = overlay_image(
+            &self.prot,
+            &self.entries,
+            fishing_species::FISHING_OVERLAY_PROT_INDEX as u32,
+        );
+        match img.as_ref().and_then(|o| fishing_species::parse(o)) {
+            Some(species) => {
+                let n = species.len();
+                // The venue-faithful tables that ride the same overlay image:
+                // the per-venue spawn pages, the reel-cadence gesture
+                // templates, and the point-exchange prize pages. Each is
+                // optional - a partial decode still plays the plain session.
+                let ov = img.as_deref().unwrap_or_default();
+                self.fishing_spawn = fishing_species::parse_spawn_tables(ov);
+                self.fishing_cadence = fishing_species::parse_cadence_templates(ov);
+                self.fishing_exchange = legaia_minigame_formats::fishing_exchange::parse(ov);
+                self.fishing_sprites = legaia_minigame_formats::fishing_sprites::parse(ov);
+                let names = self.item_names.as_ref();
+                self.fishing_captions =
+                    legaia_minigame_formats::fishing_captions::parse(ov).map(|raw| {
+                        legaia_engine_minigame_scenes::minigame_state::FishingCaptionText::resolve(
+                            &raw,
+                            |id| names.and_then(|n| n.name(id)).map(str::to_string),
+                        )
+                        .with_species_names(ov)
+                    });
+                let venue_ok = self.fishing_spawn.is_some() && self.fishing_cadence.is_some();
+                self.fishing_species = Some(species);
+                self.fishing_overlay = img;
+                format!(
+                    r#"{{"ok":true,"species":{n},"venue_tables":{venue_ok},"exchange":{}}}"#,
+                    self.fishing_exchange.is_some()
+                )
+            }
+            None => format!(
+                r#"{{"ok":false,"why":{}}}"#,
+                jstr("fishing overlay (PROT 0972) or its species table did not decode")
+            ),
+        }
+    }
+
+    /// Resolve a species id to its overlay name (`null` JSON when absent).
+    fn fishing_species_name_json(&self, id: usize) -> String {
+        self.fishing_species
+            .as_ref()
+            .and_then(|s| s.get(id))
+            .and_then(|sp| self.fishing_overlay.as_deref().and_then(|o| sp.name(o)))
+            .map(jstr)
+            .unwrap_or_else(|| "null".to_string())
+    }
+
+    /// The engine prize-exchange view for `venue`, over the disc rows +
+    /// the SCUS item names (full-disc loads).
+    fn prize_exchange(&self, venue: usize) -> Option<PrizeExchange> {
+        let ex = self.fishing_exchange.as_ref()?;
+        let rows = ex.venues.get(venue.min(1))?;
+        Some(PrizeExchange::from_asset(
+            venue.min(1),
+            rows,
+            self.item_names.as_ref(),
+        ))
+    }
+}
+
+#[wasm_bindgen]
+impl LegaiaMinigames {
+    /// The whole decoded species table, for the "what's biting" panel:
+    ///
+    /// ```json
+    /// [ { "index": 0, "name": "Legaia Bass", "score": 8000,
+    ///     "pull": 250, "strike_gate": 8 }, ... ]
+    /// ```
+    ///
+    /// `name` is `null` when the overlay's name pointer doesn't resolve.
+    pub fn fishing_species_json(&self) -> String {
+        let Some(species) = self.fishing_species.as_ref() else {
+            return "[]".to_string();
+        };
+        let overlay = self.fishing_overlay.as_deref();
+        let rows = species
+            .iter()
+            .map(|sp| {
+                let name = overlay
+                    .and_then(|o| sp.name(o))
+                    .map(jstr)
+                    .unwrap_or_else(|| "null".to_string());
+                format!(
+                    r#"{{"index":{},"name":{},"score":{},"pull":{},"strike_gate":{}}}"#,
+                    sp.index, name, sp.score_value, sp.pull_factor, sp.strike_gate
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        format!("[{rows}]")
+    }
+}
+
+// --------------------------------------------------------------------------
+// The venue-faithful pond session (the retail cast/band/strike/fight loop)
+// --------------------------------------------------------------------------
+
+/// Serialize one [`HudDraw`] into the page's draw-item JSON. Numbers and
+/// counts are expanded through the ported 8-slot digit field
+/// ([`ui_fishing::number_digit_cells`]); bars resolve through the ported
+/// cap/body/cap frame ([`HudDraw::resolve_bar`]); glyphs and captions carry
+/// their ids for the page to map (the fishing sprite page itself is the one
+/// undecoded asset - the page substitutes labelled text and says so).
+fn hud_draw_json(
+    d: &HudDraw,
+    captions: Option<&legaia_engine_minigame_scenes::minigame_state::FishingCaptionText>,
+    out: &mut Vec<String>,
+) {
+    match *d {
+        HudDraw::Number {
+            x,
+            y,
+            value,
+            brightness,
+        } => {
+            for c in ui_fishing::number_digit_cells(0, x, y, value) {
+                out.push(format!(
+                    r#"{{"t":"digit","x":{},"y":{},"d":{},"b":{brightness}}}"#,
+                    c.x, c.y, c.digit
+                ));
+            }
+        }
+        HudDraw::LargeNumber {
+            x,
+            y,
+            value,
+            brightness,
+        } => {
+            // The large style: 16 px cells (`FUN_801d76e0` style 1).
+            for c in ui_fishing::number_digit_cells(1, x, y, value) {
+                out.push(format!(
+                    r#"{{"t":"digit","big":true,"x":{},"y":{},"d":{},"b":{brightness}}}"#,
+                    c.x, c.y, c.digit
+                ));
+            }
+        }
+        HudDraw::Count {
+            value,
+            digits,
+            x,
+            y,
+        } => {
+            // The count rides the shared fixed-width number primitive
+            // (`0x80034b78`), not the fishing digit blitter: `digits` slots
+            // at the narrow pitch, value right-aligned.
+            let digits = digits.max(1) as i32;
+            let v = value.max(0);
+            let mut shown = Vec::new();
+            let mut q = v;
+            loop {
+                shown.push(q % 10);
+                q /= 10;
+                if q == 0 || shown.len() as i32 >= digits {
+                    break;
+                }
+            }
+            for (i, d) in shown.iter().rev().enumerate() {
+                let slot = digits - shown.len() as i32 + i as i32;
+                // A font cell, not a sprite digit: the page keeps drawing
+                // it when the sprite half is rasterised. The cells are the
+                // primitive's 8 px.
+                out.push(format!(
+                    r#"{{"t":"count","x":{},"y":{},"d":{},"b":128}}"#,
+                    x + slot * 8,
+                    y,
+                    d
+                ));
+            }
+        }
+        HudDraw::Glyph {
+            layer,
+            id,
+            x,
+            y,
+            brightness,
+        } => out.push(format!(
+            r#"{{"t":"glyph","layer":{layer},"id":{id},"x":{x},"y":{y},"b":{brightness}}}"#
+        )),
+        HudDraw::Caption { text, x, y } => {
+            let k = match text {
+                HudCaption::RodName(i) => format!("lure{i}"),
+                HudCaption::LuresLeft => "lures_left".to_string(),
+                HudCaption::LureCountSuffix => "lure_suffix".to_string(),
+                HudCaption::FishName(_) => "fish_name".to_string(),
+            };
+            // The disc's own string when the overlay's row resolved.
+            let txt = captions.map(|c| match text {
+                HudCaption::RodName(i) => c.lure_names.get(i as usize).cloned().unwrap_or_default(),
+                HudCaption::LuresLeft => c.lures_left.clone(),
+                HudCaption::LureCountSuffix => c.suffix.clone(),
+                HudCaption::FishName(i) => c.species_name(i as usize).to_string(),
+            });
+            match txt {
+                Some(t) => out.push(format!(
+                    r#"{{"t":"cap","k":{},"txt":{},"x":{x},"y":{y}}}"#,
+                    jstr(&k),
+                    jstr(&t)
+                )),
+                None => out.push(format!(r#"{{"t":"cap","k":{},"x":{x},"y":{y}}}"#, jstr(&k))),
+            }
+        }
+        HudDraw::Bar { .. } | HudDraw::PowerBar { .. } => {
+            if let Some(f) = d.resolve_bar() {
+                let axis = match f.axis {
+                    BarAxis::Horizontal => "h",
+                    BarAxis::Vertical => "v",
+                };
+                let (x, y) = f.positions[0];
+                let span =
+                    f.positions[2].0.max(f.positions[2].1) - f.positions[0].0.min(f.positions[0].1);
+                let (r, g, b) = f.fill_rgb.unwrap_or((0, 0, 0));
+                out.push(format!(
+                    concat!(
+                        r#"{{"t":"bar","axis":"{}","x":{},"y":{},"end_x":{},"end_y":{},"#,
+                        r#""span":{},"fill":{},"bright":{},"rgb":[{},{},{}]}}"#
+                    ),
+                    axis,
+                    x,
+                    y,
+                    f.positions[2].0,
+                    f.positions[2].1,
+                    span,
+                    f.fill_len,
+                    f.fill_brightness,
+                    r,
+                    g,
+                    b
+                ));
+            }
+        }
+    }
+}
+
+#[wasm_bindgen]
+impl LegaiaMinigames {
+    /// Whether the venue-faithful pond can start (species + spawn + cadence
+    /// tables all decoded).
+    pub fn fishing_pond_ready(&self) -> bool {
+        self.fishing_species.is_some()
+            && self.fishing_spawn.is_some()
+            && self.fishing_cadence.is_some()
+    }
+
+    /// Start a pond session at `venue` (0 = Buma, 1 = Vidna) with the
+    /// persistent save-block state: equipped `lure` (0..=2), `rod` stat
+    /// (0..=2), lifetime `casts`, the point record triple, and the one-time
+    /// prize `purchased_mask`. `seed` feeds the deterministic BIOS-rand
+    /// stream. Returns `false` when the tables didn't decode.
+    #[allow(clippy::too_many_arguments)]
+    pub fn fishing_pond_start(
+        &mut self,
+        venue: u32,
+        lure: u32,
+        rod: i32,
+        casts: i32,
+        points: i32,
+        best_points: i32,
+        best_fish: u32,
+        purchased_mask: u32,
+        seed: u32,
+    ) -> bool {
+        let (Some(species), Some(spawn), Some(cadence)) = (
+            self.fishing_species.clone(),
+            self.fishing_spawn.as_ref(),
+            self.fishing_cadence.clone(),
+        ) else {
+            return false;
+        };
+        let venue = (venue as usize).min(1);
+        let record = FishingRecord {
+            points,
+            best_points,
+            best_fish: best_fish as usize,
+        };
+        self.fishing_pond = Some(PondSession::new(
+            species,
+            spawn[venue].clone(),
+            cadence,
+            venue,
+            lure,
+            rod,
+            casts,
+            record,
+            purchased_mask,
+            seed,
+        ));
+        // The venue the cast lure lands in: the same `.MAP` buffer + region
+        // block the panel's 3D layer decoded, so the lure's walk-grid drift
+        // and its water class come off the bytes the page is drawing.
+        if let (Some(p), Some(scene)) = (self.fishing_pond.as_mut(), self.fishing_scene.as_ref())
+            && let Some(map) = scene.map.clone()
+        {
+            // Anchored on the lead's seat, as retail's lure spawn reads the
+            // lead actor's own position (`fishing_venue::lead_spawn`).
+            let (anchor_x, _, anchor_z) =
+                legaia_engine_minigame_scenes::fishing_venue::lead_spawn(venue);
+            p.attach_venue(legaia_engine_fishing::fishing::PondVenue {
+                map,
+                region_block: scene.region_block.clone(),
+                anchor_x,
+                anchor_z,
+                facing: self.fishing_angler_facing,
+                rod_mesh: scene.rod_mesh.clone(),
+            });
+        }
+        self.fishing_banners = Default::default();
+        self.fishing_prizes.clear();
+        self.fishing_lures_held = [MINIGAMES_TACKLE_HELD; 3];
+        self.fishing_venue_actors = Default::default();
+        // The lead's two ambient-ripple part records, off the overlay image
+        // the tables decoded from.
+        self.fishing_venue_actors.ripple_records = self.fishing_overlay.as_deref().and_then(|ov| {
+            legaia_engine_minigame_scenes::fishing_venue::RippleRecords::from_overlay(
+                ov,
+                fishing_species::FISHING_OVERLAY_BASE_VA,
+            )
+        });
+        self.fx.clear();
+        true
+    }
+
+    /// Point the angler (and so the next cast) at `facing`, a 12-bit angle in
+    /// the same space retail keeps in the actor's `+0x26` word. Takes effect
+    /// on the next cast.
+    pub fn fishing_set_angler_facing(&mut self, facing: i32) {
+        self.fishing_angler_facing = facing as i16;
+    }
+
+    /// The live cast lure as `{"x":..,"z":..,"water":bool,"bonus":N,
+    /// "weight":N,"drift":N}`, or `null` while no line is out.
+    pub fn fishing_lure_json(&self) -> String {
+        let Some(p) = self.fishing_pond.as_ref() else {
+            return "null".to_string();
+        };
+        let Some(lure) = p.lure_actor() else {
+            return "null".to_string();
+        };
+        let probe = p.lure_probe();
+        format!(
+            r#"{{"x":{},"z":{},"water":{},"bonus":{},"weight":{},"drift":{}}}"#,
+            lure.x(),
+            lure.z,
+            probe.water,
+            probe.countdown_bonus,
+            probe.weight,
+            probe.drift
+        )
+    }
+
+    /// This frame's fishing line as
+    /// `{"fish":[x,y],"rod":[x,y],"fish_rgb":[r,g,b],"rod_rgb":[r,g,b],"ot":n}` in
+    /// retail 320x240 screen space, or `null` while no line is out.
+    ///
+    /// The engine's line (`PondSession::line_frame`, the same call the two
+    /// world hosts make): the rod end is the rod actor's projected tip, the
+    /// packet is clipped by the ported `FUN_801D56E4`, and the colours are the
+    /// packet's. The fish end is the one input this page supplies - its own
+    /// projection of the lure it draws (`fish_x`, `fish_y`, retail screen
+    /// space), because this page's venue camera is its own fitted framing
+    /// rather than the retail camera the other two hosts resolve.
+    /// `fish_visible = false` means the lure did not project this frame.
+    pub fn fishing_line_json(&mut self, fish_x: i32, fish_y: i32, fish_visible: bool) -> String {
+        let Some(p) = self.fishing_pond.as_mut() else {
+            return "null".to_string();
+        };
+        let fish = fish_visible.then(|| {
+            (
+                fish_x.clamp(-1024, 1023) as i16,
+                fish_y.clamp(-1024, 1023) as i16,
+            )
+        });
+        let Some(l) = p.line_frame(|_| fish) else {
+            return "null".to_string();
+        };
+        format!(
+            r#"{{"fish":[{},{}],"rod":[{},{}],"fish_rgb":[{},{},{}],"rod_rgb":[{},{},{}],"ot":{}}}"#,
+            l.fish.0,
+            l.fish.1,
+            l.rod.0,
+            l.rod.1,
+            l.fish_rgb[0],
+            l.fish_rgb[1],
+            l.fish_rgb[2],
+            l.rod_rgb[0],
+            l.rod_rgb[1],
+            l.rod_rgb[2],
+            l.ot
+        )
+    }
+
+    /// This frame's rod model as `[{"xy":[x0,y0,..x3,y3],"rgb":[r0,g0,b0,..],
+    /// "ot":n}, ...]` in retail 320x240 screen space, **in draw order** -
+    /// the faces `PondSession::rod_faces` projects (the rod actor's pose,
+    /// culled and bucketed the way `FUN_80043390`'s handlers do), wrapped by
+    /// the shared `fishing::rod` builder and ordered by
+    /// `screen_prim::order_primitives`, the order the other two hosts' quad
+    /// pass draws them in. A triangle repeats its third corner. `[]` with no
+    /// rod out.
+    ///
+    /// The rod is posed in view space, so this page's own venue framing does
+    /// not move it: these are the retail screen corners. The page fills the
+    /// faces whose `ot` is above the line's before stroking the line, the rest
+    /// after it (the rod's packets are the earlier `AddPrim`s, so a shared
+    /// bucket draws the line first).
+    pub fn fishing_rod_json(&self) -> String {
+        use legaia_render_kernels::screen_prim::{ScreenPrim, order_primitives};
+        let Some(p) = self.fishing_pond.as_ref() else {
+            return "[]".to_string();
+        };
+        let prims: Vec<ScreenPrim> = p
+            .rod_faces()
+            .into_iter()
+            .map(|f| legaia_engine_ui::fishing::rod::fishing_rod_prim(f.xy, f.rgb, f.ot))
+            .collect();
+        let mut faces: Vec<String> = Vec::new();
+        for i in order_primitives(&prims) {
+            let ScreenPrim::Flat(q) = prims[i] else {
+                continue;
+            };
+            let g = q.gouraud.unwrap_or([q.color; 4]);
+            let xy: Vec<String> =
+                q.xy.iter()
+                    .flat_map(|c| [c.0.to_string(), c.1.to_string()])
+                    .collect();
+            let rgb: Vec<String> = g
+                .iter()
+                .flat_map(|c| [c[0].to_string(), c[1].to_string(), c[2].to_string()])
+                .collect();
+            faces.push(format!(
+                r#"{{"xy":[{}],"rgb":[{}],"ot":{}}}"#,
+                xy.join(","),
+                rgb.join(","),
+                q.ot_index
+            ));
+        }
+        format!("[{}]", faces.join(","))
+    }
+
+    /// Advance the pond one frame. `reel_mask` carries the held pad bits
+    /// (`0x40` Cross / reel A, `0x80` Square / reel B, and the D-pad's `0x2000`
+    /// right / `0x4000` down / `0x8000` left the rod actor reads), `cast_edge` the cast /
+    /// confirm press, `pressed_mask` the **packed** retail newly-pressed word
+    /// this frame (`_DAT_8007B874` layout: `0x8000` D-pad left, `0x2000`
+    /// D-pad right, `0x40` / `0x80` the reel buttons). The strike credit's pad
+    /// nudge is counted from it by the shared kernel
+    /// [`legaia_engine_fishing::fishing_actors::bite_pad_nudge`] - the same count
+    /// `World::tick_fishing` feeds the play hosts - rather than by this page's
+    /// script, which used to add one per key event and so also counted the
+    /// cast press and both reel buttons separately. Returns the events raised
+    /// this frame:
+    ///
+    /// ```json
+    /// [ {"e":"splash"}, {"e":"hooked","id":3,"name":"..."},
+    ///   {"e":"landed","points":1234}, {"e":"snapped"} ]
+    /// ```
+    pub fn fishing_pond_tick(
+        &mut self,
+        reel_mask: u32,
+        cast_edge: bool,
+        pressed_mask: u32,
+    ) -> String {
+        let Some(p) = self.fishing_pond.as_mut() else {
+            return "[]".to_string();
+        };
+        let edge_bonus = legaia_engine_fishing::fishing_actors::bite_pad_nudge(pressed_mask);
+        self.fx.tick(1);
+        // The venue hub (Triangle / Select on the idle shore): the same
+        // session-side kernel the two world hosts run through
+        // `World::tick_fishing_hub`. This page models no bag: the tackle
+        // screen sees each lure row's page-side stock (`fishing_lures_held`,
+        // debited by line breaks) and every rod as held. Row 3 has no world
+        // exchange sub-screen to open here: this page's prize list is its
+        // side panel, so the hub hands straight back to the menu and the
+        // page brings the panel into view.
+        let mut hub_events = Vec::new();
+        let lures = self.fishing_lures_held;
+        let hub = p.hub_step(pressed_mask, |id| match id {
+            0x9D..=0x9F => lures[(id - 0x9D) as usize],
+            _ => MINIGAMES_TACKLE_HELD,
+        });
+        match hub.exit {
+            Some(legaia_engine_fishing::fishing_hub::HubExit::Leave) => {
+                hub_events.push(r#"{"e":"hub_leave"}"#.to_string());
+            }
+            Some(legaia_engine_fishing::fishing_hub::HubExit::OpenExchange) => {
+                p.hub_exchange_closed();
+                hub_events.push(r#"{"e":"hub_exchange"}"#.to_string());
+            }
+            _ => {}
+        }
+        p.tick(
+            PondInput {
+                reel_mask,
+                cast_edge,
+                edge_bonus,
+            },
+            1,
+            0x80,
+        );
+        let events = p.take_events();
+        // The venue's shore actors, the play hosts' own step: the lead's
+        // ambient ripple and the catch bursts, seated through the venue
+        // camera this page draws with. The page aims the lead with no D-pad,
+        // so the held word carries none.
+        let scene = &self.fishing_scene;
+        legaia_engine_minigame_scenes::fishing_venue::tick_venue_actors(
+            &mut self.fishing_venue_actors,
+            p,
+            &events,
+            false,
+            0,
+            &mut self.fx,
+            || scene.as_ref().and_then(|s| s.map.clone()),
+        );
+        // A broken line spends the equipped lure (the break arm's
+        // `FUN_80042310(lure + 0x9D, 1)`), off this page's stand-in stock.
+        for id in p.take_spent_lures() {
+            if let Some(n) = id
+                .checked_sub(0x9D)
+                .and_then(|row| self.fishing_lures_held.get_mut(row as usize))
+            {
+                *n = (*n - 1).max(0);
+            }
+        }
+        let mut out = hub_events;
+        // The hook and catch cues, through the kernel `World::tick` queues
+        // them with for the two play hosts. This page keyed neither.
+        let cues: Vec<u16> = events
+            .iter()
+            .flat_map(legaia_engine_minigame_scenes::minigame_state::pond_event_cues)
+            .collect();
+        for cue in cues {
+            self.minigame_sfx_cue(cue);
+        }
+        for e in &events {
+            match *e {
+                PondEvent::Splash => {
+                    self.fishing_banners.splash.start();
+                    // The three-part strike splash, into this page's own
+                    // effect pool - the twin of the spawn
+                    // `World::tick_fishing` makes for the other two hosts
+                    // off the same strike edge.
+                    let parts = legaia_engine_fishing::fishing_chrome::splash_burst(
+                        legaia_engine_fishing::fishing_actors::SCREEN_CENTRE.0,
+                        legaia_engine_fishing::fishing_actors::SCREEN_CENTRE.1,
+                        legaia_engine_minigames::minigame_fx::SPLASH_SPRITE_ID,
+                        SPLASH_SPREAD,
+                    );
+                    for p in &parts {
+                        let (x, y) = p.fx_seat();
+                        self.fx.spawn(x, y, p.sprite_id);
+                    }
+                    out.push(r#"{"e":"splash"}"#.to_string());
+                }
+                PondEvent::Hooked(id) => {
+                    self.fishing_banners.on_hook();
+                    let name = self.fishing_species_name_json(id);
+                    out.push(format!(r#"{{"e":"hooked","id":{id},"name":{name}}}"#));
+                }
+                PondEvent::Landed(points) => {
+                    self.fishing_banners.on_landed();
+                    out.push(format!(r#"{{"e":"landed","points":{points}}}"#));
+                }
+                PondEvent::Snapped => {
+                    self.fishing_banners.on_snapped();
+                    out.push(r#"{"e":"snapped"}"#.to_string());
+                }
+                PondEvent::Recast => {
+                    self.fishing_banners.on_recast();
+                    out.push(r#"{"e":"recast"}"#.to_string());
+                }
+            }
+        }
+        format!("[{}]", out.join(","))
+    }
+
+    /// This frame's ambient ripple rings as stage triangles - the overlay's
+    /// own ripple part records run through the move VM
+    /// (`fishing_venue::tick_venue_actors`) and projected through the venue
+    /// camera (`FishingVenue::ripple_screen_tris`):
+    ///
+    /// ```json
+    /// [ { "p": [x0,y0,x1,y1,x2,y2], "c": [r,g,b, r,g,b, r,g,b], "semi": true } ]
+    /// ```
+    pub fn fishing_ripples_json(&self) -> String {
+        let rows: Vec<String> = self
+            .fishing_venue_actors
+            .ripple_screen_tris()
+            .iter()
+            .map(|t| {
+                let p: Vec<String> =
+                    t.xy.iter()
+                        .flat_map(|&(x, y)| [x, y])
+                        .map(|v| v.to_string())
+                        .collect();
+                let c: Vec<String> = t.rgb.iter().flatten().map(|v| v.to_string()).collect();
+                format!(
+                    "{{\"p\":[{}],\"c\":[{}],\"semi\":{}}}",
+                    p.join(","),
+                    c.join(","),
+                    t.semi
+                )
+            })
+            .collect();
+        format!("[{}]", rows.join(","))
+    }
+
+    /// Live pond state:
+    ///
+    /// ```json
+    /// { "live": true, "phase": "idle"|"windup"|"power"|"flight"|"waiting"|
+    ///   "hooked"|"landed"|"snapped",
+    ///   "cast_power": 64, "cast_max": 4096, "tension": 0, "tension_max": 4096,
+    ///   "record": 0, "readout": 0, "depth": 0, "lateral": 0,
+    ///   "fish": {"index":3,"name":...,"score":8000}|null, "move": "run"|...,
+    ///   "points": 0, "best": 0, "best_fish": 0, "casts": 51,
+    ///   "last_award": 0, "venue": 0, "lure": 1, "rod": 2 }
+    /// ```
+    pub fn fishing_pond_state_json(&self) -> String {
+        let Some(p) = self.fishing_pond.as_ref() else {
+            return r#"{"live":false}"#.to_string();
+        };
+        let phase = match p.phase() {
+            PondPhase::Idle => "idle",
+            PondPhase::WindUp => "windup",
+            PondPhase::Power => "power",
+            PondPhase::Flight => "flight",
+            PondPhase::Waiting => "waiting",
+            PondPhase::Hooked => "hooked",
+            PondPhase::Landed => "landed",
+            PondPhase::Snapped => "snapped",
+        };
+        let fish = match p.hooked() {
+            Some(sp) => format!(
+                r#"{{"index":{},"name":{},"score":{}}}"#,
+                sp.index,
+                self.fishing_species_name_json(sp.index),
+                sp.score_value
+            ),
+            None => "null".to_string(),
+        };
+        let mv = match p.fish_move() {
+            Some(fishing::FishMove::Run) => r#""run""#,
+            Some(fishing::FishMove::DartLeft) => r#""dart_left""#,
+            Some(fishing::FishMove::DartRight) => r#""dart_right""#,
+            Some(fishing::FishMove::Dive) => r#""dive""#,
+            None => "null",
+        };
+        format!(
+            concat!(
+                r#"{{"live":true,"phase":{},"cast_power":{},"cast_max":{},"#,
+                r#""tension":{},"tension_max":{},"record":{},"readout":{},"#,
+                r#""depth":{},"lateral":{},"fish":{},"move":{},"#,
+                r#""points":{},"best":{},"best_fish":{},"casts":{},"#,
+                r#""last_award":{},"venue":{},"lure":{},"rod":{}}}"#
+            ),
+            jstr(phase),
+            p.cast_power(),
+            fishing::CAST_POWER_MAX,
+            p.tension(),
+            fishing::TENSION_MAX,
+            p.line_record(),
+            p.readout(),
+            p.depth(),
+            p.lateral(),
+            fish,
+            mv,
+            p.record.points,
+            p.record.best_points,
+            p.record.best_fish,
+            p.casts,
+            p.last_award(),
+            p.venue,
+            p.lure,
+            p.rod,
+        )
+    }
+
+    /// The retail HUD draw list for this frame: the persistent rows
+    /// (`FUN_801d13f0`), the catch HUD (`FUN_801d1580`, gauges once hooked)
+    /// and the live banner animations, each resolved through the ported
+    /// engine-ui builders. Coordinates are retail 320x240 screen space.
+    /// Also services the banner timers, so call it exactly once per frame.
+    pub fn fishing_pond_hud_json(&mut self) -> String {
+        let Some(p) = self.fishing_pond.as_ref() else {
+            return "[]".to_string();
+        };
+        let mut draws = ui_fishing::persistent_hud_draws(
+            p.record.points,
+            p.record.best_points,
+            p.lure,
+            // This page's stand-in stock of the equipped lure row.
+            self.fishing_lures_held
+                .get(p.lure as usize)
+                .copied()
+                .unwrap_or(0),
+        );
+        // The same catch-HUD derivation the two play hosts read
+        // (`PondSession::catch_hud`).
+        let c = p.catch_hud();
+        if c.visible {
+            draws.extend(ui_fishing::catch_hud_draws(&CatchHudState {
+                record: c.record,
+                line_extent: 0,
+                cast_power: c.cast_power,
+                depth: c.depth,
+                tension: c.tension,
+                gauges_visible: c.gauges_visible,
+            }));
+        }
+        // A landed catch's result plate (`FUN_801D5298`), as both play hosts
+        // compose it.
+        if let Some(r) = p.catch_result() {
+            let name_len = self
+                .fishing_captions
+                .as_ref()
+                .map_or(0, |t| t.species_name(r.species).len());
+            draws.extend(ui_fishing::catch_result_draws(
+                r.ramp,
+                r.strength,
+                r.points,
+                r.species as u32,
+                name_len,
+            ));
+        }
+        draws.extend(self.fishing_banners.service_frame(1));
+        let mut out = Vec::new();
+        for d in &draws {
+            hud_draw_json(d, self.fishing_captions.as_ref(), &mut out);
+        }
+        self.fishing_hud_last = draws;
+        format!("[{}]", out.join(","))
+    }
+
+    /// Whether this page can draw the HUD's sprite half itself
+    /// ([`Self::fishing_hud_rgba`]): the overlay's sprite table decoded and
+    /// the pond scene - whose VRAM holds the venue's HUD page - loaded. The
+    /// page then skips its text stand-ins for glyphs, digits and bar frames.
+    pub fn fishing_hud_sprites_ready(&self) -> bool {
+        self.fishing_sprites.is_some() && self.fishing_scene.is_some()
+    }
+
+    /// The last [`Self::fishing_pond_hud_json`] frame's sprite half - every
+    /// plate, digit, gauge cap and banner cut from the overlay's sprite table
+    /// (`FUN_801D63B0`, the shared `fishing::sprite` builder the two play
+    /// hosts draw on their GPUs) - rasterised over the pond's VRAM into a
+    /// `w x h` RGBA8 overlay, transparent where nothing drew. Empty when
+    /// [`Self::fishing_hud_sprites_ready`] is false.
+    pub fn fishing_hud_rgba(&self, w: u32, h: u32) -> Vec<u8> {
+        let (Some(table), Some(scene)) =
+            (self.fishing_sprites.as_deref(), self.fishing_scene.as_ref())
+        else {
+            return Vec::new();
+        };
+        let prims = legaia_engine_ui::fishing::sprite::fishing_hud_sprite_prims(
+            &self.fishing_hud_last,
+            table,
+        );
+        legaia_render_kernels::screen_prim_raster::rasterize_rgba_overlay(
+            &prims,
+            &scene.vram_words(),
+            w,
+            h,
+        )
+    }
+
+    /// The venue hub's draw lines for this frame, in retail 320x240 space:
+    ///
+    /// ```json
+    /// { "open": true, "lines": [ {"t": "...", "x": 108, "y": 88, "m": false} ] }
+    /// ```
+    ///
+    /// The layout is the engine's (`PondSession::hub_lines`, the one the
+    /// two world hosts draw); the text is the visitor's disc (the fishing
+    /// overlay's own menu rows and help pages), decoded to printable ASCII
+    /// because this page draws with the browser's font rather than the
+    /// dialog atlas. `{"open":false}` while no hub is up.
+    pub fn fishing_hub_json(&self) -> String {
+        let (Some(p), Some(ov)) = (self.fishing_pond.as_ref(), self.fishing_overlay.as_deref())
+        else {
+            return r#"{"open":false}"#.to_string();
+        };
+        if p.hub().is_none() {
+            return r#"{"open":false}"#.to_string();
+        }
+        let Some(text) = legaia_engine_fishing::fishing_hub::FishingHubText::from_overlay(ov)
+        else {
+            return r#"{"open":false}"#.to_string();
+        };
+        let names = self.item_names.as_ref();
+        let lines: Vec<String> = p
+            .hub_lines(&text, |id| {
+                let name = names
+                    .and_then(|t| t.name(id as u8))
+                    .map(|n| n.as_bytes().to_vec())
+                    .unwrap_or_else(|| format!("item {id:#04x}").into_bytes());
+                (name, MINIGAMES_TACKLE_HELD)
+            })
+            .iter()
+            .map(|l| {
+                format!(
+                    r#"{{"t":{},"x":{},"y":{},"m":{}}}"#,
+                    jstr(&legaia_engine_fishing::fishing_hub::hub_text_lossy(&l.text)),
+                    l.x,
+                    l.y,
+                    l.marked
+                )
+            })
+            .collect();
+        format!(r#"{{"open":true,"lines":[{}]}}"#, lines.join(","))
+    }
+
+    /// The venue's species-spawn table, named:
+    ///
+    /// ```json
+    /// { "venue": 0, "rows": [ { "lure": 0, "bands": [
+    ///     {"id": 3, "name": "..."}, ... 5 ] }, ... 3 ] }
+    /// ```
+    pub fn fishing_spawn_json(&self, venue: u32) -> String {
+        let Some(spawn) = self.fishing_spawn.as_ref() else {
+            return "null".to_string();
+        };
+        let page = &spawn[(venue as usize).min(1)];
+        let rows = page
+            .iter()
+            .take(3) // three lures exist; rows 3..8 are zero padding
+            .enumerate()
+            .map(|(lure, row)| {
+                let bands = row
+                    .iter()
+                    .take(5)
+                    .map(|&id| {
+                        format!(
+                            r#"{{"id":{id},"name":{}}}"#,
+                            self.fishing_species_name_json(id as usize)
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
+                format!(r#"{{"lure":{lure},"bands":[{bands}]}}"#)
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        format!(r#"{{"venue":{},"rows":[{rows}]}}"#, (venue as usize).min(1))
+    }
+
+    // ----------------------------------------------------- point exchange
+
+    /// The venue's point-exchange page, evaluated against the live session's
+    /// points + purchased mask through the ported prize kernels:
+    ///
+    /// ```json
+    /// { "venue": 0, "points": 1200, "first_visible": 1, "rows": [
+    ///   { "row": 0, "limit": 1, "price": 50000, "item_id": 12,
+    ///     "name": "War God Icon"|null, "owned": 0, "available": false,
+    ///     "max_qty": 0, "one_time": true, "latched": false }, ... ] }
+    /// ```
+    pub fn fishing_exchange_json(&self, venue: u32) -> String {
+        let Some(ex) = self.prize_exchange(venue as usize) else {
+            return "null".to_string();
+        };
+        let (points, mask) = match self.fishing_pond.as_ref() {
+            Some(p) => (p.record.points, p.purchased_mask),
+            None => (0, 0),
+        };
+        let rows = ex
+            .rows
+            .iter()
+            .map(|r| {
+                let owned = *self.fishing_prizes.get(&(r.item_id as u32)).unwrap_or(&0);
+                let latched = ex.is_latched(r.row, mask);
+                format!(
+                    concat!(
+                        r#"{{"row":{},"limit":{},"price":{},"item_id":{},"name":{},"#,
+                        r#""owned":{},"available":{},"max_qty":{},"one_time":{},"latched":{}}}"#
+                    ),
+                    r.row,
+                    r.limit,
+                    r.price,
+                    r.item_id,
+                    r.name.as_deref().map(jstr).unwrap_or("null".to_string()),
+                    owned,
+                    ex.is_available(r.row, points, owned, mask),
+                    ex.max_qty(r.row, points, owned, mask),
+                    r.is_one_time(),
+                    latched,
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        format!(
+            r#"{{"venue":{},"points":{},"first_visible":{},"rows":[{rows}]}}"#,
+            ex.venue,
+            points,
+            ex.first_visible(points)
+        )
+    }
+
+    /// Buy `qty` of `row` at the venue's exchange, spending the pond
+    /// session's point pool and latching one-time rows in the purchased mask
+    /// (`FUN_801d06c8`'s Yes arm through the ported kernels). Returns the
+    /// purchase (`{"item_id":..,"qty":..,"cost":..,"name":..}`) or `null`.
+    pub fn fishing_exchange_buy(&mut self, venue: u32, row: u32, qty: u32) -> String {
+        let Some(ex) = self.prize_exchange(venue as usize) else {
+            return "null".to_string();
+        };
+        let Some(p) = self.fishing_pond.as_mut() else {
+            return "null".to_string();
+        };
+        let owned = *self
+            .fishing_prizes
+            .get(
+                &(ex.rows
+                    .get(row as usize)
+                    .map(|r| r.item_id as u32)
+                    .unwrap_or(0)),
+            )
+            .unwrap_or(&0);
+        let Some(purchase) = ex.buy(row as usize, qty, p.record.points, owned, p.purchased_mask)
+        else {
+            return "null".to_string();
+        };
+        p.record.points -= purchase.cost as i32;
+        if let Some(bit) = purchase.latched_bit {
+            p.purchased_mask |= 1 << bit;
+        }
+        *self
+            .fishing_prizes
+            .entry(purchase.item_id as u32)
+            .or_insert(0) += purchase.qty;
+        let name = ex
+            .rows
+            .get(row as usize)
+            .and_then(|r| r.name.as_deref())
+            .map(jstr)
+            .unwrap_or("null".to_string());
+        format!(
+            r#"{{"item_id":{},"qty":{},"cost":{},"name":{}}}"#,
+            purchase.item_id, purchase.qty, purchase.cost, name
+        )
+    }
+
+    /// Prizes collected through the exchange this session:
+    /// `[{"item_id":..,"qty":..,"name":..}, ...]`.
+    pub fn fishing_prizes_json(&self) -> String {
+        let mut rows: Vec<_> = self.fishing_prizes.iter().collect();
+        rows.sort();
+        let out = rows
+            .into_iter()
+            .map(|(&id, &qty)| {
+                let name = self
+                    .item_names
+                    .as_ref()
+                    .and_then(|t| t.name(id as u8))
+                    .map(jstr)
+                    .unwrap_or("null".to_string());
+                format!(r#"{{"item_id":{id},"qty":{qty},"name":{name}}}"#)
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        format!("[{out}]")
+    }
+}
+
+// --------------------------------------------------------------------------
+// Save-block fishing record (retail memory-card import / export)
+// --------------------------------------------------------------------------
+//
+// The persistent fishing block lives in the save's SC block under the linear
+// map SC = 0x200 + (RAM - 0x80084340) (see `legaia_save::card`, pinned by the
+// gold/coins offsets): points 0x8008444C, lure 0x80084450, rod 0x80084454,
+// best 0x80084458, best-fish 0x8008445C, cast counter 0x80084460, one-time
+// prize bitmask 0x8008446C.
+
+/// SC-block byte offset of the fishing point total (`0x8008444C`).
+const SC_FISHING_POINTS: usize = 0x30C;
+/// SC-block byte offset of the equipped lure index (`0x80084450`).
+const SC_FISHING_LURE: usize = 0x310;
+/// SC-block byte offset of the rod stat (`0x80084454`).
+const SC_FISHING_ROD: usize = 0x314;
+/// SC-block byte offset of the best-catch value (`0x80084458`).
+const SC_FISHING_BEST: usize = 0x318;
+/// SC-block byte offset of the best-catch fish id (`0x8008445C`).
+const SC_FISHING_BEST_FISH: usize = 0x31C;
+/// SC-block byte offset of the lifetime cast counter (`0x80084460`).
+const SC_FISHING_CASTS: usize = 0x320;
+/// SC-block byte offset of the one-time prize bitmask (`0x8008446C`).
+const SC_FISHING_PURCHASED: usize = 0x32C;
+
+fn sc_read_u32(sc: &[u8], off: usize) -> Option<u32> {
+    let b = sc.get(off..off + 4)?;
+    Some(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+}
+
+fn card_fishing_json_core(bytes: &[u8], block: u8) -> Result<String, String> {
+    let view = legaia_save::emu::detect(bytes).map_err(|e| format!("{e}"))?;
+    let sc = view
+        .sc_block(bytes, block)
+        .ok_or_else(|| format!("card_fishing: no block {block}"))?;
+    let rd = |off| sc_read_u32(sc, off).ok_or_else(|| "card_fishing: block too small".to_string());
+    Ok(format!(
+        concat!(
+            r#"{{"points":{},"lure":{},"rod":{},"best":{},"best_fish":{},"#,
+            r#""casts":{},"purchased":{}}}"#
+        ),
+        rd(SC_FISHING_POINTS)? as i32,
+        rd(SC_FISHING_LURE)?,
+        rd(SC_FISHING_ROD)? as i32,
+        rd(SC_FISHING_BEST)? as i32,
+        rd(SC_FISHING_BEST_FISH)?,
+        rd(SC_FISHING_CASTS)? as i32,
+        rd(SC_FISHING_PURCHASED)?,
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn card_patch_fishing_core(
+    bytes: Vec<u8>,
+    block: u8,
+    points: i32,
+    lure: u32,
+    rod: i32,
+    best: i32,
+    best_fish: u32,
+    casts: i32,
+    purchased: u32,
+) -> Result<Vec<u8>, String> {
+    let mut out = bytes;
+    let view = legaia_save::emu::detect(&out).map_err(|e| format!("{e}"))?;
+    let sc = view
+        .sc_block_mut(&mut out, block)
+        .ok_or_else(|| format!("card_patch_fishing: no block {block}"))?;
+    if sc.len() < SC_FISHING_PURCHASED + 4 {
+        return Err("card_patch_fishing: block too small".to_string());
+    }
+    let mut wr = |off: usize, v: u32| sc[off..off + 4].copy_from_slice(&v.to_le_bytes());
+    wr(SC_FISHING_POINTS, points.max(0) as u32);
+    wr(SC_FISHING_LURE, lure.min(2));
+    wr(SC_FISHING_ROD, rod.clamp(0, 2) as u32);
+    wr(SC_FISHING_BEST, best.max(0) as u32);
+    wr(SC_FISHING_BEST_FISH, best_fish);
+    wr(SC_FISHING_CASTS, casts.max(0) as u32);
+    wr(SC_FISHING_PURCHASED, purchased);
+    // The SC payload carries its own additive checksum at
+    // `RETAIL_BLOCK_CHECKSUM_OFFSET`; retail's load path re-sums the block and
+    // routes a mismatch to "Damaged data.", so an in-place edit that skips the
+    // restamp produces a card the game refuses.
+    legaia_save::restamp_sc_block_checksum(sc);
+    Ok(out)
+}
+
+/// Read the persistent fishing block out of save block `block` of an
+/// emulator card container: point total, equipped lure + rod, best catch,
+/// the lifetime cast counter and the one-time prize bitmask.
+#[wasm_bindgen]
+pub fn card_fishing_json(bytes: Vec<u8>, block: u8) -> Result<String, JsValue> {
+    card_fishing_json_core(&bytes, block).map_err(|e| JsValue::from_str(&e))
+}
+
+/// Write the fishing block back into save block `block`, returning the whole
+/// container with only those seven dwords changed plus the block checksum
+/// word - the same in-place edit shape as `card_patch_coins`, so the card
+/// still loads in an emulator and retail still accepts it.
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn card_patch_fishing(
+    bytes: Vec<u8>,
+    block: u8,
+    points: i32,
+    lure: u32,
+    rod: i32,
+    best: i32,
+    best_fish: u32,
+    casts: i32,
+    purchased: u32,
+) -> Result<Vec<u8>, JsValue> {
+    card_patch_fishing_core(
+        bytes, block, points, lure, rod, best, best_fish, casts, purchased,
+    )
+    .map_err(|e| JsValue::from_str(&e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A synthetic one-save card with a fishing block.
+    fn card_with_fishing() -> Vec<u8> {
+        let mut card = vec![0u8; legaia_save::CARD_SIZE];
+        card[..2].copy_from_slice(&legaia_save::CARD_MAGIC);
+        let f = 0x80;
+        card[f..f + 4].copy_from_slice(&0x51u32.to_le_bytes());
+        card[f + 8..f + 10].copy_from_slice(&0xFFFFu16.to_le_bytes());
+        card[f + 10..f + 28].copy_from_slice(b"BASCUS-94254PRO-00");
+        let b = legaia_save::BLOCK_SIZE;
+        card[b..b + 2].copy_from_slice(&legaia_save::SAVE_BLOCK_MAGIC);
+        let wr = |card: &mut Vec<u8>, off: usize, v: u32| {
+            card[b + off..b + off + 4].copy_from_slice(&v.to_le_bytes())
+        };
+        wr(&mut card, SC_FISHING_POINTS, 12345);
+        wr(&mut card, SC_FISHING_LURE, 1);
+        wr(&mut card, SC_FISHING_ROD, 2);
+        wr(&mut card, SC_FISHING_BEST, 900);
+        wr(&mut card, SC_FISHING_BEST_FISH, 5);
+        wr(&mut card, SC_FISHING_CASTS, 77);
+        wr(&mut card, SC_FISHING_PURCHASED, 0b101);
+        // Retail stamps the SC payload's additive checksum on every write, so a
+        // fixture without one models a card the game refuses. Stamp it, and the
+        // no-op-patch assertion below compares two blocks that are both valid
+        // rather than two that are equally rejected.
+        let sc = &mut card[b..b + legaia_save::BLOCK_SIZE];
+        legaia_save::restamp_sc_block_checksum(sc);
+        card
+    }
+
+    #[test]
+    fn card_fishing_reads_the_block() {
+        let card = card_with_fishing();
+        let json = card_fishing_json_core(&card, 1).expect("read");
+        assert!(json.contains(r#""points":12345"#), "{json}");
+        assert!(json.contains(r#""lure":1"#), "{json}");
+        assert!(json.contains(r#""rod":2"#), "{json}");
+        assert!(json.contains(r#""casts":77"#), "{json}");
+        assert!(json.contains(r#""purchased":5"#), "{json}");
+    }
+
+    #[test]
+    fn card_patch_fishing_touches_only_the_fishing_dwords() {
+        let card = card_with_fishing();
+        // A no-op patch is byte-identical.
+        let same =
+            card_patch_fishing_core(card.clone(), 1, 12345, 1, 2, 900, 5, 77, 0b101).expect("noop");
+        assert_eq!(same, card);
+        let patched = card_patch_fishing_core(card.clone(), 1, 99999, 2, 1, 5000, 9, 78, 0b111)
+            .expect("patch");
+        let json = card_fishing_json_core(&patched, 1).expect("read");
+        assert!(json.contains(r#""points":99999"#), "{json}");
+        assert!(json.contains(r#""casts":78"#), "{json}");
+        // Only the fishing region changed.
+        let base = legaia_save::BLOCK_SIZE;
+        let diff: Vec<usize> = card
+            .iter()
+            .zip(patched.iter())
+            .enumerate()
+            .filter(|(_, (a, b))| a != b)
+            .map(|(i, _)| i)
+            .collect();
+        assert!(!diff.is_empty());
+        // The restamped checksum word moves with them: an in-place edit that
+        // left it stale would produce a block retail rejects as damaged.
+        let ck = base + legaia_save::RETAIL_BLOCK_CHECKSUM_OFFSET;
+        assert!(
+            diff.iter().all(
+                |&i| (base + SC_FISHING_POINTS..base + SC_FISHING_PURCHASED + 4).contains(&i)
+                    || (ck..ck + 4).contains(&i)
+            ),
+            "only the fishing block and its checksum may change: {diff:?}"
+        );
+        assert!(
+            diff.iter().any(|&i| (ck..ck + 4).contains(&i)),
+            "the checksum word must be restamped"
+        );
+    }
+}

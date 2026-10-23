@@ -12,7 +12,7 @@ except ModuleNotFoundError:  # Python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
 
 from ui_host_drift.roots import REPO, WAIVERS
-from ui_host_drift.rows.boot_installs import BOOT_NATIVE, BOOT_WEB_ROOT
+from ui_host_drift.rows.boot_installs import BOOT_NATIVE, BOOT_WEB_ROOTS
 from ui_host_drift.rust_text import (
     brace_block,
     is_test_source,
@@ -54,7 +54,7 @@ def check_boot_installs() -> tuple[list[str], list[str], int]:
     native = boot_install_calls(native_src)
     web: set[str] = set()
     page_builds_session = False
-    for path in sorted(BOOT_WEB_ROOT.rglob("*.rs")):
+    for path in sorted(p for root in BOOT_WEB_ROOTS for p in root.rglob("*.rs")):
         if is_test_source(path):
             continue
         text = strip_all_comments(path.read_text(encoding="utf-8"))

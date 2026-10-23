@@ -42,6 +42,7 @@ use crate::{
     StatusSatelliteView, TargetPanelView, TextDraw,
 };
 use crate::{MenuWindowPainter, painter_at, painter_rect};
+use legaia_game_tables::menu_pool::MenuLabel;
 use legaia_game_tables::menu_windows::{MenuWindowTable, window_ids};
 
 /// Menu-overlay descriptor id of the **spell level-up notice** window
@@ -180,6 +181,13 @@ impl<'a> MenuRects<'a> {
             .unwrap_or(MENU_SUBWINDOW_CONTENT)
     }
 
+    /// A pool label off the same overlay image the table came from
+    /// ([`legaia_game_tables::menu_pool`]), `@` lead included; `None` without
+    /// the table.
+    pub fn label(&self, label: legaia_game_tables::menu_pool::MenuLabel) -> Option<&'a str> {
+        self.table.and_then(|t| t.labels.get(label))
+    }
+
     /// Content-origin pen for a menu window id.
     pub fn pen(&self, id: usize) -> (i32, i32) {
         let (x, y, _, _) = self.rect(id);
@@ -244,12 +252,25 @@ pub struct PauseMenuCtx<'a> {
     pub scale: u32,
 }
 
-impl PauseMenuCtx<'_> {
+impl<'a> PauseMenuCtx<'a> {
     /// Whether the sprite pass runs. Panels that have both a sprite label and
     /// an ASCII stand-in key on this: with the atlas resident the stand-in is
     /// suppressed, without it the stand-in carries the layout.
     pub fn chrome_present(&self) -> bool {
         self.chrome.is_some()
+    }
+
+    /// A pool label's disc text, or `fallback` on a load without the menu
+    /// overlay ([`MenuRects::label`]).
+    pub fn label<'s>(
+        &self,
+        label: legaia_game_tables::menu_pool::MenuLabel,
+        fallback: &'s str,
+    ) -> &'s str
+    where
+        'a: 's,
+    {
+        self.rects.label(label).unwrap_or(fallback)
     }
 
     /// ASCII stand-in for a painter's corner cursor sprite.
@@ -382,9 +403,32 @@ pub struct TopLevelView<'a> {
     pub cursor: u8,
     pub money: u32,
     pub play_time_seconds: u32,
+    /// The casino coin bank, `Some` while the box shows its coin row
+    /// (system flag `8`, raised at menu open when the bank is non-zero).
+    pub coins: Option<u32>,
     pub party: &'a [FieldMenuPartyView<'a>],
     /// Per-member AP, for the info panel's gauges (sprite pass only).
     pub party_ap: &'a [u16],
+}
+
+/// Window 49's content rect as the menu-open state rewrites it.
+///
+/// `FUN_801DC6B4` state 0 stores the money / play-time box's descriptor `y`
+/// and `h` before the window opens (`0x801DC810..0x801DC844`): `y = 0xB4`,
+/// `h = 0x18`, then, when system flag `8` (the casino coin row) is set,
+/// `y -= 0xE` and `h += 0xE` - so the box grows upward by one row. The disc
+/// descriptor's own `y` (`178`) is never what draws.
+///
+/// PORT: FUN_801DC6B4 (state 0's window-49 rect rewrite, `0x801DC804..0x801DC844`)
+pub fn money_box_rect(
+    descriptor: (i32, i32, i32, i32),
+    coins: Option<u32>,
+) -> (i32, i32, i32, i32) {
+    let (x, _, w, _) = descriptor;
+    match coins {
+        Some(_) => (x, 0xB4 - 0x0E, w, 0x18 + 0x0E),
+        None => (x, 0xB4, w, 0x18),
+    }
 }
 
 /// Status sub-screen: the main panel plus its three satellite windows.
@@ -499,51 +543,72 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
     let mut sprites: Vec<SpriteDraw> = Vec::new();
     match screen {
         PauseScreen::TopLevel(v) => {
+            let money_rect = money_box_rect(ctx.rects.rect(window_ids::TOP_MONEY_TIME), v.coins);
+            let money_pen = (money_rect.0, money_rect.1);
             texts.extend(crate::field_menu_draws_for(
                 ctx.font,
                 v.rows,
                 v.cursor,
                 v.money,
                 v.play_time_seconds,
+                v.coins,
                 ctx.rects.pen(window_ids::TOP_COMMAND_LIST),
-                ctx.rects.pen(window_ids::TOP_MONEY_TIME),
+                money_pen,
             ));
             texts.extend(crate::field_menu_info_draws_for(
                 ctx.font,
                 v.party,
                 ctx.rects.pen(window_ids::TOP_INFO_PANEL),
             ));
-            sprites.extend(ctx.window_chrome(&legaia_game_tables::menu_windows::TOP_LEVEL_WINDOWS));
+            let others: Vec<usize> = legaia_game_tables::menu_windows::TOP_LEVEL_WINDOWS
+                .iter()
+                .copied()
+                .filter(|&id| id != window_ids::TOP_MONEY_TIME)
+                .collect();
+            sprites.extend(ctx.window_chrome(&others));
             if let Some(rects) = ctx.chrome {
+                let (x, y, w, h) = money_rect;
+                sprites.extend(crate::menu_window_chrome_draws_for(
+                    rects,
+                    (x - 8, y - 8, w + 16, h + 16),
+                    ctx.origin,
+                    ctx.scale,
+                ));
                 sprites.extend(crate::field_menu_icon_sprites_for(
                     rects,
                     v.cursor,
                     v.party_ap,
                     ctx.rects.pen(window_ids::TOP_COMMAND_LIST),
-                    ctx.rects.pen(window_ids::TOP_MONEY_TIME),
+                    money_pen,
                     ctx.rects.pen(window_ids::TOP_INFO_PANEL),
+                    v.coins.is_some(),
                     ctx.origin,
                     ctx.scale,
                 ));
             }
         }
         PauseScreen::Status(v) => {
-            texts.extend(crate::status_screen_draws_for(
+            texts.extend(crate::status_screen_draws_for_with(
                 ctx.font,
+                ctx.rects.table().map(|t| &t.labels),
                 v.panel,
                 None,
                 ctx.rects.pen(window_ids::STATUS_MAIN),
                 ctx.chrome_present(),
             ));
-            texts.extend(crate::status_satellite_draws_for(
+            texts.extend(crate::status_satellite_draws_for_with(
                 ctx.font,
+                ctx.rects.table().map(|t| &t.labels),
                 v.satellite,
                 ctx.rects.pen(window_ids::STATUS_PARTY_LIST),
                 ctx.rects.pen(window_ids::STATUS_CONDITION),
                 ctx.rects.pen(window_ids::STATUS_SUMMARY),
                 ctx.chrome_present(),
             ));
-            texts.extend(ctx.tab_title(window_ids::TAB_STATUS, "Status"));
+            texts.extend(ctx.tab_title(
+                window_ids::TAB_STATUS,
+                ctx.label(MenuLabel::Status, "Status"),
+            ));
             sprites.extend(
                 ctx.window_chrome(&legaia_game_tables::menu_windows::STATUS_SCREEN_WINDOWS),
             );
@@ -590,7 +655,10 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                     ));
                 }
             }
-            texts.extend(ctx.tab_title(window_ids::TAB_OPTIONS, "Options"));
+            texts.extend(ctx.tab_title(
+                window_ids::TAB_OPTIONS,
+                ctx.label(MenuLabel::Options, "Options"),
+            ));
             sprites.extend(ctx.window_chrome(&[window_ids::TAB_OPTIONS]));
             if let Some(rects) = ctx.chrome {
                 // The settings window, grown by the engine-only rows below
@@ -626,17 +694,24 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
         }
         PauseScreen::Items(v) => {
             let info_pen = ctx.rects.pen(window_ids::ITEMS_INFO);
-            texts.extend(crate::items_screen_draws_for(
+            texts.extend(crate::items_screen_draws_for_with(
                 ctx.font,
+                ctx.rects.table().map(|t| &t.labels),
                 v.view,
                 ctx.rects.pen(window_ids::ITEMS_COMMAND),
                 ctx.rects.pen(window_ids::ITEMS_LIST),
                 info_pen,
             ));
             if let Some(points) = v.point_card {
-                texts.extend(crate::item_points_panel_draws(ctx.font, info_pen, points));
+                texts.extend(crate::item_points_panel_draws_with(
+                    ctx.font,
+                    ctx.rects.table().map(|t| &t.labels),
+                    info_pen,
+                    points,
+                ));
             }
-            texts.extend(ctx.tab_title(window_ids::TAB_ITEMS, "Items"));
+            texts
+                .extend(ctx.tab_title(window_ids::TAB_ITEMS, ctx.label(MenuLabel::Items, "Items")));
             if let Some(confirm) = v.throw_confirm {
                 texts.extend(crate::items_throw_confirm_draws_for(
                     ctx.font,
@@ -708,7 +783,8 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
         PauseScreen::ItemsTarget(view) => {
             let pen = ctx.rects.pen(14);
             texts.extend(crate::target_panel_draws_for(ctx.font, view, pen));
-            texts.extend(ctx.tab_title(window_ids::TAB_ITEMS, "Items"));
+            texts
+                .extend(ctx.tab_title(window_ids::TAB_ITEMS, ctx.label(MenuLabel::Items, "Items")));
             sprites.extend(ctx.window_chrome(&TARGET_SELECT_WINDOWS));
             if let Some(rects) = ctx.chrome {
                 sprites.extend(crate::target_panel_sprites_for(
@@ -717,14 +793,16 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
             }
         }
         PauseScreen::Magic(v) => {
-            texts.extend(crate::magic_screen_draws_for(
+            texts.extend(crate::magic_screen_draws_for_with(
                 ctx.font,
+                ctx.rects.table().map(|t| &t.labels),
                 v.view,
                 ctx.rects.pen(window_ids::MAGIC_CASTER),
                 ctx.rects.pen(window_ids::MAGIC_LIST),
                 ctx.rects.pen(window_ids::MAGIC_INFO),
             ));
-            texts.extend(ctx.tab_title(window_ids::TAB_MAGIC, "Magic"));
+            texts
+                .extend(ctx.tab_title(window_ids::TAB_MAGIC, ctx.label(MenuLabel::Magic, "Magic")));
             sprites
                 .extend(ctx.window_chrome(&legaia_game_tables::menu_windows::MAGIC_SCREEN_WINDOWS));
             if let Some(rects) = ctx.chrome {
@@ -744,14 +822,16 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
             }
         }
         PauseScreen::Equip(v) => {
-            texts.extend(crate::equip_screen_draws_for(
+            texts.extend(crate::equip_screen_draws_for_with(
                 ctx.font,
+                ctx.rects.table().map(|t| &t.labels),
                 v.view,
                 ctx.rects.pen(window_ids::EQUIP_PARTY),
                 ctx.rects.pen(window_ids::EQUIP_LIST),
                 ctx.rects.pen(window_ids::EQUIP_MAIN),
             ));
-            texts.extend(ctx.tab_title(window_ids::TAB_EQUIP, "Equip"));
+            texts
+                .extend(ctx.tab_title(window_ids::TAB_EQUIP, ctx.label(MenuLabel::Equip, "Equip")));
             // The candidate step closes the party (21) and main (22) windows:
             // its open script `0x801E4DC8` begins with close-all and reopens
             // only the tab, the list and windows 24 / 25 (see
@@ -824,9 +904,19 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                     hp_max: cmp.hp_max,
                     mp_max: cmp.mp_max,
                     rows,
+                    // The pool's stat cells (`0x801CE9A0..`), the engine's
+                    // names without the overlay.
                     labels: match rows {
-                        crate::CompareRows::SpdIntAgl => crate::COMPARE_LABELS_SPD,
-                        _ => crate::COMPARE_LABELS_ATK,
+                        crate::CompareRows::SpdIntAgl => [
+                            ctx.label(MenuLabel::Spd, crate::COMPARE_LABELS_SPD[0]),
+                            ctx.label(MenuLabel::Int, crate::COMPARE_LABELS_SPD[1]),
+                            ctx.label(MenuLabel::Agl, crate::COMPARE_LABELS_SPD[2]),
+                        ],
+                        _ => [
+                            ctx.label(MenuLabel::Atk, crate::COMPARE_LABELS_ATK[0]),
+                            ctx.label(MenuLabel::Udf, crate::COMPARE_LABELS_ATK[1]),
+                            ctx.label(MenuLabel::Ldf, crate::COMPARE_LABELS_ATK[2]),
+                        ],
                     },
                 };
                 sprites.extend(ctx.frame_around(d.rect()));
@@ -1073,7 +1163,7 @@ pub fn art_learned_notice_draws(ctx: &PauseMenuCtx, lines: &[String]) -> Vec<Tex
 /// Content-only, off the disc-parsed id-7 rect: like the shop's descriptor
 /// windows it draws only when the real table is present, because the painter
 /// is dispatched on the descriptor's renderer.
-pub fn spell_level_notice_draws(ctx: &PauseMenuCtx, line: &str) -> Vec<TextDraw> {
+pub fn spell_level_notice_draws(ctx: &PauseMenuCtx, line: &[u8]) -> Vec<TextDraw> {
     let Some((d, _)) = ctx
         .rects
         .table()
@@ -1085,4 +1175,35 @@ pub fn spell_level_notice_draws(ctx: &PauseMenuCtx, line: &str) -> Vec<TextDraw>
     out.extend(ctx.hand(cursor.x, cursor.y));
     crate::scale_stage_text_draws(&mut out, ctx.origin, ctx.scale);
     out
+}
+
+#[cfg(test)]
+mod money_box_tests {
+    use super::*;
+
+    /// The menu-open rewrite: `y = 0xB4, h = 0x18`, one row taller and one
+    /// row higher with the coin row - whatever the descriptor's own `y`.
+    #[test]
+    fn the_money_box_grows_upward_by_one_row_with_the_coin_row() {
+        let desc = (24, 178, 104, 24);
+        assert_eq!(money_box_rect(desc, None), (24, 180, 104, 24));
+        assert_eq!(money_box_rect(desc, Some(0)), (24, 166, 104, 38));
+    }
+
+    /// With the coin row the box draws three value rows at the 14-px pitch:
+    /// gold, coins, then the clock.
+    #[test]
+    fn the_coin_row_sits_between_gold_and_the_clock() {
+        let font = legaia_font::synthetic_for_tests();
+        let rows_of = |draws: &[TextDraw]| -> Vec<i32> {
+            let ys: std::collections::BTreeSet<i32> = draws.iter().map(|d| d.dst.1).collect();
+            ys.into_iter().collect()
+        };
+        let with =
+            crate::field_menu_draws_for(&font, &[], 0, 5, 3671, Some(42), (24, 24), (24, 166));
+        assert_eq!(rows_of(&with), [166, 180, 194]);
+        let without =
+            crate::field_menu_draws_for(&font, &[], 0, 5, 3671, None, (24, 24), (24, 180));
+        assert_eq!(rows_of(&without), [180, 194]);
+    }
 }

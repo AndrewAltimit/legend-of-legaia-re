@@ -650,6 +650,36 @@ fn an_art_clip_turns_effect_code_zero_into_nine() {
     }
 }
 
+/// On retail's cadence a clip the pass commits fires its frame-0 records on
+/// that pass: `FUN_80047430` walks the new clip again after its commits
+/// (`0x80047BC4..0x80047C38`), so the effect does not wait a battle frame.
+#[test]
+fn a_clip_committed_on_the_cadence_pass_walks_its_first_frame_at_once() {
+    let mut world = World::new();
+    world.enter_battle(1, 1);
+    world.toggles.battle_sm_frame_cadence = true;
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 16];
+    clips[0] = Some(pose_test_clip(0, 2, 0));
+    // Gate `1`: the walker fires a record once `frame + 1` reaches it, so
+    // this one is due at the clip's first frame.
+    clips[0x0C] = Some(scripted_clip(0x0C, (1, 0x86, 0, 300, 250)));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.actors[0].battle.queued_anim = 0x0C;
+    world.battle.anim_pass_vsyncs = 2;
+    world.tick_battle_anim_pass();
+    assert_eq!(world.actors[0].battle.current_anim, 0x0C, "committed");
+    let spawns = world.drain_battle_effect_spawns();
+    assert_eq!(
+        spawns.len(),
+        1,
+        "the frame-0 record fires on the commit pass"
+    );
+    assert_eq!(world.actors[0].battle_effect_cursor, 1);
+    // The next pass walks on from the cursor and fires nothing again.
+    world.tick_battle_anim_pass();
+    assert!(world.drain_battle_effect_spawns().is_empty());
+}
+
 #[test]
 fn monster_facing_rotates_the_spawn_offset_half_a_turn() {
     let mut world = World::new();
@@ -1533,6 +1563,28 @@ fn a_juggled_flinch_recommit_seeds_the_cue_cursor_past_its_first_cue() {
     assert_eq!(world.actors[0].battle_anim_cue_cursor, 0, "window down");
 }
 
+/// The commit's rate decay (`0x8004B080..0x8004B090`) runs for a reaction
+/// install too: a body slowed below normal when its reaction commits plays
+/// it at half speed (PROT 0912's damage arm drops the victim to `2` beside
+/// the knockdown it stages; retail's RAM holds `4` through the knockdown),
+/// and a normal-speed body keeps its rate.
+#[test]
+fn a_reaction_commit_decays_a_slowed_rate_to_half() {
+    use legaia_engine_battle_vm::battle_anim_rate::{AnimRate, RATE_HALF, RATE_NORMAL};
+    let mut world = pose_test_world();
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 22];
+    clips[0] = Some(pose_test_clip(0, 2, 0));
+    clips[4] = Some(pose_test_clip(4, 12, 0));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.actors[0].battle.hp = 50;
+    world.actors[0].battle.anim_rate = AnimRate(2);
+    assert!(world.commit_battle_reaction_entry(0, 4));
+    assert_eq!(world.actors[0].battle.anim_rate.get(), RATE_HALF);
+    world.actors[0].battle.anim_rate = AnimRate(RATE_NORMAL);
+    assert!(world.commit_battle_reaction_entry(0, 4));
+    assert_eq!(world.actors[0].battle.anim_rate.get(), RATE_NORMAL);
+}
+
 /// A struck body's reaction - a one-shot on the reaction channel - takes the
 /// capture's cursor when the capture names that entry.
 #[test]
@@ -1590,4 +1642,59 @@ fn a_stone_or_numb_body_on_its_idle_holds_its_keyframe() {
         let (before, after) = run(Some(kind));
         assert_eq!(before, after, "{kind:?} freezes the idle");
     }
+}
+
+// --- the anim tick's Rage arm (`FUN_80047430` `0x80047F10..0x80047F98`) ----
+
+fn rage_world(rage: bool) -> World {
+    let mut w = World {
+        party: legaia_engine_menus::party_state::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
+        ..World::default()
+    };
+    w.mode = SceneMode::Battle;
+    w.load_party(legaia_save::Party::zeroed(1));
+    if let Some(m) = w.party.roster.members.get_mut(0) {
+        let mut bits = m.ability_bits();
+        let word1 = if rage { 0x2000u32 } else { 0 };
+        bits[4..8].copy_from_slice(&word1.to_le_bytes());
+        m.set_ability_bits(bits);
+    }
+    w.actors[0].battle.liveness = 1;
+    w.actors[0].battle.hp = 10;
+    w.actors[0].battle.impact_state = 2;
+    w
+}
+
+/// A Rage seat is stamped with the delegation group and the tint words on
+/// every advancing tick, and its impact selector cleared; a seat without
+/// the passive is left alone.
+#[test]
+fn a_rage_seat_takes_the_delegation_group_every_tick() {
+    let mut w = rage_world(true);
+    w.tick_battle_animations();
+    let b = &w.actors[0].battle;
+    assert_eq!(b.field_flags & 0x380, 0x380);
+    assert_eq!((b.render_color, b.render_blend), (0x3FF0_0000, 0x1000));
+    assert_eq!(b.impact_state, 0);
+    // A landed hit strips the group (`andi 0xf07f`); the next tick restores it.
+    w.actors[0].battle.field_flags &= 0xF07F;
+    w.tick_battle_animations();
+    assert_eq!(w.actors[0].battle.field_flags & 0x380, 0x380);
+
+    let mut plain = rage_world(false);
+    plain.tick_battle_animations();
+    assert_eq!(plain.actors[0].battle.field_flags & 0x380, 0);
+    assert_eq!(plain.actors[0].battle.impact_state, 2);
+}
+
+/// The arm stands down under a presentation arm (`+0x21C != 0`).
+#[test]
+fn a_rage_seat_under_a_presentation_arm_is_not_stamped() {
+    let mut w = rage_world(true);
+    w.actors[0].battle.render_flag = 0xFF;
+    w.tick_battle_animations();
+    assert_eq!(w.actors[0].battle.field_flags & 0x380, 0);
 }

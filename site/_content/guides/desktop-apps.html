@@ -155,12 +155,12 @@
 
   <h3 id="port-launcher">The launcher</h3>
   <figure class="screenshot">
-    <img src="../img/desktop/port-launcher.jpg" width="960" height="720" alt="The launcher: a disc card saying Legend of Legaia (USA) is ready, the Play, Change disc, Controls, Open saves folder and Quit buttons with a help box, and the option list from Fullscreen and Window size to Original game only" loading="lazy">
+    <img src="../img/desktop/port-launcher.jpg" width="960" height="720" alt="The launcher: a disc card saying Legend of Legaia (USA) is ready, the Play, Change disc, Controls, Open saves folder and Quit buttons with a help box, and the grouped option list with its scroll bar - Display, Enhancements and Play, with Sound and Original game below the fold" loading="lazy">
     <figcaption>The launcher. Once it knows your disc it letters itself in the game's own font.</figcaption>
   </figure>
   <ol class="steps">
     <li><b>Choose disc...</b><span>Pick your <code>.bin</code> or <code>.cue</code> (<kbd>Ctrl</kbd>+<kbd>O</kbd>), drag it onto the window, or type its path. It is checked and remembered.</span></li>
-    <li><b>Options</b><span>Turn the enhancements on or off before you start; they are the same settings the in-game keys below change.</span></li>
+    <li><b>Options</b><span>Turn the enhancements on or off before you start, in a scrolling list grouped as Display, Enhancements, Play, Sound and Original game; they are the same settings the in-game keys below change.</span></li>
     <li><b>Play</b><span>The game opens on the title screen and the launcher closes.</span></li>
   </ol>
   <p>The disc card at the top says whether the disc is ready, or what is wrong with it: moved, not a disc image, or another region's disc (a PAL or Japanese disc is refused; a randomized or translated USA disc is fine). The help box under the buttons explains whichever row is focused. The arrow keys move, <kbd>Left</kbd> / <kbd>Right</kbd> change an option, <kbd>Enter</kbd> presses, <kbd>Esc</kbd> quits; the mouse works too. <em>Controls</em> shows your key bindings, and <em>Open saves folder</em> opens the folder your saves and settings live in.</p>
@@ -205,7 +205,7 @@
       <tr><td><kbd>F11</kbd>, <kbd>Alt</kbd>+<kbd>Enter</kbd></td><td>Fullscreen (the launcher also sets it, and the window size)</td><td>off</td></tr>
     </tbody>
   </table>
-  <p>The panel also lists a few keys for tinkering rather than playing: <kbd>F1</kbd> diagnostic text, <kbd>F3</kbd> a free debug camera, <kbd>F6</kbd> to fill the AP gauge and <kbd>F7</kbd> to switch random encounters off and on. Lighting, camera distance and movement mode are remembered between sessions.</p>
+  <p>The panel also lists a few keys for tinkering rather than playing: <kbd>F1</kbd> diagnostic text, <kbd>F3</kbd> a free debug camera, <kbd>F6</kbd> to fill the AP gauge and <kbd>F7</kbd> to switch random encounters off and on. The visual options (lighting and its time of day, lamp shadows, see-through walls, ground fog, bloom), camera distance, movement mode and fullscreen are remembered between sessions.</p>
   <p>To play exactly as the original looks and moves, turn on <em>Original game only</em> in the launcher, or start with <code>--retail</code>: every enhancement off and every engine option at its original value for that session, without changing your saved options.</p>
   <div class="cli"><code>./legaia-engine play-window --disc "/path/to/Legend of Legaia (USA).bin" --boot-ui --retail</code></div>
 

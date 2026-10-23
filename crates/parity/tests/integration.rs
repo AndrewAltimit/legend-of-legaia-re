@@ -24,6 +24,7 @@ mod battle_monster_tags_disc;
 mod battle_party_palette_retail_capture;
 mod battle_party_pose_live;
 mod battle_stage_live;
+mod bonus_drop_pool_disc;
 mod cast_sequence_pairing;
 mod cd_input_parity;
 mod chapter1_frontier_ladder;

@@ -14,9 +14,11 @@ impl LegaiaRuntime {
     ///
     /// Returns the number of PROT entries parsed. Nothing leaves the browser.
     pub fn load_disc(&mut self, raw_bytes: Vec<u8>, cdname_text: String) -> Result<u32, JsValue> {
-        use crate::disc::{extract_cdname_txt, extract_prot_dat, extract_scus, is_mode2_2352_disc};
+        use legaia_iso::image::{
+            extract_cdname_txt, extract_prot_dat, extract_scus, is_mode2_2352_disc,
+        };
 
-        self.disc_files = crate::disc::walk_iso_files(&raw_bytes);
+        self.disc_files = legaia_iso::image::walk_iso_files(&raw_bytes);
         // A director built before this disc loaded learns its XA extents.
         self.sync_xa_file_extents();
         let (prot_bytes, auto_cdname, scus) = if is_mode2_2352_disc(&raw_bytes) {

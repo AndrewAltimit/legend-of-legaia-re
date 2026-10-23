@@ -944,6 +944,46 @@ impl Database {
         self.accessory_index.get(key).map(|&i| &self.accessories[i])
     }
 
+    /// The equippable item pool: every weapon, armour and accessory here
+    /// whose name (case-insensitively) resolves through `name_of` - an item
+    /// id to the disc's own item name - to a real id, as `(id, price)`,
+    /// deduplicated and sorted by id. `name_of` is asked for ids `1..=255`;
+    /// the first id carrying a name wins. This is the bonus equipment drop's
+    /// pool, for the patcher's `--equipment-drops` and the engine's twin
+    /// alike; the names come from this crate and the ids from the user's disc.
+    pub fn equipment_pool_by_name(
+        &self,
+        name_of: impl Fn(u8) -> Option<String>,
+    ) -> Vec<(u8, Option<u32>)> {
+        let mut by_name: std::collections::HashMap<String, u8> = std::collections::HashMap::new();
+        for id in 1..=u8::MAX {
+            if let Some(name) = name_of(id) {
+                by_name.entry(name.to_ascii_lowercase()).or_insert(id);
+            }
+        }
+        let named_prices = self
+            .weapons()
+            .iter()
+            .map(|w| (w.name.as_str(), w.price))
+            .chain(self.armor().iter().map(|a| (a.name.as_str(), a.price)))
+            .chain(
+                self.accessories()
+                    .iter()
+                    .map(|a| (a.name.as_str(), a.price)),
+            );
+        let mut seen = std::collections::HashSet::new();
+        let mut pool = Vec::new();
+        for (name, price) in named_prices {
+            if let Some(&id) = by_name.get(&name.to_ascii_lowercase())
+                && seen.insert(id)
+            {
+                pool.push((id, price));
+            }
+        }
+        pool.sort_by_key(|e| e.0);
+        pool
+    }
+
     /// All enemies.
     pub fn enemies(&self) -> &[Enemy] {
         &self.enemies

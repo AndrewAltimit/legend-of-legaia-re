@@ -43,6 +43,7 @@
 //! these sit on.
 
 use crate::screen_elements::ExeMap;
+use legaia_overlay_images::string_refs::{self, StrRef};
 
 // --------------------------------------------------------------- SCUS labels
 
@@ -158,6 +159,134 @@ pub const OVERLAY_LABELS: [(u32, BattleUiLabel); 8] = [
     (OVL_ESCAPE, BattleUiLabel::CommitEscape),
 ];
 
+/// One site in `SCUS_942.54` that forms each [`SCUS_LABELS`] address, by
+/// retail VA: the screen-element placement record's payload word for a chip,
+/// the `lui` / `addiu` pair of the routine that copies a caption. A label a
+/// language pack moved is read where this site now points
+/// ([`legaia_overlay_images::string_refs`]). Coordinates from the
+/// translation pipeline's reference scan of the retail executable.
+pub const SCUS_REFS: [(u32, StrRef); 15] = [
+    (SCUS_RESELECT, StrRef::Word(0x8007_6DEC)),
+    (
+        SCUS_STEAL_TOOK,
+        StrRef::Pair {
+            lui: 0x8004_B2DC,
+            lo: 0x8004_B2E0,
+        },
+    ),
+    (
+        SCUS_STEAL_RECOVERED,
+        StrRef::Pair {
+            lui: 0x8004_B31C,
+            lo: 0x8004_B320,
+        },
+    ),
+    (
+        SCUS_STEAL_STOLE,
+        StrRef::Pair {
+            lui: 0x8004_B5E4,
+            lo: 0x8004_B5E8,
+        },
+    ),
+    (
+        SCUS_STEAL_RECOVERED_ALL,
+        StrRef::Pair {
+            lui: 0x8004_B370,
+            lo: 0x8004_B374,
+        },
+    ),
+    (
+        SCUS_SPARRING_INTRO,
+        StrRef::Pair {
+            lui: 0x8005_6314,
+            lo: 0x8005_6318,
+        },
+    ),
+    (SCUS_AUTO, StrRef::Word(0x8007_741C)),
+    (SCUS_COMMAND, StrRef::Word(0x8007_7404)),
+    (SCUS_ATTACK, StrRef::Word(0x8007_6CFC)),
+    (SCUS_ITEM, StrRef::Word(0x8007_6CE4)),
+    (SCUS_RUN, StrRef::Word(0x8007_6C6C)),
+    (SCUS_BEGIN, StrRef::Word(0x8007_6C24)),
+    (
+        SCUS_STEAL_TOOK_TAIL,
+        StrRef::Pair {
+            lui: 0x8004_B300,
+            lo: 0x8004_B304,
+        },
+    ),
+    (
+        SCUS_STEAL_RECOVERED_TAIL,
+        StrRef::Pair {
+            lui: 0x8004_B344,
+            lo: 0x8004_B348,
+        },
+    ),
+    (
+        SCUS_STEAL_STOLE_TAIL,
+        StrRef::Pair {
+            lui: 0x8004_B614,
+            lo: 0x8004_B618,
+        },
+    ),
+];
+
+/// One site in the battle overlay that forms each [`OVERLAY_LABELS`]
+/// address, by retail VA: the `lui` / `addiu` pair of the routine that
+/// stores or registers it. `Defense` has no reference (nothing moves it) and
+/// the Ra-Seru run is indexed by arithmetic, so neither is listed.
+pub const OVERLAY_REFS: [(u32, StrRef); 7] = [
+    (
+        OVL_TIMED_FIGHT_STRIP,
+        StrRef::Pair {
+            lui: 0x801D_0F80,
+            lo: 0x801D_0F84,
+        },
+    ),
+    (
+        OVL_SPIRIT,
+        StrRef::Pair {
+            lui: 0x801D_8F9C,
+            lo: 0x801D_8FA0,
+        },
+    ),
+    (
+        OVL_TEAM_SURPRISED,
+        StrRef::Pair {
+            lui: 0x801D_A2A0,
+            lo: 0x801D_A2A4,
+        },
+    ),
+    (
+        OVL_SOLO_SURPRISED,
+        StrRef::Pair {
+            lui: 0x801D_A294,
+            lo: 0x801D_A29C,
+        },
+    ),
+    (
+        OVL_AMBUSHED,
+        StrRef::Pair {
+            lui: 0x801D_A264,
+            lo: 0x801D_A268,
+        },
+    ),
+    (
+        OVL_BEGIN,
+        StrRef::Pair {
+            lui: 0x801D_1060,
+            lo: 0x801D_1064,
+        },
+    ),
+    (
+        OVL_ESCAPE,
+        StrRef::Pair {
+            lui: 0x801D_10D8,
+            lo: 0x801D_10DC,
+        },
+    ),
+];
+
 /// One label the battle screen can put on a chip or a banner.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BattleUiLabel {
@@ -235,6 +364,7 @@ impl BattleUiStrings {
             return;
         };
         for (va, label) in SCUS_LABELS {
+            let va = string_refs::resolve(&SCUS_REFS, scus, map.base_va(), va);
             if let Some(off) = map.off(va)
                 && let Some(s) = cstr_at(scus, off)
             {
@@ -248,6 +378,7 @@ impl BattleUiStrings {
     /// [`OVERLAY_BASE_VA`].
     pub fn merge_overlay(&mut self, bytes: &[u8], base_va: u32) {
         for (va, label) in OVERLAY_LABELS {
+            let va = string_refs::resolve(&OVERLAY_REFS, bytes, base_va, va);
             if let Some(s) = va
                 .checked_sub(base_va)
                 .and_then(|o| cstr_at(bytes, o as usize))
@@ -366,6 +497,42 @@ mod tests {
         // Index 0 is the empty slot: no label, not a missing read.
         assert_eq!(s.raseru_label(0), Some(""));
         assert!(!s.is_empty());
+    }
+
+    /// The reference tables are lookup tables: sorted, one row per label they
+    /// cover.
+    #[test]
+    fn reference_tables_are_sorted_and_cover_their_labels() {
+        assert!(SCUS_REFS.windows(2).all(|w| w[0].0 < w[1].0));
+        assert!(OVERLAY_REFS.windows(2).all(|w| w[0].0 < w[1].0));
+        for (va, _) in SCUS_LABELS {
+            assert!(string_refs::lookup(&SCUS_REFS, va).is_some(), "{va:#x}");
+        }
+        for (va, _) in SCUS_REFS {
+            assert!(SCUS_LABELS.iter().any(|(v, _)| *v == va));
+        }
+        for (va, _) in OVERLAY_REFS {
+            assert!(OVERLAY_LABELS.iter().any(|(v, _)| *v == va));
+        }
+    }
+
+    /// A moved overlay label is read where its site points.
+    #[test]
+    fn a_moved_overlay_label_reads_through_its_site() {
+        let base = OVERLAY_BASE_VA;
+        let mut bytes = vec![0u8; 0x28800];
+        let put = |b: &mut Vec<u8>, va: u32, w: &[u8]| {
+            let off = (va - base) as usize;
+            b[off..off + w.len()].copy_from_slice(w);
+        };
+        // `lui v0,0x801f ; addiu v0,v0,0x6000`: `Ambushed!` moved to 0x801F6000.
+        put(&mut bytes, 0x801D_A264, &0x3C02_801Fu32.to_le_bytes());
+        put(&mut bytes, 0x801D_A268, &0x2442_6000u32.to_le_bytes());
+        put(&mut bytes, 0x801F_6000, b"Embuscade !\0");
+        put(&mut bytes, OVL_AMBUSHED, b"stale\0");
+        let mut s = BattleUiStrings::default();
+        s.merge_overlay(&bytes, base);
+        assert_eq!(s.get(BattleUiLabel::Ambushed), Some("Embuscade !"));
     }
 
     /// A truncated image degrades to fewer labels instead of panicking.

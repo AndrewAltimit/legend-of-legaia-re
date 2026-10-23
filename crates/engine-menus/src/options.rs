@@ -112,6 +112,13 @@ pub struct OptionsState {
     /// bus), same curve as [`Self::bgm_volume`]. XA voice / FMV audio rides
     /// neither bus.
     pub sfx_volume: u8,
+    /// Full-mono downmix (engine-only output setting, `false` = off): the
+    /// finished mix, XA voice and FMV audio included, is averaged into both
+    /// channels (`AudioSink::set_downmix`). Separate from the retail
+    /// "Sound: Monaural" row ([`Self::audio`]), which is libsnd's per-voice
+    /// fold only and leaves the CD input stereo. An output choice like the
+    /// volume levels, so `pin_retail` leaves it alone. Both hosts apply it.
+    pub downmix_mono: bool,
     /// 1..=8 (1 = slowest). Reserved: **no host reads it**. Retail's options
     /// screen has no message-speed row (the menu overlay's row descriptors at
     /// `0x801E44B8` cover camera, select attack, command, move, HP display,
@@ -232,6 +239,7 @@ impl Default for OptionsState {
             vibration_encounters: true,
             bgm_volume: 8,
             sfx_volume: 8,
+            downmix_mono: false,
             message_speed: 5,
             muted: false,
             camera_distance: legaia_engine_camera::camera_distance::CameraDistance::Far,
@@ -1664,6 +1672,7 @@ mod tests {
             field_move: FieldMoveOpt::Run,
             audio: AudioMode::Mono,
             bgm_volume: 3,
+            downmix_mono: true,
             ..Default::default()
         };
         st.save(&path).expect("save");

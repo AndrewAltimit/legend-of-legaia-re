@@ -321,17 +321,19 @@ fn the_retarget_lands_the_damage_on_an_ally_not_on_the_party() {
 }
 
 #[test]
-fn a_confused_party_member_is_flipped_the_other_way() {
-    // The same resolver, entered from the party side: a confused member is
-    // never handed the command menu - it auto-swings and the class-3..6 arm
-    // flips it onto the party band. Retail's `+0x1DD` class space is one
-    // space for both sides, so a port that only handled the monster branch
-    // would pass every assertion above and fail here.
+fn a_confused_party_member_passes_its_turn() {
+    // The resolver is a monster-seat path only: `FUN_801E7320` has one
+    // caller on the disc (`jal 0x801e7320` at `0x801E2CA0`), which the seed
+    // reaches only for a seat `>= 3` (`sltiu v0,a0,0x3` at `0x801E2C70`). A
+    // confused party member is refused the command ring (`+0x16E & 0xF84`),
+    // commits nothing, and its seed reads the category `0` the round
+    // boundary left: the turn goes straight to Done (`0x801E2E0C`). A
+    // write-watched retail round with the party's `+0x16E |= 0x380` and no
+    // Rage bit shows exactly that - seed `0x0C`, then `0x50`, no approach.
     //
     // All three members are confused: a *player-driven* battle parks on the
     // first unconfused member's command menu and never reaches anyone else's
     // turn, so a single confused member is unobservable through this host.
-    let mut any = false;
     for seed in SEEDS {
         let mut w = battle_world(seed);
         w.battle.player_driven = true;
@@ -351,32 +353,26 @@ fn a_confused_party_member_is_flipped_the_other_way() {
         assert!(
             control.battle.command.is_some(),
             "seed {seed:#x}: an unconfused player-driven party must open the \
-             command menu - otherwise the auto-act below is not the \
-             confusion's doing"
+             command menu - otherwise the pass below is not the confusion's \
+             doing"
         );
 
         for slot in 0..PARTY {
             let actions = armed_actions(&mut w, slot, 600);
             for (cat, t) in &actions {
+                // A member whose confusion wore off may commit again; while
+                // confused its turn arms no category of its own.
+                let still_confused = w
+                    .battle
+                    .status_effects
+                    .statuses(slot)
+                    .iter()
+                    .any(|s| s.kind == StatusKind::Confuse);
                 assert!(
-                    *t < PARTY,
-                    "seed {seed:#x}: confused party slot {slot} armed slot {t} \
-                     - the retarget did not flip it onto the party band"
+                    !still_confused || *cat == 0,
+                    "seed {seed:#x}: confused party slot {slot} armed category \
+                     {cat} at slot {t}"
                 );
-                // The asymmetry the two branches really have, read off
-                // `FUN_801E7320`'s instruction stream: the class-`0..2` arm
-                // ends with `bne v0,v1` against `ctx[+0x13]` and clears
-                // `+0x1DE` on a self-hit (`0x801E73E0..0x801E73FC`); the
-                // class-`3..6` arm at `0x801E7484` jumps straight to the
-                // epilogue with **no** self test. So a confused party member
-                // that rolls itself keeps an armed swing at itself, and a
-                // port that "fixed" that symmetry would be wrong.
-                assert_eq!(
-                    *cat, 3,
-                    "seed {seed:#x}: the party-band arm must never clear the \
-                     action category, self-target or not"
-                );
-                any = true;
             }
         }
         // Every round start ticks the status durations (retail `FUN_801E752C`
@@ -405,8 +401,4 @@ fn a_confused_party_member_is_flipped_the_other_way() {
             );
         }
     }
-    assert!(
-        any,
-        "no confused party member ever armed an action across the seeds"
-    );
 }

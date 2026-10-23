@@ -513,10 +513,14 @@ pub fn summon_hold_profile(prot_entry: u32) -> Option<ModuleProfile> {
 /// with such a site past their gate: PROT 0919 arm 7 (`0x801F7C64`; its
 /// three fades, the kills and the CLUT loads), PROT 0922 arms 14
 /// (`0x801F7AA0`) and 15 (`0x801F7CAC`; the wash alpha store past the
-/// ramp).
+/// ramp), and PROT 0930's last arm 11 (`0x801F7CAC`): an arm with no phase
+/// write reads as `Every`, but its pool flush and fade-out run once the
+/// countdown lets the arm finish, and on the first tick they ended the two
+/// held whites arm 10 parked a whole arm early.
 pub fn gate_va(prot_entry: u32, arm: u8) -> Option<u32> {
     Some(match (prot_entry, arm) {
         (919, 7) => 0x801F_7C64,
+        (930, 0x0B) => 0x801F_7CAC,
         (922, 14) => 0x801F_7AA0,
         (922, 15) => 0x801F_7CAC,
         _ => return None,

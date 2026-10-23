@@ -611,7 +611,7 @@
 
 <section class="doc-section" id="jewel-fix">
   <h3>Jewel fix</h3>
-  <p>A few boss cinematic casts - Xain's Bloody Horns and Terio Punch, Cort's Guilty Cross, the Delilas signature moves - bypass the elemental resist ladder in retail, so a Jewel or All Guard does nothing against them; this makes elemental guards apply.</p>
+  <p>A few boss cinematic casts - Xain's Bloody Horns and Terio Punch, Cort's Guilty Cross, the Delilas signature moves - bypass the elemental resist ladder in retail, so a Jewel or All Guard does nothing against them; this makes elemental guards apply. The casts then use the damage roll every other boss cast uses, which reads the caster's INT rather than its ATK, so the hits change size too.</p>
   <table class="layout">
     <thead><tr><th>Flag</th><th>Values</th><th>Notes</th></tr></thead>
     <tbody><tr><td>--jewel-fix</td><td>toggle, seedless</td><td>In every browser preset above Vanilla.</td></tr></tbody>
@@ -629,7 +629,7 @@
     <tbody><tr><td>--approach-softlock-fix</td><td>toggle, seedless</td><td>On in the Balanced / Full Chaos presets. Healthy fights are byte-identical.</td></tr></tbody>
   </table>
   <details class="disclosure"><summary>How it is patched</summary><div class="disclosure-body">
-    <p>A monster approaching an out-of-reach target waits in a range poll with no movement code and no timeout while its staged Move clip carries it; when a summon's staging round-trip precedes the melee, that clip dies and nothing re-stages it. The fix is a nine-word rewrite of the poll's redundant per-frame facing recompute: when the clip reads dead while the poll still fails, the state bounces back to staging and retail's own code resumes the walk. Runtime-verified on both live-caught park states. Full story: <a href="../writeups/gaza-orbit-softlock.html">the endless camera orbit</a>.</p>
+    <p>A monster approaching an out-of-reach target waits in a range poll with no movement code and no timeout while its staged Move clip carries it; when Kemaro's put-back leaves the target's exit-to-idle flag set and its melee follows inside one idle loop, that clip dies and nothing re-stages it. The fix is a nine-word rewrite of the poll's redundant per-frame facing recompute: when the clip reads dead while the poll still fails, the state bounces back to staging and retail's own code resumes the walk. Runtime-verified on both live-caught park states. Full story: <a href="../writeups/gaza-orbit-softlock.html">the endless camera orbit</a>.</p>
   </div></details>
 </section>
 
@@ -642,6 +642,18 @@
   </table>
   <details class="disclosure"><summary>How it is patched</summary><div class="disclosure-body">
     <p>Zora's Floating Castle switches battles off for the last minute of its escape clock by raising system flag <code>0x15</code>, and the record that ends a successful escape never lowers it. Both Fortress scenes (<code>deroa</code>, <code>chitei2</code>) open their encounter condition list with a copy of the castle's flag-gated silent group. The fix rewrites that group - 14 decoded bytes of each scene MAN, same size - into a duplicate of the scene's own post-Jette group (flag <code>0x521</code>), so the Fortress never tests flag <code>0x15</code>. The duplicate is checked to read the same as the group retail reaches one record later, so no other story state changes. Full story: <a href="../writeups/glitches/field-oddities.html#fortress-no-encounters">no encounters in Jette's Absolute Fortress</a>.</p>
+  </div></details>
+</section>
+
+<section class="doc-section" id="conkram-freeze-fix">
+  <h3>Conkram freeze fix</h3>
+  <p>On emulators that run the CPU faster than a console, the Room of Mirrors scene in present-day Conkram can lock the game up; this stops it.</p>
+  <table class="layout">
+    <thead><tr><th>Flag</th><th>Values</th><th>Notes</th></tr></thead>
+    <tbody><tr><td>--conkram-freeze-fix</td><td>toggle, seedless</td><td>On in the Balanced / Full Chaos presets. Console-speed play is unchanged.</td></tr></tbody>
+  </table>
+  <details class="disclosure"><summary>How it is patched</summary><div class="disclosure-body">
+    <p>The scene runs with almost no free heap, and a faster emulated CPU keeps more mirror-effect particles alive until their requests for memory fail. The move VM's keyframe-pose seat (op <code>0x3C</code>) never tests its request and copies the particle's animation through the NULL pointer onto the CPU's exception vector; the render-node request is tested, but leaves its NULL pointer for later code to write through. The fix makes four same-size edits of <code>SCUS_942.54</code>: op <code>0x3C</code> is rearranged so a NULL block ends the particle through the move VM's own halt, a failed render node gets a shared stand-in node in free RAM, and both requests go through a quiet copy of the allocation routine, placed over an unreferenced thunk, so an absorbed failure never reaches the <code>PRG ERR</code> readout. Every allocation that succeeds runs the retail instructions. Full story: <a href="../writeups/glitches/field-oddities.html#conkram-mirror-freeze">Conkram mirror freeze</a>.</p>
   </div></details>
 </section>
 

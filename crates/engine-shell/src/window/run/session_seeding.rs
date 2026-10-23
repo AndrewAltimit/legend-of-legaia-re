@@ -193,6 +193,12 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
             world.seed_battle_backdrop_keep_object_1(k != 0);
         }
     }
+    // `LEGAIA_BATTLE_SHINY_SERU=1` (the retail-compare image channel, for a
+    // state made on a shiny-Seru patched disc): the shiny roll's battle-entry
+    // draw is that build's, so it runs even under `--retail`'s pin.
+    if std::env::var("LEGAIA_BATTLE_SHINY_SERU").is_ok_and(|v| v.trim() == "1") {
+        world.toggles.shiny_seru = true;
+    }
     // `LEGAIA_BATTLE_FRAME_STEP=step,state` (the retail-compare image
     // channel): run the battle on frames of `step` vsyncs from the first tick
     // the action SM reaches `state` (`World::seed_battle_frame_step`).
@@ -362,6 +368,17 @@ pub(super) fn apply_debug_seat_env(session: &mut NativeSession) {
                 <[i32; 3]>::try_from(v).ok()
             }) {
                 session.camera.zone.seat_eye_after_snap(eye);
+            }
+            // `LEGAIA_SEAT_ANGLES=P,Y,H`: the state's pitch / yaw / `H`,
+            // eased on the same moved-frame legs as the eye.
+            if let Some(angles) = std::env::var("LEGAIA_SEAT_ANGLES").ok().and_then(|f| {
+                let v: Vec<i32> = f
+                    .split(',')
+                    .filter_map(|v| v.trim().parse::<i32>().ok())
+                    .collect();
+                <[i32; 3]>::try_from(v).ok()
+            }) {
+                session.camera.zone.seat_angles_after_snap(angles);
             }
             // `LEGAIA_SEAT_HEADING=H` (retail space, `0` = -Z): stand the
             // seated player in the state's own heading, which is walk

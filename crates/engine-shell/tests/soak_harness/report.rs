@@ -30,6 +30,22 @@ pub(super) const SAVE_ENTRY_ARTIFACTS: &[(&str, &str)] = &[
         "softlock|dream|free-roam:immobile*",
         "dream's closing record returns the party to the scene it fell asleep in by a flag the sleep sets; entered by name, no branch matches and the record ends on the hidden party",
     ),
+    (
+        "softlock|other7|helper@0x00d9:op49",
+        "other7's field MAN is a draft no retail path runs; its `49 0B` opens the Incense notice, whose close clears _DAT_8007B450 (0x801F1F20), so op 0x49 re-arms on the next frame, as in retail",
+    ),
+    (
+        "timeline_cap|other7|helper@0xd9:49",
+        "other7's field MAN is a draft no retail path runs; its `49 0B` Incense notice re-arms itself in retail too, and the anti-hang cap ends it before the softlock window does when the window is longer",
+    ),
+    (
+        "timeline_cap|other7|helper@0x389:49",
+        "other7's field MAN is a draft no retail path runs; its `49 0E` parks for good in retail too, and the anti-hang cap ends it before the softlock window does when the window is longer",
+    ),
+    (
+        "softlock|other7|helper@0x0389:op49",
+        "other7's field MAN is a draft no retail path runs; its `49 0E` is past op 0x49's sub-op bound, and the Idle arm returns the same PC (0x801E0990), as in retail",
+    ),
 ];
 
 /// Scenes the story only ever enters through another scene's hand-off, never
@@ -41,6 +57,13 @@ pub(super) const SAVE_ENTRY_ARTIFACTS: &[(&str, &str)] = &[
 /// party just as a save's does.
 const HAND_OFF_ONLY_SCENES: &[&str] = &["dream"];
 
+/// Scene blocks whose field MAN no retail path runs, so every run that starts
+/// in one enters a field the game never plays. `other7` is an earlier
+/// revision of `koin3`'s MAN (`docs/formats/cdname.md`); the dance minigame
+/// loads the block's map, trigger sidecar and art pack, never its MAN as a
+/// field.
+const NEVER_RUN_FIELD_SCENES: &[&str] = &["other7"];
+
 /// Whether a hit from the run labelled `label` counts towards an entry
 /// artifact on `sig`: an `@<save>` run, or any run that starts in a
 /// hand-off-only scene the signature names.
@@ -50,7 +73,8 @@ fn artifact_run(sig: &str, label: &str) -> bool {
     }
     let start = label.split(['+', '@']).next().unwrap_or(label);
     let sig_scene = sig.split('|').nth(1).unwrap_or("");
-    HAND_OFF_ONLY_SCENES.contains(&start) && start == sig_scene
+    (HAND_OFF_ONLY_SCENES.contains(&start) || NEVER_RUN_FIELD_SCENES.contains(&start))
+        && start == sig_scene
 }
 
 /// The reason `sig` is a known save-entry artifact, if it is one.
@@ -224,7 +248,7 @@ pub(super) fn write_report(
             .join(format!("{}.replay.toml", slug(sig)));
         let _ = std::fs::write(
             &file,
-            replay_text(&o.spec, &pads, Some(f), relaxed, o.host_arming),
+            replay_text(&o.spec, &pads, Some(f), relaxed, o.arming),
         );
         let detail: String = f.detail.chars().take(220).collect();
         let _ = writeln!(

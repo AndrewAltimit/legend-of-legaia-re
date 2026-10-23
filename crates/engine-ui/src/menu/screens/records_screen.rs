@@ -471,21 +471,12 @@ pub fn records_screen_fields(view: &RecordsScreenView<'_>, pen: (i32, i32)) -> V
     out
 }
 
-/// Resolve a records ink-staging id to an RGBA tint. The `{5,6,7,9}` rows are
-/// pinned against the menu string-CLUT (same palette as the status page);
-/// staging `3` and `4` select CLUT rows with no golden capture yet, so they
-/// fall back to white.
+/// Resolve a records ink-staging id to an RGBA tint: the menu string CLUT
+/// ([`crate::menu_ink_color`]), so ink 3 (the magic rows) draws magenta and
+/// ink 4 (the monster rows) green, as the golden `menu_status_town` VRAM
+/// holds those CLUT rows.
 pub fn records_ink(staging: u8) -> [f32; 4] {
-    match staging {
-        7 => crate::MENU_TEXT_WHITE,
-        6 => crate::MENU_TEXT_GOLD,
-        5 => crate::MENU_TEXT_TEAL,
-        9 => crate::MENU_TEXT_ORANGE,
-        2 => crate::MENU_TEXT_RED,
-        // Ink 3 (magic) and 4 (monsters) select distinct CLUT rows whose RGB
-        // is not yet pinned from a capture; render neutral until it is.
-        _ => crate::MENU_TEXT_WHITE,
-    }
+    crate::menu_ink_color(staging)
 }
 
 // Fixed decimal-cell pitch of the retail number primitives (8 px per digit).

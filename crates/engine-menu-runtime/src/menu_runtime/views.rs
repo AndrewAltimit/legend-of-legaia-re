@@ -42,7 +42,7 @@ impl MenuRuntime {
     ///
     /// Falls back to the plain occupied-slot walk when the disc tables are
     /// absent (no price table means nothing to gate on).
-    pub fn sell_list_rows(world: &World) -> Vec<legaia_engine_core::world::BagRow> {
+    pub fn sell_list_rows(world: &World) -> Vec<crate::bag_rows::BagRow> {
         if let Some(rows) = world.bag_sell_rows() {
             return rows;
         }
@@ -52,7 +52,7 @@ impl MenuRuntime {
             .iter()
             .enumerate()
             .filter(|(_, (id, count))| *id != 0 && *count > 0)
-            .map(|(i, (id, count))| legaia_engine_core::world::BagRow {
+            .map(|(i, (id, count))| crate::bag_rows::BagRow {
                 slot: (start + i) as u8,
                 id: *id,
                 count: *count,

@@ -132,6 +132,9 @@ fn play_intro_movie(
 /// entered.
 struct LaunchToggles {
     entry_pulse: bool,
+    smart_monsters: bool,
+    tweaks: legaia_engine_session::session_switches::GameplayTweaks,
+    retail: bool,
     vm_dialogue: bool,
     terrain_y: bool,
     edge_collision: bool,
@@ -144,6 +147,9 @@ struct LaunchToggles {
 fn apply_launch_toggles(session: &mut NativeSession, toggles: LaunchToggles) {
     let LaunchToggles {
         entry_pulse,
+        smart_monsters,
+        tweaks,
+        retail,
         vm_dialogue,
         terrain_y,
         edge_collision,
@@ -154,9 +160,9 @@ fn apply_launch_toggles(session: &mut NativeSession, toggles: LaunchToggles) {
     // The window drains every per-tick world queue itself, right after each
     // session tick (`drain_and_log_battle_events` / `drain_and_route_field_events`).
     session.set_host_drains_queues(true);
-    // Scene-entry VDF pulse (enhancement) gate - must land before the first
-    // `enter_field_scene`, which is where the installer runs.
-    session.host.world.toggles.entry_pulse_enabled = entry_pulse;
+    // The scene-entry VDF pulse (enhancement) gate is written by the shared
+    // switch set below - it must land before the first `enter_field_scene`,
+    // which is where the installer runs.
     // Drive field dialogue through the inline-script field-VM runner so branch
     // handlers execute (flag-sets / scene-changes / GIVE_ITEM). On by default;
     // `--simple-dialogue` clears it to fall back to the plain typewriter panel.
@@ -182,7 +188,21 @@ fn apply_launch_toggles(session: &mut NativeSession, toggles: LaunchToggles) {
     // pre-finisher path for comparison.
     session.host.world.toggles.use_damage_finish = damage_finish;
     // `LEGAIA_SMART_MONSTERS` is raised with the other environment switches
-    // at session open (`legaia_engine_session::native::apply_env_world_toggles`).
+    // at session open (`legaia_engine_session::native::apply_env_world_toggles`);
+    // `--smart-monsters` (the launcher's Smarter monsters row) raises it too.
+    // `--retail` then holds every port-only switch off, whichever source
+    // raised it - the play page's retail mode does the same through
+    // `legaia_engine_session::session_switches`.
+    let switches = legaia_engine_session::session_switches::SessionSwitches {
+        smart_monsters: smart_monsters || session.host.world.toggles.smarter_monster_targeting,
+        world_map_markers: session.host.world.toggles.overworld_marker_overlay,
+        entry_pulse,
+        battle_frame_cadence: session.host.world.toggles.battle_sm_frame_cadence,
+        arts_saved_list: session.host.world.toggles.arts_saved_list,
+        tweaks,
+        retail,
+    };
+    switches.apply(&mut session.host.world.toggles);
 }
 
 /// Enter the launch scene: a `--resume-save` landing through the card-load
@@ -494,6 +514,9 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
         &mut session,
         LaunchToggles {
             entry_pulse: fidelity.entry_pulse,
+            smart_monsters: fidelity.smart_monsters,
+            tweaks: fidelity.tweaks,
+            retail: fidelity.retail,
             vm_dialogue,
             terrain_y,
             edge_collision,
@@ -614,6 +637,13 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
         disc,
     });
     app.apply_launch_options(fidelity);
+    // Which fidelity toggles this session runs off retail, once the launch
+    // switches and the (possibly pinned) options have both landed: empty
+    // under `--retail`.
+    log::info!(
+        "world: toggles off their retail value: {:?}",
+        app.session.host.world.toggles.retail_deviations()
+    );
     // The spell / seru display names off the boot SCUS, for the shop's Trade
     // row: read once here, as the browser play page reads them at disc load.
     app.ensure_seru_names();

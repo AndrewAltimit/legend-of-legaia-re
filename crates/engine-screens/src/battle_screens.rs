@@ -265,9 +265,11 @@ pub fn battle_hud_frame_draws(
             // parks the plaque while that window is up (the
             // battle_item_window capture shows the crumbs alone), so the
             // frame draws one or the other, never both.
+            // The commit-confirm screen parks it too, under the lone
+            // `Begin` tab (`bh::battle_begin_tab_alone`).
             plaque: plaque
                 .as_ref()
-                .filter(|_| w.battle.item_menu.is_none())
+                .filter(|_| w.battle.item_menu.is_none() && !bh::battle_begin_tab_alone(w))
                 .map(|(_, n)| n.as_str()),
             plaque_badge: bh::battle_plaque_element_badge(w),
             banner: banner.as_deref(),
@@ -454,7 +456,25 @@ pub fn arts_input_chrome_draws(
     let s = scale.max(1) as i32;
     let bar_origin = (origin.0, origin.1 + bar_dy * s);
     let plate_origin = (origin.0 + plate_dx * s, origin.1);
+    let glides: Vec<(usize, u8, u8)> = view
+        .pennant_glides
+        .iter()
+        .map(|&(slot, elapsed)| {
+            (
+                slot,
+                elapsed,
+                legaia_engine_battle::arts_command_input::PENNANT_GLIDE_FRAMES,
+            )
+        })
+        .collect();
     let frame = ai::ArtsInputFrame {
+        glides: &glides,
+        chip_slide: view.chip_slide.map(|e| {
+            (
+                e,
+                legaia_engine_battle::arts_command_input::CHIP_SLIDE_FRAMES,
+            )
+        }),
         buffer: view.pennants,
         spent: view.pennant_spent,
         chip_costs: view.costs,
@@ -804,6 +824,7 @@ fn with_battle_result_windows<T: Default>(
         leader: &leader,
         subject: banner.subject,
         slide: banner.slide,
+        victory: world.tables.victory_text.as_ref(),
     };
     let windows = legaia_engine_ui::battle_spoils_windows(&view);
     f(&windows, Some(&view), origin, scale)

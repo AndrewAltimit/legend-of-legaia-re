@@ -50,9 +50,11 @@
 //! Two things that host supplies are the **port's**, not retail's, and both
 //! are named where they are defined: the script table (retail's live at
 //! overlay VAs the engine never loads) and the pad chords that install an
-//! actor. The handler-id dispatcher `FUN_801F159C` is not ported either, so an
-//! actor's terminal [`crate::world_map_panel_actors::ActorExit`] retires it
-//! rather than selecting the next handler.
+//! actor. The handler-id dispatcher `FUN_801F159C` is ported
+//! (`crate::submode_hub_actors::hub_dispatch`); the host follows a terminal
+//! [`crate::world_map_panel_actors::ActorExit`] to the next handler for the
+//! ids whose bodies are ported (the close tick `0`, the draw tick `0x1A` and
+//! the travel arts `0x29` / `0x2B`) and retires the actor on any other.
 
 // ---------------------------------------------------------------------------
 // FUN_801E9B3C - panel command-script interpreter

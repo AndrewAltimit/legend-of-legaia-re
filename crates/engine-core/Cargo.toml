@@ -46,6 +46,7 @@ legaia-actor-formats.workspace = true
 legaia-engine-dialog.workspace = true
 legaia-engine-motion-vm.workspace = true
 legaia-game-tables.workspace = true
+legaia-gamedata.workspace = true
 legaia-minigame-formats.workspace = true
 legaia-overlay-images.workspace = true
 legaia-scene-formats.workspace = true

@@ -526,13 +526,19 @@
       <label class="rom-check-row">
         <input type="checkbox" id="rom-approach-fix">
         <span>Approach-softlock fix <span class="rom-opt-note">- stop the endless camera orbit (bug fix)</span>
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">When a boss's approach animation dies mid-walk (a summon right before its attack), retail waits forever while the camera circles the party. With the fix the boss simply resumes walking; healthy fights are untouched. Unaffected by the seed; <a href="../writeups/gaza-orbit-softlock.html">full write-up</a>.</span></span></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">When a monster's approach animation dies mid-walk (Kemaro cast on it right before its melee, in practice on Gaza 2), retail waits forever while the camera circles the party. With the fix the boss simply resumes walking; healthy fights are untouched. Unaffected by the seed; <a href="../writeups/gaza-orbit-softlock.html">full write-up</a>.</span></span></span>
       </label>
 
       <label class="rom-check-row">
         <input type="checkbox" id="rom-fortress-fix">
         <span>Fortress encounter fix <span class="rom-opt-note">- random battles return to Jette's Absolute Fortress (bug fix)</span>
           <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Leaving Zora's Floating Castle with under a minute on the escape clock leaves a "no battles" flag set for good, and retail's Absolute Fortress still obeys it: no random battles anywhere inside, and the Door of Light greyed out. With the fix the Fortress ignores that flag, which also heals a save that already has it. Unaffected saves and the castle itself play as retail. Unaffected by the seed; <a href="../writeups/glitches/field-oddities.html#fortress-no-encounters">full write-up</a>.</span></span></span>
+      </label>
+
+      <label class="rom-check-row">
+        <input type="checkbox" id="rom-conkram-fix">
+        <span>Conkram freeze fix <span class="rom-opt-note">- no lock-up at the Room of Mirrors on fast emulators (bug fix)</span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">On an emulator that runs the CPU faster than a console (PCSX-ReARMed's default for this game, or an overclock), the mirror scene in present-day Conkram runs out of memory and the effect code overwrites the CPU's exception vector, freezing the game. With the fix a failed allocation drops one effect particle or gives it a spare node, and no PRG ERR text appears. Console-speed play is unchanged. Unaffected by the seed; <a href="../writeups/glitches/field-oddities.html#conkram-mirror-freeze">full write-up</a>.</span></span></span>
       </label>
 
       <label class="rom-check-row">

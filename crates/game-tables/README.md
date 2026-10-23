@@ -27,7 +27,10 @@ crate depends on that one and never the reverse.
 - **Menu overlay tables** (PROT 0899) - `menu_windows` (the window descriptor
   table, [`field-menu.md`](../../docs/subsystems/field-menu.md)),
   `widget_script` (the window-script programs,
-  [`window-script.md`](../../docs/formats/window-script.md)).
+  [`window-script.md`](../../docs/formats/window-script.md)), `menu_pool`
+  (the string pool's named labels) and `menu_string_refs` (the code site
+  that forms each port-read string's address, so a reader follows a string
+  a language pack moved; [`ui-strings.md`](../../docs/tooling/translation/ui-strings.md#what-the-port-reads)).
 - **Modes, movies, sound** - `mode_table`, `sfx_table`, `xa_cue_table`
   (`SCUS_942.54`); `fmv_dispatch` (STR overlay, PROT 0970); `str_fmv_table`
   (the cutscene player's in-RAM movie lookup table).

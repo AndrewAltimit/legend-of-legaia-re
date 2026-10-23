@@ -22,8 +22,6 @@ use legaia_actor_formats::battle_char_assembly::loadout;
 use legaia_art::clip_ladder::CuratedArt;
 use legaia_gamedata::{ArtKind, Character};
 
-use crate::disc;
-
 /// `readef.DAT` (extraction PROT entry 894) - the battle side-band file
 /// carrying each character's art `"ME"` keyframe archives.
 const READEF_PROT_INDEX: u32 = 894;
@@ -72,7 +70,7 @@ fn curated(character: Character) -> Vec<CuratedArt> {
 /// character without a curated table (Terra) yields an empty list.
 pub(crate) fn decode_art_clips(
     prot: &[u8],
-    entries: &[disc::EntryMeta],
+    entries: &[legaia_prot::toc_index::EntryMeta],
     cslot: usize,
 ) -> Result<Vec<ArtClip>, String> {
     let Some(character) = character_of(cslot) else {
@@ -91,7 +89,11 @@ fn gamedata_db() -> &'static legaia_gamedata::Database {
     DB.get_or_init(legaia_gamedata::Database::load)
 }
 
-fn entry_bytes<'a>(prot: &'a [u8], entries: &[disc::EntryMeta], index: u32) -> Option<&'a [u8]> {
+fn entry_bytes<'a>(
+    prot: &'a [u8],
+    entries: &[legaia_prot::toc_index::EntryMeta],
+    index: u32,
+) -> Option<&'a [u8]> {
     let meta = entries.iter().find(|e| e.index == index)?;
     let off = meta.byte_offset as usize;
     let end = off.checked_add(meta.size_bytes as usize)?;

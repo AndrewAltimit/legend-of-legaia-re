@@ -345,15 +345,35 @@ pub fn apply_spell_outcome(
         gain,
         thresholds.as_ref().map(|t| t.as_slice()),
     )?;
-    let spell_name = def
-        .map(|d| d.name)
-        .unwrap_or_else(|| format!("Spell {spell_id:#04X}"));
+    // Window 7's own sentence off the disc (`FUN_801DCCB4`), its `0xC3`
+    // token spliced with the raw spell name - element plate included - the
+    // way the string primitive expands it; the battle-banner sentence when
+    // the overlay was not installed.
+    let line = match world.menu.spell_level_template.as_deref() {
+        Some(template) => {
+            legaia_engine_menus::pause_screens::spell_level_notice_line(template, spell_id, |id| {
+                let table = world.menu.text.as_ref()?.spell_names.as_ref()?;
+                let mut raw = Vec::new();
+                if let Some(op) = table.icon(id) {
+                    raw.extend([0xCE, op, b' ']);
+                }
+                raw.extend(table.name(id)?.bytes());
+                Some(raw)
+            })
+        }
+        None => {
+            let spell_name = def
+                .map(|d| d.name)
+                .unwrap_or_else(|| format!("Spell {spell_id:#04X}"));
+            legaia_engine_battle::magic_xp::magic_level_increased_message(&spell_name).into_bytes()
+        }
+    };
     Some(SpellLevelNotice {
         caster_slot,
         spell_index: up.spell_slot as u8,
         spell_id,
         new_level: up.new_level,
-        line: legaia_engine_battle::magic_xp::magic_level_increased_message(&spell_name),
+        line,
     })
 }
 

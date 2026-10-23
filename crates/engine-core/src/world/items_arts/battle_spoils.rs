@@ -245,7 +245,13 @@ impl World {
             let Some(def) = catalog.get(slot.monster_id) else {
                 continue;
             };
-            xp_total = xp_total.saturating_add(def.exp as u32);
+            // `WorldToggles::exp_rate_permille` (the `--exp-scale` twin)
+            // scales each record's EXP before the sum, as the patch scales
+            // the record field; `1000` is the identity.
+            xp_total = xp_total.saturating_add(u32::from(crate::world::scale_exp_permille(
+                def.exp,
+                self.toggles.exp_rate_permille,
+            )));
             gold_acc = gold_acc.saturating_add(
                 legaia_engine_battle_vm::battle_formulas::victory_gold_per_monster(def.gold),
             );
@@ -291,6 +297,12 @@ impl World {
             drops.push(item);
             let _ = self.party.inventory.add(item, 1);
         }
+        // The bonus equipment drop (`WorldToggles::bonus_drop`, the
+        // `--equipment-drops` twin) rolls here, where the hook joins: right
+        // after the normal drop grant, at `0x8004F610`. The no-reward arm
+        // reaches the same join (`0x8004F570` -> `0x8004F5A0` -> `0x8004F610`),
+        // so a special battle rolls it too, as on a patched disc.
+        self.roll_bonus_equipment_drop();
         // The +25% gold bonus fires when a living party member carries bit
         // `0x10000` of the SECOND ability word (`FUN_8004E568` tests the u32
         // at record `+0xF8`): overall bit 48 of the `+0xF4` bitfield = byte 6,
@@ -353,6 +365,98 @@ impl World {
             level_ups,
             drops,
         }
+    }
+
+    /// The bonus equipment pool: every weapon, armour and accessory the
+    /// curated gamedata names whose name resolves to an id in the disc's own
+    /// item-name table, ascending - the same join the patcher's
+    /// `--equipment-drops` embeds (`Database::equipment_pool_by_name`, shared
+    /// with `legaia_patcher::equipment`). Built once from the installed
+    /// executable and cached; empty without one.
+    pub fn bonus_drop_pool(&mut self) -> Vec<u8> {
+        if self.tables.bonus_drop_pool.is_none() {
+            let pool = self
+                .tables
+                .scus
+                .as_deref()
+                .and_then(legaia_game_tables::item_names::ItemNameTable::from_scus)
+                .map(|names| {
+                    legaia_gamedata::Database::load()
+                        .equipment_pool_by_name(|id| names.name(id).map(str::to_string))
+                        .into_iter()
+                        .map(|(id, _)| id)
+                        .collect()
+                })
+                .unwrap_or_default();
+            self.tables.bonus_drop_pool = Some(pool);
+        }
+        self.tables.bonus_drop_pool.clone().unwrap_or_default()
+    }
+
+    /// The bonus equipment drop's roll (`WorldToggles::bonus_drop`): the hook's
+    /// `rand() % 100 < chance`, then `rand() % pool_len` picks the id, which
+    /// goes straight into the bag - silent, as the hook's grant is (no
+    /// results-window line). Off, or with no pool, nothing is drawn. Returns
+    /// the granted id.
+    pub(in crate::world) fn roll_bonus_equipment_drop(&mut self) -> Option<u8> {
+        if !self.toggles.bonus_drop {
+            return None;
+        }
+        let pool = self.bonus_drop_pool();
+        if pool.is_empty() {
+            return None;
+        }
+        if self.next_rand() % 100 >= crate::world::BONUS_DROP_CHANCE_PCT {
+            return None;
+        }
+        let id = pool[self.next_rand() as usize % pool.len()];
+        let _ = self.party.inventory.add(id, 1);
+        log::info!("battle end: bonus equipment drop {id:#04x}");
+        Some(id)
+    }
+
+    /// Run-away EXP (`WorldToggles::flee_exp`, the engine twin of the
+    /// patcher's `--flee-exp` hook into the escape teardown): bank
+    /// [`crate::world::FLEE_EXP_PCT`] percent of the fled formation's listed
+    /// EXP - every formation seat, at the [`crate::world::WorldToggles::exp_rate_permille`]
+    /// scale - into each party member's cumulative XP. Banked, not levelled,
+    /// as the hook does: the share lands in the XP total the status screen
+    /// shows, and the next won battle's level check crosses any threshold it
+    /// reached. Each total saturates at the game's `9,999,999`. A special
+    /// battle (`_DAT_8007BAC0 != 0`) pays nothing, as its win does not.
+    /// Returns the per-member amount banked (`0` when the toggle is off).
+    pub(in crate::world) fn bank_flee_exp(&mut self) -> u32 {
+        const XP_CAP: u32 = 9_999_999;
+        if !self.toggles.flee_exp || self.special_battle_word() != 0 {
+            return 0;
+        }
+        let Some(formation) = self.battle.active_formation.as_ref() else {
+            return 0;
+        };
+        let rate = self.toggles.exp_rate_permille;
+        let total: u32 = formation
+            .slots
+            .iter()
+            .filter_map(|slot| self.tables.monster_catalog.get(slot.monster_id))
+            .map(|def| u32::from(crate::world::scale_exp_permille(def.exp, rate)))
+            .fold(0u32, u32::saturating_add);
+        let share = total.saturating_mul(crate::world::FLEE_EXP_PCT) / 100;
+        if share == 0 {
+            return 0;
+        }
+        for member in 0..self.party.party_count as usize {
+            let slot = self.party_roster_slot(member);
+            let tracker = &mut self.party.level_up_tracker;
+            let Some(xp) = tracker.xp.get_mut(slot) else {
+                continue;
+            };
+            *xp = xp.saturating_add(share).min(XP_CAP);
+            let banked = *xp;
+            if let Some(rec) = self.party.roster.members.get_mut(slot) {
+                rec.set_cumulative_xp(banked);
+            }
+        }
+        share
     }
 
     /// Resolve a **steal** attempt against `monster_id` using the per-monster

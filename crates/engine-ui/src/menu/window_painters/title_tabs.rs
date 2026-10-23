@@ -26,9 +26,30 @@ pub fn title_tab_draws_for(
     let l = font.layout_ascii(label);
     text_draws_for(
         &l,
-        (rect.x + menu_string_lead(font), rect.y),
+        (rect.x + pool_lead_pad(font, label), rect.y),
         MENU_TEXT_WHITE,
     )
+}
+
+/// The pad a label owes its pen for the pool's `@` lead: `0` when the label
+/// is the pool string itself (its `@` lays out as the one-pixel advance),
+/// [`menu_string_lead`] for an engine stand-in that dropped it.
+pub fn pool_lead_pad(font: &legaia_font::Font, label: &str) -> i32 {
+    if label.starts_with(MENU_STRING_LEAD as char) {
+        0
+    } else {
+        menu_string_lead(font)
+    }
+}
+
+/// A pool label's disc text, or `fallback` on a load without the menu
+/// overlay ([`legaia_game_tables::menu_pool`]).
+pub fn pool_label<'a>(
+    labels: Option<&'a legaia_game_tables::menu_pool::MenuPoolLabels>,
+    label: legaia_game_tables::menu_pool::MenuLabel,
+    fallback: &'a str,
+) -> &'a str {
+    labels.and_then(|l| l.get(label)).unwrap_or(fallback)
 }
 
 /// The byte every menu-overlay literal opens with.

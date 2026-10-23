@@ -40,6 +40,23 @@ impl World {
 
     /// Test bit `idx` in the shared system flag bank. Returns `false` for
     /// indices past the currently-grown size.
+    /// The flag test the encounter condition walk (`FUN_801D9E1C`) asks:
+    /// [`Self::system_flag_test`], except that with
+    /// [`crate::world::WorldToggles::fortress_encounter_fix`] on, the Floating
+    /// Castle's stale flag [`crate::world::FORTRESS_STALE_FLAG`] reads clear in
+    /// the Fortress scenes ([`crate::world::FORTRESS_ENCOUNTER_SCENES`]). The
+    /// walk then takes the group after the castle's copied "no battles" group,
+    /// as the `--fortress-encounter-fix` disc patch makes it do.
+    pub fn encounter_condition_flag_test(&self, idx: u16) -> bool {
+        if self.toggles.fortress_encounter_fix
+            && idx == crate::world::FORTRESS_STALE_FLAG
+            && crate::world::FORTRESS_ENCOUNTER_SCENES.contains(&self.active_scene_label.as_str())
+        {
+            return false;
+        }
+        self.system_flag_test(idx)
+    }
+
     pub fn system_flag_test(&self, idx: u16) -> bool {
         let byte = (idx >> 3) as usize;
         if byte < self.flags.system_flags.len() {

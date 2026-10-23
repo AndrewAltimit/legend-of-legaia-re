@@ -984,18 +984,13 @@ pub fn default_arm_vram_mesh(s: &ActorState) -> Option<legaia_tmd::mesh::VramMes
 /// The default-arm draw of a part, in the same `(world_pos, rot)` form a
 /// ribbon or a sprite-arm quad takes.
 pub fn default_arm_draw(s: &ActorState) -> Option<crate::effect_ribbon::RibbonDraw> {
-    const A: f32 = std::f32::consts::TAU / 4096.0;
     let mut mesh = default_arm_vram_mesh(s)?;
     // The model draw's `+0x7A` gate ([`crate::part_shatter`]).
     crate::part_shatter::apply_part_shatter(&mut mesh, crate::part_shatter::part_shatter_word(s));
     Some(crate::effect_ribbon::RibbonDraw {
         mesh,
         world_pos: [s.world_x as f32, s.world_y as f32, s.world_z as f32],
-        rot: [
-            (s.render_24 as f32) * A,
-            (s.y_rot.wrapping_add(s.render_26) as f32) * A,
-            (s.render_28 as f32) * A,
-        ],
+        rot: crate::effect_ribbon::node_rotation(s),
         flags_52: s.field_52,
     })
 }

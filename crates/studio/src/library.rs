@@ -58,6 +58,15 @@ pub struct Library {
 /// loading it: a directory with a `PROT.DAT`, or a Mode2/2352 image (or a
 /// `.cue` naming one) whose ISO9660 tree has `PROT.DAT`.
 pub fn validate(path: &Path) -> Result<Source> {
+    // Said plainly: the OS error ("No such file or directory (os error 2)")
+    // reads as a fault in the program rather than a path to correct.
+    if !path.exists() {
+        bail!(
+            "Nothing at {} - check the path, or use Open disc image... to pick \
+             your .bin / .cue",
+            path.display()
+        );
+    }
     if path.is_dir() {
         if !path.join("PROT.DAT").is_file() {
             bail!(
@@ -270,5 +279,28 @@ impl Library {
         };
         let mut disc = RawDisc::open(bin)?;
         read_iso_file(&mut disc, f)
+    }
+}
+
+#[cfg(test)]
+mod validate_tests {
+    use super::validate;
+
+    #[test]
+    fn a_missing_path_is_named_plainly() {
+        let dir = tempfile::tempdir().unwrap();
+        let e = format!(
+            "{:#}",
+            validate(&dir.path().join("Legaia.bin")).unwrap_err()
+        );
+        assert!(e.starts_with("Nothing at "), "{e}");
+        assert!(!e.contains("os error"), "{e}");
+    }
+
+    #[test]
+    fn a_folder_without_prot_says_what_it_wants() {
+        let dir = tempfile::tempdir().unwrap();
+        let e = format!("{:#}", validate(dir.path()).unwrap_err());
+        assert!(e.contains("has no PROT.DAT"), "{e}");
     }
 }

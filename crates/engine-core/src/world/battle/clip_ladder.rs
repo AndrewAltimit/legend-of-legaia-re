@@ -308,6 +308,14 @@ impl World {
             getup_entry: 0,
         };
         let w = commit_tag_ladder(inputs);
+        // The commit's unconditional rate decay runs for a reaction install
+        // too (`0x8004B080..0x8004B090`, ahead of the staged-id arms): a
+        // body slowed or frozen when its reaction commits plays it at half
+        // speed. PROT 0912's damage arm stages the knockdown and drops the
+        // victim to `2` in one pass; the commit lifts it to `4`, which
+        // retail's RAM holds through the knockdown.
+        actor.battle.anim_rate =
+            legaia_engine_battle_vm::battle_anim_rate::commit_rate_decay(actor.battle.anim_rate);
         actor.battle_animation = Some(player);
         actor.battle_reaction = Some(w.tag);
         actor.battle_reaction_entry = Some(entry);
@@ -328,6 +336,7 @@ impl World {
         actor.battle_effect_script = Some(clip.effect_script).filter(|s| !s.is_empty());
         actor.battle_effect_cursor = 0;
         actor.battle_anim_cue_cursor = cue_cursor;
+        actor.battle_clip_commits = actor.battle_clip_commits.wrapping_add(1);
         true
     }
 

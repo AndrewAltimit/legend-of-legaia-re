@@ -139,30 +139,28 @@ fn cross_beam_queues_its_clut_copy() {
 }
 
 /// PROT 0958's (Blazing Slash's) arm-9 armed wash (`FUN_8004695C(0x202020)`
-/// at `0x801F78D0`) draws on the pass as the subtractive farthest-bucket
-/// quad.
+/// at `0x801F78D0`) arms on the pass, and no host composites it: retail's
+/// drain draws it in the farthest bucket, before the frame's scene, so over a
+/// frame built from scratch it would only darken the frame's own pixels.
 #[test]
-fn armed_wash_draws_subtractive() {
+fn armed_wash_arms_without_a_composited_quad() {
     let Some(mut w) = band_world() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
         return;
     };
     w.fire_cast_presentation(958, Some(0x801F_6DD8), None, 9, 9, false);
     w.fire_cast_presentation(958, Some(0x801F_6DD8), None, 9, 10, false);
-    let prims = w.cast_wash_prims();
-    assert_eq!(prims.len(), 1);
-    let ScreenPrim::Flat(q) = prims[0] else {
-        panic!("flat")
-    };
-    assert_eq!(q.color, [0x20, 0x20, 0x20, 0xFF]);
-    assert!(q.semi_transparent);
-    assert_eq!(q.abr_mode, 2);
+    assert_eq!(w.cast_armed_wash(), Some(0x0020_2020));
+    assert!(
+        w.cast_wash_prims().is_empty(),
+        "the armed wash lands under the scene, not over it"
+    );
     // Arm 10 re-arms it on every pass (`0x801F78E4`).
     w.fire_cast_presentation(958, Some(0x801F_6DD8), None, 10, 10, false);
-    assert_eq!(w.cast_wash_prims().len(), 1);
-    // One-shot: a tick on an arm that does not re-arm it draws nothing.
+    assert_eq!(w.cast_armed_wash(), Some(0x0020_2020));
+    // One-shot: a tick on an arm that does not re-arm it leaves it unarmed.
     w.fire_cast_presentation(958, Some(0x801F_6DD8), None, 14, 14, false);
-    assert!(w.cast_wash_prims().is_empty());
+    assert_eq!(w.cast_armed_wash(), None);
 }
 
 /// A holdable arm the engine passes on its first tick is one the port does
@@ -177,4 +175,36 @@ fn an_unpaced_arm_fires_nothing() {
     w.fire_cast_presentation(906, None, None, 12, 13, false);
     assert!(w.casting.module_pres.fades.is_empty());
     assert_eq!(w.casting.module_pres.unpaced_arms, 1);
+}
+
+/// PROT 0930 (Horn): arm 3's pass spawns the held white (`-1` hold) and
+/// parks it in the part pool's last word `0x801C92EC`; arm 4's pass flushes
+/// the pool (`jal 0x80050E74` at `0x801F6EE8`) before it spawns its own
+/// fade-out, and the flush is what ends the white. Without it the additive
+/// white stayed up for the rest of the cast.
+#[test]
+fn horn_arm_4_flush_ends_the_held_white() {
+    let Some(mut w) = band_world() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
+        return;
+    };
+    w.casting.capture_spell = None;
+    w.fire_cast_presentation(930, None, None, 3, 4, false);
+    let pool = legaia_overlay_images::cast_presentation::HandleSlot::Abs(0x801C_92EC);
+    assert!(
+        w.casting
+            .module_pres
+            .fades
+            .iter()
+            .any(|f| f.slot == Some(pool)),
+        "arm 3 parks its held white in the pool"
+    );
+    w.fire_cast_presentation(930, None, None, 4, 4, false);
+    w.fire_cast_presentation(930, None, None, 4, 5, false);
+    let fades = &w.casting.module_pres.fades;
+    assert!(
+        fades.iter().all(|f| f.slot != Some(pool)),
+        "the flush halted it"
+    );
+    assert_eq!(fades.len(), 1, "arm 4's own fade-out is live");
 }

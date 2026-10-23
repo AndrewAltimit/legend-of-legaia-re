@@ -1,6 +1,6 @@
 /* Translation workbench: a language-pack editor over the user's own disc,
  * entirely client-side. The disc bytes are read in this tab and handed once to
- * a WASM `Workbench` session (crates/web-viewer/src/translate_workbench.rs),
+ * a WASM `Workbench` session (crates/web-patcher/src/translate_workbench.rs),
  * which keeps the parsed disc, its export, the importer's name planner and the
  * retail font resident. Nothing is uploaded.
  *

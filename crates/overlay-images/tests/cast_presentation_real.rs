@@ -142,6 +142,25 @@ fn decode_every_module() {
         }
     )));
 
+    // PROT 0930 (Horn) parks arm 3's held white in the part pool's last word
+    // `0x801C92EC`, and arm 4's pass flushes the pool (`jal 0x80050E74` at
+    // `0x801F6EE8`) - the flush is what ends the white. The arm-3 parts it
+    // halts are seated through the pool wrapper; arm 9's `0x801F8F44` goes
+    // straight through `FUN_80021B04` and is not among them.
+    let horn = &by_entry[&930];
+    assert!(horn.arm_sites(None, 3).any(|s| matches!(
+        s.call,
+        PresentationCall::FadeStore { slot, .. } if slot == cast_presentation::HandleSlot::Abs(0x801C_92EC)
+            && slot.in_part_pool()
+    )));
+    assert!(
+        horn.arm_sites(None, 4)
+            .any(|s| s.va == 0x801F_6EE8 && s.call == PresentationCall::PoolFlush)
+    );
+    let pooled = horn.pool_records();
+    assert!(pooled.contains(&0x801F_86BC), "arm 3's first pool part");
+    assert!(!pooled.contains(&0x801F_8F44), "arm 9's direct spawn");
+
     let vera = &by_entry[&905];
     assert_eq!(
         fades_of(vera, 2),

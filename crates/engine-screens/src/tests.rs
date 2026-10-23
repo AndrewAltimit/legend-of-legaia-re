@@ -23,7 +23,10 @@ fn table_with(id: usize, renderer_va: u32) -> MenuWindowTable {
         renderer_va,
         ..blank
     };
-    MenuWindowTable { windows }
+    MenuWindowTable {
+        windows,
+        ..Default::default()
+    }
 }
 
 fn inputs<'a>(
@@ -401,26 +404,32 @@ fn shop_labels_read_off_the_disc_overlay() {
     ] {
         assert!(!label.is_empty() && !label.0.contains(&0xC1));
     }
+    // The stat labels are bare 4-byte cells with no `@` lead.
     assert!(l.stat_labels.iter().all(|s| s.plain().len() == 3));
     assert_ne!(l.equipped, l.cannot_equip);
     for (id, row) in l.recipient_rows.iter().enumerate() {
         assert_eq!(
-            &row.0[..2],
-            &[0xC1, id as u8],
+            &row.0[..3],
+            &[b'@', 0xC1, id as u8],
             "row {id} names its own character"
         );
         let text = row.text(crate::shop::menu_name_escape(&world));
         let name = ["Ab", "Cd", "Ef"][id];
         assert!(
-            text.starts_with(name) && text.len() > name.len(),
+            text.strip_prefix('@').is_some_and(|t| t.starts_with(name))
+                && text.len() > name.len() + 1,
             "{text:?}"
         );
     }
-    assert_eq!(&l.point_card_heading.0[..2], &[0xC2, 0xFE]);
+    assert_eq!(&l.point_card_heading.0[..3], &[b'@', 0xC2, 0xFE]);
     let heading = l
         .point_card_heading
         .text(crate::shop::menu_name_escape(&world));
-    assert!(heading.starts_with(&shop_item_label(&world, 0xFE)));
+    assert!(
+        heading
+            .strip_prefix('@')
+            .is_some_and(|h| h.starts_with(&shop_item_label(&world, 0xFE)))
+    );
 }
 
 /// `FUN_800337B0` over the whole item table: every equipment id gets a stat

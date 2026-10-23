@@ -186,6 +186,62 @@ Answered questions: [settled field / locomotion](re-settled-threads/field.md), [
 | Thread | Status | What would close it |
 |---|---|---|
 | What is left of the juggle window? | partial (the per-frame law is pinned; the four-slot read is narrowed) | Two residuals ([battle-formulas.md](../subsystems/battle-formulas.md#the-juggle-window---what-makes-a-monster-juggleable)): a four-slot list reads `entry[0x23 + 4k]` with `k` set by the monster block's heap address: both measured fights read `0` (the port's value); a `0xFF` slot would hold the window open ([monster-animation.md](../formats/monster-animation.md#event-frame-list-entry-0x100x13)); the measured window runs 1-2 ticks past `32 * beat / (speed * rate)` because the cursor's sub-frame carry at the commit is unmodelled. A capture of the commit's carry closes the second. |
+| Why does Zeto's idle in `zeto_big_wave_mid_cast` show one pass older than the display lag says? | open (measured) | A retail capture of Big Wave's arms 4 and 5 with the caster's cursor and ordering tables beside each frame ([detail](#zetos-big-wave-idle-one-pass-older)). |
+
+
+### Zeto's Big Wave idle, one pass older
+
+The RAM holds Zeto's idle cursor at `60` (rate `+0x21D` `4`, Big Wave's
+halving; all sixteen frame-history entries step `2`), so two passes of display
+lag put the shown frame at `52`. The image reads `.962` with Zeto seated there
+and `.980` seated at `48`, while a display lag one pass longer wrecks the
+pan's framing (`.462`). The same extra pass costs `cort_mystic_shield_mid_cast`
+and moves the other Cort capture-band states by under `.002`, so it is not a
+corpus-wide lag.
+
+It is not the double buffer's phase: the floor grid of the table under the
+current record index (`0x8007BF30 + i * 0x74`, index `gp+0x434`) fits the
+RAM's camera, so the state was saved mid-pass and the screen is two passes
+back, as assumed (`cort_mystic_shield_mid_cast` reads the same way,
+`horn_summon_mid_cast` the other: its newest floor sits under the other
+record). Nor is it the module's pacing: a seat-0 Big Wave recorded on both
+sides (`LEGAIA_POKE32` sends the cast down Big Wave's branch) holds arms 0 and
+4 one pass each and arms 5 to 8 within two vsyncs of retail's game clock.
+What is left is the pose the frame drew, and the obvious reading of it does
+not hold across states: `battle_gimard_tail_fire_b`, saved mid-pass too, draws
+its knockdown exactly two advances behind the RAM's cursor (`72` against
+`56`), where Zeto's idle needs three. A per-pass RAM sequence of a seat-0 Big
+Wave around arm 0 cannot separate the two either: the arm-0 cut moves the
+camera on the same pass the rate halves, so the body packets' motion between
+tables is mostly the camera's. A stretch where the camera holds still and a
+body's rate or clip changes (a commit that zeroes the cursor) would show
+which advance the drawn pose stands on.
+
+That stretch exists and the drawn pose is not the odd one out. A
+PCSX-Redux film of a seat-0 Big Wave (`autorun_drawn_pose_film.lua` with
+`LEGAIA_SPELL=0x56`, `LEGAIA_POKE32=0x801C8FE4=1`) logs every pass of the
+band `0x6E..0x71`: each seat's anim tick advances its cursor and the same
+pass's decode draws the advanced value, party and monster alike, through
+the caster's rate halving on the `0x70` entry and a monster commit. No pass
+skips a decode or draws an older cursor, so the extra advance is not a
+draw-order effect; what is left is the instant the state was saved inside
+a long pass (a step-`3` pass runs across vsyncs, and a save between the
+party's ticks and the monster's splits the seats) or the image metric
+preferring a neighbouring sway pose. `zora_glare_petrify_pre` reads the
+same way round for one seat only: Vahn fits one advance behind the RAM
+(`96` of `108`), Zora two (`168` of `216`), in band `0x6F`.
+
+A save can split the seats, but not that way round. The films put a
+vsync, the instant a save state is cut, between the ticks and the decodes,
+between two seats' decodes and after the flip, and once inside a seat's
+tick: on `rim_elm_gimard_victory`'s art commit, Vahn's tick (which commits
+clip `0x11` and halves every seat's rate) runs across a vsync before
+Gimard's tick starts. The actor list ticks the nodes in descending
+address order, party seat 0 (`0x800835E4`) first and the monster rows
+after it, in both filmed fights, so a save inside the list leaves the
+party one advance further from the screen than the monsters: Vahn two
+back and Zora one, the reverse of the fits, and no split puts a seat three
+back as Zeto's `48` needs.
 
 Answered questions: [settled battle / arts / level-up](re-settled-threads/battle.md), [settled rendering / camera](re-settled-threads/rendering-camera.md), [settled world map](re-settled-threads/world-map.md); falsified readings: [battle](re-do-not-re-walk.md#battle--arts--level-up), [rendering / camera](re-do-not-re-walk.md#rendering--camera).
 

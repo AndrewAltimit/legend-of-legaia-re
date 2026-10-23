@@ -9,14 +9,31 @@ pub const BATTLE_NOT_SEEDABLE: &str = "battle not seedable: ";
 /// The `resident_patch` tag of a state made under the shiny-Seru patch, and
 /// the boost that patch applies to a shiny monster's HP / MP maxima.
 const SHINY_SERU_PATCH: &str = "shiny-seru";
+
+/// Whether a state's `resident_patch` tag names the shiny-Seru build.
+pub(super) fn is_shiny_seru_patch(resident_patch: Option<&str>) -> bool {
+    resident_patch.is_some_and(|p| p.contains(SHINY_SERU_PATCH))
+}
 const SHINY_BOOST_NUM: u32 = 135;
 const SHINY_BOOST_DEN: u32 = 100;
+
+/// The idle orbit's turn a camera pass (`-4` yaw units,
+/// `BattleCamera::align_orbit_yaw`), taken back over the display lag.
+const ORBIT_YAW_PER_PASS: i32 = 4;
 
 /// `LEGAIA_RC_SEED_TRACE=1`: one stderr line per stream the search tried
 /// (what it reached, and the ground drift it measured) and one for the
 /// undrift re-run's verdict.
 fn seed_trace() -> bool {
     std::env::var_os("LEGAIA_RC_SEED_TRACE").is_some()
+}
+
+/// `LEGAIA_RC_SEED_SCAN=1`: the stream search runs every stream instead of
+/// stopping at the first that reaches the phase, so one seed trace lists
+/// each stream's outcome - the input to a pin search. The first reaching
+/// stream is still the one scored.
+fn seed_scan() -> bool {
+    std::env::var("LEGAIA_RC_SEED_SCAN").is_ok_and(|v| v.trim() == "1")
 }
 
 pub(super) fn run_battle(
@@ -41,8 +58,8 @@ pub(super) fn run_battle(
     let latched;
     let battle = {
         let mut b = battle.clone();
-        b.entry_latches =
-            crate::retail_compare_battle::entry_latches(opts.extracted, retail, battle);
+        b.resident_shiny_seru = is_shiny_seru_patch(entry.resident_patch.as_deref());
+        b.entry_latches = crate::retail_compare_battle::entry_latches(opts.extracted, retail, &b);
         latched = b;
         &latched
     };
@@ -90,11 +107,17 @@ pub(super) fn run_battle(
         &[false, true]
     };
     // A state's pinned stream first (`BATTLE_RNG_PINS`), then the list.
-    // `LEGAIA_RC_PIN_SEED` stands in for the pin, for a sweep.
+    // `LEGAIA_RC_PIN_SEED` stands in for the pin, for a sweep;
+    // `LEGAIA_RC_NO_PINS=1` drops the table, for the sweep's unpinned pass.
+    let no_pins = std::env::var("LEGAIA_RC_NO_PINS").is_ok_and(|v| v.trim() == "1");
     let pinned = std::env::var("LEGAIA_RC_PIN_SEED")
         .ok()
         .and_then(|v| u32::from_str_radix(v.trim().trim_start_matches("0x"), 16).ok())
-        .or_else(|| crate::retail_compare_battle::pinned_seed(&entry.label));
+        .or_else(|| {
+            (!no_pins)
+                .then(|| crate::retail_compare_battle::pinned_seed(&entry.label))
+                .flatten()
+        });
     let seeds: Vec<u32> = pinned
         .into_iter()
         .chain(crate::retail_compare_battle::BATTLE_RNG_SEEDS)
@@ -163,9 +186,13 @@ pub(super) fn run_battle(
                         off_hits.get_or_insert((e, victims));
                         continue;
                     }
-                    reached = Some(e);
-                    reached_victims = victims;
-                    break 'search;
+                    if reached.is_none() {
+                        reached = Some(e);
+                        reached_victims = victims;
+                    }
+                    if !seed_scan() {
+                        break 'search;
+                    }
                 }
                 Ok(e) => {
                     first.get_or_insert(Ok(e));
@@ -339,11 +366,7 @@ pub(super) fn run_battle(
     // engine's disc value is the patch's write, not retail's, and is left
     // unscored like a probe's; any other difference still scores.
     let mut unscored = entry.ram_injected.clone();
-    if entry
-        .resident_patch
-        .as_deref()
-        .is_some_and(|p| p.contains(SHINY_SERU_PATCH))
-    {
+    if is_shiny_seru_patch(entry.resident_patch.as_deref()) {
         for (m, (r, e)) in battle.monsters.iter().zip(&engine.monsters).enumerate() {
             let Some(r) = r else { continue };
             let boosted = |v: u16| (u32::from(v) * SHINY_BOOST_NUM / SHINY_BOOST_DEN) as u16;
@@ -447,6 +470,12 @@ pub(super) fn battle_image(
             legaia_engine_capture::bar_seeds::bar_seeds_to_env(&engine.hp_seed),
         ),
     ];
+    // A shiny-Seru build's entry draw, which the child's `--retail` pin would
+    // otherwise drop while the headless seed took it
+    // (`RetailBattle::resident_shiny_seru`).
+    if battle.resident_shiny_seru {
+        env.push(("LEGAIA_BATTLE_SHINY_SERU", "1".to_string()));
+    }
     // Each body on the keyframe the capture shows it at.
     let seeds = battle.engine_clip_cursors();
     if !seeds.is_empty() {
@@ -522,8 +551,13 @@ pub(super) fn battle_image(
     // The idle orbit is a clock: phase-align it to the retail instant when
     // retail's own orbit owns the yaw (the battle tick's prologue store,
     // gated on these command-flow bytes - `0x801D07AC..0x801D07CC`).
+    // The frame on screen is two passes older, and the orbit turns `-4` a
+    // pass (`v0_1_battle_command_menu`: the RAM's yaw reads `.976`, eight
+    // units back `1.000`).
     if battle.orbit_owns_yaw() {
-        env.push(("LEGAIA_BATTLE_ORBIT_YAW", retail.camera.yaw.to_string()));
+        let back = i32::from(crate::retail_compare_battle::DISPLAY_LAG_PASSES);
+        let yaw = (i32::from(retail.camera.yaw) + ORBIT_YAW_PER_PASS * back).rem_euclid(4096);
+        env.push(("LEGAIA_BATTLE_ORBIT_YAW", yaw.to_string()));
     }
     // The captured phase's glide starts where retail's stood, as the
     // headless channel aligns it (`BattleCamera::align_glide_origin`).
@@ -534,6 +568,18 @@ pub(super) fn battle_image(
             "LEGAIA_BATTLE_CAM_ALIGN",
             legaia_engine_capture::camera_align::cam_align_to_env(&(
                 battle.displayed_cam_live,
+                battle.cam_tween.1,
+            )),
+        ));
+    }
+    // A replayed cast inside a module shot still walking: the frame on
+    // screen two passes back along the shot's own table
+    // (`RetailBattle::module_cam_aligned`).
+    if battle.module_cam_aligned() {
+        env.push((
+            "LEGAIA_BATTLE_MODULE_CAM_ALIGN",
+            legaia_engine_capture::camera_align::cam_align_to_env(&(
+                battle.displayed_module_cam_live,
                 battle.cam_tween.1,
             )),
         ));
@@ -598,6 +644,21 @@ pub(super) fn battle_image(
             "LEGAIA_SEAT_HUD_GLIDES",
             legaia_engine_capture::hud_glide::HudGlideSeat::to_env(&battle.hud_glides),
         ));
+    }
+    // The numerals the displayed frame drew, off retail's own packets
+    // (`displayed_popup_cells`); where they cannot be read, the newest
+    // numeral's rise (`popup_age_seat`) on the engine seat of its struck
+    // pool slot.
+    if let Some(cells) = battle.popup_cells.as_ref() {
+        env.push((
+            "LEGAIA_SEAT_POPUP_CELLS",
+            crate::retail_compare_battle::popup_cells_to_env(cells),
+        ));
+    }
+    if let Some((slot, age)) = battle.popup_age.filter(|_| battle.popup_cells.is_none()) {
+        let seat =
+            legaia_engine_capture::battle_drive::engine_seat(slot, battle.party_count.clamp(1, 3));
+        env.push(("LEGAIA_SEAT_POPUP_AGE", format!("{seat}:{age}")));
     }
     // A Spirit turn's bar and plate, sized as retail sized them.
     if let Some((width, plate)) = battle.spirit_gauge {
@@ -717,5 +778,22 @@ pub(super) fn battle_image(
                 .insert("image".into(), format!("engine frame failed: {e:#}"));
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod shiny_patch_tests {
+    use super::is_shiny_seru_patch;
+
+    /// The corpus's shiny states carry the build's layout in the tag; a
+    /// party-swap or unpatched state takes retail's entry with no shiny draw.
+    #[test]
+    fn shiny_seru_tag_selects_the_entry_draw() {
+        assert!(is_shiny_seru_patch(Some(
+            "shiny-seru (earlier SCUS layout)"
+        )));
+        assert!(is_shiny_seru_patch(Some("shiny-seru")));
+        assert!(!is_shiny_seru_patch(Some("party swap")));
+        assert!(!is_shiny_seru_patch(None));
     }
 }

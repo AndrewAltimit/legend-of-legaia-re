@@ -412,7 +412,7 @@ fn menu_heal_cast_accrues_spell_xp_and_levels_with_notice() {
     assert_eq!(notice.spell_index, 0);
     assert_eq!(notice.spell_id, 0x10);
     assert_eq!(notice.new_level, 2);
-    assert_eq!(notice.line, "Heal's magic level increased.");
+    assert_eq!(notice.line, b"Heal's magic level increased.");
     // Both writes are in the SAVED record bytes (LGSF round-trips them):
     // the +0x8 XP accumulator and the +0x161 level byte.
     let rec = &world.party.roster.members[0];

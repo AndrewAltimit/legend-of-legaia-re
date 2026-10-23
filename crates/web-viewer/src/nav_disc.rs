@@ -93,7 +93,7 @@ impl LegaiaViewer {
             // Keep the CDNAME text: `self.disc` only retains the extracted
             // PROT.DAT, but the full-scene assembler needs the scene-name ->
             // block map to resolve CDNAME labels.
-            self.cdname_text = crate::disc::extract_cdname_txt(&bytes);
+            self.cdname_text = legaia_iso::image::extract_cdname_txt(&bytes);
             console_log(&format!(
                 "Detected Mode2/2352 disc image ({} MB); extracted PROT.DAT ({} MB)",
                 bytes.len() / 1024 / 1024,

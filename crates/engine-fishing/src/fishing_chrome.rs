@@ -352,18 +352,13 @@ pub struct RippleSpawn {
     pub scale: i32,
 }
 
-impl RippleSpawn {
-    /// The stage seat a minigame effect pool spawns this ripple at: the
-    /// world X / Z pair `>> 3`.
-    pub fn fx_seat(&self) -> (i16, i16) {
-        (self.pos[0] >> 3, self.pos[2] >> 3)
-    }
-}
-
-// Wired: the play window spawns the wander actor's retarget ripple through
-// this into the shared `legaia_engine_minigames::minigame_fx::MinigameFxPool`
-// (`window/minigames.rs`). The seat is the wander actor's, and only that
-// host installs one, so the SPAWN stays native while the pool does not.
+/// NOT WIRED: no overlay code calls it. The lead's tick `FUN_801D2050`
+/// installs it in the slot-B hook `_DAT_8007BA2C` (`0x801D20B0..0x801D20B4`),
+/// which the move VM's op `0x20` calls (`jalr` at SCUS `0x80023764`) from an
+/// effect script; the port runs no move VM over the fishing venue's parts.
+/// The lead's ambient ripple is a separate spawn (`FUN_801D2278`,
+/// `0x801D23FC`), seated by
+/// `legaia_engine_minigame_scenes::fishing_venue::tick_venue_actors`.
 /// PORT: FUN_801D7C30 - the ripple spawn wrapper.
 ///
 /// `(actor, mode)`: a non-zero `mode` does nothing at all. Mode zero spawns

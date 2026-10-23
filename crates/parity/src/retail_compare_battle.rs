@@ -54,11 +54,14 @@ use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 mod camera_align;
 mod camera_pool;
 mod capture_drive;
+mod display_lag;
+mod effect_children;
 mod engine_run;
 mod frame_step;
 mod hud_glide;
 mod hud_glide_pool;
 mod inflight_seeds;
+mod popup_cells;
 mod spirit_gauge;
 pub use inflight_seeds::UndriftActing;
 mod ram_read;
@@ -69,10 +72,13 @@ mod summon_fade;
 use camera_align::*;
 use camera_pool::*;
 use capture_drive::*;
+pub use display_lag::*;
+use effect_children::*;
 pub use engine_run::*;
 pub use frame_step::*;
 use hud_glide::*;
 use hud_glide_pool::*;
+pub use popup_cells::*;
 use ram_read::*;
 pub use scoring::*;
 pub use seed_plan::*;
@@ -236,25 +242,20 @@ pub const BATTLE_RNG_SEEDS: [u32; 48] = [
 /// engine's draw count to the phase moves with the stream it is dealt), so
 /// which stream replays a drive or a cast stays a search result. These are
 /// that search's results for the states whose first reaching stream frames
-/// the capture's phase further from retail than another: each is the first
-/// stream, from [`BATTLE_RNG_SEEDS`] in its order, that reaches the phase
-/// with the camera and then the frame no worse than the corpus held. A pin
-/// that stops reaching falls through to the list.
+/// the capture's phase further from retail than another, or whose image
+/// child never reaches the phase on it: each is the first stream, from
+/// [`BATTLE_RNG_SEEDS`] in its order, that reaches the phase headlessly,
+/// gets a frame from the child, and scores the camera and then the frame no
+/// worse than the corpus held. The seed runs the retail-faithful mode the
+/// child runs (`retail_compare::pin_seed_retail`), so a pin is searched under
+/// it. A pin that stops reaching falls through to the list; the search is in
+/// `docs/tooling/retail-compare.md` ("The stream at the entry").
 pub const BATTLE_RNG_PINS: &[(&str, u32)] = &[
-    ("battle_gaza2_park_0x19", 0xAB1C_5ED5),
-    ("battle_gaza2_park_0x19_summon_melee", 0xBC5D_413F),
-    ("battle_gaza2_park_0x19_target_vahn", 0x428A_2F98),
-    ("battle_gimard_tail_fire_b", 0xA54F_F53A),
+    ("battle_gaza2_park_0x19", 0xFBD4_4AC9),
+    ("battle_gaza2_park_0x19_summon_melee", 0xB5C0_FBCF),
+    ("battle_gaza2_park_0x19_target_vahn", 0x49C1_6D38),
     ("battle_melee_hit_spark", 0x9E37_79B9),
-    ("battle_noa_miracle_art_combo", 0x1283_5B01),
     ("battle_vahn_tri_somersault_super", 0x8BAE_8BFB),
-    ("cort_evolved_ultra_charge_mid_cast", 0xC0FF_EE01),
-    ("delilas_gi_spirit_distortion_v3", 0x1F83_D9AB),
-    ("gimard_burning_attack", 0x9E37_79B9),
-    ("nivora_duel_pre_plasma_strike", 0x1F83_D9AB),
-    ("noa_levelup_fight_pre", 0x8BAE_8BFB),
-    ("rim_elm_gimard_seru_capture_after", 0x7F4A_7C15),
-    ("rim_elm_gimard_seru_capture_before", 0x7F4A_7C15),
     ("shiny_refactor_gimard_levelup", 0x1F83_D9AB),
 ];
 
@@ -399,6 +400,13 @@ pub struct RetailBattle {
     /// [`Self::cam_tween`] with the live pose walked back to the frame the
     /// display shows ([`displayed_cam_live`]).
     pub displayed_cam_live: legaia_engine_camera::projection::BattleCamPose,
+    /// [`Self::cam_tween`]'s live pose walked back to the displayed frame
+    /// along a table built once, as a slot-B module's shot is
+    /// ([`displayed_module_cam_live`]).
+    pub displayed_module_cam_live: legaia_engine_camera::projection::BattleCamPose,
+    /// Whether every tweened component of retail's camera reads its
+    /// endpoint ([`camera_landed`]).
+    pub cam_landed: bool,
     /// The frame driver's entry counter `gp+0x330` ([`ENTRY_COUNTER`]).
     pub entry_counter: u8,
     /// The options screen's Battle Camera word `0x800846C0` (Close `0` /
@@ -420,6 +428,13 @@ pub struct RetailBattle {
     /// surface on a pass the display has not shown yet
     /// ([`Self::displayed_menu_flow`]).
     pub hud_glides_unseen: bool,
+    /// The newest damage numeral as the displayed frame drew it: its struck
+    /// pool slot and the engine popup age whose rise matches retail's
+    /// (`hud_glide::popup_age_seat`); `None` with no live numeral.
+    pub popup_age: Option<(u8, u16)>,
+    /// The numeral cells the displayed frame drew, off the packet arenas
+    /// ([`displayed_popup_cells`]).
+    pub popup_cells: Option<Vec<DigitQuad>>,
     /// A Spirit turn's AP bar width and AP plate value as the displayed
     /// frame shows them (`spirit_gauge::retail_spirit_gauge`); `None`
     /// outside one.
@@ -483,6 +498,15 @@ pub struct RetailBattle {
     /// has settled, where retail's record raised them. Empty as read; the
     /// corpus run fills it.
     pub entry_latches: Vec<u16>,
+    /// The state was made on a shiny-Seru patched disc (its `resident_patch`
+    /// names `shiny-seru`): that build's battle init takes one `rand()` draw
+    /// for the shiny roll ahead of the formation draws
+    /// (`legaia_code_hooks::shiny_seru`, the setup routine's `jal rand`), so
+    /// the engine stands in for it with `WorldToggles::shiny_seru` on, on
+    /// both the headless seed and the image child. Off, both sides run
+    /// retail's entry with no such draw. `false` as read; the corpus run
+    /// fills it.
+    pub resident_shiny_seru: bool,
     /// Each pool slot's captured live pair, body pair `+0x3C` / `+0x40` and
     /// current clip `+0x1D9`, as read - [`Self::ground`] is what a seed
     /// places and [`Self::undrift`] moves it; this is what the capture

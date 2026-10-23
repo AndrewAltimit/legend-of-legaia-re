@@ -51,7 +51,7 @@ pub struct EquipStatRow<'a> {
     pub preview: u16,
 }
 
-/// Phase tag for [`equip_screen_draws_for`]. Mirrors
+/// Phase tag for [`equip_screen_draws_for_with`]. Mirrors
 /// `engine-menus::equip_session::EquipState` without naming the enum so
 /// the renderer doesn't pull engine-core in as a dependency.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,7 +65,7 @@ pub enum EquipDrawPhase {
 }
 
 /// Plain-data view of the whole equip screen for
-/// [`equip_screen_draws_for`].
+/// [`equip_screen_draws_for_with`].
 pub struct EquipScreenView<'a> {
     /// Party-member names for the id-21 party window rows.
     pub party_names: &'a [&'a str],
@@ -120,8 +120,9 @@ pub struct EquipScreenView<'a> {
 /// - item-list window: engine-styled candidate rows at the retail `0xD`
 ///   list pitch (the retail picker's content renderer is untraced; only
 ///   the window rect is pinned).
-pub fn equip_screen_draws_for(
+pub fn equip_screen_draws_for_with(
     font: &legaia_font::Font,
+    labels: Option<&legaia_game_tables::menu_pool::MenuPoolLabels>,
     view: &EquipScreenView<'_>,
     party_pen: (i32, i32),
     list_pen: (i32, i32),
@@ -161,14 +162,20 @@ pub fn equip_screen_draws_for(
         // (`DAT_801E46C0`), so it takes the hand cursor like any slot row.
         let (mx, my) = main_pen;
         let best_row_active = view.phase == EquipDrawPhase::SlotPicker && view.cursor == 0;
+        let best = crate::menu::window_painters::pool_label(
+            labels,
+            legaia_game_tables::menu_pool::MenuLabel::BestEquipment,
+            "Best Equipment",
+        );
         if view.text_cursor && best_row_active {
             str_at(&mut out, ">", mx + 4, my, gold);
         }
         str_at(
             &mut out,
-            "Best Equipment",
-            // The literal is `"@Best Equipment"`: the blank lead costs a pad.
-            mx + 0x10 + crate::menu::window_painters::menu_string_lead(font),
+            best,
+            // The pool string is `"@Best Equipment"`: drawn with its blank
+            // lead, which costs one pad; the stand-in adds the pad itself.
+            mx + 0x10 + crate::menu::window_painters::pool_lead_pad(font, best),
             my,
             // CLUT 7 like the slot rows: the hand marks the row, the tint only
             // backs the text-cursor fallback.
@@ -494,8 +501,9 @@ mod tests {
         ];
         let (mx, my) = MAIN;
 
-        let row0 = equip_screen_draws_for(
+        let row0 = equip_screen_draws_for_with(
             &font,
+            None,
             &view(&slots, &[], EquipDrawPhase::SlotPicker, 0, 0),
             PARTY,
             LIST,
@@ -503,8 +511,9 @@ mod tests {
         );
         assert_eq!(cursor_rows(&row0, mx + 4), vec![my]);
 
-        let row2 = equip_screen_draws_for(
+        let row2 = equip_screen_draws_for_with(
             &font,
+            None,
             &view(&slots, &[], EquipDrawPhase::SlotPicker, 2, 0),
             PARTY,
             LIST,
@@ -531,8 +540,9 @@ mod tests {
             name: "Iron Sword",
             count: 1,
         }];
-        let browse = equip_screen_draws_for(
+        let browse = equip_screen_draws_for_with(
             &font,
+            None,
             &view(&slots, &cands, EquipDrawPhase::SlotPicker, 0, 0),
             PARTY,
             LIST,
@@ -543,8 +553,9 @@ mod tests {
                 .iter()
                 .any(|d| d.dst.1 < LIST.1 + 200 && d.dst.0 < LIST.0)
         );
-        let pick = equip_screen_draws_for(
+        let pick = equip_screen_draws_for_with(
             &font,
+            None,
             &view(&slots, &cands, EquipDrawPhase::ItemPicker, 0, 0),
             PARTY,
             LIST,
@@ -570,7 +581,7 @@ mod tests {
         let changes = [(2u8, "Chain Mail")];
         let mut v = view(&slots, &[], EquipDrawPhase::SlotPicker, 0, 0);
         v.best_changes = &changes;
-        let draws = equip_screen_draws_for(&font, &v, PARTY, LIST, MAIN);
+        let draws = equip_screen_draws_for_with(&font, None, &v, PARTY, LIST, MAIN);
         let (mx, my) = MAIN;
         let row_y = my + EQUIP_ROW_PITCH * 3;
         assert_eq!(cursor_rows(&draws, mx + 0xb8), vec![row_y]);
@@ -608,15 +619,17 @@ mod tests {
             current_name: "",
         }];
 
-        let with_remove = equip_screen_draws_for(
+        let with_remove = equip_screen_draws_for_with(
             &font,
+            None,
             &view(&slots, &with_remove_row, EquipDrawPhase::ItemPicker, 0, 0),
             PARTY,
             LIST,
             MAIN,
         );
-        let without = equip_screen_draws_for(
+        let without = equip_screen_draws_for_with(
             &font,
+            None,
             &view(
                 &slots,
                 &without_remove_row,

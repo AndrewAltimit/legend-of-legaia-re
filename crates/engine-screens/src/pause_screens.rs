@@ -22,6 +22,7 @@ use legaia_engine_ui::pause_menu::{
     OptionsScreenView, PauseMenuCtx, PauseMenuDraws, PauseScreen, SpecialConfirmView,
     StatusScreenView, TopLevelView, equip_screen_compose, pause_screen_draws,
 };
+use legaia_game_tables::menu_pool::MenuLabel;
 
 /// Heading the list-reorder page prints. Retail's page carries the record
 /// screen's own chrome, which the port does not draw yet; the label names the
@@ -83,11 +84,18 @@ pub fn field_menu_root_draws(
     refusal: Option<&str>,
 ) -> PauseMenuDraws {
     let view = root.view();
+    // The root rows are the overlay pool's strings (`FUN_801CFD68` loads
+    // `0x801CE9D0` and its six siblings); the engine's names stand in only
+    // without the overlay.
     let rows: Vec<ui::FieldMenuRowView<'_>> = view
         .rows
         .iter()
-        .map(|r| ui::FieldMenuRowView {
-            label: r.label,
+        .enumerate()
+        .map(|(i, r)| ui::FieldMenuRowView {
+            label: match MenuLabel::ROOT_ROWS.get(i) {
+                Some(&l) if view.rows.len() == MenuLabel::ROOT_ROWS.len() => ctx.label(l, r.label),
+                _ => r.label,
+            },
             enabled: r.enabled,
         })
         .collect();
@@ -115,6 +123,9 @@ pub fn field_menu_root_draws(
             cursor: view.cursor,
             money: view.money,
             play_time_seconds: view.play_time_seconds,
+            coins: world
+                .system_flag_test(legaia_engine_menus::field_menu::SYSTEM_FLAG_CASINO_COIN_ROW)
+                .then_some(world.minigames.casino_coins),
             party: &party,
             party_ap: &party_ap,
         }),
@@ -207,12 +218,26 @@ pub fn status_draws(
     let Some(snap) = s.current() else {
         return PauseMenuDraws::default();
     };
+    // The stat cells are the overlay pool's (`0x801CE9A0..`, bare 4-byte
+    // cells in ATK / UDF / LDF / SPD / INT / AGL order).
+    const STAT_CELLS: [MenuLabel; 6] = [
+        MenuLabel::Atk,
+        MenuLabel::Udf,
+        MenuLabel::Ldf,
+        MenuLabel::Spd,
+        MenuLabel::Int,
+        MenuLabel::Agl,
+    ];
     let stat_rows: Vec<ui::StatusStatRow<'_>> = snap
         .stats
         .iter()
         .zip(snap.stat_labels.iter())
-        .map(|((live, growth), l)| ui::StatusStatRow {
-            label: l,
+        .enumerate()
+        .map(|(i, ((live, growth), l))| ui::StatusStatRow {
+            label: match STAT_CELLS.get(i) {
+                Some(&cell) => ctx.label(cell, l),
+                None => l,
+            },
             value: *live as u32,
             growth: *growth as u32,
         })
@@ -275,6 +300,45 @@ pub fn options_popup_rect(
     )
 }
 
+/// The Options screen's row / value text off the menu overlay's pool
+/// (`FUN_801DCEF0` and the popup `FUN_801D2B44` draw these VAs, the rows and
+/// values carrying no `@`), keyed by the engine's own name for the setting,
+/// which stands in without the overlay. A name with no pool cell keeps the
+/// engine's text - the Battle Command's second value, whose retail form is
+/// the controller-button escape `0xCE 0x00` before " button", is one.
+fn options_pool_text<'s>(ctx: &PauseMenuCtx<'s>, fallback: &'s str) -> &'s str {
+    let label = match fallback {
+        "Battle Camera" => MenuLabel::BattleCamera,
+        "Battle Select Attack" => MenuLabel::BattleSelectAttack,
+        "Battle Command" => MenuLabel::BattleCommand,
+        "Field Move" => MenuLabel::FieldMove,
+        "Field HP Display" => MenuLabel::FieldHpDisplay,
+        "Sound" => MenuLabel::Sound,
+        "Dual Shock" => MenuLabel::DualShock,
+        "  Battles" => MenuLabel::Battles,
+        "  Events" => MenuLabel::Events,
+        "  Encounters" => MenuLabel::Encounters,
+        "Close" => MenuLabel::Close,
+        "Normal" => MenuLabel::Normal,
+        "Far" => MenuLabel::Far,
+        "Select" => MenuLabel::SelectMode,
+        "Automatic" => MenuLabel::Automatic,
+        "Command" => MenuLabel::CommandMode,
+        "Directional Buttons" => MenuLabel::DirectionalButtons,
+        "Walk" => MenuLabel::Walk,
+        "Run" => MenuLabel::Run,
+        "Immediate" => MenuLabel::Immediate,
+        "Gradual" => MenuLabel::Gradual,
+        "Display Off" => MenuLabel::DisplayOff,
+        "Stereo" => MenuLabel::Stereo,
+        "Monaural" => MenuLabel::Monaural,
+        "Vibration On" => MenuLabel::VibrationOn,
+        "Vibration Off" => MenuLabel::VibrationOff,
+        _ => return fallback,
+    };
+    ctx.label(label, fallback)
+}
+
 /// Options sub-screen: the settings rows + value popup + the hand cursor, with
 /// the options window frame + tab. The screen's model is the engine's
 /// (`OptionsSession::screen_model`); this only borrows it into the renderer's
@@ -288,15 +352,25 @@ pub fn options_draws(
         .rows
         .iter()
         .map(|r| ui::OptionsRowView {
-            label: r.label,
-            value: r.value,
+            label: options_pool_text(ctx, r.label),
+            value: r.value.map(|v| options_pool_text(ctx, v)),
             teal: r.teal,
             advance: r.advance,
         })
         .collect();
+    let popup_choices: Vec<&str> = m
+        .popup
+        .as_ref()
+        .map(|p| {
+            p.choices
+                .iter()
+                .map(|c| options_pool_text(ctx, c))
+                .collect()
+        })
+        .unwrap_or_default();
     let popup = m.popup.map(|p| ui::OptionsPopupDraw {
         rect: options_popup_rect(ctx, &p),
-        choices: p.choices,
+        choices: &popup_choices,
         cursor: p.cursor,
     });
     let rebind_pairs: Vec<(&str, &str)> = m
@@ -346,13 +420,18 @@ pub fn magic_draws(
         let rows: Vec<ui::PauseMagicRow<'_>> = model
             .page_rows
             .iter()
-            .map(|(name, ra_seru)| ui::PauseMagicRow {
+            .enumerate()
+            .map(|(i, (name, ra_seru, icon))| ui::PauseMagicRow {
                 name,
                 ra_seru: *ra_seru,
+                icon: *icon,
+                ink: model.page_row_inks.get(i).copied(),
             })
             .collect();
         let info = model.info.as_ref().map(|i| ui::PauseMagicInfo {
             name: &i.name,
+            icon: i.icon,
+            ra_seru: i.ra_seru,
             level: i.level,
             desc: &i.desc,
             mp_cost: i.mp_cost,
@@ -513,9 +592,11 @@ pub fn items_draws(
     let rows: Vec<ui::PauseItemsRow<'_>> = model
         .page_rows
         .iter()
-        .map(|(name, count)| ui::PauseItemsRow {
+        .enumerate()
+        .map(|(i, (name, count))| ui::PauseItemsRow {
             name,
-            count: *count,
+            count: model.show_counts.then_some(*count),
+            ink: model.page_row_inks.get(i).copied(),
         })
         .collect();
     let info = model.info.as_ref().map(|i| ui::PauseItemInfo {
@@ -539,6 +620,9 @@ pub fn items_draws(
         info,
         text_cursor: !ctx.chrome_present(),
     };
+    // The window's labels are the menu overlay's own (`FUN_801D1B20` loads
+    // them out of its pool); none drawn without the overlay installed.
+    let throw_labels = world.map(|w| &w.menu.throw_confirm_labels);
     let throw = model
         .throw_confirm
         .as_ref()
@@ -547,26 +631,37 @@ pub fn items_draws(
             count: c.count,
             cursor: c.cursor,
             text_cursor: !ctx.chrome_present(),
+            prompt: throw_labels.map_or(["", ""], |l| [l.prompt[0].as_str(), l.prompt[1].as_str()]),
+            choices: throw_labels
+                .map_or(["", ""], |l| [l.choices[0].as_str(), l.choices[1].as_str()]),
         });
-    // Retail's own Use-route prompt strings live in the menu overlay's data
-    // segment (the `0x801CEA94` block the renderer's `lui`/`addiu` pairs point
-    // at) and are not recovered, so the port stages the item name and its own
-    // question in the retail line slots; the geometry - which is what the
-    // renderer actually is - is exact.
-    let special_one_line = model
-        .special_confirm
-        .as_ref()
-        .map(|sc| format!("Use {}?", sc.item_name));
-    let special_lines: Vec<&str> = match (model.special_confirm.as_ref(), &special_one_line) {
-        (Some(sc), Some(one)) => {
-            if matches!(sc.route, ps::UseRoute::Incense) {
-                vec![sc.item_name.as_str(), "Use it?"]
+    // The routes' own prompt lines, out of the menu overlay's string pool
+    // (`FUN_801D1DAC` / `FUN_801D1F10`), with the Incense line's `0xC2`
+    // item-name token spliced from the disc item table. Without the
+    // overlay installed the window draws no prompt text, but keeps the
+    // route's row count (one line for window 10, two for window 12), which
+    // is what places the window and its Yes / No rows.
+    let special_owned: Vec<String> = match model.special_confirm.as_ref() {
+        Some(sc) => {
+            let mut lines = world
+                .map(|w| {
+                    w.menu.use_route_prompts.lines(sc.route, |token, op| {
+                        matches!(token, 0xC2 | 0xC4)
+                            .then(|| field_menu_dispatch::item_display_text(w, op).name)
+                    })
+                })
+                .unwrap_or_default();
+            let rows = if matches!(sc.route, ps::UseRoute::Incense) {
+                2
             } else {
-                vec![one.as_str()]
-            }
+                1
+            };
+            lines.resize(rows, String::new());
+            lines
         }
-        _ => Vec::new(),
+        None => Vec::new(),
     };
+    let special_lines: Vec<&str> = special_owned.iter().map(String::as_str).collect();
     pause_screen_draws(
         ctx,
         PauseScreen::Items(ItemsScreenView {

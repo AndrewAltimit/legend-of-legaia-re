@@ -137,15 +137,21 @@ impl RetailBattle {
     /// the bodies, and walking the camera back moved `noa_levelup_fight_pre`
     /// off retail's. Elsewhere it rose wherever it moved - with the frame
     /// itself left at the RAM's instant too (`battle_gimard_tail_fire_b`
-    /// `0.745` to `0.772`).
+    /// `0.745` to `0.772`). A command-menu drive takes it too: the menu's
+    /// close-up is still easing in on most captures, and on the displayed
+    /// pose `cort_evolved_battle_first_menu` reads `0.988` against `0.947`,
+    /// `koru_strip_forced` `0.945` against `0.904`, `battle_gaza2_prompt`
+    /// `0.998` against `0.984`, with no menu capture falling.
     ///
     /// A Done-band capture takes the displayed pose only where the engine's
     /// glide heads for retail's framing on every component
     /// ([`Self::displayed_camera_on_agreement`]): it then walks retail's own
     /// step table, and the displayed pose is one it passes through.
     pub fn displayed_camera(&self) -> bool {
-        matches!(self.seed_plan(), SeedPlan::Action { .. })
-            && !matches!(self.span_gate, SpanGate::DoneHold { .. })
+        matches!(
+            self.seed_plan(),
+            SeedPlan::Action { .. } | SeedPlan::Menu { .. }
+        ) && !matches!(self.span_gate, SpanGate::DoneHold { .. })
     }
 
     /// The Done band's conditional twin of [`Self::displayed_camera`]: the
@@ -180,9 +186,34 @@ impl RetailBattle {
     /// (`flute_spikefish_midcast` `.910` to `.810`); to the displayed one
     /// both flute captures rise, once the walk-back steps onto the `0x29`
     /// table the route arm replaced ([`summon_route_prior_end`]). The
-    /// summon close-up and the module shots keep the replay's own pose.
+    /// summon close-up keeps the replay's own pose; a module shot still
+    /// walking is aligned on its own law ([`Self::module_cam_aligned`]).
     pub fn cast_glide_aligned(&self) -> bool {
         matches!(self.seed_plan(), SeedPlan::Cast) && self.action_state == 0x32
+    }
+
+    /// Whether a replayed cast's **module shot** takes retail's pose
+    /// (`BattleCamera::align_module_shot`): a capture in the summon band's
+    /// sustain / return (`0x35` / `0x36`), standing on an arm that polls the
+    /// creature stream (`cast_module_camera::creature_poll_arm`), with
+    /// retail's shot still walking. The shot armed ahead of the poll walks
+    /// on through retail's read, which the replay's resident stream never
+    /// waits on, so its progress at the capture is the read's length
+    /// (`vera_summon_mid_cast`, `72` vsyncs into PROT 0905's arm-1 shot:
+    /// `image` `.985` to `.996`). The headless seed takes the RAM's live
+    /// pose; the image child the pose walked back to the displayed frame
+    /// along the shot's own table ([`Self::displayed_module_cam_live`]).
+    /// Elsewhere the module's own clocks place its shot: aligned on PROT
+    /// 0930's side-band wait, `horn_summon_mid_cast` read `.976` against
+    /// `.988`.
+    pub fn module_cam_aligned(&self) -> bool {
+        let entry = u32::from(self.queued_action).wrapping_sub(0x81) + 903;
+        matches!(self.seed_plan(), SeedPlan::Cast)
+            && (0x81..=0xA0).contains(&self.queued_action)
+            && matches!(self.action_state, 0x35 | 0x36)
+            && legaia_engine_cast::cast_module_camera::creature_poll_arm(entry)
+                == Some(self.module_phase)
+            && !self.cam_landed
     }
 
     /// Every captured combatant's live pair and heading by engine slot - the
@@ -190,7 +221,7 @@ impl RetailBattle {
     /// may have moved) - for the phase's ground seat
     /// ([`legaia_engine_capture::ground_snap`]).
     pub fn engine_ground_snaps(&self) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
-        self.ground_snaps(false)
+        self.ground_snaps(false, false)
     }
 
     /// [`Self::engine_ground_snaps`] for the image child, whose frame is the
@@ -204,15 +235,32 @@ impl RetailBattle {
     /// `(+36, +52)` off the pairs that frame drew them on (`.938` to
     /// `.996`).
     ///
-    /// Elsewhere the RAM's pairs stay: a body moving on its own clip's
-    /// root motion is drawn from the replay's pose at the displayed tick,
-    /// and `battle_melee_hit_spark` (Vahn `+5`, the struck monster `+11` a
-    /// frame) reads `.760` on the RAM's pairs against `.743` on the ring's.
+    /// Elsewhere the RAM's pairs stay for a body moving on its own clip's
+    /// root motion, which is drawn from the replay's pose at the displayed
+    /// tick: `battle_melee_hit_spark`'s Vahn (`+5` a frame on Somersault)
+    /// reads better on the RAM's body pair than on the ring's.
+    ///
+    /// A struck monster stood on its body pair (a reaction clip `2..=5` /
+    /// `0x0B`, not the acting seat) is the exception: the hit's push carries
+    /// it, so its pose centroid holds across the two frames and the body
+    /// pair the screen drew is the RAM's moved by the ring's delta.
+    /// `battle_melee_hit_spark`'s Gimard is pushed `+11` a frame: his RAM
+    /// body pair `(-2, 492)` stands at `(-2, 470)` on the displayed frame
+    /// (`image` `.814` to `.847`).
     pub fn engine_image_ground_snaps(&self) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
-        self.ground_snaps(self.action_state == 0x14 && self.walk_yaw_base == 0x200)
+        self.ground_snaps(
+            self.action_state == 0x14 && self.walk_yaw_base == 0x200,
+            true,
+        )
     }
 
-    fn ground_snaps(&self, displayed: bool) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
+    /// `displayed` stands every combatant on the displayed frame's pair,
+    /// `displayed_struck` only a struck monster stood on its body pair.
+    fn ground_snaps(
+        &self,
+        displayed: bool,
+        displayed_struck: bool,
+    ) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
         // Past the end signal the sequencer poses the winners and the results
         // framing reads poses the replay's clips do not share; the ground
         // stays the replay's.
@@ -231,7 +279,11 @@ impl RetailBattle {
                     let m = pool - 3;
                     (m < usize::from(self.monster_count)).then_some(pc + m)?
                 };
-                if displayed && let Some(Some(then)) = self.displayed_ground.get(pool) {
+                let active = pool == usize::from(self.active_actor);
+                let struck = !active && pool >= 3 && matches!(clip, 2..=5 | 0x0B);
+                if (displayed || (displayed_struck && struck))
+                    && let Some(Some(then)) = self.displayed_ground.get(pool)
+                {
                     let d = [then[0].wrapping_sub(live[0]), then[1].wrapping_sub(live[1])];
                     body = [body[0].wrapping_add(d[0]), body[1].wrapping_add(d[1])];
                     live = *then;
@@ -241,10 +293,10 @@ impl RetailBattle {
                     x: live[0],
                     z: live[1],
                     facing: self.facing.get(pool).copied().flatten(),
-                    body: (if pool == usize::from(self.active_actor) {
+                    body: (if active {
                         (0x1E..=0x20).contains(&self.action_state)
                     } else {
-                        pool >= 3 && matches!(clip, 2..=5 | 0x0B)
+                        struck
                     })
                     .then_some(body),
                 })

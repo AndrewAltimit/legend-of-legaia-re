@@ -319,9 +319,14 @@ pub const TOP_LEVEL_WINDOWS: [usize; 3] = [
 ];
 
 /// The parsed table.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MenuWindowTable {
     pub windows: Vec<MenuWindowDescriptor>,
+    /// The same image's string-pool labels the window painters draw
+    /// ([`crate::menu_pool`]): read alongside the descriptors so every
+    /// caller holding the table draws the disc's own labels, and a caller
+    /// without it (no overlay) falls back.
+    pub labels: crate::menu_pool::MenuPoolLabels,
 }
 
 impl MenuWindowTable {
@@ -375,7 +380,10 @@ pub fn parse(overlay: &[u8]) -> Result<MenuWindowTable> {
         }
         windows.push(d);
     }
-    Ok(MenuWindowTable { windows })
+    Ok(MenuWindowTable {
+        windows,
+        labels: crate::menu_pool::MenuPoolLabels::from_menu_overlay(overlay),
+    })
 }
 
 #[cfg(test)]

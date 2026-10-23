@@ -53,6 +53,7 @@
 
 use std::path::PathBuf;
 
+use legaia_engine_menu_runtime::bag_rows::WorldBagRows;
 use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
 use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
 use legaia_engine_mode::mode::SceneMode;
@@ -217,6 +218,109 @@ fn the_magic_list_build_asks_the_broadcast_about_every_learned_spell() {
     );
     eprintln!("[magic] spell {SPELL:#04X} affects anyone on the field: {decided:?}");
     close_to_root(&mut s);
+}
+
+/// Meta, the winged-plate Ra-Seru spell (`0xCE 0x1D`, 28 px plate).
+const RA_SERU_SPELL: u8 = 0x9E;
+
+/// The Magic screen draws each spell's element plate in front of its name,
+/// the way retail's list kernel does by drawing the raw `name_ptr` string
+/// (`FUN_8002FF8C` -> `FUN_80036888` at `0x80033738`).
+///
+/// The screen is opened by pad over a party that learned Gimard (fire
+/// plate, escape `0x14`, 20 px) and Meta (winged plate, escape `0x1D`,
+/// 28 px), then composed through the shared `engine-screens` builder both
+/// play hosts call, with the session's own disc font (escape sprites
+/// attached at boot). Each row must carry an untinted plate cell at the
+/// row pen (window 18's content x `174` + `0xC`) and its name one plate
+/// width plus a space further on - `+25` and `+33`, the offsets the
+/// `sol_to_karisto_worldmap` retail capture measures.
+#[test]
+fn the_magic_list_draws_each_spells_element_plate() {
+    let Some(mut s) = booted(&[SPELL, RA_SERU_SPELL], &[]) else {
+        return;
+    };
+    open_row(&mut s, FieldMenuRow::Magic);
+    // Into the list: the info window stages the hovered spell too.
+    tap(&mut s, PadButton::Cross);
+    let Some(sub) = s.field_menu_sub.as_ref() else {
+        panic!("Magic did not open a sub-session");
+    };
+    let font = s
+        .dialog_font
+        .clone()
+        .expect("the boot source decodes the dialog font");
+    assert!(
+        font.escape_cell(0x14).is_some() && font.escape_cell(0x1D).is_some(),
+        "the boot font carries no element-plate escape sprites"
+    );
+    // The menu sprite cells both play hosts attach at boot (the native
+    // window's `attach_menu_font_cells`, the play page's `play_menu`
+    // assets), off the same PROT.DAT head bytes.
+    let system_ui = s
+        .host
+        .index
+        .prot_dat_raw_bytes(
+            legaia_engine_menus::save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET as u64,
+            legaia_ui_formats::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
+                + legaia_ui_formats::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE
+                - legaia_engine_menus::save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET,
+        )
+        .expect("system-UI sheet bytes");
+    let font = font.with_sprite_cells(&legaia_engine_menus::save_menu_atlas::menu_font_cells(
+        &system_ui, None,
+    ));
+    let ctx = legaia_engine_ui::pause_menu::PauseMenuCtx {
+        font: &font,
+        rects: legaia_engine_ui::pause_menu::MenuRects::new(None),
+        chrome: None,
+        origin: (0, 0),
+        scale: 1,
+    };
+    let draws = legaia_engine_screens::pause_screens::field_menu_sub_draws(
+        &ctx,
+        sub,
+        Some(&s.host.world),
+        None,
+    );
+    let pen_x = 174 + 0x0C;
+    let plate = |w: u32| {
+        draws
+            .texts
+            .iter()
+            .find(|d| d.dst.0 == pen_x && d.dst.2 == w && d.dst.3 == 12)
+            .map(|d| (d.dst.1, d.color))
+    };
+    let (fire_y, fire_ink) = plate(20).expect("Gimard's fire plate draws at the row pen");
+    let (wing_y, _) = plate(28).expect("Meta's winged plate draws at the row pen");
+    assert_eq!(
+        fire_ink[..3],
+        [1.0, 1.0, 1.0],
+        "a plate keeps its own colours"
+    );
+    assert_ne!(fire_y, wing_y, "one plate per row");
+    let glyph_at = |x: i32, y: i32| draws.texts.iter().any(|d| d.dst.0 == x && d.dst.1 == y);
+    assert!(
+        glyph_at(pen_x + 25, fire_y),
+        "Gimard's name follows its plate"
+    );
+    assert!(
+        glyph_at(pen_x + 33, wing_y),
+        "Meta's name follows its plate"
+    );
+    // The PAGE header is the kernel's sprite header: the 24x8 tag at
+    // `(174 + 132 - 0x38, 22 - 2)` and the page digit at
+    // `174 + 132 - 0x20 + 6`, the columns the retail capture of this screen
+    // shows.
+    let cell = |x: i32, w: u32| {
+        draws
+            .texts
+            .iter()
+            .any(|d| d.dst.0 == x && d.dst.1 == 20 && d.dst.2 == w && d.dst.3 == 8)
+    };
+    assert!(cell(250, 24), "the PAGE tag sprite");
+    assert!(cell(280, 6), "the page digit sprite");
+    eprintln!("[magic] plates at rows y={fire_y} / y={wing_y}");
 }
 
 #[test]
@@ -442,4 +546,616 @@ fn a_confirmed_field_spell_routes_through_the_state_2_dispatch_and_heals() {
     );
     eprintln!("[magic] spell {spell:#04X} group={group}: HP {hp_before} -> {hp_after}");
     close_to_root(&mut s);
+}
+
+/// The Items and Magic lists ink each row the way the kind-4 list kernel
+/// does (`FUN_80032A44`, `0x8003312C..` / `0x8003351C..`): every row white
+/// while the list is parked behind the command / caster window, and once
+/// the hand is in it a row grey only when its build-time word carries the
+/// dim bit - not every row.
+///
+/// The party is seeded so each list holds both kinds: a hurt lead with full
+/// MP, a learned field heal (castable, so white) beside Gimard (an attack,
+/// greyed in the field), and a Healing Leaf (applies to the hurt lead) beside
+/// a bag item the Use build dims. The screens are composed through the
+/// shared `engine-screens` builder both play hosts call.
+#[test]
+fn list_rows_take_their_build_time_ink_once_the_hand_is_in_the_list() {
+    let Some(mut probe) = booted(&[], &[]) else {
+        return;
+    };
+    let catalog = probe.host.world.tables.spell_catalog.clone();
+    let heal = (0x81u8..=0xA0)
+        .find(|&id| {
+            catalog.get(id).is_some_and(|d| {
+                use legaia_engine_battle::spells::SpellEffect;
+                matches!(
+                    d.effect,
+                    SpellEffect::Heal { .. } | SpellEffect::HealAll { .. }
+                )
+            })
+        })
+        .expect("the disc spell table carries a field heal");
+    // A bag id the Use list build dims: not field-usable (or equipment).
+    const LEAF: u8 = 0x77;
+    let dimmed = (0x1Au8..=0xFF)
+        .filter(|&id| id != LEAF)
+        .find(|&id| {
+            let w = &mut probe.host.world;
+            w.party.inventory.clear();
+            let _ = w.party.inventory.add(id, 1);
+            w.bag_use_rows(false)
+                .is_some_and(|rows| rows.len() == 1 && rows[0].dim && !rows[0].alt_ink)
+        })
+        .expect("some bag item dims in the field Use list");
+    drop(probe);
+
+    let Some(mut s) = booted(&[heal, SPELL], &[LEAF, dimmed]) else {
+        return;
+    };
+    let slot = s.host.world.party_roster_slot(0);
+    {
+        let rec = &mut s.host.world.party.roster.members[slot];
+        let mut hms = rec.hp_mp_sp();
+        hms.hp_cur = (hms.hp_max / 2).max(1);
+        hms.mp_max = hms.mp_max.max(999);
+        hms.mp_cur = hms.mp_max;
+        rec.set_hp_mp_sp(hms);
+    }
+    let font = s.dialog_font.clone().expect("disc dialog font");
+    // Row `i`'s name ink in the list window (content pen `(174, 22)`, rows
+    // from `+0xC` at the `0xE` pitch, name at `+0xC`).
+    let row_inks = |s: &NativeSession, n: usize| -> Vec<[f32; 4]> {
+        let ctx = legaia_engine_ui::pause_menu::PauseMenuCtx {
+            font: &font,
+            rects: legaia_engine_ui::pause_menu::MenuRects::new(None),
+            chrome: None,
+            origin: (0, 0),
+            scale: 1,
+        };
+        let sub = s.field_menu_sub.as_ref().expect("a sub-screen is open");
+        let draws = legaia_engine_screens::pause_screens::field_menu_sub_draws(
+            &ctx,
+            sub,
+            Some(&s.host.world),
+            None,
+        );
+        (0..n)
+            .map(|i| {
+                let y = 22 + 0x0C + 0x0E * i as i32;
+                draws
+                    .texts
+                    .iter()
+                    .filter(|d| d.dst.1 == y && d.dst.0 >= 174 + 0x0C && d.dst.0 < 174 + 0x70)
+                    .find(|d| d.color[..3] != [1.0, 1.0, 1.0])
+                    .map(|d| d.color)
+                    .unwrap_or_else(|| panic!("no name ink on list row {i}"))
+            })
+            .collect()
+    };
+    let white = legaia_engine_ui::MENU_TEXT_WHITE;
+    let grey = legaia_engine_ui::MENU_TEXT_GREY;
+
+    // Magic: caster focus parks the list - both rows white.
+    open_row(&mut s, FieldMenuRow::Magic);
+    assert_eq!(
+        row_inks(&s, 2),
+        [white, white],
+        "a parked spell list is all white"
+    );
+    // Into the list: the heal stays white, the attack greys.
+    tap(&mut s, PadButton::Cross);
+    assert_eq!(
+        row_inks(&s, 2),
+        [white, grey],
+        "list focus inks heal {heal:#04X} / attack {SPELL:#04X} by their build-time words"
+    );
+    close_to_root(&mut s);
+
+    // Items: the command window parks the list; Use opens it.
+    open_row(&mut s, FieldMenuRow::Items);
+    let names: Vec<u8> = match s.field_menu_sub.as_ref() {
+        Some(FieldMenuSubsession::Items(items)) => items.rows.iter().map(|r| r.id).collect(),
+        _ => panic!("Items did not open the item screen"),
+    };
+    assert_eq!(names.len(), 2);
+    assert_eq!(
+        row_inks(&s, 2),
+        [white, white],
+        "a parked bag list is all white"
+    );
+    tap(&mut s, PadButton::Cross);
+    let want: Vec<[f32; 4]> = names
+        .iter()
+        .map(|&id| if id == LEAF { white } else { grey })
+        .collect();
+    assert_eq!(
+        row_inks(&s, 2),
+        want,
+        "Use-list inks for Healing Leaf / item {dimmed:#04X} (rows {names:02X?})"
+    );
+    eprintln!("[ink] heal {heal:#04X} white, attack grey; leaf white, item {dimmed:#04X} grey");
+    close_to_root(&mut s);
+}
+
+/// The Incense confirm (window 12, `FUN_801D1F10`) draws the route's own
+/// two prompt lines out of the menu overlay's string pool - the first at
+/// the window pen with its `0xC2` token spliced to the item's disc name,
+/// the second `0xC` right and one row down - not port-composed text.
+#[test]
+fn the_incense_confirm_draws_the_overlay_prompt_lines() {
+    const INCENSE: u8 = 0x8A;
+    let Some(mut s) = booted(&[], &[INCENSE]) else {
+        return;
+    };
+    assert!(
+        s.host.world.menu.use_route_prompts.is_installed(),
+        "the menu overlay install read no Use-route prompts"
+    );
+    open_row(&mut s, FieldMenuRow::Items);
+    // Use -> the list -> the hand onto the Incense row (the new-game bag
+    // already holds other items) -> its confirm window.
+    tap(&mut s, PadButton::Cross);
+    let row = match s.field_menu_sub.as_ref() {
+        Some(FieldMenuSubsession::Items(items)) => items
+            .rows
+            .iter()
+            .position(|r| r.id == INCENSE)
+            .expect("Incense is in the bag"),
+        _ => panic!("Items did not open the item screen"),
+    };
+    for _ in 0..row {
+        tap(&mut s, PadButton::Down);
+    }
+    tap(&mut s, PadButton::Cross);
+    let Some(FieldMenuSubsession::Items(items)) = s.field_menu_sub.as_ref() else {
+        panic!("Items did not open the item screen");
+    };
+    assert!(
+        items.special_use().is_some(),
+        "the Incense row did not open its confirm route: focus {:?}, rows {:?}, blocked {}",
+        items.focus,
+        items
+            .rows
+            .iter()
+            .map(|r| (r.id, r.use_bits))
+            .collect::<Vec<_>>(),
+        items.incense_blocked()
+    );
+    let font = s.dialog_font.clone().expect("disc dialog font");
+    let ctx = legaia_engine_ui::pause_menu::PauseMenuCtx {
+        font: &font,
+        rects: legaia_engine_ui::pause_menu::MenuRects::new(None),
+        chrome: None,
+        origin: (0, 0),
+        scale: 1,
+    };
+    let draws = legaia_engine_screens::pause_screens::field_menu_sub_draws(
+        &ctx,
+        s.field_menu_sub.as_ref().unwrap(),
+        Some(&s.host.world),
+        None,
+    );
+    let w = &s.host.world;
+    let name = legaia_engine_menu_runtime::field_menu_dispatch::item_display_text(w, INCENSE).name;
+    let lines = w.menu.use_route_prompts.lines(
+        legaia_engine_menus::pause_screens::UseRoute::Incense,
+        |t, op| {
+            (t == 0xC2).then(|| {
+                legaia_engine_menu_runtime::field_menu_dispatch::item_display_text(w, op).name
+            })
+        },
+    );
+    assert_eq!(lines.len(), 2, "window 12 carries two prompt lines");
+    assert!(
+        lines[0].contains(&name),
+        "the first line splices the Incense name ({name:?}): {:?}",
+        lines[0]
+    );
+    let (px, py) = ctx.rects.pen(12);
+    let glyph_at = |x: i32, y: i32| draws.texts.iter().any(|d| d.dst.0 == x && d.dst.1 == y);
+    // Each line starts with the pool's blank `@` (width 0, a one-pixel
+    // advance), at the pen and at `+0xC`; the first visible glyph follows
+    // one pixel on.
+    assert!(
+        glyph_at(px, py) && glyph_at(px + 1, py),
+        "line 1 at the window pen"
+    );
+    assert!(
+        glyph_at(px + 0x0C, py + 0x0E) && glyph_at(px + 0x0D, py + 0x0E),
+        "line 2 at (+0xC, +0xE)"
+    );
+    eprintln!(
+        "[incense] prompt lines: {} / {} chars",
+        lines[0].len(),
+        lines[1].len()
+    );
+}
+
+/// A party holding casino coins opens the pause menu with the money box's
+/// coin row (`FUN_801DC6B4` state 0 raises system flag `8`; `FUN_801D0148`
+/// tests it): the box moves up one row to `y = 166` and draws gold, coins
+/// and the clock at the 14-px pitch - the rows a retail capture of a coin
+/// holder's root menu shows (value ink from y 168 / 182 / 196). Without
+/// coins the box sits at `y = 180` with two rows.
+#[test]
+fn a_coin_holder_s_root_menu_shows_the_coin_row() {
+    let Some(mut s) = booted(&[], &[]) else {
+        return;
+    };
+    let flag = legaia_engine_menus::field_menu::SYSTEM_FLAG_CASINO_COIN_ROW;
+    let font = s.dialog_font.clone().expect("disc dialog font");
+    let value_rows = |s: &NativeSession| -> Vec<i32> {
+        let ctx = legaia_engine_ui::pause_menu::PauseMenuCtx {
+            font: &font,
+            rects: legaia_engine_ui::pause_menu::MenuRects::new(None),
+            chrome: None,
+            origin: (0, 0),
+            scale: 1,
+        };
+        let root = s.field_menu.as_ref().expect("the pause menu is open");
+        let draws = legaia_engine_screens::pause_screens::field_menu_root_draws(
+            &ctx,
+            root,
+            &s.host.world,
+            None,
+        );
+        // The box's value columns: right of the pictograms, left of the
+        // party panel.
+        let ys: std::collections::BTreeSet<i32> = draws
+            .texts
+            .iter()
+            .filter(|d| (24 + 0x20..128).contains(&d.dst.0) && d.dst.1 >= 150)
+            .map(|d| d.dst.1)
+            .collect();
+        ys.into_iter().collect()
+    };
+
+    tap(&mut s, PadButton::Start);
+    assert!(s.field_menu_is_open(), "Start did not open the pause menu");
+    assert!(!s.host.world.system_flag_test(flag), "no coins, no flag");
+    assert_eq!(
+        value_rows(&s),
+        [180, 194],
+        "gold + clock at the retail y = 180 box"
+    );
+    tap(&mut s, PadButton::Triangle);
+    for _ in 0..8 {
+        if !s.field_menu_is_open() {
+            break;
+        }
+        tap(&mut s, PadButton::Circle);
+    }
+    assert!(!s.field_menu_is_open(), "the menu did not close");
+
+    s.host.world.minigames.casino_coins = 42;
+    tap(&mut s, PadButton::Start);
+    assert!(
+        s.field_menu_is_open(),
+        "Start did not reopen the pause menu"
+    );
+    assert!(
+        s.host.world.system_flag_test(flag),
+        "the menu open raised the coin-row flag"
+    );
+    assert_eq!(value_rows(&s), [166, 180, 194], "gold, coins, clock");
+}
+
+/// The Throw Out confirm (window 9, `FUN_801D1B20`) draws the overlay's own
+/// labels: the question line at `(WX + 6, WY + 0xE)` and Yes / No at
+/// `WX + 0x3C`. Each pool string keeps its `@` lead, a blank width-0 glyph,
+/// so the first visible glyph sits one pixel past each pen, as retail
+/// draws it.
+#[test]
+fn the_throw_out_confirm_draws_the_overlay_labels() {
+    let Some(mut s) = booted(&[], &[]) else {
+        return;
+    };
+    assert!(
+        s.host.world.menu.throw_confirm_labels.is_installed(),
+        "the menu overlay install read no Throw Out labels"
+    );
+    open_row(&mut s, FieldMenuRow::Items);
+    // Command window: Down to Throw Out, Cross into its list, Cross on the
+    // first stack (the new-game bag holds one).
+    tap(&mut s, PadButton::Down);
+    tap(&mut s, PadButton::Cross);
+    tap(&mut s, PadButton::Cross);
+    let Some(FieldMenuSubsession::Items(items)) = s.field_menu_sub.as_ref() else {
+        panic!("Items did not open the item screen");
+    };
+    assert_eq!(
+        items.focus,
+        legaia_engine_menus::pause_screens::PauseItemsFocus::ThrowOutConfirm,
+        "the Throw Out pick did not open its confirm"
+    );
+    let font = s.dialog_font.clone().expect("disc dialog font");
+    let ctx = legaia_engine_ui::pause_menu::PauseMenuCtx {
+        font: &font,
+        rects: legaia_engine_ui::pause_menu::MenuRects::new(None),
+        chrome: None,
+        origin: (0, 0),
+        scale: 1,
+    };
+    let draws = legaia_engine_screens::pause_screens::field_menu_sub_draws(
+        &ctx,
+        s.field_menu_sub.as_ref().unwrap(),
+        Some(&s.host.world),
+        None,
+    );
+    let (wx, wy) = ctx.rects.pen(9);
+    let glyph_at = |x: i32, y: i32| draws.texts.iter().any(|d| d.dst.0 == x && d.dst.1 == y);
+    for (x, y, what) in [
+        (wx + 6, wy + 0x0E, "the question"),
+        (wx + 0x3C, wy + 0x1C, "Yes"),
+        (wx + 0x3C, wy + 0x2A, "No"),
+    ] {
+        assert!(
+            glyph_at(x, y) && glyph_at(x + 1, y),
+            "{what}: the `@` at the pen, the first visible glyph one pixel on"
+        );
+    }
+}
+
+/// A menu heal that crosses its magic-XP threshold raises window 7
+/// (`FUN_801DCCB4`) with the menu overlay's own sentence: its `0xC3`
+/// spell-name token spliced to the spell's raw display name, element plate
+/// escape first. Composed through the shared notice builder over the disc
+/// window table, the plate draws untinted at the window pen.
+#[test]
+fn a_menu_heal_level_up_draws_the_overlay_sentence_with_the_plate() {
+    let Some(probe) = booted(&[], &[]) else {
+        return;
+    };
+    let catalog = probe.host.world.tables.spell_catalog.clone();
+    let spell = (0x81u8..=0x8B)
+        .find(|&id| {
+            catalog.get(id).is_some_and(|d| {
+                use legaia_engine_battle::spells::SpellEffect;
+                legaia_engine_menus::spell_menu::is_field_usable(&d.effect)
+                    && matches!(d.effect, SpellEffect::Heal { .. })
+            })
+        })
+        .expect("a single-target field heal");
+    drop(probe);
+    let Some(mut s) = booted(&[spell], &[]) else {
+        return;
+    };
+    let thresholds = s
+        .host
+        .world
+        .tables
+        .magic_xp_thresholds
+        .expect("the boot installs the disc magic-XP table");
+    let template = s
+        .host
+        .world
+        .menu
+        .spell_level_template
+        .clone()
+        .expect("the overlay install read window 7's sentence");
+    let slot = s.host.world.party_roster_slot(0);
+    {
+        let rec = &mut s.host.world.party.roster.members[slot];
+        let mut hms = rec.hp_mp_sp();
+        hms.hp_cur = (hms.hp_max / 2).max(1);
+        hms.mp_max = hms.mp_max.max(999);
+        hms.mp_cur = hms.mp_max;
+        rec.set_hp_mp_sp(hms);
+        // One cast short of level 2: the accumulator sits on the level-1
+        // entry, which the test passes only once exceeded.
+        let at = legaia_engine_battle::magic_xp::spell_slot(rec, spell).expect("learned");
+        legaia_engine_battle::magic_xp::add_spell_xp(rec, at, u32::from(thresholds[0]));
+    }
+    open_row(&mut s, FieldMenuRow::Magic);
+    tap(&mut s, PadButton::Cross); // caster
+    tap(&mut s, PadButton::Cross); // spell -> target picker
+    for _ in 0..4 {
+        if s.spell_level_notice.is_some() {
+            break;
+        }
+        tap(&mut s, PadButton::Cross);
+    }
+    let notice = s
+        .spell_level_notice
+        .clone()
+        .expect("the cast leveled the spell and raised window 7");
+    let names = s
+        .host
+        .world
+        .menu
+        .text
+        .as_ref()
+        .unwrap()
+        .spell_names
+        .as_ref()
+        .unwrap();
+    let op = names
+        .icon(spell)
+        .expect("a Seru spell name opens with a plate");
+    let mut head = vec![0xCE, op, b' '];
+    head.extend(names.name(spell).unwrap().bytes());
+    assert!(
+        notice.line.starts_with(&head),
+        "the line opens with the raw spell name, plate first"
+    );
+    assert_eq!(
+        &notice.line[head.len()..],
+        &template[2..],
+        "the rest is the overlay's own sentence"
+    );
+
+    let overlay = s
+        .host
+        .index
+        .entry_bytes_extended(legaia_game_tables::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
+        .expect("PROT 0899");
+    let table = legaia_game_tables::menu_windows::parse(&overlay).expect("menu window table");
+    let font = s.dialog_font.clone().expect("disc dialog font");
+    let ctx = legaia_engine_ui::pause_menu::PauseMenuCtx {
+        font: &font,
+        rects: legaia_engine_ui::pause_menu::MenuRects::new(Some(&table)),
+        chrome: None,
+        origin: (0, 0),
+        scale: 1,
+    };
+    let draws = legaia_engine_ui::pause_menu::spell_level_notice_draws(&ctx, &notice.line);
+    let (px, py) = ctx.rects.pen(7);
+    let plate = draws
+        .iter()
+        .find(|d| d.dst.0 == px && d.dst.2 == 20 && d.dst.3 == 12)
+        .expect("the plate draws at window 7's pen");
+    assert_eq!(plate.dst.1, py, "on the line's row");
+    assert_eq!(plate.color[..3], [1.0, 1.0, 1.0]);
+}
+
+/// The Equip screen's weapon candidate list is retail's armament build
+/// (`FUN_80030628` cases `7`..`10` / `0x15`..`0x18`): the Remove verb first,
+/// the worn weapon second when there is one, then the bag's accepted slots
+/// in slot order - not id order. The bag is seeded with two weapons Vahn can
+/// wield, the higher id first, and the list is opened by pad.
+#[test]
+fn the_weapon_candidate_list_is_remove_worn_then_bag_order() {
+    let Some(probe) = booted(&[], &[]) else {
+        return;
+    };
+    let stats = probe
+        .host
+        .world
+        .tables
+        .equip_stats
+        .clone()
+        .expect("the boot parses the equipment stat table");
+    let info = legaia_engine_menus::equipment::DiscEquipInfo::from_disc(&stats);
+    let mut weapons: Vec<u8> = (1u8..=0xFF)
+        .filter(|&id| {
+            info.category(id) == Some(legaia_game_tables::equip_stats::EquipSlot::Weapon)
+                && info.can_equip(id, 0)
+        })
+        .collect();
+    drop(probe);
+    weapons.sort_unstable();
+    let (low, high) = (weapons[0], weapons[weapons.len() - 1]);
+    assert!(low < high, "two distinct Vahn weapons on the disc");
+    // Bag order: the higher id first.
+    let Some(mut s) = booted(&[], &[high, low]) else {
+        return;
+    };
+    open_row(&mut s, FieldMenuRow::Equip);
+    tap(&mut s, PadButton::Cross); // Vahn
+    tap(&mut s, PadButton::Down); // row 1: the weapon slot
+    tap(&mut s, PadButton::Cross); // its candidate list
+    let Some(FieldMenuSubsession::Equip { session, .. }) = s.field_menu_sub.as_ref() else {
+        panic!("Equip did not open the equip screen");
+    };
+    let legaia_engine_menus::equip_session::EquipState::ItemPicker { slot, .. } = session.state()
+    else {
+        panic!(
+            "the weapon row did not open its candidate list: {:?}",
+            session.state()
+        );
+    };
+    let rows = session.items_for_slot(slot);
+    assert_eq!(
+        rows[0].id,
+        legaia_engine_menus::equip_session::REMOVE_ROW_ID,
+        "Remove leads"
+    );
+    let worn = session.record().equip[slot as usize];
+    let mut at = 1;
+    if worn != 0 {
+        assert!(
+            rows[1].equipped && rows[1].id == worn,
+            "the worn weapon second"
+        );
+        at = 2;
+    }
+    let bag: Vec<u8> = rows[at..].iter().map(|r| r.id).collect();
+    let hi = bag
+        .iter()
+        .position(|&id| id == high)
+        .expect("the high-id weapon is listed");
+    let lo = bag
+        .iter()
+        .position(|&id| id == low)
+        .expect("the low-id weapon is listed");
+    assert!(hi < lo, "bag order, not id order: {bag:02X?}");
+}
+
+/// The pause menu's root rows, the Items tab and its command window draw the
+/// menu overlay's own pool strings (`0x801CE9D0` and siblings), `@` lead
+/// included: the blank lead at each pen, the first visible glyph one pixel
+/// on - where a retail capture of the root menu inks its rows (`WX + 0x15`).
+/// Composed over the disc window table, which carries the pool labels.
+#[test]
+fn the_root_rows_tab_and_item_commands_are_the_overlay_pool_strings() {
+    use legaia_game_tables::menu_pool::MenuLabel;
+    use legaia_game_tables::menu_windows::window_ids;
+    let Some(mut s) = booted(&[], &[]) else {
+        return;
+    };
+    let overlay = s
+        .host
+        .index
+        .entry_bytes_extended(legaia_game_tables::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
+        .expect("PROT 0899");
+    let table = legaia_game_tables::menu_windows::parse(&overlay).expect("menu window table");
+    assert!(
+        table.labels.is_installed(),
+        "the table read the pool labels"
+    );
+    for l in MenuLabel::ROOT_ROWS {
+        assert!(
+            table.labels.get(l).is_some_and(|t| t.starts_with('@')),
+            "{l:?} keeps its @ lead"
+        );
+    }
+    let font = s.dialog_font.clone().expect("disc dialog font");
+    let ctx = legaia_engine_ui::pause_menu::PauseMenuCtx {
+        font: &font,
+        rects: legaia_engine_ui::pause_menu::MenuRects::new(Some(&table)),
+        chrome: None,
+        origin: (0, 0),
+        scale: 1,
+    };
+    let at = |draws: &[legaia_engine_ui::TextDraw], x: i32, y: i32| {
+        draws.iter().any(|d| d.dst.0 == x && d.dst.1 == y)
+    };
+
+    tap(&mut s, PadButton::Start);
+    let root = legaia_engine_screens::pause_screens::field_menu_root_draws(
+        &ctx,
+        s.field_menu.as_ref().expect("the pause menu is open"),
+        &s.host.world,
+        None,
+    );
+    let (lx, ly) = ctx.rects.pen(window_ids::TOP_COMMAND_LIST);
+    for row in 0..7 {
+        let y = ly + row * 14;
+        assert!(
+            at(&root.texts, lx + 0x14, y) && at(&root.texts, lx + 0x15, y),
+            "root row {row}: the @ at the pen, its first glyph one pixel on"
+        );
+    }
+
+    open_row(&mut s, FieldMenuRow::Items);
+    let items = legaia_engine_screens::pause_screens::field_menu_sub_draws(
+        &ctx,
+        s.field_menu_sub.as_ref().expect("the Items screen is open"),
+        Some(&s.host.world),
+        None,
+    );
+    let (tx, ty) = ctx.rects.pen(window_ids::TAB_ITEMS);
+    assert!(
+        at(&items.texts, tx, ty) && at(&items.texts, tx + 1, ty),
+        "the Items tab draws the pool string with its lead"
+    );
+    let (cx, cy) = ctx.rects.pen(window_ids::ITEMS_COMMAND);
+    for row in 0..3 {
+        let y = cy + row * 14;
+        assert!(
+            at(&items.texts, cx + 0x14, y) && at(&items.texts, cx + 0x15, y),
+            "command row {row} is the pool's @Use / @Throw Out / @Arrange"
+        );
+    }
 }

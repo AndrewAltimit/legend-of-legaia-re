@@ -1,6 +1,7 @@
 use legaia_engine_core::world::*;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_save_state::WorldSaveState;
+use legaia_engine_world_views::passive_hud::WorldPassiveHud;
 
 /// A field save reads the records, not the scene's actor slots. `opurud`'s
 /// scripts re-stamp slots 1 and 2 from zeroed nodes; folding those mirrors

@@ -499,7 +499,14 @@ everywhere but the overworld.
 The seven labels are NUL-terminated strings in the overlay's leading rodata
 pool: `@Items` at `0x801CE9D0`, then `@Magic` / `@Equip` / `@Status` /
 `@Options` / `@Load` / `@Save`. Each pointer targets the leading `0x40` (`@`)
-marker byte `FUN_80036888` consumes. The same pool (`0x801CE81C..0x801CEC78`)
+byte, which nothing strips: neither the expander `FUN_80036514` nor the
+renderer `FUN_80036888` tests for it, and it is a blank glyph of width `0`, so
+it draws as a one-pixel advance (`widths[c] + pad + 1`). Every pool string's
+first visible glyph therefore sits one pixel past its pen - the root rows ink
+from `WX + 0x15` on a `sol_to_karisto_worldmap` capture, against the
+`WX + 0x14` pen. The port's pool readers (`pause_screens::menu_overlay_string`,
+`shop::ShopLabel`, `pause_screens::menu_overlay_bytes`) keep the byte so the
+host font places each line the same way. The same pool (`0x801CE81C..0x801CEC78`)
 holds the options choices, the stat labels (`ATK` / `UDF` / `LDF` / `SPD` /
 `INT` / `AGL`, `Experience`, `Next Level`) and the shop / equip / status
 command strings. The battle overlay (PROT 0898) keeps its own pool at
@@ -518,6 +525,20 @@ seconds pin 59), colon glyphs (`FUN_8003c1f8` code 9) at `+0x38` / `+0x50`,
 zero-padded 2-wide minutes / seconds (`FUN_80034e4c`) at `+0x40` / `+0x58`.
 With the coin row the live window grows past its descriptor rect
 (`(24,166,104,38)` against `(24,178,104,24)`).
+
+The rect is the menu-open state's, not the descriptor's: `FUN_801DC6B4`
+state 0 first raises system flag `8` when the coin bank `0x800845A4` is
+non-zero (`0x801DC7EC..0x801DC800`, never cleared), then stores the
+descriptor's `y = 0xB4` and `h = 0x18` (`0x801DC810..0x801DC820`) and, with
+the flag set, `y -= 0xE`, `h += 0xE`. So the box draws at `y = 180` without
+coins (the disc's `178` never shows) and grows upward one row with them; a
+`sol_to_karisto_worldmap` capture of a coin holder's root menu has the gold,
+coin and clock values inking from y `168`, `182` and `196`. Port:
+`BootSession::open_field_menu` raises the flag,
+`engine-ui::pause_menu::money_box_rect` applies the rewrite, and
+`field_menu_draws_for` / `field_menu_icon_sprites_for` draw the coin row.
+Disc-gated oracle:
+`pause_learned_content_ladder::a_coin_holder_s_root_menu_shows_the_coin_row`.
 
 **Party panel (id 51, `FUN_801D030C`)**: one block per roster member (ids
 `u8[3]` at `0x80084598`, count `0x80084594`) at stride `0x3e`:
@@ -885,7 +906,12 @@ scroll top. All glyphs are UI-icon sprites:
 The tens cell is leading-zero-suppressed. The total is `ceil(rows / visible)`
 over **occupied** rows (the builder skips an empty slot, `beq s0,zero` at
 `0x8003089C`): one held item reads `PAGE 1 / 1`, an empty list draws no
-header.
+header. On the 132-px pause lists (Items, Magic, Equip candidates, all at
+`(174, 22)`) a `sol_to_karisto_worldmap` capture puts the tag's ink at
+x `251..269`, rows `21..25`, the page digit at `282` and the slash at `288`.
+Port: `engine-ui::shop_screen::page_header_draws` over the font's menu sprite
+cells (`save_menu_atlas::menu_font_cells`), shared by the shop lists and the
+pause lists; a font without the cells falls back to dialog-font stand-ins.
 
 **Rows** (`80033050..`): the block is vertically centred -
 `row0_y = WY + (content_h - visible*0xE)/2 + 5`, pitch `0xE` (12 rows from
@@ -1190,7 +1216,10 @@ about to" 8 px past the count (16 px for a 2-digit count); "Throw out?" at
 `(WX+0x3C, WY+0x2A)` with the hand at `WX+0x28`. The name renderer honours a
 `0xF1` second-byte escape that substitutes a character name (`+0x2A7`). The
 strings are in the rodata pool (`@You are about to` at `0x801CEA60`, then
-`@Throw out?` / `@Yes` / `@No`).
+`@Throw out?` at `0x801CEA74` / `@Yes` / `@No`). Port: the confirm draws them
+from `pause_screens::ThrowConfirmLabels` (installed by
+`World::install_menu_overlay_tables`), `@` lead kept; disc-gated oracle
+`pause_learned_content_ladder::the_throw_out_confirm_draws_the_overlay_labels`.
 
 **Port of the Items screen.** Session: `pause_screens::PauseItemsSession`
 (command / list / throw-out focus, page flip, No-default confirm, whole-stack
@@ -1218,16 +1247,30 @@ Specifics:
   `engine-ui::incense_notice_sprites_for` / `incense_notice_text_draws_for`
   with the line read off the disc.
 
-Known differences from retail on this screen:
-
-- The list drops **every** row to grey once the hand enters it
-  (`ItemsScreenModel::focus_list`) rather than showing each row's build-time
-  ink; the row words themselves are built correctly by `menu_list_rows`.
-- The Door of Light / Incense prompt strings are not recovered from the
-  overlay, so the port stages the item name and its own question in the retail
-  line slots (geometry is exact).
-- The Door of Wind list reuses the item-list renderer, so its count column
-  shows `0` where retail draws no count.
+- **Row ink** follows the kernel's [row-ink rule](#the-kind-4-list-kernel-scus-fun_80032a44):
+  each `PauseItemRow` keeps its slot's dim / alt-ink bits from both builds
+  (`World::bag_use_rows`, `World::bag_throw_out_rows`), and
+  `items_screen_model` inks the page through `menu_list_rows::list_row_ink` -
+  all white in command focus (the list parked), the Use build's bits in the
+  Use list and the special routes, the Throw Out build's in the Throw Out
+  list and its confirm. The Magic list does the same over the spell build's
+  admissibility (`SpellRowView::admissible`). Disc-gated oracle:
+  `pause_learned_content_ladder::list_rows_take_their_build_time_ink_once_the_hand_is_in_the_list`.
+- The **Door of Wind** rows are class `0x8000`, which the kernel draws as a
+  bare name: `ItemsScreenModel::show_counts` is `false` there and the row
+  draws no count column.
+- The **Door of Light / Incense prompts** are the overlay's own strings:
+  `FUN_801D1DAC` draws the pool string at `0x801CEA94` at `(WX, WY)`;
+  `FUN_801D1F10` draws `0x801CEAB4` at `(WX, WY)` and `0x801CEAC8` at
+  `(WX+0xC, WY+0xE)`; both then draw Yes / No (`0x801CEA84` / `0x801CEA8C`,
+  ink 5) at `WX+0x44` with the hand at `WX+0x30`. The Incense line carries a
+  `0xC2 0x8A` item-name token. The pool strings open with `@`, a width-0
+  blank glyph neither the expander nor the renderer special-cases, so each
+  line's first visible glyph sits one pixel past the pen. Port:
+  `pause_screens::UseRoutePrompts` (installed by
+  `World::install_menu_overlay_tables`), expanded against the disc item
+  table in `engine-screens`. Disc-gated oracle:
+  `pause_learned_content_ladder::the_incense_confirm_draws_the_overlay_prompt_lines`.
 
 ## Magic screen
 
@@ -1242,9 +1285,18 @@ Windows: tab 1, list 18, caster 19, info 20. Sub-screen `0x0E` = caster focus,
 `(WX, Yb)`, cursor word `DAT_801E46C8`.
 
 **Spell list (id 18, content id 5)** - renderer-less, the same page layout as
-the item list. Each row is one string whose leading `0xCE` escape draws the
-element icon plate, so the name starts 25 px right of the row pen (22 px for
-the wider winged Ra-Seru icon).
+the item list. Each row is the spell's raw display name: for a `0x5000 | id`
+row the list kernel `FUN_80032A44` takes the string from `FUN_8002FF8C`
+(the spell record's `name_ptr`) and draws it with `FUN_80036888` at
+`(WX+0xC, row)` (`0x80033738`). The name opens `0xCE op 0x20`, so the escape
+draws the element plate at the row pen and advances by its table width
+([dialog-font.md](../formats/dialog-font.md#escape-table-0x80074050)), then
+the space follows: the name starts `20 + 5 = 25` px right of the pen behind a
+plain plate (operands `0x14..=0x1B`) and `28 + 5 = 33` px behind a winged
+Ra-Seru plate (`0x1D..=0x24`). A `sol_to_karisto_worldmap` capture of the
+screen measures both: name ink at `+25` on every elemental row, at `+33` on
+"Meta". The info window's name is the same string, drawn at `(WX, WY)`
+through `FUN_8003CD00`.
 
 Row ink is decided in the list build. The out-of-battle arm of `FUN_80030628`
 (`0x80031130..0x80031264`) writes each learned spell as `0x5800 | id`
@@ -1305,7 +1357,10 @@ path uses. Both cast flows run the SCUS effect applier `FUN_800402F4` (dump
   `0x801E4D78` single: open window 7) and wait for confirm / cancel. The
   renderer `FUN_801DCCB4` patches byte `+1` of the scratch sentence at
   `0x801E46E4` with `record[0x13D + _DAT_8007BB78]` (the leveled spell's id)
-  and draws it with the corner hand at `(WX+0xE6, WY+0xD)`.
+  and draws it with the corner hand at `(WX+0xE6, WY+0xD)`. Byte `+0` is
+  `0xC3`, the expander's spell-name token (its arm reads the spell table's
+  `name_ptr`, `0x800754C8 + id*12 + 8`), so the line is the spell's raw name -
+  element plate escape first - followed by the sentence's own text.
 
 **Port of the Magic screen.** `engine-menus::spell_menu::SpellMenuSession`
 (`CharSelect` = caster focus, `SpellSelect` = list focus, `GroupConfirm` for
@@ -1320,13 +1375,20 @@ discounted cost once, applies every grant of a group cast
 kernel `magic_xp::accrue_and_level` with `magic_xp::menu_heal_xp_gain`. Both
 writes land in the `legaia_save::CharacterRecord`, so they round-trip through
 saves. `MenuRuntime::arm_spell_level_notice` holds the window-7 beat, drawn by
-`char_prompt_draws_for` at the disc-parsed rect.
+`char_prompt_draws_for` at the disc-parsed rect. Its line is the overlay's own
+sentence (`MenuState::spell_level_template`, read by
+`World::install_menu_overlay_tables`) expanded by
+`pause_screens::spell_level_notice_line` to font bytes, plate escape included;
+disc-gated oracle
+`pause_learned_content_ladder::a_menu_heal_level_up_draws_the_overlay_sentence_with_the_plate`.
 
-Known differences: the window-7 line is composed from the battle-banner
-sentence around the spell name rather than retail's own rodata sentence, and
-the notice overlays the resumed menu because the engine's spell session closes
-on cast. The element-icon plates are covered under
-[Engine port](#engine-port).
+Known difference: the notice overlays the resumed menu because the engine's
+spell session closes on cast. The element plates draw on both hosts: the model carries each
+name's escape operand (`pause_screens::spell_icon`, from
+`SpellEntry::icon`), and `magic_screen_draws_for` lays the retail
+`0xCE op 0x20 name` string out through the host font, whose escape sprites
+are attached at boot. Disc-gated oracle:
+`pause_learned_content_ladder::the_magic_list_draws_each_spells_element_plate`.
 
 ## Equip screen
 
@@ -1567,9 +1629,15 @@ its `j` targets print correctly - see
   `equip_best_change_sprites_for`; the candidate step adds windows 24
   (`item_info_panel_draws_for` + `count_panel_draws_for`) and 25.
 
-Known difference: the four **armament** candidate lists are sorted by item id,
-with Remove only on an occupied slot and no equipped row, where retail's
-builder gives both families the same two leading rows in bag order.
+- **Armament lists** take retail's armament build
+  (`EquipSession::armament_rows`, `FUN_80030628` cases `7`..`10` /
+  `0x15`..`0x18`): the Remove verb always (`0x800314D0`), the worn id when
+  the slot holds one (`0x800314DC`), then the accepted bag slots of the
+  active window in slot order (`0x80031544..0x800315E4`), the worn id skipped.
+  Disc-gated oracle:
+  `pause_learned_content_ladder::the_weapon_candidate_list_is_remove_worn_then_bag_order`.
+  A disc-free session (no restriction tables) keeps the id-sorted placeholder
+  list.
 
 ## Equip stat-compare panels (windows 25 and 41)
 
@@ -1737,7 +1805,8 @@ pitch, text inset `+0x14`, cursor at the content origin.
 **Port**: `engine-menus::options` (`OPTIONS_DISPLAY_ROWS`,
 `options_display_rows`, the `OptionsSession` Browsing -> Editing SM,
 `options_popup_content_rect`) + `engine-ui::options_draws_for`. Sound drives
-the mixer's monaural downmix (`AudioOut::set_mono`); Field HP Display sets the
+libsnd's monaural fold (`AudioSink::set_mono`, per voice only - see
+[audio](audio.md)); Field HP Display sets the
 field party HUD's idle delay (`WorldToggles::field_hp_display`, read through
 `world_map_panel_host::field_hud_view_mode`: `0x28` frames, `0xA0` frames, or
 no HUD - see
@@ -2045,17 +2114,24 @@ Screens are placed on the shared 320x240 stage via
 element icons are UI-icon sprites whose source rects are the `0x800732a4`
 records, staged into the menu atlas (`engine-menus::save_menu_atlas`).
 
+Text labels the menu overlay draws out of its string pool come off the user's
+disc: `legaia_game_tables::menu_pool::MenuPoolLabels` reads them by VA, and
+`menu_windows::parse` carries them on the `MenuWindowTable` both hosts already
+parse, so `MenuRects::label` / `PauseMenuCtx::label` answer wherever the table
+is present and the engine's names stand in only without it. Covered: the root
+rows and the five tab titles (`0x801CE9D0..`), the Items commands, the Point
+Card line, Best Equipment, MP Used, Condition, `ATR:`, Experience / Next Level,
+the stat cells (status page and window 25), the Exchange tab, and the Options
+rows and values. Each keeps its `@` lead, so the title-tab painter adds the
+lead pad only to a stand-in (`window_painters::pool_lead_pad`). Disc-gated
+oracle:
+`pause_learned_content_ladder::the_root_rows_tab_and_item_commands_are_the_overlay_pool_strings`.
+
 Where the port differs from retail today:
 
 | Area | Difference |
 |---|---|
-| List PAGE header | UI-icon records `0x76`, `0x79`, `0x7A..=0x83` are not in the baked atlas, so `list_page_header_draws` draws dialog-font glyphs at the measured columns (label `x + 0x4D`, fraction cells `x + 0x68 / 0x74 / 0x78`) |
-| Spell element plates | the plates (widget records `0x8B..=0x92`) are in the atlas as `save_menu_atlas::band_element_badges` and used by the battle HUD, but `PauseMagicRow` carries only `name` + `ra_seru`, so the spell list leaves the gap without the plate |
-| Items list ink | every row greys on list focus instead of per-row build-time ink ([Items screen](#items-screen)) |
-| Special-route prompts | Door of Light / Incense prompt text is the port's own; Door of Wind rows show a `0` count |
-| Armament candidate lists | id-sorted, without retail's leading rows on an empty slot ([Equip screen](#port-of-the-equip-screen)) |
-| Money box | no casino coin row |
-| Spell level-up notice | port-composed sentence, shown over the resumed menu |
+| Spell level-up notice | shown over the resumed menu |
 | AP gauge fill | linear per-row interpolation; retail's sub-pixel truncation unpinned |
 | `FUN_801E4140` | `guarded_box_rect` has no caller on either host (nothing produces an out-of-range `y`); waived in `scripts/ci/ui-host-drift-waivers.toml` |
 

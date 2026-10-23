@@ -241,6 +241,26 @@ pub fn enumerate_corpus(manifest: &ScenarioManifest, library: &Path) -> Vec<Corp
     out
 }
 
+/// Put a headless seed's world on the retail-faithful mode its image child
+/// runs. The child is `play-window --retail`, whose session switches end in
+/// [`legaia_engine_core::world::WorldToggles::pin_retail`]
+/// (`SessionSwitches::apply`); a seed left on the engine's defaults keeps the
+/// port's tweaks and guards on (the shiny roll's battle-entry `rand()` draw,
+/// the HP-readout and hop-landing guards, the Fortress encounter fix), so the
+/// two halves would replay different fights off one stream. A state made on
+/// a shiny-Seru build keeps that build's entry draw on both halves
+/// (`RetailBattle::resident_shiny_seru`); no other resident patch has an
+/// engine switch behind it.
+pub fn pin_seed_retail(
+    toggles: &mut legaia_engine_core::world::WorldToggles,
+    resident_shiny_seru: bool,
+) {
+    toggles.pin_retail();
+    if resident_shiny_seru {
+        toggles.shiny_seru = true;
+    }
+}
+
 /// Resolve the library + extracted dirs: env overrides first
 /// (`LEGAIA_SAVES_LIBRARY`, `LEGAIA_EXTRACTED_DIR`), then repo-relative.
 pub fn resolve_dirs() -> (Option<PathBuf>, Option<PathBuf>, Option<PathBuf>) {

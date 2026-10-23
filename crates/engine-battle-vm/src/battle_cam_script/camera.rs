@@ -46,6 +46,10 @@ pub(super) struct Glide {
     /// per-step rates can't leave a residue). `None`: a rate-clamped glide
     /// (each component clamps independently; done when all are at target).
     pub(super) steps_left: Option<u32>,
+    /// A rate-clamped glide whose `rate` is retail's per-vsync increment,
+    /// scaled by the camera step's frame step on each pass it walks (the
+    /// summon module's shots, [`BattleCamera::arm_module_shot`]).
+    pub(super) per_vsync: bool,
 }
 
 impl Glide {
@@ -126,6 +130,7 @@ impl Glide {
             rate,
             yaw_glides: yaw,
             steps_left: Some(steps.max(1)),
+            per_vsync: false,
         }
     }
 

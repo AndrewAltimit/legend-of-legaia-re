@@ -819,6 +819,30 @@ mod tests {
         );
     }
 
+    /// Pitch / yaw / `H` share the eye's moved-frame legs: seated angles
+    /// hold while the player stands and ease from there once it moves.
+    #[test]
+    fn a_standing_player_keeps_seated_angles() {
+        let (mut w, mut c) = gated_zone_world();
+        c.zone.snap_pending = true;
+        w.tick();
+        c.tick(&w);
+        let composed = [c.globals.0[0], c.globals.0[1], c.globals.0[9]];
+        let seated = [composed[0], composed[1] - 13, composed[2]];
+        c.zone.seat_angles_after_snap(seated);
+        c.zone.snap_pending = true;
+        w.tick();
+        c.tick(&w);
+        assert_eq!([c.globals.0[0], c.globals.0[1], c.globals.0[9]], seated);
+        w.tick();
+        c.tick(&w);
+        assert_eq!(c.globals.0[1], seated[1], "standing: no ease");
+        w.actors[0].move_state.world_x += 2;
+        w.tick();
+        c.tick(&w);
+        assert_ne!(c.globals.0[1], seated[1], "moved: the yaw eases on");
+    }
+
     /// A seated eye and focus survive a later snap that composes the same
     /// pose on the same spot - a region selector arm's `4C 39` in the entry
     /// script's first pass, which runs on the ticks after the seat - and stop

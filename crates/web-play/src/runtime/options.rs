@@ -64,8 +64,9 @@ impl LegaiaRuntime {
     /// Monaural / muted state applies to a fresh `AudioContext`).
     ///
     /// The same audio knobs the native window applies - the retail options
-    /// screen's Stereo / Monaural row, the engine-only master mute and the
-    /// engine-only `bgm_volume` / `sfx_volume` bus levels - plus the
+    /// screen's Stereo / Monaural row, the engine-only master mute, the
+    /// engine-only `bgm_volume` / `sfx_volume` bus levels and the engine-only
+    /// `downmix_mono` full downmix - plus the
     /// simulation knobs.
     pub(crate) fn apply_options_side_effects(&mut self) {
         #[cfg(target_arch = "wasm32")]
@@ -76,6 +77,7 @@ impl LegaiaRuntime {
             ));
             audio.set_muted(self.options_state.muted);
             audio.set_bus_volumes(self.options_state.bgm_volume, self.options_state.sfx_volume);
+            audio.set_downmix(self.options_state.downmix_mono);
         }
         // The simulation knobs (precise movement, Field Move default, reduce
         // flashing, the battle options, the tile windows, the ground fog) and

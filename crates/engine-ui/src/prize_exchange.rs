@@ -147,7 +147,11 @@ pub fn prize_exchange_draws_for(
     // 43: the "Exchange" tab (`RENDERER_TAB_EXCHANGE` shares the TitleTab
     // painter family).
     if let Some((d, _)) = painter_at(table, WIN_EXCHANGE_TAB, MenuWindowPainter::TitleTab) {
-        text.extend(title_tab_draws_for(font, painter_rect(d), "Exchange"));
+        let label = table
+            .labels
+            .get(legaia_game_tables::menu_pool::MenuLabel::Exchange)
+            .unwrap_or("Exchange");
+        text.extend(title_tab_draws_for(font, painter_rect(d), label));
     }
 
     // 45: the coin-bank counter.

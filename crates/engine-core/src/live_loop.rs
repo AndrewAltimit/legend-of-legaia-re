@@ -125,11 +125,11 @@ impl World {
         // rollability answer taken against a stale group is an answer about a
         // different story state.
         if let Some(mut t) = self.terrain.region_tracker.take() {
-            t.select_group(|flag| self.system_flag_test(flag));
+            t.select_group(|flag| self.encounter_condition_flag_test(flag));
             self.terrain.region_tracker = Some(t);
         }
         if let Some(mut t) = self.world_map.region_tracker.take() {
-            t.select_group(|flag| self.system_flag_test(flag));
+            t.select_group(|flag| self.encounter_condition_flag_test(flag));
             self.world_map.region_tracker = Some(t);
         }
         self.encounters.scene_rollable = self.scene_can_roll_encounters();

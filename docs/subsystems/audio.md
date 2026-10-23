@@ -730,7 +730,7 @@ installer walk's type-0 bank and type-2 score - rather than hunting it for the t
 the disc-gated test pins that the two readings agree on every slot, including which six
 have no pair.
 
-The site's minigame pages take exactly this path per game (`crates/web-play/src/minigames/bgm.rs`): `render_music01_bgm` / `render_music01_loop` split the pair, `VabBank::upload` the VAB, and render through the from-scratch `Spu` + `Sequencer` - the same components the live `AudioDirector` uses. Minigame BGM sources are disc-pinned extraction constants (base-independent): the Baka Fighter init loads extraction 1043 (#55 `M112` "Sol disco fever"); the dance overlay loads extraction 1048/1054 (#60/#66, the Sol disco finals, mode-selected, see [`minigame-dance.md`](minigame-dance.md)); the slot machine and fishing/Muscle Dome start **no** track and inherit their host scene's op-`0x35` BGM. The `music01_bgm_render` WASM surface renders any bank slot for the dance's Sol-disco jukebox.
+The site's minigame pages take exactly this path per game (`crates/web-minigames/src/bgm.rs`): `render_music01_bgm` / `render_music01_loop` split the pair, `VabBank::upload` the VAB, and render through the from-scratch `Spu` + `Sequencer` - the same components the live `AudioDirector` uses. Minigame BGM sources are disc-pinned extraction constants (base-independent): the Baka Fighter init loads extraction 1043 (#55 `M112` "Sol disco fever"); the dance overlay loads extraction 1048/1054 (#60/#66, the Sol disco finals, mode-selected, see [`minigame-dance.md`](minigame-dance.md)); the slot machine and fishing/Muscle Dome start **no** track and inherit their host scene's op-`0x35` BGM. The `music01_bgm_render` WASM surface renders any bank slot for the dance's Sol-disco jukebox.
 
 #### The ending theme: two entries on sound slot 10
 
@@ -1645,7 +1645,24 @@ more than one vsync, read the cell two or three units ahead. Port:
 **Monaural.** libsnd's mono mode (`_DAT_801CE330 == 1`, the options screen's
 "Sound: Monaural") sounds each voice at the larger of its two volumes on both
 sides (`0x800677F4..0x80067818`) - every voice of a mono-mode state reads
-`L == R == max` - not at their average. `Spu::mono` applies it at mix time.
+`L == R == max` - not at their average. `SsSetMono` (`FUN_80068C5C`) is a
+single `sh` of the flag, and the flag's only readers are the voice-volume
+paths: the key-on chain `FUN_80067550`, the channel remix `FUN_80066F4C`, the
+sequence-volume set `FUN_80067E9C` and the utility key-on `FUN_8006861C`, each
+with the same `sltu` / `move` fold. Nothing touches the CD input volume or
+the reverb return, so in retail mono mode XA voice and FMV audio keep their
+stereo image and the Studio C wet signal stays two-channel. `Spu::mono`
+applies the fold at mix time (`AudioSink::set_mono`), and that is all the
+Monaural row does in the port.
+
+**Full downmix (engine-only).** The options file's `downmix_mono` (the
+launcher's and the play page's "Mono output") averages the finished mix -
+voices, reverb return and XA alike - into both channels
+(`AudioSink::set_downmix`, applied inside the shared mixer core so the cpal
+and Web Audio backends cannot diverge). It is a host output setting for
+single-speaker setups, independent of the Monaural row; off is the retail
+output. A one-channel output device is averaged by the cpal callback either
+way.
 
 **BGM / SFX buses (engine-only).** Retail has one SPU mix; the engine tags
 each voice at key-on with the bus of whoever keyed it - a sequencer note
@@ -2824,10 +2841,12 @@ census above covers the battle theme's notes once it is playing.
   ([above](#the-cd-input-enable-volume-and-reverb-send)). A write-watch on
   `0x1F801DB0` across a battle voice cue names it.
 - **Two emitter inputs are constants.** The per-row scale pair `0x80091658`
-  reads `0x80` in every captured state and has no traced writer, and the port
-  folds mono at mix time (`Spu::mono`, the larger side) where the emitter arm
-  averages the two sides before writing them
+  reads `0x80` in every captured state and has no traced writer
   ([above](#positional-sound-emitters)).
+  The arm's other input, the options Sound word, reaches it: in Monaural it
+  averages the two sides (`0x800224D4..0x800224E8`) and the direct voice
+  write keeps that average, so a mono emitter sounds at the mean of its
+  levels, not the larger one `Spu::mono` gives a keyed voice.
 - **The Field↔Battle swap** has no retail audio trace
   ([above](#the-fieldbattle-swap-is-not-on-this-axis)).
 - **`.MAP` / `.PCH` / `.spk` / `.pac`** have no retail carrier to decode; the

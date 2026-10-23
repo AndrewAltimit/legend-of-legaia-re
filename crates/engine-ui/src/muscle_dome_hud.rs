@@ -42,7 +42,7 @@
 //! the INTERVAL heading, records 0/1 the ROUND word + hub digit strip.
 //! Both hosts consume the parsed records as their geometry source: the
 //! site's Muscle Dome page through
-//! `legaia-web-play::minigames_muscle::muscle_hud_json` /
+//! `web-minigames::muscle_web::muscle_hud_json` /
 //! `muscle_hub_quads_json`, and the native play-window through its
 //! `muscle_hub_sprite_draws` builder (intro card + ROUND banner over an
 //! open leg, INTERVAL + score tally between legs).
@@ -304,7 +304,7 @@ fn corner_span(texels: u8, size: i32, scale: i32) -> i32 {
 /// `docs/subsystems/minigame-muscle-dome.md`).
 ///
 /// Wired through [`hub_screen_quads`] on both hosts: the dome page calls
-/// `minigames_muscle::muscle_hub_quads_json`, which runs this emitter over
+/// `muscle_web::muscle_hub_quads_json`, which runs this emitter over
 /// the recovered draw lists and hands the page finished screen rects, and
 /// the native play-window runs the same composition in its
 /// `muscle_hub_sprite_draws` builder.

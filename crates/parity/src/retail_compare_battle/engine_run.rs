@@ -178,6 +178,10 @@ pub fn entry_latches(extracted: &Path, retail: &RetailObs, battle: &RetailBattle
     let Ok(mut session) = NativeSession::open(extracted, &cfg) else {
         return tail;
     };
+    crate::retail_compare::pin_seed_retail(
+        &mut session.host.world.toggles,
+        battle.resident_shiny_seru,
+    );
     let opts = FieldLiveOpts {
         live_loop: true,
         player_battle: true,
@@ -213,6 +217,13 @@ pub fn run_engine_battle(
         enable_audio: false,
     };
     let mut session = NativeSession::open(extracted, &cfg).context("open boot session")?;
+    // The image child's `--retail` mode, so both sides deal the fight off
+    // the same stream position; a shiny-Seru build's battle-entry draw is
+    // kept on both (`RetailBattle::resident_shiny_seru`).
+    crate::retail_compare::pin_seed_retail(
+        &mut session.host.world.toggles,
+        battle.resident_shiny_seru,
+    );
     // Player-driven: retail parks every party turn on the command flow, so an
     // auto-resolving engine would spend the settle window fighting.
     let opts = FieldLiveOpts {
@@ -545,6 +556,11 @@ pub fn run_engine_battle(
                         && let Some(cam) = session.host.world.battle.camera.as_mut()
                     {
                         cam.align_glide_origin(battle.cam_tween.0, battle.cam_tween.1);
+                    }
+                    if battle.module_cam_aligned()
+                        && let Some(cam) = session.host.world.battle.camera.as_mut()
+                    {
+                        cam.align_module_shot(battle.cam_tween.0, battle.cam_tween.1);
                     }
                     phase_tick = Some(t);
                     idle_advance = idle.advance();

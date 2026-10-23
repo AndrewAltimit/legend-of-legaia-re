@@ -276,7 +276,10 @@ fn mode4_scene_entry_carrier_census_or_skip() {
         for id in &installs {
             world.spawn_ambient_record(*id as usize + 1, [0, 0, 0]);
         }
-        for _ in 0..4 {
+        // Eight ticks: a part's `WAIT_SET v` holds `v` vsyncs (the drain is
+        // `frame_step * 8`), and `other7`'s setup waits before it keys its
+        // step.
+        for _ in 0..8 {
             world.tick_ambient_fx();
         }
         let rects = world.active_ambient_scroll_rects();

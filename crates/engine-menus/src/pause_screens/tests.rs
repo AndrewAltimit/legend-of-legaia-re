@@ -18,6 +18,8 @@ fn items_session(ids_counts: &[(u8, u8)]) -> PauseItemsSession {
             count: *count,
             desc: format!("Desc {id:02X}"),
             passive: None,
+            use_bits: 0,
+            throw_bits: 0,
         })
         .collect();
     let targets = vec![TargetRow::new(0, "Vahn").with_stats(50, 100, 10, 30)];
@@ -1142,4 +1144,30 @@ fn card_driver_ids_follow_the_root_picker_row_labels() {
     );
     assert_eq!(ROOT_MENU_ROUTES[5], SaveSubScreen::CardLoad.id());
     assert_eq!(ROOT_MENU_ROUTES[6], SaveSubScreen::CardSave.id());
+}
+
+/// The special Use routes' prompts read out of a menu-overlay image at their
+/// renderers' VAs: the pool's `@` kept, a `0xC2` token kept whole and
+/// spliced at draw time, the Door of Wind route promptless.
+#[test]
+fn use_route_prompts_read_the_overlay_pool_and_splice_the_item_name() {
+    let mut overlay = vec![0u8; 0x400];
+    let put = |o: &mut Vec<u8>, va: u32, bytes: &[u8]| {
+        let off = (va - MENU_OVERLAY_BASE_VA) as usize;
+        o[off..off + bytes.len()].copy_from_slice(bytes);
+    };
+    put(&mut overlay, DOOR_OF_LIGHT_PROMPT_VA, b"@Leave?\0");
+    put(&mut overlay, INCENSE_PROMPT_VAS[0], b"@Burn \xC2\x8A.\0");
+    put(&mut overlay, INCENSE_PROMPT_VAS[1], b"@Sure?\0");
+    let p = UseRoutePrompts::from_menu_overlay(&overlay);
+    assert!(p.is_installed());
+    assert_eq!(p.incense[0], b"@Burn \xC2\x8A.");
+    let name = |tok: u8, op: u8| (tok == 0xC2 && op == 0x8A).then(|| "Item8A".to_string());
+    assert_eq!(p.lines(UseRoute::DoorOfLight, name), ["@Leave?"]);
+    assert_eq!(
+        p.lines(UseRoute::Incense, name),
+        ["@Burn Item8A.", "@Sure?"]
+    );
+    assert!(p.lines(UseRoute::DoorOfWind, name).is_empty());
+    assert!(!UseRoutePrompts::default().is_installed());
 }

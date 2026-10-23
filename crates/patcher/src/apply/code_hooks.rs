@@ -510,3 +510,42 @@ pub fn apply_approach_fix(patcher: &mut DiscPatcher) -> Result<ApproachFixReport
         }
     }
 }
+
+/// Outcome of applying the Conkram mirror freeze fix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConkramFreezeFixReport {
+    /// Whether the sites were rewritten (`false` = already fixed).
+    pub changed: bool,
+}
+
+/// Apply the **Conkram mirror freeze fix** (see
+/// [`legaia_code_hooks::conkram_freeze_fix`]): the move VM's keyframe-pose
+/// seat (op `0x3C`) and the render-node allocation in `FUN_80020F88` survive
+/// a failed heap allocation without writing through NULL - the first halts
+/// the part through op `0x08`'s own arm, the second installs a shared
+/// stand-in node - and both allocate through a quiet entry, so a failure
+/// leaves the `PRG ERR` counter and its on-screen readout untouched. Every
+/// allocation that succeeds runs as retail.
+///
+/// Four same-size edits in `SCUS_942.54`. Each site and the surrounding
+/// words are verified before writing; an unrecognized or partly patched
+/// build is refused without touching the disc, and an already-fixed image is
+/// a no-op.
+pub fn apply_conkram_freeze_fix(patcher: &mut DiscPatcher) -> Result<ConkramFreezeFixReport> {
+    let scus = patcher
+        .read_named_file(SCUS_NAME)
+        .context("read SCUS_942.54 for the Conkram freeze fix")?;
+    match legaia_code_hooks::conkram_freeze_fix::plan(&scus)? {
+        None => Ok(ConkramFreezeFixReport { changed: false }),
+        Some(fix) => {
+            for edit in &fix.edits {
+                patcher
+                    .patch_named_file(SCUS_NAME, edit.file_off as u64, &edit.bytes)
+                    .with_context(|| {
+                        format!("write Conkram freeze fix at SCUS +{:#x}", edit.file_off)
+                    })?;
+            }
+            Ok(ConkramFreezeFixReport { changed: true })
+        }
+    }
+}

@@ -20,7 +20,6 @@
 //! tables against the real executable.
 
 use anyhow::{Context, Result};
-use std::collections::{HashMap, HashSet};
 
 use legaia_game_tables::item_names::ItemNameTable;
 use legaia_gamedata::Database;
@@ -48,35 +47,13 @@ pub struct EquipmentItem {
 pub fn equipment_pool(scus: &[u8]) -> Result<Vec<EquipmentItem>> {
     let table = ItemNameTable::from_scus(scus)
         .context("SCUS_942.54 is not a PSX-EXE / item table absent")?;
-
-    // Disc name (lowercased) -> id. Item names are unique, so first-wins is
-    // safe; `or_insert` just guards against any accidental duplicate.
-    let mut by_name: HashMap<String, u8> = HashMap::new();
-    for id in 1..=u8::MAX {
-        if let Some(name) = table.name(id) {
-            by_name.entry(name.to_ascii_lowercase()).or_insert(id);
-        }
-    }
-
-    let gd = Database::load();
-    let named_prices = gd
-        .weapons()
-        .iter()
-        .map(|w| (w.name.as_str(), w.price))
-        .chain(gd.armor().iter().map(|a| (a.name.as_str(), a.price)))
-        .chain(gd.accessories().iter().map(|a| (a.name.as_str(), a.price)));
-
-    let mut seen: HashSet<u8> = HashSet::new();
-    let mut pool: Vec<EquipmentItem> = Vec::new();
-    for (name, price) in named_prices {
-        if let Some(&id) = by_name.get(&name.to_ascii_lowercase())
-            && seen.insert(id)
-        {
-            pool.push(EquipmentItem { id, price });
-        }
-    }
-    pool.sort_by_key(|e| e.id);
-    Ok(pool)
+    // The join lives in `legaia-gamedata`, which the engine's bonus-drop
+    // twin calls too, so the two pools cannot drift.
+    Ok(Database::load()
+        .equipment_pool_by_name(|id| table.name(id).map(str::to_string))
+        .into_iter()
+        .map(|(id, price)| EquipmentItem { id, price })
+        .collect())
 }
 
 /// The equipment ids alone (sorted), for the bonus-drop id table.

@@ -128,6 +128,15 @@ pub const COST_WIDTH_BIAS: i32 = 6;
 /// the Right chip's left edge stays pinned at 256.
 pub const CHIP_WIDEN_K: [i32; 4] = [2, 1, 1, 0];
 
+/// Each chip's **seat A** `x` - the seat array's `+0` halfword (SCUS
+/// `0x80076BBC`, 12-byte stride, seat order Left / High / Low / Right),
+/// which case `9` stores into the chip record's `+0x02` (`0x801D3B54`) and
+/// re-seats by the same cost shift as seat B. The entry screen's step script
+/// (`PTR_DAT_801F4D34[9]`) opens records `0x1B..=0x1E` in mode `0`, so each
+/// chip spawns here, off the right edge, and glides to seat B
+/// ([`ArtsInputFrame::chip_anchor`]). Seat A `y` is seat B's.
+pub const CHIP_SEAT_A_X: [i32; 4] = [352, 392, 392, 424];
+
 /// Stage top-left of the AP plate.
 pub const AP_PLATE_SEAT: (i32, i32) = (208, 172);
 /// Stage span of the AP plate's gouraud fill at a full gauge
@@ -365,7 +374,20 @@ pub struct ArtsInputFrame<'a> {
     /// Open Triangle arts-list page, `None` when closed.
     pub list_page: Option<u8>,
     pub phase: ArtsInputScreen,
+    /// Committed pennants still gliding in from their chip, as
+    /// `(slot, elapsed, total)` frames ([`Self::pennant_seat`]). Empty draws
+    /// every pennant on its bar seat.
+    pub glides: &'a [(usize, u8, u8)],
+    /// The direction chips' slide-in, `(elapsed, total)` frames, while it
+    /// runs ([`Self::chip_anchor`]); `None` draws them on seat B.
+    pub chip_slide: Option<(u8, u8)>,
 }
+
+/// Record-space `y` a committed pennant lands on: case `0xB` stores the
+/// immediate `0xC0` into the pennant record's seat B (`li v0,0xc0` /
+/// `sh v0,0xc(a2)` at `0x801D3D10` / `0x801D3D14`). It draws
+/// `PENNANT_RECORD_Y - BAR_Y` above that, on the bar row.
+pub const PENNANT_RECORD_Y: i32 = 0xC0;
 
 impl ArtsInputFrame<'_> {
     /// `true` while the direction chips + D-pad are up. Retail draws
@@ -403,6 +425,38 @@ impl ArtsInputFrame<'_> {
         PENNANT_ANCHOR_X0 + self.spent.iter().take(slot).map(|&c| c as i32).sum::<i32>()
     }
 
+    /// Stage `(x, y)` of committed pennant `slot`'s **drawn left edge** this
+    /// frame. A settled pennant sits on its bar seat
+    /// ([`Self::pennant_x`], [`BAR_Y`]). One still gliding moves along
+    /// `FUN_801D9BBC`'s linear step, `start + (target - start) * elapsed /
+    /// total` (signed division), from the pressed chip's anchor - case `0xB`
+    /// copies the chip record's seat B into the pennant's seat A
+    /// (`0x801D3CE8..0x801D3CFC`) - to its landing seat
+    /// (`ctx[+0x6D8]`, [`PENNANT_RECORD_Y`]). Both ends draw with the
+    /// landing's own offset from record to bar row.
+    pub fn pennant_seat(&self, slot: usize) -> (i32, i32) {
+        let target = (self.pennant_anchor_x(slot), PENNANT_RECORD_Y);
+        let dy = PENNANT_RECORD_Y - BAR_Y;
+        let glide = self
+            .glides
+            .iter()
+            .find(|g| g.0 == slot && g.1 < g.2 && g.2 > 0)
+            .zip(
+                self.buffer
+                    .get(slot)
+                    .and_then(|&b| ChipDirection::from_command_byte(b)),
+            );
+        let (x, y) = match glide {
+            Some(((_, elapsed, total), dir)) => {
+                let start = self.chip_anchor(dir);
+                let lerp = |s: i32, t: i32| s + (t - s) * i32::from(*elapsed) / i32::from(*total);
+                (lerp(start.0, target.0), lerp(start.1, target.1))
+            }
+            None => target,
+        };
+        (x - 9, y - dy)
+    }
+
     /// Drawn width of committed pennant `slot` - its command's own cost less
     /// [`COST_WIDTH_BIAS`], copied from the pressed chip's record
     /// (`0x801D3D00` / `0x801D3D08`). The pennant itself has no cost
@@ -426,11 +480,22 @@ impl ArtsInputFrame<'_> {
     /// array's `x` re-seated by `(cost - 30) * K[slot] / 2`
     /// (`0x801D3B64..0x801D3B8C`; the `srl 31` / `addu` / `sra 1` triple is
     /// the signed divide-by-two, so the halving truncates toward zero).
+    ///
+    /// While [`Self::chip_slide`] runs, the anchor is `FUN_801D9BBC`'s linear
+    /// step from seat A ([`CHIP_SEAT_A_X`], shifted alike) to seat B:
+    /// `a + (b - a) * elapsed / total`, signed division.
     pub fn chip_anchor(&self, dir: ChipDirection) -> (i32, i32) {
         let (x, y) = dir.anchor();
         let shift =
             (self.chip_cost(dir) - CHIP_COST_ZERO_POINT) * CHIP_WIDEN_K[dir.seat_slot()] / 2;
-        (x - shift, y)
+        let b = x - shift;
+        match self.chip_slide {
+            Some((elapsed, total)) if total > 0 && elapsed < total => {
+                let a = CHIP_SEAT_A_X[dir.seat_slot()] - shift;
+                (a + (b - a) * i32::from(elapsed) / i32::from(total), y)
+            }
+            _ => (b, y),
+        }
     }
 
     /// The all-30 cost row - a favored-weapon caster, and the shape every
@@ -521,7 +586,7 @@ pub fn arts_input_chrome_draws(
         let Some(dir) = ChipDirection::from_command_byte(b) else {
             continue;
         };
-        let px = frame.pennant_x(slot);
+        let (px, py) = frame.pennant_seat(slot);
         let cap_w = rects.pennant_cap_l.2 as i32;
         // The strip between the caps is the record's own width, `cost - 6` -
         // so an off-class command stamps a wider pennant, and the next one
@@ -530,16 +595,16 @@ pub fn arts_input_chrome_draws(
         push(
             rects.pennant_cap_l,
             px,
-            BAR_Y,
+            py,
             rects.pennant_cap_l.2,
             rects.pennant_cap_l.3,
         );
         let label = frame.chip_label(rects, dir);
-        push(label, px + cap_w, BAR_Y, strip_w as u32, label.3);
+        push(label, px + cap_w, py, strip_w as u32, label.3);
         push(
             rects.pennant_cap_r,
             px + cap_w + strip_w,
-            BAR_Y,
+            py,
             rects.pennant_cap_r.2,
             rects.pennant_cap_r.3,
         );
@@ -797,7 +862,47 @@ mod tests {
             plate_value: 68,
             list_page: None,
             phase: ArtsInputScreen::Entering,
+            glides: &[],
+            chip_slide: None,
         }
+    }
+
+    /// The chips spawn on seat A and glide to seat B over the slide.
+    #[test]
+    fn the_chips_slide_in_from_seat_a() {
+        let mut f = frame(&[], &[]);
+        let rest = f.chip_anchor(ChipDirection::Left);
+        f.chip_slide = Some((0, 16));
+        assert_eq!(f.chip_anchor(ChipDirection::Left), (352, rest.1));
+        f.chip_slide = Some((8, 16));
+        assert_eq!(f.chip_anchor(ChipDirection::Left).0, 352 + (176 - 352) / 2);
+        assert_eq!(f.chip_anchor(ChipDirection::Right).0, 424 + (256 - 424) / 2);
+        f.chip_slide = Some((16, 16));
+        assert_eq!(f.chip_anchor(ChipDirection::Left), rest);
+    }
+
+    /// A pennant spawns on its pressed chip's anchor and glides linearly to
+    /// its bar seat over the record's total, landing on the bar row.
+    #[test]
+    fn a_fresh_pennant_glides_from_its_chip_to_the_bar() {
+        let buffer = [1u8]; // Left
+        let spent = [30u16];
+        let mut f = frame(&buffer, &spent);
+        let rest = f.pennant_seat(0);
+        assert_eq!(rest, (f.pennant_x(0), BAR_Y));
+        let glides = [(0usize, 0u8, 24u8)];
+        f.glides = &glides;
+        let (cx, cy) = f.chip_anchor(ChipDirection::Left);
+        let dy = PENNANT_RECORD_Y - BAR_Y;
+        assert_eq!(f.pennant_seat(0), (cx - 9, cy - dy), "spawned on the chip");
+        let half = [(0usize, 12u8, 24u8)];
+        f.glides = &half;
+        let (hx, hy) = f.pennant_seat(0);
+        assert_eq!(hx, cx + (PENNANT_ANCHOR_X0 - cx) * 12 / 24 - 9);
+        assert_eq!(hy, cy + (PENNANT_RECORD_Y - cy) * 12 / 24 - dy);
+        let done = [(0usize, 24u8, 24u8)];
+        f.glides = &done;
+        assert_eq!(f.pennant_seat(0), rest, "arrived");
     }
 
     /// The icon table's six words in id order, and the pennant ids `+ 6`

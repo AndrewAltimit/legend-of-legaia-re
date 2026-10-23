@@ -250,6 +250,51 @@ impl World {
         }
     }
 
+    /// Arm a Rage seat's turn: the queue the round's delegated fill built
+    /// (`FUN_801F0450`'s `record[+0xF8] & 0x2000` arm, run at state `0x00`
+    /// by [`Self::run_round_state_zero`]) plays as it stands.
+    ///
+    /// Retail's seed `0x0C` calls the builder `FUN_801EED1C` for every party
+    /// seat (`0x801E2C7C`). For a delegated seat that call changes nothing in
+    /// the stream: its status-limb strips touch only the direction commands
+    /// `0x0C..=0x0F`, and its arts tokenizer matches arrow strings, of which
+    /// a stream of action constants (`learned id + 0x1B`) holds none. What it
+    /// does do is clear its own scratch at its head: the starter side array
+    /// `0x801F6990` (`0x801EED5C..0x801EED74`) and the special-trigger flag
+    /// `0x801F696C` (`0x801EED88`), which with no tokenizer match stays
+    /// clear for the swing.
+    ///
+    /// The turn picker's dead-target redirect (`FUN_801DB124` from
+    /// `0x801DAF14`, category `3`) applies to the target the fill rolled,
+    /// exactly as it does to a committed Attack.
+    ///
+    /// An empty stream (the fill's first stop roll ended it, or the member
+    /// has no learned arts) is a walk-up with no swing, which is what a
+    /// write-watched retail round shows for such a seat.
+    ///
+    /// PORT: FUN_801EED1C (head scratch clears `0x801EED5C..0x801EED88` and the
+    /// stream pass-through, for a seat `FUN_801F0450`'s delegated arm filled)
+    pub(in crate::world) fn arm_party_delegated(&mut self, slot: u8) {
+        use legaia_engine_battle_vm::battle_action::{ActionCategory, ActionState};
+        let attack = ActionCategory::Attack.as_byte();
+        let rolled = self
+            .actors
+            .get(slot as usize)
+            .map_or(slot, |a| a.battle.active_target);
+        let target = self.redirect_dead_battle_target(rolled, attack, 0);
+        self.battle_ctx.active_actor = slot;
+        self.battle_ctx.super_trigger = false;
+        self.battle_ctx.queued_action = attack;
+        self.battle_ctx.action_state = ActionState::Begin.as_byte();
+        if let Some(a) = self.actors.get_mut(slot as usize) {
+            a.battle.active_target = target;
+            a.battle.action_category = attack;
+            a.battle.strike_index = 0;
+            a.battle.clear_art_profile();
+            a.battle.starter_marks = None;
+        }
+    }
+
     pub(in crate::world) fn arm_party_physical(&mut self, slot: u8) {
         use legaia_engine_battle_vm::battle_action::ActionState;
         if self.arm_ai_companion(slot) {
@@ -361,6 +406,37 @@ impl World {
             .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| (d.agl, d.action_costs.clone(), d.action_entries.clone()))
             .unwrap_or((0, Vec::new(), Vec::new()));
+        // `WorldToggles::enemy_attack_permille` (the `--enemy-attack-count`
+        // twin): each affordable price divided by the multiplier against the
+        // record's own AGL, as the patch rewrites the `+0x74` bytes. Tetsu
+        // stays pinned.
+        let pinned = self
+            .actors
+            .get(slot as usize)
+            .and_then(|a| a.battle_monster_id)
+            == Some(crate::world::SCALE_PINNED_MONSTER_ID);
+        let permille = self.toggles.enemy_attack_permille;
+        let record_agl = self
+            .actors
+            .get(slot as usize)
+            .and_then(|a| a.battle_monster_id)
+            .and_then(|id| self.tables.monster_catalog.get(id))
+            .map(|d| {
+                if d.raw_stats[0] != 0 {
+                    d.raw_stats[0]
+                } else {
+                    d.agl
+                }
+            })
+            .unwrap_or(catalog_agl);
+        let costs: Vec<u8> = if pinned || permille == crate::world::SCALE_RETAIL {
+            costs
+        } else {
+            costs
+                .iter()
+                .map(|&c| crate::world::scale_attack_cost(c, record_agl, permille))
+                .collect()
+        };
         self.battle.monster_strike_entries.clear();
         let cut = std::mem::take(&mut self.battle.monster_ai_state.cut_strike_stream);
         // The gauge retail spends is the actor's **live** `+0x154`, which the

@@ -124,7 +124,9 @@ HOSTS = {
     ],
     "web": [
         REPO / "crates" / "web-play" / "src",
+        REPO / "crates" / "web-minigames" / "src",
         REPO / "crates" / "web-viewer" / "src",
+        REPO / "crates" / "web-patcher" / "src",
     ],
 }
 

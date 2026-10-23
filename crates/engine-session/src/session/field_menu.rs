@@ -37,6 +37,12 @@ impl<S: AudioSink> BootSession<S> {
             return;
         }
         let world = &mut self.host.world;
+        // Menu-open state 0 (`FUN_801DC6B4`, `0x801DC7EC..0x801DC800`): a
+        // non-zero casino coin bank raises the system flag the money box's
+        // coin row tests. The flag is never cleared.
+        if world.minigames.casino_coins != 0 {
+            world.system_flag_set(legaia_engine_menus::field_menu::SYSTEM_FLAG_CASINO_COIN_ROW);
+        }
         let mut session = FieldMenuSession::new();
         session.money = world.party.money.max(0) as u32;
         session.play_time_seconds = world.clock.play_time_seconds;

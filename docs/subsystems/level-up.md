@@ -354,6 +354,8 @@ Without a disc the tracker falls back to `StatGain::default()`, a flat placehold
 
 **Jitter is modelled and opt-in.** `LevelUpTracker::with_level_up_jitter(seed)` seeds a PSX BIOS-rand LCG (`BiosRand`: `seed = seed×0x41C6_4E6D + 0x3039; (seed>>16)&0x7FFF`). The level-up pass then draws one `rand()` per stat per level in the applier's stat order (HP, MP, AGL, ATK, UDF, LDF, SPD, INT), including the draw when `jitter == 0` (`rand() % 1 == 0`), and applies the spread to the **unfloored** core (`level_gain_core_raw`) before the `max(1, …)` floor, as `FUN_801E9504` does.
 
+The per-level gain itself is one kernel, `levelup::jittered_level_gains`, which the tracker's jitter pass and the minigames page's Muscle Dome fighter (a new-game template levelled to the picked level, on a stream seeded by the leg's seed) both run.
+
 It is off by default: with no jitter RNG installed the tracker applies only the deterministic core and draws zero `rand()`, so replay and determinism oracles stay bit-identical. Reproducing a *specific* retail level-up bit-exactly would also need the BIOS-rand state at that moment, which is runtime state and not on the disc. The jitter mean is 0, so default totals are unbiased.
 
 ### Hydration on load

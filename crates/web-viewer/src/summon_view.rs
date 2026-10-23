@@ -280,7 +280,7 @@ fn summon_log(s: &str) {
 /// Read one PROT entry's raw on-disc bytes.
 fn entry_bytes<'a>(
     prot: &'a [u8],
-    entries: &[disc::EntryMeta],
+    entries: &[legaia_prot::toc_index::EntryMeta],
     prot_index: u32,
 ) -> Option<&'a [u8]> {
     let meta = entries.iter().find(|e| e.index == prot_index)?;
@@ -324,7 +324,7 @@ struct LoadedCast {
 #[wasm_bindgen]
 pub struct LegaiaSummons {
     prot: Vec<u8>,
-    entries: Vec<disc::EntryMeta>,
+    entries: Vec<legaia_prot::toc_index::EntryMeta>,
     current: Option<LoadedCast>,
 }
 
@@ -391,14 +391,14 @@ impl LegaiaSummons {
     /// Load a full Mode2/2352 disc image (or a raw `PROT.DAT`) and parse the
     /// TOC. Returns `{"entries": N}` JSON; errors throw.
     pub fn load_disc(&mut self, bytes: Vec<u8>) -> Result<String, JsValue> {
-        let prot = if disc::is_mode2_2352_disc(&bytes) {
-            disc::extract_prot_dat(&bytes).ok_or_else(|| {
+        let prot = if legaia_iso::image::is_mode2_2352_disc(&bytes) {
+            legaia_iso::image::extract_prot_dat(&bytes).ok_or_else(|| {
                 JsValue::from_str("summons: PROT.DAT not found in this disc image")
             })?
         } else {
             bytes
         };
-        let entries = disc::parse_prot_toc(&prot)
+        let entries = legaia_prot::toc_index::parse_prot_toc(&prot)
             .ok_or_else(|| JsValue::from_str("summons: PROT.DAT TOC parse failed"))?;
         self.prot = prot;
         self.entries = entries;

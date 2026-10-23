@@ -110,6 +110,146 @@ fn dp_alignment_absorbs_a_surplus_chunk_mid_pool() {
     assert_eq!(pairs.len(), u.len());
 }
 
+/// Chunks laid out one after another the way `nul_chunks` frames them: each
+/// starts one past the previous one's terminator. A chunk that ends in a
+/// name token whose `0x00` argument also ends its string (`@Equipar
+/// {c1:00}`) is followed by that second zero.
+fn laid_out(v: &[&[u8]]) -> Vec<Chunk> {
+    let mut off = 0x10;
+    let mut prev_head = false;
+    v.iter()
+        .map(|b| {
+            // A string that opens right after a head's argument byte is that
+            // head's tail; one listed after a string-ending head is not.
+            let tail = b.first() == Some(&b' ');
+            if prev_head && !tail {
+                off += 1;
+            }
+            let c = (off, b.to_vec());
+            off += b.len() + 1;
+            prev_head = b.last().is_some_and(|&x| x & 0xF0 == 0xC0);
+            c
+        })
+        .collect()
+}
+
+#[test]
+fn a_token_cut_fragment_never_anchors_a_pool() {
+    use super::chunk_align::pair_chunk_lists;
+    // `@{c1:00} will equip` scans as a two-byte head and a tail; the source
+    // build puts the name last, and an unrelated later line opens with the
+    // same `@{c1:00}` head. Anchoring on it would pair the labels between
+    // with the source's later lines.
+    let u = laid_out(&[
+        b"@Have ",
+        b"@.",
+        b"@None",
+        b"@How many?",
+        b"@\xC1",
+        b" will equip",
+        b"@Price",
+        b"@Swap",
+    ]);
+    let s = laid_out(&[
+        b"@Tienes ",
+        b"@.",
+        b"@Nada",
+        b"@Cuantos?",
+        b"@Equipar \xC1",
+        b"@Precio",
+        b"@Cambiar",
+        b"@El combate va a empezar.",
+        b"@Prepara a tus luchadores:",
+        b"@\xC1",
+        b", y.",
+    ]);
+    let map = pair_chunk_lists(&u, &s);
+    let got = |i: usize| map.get(&u[i].0).map(|b| b.as_slice());
+    assert_eq!(got(2), Some(&b"@Nada"[..]));
+    assert_eq!(got(3), Some(&b"@Cuantos?"[..]));
+    assert_eq!(got(6), Some(&b"@Precio"[..]));
+    assert_eq!(got(7), Some(&b"@Cambiar"[..]));
+    // The fragments pair with nothing of another shape.
+    assert_eq!(got(4), None);
+    assert_eq!(got(5), None);
+}
+
+#[test]
+fn a_surplus_string_mid_pool_does_not_slide_the_tail() {
+    use super::chunk_align::pair_chunk_lists;
+    // The source carries one extra string mid-pool (a label without its `@`
+    // ahead of the same label with it) and runs on past the pool's end. Every
+    // order-preserving alignment of these lengths scores alike pair by pair;
+    // only the one that skips the extra string pairs each label with its own.
+    let u = laid_out(&[
+        b"@How many to sell?",
+        b"@Price",
+        b"@Cannot sell",
+        b"@Exchange",
+        b"@The battle begins.",
+        b"@Are you ready?",
+    ]);
+    let s = laid_out(&[
+        b"@Quanti ne vendi?",
+        b"@Prezzo",
+        b"Non vendibile",
+        b"@Non vendibile",
+        b"@Scambio",
+        b"@Inizia lo scontro.",
+        b"@Sei pronto?",
+        b"@Lo scontro contro i fratelli",
+        b"@inizia ora con tre incontri",
+    ]);
+    let map = pair_chunk_lists(&u, &s);
+    let got: Vec<Option<&[u8]>> = u
+        .iter()
+        .map(|c| map.get(&c.0).map(|b| b.as_slice()))
+        .collect();
+    assert_eq!(
+        got,
+        [
+            Some(&b"@Quanti ne vendi?"[..]),
+            Some(b"@Prezzo"),
+            Some(b"@Non vendibile"),
+            Some(b"@Scambio"),
+            Some(b"@Inizia lo scontro."),
+            Some(b"@Sei pronto?"),
+        ]
+    );
+}
+
+#[test]
+fn a_slot_filling_string_splits_at_the_table_stride() {
+    use super::chunk_align::{pair_chunk_lists, split_at_stride, table_stride};
+    // A four-slot table at stride 0x10; the source's second string fills
+    // its slot exactly, so the NUL scan reads it and the third as one chunk.
+    let u: Vec<Chunk> = vec![
+        (0x00, b"Curse".to_vec()),
+        (0x10, b"Recover all".to_vec()),
+        (0x20, b"MP zero".to_vec()),
+        (0x30, b"Items lost".to_vec()),
+    ];
+    assert_eq!(table_stride(&[0x00, 0x10, 0x20, 0x30]), Some(0x10));
+    assert_eq!(table_stride(&[0x00, 0x10, 0x28]), None);
+    assert_eq!(table_stride(&[0x00, 0x10]), None);
+    let merged = b"Alles zurueckhol".to_vec();
+    assert_eq!(merged.len(), 0x10);
+    let mut joined = merged.clone();
+    joined.extend_from_slice(b"MP Null");
+    let s: Vec<Chunk> = vec![
+        (0x00, b"Fluch".to_vec()),
+        (0x10, joined),
+        (0x30, b"Objekte weg".to_vec()),
+    ];
+    let s = split_at_stride(s, 0x10);
+    assert_eq!(s[1], (0x10, merged.clone()));
+    assert_eq!(s[2], (0x20, b"MP Null".to_vec()));
+    let map = pair_chunk_lists(&u, &s);
+    assert_eq!(map.get(&0x10), Some(&merged));
+    assert_eq!(map.get(&0x20).map(Vec::as_slice), Some(&b"MP Null"[..]));
+    assert_eq!(map.get(&0x30).map(Vec::as_slice), Some(&b"Objekte weg"[..]));
+}
+
 #[test]
 fn crawl_pages_pair_across_paragraph_gaps() {
     // Equal counts pair one for one.

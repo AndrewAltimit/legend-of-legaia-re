@@ -77,6 +77,32 @@ pub(super) fn split_round_trip(label: &str) -> (&str, bool) {
     }
 }
 
+/// `"jou+rage"` -> `("jou", true)`: every party member carries the Evil
+/// Medallion's Rage passive (character record `+0xF8` bit `0x2000`, ability
+/// word 1) for the whole run, so every battle is fought with each member
+/// delegated (`+0x16E |= 0x380`, the anim tick's Rage arm). Outermost of the
+/// run suffixes: `jou+talk+rage`.
+pub(super) fn split_rage(label: &str) -> (&str, bool) {
+    match label.strip_suffix("+rage") {
+        Some(scene) => (scene, true),
+        None => (label, false),
+    }
+}
+
+/// The Rage passive's bit in ability word 1 (record `+0xF8`).
+const RAGE_BIT: u32 = 0x2000;
+
+/// Raise [`RAGE_BIT`] on every roster member. Re-applied every frame: an
+/// equipment change rebuilds the ability bits from what is worn.
+pub(super) fn give_party_rage(w: &mut legaia_engine_core::world::World) {
+    for m in &mut w.party.roster.members {
+        let mut bits = m.ability_bits();
+        let word = u32::from_le_bytes([bits[4], bits[5], bits[6], bits[7]]) | RAGE_BIT;
+        bits[4..8].copy_from_slice(&word.to_le_bytes());
+        m.set_ability_bits(bits);
+    }
+}
+
 /// `"town01+shop"` -> `("town01", true)`: the run opens one of the scene's
 /// shops every [`SHOP_VISIT_EVERY`] free field frames.
 pub(super) fn split_shop(label: &str) -> (&str, bool) {

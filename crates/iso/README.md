@@ -13,6 +13,16 @@ strips that wrapper and exposes a clean ISO9660 view.
   2048-byte user payload only; the caller never sees raw 2352-byte sectors.
 - `iso9660` - primary volume descriptor + directory walker. Yields
   `(name, lba, size)` tuples for every file on the disc.
+- `image` - the borrowed-slice reader the browser hosts load a visitor's
+  image through: `walk_iso_files` lists every file (subdirectories
+  included), `extract_prot_dat` / `extract_cdname_txt` / `extract_scus`
+  return a root file's logical bytes, and `read_raw_sector` hands the XA
+  demuxer a whole 2352-byte sector. No `std::fs`, so it builds for `wasm32`.
+  It walks directories through `iso9660`'s in-memory reader
+  (`root_in_image`, `list_directory_in_image`), the same one behind
+  `find_file_in_image` / `find_path_in_image` / `read_file_in_image`, so
+  the browser and the patcher resolve a name identically: case-insensitive,
+  `;1` version suffix stripped.
 - `region` - product-code heuristics for identifying which retail build
   (USA / JP / EU / debug) you're holding.
 - `write` - the write side: `encode_mode2_form1_sector` recomputes a sector's

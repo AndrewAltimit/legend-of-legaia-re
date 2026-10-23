@@ -709,6 +709,10 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         let bits = member.ability_bits();
         u32::from_le_bytes([bits[4], bits[5], bits[6], bits[7]])
     }
+
+    fn spirit_turn_ap(&self) -> i16 {
+        self.world.toggles.spirit_ap
+    }
     /// Character record `+0x185` count / `+0x186..` ids - the displayed-skill
     /// list the AI auto-fill arm draws its queue bytes from.
     fn learned_arts(&self, party_slot: u8) -> Vec<u8> {

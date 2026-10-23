@@ -20,11 +20,17 @@ carries no copy of its target; that is the shape behind Ghidra's fake
 `FUN_xxxxxxxx` "label-calls".
 
 [`scripts/ghidra-analysis/find-address-word-refs.py`](../../scripts/ghidra-analysis/find-address-word-refs.py)
-sweeps the disc's code images for **all five** forms at once - literal word,
-`lui`+`addiu`/`ori` materialisation, `jal`, `j`, and PC-relative branch - so a
-"nothing references this" result is a statement about the bytes rather than
-about one tool's blind spot. The materialisation arm follows the `lui` register
-the way [the shared walk](#how-both-scans-follow-a-register) does.
+sweeps the disc's code images for **five** forms at once - literal word,
+`lui` pair, `jal`, `j`, and PC-relative branch. The `lui` pair arm accepts
+either partner the low half can ride: an `addiu`/`ori` that materialises the
+address, or a load / store (`lb` / `lbu` / `lh` / `lhu` / `lw` / `lwl` / `lwr`
+/ `sb` / `sh` / `sw` / `swl` / `swr` / `lwc2` / `swc2`) whose base is the `lui`
+register and whose offset is the low half - the commonest way retail reads a
+named global. It follows the `lui` register the way
+[the shared walk](#how-both-scans-follow-a-register) does. Two forms are still
+outside it, `disp(gp)` and a low half split between the base and the
+displacement; both are in the [sibling sweep](#the-gp-relative-and-luiload-forms),
+and a negative means "nothing references this" only once both tools agree.
 
 ```bash
 # One address, every form, across SCUS + the based overlay images.
@@ -165,7 +171,8 @@ against a known answer before trusting a "nothing found":
   raw (every row of the static-overlay map is `form = "raw"`), so this gap does
   not cover the images where callers actually live.
 - **Split materialisation.** The pair scan wants one `lui` and one
-  `addiu`/`ori` with the exact low half, within a few instructions. An address
+  `addiu`/`ori` or load / store with the exact low half, within a few
+  instructions. An address
   assembled in more than two steps is not a pair and will not be found. The
   register walk in the sibling sweep [below](#the-gp-relative-and-luiload-forms)
   covers the multi-step case. `table_base + index` is covered to the extent
@@ -174,13 +181,14 @@ against a known answer before trusting a "nothing found":
   [the indexed form](#the-indexed-form-lui-addu-lw-lo)), never the element a
   runtime index selects - so a per-record negative over a table still needs
   the table *base* scanned before it means anything.
-- **`$gp`, `lui`+load, and a materialised base plus a displacement.** Three
-  forms this tool does not decode at all - a `disp(gp)` access, a `lui`/load
-  pair whose low half rides the load instead of an `addiu`, and an access
-  whose low half is *split* between the base register and the operand's own
-  displacement. All three are in the sibling sweep
-  [below](#the-gp-relative-and-luiload-forms); run it before reading a
-  five-form negative as "nothing references this".
+- **`$gp` and a materialised base plus a displacement.** Two forms this tool
+  does not decode - a `disp(gp)` access, and an access whose low half is
+  *split* between the base register and the operand's own displacement. Both
+  are in the sibling sweep [below](#the-gp-relative-and-luiload-forms); run it
+  before reading a five-form negative as "nothing references this". The
+  `lui`/load pair, whose low half rides the load itself, is in both tools:
+  `0x801CE330` (the SCUS mono flag) has no other reference form and the pair
+  arm finds its seven `lh` / `sh` sites in SCUS.
 - **The verdict is triage.** A `dispatch-table` classification says the
   neighbours look like function entries, not that the runtime indexes them.
 - **A loader parameter is not an address, and a computed one is not a
@@ -206,9 +214,9 @@ covers the two forms the five-form sweep is structurally blind to.
   displacement and nothing else, so no scan for the absolute address can see it
   - in either direction, writer or reader.
 - **`lui rX, hi` + `lw rY, lo(rX)`.** The commonest way retail touches a named
-  global puts the low half on the *load*. The five-form pair scan accepts only
-  `addiu` (op `0x09`) and `ori` (op `0x0D`) as the second half, so it walks past
-  every one of these.
+  global puts the low half on the *load*. The five-form pair scan finds these
+  as well; this sweep reports them alongside the gp-relative accesses to the
+  same slot, so one run answers "every access" for a small-data global.
 - **`lui rX, hi` + `ori`/`addiu rX` + `<mem> rY, disp(rX)`.** The same thing
   with the low half *split* between the register and the operand, so no
   instruction carries the address or even its low half. This is how retail
@@ -221,11 +229,11 @@ covers the two forms the five-form sweep is structurally blind to.
   `addiu`/`ori` result that *equals* the target is reported too. `--no-base-disp`
   turns the walk off.
 
-The two compose into a silent negative. `gp+0x678` - the battle sound bank's
+The gp form is a silent half-answer. `gp+0x678` - the battle sound bank's
 record table, [`bse-dat.md`](../formats/bse-dat.md) - has one gp-relative writer
-and seven `lui`+`lw` readers, and a five-form sweep of its absolute address
-`0x8007B990` reports "no word, no jump, no branch, no materialisation pair - in
-any image".
+and seven `lui`+`lw` readers. A five-form sweep of its absolute address
+`0x8007B990` finds the seven readers and not the writer: the one instruction
+that fills the table carries only `0x678`.
 
 ```bash
 # Recover $gp from the runtime's own `lui gp` / `addiu gp` pair.
@@ -300,11 +308,11 @@ positives - the scratchpad byte `0x1F800393` gains 143 sites and loses none.
 
 `lui at,0x801d; addu at,at,a3; lw v1,0xd9c(at)` (PROT 0970 at `0x801D055C`)
 reads element `a3` of the array at `0x801D0D9C` without any instruction holding
-`0x801D0D9C`. The pair scan cannot see it (the second instruction is an `addu`),
+`0x801D0D9C`. No instruction next to the `lui` completes it (the second is an `addu`),
 and a register walk that drops the register at its first redefinition stops
 one instruction short. The shared walk carries the index and the gp script
-labels the hit `[indexed by a3: array base]`; the five-form tool prints the
-`addiu` variant as `addiu+index`.
+labels the hit `[indexed by a3: array base]`; the five-form tool prints it
+with the partner's mnemonic and `+index` (`lw+index`, `addiu+index`).
 
 The form is rarer than a lax count suggests. Over SCUS and the mapped overlays
 it completes 512 accesses: 273 in SCUS, 223 in PROT 0896 (the Japanese-build

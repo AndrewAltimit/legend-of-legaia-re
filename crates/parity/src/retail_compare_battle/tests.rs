@@ -636,7 +636,7 @@ fn effect_children_are_the_displayed_frames() {
         put32(&mut ram, c + 0x10, (-300i32 << 8) as u32);
         put32(&mut ram, c + 0x1C, entry + 2 + 6 * u32::from(cursor));
     }
-    let seeds = ram_read::retail_effect_children(&ram).expect("a pool");
+    let seeds = effect_children::retail_effect_children(&ram).expect("a pool");
     assert_eq!(seeds.len(), 2);
     assert_eq!(seeds[0].anim_id, 1);
     assert_eq!((seeds[0].frame_cursor, seeds[0].wait), (2, 32));
@@ -652,12 +652,15 @@ fn effect_children_are_the_displayed_frames() {
 #[test]
 fn an_empty_effect_pool_is_still_a_seat() {
     let mut ram = vec![0u8; 0x20_0000];
-    assert!(ram_read::retail_effect_children(&ram).is_none());
+    assert!(effect_children::retail_effect_children(&ram).is_none());
     let pool = 0x800E_6A5C;
     put32(&mut ram, 0x8007_BD30, pool);
     put16(&mut ram, pool, 0x1000);
     put32(&mut ram, pool + 8, 0x800E_46E8);
-    assert_eq!(ram_read::retail_effect_children(&ram), Some(Vec::new()));
+    assert_eq!(
+        effect_children::retail_effect_children(&ram),
+        Some(Vec::new())
+    );
 }
 
 /// On the action seed's own pass the image child stands each combatant on
@@ -707,6 +710,68 @@ fn the_seed_pass_image_ground_is_the_displayed_ring_slot() {
     assert_eq!(
         pairs(b.engine_image_ground_snaps()),
         vec![(0, -7, -338), (1, 0, 0)]
+    );
+}
+
+/// A struck monster stood on its body pair takes the displayed frame's
+/// ground even past the seed's pass: the push carries it, so the body pair
+/// the screen drew is the RAM's moved by the ring's delta
+/// (`battle_melee_hit_spark`'s Gimard, `+11` a frame). The acting seat keeps
+/// the RAM's.
+#[test]
+fn a_struck_monsters_image_ground_is_the_displayed_ring_slot() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 1);
+    put8(&mut ram, ctx + 1, 1);
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x20);
+    put16(&mut ram, ctx + 0x6DA, 0x298);
+    put8(&mut ram, FORMATION_CELL, 0x04);
+    for (slot, base, live, shown, body, clip) in [
+        (
+            0u32,
+            0x800E_C9E8u32,
+            [-21i16, 136i16],
+            [-21i16, 126i16],
+            [-24i16, 95i16],
+            0x11u8,
+        ),
+        (3, 0x800E_D264, [-6, 405], [-6, 383], [-2, 492], 3),
+    ] {
+        put32(&mut ram, ACTOR_TABLE + slot * 4, base);
+        put16(&mut ram, base + 0x14C, 50);
+        put16(&mut ram, base + 0x14E, 50);
+        put16(&mut ram, base + 0x34, live[0] as u16);
+        put16(&mut ram, base + 0x38, live[1] as u16);
+        put16(&mut ram, base + 0x3C, body[0] as u16);
+        put16(&mut ram, base + 0x40, body[1] as u16);
+        put8(&mut ram, base + 0x1D9, clip);
+        put32(&mut ram, base + 0x4C, live[0] as u16 as u32);
+        put32(&mut ram, base + 0x50, live[1] as u16 as u32);
+        for k in 1..3u32 {
+            put32(&mut ram, base + 0x4C + 8 * k, shown[0] as u16 as u32);
+            put32(&mut ram, base + 0x50 + 8 * k, shown[1] as u16 as u32);
+        }
+    }
+    let b = RetailBattle::from_ram(&ram).expect("seedable");
+    let snap = |s: Vec<legaia_engine_capture::ground_snap::GroundSnap>, slot: u8| {
+        s.into_iter()
+            .find(|g| g.slot == slot)
+            .map(|g| (g.x, g.z, g.body))
+    };
+    assert_eq!(
+        snap(b.engine_image_ground_snaps(), 1),
+        Some((-6, 383, Some([-2, 470])))
+    );
+    assert_eq!(
+        snap(b.engine_ground_snaps(), 1),
+        Some((-6, 405, Some([-2, 492])))
+    );
+    assert_eq!(
+        snap(b.engine_image_ground_snaps(), 0).map(|(x, z, _)| (x, z)),
+        Some((-21, 136))
     );
 }
 
@@ -882,4 +947,250 @@ fn unconfirmed_pass_steps_keep_the_history_max() {
     assert_eq!(pass_steps(&ram), [4, 3]);
     assert_eq!(display_pass_steps(&ram), [3, 3]);
     assert_eq!(display_lag_vsyncs(&ram), 6);
+}
+
+/// A synthetic pool with one live child and one dead slot, two ordering
+/// tables and the double buffer's records: the newest table draws the live
+/// child's current quad, the older one the dead slot's last frame. Mid-pass
+/// (the newest table under the current record) the displayed frame is two
+/// passes back and the dead slot comes back a sweep before its last frame's
+/// end; after the flip (the newest table under the other record) the screen
+/// shows the older table's pass itself.
+#[test]
+fn retired_effect_children_come_back_from_the_older_table() {
+    const POOL: u32 = 0x800E_6A5C;
+    const TABLE: u32 = 0x800E_46E8;
+    const ATLAS: u32 = 0x800E_4264;
+    const ENTRY: u32 = 0x800E_4782;
+    const NEWER: u32 = 0x800F_0000;
+    const OLDER: u32 = 0x800F_1000;
+    let build = |cur: u16| {
+        let mut ram = vec![0u8; 0x20_0000];
+        put32(&mut ram, frame_step::FORCED_STEP, 1); // one sweep a pass
+        put32(&mut ram, 0x8007_BD30, POOL);
+        put16(&mut ram, POOL, 0x1000);
+        put32(&mut ram, POOL + 4, ATLAS);
+        put32(&mut ram, POOL + 8, TABLE);
+        put32(&mut ram, TABLE + 4, ENTRY); // batch 1
+        // Three frames, atlas 0 / 1 / 2, hold 2 each; the byte past the batch
+        // (the overrun's stop) holds 1.
+        put16(&mut ram, ENTRY, 3);
+        for k in 0..4u32 {
+            put8(&mut ram, ENTRY + 2 + 6 * k, k as u8);
+            put8(&mut ram, ENTRY + 3 + 6 * k, if k < 3 { 2 } else { 1 });
+        }
+        for k in 0..3u32 {
+            let a = ATLAS + 8 * k;
+            put8(&mut ram, a, (k * 64) as u8);
+            put8(&mut ram, a + 1, 128);
+            put8(&mut ram, a + 2, 64);
+            put8(&mut ram, a + 3, 64);
+            put16(&mut ram, a + 4, 0x7683);
+            put16(&mut ram, a + 6, 0x25);
+        }
+        // Slot 0 live, just entered frame 1 (wait 16); slot 1 dead, its
+        // cursor run to 3.
+        let live = POOL + 0x10;
+        put8(&mut ram, live, 3);
+        put8(&mut ram, live + 1, 3);
+        put8(&mut ram, live + 2, 1);
+        put8(&mut ram, live + 3, 16);
+        put32(&mut ram, live + 0x1C, ENTRY + 2 + 6);
+        let dead = POOL + 0x30;
+        put8(&mut ram, dead + 1, 3);
+        put8(&mut ram, dead + 2, 3);
+        put8(&mut ram, dead + 3, 8);
+        put32(&mut ram, dead + 0x10, (-200i32 << 8) as u32);
+        put32(&mut ram, dead + 0x1C, ENTRY + 2 + 18);
+        // Two 64-bucket reverse-cleared tables, each with its quads.
+        let quad = |k: u32| {
+            let b = legaia_engine_vm::effect_vm::pass2_brightness(3, k as u8);
+            (b, (k * 64) as u8)
+        };
+        for (ot, quads) in [(NEWER, vec![quad(1)]), (OLDER, vec![quad(0), quad(2)])] {
+            put32(&mut ram, ot, 0x00FF_FFFF);
+            for i in 1..64u32 {
+                put32(&mut ram, ot + 4 * i, (ot + 4 * (i - 1)) & 0xFF_FFFF);
+            }
+            for (j, (bright, u)) in quads.into_iter().enumerate() {
+                let bucket = ot + 4 * (10 + j as u32);
+                let pkt = ot + 0x400 + 0x40 * j as u32;
+                put32(&mut ram, pkt, (9 << 24) | ((bucket - 4) & 0xFF_FFFF));
+                put32(&mut ram, bucket, pkt & 0xFF_FFFF);
+                put32(
+                    &mut ram,
+                    pkt + 4,
+                    (0x2E << 24) | (u32::from(bright) * 0x01_0101),
+                );
+                let (u0, u1, v0, v1) = (u, u + 63, 128u8, 191u8);
+                for (c, (uu, vv)) in [(u0, v0), (u1, v0), (u0, v1), (u1, v1)]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let extra = match c {
+                        0 => 0x7683u32 << 16,
+                        1 => 0x25 << 16,
+                        _ => 0,
+                    };
+                    put32(
+                        &mut ram,
+                        pkt + 12 + 8 * c as u32,
+                        extra | u32::from(uu) | (u32::from(vv) << 8),
+                    );
+                }
+            }
+        }
+        // Record 0 holds the newer table, record 1 the older.
+        put32(&mut ram, 0x8007_BF30 + 0x70, NEWER);
+        put32(&mut ram, 0x8007_BF30 + 0x74 + 0x70, OLDER);
+        put16(&mut ram, 0x8007_B74C, cur);
+        ram
+    };
+    let pick = |seeds: &[legaia_engine_core::world::EffectChildSeed]| {
+        let mut v: Vec<_> = seeds
+            .iter()
+            .map(|s| (s.frame_cursor, s.wait, s.pos[1] >> 8))
+            .collect();
+        v.sort();
+        v
+    };
+    // Mid-pass: two passes back. The live child steps back onto frame 0;
+    // the dead slot stood on its last frame at wait 0 one pass ago (it
+    // retired on the next sweep), wait 8 the pass before.
+    let mid = effect_children::retail_effect_children(&build(0)).expect("a pool");
+    assert_eq!(pick(&mid), vec![(0, 8, 0), (2, 8, -200)]);
+    // After the flip: one pass back, the older table's pass itself.
+    let after = effect_children::retail_effect_children(&build(1)).expect("a pool");
+    assert_eq!(pick(&after), vec![(0, 0, 0), (2, 0, -200)]);
+}
+
+/// A retired combo-cluster record is seated off the newest numeral's ring
+/// timer: `battle_gimard_tail_fire_b`'s timer `0x160` (22 vsyncs) at step 2
+/// puts the cluster `14` of sixteen in on screen; a numeral old enough for
+/// the cluster to have landed seats nothing, and so does a live record.
+#[test]
+fn a_retired_combo_cluster_is_timed_off_the_numeral_ring() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let rec = ctx + HUD_GLIDE_TABLE + 3 * HUD_GLIDE_STRIDE;
+    put8(&mut ram, rec + 1, 14);
+    put16(&mut ram, rec + 4, 168);
+    put16(&mut ram, rec + 6, 168);
+    put16(&mut ram, rec + 8, 328);
+    put16(&mut ram, rec + 10, 168);
+    put8(&mut ram, ctx + 0x262, 1);
+    put32(&mut ram, ctx + 0x83C, 16);
+    put32(&mut ram, ctx + 0x85C, 0x160);
+    assert_eq!(
+        combo_cluster_timer_seat(&ram, ctx, 4),
+        Some(HudGlideSeat {
+            target: [168, 168],
+            elapsed: 14,
+            total: 16
+        })
+    );
+    put32(&mut ram, ctx + 0x85C, 0x200);
+    assert_eq!(combo_cluster_timer_seat(&ram, ctx, 4), None, "landed");
+    put32(&mut ram, ctx + 0x85C, 0x160);
+    put8(&mut ram, rec, 16);
+    assert_eq!(combo_cluster_timer_seat(&ram, ctx, 4), None, "live record");
+}
+
+/// The newest numeral's displayed age: `battle_melee_hit_spark`'s ring
+/// entry 2 (`15` on pool slot 3, timer `288`) at step 3 and a six-vsync lag
+/// rose on the timer `144` - age 9. A zeroed value or an out-of-range seat
+/// seats nothing.
+#[test]
+fn the_newest_numeral_is_aged_to_the_displayed_readout() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put8(&mut ram, ctx + 0x262, 3);
+    put32(&mut ram, ctx + 0x83C + 2 * 4, 15);
+    put32(&mut ram, ctx + 0x85C + 2 * 4, 288);
+    put16(&mut ram, ctx + 0x318 + 2 * 2, 3);
+    assert_eq!(popup_age_seat(&ram, ctx, 6, 3), Some((3, 9)));
+    put16(&mut ram, ctx + 0x318 + 2 * 2, 9);
+    assert_eq!(popup_age_seat(&ram, ctx, 6, 3), None, "no seat");
+    put16(&mut ram, ctx + 0x318 + 2 * 2, 3);
+    put32(&mut ram, ctx + 0x83C + 2 * 4, 0);
+    assert_eq!(popup_age_seat(&ram, ctx, 6, 3), None, "expired");
+}
+
+/// A ray burst's level and lane weight taken back over the display lag:
+/// `rim_elm_gimard_victory`'s RAM level `0x400` (rate `0x800`, `0x100` a
+/// vsync) and lane `0xFFC` (`0x155` a vsync) read `0` and `2728` four
+/// vsyncs earlier; a level taken back past zero stays on the clamp.
+#[test]
+fn a_ray_burst_level_and_lane_come_back_over_the_lag() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let node = 0x8008_30D4;
+    put16(&mut ram, node + 0x78, 0x400);
+    put16(&mut ram, node + 0x90, 0x800);
+    put16(&mut ram, node + 0xA0, 0xFFC);
+    put16(&mut ram, node + 0xB8, 0x155);
+    assert_eq!(ram_read::displayed_morph_halfword(&ram, node, 0x78, 4), 0);
+    assert_eq!(
+        ram_read::displayed_morph_halfword(&ram, node, 0xA0, 4),
+        2728
+    );
+    assert_eq!(ram_read::displayed_morph_halfword(&ram, node, 0x78, 6), 0);
+}
+
+/// A ray burst's position is the screen's only when its level ramp began
+/// before the displayed frame: `battle_melee_hit_spark`'s level `0x900`
+/// (`0x100` a vsync) is nine vsyncs old against a six-vsync lag;
+/// `rim_elm_gimard_victory`'s `0x400` began on its four-vsync lag's
+/// displayed frame itself, and a level on its clamp names no age.
+#[test]
+fn a_ray_burst_position_stands_only_through_the_lag() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let node = 0x8008_227C;
+    put16(&mut ram, node + 0x90, 0x800);
+    put16(&mut ram, node + 0x78, 0x900);
+    assert!(ram_read::ray_burst_stood_through_lag(&ram, node, 6));
+    put16(&mut ram, node + 0x78, 0x400);
+    assert!(!ram_read::ray_burst_stood_through_lag(&ram, node, 4));
+    put16(&mut ram, node + 0x78, 0x1000);
+    assert!(!ram_read::ray_burst_stood_through_lag(&ram, node, 4));
+}
+
+/// A numeral's digit quads are read off both packet arenas, and a run two
+/// passes behind the newest is the older run stepped back by its own move:
+/// `rim_elm_gimard_victory`'s `6` at `(117, 81)` 12 px in the newer arena
+/// and `(124, 92)` 10 px in the older puts the frame on screen at
+/// `(131, 103)` 8 px.
+#[test]
+fn numeral_cells_come_off_the_arenas_and_step_back_a_pass() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let quad = |ram: &mut Vec<u8>, at: u32, x: i16, y: i16, w: i16, digit: u8| {
+        let u = ((digit + 9) % 10) * 24;
+        put32(ram, at, 0x0900_0000);
+        put32(ram, at + 4, 0x2C80_8080);
+        let corners = [
+            (x, y),
+            (x + w - 1, y),
+            (x, y + w - 1),
+            (x + w - 1, y + w - 1),
+        ];
+        for (k, (cx, cy)) in corners.into_iter().enumerate() {
+            let o = at + 8 + 8 * k as u32;
+            put16(ram, o, cx as u16);
+            put16(ram, o + 2, cy as u16);
+            put8(ram, o + 4, u + if k % 2 == 1 { 23 } else { 0 });
+            put8(ram, o + 5, 64 + if k >= 2 { 23 } else { 0 });
+        }
+    };
+    quad(&mut ram, 0x800F_EF80, 117, 81, 12, 6);
+    quad(&mut ram, 0x8013_0EB0, 124, 92, 10, 6);
+    let quads = popup_cells::digit_quads(&ram);
+    assert_eq!(quads.len(), 2);
+    assert_eq!(
+        (quads[0].x, quads[0].y, quads[0].w, quads[0].digit),
+        (117, 81, 12, 6)
+    );
+    let back = popup_cells::step_back(&quads[1..], &quads[..1]);
+    assert_eq!(
+        (back[0].x, back[0].y, back[0].w, back[0].digit),
+        (131, 103, 8, 6)
+    );
 }

@@ -36,7 +36,29 @@ pub(super) fn done_cleanup<H: BattleActionHost + ?Sized>(
     } else {
         0
     };
-    if let Some(actor) = host.actor_mut(slot) {
+    // A Spirit AP setting other than retail's (`--spirit-ap`'s twin): a
+    // positive one replaces the `0x20` and runs the same accrual; a negative
+    // one drains the gauge, floored at zero, with the two passives inert.
+    let spirit_ap = host.spirit_turn_ap();
+    let recoil = if matches!(category, ActionCategory::Spirit) && spirit_ap != SPIRIT_AP_RETAIL {
+        if spirit_ap < 0 {
+            if let Some(actor) = host.actor_mut(slot) {
+                actor.action_recoil = 0;
+                actor.flag_bits.set(ActorFlags::EXIT);
+                actor.spirit_gauge = actor
+                    .spirit_gauge
+                    .saturating_sub(spirit_ap.unsigned_abs())
+                    .min(DONE_SPIRIT_CAP);
+            }
+            0
+        } else {
+            spirit_ap as u8
+        }
+    } else {
+        recoil
+    };
+    let drained = matches!(category, ActionCategory::Spirit) && spirit_ap < 0;
+    if !drained && let Some(actor) = host.actor_mut(slot) {
         actor.action_recoil = recoil;
         actor.flag_bits.set(ActorFlags::EXIT);
         let acc = u16::from(recoil);

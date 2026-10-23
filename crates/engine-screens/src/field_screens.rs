@@ -7,6 +7,7 @@ use legaia_engine_menus::name_entry::NameEntry;
 use legaia_engine_menus::save_menu_atlas::SaveMenuAtlas;
 use legaia_engine_ui::battle_hud_chrome::BattleBadgeRects;
 use legaia_engine_ui::{BattleHudDraws, NameEntryView, SaveMenuAtlasRects};
+use legaia_engine_world_views::passive_hud::WorldPassiveHud;
 
 /// The save-menu atlas' sprite rects, as the menus and the battle HUD name
 /// them - one field per band of the built atlas.
@@ -87,7 +88,11 @@ pub fn battle_badge_rects(a: &SaveMenuAtlas) -> BattleBadgeRects {
 /// `engine-ui` builders consume: the grid / control cursor split
 /// (`NameEntry::cursor_cells`) and the caret blink on the world's sim
 /// `frame` (`name_entry::caret_on`).
-pub fn name_entry_view(entry: &NameEntry, frame: u64) -> NameEntryView<'_> {
+pub fn name_entry_view<'a>(
+    entry: &'a NameEntry,
+    frame: u64,
+    prompts: Option<&'a legaia_ui_formats::name_entry_prompts::NameEntryPrompts>,
+) -> NameEntryView<'a> {
     use legaia_engine_menus::name_entry::{GRID, NameEntryState, caret_on};
     let (grid_cursor, control_cursor) = entry.cursor_cells();
     NameEntryView {
@@ -99,6 +104,7 @@ pub fn name_entry_view(entry: &NameEntry, frame: u64) -> NameEntryView<'_> {
         confirming: entry.state == NameEntryState::Confirm,
         confirm_yes: entry.confirm_yes,
         caret_on: caret_on(frame),
+        prompts,
     }
 }
 
@@ -161,8 +167,8 @@ pub fn field_party_hud_draws(
 /// anchor does not project.
 ///
 /// `World` answers the three head-relative world points
-/// (`World::passive_hud_points`, lifted by fractions of the player's `+0x72`)
-/// and the icon list for a resolved anchor (`World::passive_hud_icons`); the
+/// (`WorldPassiveHud::passive_hud_points`, lifted by fractions of the player's `+0x72`)
+/// and the icon list for a resolved anchor (`WorldPassiveHud::passive_hud_icons`); the
 /// projection between them is this function, so both play hosts seat the
 /// column the same way. Retail takes the anchor's **X from the first**
 /// projected point and its **Y from the third** - a mixed pair, not one

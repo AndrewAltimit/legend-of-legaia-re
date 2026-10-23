@@ -367,3 +367,58 @@ fn a_drift_under_a_moving_shot_is_spent_and_kept_on_a_still_one() {
         "a landed shot keeps a drift"
     );
 }
+
+/// A module shot walks retail's builder increments: `ceil(|gap| / frames)`
+/// a vsync, times the pass's frame step, each component landing on its own
+/// (`FUN_801D829C` / `FUN_8002149C`). PROT 0905's arm-1 shot from the arm-0
+/// cut (pitch `0`, yaw `0x60C`, TR `(0, 0x5E0, 0x800)`) onto pitch `-0x60`,
+/// yaw `0x9F4`, TR `(0, 0x580, 0x80)` over `0x60` frames: a PCSX-Redux cast
+/// steps yaw `22`, pitch `2`, TR y `2` and TR z `64` a step-`2` pass, so
+/// the yaw (`1000` units) lands on the `46`th pass, ahead of the rest.
+#[test]
+fn a_module_shot_walks_the_builders_per_vsync_increments() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Action, 0);
+    let cut = ModuleShot {
+        angles: [0, 0x60C, 0],
+        tr: [0, 0x5E0, 0x800],
+        focus: [0, 0, 0],
+        frames: 1,
+    };
+    let (pose, raw_z) = cut.pose();
+    cam.arm_module_shot(pose, raw_z, u32::from(cut.frames));
+    assert_eq!(cam.pose.yaw, 1548.0);
+    let shot = ModuleShot {
+        angles: [-0x60, 0x9F4, 0],
+        tr: [0, 0x580, 0x80],
+        focus: [0, 0, 0],
+        frames: 0x60,
+    };
+    let (target, raw_z) = shot.pose();
+    cam.arm_module_shot(target, raw_z, u32::from(shot.frames));
+    let start = cam.pose;
+    cam.step_module_shot();
+    assert_eq!(cam.pose.yaw - start.yaw, 22.0);
+    assert_eq!(cam.pose.pitch - start.pitch, -2.0);
+    assert_eq!(cam.pose.tr[1] - start.tr[1], -2.0);
+    assert_eq!(cam.pose.tr[2] - start.tr[2], -64.0);
+    for _ in 1..45 {
+        cam.step_module_shot();
+    }
+    assert_eq!(
+        cam.pose.yaw,
+        1548.0 + 45.0 * 22.0,
+        "45 passes in, still walking"
+    );
+    cam.step_module_shot();
+    assert_eq!(cam.pose.yaw, 2548.0, "the yaw lands on pass 46");
+    assert!(cam.pose.pitch > -96.0, "the pitch has not");
+    assert!(!cam.module_glide.is_some_and(|g| g.landed()));
+    for _ in 0..2 {
+        cam.step_module_shot();
+    }
+    assert_eq!(cam.pose.pitch, -96.0);
+    assert!(
+        cam.module_glide.is_some_and(|g| g.landed()),
+        "every component home"
+    );
+}

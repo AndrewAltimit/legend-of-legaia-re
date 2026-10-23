@@ -21,7 +21,6 @@ pub mod npc_dialog;
 mod packet_color;
 pub mod player_anm;
 mod prot_locate;
-pub mod rom_patcher;
 mod scene_export;
 mod scene_geom;
 pub mod sentinel_placements;
@@ -29,19 +28,22 @@ pub mod sfx_view;
 pub mod shop_items;
 pub mod shop_vendors;
 pub mod summon_view;
-pub mod texture_pack;
-pub mod texture_registry;
 pub mod tmd3d;
-pub mod translate_workbench;
 mod viewer_render;
 mod world_mist;
+
+// The ROM patcher's exports live in `legaia-web-patcher`. Nothing in this
+// crate names one of its items, and rustc links only the crates a build
+// references, so the bundle names it here: without this line its
+// `#[wasm_bindgen]` exports would drop out of the cdylib.
+extern crate legaia_web_patcher;
 
 use legaia_container_formats::tim_scan;
 use legaia_disc_audit::categorize::{Class, classify};
 use legaia_disc_audit::tim_catalog;
 use legaia_disc_audit::tim_deep_catalog;
-use legaia_web_play::disc;
-use legaia_web_play::disc::{EntryMeta, extract_prot_dat, extract_scus, parse_prot_toc};
+use legaia_iso::image::{extract_prot_dat, extract_scus};
+use legaia_prot::toc_index::{EntryMeta, parse_prot_toc};
 use wasm_bindgen::Clamped;
 use wasm_bindgen::prelude::*;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
@@ -831,7 +833,7 @@ pub struct LegaiaAudio {
     /// Extracted PROT.DAT bytes. TOC parses against this slice.
     prot: Vec<u8>,
     /// Parsed PROT TOC.
-    entries: Vec<disc::EntryMeta>,
+    entries: Vec<legaia_prot::toc_index::EntryMeta>,
     /// WebAudio output, constructed on the first `start_bgm` call so the
     /// `AudioContext::new` happens inside a user-gesture handler. Once
     /// created, retained across BGM switches via `attach_sequencer`.

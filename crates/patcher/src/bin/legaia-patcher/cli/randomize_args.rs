@@ -222,6 +222,20 @@ pub(crate) struct RandomizeArgs {
     /// healthy save and the castle itself play exactly as retail.
     #[arg(long, default_value_t = false)]
     pub(crate) fortress_encounter_fix: bool,
+    /// Fix the **Conkram mirror freeze**: on an emulator that runs the CPU
+    /// faster than a console (PCSX-ReARMed's default for this game, or a
+    /// SwanStation / DuckStation overclock), the Room of Mirrors scene in
+    /// present-day Conkram runs the heap dry, and the effect code copies an
+    /// animation through the failed allocation's NULL pointer over the CPU's
+    /// exception vector - the game locks up. This makes both of the effect
+    /// parts' allocations safe (four same-size edits in `SCUS_942.54`): a
+    /// failed animation block drops the part, a failed render node gets a
+    /// shared stand-in, nothing is written through NULL, and the failure no
+    /// longer leaves the `PRG ERR` readout on screen. Every allocation that
+    /// succeeds runs exactly as retail, so play at console speed is
+    /// unchanged.
+    #[arg(long, default_value_t = false)]
+    pub(crate) conkram_freeze_fix: bool,
     /// Set how much **AP the Spirit command charges** into the battle AP
     /// gauge (retail 32). `0` makes Spirit a pure defensive stance (guard
     /// boost, no AP); `100` fills the whole gauge in one press; a **negative**

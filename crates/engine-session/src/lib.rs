@@ -44,6 +44,7 @@ pub mod native;
 pub mod party_spec;
 pub mod scene_actors;
 pub mod session;
+pub mod session_switches;
 pub mod title_continue;
 pub mod xa_banks;
 

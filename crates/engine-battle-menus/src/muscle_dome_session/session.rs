@@ -77,6 +77,12 @@ pub struct MuscleDomeSession {
     pub(super) intro: u16,
     /// The play-out choreography ([`super::choreo::DomeChoreo`]).
     pub(super) choreo: super::choreo::DomeChoreo,
+    /// The player's fighter's Auto state: the saved command strings and the
+    /// per-fighter flag ([`super::auto`]).
+    pub(super) auto: super::auto::DomeAuto,
+    /// The opponent's monster-AI inputs ([`super::opponent`]); `None` keeps
+    /// the greedy stand-in.
+    pub(super) opponent_ai: Option<super::opponent::DomeOpponentAi>,
 }
 
 impl MuscleDomeSession {
@@ -114,6 +120,8 @@ impl MuscleDomeSession {
             last_turn_closes_in: false,
             intro: 0,
             choreo: super::choreo::DomeChoreo::default(),
+            auto: Default::default(),
+            opponent_ai: None,
         }
     }
 
@@ -357,14 +365,14 @@ impl MuscleDomeSession {
     }
 
     /// The opponent's selection: the same commit logic in deal order while
-    /// the budget lasts (retail reuses the shared deal/commit paths keyed on
-    /// `ctx+0x13`; there is no dome-specific AI table - the in-order greedy
-    /// walk is the host model).
+    /// the budget lasts.
     ///
-    /// Host model, disclosed: the opponent draws from the *player's* four
-    /// direction commands (`0xC..=0xF`), not from a monster action set. A
-    /// monster fights the dome through its own PROT 867 action stream, which
-    /// this session does not model.
+    /// Host model, disclosed: retail's opponent never reaches the deal /
+    /// commit paths. Its action is the battle's monster AI - the turn-order
+    /// pass `FUN_801DABA4` calls the picker `FUN_801E9FD4` for every slot at
+    /// or past `3` (`0x801DAF48`), whose physical branch budgets the
+    /// monster's own PROT 867 entries. The in-order greedy walk over the
+    /// *player's* four direction commands (`0xC..=0xF`) stands in for it.
     pub fn ai_commit_all(&mut self, slot: usize) {
         loop {
             let pick = (0..HAND_SLOTS).find(|&c| self.can_commit(slot, c));
@@ -390,13 +398,9 @@ impl MuscleDomeSession {
     /// confirm press (recomp capture: three 30-cost commits on a 100 budget
     /// move `ctx+6` `0x50 -> 0x5a` on the third press).
     ///
-    /// Retail's **Auto** arm is not modelled here, and it is not a picker: it
-    /// commits the 16-byte command string `FUN_801DA34C` reloads out of the
-    /// character's own save record (`+0x1A7` / `+0x1B7`, chosen on the
-    /// `actor+0x156 < actor+0x154` AP-band test) and `FUN_801DA59C` writes back
-    /// on the review confirm. A port of it is a record field plus a copy, not a
-    /// selection rule. See docs/subsystems/minigame-muscle-dome.md, "The Auto
-    /// arm picks nothing".
+    /// Retail's **Auto** arm is not a picker; it lives in `auto.rs`
+    /// (the saved string `FUN_801DA34C` / `FUN_801DA59C` and the round's
+    /// `FUN_801F0450` rebuild).
     ///
     /// REF: FUN_801d0748 phase 0x50
     pub fn selection_exhausted(&self, slot: usize) -> bool {
@@ -853,6 +857,7 @@ impl MuscleDomeSession {
             return false;
         };
         let hp_before = [self.f[0].hp, self.f[1].hp];
+        model.set_monster_swings(self.opponent_ai.is_some());
         model.begin_turn(hp_before);
         self.resolve_turn(|attacker, cmd| model.damage(attacker, cmd));
         let played = !model.plays().is_empty();
@@ -951,6 +956,7 @@ impl MuscleDomeSession {
         self.magic_open = false;
         self.magic_cursor = 0;
         self.menu = DomeMenu::default();
+        self.auto.flag = false;
         self.phase = MusclePhase::Select;
     }
 }
