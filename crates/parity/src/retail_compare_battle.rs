@@ -503,6 +503,15 @@ pub struct RetailBattle {
     /// has settled, where retail's record raised them. Empty as read; the
     /// corpus run fills it.
     pub entry_latches: Vec<u16>,
+    /// The state was made on a shiny-Seru patched disc (its `resident_patch`
+    /// names `shiny-seru`): that build's battle init takes one `rand()` draw
+    /// for the shiny roll ahead of the formation draws
+    /// (`legaia_code_hooks::shiny_seru`, the setup routine's `jal rand`), so
+    /// the engine stands in for it with `WorldToggles::shiny_seru` on, on
+    /// both the headless seed and the image child. Off, both sides run
+    /// retail's entry with no such draw. `false` as read; the corpus run
+    /// fills it.
+    pub resident_shiny_seru: bool,
     /// Each pool slot's captured live pair, body pair `+0x3C` / `+0x40` and
     /// current clip `+0x1D9`, as read - [`Self::ground`] is what a seed
     /// places and [`Self::undrift`] moves it; this is what the capture

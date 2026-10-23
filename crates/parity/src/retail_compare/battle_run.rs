@@ -9,6 +9,11 @@ pub const BATTLE_NOT_SEEDABLE: &str = "battle not seedable: ";
 /// The `resident_patch` tag of a state made under the shiny-Seru patch, and
 /// the boost that patch applies to a shiny monster's HP / MP maxima.
 const SHINY_SERU_PATCH: &str = "shiny-seru";
+
+/// Whether a state's `resident_patch` tag names the shiny-Seru build.
+pub(super) fn is_shiny_seru_patch(resident_patch: Option<&str>) -> bool {
+    resident_patch.is_some_and(|p| p.contains(SHINY_SERU_PATCH))
+}
 const SHINY_BOOST_NUM: u32 = 135;
 const SHINY_BOOST_DEN: u32 = 100;
 
@@ -47,6 +52,7 @@ pub(super) fn run_battle(
         let mut b = battle.clone();
         b.entry_latches =
             crate::retail_compare_battle::entry_latches(opts.extracted, retail, battle);
+        b.resident_shiny_seru = is_shiny_seru_patch(entry.resident_patch.as_deref());
         latched = b;
         &latched
     };
@@ -343,11 +349,7 @@ pub(super) fn run_battle(
     // engine's disc value is the patch's write, not retail's, and is left
     // unscored like a probe's; any other difference still scores.
     let mut unscored = entry.ram_injected.clone();
-    if entry
-        .resident_patch
-        .as_deref()
-        .is_some_and(|p| p.contains(SHINY_SERU_PATCH))
-    {
+    if is_shiny_seru_patch(entry.resident_patch.as_deref()) {
         for (m, (r, e)) in battle.monsters.iter().zip(&engine.monsters).enumerate() {
             let Some(r) = r else { continue };
             let boosted = |v: u16| (u32::from(v) * SHINY_BOOST_NUM / SHINY_BOOST_DEN) as u16;
@@ -451,6 +453,12 @@ pub(super) fn battle_image(
             legaia_engine_capture::bar_seeds::bar_seeds_to_env(&engine.hp_seed),
         ),
     ];
+    // A shiny-Seru build's entry draw, which the child's `--retail` pin would
+    // otherwise drop while the headless seed took it
+    // (`RetailBattle::resident_shiny_seru`).
+    if battle.resident_shiny_seru {
+        env.push(("LEGAIA_BATTLE_SHINY_SERU", "1".to_string()));
+    }
     // Each body on the keyframe the capture shows it at.
     let seeds = battle.engine_clip_cursors();
     if !seeds.is_empty() {
@@ -753,5 +761,22 @@ pub(super) fn battle_image(
                 .insert("image".into(), format!("engine frame failed: {e:#}"));
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod shiny_patch_tests {
+    use super::is_shiny_seru_patch;
+
+    /// The corpus's shiny states carry the build's layout in the tag; a
+    /// party-swap or unpatched state takes retail's entry with no shiny draw.
+    #[test]
+    fn shiny_seru_tag_selects_the_entry_draw() {
+        assert!(is_shiny_seru_patch(Some(
+            "shiny-seru (earlier SCUS layout)"
+        )));
+        assert!(is_shiny_seru_patch(Some("shiny-seru")));
+        assert!(!is_shiny_seru_patch(Some("party swap")));
+        assert!(!is_shiny_seru_patch(None));
     }
 }

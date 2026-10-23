@@ -193,6 +193,12 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
             world.seed_battle_backdrop_keep_object_1(k != 0);
         }
     }
+    // `LEGAIA_BATTLE_SHINY_SERU=1` (the retail-compare image channel, for a
+    // state made on a shiny-Seru patched disc): the shiny roll's battle-entry
+    // draw is that build's, so it runs even under `--retail`'s pin.
+    if std::env::var("LEGAIA_BATTLE_SHINY_SERU").is_ok_and(|v| v.trim() == "1") {
+        world.toggles.shiny_seru = true;
+    }
     // `LEGAIA_BATTLE_FRAME_STEP=step,state` (the retail-compare image
     // channel): run the battle on frames of `step` vsyncs from the first tick
     // the action SM reaches `state` (`World::seed_battle_frame_step`).

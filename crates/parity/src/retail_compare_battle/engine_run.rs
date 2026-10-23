@@ -213,6 +213,13 @@ pub fn run_engine_battle(
         enable_audio: false,
     };
     let mut session = NativeSession::open(extracted, &cfg).context("open boot session")?;
+    // A shiny-Seru build's battle-entry draw: the seed takes the engine's
+    // shiny roll, and the image child is told to take it under its
+    // `--retail` pin (`RetailBattle::resident_shiny_seru`), so both sides
+    // deal the fight off the same stream position.
+    if battle.resident_shiny_seru {
+        session.host.world.toggles.shiny_seru = true;
+    }
     // Player-driven: retail parks every party turn on the command flow, so an
     // auto-resolving engine would spend the settle window fighting.
     let opts = FieldLiveOpts {

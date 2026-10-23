@@ -159,6 +159,17 @@ ratchet neither compares it against the baseline (cut on its own image) nor
 writes it into one - `--check` prints it as `[skip]` with the reason. The
 images are never committed.
 
+A `shiny-seru` state also replays that build's battle-entry draw. The patch's
+setup routine calls `rand()` once at battle init for its shiny roll
+(`legaia_code_hooks::shiny_seru`), ahead of the formation draws, and the
+engine's twin is the `WorldToggles::shiny_seru` roll. The image child runs
+`play-window --retail`, whose pin turns that roll off, while the headless seed
+keeps it on, so the run sets `RetailBattle::resident_shiny_seru` and the child
+gets `LEGAIA_BATTLE_SHINY_SERU=1`: both sides then take the draw and deal the
+fight off the same stream position. Without it the child replays
+`shiny_refactor_gimard_levelup`'s Gimard cast one draw short, and its frame
+shows the cast's hit counter where retail shows the magic level-up notice.
+
 Which image a state was made on is read off its resident executable: every
 `SCUS_942.54` byte where a candidate image differs from retail must hold the
 candidate's value in the state's RAM, and what else differs must fall inside
