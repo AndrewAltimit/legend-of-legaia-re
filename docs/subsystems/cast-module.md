@@ -2588,7 +2588,16 @@ is the module's, moved with two kernels:
   frames, handed to the tween builder `FUN_801D829C`. What varies per arm is
   where the halfwords come from: immediates, the negated creature seat
   `actor_table[7]`, a yaw `K - facing`, or a heading between caster and victim
-  through `FUN_80019B28`;
+  through `FUN_80019B28`. The builder runs once, on the arm's pass: each
+  component's per-vsync increment is `ceil(|gap| / frames)`
+  (`0x801D845C..0x801D8464`), and the walker adds it times the pass's frame
+  step and lands each component on its own. A shot is therefore not an
+  arrive-together glide over `frames / step` passes: a gap that does not
+  divide by `frames` runs on the rounded-up increment and lands early.
+  PROT 0905's arm-1 shot (yaw `1000` units over `0x60` frames) walks yaw
+  `11` a vsync, which a PCSX-Redux cast's `cam.csv`
+  ([cast-sequence oracle](../tooling/cast-sequence-oracle.md)) and
+  `vera_summon_mid_cast`'s step table both read;
 - **drifts**: values added straight into the pitch / yaw / TR globals every
   pass an arm runs (pitch `0x8007B790`, TR x / y / z `0x800840B8` /
   `0x800840BC` / `0x800840C0`), behind the module countdown. Under a shot

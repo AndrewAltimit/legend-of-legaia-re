@@ -207,6 +207,19 @@ impl PlayWindowApp {
         {
             gate.align_camera(&mut self.session.host.world);
         }
+        // ... and a module shot still walking, onto the displayed frame's
+        // pose (`LEGAIA_BATTLE_MODULE_CAM_ALIGN`,
+        // `BattleCamera::align_module_shot`).
+        if let Some((live, end)) = self
+            .screenshot
+            .as_ref()
+            .and_then(|sc| sc.battle_module_cam_align)
+            && self.session.host.world.mode == SceneMode::Battle
+            && self.capture_phase_met()
+            && let Some(cam) = self.session.host.world.battle.camera.as_mut()
+        {
+            cam.align_module_shot(live, end);
+        }
         // ... and, on the captured phase itself, the glide's origin
         // (`LEGAIA_BATTLE_CAM_ALIGN`, `BattleCamera::align_glide_origin`).
         if let Some((live, end)) = self.screenshot.as_ref().and_then(|sc| sc.battle_cam_align)

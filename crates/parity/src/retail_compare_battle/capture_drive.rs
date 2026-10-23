@@ -186,9 +186,34 @@ impl RetailBattle {
     /// (`flute_spikefish_midcast` `.910` to `.810`); to the displayed one
     /// both flute captures rise, once the walk-back steps onto the `0x29`
     /// table the route arm replaced ([`summon_route_prior_end`]). The
-    /// summon close-up and the module shots keep the replay's own pose.
+    /// summon close-up keeps the replay's own pose; a module shot still
+    /// walking is aligned on its own law ([`Self::module_cam_aligned`]).
     pub fn cast_glide_aligned(&self) -> bool {
         matches!(self.seed_plan(), SeedPlan::Cast) && self.action_state == 0x32
+    }
+
+    /// Whether a replayed cast's **module shot** takes retail's pose
+    /// (`BattleCamera::align_module_shot`): a capture in the summon band's
+    /// sustain / return (`0x35` / `0x36`), standing on an arm that polls the
+    /// creature stream (`cast_module_camera::creature_poll_arm`), with
+    /// retail's shot still walking. The shot armed ahead of the poll walks
+    /// on through retail's read, which the replay's resident stream never
+    /// waits on, so its progress at the capture is the read's length
+    /// (`vera_summon_mid_cast`, `72` vsyncs into PROT 0905's arm-1 shot:
+    /// `image` `.985` to `.996`). The headless seed takes the RAM's live
+    /// pose; the image child the pose walked back to the displayed frame
+    /// along the shot's own table ([`Self::displayed_module_cam_live`]).
+    /// Elsewhere the module's own clocks place its shot: aligned on PROT
+    /// 0930's side-band wait, `horn_summon_mid_cast` read `.976` against
+    /// `.988`.
+    pub fn module_cam_aligned(&self) -> bool {
+        let entry = u32::from(self.queued_action).wrapping_sub(0x81) + 903;
+        matches!(self.seed_plan(), SeedPlan::Cast)
+            && (0x81..=0xA0).contains(&self.queued_action)
+            && matches!(self.action_state, 0x35 | 0x36)
+            && legaia_engine_cast::cast_module_camera::creature_poll_arm(entry)
+                == Some(self.module_phase)
+            && !self.cam_landed
     }
 
     /// Every captured combatant's live pair and heading by engine slot - the

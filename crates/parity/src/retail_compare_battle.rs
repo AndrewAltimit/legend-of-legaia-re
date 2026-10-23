@@ -403,6 +403,13 @@ pub struct RetailBattle {
     /// [`Self::cam_tween`] with the live pose walked back to the frame the
     /// display shows ([`displayed_cam_live`]).
     pub displayed_cam_live: legaia_engine_camera::projection::BattleCamPose,
+    /// [`Self::cam_tween`]'s live pose walked back to the displayed frame
+    /// along a table built once, as a slot-B module's shot is
+    /// ([`displayed_module_cam_live`]).
+    pub displayed_module_cam_live: legaia_engine_camera::projection::BattleCamPose,
+    /// Whether every tweened component of retail's camera reads its
+    /// endpoint ([`camera_landed`]).
+    pub cam_landed: bool,
     /// The frame driver's entry counter `gp+0x330` ([`ENTRY_COUNTER`]).
     pub entry_counter: u8,
     /// The options screen's Battle Camera word `0x800846C0` (Close `0` /

@@ -195,6 +195,16 @@ pub struct ScreenshotConfig {
         legaia_engine_camera::projection::BattleCamPose,
         legaia_engine_camera::projection::BattleCamPose,
     )>,
+    /// `LEGAIA_BATTLE_MODULE_CAM_ALIGN=<16 numbers>`: the displayed frame's
+    /// live pose and retail's tween endpoints under a slot-B module's shot
+    /// still walking, which the captured frame's shot takes on every
+    /// component whose endpoint agrees
+    /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::align_module_shot`]).
+    /// Set by the retail-compare image channel on a replayed cast.
+    pub battle_module_cam_align: Option<(
+        legaia_engine_camera::projection::BattleCamPose,
+        legaia_engine_camera::projection::BattleCamPose,
+    )>,
     /// `LEGAIA_SEAT_HUD_GLIDES_LANDED=1`: the retail capture's HUD widget
     /// glides had all landed, so the captured frame lands the engine's too
     /// (`World::land_battle_hud_glides`). Set by the retail-compare image
@@ -629,6 +639,9 @@ impl ScreenshotConfig {
                 .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))
                 .unwrap_or_default(),
             battle_cam_align_displayed: std::env::var("LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED")
+                .ok()
+                .and_then(|v| legaia_engine_capture::camera_align::cam_align_from_env(&v)),
+            battle_module_cam_align: std::env::var("LEGAIA_BATTLE_MODULE_CAM_ALIGN")
                 .ok()
                 .and_then(|v| legaia_engine_capture::camera_align::cam_align_from_env(&v)),
             gate_cam_target: std::cell::Cell::new(None),

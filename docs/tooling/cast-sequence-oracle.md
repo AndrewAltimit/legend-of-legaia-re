@@ -68,7 +68,10 @@ token a module's stream-wait arm polls) and the words the read-span poll
 `cdmode` `0x8007B83C`, `cdread` `0x8007B8C2`). A second file, `body.csv`, holds
 per vsync the acting seat's clip `+0x1D9`, node cursor `+0x68`, live pair,
 body pair `+0x3C` / `+0x40` and the camera focus with its tween endpoints:
-the series a summon close-up's framing is read off. At cast begin it also logs each pool slot's ground pair
+the series a summon close-up's framing is read off. A third, `cam.csv`, holds
+per vsync the live pitch, yaw and TR trio with the yaw and TR z records of the
+tween table `ctx[+0x118C]` (increment, endpoint): the walk of a module's shot.
+At cast begin it also logs each pool slot's ground pair
 `+0x34` / `+0x38` (`done.txt`). The run uses the recompiler (`--fast`) unless a
 formation is forced, and `run_probe.sh` stages the disc in a private directory,
 so no `.ppf` beside the image reaches it.
@@ -92,7 +95,8 @@ deterministic. The recorder starts on cast begin `0x28` and writes the frame
 already cropped and box-filtered to the compared `320 x 224`
 (`Frame::from_engine_capture`, the corpus's alignment). Its `meta.csv` uses
 retail seat numbers: the engine packs the party ahead of the monsters, and the
-recorder maps them back.
+recorder maps them back. Beside it, `cam.csv` holds the live camera pose per
+tick (pitch, yaw, TR trio), the engine half of the retail side's file.
 
 ## The pairing rule
 

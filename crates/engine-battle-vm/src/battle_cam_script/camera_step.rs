@@ -20,7 +20,7 @@ const ESCAPE_EYE_Z_BACK_PER_VSYNC: f32 = 32.0;
 /// units (the depth prescale truncates), the focus in world units (retail's
 /// focus trio is read off live actor pairs that a replay lands within a few
 /// units of).
-const ALIGN_ANGLE_TOLERANCE: f32 = 2.0;
+pub(super) const ALIGN_ANGLE_TOLERANCE: f32 = 2.0;
 /// The yaw endpoint band inside which [`BattleCamera::align_glide_origin`]
 /// carries retail's remaining distance over to the engine's own endpoint:
 /// under the `0x80` the yaw ladder's nearest rungs stand apart, so a wrong
@@ -35,8 +35,8 @@ const ALIGN_FOCUS_EASE_BAND: f32 = 256.0;
 /// How far [`BattleCamera::align_close_up_accum`] moves the close-up
 /// accumulator: one three-vsync pass, `8` a vsync.
 const CLOSE_UP_ALIGN_TOLERANCE: u32 = 24;
-const ALIGN_TR_TOLERANCE: f32 = 2.0;
-const ALIGN_FOCUS_TOLERANCE: f32 = 8.0;
+pub(super) const ALIGN_TR_TOLERANCE: f32 = 2.0;
+pub(super) const ALIGN_FOCUS_TOLERANCE: f32 = 8.0;
 
 impl BattleCamera {
     /// New camera snapped to the entry phase's framing (a battle that opens
@@ -971,6 +971,7 @@ impl BattleCamera {
                         ],
                         yaw_glides: false,
                         steps_left: None,
+                        per_vsync: false,
                     });
                 } else {
                     // Submenu exit: swing up over the shoulder, then ease

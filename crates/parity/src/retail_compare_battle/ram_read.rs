@@ -635,6 +635,12 @@ impl RetailBattle {
                     summon_route_prior_end(ram, ctx, action_state),
                 )
             },
+            displayed_module_cam_live: displayed_module_cam_live(
+                ram,
+                ctx,
+                &display_pass_steps(ram)[..usize::from(DISPLAY_LAG_PASSES).min(2)],
+            ),
+            cam_landed: camera_landed(ram, ctx),
             camera_option: game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION),
             battle_id: game_anchors::u8_at(ram, BATTLE_ID_WORD),
             hud_glides_landed: (0..HUD_GLIDE_SLOTS).all(|s| {

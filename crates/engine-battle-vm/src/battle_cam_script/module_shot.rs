@@ -23,28 +23,48 @@ pub const ESCAPE_SNAP_YAW: f32 = 3840.0;
 
 impl BattleCamera {
     /// Arm one of the summon module's `FUN_801D829C` calls: a tween from the
-    /// live pose to `target` over `frames` display frames, stepped on the
-    /// camera's 2-frame cadence like every framing case's. A later shot
+    /// live pose to `target` over `frames` display frames. A later shot
     /// rebuilds from wherever the previous one has reached, exactly as a
     /// second builder call does.
+    ///
+    /// The builder runs once, on the arm, over the module's own `frames`:
+    /// each component's per-vsync increment is `ceil(|gap| / frames)`
+    /// (`addu v0,v0,t2 ; addiu v0,v0,-1 ; divu v0,t2` at
+    /// `0x801D845C..0x801D8464`). The walker task `FUN_8002149C` then adds
+    /// `increment * frame_step` (`0x1F800393`, the pass's own step) every
+    /// pass and lands each component on its endpoint the pass it gets there
+    /// (`0x80021524..0x80021534` for the angles, `0x800215C8` / `0x8002165C`
+    /// for the translation and focus), independently of the others; the
+    /// task lives until all nine have landed. So the shot is not an
+    /// arrive-together glide over `frames / frame_step` passes: a component
+    /// whose gap does not divide by `frames` runs on the rounded-up
+    /// increment and lands early. `vera_summon_mid_cast`'s arm-1 shot (yaw
+    /// `1000` units over `0x60` frames) reads yaw increment `11` in the step
+    /// table, the live yaw `11 * 72` past its start beside pitch, TR y and
+    /// TR z all `72` vsyncs in.
     ///
     /// `raw_tr_z` is the target's TR z in world units, the value the module
     /// hands the builder.
     ///
-    /// REF: FUN_801D829C
+    /// REF: FUN_801D829C, FUN_8002149C
     pub fn arm_module_shot(&mut self, target: BattleCamPose, raw_tr_z: i32, frames: u32) {
         let mut from = self.pose;
-        let steps = self.frames_to_steps(frames);
-        let mut g = Glide::linear(&mut from, target, raw_tr_z, steps, true);
-        self.pose = from;
-        if steps == 1 {
+        if self.frames_to_steps(frames) == 1 {
             // A one-frame tween is a cut: retail's walker lands it the frame
             // it is armed, before the next arm can rebuild from it. The
             // camera's step cadence would otherwise let a following shot
             // start from the pose the cut replaced.
+            let mut g = Glide::linear(&mut from, target, raw_tr_z, 1, true);
+            self.pose = from;
             self.land(&g);
             g.steps_left = Some(0);
+            self.module_glide = Some(g);
+            return;
         }
+        let mut g = Glide::linear(&mut from, target, raw_tr_z, frames, true);
+        self.pose = from;
+        g.steps_left = None;
+        g.per_vsync = true;
         self.module_glide = Some(g);
     }
 
@@ -164,6 +184,57 @@ impl BattleCamera {
         self.spell_cam.is_some()
     }
 
+    /// Phase-align a module shot still walking to a retail instant: every
+    /// component whose shot endpoint agrees with retail's tween-table
+    /// endpoint (`end`) takes retail's `live` value, and the walk goes on
+    /// from there on the shot's own increments. Returns the components
+    /// moved, in [`Self::align_glide_origin`]'s bit order.
+    ///
+    /// A module arm that polls the creature stream (`FUN_8003F2B8(1)`; PROT
+    /// 0905's arm 3, PROT 0910 / 0913's arm 2) holds for as long as the
+    /// drive's read takes, while the shot armed before it walks on; the
+    /// engine's stream is resident and the arm passes on its first tick. So
+    /// the shot's progress at a capture taken in the wait is the read's
+    /// length, which no word the replay carries records:
+    /// `vera_summon_mid_cast` stands `72` vsyncs into arm 1's walk, where a
+    /// PCSX-Redux cast of the same module enters arm 3 `65` vsyncs in and
+    /// leaves it two passes later. The capture
+    /// harness's handle, the module twin of [`Self::align_glide_origin`];
+    /// nothing in play calls it.
+    pub fn align_module_shot(&mut self, live: BattleCamPose, end: BattleCamPose) -> u8 {
+        use super::camera_step::{
+            ALIGN_ANGLE_TOLERANCE, ALIGN_FOCUS_TOLERANCE, ALIGN_TR_TOLERANCE,
+        };
+        let Some(g) = self.module_glide.filter(|g| !g.landed()) else {
+            return 0;
+        };
+        let ang = |a: f32, b: f32| ((a - b).rem_euclid(4096.0)).min((b - a).rem_euclid(4096.0));
+        let nearest = |from: f32, to: f32| {
+            let d = (to - from).rem_euclid(4096.0);
+            from + if d > 2048.0 { d - 4096.0 } else { d }
+        };
+        let mut mask = 0u8;
+        if ang(g.target.pitch, end.pitch) <= ALIGN_ANGLE_TOLERANCE {
+            self.pose.pitch = nearest(self.pose.pitch, live.pitch);
+            mask |= 1;
+        }
+        if ang(g.target.yaw, end.yaw) <= ALIGN_ANGLE_TOLERANCE {
+            self.pose.yaw = nearest(self.pose.yaw, live.yaw);
+            mask |= 2;
+        }
+        for k in 0..3 {
+            if (g.target.tr[k] - end.tr[k]).abs() <= ALIGN_TR_TOLERANCE {
+                self.pose.tr[k] = live.tr[k];
+                mask |= 4 << k;
+            }
+            if (g.target.focus[k] - end.focus[k]).abs() <= ALIGN_FOCUS_TOLERANCE {
+                self.pose.focus[k] = live.focus[k];
+                mask |= 32 << k;
+            }
+        }
+        mask
+    }
+
     /// Whether a module shot is armed (tweening or landed and holding).
     pub fn module_shot_armed(&self) -> bool {
         self.module_glide.is_some()
@@ -188,6 +259,28 @@ impl BattleCamera {
                     m.steps_left = Some(n - 1);
                 }
                 self.step_components(&g);
+            }
+            None if g.per_vsync => {
+                // The walker's `increment * frame_step`, on this pass's step.
+                let mut walk = g;
+                let step = f32::from(self.frame_step.max(1));
+                for r in &mut walk.rate {
+                    *r *= step;
+                }
+                self.step_components(&walk);
+                // Every component on its endpoint: the walker task ends, and
+                // a drift after it survives.
+                let p = &self.pose;
+                if p.pitch == g.target.pitch
+                    && p.yaw == g.target.yaw
+                    && p.tr == g.target.tr
+                    && p.focus == g.target.focus
+                {
+                    self.land(&g);
+                    if let Some(m) = self.module_glide.as_mut() {
+                        m.steps_left = Some(0);
+                    }
+                }
             }
             None => self.step_components(&g),
         }

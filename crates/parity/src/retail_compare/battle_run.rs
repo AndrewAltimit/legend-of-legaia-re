@@ -547,6 +547,18 @@ pub(super) fn battle_image(
             )),
         ));
     }
+    // A replayed cast inside a module shot still walking: the frame on
+    // screen two passes back along the shot's own table
+    // (`RetailBattle::module_cam_aligned`).
+    if battle.module_cam_aligned() {
+        env.push((
+            "LEGAIA_BATTLE_MODULE_CAM_ALIGN",
+            legaia_engine_capture::camera_align::cam_align_to_env(&(
+                battle.displayed_module_cam_live,
+                battle.cam_tween.1,
+            )),
+        ));
+    }
     // Every pad drive, as the headless seed snaps and aligns every driven
     // capture: a menu capture's case-0 close-up subtracts its member's
     // heading (`0x8F0 - actor[+0x46]`), which only the ground snap carries -
