@@ -293,6 +293,12 @@ writes it, or reads it as live data. The ledger lists those spans too, as
 | `0x801EE120..0x801EEB40` | the save-slot icon sheet, uploaded to `(960, 224)` over the atlas's rows 224..239 |
 | `0x801EF070..0x801F3818` | the overlay's uninitialised data |
 
+The field overlay (PROT 0897) has one such span: its zero-filled globals at
+`0x801F3488..0x801F36A0`, ahead of the tables that end the image (the tile
+board's state at `0x801F35C4..` is among them). The file holds zeros there
+but for one word; the library captures with the overlay resident hold
+runtime writes across `0x801F3488..0x801F35A8`.
+
 The two card buffers reuse the atlas's memory once it has been uploaded
 ([`save-screen.md`](../../subsystems/save-screen.md#which-buffer-the-sum-runs-over)),
 and neither is confined to the title's Continue screen. The pause menu's Save

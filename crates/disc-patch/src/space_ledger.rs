@@ -216,6 +216,15 @@ pub const BUFFERS: &[Buffer] = &[
         what: "the overlay's uninitialised data (menu state, card handles, staging), \
                written at runtime in every capture with the overlay resident",
     },
+    Buffer {
+        image: Image::Prot(FIELD_OVERLAY),
+        start_va: 0x801F_3488,
+        end_va: 0x801F_36A0,
+        what: "the field overlay's zero-filled globals ahead of its trailing tables (the tile \
+               board's state at 0x801F35C4.. among them): zero in the file but for one word, and the \
+               library captures with the overlay resident hold runtime writes across \
+               0x801F3488..0x801F35A8",
+    },
 ];
 
 /// The first [`BUFFERS`] row `[start_va, end_va)` in `image` overlaps.

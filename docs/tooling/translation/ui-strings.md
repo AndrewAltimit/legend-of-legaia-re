@@ -117,9 +117,12 @@ The field oracle runs two passes: one that shortens every string the port
 does not read, and one that shortens nothing, where every move lands in the
 region.
 
-The Seru-absorb caption's suffix is a single `.` (`0x801F4C28`), shorter
-than the pool scan keeps as text; `translation::ui::SHORT_STRINGS` names it
-so the pack carries it and a translation of it can move. The caption's
+The Seru-absorb caption's suffix is a single `.` (`0x801F4C28`), and the
+three steal captions close with a two-byte `'.` tail (`SCUS_942.54`
+`0x8007B690..0x8007B69C`): all shorter than the pool scan keeps as text.
+`translation::ui::SHORT_STRINGS` names them so the pack carries them and a
+translation of one can move; the battle-label reader already follows each
+tail through the `lui` / `addiu` pair that loads it. The caption's
 reader follows the suffix through the `lui` / `addiu` pair that loads it
 (`0x801D91C0` / `0x801D91C8`) and the prefixes through their pointer words,
 and the oracle reads a moved suffix back off the caption the host installs

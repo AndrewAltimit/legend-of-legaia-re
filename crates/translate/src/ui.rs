@@ -347,7 +347,9 @@ pub const SCUS_POOL_BASE_VA: u32 = 0x8000_F800;
 ///   window stops before the per-character `... For {c1:00}.` variants: a
 ///   NUL-to-NUL scan would cut those at the token's `0x00` argument;
 /// - the battle **steal / spoils result** lines (`Took the stolen`,
-///   `Recovered the stolen`, `Stole the`, `Recovered all stolen items.`);
+///   `Recovered the stolen`, `Stole the`, `Recovered all stolen items.`),
+///   and the three two-byte tails three of them close with, past the
+///   command chips ([`SHORT_STRINGS`]);
 /// - the sparring-tutorial opener the new-game template trails (`I will show
 ///   you how to fight ...`, `docs/formats/new-game-table.md`);
 /// - the equip-screen `Remove` and the `Save` label near the config strings.
@@ -377,6 +379,14 @@ pub const SCUS_STRING_POOLS: &[UiStringPool] = &[
         va_start: 0x8007_7A38,
         va_end: 0x8007_7A8C,
         label: "battle steal result",
+        strict: false,
+    },
+    UiStringPool {
+        prot_index: usize::MAX,
+        base_va: SCUS_POOL_BASE_VA,
+        va_start: 0x8007_B690,
+        va_end: 0x8007_B69C,
+        label: "battle steal result tails",
         strict: false,
     },
     UiStringPool {
@@ -458,8 +468,17 @@ pub fn qualifies(chunk: &[u8]) -> bool {
 ///
 /// - PROT 0898 `0x801F4C28`: the Seru-absorb caption's suffix, appended
 ///   after the Seru's spell name (`lui a1,0x801f ; addiu a1,a1,0x4c28` at
-///   `0x801D91C0` / `0x801D91C8`, `legaia_game_tables::absorb_caption`).
-pub const SHORT_STRINGS: &[(usize, u32)] = &[(898, 0x801F_4C28)];
+///   `0x801D91C0` / `0x801D91C8`, `legaia_game_tables::absorb_caption`);
+/// - `SCUS_942.54` (`usize::MAX`) `0x8007B690` / `0x8007B694` /
+///   `0x8007B698`: the `'.` tails the steal captions `Took the stolen '`,
+///   `Recovered the stolen '` and `Stole the '` close with after the item
+///   name (`legaia_ui_formats::battle_ui_strings`).
+pub const SHORT_STRINGS: &[(usize, u32)] = &[
+    (898, 0x801F_4C28),
+    (usize::MAX, 0x8007_B690),
+    (usize::MAX, 0x8007_B694),
+    (usize::MAX, 0x8007_B698),
+];
 
 /// `true` when `chunk`, starting at `va` in PROT entry `prot`, is one of the
 /// [`SHORT_STRINGS`] and reads as glyphs.

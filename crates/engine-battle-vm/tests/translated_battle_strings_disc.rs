@@ -191,21 +191,16 @@ fn a_translated_battle_and_name_entry_pack_reaches_the_port_readers() {
             markup::encode(&e.translation, Target::CString).unwrap(),
         );
     }
-    // Every reader's string is a pack key (the steal captions' two-byte
-    // tails carry no letter, so the pools do not export them).
+    // Every reader's string is a pack key - the steal captions' two-byte
+    // tails too, which carry no letter and are kept by
+    // `legaia_translate::ui::SHORT_STRINGS`.
     let missing: Vec<&String> = wanted.keys().filter(|k| !filled.contains_key(*k)).collect();
-    for k in &missing {
-        assert!(
-            [
-                bus::SCUS_STEAL_TOOK_TAIL,
-                bus::SCUS_STEAL_RECOVERED_TAIL,
-                bus::SCUS_STEAL_STOLE_TAIL
-            ]
-            .iter()
-            .any(|&va| **k == scus_key(va)),
-            "{k} is not exported"
-        );
-    }
+    assert!(missing.is_empty(), "not exported: {missing:?}");
+    let tails = [
+        bus::SCUS_STEAL_TOOK_TAIL,
+        bus::SCUS_STEAL_RECOVERED_TAIL,
+        bus::SCUS_STEAL_STOLE_TAIL,
+    ];
 
     let mut patcher = DiscPatcher::open(disc).expect("open disc");
     let report = import_pack(&mut patcher, &pack).expect("import");
@@ -233,6 +228,21 @@ fn a_translated_battle_and_name_entry_pack_reaches_the_port_readers() {
             .collect::<Vec<_>>()
     );
     assert!(moved("scus:") > 0 && moved("ui:898:") > 0 && moved("ui:897:") > 0);
+    // Each tail outgrows its four-byte span, so applying it means moving it.
+    for va in tails {
+        let k = scus_key(va);
+        eprintln!(
+            "tail {va:#x}: applied {}, moved to {:?}",
+            applied(&k),
+            report.trace.moved.get(&k).map(|m| m.1)
+        );
+    }
+    assert!(
+        tails
+            .iter()
+            .any(|&va| report.trace.moved.contains_key(&scus_key(va))),
+        "a steal tail moves"
+    );
     let want = |key: String, img: &[u8], base: u32, va: u32| -> Vec<u8> {
         if applied(&key) {
             filled[&key].clone()
