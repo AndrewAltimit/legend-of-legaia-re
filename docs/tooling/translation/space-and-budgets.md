@@ -179,7 +179,7 @@ The room a moved string can take:
 
 | Image | Room |
 |---|---|
-| an overlay | its own pools' compaction, and the ledger's translation region in that image (the menu overlay has one) |
+| an overlay | its own pools' compaction, and the ledger's translation region in that image (the menu overlay has one; the field overlay has none, so its strings grow only into room shorter field strings give up) |
 | `SCUS_942.54` | its own pools' compaction, and the free runs the name pools' compaction leaves once the names are placed |
 
 A string that finds no room keeps its English text and is reported
@@ -198,9 +198,9 @@ executable's edits need `legaia-patcher scus-pokes` over a save state, which
 The port's string readers for the menu overlay, the battle overlay's labels
 and result lines, the executable's battle labels and the name-entry prompts
 follow a move the same way retail does, by decoding a reference site on the
-patched image ([`ui-strings.md`](ui-strings.md#what-the-port-reads)); the
-field-overlay readers listed there still read the retail VA, so there a
-moved string shows its new text in retail only.
+patched image ([`ui-strings.md`](ui-strings.md#what-the-port-reads)); so do
+the field-overlay readers (the code lock, the flag window, the coin counter,
+the Incense notice, the tile board's quit prompt).
 
 ## Where the text lives
 

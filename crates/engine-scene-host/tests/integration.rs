@@ -162,6 +162,7 @@ mod three_tunnels_swap_redress_disc;
 mod town01_arrival_camera;
 mod town01_opening_name_entry_wiring;
 mod town01_opening_timeline_trace;
+mod translated_field_strings_disc;
 mod vahn_house_roundtrip_disc;
 mod vdf_morph_ambient_disc;
 mod walk_on_trigger_dispatch_disc;

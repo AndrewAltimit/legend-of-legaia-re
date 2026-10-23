@@ -20,6 +20,8 @@
 //! models the runtime view the walk SM consumes, not the on-disc /
 //! generated fill.
 
+use legaia_engine_field::field_overlay::field_overlay_cstr;
+
 /// World units per tile (`0x80`). Retail multiplies the tile index by
 /// this when mapping a cell to a world position.
 pub const TILE: i32 = 0x80;
@@ -264,23 +266,19 @@ pub fn prompt_layout() -> PromptLayout {
     )
 }
 
-/// The field overlay's load base (PROT 0897, slot A).
-const FIELD_OVERLAY_BASE: u32 = 0x801C_E818;
 /// VAs of the prompt's three strings in the field overlay's data segment:
 /// the title and the two rows (the `a0` of the render tail's three
 /// `FUN_80036888` calls).
 pub const PROMPT_STRING_VAS: [u32; 3] = [0x801C_F650, 0x801C_F10C, 0x801C_F110];
 
 /// Read the prompt's three NUL-terminated strings out of the field overlay
-/// image (PROT entry `0897`, as the disc holds it). `None` when the image
-/// is too short to hold them.
+/// image (PROT entry `0897`, as the disc holds it), each where the render
+/// tail's own `lui` / `addiu` pair now forms its address
+/// ([`legaia_engine_field::field_overlay::field_overlay_cstr`]), so a
+/// string a language pack moved is followed. `None` when the image is too
+/// short to hold them.
 pub fn prompt_strings(field_overlay: &[u8]) -> Option<[Vec<u8>; 3]> {
-    let read = |va: u32| -> Option<Vec<u8>> {
-        let off = va.checked_sub(FIELD_OVERLAY_BASE)? as usize;
-        let tail = field_overlay.get(off..)?;
-        let end = tail.iter().position(|&b| b == 0)?;
-        Some(tail[..end].to_vec())
-    };
+    let read = |va: u32| field_overlay_cstr(field_overlay, va).map(<[u8]>::to_vec);
     Some([
         read(PROMPT_STRING_VAS[0])?,
         read(PROMPT_STRING_VAS[1])?,
