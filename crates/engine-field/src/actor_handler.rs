@@ -237,8 +237,26 @@ pub enum HandlerKernel {
     /// field VM's `4C D8` allocator
     /// (`legaia_engine_core::world::World::spawn_morph_weight_actor`) seated.
     MorphWeights,
-    /// No ported body. The handler still participates in every identity
-    /// test; it just has nothing to run.
+    /// `FUN_801D84D0`, the op-`0x49` submode driver / dialog pager -
+    /// ported in `legaia_engine_dialog` (`dialog::OwnedDialogPanel`,
+    /// `dialog_window`, `dialog_picker_slide`) and driven off the world's
+    /// dialog channel, not as a pool node.
+    DialogPager,
+    /// `LAB_801DA930`, the floor-height-ladder oscillator -
+    /// [`crate::field_actor_timers`]' ladder rung, stepped by
+    /// `legaia_engine_core::world::World`'s field eases over
+    /// `terrain.floor_tier_bobs` (the records the `4C 90..92` spawner seats)
+    /// into the scene's floor-height LUT.
+    FloorLadder,
+    /// `FUN_801DBE9C`, the fixed scene-actor (camera zone arrival). Its
+    /// retail-live leg is done by the zone follow
+    /// (`crate::camera::ZoneFollow::arm_arrival` and the tick that consumes
+    /// it); the dev-gated leg is ported as
+    /// [`crate::camera::camera_zone_arrival_tick`].
+    ZoneArrival,
+    /// No ported body: a retail `+0x0C` the enum does not name, or a null
+    /// handler. The handler still participates in every identity test; it
+    /// just has nothing to run.
     Unported,
 }
 
@@ -327,11 +345,10 @@ impl ActorHandler {
             | ActorHandler::ScreenMask
             | ActorHandler::ScreenPanel
             | ActorHandler::ScreenLetterbox => HandlerKernel::ScreenWidget,
-            ActorHandler::None
-            | ActorHandler::SubmodeDriver
-            | ActorHandler::FloorLadder
-            | ActorHandler::SceneActor
-            | ActorHandler::Retail(_) => HandlerKernel::Unported,
+            ActorHandler::SubmodeDriver => HandlerKernel::DialogPager,
+            ActorHandler::FloorLadder => HandlerKernel::FloorLadder,
+            ActorHandler::SceneActor => HandlerKernel::ZoneArrival,
+            ActorHandler::None | ActorHandler::Retail(_) => HandlerKernel::Unported,
         }
     }
 

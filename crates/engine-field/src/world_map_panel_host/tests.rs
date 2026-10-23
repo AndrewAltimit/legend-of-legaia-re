@@ -380,14 +380,16 @@ fn the_fade_flash_parks_until_the_host_releases_it() {
     }
     assert_eq!(h.phase, 3);
     h.release_flash();
-    let mut retired = false;
     for _ in 0..200 {
-        if h.tick(0, 0, 8, &mut f).retired {
-            retired = true;
+        h.tick(0, 0, 8, &mut f);
+        if matches!(h.kind, Some(PanelActorKind::TravelArt(_))) {
             break;
         }
     }
-    assert!(retired, "the released ramp-down reaches a terminal arm");
+    // The released ramp-down reaches its terminal arm, whose exit names the
+    // Riremito travel art (`PTR_FUN_801F33B4[0x29]`); the host runs it next.
+    assert_eq!(h.kind, Some(PanelActorKind::TravelArt(TravelArt::Riremito)));
+    assert_eq!(h.handler_id, 0x29);
 }
 
 #[test]

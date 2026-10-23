@@ -359,11 +359,15 @@ impl PanelActorHost {
     /// handler dispatcher to pick back up off the new id, and this host drops
     /// it instead, recording the pair in [`PanelFrame::exits`].
     ///
-    /// The one id this host *does* follow is `0`, the close tick
-    /// ([`PanelActorKind::CloseTick`]): its body is ported
-    /// ([`crate::submode_hub_actors::close_tick`]) and it is the
-    /// handler every such exit names, so the actor stays installed for it and
-    /// retires when the tick clears the completion gate.
+    /// The ids this host *does* follow are the ones whose bodies are ported:
+    /// `0`, the close tick ([`PanelActorKind::CloseTick`],
+    /// [`crate::submode_hub_actors::close_tick`]), which the actor stays
+    /// installed for and retires when the tick clears the completion gate;
+    /// and `0x29` / `0x2B`, the two travel arts the fade / flash's exits name
+    /// (`PTR_FUN_801F33B4[0x29] = FUN_801EE094`, `[0x2B] = FUN_801EE328`,
+    /// read off the PROT 0897 image), which continue as
+    /// [`PanelActorKind::TravelArt`] the way retail's dispatcher would run
+    /// them next. Every other id is dropped and recorded.
     fn retire(&mut self, frame: &mut PanelFrame, exit: ActorExit) {
         frame.exits.push(exit);
         exit.apply(
@@ -377,6 +381,10 @@ impl PanelActorHost {
         self.timer = 0;
         if exit.next_handler == crate::submode_hub_actors::slot::CLOSE_TICK {
             self.kind = Some(PanelActorKind::CloseTick);
+            return;
+        }
+        if let Some(art) = TravelArt::for_handler_id(exit.next_handler) {
+            self.install(PanelActorKind::TravelArt(art), exit.next_handler);
             return;
         }
         frame.retired = true;

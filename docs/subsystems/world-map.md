@@ -814,13 +814,14 @@ Three inputs are the **port's**, not retail's:
   `ctx[+0x50]` into a function pointer through the 52-entry
   `PTR_FUN_801F33B4`. The dispatcher is ported
   (`legaia_engine_field::submode_hub_actors::hub_dispatch`) but takes the resolved
-  handler as a closure, and seven of the table's slots are read out of the
-  image. The sub-list, text-box and flag-window exits hand back to slot
-  `0x1A`, one of the seven; the fade/flash exits pick `0x29` and `0x2B`, which
-  are not. So `PanelActorHost::retire` drops the actor and records the handler
-  pair in `PanelFrame::exits`. The pause-menu path follows those two ids
-  itself (`World::tick_pause_session`, through `TravelArt::for_handler_id`);
-  the panel host's debug fade/flash does not.
+  handler as a closure. The fade/flash exits pick `0x29` and `0x2B`, whose
+  table words in the PROT 0897 image are `FUN_801EE094` (Riremito) and
+  `FUN_801EE328` (Rula); `PanelActorHost::retire` follows them as the travel
+  arts (`TravelArt::for_handler_id`), as the pause-menu path
+  (`World::tick_pause_session`) does, and follows `0` to the close tick. The
+  sub-list, text-box and flag-window exits hand back to `0x1A`, the hub's
+  draw tick, which the panel host does not run: it drops the actor and records
+  the pair in `PanelFrame::exits`.
 - **The chords that install an actor.** Retail reaches this band from debug
   branches in the controller. The engine gates it behind the top-view toggle's
   `debug_enabled` flag and binds Square (sub-list), L1 (fade/flash, pressed
