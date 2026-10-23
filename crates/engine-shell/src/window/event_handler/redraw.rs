@@ -527,6 +527,36 @@ impl PlayWindowApp {
             let at = history.len().checked_sub(1 + usize::from(back))?;
             Some((slot, *history.get(at)?.get(usize::from(slot))?))
         });
+        let retail_cells = self.screenshot.as_ref().and_then(|sc| {
+            (sc.popup_cells_due.get() && !sc.seat_popup_cells.is_empty()).then(|| {
+                use legaia_engine_battle_vm::battle_value_readout as vr;
+                sc.seat_popup_cells
+                    .iter()
+                    .map(|&(x, y, w, digit)| vr::ValueCell {
+                        digit,
+                        x,
+                        y,
+                        w,
+                        h: w,
+                        u: vr::digit_cell_u(digit),
+                        v: vr::DIGIT_ROW_V,
+                        cell: vr::DIGIT_CELL,
+                    })
+                    .collect::<Vec<_>>()
+            })
+        });
+        if let Some(cells) = retail_cells {
+            let mut layout =
+                legaia_engine_screens::battle_value_readout::battle_value_readout_layout(
+                    world,
+                    &self.battle_hud,
+                    &cam.to_cols_array(),
+                    self.battle_stage_scale(),
+                )
+                .unwrap_or((None, Vec::new()));
+            layout.1 = vec![cells];
+            return Some(layout);
+        }
         legaia_engine_screens::battle_value_readout::battle_value_readout_layout_with(
             world,
             &self.battle_hud,

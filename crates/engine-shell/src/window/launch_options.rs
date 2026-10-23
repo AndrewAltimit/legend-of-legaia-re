@@ -229,6 +229,12 @@ pub struct ScreenshotConfig {
     /// captured frame ages the engine's newest popup on that slot to it.
     /// Set by the retail-compare image channel.
     pub seat_popup_age: Option<(u8, u16)>,
+    /// `LEGAIA_SEAT_POPUP_CELLS=x:y:w:digit,...`: the numeral cells the
+    /// retail capture's displayed frame drew; the captured frame draws them
+    /// in place of the engine's runs.
+    pub seat_popup_cells: Vec<(i32, i32, u32, u8)>,
+    /// Set on the frame the capture is due, for [`Self::seat_popup_cells`].
+    pub popup_cells_due: std::cell::Cell<bool>,
     /// The readout trios of the frames before this one, newest last, kept
     /// while [`Self::seat_popup_age`] is set: a popup aged back `d` frames
     /// is anchored on the trio it was drawn over `d` frames ago.
@@ -678,6 +684,22 @@ impl ScreenshotConfig {
             seat_hud_glides: std::env::var("LEGAIA_SEAT_HUD_GLIDES")
                 .map(|v| legaia_engine_capture::hud_glide::HudGlideSeat::list_from_env(&v))
                 .unwrap_or_default(),
+            seat_popup_cells: std::env::var("LEGAIA_SEAT_POPUP_CELLS")
+                .map(|v| {
+                    v.split(',')
+                        .filter_map(|e| {
+                            let f: Vec<&str> = e.trim().split(':').collect();
+                            Some((
+                                f.first()?.parse().ok()?,
+                                f.get(1)?.parse().ok()?,
+                                f.get(2)?.parse().ok()?,
+                                f.get(3)?.parse().ok()?,
+                            ))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            popup_cells_due: std::cell::Cell::new(false),
             seat_popup_age: std::env::var("LEGAIA_SEAT_POPUP_AGE").ok().and_then(|v| {
                 let (s, a) = v.split_once(':')?;
                 Some((s.trim().parse().ok()?, a.trim().parse().ok()?))

@@ -620,9 +620,17 @@ pub(super) fn battle_image(
             legaia_engine_capture::hud_glide::HudGlideSeat::to_env(&battle.hud_glides),
         ));
     }
-    // The newest numeral's rise as the displayed frame drew it
-    // (`popup_age_seat`), on the engine seat of its struck pool slot.
-    if let Some((slot, age)) = battle.popup_age {
+    // The numerals the displayed frame drew, off retail's own packets
+    // (`displayed_popup_cells`); where they cannot be read, the newest
+    // numeral's rise (`popup_age_seat`) on the engine seat of its struck
+    // pool slot.
+    if let Some(cells) = battle.popup_cells.as_ref() {
+        env.push((
+            "LEGAIA_SEAT_POPUP_CELLS",
+            crate::retail_compare_battle::popup_cells_to_env(cells),
+        ));
+    }
+    if let Some((slot, age)) = battle.popup_age.filter(|_| battle.popup_cells.is_none()) {
         let seat =
             legaia_engine_capture::battle_drive::engine_seat(slot, battle.party_count.clamp(1, 3));
         env.push(("LEGAIA_SEAT_POPUP_AGE", format!("{seat}:{age}")));

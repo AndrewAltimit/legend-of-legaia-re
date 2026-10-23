@@ -679,6 +679,7 @@ impl RetailBattle {
                 }
                 seats
             },
+            popup_cells: displayed_popup_cells(ram),
             popup_age: popup_age_seat(ram, ctx, display_lag_vsyncs(ram), frame_step(ram)),
             spirit_gauge: retail_spirit_gauge(ram, ctx, active, display_lag_vsyncs(ram)),
             hud_glides_unseen: {

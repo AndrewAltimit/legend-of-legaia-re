@@ -1153,3 +1153,44 @@ fn a_ray_burst_position_stands_only_through_the_lag() {
     put16(&mut ram, node + 0x78, 0x1000);
     assert!(!ram_read::ray_burst_stood_through_lag(&ram, node, 4));
 }
+
+/// A numeral's digit quads are read off both packet arenas, and a run two
+/// passes behind the newest is the older run stepped back by its own move:
+/// `rim_elm_gimard_victory`'s `6` at `(117, 81)` 12 px in the newer arena
+/// and `(124, 92)` 10 px in the older puts the frame on screen at
+/// `(131, 103)` 8 px.
+#[test]
+fn numeral_cells_come_off_the_arenas_and_step_back_a_pass() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let quad = |ram: &mut Vec<u8>, at: u32, x: i16, y: i16, w: i16, digit: u8| {
+        let u = ((digit + 9) % 10) * 24;
+        put32(ram, at, 0x0900_0000);
+        put32(ram, at + 4, 0x2C80_8080);
+        let corners = [
+            (x, y),
+            (x + w - 1, y),
+            (x, y + w - 1),
+            (x + w - 1, y + w - 1),
+        ];
+        for (k, (cx, cy)) in corners.into_iter().enumerate() {
+            let o = at + 8 + 8 * k as u32;
+            put16(ram, o, cx as u16);
+            put16(ram, o + 2, cy as u16);
+            put8(ram, o + 4, u + if k % 2 == 1 { 23 } else { 0 });
+            put8(ram, o + 5, 64 + if k >= 2 { 23 } else { 0 });
+        }
+    };
+    quad(&mut ram, 0x800F_EF80, 117, 81, 12, 6);
+    quad(&mut ram, 0x8013_0EB0, 124, 92, 10, 6);
+    let quads = popup_cells::digit_quads(&ram);
+    assert_eq!(quads.len(), 2);
+    assert_eq!(
+        (quads[0].x, quads[0].y, quads[0].w, quads[0].digit),
+        (117, 81, 12, 6)
+    );
+    let back = popup_cells::step_back(&quads[1..], &quads[..1]);
+    assert_eq!(
+        (back[0].x, back[0].y, back[0].w, back[0].digit),
+        (131, 103, 8, 6)
+    );
+}

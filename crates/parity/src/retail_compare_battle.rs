@@ -61,6 +61,7 @@ mod frame_step;
 mod hud_glide;
 mod hud_glide_pool;
 mod inflight_seeds;
+mod popup_cells;
 mod spirit_gauge;
 pub use inflight_seeds::UndriftActing;
 mod ram_read;
@@ -77,6 +78,7 @@ pub use engine_run::*;
 pub use frame_step::*;
 use hud_glide::*;
 use hud_glide_pool::*;
+pub use popup_cells::*;
 use ram_read::*;
 pub use scoring::*;
 pub use seed_plan::*;
@@ -435,6 +437,9 @@ pub struct RetailBattle {
     /// pool slot and the engine popup age whose rise matches retail's
     /// (`hud_glide::popup_age_seat`); `None` with no live numeral.
     pub popup_age: Option<(u8, u16)>,
+    /// The numeral cells the displayed frame drew, off the packet arenas
+    /// ([`displayed_popup_cells`]).
+    pub popup_cells: Option<Vec<DigitQuad>>,
     /// A Spirit turn's AP bar width and AP plate value as the displayed
     /// frame shows them (`spirit_gauge::retail_spirit_gauge`); `None`
     /// outside one.

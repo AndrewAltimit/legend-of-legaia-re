@@ -52,6 +52,7 @@ impl PlayWindowApp {
             };
             if due {
                 sc.seat_fog_due.set(true);
+                sc.popup_cells_due.set(true);
             }
             // ... and the ambient tree's sprite-arm sheets where retail's
             // emitters had put them (`LEGAIA_SEAT_SPRITE_ARMS`).
