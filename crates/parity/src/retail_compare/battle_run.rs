@@ -584,6 +584,12 @@ pub(super) fn battle_image(
             )),
         ));
     }
+    // A summon close-up re-framed on the caster's body pair every pass: the
+    // frame on screen stood on the pair of the pose three passes behind the
+    // RAM's cursor, not the live pair (`RetailBattle::summon_focus`).
+    if let Some([x, z]) = battle.summon_focus {
+        env.push(("LEGAIA_BATTLE_SUMMON_FOCUS", format!("{x},{z}")));
+    }
     // Every pad drive, as the headless seed snaps and aligns every driven
     // capture: a menu capture's case-0 close-up subtracts its member's
     // heading (`0x8F0 - actor[+0x46]`), which only the ground snap carries -

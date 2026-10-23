@@ -213,6 +213,13 @@ pub struct ScreenshotConfig {
         legaia_engine_camera::projection::BattleCamPose,
         legaia_engine_camera::projection::BattleCamPose,
     )>,
+    /// `LEGAIA_BATTLE_SUMMON_FOCUS=<x>,<z>`: the caster's body pair the
+    /// displayed frame's summon close-up was framed on - the pose three
+    /// passes behind the RAM's cursor - which the captured frame's close-up
+    /// takes as its focus
+    /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::align_summon_focus`]).
+    /// Set by the retail-compare image channel.
+    pub battle_summon_focus: Option<[f32; 2]>,
     /// `LEGAIA_SEAT_HUD_GLIDES_LANDED=1`: the retail capture's HUD widget
     /// glides had all landed, so the captured frame lands the engine's too
     /// (`World::land_battle_hud_glides`). Set by the retail-compare image
@@ -670,6 +677,12 @@ impl ScreenshotConfig {
             battle_module_cam_align: std::env::var("LEGAIA_BATTLE_MODULE_CAM_ALIGN")
                 .ok()
                 .and_then(|v| legaia_engine_capture::camera_align::cam_align_from_env(&v)),
+            battle_summon_focus: std::env::var("LEGAIA_BATTLE_SUMMON_FOCUS")
+                .ok()
+                .and_then(|v| {
+                    let mut it = v.split(',').map(|n| n.trim().parse::<f32>().ok());
+                    Some([it.next()??, it.next()??])
+                }),
             gate_cam_target: std::cell::Cell::new(None),
             battle_cam_gate_target: std::env::var("LEGAIA_BATTLE_CAM_GATE_TARGET")
                 .ok()

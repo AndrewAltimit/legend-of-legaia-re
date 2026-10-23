@@ -58,6 +58,7 @@ mod display_lag;
 mod effect_children;
 mod engine_run;
 mod frame_step;
+mod framing_body;
 mod hud_glide;
 mod hud_glide_pool;
 mod inflight_seeds;
@@ -530,6 +531,13 @@ pub struct RetailBattle {
     /// clip wraps). The frame the capture shows each body on
     /// ([`legaia_engine_capture::clip_cursors`]).
     pub clip_cursors: Vec<(u8, u8, i32)>,
+    /// The caster's body pair the displayed frame's summon close-up was
+    /// framed on, in the summon band's `0x33` / `0x34`
+    /// ([`legaia_engine_battle_vm::battle_cam_script::SUMMON_CAST_STATES`]):
+    /// `FUN_801DC0A0` case `0x12` focuses on the body pair every pass, and
+    /// the displayed frame's pass read the pair of the pose three passes
+    /// behind the RAM's cursor (`framing_body`). `None` outside the band.
+    pub summon_focus: Option<[i16; 2]>,
     /// The idle-loop cursor each engine battle slot takes at an in-flight
     /// cast's dispatch ([`legaia_engine_core::world::InflightCastSeed::idle`]):
     /// empty on the RAM read, filled from a first replay's measured advance

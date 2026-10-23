@@ -250,6 +250,19 @@ impl PlayWindowApp {
         {
             cam.align_module_shot(live, end);
         }
+        // ... and a summon close-up onto the body pair its displayed frame
+        // was framed on (`LEGAIA_BATTLE_SUMMON_FOCUS`,
+        // `BattleCamera::align_summon_focus`).
+        if let Some(body) = self
+            .screenshot
+            .as_ref()
+            .and_then(|sc| sc.battle_summon_focus)
+            && self.session.host.world.mode == SceneMode::Battle
+            && self.capture_phase_met()
+            && let Some(cam) = self.session.host.world.battle.camera.as_mut()
+        {
+            cam.align_summon_focus(body);
+        }
         // ... and, on the captured phase itself, the glide's origin
         // (`LEGAIA_BATTLE_CAM_ALIGN`, `BattleCamera::align_glide_origin`).
         if let Some((live, end)) = self.screenshot.as_ref().and_then(|sc| sc.battle_cam_align)

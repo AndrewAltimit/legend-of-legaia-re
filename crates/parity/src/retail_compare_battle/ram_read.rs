@@ -747,6 +747,12 @@ impl RetailBattle {
             entry_latches: Vec::new(),
             resident_shiny_seru: false,
             inflight_idle: [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+            summon_focus: active
+                .filter(|_| {
+                    legaia_engine_battle_vm::battle_cam_script::SUMMON_CAST_STATES
+                        .contains(&action_state)
+                })
+                .and_then(|p| super::framing_body::displayed_framing_body(ram, p)),
             clip_cursors: (0..8u32)
                 .filter_map(|slot| {
                     let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
