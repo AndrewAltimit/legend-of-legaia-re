@@ -1629,9 +1629,15 @@ its `j` targets print correctly - see
   `equip_best_change_sprites_for`; the candidate step adds windows 24
   (`item_info_panel_draws_for` + `count_panel_draws_for`) and 25.
 
-Known difference: the four **armament** candidate lists are sorted by item id,
-with Remove only on an occupied slot and no equipped row, where retail's
-builder gives both families the same two leading rows in bag order.
+- **Armament lists** take retail's armament build
+  (`EquipSession::armament_rows`, `FUN_80030628` cases `7`..`10` /
+  `0x15`..`0x18`): the Remove verb always (`0x800314D0`), the worn id when
+  the slot holds one (`0x800314DC`), then the accepted bag slots of the
+  active window in slot order (`0x80031544..0x800315E4`), the worn id skipped.
+  Disc-gated oracle:
+  `pause_learned_content_ladder::the_weapon_candidate_list_is_remove_worn_then_bag_order`.
+  A disc-free session (no restriction tables) keeps the id-sorted placeholder
+  list.
 
 ## Equip stat-compare panels (windows 25 and 41)
 
@@ -2112,7 +2118,6 @@ Where the port differs from retail today:
 
 | Area | Difference |
 |---|---|
-| Armament candidate lists | id-sorted, without retail's leading rows on an empty slot ([Equip screen](#port-of-the-equip-screen)) |
 | Spell level-up notice | shown over the resumed menu |
 | AP gauge fill | linear per-row interpolation; retail's sub-pixel truncation unpinned |
 | `FUN_801E4140` | `guarded_box_rect` has no caller on either host (nothing produces an out-of-range `y`); waived in `scripts/ci/ui-host-drift-waivers.toml` |

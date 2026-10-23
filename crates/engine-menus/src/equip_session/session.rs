@@ -384,7 +384,7 @@ impl EquipSession {
     }
 
     /// Filter the inventory to items targeting `slot` and owned ≥ 1.
-    /// Returns a list sorted by item id so cursor positions are stable
+    /// The disc-free placeholder sorts by item id so cursor positions are stable
     /// across HashMap iteration orderings.
     ///
     /// When the session carries disc-pinned [`DiscEquipInfo`] restrictions,
@@ -393,12 +393,13 @@ impl EquipSession {
     /// item's disc slot category (`+7`). Otherwise it falls back to the legacy
     /// `id >> 5` placeholder rule.
     ///
-    /// An **occupied** slot puts the retail **Remove** row first: id
-    /// [`REMOVE_ROW_ID`], the class-`0x4000` payload-`0` entry
-    /// `FUN_801D9C14` tests for at `0x801DA0B4`. An empty slot has nothing
-    /// to remove and the row is absent, which is why retail's buzz-`0x37`
-    /// arm (empty equip byte on the Remove row) is unreachable from this
-    /// list - [`Self::unequip`] keeps the guard anyway.
+    /// With the disc restrictions installed (both play hosts) every slot
+    /// takes retail's row order: [`Self::armament_rows`] for the armament
+    /// rows, [`Self::goods_rows`] for the Goods rows - Remove first, the worn
+    /// id next, then bag order. The disc-free placeholder below is id-sorted
+    /// and puts **Remove** ([`REMOVE_ROW_ID`], the class-`0x4000` payload-`0`
+    /// entry `FUN_801D9C14` tests for at `0x801DA0B4`) only on an occupied
+    /// slot; [`Self::unequip`] keeps retail's empty-slot buzz guard.
     pub fn items_for_slot(&self, slot: u8) -> Vec<EquipItem> {
         if let Some(info) = &self.restrictions
             && matches!(
@@ -407,6 +408,9 @@ impl EquipSession {
             )
         {
             return self.goods_rows(slot, info);
+        }
+        if self.restrictions.is_some() {
+            return self.armament_rows(slot);
         }
         let mut out: Vec<EquipItem> = self
             .inventory
@@ -441,13 +445,62 @@ impl EquipSession {
         out
     }
 
+    /// An **armament** slot's candidate list, in retail's row order.
+    ///
+    /// `FUN_80030628`'s armament cases (content ids `0x15`..`0x18`, also
+    /// `7`..`10`) build the same leading rows as the Goods family: the Remove
+    /// verb (`0x4000`, payload `0`) always (`sh v0,0x6020(v1)` at
+    /// `0x800314D0`), the equipped id (`0x7000 | id`) when the slot holds one
+    /// (`0x800314DC`), then every bag slot of the active window in **slot**
+    /// order (`0x80031544..0x800315E4`) whose item is equipment (record `+0`
+    /// class `1`), whose `+7` category matches the row and whose `+6` mask
+    /// takes the character - skipping the equipped id itself (`0x80031554..
+    /// 0x8003156C`). Confirming Remove on an empty slot is retail's buzz,
+    /// which [`Self::unequip`] keeps.
+    ///
+    /// REF: FUN_80030628 (armament cases `7`..`10` / `0x15`..`0x18`)
+    fn armament_rows(&self, slot: u8) -> Vec<EquipItem> {
+        let (start, end) = self.inventory.window_bounds();
+        let slots = self.inventory.slots();
+        let window = &slots[start.min(slots.len())..end.min(slots.len())];
+        let equipped_id = self.record.equip.get(slot as usize).copied().unwrap_or(0);
+        let mut out = vec![EquipItem {
+            id: REMOVE_ROW_ID,
+            slot,
+            owned: true,
+            equipped: false,
+        }];
+        if equipped_id != 0 {
+            out.push(EquipItem {
+                id: equipped_id,
+                slot,
+                owned: true,
+                equipped: true,
+            });
+        }
+        out.extend(
+            window
+                .iter()
+                .filter(|&&(id, qty)| {
+                    id != 0 && qty > 0 && id != equipped_id && self.item_fits_slot(id, slot)
+                })
+                .map(|&(id, qty)| EquipItem {
+                    id,
+                    slot,
+                    owned: qty > 0,
+                    equipped: false,
+                }),
+        );
+        out
+    }
+
     /// The three **Goods** slots' candidate list, in retail's row order.
     ///
     /// Runs [`crate::menu_list_rows::build_goods_candidate_rows`] over the
     /// bag's active window: the Remove verb always leads (even on an empty
     /// slot, where confirming it buzzes), the equipped id follows when the
     /// slot holds one, then every accepted bag slot in **slot** order, the
-    /// equipped id skipped. The armament slots keep the id-sorted list above.
+    /// equipped id skipped. The armament slots' twin is [`Self::armament_rows`].
     ///
     /// REF: FUN_80030628 (Goods cases `0xE`..`0x10` / `0x1C`..`0x1E`)
     fn goods_rows(&self, slot: u8, info: &DiscEquipInfo) -> Vec<EquipItem> {

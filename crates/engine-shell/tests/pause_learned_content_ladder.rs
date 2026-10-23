@@ -843,8 +843,8 @@ fn a_coin_holder_s_root_menu_shows_the_coin_row() {
 
 /// The Throw Out confirm (window 9, `FUN_801D1B20`) draws the overlay's own
 /// labels: the question line at `(WX + 6, WY + 0xE)` and Yes / No at
-/// `WX + 0x3C`. Each pool string keeps its `@` lead - a blank width-0 glyph
-/// - so the first visible glyph sits one pixel past each pen, as retail
+/// `WX + 0x3C`. Each pool string keeps its `@` lead, a blank width-0 glyph,
+/// so the first visible glyph sits one pixel past each pen, as retail
 /// draws it.
 #[test]
 fn the_throw_out_confirm_draws_the_overlay_labels() {
@@ -1007,4 +1007,77 @@ fn a_menu_heal_level_up_draws_the_overlay_sentence_with_the_plate() {
         .expect("the plate draws at window 7's pen");
     assert_eq!(plate.dst.1, py, "on the line's row");
     assert_eq!(plate.color[..3], [1.0, 1.0, 1.0]);
+}
+
+/// The Equip screen's weapon candidate list is retail's armament build
+/// (`FUN_80030628` cases `7`..`10` / `0x15`..`0x18`): the Remove verb first,
+/// the worn weapon second when there is one, then the bag's accepted slots
+/// in slot order - not id order. The bag is seeded with two weapons Vahn can
+/// wield, the higher id first, and the list is opened by pad.
+#[test]
+fn the_weapon_candidate_list_is_remove_worn_then_bag_order() {
+    let Some(probe) = booted(&[], &[]) else {
+        return;
+    };
+    let stats = probe
+        .host
+        .world
+        .tables
+        .equip_stats
+        .clone()
+        .expect("the boot parses the equipment stat table");
+    let info = legaia_engine_menus::equipment::DiscEquipInfo::from_disc(&stats);
+    let mut weapons: Vec<u8> = (1u8..=0xFF)
+        .filter(|&id| {
+            info.category(id) == Some(legaia_game_tables::equip_stats::EquipSlot::Weapon)
+                && info.can_equip(id, 0)
+        })
+        .collect();
+    drop(probe);
+    weapons.sort_unstable();
+    let (low, high) = (weapons[0], weapons[weapons.len() - 1]);
+    assert!(low < high, "two distinct Vahn weapons on the disc");
+    // Bag order: the higher id first.
+    let Some(mut s) = booted(&[], &[high, low]) else {
+        return;
+    };
+    open_row(&mut s, FieldMenuRow::Equip);
+    tap(&mut s, PadButton::Cross); // Vahn
+    tap(&mut s, PadButton::Down); // row 1: the weapon slot
+    tap(&mut s, PadButton::Cross); // its candidate list
+    let Some(FieldMenuSubsession::Equip { session, .. }) = s.field_menu_sub.as_ref() else {
+        panic!("Equip did not open the equip screen");
+    };
+    let legaia_engine_menus::equip_session::EquipState::ItemPicker { slot, .. } = session.state()
+    else {
+        panic!(
+            "the weapon row did not open its candidate list: {:?}",
+            session.state()
+        );
+    };
+    let rows = session.items_for_slot(slot);
+    assert_eq!(
+        rows[0].id,
+        legaia_engine_menus::equip_session::REMOVE_ROW_ID,
+        "Remove leads"
+    );
+    let worn = session.record().equip[slot as usize];
+    let mut at = 1;
+    if worn != 0 {
+        assert!(
+            rows[1].equipped && rows[1].id == worn,
+            "the worn weapon second"
+        );
+        at = 2;
+    }
+    let bag: Vec<u8> = rows[at..].iter().map(|r| r.id).collect();
+    let hi = bag
+        .iter()
+        .position(|&id| id == high)
+        .expect("the high-id weapon is listed");
+    let lo = bag
+        .iter()
+        .position(|&id| id == low)
+        .expect("the low-id weapon is listed");
+    assert!(hi < lo, "bag order, not id order: {bag:02X?}");
 }
