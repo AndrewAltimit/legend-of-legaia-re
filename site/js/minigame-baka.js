@@ -3,26 +3,28 @@
  *
  * Two layers over one <div>:
  *   - a WebGL canvas (the shared TmdRenderer R16UI paletted-VRAM pipeline)
- *     carrying the DUEL SCENE: the two fighters' real meshes - the player side
- *     from the battle-form party pack (PROT 1204), the opponent from its own
- *     per-rung pack (PROT 1206..1219) - posed per frame from their real
- *     animation banks (PROT 1203 for the party, the pack's own anim chunk for
- *     the opponent), plus the arena: the stage TMD's backdrop wall (PROT 1203
- *     descriptor 1) and a floor tiled from the wall's own dominant texture cell;
+ *     carrying the DUEL SCENE. With a bundle that carries it this is the
+ *     engine's duel surface (`engine-minigame-scenes::baka_duel_scene`, the
+ *     kernel the native window and the play page draw): the two fighters'
+ *     real meshes at the round setup's traced stand-offs, posed by the duel's
+ *     display clips, the four arena walls and the floor placed by PROT 0976
+ *     immediates, all under the arena camera's view-projection
+ *     (`DuelCamera::vp_raw`). An older bundle without it falls back to a
+ *     page-built scene - the same meshes and animation banks, but the camera
+ *     and the wall setback fitted by eye;
  *   - a 2D canvas carrying the HUD, drawn from the overlay's own 51-record
  *     widget table (DAT_801d7160) + the PROT 1203 art pages, at the screen
  *     positions traced from the retail HUD renderer FUN_801d2afc.
  *
- * Also hosts the retail PLAYER SELECT screen (the three party fighters idling
- * under the sheet's own banner, widget 12), the winner's post-match punch
- * flourish, and the between-match tally menu - the sheet's NEXT GAME /
+ * The cabinet's front end (the attract card and the PLAYER SELECT lineup) is
+ * the engine's too (`loadCabinet`). The page adds the winner's post-match
+ * punch flourish and the between-match tally menu - the sheet's NEXT GAME /
  * PAY OUT / GET COIN cells (widgets 44/45/46 + the coin digit strip).
  *
- * Traced vs fitted, stated plainly (mirrors the slot-machine section's
- * contract): every sprite CELL, PALETTE and HUD screen position is read off
- * the disc or the disassembly; the 3D CAMERA and the fighters' floor spacing
- * are fitted by eye, because the duel's GTE matrices live in COP2 and no
- * mid-duel capture exists yet. Nothing is invented art.
+ * Traced vs fitted, stated plainly: every sprite CELL, PALETTE and HUD
+ * screen position is read off the disc or the disassembly, and so is the
+ * engine surface's camera and stage. Only the legacy fallback scene's camera
+ * and wall setback are fitted. Nothing is invented art.
  *
  * Requires webgl-math.js + webgl-shaders.js + webgl-tmd.js first.
  */
@@ -375,159 +377,6 @@
       for (const c of ((cab && cab.cells) || []).slice().reverse()) {
         this._widget(g, c.w, c.x, c.y, Math.max(0, Math.min(1, c.b / 128)), false, c.b, 0x1000);
       }
-    }
-
-    /* ---------------- fighter-select screen ----------------
-     *
-     * The retail cabinet opens on a PLAYER SELECT screen: the three party
-     * fighters' battle-form models side by side under the sheet's own
-     * "PLAYER SELECT" banner (widget 12), with the cursor arrows (widgets
-     * 48/49) picking one. This rebuilds that screen from the same assets:
-     * the three PROT 1204 meshes idling in front of the arena stage. */
-    loadSelect(api) {
-      this.api = api;
-      this.ok = false;
-      this.engine = false;
-      if (this.renderer) this.renderer.semiTwoPass = false;
-      if (!api.baka_presentation_ready || !api.baka_presentation_ready()) return false;
-      this.widgets = JSON.parse(api.baka_hud_json());
-      if (!this.widgets.length) return false;
-      this.pageCanvases.clear();
-      /* The quad cache is keyed on (widget, x, y, brightness, size, mirror)
-       * only, so a new disc's widget table must drop it. */
-      if (this._quadCache) this._quadCache.clear();
-
-      const fighters = [];
-      for (let ch = 0; ch < 3; ch++) {
-        const pos = api.baka_fighter_positions(0, ch);
-        if (!pos.length) return false;
-        const parts = api.baka_fighter_part_count(0, ch);
-        const dims = api.baka_anim_dims(0, ch, 0);
-        const frames = api.baka_anim_pose_frames(0, ch, 0, parts);
-        if (!dims[0] || !dims[1] || !frames.length) return false;
-        fighters.push({
-          pos,
-          uvs: api.baka_fighter_uvs(0, ch),
-          ct: api.baka_fighter_cba_tsb(0, ch),
-          idx: api.baka_fighter_indices(0, ch),
-          oid: api.baka_fighter_object_ids(0, ch),
-          flat: api.baka_fighter_flat_rgba(0, ch),
-          clip: { frames, frameCount: dims[1], parts },
-        });
-      }
-      /* Extent of the widest fighter's rest pose sets the line-up spacing. */
-      let half = 0, height = 0;
-      for (const f of fighters) {
-        const out = new Float32Array(f.pos);
-        poseInto(out, f.pos, f.oid, f.clip, 0, 0, 0);
-        for (let i = 0; i < out.length; i += 3) {
-          half = Math.max(half, Math.abs(out[i]));
-          height = Math.max(height, -out[i + 1]);
-        }
-      }
-      this.selGap = half * 2.6;
-      /* Stage behind the line-up, set back past the fighters (see load()). */
-      const stage = this._stageBuffers(api, half);
-
-      /* Combined buffers: the three fighters, then the stage. */
-      const counts = fighters.map(f => f.pos.length / 3);
-      const nS = stage.pos.length / 3;
-      const n = counts.reduce((a, b) => a + b, 0) + nS;
-      const pos = new Float32Array(n * 3);
-      const uvs = new Uint8Array(n * 2);
-      const ct = new Uint16Array(n * 2);
-      const flat = new Uint8Array(n * 4);
-      const idx = [];
-      let vb = 0;
-      const bases = [];
-      for (const f of fighters) {
-        bases.push(vb);
-        pos.set(f.pos, vb * 3); uvs.set(f.uvs, vb * 2);
-        ct.set(f.ct, vb * 2); flat.set(f.flat, vb * 4);
-        for (const ix of f.idx) idx.push(vb + ix);
-        vb += f.pos.length / 3;
-      }
-      pos.set(stage.pos, vb * 3); uvs.set(stage.uvs, vb * 2);
-      ct.set(stage.ct, vb * 2); flat.set(stage.flat, vb * 4);
-      for (const ix of stage.idx) idx.push(vb + ix);
-
-      this.selScene = {
-        fighters, bases,
-        base: pos.slice(),
-        out: pos,
-      };
-      if (!this.renderer) this.renderer = new window.TmdRenderer(this.glCanvas);
-      /* The party atlases ride in the duel VRAM build; any opponent works. */
-      this.renderer.uploadVram(api.baka_duel_vram(5));
-      this.renderer.uploadMesh(pos, uvs, ct, new Uint32Array(idx), flat);
-
-      this.center = [0, -height * 0.45, 0];
-      this.radius = this.selGap * 1.15 + half;
-      this.cam = { yaw: 0.0, pitch: 0.08, distance: 1.55 };
-      this.tick = 0;
-      this.mode = 'select';
-      this.ok = true;
-      return true;
-    }
-
-    /* Per-frame drive of the select screen: `sel` is the highlighted
-     * character (0..2), `names` the three roster names off the disc. */
-    frameSelect(sel, names) {
-      if (!this.ok || this.mode !== 'select') return;
-      this.tick++;
-      const S = this.selScene;
-      for (let i = 0; i < 3; i++) {
-        const f = S.fighters[i];
-        const frame = Math.floor(this.tick * (ANIM_FPS / 60)) % f.clip.frameCount;
-        /* The picked fighter steps toward the camera; all face it (their
-         * intrinsic authored facing, yaw 0). */
-        const dx = (i - 1) * this.selGap;
-        const dz = i === sel ? 70 : 0;
-        poseInto(S.out, S.base, f.oid, f.clip, frame, S.bases[i], dx, 0, dz);
-      }
-      this.renderer.updatePositions(S.out);
-      this.renderer.render(this.cam.yaw, this.cam.pitch, this.cam.distance,
-                           0, 0, this.center, this.radius);
-      this._drawSelect(sel, names);
-    }
-
-    _drawSelect(sel, names) {
-      const cv = this.hudCanvas, g = cv.getContext('2d');
-      g.setTransform(cv.width / HUD_W, 0, 0, cv.height / HUD_H, 0, 0);
-      g.clearRect(0, 0, HUD_W, HUD_H);
-      g.imageSmoothingEnabled = false;
-      /* Retail framing: the select screen vignettes dark at the top and
-       * bottom of the frame (the arena light pools on the fighters). */
-      const vg = g.createLinearGradient(0, 0, 0, HUD_H);
-      vg.addColorStop(0.00, 'rgba(0,0,0,0.88)');
-      vg.addColorStop(0.16, 'rgba(0,0,0,0)');
-      vg.addColorStop(0.82, 'rgba(0,0,0,0)');
-      vg.addColorStop(1.00, 'rgba(0,0,0,0.88)');
-      g.fillStyle = vg;
-      g.fillRect(0, 0, HUD_W, HUD_H);
-      /* The sheet's own PLAYER SELECT banner across the top. */
-      this._widget(g, W.PLAYER_SELECT, 160, 24);
-      /* Cursor arrows flanking the picked fighter's column (the fighters
-       * stand at screen thirds under the fitted select camera). */
-      const cx = 160 + (sel - 1) * 96;
-      const bob = Math.sin(this.tick * 0.15) * 3;
-      /* Arrows point INWARD at the picked fighter (right cell mirrored -
-       * the sheet authors both cells left-pointing). */
-      this._widget(g, W.ARROW_L, cx + 46 + bob, 120);
-      this._widget(g, W.ARROW_R, cx - 46 - bob, 120, undefined, true);
-      /* The picked fighter's disc name (UI text - the art pack carries no
-       * name font). */
-      const name = (names && names[sel]) || '';
-      if (name) {
-        g.font = 'bold 12px ui-monospace, monospace';
-        g.textAlign = 'center';
-        g.fillStyle = 'rgba(0,0,0,0.6)';
-        g.fillText(name, cx + 1, 206 + 1);
-        g.fillStyle = '#ffe9a8';
-        g.fillText(name, cx, 206);
-      }
-      /* PRESS START, blinking like the attract loop. */
-      if ((this.tick >> 5) & 1) this._widget(g, W.PRESS_START, 160, 228);
     }
 
     /* The between-match tally menu (the retail NEXT GAME / PAY OUT cells).
