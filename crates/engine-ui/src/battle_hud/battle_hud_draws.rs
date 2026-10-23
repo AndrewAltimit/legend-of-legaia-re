@@ -211,7 +211,13 @@ pub fn battle_hud_draws_for(
                         b.separator.3 * scale as u32,
                     ),
                     src: b.separator,
-                    color: numeral_cell_tint(c),
+                    // Untinted whatever the readout's tier: retail draws it
+                    // through the system-UI sheet's fixed sub-palette 5
+                    // (CLUT `(80, 511)`, colour word `0x808080`) while the
+                    // numerals either side switch to the tier's font CLUT
+                    // (`(16 * (tier + 6), 510)`) - the Gaza captures' low HP
+                    // and empty MP read orange around a grey `/`.
+                    color: white,
                 }),
                 None => stage_text(text, font, "/", x, y + 4, c),
             }

@@ -89,3 +89,33 @@ fn font_solid_src_finds_a_white_texel_in_the_placeholder_font() {
     let rgba = font.atlas_rgba();
     assert_eq!(&rgba[off..off + 4], &[255, 255, 255, 255]);
 }
+
+/// The `/` between a current and a maximum keeps its own sub-palette while
+/// the numerals either side take the readout's tier: the Gaza captures'
+/// display lists draw the separator `SPRT` through CLUT `(80, 511)` at
+/// `0x808080` beside numerals on the danger tier's `(240, 510)`, so a
+/// low-HP / empty-MP bar reads orange digits around a grey `/`.
+#[test]
+fn bar_separator_stays_untinted_on_a_tinted_readout() {
+    let font = legaia_font::synthetic_for_tests();
+    // 79 / 1199 HP and 0 / 182 MP: both on the danger tier.
+    let slot = slot_view("Noa", true, true, 79, 1199, 0, 182);
+    let draws = hud_frame_with_chrome(&font, &[slot], Some(0));
+    let seps: Vec<_> = draws
+        .sprites
+        .iter()
+        .filter(|s| s.src == SEPARATOR_SRC)
+        .collect();
+    assert_eq!(seps.len(), 2, "the bar draws an HP and an MP separator");
+    for s in seps {
+        assert_eq!(s.color, [1.0, 1.0, 1.0, 1.0], "separator modulated: {s:?}");
+    }
+    let danger = legaia_engine_ui::numeral_cell_tint(gauge_fill_color(9));
+    assert!(
+        draws
+            .sprites
+            .iter()
+            .any(|s| s.src.1 == DIGIT_STRIP.1 && s.color == danger),
+        "the numerals beside it still take the danger tier"
+    );
+}

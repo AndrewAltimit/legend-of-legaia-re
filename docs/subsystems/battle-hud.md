@@ -1683,7 +1683,13 @@ ramp `FUN_80047430` so damage drains over frames:
 
 - **Numerals** take the readout-tint law (`hp_bar_color_index` /
   `mp_bar_color_index`, ports of `FUN_800349EC` / `FUN_80035EA8`). A dead
-  member's whole row dims.
+  member's numerals dim.
+- **The `/` separator takes no tier.** Retail draws it off the system-UI
+  sheet through its fixed sub-palette 5 (CLUT `(80, 511)`, colour word
+  `0x808080`) whatever the numerals either side read; the numerals' tier is
+  a CLUT switch to `(16 * (tier + 6), 510)`. Pinned off the display list of
+  the Gaza captures, whose low-HP and empty-MP readouts draw orange around a
+  grey `/`.
 - **Bar fills** take the whole-gauge law (`engine-battle-vm::battle_gauge::gauge_colors`,
   port of `FUN_80046A20`): death greys the whole track, an active status forces
   both fills to the override colour, otherwise each bar bands independently on
