@@ -558,17 +558,6 @@ div.play-vis-head { cursor: default; }
                    title="A successful escape banks 5% of the fled fight's EXP into every party member (the patcher's --flee-exp; play-window --flee-exp). Not retail; Retail-faithful holds it off.">
               <input type="checkbox" id="play-flee-exp"> Run-away EXP
             </label>
-            <label title="Multiplies every monster's EXP reward (the patcher's --exp-scale; play-window --exp-rate). 1x is retail; Retail-faithful holds it at 1x.">
-              EXP rate
-              <select id="play-exp-rate">
-                <option value="1000">1x</option>
-                <option value="1500">1.5x</option>
-                <option value="2000">2x</option>
-                <option value="3000">3x</option>
-                <option value="5000">5x</option>
-                <option value="500">0.5x</option>
-              </select>
-            </label>
             <label class="play-dev-menu"
                    title="Jette's Absolute Fortress keeps its random battles and its Door of Light on a save that left the Floating Castle with under a minute on the clock (the patcher's --fortress-encounter-fix; play-window --no-fortress-encounter-fix turns it off). A healthy save plays the same either way; Retail-faithful holds it off. Starts on the engine's default.">
               <input type="checkbox" id="play-fortress-fix"> Fortress battles fix
@@ -580,6 +569,85 @@ div.play-vis-head { cursor: default; }
             <label class="play-dev-menu"
                    title="Stops the retail battle softlock where a party member's HP readout stops short of their live HP and the battle waits on it forever, the camera circling (play-window --no-hp-readout-guard turns it off). A port fix with no patcher twin; Retail-faithful holds it off. Starts on the engine's default.">
               <input type="checkbox" id="play-hp-readout-guard"> Battle freeze guard
+            </label>
+            <label class="play-dev-menu"
+                   title="Now and then a won battle also grants one random piece of equipment, on top of the normal drop (a 5% roll; the patcher's --equipment-drops; play-window --equipment-drops). Not retail; Retail-faithful holds it off.">
+              <input type="checkbox" id="play-bonus-drop"> Bonus equipment drops
+            </label>
+          </div>
+        </details>
+        <details class="play-battle-tools" id="play-battle-tuning">
+          <summary>Battle tuning</summary>
+          <div class="play-btn-row">
+            <label title="Multiplies every monster's EXP reward (the patcher's --exp-scale; play-window --exp-rate). 1x is retail; Retail-faithful holds it at 1x.">
+              EXP rate
+              <select id="play-exp-rate">
+                <option value="1000">1x</option>
+                <option value="1500">1.5x</option>
+                <option value="2000">2x</option>
+                <option value="3000">3x</option>
+                <option value="5000">5x</option>
+                <option value="500">0.5x</option>
+              </select>
+            </label>
+            <label title="Multiplies every monster's HP / MP / ATK / UDF / LDF / INT / SPD; EXP, gold and drops stay retail (a uniform --enemy-stat-scale; play-window --enemy-stat-scale). 1x is retail; Retail-faithful holds it at 1x.">
+              Enemy strength
+              <select id="play-enemy-stats">
+                <option value="1000">1x</option>
+                <option value="1250">1.25x</option>
+                <option value="1500">1.5x</option>
+                <option value="2000">2x</option>
+                <option value="3000">3x</option>
+                <option value="5000">5x</option>
+                <option value="750">0.75x</option>
+                <option value="500">0.5x</option>
+              </select>
+            </label>
+            <label title="Multiplies how many hits monsters land with their standard attacks by dividing each attack's AGL price; a monster keeps at least one hit (the patcher's --enemy-attack-count; play-window --enemy-attack-count). 1x is retail.">
+              Enemy attacks
+              <select id="play-enemy-attacks">
+                <option value="1000">1x</option>
+                <option value="1500">1.5x</option>
+                <option value="2000">2x</option>
+                <option value="3000">3x</option>
+                <option value="500">0.5x</option>
+              </select>
+            </label>
+            <label title="AP the Spirit command charges into the gauge; 32 is retail, negative drains it (the patcher's --spirit-ap; play-window --spirit-ap). Retail-faithful holds 32.">
+              Spirit AP
+              <select id="play-spirit-ap">
+                <option value="32">32</option>
+                <option value="48">48</option>
+                <option value="64">64</option>
+                <option value="100">100</option>
+                <option value="0">0</option>
+                <option value="16">16</option>
+                <option value="-16">-16</option>
+                <option value="-32">-32</option>
+              </select>
+            </label>
+            <label title="AP a party member gains per 100% of max HP an enemy hit takes; 100 is retail, negative drains it (the patcher's --damage-ap; play-window --damage-ap). Retail-faithful holds 100.">
+              AP from damage
+              <select id="play-damage-ap">
+                <option value="100">100</option>
+                <option value="150">150</option>
+                <option value="200">200</option>
+                <option value="50">50</option>
+                <option value="0">0</option>
+                <option value="-50">-50</option>
+                <option value="-100">-100</option>
+              </select>
+            </label>
+            <label title="One catch chance for every capturable Seru; Original keeps each Seru's own (the patcher's --seru-catch-rate; play-window --seru-catch-rate). Retail-faithful holds Original.">
+              Seru catch rate
+              <select id="play-seru-catch-rate">
+                <option value="-1">Original</option>
+                <option value="25">25%</option>
+                <option value="50">50%</option>
+                <option value="75">75%</option>
+                <option value="100">100%</option>
+                <option value="10">10%</option>
+              </select>
             </label>
           </div>
         </details>
@@ -2492,6 +2560,16 @@ div.play-vis-head { cursor: default; }
   const fortressFixEl = document.getElementById('play-fortress-fix');
   const jewelFixEl = document.getElementById('play-jewel-fix');
   const hpGuardEl = document.getElementById('play-hp-readout-guard');
+  const bonusDropEl = document.getElementById('play-bonus-drop');
+  /* The battle-tuning selectors: element, setter, getter. Values are the
+   * engine's step lists (GameplayTweaks; a web-play test pins them). */
+  const tuningSelects = [
+    [document.getElementById('play-enemy-stats'), 'set_enemy_stat_permille', 'enemy_stat_permille'],
+    [document.getElementById('play-enemy-attacks'), 'set_enemy_attack_permille', 'enemy_attack_permille'],
+    [document.getElementById('play-spirit-ap'), 'set_spirit_ap', 'spirit_ap'],
+    [document.getElementById('play-damage-ap'), 'set_damage_ap', 'damage_ap'],
+    [document.getElementById('play-seru-catch-rate'), 'set_seru_catch_rate', 'seru_catch_rate'],
+  ];
   /* The gameplay tweaks start on the engine's defaults
    * (GameplayTweaks::default, the window's too): read them back from the
    * fresh runtime before the first write, so no box hardcodes a default. */
@@ -2505,6 +2583,11 @@ div.play-vis-head { cursor: default; }
     fortressFixEl.checked = !!rtCall('fortress_encounter_fix');
     jewelFixEl.checked = !!rtCall('jewel_fix');
     hpGuardEl.checked = !!rtCall('hp_readout_guard');
+    bonusDropEl.checked = !!rtCall('bonus_drop');
+    for (const [el, , getter] of tuningSelects) {
+      const v = rtCall(getter);
+      if (v !== undefined) el.value = String(v);
+    }
     shinyEl.dataset.synced = '1';
   }
   function rtCall(name, ...args) {
@@ -2541,6 +2624,8 @@ div.play-vis-head { cursor: default; }
     rtCall('set_fortress_encounter_fix', !!fortressFixEl.checked);
     rtCall('set_jewel_fix', !!jewelFixEl.checked);
     rtCall('set_hp_readout_guard', !!hpGuardEl.checked);
+    rtCall('set_bonus_drop', !!bonusDropEl.checked);
+    for (const [el, setter] of tuningSelects) rtCall(setter, parseInt(el.value, 10));
     rtCall('set_retail_mode', !!retailModeEl.checked);
   }
   retailModeEl.addEventListener('change', () => {
@@ -2580,6 +2665,10 @@ div.play-vis-head { cursor: default; }
   fortressFixEl.addEventListener('change', () => { rtCall('set_fortress_encounter_fix', !!fortressFixEl.checked); canvas.focus(); });
   jewelFixEl.addEventListener('change', () => { rtCall('set_jewel_fix', !!jewelFixEl.checked); canvas.focus(); });
   hpGuardEl.addEventListener('change', () => { rtCall('set_hp_readout_guard', !!hpGuardEl.checked); canvas.focus(); });
+  bonusDropEl.addEventListener('change', () => { rtCall('set_bonus_drop', !!bonusDropEl.checked); canvas.focus(); });
+  for (const [el, setter] of tuningSelects) {
+    el.addEventListener('change', () => { rtCall(setter, parseInt(el.value, 10)); canvas.focus(); });
+  }
   window.__playSyncPageToggles = syncPageToggles;
   window.__playApplyPageToggles = applyPageToggles;
 

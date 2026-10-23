@@ -1788,6 +1788,12 @@ mod tests {
             no_fortress_encounter_fix: true,
             jewel_fix: true,
             no_hp_readout_guard: true,
+            spirit_ap: Some(-16),
+            damage_ap: Some(200),
+            seru_catch_pct: Some(75),
+            enemy_attack_permille: Some(2000),
+            enemy_stat_permille: Some(1500),
+            equipment_drops: true,
             ..Default::default()
         };
         let mut argv = vec![OsString::from("legaia-engine")];
@@ -1800,8 +1806,21 @@ mod tests {
                 no_fortress_encounter_fix,
                 jewel_fix,
                 no_hp_readout_guard,
+                spirit_ap,
+                damage_ap,
+                seru_catch_rate,
+                enemy_attack_count,
+                enemy_stat_scale,
+                equipment_drops,
                 ..
             }) => {
+                assert_eq!((spirit_ap, damage_ap), (Some(-16), Some(200)));
+                assert_eq!(seru_catch_rate, Some(75));
+                assert_eq!(
+                    (enemy_attack_count, enemy_stat_scale),
+                    (Some(2000), Some(1500))
+                );
+                assert!(equipment_drops);
                 assert!(no_shiny_seru && flee_exp && no_fortress_encounter_fix && jewel_fix);
                 assert!(no_hp_readout_guard);
                 assert_eq!(exp_rate, Some(2000));

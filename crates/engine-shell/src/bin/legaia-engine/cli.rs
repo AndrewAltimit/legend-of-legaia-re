@@ -1166,6 +1166,39 @@ pub(crate) enum Cmd {
         /// default; `--retail` holds it off.
         #[arg(long, default_value_t = false)]
         no_hp_readout_guard: bool,
+        /// Spirit AP: how much AP the Spirit command charges (retail 32;
+        /// `0` = defence only, `100` = one press fills the gauge, negative =
+        /// Spirit drains it) - the engine twin of the patcher's `--spirit-ap`.
+        /// `--retail` holds it at 32.
+        #[arg(long, value_name = "AP", allow_negative_numbers = true,
+              value_parser = clap::value_parser!(i16).range(-100..=100))]
+        spirit_ap: Option<i16>,
+        /// Enemy-damage AP: AP a party member gains per 100% of max HP an
+        /// enemy hit takes (retail 100; negative = being hit drains it) - the
+        /// engine twin of `--damage-ap`. `--retail` holds it at 100.
+        #[arg(long, value_name = "AP", allow_negative_numbers = true,
+              value_parser = clap::value_parser!(i16).range(-200..=200))]
+        damage_ap: Option<i16>,
+        /// Seru catch rate: one flat percent for every capturable Seru
+        /// (retail is each Seru's own chance) - the engine twin of
+        /// `--seru-catch-rate`. `--retail` holds the records' chances.
+        #[arg(long, value_name = "PCT", value_parser = clap::value_parser!(u8).range(0..=100))]
+        seru_catch_rate: Option<u8>,
+        /// Enemy attack count multiplier (`0.1` to `5`): divides each enemy
+        /// attack's AGL price, so the same gauge buys more (or fewer) strikes,
+        /// never fewer than one - the engine twin of `--enemy-attack-count`.
+        #[arg(long, value_name = "MULT", value_parser = parse_exp_rate)]
+        enemy_attack_count: Option<u16>,
+        /// Enemy stat multiplier (`0.1` to `5`) for every monster's HP / MP /
+        /// ATK / UDF / LDF / INT / SPD - the engine twin of a uniform
+        /// `--enemy-stat-scale`. EXP, gold and drops stay as they are.
+        #[arg(long, value_name = "MULT", value_parser = parse_exp_rate)]
+        enemy_stat_scale: Option<u16>,
+        /// Bonus equipment drop: a 5% roll after each won battle for one
+        /// extra random piece of equipment - the engine twin of the patcher's
+        /// `--equipment-drops`. Not retail; `--retail` holds it off.
+        #[arg(long, default_value_t = false)]
+        equipment_drops: bool,
         /// DEBUG affordance, not a player surface: teach the lead party
         /// member a spell id (at level 1) before the first world tick, so a
         /// capture run can open the battle Magic arm without playing to the
@@ -1295,7 +1328,8 @@ pub(crate) enum Cmd {
             conflicts_with_all = ["dynamic_lighting", "no_dynamic_lighting", "no_dyn_shadows",
                 "no_entry_pulse", "no_occlusion_fade", "no_volumetric_fog", "smart_monsters",
                 "no_shiny_seru", "flee_exp", "exp_rate", "no_fortress_encounter_fix", "jewel_fix",
-                "no_hp_readout_guard"]
+                "no_hp_readout_guard", "spirit_ap", "damage_ap", "seru_catch_rate",
+                "enemy_attack_count", "enemy_stat_scale", "equipment_drops"]
         )]
         retail: bool,
     },
@@ -1553,7 +1587,7 @@ fn parse_exp_rate(v: &str) -> Result<u16, String> {
     let t = v.trim().trim_end_matches(['x', 'X']);
     let m: f64 = t.parse().map_err(|e| format!("{v:?}: {e}"))?;
     if !(0.1..=5.0).contains(&m) {
-        return Err(format!("{v:?}: the EXP rate is 0.1 to 5"));
+        return Err(format!("{v:?}: the multiplier is 0.1 to 5"));
     }
     Ok((m * 1000.0).round() as u16)
 }

@@ -243,3 +243,86 @@ pub fn spirit_gauge_fill(
     spirit += pct;
     spirit.min(100) as u16
 }
+
+/// The retail scale of [`spirit_gauge_fill`]: a hit costing 100% of max HP
+/// grants 100 AP (the `x100` shift/add chain at `0x801DE1C8..0x801DE1DC`).
+pub const DAMAGE_AP_RETAIL: i16 = 100;
+
+/// [`spirit_gauge_fill`] at an AP scale `scale` other than retail's `x100` -
+/// the arithmetic the patcher's `--damage-ap` rewrite runs (`damage_ap.rs`):
+///
+/// - `scale > 0`: `pct = over * scale / max_hp`, floored at `1`, then the
+///   retail accrual (the two "spirit gain up" bonuses, the cap at `100`);
+/// - `scale == 0`: no accrual at all (the patch drops the min-1 floor too);
+/// - `scale < 0`: the same `pct` over `|scale|`, floored at `1`, subtracted
+///   with a floor at `0`; the bonuses are inert.
+///
+/// `scale == DAMAGE_AP_RETAIL` is [`spirit_gauge_fill`] exactly.
+pub fn spirit_gauge_fill_scaled(
+    over: u32,
+    defender_maxhp: u16,
+    current_spirit: u16,
+    resist: DefenderResist,
+    defender_is_party: bool,
+    scale: i16,
+) -> u16 {
+    if scale == DAMAGE_AP_RETAIL {
+        return spirit_gauge_fill(
+            over,
+            defender_maxhp,
+            current_spirit,
+            resist,
+            defender_is_party,
+        );
+    }
+    if defender_maxhp == 0 || scale == 0 {
+        return current_spirit.min(100);
+    }
+    let pct = (over * u32::from(scale.unsigned_abs())) / u32::from(defender_maxhp);
+    let pct = pct.max(1);
+    if scale < 0 {
+        return u32::from(current_spirit).saturating_sub(pct).min(100) as u16;
+    }
+    let mut spirit = u32::from(current_spirit);
+    if defender_is_party {
+        if resist.hi & 0x200 != 0 {
+            spirit += pct >> 2;
+        }
+        if resist.hi & 0x100 != 0 {
+            spirit += pct / 10;
+        }
+    }
+    (spirit + pct).min(100) as u16
+}
+
+#[cfg(test)]
+mod damage_ap_tests {
+    use super::*;
+
+    #[test]
+    fn scaled_fill_is_retail_at_100_and_follows_the_patch_elsewhere() {
+        let r = DefenderResist::default();
+        for over in [0u32, 1, 50, 400, 999] {
+            assert_eq!(
+                spirit_gauge_fill_scaled(over, 400, 10, r, true, 100),
+                spirit_gauge_fill(over, 400, 10, r, true)
+            );
+        }
+        // A quarter of max HP: 25 AP retail, 50 at x200.
+        assert_eq!(spirit_gauge_fill_scaled(100, 400, 0, r, true, 200), 50);
+        // Zero: nothing, not even the min-1 floor.
+        assert_eq!(spirit_gauge_fill_scaled(100, 400, 7, r, true, 0), 7);
+        // Negative drains, floored at zero.
+        assert_eq!(spirit_gauge_fill_scaled(100, 400, 30, r, true, -100), 5);
+        assert_eq!(spirit_gauge_fill_scaled(400, 400, 30, r, true, -100), 0);
+        // The bonuses are inert while draining.
+        let boosted = DefenderResist {
+            hi: 0x300,
+            ..Default::default()
+        };
+        assert_eq!(
+            spirit_gauge_fill_scaled(100, 400, 30, boosted, true, -100),
+            5
+        );
+    }
+}

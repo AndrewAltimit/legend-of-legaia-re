@@ -95,6 +95,10 @@ impl World {
         if seru == 0 {
             return false;
         }
+        // `WorldToggles::seru_catch_pct` (the `--seru-catch-rate` twin): one
+        // flat percent in place of the record's `+0x3F`, on capturable
+        // records only - the patch writes exactly those.
+        let base_pct = self.toggles.seru_catch_pct.unwrap_or(base_pct);
         let roster = self.party_roster_slot(attacker_i);
         let boosted = self.party.roster.members.get(roster).is_some_and(|rec| {
             let b = rec.ability_bits();

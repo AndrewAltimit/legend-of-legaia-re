@@ -159,3 +159,20 @@ fn a_hud_element_raise_spawns_no_effect_script() {
     }
     assert_eq!(world.effect_pool.active_count(), 0);
 }
+
+/// The Seru catch rate (`WorldToggles::seru_catch_pct`, the
+/// `--seru-catch-rate` twin) replaces the record's chance: a 0% record
+/// catches at 100%, a 100% record misses at 0%; `None` (retail) keeps each.
+#[test]
+fn the_catch_rate_setting_replaces_the_records_chance() {
+    let staged = |record: u8, setting: Option<u8>| {
+        let mut world = absorb_world(record, true);
+        world.toggles.seru_catch_pct = setting;
+        world.roll_seru_absorb(0, 1);
+        world.battle_ctx.absorbed_seru
+    };
+    assert_eq!(staged(0, None), 0, "retail: a 0% record never catches");
+    assert_eq!(staged(0, Some(100)), 1);
+    assert_eq!(staged(100, None), 1);
+    assert_eq!(staged(100, Some(0)), 0);
+}

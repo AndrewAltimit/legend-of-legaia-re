@@ -231,6 +231,81 @@ impl LegaiaRuntime {
         self.page_toggles.tweaks.hp_readout_guard
     }
 
+    /// The bonus equipment drop, the native `--equipment-drops`. Retail mode
+    /// holds it off.
+    pub fn set_bonus_drop(&mut self, on: bool) {
+        self.page_toggles.tweaks.bonus_drop = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_bonus_drop`] is on.
+    pub fn bonus_drop(&self) -> bool {
+        self.page_toggles.tweaks.bonus_drop
+    }
+
+    /// Spirit AP, the native `--spirit-ap` (retail `32`; clamped to
+    /// `-100..=100` when applied). Retail mode holds `32`.
+    pub fn set_spirit_ap(&mut self, ap: i16) {
+        self.page_toggles.tweaks.spirit_ap = ap;
+        self.apply_page_toggles();
+    }
+
+    /// The value [`Self::set_spirit_ap`] set.
+    pub fn spirit_ap(&self) -> i16 {
+        self.page_toggles.tweaks.spirit_ap
+    }
+
+    /// Enemy-damage AP, the native `--damage-ap` (retail `100`; clamped to
+    /// `-200..=200`). Retail mode holds `100`.
+    pub fn set_damage_ap(&mut self, ap: i16) {
+        self.page_toggles.tweaks.damage_ap = ap;
+        self.apply_page_toggles();
+    }
+
+    /// The value [`Self::set_damage_ap`] set.
+    pub fn damage_ap(&self) -> i16 {
+        self.page_toggles.tweaks.damage_ap
+    }
+
+    /// The flat Seru catch rate in percent, the native `--seru-catch-rate`;
+    /// a negative value restores each Seru's own chance (retail).
+    pub fn set_seru_catch_rate(&mut self, pct: i16) {
+        self.page_toggles.tweaks.seru_catch_pct = u8::try_from(pct).ok().map(|p| p.min(100));
+        self.apply_page_toggles();
+    }
+
+    /// The catch rate [`Self::set_seru_catch_rate`] set, `-1` for retail.
+    pub fn seru_catch_rate(&self) -> i16 {
+        self.page_toggles
+            .tweaks
+            .seru_catch_pct
+            .map_or(-1, i16::from)
+    }
+
+    /// The enemy attack-count multiplier in permille, the native
+    /// `--enemy-attack-count` (`1000` = retail).
+    pub fn set_enemy_attack_permille(&mut self, permille: u16) {
+        self.page_toggles.tweaks.enemy_attack_permille = permille;
+        self.apply_page_toggles();
+    }
+
+    /// The multiplier [`Self::set_enemy_attack_permille`] set.
+    pub fn enemy_attack_permille(&self) -> u16 {
+        self.page_toggles.tweaks.enemy_attack_permille
+    }
+
+    /// The enemy stat multiplier in permille, the native
+    /// `--enemy-stat-scale` (`1000` = retail).
+    pub fn set_enemy_stat_permille(&mut self, permille: u16) {
+        self.page_toggles.tweaks.enemy_stat_permille = permille;
+        self.apply_page_toggles();
+    }
+
+    /// The multiplier [`Self::set_enemy_stat_permille`] set.
+    pub fn enemy_stat_permille(&self) -> u16 {
+        self.page_toggles.tweaks.enemy_stat_permille
+    }
+
     /// The photosensitivity guard (`OptionsState::reduce_flashing`), the
     /// native launcher's Reduce flashing row: persisted with the other
     /// options and applied through the session's option knobs. Retail mode
@@ -454,9 +529,50 @@ mod tests {
             "set_fortress_encounter_fix",
             "set_jewel_fix",
             "set_hp_readout_guard",
+            "set_bonus_drop",
+            "set_spirit_ap",
+            "set_damage_ap",
+            "set_seru_catch_rate",
+            "set_enemy_attack_permille",
+            "set_enemy_stat_permille",
         ] {
             assert!(page.contains(call), "play.html never calls {call}");
         }
+    }
+
+    /// The page's slider selectors offer exactly the engine's step lists, so
+    /// the page and the launcher cycle the same values.
+    #[test]
+    fn the_page_sliders_offer_the_engine_steps() {
+        use legaia_engine_session::session_switches::GameplayTweaks as T;
+        let page = include_str!("../../../site/_content/play.html");
+        let options = |id: &str| -> Vec<String> {
+            let start = page.find(&format!("id=\"{id}\"")).expect(id);
+            let end = start + page[start..].find("</select>").expect("select end");
+            page[start..end]
+                .split("<option value=\"")
+                .skip(1)
+                .map(|o| o.split('"').next().unwrap_or_default().to_string())
+                .collect()
+        };
+        let s = |v: &[i64]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let i = |v: &[i16]| v.iter().map(|&x| i64::from(x)).collect::<Vec<_>>();
+        let u = |v: &[u16]| v.iter().map(|&x| i64::from(x)).collect::<Vec<_>>();
+        assert_eq!(options("play-exp-rate"), s(&u(&T::EXP_RATES)));
+        assert_eq!(options("play-spirit-ap"), s(&i(&T::SPIRIT_AP_STEPS)));
+        assert_eq!(options("play-damage-ap"), s(&i(&T::DAMAGE_AP_STEPS)));
+        assert_eq!(options("play-enemy-attacks"), s(&u(&T::ENEMY_ATTACK_RATES)));
+        assert_eq!(options("play-enemy-stats"), s(&u(&T::ENEMY_STAT_RATES)));
+        let catch: Vec<i64> = T::CATCH_RATE_STEPS
+            .iter()
+            .map(|p| p.map_or(-1, i64::from))
+            .collect();
+        assert_eq!(options("play-seru-catch-rate"), s(&catch));
+        let mut rt = LegaiaRuntime::new();
+        rt.set_seru_catch_rate(-1);
+        assert_eq!(rt.seru_catch_rate(), -1);
+        rt.set_seru_catch_rate(50);
+        assert_eq!(rt.seru_catch_rate(), 50);
     }
 
     /// The page's cadence starts where `WorldToggles::new` does, and the

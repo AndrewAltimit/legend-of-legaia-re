@@ -85,6 +85,9 @@ pub struct DiscTables {
     /// progression tables ([`crate::world::World::install_retail_progression_tables`]);
     /// `None` disc-free.
     pub scus: Option<Arc<[u8]>>,
+    /// The bonus equipment drop's id pool (`World::bonus_drop_pool`), built
+    /// once from [`Self::scus`] on first use; `None` until then.
+    pub bonus_drop_pool: Option<Vec<u8>>,
     /// Each player summon cast's attack name - the `rec[0]` string of its
     /// `summon.dat` (PROT 0893) actor record, the text a summon module's
     /// caption arm prints. Installed by [`legaia_engine_scene_host::scene_host::SceneHost`] with the
@@ -237,6 +240,7 @@ impl DiscTables {
             art_records: std::collections::HashMap::new(),
             magic_xp_thresholds: None,
             seru_trade_config: None,
+            bonus_drop_pool: None,
             character_max_mp: Vec::new(),
             formation_table: legaia_engine_battle::monster_catalog::FormationTable::new(),
             monster_catalog: legaia_engine_battle::monster_catalog::MonsterCatalog::new(),

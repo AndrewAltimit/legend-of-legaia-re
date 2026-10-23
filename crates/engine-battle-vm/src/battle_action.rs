@@ -71,8 +71,8 @@ pub use summon::{
 mod spirit;
 use spirit::*;
 pub use spirit::{
-    SPIRIT_AP_BAR_ELEMENT, SPIRIT_AP_PLATE_ELEMENT, SPIRIT_BAR_WIDTH_BIAS, SPIRIT_CAMERA_DEPTH,
-    SPIRIT_TURN_GAIN, extended_gauge,
+    SPIRIT_AP_BAR_ELEMENT, SPIRIT_AP_PLATE_ELEMENT, SPIRIT_AP_RETAIL, SPIRIT_BAR_WIDTH_BIAS,
+    SPIRIT_CAMERA_DEPTH, SPIRIT_TURN_GAIN, extended_gauge, spirit_turn_gains,
 };
 
 mod done;

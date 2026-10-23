@@ -56,10 +56,16 @@
       <tr><td>Play</td><td>Reduce flashing</td><td><code>legaia-options.toml</code></td><td>-</td><td>on</td></tr>
       <tr><td>Gameplay tweaks</td><td>Shiny Seru (off = <code>--no-shiny-seru</code>)</td><td><code>launcher.toml</code></td><td>-</td><td>on</td></tr>
       <tr><td>Gameplay tweaks</td><td>Run-away EXP (<code>--flee-exp</code>)</td><td><code>launcher.toml</code></td><td>-</td><td>off</td></tr>
-      <tr><td>Gameplay tweaks</td><td>EXP rate (<code>--exp-rate</code>: 1x, 1.5x, 2x, 3x, 5x, 0.5x)</td><td><code>launcher.toml</code></td><td>-</td><td>1x</td></tr>
       <tr><td>Gameplay tweaks</td><td>Fortress battles fix (off = <code>--no-fortress-encounter-fix</code>)</td><td><code>launcher.toml</code></td><td>-</td><td>on</td></tr>
       <tr><td>Gameplay tweaks</td><td>Boss casts respect jewels (<code>--jewel-fix</code>)</td><td><code>launcher.toml</code></td><td>-</td><td>off</td></tr>
       <tr><td>Gameplay tweaks</td><td>Battle freeze guard (off = <code>--no-hp-readout-guard</code>)</td><td><code>launcher.toml</code></td><td>-</td><td>on</td></tr>
+      <tr><td>Gameplay tweaks</td><td>Bonus equipment drops (<code>--equipment-drops</code>)</td><td><code>launcher.toml</code></td><td>-</td><td>off</td></tr>
+      <tr><td>Battle tuning</td><td>EXP rate (<code>--exp-rate</code>: 1x, 1.5x, 2x, 3x, 5x, 0.5x)</td><td><code>launcher.toml</code></td><td>-</td><td>1x</td></tr>
+      <tr><td>Battle tuning</td><td>Enemy strength (<code>--enemy-stat-scale</code>: 1x to 5x, 0.75x, 0.5x)</td><td><code>launcher.toml</code></td><td>-</td><td>1x</td></tr>
+      <tr><td>Battle tuning</td><td>Enemy attack count (<code>--enemy-attack-count</code>: 1x to 3x, 0.5x)</td><td><code>launcher.toml</code></td><td>-</td><td>1x</td></tr>
+      <tr><td>Battle tuning</td><td>Spirit AP (<code>--spirit-ap</code>: 32 is the original, negative drains)</td><td><code>launcher.toml</code></td><td>-</td><td>32</td></tr>
+      <tr><td>Battle tuning</td><td>AP from damage (<code>--damage-ap</code>: 100 is the original, negative drains)</td><td><code>launcher.toml</code></td><td>-</td><td>100</td></tr>
+      <tr><td>Battle tuning</td><td>Seru catch rate (<code>--seru-catch-rate</code>: Original or 10..100%)</td><td><code>launcher.toml</code></td><td>-</td><td>Original</td></tr>
       <tr><td>Sound</td><td>Music / sound effects volume (0..10, 8 = the original mix)</td><td><code>legaia-options.toml</code></td><td>-</td><td>8</td></tr>
       <tr><td>Sound</td><td>Mono output</td><td><code>legaia-options.toml</code></td><td>-</td><td>off</td></tr>
       <tr><td>Original game</td><td>Original ground culling</td><td><code>legaia-options.toml</code></td><td>-</td><td>on</td></tr>
@@ -67,7 +73,7 @@
       <tr><td>Original game</td><td>Original game only (<code>--retail</code>)</td><td><code>launcher.toml</code></td><td>-</td><td>off</td></tr>
     </tbody>
   </table>
-  <p>The <code>legaia-options.toml</code> rows are the game's own options: the launcher and the in-game keys change the same value. The <code>launcher.toml</code> rows are launch switches; the browser play page has a box for each. <em>Original game only</em> starts the game retail-faithful - every enhancement off for that session, your saved options untouched. <em>Controls</em> shows the current key bindings. The <em>Gameplay tweaks</em> rows are disc-patcher features the engine runs itself, so they need no patched disc; the freeze guard is the engine's own fix for a battle softlock the original can reach. When the game stops with an error, the launcher shows its error lines; the whole log is <code>legaia-engine-game.log</code> in the saves folder (<em>Open saves folder</em>). <code>LEGAIA_LAUNCHER_DIRECT=1</code> skips the screen and boots a remembered disc straight away.</p>
+  <p>The <code>legaia-options.toml</code> rows are the game's own options: the launcher and the in-game keys change the same value. The <code>launcher.toml</code> rows are launch switches; the browser play page has a box for each. <em>Original game only</em> starts the game retail-faithful - every enhancement off for that session, your saved options untouched. <em>Controls</em> shows the current key bindings. The <em>Gameplay tweaks</em> and <em>Battle tuning</em> rows are disc-patcher features the engine runs itself, so they need no patched disc; the freeze guard is the engine's own fix for a battle softlock the original can reach. When the game stops with an error, the launcher shows its error lines; the whole log is <code>legaia-engine-game.log</code> in the saves folder (<em>Open saves folder</em>). <code>LEGAIA_LAUNCHER_DIRECT=1</code> skips the screen and boots a remembered disc straight away.</p>
   <table>
     <thead><tr><th>Platform</th><th>Settings (<code>launcher.toml</code>)</th><th>Game data (bindings, options, <code>saves/</code>)</th></tr></thead>
     <tbody>

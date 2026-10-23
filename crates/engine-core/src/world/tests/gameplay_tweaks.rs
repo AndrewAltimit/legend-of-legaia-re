@@ -194,3 +194,111 @@ fn hp_readout_guard_releases_the_absorbing_readout() {
     t.pin_retail();
     assert!(!t.hp_readout_guard);
 }
+
+/// Enemy-damage AP (`WorldToggles::damage_ap`): a hit taking a quarter of
+/// max HP charges 25 AP at retail's x100, 50 at x200, and drains at a
+/// negative scale.
+#[test]
+fn damage_ap_scales_the_hit_charge() {
+    let after = |scale: i16, start: u16| {
+        let mut world = World {
+            party: legaia_engine_menus::party_state::PartyState {
+                party_count: 1,
+                ..Default::default()
+            },
+            ..World::default()
+        };
+        world.toggles.damage_ap = scale;
+        world.actors[0].battle.max_hp = 400;
+        world.actors[0].battle.hp = 400;
+        world.actors[0].battle.spirit_gauge = start;
+        world.accrue_spirit_gauge(0, 100);
+        world.actors[0].battle.spirit_gauge
+    };
+    assert_eq!(after(DAMAGE_AP_RETAIL, 0), 25);
+    assert_eq!(after(200, 0), 50);
+    assert_eq!(after(0, 10), 10);
+    assert_eq!(after(-100, 30), 5);
+}
+
+/// Enemy attack count (`WorldToggles::enemy_attack_permille`): at 2x every
+/// affordable price halves, so the same AGL buys about twice the strikes;
+/// retail's 1x leaves the stream as it was. Tetsu is pinned.
+#[test]
+fn enemy_attack_count_scales_the_strike_budget() {
+    use legaia_engine_battle::monster_catalog::{MonsterCatalog, MonsterDef};
+    let budget = |permille: u16, id: u16| {
+        let mut world = World::default();
+        let mut def = MonsterDef::new(id, "Brute", 100, 10);
+        def.agl = 88;
+        def.action_costs = vec![44];
+        let mut cat = MonsterCatalog::new();
+        cat.insert(def);
+        world.tables.monster_catalog = cat;
+        world.toggles.enemy_attack_permille = permille;
+        world.actors[3].battle_monster_id = Some(id);
+        world.rng_state = 0x1234_5678;
+        world.arm_monster_strike_budget(3);
+        world.battle.monster_strike_budget
+    };
+    assert_eq!(budget(SCALE_RETAIL, 7), 2, "88 AGL / 44 = two strikes");
+    assert_eq!(budget(2000, 7), 4, "the price halves: four strikes");
+    assert_eq!(budget(500, 7), 1, "0.5x: one strike minimum");
+    assert_eq!(budget(2000, SCALE_PINNED_MONSTER_ID), 2, "Tetsu is pinned");
+}
+
+/// Enemy stat scale (`WorldToggles::enemy_stat_permille`): a formation's
+/// monster enters with its HP / ATK scaled; retail's 1x is the record.
+#[test]
+fn enemy_stat_scale_scales_the_seated_monster() {
+    let seated = |permille: u16| {
+        let mut world = capture_world(1);
+        world.set_shiny_chance_pct(0);
+        world.toggles.enemy_stat_permille = permille;
+        let formation = FormationDef::new(1, vec![FormationSlot::new(9)]);
+        world.enter_battle_from_formation(&formation);
+        (world.actors[1].battle.max_hp, world.battle.attack[1])
+    };
+    // Wolf: 35 HP, 12 ATK.
+    assert_eq!(seated(SCALE_RETAIL), (35, 12));
+    assert_eq!(seated(2000), (70, 24));
+}
+
+/// The bonus equipment drop (`WorldToggles::bonus_drop`): with the toggle
+/// on, some battle among many grants one id from the pool on top of the
+/// normal drop; off, nothing is drawn and the stream is retail's.
+#[test]
+fn bonus_drop_grants_equipment_and_retail_draws_nothing() {
+    use legaia_engine_battle::monster_catalog::{MonsterCatalog, MonsterDef};
+    let run = |on: bool| {
+        let mut cat = MonsterCatalog::new();
+        cat.insert(MonsterDef::new(7, "Slime", 10, 5));
+        let formation = FormationDef::new(1, vec![FormationSlot::new(7)]);
+        let mut world = World {
+            party: legaia_engine_menus::party_state::PartyState {
+                party_count: 1,
+                ..Default::default()
+            },
+            ..World::default()
+        };
+        world.tables.bonus_drop_pool = Some(vec![0x30, 0x31]);
+        world.toggles.bonus_drop = on;
+        world.actors[0].battle.hp = 100;
+        world.rng_state = 0xC0FF_EE01;
+        for _ in 0..400 {
+            world.apply_battle_loot(&formation, &cat);
+        }
+        let granted: u32 = [0x30u8, 0x31]
+            .iter()
+            .map(|id| u32::from(world.party.inventory.get(id).copied().unwrap_or(0)))
+            .sum();
+        (granted, world.rng_state)
+    };
+    let (on_granted, on_rng) = run(true);
+    assert!(on_granted > 0, "400 battles at 5% grant some equipment");
+    let (off_granted, off_rng) = run(false);
+    assert_eq!(off_granted, 0);
+    assert_ne!(on_rng, off_rng, "the roll draws only when on");
+    // No executable installed: an empty pool, and nothing to roll.
+    assert!(World::default().bonus_drop_pool().is_empty());
+}

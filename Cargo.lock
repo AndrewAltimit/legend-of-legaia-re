@@ -2129,6 +2129,7 @@ dependencies = [
  "legaia-engine-system",
  "legaia-engine-vm",
  "legaia-game-tables",
+ "legaia-gamedata",
  "legaia-lzs",
  "legaia-mes",
  "legaia-minigame-formats",

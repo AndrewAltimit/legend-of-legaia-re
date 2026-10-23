@@ -181,6 +181,22 @@ pub const SPIRIT_TURN_GAIN: u16 = 0x20;
 pub const SPIRIT_TURN_GAIN_BIT_200: u16 = 0x28;
 pub const SPIRIT_TURN_GAIN_BIT_100: u16 = 0x23;
 
+/// The Spirit turn's AP at retail, signed: [`SPIRIT_TURN_GAIN`].
+pub const SPIRIT_AP_RETAIL: i16 = SPIRIT_TURN_GAIN as i16;
+
+/// State `0x46`'s three plate-target gains for a Spirit AP setting `ap`:
+/// `(base, with record +0xF8 & 0x200, with & 0x100)`. Retail's `addiu`
+/// immediates are `ap`, `ap + ap / 4` and `ap + ap / 10` (`0x20`, `0x28`,
+/// `0x23` at `ap = 32`), which is what the patcher's `--spirit-ap` writes;
+/// a negative setting makes all three `ap`, the boost arms being inert.
+pub fn spirit_turn_gains(ap: i16) -> (i16, i16, i16) {
+    if ap < 0 {
+        (ap, ap, ap)
+    } else {
+        (ap, ap + ap / 4, ap + ap / 10)
+    }
+}
+
 /// Ceiling of the spirit-gauge target the arm stages (`slti v0,v0,0x65` /
 /// `li v0,0x64` at `0x801E4004..0x801E4010`).
 pub const SPIRIT_TARGET_CEILING: i16 = 100;
@@ -433,14 +449,31 @@ pub(super) fn spirit_arts_entry<H: BattleActionHost + ?Sized>(
     }
     ctx.damage_target = extended_gauge(base);
     let bits = host.character_ability_bits_high(slot);
-    let gain = if bits & 0x200 != 0 {
-        SPIRIT_TURN_GAIN_BIT_200
-    } else if bits & 0x100 != 0 {
-        SPIRIT_TURN_GAIN_BIT_100
+    let ap = host.spirit_turn_ap();
+    if ap == SPIRIT_AP_RETAIL {
+        let gain = if bits & 0x200 != 0 {
+            SPIRIT_TURN_GAIN_BIT_200
+        } else if bits & 0x100 != 0 {
+            SPIRIT_TURN_GAIN_BIT_100
+        } else {
+            SPIRIT_TURN_GAIN
+        };
+        ctx.hp_bar_target = (spirit.wrapping_add(gain) as i16).min(SPIRIT_TARGET_CEILING);
     } else {
-        SPIRIT_TURN_GAIN
-    };
-    ctx.hp_bar_target = (spirit.wrapping_add(gain) as i16).min(SPIRIT_TARGET_CEILING);
+        // A Spirit AP setting (`--spirit-ap`'s twin): the same three arms at
+        // the setting's gains, and a drain's target floored at zero.
+        let (base, b200, b100) = spirit_turn_gains(ap);
+        let gain = if bits & 0x200 != 0 {
+            b200
+        } else if bits & 0x100 != 0 {
+            b100
+        } else {
+            base
+        };
+        ctx.hp_bar_target = (spirit as i16)
+            .saturating_add(gain)
+            .clamp(0, SPIRIT_TARGET_CEILING);
+    }
     ctx.frame_timer = SPIRIT_BAND_HOLD;
     transition(ctx, ActionState::SpiritArtsSustain)
 }

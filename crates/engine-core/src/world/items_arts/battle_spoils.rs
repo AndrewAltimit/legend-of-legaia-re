@@ -297,6 +297,12 @@ impl World {
             drops.push(item);
             let _ = self.party.inventory.add(item, 1);
         }
+        // The bonus equipment drop (`WorldToggles::bonus_drop`, the
+        // `--equipment-drops` twin) rolls here, where the hook joins: right
+        // after the normal drop grant, at `0x8004F610`. The no-reward arm
+        // reaches the same join (`0x8004F570` -> `0x8004F5A0` -> `0x8004F610`),
+        // so a special battle rolls it too, as on a patched disc.
+        self.roll_bonus_equipment_drop();
         // The +25% gold bonus fires when a living party member carries bit
         // `0x10000` of the SECOND ability word (`FUN_8004E568` tests the u32
         // at record `+0xF8`): overall bit 48 of the `+0xF4` bitfield = byte 6,
@@ -359,6 +365,54 @@ impl World {
             level_ups,
             drops,
         }
+    }
+
+    /// The bonus equipment pool: every weapon, armour and accessory the
+    /// curated gamedata names whose name resolves to an id in the disc's own
+    /// item-name table, ascending - the same join the patcher's
+    /// `--equipment-drops` embeds (`Database::equipment_pool_by_name`, shared
+    /// with `legaia_patcher::equipment`). Built once from the installed
+    /// executable and cached; empty without one.
+    pub fn bonus_drop_pool(&mut self) -> Vec<u8> {
+        if self.tables.bonus_drop_pool.is_none() {
+            let pool = self
+                .tables
+                .scus
+                .as_deref()
+                .and_then(legaia_game_tables::item_names::ItemNameTable::from_scus)
+                .map(|names| {
+                    legaia_gamedata::Database::load()
+                        .equipment_pool_by_name(|id| names.name(id).map(str::to_string))
+                        .into_iter()
+                        .map(|(id, _)| id)
+                        .collect()
+                })
+                .unwrap_or_default();
+            self.tables.bonus_drop_pool = Some(pool);
+        }
+        self.tables.bonus_drop_pool.clone().unwrap_or_default()
+    }
+
+    /// The bonus equipment drop's roll (`WorldToggles::bonus_drop`): the hook's
+    /// `rand() % 100 < chance`, then `rand() % pool_len` picks the id, which
+    /// goes straight into the bag - silent, as the hook's grant is (no
+    /// results-window line). Off, or with no pool, nothing is drawn. Returns
+    /// the granted id.
+    pub(in crate::world) fn roll_bonus_equipment_drop(&mut self) -> Option<u8> {
+        if !self.toggles.bonus_drop {
+            return None;
+        }
+        let pool = self.bonus_drop_pool();
+        if pool.is_empty() {
+            return None;
+        }
+        if self.next_rand() % 100 >= crate::world::BONUS_DROP_CHANCE_PCT {
+            return None;
+        }
+        let id = pool[self.next_rand() as usize % pool.len()];
+        let _ = self.party.inventory.add(id, 1);
+        log::info!("battle end: bonus equipment drop {id:#04x}");
+        Some(id)
     }
 
     /// Run-away EXP (`WorldToggles::flee_exp`, the engine twin of the

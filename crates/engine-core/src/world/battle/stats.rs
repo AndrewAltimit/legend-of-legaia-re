@@ -267,7 +267,12 @@ impl World {
             .get(slot as usize)
             .and_then(|a| a.battle_monster_id)
             .and_then(|id| self.tables.monster_catalog.get(id))
-            .map(|d| d.intel)
+            // The INT the seed installed, under the enemy stat scale (the
+            // catalog's `intel` is the scripted profile's `[4]`).
+            .map(|d| {
+                crate::world::field_loop::scale_monster_def(d, self.toggles.enemy_stat_permille)
+                    .installed_stats(true)[4]
+            })
             .unwrap_or(0);
         let no_escape = u8::from(self.battle.no_escape);
         legaia_engine_battle_vm::battle_formulas::monster_escape_roll(
@@ -299,12 +304,15 @@ impl World {
         let Some(a) = self.actors.get_mut(defender_slot as usize) else {
             return;
         };
-        a.battle.spirit_gauge = legaia_engine_battle_vm::battle_formulas::spirit_gauge_fill(
+        // `WorldToggles::damage_ap` (the `--damage-ap` twin): at retail's
+        // `x100` the scaled kernel is `spirit_gauge_fill` exactly.
+        a.battle.spirit_gauge = legaia_engine_battle_vm::battle_formulas::spirit_gauge_fill_scaled(
             over as u32,
             a.battle.max_hp,
             a.battle.spirit_gauge,
             resist,
             defender_is_party,
+            self.toggles.damage_ap,
         );
     }
 
@@ -537,7 +545,10 @@ impl World {
             return None;
         }
         let id = self.actors.get(slot as usize)?.battle_monster_id?;
-        let def = self.tables.monster_catalog.get(id)?;
+        let def = crate::world::field_loop::scale_monster_def(
+            self.tables.monster_catalog.get(id)?,
+            self.toggles.enemy_stat_permille,
+        );
         if def.raw_stats == [0u16; 6] {
             return None;
         }

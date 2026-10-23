@@ -406,6 +406,37 @@ impl World {
             .and_then(|id| self.tables.monster_catalog.get(id))
             .map(|d| (d.agl, d.action_costs.clone(), d.action_entries.clone()))
             .unwrap_or((0, Vec::new(), Vec::new()));
+        // `WorldToggles::enemy_attack_permille` (the `--enemy-attack-count`
+        // twin): each affordable price divided by the multiplier against the
+        // record's own AGL, as the patch rewrites the `+0x74` bytes. Tetsu
+        // stays pinned.
+        let pinned = self
+            .actors
+            .get(slot as usize)
+            .and_then(|a| a.battle_monster_id)
+            == Some(crate::world::SCALE_PINNED_MONSTER_ID);
+        let permille = self.toggles.enemy_attack_permille;
+        let record_agl = self
+            .actors
+            .get(slot as usize)
+            .and_then(|a| a.battle_monster_id)
+            .and_then(|id| self.tables.monster_catalog.get(id))
+            .map(|d| {
+                if d.raw_stats[0] != 0 {
+                    d.raw_stats[0]
+                } else {
+                    d.agl
+                }
+            })
+            .unwrap_or(catalog_agl);
+        let costs: Vec<u8> = if pinned || permille == crate::world::SCALE_RETAIL {
+            costs
+        } else {
+            costs
+                .iter()
+                .map(|&c| crate::world::scale_attack_cost(c, record_agl, permille))
+                .collect()
+        };
         self.battle.monster_strike_entries.clear();
         let cut = std::mem::take(&mut self.battle.monster_ai_state.cut_strike_stream);
         // The gauge retail spends is the actor's **live** `+0x154`, which the

@@ -479,6 +479,14 @@ pub trait BattleActionHost {
         0
     }
 
+    /// The AP a Spirit turn charges (`actor[+0x224] = 0x20` at `0x801E5D84`,
+    /// the patcher's `--spirit-ap` site A). Default [`SPIRIT_AP_RETAIL`]; a
+    /// host with a Spirit AP setting returns it here, and both the Done band's
+    /// accrual and state `0x46`'s plate target read it.
+    fn spirit_turn_ap(&self) -> i16 {
+        SPIRIT_AP_RETAIL
+    }
+
     /// The character's displayed-skill list - record `+0x185` count and
     /// `+0x186..` ids (`legaia_save::DisplayedSkillList`), truncated to the
     /// count.

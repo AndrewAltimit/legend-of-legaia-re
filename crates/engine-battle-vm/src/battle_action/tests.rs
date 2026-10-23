@@ -87,6 +87,8 @@ struct RecHost {
     /// `(groups, clut_map)` as `cue_tables` reports them (`None` = no
     /// battle-action overlay, the trait default).
     cue_tables: Option<(Vec<u8>, Vec<u8>)>,
+    /// `spirit_turn_ap`'s answer (`None` = the trait default, retail).
+    spirit_ap: Option<i16>,
 }
 
 impl RecHost {
@@ -242,6 +244,9 @@ impl BattleActionHost for RecHost {
     }
     fn character_ability_bits_high(&self, slot: u8) -> u32 {
         self.ability_bits_high.get(&slot).copied().unwrap_or(0)
+    }
+    fn spirit_turn_ap(&self) -> i16 {
+        self.spirit_ap.unwrap_or(SPIRIT_AP_RETAIL)
     }
     fn duck_audio_level(&mut self, p: u8) {
         self.record(Event::Brightness(p));

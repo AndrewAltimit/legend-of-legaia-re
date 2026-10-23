@@ -43,6 +43,24 @@ pub struct GameplayTweaks {
     /// state-`0x51` readout softlock cannot hold. A port fix with no patcher
     /// counterpart. On by default.
     pub hp_readout_guard: bool,
+    /// Spirit AP (`--spirit-ap`, `WorldToggles::spirit_ap`): the AP a Spirit
+    /// turn charges; retail `32`, negative drains.
+    pub spirit_ap: i16,
+    /// Enemy-damage AP (`--damage-ap`, `WorldToggles::damage_ap`): AP per
+    /// 100% of max HP lost; retail `100`, negative drains.
+    pub damage_ap: i16,
+    /// Seru catch rate (`--seru-catch-rate`, `WorldToggles::seru_catch_pct`):
+    /// one flat percent for every capturable Seru; `None` is retail.
+    pub seru_catch_pct: Option<u8>,
+    /// Enemy attack count in permille (`--enemy-attack-count`,
+    /// `WorldToggles::enemy_attack_permille`); `1000` is retail.
+    pub enemy_attack_permille: u16,
+    /// Enemy stat scale in permille (a uniform `--enemy-stat-scale`,
+    /// `WorldToggles::enemy_stat_permille`); `1000` is retail.
+    pub enemy_stat_permille: u16,
+    /// Bonus equipment drop (`--equipment-drops`,
+    /// `WorldToggles::bonus_drop`). Off by default.
+    pub bonus_drop: bool,
 }
 
 impl Default for GameplayTweaks {
@@ -67,6 +85,12 @@ impl GameplayTweaks {
             fortress_encounter_fix: t.fortress_encounter_fix,
             jewel_fix: t.jewel_fix,
             hp_readout_guard: t.hp_readout_guard,
+            spirit_ap: t.spirit_ap,
+            damage_ap: t.damage_ap,
+            seru_catch_pct: t.seru_catch_pct,
+            enemy_attack_permille: t.enemy_attack_permille,
+            enemy_stat_permille: t.enemy_stat_permille,
+            bonus_drop: t.bonus_drop,
         }
     }
 
@@ -88,6 +112,43 @@ impl GameplayTweaks {
         toggles.fortress_encounter_fix = self.fortress_encounter_fix;
         toggles.jewel_fix = self.jewel_fix;
         toggles.hp_readout_guard = self.hp_readout_guard;
+        use legaia_engine_core::world::{DAMAGE_AP_RANGE, SCALE_RANGE, SPIRIT_AP_RANGE};
+        let clamp_i = |v: i16, r: std::ops::RangeInclusive<i16>| v.clamp(*r.start(), *r.end());
+        let clamp_u = |v: u16| v.clamp(*SCALE_RANGE.start(), *SCALE_RANGE.end());
+        toggles.spirit_ap = clamp_i(self.spirit_ap, SPIRIT_AP_RANGE);
+        toggles.damage_ap = clamp_i(self.damage_ap, DAMAGE_AP_RANGE);
+        toggles.seru_catch_pct = self.seru_catch_pct.map(|p| p.min(100));
+        toggles.enemy_attack_permille = clamp_u(self.enemy_attack_permille);
+        toggles.enemy_stat_permille = clamp_u(self.enemy_stat_permille);
+        toggles.bonus_drop = self.bonus_drop;
+    }
+
+    /// The Spirit AP settings a host cycles, retail first.
+    pub const SPIRIT_AP_STEPS: [i16; 8] = [32, 48, 64, 100, 0, 16, -16, -32];
+    /// The enemy-damage AP settings a host cycles, retail first.
+    pub const DAMAGE_AP_STEPS: [i16; 7] = [100, 150, 200, 50, 0, -50, -100];
+    /// The Seru catch rates a host cycles, retail (each Seru's own) first.
+    pub const CATCH_RATE_STEPS: [Option<u8>; 6] =
+        [None, Some(25), Some(50), Some(75), Some(100), Some(10)];
+    /// The enemy attack-count multipliers a host cycles, retail first.
+    pub const ENEMY_ATTACK_RATES: [u16; 5] = [1000, 1500, 2000, 3000, 500];
+    /// The enemy stat multipliers a host cycles, retail first.
+    pub const ENEMY_STAT_RATES: [u16; 8] = [1000, 1250, 1500, 2000, 3000, 5000, 750, 500];
+
+    /// The next (or, `dir < 0`, previous) entry of `steps` after `cur`; an
+    /// off-list value steps to the first (retail) entry.
+    pub fn step_in<T: PartialEq + Copy>(steps: &[T], cur: T, dir: i8) -> T {
+        let n = steps.len();
+        match steps.iter().position(|&r| r == cur) {
+            Some(i) if dir < 0 => steps[(i + n - 1) % n],
+            Some(i) => steps[(i + 1) % n],
+            None => steps[0],
+        }
+    }
+
+    /// A catch-rate setting as a player reads it: `Original` or `50%`.
+    pub fn catch_rate_label(pct: Option<u8>) -> String {
+        pct.map_or_else(|| "Original".to_string(), |p| format!("{p}%"))
     }
 
     /// The EXP rate as a player reads it: `1x`, `1.5x`, `0.5x`.
@@ -108,13 +169,7 @@ impl GameplayTweaks {
     /// The next (or, `dir < 0`, previous) rate in [`Self::EXP_RATES`]
     /// after `permille`; an off-list value steps to retail.
     pub fn step_exp_rate(permille: u16, dir: i8) -> u16 {
-        let rates = Self::EXP_RATES;
-        let n = rates.len();
-        match rates.iter().position(|&r| r == permille) {
-            Some(i) if dir < 0 => rates[(i + n - 1) % n],
-            Some(i) => rates[(i + 1) % n],
-            None => rates[0],
-        }
+        Self::step_in(&Self::EXP_RATES, permille, dir)
     }
 }
 
@@ -190,6 +245,12 @@ mod tests {
                 fortress_encounter_fix: true,
                 jewel_fix: true,
                 hp_readout_guard: true,
+                spirit_ap: -16,
+                damage_ap: 200,
+                seru_catch_pct: Some(100),
+                enemy_attack_permille: 2000,
+                enemy_stat_permille: 1500,
+                bonus_drop: true,
             },
             retail,
         }
@@ -244,6 +305,29 @@ mod tests {
         }
         .write(&mut t);
         assert_eq!(t.exp_rate_permille, 5000);
+        // The tuning sliders start at retail and their step lists lead with it.
+        assert_eq!(d.spirit_ap, GameplayTweaks::SPIRIT_AP_STEPS[0]);
+        assert_eq!(d.damage_ap, GameplayTweaks::DAMAGE_AP_STEPS[0]);
+        assert_eq!(d.seru_catch_pct, GameplayTweaks::CATCH_RATE_STEPS[0]);
+        assert_eq!(
+            d.enemy_attack_permille,
+            GameplayTweaks::ENEMY_ATTACK_RATES[0]
+        );
+        assert_eq!(d.enemy_stat_permille, GameplayTweaks::ENEMY_STAT_RATES[0]);
+        assert!(!d.bonus_drop);
+        assert_eq!(GameplayTweaks::catch_rate_label(None), "Original");
+        assert_eq!(GameplayTweaks::catch_rate_label(Some(50)), "50%");
+        GameplayTweaks {
+            spirit_ap: 500,
+            damage_ap: -900,
+            enemy_stat_permille: 1,
+            ..d
+        }
+        .write(&mut t);
+        assert_eq!(
+            (t.spirit_ap, t.damage_ap, t.enemy_stat_permille),
+            (100, -200, 100)
+        );
     }
 
     /// Retail mode lowers exactly what `WorldToggles::pin_retail` lowers

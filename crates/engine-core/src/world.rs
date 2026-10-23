@@ -136,8 +136,10 @@ pub use state::*;
 pub use types::*;
 pub use world_map_state::WorldMapState;
 pub use world_toggles::{
-    DEFAULT_BATTLE_SM_FRAME_CADENCE, EXP_RATE_RANGE, EXP_RATE_RETAIL, FLEE_EXP_PCT,
-    FORTRESS_ENCOUNTER_SCENES, FORTRESS_STALE_FLAG, WorldToggles, scale_exp_permille,
+    BONUS_DROP_CHANCE_PCT, DAMAGE_AP_RANGE, DAMAGE_AP_RETAIL, DEFAULT_BATTLE_SM_FRAME_CADENCE,
+    EXP_RATE_RANGE, EXP_RATE_RETAIL, FLEE_EXP_PCT, FORTRESS_ENCOUNTER_SCENES, FORTRESS_STALE_FLAG,
+    SCALE_PINNED_MONSTER_ID, SCALE_RANGE, SCALE_RETAIL, SPIRIT_AP_RANGE, SPIRIT_AP_RETAIL,
+    WorldToggles, scale_attack_cost, scale_exp_permille, scale_stat_permille,
 };
 
 mod actors;

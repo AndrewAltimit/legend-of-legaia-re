@@ -118,6 +118,27 @@ pub struct LauncherSettings {
     /// on by default.
     #[serde(default, skip_serializing_if = "is_false")]
     pub no_hp_readout_guard: bool,
+    /// Spirit AP (`play-window --spirit-ap`); `None` is retail's 32.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spirit_ap: Option<i16>,
+    /// Enemy-damage AP (`play-window --damage-ap`); `None` is retail's 100.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub damage_ap: Option<i16>,
+    /// Flat Seru catch rate (`play-window --seru-catch-rate`); `None` keeps
+    /// each Seru's own chance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seru_catch_pct: Option<u8>,
+    /// Enemy attack count in permille (`play-window --enemy-attack-count`);
+    /// `None` is `1x`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enemy_attack_permille: Option<u16>,
+    /// Enemy stat scale in permille (`play-window --enemy-stat-scale`);
+    /// `None` is `1x`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enemy_stat_permille: Option<u16>,
+    /// Start with the bonus equipment drop (`play-window --equipment-drops`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub equipment_drops: bool,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -351,7 +372,42 @@ pub fn play_args_with(info: &DiscInfo, settings: &LauncherSettings) -> Vec<std::
     if settings.no_hp_readout_guard {
         args.push("--no-hp-readout-guard".into());
     }
+    // `--flag=value`, so a negative AP is never read as a flag.
+    let mut kv = |flag: &str, v: String| args.push(format!("--{flag}={v}").into());
+    if let Some(ap) = settings.spirit_ap.filter(|&v| v != SPIRIT_AP_RETAIL) {
+        kv("spirit-ap", ap.to_string());
+    }
+    if let Some(ap) = settings.damage_ap.filter(|&v| v != DAMAGE_AP_RETAIL) {
+        kv("damage-ap", ap.to_string());
+    }
+    if let Some(p) = settings.seru_catch_pct {
+        kv("seru-catch-rate", p.to_string());
+    }
+    if let Some(m) = settings
+        .enemy_attack_permille
+        .filter(|&v| v != SCALE_RETAIL)
+    {
+        kv("enemy-attack-count", (f64::from(m) / 1000.0).to_string());
+    }
+    if let Some(m) = settings.enemy_stat_permille.filter(|&v| v != SCALE_RETAIL) {
+        kv("enemy-stat-scale", (f64::from(m) / 1000.0).to_string());
+    }
+    if settings.equipment_drops {
+        args.push("--equipment-drops".into());
+    }
     args
+}
+
+const SPIRIT_AP_RETAIL: i16 = legaia_engine_core::world::SPIRIT_AP_RETAIL;
+const DAMAGE_AP_RETAIL: i16 = legaia_engine_core::world::DAMAGE_AP_RETAIL;
+const SCALE_RETAIL: u16 = legaia_engine_core::world::SCALE_RETAIL;
+type Tweaks = legaia_engine_session::session_switches::GameplayTweaks;
+
+/// Step an optional slider value through `steps` (retail first); landing on
+/// retail stores `None`, so the default writes nothing.
+fn step_opt<T: PartialEq + Copy>(v: &mut Option<T>, steps: &[T], dir: i8) {
+    let next = Tweaks::step_in(steps, v.unwrap_or(steps[0]), dir);
+    *v = (next != steps[0]).then_some(next);
 }
 
 /// The EXP rate the launcher starts from and never passes: retail's `1x`.
@@ -393,6 +449,12 @@ pub enum OptionRow {
     FortressFix,
     JewelFix,
     HpReadoutGuard,
+    BonusDrop,
+    SpiritAp,
+    DamageAp,
+    SeruCatchRate,
+    EnemyAttacks,
+    EnemyStats,
     RetailTileCrop,
     RetailObjectWindow,
     Retail,
@@ -400,7 +462,7 @@ pub enum OptionRow {
 
 /// The option rows in screen order, with the heading each group starts
 /// under (`Some` on a group's first row).
-pub const OPTION_ROWS: [(Option<&str>, OptionRow); 26] = [
+pub const OPTION_ROWS: [(Option<&str>, OptionRow); 32] = [
     (Some("Display"), OptionRow::Fullscreen),
     (None, OptionRow::WindowSize),
     (None, OptionRow::CameraDistance),
@@ -417,10 +479,16 @@ pub const OPTION_ROWS: [(Option<&str>, OptionRow); 26] = [
     (None, OptionRow::ReduceFlashing),
     (Some("Gameplay tweaks"), OptionRow::ShinySeru),
     (None, OptionRow::FleeExp),
-    (None, OptionRow::ExpRate),
+    (None, OptionRow::BonusDrop),
     (None, OptionRow::FortressFix),
     (None, OptionRow::JewelFix),
     (None, OptionRow::HpReadoutGuard),
+    (Some("Battle tuning"), OptionRow::ExpRate),
+    (None, OptionRow::EnemyStats),
+    (None, OptionRow::EnemyAttacks),
+    (None, OptionRow::SpiritAp),
+    (None, OptionRow::DamageAp),
+    (None, OptionRow::SeruCatchRate),
     (Some("Sound"), OptionRow::MusicVolume),
     (None, OptionRow::SfxVolume),
     (None, OptionRow::MonoDownmix),
@@ -473,6 +541,12 @@ impl OptionRow {
             Self::FortressFix => "Fortress battles fix",
             Self::JewelFix => "Boss casts respect jewels",
             Self::HpReadoutGuard => "Battle freeze guard",
+            Self::BonusDrop => "Bonus equipment drops",
+            Self::SpiritAp => "Spirit AP",
+            Self::DamageAp => "AP from damage",
+            Self::SeruCatchRate => "Seru catch rate",
+            Self::EnemyAttacks => "Enemy attack count",
+            Self::EnemyStats => "Enemy strength",
             Self::RetailTileCrop => "Original ground culling",
             Self::RetailObjectWindow => "Original prop culling",
             Self::Retail => "Original game only",
@@ -553,6 +627,30 @@ impl OptionRow {
                 "Elemental jewels and guards protect against the bosses' signature \
                  attacks too, which the original lets through."
             }
+            Self::BonusDrop => {
+                "Now and then a won battle also gives a random piece of equipment, on \
+                 top of the normal drop."
+            }
+            Self::SpiritAp => {
+                "How much AP the Spirit command charges; 32 is the original. Negative \
+                 values make Spirit drain the gauge."
+            }
+            Self::DamageAp => {
+                "AP gained when a monster hurts you, per whole health bar lost; 100 is \
+                 the original. Negative values make hits drain AP."
+            }
+            Self::SeruCatchRate => {
+                "One catch chance for every Seru you can capture. Original keeps each \
+                 Seru's own chance."
+            }
+            Self::EnemyAttacks => {
+                "Multiplies how many hits monsters land with their normal attacks; a \
+                 monster always keeps at least one."
+            }
+            Self::EnemyStats => {
+                "Multiplies every monster's health and combat stats. Experience, gold \
+                 and drops stay as they are."
+            }
             Self::HpReadoutGuard => {
                 "Stops a rare original bug where a battle freezes with the camera \
                  circling forever after a party member's HP gauge stops counting."
@@ -587,6 +685,12 @@ impl OptionRow {
                 | Self::FortressFix
                 | Self::JewelFix
                 | Self::HpReadoutGuard
+                | Self::BonusDrop
+                | Self::SpiritAp
+                | Self::DamageAp
+                | Self::SeruCatchRate
+                | Self::EnemyAttacks
+                | Self::EnemyStats
         )
     }
 
@@ -642,6 +746,16 @@ impl OptionRow {
             Self::FortressFix => on_off(!s.no_fortress_encounter_fix),
             Self::JewelFix => on_off(s.jewel_fix),
             Self::HpReadoutGuard => on_off(!s.no_hp_readout_guard),
+            Self::BonusDrop => on_off(s.equipment_drops),
+            Self::SpiritAp => s.spirit_ap.unwrap_or(SPIRIT_AP_RETAIL).to_string(),
+            Self::DamageAp => s.damage_ap.unwrap_or(DAMAGE_AP_RETAIL).to_string(),
+            Self::SeruCatchRate => Tweaks::catch_rate_label(s.seru_catch_pct),
+            Self::EnemyAttacks => {
+                Tweaks::exp_rate_label(s.enemy_attack_permille.unwrap_or(SCALE_RETAIL))
+            }
+            Self::EnemyStats => {
+                Tweaks::exp_rate_label(s.enemy_stat_permille.unwrap_or(SCALE_RETAIL))
+            }
             Self::RetailTileCrop => on_off(opts.retail_view_window),
             Self::RetailObjectWindow => on_off(opts.retail_static_window),
             Self::Retail => on_off(s.retail),
@@ -721,6 +835,21 @@ impl OptionRow {
             Self::FortressFix => s.no_fortress_encounter_fix ^= true,
             Self::JewelFix => s.jewel_fix ^= true,
             Self::HpReadoutGuard => s.no_hp_readout_guard ^= true,
+            Self::BonusDrop => s.equipment_drops ^= true,
+            Self::SpiritAp => step_opt(&mut s.spirit_ap, &Tweaks::SPIRIT_AP_STEPS, dir),
+            Self::DamageAp => step_opt(&mut s.damage_ap, &Tweaks::DAMAGE_AP_STEPS, dir),
+            Self::SeruCatchRate => {
+                let next = Tweaks::step_in(&Tweaks::CATCH_RATE_STEPS, s.seru_catch_pct, dir);
+                s.seru_catch_pct = next;
+            }
+            Self::EnemyAttacks => step_opt(
+                &mut s.enemy_attack_permille,
+                &Tweaks::ENEMY_ATTACK_RATES,
+                dir,
+            ),
+            Self::EnemyStats => {
+                step_opt(&mut s.enemy_stat_permille, &Tweaks::ENEMY_STAT_RATES, dir)
+            }
             Self::RetailTileCrop => opts.retail_view_window ^= true,
             Self::RetailObjectWindow => opts.retail_static_window ^= true,
             Self::Retail => s.retail ^= true,
@@ -976,6 +1105,21 @@ mod tests {
         OptionRow::JewelFix.adjust(&mut o, &mut s, 1);
         assert_eq!(OptionRow::HpReadoutGuard.value(&o, &s), "On");
         OptionRow::HpReadoutGuard.adjust(&mut o, &mut s, 1);
+        assert_eq!(OptionRow::SpiritAp.value(&o, &s), "32");
+        assert_eq!(OptionRow::SeruCatchRate.value(&o, &s), "Original");
+        for row in [
+            OptionRow::BonusDrop,
+            OptionRow::SpiritAp,
+            OptionRow::DamageAp,
+            OptionRow::SeruCatchRate,
+            OptionRow::EnemyAttacks,
+            OptionRow::EnemyStats,
+        ] {
+            row.adjust(&mut o, &mut s, 1);
+        }
+        assert_eq!(OptionRow::SpiritAp.value(&o, &s), "48");
+        assert_eq!(OptionRow::EnemyStats.value(&o, &s), "1.25x");
+        assert_eq!(OptionRow::SeruCatchRate.value(&o, &s), "25%");
         assert_eq!(OptionRow::ExpRate.value(&o, &s), "1.5x");
         assert!(!OptionRow::ExpRate.is_game_option());
         let a = play_args_with(&info, &s);
@@ -986,6 +1130,12 @@ mod tests {
             "--no-fortress-encounter-fix",
             "--jewel-fix",
             "--no-hp-readout-guard",
+            "--spirit-ap=48",
+            "--damage-ap=150",
+            "--seru-catch-rate=25",
+            "--enemy-attack-count=1.5",
+            "--enemy-stat-scale=1.25",
+            "--equipment-drops",
         ] {
             assert!(a.iter().any(|x| x == flag), "{flag}");
             assert!(!plain.iter().any(|x| x == flag), "{flag} off by default");

@@ -1491,9 +1491,11 @@ hook sites, register contracts and placement are on
 [`randomizer-internals.md`](randomizer-internals.md#code-injection-features).
 
 The port runs none of these hooks, since it executes no MIPS. Several are
-carried as engine switches instead (Shiny Seru, run-away EXP, the jewel fix,
-the Fortress encounter fix, plus `--exp-scale` among the data edits), and two
-retail defects fixed here cannot occur in the port at all.
+carried as engine switches instead (Shiny Seru, run-away EXP, the bonus
+equipment drop, the jewel fix, the Fortress encounter fix, Spirit AP and
+enemy-damage AP, plus `--exp-scale`, `--seru-catch-rate`,
+`--enemy-attack-count` and a uniform `--enemy-stat-scale` among the data
+edits), and two retail defects fixed here cannot occur in the port at all.
 [Gameplay tweaks](../subsystems/gameplay-tweaks.md#classification) classifies
 every feature.
 
