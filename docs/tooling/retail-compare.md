@@ -3749,6 +3749,20 @@ every pass, so it moves with the phase of both clips):
   scale with the anchor - at the 24-px cap from its fourth frame, where
   `battle_melee_hit_spark`'s two packet arenas draw one `15` at `18` and
   then `22` px.
+- **A numeral anchored on a trio no state holds.** `battle_melee_hit_spark`'s
+  `15` still stands about `18` px above retail's on the frame on screen. The
+  newest arena's run (timer `288`) centres at x `136.5` under the RAM's own
+  camera, which `FUN_800195A8` restores from the scratchpad copy at
+  `0x1F8003C8` (`0x80019670..0x80019678`). In a mednafen state that copy is
+  `R * 4` with translation `(1514, 1298, 3779)`, which is the RAM pose with
+  the focus folded in. Projected through it, the anchor needs a trio Z near
+  `468`, where the RAM trio `(-2, -461, 492)` projects to `129`. The older
+  arenas fit Zs of about `436` and `419` with Ys climbing `130` a pass, so
+  the trio a numeral read moves with the knockdown pose as well as with the
+  push. The state holds a ring of live pairs (`+0x4C`) and cursors
+  (`+0x17A`) but not of trios, so the anchor waits on a per-pass film of
+  `+0x3C..+0x40`. Seating Gimard's knockdown cursor on the displayed frame
+  (`36`, the replay's `40`) dropped `image` `.876` to `.814`.
 - **A spell's damage is a draw.** `battle_gimard_tail_fire_a` / `_b` show
   Tail Fire's `16` on retail's Vahn and the engine's `7`: the
   summon-magic roll and the finisher's no-damage floor are `rand()` draws,
