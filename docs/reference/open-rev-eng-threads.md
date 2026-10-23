@@ -231,6 +231,18 @@ preferring a neighbouring sway pose. `zora_glare_petrify_pre` reads the
 same way round for one seat only: Vahn fits one advance behind the RAM
 (`96` of `108`), Zora two (`168` of `216`), in band `0x6F`.
 
+A save can split the seats, but not that way round. The films put a
+vsync, the instant a save state is cut, between the ticks and the decodes,
+between two seats' decodes and after the flip, and once inside a seat's
+tick: on `rim_elm_gimard_victory`'s art commit, Vahn's tick (which commits
+clip `0x11` and halves every seat's rate) runs across a vsync before
+Gimard's tick starts. The actor list ticks the nodes in descending
+address order, party seat 0 (`0x800835E4`) first and the monster rows
+after it, in both filmed fights, so a save inside the list leaves the
+party one advance further from the screen than the monsters: Vahn two
+back and Zora one, the reverse of the fits, and no split puts a seat three
+back as Zeto's `48` needs.
+
 Answered questions: [settled battle / arts / level-up](re-settled-threads/battle.md), [settled rendering / camera](re-settled-threads/rendering-camera.md), [settled world map](re-settled-threads/world-map.md); falsified readings: [battle](re-do-not-re-walk.md#battle--arts--level-up), [rendering / camera](re-do-not-re-walk.md#rendering--camera).
 
 ## Audio / BGM

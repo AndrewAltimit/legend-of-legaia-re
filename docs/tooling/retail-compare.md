@@ -3825,6 +3825,36 @@ every pass, so it moves with the phase of both clips):
   `.962` to `.966`). `battle_gimard_tail_fire_b` reads `.963` to `.961`
   with its numeral drawn nearer retail's: the rest of that gap is the
   struck body's own trio.
+- **A numeral read off retail's own packets.** Both packet arenas hold the
+  readout's digit quads (`POLY_FT4`, colour `0x2C808080`, a 24-texel cell
+  of glyph row `v = 64`), so the two newest passes' numerals need no model
+  at all. The arena linked into the newest ordering table
+  (`DisplayPhase::newest`, walked back from the quad's tag links to a
+  bucket) is the newer one; cell width does not tell them apart, since the
+  24-px cap can shrink a growing square (`battle_gimard_tail_fire_a`: `24`
+  px in the older arena, `23` in the newer). A frame one pass back draws
+  the older arena's cells; one two passes back steps each corner and the
+  extent back by the older pass's own move (`displayed_popup_cells`,
+  `LEGAIA_SEAT_POPUP_CELLS`). A newer run on the rest row `32` hides how
+  far it rose, so `battle_melee_hit_spark` (`32` against the older `49`)
+  keeps the age seat. `battle_gimard_tail_fire_a` `.966` to `.973`,
+  `battle_gimard_tail_fire_b` `.961` to `.972`, `rim_elm_gimard_victory`
+  level.
+- **A frame step the replay does not run.** `battle_melee_hit_spark`'s
+  replay runs step `2` where retail ran `3`: the step seed
+  (`RetailBattle::frame_step_seed`) covers a replayed cast's summon
+  close-up only, and an action plan runs the default. The capture's own
+  history says how long the step held: Vahn's cursor history advances `12`
+  a pass for the newest eight passes and `8` before them (rate `4`, the
+  art's halving), and the frame history's entries pass `0x1FF` for nine.
+  Seeding step `3` from the pass the run began (the art clip `0x11` at
+  cursor `32`) drew the ray burst and Gimard off retail's (`image` `.884`
+  to `.849`), and over the whole state `.876`; a history that never left
+  its step measured both ways over the state
+  (`battle_noa_miracle_art_combo` step `3`, `.962` to `.972`;
+  `battle_vahn_tri_somersault_super` step `4`, `.955` to `.861`). The
+  action plans keep the default: the seats tuned on it (the ray burst's
+  lag, the numeral, the knockdown's clock) move with the step.
 - **A spell's damage is a draw.** `battle_gimard_tail_fire_a` / `_b` show
   Tail Fire's `16` on retail's Vahn and the engine's `7`: the
   summon-magic roll and the finisher's no-damage floor are `rand()` draws,
