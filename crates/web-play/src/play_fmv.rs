@@ -79,8 +79,8 @@ use legaia_engine_system::movie::cutscene::fmv_is_skippable;
 use legaia_game_tables::fmv_dispatch::{FmvTable, STR_OVERLAY_PROT_INDEX, fmv_segment_window};
 use wasm_bindgen::prelude::*;
 
-use crate::disc::FileEntry;
 use crate::runtime::LegaiaRuntime;
+use legaia_iso::image::FileEntry;
 use legaia_mdec::str_av::{StrAv, demux_str_av};
 
 /// Raw Mode-2 sector size the page slices the disc image by.

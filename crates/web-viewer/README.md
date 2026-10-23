@@ -19,8 +19,9 @@ wasm-bindgen gathers the `#[wasm_bindgen]` exports of every crate the
 `cdylib` links, so the runtime's exports reach the page through the same
 `legaia_web_viewer.js` as this crate's: the site's JS API does not depend on
 which crate an export lives in. The viewer pages also stand on `web-play`'s
-field actor layer (`field_actors`, `field_npc`, `field_scene_anim`) and its
-in-memory disc access (`disc`), naming those modules there directly. Module
+field actor layer (`field_actors`, `field_npc`, `field_scene_anim`), naming
+those modules there directly, and read the disc through `legaia_iso::image`
+and `legaia_prot::toc_index`. Module
 by module, the exports are in
 [`docs/subsystems/browser-host.md`](../../docs/subsystems/browser-host.md).
 

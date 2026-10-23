@@ -54,6 +54,11 @@ random blobs).
   implementation. The module also pins the `+2` word skew between the RAM
   word array and `Archive::toc`.
 
+- `toc_index` - `parse_prot_toc`, a zero-copy index over a borrowed
+  `PROT.DAT` buffer (`EntryMeta`: byte offset and size per entry), which is
+  how the browser hosts slice a disc they hold in WASM memory. Entries are
+  sized through `runtime_toc`, the same span rule `archive` uses.
+
 - `timpack` - reader for an `container-formats::pack` of TIMs sitting behind a
   DATA_FIELD `TIM_LIST` chunk header (`(TIM_LIST << 24) | payload_len`), as in
   `tim.dat`. Not a container of its own: the `marker == 0x01` it tests is the

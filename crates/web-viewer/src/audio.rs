@@ -12,7 +12,8 @@
 //! returns owned `Vec<i16>` / metadata structs. The wasm-bindgen boundary
 //! lives in [`crate::LegaiaAudio`].
 
-use crate::disc::{EntryMeta, FileEntry, parse_prot_toc, read_raw_sector, walk_iso_files};
+use legaia_iso::image::{FileEntry, read_raw_sector, walk_iso_files};
+use legaia_prot::toc_index::{EntryMeta, parse_prot_toc};
 use legaia_vab::{VabReport, find_vabs, parse as parse_vab};
 use legaia_xa::demux::{
     AUDIO_BYTES_PER_SECTOR, SUBHEADER_OFFSET, USER_DATA_OFFSET, parse_subheader,
@@ -449,7 +450,7 @@ fn entry_buf<'a>(disc: &'a [u8], e: &EntryMeta) -> Option<&'a [u8]> {
 /// access to the private viewer state.
 pub fn entries_from_disc(disc: &[u8], prot_bytes: &[u8]) -> Vec<EntryMeta> {
     // PROT TOC parses against the PROT.DAT bytes; for the in-memory walker
-    // we always extract PROT.DAT first (see [`crate::disc::extract_prot_dat`]).
+    // we always extract PROT.DAT first (see [`legaia_iso::image::extract_prot_dat`]).
     let _ = disc;
     parse_prot_toc(prot_bytes).unwrap_or_default()
 }

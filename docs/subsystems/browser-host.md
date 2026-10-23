@@ -6,7 +6,7 @@ What the site's wasm bundle exports, one section per module family: the play run
 
 The browser side is two crates:
 
-- [`legaia-web-play`](../../crates/web-play/README.md) - the browser hosts of the port: `runtime`, `play` and every `play_*` module, `boot_title`, `cards`, `resume`, `session_save`, `host_slot`, `pad_bindings`, the minigames page (`minigames*`), the field actor layer (`field_actors`, `field_npc`, `field_scene_anim`) and in-memory disc access (`disc`).
+- [`legaia-web-play`](../../crates/web-play/README.md) - the browser hosts of the port: `runtime`, `play` and every `play_*` module, `boot_title`, `cards`, `resume`, `session_save`, `host_slot`, `pad_bindings`, the minigames page (`minigames*`), the field actor layer (`field_actors`, `field_npc`, `field_scene_anim`). In-memory disc access is the format layer's: `legaia_iso::image` and `legaia_prot::toc_index`.
 - [`legaia-web-viewer`](../../crates/web-viewer/README.md) - the asset inspectors and the ROM patcher, and the `cdylib` the site loads.
 
 `web-viewer` depends on `web-play`, never the reverse. wasm-bindgen collects the `#[wasm_bindgen]` exports of every crate the `cdylib` links, so `LegaiaRuntime` and `LegaiaMinigames` reach the page from the same `legaia_web_viewer.js` as `LegaiaViewer`: which crate an export lives in is invisible to the site's JS. A module name below is unique across the two crates, except `field_npc`, which each crate has - `web-play`'s holds the catalog and its builders, `web-viewer`'s the NPC page's exports over them.

@@ -22,18 +22,18 @@ impl LegaiaMinigames {
     pub fn load_disc(&mut self, bytes: Vec<u8>) -> Result<String, JsValue> {
         // The Baka announcer lines are CD-XA, outside PROT.DAT: decode them
         // now, before the raw image is dropped.
-        self.baka_xa = if disc::is_mode2_2352_disc(&bytes) {
+        self.baka_xa = if legaia_iso::image::is_mode2_2352_disc(&bytes) {
             baka_presentation::stage_baka_announcer(&bytes)
         } else {
             legaia_engine_audio::XaClipBank::new()
         };
-        let (prot, scus) = if disc::is_mode2_2352_disc(&bytes) {
+        let (prot, scus) = if legaia_iso::image::is_mode2_2352_disc(&bytes) {
             // Keep the executable too: the Muscle Dome reads the new-game
             // party template / growth curves / spell names out of it, and
             // the fishing point-exchange names its prize rows from the SCUS
             // item table. A raw PROT.DAT load plays with ids / fallbacks.
-            let scus = disc::extract_scus(&bytes);
-            let prot = disc::extract_prot_dat(&bytes).ok_or_else(|| {
+            let scus = legaia_iso::image::extract_scus(&bytes);
+            let prot = legaia_iso::image::extract_prot_dat(&bytes).ok_or_else(|| {
                 JsValue::from_str("minigames: PROT.DAT not found in this disc image")
             })?;
             (prot, scus)
@@ -44,7 +44,7 @@ impl LegaiaMinigames {
             .as_ref()
             .and_then(|scus| legaia_game_tables::item_names::ItemNameTable::from_scus(scus));
         self.scus = scus;
-        let entries = disc::parse_prot_toc(&prot)
+        let entries = legaia_prot::toc_index::parse_prot_toc(&prot)
             .ok_or_else(|| JsValue::from_str("minigames: PROT.DAT TOC parse failed"))?;
         #[cfg(target_arch = "wasm32")]
         console_log(&format!(

@@ -78,7 +78,7 @@ pub struct LegaiaMinigames {
     /// Extracted `PROT.DAT` bytes (the games only ever need PROT entries).
     prot: Vec<u8>,
     /// PROT TOC.
-    entries: Vec<disc::EntryMeta>,
+    entries: Vec<legaia_prot::toc_index::EntryMeta>,
 
     /// Live dance run.
     dance: Option<DanceGame>,
@@ -309,7 +309,11 @@ impl Default for LegaiaMinigames {
 /// SCUS loader would: the entry's full on-disc footprint (the web `parse_prot_toc`
 /// already honours the extended window), lifted through the static-overlay map so
 /// an LZS-form overlay decompresses to its runtime size.
-fn overlay_image(prot: &[u8], entries: &[disc::EntryMeta], prot_index: u32) -> Option<Vec<u8>> {
+fn overlay_image(
+    prot: &[u8],
+    entries: &[legaia_prot::toc_index::EntryMeta],
+    prot_index: u32,
+) -> Option<Vec<u8>> {
     let rec = static_overlay::overlay_map().by_prot_index(prot_index)?;
     let meta = entries.iter().find(|e| e.index == prot_index)?;
     let off = meta.byte_offset as usize;
@@ -322,7 +326,7 @@ fn overlay_image(prot: &[u8], entries: &[disc::EntryMeta], prot_index: u32) -> O
 /// for plain data entries like the art packs, not code overlays).
 fn entry_bytes<'a>(
     prot: &'a [u8],
-    entries: &[disc::EntryMeta],
+    entries: &[legaia_prot::toc_index::EntryMeta],
     prot_index: u32,
 ) -> Option<&'a [u8]> {
     let meta = entries.iter().find(|e| e.index == prot_index)?;

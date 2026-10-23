@@ -233,7 +233,10 @@ struct SlotBank {
 /// Slot `2` has the documented `DAT_8007BD11 == 4` alternate; slot `0` does
 /// not. A slot whose entry is absent or doesn't parse is simply missing from
 /// the map, which routes its cues to the fallback.
-fn read_slot_banks(prot: &[u8], entries: &[disc::EntryMeta]) -> BTreeMap<u8, SlotBank> {
+fn read_slot_banks(
+    prot: &[u8],
+    entries: &[legaia_prot::toc_index::EntryMeta],
+) -> BTreeMap<u8, SlotBank> {
     let mut banks = BTreeMap::new();
     for (slot, index) in legaia_game_tables::sfx_table::PINNED_SLOT_BANKS
         .iter()
@@ -371,13 +374,13 @@ impl LegaiaSfx {
     /// cue in an unstaged category still renders from - while each cue reports
     /// the entry it was actually rendered from.
     pub fn load_disc(&mut self, bytes: Vec<u8>) -> Result<String, JsValue> {
-        let scus = disc::extract_scus(&bytes)
+        let scus = legaia_iso::image::extract_scus(&bytes)
             .ok_or_else(|| JsValue::from_str("sfx: SCUS_942.54 not found (needs a full .bin)"))?;
         let table = SfxTable::from_scus(&scus)
             .ok_or_else(|| JsValue::from_str("sfx: SFX descriptor table did not resolve"))?;
-        let prot = disc::extract_prot_dat(&bytes)
+        let prot = legaia_iso::image::extract_prot_dat(&bytes)
             .ok_or_else(|| JsValue::from_str("sfx: PROT.DAT not found in this disc image"))?;
-        let entries = disc::parse_prot_toc(&prot)
+        let entries = legaia_prot::toc_index::parse_prot_toc(&prot)
             .ok_or_else(|| JsValue::from_str("sfx: PROT.DAT TOC parse failed"))?;
 
         let banks = read_slot_banks(&prot, &entries);

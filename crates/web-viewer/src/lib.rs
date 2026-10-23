@@ -40,8 +40,8 @@ use legaia_container_formats::tim_scan;
 use legaia_disc_audit::categorize::{Class, classify};
 use legaia_disc_audit::tim_catalog;
 use legaia_disc_audit::tim_deep_catalog;
-use legaia_web_play::disc;
-use legaia_web_play::disc::{EntryMeta, extract_prot_dat, extract_scus, parse_prot_toc};
+use legaia_iso::image::{extract_prot_dat, extract_scus};
+use legaia_prot::toc_index::{EntryMeta, parse_prot_toc};
 use wasm_bindgen::Clamped;
 use wasm_bindgen::prelude::*;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
@@ -831,7 +831,7 @@ pub struct LegaiaAudio {
     /// Extracted PROT.DAT bytes. TOC parses against this slice.
     prot: Vec<u8>,
     /// Parsed PROT TOC.
-    entries: Vec<disc::EntryMeta>,
+    entries: Vec<legaia_prot::toc_index::EntryMeta>,
     /// WebAudio output, constructed on the first `start_bgm` call so the
     /// `AudioContext::new` happens inside a user-gesture handler. Once
     /// created, retained across BGM switches via `attach_sequencer`.

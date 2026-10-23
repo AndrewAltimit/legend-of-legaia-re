@@ -8,7 +8,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_web_play::disc::extract_scus;
+use legaia_iso::image::extract_scus;
 use legaia_web_viewer::shop_items::item_records_json;
 use std::env;
 use std::fs;

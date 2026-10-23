@@ -83,7 +83,11 @@ pub(crate) struct ItemCard {
 }
 
 /// Zero-copy view of one PROT entry's on-disc bytes.
-fn entry_bytes<'a>(prot: &'a [u8], entries: &[disc::EntryMeta], index: u32) -> Option<&'a [u8]> {
+fn entry_bytes<'a>(
+    prot: &'a [u8],
+    entries: &[legaia_prot::toc_index::EntryMeta],
+    index: u32,
+) -> Option<&'a [u8]> {
     let meta = entries.iter().find(|e| e.index == index)?;
     let off = meta.byte_offset as usize;
     let end = off.checked_add(meta.size_bytes as usize)?;
@@ -95,7 +99,7 @@ fn entry_bytes<'a>(prot: &'a [u8], entries: &[disc::EntryMeta], index: u32) -> O
 /// (a texture pool or clip bank that didn't parse) to the console.
 fn build(
     prot: &[u8],
-    entries: &[disc::EntryMeta],
+    entries: &[legaia_prot::toc_index::EntryMeta],
     cslot: usize,
     equipped: [u8; bca::SECTION_COUNT],
     diff: bool,

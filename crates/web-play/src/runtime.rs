@@ -160,7 +160,7 @@ pub struct LegaiaRuntime {
     /// raw-sector extent, so the page can slice a named file (an `XA*.XA`
     /// voice bank, a `MOV/MV*.STR` movie) out of the bytes it still holds
     /// without the runtime keeping a second 700 MB copy.
-    pub(crate) disc_files: Vec<crate::disc::FileEntry>,
+    pub(crate) disc_files: Vec<legaia_iso::image::FileEntry>,
     /// Field party-status HUD driver (`FUN_801D0D38`): the idle countdown and
     /// the cached player position its decision kernel reads. The same state
     /// the native window holds - retail keeps it in overlay globals, so every

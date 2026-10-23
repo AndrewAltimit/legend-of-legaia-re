@@ -27,7 +27,7 @@ fn the_play_page_installs_the_native_boot_progression_tables() {
         eprintln!("[skip] disc unreadable (disc-gated)");
         return;
     };
-    let scus = legaia_web_play::disc::extract_scus(&bytes).expect("SCUS on the disc");
+    let scus = legaia_iso::image::extract_scus(&bytes).expect("SCUS on the disc");
 
     // The native side's install, over the same executable: what the page has
     // to match. It must itself be non-vacuous.

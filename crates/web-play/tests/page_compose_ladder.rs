@@ -553,7 +553,7 @@ fn rung3_items_use_opens_the_target_panel_over_a_hurt_party() {
     // stat-ups, so retail's usability gate treats them identically
     // (`effect_gated_by_target_state` is false for a stat-up) - the *only*
     // thing that can make their panels differ is the preview word.
-    let scus = legaia_web_play::disc::extract_scus(&bytes).expect("SCUS on the disc");
+    let scus = legaia_iso::image::extract_scus(&bytes).expect("SCUS on the disc");
     let effects = legaia_game_tables::item_effect::ItemEffectTable::from_scus(&scus)
         .expect("item-effect table");
     use legaia_engine_menus::pause_screens::target_panel_mode;
@@ -693,7 +693,7 @@ fn rung3b_the_target_panel_preview_word_matches_the_discs_item_tables() {
     drop(rt);
     let disc = std::env::var("LEGAIA_DISC_BIN").expect("gated above");
     let bytes = std::fs::read(&disc).expect("disc readable");
-    let scus = legaia_web_play::disc::extract_scus(&bytes).expect("SCUS on the disc");
+    let scus = legaia_iso::image::extract_scus(&bytes).expect("SCUS on the disc");
     let effects = legaia_game_tables::item_effect::ItemEffectTable::from_scus(&scus)
         .expect("item-effect table");
 

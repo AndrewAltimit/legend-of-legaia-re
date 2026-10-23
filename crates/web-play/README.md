@@ -18,7 +18,11 @@ Module by module, the exports are in
 | The play runtime | `runtime/` (the simulation: disc load, scene setup, the frame), `play/` and every `play_*` module (what the page draws and plays), `boot_title`, `boot_continue`, `cards`, `resume`, `session_save`, `host_slot`, `pad_bindings` |
 | The minigames runtime | `minigames/` and every `minigames_*` module |
 | The field actor layer | `field_actors` (the MAN-placed actors over a live world), `field_npc` (the NPC catalog they draw from), `field_scene_anim` (the CLUT-walk runner) - shared with the field-scene viewer in `legaia-web-viewer` |
-| Disc image access | `disc` - the in-memory ISO walk and PROT.DAT / CDNAME / SCUS extraction both crates load a visitor's image through |
+
+A visitor's disc image is read through `legaia_iso::image` (the in-memory
+ISO walk and `PROT.DAT` / `CDNAME.TXT` / SCUS extraction) and
+`legaia_prot::toc_index` (the zero-copy `PROT.DAT` entry index), the format
+layer's borrowed-slice readers.
 
 ## The bundle
 

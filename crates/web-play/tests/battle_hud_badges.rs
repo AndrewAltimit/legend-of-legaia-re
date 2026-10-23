@@ -29,7 +29,7 @@ use legaia_engine_menus::save_menu_atlas::{
     SYSTEM_UI_CLUT_EXT_TIM_OFFSET, SaveMenuAtlas, build_atlas,
 };
 use legaia_engine_scene::scene::ProtIndex;
-use legaia_web_play::disc::{extract_cdname_txt, extract_prot_dat};
+use legaia_iso::image::{extract_cdname_txt, extract_prot_dat};
 
 /// Build the atlas exactly as a host does, from a panel slice rooted at
 /// `base`. `None` when the slice or the bake fails.

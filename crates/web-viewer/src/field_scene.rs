@@ -417,7 +417,7 @@ impl LegaiaViewer {
         if let Some(ix) = &self.prot_index {
             return Ok(ix.clone());
         }
-        let prot_bytes = if crate::disc::is_mode2_2352_disc(&self.disc) {
+        let prot_bytes = if legaia_iso::image::is_mode2_2352_disc(&self.disc) {
             extract_prot_dat(&self.disc)
                 .ok_or_else(|| "PROT.DAT not found in disc image".to_string())?
         } else {

@@ -97,9 +97,9 @@ pub(super) struct DiscScanInput {
 pub(super) fn disc_scan_input(image: Vec<u8>) -> Result<DiscScanInput, JsValue> {
     let prot = legaia_iso::iso9660::read_file_in_image(&image, "PROT.DAT")
         .ok_or_else(|| err("PROT.DAT not found in disc image"))?;
-    let blocks = crate::disc::extract_cdname_txt(&image)
+    let blocks = legaia_iso::image::extract_cdname_txt(&image)
         .and_then(|t| legaia_prot::cdname::parse_str(&t).ok());
-    let scus = crate::disc::extract_scus(&image);
+    let scus = legaia_iso::image::extract_scus(&image);
     drop(image);
     Ok(DiscScanInput { prot, blocks, scus })
 }

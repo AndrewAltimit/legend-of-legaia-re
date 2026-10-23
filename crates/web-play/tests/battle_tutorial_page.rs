@@ -202,7 +202,7 @@ fn the_play_page_shows_the_sparring_tutorial_under_the_disc_condition() {
     // side-band's stage 1: `FUN_80056208`), held until any pad press, and
     // only then raises lesson 0 next to the round prompt. The caption is the
     // first box the page composes; the lesson-0 intro is the second.
-    let scus = legaia_web_play::disc::extract_scus(&std::fs::read(&disc).expect("disc"))
+    let scus = legaia_iso::image::extract_scus(&std::fs::read(&disc).expect("disc"))
         .expect("SCUS_942.54 in disc image");
     let caption = legaia_ui_formats::battle_ui_strings::BattleUiStrings::from_scus(&scus)
         .get(legaia_ui_formats::battle_ui_strings::BattleUiLabel::SparringIntro)

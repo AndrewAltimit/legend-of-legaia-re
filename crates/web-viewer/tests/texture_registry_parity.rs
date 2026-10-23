@@ -460,8 +460,8 @@ fn battle_equipment_labels_carry_the_equipment_name() {
 ///
 /// [`battle_equipment_labels_carry_the_equipment_name`] hands the scan an
 /// executable it read with `legaia_iso` - the CLI's ISO walker. The WASM
-/// binding cannot use that path: `scan_textures` reads the disc with this
-/// crate's own in-memory walker (`disc::extract_scus`) and hands the result
+/// binding cannot use that path: `scan_textures` reads the disc with the
+/// browser's in-memory walker (`legaia_iso::image::extract_scus`) and hands the result
 /// to `ScanCtx::with_scus`. Two walkers, one claim, and only one of them was
 /// measured - so a browser that silently found no executable would have shown
 /// `Gala - equip 0x13` with the whole suite green. This is the missing half:
@@ -476,7 +476,7 @@ fn the_browsers_own_disc_reader_reaches_the_equipment_name_table() {
     // The two readers, side by side. They must agree byte for byte: the page
     // and the CLI label the same block from the same table or they are two
     // catalogs wearing one name.
-    let browser = legaia_web_play::disc::extract_scus(&image).expect("browser ISO walk");
+    let browser = legaia_iso::image::extract_scus(&image).expect("browser ISO walk");
     let cli = legaia_iso::iso9660::read_file_in_image(&image, "SCUS_942.54").expect("CLI ISO walk");
     drop(image);
     assert_eq!(browser, cli, "the two hosts must read the same executable");

@@ -993,11 +993,11 @@ fn battle_render_ladder() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    let Some(prot) = legaia_web_play::disc::extract_prot_dat(&disc) else {
+    let Some(prot) = legaia_iso::image::extract_prot_dat(&disc) else {
         eprintln!("[skip] PROT.DAT extraction failed (disc-gated)");
         return;
     };
-    let cdname = legaia_web_play::disc::extract_cdname_txt(&disc);
+    let cdname = legaia_iso::image::extract_cdname_txt(&disc);
     let index = ProtIndex::from_bytes(prot, cdname.as_deref()).expect("PROT index");
 
     let mut rt = LegaiaRuntime::new();

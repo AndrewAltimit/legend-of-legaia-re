@@ -23,12 +23,12 @@ impl LegaiaAudio {
     /// both slices for later VAB / BGM / XA queries. Returns the PROT entry
     /// count for the JS UI.
     pub fn load_disc(&mut self, bytes: Vec<u8>) -> Result<u32, JsValue> {
-        let prot = disc::extract_prot_dat(&bytes).ok_or_else(|| {
+        let prot = legaia_iso::image::extract_prot_dat(&bytes).ok_or_else(|| {
             JsValue::from_str(
                 "audio: not a Mode2/2352 disc image (the audio page requires a full .bin)",
             )
         })?;
-        let entries = disc::parse_prot_toc(&prot)
+        let entries = legaia_prot::toc_index::parse_prot_toc(&prot)
             .ok_or_else(|| JsValue::from_str("audio: PROT.DAT TOC parse failed"))?;
         console_log(&format!(
             "Audio: loaded disc ({} MB), {} PROT entries",
