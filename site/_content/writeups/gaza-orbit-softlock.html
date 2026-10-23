@@ -151,7 +151,7 @@
   <p>The second capture logs the actor's animation pair - staged clip versus playing clip - every frame, which pins what kills the clip. Kemaro carries its target ~2,500 units off-arena and stages his hit reaction there, which sets the &ldquo;exit to idle at clip end&rdquo; flag. Its put-back starts his idle pose through the mid-clip commit, which keeps that flag, so the flag waits for the end of his idle loop - 360 vsyncs. When his next action inside that window is the melee, the Move clip carries the flag and is swapped for idle at its first loop end, about 12 frames in.</p>
   <ul>
     <li><strong>The window is one idle loop.</strong> Kemaro &rarr; another combatant's turn &rarr; melee runs the same clip 64 frames to a clean hit: the turn in between outlasted the loop. A cast by the boss in the window spends the flag harmlessly.</li>
-    <li><strong>It reproduces on demand.</strong> Cast Kemaro with the caster acting directly before the boss, and the approach parks whenever his next action is the melee.</li>
+    <li><strong>It reproduces on demand.</strong> Cast Kemaro with the caster acting directly before the boss, and the approach parks whenever his next action is the melee. A scripted run did exactly that on the first Kemaro, with the boss's HP and MP poked lower so that he melees; the patch's guard, poked into that park, unparked it.</li>
     <li><strong>A plain hit cannot cause it.</strong> Every other hit reaction plays to its end before the action is over, and that end clears the flag. Only Kemaro's put-back keeps it.</li>
     <li><strong>Gaza 2 is the extreme case.</strong> Of the 180 walk-less monsters he has the longest idle loop and the shortest Move loop, and the HP to survive Kemaro again and again. The few other candidates need a wide gap or die to Kemaro.</li>
     <li><strong>It is not an emulator artifact.</strong> The same recipe parks under both PCSX-Redux CPU cores with an identical onset, and every length in the chain is counted in game frames. A failed repro elsewhere is most likely the chain not lining up.</li>
@@ -167,7 +167,7 @@ v26873  boss melee starts DIRECTLY next - 0x14, target ~1022 away -> fallback
 v26876  0x19, pair 1/1: Move clip ENGAGED, sliding ~19 units/vsync
 v26888  pair 0/0: clip DEAD after ~12 vsyncs / ~236 units
         frozen at ~786 (&gt; 416 reach) -> polls forever  = the softlock</code></pre>
-      <p>The pair is <code>actor+0x1DA</code> (staged clip) / <code>actor+0x1D9</code> (playing clip). The stale latch is bit 2 of the anim event flags <code>actor+0x1DC</code>: a later capture shows it still set after the put-back turns the pair to 0/0. Why the carried reaction clip never reaches its own end is left open; the fix does not depend on it.</p>
+      <p>The pair is <code>actor+0x1DA</code> (staged clip) / <code>actor+0x1D9</code> (playing clip). The stale latch is bit 2 of the anim event flags <code>actor+0x1DC</code>: a later capture shows it still set after the put-back turns the pair to 0/0. The carried reaction clip never reaches its own end because Kemaro pins it on frame 3 with the target's speed scale set to 0 (<code>0x801F8370..0x801F8380</code>).</p>
     </div>
   </details>
 </section>

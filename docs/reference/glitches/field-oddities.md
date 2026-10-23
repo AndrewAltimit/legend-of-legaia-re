@@ -1144,6 +1144,10 @@ climbing past `0x800740EC`. Escaping the same fight with Run returns to the fiel
 
 **Status:** explained
 
+**Evidence:** two parks caught in human play on Gaza 2 (`capture`, played); one park
+reproduced from scripted pad input with Gaza's HP and MP poked lower (`capture`, poked); the
+mechanism (`disassembly`).
+
 **Reported as:** in the Gaza rematch the battle stops and the camera circles the party forever
 (community report).
 
@@ -1179,7 +1183,9 @@ ends. The camera's idle sweep runs on its own, which is why the screen keeps orb
    commit path clears bits 0..1 only and keeps bit 2.
 4. Bit 2 is raised by every hit-reaction stager. An ordinary reaction ends naturally before the
    action is over and takes the bit with it. Kemaro (PROT 0918) stages its target's reaction with
-   `+0x1DC |= 5` at `0x801F80BC`, then puts the target back by storing `0` to `+0x1DA` and adding
+   `+0x1DC |= 5` at `0x801F80BC` and pins that clip on frame 3 by zeroing the target's speed scale
+   `+0x21D` (`0x801F8370..0x801F8380`), so it cannot end while carried. It then puts the target
+   back by storing `0` to `+0x1DA` and adding
    1 to `+0x1DC` (`0x801F897C..0x801F8984`): idle is installed through the mid-clip path, bit 2
    survives, and it lasts until the idle loop's first natural end. A melee inside that window
    installs the Move clip through the mid-clip path with bit 2 still up; the first natural end
@@ -1231,7 +1237,9 @@ and the measurements are on the linked page. It also describes a second, separat
 nobody else acting in between, and let Gaza survive. If his next action is a melee aimed at a
 party member well out of his reach (the formation usually does this), he walks one short step,
 stops and the round never ends. If he casts instead, the flag is spent harmlessly; try again next
-round.
+round. This recipe has been run from scripted pad input, with Gaza's HP and MP poked lower (with
+his MP intact he answered Kemaro with spells every time): it parked on the first Kemaro, and the
+patcher's guard words, poked into the parked state, unparked it.
 
 The fix is the patcher's `--approach-softlock-fix` ([`randomizer.md`](../../tooling/randomizer.md)):
 it replaces the nine words with a guard that sends a dead approach back to state `0x14`, so the
