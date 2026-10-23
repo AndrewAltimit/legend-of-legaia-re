@@ -252,11 +252,7 @@ pub const BATTLE_RNG_SEEDS: [u32; 48] = [
 /// it. A pin that stops reaching falls through to the list; the search is in
 /// `docs/tooling/retail-compare.md` ("The stream at the entry").
 pub const BATTLE_RNG_PINS: &[(&str, u32)] = &[
-    ("battle_gaza2_park_0x19", 0xFBD4_4AC9),
-    ("battle_gaza2_park_0x19_summon_melee", 0xB5C0_FBCF),
-    ("battle_gaza2_park_0x19_target_vahn", 0x49C1_6D38),
     ("battle_melee_hit_spark", 0x9E37_79B9),
-    ("battle_vahn_tri_somersault_super", 0x8BAE_8BFB),
     ("shiny_refactor_gimard_levelup", 0x1F83_D9AB),
 ];
 

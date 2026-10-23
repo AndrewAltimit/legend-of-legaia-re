@@ -440,34 +440,19 @@ impl PlayWindowApp {
         }
         match self.screenshot.as_ref() {
             Some(sc) if let Some(drive) = sc.battle_drive => {
-                let world = &mut self.session.host.world;
-                // Retail's battle tick waits out the camera's entry
-                // sweep; a drive into a running fight waits with it, as
-                // the headless seed does.
-                let sweeping = !matches!(
-                    drive,
-                    legaia_engine_capture::battle_drive::BattleDrive::Opening { .. }
-                ) && world.mode == SceneMode::Battle
-                    && !legaia_engine_capture::battle_drive::entry_sweep_reached(world, 0xFF);
-                if sweeping {
-                    0
-                } else {
-                    if world.mode == SceneMode::Battle && !sc.battle_drive_primed.replace(true) {
-                        drive.prime(world);
-                        legaia_engine_capture::melee_hits::seed_melee_hits(
-                            world,
-                            &sc.battle_melee_hits,
-                        );
-                    }
-                    drive.steer(world);
-                    // A reached phase is held with no input until it is
-                    // sampled (`BattleDrive::hold_ticks`).
-                    if drive.reached(world) {
-                        0
-                    } else {
-                        drive.pad_word_at(world, self.tick_no)
-                    }
-                }
+                // The drive's own start and press clock, in the headless
+                // seed's step order (`DriveClock::pad`): an odd window tick
+                // at the start put every press one tick late and dealt the
+                // fight onto another stream.
+                let mut clock = sc.battle_drive_clock.get();
+                let pad = clock.pad(
+                    &drive,
+                    &mut self.session.host.world,
+                    &sc.battle_melee_hits,
+                    self.tick_no,
+                );
+                sc.battle_drive_clock.set(clock);
+                pad
             }
             _ => field_pad,
         }

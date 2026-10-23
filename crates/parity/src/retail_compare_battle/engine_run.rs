@@ -217,6 +217,7 @@ pub fn run_engine_battle(
         enable_audio: false,
     };
     let mut session = NativeSession::open(extracted, &cfg).context("open boot session")?;
+    crate::retail_compare::seat_host_camera(&mut session.camera);
     // The image child's `--retail` mode, so both sides deal the fight off
     // the same stream position; a shiny-Seru build's battle-entry draw is
     // kept on both (`RetailBattle::resident_shiny_seru`).

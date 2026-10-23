@@ -68,6 +68,7 @@ scripts/ci/retail-compare.py --images         # + the image channel (needs a dis
 scripts/ci/retail-compare.py --images --check # assert the baseline
 scripts/ci/retail-compare.py --images --bless # fold a reviewed rise into the baseline
 scripts/ci/retail-compare.py --filter town01  # only matching labels (a,b = either)
+scripts/ci/retail-compare.py --filter =battle_gaza2_park_0x19  # that label exactly
 
 LEGAIA_SAVES_LIBRARY=... LEGAIA_EXTRACTED_DIR=... \
   cargo test -p legaia-engine-shell --profile release-test --test integration retail_compare_corpus:: -- --nocapture
@@ -958,10 +959,13 @@ draws it takes.
   `LEGAIA_RC_SEED_TRACE=1`) runs a state's whole list headlessly instead of
   stopping at the first reaching stream, so one run lists every stream that
   reaches and on which tick; each candidate is then run with its frame under
-  `LEGAIA_RC_PIN_SEED`, in list order. A headless reach does not imply the
-  child's: the `korb3` Gaza park states reach the phase headlessly on many
-  streams whose child ends the fight elsewhere (`phase gate not met`), early
-  reaches as well as late ones, so their pins are frame-checked streams.
+  `LEGAIA_RC_PIN_SEED`, in list order. A headless reach implies the child's
+  only while the two halves replay the fight tick for tick
+  ([below](#the-image-child-plays-the-same-fight)). When they parted, the
+  `korb3` Gaza park states reached the phase headlessly on stream after
+  stream whose child ended the fight elsewhere (`phase gate not met`), and
+  their pins were the frame-checked streams that happened to survive it;
+  with the halves in step, each reaches on its first stream and needs none.
 - A capture past the end signal also wants retail's win pose. The results
   sequencer draws it from the stream (`victory_pose_id`), and the results camera
   is that pose's own script (`battle_over_script`). The pose actor's latched
@@ -972,7 +976,7 @@ draws it takes.
 ### The image child plays the same fight
 
 The frame is only evidence about the state the channels scored if the
-`play-window` child replays that fight tick for tick. Three couplings make that
+`play-window` child replays that fight tick for tick. These couplings make that
 true:
 
 | Coupling | Why it matters | Mechanism |
@@ -981,6 +985,22 @@ true:
 | Fog render step | It is not presentation-only: it writes the live count and depth view the next tick's spawns read, and a spawn draws the stream | The headless seed runs `BootSession::fog_render_tick` after every tick; the child is tick-locked (one tick per redraw) |
 | Field VRAM effects | A cross-context CLUT-cell fade (`CC <id> 61 ..` with a frame count) halts the context that issued it until its last row is written, and the fades are stepped from the hosts' VRAM pass | The headless seed runs `BootSession::field_vram_tick` after every field tick, and the child's settle loop does the same |
 | Mid-fight bars | A child on full bars has its monster AI pick from a different table | The seeded HP / MP reach the child on the same first battle tick (`LEGAIA_BATTLE_BARS`) |
+| The drive's clock | A drive presses on every other tick of its own count. Counted on the window's tick, a prompt that opened on an odd window tick put every press one tick late, and the fight dealt its draws onto other ticks | The child starts its drive where the headless seed does (past the entry sweep, on the first tick the command flow leaves `Idle`), arms the drive's world seed there, counts presses from it, and reads each press before the steer, in the seed's order |
+| The compass | The battle camera opens on the field's compass azimuth (`battle_entry_yaw`). A seed whose field camera lacked the play hosts' render bias opened the idle orbit hundreds of units round from the child's, and a menu drive's glide-landed hold parted on it | The headless seed gives its field camera the hosts' bias (`retail_compare::seat_host_camera`) |
+| Capture-frame aligns | An align the child applies between ticks is world state the seed never had | Under a drive or a gate the idle orbit's yaw (`LEGAIA_BATTLE_ORBIT_YAW`) is aligned on the captured frame alone, as the seed aligns it where it samples |
+
+Whether the halves agree is measured, not assumed. With
+`LEGAIA_DIAG_TICK_DIGEST=<path>` set, every session tick appends one line
+(process, session frame, mode, pad word, stream, action-SM context, field
+compass, battle camera, and each combatant's ground, HP and clip cursor),
+and the parent and its child, which inherits the variable, write into the
+same file. Split on the process and on the frame counter's restarts
+(`scripts/ci/tick-digest-diff.py`), a child's lines equal one headless run's
+up to the capture, or the first unequal line names the tick and the channel
+where they parted. A child that
+differs on purpose (a prompt capture's orbit aligned every frame, a menu
+capture driven to the displayed surface, `displayed_menu_flow`, rather than
+the RAM's) parts where that choice takes effect and nowhere earlier.
 
 ### Where the combatants stand
 

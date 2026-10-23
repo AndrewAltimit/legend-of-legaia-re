@@ -326,9 +326,13 @@ pub struct ScreenshotConfig {
     /// same driver the headless seed runs. `capture_tick` becomes the
     /// deadline. Set by the retail-compare image channel.
     pub battle_drive: Option<legaia_engine_capture::battle_drive::BattleDrive>,
-    /// Whether the drive's one-shot world seed has been armed (it is armed
-    /// on the first battle tick).
-    pub battle_drive_primed: std::cell::Cell<bool>,
+    /// Where the drive's start and press clock stand: it starts where the
+    /// headless seed's opening loop hands its drive over (past the entry
+    /// sweep, on the first tick the command flow leaves `Idle`), and counts
+    /// its presses from there
+    /// ([`legaia_engine_capture::drive_clock::DriveClock`]), whatever the
+    /// window's own tick count was.
+    pub battle_drive_clock: std::cell::Cell<legaia_engine_capture::drive_clock::DriveClock>,
     /// Ticks the drive's phase has held so far; the capture waits for
     /// [`legaia_engine_capture::battle_drive::BattleDrive::hold_ticks`]
     /// of them, as the headless seed does.
@@ -775,7 +779,7 @@ impl ScreenshotConfig {
             battle_drive: std::env::var("LEGAIA_BATTLE_DRIVE")
                 .ok()
                 .and_then(|v| legaia_engine_capture::battle_drive::BattleDrive::from_env(&v)),
-            battle_drive_primed: std::cell::Cell::new(false),
+            battle_drive_clock: std::cell::Cell::new(Default::default()),
             battle_drive_held: std::cell::Cell::new(0),
             display_lag: std::env::var("LEGAIA_CAPTURE_DISPLAY_LAG")
                 .ok()

@@ -213,9 +213,18 @@ impl PlayWindowApp {
             }
         }
         // Capture harness: phase-align the battle idle orbit to the retail
-        // state being compared (`LEGAIA_BATTLE_ORBIT_YAW`).
+        // state being compared (`LEGAIA_BATTLE_ORBIT_YAW`). A gated or
+        // driven capture aligns it on the captured frame alone, as the
+        // headless seed aligns it only where it samples: aligned on every
+        // redraw, the drive's camera stood elsewhere than the headless
+        // seed's between ticks, and a menu drive's glide-landed hold
+        // (`BattleDrive::reached`) parted from it.
+        let gated = self.screenshot.as_ref().is_some_and(|sc| {
+            sc.battle_drive.is_some() || sc.phase_gate.is_some() || sc.script_gate.is_some()
+        });
         if let Some(yaw) = self.screenshot.as_ref().and_then(|sc| sc.battle_orbit_yaw)
             && self.session.host.world.mode == SceneMode::Battle
+            && (!gated || self.capture_phase_met())
             && let Some(cam) = self.session.host.world.battle.camera.as_mut()
         {
             cam.align_orbit_yaw(yaw);

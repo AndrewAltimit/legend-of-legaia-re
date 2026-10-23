@@ -261,6 +261,18 @@ pub fn pin_seed_retail(
     }
 }
 
+/// Give a headless seed's field camera the compass bias both play hosts
+/// give theirs (`retail_field_render_yaw_bias`), so the azimuth the world
+/// reads - the d-pad remap, and the battle camera's entry yaw
+/// (`battle_entry_yaw` over `FieldLocomotion::camera_azimuth`) - is the
+/// image child's. Left at the headless default the compass is the scripted
+/// yaw alone: a fight the seed entered opened its idle orbit hundreds of
+/// units round from the child's, and every camera-gated step of a drive
+/// (a menu surface's glide-landed hold) parted from it.
+pub fn seat_host_camera(camera: &mut legaia_engine_field::camera::Camera) {
+    camera.render_yaw_bias = legaia_engine_field::camera_frame::retail_field_render_yaw_bias();
+}
+
 /// Resolve the library + extracted dirs: env overrides first
 /// (`LEGAIA_SAVES_LIBRARY`, `LEGAIA_EXTRACTED_DIR`), then repo-relative.
 pub fn resolve_dirs() -> (Option<PathBuf>, Option<PathBuf>, Option<PathBuf>) {
