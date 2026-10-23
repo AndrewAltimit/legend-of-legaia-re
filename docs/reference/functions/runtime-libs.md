@@ -134,7 +134,7 @@ for it needs reading carefully. It is the stock PSX exception-handler prologue -
 load the ExCB chain head from `0x100`, follow it, save `at`/`v0`/`v1`/`ra` into
 the saved-register area at `+8`, read `CAUSE` via `mfc0`. A five-form sweep
 ([address-reference-scan.md](../../tooling/address-reference-scan.md)) finds
-**no word, no `jal`, no `j`, no branch and no materialisation pair** for
+**no word, no `jal`, no `j`, no branch and no `lui` pair** for
 `0x8005BBB8` itself. That is not the same as the block being unused: `InitGeom`
 (`FUN_8005BB48`) copies it over `C0table[6]` on every boot, and its copy loop
 names the extent exactly - `t2` = `0x8005BBB0`, `t1` = `0x8005BBE8`, so the two

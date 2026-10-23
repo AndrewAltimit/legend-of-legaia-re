@@ -90,16 +90,13 @@ the same column through the same pointer without that guarantee.
 
 ### How the consumer was found
 
-`gp+0x678` looks consumer-less to an absolute-address sweep. Two reference
-forms are invisible to
-[`find-address-word-refs.py`](../tooling/address-reference-scan.md): a
-`disp(gp)` access carries no address at all, and a `lui rX, hi` + `lw rY,
-lo(rX)` pair puts the low half on the *load*, where that tool's pair scan
-accepts only `addiu` and `ori`. A five-form sweep of `0x8007B990` therefore
-reported "no word, no jump, no branch, no materialisation pair - in any image".
-Both forms are covered by
-[`find-gp-relative-refs.py`](../tooling/address-reference-scan.md#the-gp-relative-and-luiload-forms),
-which finds the writer and all seven readers.
+`gp+0x678` hides its writer from an absolute-address sweep: a `disp(gp)`
+access carries no address at all. The seven readers are `lui rX, hi` + `lw rY,
+lo(rX)` pairs, which put the low half on the *load*;
+[`find-address-word-refs.py`](../tooling/address-reference-scan.md) finds them
+for `0x8007B990`, and
+[`find-gp-relative-refs.py`](../tooling/address-reference-scan.md#the-gp-relative-and-luiload-forms)
+finds the writer and all seven readers.
 
 ## Layout
 

@@ -9,7 +9,8 @@ non-`jal` reference forms are invisible to the tools that look for calls:
   * a **literal address word** sitting in a table or a struct template
     (`FUN_8004DA00` is the `+0x0C` tick slot of the template word at
     `0x800767FC` - found exactly this way);
-  * a **LUI+ADDIU pair** materialising the address into a register, which
+  * a **LUI pair** - `lui` + `addiu`/`ori` materialising the address into a
+    register, or `lui` + a load / store whose offset is the low half - which
     Ghidra's reference manager does not auto-resolve, so a direct xref query
     returns zero hits even for a heavily used address (see
     `docs/tooling/ghidra.md`).
@@ -28,7 +29,7 @@ a routine it cannot possibly reach. Pass `--home <image>` to mark those.
 
 This tool sweeps `SCUS_942.54`, every statically extracted overlay image, and
 (optionally) every extracted `PROT.DAT` entry for every form - literal word,
-materialisation pair, `jal`, `j`, and PC-relative branch - and classifies
+`lui` pair, `jal`, `j`, and PC-relative branch - and classifies
 each literal-word hit by what the bytes around it look like.
 
     scripts/ghidra-analysis/find-address-word-refs.py 8005126c
@@ -102,6 +103,27 @@ NEIGHBOURS = 4
 LUI_PAIR_WINDOW = 8
 # Opcodes whose immediate is a PC-relative branch displacement.
 BRANCH_OPS = {0x01, 0x04, 0x05, 0x06, 0x07, 0x14, 0x15, 0x16, 0x17}
+# I-type memory opcodes. A `lui` pair completes in one of these as often as
+# in `addiu`: `lui v0,0x801d; lh v0,-0x1cd0(v0)` reads `0x801CE330` without
+# the address ever sitting whole in a register. Their offset is signed, so
+# they take the `addiu` form's high-half correction. `lwc2` / `swc2` are the
+# GTE transfer pair.
+MEM_OPS = {
+    0x20: "lb",
+    0x21: "lh",
+    0x22: "lwl",
+    0x23: "lw",
+    0x24: "lbu",
+    0x25: "lhu",
+    0x26: "lwr",
+    0x28: "sb",
+    0x29: "sh",
+    0x2A: "swl",
+    0x2B: "sw",
+    0x2E: "swr",
+    0x32: "lwc2",
+    0x3A: "swc2",
+}
 
 
 class Image:
@@ -291,10 +313,13 @@ def jump_hits(image: Image, target: int, opcode: int) -> list[int]:
 
 
 def lui_pair_hits(image: Image, target: int) -> list[tuple[int, int, str]]:
-    """LUI+ADDIU / LUI+ORI pairs that materialise `target`.
+    """LUI pairs that reach `target`: `addiu` / `ori` materialisation, or a
+    load / store whose base is the `lui` register and whose offset is the
+    low half.
 
-    Returns `(lui_offset, partner_offset, form)`. The `addiu` form carries the
-    sign correction the assembler applies when the low half is negative.
+    Returns `(lui_offset, partner_offset, form)`. The `addiu` and memory forms
+    carry the sign correction the assembler applies when the low half is
+    negative; `ori` zero-extends.
 
     Candidate `lui`s are found by byte pattern rather than by decoding every
     word, so the sweep stays usable over the whole extracted PROT corpus: a
@@ -323,6 +348,10 @@ def lui_pair_hits(image: Image, target: int) -> list[tuple[int, int, str]]:
                 indexed = state[rs][1] is not None
                 if op == 0x09 and imm == hi_addiu:
                     out.append((at, pos, "addiu+index" if indexed else "addiu"))
+                    break
+                if op in MEM_OPS and imm == hi_addiu:
+                    form = MEM_OPS[op]
+                    out.append((at, pos, form + "+index" if indexed else form))
                     break
                 if op == 0x0D and imm == hi_ori and not indexed:
                     out.append((at, pos, "ori"))
@@ -380,7 +409,7 @@ def report_target(target: int, images: list[Image], args) -> dict:
             print(f"  LUI   {image.label(lui_off)}  +{span} insn -> {form}")
 
     if not any(found.values()):
-        print("  (no word, no jump, no branch, no materialisation pair - in any image)")
+        print("  (no word, no jump, no branch, no lui pair - in any image)")
     else:
         print("  totals: " + " ".join(f"{k}={v}" for k, v in found.items()))
         if found["branch_alias"] and not (
