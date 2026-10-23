@@ -342,9 +342,26 @@ Structural facts, read from the raw table:
   default emitter (`effect_default_arm::vram_mesh`) applies when the colour
   word carries the bit; both hosts draw that emitter's mesh.
 - **`0x80044798` is not a table entry.** It sits between the lit set and the
-  cued banks and is a transform-free `mfc2`-only read-back / packet-pack
-  helper. The cued bodies for kinds 12..19 are full per-kind handlers past
-  it, running to about `0x80045BB4`.
+  cued banks and is the leaves' off-screen reject: a transform-free read of
+  the four projected corners (`SXY0..2` plus the first corner saved in
+  `s3`) that returns `1` only when all four sit past one screen edge - every
+  `y < 0`, every `y >= 0xF0`, every `x <= 0` or every `x >= 0x140`. A quad
+  that straddles an edge is kept, so Horn's arm-9 fan spikes run off every
+  side of retail's frame. The quad leaves call it only when the colour
+  word's top byte carries `0x40` (`lbu -0x2D1(t2)` / `andi 0x40`, kind 19
+  bank 1 at `0x800456EC..0x80045704`). The cued bodies for kinds 12..19 are
+  full per-kind handlers past it, running to about `0x80045BB4`.
+- **A double-sided word culls nothing by winding, not even a degenerate
+  quad.** The quad leaves `and` the `NCLIP` area with the dispatcher's mask
+  and branch on its sign (kind 19 bank 1: `bltz` at `0x80045634` for the
+  first triangle, `bgtz` at `0x80045668` for the second, run only when the
+  first is negative). With the double-sided bit `0x08000000` the mask is
+  `0x7FFFFFFF`, the first area is never negative and the second test never
+  runs, so a zero-area quad is drawn (and rasterises nothing). The
+  draw-kind-4 nodes' word `0xC9000000` carries both that bit and the `0x40`
+  off-screen test: of a crown's thirty-two extrapolated sliver quads retail
+  links the few that reach the screen, and the port, which draws all of
+  them, shows the same pixels.
 - **The world map swaps the handlers.** The bulk-terrain path uses eight
   overlay-resident replacements for kinds 12..19 (`0x801F7644..0x801F8690`,
   PROT 0901), so a sweep bounded to the SCUS span misses them, and on a
