@@ -77,9 +77,12 @@ impl PanelScripts {
             actors::TEXT_BOX_CONFIRM_SCRIPT,
             vec![cmd(3, SUBLIST_PANEL_INDEX, 1), cmd(0, 0, 0)],
         );
+        // `0x801F2A88` is also the draw tick's install script
+        // (`crate::submode_hub_actors::PANEL_DRAW_TICK`, `FUN_801F20B0`):
+        // one `CloseAll` record, the shape the field overlay's own copy has.
         s.set(
             actors::TEXT_BOX_DECLINE_SCRIPT,
-            vec![cmd(4, SUBLIST_PANEL_INDEX, 0), cmd(0, 0, 0)],
+            vec![cmd(5, 0, 0), cmd(0, 0, 0)],
         );
         s.set(
             actors::FLAG_WINDOW_SCRIPT,

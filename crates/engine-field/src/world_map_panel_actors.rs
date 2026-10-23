@@ -60,9 +60,9 @@
 //! there are `FUN_801EE094` (Riremito) and `FUN_801EE328` (Rula) in the PROT
 //! 0897 image - and the host continues as those travel arts. The sub-list,
 //! text-box and flag-window exits hand back to `0x1A`
-//! ([`crate::submode_hub_actors::slot::DRAW_TICK`]), the world-map hub's draw
-//! tick, which the panel host does not run: it applies the stores and records
-//! the pair.
+//! ([`crate::submode_hub_actors::slot::DRAW_TICK`]), the draw tick
+//! `FUN_801F20B0`, which the host runs next: it installs the panel script at
+//! `0x801F2A88`, pumps, and clears the completion gate so the actor retires.
 
 use crate::world_map_panel::{CursorOutcome, CursorPad, list_cursor_input};
 

@@ -36,8 +36,9 @@
 //!    [`PanelActorHost::retire`] then follows the ids whose bodies are ported:
 //!    `0`, the close tick ([`PanelActorKind::CloseTick`]), and `0x29` /
 //!    `0x2B`, the fade/flash exits' travel arts (table words `FUN_801EE094` /
-//!    `FUN_801EE328`). It drops the actor on any other, recording the pair
-//!    in [`PanelFrame::exits`] (the `0x1A` draw-tick hand-back).
+//!    `FUN_801EE328`), and `0x1A`, the draw tick the sub-list / text-box /
+//!    flag-window exits hand back to ([`PanelActorKind::DrawTick`]). It drops
+//!    the actor on any other id, recording the pair in [`PanelFrame::exits`].
 //! 3. **Which pad chord installs which actor.** Retail reaches these from
 //!    debug branches in the world-map controller. The engine's bindings live
 //!    on `World::tick_world_map_panels` and are tabulated there.

@@ -819,9 +819,11 @@ Three inputs are the **port's**, not retail's:
   `FUN_801EE328` (Rula); `PanelActorHost::retire` follows them as the travel
   arts (`TravelArt::for_handler_id`), as the pause-menu path
   (`World::tick_pause_session`) does, and follows `0` to the close tick. The
-  sub-list, text-box and flag-window exits hand back to `0x1A`, the hub's
-  draw tick, which the panel host does not run: it drops the actor and records
-  the pair in `PanelFrame::exits`.
+  sub-list, text-box and flag-window exits hand back to `0x1A`, the draw tick
+  `FUN_801F20B0`, which it runs next (`PanelActorKind::DrawTick`): state `0`
+  installs the panel script at `0x801F2A88` (one `CloseAll` record in the
+  PROT 0897 image), then it pumps and clears the completion gate while the
+  input lock is down, and the actor retires.
 - **The chords that install an actor.** Retail reaches this band from debug
   branches in the controller. The engine gates it behind the top-view toggle's
   `debug_enabled` flag and binds Square (sub-list), L1 (fade/flash, pressed

@@ -197,10 +197,34 @@ fn the_sub_list_cancel_closes_the_window_and_retires() {
     h.tick(0, 0, 1, &mut f); // phase 0 -> 1, window open
     assert!(h.windows.is_open(SUBLIST_PANEL_INDEX));
     h.tick(0, cancel(), 1, &mut f); // phase 1 -> 2
-    let frame = h.tick(0, 0, 1, &mut f); // phase 2: close + exit
+    let frame = h.tick(0, 0, 1, &mut f); // phase 2: close + exit to 0x1A
+    assert!(!frame.retired, "the exit hands the actor to the draw tick");
+    assert_eq!(h.kind, Some(PanelActorKind::DrawTick));
+    assert_eq!(h.handler_id, crate::submode_hub_actors::slot::DRAW_TICK);
+    // `FUN_801F20B0`: install its panel script, pump, clear the gate - the
+    // dispatcher then retires the actor.
+    let frame = h.tick(0, 0, 1, &mut f);
     assert!(frame.retired);
     assert!(!h.is_active());
     assert!(!h.windows.is_open(SUBLIST_PANEL_INDEX));
+}
+
+/// A locked input keeps the draw tick's completion gate up, as the close
+/// tick's does, so the actor stays until the lock drops.
+#[test]
+fn the_draw_tick_waits_out_the_input_lock() {
+    let mut h = PanelActorHost::new();
+    h.install(PanelActorKind::SubList, 0x11);
+    let mut f = Flags::default();
+    h.tick(0, 0, 1, &mut f);
+    h.tick(0, cancel(), 1, &mut f);
+    h.tick(0, 0, 1, &mut f);
+    assert_eq!(h.kind, Some(PanelActorKind::DrawTick));
+    h.input_locked = true;
+    assert!(!h.tick(0, 0, 1, &mut f).retired);
+    assert!(h.is_active());
+    h.input_locked = false;
+    assert!(h.tick(0, 0, 1, &mut f).retired);
 }
 
 #[test]
@@ -296,9 +320,12 @@ fn the_text_box_confirm_asks_for_the_party_restore() {
     let frame = h.tick(0, confirm(), 1, &mut f);
     assert!(frame.restore_party);
     assert_eq!(h.phase, 2);
-    // Dismissing the confirmation retires the actor.
+    // Dismissing the confirmation hands the actor to the draw tick, which
+    // retires it on its first frame.
     let frame = h.tick(confirm(), confirm(), 1, &mut f);
-    assert!(frame.retired);
+    assert!(!frame.retired);
+    assert_eq!(h.kind, Some(PanelActorKind::DrawTick));
+    assert!(h.tick(0, 0, 1, &mut f).retired);
 }
 
 #[test]

@@ -53,8 +53,8 @@
 //! actor. The handler-id dispatcher `FUN_801F159C` is ported
 //! (`crate::submode_hub_actors::hub_dispatch`); the host follows a terminal
 //! [`crate::world_map_panel_actors::ActorExit`] to the next handler for the
-//! ids whose bodies are ported (the close tick `0` and the travel arts
-//! `0x29` / `0x2B`) and retires the actor on any other.
+//! ids whose bodies are ported (the close tick `0`, the draw tick `0x1A` and
+//! the travel arts `0x29` / `0x2B`) and retires the actor on any other.
 
 // ---------------------------------------------------------------------------
 // FUN_801E9B3C - panel command-script interpreter
