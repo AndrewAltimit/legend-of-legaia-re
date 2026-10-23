@@ -499,8 +499,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
                 model.
               </p>
               <p>
-                <b>Fitted rather than traced:</b> the PLAYER SELECT screen's camera and line-up,
-                the menu layout and the animation slot order. When the
+                The PLAYER SELECT camera and line-up, the NEXT GAME / PAY OUT menu and the
+                animation slot order are traced and run here; only the text-menu fallback, drawn
+                when the cabinet art is missing, is laid out by the page. When the
                 presentation assets do not decode, the duel falls back to the stat panel above
                 and says so - no stand-in art is drawn.
               </p>
@@ -655,11 +656,13 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
                 venue's own camera from behind the party.
               </p>
               <p>
-                <b>Fitted rather than traced:</b> the line / bobber / ripple overlay, the
-                exact strike-denominator ladder, the fight's reel-in rates, and the
+                <b>Traced and run here:</b> the fishing line (retail's line packet off the rod
+                tip), the strike-denominator ladder and the HUD sprites.
+                <b>Fitted rather than traced:</b> the bobber, the fight's reel-in rates and the
                 fish-behaviour branch order (its pull / dart / sink formulas are per-species disc
-                data). The HUD glyph atlas is the one undecoded fishing asset, so its icons draw
-                as labelled text. The line-snap loss is an engine-side reading.
+                data). <b>Traced, but this page still uses its own value:</b> the ripple rings,
+                and the line snap - retail breaks the line on a 1-in-10 roll each frame at the
+                tension ceiling and spends a lure, while the port snaps at once and spends none.
               </p>
             </div>
           </div>
@@ -795,20 +798,23 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
                 and the Hyper Arts list window.
               </p>
               <p>
-                <b>Fitted rather than traced:</b> the base camera seat, fighter spacing and
-                facing; the banner's speed-line rays and the SUPER/MIRACLE word composition
-                (only the HYPER strip is packet-pinned); the chips' glide-in motion; the
-                KO clip pick; the opponent's greedy command AI (retail has no dome-specific AI
-                table); the jitter-free level growth (retail adds a zero-mean random spread);
-                the awarded Seru;
-                the review / Begin-Reselect screen geometry; and the arts list showing
-                every table art - the page does not model arts <em>learning</em>.
-                <b>Two of those are now traced instead:</b> the three UI blips are
-                accept (<code>0x21</code>), highlight-moved (<code>0x22</code>) and
-                refused-or-back (<code>0x23</code>); and retail's <b>Auto</b> has no picker
-                at all - it commits the command string saved into the character's own record
-                on the previous round's review confirm, which is also why a reopened input
-                screen starts with the last round's pennants.
+                <b>Traced and run here:</b> the camera seat, fighter spacing and facing
+                (the battle camera director's formation seats), the knockdown clip pick, and
+                the three UI blips - accept (<code>0x21</code>), highlight-moved
+                (<code>0x22</code>) and refused-or-back (<code>0x23</code>).
+                <b>Fitted rather than traced:</b> the banner's speed-line rays and the
+                SUPER/MIRACLE word composition (only the HYPER strip is packet-pinned); the
+                opponent's greedy command AI; the review screen's geometry; the caption Seru
+                (the arena grants no Seru - the value is only a caption index, and which one
+                retail writes is not pinned); and the arts list showing every table art - the
+                page does not model arts <em>learning</em>.
+                <b>Traced, but this page still uses its own value:</b> the chips' glide-in
+                (retail glides each chip 24 frames from the pressed chip), the Begin / Reselect
+                plate positions, the level growth (retail adds a small zero-mean random spread),
+                and <b>Auto</b>: retail has no picker at all - it commits the command string
+                saved into the character's own record on the previous round's review confirm,
+                which is also why a reopened input screen starts with the last round's
+                pennants - while this page still fills Auto greedily.
                 <b>The Ra-Seru chip is live now,</b> on this page and in the native
                 window: the shared session carries retail's three gates (the member's
                 Ra-Seru, the sealed-magic status bit, the restriction word's magic bit),
@@ -1259,7 +1265,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       '<br><br><b>The two competitors are running for real</b> - retail judges every dancer ' +
       'through the same award routine, feeding the CPU dancers a pad word synthesised from ' +
       'the same chart - so hands off the pad and they will beat you. Approximated here: the ' +
-      'banner motion curves and the post-spin input-lockout timing. Full trace: ' +
+      'rating banner and star fade (the READY count-in runs retail\u2019s envelope). Full trace: ' +
       '<code>docs/subsystems/minigame-dance.md</code>.';
     danceLoadJukebox();
   }
