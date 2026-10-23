@@ -235,7 +235,10 @@ box it draws itself (the sparring-tutorial prompt).
 
 **The breadcrumb trail.** From the command ring on, the plaque sits behind the
 round prompt's `Begin` chip, which has glided to `(16, 14)` as a gold tab
-(record 1); the plaque (record `0x1A`) rests at `(68, 14)`. Choosing a ring arm
+(record 1); the plaque (record `0x1A`) rests at `(68, 14)`. The commit-confirm
+screen `0x6E` keeps the tab and sends the plaque back up
+(`party_basic_attack_vs_gobu_gobu`: record `0x1A` at `(68, -24)`, the `Begin`
+tab alone at the top left; port `battle_begin_tab_alone`). Choosing a ring arm
 glides that arm's chip onto the trail as a third tab abutting the plaque, at
 `x = width(name) + 0x54`:
 

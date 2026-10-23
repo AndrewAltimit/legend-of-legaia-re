@@ -265,9 +265,11 @@ pub fn battle_hud_frame_draws(
             // parks the plaque while that window is up (the
             // battle_item_window capture shows the crumbs alone), so the
             // frame draws one or the other, never both.
+            // The commit-confirm screen parks it too, under the lone
+            // `Begin` tab (`bh::battle_begin_tab_alone`).
             plaque: plaque
                 .as_ref()
-                .filter(|_| w.battle.item_menu.is_none())
+                .filter(|_| w.battle.item_menu.is_none() && !bh::battle_begin_tab_alone(w))
                 .map(|(_, n)| n.as_str()),
             plaque_badge: bh::battle_plaque_element_badge(w),
             banner: banner.as_deref(),
