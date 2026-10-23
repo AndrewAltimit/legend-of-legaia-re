@@ -573,6 +573,7 @@
     "approach_fix",
     "arenas",
     "bonus_drop",
+    "conkram_freeze_fix",
     "enemy_hp_bar",
     "flee_exp",
     "jewel_fix",
@@ -1044,7 +1045,10 @@
     "scene-formats"
    ],
    "dev_deps": [
-    "prot"
+    "disc-patch",
+    "prot",
+    "translate",
+    "ui-formats"
    ],
    "bins": [],
    "lib": true,
@@ -1302,6 +1306,7 @@
     "engine-system",
     "engine-vm",
     "game-tables",
+    "gamedata",
     "mes",
     "minigame-formats",
     "overlay-images",
@@ -1463,6 +1468,7 @@
    "dependents": [
     "engine-capture",
     "engine-core",
+    "engine-minigame-scenes",
     "engine-scene-host",
     "engine-screens",
     "engine-session",
@@ -1735,7 +1741,10 @@
     "tim",
     "ui-formats"
    ],
-   "dev_deps": [],
+   "dev_deps": [
+    "disc-patch",
+    "translate"
+   ],
    "bins": [],
    "lib": true,
    "modules": [
@@ -1810,6 +1819,7 @@
     "engine-battle-menus",
     "engine-battle-vm",
     "engine-camera",
+    "engine-effects",
     "engine-field",
     "engine-fishing",
     "engine-minigames",
@@ -2174,7 +2184,8 @@
     "save",
     "scene-formats",
     "tim",
-    "tmd"
+    "tmd",
+    "ui-formats"
    ],
    "dev_deps": [
     "disc-audit",
@@ -2186,7 +2197,6 @@
     "mdt",
     "mes",
     "seq",
-    "ui-formats",
     "vab"
    ],
    "bins": [],
@@ -2242,7 +2252,8 @@
     "font",
     "game-tables",
     "minigame-formats",
-    "render-kernels"
+    "render-kernels",
+    "ui-formats"
    ],
    "dev_deps": [
     "save"
@@ -2817,6 +2828,8 @@
     "item_effect",
     "item_names",
     "level_up_tables",
+    "menu_pool",
+    "menu_string_refs",
     "menu_windows",
     "mode_table",
     "move_power",
@@ -2895,6 +2908,7 @@
    "track": "tooling",
    "scope": "Curated game-data tables (arts, magic, items, weapons, armor, accessories, enemies, shops, casino, fishing, music tracks, scene names) mined from public walkthroughs; the music and scene-name tables contributed by Stann0x. These are <strong>ground-truth labels</strong> for the binary records under RE, not disc data. See <code>docs/reference/gamedata.md</code>.",
    "dependents": [
+    "engine-core",
     "engine-system",
     "patcher",
     "studio",
@@ -3164,6 +3178,7 @@
     "overlay_ptr_table",
     "slot_b_module",
     "static_overlay",
+    "string_refs",
     "summon_overlay"
    ],
    "band": "families",
@@ -3185,6 +3200,7 @@
     "game-tables",
     "render-kernels",
     "scene-formats",
+    "ui-formats",
     "web-minigames",
     "web-play"
    ],
@@ -3953,6 +3969,7 @@
    "package": "legaia-ui-formats",
    "deps": [
     "container-formats",
+    "overlay-images",
     "prot",
     "tim"
    ],
@@ -3966,6 +3983,7 @@
     "init_pak",
     "interior_page",
     "menu_glyph_atlas",
+    "name_entry_prompts",
     "save_icon",
     "screen_elements",
     "system_ui_bundle",
@@ -3986,6 +4004,8 @@
     "engine-menu-runtime",
     "engine-menus",
     "engine-scene",
+    "engine-scene-host",
+    "engine-screens",
     "engine-shell",
     "engine-title",
     "engine-ui",
