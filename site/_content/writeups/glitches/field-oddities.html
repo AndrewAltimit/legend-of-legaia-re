@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../../index.html">home</a> &middot; <a href="../index.html">write-ups</a> &middot; <a href="index.html">glitches</a> &middot; field oddities</div>
   <h1>WORK ERR, missing encounters and script slips</h1>
-  <p class="lede">Four community-reported oddities that live in the field and battle runtime rather than in one attack or item: a debug counter that reaches the screen on Mt. Rikuroa, the random battles that stop in Jette's Absolute Fortress, the camera orbit that ends the Gaza rematch, and three small slips in the English script. One section is a mechanic rather than a fault: the two springs in Rogue's Tower that change the encounter rate. One is a freeze that needs an emulator to trigger it: the heap running out in Conkram's mirror scene when the emulated CPU is too fast. Each is explained from the game's own code and data, with the addresses to check.</p>
+  <p class="lede">Five community-reported oddities that live in the field and battle runtime rather than in one attack or item: a debug counter that reaches the screen on Mt. Rikuroa, the random battles that stop in Jette's Absolute Fortress, the freeze after a Spikefish Flute escape, the camera orbit that ends the Gaza rematch, and three small slips in the English script. One section is a mechanic rather than a fault: the two springs in Rogue's Tower that change the encounter rate. One is a freeze that needs an emulator to trigger it: the heap running out in Conkram's mirror scene when the emulated CPU is too fast. Each is explained from the game's own code and data, with the addresses to check.</p>
 </header>
 
 <div class="notice">
@@ -870,9 +870,59 @@ caption reads scene_data[sectors * 0x800 - 0x2E344]   (reached only from 93 sect
     <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - reproduced on two emulators by changing only the emulated CPU speed; why a faster CPU keeps more parts alive is inference</dd>
   </dl>
 
+  <div class="notice">
+    <div class="notice-title">In short</div>
+    <ul class="bullets">
+      <li><strong>What you see.</strong> The picture stops during the mirror scene, on some emulators; nobody reports it on a PS1 or PS2.</li>
+      <li><strong>Why.</strong> The room leaves the game's heap almost full. An emulated CPU faster than a console's draws more frames and keeps more effect parts alive, and an allocation fails. The code that asked for it never checks, and copies animation data to address zero - over the CPU's exception vector. The next interrupt loops forever.</li>
+      <li><strong>Why some emulators.</strong> It depends on CPU speed alone: SwanStation passes at 100 % and froze from 125 % with one save; PCSX-ReARMed freezes at the faster clock it applies to this game by default and passed at the lower clocks tried (30 to 50).</li>
+      <li><strong>What to do.</strong> Set the emulator's CPU speed to 100 % (on PCSX-ReARMed, a lower CPU clock) for this scene, then put it back.</li>
+    </ul>
+  </div>
+
   <p>The players call it an FMV, but no movie plays here: it is an ordinary in-engine cutscene. After the party sets the Seru Flame down before the mirror (&ldquo;That mirror is the door to the past&rdquo;), the crossing changes the music, lifts the party off the floor, lights a glow on the mirror, shows <strong>three pages of text</strong> spoken by Terra, fades to white and loads past Conkram.</p>
   <p>The game shares one small heap between the scene, its effects and anything it loads. In this room only about 16.6 KB of it is free before the crossing starts. During the crossing the game also loads the party's battle files ahead of time, and the scene's effect parts each take two blocks: a render node and an animation buffer. On a console-speed emulator the free space bottoms out at about 3.7 KB and the scene finishes. On an emulator whose CPU runs faster, the game draws more frames per second (20 per 30 vsyncs instead of 15 in this room in one capture), more parts are alive at once, and the heap runs out.</p>
   <p>The routine that sets up a part's animation never checks whether it got its memory. Handed a NULL pointer, it copies the animation data to address zero. On the PlayStation that is real RAM, and the copy covers <code>0x80000028..0x8000008C</code>, including the CPU's exception vector at <code>0x80000080</code>. The next interrupt runs the copied data as code, hits a reserved instruction at the vector itself and raises the same exception again, forever. The picture stops; pSX logs exactly that as a stream of illegal opcodes.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two panels. Top: free heap in the Room of Mirrors, drawn to scale. Before the crossing about 16.6 KB is free. At console speed on PCSX-Redux the crossing takes it down to 5,152 bytes in total with a largest free block of 3,708 bytes, and the scene finishes. With a faster emulated CPU the game draws more frames, more effect parts are alive, the free heap reaches zero and a 0x88-byte keyframe buffer request returns NULL. Bottom: the bottom of RAM. The move VM copies the four-lane keyframe through the NULL pointer over 0x80000028 to 0x8000008C, which covers the general exception vector at 0x80000080. The next interrupt runs the copied data, raises a reserved-instruction exception at 0x80000084 and re-enters the same vector forever.">
+      <defs><marker id="cm-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text x="16" y="22" class="dg-label dg-start">1  Free heap in the Room of Mirrors (to scale)</text>
+      <text x="218" y="65" class="dg-sub" style="text-anchor:end">before the crossing</text>
+      <rect x="230" y="48" width="300.0" height="26" rx="3" class="dg-group"/>
+      <rect x="230" y="48" width="300.0" height="26" rx="3" class="dg-node-accent"/>
+      <text x="540.0" y="65" class="dg-sub dg-start">about 16.6 KB</text>
+      <text x="218" y="115" class="dg-sub" style="text-anchor:end">console speed, low point</text>
+      <rect x="230" y="98" width="300.0" height="26" rx="3" class="dg-group"/>
+      <rect x="230" y="98" width="93.1" height="26" rx="3" class="dg-node-ok"/>
+      <text x="540.0" y="115" class="dg-sub dg-start">5,152 bytes in all; largest block 3,708</text>
+      <text x="218" y="165" class="dg-sub" style="text-anchor:end">faster emulated CPU</text>
+      <rect x="230" y="148" width="300.0" height="26" rx="3" class="dg-group"/>
+      <rect x="232" y="104" width="63.0" height="14" rx="2" class="dg-node"/>
+      <path d="M226 152 L244 170 M244 152 L226 170" fill="none" stroke="var(--warn)" stroke-width="2.5"/>
+      <text x="254" y="165" class="dg-sub dg-start">runs out: a 0x88-byte keyframe buffer comes back NULL</text>
+      <text x="40" y="204" class="dg-sub dg-start">What eats it: the party battle files PLAYER1..3, pre-loaded after the music swap,</text>
+      <text x="40" y="220" class="dg-sub dg-start">and the effect parts, each a 0x9C render node plus a keyframe buffer.</text>
+      <text x="40" y="236" class="dg-sub dg-start">A faster CPU draws more frames (20 per 30 vsyncs instead of 15) and keeps more parts alive.</text>
+      <text x="16" y="276" class="dg-label dg-start">2  Where the NULL copy lands: the bottom of RAM</text>
+      <rect x="120" y="300" width="640" height="34" rx="3" class="dg-node"/>
+      <rect x="220.0" y="300" width="250.0" height="34" class="dg-node-warn"/>
+      <text x="330.0" y="322" class="dg-sub">copied through NULL</text>
+      <rect x="440.0" y="294" width="30.0" height="46" rx="2" fill="none" stroke="var(--warn)" stroke-width="2"/>
+      <path class="dg-edge-dim" d="M120.0 340 L120.0 350"/><text x="120.0" y="364" class="dg-sub">0x80000000</text>
+      <path class="dg-edge-dim" d="M220.0 340 L220.0 350"/><text x="220.0" y="364" class="dg-sub">0x80000028</text>
+      <path class="dg-edge-dim" d="M470.0 340 L470.0 350"/><text x="470.0" y="364" class="dg-sub">0x8000008C</text>
+      <path class="dg-edge-dim" d="M760.0 340 L760.0 350"/><text x="760.0" y="364" class="dg-sub">0x80000100</text>
+      <text x="455.0" y="288" class="dg-sub">exception vector 0x80000080</text>
+      <path class="dg-edge" marker-end="url(#cm-ah)" d="M470.0 308 C 580.0 280, 580.0 370, 472.0 330"/>
+      <text x="566.0" y="323" class="dg-sub dg-start">every interrupt</text>
+      <text x="120" y="396" class="dg-sub dg-start">next interrupt jumps to the vector and runs the copied data:</text>
+      <text x="120" y="412" class="dg-sub dg-start">reserved instruction (Cause 0x428) at 0x80000084, which</text>
+      <text x="120" y="428" class="dg-sub dg-start">enters the same vector again - forever. The picture stops.</text>
+      <text x="120" y="456" class="dg-sub dg-start">Before: 00001A3C 800C5A27 08004003 (the BIOS jump to its handler).</text>
+    </svg>
+    <figcaption>Top: free heap in this room as the docs measure it, drawn to scale; the console-speed row is PCSX-Redux at console speed, which passes. The fast-CPU row is where SwanStation at 125 % and above and PCSX-ReARMed at its default end up. At 200 % SwanStation the allocation fails about 70 vsyncs into the crossing, before any text page; on PCSX-ReARMed&#x27;s default about 560 vsyncs in, around the first page. Bottom: the 0x88-byte, four-lane copy through the NULL pointer, to scale over the first 256 bytes of RAM.</figcaption>
+  </figure>
+
 
   <ol class="steps steps-vertical">
     <li><b>Heap nearly full</b><span>About 16.6 KB free in <code>concnow</code>; the allocator <code>FUN_8002B468</code> is best-fit over one free list.</span></li>

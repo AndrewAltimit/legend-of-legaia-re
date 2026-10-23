@@ -219,7 +219,7 @@ enhancement has a retail-faithful off position
 | `R` | Free-angle movement | off (retail 4/8-way movement), remembered | - |
 | `T` | Camera distance preset: retail, far, farther | far, remembered | - |
 | `F3` | Wide debug orbit camera | off | - |
-| `F2` | Mute audio | off | `--no-audio` |
+| `F2` | Mute audio | off, remembered | `--no-audio` |
 | `F1` | The engine's diagnostic text rows | off | - |
 | `F11`, `Alt+Enter` | Borderless fullscreen | off, remembered | `--fullscreen` / `--windowed` |
 

@@ -1,9 +1,9 @@
 # WORK ERR, missing encounters and script slips
 
-Four community-reported oddities that live in the field and battle runtime rather than in one
+Five community-reported oddities that live in the field and battle runtime rather than in one
 attack or item: a debug counter that reaches the screen on Mt. Rikuroa, the random battles that
-stop in Jette's Absolute Fortress, the camera orbit that ends the Gaza rematch, and three small
-slips in the English script. One section is a mechanic rather than a fault: the two springs in
+stop in Jette's Absolute Fortress, the freeze after a Spikefish Flute escape, the camera orbit
+that ends the Gaza rematch, and three small slips in the English script. One section is a mechanic rather than a fault: the two springs in
 Rogue's Tower that change the encounter rate. One is a freeze that needs an emulator to trigger it:
 the heap running out in Conkram's mirror scene when the emulated CPU is too fast. A closing section records the identity of
 the two summon flutes, as support for the flute pages.
