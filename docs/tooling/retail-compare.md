@@ -1377,39 +1377,62 @@ in its pool on the capture frame (`RetailBattle::effect_children`,
 child's batch is its anim cursor `+0x1C` less `2 + 6 * frame_cursor`, looked
 up in the pack0 pointer table at the pool head's `+0x08`.
 
-The children are the displayed frame's, taken back the display lag one walker
-sweep at a time (`rewind_effect_child`; the walker sweeps once a vsync): a
-child whose wait still holds its frame's whole delay entered that frame on
-the sweep and steps back onto the previous one at wait `0`, any other gains
-`8`, each takes back one motion step, and a child on its first frame within
-`8` of its first delay was seeded inside the window and is dropped. The
-masters stay the replay's; a frame draws only children.
+The children are the displayed frame's, taken back one walker sweep at a time
+(`rewind_effect_child`; the walker sweeps once a vsync): a child whose wait
+still holds its frame's whole delay entered that frame on the sweep and steps
+back onto the previous one at wait `0`, any other gains `8`, each takes back
+one motion step, and a child on its first frame within `8` of its first delay
+was seeded inside the window and is dropped. The masters stay the replay's; a
+frame draws only children (`effect_children.rs`).
+
+**How far back is the double buffer's phase.** Retail keeps two records at
+`0x8007BF30` (`0x74` bytes each, `FUN_8001DAF8`): a display environment, a
+draw environment and the ordering table at `+0x70`. The frame-end flip
+(`0x800171E4..0x80017288` in `FUN_80016E4C`) puts the current record
+(`gp+0x434`), flips the index and hands the GPU the table just built; the
+screen shows the buffer the GPU drew the pass before. A state saved while the
+CPU still builds its pass has that pass's table under the current record, and
+the screen is two passes back. A state saved after the flip has the newest
+table under the other record, and the screen is the pass just before it. The
+newest table is the one that draws the live children on their current frames
+rather than on the frames they drew a pass before. The lag is the displayed
+passes' own steps (`pass_steps`), not `display_lag_vsyncs`, whose
+`frame_step` reads the clamped history entry `0x2BC` as step `3` where the
+frame driver stepped `4`.
+
+`gimard_burning_attack` is an after-flip state with a clamped history. A
+PCSX-Redux film of the same cast from `gimard_summon_visible`
+(`autorun_effect_pool_film.lua`, `effect_pool_film_match.py`) reproduces the
+capture's pool exactly at vsync `325` and its displayed frame to an MAE of
+`0.2` at `329`. The walker runs four sweeps a pass, and the frame on screen
+drew the previous pass's ten children, not those of the pass two back that
+six sweeps of rewind had approximated. Seated at the film's own pools, the
+previous pass scores `.873`, the RAM's `.805`, two passes back `.806`; the
+reader now lands the previous pass (`.838` to `.872`). Two of that pass's
+children (slots 8 and 9) retire before the RAM's pass and are not recovered:
+an after-flip state's older table is already cleared for the next pass, so
+nothing in RAM says when a dead slot retired. They are worth `.001`. What
+remains on the frame is the creature and camera, which the image gate still
+places two passes back (see [Open](#open-the-double-buffers-phase-for-the-rest-of-the-frame)).
 
 A child the walker retired inside the window is the other edge, and it is
 still on screen. Retirement zeroes only the slot's frame count: the mirror,
 the position and the batch survive, the anim cursor run past the batch end by
 the retirement overrun (the frame loop keeps striding while the delay byte it
 lands on is zero). The slot does not say when it retired; the older ordering
-table does. It is the pass before the RAM's, and a child alive there drew its
-final frame as a `0x2E` quad of that frame's atlas rect, CLUT, page and
-brightness in the slot's mirror order. A dead slot is seeded as retired on the
-newest sweep when a table holds more such quads than the live children
-account for on that pass (each taken back one frame step), on its final frame
-one sweep before the retirement and taken back the rest of the lag
-(`retired_effect_children`). `battle_gimard_tail_fire_a`'s slot 6, a flame puff
-the older table draws at `x 148..238` with brightness `18` and the newer one
-not at all, is the faint haze left of the flame on the displayed frame (image
-`.941` to `.962`).
+table does, while it still holds its pass. A dead slot whose frame `k` quad
+(atlas rect, CLUT, page, brightness, mirror order) that table holds beyond
+what the live children account for there is taken as on frame `k` that pass,
+at the longest wait that still retires it within the newest pass, then taken
+back to the displayed pass (`retired_children`). `battle_gimard_tail_fire_a`'s
+slot 6, a flame puff the older table draws at `x 148..238` with brightness
+`18` and the newer one not at all, is the faint haze left of the flame on the
+displayed frame (image `.941` to `.962`).
 
 Every billboard the image child draws lands where retail's packet does:
 `LEGAIA_DIAG_FX_ALL` prints each quad's screen bounds, and on
 `battle_gimard_tail_fire_a` the near puff spans `x 138..241, y 101..203`
-against the older table's `138..240, 101..203`, the rest within a pixel or two
-of the quads they pair with one frame step later. `gimard_burning_attack`'s
-breath cloud is ten such children, and the lag holds there too: seated as the
-RAM holds them instead of taken back, the frame scores `.805` against `.838`,
-and with no billboards at all `.804`. Its residual is the cloud's shape inside
-the quads, not where the quads stand.
+against the older table's `138..240, 101..203`.
 
 A readable pool with no live child is seated too, as an empty set
 (`RetailBattle::effect_children` is `None` only when the state holds no
@@ -1422,6 +1445,18 @@ The fire clouds were the largest single difference on the enemy-attack
 states: `battle_gimard_tail_fire_a` rose from `.822` to `.925`, `_b` from
 `.807` to `.897`, `gimard_burning_attack` from `.786` to `.817` and
 `rim_elm_gimard_victory` from `.888` to `.891`.
+
+### Open: the double buffer's phase for the rest of the frame
+
+The effect children read the double buffer's phase; every other lag consumer
+(the camera walk-back, the part and scroller seeds, the HUD glides, the image
+retake) still takes the two-pass law and `frame_step`. On an after-flip
+capture they place the frame a pass too far back, and on a clamped history
+with a step too short. `gimard_burning_attack` shows it on the creature,
+whose head and tail stand a pass off retail's. The phase reader
+(`displayed_passes_back`) needs a newest-table test that does not lean on
+effect quads before it can serve them all - the battle floor's lattice fit
+(`camera_pool`) is one, absent inside a summon tunnel.
 
 ### The keyframe each body stands on
 

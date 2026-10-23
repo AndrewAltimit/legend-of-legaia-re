@@ -636,7 +636,7 @@ fn effect_children_are_the_displayed_frames() {
         put32(&mut ram, c + 0x10, (-300i32 << 8) as u32);
         put32(&mut ram, c + 0x1C, entry + 2 + 6 * u32::from(cursor));
     }
-    let seeds = ram_read::retail_effect_children(&ram).expect("a pool");
+    let seeds = effect_children::retail_effect_children(&ram).expect("a pool");
     assert_eq!(seeds.len(), 2);
     assert_eq!(seeds[0].anim_id, 1);
     assert_eq!((seeds[0].frame_cursor, seeds[0].wait), (2, 32));
@@ -652,12 +652,15 @@ fn effect_children_are_the_displayed_frames() {
 #[test]
 fn an_empty_effect_pool_is_still_a_seat() {
     let mut ram = vec![0u8; 0x20_0000];
-    assert!(ram_read::retail_effect_children(&ram).is_none());
+    assert!(effect_children::retail_effect_children(&ram).is_none());
     let pool = 0x800E_6A5C;
     put32(&mut ram, 0x8007_BD30, pool);
     put16(&mut ram, pool, 0x1000);
     put32(&mut ram, pool + 8, 0x800E_46E8);
-    assert_eq!(ram_read::retail_effect_children(&ram), Some(Vec::new()));
+    assert_eq!(
+        effect_children::retail_effect_children(&ram),
+        Some(Vec::new())
+    );
 }
 
 /// On the action seed's own pass the image child stands each combatant on
@@ -882,4 +885,119 @@ fn unconfirmed_pass_steps_keep_the_history_max() {
     assert_eq!(pass_steps(&ram), [4, 3]);
     assert_eq!(display_pass_steps(&ram), [3, 3]);
     assert_eq!(display_lag_vsyncs(&ram), 6);
+}
+
+/// A synthetic pool with one live child and one dead slot, two ordering
+/// tables and the double buffer's records: the newest table draws the live
+/// child's current quad, the older one the dead slot's last frame. Mid-pass
+/// (the newest table under the current record) the displayed frame is two
+/// passes back and the dead slot comes back a sweep before its last frame's
+/// end; after the flip (the newest table under the other record) the screen
+/// shows the older table's pass itself.
+#[test]
+fn retired_effect_children_come_back_from_the_older_table() {
+    const POOL: u32 = 0x800E_6A5C;
+    const TABLE: u32 = 0x800E_46E8;
+    const ATLAS: u32 = 0x800E_4264;
+    const ENTRY: u32 = 0x800E_4782;
+    const NEWER: u32 = 0x800F_0000;
+    const OLDER: u32 = 0x800F_1000;
+    let build = |cur: u16| {
+        let mut ram = vec![0u8; 0x20_0000];
+        put32(&mut ram, frame_step::FORCED_STEP, 1); // one sweep a pass
+        put32(&mut ram, 0x8007_BD30, POOL);
+        put16(&mut ram, POOL, 0x1000);
+        put32(&mut ram, POOL + 4, ATLAS);
+        put32(&mut ram, POOL + 8, TABLE);
+        put32(&mut ram, TABLE + 4, ENTRY); // batch 1
+        // Three frames, atlas 0 / 1 / 2, hold 2 each; the byte past the batch
+        // (the overrun's stop) holds 1.
+        put16(&mut ram, ENTRY, 3);
+        for k in 0..4u32 {
+            put8(&mut ram, ENTRY + 2 + 6 * k, k as u8);
+            put8(&mut ram, ENTRY + 3 + 6 * k, if k < 3 { 2 } else { 1 });
+        }
+        for k in 0..3u32 {
+            let a = ATLAS + 8 * k;
+            put8(&mut ram, a, (k * 64) as u8);
+            put8(&mut ram, a + 1, 128);
+            put8(&mut ram, a + 2, 64);
+            put8(&mut ram, a + 3, 64);
+            put16(&mut ram, a + 4, 0x7683);
+            put16(&mut ram, a + 6, 0x25);
+        }
+        // Slot 0 live, just entered frame 1 (wait 16); slot 1 dead, its
+        // cursor run to 3.
+        let live = POOL + 0x10;
+        put8(&mut ram, live, 3);
+        put8(&mut ram, live + 1, 3);
+        put8(&mut ram, live + 2, 1);
+        put8(&mut ram, live + 3, 16);
+        put32(&mut ram, live + 0x1C, ENTRY + 2 + 6);
+        let dead = POOL + 0x30;
+        put8(&mut ram, dead + 1, 3);
+        put8(&mut ram, dead + 2, 3);
+        put8(&mut ram, dead + 3, 8);
+        put32(&mut ram, dead + 0x10, (-200i32 << 8) as u32);
+        put32(&mut ram, dead + 0x1C, ENTRY + 2 + 18);
+        // Two 64-bucket reverse-cleared tables, each with its quads.
+        let quad = |k: u32| {
+            let b = legaia_engine_vm::effect_vm::pass2_brightness(3, k as u8);
+            (b, (k * 64) as u8)
+        };
+        for (ot, quads) in [(NEWER, vec![quad(1)]), (OLDER, vec![quad(0), quad(2)])] {
+            put32(&mut ram, ot, 0x00FF_FFFF);
+            for i in 1..64u32 {
+                put32(&mut ram, ot + 4 * i, (ot + 4 * (i - 1)) & 0xFF_FFFF);
+            }
+            for (j, (bright, u)) in quads.into_iter().enumerate() {
+                let bucket = ot + 4 * (10 + j as u32);
+                let pkt = ot + 0x400 + 0x40 * j as u32;
+                put32(&mut ram, pkt, (9 << 24) | ((bucket - 4) & 0xFF_FFFF));
+                put32(&mut ram, bucket, pkt & 0xFF_FFFF);
+                put32(
+                    &mut ram,
+                    pkt + 4,
+                    (0x2E << 24) | (u32::from(bright) * 0x01_0101),
+                );
+                let (u0, u1, v0, v1) = (u, u + 63, 128u8, 191u8);
+                for (c, (uu, vv)) in [(u0, v0), (u1, v0), (u0, v1), (u1, v1)]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let extra = match c {
+                        0 => 0x7683u32 << 16,
+                        1 => 0x25 << 16,
+                        _ => 0,
+                    };
+                    put32(
+                        &mut ram,
+                        pkt + 12 + 8 * c as u32,
+                        extra | u32::from(uu) | (u32::from(vv) << 8),
+                    );
+                }
+            }
+        }
+        // Record 0 holds the newer table, record 1 the older.
+        put32(&mut ram, 0x8007_BF30 + 0x70, NEWER);
+        put32(&mut ram, 0x8007_BF30 + 0x74 + 0x70, OLDER);
+        put16(&mut ram, 0x8007_B74C, cur);
+        ram
+    };
+    let pick = |seeds: &[legaia_engine_core::world::EffectChildSeed]| {
+        let mut v: Vec<_> = seeds
+            .iter()
+            .map(|s| (s.frame_cursor, s.wait, s.pos[1] >> 8))
+            .collect();
+        v.sort();
+        v
+    };
+    // Mid-pass: two passes back. The live child steps back onto frame 0;
+    // the dead slot stood on its last frame at wait 0 one pass ago (it
+    // retired on the next sweep), wait 8 the pass before.
+    let mid = effect_children::retail_effect_children(&build(0)).expect("a pool");
+    assert_eq!(pick(&mid), vec![(0, 8, 0), (2, 8, -200)]);
+    // After the flip: one pass back, the older table's pass itself.
+    let after = effect_children::retail_effect_children(&build(1)).expect("a pool");
+    assert_eq!(pick(&after), vec![(0, 0, 0), (2, 0, -200)]);
 }
