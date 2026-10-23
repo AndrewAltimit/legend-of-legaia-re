@@ -519,6 +519,20 @@ zero-padded 2-wide minutes / seconds (`FUN_80034e4c`) at `+0x40` / `+0x58`.
 With the coin row the live window grows past its descriptor rect
 (`(24,166,104,38)` against `(24,178,104,24)`).
 
+The rect is the menu-open state's, not the descriptor's: `FUN_801DC6B4`
+state 0 first raises system flag `8` when the coin bank `0x800845A4` is
+non-zero (`0x801DC7EC..0x801DC800`, never cleared), then stores the
+descriptor's `y = 0xB4` and `h = 0x18` (`0x801DC810..0x801DC820`) and, with
+the flag set, `y -= 0xE`, `h += 0xE`. So the box draws at `y = 180` without
+coins (the disc's `178` never shows) and grows upward one row with them; a
+`sol_to_karisto_worldmap` capture of a coin holder's root menu has the gold,
+coin and clock values inking from y `168`, `182` and `196`. Port:
+`BootSession::open_field_menu` raises the flag,
+`engine-ui::pause_menu::money_box_rect` applies the rewrite, and
+`field_menu_draws_for` / `field_menu_icon_sprites_for` draw the coin row.
+Disc-gated oracle:
+`pause_learned_content_ladder::a_coin_holder_s_root_menu_shows_the_coin_row`.
+
 **Party panel (id 51, `FUN_801D030C`)**: one block per roster member (ids
 `u8[3]` at `0x80084598`, count `0x80084594`) at stride `0x3e`:
 
@@ -2083,7 +2097,6 @@ Where the port differs from retail today:
 | Area | Difference |
 |---|---|
 | Armament candidate lists | id-sorted, without retail's leading rows on an empty slot ([Equip screen](#port-of-the-equip-screen)) |
-| Money box | no casino coin row |
 | Spell level-up notice | port-composed sentence, shown over the resumed menu |
 | AP gauge fill | linear per-row interpolation; retail's sub-pixel truncation unpinned |
 | `FUN_801E4140` | `guarded_box_rect` has no caller on either host (nothing produces an out-of-range `y`); waived in `scripts/ci/ui-host-drift-waivers.toml` |

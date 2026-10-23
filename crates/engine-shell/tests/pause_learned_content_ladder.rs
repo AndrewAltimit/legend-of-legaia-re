@@ -770,3 +770,72 @@ fn the_incense_confirm_draws_the_overlay_prompt_lines() {
         lines[1].len()
     );
 }
+
+/// A party holding casino coins opens the pause menu with the money box's
+/// coin row (`FUN_801DC6B4` state 0 raises system flag `8`; `FUN_801D0148`
+/// tests it): the box moves up one row to `y = 166` and draws gold, coins
+/// and the clock at the 14-px pitch - the rows a retail capture of a coin
+/// holder's root menu shows (value ink from y 168 / 182 / 196). Without
+/// coins the box sits at `y = 180` with two rows.
+#[test]
+fn a_coin_holder_s_root_menu_shows_the_coin_row() {
+    let Some(mut s) = booted(&[], &[]) else {
+        return;
+    };
+    let flag = legaia_engine_menus::field_menu::SYSTEM_FLAG_CASINO_COIN_ROW;
+    let font = s.dialog_font.clone().expect("disc dialog font");
+    let value_rows = |s: &NativeSession| -> Vec<i32> {
+        let ctx = legaia_engine_ui::pause_menu::PauseMenuCtx {
+            font: &font,
+            rects: legaia_engine_ui::pause_menu::MenuRects::new(None),
+            chrome: None,
+            origin: (0, 0),
+            scale: 1,
+        };
+        let root = s.field_menu.as_ref().expect("the pause menu is open");
+        let draws = legaia_engine_screens::pause_screens::field_menu_root_draws(
+            &ctx,
+            root,
+            &s.host.world,
+            None,
+        );
+        // The box's value columns: right of the pictograms, left of the
+        // party panel.
+        let ys: std::collections::BTreeSet<i32> = draws
+            .texts
+            .iter()
+            .filter(|d| (24 + 0x20..128).contains(&d.dst.0) && d.dst.1 >= 150)
+            .map(|d| d.dst.1)
+            .collect();
+        ys.into_iter().collect()
+    };
+
+    tap(&mut s, PadButton::Start);
+    assert!(s.field_menu_is_open(), "Start did not open the pause menu");
+    assert!(!s.host.world.system_flag_test(flag), "no coins, no flag");
+    assert_eq!(
+        value_rows(&s),
+        [180, 194],
+        "gold + clock at the retail y = 180 box"
+    );
+    tap(&mut s, PadButton::Triangle);
+    for _ in 0..8 {
+        if !s.field_menu_is_open() {
+            break;
+        }
+        tap(&mut s, PadButton::Circle);
+    }
+    assert!(!s.field_menu_is_open(), "the menu did not close");
+
+    s.host.world.minigames.casino_coins = 42;
+    tap(&mut s, PadButton::Start);
+    assert!(
+        s.field_menu_is_open(),
+        "Start did not reopen the pause menu"
+    );
+    assert!(
+        s.host.world.system_flag_test(flag),
+        "the menu open raised the coin-row flag"
+    );
+    assert_eq!(value_rows(&s), [166, 180, 194], "gold, coins, clock");
+}

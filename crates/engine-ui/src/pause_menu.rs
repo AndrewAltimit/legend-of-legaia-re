@@ -382,9 +382,32 @@ pub struct TopLevelView<'a> {
     pub cursor: u8,
     pub money: u32,
     pub play_time_seconds: u32,
+    /// The casino coin bank, `Some` while the box shows its coin row
+    /// (system flag `8`, raised at menu open when the bank is non-zero).
+    pub coins: Option<u32>,
     pub party: &'a [FieldMenuPartyView<'a>],
     /// Per-member AP, for the info panel's gauges (sprite pass only).
     pub party_ap: &'a [u16],
+}
+
+/// Window 49's content rect as the menu-open state rewrites it.
+///
+/// `FUN_801DC6B4` state 0 stores the money / play-time box's descriptor `y`
+/// and `h` before the window opens (`0x801DC810..0x801DC844`): `y = 0xB4`,
+/// `h = 0x18`, then, when system flag `8` (the casino coin row) is set,
+/// `y -= 0xE` and `h += 0xE` - so the box grows upward by one row. The disc
+/// descriptor's own `y` (`178`) is never what draws.
+///
+/// PORT: FUN_801DC6B4 (state 0's window-49 rect rewrite, `0x801DC804..0x801DC844`)
+pub fn money_box_rect(
+    descriptor: (i32, i32, i32, i32),
+    coins: Option<u32>,
+) -> (i32, i32, i32, i32) {
+    let (x, _, w, _) = descriptor;
+    match coins {
+        Some(_) => (x, 0xB4 - 0x0E, w, 0x18 + 0x0E),
+        None => (x, 0xB4, w, 0x18),
+    }
 }
 
 /// Status sub-screen: the main panel plus its three satellite windows.
@@ -499,29 +522,45 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
     let mut sprites: Vec<SpriteDraw> = Vec::new();
     match screen {
         PauseScreen::TopLevel(v) => {
+            let money_rect = money_box_rect(ctx.rects.rect(window_ids::TOP_MONEY_TIME), v.coins);
+            let money_pen = (money_rect.0, money_rect.1);
             texts.extend(crate::field_menu_draws_for(
                 ctx.font,
                 v.rows,
                 v.cursor,
                 v.money,
                 v.play_time_seconds,
+                v.coins,
                 ctx.rects.pen(window_ids::TOP_COMMAND_LIST),
-                ctx.rects.pen(window_ids::TOP_MONEY_TIME),
+                money_pen,
             ));
             texts.extend(crate::field_menu_info_draws_for(
                 ctx.font,
                 v.party,
                 ctx.rects.pen(window_ids::TOP_INFO_PANEL),
             ));
-            sprites.extend(ctx.window_chrome(&legaia_game_tables::menu_windows::TOP_LEVEL_WINDOWS));
+            let others: Vec<usize> = legaia_game_tables::menu_windows::TOP_LEVEL_WINDOWS
+                .iter()
+                .copied()
+                .filter(|&id| id != window_ids::TOP_MONEY_TIME)
+                .collect();
+            sprites.extend(ctx.window_chrome(&others));
             if let Some(rects) = ctx.chrome {
+                let (x, y, w, h) = money_rect;
+                sprites.extend(crate::menu_window_chrome_draws_for(
+                    rects,
+                    (x - 8, y - 8, w + 16, h + 16),
+                    ctx.origin,
+                    ctx.scale,
+                ));
                 sprites.extend(crate::field_menu_icon_sprites_for(
                     rects,
                     v.cursor,
                     v.party_ap,
                     ctx.rects.pen(window_ids::TOP_COMMAND_LIST),
-                    ctx.rects.pen(window_ids::TOP_MONEY_TIME),
+                    money_pen,
                     ctx.rects.pen(window_ids::TOP_INFO_PANEL),
+                    v.coins.is_some(),
                     ctx.origin,
                     ctx.scale,
                 ));
@@ -1085,4 +1124,35 @@ pub fn spell_level_notice_draws(ctx: &PauseMenuCtx, line: &str) -> Vec<TextDraw>
     out.extend(ctx.hand(cursor.x, cursor.y));
     crate::scale_stage_text_draws(&mut out, ctx.origin, ctx.scale);
     out
+}
+
+#[cfg(test)]
+mod money_box_tests {
+    use super::*;
+
+    /// The menu-open rewrite: `y = 0xB4, h = 0x18`, one row taller and one
+    /// row higher with the coin row - whatever the descriptor's own `y`.
+    #[test]
+    fn the_money_box_grows_upward_by_one_row_with_the_coin_row() {
+        let desc = (24, 178, 104, 24);
+        assert_eq!(money_box_rect(desc, None), (24, 180, 104, 24));
+        assert_eq!(money_box_rect(desc, Some(0)), (24, 166, 104, 38));
+    }
+
+    /// With the coin row the box draws three value rows at the 14-px pitch:
+    /// gold, coins, then the clock.
+    #[test]
+    fn the_coin_row_sits_between_gold_and_the_clock() {
+        let font = legaia_font::synthetic_for_tests();
+        let rows_of = |draws: &[TextDraw]| -> Vec<i32> {
+            let ys: std::collections::BTreeSet<i32> = draws.iter().map(|d| d.dst.1).collect();
+            ys.into_iter().collect()
+        };
+        let with =
+            crate::field_menu_draws_for(&font, &[], 0, 5, 3671, Some(42), (24, 24), (24, 166));
+        assert_eq!(rows_of(&with), [166, 180, 194]);
+        let without =
+            crate::field_menu_draws_for(&font, &[], 0, 5, 3671, None, (24, 24), (24, 180));
+        assert_eq!(rows_of(&without), [180, 194]);
+    }
 }

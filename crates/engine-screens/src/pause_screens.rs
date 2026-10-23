@@ -115,6 +115,9 @@ pub fn field_menu_root_draws(
             cursor: view.cursor,
             money: view.money,
             play_time_seconds: view.play_time_seconds,
+            coins: world
+                .system_flag_test(legaia_engine_menus::field_menu::SYSTEM_FLAG_CASINO_COIN_ROW)
+                .then_some(world.minigames.casino_coins),
             party: &party,
             party_ap: &party_ap,
         }),

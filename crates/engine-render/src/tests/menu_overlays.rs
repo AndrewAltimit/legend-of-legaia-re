@@ -145,18 +145,17 @@ fn field_menu_draws_emit_rows_and_footer() {
             enabled: false,
         },
     ];
-    let draws = field_menu_draws_for(&font, &rows, 0, 1234, 90, (24, 24), (24, 178));
+    let draws = field_menu_draws_for(&font, &rows, 0, 1234, 90, None, (24, 24), (24, 178));
     assert!(!draws.is_empty());
     // Retail rows are all-white ink (selection = the hand sprite, drawn
-    // by the sprite pass); a disabled row grays out (the CLUT-0 stand-in
-    // is strictly darker than the CLUT-7 white).
+    // by the sprite pass); a disabled row draws in the CLUT-0 grey.
     let any_white = draws
         .iter()
         .any(|d| (d.color[0] - MENU_TEXT_WHITE[0]).abs() < 1e-5);
     assert!(any_white);
     let any_dim = draws
         .iter()
-        .any(|d| d.color[0] < 0.5 && d.color[0] > 0.05 && d.dst.1 < 178);
+        .any(|d| d.color == legaia_engine_ui::MENU_TEXT_GREY && d.dst.1 < 178);
     assert!(any_dim);
     // Row text starts at the retail label inset (WX + 0x14) and rows sit
     // on the 14-px pitch.

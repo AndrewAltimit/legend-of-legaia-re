@@ -229,6 +229,7 @@ fn compose_top_level(ctx: &PauseMenuCtx<'_>) -> PauseMenuDraws {
             cursor: 1,
             money: 1234,
             play_time_seconds: 3671,
+            coins: None,
             party: &party,
             party_ap: &[40],
         }),
