@@ -4,7 +4,7 @@
 //! The pool itself is simulation and lives in
 //! `legaia_engine_minigames::minigame_fx`; this is only its projection onto a
 //! surface. Both halves used to sit inside the play window, which is why the
-//! fishing splash, the wander ripples and the catch bursts existed on exactly
+//! fishing splash and the catch bursts existed on exactly
 //! one of the port's three surfaces.
 //!
 //! # The placeholder is the port's, and says so
@@ -44,9 +44,8 @@ pub fn fx_part_glyph(sprite: u16) -> &'static str {
     match sprite {
         0xb => "GOOD!",
         0x16 => "*",
-        // The port's own producer ids: splash, ripple, burst.
+        // The port's own producer ids: splash, burst.
         0x100 => "~",
-        0x101 => "o",
         0x102 => "*",
         _ => "+",
     }
@@ -149,8 +148,8 @@ mod tests {
         assert_eq!(fx_part_glyph(0xb), "GOOD!");
         assert_eq!(fx_part_glyph(0x16), "*");
         assert_eq!(fx_part_glyph(0x100), "~");
-        assert_eq!(fx_part_glyph(0x101), "o");
-        assert_ne!(fx_part_glyph(0x100), fx_part_glyph(0x101));
+        assert_eq!(fx_part_glyph(0x102), "*");
+        assert_ne!(fx_part_glyph(0x100), fx_part_glyph(0x102));
     }
 
     #[test]

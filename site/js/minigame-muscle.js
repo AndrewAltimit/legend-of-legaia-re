@@ -99,11 +99,11 @@
  * SUPER/MIRACLE banner word composition (atlas layout, only the HYPER
  * strip's draw is packet-pinned), the interval panel's caption and key
  * hint (its heading, six tally rows and ringside-still backdrop are the
- * retail emitters'), the command chips' own slide-in (retail slides them
- * between the element table's two endpoints; the page draws them parked at
- * the arrived endpoint), and the review screen's geometry (screenshot-read,
- * not packet-pinned). TRACED AND RUN through the engine: each committed
- * pennant's 24-frame glide from the pressed chip (`muscle_pennant_seat_json`,
+ * retail emitters'), and the review screen's geometry (screenshot-read,
+ * not packet-pinned). TRACED AND RUN through the engine: the direction
+ * chips' 16-frame slide-in from seat A (`muscle_chip_seats_json`), each
+ * committed pennant's 24-frame glide from the pressed chip
+ * (`muscle_pennant_seat_json`,
  * the `FUN_801d9bbc` step), the Begin|Reselect plates (placement records
  * 0x10 / 0x13), and Auto - the session reloads the character's saved command
  * string for the review and the round rebuilds the queue through the pool
@@ -112,12 +112,11 @@
  * the learned-art constant. Without a disc image the chrome falls back to
  * the old canvas approximation.
  *
- * HONEST GAPS: the rules engine resolves each committed command as a basic
- * strike - retail expands a recognized art sequence through the art records
- * (more damage), so here the arts banner is presentation over the real
- * recognition, not an arts damage model; and the port has no cast path, so
- * the Ra-Seru (magic) chip renders disabled even though retail's Beginner/
- * Expert courses allow magic.
+ * The rules are the engine's shared session: a committed string resolves
+ * through the retail tokenizer (a matched art plays its own move-power
+ * row), the Ra-Seru chip casts through the battle's cast rule, and the
+ * opponent picks through the ordinary battle's monster AI over its own
+ * record.
  *
  * Requires webgl-math.js + webgl-shaders.js + webgl-tmd.js first.
  * Loaded before this file: canvas-abr.js (the semi-transparency
@@ -166,6 +165,7 @@ window.MgMuscle = (function () {
     let magicRows = null;      /* muscle_magic_json rows (lazy, per open) */
     let magicWhy = '';         /* last Ra-Seru refusal name, '' when none */
     let pennantFx = [];        /* committed-pennant glides {cmd,slot,x,y,t,life} */
+    let chipSlideT = 0;        /* frames since the direction entry opened */
     let introT = 0;            /* ticks into the intro card */
     let introLive = false;     /* the engine steps the first visit */
     let introPress = false;    /* a press this tick, for the live visit */
@@ -673,6 +673,9 @@ window.MgMuscle = (function () {
       try { m = JSON.parse(api.muscle_menu_json()); } catch (e) { m = null; }
       if (!m || !m.screen) return;
       if (m.screen === 'magic' && selectSub !== 'magic') magicRows = readMagicRows();
+      /* The entry opening (or the review handing back to it) restarts the
+       * chips' slide-in. */
+      if (m.screen === 'input' && selectSub !== 'input') chipSlideT = 0;
       selectSub = m.screen;
       confirmSel = m.cursor | 0;
       artsPage = m.list_page;
@@ -1145,9 +1148,10 @@ window.MgMuscle = (function () {
     /* One direction chip: 15-wide gold hexagon caps + 24-wide body, the
      * baked label strip (an FT4 in retail), and the two 9x18 diamond
      * arrows at the pointed ends. */
-    function drawCmdChip(cmd) {
+    function drawCmdChip(cmd, seat) {
       const p = ai();
-      const s = CMD_CHIP_SEATS[cmd];
+      const s = seat ? Object.assign({}, CMD_CHIP_SEATS[cmd], { bx: seat.x, by: seat.y })
+        : CMD_CHIP_SEATS[cmd];
       if (!p || !s) return;
       const c = p.cmd_chip;
       blit(0, c.pal, ...c.cap_l, s.bx - 15, s.by);
@@ -1161,9 +1165,21 @@ window.MgMuscle = (function () {
 
     /* The High / Left / Right / Low chip cross + the D-pad glyph (packet:
      * FT4 (220,62)-(235,77) of the pinned 16x16 dpad piece). */
+    /* The chips slide in from seat A over 16 frames each time the entry
+     * opens (step 9 opens records 0x1B..0x1E in mode 0; FUN_801d9bbc steps
+     * them). The seats are the engine's (`muscle_chip_seats_json`, the
+     * cost-shifted anchors the play hosts draw); the page counts the
+     * frames, since it calls the selection only on key presses. */
     function drawInputChips() {
       if (!ai()) return;
-      for (const cmd of [15, 12, 13, 14]) drawCmdChip(cmd);
+      let seats = null;
+      if (api.muscle_chip_seats_json) {
+        try { seats = JSON.parse(api.muscle_chip_seats_json(chipSlideT)); }
+        catch (_) { seats = null; }
+      }
+      chipSlideT++;
+      const seatOf = (cmd) => (seats || []).find(t => t.cmd === cmd) || null;
+      for (const cmd of [15, 12, 13, 14]) drawCmdChip(cmd, seatOf(cmd));
       const d = hudMeta.pieces.dpad;
       blit(0, d.pal, d.r[0], d.r[1], 16, 16, 220, 62, 15, 15);
     }

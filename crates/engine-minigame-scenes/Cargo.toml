@@ -23,6 +23,7 @@ legaia-engine-minigames.workspace = true
 legaia-engine-mode.workspace = true
 legaia-engine-scene.workspace = true
 legaia-engine-fishing.workspace = true
+legaia-engine-effects.workspace = true
 legaia-engine-vm.workspace = true
 legaia-prot.workspace = true
 legaia-engine-system.workspace = true

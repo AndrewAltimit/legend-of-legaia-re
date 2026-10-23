@@ -196,8 +196,18 @@ pub struct ArtsCommandInputSession {
     /// a frame. One step per [`Self::input`] call, which every host makes
     /// once a frame while the entry is up.
     pub pennant_glides: Vec<(usize, u8)>,
+    /// The direction chips' slide-in, elapsed frames, while it runs: the
+    /// entry screen's step `9` opens the four chip records in mode `0`
+    /// (spawn on seat A, glide to seat B) over `ctx[+0x1C]` frames, and the
+    /// review's return to the entry (step `0xF`) does the same.
+    pub chip_slide: Option<u8>,
     pub phase: ArtsInputPhase,
 }
+
+/// Frames the direction chips slide in over: the glide count `ctx[+0x1C]`,
+/// which the round reset `FUN_801D88CC` seeds to `0x10` and only the pennant
+/// spawn overrides.
+pub const CHIP_SLIDE_FRAMES: u8 = 0x10;
 
 /// Frames a committed pennant glides from its pressed chip to its bar seat:
 /// case `0xB` stamps the glide count `ctx[+0x1C] = 0x18` and mode
@@ -279,6 +289,7 @@ impl ArtsCommandInputSession {
             preseed_spent: Vec::new(),
             replay: false,
             pennant_glides: Vec::new(),
+            chip_slide: Some(0),
             phase: ArtsInputPhase::Entering,
         }
     }
@@ -399,6 +410,12 @@ impl ArtsCommandInputSession {
             g.1 = g.1.saturating_add(1);
             g.1 < PENNANT_GLIDE_FRAMES
         });
+        // The chip records step alike (`FUN_801D9BBC`).
+        self.chip_slide = self
+            .chip_slide
+            .map(|e| e.saturating_add(1))
+            .filter(|&e| e < CHIP_SLIDE_FRAMES);
+        let was_review = matches!(self.phase, ArtsInputPhase::Review);
         // Triangle cycles the learned-arts list in the entry phases
         // (closed -> page 0 -> .. -> last page -> closed); inert with no
         // pages, matching retail's no-learned-art case.
@@ -519,6 +536,10 @@ impl ArtsCommandInputSession {
                     self.pennant_glides.clear();
                     self.pool = self.pool_max;
                     self.phase = ArtsInputPhase::Entering;
+                    // Step `0xF` re-opens the chips in mode `0`.
+                    if was_review {
+                        self.chip_slide = Some(0);
+                    }
                 } else if ev.cross || ev.up || ev.down || ev.left || ev.right {
                     // Any other press opens the target picker; the commit it
                     // resolves to walks the ring on, and the last member's
@@ -699,6 +720,9 @@ pub struct ArtsInputView<'a> {
     /// Committed pennants still gliding in, `(slot, elapsed)` over
     /// [`PENNANT_GLIDE_FRAMES`] ([`ArtsCommandInputSession::pennant_glides`]).
     pub pennant_glides: &'a [(usize, u8)],
+    /// The chips' slide-in, elapsed frames over [`CHIP_SLIDE_FRAMES`]
+    /// ([`ArtsCommandInputSession::chip_slide`]).
+    pub chip_slide: Option<u8>,
 }
 
 impl ArtsInputView<'_> {

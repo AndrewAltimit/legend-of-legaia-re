@@ -188,7 +188,71 @@ pub struct FishingVenue {
     /// This frame's sway offset, applied to the point-exchange panel.
     pub sway_offset: (i16, i16),
     rng: u32,
+    /// The two ambient-ripple part records off the fishing overlay
+    /// ([`RippleRecords`]), when the host installed them.
+    pub ripple_records: Option<RippleRecords>,
+    /// The live ripple parts, run through the move VM as `FUN_80021B04`
+    /// seats them and `FUN_80021DF4` ticks them.
+    pub ripple_fx: Option<legaia_engine_effects::summon::SummonScene>,
 }
+
+/// VA of the ripple record the lead's roll spawns on `rand() & 1 != 0`
+/// (`lui a2,0x801e` / `addiu a2,a2,-0x7128` at `0x801D23E4..0x801D23EC`).
+pub const RIPPLE_RECORD_A_VA: u32 = 0x801D_8ED8;
+/// VA of the ripple record the roll spawns on `rand() & 1 == 0`
+/// (`addiu a2,a2,-0x70bc` at `0x801D23F8`).
+pub const RIPPLE_RECORD_B_VA: u32 = 0x801D_8F44;
+
+/// The ambient ripple's two part records, as the fishing overlay holds them:
+/// the move-buffer format `[i16 model_sel][u16 reserved][bytecode]`. Both
+/// select library mesh `0`, but their bytecode turns the part into a
+/// render-mode-4 default-arm node (move-VM op `0x13`), whose geometry is the
+/// procedural ring `FUN_80028158` builds - so what draws is the ring
+/// ([`legaia_engine_effects::effect_default_arm`]), not a mesh.
+#[derive(Debug, Clone)]
+pub struct RippleRecords {
+    /// The two records' bytes, record A at `0`.
+    bytes: Vec<u8>,
+    /// Record A then record B.
+    parts: Vec<legaia_overlay_images::summon_overlay::SummonPart>,
+}
+
+impl RippleRecords {
+    /// Bytes kept past record B's start - its bytecode ends at op `0x08`
+    /// well inside this.
+    const TAIL: usize = 0x100;
+
+    /// Cut both records out of the fishing overlay's as-loaded image (PROT
+    /// 0972 at `base_va`). `None` when the image does not reach them.
+    pub fn from_overlay(loaded: &[u8], base_va: u32) -> Option<Self> {
+        let a = RIPPLE_RECORD_A_VA.checked_sub(base_va)? as usize;
+        let b = (RIPPLE_RECORD_B_VA - RIPPLE_RECORD_A_VA) as usize;
+        let bytes = loaded
+            .get(a..(a + b + Self::TAIL).min(loaded.len()))?
+            .to_vec();
+        if bytes.len() <= b + 4 {
+            return None;
+        }
+        let parts = legaia_overlay_images::summon_overlay::parse_records_at(&bytes, &[0, b]);
+        (parts.len() == 2).then_some(Self { bytes, parts })
+    }
+}
+
+/// One ripple-ring triangle on the retail 320x240 stage
+/// ([`FishingVenue::ripple_screen_tris`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RippleTri {
+    /// The three corners, stage pixels.
+    pub xy: [(i16, i16); 3],
+    /// The three corners' packet colours (`texel * colour / 128` modulation).
+    pub rgb: [[u8; 3]; 3],
+    /// The packet's semi-transparency bit.
+    pub semi: bool,
+}
+
+/// The ripple parts' move-VM host: their programs touch no world state.
+struct RippleHost;
+impl legaia_engine_vm::move_vm::MoveHost for RippleHost {}
 
 impl Default for FishingVenue {
     fn default() -> Self {
@@ -199,6 +263,8 @@ impl Default for FishingVenue {
             sway_angle: 0,
             sway_offset: (0, 0),
             rng: VENUE_RNG_SEED,
+            ripple_records: None,
+            ripple_fx: None,
         }
     }
 }
@@ -207,6 +273,99 @@ impl FishingVenue {
     /// Whether the venue has been armed (its wander actor exists).
     pub fn armed(&self) -> bool {
         self.wander.is_some()
+    }
+
+    /// Spawn ripple record `variant` (`1` = A, `0` = B) at world `pos` with
+    /// the roll's rotation trio - one `FUN_80021B04(sp+0x10, sp+0x18,
+    /// record, 0x1000)` call (`0x801D23FC`), which seats the part and runs
+    /// its first move-VM slice.
+    fn spawn_ripple(&mut self, variant: u32, pos: [i16; 3], rot: [i16; 3]) {
+        let Some(rec) = self.ripple_records.as_ref() else {
+            return;
+        };
+        let part = &rec.parts[if variant != 0 { 0 } else { 1 }];
+        let scene = self.ripple_fx.get_or_insert_with(|| {
+            legaia_engine_effects::summon::SummonScene::spawn_parts(&[], &rec.bytes, 0, pos)
+        });
+        scene.push_parts(std::slice::from_ref(part), &rec.bytes, pos, rot);
+        // The seater's own first move-VM run (`FUN_80021B04` calls
+        // `FUN_80023070` before it returns).
+        scene.seat_run(&mut RippleHost);
+    }
+
+    /// One frame of the ripple parts' tick `FUN_80021DF4` (the move VM and
+    /// the channel / motion blocks), retiring the parts whose program halted.
+    fn tick_ripples(&mut self) {
+        let Some(scene) = self.ripple_fx.as_mut() else {
+            return;
+        };
+        scene.tick(
+            &mut RippleHost,
+            legaia_engine_effects::summon::RETAIL_CHANNEL_DELTA,
+        );
+        scene.parts.retain(|p| !p.finished);
+    }
+
+    /// [`Self::ripple_draws`] projected onto the stage through the venue
+    /// camera over the lead ([`venue_camera_view`],
+    /// [`project_to_retail_screen`]): each ring vertex placed by its node's
+    /// rotation banks (`FUN_80026988`, `Rx * Ry * Rz`) and position. For a
+    /// host that draws on a 2D canvas rather than through an effect-mesh
+    /// pass - the minigames page. A triangle with a corner behind the eye
+    /// is dropped.
+    pub fn ripple_screen_tris(&self) -> Vec<RippleTri> {
+        let Some(w) = self.wander.as_ref() else {
+            return Vec::new();
+        };
+        let view = venue_camera_view(w.x, w.y, w.z, w.facing);
+        let mut out = Vec::new();
+        for d in self.ripple_draws() {
+            let r = legaia_engine_camera::psx_camera::camera_rotation(d.rot[0], d.rot[1], d.rot[2]);
+            let place = |v: [f32; 3]| -> [i32; 3] {
+                let mut p = [0f32; 3];
+                for (row, o) in p.iter_mut().enumerate() {
+                    *o = d.world_pos[row] + (0..3).map(|c| r[c * 4 + row] * v[c]).sum::<f32>();
+                }
+                p.map(|c| c.round() as i32)
+            };
+            let m = &d.mesh;
+            for tri in m.indices.as_chunks::<3>().0 {
+                let idx = [tri[0] as usize, tri[1] as usize, tri[2] as usize];
+                let Some(pts) = idx
+                    .iter()
+                    .map(|&i| {
+                        m.positions
+                            .get(i)
+                            .and_then(|&v| project_to_retail_screen(&view, place(v)))
+                    })
+                    .collect::<Option<Vec<_>>>()
+                else {
+                    continue;
+                };
+                let rgb = idx.map(|i| m.colors.get(i).copied().unwrap_or([0x80; 3]));
+                let semi = m
+                    .cba_tsb
+                    .get(idx[0])
+                    .is_some_and(|ct| ct[1] & legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT != 0);
+                out.push(RippleTri {
+                    xy: [pts[0], pts[1], pts[2]],
+                    rgb,
+                    semi,
+                });
+            }
+        }
+        out
+    }
+
+    /// This frame's ripple geometry: each live part's default-arm ring
+    /// ([`legaia_engine_effects::effect_default_arm::default_arm_draw`]) at its
+    /// world position and rotation banks, in raw retail world units - the
+    /// list every host draws through its effect-mesh pass.
+    pub fn ripple_draws(&self) -> Vec<legaia_engine_effects::effect_ribbon::RibbonDraw> {
+        self.ripple_fx
+            .as_ref()
+            .map(|s| s.default_arm_draws())
+            .unwrap_or_default()
     }
 }
 
@@ -351,7 +510,13 @@ pub fn tick_venue_actors(
         // (`0x801D22A4..0x801D23C8`), handed to `FUN_80021B04(sp+0x10, ..)`
         // at `0x801D23FC`; the actor itself never moves.
         let y = v.wander.as_ref().map_or(0, |w| i32::from(w.y));
-        ripple = rolled.map(|t| [t.x, y, t.z]);
+        ripple = rolled.map(|t| {
+            (
+                t.ripple_variant,
+                [t.x as i16, y as i16, t.z as i16],
+                [0, t.rotation as i16, 0],
+            )
+        });
     }
     // Settle the actor onto the venue floor (the `.MAP` height grid through
     // the shared ground solver) and publish its camera.
@@ -373,8 +538,12 @@ pub fn tick_venue_actors(
         view.as_ref()
             .and_then(|view| project_to_retail_screen(view, p))
     };
-    if let Some((x, y)) = ripple.and_then(seat) {
-        fx.spawn(x, y, legaia_engine_minigames::minigame_fx::RIPPLE_SPRITE_ID);
+    // The ripple parts tick first (the actor list runs the parts before the
+    // lead's tick seats a new one), then the roll's spawn runs its first
+    // slice.
+    v.tick_ripples();
+    if let Some((variant, pos, rot)) = ripple {
+        v.spawn_ripple(variant, pos, rot);
     }
     // The line actor: armed on the hook event, landed on the catch event,
     // dropped on a snap.
@@ -507,29 +676,41 @@ mod tests {
     }
 
     #[test]
-    fn the_wander_retargets_into_the_shared_pool() {
-        // Held D-pad right steers the fish; the wander's retarget rolls spawn
-        // ripples into the pool every host draws, not into a host's own.
+    fn the_wander_retargets_into_its_own_ripple_parts() {
+        // Held D-pad right steers the lead; the retarget roll seats one of
+        // the overlay's ripple records as a move-VM part (here a record that
+        // halts on its first op), not a pool placeholder.
+        let base = legaia_minigame_formats::fishing_species::FISHING_OVERLAY_BASE_VA;
+        let mut image = vec![0u8; (RIPPLE_RECORD_B_VA - base) as usize + 0x200];
+        for va in [RIPPLE_RECORD_A_VA, RIPPLE_RECORD_B_VA] {
+            let o = (va - base) as usize;
+            // model_sel 0, reserved 0, then op 0x08 (halt).
+            image[o + 4] = 0x08;
+        }
         let mut mg = MinigameState::new();
         mg.fishing = Some(session());
+        mg.fishing_venue.ripple_records = RippleRecords::from_overlay(&image, base);
+        assert!(mg.fishing_venue.ripple_records.is_some());
         let held = legaia_engine_system::pad::PACK_RIGHT;
         let mut spawned = false;
         for _ in 0..2000 {
             tick_fishing_venue(&mut mg, true, held, || None);
-            if !mg.fx.is_empty() {
+            if mg.fishing_venue.ripple_fx.is_some() {
                 spawned = true;
                 break;
             }
         }
-        assert!(spawned, "no retarget ripple reached the shared pool");
-        // The ripple is a world point out in the water ahead of the lead,
-        // seated through the venue camera: it lands on the 320x240 stage.
-        let f = mg.fx.frames()[0];
+        assert!(spawned, "no retarget ripple was seated");
+        assert!(mg.fx.is_empty(), "the ripple is not a pool part");
+        tick_fishing_venue(&mut mg, true, held, || None);
         assert!(
-            (0..320).contains(&f.x) && (0..240).contains(&f.y),
-            "ripple seated off the stage at ({}, {})",
-            f.x,
-            f.y
+            mg.fishing_venue
+                .ripple_fx
+                .as_ref()
+                .unwrap()
+                .parts
+                .is_empty(),
+            "a halted ripple part retires"
         );
         let facing = mg.fishing_venue.wander.as_ref().unwrap().facing;
         assert_ne!(facing, 0, "the held D-pad did not steer the wander");

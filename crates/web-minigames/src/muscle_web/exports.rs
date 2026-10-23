@@ -194,6 +194,28 @@ impl LegaiaMinigames {
                 },
             );
         }
+        // The opponent picks through the battle's monster AI
+        // (`FUN_801DABA4` -> `FUN_801E9FD4`) over its own record, as on the
+        // play hosts: its magic ids against the SCUS spell table, its AGL
+        // budget over its own candidate swings.
+        if let Some(rec) = self
+            .monster_archive_entry()
+            .and_then(|a| legaia_actor_formats::monster_archive::record(a, monster_id).ok()?)
+        {
+            let def = legaia_engine_battle::monster_catalog::monster_def_from_record(&rec);
+            let catalog = self
+                .scus
+                .as_ref()
+                .and_then(|s| legaia_engine_battle::retail_magic::seru_magic_catalog_from_scus(s));
+            let spells = def
+                .magic_attacks
+                .iter()
+                .filter_map(|id| catalog.as_ref()?.get(*id).cloned())
+                .collect();
+            session.install_opponent_ai(
+                legaia_engine_battle_menus::muscle_dome_session::DomeOpponentAi::new(def, spells),
+            );
+        }
         session.install_damage_model(DomeDamageModel::new(
             tables.move_power.clone(),
             tables.move_map,

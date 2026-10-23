@@ -158,6 +158,7 @@ deps = [
     "engine-battle-menus",
     "engine-battle-vm",
     "engine-camera",
+    "engine-effects",
     "engine-field",
     "engine-fishing",
     "engine-minigames",

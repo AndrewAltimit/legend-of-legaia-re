@@ -251,9 +251,57 @@ impl LegaiaMinigames {
             list_page: view.list_page,
             phase: legaia_engine_ui::arts_input::ArtsInputScreen::Entering,
             glides: &glides,
+            chip_slide: None,
         };
         let (x, y) = frame.pennant_seat(slot as usize);
         format!("[{x},{y}]")
+    }
+
+    /// The four direction chips' body anchors `elapsed` frames after the
+    /// entry screen opened, as `[{"cmd": 12, "x": .., "y": ..}, ..]` (command
+    /// ids `0x0C..=0x0F`): the shared `ArtsInputFrame::chip_anchor`, the
+    /// cost-shifted seat the play hosts draw, sliding in from seat A over
+    /// `CHIP_SLIDE_FRAMES`. The page keeps the frame clock. `null` outside
+    /// the direction entry.
+    pub fn muscle_chip_seats_json(&self, elapsed: u32) -> String {
+        use legaia_engine_battle::arts_command_input::CHIP_SLIDE_FRAMES;
+        use legaia_engine_ui::arts_input::{ArtsInputFrame, ArtsInputScreen, ChipDirection};
+        let Some(view) = self
+            .muscle
+            .as_ref()
+            .and_then(|m| m.session.arts_input_view())
+        else {
+            return "null".to_string();
+        };
+        let frame = ArtsInputFrame {
+            buffer: view.buffer,
+            spent: view.spent,
+            chip_costs: view.costs,
+            chip_icons: view.chip_icons,
+            pool: view.pool,
+            pool_max: view.pool_max,
+            plate_value: view.plate_value,
+            list_page: view.list_page,
+            phase: ArtsInputScreen::Entering,
+            glides: &[],
+            chip_slide: Some((
+                elapsed.min(u32::from(CHIP_SLIDE_FRAMES)) as u8,
+                CHIP_SLIDE_FRAMES,
+            )),
+        };
+        let rows: Vec<String> = [
+            (0x0C, ChipDirection::Left),
+            (0x0D, ChipDirection::Right),
+            (0x0E, ChipDirection::Low),
+            (0x0F, ChipDirection::High),
+        ]
+        .iter()
+        .map(|&(cmd, dir)| {
+            let (x, y) = frame.chip_anchor(dir);
+            format!("{{\"cmd\":{cmd},\"x\":{x},\"y\":{y}}}")
+        })
+        .collect();
+        format!("[{}]", rows.join(","))
     }
 
     /// The retail Triangle-list rows for the contest fighter: the character's

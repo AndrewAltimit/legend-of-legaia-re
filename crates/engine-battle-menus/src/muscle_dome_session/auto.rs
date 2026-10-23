@@ -57,8 +57,6 @@ pub struct DomeAutoInputs {
     /// The opponent monster record's swing class (`+0x1E`), which picks the weight
     /// family.
     pub opponent_swing_class: u8,
-    /// The fighter's Miracle marker `ctx[+0x25F + slot]`.
-    pub miracle_marker: bool,
 }
 
 /// The status-guard table the pool arm reads, `*(i16 *)(0x801F672C + i*2)`
@@ -299,7 +297,11 @@ impl MuscleDomeSession {
                 spirit,
                 ability_high: inputs.ability_high,
                 learned: &inputs.learned,
-                miracle_marker: inputs.miracle_marker,
+                // The slot's Miracle marker `ctx[+0x25F + slot]` is the same
+                // byte the ring's Ra-Seru member gate reads, written once by
+                // the party battle-actor init `FUN_80053CB8` from the record's
+                // Ra-Seru slot.
+                miracle_marker: self.ring(0).has_raseru,
                 records: &inputs.art_records,
                 art_count: inputs.art_count,
             };

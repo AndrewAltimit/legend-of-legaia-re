@@ -342,7 +342,9 @@ impl MuscleDomeSession {
                 DomeMenuEvent::Confirm
             }
             Some(Resolution::BeginRound) => {
-                self.ai_commit_all(1);
+                // The opponent's pick: the battle's monster AI when the host
+                // installed its record, else the greedy stand-in.
+                self.opponent_commit();
                 // The round's state `0x00` runs `FUN_801F0450`, which
                 // rebuilds a flagged Attack seat's queue.
                 self.run_auto_rebuild();
@@ -576,6 +578,7 @@ impl MuscleDomeSession {
             phase: (&s.phase).into(),
             status: self.ring(0).status,
             pennant_glides: &s.pennant_glides,
+            chip_slide: s.chip_slide,
         })
     }
 

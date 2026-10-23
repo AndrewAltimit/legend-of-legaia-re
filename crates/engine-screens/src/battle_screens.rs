@@ -469,6 +469,12 @@ pub fn arts_input_chrome_draws(
         .collect();
     let frame = ai::ArtsInputFrame {
         glides: &glides,
+        chip_slide: view.chip_slide.map(|e| {
+            (
+                e,
+                legaia_engine_battle::arts_command_input::CHIP_SLIDE_FRAMES,
+            )
+        }),
         buffer: view.pennants,
         spent: view.pennant_spent,
         chip_costs: view.costs,

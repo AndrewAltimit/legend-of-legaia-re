@@ -352,6 +352,14 @@ impl LegaiaMinigames {
         self.fishing_prizes.clear();
         self.fishing_lures_held = [MINIGAMES_TACKLE_HELD; 3];
         self.fishing_venue_actors = Default::default();
+        // The lead's two ambient-ripple part records, off the overlay image
+        // the tables decoded from.
+        self.fishing_venue_actors.ripple_records = self.fishing_overlay.as_deref().and_then(|ov| {
+            legaia_engine_minigame_scenes::fishing_venue::RippleRecords::from_overlay(
+                ov,
+                fishing_species::FISHING_OVERLAY_BASE_VA,
+            )
+        });
         self.fx.clear();
         true
     }
@@ -609,6 +617,37 @@ impl LegaiaMinigames {
             }
         }
         format!("[{}]", out.join(","))
+    }
+
+    /// This frame's ambient ripple rings as stage triangles - the overlay's
+    /// own ripple part records run through the move VM
+    /// (`fishing_venue::tick_venue_actors`) and projected through the venue
+    /// camera (`FishingVenue::ripple_screen_tris`):
+    ///
+    /// ```json
+    /// [ { "p": [x0,y0,x1,y1,x2,y2], "c": [r,g,b, r,g,b, r,g,b], "semi": true } ]
+    /// ```
+    pub fn fishing_ripples_json(&self) -> String {
+        let rows: Vec<String> = self
+            .fishing_venue_actors
+            .ripple_screen_tris()
+            .iter()
+            .map(|t| {
+                let p: Vec<String> =
+                    t.xy.iter()
+                        .flat_map(|&(x, y)| [x, y])
+                        .map(|v| v.to_string())
+                        .collect();
+                let c: Vec<String> = t.rgb.iter().flatten().map(|v| v.to_string()).collect();
+                format!(
+                    "{{\"p\":[{}],\"c\":[{}],\"semi\":{}}}",
+                    p.join(","),
+                    c.join(","),
+                    t.semi
+                )
+            })
+            .collect();
+        format!("[{}]", rows.join(","))
     }
 
     /// Live pond state:

@@ -66,6 +66,9 @@ pub struct DomeDamageModel {
     pub(super) hp: [i32; 2],
     pub(super) spirit: [u16; 2],
     pub(super) log: Vec<DomePlay>,
+    /// The opponent's queue holds monster archive entry indices (the monster
+    /// AI's stream) rather than direction ids.
+    pub(super) monster_swings: bool,
 }
 
 impl DomeDamageModel {
@@ -87,6 +90,7 @@ impl DomeDamageModel {
             hp,
             spirit: [0, 0],
             log: Vec::new(),
+            monster_swings: false,
         }
     }
 
@@ -137,6 +141,23 @@ impl DomeDamageModel {
         &self.log
     }
 
+    /// Mark the opponent's queue as monster archive entry indices - the
+    /// monster AI's stream. A monster's swing is the attack band's melee
+    /// path, whose tier is the per-command scalar
+    /// `0x801F64EC[(id - 0x0C) % 5]` over the staged byte, never a move-power
+    /// row: an entry index can collide with an art constant in the id map.
+    pub fn set_monster_swings(&mut self, on: bool) {
+        self.monster_swings = on;
+    }
+
+    /// Clamp a fighter's spirit gauge (`actor+0x170`), as a monster-AI arm
+    /// writes it back.
+    pub fn set_spirit(&mut self, slot: usize, value: u16) {
+        if let Some(s) = self.spirit.get_mut(slot) {
+            *s = value;
+        }
+    }
+
     /// Open a turn: clear the play log and re-sync the HP mirror to the
     /// session's live values.
     pub fn begin_turn(&mut self, hp: [i32; 2]) {
@@ -161,7 +182,10 @@ impl DomeDamageModel {
         // 12 / 18 / 20 / 22 / 28 scale an art record's power byte decodes to.
         // Falling back to it is what stops every dome swing resolving at
         // power zero.
-        let power = match move_power::record_for_move_id(&self.move_power, &self.move_map, cmd) {
+        let row = (!(self.monster_swings && attacker == 1))
+            .then(|| move_power::record_for_move_id(&self.move_power, &self.move_map, cmd))
+            .flatten();
+        let power = match row {
             Some(r) => i32::from(r.power_raw),
             None => legaia_engine_battle_vm::battle_formulas::command_power_scalar(cmd) as i32,
         };

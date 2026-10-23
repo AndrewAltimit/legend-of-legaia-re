@@ -35,8 +35,13 @@ pub struct WanderTarget {
     /// Destination Z, `z + 0x400 + (3 - rand % 6) * 0x20`.
     pub z: i32,
     /// Which of the two ripple effect descriptors the roll picked
-    /// (`rand & 1`).
+    /// (`rand & 1`): `1` spawns record `0x801D8ED8`, `0` record `0x801D8F44`
+    /// (`0x801D23D4..0x801D23F8`).
     pub ripple_variant: u32,
+    /// The first draw, `rand() & 0xFFF`: the on-stack rotation trio's `y`
+    /// (`sh v0,0x1a(sp)` at `0x801D2300`) the ripple spawns with, `x` / `z`
+    /// zero.
+    pub rotation: u32,
 }
 
 /// Roll a new wander destination from four consecutive `rand()` draws.
@@ -51,7 +56,7 @@ pub struct WanderTarget {
 // (`window/minigames.rs`), spawning the rolled `ripple_variant`'s ripple into
 // its effect pool.
 pub fn roll_wander_target<F: FnMut() -> u32>(x: i32, z: i32, mut rolls: F) -> WanderTarget {
-    let _rotation = rolls() & 0xFFF;
+    let rotation = rolls() & 0xFFF;
     let dwell = (rolls() as i32) % RETARGET_SPAN + RETARGET_MIN;
     let dz = 3 - ((rolls() as i32) % 6);
     let dx = 3 - ((rolls() as i32) % 6);
@@ -61,6 +66,7 @@ pub fn roll_wander_target<F: FnMut() -> u32>(x: i32, z: i32, mut rolls: F) -> Wa
         x: x + dx * WANDER_STEP.1,
         z: z + WANDER_Z_BIAS + dz * WANDER_STEP.0,
         ripple_variant,
+        rotation,
     }
 }
 

@@ -1406,3 +1406,54 @@ fn the_auto_review_cancels_back_to_the_prompt() {
     ));
     assert!(s.queue(0).is_empty());
 }
+
+/// The opponent picks through the battle's monster AI: a strike fills its
+/// stream with its own candidate entry indices out of its AGL gauge
+/// (`FUN_801E9FD4`'s physical branch), never the player's directions.
+#[test]
+fn the_opponent_strikes_with_its_own_entries_out_of_its_agl_gauge() {
+    let mut s = session();
+    let mut def = legaia_engine_battle::monster_catalog::MonsterDef::new(0x10, "Gobu", 300, 40);
+    def.agl = 60;
+    def.action_costs = vec![20, 25];
+    def.action_entries = vec![7, 9];
+    s.install_opponent_ai(DomeOpponentAi::new(def, Vec::new()));
+    assert!(s.has_opponent_ai());
+    s.select_input(pad(|p| p.down = true)); // Spirit
+    s.select_input(pad(|p| p.left = true)); // Begin
+    assert_eq!(s.phase(), MusclePhase::Resolve);
+    let q = s.queue(1).to_vec();
+    assert!(!q.is_empty(), "the gauge paid for at least one swing");
+    assert!(q.iter().all(|b| *b == 7 || *b == 9), "entry indices: {q:?}");
+    assert!(q.len() <= 3, "60 AGL buys at most three 20-cost swings");
+}
+
+/// A monster whose magic roll lands on an affordable spell casts it.
+#[test]
+fn the_opponent_casts_an_affordable_spell_on_its_magic_roll() {
+    let spell = legaia_engine_battle::spells::SpellDef {
+        id: 0x40,
+        mp_cost: 1,
+        ..Default::default()
+    };
+    let mut cast_seen = false;
+    for seed in 0..64u32 {
+        let mut s = session();
+        let mut def = legaia_engine_battle::monster_catalog::MonsterDef::new(0x10, "Gobu", 300, 40);
+        def.mp = 50;
+        def.agl = 40;
+        def.action_costs = vec![20];
+        def.action_entries = vec![7];
+        def.magic_attacks = vec![0x40];
+        s.auto_rng_seed_for_tests(seed);
+        s.install_opponent_ai(DomeOpponentAi::new(def, vec![spell.clone()]));
+        s.select_input(pad(|p| p.down = true));
+        s.select_input(pad(|p| p.left = true));
+        if s.queued_cast(1) == Some(0x40) {
+            assert!(s.queue(1).is_empty(), "a cast replaces the stream");
+            cast_seen = true;
+            break;
+        }
+    }
+    assert!(cast_seen, "half the magic rolls pick the spell");
+}

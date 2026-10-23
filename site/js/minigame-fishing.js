@@ -30,8 +30,10 @@
  * the engine; without it, glyph ids fall back to labelled text.
  * Approximated (the page's note says so): the lure is drawn as projected 2D
  * geometry, and each effect part as a placeholder mark at the seat the engine
- * gives it (the venue's ambient ripples and catch bursts come from the shared
- * shore-actor step, `fishing_venue::tick_venue_actors`). The LINE is the
+ * gives it (the catch bursts come from the shared shore-actor step,
+ * `fishing_venue::tick_venue_actors`). The ambient ripples are the overlay's
+ * own ring parts, run through the move VM by the same step and drawn as
+ * the engine projects them. The LINE is the
  * engine's: `fishing_line_json` hands back retail's packet (the rod end is the rod actor's projected tip, the pair is
  * clipped by the ported FUN_801D56E4, the Gouraud end colours are the
  * packet's) given this page's projection of the lure as the fish end.
@@ -610,7 +612,7 @@ window.MgFishing = (function () {
      * table are the engine's (legaia_engine_minigames::minigame_fx); the overlay's
      * own sprite page is not staged on this page, so a part draws as its
      * glyph the same way it does on the other two hosts. */
-    const FX_GLYPH = { 11: 'GOOD!', 22: '*', 256: '~', 257: 'o', 258: '*' };
+    const FX_GLYPH = { 11: 'GOOD!', 22: '*', 256: '~', 258: '*' };
 
     /* The minigame effect-part pool's live parts, in retail 320x240 coords.
      * The pool is shared with the play page and the native window; this page
@@ -619,20 +621,6 @@ window.MgFishing = (function () {
     function drawFxParts(parts) {
       if (!parts || !parts.length) return;
       for (const p of parts) {
-        if (p.sprite === 257) {
-          /* The ambient ripple (RIPPLE_SPRITE_ID): a ring that widens as the
-           * part's fade ramp runs down, centred on the engine's seat. */
-          const a = Math.max(0, Math.min(1, p.fade / 255));
-          const r = (3 + (1 - a) * 70) * SCALE;
-          g.save();
-          g.strokeStyle = 'rgba(220,240,255,' + (0.55 * a) + ')';
-          g.lineWidth = 1.5;
-          g.beginPath();
-          g.ellipse(p.x * SCALE, p.y * SCALE, r, r * 0.38, 0, 0, Math.PI * 2);
-          g.stroke();
-          g.restore();
-          continue;
-        }
         const glyph = FX_GLYPH[p.sprite] || '+';
         hudText(glyph, p.x, p.y, {
           color: 'rgba(255,255,204,' + Math.max(0, Math.min(1, p.fade / 255)) + ')',
@@ -640,6 +628,36 @@ window.MgFishing = (function () {
           align: 'center',
         });
       }
+    }
+
+    /* The lead's ambient ripples: the overlay's own ripple part records run
+     * through the move VM, each a procedural ring (`fishing_ripples_json`,
+     * already projected through the venue camera). Canvas has no Gouraud
+     * fill, so each triangle takes its corners' mean packet colour;
+     * semi-transparent packets add (the ring's texel is a system-page patch
+     * this page does not stage - the fill colour is the modulation word). */
+    function drawRipples() {
+      if (!api.fishing_ripples_json) return;
+      let tris = [];
+      try { tris = JSON.parse(api.fishing_ripples_json()) || []; }
+      catch (_) { tris = []; }
+      if (!tris.length) return;
+      g.save();
+      for (const t of tris) {
+        const c = t.c;
+        const r = Math.min(255, (c[0] + c[3] + c[6]) * 2 / 3) | 0;
+        const gg = Math.min(255, (c[1] + c[4] + c[7]) * 2 / 3) | 0;
+        const b = Math.min(255, (c[2] + c[5] + c[8]) * 2 / 3) | 0;
+        g.globalCompositeOperation = t.semi ? 'lighter' : 'source-over';
+        g.fillStyle = 'rgb(' + r + ',' + gg + ',' + b + ')';
+        g.beginPath();
+        g.moveTo(t.p[0] * SCALE, t.p[1] * SCALE);
+        g.lineTo(t.p[2] * SCALE, t.p[3] * SCALE);
+        g.lineTo(t.p[4] * SCALE, t.p[5] * SCALE);
+        g.closePath();
+        g.fill();
+      }
+      g.restore();
     }
 
     /* One full frame: 3D pass below, HUD + overlay above. `hud` is the
@@ -660,6 +678,7 @@ window.MgFishing = (function () {
         g.fillStyle = grad;
         g.fillRect(0, 0, W, H);
       }
+      drawRipples();
       drawWaterOverlay(st);
       const sprites = !!hud && hudSpritesReady();
       if (sprites) drawHudSprites();

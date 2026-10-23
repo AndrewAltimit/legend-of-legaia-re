@@ -80,6 +80,9 @@ pub struct MuscleDomeSession {
     /// The player's fighter's Auto state: the saved command strings and the
     /// per-fighter flag ([`super::auto`]).
     pub(super) auto: super::auto::DomeAuto,
+    /// The opponent's monster-AI inputs ([`super::opponent`]); `None` keeps
+    /// the greedy stand-in.
+    pub(super) opponent_ai: Option<super::opponent::DomeOpponentAi>,
 }
 
 impl MuscleDomeSession {
@@ -118,6 +121,7 @@ impl MuscleDomeSession {
             intro: 0,
             choreo: super::choreo::DomeChoreo::default(),
             auto: Default::default(),
+            opponent_ai: None,
         }
     }
 
@@ -853,6 +857,7 @@ impl MuscleDomeSession {
             return false;
         };
         let hp_before = [self.f[0].hp, self.f[1].hp];
+        model.set_monster_swings(self.opponent_ai.is_some());
         model.begin_turn(hp_before);
         self.resolve_turn(|attacker, cmd| model.damage(attacker, cmd));
         let played = !model.plays().is_empty();
