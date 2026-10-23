@@ -66,7 +66,7 @@ pub fn battle_value_readout_layout(
     }
     let mut runs = Vec::new();
     for p in newest {
-        let Some(trio) = world.battle_display_trio(usize::from(p.slot)) else {
+        let Some(trio) = world.battle_readout_trio(usize::from(p.slot)) else {
             continue;
         };
         let age = p.frames_total.saturating_sub(p.frames_remaining);

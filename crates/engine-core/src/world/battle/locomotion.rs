@@ -158,6 +158,19 @@ impl World {
         Some([f32::from(x), f32::from(y), f32::from(z)])
     }
 
+    /// The trio the value readout anchors seat `slot`'s numeral on: the
+    /// display trio the previous pass's draw stored
+    /// ([`crate::world::BattleState::readout_trios`]), the live one when no
+    /// pass has taken it.
+    pub fn battle_readout_trio(&self, slot: usize) -> Option<[f32; 3]> {
+        self.battle
+            .readout_trios
+            .get(slot)
+            .copied()
+            .flatten()
+            .or_else(|| self.battle_display_trio(slot))
+    }
+
     /// The monster record `+0x1F` size class seated in `slot`, `0` for a
     /// party slot / empty slot / unresolved catalog (the same resolution the
     /// battle host's `monster_size_class` performs).

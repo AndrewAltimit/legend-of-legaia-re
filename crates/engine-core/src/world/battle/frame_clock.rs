@@ -363,6 +363,11 @@ impl World {
         {
             return;
         }
+        // What the previous pass's draw stored, for this frame's readout
+        // (`BattleState::readout_trios`).
+        self.battle.readout_trios = (0..self.actors.len())
+            .map(|i| self.battle_display_trio(i))
+            .collect();
         let commits_before: Vec<u32> = self.actors.iter().map(|a| a.battle_clip_commits).collect();
         self.tick_battle_animations();
         // Every commit the advance made is the committing actor's own.

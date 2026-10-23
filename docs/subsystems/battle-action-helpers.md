@@ -712,6 +712,7 @@ Draws a scaling decimal number sprite for one actor's accumulated damage `ctx[+0
 
 - Each base-10 digit is extracted (`* 0x66666667` / `>>0x22` = divide by 10) and indexes the digit glyph atlas at `0x801F6..` (`-0x7FE09BA4`). One `0x09`-code sprite quad per digit goes into the ordering table, ramp-scaled by the per-frame timer `ctx[+0x85C]`.
 - The anchor is the struck actor's display trio `+0x3C/+0x3E/+0x40` with Y replaced by `+0x3E / 2 - timer * 3 / 2`. The timer steps `0x10` a frame, and `FUN_800195A8` projects a view-space square of half-extent `timer / 2` about the anchor, so the number grows as it rises.
+- The trio is one pass old. The routine runs in the first body's draw tick (`jal 0x801df6b8` at `0x80048138`, in `FUN_800480D8`'s preamble), ahead of every body's own pose decode `FUN_8004998C` (called through `0x80048A08`), which is what stores `+0x3C..+0x40`; so it reads what the previous pass's draw left. Port: `World::battle_readout_trio` over `BattleState::readout_trios`, taken at the head of each battle-cadence anim pass.
 - The rect is widened to at least `clamp(timer >> 5, 1, 12)` and cut to 24 px, clamped to `y >= 32`, `x <= 280` and `x >= 8 + 32 * extra digits`.
 - The value is zeroed once the timer passes `0x240` (37 frames).
 

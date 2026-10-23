@@ -686,6 +686,16 @@ pub struct BattleState {
     /// attacker's (`World::tick_battle_hit_events` records them,
     /// `World::tick_battle_anim_pass` walks them again).
     pub hit_commit_rewalk: Vec<usize>,
+    /// Each actor's display trio as the previous pass's draw stored it - the
+    /// anchor the value readout projects a landed hit's numeral from
+    /// (`World::battle_readout_trio`). Retail's readout `FUN_801DF6B8` runs
+    /// in the first body's draw tick (`jal` at `0x80048138`, in
+    /// `FUN_800480D8`'s preamble), ahead of every body's own pose decode
+    /// `FUN_8004998C` (`0x80048A08`), which is what stores `+0x3C..+0x40`;
+    /// so a numeral reads the bodies one pass behind the frame it is drawn
+    /// in. Taken at the head of each battle-cadence anim pass; empty on the
+    /// per-vsync cadence, where the readout reads the live trio.
+    pub readout_trios: Vec<Option<[f32; 3]>>,
     /// The action state the SM's last pass ran (its state on entry), which
     /// the camera frames on retail's cadence
     /// ([`crate::world::World::battle_camera_state`]).
@@ -1087,6 +1097,7 @@ impl BattleState {
             anim_pass_vsyncs: 1,
             anim_slot_reached: false,
             hit_commit_rewalk: Vec::new(),
+            readout_trios: Vec::new(),
             sm_ran_state: None,
             defeat_sink_frame: None,
             vram_loads: Default::default(),
