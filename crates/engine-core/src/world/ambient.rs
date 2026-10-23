@@ -399,7 +399,8 @@ impl World {
     /// Tick one ambient part: drain the wait timer, run the move VM, flush
     /// bytecode self-writes into the shared bundle + the part's snapshot,
     /// spawn op-`0x25` children (recursively, spawn-time first run), and
-    /// run the mode-3 CLUT-cell integrator on `0x4000` render-mode parts.
+    /// run the mode-4 scroller arm. The mode-3 CLUT-cell arm runs ahead of the
+    /// VM, in [`Self::tick_ambient_fx`], as retail orders it.
     fn tick_ambient_part(&mut self, idx: usize, depth: usize) {
         if depth > MAX_SPAWN_DEPTH {
             return;
@@ -457,14 +458,6 @@ impl World {
             );
         }
 
-        // Mode-3 render tail: the `0x4000` render-mode node's CLUT-cell
-        // integrator runs every game tick regardless of the wait timer.
-        let cell_fx = if model_sel == legaia_overlay_images::summon_overlay::RENDER_NODE_MODE_A {
-            clut_cell_fx::mode3_integrate(&mut state, self.clock.frame_step.max(1))
-        } else {
-            None
-        };
-
         // Mode-4 render tail: the VRAM-rect scroller. Retail gates this arm
         // on `+0x5A == 4` alone (`0x80022CB8`) - no `model_sel` condition,
         // and jou's carrier is a plain transform node (`model_sel = -1`).
@@ -500,9 +493,6 @@ impl World {
             let part = &mut self.ambient.fx[idx];
             part.state = state;
             part.finished = finished;
-            if cell_fx.is_some() {
-                part.cell_fx = cell_fx;
-            }
             if let Some(fx) = scroll_fx
                 && part.scroll_fx.len() < MAX_PENDING_SCROLLS
             {
@@ -656,6 +646,21 @@ impl World {
                 {
                     self.audio.sfx_emitter_ops.push(op);
                 }
+                // The mode-3 arm (`0x800226D8..`, keyed on `+0x5A == 3`): the
+                // CLUT-cell cycler integrates its adds and uploads the cell
+                // **before** the move VM runs (`0x80022B94`), every tick
+                // regardless of the wait timer. So an op `0x2E` that changes
+                // a velocity takes effect on the next tick's integrate, and
+                // the spawn-time first run (`FUN_80021B04`, the VM alone)
+                // does not integrate: an op-`0x2C` capture uploads on the
+                // second part tick after it, when `+0x9C` passes 1.
+                if st.move_submode == 3
+                    && let Some(fx) =
+                        clut_cell_fx::mode3_integrate(st, self.clock.frame_step.max(1))
+                {
+                    self.ambient.fx[idx].cell_fx = Some(fx);
+                }
+                let st = &mut self.ambient.fx[idx].state;
                 if legaia_engine_effects::part_motion::runs_motion_block(st) {
                     legaia_engine_effects::part_motion::motion_block(st, drain);
                 }

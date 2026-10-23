@@ -390,6 +390,17 @@ engine verdict:
   newest, which VRAM matches, the other for the one before). It is one frame
   off by construction, which is the limit it leaves.
 
+  Which side of the displayed frame that one frame falls on is the cycler's.
+  `koin1`'s spotlight cones (`casino_ticket_counter*`, cell `(16, 507)`) ride
+  a triangle wave two ticks a side
+  ([field-ambient-fx](../subsystems/field-ambient-fx.md#the-clut-cell-hsv-cycler-the-pulsating-flesh)):
+  the newest upload is `v = -12`, the older buffer's `-18`, and the displayed
+  framebuffer, two ticks back, is back at `-12` - its cones measure brighter
+  than the draw buffer's. So the older-buffer seed draws them one palette step
+  dark; seeding VRAM's newest cells instead lifts the casino frame from
+  `0.992` to `0.996`, where on `minigame_dance_pcsx`'s strobe it drops `0.834`
+  to `0.814`. No one rule picks the displayed phase for every cycler.
+
   `minigame_dance_pcsx` measures all three. Its newest buffer holds the fade
   push at grey `170`, the older one at `141` with the cycler rows right
   behind it, and the displayed framebuffer reads `28` greys (one `3`-vsync

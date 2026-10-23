@@ -259,6 +259,12 @@ tail (`FUN_80021DF4` mode-3 arm, `0x800226D8..`) then every frame:
    rect (`FUN_800583C8`);
 4. advances `+0x9C` (clamped 1000).
 
+The arm runs **before** the part's move VM (`0x80022B94`), after the wait
+drain at the top of the tick (`0x80021E40`): a velocity an op `0x2E` sets moves
+the adds from the next tick, and the spawn-time run (`FUN_80021B04`, the VM
+alone) neither integrates nor uploads, so a fresh capture uploads on the
+second part tick.
+
 So the "pulsating flesh" never moves a vertex: it is **palette-space HSV
 cycling on the texture's CLUT rows**, re-uploaded every frame from the
 original capture.
@@ -270,8 +276,8 @@ vsyncs (`+0x54` drains `frame_step * 8`). `koin1`'s spotlight-cone cycler
 (cell `(16, 507)`) shows both: a loop of op `0x2E` (V velocity `-2 << 3`),
 `WAIT_SET 5`, op `0x2E` (`+2 << 3`), `WAIT_SET 5`, whose capture holds `v = -12`, velocity `16`, wait `16` one tick
 after a `WAIT_SET 5` at frame step 3, with its two previous uploads still in
-RAM at `v = -18` and `v = -12` - a triangle wave between `-24` and `-12`,
-two ticks a side. The port's ambient tick and the cycler integrator take the
+RAM at `v = -18` and `v = -12` - a triangle wave twelve deep, two ticks a
+side, whose phase two ticks back equals the newest upload's. The port's ambient tick and the cycler integrator take the
 byte from `legaia_engine_field::clut_cell_fx::SPEED_SCALAR`.
 
 ### The self-modifying spawn stepper
