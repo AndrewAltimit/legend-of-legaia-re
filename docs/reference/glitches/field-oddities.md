@@ -1482,10 +1482,13 @@ None of these is shown; each is a hypothesis with what speaks for and against it
    glow, the reflection controllers and three raised party members. Of these only the sequencer is
    driven by an interrupt (the root-counter tick that advances the score), and a sequencer reading
    past its data would fit both the `sound: underrun` and the illegal-instruction lines. Not traced.
-3. **The crossing's own loads** (inference). The `3F` at the end loads `conc2`; the field loader
-   reads through `FUN_8003E800`, which first waits, without limit, for any read still in flight. A
-   faster crossing could change what is in flight at that moment. Against: no read is known to be
-   in flight there.
+3. **A read still running while the pages are open** (capture, then inference). The capture below
+   finds a second CD stream that starts after the commit and, in PCSX-Redux, ends about when the
+   first page opens. Every read goes through `FUN_8003E800`, whose entry waits without limit for a
+   read in flight, and each sector passes `FUN_8003EF14`'s header check. A slower emulated drive
+   puts that stream under the text, where it overlaps the page draw and, if the player is quick,
+   the `conc2` load. For: it is the one asynchronous job the text can overlap. Against: pressing
+   fast would overlap it more, not less, unless the failure is in the stream itself.
 
 Two common explanations do not fit the disc: there is no movie in the scene, and this disc's XA
 streams are battle voices ([`battle-action-helpers.md`](../../subsystems/battle-action-helpers.md#battle-voice-cues),
@@ -1512,14 +1515,37 @@ and `P2[18]` ran by themselves. Cross was pressed by the probe at a fixed period
 | dynarec | default | every 100 vsyncs | 3267 |
 | dynarec | default | every 4 vsyncs | 2378 |
 | dynarec | `SpuIrq` on | every 100 vsyncs | 3267 |
+| dynarec | default | every 23, 47, 150 or 200 vsyncs | 2490, 2767, 3468, 3467 |
+| dynarec | default | every 300 vsyncs | 4365 |
+| dynarec | PAL video (`AutoVideo` off, `Video` 1) | every 100 vsyncs | 3265 |
+| dynarec | `8Megs` on | every 100 vsyncs | 3267 |
 
-Every run reached `conc2` with the party standing in it; none stalled or crashed. PCSX-Redux has
-no CD speed or seek setting, so the timing the reports point at could not be varied. Sampled
-every 30 vsyncs, the music swap behaved the same in the slow and the fast runs: at `P2[18]`'s start
-`0x8007BAB8` held the new index with `0x8007BA9C` still on the old one and bit 0 of `0x8007B750`
-set; 60 vsyncs later both indexes matched and the flag word was clear, so the read and the commit
-were over before the first page. The disc-side cause is therefore not something every emulator
-does; it needs one of the emulators the reports name.
+Every run reached `conc2` with the party standing in it; none stalled or crashed. Holding Cross
+down instead parks on `P2[17]`'s first page, because a page advances only on a fresh press.
+PCSX-Redux has no CD speed or seek setting, so the timing the reports point at could not be varied.
+
+One more interpreter run, Cross every 100 vsyncs, put execution breakpoints on `0x8001FC00`,
+`0x8003E800` and `0x8003F128` and logged `0x8007B750`, `gp+0x988` and `gp+0x980` on every vsync from
+`P2[18]`'s start (capture, poked state; vsyncs counted from that start):
+
+| Vsyncs | What |
+|---|---|
+| 0 | sub-op 9: bit 0 of `0x8007B750` set; `0x8007BAB8` takes the new index (extraction `0x3EC` - 2 = track 2014's entry) two vsyncs later |
+| 5 | `FUN_8001FC00` (from `0x80024680`) reads 105 sectors of track 2014 |
+| 6..61 | that read in flight (`gp+0x988` = 1); it ends at 62 |
+| 64, 65 | bit 3 (settled), then bit 4 (the script's commit); flag word clear at 67 |
+| 72 | `0x8007BA9C` latches the new index |
+| 74 | an 8-sector read from `FUN_8003E360` (return `0x8003E4CC`) |
+| 98..461 | twenty reads of 3 to 16 sectors, about 316 KiB, through the stream-file read `FUN_800559EC` (return `0x80055A4C`), to rising addresses `0x8015CBD0`..`0x801A7CE8`; the last ends at 480 |
+| 1671 | `3F`: the `conc2` load begins |
+
+So the music read was over before the commit, but the commit is followed by a second stream that
+runs for about 400 vsyncs, almost to the first text page (an estimate from the record's waits: the
+pages were not instrumented). Neither of its two callers reads anything at the music swap or the
+`conc2` load. Which op starts it, and what it loads, is not traced; the stream-file API is the one
+the battle loaders use ([`battle.md` functions](../functions/battle.md)), so a party re-stage for
+the past is one reading (inference). On an emulator whose CD is slower, or whose sector timing
+differs, this stream would still be running while the pages are open.
 
 The port does not hang here: the full-game ladder's pad tier walks `taiku`, `map03`, `concnow`,
 `conc2` and `conc` and reaches the `conkram_past` milestone
@@ -1554,9 +1580,9 @@ swap alone would be expected to show elsewhere too; no other scene is reported.
 On an emulator that freezes here, break in the debugger once the picture stops and read the PC.
 In `0x8003E008..0x8003E078` or `0x8003F2CC..0x8003F2EC` it is a CD wait (candidate 1 or 3); read
 `gp+0x980`, `gp+0x988` and `gp+0x968` (`gp` = `0x8007B318`) for the read's state. Elsewhere, read
-`0x8007B750` (bit 3 settled, bit 4 committed), `0x8007BAB8` and `0x8007BA9C`. On a console or a
-passing emulator, a watch on `gp+0x988` from the commit shows when the read really ends relative
-to the commit arm.
+`0x8007B750` (bit 3 settled, bit 4 committed), `0x8007BAB8` and `0x8007BA9C`. A watch on `gp+0x988`
+from `P2[18]`'s start shows the music read and then the twenty-read stream; on an emulator that
+freezes, compare where the stream ends with where the first page opens.
 
 ### Open questions
 
@@ -1565,6 +1591,8 @@ to the commit arm.
   speed-ups both off and on.
 - Whether it happens before the first page (candidate 1) or while the pages are open (candidate
   2); the pressing workaround says the second.
+- Which op of `P2[18]` starts the 316 KiB stream after the commit, and what it loads. A breakpoint
+  on `0x800559EC`, walked back through its callers, settles both.
 - Why the PAL release would not show it. Its `PROT.DAT` is laid out like the USA one
   ([`pal-localizations.md`](../../tooling/pal-localizations.md)); the frame rate and the text
   lengths differ.
