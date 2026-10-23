@@ -105,7 +105,7 @@
       <tr><td><a href="field-oddities.html#spikefish-flute-freeze">Spikefish Flute escape can freeze the game</a></td><td><span class="tag tag-done">explained</span></td><td>The flute&#x27;s escape skips the end of its attack, so its caption stays up after the battle frees its text; redrawn over field data, the text routine can loop forever.</td></tr>
       <tr><td><a href="field-oddities.html#gaza-2-softlock">Gaza 2 softlock</a></td><td><span class="tag tag-done">explained</span></td><td>A walking monster is carried only by its Move animation; a flinch flag Kemaro leaves behind swaps it for idle and the wait for range never ends.</td></tr>
       <tr><td><a href="field-oddities.html#dialogue-inconsistencies">Dialogue inconsistencies</a></td><td><span class="tag tag-done">explained</span></td><td>The English script renders one thing two ways; in the bath scene it turns a question and answer about the researcher into ones about Vahn.</td></tr>
-      <tr><td><a href="field-oddities.html#conkram-mirror-freeze">Conkram mirror freeze (emulators)</a></td><td><span class="tag tag-open">not confirmed</span></td><td>The scene is located and its music swap waits on the disc with no time limit; which emulator timing breaks it, and why pressing fast through the text avoids it, is not found.</td></tr>
+      <tr><td><a href="field-oddities.html#conkram-mirror-freeze">Conkram mirror freeze (emulators)</a></td><td><span class="tag tag-done">explained</span></td><td>The scene runs on a nearly full heap; an emulated CPU faster than a console&#x27;s keeps more effect parts alive, an allocation fails, and the move VM writes through the NULL pointer over the CPU&#x27;s exception vector.</td></tr>
     </tbody>
   </table></div>
 </section>

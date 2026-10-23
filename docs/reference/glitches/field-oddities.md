@@ -4,8 +4,8 @@ Four community-reported oddities that live in the field and battle runtime rathe
 attack or item: a debug counter that reaches the screen on Mt. Rikuroa, the random battles that
 stop in Jette's Absolute Fortress, the camera orbit that ends the Gaza rematch, and three small
 slips in the English script. One section is a mechanic rather than a fault: the two springs in
-Rogue's Tower that change the encounter rate. One is an emulation fault rather than a game fault:
-the freeze many emulators show in Conkram's mirror scene. A closing section records the identity of
+Rogue's Tower that change the encounter rate. One is a freeze that needs an emulator to trigger it:
+the heap running out in Conkram's mirror scene when the emulated CPU is too fast. A closing section records the identity of
 the two summon flutes, as support for the flute pages.
 
 The base of every section is static analysis of the USA disc: disassembly of `SCUS_942.54` and its
@@ -1376,7 +1376,7 @@ scene, clear flag `0x3FB` and step onto the record's trigger tile.
 
 ## Conkram mirror freeze
 
-**Status:** not confirmed
+**Status:** explained
 
 **Reported as:** the game freezes in present-day Conkram, in the Room of Mirrors scene that sends
 the party into the past, on many emulators; mashing Cross through the scene's text avoids it
@@ -1398,9 +1398,14 @@ Nobody reports it on a PS1 or PS2. The players call it an "FMV"; the disc plays 
 nine movie triggers are listed in [`str-fmv-table.md`](../../formats/str-fmv-table.md#per-scene-trigger-assignment-disc-sourced),
 and none is in a Conkram scene). The scene is drawn by the field engine like any other cutscene.
 
-The cause is not found. What is established is which scene it is, what it runs, and which waits
-in it depend on hardware timing. The rest of this section is that map, the candidate causes it
-leaves, and what was captured.
+**The cause is a heap that runs out when the emulated CPU is faster than a console's.** The scene
+runs with almost no free heap. Its effect parts are allocated per frame, so an emulator that
+gives the game more frames per second keeps more of them alive. Past the edge, an allocation
+returns NULL, and the move VM writes animation data through the NULL pointer over the bottom of
+RAM. That wipes the CPU's exception vector, and the next interrupt jumps into data: a
+reserved-instruction exception at the vector itself, raised again on every attempt. The picture
+stops; pSX logs exactly that loop as repeated illegal opcodes. Reproduced on two emulators by
+raising or lowering only the emulated CPU speed (capture, below).
 
 ### The scene
 
@@ -1411,191 +1416,155 @@ Two partition-2 records of `concnow` (extraction 0363, raw define 362), read wit
   extraction 0361). Its header gates are C1 `0x3E1` (blocks once set) and C2 `0x3CE` (King
   Nebular's Seru Flame scene `P2[16]` has run). The party walks to the mirror at tile `(31, 106)`,
   places the Seru Flame ("Over here! Put the Seru Flame here!"), and after a white flash one
-  character says "That mirror is the door to the past." Its tail is `34 01 FF FF FF 3C 00` (white
-  glow), `35 3C 00 05` (fade the current score out and stop it in 60 vsyncs), `4A 3C 00` (wait 60
-  frames), `4C 54` and `44 62`, which spawns global record `0x62` = 48 + 32 + 18, `P2[18]`.
+  character says "That mirror is the door to the past." Its tail fades the score out (`35 3C 00
+  05`), waits 60 frames and spawns global record `0x62` = 48 + 32 + 18, `P2[18]`.
 - **`P2[18]`** (C1 `0x423`) is the crossing. In order: `35 DE 07 09` (start track 2014, sound-test
   14, behind the load barrier); `CFlag` bit 3 on 54 actors; the three party members raised off the
   floor (`4C 42`, bit 29); system flags `0x0A` and `0x0B` set; `B4 F8 30 01`, which spawns
   record 2 of the scene's move-VM stager table (extraction 0362); a 60-frame wait; `35 00 00 0A`
-  (the swap commit); camera moves; `B4 32 10 ...`, a breathing green glow on actor `0x32` with a
-  looping keyframe script; `60 0A`; then **three text pages** ("...listen! In the world of the
-  past, you will meet your parents when they were young." and two more); `B4 32 20` (the glow
-  shrinks out over 67 frames); `60 0B`; camera moves and 340 frames of waits; system flag `0x423`
-  set; a white fade; `3F` to `conc2`.
+  (the swap commit); camera moves and 400 frames of waits; `B4 32 10 ...`, a breathing green glow
+  on actor `0x32`; `60 0A`; then **three text pages** spoken by Terra ("...listen! In the world of
+  the past, you will meet your parents when they were young." and two more); `B4 32 20` (the glow
+  shrinks out); `60 0B`; 340 frames of camera moves and waits; system flag `0x423` set; a white
+  fade; `3F` to `conc2`.
 
-The stager record parks on flag `0x0A` and then on `0x0B` (`2F 13 0A`, `2F 13 0B`), so its
-particle loop (`25 03` four times a pass, record 3, which rewrites its own operands with `2F 05`
-and `2F 1B`) starts after the text, not during it. The room also carries three reflection
-controllers installed at scene entry (`4C 86` in `P1[1]`, `P1[4]`, `P1[5]`), the mirror images of
-the party ([`script-vm-menuctrl.md`](../../subsystems/script-vm-menuctrl.md#4c-86--4c-87-are-the-reflection-controllers-install-and-teardown)).
+The room also carries three reflection controllers installed at scene entry (`4C 86` in `P1[1]`,
+`P1[4]`, `P1[5]`), the mirror images of the party
+([`script-vm-menuctrl.md`](../../subsystems/script-vm-menuctrl.md#4c-86--4c-87-are-the-reflection-controllers-install-and-teardown)).
 
-The text pages are the only part whose length the player controls. Everything before the first
-page, the music swap included, takes the same number of frames however fast Cross is pressed.
-So pressing fast shortens one thing: the time spent with the pages open, the glow looping, the new
-track playing and the particle effect parked.
+### Mechanism
 
-### Waits that depend on hardware timing
+1. **The heap is nearly full in this room** (capture). The game's allocator (`FUN_80017888` over
+   `FUN_8002B468`, best-fit over one free list) has about 16.6 KB free in `concnow` before the
+   mirror, the arena from `0x80091800` being otherwise taken by the scene. On PCSX-Redux at console
+   speed the crossing takes the largest free block down to 3,708 bytes and the total to 5,152, the
+   low point coming in the waits after the music commit.
+2. **After the music swap the game pre-stages battle data** (capture, disassembly). The per-frame
+   music poller `FUN_800243F0`, once a swap has committed and the game is in field mode (`*(u16
+   *)0x8007B83C == 3`), steps a small machine at `0x8007BA98` (`0x80024BB0..0x80024C64`): an
+   8-sector read through `FUN_8003E360`, a wait for the drive, then the party battle-file loader
+   `FUN_80052770` (`jal` at `0x80024C50`), which opens `PLAYER1..3` (raw TOC `0x361..0x363` =
+   extraction 863..865, [`battle-data-pack.md`](../../formats/battle-data-pack.md)) through the
+   stream-file API and reads about 316 KiB in twenty chunks into heap buffers. In PCSX-Redux this
+   runs for about 400 vsyncs from the commit, during the waits before the first page.
+3. **The effect's allocations scale with the frame rate** (capture; why is inference). While the
+   crossing runs, the scene's effect parts each take heap blocks: a `0x9C`-byte render node
+   (`FUN_80020F88`, `jal` at `0x80021184`) and a keyframe buffer for the move VM's
+   `KEYFRAME_LOAD` (op `0x0A`). Sampling the rendered frames: at console speed the field draws 15
+   frames per 30 vsyncs before the scene and 10 during it; at double CPU speed it draws 20 before
+   it. With the faster CPU the free heap falls faster and further: at 100 % its low point is about
+   6 KB, and at the faster settings below it runs out.
+4. **`KEYFRAME_LOAD` does not check its allocation** (disassembly). At `0x80023CD0..0x80023CE0`
+   in the move VM `FUN_80023070` it calls `FUN_80017888(0, count * 32 | 8)` and stores the result
+   at `actor+0x4C` with no NULL test, then copies the lane data through it (`sh` at `0x80023D30`,
+   `0x80023D3C`, and later `0x80023EF4`). The malloc wrapper's failure arm (`0x800178B8`) only
+   adds `0x20000` to the `PRG ERR` counter `0x8007B828` and returns NULL. `FUN_80020F88` does test
+   its own `0x9C` allocation (`bne` at `0x8002118C`) but still stores the NULL at `actor+0x44`,
+   and the draw path writes through it later (`sw` at `0x8001B098` in `FUN_8001ADA4`).
+5. **The NULL write lands on the exception vector** (capture). With a 4-lane keyframe (`0x88`
+   bytes) the copy covers `0x80000028..0x8000008C`. `0x80000080` holds the general exception
+   vector the BIOS installs (`lui k0,0` / `addiu k0,k0,0xC80` / `jr k0`). The next interrupt
+   executes the copied halfwords: the CPU stops with Cause `0x428` (ExcCode `0x0A`, reserved
+   instruction) and EPC `0x80000084`, and every retry enters the same vector. If the copied data
+   happens to decode as harmless instructions the game limps on, which one capture shows (below).
 
-The field script's own waits are frame-counted parks and cannot hang on timing: `4A` counts
-frames, and the two music waits re-run the op each frame until a flag changes
-([`script-vm.md`](../../subsystems/script-vm.md#sub-op-9-is-a-start-not-a-queue)). Below them, the
-music swap reads the disc, and the disc layer has waits that spin with no time limit
-(disassembly):
-
-| Wait | Where | Spins until | Time limit |
-|---|---|---|---|
-| `FUN_8003DE7C(0)` | loop `0x8003E008..0x8003E078`, `VSync(0)` between polls | the read state `gp+0x980` reads `6`, which it is given when `gp+0x988` is negative | none |
-| `FUN_8003F2B8(0)` | loop `0x8003F2CC..0x8003F2EC` | `CdSync(1)` (`FUN_8005BE8C`) returns `CdlComplete` | none |
-| `FUN_8003E800` entry | `0x8003E828..0x8003E83C` | a read still in flight finishes, by the first wait | none |
-| `FUN_800243F0` commit arm | `0x80024730..0x8002473C` | `DrawSync(0)` (`FUN_80058104`), then `FUN_8003DE7C(0)` | none |
-
-The swap is staged by the per-frame poller `FUN_800243F0`
-([`audio.md`](../../subsystems/audio.md#the-track-swap-handshake-fun_800243f0--op-0x35-sub-op-0xa)):
-its first stage polls the drive with the time-limited `FUN_8003DE7C(1)` (`0x800245F0`); the next
-starts the read of the new track with `FUN_8001FC00` -> `FUN_8003E800` (`0x80024678`) and arms a
-settle counter; the next sets the "settled" bit 3 when that counter runs out (`0x800246D0`) and,
-while the script has not committed, stalls. **"Settled" is a timer, not a test of the read**: the
-read is only waited on once the script commits, when the same stage carries on at `0x80024718`
-into `DrawSync(0)` and the unlimited `FUN_8003DE7C(0)`. Each sector arrives in
-the data-ready callback `FUN_8003EF14`, which checks the sector's header against the sector it
-expects (`0x8003EF34..0x8003EF44`); a mismatch takes the error arm, which sets the remaining count
-to `-1` and pauses the drive (`0x8003EFAC..0x8003EFD4`).
-
-On a console the read is long finished when the commit arm runs. If an emulator delivers a sector
-late, from the wrong place, or not at all, the commit arm either waits longer than a console would or forever,
-with the picture stopped. The commit arm runs on the frame after `P2[18]`'s commit at `+0x0108`,
-before the first text page.
-
-### Candidate causes
-
-None of these is shown; each is a hypothesis with what speaks for and against it.
-
-1. **The music read never completes** (inference). An emulator that drops or misplaces a CD
-   interrupt leaves `FUN_8003DE7C(0)` spinning in the commit arm. For: the wait has no limit, and
-   CD timing is where the reported emulators differ most. Against: the commit arm runs before the
-   text, so
-   pressing Cross faster cannot avoid it; and pSX reports an illegal instruction, a wild jump, not a
-   spin.
-2. **Something runs out of time while the text is open** (inference). The pressing workaround says
-   the risk grows with time spent on the pages. Live then: the new track's sequence, the looping
-   glow, the reflection controllers and three raised party members. Of these only the sequencer is
-   driven by an interrupt (the root-counter tick that advances the score), and a sequencer reading
-   past its data would fit both the `sound: underrun` and the illegal-instruction lines. Not traced.
-3. **A read still running while the pages are open** (capture, then inference). The capture below
-   finds a second CD stream that starts after the commit and, in PCSX-Redux, ends about when the
-   first page opens. Every read goes through `FUN_8003E800`, whose entry waits without limit for a
-   read in flight, and each sector passes `FUN_8003EF14`'s header check. A slower emulated drive
-   puts that stream under the text, where it overlaps the page draw and, if the player is quick,
-   the `conc2` load. For: it is the one asynchronous job the text can overlap. Against: pressing
-   fast would overlap it more, not less, unless the failure is in the stream itself.
-
-Two common explanations do not fit the disc: there is no movie in the scene, and this disc's XA
-streams are battle voices ([`battle-action-helpers.md`](../../subsystems/battle-action-helpers.md#battle-voice-cues),
-repo doc), with no field op documented to start one. The script itself never reads a hardware
-register; every hardware wait is in the disc and music code below it.
+The CD waits the scene leans on are not involved: at the stop the read state words are idle
+(`gp+0x988 = 0`, `gp+0x980 = 0`), the music swap has finished, and the PC is the exception vector,
+not a CD wait loop.
 
 ### What was captured
 
-The scene was replayed under PCSX-Redux on the retail disc, **on a poked state**: the catalogued
-late-game `map03` save state, with flags `0x3E1`, `0x423`, `0x3F2` and `0x4C8` cleared (the last
-two because `map03` `P2[7]`, the Conkram walk-on at tile `(66, 101)`, skips while `0x3F2` is set
-and goes to `concend` while `0x4C8` is set). The player was then placed on that walk-on tile, so
-the game's own warp loaded `concnow`, and after 120 settled frames onto tile `(30, 103)`, so `P2[17]`
-and `P2[18]` ran by themselves. Cross was pressed by the probe at a fixed period.
+Two routes into the scene, both from the retail disc, staged in a fresh directory away from the
+`.ppf` that sits beside the retail image:
 
-| Core | Settings | Cross | Walk-on to `conc2` (vsyncs) |
+- **a poked state** on PCSX-Redux: the catalogued late-game `map03` state, with flags `0x3E1`,
+  `0x423`, `0x3F2` and `0x4C8` cleared, the player placed on the Conkram walk-on at map tile
+  `(66, 101)` so the game's own warp loads `concnow`, then on tile `(30, 103)`;
+- **two edited memory-card saves**, booted cold on every emulator. One lifts its save body from
+  that poked state's RAM (a level-37 late-game party); the other is the **played** save from Zora's
+  Castle that precedes Conkram (`playthrough-ladder-pro00-14.mcr` PRO-14, a level-27 party), with
+  only the scene label, the position (the `P2[17]` tile) and the five `concnow` vision flags
+  edited. Loading either starts `P2[17]` by itself.
+
+Cross was pressed by the harness, every 100 vsyncs unless noted. The libretro cores ran under a
+small headless host that injects the card, presses the pad and reads RAM; ePSXe ran under box64
+on a virtual X display.
+
+| Emulator | Setting | Card | Result |
 |---|---|---|---|
-| interpreter, debugger off | default | every 100 vsyncs | 3266 |
-| interpreter, debugger off | default | every 300 vsyncs | 4365 |
-| interpreter, debugger off | default | every 4 vsyncs | 2373 |
-| interpreter, debugger on | default | every 100 vsyncs | 3266 |
-| interpreter, debugger off | `SpuIrq` on | every 100 vsyncs | 3266 |
-| interpreter, debugger off | `RCntFix` on | every 100 vsyncs | 3266 |
-| dynarec | default | every 100 vsyncs | 3267 |
-| dynarec | default | every 4 vsyncs | 2378 |
-| dynarec | `SpuIrq` on | every 100 vsyncs | 3267 |
-| dynarec | default | every 23, 47, 150 or 200 vsyncs | 2490, 2767, 3468, 3467 |
-| dynarec | default | every 300 vsyncs | 4365 |
-| dynarec | PAL video (`AutoVideo` off, `Video` 1) | every 100 vsyncs | 3265 |
-| dynarec | `8Megs` on | every 100 vsyncs | 3267 |
+| PCSX-Redux | interpreter or dynarec, `SpuIrq`, `RCntFix`, PAL video, 8 MB, Cross every 4..300 vsyncs | poked state, late-game card | passes; no allocation fails |
+| SwanStation (DuckStation core) | 100 % CPU, recompiler | both | passes |
+| SwanStation | 50 % CPU | late-game | passes |
+| SwanStation | 125 %, 150 %, 200 % CPU | played | freezes: `PRG ERR` set, vector overwritten |
+| SwanStation | 200 %, 400 % CPU | late-game | allocation fails and the vector is overwritten; stops in `concnow` |
+| PCSX-ReARMed (current) | its default for this game: dynarec (both cards), interpreter (late-game) | both | freezes; exception loop at `0x80000080` |
+| PCSX-ReARMed | `psxclock` 30, 45 (both cards), 50 (played) | both | passes |
+| PCSX-ReARMed | `psxclock` 62, 80, 100 | late-game | freezes |
+| ePSXe 2.0.5 (Linux x64) | defaults | both | passes |
 
-Every run reached `conc2` with the party standing in it; none stalled or crashed. Holding Cross
-down instead parks on `P2[17]`'s first page, because a page advances only on a fresh press.
-PCSX-Redux has no CD speed or seek setting, so the timing the reports point at could not be varied.
+PCSX-ReARMed's database sets a faster CPU for exactly this game (cycle multiplier 160 against its
+default 175, commented "some attack moves lag"), which is why its default freezes. The edge sits
+close to a console's speed: SwanStation passes at 100 % and freezes at 125 % with the played
+party. The two parties put the edge in different places, since their field data leaves different
+headroom.
 
-One more interpreter run, Cross every 100 vsyncs, put execution breakpoints on `0x8001FC00`,
-`0x8003E800` and `0x8003F128` and logged `0x8007B750`, `gp+0x988` and `gp+0x980` on every vsync from
-`P2[18]`'s start (capture, poked state; vsyncs counted from that start):
+**Pressing faster did not save the frozen settings.** At 200 % SwanStation the allocation fails
+about 70 vsyncs into `P2[18]`, before any page, so text speed cannot matter there; on
+PCSX-ReARMed's default it fails about 560 vsyncs in, around the first page. One PCSX-ReARMed run
+that pressed every 4 vsyncs reached `conc2` with the vector already overwritten (the limping case
+above); every other fast-pressing run on a freezing setting froze or stalled. That pressing helps on an emulator that is only marginally too fast, where the
+failure would fall while the pages are open, is inference.
 
-| Vsyncs | What |
-|---|---|
-| 0 | sub-op 9: bit 0 of `0x8007B750` set; `0x8007BAB8` takes the new index (extraction `0x3EC` - 2 = track 2014's entry) two vsyncs later |
-| 5 | `FUN_8001FC00` (from `0x80024680`) reads 105 sectors of track 2014 |
-| 6..61 | that read in flight (`gp+0x988` = 1); it ends at 62 |
-| 64, 65 | bit 3 (settled), then bit 4 (the script's commit); flag word clear at 67 |
-| 72 | `0x8007BA9C` latches the new index |
-| 74 | an 8-sector read from `FUN_8003E360` (return `0x8003E4CC`) |
-| 98..461 | twenty reads of 3 to 16 sectors, about 316 KiB, through the stream-file read `FUN_800559EC` (return `0x80055A4C`), to rising addresses `0x8015CBD0`..`0x801A7CE8`; the last ends at 480 |
-| 1671 | `3F`: the `conc2` load begins |
+Two emulators named by the reports were not run: ePSXe 1.6.0 reaches its plugin start-up under
+box64's 32-bit mode with plugins written for the test, then crashes as soon as its CPU core runs
+(box64 cannot execute that build's generated code); ePSXe 1.9.0 needs a 32-bit GTK 2 stack that
+box64 cannot wrap. pSX and the PS3 were not available.
 
-So the music read was over before the commit, but the commit is followed by a second stream that
-runs for about 400 vsyncs, almost to the first text page (an estimate from the record's waits: the
-pages were not instrumented). Neither of its two callers reads anything at the music swap or the
-`conc2` load. Which op starts it, and what it loads, is not traced; the stream-file API is the one
-the battle loaders use ([`battle.md` functions](../functions/battle.md)), so a party re-stage for
-the past is one reading (inference). On an emulator whose CD is slower, or whose sector timing
-differs, this stream would still be running while the pages are open.
-
-The port does not hang here: the full-game ladder's pad tier walks `taiku`, `map03`, `concnow`,
+The port does not freeze here: the full-game ladder's pad tier walks `taiku`, `map03`, `concnow`,
 `conc2` and `conc` and reaches the `conkram_past` milestone
-([`full-game-ladder.md`](../../tooling/full-game-ladder.md)), and `P2[18]`'s `3F` is the only
-scripted crossing from `concnow` to `conc2` on the disc. The port reads the disc synchronously, so
-neither music wait can stall
-([`script-vm.md`](../../subsystems/script-vm.md#sub-op-9-is-a-start-not-a-queue)).
+([`full-game-ladder.md`](../../tooling/full-game-ladder.md)). The port allocates from its own
+memory, not the game's 16 KB arena.
 
 ### Addresses
 
 | Address | Image | What | Evidence |
 |---|---|---|---|
 | `concnow` `P2[17]`, `P2[18]` | MAN, extraction 0363 | the mirror walk-on and the crossing | disc data |
-| `.PCH` records 38..41 | extraction 0361 | walk-on tiles `(29..32, 103)` -> `P2[17]` | disc data |
-| stager records 2, 3 | extraction 0362 | the crossing's particle effect | disc data |
-| `0x801E0224..0x801E0258`, `0x801E0264..0x801E02B8` | PROT entry 0897 | op `0x35` sub-ops 9 and `0xA`, the two music waits | repo doc |
-| `0x800245C0..0x800247C4` | `SCUS_942.54` | `FUN_800243F0` swap stages; commit arm at `0x80024718` | disassembly |
-| `0x8003DE7C` | `SCUS_942.54` | CD read wait; unlimited loop `0x8003E008..0x8003E078` | disassembly |
-| `0x8003F2B8` | `SCUS_942.54` | CD command wait; unlimited loop `0x8003F2CC..0x8003F2EC` | disassembly |
-| `0x8003E800`, `0x8003F128` | `SCUS_942.54` | read start (waits first for a read in flight); the drive kick | disassembly |
-| `0x8003EF14` | `SCUS_942.54` | per-sector callback; header check and error arm | disassembly |
-| `0x8005FB84`, `0x80058104`, `0x8005BE8C` | `SCUS_942.54` | `VSync`, `DrawSync`, `CdSync` wrappers | disassembly |
+| `0x80023CD0..0x80023CE0`, `0x80023D30`, `0x80023D3C`, `0x80023EF4` | `SCUS_942.54` | `KEYFRAME_LOAD`: unchecked malloc, then the lane copy through the result | disassembly, capture |
+| `0x80017888`, failure arm `0x800178B8` | `SCUS_942.54` | malloc wrapper: on NULL adds `0x20000` to `PRG ERR` and returns NULL | disassembly |
+| `0x8002B468` | `SCUS_942.54` | allocator: best-fit over the free list at `*(gp+0x840) + 0xC` | disassembly |
+| `0x80021184..0x80021190` | `SCUS_942.54` | `FUN_80020F88`: `0x9C` render-node malloc, NULL stored at `actor+0x44` | disassembly |
+| `0x8001B098` | `SCUS_942.54` | `FUN_8001ADA4`: draw-path store through `actor+0x44` | disassembly, capture |
+| `0x80024BB0..0x80024C64` | `SCUS_942.54` | `FUN_800243F0`: post-swap battle pre-stage (`FUN_8003E360`, then `FUN_80052770`) | disassembly, capture |
+| `0x80000080` | RAM | the general exception vector the NULL copy overwrites | capture |
+| `0x8007B828` | RAM | `PRG ERR` counter, `0x20000` per failed allocation | disassembly, capture |
 
 ### Scope
 
-One scene. `P2[18]` cannot be re-entered once `0x423` is set; the past is left by other routes.
-The same swap code runs at every scripted music change on the disc, which is why a cause in the
-swap alone would be expected to show elsewhere too; no other scene is reported.
+This scene on any emulator that runs the CPU fast enough; how fast is enough depends on the party.
+Any other place where the free heap gets this low behaves the same way, and the unchecked
+`KEYFRAME_LOAD` allocation serves every move-VM effect in the game, but no other report of this
+kind is known. On a console the allocation does not fail in either captured party. The
+[WORK ERR](#work-err-on-mt-rikuroa) section is the sibling limit: the fixed actor pool, not the
+heap.
 
 ### Verifying it
 
-On an emulator that freezes here, break in the debugger once the picture stops and read the PC.
-In `0x8003E008..0x8003E078` or `0x8003F2CC..0x8003F2EC` it is a CD wait (candidate 1 or 3); read
-`gp+0x980`, `gp+0x988` and `gp+0x968` (`gp` = `0x8007B318`) for the read's state. Elsewhere, read
-`0x8007B750` (bit 3 settled, bit 4 committed), `0x8007BAB8` and `0x8007BA9C`. A watch on `gp+0x988`
-from `P2[18]`'s start shows the music read and then the twenty-read stream; on an emulator that
-freezes, compare where the stream ends with where the first page opens.
+On an emulator with a CPU-speed setting, load a save in this room and raise the speed: the freeze
+comes back on demand, and lowering the speed clears it. In a debugger, break at `0x800178B8` (the
+malloc failure arm) during the crossing, and watch `0x80000080`: the vector changes from
+`00001A3C 800C5A27 08004003` to animation data, and the next interrupt ends at
+`0x80000080`/`0x80000084` with Cause `0x428`. `PRG ERR` (`0x8007B828`) reads `0x20000` or more.
 
 ### Open questions
 
-- Where the freeze is, in frames, on an emulator that shows it; no report gives a PC. DuckStation
-  is open source and named by a report, so it is the next place to look, with its CD read and seek
-  speed-ups both off and on.
-- Whether it happens before the first page (candidate 1) or while the pages are open (candidate
-  2); the pressing workaround says the second.
-- Which op of `P2[18]` starts the 316 KiB stream after the commit, and what it loads. A breakpoint
-  on `0x800559EC`, walked back through its callers, settles both.
-- Why the PAL release would not show it. Its `PROT.DAT` is laid out like the USA one
-  ([`pal-localizations.md`](../../tooling/pal-localizations.md)); the frame rate and the text
-  lengths differ.
+- Why the frame rate changes the live part count: whether the spawner (stager record 2, `25 03`
+  four times a pass) and the parts' lifetimes count different clocks. The rendered frame rate and
+  the heap fall are measured; the link between them is inference.
+- Why the PAL release would not freeze. Its 50 Hz field gives the CPU more time per frame, which
+  would help, but no PAL disc was run.
+- Which ePSXe changes the reported 1.7.0 / 1.8.0 split matches; 1.6.0 and 1.9.0 did not run here.
+- Whether pressing fast saves a marginal setting; none of the freezing settings tried was marginal.
 
 ## The two summon flutes
 
