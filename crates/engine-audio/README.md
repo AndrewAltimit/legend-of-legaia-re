@@ -20,8 +20,10 @@ mono, the SPU) is written once as provided methods over
 `AudioSink::with_core`, which is what lets `legaia-engine-session`'s
 director run unchanged on either play host.
 
-`AudioOut` also carries two output-side switches: `set_mono` (the retail
-options screen's Stereo/Monaural downmix) and `set_muted` - an engine-only
+`AudioOut` also carries three output-side switches: `set_mono` (the retail
+options screen's Stereo/Monaural row: libsnd's per-voice fold, the CD input
+left stereo), `set_downmix` (the engine-only full-mono downmix of the
+finished mix) and `set_muted` - an engine-only
 master gate that zeroes the rendered frames while the sequencer, SPU
 voices, XA stream and fade engine all keep ticking, so unmuting resumes
 playback in sync without tearing down the stream.

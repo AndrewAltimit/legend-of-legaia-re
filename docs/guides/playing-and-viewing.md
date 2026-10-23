@@ -486,7 +486,10 @@ is the retail cadence - a faster walk steps more often, standing still is silent
 The engine resolves its files against the **current directory**: key bindings
 in `legaia-input.toml`, options (camera preset, movement mode, the
 `bgm_volume` / `sfx_volume` music and sound-effect levels, `0..=10` with `8`
-the retail mix) in `legaia-options.toml`, and the save screen's port-1 memory
+the retail mix, and `downmix_mono`, the full mono downmix for a single
+speaker - separate from the in-game Monaural setting, which is the original's
+own mono mode and leaves voices and movies in stereo) in
+`legaia-options.toml`, and the save screen's port-1 memory
 card at `saves/memcard1.mcr` - the same raw card image the browser play page
 keeps, which any PSX emulator reads. The first launch that finds no card
 there writes any `slot_NN` save files an older build left into it. Run from the same

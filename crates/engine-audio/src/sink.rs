@@ -35,15 +35,23 @@ pub trait AudioSink {
     /// output shares with its device callback.
     fn with_core<R>(&self, f: impl FnOnce(&mut StreamResampler) -> R) -> R;
 
-    /// Toggle monaural output (the retail options screen's "Sound: Stereo /
-    /// Monaural" row): each SPU voice sounds at the larger of its two
-    /// volumes on both sides, as libsnd's `SsSetMono` does ([`crate::Spu::mono`]),
-    /// and the final mix (XA included) is averaged into both channels.
+    /// Toggle monaural mode (the retail options screen's "Sound: Stereo /
+    /// Monaural" row), exactly as libsnd's `SsSetMono` does: each SPU voice
+    /// sounds at the larger of its two volumes on both sides
+    /// ([`crate::Spu::mono`]). Nothing else changes - `SsSetMono`
+    /// (`FUN_80068C5C`) only raises the flag the voice-volume paths read, so
+    /// the CD input (XA voice / FMV audio) stays stereo and the voices' sum
+    /// is not averaged. The full downmix is [`Self::set_downmix`].
     fn set_mono(&self, mono: bool) {
-        self.with_core(|s| {
-            s.mono = mono;
-            s.spu.mono = mono;
-        });
+        self.with_core(|s| s.spu.mono = mono);
+    }
+
+    /// The engine-only full-mono downmix (the options file's `downmix_mono`,
+    /// both hosts' settings): the finished mix, XA included, is averaged
+    /// into both channels. Independent of [`Self::set_mono`]; off is the
+    /// retail output. A one-channel output device is averaged either way.
+    fn set_downmix(&self, on: bool) {
+        self.with_core(|s| s.downmix = on);
     }
 
     /// Master mute gate. Every producer (sequencer, SPU voices, XA stream,

@@ -461,6 +461,10 @@ div.play-vis-head { cursor: default; }
             <span id="play-sfx-volume-value">8</span>
           </label>
           <label class="play-dev-menu"
+                 title="Mono output: mix everything - voices and movie audio included - down to one channel, for single-speaker setups (the native launcher's Mono output row, persisted with the other options). The in-game Sound: Monaural row is the original's own mono mode and is separate.">
+            <input type="checkbox" id="play-downmix-mono"> Mono output
+          </label>
+          <label class="play-dev-menu"
                  title="Debug overlay: mark every overworld placement (towns, caves, doors) with the port's entity marker (the native window's LEGAIA_WORLD_MAP_MARKERS). Retail draws nothing there.">
             <input type="checkbox" id="play-world-map-markers"> Overworld markers
           </label>
@@ -2377,14 +2381,15 @@ div.play-vis-head { cursor: default; }
   }
   preciseEl.addEventListener('change', () => { applyPreciseMove(); canvas.focus(); });
 
-  /* Reduce flashing and the music / SFX bus levels - the native launcher's
-   * rows. The engine owns and persists all three (`OptionsState`), so the
+  /* Reduce flashing, the music / SFX bus levels and the mono downmix - the
+   * native launcher's rows. The engine owns and persists all four (`OptionsState`), so the
    * controls only write through and mirror the stored values back. */
   const flashEl = document.getElementById('play-reduce-flashing');
   const bgmVolEl = document.getElementById('play-bgm-volume');
   const sfxVolEl = document.getElementById('play-sfx-volume');
   const bgmVolValEl = document.getElementById('play-bgm-volume-value');
   const sfxVolValEl = document.getElementById('play-sfx-volume-value');
+  const downmixEl = document.getElementById('play-downmix-mono');
   function syncAudioOptions() {
     const rt = window.__playRuntime;
     if (!rt) return;
@@ -2392,11 +2397,13 @@ div.play-vis-head { cursor: default; }
       if (typeof rt.reduce_flashing === 'function') flashEl.checked = !!rt.reduce_flashing();
       if (typeof rt.bgm_volume === 'function') bgmVolEl.value = String(rt.bgm_volume());
       if (typeof rt.sfx_volume === 'function') sfxVolEl.value = String(rt.sfx_volume());
+      if (typeof rt.downmix_mono === 'function') downmixEl.checked = !!rt.downmix_mono();
     } catch (e) {}
     bgmVolValEl.textContent = bgmVolEl.value;
     sfxVolValEl.textContent = sfxVolEl.value;
   }
   flashEl.addEventListener('change', () => { rtCall('set_reduce_flashing', !!flashEl.checked); canvas.focus(); });
+  downmixEl.addEventListener('change', () => { rtCall('set_downmix_mono', !!downmixEl.checked); canvas.focus(); });
   bgmVolEl.addEventListener('input', () => {
     bgmVolValEl.textContent = bgmVolEl.value;
     rtCall('set_bgm_volume', parseInt(bgmVolEl.value, 10));

@@ -390,9 +390,12 @@ pub struct StreamResampler {
     /// Powers the back-to-back arts-voice no-drop path (see
     /// [`AudioOut::play_xa_shout`]); `None` for FMV/BGM.
     pending_xa: Option<XaPlayback>,
-    /// Monaural downmix (the retail options screen's "Sound: Monaural"):
-    /// when set, L/R are averaged into both channels at output time.
-    mono: bool,
+    /// Host full-mono downmix (the engine-only `downmix_mono` option; retail
+    /// has no equivalent): when set, [`Self::next_frame`] averages L/R into
+    /// both channels, XA included. Not the options screen's "Sound:
+    /// Monaural", which is libsnd's per-voice fold ([`Spu::mono`]) and
+    /// leaves the CD input stereo. Off (the default) is the retail output.
+    downmix: bool,
     /// Master mute gate (engine-only; retail has no equivalent). When set,
     /// [`Self::next_frame`] returns silence but the SPU, sequencer, fade
     /// engine, and any XA stream all keep ticking, so unmuting resumes
@@ -425,7 +428,7 @@ impl StreamResampler {
             fade_step: 0.0,
             xa: None,
             pending_xa: None,
-            mono: false,
+            downmix: false,
             muted: false,
             prev: (0, 0),
             cur: (0, 0),
@@ -489,6 +492,15 @@ impl StreamResampler {
         let l = lerp_i16(self.prev.0, self.cur.0, alpha);
         let r = lerp_i16(self.prev.1, self.cur.1, alpha);
         self.phase += self.step;
+        // Host full-mono downmix, after the resample so both backends and
+        // the test sink share it (a mono device averages again, a no-op on
+        // an already-folded frame).
+        let (l, r) = if self.downmix {
+            let m = ((l as i32 + r as i32) / 2) as i16;
+            (m, m)
+        } else {
+            (l, r)
+        };
         // Master mute: everything above still ran (sequencer, SPU, XA
         // cursor, fades), so unmute picks up mid-stream with no state loss.
         if self.muted { (0, 0) } else { (l, r) }

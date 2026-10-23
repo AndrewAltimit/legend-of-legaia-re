@@ -113,13 +113,9 @@ impl AudioOut {
                 let chans = channels as usize;
                 let frames = out.len() / chans;
                 for f in 0..frames {
-                    let (mut l, mut r) = s.next_frame();
-                    // Monaural downmix (options "Sound: Monaural").
-                    if s.mono {
-                        let m = ((l as i32 + r as i32) / 2) as i16;
-                        l = m;
-                        r = m;
-                    }
+                    // The host downmix (`downmix_mono`) is applied inside
+                    // `next_frame`, shared with the browser backend.
+                    let (l, r) = s.next_frame();
                     // Mono device: average. Stereo+: feed L/R, dup any
                     // surround channels with the dominant side.
                     if chans == 1 {

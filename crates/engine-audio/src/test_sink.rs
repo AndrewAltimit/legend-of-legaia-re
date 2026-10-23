@@ -10,7 +10,7 @@
 //! [`TestAudioSink`] closes that: it owns the **same** [`crate::StreamResampler`]
 //! the cpal callback owns and drives it by pulling frames, so every kernel on
 //! the output path runs exactly as it does under a device - sequencer tick,
-//! SPU tick, ADSR advance, master fade, XA mix, mono downmix, master mute. The
+//! SPU tick, ADSR advance, master fade, XA mix, host downmix, master mute. The
 //! only thing missing is the callback that would hand the frames to hardware.
 //!
 //! Two rules this module exists to keep:
@@ -508,5 +508,95 @@ mod tests {
         };
         assert!(tail(false).is_silent(), "no send, no tail");
         assert!(!tail(true).is_silent(), "the send leaves a reverb tail");
+    }
+
+    /// A held square wave on voice 0 panned hard toward the left
+    /// (`0x3FFF` / `0x1000`), keyed directly on the SPU.
+    fn key_panned_voice(spu: &mut crate::Spu) {
+        let mut block = [0x79u8; 16];
+        block[0] = 0x04;
+        block[1] = 0x07; // loop start | repeat | end
+        spu.ram.set_direction(TransferDirection::CpuToSpu);
+        spu.ram.write_at(SPU_ADDR, &block);
+        let v = &mut spu.voices[0];
+        v.start_addr = SPU_ADDR;
+        v.vol_left = 0x3FFF;
+        v.vol_right = 0x1000;
+        v.adsr_cfg = crate::spu::adsr::AdsrConfig::from_words(0x000F, 0x1F00);
+        spu.key_on_mask(0b1);
+    }
+
+    /// Render a panned voice under `(monaural, downmix)`.
+    fn render_panned_voice(mono: bool, downmix: bool) -> Vec<(i16, i16)> {
+        let sink = TestAudioSink::new(crate::SPU_INTERNAL_RATE);
+        sink.set_mono(mono);
+        sink.set_downmix(downmix);
+        sink.with_spu(key_panned_voice);
+        (0..256).map(|_| sink.next_frame()).collect()
+    }
+
+    /// Render a stereo XA stream carrying the left channel only.
+    fn render_left_only_xa(mono: bool, downmix: bool) -> Vec<(i16, i16)> {
+        let sink = TestAudioSink::new(crate::SPU_INTERNAL_RATE);
+        sink.set_mono(mono);
+        sink.set_downmix(downmix);
+        let pcm: Vec<i16> = (0..512).flat_map(|_| [8_000i16, 0]).collect();
+        sink.play_xa(
+            pcm,
+            crate::SPU_INTERNAL_RATE,
+            legaia_xa::Channels::Stereo,
+            false,
+            0x4000,
+        );
+        (0..256).map(|_| sink.next_frame()).collect()
+    }
+
+    /// The options screen's "Sound: Monaural" is libsnd's `SsSetMono` and
+    /// nothing more: every voice sounds at the larger of its two volumes on
+    /// both sides (`FUN_80067550`'s fold at `0x800677F4..0x80067818`). The
+    /// sum is not averaged on top, so the louder side keeps its stereo
+    /// level instead of dropping toward the quieter one.
+    #[test]
+    fn retail_monaural_is_the_per_voice_fold_only() {
+        let stereo = render_panned_voice(false, false);
+        let mono = render_panned_voice(true, false);
+        assert!(stereo.iter().any(|(l, r)| l != r), "the fixture is panned");
+        assert!(stereo.iter().any(|&(l, _)| l != 0), "the fixture sounds");
+        for (&(sl, _), &(ml, mr)) in stereo.iter().zip(&mono) {
+            assert_eq!(ml, mr, "monaural sounds the voice on both sides");
+            assert_eq!(ml, sl, "both sides at the louder (left) volume");
+        }
+    }
+
+    /// `SsSetMono` only raises the flag the voice-volume paths read: the CD
+    /// input (XA voice / FMV audio) keeps its own stereo image.
+    #[test]
+    fn retail_monaural_leaves_the_cd_input_stereo() {
+        let stereo = render_left_only_xa(false, false);
+        let mono = render_left_only_xa(true, false);
+        assert_eq!(stereo, mono, "monaural does not touch the CD input");
+        assert!(mono.iter().any(|&(l, r)| l != 0 && r == 0));
+    }
+
+    /// The host full-mono downmix (`downmix_mono`) averages the finished
+    /// mix, voices and XA alike, into both channels - on top of, and
+    /// independent of, the retail fold.
+    #[test]
+    fn host_downmix_averages_the_whole_mix() {
+        let stereo = render_panned_voice(false, false);
+        let down = render_panned_voice(false, true);
+        for (&(sl, sr), &(dl, dr)) in stereo.iter().zip(&down) {
+            assert_eq!(dl, dr);
+            assert_eq!(dl, ((sl as i32 + sr as i32) / 2) as i16);
+        }
+        let folded = render_panned_voice(true, false);
+        let both = render_panned_voice(true, true);
+        assert_eq!(both, folded, "an already-folded voice averages to itself");
+        let xa = render_left_only_xa(false, false);
+        let xa_down = render_left_only_xa(false, true);
+        assert!(xa_down.iter().any(|&(l, _)| l != 0));
+        for (&(sl, sr), &(dl, dr)) in xa.iter().zip(&xa_down) {
+            assert_eq!((dl, dr), (((sl as i32 + sr as i32) / 2) as i16, dl));
+        }
     }
 }

@@ -812,11 +812,11 @@ impl LauncherApp {
     }
 
     fn options_panel(&self, c: &mut Canvas, panel: Rect, hits: &mut Vec<(Item, Rect)>) {
-        let mut y = panel.y + 5;
+        let mut y = panel.y + 2; // 16 rows + 2 headings fill the 238 px panel exactly
         let retail = self.settings.retail;
         for (heading, row) in OPTION_ROWS {
             if let Some(h) = heading {
-                if y > panel.y + 6 {
+                if y > panel.y + 3 {
                     y += 3;
                 }
                 c.text(panel.x + 8, y, h, GOLD);

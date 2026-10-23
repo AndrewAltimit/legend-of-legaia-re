@@ -1737,7 +1737,8 @@ pitch, text inset `+0x14`, cursor at the content origin.
 **Port**: `engine-menus::options` (`OPTIONS_DISPLAY_ROWS`,
 `options_display_rows`, the `OptionsSession` Browsing -> Editing SM,
 `options_popup_content_rect`) + `engine-ui::options_draws_for`. Sound drives
-the mixer's monaural downmix (`AudioOut::set_mono`); Field HP Display sets the
+libsnd's monaural fold (`AudioSink::set_mono`, per voice only - see
+[audio](audio.md)); Field HP Display sets the
 field party HUD's idle delay (`WorldToggles::field_hp_display`, read through
 `world_map_panel_host::field_hud_view_mode`: `0x28` frames, `0xA0` frames, or
 no HUD - see

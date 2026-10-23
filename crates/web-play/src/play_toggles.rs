@@ -189,6 +189,22 @@ impl LegaiaRuntime {
         self.options_state.sfx_volume
     }
 
+    /// The engine-only full-mono downmix (`OptionsState::downmix_mono`), the
+    /// native launcher's Mono output row: the finished mix, voice and movie
+    /// audio included, averaged into both channels. Separate from the retail
+    /// options screen's Monaural row. Persisted and applied to the mixer.
+    pub fn set_downmix_mono(&mut self, on: bool) {
+        if self.options_state.downmix_mono != on {
+            self.options_state.downmix_mono = on;
+            self.persist_and_apply_options();
+        }
+    }
+
+    /// Whether [`Self::set_downmix_mono`] is on.
+    pub fn downmix_mono(&self) -> bool {
+        self.options_state.downmix_mono
+    }
+
     /// Retail-faithful mode, the native `--retail`: pin every persisted
     /// engine-only option to its retail value (`OptionsState::pin_retail`:
     /// retail camera distance, 8-way movement, no photosensitivity slew,

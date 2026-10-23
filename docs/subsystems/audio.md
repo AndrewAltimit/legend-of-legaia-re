@@ -1645,7 +1645,24 @@ more than one vsync, read the cell two or three units ahead. Port:
 **Monaural.** libsnd's mono mode (`_DAT_801CE330 == 1`, the options screen's
 "Sound: Monaural") sounds each voice at the larger of its two volumes on both
 sides (`0x800677F4..0x80067818`) - every voice of a mono-mode state reads
-`L == R == max` - not at their average. `Spu::mono` applies it at mix time.
+`L == R == max` - not at their average. `SsSetMono` (`FUN_80068C5C`) is a
+single `sh` of the flag, and the flag's only readers are the voice-volume
+paths: the key-on chain `FUN_80067550`, the channel remix `FUN_80066F4C`, the
+sequence-volume set `FUN_80067E9C` and the utility key-on `FUN_8006861C`, each
+with the same `sltu` / `move` fold. Nothing touches the CD input volume or
+the reverb return, so in retail mono mode XA voice and FMV audio keep their
+stereo image and the Studio C wet signal stays two-channel. `Spu::mono`
+applies the fold at mix time (`AudioSink::set_mono`), and that is all the
+Monaural row does in the port.
+
+**Full downmix (engine-only).** The options file's `downmix_mono` (the
+launcher's and the play page's "Mono output") averages the finished mix -
+voices, reverb return and XA alike - into both channels
+(`AudioSink::set_downmix`, applied inside the shared mixer core so the cpal
+and Web Audio backends cannot diverge). It is a host output setting for
+single-speaker setups, independent of the Monaural row; off is the retail
+output. A one-channel output device is averaged by the cpal callback either
+way.
 
 **BGM / SFX buses (engine-only).** Retail has one SPU mix; the engine tags
 each voice at key-on with the bus of whoever keyed it - a sequencer note

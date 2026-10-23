@@ -320,12 +320,13 @@ pub enum OptionRow {
     ReduceFlashing,
     MusicVolume,
     SfxVolume,
+    MonoDownmix,
     Retail,
 }
 
 /// The option rows in screen order, with the heading each group starts
 /// under (`Some` on a group's first row).
-pub const OPTION_ROWS: [(Option<&str>, OptionRow); 15] = [
+pub const OPTION_ROWS: [(Option<&str>, OptionRow); 16] = [
     (Some("Display"), OptionRow::Fullscreen),
     (None, OptionRow::WindowSize),
     (None, OptionRow::EnhancedLighting),
@@ -340,6 +341,7 @@ pub const OPTION_ROWS: [(Option<&str>, OptionRow); 15] = [
     (None, OptionRow::ReduceFlashing),
     (None, OptionRow::MusicVolume),
     (None, OptionRow::SfxVolume),
+    (None, OptionRow::MonoDownmix),
     (None, OptionRow::Retail),
 ];
 
@@ -378,6 +380,7 @@ impl OptionRow {
             Self::ReduceFlashing => "Reduce flashing",
             Self::MusicVolume => "Music volume",
             Self::SfxVolume => "Sound effects volume",
+            Self::MonoDownmix => "Mono output",
             Self::Retail => "Original game only",
         }
     }
@@ -425,6 +428,11 @@ impl OptionRow {
             }
             Self::MusicVolume => "Music level, 0 to 10; 8 is the original mix.",
             Self::SfxVolume => "Sound effect level, 0 to 10; 8 is the original mix.",
+            Self::MonoDownmix => {
+                "Mix everything, voices and movies included, down to one channel for \
+                 single-speaker setups. The in-game Monaural setting is the original's own \
+                 mono mode."
+            }
             Self::Retail => {
                 "Play exactly as the original looks and moves: every enhancement off for \
                  the session. The settings above are kept for next time."
@@ -447,6 +455,7 @@ impl OptionRow {
                 | Self::PsxRender
                 | Self::MusicVolume
                 | Self::SfxVolume
+                | Self::MonoDownmix
                 | Self::Fullscreen
                 | Self::WindowSize
         )
@@ -476,6 +485,7 @@ impl OptionRow {
             Self::ReduceFlashing => on_off(opts.reduce_flashing),
             Self::MusicVolume => opts.bgm_volume.to_string(),
             Self::SfxVolume => opts.sfx_volume.to_string(),
+            Self::MonoDownmix => on_off(opts.downmix_mono),
             Self::Retail => on_off(s.retail),
         }
     }
@@ -538,6 +548,7 @@ impl OptionRow {
             Self::ReduceFlashing => opts.reduce_flashing ^= true,
             Self::MusicVolume => opts.bgm_volume = step(opts.bgm_volume),
             Self::SfxVolume => opts.sfx_volume = step(opts.sfx_volume),
+            Self::MonoDownmix => opts.downmix_mono ^= true,
             Self::Retail => s.retail ^= true,
         }
     }
