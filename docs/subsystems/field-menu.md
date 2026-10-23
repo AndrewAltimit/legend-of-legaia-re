@@ -1242,9 +1242,18 @@ Windows: tab 1, list 18, caster 19, info 20. Sub-screen `0x0E` = caster focus,
 `(WX, Yb)`, cursor word `DAT_801E46C8`.
 
 **Spell list (id 18, content id 5)** - renderer-less, the same page layout as
-the item list. Each row is one string whose leading `0xCE` escape draws the
-element icon plate, so the name starts 25 px right of the row pen (22 px for
-the wider winged Ra-Seru icon).
+the item list. Each row is the spell's raw display name: for a `0x5000 | id`
+row the list kernel `FUN_80032A44` takes the string from `FUN_8002FF8C`
+(the spell record's `name_ptr`) and draws it with `FUN_80036888` at
+`(WX+0xC, row)` (`0x80033738`). The name opens `0xCE op 0x20`, so the escape
+draws the element plate at the row pen and advances by its table width
+([dialog-font.md](../formats/dialog-font.md#escape-table-0x80074050)), then
+the space follows: the name starts `20 + 5 = 25` px right of the pen behind a
+plain plate (operands `0x14..=0x1B`) and `28 + 5 = 33` px behind a winged
+Ra-Seru plate (`0x1D..=0x24`). A `sol_to_karisto_worldmap` capture of the
+screen measures both: name ink at `+25` on every elemental row, at `+33` on
+"Meta". The info window's name is the same string, drawn at `(WX, WY)`
+through `FUN_8003CD00`.
 
 Row ink is decided in the list build. The out-of-battle arm of `FUN_80030628`
 (`0x80031130..0x80031264`) writes each learned spell as `0x5800 | id`
@@ -1325,8 +1334,12 @@ saves. `MenuRuntime::arm_spell_level_notice` holds the window-7 beat, drawn by
 Known differences: the window-7 line is composed from the battle-banner
 sentence around the spell name rather than retail's own rodata sentence, and
 the notice overlays the resumed menu because the engine's spell session closes
-on cast. The element-icon plates are covered under
-[Engine port](#engine-port).
+on cast. The element plates draw on both hosts: the model carries each
+name's escape operand (`pause_screens::spell_icon`, from
+`SpellEntry::icon`), and `magic_screen_draws_for` lays the retail
+`0xCE op 0x20 name` string out through the host font, whose escape sprites
+are attached at boot. Disc-gated oracle:
+`pause_learned_content_ladder::the_magic_list_draws_each_spells_element_plate`.
 
 ## Equip screen
 
@@ -2051,7 +2064,6 @@ Where the port differs from retail today:
 | Area | Difference |
 |---|---|
 | List PAGE header | UI-icon records `0x76`, `0x79`, `0x7A..=0x83` are not in the baked atlas, so `list_page_header_draws` draws dialog-font glyphs at the measured columns (label `x + 0x4D`, fraction cells `x + 0x68 / 0x74 / 0x78`) |
-| Spell element plates | the plates (widget records `0x8B..=0x92`) are in the atlas as `save_menu_atlas::band_element_badges` and used by the battle HUD, but `PauseMagicRow` carries only `name` + `ra_seru`, so the spell list leaves the gap without the plate |
 | Items list ink | every row greys on list focus instead of per-row build-time ink ([Items screen](#items-screen)) |
 | Special-route prompts | Door of Light / Incense prompt text is the port's own; Door of Wind rows show a `0` count |
 | Armament candidate lists | id-sorted, without retail's leading rows on an empty slot ([Equip screen](#port-of-the-equip-screen)) |

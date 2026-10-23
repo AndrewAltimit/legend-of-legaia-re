@@ -414,6 +414,7 @@ fn compose_magic(ctx: &PauseMenuCtx<'_>) -> PauseMenuDraws {
     let rows = [PauseMagicRow {
         name: "Meta",
         ra_seru: true,
+        icon: Some(0x1D),
     }];
     let view = PauseMagicView {
         casters: &casters,

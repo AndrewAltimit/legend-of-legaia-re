@@ -129,6 +129,10 @@ fn magic_screen_resolves_disc_descriptions_levels_and_mp_max() {
     assert_eq!(m.page_rows.len(), 3);
     assert_eq!(m.page_rows[0].0, "Gimard");
     assert!(m.page_rows[2].1, "Horn is in the Ra-Seru icon block");
+    // Each row carries the element-plate escape its disc name opens with:
+    // fire (`0x14`), the Vera plate (`0x19`) and Horn's winged plate (`0x22`).
+    let icons: Vec<Option<u8>> = m.page_rows.iter().map(|r| r.2).collect();
+    assert_eq!(icons, [Some(0x14), Some(0x19), Some(0x22)]);
 
     // Enter the list: the staged spell's info carries the learned level,
     // the disc MP cost, and the two-line disc description.

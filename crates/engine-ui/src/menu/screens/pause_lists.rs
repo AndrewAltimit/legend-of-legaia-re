@@ -179,13 +179,47 @@ pub const PAUSE_LIST_ROWS_TOP: i32 = 0x0c;
 pub const PAUSE_LIST_VISIBLE_ROWS: usize = 12;
 /// Caster-window per-member block pitch (`FUN_801D2C98` steps `+0x23`).
 pub const MAGIC_CASTER_BLOCK_PITCH: i32 = 0x23;
-/// Pen advance the leading element-icon token adds before a spell name
-/// (the spell-name strings open with a `0xCE` inline-icon escape; name
-/// ink measures 25 px right of the string pen on the captures).
+/// Pen advance of a spell name's leading `0xCE 0x14..=0x1B 0x20` prefix:
+/// the element plate's escape-table width (`20`, table `0x80074050`) plus
+/// the space (`4 + 1`). Name ink lands 25 px right of the string pen on the
+/// retail captures. Used only when the font carries no escape sprites -
+/// with them attached the prefix lays out through
+/// [`legaia_font::Font::layout`] and draws the plate itself.
 pub const SPELL_ICON_ADVANCE: i32 = 25;
-/// Same advance for the wider winged Ra-Seru-magic icon (22 px - "Meta"'s
-/// name ink sits 3 px left of the regular spells').
-pub const SPELL_ICON_ADVANCE_RA_SERU: i32 = 22;
+/// The same prefix for the winged Ra-Seru plates (`0xCE 0x1D..=0x24`,
+/// table width `28`): `28 + 5`. A `sol_to_karisto_worldmap` Magic-screen
+/// capture puts "Meta"'s name ink 8 px right of the regular spells'.
+pub const SPELL_ICON_ADVANCE_RA_SERU: i32 = 33;
+
+/// One spell-name string the way retail's list kernel and info window draw
+/// it: `FUN_80036888` over the raw name (`FUN_8002FF8C` returns the spell
+/// record's `name_ptr` for a `0x5000 | id` row, drawn at `0x80033738`), so
+/// the leading `0xCE op` escape emits the element plate at the pen and
+/// advances by its table width, then the space and the name follow.
+///
+/// `icon` is the escape operand (`legaia_game_tables::spell_names::SpellEntry::icon`).
+/// Without it, or on a font with no escape sprites attached, the name draws
+/// at the fixed prefix advance and the plate's place stays empty.
+fn spell_name_draws(
+    font: &legaia_font::Font,
+    name: &str,
+    icon: Option<u8>,
+    ra_seru: bool,
+    pen: (i32, i32),
+    color: [f32; 4],
+) -> Vec<TextDraw> {
+    if let Some(op) = icon.filter(|op| font.escape_cell(*op).is_some()) {
+        let mut bytes = vec![0xCE, op, b' '];
+        bytes.extend(name.bytes());
+        return text_draws_for(&font.layout(&bytes), pen, color);
+    }
+    let advance = if ra_seru {
+        SPELL_ICON_ADVANCE_RA_SERU
+    } else {
+        SPELL_ICON_ADVANCE
+    };
+    text_draws_for(&font.layout_ascii(name), (pen.0 + advance, pen.1), color)
+}
 
 /// Focus phase of the Items screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -670,14 +704,21 @@ pub struct PauseMagicCaster<'a> {
 pub struct PauseMagicRow<'a> {
     pub name: &'a str,
     /// `true` for Ra-Seru magic (Meta / Ozma / Terra block) - retail
-    /// leads the name with the wider winged icon, shifting the name pen
-    /// left by 3 px.
+    /// leads the name with the wider winged icon. Only the no-sprite
+    /// fallback reads it; [`Self::icon`] carries the plate itself.
     pub ra_seru: bool,
+    /// Operand of the `0xCE` escape the retail name string opens with
+    /// (the element plate), `None` when the spell table is not resident.
+    pub icon: Option<u8>,
 }
 
 /// Spell info window content (drawn only while a spell is selected).
 pub struct PauseMagicInfo<'a> {
     pub name: &'a str,
+    /// The name's leading `0xCE` escape operand ([`PauseMagicRow::icon`]).
+    pub icon: Option<u8>,
+    /// Winged Ra-Seru plate ([`PauseMagicRow::ra_seru`]).
+    pub ra_seru: bool,
     /// Learned spell level (the single digit after "Lv").
     pub level: u8,
     /// Description - up to two lines split on `\n`, drawn at the 0xE
@@ -721,13 +762,14 @@ pub struct PauseMagicView<'a> {
 ///   slash stays white (PORT: FUN_801d2c98);
 /// - spell list: rows from `(X+0xC, Y+0xC)` at the 0xE pitch. Each retail
 ///   row is one string whose leading `0xCE` escape draws the element
-///   icon, so the name pen sits [`SPELL_ICON_ADVANCE`] right of the row
-///   pen ([`SPELL_ICON_ADVANCE_RA_SERU`] for the winged Ra-Seru icon);
-///   the icon sprites themselves are not yet ported - the gap holds
-///   their place. White while the caster window has focus, grey in list
-///   focus (capture-pinned);
-/// - info window: spell name gold at `(X + icon_advance, Y)` (the same
-///   leading-icon string), "Lv<n>" gold at `X+0x78`, description white
+///   plate at the row pen and advances by its table width, so the name
+///   lands [`SPELL_ICON_ADVANCE`] right of the pen
+///   ([`SPELL_ICON_ADVANCE_RA_SERU`] behind a winged Ra-Seru plate). The
+///   plate draws whenever the font carries the escape sprites; white
+///   while the caster window has focus, grey in list focus
+///   (capture-pinned);
+/// - info window: spell name gold at `(X, Y)` (the same leading-plate
+///   string), "Lv<n>" gold at `X+0x78`, description white
 ///   from `(X, Y+0xE)` at the 0xE line pitch, "MP Used" (staging 4
 ///   green) at `(X+0x18, Y+0x2A)` with the 3-digit cost - also green -
 ///   at `X+0x74` (PORT: FUN_801d2e74).
@@ -804,25 +846,28 @@ pub fn magic_screen_draws_for(
         {
             str_at(&mut out, ">", lx - 8, y, MENU_TEXT_GOLD);
         }
-        let advance = if row.ra_seru {
-            SPELL_ICON_ADVANCE_RA_SERU
-        } else {
-            SPELL_ICON_ADVANCE
-        };
-        str_at(&mut out, row.name, lx + 0x0c + advance, y, row_ink);
+        out.extend(spell_name_draws(
+            font,
+            row.name,
+            row.icon,
+            row.ra_seru,
+            (lx + 0x0c, y),
+            row_ink,
+        ));
     }
 
     // PORT: FUN_801d2e74 (item/spell description info window)
     // Info window.
     if let Some(info) = &view.info {
         let (ix, iy) = info_pen;
-        str_at(
-            &mut out,
+        out.extend(spell_name_draws(
+            font,
             info.name,
-            ix + SPELL_ICON_ADVANCE,
-            iy,
+            info.icon,
+            info.ra_seru,
+            (ix, iy),
             MENU_TEXT_GOLD,
-        );
+        ));
         let lv = format!("Lv{}", info.level);
         str_at(&mut out, &lv, ix + 0x78, iy, MENU_TEXT_GOLD);
         for (k, line) in info.desc.split('\n').take(2).enumerate() {
@@ -1256,8 +1301,8 @@ mod pause_list_tests {
         assert_eq!(num_ink(yb1 + 0x0e), MENU_TEXT_ORANGE);
     }
 
-    /// Spell rows leave the element-icon gap: regular names at
-    /// `X+0xC+25`, Ra-Seru names at `X+0xC+22`.
+    /// Without escape sprites a spell row leaves the plate's place empty:
+    /// regular names at `X+0xC+25`, Ra-Seru names at `X+0xC+33`.
     #[test]
     fn magic_list_rows_leave_icon_gap() {
         let font = legaia_font::synthetic_for_tests();
@@ -1265,10 +1310,12 @@ mod pause_list_tests {
             PauseMagicRow {
                 name: "Mushura",
                 ra_seru: false,
+                icon: Some(0x18),
             },
             PauseMagicRow {
                 name: "Meta",
                 ra_seru: true,
+                icon: Some(0x1D),
             },
         ];
         let draws = magic_screen_draws_for(
@@ -1287,6 +1334,79 @@ mod pause_list_tests {
         ));
     }
 
+    /// A font with a plate sprite at escape operand `op` (`w` wide, the
+    /// table advance equal to the width, as every plate's record has it).
+    fn font_with_plate(op: u8, w: u32) -> legaia_font::Font {
+        use legaia_font::escape_icons::{EscapeIcon, EscapeIcons};
+        let mut icons = vec![None; op as usize + 1];
+        icons[op as usize] = Some(EscapeIcon {
+            index: op,
+            w,
+            h: 12,
+            y_offset: 0,
+            advance: w as u8,
+            rgba: vec![0xFF; (w * 12 * 4) as usize],
+        });
+        legaia_font::synthetic_for_tests().with_escape_icons(&EscapeIcons { icons })
+    }
+
+    /// With the sprites attached, the row is retail's raw name string
+    /// through `FUN_80036888`: the plate untinted at the row pen, the name
+    /// one table width plus a space further on, in the row ink.
+    #[test]
+    fn magic_list_rows_draw_the_element_plate() {
+        let font = font_with_plate(0x1D, 28);
+        let rows = [PauseMagicRow {
+            name: "Meta",
+            ra_seru: true,
+            icon: Some(0x1D),
+        }];
+        let draws = magic_screen_draws_for(
+            &font,
+            &magic_view(&[], &rows, PauseMagicPhase::List),
+            (14, 40),
+            (174, 22),
+            (14, 152),
+        );
+        let y0 = 22 + 0x0c;
+        let plate = draws
+            .iter()
+            .find(|d| d.dst.2 == 28 && d.dst.1 == y0)
+            .expect("the winged plate draws");
+        assert_eq!(plate.dst.0, 174 + 0x0c);
+        assert_eq!(plate.color, [1.0, 1.0, 1.0, MENU_TEXT_GREY[3]]);
+        let space = font.layout(b" ").advance_x as i32;
+        // The first non-plate glyph is the space; the name follows it.
+        let name = draws
+            .iter()
+            .filter(|d| d.dst.1 == y0 && d.dst.2 != 28)
+            .nth(1)
+            .expect("the name draws");
+        assert_eq!(name.dst.0, 174 + 0x0c + 28 + space);
+        assert_eq!(name.color, MENU_TEXT_GREY);
+    }
+
+    /// The info window's name carries the same plate at the window pen.
+    #[test]
+    fn magic_info_name_draws_the_element_plate() {
+        let font = font_with_plate(0x18, 20);
+        let mut view = magic_view(&[], &[], PauseMagicPhase::List);
+        view.info = Some(PauseMagicInfo {
+            name: "Mushura",
+            icon: Some(0x18),
+            ra_seru: false,
+            level: 1,
+            desc: "",
+            mp_cost: 60,
+        });
+        let draws = magic_screen_draws_for(&font, &view, (14, 40), (174, 22), (14, 152));
+        assert!(
+            draws
+                .iter()
+                .any(|d| d.dst.2 == 20 && d.dst.0 == 14 && d.dst.1 == 152)
+        );
+    }
+
     /// Info window: gold name + level, white description lines at the
     /// 0xE pitch, green "MP Used" + cost at the FUN_801d2e74 pens.
     #[test]
@@ -1295,6 +1415,8 @@ mod pause_list_tests {
         let mut view = magic_view(&[], &[], PauseMagicPhase::List);
         view.info = Some(PauseMagicInfo {
             name: "Mushura",
+            icon: Some(0x18),
+            ra_seru: false,
             level: 1,
             desc: "Crazy Driver\nAttack enemies.",
             mp_cost: 60,

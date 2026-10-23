@@ -219,6 +219,81 @@ fn the_magic_list_build_asks_the_broadcast_about_every_learned_spell() {
     close_to_root(&mut s);
 }
 
+/// Meta, the winged-plate Ra-Seru spell (`0xCE 0x1D`, 28 px plate).
+const RA_SERU_SPELL: u8 = 0x9E;
+
+/// The Magic screen draws each spell's element plate in front of its name,
+/// the way retail's list kernel does by drawing the raw `name_ptr` string
+/// (`FUN_8002FF8C` -> `FUN_80036888` at `0x80033738`).
+///
+/// The screen is opened by pad over a party that learned Gimard (fire
+/// plate, escape `0x14`, 20 px) and Meta (winged plate, escape `0x1D`,
+/// 28 px), then composed through the shared `engine-screens` builder both
+/// play hosts call, with the session's own disc font (escape sprites
+/// attached at boot). Each row must carry an untinted plate cell at the
+/// row pen (window 18's content x `174` + `0xC`) and its name one plate
+/// width plus a space further on - `+25` and `+33`, the offsets the
+/// `sol_to_karisto_worldmap` retail capture measures.
+#[test]
+fn the_magic_list_draws_each_spells_element_plate() {
+    let Some(mut s) = booted(&[SPELL, RA_SERU_SPELL], &[]) else {
+        return;
+    };
+    open_row(&mut s, FieldMenuRow::Magic);
+    // Into the list: the info window stages the hovered spell too.
+    tap(&mut s, PadButton::Cross);
+    let Some(sub) = s.field_menu_sub.as_ref() else {
+        panic!("Magic did not open a sub-session");
+    };
+    let font = s
+        .dialog_font
+        .clone()
+        .expect("the boot source decodes the dialog font");
+    assert!(
+        font.escape_cell(0x14).is_some() && font.escape_cell(0x1D).is_some(),
+        "the boot font carries no element-plate escape sprites"
+    );
+    let ctx = legaia_engine_ui::pause_menu::PauseMenuCtx {
+        font: &font,
+        rects: legaia_engine_ui::pause_menu::MenuRects::new(None),
+        chrome: None,
+        origin: (0, 0),
+        scale: 1,
+    };
+    let draws = legaia_engine_screens::pause_screens::field_menu_sub_draws(
+        &ctx,
+        sub,
+        Some(&s.host.world),
+        None,
+    );
+    let pen_x = 174 + 0x0C;
+    let plate = |w: u32| {
+        draws
+            .texts
+            .iter()
+            .find(|d| d.dst.0 == pen_x && d.dst.2 == w && d.dst.3 == 12)
+            .map(|d| (d.dst.1, d.color))
+    };
+    let (fire_y, fire_ink) = plate(20).expect("Gimard's fire plate draws at the row pen");
+    let (wing_y, _) = plate(28).expect("Meta's winged plate draws at the row pen");
+    assert_eq!(
+        fire_ink[..3],
+        [1.0, 1.0, 1.0],
+        "a plate keeps its own colours"
+    );
+    assert_ne!(fire_y, wing_y, "one plate per row");
+    let glyph_at = |x: i32, y: i32| draws.texts.iter().any(|d| d.dst.0 == x && d.dst.1 == y);
+    assert!(
+        glyph_at(pen_x + 25, fire_y),
+        "Gimard's name follows its plate"
+    );
+    assert!(
+        glyph_at(pen_x + 33, wing_y),
+        "Meta's name follows its plate"
+    );
+    eprintln!("[magic] plates at rows y={fire_y} / y={wing_y}");
+}
+
 #[test]
 fn the_status_confirm_opens_the_reorder_page_and_its_browse_half_exchanges() {
     let Some(mut s) = booted(&[SPELL, SPELL_2], &[]) else {

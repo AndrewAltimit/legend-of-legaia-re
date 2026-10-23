@@ -346,13 +346,16 @@ pub fn magic_draws(
         let rows: Vec<ui::PauseMagicRow<'_>> = model
             .page_rows
             .iter()
-            .map(|(name, ra_seru)| ui::PauseMagicRow {
+            .map(|(name, ra_seru, icon)| ui::PauseMagicRow {
                 name,
                 ra_seru: *ra_seru,
+                icon: *icon,
             })
             .collect();
         let info = model.info.as_ref().map(|i| ui::PauseMagicInfo {
             name: &i.name,
+            icon: i.icon,
+            ra_seru: i.ra_seru,
             level: i.level,
             desc: &i.desc,
             mp_cost: i.mp_cost,

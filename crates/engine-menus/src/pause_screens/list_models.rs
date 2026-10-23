@@ -208,8 +208,10 @@ pub fn items_screen_model(s: &PauseItemsSession) -> ItemsScreenModel {
 pub struct MagicScreenModel {
     /// Caster blocks: `(name, level, mp, mp_max)`.
     pub casters: Vec<(String, u8, u16, u16)>,
-    /// The current page's visible spell rows: `(name, ra_seru)`.
-    pub page_rows: Vec<(String, bool)>,
+    /// The current page's visible spell rows: `(name, ra_seru, icon)`,
+    /// `icon` being the operand of the `0xCE` element-plate escape the
+    /// retail name string opens with ([`spell_icon`]).
+    pub page_rows: Vec<(String, bool, Option<u8>)>,
     pub page: u16,
     pub pages: u16,
     /// `true` = hand inside the spell list; `false` = caster-window focus.
@@ -231,6 +233,17 @@ pub struct MagicInfoModel {
     pub desc: String,
     pub mp_cost: u16,
     pub ra_seru: bool,
+    /// The name's element-plate escape operand ([`spell_icon`]).
+    pub icon: Option<u8>,
+}
+
+/// Operand of the `0xCE` escape spell `id`'s retail display name opens
+/// with - the element plate (`0x14..=0x1B`) or winged Ra-Seru plate
+/// (`0x1D..=0x24`) the Magic screen's list kernel and info window draw in
+/// front of the name, because both draw the raw `name_ptr` string
+/// (`FUN_8002FF8C` -> `FUN_80036888`). `None` without the spell table.
+pub fn spell_icon(text: Option<&MenuTextTables>, id: u8) -> Option<u8> {
+    text?.spell_names.as_ref()?.icon(id)
 }
 
 /// Assemble the Magic screen view model from a live [`SpellMenuSession`].
@@ -290,11 +303,17 @@ pub fn magic_screen_model(s: &SpellMenuSession, text: Option<&MenuTextTables>) -
         (cursor / LIST_PAGE_ROWS).min(spells.len().div_ceil(LIST_PAGE_ROWS) - 1)
     };
     let start = page0 * LIST_PAGE_ROWS;
-    let page_rows: Vec<(String, bool)> = spells
+    let page_rows: Vec<(String, bool, Option<u8>)> = spells
         .iter()
         .skip(start)
         .take(LIST_PAGE_ROWS)
-        .map(|id| (spell_name(*id), RA_SERU_SPELL_IDS.contains(id)))
+        .map(|id| {
+            (
+                spell_name(*id),
+                RA_SERU_SPELL_IDS.contains(id),
+                spell_icon(text, *id),
+            )
+        })
         .collect();
 
     // Info: the staged spell (hovered list row) - only while the hand is
@@ -339,6 +358,7 @@ pub fn magic_screen_model(s: &SpellMenuSession, text: Option<&MenuTextTables>) -
                 desc,
                 mp_cost,
                 ra_seru: RA_SERU_SPELL_IDS.contains(id),
+                icon: spell_icon(text, *id),
             }
         })
     } else {
