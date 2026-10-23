@@ -16,14 +16,17 @@ Colours are 8-bit sRGB (`Rgb`); `Rgb::to_f32` gives the normalised,
 still-sRGB-encoded `[r, g, b, 1.0]` a texture-modulating draw expects. Each
 `Palette` names roles, not hues: `ground` / `band` / `card` / `stripe` for
 surfaces from deepest up, `raised` / `hover` / `pressed` / `open` for a
-button's states, `ink` / `ink_dim` / `ink_faint` for text, `accent` (the gold
-of the game's title lettering) with `accent_fill` / `on_accent` for the one
-primary button a screen has, and `good` / `warn` / `info` for status lines.
+button's states, `rule` for separators and `outline` for a control's edge,
+`ink` / `ink_dim` / `ink_faint` for text, `accent` (the gold of the game's
+title lettering) with `accent_fill` / `on_accent` for the one primary button a
+screen has, and `good` / `warn` / `error` / `info` for status lines.
 
 `DARK` is the launcher's palette, each of its original float colours rounded
 to the nearest 8-bit step. `LIGHT` carries the same hues on white, with the
 accent darkened until it reads there. Studio's light theme applies only the
-surface, accent and selection roles over egui's own light widgets.
+surface, accent, selection, error and outline roles over egui's own light
+widgets; in both themes a control at rest carries the `outline` edge, without
+which an unticked check box all but vanishes into the panel.
 
 The play window's chrome is always dark: it sits on a scrim over whatever the
 game draws.
@@ -31,8 +34,9 @@ game draws.
 ## What the tests hold
 
 - Text contrast on every surface it is drawn over, by the WCAG ratio:
-  `ink` at least 7:1; `ink_dim`, `accent`, `good`, `warn` and `info` at
-  least 4.5:1; `ink_faint` at least 3:1; button and selected-row text, and
+  `ink` at least 7:1; `ink_dim`, `accent`, `good`, `warn`, `error` and
+  `info` at least 4.5:1; `ink_faint` and `outline` at least 3:1 (the WCAG
+  floor for a control's boundary); button and selected-row text, and
   the primary button's label, likewise.
 - The contrast function against the WCAG reference points.
 - The dark tokens stay within half an 8-bit step of the launcher's original

@@ -153,6 +153,10 @@ impl Automation {
     }
 }
 
+/// The width (points) the top bar's right-aligned View and About buttons
+/// need, with their spacing.
+const VIEW_ABOUT_W: f32 = 110.0;
+
 /// How long an informational status line ("... written to ...") stays up.
 /// Errors stay until dismissed.
 const STATUS_TTL: std::time::Duration = std::time::Duration::from_secs(8);
@@ -576,7 +580,10 @@ impl App {
     }
 
     fn top_bar(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
+        // Wrapped, so a narrow window (the 720-point minimum, or a large UI
+        // zoom) moves the last buttons to a second row instead of pushing
+        // Play, View and About off the edge.
+        ui.horizontal_wrapped(|ui| {
             ui.label(
                 RichText::new("Legaia Studio")
                     .heading()
@@ -615,12 +622,21 @@ impl App {
             });
             ui.separator();
             self.play_button(ui);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            // View and About sit at the right edge when the row has room
+            // for them, else they flow on after Play.
+            if ui.available_width() >= VIEW_ABOUT_W {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("About").on_hover_text("F1").clicked() {
+                        self.about_open = !self.about_open;
+                    }
+                    ui.menu_button("View", |ui| self.view_menu(ui));
+                });
+            } else {
+                ui.menu_button("View", |ui| self.view_menu(ui));
                 if ui.button("About").on_hover_text("F1").clicked() {
                     self.about_open = !self.about_open;
                 }
-                ui.menu_button("View", |ui| self.view_menu(ui));
-            });
+            }
         });
         ui.horizontal(|ui| {
             ui.label("Path:");
@@ -637,7 +653,7 @@ impl App {
                 self.open_path(&p);
             }
         });
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if let Some(p) = self.studio.loading() {
                 ui.spinner();
                 ui.label(format!("Loading {} ...", p.display()));
