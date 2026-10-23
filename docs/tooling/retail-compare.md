@@ -3629,7 +3629,15 @@ Replayed
 casts are left out but for the summon invoke `0x32`: their close-ups and
 module shots measured worse aligned (`shiny_refactor_gimard_precast` `.904`
 to `.861`, with the camera channel level), so the step table there is not the
-whole of what retail framed. The invoke is the exception, below. A
+whole of what retail framed. The invoke is the exception, below, and so is
+a module shot still walking on an arm that polls the creature stream
+(`cast_module_camera::creature_poll_arm`, `RetailBattle::module_cam_aligned`):
+the shot walks on through retail's read, which the replay's resident stream
+never waits on, so the headless seed takes the RAM's pose and the image child
+the pose walked back along the shot's own table, built once on the arm
+(`vera_summon_mid_cast`, PROT 0905's arm 3: `camera` `.994` to `1.0`,
+`image` `.985` to `.996`). Aligned on PROT 0930's side-band wait instead,
+`horn_summon_mid_cast` fell `.988` to `.976`. A
 correct camera can also cost a frame whose content differs: aligned,
 `battle_melee_hit_spark` films the engine's mid-somersault Vahn closer up
 (`camera` `.948` to `.990`, `image` `.566` to `.536`). The `super_queue_replace_*`
