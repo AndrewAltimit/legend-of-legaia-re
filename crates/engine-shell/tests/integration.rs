@@ -8,6 +8,7 @@
 mod arts_swing_ladder;
 mod av_decode_oracle;
 mod battle_depth_replay;
+mod battle_spell_plate_disc;
 mod boss_approach_disc;
 mod casino_floor_softlock;
 mod chapter1_boss_spine_oracle;

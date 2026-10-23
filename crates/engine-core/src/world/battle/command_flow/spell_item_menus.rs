@@ -225,6 +225,11 @@ impl World {
             .iter()
             .map(|s| (s.name.clone(), s.affordable, ra_seru(s.id)))
             .collect();
+        let icons = menu
+            .spells
+            .iter()
+            .map(|s| legaia_engine_menus::pause_screens::spell_icon(self.menu.text.as_ref(), s.id))
+            .collect();
         let selected = menu.spells.get(cursor as usize);
         let description = selected
             .and_then(|s| self.menu.text.as_ref().and_then(|t| t.spell_desc(s.id)))
@@ -249,6 +254,7 @@ impl World {
         });
         Some(BattleSpellMenuModel {
             rows,
+            icons,
             cursor: (!menu.spells.is_empty()).then_some(cursor as usize),
             description,
             level_mp,

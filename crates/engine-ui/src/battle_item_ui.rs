@@ -326,7 +326,19 @@ fn emit(
     stage_origin: (i32, i32),
     scale: i32,
 ) {
-    let mut draws = text_draws_for(&font.layout_ascii(text), (0, 0), ink);
+    emit_layout(out, &font.layout_ascii(text), pen, ink, stage_origin, scale);
+}
+
+/// [`emit`] over an already laid-out byte string (escape sprites included).
+fn emit_layout(
+    out: &mut Vec<TextDraw>,
+    layout: &legaia_font::Layout,
+    pen: (i32, i32),
+    ink: [f32; 4],
+    stage_origin: (i32, i32),
+    scale: i32,
+) {
+    let mut draws = text_draws_for(layout, (0, 0), ink);
     for d in &mut draws {
         d.dst.0 = stage_origin.0 + (pen.0 + d.dst.0) * scale;
         d.dst.1 = stage_origin.1 + (pen.1 + d.dst.1) * scale;
@@ -469,6 +481,9 @@ pub struct BattleSpellRowView<'a> {
     pub admissible: bool,
     /// The row leads with the winged Ra-Seru-magic icon.
     pub ra_seru: bool,
+    /// Operand of the `0xCE` element-plate escape the retail name string
+    /// opens with; `None` without the disc spell table.
+    pub icon: Option<u8>,
 }
 
 /// Everything one frame of the battle magic window (`0x46`) draws from.
@@ -542,7 +557,8 @@ pub fn battle_spell_window_sprites(
 }
 
 /// The magic window's text half: `PAGE n/m`, the cursor's page of rows
-/// (names past the icon advance - the icon cells themselves are not drawn),
+/// (each led by its element plate when the font carries the escape
+/// sprites, else the name past the plate's advance),
 /// the description lines and the `Lv` / `MP` tab labels.
 pub fn battle_spell_window_text(
     font: &legaia_font::Font,
@@ -583,6 +599,22 @@ pub fn battle_spell_window_text(
         } else {
             ROW_IDLE
         };
+        // Retail draws the raw name string, so its leading `0xCE op 0x20`
+        // draws the plate at the row pen and the name one table width plus
+        // a space on - with the escape sprites attached, lay it out whole.
+        if let Some(op) = row.icon.filter(|op| font.escape_cell(*op).is_some()) {
+            let mut bytes = vec![0xCE, op, b' '];
+            bytes.extend(row.name.bytes());
+            emit_layout(
+                &mut out,
+                &font.layout(&bytes),
+                (SPELL_ICON_PEN_X, y),
+                ink,
+                stage_origin,
+                scale,
+            );
+            continue;
+        }
         let advance = if row.ra_seru {
             SPELL_NAME_ADVANCE_RA_SERU
         } else {
@@ -940,11 +972,13 @@ mod tests {
                 name: "Meta",
                 admissible: true,
                 ra_seru: true,
+                icon: Some(0x1D),
             },
             BattleSpellRowView {
                 name: "Gimard",
                 admissible: true,
                 ra_seru: false,
+                icon: Some(0x14),
             },
         ];
         let desc = ["Inferno", "Attack all enemies."];
@@ -989,6 +1023,50 @@ mod tests {
             battle_spell_window_sprites(&r, &bare, (0, 0), 1)
                 .iter()
                 .all(|s| s.src != r.tab_cap_l)
+        );
+    }
+
+    /// With the escape sprites attached, each spell row draws its element
+    /// plate untinted at the row pen and the name one plate width plus a
+    /// space further on - the same raw-name layout as the pause Magic list.
+    #[test]
+    fn spell_rows_draw_their_element_plate() {
+        use legaia_font::escape_icons::{EscapeIcon, EscapeIcons};
+        let mut icons = vec![None; 0x1E];
+        icons[0x1D] = Some(EscapeIcon {
+            index: 0x1D,
+            w: 28,
+            h: 12,
+            y_offset: 0,
+            advance: 28,
+            rgba: vec![0xFF; 28 * 12 * 4],
+        });
+        let font = legaia_font::synthetic_for_tests().with_escape_icons(&EscapeIcons { icons });
+        let rows = [BattleSpellRowView {
+            name: "Meta",
+            admissible: true,
+            ra_seru: true,
+            icon: Some(0x1D),
+        }];
+        let frame = BattleSpellMenuFrame {
+            rows: &rows,
+            cursor: None,
+            description: &[],
+            level_mp: None,
+        };
+        let text = battle_spell_window_text(&font, &frame, (0, 0), 1);
+        let y = ROW_TEXT_SEAT.1;
+        let plate = text
+            .iter()
+            .find(|t| t.dst.2 == 28 && t.dst.1 == y)
+            .expect("the winged plate draws");
+        assert_eq!(plate.dst.0, SPELL_ICON_PEN_X);
+        assert_eq!(plate.color[..3], [1.0, 1.0, 1.0]);
+        let space = font.layout(b" ").advance_x as i32;
+        assert!(
+            text.iter()
+                .any(|t| t.dst.1 == y && t.dst.0 == SPELL_ICON_PEN_X + 28 + space),
+            "the name follows the plate"
         );
     }
 }
