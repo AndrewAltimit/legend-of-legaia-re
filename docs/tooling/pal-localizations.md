@@ -346,6 +346,35 @@ the item descriptions a wrong window lands on). An unpaired label stays
 vanilla. The place-name table is found by its first cell, the home town's
 name.
 
+Two more rules keep the alignment from sliding at a pool's tail:
+
+- **A token-cut fragment is not a string.** A NUL scan cuts a line at a
+  name token's `0x00` argument, so `@{c1:00} will equip` scans as a
+  two-byte head `@{c1}` and a tail ` will equip`. The builds put the name in
+  different places (the French `@Equiper {c1:00}` is one head), and the bare
+  head is the same two bytes as the head of an unrelated line elsewhere in
+  the window. A fragment never anchors a partition, pairs only with a
+  fragment of the same side (head with head, tail with tail), and only when
+  it carries prose of its own. Treated as a string, the French `@{c1}` head
+  anchored on the Delilas preamble's and slid the shop strings after it onto
+  the memory-card messages, one of them a file path.
+- **Surplus is cheap only past the pool's end.** The source window runs on
+  past the pool, so skipping source chunks after the last pair costs little,
+  while a skip before or between pairs costs more. With every skip priced
+  alike, every in-order alignment of comparable lengths scores the same, and
+  the Italian menu pool took the one that slid `@Price` / `@Cannot sell` /
+  `@Exchange` onto the next label each.
+
+The FR / DE / IT menu overlays (PROT 0899) are laid out differently from
+USA's: the entry is `0x800` bytes longer and the pool strings sit at other
+addresses, and none of the USA reference sites forms them, so the lift pairs
+the menu pool by these chunk rules alone. Every label, confirm prompt and
+Yes / No the port reads pairs on all three builds; the token-cut ` will
+equip` and ` button` tails stay unpaired by design. The two notice templates
+in the overlay's data segment (`0x801E46E4` / `0x801E4700`, see
+[`ui-strings.md`](translation/ui-strings.md#templates-whose-operands-the-renderer-patches))
+pair on none of the three and are filled by hand.
+
 A pool string is also paired through the **code and data that reference it**
 (`translation::refpair`), and for a strict pool (see
 [`ui-strings.md`](translation/ui-strings.md#strict-pools)) that is the only pairing
