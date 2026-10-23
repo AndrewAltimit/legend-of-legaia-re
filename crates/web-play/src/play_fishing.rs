@@ -268,19 +268,17 @@ impl LegaiaRuntime {
     ///   "tension": 0, "tension_max": 0, "record": 0, "points": 0,
     ///   "best": 0, "casts": 0, "lure": 0, "rod": 0, "venue": 0,
     ///   "wander": {"x":1024,"y":0,"z":1024,"facing":2048}|null,
-    ///   "line": false, "fx_parts": 0, "ripple_parts": 0 }
+    ///   "line": false, "fx_parts": 0 }
     /// ```
     ///
     /// `wander` / `line` are the venue actors the shared step
-    /// ([`Self::tick_fishing_actors`]) runs, `fx_parts` the live parts in
-    /// the world's effect pool the catch bursts land in, and `ripple_parts`
-    /// the live ripple parts the wander's retarget roll seats (the overlay's
-    /// own move-VM ring records, `FishingVenue::ripple_fx`).
+    /// ([`Self::tick_fishing_actors`]) runs, and `fx_parts` the live parts in
+    /// the world's effect pool their ripples and bursts land in.
     pub fn play_fishing_state_json(&self) -> String {
         let Some(s) = self.fishing_session() else {
             return r#"{"live":false}"#.to_string();
         };
-        let (wander, line, fx_parts, ripple_parts) =
+        let (wander, line, fx_parts) =
             self.scene_host
                 .host()
                 .map(|h| {
@@ -288,15 +286,9 @@ impl LegaiaRuntime {
                     let wander = v.wander.as_ref().map(
                         |w| serde_json::json!({"x": w.x, "y": w.y, "z": w.z, "facing": w.facing}),
                     );
-                    let ripples = v.ripple_fx.as_ref().map_or(0, |s| s.parts.len());
-                    (
-                        wander,
-                        v.line.is_some(),
-                        h.world.minigames.fx.len(),
-                        ripples,
-                    )
+                    (wander, v.line.is_some(), h.world.minigames.fx.len())
                 })
-                .unwrap_or((None, false, 0, 0));
+                .unwrap_or((None, false, 0));
         serde_json::json!({
             "live": true,
             "phase": pond_phase_name(s.phase()),
@@ -314,7 +306,6 @@ impl LegaiaRuntime {
             "wander": wander,
             "line": line,
             "fx_parts": fx_parts,
-            "ripple_parts": ripple_parts,
         })
         .to_string()
     }

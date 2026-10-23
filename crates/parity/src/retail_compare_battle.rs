@@ -242,25 +242,20 @@ pub const BATTLE_RNG_SEEDS: [u32; 48] = [
 /// engine's draw count to the phase moves with the stream it is dealt), so
 /// which stream replays a drive or a cast stays a search result. These are
 /// that search's results for the states whose first reaching stream frames
-/// the capture's phase further from retail than another: each is the first
-/// stream, from [`BATTLE_RNG_SEEDS`] in its order, that reaches the phase
-/// with the camera and then the frame no worse than the corpus held. A pin
-/// that stops reaching falls through to the list.
+/// the capture's phase further from retail than another, or whose image
+/// child never reaches the phase on it: each is the first stream, from
+/// [`BATTLE_RNG_SEEDS`] in its order, that reaches the phase headlessly,
+/// gets a frame from the child, and scores the camera and then the frame no
+/// worse than the corpus held. The seed runs the retail-faithful mode the
+/// child runs (`retail_compare::pin_seed_retail`), so a pin is searched under
+/// it. A pin that stops reaching falls through to the list; the search is in
+/// `docs/tooling/retail-compare.md` ("The stream at the entry").
 pub const BATTLE_RNG_PINS: &[(&str, u32)] = &[
-    ("battle_gaza2_park_0x19", 0xAB1C_5ED5),
-    ("battle_gaza2_park_0x19_summon_melee", 0xBC5D_413F),
-    ("battle_gaza2_park_0x19_target_vahn", 0x428A_2F98),
-    ("battle_gimard_tail_fire_b", 0xA54F_F53A),
+    ("battle_gaza2_park_0x19", 0xFBD4_4AC9),
+    ("battle_gaza2_park_0x19_summon_melee", 0xB5C0_FBCF),
+    ("battle_gaza2_park_0x19_target_vahn", 0x49C1_6D38),
     ("battle_melee_hit_spark", 0x9E37_79B9),
-    ("battle_noa_miracle_art_combo", 0x1283_5B01),
     ("battle_vahn_tri_somersault_super", 0x8BAE_8BFB),
-    ("cort_evolved_ultra_charge_mid_cast", 0xC0FF_EE01),
-    ("delilas_gi_spirit_distortion_v3", 0x1F83_D9AB),
-    ("gimard_burning_attack", 0x9E37_79B9),
-    ("nivora_duel_pre_plasma_strike", 0x1F83_D9AB),
-    ("noa_levelup_fight_pre", 0x8BAE_8BFB),
-    ("rim_elm_gimard_seru_capture_after", 0x7F4A_7C15),
-    ("rim_elm_gimard_seru_capture_before", 0x7F4A_7C15),
     ("shiny_refactor_gimard_levelup", 0x1F83_D9AB),
 ];
 

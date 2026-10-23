@@ -108,6 +108,8 @@ Environment switches that open up a battle state's channels:
 | `LEGAIA_RC_DRIVE_TRACE=1` | on stderr, one line per tick of a replayed cast's run to its gate: the action state, the yaw counter, the close-up accumulator, every heading, the caster's body pair, the glide-target focus and the camera pose |
 | `LEGAIA_RC_FX_TRACE=1` | on stderr, at the sampled tick: each active combatant's live pair, burn selector `+0x21F` and colour word, then the effect-VM pool (`FUN_801E0080`'s masters and children) with positions in the retail pool's whole units - the engine half of a side-by-side against the capture's `_DAT_8007BD30` pool |
 | `LEGAIA_RC_SEED_TRACE=1` | on stderr, one line per stream the battle search tried (prompt, drive or cast outcome, surprise opening, measured ground drift) and one for the undrift re-run's verdict |
+| `LEGAIA_RC_SEED_SCAN=1` | the battle search runs every stream instead of stopping at the first that reaches, so the seed trace lists each one's outcome ([pin search](#the-stream-at-the-entry)) |
+| `LEGAIA_RC_NO_PINS=1` | drops `BATTLE_RNG_PINS`: each state scores its first reaching list stream |
 
 The first says which component of a framing misses its endpoint and which
 input put it there - a heading, a body pair, a yaw counter; the second
@@ -162,13 +164,15 @@ images are never committed.
 A `shiny-seru` state also replays that build's battle-entry draw. The patch's
 setup routine calls `rand()` once at battle init for its shiny roll
 (`legaia_code_hooks::shiny_seru`), ahead of the formation draws, and the
-engine's twin is the `WorldToggles::shiny_seru` roll. The image child runs
-`play-window --retail`, whose pin turns that roll off, while the headless seed
-keeps it on, so the run sets `RetailBattle::resident_shiny_seru` and the child
-gets `LEGAIA_BATTLE_SHINY_SERU=1`: both sides then take the draw and deal the
-fight off the same stream position. Without it the child replays
-`shiny_refactor_gimard_levelup`'s Gimard cast one draw short, and its frame
-shows the cast's hit counter where retail shows the magic level-up notice.
+engine's twin is the `WorldToggles::shiny_seru` roll. Both halves run the
+[retail-faithful mode](#both-halves-run-retail-faithful), which turns that
+roll off, so the run sets `RetailBattle::resident_shiny_seru`: the headless
+seed turns the roll back on and the child gets `LEGAIA_BATTLE_SHINY_SERU=1`,
+and both sides deal the fight off the same stream position the build did.
+Without it the child replays `shiny_refactor_gimard_levelup`'s Gimard cast
+one draw short, and its frame shows the cast's hit counter where retail shows
+the magic level-up notice. No other resident patch in the corpus has an
+engine switch behind it, so every other state runs the pin unchanged.
 
 Which image a state was made on is read off its resident executable: every
 `SCUS_942.54` byte where a candidate image differs from retail must hold the
@@ -618,6 +622,21 @@ through `enter_scene_live` directly (no resume landing, no saved seat),
 hydrate again. Comparing its report with the default isolates what the
 landing itself contributes.
 
+### Both halves run retail-faithful
+
+The image child is `play-window --retail`, whose session switches end in
+`WorldToggles::pin_retail` (`SessionSwitches::apply`). The headless seeds
+(`run_engine_battle`, the field and menu `run_engine_with`, and the sessions
+that only land the save to read the scene's arms or region table) put their
+world on the same pin (`retail_compare::pin_seed_retail`) before the save is
+landed. Left on the engine defaults, a seed would keep the port's tweaks and
+guards on - the shiny roll's battle-entry `rand()` draw, the HP-readout and
+hop-landing guards, the Fortress encounter fix, the entry pulse and the flash
+slew - and on a retail state the two halves would replay different fights off
+one stream: the scored channels from one realisation and the frame from
+another. A resident patch keeps what its build implies
+([above](#the-ratchet)): the shiny-Seru build's entry draw.
+
 ## Mid-script states
 
 A field capture taken while a spawned record runs holds that record's
@@ -926,11 +945,23 @@ draws it takes.
 - Which stream that is, is a search result, and so is a state's pin
   (`BATTLE_RNG_PINS`, tried ahead of the list; `LEGAIA_RC_PIN_SEED` stands in
   for it in a sweep, and the report's `stream` detail names the one used).
-  Moving the world stream onto the BIOS recurrence re-dealt every list seed,
-  and fifteen states whose first reaching stream now framed their phase worse
-  than the corpus held (`noa_levelup_fight_pre` reaching its Done hold `87`
-  ticks late, the camera `0.981` to `0.935`) are pinned to the first stream in
-  list order that reaches the phase with the camera, then the frame, no worse.
+  A state is pinned only when its first reaching stream frames the phase
+  worse than the baseline holds, or its image child never reaches the phase
+  and writes no frame; the pin is then the first stream in list order that
+  reaches the phase headlessly, gets a frame from the child, and scores the
+  camera, then the frame, no worse. A pin whose state scores the same
+  unpinned is dropped.
+- The pins are re-searched whenever the draws a seed takes before its phase
+  change (a world-stream move, a toggle the seed and the child now share).
+  `LEGAIA_RC_NO_PINS=1` runs the corpus with the table dropped, which names
+  the states that need one; `LEGAIA_RC_SEED_SCAN=1` (with
+  `LEGAIA_RC_SEED_TRACE=1`) runs a state's whole list headlessly instead of
+  stopping at the first reaching stream, so one run lists every stream that
+  reaches and on which tick; each candidate is then run with its frame under
+  `LEGAIA_RC_PIN_SEED`, in list order. A headless reach does not imply the
+  child's: the `korb3` Gaza park states reach the phase headlessly on many
+  streams whose child ends the fight elsewhere (`phase gate not met`), early
+  reaches as well as late ones, so their pins are frame-checked streams.
 - A capture past the end signal also wants retail's win pose. The results
   sequencer draws it from the stream (`victory_pose_id`), and the results camera
   is that pose's own script (`battle_over_script`). The pose actor's latched

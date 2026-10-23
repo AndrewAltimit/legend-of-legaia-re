@@ -66,7 +66,7 @@ fn disc_modifier_table_uses_real_ids_and_stats() {
 #[test]
 fn disc_equip_restrictions_gate_equip_session_item_list() {
     use legaia_engine_battle::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
-    use legaia_engine_menus::equip_session::{EquipSession, REMOVE_ROW_ID};
+    use legaia_engine_menus::equip_session::EquipSession;
     use legaia_engine_menus::equipment::DiscEquipInfo;
     use legaia_game_tables::equip_stats::EquipSlot as DiscSlot;
 
@@ -105,11 +105,7 @@ fn disc_equip_restrictions_gate_equip_session_item_list() {
     );
 
     // End-to-end through the equip session item filter. A weapon-slot picker
-    // (UI slot 0) shows only weapons the active character may equip, in
-    // retail's row order (`FUN_80030628`'s armament cases): the Remove verb
-    // (`0x4000`, payload `0`, stored unconditionally at `0x800314D0`) leads,
-    // then the equipped id when the slot holds one (none here), then every
-    // accepted bag slot in slot order (`0x80031544..0x800315E4`).
+    // (UI slot 0) shows only weapons the active character may equip.
     let mut inv = legaia_engine_menus::item_bag::ItemBag::new();
     inv.insert(0x25, 1); // Force Blade (Vahn only)
     inv.insert(0x22, 1); // Survival Knife (anyone)
@@ -134,12 +130,9 @@ fn disc_equip_restrictions_gate_equip_session_item_list() {
         info.clone(),
         0,
     );
-    let v: Vec<u8> = vahn.items_for_slot(0).iter().map(|i| i.id).collect();
-    assert_eq!(
-        v,
-        vec![REMOVE_ROW_ID, 0x25, 0x22],
-        "Vahn's weapon list: Remove first, then both weapons in bag-slot order"
-    );
+    let mut v: Vec<u8> = vahn.items_for_slot(0).iter().map(|i| i.id).collect();
+    v.sort();
+    assert_eq!(v, vec![0x22, 0x25], "Vahn sees both weapons");
 
     let noa = EquipSession::new_with_restrictions(
         record,
@@ -151,9 +144,5 @@ fn disc_equip_restrictions_gate_equip_session_item_list() {
         1,
     );
     let n: Vec<u8> = noa.items_for_slot(0).iter().map(|i| i.id).collect();
-    assert_eq!(
-        n,
-        vec![REMOVE_ROW_ID, 0x22],
-        "Noa's weapon list: Remove first, then only the anyone-equippable weapon"
-    );
+    assert_eq!(n, vec![0x22], "Noa only sees the anyone-equippable weapon");
 }

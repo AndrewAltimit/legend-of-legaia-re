@@ -50,15 +50,12 @@ fn kor5_ambient_script_writes_its_cue_into_ring_slot_3() {
     s.enter_field_live("kor5", &FieldLiveOpts::default())
         .expect("enter kor5");
 
-    // Each write is stamped with the world's retail display-frame counter
-    // (one per vsync), so the cadence below is in vsyncs whatever a session
-    // tick spans.
     let mut writes = Vec::new();
-    for _ in 0..400u32 {
+    for frame in 0..400u32 {
         s.tick().expect("tick");
         for op in s.host.world.take_sfx_ring_ops() {
             if op == SfxRingOp::WriteSlot(3, 0x204) {
-                writes.push(s.host.world.clock.display_frames);
+                writes.push(frame);
             }
         }
     }
@@ -91,14 +88,11 @@ fn kor5_ambient_script_writes_its_cue_into_ring_slot_3() {
         writes.windows(2).all(|w| w[0] != w[1]),
         "the ambient record is seated once: {writes:?}"
     );
-    // Retail repeats every 63 vsyncs. The record is `0x1D 0x204`, `WAIT_SET
-    // 0x3C` (`+0x54 = 60 << 3`), then op `0x2F` sub-op `0x14`. `+0x54`
-    // drains `DAT_1F800393 * DAT_1F80037D` per game tick, one game tick per
-    // `frame_step` vsyncs, and the rate byte is `8` in every library state
-    // (this scene's included): the wait holds 60 vsyncs at any frame step,
-    // plus the tick that runs the loop.
+    // Retail repeats every 63 vsyncs. One session tick is one game tick of
+    // `frame_step` vsyncs - two in a field scene - so that is 31-32 ticks.
+    let step = u32::from(s.host.world.clock.frame_step.max(1));
     for pair in writes.windows(2) {
-        let vsyncs = pair[1] - pair[0];
+        let vsyncs = (pair[1] - pair[0]) * step;
         assert!(
             (60..=66).contains(&vsyncs),
             "cue cadence {vsyncs} vsyncs, retail repeats every 63: {writes:?}"

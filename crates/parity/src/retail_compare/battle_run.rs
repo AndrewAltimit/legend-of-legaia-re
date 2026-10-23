@@ -28,6 +28,14 @@ fn seed_trace() -> bool {
     std::env::var_os("LEGAIA_RC_SEED_TRACE").is_some()
 }
 
+/// `LEGAIA_RC_SEED_SCAN=1`: the stream search runs every stream instead of
+/// stopping at the first that reaches the phase, so one seed trace lists
+/// each stream's outcome - the input to a pin search. The first reaching
+/// stream is still the one scored.
+fn seed_scan() -> bool {
+    std::env::var("LEGAIA_RC_SEED_SCAN").is_ok_and(|v| v.trim() == "1")
+}
+
 pub(super) fn run_battle(
     opts: &RunOptions<'_>,
     entry: &CorpusEntry,
@@ -50,9 +58,8 @@ pub(super) fn run_battle(
     let latched;
     let battle = {
         let mut b = battle.clone();
-        b.entry_latches =
-            crate::retail_compare_battle::entry_latches(opts.extracted, retail, battle);
         b.resident_shiny_seru = is_shiny_seru_patch(entry.resident_patch.as_deref());
+        b.entry_latches = crate::retail_compare_battle::entry_latches(opts.extracted, retail, &b);
         latched = b;
         &latched
     };
@@ -100,11 +107,17 @@ pub(super) fn run_battle(
         &[false, true]
     };
     // A state's pinned stream first (`BATTLE_RNG_PINS`), then the list.
-    // `LEGAIA_RC_PIN_SEED` stands in for the pin, for a sweep.
+    // `LEGAIA_RC_PIN_SEED` stands in for the pin, for a sweep;
+    // `LEGAIA_RC_NO_PINS=1` drops the table, for the sweep's unpinned pass.
+    let no_pins = std::env::var("LEGAIA_RC_NO_PINS").is_ok_and(|v| v.trim() == "1");
     let pinned = std::env::var("LEGAIA_RC_PIN_SEED")
         .ok()
         .and_then(|v| u32::from_str_radix(v.trim().trim_start_matches("0x"), 16).ok())
-        .or_else(|| crate::retail_compare_battle::pinned_seed(&entry.label));
+        .or_else(|| {
+            (!no_pins)
+                .then(|| crate::retail_compare_battle::pinned_seed(&entry.label))
+                .flatten()
+        });
     let seeds: Vec<u32> = pinned
         .into_iter()
         .chain(crate::retail_compare_battle::BATTLE_RNG_SEEDS)
@@ -173,9 +186,13 @@ pub(super) fn run_battle(
                         off_hits.get_or_insert((e, victims));
                         continue;
                     }
-                    reached = Some(e);
-                    reached_victims = victims;
-                    break 'search;
+                    if reached.is_none() {
+                        reached = Some(e);
+                        reached_victims = victims;
+                    }
+                    if !seed_scan() {
+                        break 'search;
+                    }
                 }
                 Ok(e) => {
                     first.get_or_insert(Ok(e));

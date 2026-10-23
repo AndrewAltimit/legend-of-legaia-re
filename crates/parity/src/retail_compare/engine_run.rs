@@ -109,6 +109,9 @@ pub fn run_engine_with(
         enable_audio: false,
     };
     let mut session = NativeSession::open(extracted, &cfg).context("open boot session")?;
+    // The image child's `--retail` mode (`pin_seed_retail`). No field-side
+    // switch draws differently under a resident patch.
+    crate::retail_compare::pin_seed_retail(&mut session.host.world.toggles, false);
     // Field talk runs on the inline field-VM runner, as it does in both play
     // hosts (`play-window`'s default and the browser page) and in the image
     // child: without it an engaged placement opens the plain typewriter panel

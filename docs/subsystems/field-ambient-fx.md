@@ -277,15 +277,7 @@ vsyncs (`+0x54` drains `frame_step * 8`). `koin1`'s spotlight-cone cycler
 `WAIT_SET 5`, op `0x2E` (`+2 << 3`), `WAIT_SET 5`, whose capture holds `v = -12`, velocity `16`, wait `16` one tick
 after a `WAIT_SET 5` at frame step 3, with its two previous uploads still in
 RAM at `v = -18` and `v = -12` - a triangle wave twelve deep, two ticks a
-side, whose phase two ticks back equals the newest upload's.
-
-`kor5`'s looping ambient cue shows the wait half: its record stores cue
-`0x204` (op `0x1D`), then `WAIT_SET 0x3C`, and a key-on census of a retail
-`kor5` state sees the cue every 63 vsyncs - 60 vsyncs of wait plus the ticks
-the loop spends. The byte is not per scene or per mode: the core-state reset
-reloads it from a boot-time copy on every mode change
-([`move-vm.md`](move-vm.md#0x0a---keyframe_load)), and every library save
-state reads `8`. The port's ambient tick and the cycler integrator take the
+side, whose phase two ticks back equals the newest upload's. The port's ambient tick and the cycler integrator take the
 byte from `legaia_engine_field::clut_cell_fx::SPEED_SCALAR`.
 
 ### The self-modifying spawn stepper

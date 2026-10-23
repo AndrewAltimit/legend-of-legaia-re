@@ -306,81 +306,53 @@ impl FishingVenue {
         scene.parts.retain(|p| !p.finished);
     }
 
-    /// [`Self::ripple_world_mesh`] projected onto the stage through the
-    /// venue camera over the lead ([`venue_camera_view`],
-    /// [`project_to_retail_screen`]). For a host that draws on a 2D canvas
-    /// rather than through an effect-mesh pass - the minigames page. A
-    /// triangle with a corner behind the eye is dropped.
+    /// [`Self::ripple_draws`] projected onto the stage through the venue
+    /// camera over the lead ([`venue_camera_view`],
+    /// [`project_to_retail_screen`]): each ring vertex placed by its node's
+    /// rotation banks (`FUN_80026988`, `Rx * Ry * Rz`) and position. For a
+    /// host that draws on a 2D canvas rather than through an effect-mesh
+    /// pass - the minigames page. A triangle with a corner behind the eye
+    /// is dropped.
     pub fn ripple_screen_tris(&self) -> Vec<RippleTri> {
         let Some(w) = self.wander.as_ref() else {
             return Vec::new();
         };
         let view = venue_camera_view(w.x, w.y, w.z, w.facing);
-        let m = self.ripple_world_mesh();
         let mut out = Vec::new();
-        for tri in m.indices.as_chunks::<3>().0 {
-            let idx = [tri[0] as usize, tri[1] as usize, tri[2] as usize];
-            let Some(pts) = idx
-                .iter()
-                .map(|&i| {
-                    m.positions
-                        .get(i)
-                        .and_then(|v| project_to_retail_screen(&view, v.map(|c| c.round() as i32)))
-                })
-                .collect::<Option<Vec<_>>>()
-            else {
-                continue;
-            };
-            let rgb = idx.map(|i| m.colors.get(i).copied().unwrap_or([0x80; 3]));
-            let semi = m
-                .cba_tsb
-                .get(idx[0])
-                .is_some_and(|ct| ct[1] & legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT != 0);
-            out.push(RippleTri {
-                xy: [pts[0], pts[1], pts[2]],
-                rgb,
-                semi,
-            });
-        }
-        out
-    }
-
-    /// Every live ripple ring of [`Self::ripple_draws`] as one mesh in raw
-    /// retail world space (Y down): each ring vertex placed by its node's
-    /// rotation banks (`FUN_80026988`, `Rx * Ry * Rz`) and position, rounded
-    /// to the integer world units the GTE works in. The geometry a host draws
-    /// in the same pass as the pond, under the pond's own view-projection
-    /// (`FishingScene::vp_raw`) - the browser play page's venue frame.
-    pub fn ripple_world_mesh(&self) -> legaia_tmd::mesh::VramMesh {
-        let mut out = legaia_tmd::mesh::VramMesh {
-            positions: Vec::new(),
-            uvs: Vec::new(),
-            cba_tsb: Vec::new(),
-            indices: Vec::new(),
-            normals: Vec::new(),
-            colors: Vec::new(),
-        };
         for d in self.ripple_draws() {
             let r = legaia_engine_camera::psx_camera::camera_rotation(d.rot[0], d.rot[1], d.rot[2]);
-            let place = |v: [f32; 3]| -> [f32; 3] {
+            let place = |v: [f32; 3]| -> [i32; 3] {
                 let mut p = [0f32; 3];
                 for (row, o) in p.iter_mut().enumerate() {
                     *o = d.world_pos[row] + (0..3).map(|c| r[c * 4 + row] * v[c]).sum::<f32>();
                 }
-                p.map(f32::round)
+                p.map(|c| c.round() as i32)
             };
             let m = &d.mesh;
-            let base = out.positions.len() as u32;
-            out.positions.extend(m.positions.iter().map(|&v| place(v)));
-            for i in 0..m.positions.len() {
-                out.uvs.push(m.uvs.get(i).copied().unwrap_or_default());
-                out.cba_tsb
-                    .push(m.cba_tsb.get(i).copied().unwrap_or_default());
-                out.colors
-                    .push(m.colors.get(i).copied().unwrap_or([0x80; 3]));
-                out.normals.push([0.0; 3]);
+            for tri in m.indices.as_chunks::<3>().0 {
+                let idx = [tri[0] as usize, tri[1] as usize, tri[2] as usize];
+                let Some(pts) = idx
+                    .iter()
+                    .map(|&i| {
+                        m.positions
+                            .get(i)
+                            .and_then(|&v| project_to_retail_screen(&view, place(v)))
+                    })
+                    .collect::<Option<Vec<_>>>()
+                else {
+                    continue;
+                };
+                let rgb = idx.map(|i| m.colors.get(i).copied().unwrap_or([0x80; 3]));
+                let semi = m
+                    .cba_tsb
+                    .get(idx[0])
+                    .is_some_and(|ct| ct[1] & legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT != 0);
+                out.push(RippleTri {
+                    xy: [pts[0], pts[1], pts[2]],
+                    rgb,
+                    semi,
+                });
             }
-            out.indices.extend(m.indices.iter().map(|&i| base + i));
         }
         out
     }

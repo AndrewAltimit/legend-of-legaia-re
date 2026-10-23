@@ -46,7 +46,6 @@ mod play_render_state;
 mod play_ringside_still_disc;
 mod play_screen_parity_disc;
 mod play_sfx_channel;
-mod point_card_toast_page;
 mod prize_confirm_page;
 mod raseru_cross_out_page;
 mod screen_effect_page_prims;

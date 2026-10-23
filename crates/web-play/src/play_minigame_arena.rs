@@ -461,20 +461,6 @@ fn shade_json(sh: &legaia_engine_ui::ringside_backdrop::BackdropShade) -> serde_
     })
 }
 
-impl LegaiaRuntime {
-    /// The live fishing session's ripple rings in raw world space
-    /// ([`legaia_engine_minigame_scenes::fishing_venue::FishingVenue::ripple_world_mesh`]);
-    /// `None` outside fishing or with no live ripple.
-    fn fishing_ripple_mesh(&self) -> Option<legaia_tmd::mesh::VramMesh> {
-        let host = self.scene_host.host()?;
-        if host.world.mode != legaia_engine_mode::mode::SceneMode::Fishing {
-            return None;
-        }
-        let m = host.world.minigames.fishing_venue.ripple_world_mesh();
-        (!m.indices.is_empty()).then_some(m)
-    }
-}
-
 #[wasm_bindgen]
 impl LegaiaRuntime {
     // ------------------------------------------------------ Muscle Dome
@@ -772,60 +758,6 @@ impl LegaiaRuntime {
             .fishing_surface
             .scene()
             .map(|s| s.vp_raw(aspect).to_vec())
-            .unwrap_or_default()
-    }
-
-    /// This frame's fishing ripple rings - the overlay's own ripple parts
-    /// the lead's retarget roll seats (`FishingVenue::ripple_world_mesh`) -
-    /// as one mesh in the pond's raw world space, so the page draws them in
-    /// the pond's pass under [`Self::play_mg_fishing_scene_vp`]. The native
-    /// window draws the same parts through its effect pass
-    /// (`World::active_effect_kind4_draws`). The accessors below read the
-    /// same rings; all are empty with no live ripple. Returns the vertex
-    /// count.
-    pub fn play_mg_fishing_ripple_vertex_count(&self) -> u32 {
-        self.fishing_ripple_mesh()
-            .map_or(0, |m| m.positions.len() as u32)
-    }
-
-    /// Ripple vertex positions, `[x, y, z]` raw retail world (Y down).
-    pub fn play_mg_fishing_ripple_positions(&self) -> Vec<f32> {
-        self.fishing_ripple_mesh()
-            .map(|m| m.positions.iter().flatten().copied().collect())
-            .unwrap_or_default()
-    }
-
-    /// Ripple per-vertex `[u, v]`.
-    pub fn play_mg_fishing_ripple_uvs(&self) -> Vec<u8> {
-        self.fishing_ripple_mesh()
-            .map(|m| m.uvs.iter().flatten().copied().collect())
-            .unwrap_or_default()
-    }
-
-    /// Ripple per-vertex `[cba, tsb]` (the TSB's bit 15 = semi-transparent).
-    pub fn play_mg_fishing_ripple_cba_tsb(&self) -> Vec<u16> {
-        self.fishing_ripple_mesh()
-            .map(|m| m.cba_tsb.iter().flatten().copied().collect())
-            .unwrap_or_default()
-    }
-
-    /// Ripple per-vertex `[r, g, b, 255]`: the packet colour each textured
-    /// ring vertex modulates by.
-    pub fn play_mg_fishing_ripple_flat_rgba(&self) -> Vec<u8> {
-        self.fishing_ripple_mesh()
-            .map(|m| {
-                m.colors
-                    .iter()
-                    .flat_map(|c| [c[0], c[1], c[2], 255])
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-
-    /// Ripple triangle indices, local to the ripple vertices.
-    pub fn play_mg_fishing_ripple_indices(&self) -> Vec<u32> {
-        self.fishing_ripple_mesh()
-            .map(|m| m.indices)
             .unwrap_or_default()
     }
 

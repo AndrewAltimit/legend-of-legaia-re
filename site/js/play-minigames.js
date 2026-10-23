@@ -271,42 +271,7 @@
     };
     /* The pond's water sheets are semi-transparent (ABE) prims. */
     if (!takeRenderer(view, rt.play_mg_fishing_scene_vram(), buf, { semiTwoPass: true })) return null;
-    return { kind: 'fishing', gen, buf, ripples: 0 };
-  }
-
-  /* The lead's ambient ripples: the overlay's own ripple parts, each a
-   * procedural ring (`play_mg_fishing_ripple_*`, raw world space like the
-   * pond), drawn in the pond's own pass and camera - the single-mesh path
-   * has one buffer, so a frame with live rings uploads pond + rings as one
-   * mesh, and the frame they retire re-uploads the bare pond. The native
-   * window draws the same parts through its effect pass. Returns the
-   * positions to draw this frame. */
-  function fishingRipples(rt, r, sc, pondPos) {
-    const n = typeof rt.play_mg_fishing_ripple_vertex_count === 'function'
-      ? rt.play_mg_fishing_ripple_vertex_count() : 0;
-    if (!n) {
-      if (sc.ripples) {
-        const b = sc.buf;
-        r.uploadMesh(b.pos, b.uvs, b.ct, b.idx, b.flat);
-        sc.ripples = 0;
-      }
-      return pondPos;
-    }
-    const cat = (A, B, T) => { const o = new T(A.length + B.length); o.set(A); o.set(B, A.length); return o; };
-    const b = sc.buf;
-    const base = pondPos.length / 3;
-    const ridx = rt.play_mg_fishing_ripple_indices();
-    const idx = new Uint32Array(b.idx.length + ridx.length);
-    idx.set(b.idx);
-    for (let i = 0; i < ridx.length; i++) idx[b.idx.length + i] = ridx[i] + base;
-    const pos = cat(pondPos, rt.play_mg_fishing_ripple_positions(), Float32Array);
-    r.uploadMesh(pos,
-      cat(b.uvs, rt.play_mg_fishing_ripple_uvs(), Uint8Array),
-      cat(b.ct, rt.play_mg_fishing_ripple_cba_tsb(), Uint16Array),
-      idx,
-      cat(b.flat, rt.play_mg_fishing_ripple_flat_rgba(), Uint8Array));
-    sc.ripples = n;
-    return pos;
+    return { kind: 'fishing', gen };
   }
 
   function fishingFrame(rt, view, skipDraw) {
@@ -319,9 +284,7 @@
       clearGl(view);
       return;
     }
-    const pondPos = rt.play_mg_fishing_scene_positions();
-    const pos = fishingRipples(rt, r, S.scene, pondPos);
-    if (pos === pondPos) r.updatePositions(pondPos);
+    r.updatePositions(rt.play_mg_fishing_scene_positions());
     const c = r.canvas;
     const vp = rt.play_mg_fishing_scene_vp(c.width / Math.max(c.height, 1));
     r.mvpOverride = vp.length === 16 ? Float32Array.from(vp) : null;

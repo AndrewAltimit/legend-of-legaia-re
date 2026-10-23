@@ -753,14 +753,14 @@ all, so `RodLureSelect`'s owned-count probe has nothing to count. Both kernels
 say so in their own doc blocks. Read the converted row as reach, and the host
 gap as still owed.
 
-Rows left this table through the scene-session ladder
-(`crates/engine-scene-host/tests/scene_bgm_transition_ladder.rs`): the BGM
-plumbing addresses (`80019898` `800243f0`) and the
-scripted CLUT-cell cross-fade arm (`801e4c58`). The BGM rows needed a
+Five rows left this table through the scene-session ladder
+(`crates/engine-scene-host/tests/scene_bgm_transition_ladder.rs`): the four BGM
+plumbing addresses (`80019898` `800266e0` `80026520` `800243f0`) and the
+scripted CLUT-cell cross-fade arm (`801e4c58`). The BGM four needed a
 `BgmDirector` more than they needed a scene - see the structural exclusion
 above - and driving the sub-ops the scenes' own MANs carry, in the order a
 transition performs them, is what makes the pause/resume pair falsifiable
-rather than independent hook calls.
+rather than four independent hook calls.
 
 Driving them surfaced a wiring gap the reach number cannot show, because the
 gap is on the far side of the trait. `BgmDirector::reattach_volume` has a
@@ -1281,7 +1281,8 @@ No row. The ocean-animation row (`8001ada4`) was the worked example of the
 actually bounds: `native_minigame_ladder` covers it several thousand times
 per run, because `advance_ocean_animation` is on the window's per-tick path
 and a spawned `play-window` writes its own profile. "Unreachable by call" and
-"unreachable by coverage" were never the same claim.
+"unreachable by coverage" were never the same claim. `xa_clip.rs`'s
+`8003d53c` went with `arts_swing_ladder`.
 
 ### prot
 
@@ -1863,35 +1864,6 @@ moved: `sfx_cue.rs`'s module line is a `REF:` and the `PORT:` sits on
 `route_sfx_cue`, and `battle_action.rs` lists `FUN_801D5854` as a `REF:`,
 leaving the address to the function tags on its arms (`apply_death_reframe`
 among them).
-
-#### A fourth refresh: thirty added rows, two of them closable here
-
-The next refresh exported every canonical member but `full_game_ladder`, whose
-instrumented debug run outlasted the round and was stopped - so its row in
-the `PARTIAL UNION` line is a missing export, not a red one, and any row only
-that ladder entered reads never entered until it is re-exported. The wipe
-`801dd784` (`ShutterBars::step`, op `43 0C`) is the one row that moved back
-for that reason as far as the rest of the union shows: its carriers are
-`town0c`, `balden`, `balden2`, `deroa` and `station3`, and no other member
-walks a script of theirs to the op. The recipe stays debug-instrumented on
-purpose ([the `--release` trap](#a---release-export-cannot-tell-never-called-from-inlined)
-applies to `release-test` too); the cost is answered by exporting that ladder
-first, or alone.
-
-The thirty added rows, with verdicts:
-
-| addresses | verdict | what the reading found |
-|---|---|---|
-| `801dce20` | (b), **converted** | window 31, the Point Card toast. `MenuRuntime::arm_point_card_toast` returns early unless the bag holds item `0xFE`, and a cold bag never does, so every shop rung bought without painting it. `point_card_toast_page` seeds the card through the page's item cheat, buys into the bag off the equipment shop's recipient picker by pad, and requires the toast and a composed frame that differs from the same walk with no card |
-| `801d6f10` | (c), **retail-dead** | the fishing miss / retry banner. Disassembly of the fishing overlay: the driver's state word `0x801D926C` is referenced from no other image, and none of its stores writes `0x2D`; the banner's timer `0x801D9268` is stored only inside case `0x2D` itself. Nothing seeds it in retail, and `FishingBanners::miss` has no starter in the port - see [`minigame-fishing.md`](../subsystems/minigame-fishing.md#open) |
-| `80029888` `80029dd8` | (a) battle, (b) field | the shatter renderer. The producers run headless - `battle_depth_replay` builds a non-zero `ShatterInput` off a cast's `+0x1BA` - but the kernel runs only in the hosts' draw paths, and no composing member holds a shatter word. On the field the `43 07` carriers are sixteen scenes (`asset field-op-census --only "43 07"`); a page entry of each, ticked 1800 frames, raises none, so every carrier sits behind a talk or story gate. Next step: a `battle_render_ladder` rung parked on a cast that raises `+0x1BA`, or a page ladder that seeds one carrier's gate |
-| `80045bb4` | (a), effects | the bank-3 `GT4` sixteen-way split, built by `engine-effects::effect_default_arm` only for a default-arm node whose mode carries bit `0x20`. No composing battle member stages one |
-| `801f7c18` `801f7dd0` | (a), cast | Swordie's (spell `0x88`, PROT 0910) split-panel and slash-streak packets, composed by `engine-screens::screen_layers` while that module is up. No composing member casts Swordie |
-| `801f76c4` `801f7820` `801f78a4` `801f7a80` `801f7ae8` `801f7ea4` `801f7f2c` `801f7f34` `801f7fa8` `801f7fe8` `801f800c` `801f8078` `801f813c` `801f82d8` `801f835c` `801f84a4` `801f8748` `801f89d4` `801f8ab0` `801f8adc` `801f8c30` `801f8e68` `801f92ac` | (a), cast | the slot-B stagers' spawn arms, dispatched by `World::run_part_stager_calls` (`cast_band/module_stager_spawns.rs`) off the op-`0x20` calls a module's parts queue. The function runs under `battle_depth_replay` and `soak_harness`, but its per-module arm dispatch never executes in any member: no ladder's cast reaches a part that issues op `0x20`. The cast ladders seat modules without running their parts' move programs that far |
-
-The shatter, split, Swordie and stager rows belong to the battle effects and
-cast work, and each needs a composing or cast-driving rung rather than a wire:
-every one has a production caller on both hosts.
 
 ## Rows no ladder converts, and why
 

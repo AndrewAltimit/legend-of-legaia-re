@@ -657,6 +657,7 @@ impl RetailObs {
         else {
             return false;
         };
+        super::pin_seed_retail(&mut session.host.world.toggles, false);
         let opts = legaia_engine_session::session::FieldLiveOpts {
             live_loop: true,
             player_battle: true,

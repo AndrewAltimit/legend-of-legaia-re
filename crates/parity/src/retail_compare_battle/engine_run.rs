@@ -178,6 +178,10 @@ pub fn entry_latches(extracted: &Path, retail: &RetailObs, battle: &RetailBattle
     let Ok(mut session) = NativeSession::open(extracted, &cfg) else {
         return tail;
     };
+    crate::retail_compare::pin_seed_retail(
+        &mut session.host.world.toggles,
+        battle.resident_shiny_seru,
+    );
     let opts = FieldLiveOpts {
         live_loop: true,
         player_battle: true,
@@ -213,13 +217,13 @@ pub fn run_engine_battle(
         enable_audio: false,
     };
     let mut session = NativeSession::open(extracted, &cfg).context("open boot session")?;
-    // A shiny-Seru build's battle-entry draw: the seed takes the engine's
-    // shiny roll, and the image child is told to take it under its
-    // `--retail` pin (`RetailBattle::resident_shiny_seru`), so both sides
-    // deal the fight off the same stream position.
-    if battle.resident_shiny_seru {
-        session.host.world.toggles.shiny_seru = true;
-    }
+    // The image child's `--retail` mode, so both sides deal the fight off
+    // the same stream position; a shiny-Seru build's battle-entry draw is
+    // kept on both (`RetailBattle::resident_shiny_seru`).
+    crate::retail_compare::pin_seed_retail(
+        &mut session.host.world.toggles,
+        battle.resident_shiny_seru,
+    );
     // Player-driven: retail parks every party turn on the command flow, so an
     // auto-resolving engine would spend the settle window fighting.
     let opts = FieldLiveOpts {
