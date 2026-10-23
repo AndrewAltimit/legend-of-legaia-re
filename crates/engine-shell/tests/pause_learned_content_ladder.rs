@@ -896,3 +896,115 @@ fn the_throw_out_confirm_draws_the_overlay_labels() {
         );
     }
 }
+
+/// A menu heal that crosses its magic-XP threshold raises window 7
+/// (`FUN_801DCCB4`) with the menu overlay's own sentence: its `0xC3`
+/// spell-name token spliced to the spell's raw display name, element plate
+/// escape first. Composed through the shared notice builder over the disc
+/// window table, the plate draws untinted at the window pen.
+#[test]
+fn a_menu_heal_level_up_draws_the_overlay_sentence_with_the_plate() {
+    let Some(probe) = booted(&[], &[]) else {
+        return;
+    };
+    let catalog = probe.host.world.tables.spell_catalog.clone();
+    let spell = (0x81u8..=0x8B)
+        .find(|&id| {
+            catalog.get(id).is_some_and(|d| {
+                use legaia_engine_battle::spells::SpellEffect;
+                legaia_engine_menus::spell_menu::is_field_usable(&d.effect)
+                    && matches!(d.effect, SpellEffect::Heal { .. })
+            })
+        })
+        .expect("a single-target field heal");
+    drop(probe);
+    let Some(mut s) = booted(&[spell], &[]) else {
+        return;
+    };
+    let thresholds = s
+        .host
+        .world
+        .tables
+        .magic_xp_thresholds
+        .expect("the boot installs the disc magic-XP table");
+    let template = s
+        .host
+        .world
+        .menu
+        .spell_level_template
+        .clone()
+        .expect("the overlay install read window 7's sentence");
+    let slot = s.host.world.party_roster_slot(0);
+    {
+        let rec = &mut s.host.world.party.roster.members[slot];
+        let mut hms = rec.hp_mp_sp();
+        hms.hp_cur = (hms.hp_max / 2).max(1);
+        hms.mp_max = hms.mp_max.max(999);
+        hms.mp_cur = hms.mp_max;
+        rec.set_hp_mp_sp(hms);
+        // One cast short of level 2: the accumulator sits on the level-1
+        // entry, which the test passes only once exceeded.
+        let at = legaia_engine_battle::magic_xp::spell_slot(rec, spell).expect("learned");
+        legaia_engine_battle::magic_xp::add_spell_xp(rec, at, u32::from(thresholds[0]));
+    }
+    open_row(&mut s, FieldMenuRow::Magic);
+    tap(&mut s, PadButton::Cross); // caster
+    tap(&mut s, PadButton::Cross); // spell -> target picker
+    for _ in 0..4 {
+        if s.spell_level_notice.is_some() {
+            break;
+        }
+        tap(&mut s, PadButton::Cross);
+    }
+    let notice = s
+        .spell_level_notice
+        .clone()
+        .expect("the cast leveled the spell and raised window 7");
+    let names = s
+        .host
+        .world
+        .menu
+        .text
+        .as_ref()
+        .unwrap()
+        .spell_names
+        .as_ref()
+        .unwrap();
+    let op = names
+        .icon(spell)
+        .expect("a Seru spell name opens with a plate");
+    let mut head = vec![0xCE, op, b' '];
+    head.extend(names.name(spell).unwrap().bytes());
+    assert!(
+        notice.line.starts_with(&head),
+        "the line opens with the raw spell name, plate first"
+    );
+    assert_eq!(
+        &notice.line[head.len()..],
+        &template[2..],
+        "the rest is the overlay's own sentence"
+    );
+
+    let overlay = s
+        .host
+        .index
+        .entry_bytes_extended(legaia_game_tables::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
+        .expect("PROT 0899");
+    let table = legaia_game_tables::menu_windows::parse(&overlay).expect("menu window table");
+    let font = s.dialog_font.clone().expect("disc dialog font");
+    let ctx = legaia_engine_ui::pause_menu::PauseMenuCtx {
+        font: &font,
+        rects: legaia_engine_ui::pause_menu::MenuRects::new(Some(&table)),
+        chrome: None,
+        origin: (0, 0),
+        scale: 1,
+    };
+    let draws = legaia_engine_ui::pause_menu::spell_level_notice_draws(&ctx, &notice.line);
+    let (px, py) = ctx.rects.pen(7);
+    let plate = draws
+        .iter()
+        .find(|d| d.dst.0 == px && d.dst.2 == 20 && d.dst.3 == 12)
+        .expect("the plate draws at window 7's pen");
+    assert_eq!(plate.dst.1, py, "on the line's row");
+    assert_eq!(plate.color[..3], [1.0, 1.0, 1.0]);
+}

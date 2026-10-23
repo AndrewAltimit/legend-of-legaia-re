@@ -81,6 +81,44 @@ pub fn menu_overlay_bytes(overlay: &[u8], va: u32) -> Option<Vec<u8>> {
     Some(out)
 }
 
+/// VA of window 7's sentence (`FUN_801DCCB4`, `lui a0,0x801e; addiu
+/// a0,a0,0x46e4` at `0x801DCCC0`): a `0xC3` spell-name token whose operand
+/// byte the renderer patches with the leveled spell's id (`sb v1,0x1(a0)` at
+/// `0x801DCD14`) before the rest of the line.
+pub const SPELL_LEVEL_NOTICE_TEMPLATE_VA: u32 = 0x801E_46E4;
+
+/// Window 7's sentence with its spell-name token expanded, as font bytes.
+///
+/// `template` is the raw sentence ([`menu_overlay_bytes`] at
+/// [`SPELL_LEVEL_NOTICE_TEMPLATE_VA`]); each `0xC3 xx` token is replaced by
+/// `spell_name_bytes(spell_id)` - retail's `FUN_80036514` splices the spell
+/// table's raw `name_ptr` string there (its `0xC3` arm reads
+/// `0x800754C8 + id*12 + 8`), so the element plate's `0xCE` escape comes
+/// with it. The renderer has already patched the operand, so `xx` is
+/// ignored and `spell_id` used. Any other token is kept whole.
+pub fn spell_level_notice_line(
+    template: &[u8],
+    spell_id: u8,
+    spell_name_bytes: impl Fn(u8) -> Option<Vec<u8>>,
+) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while let Some(&b) = template.get(i) {
+        if b == 0xC3 {
+            out.extend(spell_name_bytes(spell_id).unwrap_or_default());
+            i += 2;
+        } else if b & 0xF0 == 0xC0 {
+            out.push(b);
+            out.extend(template.get(i + 1).copied());
+            i += 2;
+        } else {
+            out.push(b);
+            i += 1;
+        }
+    }
+    out
+}
+
 /// The special Use routes' own prompt lines, read off one PROT 0899 image:
 /// the strings `FUN_801D1DAC` (Door of Light, window 10) and `FUN_801D1F10`
 /// (Incense, window 12) draw above their Yes / No rows. Kept as raw bytes

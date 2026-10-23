@@ -301,7 +301,7 @@ fn the_box_emit_clips_below_the_display() {
 fn both_prompt_windows_share_the_corner_cursor_inset() {
     let font = legaia_font::Font::placeholder();
     let rect = PainterRect::new(38, 100, 244, 28);
-    let (_, a) = char_prompt_draws_for(&font, rect, "line");
+    let (_, a) = char_prompt_draws_for(&font, rect, b"line");
     let (_, b) = amount_prompt_draws_for(&font, rect, "head", 12, "unit");
     assert_eq!((a.x, a.y), (rect.x + 0xE6, rect.y + 0x0D));
     assert_eq!((b.x, b.y), (a.x, a.y));
@@ -315,7 +315,7 @@ fn the_notify_window_stacks_its_lines_and_shares_the_cursor() {
     let rect = PainterRect::new(38, 100, 244, 28);
     let lines = vec!["a".to_string(), "a".to_string()];
     let (draws, cursor) = notify_prompt_draws_for(&font, rect, &lines);
-    let (_, prompt) = char_prompt_draws_for(&font, rect, "line");
+    let (_, prompt) = char_prompt_draws_for(&font, rect, b"line");
     assert_eq!((cursor.x, cursor.y), (prompt.x, prompt.y));
     let (one, _) = notify_prompt_draws_for(&font, rect, &lines[..1]);
     assert!(!one.is_empty() && draws.len() > one.len());

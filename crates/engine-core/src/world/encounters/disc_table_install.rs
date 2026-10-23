@@ -122,6 +122,14 @@ impl World {
         if throw.is_installed() {
             self.menu.throw_confirm_labels = throw;
         }
+        if let Some(t) = legaia_engine_menus::pause_screens::menu_overlay_bytes(
+            overlay,
+            legaia_engine_menus::pause_screens::SPELL_LEVEL_NOTICE_TEMPLATE_VA,
+        )
+        .filter(|t| t.first() == Some(&0xC3))
+        {
+            self.menu.spell_level_template = Some(t);
+        }
         // The shop windows' label strings live in the same pool
         // (`FUN_801D4868` .. `FUN_801DCE20` load them by VA).
         let shop = legaia_engine_menus::shop::ShopLabels::from_menu_overlay(overlay);

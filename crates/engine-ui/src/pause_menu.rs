@@ -1112,7 +1112,7 @@ pub fn art_learned_notice_draws(ctx: &PauseMenuCtx, lines: &[String]) -> Vec<Tex
 /// Content-only, off the disc-parsed id-7 rect: like the shop's descriptor
 /// windows it draws only when the real table is present, because the painter
 /// is dispatched on the descriptor's renderer.
-pub fn spell_level_notice_draws(ctx: &PauseMenuCtx, line: &str) -> Vec<TextDraw> {
+pub fn spell_level_notice_draws(ctx: &PauseMenuCtx, line: &[u8]) -> Vec<TextDraw> {
     let Some((d, _)) = ctx
         .rects
         .table()

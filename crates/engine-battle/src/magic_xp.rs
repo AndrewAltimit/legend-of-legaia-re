@@ -345,11 +345,14 @@ pub struct SpellLevelNotice {
     pub spell_id: u8,
     /// The leveled byte's new value.
     pub new_level: u8,
-    /// The assembled prompt line the hosts draw. Retail patches one glyph
-    /// into a menu-overlay rodata sentence at `0x801E46E4` (not lifted -
-    /// Sony bytes); the engine composes the pinned battle-banner sentence
-    /// ([`magic_level_increased_message`]) with the spell's name instead.
-    pub line: String,
+    /// The prompt line the hosts draw, as font bytes. Retail patches the
+    /// spell id into the operand of the `0xC3` (spell-name) token that opens
+    /// the menu overlay's sentence at `0x801E46E4` and draws it through the
+    /// string primitive; the host builds the same bytes off the user's disc
+    /// (the sentence, then the raw spell name with its `0xCE` element plate).
+    /// Without the overlay it falls back to the battle-banner sentence
+    /// ([`magic_level_increased_message`]) around the spell's name.
+    pub line: Vec<u8>,
 }
 
 /// The banner suffix retail appends after the spell name (battle-action

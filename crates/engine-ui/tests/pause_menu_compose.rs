@@ -661,7 +661,7 @@ fn every_pause_screen_composes_on_both_chrome_passes() {
             assert!(d.sprites.is_empty(), "{name}: draws no window chrome");
         }
         assert!(
-            !spell_level_notice_draws(&ctx, "Meta reached Lv2!").is_empty(),
+            !spell_level_notice_draws(&ctx, b"Meta reached Lv2!").is_empty(),
             "window 7 notice composed nothing (chrome = {chrome})"
         );
     }
@@ -679,13 +679,13 @@ fn painter_gated_windows_need_the_descriptor_table() {
     let bare = fx.ctx_tableless();
     assert!(compose_context_notice(&bare).texts.is_empty());
     assert!(compose_context_ready(&bare).texts.is_empty());
-    assert!(spell_level_notice_draws(&bare, "Meta reached Lv2!").is_empty());
+    assert!(spell_level_notice_draws(&bare, b"Meta reached Lv2!").is_empty());
     // With the table they all draw - otherwise the assertions above would
     // pass against a composition that is simply broken.
     let full = fx.ctx();
     assert!(!compose_context_notice(&full).texts.is_empty());
     assert!(!compose_context_ready(&full).texts.is_empty());
-    assert!(!spell_level_notice_draws(&full, "Meta reached Lv2!").is_empty());
+    assert!(!spell_level_notice_draws(&full, b"Meta reached Lv2!").is_empty());
 }
 
 /// A screen that is not painter-gated still composes without a table - it

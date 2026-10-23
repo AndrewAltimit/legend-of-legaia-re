@@ -62,15 +62,16 @@ use super::*;
 /// `MenuRuntime::arm_spell_level_notice` holds the beat; both hosts paint
 /// this window off the disc-parsed id-7 rect while it is up and hold the
 /// pad for a confirm / cancel press, exactly like the window-31 toast
-/// below. The prompt line is engine-composed (the pinned battle-banner
-/// sentence around the spell's name) - retail's own rodata sentence at
-/// `0x801E46E4` is Sony bytes and stays on the disc.
+/// below. The prompt line arrives as font bytes: retail's own sentence at
+/// `0x801E46E4`, read off the user's disc, with its spell-name token
+/// expanded to the raw name (element plate escape included), so the font
+/// lays the plate out exactly where the string primitive draws it.
 pub fn char_prompt_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
-    line: &str,
+    line: &[u8],
 ) -> (Vec<TextDraw>, PainterSprite) {
-    let l = font.layout_ascii(line);
+    let l = font.layout(line);
     (
         text_draws_for(&l, (rect.x, rect.y), MENU_TEXT_WHITE),
         PainterSprite {

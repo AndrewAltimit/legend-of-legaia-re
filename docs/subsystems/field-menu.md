@@ -1357,7 +1357,10 @@ path uses. Both cast flows run the SCUS effect applier `FUN_800402F4` (dump
   `0x801E4D78` single: open window 7) and wait for confirm / cancel. The
   renderer `FUN_801DCCB4` patches byte `+1` of the scratch sentence at
   `0x801E46E4` with `record[0x13D + _DAT_8007BB78]` (the leveled spell's id)
-  and draws it with the corner hand at `(WX+0xE6, WY+0xD)`.
+  and draws it with the corner hand at `(WX+0xE6, WY+0xD)`. Byte `+0` is
+  `0xC3`, the expander's spell-name token (its arm reads the spell table's
+  `name_ptr`, `0x800754C8 + id*12 + 8`), so the line is the spell's raw name -
+  element plate escape first - followed by the sentence's own text.
 
 **Port of the Magic screen.** `engine-menus::spell_menu::SpellMenuSession`
 (`CharSelect` = caster focus, `SpellSelect` = list focus, `GroupConfirm` for
@@ -1372,12 +1375,15 @@ discounted cost once, applies every grant of a group cast
 kernel `magic_xp::accrue_and_level` with `magic_xp::menu_heal_xp_gain`. Both
 writes land in the `legaia_save::CharacterRecord`, so they round-trip through
 saves. `MenuRuntime::arm_spell_level_notice` holds the window-7 beat, drawn by
-`char_prompt_draws_for` at the disc-parsed rect.
+`char_prompt_draws_for` at the disc-parsed rect. Its line is the overlay's own
+sentence (`MenuState::spell_level_template`, read by
+`World::install_menu_overlay_tables`) expanded by
+`pause_screens::spell_level_notice_line` to font bytes, plate escape included;
+disc-gated oracle
+`pause_learned_content_ladder::a_menu_heal_level_up_draws_the_overlay_sentence_with_the_plate`.
 
-Known differences: the window-7 line is composed from the battle-banner
-sentence around the spell name rather than retail's own rodata sentence, and
-the notice overlays the resumed menu because the engine's spell session closes
-on cast. The element plates draw on both hosts: the model carries each
+Known difference: the notice overlays the resumed menu because the engine's
+spell session closes on cast. The element plates draw on both hosts: the model carries each
 name's escape operand (`pause_screens::spell_icon`, from
 `SpellEntry::icon`), and `magic_screen_draws_for` lays the retail
 `0xCE op 0x20 name` string out through the host font, whose escape sprites
@@ -2107,7 +2113,7 @@ Where the port differs from retail today:
 | Area | Difference |
 |---|---|
 | Armament candidate lists | id-sorted, without retail's leading rows on an empty slot ([Equip screen](#port-of-the-equip-screen)) |
-| Spell level-up notice | port-composed sentence, shown over the resumed menu |
+| Spell level-up notice | shown over the resumed menu |
 | AP gauge fill | linear per-row interpolation; retail's sub-pixel truncation unpinned |
 | `FUN_801E4140` | `guarded_box_rect` has no caller on either host (nothing produces an out-of-range `y`); waived in `scripts/ci/ui-host-drift-waivers.toml` |
 
