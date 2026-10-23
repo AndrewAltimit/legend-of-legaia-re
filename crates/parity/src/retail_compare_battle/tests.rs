@@ -1033,3 +1033,23 @@ fn a_retired_combo_cluster_is_timed_off_the_numeral_ring() {
     put8(&mut ram, rec, 16);
     assert_eq!(combo_cluster_timer_seat(&ram, ctx, 4), None, "live record");
 }
+
+/// A ray burst's level and lane weight taken back over the display lag:
+/// `rim_elm_gimard_victory`'s RAM level `0x400` (rate `0x800`, `0x100` a
+/// vsync) and lane `0xFFC` (`0x155` a vsync) read `0` and `2728` four
+/// vsyncs earlier; a level taken back past zero stays on the clamp.
+#[test]
+fn a_ray_burst_level_and_lane_come_back_over_the_lag() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let node = 0x8008_30D4;
+    put16(&mut ram, node + 0x78, 0x400);
+    put16(&mut ram, node + 0x90, 0x800);
+    put16(&mut ram, node + 0xA0, 0xFFC);
+    put16(&mut ram, node + 0xB8, 0x155);
+    assert_eq!(ram_read::displayed_morph_halfword(&ram, node, 0x78, 4), 0);
+    assert_eq!(
+        ram_read::displayed_morph_halfword(&ram, node, 0xA0, 4),
+        2728
+    );
+    assert_eq!(ram_read::displayed_morph_halfword(&ram, node, 0x78, 6), 0);
+}

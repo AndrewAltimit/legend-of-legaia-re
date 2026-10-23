@@ -3702,6 +3702,15 @@ every pass, so it moves with the phase of both clips):
   every living combatant but the counterer (`RetailBattle::counter_capture`).
   Left with its key, the third monster walked some `600` units off retail's
   ground before Vahn's turn came up (`image` `.880` to `.927`).
+- **A ray burst a pass short.** The melee ray burst (table codes `0` /
+  `9`, records `0x801F5484` / `0x801F54B4`) grows its morph lane `+0xA0`
+  `0x155` a vsync and ramps its depth-cue level `+0x78` `0x100` a vsync, and
+  the replay seats it on its own pass: `rim_elm_gimard_victory`'s lane reads
+  `0xFFC` in the RAM (`2728` on screen) where the replay's had grown `2387`.
+  The image child seats both words taken back over the two-pass lag (the
+  part tick writes them, not the draw); a lane on its `0x1000` clamp names
+  no age and is left alone, and other morphing parts are left to the replay
+  (`image` `.907` to `.916`).
 - **A combo cluster that landed early.** The cluster's glide record
   retires on the pass that snaps it and keeps its last `elapsed`, so a
   capture saved a pass or more later reads a landed table while its frame

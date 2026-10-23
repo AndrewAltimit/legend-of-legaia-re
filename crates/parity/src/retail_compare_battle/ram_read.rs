@@ -137,6 +137,41 @@ fn is_growing_default_arm(ram: &[u8], node: u32) -> bool {
 /// [`CAST_PART_SEED_OFFSETS`]: legaia_engine_effects::summon::CAST_PART_SEED_OFFSETS
 const BURST_CHILD_EXTRA_OFFSETS: [u16; 4] = [0x3E, 0x72, 0x96, 0x98];
 
+/// What a growing morph part's seed carries on top of its rotation trio:
+/// its depth-cue level `+0x78` and its first morph lane's weight `+0xA0`.
+/// Both are clocks of the part's age - the melee ray burst grows its lane
+/// `0x155` a vsync and ramps its level `0x100` a vsync - and the replay
+/// seats its burst on its own pass, not on retail's
+/// (`rim_elm_gimard_victory`: lane `0xFFC` and level `0x400` in the RAM,
+/// `2728` and `0` on screen, where the replay's had grown `2387`).
+const MORPH_SEED_OFFSETS: [u16; 2] = [0x78, 0xA0];
+
+/// The melee ray bursts: the effect-script table arm's codes `0` and `9`
+/// (`0x801F6324[0]` / `[9]`, pool meshes `8` / `9`).
+const RAY_BURST_RECORDS: [u32; 2] = [0x801F_5484, 0x801F_54B4];
+
+/// Whether part `node` is a ray burst still growing its morph lane: the
+/// part tick's envelope gate `+0x10` bit `0x1000` (op `0x0A`) up, and the
+/// lane short of its `0x1000` clamp - a clamped lane names no age. Other
+/// morphing parts are left to the replay: seeded the same way, Ultra
+/// Charge's (`cort_evolved_ultra_charge_mid_cast`) lost half its frame.
+/// A ray burst's level `+0x78` or lane weight `+0xA0` as the displayed
+/// frame held it: the level gains `(+0x90 * 8) >> 6` a vsync
+/// (`part_motion::level_block`), the lane its up rate `+0xB8` a vsync
+/// (`FUN_80020740`), and both clamp to `0..=0x1000`, so taken back they
+/// stay inside it.
+pub(super) fn displayed_morph_halfword(ram: &[u8], node: u32, off: u16, lag: i32) -> u16 {
+    let h = |o: u32| i32::from(game_anchors::u16_at(ram, node + o) as i16);
+    let per_vsync = if off == 0x78 { h(0x90) >> 3 } else { h(0xB8) };
+    (h(u32::from(off)) - per_vsync * lag).clamp(0, 0x1000) as u16
+}
+
+fn is_growing_morph(ram: &[u8], node: u32) -> bool {
+    RAY_BURST_RECORDS.contains(&game_anchors::u32_at(ram, node + 0x48))
+        && game_anchors::u32_at(ram, node + 0x10) & 0x1000 != 0
+        && game_anchors::u16_at(ram, node + 0xA0) < 0x1000
+}
+
 /// Every live effect-script table part (`FUN_80021DF4` nodes whose record
 /// `+0x48` lies in the resident battle overlay below the slot-B image -
 /// the `0x801F6324` prototypes `FUN_801DEA50`'s table arm seats) that is
@@ -170,6 +205,7 @@ pub(super) fn retail_action_fx_parts(
                 && overlay.contains(&rec)
                 && (is_burst_child(rec)
                     || is_growing_default_arm(ram, n)
+                    || is_growing_morph(ram, n)
                     || (0x80..=0x84)
                         .step_by(2)
                         .any(|o| game_anchors::u16_at(ram, n + o) != 0))
@@ -188,6 +224,19 @@ pub(super) fn retail_action_fx_parts(
                     .chain(&DEFAULT_ARM_CHANNEL_OFFSETS)
                     .copied()
                     .collect()
+            } else if is_growing_morph(ram, n) {
+                return legaia_engine_effects::summon::CastPartSeed {
+                    tag,
+                    pokes: ACTION_FX_SEED_OFFSETS
+                        .iter()
+                        .map(|&o| (o, displayed_part_halfword(ram, n, o, lag)))
+                        .chain(
+                            MORPH_SEED_OFFSETS
+                                .iter()
+                                .map(|&o| (o, displayed_morph_halfword(ram, n, o, lag))),
+                        )
+                        .collect(),
+                };
             } else {
                 ACTION_FX_SEED_OFFSETS.to_vec()
             };

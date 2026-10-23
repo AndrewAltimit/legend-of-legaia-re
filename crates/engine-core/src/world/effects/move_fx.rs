@@ -273,7 +273,14 @@ impl World {
             };
             *n += 1;
             for &(off, value) in &seed.pokes {
-                part.poke(off, value);
+                // The depth-cue level `+0x78` is the snapshot's alone: no
+                // stager arm writes it into a part it seats, so it is not
+                // one of `poke`'s offsets.
+                if off == 0x78 {
+                    part.state.field_78 = value;
+                } else {
+                    part.poke(off, value);
+                }
             }
         }
     }
