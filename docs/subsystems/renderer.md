@@ -1836,7 +1836,12 @@ visibility cull leaves it in view, whenever `+0x10 & 0x20200` is up and
 summit's props, the sky panorama among them: pack 37 carries `y_off = 2080`,
 and every retail capture holds its actor at the `-480` floor tier. Both hosts
 re-seat such draws through `field_env::follow_floor_placed_draws` over
-`World::object_floor_follow_records` when they bake the placed layer.
+`World::object_floor_follow_records` when they bake the placed layer. The
+sample is taken where the actor stands, not at its `.MAP` seat: a script
+that moves a follower carries it onto the floor at its new place, so the
+per-frame displacement of a follower is the floor's rise between the two
+(`World::object_draw_displacements`). `town01`'s record 8 is seated on a
+`16` floor and stands on a `-256` one through the opening.
 
 **A scripted height is absolute, not a lift.** The same sweep stores the seat
 `ladder[nibble] + y_off` in the actor's `+0x16` (`0x8003A62C..0x8003A64C`),

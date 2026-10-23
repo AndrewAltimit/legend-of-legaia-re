@@ -155,9 +155,19 @@ impl World {
     /// further `260..338` units up, level with the gate's lintel instead of
     /// the channel. Parked objects ([`Self::hidden_object_records`]) and
     /// unmoved ones are not listed.
+    ///
+    /// A floor follower ([`Self::object_floor_follow_records`]) takes its
+    /// `dy` from the floor instead: its draw is baked on the floor under its
+    /// seat, and the actor tick re-samples the floor under the actor where it
+    /// stands, so a script that walks it off the seat carries it onto the
+    /// floor there. `town01`'s record 8 (pack 25, the cliff-top sky strip)
+    /// is seated at `(3648, 32)` and stands at `(5312, 4032)` in
+    /// `rim_elm_zoom_intro`, where retail holds it at the `-256` floor; drawn
+    /// on the seat's floor (`16`) it sat a cliff band low across the frame.
     // REF: FUN_8001ADA4 (case 5 draws at the actor position), FUN_8003A55C
     pub fn object_draw_displacements(&self) -> std::collections::HashMap<usize, [i32; 3]> {
         let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ as u16;
+        let follow = self.object_floor_follow_records();
         // A record bound at several tiles seats its one channel at the first
         // bind (`spawn_object_channels` skips the repeats).
         let mut seeds: std::collections::HashMap<usize, (i16, i16)> = Default::default();
@@ -176,11 +186,21 @@ impl World {
                     .get(&c.placement_index)
                     .copied()
                     .unwrap_or(0);
-                let d = [
-                    i32::from(c.ctx.world_x as i16) - i32::from(sx),
-                    i32::from(c.ctx.world_y as i16) - i32::from(sy),
-                    i32::from(c.ctx.world_z as i16) - i32::from(sz),
-                ];
+                let (lx, lz) = (
+                    i32::from(c.ctx.world_x as i16),
+                    i32::from(c.ctx.world_z as i16),
+                );
+                // A floor follower's placed draw is baked on the floor under
+                // its seat (`follow_floor_placed_draws`), and retail's tick
+                // samples the floor under the actor where it stands now, so
+                // its rise is the floor's between the two.
+                let dy = if follow.contains(&c.placement_index) {
+                    self.sample_field_floor_height(lx, lz)
+                        - self.sample_field_floor_height(i32::from(sx), i32::from(sz))
+                } else {
+                    i32::from(c.ctx.world_y as i16) - i32::from(sy)
+                };
+                let d = [lx - i32::from(sx), dy, lz - i32::from(sz)];
                 (d != [0, 0, 0]).then_some((c.placement_index, d))
             })
             .collect()
