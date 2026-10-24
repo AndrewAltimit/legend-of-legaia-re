@@ -225,10 +225,16 @@
           <option value="0" selected>Level 1 (vanilla)</option>
           <option value="2">Level 2</option>
           <option value="3">Level 3</option>
+          <option value="4">Level 4</option>
           <option value="5">Level 5</option>
+          <option value="6">Level 6</option>
+          <option value="7">Level 7</option>
           <option value="8">Level 8</option>
+          <option value="9">Level 9</option>
           <option value="10">Level 10</option>
+          <option value="11">Level 11</option>
           <option value="12">Level 12</option>
+          <option value="13">Level 13</option>
           <option value="14">Level 14</option>
         </select>
       </div>
@@ -496,6 +502,16 @@
           <input type="radio" name="equip_bonus" id="ebonus-none" value="none" checked><label for="ebonus-none">Off</label>
           <input type="radio" name="equip_bonus" id="ebonus-shuffle" value="shuffle"><label for="ebonus-shuffle">Shuffle</label>
           <input type="radio" name="equip_bonus" id="ebonus-random" value="random"><label for="ebonus-random">Randomize</label>
+        </div>
+      </div>
+
+      <div class="rom-opt">
+        <span class="rom-opt-label">Who can equip what
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip">Reassigns which characters can wear each piece of gear, within each slot type: Shuffle keeps every character's count of equippable weapons, body, head and footwear pieces and only changes which ones; Randomize draws each item's owners from its slot's pool. Gear stats never move, so this composes with the stat-bonus option above and runs after the equipment editor's owner rows. <a href="randomizer.html#equip-mask">Details</a>.</span></span></span>
+        <div class="seg" role="group" aria-label="Who can equip what">
+          <input type="radio" name="equip_mask" id="emask-none" value="none" checked><label for="emask-none">Off</label>
+          <input type="radio" name="equip_mask" id="emask-shuffle" value="shuffle"><label for="emask-shuffle">Shuffle</label>
+          <input type="radio" name="equip_mask" id="emask-random" value="random"><label for="emask-random">Randomize</label>
         </div>
       </div>
 
@@ -849,14 +865,14 @@
 
 <section class="doc-section" id="how">
   <h2>How it works</h2>
-  <p>This is the same <a href="randomizer.html">randomizer / disc patcher</a> the CLI runs, compiled to WebAssembly. Every option is a deterministic, seeded edit - the same seed and settings always produce the same disc - and the post-patch summary is spoiler-safe. Edits that cannot be re-packed into their original footprint are skipped and reported rather than corrupting the disc.</p>
+  <p>This is the same <a href="randomizer.html">randomizer / disc patcher</a> the CLI runs, compiled to WebAssembly. Every option is a deterministic, seeded edit - the same seed and settings always produce the same disc, byte for byte the image <code>legaia-patcher randomize</code> writes for that seed and the matching flags - and the post-patch summary is spoiler-safe. Edits that cannot be re-packed into their original footprint are skipped and reported rather than corrupting the disc.</p>
   <details class="disclosure">
     <summary>Presets and modes, briefly</summary>
     <div class="disclosure-body">
       <ul class="bullets">
-        <li><strong>Vanilla</strong> leaves everything off. <strong>Item Mix-up</strong> shuffles loot only. <strong>Balanced</strong> shuffles loot, encounters (kingdom pool), arts and gear bonuses, turns on the code-hook extras and the three bug fixes, and starts the party at level 5. <strong>Full Chaos</strong> randomizes everything with the world-wide monster pool. Editing any control flips the row to <em>Custom</em>.</li>
+        <li><strong>Vanilla</strong> leaves everything off. <strong>Item Mix-up</strong> shuffles drops, chests, shops, the casino and steals, and adds equipment drops. <strong>Balanced</strong> shuffles drops, chests, steals, encounters (kingdom pool), arts and gear bonuses, turns on the code-hook extras, the Delilas Challenge and all four bug fixes, and starts the party at level 5 with the starting-bag bundle. <strong>Full Chaos</strong> randomizes every randomizer pass with the world-wide monster pool, adds the doors and the unused content, and starts at level 10. No preset turns on Shiny Seru (the Delilas Challenge holds its code space), the Super Arts features, all warps or the value edits. Editing any control flips the row to <em>Custom</em>.</li>
         <li><strong>Shuffle</strong> permutes what is already on the disc, so totals and difficulty are preserved. <strong>Randomize</strong> draws each slot fresh from the valid pool.</li>
-        <li>Several code-hook features share one small arena of unused executable bytes, so only one of Shiny Seru, the Super Arts move list, the Super Arts Pack, the per-art AP overrides and the Delilas Challenge can be on at once; the page flags the conflict as soon as it exists.</li>
+        <li>Several code-hook features share one small arena of unused executable bytes, so oscillating AP costs, the Super Arts move list and the Super Arts Pack each exclude all the others, and the per-art AP overrides exclude Shiny Seru and the Delilas Challenge; the page flags the conflict as soon as it exists. Shiny Seru and the Delilas Challenge together is not an error: the challenge keeps the space and the summary notes that Shiny Seru was skipped.</li>
         <li>The language pack is applied around the randomizer passes and validated against your disc first; the coverage report says what landed. Per-feature mechanics, table locations and the code-injection details are on the <a href="randomizer.html">randomizer page</a>.</li>
       </ul>
     </div>

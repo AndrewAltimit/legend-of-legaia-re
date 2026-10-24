@@ -154,6 +154,13 @@ function arenaClaims() {
       where: 'the checkbox in Gameplay',
     });
   }
+  if (chk('rom-oscillating-ap-on') && chk('rom-oscillating-ap-on').checked) {
+    out.push({
+      key: 'oscillatingAp',
+      label: 'Oscillating AP costs',
+      where: 'the Oscillating AP checkbox in Gameplay',
+    });
+  }
   if (chk('rom-shiny-seru') && chk('rom-shiny-seru').checked) {
     out.push({ key: 'shinySeru', label: 'Shiny Seru', where: 'the checkbox in Gameplay' });
   }
@@ -200,18 +207,22 @@ function delilasConflictMessage() {
 }
 
 // The one sentence shown both live and at submit, or '' when there is no
-// conflict. Only the pairs the patcher refuses outright are reported: shiny
-// Seru vs the Delilas Challenge is resolved in the patcher's favour (the
-// challenge wins, shiny is skipped with a note) and is not an error.
+// conflict. Only the pairs the patcher refuses outright are reported - the
+// rules of `check_option_conflicts` in the web-patcher crate, which are the
+// CLI's: oscillating AP costs, the Super Arts Pack and the Super Arts move
+// list each conflict with every other claimant, and the AP override with
+// shiny Seru and with the Delilas Challenge. Shiny Seru vs the Delilas
+// Challenge is resolved in the patcher's favour (the challenge wins, shiny is
+// skipped with a note) and is not an error.
 function arenaConflictMessage() {
   const claims = arenaClaims();
+  const has = (key) => claims.some((c) => c.key === key);
+  const exclusive = ['oscillatingAp', 'superArtsPack', 'showSuperArts'];
   const hard =
-    claims.some((c) => c.key === 'superArtsPack') && claims.length > 1
+    claims.length > 1 && exclusive.some(has)
       ? claims
-      : claims.some((c) => c.key === 'showSuperArts') && claims.length > 1
-      ? claims
-      : claims.some((c) => c.key === 'shinySeru') && claims.some((c) => c.key === 'artsAp')
-        ? claims.filter((c) => c.key === 'shinySeru' || c.key === 'artsAp')
+      : has('artsAp') && (has('shinySeru') || has('delilasChallenge'))
+        ? claims.filter((c) => ['artsAp', 'shinySeru', 'delilasChallenge'].includes(c.key))
         : null;
   if (!hard) return '';
   const [first, ...rest] = hard;

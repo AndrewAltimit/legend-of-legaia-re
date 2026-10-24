@@ -14,7 +14,7 @@
  * arts_ap_grants, arts_ap_costs, spirit_ap, damage_ap, oscillating_ap, enemy_stat_scale,
  * exp_scale, seru_catch_rate, delilas_party, delilas_arts_voice,
  * delilas_moves, enemy_attack_count, swing_costs, equip_owners, enemy_hp_bar,
- * fortress_encounter_fix, conkram_freeze_fix,
+ * fortress_encounter_fix, conkram_freeze_fix, equip_mask,
  * progress?)
  * -> Promise<{ data, summary, seed, lang }>`, `resolve_seed(str)`,
  * `validate_lang_pack(image, yaml, relayout?) -> { ok, language, applied, skipped, message, report }`,
@@ -608,7 +608,7 @@ function init() {
     for (const seg of ['drops', 'encounters', 'encounter_scope', 'chests',
       'shops', 'casino', 'steals', 'arts', 'doors', 'door_coupling',
       'monster_stats', 'move_power', 'element_affinity', 'spell_cost',
-      'equip_bonus']) {
+      'equip_bonus', 'equip_mask']) {
       setSeg(seg, cfg[seg]);
     }
     houseDoorsChk.checked = cfg.houseDoors;
@@ -749,6 +749,7 @@ function init() {
     }
     // ...and the checkboxes, so every side of the conflict is visibly marked.
     const BOX = {
+      oscillatingAp: 'rom-oscillating-ap-on',
       showSuperArts: 'rom-show-super-arts',
       superArtsPack: 'rom-super-arts-pack',
       shinySeru: 'rom-shiny-seru',
@@ -976,6 +977,7 @@ function init() {
     const elementAffinity = segVal('element_affinity', 'none');
     const spellCost = segVal('spell_cost', 'none');
     const equipBonus = segVal('equip_bonus', 'none');
+    const equipMask = segVal('equip_mask', 'none');
     const weaponSpecialty = weaponSpecialtyChk.checked;
 
     const langActive = langSel.value !== '';
@@ -990,7 +992,7 @@ function init() {
       houseDoors === 'none' && startingItems === 0 && doorOfWind === 0 && incense === 0 &&
       speedChain === 0 && chickenHeart === 0 && goodLuckBell === 0 && !allWarps &&
       monsterStats === 'none' && movePower === 'none' && elementAffinity === 'none' &&
-      spellCost === 'none' && equipBonus === 'none' && !weaponSpecialty &&
+      spellCost === 'none' && equipBonus === 'none' && equipMask === 'none' && !weaponSpecialty &&
       startingLevel === 0 && !fleeExp && !seruTrade && !enemyAlly && !shinySeru && !showSuperArts && !superArtsPack && !jewelFix && !approachFix && !delilasChallenge && !customItems &&
       !fishingPrice && !renameLocation && !earthEggPrice && !artsPower && !superArtPower &&
       !artsApGrant && !artsApCost &&
@@ -1032,7 +1034,7 @@ function init() {
       let langReport = null;
       if (baseActive) {
         const langRelayout = langActive && !!(langRelayoutChk && langRelayoutChk.checked);
-        const result = await mod.patch_rom(buf, seed, langPack, langRelayout, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, oscillatingAp, enemyStatScale, expScale, seruCatchRate, delilasParty, delilasArtsVoice, delilasMoves, superArtPower, showSuperArts, superArtsPack, attackCount, swingCosts, equipOwners, enemyHpBar, fortressFix, conkramFix, onPatchProgress);
+        const result = await mod.patch_rom(buf, seed, langPack, langRelayout, drops, encounters, encounterScope, chests, shops, casino, steals, arts, doors, doorCoupling, houseDoors, startingItems, doorOfWind, incense, speedChain, chickenHeart, goodLuckBell, allWarps, unusedEnemies, unusedItems, equipmentDrops, monsterStats, movePower, elementAffinity, spellCost, equipBonus, weaponSpecialty, startingLevel, soloStrong, fleeExp, seruTrade, enemyAlly, shinySeru, jewelFix, approachFix, delilasChallenge, customItems, fishingPrice, renameLocation, earthEggPrice, artsPower, artsApGrant, artsApCost, spiritAp, damageAp, oscillatingAp, enemyStatScale, expScale, seruCatchRate, delilasParty, delilasArtsVoice, delilasMoves, superArtPower, showSuperArts, superArtsPack, attackCount, swingCosts, equipOwners, enemyHpBar, fortressFix, conkramFix, equipMask, onPatchProgress);
         data = result.data;
         usedSeed = result.seed;
         summaryText = result.summary || '';

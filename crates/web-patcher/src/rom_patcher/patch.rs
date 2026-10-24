@@ -65,6 +65,7 @@ pub(super) struct PatchOptions<'a> {
     pub(super) element_affinity: &'a str,
     pub(super) spell_cost: &'a str,
     pub(super) equip_bonus: &'a str,
+    pub(super) equip_mask: &'a str,
     pub(super) weapon_specialty: bool,
     pub(super) starting_level: u8,
     pub(super) solo_strong_encounters: bool,
@@ -450,6 +451,10 @@ const STAGES: &[Stage] = &[
         steps: &[equipment::equipment_edits],
     },
     Stage {
+        label: "equip masks",
+        steps: &[equipment::equip_mask],
+    },
+    Stage {
         label: "steal items",
         steps: &[monsters::steals],
     },
@@ -594,6 +599,11 @@ async fn run_stages<'a>(
 /// pose block drops the part, a failed render node gets a shared stand-in,
 /// and the failure leaves the `PRG ERR` readout clear; every successful
 /// allocation runs as retail (seedless).
+/// `equip_mask` (`"shuffle"` / `"random"` / `"none"`) reassigns who can
+/// equip each piece of gear - the `+6` equip-character mask of the same SCUS
+/// bonus table `equip_bonus` edits, permuted within each slot category - and
+/// runs after the equipment editor, so a named owner is part of the pool it
+/// redistributes (the CLI's `--equip-mask`, in the same place in its order).
 /// `fishing_prices` is a
 /// comma/space-separated list of `item=points` pairs that set the
 /// fishing-exchange point cost of prizes (e.g. `0x6F=500` for the Water Egg).
@@ -765,6 +775,7 @@ pub async fn patch_rom(
     enemy_hp_bar: bool,
     fortress_encounter_fix: bool,
     conkram_freeze_fix: bool,
+    equip_mask: &str,
     progress: Option<js_sys::Function>,
 ) -> Result<JsValue, JsValue> {
     let opts = PatchOptions {
@@ -832,6 +843,7 @@ pub async fn patch_rom(
         enemy_hp_bar,
         fortress_encounter_fix,
         conkram_freeze_fix,
+        equip_mask,
     };
     let mut prog = Progress::new(progress, PATCH_ROM_STAGES);
     let run = run_stages(image, &opts, &mut prog).await.map_err(err)?;

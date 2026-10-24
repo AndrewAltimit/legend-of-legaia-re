@@ -17,6 +17,21 @@ pub(super) fn equip_bonus(run: &mut PatchRun<'_>) -> StepResult {
     Ok(())
 }
 
+pub(super) fn equip_mask(run: &mut PatchRun<'_>) -> StepResult {
+    let PatchOptions { equip_mask, .. } = *run.opts;
+    match parse_mode(equip_mask) {
+        Some(m) => {
+            let changed = apply::randomize_equip_masks(&mut run.patcher, run.seed, m)
+                .map_err(|e| format!("equip-mask: {e}"))?;
+            run.summary.push_str(&format!(
+                "equip-mask: {changed} bonus row(s) changed ({equip_mask})\n"
+            ));
+        }
+        None => run.summary.push_str("equip-mask: untouched\n"),
+    }
+    Ok(())
+}
+
 pub(super) fn weapon_specialty(run: &mut PatchRun<'_>) -> StepResult {
     let PatchOptions {
         weapon_specialty, ..
