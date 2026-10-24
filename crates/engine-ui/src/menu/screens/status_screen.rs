@@ -80,11 +80,13 @@ pub(crate) fn num_field_draws(
 /// the labels + equipment pictograms and folds in [`ap_gauge_sprites`]).
 /// `false` keeps the text stand-ins for callers with no atlas.
 ///
-/// The derived-stat abbreviations (ATK/UDF/LDF/SPD/INT/AGL) and the
-/// number-field separators (`/`, `(`, `)`) are always drawn here as
-/// proportional text - retail renders them through the string primitive
-/// `FUN_80036888`, not the icon atlas (no `0x800732a4` record exists for
-/// them), so there is no icon sprite to stand in for.
+/// The derived-stat abbreviations (ATK/UDF/LDF/SPD/INT/AGL) are always
+/// drawn here as proportional text - retail renders them through the string
+/// primitive `FUN_80036888`. The number-field separators (`/`, `(`, `)`) are
+/// the separator primitive `FUN_8003C1F8`'s 8x12 cells, glyphs `6` / `7` /
+/// `8` (`li a0,0x6` / `0x7` / `0x8` before each `jal 0x8003c1f8`, from
+/// `0x801D363C` on), drawn off the menu-glyph page when the font carries the
+/// cells and as font characters otherwise.
 ///
 /// PORT: FUN_801d33d8 (the status / party panel content renderer - every
 /// pen below is its instruction-pinned offset; the submenu list pages it
@@ -110,6 +112,12 @@ pub fn status_screen_draws_for_with(
     let str_at = |out: &mut Vec<TextDraw>, s: &str, x: i32, y: i32, c: [f32; 4]| {
         out.extend(text_draws_for(&font.layout_ascii(s), (x, y), c));
     };
+    use crate::menu::window_painters::{
+        SEPARATOR_GLYPH_LPAREN, SEPARATOR_GLYPH_RPAREN, SEPARATOR_GLYPH_SLASH,
+        separator_glyph_draws,
+    };
+    let sep =
+        |glyph: u8, x: i32, y: i32, c: [f32; 4]| separator_glyph_draws(font, glyph, (x, y), c);
 
     // Header: name at +8, "LV" icon at +0x50, level (2-digit) at +0x60.
     str_at(&mut out, panel.name, wx + 8, wy, white);
@@ -155,11 +163,11 @@ pub fn status_screen_draws_for_with(
             str_at(&mut out, tag, wx + 0x20, row_y, gold);
         }
         out.extend(num_field_draws(font, cur, wx + 0x30, row_y, 4, tier));
-        str_at(&mut out, "/", wx + 0x50, row_y, white);
+        out.extend(sep(SEPARATOR_GLYPH_SLASH, wx + 0x50, row_y, white));
         out.extend(num_field_draws(font, max, wx + 0x58, row_y, 4, tier));
-        str_at(&mut out, "(", wx + 0x7c, row_y, teal);
+        out.extend(sep(SEPARATOR_GLYPH_LPAREN, wx + 0x7c, row_y, teal));
         out.extend(num_field_draws(font, base, wx + 0x84, row_y, 4, teal));
-        str_at(&mut out, ")", wx + 0xa4, row_y, teal);
+        out.extend(sep(SEPARATOR_GLYPH_RPAREN, wx + 0xa4, row_y, teal));
     }
 
     // AP gauge line. With `label_icons` the caller draws the retail bar
@@ -187,7 +195,7 @@ pub fn status_screen_draws_for_with(
         };
         str_at(&mut out, sr.label, lx, row_y, white);
         out.extend(num_field_draws(font, sr.value as u64, vx, row_y, 3, white));
-        str_at(&mut out, "(", px, row_y, teal);
+        out.extend(sep(SEPARATOR_GLYPH_LPAREN, px, row_y, teal));
         out.extend(num_field_draws(
             font,
             sr.growth as u64,
@@ -196,7 +204,7 @@ pub fn status_screen_draws_for_with(
             3,
             teal,
         ));
-        str_at(&mut out, ")", px + 0x20, row_y, teal);
+        out.extend(sep(SEPARATOR_GLYPH_RPAREN, px + 0x20, row_y, teal));
     }
 
     // Equipment grid: slots 0..3 stack at +0/+0x10 on rows WY+0x6d/+0x7a/

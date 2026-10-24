@@ -859,7 +859,12 @@ pub fn magic_screen_draws_for_with(
             4,
             mp_ink,
         ));
-        str_at(&mut out, "/", cx + 0x54, mp_y, MENU_TEXT_WHITE);
+        out.extend(crate::menu::window_painters::separator_glyph_draws(
+            font,
+            crate::menu::window_painters::SEPARATOR_GLYPH_SLASH,
+            (cx + 0x54, mp_y),
+            MENU_TEXT_WHITE,
+        ));
         out.extend(num_field_draws(
             font,
             caster.mp_max as u64,

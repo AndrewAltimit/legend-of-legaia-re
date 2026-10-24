@@ -688,7 +688,10 @@ The folded id selects the page (raw ids 6..10 alias onto 1..5):
 
 **HP row** (`WY+0x13`) / **MP row** (`WY+0x20`), instr `801d35e8..801d374c`:
 current at `X+0x30`, max at `X+0x58`, base at `X+0x84` (4-digit NUM);
-separators at `X+0x50`, `X+0x7c`, `X+0xa4`. HP = record
+separators at `X+0x50`, `X+0x7c`, `X+0xa4`, the separator primitive's
+8x12 cells `FUN_8003C1F8(6 | 7 | 8)` (`/`, `(`, `)`; `li a0,0x6` at
+`0x801D363C`), not font glyphs - the derived-stat rows' parentheses are the
+same cells 7 / 8. HP = record
 `+0x106 / +0x104 / +0x11c`, MP = `+0x10a / +0x108 / +0x11e`. Current / max
 take the health-tier ink; the `/` is white and the whole parenthesised base
 group is teal. Fields end flush against their separators

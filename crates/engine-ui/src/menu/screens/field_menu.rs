@@ -222,8 +222,9 @@ pub fn field_menu_info_draws_for(
             ),
         ] {
             out.extend(num_field_draws(font, cur, pen.0 + 0x38, row_y, 4, tier));
-            out.extend(text_draws_for(
-                &font.layout_ascii("/"),
+            out.extend(crate::menu::window_painters::separator_glyph_draws(
+                font,
+                crate::menu::window_painters::SEPARATOR_GLYPH_SLASH,
                 (pen.0 + 0x58, row_y),
                 white,
             ));
