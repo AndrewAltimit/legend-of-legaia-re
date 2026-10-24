@@ -826,7 +826,6 @@
     "battle_voice",
     "bgm_tail",
     "duck",
-    "footstep",
     "note_trace",
     "seq_calc",
     "seq_events",
@@ -1237,6 +1236,7 @@
     "cast_arm_ticks",
     "cast_fatal_decision",
     "cast_module_camera",
+    "cast_module_rumble",
     "cast_module_ticks",
     "seru_magic_ticks"
    ],

@@ -1034,9 +1034,10 @@ page's card rack - and one **commit applier** that turns the screen's
 `SaveCommit` into I/O (`apply_save_commit` / `apply_card_save_commit`
 natively, `apply_card_outcome` on the page), plus the write a Save's commit
 beat asks for (`write_save_commit` / `service_card_save`). The tier pins every
-shipped call of each rack primitive (`write_slot_save`, `read_slot_save`,
-`write_save_into_card`, `MountedCard::save_at`, the page's
-`write_session_into_card` / `load_session_from_card`) to its applier, so a
+shipped call of each rack primitive (`read_slot_save`, `write_save_into_card`,
+the save-number-addressed `write_save_into_cell` / `MountedCard::save_numbered`,
+`MountedCard::save_at`, the page's `write_session_into_cell` /
+`load_session_from_card`) to its applier, so a
 hotkey or page button that saves or loads around the screen fails as `SAVE
 BYPASS`. A primitive with no shipped call at all fails too: a renamed applier
 must not leave the tier checking nothing.
