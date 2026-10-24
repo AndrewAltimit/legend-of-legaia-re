@@ -348,6 +348,11 @@ pub const VERA_OPEN_SPAWNS: [ModuleSpawn; 4] = {
     s
 };
 
+/// The records of arm 0's four glows ([`VERA_OPEN_SPAWNS`]), which rise
+/// and grow from their seat until arm 4 kills them: their motion and channel
+/// words are a clock of the vsyncs since arm 0.
+pub const VERA_OPEN_GLOWS: [u32; 4] = [0x801F_81E4, 0x801F_823C, 0x801F_8294, 0x801F_82FC];
+
 /// PROT 0905 arm 4's three spawns, an eighth of a unit (`/ 32`) along the
 /// target's heading at `y = -0x1C2` (`0x801F710C` / `7128` / `7144`).
 pub const VERA_CUT_SPAWNS: [ModuleSpawn; 3] = module_spawns(
@@ -400,7 +405,7 @@ pub const VERA_RESTORE_ARM: u8 = 9;
 /// eight sparks the stager's arm 0 (`FUN_801F8078`, record `0x801F8568`)
 /// seats into handles 2..9.
 pub fn vera_arm_kills(phase: u8) -> Option<&'static [u32]> {
-    const OPEN: [u32; 4] = [0x801F_81E4, 0x801F_823C, 0x801F_8294, 0x801F_82FC];
+    const OPEN: [u32; 4] = VERA_OPEN_GLOWS;
     const CUT: [u32; 3] = [0x801F_8364, 0x801F_83CC, 0x801F_8434];
     const SEAT_AND_SPARKS: [u32; 3] = [0x801F_8494, 0x801F_8500, 0x801F_8568];
     match phase {

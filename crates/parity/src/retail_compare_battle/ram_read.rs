@@ -63,6 +63,15 @@ const PART_TICK: u32 = 0x8002_1DF4;
 /// `3` off the clamp where every pass ran step `4`, and the rays stood two
 /// vsyncs' turn off the frame on screen.
 ///
+/// PROT 0905's arm-0 glows
+/// ([`VERA_OPEN_GLOWS`](legaia_engine_cast::cast_module_camera::VERA_OPEN_GLOWS))
+/// are seated the same way: they rise `+0x3E` and widen `+0xB6` from arm 0
+/// on, the same clock as their wait. The replay's glows stand a pass older
+/// against the band's flash-out than retail's (the flash steps from the pass
+/// after the `0x34` exit that seats both, the glows on it), so aligned on
+/// the flash, `vera_summon_mid_cast` drew them a pass wider (`.988`); seated
+/// off the RAM a lag back they stand where the screen shows them.
+///
 /// The parts a capture-cell stager seats with `rand()` rolls
 /// ([`ROLLED_STAGER_RECORDS`](legaia_engine_cast::cast_module_ticks::ROLLED_STAGER_RECORDS))
 /// are seated the same way, their lean rate `+0x84` with them: Call Wave's
@@ -70,7 +79,7 @@ const PART_TICK: u32 = 0x8002_1DF4;
 ///
 /// The lag is [`cast_part_lag_vsyncs`]'s.
 pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon::CastPartSeed> {
-    use legaia_engine_cast::cast_module_camera::ULTRA_CHARGE_SHOT_DISCS;
+    use legaia_engine_cast::cast_module_camera::{ULTRA_CHARGE_SHOT_DISCS, VERA_OPEN_GLOWS};
     use legaia_engine_cast::cast_module_ticks::{
         ROLLED_STAGER_EXTRA_OFFSETS, ROLLED_STAGER_RECORDS,
     };
@@ -86,7 +95,8 @@ pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon
                 && SLOT_B.contains(&rec)
                 && (per_pass.contains(&rec)
                     || ROLLED_STAGER_RECORDS.contains(&rec)
-                    || ULTRA_CHARGE_SHOT_DISCS.contains(&rec))
+                    || ULTRA_CHARGE_SHOT_DISCS.contains(&rec)
+                    || VERA_OPEN_GLOWS.contains(&rec))
         })
         .map(|n| {
             let tag = game_anchors::u32_at(ram, n + 0x48);
