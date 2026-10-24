@@ -239,6 +239,7 @@ fn world_spawns_and_ticks_a_summon() {
     // once every part finishes. Either way the call must not panic and the
     // draws stay in the model-pool band while it's alive.
     for _ in 0..600 {
+        world.clock.display_frames += u64::from(world.battle_frame_step().max(1));
         world.tick_summon(0x0400);
         for d in world.active_summon_part_draws() {
             assert!(d.model_index >= GIMARD_TAIL_FIRE_MODEL_INDEX);
