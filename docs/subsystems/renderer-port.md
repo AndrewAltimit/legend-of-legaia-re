@@ -22,7 +22,19 @@ and semi-transparency has its own switch.
 - **The scanline's texel row.** In PSX mode the texel lookup moves up half
   a stage row (`psx_sample_uv`, the page's `uv_dy` term): the GPU takes a
   scanline's texels at the row itself, while the host rasteriser samples
-  the pixel centre. Along the scanline the two already agree.
+  the pixel centre. Along the scanline the two already agree. The move
+  stops `1/64` stage row inside the fragment's own triangle (each vertex
+  carries a one-hot weight for its corner of the primitive record, so the
+  fragment has its barycentric weights and their row step): retail's row
+  point is a point the primitive covers, so its texel is always one the
+  primitive maps. The host also covers pixels whose row point lies outside
+  - the top sub-rows of every primitive, and all of a sliver thinner than a
+  stage row, which the snap makes of an edge-on leaf card. A sliver's UV
+  row step is huge, so an unbounded half row reads far outside its texels;
+  on `ending_vignette_fullscreen` that drew lines of a neighbouring card's
+  leaves across the sky. The margin keeps an edge sample off the row above:
+  float interpolation lands a hair either side of the edge's exact `V`, and
+  truncating the outside value takes the next card's last row.
 - **15-bit ordered dithering.** The shaded colour is dithered with the
   PSX GPU's 4x4 offset matrix and quantized to 5 bits per channel (BGR555
   framebuffer depth) - the cross-hatch gradients of retail output. The

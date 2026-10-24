@@ -274,6 +274,8 @@ fn run_native(m: &mut Machine<'_>, scene: &SceneState, frag: &Fragment) -> Out {
     // fragments here are off PSX mode, so its value never reaches a texel.
     m.gradients
         .insert("uv_affine".into(), (vec![0.0; 2], vec![0.0; 2]));
+    m.gradients
+        .insert("prim_bary".into(), (vec![0.0; 4], vec![0.0; 4]));
     // The renderer's per-ABR blend pipelines pick the entry by the mode's
     // foreground pre-scale (`psx_blend::src_shader_scale`).
     let entry = match frag.blend {
@@ -524,6 +526,8 @@ fn run_page(m: &mut Machine<'_>, scene: &SceneState, frag: &Fragment) -> Out {
     );
     m.gradients
         .insert("v_uv".into(), (vec![0.0; 2], vec![0.0; 2]));
+    m.gradients
+        .insert("v_prim_bary".into(), (vec![0.0; 4], vec![0.0; 4]));
     m.set_global("v_obj_pos", Val::f(&g.pos));
     m.set_global("v_normal", Val::f(&g.normal));
     m.set_global("v_world", Val::f(&flip(g.world)));
@@ -535,6 +539,7 @@ fn run_page(m: &mut Machine<'_>, scene: &SceneState, frag: &Fragment) -> Out {
     m.set_global("v_uv_pw", Val::f(&uv));
     m.set_global("v_flat_rgba_pw", Val::f(&[rgb[0], rgb[1], rgb[2], flag]));
     m.set_global("v_affine_w", Val::f(&[1.0]));
+    m.set_global("v_prim_bary_pw", Val::f(&[1.0; 4]));
     m.set_global("v_cba_tsb", Val::u(&cba_tsb));
     m.set_global("v_view_z", Val::f(&[frag.view_z]));
     m.set_global("v_depth_w", Val::f(&[frag.view_z]));
@@ -1149,4 +1154,132 @@ fn the_effect_clip_keeps_the_same_fragments_on_both_hosts() {
         enh_scene(&ENH_CLIP_TILT, false),
     ];
     report(&compare_against(&frags, &page_fragment_glsl(), &scenes));
+}
+
+/// PSX mode's texel row (`psx_sample_uv` / the page's `psxSampleUv`): the
+/// sample moves up half a stage row, but never off its own triangle. Each
+/// case is a fragment of a triangle on the truncating snap's stage grid,
+/// drawn at 3x: its UV, barycentric weights and their framebuffer-row steps
+/// go to both hosts (the page's steps a row up, GL's `dFdy`), which must
+/// agree, and the sample must read a texel the triangle maps.
+#[test]
+fn the_psx_texel_row_stays_on_its_triangle_on_both_hosts() {
+    let native = parse_wgsl(&compose_scene_lit_shader(VRAM_MESH_SHADER_SRC));
+    let page = parse_glsl(&page_fragment_glsl());
+    let no_fetch = || -> Box<shader_eval::ImageFetch> { Box::new(|_, _, _| [0, 0, 0, 1]) };
+    let (mut nm, mut pm) = (
+        Machine::new(&native, no_fetch()),
+        Machine::new(&page, no_fetch()),
+    );
+    let scale = 3.0f32;
+    let psx = |on: bool| {
+        Val::f(&[
+            STAGE_W * scale,
+            STAGE_H * scale,
+            f32::from(u8::from(on)),
+            0.0,
+        ])
+    };
+    // Barycentric weights of stage point `p` in triangle `t`.
+    let bary = |t: [[f32; 2]; 3], p: [f32; 2]| -> [f32; 3] {
+        let e = |a: [f32; 2], b: [f32; 2], c: [f32; 2]| {
+            (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+        };
+        let area = e(t[0], t[1], t[2]);
+        [
+            e(p, t[1], t[2]) / area,
+            e(t[0], p, t[2]) / area,
+            e(t[0], t[1], p) / area,
+        ]
+    };
+    // A leaf card whose top edge sits on stage row 70 (texel row 128, the
+    // card above it in the page ends at 127), and an edge-on sliver of it
+    // a third of a stage row tall.
+    let card = (
+        [[66.0, 70.0], [79.0, 70.0], [67.0, 92.0]],
+        [[31.0, 128.0], [63.0, 128.0], [31.0, 183.0]],
+    );
+    let sliver = (
+        [[20.0, 66.0], [60.0, 66.0], [61.0, 66.34]],
+        [[0.0, 128.0], [61.0, 128.0], [61.0, 183.0]],
+    );
+    let mut checked = 0;
+    for (tri, uvs) in [card, sliver] {
+        let (v_lo, v_hi) = (128.0f32, 183.0f32);
+        for fy in 0..3 {
+            for fx in 0..60 {
+                // Framebuffer pixel centre on the stage.
+                let p = [
+                    (66.0 * scale + fx as f32 * 0.5 + 0.5) / scale,
+                    ((tri[0][1] * scale).floor() + fy as f32 + 0.5) / scale,
+                ];
+                let b = bary(tri, p);
+                if b.iter().any(|w| *w < 0.0) {
+                    continue;
+                }
+                let below = bary(tri, [p[0], p[1] + 1.0 / scale]);
+                let lerp = |w: [f32; 3], k: usize| (0..3).map(|i| w[i] * uvs[i][k]).sum::<f32>();
+                let uv = [lerp(b, 0), lerp(b, 1)];
+                let uv_dy = [lerp(below, 0) - uv[0], lerp(below, 1) - uv[1]];
+                let b4 = [b[0], b[1], b[2], 0.0];
+                let bdy = [below[0] - b[0], below[1] - b[1], below[2] - b[2], 0.0];
+                let neg = |v: [f32; 4]| v.map(|x| -x);
+                nm.set_uniform("psx_params", psx(true));
+                pm.set_uniform("u_psx", psx(true));
+                let fnat = nm.function("psx_sample_uv");
+                let n = nm
+                    .call(
+                        fnat,
+                        vec![Val::f(&uv), Val::f(&uv_dy), Val::f(&b4), Val::f(&bdy)],
+                    )
+                    .ok()
+                    .flatten()
+                    .expect("native sample");
+                let fpage = pm.function("psxSampleUv");
+                let g = pm
+                    .call(
+                        fpage,
+                        vec![
+                            Val::f(&uv),
+                            Val::f(&[-uv_dy[0], -uv_dy[1]]),
+                            Val::f(&b4),
+                            Val::f(&neg(bdy)),
+                        ],
+                    )
+                    .ok()
+                    .flatten()
+                    .expect("page sample");
+                let (n, g) = (n.floats(), g.floats());
+                assert!(
+                    (n[0] - g[0]).abs() < 1e-3 && (n[1] - g[1]).abs() < 1e-3,
+                    "hosts part at {p:?}: native {n:?} page {g:?}"
+                );
+                assert!(
+                    n[1].trunc() >= v_lo && n[1] <= v_hi,
+                    "{p:?} samples texel row {} outside the triangle's {v_lo}..{v_hi}",
+                    n[1]
+                );
+                // Deep enough inside, the move is the whole half row.
+                if bary(tri, [p[0], p[1] - 0.6]).iter().all(|w| *w > 0.0) {
+                    assert!((n[1] - (uv[1] - uv_dy[1] * 0.5 * scale)).abs() < 1e-3);
+                }
+                // Off PSX mode the sample is the pixel centre.
+                nm.set_uniform("psx_params", psx(false));
+                let off = nm
+                    .call(
+                        fnat,
+                        vec![Val::f(&uv), Val::f(&uv_dy), Val::f(&b4), Val::f(&bdy)],
+                    )
+                    .ok()
+                    .flatten()
+                    .expect("native sample");
+                assert_eq!(off.floats(), &uv[..]);
+                checked += 1;
+            }
+        }
+    }
+    assert!(
+        checked > 40,
+        "the fragments cover both triangles: {checked}"
+    );
 }

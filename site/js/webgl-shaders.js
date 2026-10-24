@@ -531,6 +531,10 @@ in vec3 a_normal;
 out vec2 v_uv_pw;
 out vec4 v_flat_rgba_pw;
 out float v_affine_w;
+/* The vertex's corner of its primitive, one-hot (primCornerWeight), w-premultiplied
+ * like the UV: screen-linear, the fragment's barycentric weights, which keep
+ * PSX mode's texel row inside the primitive. */
+out vec4 v_prim_bary_pw;
 flat out uvec2 v_cba_tsb;
 out float v_fog_t;     /* distance-haze IR0 / 0x1000 (0..1) */
 out float v_view_z;    /* perspective view depth (clip w) for the depth cue */
@@ -541,6 +545,18 @@ flat out float v_far_bucket;
 out vec3 v_normal;     /* object-space smoothed normal (dynamic light only) */
 out vec3 v_obj_pos;    /* object-space position: the facet-normal fallback */
 out vec3 v_world;      /* page-frame world position (enhanced lighting's point lights) */
+
+/* Which corner of its primitive record the vertex is, one-hot - the twin of
+ * engine-render's prim_corner_weight. A vertex with no single owner (or an
+ * unbound record) weighs all ones, which no texel-row clamp moves. */
+vec4 primCornerWeight() {
+  if (a_prim_c0.w < 2.5) return vec4(1.0);
+  if (a_position == a_prim_c0.xyz) return vec4(1.0, 0.0, 0.0, 0.0);
+  if (a_position == a_prim_c1) return vec4(0.0, 1.0, 0.0, 0.0);
+  if (a_position == a_prim_c2) return vec4(0.0, 0.0, 1.0, 0.0);
+  if (a_prim_c0.w > 3.5 && a_position == a_prim_c3) return vec4(0.0, 0.0, 0.0, 1.0);
+  return vec4(1.0);
+}
 
 void main() {
   vec4 world_pos = u_model * vec4(a_position, 1.0);
@@ -575,6 +591,7 @@ void main() {
   v_view_z = gl_Position.w;
   v_affine_w = gl_Position.w;
   v_uv_pw = a_uv_byte * gl_Position.w;
+  v_prim_bary_pw = primCornerWeight() * gl_Position.w;
   v_flat_rgba_pw = flat_rgba * gl_Position.w;
   /* The log-depth write's w (LOG_DEPTH_GLSL): the flat bucket's
    * representative w on a continent cell, the vertex's own clip w elsewhere.
@@ -726,11 +743,13 @@ uniform vec4 u_shadow;
 in vec2 v_uv_pw;
 in vec4 v_flat_rgba_pw;
 in float v_affine_w;
+in vec4 v_prim_bary_pw;
 flat in uvec2 v_cba_tsb;
 in float v_fog_t;
 /* The screen-linear UV and colour, recovered from their w-premultiplied
  * varyings at the top of main() (see the vertex shader). */
 vec2 v_uv;
+vec4 v_prim_bary;
 vec4 v_flat_rgba;
 in float v_view_z;
 in float v_depth_w;
@@ -1045,15 +1064,43 @@ vec3 apply_distance_fog_tex(vec3 lit, vec3 texel) {
   return mix(lit, clamp(texel * u_haze_far, vec3(0.0), vec3(1.0)), v_fog_t);
 }
 
+/* How far along a texel-row move the sample stays on its own triangle - the
+ * twin of engine-render's psx_row_reach. */
+float psxRowReach(vec4 bary, vec4 stp) {
+  float t = 1.0;
+  for (int i = 0; i < 4; i++) {
+    float q = bary[i] + stp[i];
+    if (q < 0.0) t = min(t, max(bary[i], 0.0) / (bary[i] - q));
+  }
+  return t;
+}
+
+/* PSX mode's texel sample row (see main) - the twin of engine-render's
+ * psx_sample_uv. uv_dy / bary_dy are GL's dFdy, a row up. */
+vec2 psxSampleUv(vec2 uv, vec2 uv_dy, vec4 bary, vec4 bary_dy) {
+  if (u_psx.z < 0.5) return uv;
+  float perRow = u_psx.y / 240.0;
+  float rows = 0.5 * perRow;
+  float margin = perRow / 64.0;
+  float probe = rows + margin;
+  float reach = psxRowReach(bary, bary_dy * probe) * probe;
+  return uv + uv_dy * clamp(reach - margin, 0.0, rows);
+}
+
 void main() {
   v_uv = v_uv_pw / v_affine_w;
   /* PSX mode's texel sample row - the twin of engine-render's psx_sample_uv:
    * the GPU takes a scanline's texels at the row itself, half a stage row
    * above the pixel centre this rasteriser samples. GL's window y runs up,
    * so the half row up is +dFdy; u_psx.y / 240 is framebuffer rows per stage
-   * row. Taken ahead of any discard. */
+   * row. The move stops 1/64 stage row inside the fragment's own triangle
+   * (PSX_ROW_EDGE_MARGIN): retail's row point is one the primitive covers,
+   * and a sliver's huge UV row step would otherwise reach far outside its
+   * texels. Taken ahead of any discard. */
   vec2 uv_dy = dFdy(v_uv);
-  if (u_psx.z >= 0.5) v_uv += uv_dy * (0.5 * u_psx.y / 240.0);
+  v_prim_bary = v_prim_bary_pw / v_affine_w;
+  vec4 bary_dy = dFdy(v_prim_bary);
+  v_uv = psxSampleUv(v_uv, uv_dy, v_prim_bary, bary_dy);
   v_flat_rgba = v_flat_rgba_pw / v_affine_w;
   if (u_eclip_m.w > 0.5) {
     float ey = dot(u_eclip_m.xyz, v_obj_pos);
