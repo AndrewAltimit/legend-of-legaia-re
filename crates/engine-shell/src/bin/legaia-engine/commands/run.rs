@@ -318,6 +318,10 @@ pub(crate) fn cmd_config(cmd: ConfigCmd) -> Result<()> {
             mapping.save(&config_file)?;
             println!("binding saved: {key} → {btn} ({})", config_file.display());
         }
+        ConfigCmd::Reset { config_file } => {
+            Mapping::default().save(&config_file)?;
+            println!("bindings reset to the defaults ({})", config_file.display());
+        }
         ConfigCmd::DumpCutsceneMap { out } => {
             let map = legaia_engine_scene::scene::CutsceneMap::from_heuristic();
             let toml_doc = map.to_toml_string();

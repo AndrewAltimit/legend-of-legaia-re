@@ -1571,6 +1571,14 @@ pub(crate) enum ConfigCmd {
         #[arg(long, default_value = "legaia-input.toml")]
         config_file: PathBuf,
     },
+    /// Put every key binding back to the default layout - the way out for a
+    /// player who bound themselves out of the menu (the play page's Reset
+    /// keys button, `pad_bindings_reset`).
+    Reset {
+        /// Path to the TOML config file (as for `set`).
+        #[arg(long, default_value = "legaia-input.toml")]
+        config_file: PathBuf,
+    },
     /// Write the heuristic CDNAME→MV cutscene map to a TOML file.
     /// Useful as a starting point for engines that want to override one
     /// or two entries while keeping the rest of the heuristic intact.
