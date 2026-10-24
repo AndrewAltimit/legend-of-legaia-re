@@ -727,6 +727,14 @@ pub(super) fn battle_image(
             }
             _ => env.push(("LEGAIA_CAPTURE_GATE", gate.to_env())),
         }
+        // A state saved past the flip shows its fades on the table of the
+        // fade actor's own pass, nearer the RAM than the frame the gate
+        // places (`displayed_fade_lag_vsyncs`): the frame stays where the
+        // gate put it, and its fades step on to the displayed ones.
+        let lead = battle.display_lag.saturating_sub(battle.display_fade_lag);
+        if lead > 0 && gate.fade.is_some() {
+            env.push(("LEGAIA_SEAT_FADE_LEAD", lead.to_string()));
+        }
         tick += crate::retail_compare_battle::INFLIGHT_DEADLINE;
     }
     // A menu capture or any other action in flight is walked there through

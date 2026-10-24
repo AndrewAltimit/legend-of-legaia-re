@@ -379,6 +379,9 @@ pub struct RetailBattle {
     /// Vsyncs the two passes the displayed frame lags by spanned, each on
     /// its own step ([`display_pass_steps`]).
     pub display_pass_lag: u16,
+    /// Vsyncs the displayed frame's screen fades lag the RAM's fade actors
+    /// by ([`displayed_fade_lag_vsyncs`]).
+    pub display_fade_lag: u16,
     /// `ctx[+0x87C]` - the close-up accumulator the active actor's clip
     /// commit zeroes.
     pub cam_accum: u32,

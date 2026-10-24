@@ -107,6 +107,36 @@ fn the_frame_step_and_display_lag_come_off_the_history() {
     assert_eq!(frame_step(&ram), 2, "a forced step skips the history");
 }
 
+/// The fade's own table places the displayed fade: under the current
+/// record the two-pass law, under the other record (the current one still
+/// empty of it) one pass, and the law again when no table links one.
+#[test]
+fn the_fade_lag_follows_the_table_that_links_the_fade() {
+    let mut ram = vec![0u8; 0x20_0000];
+    put32(&mut ram, FORCED_STEP, 2);
+    let ots = [0x8010_0000u32, 0x8011_0000];
+    for (i, &ot) in ots.iter().enumerate() {
+        put32(&mut ram, 0x8007_BF30 + i as u32 * 0x74 + 0x70, ot);
+        // An empty bucket 1 links straight to bucket 0.
+        put32(&mut ram, ot + 4, ot & 0x00FF_FFFF);
+    }
+    let link_fade = |ram: &mut Vec<u8>, ot: u32, packet: u32| {
+        put32(ram, ot + 4, packet & 0x00FF_FFFF);
+        put32(ram, packet, (5 << 24) | (ot & 0x00FF_FFFF));
+        // POLY_F4, semi-transparent, raw: the fade's flash-out at 199.
+        put32(ram, packet + 4, 0x2BC7_C7C7);
+    };
+    assert_eq!(fade_passes_back(&ram), None);
+    assert_eq!(displayed_fade_lag_vsyncs(&ram), display_lag_vsyncs(&ram));
+    put16(&mut ram, 0x8007_B74C, 0);
+    link_fade(&mut ram, ots[1], 0x8012_0000);
+    assert_eq!(fade_passes_back(&ram), Some(1));
+    assert_eq!(displayed_fade_lag_vsyncs(&ram), 2);
+    link_fade(&mut ram, ots[0], 0x8012_0100);
+    assert_eq!(fade_passes_back(&ram), Some(2));
+    assert_eq!(displayed_fade_lag_vsyncs(&ram), 4);
+}
+
 /// The glide table's in-flight records come out with the display lag
 /// taken off `elapsed` (`nivora_duel_mid_blazing_slash`'s plaque and bar
 /// read ten of sixteen, six on screen at step 2), a landed record

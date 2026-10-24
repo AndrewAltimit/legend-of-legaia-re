@@ -645,6 +645,7 @@ impl RetailBattle {
             summon_fade: summon_fade(ram),
             display_lag: display_lag_vsyncs(ram),
             display_pass_lag: display_pass_steps(ram).iter().map(|&s| u16::from(s)).sum(),
+            display_fade_lag: displayed_fade_lag_vsyncs(ram),
             frame_step: frame_step(ram),
             step_run: newest_step_run(ram),
             step_run_start: active.and_then(|p| {

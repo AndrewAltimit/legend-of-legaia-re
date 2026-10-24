@@ -1578,6 +1578,20 @@ that pass) lengthened a lag the consumers were measured on at the
 history-max step `3`. The routing is reverted; the two-pass law and
 `frame_step` stand for every logic consumer.
 
+**The screen fades read their own table.** The fade actor links its
+`POLY_F4` (`0x2B`, OT bucket `1`) into the table of the pass it steps for, so
+the table holding that quad places the fade whatever the logic words did
+(`fade_passes_back`). `palma_summon_mid_cast` and `horn_summon_mid_cast` are
+saved with the current table still empty and the other one carrying the
+flash-out at the RAM actor's own value (`199`, `197`); their screens are one
+5-bit step brighter than that table's raster (`scripts/mednafen/ot-raster.py`),
+one pass of a fade draining `2.125` a vsync, where the two-pass law stood the
+replay's flash a pass too young. Gating those frames a pass later on the
+fade moved their sparks off retail's (`horn` `image` `.985` to `.979`), so
+the gate keeps the law and the image child steps only the fades on, by
+`display_lag - display_fade_lag` vsyncs, after the gate's own flash
+alignment (`LEGAIA_SEAT_FADE_LEAD`, `World::lead_screen_fades`).
+
 ### The keyframe each body stands on
 
 A looping clip - every idle stance - is a clock of its own, and the replay

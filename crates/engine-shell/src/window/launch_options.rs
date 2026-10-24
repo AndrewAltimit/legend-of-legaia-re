@@ -318,6 +318,12 @@ pub struct ScreenshotConfig {
     /// (`World::install_sprite_arm_snapshot`); taken once.
     pub seat_sprite_arms:
         std::cell::Cell<Option<Vec<legaia_engine_core::world::ambient::SpriteArmSeed>>>,
+    /// `LEGAIA_SEAT_FADE_LEAD=<vsyncs>`: on the frame the capture is taken,
+    /// step every live screen fade that many vsyncs on
+    /// (`World::lead_screen_fades`), for a capture whose displayed fade
+    /// stands nearer the RAM than the rest of its frame; taken once. Set by
+    /// the retail-compare image channel.
+    pub seat_fade_lead: std::cell::Cell<Option<u16>>,
     /// `LEGAIA_BATTLE_DRIVE=menu,<flow>,<seat>` /
     /// `action,<seat>,<state>,<category>,<queued>`: walk the fight through
     /// its pad path to the retail capture's phase and capture the first
@@ -732,6 +738,11 @@ impl ScreenshotConfig {
             seat_fog_due: std::cell::Cell::new(false),
             popup_trio_history: Default::default(),
             popup_trio_rewind: std::cell::Cell::new(None),
+            seat_fade_lead: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_FADE_LEAD")
+                    .ok()
+                    .and_then(|v| v.trim().parse().ok()),
+            ),
             seat_sprite_arms: std::cell::Cell::new(
                 std::env::var("LEGAIA_SEAT_SPRITE_ARMS")
                     .ok()

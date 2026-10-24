@@ -249,6 +249,16 @@ impl PlayWindowApp {
             && gate.met(&self.session.host.world)
         {
             gate.align_camera(&mut self.session.host.world);
+            // ... then the screen fades as far on as the displayed frame's
+            // own table had them (`LEGAIA_SEAT_FADE_LEAD`), past the flash
+            // the alignment just re-ran to the gate's age.
+            if let Some(n) = self
+                .screenshot
+                .as_ref()
+                .and_then(|sc| sc.seat_fade_lead.take())
+            {
+                self.session.host.world.lead_screen_fades(n);
+            }
         }
         // ... and a module shot still walking, onto the displayed frame's
         // pose (`LEGAIA_BATTLE_MODULE_CAM_ALIGN`,
