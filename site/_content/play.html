@@ -477,7 +477,7 @@ div.play-vis-head { cursor: default; }
             switch a piece of the PS1&rsquo;s own drawing. The key beside a row toggles it from the
             game window, here and in the desktop build.</p>
           <div class="play-vis-actions">
-            <label class="play-dev-menu" title="Retail-faithful for this session (the native --retail): every enhancement off - the scene-entry pulse, smart monsters, overworld markers, the saved-chain Arts list and the ledge-hop landing guard off, the battle kernels on retail's own, and every engine-only option pinned to retail (enhanced lighting and its shadows, ground fog, see-through walls, bloom, camera distance, 4/8-way movement, no flash slew, retail tile windows). Nothing is stored; untick to get your own settings back.">
+            <label class="play-dev-menu" title="Retail-faithful (the native --retail): every enhancement off - the scene-entry pulse, smart monsters, overworld markers, the saved-chain Arts list and the ledge-hop landing guard off, the battle kernels on retail's own, and every engine-only option pinned to retail (enhanced lighting and its shadows, ground fog, see-through walls, bloom, camera distance, 4/8-way movement, no flash slew, retail tile windows). Your own settings are not overwritten, and the box is remembered for your next visit, as the launcher remembers its Retail row; untick to get your settings back.">
               <input type="checkbox" id="play-retail-mode"> Retail-faithful (all enhancements off, this session)
             </label>
             <button id="play-visuals-reset" type="button"
@@ -678,10 +678,11 @@ div.play-vis-head { cursor: default; }
                    title="The Arts command opens the port's saved-chain list instead of retail's per-press directional input (the native LEGAIA_ARTS_SAVED_LIST=1). Not retail; Retail-faithful holds it off.">
               <input type="checkbox" id="play-arts-saved-list"> Saved-chain Arts list
             </label>
-            <label title="Walk straight into a minigame from this scene, through the same door warp a casino or arena door arms (the native O / B / M / K keys). Start leaves it.">
+            <label title="Walk straight into a minigame from this scene, through the same door warp a casino, arena or fishing-spot door arms (the native L / O / B / M / K keys). Start leaves it.">
               Minigame
               <select id="play-mg-warp">
                 <option value="">enter...</option>
+                <option value="0">Fishing</option>
                 <option value="3">Slot machine</option>
                 <option value="4">Baka Fighter</option>
                 <option value="5">Muscle Dome</option>
@@ -2492,7 +2493,7 @@ div.play-vis-head { cursor: default; }
   window.__playApplySeeThrough = applySeeThrough;
 
   /* The native window's render toggles: PSX rasterisation
-   * (LEGAIA_PSX_RENDER, session-only) and enhanced lighting (`I` + `F8`'s
+   * (--psx-render, remembered with the launch switches) and enhanced lighting (`I` + `F8`'s
    * time of day + `Y`'s lamp shadows, all persisted engine options - the
    * boxes reflect the stored values once a runtime is up). Presentation
    * only; re-applied on every view rebuild. */
@@ -2510,6 +2511,11 @@ div.play-vis-head { cursor: default; }
         if (typeof rt.set_light_shadows === 'function') rt.set_light_shadows(!!dynShadowsEl.checked);
         if (typeof rt.set_bloom === 'function') rt.set_bloom(!!bloomEl.checked);
       } catch (e) {}
+    }
+    /* PSX rasterisation is a remembered launch switch (the launcher's PSX
+     * rendering row): the runtime stores it, the view draws it. */
+    if (rt && typeof rt.set_psx_render === 'function') {
+      try { rt.set_psx_render(!!psxRenderEl.checked); } catch (e) {}
     }
     if (!view) return;
     view.setPsxRender(!!psxRenderEl.checked);
@@ -2675,7 +2681,25 @@ div.play-vis-head { cursor: default; }
     const r = rtCall('retail_mode');
     if (r !== undefined) retailModeEl.checked = !!r;
   }
+  /* The launch switches the page remembers between visits, as the native
+   * launcher does (PersistedSwitches, `legaia.switches` in localStorage): a
+   * fresh runtime has already seated them, so the boxes read them back once,
+   * before anything below writes a box's state into the runtime. The
+   * gameplay tweaks read back the same way in syncTweakDefaults. */
+  function syncPersistedSwitches() {
+    if (retailModeEl.dataset.synced === '1') return;
+    const r = rtCall('retail_mode');
+    if (r === undefined) return;
+    retailModeEl.checked = !!r;
+    smartEl.checked = !!rtCall('smart_monsters');
+    const pulse = rtCall('entry_pulse');
+    if (pulse !== undefined) entryPulseEl.checked = !!pulse;
+    const psx = rtCall('psx_render');
+    if (psx !== undefined) psxRenderEl.checked = !!psx;
+    retailModeEl.dataset.synced = '1';
+  }
   function applyPageToggles() {
+    syncPersistedSwitches();
     /* The cadence box starts on the engine's default: read it back from the
      * fresh runtime before the first write (WorldToggles'
      * DEFAULT_BATTLE_SM_FRAME_CADENCE). */

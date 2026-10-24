@@ -1215,8 +1215,36 @@ table; a switch with no page twin is a host difference, not a world default.
 | `--smart-monsters` (the launcher's Smarter monsters row), `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS` | `set_smart_monsters`, `set_world_map_markers`; the retail mode holds all three off on both hosts |
 | `LEGAIA_BATTLE_FRAME_CADENCE` (`0` lowers it), `LEGAIA_ARTS_SAVED_LIST` | `set_battle_frame_cadence`, `set_arts_saved_list`. The cadence has one default, `DEFAULT_BATTLE_SM_FRAME_CADENCE`, that `WorldToggles::new`, the page's `PageToggles` and its box all start from (`the_cadence_default_is_single_sourced`); the saved-chain list is off on both hosts |
 | `--no-entry-pulse` (the launcher's Living ground pulse row) | `set_entry_pulse(false)`, the "Entry pulse" box; the retail box also holds it off |
+| `--no-shiny-seru`, `--flee-exp`, `--exp-rate`, `--no-fortress-encounter-fix`, `--jewel-fix`, `--no-hp-readout-guard`, `--equipment-drops` and the battle-tuning sliders (the launcher's Gameplay tweaks and Battle tuning groups) | the Gameplay tweaks and Battle tuning boxes (`set_shiny_seru` ... `set_enemy_stat_permille`), one `GameplayTweaks` value on both hosts |
 | `--simple-dialogue`, `--flat-y`, `--no-edge-collision`, `--no-solid-npcs`, `--no-live-npcs`, `--no-damage-finish`, `--no-player-battle`, `--seed-party`, `--battle` | none: comparison and debug opt-outs from the retail default, which is the page's only setting (`--battle` has the wasm `debug_force_battle`) |
 | `--screenshot*`, `--pad-script`, `--key-script`, `--str-file`, `--cutscene-map` | none: native capture tooling |
+
+### Remembered between runs
+
+A launch switch with no `OptionsState` row behind it is remembered by the
+native **launcher**, not by `play-window` itself: the launcher's settings file
+stores it and turns it into the flag on the next Play. The page is both
+launcher and game, so it remembers the same set itself. Both store one type,
+`legaia_engine_session::session_switches::PersistedSwitches` - flattened into
+the launcher's TOML, JSON under `localStorage["legaia.switches"]` on the page -
+so a switch added there is remembered on both hosts or on neither:
+
+| Remembered | Where each host keeps it |
+|---|---|
+| `OptionsState` rows (lighting, fog, see-through walls, bloom, camera distance, volumes, mono output, ...) | `legaia-options.toml`; `localStorage["legaia.options"]` |
+| `PersistedSwitches` (PSX rasterisation, retail-faithful, entry pulse, smart monsters, the gameplay tweaks and battle tuning) | the launcher's settings file; `localStorage["legaia.switches"]` |
+| key bindings | `legaia-input.toml`; the page's pad-bindings store |
+| nothing (session only) | the world-map markers, the battle cadence and the saved-chain Arts list (environment switches natively), the cheats, the dev menu |
+
+A fresh page runtime seats the stored set before its boxes sync
+(`LegaiaRuntime::restore_persisted_switches`; a remembered retail-faithful goes
+through `set_retail_mode`, which pins the options as the box does), and the
+boxes read it back once before any box writes its own state
+(`syncPersistedSwitches`). Before the page stored the set, every gameplay tweak,
+PSX rasterisation and retail-faithful came back at the default on a reload
+while the window's launcher kept them. Pinned by
+`play_toggles::tests::launch_switches_are_remembered_in_the_launcher_layout`
+and `launcher::tests::stored_switches_are_the_shared_layout`.
 
 ## Pairing frames: what a screenshot adds
 

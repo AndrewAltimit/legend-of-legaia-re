@@ -409,6 +409,10 @@ pub struct LegaiaRuntime {
     /// The native launch switches the page throws at runtime
     /// ([`crate::play_toggles`]), re-asserted on every scene entry.
     pub(crate) page_toggles: crate::play_toggles::PageToggles,
+    /// The launch switches last written to the page's store
+    /// (`crate::play_toggles::SWITCHES_STORAGE_KEY`), so a scene entry that
+    /// re-asserts unchanged switches writes nothing.
+    pub(crate) persisted_switches: legaia_engine_session::session_switches::PersistedSwitches,
 }
 
 /// Sentinel [`LegaiaRuntime::set_field_player_screen_y`] reads as "the lead
@@ -427,7 +431,7 @@ impl LegaiaRuntime {
         world.mode = SceneMode::Title;
         let menu = MenuRuntime::new("/saves");
         let options_state = load_persisted_options();
-        Self {
+        let mut rt = Self {
             world,
             menu,
             scene_host: crate::host_slot::HostSlot::new({
@@ -521,7 +525,10 @@ impl LegaiaRuntime {
             audio_out: None,
             bgm_handoff_pending: false,
             page_toggles: Default::default(),
-        }
+            persisted_switches: Default::default(),
+        };
+        rt.restore_persisted_switches(crate::play_toggles::load_persisted_switches());
+        rt
     }
 }
 

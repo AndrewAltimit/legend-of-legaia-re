@@ -917,7 +917,7 @@ impl LauncherApp {
     }
 
     fn options_panel(&self, c: &mut Canvas, panel: Rect, hits: &mut Vec<(Item, Rect)>) {
-        let retail = self.settings.retail;
+        let retail = self.settings.switches.retail;
         let lines = option_lines();
         let scroll = self
             .opt_scroll
@@ -1063,7 +1063,7 @@ impl LauncherApp {
             Item::Quit => "Close the launcher. Esc.".into(),
             Item::Opt(row) => {
                 let mut s = row.help().to_string();
-                if self.settings.retail && row.overridden_by_retail() {
+                if self.settings.switches.retail && row.overridden_by_retail() {
                     s.push_str(" Off while Original game only is on.");
                 }
                 s
@@ -1828,8 +1828,11 @@ mod tests {
             executable: launcher::USA_EXECUTABLE.into(),
         };
         let settings = LauncherSettings {
-            psx_render: true,
-            retail: true,
+            switches: legaia_engine_session::session_switches::PersistedSwitches {
+                psx_render: true,
+                retail: true,
+                ..Default::default()
+            },
             ..Default::default()
         };
         let mut argv = vec![OsString::from("legaia-engine")];
@@ -1850,8 +1853,11 @@ mod tests {
         // The gameplay switches parse too (without `--retail`, which clap
         // refuses them beside).
         let settings = LauncherSettings {
-            no_entry_pulse: true,
-            smart_monsters: true,
+            switches: legaia_engine_session::session_switches::PersistedSwitches {
+                no_entry_pulse: true,
+                smart_monsters: true,
+                ..Default::default()
+            },
             ..Default::default()
         };
         let mut argv = vec![OsString::from("legaia-engine")];
@@ -1867,18 +1873,21 @@ mod tests {
         }
         // So do the gameplay-tweak rows.
         let settings = LauncherSettings {
-            no_shiny_seru: true,
-            flee_exp: true,
-            exp_rate_permille: Some(2000),
-            no_fortress_encounter_fix: true,
-            jewel_fix: true,
-            no_hp_readout_guard: true,
-            spirit_ap: Some(-16),
-            damage_ap: Some(200),
-            seru_catch_pct: Some(75),
-            enemy_attack_permille: Some(2000),
-            enemy_stat_permille: Some(1500),
-            equipment_drops: true,
+            switches: legaia_engine_session::session_switches::PersistedSwitches {
+                no_shiny_seru: true,
+                flee_exp: true,
+                exp_rate_permille: Some(2000),
+                no_fortress_encounter_fix: true,
+                jewel_fix: true,
+                no_hp_readout_guard: true,
+                spirit_ap: Some(-16),
+                damage_ap: Some(200),
+                seru_catch_pct: Some(75),
+                enemy_attack_permille: Some(2000),
+                enemy_stat_permille: Some(1500),
+                equipment_drops: true,
+                ..Default::default()
+            },
             ..Default::default()
         };
         let mut argv = vec![OsString::from("legaia-engine")];

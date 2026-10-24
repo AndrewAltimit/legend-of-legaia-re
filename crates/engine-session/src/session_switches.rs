@@ -203,6 +203,135 @@ pub struct SessionSwitches {
     pub retail: bool,
 }
 
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+/// The launch switches a host remembers between runs: the session switches
+/// that have no `OptionsState` row behind them, plus PSX rasterisation.
+///
+/// One serde layout for both hosts. The native launcher flattens it into its
+/// settings file (`legaia_engine_shell::launcher::LauncherSettings`) and turns
+/// it into `play-window` flags; the play page stores it as JSON in
+/// `localStorage` (`crates/web-play/src/play_toggles.rs`) and reads it back
+/// into its boxes on the next visit. A switch added here is therefore
+/// remembered on both hosts or on neither. The world-map markers, the battle
+/// cadence and the saved-chain Arts list are not here: natively they are
+/// environment switches, which no host remembers.
+///
+/// Each field is stored so the shipped default writes nothing: a switch that
+/// is on by default is kept inverted (`no_*`), a slider as `None` at retail,
+/// so [`PersistedSwitches::default`] is the engine's own default set
+/// ([`Self::tweaks`] of it is [`GameplayTweaks::default`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PersistedSwitches {
+    /// PSX-faithful rasterisation (`play-window --psx-render`, the page's
+    /// "PSX rasterisation" box).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub psx_render: bool,
+    /// Retail-faithful (`play-window --retail`, the page's Retail-faithful
+    /// box): every enhancement off, nothing written back to the options.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub retail: bool,
+    /// Without the scene-entry pulse (`--no-entry-pulse`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub no_entry_pulse: bool,
+    /// Smarter monster targeting (`--smart-monsters`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub smart_monsters: bool,
+    /// Without Shiny Seru (`--no-shiny-seru`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub no_shiny_seru: bool,
+    /// Run-away EXP (`--flee-exp`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub flee_exp: bool,
+    /// The EXP rate in permille (`--exp-rate`); `None` is retail's `1x`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exp_rate_permille: Option<u16>,
+    /// Without the Fortress encounter fix (`--no-fortress-encounter-fix`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub no_fortress_encounter_fix: bool,
+    /// The jewel fix (`--jewel-fix`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub jewel_fix: bool,
+    /// Without the battle HP-readout guard (`--no-hp-readout-guard`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub no_hp_readout_guard: bool,
+    /// Spirit AP (`--spirit-ap`); `None` is retail's 32.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spirit_ap: Option<i16>,
+    /// Enemy-damage AP (`--damage-ap`); `None` is retail's 100.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub damage_ap: Option<i16>,
+    /// Flat Seru catch rate (`--seru-catch-rate`); `None` keeps each Seru's
+    /// own chance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seru_catch_pct: Option<u8>,
+    /// Enemy attack count in permille (`--enemy-attack-count`); `None` is
+    /// `1x`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enemy_attack_permille: Option<u16>,
+    /// Enemy stat scale in permille (`--enemy-stat-scale`); `None` is `1x`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enemy_stat_permille: Option<u16>,
+    /// The bonus equipment drop (`--equipment-drops`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub equipment_drops: bool,
+    /// Save anywhere (`--save-anywhere`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub save_anywhere: bool,
+}
+
+impl PersistedSwitches {
+    /// The gameplay tweaks the stored set stands for.
+    pub fn tweaks(&self) -> GameplayTweaks {
+        use legaia_engine_core::world::{
+            DAMAGE_AP_RETAIL, EXP_RATE_RETAIL, SCALE_RETAIL, SPIRIT_AP_RETAIL,
+        };
+        GameplayTweaks {
+            shiny_seru: !self.no_shiny_seru,
+            flee_exp: self.flee_exp,
+            exp_rate_permille: self.exp_rate_permille.unwrap_or(EXP_RATE_RETAIL),
+            fortress_encounter_fix: !self.no_fortress_encounter_fix,
+            jewel_fix: self.jewel_fix,
+            hp_readout_guard: !self.no_hp_readout_guard,
+            spirit_ap: self.spirit_ap.unwrap_or(SPIRIT_AP_RETAIL),
+            damage_ap: self.damage_ap.unwrap_or(DAMAGE_AP_RETAIL),
+            seru_catch_pct: self.seru_catch_pct,
+            enemy_attack_permille: self.enemy_attack_permille.unwrap_or(SCALE_RETAIL),
+            enemy_stat_permille: self.enemy_stat_permille.unwrap_or(SCALE_RETAIL),
+            bonus_drop: self.equipment_drops,
+            save_anywhere: self.save_anywhere,
+        }
+    }
+
+    /// Store `t`, each value at its retail default written as nothing.
+    pub fn set_tweaks(&mut self, t: &GameplayTweaks) {
+        use legaia_engine_core::world::{
+            DAMAGE_AP_RETAIL, EXP_RATE_RETAIL, SCALE_RETAIL, SPIRIT_AP_RETAIL,
+        };
+        let off_retail = |v, retail| (v != retail).then_some(v);
+        self.no_shiny_seru = !t.shiny_seru;
+        self.flee_exp = t.flee_exp;
+        self.exp_rate_permille = off_retail(t.exp_rate_permille, EXP_RATE_RETAIL);
+        self.no_fortress_encounter_fix = !t.fortress_encounter_fix;
+        self.jewel_fix = t.jewel_fix;
+        self.no_hp_readout_guard = !t.hp_readout_guard;
+        self.spirit_ap = (t.spirit_ap != SPIRIT_AP_RETAIL).then_some(t.spirit_ap);
+        self.damage_ap = (t.damage_ap != DAMAGE_AP_RETAIL).then_some(t.damage_ap);
+        self.seru_catch_pct = t.seru_catch_pct;
+        self.enemy_attack_permille = off_retail(t.enemy_attack_permille, SCALE_RETAIL);
+        self.enemy_stat_permille = off_retail(t.enemy_stat_permille, SCALE_RETAIL);
+        self.equipment_drops = t.bonus_drop;
+        self.save_anywhere = t.save_anywhere;
+    }
+
+    /// Whether the scene-entry pulse is on.
+    pub fn entry_pulse(&self) -> bool {
+        !self.no_entry_pulse
+    }
+}
+
 impl SessionSwitches {
     /// Write the set onto `toggles`.
     ///
@@ -334,6 +463,34 @@ mod tests {
             (t.spirit_ap, t.damage_ap, t.enemy_stat_permille),
             (100, -200, 100)
         );
+    }
+
+    /// The stored form's default is the engine's default set and writes
+    /// nothing; every tweak round-trips through it and through JSON.
+    #[test]
+    fn persisted_switches_default_to_the_engine_and_round_trip() {
+        let d = PersistedSwitches::default();
+        assert_eq!(d.tweaks(), GameplayTweaks::default());
+        assert!(d.entry_pulse() && !d.retail && !d.psx_render && !d.smart_monsters);
+        assert_eq!(serde_json::to_string(&d).unwrap(), "{}");
+        let mut back = PersistedSwitches::default();
+        back.set_tweaks(&GameplayTweaks::default());
+        assert_eq!(back, d, "the default tweaks store as nothing");
+        let tweaks = all_on(false).tweaks;
+        let mut p = PersistedSwitches {
+            psx_render: true,
+            smart_monsters: true,
+            no_entry_pulse: true,
+            ..Default::default()
+        };
+        p.set_tweaks(&tweaks);
+        assert_eq!(p.tweaks(), tweaks);
+        let json = serde_json::to_string(&p).unwrap();
+        let q: PersistedSwitches = serde_json::from_str(&json).unwrap();
+        assert_eq!(q, p);
+        // An unknown or missing key falls back to the default.
+        let r: PersistedSwitches = serde_json::from_str(r#"{"flee_exp":true,"x":1}"#).unwrap();
+        assert!(r.flee_exp && r.tweaks().shiny_seru);
     }
 
     /// Retail mode lowers exactly what `WorldToggles::pin_retail` lowers

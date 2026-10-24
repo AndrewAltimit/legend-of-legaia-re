@@ -22,6 +22,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use legaia_engine_session::session_switches::PersistedSwitches;
 use serde::{Deserialize, Serialize};
 
 /// Directory name under the platform config / data directories.
@@ -69,8 +70,9 @@ pub fn settings_path() -> Option<PathBuf> {
 ///
 /// Only what the game has no option of its own for lives here: the disc,
 /// and the `play-window` launch switches with no persisted option behind
-/// them (`--psx-render`, `--retail`, `--no-entry-pulse`, `--smart-monsters` and the gameplay tweaks
-/// `--no-shiny-seru`, `--flee-exp`, `--exp-rate`, `--no-fortress-encounter-fix`, `--jewel-fix`). The enhancement knobs the game
+/// them ([`PersistedSwitches`]: `--psx-render`, `--retail`,
+/// `--no-entry-pulse`, `--smart-monsters` and the gameplay tweaks), which
+/// the play page remembers in the same layout. The enhancement knobs the game
 /// itself remembers (lighting, fog, see-through walls, ...) are edited in
 /// the game's own [`OPTIONS_FILE`], so the launcher and the in-game keys
 /// change one value.
@@ -79,73 +81,11 @@ pub struct LauncherSettings {
     /// The disc image the user picked (`.bin`, or the `.cue` they chose).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disc: Option<PathBuf>,
-    /// Start with PSX-faithful rasterisation (`play-window --psx-render`).
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub psx_render: bool,
-    /// Start retail-faithful (`play-window --retail`): every enhancement
-    /// off for the session, nothing written back to the options file.
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub retail: bool,
-    /// Start without the scene-entry pulse enhancement
-    /// (`play-window --no-entry-pulse`). Stored inverted so the shipped
-    /// default (pulse on) writes nothing.
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub no_entry_pulse: bool,
-    /// Start with smarter monster targeting (`play-window --smart-monsters`).
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub smart_monsters: bool,
-    /// Start without Shiny Seru (`play-window --no-shiny-seru`). Stored
-    /// inverted so the shipped default (shiny on) writes nothing.
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub no_shiny_seru: bool,
-    /// Start with run-away EXP (`play-window --flee-exp`).
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub flee_exp: bool,
-    /// The EXP rate in permille (`play-window --exp-rate`); `None` is retail's
-    /// `1x`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub exp_rate_permille: Option<u16>,
-    /// Start without the Fortress encounter fix
-    /// (`play-window --no-fortress-encounter-fix`). Stored inverted: the fix
-    /// is on by default.
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub no_fortress_encounter_fix: bool,
-    /// Start with the jewel fix (`play-window --jewel-fix`).
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub jewel_fix: bool,
-    /// Start without the battle HP-readout guard
-    /// (`play-window --no-hp-readout-guard`). Stored inverted: the guard is
-    /// on by default.
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub no_hp_readout_guard: bool,
-    /// Spirit AP (`play-window --spirit-ap`); `None` is retail's 32.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub spirit_ap: Option<i16>,
-    /// Enemy-damage AP (`play-window --damage-ap`); `None` is retail's 100.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub damage_ap: Option<i16>,
-    /// Flat Seru catch rate (`play-window --seru-catch-rate`); `None` keeps
-    /// each Seru's own chance.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub seru_catch_pct: Option<u8>,
-    /// Enemy attack count in permille (`play-window --enemy-attack-count`);
-    /// `None` is `1x`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub enemy_attack_permille: Option<u16>,
-    /// Enemy stat scale in permille (`play-window --enemy-stat-scale`);
-    /// `None` is `1x`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub enemy_stat_permille: Option<u16>,
-    /// Start with the bonus equipment drop (`play-window --equipment-drops`).
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub equipment_drops: bool,
-    /// Start with save anywhere (`play-window --save-anywhere`).
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub save_anywhere: bool,
-}
-
-fn is_false(b: &bool) -> bool {
-    !*b
+    /// The `play-window` launch switches, in the layout the play page
+    /// stores too (one serde shape for both hosts), flattened so the file
+    /// keeps its keys at the top level.
+    #[serde(flatten)]
+    pub switches: PersistedSwitches,
 }
 
 impl LauncherSettings {
@@ -363,64 +303,81 @@ pub fn play_args(info: &DiscInfo) -> Vec<std::ffi::OsString> {
 /// [`play_args`] plus the launch switches `settings` turns on.
 pub fn play_args_with(info: &DiscInfo, settings: &LauncherSettings) -> Vec<std::ffi::OsString> {
     let mut args = play_args(info);
-    if settings.psx_render {
+    if settings.switches.psx_render {
         args.push("--psx-render".into());
     }
-    if settings.retail {
+    if settings.switches.retail {
         // `--retail` holds the two switches below off itself, and clap
         // refuses them beside it.
         args.push("--retail".into());
         return args;
     }
-    if settings.no_entry_pulse {
+    if settings.switches.no_entry_pulse {
         args.push("--no-entry-pulse".into());
     }
-    if settings.smart_monsters {
+    if settings.switches.smart_monsters {
         args.push("--smart-monsters".into());
     }
-    if settings.no_shiny_seru {
+    if settings.switches.no_shiny_seru {
         args.push("--no-shiny-seru".into());
     }
-    if settings.flee_exp {
+    if settings.switches.flee_exp {
         args.push("--flee-exp".into());
     }
-    if let Some(rate) = settings.exp_rate_permille.filter(|&r| r != EXP_RATE_RETAIL) {
+    if let Some(rate) = settings
+        .switches
+        .exp_rate_permille
+        .filter(|&r| r != EXP_RATE_RETAIL)
+    {
         args.push("--exp-rate".into());
         args.push(format!("{}", f64::from(rate) / 1000.0).into());
     }
-    if settings.no_fortress_encounter_fix {
+    if settings.switches.no_fortress_encounter_fix {
         args.push("--no-fortress-encounter-fix".into());
     }
-    if settings.jewel_fix {
+    if settings.switches.jewel_fix {
         args.push("--jewel-fix".into());
     }
-    if settings.no_hp_readout_guard {
+    if settings.switches.no_hp_readout_guard {
         args.push("--no-hp-readout-guard".into());
     }
     // `--flag=value`, so a negative AP is never read as a flag.
     let mut kv = |flag: &str, v: String| args.push(format!("--{flag}={v}").into());
-    if let Some(ap) = settings.spirit_ap.filter(|&v| v != SPIRIT_AP_RETAIL) {
+    if let Some(ap) = settings
+        .switches
+        .spirit_ap
+        .filter(|&v| v != SPIRIT_AP_RETAIL)
+    {
         kv("spirit-ap", ap.to_string());
     }
-    if let Some(ap) = settings.damage_ap.filter(|&v| v != DAMAGE_AP_RETAIL) {
+    if let Some(ap) = settings
+        .switches
+        .damage_ap
+        .filter(|&v| v != DAMAGE_AP_RETAIL)
+    {
         kv("damage-ap", ap.to_string());
     }
-    if let Some(p) = settings.seru_catch_pct {
+    if let Some(p) = settings.switches.seru_catch_pct {
         kv("seru-catch-rate", p.to_string());
     }
     if let Some(m) = settings
+        .switches
         .enemy_attack_permille
         .filter(|&v| v != SCALE_RETAIL)
     {
         kv("enemy-attack-count", (f64::from(m) / 1000.0).to_string());
     }
-    if let Some(m) = settings.enemy_stat_permille.filter(|&v| v != SCALE_RETAIL) {
+    if let Some(m) = settings
+        .switches
+        .enemy_stat_permille
+        .filter(|&v| v != SCALE_RETAIL)
+    {
         kv("enemy-stat-scale", (f64::from(m) / 1000.0).to_string());
     }
-    if settings.equipment_drops {
+    if settings.switches.equipment_drops {
         args.push("--equipment-drops".into());
     }
-    if settings.save_anywhere {
+    if settings.switches.save_anywhere {
         args.push("--save-anywhere".into());
     }
     args
@@ -762,39 +719,39 @@ impl OptionRow {
             Self::SeeThroughWalls => on_off(opts.occlusion_fade),
             Self::GroundFog => on_off(opts.volumetric_fog),
             Self::Bloom => on_off(opts.bloom),
-            Self::PsxRender => on_off(s.psx_render),
+            Self::PsxRender => on_off(s.switches.psx_render),
             Self::CameraDistance => capitalise(opts.camera_distance.label()),
             Self::PreciseMovement => on_off(opts.precise_movement),
             Self::ReduceFlashing => on_off(opts.reduce_flashing),
             Self::MusicVolume => opts.bgm_volume.to_string(),
             Self::SfxVolume => opts.sfx_volume.to_string(),
             Self::MonoDownmix => on_off(opts.downmix_mono),
-            Self::EntryPulse => on_off(!s.no_entry_pulse),
-            Self::SmartMonsters => on_off(s.smart_monsters),
-            Self::ShinySeru => on_off(!s.no_shiny_seru),
-            Self::FleeExp => on_off(s.flee_exp),
+            Self::EntryPulse => on_off(!s.switches.no_entry_pulse),
+            Self::SmartMonsters => on_off(s.switches.smart_monsters),
+            Self::ShinySeru => on_off(!s.switches.no_shiny_seru),
+            Self::FleeExp => on_off(s.switches.flee_exp),
             Self::ExpRate => {
                 legaia_engine_session::session_switches::GameplayTweaks::exp_rate_label(
-                    s.exp_rate_permille.unwrap_or(EXP_RATE_RETAIL),
+                    s.switches.exp_rate_permille.unwrap_or(EXP_RATE_RETAIL),
                 )
             }
-            Self::FortressFix => on_off(!s.no_fortress_encounter_fix),
-            Self::JewelFix => on_off(s.jewel_fix),
-            Self::HpReadoutGuard => on_off(!s.no_hp_readout_guard),
-            Self::BonusDrop => on_off(s.equipment_drops),
-            Self::SaveAnywhere => on_off(s.save_anywhere),
-            Self::SpiritAp => s.spirit_ap.unwrap_or(SPIRIT_AP_RETAIL).to_string(),
-            Self::DamageAp => s.damage_ap.unwrap_or(DAMAGE_AP_RETAIL).to_string(),
-            Self::SeruCatchRate => Tweaks::catch_rate_label(s.seru_catch_pct),
+            Self::FortressFix => on_off(!s.switches.no_fortress_encounter_fix),
+            Self::JewelFix => on_off(s.switches.jewel_fix),
+            Self::HpReadoutGuard => on_off(!s.switches.no_hp_readout_guard),
+            Self::BonusDrop => on_off(s.switches.equipment_drops),
+            Self::SaveAnywhere => on_off(s.switches.save_anywhere),
+            Self::SpiritAp => s.switches.spirit_ap.unwrap_or(SPIRIT_AP_RETAIL).to_string(),
+            Self::DamageAp => s.switches.damage_ap.unwrap_or(DAMAGE_AP_RETAIL).to_string(),
+            Self::SeruCatchRate => Tweaks::catch_rate_label(s.switches.seru_catch_pct),
             Self::EnemyAttacks => {
-                Tweaks::exp_rate_label(s.enemy_attack_permille.unwrap_or(SCALE_RETAIL))
+                Tweaks::exp_rate_label(s.switches.enemy_attack_permille.unwrap_or(SCALE_RETAIL))
             }
             Self::EnemyStats => {
-                Tweaks::exp_rate_label(s.enemy_stat_permille.unwrap_or(SCALE_RETAIL))
+                Tweaks::exp_rate_label(s.switches.enemy_stat_permille.unwrap_or(SCALE_RETAIL))
             }
             Self::RetailTileCrop => on_off(opts.retail_view_window),
             Self::RetailObjectWindow => on_off(opts.retail_static_window),
-            Self::Retail => on_off(s.retail),
+            Self::Retail => on_off(s.switches.retail),
         }
     }
 
@@ -846,7 +803,7 @@ impl OptionRow {
             Self::SeeThroughWalls => opts.occlusion_fade ^= true,
             Self::GroundFog => opts.volumetric_fog ^= true,
             Self::Bloom => opts.bloom ^= true,
-            Self::PsxRender => s.psx_render ^= true,
+            Self::PsxRender => s.switches.psx_render ^= true,
             Self::CameraDistance => {
                 // A three-step cycle: back one is forward two.
                 let c = opts.camera_distance.cycle();
@@ -857,39 +814,42 @@ impl OptionRow {
             Self::MusicVolume => opts.bgm_volume = step(opts.bgm_volume),
             Self::SfxVolume => opts.sfx_volume = step(opts.sfx_volume),
             Self::MonoDownmix => opts.downmix_mono ^= true,
-            Self::EntryPulse => s.no_entry_pulse ^= true,
-            Self::SmartMonsters => s.smart_monsters ^= true,
-            Self::ShinySeru => s.no_shiny_seru ^= true,
-            Self::FleeExp => s.flee_exp ^= true,
+            Self::EntryPulse => s.switches.no_entry_pulse ^= true,
+            Self::SmartMonsters => s.switches.smart_monsters ^= true,
+            Self::ShinySeru => s.switches.no_shiny_seru ^= true,
+            Self::FleeExp => s.switches.flee_exp ^= true,
             Self::ExpRate => {
                 let next = legaia_engine_session::session_switches::GameplayTweaks::step_exp_rate(
-                    s.exp_rate_permille.unwrap_or(EXP_RATE_RETAIL),
+                    s.switches.exp_rate_permille.unwrap_or(EXP_RATE_RETAIL),
                     dir,
                 );
-                s.exp_rate_permille = (next != EXP_RATE_RETAIL).then_some(next);
+                s.switches.exp_rate_permille = (next != EXP_RATE_RETAIL).then_some(next);
             }
-            Self::FortressFix => s.no_fortress_encounter_fix ^= true,
-            Self::JewelFix => s.jewel_fix ^= true,
-            Self::HpReadoutGuard => s.no_hp_readout_guard ^= true,
-            Self::BonusDrop => s.equipment_drops ^= true,
-            Self::SaveAnywhere => s.save_anywhere ^= true,
-            Self::SpiritAp => step_opt(&mut s.spirit_ap, &Tweaks::SPIRIT_AP_STEPS, dir),
-            Self::DamageAp => step_opt(&mut s.damage_ap, &Tweaks::DAMAGE_AP_STEPS, dir),
+            Self::FortressFix => s.switches.no_fortress_encounter_fix ^= true,
+            Self::JewelFix => s.switches.jewel_fix ^= true,
+            Self::HpReadoutGuard => s.switches.no_hp_readout_guard ^= true,
+            Self::BonusDrop => s.switches.equipment_drops ^= true,
+            Self::SaveAnywhere => s.switches.save_anywhere ^= true,
+            Self::SpiritAp => step_opt(&mut s.switches.spirit_ap, &Tweaks::SPIRIT_AP_STEPS, dir),
+            Self::DamageAp => step_opt(&mut s.switches.damage_ap, &Tweaks::DAMAGE_AP_STEPS, dir),
             Self::SeruCatchRate => {
-                let next = Tweaks::step_in(&Tweaks::CATCH_RATE_STEPS, s.seru_catch_pct, dir);
-                s.seru_catch_pct = next;
+                let next =
+                    Tweaks::step_in(&Tweaks::CATCH_RATE_STEPS, s.switches.seru_catch_pct, dir);
+                s.switches.seru_catch_pct = next;
             }
             Self::EnemyAttacks => step_opt(
-                &mut s.enemy_attack_permille,
+                &mut s.switches.enemy_attack_permille,
                 &Tweaks::ENEMY_ATTACK_RATES,
                 dir,
             ),
-            Self::EnemyStats => {
-                step_opt(&mut s.enemy_stat_permille, &Tweaks::ENEMY_STAT_RATES, dir)
-            }
+            Self::EnemyStats => step_opt(
+                &mut s.switches.enemy_stat_permille,
+                &Tweaks::ENEMY_STAT_RATES,
+                dir,
+            ),
             Self::RetailTileCrop => opts.retail_view_window ^= true,
             Self::RetailObjectWindow => opts.retail_static_window ^= true,
-            Self::Retail => s.retail ^= true,
+            Self::Retail => s.switches.retail ^= true,
         }
     }
 }
@@ -1086,8 +1046,11 @@ mod tests {
         let off = LauncherSettings::default();
         assert_eq!(play_args_with(&info, &off), play_args(&info));
         let on = LauncherSettings {
-            psx_render: true,
-            retail: true,
+            switches: PersistedSwitches {
+                psx_render: true,
+                retail: true,
+                ..Default::default()
+            },
             ..Default::default()
         };
         let a = play_args_with(&info, &on);
@@ -1099,12 +1062,15 @@ mod tests {
         assert_eq!(back, on);
         // A pre-switch file (disc only) still loads.
         let old: LauncherSettings = toml::from_str("disc = \"/g/l.bin\"").unwrap();
-        assert!(!old.psx_render && !old.retail);
+        assert!(!old.switches.psx_render && !old.switches.retail);
         // The two gameplay switches ride the args, unless `--retail` holds
         // them off (clap refuses them beside it).
         let port = LauncherSettings {
-            no_entry_pulse: true,
-            smart_monsters: true,
+            switches: PersistedSwitches {
+                no_entry_pulse: true,
+                smart_monsters: true,
+                ..Default::default()
+            },
             ..Default::default()
         };
         let a = play_args_with(&info, &port);
@@ -1113,7 +1079,10 @@ mod tests {
         let a = play_args_with(
             &info,
             &LauncherSettings {
-                retail: true,
+                switches: PersistedSwitches {
+                    retail: true,
+                    ..port.switches
+                },
                 ..port
             },
         );
@@ -1122,6 +1091,37 @@ mod tests {
             !a.iter()
                 .any(|s| s == "--no-entry-pulse" || s == "--smart-monsters")
         );
+    }
+
+    /// The settings file holds the switches at the top level in the one
+    /// layout the play page stores them in (`PersistedSwitches`), so a file
+    /// written before the switches moved into that type still loads, and
+    /// the page's JSON form reads the same values.
+    #[test]
+    fn stored_switches_are_the_shared_layout() {
+        let mut s = LauncherSettings {
+            disc: Some("/g/l.bin".into()),
+            ..Default::default()
+        };
+        let mut o = legaia_engine_menus::options::OptionsState::default();
+        for (_, row) in OPTION_ROWS {
+            if !row.is_game_option() {
+                row.adjust(&mut o, &mut s, 1);
+            }
+        }
+        let text = toml::to_string(&s).unwrap();
+        let shared: PersistedSwitches = toml::from_str(&text).unwrap();
+        assert_eq!(shared, s.switches);
+        assert_ne!(shared, PersistedSwitches::default());
+        let json = serde_json::to_string(&s.switches).unwrap();
+        let page: PersistedSwitches = serde_json::from_str(&json).unwrap();
+        assert_eq!(page, s.switches);
+        let old: LauncherSettings = toml::from_str(
+            "disc = \"/g/l.bin\"\nsmart_monsters = true\nexp_rate_permille = 2000\n",
+        )
+        .unwrap();
+        assert!(old.switches.smart_monsters);
+        assert_eq!(old.switches.tweaks().exp_rate_permille, 2000);
     }
 
     /// The gameplay-tweak rows: each stored value becomes its `play-window`
@@ -1185,10 +1185,89 @@ mod tests {
         assert!(a.iter().any(|x| x == "1.5"));
         // Back to 1x writes no rate.
         OptionRow::ExpRate.adjust(&mut o, &mut s, -1);
-        assert_eq!(s.exp_rate_permille, None);
-        let retail = LauncherSettings { retail: true, ..s };
+        assert_eq!(s.switches.exp_rate_permille, None);
+        let retail = LauncherSettings {
+            switches: PersistedSwitches {
+                retail: true,
+                ..s.switches
+            },
+            ..s
+        };
         let a = play_args_with(&info, &retail);
         assert!(!a.iter().any(|x| x == "--flee-exp" || x == "--jewel-fix"));
+    }
+
+    /// The play page's control for each launcher row, `None` where a browser
+    /// has nothing to set. Exhaustive, so a new row cannot land without an
+    /// answer for the page.
+    fn page_twin(row: OptionRow) -> Option<&'static str> {
+        use OptionRow::*;
+        Some(match row {
+            WindowSize => return None,
+            Fullscreen => "play-fullscreen",
+            EnhancedLighting => "play-dyn-light",
+            TimeOfDay => "play-time-of-day",
+            LampShadows => "play-dyn-shadows",
+            SeeThroughWalls => "play-see-through",
+            GroundFog => "play-ground-fog",
+            Bloom => "play-bloom",
+            PsxRender => "play-psx-render",
+            CameraDistance => "play-camera-distance",
+            PreciseMovement => "play-precise-move",
+            ReduceFlashing => "play-reduce-flashing",
+            MusicVolume => "play-bgm-volume",
+            SfxVolume => "play-sfx-volume",
+            MonoDownmix => "play-downmix-mono",
+            EntryPulse => "play-entry-pulse",
+            SmartMonsters => "play-smart-monsters",
+            ShinySeru => "play-shiny-seru",
+            FleeExp => "play-flee-exp",
+            ExpRate => "play-exp-rate",
+            FortressFix => "play-fortress-fix",
+            JewelFix => "play-jewel-fix",
+            HpReadoutGuard => "play-hp-readout-guard",
+            BonusDrop => "play-bonus-drop",
+            SaveAnywhere => "play-save-anywhere",
+            SpiritAp => "play-spirit-ap",
+            DamageAp => "play-damage-ap",
+            SeruCatchRate => "play-seru-catch-rate",
+            EnemyAttacks => "play-enemy-attacks",
+            EnemyStats => "play-enemy-stats",
+            RetailTileCrop => "play-retail-view-window",
+            RetailObjectWindow => "play-retail-static-window",
+            Retail => "play-retail-mode",
+        })
+    }
+
+    /// Every launcher row has its control on the browser play page, and every
+    /// launch-switch row (the ones this file remembers) is one the page
+    /// remembers too: its value lives in `PersistedSwitches`, which both
+    /// hosts store. A row that changes only `LauncherSettings` and leaves
+    /// `PersistedSwitches` alone would be a switch the page forgets.
+    #[test]
+    fn every_launcher_row_has_a_play_page_twin() {
+        let page = include_str!("../../../site/_content/play.html");
+        for (_, row) in OPTION_ROWS {
+            if let Some(id) = page_twin(row) {
+                assert!(
+                    page.contains(&format!("id=\"{id}\"")),
+                    "{}: the play page has no #{id}",
+                    row.label()
+                );
+            }
+            if !row.is_game_option() && row != OptionRow::WindowSize && row != OptionRow::Fullscreen
+            {
+                let mut o = legaia_engine_menus::options::OptionsState::default();
+                let mut s = LauncherSettings::default();
+                row.adjust(&mut o, &mut s, 1);
+                assert_ne!(
+                    s.switches,
+                    PersistedSwitches::default(),
+                    "{}: a launch switch outside the shared stored set",
+                    row.label()
+                );
+            }
+        }
     }
 
     #[test]
