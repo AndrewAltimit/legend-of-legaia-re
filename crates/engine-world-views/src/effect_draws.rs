@@ -247,8 +247,7 @@ pub fn effect_model_draws(
             mesh: rb.mesh,
         })
         .collect();
-    out.shadows = world
-        .battle_ground_shadows(plan_of)
+    out.shadows = crate::battle_draws::battle_ground_shadows(world, plan_of)
         .into_iter()
         .map(|rb| FxMeshModel {
             // Placed like a part (the frame flip on the translation too),

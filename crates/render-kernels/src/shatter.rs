@@ -349,7 +349,7 @@ pub const BODY_AXES: [[f32; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.
 /// the body root along a **view** axis. `view` is the body-to-view linear
 /// map retail's object matrix carries above the object's pose - the battle
 /// world scale, the camera rotation and the body's facing
-/// (`legaia_engine_core::World::battle_shatter_view`), or [`BODY_AXES`] to
+/// (`legaia_engine_world_views::battle_draws::battle_shatter_view`), or [`BODY_AXES`] to
 /// measure along the body's own axes. The pose is the posed builders'
 /// `Rz * Ry * Rx` (the identity without `rotate`) and its translation; an
 /// object past the end of `bones` is measured unposed.

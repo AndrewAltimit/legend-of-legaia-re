@@ -489,9 +489,15 @@ impl<'m> DrawCtx<'_, 'm> {
                 }
                 // A body the defeat fade is sinking draws clipped at the
                 // stage floor (its node's `+0x42`, object-effect row 0 as
-                // battle setup seeds it) - `World::battle_actor_floor_clip`,
+                // battle setup seeds it) - `legaia_engine_world_views::battle_draws::battle_actor_floor_clip`,
                 // the page's `play_battle_actor_floor_clips` too.
-                if in_battle && let Some(c) = app.session.host.world.battle_actor_floor_clip(i) {
+                if in_battle
+                    && let Some(c) =
+                        legaia_engine_world_views::battle_draws::battle_actor_floor_clip(
+                            &app.session.host.world,
+                            i,
+                        )
+                {
                     clip_marks.push((
                         draws.len(),
                         legaia_engine_render::DrawClip {

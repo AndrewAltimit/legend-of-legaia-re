@@ -1117,6 +1117,7 @@
     "engine-session",
     "engine-shell",
     "engine-ui",
+    "engine-world-views",
     "parity",
     "web-minigames",
     "web-play"
@@ -2479,6 +2480,7 @@
     "rand",
     "retail_pad",
     "rotation_lut",
+    "rumble",
     "scene_name_sync",
     "scus_leaf_kernels",
     "sound_state",
@@ -2681,6 +2683,7 @@
    "deps": [
     "engine-battle",
     "engine-battle-menus",
+    "engine-battle-vm",
     "engine-camera",
     "engine-core",
     "engine-effects",
@@ -2697,6 +2700,7 @@
     "ui-formats"
    ],
    "dev_deps": [
+    "actor-formats",
     "container-formats",
     "engine-dev-menu",
     "engine-vm",
@@ -2707,6 +2711,7 @@
    "bins": [],
    "lib": true,
    "modules": [
+    "battle_draws",
     "camera_view",
     "effect_draws",
     "field_view_window",
@@ -2725,7 +2730,7 @@
    ],
    "band": "drivers",
    "track": "engine",
-   "scope": "The hosts' reads of a running <code>World</code> outside battle: the per-frame camera resolution, the visible-tile crop policy, scene staging, world-map markers and sky, the field party HUD and passive-ability badges (<code>WorldPassiveHud</code>), the minigame caption (<code>WorldMinigameCaption</code>), the effect draw lists, and the shop / pause / tile-board / timed-fight / Muscle Dome view models. Above <code>engine-core</code>.",
+   "scope": "The hosts' reads of a running <code>World</code> for everything but the battle HUD: the per-frame camera resolution, the visible-tile crop policy, scene staging, world-map markers and sky, the field party HUD and passive-ability badges (<code>WorldPassiveHud</code>), the minigame caption (<code>WorldMinigameCaption</code>), the effect draw lists, the battle bodies' draws (ghosts, trail, shadow, floor clip), and the shop / pause / tile-board / timed-fight / Muscle Dome view models. Above <code>engine-core</code>.",
    "dependents": [
     "engine-scene-host",
     "engine-screens",
@@ -4235,6 +4240,7 @@
     "play_minigame_slots",
     "play_minigames",
     "play_name_entry",
+    "play_rumble",
     "play_sfx",
     "play_shop",
     "play_tile_board",

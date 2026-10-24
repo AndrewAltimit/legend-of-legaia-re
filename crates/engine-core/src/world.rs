@@ -166,6 +166,7 @@ pub use battle::{
     BattleMessageBanner, COUNTER_MESSAGE_HOLD, COUNTER_MESSAGE_VA, DEFAULT_BATTLE_FRAME_STEP,
     MAGIC_LEVEL_BANNER_ELEMENT, PARTY_BODY_RADIUS, PendingCast, RoutedEffectSpawn,
     SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND, SummonPhase, SummonStager, TIMED_MESSAGE_ELEMENT,
+    battle_shadow_offset,
 };
 pub use battle::{AutoComboInputs, AutoComboState};
 pub use battle::{CASTER_STAGE_TICK_LIMIT, CasterStagePhase, CasterStageRun};

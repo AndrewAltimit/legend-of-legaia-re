@@ -94,7 +94,7 @@ impl LegaiaRuntime {
     }
 
     /// Battle body `actor_idx`'s body-to-view map under the same camera, for
-    /// the shatter renderer's sweep rows (`World::battle_shatter_view`).
+    /// the shatter renderer's sweep rows (`legaia_engine_world_views::battle_draws::battle_shatter_view`).
     pub(crate) fn battle_shatter_view(&self, actor_idx: usize) -> [[f32; 3]; 3] {
         let backdrop = self
             .battle_render
@@ -104,8 +104,12 @@ impl LegaiaRuntime {
         self.scene_host
             .host()
             .map_or(legaia_render_kernels::shatter::BODY_AXES, |h| {
-                h.world
-                    .battle_shatter_view(actor_idx, pose.as_ref(), BATTLE_WORLD_SCALE)
+                legaia_engine_world_views::battle_draws::battle_shatter_view(
+                    &h.world,
+                    actor_idx,
+                    pose.as_ref(),
+                    BATTLE_WORLD_SCALE,
+                )
             })
     }
 

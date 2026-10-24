@@ -1062,7 +1062,7 @@ and the table it writes (`BattleModelTable`: object index per channel, identity 
 pairs from `AttachPairs::from_assembly`, pinned ordinal = `AssembledCharacter::pinned_pair`). Each
 decoded clip carries its entry tail as `MonsterAnimation::variant_track` (stream part count +
 `+0xA4` bytes). The world steps a party seat's table on every battle pose and both play hosts draw
-only the objects it names for the playing stream's channels (`World::battle_live_drawn_objects`),
+only the objects it names for the playing stream's channels (`engine-world-views::battle_draws::battle_live_drawn_objects`),
 which also hides the `0xFE` extras outside surplus-channel streams. The after-image walk re-runs
 the swap per ghost into the live table, so on a ghosted frame the live body draws the table the last
 ghost left (`FUN_800480D8` calls the walk before the live draw and nothing restores the table). Disc

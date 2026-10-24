@@ -842,7 +842,7 @@ impl LegaiaRuntime {
     /// `+0x42` routes it through the clipping renderer under object-effect
     /// row 0, the stage floor as battle setup seeds it. All six zero for an
     /// unclipped body. The native window stages the same kernel,
-    /// `World::battle_actor_floor_clip`, on its draw.
+    /// `legaia_engine_world_views::battle_draws::battle_actor_floor_clip`, on its draw.
     pub fn play_battle_actor_floor_clips(&self) -> Vec<f32> {
         let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.host()) else {
             return Vec::new();
@@ -850,9 +850,11 @@ impl LegaiaRuntime {
         br.actor_slots()
             .into_iter()
             .flat_map(|actor_idx| {
-                host.world
-                    .battle_actor_floor_clip(actor_idx)
-                    .map_or([0.0; 6], |c| c.shader_floats())
+                legaia_engine_world_views::battle_draws::battle_actor_floor_clip(
+                    &host.world,
+                    actor_idx,
+                )
+                .map_or([0.0; 6], |c| c.shader_floats())
             })
             .collect()
     }

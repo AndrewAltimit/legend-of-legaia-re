@@ -44,7 +44,9 @@ mod tutorial;
 mod validator_host;
 mod victory;
 
-pub use actor_draw::{BATTLE_BODY_NCLIP, BattleActorDrawPlan, PARTY_BODY_RADIUS};
+pub use actor_draw::{
+    BATTLE_BODY_NCLIP, BattleActorDrawPlan, PARTY_BODY_RADIUS, battle_shadow_offset,
+};
 pub use auto_combo::{AutoComboInputs, AutoComboState};
 pub use cast_band::{
     CASTER_STAGE_TICK_LIMIT, CasterStagePhase, CasterStageRun, ModulePresentation, PendingCast,

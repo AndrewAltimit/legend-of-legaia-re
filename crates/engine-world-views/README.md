@@ -1,6 +1,8 @@
 # legaia-engine-world-views
 
-The play hosts' reads of a running `World` outside battle. Every function
+The play hosts' reads of a running `World` for everything but the battle
+HUD: the field, the world map, menus and minigames, and the battle bodies'
+3D draws (the HUD is `engine-battle-hud`). Every function
 here takes a `&World` (or a scene a scratch `World` stages) and answers what
 a host draws this frame; none of them writes the world. The rules, layouts
 and view structs these fill in live in the kernel crates; this crate is the
@@ -11,6 +13,13 @@ play page and `engine-screens` all draw from the same answer.
 
 Each module is named for the kernel module whose types it fills in.
 
+- **`battle_draws`** - the battle bodies' draw reads: the after-image
+  ghosts (`battle_ghost_draws`), the live mesh-variant table
+  (`battle_live_drawn_objects`, `battle_live_object_channels`), the weapon
+  trail (`battle_weapon_trail_draws`), the ground shadow, the floor clip,
+  the shatter frame and the Rot limb dimming over a posed mesh. The per-body
+  draw decision (`World::battle_actor_draw_plan`) stays in engine-core,
+  which reads it itself.
 - **`camera_view`** - the per-frame camera resolution every host calls:
   which camera owns the frame (`resolve_field_camera` over the follow,
   cutscene, world-map, map-display and venue arms) and its retail GTE

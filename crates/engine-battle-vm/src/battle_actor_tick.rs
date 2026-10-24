@@ -10,7 +10,7 @@
 //! `play_battle_actor_transforms` / `play_battle_actor_cursor`). The engine
 //! runs the calls this pass sequences by other routes - the tint through
 //! [`crate::battle_actor_tint`], the after-image walk `FUN_80049348` through
-//! `World::battle_ghost_draws`, the draw itself through each host's mesh
+//! `legaia_engine_world_views::battle_draws::battle_ghost_draws`, the draw itself through each host's mesh
 //! pass. So the port is the **decision**: [`battle_actor_tick`] returns the
 //! ordered [`BattleDrawStep`] list and the colour word the draw sees, and
 //! [`BattleActorTick::drawn`] is what the hosts gate the body on.

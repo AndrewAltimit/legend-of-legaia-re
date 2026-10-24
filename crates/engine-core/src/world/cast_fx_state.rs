@@ -117,7 +117,7 @@ pub struct CastFxState {
     /// The `+0x42` the summon creature's render node carries while it draws
     /// clipped (`0` = the floor row, `+0x42 = 1`): PROT 0927 raises `2`, so
     /// its creature is clipped by object-effect row 1.
-    pub(crate) module_creature_clip_kind: u16,
+    pub module_creature_clip_kind: u16,
     /// PROT 0927's camera-shake word `0x801F9C90`: raised by its stager
     /// arms 3 / 4, counted down by the tick's epilogue.
     pub(crate) module_shake: i32,

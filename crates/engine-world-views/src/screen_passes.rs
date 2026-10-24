@@ -214,7 +214,7 @@ impl<'a> HostView<'a> {
     }
 }
 
-/// This frame's weapon-trail bands (`World::battle_weapon_trail_draws`,
+/// This frame's weapon-trail bands (`legaia_engine_world_views::battle_draws::battle_weapon_trail_draws`,
 /// retail `FUN_8005112C` / `FUN_80048310`; band packets from
 /// `battle_trail::weapon_trail_prims`, the `FUN_800485BC` port).
 ///
@@ -231,7 +231,7 @@ impl<'a> HostView<'a> {
 pub fn weapon_trail_prims(world: &World, vp: &[f32; 16], world_scale: f32) -> Vec<ScreenPrim> {
     use legaia_render_kernels::battle_trail as bt;
     let mut out = Vec::new();
-    for d in world.battle_weapon_trail_draws() {
+    for d in crate::battle_draws::battle_weapon_trail_draws(world) {
         let Some(actor) = world.actors.get(d.actor_slot as usize) else {
             continue;
         };

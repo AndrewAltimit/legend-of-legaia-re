@@ -170,7 +170,7 @@ Four writer families put a non-zero value in that halfword:
   the half space at and above the stage floor, so the body goes down
   through the floor and leaves no packet once it is under it
   (`player_steal_skeleton_banner`, skeleton `183` down). Port:
-  `World::battle_actor_floor_clip`, staged as a per-draw clip on both hosts.
+  `engine-world-views::battle_draws::battle_actor_floor_clip`, staged as a per-draw clip on both hosts.
 
 The `sh $v0, 0x42(...)` pairs inside the brackets themselves (`0x8001B4C8`,
 `0x80048F24`) are not writers: their base register is the scratchpad packet
@@ -500,7 +500,7 @@ path untouched while the word is zero.
 
 The battle hosts hand the kernel each object's sweep frame through
 `shatter::bone_sweep_frame`: the object's pose under the body-to-view map
-`World::battle_shatter_view` (world scale, camera `Rx(pitch) * Ry(yaw)`, the
+`engine-world-views::battle_draws::battle_shatter_view` (world scale, camera `Rx(pitch) * Ry(yaw)`, the
 body's facing), measured from the body root. Not modelled: the field's sweep
 view frame (the field hosts hand the kernel the object's own axes,
 `SweepFrame::MODEL`, so `jagaroom`'s `0xC` front crosses the body along model
@@ -1093,7 +1093,7 @@ ghosts never do.
 Port: `battle_actor_draw::shadow_plan` models the numbers and
 `engine-effects::effect_default_arm::ground_shadow_mesh` builds the disc; every
 ground-shadow block in the capture library is reproduced byte for byte
-(`effect_default_arm_retail_capture.rs`). `World::battle_ground_shadows`
+(`effect_default_arm_retail_capture.rs`). `engine-world-views::battle_draws::battle_ground_shadows`
 lists one per battle body, gated on the same draw plan the host's actor pass
 uses, centred on the drawn pose's centroid turned by the facing (the body-pair
 store's rotation), and both hosts draw that list in their battle FX pass. The disc sits

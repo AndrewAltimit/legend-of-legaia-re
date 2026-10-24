@@ -55,7 +55,6 @@ mod battle_swing_anim_disc;
 mod battle_turn_order;
 mod battle_tutorial_ladder;
 mod battle_tutorial_replay_arm_disc;
-mod battle_variant_draw_disc;
 mod camera_zone_ramp_disc;
 mod capture_class_cast_ladder;
 mod casino_seat_disc;
