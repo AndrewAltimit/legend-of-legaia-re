@@ -1047,6 +1047,20 @@ case aims at those positions - case 6 on a caster, case 0 on a member, case
   capture's Gimard is pushed `+11` a frame, and his body pair `(-2, 492)`
   stands at `(-2, 470)` on the frame on screen (`image` `.814` to `.847`;
   `rim_elm_gimard_victory` `.916` to `.931`).
+- **A swing committed between the two frames.** In the strike loop
+  (`0x1E..=0x20`) each clip commit polls the range law and steps the acting
+  seat's live pair along the bearing to its target in one pass
+  (`FUN_8004AD80`, `0x8004BF7C..0x8004C118`). When the ring ids `+0x1FB` or
+  the cursor ring `+0x17A` show a commit inside the display lag
+  (`RetailBattle::displayed_recommit`), the frame on screen still shows the
+  previous swing on the pair before the step. The image child moves the
+  acting party seat onto the ring's pair **after** the camera is aligned on
+  the RAM's ground (`RetailBattle::engine_image_displayed_seats`,
+  `LEGAIA_BATTLE_DISPLAYED_SEAT`), so the framing keeps what the RAM's
+  ground arms. `rim_elm_gimard_victory`'s Vahn shows the `0x0F` swing at
+  cursor `144` on `(12, -217)`, while the RAM holds the `0x0E` commit on
+  `(3, -154)` (`image` `.922` to `.953`). Stood there before the alignment,
+  the body moved the framing too (`.870`).
 - **After-image ghosts on the displayed frame.** The ghost walk
   ([`FUN_80049348`](../subsystems/battle-actor-rendering.md#the-after-image-ghost-walk-fun_80049348))
   re-poses each ghost from the history ring's cursor `+0x17A` and live pair

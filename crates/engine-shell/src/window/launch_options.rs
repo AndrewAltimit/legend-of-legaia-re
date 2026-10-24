@@ -199,6 +199,12 @@ pub struct ScreenshotConfig {
     /// ([`legaia_engine_capture::ground_snap`]). Set by the retail-compare
     /// image channel on an action drive.
     pub battle_ground_snap: Vec<legaia_engine_capture::ground_snap::GroundSnap>,
+    /// `LEGAIA_BATTLE_DISPLAYED_SEAT=slot:x:z,...`: live pairs the captured
+    /// frame stands combatants on **after** the camera is aligned on
+    /// [`Self::battle_ground_snap`] - the displayed frame's ground of a seat
+    /// that moved between that frame and the RAM's. Set by the
+    /// retail-compare image channel (`RetailBattle::engine_image_displayed_seats`).
+    pub battle_displayed_seat: Vec<legaia_engine_capture::ground_snap::GroundSnap>,
     pub battle_cam_align_displayed: Option<(
         legaia_engine_camera::projection::BattleCamPose,
         legaia_engine_camera::projection::BattleCamPose,
@@ -680,6 +686,9 @@ impl ScreenshotConfig {
                 .ok()
                 .and_then(|v| legaia_engine_capture::camera_align::cam_align_from_env(&v)),
             battle_ground_snap: std::env::var("LEGAIA_BATTLE_GROUND_SNAP")
+                .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))
+                .unwrap_or_default(),
+            battle_displayed_seat: std::env::var("LEGAIA_BATTLE_DISPLAYED_SEAT")
                 .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))
                 .unwrap_or_default(),
             battle_cam_align_displayed: std::env::var("LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED")

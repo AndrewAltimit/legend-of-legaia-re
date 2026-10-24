@@ -732,13 +732,19 @@ pub fn run_engine_battle(
                 continue;
             }
             t.push_str(&format!(
-                " | slot {slot}: retail {live:?} body {body:?} facing {:?} clip {clip:#04X} size {size}, engine ({}, {}) body {:?} facing {} clip {:#04X} size {:?}",
+                " | slot {slot}: retail {live:?} body {body:?} facing {:?} clip {clip:#04X} cursor {:?} size {size}, engine ({}, {}) body {:?} facing {} clip {:#04X} cursor {:?} size {:?}",
                 battle.facing.get(pool).copied().flatten(),
+                battle
+                    .clip_cursors
+                    .iter()
+                    .find(|c| usize::from(c.0) == pool)
+                    .map(|c| c.2),
                 a.move_state.world_x,
                 a.move_state.world_z,
                 a.battle.seat,
                 a.battle.facing_angle & 0xFFF,
                 world.battle_current_anim(slot),
+                a.battle_animation.as_ref().map(|p| p.cursor_sixteenths()),
                 a.battle_monster_id
                     .and_then(|id| world.tables.monster_catalog.get(id))
                     .map(|d| d.size_class)

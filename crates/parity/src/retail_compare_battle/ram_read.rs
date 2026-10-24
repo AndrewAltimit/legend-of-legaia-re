@@ -1004,6 +1004,17 @@ impl RetailBattle {
                     })
                 })
                 .collect(),
+            displayed_recommit: (0..8u32)
+                .map(|slot| {
+                    let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
+                    in_ram(p)
+                        && (0..DISPLAYED_FRAMES_BACK).any(|k| {
+                            let id = |k: u32| game_anchors::u8_at(ram, p + RING_ID + k);
+                            let cur = |k: u32| game_anchors::u16_at(ram, p + RING_CURSOR + k * 2);
+                            id(k) != id(k + 1) || cur(k) < cur(k + 1)
+                        })
+                })
+                .collect(),
             ground: (0..8u32)
                 .map(|slot| {
                     let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);

@@ -1324,3 +1324,57 @@ fn numeral_cells_come_off_the_arenas_and_step_back_a_pass() {
         (131, 103, 8, 6)
     );
 }
+
+/// A strike-loop swing committed between the displayed frame and the RAM's:
+/// the ring ids and the cursor ring say so, and the image child stands the
+/// acting seat on the ring's displayed pair (`rim_elm_gimard_victory`'s
+/// Vahn). A swing that did not recommit keeps the RAM's ground.
+#[test]
+fn a_recommitted_swing_stands_on_the_displayed_pair() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 1);
+    put8(&mut ram, ctx + 1, 1);
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x1E);
+    put8(&mut ram, FORMATION_CELL, 0x0A);
+    let vahn = 0x800E_C9E8u32;
+    for (slot, base) in [(0u32, vahn), (3, 0x800E_D000)] {
+        put32(&mut ram, ACTOR_TABLE + slot * 4, base);
+        put16(&mut ram, base + 0x14C, 50);
+        put16(&mut ram, base + 0x14E, 60);
+    }
+    for (k, (id, cur, x, z)) in [
+        (0x0Eu8, 16u16, 3i32, -154i32),
+        (0x0E, 0, 4, -153),
+        (0x0F, 144, 12, -217),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        put8(&mut ram, vahn + 0x1FB + k, id);
+        put16(&mut ram, vahn + 0x17A + 2 * k, cur);
+        put32(&mut ram, vahn + POSITION_RING + 8 * k, x as u32);
+        put32(&mut ram, vahn + POSITION_RING + 8 * k + 4, z as u32);
+    }
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    assert_eq!(b.displayed_recommit.first(), Some(&true));
+    b.active_actor = 0;
+    b.action_state = 0x1E;
+    let seats = b.engine_image_displayed_seats();
+    assert_eq!(seats.len(), 1);
+    assert_eq!((seats[0].slot, seats[0].x, seats[0].z), (0, 12, -217));
+    b.action_state = 0x14;
+    assert!(
+        b.engine_image_displayed_seats().is_empty(),
+        "not in the strike loop"
+    );
+    b.action_state = 0x1E;
+    b.displayed_recommit[0] = false;
+    assert!(
+        b.engine_image_displayed_seats().is_empty(),
+        "no commit in the window"
+    );
+}
