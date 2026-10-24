@@ -177,6 +177,10 @@
         }
         this.els.stage.hidden = false;
         prog.done(`Ready - ${st.entries} PROT entries; click any art card below.`);
+        /* The progress bar fades out after done(); the status line it sits
+         * under still carried the no-disc prompt, so restate it. */
+        this.els.status.textContent =
+          `Disc loaded - ${st.entries} PROT entries. Click any art card below to play it.`;
         document.body.classList.add('arts-live');
         /* The .glb export needs an assembled character - live now. */
         if (this.els.glbBtn) this.els.glbBtn.disabled = false;

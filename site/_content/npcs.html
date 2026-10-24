@@ -801,6 +801,8 @@ canvas.npc-canvas:active { cursor: grabbing; }
       main.style.display = '';
       renderFilters();
       prog.done('Ready.');
+      /* The bar fades out; the line above it still held the no-disc prompt. */
+      status.textContent = `Disc loaded: ${f.name}. Pick a location, then click anyone in its cast.`;
 
       const start = opts.find(s => s.label === 'town01') || opts[0];
       if (start) {

@@ -26,7 +26,9 @@
       var glue = new URL('../wasm/legaia_web_viewer.js?v=' + v, base).href;
       var bin = new URL('../wasm/legaia_web_viewer_bg.wasm?v=' + v, base).href;
       promise = import(glue).then(function (mod) {
-        return mod.default(bin).then(function () { return mod; });
+        /* The object form: a bare URL argument is wasm-bindgen's deprecated
+         * signature and logs a console warning on every page. */
+        return mod.default({ module_or_path: bin }).then(function () { return mod; });
       });
       /* A failed load is not cached: the next call retries. */
       promise.catch(function () { promise = null; });

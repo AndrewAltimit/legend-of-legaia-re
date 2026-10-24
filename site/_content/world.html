@@ -424,6 +424,8 @@ canvas.world-canvas {
       wrap.style.display = '';
       renderNav('');
       prog.done(`Ready - ${renderable.length} locations.`);
+      /* The bar fades out; the line above it still held the no-disc prompt. */
+      status.textContent = `Disc loaded: ${f.name} - ${renderable.length} locations.`;
       /* Open on the starter town so the page shows a map immediately. */
       const first = renderable.find(s => s.label === 'town01') || renderable[0];
       if (first) loadScene(first.label);
