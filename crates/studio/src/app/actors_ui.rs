@@ -84,10 +84,14 @@ impl App {
             st.monsters = Some(actors::monster_rows(&lib).map_err(|e| format!("{e:#}")));
         }
 
+        // At most 45% of the window, so the model view keeps room at the
+        // minimum window size.
+        let side_max = (ctx.content_rect().width() * 0.45).max(260.0);
         egui::SidePanel::left("actors")
             .resizable(true)
-            .default_width(330.0)
+            .default_width(330.0f32.min(side_max))
             .min_width(260.0)
+            .max_width(side_max)
             .show(ctx, |ui| {
                 ui.heading("Party");
                 if let Some(Ok(cats)) = &st.catalogs {
@@ -194,7 +198,7 @@ impl App {
                     return;
                 }
             };
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.heading(&a.label);
                 ui.label(format!("{} triangles, {} clips", a.model.triangles(), a.clips.len()));
                 ui.separator();
@@ -259,7 +263,7 @@ impl App {
             if !a.clips.is_empty() {
                 v.clip = v.clip.min(a.clips.len() - 1);
                 let mut changed = false;
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     let before = v.clip;
                     egui::ComboBox::from_id_salt("clip")
                         .selected_text(a.clips[v.clip].label.clone())

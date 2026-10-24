@@ -1289,7 +1289,8 @@ impl App {
         } else {
             self.tab
         };
-        ui.horizontal(|ui| {
+        // Wraps, so a narrow window keeps every tab reachable.
+        ui.horizontal_wrapped(|ui| {
             for t in Tab::ALL {
                 let n = count(t);
                 let label = match n {
