@@ -583,6 +583,46 @@ impl World {
         }
     }
 
+    /// A script's `LFLAG_SET` / `LFLAG_CLR` (op `0x2B` / `0x2C`) aimed at the
+    /// player (`AB F8 <bit>` / `AC F8 <bit>`): `FUN_8003C83C` resolves `0xF8`
+    /// to the player object, so the bit lands on the player's `+0x62`, the
+    /// word its clip tick reads ([`Self::tick_field_player_anim`]). A
+    /// cutscene's one-shot gesture is `AB F8 03` (clamp), `A2 F8 <id>`,
+    /// `AD F8 08` (wait for the end latch).
+    ///
+    /// REF: FUN_8003C83C, FUN_801DE840 (ops 0x2B / 0x2C)
+    pub(crate) fn player_clip_flag_op(&mut self, set: bool, bit: u8) {
+        let Some(slot) = self.player_actor_slot else {
+            return;
+        };
+        // `1 << (bit & 0x1F)` stored with `sh`: bits 16+ fall off the word.
+        let Some(mask) = 1u16.checked_shl(u32::from(bit & 0x1F)) else {
+            return;
+        };
+        if let Some(a) = self.actors.get_mut(slot as usize) {
+            if set {
+                a.move_state.local_flags |= mask;
+            } else {
+                a.move_state.local_flags &= !mask;
+            }
+        }
+    }
+
+    /// Copy the clip-control bits (hold / clamp / reverse / restart) of a
+    /// player `+0x62` word some other model of it carries - a conversation's
+    /// or a prop ride's cursor, which keep their own end latch - onto the
+    /// player's own word, so the clip the body plays obeys the same bits.
+    pub(crate) fn mirror_player_clip_control(&mut self, word: u16) {
+        use legaia_engine_vm::actor_tick::CLIP_CONTROL_BITS;
+        let Some(slot) = self.player_actor_slot else {
+            return;
+        };
+        if let Some(a) = self.actors.get_mut(slot as usize) {
+            let ms = &mut a.move_state;
+            ms.local_flags = (ms.local_flags & !CLIP_CONTROL_BITS) | (word & CLIP_CONTROL_BITS);
+        }
+    }
+
     /// One field-frame advance of the player's locomotion animation: pick
     /// idle vs walk off the movement flag the locomotion step just set, emit
     /// the active clip's frame into the player actor's `pose_frame`. Called
@@ -595,10 +635,14 @@ impl World {
         let Some(anim) = &mut self.locomotion.player_anim else {
             return;
         };
-        let pose = anim.tick();
-        if let Some(actor) = self.actors.get_mut(slot as usize) {
-            actor.pose_frame = Some(pose);
-        }
+        // The player's `+0x62` control word drives the picked clip's cursor
+        // (clamp / hold / reverse / restart) and takes back its end latch.
+        let Some(actor) = self.actors.get_mut(slot as usize) else {
+            return;
+        };
+        let (pose, flags) = anim.tick_with_flags(actor.move_state.local_flags);
+        actor.move_state.local_flags = flags;
+        actor.pose_frame = Some(pose);
     }
 
     /// Run [`vm::move_vm::actor_tick`] for `slot` against the given `bytecode`

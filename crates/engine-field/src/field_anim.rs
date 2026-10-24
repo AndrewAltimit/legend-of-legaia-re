@@ -32,7 +32,7 @@ use legaia_anm::PoseFrame;
 /// every two engine ticks (one tick = one vsync, the frame step `1`).
 pub const CLIP_RATE: u16 = 8;
 
-use legaia_engine_vm::actor_tick::clip_step;
+use legaia_engine_vm::actor_tick::{CLIP_CLAMP, clip_cursor_tick, clip_step};
 
 /// Looping playback over one field clip: all frames pre-decoded to the
 /// `(translation, rotation)` pairs [`PoseFrame`] carries, walked by retail's
@@ -181,6 +181,33 @@ impl FieldClipPlayer {
         pose
     }
 
+    /// Emit the current pose, then advance one clip tick `scale` vsyncs long
+    /// under the actor's control word `flags` (`actor+0x62`) - retail's
+    /// cursor rules: restart, hold, reverse, and the clamp that stops a
+    /// one-shot on its last position instead of wrapping it. Returns the pose
+    /// and the word the tick leaves (the end latch `0x100` raised on the tick
+    /// the cursor reaches an end, a restart request consumed).
+    ///
+    /// REF: FUN_800204F8 (`legaia_engine_vm::actor_tick::clip_cursor_tick`)
+    pub fn tick_with(&mut self, scale: u16, flags: u16) -> (PoseFrame, u16) {
+        let pose = self.current_pose();
+        let flags = self.advance_with(scale, flags);
+        (pose, flags)
+    }
+
+    /// The advance half of [`Self::tick_with`].
+    pub fn advance_with(&mut self, scale: u16, flags: u16) -> u16 {
+        let frames = u16::try_from(self.frames.len()).unwrap_or(u16::MAX);
+        if frames == 0 {
+            return flags;
+        }
+        let step = (self.step.max(1) * u32::from(scale.max(1))).min(i16::MAX as u32) as i16;
+        let (cursor, out) = clip_cursor_tick(self.cursor as i16, flags, step, frames);
+        self.cursor = cursor.max(0) as u32;
+        self.hold_at_end = out & CLIP_CLAMP != 0 && self.frame() + 1 >= self.frames.len();
+        out
+    }
+
     /// The current frame's pose WITHOUT advancing the playhead. Hosts whose
     /// render rate is decoupled from the sim rate read the pose here every
     /// redraw and call [`Self::advance`] once per *sim tick*, so the clip
@@ -282,15 +309,11 @@ pub struct FieldPlayerAnim {
     /// player without it (a cutscene `MoveTo`, a channel walk-on) keeps the
     /// motion-derived walk instead. Consumed and cleared by the anim tick.
     pub pad_drove_this_frame: bool,
-    /// Queued scripted one-shot clips (field-VM `A2 F8 <move_id>` ExecMove
-    /// pokes against the player). Each plays through exactly once - front of
-    /// the queue first - overriding idle/walk; the retail player actor's
-    /// `+0x4C` anim pointer does the same (live-pinned across the `town01`
-    /// post-naming beats: ExecMove 48/49 point it at scene-bundle records
-    /// 47/48 for one playthrough each, then locomotion clips resume).
-    pub scripted: std::collections::VecDeque<FieldClipPlayer>,
-    /// Engine ticks left on the front scripted clip.
-    scripted_ticks_left: u32,
+    /// Ticks the motion-derived walk outlives the last script-made move
+    /// ([`SCRIPT_WALK_HOLD`]). A script moves the player on game-frame
+    /// boundaries, every other vsync, and without the hold the pair flipped
+    /// between walk and the pick on alternate ticks, rewinding each time.
+    script_walk_hold: u8,
     /// The leader's bank, indexed by bank slot (`0..7`); empty for a pair
     /// built with [`Self::new`].
     bank: Vec<Option<FieldClipPlayer>>,
@@ -322,8 +345,7 @@ impl FieldPlayerAnim {
             walking: false,
             moved_this_frame: false,
             pad_drove_this_frame: false,
-            scripted: std::collections::VecDeque::new(),
-            scripted_ticks_left: 0,
+            script_walk_hold: 0,
             bank: Vec::new(),
             leader: 0,
             retail_slot: None,
@@ -405,18 +427,47 @@ impl FieldPlayerAnim {
             .map(|c| (record, c));
     }
 
-    /// Queue a scripted one-shot clip (an `A2 F8` ExecMove resolution). The
-    /// clip starts at frame 0 when it reaches the front of the queue and
-    /// plays [`FieldClipPlayer::loop_ticks`] engine ticks - its own step, so
-    /// a gated clip's pass takes as long as retail's end latch does.
-    pub fn push_scripted(&mut self, mut clip: FieldClipPlayer) {
+    /// A script poked scene-bank clip `record + 1` onto the player
+    /// (`A2 F8 <move_id>` with the party-bank bit down, which the pick also
+    /// names through [`Self::select_scene_record`]): bind `clip` as that
+    /// record's player and restart it from frame 0 on the next tick.
+    ///
+    /// There is no queue and no fixed playthrough: the clip is the scene pick
+    /// like any other, so it runs under the player's control word - a script
+    /// that raised the clamp first (`AB F8 03`, then `A2 F8 <id>`, then
+    /// `AD F8 08`) gets one pass held on its last frame, exactly as retail's
+    /// `FUN_800204F8` holds it, and the next pick (`A2 F8 02`, or the pad's
+    /// own base once control returns) replaces it. The town01 post-naming
+    /// beats (ExecMove 48 / 49 onto scene records 47 / 48, then locomotion)
+    /// are two picks in a row on that rule.
+    pub fn bind_scripted(&mut self, record: u16, mut clip: FieldClipPlayer) {
         clip.rewind();
-        self.scripted.push_back(clip);
+        self.scene_clip = Some((record, clip));
+        self.playing_scene = None;
     }
 
-    /// `true` while a scripted one-shot is playing or queued.
-    pub fn scripted_active(&self) -> bool {
-        !self.scripted.is_empty()
+    /// Which clip plays now and where its cursor stands: `(source, id,
+    /// cursor, frame_count)`, `source` one of `scene` / `bank` / `walk` /
+    /// `idle`. A diagnostic view for tests and traces.
+    pub fn playing_clip(&self) -> (&'static str, usize, u32, usize) {
+        if let Some((r, c)) = self
+            .scene_clip
+            .as_ref()
+            .filter(|(r, _)| self.playing_scene == Some(*r))
+        {
+            return ("scene", usize::from(*r), c.cursor(), c.frame_count());
+        }
+        if let Some((s, c)) = self
+            .playing_slot
+            .and_then(|s| self.bank.get(s).and_then(Option::as_ref).map(|c| (s, c)))
+        {
+            return ("bank", s, c.cursor(), c.frame_count());
+        }
+        if self.walking {
+            ("walk", 0, self.walk.cursor(), self.walk.frame_count())
+        } else {
+            ("idle", 0, self.idle.cursor(), self.idle.frame_count())
+        }
     }
 
     /// Frame count of whichever locomotion clip is playing now.
@@ -442,34 +493,43 @@ impl FieldPlayerAnim {
         }
     }
 
-    /// One field tick: a queued scripted one-shot takes priority (playing
-    /// through once, then handing back); then the settle tail's retail pick
-    /// on the frames the pad step owned; otherwise switch idle/walk clips on
-    /// a movement-state edge (rewinding the incoming clip) and emit the
-    /// active clip's pose.
+    /// One field tick with the player's control word at its template state
+    /// (looping playback); see [`Self::tick_with_flags`].
     pub fn tick(&mut self) -> PoseFrame {
+        self.tick_with_flags(0).0
+    }
+
+    /// One field tick: the settle tail's retail pick - a scene-bank record,
+    /// else a party-bank slot - on the frames it owns; otherwise switch the
+    /// motion-derived idle/walk pair on a movement-state edge (rewinding the
+    /// incoming clip). Emits the active clip's pose and the control word
+    /// `flags` (the player's `actor+0x62`) as the picked clip's tick leaves
+    /// it.
+    ///
+    /// A picked clip advances under `flags` the way retail's `FUN_800204F8`
+    /// advances whatever the pick bound: a clamped clip plays once and holds
+    /// its last frame (the ledge hop's take-off and landing clips, a
+    /// cutscene's one-shot gesture), a held one freezes, the rest loop. The
+    /// motion pair is the port's own stand-in for frames retail's pick does
+    /// not own, and always loops.
+    ///
+    /// REF: FUN_800204F8
+    pub fn tick_with_flags(&mut self, flags: u16) -> (PoseFrame, u16) {
         let moved = std::mem::take(&mut self.moved_this_frame);
         let pad_drove = std::mem::take(&mut self.pad_drove_this_frame);
-        if let Some(front) = self.scripted.front_mut() {
-            if self.scripted_ticks_left == 0 {
-                // Freshly-promoted front clip: arm its full playthrough.
-                self.scripted_ticks_left = front.loop_ticks().max(1);
-            }
-            let pose = front.tick();
-            self.scripted_ticks_left = self.scripted_ticks_left.saturating_sub(1);
-            if self.scripted_ticks_left == 0 {
-                self.scripted.pop_front();
-                // Restart whichever locomotion loop resumes underneath.
-                self.idle.rewind();
-                self.walk.rewind();
-                self.playing_slot = None;
-            }
-            return pose;
+        // A move nobody's pad made (a script walked the player) plays the
+        // motion-derived walk over a standing pick: retail would hold the
+        // idle the base still names, and the port walks the body instead.
+        // The hold bridges the vsyncs between a script's moves.
+        if moved && !pad_drove {
+            self.script_walk_hold = SCRIPT_WALK_HOLD;
+        } else if pad_drove {
+            self.script_walk_hold = 0;
+        } else {
+            self.script_walk_hold = self.script_walk_hold.saturating_sub(1);
         }
-        // A move nobody's pad made (a script walked the player) keeps the
-        // motion-derived walk: retail would hold whatever base the script
-        // last set, which the port does not track for script moves.
-        let script_moved = moved && !pad_drove;
+        let script_walking = !pad_drove && self.script_walk_hold > 0;
+        let moving = moved || script_walking;
         // A scene-bank pick binds every frame it is the pick, whoever moved
         // the player: retail's `FUN_800204F8` binds whatever the settle
         // picked, and a scene-bank id is never the motion pair's to replace.
@@ -482,14 +542,23 @@ impl FieldPlayerAnim {
             }
             self.playing_scene = Some(record);
             self.playing_slot = None;
-            return clip.tick();
+            return clip.tick_with(1, flags);
         }
         if self.playing_scene.take().is_some() {
             // Leaving the scene clip: the next pick restarts from frame 0.
             self.idle.rewind();
             self.walk.rewind();
         }
-        if !script_moved && let Some(slot) = self.retail_slot.filter(|&s| self.has_bank_slot(s)) {
+        // The pick's own clip, unless a script is walking a standing body.
+        // A moving pick - the run a cutscene's `A2 F8 03` names, the hop's
+        // take-off and landing - is retail's clip whoever moved the player.
+        let slot = self
+            .retail_slot
+            .filter(|&s| self.has_bank_slot(s))
+            .filter(|&s| {
+                !script_walking || s != legaia_actor_formats::character_pack::LOCOMOTION_IDLE_SLOT
+            });
+        if let Some(slot) = slot {
             let rewind = self.playing_slot != Some(slot);
             self.playing_slot = Some(slot);
             self.walking = slot == legaia_actor_formats::character_pack::LOCOMOTION_WALK_SLOT;
@@ -497,27 +566,33 @@ impl FieldPlayerAnim {
             if rewind {
                 clip.rewind();
             }
-            return clip.tick();
+            return clip.tick_with(1, flags);
         }
         if self.playing_slot.take().is_some() {
             // Leaving the bank: the pair restarts from the edge below.
-            self.walking = !moved;
+            self.walking = !moving;
         }
-        if moved != self.walking {
-            self.walking = moved;
-            if moved {
+        if moving != self.walking {
+            self.walking = moving;
+            if moving {
                 self.walk.rewind();
             } else {
                 self.idle.rewind();
             }
         }
-        if self.walking {
+        let pose = if self.walking {
             self.walk.tick()
         } else {
             self.idle.tick()
-        }
+        };
+        (pose, flags)
     }
 }
+
+/// Ticks [`FieldPlayerAnim`]'s motion-derived walk outlives a script-made
+/// move: one game frame of two vsyncs, so a script stepping the player every
+/// other vsync reads as one continuous walk.
+pub const SCRIPT_WALK_HOLD: u8 = 2;
 
 /// Test fixture: a synthetic ANM bundle whose record `r` has `bones[r]`
 /// bones and `frames[r]` frames, each frame's bone `b` tagging `t_x` with
@@ -695,37 +770,95 @@ mod tests {
         assert_eq!(seen, vec![0, 2, 5, 7, 10, 12, 15, 17, 20, 15, 10, 5, 0]);
     }
 
-    /// A scripted one-shot (ExecMove) overrides idle/walk for exactly one
-    /// playthrough per queued clip, then locomotion resumes from frame 0 -
-    /// the retail post-naming shape (clip 47 then 48, then idle/walk).
+    /// A script's one-shot on the player (`AB F8 03`, `A2 F8 <id>`): the
+    /// clamped clip plays once, holds its last frame with the end latch up
+    /// for as long as the pick names it, and hands back on the next pick.
+    /// Without the clamp the same clip loops. (The cutscene shape: `cave01`
+    /// `P2[2]` raises the clamp, pokes Noa's getting-up clip and waits on
+    /// the latch, with dialogue in between.)
     #[test]
-    fn scripted_one_shots_play_once_in_order_then_locomotion_resumes() {
+    fn a_clamped_scripted_clip_plays_once_and_holds_until_the_next_pick() {
+        use legaia_engine_vm::actor_tick::CLIP_END;
         let bundle = synth_bundle();
         let mut idle = FieldClipPlayer::from_record(&bundle, 1).unwrap();
         let mut walk = FieldClipPlayer::from_record(&bundle, 0).unwrap();
         idle.set_step(16);
         walk.set_step(16);
         let mut anim = FieldPlayerAnim::new(idle, walk);
-        // Queue the "walk" record (tags 0/10/20) then the "idle" record
-        // (tags 100/110) as scripted clips.
-        let mut a = FieldClipPlayer::from_record(&bundle, 0).unwrap();
-        a.set_step(16);
-        let mut b = FieldClipPlayer::from_record(&bundle, 1).unwrap();
-        b.set_step(16);
-        anim.push_scripted(a);
-        anim.push_scripted(b);
-        assert!(anim.scripted_active());
-        // First clip: 3 frames exactly once.
-        for expect in [0i16, 10, 20] {
-            assert_eq!(anim.tick().bone_outputs[0].0[0], expect);
+        let mut clip = FieldClipPlayer::from_record(&bundle, 0).unwrap();
+        clip.set_step(16);
+        anim.select_scene_record(Some(0));
+        anim.bind_scripted(0, clip.clone());
+        let mut flags = CLIP_CLAMP;
+        let mut seen = Vec::new();
+        let mut latched = Vec::new();
+        for _ in 0..8 {
+            let (pose, out) = anim.tick_with_flags(flags);
+            flags = out;
+            seen.push(pose.bone_outputs[0].0[0]);
+            latched.push(flags & CLIP_END != 0);
         }
-        // Second clip: 2 frames.
-        for expect in [100i16, 110] {
-            assert_eq!(anim.tick().bone_outputs[0].0[0], expect);
+        // Frames 0 / 10 / 20 once, then frame 2 held; the latch lands on the
+        // tick the cursor reaches the end and stays up while it rests there.
+        assert_eq!(seen, vec![0, 10, 20, 20, 20, 20, 20, 20]);
+        assert_eq!(
+            latched,
+            vec![false, false, true, true, true, true, true, true]
+        );
+        // The next pick (the script's `A2 F8 02`) hands back to locomotion.
+        anim.select_scene_record(None);
+        flags &= !CLIP_CLAMP;
+        assert_eq!(anim.tick_with_flags(flags).0.bone_outputs[0].0[0], 100);
+        // Unclamped, the same poke loops.
+        anim.select_scene_record(Some(0));
+        anim.bind_scripted(0, clip);
+        let seen: Vec<i16> = (0..5)
+            .map(|_| anim.tick_with_flags(0).0.bone_outputs[0].0[0])
+            .collect();
+        assert_eq!(seen, vec![0, 10, 20, 0, 10]);
+    }
+
+    /// The ledge hop's take-off clip is the pick on frames the arc - not the
+    /// pad - moves the player, and the clamp the hop raises holds it on its
+    /// last frame instead of looping it; a script walking a standing body
+    /// still gets the motion-derived walk, held across the vsyncs between
+    /// its steps.
+    #[test]
+    fn a_moving_pick_beats_the_script_walk_and_a_standing_one_does_not() {
+        use legaia_actor_formats::character_pack::{LOCOMOTION_BANK_STRIDE, LOCOMOTION_IDLE_SLOT};
+        // Seven two-bone records of 2 frames each: slot s tags 100*s.
+        let bank = synth_anm_bundle(&[(2, 2); LOCOMOTION_BANK_STRIDE]);
+        let mut anim = FieldPlayerAnim::from_locomotion_bank(&bank, 0).unwrap();
+        const HOP: usize = 5;
+        anim.select_retail_slot(Some(HOP));
+        let mut flags = CLIP_CLAMP;
+        let mut seen = Vec::new();
+        for _ in 0..12 {
+            anim.moved_this_frame = true; // the arc moved the player
+            let (pose, out) = anim.tick_with_flags(flags);
+            flags = out;
+            seen.push(pose.bone_outputs[0].0[0] as u8);
         }
-        assert!(!anim.scripted_active());
-        // Idle loop resumes from frame 0.
-        assert_eq!(anim.tick().bone_outputs[0].0[0], 100);
+        // Two frames at step 8: 0, 0, 10, then held on frame 1.
+        let hop = (HOP * 100) as u8;
+        assert_eq!(&seen[..4], &[hop, hop, hop + 10, hop + 10]);
+        assert!(seen[3..].iter().all(|&t| t == hop + 10), "{seen:?}");
+        // A standing pick under a script walk: the walk, without a rewind on
+        // the vsync between two steps.
+        anim.select_retail_slot(Some(LOCOMOTION_IDLE_SLOT));
+        let mut keys = Vec::new();
+        for t in 0..6 {
+            anim.moved_this_frame = t % 2 == 0;
+            let _ = anim.tick_with_flags(0);
+            keys.push((anim.playing_clip().0, anim.playing_clip().2));
+        }
+        assert!(keys.iter().all(|k| k.0 == "walk"), "{keys:?}");
+        let cursors: Vec<u32> = keys.iter().map(|k| k.1).collect();
+        assert_eq!(
+            cursors,
+            vec![8, 16, 24, 0, 8, 16],
+            "one walk, never rewound"
+        );
     }
 
     #[test]
@@ -739,11 +872,15 @@ mod tests {
         // Standing: idle record (tag 100+).
         assert_eq!(anim.tick().bone_outputs[0].0[0], 100);
         assert_eq!(anim.tick().bone_outputs[0].0[0], 110);
-        // Move: walk record restarts at frame 0 (tag 0+).
+        // Move (a pad walk): walk record restarts at frame 0 (tag 0+).
         anim.moved_this_frame = true;
+        anim.pad_drove_this_frame = true;
         assert_eq!(anim.tick().bone_outputs[0].0[0], 0);
         anim.moved_this_frame = true;
+        anim.pad_drove_this_frame = true;
         assert_eq!(anim.tick().bone_outputs[0].0[0], 10);
+        // The pad step still owns the frame it stands still on.
+        anim.pad_drove_this_frame = true;
         // Release: idle restarts at frame 0.
         assert_eq!(anim.tick().bone_outputs[0].0[0], 100);
         assert!(!anim.walking);

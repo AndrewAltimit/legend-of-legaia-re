@@ -256,9 +256,22 @@ While the pad controller runs it rewrites the base before the next settle and th
 - **A ledge hop** holds the lock through its phases: no store at `0x80039D94` between the take-off `6` and the tear-down `1`.
 - **A kind-0 warp** is the case the store decides: the warp clears the lock when it arms, the pad controller is skipped through the timer and the hold, and every settle reads the `2` the previous tick's store left. See [the timed warp](#the-timed-kind-0-warp).
 
+#### The player's clip control word
+
+The pick only names the clip. How it plays is the player's `+0x62`, read by the same clip tick every actor runs ([`anm.md`](../formats/anm.md#playback-the-frame-cursor)): with the clamp bit `0x08` up the cursor stops on the clip's last position and the end latch `0x100` stays raised (`0x80020700..0x8002072C`); clear, the cursor wraps to frame 0. Nothing in the pad controller writes the word (`FUN_801d01b0` has no `+0x62` store), so a bit stays until a writer changes it. Two writers raise the clamp on the player:
+
+- **The ledge hop.** `FUN_801d2298` ORs `8` into the player's `+0x62` at take-off (`0x801D22E0..0x801D22EC`) and again at the landing crossing (`0x801D2374..0x801D2384`), and clears it at tear-down (`andi 0xfff7`, `0x801D23AC..0x801D23B8`). The take-off clip (base `6`) and the landing clip (base `7`) each play one pass and hold their last frame; the walk the tear-down binds loops again.
+- **A script's one-shot gesture.** `AB F8 03` raises the clamp, `A2 F8 <id>` binds the clip, `AC F8 08` / `AD F8 08` clear the latch and wait for it, and `AC F8 03` drops the clamp with the next pick. `cave01` `P2[2]`, Noa's introduction beside Terra, plays her getting-up (scene clip `29`, 120 frames) this way with dialogue between the bind and the wait: she rests on the last frame until the text closes.
+
+`0xF8` reaches the player because the id resolver `FUN_8003C83C` returns `_DAT_8007C364` for it, so `0x2B` / `0x2C` with that target write the player's word, not the calling record's.
+
 #### Engine port of the clip pick
 
 The pad step writes `World::locomotion.clip_base` through `legaia_engine_field::field_player_clip::locomotion_clip_base`; the hop tick applies the phase machine's stamps; `World::field_settle_clip_tail` runs `settle_clip_pick` and hands the bank slot to `FieldPlayerAnim::select_retail_slot`. Both play hosts build the player's clips with `FieldPlayerAnim::from_locomotion_bank`, which loads the leader's whole seven-record bank.
+
+The player's `+0x62` is the player actor's `move_state.local_flags`. The hop tick writes its clamp there, a cutscene timeline's `AB F8` / `AC F8` land there (`World::player_clip_flag_op`), and a conversation's or a prop ride's own cursor for the player copies its control bits there (`World::mirror_player_clip_control`). `World::tick_field_player_anim` hands the word to `FieldPlayerAnim::tick_with_flags`, which advances the picked clip - the scene record, else the bank slot - through `legaia_engine_vm::actor_tick::clip_cursor_tick` and writes the latch back. A scripted scene clip (`A2 F8 <id>` with the party-bank bit down) is that record's pick restarted at frame 0 (`FieldPlayerAnim::bind_scripted`), not a queued playthrough.
+
+The port's own addition is the motion-derived walk: when a script moves the player while the pick is the standing clip, the body walks instead of sliding in idle, held over the vsyncs between the script's steps (`SCRIPT_WALK_HOLD`). A moving pick - the run a cutscene names, the hop's two clips - always plays as retail's. Disc-gated coverage: `engine-session/tests/player_one_shot_clip_disc.rs` (the `cave01` getting-up and a `town01` hop, each holding its last frame).
 
 The system channel's store is `World::tick_field_system_channel_clip_reset`, run once per field tick after the settle and skipped while `World::field_player_movement_locked` holds (the `0x80000` bit, an open dialogue, a cutscene timeline, the tile board, a ledge hop or a scripted arc). A kind-0 warp is not a lock, so its ticks idle.
 

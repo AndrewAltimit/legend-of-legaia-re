@@ -677,6 +677,10 @@ impl World {
                 && let Some(actor) = host.world.props.bank.actor_clip_mut(target)
             {
                 actor.flags = id.ctx.local_flags;
+                if target == legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET {
+                    // The body's clip obeys the bits the talk just wrote.
+                    host.world.mirror_player_clip_control(id.ctx.local_flags);
+                }
                 id.ctx.local_flags = saved_local_flags;
             }
             match step {

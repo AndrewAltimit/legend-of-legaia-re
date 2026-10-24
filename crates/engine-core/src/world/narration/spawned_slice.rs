@@ -1057,6 +1057,17 @@ impl World {
                 }
                 if vm::field::peek_extended(&tl.bytecode, pc) == Some(0xF8) {
                     let op = opcode_byte & 0x7F;
+                    // `AB F8 <bit>` / `AC F8 <bit>`: the bit is the player's
+                    // `+0x62` - the clamp a one-shot gesture raises before its
+                    // `A2 F8 <id>` - which the player's clip tick reads. The
+                    // op still runs below as before; the end-latch wait
+                    // (`AD F8 08`) keeps its clip-length countdown.
+                    // REF: FUN_8003C83C, FUN_801DE840 (ops 0x2B / 0x2C)
+                    if matches!(op, 0x2B | 0x2C)
+                        && let Some(&bit) = tl.bytecode.get(pc + 2)
+                    {
+                        host.world.player_clip_flag_op(op == 0x2B, bit);
+                    }
                     // Halt-acquire of the player (`CC F8 85|8E|8F`): the
                     // player turns to face the op's actor bind and the record
                     // parks until the turn's terminal frame

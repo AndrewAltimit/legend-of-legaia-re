@@ -1608,10 +1608,14 @@ After the Done resume the timeline's post-naming beats animate the lead:
 `A2 F8 30` then `A2 F8 31` (op-`0x22` ExecMove, P2[3] `+0x030B`/`+0x0352`)
 land the player's `+0x4C` anim pointer on the scene ANM bundle's records
 47/48 (`record = move_id - 1`, the same record space as op-`0x4B` NPC
-cues) for one playthrough each before the walk-out moves resume the
-locomotion clips. Engine port: `engine-menus::name_entry` (SM),
+cues). The first runs clamped (`AB F8 03` before it, `AD F8 08` waiting on
+its end latch); the clamp is cleared right after the second, which loops
+through the `4A 3C` wait until `A2 F8 01` hands back to the walk. How the
+player's `+0x62` steers these clips is in
+[`field-locomotion.md`](field-locomotion.md#the-players-clip-control-word).
+Engine port: `engine-menus::name_entry` (SM),
 `engine-ui::menu::screens::name_entry` (draw builders + traced constants), and
-the scripted-clip queue `World::locomotion.player_move_cues`.
+the scripted-clip cue `World::locomotion.player_move_cues`.
 
 #### `0x4E` INVENTORY_CMP
 

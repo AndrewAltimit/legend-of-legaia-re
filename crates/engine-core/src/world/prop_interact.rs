@@ -690,6 +690,8 @@ impl World {
                 if player_target && matches!(b & 0x7F, 0x2B..=0x2D) {
                     let hint = host.world.player_clip_frames_hint();
                     host.world.props.bank.player_clip(hint).flags = player_ctx.local_flags;
+                    host.world
+                        .mirror_player_clip_control(player_ctx.local_flags);
                 }
                 match step {
                     FieldStepResult::Advance { next_pc }

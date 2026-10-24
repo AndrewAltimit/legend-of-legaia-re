@@ -200,7 +200,8 @@ A live capture on the Rim Elm free-roam state (`scripts/pcsx-redux/autorun_gated
 
 - `BoneTransform::decode` is the entry decode. `PlayerAnmBundle::sample_bone` / `sample_pose` is the two-frame sampler (next-entry rule, gate, fraction). `blend_bone_transform` is the blend including the flip retry. `lerp_angle_12` / `lerp_angle_12_journaled` are the angle interpolator, the latter returning the journal and counter as values. `PlayerAnmRecord::blends` reads the gate.
 - Both hosts pose a placed prop through one kernel, `legaia_engine_scene::field_env::prop_bone_offsets`, keyed on `PropAnim::pose_key` (the live cursor plus the clamp bit).
-- The NPC / player clip player `FieldClipPlayer` walks the same cursor and blends a gated clip on the ticks that fall inside a frame. `actor_tick::clip_step` picks the step from the record's gate and divisor; the cursor wraps to `0` on the tick that reaches `frames * 16 - 1`. `PropAnim::tick` takes its step from the same function.
+- The cursor rules of the tick (restart, hold, reverse, the clamp's stop and the loop's wrap to `0`, the end latch) are one kernel, `actor_tick::clip_cursor_tick`. `PropAnim::tick` and the player's clips both advance through it, and `actor_tick::clip_step` picks the step from the record's gate and divisor.
+- The NPC / player clip player `FieldClipPlayer` walks the same cursor and blends a gated clip on the ticks that fall inside a frame. `FieldClipPlayer::tick_with` advances it under an actor's `+0x62`; the free-running `tick` loops. The player's picked clip runs under the player's own word ([`field-locomotion.md`](../subsystems/field-locomotion.md#the-players-clip-control-word)), so a clamped one-shot holds its last frame.
 - `actor_tick::clip_end_ticks` is the bind-to-latch length the cutscene timeline times a player clip's end-latch spin with (`FieldLocomotion::scene_clip_ticks`).
 - Both hosts memoise a posed mesh on `FieldClipPlayer::pose_key` rather than on the frame index.
 
