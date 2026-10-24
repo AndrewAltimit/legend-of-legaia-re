@@ -111,10 +111,25 @@ The same patcher runs client-side. `legaia_web_patcher::rom_patcher` (`patch_rom
 compiles the crate to WebAssembly, and the site's `tooling/rom-patcher.html`
 page takes a disc image, offers the randomizer passes, the tuning sliders, the
 code-hook features, the Delilas features, texture replacement and translation
-packs, and downloads a patched image or a PPF. The disc bytes never leave the
-browser. The page's change report is spoiler-safe: a random starting-item fill
-prints only the item *count*, where the CLI listing stays verbose as the offline
-spoiler log. The CLI below is the scriptable path.
+packs, and downloads the patched `.bin` with a matching `.cue` (a PPF comes
+from the CLI). The disc bytes never leave the browser. The page's change report
+is spoiler-safe: a random starting-item fill prints only the item *count*, where
+the CLI listing stays verbose as the offline spoiler log. The CLI below is the
+scriptable path.
+
+For the same seed and settings the page writes the same image as
+`legaia-patcher randomize` with the matching flags, byte for byte, although the
+two hosts order their stages differently. That holds because every MAN re-pack
+fills its whole footprint (`legaia_disc_patch::compress_within`): a pass that
+writes only its stream leaves the tail of a longer stream an earlier pass wrote,
+so the image would depend on stage order and not only on the MAN the passes
+produced. The tuning knobs that stay on the CLI - `--equipment-drop-chance`,
+`--flee-exp-pct`, `--enemy-ally-pct`, `--shiny-pct`, `--seru-trade-offers`,
+`--solo-strong-threshold`, `--start-with`, `--keep-static-items`,
+`--no-model-transplant`, `--allow-relayout` and `--delilas-che-hammer` - run
+at their defaults on the page. A CLI run that turns encounters on without
+`--no-solo-strong-encounters` matches the page with *Solo strong fights*
+ticked.
 
 ## CLI: `legaia-patcher`
 
@@ -1114,7 +1129,10 @@ references, so a garbage row can't hand a real item an unequippable (zero) mask.
 The engine reads the same `+6` byte
 (`legaia_engine_menus::equipment::DiscEquipInfo::can_equip`), so a patched disc
 re-gates each character's equip picker. `legaia-patcher equip-bonuses` lists the
-current mask (`V/N/G` / `any`) beside each row.
+current mask (`V/N/G` / `any`) beside each row. The pass runs after the
+[equipment editor](#equipment-editor-command-costs-and-equip-owners), so a named
+`--equip-owner` mask joins the pool it redistributes. In the browser patcher it
+is **Who can equip what**, beside the stat-bonus control.
 
 ### Weapon specialty
 

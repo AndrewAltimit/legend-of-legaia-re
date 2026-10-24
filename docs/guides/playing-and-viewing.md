@@ -573,7 +573,13 @@ diagnostics (parity oracles, synthetic state drivers) you can ignore.
 `asset-viewer` reads the `extracted/` tree (there is no `--disc` here - run
 `legaia-extract` first). The `field` and `dialog` demos additionally need the
 dialog font at `extracted/font/`, which the pipeline writes by default (or
-`font-extract --disc` rebuilds).
+`font-extract --disc` rebuilds). The `field` and `world` demos, and the `tmd`
+row below, also read the mesh and texture sweeps `extracted/tmd_scan/` and
+`extracted/tim_scan/`, which a default extraction does not write: make them
+with `./asset tmd-scan extracted/PROT --out extracted/tmd_scan` and
+`./asset tim-scan extracted/PROT --out extracted/tim_scan` (or extract with
+`--all-textures` for the second). Without `tmd_scan/` the field demo opens with
+no actors and says nothing about why.
 
 ```bash
 ./asset-viewer                                                         # archive browser on ./extracted

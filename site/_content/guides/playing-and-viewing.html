@@ -297,6 +297,10 @@
 <section class="doc-section" id="asset-viewer">
   <h2>8 &middot; Browse assets interactively</h2>
   <p><code>asset-viewer</code> reads the <code>extracted/</code> tree (there is no <code>--disc</code> here - run <code>legaia-extract</code> first). The <code>field</code> and <code>dialog</code> demos additionally need the dialog font at <code>extracted/font/</code>, which the pipeline writes by default (or <code>font-extract --disc</code> rebuilds).</p>
+  <p>The <code>field</code> and <code>world</code> demos, and the <code>tmd</code> row below, also read the mesh and texture sweeps <code>extracted/tmd_scan/</code> and <code>extracted/tim_scan/</code>, which a default extraction does not write. Make them once:</p>
+  <div class="cli"><code>./asset tmd-scan extracted/PROT --out extracted/tmd_scan</code></div>
+  <div class="cli"><code>./asset tim-scan extracted/PROT --out extracted/tim_scan</code></div>
+  <p>(<code>legaia-extract --all-textures</code> writes the second.) Without <code>tmd_scan/</code> the field demo opens with no actors and says nothing about why.</p>
   <div class="table-wrap">
   <table>
     <thead><tr><th>Command</th><th>Shows</th></tr></thead>
@@ -311,7 +315,7 @@
   </div>
   <p>Started with no view named (a double-click), <code>asset-viewer</code> opens the archive browser on the <code>extracted/PROT.DAT</code> in the current folder or beside the program; with none there it says how to make one and points at <code>legaia-studio</code>. The browser takes entry names from the <code>CDNAME.TXT</code> beside <code>PROT.DAT</code> unless <code>--cdname</code> names another.</p>
   <p>The scene name is a positional argument here, not a <code>--scene</code> flag (<code>field</code>, <code>world</code> and <code>dialog</code> all take their subject that way).</p>
-  <p>In the PROT browser: <kbd>N</kbd> / <kbd>P</kbd> = next/prev entry, <kbd>PgDn</kbd> / <kbd>PgUp</kbd> = jump 10, <kbd>Esc</kbd> = quit; each entry's format is auto-detected and the first viewable sub-asset is shown. <code>tmd</code> pointed at a directory walks every mesh with the same keys. The <code>tim</code> subcommand also takes <code>extracted/PROT.DAT</code> itself with <code>--offset</code>/<code>--clut</code> for the system-UI textures that live outside any TOC entry.</p>
+  <p>In the PROT browser: <kbd>N</kbd> / <kbd>P</kbd> (or the arrows) = next/prev entry, <kbd>PgDn</kbd> / <kbd>PgUp</kbd> = jump 10, <kbd>Home</kbd> / <kbd>End</kbd> = first/last, typing a number and pressing <kbd>Enter</kbd> jumps to that PROT index (the window title shows what is typed; <kbd>Esc</kbd> cancels it), <kbd>Esc</kbd> = quit; each entry's format is auto-detected and the first viewable sub-asset is shown. <code>tmd</code> and <code>stage</code> pointed at a directory walk every file with the same keys, a typed number naming the 1-based position their titles show. The <code>tim</code> subcommand also takes <code>extracted/PROT.DAT</code> itself with <code>--offset</code>/<code>--clut</code> for the system-UI textures that live outside any TOC entry.</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="../viewer.html">Browser asset viewer</a>
