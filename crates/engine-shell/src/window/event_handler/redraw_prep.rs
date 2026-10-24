@@ -189,6 +189,12 @@ impl PlayWindowApp {
                         .world
                         .seed_object_live_model(record, model);
                 }
+                for w in &sc.seat_placements {
+                    self.session
+                        .host
+                        .world
+                        .seed_placement_seat(w.flat, w.x, w.z);
+                }
                 for w in &sc.seat_walkers {
                     self.session
                         .host

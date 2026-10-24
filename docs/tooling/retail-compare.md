@@ -359,7 +359,17 @@ engine verdict:
   (a camera aimed by a script that has since returned) - is the entry
   prologue's, not the retail script's.
 - **Actor state.** NPC positions, animation phases, open doors and live
-  effects are whatever the engine's own entry produces.
+  effects are whatever the engine's own entry produces. One exception is
+  seated: a placement retail holds exactly on the decoded target of a
+  partition-2 beat's cross-context `MOVE_TO` (`A3 <flat> xb zb`) aimed at
+  it. A walk-on beat runs once, and a card load spawns the placement from
+  its record head instead, so that tile is the beat's history
+  (`retail_compare::scripted_seats`, `World::seed_placement_seat`, the image
+  child's `LEGAIA_SEAT_PLACEMENTS`; position only, the heading stays the
+  engine's). `kor5_post_43a_checkpoint` was played through `kor5` `P2[3]`,
+  whose last `A3 0E 20 5D` stands Old Deez at `(4160, 11968)` where his head
+  bytes `20 DC` spawn him at `(4160, 11904)` (`npcs` `.977` to `1`, `image`
+  `.986` to `1.000`).
 - **Timing.** Retail's frame is one instant; the engine's is a fixed tick
   after entry. Two kinds of script history are held through the headless
   warm-up instead of being run as game time: the field VM's script-counter

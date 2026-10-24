@@ -66,6 +66,34 @@ impl World {
         }
     }
 
+    /// Capture alignment for the retail comparison
+    /// (`LEGAIA_SEAT_PLACEMENTS`): stand the placement whose flat MAN index
+    /// is `flat` on `(x, z)`, a tile a finished cutscene beat's `MOVE_TO`
+    /// left it on - history a card load does not replay. The heading stays
+    /// the engine's, so the facing channel still scores it. Returns whether
+    /// the placement moved.
+    pub fn seed_placement_seat(&mut self, flat: u16, x: i16, z: i16) -> bool {
+        let Some(slot) = self
+            .channel_view()
+            .iter()
+            .find(|c| !c.object_bind && c.ctx.script_id == flat)
+            .and_then(|c| u8::try_from(c.placement_index).ok())
+        else {
+            return false;
+        };
+        match self.npcs.positions.get(&slot) {
+            Some(&p) if p != (x, z) => {}
+            _ => return false,
+        }
+        self.npcs.positions.insert(slot, (x, z));
+        self.npcs.motions.remove(&slot);
+        if let Some(chan) = self.npcs.ambient.get_mut(&slot) {
+            chan.vm.x = x;
+            chan.vm.z = z;
+        }
+        true
+    }
+
     pub(crate) fn resync_ambient_start_positions(&mut self) {
         for (slot, chan) in self.npcs.ambient.iter_mut() {
             if chan.live.is_some() {
