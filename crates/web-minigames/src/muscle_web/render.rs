@@ -249,6 +249,7 @@ impl LegaiaMinigames {
             pool_max: view.pool_max,
             plate_value: view.plate_value,
             list_page: view.list_page,
+            list_pages: view.list_pages,
             phase: legaia_engine_ui::arts_input::ArtsInputScreen::Entering,
             glides: &glides,
             chip_slide: None,
@@ -282,6 +283,7 @@ impl LegaiaMinigames {
             pool_max: view.pool_max,
             plate_value: view.plate_value,
             list_page: view.list_page,
+            list_pages: view.list_pages,
             phase: ArtsInputScreen::Entering,
             glides: &[],
             chip_slide: Some((

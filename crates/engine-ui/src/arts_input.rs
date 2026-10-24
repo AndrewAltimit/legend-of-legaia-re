@@ -35,7 +35,7 @@
 //! REF: FUN_801D0748
 //! REF: FUN_801D388C
 
-use crate::SpriteDraw;
+use crate::{SpriteDraw, TextDraw};
 use legaia_ui_formats::title_pak;
 
 // ------------------------------------------------------------ screen seats
@@ -61,7 +61,43 @@ pub const CHIP_ANCHOR_LOW: (i32, i32) = (216, 90);
 /// carries High / Left / Right / Low.
 pub const DPAD_SEAT: (i32, i32) = (220, 62);
 /// Drawn size of the D-pad glyph (the FT4 spans 15 texels, not 16).
+///
+/// The quad's UVs run `0..16` over those 15 pixels, a texel step of
+/// `16 / 15`, so pixel `k` samples texel `floor(k * 16 / 15)` = `k`: the
+/// glyph draws its top-left 15x15 texels one to one and drops the last
+/// row and column. The builder crops the source to this size rather than
+/// scaling 16 texels into 15 pixels, which resamples the outline.
 pub const DPAD_SIZE: (u32, u32) = (15, 15);
+
+/// Texel span of a label strip's quad: retail's FT4 puts `u0` on the left
+/// edge and `u0 + 23` on the right (captured GP0 packets of every chip and
+/// pennant label, `u 104..127` across a 24- or 36-pixel record), so the
+/// 24-texel word spreads its first 24 texel *edges* across the record
+/// width - one texel short of the strip.
+pub const LABEL_U_SPAN: u32 = 23;
+
+/// The label-strip quad as one-texel-wide columns: pixel `k` of a `w`-wide
+/// record samples texel `floor(k * LABEL_U_SPAN / w)`, the GPU's affine
+/// step over the quad (`v` steps one texel per row, the strip's 18 rows
+/// over 18 pixels). Each `(texel, x0, x1)` is one column run - a texel
+/// repeated over `x0..x1` - so a host's nearest sampler reproduces the
+/// retail duplicate column (pixel 1 of a 24-wide chip) and the dropped
+/// last texel exactly, where scaling the 24-texel word to `w` pixels
+/// would duplicate a different column.
+pub fn label_strip_columns(w: i32) -> Vec<(u32, i32, i32)> {
+    let mut out: Vec<(u32, i32, i32)> = Vec::new();
+    if w <= 0 {
+        return out;
+    }
+    for k in 0..w {
+        let t = (k as u32 * LABEL_U_SPAN) / w as u32;
+        match out.last_mut() {
+            Some(run) if run.0 == t => run.2 = k + 1,
+            _ => out.push((t, k, k + 1)),
+        }
+    }
+    out
+}
 
 /// Stage `y` of the input bar and of every settled pennant.
 pub const BAR_Y: i32 = 188;
@@ -373,6 +409,9 @@ pub struct ArtsInputFrame<'a> {
     pub plate_value: u8,
     /// Open Triangle arts-list page, `None` when closed.
     pub list_page: Option<u8>,
+    /// Pages the Triangle list can cycle (`0` = the character has learned
+    /// no art and the toggle is inert) - sizes the [`arts_list_caption`].
+    pub list_pages: u8,
     pub phase: ArtsInputScreen,
     /// Committed pennants still gliding in from their chip, as
     /// `(slot, elapsed, total)` frames ([`Self::pennant_seat`]). Empty draws
@@ -581,8 +620,13 @@ pub fn arts_input_chrome_draws(
         rects.bar_arrow.3,
     );
 
-    // --- Committed pennants: cap + label + cap at the cost-weighted seat.
-    for (slot, &b) in frame.buffer.iter().enumerate() {
+    // --- Committed pennants: label + right cap + left cap at the
+    // cost-weighted seat, the last-entered pennant first. Each pennant's
+    // right cap overlaps the next one's left end (the cap is 9 wide, the
+    // gap 6), and retail's ordering table puts the earlier pennant on top:
+    // its right cap over the next label, the next left cap under its label
+    // (the captured OT walks the pennants right to left).
+    for (slot, &b) in frame.buffer.iter().enumerate().rev() {
         let Some(dir) = ChipDirection::from_command_byte(b) else {
             continue;
         };
@@ -592,21 +636,29 @@ pub fn arts_input_chrome_draws(
         // so an off-class command stamps a wider pennant, and the next one
         // starts that much further along the bar.
         let strip_w = frame.pennant_w(slot);
-        push(
-            rects.pennant_cap_l,
-            px,
-            py,
-            rects.pennant_cap_l.2,
-            rects.pennant_cap_l.3,
-        );
         let label = frame.chip_label(rects, dir);
-        push(label, px + cap_w, py, strip_w as u32, label.3);
+        for (t, x0, x1) in label_strip_columns(strip_w) {
+            push(
+                (label.0 + t, label.1, 1, label.3),
+                px + cap_w + x0,
+                py,
+                (x1 - x0) as u32,
+                label.3,
+            );
+        }
         push(
             rects.pennant_cap_r,
             px + cap_w + strip_w,
             py,
             rects.pennant_cap_r.2,
             rects.pennant_cap_r.3,
+        );
+        push(
+            rects.pennant_cap_l,
+            px,
+            py,
+            rects.pennant_cap_l.2,
+            rects.pennant_cap_l.3,
         );
     }
 
@@ -639,7 +691,15 @@ pub fn arts_input_chrome_draws(
                 rects.chip_cap_r.3,
             );
             let label = frame.chip_label(rects, dir);
-            push(label, bx, by + 4, body_w as u32, label.3);
+            for (t, x0, x1) in label_strip_columns(body_w) {
+                push(
+                    (label.0 + t, label.1, 1, label.3),
+                    bx + x0,
+                    by + 4,
+                    (x1 - x0) as u32,
+                    label.3,
+                );
+            }
             push(
                 rects.diamond_l,
                 bx - rects.diamond_l.2 as i32,
@@ -656,7 +716,7 @@ pub fn arts_input_chrome_draws(
             );
         }
         push(
-            rects.dpad,
+            (rects.dpad.0, rects.dpad.1, DPAD_SIZE.0, DPAD_SIZE.1),
             DPAD_SEAT.0,
             DPAD_SEAT.1,
             DPAD_SIZE.0,
@@ -847,6 +907,110 @@ pub fn ap_plate_draws(
     out
 }
 
+// ------------------------------------------------------- Triangle caption
+
+/// Which help line the Triangle arts list puts up beside the entry screen.
+///
+/// Both are drawn every frame by the arts-list driver `FUN_801D3444`
+/// (PROT 0898) through the SCUS sprite emitter `FUN_8002C488` (the Triangle
+/// button sprite, record `0x3A`) and the text kernel `FUN_80036888` (the
+/// battle font, CLUT word `0x7F8D`); the strings are the battle overlay's
+/// own (`legaia_ui_formats::battle_ui_strings::BattleUiLabel::ArtsListHelp`
+/// / `ArtsListNextPage`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArtsListCaption {
+    /// List closed: `Button: View Hyper Arts list` (`0x801CE840`), Triangle
+    /// at `(12, 170)` (`0x801D35FC..0x801D3628`).
+    HyperArtsList,
+    /// List open on a page another page follows: `Button: View Next page`
+    /// (`0x801CE860`), Triangle at `(162, 154)` (`0x801D3704..0x801D372C`),
+    /// at the window's bottom-right.
+    NextPage,
+}
+
+/// Stage seat of the Triangle sprite under the closed-list caption.
+pub const CAPTION_CLOSED_SEAT: (i32, i32) = (12, 170);
+/// Stage seat of the Triangle sprite under the next-page caption.
+pub const CAPTION_OPEN_SEAT: (i32, i32) = (162, 154);
+/// Caption text pen relative to its Triangle sprite: both call sites pass
+/// the text kernel `sprite_x + 16` and `sprite_y + 2` (`0x1C` / `0xAC`,
+/// `0xB2` / `0x9C`).
+pub const CAPTION_TEXT_OFFSET: (i32, i32) = (16, 2);
+/// The `0xCE` escape operand whose sprite is the Triangle button: SCUS
+/// escape table `0x80074050` entry `3` names sprite record `0x3A`, the
+/// record `FUN_801D3444` passes `FUN_8002C488` directly.
+pub const CAPTION_TRIANGLE_ESCAPE: u8 = 3;
+
+impl ArtsListCaption {
+    /// Stage seat of the Triangle sprite.
+    pub fn glyph_seat(self) -> (i32, i32) {
+        match self {
+            Self::HyperArtsList => CAPTION_CLOSED_SEAT,
+            Self::NextPage => CAPTION_OPEN_SEAT,
+        }
+    }
+
+    /// Stage pen of the caption text.
+    pub fn text_pen(self) -> (i32, i32) {
+        let (x, y) = self.glyph_seat();
+        (x + CAPTION_TEXT_OFFSET.0, y + CAPTION_TEXT_OFFSET.1)
+    }
+}
+
+/// The caption `FUN_801D3444` draws this frame, if any.
+///
+/// Both arms test the flow byte for the entry state `0x50`
+/// ([`ArtsInputScreen::Entering`]). Closed, the caption needs a non-zero
+/// learned-arts count (`record[+0x185]`, the latch at `0x801F4E08` set at
+/// `0x801D35E8`) - here `list_pages > 0`. Open, it reads the list's row
+/// offset `0x8007B458` and the count: row 0 with six or more arts, or row 5
+/// with eleven or more, puts up `Next page` (`0x801D3688` / `0x801D36E0`);
+/// the last page and a third page draw nothing. In page terms that is
+/// "another page follows, and this is page 0 or 1".
+pub fn arts_list_caption(frame: &ArtsInputFrame<'_>) -> Option<ArtsListCaption> {
+    if frame.phase != ArtsInputScreen::Entering || frame.list_pages == 0 {
+        return None;
+    }
+    match frame.list_page {
+        None => Some(ArtsListCaption::HyperArtsList),
+        Some(p) if p < 2 && p + 1 < frame.list_pages => Some(ArtsListCaption::NextPage),
+        Some(_) => None,
+    }
+}
+
+/// The caption's Triangle sprite and text, in surface pixels. `text` is the
+/// line the disc carries for `caption`; `ink` the battle font's label ink.
+/// Without the escape sprites attached to `font` the line draws alone.
+pub fn arts_list_caption_text_draws(
+    font: &legaia_font::Font,
+    caption: ArtsListCaption,
+    text: &str,
+    ink: [f32; 4],
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<TextDraw> {
+    let scale = stage_scale.max(1) as i32;
+    let at = |x: i32, y: i32| (stage_origin.0 + x * scale, stage_origin.1 + y * scale);
+    let mut out = Vec::new();
+    if let Some(cell) = font.escape_cell(CAPTION_TRIANGLE_ESCAPE) {
+        let (gx, gy) = caption.glyph_seat();
+        let (x, y) = at(gx, gy);
+        out.push(TextDraw {
+            dst: (x, y, cell.w * scale as u32, cell.h * scale as u32),
+            src: (cell.atlas_x, cell.atlas_y, cell.w, cell.h),
+            // `FUN_8002C488` emits the sprite at the neutral `0x808080`.
+            color: [1.0, 1.0, 1.0, 1.0],
+        });
+    }
+    let (tx, ty) = caption.text_pen();
+    for mut d in crate::text_draws_for(&font.layout_ascii(text), (0, 0), ink) {
+        let (x, y) = at(tx + d.dst.0, ty + d.dst.1);
+        d.dst = (x, y, d.dst.2 * scale as u32, d.dst.3 * scale as u32);
+        out.push(d);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -861,6 +1025,7 @@ mod tests {
             pool_max: 100,
             plate_value: 68,
             list_page: None,
+            list_pages: 0,
             phase: ArtsInputScreen::Entering,
             glides: &[],
             chip_slide: None,
@@ -1158,8 +1323,9 @@ mod tests {
         let entering = arts_input_chrome_draws(&ArtsInputAtlasRects::BAKED, &f, (0, 0), 1).len();
         f.phase = ArtsInputScreen::Review;
         let review = arts_input_chrome_draws(&ArtsInputAtlasRects::BAKED, &f, (0, 0), 1).len();
-        // Four chips x 6 pieces + the D-pad = 25 draws the review drops.
-        assert_eq!(entering - review, 25);
+        // Four chips x (5 pieces + the 23 label columns of a 24-wide
+        // record) + the D-pad = 113 draws the review drops.
+        assert_eq!(entering - review, 4 * (5 + 23) + 1);
     }
 
     #[test]
@@ -1173,7 +1339,134 @@ mod tests {
             1,
         )
         .len();
-        assert_eq!(two - empty, 6, "cap + label + cap per entered command");
+        // Cap + the label's 23 column runs (a 24-wide pennant) + cap.
+        assert_eq!(two - empty, 2 * (2 + 23), "cap + label + cap per command");
+    }
+
+    /// `FUN_801D3444`'s caption arms: closed with any learned art, open on
+    /// a page that another follows (pages 0 and 1 only), entry phase only.
+    #[test]
+    fn the_triangle_caption_follows_the_list_drivers_arms() {
+        let mut f = frame(&[], &[]);
+        assert_eq!(arts_list_caption(&f), None, "no learned art, no caption");
+        f.list_pages = 1;
+        assert_eq!(arts_list_caption(&f), Some(ArtsListCaption::HyperArtsList));
+        f.list_page = Some(0);
+        assert_eq!(arts_list_caption(&f), None, "one page: nothing follows");
+        f.list_pages = 3;
+        assert_eq!(arts_list_caption(&f), Some(ArtsListCaption::NextPage));
+        f.list_page = Some(1);
+        assert_eq!(arts_list_caption(&f), Some(ArtsListCaption::NextPage));
+        f.list_page = Some(2);
+        assert_eq!(arts_list_caption(&f), None, "the last page");
+        f.list_page = None;
+        f.phase = ArtsInputScreen::Review;
+        assert_eq!(arts_list_caption(&f), None, "entry state 0x50 only");
+        assert_eq!(ArtsListCaption::HyperArtsList.text_pen(), (28, 172));
+        assert_eq!(ArtsListCaption::NextPage.text_pen(), (178, 156));
+    }
+
+    /// The caption is the Triangle sprite at its seat plus the line at
+    /// `+ (16, 2)`, scaled with the stage.
+    #[test]
+    fn the_caption_draws_the_triangle_then_the_line() {
+        use legaia_font::escape_icons::{EscapeIcon, EscapeIcons};
+        let mut icons = vec![None; 38];
+        icons[CAPTION_TRIANGLE_ESCAPE as usize] = Some(EscapeIcon {
+            index: CAPTION_TRIANGLE_ESCAPE,
+            w: 16,
+            h: 16,
+            y_offset: -2,
+            advance: 16,
+            rgba: vec![255; 16 * 16 * 4],
+        });
+        let font = legaia_font::synthetic_for_tests().with_escape_icons(&EscapeIcons { icons });
+        let ink = [0.5, 0.5, 0.5, 1.0];
+        let d = arts_list_caption_text_draws(
+            &font,
+            ArtsListCaption::HyperArtsList,
+            "Ab",
+            ink,
+            (10, 20),
+            2,
+        );
+        assert_eq!(d.len(), 3, "sprite + two glyphs");
+        assert_eq!((d[0].dst.0, d[0].dst.1), (10 + 12 * 2, 20 + 170 * 2));
+        assert_eq!((d[0].dst.2, d[0].dst.3), (32, 32));
+        assert_eq!(d[0].color, [1.0, 1.0, 1.0, 1.0]);
+        assert_eq!(d[1].dst.0, 10 + 28 * 2);
+        assert_eq!(d[1].color, ink);
+        // No sprites attached: the line alone.
+        let bare = legaia_font::synthetic_for_tests();
+        let d =
+            arts_list_caption_text_draws(&bare, ArtsListCaption::NextPage, "Ab", ink, (0, 0), 1);
+        assert_eq!(d.len(), 2);
+        assert_eq!(d[0].dst.0, 178);
+    }
+
+    /// An earlier pennant draws over the next one: its right cap lands
+    /// after the next pennant's label, and the next pennant's left cap
+    /// before its own label.
+    #[test]
+    fn earlier_pennants_draw_over_later_ones() {
+        let r = ArtsInputAtlasRects::BAKED;
+        let f = frame(&[4, 3], &[30, 30]);
+        let draws = arts_input_chrome_draws(&r, &f, (0, 0), 1);
+        let cap_w = r.pennant_cap_l.2 as i32;
+        let (p0, p1) = (f.pennant_x(0), f.pennant_x(1));
+        let find = |pred: &dyn Fn(&SpriteDraw) -> bool| draws.iter().position(pred).unwrap();
+        let right0 = find(&|d| d.src == r.pennant_cap_r && d.dst.0 == p0 + cap_w + 24);
+        let left1 = find(&|d| d.src == r.pennant_cap_l && d.dst.0 == p1);
+        let label0 = find(&|d| d.dst.0 == p0 + cap_w && d.src.0 == r.label_u);
+        let label1 = find(&|d| d.dst.0 == p1 + cap_w && d.src.0 == r.label_u);
+        assert!(
+            right0 > label1,
+            "pennant 0's right cap over pennant 1's label"
+        );
+        assert!(
+            left1 < label0,
+            "pennant 1's left cap under pennant 0's label"
+        );
+    }
+
+    /// The label quad's `u` runs `u0..u0 + 23` across the record, as the
+    /// captured packets read: on a 24-wide chip pixel 1 repeats texel 0 and
+    /// texel 23 never draws; a 36-wide off-class record spreads the same 23
+    /// texel steps over 36 pixels. Every pixel is covered exactly once.
+    #[test]
+    fn label_columns_step_twenty_three_texels_across_the_record() {
+        let narrow = label_strip_columns(24);
+        assert_eq!(narrow.len(), 23);
+        assert_eq!(narrow[0], (0, 0, 2));
+        assert_eq!(narrow[1], (1, 2, 3));
+        assert_eq!(*narrow.last().unwrap(), (22, 23, 24));
+        for w in [24, 30, 36, 60] {
+            let runs = label_strip_columns(w);
+            assert_eq!(runs.first().map(|r| r.1), Some(0));
+            assert_eq!(runs.last().map(|r| r.2), Some(w));
+            assert!(runs.windows(2).all(|p| p[0].2 == p[1].1));
+            for (t, x0, _) in runs {
+                assert_eq!(t, x0 as u32 * LABEL_U_SPAN / w as u32);
+            }
+        }
+        let wide = label_strip_columns(36);
+        assert_eq!(wide.len(), 23);
+        assert!(label_strip_columns(0).is_empty());
+    }
+
+    /// The D-pad draws its top-left 15x15 texels one to one, not the whole
+    /// 16x16 glyph squeezed into 15 pixels.
+    #[test]
+    fn the_dpad_samples_fifteen_texels_one_to_one() {
+        let r = ArtsInputAtlasRects::BAKED;
+        let draws = arts_input_chrome_draws(&r, &frame(&[], &[]), (0, 0), 1);
+        let dpad = draws
+            .iter()
+            .find(|d| (d.src.0, d.src.1) == (r.dpad.0, r.dpad.1))
+            .expect("D-pad drawn while entering");
+        assert_eq!(dpad.src.2, DPAD_SIZE.0);
+        assert_eq!(dpad.src.3, DPAD_SIZE.1);
+        assert_eq!((dpad.dst.2, dpad.dst.3), DPAD_SIZE);
     }
 
     #[test]

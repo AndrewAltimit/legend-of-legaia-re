@@ -709,6 +709,10 @@ All from the boot-gap widget TIM's page (`(896,256)`; sub-palette = row-511 CLUT
 
 The status plate is parked off-screen during input (its draws move to `y=230`, below the 228-line display window).
 
+Two of these pieces are quads, not sprites, and their UVs are one texel short of the drawn size. Every label strip, on a chip or a pennant, is an FT4 whose `u` runs `104..127` across the record whatever its width (24 at a 30-AP cost, 36 off-class), with `v` stepping one texel per row. Pixel `k` of a `w`-wide record therefore samples texel `floor(k * 23 / w)`: a 24-wide chip repeats texel 0 at pixel 1 and never draws texel 23. The D-pad FT4 runs `u` / `v` `0..16` over 15 pixels, which samples texels `0..14` one to one and drops the glyph's last row and column. Port `arts_input::label_strip_columns` / `DPAD_SIZE`. In the ordering table the pennants walk right to left, so an earlier pennant draws over the next one: its right cap covers the next label's first three pixels.
+
+The Triangle caption is drawn every frame by the arts-list driver `FUN_801D3444` (PROT 0898): the Triangle sprite through `FUN_8002C488` (record `0x3A`, the `0xCE` escape operand 3's sprite) and the line through the text kernel `FUN_80036888` (battle font, CLUT word `0x7F8D`). Both arms require the entry state `0x50`. The closed line (`0x801CE840`) needs a non-zero learned-arts count (`record[+0x185]`, latched into `0x801F4E08` at `0x801D35E8`). The next-page line (`0x801CE860`) draws on list row offset `0` with six or more arts, or offset `5` with eleven or more (`0x801D3688` / `0x801D36E0`), so the last page carries none. Port `arts_input::arts_list_caption`.
+
 **Arts list window** (Triangle): rect `(6,28)`-`(160,188)`. Interior = the system-UI panel tile `(128,0)` 32x32 (sub-pal 2, the `OVERLAY_SYSTEM_UI_PANEL_INTERIOR` region the pause menu tiles, [`field-menu.md`](field-menu.md)), tiled as shaded-textured quads under a vertical gouraud `0x40` top -> `0x88` bottom.
 
 - Borders (sub-pal 2): edge strips `(164,0)` / `(164,28)` 24x4 and `(160,4)` / `(188,4)` 4x24, corners at `(160,0)` / `(188,0)` / `(160,28)` / `(188,28)` 4x4.

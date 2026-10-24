@@ -489,6 +489,7 @@ pub fn arts_input_chrome_draws(
         pool_max: view.pool_max,
         plate_value: view.plate_value,
         list_page: view.list_page,
+        list_pages: view.list_pages,
         phase: arts_input_screen(view.phase),
     };
     let mut out =
@@ -523,6 +524,59 @@ pub fn arts_input_chrome_draws(
         ));
     }
     out
+}
+
+/// The arts entry's Triangle help caption - the Triangle button sprite and
+/// the battle overlay's `View Hyper Arts list` / `View Next page` line
+/// (`FUN_801D3444`, [`legaia_engine_ui::arts_input::arts_list_caption`]) -
+/// while a party member owns the entry. Empty when no caption is up or the
+/// disc's line was not read.
+fn arts_list_caption_draws(
+    world: &World,
+    font: &legaia_font::Font,
+    origin: (i32, i32),
+    scale: u32,
+) -> Vec<TextDraw> {
+    use legaia_engine_ui::arts_input as ai;
+    use legaia_ui_formats::battle_ui_strings::BattleUiLabel;
+    if world.dialogue_owns_input() {
+        return Vec::new();
+    }
+    let Some(view) = world.arts_input_view() else {
+        return Vec::new();
+    };
+    let frame = ai::ArtsInputFrame {
+        glides: &[],
+        chip_slide: None,
+        buffer: view.pennants,
+        spent: view.pennant_spent,
+        chip_costs: view.costs,
+        chip_icons: view.chip_icons,
+        pool: view.pool,
+        pool_max: view.pool_max,
+        plate_value: view.plate_value,
+        list_page: view.list_page,
+        list_pages: view.list_pages,
+        phase: arts_input_screen(view.phase),
+    };
+    let Some(caption) = ai::arts_list_caption(&frame) else {
+        return Vec::new();
+    };
+    let label = match caption {
+        ai::ArtsListCaption::HyperArtsList => BattleUiLabel::ArtsListHelp,
+        ai::ArtsListCaption::NextPage => BattleUiLabel::ArtsListNextPage,
+    };
+    let Some(text) = world.battle.ui_strings.get(label) else {
+        return Vec::new();
+    };
+    ai::arts_list_caption_text_draws(
+        font,
+        caption,
+        text,
+        legaia_engine_ui::battle_command_ui::LABEL_INK,
+        origin,
+        scale,
+    )
 }
 
 /// Left margin of the battle submenus' text stand-ins (surface pixels).
@@ -620,6 +674,7 @@ pub fn battle_text_draws(
         }
         let mut out = battle_hud_frame_draws(inputs, surface_w, surface_h).text;
         out.extend(command_chip_text(w, font, origin, scale));
+        out.extend(arts_list_caption_draws(w, font, origin, scale));
         return out;
     }
     if w.mode != SceneMode::Battle {
@@ -651,10 +706,12 @@ pub fn battle_text_draws(
         return out;
     }
     if w.arts_input_view().is_some() {
-        // Retail-model arts entry: the whole screen is baked art, drawn in
-        // the sprite layer by `arts_input_chrome_draws`, so it puts up no
-        // text. The Begin | Reselect pick is the party's commit confirm (the
+        // Retail-model arts entry: the chips, bar and pennants are baked
+        // art, drawn in the sprite layer by `arts_input_chrome_draws`; the
+        // one line of text is the Triangle list's help caption. The
+        // Begin | Reselect pick is the party's commit confirm (the
         // command-chip cluster), not a line of this screen.
+        out.extend(arts_list_caption_draws(w, font, origin, scale));
         return out;
     }
     if let Some(arts) = &w.battle.arts_menu {
