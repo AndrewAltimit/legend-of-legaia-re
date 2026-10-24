@@ -310,6 +310,35 @@ pub fn battle_live_drawn_objects(world: &World, i: usize) -> Option<Vec<bool>> {
     Some(table.drawn_objects(usize::from(parts)))
 }
 
+/// [`battle_live_drawn_objects`] over a mesh of `n_objects` TMD objects,
+/// with a monster's channels bounded too.
+///
+/// `FUN_80048A08` draws as many channels as the playing stream has parts
+/// (the loop bound is `**(node[+0x4C] + 0x88)`, read at `0x80048B2C` and
+/// again at `0x80049020`), each with the object the node's per-channel table
+/// names, and a monster's table stays the registration identity. So a
+/// monster whose TMD carries more objects than the playing stream has parts
+/// draws only the first `parts`: Koru's sixteenth object is a staff that
+/// only his 16-part action `0x15` poses, and every other clip, the 15-part
+/// idle among them, leaves it undrawn (`koru_strip_forced`). Undrawn, the
+/// port stood it unposed at the body's origin, a rod through the hood.
+// REF: FUN_80048A08
+pub fn battle_drawn_objects(world: &World, i: usize, n_objects: usize) -> Option<Vec<bool>> {
+    if let Some(d) = battle_live_drawn_objects(world, i) {
+        return Some(d);
+    }
+    let actor = world.actors.get(i)?;
+    actor.battle_monster_id?;
+    let parts = usize::from(
+        actor
+            .battle_animation
+            .as_ref()?
+            .variant_track()
+            .stream_parts,
+    );
+    (parts != 0 && parts < n_objects).then(|| (0..n_objects).map(|o| o < parts).collect())
+}
+
 /// The channel each TMD object of actor `i`'s live body is drawn in
 /// (indexed by object), off the same live table as
 /// [`battle_live_drawn_objects`]: a variant swapped into an

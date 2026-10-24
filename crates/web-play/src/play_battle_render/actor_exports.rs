@@ -162,9 +162,10 @@ impl LegaiaRuntime {
     /// the playing stream's channels (`legaia_engine_world_views::battle_draws::battle_live_drawn_objects` -
     /// the draw pass `FUN_80048A08` after the mesh-variant swap
     /// `FUN_8004CCD4`). The page collapses their vertices after posing.
-    /// Empty for an actor with no model table (monsters, summons, a
-    /// fallback form) - every object draws. The native window's twin masks
-    /// the TMD in `build_posed_actor_overrides`.
+    /// A monster draws the playing stream's channels over its identity
+    /// table (`battle_drawn_objects`); empty for a summon or a fallback form
+    /// - every object draws. The native window's twin masks the TMD in
+    /// `build_posed_actor_overrides`.
     pub fn play_battle_actor_hidden(&self, i: u32) -> Vec<u32> {
         let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.host()) else {
             return Vec::new();
@@ -175,9 +176,14 @@ impl LegaiaRuntime {
         if a.object_ids.is_empty() {
             return Vec::new();
         }
-        legaia_engine_world_views::battle_draws::battle_live_drawn_objects(&host.world, a.actor_idx)
-            .map(|d| legaia_engine_battle::battle_attach_swap::hidden_objects(&d))
-            .unwrap_or_default()
+        let n_objects = a.object_ids.iter().max().map_or(0, |&m| m as usize + 1);
+        legaia_engine_world_views::battle_draws::battle_drawn_objects(
+            &host.world,
+            a.actor_idx,
+            n_objects,
+        )
+        .map(|d| legaia_engine_battle::battle_attach_swap::hidden_objects(&d))
+        .unwrap_or_default()
     }
 
     /// Battle actor `i`'s object-local positions with the playing clip's

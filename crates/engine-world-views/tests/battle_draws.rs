@@ -416,3 +416,35 @@ fn a_sunk_body_is_clipped_at_the_stage_floor() {
         "battle only"
     );
 }
+
+/// A monster draws the playing stream's channels over its identity table
+/// (`FUN_80048A08`'s loop bound is the stream's part count): a 16-object
+/// mesh on a 15-part clip leaves its last object undrawn (Koru's staff on
+/// his idle), and a clip with as many parts as objects draws them all.
+#[test]
+fn a_monster_draws_only_the_playing_streams_channels() {
+    let mut world = World::default();
+    world.enter_battle(1, 1);
+    let monster = 1;
+    world.actors[monster].battle_monster_id = Some(182);
+    let mut clip = pose_test_clip(0, 2, 0);
+    clip.variant_track.stream_parts = 15;
+    world.actors[monster].battle_animation =
+        legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(&clip);
+    let drawn = legaia_engine_world_views::battle_draws::battle_drawn_objects(&world, monster, 16)
+        .expect("bounded");
+    assert_eq!(drawn.len(), 16);
+    assert!(drawn[..15].iter().all(|&d| d), "the stream's channels draw");
+    assert!(!drawn[15], "the object past them does not");
+    assert!(
+        legaia_engine_world_views::battle_draws::battle_drawn_objects(&world, monster, 15)
+            .is_none(),
+        "every object has a channel"
+    );
+    world.actors[monster].battle_monster_id = None;
+    assert!(
+        legaia_engine_world_views::battle_draws::battle_drawn_objects(&world, monster, 16)
+            .is_none(),
+        "only a monster's table is the bare identity"
+    );
+}

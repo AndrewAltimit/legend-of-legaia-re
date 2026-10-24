@@ -286,9 +286,10 @@ impl PlayWindowApp {
         input: &legaia_render_kernels::shatter::ShatterInput,
     ) -> Option<UploadedVramMesh> {
         let (tmd, raw) = self.scene_tmd_data.get(tmd_idx)?;
-        let masked = legaia_engine_world_views::battle_draws::battle_live_drawn_objects(
+        let masked = legaia_engine_world_views::battle_draws::battle_drawn_objects(
             &self.session.host.world,
             ai,
+            tmd.objects.len(),
         )
         .map(|d| legaia_engine_battle::battle_attach_swap::mask_tmd(tmd, &d));
         let tmd = masked.as_ref().unwrap_or(tmd);
@@ -437,9 +438,10 @@ impl PlayWindowApp {
             // names for the playing stream's channels (`FUN_80048A08` after
             // the mesh-variant swap `FUN_8004CCD4`); the browser page's twin
             // is `play_battle_actor_hidden`.
-            let masked = legaia_engine_world_views::battle_draws::battle_live_drawn_objects(
+            let masked = legaia_engine_world_views::battle_draws::battle_drawn_objects(
                 &self.session.host.world,
                 ai,
+                tmd.objects.len(),
             )
             .map(|d| legaia_engine_battle::battle_attach_swap::mask_tmd(tmd, &d));
             let tmd = masked.as_ref().unwrap_or(tmd);
