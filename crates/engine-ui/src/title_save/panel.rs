@@ -63,6 +63,13 @@ pub(crate) fn nine_slice_panel_into(
                 sw: i32,
                 sh: i32| { push_c(out, src, sx, sy, sw, sh, white) };
 
+    // The save screen's messagebox (`FUN_801E36C4` -> `FUN_8002C69C`) fills
+    // with the same class-0 bands as the pause windows: a panel taller than
+    // one marble patch shows the patch tiled and the grey ramp spread over
+    // the panel's height (the parked info panel, 80 rows, in a retail
+    // framebuffer), not one patch stretched. The 29-row header tab is a
+    // single band, which the baked interior tile already is.
+    let tile_filigree = tile_filigree || ph > rects.panel_interior.3 as i32;
     if tile_filigree {
         // Pause-menu interior: the class-0 fill retail's window drawer runs
         // under every menu frame (`FUN_8002BDC4`) - 32-texel columns and

@@ -77,11 +77,21 @@ pub const RETAIL_SUMMARY_LEVELS_OFFSET: usize = 0x230;
 /// from that member's record (`0x801E1AA8..0x801E1AD4`). Record `+0x104..`
 /// is the live HP / MP block.
 pub const RETAIL_SUMMARY_STAT_ROWS: [(usize, usize); 4] = [
-    (0x23C, 0x104),
-    (0x234, 0x108),
-    (0x24C, 0x106),
-    (0x244, 0x10A),
+    (RETAIL_SUMMARY_HP_MAX_ROW, 0x104),
+    (RETAIL_SUMMARY_MP_MAX_ROW, 0x108),
+    (RETAIL_SUMMARY_HP_CUR_ROW, 0x106),
+    (RETAIL_SUMMARY_MP_CUR_ROW, 0x10A),
 ];
+/// Summary row: per member `k` at `+2k`, maximum HP. The preview halves and
+/// quarters it against [`RETAIL_SUMMARY_HP_CUR_ROW`] for the readout tier
+/// (`lh v1,0x4c(s1)` against `lhu v1,0x3c(s1)` at `0x801E0CF0..0x801E0D50`).
+pub const RETAIL_SUMMARY_HP_MAX_ROW: usize = 0x23C;
+/// Summary row: maximum MP.
+pub const RETAIL_SUMMARY_MP_MAX_ROW: usize = 0x234;
+/// Summary row: current HP, the left-hand number of the preview's HP line.
+pub const RETAIL_SUMMARY_HP_CUR_ROW: usize = 0x24C;
+/// Summary row: current MP.
+pub const RETAIL_SUMMARY_MP_CUR_ROW: usize = 0x244;
 
 /// Record `+0x2A7`, the display name the summary copies `0xC` bytes of into
 /// [`RETAIL_PARTY_NAME_TABLE_OFFSET`] (`addiu a1,s5,0x86f`).
@@ -132,6 +142,108 @@ pub fn write_retail_save_summary(sc_block: &mut [u8]) -> Result<()> {
     }
     restamp_sc_block_checksum(sc_block);
     Ok(())
+}
+
+/// Summary: the location string the preview prints, the block's first
+/// `0x24` bytes of the live window (the scene banner name, NUL-padded).
+pub const RETAIL_SUMMARY_LOCATION_OFFSET: usize = RETAIL_GAME_DATA_OFFSET;
+/// Bytes of [`RETAIL_SUMMARY_LOCATION_OFFSET`] the preview copies before it
+/// measures the string (`FUN_8001A8B0(sp+0x18, buf, 0x24)` at `0x801E0A24`).
+pub const RETAIL_SUMMARY_LOCATION_LEN: usize = 0x24;
+/// Members the summary has room for: each per-member row is four entries
+/// wide before the next row starts.
+pub const RETAIL_SUMMARY_MEMBERS_MAX: usize = 4;
+
+/// One party member as the save summary carries it.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct RetailSummaryMember {
+    /// Roster id (`0` Vahn, `1` Noa, `2` Gala): the save-icon tile the
+    /// preview draws as this member's face.
+    pub id: u8,
+    /// The record's `+0x130`, the displayed level.
+    pub level: u8,
+    /// Current / maximum HP, the record's `+0x106` / `+0x104` as stored.
+    pub hp: (i16, i16),
+    /// Current / maximum MP, the record's `+0x10A` / `+0x108` as stored.
+    pub mp: (i16, i16),
+    /// The display name, up to its NUL inside the `0xC`-byte field.
+    pub name: Vec<u8>,
+}
+
+/// The save summary as the load screen's preview reads it.
+///
+/// `FUN_801E08D8` draws a block's info panel from the per-slot copy of the
+/// block's `0x200..0x300` (`0x801EF1B8 + slot * 0x100`, byte-identical to the
+/// card on every library save), never from the character records: what the
+/// panel shows is what [`write_retail_save_summary`] stored at save time.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct RetailSaveSummary {
+    /// The location bytes up to their NUL (at most
+    /// [`RETAIL_SUMMARY_LOCATION_LEN`]).
+    pub location: Vec<u8>,
+    /// Retail's own test on the location string (`0x801E0A2C..0x801E0A78`):
+    /// shorter than 33 bytes and every byte in `0x20..0xB0`. A block that
+    /// fails it prints its badge and nothing else - no location, no time, no
+    /// party rows.
+    pub location_valid: bool,
+    /// The play clock in 60 Hz frames ([`RETAIL_SUMMARY_CLOCK_OFFSET`]).
+    pub clock_frames: u32,
+    /// The stored party count ([`RETAIL_SUMMARY_COUNT_OFFSET`]).
+    pub count: u8,
+    /// The constant-`1` byte the composer writes beside the count. A block
+    /// composed without a summary holds `0` here.
+    pub flag: u8,
+    /// The members, `min(count, RETAIL_SUMMARY_MEMBERS_MAX)` of them.
+    pub members: Vec<RetailSummaryMember>,
+}
+
+/// Read the save summary off an SC block. `None` for a short block.
+pub fn read_retail_save_summary(sc_block: &[u8]) -> Option<RetailSaveSummary> {
+    if sc_block.len() < RETAIL_PARTY_NAME_TABLE_OFFSET + RETAIL_SUMMARY_MEMBERS_MAX * 0xC {
+        return None;
+    }
+    let loc_field = &sc_block[RETAIL_SUMMARY_LOCATION_OFFSET
+        ..RETAIL_SUMMARY_LOCATION_OFFSET + RETAIL_SUMMARY_LOCATION_LEN];
+    let len = loc_field
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(RETAIL_SUMMARY_LOCATION_LEN);
+    let location = loc_field[..len].to_vec();
+    let location_valid = len < 0x21 && location.iter().all(|&b| b.wrapping_sub(0x20) < 0x90);
+    let u16_at = |o: usize| i16::from_le_bytes([sc_block[o], sc_block[o + 1]]);
+    let count = sc_block[RETAIL_SUMMARY_COUNT_OFFSET];
+    let members = (0..usize::from(count).min(RETAIL_SUMMARY_MEMBERS_MAX))
+        .map(|k| {
+            let name_at = RETAIL_PARTY_NAME_TABLE_OFFSET + k * RETAIL_PARTY_NAME_STRIDE;
+            let field = &sc_block[name_at..name_at + RETAIL_PARTY_NAME_STRIDE];
+            let n = field.iter().position(|&b| b == 0).unwrap_or(field.len());
+            RetailSummaryMember {
+                id: sc_block[RETAIL_SUMMARY_IDS_OFFSET + k],
+                level: sc_block[RETAIL_SUMMARY_LEVELS_OFFSET + k],
+                hp: (
+                    u16_at(RETAIL_SUMMARY_HP_CUR_ROW + 2 * k),
+                    u16_at(RETAIL_SUMMARY_HP_MAX_ROW + 2 * k),
+                ),
+                mp: (
+                    u16_at(RETAIL_SUMMARY_MP_CUR_ROW + 2 * k),
+                    u16_at(RETAIL_SUMMARY_MP_MAX_ROW + 2 * k),
+                ),
+                name: field[..n].to_vec(),
+            }
+        })
+        .collect();
+    Some(RetailSaveSummary {
+        location,
+        location_valid,
+        clock_frames: u32::from_le_bytes(
+            sc_block[RETAIL_SUMMARY_CLOCK_OFFSET..RETAIL_SUMMARY_CLOCK_OFFSET + 4]
+                .try_into()
+                .unwrap(),
+        ),
+        count,
+        flag: sc_block[RETAIL_SUMMARY_FLAG_OFFSET],
+        members,
+    })
 }
 
 /// The live-state window ([`RETAIL_LIVE_WINDOW_OFFSET`], [`RETAIL_LIVE_WINDOW_LEN`]
@@ -236,6 +348,33 @@ mod tests {
             assert_eq!(b[*row + 2], i as u8, "row {row:#x} member 1");
         }
         assert!(crate::card::sc_block_checksum_valid(&b));
+        // And the preview's reader gets the same rows back, current before
+        // maximum.
+        let sum = read_retail_save_summary(&b).unwrap();
+        assert_eq!((sum.count, sum.flag, sum.clock_frames), (2, 1, 1234));
+        assert_eq!(sum.members.len(), 2);
+        assert_eq!(sum.members[0].id, 2);
+        assert_eq!(sum.members[0].name, b"Gala");
+        assert_eq!(sum.members[0].level, 12);
+        // Record +0x104 = 20 is HP max, +0x106 = 22 HP cur, +0x108 = 21 MP
+        // max, +0x10A = 23 MP cur.
+        assert_eq!(sum.members[0].hp, (22, 20));
+        assert_eq!(sum.members[0].mp, (23, 21));
+    }
+
+    #[test]
+    fn the_location_test_is_retails() {
+        let mut b = vec![0u8; BLOCK_SIZE];
+        b[0x200..0x20B].copy_from_slice(b"Mt. Rikuroa");
+        let s = read_retail_save_summary(&b).unwrap();
+        assert_eq!(s.location, b"Mt. Rikuroa");
+        assert!(s.location_valid);
+        b[0x203] = 0x1F;
+        assert!(!read_retail_save_summary(&b).unwrap().location_valid);
+        b[0x203] = 0xAF;
+        assert!(read_retail_save_summary(&b).unwrap().location_valid);
+        b[0x200..0x224].fill(b'a');
+        assert!(!read_retail_save_summary(&b).unwrap().location_valid);
     }
 
     #[test]

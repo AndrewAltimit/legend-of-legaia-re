@@ -18,6 +18,7 @@ use legaia_engine_ui::SLOT_INFO_PANEL_SIZE;
 use legaia_engine_ui::SaveMenuAtlasRects;
 use legaia_engine_ui::SaveSelectRow;
 use legaia_engine_ui::SlotGridCell;
+use legaia_engine_ui::SlotInfoMember;
 use legaia_engine_ui::SlotInfoView;
 use legaia_engine_ui::dialog_advance_hand_sprite;
 use legaia_engine_ui::dialog_option_hand_sprite;
@@ -30,6 +31,7 @@ use legaia_engine_ui::save_select_cursor_draw_for;
 use legaia_engine_ui::save_select_draws_for;
 use legaia_engine_ui::scale_stage_text_draws;
 use legaia_engine_ui::slot_info_caption_draws_for;
+use legaia_engine_ui::slot_info_caption_sprites_for;
 use legaia_engine_ui::slot_info_panel_draws_for;
 use legaia_engine_ui::slot_info_panel_text_draws_for;
 use legaia_engine_ui::slot_preview_grid_draws_for;
@@ -229,11 +231,11 @@ pub(super) fn pinned_save_menu_rects() -> SaveMenuAtlasRects {
         tab_cap_r: (172, 232, 8, 20),
         atr_icons: [(184, 232, 28, 12), (212, 232, 28, 12), (184, 244, 28, 12)],
         load_empty_frame: Some((200, 64, 32, 32)),
-        load_portrait_by_char: [
-            Some((200, 96, 16, 16)),
-            Some((216, 96, 16, 16)),
-            Some((232, 96, 16, 16)),
-        ],
+        load_used_frame: Some((0, 80, 32, 32)),
+        save_icons: std::array::from_fn(|t| match t {
+            0..=2 => Some((200 + 16 * t as u32, 96, 16, 16)),
+            _ => None,
+        }),
         // The battle screen's own cells, at their baked atlas seats
         // (`save_menu_atlas::ATLAS_RECT_BATTLE_*` / `_HUD_DIGITS`).
         battle: Some(BattleChromeRects {
@@ -588,34 +590,58 @@ fn now_checking_text_emits_two_lines_at_distinct_y() {
 }
 
 #[test]
-fn slot_preview_grid_emits_one_frame_per_cell_plus_portraits_plus_cursor() {
+fn slot_preview_grid_emits_one_frame_per_cell_plus_faces_plus_cursor() {
     let rects = pinned_save_menu_rects();
-    // 4 of 15 slots present, slot 0 = Vahn portrait.
+    // Cells 0..2 hold saves (faces = tiles 0..2, the cell's own number);
+    // cell 8 holds a save whose tile the atlas lacks; cell 12 is foreign.
     let mut cells = [SlotGridCell::default(); 15];
-    cells[0] = SlotGridCell {
-        present: true,
-        portrait_char_id: Some(0),
-    };
-    cells[6] = SlotGridCell {
-        present: true,
-        portrait_char_id: Some(1),
-    };
-    cells[7] = SlotGridCell {
-        present: true,
-        portrait_char_id: Some(2),
-    };
+    for c in 0..3u8 {
+        cells[c as usize] = SlotGridCell {
+            present: true,
+            icon_tile: Some(c),
+            foreign: false,
+        };
+    }
     cells[8] = SlotGridCell {
         present: true,
-        portrait_char_id: None,
+        icon_tile: Some(8),
+        foreign: false,
+    };
+    cells[12] = SlotGridCell {
+        present: false,
+        icon_tile: None,
+        foreign: true,
     };
     let draws = slot_preview_grid_draws_for(&rects, &cells, 0, (0, 0), 1);
-    // 15 empty-frame sprites + 3 portraits (slot 8 has present=true
-    // but portrait_char_id=None so no portrait sprite) + 1 cursor.
     assert_eq!(
         draws.len(),
         15 + 3 + 1,
-        "expected 15 frames + 3 portraits + 1 cursor; got {}",
+        "expected 15 frames + 3 faces + 1 cursor; got {}",
         draws.len()
+    );
+    // Cell `n`'s face is save-icon tile `n`.
+    let face_srcs: Vec<_> = draws
+        .iter()
+        .filter(|d| d.dst.2 == 16 && d.src != rects.cursor)
+        .map(|d| d.src)
+        .collect();
+    assert_eq!(
+        face_srcs,
+        vec![
+            rects.save_icons[0].unwrap(),
+            rects.save_icons[1].unwrap(),
+            rects.save_icons[2].unwrap()
+        ]
+    );
+    // The foreign cell wears the "USED" frame, every other the empty one.
+    let frames: Vec<_> = draws.iter().filter(|d| d.dst.2 == 32).collect();
+    assert_eq!(frames.len(), 15);
+    assert_eq!(
+        frames
+            .iter()
+            .filter(|d| Some(d.src) == rects.load_used_frame)
+            .count(),
+        1
     );
     // Cursor (the last sprite) sits to the left of slot 0's cell.
     let cursor = draws.last().unwrap();
@@ -659,37 +685,36 @@ fn slot_preview_grid_cursor_follows_selected_slot() {
     );
 }
 
+const VAHN: [SlotInfoMember<'static>; 1] = [SlotInfoMember {
+    id: 0,
+    name: "Vahn",
+    level: 2,
+    hp: (203, 221),
+    mp: (27, 27),
+}];
+
+fn one_member_info() -> SlotInfoView<'static> {
+    SlotInfoView {
+        slot_no: 1,
+        location: "Drake Kingdom",
+        location_valid: true,
+        old_filename: false,
+        play_time: (0, 43, 9),
+        members: &VAHN,
+    }
+}
+
 #[test]
-fn slot_info_panel_skips_chrome_portrait_when_no_save() {
+fn slot_info_panel_draws_the_retail_sprite_set() {
     let rects = pinned_save_menu_rects();
-    let chrome_with = slot_info_panel_draws_for(
-        &rects,
-        Some(&SlotInfoView {
-            slot_no: 1,
-            location: "Drake Kingdom",
-            play_time: "00:43:09",
-            leader_name: "Vahn",
-            leader_level: 2,
-            leader_hp: (203, 221),
-            leader_mp: (27, 27),
-            leader_char_id: 0,
-        }),
-        0,
-        (0, 0),
-        1,
-    );
+    let info = one_member_info();
+    let chrome_with = slot_info_panel_draws_for(&rects, Some(&info), 0, (0, 0), 1);
     let chrome_none = slot_info_panel_draws_for(&rects, None, 0, (0, 0), 1);
-    // With Some, expect the chrome PLUS the leader portrait, the
-    // three retail LV / HP / MP label sprites and the `No.` + numeral
-    // block badge.
-    assert!(
-        chrome_with.len() > chrome_none.len(),
-        "info-panel with save should emit extra content sprites"
-    );
+    // Badge (2) + face + LV / HP / MP labels + numerals (level 1, HP 3 + 3,
+    // MP 2 + 2, time 6) + two `/` cells.
     assert_eq!(
         chrome_with.len() - chrome_none.len(),
-        6,
-        "delta should be the leader portrait + LV/HP/MP labels + block badge"
+        2 + 1 + 3 + 1 + 6 + 4 + 6 + 2
     );
     // The label sprites sit at the pinned column-0 offsets off the
     // parked panel y (138 + 33/46/59).
@@ -704,6 +729,116 @@ fn slot_info_panel_skips_chrome_portrait_when_no_save() {
             .expect("label sprite emitted");
         assert_eq!((d.dst.0, d.dst.1), (16, 138 + dy));
     }
+    // The numerals fill their fields from the right: HP 203 in the 4-cell
+    // field at x 32 starts one cell in; the 2-cell level field at 48 holds
+    // "2" in its right cell.
+    let strip = rects.battle.unwrap().digits.unwrap();
+    let digit_at = |y: i32| -> Vec<i32> {
+        let mut xs: Vec<i32> = chrome_with
+            .iter()
+            .filter(|d| d.src.1 == strip.1 && d.dst.1 == y)
+            .map(|d| d.dst.0)
+            .collect();
+        xs.sort();
+        xs
+    };
+    assert_eq!(digit_at(138 + 33), vec![56]);
+    assert_eq!(digit_at(138 + 46), vec![40, 48, 56, 85, 93, 101]);
+    // MP 27 in the 3-cell fields at 40 and 85.
+    assert_eq!(digit_at(138 + 59), vec![48, 56, 93, 101]);
+    // The time is three zero-padded pairs at 236 / 260 / 284.
+    assert_eq!(digit_at(138 + 4), vec![236, 244, 260, 268, 284, 292]);
+}
+
+#[test]
+fn slot_info_panel_columns_and_tiers_follow_the_summary() {
+    let rects = pinned_save_menu_rects();
+    let members = [
+        SlotInfoMember {
+            id: 0,
+            name: "Vahn",
+            level: 29,
+            hp: (836, 1673),
+            mp: (144, 288),
+        },
+        SlotInfoMember {
+            id: 1,
+            name: "Noa",
+            level: 29,
+            hp: (390, 1560),
+            mp: (62, 248),
+        },
+        SlotInfoMember {
+            id: 2,
+            name: "Gala",
+            level: 29,
+            hp: (837, 1673),
+            mp: (0, 339),
+        },
+    ];
+    let info = SlotInfoView {
+        members: &members,
+        ..one_member_info()
+    };
+    let draws = slot_info_panel_draws_for(&rects, Some(&info), 0, (0, 0), 1);
+    // One face per member, at the 96-px column pitch, tile = party id.
+    for (i, m) in members.iter().enumerate() {
+        let face = rects.save_icons[m.id as usize].unwrap();
+        let d = draws.iter().find(|d| d.src == face).expect("member face");
+        assert_eq!((d.dst.0, d.dst.1), (16 + 96 * i as i32, 138 + 16));
+    }
+    // Tier tints: HP row (y 184) - Vahn gold, Noa orange, Gala normal.
+    let strip = rects.battle.unwrap().digits.unwrap();
+    let tint_at = |x0: i32, y: i32| {
+        draws
+            .iter()
+            .find(|d| d.src.1 == strip.1 && d.dst.1 == y && d.dst.0 >= x0 && d.dst.0 < x0 + 96)
+            .map(|d| d.color)
+            .unwrap()
+    };
+    let normal = legaia_engine_ui::numeral_cell_tint(legaia_engine_ui::READOUT_NORMAL);
+    let gold = legaia_engine_ui::numeral_cell_tint(legaia_engine_ui::gauge_fill_color(6));
+    let orange = legaia_engine_ui::numeral_cell_tint(legaia_engine_ui::gauge_fill_color(9));
+    assert_eq!(tint_at(16, 184), gold);
+    assert_eq!(tint_at(112, 184), orange);
+    assert_eq!(tint_at(208, 184), normal);
+    // MP row (y 197): gold, orange, orange.
+    assert_eq!(tint_at(16, 197), gold);
+    assert_eq!(tint_at(112, 197), orange);
+    assert_eq!(tint_at(208, 197), orange);
+}
+
+#[test]
+fn slot_info_panel_with_an_invalid_location_draws_only_the_badge() {
+    let rects = pinned_save_menu_rects();
+    let font = legaia_font::synthetic_for_tests();
+    let info = SlotInfoView {
+        location_valid: false,
+        ..one_member_info()
+    };
+    let with = slot_info_panel_draws_for(&rects, Some(&info), 0, (0, 0), 1);
+    let none = slot_info_panel_draws_for(&rects, None, 0, (0, 0), 1);
+    assert_eq!(with.len() - none.len(), 2, "the No. + numeral badge alone");
+    assert!(
+        slot_info_panel_text_draws_for(&font, Some(&info), 0, (0, 0), 1, Some(&rects)).is_empty()
+    );
+}
+
+#[test]
+fn able_to_save_carries_the_blocks_face_and_badge() {
+    let rects = pinned_save_menu_rects();
+    let draws = slot_info_caption_sprites_for(&rects, 1, 0, (0, 0), 1);
+    let face = draws
+        .iter()
+        .find(|d| Some(d.src) == rects.save_icons[1])
+        .expect("face");
+    assert_eq!((face.dst.0, face.dst.1), (0x58, 138 + 0x1C));
+    let frame = draws
+        .iter()
+        .find(|d| Some(d.src) == rects.load_empty_frame)
+        .expect("frame");
+    assert_eq!((frame.dst.0, frame.dst.1), (0x50, 138 + 0x14));
+    assert_eq!(draws.len(), 4, "face + frame + badge pair");
 }
 
 #[test]
@@ -754,25 +889,14 @@ fn slot_info_caption_rides_the_panel_slide() {
 }
 
 #[test]
-fn slot_info_panel_text_emits_all_six_lines() {
+fn slot_info_panel_text_emits_its_rows() {
     let font = legaia_font::synthetic_for_tests();
-    let info = SlotInfoView {
-        slot_no: 1,
-        location: "Drake Kingdom",
-        play_time: "00:43:09",
-        leader_name: "Vahn",
-        leader_level: 2,
-        leader_hp: (203, 221),
-        leader_mp: (27, 27),
-        leader_char_id: 0,
-    };
-    let draws = slot_info_panel_text_draws_for(&font, Some(&info), 0, (0, 0), 1, false);
+    let info = one_member_info();
+    let draws = slot_info_panel_text_draws_for(&font, Some(&info), 0, (0, 0), 1, None);
     // Empty-save case must emit zero glyphs.
-    assert!(slot_info_panel_text_draws_for(&font, None, 0, (0, 0), 1, false).is_empty());
-    // The panel emits 10 distinct text rows (No, location, Time
-    // label, time value, name, LV label, LV value, HP label,
-    // HP value, MP label, MP value). Their y-coords cluster into
-    // a few distinct rows; expect at least 4 distinct y values.
+    assert!(slot_info_panel_text_draws_for(&font, None, 0, (0, 0), 1, None).is_empty());
+    // Without the atlas every element is a glyph: title row, name, and the
+    // LV / HP / MP rows - at least four distinct y values.
     let ys: std::collections::HashSet<i32> = draws.iter().map(|d| d.dst.1).collect();
     assert!(
         ys.len() >= 4,
@@ -784,16 +908,7 @@ fn slot_info_panel_text_emits_all_six_lines() {
 fn slot_info_panel_slide_offset_shifts_everything_below_parked() {
     let rects = pinned_save_menu_rects();
     let font = legaia_font::synthetic_for_tests();
-    let info = SlotInfoView {
-        slot_no: 1,
-        location: "Drake Kingdom",
-        play_time: "00:43:09",
-        leader_name: "Vahn",
-        leader_level: 2,
-        leader_hp: (203, 221),
-        leader_mp: (27, 27),
-        leader_char_id: 0,
-    };
+    let info = one_member_info();
     let chrome_landed = slot_info_panel_draws_for(&rects, Some(&info), 0, (0, 0), 1);
     let chrome_slid = slot_info_panel_draws_for(&rects, Some(&info), 50, (0, 0), 1);
     assert_eq!(chrome_landed.len(), chrome_slid.len());
@@ -805,8 +920,8 @@ fn slot_info_panel_slide_offset_shifts_everything_below_parked() {
             "y must shift by exactly slide offset"
         );
     }
-    let text_landed = slot_info_panel_text_draws_for(&font, Some(&info), 0, (0, 0), 1, false);
-    let text_slid = slot_info_panel_text_draws_for(&font, Some(&info), 50, (0, 0), 1, false);
+    let text_landed = slot_info_panel_text_draws_for(&font, Some(&info), 0, (0, 0), 1, None);
+    let text_slid = slot_info_panel_text_draws_for(&font, Some(&info), 50, (0, 0), 1, None);
     assert_eq!(text_landed.len(), text_slid.len());
     for (a, b) in text_landed.iter().zip(text_slid.iter()) {
         assert_eq!(b.dst.1 - a.dst.1, 50);

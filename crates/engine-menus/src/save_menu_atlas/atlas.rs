@@ -278,6 +278,27 @@ impl SaveMenuAtlas {
     pub fn band_load_empty_frame(&self) -> (u32, u32, u32, u32) {
         ATLAS_RECT_EMPTY_FRAME
     }
+    /// The grid's "USED" cell frame ([`ATLAS_RECT_USED_FRAME`]).
+    pub fn band_load_used_frame(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_USED_FRAME
+    }
+    /// Save-icon tile `tile` (`0..15`): the face the grid draws in cell
+    /// `tile` and the info panel draws for party id `tile`. Tiles `0..3` are
+    /// the portrait TIMs ([`Self::band_load_portrait`]); the rest are baked
+    /// off the icon strip. `None` past tile 14 (tile 15 is blank padding).
+    pub fn band_save_icon(&self, tile: u8) -> Option<(u32, u32, u32, u32)> {
+        let t = usize::from(tile);
+        if t < ATLAS_SAVE_ICON_FIRST_BAKED {
+            return self.band_load_portrait(tile);
+        }
+        ATLAS_RECT_SAVE_ICON_CELLS
+            .get(t - ATLAS_SAVE_ICON_FIRST_BAKED)
+            .map(|&(x, y)| (x, y, ATLAS_RECT_PORTRAIT_W, ATLAS_RECT_PORTRAIT_H))
+    }
+    /// Every save-icon tile, as [`Self::band_save_icon`] answers it.
+    pub fn band_save_icons(&self) -> [Option<(u32, u32, u32, u32)>; 16] {
+        std::array::from_fn(|t| self.band_save_icon(t as u8))
+    }
     /// Character portrait sub-rect for the load-screen slot grid
     /// (16x16). `char_id`: 0=Vahn, 1=Noa, 2=Gala. Returns `None` for
     /// characters whose portrait isn't in the on-disc atlas (party

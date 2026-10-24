@@ -1132,7 +1132,8 @@ mod pause_list_tests {
             tab_cap_r: z,
             atr_icons: [z; 3],
             load_empty_frame: None,
-            load_portrait_by_char: [None; 3],
+            load_used_frame: None,
+            save_icons: [None; 16],
             battle: None,
         }
     }

@@ -157,6 +157,14 @@ pub const OVERLAY_SAVE_UI_REC_NO_LABEL: (u32, u32, u32, u32) = (0, 144, 22, 16);
 /// 88x8 interior (`x 8..96`, `y 4..12`) is transparent, so the fill drawn
 /// under it shows through. Sub-palette 0.
 pub const OVERLAY_SAVE_UI_REC_PROGRESS_TUBE: (u32, u32, u32, u32) = (0, 0, 104, 16);
+/// Record 1: the grid's empty-cell frame (32x32, a 20x20 box 6 px in).
+/// Sub-palette [`OVERLAY_SAVE_UI_REC_FRAME_CLUT`].
+pub const OVERLAY_SAVE_UI_REC_EMPTY_FRAME: (u32, u32, u32, u32) = (0, 96, 32, 32);
+/// Record 5: the same frame lettered "USED", which `FUN_801E0FD0` draws for a
+/// block occupied by something the game cannot read.
+pub const OVERLAY_SAVE_UI_REC_USED_FRAME: (u32, u32, u32, u32) = (80, 96, 32, 32);
+/// Sub-palette of records 1 and 5.
+pub const OVERLAY_SAVE_UI_REC_FRAME_CLUT: usize = 6;
 /// Sub-palettes of records 2 / 3 / 4 (the records' `+0` words).
 pub const OVERLAY_SAVE_UI_REC_DIGIT_CLUT: usize = 8;
 /// Companion to [`OVERLAY_SAVE_UI_REC_DIGIT_CLUT`]: the tube's sub-palette.

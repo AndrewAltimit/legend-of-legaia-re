@@ -62,6 +62,7 @@ impl LegaiaRuntime {
                         &mut texts,
                         origin,
                         scale,
+                        true,
                     );
                     PauseMenuDraws::default()
                 }

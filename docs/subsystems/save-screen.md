@@ -1241,7 +1241,7 @@ Read off the GP0 draw list of the running load screen:
   `+4` px right. Per cell the renderer interpolates a slide base
   `0x15A + slot*64 -> 0x5A` in 12-bit fixed point, adds `col*40 + row*4`, and
   the cell drawer `FUN_801E0FD0` adds a `+8` inset. The focused cell draws at
-  `0x80` modulation, the others at `0x60`; portraits are 16x16 at cell
+  `0x80` modulation, the others at `0x60`; the save-icon faces (tile = cell) are 16x16 at cell
   `+8, +8`; the finger cursor sits at cell quad `+(-10, +4)`. Port:
   `engine-ui::slot_grid_quad_x` / `slot_preview_grid_draws_for`.
 - **Dimmed title art** (`FUN_801E02A4`): two `0x64` sprites split at x = 192
@@ -1469,53 +1469,116 @@ test asserts the cell bound.
 
 #### Mode 1 layout
 
-Title row, all at `y = local_34 + 4` (142 landed) unless noted; the `Time`
-string is at `0x801CF340`:
+Read off the disassembly (`0x801E09CC..0x801E0E5C`) and checked against
+retail framebuffers of the parked panel. The title row sits at
+`y = local_34 + 4` (142 landed) unless noted:
 
-| Element | x | y |
-|---|---|---|
-| `No.` / numeral badge (`FUN_801E3FF0`, numeral `u = slot_index << 4`) | 8 / 30 | `local_34 - 8` |
-| Location name (per-slot buffer `+0`) | 48 | `local_34 + 4` |
-| `Time` label | 208 | `local_34 + 4` |
-| Time digit pairs (8x12 digit glyphs) | 236 / 244, 260 / 268, 284 / 292 | `local_34 + 4` |
-| Colons | 252, 276 | `local_34 + 4` |
+| Element | Call | x | y |
+|---|---|---|---|
+| `No.` / numeral badge | `FUN_801E3FF0` records 3 / 2, numeral `u = slot << 4` | 8 / 30 | `local_34 - 8` |
+| "Old Filename" (`0x801CF330`) | only when the card filename matches `BISCPS-10059PRO-` | 48 | `local_34` |
+| Location (summary `+0x00`) | `FUN_80036888`, after the validity test below | 48 | `local_34 + 4` |
+| `Time ` (`0x801CF340`) | `FUN_80036888` | 208 | `local_34 + 4` |
+| Hours / minutes / seconds | `FUN_80034E4C(v, 2, x, y)`, two zero-padded 8x12 cells each | 236 / 260 / 284 | `local_34 + 4` |
+| Colons (`0x801CF348`) | `FUN_80036888(":")` | 252 / 276 | `local_34 + 4` |
 
-Per-character rows iterate `i = 0..slot_buf[+0x28]`, column base
+The clock word is **60 Hz frames**, not seconds: the three reciprocal
+multiplies split it into `f / 216000`, `f / 3600 - 60h` and
+`f / 60 - 60 * (f / 3600)`. An hour count of 100 or more prints
+`99:59:59` (`slti v0,a2,0x64` at `0x801E0B38`).
+
+**The location test.** The panel copies `0x24` bytes of the location to the
+stack and rejects the string when it is 33 bytes or longer or holds any byte
+outside `0x20..0xB0` (`0x801E0A2C..0x801E0A78`). A rejected block prints its
+badge and nothing else: no location, time, or party rows.
+
+Per-character columns iterate `i = 0..slot_buf[+0x28]`, column base
 `16 + i * 96` (16 / 112 / 208), row base `s3 = local_34 + 20` (158 landed):
 
-| Element | x from column base | y |
-|---|---|---|
-| Portrait icon, 16x16 | `+0` | `s3 - 4` |
-| Name | `+24` | `s3` |
-| `LV` marker / value | `+0` / `+32` | `s3 + 13` |
-| `HP` marker / current / `/` / max | `+0` / `+16` / `+49` / `+61` | `s3 + 26` |
-| `MP` marker / current / `/` / max | `+0` / `+24` / `+49` / `+69` | `s3 + 39` |
+| Element | Call | x from column base | y |
+|---|---|---|---|
+| Face, 16x16 | record 0 with `u = id << 4`, CLUT `0x40 + id` | `+0` | `s3 - 4` |
+| Name | `FUN_80036888(name, 0, 0, x + 0x18, s3)` | `+24` | `s3` |
+| `LV` marker / level | `FUN_8002C488(x, y, 0xA)` / `FUN_80034B78(lv, 2, x + 0x20, y)` | `+0` / `+32` | `s3 + 13` |
+| `HP` marker / current / `/` / max | `0x3F` / `(cur, 4, x + 0x10)` / glyph 6 / `(max, 4, x + 0x3D)` | `+0` / `+16` / `+49` / `+61` | `s3 + 26` |
+| `MP` marker / current / `/` / max | `0x40` / `(cur, 3, x + 0x18)` / glyph 6 / `(max, 3, x + 0x45)` | `+0` / `+24` / `+49` / `+69` | `s3 + 39` |
 
-HP / MP value colour via `_DAT_8007b454`: 7 (green), 6 (yellow,
-`cur <= max/2`), 9 (red, `cur <= max/4`).
+Every number is the HUD's 8x12 numeral cell (`FUN_80034B78`, texel row
+`0xD0`), filled from the right of a fixed field: the level in 2 cells, HP in
+4, MP in 3. The face is the **save-icon sheet's** tile for the member's party
+id ([`save-icon.md`](../formats/save-icon.md)).
 
-**Per-slot data buffer**, slot N at `0x801EF1B8 + N * 0x100`:
+**Readout tiers.** `_DAT_8007B454` selects the numeral CLUT
+(`0x7F86 + tier`, row 510). Per stat pair it is set to `7`, to `6` when
+`cur <= max / 2`, and to `9` when `cur <= max / 4`, the halves and quarters
+rounding toward zero on the signed halfwords (`0x801E0CF0..0x801E0D50` for
+HP, `0x801E0D78..0x801E0DD8` for MP). Both numbers of the pair take the
+tier; the tier is reset to `7` before the two `/` glyphs. On screen `7` is
+the normal grey-white readout, `6` gold and `9` orange. There is no K.O.
+tier: `0 / 339` is orange.
 
-| Offset | Type | Field |
-|---|---|---|
-| `+0x00` | char[24] | Location name, null-padded |
-| `+0x10` | char[14] | Card filename prefix (`BISCPS-10059PRO`), for the validity check |
-| `+0x24` | u32 | Game time in seconds (capped at `99:59:59 = 357599`) |
-| `+0x28` | u8 | Party member count |
-| `+0x2C+i` | u8 | Party id (0 = Vahn, 1 = Noa, 2 = Gala) |
-| `+0x30+i` | u8 | Level (0..99) |
-| `+0x34` / `+0x3C` | s16 | Char 0 MP / HP current |
-| `+0x44` / `+0x4C` | s16 | Char 0 MP / HP max |
-| `+0x54 + i*0x0C` | char[8] | Character name |
+**Per-slot data buffer**, slot N at `0x801EF1B8 + N * 0x100`. It is a
+verbatim copy of the save block's `0x200..0x300` (byte-equal on every block
+of a captured card), so the panel prints the **save summary** the composer
+`FUN_801E1934` wrote at save time, never the character records:
 
-Port: `SaveSelectSession::info_panel_slide_anim_t()` holds at 0 during
+| Offset | SC offset | Type | Field |
+|---|---|---|---|
+| `+0x00` | `0x200` | char[0x24] | Location (the scene banner name), NUL-padded |
+| `+0x24` | `0x224` | u32 | Play clock, 60 Hz frames |
+| `+0x28` | `0x228` | u8 | Party member count |
+| `+0x29` | `0x229` | u8 | Constant `1` |
+| `+0x2A` | `0x22A` | u8 | Save number |
+| `+0x2C+i` | `0x22C` | u8 | Party id (0 = Vahn, 1 = Noa, 2 = Gala) |
+| `+0x30+i` | `0x230` | u8 | Level |
+| `+0x34+2i` | `0x234` | s16 | MP max (record `+0x108`) |
+| `+0x3C+2i` | `0x23C` | s16 | HP max (record `+0x104`) |
+| `+0x44+2i` | `0x244` | s16 | MP current (record `+0x10A`) |
+| `+0x4C+2i` | `0x24C` | s16 | HP current (record `+0x106`) |
+| `+0x54+0xC*i` | `0x254` | char[0xC] | Name |
+
+The filename the "Old Filename" test reads is not in this buffer: it is the
+directory walk's per-slot record at `0x801F2A88 + slot * 0x40`.
+
+**Grid cells.** The cell drawer `FUN_801E0FD0` takes the same class byte as
+the panel. A Legaia save draws record 0 with `u = cell << 4` and CLUT
+`0x40 + cell` (`0x801E10BC`) - the save-icon tile of the cell's own save
+number, so the fifteen cells show fifteen faces - inside record 1, the
+empty-cell frame. An unreadable block draws record 5, the frame lettered
+`USED`; a free block record 1 alone. Records 1 and 5 are 32x32 cells of the
+save-menu sheet at `(0, 96)` / `(80, 96)` through sub-palette 6.
+
+**A cell is a save number, not a card block.** The walk stamps the class of
+the slot a filename's two digits name; the block the BIOS put the file in
+plays no part. A retail capture of a card holding `BASCUS-94254PRO-05` in
+block 14 shows that save in cell 5, its info panel badged `No. 6`.
+
+**"Able to save."** (mode 3 on a Save, `0x801E0EB8..0x801E0F54`) carries the
+block's face (record 0, tile = slot) at `(0x58, local_34 + 0x1C)` inside the
+empty frame at `(0x50, local_34 + 0x14)`, and the block badge. "No data" and
+"Not a Legend of Legaia save." are the caption alone.
+
+**The panel's fill.** `FUN_801E36C4` draws through the box emitter
+`FUN_8002C69C`, whose interior is the class-0 marble tiled in 32-texel bands
+under a grey ramp from `0x40` to `0x88` over the box's height - the pause
+windows' fill. A 29-row box (the header tab) is one band.
+
+**Port.** `SaveSelectSession::info_panel_slide_anim_t()` holds at 0 during
 Browsing / NowChecking / Done and ramps during SlotPreview / Confirm, between
 `save_select::INFO_PANEL_OFFSCREEN_Y = 394` and `INFO_PANEL_PARKED_Y = 138`.
-`engine-ui::slot_info_panel_draws_for` and `slot_info_panel_text_draws_for`
-take a `panel_y_offset`, which both hosts get from
-`SaveScreenFlow::overlay_model` (`SaveOverlayPreview::panel_y_offset`) and
-pass to `save_select_overlay_draws`. The per-element constants
-(`SLOT_INFO_*`) are panel-y-relative.
+`engine-ui::slot_info_panel_draws_for` (the sprite half: chrome, badge, faces,
+labels, numerals, `/`) and `slot_info_panel_text_draws_for` (location,
+`Time`, colons, names) take a `panel_y_offset`, which both hosts get from
+`SaveScreenFlow::overlay_model` and pass to `save_select_overlay_draws`; the
+per-element constants (`SLOT_INFO_*`) are panel-y-relative, and the tier law
+is `slot_info_readout_tier`. The rows come from
+`legaia_save::card::read_retail_save_summary` through
+`engine-menus::save_select::apply_retail_summary` (a block composed with no
+summary gets one derived from its own fields first); the grid and both hosts'
+Load and Save address a card by save number through
+`MountedCard::block_of_save_number` and
+`card_write::write_save_into_cell` (a new save goes to the lowest free
+block). `slot_info_caption_sprites_for` draws the "Able to save." picture.
 
 ## Debug character-parameter editor (`FUN_801D6E18`)
 

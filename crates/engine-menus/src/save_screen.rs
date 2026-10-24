@@ -737,8 +737,11 @@ pub fn card_port_snapshot(port: u8, mounted: Option<&str>) -> SlotSnapshot {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SaveOverlayCell {
     pub present: bool,
-    /// The leader's portrait, on a present block.
-    pub portrait_char_id: Option<u8>,
+    /// The save-icon tile, on a present block: the cell's own save number,
+    /// as `FUN_801E0FD0` stamps record 0 with `u = cell << 4`.
+    pub icon_tile: Option<u8>,
+    /// The block holds something unreadable: the "USED" frame.
+    pub foreign: bool,
 }
 
 /// The preview half of a [`SaveOverlayModel`]: the picked card's grid, the
@@ -754,6 +757,9 @@ pub struct SaveOverlayPreview<'a> {
     pub play_time: String,
     /// What the panel says about a block with nothing loadable.
     pub caption: Option<&'static str>,
+    /// The block whose face and badge the caption carries ("Able to
+    /// save." only).
+    pub caption_icon: Option<u8>,
     /// The info panel's slide delta from its parked y (`0` = landed).
     pub panel_y_offset: i32,
 }
@@ -817,19 +823,25 @@ impl SaveScreenFlow {
                         .get(i)
                         .map(|b| SaveOverlayCell {
                             present: b.present,
-                            portrait_char_id: b.present.then_some(b.leader_char_id),
+                            icon_tile: b.present.then_some(i as u8),
+                            foreign: !b.present
+                                && b.content == crate::save_select::SlotContent::Foreign,
                         })
                         .unwrap_or_default()
                 })
                 .collect();
             let focused = blocks.get(cell as usize);
             let info = focused.filter(|b| b.present);
-            let caption = match (info, focused) {
-                (None, Some(b)) => {
-                    crate::save_select::SlotInfoMode::for_grid_cell(cell, b).caption(session.mode())
-                }
+            let mode = match (info, focused) {
+                (None, Some(b)) => Some(crate::save_select::SlotInfoMode::for_grid_cell(cell, b)),
                 _ => None,
             };
+            let caption = mode.and_then(|m| m.caption(session.mode()));
+            // "Able to save." carries the block's face and badge; the other
+            // captions are the line alone (`0x801E0EB0`).
+            let caption_icon = (mode == Some(crate::save_select::SlotInfoMode::FreeBlock)
+                && session.mode() == SaveSelectMode::Save)
+                .then_some(cell);
             let (_, y) = crate::save_select::interpolate_anim(
                 (0, crate::save_select::INFO_PANEL_OFFSCREEN_Y),
                 (0, crate::save_select::INFO_PANEL_PARKED_Y),
@@ -841,6 +853,7 @@ impl SaveScreenFlow {
                 info,
                 play_time: info.map(|b| b.play_time_string()).unwrap_or_default(),
                 caption,
+                caption_icon,
                 panel_y_offset: y - crate::save_select::INFO_PANEL_PARKED_Y,
             }
         });

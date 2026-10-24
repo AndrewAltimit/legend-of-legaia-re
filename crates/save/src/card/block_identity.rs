@@ -57,6 +57,37 @@ pub const RETAIL_ICON_CLUT_BYTES: usize = 32;
 /// overlay's data segment, and the directory frames of real cards.
 pub const LEGAIA_SAVE_FILENAME_PREFIX: &str = "BASCUS-94254PRO-";
 
+/// The Japanese build's prefix (SCPS-10059). Retail's directory walk
+/// accepts it beside [`LEGAIA_SAVE_FILENAME_PREFIX`] (the literal at
+/// `0x801EF054`), and the preview marks such a block "Old Filename".
+pub const LEGAIA_SAVE_FILENAME_PREFIX_JP: &str = "BISCPS-10059PRO-";
+
+/// The save number a directory-frame filename names, or `None` when the
+/// name is not a Legaia save's.
+///
+/// Retail's walk (`FUN_801E1208`) matches either regional prefix over 16
+/// bytes, then reads the two bytes after it as ASCII digits; the second only
+/// folds in when it is a digit.
+pub fn legaia_save_number(name: &[u8]) -> Option<usize> {
+    let n = LEGAIA_SAVE_FILENAME_PREFIX.len();
+    if name.len() < n + 2 {
+        return None;
+    }
+    let prefix = &name[..n];
+    if prefix != LEGAIA_SAVE_FILENAME_PREFIX.as_bytes()
+        && prefix != LEGAIA_SAVE_FILENAME_PREFIX_JP.as_bytes()
+    {
+        return None;
+    }
+    let hi = name[n].wrapping_sub(b'0');
+    let lo = name[n + 1].wrapping_sub(b'0');
+    Some(if lo < 10 {
+        hi as usize * 10 + lo as usize
+    } else {
+        hi as usize
+    })
+}
+
 /// The directory-frame filename for save slot `slot` (0-based).
 pub fn legaia_save_filename(slot: u32) -> String {
     format!("{LEGAIA_SAVE_FILENAME_PREFIX}{:02}", slot.min(99))

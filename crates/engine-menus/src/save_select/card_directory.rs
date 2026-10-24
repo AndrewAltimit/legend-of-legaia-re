@@ -69,10 +69,9 @@ pub(super) const CARD_PREFIX_LEN: usize = 16;
 /// The index-space mismatch that once read as this walk's blocker is what
 /// it is now wired *for*. Its class array is keyed by the **filename's
 /// save index** ([`card_dir_slot_of`] parses the digits after the
-/// `BASCUS-` prefix) while the browser card rack's 5x3 preview grid is
-/// keyed by **physical block**, and the two do disagree on a real card -
-/// retail files a save by the save-select list position it was standing
-/// on, so `-03` can sit in any block. That makes "which save numbers does
+/// `BASCUS-` prefix), not by **physical block**, and the two do disagree
+/// on a real card - retail files a save by the save-select list position it
+/// was standing on, so `-03` can sit in any block. That makes "which save numbers does
 /// this card already carry" a question the rack has to ask before it
 /// claims a block, and this is the pass that answers it:
 /// `LegaiaRuntime::card_save_index` in `web-play::cards` reads the
@@ -80,10 +79,10 @@ pub(super) const CARD_PREFIX_LEN: usize = 16;
 /// card is already using. Without it the rack derived the number from the
 /// block alone and wrote duplicate filenames onto a retail card.
 ///
-/// The other index-space direction - re-keying the preview grid itself
-/// into this array - is a separate question and is still open. It is not a
-/// prerequisite for the above: a host can key its own grid however it
-/// likes and still owe the card unique filenames.
+/// The preview grid is keyed by this array too: [`card_block_snapshots`]
+/// places each save in the cell its filename names and resolves the block
+/// through `MountedCard::block_of_save_number`, as a retail capture of a
+/// card holding `-05` in block 14 shows it in cell 5.
 ///
 /// PORT: FUN_801E1208
 pub fn classify_card_directory(

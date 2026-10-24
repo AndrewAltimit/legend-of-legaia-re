@@ -55,11 +55,8 @@ pub fn save_menu_rects(a: &SaveMenuAtlas) -> SaveMenuAtlasRects {
         tab_cap_r: a.band_tab_cap_r(),
         atr_icons: a.band_atr_icons(),
         load_empty_frame: Some(a.band_load_empty_frame()),
-        load_portrait_by_char: [
-            a.band_load_portrait(0),
-            a.band_load_portrait(1),
-            a.band_load_portrait(2),
-        ],
+        load_used_frame: Some(a.band_load_used_frame()),
+        save_icons: a.band_save_icons(),
         battle: Some(legaia_engine_ui::BattleChromeRects {
             panel_bg: a.band_battle_panel_bg(),
             plate_cap_l: a.band_battle_plate_cap_l(),

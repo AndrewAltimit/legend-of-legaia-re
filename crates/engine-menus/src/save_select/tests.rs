@@ -20,6 +20,7 @@ fn slots(present_set: &[bool]) -> Vec<SlotSnapshot> {
                     leader_name: "Vahn".into(),
                     leader_hp: (100, 100),
                     leader_mp: (20, 20),
+                    ..SlotSnapshot::empty(i as u8)
                 }
             } else {
                 SlotSnapshot::empty(i as u8)

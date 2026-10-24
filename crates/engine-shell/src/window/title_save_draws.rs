@@ -90,14 +90,14 @@ impl PlayWindowApp {
         // pill chrome and any retail Load-mode overlays draw off the pair.
         let draws = match &self.boot_ui {
             BootUiState::Continue(c) => {
-                self.save_select_overlay(c.flow(), c.session(), surface_w, surface_h)
+                self.save_select_overlay(c.flow(), c.session(), surface_w, surface_h, false)
             }
             BootUiState::FieldMenu {
                 sub: Some(active), ..
             } => {
                 use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
                 if let FieldMenuSubsession::Save(s) = active {
-                    self.save_select_overlay(&self.save_flow, s, surface_w, surface_h)
+                    self.save_select_overlay(&self.save_flow, s, surface_w, surface_h, true)
                 } else {
                     return (Vec::new(), None);
                 }
@@ -121,8 +121,12 @@ impl PlayWindowApp {
         s: &legaia_engine_menus::save_select::SaveSelectSession,
         surface_w: u32,
         surface_h: u32,
+        in_game: bool,
     ) -> legaia_engine_ui::SaveSelectOverlayDraws {
         let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
+        // A screen the game opened carries the current place name beside its
+        // header tab; the title's Continue screen does not.
+        let place = in_game.then(|| self.session.current_resume().location);
         legaia_engine_screens::pause_screens::save_select_overlay_draws(
             flow,
             s,
@@ -130,6 +134,7 @@ impl PlayWindowApp {
             self.save_menu.as_ref().map(|a| &a.rects),
             stage_origin,
             stage_scale,
+            place.as_deref(),
         )
         .unwrap_or_default()
     }

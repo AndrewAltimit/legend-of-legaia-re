@@ -9,7 +9,7 @@ impl LegaiaRuntime {
     /// twin, with the pill row bound to the rack's card ports and the preview
     /// grid to the selected card's blocks. `flow` is the driver the screen
     /// runs under: the pause menu's own, or the title's Continue screen's
-    /// (`crate::boot_continue`).
+    /// (`crate::boot_continue`); `in_game` is `true` for the former.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn build_save_select(
         &self,
@@ -20,7 +20,11 @@ impl LegaiaRuntime {
         texts: &mut Vec<TextDraw>,
         origin: (i32, i32),
         scale: u32,
+        in_game: bool,
     ) -> Option<(usize, u8)> {
+        // A screen the game opened carries the current place name beside its
+        // header tab; the title's Continue screen does not.
+        let place = in_game.then(|| self.current_resume().location);
         // The screen is the shared composition over the engine's overlay
         // sequence (`SaveScreenFlow::overlay_model` ->
         // `save_select_overlay_draws`), the native window's calls too. Its
@@ -34,6 +38,7 @@ impl LegaiaRuntime {
             assets.chrome.as_ref().map(|(_, rects)| rects),
             origin,
             scale,
+            place.as_deref(),
         )?;
         let darken = out.darken.map(|d| (sprites.len() + d.sprite, d.level));
         sprites.extend(out.sprites);

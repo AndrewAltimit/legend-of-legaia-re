@@ -85,7 +85,7 @@ impl PlayWindowApp {
     }
 
     /// Write the live session into the rack cell a Save's commit beat asked
-    /// for: grid cell `cell` of the card in `port` (block `cell + 1`),
+    /// for: grid cell `cell` of the card in `port` (save number `cell`),
     /// through the kernel the browser rack writes with, then the card back to
     /// its file. `true` when the bytes are down.
     fn write_save_commit(&mut self, commit: legaia_engine_menus::save_screen::SaveCommit) -> bool {
@@ -104,10 +104,12 @@ impl PlayWindowApp {
             );
             return false;
         };
-        let block = commit.cell + 1;
-        let wrote = legaia_engine_menu_runtime::card_write::write_save_into_card(
+        // The grid cell is the save number; the block is wherever the card
+        // already files that number, else the lowest free block.
+        let cell = commit.cell;
+        let wrote = legaia_engine_menu_runtime::card_write::write_save_into_cell(
             card,
-            block,
+            cell,
             &sf,
             &resume,
             Some(&index),
@@ -131,7 +133,7 @@ impl PlayWindowApp {
         match wrote {
             Ok(w) => {
                 log::info!(
-                    "save screen: saved port {} block {block} as save {} (scene '{}'{})",
+                    "save screen: saved port {} cell {cell} as save {} (scene '{}'{})",
                     commit.port + 1,
                     w.save_slot,
                     resume.scene,
@@ -145,7 +147,7 @@ impl PlayWindowApp {
             }
             Err(e) => {
                 log::warn!(
-                    "save screen: save into port {} block {block} failed: {e:#}",
+                    "save screen: save into port {} cell {cell} failed: {e:#}",
                     commit.port + 1
                 );
                 false
@@ -182,7 +184,7 @@ impl PlayWindowApp {
     /// it.
     ///
     /// A Save goes through the kernel the browser rack writes with
-    /// ([`legaia_engine_menu_runtime::card_write::write_save_into_card`]) - the block's
+    /// ([`legaia_engine_menu_runtime::card_write::write_save_into_cell`]) - the block's
     /// save number, payload, engine ext tail, resume point, identity and
     /// directory claim are decided there - and the card is then written back
     /// to the image file it was mounted from. Either step failing raises the
@@ -217,9 +219,9 @@ impl PlayWindowApp {
         let Some(card) = self.card_ports()[commit.port as usize] else {
             return false;
         };
-        let Some((sf, resume)) = card.save_at(cell) else {
+        let Some((sf, resume)) = card.save_numbered(usize::from(cell)) else {
             log::warn!(
-                "save screen: port {} block {} holds no save",
+                "save screen: port {} holds no save {}",
                 commit.port + 1,
                 cell + 1
             );
@@ -230,7 +232,7 @@ impl PlayWindowApp {
             .session
             .resume_save(sf, &resume.scene, &self.field_live_opts);
         log::info!(
-            "save screen: loaded port {} block {}, landed {} ({:?})",
+            "save screen: loaded port {} save {}, landed {} ({:?})",
             commit.port + 1,
             cell + 1,
             landing.kind(),
@@ -891,7 +893,7 @@ impl PlayWindowApp {
                 // pill rows, the phase overlays (NowChecking dialog, slot-info
                 // text / captions, confirm messagebox) - through the one
                 // composition the pause menu's Load / Save rows share.
-                self.save_select_overlay(c.flow(), c.session(), surface_w, surface_h)
+                self.save_select_overlay(c.flow(), c.session(), surface_w, surface_h, false)
                     .texts
             }
             BootUiState::FieldMenu { sub } => {

@@ -213,7 +213,10 @@ fn card_with_save(block: u8, name: &str, gold: i32) -> Vec<u8> {
     let f = card::DIR_FRAME_SIZE * block as usize;
     buf[f..f + 4].copy_from_slice(&card::state::FIRST_BLOCK.to_le_bytes());
     buf[f + 8..f + 10].copy_from_slice(&0xFFFFu16.to_le_bytes());
-    buf[f + 10..f + 28].copy_from_slice(b"BASCUS-94254PRO-00");
+    // Filed under save number `block - 1`, so the save shows in grid cell
+    // `block - 1`: the grid places a save by its filename's number.
+    let filename = card::legaia_save_filename(u32::from(block) - 1);
+    buf[f + 10..f + 28].copy_from_slice(filename.as_bytes());
     let b = card::BLOCK_SIZE * block as usize;
     let sc = &mut buf[b..b + card::BLOCK_SIZE];
     sc[..2].copy_from_slice(&card::SAVE_BLOCK_MAGIC);
@@ -327,10 +330,17 @@ fn load_screen_walks_the_retail_card_flow_off_an_inserted_card() {
         before, after,
         "moving the grid cursor must re-draw (cursor + the focused block's info)"
     );
-    let (_, filled_texts) = draw_counts(&rt);
+    let (filled_sprites, filled_texts) = draw_counts(&rt);
+    // The stat numbers, labels, face and badge are atlas sprites (retail's
+    // 8x12 numeral cells); the name, location and time label are text.
     assert!(
-        filled_texts > empty_cell_texts + 10,
-        "focusing the card's save must print its name / LV / HP / MP / time \
+        filled_sprites > grid_sprites + 20,
+        "focusing the card's save must draw its LV / HP / MP / time numerals \
+         (got {filled_sprites} sprites vs {grid_sprites} on an empty block)"
+    );
+    assert!(
+        filled_texts > empty_cell_texts,
+        "focusing the card's save must print its name and location \
          (got {filled_texts} vs {empty_cell_texts} on an empty block)"
     );
 

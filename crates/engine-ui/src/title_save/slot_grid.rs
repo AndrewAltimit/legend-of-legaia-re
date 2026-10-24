@@ -17,16 +17,23 @@ pub const SLOT_GRID_ROW_STAGGER_X: i32 = 4;
 pub const SLOT_GRID_COLS: usize = 5;
 pub const SLOT_GRID_ROWS: usize = 3;
 
-/// Per-cell view passed into [`slot_preview_grid_draws_for`]. Each
-/// memory-card block becomes one cell; `present=false` cells render
-/// as plain empty frames. When a save is present, `portrait_char_id`
-/// (= lead party member's char_id) selects which 16×16 portrait
-/// (0=Vahn, 1=Noa, 2=Gala) is drawn inside the frame; `None` falls
-/// back to the empty frame.
+/// Per-cell view passed into [`slot_preview_grid_draws_for`] - the three
+/// arms of `FUN_801E0FD0`, keyed on the block's class:
+///
+/// | Class | Draws |
+/// |---|---|
+/// | a Legaia save | save-icon tile `icon_tile` (record 0) inside the empty frame (record 1) |
+/// | unreadable (`foreign`) | the "USED" frame (record 5) |
+/// | free | the empty frame alone |
+///
+/// `icon_tile` is the cell's own **save number**: the cell drawer sets
+/// record 0's `u = cell << 4` and CLUT `0x40 + cell` (`0x801E10BC`), so the
+/// grid shows fifteen different faces, not the party leader's.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SlotGridCell {
     pub present: bool,
-    pub portrait_char_id: Option<u8>,
+    pub icon_tile: Option<u8>,
+    pub foreign: bool,
 }
 
 /// Retail park base of a cell quad's slide x: `0x15A` plus the cell
@@ -81,10 +88,10 @@ pub fn slot_grid_quad_x(col: u32, row: u32, slot: u32, t: u16) -> i32 {
 }
 
 /// Build [`SpriteDraw`]s for the 5×3 slot-preview grid. Each cell
-/// gets the empty-frame sprite (32×32 with 20×20 visible border).
-/// Filled cells additionally get a 16×16 portrait centred in the
-/// frame. The cursor sprite sits to the left of the currently
-/// selected cell.
+/// gets a frame sprite (32×32 with 20×20 visible border): the "USED"
+/// frame on an unreadable block, the empty frame otherwise. A save's
+/// cell additionally gets its save-icon face centred in the frame. The
+/// cursor sprite sits to the left of the currently selected cell.
 ///
 /// PORT: FUN_801e06c0 (the landed grid: quad x = `98 + col*40 + row*4`,
 /// y = `28 + row*20`; focused cell full `0x80` modulation, every other
@@ -152,12 +159,15 @@ pub fn slot_preview_grid_draws_for(
         } else {
             dim
         };
-        if let Some(frame) = rects.load_empty_frame {
-            // The full 32×32 sprite is drawn with its top-left at
-            // (cell_x - 6, cell_y - 6) so the visible 20×20 border
-            // sits at the cell position. Engines may instead sample
-            // sub-rect (6, 6, 20, 20) and skip the margin - both
-            // produce the same on-screen pixels.
+        let frame = if cell.foreign {
+            rects.load_used_frame.or(rects.load_empty_frame)
+        } else {
+            rects.load_empty_frame
+        };
+        if let Some(frame) = frame {
+            // The full 32x32 sprite is drawn with its top-left at
+            // (cell_x - 6, cell_y - 6) so the visible 20x20 border
+            // sits at the cell position.
             push(
                 &mut out,
                 frame,
@@ -169,16 +179,12 @@ pub fn slot_preview_grid_draws_for(
             );
         }
         if cell.present
-            && let Some(char_id) = cell.portrait_char_id
-            && let Some(portrait) = rects
-                .load_portrait_by_char
-                .get(char_id as usize)
-                .copied()
-                .flatten()
+            && let Some(tile) = cell.icon_tile
+            && let Some(face) = rects.save_icons.get(tile as usize).copied().flatten()
         {
-            // Portrait centred inside the 20×20 visible frame
-            // (16×16 portrait + 2px margin each side).
-            push(&mut out, portrait, cell_x + 2, cell_y + 2, 16, 16, color);
+            // The face centred inside the 20x20 visible frame (16x16 + 2 px
+            // margin each side) - record 0 at the cell pen's `+16, +0`.
+            push(&mut out, face, cell_x + 2, cell_y + 2, 16, 16, color);
         }
     }
 

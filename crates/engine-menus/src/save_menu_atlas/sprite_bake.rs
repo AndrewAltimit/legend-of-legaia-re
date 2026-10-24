@@ -471,6 +471,44 @@ pub(super) fn add_card_work_sprites(
     Ok(())
 }
 
+/// The grid's "USED" frame (sprite record 5, sub-palette 6 of the save-menu
+/// sheet) and save-icon tiles `3..=14` off the overlay's icon strip, tile `t`
+/// through its own sub-palette `t`. Best-effort: a `prot_0899_bytes` short of
+/// the strip skips the tiles.
+pub(super) fn add_save_grid_sprites(
+    dst: &mut [u8],
+    sheet: &legaia_tim::Tim,
+    sheet_w: u32,
+    prot_0899_bytes: &[u8],
+) -> anyhow::Result<()> {
+    let frame_rgba = legaia_tim::decode_rgba8(sheet, title_pak::OVERLAY_SAVE_UI_REC_FRAME_CLUT)?;
+    copy_rect(
+        dst,
+        ATLAS_WIDTH,
+        &frame_rgba,
+        sheet_w,
+        title_pak::OVERLAY_SAVE_UI_REC_USED_FRAME,
+        ATLAS_RECT_USED_FRAME,
+    );
+    let Ok(strip) = title_pak::extract_overlay_card_icon_tim(prot_0899_bytes) else {
+        return Ok(());
+    };
+    let strip = legaia_tim::parse(strip.bytes)?;
+    let strip_w = strip.pixel_width() as u32;
+    for (i, &(x, y)) in ATLAS_RECT_SAVE_ICON_CELLS.iter().enumerate() {
+        let tile = ATLAS_SAVE_ICON_FIRST_BAKED + i;
+        let rgba = legaia_tim::decode_rgba8(&strip, tile)?;
+        let src = (
+            tile as u32 * ATLAS_RECT_PORTRAIT_W,
+            0,
+            ATLAS_RECT_PORTRAIT_W,
+            ATLAS_RECT_PORTRAIT_H,
+        );
+        copy_rect(dst, ATLAS_WIDTH, &rgba, strip_w, src, (x, y, src.2, src.3));
+    }
+    Ok(())
+}
+
 pub(super) fn add_load_slot_grid_sprites(
     dst: &mut [u8],
     prot_dat_bytes: &[u8],

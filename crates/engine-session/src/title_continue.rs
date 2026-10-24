@@ -190,10 +190,13 @@ impl ContinueScreen {
             .filter(|c| c.kind == SaveCommitKind::Load)
             .and_then(|c| {
                 let card = ports.get(c.port as usize).copied().flatten()?;
-                let (save, resume) = card.save_at(c.cell)?;
+                // The grid cell is the save number; its file sits in
+                // whatever block the card put it.
+                let block = card.block_of_save_number(usize::from(c.cell))?;
+                let (save, resume) = card.save_numbered(usize::from(c.cell))?;
                 Some(ContinueLoad {
                     port: c.port,
-                    block: c.cell + 1,
+                    block,
                     save,
                     scene: resume.scene,
                 })

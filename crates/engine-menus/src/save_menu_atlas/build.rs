@@ -87,6 +87,9 @@ pub fn build_atlas(
     // The block badge and the write panel's progress tube - records 2 / 3 /
     // 4 of the save UI's sprite-record table (`0x801E5048`), same TIM.
     add_card_work_sprites(&mut out, &pill_parsed, pill_w)?;
+    // The grid's "USED" frame and the save-icon faces past the three
+    // portrait TIMs (records 5 and 0 of the same table).
+    add_save_grid_sprites(&mut out, &pill_parsed, pill_w, prot_0899_bytes)?;
 
     // Panel 9-slice tiles - copy from panel plane (256x192) into
     // atlas at the same source coords (160..192, 0..32). Those atlas

@@ -422,10 +422,16 @@ pub struct SaveMenuAtlasRects {
     /// preview screen to draw the 5x3 grid of save-slot boxes. When
     /// `None`, the slot-preview falls back to a solid blue rect.
     pub load_empty_frame: Option<(u32, u32, u32, u32)>,
-    /// Up to 3 character portrait sub-rects (16x16 each, decoded
-    /// from PROT.DAT[0x1AC90..0x1AF30]). Index = char_id (0=Vahn,
-    /// 1=Noa, 2=Gala). `None` for char_ids past the 3-portrait atlas.
-    pub load_portrait_by_char: [Option<(u32, u32, u32, u32)>; 3],
+    /// The grid's "USED" cell frame (sprite record 5, 32x32 with the same
+    /// 6 px margin as [`Self::load_empty_frame`]): a block occupied by
+    /// something the game cannot read. `None` falls back to the empty frame.
+    pub load_used_frame: Option<(u32, u32, u32, u32)>,
+    /// The save-icon sheet's sixteen 16x16 faces, by tile. One tile space
+    /// with two readers: the grid draws tile `n` in cell `n` (a save's own
+    /// face is its save number's), the info panel draws tile `id` for party
+    /// member `id` (0 Vahn, 1 Noa, 2 Gala - tiles `0..3` are those three
+    /// portraits). `None` for a tile the atlas did not bake.
+    pub save_icons: [Option<(u32, u32, u32, u32)>; 16],
     /// The battle screen's own skin, when the atlas carries it. See
     /// [`BattleChromeRects`].
     pub battle: Option<BattleChromeRects>,

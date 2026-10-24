@@ -240,6 +240,7 @@ pub(crate) fn snapshot_for_save(
         leader_name: leader.name,
         leader_hp: leader.hp,
         leader_mp: leader.mp,
+        ..SlotSnapshot::empty(slot)
     }
 }
 

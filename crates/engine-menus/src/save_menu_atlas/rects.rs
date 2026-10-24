@@ -338,6 +338,35 @@ pub(super) const ELEMENT_BADGE_ROW499_TIM_OFFSET: usize = 0x100D0;
 /// one asset, already baked here and already drawn by
 /// `legaia_engine_ui::title_save::slot_grid`.
 pub const ATLAS_RECT_PORTRAIT_W: u32 = 16;
+/// Atlas placement of save-icon tiles `3..=14` (the faces past the three
+/// portrait TIMs): the grid draws tile `n` in cell `n`, and an "Able to
+/// save." panel the focused block's tile, so all fifteen are reachable.
+/// Decoded off the menu overlay's icon strip (PROT 0899
+/// `title_pak::OVERLAY_CARD_ICON_TIM_OFFSET`), tile `t` through sub-palette
+/// `t` ([`legaia_ui_formats::save_icon`]). No 192-px run of the atlas is
+/// free, so the cells are scattered over free 16x16 squares.
+pub const ATLAS_RECT_SAVE_ICON_CELLS: [(u32, u32); 12] = [
+    (128, 80),
+    (144, 80),
+    (160, 80),
+    (176, 80),
+    (128, 96),
+    (144, 96),
+    (160, 96),
+    (176, 96),
+    (32, 80),
+    (48, 80),
+    (128, 64),
+    (176, 64),
+];
+/// First save-icon tile [`ATLAS_RECT_SAVE_ICON_CELLS`] holds; tiles below it
+/// are the portrait TIMs at [`ATLAS_RECT_PORTRAIT_BASE_X`].
+pub const ATLAS_SAVE_ICON_FIRST_BAKED: usize = 3;
+/// Atlas placement of the grid's **"USED"** cell frame: sprite record 5 of
+/// the save UI's table (`0x801E5048 + 5 * 12`: sub-palette 6, `(80, 96)`,
+/// 32x32 on the save-menu sheet), which `FUN_801E0FD0` draws for a block
+/// its walk classed as occupied by something unreadable.
+pub const ATLAS_RECT_USED_FRAME: (u32, u32, u32, u32) = (0, 80, 32, 32);
 pub const ATLAS_RECT_PORTRAIT_H: u32 = 16;
 pub const ATLAS_RECT_PORTRAIT_BASE_X: u32 = 200;
 pub const ATLAS_RECT_PORTRAIT_BASE_Y: u32 = 96;

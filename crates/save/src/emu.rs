@@ -405,6 +405,46 @@ impl MountedCard {
         Some((sf, crate::SaveResume::from_retail_sc_block(sc)))
     }
 
+    /// The save number `block`'s file carries in its filename, when the block
+    /// opens a chain filed under a Legaia save name.
+    pub fn save_number_of_block(&self, block: u8) -> Option<usize> {
+        if !self.block_is_save_start(block) {
+            return None;
+        }
+        card::legaia_save_number(self.dir_frame(block)?.get(0x0A..)?)
+    }
+
+    /// The block holding save number `n`, by filename.
+    ///
+    /// The load grid places a save by the number its **filename** carries,
+    /// not by the block the BIOS put the file in: retail's directory walk
+    /// (`FUN_801E1208`) stamps the slot the name's two digits name, and the
+    /// load opens the file by that name. A card that saved out of order -
+    /// any real one - holds `-03` in block 2. When two files name the same
+    /// number the later block wins, as the walk's later stamp does.
+    pub fn block_of_save_number(&self, n: usize) -> Option<u8> {
+        (1..=card::DIR_FRAMES as u8)
+            .rev()
+            .find(|&b| self.save_number_of_block(b) == Some(n))
+    }
+
+    /// The save filed under number `n` ([`Self::block_of_save_number`]), read
+    /// as [`Self::save_at`] reads a block.
+    pub fn save_numbered(&self, n: usize) -> Option<(crate::SaveFile, crate::SaveResume)> {
+        self.save_at(self.block_of_save_number(n)?.checked_sub(1)?)
+    }
+
+    /// The block a new save would be created in: the lowest block whose
+    /// directory frame is free (state `0xA0..=0xAF`, a deleted file
+    /// included), as the BIOS allocates a new file. `None` on a full card.
+    pub fn first_free_block(&self) -> Option<u8> {
+        (1..=card::DIR_FRAMES as u8).find(|&b| {
+            self.dir_frame(b)
+                .and_then(|f| f.first())
+                .is_some_and(|&s| s & 0xF0 == 0xA0)
+        })
+    }
+
     /// This card's SC block `block`, when the block opens a save chain.
     pub fn sc_block(&self, block: u8) -> Option<&[u8]> {
         self.view
@@ -439,6 +479,26 @@ mod tests {
         let b = BLOCK_SIZE;
         buf[b..b + 2].copy_from_slice(&SAVE_BLOCK_MAGIC);
         buf
+    }
+
+    /// A save is found by the number its filename carries, not by its block:
+    /// a card that saved `-03` first holds it in block 1. Deleted frames
+    /// (`0xA1`) count as free for a new file.
+    #[test]
+    fn saves_are_addressed_by_filename_number() {
+        let mut buf = raw_card();
+        let f = DIR_FRAME_SIZE;
+        buf[f + 10..f + 28].copy_from_slice(b"BASCUS-94254PRO-03");
+        for blk in 2..=15usize {
+            buf[f * blk] = if blk == 2 { 0xA1 } else { 0xA0 };
+        }
+        let card = MountedCard::from_bytes(buf, "t").unwrap();
+        assert_eq!(card.save_number_of_block(1), Some(3));
+        assert_eq!(card.block_of_save_number(3), Some(1));
+        assert_eq!(card.block_of_save_number(0), None);
+        assert_eq!(card.first_free_block(), Some(2));
+        assert_eq!(card::legaia_save_number(b"BISCPS-10059PRO-1x"), Some(1));
+        assert_eq!(card::legaia_save_number(b"BASCUS-94221FFTA00"), None);
     }
 
     /// `persist` writes a dirty card back to the file it was opened from,

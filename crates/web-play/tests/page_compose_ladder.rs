@@ -271,9 +271,12 @@ fn rung1_the_card_rack_walks_a_real_cards_directory() {
              filed it, and nowhere else"
         );
     }
-    assert_eq!(arr[0]["blocks"][0]["name"], "Vahn", "block 1 previews Vahn");
-    assert_eq!(arr[0]["blocks"][0]["money"], 1234);
-    assert_eq!(arr[0]["blocks"][0]["location"], "Rim Elm");
+    // The rows are grid cells, and a cell is the save number the filename
+    // carries: the `-03` save in block 1 is cell 3.
+    assert_eq!(arr[0]["blocks"][3]["name"], "Vahn", "cell 3 previews Vahn");
+    assert_eq!(arr[0]["blocks"][3]["block"], 1, "filed in block 1");
+    assert_eq!(arr[0]["blocks"][3]["money"], 1234);
+    assert_eq!(arr[0]["blocks"][3]["location"], "Rim Elm");
 
     // --- the menu flow, composed per edge ---------------------------------
     assert!(
@@ -294,10 +297,10 @@ fn rung1_the_card_rack_walks_a_real_cards_directory() {
     );
     assert!(grid_texts > 0, "the grid's info panel drew no text");
 
-    // Walk to a free cell (cell 4 = block 5) and commit a save there. The
-    // preferred number for block 5 is 4, which this card does not file, so
-    // the classification must leave it alone; what it must NOT do is collide
-    // with the `-03` already on the card.
+    // Walk to a free cell (cell 4) and commit a save there: save number 4,
+    // created in the lowest free block (block 2), as the BIOS places a new
+    // file. What it must NOT do is collide with the `-03` already on the
+    // card.
     for _ in 0..4 {
         rt.play_menu_input(RIGHT);
         let _ = rt.play_menu_draws_json(W, H);
@@ -344,9 +347,13 @@ fn rung1_the_card_rack_walks_a_real_cards_directory() {
     // The generic card walker (what an emulator uses) must still see both.
     assert_eq!(card::parse_card(&exported).expect("card parses").len(), 2);
 
+    assert!(
+        names.contains(&card::legaia_save_filename(4)),
+        "the new save is filed under the cell it was made in: {names:?}"
+    );
     // Only the newly-claimed block and its directory frame may have moved.
-    let b5 = card::BLOCK_SIZE * 5;
-    let f5 = card::DIR_FRAME_SIZE * 5;
+    let b5 = card::BLOCK_SIZE * 2;
+    let f5 = card::DIR_FRAME_SIZE * 2;
     let escaped: Vec<usize> = original
         .iter()
         .zip(exported.iter())
@@ -357,7 +364,7 @@ fn rung1_the_card_rack_walks_a_real_cards_directory() {
             !(b5..b5 + card::BLOCK_SIZE).contains(i) && !(f5..f5 + card::DIR_FRAME_SIZE).contains(i)
         })
         .collect();
-    assert!(escaped.is_empty(), "writes escaped block 5: {escaped:?}");
+    assert!(escaped.is_empty(), "writes escaped block 2: {escaped:?}");
 }
 
 // ---------------------------------------------------------------------------
@@ -393,8 +400,9 @@ fn rung2_the_save_panel_wears_all_three_info_modes() {
     rt.insert_card(1, card_with_no_free_budget(3, 5), "B".into())
         .expect("insert port 2");
 
-    /// Focus cell `cell` of `port`'s grid and return the composed text count.
-    fn panel_texts(rt: &mut LegaiaRuntime, port: usize, cell: usize) -> usize {
+    /// Focus cell `cell` of `port`'s grid and return the composed sprite
+    /// and text counts.
+    fn panel_draws(rt: &mut LegaiaRuntime, port: usize, cell: usize) -> (usize, usize) {
         open_row(rt, ROW_SAVE);
         for _ in 0..port {
             rt.play_menu_input(DOWN);
@@ -404,23 +412,26 @@ fn rung2_the_save_panel_wears_all_three_info_modes() {
         for _ in 0..cell {
             rt.play_menu_input(RIGHT);
         }
-        let (_, texts) = menu_draws(rt);
+        let draws = menu_draws(rt);
         unwind(rt);
-        texts
+        draws
     }
 
-    // Port 1: cell 0 is the save (preview), cell 4 is free (the budget pays).
-    let preview = panel_texts(&mut rt, 0, 0);
-    let free = panel_texts(&mut rt, 0, 4);
+    // Port 1: cell 3 is the save (its file is `-03`), cell 4 is free (the
+    // budget pays).
+    let (preview_sprites, preview) = panel_draws(&mut rt, 0, 3);
+    let (free_sprites, free) = panel_draws(&mut rt, 0, 4);
     // Port 2: cell 0 is unclaimed and the budget is spent, so it is foreign.
-    let foreign = panel_texts(&mut rt, 1, 0);
+    let (_, foreign) = panel_draws(&mut rt, 1, 0);
 
     eprintln!("[w1l4] info panel glyphs: preview={preview} free={free} foreign={foreign}");
     assert!(preview > 0 && free > 0 && foreign > 0, "every mode draws");
+    // The preview's numbers, labels and faces are atlas sprites; a caption
+    // is one line of text and ("Able to save.") one framed face.
     assert!(
-        preview > free && preview > foreign,
-        "the stats preview is a multi-row panel, the other two are one \
-         centred line (preview={preview} free={free} foreign={foreign})"
+        preview_sprites > free_sprites + 20,
+        "the stats preview is a multi-row panel, the caption one line \
+         (preview sprites={preview_sprites} free sprites={free_sprites})"
     );
     assert!(
         foreign > free,
@@ -468,7 +479,10 @@ fn rung2b_a_refused_load_raises_the_refusal_notice() {
     rt.play_menu_input(CROSS); // pick SLOT 1
     settle_card_read(&mut rt);
     rt.eject_card(0);
-    rt.play_menu_input(CROSS); // load cell 0 - raises "Do you wish to load?"
+    for _ in 0..3 {
+        rt.play_menu_input(RIGHT); // to cell 3, where the `-03` save sits
+    }
+    rt.play_menu_input(CROSS); // load it - raises "Do you wish to load?"
     rt.play_menu_input(LEFT); // -> Yes
     rt.play_menu_input(CROSS); // - and there is no card to load from
     run_commit_beat(&mut rt);

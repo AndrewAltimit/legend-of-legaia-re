@@ -29,6 +29,10 @@ pub struct SaveSelectPreviewView<'a> {
     pub cell: u8,
     pub info: Option<SlotInfoView<'a>>,
     pub caption: Option<&'a str>,
+    /// The block whose face and badge the caption carries: "Able to save."
+    /// on a Save (view mode 3, `0x801E0EB8`). `None` for every other
+    /// caption, which is the one line alone.
+    pub caption_icon: Option<u8>,
     /// The info panel's slide delta from its parked y (`0` = landed).
     pub panel_y_offset: i32,
 }
@@ -61,7 +65,20 @@ pub struct SaveSelectOverlayView<'a> {
     pub preview: Option<SaveSelectPreviewView<'a>>,
     /// The confirm prompt and its Yes / No cursor.
     pub confirm: Option<(&'a str, u8)>,
+    /// The current place name, for a screen opened from the game rather
+    /// than the title: retail's header tab carries a second box beside it
+    /// holding the string `_DAT_8007B44C` points at, whenever the title
+    /// flag `_DAT_8007BB00` is clear (`0x801E1D7C..0x801E1DBC`). `None`
+    /// on the title's Continue screen.
+    pub location_tab: Option<&'a str>,
 }
+
+/// The in-game location box beside the header tab:
+/// `FUN_801E36C4(48 + 0xA0, 6, 0xBF, 0xD)` through the messagebox
+/// inflation, footprint `(208 - 95 - 10, 4, 191 + 16, 13 + 16)`.
+pub const SAVE_SELECT_LOCATION_TAB_RECT: (i32, i32, i32, i32) = (103, 4, 207, 29);
+/// Where the location string starts: the raw emitter at `(48 + 0x40, 6 + 6)`.
+pub const SAVE_SELECT_LOCATION_TAB_TEXT: (i32, i32) = (112, 12);
 
 /// [`save_select_overlay_draws`]'s output.
 #[derive(Default)]
@@ -225,6 +242,16 @@ pub fn save_select_overlay_draws(
             stage_origin,
             stage_scale,
         ));
+        if view.location_tab.is_some() {
+            nine_slice_panel_into(
+                &mut out.sprites,
+                rects,
+                SAVE_SELECT_LOCATION_TAB_RECT,
+                stage_origin,
+                stage_scale,
+                false,
+            );
+        }
         if let Some(row) = view.pill_cursor {
             out.sprites.push(save_select_cursor_draw_for(
                 rects,
@@ -232,6 +259,22 @@ pub fn save_select_overlay_draws(
                 stage_origin,
                 stage_scale,
             ));
+        }
+    }
+    if let Some(place) = view.location_tab {
+        let scale = stage_scale.max(1);
+        let (x, y) = SAVE_SELECT_LOCATION_TAB_TEXT;
+        for g in &font.layout_ascii(place).glyphs {
+            out.texts.push(TextDraw {
+                dst: (
+                    stage_origin.0 + (x + g.dst_x) * scale as i32,
+                    stage_origin.1 + (y + g.dst_y) * scale as i32,
+                    g.width * scale,
+                    g.height * scale,
+                ),
+                src: (g.atlas_x, g.atlas_y, g.width, g.height),
+                color: SAVE_SELECT_TITLE_COLOR,
+            });
         }
     }
     if view.now_checking {
@@ -286,11 +329,20 @@ pub fn save_select_overlay_draws(
             p.panel_y_offset,
             stage_origin,
             stage_scale,
-            chrome,
+            rects,
         ));
         if p.info.is_none()
             && let Some(caption) = p.caption
         {
+            if let (Some(rects), Some(block)) = (rects, p.caption_icon) {
+                out.sprites.extend(slot_info_caption_sprites_for(
+                    rects,
+                    block,
+                    p.panel_y_offset,
+                    stage_origin,
+                    stage_scale,
+                ));
+            }
             out.texts.extend(slot_info_caption_draws_for(
                 font,
                 caption,
@@ -391,6 +443,7 @@ mod tests {
             banner: None,
             preview: None,
             confirm: None,
+            location_tab: None,
         };
         let title_only = save_select_overlay_draws(&font, None, &base, (0, 0), 1);
         let view = SaveSelectOverlayView {
@@ -399,6 +452,7 @@ mod tests {
                 cell: 0,
                 info: None,
                 caption: Some("Free block"),
+                caption_icon: None,
                 panel_y_offset: 0,
             }),
             confirm: Some(("Do you wish to save?", 0)),
@@ -456,9 +510,11 @@ mod tests {
                 cell: 3,
                 info: None,
                 caption: Some("Able to save."),
+                caption_icon: None,
                 panel_y_offset: 0,
             }),
             confirm: Some(("Do you wish to save?", cursor)),
+            location_tab: None,
         };
         let hands = |cursor| -> Vec<(i32, i32)> {
             save_select_overlay_draws(&font, Some(&rects), &view(cursor), (0, 0), 1)
@@ -505,9 +561,11 @@ mod tests {
                 cell: 0,
                 info: None,
                 caption: Some("Able to save."),
+                caption_icon: None,
                 panel_y_offset: 0,
             }),
             confirm: None,
+            location_tab: None,
         };
         let sliding = save_select_overlay_draws(&font, None, &base, (0, 0), 1);
         let parked = save_select_overlay_draws(
@@ -559,9 +617,11 @@ mod tests {
                 cell: 0,
                 info: None,
                 caption: Some("Able to save."),
+                caption_icon: None,
                 panel_y_offset: 0,
             }),
             confirm: None,
+            location_tab: None,
         };
         let plain = save_select_overlay_draws(&font, None, &base, (0, 0), 1);
         let confirm = save_select_overlay_draws(

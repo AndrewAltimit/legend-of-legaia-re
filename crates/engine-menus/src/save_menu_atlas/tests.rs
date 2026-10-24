@@ -385,3 +385,46 @@ fn builds_real_save_menu_atlas_when_disc_extracted() {
         );
     }
 }
+
+/// Disc-gated: the grid's "USED" frame and save-icon tiles 3..=14 bake
+/// with ink, and every baked cell is distinct from its neighbours - the
+/// grid draws tile `n` in cell `n`, so a blank or repeated tile is a wrong
+/// face on screen.
+#[test]
+fn save_grid_faces_and_used_frame_bake() {
+    let (Ok(prot_dat), Ok(prot_899)) = (
+        std::fs::read("../../extracted/PROT.DAT"),
+        std::fs::read("../../extracted/PROT/0899_xxx_dat.BIN"),
+    ) else {
+        eprintln!("skip: extracted PROT.DAT / 0899 missing");
+        return;
+    };
+    let end = legaia_ui_formats::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
+        + legaia_ui_formats::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE;
+    let hud_slice = &prot_dat[SYSTEM_UI_CLUT_EXT_TIM_OFFSET..end];
+    let atlas = build_atlas(hud_slice, &prot_899, None).expect("atlas");
+    let cell = |r: (u32, u32, u32, u32)| -> Vec<u8> {
+        (r.1..r.1 + r.3)
+            .flat_map(|y| {
+                let o = ((y * ATLAS_WIDTH + r.0) * 4) as usize;
+                atlas.rgba[o..o + (r.2 * 4) as usize].to_vec()
+            })
+            .collect()
+    };
+    let opaque = |px: &[u8]| px.chunks(4).filter(|p| p[3] != 0).count();
+    assert!(
+        opaque(&cell(atlas.band_load_used_frame())) > 40,
+        "USED frame has ink"
+    );
+    let mut seen = Vec::new();
+    for t in 0..15u8 {
+        let r = atlas.band_save_icon(t).expect("tile rect");
+        let px = cell(r);
+        if usize::from(t) >= ATLAS_SAVE_ICON_FIRST_BAKED {
+            assert!(opaque(&px) > 100, "tile {t} decoded empty");
+        }
+        assert!(!seen.contains(&px), "tile {t} repeats an earlier face");
+        seen.push(px);
+    }
+    assert!(atlas.band_save_icon(15).is_none());
+}

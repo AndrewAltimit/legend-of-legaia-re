@@ -149,7 +149,8 @@ fn chrome_rects() -> SaveMenuAtlasRects {
         tab_cap_r: band(),
         atr_icons: [band(), band(), band()],
         load_empty_frame: None,
-        load_portrait_by_char: [Some(band()), Some(band()), Some(band())],
+        load_used_frame: None,
+        save_icons: std::array::from_fn(|t| (t < 3).then_some(band())),
         battle: None,
     }
 }

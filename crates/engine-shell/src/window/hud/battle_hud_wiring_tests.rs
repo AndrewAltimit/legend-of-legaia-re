@@ -76,7 +76,8 @@ const fn blank_rects() -> legaia_engine_ui::SaveMenuAtlasRects {
         tab_cap_r: Z,
         atr_icons: [Z; 3],
         load_empty_frame: None,
-        load_portrait_by_char: [None; 3],
+        load_used_frame: None,
+        save_icons: [None; 16],
         battle: None,
     }
 }

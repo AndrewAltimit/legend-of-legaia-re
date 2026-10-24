@@ -114,7 +114,7 @@ impl LegaiaRuntime {
             }
             return;
         }
-        let ok = match self.write_session_into_card(request.port as usize, request.cell + 1) {
+        let ok = match self.write_session_into_cell(request.port as usize, request.cell) {
             Ok(()) => true,
             Err(e) => {
                 crate::console_log(&format!("play menu: card save failed: {e}"));
@@ -138,8 +138,8 @@ impl LegaiaRuntime {
     /// Commit a finished Load / Save session against the memory-card rack.
     ///
     /// [`SaveScreenFlow::commit`] resolves the port off the session's outcome
-    /// and the cell off the grid; this host maps cell `i` to card block
-    /// `i + 1` (block 0 is the card directory) and moves the bytes. A failure
+    /// and the cell off the grid; the cell is a save number, which this host
+    /// resolves to the block whose file carries it and moves the bytes. A failure
     /// (card ejected mid-flow, unreadable block) is logged and drops the
     /// player back to the menu rather than throwing - the world is left
     /// untouched.
@@ -151,7 +151,13 @@ impl LegaiaRuntime {
         let Some(commit) = flow.commit(session) else {
             return;
         };
-        let block = commit.cell + 1;
+        // The grid cell is the save number; its file sits in whatever block
+        // the card put it (an unfiled cell reads as no save).
+        let cell = commit.cell;
+        let block = self
+            .card(commit.port as usize)
+            .and_then(|c| c.block_of_save_number(usize::from(cell)))
+            .unwrap_or(0);
         match commit.kind {
             SaveCommitKind::Load => {
                 match self.load_session_from_card(commit.port as usize, block) {
@@ -171,7 +177,7 @@ impl LegaiaRuntime {
                 }
             }
             SaveCommitKind::Save => {
-                if let Err(e) = self.write_session_into_card(commit.port as usize, block) {
+                if let Err(e) = self.write_session_into_cell(commit.port as usize, cell) {
                     crate::console_log(&format!("play menu: card save failed: {e}"));
                     // A console line is not an answer to the player: the
                     // screen closed and nothing had happened. Raise the
