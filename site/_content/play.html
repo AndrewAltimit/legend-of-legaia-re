@@ -2386,8 +2386,10 @@ div.play-vis-head { cursor: default; }
   /* Another tab of this page saved onto the browser card: remount it, so a
    * save made here next writes over the card as it now stands rather than
    * over this tab's older copy (which would drop the other tab's save). */
-  window.addEventListener('storage', (e) => {
-    if (e.key !== 'legaia.card.v1.browser' || !runtime) return;
+  /* `storageEvent`, not `e`: the page-key drift gate reads `e.key` as a
+   * KeyboardEvent read, and this is a StorageEvent's key. */
+  window.addEventListener('storage', (storageEvent) => {
+    if (storageEvent.key !== 'legaia.card.v1.browser' || !runtime) return;
     for (let p = 0; p < CARD_PORTS; p++) {
       if (portSaveIds[p] === BROWSER_CARD) insertCard(p, BROWSER_CARD, true);
     }
