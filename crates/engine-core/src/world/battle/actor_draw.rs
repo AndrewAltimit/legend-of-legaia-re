@@ -588,7 +588,7 @@ mod tests {
         assert_eq!(world.battle_ambient_base(), [0x20; 3]);
         let mut loaded_at = None;
         for _ in 0..64 {
-            world.clock.display_frames += 2;
+            world.advance_battle_pass();
             world.tick_battle_camera();
             let counter = world
                 .battle

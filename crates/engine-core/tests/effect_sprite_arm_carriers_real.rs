@@ -58,7 +58,7 @@ fn shipped_sprite_arm_nodes_reach_the_kind4_draw_list() {
         let mut default_peak = 0usize;
         let mut pages = std::collections::BTreeSet::new();
         for _ in 0..600 {
-            world.clock.display_frames += u64::from(world.battle_frame_step().max(1));
+            world.advance_battle_pass();
             world.tick_summon(8);
             let Some(scene) = world.casting.active_summon.as_ref() else {
                 break;

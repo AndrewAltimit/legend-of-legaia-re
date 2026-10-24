@@ -706,7 +706,7 @@ fn every_ported_cast_module_body_is_entered_through_its_own_seam() {
                 for _ in 0..PART_CALL_FRAMES {
                     // One battle pass a step: the parts take their part tick
                     // once a battle frame (`World::summon_fx_pass_vsyncs`).
-                    w.clock.display_frames += u64::from(w.battle_frame_step().max(1));
+                    w.advance_battle_pass();
                     let busy = w.summon_stager_tick();
                     w.tick_summon(legaia_engine_core::world::EFFECT_SCENE_GRAPH_STEP);
                     if probe(&w) {

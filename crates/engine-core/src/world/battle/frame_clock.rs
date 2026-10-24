@@ -603,11 +603,54 @@ impl World {
     pub fn battle_frame_step(&self) -> u8 {
         self.battle.frame_clock.step
     }
+
+    /// Move the display clock to the first vsync of the next battle frame
+    /// and return the vsyncs it moved: the clock advance a host's
+    /// [`World::tick`] makes between two battle passes.
+    ///
+    /// The per-pass kernels ([`Self::tick_summon`], [`Self::tick_move_fx`],
+    /// the action SM on retail's cadence, the battle camera) run once per
+    /// [`BattleFrameClock`] frame and treat every later call inside the same
+    /// frame as "between passes", so a test that drives them in a loop must
+    /// open a new frame per step or it ticks them once and never again.
+    /// From a tick that opens a frame this is the frame step; from one inside
+    /// a frame it is the rest of that frame.
+    pub fn advance_battle_pass(&mut self) -> u8 {
+        let clock = &self.battle.frame_clock;
+        let step = u64::from(clock.step.max(1));
+        let into = clock.ticks_into_frame(self.clock.display_frames);
+        let vsyncs = step - into;
+        self.clock.display_frames += vsyncs;
+        vsyncs as u8
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `advance_battle_pass` lands on the tick that opens the next frame:
+    /// a whole step from a frame's first tick, the remainder from inside
+    /// one, and every landing claims a fresh per-pass tick.
+    #[test]
+    fn advance_battle_pass_opens_the_next_frame() {
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.toggles.battle_sm_frame_cadence = true;
+        w.set_battle_frame_step(3);
+        let opening = w.clock.display_frames + w.advance_battle_pass() as u64;
+        assert_eq!(w.clock.display_frames, opening);
+        assert_eq!(w.advance_battle_pass(), 3);
+        w.clock.display_frames += 1;
+        assert_eq!(w.advance_battle_pass(), 2, "the rest of the frame");
+        let mut passes = Vec::new();
+        for _ in 0..4 {
+            w.advance_battle_pass();
+            passes.push(w.summon_fx_pass_vsyncs());
+            passes.push(w.summon_fx_pass_vsyncs());
+        }
+        assert_eq!(passes, [3, 0, 3, 0, 3, 0, 3, 0]);
+    }
 
     /// The table-form parts tick once a battle frame in battle on retail's
     /// cadence, spanning the frame step; every tick at one vsync elsewhere.

@@ -156,7 +156,7 @@ fn shipped_ribbon_carriers_reach_the_battle_draw_list() {
         let mut first: Option<(usize, usize)> = None;
         let mut max_quads = 0usize;
         for frame in 0..600 {
-            world.clock.display_frames += u64::from(world.battle_frame_step().max(1));
+            world.advance_battle_pass();
             world.tick_summon(8);
             let ribbons = world.active_effect_ribbons();
             for rb in &ribbons {

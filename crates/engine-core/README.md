@@ -117,6 +117,12 @@ battle-loop step, a `pub(crate)` field); a test that needs only the public
 API belongs in `tests/` instead, where it names the crate as
 `legaia_engine_core::` like a downstream crate would.
 
+A test that drives a per-pass battle kernel in a loop (`tick_summon`,
+`tick_move_fx`, the battle camera, the action SM on retail's cadence) opens
+each pass with `World::advance_battle_pass`, the clock advance a host's
+`World::tick` makes between two battle passes; without it the kernel runs
+once and every later call reads as "between passes".
+
 ## Where the behaviour is documented
 
 | Topic | Page |
