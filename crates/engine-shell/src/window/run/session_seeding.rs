@@ -286,6 +286,17 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
         world.battle.forced_monster_cast = Some((seat, spell));
         world.battle.forced_monster_cast_at_prompt = at_prompt;
     }
+    // `LEGAIA_BATTLE_GUARD=seat[,seat..]`: party seats that stand in the
+    // Spirit stance (`+0x1DE == 4`) when the fight opens - a capture's
+    // guarding member, which the cast-sequence oracle's monster cast lands
+    // its hits on. A debug seam.
+    if let Ok(v) = std::env::var("LEGAIA_BATTLE_GUARD") {
+        for seat in v.split(',').filter_map(|t| t.trim().parse::<usize>().ok()) {
+            if let Some(g) = world.battle.forced_guard.get_mut(seat) {
+                *g = true;
+            }
+        }
+    }
     // `LEGAIA_BATTLE_RNG_SEED=<u32>`: the world stream's state at the entry,
     // so the fight does not inherit however many field draws the boot took.
     // The retail comparison corpus pins it on both its sides

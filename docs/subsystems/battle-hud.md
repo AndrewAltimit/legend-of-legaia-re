@@ -711,6 +711,15 @@ A and registers a fresh glide to seat B (`0x801D92E8..0x801D93D8`).
 `+40` every `HIT` / `TOTAL` packet of that frame shows. Port:
 `BattleHud::push_popup` restarts the cluster's `age` on each landed damage hit.
 
+**A hit that clears the flag counts without opening.** PROT 0959's wrapper
+hits store `0` into `DAT_8007B64C` beside each HP write
+(`0x801F7244` / `0x801F7AF4` / `0x801F7F18`) and its arm `0xF` raises it once
+as it passes, so Megaton Press opens the cluster on the barrage's last pass
+already reading `11 HIT` / `TOTAL 378`. Port: `BattleHud::hold_combo`, driven
+by `BattleState::combo_cluster_held`. A cast that lands more than one hit
+reads `HIT` / `TOTAL` as that capture does; a one-hit cast keeps `DAMAGE`
+(`battle_gimard_tail_fire_a`).
+
 **The `0x51` fade-down closes it in reverse.** The band's teardown - countdown
 under `0xC`, once per action (`0x801E6158..0x801E6214`) - wipes the element
 list (`FUN_801D99BC` at `0x801E6170`) and, when the action landed damage

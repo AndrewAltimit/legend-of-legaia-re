@@ -400,6 +400,14 @@ impl World {
         self.battle.round_flow.phase = RoundPhase::Execute;
         self.sweep_battle_intro_names();
         self.set_battle_flow(legaia_engine_battle_menus::battle_flow::BattleFlowState::Idle);
+        for (g, forced) in self
+            .battle
+            .guarding
+            .iter_mut()
+            .zip(self.battle.forced_guard)
+        {
+            *g |= forced;
+        }
         self.take_monster_turn(seat);
     }
 

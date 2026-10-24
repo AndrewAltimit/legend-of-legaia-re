@@ -66,6 +66,7 @@ pub fn battle_value_readout_layout_with(
     let cluster = hud
         .combo
         .as_ref()
+        .filter(|c| !c.hidden)
         .map(|c| vr::combo_cluster(c.style, c.hits, c.total, c.slide()));
     let mut newest: Vec<&DamagePopup> = Vec::new();
     for p in &hud.popups {

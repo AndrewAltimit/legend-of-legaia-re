@@ -583,6 +583,29 @@ fn the_combo_cluster_counts_landed_damage_of_one_action_and_drops_with_it() {
 }
 
 #[test]
+fn a_held_cast_counts_its_hits_and_opens_as_hit_total() {
+    let mut h = BattleHud::default();
+    h.arm_combo(Some(ComboStyle::Damage), 3);
+    h.hold_combo(true);
+    for amount in [67, 71, 26] {
+        h.push_damage(0, amount);
+    }
+    let c = h.combo.expect("counted under the hold");
+    assert!(c.hidden);
+    assert_eq!((c.style, c.hits, c.total), (ComboStyle::HitTotal, 3, 164));
+    // The release opens it, sliding in from the start.
+    h.hold_combo(false);
+    let c = h.combo.unwrap();
+    assert!(!c.hidden);
+    assert_eq!(c.age, 0);
+    // One hit stays a `DAMAGE` readout.
+    let mut one = BattleHud::default();
+    one.arm_combo(Some(ComboStyle::Damage), 3);
+    one.push_damage(0, 16);
+    assert_eq!(one.combo.unwrap().style, ComboStyle::Damage);
+}
+
+#[test]
 fn subdraw_decoder_reads_a_synthetic_table() {
     let base = 0x801F_0000u32;
     let mut image = vec![0u8; 0x6000];

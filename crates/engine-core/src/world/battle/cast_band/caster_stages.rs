@@ -150,10 +150,11 @@ impl World {
         }
         // `0x70` frames nothing of its own: the camera is the module's.
         if let Some(cam) = self.battle.camera.as_mut() {
-            if run.capture_pose_set.is_some() || run.capture_focus_z != 0 {
-                // A director that stores into the globals runs retail's
-                // order: the arm's drift, then its pass stores, then the
-                // shot its builder tweens from them (PROT 0959).
+            if run.capture_drift_first || run.capture_pose_set.is_some() || run.capture_focus_z != 0
+            {
+                // A director that stores into the globals, or says so, runs
+                // retail's order: the arm's drift, then its pass stores, then
+                // the shot its builder tweens from them (PROT 0959, 0960).
                 if let Some(d) = run.capture_drift {
                     cam.drift_module(d.pitch, d.yaw, d.tr_y, d.tr_z);
                     if d.tr_x != 0 {
@@ -224,6 +225,7 @@ impl World {
         self.casting.module_beam_live = false;
         self.casting.module_hit_arm = None;
         self.casting.module_settle_ticks = 0;
+        self.battle.combo_cluster_held = false;
         self.casting.capture_spell = Some(spell_id);
         self.casting.caster_stages = self.caster_stage_run_for(spell_id);
         self.emit_cast_module_voice(spell_id);

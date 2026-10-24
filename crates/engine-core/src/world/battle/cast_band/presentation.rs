@@ -92,9 +92,13 @@ const VRAM_MOVES_PORTED_BY_HAND: [u32; 1] = [903];
 /// `ctx[+0x278]` themselves. The hook fires after the tick, so a decoded
 /// store would land behind a write the port orders after it in the same
 /// tick (PROT 0923's stager stores `3` once its arm 0 has stored `0`).
-const STAGE_BYTES_PORTED_BY_HAND: [u32; 21] = [
-    903, 904, 906, 907, 908, 909, 910, 911, 912, 913, 918, 922, 923, 925, 927, 942, 954, 959, 961,
-    963, 965,
+///
+/// PROT 0960's arm-4 store is `sb s6,0x278` with `s6 = 3` loaded by the phase
+/// switch ahead of the arm (`li s6,0x3` at `0x801F758C`), which the decoder's
+/// arm walk reads as `0`; its director stores the `3`.
+const STAGE_BYTES_PORTED_BY_HAND: [u32; 22] = [
+    903, 904, 906, 907, 908, 909, 910, 911, 912, 913, 918, 922, 923, 925, 927, 942, 954, 959, 960,
+    961, 963, 965,
 ];
 
 /// One fade a module arm spawned through the hook: the fade actor, the call

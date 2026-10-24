@@ -1,7 +1,8 @@
 //! The op-`0x20` stagers of the capture-class cells whose parts call back
 //! into their module: PROT 0938 (Chaos Breath / Mystic Circle), PROT 0944
 //! (Guilty Cross / Curse All), PROT 0946 (Zeto's Call Wave / Big Wave), PROT
-//! 0959 (Che Delilas's Megaton Press) and
+//! 0959 (Che Delilas's Megaton Press), PROT 0960 (Lu Delilas's Plasma Strike)
+//! and
 //! PROT 0962 (the Blade Breath cell, whose
 //! `0xA5` body is Cort's Ultra Charge). Each seats more records off the
 //! calling part, the shape [`super::stager_spawns`] documents for the summon
@@ -323,6 +324,28 @@ pub fn megaton_press_stager_spawns(
             .collect(),
         4 => megaton_press_rock_ring(0x801F_8E34, -0x100, rand),
         5 => vec![at(0x801F_9478), at(0x801F_8AE4), at(0x801F_8B30)],
+        _ => Vec::new(),
+    }
+}
+
+/// PROT 0960's stager `FUN_801F86B0` (Plasma Strike), reached through
+/// `gp[+0x714]` from its parts' op `0x20`:
+///
+/// | Arm | Seats |
+/// |---:|---|
+/// | 0 | `0x801F8784`, `0x801F87E0` on the caller |
+/// | 1 | `0x801F8B40` on the caller |
+/// | 2 | `0x801F8C74` on the caller |
+///
+/// Every call goes through `FUN_80050ED4` at `0x1000`.
+///
+/// PORT: FUN_801F86B0 (PROT 0960 stager)
+pub fn plasma_strike_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<StagerSpawn> {
+    let at = |r: u32| on_caller(r, caller, 0x1000);
+    match arm {
+        0 => vec![at(0x801F_8784), at(0x801F_87E0)],
+        1 => vec![at(0x801F_8B40)],
+        2 => vec![at(0x801F_8C74)],
         _ => Vec::new(),
     }
 }

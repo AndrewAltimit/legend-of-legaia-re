@@ -934,6 +934,9 @@ gives each exactly one owner:
     `0x71`), waived by `arm_sweep_arm` past the arm.
   - PROT 0966's arm-11 stager hit and PROT 0960's burst, which raise
     `module_skips_fold`.
+  - PROT 0959's eleven wrapper hits, which its director names one by one
+    ([above](#prot-0959-megaton-press)) and which waive the fold for the
+    whole cast.
 
 Whatever rolls the wrapper in-tick must waive the fold on the same branch.
 Two module HP writes are not wrapper rolls and owe the fold nothing: PROT
@@ -2814,6 +2817,7 @@ cell's other bodies' records off the screen:
 | 0944 Guilty Cross (`0x37`), `0x801F6A04` | arm 1 two camera-locked records on the zeroed stack trios; arm 2, after flushing the pool, three on the victim, the third `0x801F81E8` then stored `+0x16 = -0x1200`, `+0x42 = 1` (`capture_spawn_pokes`); arm 3 three on the victim as the hit lands; arm 4 flushes the pool | `FUN_801F7F2C`: arm 0 `0x801F7FE8`, arm 1 `0x801F8244` and `0x801F8290`, arm 2 `0x801F8290`, each at the caller's scale; the arm-3 record `0x801F8210` calls arms 1 and 2 |
 | 0946 Call Wave (`0x55`) / Big Wave (`0x56`), `0x801F69FC` | Call Wave's arm 0 the ray caller `0x801F78CC` on the caster's `+0x3C`; Big Wave's arm 4 the wave caller `0x801F7C44`, arm 5 nine records, arm 6 four, after halting every handle it keeps (`capture_arm_spawns_for` keys arm 0 on the action) | `FUN_801F76C4`: arm 0 three rings and eight rays `0x801F7970` with per-ray `rand()` waits, leans, lengths and rolls; arm 1 one wave `0x801F7BF8` into a sixteen-slot handle table while the phase is below `7` |
 | 0959 Megaton Press (`0x7A`), `0x801F69F0` | arm 0 `0x801F884C` on the caster; arm 8 ten records on the caster; arm `0xB` five on the caster mid-jump, after a pool flush; arm `0xD` five on the victim's body point turned to the caster; arm `0xE` eleven on the victim's body point at floor height (scales `0xC00` / `0x800` / `0x1000`), after a flush; arms 4 and `0xF` flush | `FUN_801F8250`: arms 1 and 4 two rings of twelve rocks around the origin, rolled off `rand()`; arm 3 four rolled records and a held white parked at `ctx[+0x102C]`; arm 2 a flush, the kill of that white and a `0x40`-frame fade-out ([below](#prot-0959-megaton-press)) |
+| 0960 Plasma Strike (`0x7B`), `0x801F74E4` | arm 0 `0x801F8768` on the caster; arm `0xD` four records on the victim's floor point turned to the caster; arm 4 flushes | `FUN_801F86B0`: arm 0 `0x801F8784` and `0x801F87E0`, arm 1 `0x801F8B40`, arm 2 `0x801F8C74`, each on the caller |
 | 0961 Final Crisis / Dead End Crisis (`0xB4` / `0xA1`), `0x801F69D8` | arm 0 `0x801F7AB4` on the caster; arm 2 three records and arm 3, after flushing the pool, eleven, all on the caster's trio lowered `0x200` on height and depth in the evolved Cort's formation (`CasterShifted`, `capture_arm_spawns_in`); arms 1, 3 and 5 flush the pool on their pass | `FUN_801F78A4`: arm 0 `0x801F7AD0` and `0x801F7B1C`, arm 1 `0x801F7DB0`, arm 2 two records then four shards `0x801F7E80` with five `rand()` pokes each, arm 3 `0x801F8234` and `0x801F8278` |
 
 The ported stagers run off the parts' own calls
@@ -2903,6 +2907,7 @@ exit yaw store `ctx[+0x6DA] = 0x780` is applied as the module finishes
 | 0938 `0xB7` Mystic Circle, `0x801F69EC` | arm 0's cut behind the caster (pitch `-0x40`, TR `(0, 0x600, 0x600)`), arm 2's cut to the front (pitch `0x180`, TR `(0, 0x600, 0xC00)`); drifts on arms 1 / 2 (TR z `+4`, TR y `-1` a vsync) and 3 (`+96`, `-29`) | `0x801F8040`, **absolute**, not scalar-scaled: `0x800`, drained `8 * delta` |
 | 0946 Call Wave `0x55` / Big Wave `0x56`, `0x801F69FC` (`SINGLE_BODY`) | below | `0x801F7F20`; the director owns the phase and finishes the module at arm 8 |
 | 0953 Terio Punch, `0x801F69FC` (`SINGLE_BODY`) | below | - |
+| 0960 `0x7B` Plasma Strike, `0x801F74E4` | [below](#prot-0960-plasma-strike) | `0x801F8E50`, seeded `scalar * 12`; arms 5, 6 and `0xD` gate on the caster's clip instead, arms 7..`0xF` re-arm by storing |
 | 0959 `0x7A` Megaton Press, `0x801F69F0` | [below](#prot-0959-megaton-press) | `0x801F9624`, seeded `scalar * 12`; the phase chain is ported (`MEGATON_PRESS_CHAIN`), so the director runs the countdown table and leaves the phase alone |
 
 - **0944** frames on the caster's facing, which the cast begin points at its
@@ -2957,8 +2962,34 @@ stores ride the same seat writes; the director's table carries each one.
 Arm `0xF` lands a hit (`FUN_801DD6B4(0x30)`) on every pass the threshold word
 stands at or above the countdown, and lowers the word `scalar << 5` each
 time: with arm `0xE`'s `+ scalar << 8` that is nine hits over the arm, which
-with arms 7 and `0xD` is the eleven-hit total retail shows. The port's fold
-lands the cast's outcome as one.
+with arms 7 and `0xD` (`0x80` each) is the eleven-hit total retail shows. The
+director names each hit (`CaptureCamArm::hit_site`) and the band lands it
+in-tick, `FUN_801DD6B4(power, ctx[+0x13], 0)` on seat 0 with the shape-A
+clamp, pushing the raw roll as its popup first; the fold is waived. Every hit
+stores `0` into the readout flag `DAT_8007B64C` and arm `0xF`'s pass raises
+it to `0x78`, so the cluster opens once, already reading `11 HIT`
+([battle-hud.md](battle-hud.md)). In the captured duel Gala stands in the
+Spirit stance (`+0x1DE == 4`): the defender roll doubles in `FUN_801DD864`
+and the finisher halves the net, which puts the `0x80` hits at `67` / `71`
+and the `0x30` hits at `24..30`, `378` in all.
+
+<a id="prot-0960-plasma-strike"></a>
+
+**0960 Plasma Strike** (`cast_module_camera::plasma_strike_camera`) is
+Megaton Press's sibling body. Arm 0 stands Lu at `(0, 0x80)` and the victim at
+`(0, -0x80)` with the same global stores and a `0xC`-frame shot at half the
+framing depth, staging Lu's `0x0E` at rate `1`. Arms 1..4 walk TR z `+s/4` a
+vsync (arm 3 spins the yaw a full turn); arm 4 stages `0x0C`, stores
+`0x1000` into both backdrop records' `+0x78` and the stage byte `3`, so the
+backdrop leaves the screen for the rest of the cast. Arm 5 cuts to the pair's
+midpoint every pass and waits for Lu's clip `0x0D` to reach cursor `0x90`;
+arm 6 waits for its loop counter to leave `0xFF`. Arms 7, 9 and `0xB` climb
+(TR z `+16s`, yaw `-s`) and cut onto Lu's body at TR y `-5` times its display
+height, with one-pass arms 8 and `0xA` between; arm `0xD` holds for cursor
+`0x160`, fires the `0x1C0` burst and seats four records on the victim's floor
+point; arm `0xE` hides the victim and cuts to TR `(-0x80, 0x200, 0x340)` on
+Lu. The decoder reads arm 4's stage byte as `0` (its `s6` is loaded by the
+phase switch ahead of the arm), so the director stores it.
 
 The rest of the measured set carries its gate as a countdown table with no camera arms
 (`cast_module_camera::capture_countdown`: per arm, the drain form and the

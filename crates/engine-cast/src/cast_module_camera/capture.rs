@@ -63,6 +63,20 @@ pub struct CaptureCamArm {
     pub caster_write: CaptureSeatWrite,
     /// The arm's stores into the victim seat `actor_table[caster + 0x1DD]`.
     pub victim_write: CaptureSeatWrite,
+    /// The arm stores `0x1000` into both backdrop records' depth-cue weight
+    /// `+0x78` (`ctx[+0x106C]` / `ctx[+0x1070]`), which takes the pair off
+    /// the draw while the stage byte holds the ramp's ceiling there.
+    pub backdrop_off: bool,
+    /// A literal store into the stage byte `ctx[+0x278]` on this pass.
+    pub ctx_278: Option<u8>,
+    /// The arm drifts ahead of its gate and shoots after it, so a pass's
+    /// cut lands on its own endpoint (the drift is spent before the cut).
+    pub drift_first: bool,
+    /// A damage-wrapper hit the arm lands on this pass, by its site index
+    /// into the module's baked powers
+    /// ([`crate::cast_module_ticks::damage_shape_for`]); the module then
+    /// owns the cast's outcome and the band's fold is waived.
+    pub hit_site: Option<u8>,
 }
 
 /// Absolute stores a capture arm makes into the camera globals: yaw
@@ -85,6 +99,14 @@ pub struct CapturePoseSet {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CaptureSeatWrite {
     pub rate: Option<u8>,
+    /// A clip staged onto `+0x1DA`.
+    pub stage: Option<u8>,
+    /// The [`Self::stage`] store came with the `+0x1DC` bump, which cuts the
+    /// playing clip at once; without it the byte waits for the clip's end.
+    pub restage: bool,
+    /// The loop counter `+0x21B` / budget `+0x176` cleared: the playing
+    /// clip's park is released.
+    pub loop_release: bool,
     pub x: Option<i16>,
     pub z: Option<i16>,
     pub dz: i16,
@@ -124,6 +146,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (946, SINGLE_BODY) => Some(wave_camera),
         (966, SINGLE_BODY) => Some(super::evil_seru_magic_camera),
         (959, super::MEGATON_PRESS_BODY) => Some(super::megaton_press_camera),
+        (960, super::PLASMA_STRIKE_BODY) => Some(super::plasma_strike_camera),
         _ => None,
     }
 }

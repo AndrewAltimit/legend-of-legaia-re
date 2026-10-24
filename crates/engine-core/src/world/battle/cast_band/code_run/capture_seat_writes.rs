@@ -26,6 +26,20 @@ impl World {
         st.caster_body = body(self, caster_slot);
         st.victim_body = body(self, victim_slot);
         st.lead_roster = (self.party_roster_slot(0) + 1) as u8;
+        // The caster's clip state, for the bodies that wait on it.
+        let caster = self
+            .actors
+            .get(usize::from(caster_slot))
+            .filter(|a| a.battle_action_clips.is_some());
+        st.caster_clip = caster.map(|_| self.cast_view(caster_slot).playing_anim);
+        st.caster_frame = caster
+            .and_then(|a| a.battle_animation.as_ref())
+            .map(|p| p.cursor_sixteenths());
+        // `+0x21B`, the committed entry's loop count less the cycles run
+        // (the player's `+0x176 >> 4` mirror).
+        st.caster_loops = caster
+            .and_then(|a| a.battle_animation.as_ref())
+            .map(|p| p.loop_cycles_remaining());
         st.frame_step = self.battle_frame_step().max(1);
         let frame = self.clock.display_frames;
         st.opens_pass = self.battle.frame_clock.ticks_into_frame(frame) == 0
@@ -87,6 +101,33 @@ impl World {
             && let Some(p) = a.battle_animation.as_mut()
         {
             p.seek_sixteenths(0);
+        }
+        if w.loop_release {
+            a.battle.hit_count_bound = 0;
+            if let Some(p) = a.battle_animation.as_mut() {
+                p.release_loop_window();
+            }
+        }
+        if let Some(clip) = w.stage {
+            a.battle.queued_anim = clip;
+            if w.restage {
+                a.battle
+                    .flag_bits
+                    .set(legaia_engine_battle_vm::battle_action::ActorFlags::WINDUP_DONE);
+            }
+            self.commit_staged_battle_anim(usize::from(slot));
+            // The bump's bit 0 cuts the playing clip at once, a one-shot
+            // parked on its last frame included (Lu's `0x0E` holds there
+            // until PROT 0960's arm 4 stages `0x0C` over it).
+            let i = usize::from(slot);
+            if w.restage
+                && self
+                    .actors
+                    .get(i)
+                    .is_some_and(|a| a.battle.queued_anim != a.battle.current_anim)
+            {
+                self.commit_staged_battle_anim_at_boundary(i);
+            }
         }
     }
 }

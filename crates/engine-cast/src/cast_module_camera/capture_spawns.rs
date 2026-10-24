@@ -613,7 +613,7 @@ const E961_LOWERED_FORMATION: u8 = 0xB5;
 
 /// The capture-class entries whose spawns are seated per arm instead of by
 /// the pager.
-pub const CAPTURE_SPAWN_ENTRIES: [u32; 8] = [938, 940, 944, 946, 959, 961, 962, 966];
+pub const CAPTURE_SPAWN_ENTRIES: [u32; 9] = [938, 940, 944, 946, 959, 960, 961, 962, 966];
 
 /// Halfword stores a capture arm makes into a part it has just seated, as
 /// `(actor offset, value)`, applied after the part's seat run: PROT 0944's
@@ -683,6 +683,7 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
         944 => body == Some(0x801F_6A04),
         946 => true,
         959 => body == Some(super::MEGATON_PRESS_BODY),
+        960 => body == Some(super::PLASMA_STRIKE_BODY),
         961 => true,
         962 => body == Some(0x801F_69D8),
         966 => true,
@@ -696,7 +697,7 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
 /// (`0x801F6DE4`, `0x801F6FA4`), PROT 0940's arm 7 (`0x801F7870`),
 /// PROT 0944's arms 2 and 4 (`0x801F6E50`, `0x801F7268`) and PROT 0959's
 /// arms 4, `0x0B`, `0x0E` and `0x0F` (`0x801F6ECC`, `0x801F77CC`,
-/// `0x801F7BE4`, `0x801F7F60`).
+/// `0x801F7BE4`, `0x801F7F60`) and PROT 0960's arm 4 (`0x801F79D0`).
 ///
 /// PROT 0946's arm 6 is the same reach by another route: it sets the halt
 /// bit on every word of its handle table `0x801F7F30` (`0x801F7174..
@@ -710,6 +711,7 @@ pub fn capture_arm_flushes_pool(prot_entry: u32, phase: u8) -> bool {
             | (944, 2 | 4)
             | (946, 6)
             | (959, 4 | 0x0B | 0x0E | 0x0F)
+            | (960, 4)
             | (961, 1 | 3 | 5)
     )
 }
@@ -787,6 +789,8 @@ pub fn capture_arm_spawns(prot_entry: u32, phase: u8) -> &'static [ModuleSpawn] 
         (959, 0x0B) => &super::megaton_press::E959_B,
         (959, 0x0D) => &super::megaton_press::E959_D,
         (959, 0x0E) => &super::megaton_press::E959_E,
+        (960, 0) => &super::plasma_strike::E960_0,
+        (960, 0x0D) => &super::plasma_strike::E960_D,
         _ => &[],
     }
 }

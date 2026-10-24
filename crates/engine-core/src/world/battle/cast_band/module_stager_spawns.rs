@@ -16,6 +16,7 @@ use legaia_engine_cast::cast_module_ticks::{
 };
 use legaia_engine_cast::cast_module_ticks::{
     MEGATON_PRESS_HELD_WHITE, MEGATON_PRESS_WHITE_OUT, megaton_press_stager_spawns,
+    plasma_strike_stager_spawns,
 };
 use legaia_engine_cast::cast_module_ticks::{
     barra_stager_spawns, gola_gola_stager_spawns, iota_stager_spawns, jedo_stager_spawns,
@@ -63,6 +64,7 @@ impl World {
                 | 944
                 | 946
                 | 959
+                | 960
                 | 961
                 | 962
         )
@@ -94,7 +96,7 @@ impl World {
         // A capture cell's stager runs only for the body whose arms seat
         // per arm; its other bodies keep the pager's whole-set placement,
         // which already holds the records the stager would seat.
-        if matches!(entry, 938 | 940 | 944 | 959 | 962)
+        if matches!(entry, 938 | 940 | 944 | 959 | 960 | 962)
             && self
                 .casting
                 .capture_spell
@@ -191,6 +193,7 @@ impl World {
                 940 => Vec::new(),
                 944 => guilty_cross_cell_stager_spawns(arm, caller),
                 959 => megaton_press_stager_spawns(arm, caller, &mut rand),
+                960 => plasma_strike_stager_spawns(arm, caller),
                 946 => call_wave_stager_spawns(arm, caller, phase, waves, &mut rand),
                 961 => dead_end_crisis_stager_spawns(arm, caller, &mut rand),
                 962 => blade_breath_cell_stager_spawns(arm, caller),

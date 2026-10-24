@@ -263,6 +263,14 @@ pub struct ModuleCamState {
     pub opens_pass: bool,
     /// The battle frame step `*(0x1F800393)`, fed by the host.
     pub frame_step: u8,
+    /// The caster's playing clip `+0x1D9`, fed by the host for a capture
+    /// director (PROT 0960's arm-5 wait). `None` where the host plays none.
+    pub caster_clip: Option<u8>,
+    /// The caster's anim-node cursor `+0x68` (12.4), fed like
+    /// [`Self::caster_clip`].
+    pub caster_frame: Option<u16>,
+    /// The caster's loop counter `+0x21B`, fed like [`Self::caster_clip`].
+    pub caster_loops: Option<u8>,
 }
 
 /// `FUN_801D5854(7, 6)` out of a module arm: the action SM's own case-6
@@ -552,6 +560,9 @@ pub enum SpawnAnchor {
     /// stack, `sh zero,0x22(sp)`), on the victim's angle trio, at the scale
     /// `a3`: PROT 0959 arm `0x0E` (`0x801F7BFC..0x801F7E18`).
     VictimBodyGround { scale: u16 },
+    /// [`Self::VictimBodyGround`] on the caster's angle trio at `0x1000`:
+    /// PROT 0960 arm `0x0D` (`0x801F8284..0x801F82EC`).
+    VictimBodyGroundCasterRot,
 }
 
 /// The seat a [`SpawnAnchor::AlongVictimHeading`] point starts from.
@@ -698,6 +709,11 @@ pub fn spawn_anchor_point_with(
             let v = seats.victim_body?;
             let f = seats.caster.map_or(0, |c| c.facing as i16);
             ([v.x, v.y, v.z], [0, f, 0])
+        }
+        SpawnAnchor::VictimBodyGroundCasterRot => {
+            let v = seats.victim_body?;
+            let f = seats.caster.map_or(0, |c| c.facing as i16);
+            ([v.x, 0, v.z], [0, f, 0])
         }
         SpawnAnchor::VictimBodyGround { .. } => {
             let v = seats.victim_body?;
@@ -898,6 +914,7 @@ mod meta_terra_ozma;
 mod nighto;
 mod nova;
 mod orb;
+mod plasma_strike;
 mod puera;
 mod seru;
 pub mod summon_holds;
@@ -924,6 +941,10 @@ pub use meta_terra_ozma::*;
 pub use nighto::*;
 pub use nova::*;
 pub use orb::*;
+pub use plasma_strike::{
+    PLASMA_STRIKE_ARM5_CURSOR, PLASMA_STRIKE_BODY, PLASMA_STRIKE_BURST_CURSOR,
+    PLASMA_STRIKE_COUNTDOWN, plasma_strike_camera,
+};
 pub use puera::*;
 pub use seru::*;
 pub use swordie::*;

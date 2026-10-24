@@ -376,6 +376,9 @@ pub struct CastModuleCodeRun {
     pub capture_pose_set: Option<legaia_engine_cast::cast_module_camera::CapturePoseSet>,
     /// A capture director's focus z drift on this pass.
     pub capture_focus_z: i16,
+    /// The capture director drifts before it shoots
+    /// ([`legaia_engine_cast::cast_module_camera::CaptureCamArm::drift_first`]).
+    pub capture_drift_first: bool,
     /// The spawn calls the module's arm made this frame, for a director that
     /// reports them ([`legaia_engine_cast::cast_module_camera::ModuleProfile::stages_spawns`]).
     pub spawns: &'static [legaia_engine_cast::cast_module_camera::ModuleSpawn],

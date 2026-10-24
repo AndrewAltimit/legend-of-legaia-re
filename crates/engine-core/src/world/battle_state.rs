@@ -451,6 +451,14 @@ pub struct BattleState {
     /// cast-sequence oracle's way to record a monster cast from a prompt
     /// with no pad drive. `false` on every ordinary fight.
     pub forced_monster_cast_at_prompt: bool,
+    /// Party seats a debug seed stands in the Spirit stance when the forced
+    /// monster turn is dispatched from the prompt
+    /// ([`Self::forced_monster_cast_at_prompt`]).
+    pub forced_guard: [bool; 3],
+    /// A cast module's hits land without opening the combo cluster: the
+    /// readout flag `DAT_8007B64C` its wrapper hits clear and a later arm
+    /// raises (PROT 0959's barrage, `BattleHud::hold_combo`).
+    pub combo_cluster_held: bool,
     /// A debug seed that makes the next party killing blow's steal roll
     /// land - the retail comparison corpus's way into a capture that shows
     /// the death-spoils caption: the capture holds the outcome of a
@@ -1080,6 +1088,8 @@ impl BattleState {
             forced_monster_cast: None,
             forced_monster_target: None,
             forced_monster_cast_at_prompt: false,
+            forced_guard: [false; 3],
+            combo_cluster_held: false,
             forced_steal: false,
             forced_melee_hits: Default::default(),
             forced_melee_total: None,

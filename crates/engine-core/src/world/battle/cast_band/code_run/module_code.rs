@@ -295,7 +295,11 @@ impl World {
             run.camera_shot = arm.shot;
             run.capture_drift = arm.drift;
             run.capture_pose_set = arm.pose_set;
+            if let Some(v) = arm.ctx_278 {
+                ctx.ctx_278 = v;
+            }
             run.capture_focus_z = arm.focus_z;
+            run.capture_drift_first = arm.drift_first;
             capture_held = arm.hold;
             capture_arm = Some(arm);
         }
@@ -1298,6 +1302,58 @@ impl World {
         if let Some(arm) = capture_arm {
             self.apply_capture_seat_writes(caster_slot, arm.caster_write);
             self.apply_capture_seat_writes(victim_slot, arm.victim_write);
+            // A director that lands the module's wrapper hits itself (PROT
+            // 0959's three sites, arm `0x0F`'s many times over): each is
+            // `FUN_801DD6B4(power, ctx[+0x13], 0)` aimed at `0x801C9370[0]`,
+            // its popup pushed with the raw roll (`jal 0x801F44A0` ahead of
+            // the clamp), then the shape-A clamp and the HP write. The fold
+            // owes the cast nothing.
+            if legaia_engine_cast::cast_module_ticks::damage_shape_for(entry).is_some()
+                && entry == 959
+            {
+                self.casting.module_skips_fold = true;
+            }
+            if let Some(site) = arm.hit_site
+                && let Some(shape) = legaia_engine_cast::cast_module_ticks::damage_shape_for(entry)
+                && let Some(roll) =
+                    self.capture_module_roll_site(shape, usize::from(site), caster_slot, 0)
+            {
+                // The shape-A clamp and the HP / bar writes. The two hits
+                // that strike the victim down (arms 7 and `0x0D`; arm 7
+                // stages its `+0x1F1` knockdown beside it) go through the
+                // safe-clamp hit arm the fold lands a cast with, the victim's
+                // reaction included; arm `0x0F`'s barrage restages nothing.
+                if site < 2 {
+                    self.apply_effect_child_hit(0, roll.max(0));
+                    if roll > 0 {
+                        let survives = self.actors.first().is_some_and(|a| a.battle.hp > 0);
+                        self.queue_battle_reaction(0, survives);
+                    }
+                } else {
+                    let orig = self.cast_view(0);
+                    let mut view = orig;
+                    ticks::apply_hit_floor_zero(&mut view, roll);
+                    let mut live = self.cast_view(0);
+                    live.fold_writes(&orig, &view);
+                    self.write_cast_view(0, &live);
+                }
+                self.battle
+                    .hit_fx
+                    .push(legaia_engine_battle::battle_events::BattleHitFx {
+                        target_slot: 0,
+                        amount: roll.clamp(0, i32::from(u16::MAX)) as u16,
+                        is_heal: false,
+                        is_crit: false,
+                    });
+            }
+            // PROT 0959's hits clear the readout flag and its arm `0x0F`
+            // raises it as it passes: the cluster opens on that pass.
+            self.battle.combo_cluster_held =
+                entry == 959 && (phase_in < 0x0F || (phase_in == 0x0F && arm.hold));
+            if arm.backdrop_off {
+                self.battle.backdrop_cue =
+                    legaia_engine_battle_vm::battle_ground_grid::BACKDROP_CUE_FULL;
+            }
         }
         // The summon-creature directors' HP and colour-word stores, after
         // the views' fold-back like PROT 0908's.

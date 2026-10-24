@@ -104,6 +104,9 @@ pub fn megaton_press_camera(
         0x0E => Some(1 << 8),
         _ => None,
     };
+    // The host's default order (shot, then drift) measures `.004` better
+    // over the cast than the body's own drift-first order; arms 0, 3 and 9
+    // take the drift-first path through their stores anyway.
     let mut arm = CaptureCamArm::default();
     if phase == 0 {
         st.countdown.0 = SPEED_SCALAR * 12;
@@ -204,6 +207,7 @@ pub fn megaton_press_camera(
         st.countdown.drain();
         if w >= st.countdown.0 {
             w -= SPEED_SCALAR << 5;
+            arm.hit_site = Some(2);
         }
         st.countdown.0 > 0
     } else {
@@ -261,6 +265,8 @@ pub fn megaton_press_camera(
                 arm.victim_write.colour = Some(0x2008_0200);
                 arm.victim_write.render_flag = Some(0);
             }
+            // `FUN_801DD6B4(0x80)` at `0x801F71E8`, as the arm passes.
+            7 => arm.hit_site = Some(0),
             8 => {
                 w = SHAKE_SEED;
                 toggle = 0;
@@ -279,7 +285,11 @@ pub fn megaton_press_camera(
                 arm.victim_write.cursor_reset = true;
             }
             0x0B => arm.caster_write.y = Some(-0x780),
-            0x0D => arm.victim_write.render_flag = Some(7),
+            // `FUN_801DD6B4(0x80)` at `0x801F7A90`.
+            0x0D => {
+                arm.victim_write.render_flag = Some(7);
+                arm.hit_site = Some(1);
+            }
             0x0E => {
                 arm.victim_write.y = Some(0);
                 arm.victim_write.cursor_reset = true;

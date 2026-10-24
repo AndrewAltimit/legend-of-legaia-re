@@ -219,6 +219,8 @@ def run_engine(a, out: Path) -> bool:
         # (Mule) short of its last arms.
         "LEGAIA_DIAG_CAST_SEQ_MAX": "4000",
     })
+    if a.guard:
+        env["LEGAIA_BATTLE_GUARD"] = a.guard
     env.update(dict(kv.split("=", 1) for kv in a.engine_env))
     (out / "engine-cmd.txt").write_text(
         " ".join(f"{k}={shlex.quote(v)}" for k, v in sorted(env.items()) if k.startswith("LEGAIA_"))
@@ -265,6 +267,8 @@ def main() -> int:
     ap.add_argument("--retail-lag", help="display lag in vsyncs, or 'auto' (2 * frame step, the default)")
     ap.add_argument("--strip", type=int, default=12, help="pairs in strip.png")
     ap.add_argument("--no-ground", action="store_true", help="do not seat the combatants on retail's ground pairs")
+    ap.add_argument("--guard", default="", metavar="SEATS",
+                    help="engine: party seats in the Spirit stance at the cast (comma list; retail's +0x1DE == 4)")
     ap.add_argument("--engine-env", action="append", default=[], metavar="K=V",
                     help="extra environment for the engine child (repeatable)")
     ap.add_argument("--out", help="output dir (default captures/cast-sequence/<state>_<spell>)")
