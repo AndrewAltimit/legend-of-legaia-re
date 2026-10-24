@@ -335,6 +335,16 @@ pub struct FieldPlayerAnim {
     scene_clip: Option<(u16, FieldClipPlayer)>,
     /// Whether the scene clip was the one playing last tick (rewind rule).
     playing_scene: Option<u16>,
+    /// The scene record [`Self::resolve_scene_clip`] last refused (another
+    /// skeleton), which the pick then hands to the motion pair at once.
+    scene_refused: Option<u16>,
+    /// The pose the last tick emitted, re-emitted while a fresh scene pick
+    /// waits for the host to resolve its clip ([`SCENE_RESOLVE_HOLD`]).
+    last_pose: Option<PoseFrame>,
+    /// Ticks the current pick has waited unresolved.
+    scene_wait: u8,
+    /// Whether the last tick re-emitted [`Self::last_pose`].
+    holding: bool,
 }
 
 impl FieldPlayerAnim {
@@ -353,6 +363,10 @@ impl FieldPlayerAnim {
             scene_record: None,
             scene_clip: None,
             playing_scene: None,
+            scene_refused: None,
+            last_pose: None,
+            scene_wait: 0,
+            holding: false,
         }
     }
 
@@ -425,6 +439,7 @@ impl FieldPlayerAnim {
         self.scene_clip = FieldClipPlayer::from_record(bundle, record as usize)
             .filter(|c| c.bone_count() == self.idle.bone_count())
             .map(|c| (record, c));
+        self.scene_refused = self.scene_clip.is_none().then_some(record);
     }
 
     /// A script poked scene-bank clip `record + 1` onto the player
@@ -448,8 +463,14 @@ impl FieldPlayerAnim {
 
     /// Which clip plays now and where its cursor stands: `(source, id,
     /// cursor, frame_count)`, `source` one of `scene` / `bank` / `walk` /
-    /// `idle`. A diagnostic view for tests and traces.
+    /// `idle`, or `held` while a fresh scene pick waits for its clip (`id`
+    /// the record). A diagnostic view for tests and traces.
     pub fn playing_clip(&self) -> (&'static str, usize, u32, usize) {
+        if self.holding
+            && let Some(r) = self.scene_record
+        {
+            return ("held", usize::from(r), 0, 0);
+        }
         if let Some((r, c)) = self
             .scene_clip
             .as_ref()
@@ -515,6 +536,35 @@ impl FieldPlayerAnim {
     ///
     /// REF: FUN_800204F8
     pub fn tick_with_flags(&mut self, flags: u16) -> (PoseFrame, u16) {
+        // A scene pick a script made this tick binds in retail at once, but
+        // its clip is loaded from the host's scene bundle in the frame tail
+        // that follows ([`Self::resolve_scene_clip`]). Falling through to the
+        // motion pair for that tick flashed a different clip for one frame;
+        // the body holds the pose it had instead, and the new clip starts at
+        // frame 0 on the tick after.
+        let pending = self.scene_record.is_some_and(|r| {
+            self.scene_refused != Some(r) && !self.scene_clip.as_ref().is_some_and(|(c, _)| *c == r)
+        });
+        if pending
+            && self.scene_wait < SCENE_RESOLVE_HOLD
+            && let Some(pose) = self.last_pose.clone()
+        {
+            self.scene_wait += 1;
+            self.holding = true;
+            self.moved_this_frame = false;
+            self.pad_drove_this_frame = false;
+            return (pose, flags);
+        }
+        if !pending {
+            self.scene_wait = 0;
+        }
+        self.holding = false;
+        let (pose, flags) = self.tick_picked(flags);
+        self.last_pose = Some(pose.clone());
+        (pose, flags)
+    }
+
+    fn tick_picked(&mut self, flags: u16) -> (PoseFrame, u16) {
         let moved = std::mem::take(&mut self.moved_this_frame);
         let pad_drove = std::mem::take(&mut self.pad_drove_this_frame);
         // A move nobody's pad made (a script walked the player) plays the
@@ -593,6 +643,11 @@ impl FieldPlayerAnim {
 /// move: one game frame of two vsyncs, so a script stepping the player every
 /// other vsync reads as one continuous walk.
 pub const SCRIPT_WALK_HOLD: u8 = 2;
+
+/// Ticks [`FieldPlayerAnim`] holds its last pose for a scene pick whose clip
+/// the host has not resolved yet: one frame tail resolves it, and a world no
+/// host feeds (a headless run) falls back to the motion pair after this.
+pub const SCENE_RESOLVE_HOLD: u8 = 2;
 
 /// Test fixture: a synthetic ANM bundle whose record `r` has `bones[r]`
 /// bones and `frames[r]` frames, each frame's bone `b` tagging `t_x` with
@@ -884,6 +939,40 @@ mod tests {
         // Release: idle restarts at frame 0.
         assert_eq!(anim.tick().bone_outputs[0].0[0], 100);
         assert!(!anim.walking);
+    }
+
+    /// The tick a script makes a scene pick, its clip is not loaded yet (the
+    /// host resolves it in the frame tail): the body holds its pose rather
+    /// than flashing the motion pair, then the clip starts at frame 0. A pick
+    /// nothing resolves falls back to the pair after the hold.
+    #[test]
+    fn an_unresolved_scene_pick_holds_the_last_pose() {
+        let party = synth_anm_bundle(&[(2, 3), (2, 4)]);
+        let idle = FieldClipPlayer::from_record(&party, 1).unwrap();
+        let walk = FieldClipPlayer::from_record(&party, 0).unwrap();
+        let mut anim = FieldPlayerAnim::new(idle, walk);
+        let scene = synth_anm_bundle(&[(2, 2), (2, 5)]);
+        // Idle frames 0, 0, 1 (step 8): the last pose emitted is frame 1.
+        for _ in 0..3 {
+            anim.tick();
+        }
+        let held = anim.tick().bone_outputs[0].0[0];
+        anim.select_scene_record(Some(1));
+        assert_eq!(anim.tick().bone_outputs[0].0[0], held, "held, not the pair");
+        anim.resolve_scene_clip(&scene);
+        assert_eq!(
+            anim.tick().bone_outputs[0].0[0],
+            100,
+            "scene record 1, frame 0"
+        );
+        // Never resolved: the hold runs out and the pair takes over.
+        anim.select_scene_record(Some(7));
+        let a = anim.tick().bone_outputs[0].0[0];
+        let b = anim.tick().bone_outputs[0].0[0];
+        assert_eq!(a, b);
+        assert_eq!(anim.playing_clip().0, "held");
+        anim.tick();
+        assert_eq!(anim.playing_clip().0, "idle");
     }
 
     #[test]

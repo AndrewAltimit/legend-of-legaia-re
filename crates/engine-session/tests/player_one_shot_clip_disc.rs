@@ -17,6 +17,10 @@
 //!   (bank slots 5 / 6). The port ignored the clamp, and the hop's arc-made
 //!   moves sent the body to the motion-derived walk loop for the whole flight.
 //!
+//! The tick a script makes the scene pick, the clip is not loaded yet (the
+//! host resolves it in the frame tail): the body holds its last pose for
+//! that tick instead of flashing the motion-derived pair.
+//!
 //! Both are driven here through a `NativeSession` with the per-frame tail the
 //! play hosts run (`step_world_frame_tail` over the binding's banks), the
 //! same player clip path the native window and the browser page share.
@@ -156,6 +160,13 @@ fn noas_getting_up_plays_once_and_holds() {
         }
     }
     let left_at = left_at.expect("the cutscene picked the getting-up clip and moved on");
+    // The tick of the pick holds the previous pose while the host resolves
+    // the clip; it never flashes the motion pair.
+    assert!(
+        run.iter().all(|s| s.source != "idle" && s.source != "walk"),
+        "the motion pair flashed under the scene pick: {:?}",
+        &run[..run.len().min(3)]
+    );
     let scene: Vec<&Sample> = run.iter().filter(|s| s.source == "scene").collect();
     let first = scene
         .first()

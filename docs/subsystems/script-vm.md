@@ -1609,9 +1609,14 @@ After the Done resume the timeline's post-naming beats animate the lead:
 land the player's `+0x4C` anim pointer on the scene ANM bundle's records
 47/48 (`record = move_id - 1`, the same record space as op-`0x4B` NPC
 cues). The first runs clamped (`AB F8 03` before it, `AD F8 08` waiting on
-its end latch); the clamp is cleared right after the second, which loops
-through the `4A 3C` wait until `A2 F8 01` hands back to the walk. How the
-player's `+0x62` steers these clips is in
+its end latch); the clamp is cleared right after the second, so it would
+loop, but the `4A 3C` wait ends before one pass does and `A2 F8 01` hands
+back to the walk. A retail capture from `s2_rimelm_town01`
+([`autorun_player_clip_beat.lua`](../../scripts/pcsx-redux/autorun_player_clip_beat.lua),
+per-vsync player `+0x5C` / `+0x62` / `+0x68`) reads clip 48 (15 frames,
+`+0x62 = 0x1D`) from cursor 8 to 232 in 58 vsyncs, then clip 49 (20 frames,
+`0x15`) from 16 to 232 in 58 vsyncs - cursor 319 is its last position - then
+clip 1. How the player's `+0x62` steers these clips is in
 [`field-locomotion.md`](field-locomotion.md#the-players-clip-control-word).
 Engine port: `engine-menus::name_entry` (SM),
 `engine-ui::menu::screens::name_entry` (draw builders + traced constants), and

@@ -154,8 +154,12 @@ fn map01_player_idles_on_the_party_bank_and_walks_on_the_kingdom_bank() {
     let mut walk_poses = HashSet::new();
     for _ in 0..39 {
         frame(&mut host, PadButton::Up.mask(), &scene_bundle);
-        walk_poses.insert(pose_key(&host));
         let anim = host.world.locomotion.player_anim.as_ref().unwrap();
+        // The tick of the pick holds the idle pose while the frame tail
+        // resolves the kingdom clip (`SCENE_RESOLVE_HOLD`).
+        if anim.playing_clip().0 != "held" {
+            walk_poses.insert(pose_key(&host));
+        }
         assert_eq!(anim.scene_record(), Some(0), "kingdom record `leader`");
         assert_eq!(host.world.locomotion.player_clip, 1, "clip id leader + 1");
         assert!(!host.world.locomotion.player_party_bank);
