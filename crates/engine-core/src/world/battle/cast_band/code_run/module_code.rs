@@ -1268,6 +1268,9 @@ impl World {
             if entry == 929 {
                 self.apply_mule_writes(phase_in, ctx.phase != phase_in);
             }
+            if entry == 928 {
+                self.apply_palma_writes(phase_in, ctx.phase != phase_in);
+            }
             self.apply_summon_pre_hits(
                 entry,
                 phase_in,

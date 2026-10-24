@@ -2399,7 +2399,17 @@ Mushura's arms 0 and 1 show the latched victim the band's freeze hid
 (`World::apply_horn_writes`): arm 1 shows
 the party, arm 3 seats the creature hidden and arm 4 shows it, arm 8 hides
 the party for the rise, and the heal arm `0xA` shows it again and hides the
-creature. Mule's monster-row visibility is carried too
+creature. Palma's monster-row visibility is carried for its opening
+(`World::apply_palma_writes`): arm 1 shows every living monster of seats
+3..6 on each of its passes, held or not (`+0x21C = 0`, `+0x04 = 0x20080200`,
+`0x801F6CFC..0x801F6D48`, ahead of the side-band token gate), so
+`palma_summon_mid_cast` frames the row standing while the stream fills, and
+arm 4's pass hides it (`0x801F73BC..0x801F73FC`) as it seats the creature.
+Arm 0's pull of each monster's ground pair to an eighth (`sra 3` into
+`+0x34` / `+0x38` at `0x801F6C9C..0x801F6CD8`, the originals parked at
+`0x801FA0A8`) and the later row writes (arm `0xE`'s re-show on the far
+plane `+0x38 = -0x4000`, arms `0xF` and `0x11`'s hides, the hit arm's lit
+`0x3C0`) are not carried. Mule's monster-row visibility is carried too
 (`World::apply_mule_writes`): arm 1 shows every living monster on each of
 its passes, held or not (`0x801F6D04`, ahead of the stream-token gate),
 arms 5 and 17 hide the row on their passes and arm 11 shows it again, and

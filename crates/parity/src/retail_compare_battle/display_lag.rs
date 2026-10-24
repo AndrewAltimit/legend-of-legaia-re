@@ -165,7 +165,9 @@ fn record_links_fade(ram: &[u8], i: u32) -> bool {
 /// frames keeps the law: gated a pass later on the fade, `horn`'s sparks
 /// and creature parted from retail's (`image` `.985` to `.979`), so the
 /// image child keeps the gate and steps only the fades on
-/// (`LEGAIA_SEAT_FADE_LEAD`).
+/// (`LEGAIA_SEAT_FADE_LEAD`). The slot-B cast parts' seeds follow the
+/// fade's table: they tick with the fade actor, and `horn`'s newest table
+/// draws the sparkles at the RAM's own levels (`cast_part_lag_vsyncs`).
 pub fn fade_passes_back(ram: &[u8]) -> Option<u8> {
     let cur = u32::from(game_anchors::u16_at(ram, DOUBLE_BUFFER_INDEX) & 1);
     match (record_links_fade(ram, cur), record_links_fade(ram, cur ^ 1)) {

@@ -364,3 +364,35 @@ fn horn_hides_and_shows_the_party_around_the_heal() {
     assert!(!world.battle_body_hidden(0));
     assert!(world.battle_body_hidden(9), "the creature leaves");
 }
+
+/// Palma's arm 1 shows the living monster row the band hid, on every pass
+/// whether it holds or not; arm 4's pass hides it again as the creature is
+/// seated.
+#[test]
+fn palma_shows_the_monster_row_until_its_creature_lands() {
+    use legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN;
+    const PALMA: u8 = 0x9A;
+    let mut world = aluru_world(Some(false));
+    assert_eq!(world.cast_module_for(PALMA), Some(928));
+    world.actors[1].battle.render_flag = RENDER_FLAG_HIDDEN;
+    world.actors[1].battle.render_color = 0;
+    assert!(world.battle_body_hidden(1));
+    world.casting.module_phase = 1;
+    world.run_cast_module_code(PALMA, 1);
+    assert!(!world.battle_body_hidden(1), "arm 1 shows the row");
+    world.casting.module_phase = 4;
+    world.casting.module_cam.countdown.0 = 0;
+    for _ in 0..20_000 {
+        if world.casting.module_phase != 4 {
+            break;
+        }
+        assert!(
+            !world.battle_body_hidden(1),
+            "held, arm 4 leaves the row up"
+        );
+        world.run_cast_module_code(PALMA, 4);
+    }
+    assert_ne!(world.casting.module_phase, 4, "arm 4 passed");
+    assert!(world.battle_body_hidden(1), "arm 4's pass hides the row");
+    assert!(!world.battle_body_hidden(0), "the caster is not a monster");
+}

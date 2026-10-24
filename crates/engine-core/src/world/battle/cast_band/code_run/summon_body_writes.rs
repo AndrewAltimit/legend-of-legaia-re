@@ -306,6 +306,36 @@ impl World {
     }
 
     /// The engine slots of the seated monsters with HP left.
+    /// PROT 0928's (Palma) monster-row visibility. Arm 1 shows every living
+    /// monster of seats 3..6 on each of its passes, held or not
+    /// (`+0x21C = 0`, `+0x04 = 0x20080200`, `0x801F6CFC..0x801F6D48`, ahead
+    /// of the side-band token gate at `0x801F6D58`), so the row the band hid
+    /// stands in the opening framing; arm 4's pass hides it again
+    /// (`+0x21C = 0xFF`, `+0x04 = 0`, `0x801F73BC..0x801F73FC`) as the
+    /// creature is seated. The engine's shown word is its resting `0` under a
+    /// lowered flag. Arm 0's pull of the row's ground pairs to an eighth
+    /// (`0x801F6C9C..0x801F6CD8`) and the later arms' row writes (arm
+    /// `0xE`'s re-show on the far plane `+0x38 = -0x4000`, arms `0xF` /
+    /// `0x11`'s hides, the hit arm's lit `0x3C0`) are not carried.
+    pub(in crate::world::battle::cast_band) fn apply_palma_writes(
+        &mut self,
+        phase_in: u8,
+        passed: bool,
+    ) {
+        use legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN;
+        let hidden = match (phase_in, passed) {
+            (1, _) => false,
+            (4, true) => true,
+            _ => return,
+        };
+        for slot in self.living_monster_slots().into_iter().take(4) {
+            if let Some(a) = self.actors.get_mut(slot) {
+                a.battle.render_flag = if hidden { RENDER_FLAG_HIDDEN } else { 0 };
+                a.battle.render_color = 0;
+            }
+        }
+    }
+
     fn living_monster_slots(&self) -> Vec<usize> {
         let pc = usize::from(self.party.party_count);
         (pc..self.actors.len().min(pc + 5))

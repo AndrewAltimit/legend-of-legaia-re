@@ -556,6 +556,106 @@ fn action_fx_part_seed_is_the_displayed_rotation() {
     );
 }
 
+/// The ray fan fading out at the end of the invoke clip is seeded with its
+/// depth-cue level taken back the lag, and a fan its program killed on the
+/// RAM's pass is still seated while the displayed frame drew it short of
+/// black: `meta_summon_mid_cast`'s fan holds `0x132C` (the kill skipped
+/// the clamp) at rate `0xCC8`, `0x199` a vsync, so four vsyncs back it drew
+/// at `0xCC8`.
+#[test]
+fn a_fading_ray_fan_is_seeded_with_its_displayed_level() {
+    let mut ram = vec![0u8; 0x20_0000];
+    put32(&mut ram, frame_step::FORCED_STEP, 2);
+    let nodes = [0x8008_2C9C, 0x8008_2D00];
+    put32(&mut ram, 0x8007_C34C + 4, nodes[0]);
+    for (i, &n) in nodes.iter().enumerate() {
+        put32(&mut ram, n, nodes.get(i + 1).copied().unwrap_or(0));
+        put32(&mut ram, n + 0x0C, 0x8002_1DF4);
+        put32(&mut ram, n + 0x10, 0x8);
+        put32(&mut ram, n + 0x48, 0x801F_5A04);
+        put16(&mut ram, n + 0x5A, 1);
+        put16(&mut ram, n + 0x26, 144);
+        put16(&mut ram, n + 0x82, 0xFE40);
+        put16(&mut ram, n + 0x90, 0xCC8);
+    }
+    put16(&mut ram, nodes[0] + 0x78, 0x132C);
+    // Black on the displayed frame too: killed and gone from the screen.
+    put16(&mut ram, nodes[1] + 0x78, 0x1A00);
+    let seeds = ram_read::retail_action_fx_parts(&ram);
+    assert_eq!(seeds.len(), 1);
+    assert_eq!(
+        seeds[0].pokes,
+        vec![(0x24, 0), (0x26, 144 + 4 * 56), (0x28, 0), (0x78, 0xCC8)]
+    );
+}
+
+/// A slot-B cast part under a depth-cue ramp is seeded with its level taken
+/// back the lag, unless it stands on the clamp its rate runs toward - Horn's
+/// sparkle (`0x801F85FC`, fading in at `-0x100` a vsync): the youngest
+/// volley's `0xD00` reads black two step-`2` passes back, the oldest's `0`
+/// is left to the replay.
+#[test]
+fn a_cast_part_level_ramp_is_seeded_off_its_clamp() {
+    let mut ram = vec![0u8; 0x20_0000];
+    put32(&mut ram, frame_step::FORCED_STEP, 2);
+    let nodes = [0x8008_2000, 0x8008_2100, 0x8008_2200];
+    put32(&mut ram, 0x8007_C34C + 4, nodes[0]);
+    for (i, &n) in nodes.iter().enumerate() {
+        put32(&mut ram, n, nodes.get(i + 1).copied().unwrap_or(0));
+        put32(&mut ram, n + 0x0C, 0x8002_1DF4);
+        put32(&mut ram, n + 0x48, 0x801F_85FC);
+        put16(&mut ram, n + 0x5A, 2);
+        put16(&mut ram, n + 0x90, 0xF800);
+    }
+    put16(&mut ram, nodes[0] + 0x78, 0xD00);
+    put16(&mut ram, nodes[1] + 0x78, 0x100);
+    put16(&mut ram, nodes[2] + 0x78, 0);
+    let level = |s: &legaia_engine_effects::summon::CastPartSeed| {
+        s.pokes.iter().find(|p| p.0 == 0x78).map(|p| p.1)
+    };
+    let seeds = ram_read::retail_cast_parts(&ram);
+    assert_eq!(seeds.len(), 3);
+    assert_eq!(level(&seeds[0]), Some(0x1000));
+    assert_eq!(level(&seeds[1]), Some(0x500));
+    assert_eq!(level(&seeds[2]), None);
+}
+
+/// A capture saved after the flip with the current table empty and the
+/// fade linked under the other record shows the pass before the newest
+/// table, so a cast part's seed is taken back one pass: Horn's capture.
+#[test]
+fn a_cast_part_is_taken_back_one_pass_when_the_newest_table_is_the_other() {
+    let mut ram = vec![0u8; 0x20_0000];
+    put32(&mut ram, frame_step::FORCED_STEP, 3);
+    // Record 1 links a fade quad at bucket 1; record 0 is current and empty.
+    let (ot0, ot1, pkt) = (0x800F_4B08_u32, 0x800F_099C_u32, 0x8014_0000_u32);
+    put32(&mut ram, 0x8007_BF30 + 0x70, ot0);
+    put32(&mut ram, 0x8007_BF30 + 0x74 + 0x70, ot1);
+    for b in 0..0x1000u32 {
+        let link = |ot: u32| {
+            if b == 0 {
+                0x00FF_FFFF
+            } else {
+                (ot + (b - 1) * 4) & 0xFF_FFFF
+            }
+        };
+        put32(&mut ram, ot0 + b * 4, link(ot0));
+        put32(&mut ram, ot1 + b * 4, link(ot1));
+    }
+    put32(&mut ram, ot1 + 4, pkt & 0xFF_FFFF);
+    put32(&mut ram, pkt, 0x0500_0000 | (ot1 & 0xFF_FFFF));
+    put32(&mut ram, pkt + 4, 0x2BFF_FFFF);
+    let n = 0x8008_2000;
+    put32(&mut ram, 0x8007_C34C + 4, n);
+    put32(&mut ram, n + 0x0C, 0x8002_1DF4);
+    put32(&mut ram, n + 0x48, 0x801F_85FC);
+    put16(&mut ram, n + 0x5A, 2);
+    put16(&mut ram, n + 0x54, 480);
+    let seeds = ram_read::retail_cast_parts(&ram);
+    let wait = seeds[0].pokes.iter().find(|p| p.0 == 0x54).map(|p| p.1);
+    assert_eq!(wait, Some(480 + 8 * 3));
+}
+
 /// The ghosts on screen are the walk's slots read from the displayed frame,
 /// two ring slots down: `battle_melee_hit_spark`'s Vahn (rate `4`, step `2`)
 /// shows ring slots 4 and 6 - cursors `80` / `56` on `(-21, 116)` /

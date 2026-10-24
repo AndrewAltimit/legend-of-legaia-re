@@ -67,6 +67,8 @@ const PART_TICK: u32 = 0x8002_1DF4;
 /// ([`ROLLED_STAGER_RECORDS`](legaia_engine_cast::cast_module_ticks::ROLLED_STAGER_RECORDS))
 /// are seated the same way, their lean rate `+0x84` with them: Call Wave's
 /// rays fan at angles the replay's own stream does not deal.
+///
+/// The lag is [`cast_part_lag_vsyncs`]'s.
 pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon::CastPartSeed> {
     use legaia_engine_cast::cast_module_camera::ULTRA_CHARGE_SHOT_DISCS;
     use legaia_engine_cast::cast_module_ticks::{
@@ -74,7 +76,7 @@ pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon
     };
     let per_pass: Vec<u32> =
         legaia_engine_cast::cast_module_camera::per_pass_spawn_records().collect();
-    let lag = pass_steps(ram).iter().map(|&s| i32::from(s)).sum::<i32>();
+    let lag = cast_part_lag_vsyncs(ram);
     crate::retail_compare_script::actor_nodes(ram)
         .into_iter()
         .filter(|&n| {
@@ -93,16 +95,67 @@ pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon
             } else {
                 &[]
             };
+            let level =
+                level_ramping(ram, n).then(|| (0x78, displayed_morph_halfword(ram, n, 0x78, lag)));
             legaia_engine_effects::summon::CastPartSeed {
                 tag,
                 pokes: legaia_engine_effects::summon::CAST_PART_SEED_OFFSETS
                     .iter()
                     .chain(extra)
                     .map(|&o| (o, displayed_part_halfword(ram, n, o, lag)))
+                    .chain(level)
                     .collect(),
             }
         })
         .collect()
+}
+
+/// Vsyncs a slot-B cast part on the displayed frame lags the RAM's by: the
+/// two passes' steps, except on a capture saved after the flip with the
+/// current table still empty ([`fade_passes_back`] `Some(1)`), where the
+/// newest table under the other record drew the parts' RAM state and the
+/// screen shows the pass before it - one pass, the RAM pass's own step.
+///
+/// `horn_summon_mid_cast` reads that way. Its newest table draws each
+/// sparkle's packets at the RAM's own depth-cue level (the middle volley's
+/// `0x100` as `0xEFEFEF`, the youngest's `0xD00` as `0x2F2F2F`), so the
+/// parts take their ticks with the fade actor, not with the logic words the
+/// two-pass law covers. Seated a pass back (step `3`) the sparks land on
+/// retail's: `image` `.988` to `1.000` (mae `4.3` to `3.5`); seated two
+/// passes back each stood one pass further out along its converging path
+/// and one pass dimmer in its fade-in.
+fn cast_part_lag_vsyncs(ram: &[u8]) -> i32 {
+    let steps = pass_steps(ram).map(i32::from);
+    match fade_passes_back(ram) {
+        Some(1) => steps[0],
+        _ => steps.iter().sum(),
+    }
+}
+
+/// Whether part `node`'s depth-cue level `+0x78` is under its ramp (a
+/// non-zero rate `+0x90`, `(+0x90 * 8) >> 6` a vsync): then the level is a
+/// clock of the part's age like its banks, and a seed carries it taken back
+/// the display lag ([`displayed_morph_halfword`]).
+///
+/// Horn's sparkle triples (`0x801F859C` / `0x801F85FC` / `0x801F865C`) open
+/// at level `0x1000` (black: op `0x0C`, far colour black) and fade in at
+/// `-0x100` a vsync (op `0x0D`). `horn_summon_mid_cast` holds three
+/// volleys, the youngest three vsyncs in (`0xD00`) and born inside the
+/// lag, so the displayed frame drew it black; the seat had cloned an older,
+/// fully lit replay part for it, and four sparks the screen does not show
+/// drew at full brightness.
+///
+/// A level standing on the clamp its rate runs toward names no age and is
+/// left to the replay: the post-VM clamp `0x80022BC0..0x80022C1C` zeroes a
+/// level that wrapped below `0` and saturates one past `0x1000`, so Horn's
+/// oldest volley (level `0`, rate `-0x800`) finished its fade some time
+/// before the RAM's pass. A part its program killed on the pass skips the
+/// clamp (the kill test at `0x80022BB4..0x80022BB8` jumps past it), which is
+/// how Meta's fan holds `0x132C`.
+fn level_ramping(ram: &[u8], node: u32) -> bool {
+    let rate = game_anchors::u16_at(ram, node + 0x90) as i16;
+    let level = game_anchors::u16_at(ram, node + 0x78);
+    (rate < 0 && level != 0) || (rate > 0 && level != 0x1000)
 }
 
 /// The render banks an effect-script table part's seed carries: its
@@ -161,6 +214,31 @@ const RAY_BURST_RECORDS: [u32; 2] = [0x801F_5484, 0x801F_54B4];
 /// short. `swordie_summon_mid_cast` holds `0xBB0` at rate `0x88` against a
 /// replay standing past the displayed `0x990`.
 const LANE_SEEDED_FANS: [u32; 1] = [0x801F_5A04];
+
+/// Whether part `node` is a [`LANE_SEEDED_FANS`] fan under its depth-cue
+/// ramp: a level `+0x78` off zero with a rate `+0x90`. The fan fades out
+/// that way at the end of the invoke clip, `(+0x90 * 8) >> 6` a vsync
+/// toward its black far colour (`0x199` at Meta's and Freed's `0xCC8`),
+/// so like its banks the level is a clock of its age and is seated taken
+/// back the display lag ([`displayed_morph_halfword`]).
+/// `meta_summon_mid_cast` holds `0x132C` in the RAM, which its newest
+/// table drew black (the level past `0x1000`), while the displayed frame,
+/// four vsyncs back, drew the rays at `0xCC8`; the replay stood at `0xFFA`
+/// and drew no rays.
+fn fan_level_ramping(ram: &[u8], node: u32) -> bool {
+    LANE_SEEDED_FANS.contains(&game_anchors::u32_at(ram, node + 0x48))
+        && game_anchors::u16_at(ram, node + 0x78) != 0
+        && level_ramping(ram, node)
+}
+
+/// Whether a killed fan (`+0x10 & 8`, its program's end reached on the
+/// RAM's pass) still drew on the displayed frame: under its level ramp
+/// ([`fan_level_ramping`]), and short of black `lag` vsyncs back. Meta's
+/// fan is killed on the pass after the newest table drew it at `0xFFA`; the
+/// frame on screen is a pass older again.
+fn fan_fading_through_lag(ram: &[u8], node: u32, lag: i32) -> bool {
+    fan_level_ramping(ram, node) && displayed_morph_halfword(ram, node, 0x78, lag) < 0x1000
+}
 
 /// Only the ray bursts are seeded this way ([`is_ray_burst`]). Other
 /// morphing parts are left to the replay: seeded the same way, Ultra
@@ -247,7 +325,8 @@ pub(super) fn retail_action_fx_parts(
         .filter(|&n| {
             let rec = game_anchors::u32_at(ram, n + 0x48);
             game_anchors::u32_at(ram, n + 0x0C) == PART_TICK
-                && game_anchors::u32_at(ram, n + 0x10) & 0x8 == 0
+                && (game_anchors::u32_at(ram, n + 0x10) & 0x8 == 0
+                    || fan_fading_through_lag(ram, n, lag))
                 && overlay.contains(&rec)
                 && (is_burst_child(rec)
                     || is_growing_default_arm(ram, n)
@@ -292,12 +371,15 @@ pub(super) fn retail_action_fx_parts(
                 && game_anchors::u32_at(ram, n + 0x10) & 0x1000 != 0
                 && game_anchors::u16_at(ram, n + 0xA0) < 0x1000)
                 .then(|| (0xA0, displayed_morph_halfword(ram, n, 0xA0, lag)));
+            let level = fan_level_ramping(ram, n)
+                .then(|| (0x78, displayed_morph_halfword(ram, n, 0x78, lag)));
             legaia_engine_effects::summon::CastPartSeed {
                 tag,
                 pokes: offsets
                     .iter()
                     .map(|&o| (o, displayed_part_halfword(ram, n, o, lag)))
                     .chain(lane)
+                    .chain(level)
                     .collect(),
             }
         })

@@ -1373,7 +1373,7 @@ PROT 0930's sparkles are the same kind of part: its stager seats a volley
 of them on every op-`0x20` call its looping record `0x801F857C` makes, each
 at a `rand()` spoke, and how many volleys are live is the side-band wait's
 length. They are in the seat too (`per_pass_spawn_records`), which holds
-`horn_summon_mid_cast` at `.979`.
+`horn_summon_mid_cast` at `1.000`.
 
 Each seeded word is taken back to the displayed frame
 (`displayed_part_halfword`): the part tick integrates the render banks, the
@@ -1391,6 +1391,26 @@ pass whose entry is the clamp ran step `4`
 ([below](#a-drives-frame-is-the-one-the-display-showed)), and its consecutive
 rays stand four vsyncs apart. Taken back six vsyncs the rays read `.894`,
 eight `.901`.
+
+A capture saved after the flip with the current table still empty, the
+fade linked under the other record (`fade_passes_back` `Some(1)`), takes the
+parts back **one** pass, the RAM pass's own step (`cast_part_lag_vsyncs`):
+the parts tick with the fade actor, and the newest table drew them at the
+RAM's words. `horn_summon_mid_cast`'s newest table draws each sparkle at its
+RAM depth-cue level (the middle volley's `0x100` as `0xEFEFEF`, the
+youngest's `0xD00` as `0x2F2F2F`, `scripts/mednafen/ot-raster.py`). Taken
+back two step-`3` passes each spark stood a pass further out on its
+converging path and a pass dimmer in its fade-in, and the frame read `.988`;
+one pass back it reads `1.000`.
+
+A part under a depth-cue ramp (rate `+0x90`, `(+0x90 * 8) >> 6` a vsync) is
+seeded with its level `+0x78` as well, taken back the same way. Horn's
+sparkles open black (op `0x0C`, level `0x1000`) and fade in at `-0x100` a
+vsync; a volley born inside the lag reads black on screen, where the seat's
+shortfall clone of an older, lit part drew it at full brightness. A level on
+the clamp its rate runs toward (`0` fading in, `0x1000` fading out) names no
+age and stays the replay's: the post-VM clamp `0x80022BC0..0x80022C1C`
+zeroes a level that wrapped below `0` and saturates one past `0x1000`.
 
 The snapshot is otherwise kept to those records. A part seated once runs on
 a clock the replay already aligns, and the RAM is one frame-pair ahead of the
@@ -1438,9 +1458,20 @@ program words may have been rewritten inside the display lag (Swordie's fan
 reloads its wait for the fade-out on the captured pass), so the wait, the
 PC and the level ramp stay the replay's. `freed_summon_mid_cast` rose from
 `.906` to `.954`, `swordie_summon_mid_cast` from `.939` to `.992` and
-`shiny_refactor_gimard_precast` (the same fan) from `.902` to `.928`; seating
-the level as well measured no better. The fan's angles are this clock, not a
-`rand()` draw.
+`shiny_refactor_gimard_precast` (the same fan) from `.902` to `.928`. The
+fan's angles are this clock, not a `rand()` draw.
+
+At the end of the invoke clip the fan fades out under a depth-cue ramp
+(`+0x90 = 0xCC8`, `0x199` a vsync toward its black far colour), and the level
+`+0x78` is then a clock too: a fan off zero under the ramp is seated with it,
+taken back the display lag (`fan_level_ramping`). A fan its program killed on
+the RAM's pass (`+0x10 & 8`) is still seated while the displayed frame drew
+it short of black (`fan_fading_through_lag`): the kill test at
+`0x80022BB4..0x80022BB8` jumps past the post-VM clamp, so the level reads
+past `0x1000`. `meta_summon_mid_cast`'s fan holds `0x132C`; its newest table
+drew the rays black at `0xFFA` and the displayed frame at `0xCC8`, where the
+replay's own fan stood at `0xFFA` and drew none (`image` `.998` to `1.000`;
+`freed_summon_mid_cast`'s fan, mid-fade at `0x996`, `.988` to `.989`).
 
 A growing default-arm node is the same clock on another block. A draw-kind-4
 node on the default emitter (`+0x56 == 4`, `+0x9E & 0x6000 == 0`) in render
