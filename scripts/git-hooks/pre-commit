@@ -548,6 +548,14 @@ if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/ci/check-ui-host-drift.p
         exit 1
     fi
 fi
+if command -v python3 >/dev/null 2>&1 && [[ -f "scripts/ci/check-page-export-reach.py" ]]; then
+    printf '[pre-commit] play-page export reach (every LegaiaRuntime export reached or waived)\n'
+    if ! python3 scripts/ci/check-page-export-reach.py >/dev/null; then
+        python3 scripts/ci/check-page-export-reach.py >&2 || true
+        printf '[pre-commit] Wire the page control, or waive it in scripts/ci/page-export-reach-waivers.toml (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
+        exit 1
+    fi
+fi
 
 # wasm32 type-check. Every cargo gate above builds for the HOST triple, so a
 # `#[cfg(target_arch = "wasm32")]` block - which is most of the browser play

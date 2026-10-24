@@ -788,6 +788,8 @@ div.play-vis-head { cursor: default; }
       <div class="play-rail">
         <div class="play-card">
           <h3>Controls</h3>
+          <button type="button" id="play-keys-reset"
+                  title="Put every key back to its default binding - the way out if a Key Config rebind left you without a way into the menu (the native legaia-engine config reset).">Reset keys</button>
           <div class="play-keys" id="play-keys">
             <kbd data-key="ArrowUp">&uarr;&darr;&larr;&rarr;</kbd><span>Walk (camera-relative)</span>
             <kbd data-key="KeyW">W A S D</kbd><span>Walk, same as the arrows</span>
@@ -2899,6 +2901,20 @@ div.play-vis-head { cursor: default; }
     let err = '';
     try { err = rt.set_active_party_spec(spec); } catch (e) { err = String(e); }
     saveMsg(err ? `Party: ${err}` : `Party set to ${spec}.`, !!err);
+    canvas.focus();
+  });
+  /* Reset keys: the engine's default layout back over a Key Config rebind
+   * (`pad_bindings_reset`, the native `legaia-engine config reset`); the
+   * running view re-reads the table through its revision counter. */
+  document.getElementById('play-keys-reset').addEventListener('click', () => {
+    const rt = window.__playRuntime;
+    if (!rt || typeof rt.pad_bindings_reset !== 'function') {
+      saveMsg('Load a disc before resetting the keys.', true);
+      return;
+    }
+    try { rt.pad_bindings_reset(); } catch (e) { console.warn('pad_bindings_reset', e); }
+    if (typeof window.legaiaSyncPadBindings === 'function') window.legaiaSyncPadBindings(rt);
+    saveMsg('Keys reset to the defaults.');
     canvas.focus();
   });
   document.getElementById('play-force-battle').addEventListener('click', () => {

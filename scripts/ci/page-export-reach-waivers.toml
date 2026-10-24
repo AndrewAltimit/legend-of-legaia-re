@@ -1,0 +1,163 @@
+# Waivers for scripts/ci/check-page-export-reach.py: LegaiaRuntime exports
+# no site source names, each with the kind of reason it has. A row may name
+# exports by glob. A row that matches nothing, or matches an export the page
+# now names, fails the gate - delete it.
+#
+# Kinds: probe, tick-internal, driver, superseded, both-absent (meanings in
+# the script's KINDS table and docs/tooling/host-drift.md#page-export-reach).
+
+[[waiver]]
+kind = "probe"
+reason = "Read-only state the Rust oracles (crates/web-play/tests, engine-shell host_frame_parity) and headless drivers sample; the page draws the same state from its draw-list exports."
+names = [
+    "active_party_json",
+    "boot_continue_is_open",
+    "boot_logos_is_active",
+    "boot_title_attract_skips",
+    "boot_title_has_save_data",
+    "boot_title_submode",
+    "card_slot_dirty",
+    "disc_loaded",
+    "field_menu_model_json",
+    "field_offmap_hide_xz",
+    "field_player_occluded",
+    "field_player_screen_y",
+    "field_status_json",
+    "is_game_over",
+    "menu_is_open",
+    "menu_label",
+    "mode_state_json",
+    "name_entry_state_json",
+    "play_battle_camera_json",
+    "play_battle_face_count",
+    "play_battle_tutorial_json",
+    "play_camera_follow_angles",
+    "play_camera_gte_h",
+    "play_camera_is_top_view",
+    "play_camera_knobs_live",
+    "play_camera_tilt",
+    "play_camera_view_json",
+    "play_camera_zoom",
+    "play_cutscene_camera_json",
+    "play_dev_menu_enabled",
+    "play_field_anim_kind",
+    "play_fishing_hub_state_json",
+    "play_fmv_audio_cursor_secs",
+    "play_fmv_id",
+    "play_fmv_skippable",
+    "play_fmv_supported",
+    "play_fog_stats",
+    "play_menu_can_open",
+    "play_menu_sub_is_open",
+    "play_mg_baka_anim_dims",
+    "play_mg_baka_duel_facing_json",
+    "play_mg_baka_presentation_ready",
+    "play_mg_baka_state_json",
+    "play_mg_dance_chart_json",
+    "play_mg_dance_state_json",
+    "play_mg_muscle_state_json",
+    "play_mg_slot_active",
+    "play_mg_slot_art_ready",
+    "play_mg_slot_bonus_json",
+    "play_mg_slot_marquee_json",
+    "play_mg_slot_page_width",
+    "play_mg_slot_reel_pos",
+    "play_mg_slot_scene_json",
+    "play_mg_slot_scene_ready",
+    "play_mg_slot_strip",
+    "play_occlusion_focus",
+    "play_scene_save_allowed",
+    "play_screen_effect_push_count",
+    "play_sfx_cue_bank_prot",
+    "play_sfx_cue_slot",
+    "play_sfx_probe_active_samples",
+    "play_sfx_probe_peak",
+    "play_sfx_ready",
+    "play_world_map_marker_count",
+    "play_xa_probe_clip_frames",
+    "play_xa_probe_shout_peak",
+    "play_xa_state_json",
+    "retail_deviations_json",
+]
+
+[[waiver]]
+kind = "probe"
+reason = "Getters of session-only page switches: the boxes write them and never read them back, as no native launch switch is remembered for these (host-drift.md#remembered-between-runs)."
+names = ["arts_saved_list", "world_map_markers", "battle_fx_outline", "debug_compass_azimuth"]
+
+[[waiver]]
+kind = "tick-internal"
+reason = "Steps the page's play_frame_ticks export runs inside its tick order (BootSession::claim_tick hands each tick to the pause menu, a shop, the name entry, the prologue skip or the game-over hold); the standalone exports are the oracles' single-step handles."
+names = [
+    "game_over_input",
+    "name_entry_input",
+    "play_menu_open_row",
+    "play_menu_settle",
+    "play_menu_take_load_scene",
+    "play_shop_after_tick",
+    "play_shop_input",
+    "play_take_prologue_handoff",
+    "play_tick_overlay_sfx",
+    "play_fishing_stop",
+]
+
+[[waiver]]
+kind = "driver"
+reason = "Debug entries a headless driver or disc-gated oracle arms to reach a state no page control is owed (docs/tooling/site-shell.md); the native window's twins are launch flags or dev keys."
+names = [
+    "debug_arm_scene_shop",
+    "debug_formation_rows",
+    "debug_seed_inflight_cast",
+    "debug_seed_monster_cast",
+    "debug_shatter",
+    "debug_talk_to_placement",
+    "play_debug_seat",
+    "play_fmv_trigger",
+    "begin_new_game",
+]
+
+[[waiver]]
+kind = "superseded"
+reason = "The per-cheat setters cheat_apply (one PlayerCheat key, the engine-cheats list both hosts share) replaced on the page; kept for the cheat oracles."
+names = [
+    "cheat_give_item",
+    "cheat_grant_seru",
+    "cheat_learn_all_arts",
+    "cheat_max_items",
+    "cheat_restore_party",
+    "cheat_set_coins",
+    "cheat_set_gold",
+    "cheat_set_party_level",
+]
+
+[[waiver]]
+kind = "superseded"
+reason = "The per-fighter and stage mesh exports the engine's duel surface play_mg_baka_scene_* (engine-minigame-scenes::baka_duel_scene) replaced on the page."
+names = ["play_mg_baka_fighter_*", "play_mg_baka_stage_*", "play_mg_baka_anim_pose_frames", "play_mg_baka_duel_vram"]
+
+[[waiver]]
+kind = "superseded"
+reason = "Slot-cabinet art pages the cabinet's VRAM image (play_mg_slot_vram, play_mg_slot_cabinet_ready) and its payline screen prims replaced on the page."
+names = [
+    "play_mg_slot_bonus_number_rgba",
+    "play_mg_slot_digits_rgba",
+    "play_mg_slot_page_rgba",
+    "play_mg_slot_panel_rgba",
+    "play_mg_slot_payline_prims_json",
+    "play_mg_slot_symbol_rgba",
+]
+
+[[waiver]]
+kind = "superseded"
+reason = "Older field and NPC mesh reads: the placed-object layer draws through field_mesh_posed and the NPC layer through play_npc_draw_poses (FieldActors::draw_poses), which carry the transform and tilt."
+names = ["field_mesh", "play_dynamic_mesh_object_ids", "play_npc_transforms", "play_npc_tilts"]
+
+[[waiver]]
+kind = "superseded"
+reason = "The disc-free scaffold menu the retail pause menu (play_menu_*) replaced, and the blip-ownership flag every current bundle answers the same way."
+names = ["open_menu", "menu_tick", "play_menu_blips_inline"]
+
+[[waiver]]
+kind = "both-absent"
+reason = "Retail's 5-bit overlay tint switch: on by default on both hosts and no control on either (the native Renderer::set_ui_psx_tint has no caller either)."
+names = ["set_ui_psx_tint", "ui_psx_tint"]

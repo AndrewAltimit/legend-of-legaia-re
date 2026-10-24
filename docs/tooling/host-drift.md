@@ -1115,6 +1115,39 @@ buffer; a second program drawn into the same buffer with the rasterised
 `gl_FragCoord.z` loses nearly every depth test. The enhanced-lighting glow
 program did exactly that until it wrote the same log depth.
 
+## Page export reach
+
+Every tier above asks whether the page calls an engine kernel. None asks the
+converse: does the page call every export the runtime offers it? An export no
+page source names is either a probe a driver reads, a step the page's tick
+export already runs, a debug entry, a superseded surface - or a feature the
+page never offers. `play_fishing_start` was the last kind: exported, pinned by
+a Rust oracle and documented, with no page control calling it, so the page
+could reach fishing only by walking to a fishing spot.
+
+[`check-page-export-reach.py`](../../scripts/ci/check-page-export-reach.py)
+lists every method of every `#[wasm_bindgen] impl LegaiaRuntime` block and
+requires each to be named by a `site/` source - as a whole word, or built from
+a string prefix and a called name, the way `LegaiaFieldActors.api(rt,
+'play_npc_')` binds the NPC layer - or to be covered by a row of
+[`page-export-reach-waivers.toml`](../../scripts/ci/page-export-reach-waivers.toml):
+
+| Kind | Means |
+|---|---|
+| `probe` | a read-only state or diagnostic read an oracle or headless driver takes |
+| `tick-internal` | a step `play_frame_ticks` already runs inside its tick order |
+| `driver` | a debug entry a headless driver arms ([`site-shell.md`](site-shell.md#reaching-the-play-pages-battle-screen-headlessly)) |
+| `superseded` | an older surface a newer export replaced on the page |
+| `both-absent` | a control neither host offers |
+
+A row names exports by glob. A row that matches no export, or one the page now
+names, fails the gate, so a waiver cannot outlive the export it excuses. Being
+named by a Rust test does not count as reached: that is exactly how the fishing
+gap stayed green. The first sweep wired the two real gaps it found -
+the picker's Fishing row and a Reset keys button over `pad_bindings_reset`
+(natively `legaia-engine config reset`) - and waived the rest. It runs in CI
+and the pre-commit hook.
+
 ## What a waiver may say
 
 Both waiver files are validated for staleness on every run, so they cannot
