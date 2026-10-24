@@ -782,7 +782,10 @@ mod mounted_card_tests {
         let mut card = vec![0u8; legaia_save::card::CARD_SIZE];
         card[..2].copy_from_slice(&legaia_save::card::CARD_MAGIC);
         let view = legaia_save::emu::detect(&card).expect("MC header makes it a raw card");
-        view.claim_block(&mut card, block, "BASCUS-94254PRO-00")
+        // Filed under save number `block - 1`: the grid places a save by its
+        // filename's number, so this one shows in cell `block - 1`.
+        let name = legaia_save::card::legaia_save_filename(u32::from(block) - 1);
+        view.claim_block(&mut card, block, &name)
             .expect("block is addressable");
         let sc = view
             .sc_block_mut(&mut card, block)
@@ -865,15 +868,14 @@ mod mounted_card_tests {
         assert_eq!(session.current_slot(), 1);
     }
 
-    /// The grid behind port 2 is the card's own fifteen blocks: grid cell `i`
-    /// is card block `i + 1`, and only the claimed block reads as a save.
+    /// The grid behind port 2 is the card's own fifteen save numbers: the
+    /// block filed `-02` shows in cell 2, and only it reads as a save.
     #[test]
     fn the_card_grid_reads_the_claimed_block_and_nothing_else() {
         let (_dir, card) = mount("player.mcr", 3);
         let blocks = card_port_blocks([None, Some(&card)], 1);
         assert_eq!(blocks.len(), SLOT_GRID_CELLS as usize);
-        // Block 3 is grid cell 2 - the off-by-one that makes the directory
-        // block addressable would put this on cell 3.
+        // Filed `-02` (in block 3), so grid cell 2.
         let cell = &blocks[2];
         assert!(cell.present);
         assert_eq!(cell.content, SlotContent::LegaiaSave);
