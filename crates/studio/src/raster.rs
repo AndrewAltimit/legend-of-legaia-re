@@ -79,8 +79,13 @@ impl Model {
         Some(m)
     }
 
-    /// Re-centre the camera target on the current positions.
+    /// Re-centre the camera target on the current positions' bounding box.
     pub fn refit(&mut self) {
+        if self.positions.is_empty() {
+            self.center = [0.0; 3];
+            self.radius = 1.0;
+            return;
+        }
         let mut lo = [f32::MAX; 3];
         let mut hi = [f32::MIN; 3];
         for p in &self.positions {
@@ -95,14 +100,9 @@ impl Model {
             (lo[2] + hi[2]) * 0.5,
         ];
         self.center = c;
-        self.radius = self
-            .positions
-            .iter()
-            .map(|p| {
-                let d = [p[0] - c[0], p[1] - c[1], p[2] - c[2]];
-                (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
-            })
-            .fold(1.0f32, f32::max);
+        // Half the box diagonal, as the site's mesh viewers frame by.
+        let d = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
+        self.radius = (0.5 * (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()).max(1.0);
     }
 
     /// Pose every object by its part's rigid transform: the PSX
@@ -188,26 +188,41 @@ impl Model {
 /// prim baked near black still shows its shape under the viewer light.
 const LIT_FLOOR: f32 = 72.0;
 
-/// Orbit camera around the model's bounding-sphere centre.
+/// Vertical field of view of the orbit view, radians. The static site's
+/// mesh viewers (`site/_content/monsters.html`, `site/js/mesh-view.js`) use
+/// the same value, so a model frames alike on both.
+pub const FOV_Y: f32 = 1.1;
+
+/// Default camera distance in bounding-sphere radii (the site viewers'
+/// `distance: 2.6`).
+pub const DEFAULT_DISTANCE_RADII: f32 = 2.6;
+
+/// Orbit camera around the model's bounding-box centre.
+///
+/// Sign convention: positive `pitch` puts the eye **above** the model
+/// (PSX `-Y`), looking down at it; negative looks up from below.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Camera {
     /// Radians about the vertical axis.
     pub yaw: f32,
-    /// Radians up/down, clamped to just short of the poles.
+    /// Radians of elevation; positive looks down from above. Clamped to
+    /// just short of the poles.
     pub pitch: f32,
-    /// Distance multiplier (1 = the sphere fills the view).
+    /// Distance multiplier over [`DEFAULT_DISTANCE_RADII`] (1 = default).
     pub zoom: f32,
 }
 
 impl Default for Camera {
-    /// A three-quarter view of the model's front with some margin.
-    /// Character and monster meshes face `+Z` and the camera sits on the
-    /// `-Z` side at yaw 0, so the half turn puts the face toward the viewer.
+    /// The site's mesh-viewer pose: a three-quarter view of the model's
+    /// front from slightly above (`pitch` 0.2, `yaw` 0.5 past the front,
+    /// 2.6 radii out). Character and monster meshes face `+Z` and the
+    /// camera sits on the `-Z` side at yaw 0, so the half turn puts the
+    /// face toward the viewer.
     fn default() -> Self {
         Self {
-            yaw: std::f32::consts::PI + 0.6,
-            pitch: -0.35,
-            zoom: 1.3,
+            yaw: std::f32::consts::PI + 0.5,
+            pitch: 0.2,
+            zoom: 1.0,
         }
     }
 }
@@ -253,6 +268,29 @@ fn texel(vram: &Vram, cba: u16, tsb: u16, u: usize, v: usize) -> u16 {
     }
 }
 
+/// Screen position (`x`, `y` in pixels, `y` down) and view depth of the
+/// model-space point `p` under `cam` in a `w * h` frame. Model space is
+/// PSX: `+Y` down, so a positive `cam.pitch` raises the eye over `-Y`.
+pub fn project_point(model: &Model, cam: Camera, w: usize, h: usize, p: [f32; 3]) -> [f32; 3] {
+    let (sy, cy) = cam.yaw.sin_cos();
+    let (sp, cp) = cam.pitch.sin_cos();
+    let f = (h as f32 * 0.5) / (FOV_Y * 0.5).tan();
+    let dist = model.radius * DEFAULT_DISTANCE_RADII * cam.zoom.max(0.05);
+    let x = p[0] - model.center[0];
+    let y = p[1] - model.center[1];
+    let z = p[2] - model.center[2];
+    // Yaw about Y, then pitch about X.
+    let x1 = x * cy + z * sy;
+    let z1 = -x * sy + z * cy;
+    let y2 = y * cp - z1 * sp;
+    let z2 = y * sp + z1 * cp + dist;
+    [
+        w as f32 * 0.5 + f * x1 / z2,
+        h as f32 * 0.5 + f * y2 / z2,
+        z2,
+    ]
+}
+
 /// Render `model` into a `w * h` RGBA8 buffer.
 pub fn render(
     model: &Model,
@@ -273,26 +311,9 @@ pub fn render(
 
     let (sy, cy) = cam.yaw.sin_cos();
     let (sp, cp) = cam.pitch.sin_cos();
-    let fov = 45f32.to_radians();
-    let f = (h as f32 * 0.5) / (fov * 0.5).tan();
-    let dist = model.radius / (fov * 0.5).sin() * cam.zoom.max(0.05);
     let near = model.radius * 0.01;
 
-    let project = |p: [f32; 3]| -> [f32; 3] {
-        let x = p[0] - model.center[0];
-        let y = p[1] - model.center[1];
-        let z = p[2] - model.center[2];
-        // Yaw about Y, then pitch about X.
-        let x1 = x * cy + z * sy;
-        let z1 = -x * sy + z * cy;
-        let y2 = y * cp - z1 * sp;
-        let z2 = y * sp + z1 * cp + dist;
-        [
-            w as f32 * 0.5 + f * x1 / z2,
-            h as f32 * 0.5 + f * y2 / z2,
-            z2,
-        ]
-    };
+    let project = |p: [f32; 3]| project_point(model, cam, w, h, p);
     let screen: Vec<[f32; 3]> = model.positions.iter().map(|&p| project(p)).collect();
     // Viewer light, from the upper left in view space.
     let light = {
@@ -473,6 +494,44 @@ mod tests {
             ..m
         };
         assert_eq!(flat.texture_coverage(&legaia_tim::Vram::new()), (0, 0));
+    }
+
+    /// The default pose looks down on the model from above: on a floor
+    /// square under the model (PSX `+Y` is down), the edge nearer the eye
+    /// draws lower on screen than the far edge, and the top of the model
+    /// sits nearer the eye than its feet.
+    #[test]
+    fn default_camera_looks_down_from_above() {
+        let m = Model {
+            positions: Vec::new(),
+            rest: Vec::new(),
+            object_ids: Vec::new(),
+            uvs: Vec::new(),
+            cba_tsb: Vec::new(),
+            modulation: Vec::new(),
+            fill: Vec::new(),
+            textured: Vec::new(),
+            indices: Vec::new(),
+            center: [0.0; 3],
+            radius: 100.0,
+        };
+        let cam = Camera::default();
+        assert!(cam.pitch > 0.0);
+        let (w, h) = (320, 240);
+        // The camera sits toward the yaw-rotated -Z; probe along that axis.
+        let (s, c) = cam.yaw.sin_cos();
+        let toward_eye = |d: f32| [s * d, 50.0, -c * d];
+        let near = project_point(&m, cam, w, h, toward_eye(60.0));
+        let far = project_point(&m, cam, w, h, toward_eye(-60.0));
+        assert!(near[2] < far[2], "probe axis points at the eye");
+        assert!(
+            near[1] > far[1],
+            "near floor edge below far edge: {near:?} {far:?}"
+        );
+        let head = project_point(&m, cam, w, h, [0.0, -100.0, 0.0]);
+        let feet = project_point(&m, cam, w, h, [0.0, 100.0, 0.0]);
+        assert!(head[2] < feet[2], "head nearer the eye than feet");
+        assert!(head[1] < feet[1], "head draws above feet");
     }
 
     #[test]
