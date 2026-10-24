@@ -590,6 +590,11 @@ impl World {
         self.field_vm.free_roam_staging = false;
         self.flags.system_flags.clear();
         self.party.money = NEW_GAME_STARTING_GOLD;
+        // A New Game is no retail block's continuation: its saves compose
+        // from zero, as retail's own first save of a New Game does from a
+        // freshly reset window.
+        self.party.retail_window = None;
+        self.party.previous_scene = None;
         self.minigames.point_card = 0;
         self.party.inventory.clear();
         self.pending_scene_transition = None;

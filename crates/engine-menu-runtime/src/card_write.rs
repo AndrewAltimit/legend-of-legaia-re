@@ -113,6 +113,18 @@ pub fn retail_block_icon(
     })
 }
 
+/// The save-title template off the disc's menu overlay
+/// (`legaia_ui_formats::save_icon::title_template`, PROT 899), or `None`
+/// when it cannot be read - a free block's title then stays empty.
+pub fn retail_block_title_template(
+    index: &legaia_engine_scene::scene::ProtIndex,
+) -> Option<[u8; card::RETAIL_TITLE_TEMPLATE_LEN]> {
+    let entry = index
+        .entry_bytes(legaia_ui_formats::save_icon::PROT_ENTRY as u32)
+        .ok()?;
+    legaia_ui_formats::save_icon::title_template(&entry)
+}
+
 /// What [`write_save_into_card`] did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CardWrite {
@@ -166,6 +178,19 @@ pub fn write_save_into_card(
     resume
         .write_into_retail_sc_block(sc)
         .map_err(|e| format!("save: {e}"))?;
+    // The resume scene's CDNAME define, the index word beside its label.
+    if let Some(define) = index
+        .filter(|_| !resume.scene.is_empty())
+        .and_then(|i| i.block_range(&resume.scene))
+        .map(|(raw, _)| raw)
+    {
+        card::write_retail_scene_index(sc, define).map_err(|e| format!("save: {e}"))?;
+    }
+    // A free block has no title; stamp retail's template so the BIOS card
+    // browser names the save (the identity below patches its digits).
+    if let Some(template) = index.and_then(retail_block_title_template) {
+        card::write_retail_block_title(sc, &template).map_err(|e| format!("save: {e}"))?;
+    }
     card::write_retail_block_identity(sc, save_slot, icon.as_ref())
         .map_err(|e| format!("save: {e}"))?;
     if !was_active {

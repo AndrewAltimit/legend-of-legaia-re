@@ -204,6 +204,15 @@ fn composition_is_an_in_place_patch_over_a_named_region_list() {
             || legaia_save::card::RETAIL_OPTION_WORD_OFFSETS
                 .iter()
                 .any(|&(o, _)| (o..o + 4).contains(&i))
+            // The save summary (`0x80084364..`) the load screen's preview
+            // reads, derived from the fields above as `FUN_801E1934`
+            // derives it: clock copy, count, member ids, levels, the four
+            // stat rows and the party name table.
+            || (legaia_save::card::RETAIL_SUMMARY_CLOCK_OFFSET
+                ..legaia_save::card::RETAIL_PARTY_NAME_TABLE_OFFSET
+                    + legaia_save::card::RETAIL_PARTY_MEMBERS_MAX
+                        * legaia_save::card::RETAIL_PARTY_NAME_STRIDE)
+                .contains(&i)
             || (RETAIL_BLOCK_CHECKSUM_OFFSET..RETAIL_BLOCK_CHECKSUM_OFFSET + 4).contains(&i)
     };
     let stray: Vec<usize> = touched.into_iter().filter(|&i| !owned(i)).collect();

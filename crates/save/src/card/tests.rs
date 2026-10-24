@@ -399,12 +399,55 @@ fn save_icon_identity_patches_digits_only_into_a_real_title() {
         title[RETAIL_TITLE_DIGIT_OFFSETS[1]], 0x54,
         "slot 4 shows 05"
     );
+    // The time digits show the block's clock (zero here): `00:00`.
+    for off in RETAIL_TITLE_TIME_DIGIT_OFFSETS {
+        assert_eq!(title[off], SAVE_TITLE_DIGIT_BASE, "time digit {off:#x}");
+    }
     // Every other title byte is untouched.
     for (i, &b) in title.iter().enumerate() {
-        if !RETAIL_TITLE_DIGIT_OFFSETS.contains(&i) {
+        if !RETAIL_TITLE_DIGIT_OFFSETS.contains(&i) && !RETAIL_TITLE_TIME_DIGIT_OFFSETS.contains(&i)
+        {
             assert_eq!(b, 0x20, "title byte {i} moved");
         }
     }
+}
+
+/// The title's `Time HH:MM` reads the block's own play clock, as every
+/// retail-written title does (27:45 at clock 5995583 on a real card), and the
+/// save number lands in the save summary.
+#[test]
+fn save_icon_identity_stamps_the_play_time_and_summary_slot() {
+    assert_eq!(
+        save_title_time_digits(5_995_583).map(|d| d - SAVE_TITLE_DIGIT_BASE),
+        [2, 7, 4, 5]
+    );
+    assert_eq!(
+        save_title_time_digits(u32::MAX).map(|d| d - SAVE_TITLE_DIGIT_BASE),
+        [9, 9, 5, 9],
+        "clamped at 99:59"
+    );
+    let template = [0x20u8; RETAIL_TITLE_TEMPLATE_LEN];
+    let mut b = vec![0u8; BLOCK_SIZE];
+    b[RETAIL_PLAY_COUNTER_OFFSET..RETAIL_PLAY_COUNTER_OFFSET + 4]
+        .copy_from_slice(&6_090_083u32.to_le_bytes());
+    write_retail_block_title(&mut b, &template).unwrap();
+    write_retail_block_identity(&mut b, 6, None).unwrap();
+    let title = &b[RETAIL_TITLE_OFFSET..];
+    let digits: Vec<u8> = RETAIL_TITLE_DIGIT_OFFSETS
+        .iter()
+        .chain(RETAIL_TITLE_TIME_DIGIT_OFFSETS.iter())
+        .map(|&o| title[o] - SAVE_TITLE_DIGIT_BASE)
+        .collect();
+    assert_eq!(digits, [0, 7, 2, 8, 1, 1], "No. 07, Time 28:11");
+    assert_eq!(b[RETAIL_SUMMARY_SLOT_OFFSET], 6);
+    assert!(sc_block_checksum_valid(&b));
+    // A titled block keeps its title.
+    let before = b[RETAIL_TITLE_OFFSET..RETAIL_ICON_CLUT_OFFSET].to_vec();
+    write_retail_block_title(&mut b, &[0x41; RETAIL_TITLE_TEMPLATE_LEN]).unwrap();
+    assert_eq!(
+        &b[RETAIL_TITLE_OFFSET..RETAIL_ICON_CLUT_OFFSET],
+        &before[..]
+    );
 }
 
 #[test]

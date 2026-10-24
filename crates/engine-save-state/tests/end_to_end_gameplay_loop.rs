@@ -124,6 +124,8 @@ fn synthetic_save_file() -> SaveFile {
             active_party: vec![0, 1, 2],
             per_char: vec![],
             saved_chains: vec![],
+            retail_window: None,
+            previous_scene: None,
         },
     }
 }
@@ -624,6 +626,9 @@ fn synthetic_party_loop_round_trips_via_retail_sc_block() {
             audio_levels: post_loop.ext_v2.audio_levels,
             options: post_loop.ext_v2.options,
             play_time_seconds: post_loop.ext_v2.play_time_seconds,
+            // A lift keeps the block's whole live-state window.
+            retail_window: legaia_save::card::read_retail_live_window(&sc_block)
+                .map(<[u8]>::to_vec),
             ..SaveExtV2::default()
         },
         "only the retail-carried v2 fields survive the SC round-trip"
@@ -885,6 +890,8 @@ fn real_psx_memory_card_save_drives_full_loop() {
             active_party: vec![0, 1, 2],
             per_char: vec![],
             saved_chains: vec![],
+            retail_window: None,
+            previous_scene: None,
         },
     };
 

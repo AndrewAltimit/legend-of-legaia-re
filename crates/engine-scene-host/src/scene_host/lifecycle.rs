@@ -209,6 +209,13 @@ impl SceneHost {
                 legaia_engine_vm::actor_tick::clip_end_ticks(frames, step)
             })
             .collect();
+        // The previous-scene label `0x80084558`: a scene change backs the
+        // active label up into it (`FUN_80056758(0x80084558, 0x80084548)`
+        // in `FUN_8001FD44` / `FUN_80021934`), and a card Save carries it. A
+        // card load restores its own after the entry.
+        if let Some(old) = self.scene.as_ref() {
+            self.world.party.previous_scene = Some(old.name.clone());
+        }
         self.scene = Some(scene);
         self.assets = Some(assets);
         self.refresh_scene_destinations();

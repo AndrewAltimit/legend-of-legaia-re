@@ -838,6 +838,17 @@ mod cross_host {
     }
 
     fn diff(a: &SaveFile, b: &SaveFile) -> Option<String> {
+        // The save number in the window's summary is the block's filing,
+        // not the save's state: this test writes every save into block 1.
+        let filed_as_zero = |sf: &SaveFile| {
+            let mut sf = sf.clone();
+            if let Some(w) = sf.ext_v2.retail_window.as_mut() {
+                w[legaia_save::card::RETAIL_SUMMARY_SLOT_OFFSET
+                    - legaia_save::card::RETAIL_LIVE_WINDOW_OFFSET] = 0;
+            }
+            sf
+        };
+        let (a, b) = (&filed_as_zero(a), &filed_as_zero(b));
         if a == b {
             return None;
         }
@@ -863,6 +874,16 @@ mod cross_host {
                     .collect::<String>()
             };
             return Some(format!("ext: ...{}... vs ...{}...", cut(&da), cut(&db)));
+        }
+        if let (Some(x), Some(y)) = (&a.ext_v2.retail_window, &b.ext_v2.retail_window)
+            && let Some(o) = (0..x.len().min(y.len())).find(|&o| x[o] != y[o])
+        {
+            return Some(format!(
+                "retail_window+{o:#06x} (SC {:#06x}) {:#04x} vs {:#04x}",
+                o + legaia_save::card::RETAIL_LIVE_WINDOW_OFFSET,
+                x[o],
+                y[o]
+            ));
         }
         if a.ext_v2.field_position != b.ext_v2.field_position {
             return Some(format!(

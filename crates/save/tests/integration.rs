@@ -7,6 +7,7 @@
 
 mod card_inventory_ladder;
 mod card_item_slot_roundtrip;
+mod fresh_block_reproduces_retail;
 mod real_card_roundtrip;
 mod region_gate_card_brackets;
 mod resume_and_engine_ext;

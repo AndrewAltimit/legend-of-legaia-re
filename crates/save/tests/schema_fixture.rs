@@ -90,6 +90,8 @@ fn build_synthetic_save() -> SaveFile {
                 vibration_events: 1,
                 ..Default::default()
             }),
+            retail_window: None,
+            previous_scene: None,
             active_party: vec![0, 1, 2],
             per_char: vec![(
                 0,
@@ -291,6 +293,9 @@ fn retail_sc_round_trips_only_representable_fields() {
             audio_levels: save.ext_v2.audio_levels,
             options: save.ext_v2.options,
             play_time_seconds: save.ext_v2.play_time_seconds,
+            // A lift keeps the block's whole live-state window.
+            retail_window: legaia_save::card::read_retail_live_window(&sc_block)
+                .map(<[u8]>::to_vec),
             ..SaveExtV2::default()
         },
         "only the present party, the field position, the audio levels and \

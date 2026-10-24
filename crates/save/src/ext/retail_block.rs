@@ -87,6 +87,10 @@ impl SaveFile {
         {
             ext_v2.play_time_seconds = ticks / crate::card::RETAIL_PLAY_COUNTER_HZ;
         }
+        // The whole window and the previous scene: what a block written from
+        // this save starts from, so the words no field above names survive.
+        ext_v2.retail_window = crate::card::read_retail_live_window(sc_block).map(<[u8]>::to_vec);
+        ext_v2.previous_scene = crate::card::read_retail_previous_scene(sc_block);
         Ok(Self {
             party,
             ext: SaveExt {
@@ -189,6 +193,16 @@ impl SaveFile {
         // disc, so it lives in `card::write_retail_block_identity`.
         sc_block[..crate::card::SAVE_BLOCK_HEADER.len()]
             .copy_from_slice(&crate::card::SAVE_BLOCK_HEADER);
+        // A save lifted from a retail block starts from that block's whole
+        // live-state window - retail's composer copies the window from RAM,
+        // so it holds words no region below names - and every region is then
+        // laid over it. A save with no window patches the block in place.
+        if let Some(window) = self.ext_v2.retail_window.as_deref()
+            && window.len() == crate::card::RETAIL_LIVE_WINDOW_LEN
+            && sc_block.len() >= crate::card::RETAIL_LIVE_STATE_SIZE
+        {
+            crate::card::write_retail_live_window(sc_block, window)?;
+        }
         let records: Vec<Vec<u8>> = self.party.members.iter().map(|m| m.raw.to_vec()).collect();
         crate::card::write_retail_char_records(sc_block, &records)?;
         crate::card::write_retail_story_flags(sc_block, &self.ext.story_flag_bits)?;
@@ -222,12 +236,28 @@ impl SaveFile {
         }
         // The play clock, so retail's save screen prints the time this save
         // was played for and retail's own clock carries on from it.
-        crate::card::write_retail_play_counter(
-            sc_block,
-            self.ext_v2
-                .play_time_seconds
-                .saturating_mul(crate::card::RETAIL_PLAY_COUNTER_HZ),
-        )?;
+        // A window whose own clock is still in the same second keeps its
+        // ticks: the engine counts whole seconds, and rounding a retail
+        // clock down to one costs the block its sub-second ticks.
+        let ticks = self
+            .ext_v2
+            .play_time_seconds
+            .saturating_mul(crate::card::RETAIL_PLAY_COUNTER_HZ);
+        let ticks = crate::card::read_retail_play_counter(sc_block)
+            .filter(|t| {
+                self.ext_v2.retail_window.is_some()
+                    && t / crate::card::RETAIL_PLAY_COUNTER_HZ == self.ext_v2.play_time_seconds
+            })
+            .unwrap_or(ticks);
+        crate::card::write_retail_play_counter(sc_block, ticks)?;
+        if let Some(scene) = self.ext_v2.previous_scene.as_deref() {
+            crate::card::write_retail_previous_scene(sc_block, scene)?;
+        }
+        // The save summary the load screen's preview reads, derived from
+        // the fields just written as retail's composer derives it.
+        if sc_block.len() >= crate::card::RETAIL_LIVE_STATE_SIZE {
+            crate::card::write_retail_save_summary(sc_block)?;
+        }
         Ok(())
     }
 }

@@ -128,6 +128,8 @@ fn round_trip_v2_full_ext() {
                     sequence: vec![4, 4, 4, 4],
                 },
             ],
+            retail_window: None,
+            previous_scene: None,
         },
     };
     let bytes = sf.write();
@@ -368,6 +370,8 @@ fn save_with_saved_chain() -> SaveFile {
                 name: "Combo".to_string(),
                 sequence: vec![0x10, 0x20, 0x30],
             }],
+            retail_window: None,
+            previous_scene: None,
         },
     }
 }

@@ -151,6 +151,14 @@ pub struct PartyState {
     /// `World::step_name_entry`; on commit the name lands in
     /// [`PartyState::party_names`].
     pub name_entry: Option<crate::name_entry::NameEntry>,
+    /// The retail live-state window of the save this session was loaded
+    /// from ([`legaia_save::SaveExtV2::retail_window`]): the base a card Save
+    /// lays its regions over, so the window words the engine does not model
+    /// survive. `None` after a New Game.
+    pub retail_window: Option<Vec<u8>>,
+    /// The previous scene's CDNAME label (retail `0x80084558`), backed up by
+    /// every scene change and written into a card Save.
+    pub previous_scene: Option<String>,
 }
 
 impl PartyState {
@@ -177,6 +185,8 @@ impl PartyState {
             party_ability_mask: [0; legaia_engine_battle::accessory_passives::ABILITY_WORDS],
             party_names: Vec::new(),
             name_entry: None,
+            retail_window: None,
+            previous_scene: None,
         }
     }
 }

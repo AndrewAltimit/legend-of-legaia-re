@@ -997,28 +997,32 @@ existing save and is the sharp edge for a new one. Write order is records,
 then flags, then inventory, which is what reclaims slot 3's aliased tail.
 `engine-core/tests/save_block_checksum.rs` pins the region list.
 
-**What a fresh block does not carry.** Lifting a retail block and composing
-it into a *free* block of a blank card reproduces everything in the window
-except these spans (SC offsets; RAM = `0x80084140 + offset`), which stay zero
-because no lift field holds them:
+**The window rides with the save.** Retail's compose copies the whole
+window from RAM, so a block carries words the lift has no field for. A lift
+keeps the block's window whole (`SaveExtV2::retail_window`, SC `0x200..0x1A18`;
+an `LGSF` file carries it as the `LGXB` block), the engine holds it for the
+session (`PartyState::retail_window`, cleared by a New Game), and the composer
+lays it down first and every region over it. A retail block lifted and written
+into a *free* block of a blank card comes out identical to retail's own over
+the whole window (`crates/save/tests/fresh_block_reproduces_retail.rs`, over
+the library cards).
 
-| SC span | RAM | Contents |
-|---|---|---|
-| `0x207..0x257` | `0x80084347..` | the banner name's bytes after its NUL (MAN residue), and the party display-name list at `0x254` |
-| `0x260..0x276` | `0x800843A0..` | unnamed |
-| `0x300..0x308`, `0x324` | `0x80084440..`, `0x80084464` | unnamed, beside the fishing words |
-| `0x400` | `0x80084540` | unnamed |
-| `0x418..0x41F` | `0x80084558` | the previous scene's label |
-| `0x430..0x434` | `0x80084570` | the play clock's sub-second ticks (the engine keeps whole seconds) |
-| `0x480`, `0x4A4..0x4D1`, `0x4E4..0x4EC` | `0x800845C0..` | unnamed |
-| `0x564..0x568`, `0x590..0x59C` | `0x800846A4..`, `0x800846D0..` | unnamed, beside the options words |
+**What the composer derives.** For a save with no window (one born in the
+engine), the composer derives what retail's composer derives, so the block
+reads on retail's load screen and in the BIOS card browser:
 
-So a card the engine writes is read by retail's loader (header, checksum and
-every lifted region are retail's), but those words come back zero, where the
-same save written by retail would carry the live values. An overwrite of an
-existing block keeps whatever that block held there, since the composer
-patches in place. Which
-of the unnamed words a resumed retail game reads is open.
+| SC span | RAM | Contents | Source |
+|---|---|---|---|
+| `0x04..0x44` | `0x80084144` | title `Legend of Legaia NN  Time HH:MM`, from the template at menu-overlay VA `0x801E4FC8` (PROT 0899 file `0x167B0`) when the block has no title | `FUN_8003D26C(0x80084144, 0x801E4FC8, 2)` at `0x801E1A18`; the time digits match the block's clock on every library card |
+| `0x224..0x260` | `0x80084364..` | save summary: clock copy `0x224`, party count `0x228`, `1` at `0x229`, save number `0x22A`, per member its id `0x22C+k`, level `0x230+k`, the record's HP / MP halfwords in four rows (`0x234`, `0x23C`, `0x244`, `0x24C`, `+2k`) and its name at `0x254 + 0xC*k` | `0x801E1A34..0x801E1AE8` (`card::write_retail_save_summary`) |
+| `0x400` | `0x80084540` | the current scene's raw CDNAME define, a `u32` | rewritten by `FUN_8001D7F8` on a scene change; the library cards hold the define of the `0x408` label |
+| `0x418` | `0x80084558` | the previous scene's label | backed up from `0x80084548` by every name-based scene change (`FUN_8001FD44`, `FUN_80021934`); the engine tracks it on scene entry (`PartyState::previous_scene`, `LGXC`) |
+
+What such a block still leaves zero are the banner name's bytes after its NUL,
+the play clock's sub-second ticks (the engine keeps whole seconds; a window
+still in the same second keeps its ticks), and unnamed words at `0x300..0x308`,
+`0x324`, `0x480`, `0x4A4..0x4D1`, `0x4E4..0x4EC`, `0x564..0x568` and
+`0x590..0x59C`. Which of those a resumed retail game reads is open.
 
 The **resume point** has its own writer,
 `SaveResume::write_into_retail_sc_block` (`card::write_retail_resume`): the

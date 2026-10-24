@@ -193,6 +193,22 @@ impl SaveFile {
             out.extend_from_slice(&body);
         }
 
+        // Optional LGXB block: the retail live-state window the save was
+        // lifted from. Emitted only when the save carries one.
+        if let Some(window) = self.ext_v2.retail_window.as_deref() {
+            out.extend_from_slice(&SAVE_FILE_EXTB_MAGIC);
+            out.extend_from_slice(&(window.len() as u32).to_le_bytes());
+            out.extend_from_slice(window);
+        }
+
+        // Optional LGXC block: the previous scene's label.
+        if let Some(scene) = self.ext_v2.previous_scene.as_deref() {
+            let body = ascii_clamped(scene, RESUME_SCENE_MAX_LEN);
+            out.extend_from_slice(&SAVE_FILE_EXTC_MAGIC);
+            out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+            out.extend_from_slice(&body);
+        }
+
         out
     }
 }
