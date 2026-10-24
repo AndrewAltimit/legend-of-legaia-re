@@ -497,10 +497,12 @@ impl World {
     /// arm 5 on; without the flight the engine left it on arm 3's seat, behind
     /// the camera, and drew no creature from the portal on.
     ///
-    /// Not carried: arm 3's zero colour word (the idle tint arm eases it up
-    /// to neutral, the creature's fade-in; the engine's zero word reads as
-    /// neutral under a lowered flag) and the render-node scale `+0x72` arm 3
-    /// zeroes and arm 4 grows by `32` a frame delta.
+    /// Arm 3 also zeroes the creature's colour word, which the tint pass's
+    /// decay arm eases back to neutral (the fade-in). Not carried: the
+    /// render-node scale `+0x72` arm 3 zeroes (`sh zero,0x72(v1)` at
+    /// `0x801F6DDC`), each draining pass of arm 4 grows by `32 * delta`
+    /// (`0x801F6E00..0x801F6E1C`) and arm 4's exit stands at `0x1000`
+    /// (`0x801F71A4`) - the battle body draw reads no render scale.
     pub(in crate::world::battle::cast_band) fn apply_gilium_writes(
         &mut self,
         phase_in: u8,
@@ -519,6 +521,11 @@ impl World {
             (3, true) => {
                 [m.world_x, m.world_y, m.world_z] = [0, -0x100, -0x800];
                 a.battle.facing_angle = 0;
+                // `sw zero,0x4(s6)` at `0x801F6DD8`: the creature's colour
+                // word, which the tint pass's decay arm (`+0x21C == 0`)
+                // eases back up to neutral `8` lanes a vsync - its fade-in
+                // through the portal.
+                a.battle.render_color = 0;
             }
             (4, false) => {
                 m.world_z = m.world_z.wrapping_add(24 * d);

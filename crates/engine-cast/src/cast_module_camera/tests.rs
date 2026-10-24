@@ -1125,6 +1125,30 @@ fn mule_arm_kills_follow_the_parked_handles() {
 }
 
 /// Palma's arm 3 drops the stage once its word passes `scalar << 7`.
+/// Arm 4's exit pass stores TR x `-0x2000` and TR z `0x2000` straight
+/// before its `0x160`-frame pan: the drift lands the live globals there.
+#[test]
+fn palma_arm_4_pans_from_its_stored_origin() {
+    let mut st = ModuleCamState {
+        countdown: ModuleCountdown(128 * SPEED_SCALAR - MODULE_DRAIN_PER_TICK),
+        live_pitch_tr: Some((0x30, [0x10, 0x20, 0x1900])),
+        live_yaw: Some(0x100),
+        ..Default::default()
+    };
+    let d = palma_direct(&mut st, 4, seats());
+    assert!(!d.hold);
+    assert_eq!(d.shot.map(|s| s.frames), Some(0x160));
+    let drift = d.drift.expect("the exit stores the pan's origin");
+    assert_eq!(0x10 + i32::from(drift.tr_x), -0x2000);
+    assert_eq!(0x1900 + i32::from(drift.tr_z), 0x2000);
+    // No live pose fed: nothing to land, the pan sets out where it stands.
+    let mut st = ModuleCamState {
+        countdown: ModuleCountdown(128 * SPEED_SCALAR - MODULE_DRAIN_PER_TICK),
+        ..Default::default()
+    };
+    assert!(palma_direct(&mut st, 4, seats()).drift.is_none());
+}
+
 #[test]
 fn palma_arm_3_drops_the_stage_halfway() {
     assert_eq!(palma_stage_byte(3, (SPEED_SCALAR << 7) - 1), None);

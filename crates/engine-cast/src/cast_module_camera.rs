@@ -192,6 +192,11 @@ pub struct ModuleCamState {
     /// straight into the global (PROT 0909 arm 13, PROT 0911 arm 10, PROT
     /// 0913 arms 3 and 4). `None` where the host has no camera.
     pub live_yaw: Option<u16>,
+    /// The live pitch `0x8007B790` and TR trio `0x800840B8/BC/C0` as the
+    /// host last saw them, for an arm that stores them straight before it
+    /// arms a shot (PROT 0928's arm 4 exit). `None` where the host has no
+    /// camera.
+    pub live_pitch_tr: Option<(i32, [i32; 3])>,
     /// Module-image words a director reads that the module's ported tick
     /// body owns, fed by the host each tick: PROT 0910's hit counter
     /// `0x801F8DAC` and fourth-slash progress `0x801F8DA8`, which pick its

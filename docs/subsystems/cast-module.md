@@ -2257,7 +2257,14 @@ drains it is not identified.
 Arms that store the camera globals straight (Barra arms 3..6 and `0xC`, Palma
 arms 3 and 4) land each store as a one-frame cut on the origin, the TR z
 through the inverse of the tween's prescale; Meta's arm-6 and Ozma's arms 5..9
-TR y stores are not carried. Two module words are modelled on the director's
+TR y stores are not carried. Palma's arm 4 exit stores before it pans: the
+pass runs its per-pass stores at the word it reached, then TR x `-0x2000` and
+TR z `0x2000` straight (`0x801F7418..0x801F7424`), and only then arms its
+`0x160`-frame shot, whose tween sets out from those globals. The director
+lands the stores as a drift off the live pose
+(`ModuleCamState::live_pitch_tr`), applied ahead of the shot; armed off the
+sweep's last pose instead, the pan set out a fifth of the way to the planet
+and arm 5's frames filled the screen with it. Two module words are modelled on the director's
 `ramp`: Barra's TR z pull and its victim's fall, and Mule's world-anchor Z
 `0x80089120`, which the port otherwise keeps no twin of (from `0`).
 
@@ -2320,7 +2327,10 @@ the battle pass the way retail's do: one part tick a battle frame, the delta
 one-vsync delta, a drift under `8` never moves. Retail runs Horn's arms 4
 to 10 at step `4`, so a glow there moves `trunc(v / 2)` every four vsyncs;
 the engine's step-`2` frame moves it `trunc(v / 4)` every two, the same
-rate for the even drifts and short of it for the odd ones.
+rate for the even drifts and short of it for the odd ones. The mode-3 HSV
+adds and the mode-4 scroll countdown take the pass's span on both part lists,
+the summon scene's and the effect-script table scenes'
+(`World::queue_battle_part_scrolls_over`).
 
 Arm 9's close-up is filled by the creature itself: the crystal blades are
 its mesh (CLUTs `0x7980..0x798B`, texture page `0x37` in the ordering
@@ -2453,7 +2463,12 @@ Gilium's creature flight is carried (`World::apply_gilium_writes`): arm 3's
 pass seats the creature at `(0, -0x100, -0x800)`, each held pass of arm 4
 flies it `24` a frame delta along `+0x38` and `2` down `+0x36`
 (`0x801F6E30..0x801F6E58`), and arm 4's pass stands it at `+0x38 = 0x400`
-(`0x801F718C`), the point a retail capture holds from arm 5 on. Its stage
+(`0x801F718C`), the point a retail capture holds from arm 5 on. Arm 3 also
+zeroes the creature's colour word (`sw zero,0x4(s6)` at `0x801F6DD8`), which
+the tint pass's decay arm eases back up to neutral: the fade-in. The render
+scale `+0x72` it zeroes beside it (`0x801F6DDC`), which arm 4 grows `32 *
+delta` a draining pass and stands at `0x1000` on its exit (`0x801F71A4`), is
+not carried: the battle body draw reads no render scale. Its stage
 byte is carried by hand (`cast_module_camera::gilium_stage_byte`): `0` in
 arm 0, `2` on the passes of arms 3, 4 and `0x11`, and the stager's arm 0
 (`FUN_801F8B90`) stores `3` on the op-`0x20` call of the part that reaches
