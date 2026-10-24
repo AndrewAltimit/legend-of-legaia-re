@@ -47,6 +47,8 @@ pub(in crate::world) struct SeatArmWrite {
     pub colour: Option<u32>,
     /// The render node's `+0x72`, the render scale.
     pub render_scale: Option<u16>,
+    /// `(+0x21C, +0x0C)`: the tint state and blend word.
+    pub tint: Option<(u8, u32)>,
 }
 
 const fn seat(x: SeatCoord, z: SeatCoord, facing: u16) -> SeatArmWrite {
@@ -59,6 +61,7 @@ const fn seat(x: SeatCoord, z: SeatCoord, facing: u16) -> SeatArmWrite {
         loop_hold: None,
         colour: None,
         render_scale: None,
+        tint: None,
     }
 }
 
@@ -80,6 +83,11 @@ impl SeatArmWrite {
 
     const fn render_scale(mut self, scale: u16) -> Self {
         self.render_scale = Some(scale);
+        self
+    }
+
+    const fn tint(mut self, state: u8, blend: u32) -> Self {
+        self.tint = Some((state, blend));
         self
     }
 }
@@ -107,6 +115,7 @@ pub(in crate::world) fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> 
             loop_hold: Some((8, 0x80)),
             colour: None,
             render_scale: None,
+            tint: None,
         },
         // `0x801F6C54`: the facing only.
         912 => SeatArmWrite {
@@ -118,6 +127,7 @@ pub(in crate::world) fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> 
             loop_hold: None,
             colour: None,
             render_scale: None,
+            tint: None,
         },
         // `0x801F6CC0..0x801F6CE0`: `0x400` across and `0x267` back off
         // the installer's seat.
@@ -139,6 +149,7 @@ pub(in crate::world) fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> 
             loop_hold: None,
             colour: None,
             render_scale: None,
+            tint: None,
         },
         // `0x801F6FC0..0x801F6FC8`.
         921 => seat(Lit(0), Lit(0), 0),
@@ -158,8 +169,20 @@ pub(in crate::world) fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> 
         925 => seat(Lit(0), Lit(0), 0x800).rate(8),
         // `0x801F6DF4..0x801F6E0C`.
         927 => seat(Lit(0), Lit(0x1C0), 0x800).rate(0),
-        // `0x801F746C..0x801F7498`: the origin, lifted `0x40`.
-        928 => seat(Lit(0), Lit(0), 0).y(-0x40),
+        // `0x801F746C..0x801F7474`: the origin, facing `0`. The height is
+        // `0` for the arm's first spawn and `-0x40` for the next four, then
+        // `+0x36 = 0x300` (`0x801F74F4`), below the floor inside the planet
+        // the arm's parts draw; with it the red word `+0x04 = 0x3FF` held
+        // under tint state `0xFF` at blend `0x1000`, rate `8`
+        // (`0x801F74F8..0x801F7518`). Arm 5's pass lowers the state and the
+        // word eases back to neutral (`World::apply_palma_writes`). Not
+        // carried: the arm's rate `8` (`0x801F7518`) and arm 5's `4`, which
+        // the engine's clip staging for this creature does not survive (its
+        // clip 0 runs out under them and arm 7's clip-2 wait never lands).
+        928 => seat(Lit(0), Lit(0), 0)
+            .y(0x300)
+            .colour(0x3FF)
+            .tint(0xFF, 0x1000),
         // `0x801F70A0..0x801F70CC` (Z: see above).
         929 => seat(Lit(0), Keep, 0x800),
         // `0x801F6EA0..0x801F6EB4`.
@@ -231,6 +254,10 @@ impl World {
         if let Some(sc) = w.render_scale {
             a.battle.render_scale = Some(sc);
         }
+        if let Some((state, blend)) = w.tint {
+            a.battle.render_flag = state;
+            a.battle.render_blend = blend;
+        }
         if let Some((count, timer)) = w.loop_hold {
             a.battle.hit_count_bound = count;
             if let Some(p) = a.battle_animation.as_mut() {
@@ -279,13 +306,16 @@ impl World {
 /// only on the pass that finds it spent (`bgez` / `bgtz` straight ahead of
 /// `jal 0x801F19EC`), so the creature appears as the arm **leaves**, not as
 /// it is entered: PROT 0907 (`0x801F76B8`), 0911 (`0x801F70A0`), 0923
-/// (`0x801F6D9C`) and 0932 (`0x801F6EA4`). Their seat arm is
+/// (`0x801F6D9C`) and 0932 (`0x801F6EA4`). PROT 0928's arm 4 returns on
+/// every pass its sweep word has not reached its end (`bne t0,v0` at
+/// `0x801F73B0`), and only the passing one cuts the camera and calls the
+/// installer (`0x801F7444` / `0x801F744C`). Their seat arm is
 /// [`legaia_engine_cast::cast_module_camera::module_seat_arm`]; the
 /// summon-hold modules already name the arm after theirs. PROT 0915
 /// (`0x801F6E54`) and 0934 (`0x801F7028`) seat on the pass too, but their
 /// camera-only directors park on that arm, so the port seats them as it is
 /// entered.
-const SEATS_ON_PASS: [u32; 4] = [907, 911, 923, 932];
+const SEATS_ON_PASS: [u32; 5] = [907, 911, 923, 928, 932];
 
 /// Whether PROT `prot_entry`'s owed seat is due at module phase `phase`,
 /// given its seat arm `arm`.

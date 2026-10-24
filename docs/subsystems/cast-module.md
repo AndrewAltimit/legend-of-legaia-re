@@ -3336,9 +3336,18 @@ director carries it. Several arms also set their own rate: PROT 0922, 0927 and
 0966 freeze the creature (`0`), 0931, 0933 and 0934 seat it at `4`, 0924 and
 0925 at `8`, 0932 at `0x10`. PROT 0929 stores `-(0x80089120)`, the world
 anchor's Z, which the port keeps no twin of. Where the arm drains a countdown
-ahead of the call (PROT 0907, 0911, 0915, 0923, 0932, 0934), the creature is
-seated on the arm's pass rather than as it is entered, and the port does so
-for all of them.
+ahead of the call (PROT 0907, 0911, 0915, 0923, 0932, 0934), or holds until a
+sweep word reaches its end (PROT 0928, `bne t0,v0` at `0x801F73B0`), the
+creature is seated on the arm's pass rather than as it is entered, and the
+port does so for all of them. PROT 0928's arm seats its five parts on the
+creature at height `0` and `-0x40`, then stands it at `+0x36 = 0x300`,
+under the floor inside the planet those parts draw, and holds the red word
+`+0x04 = 0x3FF` under tint state `0xFF` at blend `0x1000`
+(`0x801F74F0..0x801F750C`); arm 5's pass lowers the state
+(`0x801F75DC`), so the creature rises out of the planet red and eases to its
+own colour. The arm's rate `8` and arm 5's `4` are not carried: under them
+the engine's clip staging runs the creature's first clip out, and arm 7's
+wait for clip 2 never lands.
 
 The creature's clips are the cast record's own, not its archive twin's: the
 installer hands the record's part table to the node (`0x801F1DCC`) and scans

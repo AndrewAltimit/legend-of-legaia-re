@@ -391,6 +391,18 @@ impl World {
                     m.world_z /= 8;
                 }
             }
+            // Arm 5's pass lowers the creature's tint state
+            // (`sb zero,0x21C(s4)` at `0x801F75DC`): the red word arm 4 held
+            // eases back to neutral as the creature rises out of the planet.
+            (5, true) => {
+                if let Some(a) = self
+                    .casting
+                    .summon_actor_slot
+                    .and_then(|s| self.actors.get_mut(usize::from(s)))
+                {
+                    a.battle.render_flag = 0;
+                }
+            }
             (1, _) | (4, true) => {
                 let hidden = phase_in == 4;
                 for slot in self.living_monster_slots().into_iter().take(4) {

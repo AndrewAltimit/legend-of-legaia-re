@@ -1237,14 +1237,15 @@ const S928_2: [ModuleSpawn; 1] = [
 const S928_4: [ModuleSpawn; 5] = [
     // 0x801F7478
     spawn(0x801F9260, Creature),
-    // 0x801F74A0
-    spawn(0x801F928C, Creature),
+    // 0x801F74A0: the four after the first seat on the creature lifted
+    // `0x40` (`sh v1,0x36(s4)` with `v1 = -0x40` at `0x801F7498`).
+    spawn(0x801F928C, CreatureRaised { dy: -0x40 }),
     // 0x801F74B8
-    spawn(0x801F92E8, Creature),
+    spawn(0x801F92E8, CreatureRaised { dy: -0x40 }),
     // 0x801F74D0
-    spawn(0x801F9330, Creature),
+    spawn(0x801F9330, CreatureRaised { dy: -0x40 }),
     // 0x801F74E8
-    spawn(0x801F9378, Creature),
+    spawn(0x801F9378, CreatureRaised { dy: -0x40 }),
 ];
 const S928_7: [ModuleSpawn; 1] = [
     // 0x801F7958
