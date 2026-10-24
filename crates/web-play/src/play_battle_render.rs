@@ -117,8 +117,10 @@ struct WebStageShell {
 /// The backdrop mesh for one object list: the shell drawn twice, the second
 /// copy under the per-stage transform. The disc shell is an authored HALF;
 /// the second copy closes the horizon. `append_scaled` reverses winding on a
-/// negative determinant (the mesh-level analogue of retail's `0x40000000 ->
-/// 0x48000000` draw-mode swap).
+/// negative determinant, and a mirrored copy B, which retail draws both-sided
+/// (`0x48000000`), is carried once per winding; the page draws the mesh under
+/// [`LegaiaRuntime::play_battle_backdrop_nclip`]
+/// (`legaia_engine_scene_host::scene_host::backdrop_shell_mesh`).
 fn stage_shell_mesh(
     tmd: &legaia_tmd::Tmd,
     raw: &[u8],
@@ -126,12 +128,13 @@ fn stage_shell_mesh(
     objects: &[usize],
 ) -> Option<BattleMesh> {
     let tmd0 = legaia_scene_formats::battle_backdrop::objects_tmd(tmd, objects);
-    let (mut vmesh, _oids, shading) = legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd0, raw);
-    let mut flat = crate::packet_color::hybrid(&vmesh, &shading);
-    let first = vmesh.clone();
-    vmesh.append_scaled(&first, second.scale());
-    let flat_copy = flat.clone();
-    flat.extend(flat_copy);
+    let (first, _oids, shading) = legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd0, raw);
+    let one = crate::packet_color::hybrid(&first, &shading);
+    // Copy A, copy B, and a both-sided copy B's reversed twin
+    // (`backdrop_shell_mesh`): one packet-colour run per appended copy.
+    let vmesh = legaia_engine_scene_host::scene_host::backdrop_shell_mesh(&first, second);
+    let copies = vmesh.positions.len() / first.positions.len().max(1);
+    let flat = one.repeat(copies);
     (!vmesh.indices.is_empty()).then_some(BattleMesh { mesh: vmesh, flat })
 }
 

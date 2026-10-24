@@ -139,7 +139,15 @@
         } catch (e) { /* draw uncued */ }
       }
       if (b.backdrop && !backdropHidden) {
-        draws.push({ meshId: b.backdrop, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0, cue: backdropCue });
+        /* Copy A keeps its front faces only; the mesh carries a both-sided
+         * copy B once per winding (`backdrop_shell_mesh`), so the cull leaves
+         * it both-sided. Guarded against a cached WASM without the export. */
+        const shellNclip = (typeof rt.play_battle_backdrop_nclip === 'function')
+          ? rt.play_battle_backdrop_nclip() : undefined;
+        draws.push({
+          meshId: b.backdrop, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0, cue: backdropCue,
+          nclip: shellNclip,
+        });
       }
       /* The backdrop's drawn slot 1 (on a stage that keeps object 1, the
        * horizon mist ribbon) turns about Y every battle frame, so it is one

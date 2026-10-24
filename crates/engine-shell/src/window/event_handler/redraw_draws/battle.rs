@@ -10,7 +10,10 @@ impl<'m> DrawCtx<'_, 'm> {
         let store = &self.store;
         let cam = self.cam;
         let DrawLists {
-            draws, color_draws, ..
+            draws,
+            color_draws,
+            nclip_marks,
+            ..
         } = out;
         // Battle backdrop: the scene's `scene_tmd_stream`
         // dome (PROT 88 for the overworld map01 battle) -
@@ -83,6 +86,15 @@ impl<'m> DrawCtx<'_, 'm> {
             && let Some(mesh) = store.meshes.get(stage_idx)
         {
             let flip = PlayWindowApp::battle_stage_model();
+            // Copy A keeps its front faces only; the mesh carries a
+            // both-sided copy B twice, once per winding
+            // (`backdrop_shell_mesh` / `backdrop_shell_nclip`).
+            if let Some((_, second)) = app.battle_stage_shell.as_ref() {
+                nclip_marks.push((
+                    draws.len(),
+                    legaia_engine_scene_host::scene_host::backdrop_shell_nclip(*second),
+                ));
+            }
             // Half-arena stage in the scaled battle stage space.
             draws.push(SceneDraw {
                 mesh,

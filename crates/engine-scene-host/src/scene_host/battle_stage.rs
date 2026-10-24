@@ -110,6 +110,42 @@ pub fn backdrop_copy_nclip(second: SecondCopy, copy_b: bool) -> u32 {
     }
 }
 
+/// The fixed backdrop shell's textured mesh, both copies in one draw: copy A,
+/// then copy B under the second-copy transform, and - when copy B draws both
+/// sides ([`backdrop_copy_nclip`]) - copy B once more with its winding
+/// reversed. Drawn under [`backdrop_shell_nclip`], so copy A keeps its front
+/// faces only and copy B shows both: of each reversed pair exactly one
+/// triangle survives the cull, which is a both-sided draw.
+///
+/// Every copy of the backdrop goes through the one arm and the one word rule
+/// ([`backdrop_copy_nclip`]), not only the spun slot 1. On nilboa's stage the
+/// fixed object's additive ice crystals (tpage `0x2C`, ABR 1) show it: the
+/// mirrored copy's crystal behind Koru draws both its faces, copy A's only the
+/// ones facing the camera (`koru_strip_forced`).
+///
+/// REF: FUN_8001ADA4, FUN_80043390
+pub fn backdrop_shell_mesh(
+    first: &legaia_tmd::mesh::VramMesh,
+    second: SecondCopy,
+) -> legaia_tmd::mesh::VramMesh {
+    let mut out = first.clone();
+    out.append_scaled(first, second.scale());
+    if backdrop_copy_nclip(second, true) == 0 {
+        let mut reversed = first.clone();
+        for t in reversed.indices.as_chunks_mut::<3>().0 {
+            t.swap(1, 2);
+        }
+        out.append_scaled(&reversed, second.scale());
+    }
+    out
+}
+
+/// The NCLIP word the fixed backdrop shell ([`backdrop_shell_mesh`]) draws
+/// under: copy A's, which keeps front faces only.
+pub fn backdrop_shell_nclip(second: SecondCopy) -> u32 {
+    backdrop_copy_nclip(second, false)
+}
+
 impl SceneHost {
     /// The battle-stage backdrop entry for a fight starting now: the entry the
     /// last region setup's stage variant names in the loaded scene, falling
@@ -208,6 +244,34 @@ mod tests {
 
     fn near(a: [f32; 3], b: [f32; 3]) -> bool {
         a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-3)
+    }
+
+    #[test]
+    fn the_shell_mesh_doubles_only_a_both_sided_copy_b() {
+        let first = legaia_tmd::mesh::VramMesh {
+            positions: vec![[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            uvs: vec![[0, 0]; 3],
+            cba_tsb: vec![[0, 0]; 3],
+            indices: vec![0, 1, 2],
+            normals: vec![[0.0, 0.0, 1.0]; 3],
+            colors: vec![[128, 128, 128]; 3],
+        };
+        let half = backdrop_shell_mesh(&first, SecondCopy::HalfTurn);
+        assert_eq!(half.indices.len(), 6, "copy A and copy B, both one-sided");
+        let mirror = backdrop_shell_mesh(&first, SecondCopy::MirrorX);
+        assert_eq!(mirror.indices.len(), 9, "the mirrored copy twice");
+        // Copy B's two triangles wind opposite ways over the same corners.
+        let b = &mirror.indices[3..6];
+        let b_rev = &mirror.indices[6..9];
+        let at = |i: u32| mirror.positions[i as usize];
+        assert_eq!(
+            [at(b[0]), at(b[1]), at(b[2])],
+            [at(b_rev[0]), at(b_rev[2]), at(b_rev[1])]
+        );
+        assert_eq!(
+            backdrop_shell_nclip(SecondCopy::MirrorX),
+            legaia_engine_core::world::BATTLE_BODY_NCLIP
+        );
     }
 
     #[test]
