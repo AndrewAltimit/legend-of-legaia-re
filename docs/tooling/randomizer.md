@@ -2298,6 +2298,16 @@ can steer faces onto specific palettes; faces without a `_pNN` hint are
 palletized automatically (greedy, seam-aware, at most 15 sixteen-colour
 CLUTs).
 
+The ids `0xB3..=0xBA` (Songi's third form, the Cort forms, Koru) also have
+faces that sample the shared boss effect page rather than their own pool
+([`battle.md`](../subsystems/battle.md#the-boss-effect-page)). Those export
+as `boss_pNN` / `boss_semi_abrN_pNN` (`NN` = one of the boss page's 16
+palettes) and re-import onto the boss page's CLUT row and texture-page
+column with their UVs verbatim; they claim no texel of the editable page.
+The export writes `<stem>_boss.png`, a render of that page for the editor
+to display. It is reference only: other ids and the Mystic Shield share the
+page, so `--obj` never writes it back.
+
 **The part-count law.** Battle animations pose TMD objects rigidly **by
 index** - there is no skeleton hierarchy, each part gets an absolute
 translation + rotation per frame ([`formats/monster-animation.md`](../formats/monster-animation.md)).

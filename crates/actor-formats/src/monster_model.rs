@@ -17,6 +17,17 @@
 //! archive: `cba = 0x7840 | palette_index` (row 481), `tsb = 0x25` (page x
 //! 320, 4bpp, blend rate 1) - the battle loader relocates both per slot.
 //!
+//! **Boss-page faces.** The ids `0xB3..=0xBA` also carry prims on CLUT row
+//! `482` / texture-page column `6`: they sample the boss effect page the
+//! battle loader stages eight slots past the monster
+//! ([`crate::monster_archive::boss_effect_page`]), not this pool. Those faces
+//! export under `boss_pNN` / `boss_semi_abrN_pNN` materials (`NN` = one of
+//! the boss page's 16 palettes), take no part in the pool page's ownership or
+//! palette grouping, and re-import onto [`BOSS_CBA_BASE`] / [`BOSS_TSB_BASE`]
+//! with their UVs verbatim. The boss page is shared archive data, not this
+//! monster's: [`export_obj_with_boss_page`] renders it to a reference PNG for
+//! the editor, and import never writes it.
+//!
 //! A model that keeps the retail TMD's object count animates through the
 //! retail keyframe streams untouched - that is the whole trick that makes
 //! mesh replacement cheap: parts are posed rigidly by index, so new geometry
@@ -41,6 +52,14 @@ use legaia_tmd::encode::{
 pub const CBA_BASE: u16 = 0x7840;
 /// Retail pre-relocation texture page word: x 320, y 0, 4bpp, blend rate 1.
 pub const TSB_BASE: u16 = 0x25;
+/// Retail pre-relocation CLUT base of a boss-page prim: row 482, which the
+/// loader's `slot + 3` relocation lands on the boss page's row 485.
+pub const BOSS_CBA_BASE: u16 = 482 << 6;
+/// Retail pre-relocation texture page word of a boss-page prim: column 6
+/// (the boss page at `(0x180, 0x100)` after relocation), 4bpp, blend rate 1.
+pub const BOSS_TSB_BASE: u16 = 0x26;
+/// Palettes in the boss page's 256-entry CLUT row.
+pub const BOSS_CLUT_COUNT: usize = 16;
 /// CLUT rows in a monster pool.
 pub const CLUT_COUNT: usize = 15;
 /// Bytes per stored CLUT (16 BGR555 entries).
@@ -66,6 +85,17 @@ pub struct ExportedModel {
     /// through its owner's palette). Unowned texels are dead bytes in the
     /// pool - rendered through CLUT 0 for context, discarded on import.
     pub owned: Vec<bool>,
+    /// The boss effect page rendered through the boss faces' palettes
+    /// (`256 * PAGE_HEIGHT * 4` bytes), for the `boss_*` materials to display.
+    /// Reference only - import never reads it. `None` without boss faces or
+    /// when exported without the archive.
+    pub boss_rgba: Option<Vec<u8>>,
+}
+
+/// Whether a stored prim samples the boss effect page (texture-page column
+/// 6) rather than the monster's own pool.
+fn is_boss_prim(tsb: u16) -> bool {
+    tsb & 0xF == BOSS_TSB_BASE & 0xF
 }
 
 /// One imported model, ready for the block rebuilder.
@@ -300,10 +330,41 @@ pub fn export_obj(mesh: &MonsterMesh, stem: &str) -> Result<ExportedModel> {
     export_obj_parts(mesh.tmd_bytes(), pool, stem)
 }
 
+/// [`export_obj`] plus a reference render of the boss effect page for the
+/// `boss_*` materials ([`ExportedModel::boss_rgba`]). `archive` is the whole
+/// monster archive (PROT 867), which holds the page.
+pub fn export_obj_with_boss_page(
+    mesh: &MonsterMesh,
+    archive: &[u8],
+    stem: &str,
+) -> Result<ExportedModel> {
+    let pool = mesh
+        .texture_pool_bytes()
+        .ok_or_else(|| anyhow::anyhow!("monster has no texture pool"))?;
+    let boss = crate::monster_archive::boss_effect_page(archive, mesh.id);
+    export_impl(
+        mesh.tmd_bytes(),
+        pool,
+        boss.as_ref().map(|(c, p)| (c.as_slice(), *p)),
+        stem,
+    )
+}
+
 /// [`export_obj`] from raw parts: TMD bytes + texture pool bytes. Also the
 /// second half of the codec's fixed-point property - exporting an imported
 /// model reproduces the OBJ geometry and the owned texels of the PNG.
 pub fn export_obj_parts(tmd_bytes: &[u8], pool: &[u8], stem: &str) -> Result<ExportedModel> {
+    export_impl(tmd_bytes, pool, None, stem)
+}
+
+/// Shared exporter body. `boss` is the boss effect page as
+/// `(clut, pixels)` when the caller has the archive.
+fn export_impl(
+    tmd_bytes: &[u8],
+    pool: &[u8],
+    boss: Option<(&[u8], &[u8])>,
+    stem: &str,
+) -> Result<ExportedModel> {
     let tmd = legaia_tmd::parse(tmd_bytes).context("monster TMD unparseable")?;
     let model = decode_model(&tmd, tmd_bytes)?;
     let (cluts, indices, width) =
@@ -318,10 +379,36 @@ pub fn export_obj_parts(tmd_bytes: &[u8], pool: &[u8], stem: &str) -> Result<Exp
         .flat_map(|o| &o.groups)
         .filter(|g| g.shape.is_textured())
         .flat_map(|g| &g.prims)
+        .filter(|p| !is_boss_prim(p.tsb))
         .map(|p| (p.uvs.clone(), p.cba & 0x3F))
         .collect();
     let owner = compute_owners(&claim_faces, width);
 
+    // The boss page, rendered the same way through the boss faces' own
+    // palettes (row 482's sixteen).
+    let boss_faces: Vec<(Vec<(u8, u8)>, u16)> = model
+        .iter()
+        .flat_map(|o| &o.groups)
+        .filter(|g| g.shape.is_textured())
+        .flat_map(|g| &g.prims)
+        .filter(|p| is_boss_prim(p.tsb))
+        .map(|p| (p.uvs.clone(), p.cba & 0x3F))
+        .collect();
+    let boss_rgba = boss
+        .filter(|_| !boss_faces.is_empty())
+        .map(|(clut, pixels)| {
+            let owner = compute_owners(&boss_faces, UV_SPACE);
+            let mut out = vec![0u8; UV_SPACE * PAGE_HEIGHT * 4];
+            for (t, o) in owner.iter().enumerate() {
+                let (x, y) = (t % UV_SPACE, t / UV_SPACE);
+                let byte = pixels.get(y * (UV_SPACE / 2) + x / 2).copied().unwrap_or(0);
+                let idx = if x % 2 == 0 { byte & 0x0F } else { byte >> 4 } as usize;
+                let pal = o.unwrap_or(0) as usize % BOSS_CLUT_COUNT;
+                let c = legaia_bytes::u16_le(clut, (pal * 16 + idx) * 2).unwrap_or(0);
+                out[t * 4..t * 4 + 4].copy_from_slice(&bgr555_to_rgba(c));
+            }
+            out
+        });
     // Page render: owned texels through their palette, unowned through 0.
     let mut rgba = vec![0u8; width * PAGE_HEIGHT * 4];
     for (t, &idx) in indices.iter().enumerate() {
@@ -368,6 +455,8 @@ pub fn export_obj_parts(tmd_bytes: &[u8], pool: &[u8], stem: &str) -> Result<Exp
         /// CLUT index (`cba & 0x3F`) - carried into the material name so a
         /// re-import reproduces the palette partition exactly.
         palette: u8,
+        /// Samples the boss effect page, not the pool (`boss_*` material).
+        boss: bool,
         textured: bool,
         v: Vec<usize>,  // global 1-based OBJ vertex ids
         vt: Vec<usize>, // global 1-based OBJ vt ids (textured only)
@@ -420,6 +509,7 @@ pub fn export_obj_parts(tmd_bytes: &[u8], pool: &[u8], stem: &str) -> Result<Exp
                     semi: g.semi_transparent,
                     abr: ((p.tsb >> 5) & 3) as u8,
                     palette: (p.cba & 0x3F) as u8,
+                    boss: g.shape.is_textured() && is_boss_prim(p.tsb),
                     textured: g.shape.is_textured(),
                     v: fv,
                     vt: fvt,
@@ -450,10 +540,11 @@ pub fn export_obj_parts(tmd_bytes: &[u8], pool: &[u8], stem: &str) -> Result<Exp
         // re-import reproduces the palette partition exactly - and a modder
         // can steer faces onto palettes deliberately).
         let mtl = if f.textured {
+            let base = if f.boss { "boss" } else { "skin" };
             if f.semi {
-                format!("skin_semi_abr{}_p{:02}", f.abr, f.palette)
+                format!("{base}_semi_abr{}_p{:02}", f.abr, f.palette)
             } else {
-                format!("skin_p{:02}", f.palette)
+                format!("{base}_p{:02}", f.palette)
             }
         } else {
             "flat".to_string()
@@ -479,6 +570,8 @@ pub fn export_obj_parts(tmd_bytes: &[u8], pool: &[u8], stem: &str) -> Result<Exp
          # semi-transparent (ABE) geometry with GPU blend rate N (1 =\n\
          # additive, 0 = 50/50, 2 = subtractive, 3 = quarter-additive);\n\
          # flat = untextured vertex-coloured geometry.\n\
+         # boss_* = the same for faces sampling the shared boss effect page\n\
+         # (palette NN of its 16); their texture is reference-only.\n\
          # The _pNN suffix is a palette HINT - faces without one are\n\
          # palletized automatically on import.\n",
     );
@@ -488,7 +581,11 @@ pub fn export_obj_parts(tmd_bytes: &[u8], pool: &[u8], stem: &str) -> Result<Exp
         if semi {
             let _ = writeln!(mtl, "d 0.5");
         }
-        if name != "flat" {
+        if name.starts_with("boss") {
+            if boss_rgba.is_some() {
+                let _ = writeln!(mtl, "map_Kd {stem}_boss.png");
+            }
+        } else if name != "flat" {
             let _ = writeln!(mtl, "map_Kd {stem}.png");
         }
     }
@@ -500,6 +597,7 @@ pub fn export_obj_parts(tmd_bytes: &[u8], pool: &[u8], stem: &str) -> Result<Exp
         page_width: width,
         page_height: PAGE_HEIGHT,
         owned: owner.iter().map(|o| o.is_some()).collect(),
+        boss_rgba,
     })
 }
 
@@ -520,6 +618,8 @@ struct ObjFace {
     abr: u8,
     /// CLUT the face wants (`_pNN` material suffix). `None` = auto-palletize.
     palette_hint: Option<u8>,
+    /// A `boss_*` material: the face samples the boss effect page.
+    boss: bool,
     v: Vec<usize>,          // 0-based into vertex list
     vt: Vec<Option<usize>>, // 0-based into vt list
 }
@@ -540,6 +640,7 @@ fn parse_obj(text: &str) -> Result<ParsedObj> {
     let mut semi = false;
     let mut abr = 1u8;
     let mut palette_hint: Option<u8> = None;
+    let mut boss = false;
     for (ln, raw) in text.lines().enumerate() {
         let line = raw.trim();
         let ctx = || format!("OBJ line {}", ln + 1);
@@ -599,7 +700,9 @@ fn parse_obj(text: &str) -> Result<ParsedObj> {
                     })
                 };
                 abr = digits_after("_abr").filter(|&a| a <= 3).unwrap_or(1);
-                palette_hint = digits_after("_p").filter(|&p| (p as usize) < CLUT_COUNT);
+                boss = name.starts_with("boss");
+                let palettes = if boss { BOSS_CLUT_COUNT } else { CLUT_COUNT };
+                palette_hint = digits_after("_p").filter(|&p| (p as usize) < palettes);
             }
             Some("f") => {
                 let part = cur_part.unwrap_or(0);
@@ -637,6 +740,7 @@ fn parse_obj(text: &str) -> Result<ParsedObj> {
                     semi,
                     abr,
                     palette_hint,
+                    boss,
                     v,
                     vt,
                 });
@@ -735,6 +839,9 @@ pub fn import_obj(
     for (fi, f) in parsed.faces.iter().enumerate() {
         if f.vt.iter().any(|t| t.is_none()) {
             continue; // untextured face
+        }
+        if f.boss {
+            continue; // samples the boss page, not this pool
         }
         let uvs: Vec<(u8, u8)> = f.vt.iter().map(|t| uv8(parsed.uvs[t.unwrap()])).collect();
         // OBJ quads are perimeter-ordered; the rasterizer (like the stored
@@ -1022,13 +1129,19 @@ pub fn import_obj(
             let (uvs, cba, tsb) = if textured {
                 let uvs: Vec<(u8, u8)> = f.vt.iter().map(|t| uv8(parsed.uvs[t.unwrap()])).collect();
                 let uvs: Vec<(u8, u8)> = order.iter().map(|&k| uvs[k]).collect();
-                let gi = face_group.get(&fi).copied().unwrap_or(0);
-                let tsb = if semi {
-                    (TSB_BASE & !0x60) | ((f.abr as u16) << 5)
+                let (cba_base, tsb_base, gi) = if f.boss {
+                    let p = f.palette_hint.unwrap_or(0) as usize;
+                    (BOSS_CBA_BASE, BOSS_TSB_BASE, p)
                 } else {
-                    TSB_BASE
+                    let gi = face_group.get(&fi).copied().unwrap_or(0);
+                    (CBA_BASE, TSB_BASE, gi)
                 };
-                (uvs, CBA_BASE | gi as u16, tsb)
+                let tsb = if semi {
+                    (tsb_base & !0x60) | ((f.abr as u16) << 5)
+                } else {
+                    tsb_base
+                };
+                (uvs, cba_base | gi as u16, tsb)
             } else {
                 (Vec::new(), 0, 0)
             };
@@ -1139,6 +1252,50 @@ f 4 5 6
         let c1 = u16::from_le_bytes([m.pool[2], m.pool[3]]);
         assert_eq!(u16::from_le_bytes([m.pool[0], m.pool[1]]), 0);
         assert_eq!(c1, rgba_to_bgr555(200, 0, 0, 255));
+    }
+
+    /// A `boss_*` face re-imports onto the boss page's row and column with
+    /// its palette verbatim (one of 16, past the pool's 15) and claims no
+    /// pool texel or palette.
+    #[test]
+    fn boss_faces_keep_the_boss_page_and_palette() {
+        let obj = r#"
+o part_00
+v 0 0 0
+v 100 0 0
+v 0 100 0
+vt 0.1 0.9
+vt 0.2 0.9
+vt 0.1 0.8
+usemtl boss_semi_abr1_p15
+f 1/1 2/2 3/3
+usemtl boss_p03
+f 3/3 2/2 1/1
+"#;
+        let mut rgba = vec![0u8; 128 * 256 * 4];
+        rgba[3] = 255;
+        let m = import_obj(obj, &rgba, 128, 1).unwrap();
+        assert_eq!(m.palettes_used, 0, "boss faces open no pool palette");
+        let tmd = legaia_tmd::parse(&m.tmd).unwrap();
+        let model = decode_model(&tmd, &m.tmd).unwrap();
+        let mut words: Vec<(bool, u16, u16)> = model[0]
+            .groups
+            .iter()
+            .flat_map(|g| {
+                g.prims
+                    .iter()
+                    .map(move |p| (g.semi_transparent, p.cba, p.tsb))
+            })
+            .collect();
+        words.sort();
+        assert_eq!(
+            words,
+            vec![
+                (false, BOSS_CBA_BASE | 3, BOSS_TSB_BASE),
+                (true, BOSS_CBA_BASE | 15, BOSS_TSB_BASE),
+            ]
+        );
+        assert!(is_boss_prim(BOSS_TSB_BASE) && !is_boss_prim(TSB_BASE));
     }
 
     #[test]
