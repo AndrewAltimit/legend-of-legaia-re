@@ -286,6 +286,15 @@ same disc is never handed to `onLoad` twice, and a genuinely different disc
 waits for the delivery in flight, so *last picked* wins rather than *last to
 finish*. A failed delivery clears the key so a retry still gets through.
 
+The top-bar disc chip (`wireDiscChip` in `layout.js`) reads the cache once, at
+page load, so on its own it misses a disc cached later through a page's own
+input and keeps offering to insert one. `RomCache.put` and `clear` therefore
+fire `legaia-disc-cache` on `window` once they commit, with the new
+`{name, size, savedAt}` (or `null`), and the chip re-renders from it. Forget
+also empties the page's input: a browser fires no `change` for the file an
+input already holds, so re-picking the same disc after Forget used to cache
+nothing.
+
 The reproduction is a control pair, not a screenshot: with a warm cache, pick
 the file again, click **New game** as soon as the boot modes appear, and read
 the HUD ten seconds later. Re-picking leaves the HUD's Scene at `-` (the engine

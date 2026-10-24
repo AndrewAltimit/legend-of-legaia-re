@@ -17,6 +17,11 @@
  *   resolve(input)   -> Promise<source|null>          picked file, else cache
  *   attach(input,opts) wire a file <input> to the cache (see below)
  *
+ * A committed put() or clear() fires `legaia-disc-cache` on `window`, with
+ * `detail` = the new {name,size,savedAt} or null. The top-bar disc chip
+ * (layout.js) reads the cache once at page load, so without the event a
+ * disc picked through a page's own input left it saying no disc was in.
+ *
  * A `source` is shaped `{ name, size, arrayBuffer() }` so existing
  * handlers that do `f.name / f.size / await f.arrayBuffer()` work
  * unchanged whether the bytes came from a fresh pick or the cache.
@@ -77,6 +82,12 @@
     });
   }
 
+  function announce(detail) {
+    try {
+      window.dispatchEvent(new CustomEvent('legaia-disc-cache', { detail: detail }));
+    } catch (e) { /* no CustomEvent: the chip catches up on the next load */ }
+  }
+
   function put(file) {
     if (!hasIdb) return Promise.resolve();
     var rec = {
@@ -89,6 +100,8 @@
     return openDb().then(function (db) {
       return tx(db, 'readwrite', function (s) { return s.put(rec, KEY); })
         .finally(function () { db.close(); });
+    }).then(function () {
+      announce({ name: rec.name, size: rec.size, savedAt: rec.savedAt });
     });
   }
 
@@ -119,7 +132,7 @@
     return openDb().then(function (db) {
       return tx(db, 'readwrite', function (s) { return s.delete(KEY); })
         .finally(function () { db.close(); });
-    });
+    }).then(function () { announce(null); });
   }
 
   /* Wrap a cache record's Blob as a File-shaped source. */
@@ -262,11 +275,16 @@
       }
     }
 
+    /* Forget empties the input too: a browser fires no `change` for the file
+     * the input already holds, so re-picking the same disc after Forget would
+     * otherwise neither cache it nor update the top-bar chip. */
+    function forgotten() { try { input.value = ''; } catch (e) { /* read-only */ } }
+
     input.addEventListener('change', function () {
       var f = input.files && input.files[0];
       if (!f) return;
       put(f).then(function () {
-        renderChip(chip, { name: f.name, size: f.size }, false);
+        renderChip(chip, { name: f.name, size: f.size }, false, forgotten);
       }).catch(function (e) {
         console.warn('RomCache: could not cache disc -', e);
       });
@@ -277,7 +295,7 @@
     if (!hasIdb) return;
     get().then(function (rec) {
       if (!rec || !rec.blob) return;
-      renderChip(chip, rec, autoLoad);
+      renderChip(chip, rec, autoLoad, forgotten);
       notifyInfo(sourceFromRecord(rec));
       if (autoLoad) deliver(sourceFromRecord(rec));
     }).catch(function (e) {

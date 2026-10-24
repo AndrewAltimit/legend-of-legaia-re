@@ -884,7 +884,14 @@ function wireDiscChip() {
     }
   }
 
-  peekDiscMeta().then(render).catch(function () { render(null); });
+  /* A page's own disc input caches through RomCache, after this first read:
+     follow its put / clear (js/rom-cache.js) so the chip never contradicts
+     the page. A first read that settles after such an event is stale. */
+  let followed = false;
+  window.addEventListener('legaia-disc-cache', function (e) { followed = true; render(e.detail); });
+  peekDiscMeta()
+    .then(function (meta) { if (!followed) render(meta); })
+    .catch(function () { if (!followed) render(null); });
 
   const input = document.createElement('input');
   input.type = 'file';
