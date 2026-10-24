@@ -892,7 +892,7 @@ host's per-frame list has grown a member the other's has not.
 It also covers two of the three hosts, and for a structural reason rather than
 an oversight: the minigames page has no frame path to walk. It exports one
 tick per minigame (`dance_tick`, `baka_tick`, `slot_step`, `fishing_pond_tick`,
-`muscle_tick_time_meter`), each called by its own page module, so there is no
+`muscle_tick_arts_list`), each called by its own page module, so there is no
 fall-through list for an arm to skip part of. A shared frame path is the thing
 this tier measures; that host does not have one.
 
@@ -1515,7 +1515,7 @@ fold the standalone games into the play page.
 
 | Lacks | Because |
 |---|---|
-| a frame path (tier 11) | It exports one tick per game (`dance_tick`, `baka_tick`, `slot_step`, `fishing_pond_tick`, `muscle_tick_time_meter`). It does share the clock: `LegaiaMinigames::drain_sim_steps`. |
+| a frame path (tier 11) | It exports one tick per game (`dance_tick`, `baka_tick`, `slot_step`, `fishing_pond_tick`, `muscle_tick_arts_list`). It does share the clock: `LegaiaMinigames::drain_sim_steps`. |
 | the Muscle Dome ringside still | Armed by `World::exit_muscle_dome` writing `MinigameState::muscle_ringside_still` ([`ringside-still.md`](../formats/ringside-still.md#in-the-port)). |
 | fishing venue actors and exchange session | No venue scene; it lays the exchange out from `fishing_exchange_json` and treats every tackle item as held. |
 | the round-start cameo | It passes the duel no held word. |
@@ -1591,7 +1591,7 @@ method is the kernel call plus the single thing only that host holds.
 | `poll_game_over` | `BootSession::take_party_wipe` | where it keeps the hold: the window's `BootUiState::GameOver`, the page's `game_over` |
 | `poll_field_shop` | `BootSession::poll_field_overlay` (over `MenuRuntime::poll_field_overlay`) | nothing; the page counts the blip for its readout |
 | `tick_world_effects` | `BootSession::step_effect_scene_graphs` | the summon creature's mesh bind, ahead of the kernel |
-| `tick_muscle_time_meter` | `BootSession::step_muscle_time_meter` | nothing |
+| `tick_muscle_arts_list_slide` | `BootSession::step_muscle_arts_list_slide` | nothing |
 | `tick_fishing_banners` | `engine-screens::fishing_banner_frame` | the cache its `&self` draw pass reads |
 | `tick_sfx` | `BootSession::step_audio_frame` | nothing |
 

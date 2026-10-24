@@ -123,14 +123,14 @@ impl LegaiaRuntime {
         }
     }
 
-    /// Advance the Muscle Dome leg's round time meter one sim tick - the
-    /// session's step (`BootSession::step_muscle_time_meter`; retail's
-    /// per-frame arena driver step, which the engine's pad tick does not
-    /// run). Its own step of `tick_frame`, as it is of the native window's
-    /// frame path. No-op with no leg open.
-    pub(crate) fn tick_muscle_time_meter(&mut self) {
+    /// Step the Muscle Dome leg's arts-entry Triangle list window one sim
+    /// tick - the session's step (`BootSession::step_muscle_arts_list_slide`;
+    /// retail's battle menu SM runs the arts-list driver every frame, which
+    /// the engine's pad tick does not). Its own step of `tick_frame`, as it
+    /// is of the native window's frame path. No-op with no leg open.
+    pub(crate) fn tick_muscle_arts_list_slide(&mut self) {
         if let Some(s) = self.scene_host.session_mut() {
-            s.step_muscle_time_meter();
+            s.step_muscle_arts_list_slide();
         }
     }
 
@@ -486,7 +486,7 @@ impl LegaiaRuntime {
     ///   "budget": 120, "costs": [30, 30, 30, 30], "spent": 60, "queued": 2,
     ///   "last_damage": [0, 90],
     ///   "plays": [ { "attacker": 0, "cmd": 12, "damage": 90 } ],
-    ///   "turns_resolved": 1, "time_meter": 3, "magic_open": false }
+    ///   "turns_resolved": 1, "arts_list_slide": 0, "magic_open": false }
     /// ```
     pub fn play_mg_muscle_state_json(&self) -> String {
         let Some(s) = self.muscle_session() else {
@@ -522,7 +522,7 @@ impl LegaiaRuntime {
             "last_damage": s.last_turn_damage(),
             "plays": plays,
             "turns_resolved": self.minigame_ui.muscle.turns_resolved,
-            "time_meter": s.time_meter(),
+            "arts_list_slide": s.arts_list_slide(),
             "magic_open": s.magic_open(),
             // The press the shared scripted driver makes this frame
             // (`MuscleDomeSession::scripted_press`), as a pad mask; `null`

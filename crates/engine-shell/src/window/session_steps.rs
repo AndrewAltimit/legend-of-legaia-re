@@ -6,7 +6,7 @@
 //! state a wipe hands the frame to, the cue voice, the boot SCUS read behind
 //! the Trade row, the summon creature's mesh bind. The browser play page names
 //! the same steps over the same kernels (`poll_game_over`, `poll_field_shop`,
-//! `tick_world_effects`, `tick_muscle_time_meter`), which is what
+//! `tick_world_effects`, `tick_muscle_arts_list_slide`), which is what
 //! `scripts/ci/check-ui-host-drift.py` pairs on the two frame paths.
 
 use super::*;

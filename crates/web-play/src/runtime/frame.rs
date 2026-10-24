@@ -120,9 +120,9 @@ impl LegaiaRuntime {
         // In-world minigame presentation (casino / dance / arena sessions
         // the scene host installed): the draw-side state the page reads.
         self.tick_minigame_ui();
-        // Muscle Dome: the round time meter, the session's step the native
+        // Muscle Dome: the arts entry list window slide, the session's step the native
         // window names the same way.
-        self.tick_muscle_time_meter();
+        self.tick_muscle_arts_list_slide();
         // Sound-effect channel: advance the delay scheduler, key whatever
         // matured.
         //

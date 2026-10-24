@@ -645,8 +645,8 @@ impl LegaiaMinigames {
     /// remaining-turns field: a dome leg is an ordinary battle and ends on a
     /// KO. `hp_left` is the opponent's HP percentage (the number retail
     /// stamps at x=`0xd2`), `hp_left_pct` carries both fighters' percentages
-    /// for the page's bars, and `time_meter` / `time_meter_max` mirror the
-    /// `FUN_801d3444` ramp.
+    /// for the page's bars, and `arts_list_slide` is the entry's Triangle
+    /// list window's slide counter (`FUN_801d3444`).
     pub fn muscle_state_json(&self) -> String {
         let Some(c) = self.muscle.as_ref() else {
             return r#"{"live":false}"#.to_string();
@@ -685,8 +685,7 @@ impl LegaiaMinigames {
             "spent": [s.spent(0), s.spent(1)],
             "hp_left": s.hp_left(),
             "hp_left_pct": [s.hp_left_percent(0), s.hp_left_percent(1)],
-            "time_meter": s.time_meter(),
-            "time_meter_max": legaia_engine_minigames::muscle_dome::TIME_METER_MAX,
+            "arts_list_slide": s.arts_list_slide(),
             "queue": [s.queue(0), s.queue(1)],
             // The player's committed string as the action queue the turn
             // walks (the tokenizer over the installed art catalog), and the

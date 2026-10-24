@@ -1,14 +1,14 @@
-//! The Muscle Dome on the play window: the time meter, the arena upload, and
-//! the contest hub (its tick, asset load and sprite draws).
+//! The Muscle Dome on the play window: the arts-list slide step, the arena
+//! upload, and the contest hub (its tick, asset load and sprite draws).
 
 use super::*;
 
 impl PlayWindowApp {
-    /// Advance the Muscle Dome contest's round **time meter** one frame - the
-    /// session's step (`BootSession::step_muscle_time_meter`), which the
-    /// browser play page names the same way. No-op outside a contest.
-    pub(in crate::window) fn tick_muscle_time_meter(&mut self) {
-        self.session.step_muscle_time_meter();
+    /// Step the Muscle Dome leg's arts-entry Triangle list window one frame -
+    /// the session's step (`BootSession::step_muscle_arts_list_slide`), which
+    /// the browser play page names the same way. No-op outside a contest.
+    pub(in crate::window) fn tick_muscle_arts_list_slide(&mut self) {
+        self.session.step_muscle_arts_list_slide();
     }
 }
 

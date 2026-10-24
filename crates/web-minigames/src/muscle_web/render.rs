@@ -367,19 +367,15 @@ impl LegaiaMinigames {
         }
     }
 
-    /// Advance the round **time meter** one frame by the frame delta `dt`,
-    /// returning the bar sprite's new Y offset (`-0x92` empty, `+0xE` full).
-    /// The counter climbs while the direction-entry phase runs and drains
-    /// otherwise - retail gates the ramp on `ctx+6 == 0x50`, the entry phase,
-    /// **not** on the playback. Returns `0` with no contest up.
+    /// Step the entry screen's Triangle arts-list window one frame by the
+    /// frame delta `dt` (the slide counter climbs while the list is open in
+    /// the entry and drains otherwise).
     ///
-    /// PORT: FUN_801d3444, through
-    /// [`MuscleDomeSession::tick_time_meter`](legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession::tick_time_meter)
-    pub fn muscle_tick_time_meter(&mut self, dt: u8) -> i32 {
-        self.muscle
-            .as_mut()
-            .map(|c| c.session.tick_time_meter(dt) as i32)
-            .unwrap_or(0)
+    /// REF: FUN_801d3444
+    pub fn muscle_tick_arts_list(&mut self, dt: u8) {
+        if let Some(c) = self.muscle.as_mut() {
+            c.session.tick_arts_list_slide(dt);
+        }
     }
 
     pub(super) fn muscle_monster_render_mesh(

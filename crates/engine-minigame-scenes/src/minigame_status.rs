@@ -25,7 +25,7 @@ use legaia_engine_battle_menus::muscle_dome_session::MusclePhase;
 use legaia_engine_fishing::fishing::PondSession;
 use legaia_engine_minigames::baka_fighter::{BakaFight, MatchPhase};
 use legaia_engine_minigames::dance::{DanceGame, Judge, dance_number_digits};
-use legaia_engine_minigames::muscle_dome::{ContestFlags, TIME_METER_MAX};
+use legaia_engine_minigames::muscle_dome::ContestFlags;
 use legaia_engine_minigames::slot_machine::{SlotMachine, SlotPhase};
 use legaia_engine_mode::mode::SceneMode;
 
@@ -428,7 +428,6 @@ pub fn muscle_status_rows(mg: &MinigameState, muscle: &MuscleWorld) -> Vec<Statu
     out.push(StatusRow::hint(status.into_iter().chain([
         format!("you {}hp", s.hp(0)),
         format!("foe {}hp", s.hp(1)),
-        format!("time {}/{}", s.time_meter(), TIME_METER_MAX),
         "Start = quit".to_string(),
     ])));
     out

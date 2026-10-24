@@ -583,9 +583,9 @@ impl PlayWindowApp {
         // reel-in / miss / auxiliary / strike splash) and cache their
         // draws - the retail driver tail's own per-frame timer loop.
         self.tick_fishing_banners();
-        // Muscle Dome: run the round time meter (climbs through the
-        // selection phase, drains outside it).
-        self.tick_muscle_time_meter();
+        // Muscle Dome: slide the arts entry list window (in while the
+        // entry's Triangle list is open, out otherwise).
+        self.tick_muscle_arts_list_slide();
         // Opt-in synthetic tile board (`LEGAIA_TILE_BOARD_DEMO=1`): no
         // retail scene script installs one, so this is the visual
         // trigger for the per-cell tile-actor draw pass.

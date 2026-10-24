@@ -2,7 +2,7 @@
 //!
 //! The host call sites live in the `legaia-engine` binary (the winit window),
 //! which no integration test can link against, so these pin the engine-side
-//! halves those call sites rely on: the Muscle Dome round time meter's
+//! halves those call sites rely on: the Muscle Dome arts-list window's
 //! per-frame advance, the dance HUD's judged-vs-displayed combo-slot split, and
 //! the slot machine's session-start strip build. It also pins which minigame
 //! exits go through the mode-24 door warp and which keep the plain
@@ -155,14 +155,16 @@ fn a_new_machine_seeds_its_display_strips_from_the_permuted_symbol_strips() {
     }
 }
 
-// --- Muscle Dome round time meter -----------------------------------------
+// --- Muscle Dome arts-list slide --------------------------------------------
 
+/// The step both hosts run each frame of a dome leg
+/// (`BootSession::step_muscle_arts_list_slide`) slides the entry screen's
+/// Triangle list window (`FUN_801D3444`); with no entry open it holds at `0`.
 #[test]
-fn the_time_meter_climbs_through_selection_and_drains_once_it_ends() {
+fn the_dome_arts_list_slide_holds_without_an_open_entry() {
     use legaia_engine_battle_menus::muscle_dome_session::{
         MuscleCard, MuscleDomeSession, MusclePhase,
     };
-    use legaia_engine_minigames::muscle_dome::TIME_METER_MAX;
     let hand = || {
         [0u8, 1, 2, 3].map(|i| MuscleCard {
             command_id: 0x0C + i,
@@ -171,25 +173,10 @@ fn the_time_meter_climbs_through_selection_and_drains_once_it_ends() {
     };
     let mut s = MuscleDomeSession::new(hand(), hand(), [100, 100], [500, 500], 1);
     assert_eq!(s.phase(), MusclePhase::Select);
-    assert_eq!(s.time_meter(), 0);
-
-    // Empty bar first, then a full climb over TIME_METER_MAX ticks.
-    let empty_y = s.time_meter_bar_y();
-    for _ in 0..TIME_METER_MAX {
-        s.tick_time_meter(1);
+    for _ in 0..16 {
+        s.tick_arts_list_slide(1);
     }
-    assert_eq!(s.time_meter(), TIME_METER_MAX, "clamped at a full bar");
-    let full_y = s.time_meter_bar_y();
-    assert!(full_y > empty_y, "the bar rises as the meter fills");
-
-    // Leaving the selection phase drains it again.
-    s.end_selection();
-    assert_ne!(s.phase(), MusclePhase::Select);
-    for _ in 0..TIME_METER_MAX {
-        s.tick_time_meter(1);
-    }
-    assert_eq!(s.time_meter(), 0, "drains outside the selection phase");
-    assert_eq!(s.time_meter_bar_y(), empty_y);
+    assert_eq!(s.arts_list_slide(), 0);
 }
 
 // --- dance: the judged cell is not the displayed cell ----------------------

@@ -206,16 +206,17 @@ impl<S: AudioSink> BootSession<S> {
         ring
     }
 
-    /// Advance the Muscle Dome leg's round **time meter** one frame
-    /// (`MuscleDomeSession::tick_time_meter`): it climbs through the
-    /// selection phase and drains outside it. No-op with no leg open.
+    /// Step the Muscle Dome leg's arts-entry Triangle list window one frame
+    /// (`MuscleDomeSession::tick_arts_list_slide`): its slide counter climbs
+    /// while the list is open in the entry and drains otherwise. No-op with
+    /// no leg open.
     ///
-    /// Retail runs the meter from the arena's per-frame driver with the frame
-    /// delta from scratchpad `0x1F800393`; the port ticks a fixed one per sim
-    /// tick.
-    pub fn step_muscle_time_meter(&mut self) {
+    /// Retail steps it from the battle menu SM (`FUN_801D0748` ->
+    /// `FUN_801D3444`) by the frame delta from scratchpad `0x1F800393`; the
+    /// port ticks a fixed one per sim tick.
+    pub fn step_muscle_arts_list_slide(&mut self) {
         if let Some(s) = self.host.world.minigames.muscle_dome.as_mut() {
-            s.tick_time_meter(1);
+            s.tick_arts_list_slide(1);
         }
     }
 
