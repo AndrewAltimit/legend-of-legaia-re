@@ -335,49 +335,6 @@ pub fn float_actor_tick(
     }
 }
 
-/// Runtime VA of the ripple part descriptor the splash spawner passes.
-pub const RIPPLE_DESCRIPTOR_VA: u32 = 0x801D_899C;
-
-/// The spawn the ripple wrapper issues, in `FUN_80021B04` argument order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RippleSpawn {
-    /// Position vector built on the stack: the actor's `+0x14` and `+0x18`
-    /// world coordinates with a zero middle component.
-    pub pos: [i16; 3],
-    /// Rotation vector - always zero.
-    pub rot: [i16; 3],
-    /// Descriptor pointer, [`RIPPLE_DESCRIPTOR_VA`].
-    pub descriptor: u32,
-    /// Fixed-point scale.
-    pub scale: i32,
-}
-
-/// NOT WIRED: no overlay code calls it. The lead's tick `FUN_801D2050`
-/// installs it in the slot-B hook `_DAT_8007BA2C` (`0x801D20B0..0x801D20B4`),
-/// which the move VM's op `0x20` calls (`jalr` at SCUS `0x80023764`) from an
-/// effect script; the port runs no move VM over the fishing venue's parts.
-/// The lead's ambient ripple is a separate spawn (`FUN_801D2278`,
-/// `0x801D23FC`), seated by
-/// `legaia_engine_minigame_scenes::fishing_venue::tick_venue_actors`.
-/// PORT: FUN_801D7C30 - the ripple spawn wrapper.
-///
-/// `(actor, mode)`: a non-zero `mode` does nothing at all. Mode zero spawns
-/// the [`RIPPLE_DESCRIPTOR_VA`] part at the actor's world position, with a
-/// zero rotation and scale `0x1000`. Note the position vector's **middle**
-/// component is the zero - the two coordinates come from `+0x14` and `+0x18`,
-/// which is the world XZ pair, not a screen point.
-pub fn ripple_spawn(actor_x: i16, actor_z: i16, mode: i32) -> Option<RippleSpawn> {
-    if mode != 0 {
-        return None;
-    }
-    Some(RippleSpawn {
-        pos: [actor_x, 0, actor_z],
-        rot: [0, 0, 0],
-        descriptor: RIPPLE_DESCRIPTOR_VA,
-        scale: 0x1000,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -498,16 +455,6 @@ mod tests {
         // The tick bit is gone and the solver's off-floor bit stayed clear.
         assert_eq!(t.flags, 0xFD);
         assert_eq!(t.flags & ACTOR_FLAG_OFF_FLOOR, 0);
-    }
-
-    #[test]
-    fn ripple_spawns_only_in_mode_zero() {
-        assert!(ripple_spawn(1, 2, 1).is_none());
-        let s = ripple_spawn(1, 2, 0).unwrap();
-        assert_eq!(s.pos, [1, 0, 2]);
-        assert_eq!(s.rot, [0, 0, 0]);
-        assert_eq!(s.descriptor, RIPPLE_DESCRIPTOR_VA);
-        assert_eq!(s.scale, 0x1000);
     }
 
     #[test]

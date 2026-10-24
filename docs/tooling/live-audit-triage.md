@@ -1711,6 +1711,26 @@ base was in doubt.
 | `80024190` field save actor `tick` | full | the jump table at `0x80010898` matches the state arms |
 | `801F1278` `MaskedBytes` | `REF` | the `+0x8E` / `+0x8F` save-force-restore (`0x801F12D8..0x801F1314`) writes nothing the engine models; the routine stays ported through its other slices |
 
+**Every permissive edge in the set is a name collision, so every tag stands.**
+The check is two-sided. Walking the permissive graph's BFS parents back from
+each anchor ends, in one hop, on a host function that calls a same-named method
+of some other type. And no non-test source outside the anchor's own file names
+its type (`SceneNameEntry`, `ActorNodePool`, `FieldSaveScreenActor`,
+`StreamLoadQueue`, `StreamFileHost`, `StreamSlotSm`, `CardIoState`,
+`CardWriteMachine`) or its free function (`poll_events_a`, `sync_scene_name`),
+so no host could hold a receiver for the call. The colliding edges:
+
+| anchor | permissive parent | the call it actually makes |
+|---|---|---|
+| scene-name sync module (`SceneNameEntry::new`) | `LegaiaMinigames::baka_duel_vram` | some other type's `new` |
+| actor node pool module, `new`, `free` | `asset-viewer` `main` (`default`), `baka_duel_vram` (`new`), the translate space report (`free`) | other types' `default` / `new` / `free` |
+| field save actor `tick` | `asset-viewer` `WorldApp::window_event` | the viewer's own `tick` calls |
+| `StreamLoadQueue` | `AudioDirector::enqueue_sfx` (`enqueue`), `Library::open_disc` (`entries`) | the SFX queue, the disc library's directory entries |
+| `read`, `close` | `font-extract` `main`, `WebAudioOut::drop` | file and audio-context `read` / `close` |
+| `arm`, `801F17F8` `step` | the Muscle Dome first-visit rows, the asset browser's `window_event` | other `arm` / `step` methods |
+| `reset`, `step`, `read_file`, `write_file`, `poll_events_a` | the play window's `window_event`, `RecordLog::flush`, `asset` `disc_map_cmd`, the asset browser | other types' methods of those names; `poll_events_a` hangs off `CardIoState::step` |
+| `CardWriteMachine` `tick` | `asset-viewer` `WorldApp::window_event` | the viewer's own `tick` calls |
+
 ## See also
 
 - [`port-catalog.md`](port-catalog.md) - the catalog, the `live` axis and the
