@@ -15,7 +15,8 @@
 //! `+0x3E` (PROT 0917 arm `0xB`, seated at `z = 0`), and PROT 0929 arm 17's
 //! world-anchor point and TR z scale (seated on the origin at unit scale).
 //! A loop that seats the same record many times over a per-part velocity
-//! write (PROT 0930 arm 6's sixteen passes) is seated once per call site.
+//! write (PROT 0930 arm 6's sixteen passes) is seated once per pass, its
+//! writes carried by [`horn_ring_drift`].
 //!
 //! See `ghidra/scripts/funcs/overlay_summon_<label>_<entry>_<va>.txt`.
 
@@ -1800,44 +1801,55 @@ const S930_4: [ModuleSpawn; 8] = [
         },
     ),
 ];
-const S930_6: [ModuleSpawn; 4] = [
-    // 0x801F717C
-    spawn(
-        0x801F8C44,
-        LiteralScaled {
-            pos: [0, 0, 0],
-            rot: [0, 0, 0],
-            scale: 0x1000,
-        },
-    ),
-    // 0x801F71E8
-    spawn(
-        0x801F8CA0,
-        LiteralScaled {
-            pos: [0, 0, 0],
-            rot: [0, 0, 0],
-            scale: 0x1000,
-        },
-    ),
-    // 0x801F7254
-    spawn(
-        0x801F8C44,
-        LiteralScaled {
-            pos: [0, 0, 0],
-            rot: [0, 0, 0],
-            scale: 0x1000,
-        },
-    ),
-    // 0x801F72C0
-    spawn(
-        0x801F8CA0,
-        LiteralScaled {
-            pos: [0, 0, 0],
-            rot: [0, 0, 0],
-            scale: 0x1000,
-        },
-    ),
-];
+/// PROT 0930 arm 6's loop (`0x801F7148..0x801F7330`): sixteen passes of
+/// four calls, `0x801F8C44` / `0x801F8CA0` / `0x801F8C44` / `0x801F8CA0`, each
+/// on the arm's zeroed stack trios; [`horn_ring_drift`] is the drift each pass
+/// writes into the part the call hands back.
+const S930_6: [ModuleSpawn; HORN_RING_CALLS] = {
+    const AT: SpawnAnchor = LiteralScaled {
+        pos: [0, 0, 0],
+        rot: [0, 0, 0],
+        scale: 0x1000,
+    };
+    let mut out = [spawn(HORN_RING_RECORDS[0], AT); HORN_RING_CALLS];
+    let mut i = 0;
+    while i < HORN_RING_CALLS {
+        out[i] = spawn(HORN_RING_RECORDS[i % 2], AT);
+        i += 1;
+    }
+    out
+};
+/// The two records PROT 0930's arm 6 seats in turn.
+pub const HORN_RING_RECORDS: [u32; 2] = [0x801F_8C44, 0x801F_8CA0];
+/// Arm 6's calls: sixteen passes of four.
+const HORN_RING_CALLS: usize = 64;
+
+/// The drift PROT 0930's arm 6 stores into the part its `n`-th seat of
+/// `record` hands back (`n` counted per record, in call order). Pass
+/// `k = n / 2` reads the SCUS sine pair at angle `0x100 k` (byte offset
+/// `k << 9` into `_DAT_8007B81C` / `_DAT_8007B7F8`) and stores
+/// `+0x3C = trunc(sin / d)` (`mult 0x2AAAAAAB`, `sra 7` / `sra 6`) and
+/// `+0x3E = trunc(cos / e)` (`addiu 0x3FF` / `0x1FF` under a negative,
+/// `sra 10` / `sra 9`): `(d, e) = (768, 1024)` for each record's first seat
+/// of the pass, `(384, 512)` for its second. Sixty-four glows leave the
+/// creature on sixteen spokes at two speeds, the ring that opens round it.
+/// `None` for any other record.
+pub fn horn_ring_drift(record: u32, n: usize) -> Option<[(u16, u16); 2]> {
+    if !HORN_RING_RECORDS.contains(&record) || n >= HORN_RING_CALLS / 2 {
+        return None;
+    }
+    let k = (n / 2) as u16;
+    let (d, e) = if n.is_multiple_of(2) {
+        (768, 1024)
+    } else {
+        (384, 512)
+    };
+    let (sin, cos) = legaia_engine_system::trig::trig12(k << 8);
+    Some([
+        (0x3C, (i32::from(sin) / d) as i16 as u16),
+        (0x3E, (i32::from(cos) / e) as i16 as u16),
+    ])
+}
 const S930_8: [ModuleSpawn; 2] = [
     // 0x801F7550
     spawn(

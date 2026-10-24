@@ -337,8 +337,10 @@ fn a_dead_idle_monster_enters_the_defeat_fade_and_drains() {
     assert_eq!(world.actors[2].battle.render_flag, 0);
 }
 
-/// Horn hides the party for its rise (arm 8), shows it again and hides the
-/// creature on the heal (arm `0xA`).
+/// Horn hides the party for its rise (arm 8), shows it again on the heal
+/// (arm `0xA`), whose pass relights the creature white under the tint
+/// machine's hold state rather than hiding it (`0x801F77A8..0x801F77EC`);
+/// arm `0xB`'s pass hides it (`0x801F7D04..0x801F7D10`).
 #[test]
 fn horn_hides_and_shows_the_party_around_the_heal() {
     use legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN;
@@ -362,6 +364,14 @@ fn horn_hides_and_shows_the_party_around_the_heal() {
     run_arm(&mut world, 0xA);
     assert_eq!(world.actors[0].battle.render_flag, 0);
     assert!(!world.battle_body_hidden(0));
+    assert!(!world.battle_body_hidden(9), "the creature stays lit");
+    assert_eq!(world.actors[9].battle.render_color, 0x3FFF_FFFF);
+    assert_eq!(world.actors[9].battle.render_flag, RENDER_FLAG_HIDDEN);
+    assert_eq!(
+        (world.actors[9].move_state.world_y, world.actors[9].move_state.world_z),
+        (0x480, -0x200)
+    );
+    run_arm(&mut world, 0xB);
     assert!(world.battle_body_hidden(9), "the creature leaves");
 }
 

@@ -240,6 +240,23 @@ pub fn palma_stage_byte(phase: u8, countdown: i32) -> Option<u8> {
     (phase == 3 && countdown >= S << 7).then_some(3)
 }
 
+/// The stage byte `ctx[+0x278]` PROT 0923's tick body stores on the pass
+/// that leaves arm `phase`: `0` in arm 0 (`0x801F6BE8`), `2` in arms 3, 4
+/// and `0x11`. Arm 3's is `sb s0,0x278(a0)` in the delay slot of its exit
+/// jump (`0x801F6DE4`), `s0` the `2` the dispatch tree loads in a branch
+/// delay slot on the way into the low arms (`li s0,0x2` at `0x801F6A70`);
+/// arms 4 and `0x11` store an immediate `2` (`0x801F7298`, `0x801F83A0`).
+/// The stager's arm 0 stores the `3` (`FUN_801F8B90`, `0x801F8BFC`), on the
+/// op-`0x20` call of the part that reaches it. A retail cast reads `2`
+/// through arm 4 and the head of arm 5, then `3`.
+pub fn gilium_stage_byte(phase: u8) -> Option<u8> {
+    match phase {
+        0 => Some(0),
+        3 | 4 | 0x11 => Some(2),
+        _ => None,
+    }
+}
+
 /// PROT 0928 (Palma): the word `T` at `0x801FA0D0` drives arms 3 and 4
 /// upwards (`T += p` to `scalar * 256` / `128`), where the module stores the
 /// camera globals straight from sines of `T` every pass; the port lands each

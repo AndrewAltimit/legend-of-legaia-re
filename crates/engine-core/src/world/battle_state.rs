@@ -682,6 +682,9 @@ pub struct BattleState {
     /// The battle frame the effect-script table parts last took their part
     /// tick on ([`crate::world::World::action_fx_pass_vsyncs`]).
     pub action_fx_pass_frame: Option<u64>,
+    /// The battle frame the cast's summon parts last took their part tick on
+    /// ([`crate::world::World::summon_fx_pass_vsyncs`]).
+    pub summon_fx_pass_frame: Option<u64>,
     /// The vsyncs this tick's anim pass spans: the frame step on the tick
     /// that opens a battle frame, `0` on the ticks between, `1` on the
     /// per-vsync cadence.
@@ -1111,6 +1114,7 @@ impl BattleState {
             sm_pass_frame: None,
             anim_pass_frame: None,
             action_fx_pass_frame: None,
+            summon_fx_pass_frame: None,
             anim_pass_vsyncs: 1,
             anim_slot_reached: false,
             hit_commit_rewalk: Vec::new(),

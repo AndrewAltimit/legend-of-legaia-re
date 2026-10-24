@@ -215,6 +215,15 @@ fn decode_every_module() {
     assert_eq!(stage(930, 0x801F_6B54), Some((0, Some(2))));
     assert_eq!(stage(930, 0x801F_73CC), Some((7, Some(3))));
     assert_eq!(stage(946, 0x801F_6BF8), Some((0, Some(2))));
+    // PROT 0923's arm 3 pass stores `s0`, the `2` the dispatch tree loads
+    // in a branch delay slot on the way to it (`li s0,0x2` at
+    // `0x801F6A70`; `sb s0,0x278(a0)` at `0x801F6DE4`): the decode walks
+    // each arm from its own entry and reads no value there, which is why
+    // `cast_module_camera::gilium_stage_byte` carries PROT 0923's stores by
+    // hand. Arms 4 and `0x11` store an immediate `2`.
+    assert_eq!(stage(923, 0x801F_6DE4), Some((3, None)));
+    assert_eq!(stage(923, 0x801F_7298), Some((4, Some(2))));
+    assert_eq!(stage(923, 0x801F_83A0), Some((0x11, Some(2))));
     // A tick port that writes the byte by hand agrees with the decode:
     // Gimard's cut and tunnel (`GIMARD_CUT_CTX_278` / `GIMARD_TUNNEL_CTX_278`).
     assert_eq!(stage(903, 0x801F_6F2C), Some((4, Some(3))));

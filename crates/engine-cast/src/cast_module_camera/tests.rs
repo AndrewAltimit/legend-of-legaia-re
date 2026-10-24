@@ -1150,3 +1150,45 @@ fn horn_arm_8_stages_its_clip_with_the_bump_and_arm_9_bare() {
     assert_eq!(st.creature_stage, Some(2));
     assert!(!st.creature_restage);
 }
+
+#[test]
+fn horn_arm_6_seats_sixteen_spokes_of_glows_at_two_speeds() {
+    // Sixteen passes of four calls, the two records in turn.
+    let s = creature_arm_spawns(930, 6, SpawnTiming::Pass);
+    assert_eq!(s.len(), 64);
+    let records: Vec<u32> = s
+        .iter()
+        .map(|c| match c.record {
+            SpawnRecord::Module(va) => va,
+            SpawnRecord::BattleProto(_) => 0,
+        })
+        .collect();
+    assert!(records.chunks(2).all(|p| p == HORN_RING_RECORDS));
+    // Pass 0 looks straight up the cosine: the slow seat `+0x3E = 4096 /
+    // 1024`, the fast one `4096 / 512`; pass 1 (angle `0x100`) reads
+    // `sin = 1567`, `cos = 3784`. These are the drifts a retail Horn cast
+    // holds in its arm-7 glows.
+    assert_eq!(
+        horn_ring_drift(0x801F_8C44, 0),
+        Some([(0x3C, 0), (0x3E, 4)])
+    );
+    assert_eq!(
+        horn_ring_drift(0x801F_8CA0, 1),
+        Some([(0x3C, 0), (0x3E, 8)])
+    );
+    assert_eq!(
+        horn_ring_drift(0x801F_8C44, 2),
+        Some([(0x3C, 2), (0x3E, 3)])
+    );
+    assert_eq!(
+        horn_ring_drift(0x801F_8C44, 3),
+        Some([(0x3C, 4), (0x3E, 7)])
+    );
+    // Pass 12 points down -X: the quotients truncate toward zero.
+    assert_eq!(
+        horn_ring_drift(0x801F_8C44, 24),
+        Some([(0x3C, (-5i16) as u16), (0x3E, 0)])
+    );
+    assert_eq!(horn_ring_drift(0x801F_8C44, 32), None);
+    assert_eq!(horn_ring_drift(0x801F_8BEC, 0), None);
+}

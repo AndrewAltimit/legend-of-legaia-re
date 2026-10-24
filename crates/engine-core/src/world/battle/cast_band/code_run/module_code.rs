@@ -70,7 +70,17 @@ impl World {
             e if Self::runs_part_stager_calls(e) => self.run_part_stager_calls(e),
             922 => self.run_puera_stager_calls(&mut ctx),
             927 => self.run_juggernaut_stager_calls(),
-            923 => ticks::gilium_stager(&mut ctx, arm),
+            // PROT 0923's stager is reached through its parts' op-`0x20`
+            // calls, never off the phase: its arm 0 (the stage byte `3`) runs
+            // when the record that calls it does. A retail cast holds
+            // `ctx[+0x278] = 2` through arms 4 and 5's head and `3` only
+            // later in arm 5; run off the phase, arm 0 dropped the stage
+            // from the cast's first tick.
+            923 => {
+                for (call_arm, _) in std::mem::take(&mut self.casting.module_stager_calls) {
+                    ticks::gilium_stager(&mut ctx, call_arm);
+                }
+            }
             949 => ticks::water_crystals_stager(&mut victim, arm),
             _ => {}
         }
@@ -1280,6 +1290,9 @@ impl World {
             if entry == 928 {
                 self.apply_palma_writes(phase_in, ctx.phase != phase_in);
             }
+            if entry == 923 {
+                self.apply_gilium_writes(phase_in, ctx.phase != phase_in);
+            }
             self.apply_summon_pre_hits(
                 entry,
                 phase_in,
@@ -1336,6 +1349,12 @@ impl World {
                 phase_in,
                 self.casting.module_cam.countdown.0,
             )
+        {
+            ctx.ctx_278 = v;
+        }
+        if entry == 923
+            && ctx.phase != phase_in
+            && let Some(v) = legaia_engine_cast::cast_module_camera::gilium_stage_byte(phase_in)
         {
             ctx.ctx_278 = v;
         }

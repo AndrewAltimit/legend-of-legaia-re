@@ -197,12 +197,18 @@ impl World {
     /// PROT 0930's (Horn) seat visibility, on the passes that write it: arm
     /// 1 shows the party (`+0x04 = 0x20080200`, `+0x21C = 0`,
     /// `0x801F6C78..`), arm 3 seats the creature hidden (`+0x21C = 0xFF`, `+0x04 = 0`,
-    /// `0x801F6E98..`) and arm 4 shows it; arm 8 hides the party
-    /// (`0x801F7428..`); arm `0xA`, the heal, shows the party again and hides
-    /// the creature (`0x801F771C..`); arm `0xB` keeps the creature hidden. The
-    /// engine's shown word is its resting `0` under a lowered flag. Arm 1's
-    /// hide of the monster row is not carried: nothing in the module shows it
-    /// again, and the band's own reset is not modelled.
+    /// `0x801F6E98..`) and arm 4 shows it white (`+0x04 = 0x3FFFFFFF`,
+    /// `+0x21C = 0`, `0x801F6FD4..0x801F6FFC`), the idle arm of the tint
+    /// state machine easing it back to neutral; arm 8 hides the party
+    /// (`0x801F7428..`); arm `0xA`, the heal, shows the party again and
+    /// relights the creature for the closing burst: `+0x04 = 0x3FFFFFFF`,
+    /// `+0x0C = 0x1000`, `+0x21C = 0xFF` (the hold state, which leaves the
+    /// word drawn), standing at `+0x36 = 0x480`, `+0x38 = -0x200`, facing
+    /// `0` (`0x801F77A8..0x801F77EC`); arm `0xB`'s pass hides it
+    /// (`+0x21C = 0xFF`, `+0x04 = 0`, `0x801F7D04..0x801F7D10`). The engine's
+    /// shown word is its resting `0` under a lowered flag. Arm 1's hide of
+    /// the monster row is not carried: nothing in the module shows it again,
+    /// and the band's own reset is not modelled.
     pub(in crate::world::battle::cast_band) fn apply_horn_writes(
         &mut self,
         phase_in: u8,
@@ -210,6 +216,8 @@ impl World {
         seat_slot: u8,
     ) {
         use legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN;
+        /// The white word arms 4 and `0xA` store (`lui 0x3FFF; ori 0xFFFF`).
+        const WHITE: u32 = 0x3FFF_FFFF;
         if !passed {
             return;
         }
@@ -217,15 +225,23 @@ impl World {
             a.battle.render_flag = if hidden { RENDER_FLAG_HIDDEN } else { 0 };
             a.battle.render_color = 0;
         };
-        let creature = match phase_in {
-            3 | 0xA | 0xB => Some(true),
-            4 => Some(false),
-            _ => None,
-        };
-        if let Some(hidden) = creature
-            && let Some(a) = self.actors.get_mut(usize::from(seat_slot))
-        {
-            set(a, hidden);
+        if let Some(a) = self.actors.get_mut(usize::from(seat_slot)) {
+            match phase_in {
+                3 | 0xB => set(a, true),
+                4 => {
+                    a.battle.render_flag = 0;
+                    a.battle.render_color = WHITE;
+                }
+                0xA => {
+                    a.battle.render_flag = RENDER_FLAG_HIDDEN;
+                    a.battle.render_color = WHITE;
+                    a.battle.render_blend = 0x1000;
+                    a.move_state.world_y = 0x480;
+                    a.move_state.world_z = -0x200;
+                    a.battle.facing_angle = 0;
+                }
+                _ => {}
+            }
         }
         let party = match phase_in {
             1 | 0xA => Some(false),
@@ -313,26 +329,203 @@ impl World {
     /// stands in the opening framing; arm 4's pass hides it again
     /// (`+0x21C = 0xFF`, `+0x04 = 0`, `0x801F73BC..0x801F73FC`) as the
     /// creature is seated. The engine's shown word is its resting `0` under a
-    /// lowered flag. Arm 0's pull of the row's ground pairs to an eighth
-    /// (`0x801F6C9C..0x801F6CD8`) and the later arms' row writes (arm
-    /// `0xE`'s re-show on the far plane `+0x38 = -0x4000`, arms `0xF` /
-    /// `0x11`'s hides, the hit arm's lit `0x3C0`) are not carried.
+    /// lowered flag. The row's later choreography, seat by seat over seats
+    /// 3..6 (a seat with HP left is "living"):
+    ///
+    /// - arm 0 parks each living seat's ground trio and facing
+    ///   (`0x801FA0A8` / `0x801FA0C8`) and pulls its ground pair to an
+    ///   eighth (`sra 3` into `+0x34` / `+0x38`, `0x801F6C44..0x801F6CF0`);
+    /// - arm `0xE`'s pass re-shows the living row on the far plane
+    ///   (`+0x38 = -0x4000`, facing `0`) and bumps a dead seat's zero facing
+    ///   to `1`, the mark the later arms skip it by (`0x801F7F3C..0x801F7FD0`);
+    /// - arm `0xF` holds the living row on that plane every pass; once its
+    ///   word is under `0x1C1` it hides every seat (`0x801F81CC..0x801F81E4`,
+    ///   after the pre-hit), and its pass lights each unmarked seat, the
+    ///   colour word `0x3C0` under the soft-red state `7`, standing at
+    ///   `+0x38 = |+0x34| / 4 - 0x400` (`0x801F82CC..0x801F8370`);
+    /// - arm `0x10` keeps that stand every pass (`0x801F8418..0x801F8484`);
+    /// - arm `0x11`'s pass hides the living row (`0x801F8694..0x801F86DC`);
+    /// - the hit arm `0x13`'s pass puts each living seat's parked trio and
+    ///   facing back, turns it from the creature (`FUN_80019B28` + `0x800`)
+    ///   and shows it lit `0x3C0` (`0x801F892C..0x801F8B40`).
+    ///
+    /// Not carried: the render node's colour word `+0x74 = 0x00F00000`, the
+    /// `+0x1F6` cue cursor arm `0xF` stores and the node `+0x26` / `+0x68`
+    /// halfwords arms `0xE` / `0x10` zero and set.
     pub(in crate::world::battle::cast_band) fn apply_palma_writes(
         &mut self,
         phase_in: u8,
         passed: bool,
     ) {
+        use legaia_engine_battle_vm::battle_formulas::STATE_RED_SOFT;
         use legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN;
-        let hidden = match (phase_in, passed) {
-            (1, _) => false,
-            (4, true) => true,
-            _ => return,
-        };
-        for slot in self.living_monster_slots().into_iter().take(4) {
-            if let Some(a) = self.actors.get_mut(slot) {
-                a.battle.render_flag = if hidden { RENDER_FLAG_HIDDEN } else { 0 };
-                a.battle.render_color = 0;
+        /// The lit colour word arms `0xF` and `0x13` store (`li 0x3C0`).
+        const LIT: u32 = 0x3C0;
+        /// The far plane arms `0xE` / `0xF` stand the row on.
+        const FAR_Z: i16 = -0x4000;
+        let pc = usize::from(self.party.party_count);
+        let seats: Vec<usize> = (pc..pc + 4)
+            .filter(|&s| {
+                self.actors
+                    .get(s)
+                    .is_some_and(|a| a.active && a.battle_monster_id.is_some())
+            })
+            .collect();
+        let living = |w: &Self, s: usize| w.actors.get(s).is_some_and(|a| a.battle.hp != 0);
+        let stand = |x: i16| ((i32::from(x).abs() >> 2) - 0x400) as i16;
+        match (phase_in, passed) {
+            (0, true) => {
+                self.casting.module_saved_poses.clear();
+                for &s in &seats {
+                    if !living(self, s) {
+                        continue;
+                    }
+                    let a = &mut self.actors[s];
+                    let m = &mut a.move_state;
+                    self.casting.module_saved_poses.push((
+                        s,
+                        [m.world_x, m.world_y, m.world_z],
+                        a.battle.facing_angle,
+                    ));
+                    m.world_x /= 8;
+                    m.world_z /= 8;
+                }
             }
+            (1, _) | (4, true) => {
+                let hidden = phase_in == 4;
+                for slot in self.living_monster_slots().into_iter().take(4) {
+                    if let Some(a) = self.actors.get_mut(slot) {
+                        a.battle.render_flag = if hidden { RENDER_FLAG_HIDDEN } else { 0 };
+                        a.battle.render_color = 0;
+                    }
+                }
+            }
+            (0xE, true) => {
+                for &s in &seats {
+                    let live = living(self, s);
+                    let a = &mut self.actors[s];
+                    if live {
+                        a.battle.render_color = 0;
+                        a.battle.render_flag = 0;
+                        a.move_state.world_z = FAR_Z;
+                        a.battle.facing_angle = 0;
+                    } else if a.battle.facing_angle == 0 {
+                        a.battle.facing_angle = 1;
+                    }
+                }
+            }
+            (0xF, _) => {
+                let swept = self.casting.module_cam.countdown.0 < 0x1C1;
+                for &s in &seats {
+                    let live = living(self, s);
+                    let a = &mut self.actors[s];
+                    if live {
+                        a.move_state.world_z = FAR_Z;
+                    }
+                    if swept {
+                        a.battle.render_color = 0;
+                        a.battle.render_flag = RENDER_FLAG_HIDDEN;
+                    }
+                    if passed && a.battle.facing_angle == 0 {
+                        a.move_state.world_z = stand(a.move_state.world_x);
+                        a.battle.render_color = LIT;
+                        a.battle.render_flag = STATE_RED_SOFT;
+                    }
+                }
+            }
+            (0x10, _) => {
+                for &s in &seats {
+                    let a = &mut self.actors[s];
+                    if a.battle.facing_angle == 0 {
+                        a.move_state.world_z = stand(a.move_state.world_x);
+                    }
+                }
+            }
+            (0x11, true) => {
+                for &s in &seats {
+                    if living(self, s) {
+                        let a = &mut self.actors[s];
+                        a.battle.render_color = 0;
+                        a.battle.render_flag = RENDER_FLAG_HIDDEN;
+                    }
+                }
+            }
+            (0x13, true) => {
+                let creature = self
+                    .casting
+                    .module_cam
+                    .creature
+                    .or(self.casting.module_cam.creature_live);
+                for &s in &seats {
+                    if !living(self, s) {
+                        continue;
+                    }
+                    let saved = self
+                        .casting
+                        .module_saved_poses
+                        .iter()
+                        .find(|p| p.0 == s)
+                        .copied();
+                    let a = &mut self.actors[s];
+                    if let Some((_, pos, facing)) = saved {
+                        let m = &mut a.move_state;
+                        [m.world_x, m.world_y, m.world_z] = pos;
+                        a.battle.facing_angle = facing;
+                    }
+                    if let Some(c) = creature {
+                        let m = &a.move_state;
+                        let h = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
+                            c.z, c.x, m.world_z, m.world_x,
+                        );
+                        a.battle.facing_angle = h.wrapping_add(0x800) & 0xFFF;
+                    }
+                    a.battle.render_color = LIT;
+                    a.battle.render_flag = 0;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// PROT 0923's (Gilium) creature flight through its portal. Arm 3's
+    /// pass seats the creature at `(0, -0x100, -0x800)`, facing `0`
+    /// (`0x801F6DB8..0x801F6DD4`, after `FUN_801F19EC`); each pass of arm 4
+    /// that still finds its word positive flies it `24` a frame delta along
+    /// `+0x38` and `2` down `+0x36` (`0x801F6E30..0x801F6E58`), and arm 4's
+    /// pass stands it at `+0x38 = 0x400` (`0x801F718C`). A retail cast in arm
+    /// 4 holds the creature at `z = -1184` on its way in and at `0x400` from
+    /// arm 5 on; without the flight the engine left it on arm 3's seat, behind
+    /// the camera, and drew no creature from the portal on.
+    ///
+    /// Not carried: arm 3's zero colour word (the idle tint arm eases it up
+    /// to neutral, the creature's fade-in; the engine's zero word reads as
+    /// neutral under a lowered flag) and the render-node scale `+0x72` arm 3
+    /// zeroes and arm 4 grows by `32` a frame delta.
+    pub(in crate::world::battle::cast_band) fn apply_gilium_writes(
+        &mut self,
+        phase_in: u8,
+        passed: bool,
+    ) {
+        let d = legaia_engine_cast::cast_module_camera::DELTA_PER_TICK as i16;
+        let Some(a) = self
+            .casting
+            .summon_actor_slot
+            .and_then(|s| self.actors.get_mut(usize::from(s)))
+        else {
+            return;
+        };
+        let m = &mut a.move_state;
+        match (phase_in, passed) {
+            (3, true) => {
+                [m.world_x, m.world_y, m.world_z] = [0, -0x100, -0x800];
+                a.battle.facing_angle = 0;
+            }
+            (4, false) => {
+                m.world_z = m.world_z.wrapping_add(24 * d);
+                m.world_y = m.world_y.wrapping_add(2 * d);
+            }
+            (4, true) => m.world_z = 0x400,
+            _ => {}
         }
     }
 

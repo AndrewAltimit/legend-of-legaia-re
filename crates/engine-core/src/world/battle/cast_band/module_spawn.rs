@@ -449,6 +449,9 @@ impl World {
             }),
             depth: self.battle.camera_frame_height,
         };
+        // Seats of each record so far in this call: PROT 0930's arm 6 writes
+        // a different drift into each glow it seats.
+        let mut seats_of: Vec<(u32, usize)> = Vec::new();
         for spawn in spawns {
             let point = match spawn.anchor {
                 legaia_engine_cast::cast_module_camera::SpawnAnchor::ArmPoint => arm_point,
@@ -533,9 +536,23 @@ impl World {
             if let SpawnRecord::Module(va) = spawn.record {
                 let pokes =
                     legaia_engine_cast::cast_module_camera::capture_spawn_pokes(prot_entry, va);
+                let n = match seats_of.iter_mut().find(|(r, _)| *r == va) {
+                    Some((_, n)) => {
+                        *n += 1;
+                        *n - 1
+                    }
+                    None => {
+                        seats_of.push((va, 1));
+                        0
+                    }
+                };
+                let drift = (prot_entry == 930)
+                    .then(|| legaia_engine_cast::cast_module_camera::horn_ring_drift(va, n))
+                    .flatten();
                 for part in &mut scene.parts[first..] {
                     part.tag.get_or_insert(va);
                     part.seat_pokes.extend_from_slice(pokes);
+                    part.seat_pokes.extend(drift.iter().flatten());
                 }
                 // A seated stager-calling record makes its own call, so the
                 // clock kept in its place stops.

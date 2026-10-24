@@ -369,6 +369,28 @@ impl World {
         self.battle_frame_step().max(1)
     }
 
+    /// The same pass for the cast's summon parts
+    /// ([`Self::tick_summon`]): the slot-B module's parts are list-1 nodes
+    /// of the battle pass like the table-form ones, so on retail's cadence
+    /// they take one part tick a battle frame, scaled by the step. The
+    /// motion block's velocity terms truncate per tick
+    /// (`(v << 12) * delta >> 18`), so a part ticked every vsync at the
+    /// one-vsync delta never moves on a drift under `8`: PROT 0930's arm-6
+    /// glows (`+0x3C` / `+0x3E` of `0..10`) stood in the centre.
+    pub(in crate::world) fn summon_fx_pass_vsyncs(&mut self) -> u8 {
+        if self.mode != legaia_engine_mode::mode::SceneMode::Battle
+            || !self.toggles.battle_sm_frame_cadence
+        {
+            return 1;
+        }
+        let frame = self.battle_frame_id();
+        if self.battle.summon_fx_pass_frame == Some(frame) {
+            return 0;
+        }
+        self.battle.summon_fx_pass_frame = Some(frame);
+        self.battle_frame_step().max(1)
+    }
+
     /// The actor anim tick's pass on retail's cadence, run after the frame
     /// driver's pass and its camera: the cursor advance
     /// ([`Self::tick_battle_animations`]), then - when the pass reached the
