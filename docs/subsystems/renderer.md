@@ -524,8 +524,11 @@ full pixel chain - palette, colour word, depth cue, blend, dither - is
 The trap for any new draw path: an unbound colour attribute defaults to
 white, and white is `texel * 255/128`, so a missing colour stream reads as
 "too bright", not as "unlit". A synthetic Lambert survives only in two viewer
-aids - the asset-viewer's bare-geometry `MESH_SHADER_SRC` and the site's lit
-bestiary preview - and neither is a claim about retail.
+aids - the asset-viewer's bare-geometry `MESH_SHADER_SRC` and the site
+bestiary's opt-in "lit preview" toggle - and neither is a claim about retail.
+The bestiary itself defaults to the retail path: each face's baked colour word
+(`monster_mesh_colors`) multiplies its texel, and the view keeps the lit look
+only when the wasm bundle carries no colour stream, for exactly this trap.
 
 ### What issues a colour op
 

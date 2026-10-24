@@ -310,6 +310,18 @@ impl LegaiaViewer {
         out
     }
 
+    /// Per-vertex baked colour word for monster `id`'s mesh, `[r, g, b]` per
+    /// vertex (parallel to [`Self::monster_mesh_positions`]). This is retail's
+    /// whole lighting of a monster: the GPU draws `texel * colour / 128`
+    /// (`0x80` neutral), an untextured face takes the word as its colour, and
+    /// a light-source-row prim (no word) reads neutral. See
+    /// `docs/subsystems/shading.md`. Empty if the id has no mesh.
+    pub fn monster_mesh_colors(&self, id: u16) -> Vec<u8> {
+        self.build_monster_mesh(id)
+            .map(|m| m.colors.iter().flatten().copied().collect())
+            .unwrap_or_default()
+    }
+
     /// Per-vertex blend mode for monster `id`'s mesh (parallel to
     /// [`Self::monster_mesh_positions`]): `0` opaque, `1 + abr` for a
     /// semi-transparent prim (the group's ABE bit, packed into TSB bit 15 by
