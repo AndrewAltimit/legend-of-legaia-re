@@ -24,7 +24,7 @@ culling, the port's render passes and knobs. How a pixel gets its colour is
   through the GTE light. The port does both by default on both hosts
   ([Lighting](#lighting)).
 - **Rasterisation defaults to clean.** `Renderer::set_psx_mode` is opt-in and
-  gates vertex jitter + 15-bit dither only. Affine UVs are unconditional, and
+  gates the retail vertex snap (truncated onto the 320×240 grid, with its scanline texel row) and 15-bit dither only. Affine UVs are unconditional, and
   they are the faithful behaviour
   ([knobs](#rendering-knobs-what-is-faithful-what-is-a-choice)).
 - **Simulation is faithful with no opt-out.**
