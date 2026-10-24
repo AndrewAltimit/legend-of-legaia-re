@@ -108,7 +108,7 @@ view is, the mouse wheel scrolls it, and `Page Up` / `Page Down` / `Home` /
 | Display | Fullscreen (borderless) | `legaia-options.toml` | `F11`, `Alt+Enter` | off |
 | Display | Window size (640x480 .. 1920x1440, steps of 320x240) | `legaia-options.toml` | - | 960x720 |
 | Display | Camera distance (retail, far, farther) | `legaia-options.toml` | `T` | far |
-| Display | PlayStation pixel look (`--psx-render`) | `launcher.toml` | - | off |
+| Display | PlayStation pixel look: the native 320x240 picture, magnified (`--psx-render`) | `launcher.toml` | - | off |
 | Enhancements | Enhanced lighting | `legaia-options.toml` | `I` | on |
 | Enhancements | Time of day (auto, day, dusk, night) | `legaia-options.toml` | `F8` | auto |
 | Enhancements | Lamp shadows | `legaia-options.toml` | `Y` | on |

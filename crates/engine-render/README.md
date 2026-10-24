@@ -27,6 +27,11 @@ same surface and depth attachment:
   additionally takes per-vertex blend words (ABE bit 15 + ABR bits 5..=6,
   `psx_blend::pack_blend_word`) so untextured semi-transparent prims
   blend in PSX mode.
+- **Native target** - `set_native_resolution(Some(PSX_DISPLAY_SIZE))`: every
+  pass of a frame drawn into a `320 x 240` offscreen texture and presented
+  with a nearest-neighbour integer upscale; `surface_size` and captures are
+  the native size while it is on. PSX mode runs on it (the GPU's fill rule
+  and texel rounding hold only at stage scale 1).
 - **Screen-space 2D overlay** - `render(RenderTarget::ScreenOverlay)`. PSX
   `POLY_FT4` textured quads + flat quads in surface pixels, drawn in
   ordering-table order (back-to-front by OT index, LIFO within a bucket)

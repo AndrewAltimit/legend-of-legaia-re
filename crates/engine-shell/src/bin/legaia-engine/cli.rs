@@ -1301,10 +1301,12 @@ pub(crate) enum Cmd {
         /// with the `F9` key.
         #[arg(long, default_value_t = false)]
         no_volumetric_fog: bool,
-        /// Start in PSX-faithful rasterisation: sub-pixel vertex jitter and
-        /// 15-bit ordered dithering on the 3D mesh pipelines (the play page's
-        /// "PSX rasterisation" box; the `LEGAIA_PSX_RENDER=1` environment switch does
-        /// the same). Off by default - clean modern output.
+        /// Start in PSX-faithful rasterisation: the whole frame drawn at the
+        /// display's own 320x240 and magnified nearest-neighbour, with the
+        /// vertex snap, the GPU's fill rule and 15-bit ordered dithering (the
+        /// play page's "PSX rasterisation" box; the `LEGAIA_PSX_RENDER=1`
+        /// environment switch does the same). Off by default - clean modern
+        /// output at the window's resolution.
         #[arg(long, default_value_t = false)]
         psx_render: bool,
         /// Open borderless fullscreen for this session, whatever the options
@@ -1326,11 +1328,12 @@ pub(crate) enum Cmd {
         /// value for this session (retail camera distance, the 8-way movement
         /// decode, no photosensitivity slew, retail tile windows). The one
         /// switch a parity capture passes; nothing is written back to the
-        /// options file.
+        /// options file. `--dynamic-lighting` beside it keeps enhanced
+        /// lighting on (the retail-compare enhanced smoke tier).
         #[arg(
             long,
             default_value_t = false,
-            conflicts_with_all = ["dynamic_lighting", "no_dynamic_lighting", "no_dyn_shadows",
+            conflicts_with_all = ["no_dynamic_lighting", "no_dyn_shadows",
                 "no_entry_pulse", "no_occlusion_fade", "no_volumetric_fog", "smart_monsters",
                 "no_shiny_seru", "flee_exp", "exp_rate", "no_fortress_encounter_fix", "jewel_fix",
                 "no_hp_readout_guard", "spirit_ap", "damage_ap", "seru_catch_rate",

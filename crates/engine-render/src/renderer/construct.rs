@@ -230,6 +230,7 @@ impl Renderer {
             scene_quad_ranges: std::cell::RefCell::new(Vec::new()),
             blend_list: std::cell::RefCell::new(Vec::new()),
             depth_view,
+            native: None,
             psx_mode: std::cell::Cell::new(false),
             ui_psx_tint: std::cell::Cell::new(true),
             vram_upload_counter: std::cell::Cell::new(0),

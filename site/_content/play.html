@@ -536,10 +536,10 @@ div.play-vis-head { cursor: default; }
               <p class="play-vis-desc"><button id="play-camera-distance" type="button">Camera: far</button>
                 How far back the follow camera sits: retail, far or farther.</p>
             </li>
-            <li class="play-vis-row" title="PSX rasterisation: snap every vertex to the framebuffer's pixel grid (the PS1's integer screen coordinates - the vertex jitter) and dither each shaded pixel down to 15-bit colour with the PSX 4x4 matrix (the native window's LEGAIA_PSX_RENDER). Off draws the clean render; presentation only.">
+            <li class="play-vis-row" title="PSX rasterisation: draw the whole frame at the PS1's own 320x240 and magnify it with square pixels, snap every vertex to that pixel grid (the PS1's integer screen coordinates - the vertex jitter) and dither each shaded pixel down to 15-bit colour with the PSX 4x4 matrix (the native window's --psx-render). Off draws the clean render at the canvas resolution; presentation only.">
               <label class="play-vis-head"><input type="checkbox" id="play-psx-render"> <span class="play-vis-name">PSX rasterisation</span>
                 <span class="play-vis-tag is-retail">Retail look</span></label>
-              <p class="play-vis-desc">The PS1&rsquo;s wobbling vertices and 15-bit colour dither. Off draws a clean image.</p>
+              <p class="play-vis-desc">The PS1&rsquo;s own 320&times;240 picture: chunky pixels, wobbling vertices and 15-bit colour dither. Off draws a clean image.</p>
             </li>
             <li class="play-vis-row" title="Retail's visible-tile crop: at retail framing, draw only the terrain tiles the PS1's camera window covers (the retail_view_window option, persisted like the native config). Off draws the whole scene.">
               <label class="play-vis-head"><input type="checkbox" id="play-retail-view-window" checked> <span class="play-vis-name">Retail tile crop</span>

@@ -66,8 +66,8 @@ impl Renderer {
             self.text_index_capacity.set(cap);
         }
 
-        let surf_w = self.config.width.max(1) as f32;
-        let surf_h = self.config.height.max(1) as f32;
+        let surf_w = self.target_size().0.max(1) as f32;
+        let surf_h = self.target_size().1.max(1) as f32;
 
         let mut verts: Vec<TextVertex> = Vec::with_capacity(needed_v as usize);
         let mut idxs: Vec<u32> = Vec::with_capacity(needed_i as usize);
@@ -230,7 +230,7 @@ impl Renderer {
             return None;
         }
         let (x, y, w, h) = self.scene_viewport.get()?;
-        let (full_w, full_h) = (self.config.width, self.config.height);
+        let (full_w, full_h) = self.target_size();
         if w == 0 || h == 0 || x + w > full_w || y + h > full_h || (w, h) == (full_w, full_h) {
             return None;
         }

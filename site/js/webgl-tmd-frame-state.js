@@ -187,7 +187,12 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     const gl = this.gl;
     if (this.locPsx) {
       const on = this.psxMode ? 1 : 0;
-      gl.uniform4f(this.locPsx, w, h, on, on);
+      /* `z = 2` on the native 320 x 240 backing store (the page's PSX
+       * rasterisation, `PlayView._applyNativeResolution`): the snapped
+       * geometry takes the GPU's pixel centre and texel bias, the native
+       * renderer's `psx_snap_params`. */
+      const snap = on && w === 320 && h === 240 ? 2 : on;
+      gl.uniform4f(this.locPsx, w, h, snap, on);
     }
     if (this.locDynDir) {
       /* The mood comes from the engine with this frame's lighting packet;

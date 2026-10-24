@@ -16,6 +16,7 @@ mod construct;
 mod depth;
 mod fog_volume;
 mod letterbox;
+mod native_target;
 mod render;
 mod state;
 mod upload;
@@ -34,6 +35,7 @@ pub(crate) use fog_volume::FOG_SHADER_SRC;
 #[cfg(test)]
 pub(crate) use bloom::BLOOM_SHADER_SRC;
 pub(crate) use letterbox::letterbox_scale;
+pub use native_target::PSX_DISPLAY_SIZE;
 pub use render::CaptureImage;
 pub use state::*;
 pub use uploaded::*;

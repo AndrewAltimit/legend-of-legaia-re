@@ -106,6 +106,35 @@ fn a_state_run_without_its_own_image_is_skipped_and_never_blessed() {
     assert!(prior.fallback_skips(&own).is_empty());
 }
 
+/// The smoke tier breaks only on a frame far under the accuracy baseline or
+/// on a seeded state with no frame at all; a raster-sized drop passes, and a
+/// patched-disc state is never judged.
+#[test]
+fn the_smoke_tier_breaks_only_on_a_large_drop_or_a_missing_frame() {
+    let mut b = Baseline::default();
+    for l in ["near", "far", "blank", "patched"] {
+        b.states.insert(l.into(), chans(&[("image", 0.95)]));
+    }
+    let retail = |label: &str, image: Option<f64>| {
+        let mut r = patched_report(label, image.unwrap_or(0.0), None);
+        r.resident_patch = None;
+        if image.is_none() {
+            r.channels = chans(&[("camera", 1.0)]);
+        }
+        r
+    };
+    let reports = vec![
+        retail("near", Some(0.80)),
+        retail("far", Some(0.60)),
+        retail("blank", None),
+        patched_report("patched", 0.1, None),
+    ];
+    let breaks = b.smoke_breaks(&reports, SMOKE_IMAGE_SLACK);
+    assert_eq!(breaks.len(), 2, "{breaks:?}");
+    assert!(breaks[0].starts_with("far.image"));
+    assert!(breaks[1].starts_with("blank.image: no frame"));
+}
+
 /// The sub-screen word names the screen: a root row's route, one of the
 /// Equip row's three steps, the title family (clear) or a script-entered
 /// screen no root row routes to.

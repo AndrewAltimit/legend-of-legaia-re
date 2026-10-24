@@ -35,7 +35,15 @@ impl Renderer {
         // queue with vsync off) this is where the CPU blocks, so keeping it as
         // its own profiler stage stops it from being misread as GPU-submit cost.
         crate::profile::mark("acquire");
-        self.encode_frame(target, &view)?;
+        match &self.native {
+            // The native target: the frame draws at the display's own size,
+            // then the window magnifies it.
+            Some(native) => {
+                self.encode_frame(target, &native.view)?;
+                self.present_native(native, &view);
+            }
+            None => self.encode_frame(target, &view)?,
+        }
         frame.present();
         crate::profile::mark("present");
         Ok(())
@@ -69,8 +77,10 @@ impl Renderer {
         // Stage uniform writes before begin_render_pass.
         match &target {
             RenderTarget::Texture(t) => {
-                let (sx, sy) =
-                    letterbox_scale(self.config.width, self.config.height, t.width, t.height);
+                let (sx, sy) = {
+                    let (w, h) = self.target_size();
+                    letterbox_scale(w, h, t.width, t.height)
+                };
                 self.queue.write_buffer(
                     &self.uniforms_buf,
                     0,
@@ -83,7 +93,7 @@ impl Renderer {
             | RenderTarget::TexturedMesh { mvp, .. }
             | RenderTarget::VramMesh { mvp, .. }
             | RenderTarget::Lines { mvp, .. } => {
-                let snap = if self.psx_mode.get() { 1.0f32 } else { 0.0 };
+                let (snap, dither) = self.psx_snap_params();
                 self.queue.write_buffer(
                     &self.mesh_uniforms_buf,
                     0,
@@ -94,10 +104,10 @@ impl Renderer {
                         // Light coming from upper-back-left in world space.
                         depth_cue: self.depth_cue.get(),
                         psx_params: [
-                            self.config.width as f32,
-                            self.config.height as f32,
+                            self.target_size().0 as f32,
+                            self.target_size().1 as f32,
                             snap,
-                            snap, // .w = dither_enable (shares the psx_mode flag)
+                            dither, // .w = dither_enable (the psx_mode flag)
                         ],
                         tex_window: [pack_tex_window(self.tex_window.get()), 0, 0, 0],
                         grade: self.color_grade.get(),
@@ -257,7 +267,7 @@ impl Renderer {
             // The stage rect the 3D pass and the screen-primitive overlay are
             // confined to (see `set_scene_viewport`); the text / sprite
             // overlays are in surface pixels and take the whole target.
-            let (full_w, full_h) = (self.config.width, self.config.height);
+            let (full_w, full_h) = self.target_size();
             let scene_vp = self
                 .scene_viewport
                 .get()

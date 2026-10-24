@@ -429,6 +429,10 @@ fn main() -> Result<()> {
             battle.as_deref(),
             if retail {
                 window::LaunchFidelity {
+                    // `--dynamic-lighting` beside `--retail` keeps enhanced
+                    // lighting on over the pinned session: the retail-compare
+                    // corpus's enhanced smoke tier.
+                    dynamic_lighting: Some(dynamic_lighting),
                     psx_render,
                     window: window::WindowLaunch::from_flags(fullscreen, windowed, window_scale),
                     ..window::LaunchFidelity::retail()

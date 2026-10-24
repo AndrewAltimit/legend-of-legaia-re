@@ -69,6 +69,8 @@ scripts/ci/retail-compare.py --images --check # assert the baseline
 scripts/ci/retail-compare.py --images --bless # fold a reviewed rise into the baseline
 scripts/ci/retail-compare.py --filter town01  # only matching labels (a,b = either)
 scripts/ci/retail-compare.py --filter =battle_gaza2_park_0x19  # that label exactly
+scripts/ci/retail-compare.py --smoke clean    # smoke tier: clean 3x frames, loose check
+scripts/ci/retail-compare.py --smoke enhanced # smoke tier: + enhanced lighting
 
 LEGAIA_SAVES_LIBRARY=... LEGAIA_EXTRACTED_DIR=... \
   cargo test -p legaia-engine-shell --profile release-test --test integration retail_compare_corpus:: -- --nocapture
@@ -82,8 +84,9 @@ and then in the main checkout.
 
 The subcommand is `legaia-engine retail-compare`, which takes `--library`,
 `--extracted-root`, `--manifest`, `--out`, `--images`, `--filter`,
-`--flags-first`, `--write-baseline` (the driver's `--bless`) and
-`--check-baseline` (the driver's `--check`).
+`--flags-first`, `--write-baseline` (the driver's `--bless`),
+`--check-baseline` (the driver's `--check`), and `--render` / `--smoke-check`
+(the driver's `--smoke`, [below](#the-smoke-tier)).
 
 ## Reading the report
 
@@ -2713,11 +2716,20 @@ Retail's drawing area is `320 x 224` at draw offset `(0, 4)` / `(0, 244)`,
 and the display scans out from the same origin
 ([renderer](../subsystems/renderer.md#the-screen-the-gte-projects-onto-is-320x224-not-320x240)),
 so the compared frame is the top `224` rows of the display crop - the rows
-below are never drawn. The port keeps a `320 x 240` logical screen whose row
-`y` is retail's draw row `y` (the `OFY = 114` bias puts the GTE origin on the
-same row in both), rendered at an integer scale, so engine row `s * y` is
-retail row `y`: the capture's top `224 * s` rows are box-filtered down by
-`s`, and the port's bottom `16` logical rows are left out.
+below are never drawn. A state whose display is not `320` wide (no corpus
+state's field, battle or menu frame is) is not scored. The port keeps a
+`320 x 240` logical screen whose row `y` is retail's draw row `y` (the
+`OFY = 114` bias puts the GTE origin on the same row in both).
+
+The channel is the accuracy metric, so the child draws the frame the way the
+GPU does: `--retail --psx-render`, PSX mode on the
+[native target](../subsystems/renderer-port.md#the-native-target) - every
+pass at the display's own `320 x 240`, with retail's vertex snap, fill rule,
+texel rounding and dither. Its capture is the native frame, compared pixel
+for pixel with the crop. Any other render mode is a capture at an integer
+scale `s` of the stage (engine row `s * y` is retail row `y`), whose top
+`224 * s` rows are box-filtered down by `s`; those modes are the
+[smoke tier](#the-smoke-tier), never the score.
 
 Two numbers per state:
 
@@ -2725,11 +2737,11 @@ Two numbers per state:
 - `within` - the fraction of `8 x 8` blocks whose mean colour is within
   `24` of retail's on every channel. This is the score.
 
-Block means rather than pixels: the engine rasterises at its own resolution
-with its own filtering, so a per-pixel test would mostly score dither,
-filtering and sub-pixel edges. A block test moves on wrong camera, missing
-or extra geometry, wrong CLUTs and wrong overlays, and not on rasteriser
-noise. A retail frame whose mean luma is below `8` - a fade - is not scored:
+Block means rather than pixels: even at the native size a per-pixel test
+would mostly score dither phase, a texel rounding on one capture's emulator
+and the last sub-pixel of an edge. A block test moves on wrong camera,
+missing or extra geometry, wrong CLUTs and wrong overlays, and not on
+rasteriser noise. A retail frame whose mean luma is below `8` - a fade - is not scored:
 a dark engine frame would match it and say nothing about the scene.
 
 The engine frame comes from `play-window` run as a child in a scratch
@@ -2751,6 +2763,28 @@ moved with machine load, which is what made image runs load-sensitive.
 The report writes `retail | engine | |diff|` side by side for every scored
 state. **Those PNGs are retail pixels**; the report directory must stay
 gitignored (`captures/` is).
+
+### The smoke tier
+
+The clean rasteriser at the window's `3x` stage, and the enhancements over
+it, are not what retail draws, so they never feed the score or the ratchet.
+They are still drawn by every player, so a run in either mode guards them
+against a break outright - a black frame, a pass that stopped drawing, a
+misplaced stage:
+
+```bash
+scripts/ci/retail-compare.py --smoke clean      # --retail
+scripts/ci/retail-compare.py --smoke enhanced   # --retail --dynamic-lighting
+```
+
+The driver runs the image corpus with `legaia-engine retail-compare --render
+<mode> --smoke-check <baseline>`, writes its report to
+`captures/retail-compare-smoke-<mode>/`, and fails a state only when its
+frame scores more than `SMOKE_IMAGE_SLACK` (`0.25`) under the accuracy
+baseline's image score, or when a state it seeded scores no frame
+(`Baseline::smoke_breaks`). It never writes or checks the ratchet:
+`--render` with `--bless` / `--check` is refused. Patched-disc states are
+left out, as they are of the ratchet.
 
 ### A box on screen while the record runs on
 

@@ -114,6 +114,19 @@ fn psx_snap_clip(clip: vec4<f32>, vp_w: f32, vp_h: f32) -> vec4<f32> {
     return vec4<f32>(nx * clip.w, ny * clip.w, clip.z, clip.w);
 }
 
+// The native target's pixel centre (`Renderer::set_native_resolution`, PSX
+// mode's `psx_params.z = 2`): a snapped vertex moves half a stage pixel down
+// and right, so the integer point the GPU tests a pixel at is the host's
+// pixel centre, and the host's own top-left rule there is the GPU's fill
+// rule. Coverage is then whole stage pixels, each one primitive's, as the
+// GPU's is - which no fragment discard at a window-sized target can give.
+fn psx_native_centre(clip: vec4<f32>, vp_w: f32, vp_h: f32) -> vec4<f32> {
+    if vp_w <= 0.0 || vp_h <= 0.0 || clip.w <= 0.0 {
+        return clip;
+    }
+    return vec4<f32>(clip.x + clip.w / vp_w, clip.y - clip.w / vp_h, clip.z, clip.w);
+}
+
 // Full-scene colour grade. `grade.rgb` is a per-channel multiply tint and
 // `grade.a` the strength: the shaded pixel is cross-faded toward
 // `rgb * grade.rgb`. strength 0 (the identity default) passes the colour

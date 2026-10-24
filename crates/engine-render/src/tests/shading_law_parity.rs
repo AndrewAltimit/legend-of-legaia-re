@@ -1283,3 +1283,54 @@ fn the_psx_texel_row_stays_on_its_triangle_on_both_hosts() {
         "the fragments cover both triangles: {checked}"
     );
 }
+
+/// PSX mode on the native target (`psx_params.z = 2`,
+/// `Renderer::set_native_resolution`): the fragment's UV is the GPU's at its
+/// integer sample point already, and both hosts take the texel the GPU's
+/// half-texel bias rounds it to - with no row move, wherever the fragment
+/// sits in its triangle.
+#[test]
+fn the_native_psx_texel_is_the_rounded_uv_on_both_hosts() {
+    let native = parse_wgsl(&compose_scene_lit_shader(VRAM_MESH_SHADER_SRC));
+    let page = parse_glsl(&page_fragment_glsl());
+    let no_fetch = || -> Box<shader_eval::ImageFetch> { Box::new(|_, _, _| [0, 0, 0, 1]) };
+    let (mut nm, mut pm) = (
+        Machine::new(&native, no_fetch()),
+        Machine::new(&page, no_fetch()),
+    );
+    let psx = Val::f(&[STAGE_W, STAGE_H, 2.0, 1.0]);
+    nm.set_uniform("psx_params", psx.clone());
+    pm.set_uniform("u_psx", psx);
+    for (uv, uv_dy, b) in [
+        ([31.0f32, 128.0], [0.0f32, 2.5], [0.2f32, 0.3, 0.5, 0.0]),
+        ([12.25, 40.75], [0.4, -1.0], [0.0, 0.0, 1.0, 0.0]),
+    ] {
+        let bdy = [0.01f32, -0.02, 0.01, 0.0];
+        let fnat = nm.function("psx_texel_uv");
+        let n = nm
+            .call(
+                fnat,
+                vec![Val::f(&uv), Val::f(&uv_dy), Val::f(&b), Val::f(&bdy)],
+            )
+            .ok()
+            .flatten()
+            .expect("native sample");
+        let fpage = pm.function("psxSampleUv");
+        let g = pm
+            .call(
+                fpage,
+                vec![
+                    Val::f(&uv),
+                    Val::f(&[-uv_dy[0], -uv_dy[1]]),
+                    Val::f(&b),
+                    Val::f(&bdy.map(|x| -x)),
+                ],
+            )
+            .ok()
+            .flatten()
+            .expect("page sample");
+        let want = [uv[0] + 0.5, uv[1] + 0.5];
+        assert_eq!(n.floats(), &want[..], "native");
+        assert_eq!(g.floats(), &want[..], "page");
+    }
+}

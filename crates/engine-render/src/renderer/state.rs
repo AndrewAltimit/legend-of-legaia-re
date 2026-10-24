@@ -131,8 +131,11 @@ pub struct Renderer {
     /// `render` API; cleared and refilled each frame, capacity persists so
     /// the per-prim sort allocates nothing in steady state.
     pub(super) blend_list: std::cell::RefCell<Vec<psx_blend::BlendListEntry>>,
-    /// Depth target - recreated on resize.
+    /// Depth target - recreated on resize, at [`Self::target_size`].
     pub(super) depth_view: wgpu::TextureView,
+    /// The native-resolution frame target ([`Self::set_native_resolution`]);
+    /// `None` draws straight onto the surface.
+    pub(super) native: Option<super::native_target::NativeTarget>,
     /// PSX-faithful rendering mode. When `true`, the VRAM-mesh shader uses
     /// affine (linear-in-screen-space) UV interpolation instead of
     /// perspective-correct, and snaps clip-space x/y to integer pixel
@@ -349,6 +352,17 @@ impl Renderer {
     /// Read current PSX-mode flag.
     pub fn psx_mode(&self) -> bool {
         self.psx_mode.get()
+    }
+
+    /// `psx_params.z` / `.w` of a mesh uniform: the vertex snap (`0` off,
+    /// `1` on, `2` on with the native target's pixel centre - see
+    /// [`Self::set_native_resolution`]) and the dither enable.
+    pub(super) fn psx_snap_params(&self) -> (f32, f32) {
+        match (self.psx_mode.get(), self.native.is_some()) {
+            (false, _) => (0.0, 0.0),
+            (true, false) => (1.0, 1.0),
+            (true, true) => (2.0, 1.0),
+        }
     }
 
     /// Tint the 2D overlay (menus, HUD, dialogue, every text and sprite
@@ -823,10 +837,15 @@ impl Renderer {
         self.config.width = width.max(1);
         self.config.height = height.max(1);
         self.surface.configure(&self.device, &self.config);
-        self.depth_view = create_depth_view(&self.device, self.config.width, self.config.height);
+        let (w, h) = self.target_size();
+        self.depth_view = create_depth_view(&self.device, w, h);
     }
 
+    /// The size the hosts lay a frame out in: the surface's, or the native
+    /// target's while one is set ([`Self::set_native_resolution`]) - the 2D
+    /// stage then sits at scale 1 and the window only magnifies the frame.
+    /// The window's own size is [`Self::presented_size`].
     pub fn surface_size(&self) -> (u32, u32) {
-        (self.config.width, self.config.height)
+        self.target_size()
     }
 }

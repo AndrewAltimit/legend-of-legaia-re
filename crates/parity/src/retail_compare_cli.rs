@@ -7,8 +7,10 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 
 use crate::retail_compare::{
-    Baseline, IMAGE_CHANNELS, RunOptions, markdown_report, resolve_dirs, run_corpus, summarise,
+    Baseline, IMAGE_CHANNELS, RunOptions, SMOKE_IMAGE_SLACK, markdown_report, resolve_dirs,
+    run_corpus, summarise,
 };
+use crate::retail_compare_image::FrameRender;
 
 /// Seed the engine from every seedable retail save state in the library and
 /// score it against retail per channel (scene, mode, position, footing,
@@ -50,6 +52,17 @@ pub struct RetailCompareArgs {
     /// Check the run against this baseline and exit non-zero on any drop.
     #[arg(long)]
     pub check_baseline: Option<PathBuf>,
+    /// How the image child draws its frame. `psx` (the default) is the
+    /// accuracy metric the baseline holds; `clean` and `enhanced` are the
+    /// smoke tier, checked with `--smoke-check` and never written to or
+    /// checked against the ratchet.
+    #[arg(long, value_enum, default_value_t = FrameRender::Psx)]
+    pub render: FrameRender,
+    /// Smoke tier: report every image score more than the smoke slack under
+    /// this baseline's, and exit non-zero on any (loose; see
+    /// `Baseline::smoke_breaks`).
+    #[arg(long)]
+    pub smoke_check: Option<PathBuf>,
 }
 
 pub fn run(args: RetailCompareArgs) -> Result<()> {
@@ -58,6 +71,15 @@ pub fn run(args: RetailCompareArgs) -> Result<()> {
     let library = args.library.or(l).context("no save library")?;
     let extracted = args.extracted_root.or(e).context("no extracted disc")?;
     let manifest = legaia_ram_image::ScenarioManifest::from_path(&manifest_path)?;
+    // The ratchet holds the accuracy mode's scores only: a smoke-tier render
+    // neither writes nor checks it.
+    anyhow::ensure!(
+        args.render == FrameRender::Psx
+            || (args.write_baseline.is_none() && args.check_baseline.is_none()),
+        "--render {:?} is the smoke tier: use --smoke-check, not the baseline ratchet",
+        args.render
+    );
+    crate::retail_compare_image::set_frame_render(args.render);
     let exe = std::env::current_exe()?;
     std::fs::create_dir_all(&args.out)?;
     let out = std::fs::canonicalize(&args.out)?;
@@ -131,6 +153,25 @@ pub fn run(args: RetailCompareArgs) -> Result<()> {
             regs.len()
         );
         println!("baseline {} holds", p.display());
+    }
+    if let Some(p) = args.smoke_check {
+        anyhow::ensure!(args.images, "--smoke-check scores frames: pass --images");
+        let b: Baseline = serde_json::from_str(&std::fs::read_to_string(&p)?)?;
+        let breaks = b.smoke_breaks(&reports, SMOKE_IMAGE_SLACK);
+        for r in &breaks {
+            eprintln!("[smoke-break] {r}");
+        }
+        anyhow::ensure!(
+            breaks.is_empty(),
+            "{} frame(s) in render mode {:?} broke against the accuracy baseline",
+            breaks.len(),
+            args.render
+        );
+        println!(
+            "smoke tier {:?} holds within {SMOKE_IMAGE_SLACK} of {}",
+            args.render,
+            p.display()
+        );
     }
     Ok(())
 }
