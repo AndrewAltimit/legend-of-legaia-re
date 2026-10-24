@@ -242,13 +242,9 @@ pub struct ScreenshotConfig {
     pub seat_popup_cells: Vec<(i32, i32, u32, u8)>,
     /// Set on the frame the capture is due, for [`Self::seat_popup_cells`].
     pub popup_cells_due: std::cell::Cell<bool>,
-    /// The readout trios of the frames before this one, newest last, kept
-    /// while [`Self::seat_popup_age`] is set: a popup aged back `d` frames
-    /// is anchored on the trio it was drawn over `d` frames ago.
-    pub popup_trio_history: std::cell::RefCell<std::collections::VecDeque<Vec<Option<[f32; 3]>>>>,
-    /// `(slot, frames)`: the seated popup's anchor taken that many frames
-    /// back in [`Self::popup_trio_history`].
-    pub popup_trio_rewind: std::cell::Cell<Option<(u8, u16)>>,
+    /// Whether [`Self::seat_popup_age`] has aged the popup yet: once, on the
+    /// frame the capture is due.
+    pub popup_age_seated: std::cell::Cell<bool>,
     /// `LEGAIA_SEAT_SPIRIT_GAUGE=<bar width>,<plate value>`: a Spirit turn's
     /// AP bar width and AP plate value as the retail capture's displayed
     /// frame shows them; the captured frame seats the engine's on them.
@@ -736,8 +732,7 @@ impl ScreenshotConfig {
                     .map(|v| legaia_engine_capture::field_seeds::fog_from_env(&v)),
             ),
             seat_fog_due: std::cell::Cell::new(false),
-            popup_trio_history: Default::default(),
-            popup_trio_rewind: std::cell::Cell::new(None),
+            popup_age_seated: std::cell::Cell::new(false),
             seat_fade_lead: std::cell::Cell::new(
                 std::env::var("LEGAIA_SEAT_FADE_LEAD")
                     .ok()

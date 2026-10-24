@@ -3935,11 +3935,15 @@ every pass, so it moves with the phase of both clips):
   vsyncs early and aged its popup to `11`, over a trio one of its passes
   newer (Y `-371`); its own age-`9` frame rose over Y `-335` onto retail's
   row. The image child seats the newest popup's age off the ring
-  (`popup_age_seat`, `LEGAIA_SEAT_POPUP_AGE`) and takes its anchor back by
-  the same frames (`image` `.876` to `.884`; `battle_gimard_tail_fire_a`
-  `.962` to `.966`). `battle_gimard_tail_fire_b` reads `.963` to `.961`
-  with its numeral drawn nearer retail's: the rest of that gap is the
-  struck body's own trio.
+  (`popup_age_seat`, `LEGAIA_SEAT_POPUP_AGE`) and nothing else: the
+  renderer reads the struck body's trio on every draw, so the anchor is the
+  frame's own readout trio. Once the step seed stands the struck reaction
+  on retail's displayed cursor (`36`, readout trio Y `-335` off the pass at
+  `24`), that trio is retail's: the engine's Gimard at the RAM's cursor
+  `60` reads `(-3, -461, 498)` against the RAM's `(-2, -461, 492)`. An
+  anchor taken back to the frame the replay's popup was age `9` stood on
+  the cursor-`12` trio (Y `-284`) and drew the `15` about nine pixels
+  below retail's.
 - **A numeral read off retail's own packets.** Both packet arenas hold the
   readout's digit quads (`POLY_FT4`, colour `0x2C808080`, a 24-texel cell
   of glyph row `v = 64`), so the two newest passes' numerals need no model
