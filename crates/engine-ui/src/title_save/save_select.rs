@@ -200,12 +200,20 @@ mod backdrop_and_record_tests {
 /// this so everything stays in lockstep at any window resolution.
 ///
 /// Engines compute `stage_scale = min(surface_w / 320, surface_h /
-/// 240).clamp(1, 4)`, center the resulting `320*scale × 240*scale`
+/// 240).clamp(1, BOOT_UI_STAGE_MAX_SCALE)`, center the resulting `320*scale × 240*scale`
 /// rectangle inside the surface, and use that as the `stage_origin`
 /// for every boot-UI sprite emission.
 pub const BOOT_UI_STAGE_W: u32 = 320;
 /// Companion to [`BOOT_UI_STAGE_W`].
 pub const BOOT_UI_STAGE_H: u32 = 240;
+/// The largest integer scale the stage takes. High enough that no real
+/// window is left with a border wider than one stage step: a 4x cap left a
+/// 1920x1440 window (a 960x720 window on a 2x HiDPI desktop) drawing the
+/// game in its central 1280x960 with a black frame a third of the window
+/// wide, and a 2560x1440 fullscreen at 4x of its 6x. A fit at the largest
+/// integer scale can never draw past the surface, so the cap only bounds
+/// absurd surfaces.
+pub const BOOT_UI_STAGE_MAX_SCALE: u32 = 16;
 
 /// Retail PSX framebuffer position of the load-screen panel top-left.
 /// Mirror of [`legaia_ui_formats::title_pak::OVERLAY_SAVE_PANEL_RETAIL_DST`].

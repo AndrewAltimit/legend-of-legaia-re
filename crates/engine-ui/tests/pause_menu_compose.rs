@@ -800,10 +800,22 @@ fn the_stage_transform_centres_at_an_integer_scale() {
     // A surface smaller than the stage clamps to 1x rather than to 0.
     let (_, small) = stage_transform(100, 100);
     assert_eq!(small, 1);
-    // And the clamp caps at 4x, which is what keeps a 4K window from
-    // scaling the menu off its own edges.
+    // A large window takes the largest integer scale that fits, so the
+    // stage fills it: a 960x720 window on a 2x HiDPI desktop is 1920x1440,
+    // the stage at 6x with no border. (A 4x cap drew it in the central
+    // 1280x960.)
+    let (origin, hidpi) = stage_transform(1920, 1440);
+    assert_eq!((origin, hidpi), ((0, 0), 6));
+    let (origin, wide) = stage_transform(2560, 1440);
+    assert_eq!((origin, wide), ((320, 0), 6));
     let (_, big) = stage_transform(4096, 4096);
-    assert_eq!(big, 4);
+    assert_eq!(big, 12);
+    // The fit never draws past the surface.
+    for (w, h) in [(1366, 768), (3840, 2160), (5120, 2880), (100_000, 100_000)] {
+        let ((x0, y0), s) = stage_transform(w, h);
+        assert!(x0 >= 0 && y0 >= 0, "{w}x{h}");
+        assert!(320 * s <= w && 240 * s <= h, "{w}x{h} at {s}x");
+    }
 }
 
 /// Every draw the composition emits lands inside the surface it was given.

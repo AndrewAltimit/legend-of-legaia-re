@@ -82,7 +82,7 @@ pub fn battle_hud_draws_for(
     // centred in the surface.
     let scale = (frame.surface.0 / BOOT_UI_STAGE_W)
         .min(frame.surface.1 / BOOT_UI_STAGE_H)
-        .clamp(1, 4) as i32;
+        .clamp(1, crate::BOOT_UI_STAGE_MAX_SCALE) as i32;
     let origin = (
         (frame.surface.0 as i32 - BOOT_UI_STAGE_W as i32 * scale) / 2,
         (frame.surface.1 as i32 - BOOT_UI_STAGE_H as i32 * scale) / 2,

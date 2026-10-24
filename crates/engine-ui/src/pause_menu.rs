@@ -212,7 +212,7 @@ impl<'a> MenuRects<'a> {
 pub fn stage_transform(surface_w: u32, surface_h: u32) -> ((i32, i32), u32) {
     let scale = (surface_w.max(1) / crate::BOOT_UI_STAGE_W)
         .min(surface_h.max(1) / crate::BOOT_UI_STAGE_H)
-        .clamp(1, 4);
+        .clamp(1, crate::BOOT_UI_STAGE_MAX_SCALE);
     let sw = crate::BOOT_UI_STAGE_W * scale;
     let sh = crate::BOOT_UI_STAGE_H * scale;
     let x0 = (surface_w as i32 - sw as i32) / 2;

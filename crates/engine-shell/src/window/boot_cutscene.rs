@@ -868,7 +868,8 @@ impl PlayWindowApp {
                     let atlas_h: u32 = 256;
                     let scale = (surface_w / atlas_w.max(1))
                         .min(surface_h / atlas_h.max(1))
-                        .clamp(1, 4) as i32;
+                        .clamp(1, legaia_engine_ui::BOOT_UI_STAGE_MAX_SCALE)
+                        as i32;
                     let stage_x0 = (surface_w as i32 - (atlas_w as i32) * scale) / 2;
                     let stage_y0 = (surface_h as i32 - (atlas_h as i32) * scale) / 2;
                     // src-y=148 sits between the wordmark and the

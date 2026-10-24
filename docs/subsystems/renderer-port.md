@@ -287,6 +287,14 @@ CPU beyond two uniform writes a frame.
 
 ## Screen-space overlay pass
 
+**One stage for every window size.** Every 2D draw and the 3D pass's
+viewport (`scene_viewport_for`) sit on the 320x240 stage
+`pause_menu::stage_transform` centres at the largest integer scale the
+surface holds, up to `BOOT_UI_STAGE_MAX_SCALE` (16x). The frame around it is
+therefore under one stage step on each axis: a 960x720 window on a 2x HiDPI
+desktop (1920x1440) is the stage at 6x with no border, and a 1.5x one
+(1440x1080) is 4x inside an 80 / 60 px frame.
+
 **The tint is retail's, 5-bit.** The text / sprite shader tints every quad
 through `ui_tint` - WGSL generated from `legaia_render_kernels::ui_tint`, the
 same kernel the browser page tints its atlas copies with: the texel truncated

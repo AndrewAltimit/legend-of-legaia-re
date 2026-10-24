@@ -88,7 +88,9 @@ fn quad_json(d: &TextDraw) -> serde_json::Value {
 fn stage_transform(surface_w: u32, surface_h: u32) -> ((i32, i32), u32) {
     let sw = ui::BOOT_UI_STAGE_W;
     let sh = ui::BOOT_UI_STAGE_H;
-    let scale = (surface_w / sw).min(surface_h / sh).clamp(1, 4);
+    let scale = (surface_w / sw)
+        .min(surface_h / sh)
+        .clamp(1, ui::BOOT_UI_STAGE_MAX_SCALE);
     let x0 = (surface_w as i32 - (sw * scale) as i32) / 2;
     let y0 = (surface_h as i32 - (sh * scale) as i32) / 2;
     ((x0, y0), scale)
