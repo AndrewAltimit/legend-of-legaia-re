@@ -34,9 +34,10 @@ pub(super) fn stage_shell_meshes(
         &legaia_tmd::mesh::tmd_to_vram_mesh(&tmd0, raw),
         second,
     );
-    let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&tmd0, raw);
-    let cfirst = cmesh.clone();
-    cmesh.append_scaled(&cfirst, second.scale());
+    let cmesh = legaia_engine_scene_host::scene_host::backdrop_shell_color_mesh(
+        &legaia_tmd::mesh::tmd_to_color_mesh(&tmd0, raw),
+        second,
+    );
     (vmesh, cmesh)
 }
 

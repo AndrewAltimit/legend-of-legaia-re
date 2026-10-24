@@ -34,6 +34,7 @@ pub(super) fn stage_draw_marks(
     clip_marks: Vec<(usize, legaia_engine_render::DrawClip)>,
     color_clip_marks: Vec<(usize, legaia_engine_render::DrawClip)>,
     nclip_marks: Vec<(usize, u32)>,
+    color_nclip_marks: Vec<(usize, u32)>,
 ) {
     let mut tex = vec![None; draws_len];
     for (i, c) in clip_marks {
@@ -55,6 +56,13 @@ pub(super) fn stage_draw_marks(
         }
     }
     r.set_draw_nclip(nclip);
+    let mut color_nclip = vec![None; color_draws_len];
+    for (i, m) in color_nclip_marks {
+        if let Some(slot) = color_nclip.get_mut(i) {
+            *slot = Some(m);
+        }
+    }
+    r.set_color_draw_nclip(color_nclip);
 }
 
 /// The `--screenshot-every` sweep: capture this frame into the sweep dir

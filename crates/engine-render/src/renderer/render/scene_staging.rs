@@ -314,6 +314,7 @@ impl Renderer {
         let tex_window_packed = pack_tex_window(self.tex_window.get());
         let (clips_textured, clips_color) = self.draw_clips.borrow().clone();
         let nclip_textured = self.draw_nclip.borrow().clone();
+        let nclip_color = self.color_draw_nclip.borrow().clone();
         let grade = self.color_grade.get();
         // flags[2] is set per draw below: 1.0 = environment geometry the
         // occlusion fade may dissolve, 0.0 = actor draws (player / NPCs)
@@ -431,7 +432,7 @@ impl Renderer {
                 draw.cue,
                 i < occl_env_color,
                 clips_color.get(i).copied().flatten(),
-                None,
+                nclip_color.get(i).copied().flatten(),
             );
         }
         let buf_borrow = self.scene_uniforms_buf.borrow();

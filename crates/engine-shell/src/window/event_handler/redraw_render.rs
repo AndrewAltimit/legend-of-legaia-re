@@ -124,6 +124,7 @@ impl PlayWindowApp {
             clip_marks,
             mut nclip_marks,
             color_clip_marks,
+            color_nclip_marks,
         } = draw_cx.build_scene_draws();
         let OverlayDraws {
             hud,
@@ -222,6 +223,7 @@ impl PlayWindowApp {
             clip_marks,
             color_clip_marks,
             nclip_marks,
+            color_nclip_marks,
         );
         let scene = RenderScene {
             vram,

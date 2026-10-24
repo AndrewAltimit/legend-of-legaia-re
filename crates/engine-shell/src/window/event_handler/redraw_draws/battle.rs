@@ -13,6 +13,7 @@ impl<'m> DrawCtx<'_, 'm> {
             draws,
             color_draws,
             nclip_marks,
+            color_nclip_marks,
             ..
         } = out;
         // Battle backdrop: the scene's `scene_tmd_stream`
@@ -111,6 +112,14 @@ impl<'m> DrawCtx<'_, 'm> {
             && let Some(cidx) = app.battle_stage_color_mesh
             && let Some(cmesh) = store.color_meshes.get(cidx)
         {
+            // The same copy-A word as the textured half
+            // (`backdrop_shell_color_mesh`).
+            if let Some((_, second)) = app.battle_stage_shell.as_ref() {
+                color_nclip_marks.push((
+                    color_draws.len(),
+                    legaia_engine_scene_host::scene_host::backdrop_shell_nclip(*second),
+                ));
+            }
             color_draws.push(ColorSceneDraw {
                 mesh: cmesh,
                 mvp: cam * PlayWindowApp::battle_stage_model(),

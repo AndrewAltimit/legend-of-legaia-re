@@ -168,6 +168,9 @@ pub struct Renderer {
     /// entry replaces the frame's [`Renderer::set_backface_cull`] word for
     /// that draw; held until the next call.
     pub(super) draw_nclip: std::cell::RefCell<Vec<Option<u32>>>,
+    /// [`Self::draw_nclip`] for the scene's untextured `color_draws`
+    /// ([`Renderer::set_color_draw_nclip`]).
+    pub(super) color_draw_nclip: std::cell::RefCell<Vec<Option<u32>>>,
     /// Full-scene colour grade `(gold_r, gold_g, gold_b, strength)` staged
     /// into every field `MeshUniforms` (see [`super::uploaded::MeshUniforms`]).
     /// Defaults to `(1, 1, 1, 0)` = identity (no grade). Set with
@@ -659,6 +662,14 @@ impl Renderer {
     /// whole stays both-sided. Held until the next call.
     pub fn set_draw_nclip(&self, textured: Vec<Option<u32>>) {
         *self.draw_nclip.borrow_mut() = textured;
+    }
+
+    /// [`Self::set_draw_nclip`] for the untextured colour pipeline:
+    /// `color[i]` for `Scene::color_draws[i]`. The battle backdrop's
+    /// untextured half takes copy A's word there, as its textured half does.
+    /// Held until the next call.
+    pub fn set_color_draw_nclip(&self, color: Vec<Option<u32>>) {
+        *self.color_draw_nclip.borrow_mut() = color;
     }
 
     /// Read the current `(mask_x, mask_y, off_x, off_y)` texture window

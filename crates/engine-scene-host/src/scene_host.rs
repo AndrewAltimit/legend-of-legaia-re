@@ -330,8 +330,8 @@ mod audio_dialog;
 mod battle_intro_inputs;
 mod battle_stage;
 pub use battle_stage::{
-    BattleStageLayers, backdrop_copy_nclip, backdrop_shell_mesh, backdrop_shell_nclip,
-    backdrop_slot_1_basis,
+    BattleStageLayers, backdrop_copy_nclip, backdrop_shell_color_mesh, backdrop_shell_mesh,
+    backdrop_shell_nclip, backdrop_slot_1_basis,
 };
 mod effects;
 mod lifecycle;

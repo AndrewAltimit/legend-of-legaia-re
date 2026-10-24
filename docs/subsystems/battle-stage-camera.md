@@ -607,9 +607,12 @@ once per winding, and draw it under copy A's word
 (`scene_host::backdrop_shell_mesh` / `backdrop_shell_nclip`): of each
 reversed pair exactly one triangle survives the cull. Drawn without a cull,
 the copy-A crystal came out as bright as the mirrored one (`image` `.945` to
-`.976`). The browser page's hybrid mesh carries the untextured `F*` / `G*`
-prims inside the same cull; the native window draws that half on its colour
-pipeline, which takes no NCLIP word, so there it stays both-sided.
+`.976`). The untextured `F*` / `G*` prims take the same rule on both hosts: the
+browser page's hybrid mesh carries them inside the one cull, and the native
+window builds its colour-pipeline half the same way
+(`backdrop_shell_color_mesh`) and draws it under the same word
+(`Renderer::set_color_draw_nclip`), the spun slot's untextured half
+included.
 
 The spin is `World::tick_battle_backdrop_spin` (once a battle frame) and
 `legaia_engine_scene_host::scene_host::backdrop_slot_1_basis`; both play hosts draw

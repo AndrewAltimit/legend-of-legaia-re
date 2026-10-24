@@ -140,6 +140,26 @@ pub fn backdrop_shell_mesh(
     out
 }
 
+/// [`backdrop_shell_mesh`] for the shell's untextured `F*` / `G*` half (the
+/// native window's colour pipeline): the same copies, so the same
+/// [`backdrop_shell_nclip`] word leaves it both-sided exactly where the
+/// textured half is.
+pub fn backdrop_shell_color_mesh(
+    first: &legaia_tmd::mesh::ColorMesh,
+    second: SecondCopy,
+) -> legaia_tmd::mesh::ColorMesh {
+    let mut out = first.clone();
+    out.append_scaled(first, second.scale());
+    if backdrop_copy_nclip(second, true) == 0 {
+        let mut reversed = first.clone();
+        for t in reversed.indices.as_chunks_mut::<3>().0 {
+            t.swap(1, 2);
+        }
+        out.append_scaled(&reversed, second.scale());
+    }
+    out
+}
+
 /// The NCLIP word the fixed backdrop shell ([`backdrop_shell_mesh`]) draws
 /// under: copy A's, which keeps front faces only.
 pub fn backdrop_shell_nclip(second: SecondCopy) -> u32 {
