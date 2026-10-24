@@ -582,18 +582,28 @@ impl LauncherApp {
                     evl.exit();
                     return;
                 }
-                let mut msg = vec![(format!("The game stopped with an error ({status})."), WARN)];
-                if let Some(log) = &game.log {
-                    for line in log_tail(log, 2) {
-                        msg.push((line, DIM));
-                    }
-                    msg.push((
-                        format!(
-                            "Full log: {} in the saves folder.",
-                            log.file_name().unwrap_or_default().to_string_lossy()
-                        ),
-                        FAINT,
-                    ));
+                // The disc going away under a running launcher (unplugged,
+                // moved) is the common cause, and the disc card would
+                // otherwise still say "ready": check it again.
+                let disc_problem = self
+                    .disc
+                    .as_ref()
+                    .and_then(|d| launcher::validate_disc(&d.path).err());
+                let log_text = game
+                    .log
+                    .as_deref()
+                    .and_then(|l| std::fs::read_to_string(l).ok());
+                let msg = failure_message(
+                    &status,
+                    game.log.as_deref(),
+                    log_text.as_deref(),
+                    disc_problem.as_ref(),
+                );
+                if let Some(p) = disc_problem {
+                    log::info!("launcher: after the failed start, {p}");
+                    self.disc = None;
+                    self.problem = Some(p);
+                    self.focus = Item::ChooseDisc;
                 }
                 self.status = Some(msg);
                 evl.set_control_flow(ControlFlow::Wait);
@@ -783,34 +793,36 @@ impl LauncherApp {
         }
 
         // Left column, below the buttons: help for the focused control.
-        let help_y = COLUMNS_Y + BUTTONS.len() as i32 * BUTTON_PITCH + 4;
-        let help = Rect::new(LEFT_X, help_y, LEFT_W, STAGE_H - PAD - help_y);
+        let help = help_rect();
         c.rect(help, CARD);
-        let mut y = help.y + 6;
         let lines: Vec<Message> = match &self.status {
             Some(s) => s.clone(),
             None => vec![(self.help_text(), DIM)],
         };
-        let inner = help.w - 12;
-        'outer: for (text, ink) in &lines {
-            for l in c.wrap(text, inner) {
-                if y + 12 > help.y + help.h - 14 {
+        let hl = help_layout(c, &lines);
+        let mut y = help.y + 6;
+        'outer: for (wrapped, ink) in &hl.lines {
+            for l in wrapped {
+                if y + 12 > hl.bottom {
                     break 'outer;
                 }
-                c.text(help.x + 6, y, &l, *ink);
+                c.text(help.x + 6, y, l, *ink);
                 y += 12;
             }
             y += 3;
         }
-        c.text(
-            help.x + 6,
-            help.y + help.h - 14,
-            "Arrows, Enter, Tab, Esc",
-            FAINT,
-        );
+        let footer = hl.footer;
+        if footer {
+            c.text(
+                help.x + 6,
+                help.y + help.h - 14,
+                "Arrows, Enter, Tab, Esc",
+                FAINT,
+            );
+        }
 
         // Right column.
-        let panel = Rect::new(RIGHT_X, COLUMNS_Y, RIGHT_W, STAGE_H - PAD - COLUMNS_Y);
+        let panel = panel_rect();
         c.rect(panel, CARD);
         match self.panel {
             Panel::Options => self.options_panel(c, panel, hits),
@@ -905,7 +917,7 @@ impl LauncherApp {
     }
 
     fn options_panel(&self, c: &mut Canvas, panel: Rect, hits: &mut Vec<(Item, Rect)>) {
-        let retail = self.settings.retail;
+        let retail = self.settings.switches.retail;
         let lines = option_lines();
         let scroll = self
             .opt_scroll
@@ -1006,6 +1018,7 @@ impl LauncherApp {
         ] {
             rows.push((b.into(), keys(b)));
         }
+        debug_assert_eq!(rows.len() as i32 + 1, CONTROLS_ROWS);
         let mut y = panel.y + 5;
         c.text(panel.x + 8, y, "Button", GOLD);
         let kh = "Key";
@@ -1017,15 +1030,8 @@ impl LauncherApp {
             c.text(panel.x + panel.w - 10 - w, y, &k, GOLD);
             y += ROW_PITCH;
         }
-        y += 4;
-        for line in [
-            "A gamepad works too. Key Config on the in-game Options screen rebinds keys.",
-            "Esc twice quits the game; F12 lists the display keys.",
-        ] {
-            for l in c.wrap(line, panel.w - 20) {
-                c.text(panel.x + 10, y, &l, DIM);
-                y += 12;
-            }
+        for (i, l) in controls_note_lines(c, panel).into_iter().enumerate() {
+            c.text(panel.x + 10, y + 4 + i as i32 * 12, &l, DIM);
         }
     }
 
@@ -1057,8 +1063,8 @@ impl LauncherApp {
             Item::Quit => "Close the launcher. Esc.".into(),
             Item::Opt(row) => {
                 let mut s = row.help().to_string();
-                if self.settings.retail && row.overridden_by_retail() {
-                    s.push_str(" Original game only is on, so this plays as the original for now.");
+                if self.settings.switches.retail && row.overridden_by_retail() {
+                    s.push_str(" Off while Original game only is on.");
                 }
                 s
             }
@@ -1524,34 +1530,34 @@ fn pump<R: Read + Send + 'static>(
     })
 }
 
-/// The lines of `log` worth showing a player: its last `n` error lines (a
-/// panic, an `ERROR` record, an `Error:` exit), else its last line, each
-/// without the logger's `[time LEVEL module]` prefix.
-fn log_tail(log: &Path, n: usize) -> Vec<String> {
-    let Ok(text) = std::fs::read_to_string(log) else {
-        return Vec::new();
-    };
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    let errors: Vec<&str> = lines
-        .iter()
-        .copied()
-        .filter(|l| l.contains(" ERROR ") || l.contains("panicked") || l.starts_with("Error"))
-        .collect();
-    let pick = if errors.is_empty() { &lines } else { &errors };
-    pick[pick.len().saturating_sub(n)..]
-        .iter()
-        .map(|l| strip_log_prefix(l).to_string())
-        .collect()
-}
-
-/// `[2026-01-01T00:00:00Z INFO  module] text` -> `text`.
-fn strip_log_prefix(line: &str) -> &str {
-    if line.starts_with('[')
-        && let Some(end) = line.find("] ")
-    {
-        return &line[end + 2..];
+/// The help-box account of a failed game: how it ended, then either what is
+/// wrong with the disc (the disc card names the problem too) or where the
+/// log is - second, so the reason after it can never push it out of the
+/// box - and the reason the log gives.
+fn failure_message(
+    status: &std::process::ExitStatus,
+    log: Option<&Path>,
+    log_text: Option<&str>,
+    disc_problem: Option<&DiscProblem>,
+) -> Vec<Message> {
+    let mut msg = vec![(legaia_app_theme::game_exit::exit_headline(status), WARN)];
+    if let Some(p) = disc_problem {
+        msg.extend(problem_message(p));
+        return msg;
     }
-    line
+    if let Some(log) = log {
+        msg.push((
+            format!(
+                "{} in the saves folder.",
+                log.file_name().unwrap_or_default().to_string_lossy()
+            ),
+            FAINT,
+        ));
+    }
+    if let Some(why) = log_text.and_then(legaia_app_theme::game_exit::failure_detail) {
+        msg.push((why, DIM));
+    }
+    msg
 }
 
 /// Open `dir` in the platform's file manager.
@@ -1596,23 +1602,102 @@ fn problem_path(p: &DiscProblem) -> Option<&Path> {
 
 /// The help-box explanation of `p`, with what to do about it.
 fn problem_message(p: &DiscProblem) -> Vec<Message> {
-    let (why, hint) = match p {
+    let (why, hint): (String, String) = match p {
         DiscProblem::NotSet => return Vec::new(),
-        DiscProblem::BadSettings(why) => (why.clone(), "Choose the disc again."),
+        DiscProblem::BadSettings(why) => (why.clone(), "Choose the disc again.".into()),
         DiscProblem::Missing(_) | DiscProblem::Moved(_) => (
             "It may have been moved, renamed, or be on a drive that is not connected.".into(),
-            "Choose it again where it is now.",
+            "Choose it again where it is now.".into(),
         ),
-        DiscProblem::Unreadable { reason, .. } => (
-            format!("{}.", capitalise_first(reason)),
-            "Choose the .bin of a raw Mode2/2352 dump, or the .cue beside it.",
+        DiscProblem::Unreadable { reason, fix, .. } => (
+            sentence(reason),
+            fix.clone().unwrap_or_else(|| {
+                "Choose the .bin of a raw Mode2/2352 dump, or the .cue beside it.".into()
+            }),
         ),
         DiscProblem::WrongDisc { reason, .. } => (
-            format!("{}.", capitalise_first(reason)),
-            "A randomized or translated USA disc works too.",
+            sentence(reason),
+            "A randomized or translated USA disc works too.".into(),
         ),
     };
-    vec![(why, WARN), (hint.into(), DIM)]
+    vec![(why, WARN), (hint, DIM)]
+}
+
+/// `s` as a sentence: capitalised, ending in one full stop.
+fn sentence(s: &str) -> String {
+    let s = capitalise_first(s.trim());
+    if s.ends_with(['.', '!', '?']) {
+        s
+    } else {
+        format!("{s}.")
+    }
+}
+
+/// The help box under the buttons.
+fn help_rect() -> Rect {
+    let y = COLUMNS_Y + BUTTONS.len() as i32 * BUTTON_PITCH + 4;
+    Rect::new(LEFT_X, y, LEFT_W, STAGE_H - PAD - y)
+}
+
+/// The right-hand panel (options or controls).
+fn panel_rect() -> Rect {
+    Rect::new(RIGHT_X, COLUMNS_Y, RIGHT_W, STAGE_H - PAD - COLUMNS_Y)
+}
+
+/// The controls panel's rows: the header and the D-pad, then ten buttons.
+const CONTROLS_ROWS: i32 = 12;
+
+/// The notes under the controls table, wrapped to the panel.
+const CONTROLS_NOTES: [&str; 2] = [
+    "Gamepad: bottom button Cross, right Circle, left Square, top Triangle.",
+    "Key Config in the in-game Options rebinds keys; F12 in the game lists every key.",
+];
+
+fn controls_note_lines(c: &Canvas, panel: Rect) -> Vec<String> {
+    CONTROLS_NOTES
+        .iter()
+        .flat_map(|n| c.wrap(n, panel.w - 20))
+        .collect()
+}
+
+/// The stage row just past the controls notes' last line (the fit test's
+/// measure of [`LauncherApp::controls_panel`]).
+#[cfg(test)]
+fn controls_notes_bottom(c: &Canvas, panel: Rect) -> i32 {
+    panel.y + 5 + CONTROLS_ROWS * ROW_PITCH + 4 + controls_note_lines(c, panel).len() as i32 * 12
+}
+
+/// How a help-box message lays out: its wrapped lines, whether the key
+/// reminder keeps its line, the last row text may reach, and whether every
+/// line fits.
+struct HelpLayout {
+    lines: Vec<(Vec<String>, [f32; 4])>,
+    footer: bool,
+    bottom: i32,
+    /// Read by the fit test; the window draws what fits either way.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fits: bool,
+}
+
+fn help_layout(c: &Canvas, msg: &[Message]) -> HelpLayout {
+    let help = help_rect();
+    let lines: Vec<(Vec<String>, [f32; 4])> = msg
+        .iter()
+        .map(|(text, ink)| (c.wrap(text, help.w - 12), *ink))
+        .collect();
+    // The key reminder gives its line up to a message that needs it (a disc
+    // problem's reason and fix): cutting the fix off mid-sentence would
+    // leave the one line that says what to do unread.
+    let rows: i32 = lines.iter().map(|(l, _)| l.len() as i32).sum();
+    let needed = rows * 12 + 3 * (lines.len() as i32 - 1).max(0);
+    let footer = needed <= help.h - 6 - 14;
+    let bottom = help.y + help.h - if footer { 14 } else { 4 };
+    HelpLayout {
+        fits: help.y + 6 + needed <= bottom,
+        lines,
+        footer,
+        bottom,
+    }
 }
 
 fn capitalise_first(s: &str) -> String {
@@ -1743,8 +1828,11 @@ mod tests {
             executable: launcher::USA_EXECUTABLE.into(),
         };
         let settings = LauncherSettings {
-            psx_render: true,
-            retail: true,
+            switches: legaia_engine_session::session_switches::PersistedSwitches {
+                psx_render: true,
+                retail: true,
+                ..Default::default()
+            },
             ..Default::default()
         };
         let mut argv = vec![OsString::from("legaia-engine")];
@@ -1765,8 +1853,11 @@ mod tests {
         // The gameplay switches parse too (without `--retail`, which clap
         // refuses them beside).
         let settings = LauncherSettings {
-            no_entry_pulse: true,
-            smart_monsters: true,
+            switches: legaia_engine_session::session_switches::PersistedSwitches {
+                no_entry_pulse: true,
+                smart_monsters: true,
+                ..Default::default()
+            },
             ..Default::default()
         };
         let mut argv = vec![OsString::from("legaia-engine")];
@@ -1782,18 +1873,21 @@ mod tests {
         }
         // So do the gameplay-tweak rows.
         let settings = LauncherSettings {
-            no_shiny_seru: true,
-            flee_exp: true,
-            exp_rate_permille: Some(2000),
-            no_fortress_encounter_fix: true,
-            jewel_fix: true,
-            no_hp_readout_guard: true,
-            spirit_ap: Some(-16),
-            damage_ap: Some(200),
-            seru_catch_pct: Some(75),
-            enemy_attack_permille: Some(2000),
-            enemy_stat_permille: Some(1500),
-            equipment_drops: true,
+            switches: legaia_engine_session::session_switches::PersistedSwitches {
+                no_shiny_seru: true,
+                flee_exp: true,
+                exp_rate_permille: Some(2000),
+                no_fortress_encounter_fix: true,
+                jewel_fix: true,
+                no_hp_readout_guard: true,
+                spirit_ap: Some(-16),
+                damage_ap: Some(200),
+                seru_catch_pct: Some(75),
+                enemy_attack_permille: Some(2000),
+                enemy_stat_permille: Some(1500),
+                equipment_drops: true,
+                ..Default::default()
+            },
             ..Default::default()
         };
         let mut argv = vec![OsString::from("legaia-engine")];
@@ -1874,19 +1968,141 @@ mod tests {
         assert_eq!(clean_typed_path("/plain.bin"), "/plain.bin");
     }
 
+    /// The fonts the launcher letters itself in: the built-in one (first
+    /// run, condensed) and, when a disc is known, the disc's dialog font.
+    fn fonts() -> Vec<(legaia_font::Font, bool, &'static str)> {
+        let mut v = vec![(legaia_font::Font::placeholder(), true, "built-in font")];
+        if let Some(bin) = std::env::var_os("LEGAIA_DISC_BIN")
+            && let Some(f) = launcher::disc_font(Path::new(&bin))
+        {
+            v.push((f, false, "disc font"));
+        } else {
+            eprintln!("skip: disc-font half (LEGAIA_DISC_BIN unset)");
+        }
+        v
+    }
+
+    fn canvas_for(font: &legaia_font::Font, condense: bool) -> Canvas<'_> {
+        Canvas {
+            condense,
+            ..canvas(font)
+        }
+    }
+
+    /// Every message the help box shows, in its widest form.
+    fn help_messages() -> Vec<(String, Vec<Message>)> {
+        let mut out: Vec<(String, Vec<Message>)> = Vec::new();
+        let one = |s: &str| vec![(s.to_string(), DIM)];
+        for (_, row) in OPTION_ROWS {
+            out.push((row.label().into(), one(row.help())));
+            if row.overridden_by_retail() {
+                let s = format!("{} Off while Original game only is on.", row.help());
+                out.push((format!("{} (retail)", row.label()), one(&s)));
+            }
+        }
+        let path = PathBuf::from("/home/player/Games/Legend of Legaia (USA).bin");
+        let problems = [
+            DiscProblem::NotSet,
+            DiscProblem::BadSettings("expected `=`, found newline at line 1".into()),
+            DiscProblem::Missing(path.clone()),
+            DiscProblem::Moved(path.clone()),
+            DiscProblem::WrongDisc {
+                path: path.clone(),
+                reason: "it is the Europe release (SCES_019.44); the engine runs the USA disc \
+                         (SCUS_942.54)"
+                    .into(),
+            },
+        ];
+        for p in problems {
+            out.push((format!("{p:?}"), problem_message(&p)));
+        }
+        // Every reason the disc sniffer gives.
+        let mut iso = vec![0u8; legaia_iso::sniff::SNIFF_LEN];
+        iso[16 * 2048 + 1..16 * 2048 + 6].copy_from_slice(b"CD001");
+        for (ext, head) in [
+            ("chd", &b"MComprHD"[..]),
+            ("pbp", b"\0PBP"),
+            ("ecm", b"ECM\0"),
+            ("zip", b"PK\x03\x04"),
+            ("ppf", b"PPF"),
+            ("ccd", b"[CloneCD]"),
+            ("m3u", b"x.cue"),
+            ("iso", &iso),
+            ("bin", &[1u8; 8]),
+            ("bin", &[1u8; 4096]),
+        ] {
+            let d = legaia_iso::sniff::diagnose_bytes(ext, head, head.len() as u64).unwrap();
+            let p = DiscProblem::Unreadable {
+                path: path.clone(),
+                reason: d.what,
+                fix: Some(d.fix),
+            };
+            out.push((format!("sniff {ext}"), problem_message(&p)));
+        }
+        let renamed = DiscProblem::Unreadable {
+            path: path.clone(),
+            reason: "This .cue names \"Legend of Legaia (USA) (Track 1).bin\", which is not in \
+                     its folder."
+                .into(),
+            fix: Some(
+                "If the .bin was renamed, choose \"Legend of Legaia (USA).bin\" itself.".into(),
+            ),
+        };
+        out.push(("renamed cue".into(), problem_message(&renamed)));
+        // A failed game: the longest headline, the log line and a reason at
+        // its cap; and a failure the disc explains.
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            let status = std::process::ExitStatus::from_raw(255 << 8);
+            let log = format!("Error: {}\n", "word ".repeat(40));
+            out.push((
+                "failed game".into(),
+                failure_message(
+                    &status,
+                    Some(Path::new("/d/legaia-engine-game.log")),
+                    Some(&log),
+                    None,
+                ),
+            ));
+            out.push((
+                "failed game, disc gone".into(),
+                failure_message(&status, None, None, Some(&DiscProblem::Moved(path.clone()))),
+            ));
+        }
+        out
+    }
+
+    /// Every help-box message fits whole, in both fonts: nothing the box
+    /// shows is cut off mid-sentence.
     #[test]
-    fn log_tail_skips_blank_lines() {
-        let dir = tempfile::tempdir().unwrap();
-        let p = dir.path().join("game.log");
-        std::fs::write(&p, "a\n\nb\nc\n\n").unwrap();
-        assert_eq!(log_tail(&p, 2), vec!["b", "c"]);
-        assert!(log_tail(&dir.path().join("none.log"), 2).is_empty());
-        // Error lines win over the chatter after them, prefix stripped.
-        std::fs::write(
-            &p,
-            "[t INFO  m] loading\n[t ERROR m] no VRAM\n[t INFO  m] bye\n",
-        )
-        .unwrap();
-        assert_eq!(log_tail(&p, 2), vec!["no VRAM"]);
+    fn every_help_message_fits_the_help_box() {
+        let mut cut = Vec::new();
+        for (font, condense, name) in fonts() {
+            let c = canvas_for(&font, condense);
+            for (what, msg) in help_messages() {
+                let l = help_layout(&c, &msg);
+                if !l.fits {
+                    let rows: Vec<_> = l.lines.iter().map(|(w, _)| w).collect();
+                    cut.push(format!("{name}: {what}: {rows:?}"));
+                }
+            }
+        }
+        assert!(cut.is_empty(), "the help box cuts off:\n{}", cut.join("\n"));
+    }
+
+    /// The controls table and its notes stay inside the panel, in both fonts.
+    #[test]
+    fn controls_notes_fit_the_panel() {
+        let panel = panel_rect();
+        for (font, condense, name) in fonts() {
+            let c = canvas_for(&font, condense);
+            let bottom = controls_notes_bottom(&c, panel);
+            assert!(
+                bottom <= panel.y + panel.h - 2,
+                "{name}: the controls notes end at {bottom}, past the panel's {}",
+                panel.y + panel.h
+            );
+        }
     }
 }

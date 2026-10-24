@@ -3,8 +3,9 @@
 //! `0x4F2` (the boulders push) while the leader **or member `0x31`** stands
 //! in `(53..55, 62..64)` (`+0x4D4` / `+0x4DF`).
 
-use super::*;
+use legaia_engine_core::world::*;
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_vm::field::FieldCtx;
 
 /// The box's middle in the test's own tiles, `(x - 0x40) >> 7` = `(54, 63)`.
 const IN_BOX: (i16, i16) = (54 * 128 + 128, 63 * 128 + 128);

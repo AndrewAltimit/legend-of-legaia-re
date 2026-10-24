@@ -344,12 +344,13 @@
    "bins": [],
    "lib": true,
    "modules": [
+    "game_exit",
     "spacing",
     "chrome"
    ],
    "band": "leaves",
    "track": "tooling",
-   "scope": "The desktop programs' one palette (dark and light) and spacing values: Studio's egui theme, the game launcher, the play window's own chrome. No dependencies.",
+   "scope": "The desktop programs' one palette (dark and light) and spacing values: Studio's egui theme, the game launcher, the play window's own chrome; plus the failed-game wording (<code>game_exit</code>) the launcher and Studio share. No dependencies.",
    "dependents": [
     "engine-shell",
     "studio"
@@ -825,7 +826,6 @@
     "battle_voice",
     "bgm_tail",
     "duck",
-    "footstep",
     "note_trace",
     "seq_calc",
     "seq_events",
@@ -964,6 +964,7 @@
     "engine-battle-vm",
     "engine-cast",
     "engine-core",
+    "engine-menus",
     "engine-mode",
     "engine-system",
     "font",
@@ -971,7 +972,6 @@
    ],
    "dev_deps": [
     "actor-formats",
-    "engine-menus",
     "save"
    ],
    "bins": [],
@@ -979,7 +979,7 @@
    "modules": [],
    "band": "drivers",
    "track": "engine",
-   "scope": "The battle HUD's reads of a running <code>World</code>: the phase word, command chips, commit log, plaques and glides, banners, badges, and the <code>BattleHud</code> row sync both hosts and <code>engine-screens</code> draw from. Above <code>engine-core</code>.",
+   "scope": "The battle HUD's reads of a running <code>World</code>: the phase word, command chips, commit log, plaques and glides, banners, badges, the Magic / Item window models and result windows, and the <code>BattleHud</code> row sync both hosts and <code>engine-screens</code> draw from. Above <code>engine-core</code>.",
    "dependents": [
     "engine-screens",
     "engine-session",
@@ -1116,6 +1116,7 @@
     "engine-session",
     "engine-shell",
     "engine-ui",
+    "engine-world-views",
     "parity",
     "web-minigames",
     "web-play"
@@ -1195,6 +1196,7 @@
     "camera_align",
     "cast_parts",
     "clip_cursors",
+    "drive_clock",
     "effect_children",
     "field_seeds",
     "formation_cell",
@@ -1234,6 +1236,7 @@
     "cast_arm_ticks",
     "cast_fatal_decision",
     "cast_module_camera",
+    "cast_module_rumble",
     "cast_module_ticks",
     "seru_magic_ticks"
    ],
@@ -1794,6 +1797,7 @@
    "role": "menu and memory-card front end",
    "scope": "The <code>World</code>-free menu front end: item / equipment catalogs, inventory-use and spell-menu sessions, list-row model, window-widget host, memory-card flow, inn, item bag + equip session, save / status / pause / shop screens, the options state + screen session. The dialog layer is <code>engine-dialog</code>, the title front end <code>engine-title</code>, the battle command picker <code>engine-battle-menus</code>.",
    "dependents": [
+    "engine-battle-hud",
     "engine-cheats",
     "engine-core",
     "engine-menu-runtime",
@@ -2189,6 +2193,7 @@
    ],
    "dev_deps": [
     "disc-audit",
+    "disc-patch",
     "engine-battle-hud",
     "engine-camera",
     "font",
@@ -2197,6 +2202,7 @@
     "mdt",
     "mes",
     "seq",
+    "translate",
     "vab"
    ],
    "bins": [],
@@ -2474,6 +2480,7 @@
     "rand",
     "retail_pad",
     "rotation_lut",
+    "rumble",
     "scene_name_sync",
     "scus_leaf_kernels",
     "sound_state",
@@ -2676,6 +2683,7 @@
    "deps": [
     "engine-battle",
     "engine-battle-menus",
+    "engine-battle-vm",
     "engine-camera",
     "engine-core",
     "engine-effects",
@@ -2692,6 +2700,7 @@
     "ui-formats"
    ],
    "dev_deps": [
+    "actor-formats",
     "container-formats",
     "engine-dev-menu",
     "engine-vm",
@@ -2702,6 +2711,7 @@
    "bins": [],
    "lib": true,
    "modules": [
+    "battle_draws",
     "camera_view",
     "effect_draws",
     "field_view_window",
@@ -2720,7 +2730,7 @@
    ],
    "band": "drivers",
    "track": "engine",
-   "scope": "The hosts' reads of a running <code>World</code> outside battle: the per-frame camera resolution, the visible-tile crop policy, scene staging, world-map markers and sky, the field party HUD and passive-ability badges (<code>WorldPassiveHud</code>), the minigame caption (<code>WorldMinigameCaption</code>), the effect draw lists, and the shop / pause / tile-board / timed-fight / Muscle Dome view models. Above <code>engine-core</code>.",
+   "scope": "The hosts' reads of a running <code>World</code> for everything but the battle HUD: the per-frame camera resolution, the visible-tile crop policy, scene staging, world-map markers and sky, the field party HUD and passive-ability badges (<code>WorldPassiveHud</code>), the minigame caption (<code>WorldMinigameCaption</code>), the effect draw lists, the battle bodies' draws (ghosts, trail, shadow, floor clip), and the shop / pause / tile-board / timed-fight / Muscle Dome view models. Above <code>engine-core</code>.",
    "dependents": [
     "engine-scene-host",
     "engine-screens",
@@ -2931,6 +2941,7 @@
     "raw",
     "region",
     "relayout",
+    "sniff",
     "write"
    ],
    "band": "leaves",
@@ -4229,6 +4240,7 @@
     "play_minigame_slots",
     "play_minigames",
     "play_name_entry",
+    "play_rumble",
     "play_sfx",
     "play_shop",
     "play_tile_board",

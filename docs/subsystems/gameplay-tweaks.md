@@ -64,6 +64,7 @@ Each switch is one field of `legaia_engine_session::session_switches::GameplayTw
 | Boss casts respect jewels | `--jewel-fix` | off | off |
 | Battle freeze guard | `--no-hp-readout-guard` | on | off |
 | Bonus equipment drops | `--equipment-drops` | off | off |
+| Save anywhere | `--save-anywhere` | off | off |
 | Enemy strength | `--enemy-stat-scale MULT` (`0.1..=5`) | `1x` | `1x` |
 | Enemy attack count | `--enemy-attack-count MULT` (`0.1..=5`) | `1x` | `1x` |
 | Spirit AP | `--spirit-ap AP` (`-100..=100`) | `32` | `32` |
@@ -108,6 +109,10 @@ Before each frame of the HP-readout ramp (`World::tick_battle_hp_bars`, retail `
 
 Once per won battle, right after the normal drop grant, the engine rolls `rand() % 100 < 5` and on a hit `rand() % pool_len` picks one id that goes straight into the bag, silently, as the hook grants it (`World::roll_bonus_equipment_drop`, called from `apply_battle_loot`). The hook joins the reward routine at `0x8004F610`, which the no-reward arm reaches too (`0x8004F488` to `0x8004F570` to `0x8004F5A0` to `0x8004F610`, see `ghidra/scripts/funcs/8004e568.txt`), so a special battle rolls it as on a patched disc. The pool is every weapon, armour and accessory the curated gamedata names whose name resolves in the disc's item-name table (`Database::equipment_pool_by_name`), the one join the patcher embeds too; the disc-gated `bonus_drop_pool_disc` test pins the two pools equal.
 
+### Save anywhere
+
+Retail's pause menu offers Save only where the scene's MAN header raises the save-allow bit (`_DAT_8007B6A8`, the three kingdom world maps); a save point reaches the save screen through its own script. On, the gate the menu samples at open (`BootSession::open_field_menu`) is the scene's bit OR the switch, so the Save row works in every scene the menu opens in. The scene's bit itself (`PartyState::scene_save_allowed`) is untouched, because the follow camera and the world-map locomotion read it too. The switch has no patcher counterpart; it is a port enhancement.
+
 ### Battle tuning
 
 Each slider is one scale at the reader the patcher's data or code edit changes, with the patcher's arithmetic:
@@ -133,7 +138,7 @@ Each switch has a disc-free test that it changes behaviour when on and that its 
 | `damage_ap_scales_the_hit_charge`, `enemy_attack_count_scales_the_strike_budget`, `enemy_stat_scale_scales_the_seated_monster`, `bonus_drop_grants_equipment_and_retail_draws_nothing` (`world::tests::gameplay_tweaks`), `the_catch_rate_setting_replaces_the_records_chance` (`world::tests::seru_absorb`), `enemy_scales_match_the_patcher_arithmetic` (`world_toggles`) | `engine-core` |
 | `done_cleanup_pays_the_spirit_ap_setting` (`battle_action::tests::done`), `scaled_fill_is_retail_at_100_and_follows_the_patch_elsewhere` (`battle_formulas`) | `engine-battle-vm` |
 | `engine_bonus_pool_is_the_patchers` (disc-gated) | `parity` |
-| `retail_masks_every_tweak`, `tweak_defaults_are_the_engine_defaults_and_rates_cycle` (`session_switches`) | `engine-session` |
+| `retail_masks_every_tweak`, `tweak_defaults_are_the_engine_defaults_and_rates_cycle` (`session_switches`); `save_anywhere_lifts_the_scene_gate_and_retail_holds_it_off` (disc-gated, `tests/save_gate_field_menu.rs`) | `engine-session` |
 | `gameplay_tweak_rows_ride_the_args` (`launcher`), `no_subcommand_parses_and_play_args_reach_play_window` (`launcher_window`) | `engine-shell` |
 | `gameplay_tweaks_start_at_the_engine_defaults`, `the_page_sliders_offer_the_engine_steps` (`play_toggles`) | `web-play` |
 

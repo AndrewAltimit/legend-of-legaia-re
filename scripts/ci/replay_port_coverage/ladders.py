@@ -353,6 +353,14 @@ CANONICAL_LADDERS = [
     # `capture_bypass_predamage` / `capture_respect_predamage` rather than a
     # kernel test. Disc-gated; export WITHOUT `--release`.
     ("capture_class_cast_ladder", "legaia-engine-core"),
+    # The slot-B stagers' arms run only off the op-`0x20` calls a module's
+    # own parts make from their move programs, and every cast-band member
+    # above steps module code with no part running. `cast_stager_arms_ladder`
+    # casts each part-stager module through the in-flight seam in a real
+    # encounter and runs the world's frame tail, so the parts' programs make
+    # the calls; it requires `CastFxState::stager_arm_calls_run` to move per
+    # module. Disc-gated (PROT.DAT + SCUS); export WITHOUT `--release`.
+    ("cast_stager_arms_ladder", "legaia-engine-core"),
     # --- lane W1-G: the three gates behind the (b) rows --------------------
     #
     # `seru_capture_ladder` is the Seru-capture gate's *production* route.

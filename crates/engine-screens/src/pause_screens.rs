@@ -818,6 +818,10 @@ pub fn arts_editor_draws(
 /// screen and the pause menu's Load / Save rows alike. The text half draws
 /// with or without the system-UI atlas; the sprite half needs it. `None`
 /// when the flow has no overlay for the session.
+///
+/// `location_tab` is the current place name for a screen the game opened
+/// (the pause menu's Load / Save rows), `None` on the title's Continue
+/// screen - retail draws it beside the header tab only off the title.
 pub fn save_select_overlay_draws(
     flow: &legaia_engine_menus::save_screen::SaveScreenFlow,
     s: &legaia_engine_menus::save_select::SaveSelectSession,
@@ -825,6 +829,7 @@ pub fn save_select_overlay_draws(
     chrome: Option<&ui::SaveMenuAtlasRects>,
     origin: (i32, i32),
     scale: u32,
+    location_tab: Option<&str>,
 ) -> Option<ui::SaveSelectOverlayDraws> {
     let m = flow.overlay_model(s)?;
     let rows: Vec<ui::SaveSelectRow<'_>> = s
@@ -845,7 +850,24 @@ pub fn save_select_overlay_draws(
         .flat_map(|p| p.cells.iter())
         .map(|c| ui::SlotGridCell {
             present: c.present,
-            portrait_char_id: c.portrait_char_id,
+            icon_tile: c.icon_tile,
+            foreign: c.foreign,
+        })
+        .collect();
+    let members = m
+        .preview
+        .as_ref()
+        .and_then(|p| p.info)
+        .map(|b| b.panel_members())
+        .unwrap_or_default();
+    let member_views: Vec<ui::SlotInfoMember<'_>> = members
+        .iter()
+        .map(|mb| ui::SlotInfoMember {
+            id: mb.id,
+            name: &mb.name,
+            level: mb.level,
+            hp: mb.hp,
+            mp: mb.mp,
         })
         .collect();
     let preview = m.preview.as_ref().map(|p| ui::SaveSelectPreviewView {
@@ -854,14 +876,13 @@ pub fn save_select_overlay_draws(
         info: p.info.map(|b| ui::SlotInfoView {
             slot_no: b.slot.saturating_add(1),
             location: &b.location,
-            play_time: &p.play_time,
-            leader_name: &b.leader_name,
-            leader_level: b.party_lv,
-            leader_hp: b.leader_hp,
-            leader_mp: b.leader_mp,
-            leader_char_id: b.leader_char_id,
+            location_valid: b.location_valid,
+            old_filename: b.old_filename,
+            play_time: b.play_time_hms(),
+            members: &member_views,
         }),
         caption: p.caption,
+        caption_icon: p.caption_icon,
         panel_y_offset: p.panel_y_offset,
     });
     let view = ui::SaveSelectOverlayView {
@@ -883,6 +904,7 @@ pub fn save_select_overlay_draws(
         }),
         preview,
         confirm: m.confirm,
+        location_tab,
     };
     Some(ui::save_select_overlay_draws(
         font, chrome, &view, origin, scale,

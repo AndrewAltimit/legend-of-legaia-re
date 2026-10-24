@@ -25,6 +25,10 @@ impl PlayWindowApp {
         let ticks = if self.screenshot.is_some() { 1 } else { ticks };
         self.poll_gamepad();
         self.run_sim_ticks(ticks);
+        // The frame's rumble, after its ticks (`BootSession::rumble_frame`).
+        if let Some(gp) = self.gamepad.as_mut() {
+            gp.set_rumble(self.session.rumble_frame());
+        }
     }
 
     /// The `--simple-dialogue` panel's option picker, on this tick's bound pad
@@ -440,34 +444,19 @@ impl PlayWindowApp {
         }
         match self.screenshot.as_ref() {
             Some(sc) if let Some(drive) = sc.battle_drive => {
-                let world = &mut self.session.host.world;
-                // Retail's battle tick waits out the camera's entry
-                // sweep; a drive into a running fight waits with it, as
-                // the headless seed does.
-                let sweeping = !matches!(
-                    drive,
-                    legaia_engine_capture::battle_drive::BattleDrive::Opening { .. }
-                ) && world.mode == SceneMode::Battle
-                    && !legaia_engine_capture::battle_drive::entry_sweep_reached(world, 0xFF);
-                if sweeping {
-                    0
-                } else {
-                    if world.mode == SceneMode::Battle && !sc.battle_drive_primed.replace(true) {
-                        drive.prime(world);
-                        legaia_engine_capture::melee_hits::seed_melee_hits(
-                            world,
-                            &sc.battle_melee_hits,
-                        );
-                    }
-                    drive.steer(world);
-                    // A reached phase is held with no input until it is
-                    // sampled (`BattleDrive::hold_ticks`).
-                    if drive.reached(world) {
-                        0
-                    } else {
-                        drive.pad_word_at(world, self.tick_no)
-                    }
-                }
+                // The drive's own start and press clock, in the headless
+                // seed's step order (`DriveClock::pad`): an odd window tick
+                // at the start put every press one tick late and dealt the
+                // fight onto another stream.
+                let mut clock = sc.battle_drive_clock.get();
+                let pad = clock.pad(
+                    &drive,
+                    &mut self.session.host.world,
+                    &sc.battle_melee_hits,
+                    self.tick_no,
+                );
+                sc.battle_drive_clock.set(clock);
+                pad
             }
             _ => field_pad,
         }
@@ -594,9 +583,9 @@ impl PlayWindowApp {
         // reel-in / miss / auxiliary / strike splash) and cache their
         // draws - the retail driver tail's own per-frame timer loop.
         self.tick_fishing_banners();
-        // Muscle Dome: run the round time meter (climbs through the
-        // selection phase, drains outside it).
-        self.tick_muscle_time_meter();
+        // Muscle Dome: slide the arts entry list window (in while the
+        // entry's Triangle list is open, out otherwise).
+        self.tick_muscle_arts_list_slide();
         // Opt-in synthetic tile board (`LEGAIA_TILE_BOARD_DEMO=1`): no
         // retail scene script installs one, so this is the visual
         // trigger for the per-cell tile-actor draw pass.

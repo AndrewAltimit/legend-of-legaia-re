@@ -69,7 +69,7 @@ impl WorldMapEntityKind {
 }
 
 /// Render-agnostic snapshot of one placed overworld entity, produced by
-/// `World::world_map_entity_markers`. The disc-sourced placement seeding
+/// `legaia_engine_world_views::world_map_markers::world_map_entity_markers`. The disc-sourced placement seeding
 /// (`SceneHost::enter_world_map_scene`) installs each entity
 /// with a world position and a [`WorldMapEntityConfig`]; this pairs the
 /// position with its coarse [`WorldMapEntityKind`] so a host can draw a marker
@@ -93,7 +93,7 @@ pub struct WorldMapEntityMarker {
 }
 
 /// Render-agnostic snapshot of the player's overworld position, produced by
-/// `World::world_map_player_marker`. In `SceneMode::WorldMap` the kingdom
+/// `legaia_engine_world_views::world_map_markers::world_map_player_marker`. In `SceneMode::WorldMap` the kingdom
 /// terrain mesh renders at its pack-local coordinates and the player actor's
 /// own mesh is not drawn, so a host draws a marker at this position to show the
 /// player on the map. `facing` is the player's heading (`render_26`), so the

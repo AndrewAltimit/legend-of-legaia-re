@@ -6,7 +6,7 @@
 //! rebuilds the record's stats, and the bag is never read or written. Driven
 //! through `load_field_script` + `tick`, so the real dispatch is exercised.
 
-use super::*;
+use legaia_engine_core::world::*;
 use legaia_engine_mode::mode::SceneMode;
 
 fn field_world(members: usize) -> World {

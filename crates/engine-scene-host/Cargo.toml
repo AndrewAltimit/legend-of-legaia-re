@@ -46,6 +46,10 @@ anyhow.workspace = true
 log.workspace = true
 
 [dev-dependencies]
+# translated_field_strings_disc imports a language pack in memory and reads
+# the patched field overlay back through this crate's readers.
+legaia-disc-patch.workspace = true
+legaia-translate.workspace = true
 legaia-engine-battle-hud.workspace = true
 # Named only by tests: crates the disc-gated chains walk directly.
 legaia-engine-camera.workspace = true

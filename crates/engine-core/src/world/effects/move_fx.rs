@@ -487,9 +487,24 @@ impl World {
         let move_n = scenes.len();
         scenes.append(&mut self.casting.active_action_fx);
         let channel_delta = self.effect_channel_delta();
-        let step = self.move_vm.ramp_ratio.max(1);
-        for scene in &mut scenes {
-            scene.channel_delta = channel_delta;
+        let ratio = self.move_vm.ramp_ratio.max(1);
+        // A table-form part's seat-frame tick is the battle pass's part tick
+        // on retail's cadence, scaled by the frame step like the rest
+        // ([`Self::action_fx_pass_vsyncs`]).
+        let fx_pass = if self.mode == legaia_engine_mode::mode::SceneMode::Battle
+            && self.toggles.battle_sm_frame_cadence
+        {
+            self.battle_frame_step().max(1)
+        } else {
+            1
+        };
+        for (k, scene) in scenes.iter_mut().enumerate() {
+            let mult = if k >= move_n { fx_pass } else { 1 };
+            let step = ratio * mult;
+            scene.channel_delta = channel_delta * u16::from(mult);
+            if mult > 1 {
+                scene.last_frame_delta = scene.channel_delta;
+            }
             let seated = {
                 let mut host = MoveVmHostImpl {
                     world: self,
@@ -555,8 +570,15 @@ impl World {
         // scene-graph step `0x400` every wait under 128 frames expired in one
         // tick: the Spirit charge's aura prototypes (`0x07` / `0x08`, a
         // `0x4F`-frame hold each) lived three ticks and never showed.
+        //
+        // On retail's battle cadence the part tick is the battle pass's
+        // (`World::action_fx_pass_vsyncs`): one tick a battle frame, its
+        // drain and envelope scaled by the frame step, nothing between.
+        let pass = self.action_fx_pass_vsyncs();
+        let fx_delta = channel_delta * u16::from(pass);
+        let fx_step = self.move_vm.ramp_ratio.max(1) * pass;
         let mut action_fx = std::mem::take(&mut self.casting.active_action_fx);
-        for scene in &mut action_fx {
+        for scene in action_fx.iter_mut().filter(|_| pass > 0) {
             let mut host = MoveVmHostImpl {
                 world: self,
                 current_slot: None,
@@ -564,9 +586,11 @@ impl World {
                 field_record_words: None,
                 child_spawns: Vec::new(),
             };
-            scene.channel_delta = channel_delta;
-            scene.tick(&mut host, channel_delta);
-            self.queue_battle_part_scrolls(&mut scene.parts);
+            scene.channel_delta = fx_delta;
+            scene.tick(&mut host, fx_delta);
+            // The mode-3 HSV adds and the mode-4 countdown take the pass's
+            // span like the rest of the part tick.
+            self.queue_battle_part_scrolls_over(&mut scene.parts, pass);
             // The morph-lane ramp envelope `FUN_80020740`, which the part
             // tick runs on a part whose `+0x10` word carries the op-`0x0A`
             // bit `0x1000` - the same gate the field ambient tree takes. It
@@ -585,12 +609,11 @@ impl World {
             // first tick of a table-form scene, which runs that first VM
             // step - grows nothing: the captures read `0x66 * N` at wait
             // `0x278 - 8 * N`.
-            let step = self.move_vm.ramp_ratio.max(1);
             for part in &mut scene.parts {
                 if !part.finished
                     && part.state.flags & vm::move_buffer::STATUS_FLAG_ENVELOPE_ACTIVE != 0
                 {
-                    vm::vdf_morph::envelope_tick_actor(&mut part.state, step);
+                    vm::vdf_morph::envelope_tick_actor(&mut part.state, fx_step);
                 }
             }
         }

@@ -245,12 +245,12 @@ Owning page: [`audio.md` § key-on pitch law](../../subsystems/audio.md).
 Consequences:
 
 - The two "per-voice trigger bytes" are one actuator payload: a per-step on / off pulse and an intensity level, transmitted by libpad every poll.
-- `gp+0x614` / `gp+0x618` are vibration-intensity requests, not a locomotion speed (`+0x618` is written verbatim into an actuator level byte). Their writers are unpinned.
+- `gp+0x614` / `gp+0x618` are vibration-intensity requests, not a locomotion speed (`+0x618` is written verbatim into an actuator level byte). With `gp = 0x8007B318` they are `_DAT_8007B92C` / `_DAT_8007B930`, whose writers are the field VM's op `0x4C` nibble-4 subs `6` / `7`, the encounter handoff, the battle intro, the battle overlay, the summon and cast modules and the options screen's Events commit ([`audio.md`](../../subsystems/audio.md#not-ssapi-the-0x801ce628-cluster-is-libpad)).
 - `_DAT_8007B8A4` pinned at `2` across four field and overworld runs means nothing requests vibration while walking, as the game's Vibration options (battles / events / encounters) predict.
 
 Not SsAPI: the `0x8006C000..0x8006F000` band does hold libspu / libsnd code and the stride-`0xF0` record array with an `0xFF` idle fill resembles a sequence-worker table, but the resolved context's `+0x30` is the button report `FUN_8001822C` decodes, `PadInfoMode`'s id-table branch has no sequencer reading, and the record count is 2 - the number of controller sockets.
 
-Port: `engine-audio::footstep` mirrors the arithmetic and keeps its `// PORT:` tag. Owning page: [`audio.md`](../../subsystems/audio.md#not-ssapi-the-0x801ce628-cluster-is-libpad).
+Port: `legaia_engine_system::rumble` carries the `// PORT:` tag and drives the controller from the motor words, written by the field scripts and every battle-side writer ([`audio.md`](../../subsystems/audio.md#battle-side-rumble)). The old `engine-audio::footstep` copy, fed a stand-in walking speed, is retired. Owning page: [`audio.md`](../../subsystems/audio.md#not-ssapi-the-0x801ce628-cluster-is-libpad).
 
 See `ghidra/scripts/funcs/8006e2b4.txt`, `8006ce30.txt`, `8006d7b4.txt`, `8006ca7c.txt`, `8006cb3c.txt`, `8006cdb0.txt`, `8006d1e0.txt`, `8006d2ac.txt`, `8001d230.txt`, `8001822c.txt`, `80018db0.txt`, `80018f94.txt`, `8005c034.txt`.
 

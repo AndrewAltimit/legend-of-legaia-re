@@ -70,6 +70,7 @@ fn save_select_load_outcome_round_trips() {
             leader_name: "Vahn".into(),
             leader_hp: (100, 100),
             leader_mp: (20, 20),
+            ..SlotSnapshot::empty(0)
         },
         SlotSnapshot::empty(1),
     ];

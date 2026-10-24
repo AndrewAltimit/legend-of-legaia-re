@@ -60,6 +60,14 @@ pub struct ArtTableEntry {
     pub commands: Vec<Command>,
     /// `true` for the per-character index-`0` Miracle Art row.
     pub is_miracle: bool,
+    /// The name string's bytes as stored, up to its terminator, escapes
+    /// kept (`0xCF XX` ink, `0xC1 XX` character name) - what the list
+    /// renderer `FUN_80034358` hands `FUN_80036888`. Empty when unread.
+    pub name_bytes: Vec<u8>,
+    /// The command-glyph string's `count` two-byte entries as stored, the
+    /// `0xFF XX` ink markers kept in place - what `FUN_80034358` walks for
+    /// the arrows. Empty when unread.
+    pub glyphs: Vec<[u8; 2]>,
 }
 
 /// Map a two-byte command glyph to a [`Command`]. Returns `None` for the
@@ -220,6 +228,39 @@ fn read_commands(scus: &[u8], map: &ExeMap, va: u32) -> Option<(Vec<Command>, bo
     Some((cmds, miracle_marker))
 }
 
+/// The name string's bytes up to its `0x00` terminator, escapes kept. A
+/// `0xC1` / `0xCF` escape's operand byte is copied even when it is `0x00`
+/// (`0xC1 0x00` names character 0).
+fn read_raw_name(scus: &[u8], map: &ExeMap, va: u32) -> Option<Vec<u8>> {
+    let start = map.off(va)?;
+    let mut out = Vec::new();
+    let mut i = start;
+    while let Some(&b) = scus.get(i) {
+        if b == 0 {
+            break;
+        }
+        out.push(b);
+        if (0xC0..=0xCF).contains(&b) {
+            out.push(*scus.get(i + 1)?);
+            i += 1;
+        }
+        i += 1;
+    }
+    Some(out)
+}
+
+/// The command-glyph string's `count` raw entries.
+fn read_glyphs(scus: &[u8], map: &ExeMap, va: u32) -> Option<Vec<[u8; 2]>> {
+    let o = map.off(va)?;
+    let count = *scus.get(o)? as usize;
+    (0..count)
+        .map(|k| {
+            let p = o + 1 + k * 2;
+            Some([*scus.get(p)?, *scus.get(p + 1)?])
+        })
+        .collect()
+}
+
 fn character_for_row(row: u8) -> Option<Character> {
     match row {
         0 => Some(Character::Vahn),
@@ -261,6 +302,8 @@ pub fn parse_from_scus(scus: &[u8]) -> Option<Vec<ArtTableEntry>> {
             ap,
             commands,
             is_miracle: col == 0 || miracle_marker,
+            name_bytes: read_raw_name(scus, &map, name_ptr).unwrap_or_default(),
+            glyphs: read_glyphs(scus, &map, cmd_ptr).unwrap_or_default(),
         });
     }
     Some(out)
@@ -462,6 +505,8 @@ mod tests {
             ap: 0,
             is_miracle: index == 0,
             commands,
+            name_bytes: Vec::new(),
+            glyphs: Vec::new(),
         }
     }
 

@@ -24,7 +24,7 @@ culling, the port's render passes and knobs. How a pixel gets its colour is
   through the GTE light. The port does both by default on both hosts
   ([Lighting](#lighting)).
 - **Rasterisation defaults to clean.** `Renderer::set_psx_mode` is opt-in and
-  gates vertex jitter + 15-bit dither only. Affine UVs are unconditional, and
+  gates the retail vertex snap (truncated onto the 320×240 grid, with its scanline texel row) and 15-bit dither only. Affine UVs are unconditional, and
   they are the faithful behaviour
   ([knobs](#rendering-knobs-what-is-faithful-what-is-a-choice)).
 - **Simulation is faithful with no opt-out.**
@@ -170,7 +170,7 @@ Four writer families put a non-zero value in that halfword:
   the half space at and above the stage floor, so the body goes down
   through the floor and leaves no packet once it is under it
   (`player_steal_skeleton_banner`, skeleton `183` down). Port:
-  `World::battle_actor_floor_clip`, staged as a per-draw clip on both hosts.
+  `engine-world-views::battle_draws::battle_actor_floor_clip`, staged as a per-draw clip on both hosts.
 
 The `sh $v0, 0x42(...)` pairs inside the brackets themselves (`0x8001B4C8`,
 `0x80048F24`) are not writers: their base register is the scratchpad packet
@@ -500,7 +500,7 @@ path untouched while the word is zero.
 
 The battle hosts hand the kernel each object's sweep frame through
 `shatter::bone_sweep_frame`: the object's pose under the body-to-view map
-`World::battle_shatter_view` (world scale, camera `Rx(pitch) * Ry(yaw)`, the
+`engine-world-views::battle_draws::battle_shatter_view` (world scale, camera `Rx(pitch) * Ry(yaw)`, the
 body's facing), measured from the body root. Not modelled: the field's sweep
 view frame (the field hosts hand the kernel the object's own axes,
 `SweepFrame::MODEL`, so `jagaroom`'s `0xC` front crosses the body along model
@@ -524,8 +524,11 @@ full pixel chain - palette, colour word, depth cue, blend, dither - is
 The trap for any new draw path: an unbound colour attribute defaults to
 white, and white is `texel * 255/128`, so a missing colour stream reads as
 "too bright", not as "unlit". A synthetic Lambert survives only in two viewer
-aids - the asset-viewer's bare-geometry `MESH_SHADER_SRC` and the site's lit
-bestiary preview - and neither is a claim about retail.
+aids - the asset-viewer's bare-geometry `MESH_SHADER_SRC` and the site
+bestiary's opt-in "lit preview" toggle - and neither is a claim about retail.
+The bestiary itself defaults to the retail path: each face's baked colour word
+(`monster_mesh_colors`) multiplies its texel, and the view keeps the lit look
+only when the wasm bundle carries no colour stream, for exactly this trap.
 
 ### What issues a colour op
 
@@ -864,6 +867,32 @@ floor.
 
 Disc-gated pin: `crates/engine-scene/tests/field_ground_far_bucket_disc.rs`.
 
+### A sorted cell draws two buckets behind its farthest corner
+
+A cell **with** the sort bit is not depth-tested either. `FUN_801F6D48`
+takes the largest of its four corner `SZ`s (the three `sub` / `bgez` /
+`move` steps at `0x801F6FAC..0x801F6FD8`) and links the packet at
+`(max SZ >> 5) + 2` (`srl 5` / `addi 2` / `sll 2` / `addu` at
+`0x801F6FDC..0x801F6FE8`), so the whole cell sits at one depth, two buckets
+behind its farthest corner, and every primitive whose own bucket is nearer
+paints over it. Field objects bucket on the same scale: in
+`door_warp_town01_to_map01` (`town0c`, a mednafen state) the ordering-table
+slots heading the chains put a rock face (mean corner `SZ` near `11060`)
+27 slots in front of the raised ground cell `(23, 46)` it is sunk into
+(farthest corner near `11845`), which is `(11845 >> 5) + 2 - (11060 >> 5)`.
+So the rock's buried lower faces show over the grass. A depth buffer hides
+them under the cell.
+
+The port gives an unmarked cell (`x0 < x1`, `z0 < z1` in its flat refs) the
+depth of that bucket: `field_sorted_cell_depth` in `engine-render`,
+`fieldSortedCellDepth` / `fieldSortedCellW` in `site/js/webgl-shaders.js`,
+with the field frame's `SZ = 6 * clip.w`
+(`legaia_engine_field::camera::CUTSCENE_WORLD_SCALE`). The overworld's
+continent cells already draw at their bucket the same way, at `+ 14`
+(`overworld_flat_depth`). GPU pin:
+`a_sorted_field_cell_draws_flat_two_buckets_behind_its_far_corner`
+(`engine-render` `tests/overworld_flat_depth_gpu.rs`).
+
 ### No draw channel is gated on object-grid bit `0x0800`
 
 Bit `0x0800` marks a **kind-2 tile-trigger** cell (the elevation override
@@ -1067,7 +1096,7 @@ ghosts never do.
 Port: `battle_actor_draw::shadow_plan` models the numbers and
 `engine-effects::effect_default_arm::ground_shadow_mesh` builds the disc; every
 ground-shadow block in the capture library is reproduced byte for byte
-(`effect_default_arm_retail_capture.rs`). `World::battle_ground_shadows`
+(`effect_default_arm_retail_capture.rs`). `engine-world-views::battle_draws::battle_ground_shadows`
 lists one per battle body, gated on the same draw plan the host's actor pass
 uses, centred on the drawn pose's centroid turned by the facing (the body-pair
 store's rotation), and both hosts draw that list in their battle FX pass. The disc sits
@@ -1582,6 +1611,12 @@ It is the SCUS-resident sibling of the overlay "Moves" submenu (same arts
 table, same name / AP / command-arrow layout) in
 [`field-menu.md`](field-menu.md#moves-list-submenu-3); the two differ in row
 pitch and host screen. See `ghidra/scripts/funcs/80034358.txt`.
+
+Its one caller is the per-frame widget walker `FUN_80031D00`, for a kind-`0xC`
+text actor. The battle arts entry registers one for its Triangle list window
+(`FUN_801DBB8C`, re-registered by the panel rebuild `FUN_801D99BC`). The pen, ink and arrow-alignment law, the window's slide, and the
+port are in
+[`minigame-muscle-dome.md`](minigame-muscle-dome.md#the-triangle-arts-list).
 
 ## TMD pointer table
 
@@ -2222,6 +2257,13 @@ The port arms the rejection through one kernel both hosts read,
 | World map | both sides (its continent terrain's winding parity is the world-map pass's) |
 | Battle stage, other minigame venues | both sides |
 | Battle **bodies** | culled per draw under the field's parity, word `2` (`BattleActorDrawPlan::nclip_mode`; `Renderer::set_draw_nclip` natively, the placement `nclip` on the play page) |
+
+A move-VM part is the one field draw whose word can carry the bit. The
+field FX parts (`World::active_field_fx_part_draws`) hand it on as
+`ColourWord::double_sided`; the native window marks such a draw both-sided
+(`FxFrame::push_draws`) and the play page draws its baked effect mesh
+both-sided, so `opdeene`'s light cone (`0xC9000000`) is not dropped by the
+field pass's cull.
 
 Battle bodies go through the same dispatcher with their render node's colour
 word, which never carries the double-sided bit. On an opaque body the depth

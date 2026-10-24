@@ -83,6 +83,7 @@ fn the_spirit_aura_prototypes_hold_and_draw_their_morphed_cone() {
     assert!(world.spawn_action_table_effect(0x07, [0, 0, -800]));
     let mut grown = None;
     for tick in 0..30 {
+        world.clock.display_frames += 1;
         world.tick_move_fx(legaia_engine_core::world::EFFECT_SCENE_GRAPH_STEP);
         let draws = world.active_move_fx_part_draws();
         assert_eq!(draws.len(), 1, "the aura part is still up at tick {tick}");
@@ -110,12 +111,71 @@ fn the_spirit_aura_prototypes_hold_and_draw_their_morphed_cone() {
 /// `0x80` a frame (op `0x0D`'s `-0x80 << 3` rate through the part tick's
 /// level block) toward `0` - black under an additive word, so the cone fades
 /// **in** - and the bank turns `0x222` a frame.
+///
+/// "A frame" is a vsync: the part tick `FUN_80021DF4` scales its drain and
+/// channels by `DAT_1F800393 * DAT_1F80037D` and the envelope by
+/// `DAT_1F800393`, so the captured values are linear in vsyncs whatever step
+/// the pass ran at. On the per-vsync cadence every vsync is a pass and both
+/// capture points are sampled directly; on retail's battle cadence (the
+/// default, step 2 here) the part ticks once a battle frame, so its passes
+/// land on the even-vsync samples of the same trace - the `28`-frame capture
+/// among them - and hold between.
 #[test]
 fn the_spirit_aura_grows_and_fades_at_the_captured_rates() {
     let Some(dir) = extracted() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
         return;
     };
+    let per_vsync = aura_trace(&dir, false, 48);
+    let at = |seen: &[AuraSample], wait: i16| {
+        seen.iter()
+            .find(|e| e.0 == wait)
+            .copied()
+            .unwrap_or_else(|| panic!("no tick at wait {wait}: {seen:?}"))
+    };
+    let (_, w7, l7, r7) = at(&per_vsync, 576);
+    assert_eq!((w7, l7), (0x2CA, 0xC80), "7 frames in");
+    let (_, w28, l28, r28) = at(&per_vsync, 408);
+    assert_eq!((w28, l28), (0xB28, 0x200), "28 frames in");
+    assert_eq!(
+        r28.wrapping_sub(r7),
+        0x222 * 21,
+        "the bank spins 0x222 a frame"
+    );
+
+    let on_pass = aura_trace(&dir, true, 40);
+    assert_eq!(
+        at(&on_pass, 408),
+        (408, 0xB28, 0x200, r28),
+        "28 frames in, on the battle pass"
+    );
+    let mut passes = 0;
+    for (i, sample) in on_pass.iter().enumerate() {
+        // Between passes the part holds the last pass's state.
+        if i > 0 && on_pass[i - 1] == *sample {
+            continue;
+        }
+        passes += 1;
+        assert_eq!(
+            *sample,
+            at(&per_vsync, sample.0),
+            "the pass at tick {i} reads the per-vsync trace's state at its wait"
+        );
+        assert_eq!((0x278 - i32::from(sample.0)) % 16, 0, "a 2-vsync pass");
+    }
+    assert!(
+        passes >= 15,
+        "the part ticks once a battle frame: {on_pass:?}"
+    );
+}
+
+/// `(wait +0x54, morph weight, level +0x78, Y bank +0x26)`.
+type AuraSample = (i16, u16, u16, i16);
+
+/// Spawn prototype `0x07` and run `ticks` display ticks, advancing the vsync
+/// clock on each as a host does, on the battle cadence or per vsync, and
+/// sample the live part after every tick.
+fn aura_trace(dir: &std::path::Path, battle_cadence: bool, ticks: usize) -> Vec<AuraSample> {
     let mut archive = Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
     let overlay = entry(
         &mut archive,
@@ -123,12 +183,14 @@ fn the_spirit_aura_grows_and_fades_at_the_captured_rates() {
     );
     let mut world = World::new();
     world.mode = SceneMode::Battle;
+    world.toggles.battle_sm_frame_cadence = battle_cadence;
     world.tables.move_power = Some(MovePowerCatalog::from_overlay_0898(&overlay).expect("catalog"));
     world.tables.move_power_overlay = Some(Arc::from(overlay.as_slice()));
     world.tables.battle_vdf = Some(Arc::from(entry(&mut archive, 872).as_slice()));
     assert!(world.spawn_action_table_effect(0x07, [0, 0, -800]));
     let mut seen = Vec::new();
-    for _ in 0..40 {
+    for _ in 0..ticks {
+        world.clock.display_frames += 1;
         world.tick_move_fx(legaia_engine_core::world::EFFECT_SCENE_GRAPH_STEP);
         let part = &world.casting.active_action_fx[0].parts[0];
         let s = &part.state;
@@ -146,19 +208,5 @@ fn the_spirit_aura_grows_and_fades_at_the_captured_rates() {
         );
         assert!(!draw.draws_rest_mesh());
     }
-    let at = |wait: i16| {
-        seen.iter()
-            .find(|e| e.0 == wait)
-            .copied()
-            .unwrap_or_else(|| panic!("no tick at wait {wait}: {seen:?}"))
-    };
-    let (_, w7, l7, r7) = at(576);
-    assert_eq!((w7, l7), (0x2CA, 0xC80), "7 frames in");
-    let (_, w28, l28, r28) = at(408);
-    assert_eq!((w28, l28), (0xB28, 0x200), "28 frames in");
-    assert_eq!(
-        r28.wrapping_sub(r7),
-        0x222 * 21,
-        "the bank spins 0x222 a frame"
-    );
+    seen
 }

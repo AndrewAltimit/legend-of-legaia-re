@@ -150,6 +150,21 @@ pub mod sprite_cell_ids {
     /// rise / fall arrows (`4` / `5`), `/ ( ) :`.
     pub const SEPARATOR: u16 = 0x110;
     // `SEPARATOR + 13` is the last; `0x11E..` is free.
+    /// Base of the per-ink numeral and separator cells: the same 8x12
+    /// cells as [`NUMERAL`] / [`SEPARATOR`], decoded under ink-staging id
+    /// `s`'s own font CLUT (sub-palette `6 + s`) rather than tier 7's.
+    /// Address one with [`ink_numeral`] / [`ink_separator`].
+    pub const INK_CELLS: u16 = 0x300;
+    /// Id stride between two ink-staging ids' cell blocks.
+    pub const INK_CELLS_STRIDE: u16 = 0x20;
+    /// The numeral `d` decoded under ink-staging id `staging`'s CLUT.
+    pub const fn ink_numeral(staging: u8, d: u16) -> u16 {
+        INK_CELLS + staging as u16 * INK_CELLS_STRIDE + d
+    }
+    /// The separator glyph `g` decoded under ink-staging id `staging`'s CLUT.
+    pub const fn ink_separator(staging: u8, g: u16) -> u16 {
+        INK_CELLS + staging as u16 * INK_CELLS_STRIDE + 0x10 + g
+    }
     /// The list page header's "PAGE" tag (UI-icon `0x76`, 24x8).
     pub const PAGE_TAG: u16 = 0x200;
     /// The page header's 6x8 digit `d` is `PAGE_DIGIT + d` (icons
@@ -161,6 +176,16 @@ pub mod sprite_cell_ids {
     pub const PAGE_PREV: u16 = 0x230;
     /// The list's next-page triangle (icon `0x28`, 8x8).
     pub const PAGE_NEXT: u16 = 0x231;
+    /// Base of the 12x12 command arrows the arrow primitive `FUN_8003C310`
+    /// blits (menu-glyph page, `uv = (0xD0 + 12 * dir, 0xD0)`, `dir` `0` up,
+    /// `1` down, `2` right, `3` left), one block of four per ink-staging id.
+    /// Address one with [`ink_arrow`].
+    pub const ARROW: u16 = 0x240;
+    /// Arrow `dir` decoded under ink-staging id `staging`'s CLUT
+    /// (`staging + 0x7F86`, `0x8003C36C..0x8003C380`).
+    pub const fn ink_arrow(staging: u8, dir: u16) -> u16 {
+        ARROW + staging as u16 * 4 + dir
+    }
 }
 
 /// One sprite cell's pixels for [`Font::with_sprite_cells`].

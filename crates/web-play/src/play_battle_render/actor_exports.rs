@@ -159,7 +159,7 @@ impl LegaiaRuntime {
 
     /// Battle actor `i`'s **hidden objects** this frame, as TMD object
     /// indices: the objects its per-channel model table does not name for
-    /// the playing stream's channels (`World::battle_live_drawn_objects` -
+    /// the playing stream's channels (`legaia_engine_world_views::battle_draws::battle_live_drawn_objects` -
     /// the draw pass `FUN_80048A08` after the mesh-variant swap
     /// `FUN_8004CCD4`). The page collapses their vertices after posing.
     /// Empty for an actor with no model table (monsters, summons, a
@@ -175,8 +175,7 @@ impl LegaiaRuntime {
         if a.object_ids.is_empty() {
             return Vec::new();
         }
-        host.world
-            .battle_live_drawn_objects(a.actor_idx)
+        legaia_engine_world_views::battle_draws::battle_live_drawn_objects(&host.world, a.actor_idx)
             .map(|d| legaia_engine_battle::battle_attach_swap::hidden_objects(&d))
             .unwrap_or_default()
     }
@@ -271,7 +270,7 @@ impl LegaiaRuntime {
     /// Battle actor `i`'s **arts after-image ghosts** this frame - the
     /// browser seat of the retail walk `FUN_80049348`
     /// (`legaia_engine_battle::battle_afterimage`; the plan comes from the
-    /// shared `World::battle_ghost_draws`). Seven `f32` per ghost:
+    /// shared `legaia_engine_world_views::battle_draws::battle_ghost_draws`). Seven `f32` per ghost:
     /// `[world_x, world_y, world_z, r, g, b, k]` - the position in the
     /// placement frame (`battle_afterimage::placement_pos`, height negated),
     /// which the page places as it stands - with RGB normalized `0..1`
@@ -311,7 +310,7 @@ impl LegaiaRuntime {
             ])
         });
         let mut out = Vec::new();
-        for g in host.world.battle_ghost_draws() {
+        for g in legaia_engine_world_views::battle_draws::battle_ghost_draws(&host.world) {
             if g.actor_slot as usize != a.actor_idx {
                 continue;
             }
@@ -353,8 +352,7 @@ impl LegaiaRuntime {
         let Some(a) = br.actors.get(i as usize) else {
             return Vec::new();
         };
-        host.world
-            .battle_ghost_draws()
+        legaia_engine_world_views::battle_draws::battle_ghost_draws(&host.world)
             .into_iter()
             .filter(|d| d.actor_slot as usize == a.actor_idx)
             .nth(g as usize)
@@ -375,8 +373,7 @@ impl LegaiaRuntime {
         let Some(a) = br.actors.get(i as usize) else {
             return 0;
         };
-        host.world
-            .battle_ghost_draws()
+        legaia_engine_world_views::battle_draws::battle_ghost_draws(&host.world)
             .iter()
             .filter(|d| d.actor_slot as usize == a.actor_idx)
             .nth(g as usize)
@@ -393,7 +390,7 @@ impl LegaiaRuntime {
         let Some(a) = br.actors.get(i as usize) else {
             return Vec::new();
         };
-        let draws = host.world.battle_ghost_draws();
+        let draws = legaia_engine_world_views::battle_draws::battle_ghost_draws(&host.world);
         let Some(d) = draws
             .iter()
             .filter(|d| d.actor_slot as usize == a.actor_idx)

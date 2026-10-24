@@ -21,65 +21,6 @@ use legaia_engine_save_state::WorldSaveState;
 use super::BootSession;
 use crate::audio_director::SfxFrameReport;
 
-/// Cue id fired for a footstep: `None`, and pinned there by capture -
-/// **retail plays no footstep sound at all**, so the cadence
-/// ([`BootSession::step_footstep_cadence`]) runs and keys no voice because
-/// there is nothing to key.
-///
-/// The contrast that settles it is
-/// `scripts/pcsx-redux/autorun_footstep_cue.lua`, which watches every cue path
-/// at once - both ring producers (`FUN_80035B50` / `FUN_80035BD0`), the
-/// dispatcher `FUN_8004FCC8`, the per-actor trigger `FUN_800250D4`, the voice
-/// programmer `FUN_80065034`, and the four ring slots themselves - and runs one
-/// field save state twice for the same number of vsyncs, once standing still
-/// and once with the D-pad held. Standing still, a house-interior walk and a
-/// kingdom-overworld walk each fire **nothing**. The one walk that fires
-/// anything fires exactly two scene-script cues (`0x2E`, `0x2F`) hundreds of
-/// vsyncs apart, out of the field VM's script SFX op - triggers the player
-/// crossed, not a step cadence. Write-up: `docs/formats/sfx-table.md`.
-///
-/// So there is no retail id to copy, and a guessed one would not be a
-/// near-miss but an arbitrary sample: an id resolves through the descriptor
-/// table (`DAT_8006F198 + id*8`) to a `(program, tone)` pair, and that pair
-/// selects a different sample in every resident bank. Firing `0x21` in a
-/// field scene played an impact sample: walking punched.
-///
-/// Giving the port a footstep is therefore an *enhancement* choice - author a
-/// cue and set it here, where every host's cadence step queues it - not a
-/// fidelity gap waiting on more RE.
-pub const CUE_FOOTSTEP: Option<u8> = None;
-
-/// World-unit displacement per tick below which the player counts as still.
-/// The controller steps 2 units at a time, so anything under one unit is
-/// numerical drift rather than a walk.
-const WALK_EPSILON: i32 = 1;
-
-/// Movement magnitude handed to the footstep cadence while the player walks.
-///
-/// **This is a port pick, and it has to be, because the two engines do not
-/// carry the same quantity.** Retail feeds `FUN_80018db0` a controller speed
-/// word, and the kernel's own constants bound where that word must live for a
-/// step to fire at all: `interval = 0xF - (min(speed + 0x20, 0xFA) >> 4)` and
-/// the `interval < 0xB` gate together require `speed >= 0x30`, saturating at
-/// `0xDA`. The port has no such word - `World` exposes a walking *flag* and a
-/// 2-units-per-tick step, and feeding that raw world delta in leaves `interval`
-/// at `0xD`, i.e. permanently below the gate, so no step would ever fire.
-///
-/// A single-speed walker therefore has to be placed somewhere in retail's
-/// moving band, and `0x30` is the deliberately conservative end of it: the
-/// slowest speed retail treats as moving, so the cadence this produces is the
-/// slowest retail would ever produce for a walking player and cannot overstate
-/// the step rate.
-///
-/// Capture adds one thing worth stating plainly: retail's own speed word does
-/// **not** reach `0x30` while the player walks a field scene or the kingdom
-/// overworld - `_DAT_8007B8A4` stays pinned at `2`, the gate's else-branch, for
-/// every observed frame. Feeding `0x30` in here therefore makes the port's
-/// cadence fire where retail's stays shut, which is fine precisely because
-/// [`CUE_FOOTSTEP`] keys no voice: what runs is a timing counter, not a sound
-/// retail does not make.
-const WALK_SPEED_UNITS: i32 = 0x30;
-
 /// One sim tick of the hosts' field-NPC clip players.
 ///
 /// The players are host-side - each host keys its pose cache or its JSON on
@@ -265,16 +206,17 @@ impl<S: AudioSink> BootSession<S> {
         ring
     }
 
-    /// Advance the Muscle Dome leg's round **time meter** one frame
-    /// (`MuscleDomeSession::tick_time_meter`): it climbs through the
-    /// selection phase and drains outside it. No-op with no leg open.
+    /// Step the Muscle Dome leg's arts-entry Triangle list window one frame
+    /// (`MuscleDomeSession::tick_arts_list_slide`): its slide counter climbs
+    /// while the list is open in the entry and drains otherwise. No-op with
+    /// no leg open.
     ///
-    /// Retail runs the meter from the arena's per-frame driver with the frame
-    /// delta from scratchpad `0x1F800393`; the port ticks a fixed one per sim
-    /// tick.
-    pub fn step_muscle_time_meter(&mut self) {
+    /// Retail steps it from the battle menu SM (`FUN_801D0748` ->
+    /// `FUN_801D3444`) by the frame delta from scratchpad `0x1F800393`; the
+    /// port ticks a fixed one per sim tick.
+    pub fn step_muscle_arts_list_slide(&mut self) {
         if let Some(s) = self.host.world.minigames.muscle_dome.as_mut() {
-            s.tick_time_meter(1);
+            s.tick_arts_list_slide(1);
         }
     }
 
@@ -543,57 +485,6 @@ impl<S: AudioSink> BootSession<S> {
             xa.dur,
             if fired { "playing" } else { "not playing" }
         );
-    }
-
-    /// One sim tick of the footstep / ambient cadence (`FUN_80018db0`,
-    /// [`FootstepCadence`]): feed it this tick's movement magnitude and
-    /// queue [`CUE_FOOTSTEP`] when its step gate opens. Returns whether the
-    /// gate opened, cue or no cue, so a host can count it.
-    ///
-    /// The cadence runs in the field-run modes only; a suspended scene (menu,
-    /// minigame, cutscene) is not walking, and retail's field audio update
-    /// does not run there either. The walk clip stays running when a step is
-    /// blocked by a wall - retail's walk-in-place - so either the clip or a
-    /// displacement counts as moving.
-    ///
-    /// A host calls it once per sim tick ahead of [`Self::step_audio_frame`].
-    ///
-    /// [`FootstepCadence`]: legaia_engine_audio::footstep::FootstepCadence
-    // REF: FUN_80018db0
-    pub fn step_footstep_cadence(&mut self) -> bool {
-        let world = &self.host.world;
-        let mag = if matches!(world.mode, SceneMode::Field | SceneMode::WorldMap) {
-            let pos = world
-                .player_actor_slot
-                .and_then(|s| world.actors.get(s as usize))
-                .map(|a| (a.move_state.world_x as i32, a.move_state.world_z as i32))
-                .unwrap_or((0, 0));
-            let displaced = self
-                .footstep_prev_pos
-                .is_some_and(|(px, pz)| (pos.0 - px).abs().max((pos.1 - pz).abs()) >= WALK_EPSILON);
-            self.footstep_prev_pos = Some(pos);
-            let walking = world
-                .locomotion
-                .player_anim
-                .as_ref()
-                .is_some_and(|f| f.walking);
-            if walking || displaced {
-                WALK_SPEED_UNITS
-            } else {
-                0
-            }
-        } else {
-            self.footstep_prev_pos = None;
-            0
-        };
-        let fired = self.footstep.tick_cadence(mag, mag).step_fired;
-        if fired
-            && let Some(cue) = CUE_FOOTSTEP
-            && let Some(bgm) = self.bgm.as_mut()
-        {
-            bgm.enqueue_sfx(u16::from(cue), 0, 0, 0);
-        }
-        fired
     }
 
     /// The **audio frame** of a field or battle tick: the duck ramp toward

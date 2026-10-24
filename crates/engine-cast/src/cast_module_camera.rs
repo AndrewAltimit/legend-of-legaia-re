@@ -171,6 +171,13 @@ pub struct ModuleCamState {
     /// while it held - a write the phase-chain body, which does not run on
     /// a held pass, cannot make. The host takes it once.
     pub creature_stage: Option<u8>,
+    /// The [`Self::creature_stage`] store came with the `+0x1DC` bump (the
+    /// paired `lbu; addiu 1; sb` on both bytes), whose bit 0 cuts the
+    /// playing clip at once; without it the staged byte waits for the
+    /// clip's natural end. PROT 0930's arm 8 bumps both
+    /// (`0x801F750C..0x801F7524`); its arm 9's store of `2` is bare
+    /// (`0x801F7590`). The host takes it with the stage.
+    pub creature_restage: bool,
     /// An arm cleared the creature's loop counter on this pass, held or not
     /// (`sb zero,0x21b` / `sh zero,0x176`): the park of the playing clip is
     /// released. The host takes it once.
@@ -185,6 +192,11 @@ pub struct ModuleCamState {
     /// straight into the global (PROT 0909 arm 13, PROT 0911 arm 10, PROT
     /// 0913 arms 3 and 4). `None` where the host has no camera.
     pub live_yaw: Option<u16>,
+    /// The live pitch `0x8007B790` and TR trio `0x800840B8/BC/C0` as the
+    /// host last saw them, for an arm that stores them straight before it
+    /// arms a shot (PROT 0928's arm 4 exit). `None` where the host has no
+    /// camera.
+    pub live_pitch_tr: Option<(i32, [i32; 3])>,
     /// Module-image words a director reads that the module's ported tick
     /// body owns, fed by the host each tick: PROT 0910's hit counter
     /// `0x801F8DAC` and fourth-slash progress `0x801F8DA8`, which pick its

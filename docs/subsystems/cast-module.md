@@ -2257,7 +2257,14 @@ drains it is not identified.
 Arms that store the camera globals straight (Barra arms 3..6 and `0xC`, Palma
 arms 3 and 4) land each store as a one-frame cut on the origin, the TR z
 through the inverse of the tween's prescale; Meta's arm-6 and Ozma's arms 5..9
-TR y stores are not carried. Two module words are modelled on the director's
+TR y stores are not carried. Palma's arm 4 exit stores before it pans: the
+pass runs its per-pass stores at the word it reached, then TR x `-0x2000` and
+TR z `0x2000` straight (`0x801F7418..0x801F7424`), and only then arms its
+`0x160`-frame shot, whose tween sets out from those globals. The director
+lands the stores as a drift off the live pose
+(`ModuleCamState::live_pitch_tr`), applied ahead of the shot; armed off the
+sweep's last pose instead, the pan set out a fifth of the way to the planet
+and arm 5's frames filled the screen with it. Two module words are modelled on the director's
 `ramp`: Barra's TR z pull and its victim's fall, and Mule's world-anchor Z
 `0x80089120`, which the port otherwise keeps no twin of (from `0`).
 
@@ -2297,11 +2304,46 @@ live parts match record for record: in arm 4 the stager's loop record, its
 three sparkle records twenty or fourteen each, arm 3's six pool parts and a
 dozen wisps `0x801F8900`; in arm 9 the nine records arm 4 and arm 8 seated,
 `0x801F8BEC` ten or eleven times. Arm 9's camera matches too (pitch `0`, yaw
-`0`, TR y `0x158C`, TR z from `0x200` scaled, `+16` a vsync). Where Horn's
-frames still part from retail's in those arms (a ring of glows round the
-creature in arm 4 that the engine does not draw, arm 9's blades drawn wider),
-the difference is in what those parts draw, not in which are live or where
-the camera stands.
+`0`, TR y `0x158C`, TR z from `0x200` scaled, `+16` a vsync).
+
+**Horn's ring of glows** is arm 6's loop (`0x801F7148..0x801F7330`):
+sixteen passes of four calls, `0x801F8C44` / `0x801F8CA0` twice each, every
+call on the arm's zeroed stack trios. Pass `k` reads the SCUS sine pair at
+angle `0x100 k` (byte offset `k << 9`) and writes into the part each call
+hands back `+0x3C = trunc(sin / 768)` and `+0x3E = trunc(cos / 1024)` for
+the first call of each record, `/ 384` and `/ 512` for the second
+(`mult 0x2AAAAAAB` with `sra 7` / `sra 6`; `addiu 0x3FF` / `0x1FF` under a
+negative, `sra 10` / `sra 9`). The sixty-four camera-relative glows (`+0x52
+= 0x580`, world `(0, 0, 0x100)`) then drift out on sixteen spokes at two
+speeds through the motion block. A retail capture in arm 7 holds all
+sixty-four, each record thirty-two times, with exactly those drifts
+(`cast_module_camera::horn_ring_drift`). Seated once per call site, the
+engine drew four glows stacked in the centre: the one green disc.
+
+The drifts are small, and the motion block truncates per part tick
+(`(v << 12) * delta >> 18`), so the glows only move when the parts tick on
+the battle pass the way retail's do: one part tick a battle frame, the delta
+`step * 8` (`World::summon_fx_pass_vsyncs`). Ticked every vsync at the
+one-vsync delta, a drift under `8` never moves. Retail runs Horn's arms 4
+to 10 at step `4`, so a glow there moves `trunc(v / 2)` every four vsyncs;
+the engine's step-`2` frame moves it `trunc(v / 4)` every two, the same
+rate for the even drifts and short of it for the odd ones. The mode-3 HSV
+adds and the mode-4 scroll countdown take the pass's span on both part lists,
+the summon scene's and the effect-script table scenes'
+(`World::queue_battle_part_scrolls_over`).
+
+Arm 9's close-up is filled by the creature itself: the crystal blades are
+its mesh (CLUTs `0x7980..0x798B`, texture page `0x37` in the ordering
+tables), not the fans. Which pose they stand in is a clip commit. Arm 8
+stages clip `1` with the `+0x1DC` bump (`+0x1DA` and `+0x1DC` both `+1`,
+`0x801F750C..0x801F7524`), so it cuts the idle at once; arm 9 then stores
+`2` into `+0x1DA` bare on every pass (`sb v0,0x1da(s4)` at `0x801F7590`),
+and a bare byte waits for the playing clip's natural end. Retail RAM
+through arm 9 holds `+0x1D9 = 1`, `+0x1DA = 2`, `+0x1DC = 0`, rate `4`,
+the cursor climbing `8` to `280`: the close-up is clip `1`'s wing spread,
+and clip `2` takes over in arm `0xA`. The engine carries both
+(`ModuleCamState::creature_restage`, PROT 0930 among the clip-gated modules
+of `module_creature.rs`).
 
 Their draw state matches too, part for part, once each is paired by age (its
 wait word): the `+0x9C..+0xCC` block, draw kind `+0x56`, render mode `+0x5A`
@@ -2385,9 +2427,54 @@ gone when arm `0xF` frames the struck row.
 Mushura's arms 0 and 1 show the latched victim the band's freeze hid
 (`World::apply_mushura_writes`). Horn's seat visibility is carried
 (`World::apply_horn_writes`): arm 1 shows
-the party, arm 3 seats the creature hidden and arm 4 shows it, arm 8 hides
-the party for the rise, and the heal arm `0xA` shows it again and hides the
-creature. Mule's monster-row visibility is carried too
+the party, arm 3 seats the creature hidden and arm 4 shows it white
+(`+0x04 = 0x3FFFFFFF` under the idle tint state, which eases it back), arm
+8 hides the party for the rise, and the heal arm `0xA` shows the party
+again. Arm `0xA`'s pass does not hide the creature: it relights it for the
+closing burst, `+0x04 = 0x3FFFFFFF`, `+0x0C = 0x1000` and `+0x21C = 0xFF`
+at `+0x36 = 0x480`, `+0x38 = -0x200` (`0x801F77A8..0x801F77EC`). The
+`0xFF` byte is the tint machine's hold state and leaves the white word
+drawn; a retail capture in arm `0xB` holds that word on the creature seat,
+and the white crystal silhouette fills arm `0xB`'s frames until its own
+pass zeroes the word (`0x801F7D04..0x801F7D10`). Palma's monster-row visibility is carried for its opening
+(`World::apply_palma_writes`): arm 1 shows every living monster of seats
+3..6 on each of its passes, held or not (`+0x21C = 0`, `+0x04 = 0x20080200`,
+`0x801F6CFC..0x801F6D48`, ahead of the side-band token gate), so
+`palma_summon_mid_cast` frames the row standing while the stream fills, and
+arm 4's pass hides it (`0x801F73BC..0x801F73FC`) as it seats the creature.
+The rest of the row's choreography is carried too, on seats 3..6. Arm 0
+parks each living seat's ground trio and facing (`0x801FA0A8` /
+`0x801FA0C8`) and pulls its ground pair to an eighth (`sra 3` into
+`+0x34` / `+0x38`, `0x801F6C44..0x801F6CF0`). Arm `0xE`'s pass re-shows the
+living row on the far plane (`+0x38 = -0x4000`, facing `0`) and marks a
+dead seat by bumping a zero facing to `1` (`0x801F7F3C..0x801F7FD0`). Arm
+`0xF` holds the living row on that plane every pass, hides every seat
+once its word is under `0x1C1` (after the pre-hit), and on its pass lights
+each unmarked seat with the colour word `0x3C0` under the soft-red tint
+state `7`, standing it at `+0x38 = |+0x34| / 4 - 0x400`
+(`0x801F82CC..0x801F8370`); arm `0x10` keeps that stand every pass and arm
+`0x11`'s pass hides the living row. The hit arm `0x13`'s pass puts each
+living seat's parked trio and facing back, turns it away from the creature
+(`FUN_80019B28` plus `0x800`) and shows it lit `0x3C0`
+(`0x801F892C..0x801F8B40`). Not carried: the render node's colour word
+`+0x74 = 0x00F00000`, the `+0x1F6` cue cursor arm `0xF` stores, and the
+node halfwords `+0x26` / `+0x68` arms `0xE` and `0x10` write.
+Gilium's creature flight is carried (`World::apply_gilium_writes`): arm 3's
+pass seats the creature at `(0, -0x100, -0x800)`, each held pass of arm 4
+flies it `24` a frame delta along `+0x38` and `2` down `+0x36`
+(`0x801F6E30..0x801F6E58`), and arm 4's pass stands it at `+0x38 = 0x400`
+(`0x801F718C`), the point a retail capture holds from arm 5 on. Arm 3 also
+zeroes the creature's colour word (`sw zero,0x4(s6)` at `0x801F6DD8`), which
+the tint pass's decay arm eases back up to neutral: the fade-in. The render
+scale `+0x72` it zeroes beside it (`0x801F6DDC`), which arm 4 grows `32 *
+delta` a draining pass and stands at `0x1000` on its exit (`0x801F71A4`), is
+not carried: the battle body draw reads no render scale. Its stage
+byte is carried by hand (`cast_module_camera::gilium_stage_byte`): `0` in
+arm 0, `2` on the passes of arms 3, 4 and `0x11`, and the stager's arm 0
+(`FUN_801F8B90`) stores `3` on the op-`0x20` call of the part that reaches
+it, which a retail cast makes partway through arm 5. Run off the module's
+phase instead, the stager's `3` dropped the stage from the cast's first
+tick. Mule's monster-row visibility is carried too
 (`World::apply_mule_writes`): arm 1 shows every living monster on each of
 its passes, held or not (`0x801F6D04`, ahead of the stream-token gate),
 arms 5 and 17 hide the row on their passes and arm 11 shows it again, and

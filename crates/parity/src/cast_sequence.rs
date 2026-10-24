@@ -285,6 +285,46 @@ impl Side {
             .collect()
     }
 
+    /// The row whose state a frame grabbed on `row` displays, off the frame
+    /// counter: the last row of the frame two counter bumps back. A frame
+    /// that follows one which ran past its step flips a vsync after its
+    /// bump, so on that bump's own vsync the screen still holds the frame
+    /// before; an on-time frame flips on its bump (step `1`: every shot is
+    /// a new image, two rows back). A frame's pass leaves its
+    /// state on its last row, and the double buffer shows what the frame
+    /// before last drew ([`Lag::Auto`]). On an ordinary step-`2` frame this
+    /// is the `2 * step` rule; counted in frames, a slow frame keeps its
+    /// image up for every vsync it ran over. `horn_summon` enters module
+    /// phase 9 on frame `1725` (vsync 2099) with frames of seven vsyncs at
+    /// step `4`, and the close-up reaches the screen at vsync 2113, the
+    /// vsync after frame `1727`'s bump, where `2 * step` paired the phase-8
+    /// shot at 2109 with the phase-9 row at 2101; in its phase 7 the image
+    /// at 1121 (frame `1600`'s bump) is still the one 1113..1119 show.
+    /// `None` without the `frame` column or before the recording holds that
+    /// frame.
+    fn shown_by_frame(&self, row: &Row) -> Option<u64> {
+        let f = row.frame?;
+        let i = self.rows.binary_search_by_key(&row.t, |r| r.t).ok()?;
+        // The frame before this one ran past its step: its flip lands a
+        // vsync after this frame's bump.
+        let late_flip = i > 0 && self.rows[i - 1].frame != Some(f) && {
+            let prev = &self.rows[i - 1];
+            let len = self.rows[..i]
+                .iter()
+                .rev()
+                .take_while(|r| r.frame == prev.frame)
+                .count();
+            len > usize::from(prev.step.max(1))
+        };
+        let want = f.checked_sub(if late_flip { 3 } else { 2 })?;
+        self.rows[..=i]
+            .iter()
+            .rev()
+            .find(|r| r.frame.is_some_and(|g| g <= want))
+            .filter(|r| r.frame == Some(want))
+            .map(|r| r.t)
+    }
+
     fn row_at(&self, t: u64) -> Option<&Row> {
         let i = self.rows.binary_search_by_key(&t, |r| r.t).ok()?;
         self.rows.get(i)
@@ -388,7 +428,9 @@ pub fn align(a: &[Segment], b: &[Segment]) -> Vec<(usize, usize)> {
 /// How a retail frame is shifted back to the row it displays.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Lag {
-    /// `2 * frame step` read off the row the frame was grabbed on.
+    /// Two game frames back, off the frame counter
+    /// (`Side::shown_by_frame`); `2 * frame step` read off the row the frame
+    /// was grabbed on where the capture has no counter.
     Auto,
     Fixed(u64),
 }
@@ -545,11 +587,13 @@ pub fn compare(
     let mut retail_frames = 0usize;
     for row in retail.rows.iter().filter(|r| r.shot.is_some()) {
         retail_frames += 1;
-        let l = match lag {
-            Lag::Auto => 2 * u64::from(row.step.max(1)),
-            Lag::Fixed(n) => n,
+        let shown = match lag {
+            Lag::Auto => retail
+                .shown_by_frame(row)
+                .or_else(|| row.t.checked_sub(2 * u64::from(row.step.max(1)))),
+            Lag::Fixed(n) => row.t.checked_sub(n),
         };
-        let Some(shown) = row.t.checked_sub(l) else {
+        let Some(shown) = shown else {
             unpaired += 1;
             continue;
         };
@@ -981,6 +1025,29 @@ mod tests {
         s.rows[1].frame = None;
         assert!(s.game_clock().is_none());
         assert!(s.frames().is_empty());
+    }
+
+    /// A shot shows the last row of the frame two counter bumps back, so a
+    /// slow frame holds the image for all its vsyncs.
+    #[test]
+    fn auto_lag_counts_frames_not_vsyncs() {
+        let s = side(&[(1, 2, 2), (2, 4, 7), (3, 4, 7), (4, 4, 7)]);
+        let rows_of = |f: u32| s.rows.iter().filter(move |r| r.frame == Some(f));
+        let last_of = |f: u32| rows_of(f).next_back().unwrap().t;
+        // Frame 3 past its bump shows frame 1's last row, all seven vsyncs.
+        for r in rows_of(3).skip(1) {
+            assert_eq!(s.shown_by_frame(r), Some(last_of(1)));
+        }
+        // Frame 4 follows a slow frame: its bump vsync still shows frame 1,
+        // the vsync after shows frame 2.
+        let mut f4 = rows_of(4);
+        assert_eq!(s.shown_by_frame(f4.next().unwrap()), Some(last_of(1)));
+        assert_eq!(s.shown_by_frame(f4.next().unwrap()), Some(last_of(2)));
+        // Frame 2 has no frame two back in the recording.
+        assert_eq!(s.shown_by_frame(&s.rows[3]), None);
+        // On-time frames flip on their bump.
+        let t = side(&[(1, 1, 1), (2, 1, 1), (3, 1, 1)]);
+        assert_eq!(t.shown_by_frame(&t.rows[2]), Some(t.rows[0].t));
     }
 
     #[test]

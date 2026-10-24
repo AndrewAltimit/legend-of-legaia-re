@@ -325,3 +325,38 @@ fn untextured_vertices_project_identically_on_both_hosts() {
         .collect();
     compare(&compose_scene_lit_shader(COLOR_MESH_SHADER_SRC), &verts);
 }
+
+/// The PSX vertex snap truncates onto the 320 x 240 stage, rows top-down, as
+/// the GTE's `SX` / `SY` are floored: every snapped vertex lands on a whole
+/// stage pixel at or up-left of its exact position, less than one pixel away.
+#[test]
+fn the_psx_snap_truncates_onto_the_stage_grid() {
+    let native = parse_wgsl(&compose_scene_lit_shader(VRAM_MESH_SHADER_SRC));
+    let mut m = Machine::new(&native, no_fetch());
+    let mvp = camera(0.3, 2600.0);
+    let stage = |clip: &[f32; 3]| {
+        let (x, y) = (clip[0] / clip[2], clip[1] / clip[2]);
+        ((x * 0.5 + 0.5) * STAGE_W, (0.5 - y * 0.5) * STAGE_H)
+    };
+    let mut n = 0;
+    for v in vertices() {
+        let frame = |snap| Frame {
+            mvp,
+            curve: 0.0,
+            snap,
+            prim_near: [0.0; 4],
+        };
+        let (exact, rej, _) = run_native(&mut m, &frame(false), &v);
+        let (snapped, _, _) = run_native(&mut m, &frame(true), &v);
+        if rej || exact[2] <= 0.0 {
+            continue;
+        }
+        let (ex, ey) = stage(&exact);
+        let (sx, sy) = stage(&snapped);
+        assert!((sx - sx.round()).abs() < 1e-3 && (sy - sy.round()).abs() < 1e-3);
+        assert!((sx - ex.floor()).abs() < 1e-3, "x {ex} snapped to {sx}");
+        assert!((sy - ey.floor()).abs() < 1e-3, "y {ey} snapped to {sy}");
+        n += 1;
+    }
+    assert!(n > 20, "the grid covers the stage: {n} vertices checked");
+}

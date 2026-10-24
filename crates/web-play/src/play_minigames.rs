@@ -597,3 +597,29 @@ impl LegaiaRuntime {
         true
     }
 }
+
+#[cfg(test)]
+mod tests {
+    /// The page's minigame picker offers every playable mode-24 slot - the
+    /// set the native window's minigame keys enter (`L` fishing, `O` slots,
+    /// `B` Baka Fighter, `M` Muscle Dome, `K` dance). Fishing was missing, so
+    /// the page reached it only by walking to a fishing spot.
+    #[test]
+    fn the_page_picker_offers_every_playable_minigame() {
+        use legaia_engine_mode::minigame_entry::MinigameSubId;
+        let page = include_str!("../../../site/_content/play.html");
+        let start = page.find("id=\"play-mg-warp\"").expect("the picker");
+        let end = start + page[start..].find("</select>").expect("its end");
+        let picker = &page[start..end];
+        for (i, slot) in MinigameSubId::ALL.iter().enumerate() {
+            let offered = picker.contains(&format!("<option value=\"{i}\">"));
+            assert_eq!(
+                offered,
+                slot.is_playable(),
+                "{}: offered {offered}, playable {}",
+                slot.label(),
+                slot.is_playable()
+            );
+        }
+    }
+}

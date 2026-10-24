@@ -256,14 +256,28 @@ pub fn popup_value_cells(
     amount: u16,
     age: u16,
 ) -> Vec<vr::ValueCell> {
+    popup_value_cells_at_step(vp, world_scale, trio, amount, age, 1)
+}
+
+/// [`popup_value_cells`] on a battle frame of `step` vsyncs: the square's
+/// half-extent and the minimum-width gate read the timer after the frame's
+/// own `0x10 * step` ([`vr::popup_anchor_at_step`]).
+pub fn popup_value_cells_at_step(
+    vp: &[f32; 16],
+    world_scale: f32,
+    trio: [f32; 3],
+    amount: u16,
+    age: u16,
+    step: u8,
+) -> Vec<vr::ValueCell> {
     if !vr::popup_live(age) {
         return Vec::new();
     }
-    let (anchor, half) = vr::popup_anchor(trio.map(|v| v as i32), age);
+    let (anchor, half) = vr::popup_anchor_at_step(trio.map(|v| v as i32), age, step);
     let Some(rect) = popup_rect(vp, world_scale, anchor, half) else {
         return Vec::new();
     };
-    vr::popup_cells(amount, rect, vr::popup_timer(age))
+    vr::popup_cells(amount, rect, vr::popup_timer_at_step(age, step))
 }
 
 #[cfg(test)]

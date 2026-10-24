@@ -172,7 +172,7 @@ fn world_tick_runs_physics_pass_on_the_actor_game_tick() {
 }
 
 // The pool's firing *rate* (once per `frame_step` vsyncs) and the
-// cadence-invariance it buys are pinned in `world::tests::actor_cadence`,
+// cadence-invariance it buys are pinned in engine-core's `actor_cadence` integration test,
 // which measures displacement and pose count directly rather than through
 // `last_tick_events` (that buffer holds the last game tick's events, so it
 // reads as non-empty on the sim ticks between game ticks too).

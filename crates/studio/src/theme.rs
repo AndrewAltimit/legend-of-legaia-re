@@ -30,7 +30,7 @@ pub fn install(ctx: &egui::Context) {
         v.warn_fg_color = c(p.warn);
     });
     // The light theme keeps egui's own widget greys; only the surfaces, the
-    // accent and the selection take the palette.
+    // accent, the selection and the control edges take the palette.
     ctx.style_mut_of(egui::Theme::Light, |s| surfaces(&mut s.visuals, &LIGHT));
     for theme in [egui::Theme::Dark, egui::Theme::Light] {
         ctx.style_mut_of(theme, |s| {
@@ -49,6 +49,13 @@ fn surfaces(v: &mut egui::Visuals, p: &Palette) {
     v.selection.bg_fill = c(p.selection);
     v.selection.stroke = Stroke::new(1.0_f32, c(p.selection_stroke));
     v.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, c(p.hover_stroke));
+    // A control at rest gets an edge. Without one, a check box is a square
+    // 1.1:1 (light) or 1.3:1 (dark) against the panel - an unticked box all
+    // but disappears - and a text field is a borderless strip.
+    v.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, c(p.outline));
+    // egui's own error red is pure #FF0000 in both themes: 3.9:1 on the
+    // light panel, and harsher than every other colour on the dark one.
+    v.error_fg_color = c(p.error);
 }
 
 /// The palette for the current visuals.
@@ -69,6 +76,11 @@ pub fn primary_button(text: impl Into<String>) -> egui::Button<'static> {
             .strong(),
     )
     .fill(c(DARK.accent_fill))
+}
+
+/// The tint for a warning line.
+pub fn warn(ui: &egui::Ui) -> Color32 {
+    c(palette(ui).warn)
 }
 
 /// The tint for a success line.

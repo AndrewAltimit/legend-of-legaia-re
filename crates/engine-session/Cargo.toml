@@ -57,6 +57,7 @@ legaia-prot.workspace = true
 legaia-engine-audio.workspace = true
 legaia-engine-minigames.workspace = true
 legaia-minigame-formats.workspace = true
+serde_json.workspace = true
 
 [[test]]
 name = "integration"

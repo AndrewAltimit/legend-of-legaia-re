@@ -22,6 +22,7 @@ impl World {
                 // pre-nullify amount - retail charges the gauge before the
                 // absorb stage, so a Stone target's absorbed cast still charges.
                 self.accrue_spirit_gauge(target, amount);
+                self.finisher_rumble(target);
                 // A petrified target (Stone) absorbs the hit - no HP loss, like
                 // the basic-attack path; Stone is invulnerable at every damage
                 // entry point.

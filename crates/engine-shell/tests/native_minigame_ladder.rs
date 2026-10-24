@@ -508,7 +508,7 @@ fn rung6_slot_machine_opens() {
     );
 }
 
-/// The Muscle Dome leg: the contest hub's HUD lines and the round time meter.
+/// The Muscle Dome leg: the contest hub opens into its first fight.
 #[test]
 fn rung7_muscle_dome_leg_opens() {
     rung(

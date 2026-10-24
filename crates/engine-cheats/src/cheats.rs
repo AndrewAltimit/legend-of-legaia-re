@@ -1094,6 +1094,8 @@ mod tests {
             ap: 0,
             commands: Vec::new(),
             is_miracle: i == 0,
+            name_bytes: Vec::new(),
+            glyphs: Vec::new(),
         };
         let text = legaia_engine_menus::pause_screens::MenuTextTables {
             arts: Some(vec![

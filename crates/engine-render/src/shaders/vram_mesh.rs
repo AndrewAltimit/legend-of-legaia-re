@@ -89,6 +89,11 @@ struct VsOut {
     // World-space position (`u.model * position`) for the per-scene
     // point-light layer.
     @location(5) world_w: vec3<f32>,
+    // The vertex's corner of its primitive, one-hot over the record's four
+    // corners (`prim_corner_weight`): interpolated, the fragment's
+    // barycentric weights, which keep PSX mode's texel row inside the
+    // primitive (`psx_sample_uv`). All ones on a vertex with no single owner.
+    @location(6) @interpolate(linear) prim_bary: vec4<f32>,
 };
 
 // `z = a * w + b` of `m`'s depth row over its `w` row, read the way
@@ -156,6 +161,35 @@ fn field_far_bucket_depth(clip: vec4<f32>, fa: vec4<f32>, sz_scale: f32) -> vec4
     return clip;
 }
 
+// The field ground pass's sorted cells (`legaia_engine_scene::field_ground::
+// flat_refs`, object-grid bit `0x8000` set): `FUN_801F6D48` links such a cell
+// at `(max corner SZ >> 5) + 2` (`0x801F6FAC..0x801F6FE8`), two buckets
+// behind its farthest corner, so the whole cell draws at that bucket's depth
+// and every primitive whose own bucket is nearer paints over it - a rock or
+// a post sunk below a raised floor tier shows its buried faces, as retail's
+// ordering table draws them. `fa` / `fb` are the cell's `[x0, z0, x1, z1]` /
+// `[y00, y10, y01, y11]` (an unmarked cell has `x0 < x1` and `z0 < z1`; every
+// other mesh carries zeros and keeps its per-pixel depth). The field frame's
+// `SZ` is `clip.w` times the base matrix's scale
+// (`legaia_engine_field::camera::CUTSCENE_WORLD_SCALE`). Off the field
+// (`sz_scale > 0`, the overworld's key) nothing moves.
+const FIELD_SZ_PER_W: f32 = 6.0;
+fn field_sorted_cell_depth(clip: vec4<f32>, fa: vec4<f32>, fb: vec4<f32>, sz_scale: f32) -> vec4<f32> {
+    if (sz_scale > 0.0 || clip.w <= 0.0 || fa.z <= fa.x || fa.w <= fa.y) {
+        return clip;
+    }
+    let w0 = (u.mvp * vec4<f32>(fa.x, fb.x, fa.y, 1.0)).w;
+    let w1 = (u.mvp * vec4<f32>(fa.z, fb.y, fa.y, 1.0)).w;
+    let w2 = (u.mvp * vec4<f32>(fa.x, fb.z, fa.w, 1.0)).w;
+    let w3 = (u.mvp * vec4<f32>(fa.z, fb.w, fa.w, 1.0)).w;
+    let sz = clamp(i32(round(max(max(w0, w1), max(w2, w3)) * FIELD_SZ_PER_W)), 0, 0xFFFF);
+    let bucket = (sz >> 5u) + 2;
+    let rep_w = f32(bucket * 32) / FIELD_SZ_PER_W;
+    let ab = depth_affine(u.mvp);
+    let ndc = ab.x + ab.y / rep_w;
+    return vec4<f32>(clip.x, clip.y, ndc * clip.w, clip.w);
+}
+
 // The overworld continent's depth cue
 // (`legaia_engine_field::overworld_ground_cue`): retail's ground emitter
 // (`FUN_801F89B8`) runs each cell's packet colour through `DPCS` with
@@ -197,8 +231,9 @@ fn vs_main(
     var clip = overworld_curve_clip(u.mvp * vec4<f32>(position, 1.0), u.flags.w);
     clip = overworld_flat_depth(clip, flat_a, flat_b, u.flags.w);
     clip = field_far_bucket_depth(clip, flat_a, u.flags.w);
+    clip = field_sorted_cell_depth(clip, flat_a, flat_b, u.flags.w);
     if u.psx_params.z >= 0.5 {
-        clip = psx_snap_clip(clip, u.psx_params.x, u.psx_params.y);
+        clip = psx_snap_clip(clip, PSX_STAGE_W, PSX_STAGE_H);
     }
     if prim_near_rejected(u.mvp, prim_c0, prim_c1, prim_c2, prim_c3) {
         clip = PRIM_REJECTED_CLIP;
@@ -214,6 +249,7 @@ fn vs_main(
         flat_b,
         u.flags.w,
     );
+    out.prim_bary = prim_corner_weight(position, prim_c0, prim_c1, prim_c2, prim_c3);
     let p4 = vec4<f32>(position, 1.0);
     out.world_w = vec3<f32>(dot(u.model_r0, p4), dot(u.model_r1, p4), dot(u.model_r2, p4));
     return out;
@@ -288,8 +324,86 @@ fn fetch_vram_word(uv_affine: vec2<f32>, cba: u32, tsb: u32) -> u32 {
     return textureLoad(t_vram, vec2<i32>(vx, vy), 0).r;
 }
 
+// Which corner of its primitive record a vertex is, one-hot: the mesh
+// builders give every vertex of a primitive the primitive's own corners
+// (`legaia_render_kernels::prim_near_reject::prim_corner_refs`), so the vertex
+// finds itself among them. A vertex two primitives share has no record
+// (`c0.w == 0`) and weighs all ones, which no texel-row clamp ever moves.
+fn prim_corner_weight(p: vec3<f32>, c0: vec4<f32>, c1: vec3<f32>, c2: vec3<f32>, c3: vec3<f32>) -> vec4<f32> {
+    if c0.w < 2.5 {
+        return vec4<f32>(1.0);
+    }
+    if all(p == c0.xyz) {
+        return vec4<f32>(1.0, 0.0, 0.0, 0.0);
+    }
+    if all(p == c1) {
+        return vec4<f32>(0.0, 1.0, 0.0, 0.0);
+    }
+    if all(p == c2) {
+        return vec4<f32>(0.0, 0.0, 1.0, 0.0);
+    }
+    if c0.w > 3.5 && all(p == c3) {
+        return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+    }
+    return vec4<f32>(1.0);
+}
+
+// How far along a texel-row move the sample may go and stay on its own
+// triangle: the fraction `t` of the move at which the first barycentric
+// weight reaches zero (1 when none does). `bary` is the fragment's weights,
+// `step` their change over the whole move.
+fn psx_row_reach(bary: vec4<f32>, step: vec4<f32>) -> f32 {
+    var t = 1.0;
+    for (var i = 0; i < 4; i = i + 1) {
+        let q = bary[i] + step[i];
+        if q < 0.0 {
+            t = min(t, max(bary[i], 0.0) / (bary[i] - q));
+        }
+    }
+    return t;
+}
+
+// How far short of its triangle's edge the texel row stops, in stage rows.
+// Retail's row point on a top edge reads the edge's own `V` exactly; the
+// host's float interpolation lands a hair either side of it, and truncating
+// the outside value takes the texel row above - on a leaf card packed under
+// another, a line of the neighbour's texels.
+const PSX_ROW_EDGE_MARGIN: f32 = 1.0 / 64.0;
+
+// PSX mode's texel sample row. The GPU walks a polygon one scanline at a
+// time and takes each pixel's texel at the scanline's own row: the interpolated
+// `V` of stage row `y` is the value at `y`, not at the row's centre `y + 0.5`
+// that the host rasteriser samples (along a scanline the two agree - the span
+// texel lands on the pixel centre). So in PSX mode the sample moves up half a
+// stage row, `uv_dy` being the UV's per-framebuffer-row step and
+// `psx_params.y / PSX_STAGE_H` the framebuffer rows per stage row. Identity
+// off PSX mode.
+//
+// The move stops at the fragment's own triangle, `PSX_ROW_EDGE_MARGIN` inside
+// it (`bary_dy` the barycentric weights' row step, `psx_row_reach`). Retail's
+// row point is a point the primitive covers, so its texel never comes from
+// outside the primitive's UVs. The host also covers pixels whose row point
+// lies outside - the top sub-rows of every primitive, and the whole of a
+// sliver thinner than a stage row, which a snapped edge-on leaf card becomes;
+// on a sliver the UV's row step is huge, so half a row of it lands far
+// outside the primitive's texels and draws them as a streak.
+fn psx_sample_uv(uv: vec2<f32>, uv_dy: vec2<f32>, bary: vec4<f32>, bary_dy: vec4<f32>) -> vec2<f32> {
+    if u.psx_params.z < 0.5 {
+        return uv;
+    }
+    let per_row = u.psx_params.y / PSX_STAGE_H;
+    let rows = 0.5 * per_row;
+    let margin = PSX_ROW_EDGE_MARGIN * per_row;
+    let probe = rows + margin;
+    let reach = psx_row_reach(bary, -bary_dy * probe) * probe;
+    return uv - uv_dy * clamp(reach - margin, 0.0, rows);
+}
+
 @fragment
 fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
+    // Taken ahead of any discard, in uniform control flow.
+    let uv_dy = dpdy(in.uv_affine);
+    let bary_dy = dpdy(in.prim_bary);
     // Object-effect clip of a raised `+0x42` (see EFFECT_CLIP_WGSL).
     if effect_clipped(in.world_pos) {
         discard;
@@ -320,7 +434,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     }
     let tsb = in.cba_tsb.y;
     let cba = in.cba_tsb.x;
-    var word = fetch_vram_word(in.uv_affine, cba, tsb);
+    var word = fetch_vram_word(psx_sample_uv(in.uv_affine, uv_dy, in.prim_bary, bary_dy), cba, tsb);
     // Prologue palette-collapse grade: retail rewrites the scene's uploaded
     // CLUTs (and TMD colour words) to the gold law at load; the engine's
     // VRAM carries the disc palettes, so the law applies per decoded texel
@@ -412,6 +526,8 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
 // texels, and the 5-bit blend math itself is not dithered (PSX-SPX
 // "GPU - Dithering/Color-Depth").
 fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
+    let uv_dy = dpdy(in.uv_affine);
+    let bary_dy = dpdy(in.prim_bary);
     if effect_clipped(in.world_pos) {
         discard;
     }
@@ -436,7 +552,7 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     }
     let tsb = in.cba_tsb.y;
     let cba = in.cba_tsb.x;
-    var word = fetch_vram_word(in.uv_affine, cba, tsb);
+    var word = fetch_vram_word(psx_sample_uv(in.uv_affine, uv_dy, in.prim_bary, bary_dy), cba, tsb);
     // Texel 0x0000 never draws; STP=0 texels were already drawn opaque by
     // the first pass. 0x8000 (black + STP) correctly blends.
     if word == 0u || ((word >> 15u) & 1u) == 0u {

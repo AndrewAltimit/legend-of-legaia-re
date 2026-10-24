@@ -14,8 +14,27 @@ and semi-transparency has its own switch.
   see on retail PSX surfaces with steep depth gradients. UV is
   `@interpolate(linear)` in WGSL, on every path regardless of PSX mode.
 - **Sub-pixel vertex snap ("vertex jitter").** Clip-space `x`/`y` are
-  snapped to the nearest integer pixel before rasterisation, giving the
-  GTE's characteristic per-vertex shimmer on slow-moving geometry.
+  truncated onto the 320 x 240 stage's pixel grid (rows top-down), whatever
+  scale the host draws the stage at - the GTE's `SX` / `SY` are an
+  arithmetic-shift floor ([renderer](renderer.md)). That gives the
+  characteristic per-vertex shimmer on slow-moving geometry and puts each
+  edge on retail's pixel boundary.
+- **The scanline's texel row.** In PSX mode the texel lookup moves up half
+  a stage row (`psx_sample_uv`, the page's `uv_dy` term): the GPU takes a
+  scanline's texels at the row itself, while the host rasteriser samples
+  the pixel centre. Along the scanline the two already agree. The move
+  stops `1/64` stage row inside the fragment's own triangle (each vertex
+  carries a one-hot weight for its corner of the primitive record, so the
+  fragment has its barycentric weights and their row step): retail's row
+  point is a point the primitive covers, so its texel is always one the
+  primitive maps. The host also covers pixels whose row point lies outside
+  - the top sub-rows of every primitive, and all of a sliver thinner than a
+  stage row, which the snap makes of an edge-on leaf card. A sliver's UV
+  row step is huge, so an unbounded half row reads far outside its texels;
+  on `ending_vignette_fullscreen` that drew lines of a neighbouring card's
+  leaves across the sky. The margin keeps an edge sample off the row above:
+  float interpolation lands a hair either side of the edge's exact `V`, and
+  truncating the outside value takes the next card's last row.
 - **15-bit ordered dithering.** The shaded colour is dithered with the
   PSX GPU's 4x4 offset matrix and quantized to 5 bits per channel (BGR555
   framebuffer depth) - the cross-hatch gradients of retail output. The
@@ -103,6 +122,60 @@ which is how the GPU hands the modulated texel to the blend
 
 In the `legaia-engine play-window` binary PSX mode (vertex snap + dither)
 is opt-in via the `LEGAIA_PSX_RENDER=1` environment variable.
+
+### What the clean rasteriser leaves on a retail frame
+
+Off PSX mode the engine draws every vertex at its exact sub-pixel position.
+Retail's are truncated, so against a capture the clean frame's texture
+content sits about half a stage pixel right, and its rows match. The vertex
+positions themselves agree to the census: matched against the packets on a
+state's own ordering tables (`draw-family-diff.py`'s per-triangle file), the
+engine's corners sit `+0.5` from retail's integer ones on both axes, the
+truncation's mean, on a card-boot state and a played-forward one alike, and
+the HUD lines up exactly. The horizontal half pixel is what is left once the
+scanline's texel row is accounted for: a reference rasteriser over the
+retail packets matches both emulators' frames with coverage on the integer
+pixel and the texel taken at the pixel centre along the row and at the row
+itself across it.
+
+PSX mode removes it. On the retail field states it was tried on the offset
+goes and the block score rises or holds within a block (`kor5_field_card_boot` `x +0.56` to `+0.04` stage pixels,
+`doman_field_card_boot` `+1.39` to `+0.23`, `conc_field_card_boot` `+1.00`
+to `+0.17`), and the battle states it was tried on score the same in both
+modes.
+
+### What PSX mode still leaves
+
+Over the whole retail corpus PSX mode is not a uniform gain, so the
+retail-compare image child stays on the clean rasteriser. The field states
+mostly rise; what drops is thin geometry - a hit spark's spikes
+(`battle_melee_hit_spark`), a cast's ice shards
+(`nivora_duel_mid_blazing_slash`). The host covers a pixel wherever the
+snapped triangle crosses one of its framebuffer sample points, a supersample
+of the stage pixel, while the GPU tests one point per stage pixel, so a
+primitive less than a stage pixel wide lands on different pixels.
+
+The GPU's rule cannot be had by discarding fragments. A fragment can test
+the stage pixel's own point with the fill rule's tie break (the barycentric
+weights the texel row carries reach it), but the host only rasterises the
+part of a stage pixel inside each triangle: where an edge crosses a stage
+pixel, the triangle the rule gives the pixel to has fragments on its own
+side only, and the other side's fragments are the ones the test drops, so
+every diagonal shared edge cracks. The GPU's coverage needs whole stage
+pixels owned by one primitive - the 3D pass drawn at stage resolution,
+where the host's own top-left rule at pixel centres is the GPU's at the
+integer corner once the geometry moves half a pixel.
+
+Per-primitive painter order is not the answer to the opaque ordering
+residue. Drawing every owned field primitive at the depth of its corners'
+mean `w`, the `AVSZ` key the TMD handlers link their packets by
+(`mfc2 s2, OTZ` / `andi s2, s2, 0xFFFC` / `addu s2, s2, t0` in
+`FUN_80043B58`), puts `door_warp_town01_to_map01`'s rock quad over its
+neighbour as retail does, and in the same pass hides the slot cabinet's
+face in `casino_ticket_counter` and a beam and counter in
+`doman_field_card_boot`: retail's frame there is not one ordering table
+keyed by every primitive's own mean, so the per-object linking has to be
+read before an ordering rule is ported.
 
 ## Enhanced lighting (enhancement, NOT retail)
 
@@ -286,6 +359,14 @@ sixteenth of the pixels; on the page, one extra resolve blit. Nothing on the
 CPU beyond two uniform writes a frame.
 
 ## Screen-space overlay pass
+
+**One stage for every window size.** Every 2D draw and the 3D pass's
+viewport (`scene_viewport_for`) sit on the 320x240 stage
+`pause_menu::stage_transform` centres at the largest integer scale the
+surface holds, up to `BOOT_UI_STAGE_MAX_SCALE` (16x). The frame around it is
+therefore under one stage step on each axis: a 960x720 window on a 2x HiDPI
+desktop (1920x1440) is the stage at 6x with no border, and a 1.5x one
+(1440x1080) is 4x inside an 80 / 60 px frame.
 
 **The tint is retail's, 5-bit.** The text / sprite shader tints every quad
 through `ui_tint` - WGSL generated from `legaia_render_kernels::ui_tint`, the

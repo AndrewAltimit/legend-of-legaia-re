@@ -130,33 +130,26 @@ impl PlayWindowApp {
                 }
             }
             // The newest numeral on the struck slot, aged to the rise
-            // retail's displayed frame drew (`LEGAIA_SEAT_POPUP_AGE`).
-            // The popup and its anchor are both rewound: the trio it rose
-            // over that many frames ago (`popup_trio_history`).
-            if let Some((slot, age)) = sc.seat_popup_age {
-                let world = &self.session.host.world;
-                let trios: Vec<Option<[f32; 3]>> = (0..world.actors.len())
-                    .map(|i| world.battle_readout_trio(i))
-                    .collect();
-                let mut history = sc.popup_trio_history.borrow_mut();
-                history.push_back(trios);
-                if history.len() > 16 {
-                    history.pop_front();
-                }
-                if due
-                    && sc.popup_trio_rewind.get().is_none()
-                    && let Some(p) = self
-                        .battle_hud
-                        .popups
-                        .iter_mut()
-                        .filter(|p| p.slot == slot && p.status.is_none())
-                        .min_by_key(|p| p.frames_total.saturating_sub(p.frames_remaining))
-                {
-                    let now = p.frames_total.saturating_sub(p.frames_remaining);
-                    p.frames_remaining = p.frames_total.saturating_sub(age);
-                    sc.popup_trio_rewind
-                        .set(Some((slot, now.saturating_sub(age))));
-                }
+            // retail's displayed frame drew (`LEGAIA_SEAT_POPUP_AGE`). Only
+            // the age is seated: the renderer `FUN_801DF6B8` reads the struck
+            // body's display trio `+0x3C..+0x40` on every draw
+            // (`0x801DF758..0x801DF780`), so the anchor is the frame's own
+            // readout trio, not the one the popup was pushed over.
+            if let Some((slot, age)) = sc.seat_popup_age
+                && due
+                && !sc.popup_age_seated.get()
+                && let Some(p) = self
+                    .battle_hud
+                    .popups
+                    .iter_mut()
+                    .filter(|p| p.slot == slot && p.status.is_none())
+                    .min_by_key(|p| p.frames_total.saturating_sub(p.frames_remaining))
+            {
+                p.frames_remaining = p.frames_total.saturating_sub(age);
+                sc.popup_age_seated.set(true);
+            }
+            if due && let Some((page, slide)) = sc.seat_arts_list {
+                self.session.host.world.seat_arts_list(page, slide);
             }
             if due && let Some((width, plate)) = sc.seat_spirit_gauge {
                 let ctx = &mut self.session.host.world.battle_ctx;
@@ -213,9 +206,22 @@ impl PlayWindowApp {
             }
         }
         // Capture harness: phase-align the battle idle orbit to the retail
-        // state being compared (`LEGAIA_BATTLE_ORBIT_YAW`).
+        // state being compared (`LEGAIA_BATTLE_ORBIT_YAW`), on the captured
+        // frame alone - the gate's, or the fixed tick's - as the headless
+        // seed aligns it only where it samples. Aligned on every redraw, the
+        // child's camera stood elsewhere than the seed's between ticks, and
+        // a menu drive's glide-landed hold (`BattleDrive::reached`) parted
+        // from it.
+        let capture_frame = self.screenshot.as_ref().is_some_and(|sc| {
+            if sc.battle_drive.is_some() || sc.phase_gate.is_some() || sc.script_gate.is_some() {
+                self.capture_phase_met()
+            } else {
+                self.tick_no >= sc.capture_tick
+            }
+        });
         if let Some(yaw) = self.screenshot.as_ref().and_then(|sc| sc.battle_orbit_yaw)
             && self.session.host.world.mode == SceneMode::Battle
+            && capture_frame
             && let Some(cam) = self.session.host.world.battle.camera.as_mut()
         {
             cam.align_orbit_yaw(yaw);
@@ -236,6 +242,16 @@ impl PlayWindowApp {
             && gate.met(&self.session.host.world)
         {
             gate.align_camera(&mut self.session.host.world);
+            // ... then the screen fades as far on as the displayed frame's
+            // own table had them (`LEGAIA_SEAT_FADE_LEAD`), past the flash
+            // the alignment just re-ran to the gate's age.
+            if let Some(n) = self
+                .screenshot
+                .as_ref()
+                .and_then(|sc| sc.seat_fade_lead.take())
+            {
+                self.session.host.world.lead_screen_fades(n);
+            }
         }
         // ... and a module shot still walking, onto the displayed frame's
         // pose (`LEGAIA_BATTLE_MODULE_CAM_ALIGN`,
@@ -249,6 +265,19 @@ impl PlayWindowApp {
             && let Some(cam) = self.session.host.world.battle.camera.as_mut()
         {
             cam.align_module_shot(live, end);
+        }
+        // ... and a summon close-up onto the body pair its displayed frame
+        // was framed on (`LEGAIA_BATTLE_SUMMON_FOCUS`,
+        // `BattleCamera::align_summon_focus`).
+        if let Some(body) = self
+            .screenshot
+            .as_ref()
+            .and_then(|sc| sc.battle_summon_focus)
+            && self.session.host.world.mode == SceneMode::Battle
+            && self.capture_phase_met()
+            && let Some(cam) = self.session.host.world.battle.camera.as_mut()
+        {
+            cam.align_summon_focus(body);
         }
         // ... and, on the captured phase itself, the glide's origin
         // (`LEGAIA_BATTLE_CAM_ALIGN`, `BattleCamera::align_glide_origin`).

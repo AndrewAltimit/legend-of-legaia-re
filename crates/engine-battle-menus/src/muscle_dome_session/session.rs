@@ -20,11 +20,6 @@ pub struct MuscleDomeSession {
     /// The installed retail damage kernel, when the host has disc tables to
     /// give it ([`MuscleDomeSession::install_damage_model`]).
     pub(super) damage: Option<DomeDamageModel>,
-    /// The round time meter's `0..=`[`TIME_METER_MAX`] counter, advanced by
-    /// [`Self::tick_time_meter`].
-    pub(super) time_meter: u8,
-    /// The meter bar sprite's Y offset for the current counter value.
-    pub(super) time_meter_bar_y: i16,
     /// Per-fighter **normal-art catalog** in grid order (ascending action
     /// constant), when the host has the character's art records. Empty =
     /// "this fighter knows no arts", which is retail's own answer for an
@@ -106,8 +101,6 @@ impl MuscleDomeSession {
             reward_seru_index,
             last_turn_damage: [0, 0],
             damage: None,
-            time_meter: 0,
-            time_meter_bar_y: time_meter_step(0, 0, false, false).1,
             art_catalog: [Vec::new(), Vec::new()],
             magic: [None, None],
             cast: [None, None],
@@ -175,32 +168,26 @@ impl MuscleDomeSession {
         self.special
     }
 
-    /// Advance the round **time meter** one frame by the frame delta `dt`.
-    ///
-    /// The counter climbs while the contest is in its selection phase (retail's
-    /// phase tag `'P'`) and drains otherwise, and the bar sprite's Y offset
-    /// follows it ([`time_meter_step`]). Retail additionally gates the climb on
-    /// a separate ramp flag; nothing in the port lowers that flag mid-selection,
-    /// so the session passes it up and the phase is the whole gate here.
-    ///
-    /// Returns the bar's new Y offset.
-    pub fn tick_time_meter(&mut self, dt: u8) -> i16 {
-        let in_select = self.phase == MusclePhase::Select;
-        let (counter, bar_y) = time_meter_step(self.time_meter, dt, in_select, in_select);
-        self.time_meter = counter;
-        self.time_meter_bar_y = bar_y;
-        bar_y
+    /// Step the entry screen's Triangle arts-list window one frame of `dt`
+    /// vsyncs. A dome leg runs the battle overlay's menu SM, so
+    /// `FUN_801D0748` calls the arts-list driver `FUN_801D3444` (PROT 0898,
+    /// `jal` at `0x801D0B24`) every frame of it: the window's slide counter
+    /// `0x801F4E0A` climbs by the frame step while the list is open in the
+    /// entry state `0x50` and drains otherwise
+    /// ([`legaia_engine_battle::arts_command_input::ArtsCommandInputSession::step_list_slide`]).
+    /// A no-op while the entry is not the open menu.
+    pub fn tick_arts_list_slide(&mut self, dt: u8) {
+        if let DomeMenu::Input(s) = &mut self.menu {
+            s.step_list_slide(dt);
+        }
     }
 
-    /// The time meter's current counter, `0..=`[`TIME_METER_MAX`].
-    pub fn time_meter(&self) -> u8 {
-        self.time_meter
-    }
-
-    /// The time-meter bar sprite's current Y offset (`-0x92` empty, `+0xE`
-    /// full).
-    pub fn time_meter_bar_y(&self) -> i16 {
-        self.time_meter_bar_y
+    /// The entry's arts-list slide counter (`0` while no entry is open).
+    pub fn arts_list_slide(&self) -> u8 {
+        match &self.menu {
+            DomeMenu::Input(s) => s.list_slide,
+            _ => 0,
+        }
     }
 
     /// Current phase.

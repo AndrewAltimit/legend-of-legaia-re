@@ -5,6 +5,8 @@
 //! one per file. Run a single file's tests with
 //! `cargo test -p legaia-engine-world-views --test integration <name>::`.
 
+mod battle_draws;
+mod battle_variant_draw_disc;
 mod field_lit_rows_cave01_disc;
 mod scene_clut_over_shared_layer;
 mod scene_mesh_pool_walk_disc;

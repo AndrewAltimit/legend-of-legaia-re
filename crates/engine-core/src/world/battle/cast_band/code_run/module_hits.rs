@@ -202,7 +202,12 @@ impl World {
         let bypass_party_resist = match shape.wrapper {
             CastWrapper::Respect => INT_WRAPPER_BYPASSES_PARTY_RESIST,
             CastWrapper::Bypass => ATK_WRAPPER_BYPASSES_PARTY_RESIST,
-            CastWrapper::SharedSummon => return net,
+            CastWrapper::SharedSummon => {
+                // The shared kernel still ends in the finisher, whose
+                // rumble does not depend on the arguments left unmodelled.
+                self.finisher_rumble(target);
+                return net;
+            }
         };
         let party_count = self.party.party_count;
         let attacker_element = self.monster_seat_element(attacker as usize).unwrap_or(7);
@@ -225,6 +230,7 @@ impl World {
         };
         let over = damage_finish_lazy(&finish, || self.next_rand() as u16).min(9999);
         self.accrue_spirit_gauge(target, over as u16);
+        self.finisher_rumble(target);
         over as i32
     }
 

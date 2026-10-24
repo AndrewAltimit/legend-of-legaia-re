@@ -180,7 +180,20 @@ impl World {
         };
         // Scoped to the state: the ring a capture holds speaks for its own
         // state's frames, not for the states around it.
-        let want = if self.battle_ctx.action_state == state {
+        let reached = self
+            .battle
+            .frame_step_seed_from
+            .is_none_or(|(clip, cursor)| {
+                self.actors
+                    .get(usize::from(self.battle_ctx.active_actor))
+                    .is_some_and(|a| {
+                        (a.battle.current_anim == clip || a.battle_reaction_entry == Some(clip))
+                            && a.battle_animation
+                                .as_ref()
+                                .is_some_and(|p| p.cursor_sixteenths() as i32 >= cursor)
+                    })
+            });
+        let want = if self.battle_ctx.action_state == state && reached {
             step
         } else {
             DEFAULT_BATTLE_FRAME_STEP
@@ -330,6 +343,51 @@ impl World {
             return 0;
         }
         self.battle.anim_pass_frame = Some(frame);
+        self.battle_frame_step().max(1)
+    }
+
+    /// How many vsyncs the effect-script table parts' part tick spans this
+    /// tick, and claim the frame. Retail's part tick `FUN_80021DF4` is an
+    /// actor-list node of the same main-loop pass as the battle frame
+    /// driver, so it runs once a battle frame and scales its wait drain and
+    /// channel integration by `DAT_1F800393 * DAT_1F80037D`
+    /// (`0x80021E40..0x80021E4C`) and the envelope tail `FUN_80020740` by
+    /// `DAT_1F800393`. On retail's cadence in battle that is the first tick
+    /// of each [`BattleFrameClock`] frame, with the frame step, and `0` on
+    /// the ticks between; elsewhere it is `1`.
+    pub(in crate::world) fn action_fx_pass_vsyncs(&mut self) -> u8 {
+        if self.mode != legaia_engine_mode::mode::SceneMode::Battle
+            || !self.toggles.battle_sm_frame_cadence
+        {
+            return 1;
+        }
+        let frame = self.battle_frame_id();
+        if self.battle.action_fx_pass_frame == Some(frame) {
+            return 0;
+        }
+        self.battle.action_fx_pass_frame = Some(frame);
+        self.battle_frame_step().max(1)
+    }
+
+    /// The same pass for the cast's summon parts
+    /// ([`Self::tick_summon`]): the slot-B module's parts are list-1 nodes
+    /// of the battle pass like the table-form ones, so on retail's cadence
+    /// they take one part tick a battle frame, scaled by the step. The
+    /// motion block's velocity terms truncate per tick
+    /// (`(v << 12) * delta >> 18`), so a part ticked every vsync at the
+    /// one-vsync delta never moves on a drift under `8`: PROT 0930's arm-6
+    /// glows (`+0x3C` / `+0x3E` of `0..10`) stood in the centre.
+    pub(in crate::world) fn summon_fx_pass_vsyncs(&mut self) -> u8 {
+        if self.mode != legaia_engine_mode::mode::SceneMode::Battle
+            || !self.toggles.battle_sm_frame_cadence
+        {
+            return 1;
+        }
+        let frame = self.battle_frame_id();
+        if self.battle.summon_fx_pass_frame == Some(frame) {
+            return 0;
+        }
+        self.battle.summon_fx_pass_frame = Some(frame);
         self.battle_frame_step().max(1)
     }
 
@@ -550,6 +608,28 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The table-form parts tick once a battle frame in battle on retail's
+    /// cadence, spanning the frame step; every tick at one vsync elsewhere.
+    #[test]
+    fn the_action_fx_part_tick_is_the_battle_pass() {
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.toggles.battle_sm_frame_cadence = true;
+        w.set_battle_frame_step(3);
+        let mut ticks = Vec::new();
+        for t in 30..40u64 {
+            w.clock.display_frames = t;
+            ticks.push(w.action_fx_pass_vsyncs());
+        }
+        let passes: Vec<usize> = (0..ticks.len()).filter(|&i| ticks[i] != 0).collect();
+        assert!(passes.windows(2).all(|p| p[1] - p[0] == 3), "{ticks:?}");
+        assert!(passes.len() >= 3);
+        assert!(ticks.iter().all(|&n| n == 0 || n == 3));
+        w.toggles.battle_sm_frame_cadence = false;
+        assert_eq!(w.action_fx_pass_vsyncs(), 1);
+        assert_eq!(w.action_fx_pass_vsyncs(), 1);
+    }
 
     /// On retail's cadence the action SM takes one pass a battle frame and
     /// drains its timers by the step; on the per-vsync cadence

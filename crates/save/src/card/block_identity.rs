@@ -15,6 +15,18 @@ pub const RETAIL_TITLE_OFFSET: usize = 0x04;
 /// PORT: FUN_801e1934 (`0x801E19E4..0x801E19E8`)
 pub const RETAIL_TITLE_DIGIT_OFFSETS: [usize; 2] = [0x23, 0x25];
 
+/// Offsets **within the title** of the play-time digits' low bytes: hours
+/// tens / units, then minutes tens / units, of `Time HH:MM` - the title's
+/// second half. Retail's titles carry the block's own play clock there
+/// (hours `clock / 216000`, minutes `clock / 3600 % 60`), read off real
+/// cards; the menu overlay keeps the template live at `0x801E4FC8` and the
+/// composer copies `0x40` bytes of it (`FUN_8003D26C` with `a2 = 2`).
+pub const RETAIL_TITLE_TIME_DIGIT_OFFSETS: [usize; 4] = [0x35, 0x37, 0x3B, 0x3D];
+
+/// Bytes of the title template the composer copies into the block
+/// (`FUN_8003D26C(0x80084144, 0x801E4FC8, 2)`: two 32-byte strides).
+pub const RETAIL_TITLE_TEMPLATE_LEN: usize = 0x40;
+
 /// Low byte of the Shift-JIS full-width digit zero. A title digit is
 /// `SAVE_TITLE_DIGIT_BASE + digit`, which is what makes the BIOS render it
 /// as a full-width numeral.
@@ -45,6 +57,37 @@ pub const RETAIL_ICON_CLUT_BYTES: usize = 32;
 /// overlay's data segment, and the directory frames of real cards.
 pub const LEGAIA_SAVE_FILENAME_PREFIX: &str = "BASCUS-94254PRO-";
 
+/// The Japanese build's prefix (SCPS-10059). Retail's directory walk
+/// accepts it beside [`LEGAIA_SAVE_FILENAME_PREFIX`] (the literal at
+/// `0x801EF054`), and the preview marks such a block "Old Filename".
+pub const LEGAIA_SAVE_FILENAME_PREFIX_JP: &str = "BISCPS-10059PRO-";
+
+/// The save number a directory-frame filename names, or `None` when the
+/// name is not a Legaia save's.
+///
+/// Retail's walk (`FUN_801E1208`) matches either regional prefix over 16
+/// bytes, then reads the two bytes after it as ASCII digits; the second only
+/// folds in when it is a digit.
+pub fn legaia_save_number(name: &[u8]) -> Option<usize> {
+    let n = LEGAIA_SAVE_FILENAME_PREFIX.len();
+    if name.len() < n + 2 {
+        return None;
+    }
+    let prefix = &name[..n];
+    if prefix != LEGAIA_SAVE_FILENAME_PREFIX.as_bytes()
+        && prefix != LEGAIA_SAVE_FILENAME_PREFIX_JP.as_bytes()
+    {
+        return None;
+    }
+    let hi = name[n].wrapping_sub(b'0');
+    let lo = name[n + 1].wrapping_sub(b'0');
+    Some(if lo < 10 {
+        hi as usize * 10 + lo as usize
+    } else {
+        hi as usize
+    })
+}
+
 /// The directory-frame filename for save slot `slot` (0-based).
 pub fn legaia_save_filename(slot: u32) -> String {
     format!("{LEGAIA_SAVE_FILENAME_PREFIX}{:02}", slot.min(99))
@@ -61,6 +104,43 @@ pub fn save_title_digits(slot: u32) -> [u8; 2] {
         SAVE_TITLE_DIGIT_BASE.wrapping_add((n / 10) as u8),
         SAVE_TITLE_DIGIT_BASE.wrapping_add((n % 10) as u8),
     ]
+}
+
+/// The four play-time digits of a save title for a play clock of `ticks`
+/// (`1/60` s): `HH:MM`, clamped at `99:59` as the save screen's own time line
+/// clamps.
+pub fn save_title_time_digits(ticks: u32) -> [u8; 4] {
+    let (h, m) = if ticks / 216_000 > 99 {
+        (99, 59)
+    } else {
+        (ticks / 216_000, ticks / 3600 % 60)
+    };
+    [h / 10, h % 10, m / 10, m % 10].map(|d| SAVE_TITLE_DIGIT_BASE + d as u8)
+}
+
+/// Copy the save-title template into a block whose title region is empty:
+/// a free block a save is claiming has no title, and the BIOS card browser
+/// then lists the save nameless. The template is the menu overlay's own
+/// (PROT 0899, `legaia_ui_formats::save_icon::title_template`); this crate
+/// stays disc-free, so the caller supplies it.
+/// [`write_retail_block_identity`] then patches its digits. A block that
+/// already carries a title keeps it. Restamps the checksum.
+pub fn write_retail_block_title(
+    sc_block: &mut [u8],
+    template: &[u8; RETAIL_TITLE_TEMPLATE_LEN],
+) -> Result<()> {
+    let end = RETAIL_TITLE_OFFSET + RETAIL_TITLE_TEMPLATE_LEN;
+    if sc_block.len() < end {
+        bail!("SC block too small for its title");
+    }
+    if sc_block[RETAIL_TITLE_OFFSET..RETAIL_ICON_CLUT_OFFSET]
+        .iter()
+        .all(|&b| b == 0)
+    {
+        sc_block[RETAIL_TITLE_OFFSET..end].copy_from_slice(template);
+        restamp_sc_block_checksum(sc_block);
+    }
+    Ok(())
 }
 
 /// The per-slot portrait a save block carries as its memory-card icon.
@@ -104,6 +184,9 @@ pub fn write_retail_block_identity(
     }
     sc_block[..SAVE_BLOCK_HEADER.len()].copy_from_slice(&SAVE_BLOCK_HEADER);
 
+    let clock = sc_block
+        .get(RETAIL_PLAY_COUNTER_OFFSET..RETAIL_PLAY_COUNTER_OFFSET + 4)
+        .map(|b| u32::from_le_bytes(b.try_into().unwrap()));
     let title = &mut sc_block[RETAIL_TITLE_OFFSET..RETAIL_ICON_CLUT_OFFSET];
     if title.iter().any(|&b| b != 0) {
         let digits = save_title_digits(slot);
@@ -112,6 +195,19 @@ pub fn write_retail_block_identity(
                 *slot_byte = *d;
             }
         }
+        if let Some(clock) = clock {
+            for (off, d) in RETAIL_TITLE_TIME_DIGIT_OFFSETS
+                .iter()
+                .zip(save_title_time_digits(clock))
+            {
+                title[*off] = d;
+            }
+        }
+    }
+    // The save number in the save summary (`sb v1,0x2a(s6)` at
+    // `0x801E19AC`) - the slot the load screen's preview files it under.
+    if let Some(b) = sc_block.get_mut(RETAIL_SUMMARY_SLOT_OFFSET) {
+        *b = slot.min(u32::from(u8::MAX)) as u8;
     }
 
     if let Some(icon) = icon {

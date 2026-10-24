@@ -58,6 +58,7 @@ mod display_lag;
 mod effect_children;
 mod engine_run;
 mod frame_step;
+mod framing_body;
 mod hud_glide;
 mod hud_glide_pool;
 mod inflight_seeds;
@@ -251,11 +252,7 @@ pub const BATTLE_RNG_SEEDS: [u32; 48] = [
 /// it. A pin that stops reaching falls through to the list; the search is in
 /// `docs/tooling/retail-compare.md` ("The stream at the entry").
 pub const BATTLE_RNG_PINS: &[(&str, u32)] = &[
-    ("battle_gaza2_park_0x19", 0xFBD4_4AC9),
-    ("battle_gaza2_park_0x19_summon_melee", 0xB5C0_FBCF),
-    ("battle_gaza2_park_0x19_target_vahn", 0x49C1_6D38),
     ("battle_melee_hit_spark", 0x9E37_79B9),
-    ("battle_vahn_tri_somersault_super", 0x8BAE_8BFB),
     ("shiny_refactor_gimard_levelup", 0x1F83_D9AB),
 ];
 
@@ -298,6 +295,14 @@ pub struct RetailBattle {
     /// The frame step the capture's frame ran at (`*(0x1F800393)`, rebuilt
     /// from the frame-time ring - [`frame_step`]).
     pub frame_step: u8,
+    /// The newest passes' common step and how many passes ran at it
+    /// ([`newest_step_run`]).
+    pub step_run: (u8, usize),
+    /// Where a run shorter than the history began, on the acting body: its
+    /// playing clip `+0x1D9` and its anim-cursor history `+0x17A` at the
+    /// pass before the run, when the run stays inside that clip (the
+    /// history ring id `+0x1FB` holds over it).
+    pub step_run_start: Option<(u8, i32)>,
     pub run_state: u8,
     pub stage_id: u8,
     pub scripted: bool,
@@ -374,6 +379,9 @@ pub struct RetailBattle {
     /// Vsyncs the two passes the displayed frame lags by spanned, each on
     /// its own step ([`display_pass_steps`]).
     pub display_pass_lag: u16,
+    /// Vsyncs the displayed frame's screen fades lag the RAM's fade actors
+    /// by ([`displayed_fade_lag_vsyncs`]).
+    pub display_fade_lag: u16,
     /// `ctx[+0x87C]` - the close-up accumulator the active actor's clip
     /// commit zeroes.
     pub cam_accum: u32,
@@ -439,6 +447,11 @@ pub struct RetailBattle {
     /// frame shows them (`spirit_gauge::retail_spirit_gauge`); `None`
     /// outside one.
     pub spirit_gauge: Option<(i16, i16)>,
+    /// The arts entry's Triangle list, open: its page (the row offset
+    /// `_DAT_8007B458` over five) and the window's slide counter
+    /// `0x801F4E0A` (`FUN_801D3444`); `None` while the list is closed or
+    /// the menu is not in the entry state `0x50`.
+    pub arts_list: Option<(u8, u8)>,
     /// The options screen's Select Attack word `0x800846C4` (Select `0` /
     /// Automatic `1` / Command `2`): whether the ring's Attack arm opens
     /// the `Auto | Command` prompt `0x78`.
@@ -485,6 +498,9 @@ pub struct RetailBattle {
     /// replay lands these amounts rather than its own rolls
     /// ([`Self::melee_hit_seeds`]).
     pub action_hit_sequence: Vec<(u8, u16)>,
+    /// How many of [`Self::action_hit_sequence`]'s newest pushes the acting
+    /// body's playing clip landed ([`clip_own_pushes`]).
+    pub clip_pushes: u8,
     /// The string's running total `DAT_8007BD14` (the `TOTAL` the combo
     /// cluster draws; the melee kernel's HP write stores it,
     /// `0x801EEA64..0x801EEA78`).
@@ -527,6 +543,13 @@ pub struct RetailBattle {
     /// clip wraps). The frame the capture shows each body on
     /// ([`legaia_engine_capture::clip_cursors`]).
     pub clip_cursors: Vec<(u8, u8, i32)>,
+    /// The caster's body pair the displayed frame's summon close-up was
+    /// framed on, in the summon band's `0x33` / `0x34`
+    /// ([`legaia_engine_battle_vm::battle_cam_script::SUMMON_CAST_STATES`]):
+    /// `FUN_801DC0A0` case `0x12` focuses on the body pair every pass, and
+    /// the displayed frame's pass read the pair of the pose three passes
+    /// behind the RAM's cursor (`framing_body`). `None` outside the band.
+    pub summon_focus: Option<[i16; 2]>,
     /// The idle-loop cursor each engine battle slot takes at an in-flight
     /// cast's dispatch ([`legaia_engine_core::world::InflightCastSeed::idle`]):
     /// empty on the RAM read, filled from a first replay's measured advance

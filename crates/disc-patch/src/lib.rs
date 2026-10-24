@@ -58,11 +58,24 @@ pub fn man_compressed_budget(
 /// chests, shops, doors) re-packs the whole stream - with greedy alone that
 /// later pass would overflow and skip (or fail) a scene the first pass proved
 /// fits.
+///
+/// The returned bytes fill the **whole** budget: the stream, then zeros to the
+/// footprint's end. The decoder stops at the descriptor's decoded size, so the
+/// fill is never read - but writing only the stream would leave the tail of
+/// whatever longer stream an earlier pass wrote there. The finished image would
+/// then depend on the order the passes ran in, not just on the MAN they
+/// produced: two runs reaching the same decoded MAN by different stage orders
+/// (the CLI's `randomize` and the browser's `patch_rom` order their stages
+/// differently) would write different bytes, and a shared seed would not
+/// reproduce one image.
 pub fn compress_within(decoded: &[u8], budget: usize) -> Option<Vec<u8>> {
-    let stream = legaia_lzs::compress(decoded);
-    if stream.len() <= budget {
-        return Some(stream);
+    let mut stream = legaia_lzs::compress(decoded);
+    if stream.len() > budget {
+        stream = legaia_lzs::compress_optimal(decoded);
+        if stream.len() > budget {
+            return None;
+        }
     }
-    let stream = legaia_lzs::compress_optimal(decoded);
-    (stream.len() <= budget).then_some(stream)
+    stream.resize(budget, 0);
+    Some(stream)
 }

@@ -191,6 +191,12 @@ pub const SAVE_FILE_EXT9_MAGIC: [u8; 4] = *b"LGX9";
 /// config words, one byte each in [`crate::card::RetailOptions::to_bytes`]
 /// order. Emitted only when the save carries them, like `LGX9`.
 pub const SAVE_FILE_EXTA_MAGIC: [u8; 4] = *b"LGXA";
+/// Optional retail live-state window block ([`SaveExtV2::retail_window`]):
+/// the window bytes verbatim. Emitted only when the save carries them.
+pub const SAVE_FILE_EXTB_MAGIC: [u8; 4] = *b"LGXB";
+/// Optional previous-scene block ([`SaveExtV2::previous_scene`]): the label's
+/// ASCII bytes. Emitted only when the save carries one.
+pub const SAVE_FILE_EXTC_MAGIC: [u8; 4] = *b"LGXC";
 /// Byte offset of the engine-ext blob inside a retail SC block: the first
 /// byte past the `0x1A18`-byte live-state copy retail composes and loads.
 pub const RETAIL_ENGINE_EXT_OFFSET: usize = crate::card::RETAIL_LIVE_STATE_SIZE;
@@ -333,6 +339,21 @@ pub struct SaveExtV2 {
     /// in the optional `LGXA` block. `None` = the save names none, and a load
     /// keeps the session's options.
     pub options: Option<crate::card::RetailOptions>,
+    /// The whole live-state window of the retail block this save was lifted
+    /// from ([`crate::card::RETAIL_LIVE_WINDOW_OFFSET`],
+    /// [`crate::card::RETAIL_LIVE_WINDOW_LEN`] bytes). Retail's composer
+    /// copies the window from live RAM, so a block carries words no lift
+    /// field names; a block written from this save starts from these bytes
+    /// and lays every modelled region over them, so those words survive a
+    /// save made in the engine instead of coming back zero. An `LGSF` file
+    /// carries it in the optional `LGXB` block. `None` = the save was never
+    /// a retail block (a New Game), and a block is written from zero.
+    pub retail_window: Option<Vec<u8>>,
+    /// The previous scene's CDNAME label (retail `0x80084558`, SC `0x418`),
+    /// which every name-based scene change backs the active label up into.
+    /// An `LGSF` file carries it in the optional `LGXC` block. `None` = not
+    /// known.
+    pub previous_scene: Option<String>,
 }
 
 /// Where a save was written: the scene to resume into and the name the

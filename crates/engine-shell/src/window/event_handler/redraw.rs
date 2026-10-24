@@ -519,14 +519,6 @@ impl PlayWindowApp {
         cam: Mat4,
     ) -> Option<legaia_engine_screens::battle_value_readout::ValueReadoutLayout> {
         let world = &self.session.host.world;
-        // A capture's seated popup rises over the trio of the frame its age
-        // was taken back to (`ScreenshotConfig::popup_trio_rewind`).
-        let rewind = self.screenshot.as_ref().and_then(|sc| {
-            let (slot, back) = sc.popup_trio_rewind.get()?;
-            let history = sc.popup_trio_history.borrow();
-            let at = history.len().checked_sub(1 + usize::from(back))?;
-            Some((slot, *history.get(at)?.get(usize::from(slot))?))
-        });
         let retail_cells = self.screenshot.as_ref().and_then(|sc| {
             (sc.popup_cells_due.get() && !sc.seat_popup_cells.is_empty()).then(|| {
                 use legaia_engine_battle_vm::battle_value_readout as vr;
@@ -557,15 +549,11 @@ impl PlayWindowApp {
             layout.1 = vec![cells];
             return Some(layout);
         }
-        legaia_engine_screens::battle_value_readout::battle_value_readout_layout_with(
+        legaia_engine_screens::battle_value_readout::battle_value_readout_layout(
             world,
             &self.battle_hud,
             &cam.to_cols_array(),
             self.battle_stage_scale(),
-            |slot| match rewind {
-                Some((s, trio)) if s == slot => trio,
-                _ => world.battle_readout_trio(usize::from(slot)),
-            },
         )
     }
 }

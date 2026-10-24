@@ -772,6 +772,30 @@ impl BattleCamera {
         true
     }
 
+    /// Stand the summon close-up's focus on the body pair `body` (`x`, `z`)
+    /// a retail capture's **displayed** frame was framed on.
+    ///
+    /// `FUN_801DC0A0` case `0x12` re-arms the close-up on every `0x33` /
+    /// `0x34` pass with the focus on the caster's body pair `+0x3C` / `+0x40`
+    /// (`lhu v0,0x3c(s2)` / `lhu v0,0x40(s2)` at `0x801DCD74..0x801DCD84`),
+    /// and that pair is what the previous pass's decode left
+    /// (`FUN_8004998C`, `0x8004A3DC..0x8004A5F8`): the action SM ticks
+    /// before the draw. The frame on screen is two passes older than the
+    /// RAM's cursor, so its focus is the body pair of the pose three passes
+    /// back, not the live pair a capture's RAM holds. The harness reads that
+    /// pair off the caster's cursor ring; returns whether the close-up owns
+    /// the camera and took it. Nothing in play calls it.
+    pub fn align_summon_focus(&mut self, body: [f32; 2]) -> bool {
+        if self.phase != BattleCamPhase::Action
+            || !SUMMON_CAST_STATES.contains(&self.last_action_state)
+        {
+            return false;
+        }
+        self.pose.focus[0] = body[0];
+        self.pose.focus[2] = body[1];
+        true
+    }
+
     /// Retail's `ctx[+0x87C]` - the close-up accumulator the framing
     /// prologues advance by `8` a display frame and the active actor's clip
     /// commit zeroes ([`Self::observe_active_commits`]).

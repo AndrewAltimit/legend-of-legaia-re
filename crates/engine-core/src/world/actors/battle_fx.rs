@@ -399,67 +399,12 @@ impl World {
     /// slot each anim pass: one a vsync on the per-vsync cadence, so a ghost
     /// `depth` battle frames back is `depth * frame_step` slots back; one a
     /// battle frame on retail's cadence.
-    fn ghost_ring_slots_per_frame(&self) -> usize {
+    pub fn ghost_ring_slots_per_frame(&self) -> usize {
         if self.toggles.battle_sm_frame_cadence {
             1
         } else {
             usize::from(self.clock.frame_step.max(1))
         }
-    }
-
-    /// Plan this frame's arts after-image ghosts - the engine seat of the
-    /// retail per-actor walk `FUN_80049348` (see
-    /// [`legaia_engine_battle::battle_afterimage`]). For every battle actor with a pose
-    /// history, sample the two rate-scheduled ring depths, keep the
-    /// ghost-eligible ones, and resolve each ghost's flat additive colour
-    /// (per-character base from the SCUS `0x80076908` table via the
-    /// present-party ordinal; monsters share the `0x80076914` word; each
-    /// drawn ghost decays by `0x101010`). Hosts draw each returned pose as
-    /// a flat-coloured additive copy of the actor's mesh, behind the live
-    /// body (retail pushes the ghost `0x50` OT buckets deeper).
-    // REF: FUN_80049348 (the walk; kernel in `legaia_engine_battle::battle_afterimage`)
-    pub fn battle_ghost_draws(&self) -> Vec<BattleGhostDraw> {
-        use legaia_engine_battle::battle_afterimage as ai;
-        let mut out = Vec::new();
-        let per_frame = self.ghost_ring_slots_per_frame();
-        for (i, actor) in self.actors.iter().enumerate() {
-            if actor.battle_pose_history.is_empty() {
-                continue;
-            }
-            let monster = actor.battle_monster_id.is_some();
-            let base = if monster {
-                ai::GHOST_COLOR_MONSTER
-            } else {
-                *ai::GHOST_COLOR_PARTY
-                    .get(self.party_roster_slot(i))
-                    .unwrap_or(&ai::GHOST_COLOR_MONSTER)
-            };
-            let hist = &actor.battle_pose_history;
-            let plans = ai::plan_ghosts(actor.battle.anim_rate.get(), monster, base, |depth| {
-                hist.get(per_frame * depth)
-                    .map(|f| f.ghost_eligible)
-                    .unwrap_or(false)
-            });
-            // The walk re-runs the mesh-variant swap per ghost with that
-            // ghost's historical entry and cursor, into the live table
-            // (`0x800494E0..0x80049504`); a scratch copy carries the writes
-            // from ghost to ghost.
-            let mut table = actor.battle_model_table.clone();
-            for p in plans {
-                let Some(f) = hist.get(per_frame * p.depth) else {
-                    continue;
-                };
-                let drawn = ghost_model_step(&mut table, f);
-                out.push(BattleGhostDraw {
-                    actor_slot: i as u8,
-                    pos: f.pos,
-                    pose: f.pose.clone(),
-                    color: p.color,
-                    drawn,
-                });
-            }
-        }
-        out
     }
 
     /// Close the ghost walk's slot for `depth` battle frames back (its
@@ -480,7 +425,7 @@ impl World {
 
     /// Stand one after-image ghost where a capture's history ring holds it:
     /// the pose-history slot the ghost walk reads for `depth` battle frames
-    /// back ([`Self::battle_ghost_draws`]) becomes the actor's playing clip
+    /// back (`legaia_engine_world_views::battle_draws::battle_ghost_draws`) becomes the actor's playing clip
     /// posed at `cursor` (12.4 sixteenths) on the ground pair `pos`
     /// (`[x, z]`), ghost-eligible. Retail's ring keeps, per battle frame,
     /// the cursor `+0x17A`, the live pair `+0x4C` and the ring id `+0x1FB`
@@ -529,88 +474,6 @@ impl World {
         }
         hist[at] = frame;
         true
-    }
-
-    /// The objects actor `i`'s live body draws this frame, indexed by TMD
-    /// object; `None` draws every object.
-    ///
-    /// The draw tick `FUN_800480D8` runs the after-image walk
-    /// (`jal 0x80049348` at `0x80048254`) before the live draw pass
-    /// (`0x800482E0` / `0x800482F8`), and the walk's per-ghost swap writes the
-    /// **live** model table without restoring it - only the node's entry
-    /// `+0x4C` and cursor `+0x68` come back (`0x80049558` / `0x80049568`). So
-    /// on a frame that draws ghosts the live body draws the table the last
-    /// ghost left, over the live stream's channels.
-    // REF: FUN_800480D8, FUN_80049348
-    pub fn battle_live_drawn_objects(&self, i: usize) -> Option<Vec<bool>> {
-        let actor = self.actors.get(i)?;
-        let (table, ghosted) = self.battle_live_model_table(i)?;
-        if !ghosted {
-            return actor.battle_drawn_objects.clone();
-        }
-        let parts = actor
-            .battle_animation
-            .as_ref()
-            .map(|p| p.variant_track().stream_parts)
-            .unwrap_or(0);
-        if parts == 0 {
-            return None;
-        }
-        Some(table.drawn_objects(usize::from(parts)))
-    }
-
-    /// The channel each TMD object of actor `i`'s live body is drawn in
-    /// (indexed by object), off the same live table as
-    /// [`Self::battle_live_drawn_objects`]: a variant swapped into an
-    /// attach-bone channel answers that channel. The draw pass's per-channel
-    /// rules (the Rot limb dimming tests the channel counter
-    /// `FUN_80048A08` loops on) read objects through this. `None` for an
-    /// actor with no model table, whose objects are their own channels.
-    pub fn battle_live_object_channels(&self, i: usize) -> Option<Vec<u32>> {
-        let (table, _) = self.battle_live_model_table(i)?;
-        let mut out: Vec<u32> = (0..table.table.len() as u32).collect();
-        // Earlier channels win, as the draw pass meets them first; an
-        // object no channel names keeps its own index (it is not drawn).
-        for (c, &o) in table.table.iter().enumerate().rev() {
-            if let Some(slot) = out.get_mut(o as usize) {
-                *slot = c as u32;
-            }
-        }
-        Some(out)
-    }
-
-    /// Actor `i`'s model table as the live draw reads it, and whether the
-    /// after-image walk re-ran the swap into it this frame.
-    fn battle_live_model_table(
-        &self,
-        i: usize,
-    ) -> Option<(
-        legaia_engine_battle::battle_attach_swap::BattleModelTable,
-        bool,
-    )> {
-        use legaia_engine_battle::battle_afterimage as ai;
-        let actor = self.actors.get(i)?;
-        let mut table = actor.battle_model_table.clone()?;
-        let hist = &actor.battle_pose_history;
-        let per_frame = self.ghost_ring_slots_per_frame();
-        let monster = actor.battle_monster_id.is_some();
-        let plans = ai::plan_ghosts(actor.battle.anim_rate.get(), monster, [0; 3], |depth| {
-            hist.get(per_frame * depth)
-                .map(|f| f.ghost_eligible)
-                .unwrap_or(false)
-        });
-        for p in &plans {
-            if let Some(f) = hist.get(per_frame * p.depth)
-                && f.variant_track.stream_parts != 0
-            {
-                table.step(
-                    &f.variant_track.windows,
-                    f.frame,
-                    f.variant_track.stream_parts,
-                );
-            }
-        }
-        Some((table, !plans.is_empty()))
     }
 
     /// Arm the retail **impact tint triple** on `target`: `+0x04 = impact
@@ -864,7 +727,7 @@ impl World {
             a.move_state.world_y = a.move_state.world_y.wrapping_add(sink);
             // `sh s4,0x42(a0)` at `0x800504AC`, beside the height store: the
             // sinking body draws clipped at the floor from here on
-            // (`World::battle_actor_floor_clip`).
+            // (`legaia_engine_world_views::battle_draws::battle_actor_floor_clip`).
             a.battle.floor_clip = true;
         }
     }
@@ -882,8 +745,10 @@ impl World {
     /// (`FUN_80046A20`, `0x8004713C..0x80047160`, `DAT_1F800393 << 3` a
     /// frame); `add` is that gain since the last call.
     ///
-    /// Not ported: selector `2`'s screen-shake globals (`_DAT_8007B92C` /
-    /// `_DAT_8007B930`, `gp+0xA30..0xA34`, `0x8004A838..0x8004A8BC`).
+    /// Selector `2`'s puff also rumbles the controller, behind the Battles
+    /// vibration row (`0x8004A838..0x8004A8BC`): two more `rand()` draws,
+    /// only while the row is on, give the pulse and level words
+    /// ([`legaia_engine_system::rumble::burning_body_write`]).
     ///
     /// PORT: FUN_8004998C (`0x8004A5FC..0x8004A8D8`, the selector emit loop)
     pub(in crate::world) fn emit_battle_burn_sprites(&mut self, add: u16) {
@@ -943,6 +808,12 @@ impl World {
                     && let Some(fx) = ifx::burn_effect(selector, red)
                 {
                     self.try_spawn_effect(fx, p, facing & 0xFFF);
+                    if selector == 2 && !self.battle_vibration_off() {
+                        let r0 = self.next_rand();
+                        let r1 = self.next_rand();
+                        self.rumble
+                            .battle_write(legaia_engine_system::rumble::burning_body_write(r0, r1));
+                    }
                 }
             }
         }
@@ -1224,71 +1095,6 @@ impl World {
             .unwrap_or(0)
     }
 
-    /// Plan this frame's weapon-trail sweeps - the engine seat of the
-    /// retail trigger `FUN_8005112C` + sweep driver `FUN_80048310`
-    /// (kernels in `legaia_render_kernels::battle_trail`; geometry emission in
-    /// `legaia_render_kernels::battle_trail`).
-    ///
-    /// For each party battle actor whose committed clip's `+0x77`
-    /// identity byte matches its character's trigger row, sample the pose
-    /// ring at even depths (one sweep step per two frames - the retail
-    /// `2 * rate` cursor rewind under the per-frame `rate` advance),
-    /// stopping at the clip boundary (ring `clip_key` mismatch), the
-    /// 16-step budget, or a pose without the trigger's control points.
-    /// A sweep below two steps draws nothing (`FUN_80048310`'s
-    /// `slti 0x2` gate).
-    // PORT: FUN_8005112C (trigger; table in `engine-battle-vm::battle_trail`)
-    // REF: FUN_80048310 (sweep capture - the ring sampling here replaces
-    // the rewound re-decode; see `engine-battle-vm::battle_trail` module docs)
-    pub fn battle_weapon_trail_draws(&self) -> Vec<BattleWeaponTrailDraw> {
-        use legaia_render_kernels::battle_trail as wt;
-        let mut out = Vec::new();
-        for (i, actor) in self.actors.iter().enumerate() {
-            // Party-only: retail's trigger gates on seat < 3; the engine
-            // keys party-ness on identity, not slot (monsters may sit
-            // anywhere - the slot-gate trap).
-            if actor.battle_monster_id.is_some() {
-                continue;
-            }
-            let Some(player) = &actor.battle_animation else {
-                continue;
-            };
-            let key = player.attach_key();
-            // Retail char id space: `DAT_8007BD10[seat]` = roster ordinal
-            // + 1 (1 = Vahn, 2 = Noa, 3 = Gala).
-            let char_id = self.party_roster_slot(i) as u8 + 1;
-            let Some(trig) = wt::trail_trigger(char_id, key) else {
-                continue;
-            };
-            let hist = &actor.battle_pose_history;
-            let mut steps = Vec::new();
-            'sweep: for k in 0..wt::MAX_SWEEP_STEPS {
-                let Some(f) = hist.get(k * wt::SWEEP_FRAMES_PER_STEP) else {
-                    break;
-                };
-                if f.clip_key != key {
-                    break;
-                }
-                let mut pts = [[0i16; 3]; wt::TRAIL_POINTS];
-                for (p, pt) in pts.iter_mut().enumerate() {
-                    match f.pose.bone_outputs.get(trig.base_part + p) {
-                        Some((t, _rot)) => *pt = *t,
-                        None => break 'sweep,
-                    }
-                }
-                steps.push(pts);
-            }
-            if steps.len() >= 2 {
-                out.push(BattleWeaponTrailDraw {
-                    actor_slot: i as u8,
-                    steps,
-                    rgb: trig.rgb,
-                });
-            }
-        }
-        out
-    }
-
     /// Commit every actor's staged battle anim id (`queued_anim` vs
     /// `current_anim`) through the retail anim-commit ladder. Engine port of
     /// the per-frame consumer that converges `+0x1D9` toward `+0x1DA`:
@@ -1387,10 +1193,11 @@ impl World {
     /// scale `node[+0x58] << 1` (`sll a3,a3,0x11` / `sra a3,a3,0x10`). The
     /// angle trio at `sp+0x18` is whatever the walk's stack held (the table
     /// arm's stores); the part is a flat ring, seated unturned here. The
-    /// screen-shake stores that follow (`0x801DEF24..0x801DEF54`, under
-    /// `0x800845C8 == 0`) are not carried.
+    /// controller rumble stores that follow (`0x801DEF24..0x801DEF54`, under
+    /// `0x800845C8 == 0`) jolt both motors to `0x80`, fading at `0xC` a
+    /// frame step.
     ///
-    /// PORT: FUN_801DEA50 (`0x801DEEC0..0x801DEF08`, the floor part)
+    /// PORT: FUN_801DEA50 (`0x801DEEC0..0x801DEF54`, the floor part and its rumble)
     pub(super) fn seat_effect_floor_part(&mut self, i: usize) {
         let Some(a) = self.actors.get(i) else {
             return;
@@ -1406,6 +1213,7 @@ impl World {
             [0; 3],
             (radius << 1) as u16,
         );
+        self.battle_rumble(legaia_engine_system::rumble::battle_writes::FLOOR_PART);
     }
 
     /// `*(actor[+0x22C]) + 0x58`, the render node's size: the record size
@@ -1428,20 +1236,4 @@ impl World {
             None => PARTY_BODY_RADIUS,
         }
     }
-}
-
-/// One ghost's re-run of the mesh-variant swap (`FUN_80049348` ->
-/// `FUN_8004CCD4`) into the walk's running table, and the objects that
-/// ghost's draw pass then draws over its own stream's channels.
-fn ghost_model_step(
-    table: &mut Option<legaia_engine_battle::battle_attach_swap::BattleModelTable>,
-    f: &crate::world::BattleGhostFrame,
-) -> Option<Vec<bool>> {
-    let t = table.as_mut()?;
-    let parts = f.variant_track.stream_parts;
-    if parts == 0 {
-        return None;
-    }
-    t.step(&f.variant_track.windows, f.frame, parts);
-    Some(t.drawn_objects(usize::from(parts)))
 }

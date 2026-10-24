@@ -202,14 +202,20 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
     // `LEGAIA_BATTLE_FRAME_STEP=step,state` (the retail-compare image
     // channel): run the battle on frames of `step` vsyncs from the first tick
     // the action SM reaches `state` (`World::seed_battle_frame_step`).
-    if let Some((step, state)) = std::env::var("LEGAIA_BATTLE_FRAME_STEP")
-        .ok()
-        .and_then(|s| {
-            let (a, b) = s.split_once(',')?;
-            Some((a.trim().parse::<u8>().ok()?, b.trim().parse::<u8>().ok()?))
-        })
-    {
-        world.seed_battle_frame_step(step, state);
+    // A fourth and fifth field `clip,cursor` hold the step back until the
+    // acting body's clip has reached that cursor (`frame_step_seed_from`).
+    if let Ok(v) = std::env::var("LEGAIA_BATTLE_FRAME_STEP") {
+        let f: Vec<&str> = v.split(',').map(str::trim).collect();
+        if let (Some(Ok(step)), Some(Ok(state))) = (
+            f.first().map(|x| x.parse::<u8>()),
+            f.get(1).map(|x| x.parse::<u8>()),
+        ) {
+            world.seed_battle_frame_step(step, state);
+            world.battle.frame_step_seed_from = match (f.get(2), f.get(3)) {
+                (Some(c), Some(k)) => c.parse::<u8>().ok().zip(k.parse::<i32>().ok()),
+                _ => None,
+            };
+        }
     }
 
     // `LEGAIA_BATTLE_INFLIGHT=caster,spell,target[;x:z,...[;cursor,...]]`:
@@ -325,6 +331,14 @@ pub(super) fn apply_debug_seat_env(session: &mut NativeSession) {
         .and_then(|s| s.trim().parse::<u8>().ok())
     {
         session.host.world.seed_frame_step(step);
+    }
+    // `LEGAIA_SEAT_SAVE_ALLOWED=1` (the retail-compare image channel): a
+    // retail state whose save-allow word `_DAT_8007B6A8` is raised - the bit
+    // a kingdom overworld's MAN header sets, or a capture probe's named poke
+    // - lands the same scene bit, so the pause menu's Save row opens as it
+    // did in retail.
+    if std::env::var("LEGAIA_SEAT_SAVE_ALLOWED").is_ok_and(|v| v.trim() == "1") {
+        session.host.world.party.scene_save_allowed = true;
     }
     if let Ok(seat) = std::env::var("LEGAIA_SEAT") {
         let xz: Vec<i16> = seat

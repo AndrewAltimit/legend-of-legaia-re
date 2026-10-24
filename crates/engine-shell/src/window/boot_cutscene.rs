@@ -85,7 +85,7 @@ impl PlayWindowApp {
     }
 
     /// Write the live session into the rack cell a Save's commit beat asked
-    /// for: grid cell `cell` of the card in `port` (block `cell + 1`),
+    /// for: grid cell `cell` of the card in `port` (save number `cell`),
     /// through the kernel the browser rack writes with, then the card back to
     /// its file. `true` when the bytes are down.
     fn write_save_commit(&mut self, commit: legaia_engine_menus::save_screen::SaveCommit) -> bool {
@@ -104,10 +104,12 @@ impl PlayWindowApp {
             );
             return false;
         };
-        let block = commit.cell + 1;
-        let wrote = legaia_engine_menu_runtime::card_write::write_save_into_card(
+        // The grid cell is the save number; the block is wherever the card
+        // already files that number, else the lowest free block.
+        let cell = commit.cell;
+        let wrote = legaia_engine_menu_runtime::card_write::write_save_into_cell(
             card,
-            block,
+            cell,
             &sf,
             &resume,
             Some(&index),
@@ -117,7 +119,13 @@ impl PlayWindowApp {
             // A card mounted from no file (a blank one standing in for a
             // port-1 image that did not mount) has nowhere to go; a harness
             // run writes nothing to the player's directory.
-            if !self.persist_disabled {
+            if !self.persist_disabled || self.persist_cards {
+                if card.path.is_none() {
+                    // The save would live only in this session's memory and
+                    // be gone on the next launch: say so on the save screen
+                    // rather than report a save that is not kept.
+                    anyhow::bail!("card {} has no file to write back to", card.label);
+                }
                 card.persist()?;
             }
             Ok(w)
@@ -125,7 +133,7 @@ impl PlayWindowApp {
         match wrote {
             Ok(w) => {
                 log::info!(
-                    "save screen: saved port {} block {block} as save {} (scene '{}'{})",
+                    "save screen: saved port {} cell {cell} as save {} (scene '{}'{})",
                     commit.port + 1,
                     w.save_slot,
                     resume.scene,
@@ -139,7 +147,7 @@ impl PlayWindowApp {
             }
             Err(e) => {
                 log::warn!(
-                    "save screen: save into port {} block {block} failed: {e:#}",
+                    "save screen: save into port {} cell {cell} failed: {e:#}",
                     commit.port + 1
                 );
                 false
@@ -176,7 +184,7 @@ impl PlayWindowApp {
     /// it.
     ///
     /// A Save goes through the kernel the browser rack writes with
-    /// ([`legaia_engine_menu_runtime::card_write::write_save_into_card`]) - the block's
+    /// ([`legaia_engine_menu_runtime::card_write::write_save_into_cell`]) - the block's
     /// save number, payload, engine ext tail, resume point, identity and
     /// directory claim are decided there - and the card is then written back
     /// to the image file it was mounted from. Either step failing raises the
@@ -211,9 +219,9 @@ impl PlayWindowApp {
         let Some(card) = self.card_ports()[commit.port as usize] else {
             return false;
         };
-        let Some((sf, resume)) = card.save_at(cell) else {
+        let Some((sf, resume)) = card.save_numbered(usize::from(cell)) else {
             log::warn!(
-                "save screen: port {} block {} holds no save",
+                "save screen: port {} holds no save {}",
                 commit.port + 1,
                 cell + 1
             );
@@ -224,7 +232,7 @@ impl PlayWindowApp {
             .session
             .resume_save(sf, &resume.scene, &self.field_live_opts);
         log::info!(
-            "save screen: loaded port {} block {}, landed {} ({:?})",
+            "save screen: loaded port {} save {}, landed {} ({:?})",
             commit.port + 1,
             cell + 1,
             landing.kind(),
@@ -270,14 +278,11 @@ impl PlayWindowApp {
         let _ = self.session.step_overlay_sfx();
     }
 
-    /// The tick's audio frame: the footstep cadence
-    /// (`BootSession::step_footstep_cadence`), then the duck ramp, the delay
-    /// scheduler and the cues that matured (`BootSession::step_audio_frame`),
-    /// after every step of the tick that queues one. The browser play page
-    /// runs the same two session steps in its own `tick_sfx`, at the same
-    /// point of its frame.
+    /// The tick's audio frame: the duck ramp, the delay scheduler and the
+    /// cues that matured (`BootSession::step_audio_frame`), after every step
+    /// of the tick that queues one. The browser play page runs the same
+    /// session step in its own `tick_sfx`, at the same point of its frame.
     pub(super) fn tick_sfx(&mut self) {
-        let _ = self.session.step_footstep_cadence();
         let _ = self.session.step_audio_frame();
     }
 
@@ -862,7 +867,8 @@ impl PlayWindowApp {
                     let atlas_h: u32 = 256;
                     let scale = (surface_w / atlas_w.max(1))
                         .min(surface_h / atlas_h.max(1))
-                        .clamp(1, 4) as i32;
+                        .clamp(1, legaia_engine_ui::BOOT_UI_STAGE_MAX_SCALE)
+                        as i32;
                     let stage_x0 = (surface_w as i32 - (atlas_w as i32) * scale) / 2;
                     let stage_y0 = (surface_h as i32 - (atlas_h as i32) * scale) / 2;
                     // src-y=148 sits between the wordmark and the
@@ -887,7 +893,7 @@ impl PlayWindowApp {
                 // pill rows, the phase overlays (NowChecking dialog, slot-info
                 // text / captions, confirm messagebox) - through the one
                 // composition the pause menu's Load / Save rows share.
-                self.save_select_overlay(c.flow(), c.session(), surface_w, surface_h)
+                self.save_select_overlay(c.flow(), c.session(), surface_w, surface_h, false)
                     .texts
             }
             BootUiState::FieldMenu { sub } => {

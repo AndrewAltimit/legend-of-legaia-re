@@ -575,6 +575,7 @@ impl MuscleDomeSession {
             plate_value: self.spirit(0).min(100) as u8,
             list_page: s.list_page,
             list_pages: s.list_pages,
+            list_slide: s.list_slide,
             phase: (&s.phase).into(),
             status: self.ring(0).status,
             pennant_glides: &s.pennant_glides,

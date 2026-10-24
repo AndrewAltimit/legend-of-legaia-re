@@ -213,7 +213,10 @@ fn card_with_save(block: u8, name: &str, gold: i32) -> Vec<u8> {
     let f = card::DIR_FRAME_SIZE * block as usize;
     buf[f..f + 4].copy_from_slice(&card::state::FIRST_BLOCK.to_le_bytes());
     buf[f + 8..f + 10].copy_from_slice(&0xFFFFu16.to_le_bytes());
-    buf[f + 10..f + 28].copy_from_slice(b"BASCUS-94254PRO-00");
+    // Filed under save number `block - 1`, so the save shows in grid cell
+    // `block - 1`: the grid places a save by its filename's number.
+    let filename = card::legaia_save_filename(u32::from(block) - 1);
+    buf[f + 10..f + 28].copy_from_slice(filename.as_bytes());
     let b = card::BLOCK_SIZE * block as usize;
     let sc = &mut buf[b..b + card::BLOCK_SIZE];
     sc[..2].copy_from_slice(&card::SAVE_BLOCK_MAGIC);
@@ -327,10 +330,17 @@ fn load_screen_walks_the_retail_card_flow_off_an_inserted_card() {
         before, after,
         "moving the grid cursor must re-draw (cursor + the focused block's info)"
     );
-    let (_, filled_texts) = draw_counts(&rt);
+    let (filled_sprites, filled_texts) = draw_counts(&rt);
+    // The stat numbers, labels, face and badge are atlas sprites (retail's
+    // 8x12 numeral cells); the name, location and time label are text.
     assert!(
-        filled_texts > empty_cell_texts + 10,
-        "focusing the card's save must print its name / LV / HP / MP / time \
+        filled_sprites > grid_sprites + 20,
+        "focusing the card's save must draw its LV / HP / MP / time numerals \
+         (got {filled_sprites} sprites vs {grid_sprites} on an empty block)"
+    );
+    assert!(
+        filled_texts > empty_cell_texts,
+        "focusing the card's save must print its name and location \
          (got {filled_texts} vs {empty_cell_texts} on an empty block)"
     );
 
@@ -418,6 +428,68 @@ fn save_screen_writes_the_session_into_the_inserted_card() {
         .filter(|i| !(b3..b3 + legaia_save::card::BLOCK_SIZE).contains(i))
         .collect();
     assert!(escaped.is_empty(), "writes escaped block 3: {escaped:?}");
+}
+
+/// Walk a Save of the live session into free block 1 of a blank card in
+/// port 1, up to the confirmed Yes.
+fn confirm_a_save_into_a_blank_card(rt: &mut LegaiaRuntime) {
+    rt.insert_card(0, legaia_save::card::formatted_card_image(), "blank".into())
+        .expect("insert");
+    rt.play_menu_open();
+    rt.play_menu_settle();
+    open_row(rt, ROW_SAVE);
+    rt.play_menu_input(CROSS); // pick SLOT 1
+    for _ in 0..200 {
+        rt.play_menu_input(0); // "Now checking" beat
+    }
+    rt.play_menu_input(CROSS); // cell 0 = block 1, free
+    rt.play_menu_input(UP); // the prompt opens on No -> Yes
+    rt.play_menu_input(CROSS);
+}
+
+/// The page that stores its cards (`card_store_handshake`) holds the Save
+/// beat until it has answered for the store, so the result line is the
+/// store's outcome: a browser that refused the card answers `false` and the
+/// beat takes it, rather than "Save successful." over a save a reload loses.
+/// A page that never answers is given up on; the beat does not hang.
+#[test]
+fn the_save_beat_waits_for_the_page_to_store_the_card() {
+    let Some(mut rt) = loaded_in(SAVE_ALLOWED_SCENE) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    rt.card_store_handshake(true);
+    confirm_a_save_into_a_blank_card(&mut rt);
+    let mut written = false;
+    for _ in 0..200 {
+        rt.play_menu_input(0);
+        if rt.card_take_written(0) {
+            written = true;
+            break;
+        }
+    }
+    assert!(written, "the Save wrote the card and handed it to the page");
+    for _ in 0..10 {
+        rt.play_menu_input(0);
+    }
+    assert!(
+        rt.card_store_result(false),
+        "the beat was still waiting on the page's store"
+    );
+    assert!(!rt.card_store_result(true), "answered once");
+    run_commit_beat(&mut rt);
+
+    // No answer at all: the beat gives up instead of holding the screen.
+    let Some(mut rt) = loaded_in(SAVE_ALLOWED_SCENE) else {
+        return;
+    };
+    rt.card_store_handshake(true);
+    confirm_a_save_into_a_blank_card(&mut rt);
+    run_commit_beat(&mut rt);
+    assert!(
+        !rt.card_store_result(true),
+        "the beat stopped waiting for a page that never answered"
+    );
 }
 
 /// With no card in either port the Load screen still renders retail's panel +

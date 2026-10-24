@@ -32,6 +32,7 @@ pub mod ram_map;
 pub mod rand;
 pub mod retail_pad;
 pub mod rotation_lut;
+pub mod rumble;
 pub mod scene_name_sync;
 pub mod scus_leaf_kernels;
 pub mod sound_state;

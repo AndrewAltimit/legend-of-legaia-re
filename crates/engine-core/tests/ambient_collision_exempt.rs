@@ -2,8 +2,9 @@
 //! placement context carries `+0x10 & 3` (op `0x31` bit 0 / 1) never stops
 //! for the player; one without it does.
 
-use super::*;
+use legaia_engine_core::world::*;
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_vm::field::FieldCtx;
 
 /// A field world with the player standing one probe ahead of an ambient
 /// walker in slot 5, whose stream is a `+Z` directional step.

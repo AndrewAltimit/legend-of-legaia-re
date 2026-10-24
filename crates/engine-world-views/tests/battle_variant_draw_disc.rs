@@ -92,7 +92,8 @@ fn noa_windowed_clip_draws_the_variant() {
         world.set_actor_battle_animation(NOA, player);
         world.actors[NOA].battle.current_anim = id;
         assert!(world.seat_battle_clip_cursor(NOA, id, i32::from(frame) * 16));
-        world.battle_live_drawn_objects(NOA).expect("drawn set")
+        legaia_engine_world_views::battle_draws::battle_live_drawn_objects(world, NOA)
+            .expect("drawn set")
     };
     // The walk's window first, then the idle loop: the swap writes the
     // default back on the first frame outside any window.

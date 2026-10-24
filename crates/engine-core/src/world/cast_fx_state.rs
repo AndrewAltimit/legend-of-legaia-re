@@ -117,7 +117,7 @@ pub struct CastFxState {
     /// The `+0x42` the summon creature's render node carries while it draws
     /// clipped (`0` = the floor row, `+0x42 = 1`): PROT 0927 raises `2`, so
     /// its creature is clipped by object-effect row 1.
-    pub(crate) module_creature_clip_kind: u16,
+    pub module_creature_clip_kind: u16,
     /// PROT 0927's camera-shake word `0x801F9C90`: raised by its stager
     /// arms 3 / 4, counted down by the tick's epilogue.
     pub(crate) module_shake: i32,
@@ -126,6 +126,9 @@ pub struct CastFxState {
     /// (`World::run_cast_module_code`), so a settle wait after it sees the
     /// victim react.
     pub(crate) module_hit_arm: Option<u8>,
+    /// PROT 0922's rumble alternation word `0x801FA0BC`, bumped by its arms
+    /// 14 and 15 (`cast_module_rumble::RumbleStore::PueraAlternate`).
+    pub(crate) module_rumble_alternate: u32,
     /// Ticks the current arm has held on its settle wait
     /// (`cast_module_ticks::ChainSettle`), bounded by
     /// `cast_fatal_decision::SETTLE_TICK_LIMIT`.
@@ -148,6 +151,13 @@ pub struct CastFxState {
     /// (`World::run_cast_module_code`); PROT 0909's phase rendezvous are two
     /// of them.
     pub(crate) module_stager_calls: Vec<(u8, legaia_engine_cast::cast_module_ticks::StagerCaller)>,
+    /// How many op-`0x20` calls have reached a module's stager arm
+    /// (wrapping): the ones `World::run_part_stager_calls` drains, and PROT
+    /// 0925's, whose arm runs inside the calling part's step. Nothing in the
+    /// engine reads it: it is the observable a reach ladder holds its casts
+    /// to, since a stager arm that seats nothing new looks the same as one
+    /// that never ran.
+    pub stager_arm_calls_run: u32,
     /// PROT 0917's stager counter word `0x801F9364`
     /// ([`legaia_engine_cast::cast_module_ticks::BARRA_STAGER_COUNTER`]),
     /// `0` in the image the band pages in for each cast.
@@ -385,9 +395,11 @@ impl CastFxState {
             module_creature_clip_kind: 0,
             module_shake: 0,
             module_hit_arm: None,
+            module_rumble_alternate: 0,
             module_settle_ticks: 0,
             module_nighto_outcome: None,
             module_stager_calls: Vec::new(),
+            stager_arm_calls_run: 0,
             module_barra_counter: 0,
             module_running_entry: None,
             module_spikefish_words: Default::default(),

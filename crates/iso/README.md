@@ -23,6 +23,13 @@ strips that wrapper and exposes a clean ISO9660 view.
   `find_file_in_image` / `find_path_in_image` / `read_file_in_image`, so
   the browser and the patcher resolve a name identically: case-insensitive,
   `;1` version suffix stripped.
+- `sniff` - why a picked file is not a raw dump, said for a picker screen
+  (`Diagnosis { what, fix }`, two short sentences, no path): a 2048-byte
+  `.iso`, a `.chd`, an EBOOT `.pbp`, an ECM image, an archive, a patch file,
+  or a `.cue` whose `.bin` is missing (naming the one `.bin` beside it, the
+  renamed-file case). `diagnose_bytes` works on a head buffer (no `std::fs`);
+  `diagnose_path` follows a `.cue` first. The launcher and Studio show it in
+  place of the reader's terminal message.
 - `region` - product-code heuristics for identifying which retail build
   (USA / JP / EU / debug) you're holding.
 - `write` - the write side: `encode_mode2_form1_sector` recomputes a sector's

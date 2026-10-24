@@ -103,7 +103,7 @@
 //! from the pool, so a translation that lifts the `0898` pool does not reach
 //! it, and the escape messages have no engine caption at all. The defeat
 //! message does come off the pool ([`DefeatText`]): both hosts draw it in the
-//! loss window through `World::battle_defeat_banner`. The layout arguments
+//! loss window through `legaia_engine_battle_hud::battle_defeat_banner`. The layout arguments
 //! `FUN_801DBB8C` passes the register call encode the panel band's
 //! *vertical* placement, which is why `engine-ui`'s panel Y is still an
 //! approximation.

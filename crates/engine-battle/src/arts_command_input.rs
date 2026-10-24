@@ -176,6 +176,10 @@ pub struct ArtsCommandInputSession {
     /// ([`arts_list_pager`]); `None` keeps the plain page cycle over
     /// [`Self::list_pages`].
     pub list_rows: Option<u8>,
+    /// The list window's slide counter `0x801F4E0A`, `0..=`[`ARTS_LIST_SLIDE_MAX`]
+    /// ([`Self::step_list_slide`]): the window's `x` is
+    /// `slide * 160 / 12 - 146`, off-screen at `0` and seated at `14`.
+    pub list_slide: u8,
     /// The character's saved auto command string, loaded when the entry
     /// opened (`FUN_801DA34C` at `0x801D1734`, beside the `0x50` phase
     /// store), as `Command::as_byte()` values. Empty when the record held
@@ -255,7 +259,51 @@ pub fn arts_list_pager(open: Option<u8>, learned: u8) -> Option<u8> {
     }
 }
 
+/// One row of the Triangle arts list's open page, as the list renderer
+/// `FUN_80034358` (SCUS) draws it out of the arts-name table record
+/// (`DAT_80075EC4`, keyed on `[character, art id]`) for a learned id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArtsListRow {
+    /// The record's `+0xC` name string, substitutions spliced in and the
+    /// `0xCF XX` ink escapes kept.
+    pub name: Vec<u8>,
+    /// The AP the row shows: record `+2`, halved under the character
+    /// record's `+0xF8` bit `0x800` (`srl s0,s0,1` at `0x800344E8`).
+    pub ap: u8,
+    /// The record's `+8` command-glyph entries, `0xFF XX` ink markers kept.
+    pub glyphs: Vec<[u8; 2]>,
+}
+
+/// The list window's slide counter at rest, seated (`sltiu v0,v0,0xd` /
+/// `li v0,0xc` at `0x801D34A0..0x801D34B4`).
+pub const ARTS_LIST_SLIDE_MAX: u8 = 12;
+
 impl ArtsCommandInputSession {
+    /// Step the Triangle list window's slide one battle frame of
+    /// `frame_step` vsyncs, as the arts-list driver `FUN_801D3444` does after
+    /// the frame's input: the counter climbs by the frame step
+    /// (`DAT_1F800393`) while the list is open in the entry state `0x50` and
+    /// drains by it otherwise, clamped to `0..=12`. Drained outside the
+    /// entry, the driver clears the list bits `0x801F4E09` (`0x801D3528..
+    /// 0x801D3554`), so the list is closed and a return to the entry does not
+    /// reopen it. `frame_step == 0` (a tick between two battle passes) holds.
+    ///
+    /// PORT: overlay_battle_action_0898_801d3444 (the slide counter)
+    pub fn step_list_slide(&mut self, frame_step: u8) {
+        let entering = matches!(self.phase, ArtsInputPhase::Entering);
+        if entering && self.list_page.is_some() {
+            self.list_slide = self
+                .list_slide
+                .saturating_add(frame_step)
+                .min(ARTS_LIST_SLIDE_MAX);
+        } else {
+            self.list_slide = self.list_slide.saturating_sub(frame_step);
+        }
+        if self.list_slide == 0 && !entering {
+            self.list_page = None;
+        }
+    }
+
     /// The entry with the retail pager over `learned` arts
     /// ([`Self::list_rows`]); the page count follows the pager's three-page
     /// cap.
@@ -285,6 +333,7 @@ impl ArtsCommandInputSession {
             list_pages,
             list_page: None,
             list_rows: None,
+            list_slide: 0,
             preseed: Vec::new(),
             preseed_spent: Vec::new(),
             replay: false,
@@ -712,6 +761,9 @@ pub struct ArtsInputView<'a> {
     pub list_page: Option<u8>,
     /// Pages the Triangle list can cycle (`0` = the toggle is inert).
     pub list_pages: u8,
+    /// The list window's slide counter
+    /// ([`ArtsCommandInputSession::list_slide`]).
+    pub list_slide: u8,
     pub phase: ArtsInputScreen,
     /// The caster's `+0x16E` status word. Its Rot limb bits (`0x38`) pick
     /// which chips wear the Rot stamp during entry ([`rot_blocks`] refuses

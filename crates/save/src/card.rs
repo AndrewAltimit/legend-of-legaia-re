@@ -50,6 +50,7 @@
 
 mod block_identity;
 mod directory;
+mod save_summary;
 mod sc_block;
 mod sc_checksum;
 #[cfg(test)]
@@ -57,5 +58,6 @@ mod tests;
 
 pub use block_identity::*;
 pub use directory::*;
+pub use save_summary::*;
 pub use sc_block::*;
 pub use sc_checksum::*;

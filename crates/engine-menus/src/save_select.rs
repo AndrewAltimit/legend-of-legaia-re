@@ -136,6 +136,39 @@ pub struct SlotSnapshot {
     /// Lead character's current/max MP (a.k.a. WP) for the info
     /// panel.
     pub leader_mp: (u16, u16),
+    /// The party rows the info panel prints, one per member, from the
+    /// block's **save summary** - what retail's preview reads
+    /// (`FUN_801E08D8` over the per-slot copy of the block's `0x200..0x300`),
+    /// never the character records. Empty on a snapshot built without a
+    /// card block; the panel then prints the leader fields as its one row
+    /// ([`Self::panel_members`]).
+    pub members: Vec<SlotMember>,
+    /// The location string passes retail's test (shorter than 33 bytes,
+    /// every byte in `0x20..0xB0`). A block that fails it prints only its
+    /// block badge.
+    pub location_valid: bool,
+    /// The file is filed under the Japanese build's prefix: retail's panel
+    /// adds an "Old Filename" line over the location.
+    pub old_filename: bool,
+    /// The card block the save's file lives in, when this snapshot came off
+    /// a card. The grid cell is the save **number**; the BIOS puts the file
+    /// in whatever block was free, so the two differ on any card that was
+    /// saved out of order.
+    pub card_block: Option<u8>,
+}
+
+/// One party member of a [`SlotSnapshot`]'s info panel, as the save summary
+/// stores it.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SlotMember {
+    /// Roster id: the save-icon tile drawn as the member's face.
+    pub id: u8,
+    pub name: String,
+    pub level: u8,
+    /// Current / maximum HP as stored (signed halfwords).
+    pub hp: (i16, i16),
+    /// Current / maximum MP.
+    pub mp: (i16, i16),
 }
 
 impl SlotSnapshot {
@@ -154,6 +187,10 @@ impl SlotSnapshot {
             leader_name: String::new(),
             leader_hp: (0, 0),
             leader_mp: (0, 0),
+            members: Vec::new(),
+            location_valid: true,
+            old_filename: false,
+            card_block: None,
         }
     }
 
@@ -169,13 +206,41 @@ impl SlotSnapshot {
         }
     }
 
-    /// Format play time as `HH:MM:SS`.
+    /// Format play time as `HH:MM:SS`, clamped at `99:59:59` as retail's
+    /// panel clamps it (`slti v0,a2,0x64` at `0x801E0B38`: an hour count of
+    /// 100 or more prints `99`, `59`, `59`).
     pub fn play_time_string(&self) -> String {
-        let secs = self.play_time_seconds;
-        let h = secs / 3600;
-        let m = (secs % 3600) / 60;
-        let s = secs % 60;
+        let (h, m, s) = self.play_time_hms();
         format!("{h:02}:{m:02}:{s:02}")
+    }
+
+    /// [`Self::play_time_string`]'s three numbers.
+    pub fn play_time_hms(&self) -> (u32, u32, u32) {
+        let secs = self.play_time_seconds;
+        if secs / 3600 >= 100 {
+            (99, 59, 59)
+        } else {
+            (secs / 3600, (secs % 3600) / 60, secs % 60)
+        }
+    }
+
+    /// The rows the info panel prints: the summary's members, or - for a
+    /// snapshot that carries none - the leader fields as one row.
+    pub fn panel_members(&self) -> Vec<SlotMember> {
+        // A block whose summary - stored or derived - names no member still
+        // lifted a party (that is what `present` means), so it prints the
+        // leader rather than a bare panel.
+        if !self.members.is_empty() || !self.present {
+            return self.members.clone();
+        }
+        let clamp = |v: u16| v.min(i16::MAX as u16) as i16;
+        vec![SlotMember {
+            id: self.leader_char_id,
+            name: self.leader_name.clone(),
+            level: self.party_lv,
+            hp: (clamp(self.leader_hp.0), clamp(self.leader_hp.1)),
+            mp: (clamp(self.leader_mp.0), clamp(self.leader_mp.1)),
+        }]
     }
 }
 

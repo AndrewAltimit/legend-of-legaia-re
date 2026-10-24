@@ -208,7 +208,7 @@ pub fn monster_page_origin(slot: u8) -> (u16, u16) {
 /// 3) << 22` on the word whose upper half is the CBA). The on-disc rows are
 /// `481` (the monster's own palettes, which land on `484 + slot`, where
 /// [`MonsterMesh::battle_render_mesh`] writes them) and, for the bosses
-/// `0xB3..=0xB6`, `482` - the boss effect page's CLUT row `485` the loader
+/// `0xB3..=0xBA`, `482` - the boss effect page's CLUT row `485` the loader
 /// stages for those ids ([`super::BOSS_PAGE_CLUT_ROW`]). The palette index
 /// `cba & 0x3F` is untouched.
 ///
@@ -222,7 +222,7 @@ pub fn relocate_cba(cba: u16, slot: u8) -> u16 {
 /// on the word whose upper half is the TSB) - the tpage column moves by the
 /// slot and the `+0x10` raises `tpage_y` to 256. The on-disc columns are `5`
 /// (the monster's own page, [`monster_page_origin`]) and, for the bosses
-/// `0xB3..=0xB6`, `6` - the boss effect page at `(0x180, 0x100)`
+/// `0xB3..=0xBA`, `6` - the boss effect page at `(0x180, 0x100)`
 /// ([`super::BOSS_PAGE_RECT`]). Depth and abr bits ride through; bit 15 (the
 /// engine-side semi-transparency enable packed by
 /// `legaia_tmd::mesh::pack_tsb_semi`) is kept out of the add.
@@ -245,7 +245,7 @@ pub const TEXTURE_HEIGHT: usize = 256;
 
 /// Convert a PSX BGR555 colour to RGBA8. The all-zero colour (`0x0000`) is the
 /// PSX transparent texel and maps to alpha 0; every other colour is opaque.
-fn bgr555_to_rgba(v: u16) -> [u8; 4] {
+pub(super) fn bgr555_to_rgba(v: u16) -> [u8; 4] {
     let r = ((v & 0x1F) << 3) as u8;
     let g = (((v >> 5) & 0x1F) << 3) as u8;
     let b = (((v >> 10) & 0x1F) << 3) as u8;
@@ -293,7 +293,7 @@ impl MonsterTexture {
         out
     }
 
-    /// Flatten the 15 palettes into a single `15 * 16` RGBA8 row, suitable for
+    /// Flatten the palettes into a single `palettes * 16` RGBA8 row, suitable for
     /// uploading as a palette lookup texture (palette `p`, colour `c` is at
     /// pixel `p * 16 + c`).
     pub fn palette_rgba(&self) -> Vec<u8> {

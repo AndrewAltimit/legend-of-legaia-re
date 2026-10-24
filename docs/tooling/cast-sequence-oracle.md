@@ -111,10 +111,18 @@ Frames pair on the action-SM clock, never on wall time:
 2. **Alignment.** The two segment lists align by longest common subsequence
    on their keys. A state one side visits and the other skips leaves the rest
    aligned and shows up as a one-sided segment row.
-3. **Display lag.** A retail grab on vsync `v` shows the frame built
-   `2 * step` vsyncs earlier ([Replayed casts](retail-compare.md#replayed-casts)),
-   so it is keyed on the row at `v - lag`, with `step` read off the grab's own
-   row. `--retail-lag <n>` fixes it instead. The engine renders the tick it
+3. **Display lag.** A retail grab shows the frame built two game frames
+   earlier ([Replayed casts](retail-compare.md#replayed-casts)), so it is
+   keyed on the last row of the frame two counter bumps back. A frame that
+   follows one which ran past its step flips a vsync after its bump, so a
+   grab on that bump's vsync is keyed one frame further back. On an on-time
+   frame this is the row `2 * step` vsyncs earlier; counted in frames, a slow
+   frame keeps its image up for every vsync it overran. `horn_summon` enters
+   module phase 9 on a seven-vsync step-`4` frame, and its close-up reaches
+   the screen fourteen vsyncs later, not eight: the vsync rule scored the
+   phase-8 shots still on screen against the engine's phase-9 close-up. A
+   capture without the frame counter falls back to `2 * step` read off the
+   grab's own row. `--retail-lag <n>` fixes it instead. The engine renders the tick it
    just ran and takes no lag. On a cast whose close-up the engine already
    matches, `auto` scores those segments higher than a fixed lag of `0`, `2`,
    `6` or `10`; a re-score with `--score-only --retail-lag` repeats that check.
@@ -184,6 +192,15 @@ runs it in 2244 ticks. Guilty Cross's capture run (`0x70`, phases `1..5` at
 `128 / 128 / 128 / 256 / 195`) is 982 wall vsyncs and 835 on the clock; the
 engine's Cort casts it in 835 ticks. A soak trace that reads a summon or a
 boss cast as "long" is reading the cast's own length.
+
+A short arm can still part the clocks a later segment pairs on. Vera's arm 3
+polls the creature stream (`FUN_8003F2B8(1)`) for four vsyncs where the
+engine's resident stream passes it in two, and PROT 0905's white rise
+(spawned in arm 2, `0x20` vsyncs) runs on through both: a phase-4 pair `into`
+frames past the arm's entry holds retail's rise older than the engine's
+(`64`, eight vsyncs in, at retail's arm-4 entry in one capture), and
+the whole arm-4 segment scores low on the brighter retail frame. The
+`vera_summon_mid_cast` still, gated on the rise's own age, matches it.
 
 ## Reading the report
 

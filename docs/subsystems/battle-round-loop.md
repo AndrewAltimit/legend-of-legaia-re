@@ -330,7 +330,7 @@ What differs is the string word `FUN_801D84C0` publishes into each at battle sta
 
 A team string opens with the text engine's name escape `0xC1`, whose operand `FUN_801D84C0` patches to the lead's index. On a win the results frame re-patches the victory buffer's operand (`ctx+0xAA`, `0x8004F658`) to the pose actor's index when the party has two or more members; the pose actor is the lead, so the store names the same character. The loss arm stores nothing there.
 
-Port: the two defeat pieces are read off PROT 0898 (`battle_party_panel::DefeatText` in `crates/engine-vm`, installed with the move-power table) and composed in `World::battle_defeat_banner`; without the disc pool the window opens empty. The win window's sentence is built from typed state.
+Port: the two defeat pieces are read off PROT 0898 (`battle_party_panel::DefeatText` in `crates/engine-vm`, installed with the move-power table) and composed in `engine-battle-hud::battle_defeat_banner`; without the disc pool the window opens empty. The win window's sentence is built from typed state.
 
 <a id="battle-end-both-hosts"></a>
 
@@ -339,8 +339,8 @@ Port: the two defeat pieces are read off PROT 0898 (`battle_party_panel::DefeatT
 `World::finish_battle` (`world/battle/teardown.rs`) is what a resolved battle runs:
 
 - **Party HP / MP persists.** The battle mutates the `BattleActor` mirrors; `finish_battle` writes them into the roster records (`World::save_party`) before restoring the field actor snapshot, then pushes them back onto the restored party actors (`World::resync_party_actors_from_roster`).
-- **A victory raises the result screen in battle** (`World::battle_spoils_banner`, up from the results frame through the exit): retail's two framed windows, described by `engine-ui`'s `battle_spoils_windows` and filled by `battle_spoils_draws_for` on both hosts. Rects and columns are measured off a retail framebuffer; see [level-up](level-up.md#what-the-port-draws-between-the-last-enemy-dying-and-the-field-returning). A `finish_battle` that applies the loot itself (no victory sequence ran) arms the aging `World::SPOILS_BANNER_FRAMES` window instead.
-- **A wipe raises the loss window** (`World::battle_defeat_banner`, same span), drawn by `battle_defeat_windows` on both hosts. The spoils panel answers only a win, since `last_rewards` outlives its battle.
+- **A victory raises the result screen in battle** (`engine-battle-hud::battle_spoils_banner`, up from the results frame through the exit while `World::battle_spoils_window_up` holds): retail's two framed windows, described by `engine-ui`'s `battle_spoils_windows` and filled by `battle_spoils_draws_for` on both hosts. Rects and columns are measured off a retail framebuffer; see [level-up](level-up.md#what-the-port-draws-between-the-last-enemy-dying-and-the-field-returning). A `finish_battle` that applies the loot itself (no victory sequence ran) arms the aging `World::SPOILS_BANNER_FRAMES` window instead.
+- **A wipe raises the loss window** (`engine-battle-hud::battle_defeat_banner`, same span), drawn by `battle_defeat_windows` on both hosts. The spoils panel answers only a win, since `last_rewards` outlives its battle.
 - **A wipe raises `World::game_over`**, which both hosts route to the title screen - see [party wipe](#party-wipe--the-game-over-overlay).
 - **The exit's party loop runs on every exit** (`battle_formulas::battle_exit_party_reset`): statuses clear unless the special-battle word carries the arena bit, and a member at 0 HP stands up at 1 - see [battle-formulas.md](battle-formulas.md#the-flow-readers).
 - **The return flags** are folded by `battle_return_flags` (`crates/engine-battle`); see step 5 of the [wipe destination](#the-retail-wipe-destination-is-the-card-continue-screen).

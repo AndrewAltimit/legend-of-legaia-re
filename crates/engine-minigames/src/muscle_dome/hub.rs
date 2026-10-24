@@ -1,4 +1,4 @@
-//! Contest-hub presentation: sprite glides, the time meter and the hub screen timing.
+//! Contest-hub presentation: sprite glides and the hub screen timing.
 
 /// One animated-sprite glide record (`ctx + 0x11B4 + i*0xC`, up to 0x28
 /// handles): a sprite easing from `start` to `target` over `total` frames.
@@ -56,29 +56,6 @@ impl SpriteGlide {
             remaining: (self.total - self.elapsed) as u32 + 1,
         }
     }
-}
-
-/// The round time meter's counter ceiling (`0xC` ticks = a full bar).
-pub const TIME_METER_MAX: u8 = 0xC;
-
-/// PORT: FUN_801d3444 (PROT 0898; core ramp + bar mapping) - the round **time meter**:
-/// while the phase tag is `'P'` (0x50, the selection phase) and the ramp
-/// flag is up, the 0..=0xC counter climbs by the frame delta (clamped at
-/// [`TIME_METER_MAX`]); otherwise it drains by the delta (floored at 0).
-/// The bar sprite's Y offset is `counter * 160 / 12 - 0x92` (the
-/// `0x2AAAAAAB` reciprocal-multiply divide) - `-0x92` empty, `+0xE` full.
-/// Returns `(new_counter, bar_y)`.
-///
-/// Wired: `legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession::tick_time_meter`, which the host calls once a
-/// frame while a contest is up.
-pub fn time_meter_step(counter: u8, dt: u8, in_select_phase: bool, ramp_up: bool) -> (u8, i16) {
-    let new = if ramp_up && in_select_phase {
-        (counter as u32 + dt as u32).min(TIME_METER_MAX as u32) as u8
-    } else {
-        counter.saturating_sub(dt)
-    };
-    let bar_y = (new as i32 * 160 / 12 - 0x92) as i16;
-    (new, bar_y)
 }
 
 // ------------------------------------------------------- hub screen timing

@@ -368,7 +368,7 @@
   <p>Retail never lists a Super Art anywhere; with this on, a Super Art you have performed appears on the in-battle Triangle arts list and on the pause menu's Moves page, sorted by AP, with its name, the AP its chain costs and the arrows you type.</p>
   <table class="layout">
     <thead><tr><th>Flag</th><th>Values</th><th>Notes</th></tr></thead>
-    <tbody><tr><td>--show-super-arts</td><td>toggle</td><td>Arena feature: exclusive with <code>--shiny-seru</code>, <code>--super-arts-pack</code>, <code>--arts-ap-grant</code> / <code>--arts-ap-cost</code>, <code>--delilas-challenge</code>. Terra has no Super Arts.</td></tr></tbody>
+    <tbody><tr><td>--show-super-arts</td><td>toggle</td><td>Arena feature: exclusive with <code>--shiny-seru</code>, <code>--super-arts-pack</code>, <code>--arts-ap-grant</code> / <code>--arts-ap-cost</code>, <code>--oscillating-ap</code>, <code>--delilas-challenge</code>. Terra has no Super Arts.</td></tr></tbody>
   </table>
   <details class="disclosure"><summary>How it is patched</summary><div class="disclosure-body">
     <p>Tiers E + F. <strong>Performed</strong> is a per-character bitfield in the one free, save-persistent byte of the character record (<code>+0x75D</code>, the sixteenth learned-id slot no fifteen-art character reaches), set by a two-word detour at the Super applier's match arm. It rides in the save block, so rows survive a save/load.</p>
@@ -453,7 +453,7 @@
   <p>Who can wear what is reshuffled within each slot type; each character keeps exactly as many equippable weapons, body, head and footwear pieces as in retail, just different ones.</p>
   <table class="layout">
     <thead><tr><th>Flag</th><th>Values</th><th>Notes</th></tr></thead>
-    <tbody><tr><td>--equip-mask</td><td>shuffle / random / none</td><td>Nobody is ever left with zero gear in a slot under shuffle.</td></tr></tbody>
+    <tbody><tr><td>--equip-mask</td><td>shuffle / random / none</td><td>Nobody is ever left with zero gear in a slot under shuffle. Runs after the equipment editor. Browser: Who can equip what.</td></tr></tbody>
   </table>
   <details class="disclosure"><summary>How it is patched</summary><div class="disclosure-body">
     <p>Tier A. The <code>+6</code> equip-character mask (<code>1</code> Vahn, <code>2</code> Noa, <code>4</code> Gala, <code>7</code> any) of the same table, permuted within slot category (<code>+7 &amp; 0x60</code>). The engine's equip picker reads the same byte, so a patched disc re-gates it there too.</p>
@@ -585,7 +585,7 @@
   <table class="layout">
     <thead><tr><th>Flag</th><th>Values</th><th>Notes</th></tr></thead>
     <tbody>
-      <tr><td>--shiny-seru</td><td>toggle</td><td>Arena feature (exclusive with the Super Arts list / pack, AP override, Delilas Challenge). Applies to Seru captured after patching.</td></tr>
+      <tr><td>--shiny-seru</td><td>toggle</td><td>Arena feature: exclusive with the Super Arts list / pack, the AP override and oscillating AP; with the Delilas Challenge it is skipped with a note (the challenge keeps the space), which is why no preset turns it on. Applies to Seru captured after patching.</td></tr>
       <tr><td>--shiny-pct</td><td>percent, default 2</td><td>Per-battle chance on the frontmost capturable enemy.</td></tr>
     </tbody>
   </table>
@@ -614,7 +614,7 @@
   <p>A few boss cinematic casts - Xain's Bloody Horns and Terio Punch, Cort's Guilty Cross, the Delilas signature moves - bypass the elemental resist ladder in retail, so a Jewel or All Guard does nothing against them; this makes elemental guards apply. The casts then use the damage roll every other boss cast uses, which reads the caster's INT rather than its ATK, so the hits change size too.</p>
   <table class="layout">
     <thead><tr><th>Flag</th><th>Values</th><th>Notes</th></tr></thead>
-    <tbody><tr><td>--jewel-fix</td><td>toggle, seedless</td><td>In every browser preset above Vanilla.</td></tr></tbody>
+    <tbody><tr><td>--jewel-fix</td><td>toggle, seedless</td><td>On in the Balanced / Full Chaos presets.</td></tr></tbody>
   </table>
   <details class="disclosure"><summary>How it is patched</summary><div class="disclosure-body">
     <p>Same-size retargets of those casts' damage path onto the ordinary elemental route. See <a href="../subsystems/battle-formulas.html">battle formulas</a> and <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md" target="_blank" rel="noopener">cast modules</a>.</p>
@@ -825,7 +825,7 @@
     </tbody>
   </table>
   <details class="disclosure"><summary>How it is patched</summary><div class="disclosure-body">
-    <p><strong>The part-count law:</strong> battle animations pose TMD objects rigidly by index with no skeleton (<a href="../formats/monster-animation.html">monster animation</a>), so a replacement with the retail object count inherits every move; the importer rejects any other count. Material names carry render state (<code>skin_pNN</code>, <code>skin_semi_abrN_pNN</code>, <code>flat</code>) so a round trip reproduces the palette partition; faces without a hint are re-palettized greedily into at most 15 sixteen-colour CLUTs. The block is re-packed into its <code>0x14000</code> slot and the patched image re-decoded before success is reported. Two worked examples ship in the repo. See <a href="../formats/tmd.html">TMD</a> and the <a href="../monsters.html">bestiary</a>.</p>
+    <p><strong>The part-count law:</strong> battle animations pose TMD objects rigidly by index with no skeleton (<a href="../formats/monster-animation.html">monster animation</a>), so a replacement with the retail object count inherits every move; the importer rejects any other count. Material names carry render state (<code>skin_pNN</code>, <code>skin_semi_abrN_pNN</code>, <code>flat</code>) so a round trip reproduces the palette partition; faces without a hint are re-palettized greedily into at most 15 sixteen-colour CLUTs. The bosses <code>0xB3..=0xBA</code> (Songi's third form, the Cort forms, Koru) also have faces on the shared boss effect page: they export as <code>boss_pNN</code> / <code>boss_semi_abrN_pNN</code>, re-import onto that page's palette row and column untouched, and come with a reference-only <code>&lt;stem&gt;_boss.png</code> render of the page. The block is re-packed into its <code>0x14000</code> slot and the patched image re-decoded before success is reported. Two worked examples ship in the repo. See <a href="../formats/tmd.html">TMD</a> and the <a href="../monsters.html">bestiary</a>.</p>
   </div></details>
 </section>
 

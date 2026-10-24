@@ -272,6 +272,11 @@ pub struct LegaiaRuntime {
     /// ([`Self::card_take_written`]). Distinct from the card's own `dirty`
     /// bit, which means "not exported to the emulator yet".
     pub(crate) cards_written: [bool; crate::cards::CARD_SLOTS],
+    /// The page stores each written card and answers with
+    /// [`Self::card_store_result`] before the save screen reports the Save
+    /// ([`Self::card_store_handshake`]). Off for a host that never answers -
+    /// the native tests driving this runtime - which report the write itself.
+    pub(crate) card_store_handshake: bool,
     /// Fishing HUD one-shot banner timers (hook / reel-in / miss / auxiliary /
     /// strike splash), serviced once per sim tick by
     /// [`Self::tick_fishing_banners`] - the browser twin of the native window's
@@ -342,8 +347,8 @@ pub struct LegaiaRuntime {
     /// [`Self::play_shop_after_tick`] skips its step - the native window's
     /// `shop_opened_this_tick`.
     pub(crate) shop_opened_this_tick: bool,
-    /// The page's sound-effect channel: disc descriptor bank, delay scheduler,
-    /// footstep cadence ([`crate::play_sfx`]).
+    /// The page's sound-effect channel: disc descriptor bank, delay scheduler
+    /// ([`crate::play_sfx`]).
     pub(crate) sfx: crate::play_sfx::PlaySfx,
     /// The live party-wipe hand-off, when a wipe raised one: the same
     /// [`legaia_engine_menus::game_over::GameOverSession`] the native window
@@ -404,6 +409,10 @@ pub struct LegaiaRuntime {
     /// The native launch switches the page throws at runtime
     /// ([`crate::play_toggles`]), re-asserted on every scene entry.
     pub(crate) page_toggles: crate::play_toggles::PageToggles,
+    /// The launch switches last written to the page's store
+    /// (`crate::play_toggles::SWITCHES_STORAGE_KEY`), so a scene entry that
+    /// re-asserts unchanged switches writes nothing.
+    pub(crate) persisted_switches: legaia_engine_session::session_switches::PersistedSwitches,
 }
 
 /// Sentinel [`LegaiaRuntime::set_field_player_screen_y`] reads as "the lead
@@ -422,7 +431,7 @@ impl LegaiaRuntime {
         world.mode = SceneMode::Title;
         let menu = MenuRuntime::new("/saves");
         let options_state = load_persisted_options();
-        Self {
+        let mut rt = Self {
             world,
             menu,
             scene_host: crate::host_slot::HostSlot::new({
@@ -487,6 +496,7 @@ impl LegaiaRuntime {
             menu_glyph_atlas: None,
             cards: [const { None }; crate::cards::CARD_SLOTS],
             cards_written: [false; crate::cards::CARD_SLOTS],
+            card_store_handshake: false,
             fishing_banners: Default::default(),
             fishing_banner_draws: Vec::new(),
             equip_stats: None,
@@ -515,7 +525,10 @@ impl LegaiaRuntime {
             audio_out: None,
             bgm_handoff_pending: false,
             page_toggles: Default::default(),
-        }
+            persisted_switches: Default::default(),
+        };
+        rt.restore_persisted_switches(crate::play_toggles::load_persisted_switches());
+        rt
     }
 }
 

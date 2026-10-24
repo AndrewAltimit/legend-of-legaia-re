@@ -144,8 +144,7 @@ fn the_battle_magic_window_draws_each_spells_element_plate() {
         press(&mut w, PadButton::Cross); // Begin -> the ring
     }
     press(&mut w, PadButton::Right); // ring: Magic arm
-    let model = w
-        .battle_spell_menu_model()
+    let model = legaia_engine_battle_hud::battle_spell_menu_model(&w)
         .expect("the Magic arm opened the spell window");
     assert_eq!(
         model.icons,

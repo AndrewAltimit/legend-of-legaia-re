@@ -353,7 +353,10 @@ pub fn battle_chrome_sprite_draws(
     // The battle item window's chrome (both packet-pinned 9-slice windows,
     // the breadcrumb tabs and the hand cursor) rides the same atlas layer as
     // the rest of the menu chrome.
-    if let (Some(rects), Some(model)) = (inputs.chrome, w.battle_item_menu_model()) {
+    if let (Some(rects), Some(model)) = (
+        inputs.chrome,
+        legaia_engine_battle_hud::battle_item_menu_model(w),
+    ) {
         out.extend(crate::with_battle_item_frame(&model, |frame| {
             legaia_engine_ui::battle_item_ui::battle_item_window_sprites(
                 inputs.font,
@@ -366,7 +369,10 @@ pub fn battle_chrome_sprite_draws(
     }
     // The magic window (`0x46`): the item window's two windows, the `Lv` /
     // `MP` tabs and the hand; its breadcrumb trail is the HUD's.
-    if let (Some(rects), Some(model)) = (inputs.chrome, w.battle_spell_menu_model()) {
+    if let (Some(rects), Some(model)) = (
+        inputs.chrome,
+        legaia_engine_battle_hud::battle_spell_menu_model(w),
+    ) {
         out.extend(crate::with_battle_spell_frame(&model, |frame| {
             legaia_engine_ui::battle_item_ui::battle_spell_window_sprites(
                 rects, frame, origin, scale,
@@ -483,6 +489,7 @@ pub fn arts_input_chrome_draws(
         pool_max: view.pool_max,
         plate_value: view.plate_value,
         list_page: view.list_page,
+        list_pages: view.list_pages,
         phase: arts_input_screen(view.phase),
     };
     let mut out =
@@ -516,7 +523,102 @@ pub fn arts_input_chrome_draws(
             scale,
         ));
     }
+    // The Triangle arts list's window frame, over the rest of the screen
+    // (its node is the walker's first, key `0`): the rows are text
+    // (`arts_list_draws`). Only where the rows can be drawn too - a dome
+    // leg slides the window but carries no learned list
+    // (`World::arts_list_rows`), and an empty frame is not retail's.
+    if let Some(r) = chrome
+        && entry.is_some()
+        && world.arts_list_rows().is_some()
+    {
+        out.extend(ai::arts_list_frame_draws(r, view.list_slide, origin, scale));
+    }
     out
+}
+
+/// The arts entry's Triangle help caption - the Triangle button sprite and
+/// the battle overlay's `View Hyper Arts list` / `View Next page` line
+/// (`FUN_801D3444`, [`legaia_engine_ui::arts_input::arts_list_caption`]) -
+/// while a party member owns the entry. Empty when no caption is up or the
+/// disc's line was not read.
+fn arts_list_caption_draws(
+    world: &World,
+    font: &legaia_font::Font,
+    origin: (i32, i32),
+    scale: u32,
+) -> Vec<TextDraw> {
+    use legaia_engine_ui::arts_input as ai;
+    use legaia_ui_formats::battle_ui_strings::BattleUiLabel;
+    if world.dialogue_owns_input() {
+        return Vec::new();
+    }
+    let Some(view) = world.arts_input_view() else {
+        return Vec::new();
+    };
+    let frame = ai::ArtsInputFrame {
+        glides: &[],
+        chip_slide: None,
+        buffer: view.pennants,
+        spent: view.pennant_spent,
+        chip_costs: view.costs,
+        chip_icons: view.chip_icons,
+        pool: view.pool,
+        pool_max: view.pool_max,
+        plate_value: view.plate_value,
+        list_page: view.list_page,
+        list_pages: view.list_pages,
+        phase: arts_input_screen(view.phase),
+    };
+    let mut out = arts_list_draws(world, font, view.list_slide, origin, scale);
+    let Some(caption) = ai::arts_list_caption(&frame) else {
+        return out;
+    };
+    let label = match caption {
+        ai::ArtsListCaption::HyperArtsList => BattleUiLabel::ArtsListHelp,
+        ai::ArtsListCaption::NextPage => BattleUiLabel::ArtsListNextPage,
+    };
+    let Some(text) = world.battle.ui_strings.get(label) else {
+        return out;
+    };
+    out.extend(ai::arts_list_caption_text_draws(
+        font,
+        caption,
+        text,
+        legaia_engine_ui::battle_command_ui::LABEL_INK,
+        origin,
+        scale,
+    ));
+    out
+}
+
+/// The Triangle arts list's rows (`FUN_80034358`) on the open page, at the
+/// window's slide - names, AP and command arrows
+/// ([`legaia_engine_ui::arts_input::arts_list_text_draws`] over
+/// `World::arts_list_rows`). Empty while no page is open or the arts-name
+/// table is not installed.
+fn arts_list_draws(
+    world: &World,
+    font: &legaia_font::Font,
+    slide: u8,
+    origin: (i32, i32),
+    scale: u32,
+) -> Vec<TextDraw> {
+    use legaia_engine_ui::arts_input as ai;
+    let Some(rows) = world.arts_list_rows() else {
+        return Vec::new();
+    };
+    let views: Vec<Option<ai::ArtsListRowView<'_>>> = rows
+        .iter()
+        .map(|r| {
+            r.as_ref().map(|r| ai::ArtsListRowView {
+                name: &r.name,
+                ap: r.ap,
+                glyphs: &r.glyphs,
+            })
+        })
+        .collect();
+    ai::arts_list_text_draws(font, &views, slide, origin, scale)
 }
 
 /// Left margin of the battle submenus' text stand-ins (surface pixels).
@@ -614,6 +716,7 @@ pub fn battle_text_draws(
         }
         let mut out = battle_hud_frame_draws(inputs, surface_w, surface_h).text;
         out.extend(command_chip_text(w, font, origin, scale));
+        out.extend(arts_list_caption_draws(w, font, origin, scale));
         return out;
     }
     if w.mode != SceneMode::Battle {
@@ -645,10 +748,12 @@ pub fn battle_text_draws(
         return out;
     }
     if w.arts_input_view().is_some() {
-        // Retail-model arts entry: the whole screen is baked art, drawn in
-        // the sprite layer by `arts_input_chrome_draws`, so it puts up no
-        // text. The Begin | Reselect pick is the party's commit confirm (the
+        // Retail-model arts entry: the chips, bar and pennants are baked
+        // art, drawn in the sprite layer by `arts_input_chrome_draws`; the
+        // one line of text is the Triangle list's help caption. The
+        // Begin | Reselect pick is the party's commit confirm (the
         // command-chip cluster), not a line of this screen.
+        out.extend(arts_list_caption_draws(w, font, origin, scale));
         return out;
     }
     if let Some(arts) = &w.battle.arts_menu {
@@ -703,7 +808,7 @@ pub fn battle_text_draws(
                 // Retail's magic window (state `0x46`): the windowed list,
                 // description and `Lv` / `MP` tabs, not a text column. The
                 // window chrome rides `battle_chrome_sprite_draws`.
-                if let Some(model) = w.battle_spell_menu_model() {
+                if let Some(model) = legaia_engine_battle_hud::battle_spell_menu_model(w) {
                     out.extend(crate::with_battle_spell_frame(&model, |frame| {
                         legaia_engine_ui::battle_item_ui::battle_spell_window_text(
                             font, frame, origin, scale,
@@ -720,7 +825,7 @@ pub fn battle_text_draws(
         // Retail's item window (state 0x3C): the packet-pinned list +
         // description windows with breadcrumbs and the hand cursor. Text half
         // here; the window chrome + hand ride `battle_chrome_sprite_draws`.
-        if let Some(model) = w.battle_item_menu_model() {
+        if let Some(model) = legaia_engine_battle_hud::battle_item_menu_model(w) {
             out.extend(crate::with_battle_item_frame(&model, |frame| {
                 legaia_engine_ui::battle_item_ui::battle_item_window_text(
                     font, frame, origin, scale,
@@ -793,8 +898,8 @@ pub fn battle_tutorial_stage_draws(
 }
 
 /// The post-battle report's windows this frame, with the stage transform:
-/// the loss window when `World::battle_defeat_banner` is up, else the spoils
-/// report (`World::battle_spoils_banner`), else nothing.
+/// the loss window when `legaia_engine_battle_hud::battle_defeat_banner` is
+/// up, else the spoils report (`battle_spoils_banner`), else nothing.
 fn with_battle_result_windows<T: Default>(
     world: &World,
     surface_w: u32,
@@ -807,15 +912,15 @@ fn with_battle_result_windows<T: Default>(
     ) -> T,
 ) -> T {
     let (origin, scale) = legaia_engine_ui::pause_menu::stage_transform(surface_w, surface_h);
-    if let Some(defeat) = world.battle_defeat_banner() {
+    if let Some(defeat) = legaia_engine_battle_hud::battle_defeat_banner(world) {
         let windows =
             legaia_engine_ui::battle_defeat_windows(defeat.line.as_deref(), defeat.slide_y);
         return f(&windows, None, origin, scale);
     }
-    let Some(banner) = world.battle_spoils_banner() else {
+    let Some(banner) = legaia_engine_battle_hud::battle_spoils_banner(world) else {
         return T::default();
     };
-    let leader = world.battle_spoils_leader();
+    let leader = legaia_engine_battle_hud::battle_spoils_leader(world);
     let view = legaia_engine_ui::BattleSpoilsView {
         xp: banner.xp,
         gold: banner.gold,

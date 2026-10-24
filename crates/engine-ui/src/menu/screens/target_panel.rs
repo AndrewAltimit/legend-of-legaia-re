@@ -198,7 +198,12 @@ pub fn target_panel_draws_for(
                     4,
                     MENU_TEXT_WHITE,
                 ));
-                str_at(&mut out, "(", wx + 0x58, num_y, MENU_TEXT_TEAL);
+                out.extend(crate::menu::window_painters::separator_glyph_draws(
+                    font,
+                    crate::menu::window_painters::SEPARATOR_GLYPH_LPAREN,
+                    (wx + 0x58, num_y),
+                    MENU_TEXT_TEAL,
+                ));
                 out.extend(num_field_draws(
                     font,
                     base as u64,
@@ -207,7 +212,12 @@ pub fn target_panel_draws_for(
                     4,
                     MENU_TEXT_TEAL,
                 ));
-                str_at(&mut out, ")", wx + 0x80, num_y, MENU_TEXT_TEAL);
+                out.extend(crate::menu::window_painters::separator_glyph_draws(
+                    font,
+                    crate::menu::window_painters::SEPARATOR_GLYPH_RPAREN,
+                    (wx + 0x80, num_y),
+                    MENU_TEXT_TEAL,
+                ));
             }
         } else {
             // Plain HP row: cur / max with the health-tier ink; the
@@ -224,7 +234,12 @@ pub fn target_panel_draws_for(
                 4,
                 hp_ink,
             ));
-            str_at(&mut out, "/", wx + 0x4c, hp_y, MENU_TEXT_WHITE);
+            out.extend(crate::menu::window_painters::separator_glyph_draws(
+                font,
+                crate::menu::window_painters::SEPARATOR_GLYPH_SLASH,
+                (wx + 0x4c, hp_y),
+                MENU_TEXT_WHITE,
+            ));
             out.extend(num_field_draws(
                 font,
                 m.hp_max as u64,
@@ -248,7 +263,12 @@ pub fn target_panel_draws_for(
                     4,
                     mp_ink,
                 ));
-                str_at(&mut out, "/", wx + 0x4c, mp_y, MENU_TEXT_WHITE);
+                out.extend(crate::menu::window_painters::separator_glyph_draws(
+                    font,
+                    crate::menu::window_painters::SEPARATOR_GLYPH_SLASH,
+                    (wx + 0x4c, mp_y),
+                    MENU_TEXT_WHITE,
+                ));
                 out.extend(num_field_draws(
                     font,
                     m.mp_max as u64,
@@ -285,7 +305,12 @@ pub fn target_panel_draws_for(
                 3,
                 MENU_TEXT_WHITE,
             ));
-            str_at(&mut out, "(", wx + 0x5c, y, MENU_TEXT_TEAL);
+            out.extend(crate::menu::window_painters::separator_glyph_draws(
+                font,
+                crate::menu::window_painters::SEPARATOR_GLYPH_LPAREN,
+                (wx + 0x5c, y),
+                MENU_TEXT_TEAL,
+            ));
             out.extend(num_field_draws(
                 font,
                 m.stat_base[stat] as u64,
@@ -294,7 +319,12 @@ pub fn target_panel_draws_for(
                 3,
                 MENU_TEXT_TEAL,
             ));
-            str_at(&mut out, ")", wx + 0x7c, y, MENU_TEXT_TEAL);
+            out.extend(crate::menu::window_painters::separator_glyph_draws(
+                font,
+                crate::menu::window_painters::SEPARATOR_GLYPH_RPAREN,
+                (wx + 0x7c, y),
+                MENU_TEXT_TEAL,
+            ));
         }
 
         // ASCII hand stand-in (retail hand pens are in the sprites fn).
@@ -560,7 +590,8 @@ mod target_panel_tests {
             tab_cap_r: z,
             atr_icons: [z; 3],
             load_empty_frame: None,
-            load_portrait_by_char: [None; 3],
+            load_used_frame: None,
+            save_icons: [None; 16],
             battle: None,
         };
         let hands = |cursor: TargetPanelCursor| {

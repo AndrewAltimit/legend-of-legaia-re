@@ -45,7 +45,7 @@ mod tick_owner;
 
 use disc_tables::*;
 pub use disc_tables::{BATTLE_XA_CLIP_SLOTS, attach_escape_icons};
-pub use frame_steps::{CUE_FOOTSTEP, step_npc_clip_players};
+pub use frame_steps::step_npc_clip_players;
 pub use scene_entry::{NewGameHost, start_new_game_on};
 pub use tick_owner::{TickClaims, TickOwner};
 
@@ -297,11 +297,6 @@ pub struct BootSession<S: AudioSink> {
     /// [`Self::tick`] neither auto-opens [`Self::field_menu`] on Start nor
     /// ticks it.
     host_owns_pause_menu: bool,
-    /// The footstep / ambient cadence (`FUN_80018db0`), stepped once per sim
-    /// tick by [`Self::step_footstep_cadence`].
-    footstep: legaia_engine_audio::footstep::FootstepCadence,
-    /// Last tick's player XZ, for the movement magnitude the cadence reads.
-    footstep_prev_pos: Option<(i32, i32)>,
 }
 
 /// How much of each per-tick world queue a tick left behind.

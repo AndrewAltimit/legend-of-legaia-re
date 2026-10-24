@@ -1125,9 +1125,94 @@ fn mule_arm_kills_follow_the_parked_handles() {
 }
 
 /// Palma's arm 3 drops the stage once its word passes `scalar << 7`.
+/// Arm 4's exit pass stores TR x `-0x2000` and TR z `0x2000` straight
+/// before its `0x160`-frame pan: the drift lands the live globals there.
+#[test]
+fn palma_arm_4_pans_from_its_stored_origin() {
+    let mut st = ModuleCamState {
+        countdown: ModuleCountdown(128 * SPEED_SCALAR - MODULE_DRAIN_PER_TICK),
+        live_pitch_tr: Some((0x30, [0x10, 0x20, 0x1900])),
+        live_yaw: Some(0x100),
+        ..Default::default()
+    };
+    let d = palma_direct(&mut st, 4, seats());
+    assert!(!d.hold);
+    assert_eq!(d.shot.map(|s| s.frames), Some(0x160));
+    let drift = d.drift.expect("the exit stores the pan's origin");
+    assert_eq!(0x10 + i32::from(drift.tr_x), -0x2000);
+    assert_eq!(0x1900 + i32::from(drift.tr_z), 0x2000);
+    // No live pose fed: nothing to land, the pan sets out where it stands.
+    let mut st = ModuleCamState {
+        countdown: ModuleCountdown(128 * SPEED_SCALAR - MODULE_DRAIN_PER_TICK),
+        ..Default::default()
+    };
+    assert!(palma_direct(&mut st, 4, seats()).drift.is_none());
+}
+
 #[test]
 fn palma_arm_3_drops_the_stage_halfway() {
     assert_eq!(palma_stage_byte(3, (SPEED_SCALAR << 7) - 1), None);
     assert_eq!(palma_stage_byte(3, SPEED_SCALAR << 7), Some(3));
     assert_eq!(palma_stage_byte(4, SPEED_SCALAR << 8), None);
+}
+
+#[test]
+fn horn_arm_8_stages_its_clip_with_the_bump_and_arm_9_bare() {
+    // Arm 8 passes on a spent word: clip `1` with the `+0x1DC` bump
+    // (`0x801F750C..0x801F7524`), which cuts the idle at once.
+    let mut st = ModuleCamState::default();
+    let d = horn_direct(&mut st, 8, seats());
+    assert!(!d.hold);
+    assert_eq!(st.creature_stage, Some(1));
+    assert!(st.creature_restage);
+    // Arm 9 stores `2` bare on every pass, held or not (`0x801F7590`):
+    // the creature plays clip `1` out before clip `2` commits.
+    let mut st = ModuleCamState::default();
+    st.countdown.0 = 0x1000;
+    let d = horn_direct(&mut st, 9, seats());
+    assert!(d.hold);
+    assert_eq!(st.creature_stage, Some(2));
+    assert!(!st.creature_restage);
+}
+
+#[test]
+fn horn_arm_6_seats_sixteen_spokes_of_glows_at_two_speeds() {
+    // Sixteen passes of four calls, the two records in turn.
+    let s = creature_arm_spawns(930, 6, SpawnTiming::Pass);
+    assert_eq!(s.len(), 64);
+    let records: Vec<u32> = s
+        .iter()
+        .map(|c| match c.record {
+            SpawnRecord::Module(va) => va,
+            SpawnRecord::BattleProto(_) => 0,
+        })
+        .collect();
+    assert!(records.chunks(2).all(|p| p == HORN_RING_RECORDS));
+    // Pass 0 looks straight up the cosine: the slow seat `+0x3E = 4096 /
+    // 1024`, the fast one `4096 / 512`; pass 1 (angle `0x100`) reads
+    // `sin = 1567`, `cos = 3784`. These are the drifts a retail Horn cast
+    // holds in its arm-7 glows.
+    assert_eq!(
+        horn_ring_drift(0x801F_8C44, 0),
+        Some([(0x3C, 0), (0x3E, 4)])
+    );
+    assert_eq!(
+        horn_ring_drift(0x801F_8CA0, 1),
+        Some([(0x3C, 0), (0x3E, 8)])
+    );
+    assert_eq!(
+        horn_ring_drift(0x801F_8C44, 2),
+        Some([(0x3C, 2), (0x3E, 3)])
+    );
+    assert_eq!(
+        horn_ring_drift(0x801F_8C44, 3),
+        Some([(0x3C, 4), (0x3E, 7)])
+    );
+    // Pass 12 points down -X: the quotients truncate toward zero.
+    assert_eq!(
+        horn_ring_drift(0x801F_8C44, 24),
+        Some([(0x3C, (-5i16) as u16), (0x3E, 0)])
+    );
+    assert_eq!(horn_ring_drift(0x801F_8C44, 32), None);
+    assert_eq!(horn_ring_drift(0x801F_8BEC, 0), None);
 }

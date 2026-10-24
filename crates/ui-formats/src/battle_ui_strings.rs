@@ -139,6 +139,14 @@ pub const OVL_SOLO_SURPRISED: u32 = 0x801F_4CF8;
 /// (`legaia_engine_world_views::timed_fight`).
 pub const OVL_TIMED_FIGHT_STRIP: u32 = 0x801C_E818;
 
+/// The arts-entry help line under a closed Triangle list - `Button: View
+/// Hyper Arts list`, drawn beside the Triangle sprite by the arts-list
+/// driver `FUN_801D3444` (`lui`+`addiu` pair `0x801D3614..0x801D3618`).
+pub const OVL_ARTS_LIST_HELP: u32 = 0x801C_E840;
+/// The same driver's line under an open list page another page follows -
+/// `Button: View Next page` (`0x801D371C..0x801D3720`).
+pub const OVL_ARTS_LIST_NEXT_PAGE: u32 = 0x801C_E860;
+
 /// Base of the per-Ra-Seru magic-command label table (`0x801D8F0C`).
 pub const RASERU_LABEL_TABLE_VA: u32 = 0x801F_4B9E;
 /// Bytes between two Ra-Seru labels (`id*5` then `<< 1`).
@@ -148,8 +156,10 @@ pub const RASERU_LABEL_STRIDE: u32 = 10;
 pub const RASERU_LABEL_MAX: u8 = 4;
 
 /// Every overlay-resident battle label, in address order.
-pub const OVERLAY_LABELS: [(u32, BattleUiLabel); 8] = [
+pub const OVERLAY_LABELS: [(u32, BattleUiLabel); 10] = [
     (OVL_TIMED_FIGHT_STRIP, BattleUiLabel::TimedFightStrip),
+    (OVL_ARTS_LIST_HELP, BattleUiLabel::ArtsListHelp),
+    (OVL_ARTS_LIST_NEXT_PAGE, BattleUiLabel::ArtsListNextPage),
     (OVL_SPIRIT, BattleUiLabel::Spirit),
     (OVL_DEFENSE, BattleUiLabel::Defense),
     (OVL_TEAM_SURPRISED, BattleUiLabel::TeamSurprised),
@@ -235,12 +245,26 @@ pub const SCUS_REFS: [(u32, StrRef); 15] = [
 /// address, by retail VA: the `lui` / `addiu` pair of the routine that
 /// stores or registers it. `Defense` has no reference (nothing moves it) and
 /// the Ra-Seru run is indexed by arithmetic, so neither is listed.
-pub const OVERLAY_REFS: [(u32, StrRef); 7] = [
+pub const OVERLAY_REFS: [(u32, StrRef); 9] = [
     (
         OVL_TIMED_FIGHT_STRIP,
         StrRef::Pair {
             lui: 0x801D_0F80,
             lo: 0x801D_0F84,
+        },
+    ),
+    (
+        OVL_ARTS_LIST_HELP,
+        StrRef::Pair {
+            lui: 0x801D_3614,
+            lo: 0x801D_3618,
+        },
+    ),
+    (
+        OVL_ARTS_LIST_NEXT_PAGE,
+        StrRef::Pair {
+            lui: 0x801D_371C,
+            lo: 0x801D_3720,
         },
     ),
     (
@@ -337,6 +361,10 @@ pub enum BattleUiLabel {
     StealRecoveredAll,
     /// Koru's timed-fight strip (`Turns Left` / `HP Left` field labels).
     TimedFightStrip,
+    /// The arts entry's closed-list Triangle help line.
+    ArtsListHelp,
+    /// The arts list's next-page Triangle help line.
+    ArtsListNextPage,
 }
 
 /// The battle UI labels read off one image pair.

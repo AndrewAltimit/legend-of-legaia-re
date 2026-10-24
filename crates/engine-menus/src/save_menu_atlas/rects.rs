@@ -199,6 +199,39 @@ pub const HUD_DIGIT_W: u32 = 8;
 /// Height of one HUD numeral cell.
 pub const HUD_DIGIT_H: u32 = 12;
 
+/// Ink-staging ids `0..=9` (`_DAT_8007B454`): a numeral or separator draws
+/// through the font CLUT `16 * (6 + id)` on VRAM row 510, which is
+/// sub-palette `6 + id` of the menu-glyph TIM.
+pub const NUMERAL_INK_IDS: u8 = 10;
+
+/// Atlas placement of the HUD numeral strip decoded under ink-staging id
+/// `staging` (`0..`[`NUMERAL_INK_IDS`]).
+///
+/// Retail resolves a readout tier by **selecting** that tier's font CLUT
+/// (`FUN_80034B78` passes `gp[0x13C] + 0x7F86` as the sprite's CLUT word),
+/// so each tier's cell carries its own ink *and* its own outline and
+/// mid-tone; scaling the tier-7 strip lands the ink but not the darker
+/// entries. Tier 7 is [`ATLAS_RECT_HUD_DIGITS`]; the other nine strips sit
+/// three to a row in the rows below the 256-row save-menu plane
+/// ([`ATLAS_BAKED_HEIGHT`]).
+pub const fn atlas_rect_hud_digits_ink(staging: u8) -> (u32, u32, u32, u32) {
+    if staging == 7 {
+        return ATLAS_RECT_HUD_DIGITS;
+    }
+    let i = (if staging > 7 { staging - 1 } else { staging }) as u32;
+    let w = HUD_DIGIT_W * 10;
+    (
+        (i % 3) * w,
+        ATLAS_HEIGHT + (i / 3) * HUD_DIGIT_H,
+        w,
+        HUD_DIGIT_H,
+    )
+}
+
+/// Height of the baked atlas: the 256-row save-menu plane plus the three
+/// rows of per-ink numeral strips ([`atlas_rect_hud_digits_ink`]) below it.
+pub const ATLAS_BAKED_HEIGHT: u32 = ATLAS_HEIGHT + 3 * HUD_DIGIT_H;
+
 /// Atlas placement of the **status-element badge block** - the nine 48x16
 /// word tags `FUN_8002C2E4`'s exclusive ladder selects from, sprite ids
 /// `0x18..=0x20` (`legaia_ui_formats::ui_widgets::STATUS_BADGES`).
@@ -338,6 +371,35 @@ pub(super) const ELEMENT_BADGE_ROW499_TIM_OFFSET: usize = 0x100D0;
 /// one asset, already baked here and already drawn by
 /// `legaia_engine_ui::title_save::slot_grid`.
 pub const ATLAS_RECT_PORTRAIT_W: u32 = 16;
+/// Atlas placement of save-icon tiles `3..=14` (the faces past the three
+/// portrait TIMs): the grid draws tile `n` in cell `n`, and an "Able to
+/// save." panel the focused block's tile, so all fifteen are reachable.
+/// Decoded off the menu overlay's icon strip (PROT 0899
+/// `title_pak::OVERLAY_CARD_ICON_TIM_OFFSET`), tile `t` through sub-palette
+/// `t` ([`legaia_ui_formats::save_icon`]). No 192-px run of the atlas is
+/// free, so the cells are scattered over free 16x16 squares.
+pub const ATLAS_RECT_SAVE_ICON_CELLS: [(u32, u32); 12] = [
+    (128, 80),
+    (144, 80),
+    (160, 80),
+    (176, 80),
+    (128, 96),
+    (144, 96),
+    (160, 96),
+    (176, 96),
+    (32, 80),
+    (48, 80),
+    (128, 64),
+    (176, 64),
+];
+/// First save-icon tile [`ATLAS_RECT_SAVE_ICON_CELLS`] holds; tiles below it
+/// are the portrait TIMs at [`ATLAS_RECT_PORTRAIT_BASE_X`].
+pub const ATLAS_SAVE_ICON_FIRST_BAKED: usize = 3;
+/// Atlas placement of the grid's **"USED"** cell frame: sprite record 5 of
+/// the save UI's table (`0x801E5048 + 5 * 12`: sub-palette 6, `(80, 96)`,
+/// 32x32 on the save-menu sheet), which `FUN_801E0FD0` draws for a block
+/// its walk classed as occupied by something unreadable.
+pub const ATLAS_RECT_USED_FRAME: (u32, u32, u32, u32) = (0, 80, 32, 32);
 pub const ATLAS_RECT_PORTRAIT_H: u32 = 16;
 pub const ATLAS_RECT_PORTRAIT_BASE_X: u32 = 200;
 pub const ATLAS_RECT_PORTRAIT_BASE_Y: u32 = 96;

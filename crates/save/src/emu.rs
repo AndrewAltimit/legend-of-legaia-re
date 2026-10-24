@@ -356,13 +356,31 @@ impl MountedCard {
     /// The bytes are the container exactly as mounted plus the in-place block
     /// writes, never re-encoded, so every save the card held before is still
     /// there byte for byte.
+    ///
+    /// The file's directory is created when missing: a first save on a fresh
+    /// install has a card path under a save directory nothing has made yet,
+    /// and refusing it there failed every save until the player created the
+    /// directory by hand. The image is written beside the file and renamed
+    /// over it, so a write cut short leaves the previous card - every other
+    /// save on it - intact instead of a truncated image.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn persist(&mut self) -> Result<bool> {
         use anyhow::Context;
         let Some(path) = self.path.as_ref().filter(|_| self.dirty) else {
             return Ok(false);
         };
-        std::fs::write(path, &self.bytes)
+        if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+            std::fs::create_dir_all(dir)
+                .with_context(|| format!("create memory-card directory {}", dir.display()))?;
+        }
+        let mut staging = path.as_os_str().to_owned();
+        staging.push(".tmp");
+        let staging = std::path::PathBuf::from(staging);
+        std::fs::write(&staging, &self.bytes)
+            .and_then(|()| std::fs::rename(&staging, path))
+            .inspect_err(|_| {
+                let _ = std::fs::remove_file(&staging);
+            })
             .with_context(|| format!("write memory-card image {}", path.display()))?;
         self.dirty = false;
         Ok(true)
@@ -385,6 +403,46 @@ impl MountedCard {
             return None;
         }
         Some((sf, crate::SaveResume::from_retail_sc_block(sc)))
+    }
+
+    /// The save number `block`'s file carries in its filename, when the block
+    /// opens a chain filed under a Legaia save name.
+    pub fn save_number_of_block(&self, block: u8) -> Option<usize> {
+        if !self.block_is_save_start(block) {
+            return None;
+        }
+        card::legaia_save_number(self.dir_frame(block)?.get(0x0A..)?)
+    }
+
+    /// The block holding save number `n`, by filename.
+    ///
+    /// The load grid places a save by the number its **filename** carries,
+    /// not by the block the BIOS put the file in: retail's directory walk
+    /// (`FUN_801E1208`) stamps the slot the name's two digits name, and the
+    /// load opens the file by that name. A card that saved out of order -
+    /// any real one - holds `-03` in block 2. When two files name the same
+    /// number the later block wins, as the walk's later stamp does.
+    pub fn block_of_save_number(&self, n: usize) -> Option<u8> {
+        (1..=card::DIR_FRAMES as u8)
+            .rev()
+            .find(|&b| self.save_number_of_block(b) == Some(n))
+    }
+
+    /// The save filed under number `n` ([`Self::block_of_save_number`]), read
+    /// as [`Self::save_at`] reads a block.
+    pub fn save_numbered(&self, n: usize) -> Option<(crate::SaveFile, crate::SaveResume)> {
+        self.save_at(self.block_of_save_number(n)?.checked_sub(1)?)
+    }
+
+    /// The block a new save would be created in: the lowest block whose
+    /// directory frame is free (state `0xA0..=0xAF`, a deleted file
+    /// included), as the BIOS allocates a new file. `None` on a full card.
+    pub fn first_free_block(&self) -> Option<u8> {
+        (1..=card::DIR_FRAMES as u8).find(|&b| {
+            self.dir_frame(b)
+                .and_then(|f| f.first())
+                .is_some_and(|&s| s & 0xF0 == 0xA0)
+        })
     }
 
     /// This card's SC block `block`, when the block opens a save chain.
@@ -423,6 +481,26 @@ mod tests {
         buf
     }
 
+    /// A save is found by the number its filename carries, not by its block:
+    /// a card that saved `-03` first holds it in block 1. Deleted frames
+    /// (`0xA1`) count as free for a new file.
+    #[test]
+    fn saves_are_addressed_by_filename_number() {
+        let mut buf = raw_card();
+        let f = DIR_FRAME_SIZE;
+        buf[f + 10..f + 28].copy_from_slice(b"BASCUS-94254PRO-03");
+        for blk in 2..=15usize {
+            buf[f * blk] = if blk == 2 { 0xA1 } else { 0xA0 };
+        }
+        let card = MountedCard::from_bytes(buf, "t").unwrap();
+        assert_eq!(card.save_number_of_block(1), Some(3));
+        assert_eq!(card.block_of_save_number(3), Some(1));
+        assert_eq!(card.block_of_save_number(0), None);
+        assert_eq!(card.first_free_block(), Some(2));
+        assert_eq!(card::legaia_save_number(b"BISCPS-10059PRO-1x"), Some(1));
+        assert_eq!(card::legaia_save_number(b"BASCUS-94221FFTA00"), None);
+    }
+
     /// `persist` writes a dirty card back to the file it was opened from,
     /// and a clean card (or one mounted from bytes) writes nothing.
     #[test]
@@ -444,6 +522,27 @@ mod tests {
         loose.dirty = true;
         assert!(!loose.persist().unwrap(), "no file to write back to");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A card whose file sits in a directory that does not exist yet - the
+    /// native window's `saves/memcard1.mcr` on a fresh install - is written
+    /// on its first save, directory and all, and leaves no staging file.
+    #[test]
+    fn persist_creates_the_missing_save_directory() {
+        let root = std::env::temp_dir().join(format!("legaia-card-fresh-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let path = root.join("saves").join("memcard1.mcr");
+        let mut card = MountedCard::from_bytes(raw_card(), "memcard1.mcr").unwrap();
+        card.path = Some(path.clone());
+        card.dirty = true;
+        assert!(card.persist().expect("first save on a fresh install"));
+        assert_eq!(std::fs::read(&path).unwrap(), card.bytes);
+        let names: Vec<_> = std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, vec![std::ffi::OsString::from("memcard1.mcr")]);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// A save-start block whose character records are all zero lists as a

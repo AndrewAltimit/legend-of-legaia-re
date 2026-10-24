@@ -476,6 +476,13 @@ pub struct BattleState {
     /// against Gobu Gobu's `76`, no more than the quarter, and a replay that
     /// rolled `21` knocked him down and stood the fight 300 units off.
     pub forced_melee_total: Option<(u8, u32)>,
+    /// `(clip, pushes)`: the newest `pushes` entries of
+    /// [`Self::forced_melee_hits`] belong to the acting body's clip `clip`
+    /// (`+0x1D9`). A party hit from another clip that reaches them - a
+    /// swing the replay landed where retail's defender blocked - leaves
+    /// them for that clip and takes an unknown amount, so the capture's
+    /// own numeral lands its captured value.
+    pub forced_melee_own_clip: Option<(u8, u8)>,
     /// A retail-comparison seed: the engine slot of an attacker held where
     /// it stands for its approach. Retail can park a monster in state
     /// `0x19` with its Move clip dead (`+0x1DC` bit 2 left set by a flinch
@@ -672,6 +679,12 @@ pub struct BattleState {
     /// The battle frame the actor anim tick last ran its pass on
     /// ([`crate::world::World::battle_anim_pass_vsyncs`]).
     pub anim_pass_frame: Option<u64>,
+    /// The battle frame the effect-script table parts last took their part
+    /// tick on ([`crate::world::World::action_fx_pass_vsyncs`]).
+    pub action_fx_pass_frame: Option<u64>,
+    /// The battle frame the cast's summon parts last took their part tick on
+    /// ([`crate::world::World::summon_fx_pass_vsyncs`]).
+    pub summon_fx_pass_frame: Option<u64>,
     /// The vsyncs this tick's anim pass spans: the frame step on the tick
     /// that opens a battle frame, `0` on the ticks between, `1` on the
     /// per-vsync cadence.
@@ -696,6 +709,11 @@ pub struct BattleState {
     /// in. Taken at the head of each battle-cadence anim pass; empty on the
     /// per-vsync cadence, where the readout reads the live trio.
     pub readout_trios: Vec<Option<[f32; 3]>>,
+    /// A replay's seeded battle frame step (`World::seed_battle_frame_step`)
+    /// held back until the acting body plays clip `.0` at or past cursor
+    /// `.1` (sixteenths): the pass a capture's step run began on, as its
+    /// cursor history holds it. Not a retail field.
+    pub frame_step_seed_from: Option<(u8, i32)>,
     /// The action state the SM's last pass ran (its state on entry), which
     /// the camera frames on retail's cadence
     /// ([`crate::world::World::battle_camera_state`]).
@@ -865,8 +883,8 @@ pub struct BattleState {
     pub last_rewards: Option<BattleRewards>,
     /// Frames left on the post-battle spoils panel. [`crate::world::World::finish_battle`]
     /// arms it on a monster wipe ([`crate::world::World::SPOILS_BANNER_FRAMES`]) and
-    /// [`crate::world::World::tick`] counts it down; a host draws
-    /// [`crate::world::World::battle_spoils_banner`] while it is non-zero. Without this the
+    /// [`crate::world::World::tick`] counts it down; the panel is up
+    /// ([`crate::world::World::battle_spoils_window_up`]) while it is non-zero. Without this the
     /// XP / gold / drops in [`crate::world::BattleState::last_rewards`] were applied with no
     /// on-screen acknowledgement at all.
     pub(crate) spoils_frames: u16,
@@ -1058,6 +1076,7 @@ impl BattleState {
             forced_steal: false,
             forced_melee_hits: Default::default(),
             forced_melee_total: None,
+            forced_melee_own_clip: None,
             approach_hold: None,
             party_melee_pushes: 0,
             forced_absorb: false,
@@ -1094,10 +1113,13 @@ impl BattleState {
             pass_draw_frame: None,
             sm_pass_frame: None,
             anim_pass_frame: None,
+            action_fx_pass_frame: None,
+            summon_fx_pass_frame: None,
             anim_pass_vsyncs: 1,
             anim_slot_reached: false,
             hit_commit_rewalk: Vec::new(),
             readout_trios: Vec::new(),
+            frame_step_seed_from: None,
             sm_ran_state: None,
             defeat_sink_frame: None,
             vram_loads: Default::default(),

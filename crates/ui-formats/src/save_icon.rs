@@ -104,6 +104,29 @@ pub const PROT_ENTRY_CLUT_DATA_OFFSET: usize = PROT_ENTRY_OFFSET + 8 + 12;
 pub const PROT_ENTRY_PIXEL_DATA_OFFSET: usize =
     PROT_ENTRY_CLUT_DATA_OFFSET + (CLUT_RECT.2 as usize) * 2 + 12;
 
+/// Byte offset in PROT entry 899 of the **save-title template**, the
+/// Shift-JIS `Legend of Legaia NN  Time HH:MM` line a save block's title is
+/// stamped from. Menu-overlay VA `0x801E4FC8` (base `0x801CE818`): retail's
+/// composer `FUN_801E1934` loads `0x801E4FC8` into `a1` (`0x801E1954..58`),
+/// patches the slot digits into it (`sb t1,0x23(a1)` / `sb a3,0x25(a1)`) and
+/// copies `0x40` bytes of it to the block's title (`FUN_8003D26C(0x80084144,
+/// a1, 2)` at `0x801E1A18`).
+pub const TITLE_TEMPLATE_OFFSET: usize = 0x167B0;
+
+/// Bytes of the save-title template the composer copies.
+pub const TITLE_TEMPLATE_LEN: usize = 0x40;
+
+/// The save-title template out of PROT entry 899, or `None` when the entry is
+/// too short or the bytes there do not open with a Shift-JIS double-byte
+/// lead (`0x81..=0x9F`) - not the template.
+pub fn title_template(entry: &[u8]) -> Option<[u8; TITLE_TEMPLATE_LEN]> {
+    let t: [u8; TITLE_TEMPLATE_LEN] = entry
+        .get(TITLE_TEMPLATE_OFFSET..TITLE_TEMPLATE_OFFSET + TITLE_TEMPLATE_LEN)?
+        .try_into()
+        .ok()?;
+    (0x81..=0x9F).contains(&t[0]).then_some(t)
+}
+
 /// Bytes per strip row: 256 pixels at 4bpp.
 pub const STRIP_ROW_BYTES: usize = 128;
 

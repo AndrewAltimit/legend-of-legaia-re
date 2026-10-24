@@ -25,6 +25,11 @@ use crate::battle_drive::engine_seat;
 pub struct MeleeHitSeed {
     pub hits: Vec<(u8, u16)>,
     pub total: Option<(u8, u32)>,
+    /// `(clip, pushes)`: the ring's newest `pushes` pushes were landed by
+    /// the acting body's clip `clip` (`+0x1D9`), the one the capture shows
+    /// it playing. A replay that lands an extra hit earlier in the string
+    /// (a swing retail's defender blocked) must not spend them on it.
+    pub own_clip: Option<(u8, u8)>,
 }
 
 impl MeleeHitSeed {
@@ -44,9 +49,11 @@ pub fn seed_melee_hits(world: &mut legaia_engine_core::world::World, seed: &Mele
     world.battle.forced_melee_total = seed
         .total
         .map(|(slot, total)| (engine_seat(slot, pc), total));
+    world.battle.forced_melee_own_clip = seed.own_clip;
 }
 
-/// `slot:amount,...[|slot:total]` for `LEGAIA_BATTLE_MELEE_HITS`.
+/// `slot:amount,...[|slot:total][@clip:pushes]` for
+/// `LEGAIA_BATTLE_MELEE_HITS`.
 pub fn melee_hits_to_env(seed: &MeleeHitSeed) -> String {
     let hits = seed
         .hits
@@ -54,14 +61,26 @@ pub fn melee_hits_to_env(seed: &MeleeHitSeed) -> String {
         .map(|(s, a)| format!("{s}:{a}"))
         .collect::<Vec<_>>()
         .join(",");
-    match seed.total {
+    let head = match seed.total {
         Some((s, t)) => format!("{hits}|{s}:{t}"),
         None => hits,
+    };
+    match seed.own_clip {
+        Some((c, n)) => format!("{head}@{c}:{n}"),
+        None => head,
     }
 }
 
 /// Parse [`melee_hits_to_env`]'s form; a malformed entry is skipped.
 pub fn melee_hits_from_env(s: &str) -> MeleeHitSeed {
+    let (s, own_clip) = match s.split_once('@') {
+        Some((head, own)) => (
+            head,
+            own.split_once(':')
+                .and_then(|(c, n)| Some((c.trim().parse().ok()?, n.trim().parse().ok()?))),
+        ),
+        None => (s, None),
+    };
     let (hits, total) = match s.split_once('|') {
         Some((h, t)) => (h, Some(t)),
         None => (s, None),
@@ -78,6 +97,7 @@ pub fn melee_hits_from_env(s: &str) -> MeleeHitSeed {
             let (slot, v) = t.trim().split_once(':')?;
             Some((slot.parse().ok()?, v.parse().ok()?))
         }),
+        own_clip,
     }
 }
 
@@ -90,11 +110,19 @@ mod tests {
         let seed = MeleeHitSeed {
             hits: vec![(3, 0), (3, 15)],
             total: Some((3, 29)),
+            own_clip: None,
         };
         assert_eq!(melee_hits_from_env(&melee_hits_to_env(&seed)), seed);
+        let owned = MeleeHitSeed {
+            own_clip: Some((0x11, 1)),
+            ..seed
+        };
+        assert_eq!(melee_hits_to_env(&owned), "3:0,3:15|3:29@17:1");
+        assert_eq!(melee_hits_from_env(&melee_hits_to_env(&owned)), owned);
         let bare = MeleeHitSeed {
             hits: vec![(4, 7)],
             total: None,
+            own_clip: None,
         };
         assert_eq!(melee_hits_from_env(&melee_hits_to_env(&bare)), bare);
         assert!(melee_hits_from_env("").is_empty());

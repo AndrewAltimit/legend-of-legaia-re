@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 
 use crate::retail_compare::{
-    Baseline, RunOptions, markdown_report, resolve_dirs, run_corpus, summarise,
+    Baseline, IMAGE_CHANNELS, RunOptions, markdown_report, resolve_dirs, run_corpus, summarise,
 };
 
 /// Seed the engine from every seedable retail save state in the library and
@@ -107,14 +107,14 @@ pub fn run(args: RetailCompareArgs) -> Result<()> {
         let prior: Option<Baseline> = std::fs::read_to_string(&p)
             .ok()
             .and_then(|t| serde_json::from_str(&t).ok());
-        let unmeasured: &[&str] = if args.images { &[] } else { &["image"] };
+        let unmeasured: &[&str] = if args.images { &[] } else { IMAGE_CHANNELS };
         let b = Baseline::from_reports(&reports).merged_over(prior, unmeasured);
         std::fs::write(&p, serde_json::to_string_pretty(&b)? + "\n")?;
         println!("wrote baseline {}", p.display());
     }
     if let Some(p) = args.check_baseline {
         let b: Baseline = serde_json::from_str(&std::fs::read_to_string(&p)?)?;
-        let allow: &[&str] = if args.images { &[] } else { &["image"] };
+        let allow: &[&str] = if args.images { &[] } else { IMAGE_CHANNELS };
         let regs = b.regressions(&reports, allow);
         for r in &regs {
             eprintln!("[regression] {r}");

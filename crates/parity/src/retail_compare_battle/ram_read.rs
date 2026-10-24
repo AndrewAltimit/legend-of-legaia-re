@@ -5,6 +5,9 @@ use super::*;
 
 /// `ctx[+0x274]` - the next actor the initiative pick `FUN_801DABA4` chose.
 pub(super) const NEXT_ACTOR: u32 = 0x274;
+/// The magic-capture fade (`ctx[+0x07] = 0x6F`): audio duck and a CD wait,
+/// with no framing call of its own (`docs/subsystems/battle-action.md`).
+const CAPTURE_FADE_STATE: u8 = 0x6F;
 
 pub(super) fn in_ram(p: u32) -> bool {
     (0x8000_0000..0x8020_0000).contains(&p)
@@ -60,18 +63,29 @@ const PART_TICK: u32 = 0x8002_1DF4;
 /// `3` off the clamp where every pass ran step `4`, and the rays stood two
 /// vsyncs' turn off the frame on screen.
 ///
+/// PROT 0905's arm-0 glows
+/// ([`VERA_OPEN_GLOWS`](legaia_engine_cast::cast_module_camera::VERA_OPEN_GLOWS))
+/// are seated the same way: they rise `+0x3E` and widen `+0xB6` from arm 0
+/// on, the same clock as their wait. The replay's glows stand a pass older
+/// against the band's flash-out than retail's (the flash steps from the pass
+/// after the `0x34` exit that seats both, the glows on it), so aligned on
+/// the flash, `vera_summon_mid_cast` drew them a pass wider (`.988`); seated
+/// off the RAM a lag back they stand where the screen shows them.
+///
 /// The parts a capture-cell stager seats with `rand()` rolls
 /// ([`ROLLED_STAGER_RECORDS`](legaia_engine_cast::cast_module_ticks::ROLLED_STAGER_RECORDS))
 /// are seated the same way, their lean rate `+0x84` with them: Call Wave's
 /// rays fan at angles the replay's own stream does not deal.
+///
+/// The lag is [`cast_part_lag_vsyncs`]'s.
 pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon::CastPartSeed> {
-    use legaia_engine_cast::cast_module_camera::ULTRA_CHARGE_SHOT_DISCS;
+    use legaia_engine_cast::cast_module_camera::{ULTRA_CHARGE_SHOT_DISCS, VERA_OPEN_GLOWS};
     use legaia_engine_cast::cast_module_ticks::{
         ROLLED_STAGER_EXTRA_OFFSETS, ROLLED_STAGER_RECORDS,
     };
     let per_pass: Vec<u32> =
         legaia_engine_cast::cast_module_camera::per_pass_spawn_records().collect();
-    let lag = pass_steps(ram).iter().map(|&s| i32::from(s)).sum::<i32>();
+    let lag = cast_part_lag_vsyncs(ram);
     crate::retail_compare_script::actor_nodes(ram)
         .into_iter()
         .filter(|&n| {
@@ -81,7 +95,8 @@ pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon
                 && SLOT_B.contains(&rec)
                 && (per_pass.contains(&rec)
                     || ROLLED_STAGER_RECORDS.contains(&rec)
-                    || ULTRA_CHARGE_SHOT_DISCS.contains(&rec))
+                    || ULTRA_CHARGE_SHOT_DISCS.contains(&rec)
+                    || VERA_OPEN_GLOWS.contains(&rec))
         })
         .map(|n| {
             let tag = game_anchors::u32_at(ram, n + 0x48);
@@ -90,16 +105,67 @@ pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon
             } else {
                 &[]
             };
+            let level =
+                level_ramping(ram, n).then(|| (0x78, displayed_morph_halfword(ram, n, 0x78, lag)));
             legaia_engine_effects::summon::CastPartSeed {
                 tag,
                 pokes: legaia_engine_effects::summon::CAST_PART_SEED_OFFSETS
                     .iter()
                     .chain(extra)
                     .map(|&o| (o, displayed_part_halfword(ram, n, o, lag)))
+                    .chain(level)
                     .collect(),
             }
         })
         .collect()
+}
+
+/// Vsyncs a slot-B cast part on the displayed frame lags the RAM's by: the
+/// two passes' steps, except on a capture saved after the flip with the
+/// current table still empty ([`fade_passes_back`] `Some(1)`), where the
+/// newest table under the other record drew the parts' RAM state and the
+/// screen shows the pass before it - one pass, the RAM pass's own step.
+///
+/// `horn_summon_mid_cast` reads that way. Its newest table draws each
+/// sparkle's packets at the RAM's own depth-cue level (the middle volley's
+/// `0x100` as `0xEFEFEF`, the youngest's `0xD00` as `0x2F2F2F`), so the
+/// parts take their ticks with the fade actor, not with the logic words the
+/// two-pass law covers. Seated a pass back (step `3`) the sparks land on
+/// retail's: `image` `.988` to `1.000` (mae `4.3` to `3.5`); seated two
+/// passes back each stood one pass further out along its converging path
+/// and one pass dimmer in its fade-in.
+fn cast_part_lag_vsyncs(ram: &[u8]) -> i32 {
+    let steps = pass_steps(ram).map(i32::from);
+    match fade_passes_back(ram) {
+        Some(1) => steps[0],
+        _ => steps.iter().sum(),
+    }
+}
+
+/// Whether part `node`'s depth-cue level `+0x78` is under its ramp (a
+/// non-zero rate `+0x90`, `(+0x90 * 8) >> 6` a vsync): then the level is a
+/// clock of the part's age like its banks, and a seed carries it taken back
+/// the display lag ([`displayed_morph_halfword`]).
+///
+/// Horn's sparkle triples (`0x801F859C` / `0x801F85FC` / `0x801F865C`) open
+/// at level `0x1000` (black: op `0x0C`, far colour black) and fade in at
+/// `-0x100` a vsync (op `0x0D`). `horn_summon_mid_cast` holds three
+/// volleys, the youngest three vsyncs in (`0xD00`) and born inside the
+/// lag, so the displayed frame drew it black; the seat had cloned an older,
+/// fully lit replay part for it, and four sparks the screen does not show
+/// drew at full brightness.
+///
+/// A level standing on the clamp its rate runs toward names no age and is
+/// left to the replay: the post-VM clamp `0x80022BC0..0x80022C1C` zeroes a
+/// level that wrapped below `0` and saturates one past `0x1000`, so Horn's
+/// oldest volley (level `0`, rate `-0x800`) finished its fade some time
+/// before the RAM's pass. A part its program killed on the pass skips the
+/// clamp (the kill test at `0x80022BB4..0x80022BB8` jumps past it), which is
+/// how Meta's fan holds `0x132C`.
+fn level_ramping(ram: &[u8], node: u32) -> bool {
+    let rate = game_anchors::u16_at(ram, node + 0x90) as i16;
+    let level = game_anchors::u16_at(ram, node + 0x78);
+    (rate < 0 && level != 0) || (rate > 0 && level != 0x1000)
 }
 
 /// The render banks an effect-script table part's seed carries: its
@@ -149,6 +215,40 @@ const MORPH_SEED_OFFSETS: [u16; 2] = [0x78, 0xA0];
 /// The melee ray bursts: the effect-script table arm's codes `0` and `9`
 /// (`0x801F6324[0]` / `[9]`, pool meshes `8` / `9`).
 const RAY_BURST_RECORDS: [u32; 2] = [0x801F_5484, 0x801F_54B4];
+
+/// The summon invoke clip's ray fan (record `0x801F5A04`), whose lane
+/// weight `+0xA0` is seeded beside its banks, taken back the display lag
+/// ([`displayed_morph_halfword`]): the lane is how far each ray reaches,
+/// and it grows `+0xB8 * DAT_1F800393` a pass from the seat, so a replay
+/// that seats the fan a pass off retail's draws every ray a pass long or
+/// short. `swordie_summon_mid_cast` holds `0xBB0` at rate `0x88` against a
+/// replay standing past the displayed `0x990`.
+const LANE_SEEDED_FANS: [u32; 1] = [0x801F_5A04];
+
+/// Whether part `node` is a [`LANE_SEEDED_FANS`] fan under its depth-cue
+/// ramp: a level `+0x78` off zero with a rate `+0x90`. The fan fades out
+/// that way at the end of the invoke clip, `(+0x90 * 8) >> 6` a vsync
+/// toward its black far colour (`0x199` at Meta's and Freed's `0xCC8`),
+/// so like its banks the level is a clock of its age and is seated taken
+/// back the display lag ([`displayed_morph_halfword`]).
+/// `meta_summon_mid_cast` holds `0x132C` in the RAM, which its newest
+/// table drew black (the level past `0x1000`), while the displayed frame,
+/// four vsyncs back, drew the rays at `0xCC8`; the replay stood at `0xFFA`
+/// and drew no rays.
+fn fan_level_ramping(ram: &[u8], node: u32) -> bool {
+    LANE_SEEDED_FANS.contains(&game_anchors::u32_at(ram, node + 0x48))
+        && game_anchors::u16_at(ram, node + 0x78) != 0
+        && level_ramping(ram, node)
+}
+
+/// Whether a killed fan (`+0x10 & 8`, its program's end reached on the
+/// RAM's pass) still drew on the displayed frame: under its level ramp
+/// ([`fan_level_ramping`]), and short of black `lag` vsyncs back. Meta's
+/// fan is killed on the pass after the newest table drew it at `0xFFA`; the
+/// frame on screen is a pass older again.
+fn fan_fading_through_lag(ram: &[u8], node: u32, lag: i32) -> bool {
+    fan_level_ramping(ram, node) && displayed_morph_halfword(ram, node, 0x78, lag) < 0x1000
+}
 
 /// Only the ray bursts are seeded this way ([`is_ray_burst`]). Other
 /// morphing parts are left to the replay: seeded the same way, Ultra
@@ -235,7 +335,8 @@ pub(super) fn retail_action_fx_parts(
         .filter(|&n| {
             let rec = game_anchors::u32_at(ram, n + 0x48);
             game_anchors::u32_at(ram, n + 0x0C) == PART_TICK
-                && game_anchors::u32_at(ram, n + 0x10) & 0x8 == 0
+                && (game_anchors::u32_at(ram, n + 0x10) & 0x8 == 0
+                    || fan_fading_through_lag(ram, n, lag))
                 && overlay.contains(&rec)
                 && (is_burst_child(rec)
                     || is_growing_default_arm(ram, n)
@@ -276,11 +377,19 @@ pub(super) fn retail_action_fx_parts(
             } else {
                 ACTION_FX_SEED_OFFSETS.to_vec()
             };
+            let lane = (LANE_SEEDED_FANS.contains(&tag)
+                && game_anchors::u32_at(ram, n + 0x10) & 0x1000 != 0
+                && game_anchors::u16_at(ram, n + 0xA0) < 0x1000)
+                .then(|| (0xA0, displayed_morph_halfword(ram, n, 0xA0, lag)));
+            let level = fan_level_ramping(ram, n)
+                .then(|| (0x78, displayed_morph_halfword(ram, n, 0x78, lag)));
             legaia_engine_effects::summon::CastPartSeed {
                 tag,
                 pokes: offsets
                     .iter()
                     .map(|&o| (o, displayed_part_halfword(ram, n, o, lag)))
+                    .chain(lane)
+                    .chain(level)
                     .collect(),
             }
         })
@@ -491,6 +600,32 @@ pub(super) fn action_hit_sequence(ram: &[u8], ctx: u32) -> Vec<(u8, u16)> {
         .collect()
 }
 
+/// `ctx[+0x85C + i * 4]` - ring entry `i`'s timer, `0x10 * step` a pass
+/// (`0x801DF7B8..0x801DF7C8`).
+const RING_TIMER: u32 = 0x85C;
+/// The close-up accumulator `ctx[+0x87C]`: `8 * step` a pass since the
+/// acting actor's last clip commit (`0x801D5900..0x801D5914`, zeroed at
+/// `0x8004BF74`).
+const CLOSE_UP_ACCUM: u32 = 0x87C;
+
+/// How many of the ring's newest pushes ([`action_hit_sequence`]) the acting
+/// body's playing clip landed: those whose timer is younger than the clip.
+/// The timer gains `0x10` a vsync and the accumulator `8`, so a push the
+/// clip made reads under twice the accumulator.
+/// `battle_melee_hit_spark`'s Somersault holds accumulator `256` and its
+/// closing `15` timer `288`, the string's two expired pushes `608`: one.
+pub(super) fn clip_own_pushes(ram: &[u8], ctx: u32) -> u8 {
+    let count = game_anchors::u8_at(ram, ctx + RING_PUSHES);
+    if count > RING_LEN {
+        return 0;
+    }
+    let age = 2 * game_anchors::u32_at(ram, ctx + CLOSE_UP_ACCUM);
+    (0..u32::from(count))
+        .rev()
+        .take_while(|&i| game_anchors::u32_at(ram, ctx + RING_TIMER + i * 4) < age)
+        .count() as u8
+}
+
 pub(super) fn action_hits(ram: &[u8], ctx: u32) -> Vec<(u8, u16)> {
     let state = game_anchors::u8_at(ram, ctx + 7);
     let count = game_anchors::u8_at(ram, ctx + RING_PUSHES);
@@ -602,7 +737,40 @@ impl RetailBattle {
             summon_fade: summon_fade(ram),
             display_lag: display_lag_vsyncs(ram),
             display_pass_lag: display_pass_steps(ram).iter().map(|&s| u16::from(s)).sum(),
+            display_fade_lag: displayed_fade_lag_vsyncs(ram),
             frame_step: frame_step(ram),
+            step_run: newest_step_run(ram),
+            step_run_start: active.and_then(|p| {
+                let (_, n) = newest_step_run(ram);
+                let n = n as u32;
+                if !in_ram(p) || n >= 16 {
+                    return None;
+                }
+                // The body's own advances bound the run: the cursor ring
+                // advances by the same amount every pass of a run
+                // (`battle_melee_hit_spark`: eight advances of 12, then 8).
+                // A pass advances by the frame before it, so the first long
+                // frame was opened by the pass before the first long
+                // advance - the ninth step-3 entry the history holds - and
+                // that pass read the cursor one slot further back (`24`,
+                // where the first advance of 12 left `32`). The seed opens
+                // its frame on the pass whose action SM reads that cursor.
+                let id = game_anchors::u8_at(ram, p + RING_ID);
+                let at = |i: u32| i32::from(game_anchors::u16_at(ram, p + RING_CURSOR + i * 2));
+                let adv = at(0) - at(1);
+                let body = (0..n)
+                    .take_while(|&i| {
+                        at(i) - at(i + 1) == adv
+                            && game_anchors::u8_at(ram, p + RING_ID + i + 1) == id
+                    })
+                    .count() as u32;
+                let opener = body + 1;
+                (adv > 0
+                    && body > 0
+                    && opener < RING_SLOTS
+                    && game_anchors::u8_at(ram, p + RING_ID + opener) == id)
+                    .then(|| (game_anchors::u8_at(ram, p + 0x1D9), at(opener)))
+            }),
             cam_accum: game_anchors::u32_at(ram, ctx + 0x87C),
             caster_clip: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1D9)),
             walk_yaw_base: game_anchors::u16_at(ram, ctx + 0x6DA),
@@ -627,13 +795,23 @@ impl RetailBattle {
                 let steps: Vec<u8> = (0..usize::from(passes))
                     .map(|n| steps.get(n).copied().unwrap_or(frame_step(ram)))
                     .collect();
-                displayed_cam_live_steps(
-                    ram,
-                    ctx,
-                    &steps,
-                    confirmed,
-                    summon_route_prior_end(ram, ctx, action_state),
-                )
+                // The magic-capture fade `0x6F` arms no framing: the table the
+                // branch `0x6E` left (`FUN_801D5854(actor, 6)` every pass)
+                // walks on at its own increment, so the passes back stood
+                // that increment further out each, not the re-arm's widening
+                // share (`zora_glare_petrify_pre`: TR z `4910` on the re-arm's
+                // walk, `.971`; `4883` on the table's, `.996`).
+                if action_state == CAPTURE_FADE_STATE {
+                    displayed_module_cam_live(ram, ctx, &steps)
+                } else {
+                    displayed_cam_live_steps(
+                        ram,
+                        ctx,
+                        &steps,
+                        confirmed,
+                        summon_route_prior_end(ram, ctx, action_state),
+                    )
+                }
             },
             displayed_module_cam_live: displayed_module_cam_live(
                 ram,
@@ -682,6 +860,7 @@ impl RetailBattle {
             popup_cells: displayed_popup_cells(ram),
             popup_age: popup_age_seat(ram, ctx, display_lag_vsyncs(ram), frame_step(ram)),
             spirit_gauge: retail_spirit_gauge(ram, ctx, active, display_lag_vsyncs(ram)),
+            arts_list: retail_arts_list(ram, ctx),
             hud_glides_unseen: {
                 let lag = display_lag_vsyncs(ram);
                 let live: Vec<u8> = (0..HUD_GLIDE_SLOTS)
@@ -716,10 +895,27 @@ impl RetailBattle {
             module_phase: game_anchors::u8_at(ram, ctx + 0x279),
             action_hits: action_hits(ram, ctx),
             action_hit_sequence: action_hit_sequence(ram, ctx),
+            clip_pushes: clip_own_pushes(ram, ctx),
             combo_total: u32::from(game_anchors::u16_at(ram, COMBO_TOTAL)),
             entry_latches: Vec::new(),
             resident_shiny_seru: false,
             inflight_idle: [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+            // Only where the close-up's three-frame tween lands inside a pass
+            // (`SUMMON_CAST_TWEEN_FRAMES`): on a shorter step the focus is
+            // still walking toward the pair when the pass draws, a
+            // position the tween's history decides and this reader does
+            // not walk.
+            summon_focus: active
+                .filter(|_| {
+                    use legaia_engine_battle_vm::battle_cam_script::{
+                        SUMMON_CAST_STATES, SUMMON_CAST_TWEEN_FRAMES,
+                    };
+                    SUMMON_CAST_STATES.contains(&action_state)
+                        && display_pass_steps(ram)
+                            .iter()
+                            .all(|&s| u32::from(s) >= SUMMON_CAST_TWEEN_FRAMES)
+                })
+                .and_then(|p| super::framing_body::displayed_framing_body(ram, p)),
             clip_cursors: (0..8u32)
                 .filter_map(|slot| {
                     let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
@@ -906,4 +1102,25 @@ pub(super) fn seed_target_code(ram: &[u8], ctx: u32, actor: u32) -> u8 {
     } else {
         raw
     }
+}
+
+/// The arts list's list bits (`0x80` live, `0x01` open), its window's
+/// slide counter and the pager's row offset (`FUN_801D3444` /
+/// `FUN_801D3748`, PROT 0898).
+const ARTS_LIST_BITS: u32 = 0x801F_4E09;
+const ARTS_LIST_SLIDE: u32 = 0x801F_4E0A;
+const ARTS_LIST_ROW_OFFSET: u32 = 0x8007_B458;
+
+/// The open Triangle arts list as `(page, slide)`, while the menu is in the
+/// entry state `0x50` and the list bits read live and open.
+fn retail_arts_list(ram: &[u8], ctx: u32) -> Option<(u8, u8)> {
+    if game_anchors::u8_at(ram, ctx + 6) != 0x50 {
+        return None;
+    }
+    let bits = game_anchors::u8_at(ram, ARTS_LIST_BITS);
+    if bits & 0x81 != 0x81 {
+        return None;
+    }
+    let row = game_anchors::u8_at(ram, ARTS_LIST_ROW_OFFSET);
+    Some((row / 5, game_anchors::u8_at(ram, ARTS_LIST_SLIDE)))
 }

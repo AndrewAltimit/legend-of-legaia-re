@@ -216,6 +216,13 @@ impl SaveMenuAtlas {
     pub fn band_hud_digits(&self) -> Option<(u32, u32, u32, u32)> {
         self.has_hud_digits.then_some(ATLAS_RECT_HUD_DIGITS)
     }
+    /// The HUD numeral strip decoded under each ink-staging id's font CLUT
+    /// ([`atlas_rect_hud_digits_ink`]), indexed by staging id; entry `7` is
+    /// [`Self::band_hud_digits`]. `None` exactly when that is.
+    pub fn band_hud_digits_by_ink(&self) -> Option<[(u32, u32, u32, u32); 10]> {
+        self.has_hud_digits
+            .then(|| std::array::from_fn(|i| atlas_rect_hud_digits_ink(i as u8)))
+    }
     /// The red cross-out X ([`add_cross_out_mark`]), when baked.
     pub fn band_cross_out(&self) -> Option<(u32, u32, u32, u32)> {
         self.has_cross_out.then_some(ATLAS_RECT_CROSS_OUT)
@@ -277,6 +284,27 @@ impl SaveMenuAtlas {
     /// margin is transparent).
     pub fn band_load_empty_frame(&self) -> (u32, u32, u32, u32) {
         ATLAS_RECT_EMPTY_FRAME
+    }
+    /// The grid's "USED" cell frame ([`ATLAS_RECT_USED_FRAME`]).
+    pub fn band_load_used_frame(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_USED_FRAME
+    }
+    /// Save-icon tile `tile` (`0..15`): the face the grid draws in cell
+    /// `tile` and the info panel draws for party id `tile`. Tiles `0..3` are
+    /// the portrait TIMs ([`Self::band_load_portrait`]); the rest are baked
+    /// off the icon strip. `None` past tile 14 (tile 15 is blank padding).
+    pub fn band_save_icon(&self, tile: u8) -> Option<(u32, u32, u32, u32)> {
+        let t = usize::from(tile);
+        if t < ATLAS_SAVE_ICON_FIRST_BAKED {
+            return self.band_load_portrait(tile);
+        }
+        ATLAS_RECT_SAVE_ICON_CELLS
+            .get(t - ATLAS_SAVE_ICON_FIRST_BAKED)
+            .map(|&(x, y)| (x, y, ATLAS_RECT_PORTRAIT_W, ATLAS_RECT_PORTRAIT_H))
+    }
+    /// Every save-icon tile, as [`Self::band_save_icon`] answers it.
+    pub fn band_save_icons(&self) -> [Option<(u32, u32, u32, u32)>; 16] {
+        std::array::from_fn(|t| self.band_save_icon(t as u8))
     }
     /// Character portrait sub-rect for the load-screen slot grid
     /// (16x16). `char_id`: 0=Vahn, 1=Noa, 2=Gala. Returns `None` for

@@ -558,6 +558,11 @@ mod tests {
         world.begin_new_game_seeded(Some(&trio()), None);
         assert_eq!(world.party.party_count, 1, "a New Game stays retail");
         assert_eq!(world.party.roster.members.len(), 1);
+        // The picker's composition goes with it, or a save would name the
+        // trio as the present party.
+        assert!(world.party.active_party.is_empty());
+        assert_eq!(world.party.party_leader_slot, None);
+        assert!(world.party.party_actor_slots.is_empty());
     }
 
     #[test]

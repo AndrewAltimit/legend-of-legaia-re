@@ -7,6 +7,8 @@
 
 mod battle_formation_span;
 mod battle_intro_names;
+mod battle_loss_window;
+mod battle_menu_windows;
 mod battle_plaque_badge_census_disc;
 mod commit_confirm;
 mod counterattack;

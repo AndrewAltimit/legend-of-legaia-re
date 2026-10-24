@@ -189,9 +189,12 @@ pub struct FxModelDraws {
     /// Battle ground shadows (`FUN_80048A08`'s disc, built by the default
     /// arm `FUN_80028158`), one per drawn body. Empty outside battle.
     pub shadows: Vec<FxMeshModel>,
-    /// Field move-VM stager parts (op `0x34` sub 3), indexed into the scene
-    /// TMD pack (`DAT_8007C018[5 + model_sel]`). None on the overworld.
-    pub field_parts: Vec<FxIndexedModel>,
+    /// Field move-VM stager parts (op `0x34` sub 3) and the scene's
+    /// mesh-bearing ambient parts, `draw.model_index` a scene-pack slot
+    /// (`DAT_8007C018[5 + slot]`). The host applies the part's render state
+    /// (`SummonPartDraw::apply_render_state`) unless it draws its rest mesh.
+    /// None on the overworld.
+    pub field_parts: Vec<FxPartModel>,
 }
 
 /// Compose this frame's effect model draws. `part_cam` is the retail camera
@@ -244,8 +247,7 @@ pub fn effect_model_draws(
             mesh: rb.mesh,
         })
         .collect();
-    out.shadows = world
-        .battle_ground_shadows(plan_of)
+    out.shadows = crate::battle_draws::battle_ground_shadows(world, plan_of)
         .into_iter()
         .map(|rb| FxMeshModel {
             // Placed like a part (the frame flip on the translation too),
@@ -268,12 +270,12 @@ pub fn effect_model_draws(
                 let place =
                     camera_relative_model_prefix(fp.flags_52, fp.world_pos, part_cam, false)
                         .unwrap_or_else(|| mat4_translation(fp.world_pos));
-                FxIndexedModel {
-                    index: fp.model_index,
+                FxPartModel {
                     model: mat4_mul(
                         &place,
                         &mat4_mul(&part_rotation(fp.rot, false), &model_flip),
                     ),
+                    draw: fp,
                 }
             })
             .collect();

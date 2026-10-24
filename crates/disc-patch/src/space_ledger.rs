@@ -77,6 +77,9 @@ impl Region {
 /// Menu overlay (PROT 0899), the pause menu / shop / save screen image.
 pub const MENU_OVERLAY: usize = 899;
 
+/// Field overlay (PROT 0897), the town / dungeon / world-map image.
+pub const FIELD_OVERLAY: usize = 897;
+
 /// The ledger. Mod regions carry the flags that claim them; see
 /// `docs/tooling/randomizer.md` ("The injected-code arena budget") and each
 /// module's constants.
@@ -142,6 +145,18 @@ pub const REGIONS: &[Region] = &[
               any image forms an address inside it, neither card buffer reaches it, and it reads \
               zero in every library capture with the overlay resident",
     },
+    Region {
+        image: Image::Prot(FIELD_OVERLAY),
+        start_va: 0x801F_2D78,
+        end_va: 0x801F_2E88,
+        owner: Owner::Translation,
+        why: "zero fill past the 17-record panel-window table (0x801F2B98..0x801F2D74), a word \
+              clear of record 16 and of the live global at 0x801F2E8C: no instruction or word in \
+              any image forms an address inside it, every window index that reaches the table \
+              is at most 16 (the descriptor scripts of all seventeen FUN_801E9B3C calls, \
+              FUN_801ECA08's three callers, fixed record offsets), and it reads zero in every \
+              library capture with the overlay resident",
+    },
 ];
 
 /// A span the running game itself writes, or reads as live data, while the
@@ -200,6 +215,15 @@ pub const BUFFERS: &[Buffer] = &[
         end_va: 0x801F_3818,
         what: "the overlay's uninitialised data (menu state, card handles, staging), \
                written at runtime in every capture with the overlay resident",
+    },
+    Buffer {
+        image: Image::Prot(FIELD_OVERLAY),
+        start_va: 0x801F_3488,
+        end_va: 0x801F_36A0,
+        what: "the field overlay's zero-filled globals ahead of its trailing tables (the tile \
+               board's state at 0x801F35C4.. among them): zero in the file but for one word, and the \
+               library captures with the overlay resident hold runtime writes across \
+               0x801F3488..0x801F35A8",
     },
 ];
 

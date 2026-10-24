@@ -45,6 +45,7 @@ pub mod play_minigame_arena;
 pub mod play_minigame_slots;
 pub mod play_minigames;
 pub mod play_name_entry;
+pub mod play_rumble;
 pub mod play_sfx;
 pub mod play_shop;
 pub mod play_tile_board;

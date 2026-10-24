@@ -535,6 +535,25 @@ clamps of `+0x78` and `+0x72` (`0x80022BC0..0x80022C1C`), then the mode-`4`
 (`0x80022CB8..0x80022EE0`) / mode-`7` draw and the mode-`6` keyframe-pose pack
 ([keyframe-pose ops](#keyframe-pose-ops-0x3c--0x3d)).
 
+### A mesh-bearing part draws its pack mesh
+
+A record whose `model_sel` is not negative gets a model list from the seater:
+`+0x44[0]` is the group count of `DAT_8007C018[+0x64]` and `+0x44[1..]` its
+group descriptors (`0x80021BF4..0x80021C54`), with `+0x5A = 1` and flag
+`0x2` cleared (`0x80021C58..0x80021CB0`). The render dispatcher's case 5
+(`FUN_8001ADA4`) then draws that mesh at the part's position, banks, render
+scale `+0x72` and colour word `+0x74` / `+0x78` every frame, until the part
+halts (`0x8`) or a script raises `0x2`. The global index is the record's
+own `model_sel`, so the scene-pack slot is `model_sel - 5`.
+
+`opdeene`'s light cone over the Seru in the opening narration is one: record
+`0x394` of the scene's stager bundle, `model_sel 0x4C` (pack slot `71`, an
+additive `GT4` fan on texture page `0x37`), word `0xC9000000`. That word's
+`0x08000000` makes the dispatcher draw it both-sided
+([renderer](renderer.md#the-field-pass-culls-back-faces)), and its
+render-mode-4 sibling at the same seat scrolls the fan's texture.
+`new_game_cutscene_intro_a` reads `1.000` with the part drawn.
+
 ### Mode 3: `FUN_80019D50` is an HSV recolour
 
 The mode-`3` callee recolours an image; it spawns nothing. It walks `w * h`
@@ -568,6 +587,7 @@ packets, SPU triggers and libgpu VRAM copies. The port splits it by block.
 | Mode 5 positional sound emitter | `engine-vm::sfx_emitter::emitter_tick`, driven from `World::tick_ambient_fx`; voices by `AudioDirector::drive_sfx_emitters` |
 | `+0x5A` seeding from `model_sel` | `engine-effects::summon::RenderMode::from_model_sel` (`0x4000 -> Particle`, `0x4001 -> SoundEmitter`); the field seater `World::spawn_ambient_record_at` writes `+0x5A` itself (`3` / `5`) |
 | Part seater `FUN_80021B04` | `move_vm::spawn_move_actor`; field host `World::spawn_ambient_record_at` |
+| Case-5 model draw of a mesh-bearing field part (`model_sel >= 0`) | `World::ambient_mesh_part_draws`, through `World::active_field_fx_part_draws` on both hosts ([below](#a-mesh-bearing-part-draws-its-pack-mesh)) |
 
 The **field** path is live on both play hosts. Field-VM op `0x34` sub-3 ("Play
 3D animation", `FUN_800252EC`) and the scene-entry installer are the same

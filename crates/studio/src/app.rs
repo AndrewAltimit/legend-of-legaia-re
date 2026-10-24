@@ -153,6 +153,10 @@ impl Automation {
     }
 }
 
+/// The width (points) the top bar's right-aligned View and About buttons
+/// need, with their spacing.
+const VIEW_ABOUT_W: f32 = 110.0;
+
 /// How long an informational status line ("... written to ...") stays up.
 /// Errors stay until dismissed.
 const STATUS_TTL: std::time::Duration = std::time::Duration::from_secs(8);
@@ -576,7 +580,10 @@ impl App {
     }
 
     fn top_bar(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
+        // Wrapped, so a narrow window (the 720-point minimum, or a large UI
+        // zoom) moves the last buttons to a second row instead of pushing
+        // Play, View and About off the edge.
+        ui.horizontal_wrapped(|ui| {
             ui.label(
                 RichText::new("Legaia Studio")
                     .heading()
@@ -615,12 +622,21 @@ impl App {
             });
             ui.separator();
             self.play_button(ui);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            // View and About sit at the right edge when the row has room
+            // for them, else they flow on after Play.
+            if ui.available_width() >= VIEW_ABOUT_W {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("About").on_hover_text("F1").clicked() {
+                        self.about_open = !self.about_open;
+                    }
+                    ui.menu_button("View", |ui| self.view_menu(ui));
+                });
+            } else {
+                ui.menu_button("View", |ui| self.view_menu(ui));
                 if ui.button("About").on_hover_text("F1").clicked() {
                     self.about_open = !self.about_open;
                 }
-                ui.menu_button("View", |ui| self.view_menu(ui));
-            });
+            }
         });
         ui.horizontal(|ui| {
             ui.label("Path:");
@@ -637,7 +653,7 @@ impl App {
                 self.open_path(&p);
             }
         });
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if let Some(p) = self.studio.loading() {
                 ui.spinner();
                 ui.label(format!("Loading {} ...", p.display()));
@@ -656,6 +672,15 @@ impl App {
                         .map(|r| format!(", region {r}"))
                         .unwrap_or_default()
                 ));
+                // Another region's disc browses fine but cannot start the
+                // game; say so where the region is named, not only in the
+                // greyed-out Play button's hover text.
+                if matches!(lib.source, Source::Disc(_))
+                    && let Err(why) = crate::launch::playable_disc(lib)
+                {
+                    ui.label(RichText::new("- Play needs the USA disc").color(crate::theme::warn(ui)))
+                        .on_hover_text(why);
+                }
                 let n = self.studio.classified();
                 if n < lib.entries.len() {
                     ui.spinner();
@@ -942,12 +967,17 @@ impl App {
         self.game = None;
         match res {
             Ok(()) => self.studio.status = Some("The game has closed.".into()),
-            Err(status) => {
-                let mut msg = format!("The game stopped with an error ({status}).");
+            Err(headline) => {
+                // The launcher's words for the same failure: how it ended,
+                // then the reason its log gives, if it gives one.
+                let mut msg = headline;
                 if let Some(log) = &log {
-                    for line in crate::launch::log_tail(log, 3) {
-                        msg.push_str("\n  ");
-                        msg.push_str(&line);
+                    if let Some(why) = std::fs::read_to_string(log)
+                        .ok()
+                        .and_then(|t| legaia_app_theme::game_exit::failure_detail(&t))
+                    {
+                        msg.push(' ');
+                        msg.push_str(&why);
                     }
                     msg.push_str(&format!("\nFull log: {}", log.display()));
                 }
@@ -1211,8 +1241,23 @@ impl App {
             return;
         };
         let e = &lib.entries[pos];
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.heading(lib.stem(e.index));
+            // The stem is the extracted file's name, whose CDNAME label runs
+            // two entries late; the tree files the entry under the block it
+            // belongs to on the disc. Name that block beside the stem
+            // whenever the two differ, so the heading and the tree agree.
+            if let Some(retail) = lib.retail_block(e.index)
+                && lib.label(e.index) != Some(retail)
+            {
+                ui.label(RichText::new(format!("block {retail}")).color(crate::theme::accent(ui)))
+                    .on_hover_text(format!(
+                        "On the disc this entry belongs to {retail}. The file name keeps the \
+                         label legaia-extract gives it, {}, which applies the CDNAME numbers two \
+                         entries late (docs/formats/cdname.md).",
+                        lib.label(e.index).unwrap_or("-")
+                    ));
+            }
             ui.label(format!("{} - {}", a.class.name(), human_size(e.size_bytes)));
         });
         let count = |t: Tab| match t {

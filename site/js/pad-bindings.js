@@ -190,6 +190,38 @@
    * (`StandardGamepad::reset`, the native window's focus rule). */
   window.legaiaResetGamepad = () => { gamepadHeld = new Set(); };
 
+  /* Controller rumble: the two motor levels the engine's frame left
+   * (`play_rumble_levels`, the native window's gilrs force-feedback source
+   * too) onto every connected pad with a `vibrationActuator`. A level that
+   * holds is re-sent before the last effect runs out; a drop to zero stops
+   * the motors. A browser without the haptics API rumbles nothing. */
+  const RUMBLE_EFFECT_MS = 200;
+  let rumbleLast = { strong: 0, weak: 0, at: 0 };
+  window.legaiaSetRumble = (strong, weak) => {
+    if (!navigator.getGamepads) return;
+    const now = performance.now();
+    const same = Math.abs(strong - rumbleLast.strong) < 1 / 64
+      && Math.abs(weak - rumbleLast.weak) < 1 / 64;
+    const idle = strong <= 0 && weak <= 0;
+    if (same && (idle || now - rumbleLast.at < RUMBLE_EFFECT_MS / 2)) return;
+    rumbleLast = { strong, weak, at: now };
+    let pads = [];
+    try { pads = Array.from(navigator.getGamepads() || []); } catch (e) { return; }
+    for (const gp of pads) {
+      const act = gp && gp.connected && gp.vibrationActuator;
+      if (!act) continue;
+      try {
+        if (idle) {
+          if (typeof act.reset === 'function') act.reset();
+        } else {
+          act.playEffect('dual-rumble', {
+            duration: RUMBLE_EFFECT_MS, strongMagnitude: strong, weakMagnitude: weak,
+          });
+        }
+      } catch (e) { /* a pad that refuses the effect keeps playing silently */ }
+    }
+  };
+
   window.legaiaAdoptPadBindings = adoptPadBindings;
   /* Re-read the engine's table after the options screen's Key Config screen
    * rebound something. The table above is folded into `PAD` once at load, so

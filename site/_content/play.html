@@ -477,7 +477,7 @@ div.play-vis-head { cursor: default; }
             switch a piece of the PS1&rsquo;s own drawing. The key beside a row toggles it from the
             game window, here and in the desktop build.</p>
           <div class="play-vis-actions">
-            <label class="play-dev-menu" title="Retail-faithful for this session (the native --retail): every enhancement off - the scene-entry pulse, smart monsters, overworld markers, the saved-chain Arts list and the ledge-hop landing guard off, the battle kernels on retail's own, and every engine-only option pinned to retail (enhanced lighting and its shadows, ground fog, see-through walls, bloom, camera distance, 4/8-way movement, no flash slew, retail tile windows). Nothing is stored; untick to get your own settings back.">
+            <label class="play-dev-menu" title="Retail-faithful (the native --retail): every enhancement off - the scene-entry pulse, smart monsters, overworld markers, the saved-chain Arts list and the ledge-hop landing guard off, the battle kernels on retail's own, and every engine-only option pinned to retail (enhanced lighting and its shadows, ground fog, see-through walls, bloom, camera distance, 4/8-way movement, no flash slew, retail tile windows). Your own settings are not overwritten, and the box is remembered for your next visit, as the launcher remembers its Retail row; untick to get your settings back.">
               <input type="checkbox" id="play-retail-mode"> Retail-faithful (all enhancements off, this session)
             </label>
             <button id="play-visuals-reset" type="button"
@@ -573,6 +573,10 @@ div.play-vis-head { cursor: default; }
             <label class="play-dev-menu"
                    title="Now and then a won battle also grants one random piece of equipment, on top of the normal drop (a 5% roll; the patcher's --equipment-drops; play-window --equipment-drops). Not retail; Retail-faithful holds it off.">
               <input type="checkbox" id="play-bonus-drop"> Bonus equipment drops
+            </label>
+            <label class="play-dev-menu"
+                   title="The pause menu's Save row works in every scene, not only on the world map and at save points as in the original (play-window --save-anywhere). Not retail; Retail-faithful holds it off.">
+              <input type="checkbox" id="play-save-anywhere"> Save anywhere
             </label>
           </div>
         </details>
@@ -674,10 +678,11 @@ div.play-vis-head { cursor: default; }
                    title="The Arts command opens the port's saved-chain list instead of retail's per-press directional input (the native LEGAIA_ARTS_SAVED_LIST=1). Not retail; Retail-faithful holds it off.">
               <input type="checkbox" id="play-arts-saved-list"> Saved-chain Arts list
             </label>
-            <label title="Walk straight into a minigame from this scene, through the same door warp a casino or arena door arms (the native O / B / M / K keys). Start leaves it.">
+            <label title="Walk straight into a minigame from this scene, through the same door warp a casino, arena or fishing-spot door arms (the native L / O / B / M / K keys). Start leaves it.">
               Minigame
               <select id="play-mg-warp">
                 <option value="">enter...</option>
+                <option value="0">Fishing</option>
                 <option value="3">Slot machine</option>
                 <option value="4">Baka Fighter</option>
                 <option value="5">Muscle Dome</option>
@@ -783,6 +788,8 @@ div.play-vis-head { cursor: default; }
       <div class="play-rail">
         <div class="play-card">
           <h3>Controls</h3>
+          <button type="button" id="play-keys-reset"
+                  title="Put every key back to its default binding - the way out if a Key Config rebind left you without a way into the menu (the native legaia-engine config reset).">Reset keys</button>
           <div class="play-keys" id="play-keys">
             <kbd data-key="ArrowUp">&uarr;&darr;&larr;&rarr;</kbd><span>Walk (camera-relative)</span>
             <kbd data-key="KeyW">W A S D</kbd><span>Walk, same as the arrows</span>
@@ -2026,6 +2033,46 @@ div.play-vis-head { cursor: default; }
     });
   }
 
+  /* The saves on the BROWSER CARD (the port-1 card the in-game Save screen
+   * writes) as tiles at the head of the bar. They are not stored sessions -
+   * the card is - so without this a save made at a save point lived only
+   * behind the title's Continue and the in-game Load row, and the bar told
+   * a player who had just saved "No saves in this browser yet". */
+  let browserToolsAsked = false;
+  let savesWasm = null;
+  function browserCardTiles() {
+    if (!wasm && !savesWasm) {
+      /* The listing needs the WASM card reader; draw the bar again once the
+       * module is in (it is cached, so this pulls nothing twice). */
+      if (!browserToolsAsked && LegaiaSaves.getBrowserCard()) {
+        browserToolsAsked = true;
+        saveTools().then((mod) => { if (mod) { savesWasm = mod; renderSavesStrip(); } })
+          .catch(() => {});
+      }
+      return [];
+    }
+    return LegaiaSaves.browserCardTiles(wasm || savesWasm);
+  }
+
+  /* Resume a save off the browser card: the same lift the in-game Load
+   * screen does, then the one landing call every load path takes. */
+  function resumeBrowserCardSave(meta) {
+    if (!runtime) {
+      saveMsg('Load your disc image first - it is picked up from the browser cache automatically.', true);
+      return;
+    }
+    const bytes = LegaiaSaves.getBrowserCard();
+    if (!bytes) { saveMsg('The browser memory card is no longer stored in this browser.', true); return; }
+    try {
+      const sum = JSON.parse(runtime.import_card_save(bytes, meta.block));
+      saveMsg(`Loaded block ${meta.block} of the browser memory card${sum.location ? ` (${sum.location})` : ''}.`);
+      resumeLoadedSave();
+    } catch (err) {
+      saveMsg(`Load failed: ${err.message || err}`, true);
+      console.warn(err);
+    }
+  }
+
   let savesBar = null;
   function renderSavesStrip() {
     if (!savesBar) {
@@ -2035,15 +2082,18 @@ div.play-vis-head { cursor: default; }
         harvest: harvestPortraits,
         acceptExts: '.lgsf,.mcr,.mcd,.gme,.mcs',
         onAdd: addSaveFile,
+        fixedTiles: browserCardTiles,
         primaryButton: (meta) => ({
           text: 'Resume', cls: 'lgrb-primary',
           title: 'Load this save into the running engine',
-          onClick: resumeSession,
+          onClick: meta.fixed ? resumeBrowserCardSave : resumeSession,
         }),
         emptyText:
-          'No saves in this browser yet. Import an engine <b>.lgsf</b> or an emulator '
-          + 'memory-card save (<b>.mcr / .gme / .mcs</b>) to pick up your party - it persists '
-          + 'here and resumes straight into the running engine. Nothing is uploaded.',
+          'No saves in this browser yet. Save in game at a save point or on the world map '
+          + '(it goes on this browser\'s memory card and shows up here), or import an engine '
+          + '<b>.lgsf</b> or an emulator memory-card save (<b>.mcr / .gme / .mcs</b>) to pick up '
+          + 'your party - it persists here and resumes straight into the running engine. '
+          + 'Nothing is uploaded.',
       });
     }
     savesBar.render();
@@ -2094,6 +2144,9 @@ div.play-vis-head { cursor: default; }
    * which must not silently pull the cards out from under the player. */
   function remountCards() {
     if (!runtime) return;
+    /* This page stores every written card and answers the Save beat
+     * (`card_store_result`, in the store poll below). */
+    if (typeof runtime.card_store_handshake === 'function') runtime.card_store_handshake(true);
     for (let p = 0; p < CARD_PORTS; p++) {
       if (portSaveIds[p]) insertCard(p, portSaveIds[p], true);
     }
@@ -2316,13 +2369,35 @@ div.play-vis-head { cursor: default; }
     for (let p = 0; p < CARD_PORTS; p++) {
       if (!runtime.card_take_written(p)) continue;
       const bytes = runtime.card_bytes(p);
-      if (bytes && bytes.length && storeCardBytes(p, bytes) === null) {
+      const stored = !!(bytes && bytes.length) && storeCardBytes(p, bytes) !== null;
+      if (!stored) {
         saveMsg(`Could not store the card in port ${p + 1} in this browser - export it to keep the save.`, true);
-        if (typeof runtime.card_store_failed === 'function') runtime.card_store_failed();
+      }
+      /* The Save beat waits on this answer (`card_store_handshake`), so its
+       * result line is the store's outcome: "Unable to save." when the
+       * browser refused the card, not "Save successful." over a save a
+       * reload would lose. No beat waiting: raise the notice instead. */
+      const answered = typeof runtime.card_store_result === 'function'
+        && runtime.card_store_result(stored);
+      if (!stored && !answered && typeof runtime.card_store_failed === 'function') {
+        runtime.card_store_failed();
       }
       renderCardRack();
     }
   }, 100);
+  /* Another tab of this page saved onto the browser card: remount it, so a
+   * save made here next writes over the card as it now stands rather than
+   * over this tab's older copy (which would drop the other tab's save). */
+  /* `storageEvent`, not `e`: the page-key drift gate reads `e.key` as a
+   * KeyboardEvent read, and this is a StorageEvent's key. */
+  window.addEventListener('storage', (storageEvent) => {
+    if (storageEvent.key !== 'legaia.card.v1.browser' || !runtime) return;
+    for (let p = 0; p < CARD_PORTS; p++) {
+      if (portSaveIds[p] === BROWSER_CARD) insertCard(p, BROWSER_CARD, true);
+    }
+    renderSavesStrip();
+    renderCardRack();
+  });
   window.addEventListener('legaia-saves-change', () => {
     renderSavesStrip();
     /* A deleted card must not stay in a port. */
@@ -2422,7 +2497,7 @@ div.play-vis-head { cursor: default; }
   window.__playApplySeeThrough = applySeeThrough;
 
   /* The native window's render toggles: PSX rasterisation
-   * (LEGAIA_PSX_RENDER, session-only) and enhanced lighting (`I` + `F8`'s
+   * (--psx-render, remembered with the launch switches) and enhanced lighting (`I` + `F8`'s
    * time of day + `Y`'s lamp shadows, all persisted engine options - the
    * boxes reflect the stored values once a runtime is up). Presentation
    * only; re-applied on every view rebuild. */
@@ -2440,6 +2515,11 @@ div.play-vis-head { cursor: default; }
         if (typeof rt.set_light_shadows === 'function') rt.set_light_shadows(!!dynShadowsEl.checked);
         if (typeof rt.set_bloom === 'function') rt.set_bloom(!!bloomEl.checked);
       } catch (e) {}
+    }
+    /* PSX rasterisation is a remembered launch switch (the launcher's PSX
+     * rendering row): the runtime stores it, the view draws it. */
+    if (rt && typeof rt.set_psx_render === 'function') {
+      try { rt.set_psx_render(!!psxRenderEl.checked); } catch (e) {}
     }
     if (!view) return;
     view.setPsxRender(!!psxRenderEl.checked);
@@ -2561,6 +2641,7 @@ div.play-vis-head { cursor: default; }
   const jewelFixEl = document.getElementById('play-jewel-fix');
   const hpGuardEl = document.getElementById('play-hp-readout-guard');
   const bonusDropEl = document.getElementById('play-bonus-drop');
+  const saveAnywhereEl = document.getElementById('play-save-anywhere');
   /* The battle-tuning selectors: element, setter, getter. Values are the
    * engine's step lists (GameplayTweaks; a web-play test pins them). */
   const tuningSelects = [
@@ -2584,6 +2665,7 @@ div.play-vis-head { cursor: default; }
     jewelFixEl.checked = !!rtCall('jewel_fix');
     hpGuardEl.checked = !!rtCall('hp_readout_guard');
     bonusDropEl.checked = !!rtCall('bonus_drop');
+    saveAnywhereEl.checked = !!rtCall('save_anywhere');
     for (const [el, , getter] of tuningSelects) {
       const v = rtCall(getter);
       if (v !== undefined) el.value = String(v);
@@ -2603,7 +2685,25 @@ div.play-vis-head { cursor: default; }
     const r = rtCall('retail_mode');
     if (r !== undefined) retailModeEl.checked = !!r;
   }
+  /* The launch switches the page remembers between visits, as the native
+   * launcher does (PersistedSwitches, `legaia.switches` in localStorage): a
+   * fresh runtime has already seated them, so the boxes read them back once,
+   * before anything below writes a box's state into the runtime. The
+   * gameplay tweaks read back the same way in syncTweakDefaults. */
+  function syncPersistedSwitches() {
+    if (retailModeEl.dataset.synced === '1') return;
+    const r = rtCall('retail_mode');
+    if (r === undefined) return;
+    retailModeEl.checked = !!r;
+    smartEl.checked = !!rtCall('smart_monsters');
+    const pulse = rtCall('entry_pulse');
+    if (pulse !== undefined) entryPulseEl.checked = !!pulse;
+    const psx = rtCall('psx_render');
+    if (psx !== undefined) psxRenderEl.checked = !!psx;
+    retailModeEl.dataset.synced = '1';
+  }
   function applyPageToggles() {
+    syncPersistedSwitches();
     /* The cadence box starts on the engine's default: read it back from the
      * fresh runtime before the first write (WorldToggles'
      * DEFAULT_BATTLE_SM_FRAME_CADENCE). */
@@ -2625,6 +2725,7 @@ div.play-vis-head { cursor: default; }
     rtCall('set_jewel_fix', !!jewelFixEl.checked);
     rtCall('set_hp_readout_guard', !!hpGuardEl.checked);
     rtCall('set_bonus_drop', !!bonusDropEl.checked);
+    rtCall('set_save_anywhere', !!saveAnywhereEl.checked);
     for (const [el, setter] of tuningSelects) rtCall(setter, parseInt(el.value, 10));
     rtCall('set_retail_mode', !!retailModeEl.checked);
   }
@@ -2666,6 +2767,7 @@ div.play-vis-head { cursor: default; }
   jewelFixEl.addEventListener('change', () => { rtCall('set_jewel_fix', !!jewelFixEl.checked); canvas.focus(); });
   hpGuardEl.addEventListener('change', () => { rtCall('set_hp_readout_guard', !!hpGuardEl.checked); canvas.focus(); });
   bonusDropEl.addEventListener('change', () => { rtCall('set_bonus_drop', !!bonusDropEl.checked); canvas.focus(); });
+  saveAnywhereEl.addEventListener('change', () => { rtCall('set_save_anywhere', !!saveAnywhereEl.checked); canvas.focus(); });
   for (const [el, setter] of tuningSelects) {
     el.addEventListener('change', () => { rtCall(setter, parseInt(el.value, 10)); canvas.focus(); });
   }
@@ -2801,6 +2903,20 @@ div.play-vis-head { cursor: default; }
     saveMsg(err ? `Party: ${err}` : `Party set to ${spec}.`, !!err);
     canvas.focus();
   });
+  /* Reset keys: the engine's default layout back over a Key Config rebind
+   * (`pad_bindings_reset`, the native `legaia-engine config reset`); the
+   * running view re-reads the table through its revision counter. */
+  document.getElementById('play-keys-reset').addEventListener('click', () => {
+    const rt = window.__playRuntime;
+    if (!rt || typeof rt.pad_bindings_reset !== 'function') {
+      saveMsg('Load a disc before resetting the keys.', true);
+      return;
+    }
+    try { rt.pad_bindings_reset(); } catch (e) { console.warn('pad_bindings_reset', e); }
+    if (typeof window.legaiaSyncPadBindings === 'function') window.legaiaSyncPadBindings(rt);
+    saveMsg('Keys reset to the defaults.');
+    canvas.focus();
+  });
   document.getElementById('play-force-battle').addEventListener('click', () => {
     const rt = window.__playRuntime;
     if (!rt || typeof rt.debug_force_battle !== 'function') return;
@@ -2811,7 +2927,8 @@ div.play-vis-head { cursor: default; }
   });
   /* Minigame entry: arm the mode-24 door warp for the picked game, the
    * request a walked door makes (`World::request_minigame_warp`), so the
-   * session that opens is the one the door installs. */
+   * session that opens is the one the door installs. Fishing enters
+   * directly (`play_fishing_start`), as the native window's `L` does. */
   const mgWarpEl = document.getElementById('play-mg-warp');
   mgWarpEl.addEventListener('change', () => {
     const sub = parseInt(mgWarpEl.value, 10);
@@ -2819,8 +2936,10 @@ div.play-vis-head { cursor: default; }
     const rt = window.__playRuntime;
     if (!rt || isNaN(sub) || typeof rt.play_mg_debug_warp !== 'function') return;
     let ok = false;
-    try { ok = !!rt.play_mg_debug_warp(sub); } catch (e) { ok = false; }
-    saveMsg(ok ? 'Minigame door armed.' : 'Load a scene before entering a minigame.', !ok);
+    const fishing = sub === 0 && typeof rt.play_fishing_start === 'function';
+    try { ok = fishing ? !!rt.play_fishing_start() : !!rt.play_mg_debug_warp(sub); } catch (e) { ok = false; }
+    saveMsg(ok ? (fishing ? 'Fishing started.' : 'Minigame door armed.')
+               : 'Load a scene before entering a minigame.', !ok);
     canvas.focus();
   });
   window.__playApplyBattleTools = applyBattleTools;

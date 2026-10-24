@@ -204,8 +204,6 @@ impl<S: AudioSink> BootSession<S> {
             queue_marks: HostQueueMarks::default(),
             camera_azimuth_override: None,
             host_owns_pause_menu: false,
-            footstep: Default::default(),
-            footstep_prev_pos: None,
         })
     }
 

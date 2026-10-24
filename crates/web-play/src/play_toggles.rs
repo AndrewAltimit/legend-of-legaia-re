@@ -12,9 +12,48 @@
 //! which outlives a scene change; the page also keeps its own copy and
 //! re-asserts it on every scene entry, so a switch thrown before a disc is
 //! loaded holds once one is.
+//!
+//! The switches the native launcher remembers between runs
+//! (`legaia_engine_session::session_switches::PersistedSwitches`: PSX
+//! rasterisation, retail-faithful, the entry pulse, smart monsters and the
+//! gameplay tweaks) the page remembers too, in the same serde layout, under
+//! [`SWITCHES_STORAGE_KEY`]. A fresh runtime starts from what is stored, and
+//! every change is written back.
 
 use crate::runtime::LegaiaRuntime;
+use legaia_engine_session::session_switches::PersistedSwitches;
 use wasm_bindgen::prelude::*;
+
+/// `localStorage` key the page's remembered launch switches live under - the
+/// browser twin of the native launcher's settings file, as
+/// `crate::runtime::OPTIONS_STORAGE_KEY` is of its options file.
+pub const SWITCHES_STORAGE_KEY: &str = "legaia.switches";
+
+/// The stored switches, or the defaults when nothing is stored, the store is
+/// unavailable or the JSON no longer parses (as the options store reads).
+pub(crate) fn load_persisted_switches() -> PersistedSwitches {
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Some(raw) = web_sys::window()
+            .and_then(|w| w.local_storage().ok().flatten())
+            .and_then(|s| s.get_item(SWITCHES_STORAGE_KEY).ok().flatten())
+            && let Ok(stored) = serde_json::from_str(&raw)
+        {
+            return stored;
+        }
+    }
+    PersistedSwitches::default()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn store_persisted_switches(p: &PersistedSwitches) {
+    if let Some(store) = web_sys::window().and_then(|w| w.local_storage().ok().flatten())
+        && let Ok(json) = serde_json::to_string(p)
+        && store.set_item(SWITCHES_STORAGE_KEY, &json).is_err()
+    {
+        crate::console_log("switches: localStorage write failed");
+    }
+}
 
 /// The page-side switches, re-asserted on every scene entry.
 #[derive(Debug, Clone, Copy)]
@@ -46,6 +85,10 @@ pub struct PageToggles {
     /// (the native `Renderer::set_ui_psx_tint`). On by default: it is retail
     /// behaviour.
     pub ui_psx_tint: bool,
+    /// PSX-faithful rasterisation (the native `--psx-render`). The page's
+    /// view draws it; the runtime only remembers it with the other launch
+    /// switches.
+    pub psx_render: bool,
     /// The patcher features graduated into engine switches
     /// (`legaia_engine_session::session_switches::GameplayTweaks`), starting
     /// from the engine's defaults as the window does. Retail mode holds them
@@ -63,8 +106,38 @@ impl Default for PageToggles {
             battle_frame_cadence: legaia_engine_core::world::DEFAULT_BATTLE_SM_FRAME_CADENCE,
             arts_saved_list: false,
             ui_psx_tint: true,
+            psx_render: false,
             tweaks: legaia_engine_session::session_switches::GameplayTweaks::default(),
         }
+    }
+}
+
+impl PageToggles {
+    /// The page's start: the defaults with the remembered launch switches
+    /// over them. Retail-faithful is not raised here - its pin needs the
+    /// options, so [`LegaiaRuntime::new`] throws it through
+    /// [`LegaiaRuntime::set_retail_mode`].
+    pub fn from_persisted(p: &PersistedSwitches) -> Self {
+        Self {
+            smart_monsters: p.smart_monsters,
+            entry_pulse: p.entry_pulse(),
+            psx_render: p.psx_render,
+            tweaks: p.tweaks(),
+            ..Self::default()
+        }
+    }
+
+    /// The launch switches to remember, in the native launcher's layout.
+    pub fn persisted(&self) -> PersistedSwitches {
+        let mut p = PersistedSwitches {
+            psx_render: self.psx_render,
+            retail: self.retail,
+            no_entry_pulse: !self.entry_pulse,
+            smart_monsters: self.smart_monsters,
+            ..Default::default()
+        };
+        p.set_tweaks(&self.tweaks);
+        p
     }
 }
 
@@ -88,6 +161,29 @@ impl LegaiaRuntime {
         if let Some(host) = self.scene_host.host_mut() {
             switches.apply(&mut host.world.toggles);
         }
+        self.persist_page_toggles();
+    }
+
+    /// Seat the remembered launch switches on a fresh runtime: the switches
+    /// themselves, then Retail-faithful through its setter, which pins the
+    /// options as the box does. Nothing is written back.
+    pub(crate) fn restore_persisted_switches(&mut self, p: PersistedSwitches) {
+        self.page_toggles = PageToggles::from_persisted(&p);
+        self.persisted_switches = p;
+        if p.retail {
+            self.set_retail_mode(true);
+        }
+    }
+
+    /// Remember the launch switches when they moved since the last write.
+    pub(crate) fn persist_page_toggles(&mut self) {
+        let p = self.page_toggles.persisted();
+        if p == self.persisted_switches {
+            return;
+        }
+        self.persisted_switches = p;
+        #[cfg(target_arch = "wasm32")]
+        store_persisted_switches(&p);
     }
 }
 
@@ -241,6 +337,18 @@ impl LegaiaRuntime {
     /// Whether [`Self::set_bonus_drop`] is on.
     pub fn bonus_drop(&self) -> bool {
         self.page_toggles.tweaks.bonus_drop
+    }
+
+    /// Save anywhere, the native `--save-anywhere`: the pause menu's Save
+    /// row works in every scene. Retail mode holds it off.
+    pub fn set_save_anywhere(&mut self, on: bool) {
+        self.page_toggles.tweaks.save_anywhere = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_save_anywhere`] is on.
+    pub fn save_anywhere(&self) -> bool {
+        self.page_toggles.tweaks.save_anywhere
     }
 
     /// Spirit AP, the native `--spirit-ap` (retail `32`; clamped to
@@ -436,6 +544,20 @@ impl LegaiaRuntime {
 
 #[wasm_bindgen]
 impl LegaiaRuntime {
+    /// Remember PSX-faithful rasterisation (the native `--psx-render`, the
+    /// launcher's PSX rendering row) with the other launch switches. The
+    /// page's view applies it; this only records it for the next visit.
+    pub fn set_psx_render(&mut self, on: bool) {
+        self.page_toggles.psx_render = on;
+        self.persist_page_toggles();
+    }
+
+    /// Whether [`Self::set_psx_render`] is on - remembered from the last
+    /// visit on a fresh runtime.
+    pub fn psx_render(&self) -> bool {
+        self.page_toggles.psx_render
+    }
+
     /// Tint the overlay the way retail's GPU does (the default) or with the
     /// plain 8-bit multiply - the native window's `Renderer::set_ui_psx_tint`.
     /// The page's atlas blitter reads it through [`Self::psx_tint_atlas`].
@@ -501,6 +623,54 @@ mod tests {
         assert!(!rt.system_flag(0x142));
     }
 
+    /// The remembered launch switches are the native launcher's: the page
+    /// seats a stored set on a fresh runtime (Retail-faithful through its
+    /// pin), and every setter changes what it would store.
+    #[test]
+    fn launch_switches_are_remembered_in_the_launcher_layout() {
+        let mut rt = LegaiaRuntime::new();
+        assert_eq!(rt.page_toggles.persisted(), PersistedSwitches::default());
+        rt.set_smart_monsters(true);
+        rt.set_entry_pulse(false);
+        rt.set_psx_render(true);
+        rt.set_flee_exp(true);
+        rt.set_spirit_ap(64);
+        rt.set_save_anywhere(true);
+        let p = rt.persisted_switches;
+        assert!(p.smart_monsters && p.no_entry_pulse && p.psx_render && p.flee_exp);
+        assert!(p.save_anywhere);
+        assert_eq!(p.spirit_ap, Some(64));
+        assert_eq!(p, rt.page_toggles.persisted());
+        // The session-only switches are not part of it, as natively.
+        rt.set_world_map_markers(true);
+        rt.set_arts_saved_list(true);
+        assert_eq!(rt.persisted_switches, p);
+        // A fresh runtime seated from the store comes back the same.
+        let mut back = LegaiaRuntime::new();
+        back.restore_persisted_switches(p);
+        assert!(back.smart_monsters() && !back.entry_pulse() && back.psx_render());
+        assert!(back.save_anywhere());
+        assert_eq!(back.page_toggles.tweaks, p.tweaks());
+        assert!(!back.retail_mode());
+        // A remembered Retail-faithful pins the options, as the box does.
+        let mut retail = LegaiaRuntime::new();
+        retail.restore_persisted_switches(PersistedSwitches { retail: true, ..p });
+        assert!(retail.retail_mode());
+        assert_eq!(retail.retail_deviations_json(), "[]");
+        // The page reads every remembered switch back into its box.
+        let page = include_str!("../../../site/_content/play.html");
+        assert!(
+            page.contains("rt.set_psx_render("),
+            "play.html never stores PSX rendering"
+        );
+        for call in ["psx_render", "smart_monsters", "entry_pulse", "retail_mode"] {
+            assert!(
+                page.contains(&format!("rtCall('{call}')")),
+                "play.html never reads {call} back"
+            );
+        }
+    }
+
     /// The gameplay tweaks start at the engine's defaults (the window's too),
     /// each setter reads back, and the page carries a control for each.
     #[test]
@@ -530,6 +700,7 @@ mod tests {
             "set_jewel_fix",
             "set_hp_readout_guard",
             "set_bonus_drop",
+            "set_save_anywhere",
             "set_spirit_ap",
             "set_damage_ap",
             "set_seru_catch_rate",

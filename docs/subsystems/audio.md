@@ -1424,10 +1424,115 @@ cadence, not an audio one - see the
 [`80018DB0` row](../reference/functions/audio.md) and
 [`re-settled-threads.md`](../reference/re-settled-threads/audio.md#fun_80018db0-is-a-rumble-cadence-not-an-audio-one).
 
+Its two inputs `gp+0x614` / `gp+0x618` (`gp = 0x8007B318`) are the absolute
+words `_DAT_8007B92C` / `_DAT_8007B930`, the game's **rumble state**:
+
+| Writer | What it does |
+|---|---|
+| field-VM op `0x4C` nibble-4 subs `6` / `7` | write or ramp either word; gated by the Events vibration word `_DAT_800845A8`, which clears both instead (215 sites in 40 scenes) |
+| the options screen | committing Events Off zeroes both |
+| the field entity SM `FUN_801DA51C` | the encounter jolt: both words `0xFF` on the battle handoff, gated by the Encounters word `0x800845CC` |
+| the field-to-battle intro (PROT 0979) | zeroes both at its init and on every tick |
+| the battle overlay (PROT 0898), the SCUS anim decoder, the summon and cast modules | store both words with a decay rate each on hits, blocks, quakes and casts, gated by the Battles word `0x800845C8` ([below](#battle-side-rumble)) |
+| `FUN_80046A20` (battle frame driver) | runs both words down a battle pass ([below](#battle-side-rumble)) |
+
+The kernel paces the small motor's one-frame pulse by `gp+0x614` (period
+`15 - (clamp(word + 0x20, 0, 0xFA) >> 4)`, pulsing below `11`) and hands the
+large motor the low byte of `gp+0x618`.
+
+Port: `legaia_engine_system::rumble` (the kernel), `World::rumble` (the two
+words, the field writes and their ramps, the Events commit), and
+`BootSession::rumble_frame`, which both play hosts give their controller -
+gilrs force feedback natively, the Gamepad API's `vibrationActuator` on the
+page. The small motor's pulse reaches a host as its duty over the last eight
+ticks, the level a DualShock motor's inertia averages it to.
+
 Provenance: `see ghidra/scripts/funcs/8006e2b4.txt`, `8006ce30.txt`,
 `8006d7b4.txt`, `8006cdb0.txt`, `8006ca7c.txt`, `8006cb3c.txt`, `8006d1e0.txt`,
 `8006d2ac.txt`, `8006e600.txt`, `8006e46c.txt`, `8006daac.txt`, `8001d230.txt`,
 `8001822c.txt`.
+
+### Battle-side rumble
+
+Every battle-side writer stores five words in one block: the two motor words,
+a decay rate for each (`gp+0xA30` / `gp+0xA34`, `0x8007BD48` / `0x8007BD4C`)
+and a hold timer (`gp+0xA1C`, `0x8007BD34`), which no shipped writer sets to
+anything but `0`. Each block sits behind `lw ..,0x45c8(..)` / `bnez`: the
+options screen's Battles row Off skips it. The battle controller's spawn
+`FUN_80055B6C` seeds both rates at `8` and the hold at `0`
+(`0x80055B7C..0x80055BB8`).
+
+The frame driver `FUN_80046A20` runs the words down once a battle pass
+(`0x80047164..0x8004725C`, after the `ctx[+0x328]` accumulator), on the frame
+step `DAT_1F800393`:
+
+```text
+if hold > 0: hold -= step; if hold > 0: skip the decay
+hold = 0
+for word, rate in (pulse, gp+0xA30), (level, gp+0xA34):
+    if word > 0: word -= step * rate; if word >= 0x100: word = 0xFF
+    if word < 0: word = 0
+```
+
+A negative rate therefore grows a word up to `0xFF`, and a zero rate holds it
+flat. The battle-exit pass skips the block (`0x80046E80` / `0x80046EE4` jump
+past it), so a word still up when the fight ends stays up.
+
+The battle overlay's writers (PROT 0898) and the SCUS one:
+
+| Writer | When | Pulse / level / rates |
+|---|---|---|
+| `FUN_801EC3E4` block roll and juggle-window block (`0x801EC890..0x801ECA00`) | a block the roll grants or the window forces, before the block-break cancel | party defender `FF / FF / 40 / 40`, then party attacker `C0 / B0 / 30 / 2C` |
+| `FUN_801EC3E4` landed hit (`0x801EDCD0..0x801EDD58`) | every unblocked swing, after the Spirit accrual | party defender `FF / FF / 20 / 20`, then party attacker `C0 / B0 / 18 / 16` |
+| `FUN_801EC3E4` impact kind `5` (`0x801EE514..0x801EE568`) | a party defender, ahead of the Rot immunity test | `FF / 80 / 4 / 2` |
+| `FUN_801DDB30` shared finisher (`0x801DE2E4..0x801DE364`) | every spell, special and module hit, unless the defender is Stoned | party defender `FF / FF / 4 / 4`, monster `C0 / C0 / 3 / 3` |
+| `FUN_801DEA50` floor part (`0x801DEF24..0x801DEF54`) | effect-script codes `0x81..=0x83` | `80 / 80 / C / C` |
+| `FUN_8004998C` burning body (`0x8004A838..0x8004A8BC`) | each selector-`2` puff | `A0 - rand % 64` / `80 - rand % 64` / `8 / 8`, two `rand()` draws only while the row is on |
+
+`FUN_801EC3E4` has one more store, ungated, in the arm that forces a block
+while `_DAT_8007BD84` is up (`0x801ECAC4..0x801ECAF8`); the port does not take
+that arm.
+
+The encounter jolt is the field's: `FUN_801DA51C`'s battle handoff
+(`0x801DA6F0..0x801DA718`, beside its game-mode-`8` store) sets both words to
+`0xFF` with no rate, and the intro overlay zeroes them at its init
+(`FUN_801CE8CC`, `0x801CF134..0x801CF144`) and at the head of every tick
+(`FUN_801CF5BC`, `0x801CF5D8..0x801CF5E4`). The jolt therefore lasts the
+mode-`8` window the intro overlay takes to load: six vsyncs in a PCSX-Redux
+capture of the Queen Bee ambush.
+
+The slot-B modules' stores sit inside their tick bodies' phase arms, each on
+one edge of its arm: the arm's pass, every pass the phase holds it, held
+passes only (Ozma's arm 9), or a countdown window (Gilium's arm 11). The
+table is `legaia_engine_cast::cast_module_rumble::MODULE_RUMBLE`, one row per
+store with its gate address. Two stores move only the rates (Chaos Flare's
+arm 7 to `-1`, Genocidal Cannon's arm `0x10` to `4`), Guilty Cross's arm 0
+clears all five words, Ozma's spray arms draw two `rand()` inside the gate,
+and Puera's arms 14 / 15 alternate their strength on the word `0x801FA0BC`.
+Puera's arm 20 stores once per falling part as each lands. PROT 0924's
+`0x801F7F68` block is a byte copy of PROT 0923's arm-14 block in its
+inherited tail, reached by no 0924 dispatch.
+
+The capture (`scripts/pcsx-redux/autorun_rumble_words.lua` over
+`rim_elm_queen_bee_battle`) reads the words every vsync and logs each writer
+site's hit: the encounter store, a monster swing on the party
+(`FF / FF / 20 / 20`, then `0xFF -> 0x9F -> 0x3F -> 0` on three-vsync passes)
+and a floor part (`80 / 80 / C / C`, `0x80 -> 0x5C -> 0x38 -> 0x14 -> 0`). The
+emulator's pad reports no extended mode, so its actuator pair is the other
+layout and the words are what the capture compares.
+
+Port: `legaia_engine_system::rumble::BattleRumbleDecay` (the driver's block),
+`BattleRumbleWrite` and the `battle_writes` table; `World::battle_rumble` (the
+Battles gate) at each writer's call site, `World::tick_battle_rumble_decay`
+on every battle pass, `World::apply_module_rumble` in the module runner, and
+`World::encounter_rumble` on the transition's first frame. The port loads the
+intro at once, so the transition holds the retail load window
+(`ENCOUNTER_JOLT_VSYNCS`) before the intro's zeroing starts. Puera's arm 20
+is not carried: the port runs no per-part landing.
+
+Provenance: `see ghidra/scripts/funcs/80046a20.txt`, `overlay_battle_action_801ec3e4.txt`,
+`8004998c.txt`, `801da51c.txt`, `overlay_field_battle_intro_0979_801ce8cc.txt`,
+and the slot-B module dumps the table cites.
 
 ## File-API leaf cluster
 

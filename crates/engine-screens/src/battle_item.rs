@@ -4,7 +4,7 @@
 use legaia_engine_menus::inventory_use::BattleItemMenuModel;
 use legaia_engine_ui::battle_item_ui as bii;
 
-/// Borrow a battle-item-window model (`World::battle_item_menu_model`) as the
+/// Borrow a battle-item-window model (`legaia_engine_battle_hud::battle_item_menu_model`) as the
 /// shared builder's frame, handing it to `f`. The frame borrows row views
 /// built here, so this is continuation-shaped. Both play hosts draw the item
 /// window through it; each used to carry its own copy.
@@ -51,7 +51,7 @@ pub fn with_battle_item_frame<R>(
     f(&frame)
 }
 
-/// Borrow a battle Magic window model (`World::battle_spell_menu_model`) as
+/// Borrow a battle Magic window model (`legaia_engine_battle_hud::battle_spell_menu_model`) as
 /// the shared builder's frame - the spell window's twin of
 /// [`with_battle_item_frame`].
 pub fn with_battle_spell_frame<R>(

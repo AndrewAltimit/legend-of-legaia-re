@@ -249,7 +249,8 @@ pub(super) fn add_battle_chrome_sprites(
 }
 
 /// Stamp the battle HUD's ten 8x12 numeral cells into
-/// [`ATLAS_RECT_HUD_DIGITS`].
+/// [`ATLAS_RECT_HUD_DIGITS`], and the same strip under every other
+/// ink-staging CLUT into [`atlas_rect_hud_digits_ink`].
 ///
 /// Source is the **menu-glyph atlas** TIM, not the system-UI sheet -
 /// retail's HUD numerals come off VRAM page `(960, 256)` through CLUT
@@ -263,16 +264,17 @@ pub(super) fn add_hud_digit_strip(dst: &mut [u8], menu_glyph_tim: &[u8]) -> anyh
     let tim = mga::extract_from_tim_slice(menu_glyph_tim)?;
     let parsed = legaia_tim::parse(tim.bytes)?;
     let src_w = parsed.pixel_width() as u32;
-    let rgba =
-        legaia_tim::decode_rgba8(&parsed, title_pak::MENU_GLYPH_ATLAS_TEXT_CLUT_ROW as usize)?;
-    copy_rect(
-        dst,
-        ATLAS_WIDTH,
-        &rgba,
-        src_w,
-        mga::DIGITS_ROW,
-        ATLAS_RECT_HUD_DIGITS,
-    );
+    for staging in 0..NUMERAL_INK_IDS {
+        let rgba = legaia_tim::decode_rgba8(&parsed, 6 + staging as usize)?;
+        copy_rect(
+            dst,
+            ATLAS_WIDTH,
+            &rgba,
+            src_w,
+            mga::DIGITS_ROW,
+            atlas_rect_hud_digits_ink(staging),
+        );
+    }
     Ok(())
 }
 
@@ -467,6 +469,44 @@ pub(super) fn add_card_work_sprites(
                 dst[off..off + 4].copy_from_slice(&[v, v, v, 255]);
             }
         }
+    }
+    Ok(())
+}
+
+/// The grid's "USED" frame (sprite record 5, sub-palette 6 of the save-menu
+/// sheet) and save-icon tiles `3..=14` off the overlay's icon strip, tile `t`
+/// through its own sub-palette `t`. Best-effort: a `prot_0899_bytes` short of
+/// the strip skips the tiles.
+pub(super) fn add_save_grid_sprites(
+    dst: &mut [u8],
+    sheet: &legaia_tim::Tim,
+    sheet_w: u32,
+    prot_0899_bytes: &[u8],
+) -> anyhow::Result<()> {
+    let frame_rgba = legaia_tim::decode_rgba8(sheet, title_pak::OVERLAY_SAVE_UI_REC_FRAME_CLUT)?;
+    copy_rect(
+        dst,
+        ATLAS_WIDTH,
+        &frame_rgba,
+        sheet_w,
+        title_pak::OVERLAY_SAVE_UI_REC_USED_FRAME,
+        ATLAS_RECT_USED_FRAME,
+    );
+    let Ok(strip) = title_pak::extract_overlay_card_icon_tim(prot_0899_bytes) else {
+        return Ok(());
+    };
+    let strip = legaia_tim::parse(strip.bytes)?;
+    let strip_w = strip.pixel_width() as u32;
+    for (i, &(x, y)) in ATLAS_RECT_SAVE_ICON_CELLS.iter().enumerate() {
+        let tile = ATLAS_SAVE_ICON_FIRST_BAKED + i;
+        let rgba = legaia_tim::decode_rgba8(&strip, tile)?;
+        let src = (
+            tile as u32 * ATLAS_RECT_PORTRAIT_W,
+            0,
+            ATLAS_RECT_PORTRAIT_W,
+            ATLAS_RECT_PORTRAIT_H,
+        );
+        copy_rect(dst, ATLAS_WIDTH, &rgba, strip_w, src, (x, y, src.2, src.3));
     }
     Ok(())
 }

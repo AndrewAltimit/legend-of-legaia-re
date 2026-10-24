@@ -166,6 +166,26 @@ fn real_disc_lists_prot_entries_and_previews() {
             .any(|f| f.path.eq_ignore_ascii_case("SCUS_942.54"))
     );
     assert!(s.blocks.len() > 50, "entries group under CDNAME blocks");
+    // The tree groups by the retail block, not the +2-shifted filename
+    // label: extraction 0874 (the field character pack) is player_data's
+    // first entry, 0870 is befect_data's (docs/formats/cdname.md).
+    let block_of = |index: u32| {
+        let pos = lib.position_of(index).unwrap();
+        s.blocks
+            .iter()
+            .find(|b| b.entries.contains(&pos))
+            .map(|b| (b.name.as_str(), b.entries[0] == pos))
+            .unwrap()
+    };
+    assert_eq!(block_of(874), ("player_data", true));
+    assert_eq!(block_of(870), ("befect_data", true));
+    assert_eq!(block_of(873).0, "befect_data");
+    assert_eq!(block_of(1).0, "town01");
+    assert_eq!(
+        lib.label(874),
+        Some("befect_data"),
+        "the filename label stays as extracted"
+    );
     assert_eq!(
         s.blocks.iter().map(|b| b.entries.len()).sum::<usize>(),
         1233

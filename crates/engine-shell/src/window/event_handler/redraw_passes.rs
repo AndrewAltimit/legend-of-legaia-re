@@ -255,14 +255,19 @@ impl PlayWindowApp {
     }
 
     /// Battle body `ai`'s body-to-view map under the same camera, for the
-    /// shatter renderer's sweep rows (`World::battle_shatter_view`).
+    /// shatter renderer's sweep rows (`legaia_engine_world_views::battle_draws::battle_shatter_view`).
     fn body_shatter_view(&self, ai: usize) -> [[f32; 3]; 3] {
         let world = &self.session.host.world;
         let pose = self
             .battle_stage_mesh
             .is_some()
             .then(|| world.battle_cam_pose());
-        world.battle_shatter_view(ai, pose.as_ref(), BATTLE_WORLD_SCALE)
+        legaia_engine_world_views::battle_draws::battle_shatter_view(
+            world,
+            ai,
+            pose.as_ref(),
+            BATTLE_WORLD_SCALE,
+        )
     }
 
     /// Battle body `ai`'s mesh broken by the shatter renderer
@@ -281,19 +286,21 @@ impl PlayWindowApp {
         input: &legaia_render_kernels::shatter::ShatterInput,
     ) -> Option<UploadedVramMesh> {
         let (tmd, raw) = self.scene_tmd_data.get(tmd_idx)?;
-        let masked = self
-            .session
-            .host
-            .world
-            .battle_live_drawn_objects(ai)
-            .map(|d| legaia_engine_battle::battle_attach_swap::mask_tmd(tmd, &d));
+        let masked = legaia_engine_world_views::battle_draws::battle_live_drawn_objects(
+            &self.session.host.world,
+            ai,
+        )
+        .map(|d| legaia_engine_battle::battle_attach_swap::mask_tmd(tmd, &d));
         let tmd = masked.as_ref().unwrap_or(tmd);
         let (mut local, object_ids) = legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(tmd, raw);
         if actor.battle_animation.is_some() {
-            self.session
-                .host
-                .world
-                .dim_posed_battle_mesh(ai, tmd, raw, &mut local.colors);
+            legaia_engine_world_views::battle_draws::dim_posed_battle_mesh(
+                &self.session.host.world,
+                ai,
+                tmd,
+                raw,
+                &mut local.colors,
+            );
         }
         let bones = actor
             .pose_frame
@@ -430,12 +437,11 @@ impl PlayWindowApp {
             // names for the playing stream's channels (`FUN_80048A08` after
             // the mesh-variant swap `FUN_8004CCD4`); the browser page's twin
             // is `play_battle_actor_hidden`.
-            let masked = self
-                .session
-                .host
-                .world
-                .battle_live_drawn_objects(ai)
-                .map(|d| legaia_engine_battle::battle_attach_swap::mask_tmd(tmd, &d));
+            let masked = legaia_engine_world_views::battle_draws::battle_live_drawn_objects(
+                &self.session.host.world,
+                ai,
+            )
+            .map(|d| legaia_engine_battle::battle_attach_swap::mask_tmd(tmd, &d));
             let tmd = masked.as_ref().unwrap_or(tmd);
             let mut vmesh = if actor.battle_animation.is_some() || player_slot == Some(ai as u8) {
                 legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &pose.bone_outputs)
@@ -476,10 +482,13 @@ impl PlayWindowApp {
             // Rot limb dimming (`FUN_80048A08`), the browser page's twin in
             // `web-play::play_battle_limb_dim`.
             if actor.battle_animation.is_some() {
-                self.session
-                    .host
-                    .world
-                    .dim_posed_battle_mesh(ai, tmd, raw, &mut vmesh.colors);
+                legaia_engine_world_views::battle_draws::dim_posed_battle_mesh(
+                    &self.session.host.world,
+                    ai,
+                    tmd,
+                    raw,
+                    &mut vmesh.colors,
+                );
             }
             // The body's whole-mesh semi-transparency (the near-camera ghost
             // pass `FUN_8004DC68`, the capture / defeat fade): the colour
@@ -663,7 +672,7 @@ impl PlayWindowApp {
     ) -> (
         Vec<(UploadedVramMesh, Mat4)>,
         Vec<(UploadedVramMesh, Mat4)>,
-        Vec<(UploadedVramMesh, Mat4)>,
+        Vec<(UploadedVramMesh, Mat4, bool)>,
     ) {
         if self.boot_ui.is_active() {
             return (Vec::new(), Vec::new(), Vec::new());
@@ -729,11 +738,17 @@ impl PlayWindowApp {
             .field_parts
             .iter()
             .filter_map(|fp| {
-                let (tmd, raw) = self.field_stager_tmds.get(fp.index)?;
-                let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(tmd, raw);
+                let (tmd, raw) = self.field_stager_tmds.get(fp.draw.model_index)?;
+                let mut vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(tmd, raw);
+                // The case-5 draw's render state: scale `+0x72`, colour word
+                // `+0x74` / `+0x78` (ABE / ABR ORed into every packet).
+                if !fp.draw.draws_rest_mesh() {
+                    fp.draw.apply_render_state(&mut vmesh);
+                }
                 Some((
                     upload(&vmesh, "field-FX part")?,
                     Mat4::from_cols_array(&fp.model),
+                    fp.draw.colour.double_sided,
                 ))
             })
             .collect();
@@ -800,7 +815,7 @@ impl PlayWindowApp {
 
     /// Build this frame's arts after-image ghost meshes - the render half of
     /// the retail walk `FUN_80049348` (`legaia_engine_battle::battle_afterimage`
-    /// holds the schedule/gate/colour kernel; `World::battle_ghost_draws`
+    /// holds the schedule/gate/colour kernel; `legaia_engine_world_views::battle_draws::battle_ghost_draws`
     /// binds it to the live pose history). Each ghost is the actor's full
     /// mesh at a historical pose, drawn through the body's own textured
     /// path: the walk only rewrites the render node's colour word
@@ -830,7 +845,7 @@ impl PlayWindowApp {
         if std::env::var_os("LEGAIA_DIAG_NO_GHOSTS").is_some() {
             return out;
         }
-        for g in world.battle_ghost_draws() {
+        for g in legaia_engine_world_views::battle_draws::battle_ghost_draws(world) {
             let i = g.actor_slot as usize;
             let Some(actor) = world.actors.get(i) else {
                 continue;

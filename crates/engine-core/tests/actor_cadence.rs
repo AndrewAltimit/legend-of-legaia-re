@@ -19,7 +19,7 @@
 //! samples. A change that moves any duration is a regression, not a tuning
 //! opportunity.
 
-use super::*;
+use legaia_engine_core::world::*;
 use legaia_engine_mode::mode::SceneMode;
 
 /// Sim ticks to run. One sim tick is one retail display frame (the 1:1

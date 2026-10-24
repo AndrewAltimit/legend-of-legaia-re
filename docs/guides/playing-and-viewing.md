@@ -83,7 +83,11 @@ randomized or translated USA disc is accepted, since it still boots the USA
 executable. The check reads a few sectors, not the whole image - it is not the
 SHA-256 fingerprint `disc-extract verify` computes. The disc card says what is
 wrong in one line (the file moved, is not a disc image, is another region's
-disc) and the help box gives the reason and the fix.
+disc) and the help box gives the reason and the fix. A file that is not a raw
+dump is named for what it is (`legaia_iso::sniff`): a 2048-byte `.iso` (it
+leaves out the streamed movie and voice sectors), a compressed `.chd`, an
+EBOOT `.pbp`, an ECM image, an archive, a patch file, or a `.cue` whose `.bin`
+was renamed - in which case the one `.bin` beside it is named.
 
 A disc that passes is remembered in `launcher.toml` in the platform config
 directory (`~/.config/legaia-engine` on Linux, `%APPDATA%\legaia-engine` on
@@ -121,6 +125,7 @@ view is, the mouse wheel scrolls it, and `Page Up` / `Page Down` / `Home` /
 | Gameplay tweaks | Boss casts respect jewels (`--jewel-fix`) | `launcher.toml` | - | off |
 | Gameplay tweaks | Battle freeze guard (off = `--no-hp-readout-guard`) | `launcher.toml` | - | on |
 | Gameplay tweaks | Bonus equipment drops (`--equipment-drops`) | `launcher.toml` | - | off |
+| Gameplay tweaks | Save anywhere (`--save-anywhere`) | `launcher.toml` | - | off |
 | Battle tuning | EXP rate (`--exp-rate`: 1x, 1.5x, 2x, 3x, 5x, 0.5x) | `launcher.toml` | - | 1x |
 | Battle tuning | Enemy strength (`--enemy-stat-scale`: 1x to 5x, 0.75x, 0.5x) | `launcher.toml` | - | 1x |
 | Battle tuning | Enemy attack count (`--enemy-attack-count`: 1x to 3x, 0.5x) | `launcher.toml` | - | 1x |
@@ -155,9 +160,16 @@ what each does and which patcher features stay with the patcher.
 `--smart-monsters` or a gameplay-tweak flag when those rows ask for them) in a child
 process, and the launcher window closes. When the game exits normally the
 launcher ends with it. When it stops with an error, the launcher comes back
-with the error lines of the game's log; the whole log is
-`legaia-engine-game.log` in the saves folder. Run from a terminal, the game's
-output still prints there too.
+and says how it ended (an exit code, or a crash by signal or Windows
+exception), then checks the disc again: a disc that has gone (unplugged,
+moved) turns the disc card back into the picker with that reason. Otherwise
+the help box names the log, `legaia-engine-game.log` in the saves folder, and
+the reason the log gives - a panic's message, or the root of the error chain
+the engine exits with. A crash leaves no reason in the log, and none is
+invented from the lines before it. A panic on any of the game's threads (the
+audio mixer inside the sound callback, the controller reader) ends the
+process, so it is reported instead of the game playing on silent or deaf to
+the pad. Run from a terminal, the game's output still prints there too.
 
 `LEGAIA_LAUNCHER_DIRECT=1` skips the screen: a remembered disc that still
 validates boots straight into the game, in the launcher's own process.
@@ -245,8 +257,9 @@ In the native window each press shows the toggle's new state at the bottom
 left for a moment (*Ground fog: off*); holding a key toggles once, not
 repeatedly. A key that only acts while you walk
 around (`F3`, `T`, `R`) says so when pressed on the title screen or in a menu.
-`F12` (or `?`) opens a panel listing every toggle key with its current state;
-press it again to close it. A player's window says so for its first few
+`F12` (or `?`) opens a panel listing every toggle key with its current state,
+and under it the key each pad button is on (Cross, Circle, Start, ...), read
+from the live Key Config table; press it again to close it. A player's window says so for its first few
 seconds (*F12 or ? lists the keys*, bottom left) until the panel is opened. A
 `--screenshot` capture leaves that line, the toggle notices and the quit
 prompt out, so it shows only what the game draws; `--screenshot-chrome` keeps
@@ -504,9 +517,8 @@ effect by writing an id into a ring, and only a handful of those writes have
 been traced, so a cue is either `disc` (the id is retail's, at the place retail
 writes it) or `site` (retail's id there is unpinned and the port reuses the
 closest one). The browser page reports the split per event rather than presenting
-a guess as the game's sound. The footstep is the clearest example: its *timing*
-is the retail cadence - a faster walk steps more often, standing still is silent
-- while the cue id it fires is the port's pick.
+a guess as the game's sound. Walking is silent, because retail's is: the game
+plays no footstep sound at all.
 
 ## 6. Saves and config live next to you
 
@@ -518,7 +530,8 @@ speaker - separate from the in-game Monaural setting, which is the original's
 own mono mode and leaves voices and movies in stereo) in
 `legaia-options.toml`, and the save screen's port-1 memory
 card at `saves/memcard1.mcr` - the same raw card image the browser play page
-keeps, which any PSX emulator reads. The first launch that finds no card
+keeps, which any PSX emulator reads, created with its folder on the first
+save. The first launch that finds no card
 there writes any `slot_NN` save files an older build left into it. Run from the same
 directory each time - or pass explicit paths where supported
 (`--save-dir`, `config set --config-file`). A game started from the
@@ -559,7 +572,13 @@ diagnostics (parity oracles, synthetic state drivers) you can ignore.
 `asset-viewer` reads the `extracted/` tree (there is no `--disc` here - run
 `legaia-extract` first). The `field` and `dialog` demos additionally need the
 dialog font at `extracted/font/`, which the pipeline writes by default (or
-`font-extract --disc` rebuilds).
+`font-extract --disc` rebuilds). The `field` and `world` demos, and the `tmd`
+row below, also read the mesh and texture sweeps `extracted/tmd_scan/` and
+`extracted/tim_scan/`, which a default extraction does not write: make them
+with `./asset tmd-scan extracted/PROT --out extracted/tmd_scan` and
+`./asset tim-scan extracted/PROT --out extracted/tim_scan` (or extract with
+`--all-textures` for the second). Without `tmd_scan/` the field demo opens with
+no actors and says nothing about why.
 
 ```bash
 ./asset-viewer                                                         # archive browser on ./extracted

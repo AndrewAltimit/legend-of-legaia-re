@@ -16,5 +16,6 @@
 pub mod cast_arm_ticks;
 pub mod cast_fatal_decision;
 pub mod cast_module_camera;
+pub mod cast_module_rumble;
 pub mod cast_module_ticks;
 pub mod seru_magic_ticks;

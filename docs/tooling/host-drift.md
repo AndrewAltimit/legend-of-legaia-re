@@ -892,7 +892,7 @@ host's per-frame list has grown a member the other's has not.
 It also covers two of the three hosts, and for a structural reason rather than
 an oversight: the minigames page has no frame path to walk. It exports one
 tick per minigame (`dance_tick`, `baka_tick`, `slot_step`, `fishing_pond_tick`,
-`muscle_tick_time_meter`), each called by its own page module, so there is no
+`muscle_tick_arts_list`), each called by its own page module, so there is no
 fall-through list for an arm to skip part of. A shared frame path is the thing
 this tier measures; that host does not have one.
 
@@ -1034,9 +1034,10 @@ page's card rack - and one **commit applier** that turns the screen's
 `SaveCommit` into I/O (`apply_save_commit` / `apply_card_save_commit`
 natively, `apply_card_outcome` on the page), plus the write a Save's commit
 beat asks for (`write_save_commit` / `service_card_save`). The tier pins every
-shipped call of each rack primitive (`write_slot_save`, `read_slot_save`,
-`write_save_into_card`, `MountedCard::save_at`, the page's
-`write_session_into_card` / `load_session_from_card`) to its applier, so a
+shipped call of each rack primitive (`read_slot_save`, `write_save_into_card`,
+the save-number-addressed `write_save_into_cell` / `MountedCard::save_numbered`,
+`MountedCard::save_at`, the page's `write_session_into_cell` /
+`load_session_from_card`) to its applier, so a
 hotkey or page button that saves or loads around the screen fails as `SAVE
 BYPASS`. A primitive with no shipped call at all fails too: a renamed applier
 must not leave the tier checking nothing.
@@ -1114,6 +1115,39 @@ program writes `log2(w) / LOG_DEPTH_RANGE` on perspective frames
 buffer; a second program drawn into the same buffer with the rasterised
 `gl_FragCoord.z` loses nearly every depth test. The enhanced-lighting glow
 program did exactly that until it wrote the same log depth.
+
+## Page export reach
+
+Every tier above asks whether the page calls an engine kernel. None asks the
+converse: does the page call every export the runtime offers it? An export no
+page source names is either a probe a driver reads, a step the page's tick
+export already runs, a debug entry, a superseded surface - or a feature the
+page never offers. `play_fishing_start` was the last kind: exported, pinned by
+a Rust oracle and documented, with no page control calling it, so the page
+could reach fishing only by walking to a fishing spot.
+
+[`check-page-export-reach.py`](../../scripts/ci/check-page-export-reach.py)
+lists every method of every `#[wasm_bindgen] impl LegaiaRuntime` block and
+requires each to be named by a `site/` source - as a whole word, or built from
+a string prefix and a called name, the way `LegaiaFieldActors.api(rt,
+'play_npc_')` binds the NPC layer - or to be covered by a row of
+[`page-export-reach-waivers.toml`](../../scripts/ci/page-export-reach-waivers.toml):
+
+| Kind | Means |
+|---|---|
+| `probe` | a read-only state or diagnostic read an oracle or headless driver takes |
+| `tick-internal` | a step `play_frame_ticks` already runs inside its tick order |
+| `driver` | a debug entry a headless driver arms ([`site-shell.md`](site-shell.md#reaching-the-play-pages-battle-screen-headlessly)) |
+| `superseded` | an older surface a newer export replaced on the page |
+| `both-absent` | a control neither host offers |
+
+A row names exports by glob. A row that matches no export, or one the page now
+names, fails the gate, so a waiver cannot outlive the export it excuses. Being
+named by a Rust test does not count as reached: that is exactly how the fishing
+gap stayed green. The first sweep wired the two real gaps it found -
+the picker's Fishing row and a Reset keys button over `pad_bindings_reset`
+(natively `legaia-engine config reset`) - and waived the rest. It runs in CI
+and the pre-commit hook.
 
 ## What a waiver may say
 
@@ -1215,8 +1249,40 @@ table; a switch with no page twin is a host difference, not a world default.
 | `--smart-monsters` (the launcher's Smarter monsters row), `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS` | `set_smart_monsters`, `set_world_map_markers`; the retail mode holds all three off on both hosts |
 | `LEGAIA_BATTLE_FRAME_CADENCE` (`0` lowers it), `LEGAIA_ARTS_SAVED_LIST` | `set_battle_frame_cadence`, `set_arts_saved_list`. The cadence has one default, `DEFAULT_BATTLE_SM_FRAME_CADENCE`, that `WorldToggles::new`, the page's `PageToggles` and its box all start from (`the_cadence_default_is_single_sourced`); the saved-chain list is off on both hosts |
 | `--no-entry-pulse` (the launcher's Living ground pulse row) | `set_entry_pulse(false)`, the "Entry pulse" box; the retail box also holds it off |
+| `--no-shiny-seru`, `--flee-exp`, `--exp-rate`, `--no-fortress-encounter-fix`, `--jewel-fix`, `--no-hp-readout-guard`, `--equipment-drops` and the battle-tuning sliders (the launcher's Gameplay tweaks and Battle tuning groups) | the Gameplay tweaks and Battle tuning boxes (`set_shiny_seru` ... `set_enemy_stat_permille`), one `GameplayTweaks` value on both hosts |
 | `--simple-dialogue`, `--flat-y`, `--no-edge-collision`, `--no-solid-npcs`, `--no-live-npcs`, `--no-damage-finish`, `--no-player-battle`, `--seed-party`, `--battle` | none: comparison and debug opt-outs from the retail default, which is the page's only setting (`--battle` has the wasm `debug_force_battle`) |
 | `--screenshot*`, `--pad-script`, `--key-script`, `--str-file`, `--cutscene-map` | none: native capture tooling |
+
+### Remembered between runs
+
+A launch switch with no `OptionsState` row behind it is remembered by the
+native **launcher**, not by `play-window` itself: the launcher's settings file
+stores it and turns it into the flag on the next Play. The page is both
+launcher and game, so it remembers the same set itself. Both store one type,
+`legaia_engine_session::session_switches::PersistedSwitches` - flattened into
+the launcher's TOML, JSON under `localStorage["legaia.switches"]` on the page -
+so a switch added there is remembered on both hosts or on neither:
+
+| Remembered | Where each host keeps it |
+|---|---|
+| `OptionsState` rows (lighting, fog, see-through walls, bloom, camera distance, volumes, mono output, ...) | `legaia-options.toml`; `localStorage["legaia.options"]` |
+| `PersistedSwitches` (PSX rasterisation, retail-faithful, entry pulse, smart monsters, the gameplay tweaks and battle tuning) | the launcher's settings file; `localStorage["legaia.switches"]` |
+| key bindings | `legaia-input.toml`; the page's pad-bindings store |
+| nothing (session only) | the world-map markers, the battle cadence and the saved-chain Arts list (environment switches natively), the cheats, the dev menu |
+
+A fresh page runtime seats the stored set before its boxes sync
+(`LegaiaRuntime::restore_persisted_switches`; a remembered retail-faithful goes
+through `set_retail_mode`, which pins the options as the box does), and the
+boxes read it back once before any box writes its own state
+(`syncPersistedSwitches`). Before the page stored the set, every gameplay tweak,
+PSX rasterisation and retail-faithful came back at the default on a reload
+while the window's launcher kept them. Pinned by
+`play_toggles::tests::launch_switches_are_remembered_in_the_launcher_layout`
+and `launcher::tests::stored_switches_are_the_shared_layout`;
+`launcher::tests::every_launcher_row_has_a_play_page_twin` maps every launcher
+row to its page control through an exhaustive match, so a new row cannot land
+without an answer for the page, and fails a launch-switch row that leaves the
+shared set untouched.
 
 ## Pairing frames: what a screenshot adds
 
@@ -1450,7 +1516,7 @@ fold the standalone games into the play page.
 
 | Lacks | Because |
 |---|---|
-| a frame path (tier 11) | It exports one tick per game (`dance_tick`, `baka_tick`, `slot_step`, `fishing_pond_tick`, `muscle_tick_time_meter`). It does share the clock: `LegaiaMinigames::drain_sim_steps`. |
+| a frame path (tier 11) | It exports one tick per game (`dance_tick`, `baka_tick`, `slot_step`, `fishing_pond_tick`, `muscle_tick_arts_list`). It does share the clock: `LegaiaMinigames::drain_sim_steps`. |
 | the Muscle Dome ringside still | Armed by `World::exit_muscle_dome` writing `MinigameState::muscle_ringside_still` ([`ringside-still.md`](../formats/ringside-still.md#in-the-port)). |
 | fishing venue actors and exchange session | No venue scene; it lays the exchange out from `fishing_exchange_json` and treats every tackle item as held. |
 | the round-start cameo | It passes the duel no held word. |
@@ -1526,9 +1592,9 @@ method is the kernel call plus the single thing only that host holds.
 | `poll_game_over` | `BootSession::take_party_wipe` | where it keeps the hold: the window's `BootUiState::GameOver`, the page's `game_over` |
 | `poll_field_shop` | `BootSession::poll_field_overlay` (over `MenuRuntime::poll_field_overlay`) | nothing; the page counts the blip for its readout |
 | `tick_world_effects` | `BootSession::step_effect_scene_graphs` | the summon creature's mesh bind, ahead of the kernel |
-| `tick_muscle_time_meter` | `BootSession::step_muscle_time_meter` | nothing |
+| `tick_muscle_arts_list_slide` | `BootSession::step_muscle_arts_list_slide` | nothing |
 | `tick_fishing_banners` | `engine-screens::fishing_banner_frame` | the cache its `&self` draw pass reads |
-| `tick_sfx` | `BootSession::step_footstep_cadence`, then `BootSession::step_audio_frame` | nothing; the page counts the cadence steps for its readout |
+| `tick_sfx` | `BootSession::step_audio_frame` | nothing |
 
 `take_party_wipe` consumes `World::game_over` on the take and is handed one
 term, whether a host screen already owns the frame. `poll_field_overlay` opens
@@ -1567,11 +1633,12 @@ the tick that queues a cue - the battle-event step last among them - and ahead
 of the field-event drain, so a zero-delay cue sounds on its own tick on either
 host. The battle's audio - the duck target, the strike / cast cues, the
 cast-voice prestage, the CD-XA clips and the arts shouts - is routed in the
-battle-event step, ahead of it, by `BootSession::route_battle_audio`. The
-footstep cadence (`step_footstep_cadence`, the `FUN_80018db0` port) steps on
-every host just before it; it queues `CUE_FOOTSTEP`, which is `None` because
-retail fires no footstep cue. Under a screen that freezes the field neither
-host reaches it; `step_overlay_sfx` steps the scheduler alone there.
+battle-event step, ahead of it, by `BootSession::route_battle_audio`. Walking
+queues no cue: retail fires no footstep ([`sfx-table.md`](../formats/sfx-table.md)),
+and the per-frame kernel once ported as a footstep cadence, `FUN_80018db0`, is
+the rumble actuator both hosts read through `BootSession::rumble_frame`. Under
+a screen that freezes the field neither host reaches the audio frame;
+`step_overlay_sfx` steps the scheduler alone there.
 
 `step_npc_clip_players` asks `World::field_npc_clips_advance` **per tick**.
 Retail reaches the per-actor anim tick (`FUN_800204F8`) once per field frame,
@@ -1646,6 +1713,7 @@ reaches it. One layout, the W3C standard mapping, lives in
 | button order, stick dead zone, trigger threshold | `gamepad::STANDARD_BUTTONS`, `STICK_DEAD_ZONE`, `BUTTON_PRESS_THRESHOLD` | gilrs buttons renamed to standard indices (`window::gamepad::standard_index`) | `gamepad_layout_json`, adopted by `pad-bindings.js` |
 | press / release edges, focus-loss reset | `StandardGamepad::update`, `reset` | `poll_gamepad` once per redraw, ahead of the ticks; `Focused(false)` | `legaiaPollGamepad` (play page, title card), `legaiaGamepadEdges` (minigames page) |
 | where the word lands | the tick's pad word | `gamepad_held`, ORed with the keyboard's held word each tick; a press since the last poll goes through `PadTapLatch` | `Gamepad:<Button>` entries in the `held` / `pulse` sets; on the minigames page an edge event naming its button through the key handlers |
+| rumble | `legaia_engine_system::rumble` over `World::rumble`, read through `BootSession::rumble_frame` (a `SIM_PAIRS` row) | `GamepadHost::set_rumble`: two endless gilrs force-feedback effects whose gains are the levels, once per redraw after its ticks | `legaiaSetRumble` (`pad-bindings.js`): a `dual-rumble` effect on every pad with a `vibrationActuator`, re-sent while a level holds |
 
 Scripted and headless native runs open no controller: the pad word there is
 the script's. Two native surfaces read the pad outside the tick's word and
@@ -2051,12 +2119,12 @@ Three more surfaces sit outside every tier:
 | HUD frame rows | `battle_hud::battle_intro_names`, `battle_commit_log`, `battle_banner_message` (elements `0x59` / `0x65` share the string at `ctx + 0x1F9`; [`battle-action.md`](../subsystems/battle-action.md#the-battle-message-banner-elements-0x59-and-0x65)) |
 | effect spawns | `World::route_battle_effect_spawns`; a `ui_element` raise is a placement index for the HUD spawner `FUN_801D8DE8`, not an effect |
 | effect ribbon (move-VM op `0x42`, `FUN_801CFA48`) | `World::active_effect_ribbons` (`effect_ribbon`); in play the carrier is Gilium's summon (PROT 0923) |
-| ground shadow, default draw-kind-4 arm | `engine-effects::effect_default_arm` (`FUN_80028158`), `World::active_effect_kind4_draws`, `World::battle_ground_shadows` ([`effect-vm.md`](../subsystems/effect-vm.md#the-default-arms-draw)) |
+| ground shadow, default draw-kind-4 arm | `engine-effects::effect_default_arm` (`FUN_80028158`), `World::active_effect_kind4_draws`, `engine-world-views::battle_draws::battle_ground_shadows` ([`effect-vm.md`](../subsystems/effect-vm.md#the-default-arms-draw)) |
 | move-FX spawn to sound | `BootSession::step_effect_scene_graphs`, over `engine-session::battle_fx::spawn_pending_move_fx` |
 | scene matrix for FX passes | `battle_scene_mvp`, at the stage's 4:3 |
 | labels | `engine-scene::battle_overlay_readers::battle_ui_strings_for_disc`; `SCUS_LABELS` and `OVERLAY_LABELS` share no key |
 | party wipe | `GameOverOutcome::ReturnToTitle`; the whole overlay list is empty for the hold |
-| spoils leader | `World::battle_spoils_leader` |
+| spoils leader | `engine-battle-hud::battle_spoils_leader` |
 | summon seat order | seated before the effect scene-graph tick (`tick_world_effects`) |
 
 **Body blend.** Two retail writers put a whole body into a semi-transparent
@@ -2217,8 +2285,10 @@ a walked door reach one session through `SceneHost::drain_minigame_warp`. `K`
 built a Qualifier floor of its own until it took the warp, so the dance it
 opened ignored the story flags the hall's floor is read from. Two launchers
 stay direct on purpose: `U` (the how-to floor, which no flag state in a
-launcher reaches) and fishing (`L`, and the page's `play_fishing_start`,
-alike).
+launcher reaches) and fishing (`L`, and the page picker's Fishing row through
+`play_fishing_start`, alike). The picker offers every playable slot
+(`play_minigames::tests::the_page_picker_offers_every_playable_minigame`); it
+lacked fishing, whose export no page control called.
 
 ### The minigame side-channel step is paired; its contents are not
 

@@ -27,7 +27,7 @@
 //! Three more reach a stager rather than a body: `Reach::Stager`, run inline
 //! off the caller's arm; `Reach::PartCall`, reached only through the
 //! module's spawned parts' op-`0x20` calls (PROT 0909); and
-//! `Reach::QueuedCall`, the same part call queued by hand (PROT 0922).
+//! `Reach::QueuedCall`, the same part call queued by hand (PROT 0922, 0923).
 //!
 //! The denominator is the **sources**: `tagged_addresses` scrapes every
 //! `// PORT:` address out of `cast_module_ticks.rs` and its submodules,
@@ -76,8 +76,8 @@ enum Reach {
     /// `run_cast_module_code`'s **staging** call, which runs before the tick
     /// match and unconditionally for its entry. A stager is not a tick body -
     /// it reports no `CastTickStep`, so `tick_ported` stays false for a module
-    /// that carries only a stager (PROT 0923), and "entered" has to be the
-    /// state the stager itself writes.
+    /// that carries only a stager, and "entered" has to be the state the
+    /// stager itself writes.
     Stager,
     /// A stager only the module's spawned **parts** call (move-VM op `0x20`):
     /// PROT 0909's, whose arm `0` record `0x801F7E18` calls after its
@@ -88,8 +88,22 @@ enum Reach {
     /// A stager reached through its parts' op-`0x20` calls, driven by
     /// queueing the call the way `MoveVmHostImpl::ext_20` does and running
     /// one module tick on an arm whose body writes no `ctx[+0x278]` of its
-    /// own (PROT 0922's arm 3).
+    /// own ([`queued_call_phase`]).
     QueuedCall,
+}
+
+/// The module phase a `Reach::QueuedCall` row's one tick runs on: an arm
+/// whose own pass stores no `ctx[+0x278]`, so the stager's `3` is the only
+/// write the probe can see. PROT 0922's arm 3; PROT 0923's arm 5, since its
+/// arms 0, 3, 4 and `0x11` each store a stage byte on the pass that leaves
+/// them (`cast_module_camera::gilium_stage_byte`). PROT 0923's stager
+/// `FUN_801F8B90` takes `(part, arm)` and its tick body `0x801F69D8` never
+/// calls it, so the parts' op-`0x20` calls are its only way in.
+fn queued_call_phase(entry: u32) -> u8 {
+    match entry {
+        923 => 5,
+        _ => 3,
+    }
 }
 
 /// One dispatch site of the module half.
@@ -185,7 +199,7 @@ const ROWS: [Row; 34] = [
         Reach::Stager,
     ),
     row(&[0x801F_90E4], 922, None, None, Reach::QueuedCall),
-    row(&[0x801F_8B90], 923, None, None, Reach::Stager),
+    row(&[0x801F_8B90], 923, None, None, Reach::QueuedCall),
     row(&[0x801F_7740], 906, None, None, Reach::Stager),
     row(&[0x801F_7AF4], 909, None, None, Reach::PartCall),
     // --- the two whole-row AoE sweep stagers -------------------------------
@@ -672,10 +686,11 @@ fn every_ported_cast_module_body_is_entered_through_its_own_seam() {
                     .find(|(a, _)| *a == r.addrs[0])
                     .map(|(_, f)| *f)
                     .expect("a queued-call stager row carries a probe");
-                w.casting.module_phase = 3;
+                let phase = queued_call_phase(entry);
+                w.casting.module_phase = phase;
                 w.queue_cast_stager_call(0);
                 let run = w
-                    .run_cast_module_code(id, 3)
+                    .run_cast_module_code(id, phase)
                     .expect("the queued-call module pages");
                 assert_eq!(run.prot_entry, entry);
                 saw_port = probe(&w);
@@ -689,6 +704,9 @@ fn every_ported_cast_module_body_is_entered_through_its_own_seam() {
                 w.casting.summon_actor_slot = Some(ticks::SUMMON_SEAT);
                 w.arm_summon_stager(caster as u8, id);
                 for _ in 0..PART_CALL_FRAMES {
+                    // One battle pass a step: the parts take their part tick
+                    // once a battle frame (`World::summon_fx_pass_vsyncs`).
+                    w.clock.display_frames += u64::from(w.battle_frame_step().max(1));
                     let busy = w.summon_stager_tick();
                     w.tick_summon(legaia_engine_core::world::EFFECT_SCENE_GRAPH_STEP);
                     if probe(&w) {

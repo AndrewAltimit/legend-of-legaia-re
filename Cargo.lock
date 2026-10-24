@@ -2437,6 +2437,7 @@ dependencies = [
  "legaia-art",
  "legaia-container-formats",
  "legaia-disc-audit",
+ "legaia-disc-patch",
  "legaia-engine-battle",
  "legaia-engine-battle-hud",
  "legaia-engine-battle-menus",
@@ -2472,6 +2473,7 @@ dependencies = [
  "legaia-seq",
  "legaia-tim",
  "legaia-tmd",
+ "legaia-translate",
  "legaia-ui-formats",
  "legaia-vab",
  "log",
@@ -2559,6 +2561,7 @@ dependencies = [
  "legaia-xa",
  "log",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2697,9 +2700,11 @@ name = "legaia-engine-world-views"
 version = "0.1.0"
 dependencies = [
  "glam",
+ "legaia-actor-formats",
  "legaia-container-formats",
  "legaia-engine-battle",
  "legaia-engine-battle-menus",
+ "legaia-engine-battle-vm",
  "legaia-engine-camera",
  "legaia-engine-core",
  "legaia-engine-dev-menu",
@@ -2792,6 +2797,7 @@ dependencies = [
  "clap",
  "libc",
  "sha2",
+ "tempfile",
 ]
 
 [[package]]

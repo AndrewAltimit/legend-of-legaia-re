@@ -872,27 +872,39 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     if (Number.isFinite(id)) selectMonster(id);
   });
 
-  // ---- 3D mesh viewer (WebGL2, directional-lit, textured) ------------------
+  // ---- 3D mesh viewer (WebGL2, retail-shaded, textured) -------------------
   // Textures come from the decoded monster texture pool (record +0x08): a 4bpp
-  // index page (uploaded as an R8 texture) + a 15x16 palette LUT (RGBA). The
-  // fragment shader does the index->palette lookup the PSX GPU does in VRAM,
-  // picking the palette by the prim's CBA (a_pal = cba & 0x3F). Falls back to
-  // flat directional shading when a slot has no texture.
+  // index page (uploaded as an R8 texture) + a palette LUT (RGBA, 16 colours
+  // per palette). The fragment shader does the index->palette lookup the PSX
+  // GPU does in VRAM, picking the palette per vertex (a_pal: the prim's
+  // cba & 0x3F, offset past the pool's 15 for a boss prim that samples the
+  // boss effect page). Falls back to flat directional shading when a slot has
+  // no texture.
+  //
+  // Shading defaults to what battle shows: retail lights a monster with
+  // nothing, the texel is multiplied by the face's baked colour word
+  // (texel * colour / 128, 0x80 neutral) and an untextured face is filled
+  // with the word itself (docs/subsystems/shading.md). The "lit preview"
+  // toggle swaps in a directional key light instead - a viewer aid for
+  // reading shape, not a claim about retail.
 
   const MESH_VS = `#version 300 es
   in vec3 a_pos;
   in vec3 a_nrm;
   in vec2 a_uv;
   in float a_pal;
+  in vec3 a_col;             // baked colour word / 255 (0x80 = neutral)
   uniform mat4 u_mvp;
   uniform mat3 u_nrm;
   out vec3 v_n;
   out vec2 v_uv;
   out float v_pal;
+  out vec3 v_col;
   void main() {
     v_n = u_nrm * a_nrm;
     v_uv = a_uv;
     v_pal = a_pal;
+    v_col = a_col;
     gl_Position = u_mvp * vec4(a_pos, 1.0);
   }`;
 
@@ -901,9 +913,12 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   in vec3 v_n;
   in vec2 v_uv;
   in float v_pal;
+  in vec3 v_col;
   uniform sampler2D u_idx;   // R8: palette index per texel (value*255)
-  uniform sampler2D u_pal;   // RGBA8: 15*16 palette LUT (one row)
+  uniform sampler2D u_pal;   // RGBA8: palette LUT, 16 colours per palette (one row)
+  uniform float u_palw;      // LUT width in colours (15*16, or 31*16 with the boss page)
   uniform bool u_textured;
+  uniform bool u_retail;     // baked colour word, no light (battle's look)
   out vec4 o_col;
   void main() {
     float ln = length(v_n);
@@ -915,12 +930,19 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     float amb = 0.42 + 0.18 * N.y;
     if (u_textured) {
       float idx = floor(texture(u_idx, v_uv).r * 255.0 + 0.5);
-      float u = (v_pal * 16.0 + idx + 0.5) / 240.0;
+      float u = (v_pal * 16.0 + idx + 0.5) / u_palw;
       vec4 t = texture(u_pal, vec2(u, 0.5));
       if (t.a < 0.5) discard;            // PSX index-0 transparent texel
-      // PSX textures carry their own shading; modulate gently by the light.
+      if (u_retail) {
+        // texel * colour / 128, clamped per channel.
+        o_col = vec4(clamp(t.rgb * v_col * (255.0 / 128.0), 0.0, 1.0), 1.0);
+        return;
+      }
+      // Lit preview: modulate gently by the key light.
       vec3 col = t.rgb * (0.74 + key * 0.40);
       o_col = vec4(pow(clamp(col, 0.0, 1.0), vec3(0.85)), 1.0);
+    } else if (u_retail) {
+      o_col = vec4(v_col, 1.0);          // untextured: the word is the colour
     } else {
       vec3 base = vec3(0.66, 0.70, 0.78);
       vec3 col = base * (amb + key * 0.78);
@@ -946,10 +968,13 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
         nrm: gl.getAttribLocation(this.prog, 'a_nrm'),
         uv: gl.getAttribLocation(this.prog, 'a_uv'),
         pal: gl.getAttribLocation(this.prog, 'a_pal'),
+        col: gl.getAttribLocation(this.prog, 'a_col'),
+        retail: gl.getUniformLocation(this.prog, 'u_retail'),
         mvp: gl.getUniformLocation(this.prog, 'u_mvp'),
         nmat: gl.getUniformLocation(this.prog, 'u_nrm'),
         idxTex: gl.getUniformLocation(this.prog, 'u_idx'),
         palTex: gl.getUniformLocation(this.prog, 'u_pal'),
+        palW: gl.getUniformLocation(this.prog, 'u_palw'),
         textured: gl.getUniformLocation(this.prog, 'u_textured'),
       };
       this.vao = gl.createVertexArray();
@@ -957,10 +982,14 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       this.nrmBuf = gl.createBuffer();
       this.uvBuf = gl.createBuffer();
       this.palBuf = gl.createBuffer();
+      this.colBuf = gl.createBuffer();
       this.idxBuf = gl.createBuffer();
       this.idxTex = gl.createTexture();   // 4bpp index page (R8)
-      this.palTex = gl.createTexture();   // 15*16 palette LUT (RGBA8)
+      this.palTex = gl.createTexture();   // palette LUT (RGBA8), 16 colours per palette
+      this.palW = 240;
       this.textured = false;
+      this.hasColors = false;  // the wasm bundle carried the colour words
+      this.lit = false;        // user toggle: lit preview instead of retail
       this.indexCount = 0;
       this.center = [0, 0, 0];
       this.radius = 1;
@@ -973,12 +1002,16 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       this._raf = requestAnimationFrame(this._loop);
     }
 
-    // `tex` is { idx: Uint8Array(w*h), pal: Uint8Array(15*16*4), w, h } or null.
+    // `tex` is { idx: Uint8Array(w*h), pal: Uint8Array(palettes*16*4), w, h } or null.
     // `anim` is { objectIds: Uint32Array(nverts), partCount, frameCount,
     //   frames: Int32Array(frameCount*partCount*6) } or null. When present, the
     //   idle animation (action 0) is played by re-posing each TMD object
     //   relative to frame 0 (so frame 0 == the static rest pose).
-    setMesh(positions, normals, indices, bounds, uvs, palIdx, tex, anim) {
+    // `blend` is a per-vertex Uint8Array (0 opaque, 1 + abr for a
+    //   semi-transparent prim) or null for an all-opaque draw.
+    // `colors` is the per-vertex baked colour word, Uint8Array(nverts*3), or
+    //   null (an older wasm build): the view then falls back to the lit look.
+    setMesh(positions, normals, indices, bounds, uvs, palIdx, tex, anim, blend, colors) {
       const gl = this.gl;
       // Keep the pristine per-object local geometry so a later action switch
       // (setAnimation) can re-pose without re-uploading the whole mesh/textures.
@@ -1021,9 +1054,11 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        // Palette LUT: 15*16 = 240 RGBA colours in one row.
+        // Palette LUT in one row: the pool's 15*16 colours, then the boss
+        // effect page's 16*16 for the bosses whose prims sample it.
+        this.palW = Math.max(16, (tex.pal.length / 4) | 0);
         gl.bindTexture(gl.TEXTURE_2D, this.palTex);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 240, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, tex.pal);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.palW, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, tex.pal);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -1034,8 +1069,45 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
         gl.disableVertexAttribArray(this.loc.pal);
       }
 
+      // The baked colour words (retail shading). Without them the attribute
+      // is disabled, and the view stays on the lit look: an unbound colour
+      // reads as white, which `texel * 255/128` would draw twice as bright.
+      this.hasColors = !!(colors && colors.length === (positions.length / 3) * 3);
+      if (this.hasColors) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.colBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, colors, gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(this.loc.col);
+        gl.vertexAttribPointer(this.loc.col, 3, gl.UNSIGNED_BYTE, true, 0, 0);
+      } else if (this.loc.col >= 0) {
+        gl.disableVertexAttribArray(this.loc.col);
+      }
+
+      // Opaque triangles first, then the semi-transparent ones: a semi prim
+      // blends over what is already drawn, and the battle CLUT's STP bit
+      // makes every opaque texel of it blend. The semi triangles are
+      // re-sorted back to front every frame (`_sortSemi`).
+      const opaque = [], semi = [], semiMode = [];
+      for (let t = 0; t + 2 < indices.length; t += 3) {
+        const m = blend && blend.length ? (blend[indices[t]] | 0) : 0;
+        if (m > 0 && m < 5) {
+          semi.push(indices[t], indices[t + 1], indices[t + 2]);
+          semiMode.push(m);
+        } else {
+          opaque.push(indices[t], indices[t + 1], indices[t + 2]);
+        }
+      }
+      this.opaqueCount = opaque.length;
+      this.semiTris = Uint32Array.from(semi);
+      this.semiMode = Uint8Array.from(semiMode);
+      this.semiOrder = new Uint32Array(this.semiTris.length);
+      this.semiDepth = new Float32Array(semiMode.length);
+      this.semiRank = new Uint32Array(semiMode.length);
+      const ordered = new Uint32Array(indices.length);
+      ordered.set(opaque, 0);
+      ordered.set(semi, opaque.length);
+      this.runs = this.opaqueCount ? [{ mode: 0, first: 0, count: this.opaqueCount }] : [];
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.idxBuf);
-      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, ordered, semi.length ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW);
       gl.bindVertexArray(null);
       this.indexCount = indices.length;
       this.center = [bounds[0], bounds[1], bounds[2]];
@@ -1211,6 +1283,44 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       c.addEventListener('dblclick', () => this.resetView());
     }
 
+    // Sort the semi-transparent triangles back to front under `mvp` (by
+    // clip-space w of each centroid, the view distance), re-upload them
+    // behind the opaque ones, and rebuild the draw runs: consecutive
+    // triangles of one blend mode draw in one call. Index buffer must be
+    // bound (the VAO's).
+    _sortSemi(mvp) {
+      const n = this.semiMode.length;
+      if (!n) return;
+      const gl = this.gl;
+      const P = this.anim ? this.anim.out : this._basePos;
+      const tris = this.semiTris, depth = this.semiDepth, rank = this.semiRank;
+      for (let i = 0; i < n; i++) {
+        let w = 0;
+        for (let k = 0; k < 3; k++) {
+          const v = tris[i * 3 + k] * 3;
+          w += mvp[3] * P[v] + mvp[7] * P[v + 1] + mvp[11] * P[v + 2] + mvp[15];
+        }
+        depth[i] = w;
+        rank[i] = i;
+      }
+      rank.sort((a, b) => depth[b] - depth[a]);   // farthest first
+      const out = this.semiOrder;
+      const runs = this.opaqueCount ? [{ mode: 0, first: 0, count: this.opaqueCount }] : [];
+      for (let r = 0; r < n; r++) {
+        const i = rank[r];
+        out[r * 3] = tris[i * 3]; out[r * 3 + 1] = tris[i * 3 + 1]; out[r * 3 + 2] = tris[i * 3 + 2];
+        const mode = this.semiMode[i];
+        const last = runs[runs.length - 1];
+        if (last && last.mode === mode && last.first + last.count === this.opaqueCount + r * 3) {
+          last.count += 3;
+        } else {
+          runs.push({ mode, first: this.opaqueCount + r * 3, count: 3 });
+        }
+      }
+      gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, this.opaqueCount * 4, out);
+      this.runs = runs;
+    }
+
     _loop() {
       const gl = this.gl;
       const w = this.canvas.width, h = this.canvas.height;
@@ -1224,6 +1334,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
         gl.uniformMatrix4fv(this.loc.mvp, false, m.mvp);
         gl.uniformMatrix3fv(this.loc.nmat, false, m.normalMat);
         gl.uniform1i(this.loc.textured, this.textured ? 1 : 0);
+        gl.uniform1i(this.loc.retail, this.hasColors && !this.lit ? 1 : 0);
         if (this.textured) {
           gl.activeTexture(gl.TEXTURE0);
           gl.bindTexture(gl.TEXTURE_2D, this.idxTex);
@@ -1231,12 +1342,42 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
           gl.activeTexture(gl.TEXTURE1);
           gl.bindTexture(gl.TEXTURE_2D, this.palTex);
           gl.uniform1i(this.loc.palTex, 1);
+          gl.uniform1f(this.loc.palW, this.palW);
         }
         gl.bindVertexArray(this.vao);
-        gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_INT, 0);
+        this._sortSemi(m.mvp);
+        for (const run of (this.runs || [{ mode: 0, first: 0, count: this.indexCount }])) {
+          setBlendMode(gl, run.mode);
+          gl.drawElements(gl.TRIANGLES, run.count, gl.UNSIGNED_INT, run.first * 4);
+        }
+        setBlendMode(gl, 0);
         gl.bindVertexArray(null);
       }
       this._raf = requestAnimationFrame(this._loop);
+    }
+  }
+
+  // PSX semi-transparency for a run of triangles: mode 0 opaque, else
+  // 1 + abr - B/2+F/2, B+F, B-F, B+F/4. Blended runs test depth but do not
+  // write it, so they never hide geometry drawn after them.
+  function setBlendMode(gl, mode) {
+    if (!mode) {
+      gl.disable(gl.BLEND);
+      gl.depthMask(true);
+      gl.blendEquation(gl.FUNC_ADD);
+      return;
+    }
+    gl.enable(gl.BLEND);
+    gl.depthMask(false);
+    gl.blendEquation(mode === 3 ? gl.FUNC_REVERSE_SUBTRACT : gl.FUNC_ADD);
+    if (mode === 1) {
+      gl.blendColor(0.5, 0.5, 0.5, 0.5);
+      gl.blendFunc(gl.CONSTANT_COLOR, gl.CONSTANT_COLOR);
+    } else if (mode === 4) {
+      gl.blendColor(0.25, 0.25, 0.25, 0.25);
+      gl.blendFunc(gl.CONSTANT_COLOR, gl.ONE);
+    } else {
+      gl.blendFunc(gl.ONE, gl.ONE);
     }
   }
 
@@ -1293,6 +1434,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
             <div class="mesh-viewer-controls">
               <button id="mesh-spin-btn" type="button">⏸ stop spin</button>
               <button id="mesh-reset-btn" type="button">↺ reset view</button>
+              <button id="mesh-light-btn" type="button" title="Retail draws each face's baked colour word with no light; the lit preview adds a key light to read shape">☀ lit preview</button>
               <button id="mesh-glb-btn" class="btn-accent" type="button" title="Download mesh + texture + all animations as a glTF .glb">Download .glb</button>
               <button id="mesh-close-btn" type="button">✕ close</button>
             </div>
@@ -1317,6 +1459,11 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       updateSpinLabel(meshView.cam.autoRotate);
     });
     detailRow.querySelector('#mesh-reset-btn').addEventListener('click', () => meshView?.resetView());
+    detailRow.querySelector('#mesh-light-btn').addEventListener('click', (e) => {
+      if (!meshView) return;
+      meshView.lit = !meshView.lit;
+      e.currentTarget.textContent = meshView.lit ? '◐ retail shading' : '☀ lit preview';
+    });
     detailRow.querySelector('#mesh-glb-btn').addEventListener('click', () => downloadCurrentGlb());
     detailRow.querySelector('#mesh-close-btn').addEventListener('click', () => {
       selectedId = null;
@@ -1360,7 +1507,8 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       statsEl.innerHTML = '<span style="color:var(--text-dim)">No model for this id (filler slot).</span>';
       return;
     }
-    // Texture pool (record +0x08): 4bpp index page + 15x16 palette LUT.
+    // Texture pool (record +0x08): 4bpp index page + palette LUT, widened by
+    // the boss effect page for the ids whose prims sample it.
     const uvs = viewer.monster_mesh_uvs(id);
     const palIdx = viewer.monster_mesh_palette_index(id);
     const texIdx = viewer.monster_texture_indices(id);
@@ -1405,6 +1553,10 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
         palIdx.length ? Float32Array.from(palIdx) : null,
         tex,
         idleAnim,
+        // Older cached wasm builds carry no blend export: draw all opaque.
+        viewer.monster_mesh_blend_modes ? Uint8Array.from(viewer.monster_mesh_blend_modes(id)) : null,
+        // Older cached wasm builds carry no colour words: the lit look stays.
+        viewer.monster_mesh_colors ? Uint8Array.from(viewer.monster_mesh_colors(id)) : null,
       );
       meshView.resetView();
       const meshStats =

@@ -11,7 +11,7 @@
 //! see [`take_item_prefers_the_bag_over_the_worn_copy`], which is the one an
 //! implementation that unequips unconditionally still fails.
 
-use super::*;
+use legaia_engine_core::world::*;
 use legaia_engine_mode::mode::SceneMode;
 
 /// `[4C, 52, item_id]` followed by a HALT, so the VM stops after the arm

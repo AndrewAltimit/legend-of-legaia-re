@@ -116,6 +116,77 @@ pub fn passes_back_for(ram: &[u8], newest: u32) -> u8 {
     if newest == ot(cur ^ 1) { 1 } else { 2 }
 }
 
+/// The OT bucket a screen fade links at: `FUN_80024EE4` adds its quad at
+/// `ot + id * 4`, and the summon fades carry id `1`.
+const FADE_BUCKET: u32 = 1;
+/// Buckets in a battle ordering table; the chain starts at the top one.
+const OT_BUCKETS: u32 = 0x1000;
+
+/// Whether record `i`'s ordering table links a flat semi-transparent quad
+/// (`POLY_F4` `0x2A` / `0x2B`, the fade's packet) in [`FADE_BUCKET`]: the
+/// bucket's chain, followed until it re-enters the bucket array.
+fn record_links_fade(ram: &[u8], i: u32) -> bool {
+    let ot = game_anchors::u32_at(
+        ram,
+        DOUBLE_BUFFER + i * DOUBLE_BUFFER_STRIDE + DOUBLE_BUFFER_OT,
+    );
+    let buckets = ot..ot.wrapping_add(OT_BUCKETS * 4);
+    if !in_ram(ot) {
+        return false;
+    }
+    let mut p = (game_anchors::u32_at(ram, ot + FADE_BUCKET * 4) & 0x00FF_FFFF) | 0x8000_0000;
+    for _ in 0..64 {
+        if buckets.contains(&p) || !in_ram(p) {
+            return false;
+        }
+        let tag = game_anchors::u32_at(ram, p);
+        if tag >> 24 != 0 && (game_anchors::u32_at(ram, p + 4) >> 24) & !1 == 0x2A {
+            return true;
+        }
+        p = (tag & 0x00FF_FFFF) | 0x8000_0000;
+    }
+    false
+}
+
+/// Passes the displayed frame's screen fade is older than the RAM's fade
+/// actor: the fade actor's tick links its quad into the table it steps
+/// for, so the table holding it is the fade's own pass, whatever the logic
+/// words did. Under the current record that is the two-pass law; under the
+/// record the flip already moved off (the current one cleared and still
+/// empty of it), the screen shows the pass just before. `None` when
+/// neither table links a fade.
+///
+/// `palma_summon_mid_cast` and `horn_summon_mid_cast` are saved that way:
+/// the current table is empty, the other one carries the flash-out at the
+/// RAM actor's own `199` / `197`, and the screen is one 5-bit step brighter
+/// than that table's raster (`scripts/mednafen/ot-raster.py`), one pass of
+/// a fade that drains `2.125` a vsync. On the two-pass law the replay's
+/// flash stood a pass too young and a step too bright. The rest of those
+/// frames keeps the law: gated a pass later on the fade, `horn`'s sparks
+/// and creature parted from retail's (`image` `.985` to `.979`), so the
+/// image child keeps the gate and steps only the fades on
+/// (`LEGAIA_SEAT_FADE_LEAD`). The slot-B cast parts' seeds follow the
+/// fade's table: they tick with the fade actor, and `horn`'s newest table
+/// draws the sparkles at the RAM's own levels (`cast_part_lag_vsyncs`).
+pub fn fade_passes_back(ram: &[u8]) -> Option<u8> {
+    let cur = u32::from(game_anchors::u16_at(ram, DOUBLE_BUFFER_INDEX) & 1);
+    match (record_links_fade(ram, cur), record_links_fade(ram, cur ^ 1)) {
+        (true, _) => Some(2),
+        (false, true) => Some(1),
+        (false, false) => None,
+    }
+}
+
+/// Vsyncs the displayed frame's screen fades lag the RAM's fade actors by:
+/// [`fade_passes_back`] passes of the frame step, the two-pass
+/// [`display_lag_vsyncs`] when no table links a fade.
+pub fn displayed_fade_lag_vsyncs(ram: &[u8]) -> u16 {
+    match fade_passes_back(ram) {
+        Some(back) => u16::from(back) * u16::from(frame_step(ram)),
+        None => display_lag_vsyncs(ram),
+    }
+}
+
 /// Passes the displayed frame is older than the RAM's ([`display_phase`]).
 pub fn displayed_passes_back(ram: &[u8]) -> u8 {
     display_phase(ram).back

@@ -3,8 +3,9 @@
 This guide is for someone who downloaded a release archive from the project's
 GitHub Releases page: a directory of prebuilt binaries (the command-line
 tools, the engine and Legaia Studio), the two license files,
-`README-PLAY.txt` and a short `README.txt`. No Rust toolchain, no source
-checkout.
+`THIRD-PARTY-LICENSES.txt`, `README-PLAY.txt` and a short `README.txt` (on
+macOS also `Legend of Legaia.app` and `Legaia Studio.app`). No Rust toolchain,
+no source checkout.
 
 Pick your path:
 

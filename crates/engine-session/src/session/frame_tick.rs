@@ -5,6 +5,15 @@
 use super::*;
 
 impl<S: AudioSink> BootSession<S> {
+    /// The controller rumble the frame's last tick left
+    /// (`World::rumble_frame`, `FUN_80018DB0`'s payload), which both play
+    /// hosts hand their gamepad after the frame's ticks: the native window
+    /// through gilrs force feedback, the page through the Gamepad API's
+    /// `vibrationActuator`.
+    pub fn rumble_frame(&self) -> legaia_engine_system::rumble::RumbleFrame {
+        self.host.world.rumble_frame()
+    }
+
     /// The fog pool's render step the play hosts run from their draw pass
     /// (`World::fog_render_step` through the field follow frame), for a
     /// headless driver that renders nothing but must keep the world in step
@@ -356,6 +365,7 @@ impl<S: AudioSink> BootSession<S> {
     }
 
     pub fn tick(&mut self) -> Result<SceneTickEvent> {
+        crate::host_trace::emit_tick_digest(self);
         // The hosts' per-tick queue duty, for a caller that does not perform
         // it: what the previous tick queued and nobody took is gone before
         // this one runs, as it is in both play hosts.

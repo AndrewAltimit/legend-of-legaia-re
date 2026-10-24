@@ -68,6 +68,7 @@ scripts/ci/retail-compare.py --images         # + the image channel (needs a dis
 scripts/ci/retail-compare.py --images --check # assert the baseline
 scripts/ci/retail-compare.py --images --bless # fold a reviewed rise into the baseline
 scripts/ci/retail-compare.py --filter town01  # only matching labels (a,b = either)
+scripts/ci/retail-compare.py --filter =battle_gaza2_park_0x19  # that label exactly
 
 LEGAIA_SAVES_LIBRARY=... LEGAIA_EXTRACTED_DIR=... \
   cargo test -p legaia-engine-shell --profile release-test --test integration retail_compare_corpus:: -- --nocapture
@@ -958,10 +959,13 @@ draws it takes.
   `LEGAIA_RC_SEED_TRACE=1`) runs a state's whole list headlessly instead of
   stopping at the first reaching stream, so one run lists every stream that
   reaches and on which tick; each candidate is then run with its frame under
-  `LEGAIA_RC_PIN_SEED`, in list order. A headless reach does not imply the
-  child's: the `korb3` Gaza park states reach the phase headlessly on many
-  streams whose child ends the fight elsewhere (`phase gate not met`), early
-  reaches as well as late ones, so their pins are frame-checked streams.
+  `LEGAIA_RC_PIN_SEED`, in list order. A headless reach implies the child's
+  only while the two halves replay the fight tick for tick
+  ([below](#the-image-child-plays-the-same-fight)). When they parted, the
+  `korb3` Gaza park states reached the phase headlessly on stream after
+  stream whose child ended the fight elsewhere (`phase gate not met`), and
+  their pins were the frame-checked streams that happened to survive it;
+  with the halves in step, each reaches on its first stream and needs none.
 - A capture past the end signal also wants retail's win pose. The results
   sequencer draws it from the stream (`victory_pose_id`), and the results camera
   is that pose's own script (`battle_over_script`). The pose actor's latched
@@ -972,7 +976,7 @@ draws it takes.
 ### The image child plays the same fight
 
 The frame is only evidence about the state the channels scored if the
-`play-window` child replays that fight tick for tick. Three couplings make that
+`play-window` child replays that fight tick for tick. These couplings make that
 true:
 
 | Coupling | Why it matters | Mechanism |
@@ -981,6 +985,28 @@ true:
 | Fog render step | It is not presentation-only: it writes the live count and depth view the next tick's spawns read, and a spawn draws the stream | The headless seed runs `BootSession::fog_render_tick` after every tick; the child is tick-locked (one tick per redraw) |
 | Field VRAM effects | A cross-context CLUT-cell fade (`CC <id> 61 ..` with a frame count) halts the context that issued it until its last row is written, and the fades are stepped from the hosts' VRAM pass | The headless seed runs `BootSession::field_vram_tick` after every field tick, and the child's settle loop does the same |
 | Mid-fight bars | A child on full bars has its monster AI pick from a different table | The seeded HP / MP reach the child on the same first battle tick (`LEGAIA_BATTLE_BARS`) |
+| The drive's clock | A drive presses on every other tick of its own count. Counted on the window's tick, a prompt that opened on an odd window tick put every press one tick late, and the fight dealt its draws onto other ticks | The child starts its drive where the headless seed does (past the entry sweep, on the first tick the command flow leaves `Idle`), arms the drive's world seed there, counts presses from it, and reads each press before the steer, in the seed's order |
+| The compass | The battle camera opens on the field's compass azimuth (`battle_entry_yaw`). A seed whose field camera lacked the play hosts' render bias opened the idle orbit hundreds of units round from the child's, and a menu drive's glide-landed hold parted on it | The headless seed gives its field camera the hosts' bias (`retail_compare::seat_host_camera`) |
+| Capture-frame aligns | An align the child applies between ticks is world state the seed never had | The idle orbit's yaw (`LEGAIA_BATTLE_ORBIT_YAW`) is aligned on the captured frame alone, gated or fixed-tick, as the seed aligns it where it samples |
+
+Whether the halves agree is measured, not assumed. With
+`LEGAIA_DIAG_TICK_DIGEST=<path>` set, every session tick appends one line
+(process, session frame, mode, pad word, stream, action-SM context, field
+compass, battle camera, and each combatant's ground, HP and clip cursor),
+and the parent and its child, which inherits the variable, write into the
+same file. Split on the process and on the frame counter's restarts
+(`scripts/ci/tick-digest-diff.py`), a child's lines equal one headless run's
+up to the capture, or the first unequal line names the tick and the channel
+where they parted. A child that differs on purpose (a menu capture driven
+to the displayed surface, `displayed_menu_flow`, rather than the RAM's)
+parts where that choice takes effect and nowhere earlier.
+
+A prompt capture's child runs past the seed's sample on purpose. The seed
+samples sixty ticks after the first prompt (`BATTLE_SETTLE_TICKS`), while
+the intro's enemy-name banner is still up; retail's prompt frame is a
+surface the player sat on, banner gone, which the child's later fixed tick
+(`BATTLE_CAPTURE_TICK` past the prompt) shows. Taken at the seed's own tick,
+the prompt frames fell from `1.000` to `0.92`-`0.97` on that banner.
 
 ### Where the combatants stand
 
@@ -1140,6 +1166,17 @@ clock, which the raise does not share:
 `nivora_duel_mid_blazing_slash` holds plaque and bar ten vsyncs into the raise
 (six on screen), and `battle_melee_hit_spark`'s cluster is twelve vsyncs into
 its slide (eight on screen), which leaves it off the right edge.
+
+### An open arts list
+
+An arts-entry capture with the Triangle list open (menu flow `0x50`, list bits
+`0x801F4E09 & 0x81 == 0x81`) seats the engine's entry on retail's page
+(`_DAT_8007B458 / 5`) and slide counter (`0x801F4E0A`):
+`LEGAIA_SEAT_ARTS_LIST=<page>,<slide>`, `World::seat_arts_list`. The drive
+reaches the entry but presses no Triangle, so without the seat the frame shows
+the list closed. The `arts_list_*` states were played forward from the
+`arts_bar_*` ones on the retail disc by
+`scripts/pcsx-redux/autorun_arts_list_capture.lua`, pad only.
 
 ### A push the capture already holds
 
@@ -1347,7 +1384,7 @@ PROT 0930's sparkles are the same kind of part: its stager seats a volley
 of them on every op-`0x20` call its looping record `0x801F857C` makes, each
 at a `rand()` spoke, and how many volleys are live is the side-band wait's
 length. They are in the seat too (`per_pass_spawn_records`), which holds
-`horn_summon_mid_cast` at `.979`.
+`horn_summon_mid_cast` at `1.000`.
 
 Each seeded word is taken back to the displayed frame
 (`displayed_part_halfword`): the part tick integrates the render banks, the
@@ -1365,6 +1402,26 @@ pass whose entry is the clamp ran step `4`
 ([below](#a-drives-frame-is-the-one-the-display-showed)), and its consecutive
 rays stand four vsyncs apart. Taken back six vsyncs the rays read `.894`,
 eight `.901`.
+
+A capture saved after the flip with the current table still empty, the
+fade linked under the other record (`fade_passes_back` `Some(1)`), takes the
+parts back **one** pass, the RAM pass's own step (`cast_part_lag_vsyncs`):
+the parts tick with the fade actor, and the newest table drew them at the
+RAM's words. `horn_summon_mid_cast`'s newest table draws each sparkle at its
+RAM depth-cue level (the middle volley's `0x100` as `0xEFEFEF`, the
+youngest's `0xD00` as `0x2F2F2F`, `scripts/mednafen/ot-raster.py`). Taken
+back two step-`3` passes each spark stood a pass further out on its
+converging path and a pass dimmer in its fade-in, and the frame read `.988`;
+one pass back it reads `1.000`.
+
+A part under a depth-cue ramp (rate `+0x90`, `(+0x90 * 8) >> 6` a vsync) is
+seeded with its level `+0x78` as well, taken back the same way. Horn's
+sparkles open black (op `0x0C`, level `0x1000`) and fade in at `-0x100` a
+vsync; a volley born inside the lag reads black on screen, where the seat's
+shortfall clone of an older, lit part drew it at full brightness. A level on
+the clamp its rate runs toward (`0` fading in, `0x1000` fading out) names no
+age and stays the replay's: the post-VM clamp `0x80022BC0..0x80022C1C`
+zeroes a level that wrapped below `0` and saturates one past `0x1000`.
 
 The snapshot is otherwise kept to those records. A part seated once runs on
 a clock the replay already aligns, and the RAM is one frame-pair ahead of the
@@ -1412,9 +1469,20 @@ program words may have been rewritten inside the display lag (Swordie's fan
 reloads its wait for the fade-out on the captured pass), so the wait, the
 PC and the level ramp stay the replay's. `freed_summon_mid_cast` rose from
 `.906` to `.954`, `swordie_summon_mid_cast` from `.939` to `.992` and
-`shiny_refactor_gimard_precast` (the same fan) from `.902` to `.928`; seating
-the level as well measured no better. The fan's angles are this clock, not a
-`rand()` draw.
+`shiny_refactor_gimard_precast` (the same fan) from `.902` to `.928`. The
+fan's angles are this clock, not a `rand()` draw.
+
+At the end of the invoke clip the fan fades out under a depth-cue ramp
+(`+0x90 = 0xCC8`, `0x199` a vsync toward its black far colour), and the level
+`+0x78` is then a clock too: a fan off zero under the ramp is seated with it,
+taken back the display lag (`fan_level_ramping`). A fan its program killed on
+the RAM's pass (`+0x10 & 8`) is still seated while the displayed frame drew
+it short of black (`fan_fading_through_lag`): the kill test at
+`0x80022BB4..0x80022BB8` jumps past the post-VM clamp, so the level reads
+past `0x1000`. `meta_summon_mid_cast`'s fan holds `0x132C`; its newest table
+drew the rays black at `0xFFA` and the displayed frame at `0xCC8`, where the
+replay's own fan stood at `0xFFA` and drew none (`image` `.998` to `1.000`;
+`freed_summon_mid_cast`'s fan, mid-fade at `0x996`, `.988` to `.989`).
 
 A growing default-arm node is the same clock on another block. A draw-kind-4
 node on the default emitter (`+0x56 == 4`, `+0x9E & 0x6000 == 0`) in render
@@ -1551,6 +1619,20 @@ entry as a step-`4` pass for every consumer (the frame driver's own rule for
 that pass) lengthened a lag the consumers were measured on at the
 history-max step `3`. The routing is reverted; the two-pass law and
 `frame_step` stand for every logic consumer.
+
+**The screen fades read their own table.** The fade actor links its
+`POLY_F4` (`0x2B`, OT bucket `1`) into the table of the pass it steps for, so
+the table holding that quad places the fade whatever the logic words did
+(`fade_passes_back`). `palma_summon_mid_cast` and `horn_summon_mid_cast` are
+saved with the current table still empty and the other one carrying the
+flash-out at the RAM actor's own value (`199`, `197`); their screens are one
+5-bit step brighter than that table's raster (`scripts/mednafen/ot-raster.py`),
+one pass of a fade draining `2.125` a vsync, where the two-pass law stood the
+replay's flash a pass too young. Gating those frames a pass later on the
+fade moved their sparks off retail's (`horn` `image` `.985` to `.979`), so
+the gate keeps the law and the image child steps only the fades on, by
+`display_lag - display_fade_lag` vsyncs, after the gate's own flash
+alignment (`LEGAIA_SEAT_FADE_LEAD`, `World::lead_screen_fades`).
 
 ### The keyframe each body stands on
 
@@ -1691,6 +1773,16 @@ the ring holds (`EngineBattle::action_pushes`, the engine's
 the phase on another count is kept as the fallback while the rest are tried,
 and the first such run is kept when none matches. On the matching stream the
 frame draws `15` and Gimard stands on his captured `(-6, 405)`.
+
+The ring's timers also say which pushes the capture's own clip landed: an
+entry's timer gains `0x10` a vsync and the close-up accumulator `ctx[+0x87C]`
+`8` since the acting clip's commit, so a push under twice the accumulator is
+the clip's (`battle_melee_hit_spark`: accumulator `256`, the `15` at `288`,
+the two expired pushes at `608`). The seed carries that count with the clip
+id (`MeleeHitSeed::own_clip`, `@clip:pushes` on the env form), and a hit from
+another clip that reaches those entries takes an unknown amount instead
+(`BattleState::forced_melee_own_clip`). So where the image child's stream
+connects a swing retail's Gimard blocked, the Somersault still lands its `15`.
 
 A monster's cast (`+0x1DE == 2` on a monster seat) pushes its hits on the
 same ring, and its replay seeds them the same way: the cast's hit on the
@@ -2383,6 +2475,37 @@ the title picker, the card-boot save select) and a screen no root row routes
 to is script-entered (the casino prize exchange, `0x20`); both are kept with
 a `menu not seedable:` reason and counted as classified limits.
 
+### Card screens
+
+A Load / Save screen on its grid shows a memory card, so it is seeded only
+when its scenario names the card it was captured with (`memory_card`, a file
+under `saves/library/cards/`). The card screen's sub-mode word `0x801F0204`
+says the grid is up (`0x0B`; the pill row reads `0x14`,
+[save-screen](../subsystems/save-screen.md#loadsave-dispatch-fun_801dd35c)).
+Both sides mount a copy of the card in port 1, the `SLOT 1` pill: the headless
+session's save rack is built from it, and the image child gets it as
+`memcard1.mcr` in a scratch `--save-dir`.
+
+- **Pause-menu grid** (sub-screen `0x18` / `0x19`). The pause-menu drive
+  takes one more `Cross` on the pill row and waits out the card read
+  (`CARD_READ_SETTLE_TICKS`). Retail's save-allow word `_DAT_8007B6A8` is
+  landed on the engine's scene bit (`LEGAIA_SEAT_SAVE_ALLOWED` for the
+  child), so a state captured with it raised - an overworld, or a probe's
+  named `ram_poked` - opens the Save row as retail did.
+- **Title Continue grid** (sub-screen clear). There is no field to seed: the
+  child boots its own front end (`--boot-ui`) and is driven to the grid by a
+  fixed pad script (`TITLE_CONTINUE_PRESSES`, captured at
+  `TITLE_CONTINUE_CAPTURE_TICK`). The state scores the image channels only.
+
+Both add `card_panel`: the fraction of pixels of the info panel
+(`CARD_INFO_PANEL`, `x 8..312`, `y 128..224`) within `24` of retail's on
+every channel. It is a pixel test because the panel is 2D and drawn 1:1, so
+a numeral in the wrong ink or a glyph a row off moves it where the `8 x 8`
+block test does not. Like `image`, a run without a display leaves it
+unmeasured. The states are `load_grid_endgame_card` and
+`save_grid_endgame_card_conc`, both on the library card
+`playthrough-endgame-7saves.mcr`.
+
 What a like-for-like menu frame shows is the engine's. The Status and Equip character lists are the present
 party (`DAT_80084594` over `0x80084598`,
 `field_menu_dispatch::status_snapshots` and `EquipScreenModel::party_row`), not
@@ -2414,6 +2537,7 @@ measured channels.
 | `inventory` | fraction of non-empty bag slots equal, slot for slot, plus gold |
 | `enemies` / `enemy_hp` / `battle_party` / `phase` | battle states only ([above](#battle-states)) |
 | `menu` | menu states only: 1 when the engine's pause menu holds retail's sub-screen ([above](#menu-states)) |
+| `card_panel` | card-screen states only: fraction of the info panel's pixels within tolerance ([above](#card-screens)) |
 | `image` | fraction of `8 x 8` blocks within tolerance ([below](#the-image-channel)) |
 
 `party` and `inventory` are seeded straight from the retail window, so on
@@ -2744,6 +2868,18 @@ own frame:
 | `Landed` | retail sat on the CD wait with its glide long landed, and the engine's gate is the tick its own glide lands: the frames before it are mid-glide (`evil_medallion_rage_battle` `0.913` to `0.395`) |
 | a monster's clip age | Tail Fire's hit rays run on the engine's own clock ([above](#the-frames-either-side-of-a-gated-capture)); both `battle_gimard_tail_fire_*` frames fell |
 | `DoneHold` | the Done band's captures part on where the replay left the bodies (`noa_levelup_fight_pre` fell) |
+
+The retake is counted in the child's ticks, and with the child in step with
+the seed ([above](#the-image-child-plays-the-same-fight)) those are the
+seed's ticks: the gate tick is the one the seed sampled, and the retake is
+`lag` ticks before it. `battle_melee_hit_spark` (frame step `3`, lag `6`)
+gates on child tick `536`, the seed's last, and retakes at `530`; a sweep of
+the capture tick over `526..536` draws one frame per three-tick pass, and the
+pass at `530..532` scores best (`0.893`, against `0.812` a pass earlier and
+`0.768` a pass later). The `0.908` this state read before the halves were in
+step was the frame of another fight: the child pressed one tick late from
+its first press, its world left the seed's within thirty ticks, and it gated
+two ticks later on a different realisation.
 
 **The camera.** A camera still closing on its framing draws the displayed
 frame well short of the RAM's pose, and the ease is fastest at its start.
@@ -3740,6 +3876,29 @@ every pass, so it moves with the phase of both clips):
   frames under any step, a replayed cast in the module states `0x35` /
   `0x36` measured mixed (`gimard_burning_attack` `image` `+.022`, `camera`
   `-.026`), so those stay at the default step too.
+- **The close-up's focus is three passes behind the cursor.** Case `0x12`
+  focuses on the caster's body pair `+0x3C` / `+0x40`, and the action SM
+  ticks before the draw, so a pass frames the pair the previous pass's
+  decode (`FUN_8004998C`) left. The displayed frame is two passes behind the
+  RAM's cursor, so its framing stood on the pose three passes back: slot `3`
+  of the caster's cursor ring `+0x17A`, not the live pair. That holds at
+  either save instant. A state saved after the draw holds the live pose's
+  pair (`gimard_summon_start`: body pair `(117, -446)` is the decode of
+  ring slot `0`, the live focus `(115, -449)` slot `1`'s); one saved
+  between the ticks and the draw holds the previous pose's
+  (`gizam_summon_mid_cast`: Noa's `(597, -795)` is slot `1`'s while the
+  cursor reads `124`). The harness decodes the slot-`3` pose straight from
+  the caster's RAM stream (`framing_body`) and the image child stands the
+  close-up's focus on it (`LEGAIA_BATTLE_SUMMON_FOCUS`,
+  `BattleCamera::align_summon_focus`) wherever the tween lands inside a
+  pass: `gizam_summon_mid_cast` `image` `.965` to `1.000`, two or three
+  units of focus that drew Noa two pixels right.
+- **A table no state re-arms walks at its own increment.** The magic-capture
+  fade `0x6F` calls no framing, so the table the `0x6E` branch armed
+  (`FUN_801D5854(actor, 6)` every pass) walks on unchanged: the displayed
+  frame stood `increment * step` a pass further out, not the widening
+  share the re-arm walk-back takes (`zora_glare_petrify_pre`: TR z `4910` on
+  the re-arm's walk, `.971`; `4883` on the table's, `.996`).
 - **A park lasts as long as retail sat in it.**
   `battle_gaza2_park_0x19_summon_melee` is a live-caught park: Gaza's
   fallback Move clip dies short of its target and the action holds in `0x19`
@@ -3862,11 +4021,15 @@ every pass, so it moves with the phase of both clips):
   vsyncs early and aged its popup to `11`, over a trio one of its passes
   newer (Y `-371`); its own age-`9` frame rose over Y `-335` onto retail's
   row. The image child seats the newest popup's age off the ring
-  (`popup_age_seat`, `LEGAIA_SEAT_POPUP_AGE`) and takes its anchor back by
-  the same frames (`image` `.876` to `.884`; `battle_gimard_tail_fire_a`
-  `.962` to `.966`). `battle_gimard_tail_fire_b` reads `.963` to `.961`
-  with its numeral drawn nearer retail's: the rest of that gap is the
-  struck body's own trio.
+  (`popup_age_seat`, `LEGAIA_SEAT_POPUP_AGE`) and nothing else: the
+  renderer reads the struck body's trio on every draw, so the anchor is the
+  frame's own readout trio. Once the step seed stands the struck reaction
+  on retail's displayed cursor (`36`, readout trio Y `-335` off the pass at
+  `24`), that trio is retail's: the engine's Gimard at the RAM's cursor
+  `60` reads `(-3, -461, 498)` against the RAM's `(-2, -461, 492)`. An
+  anchor taken back to the frame the replay's popup was age `9` stood on
+  the cursor-`12` trio (Y `-284`) and drew the `15` about nine pixels
+  below retail's.
 - **A numeral read off retail's own packets.** Both packet arenas hold the
   readout's digit quads (`POLY_FT4`, colour `0x2C808080`, a 24-texel cell
   of glyph row `v = 64`), so the two newest passes' numerals need no model
@@ -3883,20 +4046,30 @@ every pass, so it moves with the phase of both clips):
   `battle_gimard_tail_fire_b` `.961` to `.972`, `rim_elm_gimard_victory`
   level.
 - **A frame step the replay does not run.** `battle_melee_hit_spark`'s
-  replay runs step `2` where retail ran `3`: the step seed
-  (`RetailBattle::frame_step_seed`) covers a replayed cast's summon
-  close-up only, and an action plan runs the default. The capture's own
-  history says how long the step held: Vahn's cursor history advances `12`
-  a pass for the newest eight passes and `8` before them (rate `4`, the
-  art's halving), and the frame history's entries pass `0x1FF` for nine.
-  Seeding step `3` from the pass the run began (the art clip `0x11` at
-  cursor `32`) drew the ray burst and Gimard off retail's (`image` `.884`
-  to `.849`), and over the whole state `.876`; a history that never left
-  its step measured both ways over the state
-  (`battle_noa_miracle_art_combo` step `3`, `.962` to `.972`;
-  `battle_vahn_tri_somersault_super` step `4`, `.955` to `.861`). The
-  action plans keep the default: the seats tuned on it (the ray burst's
-  lag, the numeral, the knockdown's clock) move with the step.
+  passes ran step `3` and an action plan runs the default `2`, so the
+  step seed (`RetailBattle::frame_step_seed`) also covers an action in
+  flight whose newest passes left the default inside the history. The
+  capture's own history says where the run began: Vahn's cursor history
+  advances `12` a pass for the newest eight passes and `8` before them
+  (rate `4`, the art's halving), and the frame history's entries pass
+  `0x1FF` for nine. The seed holds the step back until the acting body's
+  clip reaches the cursor the run's opening pass read
+  (`RetailBattle::step_run_start`, art clip `0x11` at cursor `24`,
+  `BattleState::frame_step_seed_from`), which lands Vahn's cursor (`104`)
+  and Gimard's reaction cursor (`36`) on retail's displayed frame. A
+  history that never left its step is not seeded, nor a run on the base
+  clip `0`, which names no swing (`cort_evil_seru_magic_mid_cast`'s
+  state-`0x6F` run read `image` `1.000` to `.967`); over the whole state a
+  never-left history measured both ways (`battle_noa_miracle_art_combo` step `3`, `.962` to
+  `.972`; `battle_vahn_tri_somersault_super` step `4`, `.955` to `.861`).
+  The step seed alone read `.887` to `.884`: the struck reaction's ray
+  burst (record `0x801F54B4`) drew shorter, because its lane weight is the
+  replay's own clock and the table-form parts ticked once a vsync. On the
+  battle pass's part tick ([effect-vm](../subsystems/effect-vm.md)) the
+  burst seated on the reaction's commit pass reads wait `0x60` and lane
+  `0xFFC` on the displayed frame, the clock that leaves the capture's RAM
+  at wait `0x30`, level `0x900` and a clamped lane two passes later, and
+  the state reads `.908`.
 - **A spell's damage is a draw.** `battle_gimard_tail_fire_a` / `_b` show
   Tail Fire's `16` on retail's Vahn and the engine's `7`: the
   summon-magic roll and the finisher's no-damage floor are `rand()` draws,

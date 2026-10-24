@@ -364,15 +364,16 @@ bool primNearRejected(mat4 m) {
  * that never stages it renders exactly as before. Shared by both stages. */
 uniform vec4 u_psx;
 
-/* Snap a clip-space position to the nearest integer pixel of a vp_w x vp_h
- * framebuffer - the GTE's integer screen coordinates, i.e. the "vertex
- * jitter". Twin of engine-render's psx_snap_clip; z and w are preserved. */
+/* Snap a clip-space position down to the integer pixel of the vp_w x vp_h
+ * PSX stage (320 x 240, rows top-down) - the GTE's truncated screen
+ * coordinates, i.e. the "vertex jitter". Twin of engine-render's
+ * psx_snap_clip; z and w are preserved. */
 vec4 psxSnapClip(vec4 clip, float vp_w, float vp_h) {
   if (vp_w <= 0.0 || vp_h <= 0.0 || clip.w <= 0.0) return clip;
   float px = (clip.x / clip.w * 0.5 + 0.5) * vp_w;
-  float py = (clip.y / clip.w * 0.5 + 0.5) * vp_h;
-  float nx = (floor(px + 0.5) / vp_w) * 2.0 - 1.0;
-  float ny = (floor(py + 0.5) / vp_h) * 2.0 - 1.0;
+  float py = (0.5 - clip.y / clip.w * 0.5) * vp_h;
+  float nx = (floor(px) / vp_w) * 2.0 - 1.0;
+  float ny = 1.0 - (floor(py) / vp_h) * 2.0;
   return vec4(nx * clip.w, ny * clip.w, clip.z, clip.w);
 }
 
@@ -446,6 +447,31 @@ vec4 overworldFlatDepth(vec4 clip, mat4 m, vec4 fa, vec4 fb) {
   return vec4(clip.x, clip.y, (ab.x + ab.y / repW) * clip.w, clip.w);
 }
 
+/* The field ground pass's sorted cells - the GLSL twin of engine-render's
+ * field_sorted_cell_depth. FUN_801F6D48 links a cell carrying the object-grid
+ * sort bit 0x8000 at (max corner SZ >> 5) + 2, two buckets behind its
+ * farthest corner, so every primitive whose own bucket is nearer paints over
+ * it (a rock sunk below a raised floor tier shows its buried faces). An
+ * unmarked cell has x0 < x1 and z0 < z1; the field frame's SZ is clip w times
+ * the base matrix's scale 6. The representative w, or -1 where the vertex
+ * keeps its per-pixel depth. Off the overworld only (u_curve 0). */
+const float FIELD_SZ_PER_W = 6.0;
+float fieldSortedCellW(mat4 m, vec4 fa, vec4 fb) {
+  if (u_curve > 0.0 || fa.z <= fa.x || fa.w <= fa.y) return -1.0;
+  float w0 = (m * vec4(fa.x, fb.x, fa.y, 1.0)).w;
+  float w1 = (m * vec4(fa.z, fb.y, fa.y, 1.0)).w;
+  float w2 = (m * vec4(fa.x, fb.z, fa.w, 1.0)).w;
+  float w3 = (m * vec4(fa.z, fb.w, fa.w, 1.0)).w;
+  int sz = clamp(int(floor(max(max(w0, w1), max(w2, w3)) * FIELD_SZ_PER_W + 0.5)), 0, 0xFFFF);
+  return float(((sz >> 5) + 2) * 32) / FIELD_SZ_PER_W;
+}
+vec4 fieldSortedCellDepth(vec4 clip, mat4 m, vec4 fa, vec4 fb) {
+  float repW = fieldSortedCellW(m, fa, fb);
+  if (repW <= 0.0 || clip.w <= 0.0) return clip;
+  vec2 ab = depthAffine(m);
+  return vec4(clip.x, clip.y, (ab.x + ab.y / repW) * clip.w, clip.w);
+}
+
 /* The continent ground's depth cue - the GLSL twin of engine-render's
  * overworld_ground_cue (legaia_engine_field::overworld_ground_cue). Retail's
  * ground emitter (FUN_801F89B8) runs each cell's packet colour through DPCS
@@ -505,6 +531,10 @@ in vec3 a_normal;
 out vec2 v_uv_pw;
 out vec4 v_flat_rgba_pw;
 out float v_affine_w;
+/* The vertex's corner of its primitive, one-hot (primCornerWeight), w-premultiplied
+ * like the UV: screen-linear, the fragment's barycentric weights, which keep
+ * PSX mode's texel row inside the primitive. */
+out vec4 v_prim_bary_pw;
 flat out uvec2 v_cba_tsb;
 out float v_fog_t;     /* distance-haze IR0 / 0x1000 (0..1) */
 out float v_view_z;    /* perspective view depth (clip w) for the depth cue */
@@ -515,6 +545,18 @@ flat out float v_far_bucket;
 out vec3 v_normal;     /* object-space smoothed normal (dynamic light only) */
 out vec3 v_obj_pos;    /* object-space position: the facet-normal fallback */
 out vec3 v_world;      /* page-frame world position (enhanced lighting's point lights) */
+
+/* Which corner of its primitive record the vertex is, one-hot - the twin of
+ * engine-render's prim_corner_weight. A vertex with no single owner (or an
+ * unbound record) weighs all ones, which no texel-row clamp moves. */
+vec4 primCornerWeight() {
+  if (a_prim_c0.w < 2.5) return vec4(1.0);
+  if (a_position == a_prim_c0.xyz) return vec4(1.0, 0.0, 0.0, 0.0);
+  if (a_position == a_prim_c1) return vec4(0.0, 1.0, 0.0, 0.0);
+  if (a_position == a_prim_c2) return vec4(0.0, 0.0, 1.0, 0.0);
+  if (a_prim_c0.w > 3.5 && a_position == a_prim_c3) return vec4(0.0, 0.0, 0.0, 1.0);
+  return vec4(1.0);
+}
 
 void main() {
   vec4 world_pos = u_model * vec4(a_position, 1.0);
@@ -538,20 +580,24 @@ void main() {
   }
   gl_Position = overworldFlatDepth(overworldCurve(u_mvp * world_pos), u_mvp * u_model,
                                    a_ground_ref_xz, a_ground_ref_y);
+  gl_Position = fieldSortedCellDepth(gl_Position, u_mvp * u_model,
+                                     a_ground_ref_xz, a_ground_ref_y);
   /* After the overworld bend, as native snaps after its curve: retail bends
    * SY before the packet is written. Identity while u_psx.z is 0. */
-  if (u_psx.z >= 0.5) gl_Position = psxSnapClip(gl_Position, u_psx.x, u_psx.y);
+  if (u_psx.z >= 0.5) gl_Position = psxSnapClip(gl_Position, 320.0, 240.0);
   /* A rejected primitive parks every corner on one point outside the clip
    * volume: no area, nothing rasterised. */
   if (primNearRejected(u_mvp * u_model)) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
   v_view_z = gl_Position.w;
   v_affine_w = gl_Position.w;
   v_uv_pw = a_uv_byte * gl_Position.w;
+  v_prim_bary_pw = primCornerWeight() * gl_Position.w;
   v_flat_rgba_pw = flat_rgba * gl_Position.w;
   /* The log-depth write's w (LOG_DEPTH_GLSL): the flat bucket's
    * representative w on a continent cell, the vertex's own clip w elsewhere.
    * Perspective interpolation of w is exact. */
   float flatW = overworldFlatW(u_mvp * u_model, a_ground_ref_xz, a_ground_ref_y);
+  if (flatW <= 0.0) flatW = fieldSortedCellW(u_mvp * u_model, a_ground_ref_xz, a_ground_ref_y);
   v_depth_w = flatW > 0.0 ? flatW : gl_Position.w;
   v_far_bucket = fieldFarBucket(a_ground_ref_xz) ? 1.0
     : (fieldFlatFarBucket(a_ground_ref_xz) ? 2.0 : 0.0);
@@ -697,11 +743,13 @@ uniform vec4 u_shadow;
 in vec2 v_uv_pw;
 in vec4 v_flat_rgba_pw;
 in float v_affine_w;
+in vec4 v_prim_bary_pw;
 flat in uvec2 v_cba_tsb;
 in float v_fog_t;
 /* The screen-linear UV and colour, recovered from their w-premultiplied
  * varyings at the top of main() (see the vertex shader). */
 vec2 v_uv;
+vec4 v_prim_bary;
 vec4 v_flat_rgba;
 in float v_view_z;
 in float v_depth_w;
@@ -1016,8 +1064,43 @@ vec3 apply_distance_fog_tex(vec3 lit, vec3 texel) {
   return mix(lit, clamp(texel * u_haze_far, vec3(0.0), vec3(1.0)), v_fog_t);
 }
 
+/* How far along a texel-row move the sample stays on its own triangle - the
+ * twin of engine-render's psx_row_reach. */
+float psxRowReach(vec4 bary, vec4 stp) {
+  float t = 1.0;
+  for (int i = 0; i < 4; i++) {
+    float q = bary[i] + stp[i];
+    if (q < 0.0) t = min(t, max(bary[i], 0.0) / (bary[i] - q));
+  }
+  return t;
+}
+
+/* PSX mode's texel sample row (see main) - the twin of engine-render's
+ * psx_sample_uv. uv_dy / bary_dy are GL's dFdy, a row up. */
+vec2 psxSampleUv(vec2 uv, vec2 uv_dy, vec4 bary, vec4 bary_dy) {
+  if (u_psx.z < 0.5) return uv;
+  float perRow = u_psx.y / 240.0;
+  float rows = 0.5 * perRow;
+  float margin = perRow / 64.0;
+  float probe = rows + margin;
+  float reach = psxRowReach(bary, bary_dy * probe) * probe;
+  return uv + uv_dy * clamp(reach - margin, 0.0, rows);
+}
+
 void main() {
   v_uv = v_uv_pw / v_affine_w;
+  /* PSX mode's texel sample row - the twin of engine-render's psx_sample_uv:
+   * the GPU takes a scanline's texels at the row itself, half a stage row
+   * above the pixel centre this rasteriser samples. GL's window y runs up,
+   * so the half row up is +dFdy; u_psx.y / 240 is framebuffer rows per stage
+   * row. The move stops 1/64 stage row inside the fragment's own triangle
+   * (PSX_ROW_EDGE_MARGIN): retail's row point is one the primitive covers,
+   * and a sliver's huge UV row step would otherwise reach far outside its
+   * texels. Taken ahead of any discard. */
+  vec2 uv_dy = dFdy(v_uv);
+  v_prim_bary = v_prim_bary_pw / v_affine_w;
+  vec4 bary_dy = dFdy(v_prim_bary);
+  v_uv = psxSampleUv(v_uv, uv_dy, v_prim_bary, bary_dy);
   v_flat_rgba = v_flat_rgba_pw / v_affine_w;
   if (u_eclip_m.w > 0.5) {
     float ey = dot(u_eclip_m.xyz, v_obj_pos);

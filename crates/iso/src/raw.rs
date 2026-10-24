@@ -151,7 +151,7 @@ pub fn resolve_disc_path(path: &Path) -> io::Result<PathBuf> {
 /// Pull the first `FILE "<name>" BINARY` token out of a cue sheet body.
 /// Lenient about whitespace and accepts both quoted and unquoted file
 /// names. Returns `None` if no FILE line is present.
-fn parse_cue_first_file(text: &str) -> Option<String> {
+pub(crate) fn parse_cue_first_file(text: &str) -> Option<String> {
     for raw in text.lines() {
         let line = raw.trim();
         if !line.to_ascii_uppercase().starts_with("FILE") {

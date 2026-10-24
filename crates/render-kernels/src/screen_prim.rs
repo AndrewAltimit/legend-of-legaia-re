@@ -988,6 +988,24 @@ fn tex_mod_factor(color: u32) -> [f32; 4] {
     [r, g, b, 1.0]
 }
 
+/// A flat (unshaded, untextured) quad's colour as the PSX GPU draws it: the
+/// packet's 24-bit colour truncated to the framebuffer's 5 bits a channel
+/// (`c8 >> 3`), since the GPU dithers only shaded and texture-blended
+/// polygons, and presented as the 5-bit value (`/ 31`). Alpha passes
+/// through.
+///
+/// Additive screen fades are where it shows: a fade adds whole 5-bit steps
+/// to the frame, so a dim one adds less than its byte value says.
+/// `vera_summon_mid_cast` composites PROT 0905's white rise (`31`, three
+/// steps: `25` presented) over the band's flash-out (`106`, thirteen steps:
+/// `107`), both `POLY_F4` `0x2B` at OT bucket `1`; the unquantised pair added
+/// `137` where retail's added `132`, and the whole frame sat five levels
+/// bright.
+pub fn flat_gpu_color(c: [u8; 4]) -> [f32; 4] {
+    let ch = |v: u8| f32::from(v >> 3) / 31.0;
+    [ch(c[0]), ch(c[1]), ch(c[2]), f32::from(c[3]) / 255.0]
+}
+
 /// One channel of the PSX GPU's **texture blend** on a 5-bit texel: the
 /// GPU multiplies the texel by the packet colour over `128` and writes the
 /// result back at the framebuffer's 5-bit depth, so the fraction is dropped
@@ -1061,7 +1079,7 @@ pub fn build_geometry(prims: &[ScreenPrim], surf_w: u32, surf_h: u32) -> Overlay
                     [0, 0],
                     match q.gouraud {
                         Some(g) => std::array::from_fn(|i| corner(g[i])),
-                        None => [corner(q.color); 4],
+                        None => [flat_gpu_color(q.color); 4],
                     },
                     0,
                     q.depth,
@@ -1257,6 +1275,34 @@ mod tests {
         assert_eq!(psx_texture_blend(14, 39), 4);
         // Brightening saturates at the 5-bit ceiling.
         assert_eq!(psx_texture_blend(31, 0xFF), 31);
+    }
+
+    /// A flat quad's colour reaches the frame in whole 5-bit steps; a
+    /// shaded one keeps its bytes (the GPU dithers those).
+    #[test]
+    fn a_flat_quad_draws_its_colour_at_the_framebuffer_depth() {
+        let step = |v: u8| f32::from(v) / 31.0;
+        assert_eq!(
+            flat_gpu_color([31, 106, 0xFF, 0x80]),
+            [step(3), step(13), step(31), 128.0 / 255.0]
+        );
+        // Black and white are exact.
+        assert_eq!(flat_gpu_color([0, 0, 0, 0xFF]), [0.0, 0.0, 0.0, 1.0]);
+        let quad = |gouraud: Option<[[u8; 4]; 4]>| {
+            ScreenPrim::Flat(FlatQuad {
+                xy: [(0, 0), (10, 0), (0, 10), (10, 10)],
+                color: [31, 31, 31, 255],
+                gouraud,
+                semi_transparent: true,
+                abr_mode: 1,
+                ot_index: 1,
+                depth: None,
+            })
+        };
+        let flat = build_geometry(&[quad(None)], 320, 240);
+        assert!(flat.vertices.iter().all(|v| v.color[0] == step(3)));
+        let shaded = build_geometry(&[quad(Some([[31, 31, 31, 255]; 4]))], 320, 240);
+        assert!(shaded.vertices.iter().all(|v| v.color[0] == 31.0 / 255.0));
     }
 
     #[test]

@@ -26,7 +26,7 @@
  *   - a 2D canvas carrying the battle chrome: the intro card, the command
  *     cluster (Begin + name chips, Item crossed out, Attack / D-pad /
  *     Ra-Seru / Spirit), the name/HP/MP plate, the AP plate, the arts
- *     banner with its speed-lines, damage numbers, the round time meter,
+ *     banner with its speed-lines, damage numbers,
  *     the between-LEGS interval panel and the verdict banners.
  *
  * CADENCE: the INTERVAL + score-tally screen is a between-FIGHTS beat, not a
@@ -57,7 +57,7 @@
  * backdrop + ground grid texture address, the ABE additive lamp glows (the
  * object-1 dust decal is omitted - the retail match capture shows a
  * mist-free interior; see docs/subsystems/minigame-muscle-dome.md), the
- * time-meter ramp, the battle seats + battle camera script (the engine's
+ * battle seats + battle camera script (the engine's
  * dome surface, shared with the play hosts), the cue id set, the
  * command -> swing-clip pairing (the four card ids 0xC..0xF ARE the swing
  * record slots of the player battle file - the disc's own pairing), the
@@ -185,7 +185,6 @@ window.MgMuscle = (function () {
     let hpShow = [0, 0];       /* eased HP bar values */
     let lastOpts = null;       /* {char, level, monster} for restart */
     let roster = null;         /* muscle_roster_json rows */
-    let meter = 0;             /* round time meter 0..0xC (FUN_801d3444) */
     let tally = null;          /* {attacker, total} - playback damage tally */
     /* The cleared leg's victory caption (FUN_801D8DE8 case 0x59). Retail plays
      * it inside the battle before the hub takes over; the page has no separate
@@ -1618,24 +1617,6 @@ window.MgMuscle = (function () {
       b.t++;
     }
 
-    /* The round TIME METER (FUN_801d3444): a 0..0xC counter that ramps while
-     * the direction-ENTRY phase (`ctx+6 == 0x50`) runs and drains otherwise,
-     * mapped to a 160-px bar (`counter * 160 / 12`). The counter comes from
-     * the port (`engine-minigames::muscle_dome::time_meter_step`, through
-     * `muscle_tick_time_meter`); only the screen placement is fitted. */
-    function drawTimeMeter() {
-      const hFull = 160;
-      const hh = Math.round(meter * hFull / 12);
-      const x = 306, yBot = 196;
-      g.fillStyle = 'rgba(0,0,0,0.55)';
-      g.fillRect(x * 2, (yBot - hFull) * 2, 6 * 2, hFull * 2);
-      g.fillStyle = '#ffd166';
-      g.fillRect(x * 2, (yBot - hh) * 2, 6 * 2, hh * 2);
-      g.strokeStyle = 'rgba(255,255,255,0.35)';
-      g.strokeRect(x * 2 + 0.5, (yBot - hFull) * 2 + 0.5, 6 * 2, hFull * 2);
-      text('TIME', x + 3, yBot + 7, 6, '#aeb6c4', 'center', '');
-    }
-
     /* Filled horizontal bar in 320x240 screen space (the canvas is 2x). */
     function gaugeBar(x, y, w, h, frac, fill) {
       const f = Math.max(0, Math.min(1, frac || 0));
@@ -1848,15 +1829,6 @@ window.MgMuscle = (function () {
       }
       runTickTimers();
 
-      /* Round time meter (FUN_801d3444): the ported ramp owns it - it climbs
-       * while the DIRECTION-ENTRY phase runs (retail gates on ctx+6 == 0x50)
-       * and drains otherwise. An earlier revision here ramped during
-       * PLAYBACK, which is the inverse of retail. */
-      if (api.muscle_tick_time_meter) {
-        api.muscle_tick_time_meter(1);
-        meter = st().time_meter | 0;
-      }
-
       /* Ease the HP bars toward their targets. */
       /* (targets are set per landed event; outside playback follow state) */
       if (mode !== 'playback' && state.live) {
@@ -1962,7 +1934,6 @@ window.MgMuscle = (function () {
       } else if (mode === 'decided') {
         drawStatusPlate(state);
       }
-      if (meter > 0) drawTimeMeter();
       drawPopups();
       drawBanner();
     }

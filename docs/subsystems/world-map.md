@@ -2729,11 +2729,11 @@ Retail's placements are actor models sorted into the OT with the terrain. The
 port draws landmarks, decorations and scene actors as meshes (above); on top
 of that it has a debug **marker** layer.
 
-[`World::world_map_entity_markers`](../../crates/engine-core/src/world.rs)
+[`world_map_markers::world_map_entity_markers`](../../crates/engine-world-views/src/world_map_markers.rs)
 returns one `WorldMapEntityMarker { world_pos, kind }` per installed entity
 with a position (`WorldMapEntityKind`: Portal / Npc / EncounterZone); the
 marker `y` is the player's current plane.
-[`World::world_map_player_marker`](../../crates/engine-core/src/world.rs)
+[`world_map_player_marker`](../../crates/engine-world-views/src/world_map_markers.rs)
 returns the player's position and heading.
 
 One kernel draws them for both hosts,

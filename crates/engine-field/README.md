@@ -158,7 +158,9 @@ a dependent crate.
   The `World` seams that apply their flag writes stay in `legaia-engine-core`.
 - `field_overlay` - the field overlay image (PROT 0897) as data: its load
   base and `field_overlay_cstr`, the one reader for the NUL-terminated
-  strings its data segment holds.
+  strings its data segment holds, which follows a string a language pack
+  moved through `STRING_REFS` (the code site that forms each port-read
+  string's address; [`ui-strings.md`](../../docs/tooling/translation/ui-strings.md#what-the-port-reads)).
 - `scene_transition_sweep` - the scene-transition **teardown sweep**
   (`FUN_801D7518`, which the field initialiser runs once per actor list on a
   warp entry); `actor_colour_tween` - the per-actor **colour tween**

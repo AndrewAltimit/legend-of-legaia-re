@@ -64,7 +64,7 @@ pub fn build_atlas(
     let cursor_rgba = legaia_tim::decode_rgba8(&panel_parsed, CURSOR_CLUT_ROW)?;
 
     // --- Compose into single 256x256 atlas ---
-    let mut out = vec![0u8; (ATLAS_WIDTH * ATLAS_HEIGHT * 4) as usize];
+    let mut out = vec![0u8; (ATLAS_WIDTH * ATLAS_BAKED_HEIGHT * 4) as usize];
 
     // Slot pills - copy from pill plane (256x256) at retail src coords.
     copy_rect(
@@ -87,6 +87,9 @@ pub fn build_atlas(
     // The block badge and the write panel's progress tube - records 2 / 3 /
     // 4 of the save UI's sprite-record table (`0x801E5048`), same TIM.
     add_card_work_sprites(&mut out, &pill_parsed, pill_w)?;
+    // The grid's "USED" frame and the save-icon faces past the three
+    // portrait TIMs (records 5 and 0 of the same table).
+    add_save_grid_sprites(&mut out, &pill_parsed, pill_w, prot_0899_bytes)?;
 
     // Panel 9-slice tiles - copy from panel plane (256x192) into
     // atlas at the same source coords (160..192, 0..32). Those atlas
@@ -357,7 +360,7 @@ pub fn build_atlas(
     Ok(SaveMenuAtlas {
         rgba: out,
         width: ATLAS_WIDTH,
-        height: ATLAS_HEIGHT,
+        height: ATLAS_BAKED_HEIGHT,
         has_hud_digits,
         status_badges_baked,
         element_badges_baked,
@@ -381,6 +384,9 @@ pub const SEPARATOR_GLYPHS: u32 = 14;
 /// * the fourteen 8x12 separator glyphs beside them on the same row
 ///   (`FUN_8003C1F8`, `uv = (0x50 + g * 8, 208)`): the `/` between two
 ///   counts and the stat-compare rise / fall arrows;
+/// * the four 12x12 command arrows after them (`FUN_8003C310`,
+///   `uv = (0xD0 + dir * 12, 208)`), per ink only - the battle arts list's
+///   command strings;
 /// * the list kernel `FUN_80032A44`'s pager pieces off the system-UI sheet,
 ///   at their UI-icon records (`0x800732A4 + code * 12`, `+3` CLUT byte,
 ///   `+4..+7` U/V/W/H): the "PAGE" tag (code `0x76`, CLUT 1), the 6x8 page
@@ -429,6 +435,43 @@ pub fn menu_font_cells(
                     w: 8,
                     h: 12,
                     rgba: cut(&rgba, w, (0x50 + g * 8, 208, 8, 12)),
+                });
+            }
+        }
+        // The same cells under every ink-staging CLUT. Both primitives pass
+        // `staging + 0x7F86` as the sprite's CLUT word (`addiu a2,a2,0x7f86`
+        // at `0x80034C80`, `addiu v1,v1,0x7f86` at `0x8003C260`) - a tier is
+        // a CLUT pick, so each ink brings its own outline and mid-tone.
+        for staging in 0..NUMERAL_INK_IDS {
+            let Ok(rgba) = legaia_tim::decode_rgba8(&tim, 6 + staging as usize) else {
+                continue;
+            };
+            for d in 0..10u32 {
+                cells.push(SpriteCellSrc {
+                    id: ids::ink_numeral(staging, d as u16),
+                    w: 8,
+                    h: 12,
+                    rgba: cut(&rgba, w, (d * 8, 208, 8, 12)),
+                });
+            }
+            for g in 0..SEPARATOR_GLYPHS {
+                cells.push(SpriteCellSrc {
+                    id: ids::ink_separator(staging, g as u16),
+                    w: 8,
+                    h: 12,
+                    rgba: cut(&rgba, w, (0x50 + g * 8, 208, 8, 12)),
+                });
+            }
+            // The command arrows `FUN_8003C310` draws: `uv = (dir * 12 +
+            // 0xD0, 0xD0, 12, 12)` (`addiu v0,v0,0xd0` / `li v0,0xc` at
+            // `0x8003C334..0x8003C358`), under the same `staging + 0x7F86`
+            // CLUT word.
+            for dir in (0..4u32).filter(|_| w >= 0xD0 + 4 * 12) {
+                cells.push(SpriteCellSrc {
+                    id: ids::ink_arrow(staging, dir as u16),
+                    w: 12,
+                    h: 12,
+                    rgba: cut(&rgba, w, (0xD0 + dir * 12, 208, 12, 12)),
                 });
             }
         }

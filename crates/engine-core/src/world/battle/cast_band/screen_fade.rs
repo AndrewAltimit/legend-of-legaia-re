@@ -36,6 +36,28 @@ impl World {
         fade_draw(self.presentation.fade.as_ref()?)
     }
 
+    /// Step every live screen fade `vsyncs` on, as the world tick steps them
+    /// (`frame_tick::mode_tick`), outside a tick. A capture harness seat: a
+    /// retail state saved past the flip shows its fades one pass nearer the
+    /// RAM than the rest of its frame, since the fade actor links its quad
+    /// into the table of the pass it steps for.
+    pub fn lead_screen_fades(&mut self, vsyncs: u16) {
+        let n = u8::try_from(vsyncs).unwrap_or(u8::MAX);
+        if n == 0 {
+            return;
+        }
+        if let Some(fade) = &mut self.presentation.fade
+            && !fade.step_vsyncs(n)
+            && !fade.holds_at_end()
+        {
+            self.presentation.fade = None;
+        }
+        self.presentation
+            .module_fades
+            .retain_mut(|f| f.step_vsyncs(n) || f.holds_at_end());
+        self.step_cast_hook_fades(n);
+    }
+
     /// Every live full-screen fade quad this frame, the world's fade first
     /// and then the module fades running beside it
     /// ([`crate::world::ScreenFxState::module_fades`], and the fades the

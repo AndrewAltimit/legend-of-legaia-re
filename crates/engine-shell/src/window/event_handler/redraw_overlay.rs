@@ -34,15 +34,25 @@ pub(super) struct FxFrame {
     pub world_map_slot4_lines: Option<legaia_engine_render::UploadedLines>,
     pub effect_model_draws: Vec<(UploadedVramMesh, Mat4)>,
     pub summon_part_draws: Vec<(UploadedVramMesh, Mat4)>,
-    pub field_fx_draws: Vec<(UploadedVramMesh, Mat4)>,
+    /// The field move-VM parts, each with its colour word's double-sided bit
+    /// (`ColourWord::double_sided`).
+    pub field_fx_draws: Vec<(UploadedVramMesh, Mat4, bool)>,
 }
 
 impl FxFrame {
     /// Append the effect meshes to the scene's textured draws, in the order
     /// the passes run: billboards, effect models, summon parts, field FX
     /// parts. The move-FX streak is a screen primitive
-    /// (`engine-screens::battle_fx`), not a scene draw.
-    pub(super) fn push_draws<'x>(&'x self, draws: &mut Vec<SceneDraw<'x>>) {
+    /// (`engine-screens::battle_fx`), not a scene draw. A field part whose
+    /// colour word carries the double-sided bit takes a both-sided `NCLIP`
+    /// mark in `nclip_marks`: the prim dispatcher `FUN_80043390` lowers its
+    /// winding mask for that word (`0x80043520..0x80043540`), so the field
+    /// pass's back-face cull never drops its packets.
+    pub(super) fn push_draws<'x>(
+        &'x self,
+        draws: &mut Vec<SceneDraw<'x>>,
+        nclip_marks: &mut Vec<(usize, u32)>,
+    ) {
         let fx_cam = self.fx_cam;
         let effect_billboard = &self.effect_billboard;
         let effect_model_draws = &self.effect_model_draws;
@@ -69,7 +79,10 @@ impl FxFrame {
                 cue: None,
             });
         }
-        for (mesh, model) in field_fx_draws {
+        for (mesh, model, double_sided) in field_fx_draws {
+            if *double_sided {
+                nclip_marks.push((draws.len(), 0));
+            }
             draws.push(SceneDraw {
                 mesh,
                 mvp: fx_cam * *model,

@@ -193,6 +193,8 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         // inside the caller's step as retail's does; what it seats waits
         // for the module's next tick like every other stager's seats.
         if self.world.casting.module_running_entry == Some(925) {
+            self.world.casting.stager_arm_calls_run =
+                self.world.casting.stager_arm_calls_run.wrapping_add(1);
             let phase = self.world.casting.module_phase;
             let mut words = self.world.casting.module_spikefish_words;
             let world = &mut *self.world;

@@ -200,12 +200,20 @@ mod backdrop_and_record_tests {
 /// this so everything stays in lockstep at any window resolution.
 ///
 /// Engines compute `stage_scale = min(surface_w / 320, surface_h /
-/// 240).clamp(1, 4)`, center the resulting `320*scale × 240*scale`
+/// 240).clamp(1, BOOT_UI_STAGE_MAX_SCALE)`, center the resulting `320*scale × 240*scale`
 /// rectangle inside the surface, and use that as the `stage_origin`
 /// for every boot-UI sprite emission.
 pub const BOOT_UI_STAGE_W: u32 = 320;
 /// Companion to [`BOOT_UI_STAGE_W`].
 pub const BOOT_UI_STAGE_H: u32 = 240;
+/// The largest integer scale the stage takes. High enough that no real
+/// window is left with a border wider than one stage step: a 4x cap left a
+/// 1920x1440 window (a 960x720 window on a 2x HiDPI desktop) drawing the
+/// game in its central 1280x960 with a black frame a third of the window
+/// wide, and a 2560x1440 fullscreen at 4x of its 6x. A fit at the largest
+/// integer scale can never draw past the surface, so the cap only bounds
+/// absurd surfaces.
+pub const BOOT_UI_STAGE_MAX_SCALE: u32 = 16;
 
 /// Retail PSX framebuffer position of the load-screen panel top-left.
 /// Mirror of [`legaia_ui_formats::title_pak::OVERLAY_SAVE_PANEL_RETAIL_DST`].
@@ -414,10 +422,16 @@ pub struct SaveMenuAtlasRects {
     /// preview screen to draw the 5x3 grid of save-slot boxes. When
     /// `None`, the slot-preview falls back to a solid blue rect.
     pub load_empty_frame: Option<(u32, u32, u32, u32)>,
-    /// Up to 3 character portrait sub-rects (16x16 each, decoded
-    /// from PROT.DAT[0x1AC90..0x1AF30]). Index = char_id (0=Vahn,
-    /// 1=Noa, 2=Gala). `None` for char_ids past the 3-portrait atlas.
-    pub load_portrait_by_char: [Option<(u32, u32, u32, u32)>; 3],
+    /// The grid's "USED" cell frame (sprite record 5, 32x32 with the same
+    /// 6 px margin as [`Self::load_empty_frame`]): a block occupied by
+    /// something the game cannot read. `None` falls back to the empty frame.
+    pub load_used_frame: Option<(u32, u32, u32, u32)>,
+    /// The save-icon sheet's sixteen 16x16 faces, by tile. One tile space
+    /// with two readers: the grid draws tile `n` in cell `n` (a save's own
+    /// face is its save number's), the info panel draws tile `id` for party
+    /// member `id` (0 Vahn, 1 Noa, 2 Gala - tiles `0..3` are those three
+    /// portraits). `None` for a tile the atlas did not bake.
+    pub save_icons: [Option<(u32, u32, u32, u32)>; 16],
     /// The battle screen's own skin, when the atlas carries it. See
     /// [`BattleChromeRects`].
     pub battle: Option<BattleChromeRects>,
@@ -503,6 +517,12 @@ pub struct BattleChromeRects {
     /// font glyphs seated on the same 8-px grid, so the layout survives
     /// even without the art.
     pub digits: Option<(u32, u32, u32, u32)>,
+    /// The same strip decoded under each ink-staging id's font CLUT,
+    /// indexed by staging id (`7` is [`Self::digits`]). A readout tier is
+    /// a CLUT pick in retail, so a tinted readout draws from its tier's own
+    /// strip ([`crate::hud_numeral_cell`]). `None` exactly when
+    /// [`Self::digits`] is, or for an atlas baked without them.
+    pub ink_digits: Option<[(u32, u32, u32, u32); 10]>,
     /// The red **cross-out X** (64x16) retail lays over a forbidden command
     /// chip (`FUN_801DBC30`), baked out of the battle effect page. `None`
     /// when the atlas was built without it; the chip then keeps its greyed

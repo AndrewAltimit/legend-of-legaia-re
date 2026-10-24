@@ -56,6 +56,9 @@ pub struct World {
     pub party: PartyState,
     /// Full-screen presentation state: fades, tints, the screen-effect widget host and the cinematic bars.
     pub presentation: ScreenFxState,
+    /// DualShock rumble: the two motor words, their script ramps and the
+    /// actuator payload this tick produced.
+    pub rumble: WorldRumble,
     /// Story / system flag words: the retail flag arrays and the story-flag bit image the scripts test and set.
     pub flags: StoryFlagState,
     /// The field fog-particle pool (`_DAT_8007B7E0`) the ambient emitter
@@ -384,6 +387,7 @@ impl World {
             toggles: WorldToggles::new(),
             party: PartyState::new(),
             presentation: ScreenFxState::new(),
+            rumble: WorldRumble::default(),
             flags: StoryFlagState::new(),
             fog: legaia_engine_field::fog_particles::FogPool::new(),
             fog_volume: legaia_render_kernels::fog_volume::FogVolume::new(),
@@ -590,6 +594,21 @@ impl World {
         self.field_vm.free_roam_staging = false;
         self.flags.system_flags.clear();
         self.party.money = NEW_GAME_STARTING_GOLD;
+        // A New Game is no retail block's continuation: its saves compose
+        // from zero, as retail's own first save of a New Game does from a
+        // freshly reset window.
+        self.party.retail_window = None;
+        self.party.previous_scene = None;
+        // Retail's New Game party is Vahn alone (`0x80084594 = 1`, member
+        // list `[0]`). A composition left by an earlier session - the scene
+        // picker seats Vahn / Noa / Gala before the title's New Game on both
+        // hosts - would outlive the one-member roster: the save composer
+        // writes `active_party` as the card's count and member list, and the
+        // reload came back a three-member party.
+        self.party.active_party.clear();
+        self.party.party_leader_slot = None;
+        self.party.party_actor_slots.clear();
+        self.party.field_list_emptied = false;
         self.minigames.point_card = 0;
         self.party.inventory.clear();
         self.pending_scene_transition = None;

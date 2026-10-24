@@ -347,7 +347,9 @@ pub const SCUS_POOL_BASE_VA: u32 = 0x8000_F800;
 ///   window stops before the per-character `... For {c1:00}.` variants: a
 ///   NUL-to-NUL scan would cut those at the token's `0x00` argument;
 /// - the battle **steal / spoils result** lines (`Took the stolen`,
-///   `Recovered the stolen`, `Stole the`, `Recovered all stolen items.`);
+///   `Recovered the stolen`, `Stole the`, `Recovered all stolen items.`),
+///   and the three two-byte tails three of them close with, past the
+///   command chips ([`SHORT_STRINGS`]);
 /// - the sparring-tutorial opener the new-game template trails (`I will show
 ///   you how to fight ...`, `docs/formats/new-game-table.md`);
 /// - the equip-screen `Remove` and the `Save` label near the config strings.
@@ -377,6 +379,14 @@ pub const SCUS_STRING_POOLS: &[UiStringPool] = &[
         va_start: 0x8007_7A38,
         va_end: 0x8007_7A8C,
         label: "battle steal result",
+        strict: false,
+    },
+    UiStringPool {
+        prot_index: usize::MAX,
+        base_va: SCUS_POOL_BASE_VA,
+        va_start: 0x8007_B690,
+        va_end: 0x8007_B69C,
+        label: "battle steal result tails",
         strict: false,
     },
     UiStringPool {
@@ -450,6 +460,34 @@ pub fn qualifies(chunk: &[u8]) -> bool {
     let letters = chunk.iter().filter(|b| b.is_ascii_alphabetic()).count();
     let printable = chunk.iter().filter(|&&b| (0x20..0x7f).contains(&b)).count();
     letters >= 1 && printable >= 2
+}
+
+/// Strings shorter than [`qualifies`] accepts that code nonetheless draws as
+/// text, as `(PROT entry, VA)`: a pool scan keeps any glyph run that starts
+/// at one of these, so the pack carries it and a translation of it can move.
+///
+/// - PROT 0898 `0x801F4C28`: the Seru-absorb caption's suffix, appended
+///   after the Seru's spell name (`lui a1,0x801f ; addiu a1,a1,0x4c28` at
+///   `0x801D91C0` / `0x801D91C8`, `legaia_game_tables::absorb_caption`);
+/// - `SCUS_942.54` (`usize::MAX`) `0x8007B690` / `0x8007B694` /
+///   `0x8007B698`: the `'.` tails the steal captions `Took the stolen '`,
+///   `Recovered the stolen '` and `Stole the '` close with after the item
+///   name (`legaia_ui_formats::battle_ui_strings`).
+pub const SHORT_STRINGS: &[(usize, u32)] = &[
+    (898, 0x801F_4C28),
+    (usize::MAX, 0x8007_B690),
+    (usize::MAX, 0x8007_B694),
+    (usize::MAX, 0x8007_B698),
+];
+
+/// `true` when `chunk`, starting at `va` in PROT entry `prot`, is one of the
+/// [`SHORT_STRINGS`] and reads as glyphs.
+fn is_short_string(prot: usize, va: u32, chunk: &[u8]) -> bool {
+    SHORT_STRINGS.contains(&(prot, va))
+        && !chunk.is_empty()
+        && chunk
+            .iter()
+            .all(|&b| (0x20..0x7f).contains(&b) || b >= 0x80)
 }
 
 /// Zero alignment padding usable past a string's terminator. The overlay pools
@@ -617,6 +655,7 @@ pub fn scan_pool(entry: &[u8], pool: &UiStringPool) -> Vec<UiString> {
             is_ui_text(&entry[start..e])
         } else {
             qualifies(&entry[pos..e])
+                || is_short_string(pool.prot_index, pool.base_va + pos as u32, &entry[pos..e])
         };
         if keep {
             raw.push((start, &entry[start..e]));
@@ -659,6 +698,32 @@ mod tests {
         assert!(!qualifies(&[0xce]));
         assert!(!qualifies(&[0x40, 0xc1]));
         assert!(!qualifies(b"."));
+    }
+
+    #[test]
+    fn a_listed_short_string_is_kept_and_no_other() {
+        // `.` at the absorb suffix's VA, and `.` four bytes on.
+        let mut entry = vec![0u8; 0x40];
+        entry[0x28..0x2A].copy_from_slice(b".\0");
+        entry[0x2C..0x2E].copy_from_slice(b".\0");
+        let pool = UiStringPool {
+            prot_index: 898,
+            base_va: 0x801F_4C00,
+            va_start: 0x801F_4C20,
+            va_end: 0x801F_4C40,
+            label: "t",
+            strict: false,
+        };
+        let out = scan_pool(&entry, &pool);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].va, 0x801F_4C28);
+        assert_eq!(out[0].bytes, b".");
+        // The same bytes in another entry are junk.
+        let other = UiStringPool {
+            prot_index: 899,
+            ..pool
+        };
+        assert!(scan_pool(&entry, &other).is_empty());
     }
 
     #[test]

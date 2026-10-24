@@ -113,6 +113,18 @@ pub fn retail_block_icon(
     })
 }
 
+/// The save-title template off the disc's menu overlay
+/// (`legaia_ui_formats::save_icon::title_template`, PROT 899), or `None`
+/// when it cannot be read - a free block's title then stays empty.
+pub fn retail_block_title_template(
+    index: &legaia_engine_scene::scene::ProtIndex,
+) -> Option<[u8; card::RETAIL_TITLE_TEMPLATE_LEN]> {
+    let entry = index
+        .entry_bytes(legaia_ui_formats::save_icon::PROT_ENTRY as u32)
+        .ok()?;
+    legaia_ui_formats::save_icon::title_template(&entry)
+}
+
 /// What [`write_save_into_card`] did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CardWrite {
@@ -152,6 +164,43 @@ pub fn write_save_into_card(
     index: Option<&legaia_engine_scene::scene::ProtIndex>,
 ) -> Result<CardWrite, String> {
     let save_slot = card_save_index(card, block);
+    write_save_into_block(card, block, save_slot, sf, resume, index)
+}
+
+/// The card block a Save into grid `cell` writes: the block whose file
+/// already carries save number `cell`, else the lowest free block - where
+/// the BIOS creates the file retail opens by name (`bu..:BASCUS-94254PRO-NN`
+/// for the list position it stands on). `None` on a card with neither.
+pub fn card_block_for_cell(card: &MountedCard, cell: u8) -> Option<u8> {
+    card.block_of_save_number(usize::from(cell))
+        .or_else(|| card.first_free_block())
+}
+
+/// Write `sf` + `resume` as save number `cell` - the grid cell the player
+/// picked - into the block [`card_block_for_cell`] resolves, filing a new
+/// file under that number. The cell, not the block, is the save number: it
+/// is what the title digits, the icon and the filename carry, and where the
+/// grid shows the save on the next read.
+pub fn write_save_into_cell(
+    card: &mut MountedCard,
+    cell: u8,
+    sf: &SaveFile,
+    resume: &SaveResume,
+    index: Option<&legaia_engine_scene::scene::ProtIndex>,
+) -> Result<CardWrite, String> {
+    let block = card_block_for_cell(card, cell)
+        .ok_or_else(|| format!("card has no block for save {} (full)", u32::from(cell) + 1))?;
+    write_save_into_block(card, block, u32::from(cell), sf, resume, index)
+}
+
+fn write_save_into_block(
+    card: &mut MountedCard,
+    block: u8,
+    save_slot: u32,
+    sf: &SaveFile,
+    resume: &SaveResume,
+    index: Option<&legaia_engine_scene::scene::ProtIndex>,
+) -> Result<CardWrite, String> {
     let icon = index.and_then(|i| retail_block_icon(i, save_slot));
     let view = card.view;
     let was_active = view.block_is_save_start(&card.bytes, block);
@@ -166,6 +215,19 @@ pub fn write_save_into_card(
     resume
         .write_into_retail_sc_block(sc)
         .map_err(|e| format!("save: {e}"))?;
+    // The resume scene's CDNAME define, the index word beside its label.
+    if let Some(define) = index
+        .filter(|_| !resume.scene.is_empty())
+        .and_then(|i| i.block_range(&resume.scene))
+        .map(|(raw, _)| raw)
+    {
+        card::write_retail_scene_index(sc, define).map_err(|e| format!("save: {e}"))?;
+    }
+    // A free block has no title; stamp retail's template so the BIOS card
+    // browser names the save (the identity below patches its digits).
+    if let Some(template) = index.and_then(retail_block_title_template) {
+        card::write_retail_block_title(sc, &template).map_err(|e| format!("save: {e}"))?;
+    }
     card::write_retail_block_identity(sc, save_slot, icon.as_ref())
         .map_err(|e| format!("save: {e}"))?;
     if !was_active {

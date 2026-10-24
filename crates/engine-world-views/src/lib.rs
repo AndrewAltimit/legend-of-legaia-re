@@ -1,4 +1,6 @@
-//! The play hosts' reads of a running `World` outside battle: a live
+//! The play hosts' reads of a running `World` for everything but the battle
+//! HUD (the field, the world map, menus, minigames and the battle bodies'
+//! draws): a live
 //! [`legaia_engine_core::world::World`] projected into the view models the
 //! kernel crates define.
 //!
@@ -16,8 +18,9 @@
 //!
 //! It sits directly above `legaia-engine-core` and nothing in the simulation
 //! names it, so a change to a view rebuilds the hosts but not `World`. The
-//! battle screen's reads are the sibling crate `legaia-engine-battle-hud`.
+//! battle HUD's reads are the sibling crate `legaia-engine-battle-hud`.
 
+pub mod battle_draws;
 pub mod camera_view;
 pub mod effect_draws;
 pub mod field_view_window;

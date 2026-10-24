@@ -36,6 +36,15 @@ pub trait BattleTestDrivers {
     /// The battle exit's settle (`World::finish_battle`): capture banking,
     /// spoils and the field restore, run once at the end of a fight.
     fn finish_battle(&mut self);
+    /// Arm the end-of-battle sequence off `battle.end`
+    /// (`World::begin_battle_end_sequence`).
+    fn begin_battle_end_sequence(&mut self);
+    /// One frame of the end-of-battle sequence.
+    fn tick_battle_end_sequence(&mut self);
+    /// The battle Item window's session over the live world.
+    fn build_battle_item_session(&self) -> legaia_engine_menus::inventory_use::InventoryUseSession;
+    /// One frame of the open battle Item window.
+    fn tick_battle_item_menu(&mut self);
 }
 
 impl BattleTestDrivers for World {
@@ -78,5 +87,17 @@ impl BattleTestDrivers for World {
     }
     fn finish_battle(&mut self) {
         World::finish_battle(self)
+    }
+    fn begin_battle_end_sequence(&mut self) {
+        World::begin_battle_end_sequence(self)
+    }
+    fn tick_battle_end_sequence(&mut self) {
+        World::tick_battle_end_sequence(self)
+    }
+    fn build_battle_item_session(&self) -> legaia_engine_menus::inventory_use::InventoryUseSession {
+        World::build_battle_item_session(self)
+    }
+    fn tick_battle_item_menu(&mut self) {
+        World::tick_battle_item_menu(self)
     }
 }

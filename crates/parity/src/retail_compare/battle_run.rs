@@ -584,6 +584,12 @@ pub(super) fn battle_image(
             )),
         ));
     }
+    // A summon close-up re-framed on the caster's body pair every pass: the
+    // frame on screen stood on the pair of the pose three passes behind the
+    // RAM's cursor, not the live pair (`RetailBattle::summon_focus`).
+    if let Some([x, z]) = battle.summon_focus {
+        env.push(("LEGAIA_BATTLE_SUMMON_FOCUS", format!("{x},{z}")));
+    }
     // Every pad drive, as the headless seed snaps and aligns every driven
     // capture: a menu capture's case-0 close-up subtracts its member's
     // heading (`0x8F0 - actor[+0x46]`), which only the ground snap carries -
@@ -664,12 +670,18 @@ pub(super) fn battle_image(
     if let Some((width, plate)) = battle.spirit_gauge {
         env.push(("LEGAIA_SEAT_SPIRIT_GAUGE", format!("{width},{plate}")));
     }
+    // The arts entry's Triangle list, open on the capture's page with its
+    // window as far in as retail's had slid.
+    if let Some((page, slide)) = battle.arts_list {
+        env.push(("LEGAIA_SEAT_ARTS_LIST", format!("{page},{slide}")));
+    }
     // A capture taken mid-cast replays its cast and is captured on its phase
     // (the gate), with the fixed tick as the deadline.
     // The capture's own frame step over its last stretch, as the headless
     // seed ran it (`RetailBattle::frame_step_seed`).
-    if let Some((step, state)) = battle.frame_step_seed() {
-        env.push(("LEGAIA_BATTLE_FRAME_STEP", format!("{step},{state}")));
+    if let Some((step, state, from)) = battle.frame_step_seed() {
+        let from = from.map_or(String::new(), |(clip, cursor)| format!(",{clip},{cursor}"));
+        env.push(("LEGAIA_BATTLE_FRAME_STEP", format!("{step},{state}{from}")));
     }
     let mut tick = crate::retail_compare_battle::BATTLE_CAPTURE_TICK
         + u64::from(engine.prompt_tick.unwrap_or(0));
@@ -719,6 +731,14 @@ pub(super) fn battle_image(
                 env.push(("LEGAIA_CAPTURE_DISPLAY_LAG", battle.display_lag.to_string()));
             }
             _ => env.push(("LEGAIA_CAPTURE_GATE", gate.to_env())),
+        }
+        // A state saved past the flip shows its fades on the table of the
+        // fade actor's own pass, nearer the RAM than the frame the gate
+        // places (`displayed_fade_lag_vsyncs`): the frame stays where the
+        // gate put it, and its fades step on to the displayed ones.
+        let lead = battle.display_lag.saturating_sub(battle.display_fade_lag);
+        if lead > 0 && gate.fade.is_some() {
+            env.push(("LEGAIA_SEAT_FADE_LEAD", lead.to_string()));
         }
         tick += crate::retail_compare_battle::INFLIGHT_DEADLINE;
     }

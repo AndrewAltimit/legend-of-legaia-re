@@ -153,18 +153,20 @@ pub use field_script_actors::{FieldLightDraw, NpcDrawPose};
 mod drop_shadow_render;
 mod fog_render;
 mod fog_volume_host;
+mod rumble_state;
 pub use cutscene_elements::{
     AMBIENT_EMITTER_SCENE_ARM, AMBIENT_EMITTER_TEMPLATE_VA, CutsceneElement, ElementFrame,
     ElementKind, WorldRng,
 };
+pub use rumble_state::WorldRumble;
 mod assets_events;
 mod battle;
 pub use battle::{
-    ABSORB_BANNER_ELEMENT, BATTLE_BODY_NCLIP, BattleActorDrawPlan, BattleDefeatBanner,
-    BattleFrameClock, BattleMessageBanner, BattleSpoilsBanner, COUNTER_MESSAGE_HOLD,
-    COUNTER_MESSAGE_VA, DEFAULT_BATTLE_FRAME_STEP, MAGIC_LEVEL_BANNER_ELEMENT, PARTY_BODY_RADIUS,
-    PendingCast, RoutedEffectSpawn, SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND, SummonPhase,
-    SummonStager, TIMED_MESSAGE_ELEMENT,
+    ABSORB_BANNER_ELEMENT, BATTLE_BODY_NCLIP, BattleActorDrawPlan, BattleFrameClock,
+    BattleMessageBanner, COUNTER_MESSAGE_HOLD, COUNTER_MESSAGE_VA, DEFAULT_BATTLE_FRAME_STEP,
+    MAGIC_LEVEL_BANNER_ELEMENT, PARTY_BODY_RADIUS, PendingCast, RoutedEffectSpawn,
+    SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND, SummonPhase, SummonStager, TIMED_MESSAGE_ELEMENT,
+    battle_shadow_offset,
 };
 pub use battle::{AutoComboInputs, AutoComboState};
 pub use battle::{CASTER_STAGE_TICK_LIMIT, CasterStagePhase, CasterStageRun};

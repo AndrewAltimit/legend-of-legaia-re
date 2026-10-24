@@ -14,9 +14,65 @@ use legaia_engine_core::world::World;
 use legaia_engine_field::camera_frame;
 use legaia_engine_field::camera_frame::FieldCameraFrame;
 use legaia_engine_field::world_map_markers::{
-    DISPLAY_H, DISPLAY_W, MarkerQuad, MarkerSegment, entity_segments, player_segments,
-    segment_quad_depth,
+    DISPLAY_H, DISPLAY_W, MarkerQuad, MarkerSegment, WorldMapEntityKind, WorldMapEntityMarker,
+    WorldMapPlayerMarker, entity_segments, player_segments, segment_quad_depth,
 };
+
+/// Snapshot every placed overworld entity for the renderer: one
+/// [`WorldMapEntityMarker`] per installed entity that carries a world
+/// position, paired with its coarse [`WorldMapEntityKind`].
+///
+/// Returns an empty vector unless the disc-placement seeding
+/// (`World::install_world_map_entities_at`) populated
+/// [`legaia_engine_core::world::WorldMapState::entity_positions`] - the
+/// config-only installers (which leave positions empty) produce no markers,
+/// so a camera-only or synthetic world map degrades cleanly. The marker `y`
+/// is the player actor's current plane (the placements are 2D), so markers
+/// sit on the player's walking plane rather than at an arbitrary `y = 0`.
+pub fn world_map_entity_markers(world: &World) -> Vec<WorldMapEntityMarker> {
+    if world.world_map.entity_positions.is_empty() {
+        return Vec::new();
+    }
+    let base_y = world
+        .player_actor_slot
+        .and_then(|s| world.actors.get(s as usize))
+        .map(|a| a.move_state.world_y as f32)
+        .unwrap_or(0.0);
+    world
+        .world_map
+        .entity_positions
+        .iter()
+        .enumerate()
+        .map(|(i, &(x, z))| {
+            let kind = WorldMapEntityKind::of_config(world.world_map.entity_configs.get(i));
+            WorldMapEntityMarker {
+                world_pos: [x as f32, base_y, z as f32],
+                kind,
+            }
+        })
+        .collect()
+}
+
+/// The player's overworld position for the renderer, or `None` when there
+/// is no active player actor. The world-map draw path renders the party
+/// leader's field mesh at this position, oriented by
+/// [`WorldMapPlayerMarker::facing`]; the marker doubles as the diagnostic
+/// wireframe stand-in when the mesh upload failed.
+pub fn world_map_player_marker(world: &World) -> Option<WorldMapPlayerMarker> {
+    let slot = world.player_actor_slot? as usize;
+    let a = world.actors.get(slot)?;
+    if !a.active {
+        return None;
+    }
+    Some(WorldMapPlayerMarker {
+        world_pos: [
+            a.move_state.world_x as f32,
+            a.move_state.world_y as f32,
+            a.move_state.world_z as f32,
+        ],
+        facing: a.move_state.render_26,
+    })
+}
 
 /// Every marker segment this frame: one set per placed entity while the
 /// debug overlay is up ([`legaia_engine_core::world::WorldToggles::overworld_marker_overlay`]),
@@ -35,7 +91,7 @@ pub fn marker_segments(world: &World, draw_player: bool) -> Vec<MarkerSegment> {
     let mut out = Vec::new();
     let grounded = !world.terrain.collision_grid.is_empty();
     let entities = if world.toggles.overworld_marker_overlay {
-        world.world_map_entity_markers()
+        world_map_entity_markers(world)
     } else {
         Vec::new()
     };
@@ -47,7 +103,7 @@ pub fn marker_segments(world: &World, draw_player: bool) -> Vec<MarkerSegment> {
         }
         out.extend(entity_segments(&m));
     }
-    if draw_player && let Some(p) = world.world_map_player_marker() {
+    if draw_player && let Some(p) = world_map_player_marker(world) {
         out.extend(player_segments(&p));
     }
     out
@@ -105,6 +161,7 @@ pub fn marker_prims(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use legaia_engine_field::world_map_entity_config::WorldMapEntityConfig;
     use legaia_engine_field::world_map_markers::{PLAYER_COLOR, depth_toward};
     use legaia_engine_mode::mode::SceneMode;
 
@@ -164,7 +221,7 @@ mod tests {
     fn entity_markers_draw_only_under_the_debug_toggle() {
         let mut w = world_map_world();
         w.world_map.entity_positions = vec![(1200, 2100)];
-        assert_eq!(w.world_map_entity_markers().len(), 1);
+        assert_eq!(world_map_entity_markers(&w).len(), 1);
         assert!(
             marker_segments(&w, false).is_empty(),
             "no entity marker by default - retail draws none"
@@ -214,5 +271,101 @@ mod tests {
         let far_p = [p[0] + dir[0], p[1] + dir[1], p[2] + dir[2]];
         let far = depth_toward(&vp, far_p, eye).unwrap();
         assert!(far > pulled, "far {far} vs {pulled}");
+    }
+
+    /// Placed overworld entities surface as render markers: one per installed
+    /// position, paired with its kind, at the player's walking plane.
+    #[test]
+    fn world_map_entity_markers_pair_position_and_kind() {
+        let mut world = World::default();
+        world.enter_world_map();
+        world.install_field_player(0);
+        // Put the player on a known plane so the marker `y` is deterministic.
+        world.actors[0].move_state.world_y = -200;
+        world.install_world_map_entities_at(vec![
+            (
+                WorldMapEntityConfig::MinigameDoor { sub_id: 3, slot: 0 },
+                (448, 320),
+            ),
+            (
+                WorldMapEntityConfig::Npc {
+                    interact_id: 4,
+                    text_id: None,
+                    inline: Vec::new(),
+                },
+                (640, 128),
+            ),
+            (
+                WorldMapEntityConfig::EncounterZone { formation_id: 2 },
+                (-64, 512),
+            ),
+        ]);
+
+        let markers = world_map_entity_markers(&world);
+        assert_eq!(markers.len(), 3);
+        // Position x/z come straight from the placement; y is the player plane.
+        assert_eq!(markers[0].world_pos, [448.0, -200.0, 320.0]);
+        assert_eq!(markers[0].kind, WorldMapEntityKind::Portal);
+        assert_eq!(markers[1].world_pos, [640.0, -200.0, 128.0]);
+        assert_eq!(markers[1].kind, WorldMapEntityKind::Npc);
+        assert_eq!(markers[2].world_pos, [-64.0, -200.0, 512.0]);
+        assert_eq!(markers[2].kind, WorldMapEntityKind::EncounterZone);
+    }
+
+    /// The player surfaces as an overworld marker at its actor position; with no
+    /// player actor installed there is no marker.
+    #[test]
+    fn world_map_player_marker_tracks_player_actor() {
+        let mut world = World::default();
+        world.enter_world_map();
+        assert!(
+            world_map_player_marker(&world).is_none(),
+            "no player actor -> no marker"
+        );
+        world.install_field_player(0);
+        world.actors[0].move_state.world_x = 320;
+        world.actors[0].move_state.world_y = -64;
+        world.actors[0].move_state.world_z = 256;
+        let m = world_map_player_marker(&world).expect("player marker present");
+        assert_eq!(m.world_pos, [320.0, -64.0, 256.0]);
+    }
+
+    /// Walking on the overworld records a heading the player marker exposes (the
+    /// world-map walk sets `render_26` itself, since it uses the camera-relative
+    /// bits rather than the field heading decoder).
+    #[test]
+    fn world_map_walking_sets_player_marker_facing() {
+        let mut world = World::default();
+        world.enter_world_map();
+        world.install_field_player(0);
+        world.set_world_map_encounter(false, 50, 0, 64);
+        world.reset_field_collision_grid(); // all-walkable so the step commits
+        world.actors[0].move_state.world_z = 200; // away from the -Z boundary
+        let start_z = world.actors[0].move_state.world_z;
+        // At the default azimuth the walk frame is retail's identity, so "screen
+        // up" walks +Z (dx=0, dz=1) -> atan2(0, 1) = 0 -> heading 0.
+        world.set_pad(legaia_engine_system::input::PadButton::Up.mask());
+        let _ = world.tick();
+        let m = world_map_player_marker(&world).expect("player marker present");
+        assert_eq!(m.facing, 0, "walking +Z faces heading 0");
+        assert!(
+            world.actors[0].move_state.world_z > start_z,
+            "the player advanced +Z (start {start_z} -> {})",
+            world.actors[0].move_state.world_z
+        );
+    }
+
+    /// Config-only installs (no disc placements) produce no markers, so a
+    /// camera-only or synthetic world map draws nothing.
+    #[test]
+    fn world_map_entity_markers_empty_without_positions() {
+        let mut world = World::default();
+        world.enter_world_map();
+        world.install_world_map_entities_with_configs(vec![WorldMapEntityConfig::Npc {
+            interact_id: 1,
+            text_id: None,
+            inline: Vec::new(),
+        }]);
+        assert!(world_map_entity_markers(&world).is_empty());
     }
 }

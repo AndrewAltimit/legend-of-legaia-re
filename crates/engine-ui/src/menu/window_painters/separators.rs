@@ -17,18 +17,25 @@ pub const SEPARATOR_GLYPH_RISE: u8 = 4;
 pub const SEPARATOR_GLYPH_FALL: u8 = 5;
 /// Separator glyph `6`: `/`.
 pub const SEPARATOR_GLYPH_SLASH: u8 = 6;
+/// Separator glyph `7`: `(` - the status page's base / growth groups open
+/// on it (`FUN_801D33D8`, `li a0,0x7` at `0x801D3658`).
+pub const SEPARATOR_GLYPH_LPAREN: u8 = 7;
+/// Separator glyph `8`: `)` (`li a0,0x8` at `0x801D3690`).
+pub const SEPARATOR_GLYPH_RPAREN: u8 = 8;
 /// Separator glyph `9`: `:`.
 pub const SEPARATOR_GLYPH_COLON: u8 = 9;
 /// Separator glyph `0xD`: `.`.
 pub const SEPARATOR_GLYPH_DOT: u8 = 0x0D;
 
 /// The character a separator-glyph id draws, or `None` for an id outside
-/// the three the corpus pins as text. The arrows (`4` / `5`) have no font
+/// the five the corpus pins as text. The arrows (`4` / `5`) have no font
 /// character: they draw only off the glyph page
 /// ([`legaia_font::sprite_cell_ids::SEPARATOR`]).
 pub fn separator_glyph_char(glyph: u8) -> Option<char> {
     match glyph {
         SEPARATOR_GLYPH_SLASH => Some('/'),
+        SEPARATOR_GLYPH_LPAREN => Some('('),
+        SEPARATOR_GLYPH_RPAREN => Some(')'),
         SEPARATOR_GLYPH_COLON => Some(':'),
         SEPARATOR_GLYPH_DOT => Some('.'),
         _ => None,
@@ -52,11 +59,11 @@ pub(crate) fn separator_glyph_draws(
     pen: (i32, i32),
     color: [f32; 4],
 ) -> Vec<TextDraw> {
-    if let Some(c) = font.sprite_cell(legaia_font::sprite_cell_ids::SEPARATOR + u16::from(glyph)) {
+    if let Some((c, tint)) = crate::menu_numeral_cell(font, true, u16::from(glyph), color) {
         return vec![TextDraw {
             dst: (pen.0, pen.1, c.w, c.h),
             src: (c.atlas_x, c.atlas_y, c.w, c.h),
-            color: crate::numeral_cell_tint(color),
+            color: tint,
         }];
     }
     match separator_glyph_char(glyph) {

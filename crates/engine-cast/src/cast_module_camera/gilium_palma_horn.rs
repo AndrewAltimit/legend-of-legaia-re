@@ -206,8 +206,14 @@ pub const PALMA_SETTLE_PHASE: u8 = 0xC8;
 /// One of arms 3 and 4's per-pass stores, worked out of the word `t`: the
 /// globals land straight on these values every pass.
 fn palma_sweep(phase: u8, t: i32) -> ArmDirection {
+    let (pitch, yaw, tr_y, tr_z) = palma_sweep_globals(phase, t);
+    cut([pitch, yaw], [0, tr_y, raw_tr_z(tr_z)], [0; 3], 1)
+}
+
+/// The pitch, yaw, TR y and TR z globals [`palma_sweep`] lands on.
+fn palma_sweep_globals(phase: u8, t: i32) -> (i32, i32, i32, i32) {
     let sin = |a: i32| i32::from(legaia_engine_system::trig::sin12((a & 0xFFF) as u16));
-    let (pitch, yaw, tr_y, tr_z) = if phase == 3 {
+    if phase == 3 {
         let yaw = sin(3 * t / 8 + 0x800);
         if t >= 160 * S {
             (0x40 - sin(2 * t) / 8, yaw, 0, 0x1800 - sin(t))
@@ -227,8 +233,28 @@ fn palma_sweep(phase: u8, t: i32) -> ArmDirection {
             sin(t) / 2,
             0x1800 - 2 * sin(t),
         )
-    };
-    cut([pitch, yaw], [0, tr_y, raw_tr_z(tr_z)], [0; 3], 1)
+    }
+}
+
+/// PROT 0928 arm 4's exit stores, ahead of its `0x160`-frame pan: the pass
+/// runs the arm's per-pass globals at the word it just reached
+/// (`0x801F72F0..0x801F73B4`), then stores TR x `-0x2000` and TR z `0x2000`
+/// straight (`sw v0,0x40b8(t0)` / `sw v0,0x8(v1)` at `0x801F7418..0x801F7424`)
+/// and calls `FUN_801D829C`, whose tween sets out from those globals. As
+/// the drift that lands the live globals there (none with no live pose
+/// fed). Armed off the sweep's last pose instead, the pan set out a fifth
+/// of the way to the planet and the creature's first frames filled the
+/// screen with it.
+fn palma_pan_origin(st: &ModuleCamState, t: i32) -> Option<CaptureDrift> {
+    let (pitch, tr) = st.live_pitch_tr?;
+    let (p, yaw, tr_y, _) = palma_sweep_globals(4, t);
+    Some(drift(
+        p - pitch,
+        yaw_to(st, yaw),
+        -0x2000 - tr[0],
+        tr_y - tr[1],
+        0x2000 - tr[2],
+    ))
 }
 
 /// The stage byte `ctx[+0x278]` PROT 0928's arm 3 stores once its word `T`
@@ -238,6 +264,23 @@ fn palma_sweep(phase: u8, t: i32) -> ArmDirection {
 /// no later arm touches it before arm `0x11`'s `0`.
 pub fn palma_stage_byte(phase: u8, countdown: i32) -> Option<u8> {
     (phase == 3 && countdown >= S << 7).then_some(3)
+}
+
+/// The stage byte `ctx[+0x278]` PROT 0923's tick body stores on the pass
+/// that leaves arm `phase`: `0` in arm 0 (`0x801F6BE8`), `2` in arms 3, 4
+/// and `0x11`. Arm 3's is `sb s0,0x278(a0)` in the delay slot of its exit
+/// jump (`0x801F6DE4`), `s0` the `2` the dispatch tree loads in a branch
+/// delay slot on the way into the low arms (`li s0,0x2` at `0x801F6A70`);
+/// arms 4 and `0x11` store an immediate `2` (`0x801F7298`, `0x801F83A0`).
+/// The stager's arm 0 stores the `3` (`FUN_801F8B90`, `0x801F8BFC`), on the
+/// op-`0x20` call of the part that reaches it. A retail cast reads `2`
+/// through arm 4 and the head of arm 5, then `3`.
+pub fn gilium_stage_byte(phase: u8) -> Option<u8> {
+    match phase {
+        0 => Some(0),
+        3 | 4 | 0x11 => Some(2),
+        _ => None,
+    }
 }
 
 /// PROT 0928 (Palma): the word `T` at `0x801FA0D0` drives arms 3 and 4
@@ -301,9 +344,13 @@ pub fn palma_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
                 st.countdown.0 = 0;
                 return ArmDirection::PASS;
             }
+            let origin = palma_pan_origin(st, st.countdown.0);
             st.countdown.0 = 384 * S;
             st.creature = Some(ModuleSeat::default());
-            cut([0x100, 0x600], [0, 0xC8, 0x1000], [0; 3], 0x160)
+            with_drift(
+                cut([0x100, 0x600], [0, 0xC8, 0x1000], [0; 3], 0x160),
+                origin,
+            )
         }
         5 => {
             if gated(st, 64 * S) {
@@ -523,7 +570,9 @@ pub fn horn_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             if gated(st, 0xC0) {
                 return held(d);
             }
+            // `+0x1DA += 1` with the `+0x1DC` bump: clip `1` cuts in at once.
             st.creature_stage = Some(1);
+            st.creature_restage = true;
             with_drift(cut([0, 0], [0, 0x158C, 0x200], [0, 0, -0x800], 1), d)
         }
         9 => {

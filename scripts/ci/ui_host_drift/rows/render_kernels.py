@@ -240,6 +240,10 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
                 "`move_fx_streak_quads`) take the view-projection as an "
                 "argument; `engine-screens::battle_fx` is their one caller "
                 "that builds it",
+            "crates/engine-world-views/src/battle_draws.rs":
+                "defines `battle_weapon_trail_draws`, the per-actor trail "
+                "band builder over the pose ring; it emits world-space bands "
+                "and projects nothing",
             "crates/web-play/src/play_battle/test_probes.rs":
                 "counts the draws (`debug_battle_*` probes for the battle "
                 "ladder) and projects or draws nothing",

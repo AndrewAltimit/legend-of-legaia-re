@@ -27,12 +27,12 @@ impl LegaiaRuntime {
     }
 
     /// Battle mesh `i`'s object -> draw-channel map
-    /// (`World::battle_live_object_channels`); `None` = identity.
+    /// (`legaia_engine_world_views::battle_draws::battle_live_object_channels`); `None` = identity.
     fn object_channels(&self, i: u32) -> Option<Vec<u32>> {
         let br = self.battle_render.as_ref()?;
         let host = self.scene_host.host()?;
         let (actor_idx, _, _) = br.actor_colour_stream(i as usize)?;
-        host.world.battle_live_object_channels(actor_idx)
+        legaia_engine_world_views::battle_draws::battle_live_object_channels(&host.world, actor_idx)
     }
 }
 

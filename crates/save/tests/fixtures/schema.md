@@ -64,6 +64,9 @@ want it durable need to keep emitting LGSF v2 alongside the SC export.
 | `ext.story_flag_bits` | inside LGX3 | `0x14C0` (`0x358` bytes) | `0x358` B | Window mirrors live RAM `0x80085600..0x80085958`; the system-flag bank is its `+0x158..` (all `0x200` bytes). `from_retail_sc_block` returns the full slice; LGSF v3 stores it with a `u16 LE` length prefix. |
 | `LGX4` ext block | after LGX3 | - | varies | LGSF v4 only |
 | `ext_v2.per_char[*].shiny_spells` | inside LGX4 | engine-only | 1 + S B / char | Spell ids learned from a shiny Seru (+35% damage). Only chars with ≥1 shiny spell are listed. Retail encodes this in the `+0x161` spell-level high bit. |
+| `ext_v2.retail_window` | `LGXB` (optional) | `0x200..0x1A18` | `0x1818` B | The whole live-state window of the block the save was lifted from; the SC writer lays it down first and every region above over it. |
+| `ext_v2.previous_scene` | `LGXC` (optional) | `0x418` | `0x10` B | Previous scene's CDNAME label (`0x80084558`). |
+| (no `SaveFile` field) | - | `0x224..0x260` | - | Save summary, derived from the block by `card::write_retail_save_summary` as retail's composer derives it (clock copy, party count, member ids, levels, HP / MP halfwords, names at `0x254`). |
 | (no `SaveFile` field) | - | `0x1FFC` | 4 B | Block checksum. Not a save *field* - a derived word every SC writer restamps, so it drifts whenever any region above it does. See [`card::sc_block_checksum`](../../src/card.rs). |
 
 ## Engine-only fields inside an SC block

@@ -33,8 +33,14 @@ const ZENOIR_OVER_VICTIM_ARM: u8 = 10;
 /// until arm 9's stage-bit commit of clip `2`. PROT 0928's arm 6 stages
 /// clip `2` bare (`sb v0,0x1da(s4)` at `0x801F7828`) and arm 7 holds until
 /// it plays (`lbu v1,0x1d9(s4)` / `bne v1,2` at `0x801F7890..0x801F7898`):
-/// in retail that is the end of clip `1`, ~300 vsyncs on.
-const CLIP_GATED_MODULES: [u32; 5] = [907, 908, 909, 913, 928];
+/// in retail that is the end of clip `1`, ~300 vsyncs on. PROT 0930 (Horn)
+/// stages clip `1` with the stage bit in arm 8 (`+0x1DA` / `+0x1DC` both
+/// `+1`, `0x801F750C..0x801F7524`) and then stores `2` bare on every arm-9
+/// pass (`sb v0,0x1da(s4)` at `0x801F7590`): retail RAM through arm 9 holds
+/// `+0x1D9 = 1`, `+0x1DA = 2`, `+0x1DC = 0`, the cursor climbing `8` to
+/// `280`, so the wing-spread clip `1` is what the close-up shows, not the
+/// clip `2` an at-once commit swapped in on arm 9's first pass.
+const CLIP_GATED_MODULES: [u32; 6] = [907, 908, 909, 913, 928, 930];
 
 /// The animation rate `+0x21D` the creature seat installer `FUN_801F19EC`
 /// gives the creature it seats (`li s3,0x2` at `0x801F1CFC`, stored at

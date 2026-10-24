@@ -429,66 +429,106 @@ pub fn snapshot_for_save(
         leader_name: leader.name,
         leader_hp: leader.hp,
         leader_mp: leader.mp,
+        ..SlotSnapshot::empty(slot)
     }
 }
 
-/// A mounted card's fifteen blocks as the 5x3 preview grid reads them - one
-/// derivation, both hosts.
+/// Lay a card block's **save summary** over a snapshot: the party rows,
+/// the play clock and the location test the info panel prints from.
 ///
-/// The free-cell captions are priced by the retail free-block budget
-/// (`FUN_801E3AF0` -> `FUN_801E3BA0`): enumerate the card's files off its live
-/// directory frames, fill the fixed table, and ask the card how many blocks it
-/// itself says are free. Retail only captions a cell "free" while that budget
-/// pays for it - absence of a claim is not evidence a block is free, so an
-/// unclaimed cell past the budget captions as foreign rather than inviting an
-/// overwrite.
+/// Retail's preview reads only the summary (the per-slot copy of the
+/// block's `0x200..0x300`, `0x801EF1B8 + slot * 0x100`), so a block whose
+/// summary and records disagree prints the summary. A block composed with
+/// no summary at all (flag and count both zero - a save an older engine
+/// build wrote) gets one derived from its own fields first, the way retail's
+/// composer derives it, rather than printing an empty panel.
+pub fn apply_retail_summary(snap: &mut SlotSnapshot, sc_block: &[u8], dir_name: &[u8]) {
+    let derived;
+    let mut block = sc_block;
+    if let Some(s) = legaia_save::card::read_retail_save_summary(sc_block)
+        && s.flag == 0
+        && s.count == 0
+    {
+        let mut copy = sc_block.to_vec();
+        if legaia_save::card::write_retail_save_summary(&mut copy).is_ok() {
+            derived = copy;
+            block = &derived;
+        }
+    }
+    let Some(sum) = legaia_save::card::read_retail_save_summary(block) else {
+        return;
+    };
+    let text = |b: &[u8]| -> String { b.iter().map(|&c| c as char).collect() };
+    snap.location = text(&sum.location);
+    snap.location_valid = sum.location_valid;
+    snap.play_time_seconds = sum.clock_frames / legaia_save::card::RETAIL_PLAY_COUNTER_HZ;
+    snap.members = sum
+        .members
+        .iter()
+        .map(|m| SlotMember {
+            id: m.id,
+            name: text(&m.name),
+            level: m.level,
+            hp: m.hp,
+            mp: m.mp,
+        })
+        .collect();
+    snap.old_filename =
+        dir_name.starts_with(legaia_save::card::LEGAIA_SAVE_FILENAME_PREFIX_JP.as_bytes());
+}
+
+/// A mounted card's fifteen grid cells as the 5x3 preview grid reads them -
+/// one derivation, both hosts.
 ///
-/// A block the directory *claims* but which will not lift is someone else's
-/// save, not a free block: retail captions the two differently, and folding
-/// them invites a Save to overwrite what it never read.
+/// A cell is a **save number**, not a card block. Retail's directory walk
+/// (`FUN_801E1208`, ported as [`classify_card_directory`]) stamps the slot a
+/// Legaia filename's two digits name, then spends the card's free-block
+/// budget (`FUN_801E3AF0` -> `FUN_801E3BA0`) on the cells no filename
+/// claimed, in cell order; whatever the budget cannot pay for captions as
+/// foreign. The block a save's file sits in plays no part: the BIOS puts a
+/// new file in the lowest free block, so `-03` lands in block 2 on a card
+/// saved out of order, and the grid still shows it in cell 3. A retail
+/// capture of a card holding `-05` in block 14 shows it in cell 5.
 ///
-/// The native window used to skip the budget entirely and caption every
-/// unclaimed cell free, so the same card image printed differently on the two
-/// hosts past the budget.
+/// A cell whose file names it but whose block will not lift is someone
+/// else's save, not a free block: folding the two invites a Save to
+/// overwrite what it never read.
+///
+/// The info panel's rows come from the block's save summary
+/// ([`apply_retail_summary`]), as retail's do.
 pub fn card_block_snapshots(card: &legaia_save::emu::MountedCard) -> Vec<SlotSnapshot> {
     let entries = card_dir_entries(card);
     let (dir_table, dir_count) = card_directory_scan(&entries);
-    let mut free_budget = card_free_blocks(&dir_table, dir_count).max(0);
+    let free = card_free_blocks(&dir_table, dir_count).max(0) as u32;
+    let names: Vec<&[u8]> = entries.iter().map(|e| e.name.as_slice()).collect();
+    let classes = classify_card_directory(&names, free);
     (0..crate::save_screen::SLOT_GRID_CELLS)
-        .map(|cell| {
-            let block = cell + 1;
-            if !card.block_is_save_start(block) {
-                if free_budget > 0 {
-                    free_budget -= 1;
-                    return SlotSnapshot::empty(cell);
-                }
-                return SlotSnapshot::foreign(cell);
-            }
-            // Past here the block IS claimed, so every way of failing to read
-            // it is someone else's save rather than a free block.
-            //
-            // Retail's directory walk (`FUN_801E1208`) classifies a block a
-            // Legaia save by its **filename** alone - one of the two regional
-            // prefixes - so a file another game wrote is foreign however its
-            // bytes happen to parse.
-            let ours = card
-                .dir_frame(block)
-                .and_then(|f| f.get(0x0A..))
-                .and_then(super::card_dir_slot_of)
-                .is_some();
-            if !ours {
-                return SlotSnapshot::foreign(cell);
-            }
-            match card.save_at(cell) {
-                Some((sf, resume)) => SlotSnapshot {
+        .map(|cell| match classes[cell as usize] {
+            SlotContent::Free => SlotSnapshot::empty(cell),
+            SlotContent::Foreign => SlotSnapshot::foreign(cell),
+            SlotContent::LegaiaSave => {
+                let Some(block) = card.block_of_save_number(cell as usize) else {
+                    return SlotSnapshot::foreign(cell);
+                };
+                let Some((sf, resume)) = block.checked_sub(1).and_then(|c| card.save_at(c)) else {
+                    return SlotSnapshot::foreign(cell);
+                };
+                let sc = card.sc_block(block);
+                let mut snap = SlotSnapshot {
                     // The read's verify, ahead of time: retail sums the
                     // block it read and refuses it on a mismatch.
-                    damaged: !card
-                        .sc_block(block)
-                        .is_some_and(legaia_save::card::sc_block_checksum_valid),
+                    damaged: !sc.is_some_and(legaia_save::card::sc_block_checksum_valid),
+                    card_block: Some(block),
                     ..snapshot_for_save(cell, &sf, &resume)
-                },
-                None => SlotSnapshot::foreign(cell),
+                };
+                if let Some(sc) = sc {
+                    let name = card
+                        .dir_frame(block)
+                        .and_then(|f| f.get(0x0A..))
+                        .unwrap_or(&[]);
+                    apply_retail_summary(&mut snap, sc, name);
+                }
+                snap
             }
         })
         .collect()

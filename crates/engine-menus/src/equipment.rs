@@ -806,7 +806,7 @@ pub fn vanilla_equipment_catalog() -> EquipmentCatalog {
 /// `take_item` - consume one from the bag, and **only** on the
 /// `0x100` miss call this kernel.
 ///
-/// The order is asserted rather than described: `world::tests::take_item`
+/// The order is asserted rather than described: engine-core's `take_item` integration test
 /// fails 4 of 5 without the override, and reading the sentinel the other way
 /// round (running both effects) leaves only
 /// `take_item_prefers_the_bag_over_the_worn_copy` failing - so each half of

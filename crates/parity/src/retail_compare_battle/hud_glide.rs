@@ -97,11 +97,9 @@ pub(super) fn combo_cluster_timer_seat(ram: &[u8], ctx: u32, lag: u16) -> Option
 /// The replay lands the hit on its own clock, so its popup's age on the
 /// captured frame need not be retail's: `battle_melee_hit_spark`'s RAM
 /// timer `288` at step `3` puts the frame's rise on `144` (age `9`), where
-/// the replay had aged its `15` to `11`, eighteen pixels higher. The hit
-/// that pushed the numeral started the struck body's reaction too, so the
-/// image child takes the popup's anchor back by the same frames
-/// (`ScreenshotConfig::popup_trio_rewind`): the replay's age-`9` frame
-/// rose over trio Y `-335` and stood on retail's row.
+/// the replay had aged its `15` to `11`, eighteen pixels higher. Only the
+/// age is seated: the renderer reads the struck body's trio on every draw,
+/// so the anchor is the captured frame's own readout trio.
 pub(super) fn popup_age_seat(ram: &[u8], ctx: u32, lag: u16, step: u8) -> Option<(u8, u16)> {
     let newest = u32::from(game_anchors::u8_at(ram, ctx + 0x262).wrapping_sub(1) & 7);
     if game_anchors::u32_at(ram, ctx + 0x83C + newest * 4) == 0 {

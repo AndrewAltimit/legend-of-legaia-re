@@ -859,7 +859,12 @@ pub fn magic_screen_draws_for_with(
             4,
             mp_ink,
         ));
-        str_at(&mut out, "/", cx + 0x54, mp_y, MENU_TEXT_WHITE);
+        out.extend(crate::menu::window_painters::separator_glyph_draws(
+            font,
+            crate::menu::window_painters::SEPARATOR_GLYPH_SLASH,
+            (cx + 0x54, mp_y),
+            MENU_TEXT_WHITE,
+        ));
         out.extend(num_field_draws(
             font,
             caster.mp_max as u64,
@@ -1132,7 +1137,8 @@ mod pause_list_tests {
             tab_cap_r: z,
             atr_icons: [z; 3],
             load_empty_frame: None,
-            load_portrait_by_char: [None; 3],
+            load_used_frame: None,
+            save_icons: [None; 16],
             battle: None,
         }
     }

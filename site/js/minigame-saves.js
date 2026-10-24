@@ -28,17 +28,42 @@
   var containerEl = null;
   var bar = null;              /* LegaiaSaves.createRichBar instance */
   var wasmPromise = null;
+  var wasmMod = null;          /* the resolved module, for synchronous reads */
 
   /* ---------------- plumbing ---------------- */
 
   function wasm() {
     if (!wasmPromise) {
       wasmPromise = window.LegaiaWasm.load();
-      wasmPromise.catch(function (e) {
+      wasmPromise.then(function (mod) {
+        var first = !wasmMod;
+        wasmMod = mod;
+        /* The browser card's tiles need the module to list; draw them now. */
+        if (first && LegaiaSaves.getBrowserCard()) render();
+      }, function (e) {
         console.warn('MgSaveBar: WASM save tools unavailable -', e);
       });
     }
     return wasmPromise;
+  }
+
+  /* The saves the play page's in-game Save screen wrote onto this browser's
+   * memory card, as tiles ahead of the stored sessions - the same card the
+   * play page's save bar lists. */
+  function fixedTiles() {
+    if (!wasmMod) {
+      if (LegaiaSaves.getBrowserCard()) wasm();
+      return [];
+    }
+    return LegaiaSaves.browserCardTiles(wasmMod);
+  }
+
+  /* The tile meta for a save id, stored session or browser-card block. */
+  function metaFor(id) {
+    if (LegaiaSaves.isBrowserTileId(id)) {
+      return fixedTiles().filter(function (t) { return t.id === id; })[0] || null;
+    }
+    return LegaiaSaves.listSessions().filter(function (s) { return s.id === id; })[0] || null;
   }
 
   /* Pull the three load-screen portrait TIMs off the loaded disc (the
@@ -83,7 +108,10 @@
   function exportSave(meta) {
     var cs = LegaiaSaves.coinSession();
     if (!cs || cs.saveId !== meta.id) return;
-    var stored = LegaiaSaves.getSession(meta.id);
+    var card = meta.fixed ? LegaiaSaves.getBrowserCard() : null;
+    var stored = meta.fixed
+      ? (card ? { bytes: card, meta: meta } : null)
+      : LegaiaSaves.getSession(meta.id);
     if (!stored) {
       if (bar) bar.setStatus('The bytes for that save are gone from this browser.', 'bad');
       return;
@@ -91,8 +119,11 @@
     var coins = Math.min(COIN_CAP, Math.max(0, cs.coins || 0));
     wasm().then(function (mod) {
       var patched = mod.card_patch_coins(stored.bytes, meta.block, coins);
-      var id = LegaiaSaves.putSession(
-        Object.assign({}, stored.meta, { coins: coins }), patched);
+      /* A browser-card block banks into the card itself, where the play
+       * page's Load screen reads it back. */
+      var id = meta.fixed
+        ? LegaiaSaves.putBrowserCard(patched)
+        : LegaiaSaves.putSession(Object.assign({}, stored.meta, { coins: coins }), patched);
       if (id === null) {
         if (bar) bar.setStatus('Could not store the updated save (storage full?).', 'bad');
         return;
@@ -159,9 +190,7 @@
   function sessionLine() {
     var cs = LegaiaSaves.coinSession();
     if (cs) {
-      var meta = LegaiaSaves.listSessions().filter(function (s) {
-        return s.id === cs.saveId;
-      })[0];
+      var meta = metaFor(cs.saveId);
       return 'Session: ' + cs.coins + ' coins · '
         + (meta ? (meta.name || meta.id) : 'deleted save');
     }
@@ -215,6 +244,7 @@
       harvest: harvestPortraits,
       sessionLine: sessionLine,
       showCoins: true,
+      fixedTiles: fixedTiles,
       acceptExts: '.mcr,.mcd,.gme,.mcs,.lgsf',
       onAdd: addFile,
       onDelete: onDelete,

@@ -182,7 +182,7 @@ pub fn battle_spoils_windows(view: &BattleSpoilsView<'_>) -> Vec<SpoilsWindow> {
             None => format!("Gained {} Experience and {} G.", view.xp, view.gold),
         },
     ];
-    // The drop line arrives composed (`World::battle_spoils_banner`): the
+    // The drop line arrives composed (`legaia_engine_battle_hud::battle_spoils_banner`): the
     // executable's template, appended to the victory buffer as its third row.
     lines.extend(view.drops.iter().cloned());
     // Retail's box is a fixed `288 x 42` (element `0x41`): three rows - the

@@ -302,3 +302,19 @@ changes = [
   ["states/horn_summon_mid_cast/camera", 0.996, 0.995],
   ["states/nivora_duel_pre_megaton_press/image", 0.969, 0.968],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The image child now replays the headless fight tick for tick (drive press clock, host camera render bias on the battle compass, capture-tick orbit align). The old rim_elm_gimard_victory frame scored a desynced fight that happened to sit closer to retail; the new frame is the fight the seed reached. The headless seed's field camera now carries the play hosts' render bias, which opens cort_mystic_shield_mid_cast's battle on a compass yaw 42 units round from retail's (seed yaw 56 vs retail 14); the pre-bias seed matched retail there and the bias itself is the open question. Burning Attack's drop is one thousandth under the same alignment."
+changes = [
+  ["states/cort_mystic_shield_mid_cast/camera", 0.991, 0.986],
+  ["states/gimard_burning_attack/image", 0.872, 0.871],
+  ["states/rim_elm_gimard_victory/image", 0.931, 0.922],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "minigame_dance_pcsx is seeded on a resident patched disc (a mod row, not retail ground truth); its frame drifted under this wave's field draw-order and ambient-part changes. Kept as a mod regression check; not an engine defect and not attributed to one commit."
+changes = [
+  ["states/minigame_dance_pcsx/image", 0.847, 0.829],
+]

@@ -819,6 +819,11 @@ pub(super) struct PlayWindowApp {
     /// Never write the options or bindings files: set by the headless
     /// window, whose key presses are a test's, not a player's.
     pub(super) persist_disabled: bool,
+    /// Write card saves back to their image even with
+    /// [`Self::persist_disabled`] set: a headless window opened over a
+    /// caller's own save directory (`HeadlessPlayWindow::open_boot_ui_in`),
+    /// whose relaunch must find the card the Save wrote.
+    pub(super) persist_cards: bool,
     /// The most recent fresh key-down's engine key **name**
     /// (`keycode_to_name`), consumed once by the pause menu's Key Config
     /// screen. `None` when nothing new was pressed since the last tick.

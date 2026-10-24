@@ -335,7 +335,8 @@ is `BattleState::module_panels_glide`.
 ### Numbers are cells, names are glyphs
 
 Every **number** on the battle screen is a run of fixed 8x12 cells - `v = 208`,
-`u = digit * 8` on the font page, sub-palette 13. Only names use the
+`u = digit * 8` on the font page, sub-palette `tier + 6` (13 on the normal
+tier). Only names use the
 proportional dialog font. The separator sprite sits four rows above the
 numerals it separates.
 
@@ -1291,7 +1292,7 @@ re-points the bar per cursor move (step `0x18`).
 through the shared 9-slice menu-window chrome, the tab-banner 3-slice and the
 save-select hand cell. The projection (dedup row list with the cursor mapped
 into it, disc description, breadcrumb name, same-side target rows) is
-`engine-core::World::battle_item_menu_model` /
+`engine-battle-hud::battle_item_menu_model` /
 `InventoryUseSession::menu_view`, consumed by both play hosts. At target select
 the window draws only the breadcrumb trail; the strip is the HUD builder's
 party bar (`battle_readout_bar_slot` names the pointed member through
@@ -1328,7 +1329,7 @@ the screen keeps only the trail and an `All` plate.
 
 **Port.** `engine-ui::battle_item_ui::battle_spell_window_*` composes the two
 windows, the tabs and the hand through the same 9-slice, tab-banner and hand
-cells the item window uses; `World::battle_spell_menu_model` projects the open
+cells the item window uses; `engine-battle-hud::battle_spell_menu_model` projects the open
 `BattleSpellSession` (rows, hand row, the disc spell table's info lines, the
 caster's record `+0x161` level, the effective MP cost), and
 `engine-screens::with_battle_spell_frame` hands it to both play hosts. Each
@@ -1658,8 +1659,9 @@ writes no anchor for); the panel backgrounds carry a local seat mirror, and
 **The surface samples the disc's own cells.** The 102x48 marbled panel plate,
 the blue plate 3-slice, the 8x16 `/` separator and the 8x12 numerals are baked
 into the shared sprite atlas and drawn 1:1 - the first three off the system-UI
-sheet (sub-palettes 0 / 4 / 5), the numerals off the menu-glyph atlas through
-sub-palette 13. Source rects live in
+sheet (sub-palettes 0 / 4 / 5), the numerals off the menu-glyph atlas once per
+ink-staging id, through sub-palettes 6..15 (`save_menu_atlas::atlas_rect_hud_digits_ink`;
+13 is the normal tier). Source rects live in
 [`title_pak`](../../crates/ui-formats/src/title_pak.rs) as
 `OVERLAY_SYSTEM_UI_BATTLE_*`; atlas seats in
 [`save_menu_atlas`](../../crates/engine-menus/src/save_menu_atlas.rs) as
@@ -1683,7 +1685,17 @@ ramp `FUN_80047430` so damage drains over frames:
 
 - **Numerals** take the readout-tint law (`hp_bar_color_index` /
   `mp_bar_color_index`, ports of `FUN_800349EC` / `FUN_80035EA8`). A dead
-  member's whole row dims.
+  member's numerals dim.
+- **The `/` separator takes no tier.** Retail draws it off the system-UI
+  sheet through its fixed sub-palette 5 (CLUT `(80, 511)`, colour word
+  `0x808080`) whatever the numerals either side read; the numerals' tier is
+  a CLUT switch to `(16 * (tier + 6), 510)`. Pinned off the display lists of
+  unpatched retail states with tinted readouts, on every tier: the dead
+  tier's `(128, 510)` and the danger tier's `(240, 510)` beside each other in
+  `cort_mystic_circle_mid_cast`, the caution tier's `(192, 510)` in the
+  `super_queue_replace_*` captures, `(144, 510)` in `zora_glare_petrify_post`,
+  and danger digits on the `arts_bar_*` captures. Every separator `SPRT` in
+  them reads `(80, 511)` at `0x808080`.
 - **Bar fills** take the whole-gauge law (`engine-battle-vm::battle_gauge::gauge_colors`,
   port of `FUN_80046A20`): death greys the whole track, an active status forces
   both fills to the override colour, otherwise each bar bands independently on

@@ -401,12 +401,33 @@ pub const fn popup_live(age: u16) -> bool {
     popup_timer(age) - POPUP_TIMER_STEP <= POPUP_TIMER_LIMIT
 }
 
+/// The ring timer an entry `age` vsyncs old is drawn with on a frame of
+/// `step` vsyncs: the timer the anchor reads (`16 * age`, one
+/// [`POPUP_TIMER_STEP`] a vsync) plus that frame's own step, `0x10 *
+/// DAT_1F800393` (`0x801DF7B8..0x801DF7C8`), which lands between the anchor
+/// read and the square's half-extent read. [`popup_timer`] is step `1`.
+pub const fn popup_timer_at_step(age: u16, step: u8) -> i32 {
+    let step = if step == 0 { 1 } else { step };
+    age as i32 * POPUP_TIMER_STEP + step as i32 * POPUP_TIMER_STEP
+}
+
 /// The anchor and view-space half-extent `FUN_801DF6B8` projects for an
-/// entry `age` frames old over an actor whose display trio is `trio`.
+/// entry `age` frames old over an actor whose display trio is `trio`, at a
+/// frame step of one ([`popup_anchor_at_step`]).
 pub fn popup_anchor(trio: [i32; 3], age: u16) -> ([i32; 3], i32) {
-    let before = popup_timer(age) - POPUP_TIMER_STEP;
+    popup_anchor_at_step(trio, age, 1)
+}
+
+/// [`popup_anchor`] on a frame of `step` vsyncs. The anchor's Y reads the
+/// timer before the frame's step (`lw v1,0x85c(a2)` at `0x801DF784`, the
+/// `* 3 / 2` lift at `0x801DF79C..0x801DF7B0`), the half-extent after it
+/// (`lw a1,0x85c(a2)` at `0x801DF7E8`, `sll 0xF; sra 0x10` at `0x801DF810`),
+/// so a step-`3` frame draws its square `0x18` view units wider about the
+/// same anchor than a step-`1` frame of the same age.
+pub fn popup_anchor_at_step(trio: [i32; 3], age: u16, step: u8) -> ([i32; 3], i32) {
+    let before = age as i32 * POPUP_TIMER_STEP;
     let y = trio[1] / 2 - (before * 3) / 2;
-    let half = (popup_timer(age) << 15) >> 16;
+    let half = (popup_timer_at_step(age, step) << 15) >> 16;
     ([trio[0], y, trio[2]], half)
 }
 

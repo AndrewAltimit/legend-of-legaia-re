@@ -1788,7 +1788,7 @@ field position (`World::step_field_cross_context_bbox`): stepped on the
 player-seated system context, `nilboa`'s `CD 31` (the leader **or member
 `0x31`** in `(53..55, 62..64)` raises `0x4F2`, the boulders' push gate) read
 the player, and the flag fell the moment the leader swapped away from the
-box. Pinned by `world::tests::system_bbox_target`.
+box. Pinned by engine-core's `system_bbox_target` integration test.
 
 ### What arriving in a spoke writes
 

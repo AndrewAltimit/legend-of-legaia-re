@@ -31,6 +31,7 @@ impl World {
         phase: u8,
     ) {
         let stage = self.casting.module_cam.creature_stage.take();
+        let restage = std::mem::take(&mut self.casting.module_cam.creature_restage);
         let release = std::mem::take(&mut self.casting.module_cam.creature_loop_release);
         let rearm = std::mem::take(&mut self.casting.module_cam.creature_loop_arm);
         let seek = self.casting.module_cam.creature_seek.take();
@@ -53,6 +54,13 @@ impl World {
         }
         if let Some(clip) = stage {
             a.battle.queued_anim = clip;
+            // The `+0x1DC` bump beside the store: bit 0, the at-once cut
+            // (as `World::write_cast_actor_state` sets it for a body's).
+            if restage {
+                a.battle
+                    .flag_bits
+                    .set(legaia_engine_battle_vm::battle_action::ActorFlags::WINDUP_DONE);
+            }
         }
         // A director arm's `+0x21B = 0xFF` / `+0x176 = 0xFF0`: the playing
         // clip's park is held again (PROT 0914, 0923, 0928).

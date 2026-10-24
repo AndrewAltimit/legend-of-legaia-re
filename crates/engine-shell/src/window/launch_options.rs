@@ -213,6 +213,13 @@ pub struct ScreenshotConfig {
         legaia_engine_camera::projection::BattleCamPose,
         legaia_engine_camera::projection::BattleCamPose,
     )>,
+    /// `LEGAIA_BATTLE_SUMMON_FOCUS=<x>,<z>`: the caster's body pair the
+    /// displayed frame's summon close-up was framed on - the pose three
+    /// passes behind the RAM's cursor - which the captured frame's close-up
+    /// takes as its focus
+    /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::align_summon_focus`]).
+    /// Set by the retail-compare image channel.
+    pub battle_summon_focus: Option<[f32; 2]>,
     /// `LEGAIA_SEAT_HUD_GLIDES_LANDED=1`: the retail capture's HUD widget
     /// glides had all landed, so the captured frame lands the engine's too
     /// (`World::land_battle_hud_glides`). Set by the retail-compare image
@@ -235,18 +242,19 @@ pub struct ScreenshotConfig {
     pub seat_popup_cells: Vec<(i32, i32, u32, u8)>,
     /// Set on the frame the capture is due, for [`Self::seat_popup_cells`].
     pub popup_cells_due: std::cell::Cell<bool>,
-    /// The readout trios of the frames before this one, newest last, kept
-    /// while [`Self::seat_popup_age`] is set: a popup aged back `d` frames
-    /// is anchored on the trio it was drawn over `d` frames ago.
-    pub popup_trio_history: std::cell::RefCell<std::collections::VecDeque<Vec<Option<[f32; 3]>>>>,
-    /// `(slot, frames)`: the seated popup's anchor taken that many frames
-    /// back in [`Self::popup_trio_history`].
-    pub popup_trio_rewind: std::cell::Cell<Option<(u8, u16)>>,
+    /// Whether [`Self::seat_popup_age`] has aged the popup yet: once, on the
+    /// frame the capture is due.
+    pub popup_age_seated: std::cell::Cell<bool>,
     /// `LEGAIA_SEAT_SPIRIT_GAUGE=<bar width>,<plate value>`: a Spirit turn's
     /// AP bar width and AP plate value as the retail capture's displayed
     /// frame shows them; the captured frame seats the engine's on them.
     /// Set by the retail-compare image channel.
     pub seat_spirit_gauge: Option<(i16, i16)>,
+    /// `LEGAIA_SEAT_ARTS_LIST=<page>,<slide>`: the arts entry's Triangle
+    /// list open on the retail capture's page with its window's slide
+    /// counter; the captured frame seats the engine's entry on them
+    /// (`World::seat_arts_list`). Set by the retail-compare image channel.
+    pub seat_arts_list: Option<(u8, u8)>,
     /// `LEGAIA_SCRIPT_GATE=<flat>:<head hex>:<pc>:<wait>`: the field twin of
     /// [`Self::phase_gate`] - capture the first frame the engine's context
     /// for a retail capture's running record holds its PC
@@ -311,6 +319,12 @@ pub struct ScreenshotConfig {
     /// (`World::install_sprite_arm_snapshot`); taken once.
     pub seat_sprite_arms:
         std::cell::Cell<Option<Vec<legaia_engine_core::world::ambient::SpriteArmSeed>>>,
+    /// `LEGAIA_SEAT_FADE_LEAD=<vsyncs>`: on the frame the capture is taken,
+    /// step every live screen fade that many vsyncs on
+    /// (`World::lead_screen_fades`), for a capture whose displayed fade
+    /// stands nearer the RAM than the rest of its frame; taken once. Set by
+    /// the retail-compare image channel.
+    pub seat_fade_lead: std::cell::Cell<Option<u16>>,
     /// `LEGAIA_BATTLE_DRIVE=menu,<flow>,<seat>` /
     /// `action,<seat>,<state>,<category>,<queued>`: walk the fight through
     /// its pad path to the retail capture's phase and capture the first
@@ -319,9 +333,13 @@ pub struct ScreenshotConfig {
     /// same driver the headless seed runs. `capture_tick` becomes the
     /// deadline. Set by the retail-compare image channel.
     pub battle_drive: Option<legaia_engine_capture::battle_drive::BattleDrive>,
-    /// Whether the drive's one-shot world seed has been armed (it is armed
-    /// on the first battle tick).
-    pub battle_drive_primed: std::cell::Cell<bool>,
+    /// Where the drive's start and press clock stand: it starts where the
+    /// headless seed's opening loop hands its drive over (past the entry
+    /// sweep, on the first tick the command flow leaves `Idle`), and counts
+    /// its presses from there
+    /// ([`legaia_engine_capture::drive_clock::DriveClock`]), whatever the
+    /// window's own tick count was.
+    pub battle_drive_clock: std::cell::Cell<legaia_engine_capture::drive_clock::DriveClock>,
     /// Ticks the drive's phase has held so far; the capture waits for
     /// [`legaia_engine_capture::battle_drive::BattleDrive::hold_ticks`]
     /// of them, as the headless seed does.
@@ -670,6 +688,12 @@ impl ScreenshotConfig {
             battle_module_cam_align: std::env::var("LEGAIA_BATTLE_MODULE_CAM_ALIGN")
                 .ok()
                 .and_then(|v| legaia_engine_capture::camera_align::cam_align_from_env(&v)),
+            battle_summon_focus: std::env::var("LEGAIA_BATTLE_SUMMON_FOCUS")
+                .ok()
+                .and_then(|v| {
+                    let mut it = v.split(',').map(|n| n.trim().parse::<f32>().ok());
+                    Some([it.next()??, it.next()??])
+                }),
             gate_cam_target: std::cell::Cell::new(None),
             battle_cam_gate_target: std::env::var("LEGAIA_BATTLE_CAM_GATE_TARGET")
                 .ok()
@@ -681,6 +705,10 @@ impl ScreenshotConfig {
                     let (w, p) = v.split_once(',')?;
                     Some((w.trim().parse().ok()?, p.trim().parse().ok()?))
                 }),
+            seat_arts_list: std::env::var("LEGAIA_SEAT_ARTS_LIST").ok().and_then(|v| {
+                let (page, slide) = v.split_once(',')?;
+                Some((page.trim().parse().ok()?, slide.trim().parse().ok()?))
+            }),
             seat_hud_glides: std::env::var("LEGAIA_SEAT_HUD_GLIDES")
                 .map(|v| legaia_engine_capture::hud_glide::HudGlideSeat::list_from_env(&v))
                 .unwrap_or_default(),
@@ -713,8 +741,12 @@ impl ScreenshotConfig {
                     .map(|v| legaia_engine_capture::field_seeds::fog_from_env(&v)),
             ),
             seat_fog_due: std::cell::Cell::new(false),
-            popup_trio_history: Default::default(),
-            popup_trio_rewind: std::cell::Cell::new(None),
+            popup_age_seated: std::cell::Cell::new(false),
+            seat_fade_lead: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_FADE_LEAD")
+                    .ok()
+                    .and_then(|v| v.trim().parse().ok()),
+            ),
             seat_sprite_arms: std::cell::Cell::new(
                 std::env::var("LEGAIA_SEAT_SPRITE_ARMS")
                     .ok()
@@ -762,7 +794,7 @@ impl ScreenshotConfig {
             battle_drive: std::env::var("LEGAIA_BATTLE_DRIVE")
                 .ok()
                 .and_then(|v| legaia_engine_capture::battle_drive::BattleDrive::from_env(&v)),
-            battle_drive_primed: std::cell::Cell::new(false),
+            battle_drive_clock: std::cell::Cell::new(Default::default()),
             battle_drive_held: std::cell::Cell::new(0),
             display_lag: std::env::var("LEGAIA_CAPTURE_DISPLAY_LAG")
                 .ok()

@@ -351,7 +351,14 @@ impl SummonScene {
             *n += 1;
             let part = &mut self.parts[idx];
             for &(off, value) in &seed.pokes {
-                part.poke(off, value);
+                // The depth-cue level `+0x78` is the snapshot's alone (no
+                // stager arm writes it into a part it seats), as in
+                // `World::install_action_fx_part_snapshot`.
+                if off == 0x78 {
+                    part.state.field_78 = value;
+                } else {
+                    part.poke(off, value);
+                }
             }
             part.state.world_y_mirror = part.state.world_y;
         }

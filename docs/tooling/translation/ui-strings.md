@@ -66,8 +66,10 @@ translation of any of these reaches retail and the port alike:
 |---|---|---|
 | menu overlay, PROT 0899 | the pause menu's rows and tab titles, the Items / Equip / Status / Magic labels, the Options rows and values, the shop strings, the Throw Out / Door of Light / Incense confirms, Yes / No, the two templates above | `legaia_game_tables::menu_pool`, `engine-menus::pause_screens`, `engine-menus::shop::ShopLabels` |
 | battle overlay, PROT 0898 | `Spirit`, the commit chip's `Begin` / `Escape`, the formation banners, the victory report, the loss window's line | `legaia_ui_formats::battle_ui_strings`, `battle_party_panel::{VictoryText, DefeatText}` |
+| battle overlay, PROT 0898 | the Seru-absorb caption's three prefixes and its suffix | `legaia_game_tables::absorb_caption` |
 | `SCUS_942.54` | the command chips, `Reselect`, the steal captions, the sparring opener | `legaia_ui_formats::battle_ui_strings` |
 | field overlay, PROT 0897 | the name-entry prompts and its Yes / No | `legaia_ui_formats::name_entry_prompts` |
+| field overlay, PROT 0897 | the code lock's header, the flag window's legend, the coin counter's labels, the Incense wear-off notice, the tile board's quit prompt | `legaia_engine_field::field_overlay::field_overlay_cstr` |
 
 Two properties of the readers make that hold for a translated disc:
 
@@ -93,32 +95,50 @@ three measured columns. A translation that keeps three word groups lands on
 those columns; any other shape is drawn whole from the pen, the way retail
 draws it.
 
-The disc oracles `engine-menus/tests/translated_menu_strings_disc.rs` and
-`engine-battle-vm/tests/translated_battle_strings_disc.rs` fill these strings
+The disc oracles `engine-menus/tests/translated_menu_strings_disc.rs`,
+`engine-battle-vm/tests/translated_battle_strings_disc.rs` and
+`engine-scene-host/tests/translated_field_strings_disc.rs` fill these strings
 with longer, accented translations, import them in memory, and read the
-patched images back through the readers the hosts call: each returns what
-the import wrote. Both check their reference tables against the import's own
-reference scan of the retail images.
+patched images back through the readers the hosts call (the field oracle
+through a `SceneHost` built over the patched `PROT.DAT`, opening each
+screen): each returns what the import wrote. All three check their
+reference tables against the import's own reference scan of the retail
+images.
+
+Every field-overlay string the port reads is loaded by one private `lui a0`
+/ `addiu a0` pair in the routine that draws it, so a move may take any
+address in the image. `Yes` / `No` have three sites each - the tile board's
+render tail, the three-line panel painter and the name-entry pointer table -
+and a move rewrites all three. A longer field string goes into room
+shorter strings in its pools give up, or into the field overlay's
+translation region past the panel-window table
+([`space-and-budgets.md`](space-and-budgets.md#the-translation-regions)).
+The field oracle runs two passes: one that shortens every string the port
+does not read, and one that shortens nothing, where every move lands in the
+region.
+
+The Seru-absorb caption's suffix is a single `.` (`0x801F4C28`), and the
+three steal captions close with a two-byte `'.` tail (`SCUS_942.54`
+`0x8007B690..0x8007B69C`): all shorter than the pool scan keeps as text.
+`translation::ui::SHORT_STRINGS` names them so the pack carries them and a
+translation of one can move; the battle-label reader already follows each
+tail through the `lui` / `addiu` pair that loads it. The caption's
+reader follows the suffix through the `lui` / `addiu` pair that loads it
+(`0x801D91C0` / `0x801D91C8`) and the prefixes through their pointer words,
+and the oracle reads a moved suffix back off the caption the host installs
+at field entry.
 
 ## English the port draws that a pack cannot reach
 
 These lines are drawn from literals in the port, or read where a moved string
 no longer is. Most visible first:
 
-1. **Field-overlay strings read at a fixed VA**: the Incense wear-off
-   notice, the code-lock header, the flag window legend, the coin counter's
-   labels, the tile board's quit prompt (`engine-field::field_overlay`,
-   `engine-minigames::tile_board`,
-   `engine-core::incense_notice`). An in-place translation shows; one long
-   enough to move is read at the retail VA.
-2. **The Seru-absorb caption** (`legaia_game_tables::absorb_caption`,
-   PROT 0898 `0x801F4DFC` / `0x801F4C28`): the same fixed-VA read.
-3. **Port-only screens and captions**: the arts editor, key rebind, `PRESS
+1. **Port-only screens and captions**: the arts editor, key rebind, `PRESS
    START`, `ENCOUNTER!`, `K.O.`, `(no usable items)`, `(no targets)`, `No
    prizes remain.`, the `PAGE` tag, the dance minigame's `READY` / `GO!`.
    Retail has no string for them, so a pack has no key; they need a port-side
    string table of their own.
-4. **The fallbacks for a load without the disc** (each reader's English
+2. **The fallbacks for a load without the disc** (each reader's English
    default): drawn only when the image is absent, never on a disc load.
 
 On a PAL disc the port reads the USA coordinates of differently laid-out

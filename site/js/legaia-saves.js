@@ -215,6 +215,36 @@
     return true;
   }
 
+  /* Id prefix of the save-bar tiles drawn for blocks of the browser card. */
+  var BROWSER_TILE_PREFIX = '@browser-block-';
+
+  /* The saves on the browser card as save-bar tile metas (`fixedTiles` of
+   * createRichBar), one per valid block, listed by the WASM module `mod`'s
+   * `card_saves_json`. A save made in game at a save point is a block of
+   * this card, not a stored session, so a bar that drew only sessions
+   * showed none of them. [] when there is no card or no module. */
+  function browserCardTiles(mod) {
+    var bytes = getBrowserCard();
+    if (!bytes || !mod || typeof mod.card_saves_json !== 'function') return [];
+    var listing;
+    try { listing = JSON.parse(mod.card_saves_json(bytes)); }
+    catch (e) { return []; }
+    return (listing.saves || []).filter(function (s) { return s.valid; }).map(function (s) {
+      return {
+        id: BROWSER_TILE_PREFIX + s.block,
+        kind: 'card', format: 'mcr', fixed: true, bytes: bytes,
+        block: s.block,
+        name: 'Browser memory card - block ' + s.block,
+        party: s.party || [], level: s.level, money: s.money, coins: s.coins,
+        location: s.location || s.scene || '',
+      };
+    });
+  }
+
+  function isBrowserTileId(id) {
+    return typeof id === 'string' && id.indexOf(BROWSER_TILE_PREFIX) === 0;
+  }
+
   /* ---------------- minigame progress ---------------- */
 
   function getMinigames() {
@@ -627,6 +657,10 @@
    *   onAdd(file)    -> Promise, import a picked save file; the bar re-renders
    *   primaryButton(meta, ctx)  -> { text, cls, title, disabled, onClick } | null
    *   loadedId()     -> id of the currently-loaded tile (highlight), or null
+   *   fixedTiles()   -> extra tile metas drawn ahead of the stored sessions:
+   *                  { id, kind: 'card', block, name, party, level, money,
+   *                    location, bytes, fixed: true }. `bytes` is the card
+   *                  image (icon + download); a fixed tile has no delete.
    */
   function createRichBar(containerEl, opts) {
     opts = opts || {};
@@ -672,7 +706,7 @@
         done(c);
       };
       if (meta.kind !== 'card' || meta.block == null) { fallback(); return; }
-      var stored = getSession(meta.id);
+      var stored = meta.bytes ? { bytes: meta.bytes } : getSession(meta.id);
       if (!stored) { fallback(); return; }
       wasm().then(function (mod) {
         var c = rgbaCanvas(mod.card_icon_rgba(stored.bytes, meta.block), 16, 16);
@@ -685,7 +719,7 @@
     /* Re-derive level / location / party for sessions stored before those
      * fields existed. One shot per save per page load. */
     function enrichMeta(meta) {
-      if (enriched[meta.id] || meta.level != null) return;
+      if (meta.fixed || enriched[meta.id] || meta.level != null) return;
       enriched[meta.id] = true;
       var stored = getSession(meta.id);
       if (!stored) return;
@@ -760,22 +794,27 @@
       dl.type = 'button';
       dl.title = 'Download this save as a file';
       dl.addEventListener('click', function () {
-        var stored = getSession(meta.id);
+        var stored = meta.bytes ? { bytes: meta.bytes } : getSession(meta.id);
         if (!stored) { setStatus('The bytes for that save are gone from this browser.', 'bad'); return; }
         triggerDownload(stored.bytes, downloadName(meta));
       });
       row2.appendChild(dl);
-      var del = el('button', 'lgrb-btn', '×');
-      del.type = 'button';
-      del.title = 'Remove this save from the browser';
-      del.addEventListener('click', function () {
-        if (typeof opts.onDelete === 'function') opts.onDelete(meta);
-        deleteSession(meta.id);
-        delete iconCache[meta.id];
-        setStatus('Deleted "' + (meta.name || meta.id) + '".');
-        render();
-      });
-      row2.appendChild(del);
+      /* A fixed tile (a save on the browser card) is not a stored session:
+       * there is nothing here to delete - the card's own Save screen
+       * overwrites it. */
+      if (!meta.fixed) {
+        var del = el('button', 'lgrb-btn', '×');
+        del.type = 'button';
+        del.title = 'Remove this save from the browser';
+        del.addEventListener('click', function () {
+          if (typeof opts.onDelete === 'function') opts.onDelete(meta);
+          deleteSession(meta.id);
+          delete iconCache[meta.id];
+          setStatus('Deleted "' + (meta.name || meta.id) + '".');
+          render();
+        });
+        row2.appendChild(del);
+      }
       btns.appendChild(row2);
       tile.appendChild(btns);
 
@@ -824,7 +863,11 @@
       addPicker(head);
       box.appendChild(head);
 
-      var sessions = listSessions();
+      var extra = [];
+      if (typeof opts.fixedTiles === 'function') {
+        try { extra = opts.fixedTiles() || []; } catch (e) { extra = []; }
+      }
+      var sessions = extra.concat(listSessions());
       var loadedId = typeof opts.loadedId === 'function' ? opts.loadedId() : null;
       if (!sessions.length) {
         var empty = el('div', 'lgrb-empty');
@@ -860,6 +903,8 @@
     deleteSession: deleteSession,
     getBrowserCard: getBrowserCard,
     putBrowserCard: putBrowserCard,
+    browserCardTiles: browserCardTiles,
+    isBrowserTileId: isBrowserTileId,
     patchSessionMeta: patchSessionMeta,
     getMinigames: getMinigames,
     putMinigame: putMinigame,

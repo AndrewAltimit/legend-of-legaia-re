@@ -185,6 +185,9 @@ jobs:
       - name: UI host drift
         run: python3 scripts/ci/check-ui-host-drift.py
 
+      - name: Play-page export reach
+        run: python3 scripts/ci/check-page-export-reach.py
+
       - name: Trait-override symmetry
         run: python3 scripts/ci/check-trait-override-symmetry.py
 

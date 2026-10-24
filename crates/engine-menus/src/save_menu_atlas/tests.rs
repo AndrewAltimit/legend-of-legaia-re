@@ -36,12 +36,14 @@ fn builds_real_save_menu_atlas_when_disc_extracted() {
     // come along; `build_atlas` splits that leading TIM back off.
     let hud_slice = &prot_dat[SYSTEM_UI_CLUT_EXT_TIM_OFFSET..end];
     // The menu font's sprite cells: ten numerals, fourteen separator glyphs,
-    // the PAGE tag, ten page digits, the slash and two triangles - every one
-    // carrying ink.
+    // the PAGE tag, ten page digits, the slash and two triangles, and per ink
+    // the numerals, separators and four command arrows - every one carrying
+    // ink.
     let cells = menu_font_cells(hud_slice, Some(glyph_tim));
     assert_eq!(
         cells.len(),
-        24 + SEPARATOR_GLYPHS as usize,
+        24 + SEPARATOR_GLYPHS as usize
+            + NUMERAL_INK_IDS as usize * (10 + SEPARATOR_GLYPHS as usize + 4),
         "every menu sprite cell decodes"
     );
     for c in &cells {
@@ -50,7 +52,7 @@ fn builds_real_save_menu_atlas_when_disc_extracted() {
     }
     let atlas = build_atlas(hud_slice, &prot_899, Some(glyph_tim)).expect("build save-menu atlas");
     assert_eq!(atlas.width, ATLAS_WIDTH);
-    assert_eq!(atlas.height, ATLAS_HEIGHT);
+    assert_eq!(atlas.height, ATLAS_BAKED_HEIGHT);
 
     // The dark class-0 skin (widget record 0x43): its fill patch is fully
     // opaque and a near-black neutral marble, with none of the blue skin's
@@ -93,7 +95,10 @@ fn builds_real_save_menu_atlas_when_disc_extracted() {
             .count();
         assert!(ink > 0, "dark border cell {cell:?} decoded empty");
     }
-    assert_eq!(atlas.rgba.len(), (ATLAS_WIDTH * ATLAS_HEIGHT * 4) as usize);
+    assert_eq!(
+        atlas.rgba.len(),
+        (ATLAS_WIDTH * ATLAS_BAKED_HEIGHT * 4) as usize
+    );
 
     // The HUD numeral strip: ten 8x12 cells, every one carrying ink,
     // and none of them bleeding into a neighbour's cell. Retail draws
@@ -121,6 +126,57 @@ fn builds_real_save_menu_atlas_when_disc_extracted() {
         strip.0 + strip.2
     );
     assert_eq!(hud_digit_cell(strip, 10), None);
+
+    // Each ink-staging id's strip is the same cells through that id's own
+    // font CLUT: the ink *and* the outline are the CLUT's. The `0` cell's
+    // outline is entry 14 - tier 7 `(4, 4, 4)`, tier 6 (caution) `(8, 8, 4)`,
+    // tier 9 (danger) `(8, 6, 3)` on the 5-bit grid, which a retail frame
+    // shows as `(33, 33, 33)` / `(66, 66, 33)` / `(66, 49, 24)`. Scaling the
+    // tier-7 strip onto the caution ink drew that outline `(33, 24, 0)`.
+    let by_ink = atlas
+        .band_hud_digits_by_ink()
+        .expect("per-ink strips baked");
+    assert_eq!(by_ink[7], strip);
+    let darkest = |rect: (u32, u32, u32, u32)| {
+        let (x0, y0) = (rect.0, rect.1);
+        (0..HUD_DIGIT_H)
+            .flat_map(|r| (0..HUD_DIGIT_W).map(move |c| (x0 + c, y0 + r)))
+            .map(|(x, y)| {
+                let o = ((y * ATLAS_WIDTH + x) * 4) as usize;
+                [
+                    atlas.rgba[o],
+                    atlas.rgba[o + 1],
+                    atlas.rgba[o + 2],
+                    atlas.rgba[o + 3],
+                ]
+            })
+            .filter(|p| p[3] != 0)
+            .min_by_key(|p| u32::from(p[0]) + u32::from(p[1]) + u32::from(p[2]))
+            .expect("opaque texel")
+    };
+    let near = |p: [u8; 4], want: [u8; 3]| (0..3).all(|k| p[k].abs_diff(want[k]) <= 2);
+    assert!(
+        near(darkest(by_ink[7]), [33, 33, 33]),
+        "{:?}",
+        darkest(by_ink[7])
+    );
+    assert!(
+        near(darkest(by_ink[6]), [66, 66, 33]),
+        "{:?}",
+        darkest(by_ink[6])
+    );
+    assert!(
+        near(darkest(by_ink[9]), [66, 49, 24]),
+        "{:?}",
+        darkest(by_ink[9])
+    );
+    // No two strips overlap, and every one lies inside the baked atlas.
+    for (i, a) in by_ink.iter().enumerate() {
+        assert!(a.0 + a.2 <= ATLAS_WIDTH && a.1 + a.3 <= ATLAS_BAKED_HEIGHT);
+        for b in &by_ink[i + 1..] {
+            assert!(a.0 + a.2 <= b.0 || b.0 + b.2 <= a.0 || a.1 + a.3 <= b.1 || b.1 + b.3 <= a.1);
+        }
+    }
 
     // The nine status-element badges, including the three whose
     // sub-palettes (16 / 17 / 18) only exist because the slice reached
@@ -199,6 +255,7 @@ fn builds_real_save_menu_atlas_when_disc_extracted() {
     let bare = build_atlas(system_ui_slice, &prot_899, None).expect("build without glyphs");
     assert!(!bare.has_hud_digits);
     assert_eq!(bare.band_hud_digits(), None);
+    assert_eq!(bare.band_hud_digits_by_ink(), None);
 
     // The top-left corner tile must contain opaque gold-bronze
     // pixels (CLUT row 2 entries 7..15).
@@ -384,4 +441,47 @@ fn builds_real_save_menu_atlas_when_disc_extracted() {
             "ATR icon {i} top-left corner should be transparent"
         );
     }
+}
+
+/// Disc-gated: the grid's "USED" frame and save-icon tiles 3..=14 bake
+/// with ink, and every baked cell is distinct from its neighbours - the
+/// grid draws tile `n` in cell `n`, so a blank or repeated tile is a wrong
+/// face on screen.
+#[test]
+fn save_grid_faces_and_used_frame_bake() {
+    let (Ok(prot_dat), Ok(prot_899)) = (
+        std::fs::read("../../extracted/PROT.DAT"),
+        std::fs::read("../../extracted/PROT/0899_xxx_dat.BIN"),
+    ) else {
+        eprintln!("skip: extracted PROT.DAT / 0899 missing");
+        return;
+    };
+    let end = legaia_ui_formats::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
+        + legaia_ui_formats::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE;
+    let hud_slice = &prot_dat[SYSTEM_UI_CLUT_EXT_TIM_OFFSET..end];
+    let atlas = build_atlas(hud_slice, &prot_899, None).expect("atlas");
+    let cell = |r: (u32, u32, u32, u32)| -> Vec<u8> {
+        (r.1..r.1 + r.3)
+            .flat_map(|y| {
+                let o = ((y * ATLAS_WIDTH + r.0) * 4) as usize;
+                atlas.rgba[o..o + (r.2 * 4) as usize].to_vec()
+            })
+            .collect()
+    };
+    let opaque = |px: &[u8]| px.chunks(4).filter(|p| p[3] != 0).count();
+    assert!(
+        opaque(&cell(atlas.band_load_used_frame())) > 40,
+        "USED frame has ink"
+    );
+    let mut seen = Vec::new();
+    for t in 0..15u8 {
+        let r = atlas.band_save_icon(t).expect("tile rect");
+        let px = cell(r);
+        if usize::from(t) >= ATLAS_SAVE_ICON_FIRST_BAKED {
+            assert!(opaque(&px) > 100, "tile {t} decoded empty");
+        }
+        assert!(!seen.contains(&px), "tile {t} repeats an earlier face");
+        seen.push(px);
+    }
+    assert!(atlas.band_save_icon(15).is_none());
 }

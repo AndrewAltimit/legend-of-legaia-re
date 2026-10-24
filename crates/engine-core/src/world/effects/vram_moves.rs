@@ -139,10 +139,24 @@ impl World {
         &mut self,
         parts: &mut [legaia_engine_effects::summon::SummonPartRuntime],
     ) {
+        self.queue_battle_part_scrolls_over(parts, 1);
+    }
+
+    /// [`Self::queue_battle_part_scrolls`] for a part tick that spans
+    /// `vsyncs` vsyncs (the summon parts on retail's battle cadence,
+    /// [`Self::summon_fx_pass_vsyncs`]): the mode-3 HSV adds and the mode-4
+    /// countdown take that many vsyncs' delta in the one tick, as the rest of
+    /// the part tick does.
+    pub(crate) fn queue_battle_part_scrolls_over(
+        &mut self,
+        parts: &mut [legaia_engine_effects::summon::SummonPartRuntime],
+        vsyncs: u8,
+    ) {
         if self.mode != SceneMode::Battle {
             return;
         }
-        let step = self.clock.frame_step.max(1);
+        let vsyncs = vsyncs.max(1);
+        let step = self.clock.frame_step.max(1) * vsyncs;
         for part in parts.iter_mut().filter(|p| !p.finished) {
             // The mode-3 arm: a `0x4000` part's HSV adds integrate every
             // tick, and from its second armed frame on it recolours the rect
@@ -150,7 +164,7 @@ impl World {
             // hue-cycles the scanline backdrop's CLUT row 488).
             if part.state.move_submode == legaia_engine_effects::summon::RenderMode::Particle.raw()
             {
-                let delta = self.move_vm.ramp_ratio.max(1);
+                let delta = self.move_vm.ramp_ratio.max(1) * vsyncs;
                 if part.state.field_9c == 1 {
                     let d = &part.state.keyframe_desc;
                     self.battle.cell_captures.remove(&(d[0], d[1], d[2], d[3]));

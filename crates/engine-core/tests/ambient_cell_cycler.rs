@@ -9,7 +9,7 @@
 //! `v = -12`, velocity `+16` and wait `16`, with the two previous uploads still
 //! in RAM at `v = -18` and `v = -12`.
 
-use super::*;
+use legaia_engine_core::world::*;
 use legaia_overlay_images::summon_overlay::{RENDER_NODE_MODE_A, SummonPart};
 
 fn cone_world() -> World {

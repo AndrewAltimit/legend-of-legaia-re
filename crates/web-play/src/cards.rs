@@ -90,14 +90,44 @@ impl LegaiaRuntime {
         legaia_engine_session::title_continue::card_port_blocks(self.card_ports(), slot as u8)
     }
 
-    /// Write the live session into `block` of the card in rack slot `slot`.
+    /// Write the live session into the card in rack slot `slot` as save
+    /// number `cell` - the way the save screen's grid addresses a card - in
+    /// the block that already files that number, else the lowest free one.
     ///
     /// The bytes are decided by the shared kernel
-    /// [`legaia_engine_menu_runtime::card_write::write_save_into_card`] - the same one
+    /// [`legaia_engine_menu_runtime::card_write::write_save_into_cell`] - the same one
     /// the native window's `--card` port writes through - and stamped **in
     /// place**, so every byte outside the block is the player's own card. The
     /// card is left dirty for the page to export.
+    pub(crate) fn write_session_into_cell(&mut self, slot: usize, cell: u8) -> Result<(), String> {
+        self.write_session_with(slot, |card, sf, resume, index| {
+            legaia_engine_menu_runtime::card_write::write_save_into_cell(
+                card, cell, sf, resume, index,
+            )
+        })
+    }
+
+    /// The block-addressed form of [`Self::write_session_into_cell`], for the
+    /// tests that stage a card block by block.
+    #[cfg(test)]
     pub(crate) fn write_session_into_card(&mut self, slot: usize, block: u8) -> Result<(), String> {
+        self.write_session_with(slot, |card, sf, resume, index| {
+            legaia_engine_menu_runtime::card_write::write_save_into_card(
+                card, block, sf, resume, index,
+            )
+        })
+    }
+
+    fn write_session_with(
+        &mut self,
+        slot: usize,
+        write: impl FnOnce(
+            &mut MountedCard,
+            &legaia_save::SaveFile,
+            &legaia_save::SaveResume,
+            Option<&legaia_engine_scene::scene::ProtIndex>,
+        ) -> Result<legaia_engine_menu_runtime::card_write::CardWrite, String>,
+    ) -> Result<(), String> {
         let sf = self.world_mut().save_full();
         let resume = self.current_resume();
         let index = self.scene_host.host().map(|h| h.index.clone());
@@ -106,13 +136,7 @@ impl LegaiaRuntime {
             .get_mut(slot)
             .and_then(|c| c.as_mut())
             .ok_or_else(|| format!("no memory card in slot {}", slot + 1))?;
-        let wrote = legaia_engine_menu_runtime::card_write::write_save_into_card(
-            card_slot,
-            block,
-            &sf,
-            &resume,
-            index.as_deref(),
-        )?;
+        let wrote = write(card_slot, &sf, &resume, index.as_deref())?;
         if !wrote.ext_written {
             crate::console_log("play menu: engine ext too large for the card block; withheld");
         }
@@ -290,7 +314,7 @@ impl LegaiaRuntime {
             .iter()
             .map(|s| {
                 serde_json::json!({
-                    "block": s.slot + 1,
+                    "block": s.card_block.unwrap_or(s.slot + 1),
                     "present": s.present,
                     "name": s.leader_name,
                     "level": s.party_lv,
@@ -838,6 +862,17 @@ mod cross_host {
     }
 
     fn diff(a: &SaveFile, b: &SaveFile) -> Option<String> {
+        // The save number in the window's summary is the block's filing,
+        // not the save's state: this test writes every save into block 1.
+        let filed_as_zero = |sf: &SaveFile| {
+            let mut sf = sf.clone();
+            if let Some(w) = sf.ext_v2.retail_window.as_mut() {
+                w[legaia_save::card::RETAIL_SUMMARY_SLOT_OFFSET
+                    - legaia_save::card::RETAIL_LIVE_WINDOW_OFFSET] = 0;
+            }
+            sf
+        };
+        let (a, b) = (&filed_as_zero(a), &filed_as_zero(b));
         if a == b {
             return None;
         }
@@ -863,6 +898,16 @@ mod cross_host {
                     .collect::<String>()
             };
             return Some(format!("ext: ...{}... vs ...{}...", cut(&da), cut(&db)));
+        }
+        if let (Some(x), Some(y)) = (&a.ext_v2.retail_window, &b.ext_v2.retail_window)
+            && let Some(o) = (0..x.len().min(y.len())).find(|&o| x[o] != y[o])
+        {
+            return Some(format!(
+                "retail_window+{o:#06x} (SC {:#06x}) {:#04x} vs {:#04x}",
+                o + legaia_save::card::RETAIL_LIVE_WINDOW_OFFSET,
+                x[o],
+                y[o]
+            ));
         }
         if a.ext_v2.field_position != b.ext_v2.field_position {
             return Some(format!(

@@ -211,6 +211,39 @@ fn the_drive_walks_the_root_cursor_onto_the_row() {
     );
 }
 
+/// The card screen's sub-mode word marks the grid: a Load / Save screen on
+/// it takes one more `Cross` past its pill row and waits out the card read,
+/// and the title's Continue grid (sub-screen clear) is its own seed.
+#[test]
+fn a_card_grid_capture_drives_past_its_pill_row() {
+    let grid = |sub: u8| {
+        let mut ram = ram_with_subscreen(sub);
+        let o = (CARD_SCREEN_SUBMODE & 0x1F_FFFF) as usize;
+        ram[o..o + 4].copy_from_slice(&CARD_SUBMODE_GRID.to_le_bytes());
+        ram
+    };
+    let pill = RetailMenu::from_ram(&ram_with_subscreen(0x19), "conc").unwrap();
+    let save = RetailMenu::from_ram(&grid(0x19), "conc").unwrap();
+    assert_eq!(save.row, FieldMenuRow::Save);
+    assert!(save.card_grid && !save.title_continue && !pill.card_grid);
+    let (a, b) = (pause_menu_presses(&pill), pause_menu_presses(&save));
+    assert_eq!(b.len(), a.len() + 1);
+    assert_eq!(b.last().unwrap().1, PadButton::Cross);
+    assert!(pause_menu_drive_ticks(&save) >= b.last().unwrap().0 + CARD_READ_SETTLE_TICKS);
+    // The word is the menu overlay's: on a screen that is no card screen it
+    // holds whatever it last held, and means nothing.
+    assert!(
+        !RetailMenu::from_ram(&grid(0x15), "town01")
+            .unwrap()
+            .card_grid
+    );
+    // Sub-screen clear with the grid up is the title's Continue screen;
+    // clear without it is still the unseedable title family.
+    let title = RetailMenu::from_ram(&grid(0), "opdeene").unwrap();
+    assert!(title.title_continue && title.card_grid);
+    assert!(RetailMenu::from_ram(&ram_with_subscreen(0), "opdeene").is_err());
+}
+
 #[test]
 fn cell_fx_and_fog_seeds_round_trip_through_their_env_forms() {
     let fx = vec![legaia_engine_field::clut_cell_fx::ClutCellFx {

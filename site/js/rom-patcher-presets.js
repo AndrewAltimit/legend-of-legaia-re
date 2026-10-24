@@ -80,7 +80,7 @@ const PRESET_BASE = {
   allWarps: false,
   unusedEnemies: false, unusedItems: false,
   monster_stats: 'none', move_power: 'none', element_affinity: 'none',
-  spell_cost: 'none', equip_bonus: 'none', weaponSpecialty: false,
+  spell_cost: 'none', equip_bonus: 'none', equip_mask: 'none', weaponSpecialty: false,
   startingLevel: 0,
 };
 
@@ -108,6 +108,11 @@ const STARTING_BUNDLE = {
 // off the vanilla difficulty curve that the rest of Balanced - kingdom-scope
 // encounters, shuffled loot, the level-5 start - is balanced against.
 //
+// Shiny Seru is in neither gameplay preset. Both turn on the Delilas
+// Challenge, which claims the same injected-code arena; the patcher resolves
+// that pair in the challenge's favour and skips shiny Seru with a note, so a
+// preset that ticked it would show a feature the patched disc does not carry.
+//
 // The two presets start at different levels on purpose. Balanced keeps the
 // early curve legible: level 5 clears the opening difficulty spike without
 // skipping past the fights the shuffled encounter tables are tuned around.
@@ -127,7 +132,7 @@ const PRESETS = {
     soloStrong: true, fleeExp: true,
     chests: 'shuffle', steals: 'shuffle', arts: 'shuffle',
     equip_bonus: 'shuffle', equipmentDrops: true,
-    seruTrade: true, enemyAlly: true, shinySeru: true, jewelFix: true, approachFix: true, fortressFix: true, conkramFix: true,
+    seruTrade: true, enemyAlly: true, jewelFix: true, approachFix: true, fortressFix: true, conkramFix: true,
     delilasChallenge: true, customItems: true,
     ...STARTING_BUNDLE, startingLevel: 5,
   },
@@ -140,7 +145,7 @@ const PRESETS = {
     houseDoors: true, unusedEnemies: true, unusedItems: true,
     monster_stats: 'random', move_power: 'random', element_affinity: 'random',
     spell_cost: 'random', equip_bonus: 'random', weaponSpecialty: true,
-    equipmentDrops: true, seruTrade: true, enemyAlly: true, shinySeru: true, jewelFix: true, approachFix: true, fortressFix: true, conkramFix: true,
+    equipmentDrops: true, seruTrade: true, enemyAlly: true, jewelFix: true, approachFix: true, fortressFix: true, conkramFix: true,
     delilasChallenge: true, customItems: true,
     ...STARTING_BUNDLE, startingLevel: 10,
   },

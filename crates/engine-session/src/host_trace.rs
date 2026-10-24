@@ -383,3 +383,74 @@ pub fn first_divergences(
         })
         .collect()
 }
+
+/// `LEGAIA_DIAG_TICK_DIGEST=<path>`: one line per session tick, appended to
+/// `<path>`, sampled at the head of [`BootSession::tick`] - after the host
+/// set the tick's pad word and before the world steps. Two drivers of one
+/// fight (the retail comparison's headless seed and its `play-window`
+/// image child) write into one file, each line led by its process id and
+/// session frame; the first line two sessions disagree on is where they
+/// parted (`scripts/ci/tick-digest-diff.py`). The line carries the pad word,
+/// the stream, the action SM's context, the field compass, the battle camera
+/// and every active actor's ground, HP and clip cursor - the channels a
+/// battle replay rides on - and none of the per-host clocks.
+pub fn emit_tick_digest<S: AudioSink>(session: &BootSession<S>) {
+    use std::io::Write;
+    use std::sync::{Mutex, OnceLock};
+    static OUT: OnceLock<Option<Mutex<std::fs::File>>> = OnceLock::new();
+    let out = OUT.get_or_init(|| {
+        let path = std::env::var_os("LEGAIA_DIAG_TICK_DIGEST")?;
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .ok()
+            .map(Mutex::new)
+    });
+    let Some(out) = out else {
+        return;
+    };
+    let world = &session.host.world;
+    let mut line = format!(
+        "{:?} pad={:04x} rng={:08x} flow={:?} st={:02x} act={} ctx={:016x}",
+        world.mode,
+        world.input.pad(),
+        world.rng_state,
+        world.battle.flow,
+        world.battle_ctx.action_state,
+        world.battle_ctx.active_actor,
+        debug_digest(&world.battle_ctx),
+    );
+    line.push_str(&format!(" az={}", world.locomotion.camera_azimuth));
+    if let Some(cam) = world.battle.camera.as_ref() {
+        let p = cam.framing_pose();
+        line.push_str(&format!(
+            " cam={:?}/{}/{:.1},{:.1},{:?}",
+            cam.phase(),
+            cam.is_gliding(),
+            p.pitch,
+            p.yaw,
+            p.tr,
+        ));
+    }
+    for (i, a) in world.actors.iter().enumerate().take(8) {
+        if !a.active {
+            continue;
+        }
+        line.push_str(&format!(
+            " | {i}:{},{},{} h{} c{:?}",
+            a.move_state.world_x,
+            a.move_state.world_z,
+            a.battle.facing_angle & 0xFFF,
+            a.battle.hp,
+            a.battle_animation
+                .as_ref()
+                .map(|p| (p.action_id(), p.cursor_sixteenths())),
+        ));
+    }
+    if let Ok(mut f) = out.lock() {
+        // Process and session frame first, so one file holding several
+        // sessions (a parent and its child) splits back into runs.
+        let _ = writeln!(f, "{} {} {line}", std::process::id(), session.frames);
+    }
+}

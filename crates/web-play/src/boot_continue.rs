@@ -102,6 +102,7 @@ impl LegaiaRuntime {
             &mut texts,
             origin,
             scale,
+            false,
         );
         serde_json::json!({
             "open": true,

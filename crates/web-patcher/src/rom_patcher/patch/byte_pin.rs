@@ -125,6 +125,7 @@ fn cases() -> Vec<(&'static str, PatchOptions<'static>)> {
         element_affinity: "shuffle",
         spell_cost: "random",
         equip_bonus: "random",
+        equip_mask: "shuffle",
         shiny_seru: true,
         delilas_challenge: true,
         custom_items: true,
@@ -187,43 +188,43 @@ fn cases() -> Vec<(&'static str, PatchOptions<'static>)> {
 const PINS: &[(&str, &str, &str)] = &[
     (
         "everything",
-        "b31d2d19c4bb7617846a57c1d0638c560351962e048d3a971e963e234b452235",
-        "edad85629b6338dd3a8fac49a21ddeb70c079b4a44c8f3626f288dbfa9469b57",
+        "758139f3d2d3f592d36adff48da8e9f14a41af3245897e23024b4d52f01fe7ad",
+        "65dcf645978d41c99b253005141fdf5b87a8fcc18e1d1a5994287fa5431886d2",
     ),
     (
         "challenge",
-        "bf4f9a36c831eefc3b3e1b7a4b577bc6a0933dd58fcdf3e05f9b7d295119c3cb",
-        "0a2da7d07cb4f35441eb966dbac85b49a0805e222b29d87b1fe78cf3b2156225",
+        "a87655274ce2a26b107bd55f17204783c3a74c394cf064717fb79d28b54324c7",
+        "59835c643a25ca64f04ae2e8f628ef4f00f9b5460899cfad7101208237e4b400",
     ),
     (
         "party",
-        "d296295ad2040947d9a1da7cd9290f26f28c609738abdb5ea2417fe940de2a0d",
-        "80ff46489e9aaa69e765ef196e3d917b33161e716acb8d385eb6e445e2654a2b",
+        "f36692da9d2785feb272aaee6ac16b8d48b03773438411b15efc33e2ef4a2b87",
+        "297d27d0294e09f44401120cad76947df6b9b2ff14798dd39eeae9891aae81f4",
     ),
     (
         "party_arena_taken",
         "3e90183f0610ad62d02c55273b798eb95b88fb1b4959f38432a62baa960d9bf2",
-        "bdf3f423eab0fc38df81abf5da582514b41027823eeb4047962223b33d56794a",
+        "dcb5c47637ee5810b5e21322d83f80d5149ecc70fe85982e4d0fce9e9dc37af5",
     ),
     (
         "pack",
         "edd9ebee1b01eb0f8e10039158627093df35d38a1c6b8ac0511632d5c0284aba",
-        "95be6887b15ab7b520ee233ea8a9cba16e0f8f70c28fb8c0c47dc5c0e2637597",
+        "720db44482b96509f6472b49824c693901bd4661af01040924e4c0c40aa4ac03",
     ),
     (
         "arts_ap",
         "cd44254c017bc499cbce39dde8643f908d344e3d8de432b00b3a8ae653506086",
-        "1c714f2302453e15cc1efa5b80ff59e5c3f2d5984ddf03302151e0bb116817df",
+        "2c0e701545c3209b7635233102fed2e5e7fdcc259c7d8f05442419e6c5c9c24b",
     ),
     (
         "oscillating",
         "ccb7988a1b62945639ba39ccc75be7627c24c178c4662c1f29f5cab6d84f2ac8",
-        "9906d19b5655a3b2f023f608402feb4fc77b1816a72d40c04adde0de51a58c74",
+        "982ac2122df0a475df83c9590f32df422ff48b15ca6edb3e935b75a1d7184468",
     ),
     (
         "untouched",
         "e6120a5d70716dd2f026a2da32d0171d52651971b52c4347a68541299f75258c",
-        "31d7f42fff596f7e9dbe96a3920437e5660f279a3f21c15aec3ab3d789eb70e1",
+        "ae56c7138201ac54aab072e05f05831fe9011d43524742373ce6da04dbf52898",
     ),
 ];
 

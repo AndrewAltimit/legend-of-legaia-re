@@ -360,7 +360,7 @@ pub struct BattleGhostFrame {
 }
 
 /// One planned weapon-trail draw, resolved by
-/// `World::battle_weapon_trail_draws`: the ring-sampled sweep of an
+/// `legaia_engine_world_views::battle_draws::battle_weapon_trail_draws`: the ring-sampled sweep of an
 /// actor's three trail control points (the weapon bone chain
 /// `base_part..base_part+3` of its trigger row -
 /// `legaia_render_kernels::battle_trail`), in actor-local space, newest step
@@ -379,7 +379,7 @@ pub struct BattleWeaponTrailDraw {
 }
 
 /// One planned after-image ghost draw, resolved by
-/// [`World::battle_ghost_draws`]: draw `actor_slot`'s mesh posed with
+/// `legaia_engine_world_views::battle_draws::battle_ghost_draws`: draw `actor_slot`'s mesh posed with
 /// `pose` at `pos`, flat-coloured `color`, additive semi-transparent,
 /// behind the live body.
 #[derive(Debug, Clone)]
@@ -678,7 +678,7 @@ pub struct Actor {
     /// retail rings `FUN_80047430` shifts every frame (position `+0x4C`,
     /// anim cursor `+0x17A`, clip `+0x234`, committed anim id `+0x1FB`;
     /// 32 slots). Front = last frame. Feeds the arts after-image ghost walk
-    /// ([`legaia_engine_battle::battle_afterimage`], `World::battle_ghost_draws`).
+    /// ([`legaia_engine_battle::battle_afterimage`], `legaia_engine_world_views::battle_draws::battle_ghost_draws`).
     /// Maintained only while a battle animation plays; cleared on battle
     /// exit with the rest of the battle anim state.
     pub battle_pose_history: std::collections::VecDeque<BattleGhostFrame>,

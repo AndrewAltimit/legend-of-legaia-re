@@ -82,7 +82,7 @@ pub fn battle_hud_draws_for(
     // centred in the surface.
     let scale = (frame.surface.0 / BOOT_UI_STAGE_W)
         .min(frame.surface.1 / BOOT_UI_STAGE_H)
-        .clamp(1, 4) as i32;
+        .clamp(1, crate::BOOT_UI_STAGE_MAX_SCALE) as i32;
     let origin = (
         (frame.surface.0 as i32 - BOOT_UI_STAGE_W as i32 * scale) / 2,
         (frame.surface.1 as i32 - BOOT_UI_STAGE_H as i32 * scale) / 2,
@@ -211,7 +211,13 @@ pub fn battle_hud_draws_for(
                         b.separator.3 * scale as u32,
                     ),
                     src: b.separator,
-                    color: numeral_cell_tint(c),
+                    // Untinted whatever the readout's tier: retail draws it
+                    // through the system-UI sheet's fixed sub-palette 5
+                    // (CLUT `(80, 511)`, colour word `0x808080`) while the
+                    // numerals either side switch to the tier's font CLUT
+                    // (`(16 * (tier + 6), 510)`), dead tier included
+                    // (`cort_mystic_circle_mid_cast`'s display list).
+                    color: white,
                 }),
                 None => stage_text(text, font, "/", x, y + 4, c),
             }
@@ -240,11 +246,8 @@ pub fn battle_hud_draws_for(
         for (i, ch) in s.bytes().enumerate() {
             let cell_x = left + i as i32 * DIGIT_W;
             let d = u32::from(ch - b'0');
-            match battle
-                .and_then(|b| b.digits)
-                .and_then(|strip| crate::hud_digit_rect(strip, d))
-            {
-                Some(src) => sprites.push(SpriteDraw {
+            match battle.and_then(|b| crate::hud_numeral_cell(&b, d, c)) {
+                Some((src, color)) => sprites.push(SpriteDraw {
                     dst: (
                         origin.0 + cell_x * scale,
                         origin.1 + y * scale,
@@ -252,7 +255,7 @@ pub fn battle_hud_draws_for(
                         src.3 * scale as u32,
                     ),
                     src,
-                    color: numeral_cell_tint(c),
+                    color,
                 }),
                 None => {
                     let glyph = [ch];

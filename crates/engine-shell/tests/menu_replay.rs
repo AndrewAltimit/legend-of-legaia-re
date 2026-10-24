@@ -214,6 +214,7 @@ fn port0_blocks() -> Vec<SlotSnapshot> {
         leader_name: "Vahn".to_string(),
         leader_hp: (40, 60),
         leader_mp: (8, 12),
+        ..SlotSnapshot::empty(0)
     };
     blocks
 }

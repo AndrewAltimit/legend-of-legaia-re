@@ -288,6 +288,33 @@ than its pool holds is under-read, not a small frame.
 The corresponding sweep for "which states exist at all" is
 `state-index.py` above; the two are meant to be used in that order.
 
+### Rasterise a battle ordering table
+
+```bash
+mednafen-state extract --start 0x80000000 --end 0x80200000 --out ram.bin <state>
+mednafen-state vram-dump --out vram.png --out-bin vram.bin <state>
+scripts/mednafen/ot-raster.py ram.bin vram.bin --record 0 --out ot0.png
+```
+
+`display-list` says which packets a frame links; `ot-raster.py` draws them. It
+walks one of the battle double buffer's two records (`0x8007BF30`, the bucket
+array at `+0x70`; `gp+0x434` names the current one) in chain order and
+rasterises every polygon and sprite against the state's own VRAM at the
+GPU's 5-bit depth: CLUT textures, the texture blend, flat colours cut to 5
+bits, the four ABR modes on STP texels, quads split `(v0, v1, v2)` +
+`(v1, v2, v3)` with affine UVs, oversized prims rejected. No dither, no mask
+bit. `--buckets`, `--clut` and `--skip-clut` isolate one body or layer.
+
+It is a second renderer that shares no code with the engine, which is what
+it is for. Neither table is the displayed frame (that one is two passes
+back, and its packets are gone), but an engine frame seated on the inputs a
+table was built from must match that table's raster: if it does, a residual
+against the displayed frame is a question of which inputs the screen stood
+on, not of rasterisation, draw order or a missing primitive.
+`zeto_big_wave_mid_cast` is the worked case: the port matches both of its
+tables at `1.000` ([open threads](../reference/open-rev-eng-threads.md#zetos-big-wave-idle-one-pass-older)).
+The output is a picture of retail's frame and stays out of the repository.
+
 ### Byte-match a player battle file (`battle_data` block) against VRAM
 
 ```bash

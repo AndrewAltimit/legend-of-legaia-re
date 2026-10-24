@@ -49,7 +49,7 @@ cd legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu
   <p>Every binary answers <code>--version</code> and <code>--help</code>. How the archives are produced: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/releases.md"><code>tooling/releases.md</code></a>.</p>
 
   <h3>Build from source</h3>
-  <p>The repo is a Cargo workspace, one library plus a binary per crate.</p>
+  <p>The repo is a Cargo workspace: a library per crate, and a command-line binary on the crates that have a tool to run.</p>
 <pre><code>git clone https://github.com/AndrewAltimit/legend-of-legaia-re
 cd legend-of-legaia-re
 cargo build --release
@@ -85,16 +85,16 @@ cargo test --workspace --release</code></pre>
 
 <section class="doc-section" id="play">
   <h2>3 · Play or browse natively</h2>
-  <p>Nothing needs extracting first: every subcommand accepts the disc directly with <code>--disc</code>.</p>
+  <p>Nothing needs extracting to play: every <code>legaia-engine</code> subcommand accepts the disc directly with <code>--disc</code>. The desktop asset viewer below is the exception - it reads an <code>extracted/</code> tree.</p>
   <h3>Boot the engine</h3>
 <pre><code>./legaia-engine play-window --disc "/path/to/Legend of Legaia (USA).bin"</code></pre>
-  <p>This opens Rim Elm in a 960&times;720 window with field rendering, music, NPC scripts, dialog and the gameplay loop: walking rolls the scene's own random encounters, a battle opens the command menu, and a win returns you to the field with XP, gold and drops. Arrows are the D-pad; <kbd>Z</kbd> is Cross and <kbd>Esc</kbd> quits. Add <code>--boot-ui</code> to start at the title screen and its New Game / save-select flow instead, or <code>--scene &lt;name&gt;</code> to enter any other scene directly. The full key table, save/load, the scene list and the enhancement toggles are in the <a href="guides/playing-and-viewing.html">playing-and-viewing guide</a>.</p>
+  <p>This opens Rim Elm in a 960&times;720 window with field rendering, music, NPC scripts, dialog and the gameplay loop: walking rolls the scene's own random encounters, a battle opens the command menu, and a win returns you to the field with XP, gold and drops. Arrows are the D-pad; <kbd>Z</kbd> is Cross, and <kbd>Esc</kbd> pressed twice quits (the first press only asks). Add <code>--boot-ui</code> to start at the title screen and its New Game / save-select flow instead, or <code>--scene &lt;name&gt;</code> to enter any other scene directly. The full key table, save/load, the scene list and the enhancement toggles are in the <a href="guides/playing-and-viewing.html">playing-and-viewing guide</a>.</p>
   <h3>Open the desktop asset viewer</h3>
   <p><code>asset-viewer</code> has a subcommand per asset class - <code>prot</code> (archive browser), <code>tim</code>, <code>tmd</code>, <code>stage</code>, <code>vab</code>, <code>seq</code>, <code>field</code> (scene runner), <code>dialog</code>, <code>battle-scene</code>, <code>world</code>, <code>save-icons</code> (the save-slot portrait sheet). The <a href="viewer.html">browser build</a> covers most of the same ground.</p>
 <pre><code>./asset-viewer prot extracted/PROT.DAT
 ./asset-viewer tmd extracted/.../foo.tmd
 ./asset-viewer vab extracted/.../bank.vab</code></pre>
-  <p>Inside the PROT browser: <kbd>N</kbd> / <kbd>P</kbd> = next/prev entry; <kbd>PgDn</kbd> / <kbd>PgUp</kbd> = jump 10; <kbd>Esc</kbd> = quit. It detects the format and shows the first viewable sub-asset.</p>
+  <p>Inside the PROT browser: <kbd>N</kbd> / <kbd>P</kbd> (or the arrows) = next/prev entry; <kbd>PgDn</kbd> / <kbd>PgUp</kbd> = jump 10; <kbd>Home</kbd> / <kbd>End</kbd> = first/last; type a number and press <kbd>Enter</kbd> to jump to that PROT index; <kbd>Esc</kbd> = quit. It detects the format and shows the first viewable sub-asset.</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="subsystems/engine.html">Engine reimplementation</a>
@@ -104,7 +104,7 @@ cargo test --workspace --release</code></pre>
 
 <section class="doc-section" id="mod">
   <h2>4 · Mod your copy</h2>
-  <p>The patcher writes a patched copy of your disc and a shareable PPF patch that carries none of the game's bytes. Nothing is randomized unless asked - each family has its own flag (<code>--drops shuffle</code>, chests, steals, arts, doors, shops, monster stats, spell costs, equipment, and code-hook extras), and the same seed over the same disc is byte-deterministic, so two people get identical patches.</p>
+  <p>The patcher writes a patched copy of your disc and a shareable PPF patch that carries none of the game's bytes. Nothing is randomized unless asked - each family has its own flag (<code>--drops shuffle</code>, encounters, chests, steals, arts, doors, shops, the casino, monster stats, spell costs, equipment, and code-hook extras), and the same seed over the same disc is byte-deterministic, so two people get identical patches - the <a href="tooling/rom-patcher.html">ROM patcher page</a> included, which writes the same image for the same seed and settings.</p>
 <pre><code>./legaia-patcher randomize \
     --input "/path/to/Legend of Legaia (USA).bin" \
     --seed 12345 --drops shuffle \

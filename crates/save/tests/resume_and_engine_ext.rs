@@ -75,6 +75,8 @@ fn a_save() -> SaveFile {
                 name: "Tornado Flame".into(),
                 sequence: vec![1, 2, 3],
             }],
+            retail_window: None,
+            previous_scene: None,
         },
     }
 }
@@ -239,6 +241,8 @@ fn engine_ext_round_trips_through_a_retail_block_and_keeps_it_valid() {
             audio_levels: legaia_save::card::read_retail_audio_levels(&block),
             options: legaia_save::card::read_retail_audio_levels(&block)
                 .and_then(|_| legaia_save::card::read_retail_options(&block)),
+            retail_window: legaia_save::card::read_retail_live_window(&block).map(<[u8]>::to_vec),
+            previous_scene: legaia_save::card::read_retail_previous_scene(&block),
             ..sf.ext_v2.clone()
         }
     );
@@ -288,6 +292,8 @@ fn retail_only_ext(block: &[u8]) -> SaveExtV2 {
             .and_then(|_| legaia_save::card::read_retail_options(block)),
         play_time_seconds: legaia_save::card::read_retail_play_counter(block).unwrap_or(0)
             / legaia_save::card::RETAIL_PLAY_COUNTER_HZ,
+        retail_window: legaia_save::card::read_retail_live_window(block).map(<[u8]>::to_vec),
+        previous_scene: legaia_save::card::read_retail_previous_scene(block),
         ..SaveExtV2::default()
     }
 }

@@ -8,11 +8,19 @@
 //! accent and the primary button. The light palette carries the same hues on
 //! a white ground, with the accent darkened until it reads on white.
 //!
+//! [`game_exit`] is the wording the launcher and Studio share for a game
+//! that stopped with an error.
+//!
 //! No dependencies: each consumer converts a [`Rgb`] into its toolkit's
 //! colour (`egui::Color32::from_rgb`, a `[f32; 4]` for the launcher's
 //! software canvas and the play window's text layer).
 
 #![no_std]
+
+// `game_exit` speaks in exit statuses and owned strings.
+extern crate std;
+
+pub mod game_exit;
 
 /// An sRGB colour, 8 bits per channel, opaque.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -88,8 +96,12 @@ pub struct Palette {
     pub pressed: Rgb,
     /// An open combo box or menu button.
     pub open: Rgb,
-    /// Separators and outlines.
+    /// Separators.
     pub rule: Rgb,
+    /// The edge of a control at rest (a check box, a text field, a light
+    /// theme's button): at least 3:1 against every surface, the WCAG floor
+    /// for a control's boundary.
+    pub outline: Rgb,
     /// Body text.
     pub ink: Rgb,
     /// Secondary text.
@@ -114,6 +126,8 @@ pub struct Palette {
     pub good: Rgb,
     /// Warnings.
     pub warn: Rgb,
+    /// Errors (a failed open, a failed export).
+    pub error: Rgb,
     /// Key names and informational lines.
     pub info: Rgb,
 }
@@ -129,6 +143,7 @@ pub const DARK: Palette = Palette {
     pressed: Rgb(70, 62, 40),
     open: Rgb(46, 50, 74),
     rule: Rgb(61, 66, 92),
+    outline: Rgb(110, 118, 150),
     ink: Rgb(237, 237, 245),
     ink_dim: Rgb(153, 163, 189),
     ink_faint: Rgb(107, 115, 138),
@@ -141,6 +156,7 @@ pub const DARK: Palette = Palette {
     hover_stroke: Rgb(200, 160, 70),
     good: Rgb(128, 219, 133),
     warn: Rgb(255, 148, 92),
+    error: Rgb(255, 120, 120),
     info: Rgb(179, 217, 255),
 };
 
@@ -156,6 +172,7 @@ pub const LIGHT: Palette = Palette {
     pressed: Rgb(246, 226, 180),
     open: Rgb(222, 224, 234),
     rule: Rgb(200, 203, 215),
+    outline: Rgb(128, 132, 148),
     ink: Rgb(24, 26, 36),
     ink_dim: Rgb(80, 86, 104),
     ink_faint: Rgb(120, 126, 142),
@@ -168,6 +185,7 @@ pub const LIGHT: Palette = Palette {
     hover_stroke: Rgb(190, 140, 40),
     good: Rgb(30, 120, 40),
     warn: Rgb(170, 80, 10),
+    error: Rgb(176, 32, 32),
     info: Rgb(30, 90, 170),
 };
 
@@ -216,6 +234,8 @@ mod tests {
             assert!(p.accent.contrast(s) >= 4.5, "{name}: accent on {s:?}");
             assert!(p.good.contrast(s) >= 4.5, "{name}: good on {s:?}");
             assert!(p.warn.contrast(s) >= 4.5, "{name}: warn on {s:?}");
+            assert!(p.error.contrast(s) >= 4.5, "{name}: error on {s:?}");
+            assert!(p.outline.contrast(s) >= 3.0, "{name}: outline on {s:?}");
             assert!(p.info.contrast(s) >= 4.5, "{name}: info on {s:?}");
             assert!(p.ink_faint.contrast(s) >= 3.0, "{name}: ink_faint on {s:?}");
         }

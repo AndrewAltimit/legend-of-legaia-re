@@ -118,8 +118,8 @@ next tick a host yaw. The per-tick audio routing is the director's own
 (`route_world_sfx`, `enqueue_battle_cues`, `tick_audio_frame`), reached
 through the session's frame steps (`session/frame_steps.rs`:
 `route_battle_audio`, `poll_field_overlay`, `step_dance_tail`,
-`sound_muscle_hub`, `sound_baka_announcer`, `step_footstep_cadence`,
-`step_audio_frame`), which both play hosts call.
+`sound_muscle_hub`, `sound_baka_announcer`, `step_audio_frame`), which both
+play hosts call.
 
 CD-XA voice has one request path, `AudioDirector::play_xa_clip`, and two ways
 to stage a clip the bank lacks: a synchronous `XaChannelSource` (the native

@@ -26,7 +26,10 @@
 //! ## Texture
 //!
 //! A monster's 4bpp page is shared by every part, but each prim picks one of
-//! the 15 CLUTs (`cba & 0x3F`). A single glTF material can't do per-primitive
+//! the 15 CLUTs (`cba & 0x3F`) - or, for the bosses that sample it, the boss
+//! effect page and one of its 16 CLUTs, which
+//! [`monster_archive::MonsterPreview`] folds into the same page and palette
+//! list. A single glTF material can't do per-primitive
 //! palette indexing, so the page is baked into a **vertical palette atlas**:
 //! the page rendered once per distinct palette in use, stacked top to bottom,
 //! and each vertex's `V` is remapped into its palette's band. The result is one
@@ -66,12 +69,16 @@ pub fn export_glb(entry: &[u8], id: u16) -> Result<Option<Vec<u8>>> {
     let Ok(tmd) = legaia_tmd::parse(monster.tmd_bytes()) else {
         return Ok(None);
     };
-    let (mesh, object_ids) =
-        legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, monster.tmd_bytes());
-    if mesh.positions.is_empty() || mesh.indices.is_empty() {
+    let object_ids =
+        legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, monster.tmd_bytes()).1;
+    // The atlas resolves each prim's page and palette the way VRAM does,
+    // boss-page prims included (see `monster_archive::MonsterPreview`).
+    let Some(preview) = monster.preview(entry) else {
+        return Ok(None);
+    };
+    if preview.mesh.positions.is_empty() || preview.mesh.indices.is_empty() {
         return Ok(None);
     }
-    let texture = monster.texture();
     let animations: Vec<MonsterAnimation> = monster_archive::animations(entry, id)?
         .unwrap_or_default()
         .into_iter()
@@ -85,9 +92,11 @@ pub fn export_glb(entry: &[u8], id: u16) -> Result<Option<Vec<u8>>> {
 
     Ok(Some(build_glb(
         &name,
-        &mesh,
+        &preview.mesh,
+        &preview.atlas_uvs,
+        &preview.atlas_palettes,
         &object_ids,
-        texture.as_ref(),
+        preview.texture.as_ref(),
         &animations,
     )))
 }
@@ -239,6 +248,8 @@ struct ObjectGeom {
 /// into each object's own local array and rewriting UVs into the palette atlas.
 fn partition_objects(
     mesh: &legaia_tmd::mesh::VramMesh,
+    atlas_uvs: &[[u16; 2]],
+    atlas_palettes: &[u8],
     object_ids: &[u32],
     tex: Option<&MonsterTexture>,
     palette_slot: &dyn Fn(usize) -> usize,
@@ -275,8 +286,8 @@ fn partition_objects(
                 geom.normals
                     .push(mesh.normals.get(gv).copied().unwrap_or([0.0; 3]));
                 // Remap UV into the vertex's palette band of the atlas.
-                let uv = mesh.uvs.get(gv).copied().unwrap_or([0, 0]);
-                let pal = (mesh.cba_tsb.get(gv).map(|ct| ct[0]).unwrap_or(0) & 0x3F) as usize;
+                let uv = atlas_uvs.get(gv).copied().unwrap_or([0, 0]);
+                let pal = atlas_palettes.get(gv).copied().unwrap_or(0) as usize;
                 let slot = palette_slot(pal) as f32;
                 let u = (uv[0] as f32 + 0.5) / tw;
                 let v_local = (uv[1] as f32 + 0.5) / th;
@@ -308,6 +319,8 @@ fn partition_objects(
 fn build_glb(
     name: &str,
     mesh: &legaia_tmd::mesh::VramMesh,
+    atlas_uvs: &[[u16; 2]],
+    atlas_palettes: &[u8],
     object_ids: &[u32],
     tex: Option<&MonsterTexture>,
     animations: &[MonsterAnimation],
@@ -316,11 +329,11 @@ fn build_glb(
 
     // --- Texture: bake the palette atlas (one band per CLUT in use). ---
     let mut used_palettes: Vec<usize> = Vec::new();
+    let palette_count = tex.map_or(CLUT_COUNT, |t| t.palettes.len()).max(1);
     if tex.is_some() {
-        let mut seen = [false; CLUT_COUNT];
-        for ct in &mesh.cba_tsb {
-            let p = (ct[0] & 0x3F) as usize;
-            let p = p.min(CLUT_COUNT - 1);
+        let mut seen = vec![false; palette_count];
+        for &p in atlas_palettes {
+            let p = usize::from(p).min(palette_count - 1);
             if !seen[p] {
                 seen[p] = true;
                 used_palettes.push(p);
@@ -331,7 +344,7 @@ fn build_glb(
     let palette_slot = |pal: usize| -> usize {
         used_palettes
             .iter()
-            .position(|&p| p == pal.min(CLUT_COUNT - 1))
+            .position(|&p| p == pal.min(palette_count - 1))
             .unwrap_or(0)
     };
     let bands = used_palettes.len();
@@ -366,7 +379,15 @@ fn build_glb(
     };
 
     // --- Per-object geometry -> nodes + meshes. ---
-    let objects = partition_objects(mesh, object_ids, tex, &palette_slot, bands);
+    let objects = partition_objects(
+        mesh,
+        atlas_uvs,
+        atlas_palettes,
+        object_ids,
+        tex,
+        &palette_slot,
+        bands,
+    );
 
     // Idle frame-0 pose drives each node's base transform (so a non-animating
     // viewer still shows the rest pose, not the collapsed origin model).
@@ -616,7 +637,7 @@ mod tests {
             normals: vec![[0.0, 0.0, 1.0]; 3],
             colors: vec![[legaia_tmd::legaia_prims::MODULATION_NEUTRAL; 3]; 3],
         };
-        let glb = build_glb("test", &mesh, &[0, 0, 0], None, &[]);
+        let glb = build_glb("test", &mesh, &[[0, 0]; 3], &[0; 3], &[0, 0, 0], None, &[]);
         assert_eq!(&glb[0..4], b"glTF");
         assert_eq!(u32::from_le_bytes(glb[4..8].try_into().unwrap()), 2);
         let total = u32::from_le_bytes(glb[8..12].try_into().unwrap()) as usize;
@@ -642,7 +663,7 @@ mod tests {
             normals: vec![[0.0, 0.0, 1.0]; 3],
             colors: vec![[0x40, 0x80, 0xF8]; 3],
         };
-        let glb = build_glb("test", &mesh, &[0, 0, 0], None, &[]);
+        let glb = build_glb("test", &mesh, &[[0, 0]; 3], &[0; 3], &[0, 0, 0], None, &[]);
         let (root, bin) = crate::gltf_color::glb_probe::split(&glb).expect("glb container");
         assert_eq!(root["extensionsUsed"][0], "KHR_materials_unlit");
         let acc = root["meshes"][0]["primitives"][0]["attributes"]["COLOR_0"]

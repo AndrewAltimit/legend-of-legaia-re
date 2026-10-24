@@ -36,6 +36,7 @@ pub mod battle_drive;
 pub mod camera_align;
 pub mod cast_parts;
 pub mod clip_cursors;
+pub mod drive_clock;
 pub mod effect_children;
 pub mod field_seeds;
 pub mod formation_cell;

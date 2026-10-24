@@ -164,6 +164,12 @@ pub fn render_indices(hf: &WalkHeightfield) -> Vec<u32> {
 /// above the sunk ground) clear, left every one of those strips under the
 /// floor in `conc_field_card_boot`.
 ///
+/// An unmarked cell (one with the sort bit) keeps its corners as they are,
+/// and the shaders draw it at one depth, its ordering-table bucket
+/// `(max corner SZ >> 5) + 2` (`field_sorted_cell_depth` in `engine-render`,
+/// `fieldSortedCellDepth` on the page), so a mesh sunk below a raised floor
+/// tier paints over it as retail's ordering table lets it.
+///
 /// REF: FUN_801F6D48
 pub fn flat_refs(hf: &WalkHeightfield, positions: &[[f32; 3]]) -> Vec<[f32; 8]> {
     let mut refs = legaia_engine_field::overworld_draw_order::ground_flat_refs(positions);

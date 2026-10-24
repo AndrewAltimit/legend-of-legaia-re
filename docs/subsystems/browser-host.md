@@ -505,17 +505,10 @@ reports it per event with a note explaining the choice - the page names
 behaviour (`menu_confirm`) and never a cue number, and can label which sounds
 are the game's.
 
-The footstep row is the instructive one. Its *cadence* is the ported retail
-kernel `FUN_80018db0` (interval derived from movement magnitude, the `0xB`
-stationary gate, the `0x4B0` ambient period) getting its first host caller - but
-**two** of its inputs are port picks, and the second is worth knowing before
-touching this code. Retail's "movement magnitude" is a controller speed word,
-not a world-space delta: the kernel's own arithmetic requires `speed >= 0x30`
-before a step can fire, and the port's controller moves 2 units per tick, so
-feeding the raw displacement in leaves the interval permanently below the gate
-and no footstep ever sounds. `WALK_SPEED_UNITS` places a single-speed walker at
-the conservative end of retail's moving band instead. Pinning the real speed
-word is what would retire the pick.
+Walking is silent on the page, as it is in retail: a capture of every cue path
+while walking fires no footstep ([`sfx-table.md`](../formats/sfx-table.md)). The
+per-frame kernel once wired here as a footstep cadence, `FUN_80018db0`, is the
+controller's rumble actuator ([`audio.md`](audio.md#not-ssapi-the-0x801ce628-cluster-is-libpad)).
 
 `play_sfx_probe_peak` is the measurement that keeps this honest: it renders a cue
 through a throwaway SPU and reports its peak sample, so "wired but every cue is
@@ -558,6 +551,7 @@ gate:
 |---|---|
 | Seru-trade shop screens | Closed. Config + name table install at `load_disc`, and both hosts draw the trade screens through the one shared composition (`legaia_engine_screens`). |
 | Options screen | Closed. The page persists `OptionsState` to `localStorage` (`legaia.options`, `runtime/options.rs`) through the same serde impl the native window writes to `legaia-options.toml`, and both save `OptionsPins::persistable` on an Options close. |
+| Remembered launch switches | Closed. PSX rasterisation, retail-faithful, the entry pulse, smart monsters and the gameplay tweaks persist to `localStorage` (`legaia.switches`, `play_toggles`) as `PersistedSwitches`, the type the native launcher flattens into its settings file ([`host-drift.md`](../tooling/host-drift.md#remembered-between-runs)). |
 | Inn prompt | Closed. Neither host opens an inn session (the retail inn is an ordinary field-VM dialogue), and both draw the prompt when one is up: `play_shop`'s inn arm ports the native `window/hud.rs` arm. |
 | Load / Save rows | Closed at the model. This host browses the console's two memory-card ports; the native window writes LGSF files to `saves/` - but both build the slot from one `legaia_save` summary (leader name, level, HP/MP, resume scene + location), and the card block carries the engine ext (play clock, saved chains) in the tail retail never reads. |
 | Dance / Baka / Muscle / slots | Closed in-world. Both hosts enter them from the scene's own door warps; this host draws them through `play_minigames` (below) with the standalone page's renderers, and the standalone page stays as the free-play surface. |
@@ -1182,6 +1176,25 @@ frame (state + product code + XOR checksum) so the emulator's card browser sees
 the new save. A `dirty` flag per port tells the page there are unexported
 writes.
 
+The page's save bar draws the **browser card's** saves as tiles ahead of its
+stored sessions (`browserCardTiles` in `play.html`, through the bar's
+`fixedTiles` hook in `site/js/legaia-saves.js`): one per valid block, listed
+by `card_saves_json`, with Resume landing it through `import_card_save` and
+download handing back the whole card image. A save made at a save point is a
+block of that card, not a stored session, so without these tiles the bar read
+"No saves in this browser yet" after a reload while the save sat on the card.
+The page stores each written card itself, so the save screen only knows the
+Save landed once the page says so: `card_store_handshake(true)` makes the
+"Saving to MEMORY CARD" beat wait after the in-memory write for
+`card_store_result(stored)`, which the page's store poll answers. A browser
+that refuses the store (storage full or blocked) therefore reads "Unable to
+save." in the beat instead of "Save successful." over a save a reload loses,
+and a page that never answers is given up on as failed after
+`CARD_STORE_WAIT_FRAMES`. Without the handshake (the native tests driving the
+runtime) the beat reports the write at once, and a refused store can only
+raise `card_store_failed`'s notice afterwards. Pinned by
+`menu_parity::the_save_beat_waits_for_the_page_to_store_the_card`.
+
 `card_block_snapshots` lifts each block through `SaveFile::from_retail_sc_block`
 to feed the preview grid's portraits and the info panel's name / level / HP /
 MP / location rows - the same fields retail reads into its per-slot buffer.
@@ -1367,6 +1380,6 @@ reference TIMs sitting in other PROT entries.
 | [`play_hotkeys`](../../crates/web-play/src/play_hotkeys.rs) | `play_host_hotkey`: the native window's option / cheat / camera keys, resolved through the shared `engine-session::hotkeys` table; `play_host_hotkey_notice` / `play_host_hotkey_refusal` word the notice line; `host_hotkeys_json` lists the table. The page half is `window.__playHotkeyActions` in `play.html`. |
 | [`play_lighting`](../../crates/web-play/src/play_lighting.rs) / [`play_fog_volume`](../../crates/web-play/src/play_fog_volume.rs) | The enhanced-lighting and volumetric-fog enhancements (twins of the native `I` / `F8` and `F9`), from the shared engine-side sources. |
 | [`play_cheats`](../../crates/web-play/src/play_cheats.rs) | The play page's Cheats panel, thin bindings over `engine-cheats::cheats`. |
-| [`play_toggles`](../../crates/web-play/src/play_toggles.rs) | Runtime twins of native launch switches: `--retail` (session-only `OptionsState::pin_retail`; the store is not written while it holds), `--set-flag`, `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS`, and the [gameplay tweaks](gameplay-tweaks.md) (`set_shiny_seru`, `set_flee_exp`, `set_exp_rate_permille`, `set_fortress_encounter_fix`, `set_jewel_fix`, `set_hp_readout_guard`, `set_bonus_drop`, and the battle-tuning setters `set_enemy_stat_permille`, `set_enemy_attack_permille`, `set_spirit_ap`, `set_damage_ap`, `set_seru_catch_rate`). |
+| [`play_toggles`](../../crates/web-play/src/play_toggles.rs) | Runtime twins of native launch switches, the launcher-remembered ones stored under `legaia.switches` (`PersistedSwitches`): `--retail` (`OptionsState::pin_retail` for the session; the options store keeps the pre-pin values), `--psx-render` (`set_psx_render`), `--set-flag`, `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS`, and the [gameplay tweaks](gameplay-tweaks.md) (`set_shiny_seru`, `set_flee_exp`, `set_exp_rate_permille`, `set_fortress_encounter_fix`, `set_jewel_fix`, `set_hp_readout_guard`, `set_bonus_drop`, `set_save_anywhere`, and the battle-tuning setters `set_enemy_stat_permille`, `set_enemy_attack_permille`, `set_spirit_ap`, `set_damage_ap`, `set_seru_catch_rate`). |
 | [`audio_api`](../../crates/web-viewer/src/audio_api.rs) | `LegaiaAudio`, the media page's audio bindings. |
 | [`play_host_parity`](../../crates/web-play/src/play_host_parity.rs) | Read-only probes over the live `World` for the tests pairing this host against the native window; not wasm exports. |

@@ -48,7 +48,7 @@
 //!   draws behind it.
 //!
 //! This module is the renderer-free kernel: the schedule, gate and colour
-//! law. `World::battle_ghost_draws` binds it to the live pose history; each
+//! law. `legaia_engine_world_views::battle_draws::battle_ghost_draws` binds it to the live pose history; each
 //! host draws the returned poses as additive copies of the actor's textured
 //! mesh, the ghost colour staged as a full-weight depth cue
 //! ([`ghost_far_colour`], [`GHOST_ABR`]).

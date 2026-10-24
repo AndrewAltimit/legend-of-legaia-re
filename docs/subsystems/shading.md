@@ -283,6 +283,16 @@ setting: in `cort_evolved_ultra_charge_mid_cast` the full-precision sum of the
 camera-locked discs washed the lower frame about ten levels brighter than
 retail.
 
+`F` for a **flat** primitive (no texture, no Gouraud) is its packet colour cut
+to 5 bits, `colour >> 3`: the GPU dithers only shaded and texture-blended
+polygons, so a flat one reaches the frame in whole steps. The full-screen
+fades are flat `POLY_F4`s (`0x2B`, additive, OT bucket `1`), and two of them
+stacked add their truncated sums: `vera_summon_mid_cast` draws PROT 0905's
+white rise at `31` (three steps) over the band's flash-out at `106`
+(thirteen), `132` levels where the bytes add to `137`. The screen-primitive
+builder emits a flat quad's colour that way on both hosts
+(`screen_prim::flat_gpu_color`); a Gouraud quad keeps its bytes.
+
 A PNG export cannot express this; the viewer notes when a palette carries STP
 entries. Port detail: [`renderer.md`](renderer.md#set_semi_blend---semi-transparency-blend-modes).
 

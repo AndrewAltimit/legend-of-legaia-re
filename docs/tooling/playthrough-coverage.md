@@ -284,7 +284,7 @@ Most always-resident per-frame SCUS hits are host-replaced library code, not gam
 | `80059280`, `80059510`, `80059744`, `8005AA30` | libgpu primitive-word composers: sprite builder, tpage, texwindow, GPU-queue timeout-arm | ignore list |
 | `800173BC`, `800178F0`, `8001A89C`, `8001ABC8` | Dev-profiler HUD, its two marks, its digit drawer | ignore list |
 | `80019890` | No-op stub | ignore list |
-| `80018DB0` | Field footstep / ambient audio cadence tick | [`functions.md`](../reference/functions.md) |
+| `80018DB0` | Rumble actuator tick (once read as a footstep cadence) | [`functions.md`](../reference/functions.md) |
 | `80018F94` | Positional-voice slot update | `functions.md` |
 | `800267FC` | Timed audio-cue / event trigger | `functions.md` |
 | `8001D058` | Guarded per-frame sub-dispatch to `FUN_80026CE4` | `functions.md` |

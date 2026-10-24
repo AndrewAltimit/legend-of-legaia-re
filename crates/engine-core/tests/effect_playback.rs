@@ -1,4 +1,4 @@
-use super::*;
+use legaia_engine_core::world::*;
 
 /// A minimal `efect.dat` 2-pack: 1 atlas entry (a 24x24 sprite at texel
 /// (5,7), tpage 0x88, clut 0x12), 1 anim batch (one frame -> atlas 0 with a

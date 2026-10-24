@@ -17,6 +17,8 @@
 mod cli;
 #[path = "legaia-engine/commands.rs"]
 mod commands;
+#[path = "legaia-engine/fatal_panic.rs"]
+mod fatal_panic;
 #[path = "legaia-engine/launcher_window.rs"]
 mod launcher_window;
 
@@ -59,6 +61,11 @@ fn main() -> Result<()> {
             None => return Ok(()),
         },
     };
+    // A running game ends on a panic on any of its threads, so the launcher
+    // sees the crash (`fatal_panic`); the tool subcommands keep the default.
+    if matches!(cmd, Cmd::PlayWindow { .. } | Cmd::Play { .. }) {
+        fatal_panic::install();
+    }
     match cmd {
         Cmd::RetailCompare(args) => legaia_parity::retail_compare_cli::run(args),
         Cmd::CastSequenceScore(args) => legaia_parity::cast_sequence::run(args),
@@ -364,6 +371,7 @@ fn main() -> Result<()> {
             enemy_attack_count,
             enemy_stat_scale,
             equipment_drops,
+            save_anywhere,
             no_occlusion_fade,
             no_volumetric_fog,
             psx_render,
@@ -455,6 +463,7 @@ fn main() -> Result<()> {
                         enemy_stat_permille: enemy_stat_scale
                             .unwrap_or(legaia_engine_core::world::SCALE_RETAIL),
                         bonus_drop: equipment_drops,
+                        save_anywhere,
                     },
                     occlusion_fade: !no_occlusion_fade,
                     volumetric_fog: !no_volumetric_fog,

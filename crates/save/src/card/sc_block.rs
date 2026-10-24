@@ -661,6 +661,12 @@ pub fn write_retail_resume(sc_block: &mut [u8], scene: &str, location: &str) -> 
         bail!("sc_block too small for the resume fields (need {need} bytes)");
     }
     let put = |sc_block: &mut [u8], at: usize, width: usize, text: &str| {
+        // A field that already reads as this text keeps its bytes: retail
+        // copies the banner name with a fixed-width copy, so a real block
+        // carries MAN residue after the NUL that a re-save need not wipe.
+        if retail_ascii_field(sc_block, at, width).as_deref() == Some(text) {
+            return;
+        }
         let field = &mut sc_block[at..at + width];
         field.fill(0);
         for (dst, c) in field.iter_mut().zip(text.chars()).take(width - 1) {

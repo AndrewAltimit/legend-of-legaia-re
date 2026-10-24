@@ -179,7 +179,7 @@ The room a moved string can take:
 
 | Image | Room |
 |---|---|
-| an overlay | its own pools' compaction, and the ledger's translation region in that image (the menu overlay has one) |
+| an overlay | its own pools' compaction, and the ledger's translation region in that image (the menu and field overlays have one) |
 | `SCUS_942.54` | its own pools' compaction, and the free runs the name pools' compaction leaves once the names are placed |
 
 A string that finds no room keeps its English text and is reported
@@ -198,9 +198,9 @@ executable's edits need `legaia-patcher scus-pokes` over a save state, which
 The port's string readers for the menu overlay, the battle overlay's labels
 and result lines, the executable's battle labels and the name-entry prompts
 follow a move the same way retail does, by decoding a reference site on the
-patched image ([`ui-strings.md`](ui-strings.md#what-the-port-reads)); the
-field-overlay readers listed there still read the retail VA, so there a
-moved string shows its new text in retail only.
+patched image ([`ui-strings.md`](ui-strings.md#what-the-port-reads)); so do
+the field-overlay readers (the code lock, the flag window, the coin counter,
+the Incense notice, the tile board's quit prompt).
 
 ## Where the text lives
 
@@ -211,7 +211,7 @@ The memory map of every translatable category, and what room it has:
 | `items` (and item types, spells, arts, accessory passives) | `SCUS_942.54` name pools, always resident | a pointer word in each table record | the name regions' compaction ([above](#longer-names)) |
 | `monster_names` | the monster archive (PROT 0867), one record per monster, streamed per battle | the record's `+0x00` block-relative offset | the record grows, up to fifteen bytes ([below](#monster-names)) |
 | `place_names` | `SCUS_942.54` quick-travel cells, always resident | fixed `0x20`-byte cells | none needed: 31 bytes each |
-| `ui_menu` | overlay data segments, resident while their overlay is | `lui` pairs and pointer words in the overlay's code | its pools' compaction; the menu overlay's translation region |
+| `ui_menu` | overlay data segments, resident while their overlay is | `lui` pairs and pointer words in the overlay's code | its pools' compaction; the menu and field overlays' translation regions |
 | `system_text` | `SCUS_942.54` system pools, always resident | pointer words, `lui` pairs, `$gp` forms | its pools' compaction; the name pools' free runs |
 
 `place_names` is one of three carriers a place name has; the world-map label
@@ -247,7 +247,9 @@ when that leaves one without room. `translation_code_strings_real.rs` applies a
 pack and the menu-overlay mods in both orders and checks both. `translate space --verbose` lists every region,
 its owner and how much of it is still zero.
 
-The translation region is the menu overlay's zero fill between the save-menu
+### The translation regions
+
+The menu overlay's region is its zero fill between the save-menu
 atlas and the save-slot icon sheet (PROT 0899, `0x801ED340..0x801EE120`).
 No instruction in any image forms an address inside it, neither save-screen
 card buffer reaches it, and it reads zero in every library capture with the
@@ -255,6 +257,27 @@ overlay resident - the title's card load, a shop, the pause menu. A moved
 menu label is read only while its overlay is resident, and the overlay loads
 whole (the loader reads the entry's full sector extent), so the region is
 there whenever the label is.
+
+The field overlay's region is the zero fill past its panel-window table
+(PROT 0897, `0x801F2D78..0x801F2E88`). The table at `0x801F2B98` holds 17
+records of `0x1C` bytes and ends at `0x801F2D74`; the region keeps one word
+clear of record 16 and one of the live global at `0x801F2E8C`. Three things
+make it dead:
+
+- no instruction or pointer word in any image (the executable, PROT
+  0895..0981) forms an address inside it;
+- every window index that reaches the table is at most 16. The table is
+  indexed by `FUN_801E9B3C` from the window halfword of a descriptor
+  script's 8-byte rows; its seventeen calls pass fifteen scripts
+  (`0x801F2A88`, `0x801F3170`, `0x801F3274..0x801F3388`), whose rows name
+  windows 0 and 6..16 only. The other indexer, `FUN_801ECA08`, is called
+  with windows 0, 1 and 2, and the remaining readers use fixed record
+  offsets;
+- it reads zero in every library capture with the overlay resident (89
+  states).
+
+The map display (PROT 0981) swaps over the overlay's first `0x1000` bytes
+only, so the region survives it.
 
 ### Zero is not room: runtime buffers
 
@@ -269,6 +292,12 @@ writes it, or reads it as live data. The ledger lists those spans too, as
 | `0x801E5120..0x801EA440` | the save-menu atlas's header, palette and pixel rows 0..161, uploaded to VRAM `(960, 0)` when the card screen opens |
 | `0x801EE120..0x801EEB40` | the save-slot icon sheet, uploaded to `(960, 224)` over the atlas's rows 224..239 |
 | `0x801EF070..0x801F3818` | the overlay's uninitialised data |
+
+The field overlay (PROT 0897) has one such span: its zero-filled globals at
+`0x801F3488..0x801F36A0`, ahead of the tables that end the image (the tile
+board's state at `0x801F35C4..` is among them). The file holds zeros there
+but for one word; the library captures with the overlay resident hold
+runtime writes across `0x801F3488..0x801F35A8`.
 
 The two card buffers reuse the atlas's memory once it has been uploaded
 ([`save-screen.md`](../../subsystems/save-screen.md#which-buffer-the-sum-runs-over)),
@@ -297,6 +326,7 @@ resident.
 | longer `system_text` | SCUS system pools, then the name pools' free runs | every SCUS mod arena (`--shiny-seru`, `--equipment-drops`, `--flee-exp`, `--enemy-ally`, `--seru-trade`, `--delilas-challenge`, `--show-super-arts`) | yes: the arenas are never used for text |
 | longer menu-overlay labels | 0899 pools, 0899 translation region | `--seru-trade`, `--show-super-arts` (run-C and the description run, in the atlas's blank band) | yes |
 | longer battle-overlay labels | 0898 pools | `--enemy-hp-bar`, the arts hooks (code outside the pools) | yes |
+| longer field-overlay labels | 0897 pools, 0897 translation region | the op-`0x49` shop / warp detours (code at `0x801E09A8`, outside both) | yes |
 | longer monster names | the record, inside its `0x14000` slot | `legaia-patcher monster-model` re-packs the same block; `--monster-stats` / `--enemy-stat-scale` write fields in it | yes, while the re-packed block fits its slot |
 | longer place names | none (31-byte cells) | `--rename-location` writes the same cells | the later write wins |
 
@@ -324,8 +354,8 @@ Each place a larger text pool could live was measured:
   occupants live.
 
 So the room is where the importer already looks: bytes the English layout
-wastes (compaction), bytes a shorter translation gives up, and the one
-reserved translation region.
+wastes (compaction), bytes a shorter translation gives up, and the
+reserved translation regions.
 
 ## Dialog
 

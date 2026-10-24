@@ -134,7 +134,7 @@ impl PlayWindowApp {
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<TextDraw> {
-        self.save_select_overlay(&self.save_flow, s, surface_w, surface_h)
+        self.save_select_overlay(&self.save_flow, s, surface_w, surface_h, true)
             .texts
     }
 }

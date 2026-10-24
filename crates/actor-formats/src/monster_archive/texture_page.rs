@@ -142,6 +142,12 @@ impl MonsterPage {
                     if prim.uvs.is_empty() {
                         continue;
                     }
+                    // A boss prim on texture-page column 6 samples the boss
+                    // effect page, not this pool (`super::MonsterPreview`):
+                    // its UVs name no texel here.
+                    if prim.tsb & 0xF == super::BOSS_PAGE_COLUMN {
+                        continue;
+                    }
                     let palette = (prim.cba & 0x3F) as u8;
                     if palette as usize >= CLUT_COUNT {
                         continue;

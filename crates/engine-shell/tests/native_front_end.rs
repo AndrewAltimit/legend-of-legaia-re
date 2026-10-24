@@ -65,6 +65,25 @@ fn boot_ui_logos_title_new_game_enters_the_opening() {
         legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE,
         "New Game enters the prologue scene"
     );
+    // The window pre-boots its launch scene through the scene picker, which
+    // seats the Vahn / Noa / Gala composition; the New Game drops it. A
+    // stale composition is what wrote a Vahn-alone save as a three-member
+    // party (card count 3, members 0 1 2) that reloaded with Noa and Gala.
+    let party = &w.session().host.world.party;
+    assert_eq!(party.party_count, 1, "a New Game party is Vahn alone");
+    assert!(
+        party.active_party.is_empty(),
+        "a New Game keeps no picker composition: {:?}",
+        party.active_party
+    );
+    assert_eq!(party.party_leader_slot, None);
+    use legaia_engine_save_state::WorldSaveState;
+    let save = w.session_mut().host.world.save_full();
+    assert_eq!(
+        save.ext_v2.active_party,
+        vec![0],
+        "the New Game's first save names Vahn alone"
+    );
 }
 
 /// The library card the Continue run mounts: `LEGAIA_SOAK_CARD` (the soak

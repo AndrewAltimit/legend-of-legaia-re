@@ -7,7 +7,11 @@
 //!   labels may legally differ (a gouraud prim with uniform corners
 //!   re-imports as flat; identical on the GPU);
 //! - every texel any textured prim covers renders to the same colour
-//!   through the re-imported palettes as through the retail ones.
+//!   through the re-imported palettes as through the retail ones;
+//! - every textured prim keeps its CLUT row and texture-page column, so the
+//!   boss-page prims of `0xB3..=0xBA` (row 482 / column 6) keep sampling the
+//!   boss effect page with their own palette rather than folding onto the
+//!   pool.
 //!
 //! Byte-level equality is NOT expected here (palette regrouping, vertex
 //! dedup order, group bucketing) - the TMD byte layer has its own oracle in
@@ -42,7 +46,17 @@ struct ResolvedPrim {
     semi: bool,
     abr: u8,
     corners: Vec<Corner>,
-    palette: u8, // cba & 0x3F (compared via texel colours, not directly)
+    /// `(cba & !0x3F, tsb & !0x60)` for a textured prim: the CLUT row and the
+    /// page word without the blend rate. Compared exactly.
+    page: (u16, u16),
+    /// cba & 0x3F: compared via texel colours for pool prims (the import
+    /// regroups palettes), exactly for boss-page prims (it never does).
+    palette: u8,
+}
+
+/// A prim on texture-page column 6 samples the boss effect page.
+fn is_boss(p: &ResolvedPrim) -> bool {
+    p.textured && p.page.1 & 0xF == 6
 }
 
 fn resolve(model: &[legaia_tmd::encode::ModelObject]) -> Vec<ResolvedPrim> {
@@ -73,6 +87,11 @@ fn resolve(model: &[legaia_tmd::encode::ModelObject]) -> Vec<ResolvedPrim> {
                         1
                     },
                     corners,
+                    page: if g.shape.is_textured() {
+                        (p.cba & !0x3F, p.tsb & !0x60)
+                    } else {
+                        (0, 0)
+                    },
                     palette: (p.cba & 0x3F) as u8,
                 });
             }
@@ -138,6 +157,7 @@ fn monster_models_survive_obj_png_round_trip() {
     };
 
     let mut verified = 0usize;
+    let mut boss_prims = 0usize;
     let mut failures: Vec<String> = Vec::new();
     let slot_count = (entry.len() / monster_archive::SLOT_STRIDE) as u16;
     for id in 1..=slot_count {
@@ -185,7 +205,7 @@ fn monster_models_survive_obj_png_round_trip() {
         let strip = |v: &[ResolvedPrim]| -> Vec<ResolvedPrim> {
             v.iter()
                 .map(|p| ResolvedPrim {
-                    palette: 0,
+                    palette: if is_boss(p) { p.palette } else { 0 },
                     ..p.clone()
                 })
                 .collect()
@@ -222,7 +242,8 @@ fn monster_models_survive_obj_png_round_trip() {
         // EXACT.
         let mut corner_palettes: BTreeMap<(u8, u8), std::collections::BTreeSet<u8>> =
             BTreeMap::new();
-        for p in a.iter().filter(|p| p.textured) {
+        boss_prims += a.iter().filter(|p| is_boss(p)).count();
+        for p in a.iter().filter(|p| p.textured && !is_boss(p)) {
             for &(_, _, uv) in &p.corners {
                 if let Some(uv) = uv {
                     corner_palettes.entry(uv).or_default().insert(p.palette);
@@ -236,7 +257,9 @@ fn monster_models_survive_obj_png_round_trip() {
             .collect();
         let mut texel_mismatch: BTreeMap<(u8, u8), (u16, u16)> = BTreeMap::new();
         for (pa, pb) in a.iter().zip(b.iter()) {
-            if !pa.textured {
+            // A boss-page prim samples the shared boss page, which the codec
+            // never writes; its row, column and palette are checked above.
+            if !pa.textured || is_boss(pa) {
                 continue;
             }
             let ta = corner_texels(pa, &ac, &ai, aw);
@@ -319,5 +342,9 @@ fn monster_models_survive_obj_png_round_trip() {
     assert!(
         verified >= 150,
         "only {verified} monsters verified - the walk went vacuous"
+    );
+    assert!(
+        boss_prims > 0,
+        "no boss-page prim was walked - the 0xB3..=0xBA leg went vacuous"
     );
 }

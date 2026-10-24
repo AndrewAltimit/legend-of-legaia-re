@@ -130,6 +130,7 @@ impl World {
             plate_value: self.spirit_gauge(s.actor).min(100) as u8,
             list_page: s.list_page,
             list_pages: s.list_pages,
+            list_slide: s.list_slide,
             phase: (&s.phase).into(),
             status: self.raw_status_word(s.actor),
             pennant_glides: &s.pennant_glides,
@@ -197,11 +198,84 @@ impl World {
             plate_value: self.battle_ctx.spirit_plate_value.clamp(0, 100) as u8,
             list_page: None,
             list_pages: 0,
+            list_slide: 0,
             phase: ArtsInputScreen::Review,
             status: 0,
             pennant_glides: &[],
             chip_slide: None,
         })
+    }
+
+    /// Stand the open arts entry's Triangle list on `page` with its window's
+    /// slide counter at `slide` - a retail capture's list as its RAM holds
+    /// it (`_DAT_8007B458 / 5`, `0x801F4E0A`). A no-op without an entry, or
+    /// for a page the character's learned count does not reach.
+    pub fn seat_arts_list(&mut self, page: u8, slide: u8) {
+        use legaia_engine_battle::arts_command_input::ARTS_LIST_SLIDE_MAX;
+        let Some(s) = self.battle.arts_input.as_mut() else {
+            return;
+        };
+        if page >= s.list_pages {
+            return;
+        }
+        s.list_page = Some(page);
+        s.list_slide = slide.min(ARTS_LIST_SLIDE_MAX);
+    }
+
+    /// The rows the Triangle arts list's open page shows, in row order, or
+    /// `None` while no list page is open or the arts-name table is not
+    /// installed ([`Self::install_menu_text`]).
+    ///
+    /// The list renderer `FUN_80034358` walks the acting character's learned
+    /// ids (record `+0x186..`, count `+0x185`) from the pager's row offset
+    /// (`_DAT_8007B458`, five rows a page), and for each scans the arts-name
+    /// table for `[character, id]`. An id the table does not carry leaves its
+    /// row empty (`None`): the row pitch still advances (`0x8003474C`).
+    /// `0xC1 XX` substitutions in a name are spliced with party member
+    /// `XX`'s name, as the text kernel's expander `FUN_80036514` does.
+    ///
+    /// PORT: FUN_80034358 (row model)
+    pub fn arts_list_rows(
+        &self,
+    ) -> Option<Vec<Option<legaia_engine_battle::arts_command_input::ArtsListRow>>> {
+        use legaia_engine_battle::arts_command_input::{ARTS_LIST_ROWS_PER_PAGE, ArtsListRow};
+        if self.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
+            return None;
+        }
+        let s = self.battle.arts_input.as_ref()?;
+        let page = s.list_page?;
+        let table = self.menu.text.as_ref()?.arts.as_ref()?;
+        let char_slot = self.party_roster_slot(s.actor as usize);
+        let record = self.party.roster.members.get(char_slot)?;
+        let skills = record.displayed_skills();
+        let count = usize::from(skills.count).min(skills.ids.len());
+        let halved = record.ability_bits()[5] & 0x08 != 0;
+        let character = self.caster_character(char_slot as u8);
+        let first = usize::from(page) * ARTS_LIST_ROWS_PER_PAGE;
+        let rows = (first..count.min(first + ARTS_LIST_ROWS_PER_PAGE))
+            .map(|i| {
+                let id = skills.ids[i];
+                let e = table
+                    .iter()
+                    .find(|e| e.character == character && e.index == id)?;
+                let mut name = Vec::with_capacity(e.name_bytes.len());
+                let mut b = e.name_bytes.iter().copied();
+                while let Some(c) = b.next() {
+                    if c == 0xC1 {
+                        let who = b.next().unwrap_or(0);
+                        name.extend_from_slice(self.party_name(usize::from(who)).as_bytes());
+                    } else {
+                        name.push(c);
+                    }
+                }
+                Some(ArtsListRow {
+                    name,
+                    ap: if halved { e.ap >> 1 } else { e.ap },
+                    glyphs: e.glyphs.clone(),
+                })
+            })
+            .collect();
+        Some(rows)
     }
 
     /// Where the Spirit turn's AP bar and AP plate sit relative to their rest
@@ -378,6 +452,9 @@ impl World {
         );
         let phase_before = session.phase.clone();
         session.input(ev, party, monsters);
+        // `FUN_801D0748` runs the arts-list driver `FUN_801D3444` after the
+        // frame's input: the Triangle list window slides by the frame step.
+        session.step_list_slide(self.battle.anim_pass_vsyncs);
         if let Some(cue) = super::ui_cues::arts_phase_cue(&phase_before, &session.phase, ev.cross) {
             self.push_battle_ui_cue(cue);
         }

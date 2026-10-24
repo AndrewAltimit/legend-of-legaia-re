@@ -65,7 +65,7 @@ pub(crate) fn cmd_monster_model(
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| "model".into());
-        let exported = monster_model::export_obj(&mesh, &stem_name)?;
+        let exported = monster_model::export_obj_with_boss_page(&mesh, &entry, &stem_name)?;
         let obj_path = stem.with_extension("obj");
         let mtl_path = stem.with_extension("mtl");
         let png_path = stem.with_extension("png");
@@ -79,6 +79,22 @@ pub(crate) fn cmd_monster_model(
             exported.page_height,
             &exported.rgba,
         )?;
+        // The shared boss effect page the `boss_*` faces sample, for the
+        // editor to display. Reference only: --obj never reads it back.
+        if let Some(boss) = &exported.boss_rgba {
+            let boss_path = stem.with_file_name(format!("{stem_name}_boss.png"));
+            legaia_tim::write_png(
+                &boss_path,
+                monster_model::UV_SPACE,
+                monster_model::PAGE_HEIGHT,
+                boss,
+            )?;
+            println!(
+                "boss-page faces (materials boss_*) sample the shared boss effect page: \
+                 reference render {} (not re-imported)",
+                boss_path.display()
+            );
+        }
         println!(
             "exported id {id} {name}: {} parts, {} verts, {} prims -> {} / {} / {} ({}x{})",
             retail_tmd.objects.len(),
@@ -92,7 +108,7 @@ pub(crate) fn cmd_monster_model(
         );
         println!(
             "edit in Blender (raw GTE units, y-down; keep all {} `o part_NN` groups; \
-             materials skin_pNN / skin_semi_abrN_pNN / flat carry the render state)",
+             materials skin_pNN / skin_semi_abrN_pNN / boss_* / flat carry the render state)",
             retail_tmd.objects.len()
         );
     }

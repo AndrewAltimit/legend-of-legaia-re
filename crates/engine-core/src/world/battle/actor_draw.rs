@@ -25,12 +25,6 @@ pub const PARTY_BODY_RADIUS: i16 = 640;
 /// cast module's creature seat - `docs/subsystems/cast-module.md`).
 pub const SUMMON_CREATURE_SEAT: i16 = 7;
 
-/// How far above the floor (retail units, `-Y`) the port lays the battle
-/// ground shadow, so a host's depth test draws it over the stage floor it is
-/// coplanar with. Retail has no depth buffer to tie; clear of the other
-/// coplanar lifts (the field drop shadow's six units).
-pub const BATTLE_SHADOW_DEPTH_LIFT: f32 = 2.5;
-
 /// Where a battle body's ground shadow sits off its node position: the
 /// drawn pose's centroid, turned onto the ground.
 ///
@@ -49,7 +43,7 @@ pub const BATTLE_SHADOW_DEPTH_LIFT: f32 = 2.5;
 /// makes ([`super::locomotion::body_offset`]); the port's battle bodies
 /// carry no pitch, so the centroid's ground projection has no height.
 // PORT: FUN_80048A08 (`0x80049034..0x8004914C`, the shadow's translation)
-fn battle_shadow_offset(actor: &crate::world::Actor) -> (i16, i16) {
+pub fn battle_shadow_offset(actor: &crate::world::Actor) -> (i16, i16) {
     super::locomotion::stream_pose(actor)
         .map(super::locomotion::pose_centroid_xz)
         .map(|(cx, cz)| super::locomotion::body_offset(actor.battle.facing_angle, cx, cz, 0x1000))
@@ -400,46 +394,6 @@ impl World {
         legaia_render_kernels::shatter::ShatterInput::new(b.shatter as i16, row)
     }
 
-    /// The body-to-view map battle body `actor_idx`'s object matrices carry
-    /// above each object's pose - the battle world scale (the base matrix
-    /// `0x8007BF10 = 16384 * I`), the camera rotation `Rx(pitch) * Ry(yaw)`
-    /// and the body's facing `+0x46` - which the shatter renderer's sweep
-    /// arms measure a triangle's centroid through (`0x8002A000`), less the
-    /// node's view translation. Hand it to
-    /// [`legaia_render_kernels::shatter::bone_sweep_frame`]. Without a
-    /// camera pose the body is measured unturned by the camera.
-    // REF: FUN_80029DD8, FUN_80048A08
-    pub fn battle_shatter_view(
-        &self,
-        actor_idx: usize,
-        pose: Option<&BattleCamPose>,
-        world_scale: f32,
-    ) -> [[f32; 3]; 3] {
-        let to_rad = |units: f32| units / 4096.0 * std::f32::consts::TAU;
-        // `Ry(b)` in the camera kernel's convention: `+Z` turns onto
-        // `(sin b, 0, cos b)`, the same turn a body's facing makes.
-        let ry = |b: f32| {
-            let (s, c) = b.sin_cos();
-            [[c, 0.0, s], [0.0, 1.0, 0.0], [-s, 0.0, c]]
-        };
-        let mul = |a: [[f32; 3]; 3], b: [[f32; 3]; 3]| -> [[f32; 3]; 3] {
-            std::array::from_fn(|r| {
-                std::array::from_fn(|c| (0..3).map(|k| a[r][k] * b[k][c]).sum())
-            })
-        };
-        let facing = self
-            .actors
-            .get(actor_idx)
-            .map_or(0.0, |a| f32::from(a.battle.facing_angle & 0xFFF));
-        let mut m = ry(to_rad(facing));
-        if let Some(p) = pose {
-            let (sa, ca) = to_rad(p.pitch).sin_cos();
-            let rx = [[1.0, 0.0, 0.0], [0.0, ca, -sa], [0.0, sa, ca]];
-            m = mul(mul(rx, ry(to_rad(p.yaw))), m);
-        }
-        m.map(|row| row.map(|x| x * world_scale))
-    }
-
     /// Whether battle body `actor_idx` is off screen under a hide: its
     /// `+0x21C` raised to `0xFF` **and** its colour word `+0x04` zero.
     /// Retail's hide is the colour word - the summon band writes
@@ -457,175 +411,6 @@ impl World {
             a.battle.render_flag == legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN
                 && a.battle.render_color == 0
         })
-    }
-
-    /// Battle body `actor_idx`'s **ground shadow** this frame, as a mesh
-    /// composed like an effect part - `None` when the body is not drawn
-    /// (`plan.drawn`), or the shadow gate or its pitch / roll test drops it.
-    ///
-    /// Retail draws it at the end of the per-actor draw `FUN_80048A08`
-    /// (`0x80049034..0x800492BC`): the point under the actor (its height
-    /// `+0x16` zeroed), a 24-column disc of radius `+0x58 * 4 / 10` built by
-    /// `FUN_80028158` in mode `1` ([`legaia_engine_effects::effect_default_arm::ground_shadow_mesh`]),
-    /// subtracted from the frame (flag word `0x8A000000`). The colours are
-    /// `legaia_engine_battle_vm::battle_actor_draw::shadow_plan` over the draw
-    /// colour word. The skip flag `+0x6A` is not modelled (no engine actor
-    /// carries it), so every drawn body casts one.
-    ///
-    /// The disc sits [`BATTLE_SHADOW_DEPTH_LIFT`] above the floor so both
-    /// hosts' depth tests draw it over the stage floor it lies on.
-    pub fn battle_ground_shadow(
-        &self,
-        actor_idx: usize,
-        plan: &BattleActorDrawPlan,
-    ) -> Option<legaia_engine_effects::effect_ribbon::RibbonDraw> {
-        if self.mode != SceneMode::Battle || !plan.drawn {
-            return None;
-        }
-        let actor = self.actors.get(actor_idx)?;
-        let m = &actor.move_state;
-        // The main draw's `+0x6A`: the retail pool slot is the body's
-        // `+0x5A` (the plan's seat, which hands the summon creature retail's
-        // slot `7`), and the after-image ghosts (`battle_afterimage`) cast
-        // none.
-        let skip = legaia_engine_battle_vm::battle_actor_draw::body_shadow_skip(plan.seat, false);
-        let shadow = legaia_engine_battle_vm::battle_actor_draw::shadow_plan(
-            skip,
-            plan.draw_colour,
-            m.world_y,
-            plan.radius,
-            m.render_24,
-            m.render_28,
-        )?;
-        if !shadow.drawn {
-            return None;
-        }
-        let mesh = legaia_engine_effects::effect_default_arm::ground_shadow_mesh(
-            shadow.inner,
-            shadow.outer,
-            shadow.radius,
-        );
-        let (dx, dz) = battle_shadow_offset(actor);
-        Some(legaia_engine_effects::effect_ribbon::RibbonDraw {
-            mesh,
-            world_pos: [
-                f32::from(m.world_x.wrapping_add(dx)),
-                -BATTLE_SHADOW_DEPTH_LIFT,
-                f32::from(m.world_z.wrapping_add(dz)),
-            ],
-            rot: [0.0; 3],
-            // A battle body's ground shadow is not a move-VM node; it draws
-            // under the full camera (`FUN_80048A08`).
-            flags_52: 0,
-        })
-    }
-
-    /// The clip a battle body draws under while its node's `+0x42` is raised
-    /// ([`legaia_engine_battle_vm::battle_action::BattleActor::floor_clip`]),
-    /// in the body's **mesh** space - the posed mesh both hosts upload, in
-    /// retail's actor-local units. `None` for a body that draws unclipped.
-    ///
-    /// Retail's per-actor draw `FUN_80048A08` tests the node's `+0x42` per
-    /// object (`lh v0,0x42(s0)` at `0x80048E84`): raised, it runs
-    /// `FUN_8001C204` over the object's posed transform and hands the object
-    /// to the clipping renderer `FUN_8002735C` (`0x80048E94..0x80048FE4`)
-    /// instead of the prim dispatcher. The clip is object-effect row
-    /// `+0x42 - 1`, which battle setup re-seeds as angles `0`,
-    /// `lo = -0x7FFF`, `hi = 0`
-    /// ([`legaia_engine_effects::object_effect::BATTLE_ROW0`]): the half
-    /// space at and above the stage floor. The one battle writer is the
-    /// defeat fade's sink (`World::tick_battle_defeat_sink`), so a killed
-    /// monster goes down through the floor and is gone once its mesh is
-    /// under it - `player_steal_skeleton_banner` holds its skeleton `183`
-    /// units down with no packet of it left on the ordering table.
-    ///
-    /// The effect point is `s * Rrow * (Ractor * v + pos)` over the posed
-    /// vertex `v`, the node position `pos` (the body's live trio) and the
-    /// render scale `s = +0x72`; the actor rotation is the facing yaw, which
-    /// the floor row's vertical normal never reads.
-    // REF: FUN_80048A08, FUN_8001C204, FUN_80027F00
-    pub fn battle_actor_floor_clip(
-        &self,
-        actor_idx: usize,
-    ) -> Option<legaia_engine_effects::object_effect::MeshClip> {
-        if self.mode != SceneMode::Battle {
-            return None;
-        }
-        let actor = self.actors.get(actor_idx)?;
-        if !actor.battle.floor_clip {
-            return None;
-        }
-        // The summon creature's node may name another row (PROT 0927 raises
-        // `+0x42 = 2`); every other clipped body is on the floor row.
-        let kind = match self.casting.module_creature_clip_kind {
-            k if k > 1 && self.casting.summon_actor_slot == Some(actor_idx as u8) => k,
-            _ => 1,
-        };
-        let clip = self
-            .object_effect
-            .clip_for(kind, &self.sin_lut, &self.cos_lut)?;
-        let m = &actor.move_state;
-        let yaw = f32::from(actor.battle.facing_angle & 0xFFF) / 4096.0 * std::f32::consts::TAU;
-        let (s, c) = yaw.sin_cos();
-        let rows = [
-            [c, 0.0, s, f32::from(m.world_x)],
-            [0.0, 1.0, 0.0, f32::from(m.world_y)],
-            [-s, 0.0, c, f32::from(m.world_z)],
-        ];
-        let scale = match m.field_72 {
-            0 => 1.0,
-            v => f32::from(v) / 4096.0,
-        };
-        Some(clip.in_mesh_space(rows, scale))
-    }
-
-    /// Every battle body's [`Self::battle_ground_shadow`], each judged by the
-    /// host's own draw plan (`plan_of`, the same call its actor pass makes).
-    /// Both hosts' battle FX passes draw this list after the draw-kind-4
-    /// list.
-    pub fn battle_ground_shadows(
-        &self,
-        plan_of: impl Fn(usize) -> Option<BattleActorDrawPlan>,
-    ) -> Vec<legaia_engine_effects::effect_ribbon::RibbonDraw> {
-        if self.mode != SceneMode::Battle {
-            return Vec::new();
-        }
-        (0..self.actors.len())
-            .filter(|&i| self.actors[i].active)
-            .filter_map(|i| self.battle_ground_shadow(i, &plan_of(i)?))
-            .collect()
-    }
-
-    /// Apply [`Self::battle_limb_dim_plan`] to a per-frame posed battle mesh's
-    /// packet colours - the native window's seat. `colors` must be the
-    /// stream `legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot` built from the
-    /// same `tmd` / `raw` (it walks the textured prims in the order
-    /// `tmd_to_vram_mesh_with_object_ids` does, which supplies the object of
-    /// each vertex). Returns whether anything was dimmed.
-    pub fn dim_posed_battle_mesh(
-        &self,
-        actor_idx: usize,
-        tmd: &legaia_tmd::Tmd,
-        raw: &[u8],
-        colors: &mut [[u8; 3]],
-    ) -> bool {
-        let Some(plan) = self.battle_limb_dim_plan(actor_idx, tmd.objects.len()) else {
-            return false;
-        };
-        let mut ids = legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(tmd, raw).1;
-        if ids.len() != colors.len() {
-            return false;
-        }
-        // The rule tests the draw pass's channel counter, so an object
-        // drawn in another object's channel (an equipment variant) dims
-        // with that channel.
-        if let Some(ch) = self.battle_live_object_channels(actor_idx) {
-            for id in &mut ids {
-                *id = ch.get(*id as usize).copied().unwrap_or(*id);
-            }
-        }
-        plan.apply_rgb(colors, &ids);
-        true
     }
 }
 
@@ -736,80 +521,6 @@ mod tests {
         world.actors[0].battle.render_flag = 0;
         world.actors[0].battle.render_color = 0;
         assert!(!world.battle_body_hidden(0), "a zero word reads neutral");
-    }
-
-    /// A drawn party body casts the 24-column subtractive disc of radius
-    /// `640 * 4 / 10`, under it on the floor; a pitched body casts none.
-    #[test]
-    fn a_drawn_party_body_casts_the_ground_shadow_disc() {
-        let mut world = battle_world();
-        world.actors[0].move_state.world_z = 0;
-        world.actors[0].move_state.world_x = 300;
-        let plan = world
-            .battle_actor_draw_plan(0, Some(&pose(4000.0)), 4.0, false)
-            .expect("party seat");
-        assert_eq!(plan.radius, PARTY_BODY_RADIUS);
-        let d = world.battle_ground_shadow(0, &plan).expect("a shadow");
-        assert_eq!(d.world_pos, [300.0, -BATTLE_SHADOW_DEPTH_LIFT, 0.0]);
-        assert_eq!(d.mesh.indices.len(), 24 * 6);
-        let r = d
-            .mesh
-            .positions
-            .iter()
-            .map(|p| p[0].hypot(p[2]))
-            .fold(0.0f32, f32::max);
-        assert!((r - 256.0).abs() < 1.5, "radius {r}");
-        let all = world.battle_ground_shadows(|i| {
-            world.battle_actor_draw_plan(i, Some(&pose(4000.0)), 4.0, false)
-        });
-        assert!(!all.is_empty());
-        world.actors[0].move_state.render_24 = 0x100;
-        assert!(world.battle_ground_shadow(0, &plan).is_none());
-    }
-
-    /// The disc sits under the drawn pose's centroid, turned by the facing,
-    /// not under the node: a clip whose parts stand 400 units forward of the
-    /// node moves the shadow with them (`FUN_80048A08`'s `MVMVA` of the pose
-    /// pool's `+0x120 / +0x124`).
-    #[test]
-    fn the_ground_shadow_follows_the_pose_centroid() {
-        use legaia_actor_formats::monster_archive::{MonsterAnimation, PartPose};
-        let mut world = battle_world();
-        world.actors[0].move_state.world_x = 100;
-        world.actors[0].move_state.world_z = -700;
-        let plan = world
-            .battle_actor_draw_plan(0, Some(&pose(4000.0)), 4.0, false)
-            .expect("party seat");
-        let anim = MonsterAnimation {
-            variant_track: Default::default(),
-            action_id: 0,
-            rate: 1,
-            attach_key: 0,
-            solo_flag: 0,
-            impact_class: 0,
-            effect_script: Vec::new(),
-            part_count: 2,
-            frame_count: 1,
-            frames: vec![vec![
-                PartPose {
-                    tz: 400,
-                    ..PartPose::default()
-                };
-                2
-            ]],
-        };
-        let a = &mut world.actors[0];
-        a.battle_animation = legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(&anim);
-        a.pose_frame = Some(a.battle_animation.as_mut().unwrap().seat_cursor(0));
-        for (facing, want) in [(0u16, [100.0, -300.0]), (0x800, [100.0, -1100.0])] {
-            world.actors[0].battle.facing_angle = facing;
-            let d = world.battle_ground_shadow(0, &plan).expect("a shadow");
-            assert!(
-                (d.world_pos[0] - want[0]).abs() <= 1.0 && (d.world_pos[2] - want[1]).abs() <= 1.0,
-                "facing {facing:#x}: {:?}",
-                d.world_pos
-            );
-        }
     }
 
     /// The seated summon creature is a tinted body on retail's seat 7: PROT
@@ -1023,30 +734,5 @@ mod tests {
         world.tables.rot_limb_table = None;
         world.battle.status_effects.apply(0, StatusKind::Rot);
         assert!(world.battle_limb_dim_plan(0, 12).is_none());
-    }
-
-    /// A body the defeat sink raised `+0x42` on keeps only what stands at
-    /// or above the floor: over its posed mesh the clip is the mesh's own
-    /// `Y` against the body's height `+0x36`, so a body `183` down (Y-down)
-    /// keeps nothing above mesh `y = -183`.
-    #[test]
-    fn a_sunk_body_is_clipped_at_the_stage_floor() {
-        let mut world = World::default();
-        world.enter_battle(1, 1);
-        assert!(world.battle_actor_floor_clip(1).is_none(), "gate down");
-        world.actors[1].battle.floor_clip = true;
-        world.actors[1].battle.facing_angle = 0x800;
-        world.actors[1].move_state.world_x = 675;
-        world.actors[1].move_state.world_y = 183;
-        world.actors[1].move_state.world_z = 623;
-        let c = world.battle_actor_floor_clip(1).expect("raised");
-        assert!(
-            c.keeps([30.0, -200.0, -40.0]),
-            "a vertex still above the floor"
-        );
-        assert!(!c.keeps([30.0, -100.0, -40.0]), "a vertex sunk under it");
-        assert!(!c.keeps([0.0, 0.0, 0.0]), "the body's origin is under it");
-        world.mode = SceneMode::Field;
-        assert!(world.battle_actor_floor_clip(1).is_none(), "battle only");
     }
 }

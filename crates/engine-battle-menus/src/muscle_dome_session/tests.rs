@@ -980,16 +980,6 @@ fn glide_eases_linearly_with_signed_division() {
     assert_eq!(g.elapsed, 5);
 }
 
-#[test]
-fn time_meter_ramps_in_select_phase_and_drains_otherwise() {
-    // Ramp clamps at 0xC.
-    assert_eq!(time_meter_step(0xB, 3, true, true), (0xC, 0xE));
-    // Outside the select phase the same flags drain.
-    assert_eq!(time_meter_step(5, 2, false, true).0, 3);
-    // Drain floors at zero; empty bar sits at -0x92.
-    assert_eq!(time_meter_step(1, 3, true, false), (0, -0x92));
-}
-
 // --- the contest layer ------------------------------------------------
 
 /// Synthetic score rows shaped like the ladder's (8 / 8 / 13 populated
@@ -1456,4 +1446,35 @@ fn the_opponent_casts_an_affordable_spell_on_its_magic_roll() {
         }
     }
     assert!(cast_seen, "half the magic rolls pick the spell");
+}
+
+/// A dome leg runs the battle menu SM, so its entry screen's Triangle list
+/// window slides like the battle's (`FUN_801D3444`): inert on the ring, in
+/// once the entry's list is open, out again when it closes.
+#[test]
+fn the_entry_list_window_slides_in_the_dome_as_in_battle() {
+    use legaia_art::{ActionConstant, Command};
+    let mut s = session();
+    s.install_art_catalog(
+        0,
+        vec![(
+            ActionConstant::from_byte(0x1F).unwrap(),
+            vec![Command::Right, Command::Left],
+        )],
+    );
+    s.tick_arts_list_slide(2);
+    assert_eq!(s.arts_list_slide(), 0, "the ring: no entry");
+    // Attack, then Command: the direction entry.
+    s.select_input(pad(|p| p.left = true));
+    s.select_input(pad(|p| p.right = true));
+    assert!(matches!(s.menu(), DomeMenu::Input(_)), "{:?}", s.menu());
+    s.select_input(pad(|p| p.triangle = true));
+    for _ in 0..8 {
+        s.tick_arts_list_slide(2);
+    }
+    assert_eq!(s.arts_list_slide(), 12);
+    // One page: the next press closes it, and the window drains.
+    s.select_input(pad(|p| p.triangle = true));
+    s.tick_arts_list_slide(2);
+    assert_eq!(s.arts_list_slide(), 10);
 }

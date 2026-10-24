@@ -7,7 +7,7 @@ use legaia_engine_mode::card_request::{CARD_REQUEST_MODE, request_card_mode};
 
 #[test]
 fn world_tick_drives_walk_idle_switch_into_pose_frame() {
-    use crate::world::World;
+    use legaia_engine_core::world::World;
     use legaia_engine_mode::mode::SceneMode;
     let mut w = World {
         mode: SceneMode::Field,
@@ -44,7 +44,7 @@ fn world_tick_drives_walk_idle_switch_into_pose_frame() {
 /// does, so the pad cannot walk the player out of a held door.
 #[test]
 fn a_parked_transition_engages_the_player() {
-    let mut w = crate::world::World::new();
+    let mut w = legaia_engine_core::world::World::new();
     assert!(!w.script_context_engages_player());
     w.scene_transition_hold = Some(SceneTransitionHold::new(HeldTransition::Portal(3, 1)));
     assert!(w.script_context_engages_player());
