@@ -1244,7 +1244,11 @@ boxes read it back once before any box writes its own state
 PSX rasterisation and retail-faithful came back at the default on a reload
 while the window's launcher kept them. Pinned by
 `play_toggles::tests::launch_switches_are_remembered_in_the_launcher_layout`
-and `launcher::tests::stored_switches_are_the_shared_layout`.
+and `launcher::tests::stored_switches_are_the_shared_layout`;
+`launcher::tests::every_launcher_row_has_a_play_page_twin` maps every launcher
+row to its page control through an exhaustive match, so a new row cannot land
+without an answer for the page, and fails a launch-switch row that leaves the
+shared set untouched.
 
 ## Pairing frames: what a screenshot adds
 
@@ -2245,8 +2249,10 @@ a walked door reach one session through `SceneHost::drain_minigame_warp`. `K`
 built a Qualifier floor of its own until it took the warp, so the dance it
 opened ignored the story flags the hall's floor is read from. Two launchers
 stay direct on purpose: `U` (the how-to floor, which no flag state in a
-launcher reaches) and fishing (`L`, and the page's `play_fishing_start`,
-alike).
+launcher reaches) and fishing (`L`, and the page picker's Fishing row through
+`play_fishing_start`, alike). The picker offers every playable slot
+(`play_minigames::tests::the_page_picker_offers_every_playable_minigame`); it
+lacked fishing, whose export no page control called.
 
 ### The minigame side-channel step is paired; its contents are not
 

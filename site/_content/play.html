@@ -2909,7 +2909,8 @@ div.play-vis-head { cursor: default; }
   });
   /* Minigame entry: arm the mode-24 door warp for the picked game, the
    * request a walked door makes (`World::request_minigame_warp`), so the
-   * session that opens is the one the door installs. */
+   * session that opens is the one the door installs. Fishing enters
+   * directly (`play_fishing_start`), as the native window's `L` does. */
   const mgWarpEl = document.getElementById('play-mg-warp');
   mgWarpEl.addEventListener('change', () => {
     const sub = parseInt(mgWarpEl.value, 10);
@@ -2917,8 +2918,10 @@ div.play-vis-head { cursor: default; }
     const rt = window.__playRuntime;
     if (!rt || isNaN(sub) || typeof rt.play_mg_debug_warp !== 'function') return;
     let ok = false;
-    try { ok = !!rt.play_mg_debug_warp(sub); } catch (e) { ok = false; }
-    saveMsg(ok ? 'Minigame door armed.' : 'Load a scene before entering a minigame.', !ok);
+    const fishing = sub === 0 && typeof rt.play_fishing_start === 'function';
+    try { ok = fishing ? !!rt.play_fishing_start() : !!rt.play_mg_debug_warp(sub); } catch (e) { ok = false; }
+    saveMsg(ok ? (fishing ? 'Fishing started.' : 'Minigame door armed.')
+               : 'Load a scene before entering a minigame.', !ok);
     canvas.focus();
   });
   window.__playApplyBattleTools = applyBattleTools;
