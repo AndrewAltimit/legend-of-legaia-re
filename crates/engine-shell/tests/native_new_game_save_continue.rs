@@ -20,6 +20,10 @@
 //! `play-window --pad-script` (`<leg>.pad-script`), so the save-anywhere leg
 //! can be replayed on a real window.
 //!
+//! `page_new_game_reaches_free_roam` runs the browser play page's runtime
+//! over the same opening, driven the way `play-view-frame.js` drives it, as
+//! far as the frame the pause menu may open.
+//!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
 use std::path::{Path, PathBuf};
@@ -409,4 +413,71 @@ fn new_game_save_anywhere_quit_continue() {
         return;
     };
     run_leg(Path::new(&disc), "save-anywhere", true);
+}
+
+/// The browser play page's runtime over the same New Game, driven the way
+/// `site/js/play-view-frame.js` drives it (`frame_ticks` with the frame's
+/// edges and held word, one tick a frame): the title's New Game
+/// (`play_new_game`), Cross mashed through the opening and the naming
+/// prompt's retail confirm, until the pause menu may open in `town01`.
+#[test]
+fn page_new_game_reaches_free_roam() {
+    let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let bytes = std::fs::read(&disc).expect("read the disc");
+    let mut rt = legaia_web_play::runtime::LegaiaRuntime::new();
+    rt.load_disc(bytes, String::new()).expect("load_disc");
+    rt.play_new_game().expect("play_new_game");
+    let (mut prev, mut pulse) = (0u16, 0u16);
+    let mut naming_step = 0u8;
+    let mut free_at = None;
+    for f in 0..20_000u32 {
+        let world = &rt.debug_session().expect("session").host.world;
+        let pad = if world.name_entry_active() {
+            if f % 8 >= 2 {
+                0
+            } else {
+                let p = [PadButton::Cross, PadButton::Up, PadButton::Cross]
+                    [(naming_step as usize).min(2)];
+                naming_step = naming_step.saturating_add(1);
+                mask(p)
+            }
+        } else if f % 4 < 2 {
+            mask(PadButton::Cross)
+        } else {
+            0
+        };
+        pulse |= pad & !prev;
+        prev = pad;
+        let r = rt.frame_ticks(1, pulse, pad).expect("frame_ticks");
+        if r.ticks > 0 {
+            pulse = 0;
+        }
+        let _ = rt.play_camera_vp(320.0, 240.0);
+        if naming_step >= 3 && rt.play_menu_can_open() {
+            free_at = Some(f);
+            break;
+        }
+        if f % 1000 == 999 {
+            let w = &rt.debug_session().expect("session").host.world;
+            eprintln!(
+                "[ngsc:page] f{f} scene '{}' mode {:?} dialog {} inline {} timeline {} engages {} chain {} named {}",
+                w.active_scene_label,
+                w.mode,
+                w.dialog.current.is_some(),
+                w.dialog.inline.is_some(),
+                w.cutscene_timeline_active(),
+                w.script_context_engages_player(),
+                w.cutscene.opening_chain_active,
+                naming_step
+            );
+        }
+    }
+    eprintln!("[ngsc:page] the pause menu may open from frame {free_at:?}");
+    assert!(
+        free_at.is_some(),
+        "the page's New Game never handed the controls back"
+    );
 }
