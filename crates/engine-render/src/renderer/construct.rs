@@ -231,6 +231,7 @@ impl Renderer {
             blend_list: std::cell::RefCell::new(Vec::new()),
             depth_view,
             native: None,
+            psx_texel_rule: std::cell::Cell::new(PsxTexelRule::Gpu),
             psx_mode: std::cell::Cell::new(false),
             ui_psx_tint: std::cell::Cell::new(true),
             vram_upload_counter: std::cell::Cell::new(0),

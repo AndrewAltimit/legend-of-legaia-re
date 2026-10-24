@@ -47,6 +47,11 @@ impl ApplicationHandler for PlayWindowApp {
         {
             r.set_psx_mode(true);
             r.set_native_resolution(Some(legaia_engine_render::PSX_DISPLAY_SIZE));
+            // Instrument: a retail-compare child scoring a PCSX-Redux capture
+            // samples that emulator's texel rule, not the console's.
+            if std::env::var("LEGAIA_PSX_CAPTURE_RASTER").as_deref() == Ok("pcsx-redux") {
+                r.set_psx_texel_rule(legaia_engine_render::PsxTexelRule::PcsxRedux);
+            }
             log::info!("play-window: PSX-faithful render mode enabled (native 320x240)");
         }
         // Opt-in dynamic-lighting enhancement (`--dynamic-lighting`, or the

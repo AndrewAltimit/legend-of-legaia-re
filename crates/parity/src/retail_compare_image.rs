@@ -99,6 +99,20 @@ pub fn set_frame_render(mode: FrameRender) {
     let _ = FRAME_RENDER.set(mode);
 }
 
+thread_local! {
+    static CAPTURE_EMULATOR: std::cell::Cell<&'static str> = const { std::cell::Cell::new("") };
+}
+
+/// Name the emulator that made the state the next image children score
+/// (`"mednafen"` / `"pcsx-redux"`). In the accuracy mode a PCSX-Redux
+/// capture's child samples that emulator's texel rule
+/// (`LEGAIA_PSX_CAPTURE_RASTER`, `PsxTexelRule::PcsxRedux`): its software
+/// GPU drops the console's half-texel bias, and scored against the console's
+/// rule every scaled texture on such a state reads as an engine miss.
+pub fn set_capture_emulator(emulator: &'static str) {
+    CAPTURE_EMULATOR.with(|c| c.set(emulator));
+}
+
 /// The render mode the image children run.
 pub fn frame_render() -> FrameRender {
     FRAME_RENDER.get().copied().unwrap_or_default()
@@ -426,6 +440,9 @@ pub fn engine_frame_with(
     // accuracy mode adds `--psx-render`: the frame drawn at the display's own
     // 320x240 with retail's snap and dither (`FrameRender`).
     let render = frame_render();
+    if render == FrameRender::Psx && CAPTURE_EMULATOR.with(|c| c.get()) == "pcsx-redux" {
+        cmd.env("LEGAIA_PSX_CAPTURE_RASTER", "pcsx-redux");
+    }
     cmd.args(["play-window", "--no-audio"])
         .args(render.child_args())
         .args(["--scene", scene])

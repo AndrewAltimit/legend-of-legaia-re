@@ -160,9 +160,17 @@ at the row itself) pick the same texel; they part on scaled texturing, and
 there the rounding is what Mednafen captures show: drawn the other way,
 `ending_vignette_fullscreen`'s mean pixel error is three times what the
 rounding leaves. PCSX-Redux captures are drawn by its software GPU, which
-takes the row without the half-texel bias, so on a PCSX-Redux state a scaled
-texture keeps a texel-row residual that is the capture's rasteriser, not
-retail's.
+takes the texel with no bias - at the pixel centre along the row and at the
+row itself - so scored against the console's rule a scaled texture on a
+PCSX-Redux state reads as a miss that is the capture's rasteriser, not the
+engine. `Renderer::set_psx_texel_rule(PsxTexelRule::PcsxRedux)` samples that
+rule instead; it is an instrument, not a player mode
+([retail-compare](../tooling/retail-compare.md#the-image-channel)).
+
+The composited screen primitives take the same pixel centre and texel bias
+on the native target: a sprite drawn one texel per pixel samples the same
+texels either way, and a scaled quad - an ending vignette's photo shrunk to
+a corner - samples the GPU's.
 
 ### What the clean rasteriser leaves on a retail frame
 

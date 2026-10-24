@@ -21,6 +21,23 @@ use super::*;
 /// the GTE projects onto, the stage every host draws in.
 pub const PSX_DISPLAY_SIZE: (u32, u32) = (320, 240);
 
+/// Which texel PSX mode on the native target takes for a fragment's UV.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PsxTexelRule {
+    /// The console's: the UV at the integer sample point plus half a texel
+    /// on both axes (the GPU's interpolators start from the vertex value
+    /// plus one half), so the texel is the UV rounded. Mednafen captures
+    /// match it.
+    #[default]
+    Gpu,
+    /// PCSX-Redux's software GPU: no half-texel bias - the texel at the
+    /// pixel centre along the row and at the row itself. Not a player mode:
+    /// the retail-compare image child takes it on a PCSX-Redux capture, so
+    /// the score measures the engine and not that emulator's rasteriser
+    /// (`LEGAIA_PSX_CAPTURE_RASTER=pcsx-redux`).
+    PcsxRedux,
+}
+
 /// The offscreen frame of [`Renderer::set_native_resolution`].
 pub(crate) struct NativeTarget {
     pub(super) width: u32,

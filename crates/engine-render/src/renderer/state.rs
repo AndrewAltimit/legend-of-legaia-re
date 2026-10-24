@@ -136,6 +136,9 @@ pub struct Renderer {
     /// The native-resolution frame target ([`Self::set_native_resolution`]);
     /// `None` draws straight onto the surface.
     pub(super) native: Option<super::native_target::NativeTarget>,
+    /// The texel rule of PSX mode on the native target
+    /// ([`Self::set_psx_texel_rule`]).
+    pub(super) psx_texel_rule: std::cell::Cell<PsxTexelRule>,
     /// PSX-faithful rendering mode. When `true`, the VRAM-mesh shader uses
     /// affine (linear-in-screen-space) UV interpolation instead of
     /// perspective-correct, and snaps clip-space x/y to integer pixel
@@ -354,6 +357,14 @@ impl Renderer {
         self.psx_mode.get()
     }
 
+    /// Pick the texel rule PSX mode on the native target samples with:
+    /// [`PsxTexelRule::Gpu`] (the default, the console's) or
+    /// [`PsxTexelRule::PcsxRedux`], an instrument for scoring a frame
+    /// against a PCSX-Redux capture. No effect off the native target.
+    pub fn set_psx_texel_rule(&self, rule: PsxTexelRule) {
+        self.psx_texel_rule.set(rule);
+    }
+
     /// `psx_params.z` / `.w` of a mesh uniform: the vertex snap (`0` off,
     /// `1` on, `2` on with the native target's pixel centre - see
     /// [`Self::set_native_resolution`]) and the dither enable.
@@ -361,7 +372,10 @@ impl Renderer {
         match (self.psx_mode.get(), self.native.is_some()) {
             (false, _) => (0.0, 0.0),
             (true, false) => (1.0, 1.0),
-            (true, true) => (2.0, 1.0),
+            (true, true) => match self.psx_texel_rule.get() {
+                PsxTexelRule::Gpu => (2.0, 1.0),
+                PsxTexelRule::PcsxRedux => (3.0, 1.0),
+            },
         }
     }
 

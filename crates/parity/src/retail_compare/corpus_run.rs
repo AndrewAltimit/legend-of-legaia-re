@@ -124,6 +124,7 @@ pub fn run_corpus(opts: &RunOptions<'_>) -> Result<Vec<StateReport>> {
         {
             continue;
         }
+        crate::retail_compare_image::set_capture_emulator(entry.emulator);
         // A state made on a known patched image runs the engine on that
         // image's files (`resident_disc`); one whose image is not on this
         // machine runs on the retail disc and says so.

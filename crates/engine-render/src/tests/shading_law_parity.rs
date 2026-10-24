@@ -1310,7 +1310,14 @@ fn the_native_psx_texel_is_the_rounded_uv_on_both_hosts() {
         let n = nm
             .call(
                 fnat,
-                vec![Val::f(&uv), Val::f(&uv_dy), Val::f(&b), Val::f(&bdy)],
+                vec![
+                    Val::f(&uv),
+                    Val::f(&[1.0, 0.0]),
+                    Val::f(&uv_dy),
+                    Val::f(&b),
+                    Val::f(&[0.0; 4]),
+                    Val::f(&bdy),
+                ],
             )
             .ok()
             .flatten()

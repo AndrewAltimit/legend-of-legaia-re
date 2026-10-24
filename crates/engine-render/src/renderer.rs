@@ -35,7 +35,7 @@ pub(crate) use fog_volume::FOG_SHADER_SRC;
 #[cfg(test)]
 pub(crate) use bloom::BLOOM_SHADER_SRC;
 pub(crate) use letterbox::letterbox_scale;
-pub use native_target::PSX_DISPLAY_SIZE;
+pub use native_target::{PSX_DISPLAY_SIZE, PsxTexelRule};
 pub use render::CaptureImage;
 pub use state::*;
 pub use uploaded::*;
