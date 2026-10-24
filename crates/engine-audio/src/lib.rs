@@ -28,7 +28,6 @@ pub use native_out::AudioOut;
 use native_out::pcm_to_silence_padded_adpcm;
 pub mod bgm_tail;
 pub mod duck;
-pub mod footstep;
 pub mod note_trace;
 pub mod seq_calc;
 pub mod seq_events;
@@ -52,7 +51,6 @@ pub use battle_voice::{
     BattleVoiceAction, BattleVoiceCtx, BattleVoiceStep, BattleVoiceTables, NO_CLIP,
     battle_voice_step,
 };
-pub use footstep::{AMBIENT_PERIOD_FRAMES, CadenceTick, FootstepCadence};
 pub use seq_calc::{
     SeqCalcState, SeqCall, SeqChannel, SlideDir, SlideTick, TempoTick, TrackEnd, dispatch_channel,
     seq_calc, tempo_slide_tick, tick_budget, track_end, volume_slide_tick,

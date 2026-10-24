@@ -13,7 +13,7 @@
 //! the native session and window make.
 //!
 //! What this module keeps is the page's side: the event -> cue table with
-//! per-row provenance, the footstep cadence, and the counters the readout and
+//! per-row provenance, and the counters the readout and
 //! the tests read ([`PlaySfx`]). The browser's audio output exists only after
 //! a user gesture, so the director is built then (on wasm) and staged at once,
 //! slot 0 and the mode's shared-region bank both, rather than lazily on the
@@ -36,20 +36,13 @@
 //! (`legaia_engine_audio::vab_bind::compute_pitch`), and the three menu cues
 //! sound again; see [`CUE_MENU_CURSOR`] for what remains inexact about them.
 //!
-//! The **footstep cadence** is the interesting case, and its answer is a
-//! negative: the *timing* is the ported retail kernel (`FUN_80018db0`,
-//! [`FootstepCadence`] - the interval derived from movement magnitude, the
-//! `0xB` gate, the `0x4B0` ambient period), but a runtime capture of every cue
-//! path while walking a field scene shows retail firing **no cue at all** - and
-//! shows that kernel's own step gate never opening while walking either. So
-//! the session steps the cadence on every host
-//! (`BootSession::step_footstep_cadence`) and queues nothing; this page keeps
-//! its counter observable. See `legaia_engine_session::session::CUE_FOOTSTEP`.
-//!
-//! [`FootstepCadence`]: legaia_engine_audio::footstep::FootstepCadence
+//! Walking is silent, as retail's is: a runtime capture of every cue path
+//! while walking a field scene shows retail firing **no cue at all**
+//! (`docs/formats/sfx-table.md`). The per-frame kernel once ported here as a
+//! "footstep cadence", `FUN_80018db0`, is the controller's rumble actuator
+//! (`legaia_engine_system::rumble`).
 //!
 //! REF: FUN_80016b6c (the cue-ring drainer whose descriptor shape SfxBank mirrors)
-//! REF: FUN_80018db0 (the footstep / ambient cadence this feeds movement into)
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_audio::{AudioSink, SfxBank};
@@ -195,7 +188,7 @@ const PLAY_EVENTS: &[PlayCue] = &[
 ];
 
 /// The page's side of the SFX channel: descriptor tables kept for before a
-/// director exists, the footstep cadence, and the readout's counters.
+/// director exists, and the readout's counters.
 #[derive(Default)]
 pub struct PlaySfx {
     /// Descriptors decoded from the disc executable, installed into the
@@ -208,13 +201,6 @@ pub struct PlaySfx {
     /// Whether the director's resident banks were staged against the loaded
     /// disc (once per director).
     pub resident_staged: bool,
-    /// Cadence steps the ported `FUN_80018db0` kernel has fired since the page
-    /// loaded (the session's `step_footstep_cadence`), counted whether or not
-    /// a cue id is pinned. This is what keeps the cadence falsifiable while
-    /// `CUE_FOOTSTEP` is `None`: a wired kernel that produces nothing is
-    /// indistinguishable from an unwired one, and `queued` alone cannot tell
-    /// them apart once the voice key is withheld.
-    pub cadence_steps: u32,
     /// Cues *enqueued* since the page loaded, whether or not a voice took
     /// them. This is what a cue **source** produces, so it is the signal that
     /// tells a wired-but-silent source apart from one that never fires.
@@ -223,7 +209,7 @@ pub struct PlaySfx {
     /// **before** the `fires` lookup and so independent of whether the row is
     /// withheld. It is what tells a wired firing site from an unwired one while
     /// a row is silent: `queued` cannot, because a withheld row never reaches
-    /// the queue. Same role [`Self::cadence_steps`] plays for the footstep.
+    /// the queue.
     pub menu_cue_requests: u32,
     /// Cues that keyed an SPU voice since the page loaded - the page's readout
     /// and the audibility half of the measurement.
@@ -351,10 +337,9 @@ impl LegaiaRuntime {
         }
     }
 
-    /// One sim tick of the SFX channel - the session's two steps, the ones
-    /// the native window's `tick_sfx` runs at the same point of its frame:
-    /// the footstep cadence (`BootSession::step_footstep_cadence`), then the
-    /// audio frame (`BootSession::step_audio_frame`: the duck ramp toward the
+    /// One sim tick of the SFX channel - the session's step the native
+    /// window's `tick_sfx` runs at the same point of its frame: the audio
+    /// frame (`BootSession::step_audio_frame`: the duck ramp toward the
     /// world's configured level - a loaded save's own; it ramps in every
     /// mode, and the ramp back to full outlives the battle - the delay
     /// scheduler and the matured cues). Called from `tick_frame`, after the
@@ -364,11 +349,7 @@ impl LegaiaRuntime {
         let Some(session) = self.scene_host.session_mut() else {
             return;
         };
-        let stepped = session.step_footstep_cadence();
         let report = session.step_audio_frame();
-        if stepped {
-            self.sfx.cadence_steps += 1;
-        }
         if let Some(report) = report {
             self.sfx.count(report);
         }
@@ -551,7 +532,6 @@ impl LegaiaRuntime {
             "shared_slot": shared.map(|b| b.slot),
             "banks": banks,
             "vab_staged": d.is_some_and(|d| d.has_sfx_vab_slot(0)),
-            "cadence_steps": self.sfx.cadence_steps,
             "menu_cue_requests": self.sfx.menu_cue_requests,
             "queued": self.sfx.queued,
             "fired": self.sfx.fired,

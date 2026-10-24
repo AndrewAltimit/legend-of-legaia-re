@@ -1593,7 +1593,7 @@ method is the kernel call plus the single thing only that host holds.
 | `tick_world_effects` | `BootSession::step_effect_scene_graphs` | the summon creature's mesh bind, ahead of the kernel |
 | `tick_muscle_time_meter` | `BootSession::step_muscle_time_meter` | nothing |
 | `tick_fishing_banners` | `engine-screens::fishing_banner_frame` | the cache its `&self` draw pass reads |
-| `tick_sfx` | `BootSession::step_footstep_cadence`, then `BootSession::step_audio_frame` | nothing; the page counts the cadence steps for its readout |
+| `tick_sfx` | `BootSession::step_audio_frame` | nothing |
 
 `take_party_wipe` consumes `World::game_over` on the take and is handed one
 term, whether a host screen already owns the frame. `poll_field_overlay` opens
@@ -1632,11 +1632,12 @@ the tick that queues a cue - the battle-event step last among them - and ahead
 of the field-event drain, so a zero-delay cue sounds on its own tick on either
 host. The battle's audio - the duck target, the strike / cast cues, the
 cast-voice prestage, the CD-XA clips and the arts shouts - is routed in the
-battle-event step, ahead of it, by `BootSession::route_battle_audio`. The
-footstep cadence (`step_footstep_cadence`, the `FUN_80018db0` port) steps on
-every host just before it; it queues `CUE_FOOTSTEP`, which is `None` because
-retail fires no footstep cue. Under a screen that freezes the field neither
-host reaches it; `step_overlay_sfx` steps the scheduler alone there.
+battle-event step, ahead of it, by `BootSession::route_battle_audio`. Walking
+queues no cue: retail fires no footstep ([`sfx-table.md`](../formats/sfx-table.md)),
+and the per-frame kernel once ported as a footstep cadence, `FUN_80018db0`, is
+the rumble actuator both hosts read through `BootSession::rumble_frame`. Under
+a screen that freezes the field neither host reaches the audio frame;
+`step_overlay_sfx` steps the scheduler alone there.
 
 `step_npc_clip_players` asks `World::field_npc_clips_advance` **per tick**.
 Retail reaches the per-actor anim tick (`FUN_800204F8`) once per field frame,

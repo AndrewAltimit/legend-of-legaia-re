@@ -1194,10 +1194,10 @@ that half is disclosed at its tag and waived by the drift gate.
 |---|---|---|---|---|
 | `sfx.rs` | 1 | converted | `native_minigame_ladder` rung 9 keys the slot reel motor's voice through the native director - see [the harness-blind table](#no-ladder-harness-blind) | `80065034` |
 
-The footstep cadence and the SFX delay ring left this table through the
-composition ladder - both tick on the browser play page's frame path, which is
-exactly the host asymmetry the footstep module doc records against the native
-window. The seven `sequencer` / `sfx` / `vab_bind` rows left it through the
+The SFX delay ring left this table through the composition ladder - it ticks
+on the browser play page's frame path. The footstep cadence beside it is gone:
+the kernel it copied, `FUN_80018DB0`, is the rumble actuator in
+`engine-system::rumble`. The seven `sequencer` / `sfx` / `vab_bind` rows left it through the
 audio session ladder: what they needed was a mixer-attached tick, which
 `legaia_engine_audio::TestAudioSink` supplies without a device by driving the
 same mixing core the cpal callback drives.

@@ -517,9 +517,8 @@ effect by writing an id into a ring, and only a handful of those writes have
 been traced, so a cue is either `disc` (the id is retail's, at the place retail
 writes it) or `site` (retail's id there is unpinned and the port reuses the
 closest one). The browser page reports the split per event rather than presenting
-a guess as the game's sound. The footstep is the clearest example: its *timing*
-is the retail cadence - a faster walk steps more often, standing still is silent
-- while the cue id it fires is the port's pick.
+a guess as the game's sound. Walking is silent, because retail's is: the game
+plays no footstep sound at all.
 
 ## 6. Saves and config live next to you
 

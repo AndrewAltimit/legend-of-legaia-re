@@ -123,8 +123,8 @@ impl LegaiaRuntime {
         // Muscle Dome: the round time meter, the session's step the native
         // window names the same way.
         self.tick_muscle_time_meter();
-        // Sound-effect channel: step the footstep cadence, advance the delay
-        // scheduler, key whatever matured.
+        // Sound-effect channel: advance the delay scheduler, key whatever
+        // matured.
         //
         // **After** the two queue drains above, not before them. The audio
         // frame is one session step on both hosts

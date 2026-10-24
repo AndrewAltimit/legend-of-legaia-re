@@ -276,14 +276,11 @@ impl PlayWindowApp {
         let _ = self.session.step_overlay_sfx();
     }
 
-    /// The tick's audio frame: the footstep cadence
-    /// (`BootSession::step_footstep_cadence`), then the duck ramp, the delay
-    /// scheduler and the cues that matured (`BootSession::step_audio_frame`),
-    /// after every step of the tick that queues one. The browser play page
-    /// runs the same two session steps in its own `tick_sfx`, at the same
-    /// point of its frame.
+    /// The tick's audio frame: the duck ramp, the delay scheduler and the
+    /// cues that matured (`BootSession::step_audio_frame`), after every step
+    /// of the tick that queues one. The browser play page runs the same
+    /// session step in its own `tick_sfx`, at the same point of its frame.
     pub(super) fn tick_sfx(&mut self) {
-        let _ = self.session.step_footstep_cadence();
         let _ = self.session.step_audio_frame();
     }
 

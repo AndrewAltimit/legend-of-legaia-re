@@ -202,16 +202,16 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["battle_mode_edge", "on_battle_entered", "on_battle_left"],
     },
     {
-        "what": "the tick's audio frame, native vs play page - the footstep "
-        "cadence ran on the page alone, beside a field CD-XA lane the "
-        "session now routes for every host. Both `tick_sfx` steps are the "
-        "same two session steps",
+        "what": "the tick's audio frame, native vs play page - a cadence step "
+        "once ran on the page alone, beside a field CD-XA lane the session "
+        "now routes for every host. Both `tick_sfx` steps are the same "
+        "session step",
         "sites": {
             "native": ("crates/engine-shell/src/window/boot_cutscene.rs", "tick_sfx"),
             "web": ("crates/web-play/src/play_sfx.rs", "tick_sfx"),
         },
         "mode": "symbols_all",
-        "symbols": ["step_footstep_cadence", "step_audio_frame"],
+        "symbols": ["step_audio_frame"],
     },
     {
         "what": "Muscle Dome hub sounds, native vs play page - the first "

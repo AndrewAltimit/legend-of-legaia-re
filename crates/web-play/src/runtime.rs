@@ -347,8 +347,8 @@ pub struct LegaiaRuntime {
     /// [`Self::play_shop_after_tick`] skips its step - the native window's
     /// `shop_opened_this_tick`.
     pub(crate) shop_opened_this_tick: bool,
-    /// The page's sound-effect channel: disc descriptor bank, delay scheduler,
-    /// footstep cadence ([`crate::play_sfx`]).
+    /// The page's sound-effect channel: disc descriptor bank, delay scheduler
+    /// ([`crate::play_sfx`]).
     pub(crate) sfx: crate::play_sfx::PlaySfx,
     /// The live party-wipe hand-off, when a wipe raised one: the same
     /// [`legaia_engine_menus::game_over::GameOverSession`] the native window

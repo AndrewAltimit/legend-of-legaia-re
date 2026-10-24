@@ -158,8 +158,8 @@ several silent gaps. Check both section counts before and after.
 
 The rename and anchor-move rows are source edits, and each wants a comment
 saying why the name or the tag placement is the way it is - otherwise the next
-refactor undoes it and the false accusation returns. `footstep.rs`,
-`anim_cue.rs`, `seq_calc.rs`, `dance_tutorial.rs`, `title_prim.rs`,
+refactor undoes it and the false accusation returns. `anim_cue.rs`,
+`seq_calc.rs`, `dance_tutorial.rs`, `title_prim.rs`,
 `vram_rect_copy.rs` and `world_map_overlay.rs` each carry that note.
 
 ### The two-graph split (implemented)
@@ -192,9 +192,9 @@ consults the graph whose error mode is safe for it.
 
    The qualifier has a cost, recorded above as its own mechanism: an
    unambiguous in-tree name is never gated even when `std` spells it too. A
-   crate-root re-export is the other soft spot - `pub use footstep::{..,
-   FootstepCadence}` makes `lib.rs` a file that "names the type", so any
-   `.tick(` in `lib.rs` passes the gate onto `FootstepCadence::tick`.
+   crate-root re-export is the other soft spot - a `pub use module::{..,
+   Type}` makes `lib.rs` a file that "names the type", so any `.tick(` in
+   `lib.rs` passes the gate onto `Type::tick`.
 
 ### Anchor granularity
 
@@ -343,7 +343,7 @@ recognisable: match the mechanism, apply the same fix.
 | addr | site | verdict | resolution |
 |---|---|---|---|
 | `801da6b4` | `engine-battle-vm/src/battle_action/target_cursor.rs` | FALSE-EDGE | Module `PORT:` / `REPLACED-BY:` pair moved onto `target_cursor_highlight`; the module was live through the cursor constants and `cursor_cue`, which both battle hosts use and which are not the port. The replacement verdict stands. |
-| `80018db0` | `engine-audio/src/footstep.rs` | FALSE-EDGE | `FootstepCadence::tick` renamed `tick_cadence`; the crate's own `lib.rs` re-exports the type and calls `spu.tick()`, so the gate passed. |
+| `80018db0` | `engine-audio/src/footstep.rs` (retired) | FALSE-EDGE | `FootstepCadence::tick` was renamed `tick_cadence`: the crate's own `lib.rs` re-exported the type and calls `spu.tick()`, so the gate passed. The copy is gone; the kernel's port is `engine-system::rumble`. |
 | `801e0080` | `engine-vm/src/battle_scatter.rs` (since deleted - the routine is the effect-VM walker) | FALSE-EDGE | `rotate_offset` renamed `scatter_rotate_offset`; the live `rotate_offset` is `engine-effects::action_effect_script`'s same-named free function, which gained its first host caller when the effect-script walk was wired into the battle tick. |
 | `800198e0`, `80058298`, `80058490` | `engine-title/src/title_prim.rs` | FALSE-EDGE | Module tag moved onto `exec_sprite_descriptor` / `exec_clear_image` / `exec_move_image`; the file was live through `Rect12::to_le_bytes`. |
 | `800468a4`, `80057914` | `engine-vm/src/vram_rect_copy.rs` | FALSE-EDGE | Module tag moved onto `enqueue` / `build_packet`, each with its own tag; the file was live through `op43_sub12_calls`, which no tag covered. Both helpers have a host now (`World::apply_vram_rect_copies`), so the split no longer hides an unwired half. |

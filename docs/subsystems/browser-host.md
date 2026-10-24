@@ -505,17 +505,10 @@ reports it per event with a note explaining the choice - the page names
 behaviour (`menu_confirm`) and never a cue number, and can label which sounds
 are the game's.
 
-The footstep row is the instructive one. Its *cadence* is the ported retail
-kernel `FUN_80018db0` (interval derived from movement magnitude, the `0xB`
-stationary gate, the `0x4B0` ambient period) getting its first host caller - but
-**two** of its inputs are port picks, and the second is worth knowing before
-touching this code. Retail's "movement magnitude" is a controller speed word,
-not a world-space delta: the kernel's own arithmetic requires `speed >= 0x30`
-before a step can fire, and the port's controller moves 2 units per tick, so
-feeding the raw displacement in leaves the interval permanently below the gate
-and no footstep ever sounds. `WALK_SPEED_UNITS` places a single-speed walker at
-the conservative end of retail's moving band instead. Pinning the real speed
-word is what would retire the pick.
+Walking is silent on the page, as it is in retail: a capture of every cue path
+while walking fires no footstep ([`sfx-table.md`](../formats/sfx-table.md)). The
+per-frame kernel once wired here as a footstep cadence, `FUN_80018db0`, is the
+controller's rumble actuator ([`audio.md`](audio.md#not-ssapi-the-0x801ce628-cluster-is-libpad)).
 
 `play_sfx_probe_peak` is the measurement that keeps this honest: it renders a cue
 through a throwaway SPU and reports its peak sample, so "wired but every cue is

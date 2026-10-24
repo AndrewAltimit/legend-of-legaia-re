@@ -476,11 +476,11 @@ The per-body anim decode `FUN_8004998C` ends in a second spawn loop (`0x8004A5FC
 | Selector `+0x21F` | Effect | Condition |
 |---|---|---|
 | `1` | `0x0B` (fire) | once the node colour's red lane reaches `0xB0` |
-| `2` | `0x10` | also sets screen-shake globals |
+| `2` | `0x10` | also rumbles the controller ([audio.md](audio.md#battle-side-rumble)) |
 
 This is the fire the `gimard_burning_attack` state shows at the creature's mouth: two effect-`0x0B` masters live at `(127, -317, -1732)` / `(133, -404, -1730)` beside the red creature at `(143, -1606)`. It is also the fire a Tail-Fire-struck body sheds.
 
-Port: `World::emit_battle_burn_sprites` over `engine-battle-vm::battle_impact_fx`'s `burn_effect` / `burn_emit_point`. Selector `2`'s writes to the controller rumble words (`_DAT_8007B92C` / `_DAT_8007B930`, [audio.md](audio.md#not-ssapi-the-0x801ce628-cluster-is-libpad)) are not modelled.
+Port: `World::emit_battle_burn_sprites` over `engine-battle-vm::battle_impact_fx`'s `burn_effect` / `burn_emit_point`. Selector `2`'s puff also rumbles the controller, with two more `rand()` draws while the Battles vibration row is on ([audio.md](audio.md#battle-side-rumble)).
 
 ### Seru-magic summon-overlay dispatch
 
