@@ -83,6 +83,17 @@ impl World {
                     ticks::gilium_stager(&mut ctx, call_arm);
                     for s in &ticks::gilium_stager_spawns(call_arm, caller) {
                         self.seat_stager_spawn(entry, s);
+                        // Arm 0 parks the bowl's handle where the module's
+                        // halt loops find it, beside the tick body's own
+                        // parked parts.
+                        if s.record == ticks::GILIUM_BOWL_RECORD {
+                            self.park_module_part(
+                                legaia_overlay_images::cast_presentation::HandleSlot::Abs(
+                                    ticks::GILIUM_BOWL_HANDLE,
+                                ),
+                                s.record,
+                            );
+                        }
                     }
                 }
             }

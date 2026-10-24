@@ -2479,11 +2479,11 @@ pass hides the creature for the rest of the cast (`0x801F7D38..0x801F7D40`).
 The stager's arm 0 seats the fire bowl `0x801F9450` on its caller, the ring
 rising from radius `0x800` at the floor to `0x1000` at height `-0x400` that
 fills the frame from arm 5 on, and its arm 2 seats `0x801FA414` at the
-caller's scale (`cast_module_ticks::gilium_stager_spawns`). The module parks
-its parts' handles in a table at `0x801FA478` and halts them by slot on the
-passes of arms 5, `0xB`, `0x11` and `0x14`
-(`cast_module_camera::gilium_arm_kills`); arm `0xB`'s halt takes the bowl and
-the ring with the arm-8 and arm-`0xA` parts, which returns the frame to the
+caller's scale (`cast_module_ticks::gilium_stager_spawns`). Arm 0 parks the
+bowl's handle in slot 22 of the module's handle table `0x801FA478`
+(`0x801FA4D0`), which arm `0xB`'s halt loop walks with the tick body's own
+parked parts ([presentation calls](#presentation-calls)), so the bowl goes
+with the ring and the arm-8 and arm-`0xA` parts and the frame returns to the
 stage. Its stage
 byte is carried by hand (`cast_module_camera::gilium_stage_byte`): `0` in
 arm 0, `2` on the passes of arms 3, 4 and `0x11`, and the stager's arm 0

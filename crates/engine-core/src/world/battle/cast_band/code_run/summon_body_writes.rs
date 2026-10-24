@@ -511,14 +511,6 @@ impl World {
         passed: bool,
     ) {
         let d = legaia_engine_cast::cast_module_camera::DELTA_PER_TICK as i16;
-        if passed && let Some(scene) = self.casting.active_summon.as_mut() {
-            let kills = legaia_engine_cast::cast_module_camera::gilium_arm_kills(phase_in);
-            for part in &mut scene.parts {
-                if part.tag.is_some_and(|t| kills.contains(&t)) {
-                    part.finished = true;
-                }
-            }
-        }
         let Some(a) = self
             .casting
             .summon_actor_slot

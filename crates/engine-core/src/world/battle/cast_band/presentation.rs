@@ -135,6 +135,19 @@ pub struct ModulePresentation {
 }
 
 impl World {
+    /// Park a part a module seated outside its tick body (a stager arm's
+    /// seat) in handle slot `slot`, as a tick-body `PartStore` would, so the
+    /// module's later kill of the slot halts it.
+    pub(in crate::world::battle::cast_band) fn park_module_part(
+        &mut self,
+        slot: legaia_overlay_images::cast_presentation::HandleSlot,
+        record: u32,
+    ) {
+        let ps = &mut self.casting.module_pres.part_slots;
+        ps.retain(|&(s, _)| s != slot);
+        ps.push((slot, record));
+    }
+
     /// Fire the presentation calls of module `entry`'s arm `phase_in` for
     /// the tick that just ran. `body` is the trampoline-selected tick body
     /// (`None` for a module with one phase switch), `phase_out` the phase the

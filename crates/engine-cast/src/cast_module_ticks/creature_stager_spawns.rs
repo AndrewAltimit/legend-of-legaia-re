@@ -153,6 +153,12 @@ pub const IOTA_VOLLEY_RECORDS: [u32; 2] = [0x801F_8448, 0x801F_8498];
 /// creature performs in from its arm 5 on.
 pub const GILIUM_BOWL_RECORD: u32 = 0x801F_9450;
 
+/// The word PROT 0923's stager arm `0` parks the bowl's handle in
+/// (`sw v0,-0x5B30(v1)` at `0x801F8BF0`): slot 22 of the module's handle
+/// table `0x801FA478`, which arm `0xB`'s halt loop walks
+/// (`0x801F7C84..0x801F7CB0`), so the bowl goes with the arm-`0xA` parts.
+pub const GILIUM_BOWL_HANDLE: u32 = 0x801F_A4D0;
+
 /// PROT 0923 (Gilium) - the stager `FUN_801F8B90`, three arms behind a
 /// `beq` / `slti` chain, reached only through its parts' op-`0x20` calls:
 ///

@@ -291,48 +291,6 @@ pub fn gilium_stage_byte(phase: u8) -> Option<u8> {
     }
 }
 
-/// The parts each PROT 0923 arm halts on its pass (`ori 0x8` into the flag
-/// word of a handle parked in the module's table `0x801FA478`), by record.
-/// The table's slots are filled by arm 4 (slot 0 the ring `0x801F9084`,
-/// slots 1..6 its six `0x801F928C`), arm 8 (slots 1..14, its spawns in
-/// call order), arm `0xA` (slots 15..19, its fifth to ninth spawns; 20 and
-/// 21 screen prims), the stager's arm 0 (slot 22, the bowl
-/// [`crate::cast_module_ticks::GILIUM_BOWL_RECORD`]), arm `0xE` (slot 0
-/// `0x801F9FCC`, slots 1..6 `0x801FA090`) and arm `0x13` (slots 0..5
-/// `0x801FA0F4`, 6..11 `0x801FA158`):
-///
-/// | arm | halts slots | site |
-/// |---:|---|---|
-/// | 5 | 1..6 | `0x801F740C..0x801F7444` |
-/// | `0xB` | 0..11 and 15..22 (arm 8's last three survive) | `0x801F7C54..0x801F7CB0` |
-/// | `0x11` | 0..8 | `0x801F8344..0x801F8378` |
-/// | `0x14` | 0..11 | `0x801F85E4..0x801F861C` |
-///
-/// Arms `0xC` and `0x16` halt slot 0 when it holds a screen prim, which is
-/// not a part.
-pub fn gilium_arm_kills(phase: u8) -> &'static [u32] {
-    match phase {
-        5 => &[0x801F_928C],
-        0xB => &[
-            0x801F_9084,
-            0x801F_92D8,
-            0x801F_9320,
-            0x801F_9368,
-            0x801F_940C,
-            0x801F_93B0,
-            0x801F_97D0,
-            0x801F_9854,
-            0x801F_98C0,
-            0x801F_9928,
-            0x801F_9990,
-            crate::cast_module_ticks::GILIUM_BOWL_RECORD,
-        ],
-        0x11 => &[0x801F_9FCC, 0x801F_A090],
-        0x14 => &[0x801F_A0F4, 0x801F_A158],
-        _ => &[],
-    }
-}
-
 /// PROT 0928 (Palma): the word `T` at `0x801FA0D0` drives arms 3 and 4
 /// upwards (`T += p` to `scalar * 256` / `128`), where the module stores the
 /// camera globals straight from sines of `T` every pass; the port lands each
