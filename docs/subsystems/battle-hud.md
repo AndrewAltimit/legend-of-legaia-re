@@ -1687,9 +1687,13 @@ ramp `FUN_80047430` so damage drains over frames:
 - **The `/` separator takes no tier.** Retail draws it off the system-UI
   sheet through its fixed sub-palette 5 (CLUT `(80, 511)`, colour word
   `0x808080`) whatever the numerals either side read; the numerals' tier is
-  a CLUT switch to `(16 * (tier + 6), 510)`. Pinned off the display list of
-  the Gaza captures, whose low-HP and empty-MP readouts draw orange around a
-  grey `/`.
+  a CLUT switch to `(16 * (tier + 6), 510)`. Pinned off the display lists of
+  unpatched retail states with tinted readouts, on every tier: the dead
+  tier's `(128, 510)` and the danger tier's `(240, 510)` beside each other in
+  `cort_mystic_circle_mid_cast`, the caution tier's `(192, 510)` in the
+  `super_queue_replace_*` captures, `(144, 510)` in `zora_glare_petrify_post`,
+  and danger digits on the `arts_bar_*` captures. Every separator `SPRT` in
+  them reads `(80, 511)` at `0x808080`.
 - **Bar fills** take the whole-gauge law (`engine-battle-vm::battle_gauge::gauge_colors`,
   port of `FUN_80046A20`): death greys the whole track, an active status forces
   both fills to the override colour, otherwise each bar bands independently on

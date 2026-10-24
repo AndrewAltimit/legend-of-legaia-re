@@ -91,10 +91,11 @@ fn font_solid_src_finds_a_white_texel_in_the_placeholder_font() {
 }
 
 /// The `/` between a current and a maximum keeps its own sub-palette while
-/// the numerals either side take the readout's tier: the Gaza captures'
-/// display lists draw the separator `SPRT` through CLUT `(80, 511)` at
-/// `0x808080` beside numerals on the danger tier's `(240, 510)`, so a
-/// low-HP / empty-MP bar reads orange digits around a grey `/`.
+/// the numerals either side take the readout's tier: retail display lists
+/// (`cort_mystic_circle_mid_cast`, the `arts_bar_*` captures) draw the
+/// separator `SPRT` through CLUT `(80, 511)` at `0x808080` beside numerals
+/// on the danger tier's `(240, 510)`, so a low-HP / low-MP bar reads orange
+/// digits around a grey `/`.
 #[test]
 fn bar_separator_stays_untinted_on_a_tinted_readout() {
     let font = legaia_font::synthetic_for_tests();

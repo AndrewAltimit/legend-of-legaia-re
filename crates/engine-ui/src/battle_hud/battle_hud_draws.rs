@@ -215,8 +215,8 @@ pub fn battle_hud_draws_for(
                     // through the system-UI sheet's fixed sub-palette 5
                     // (CLUT `(80, 511)`, colour word `0x808080`) while the
                     // numerals either side switch to the tier's font CLUT
-                    // (`(16 * (tier + 6), 510)`) - the Gaza captures' low HP
-                    // and empty MP read orange around a grey `/`.
+                    // (`(16 * (tier + 6), 510)`), dead tier included
+                    // (`cort_mystic_circle_mid_cast`'s display list).
                     color: white,
                 }),
                 None => stage_text(text, font, "/", x, y + 4, c),
