@@ -410,6 +410,63 @@ pub(crate) fn capture_yaw_done(
         .is_none_or(|c| c.action_yaw_base() >= want)
 }
 
+/// The module ticks a `0x70` capture's band spends before its arm gate
+/// `(phase, countdown)` is met, counted from the band's first tick: the
+/// module's own countdown walk (the capture director's, or the body's
+/// countdown table), run from a default state. The yaw counter `ctx[+0x6DA]`
+/// a capture holds was read that many ticks into `0x70`, so the `0x6E` hold
+/// ([`capture_yaw_done`]) stands that far short of it. `0` for a module with
+/// neither (or a walk that does not reach the gate).
+pub(crate) fn capture_band_ticks_to_arm(
+    world: &legaia_engine_core::world::World,
+    seat: u8,
+    arm: (u8, i32),
+) -> u16 {
+    use legaia_engine_cast::cast_module_camera as cmc;
+    let Some(action) = world
+        .actors
+        .get(usize::from(seat))
+        .map(|a| a.battle.params[0])
+    else {
+        return 0;
+    };
+    let Some(entry) = world.cast_module_for(action) else {
+        return 0;
+    };
+    let body = legaia_engine_cast::cast_module_ticks::capture_tick_body(entry, action)
+        .unwrap_or(cmc::SINGLE_BODY);
+    let director = cmc::capture_camera_director(entry, body);
+    let table = cmc::capture_arm_countdowns(entry, body);
+    if director.is_none() && table.is_none() {
+        return 0;
+    }
+    let mut st = cmc::ModuleCamState::default();
+    let seats = cmc::ModuleCamSeats::default();
+    let mut phase = 0u8;
+    for n in 1..=4096u16 {
+        if let Some(d) = director {
+            st.opens_pass = true;
+            let a = d(&mut st, phase, seats);
+            if !a.hold {
+                phase = a.next.unwrap_or(phase.wrapping_add(1));
+            }
+        } else {
+            match table.and_then(|t| cmc::arm_countdown(t, phase)) {
+                Some(c) if c.holds(&mut st.countdown) => {}
+                Some(c) => {
+                    c.pass(&mut st.countdown);
+                    phase = phase.wrapping_add(1);
+                }
+                None => return 0,
+            }
+        }
+        if phase > arm.0 || (phase == arm.0 && st.countdown.0 <= arm.1) {
+            return n;
+        }
+    }
+    0
+}
+
 /// Whether the engine's `0x6F` pull-in has come down at least as far as
 /// retail's `height` (`ctx[+0x6D0]`, an unsigned halfword the ramp wraps).
 pub(crate) fn capture_ramp_done(world: &legaia_engine_core::world::World, height: u16) -> bool {
@@ -1154,6 +1211,18 @@ impl BattleDrive {
                 world.stretch_battle_frame((step + off / per_vsync) as u8);
             }
         }
+        // A `0x70` capture read its yaw counter some ticks into the band:
+        // the `0x6E` hold stands that far short of it.
+        let yaw = match arm {
+            Some(a) if want == 0x70 && state == 0x6E => yaw.map(|y| {
+                y.saturating_sub(capture_band_ticks_to_arm(
+                    world,
+                    world.battle_ctx.active_actor,
+                    a,
+                ))
+            }),
+            _ => yaw,
+        };
         world.audio.sound_bank_ready = !(ours
             && state == 0x6E
             && !(capture_accum_done(world, height, accum) && capture_yaw_done(world, height, yaw)));

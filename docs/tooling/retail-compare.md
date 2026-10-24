@@ -2098,6 +2098,17 @@ frames further into the wait than the accumulator shows, a fifth of a turn of
 yaw. Held so, the engine lands where every such capture is framed - pitch `0`,
 `TR y = 0x500`, focus on the caster's seat.
 
+A capture past the band's start read its counter that many ticks into `0x70`
+too, so for a `0x70` gate the hold stands short of retail's counter by the
+module ticks the band takes to reach the gate's arm and countdown
+(`capture_band_ticks_to_arm`: the capture director's or countdown table's own
+walk, run from a default state). Mystic Shield's arm-0 shot
+(`cort_mystic_shield_mid_cast`, `34` vsyncs into its `0x40` frames) tweens the
+yaw from where `0x6F` left it, so held to the capture's whole counter the
+engine opened the shot `42` units further round (yaw `56` against retail's
+`14`, camera `.986`); held short, it reads `22` (camera `1.000`, image `.993`
+to `.999`).
+
 The engine's side of the accumulator test is its clip age
 (`BattleCamera::clip_age`): the accumulator with a looping clip's natural-end
 re-commits left out, as the action gates read it
