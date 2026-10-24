@@ -505,7 +505,7 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
 
   const THUMB_PX = 96;
   const STILL_PX = 176;
-  const NPC_CAM = { yaw: Math.PI + 0.35, pitch: 0.12, distance: 2.1, autoRotate: true };
+  const NPC_CAM = { yaw: Math.PI - 0.35, pitch: 0.12, distance: 2.1, autoRotate: true };
 
   const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
   const gold = (n) => `${Number(n).toLocaleString()} G`;
@@ -698,7 +698,7 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
       const pos = viewer.equipped_item_only_positions(section);
       const idx = viewer.equipped_item_only_indices(section);
       if (!pos.length || !idx.length) throw new Error('the piece did not come away from the model on its own');
-      if (!itemView) itemView = new window.MeshView(itemCanvas, { cam: { yaw: 0.6, pitch: 0.15, distance: 2.4, autoRotate: true } });
+      if (!itemView) itemView = new window.MeshView(itemCanvas, { cam: { yaw: -0.6, pitch: 0.15, distance: 2.4, autoRotate: true } });
       itemView.uploadVram(viewer.equipped_vram_bytes());
       const uv = viewer.equipped_item_only_uvs(section);
       const uv8 = new Uint8Array(uv.length);

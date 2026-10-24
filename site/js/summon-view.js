@@ -191,7 +191,7 @@
          * page does. */
         try {
           this.view = new window.MeshView(this.els.canvas, {
-            cam: { yaw: Math.PI / 2, pitch: 0.08, distance: 1.7, autoRotate: true },
+            cam: { yaw: -Math.PI / 2, pitch: 0.08, distance: 1.7, autoRotate: true },
             zoom: { min: 0.9, max: 7 },
           });
         } catch (err) {

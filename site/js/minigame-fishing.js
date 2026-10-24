@@ -108,7 +108,7 @@ window.MgFishing = (function () {
       const lead = b.members.length ? b.members[0].anchor : { x: 0, y: 0, z: 0, yaw: 0 };
       b.anchor = Object.assign({}, lead);
       const [fx, fz] = facingOf(b.anchor);
-      b.defCam = { yaw: lead.yaw, pitch: 0.22, distance: 0.55, orbit: false };
+      b.defCam = { yaw: -lead.yaw, pitch: 0.22, distance: 0.55, orbit: false };
       b.cam = Object.assign({}, b.defCam);
       b.center = [
         b.anchor.x + fx * 700,
@@ -270,13 +270,10 @@ window.MgFishing = (function () {
       if (posed) b.renderer.updatePositions(b.out);
       b.vp = engineVp();
       b.renderer.mvpOverride = b.vp;
-      /* The engine projection carries the retail screen-X mirror the orbit
-       * framing does not, so its front faces wind the other way. */
-      const front = b.renderer.cullFrontFace;
-      if (b.vp) b.renderer.cullFrontFace = front === 'ccw' ? 'cw' : 'ccw';
+      /* The engine projection and the orbit framing share one parity (neither
+       * mirrors the model), so one front-face winding serves both. */
       b.renderer.render(b.cam.yaw, b.cam.pitch, b.cam.distance,
                         0, 0, b.center, b.radius, b.fov);
-      b.renderer.cullFrontFace = front;
       b.renderer.mvpOverride = null;
     }
 

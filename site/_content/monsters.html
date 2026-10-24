@@ -993,7 +993,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       this.indexCount = 0;
       this.center = [0, 0, 0];
       this.radius = 1;
-      this.cam = { yaw: 0.5, pitch: 0.2, distance: 2.6, autoRotate: true };
+      this.cam = { yaw: -0.5, pitch: 0.2, distance: 2.6, autoRotate: true };
       gl.enable(gl.DEPTH_TEST);
       gl.disable(gl.CULL_FACE); // PSX winding isn't consistent; draw both sides
       gl.clearColor(0, 0, 0, 0);
@@ -1249,7 +1249,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     }
 
     resetView() {
-      this.cam = { yaw: 0.5, pitch: 0.2, distance: 2.6, autoRotate: true };
+      this.cam = { yaw: -0.5, pitch: 0.2, distance: 2.6, autoRotate: true };
       updateSpinLabel(this.cam.autoRotate);
     }
 
@@ -1382,14 +1382,17 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   }
 
   // Build {mvp, normalMat} from the shared webgl-math helpers. The model is
-  // centered + uniformly scaled to a unit sphere (Y-flip for PSX +Y-down),
+  // centered + uniformly scaled to a unit sphere (X+Y flip for PSX +Y-down),
   // then orbited by the camera. Normals use the modelview's upper-3x3 so
   // lighting stays anchored to the camera as the model spins.
   function buildMatrices(cam, center, radius, w, h) {
     const s = 1.0 / radius;
     const T = translate(-center[0], -center[1], -center[2]);
     const S = scaleMat(s);
-    S[5] = -s; // flip Y
+    // Flip Y and X together: a half turn about Z, so PSX +Y-down comes out
+    // up without mirroring the model (a Y-only flip drew its mirror image).
+    S[0] = -s;
+    S[5] = -s;
     const M = mulMat4(S, T);
     const dist = Math.max(cam.distance, 0.01);
     const V = mulMat4(translate(0, 0, -dist), mulMat4(rotateX(cam.pitch), rotateY(cam.yaw)));

@@ -677,9 +677,10 @@ uniform vec4 u_palette;
  * camera-facing copy; with culling off both copies draw and z-fight. Flagged
  * fragments keep exactly one copy per view: the front-facing one when
  * u_pair_front != 0, the back-facing one otherwise. The value encodes the
- * view chain's reflection parity - buildMvp's single Y-flip projections keep
- * front (1); the assembled views add the retail screen-X mirror on top (two
- * reflections), which inverts gl_FrontFacing, so they keep back (0). */
+ * view chain's reflection parity: the assembled views (Y flip + the retail
+ * screen-X mirror) and buildMvp (X + Y flip) are both two reflections, a
+ * rotation, so they keep back (0); an engine-built single-mesh override
+ * keeps front (1). */
 uniform int u_pair_front;
 /* Retail GTE **NCLIP** winding rejection, as a fragment test. 0 (the GL
  * default) draws both sides - the engine's rasterizer pipelines do the same,

@@ -222,7 +222,7 @@
         && this.api.art_fanfare_pcm_i16) ? this.charState.fanfare : null;
       if (!this.view) {
         this.view = new window.MeshView(this.els.canvas, {
-          cam: { yaw: Math.PI / 2, pitch: 0.05, distance: 2.2, autoRotate: false },
+          cam: { yaw: -Math.PI / 2, pitch: 0.05, distance: 2.2, autoRotate: false },
           zoom: { min: 1.2, max: 6 },
         });
       }

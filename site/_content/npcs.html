@@ -663,7 +663,7 @@ canvas.npc-canvas:active { cursor: grabbing; }
        * the default half a turn so they're introduced face-on. */
       meshView = new window.MeshView(canvasEl, {
         onSpin: updateSpinLabel,
-        cam: { yaw: Math.PI + 0.35, pitch: 0.12, distance: 2.6, autoRotate: true },
+        cam: { yaw: Math.PI - 0.35, pitch: 0.12, distance: 2.6, autoRotate: true },
       });
       /* Headless-verification hook: lets a browser test assert the posed
        * geometry actually assembles (an unposed multi-part model collapses to

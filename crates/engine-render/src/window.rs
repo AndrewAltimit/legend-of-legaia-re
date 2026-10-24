@@ -269,7 +269,10 @@ pub fn scene_clip_planes(distance: f32) -> (f32, f32) {
 /// uses the standard PSX convention (60° FOV, Y-up camera, Y-down geometry).
 /// Because callers draw their geometry Y-flipped (`scale(1,-1,1)`), this frames
 /// the *flipped* centre (`-(lo.y+hi.y)/2`) with the eye above it - otherwise an
-/// off-centre scene renders from underneath ("ground on the ceiling").
+/// off-centre scene renders from underneath ("ground on the ceiling"). That Y
+/// flip alone is a reflection, so the returned matrix ends in a Z flip: the
+/// chain is then a rotation and the scene keeps retail's handedness instead of
+/// drawing as its mirror image.
 ///
 /// # Parameters
 /// - `aabb_lo`, `aabb_hi` - world-space bounding box of the scene.
@@ -296,10 +299,14 @@ pub fn orbit_camera_mvp(
     // rendered from underneath ("ground on the ceiling"). Centred single models
     // (the asset-viewer's TMD previews) have `lo.y ≈ -hi.y`, so this is a no-op
     // for them. Same correction the world-map camera already carries.
+    // The callers' Y-only flip is a reflection; this camera adds the Z flip
+    // (`mirror_fix`, applied first) so the whole chain is a half turn about X
+    // and the scene is not drawn as its mirror image. The framing centre is
+    // taken in that doubly-flipped space.
     let center = Vec3::new(
         (lo.x + hi.x) * 0.5,
         -(lo.y + hi.y) * 0.5,
-        (lo.z + hi.z) * 0.5,
+        -(lo.z + hi.z) * 0.5,
     );
     let radius = ((hi - lo).length() * 0.5).max(1.0);
     let distance = radius / 30f32.to_radians().tan() * 1.6;
@@ -315,7 +322,8 @@ pub fn orbit_camera_mvp(
     let view = Mat4::look_at_rh(eye, center, Vec3::Y);
     let (near, far) = scene_clip_planes(distance);
     let proj = Mat4::perspective_rh(60f32.to_radians(), aspect.max(0.01), near, far);
-    proj * view
+    let mirror_fix = Mat4::from_scale(Vec3::new(1.0, 1.0, -1.0));
+    proj * view * mirror_fix
 }
 
 /// Camera MVP for the world-map mode, driven by the live
@@ -574,6 +582,31 @@ mod camera_tests {
                 }
             }
         }
+    }
+
+    /// The orbit camera does not mirror the scene: with the callers' Y-only
+    /// model flip applied, the chain to the screen is a rotation (positive
+    /// determinant in the x/y/z basis the GTE uses: screen x right, screen y
+    /// down, depth into the screen). A Y-only flip under `look_at_rh` drew
+    /// the mirror image, which the field pass's NCLIP cull then culled from
+    /// the wrong side (the F3 debug view lost every floor).
+    #[test]
+    fn orbit_camera_keeps_retail_handedness() {
+        let (lo, hi) = ([-500.0, -500.0, -500.0], [500.0, 500.0, 500.0]);
+        let flip_y = Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
+        let m = orbit_camera_mvp(lo, hi, 0.25, 0.85, 3.0, 1.0) * flip_y;
+        let screen = |p: Vec3| {
+            let c = m * p.extend(1.0);
+            // NDC y is up; the GTE's screen y is down.
+            Vec3::new(c.x / c.w, -c.y / c.w, c.w)
+        };
+        let o = screen(Vec3::ZERO);
+        let ex = screen(Vec3::new(10.0, 0.0, 0.0)) - o;
+        let ey = screen(Vec3::new(0.0, 10.0, 0.0)) - o;
+        let ez = screen(Vec3::new(0.0, 0.0, 10.0)) - o;
+        // Orientation of the projected basis (x, y screen, w = depth).
+        let det = ex.dot(ey.cross(ez));
+        assert!(det > 0.0, "orbit camera mirrors the scene (det {det})");
     }
 
     /// GUARD (no near cull): the near plane stays within a few units of the

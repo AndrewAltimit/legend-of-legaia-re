@@ -50,7 +50,7 @@
       this.onSpin = o.onSpin || null;
       this.onFrame = null;
       this.defaultCam = Object.assign(
-        { yaw: 0.4, pitch: 0.1, distance: 2.6, autoRotate: true }, o.cam || {});
+        { yaw: -0.4, pitch: 0.1, distance: 2.6, autoRotate: true }, o.cam || {});
       this.zoom = Object.assign({ min: 1.4, max: 8 }, o.zoom || {});
       this.cam = Object.assign({}, this.defaultCam);
 
