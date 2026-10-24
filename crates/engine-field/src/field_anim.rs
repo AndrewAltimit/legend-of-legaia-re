@@ -47,6 +47,9 @@ pub struct FieldClipPlayer {
     cursor: u32,
     /// Cursor units added per engine tick ([`clip_step`]).
     step: u32,
+    /// The record's step divisor (header `flag` low byte), which a gated
+    /// record's step divides the actor's rate by ([`Self::set_rate`]).
+    div: u8,
     /// The record's blend gate ([`legaia_actor_formats::player_anm::PlayerAnmRecord::blends`]):
     /// set, a cursor that falls inside a frame poses between it and the next.
     blend: bool,
@@ -86,6 +89,7 @@ impl FieldClipPlayer {
             frames,
             cursor: 0,
             step: u32::from(clip_step(CLIP_RATE, blend, (rec.flag & 0xFF) as u8)),
+            div: (rec.flag & 0xFF) as u8,
             blend,
             hold_at_end: false,
         })
@@ -109,6 +113,13 @@ impl FieldClipPlayer {
 
     /// Replace the per-tick step and restart the clip at frame 0 (the cursor
     /// must stay a multiple of the step).
+    /// Re-derive the step from the actor's clip rate `rate` (`actor+0x6A`),
+    /// the record's gate and divisor ([`clip_step`]), keeping the cursor - a
+    /// rate change does not rewind the clip.
+    pub fn set_rate(&mut self, rate: i16) {
+        self.step = u32::from(clip_step(rate.max(1) as u16, self.blend, self.div)).max(1);
+    }
+
     pub fn set_step(&mut self, step: u32) {
         self.step = step.max(1);
         self.rewind();
@@ -345,6 +356,9 @@ pub struct FieldPlayerAnim {
     scene_wait: u8,
     /// Whether the last tick re-emitted [`Self::last_pose`].
     holding: bool,
+    /// The player's clip rate `actor+0x6A` the picked clip steps at: the
+    /// pad step's `8` ([`CLIP_RATE`]), or what a script's `CC F8 41` set.
+    clip_rate: i16,
 }
 
 impl FieldPlayerAnim {
@@ -367,6 +381,7 @@ impl FieldPlayerAnim {
             last_pose: None,
             scene_wait: 0,
             holding: false,
+            clip_rate: CLIP_RATE as i16,
         }
     }
 
@@ -390,6 +405,13 @@ impl FieldPlayerAnim {
             .map(|slot| FieldClipPlayer::from_record(bundle, rec(slot)))
             .collect();
         Some(anim)
+    }
+
+    /// Set the player's clip rate (`actor+0x6A`), which the picked clip -
+    /// scene record or bank slot - steps at from its next tick. The motion
+    /// pair keeps [`CLIP_RATE`].
+    pub fn set_clip_rate(&mut self, rate: i16) {
+        self.clip_rate = rate.max(1);
     }
 
     /// Whether bank slot `slot` has a playable clip.
@@ -456,9 +478,10 @@ impl FieldPlayerAnim {
     /// beats (ExecMove 48 / 49 onto scene records 47 / 48, then locomotion)
     /// are two picks in a row on that rule.
     pub fn bind_scripted(&mut self, record: u16, mut clip: FieldClipPlayer) {
+        // Rewound here, so the next tick plays frame 0 whether or not this
+        // record was already the one playing.
         clip.rewind();
         self.scene_clip = Some((record, clip));
-        self.playing_scene = None;
     }
 
     /// Which clip plays now and where its cursor stands: `(source, id,
@@ -592,6 +615,7 @@ impl FieldPlayerAnim {
             }
             self.playing_scene = Some(record);
             self.playing_slot = None;
+            clip.set_rate(self.clip_rate);
             return clip.tick_with(1, flags);
         }
         if self.playing_scene.take().is_some() {
@@ -616,6 +640,7 @@ impl FieldPlayerAnim {
             if rewind {
                 clip.rewind();
             }
+            clip.set_rate(self.clip_rate);
             return clip.tick_with(1, flags);
         }
         if self.playing_slot.take().is_some() {
@@ -840,8 +865,9 @@ mod tests {
         idle.set_step(16);
         walk.set_step(16);
         let mut anim = FieldPlayerAnim::new(idle, walk);
-        let mut clip = FieldClipPlayer::from_record(&bundle, 0).unwrap();
-        clip.set_step(16);
+        // Rate 16: one frame a tick for the ungated record.
+        anim.set_clip_rate(16);
+        let clip = FieldClipPlayer::from_record(&bundle, 0).unwrap();
         anim.select_scene_record(Some(0));
         anim.bind_scripted(0, clip.clone());
         let mut flags = CLIP_CLAMP;
@@ -913,6 +939,29 @@ mod tests {
             cursors,
             vec![8, 16, 24, 0, 8, 16],
             "one walk, never rewound"
+        );
+    }
+
+    /// A script's `CC F8 41 <rate>` halves the player's clip speed: the
+    /// picked clip steps at the player's rate (`+0x6A`), re-derived through
+    /// the record's gate, without a rewind (retail `cave01` plays scene clip
+    /// 20 at rate 4: cursor 8 to 304 in 75 vsyncs).
+    #[test]
+    fn the_picked_clip_steps_at_the_players_rate() {
+        let bundle = synth_bundle();
+        let idle = FieldClipPlayer::from_record(&bundle, 1).unwrap();
+        let walk = FieldClipPlayer::from_record(&bundle, 0).unwrap();
+        let mut anim = FieldPlayerAnim::new(idle, walk);
+        anim.select_scene_record(Some(0));
+        anim.bind_scripted(0, FieldClipPlayer::from_record(&bundle, 0).unwrap());
+        anim.tick();
+        assert_eq!(anim.playing_clip().2, 8, "rate 8: 8 units a tick");
+        anim.set_clip_rate(4);
+        anim.tick();
+        assert_eq!(
+            anim.playing_clip().2,
+            12,
+            "rate 4: 4 units a tick, no rewind"
         );
     }
 

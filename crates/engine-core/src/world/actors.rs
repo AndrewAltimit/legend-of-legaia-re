@@ -608,6 +608,31 @@ impl World {
         }
     }
 
+    /// Ticks from binding scene-bank record `record` on the player to its end
+    /// latch, at the player's live clip rate
+    /// ([`crate::world::FieldLocomotion::player_clip_rate`]) through the
+    /// record's gate and divisor - the length a cutscene's `AD F8 08` waits.
+    /// Falls back to the template-rate table when the record's metadata is
+    /// missing; `0` for an unknown record.
+    ///
+    /// REF: FUN_800204F8 (the step select and the end test)
+    pub(crate) fn player_scene_clip_end_ticks(&self, record: u16) -> u32 {
+        use legaia_engine_vm::actor_tick::{clip_end_ticks, clip_step};
+        let i = usize::from(record);
+        match self.locomotion.scene_clip_meta.get(i) {
+            Some(&(frames, gated, div)) => {
+                let rate = self.locomotion.player_clip_rate.max(1) as u16;
+                clip_end_ticks(frames, clip_step(rate, gated, div))
+            }
+            None => self
+                .locomotion
+                .scene_clip_ticks
+                .get(i)
+                .copied()
+                .unwrap_or(0),
+        }
+    }
+
     /// Copy the clip-control bits (hold / clamp / reverse / restart) of a
     /// player `+0x62` word some other model of it carries - a conversation's
     /// or a prop ride's cursor, which keep their own end latch - onto the
@@ -640,6 +665,7 @@ impl World {
         let Some(actor) = self.actors.get_mut(slot as usize) else {
             return;
         };
+        anim.set_clip_rate(self.locomotion.player_clip_rate);
         let (pose, flags) = anim.tick_with_flags(actor.move_state.local_flags);
         actor.move_state.local_flags = flags;
         actor.pose_frame = Some(pose);

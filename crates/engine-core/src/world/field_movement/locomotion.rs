@@ -268,6 +268,8 @@ impl World {
         ) {
             self.locomotion.clip_base = base;
             self.locomotion.player_party_bank = true;
+            // The same frames stamp the clip rate `+0x6A = 8`.
+            self.locomotion.player_clip_rate = legaia_engine_field::field_anim::CLIP_RATE as i16;
             if let Some(anim) = &mut self.locomotion.player_anim {
                 anim.pad_drove_this_frame = true;
             }

@@ -109,25 +109,19 @@ fn sample(session: &NativeSession) -> Sample {
     }
 }
 
-/// `cave01`'s Noa introduction: the clamped getting-up clip (scene clip 29,
-/// record 28) plays one pass and rests on its last frame, latched, until the
-/// script's next pick - it never restarts.
-#[test]
-fn noas_getting_up_plays_once_and_holds() {
-    const GETTING_UP: i16 = 29;
-    let Some(mut session) = open("cave01", |s| {
+/// Drive `cave01`'s Noa introduction (flag `0x156`, the party emptied to
+/// Noa), naming her and paging the dialogue, calling `each` with every
+/// frame's sample until it returns `true` or the budget runs out.
+fn drive_noa_intro(mut each: impl FnMut(Sample) -> bool) -> Option<()> {
+    let mut session = open("cave01", |s| {
         s.host.world.set_active_party(vec![0, 1, 2]);
         // The beat that empties the party and spawns Noa's introduction.
         s.host.world.system_flag_set(0x156);
-    }) else {
-        return;
-    };
+    })?;
     let mut binding = bind_scene_actors(&mut session.host);
     session.set_host_drains_queues(true);
     let mut naming_step = 0u32;
-    let mut run: Vec<Sample> = Vec::new();
-    let mut left_at = None;
-    for f in 0..3000u32 {
+    for f in 0..4000u32 {
         // The roster change to Noa alone rebuilds the rig, as both hosts do.
         if session.host.world.take_player_rig_change() {
             binding = bind_scene_actors(&mut session.host);
@@ -151,13 +145,34 @@ fn noas_getting_up_plays_once_and_holds() {
             0
         });
         frame(&mut session, &binding);
-        let s = sample(&session);
-        if s.clip == GETTING_UP {
-            run.push(s);
-        } else if !run.is_empty() {
-            left_at = Some(s);
+        if each(sample(&session)) {
             break;
         }
+    }
+    Some(())
+}
+
+/// `cave01`'s Noa introduction: the clamped getting-up clip (scene clip 29,
+/// record 28) plays one pass and rests on its last frame, latched, until the
+/// script's next pick - it never restarts.
+#[test]
+fn noas_getting_up_plays_once_and_holds() {
+    const GETTING_UP: i16 = 29;
+    let mut run: Vec<Sample> = Vec::new();
+    let mut left_at = None;
+    let ran = drive_noa_intro(|s| {
+        if s.clip == GETTING_UP {
+            run.push(s);
+            false
+        } else if !run.is_empty() {
+            left_at = Some(s);
+            true
+        } else {
+            false
+        }
+    });
+    if ran.is_none() {
+        return;
     }
     let left_at = left_at.expect("the cutscene picked the getting-up clip and moved on");
     // The tick of the pick holds the previous pose while the host resolves
@@ -203,6 +218,57 @@ fn noas_getting_up_plays_once_and_holds() {
         first.frames - 1,
         left_at.clip
     );
+}
+
+/// The script slows the player's clip before a gesture: `CC F8 41 08` (rate
+/// `8 >> 1 = 4`), `A2 F8 14` (scene clip 20, 20 frames), `AD F8 08`, then
+/// `CC F8 41 10` back to 8. At rate 4 the clip's 320 cursor units take 80
+/// ticks to the end latch; retail takes 78 vsyncs from cursor 16 to 319
+/// (`autorun_player_clip_beat.lua`, `LEGAIA_CAVE01_REENTRY=1`). The port
+/// stepped it at the pad's rate 8 and finished in half the time.
+#[test]
+fn a_scripted_rate_slows_the_players_clip() {
+    const GESTURE: i16 = 20;
+    let mut start = None;
+    let mut ticks = 0u32;
+    let mut done = None;
+    let mut prev: Option<(u32, u32)> = None;
+    let mut steps = Vec::new();
+    let ran = drive_noa_intro(|s| {
+        if s.clip == GESTURE && s.source == "scene" {
+            // Each bind restarts the measurement: the first pass is cut by
+            // the script's next pick a few cursor units short of the latch.
+            if s.cursor <= 4 {
+                start = Some(ticks);
+            }
+            if let Some((c, t)) = prev
+                && s.cursor > c
+                && t + 1 == ticks
+            {
+                steps.push(s.cursor - c);
+            }
+            prev = Some((s.cursor, ticks));
+            if let Some(t0) = start
+                && s.cursor as usize == s.frames * 16 - 1
+            {
+                done = Some(ticks - t0);
+                return true;
+            }
+        }
+        ticks += 1;
+        false
+    });
+    if ran.is_none() {
+        return;
+    }
+    let took = done.expect("the gesture reached its last frame");
+    eprintln!("clip 20: {took} ticks from its bind to its last position");
+    // Four units a tick; the step onto the last position is the clamp's.
+    assert!(
+        steps[..steps.len() - 1].iter().all(|&d| d == 4),
+        "rate 4 steps 4 cursor units a tick: {steps:?}"
+    );
+    assert!((76..=82).contains(&took), "rate 4 pass length {took}");
 }
 
 /// A `town01` ledge hop: the take-off clip (bank slot 5) and the landing clip

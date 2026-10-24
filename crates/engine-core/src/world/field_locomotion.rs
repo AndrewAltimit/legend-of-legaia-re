@@ -279,6 +279,10 @@ pub struct FieldLocomotion {
     /// cursor from when a script pokes a scene-bank clip onto it
     /// (`World::bind_npc_scene_clip`).
     pub scene_clip_meta: Vec<(u16, bool, u8)>,
+    /// The player's clip rate `actor+0x6A`: `8` from every frame the pad step
+    /// runs (`FUN_801D01B0` stamps it), else what a cutscene's `CC F8 41`
+    /// set (halved, floor `1`). The player's picked clip steps at it.
+    pub player_clip_rate: i16,
     /// The clip base `_DAT_8007BDD8`: the 1-based slot inside the leader's
     /// seven-record locomotion bank the settle tail strides into the player's
     /// clip id. Written by the pad step (idle `2` / walk `1` / run `3`, or
@@ -358,6 +362,7 @@ impl FieldLocomotion {
             player_move_cues: Vec::new(),
             scene_clip_ticks: Vec::new(),
             scene_clip_meta: Vec::new(),
+            player_clip_rate: legaia_engine_field::field_anim::CLIP_RATE as i16,
             clip_base: legaia_engine_field::field_player_clip::BASE_IDLE,
             player_clip: legaia_engine_field::field_player_clip::BASE_IDLE as i16,
             player_party_bank: true,
