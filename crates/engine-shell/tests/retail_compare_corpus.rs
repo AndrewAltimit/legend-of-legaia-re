@@ -74,7 +74,11 @@ fn the_retail_comparison_corpus_holds_its_baseline() {
         &std::fs::read_to_string(&baseline_path).expect("read the committed baseline"),
     )
     .expect("parse the baseline");
-    let allow: &[&str] = if images { &[] } else { &["image"] };
+    let allow: &[&str] = if images {
+        &[]
+    } else {
+        legaia_parity::retail_compare::IMAGE_CHANNELS
+    };
     let regressions = baseline.regressions(&reports, allow);
     for r in &regressions {
         eprintln!("[regression] {r}");

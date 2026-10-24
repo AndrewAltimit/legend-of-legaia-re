@@ -2464,6 +2464,37 @@ the title picker, the card-boot save select) and a screen no root row routes
 to is script-entered (the casino prize exchange, `0x20`); both are kept with
 a `menu not seedable:` reason and counted as classified limits.
 
+### Card screens
+
+A Load / Save screen on its grid shows a memory card, so it is seeded only
+when its scenario names the card it was captured with (`memory_card`, a file
+under `saves/library/cards/`). The card screen's sub-mode word `0x801F0204`
+says the grid is up (`0x0B`; the pill row reads `0x14`,
+[save-screen](../subsystems/save-screen.md#loadsave-dispatch-fun_801dd35c)).
+Both sides mount a copy of the card in port 1, the `SLOT 1` pill: the headless
+session's save rack is built from it, and the image child gets it as
+`memcard1.mcr` in a scratch `--save-dir`.
+
+- **Pause-menu grid** (sub-screen `0x18` / `0x19`). The pause-menu drive
+  takes one more `Cross` on the pill row and waits out the card read
+  (`CARD_READ_SETTLE_TICKS`). Retail's save-allow word `_DAT_8007B6A8` is
+  landed on the engine's scene bit (`LEGAIA_SEAT_SAVE_ALLOWED` for the
+  child), so a state captured with it raised - an overworld, or a probe's
+  named `ram_poked` - opens the Save row as retail did.
+- **Title Continue grid** (sub-screen clear). There is no field to seed: the
+  child boots its own front end (`--boot-ui`) and is driven to the grid by a
+  fixed pad script (`TITLE_CONTINUE_PRESSES`, captured at
+  `TITLE_CONTINUE_CAPTURE_TICK`). The state scores the image channels only.
+
+Both add `card_panel`: the fraction of pixels of the info panel
+(`CARD_INFO_PANEL`, `x 8..312`, `y 128..224`) within `24` of retail's on
+every channel. It is a pixel test because the panel is 2D and drawn 1:1, so
+a numeral in the wrong ink or a glyph a row off moves it where the `8 x 8`
+block test does not. Like `image`, a run without a display leaves it
+unmeasured. The states are `load_grid_endgame_card` and
+`save_grid_endgame_card_conc`, both on the library card
+`playthrough-endgame-7saves.mcr`.
+
 What a like-for-like menu frame shows is the engine's. The Status and Equip character lists are the present
 party (`DAT_80084594` over `0x80084598`,
 `field_menu_dispatch::status_snapshots` and `EquipScreenModel::party_row`), not
@@ -2495,6 +2526,7 @@ measured channels.
 | `inventory` | fraction of non-empty bag slots equal, slot for slot, plus gold |
 | `enemies` / `enemy_hp` / `battle_party` / `phase` | battle states only ([above](#battle-states)) |
 | `menu` | menu states only: 1 when the engine's pause menu holds retail's sub-screen ([above](#menu-states)) |
+| `card_panel` | card-screen states only: fraction of the info panel's pixels within tolerance ([above](#card-screens)) |
 | `image` | fraction of `8 x 8` blocks within tolerance ([below](#the-image-channel)) |
 
 `party` and `inventory` are seeded straight from the retail window, so on

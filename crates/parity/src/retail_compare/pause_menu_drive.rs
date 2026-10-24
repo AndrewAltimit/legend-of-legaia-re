@@ -13,6 +13,12 @@ pub const MENU_PRESS_GAP: u64 = 12;
 /// `FUN_801ED308` phase 1), longer than one [`MENU_PRESS_GAP`].
 pub const MENU_OPEN_WIPE_TICKS: u64 = MENU_PRESS_GAP;
 
+/// Ticks a card screen's grid takes to come up after its pill-row confirm:
+/// the "Now checking" card read runs first (`FUN_801DD35C` sub-modes `0x04`
+/// / `0x05`). Measured on `play-window`: the grid is up about `100` ticks
+/// after the confirm.
+pub const CARD_READ_SETTLE_TICKS: u64 = 160;
+
 /// The pad edges that reach `menu` from a settled field, as `(tick offset,
 /// button)` pairs from the first press: `Start`, `Down` until the root
 /// cursor (opening on row `0`) sits on the row, `Cross`. The Equip row opens
@@ -38,12 +44,22 @@ pub fn pause_menu_presses(menu: &RetailMenu) -> Vec<(u64, legaia_engine_system::
         press(PadButton::Down);
         press(PadButton::Cross);
     }
+    // A Load / Save grid is one confirm past its pill row, on the port the
+    // card in port 1 sits on (`SLOT 1`, the pill the screen opens on).
+    if menu.card_grid {
+        press(PadButton::Cross);
+    }
     out
 }
 
 /// Ticks a menu drive runs from its first press to the sample.
 pub fn pause_menu_drive_ticks(menu: &RetailMenu) -> u64 {
-    pause_menu_presses(menu).last().map_or(0, |p| p.0) + 2 * MENU_PRESS_GAP
+    let settle = if menu.card_grid {
+        CARD_READ_SETTLE_TICKS
+    } else {
+        2 * MENU_PRESS_GAP
+    };
+    pause_menu_presses(menu).last().map_or(0, |p| p.0) + settle
 }
 
 /// Drive the headless session's pause menu to `menu` through its pad path

@@ -270,7 +270,28 @@ pub fn run_engine_with(
         return Ok(obs);
     }
     let menu_subscreen = match &retail.menu {
-        Some(Ok(menu)) => drive_pause_menu(&mut session, menu)?,
+        Some(Ok(menu)) => {
+            // The menu samples the scene's save-allow bit at open; land
+            // retail's (`LEGAIA_SEAT_SAVE_ALLOWED` is the image child's form).
+            if retail.save_allowed {
+                session.host.world.party.scene_save_allowed = true;
+            }
+            // A card screen's grid reads the capture's card, in port 1 as
+            // the image child mounts it.
+            if menu.card_grid
+                && let Some(path) = &retail.memory_card
+            {
+                use legaia_engine_session::title_continue::{card_port_blocks, card_port_rack};
+                let card = legaia_save::emu::MountedCard::open(path)
+                    .with_context(|| format!("mount memory card {}", path.display()))?;
+                let ports = [Some(&card), None];
+                session.set_save_rack(
+                    card_port_rack(ports),
+                    vec![card_port_blocks(ports, 0), card_port_blocks(ports, 1)],
+                );
+            }
+            drive_pause_menu(&mut session, menu)?
+        }
         _ => None,
     };
     let mut obs = sample_engine(&mut session, retail, &director, menu_subscreen);

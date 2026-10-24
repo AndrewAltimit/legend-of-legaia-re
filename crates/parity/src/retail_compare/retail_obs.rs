@@ -179,6 +179,15 @@ pub struct RetailObs {
     pub arrival_facing: i16,
     /// Every field-actor-ticked placement's heading ([`retail_actor_facings`]).
     pub actor_facings: Vec<ActorFacing>,
+    /// The save-allow word `_DAT_8007B6A8` is raised: the scene is a kingdom
+    /// overworld, or a capture probe poked it (the scenario's `ram_poked`
+    /// names that). The seed lands the same bit, so the pause menu's Save
+    /// row opens as it did in retail.
+    pub save_allowed: bool,
+    /// The memory-card image the capture ran with (the scenario's
+    /// `memory_card`), which a card-screen seed mounts in port 1. Set by the
+    /// corpus run, not read from RAM.
+    pub memory_card: Option<PathBuf>,
 }
 
 /// One field actor's heading as a retail state holds it.
@@ -301,6 +310,8 @@ impl RetailObs {
             frame,
             battle,
             menu,
+            save_allowed: game_anchors::u32_at(ram, SAVE_ALLOW) != 0,
+            memory_card: None,
             scripts: crate::retail_compare_script::RetailScripts::from_ram(ram),
             cell_fx: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_cell_fx(ram)

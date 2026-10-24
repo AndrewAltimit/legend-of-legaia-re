@@ -42,6 +42,16 @@
 #                                     by scripts/pcsx-redux/patch_taint_audit.py
 #                                     states (and scan, the whole-executable form); see docs/tooling/
 #                                     pcsx-redux-automation.md#patched-disc-taint
+#   memory_card                str    the memory-card image the state was
+#                                     captured with, a file name under
+#                                     saves/library/cards/ (gitignored). A
+#                                     card-screen state shows that card's
+#                                     contents; retail-compare mounts the same
+#                                     card on the engine side.
+#   ram_poked                  list   RAM words the capture probe wrote before
+#                                     the state was saved ("<va> = <value>
+#                                     (<why>)"). A poked state is not pure
+#                                     retail play; the poke is named here.
 #   [scenarios.overlay_slice]  block  mednafen overlay-slice range
 #   [[scenarios.watchpoints]]  block  mednafen diff watchpoint regions
 #
@@ -402,6 +412,29 @@ expected_game_mode = 0x17
 # walks it end-to-end to the confirm prompt. Capturing a state here would still
 # save ~700 vsyncs per probe run.
 topics = ["save screen", "menu overlay"]
+
+[[scenarios]]
+slot = 255
+label = "load_grid_endgame_card"
+backup_fingerprint = "c009b96e0de1e6a38828c89cc5fe21fa586b0079183285108bcac1cad26c4864"
+description = "The title's Continue screen on its 5x3 grid, card in slot 1 = the library card playthrough-endgame-7saves.mcr (seven Legaia saves, foreign files, free blocks), cursor on cell 0 (No. 1, Conkram (Past)). From save_select_idle: CROSS at vsync 30 on the SLOT 1 pill, checkpoint at 800 (autorun_menu_screen_dump.lua, LEGAIA_CKPT_AT). Card-screen sub-mode 0x801F0204 = 0x0B (grid), sub-screen 0x801E46A4 clear. No pokes. retail-compare boots the engine's front end with the same card in port 1 and scores the frame and the info panel."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "opdeene"
+memory_card = "playthrough-endgame-7saves.mcr"
+topics = ["save screen", "load grid", "memory card", "retail-compare"]
+
+[[scenarios]]
+slot = 255
+label = "save_grid_endgame_card_conc"
+backup_fingerprint = "71a6bcf106ac5a3146de9c8f913440b21f575caccf2e6abd64503a1513ad9a27"
+description = "The pause menu's Save screen on its 5x3 grid in conc, card in slot 1 = the library card playthrough-endgame-7saves.mcr, cursor on cell 0. From save_select_idle: CROSS 30 (SLOT 1), CROSS 700 on cell 0 (No. 1, Conkram (Past)), UP 800, CROSS 860 (load), field conc by vsync 1525; save-allow word poked from 2150 (conc's MAN does not raise it, so retail offers no Save row there), SELECT 2200, six DOWNs onto Save, CROSS 2480 (Save row), CROSS 2600 (SLOT 1 pill), checkpoint at 3020. Sub-screen 0x801E46A4 = 0x19, card-screen sub-mode 0x801F0204 = 0x0B. retail-compare drives the engine's pause menu to the same grid with the same card in port 1."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "conc"
+memory_card = "playthrough-endgame-7saves.mcr"
+ram_poked = ["0x8007B6A8 = 1 (save-allow word, held every vsync from 2150, so the pause menu offers Save outside a kingdom overworld)"]
+topics = ["save screen", "save grid", "memory card", "retail-compare"]
 
 # ----------------------------------------------------------------------
 # NEW GAME flow: title menu -> intro cutscene A -> Rim Elm zoom-in ->

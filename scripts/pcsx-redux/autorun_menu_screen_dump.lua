@@ -28,6 +28,15 @@
 --                      matches a patched disc under test (a state carries
 --                      the SCUS of the disc that booted it; the menu
 --                      overlay reloads from the disc when the menu opens)
+--   LEGAIA_POKE_FROM   optional `<vsync>:<hexva>:<hexword>`: write that word
+--                      every vsync from <vsync> on (a scene load rewrites
+--                      most gates, so a one-shot poke does not hold). Logged
+--                      as POKED; a state saved after it is a poked state and
+--                      its scenario must name the poke.
+--   LEGAIA_CKPT_AT     optional comma list of <vsync>:<name>: write
+--                      <out>/<name>.rawsstate (raw uncompressed save state;
+--                      `gzip -c` it to the GUI .sstate form, then back it up
+--                      with scripts/manage-states.py)
 --
 -- No breakpoints are armed, so --fast (dynarec) runs are fine.
 
@@ -41,6 +50,12 @@ local FRAMES  = probe.getenv_num("LEGAIA_FRAMES", 600)
 local SCRIPT  = probe.getenv("LEGAIA_PAD_SCRIPT", "")
 local DUMPS   = probe.getenv("LEGAIA_DUMP_AT", "")
 local POKES   = probe.getenv("LEGAIA_POKES", "")
+local POKE_FROM = probe.getenv("LEGAIA_POKE_FROM", "")
+local CKPTS   = probe.getenv("LEGAIA_CKPT_AT", "")
+local pf_at, pf_va, pf_word = string.match(POKE_FROM, "^%s*(%d+):(%x+):(%x+)%s*$")
+pf_at = tonumber(pf_at)
+pf_va = pf_va and tonumber(pf_va, 16)
+pf_word = pf_word and tonumber(pf_word, 16)
 
 local GAME_MODE_VA  = 0x8007b83c
 local SCENE_NAME_VA = 0x8007050c
@@ -142,8 +157,19 @@ local function dump_checkpoint(name, vsync)
     end
 end
 
+local function save_checkpoint(name, vsync)
+    local ok, err = pcall(function()
+        local w = PCSX.createSaveState()
+        local fh = Support.File.open(probe.out_path(name .. ".rawsstate"), "TRUNCATE")
+        fh:writeMoveSlice(w)
+        fh:close()
+    end)
+    logf("CKPT %s vsync=%d ok=%s %s", name, vsync, tostring(ok), tostring(err or ""))
+end
+
 local steps = parse_pad(SCRIPT)
 local marks = parse_dumps(DUMPS)
+local ckpts = parse_dumps(CKPTS)
 local releases = {}
 local last_mode = nil
 local pad_seen = {}
@@ -177,6 +203,12 @@ probe.run({
                 logf("applied %d SCUS pokes from %s", n, POKES)
             end
         end
+        if pf_at ~= nil and vsync >= pf_at then
+            if vsync == pf_at then
+                logf("vsync=%d POKED 0x%08x = 0x%x (held every vsync)", vsync, pf_va, pf_word)
+            end
+            probe.write_u32(pf_va, pf_word)
+        end
         local mode = probe.read_u8(GAME_MODE_VA)
         if mode ~= last_mode then
             logf("vsync=%d game_mode=0x%02x scene=%q", vsync, mode or 0xFF,
@@ -206,6 +238,9 @@ probe.run({
 
         for _, m in ipairs(marks) do
             if m.at == vsync then dump_checkpoint(m.name, vsync) end
+        end
+        for _, c in ipairs(ckpts) do
+            if c.at == vsync then save_checkpoint(c.name, vsync) end
         end
     end,
 

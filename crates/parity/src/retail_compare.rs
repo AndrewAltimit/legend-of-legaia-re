@@ -127,6 +127,20 @@ const MENU_SUBSCREEN: u32 = 0x801E_46A4;
 /// `FUN_801D98F0` - the id the root row routes to), the slot browse
 /// (`0x13`, `FUN_801D99F0`) and the candidate list (`0x14`, `FUN_801D9C14`).
 const MENU_EQUIP_PICK: u8 = 0x12;
+/// The card screen's sub-mode word (`0x801F0204`): `FUN_801DD35C` runs the
+/// pill row, the card read, the grid and the transfer off it, dispatching
+/// through its jump table at `0x801DD7F8` on `FUN_801E38D0` of this word.
+/// It is the same word on the pause menu's Load / Save screens and on the
+/// title's Continue screen.
+const CARD_SCREEN_SUBMODE: u32 = 0x801F_0204;
+/// [`CARD_SCREEN_SUBMODE`] while the 5x3 grid is up and browsing (the grid
+/// confirm test, `0x801DEAB8..0x801DEB00`); the pill row reads `0x14`, the
+/// title `0x10`.
+const CARD_SUBMODE_GRID: u32 = 0x0B;
+/// `_DAT_8007B6A8`, the save-allow word: the scene's MAN header raises it on
+/// the three kingdom overworlds, and the pause menu offers Save only while it
+/// is set.
+const SAVE_ALLOW: u32 = 0x8007_B6A8;
 const MENU_EQUIP_SLOTS: u8 = 0x13;
 const MENU_EQUIP_CANDIDATES: u8 = 0x14;
 
@@ -209,6 +223,10 @@ pub struct CorpusEntry {
     /// The scenario's `ram_injected` - combatant fields its capture probe
     /// wrote after battle init, which the battle channels do not score.
     pub ram_injected: Vec<String>,
+    /// The scenario's `memory_card`, resolved under the library's `cards/`
+    /// directory: `Ok` the image on disk, `Err` the file name that is not
+    /// there. A card-screen state mounts it on the engine side.
+    pub memory_card: Option<std::result::Result<PathBuf, String>>,
 }
 
 /// Enumerate every scenario with a library backup on disk, deduplicated by
@@ -234,6 +252,14 @@ pub fn enumerate_corpus(manifest: &ScenarioManifest, library: &Path) -> Vec<Corp
                     resident_patch: sc.resident_patch.clone(),
                     resident_disc: sc.resident_disc.clone(),
                     ram_injected: sc.ram_injected.clone(),
+                    memory_card: sc.memory_card.as_ref().map(|name| {
+                        let p = library.join("cards").join(name);
+                        if p.is_file() {
+                            Ok(p)
+                        } else {
+                            Err(name.clone())
+                        }
+                    }),
                 });
             }
         }

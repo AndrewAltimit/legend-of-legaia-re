@@ -130,6 +130,17 @@ pub struct Scenario {
     /// computed, so the corpus does not score it.
     #[serde(default)]
     pub ram_injected: Vec<String>,
+    /// File name of the memory-card image the state was captured with,
+    /// under `saves/library/cards/` (gitignored, like the states). A state
+    /// on a card screen shows that card's contents, so the retail
+    /// comparison mounts the same card on the engine side.
+    #[serde(default)]
+    pub memory_card: Option<String>,
+    /// RAM words the capture probe wrote before the state was saved, as
+    /// `"<va> = <value> (<why>)"` - a poked state is not pure retail play,
+    /// and the poke is named here so nothing downstream reads it as such.
+    #[serde(default)]
+    pub ram_poked: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

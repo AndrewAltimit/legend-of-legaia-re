@@ -332,6 +332,14 @@ pub(super) fn apply_debug_seat_env(session: &mut NativeSession) {
     {
         session.host.world.seed_frame_step(step);
     }
+    // `LEGAIA_SEAT_SAVE_ALLOWED=1` (the retail-compare image channel): a
+    // retail state whose save-allow word `_DAT_8007B6A8` is raised - the bit
+    // a kingdom overworld's MAN header sets, or a capture probe's named poke
+    // - lands the same scene bit, so the pause menu's Save row opens as it
+    // did in retail.
+    if std::env::var("LEGAIA_SEAT_SAVE_ALLOWED").is_ok_and(|v| v.trim() == "1") {
+        session.host.world.party.scene_save_allowed = true;
+    }
     if let Ok(seat) = std::env::var("LEGAIA_SEAT") {
         let xz: Vec<i16> = seat
             .split(',')

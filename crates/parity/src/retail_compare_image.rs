@@ -143,6 +143,42 @@ pub struct ImageScore {
     pub note: String,
 }
 
+/// The card screen's info panel - the `No. N` tab, the location and play
+/// time, and one column per member (face, name, `LV`, `HP`, `MP`) - in the
+/// compared frame: `x 8..312`, `y 128..224`. The panel retail draws is
+/// `(8, 136)` to `(312, 216)` with its tab above; the rect is the panel's
+/// footprint, cut at the frame's 224-line foot.
+pub const CARD_INFO_PANEL: (usize, usize, usize, usize) = (8, 128, 304, 96);
+
+/// Per-pixel tolerance of [`panel_score`]: the largest channel difference a
+/// pixel may show and still match, in 8-bit units.
+pub const PANEL_PIXEL_TOLERANCE: u8 = 24;
+
+/// The fraction of pixels inside `rect` whose every channel is within
+/// [`PANEL_PIXEL_TOLERANCE`] of retail's.
+///
+/// A pixel test, not [`score`]'s block test: a 2D panel is drawn 1:1 on
+/// the stage, so there is no rasteriser noise to forgive, and what goes
+/// wrong on one - a numeral's outline in the wrong ink, a glyph one row
+/// off, a face from the wrong tile - is a few pixels per cell, which an
+/// `8 x 8` block mean absorbs.
+pub fn panel_score(retail: &Frame, engine: &Frame, rect: (usize, usize, usize, usize)) -> f64 {
+    let (x0, y0, w, h) = rect;
+    let (x1, y1) = ((x0 + w).min(FRAME_W), (y0 + h).min(FRAME_H));
+    let mut ok = 0usize;
+    let mut n = 0usize;
+    for y in y0..y1 {
+        for x in x0..x1 {
+            let (r, e) = (retail.px(x, y), engine.px(x, y));
+            n += 1;
+            if (0..3).all(|c| r[c].abs_diff(e[c]) <= PANEL_PIXEL_TOLERANCE) {
+                ok += 1;
+            }
+        }
+    }
+    if n == 0 { 0.0 } else { ok as f64 / n as f64 }
+}
+
 /// Mean BT.601 luma of a frame.
 pub fn luma(f: &Frame) -> f64 {
     let mut s = 0.0;
@@ -486,6 +522,25 @@ mod tests {
         let s = score(&solid(100), &solid(100));
         assert_eq!(s.within, 1.0);
         assert_eq!(s.mae, 0.0);
+    }
+
+    /// The panel test counts pixels, so a few off pixels inside the panel
+    /// move it where the block test does not, and pixels outside the rect
+    /// do not move it at all.
+    #[test]
+    fn the_panel_score_counts_pixels_inside_its_rect() {
+        let rect = CARD_INFO_PANEL;
+        assert_eq!(panel_score(&solid(100), &solid(124), rect), 1.0);
+        assert_eq!(panel_score(&solid(100), &solid(125), rect), 0.0);
+        let mut e = solid(100);
+        // One wrong pixel inside the panel, one outside it.
+        for (x, y) in [(rect.0 + 3, rect.1 + 3), (0, 0)] {
+            let o = (y * FRAME_W + x) * 3;
+            e.rgb[o..o + 3].copy_from_slice(&[0, 0, 0]);
+        }
+        let n = (rect.2 * rect.3) as f64;
+        assert_eq!(panel_score(&solid(100), &e, rect), (n - 1.0) / n);
+        assert_eq!(score(&solid(100), &e).within, 1.0);
     }
 
     #[test]

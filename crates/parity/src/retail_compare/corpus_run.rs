@@ -232,6 +232,38 @@ pub(super) fn run_one(
         report.unseeded = format!("{MENU_NOT_SEEDABLE}{why}");
         return report;
     }
+    // A card screen shows a memory card's contents: the engine mounts the
+    // card the capture ran with, or the state is not seeded.
+    let mut card: Option<&Path> = None;
+    if let Some(Ok(menu)) = &retail.menu
+        && (menu.card_grid || menu.title_continue)
+    {
+        card = match &entry.memory_card {
+            Some(Ok(p)) => Some(p.as_path()),
+            Some(Err(name)) => {
+                report.unseeded = format!(
+                    "{MENU_NOT_SEEDABLE}card screen's memory card {name} is not in the library"
+                );
+                return report;
+            }
+            None => {
+                report.unseeded =
+                    format!("{MENU_NOT_SEEDABLE}card screen whose scenario names no `memory_card`");
+                return report;
+            }
+        };
+        if menu.title_continue {
+            title_continue_run(
+                opts,
+                entry,
+                &retail,
+                card.unwrap_or(Path::new("")),
+                &mut report,
+            );
+            return report;
+        }
+        retail.memory_card = card.map(Path::to_path_buf);
+    }
     let engine = match run_engine_with(opts.extracted, &retail, opts.order) {
         Ok(e) => e,
         Err(e) => {
@@ -239,6 +271,7 @@ pub(super) fn run_one(
             return report;
         }
     };
+    let mut panel: Option<f64> = None;
     let image = match (
         opts.engine_exe,
         &retail.frame,
@@ -253,7 +286,18 @@ pub(super) fn run_one(
             let Some(Ok(menu)) = &retail.menu else {
                 unreachable!()
             };
-            menu_image(opts, exe, entry, &retail, menu, seat, save, rf, &mut report)
+            menu_image(
+                opts,
+                exe,
+                entry,
+                &retail,
+                MenuFrame { menu, card },
+                seat,
+                save,
+                rf,
+                &mut report,
+                &mut panel,
+            )
         }
         (Some(_), Some(rf), _, _)
             if crate::retail_compare_image::luma(rf) < crate::retail_compare_image::DARK_LUMA =>
@@ -344,12 +388,129 @@ pub(super) fn run_one(
         }
         _ => None,
     };
-    let (ch, det) = compare(&retail, &engine, image.clone());
+    let (mut ch, det) = compare(&retail, &engine, image.clone());
     report.detail.extend(det);
+    if let Some(p) = panel {
+        ch.insert(CARD_PANEL_CHANNEL.into(), round3(p));
+    }
     report.score = state_score(&ch);
     report.channels = ch;
     report.image = image;
     report
+}
+
+/// The channel [`crate::retail_compare_image::panel_score`] scores a card
+/// screen's info panel on. Image-derived, so a run without a display leaves
+/// it unmeasured like `image` ([`IMAGE_CHANNELS`]).
+pub const CARD_PANEL_CHANNEL: &str = "card_panel";
+
+/// The channels only a run with a display measures.
+pub const IMAGE_CHANNELS: &[&str] = &["image", CARD_PANEL_CHANNEL];
+
+fn round3(v: f64) -> f64 {
+    (v * 1000.0).round() / 1000.0
+}
+
+/// What a pause-menu frame drives to: the screen, and the card a card
+/// screen mounts in port 1.
+pub(super) struct MenuFrame<'a> {
+    pub menu: &'a RetailMenu,
+    pub card: Option<&'a Path>,
+}
+
+/// A save directory for the `play-window` child holding `card` as its port-1
+/// card (`memcard1.mcr`, the file the window mounts in port 1), copied so a
+/// Save the drive commits cannot write the library's image.
+fn card_save_dir(out_dir: Option<&Path>, label: &str, card: &Path) -> Result<PathBuf> {
+    let dir = crate::retail_compare_image::work_dir(out_dir).join(format!("{label}-card"));
+    std::fs::create_dir_all(&dir)?;
+    std::fs::copy(card, dir.join("memcard1.mcr"))
+        .with_context(|| format!("copy memory card {}", card.display()))?;
+    Ok(dir)
+}
+
+/// Pad edges that take `play-window --boot-ui` from a cold start to the
+/// title's Continue grid on the port-1 card: skip the publisher logos,
+/// `Cross` past "PRESS START BUTTON", `Down` onto CONTINUE, `Cross`, then
+/// `Cross` on the `SLOT 1` pill. The child is tick-locked, so the ticks are
+/// the same every run; each sits a beat after its screen takes input.
+pub const TITLE_CONTINUE_PRESSES: &str =
+    "100:Down,160:Cross,700:Cross,760:Down,820:Cross,900:Cross";
+/// Tick the title Continue frame is taken at: the grid is up and still by
+/// then ([`TITLE_CONTINUE_PRESSES`]' last confirm plus the card read).
+pub const TITLE_CONTINUE_CAPTURE_TICK: u64 = 1200;
+
+/// A title-family card screen: the Continue grid over the title. There is no
+/// field to seed - the engine boots its own front end with the capture's
+/// card in port 1 and is driven to the grid - so the state scores the image
+/// channels only.
+fn title_continue_run(
+    opts: &RunOptions<'_>,
+    entry: &CorpusEntry,
+    retail: &RetailObs,
+    card: &Path,
+    report: &mut StateReport,
+) {
+    let (Some(exe), Some(rf)) = (opts.engine_exe, &retail.frame) else {
+        report.detail.insert(
+            "image".into(),
+            "not scored: a title Continue grid scores its frame only, and this run has none".into(),
+        );
+        return;
+    };
+    let dir = match card_save_dir(opts.out_dir, &entry.label, card) {
+        Ok(d) => d,
+        Err(e) => {
+            report.unseeded = format!("seeding failed: {e:#}");
+            return;
+        }
+    };
+    let extra = vec![
+        "--boot-ui".to_string(),
+        "--save-dir".to_string(),
+        dir.display().to_string(),
+        "--pad-script".to_string(),
+        TITLE_CONTINUE_PRESSES.to_string(),
+    ];
+    match crate::retail_compare_image::engine_frame_with(
+        exe,
+        opts.extracted,
+        &retail.scene,
+        None,
+        &extra,
+        &[],
+        TITLE_CONTINUE_CAPTURE_TICK,
+        opts.out_dir,
+        &entry.label,
+        crate::retail_compare_image::FrameEntry::Door(&[]),
+    ) {
+        Ok(ef) => {
+            if let Some(dir) = opts.out_dir {
+                let _ = crate::retail_compare_image::write_side_by_side(
+                    &dir.join(format!("{}.png", entry.label)),
+                    rf,
+                    &ef,
+                );
+            }
+            let score = crate::retail_compare_image::score(rf, &ef);
+            let panel = crate::retail_compare_image::panel_score(
+                rf,
+                &ef,
+                crate::retail_compare_image::CARD_INFO_PANEL,
+            );
+            report.channels.insert("image".into(), round3(score.within));
+            report
+                .channels
+                .insert(CARD_PANEL_CHANNEL.into(), round3(panel));
+            report.score = state_score(&report.channels);
+            report.image = Some(score);
+        }
+        Err(e) => {
+            report
+                .detail
+                .insert("image".into(), format!("engine frame failed: {e:#}"));
+        }
+    }
 }
 
 /// The pause-menu frame through `play-window`: the card-load resume and seat
@@ -362,26 +523,44 @@ pub(super) fn menu_image(
     exe: &Path,
     entry: &CorpusEntry,
     retail: &RetailObs,
-    menu: &RetailMenu,
+    frame: MenuFrame<'_>,
     seat: Option<[i16; 3]>,
     save: &legaia_save::SaveFile,
     rf: &Frame,
     report: &mut StateReport,
+    panel: &mut Option<f64>,
 ) -> Option<ImageScore> {
+    let menu = frame.menu;
     let first = crate::retail_compare_image::CAPTURE_TICK;
     let script = pause_menu_presses(menu)
         .iter()
         .map(|(t, b)| format!("{}:{b:?}", first + t))
         .collect::<Vec<_>>()
         .join(",");
-    let extra = vec!["--pad-script".to_string(), script];
+    let mut extra = vec!["--pad-script".to_string(), script];
+    if let Some(card) = frame.card {
+        match card_save_dir(opts.out_dir, &entry.label, card) {
+            Ok(dir) => extra.extend(["--save-dir".to_string(), dir.display().to_string()]),
+            Err(e) => {
+                report
+                    .detail
+                    .insert("image".into(), format!("engine frame failed: {e:#}"));
+                return None;
+            }
+        }
+    }
+    let env: Vec<(&str, String)> = if retail.save_allowed {
+        vec![("LEGAIA_SEAT_SAVE_ALLOWED", "1".to_string())]
+    } else {
+        Vec::new()
+    };
     match crate::retail_compare_image::engine_frame_with(
         exe,
         opts.extracted,
         &retail.scene,
         seat.map(|[x, _, z]| (x, z)),
         &extra,
-        &[],
+        &env,
         first + pause_menu_drive_ticks(menu),
         opts.out_dir,
         &entry.label,
@@ -394,6 +573,13 @@ pub(super) fn menu_image(
                     rf,
                     &ef,
                 );
+            }
+            if menu.card_grid {
+                *panel = Some(crate::retail_compare_image::panel_score(
+                    rf,
+                    &ef,
+                    crate::retail_compare_image::CARD_INFO_PANEL,
+                ));
             }
             Some(crate::retail_compare_image::score(rf, &ef))
         }

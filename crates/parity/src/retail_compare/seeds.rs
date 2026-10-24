@@ -1163,6 +1163,13 @@ pub struct RetailMenu {
     /// For an Equip-row screen, how many confirms past the root row it sits
     /// (`0` character picker, `1` slot browse, `2` candidate list).
     pub equip_depth: u8,
+    /// The card screen holds its grid ([`CARD_SCREEN_SUBMODE`] reads
+    /// [`CARD_SUBMODE_GRID`]): a Load / Save screen one confirm past its pill
+    /// row, showing a memory card's contents.
+    pub card_grid: bool,
+    /// The title's Continue screen on its grid - sub-screen clear, the card
+    /// screen up over the title. Reached from the title, not from a field.
+    pub title_continue: bool,
 }
 
 impl RetailMenu {
@@ -1174,6 +1181,16 @@ impl RetailMenu {
     pub(super) fn from_ram(ram: &[u8], scene: &str) -> std::result::Result<Self, String> {
         use legaia_engine_menus::field_menu::FieldMenuRow;
         let subscreen = game_anchors::u8_at(ram, MENU_SUBSCREEN);
+        let card_grid = game_anchors::u32_at(ram, CARD_SCREEN_SUBMODE) == CARD_SUBMODE_GRID;
+        if subscreen == 0 && card_grid {
+            return Ok(Self {
+                subscreen,
+                row: FieldMenuRow::Load,
+                equip_depth: 0,
+                card_grid,
+                title_continue: true,
+            });
+        }
         if subscreen == 0 {
             return Err(format!(
                 "title / boot screen on {scene} (sub-screen 0x00); no title seeding path"
@@ -1194,6 +1211,10 @@ impl RetailMenu {
             subscreen,
             row,
             equip_depth,
+            // Only the Load / Save rows open a card screen; the word is the
+            // menu overlay's, and holds whatever it last held elsewhere.
+            card_grid: card_grid && matches!(row, FieldMenuRow::Load | FieldMenuRow::Save),
+            title_continue: false,
         })
     }
 }

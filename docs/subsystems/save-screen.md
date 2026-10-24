@@ -372,7 +372,14 @@ retail's name-index space is open.
 
 `FUN_801DD35C(1, op)` is the whole card screen for both directions: it runs
 the pill row, the read, the grid, the confirm and the transfer as internal
-sub-modes, and draws the screen each frame. The sub-modes this page pins:
+sub-modes, and draws the screen each frame. The sub-mode lives in the word
+`0x801F0204`: the dispatcher's jump table at `0x801DD7F8` switches on
+`FUN_801E38D0` of it (`lw a0,0x204(v0)` at `0x801DD6AC`). The title's
+Continue screen runs the same routine and the same word, so a capture says
+which stage it holds whether the sub-screen word `DAT_801E46A4` is set (the
+pause menu's Load / Save) or clear (the title): `0x10` on the title itself,
+`0x14` on the pill row, `0x0B` while the grid browses, `0x16` once a Load's
+confirm is taken. The sub-modes this page pins:
 
 | Sub-mode | Role | Site |
 |---|---|---|
