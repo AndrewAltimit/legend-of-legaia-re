@@ -30,7 +30,8 @@ impl HeadlessPlayWindow {
     /// ignored (the options start at their defaults,
     /// as a fresh browser profile's do).
     pub fn open(disc: &Path, scene: &str) -> Result<Self> {
-        Self::open_with(disc, scene, false, None)
+        let save_dir = std::env::temp_dir().join("legaia-headless-window-saves");
+        Self::open_with(disc, scene, false, None, &save_dir)
     }
 
     /// [`Self::open`] as `play-window --boot-ui [--card <card>]` launches:
@@ -40,11 +41,33 @@ impl HeadlessPlayWindow {
     /// names; port 1 is the window's own card in a scratch save directory.
     /// Nothing this window saves reaches either file.
     pub fn open_boot_ui(disc: &Path, scene: &str, card: Option<&Path>) -> Result<Self> {
-        Self::open_with(disc, scene, true, card)
+        let save_dir = std::env::temp_dir().join("legaia-headless-window-saves");
+        Self::open_with(disc, scene, true, card, &save_dir)
     }
 
-    fn open_with(disc: &Path, scene: &str, boot_ui: bool, card: Option<&Path>) -> Result<Self> {
-        let save_dir = std::env::temp_dir().join("legaia-headless-window-saves");
+    /// [`Self::open_boot_ui`] over the save directory `save_dir`, as
+    /// `play-window --boot-ui --save-dir <save_dir>` launches: port 1 is the
+    /// card file there (`memcard1.mcr`), which a Save writes back to disk
+    /// and a later window over the same directory reads - a quit and
+    /// relaunch. The options and bindings files stay unwritten.
+    pub fn open_boot_ui_in(
+        disc: &Path,
+        scene: &str,
+        card: Option<&Path>,
+        save_dir: &Path,
+    ) -> Result<Self> {
+        let mut w = Self::open_with(disc, scene, true, card, save_dir)?;
+        w.app.persist_cards = true;
+        Ok(w)
+    }
+
+    fn open_with(
+        disc: &Path,
+        scene: &str,
+        boot_ui: bool,
+        card: Option<&Path>,
+        save_dir: &Path,
+    ) -> Result<Self> {
         let mut app = assemble_play_window(PlayWindowLaunch {
             scene,
             extracted_root: Path::new("extracted"),
@@ -53,7 +76,7 @@ impl HeadlessPlayWindow {
             audio_detached: true,
             world_map: false,
             boot_ui,
-            save_dir: &save_dir,
+            save_dir,
             card,
             cheat_file: None,
             cheat_strict: false,
@@ -183,6 +206,19 @@ impl HeadlessPlayWindow {
     pub fn continue_screen_mut(&mut self) -> Option<&mut legaia_engine_session::ContinueScreen> {
         match &mut self.app.boot_ui {
             BootUiState::Continue(c) => Some(c),
+            _ => None,
+        }
+    }
+
+    /// The phase of the pause menu's Load / Save screen, while the window
+    /// routes the frame to it (the menu's `FieldMenu` arm with a Save
+    /// sub-session pushed).
+    pub fn save_select_phase(&self) -> Option<legaia_engine_menus::save_select::SelectPhase> {
+        use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
+        match &self.app.boot_ui {
+            BootUiState::FieldMenu {
+                sub: Some(FieldMenuSubsession::Save(s)),
+            } => Some(s.phase()),
             _ => None,
         }
     }

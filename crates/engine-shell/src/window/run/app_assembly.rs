@@ -159,6 +159,7 @@ impl PlayWindowApp {
             mapping,
             keys_down: std::collections::HashSet::new(),
             persist_disabled: false,
+            persist_cards: false,
             pending_key_name: None,
             menu_runtime: MenuRuntime::new(save_dir.to_path_buf()),
             prev_pad: 0,
