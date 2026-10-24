@@ -2807,6 +2807,22 @@ drop its panel on the commit, so its frame at the same PC had no box at all.
 It now keeps the dismissed box up until the next line loads, and the frame
 reads `0.994`.
 
+### Native frames show what the box filter hid
+
+At the native size a one-pixel feature counts at full strength in its block,
+where a `3x` capture box-filtered down spread it over a third of one, so a
+residual the clean child scored as a match can fail a block. Two such cases
+are timing and effect content, not rasterisation:
+
+- `cort_guilty_cross_mid_cast`: Guilty Cross's sphere draws three pixels
+  narrow on its right edge, which is the sphere and camera three ticks after
+  the frame retail shows. Taken at `LEGAIA_DIAG_CAPTURE_TICK` three ticks
+  before the drive's frame, the edge matches retail's to the pixel and the
+  frame scores `0.988`.
+- `zeto_call_wave_mid_cast`: the engine draws one Call Wave ray horizontal
+  across the left of the frame where retail has none; the failing blocks are
+  that ray's.
+
 ### A black band across the top is a readback race
 
 An engine frame whose top rows came back pure black - up to fifteen rows,

@@ -172,6 +172,13 @@ on the native target: a sprite drawn one texel per pixel samples the same
 texels either way, and a scaled quad - an ending vignette's photo shrunk to
 a corner - samples the GPU's.
 
+The Gouraud colour is not rounded the way the UV is. Rounding the
+interpolated colour to a whole step (a half-step start, as an emulator's
+colour interpolators take) moves only shaded primitives, and on the retail
+states it touches it makes the frame brighter than the capture:
+`v0_1_battle_command_menu`'s exactly matching pixels fall by a hundredth,
+and no state's score rises. The colour stays the interpolated value.
+
 ### What the clean rasteriser leaves on a retail frame
 
 Off PSX mode the engine draws every vertex at its exact sub-pixel position.
