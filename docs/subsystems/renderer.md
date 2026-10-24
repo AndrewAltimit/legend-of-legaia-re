@@ -2249,6 +2249,13 @@ The port arms the rejection through one kernel both hosts read,
 | Battle stage, other minigame venues | both sides |
 | Battle **bodies** | culled per draw under the field's parity, word `2` (`BattleActorDrawPlan::nclip_mode`; `Renderer::set_draw_nclip` natively, the placement `nclip` on the play page) |
 
+A move-VM part is the one field draw whose word can carry the bit. The
+field FX parts (`World::active_field_fx_part_draws`) hand it on as
+`ColourWord::double_sided`; the native window marks such a draw both-sided
+(`FxFrame::push_draws`) and the play page draws its baked effect mesh
+both-sided, so `opdeene`'s light cone (`0xC9000000`) is not dropped by the
+field pass's cull.
+
 Battle bodies go through the same dispatcher with their render node's colour
 word, which never carries the double-sided bit. On an opaque body the depth
 test hides the far shell anyway; on a semi-transparent one - the near-camera

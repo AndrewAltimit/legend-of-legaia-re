@@ -34,6 +34,10 @@ pub struct ColourWord {
     /// sixteen `POLY_GT3`s instead of one `GT4` ([`subdivide_quad`]). Bank 3
     /// shares every other kind's leaf with bank 1.
     pub split_quads: bool,
+    /// Mode bit `0x08` (word bit `0x08000000`): the dispatcher lowers the
+    /// `NCLIP` area mask to `0x7FFFFFFF` (`0x80043520..0x80043540`), so no
+    /// packet is rejected by its winding and the mesh draws both sides.
+    pub double_sided: bool,
 }
 
 impl ColourWord {
@@ -51,6 +55,7 @@ impl ColourWord {
             far: [w as u8, (w >> 8) as u8, (w >> 16) as u8],
             ir0: ir0.min(0x1000),
             split_quads: mode & 0x20 != 0,
+            double_sided: mode & 0x08 != 0,
         }
     }
 
@@ -223,6 +228,7 @@ mod tests {
             far: [0, 0, 0],
             ir0: 0x800,
             split_quads: false,
+            double_sided: false,
         };
         assert_eq!(c.cue([0x80, 0x40, 0xFF]), [0x40, 0x20, 0x7F]);
     }

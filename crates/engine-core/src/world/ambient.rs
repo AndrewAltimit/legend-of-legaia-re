@@ -732,6 +732,40 @@ impl World {
             .collect()
     }
 
+    /// The live ambient parts that carry a scene-pack mesh, as model draws
+    /// whose `model_index` is the **pack slot** (`model_sel - 5`).
+    ///
+    /// The seater `FUN_80021B04` gives a record whose `model_sel` is not
+    /// negative a model list: `+0x44[0]` is the group count of
+    /// `DAT_8007C018[+0x64]` and `+0x44[1..]` its group descriptors
+    /// (`0x80021BF4..0x80021C54`), with `+0x5A = 1` and flag `0x2` cleared
+    /// (`0x80021CA8..0x80021CB0`), so the render dispatcher's case 5
+    /// (`FUN_8001ADA4`) draws the mesh at the part's position, banks, scale
+    /// `+0x72` and colour word `+0x74` / `+0x78` every frame until the
+    /// part halts or a script raises `0x2`. `opdeene`'s light cone over the
+    /// Seru (record `0x394`, `model_sel 0x4C`, an additive `GT4` fan) is one.
+    pub fn ambient_mesh_part_draws(&self) -> Vec<legaia_engine_effects::summon::SummonPartDraw> {
+        self.ambient
+            .fx
+            .iter()
+            .filter(|p| !p.finished && p.state.flags & 0xA == 0)
+            .filter_map(|p| {
+                let pack_slot = pack_slot_of_model_sel(p.model_sel)?;
+                let s = &p.state;
+                Some(legaia_engine_effects::summon::SummonPartDraw {
+                    model_index: pack_slot,
+                    world_pos: [s.world_x as f32, s.world_y as f32, s.world_z as f32],
+                    rot: legaia_engine_effects::effect_ribbon::node_rotation(s),
+                    flags_52: s.field_52,
+                    morph: legaia_engine_effects::summon::PartMorph::of(s),
+                    scale: s.field_72,
+                    colour: legaia_render_kernels::sprite_arm::ColourWord::of(s),
+                    shatter: legaia_engine_effects::part_shatter::part_shatter_word(s),
+                })
+            })
+            .collect()
+    }
+
     /// Every live mesh-bearing ambient part with the morph envelope armed
     /// (`+0x10` bit `0x1000`, op `0x0A`) - the retail VDF morph carriers
     /// (town0e's flesh lumps, rikuroa's generator sacs).

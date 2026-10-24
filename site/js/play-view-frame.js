@@ -926,7 +926,13 @@
           rt.play_battle_fx_positions(), rt.play_battle_fx_uvs(),
           rt.play_battle_fx_cba_tsb(), rt.play_battle_fx_indices(),
           rt.play_battle_fx_flat_rgba());
-        draws.push({ meshId: BATTLE_FX_BILLBOARD_MESH, model: IDENTITY_MODEL, noOccl: true });
+        /* Both sides: what this mesh bakes - camera-facing billboards, the
+         * draw-kind-4 nodes and the field parts with a colour word of their
+         * own (opdeene's light cone) - draws under the double-sided word
+         * 0x08000000 the prim dispatcher reads as "no NCLIP"; the field
+         * pass's back-face cull would otherwise drop the cone (the native
+         * window marks the same parts, FxFrame::push_draws). */
+        draws.push({ meshId: BATTLE_FX_BILLBOARD_MESH, model: IDENTITY_MODEL, noOccl: true, nclip: 0 });
       }
       const n = rt.play_battle_fx_model_count();
       if (!n) return;

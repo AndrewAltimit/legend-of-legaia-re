@@ -663,7 +663,7 @@ impl PlayWindowApp {
     ) -> (
         Vec<(UploadedVramMesh, Mat4)>,
         Vec<(UploadedVramMesh, Mat4)>,
-        Vec<(UploadedVramMesh, Mat4)>,
+        Vec<(UploadedVramMesh, Mat4, bool)>,
     ) {
         if self.boot_ui.is_active() {
             return (Vec::new(), Vec::new(), Vec::new());
@@ -729,11 +729,17 @@ impl PlayWindowApp {
             .field_parts
             .iter()
             .filter_map(|fp| {
-                let (tmd, raw) = self.field_stager_tmds.get(fp.index)?;
-                let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(tmd, raw);
+                let (tmd, raw) = self.field_stager_tmds.get(fp.draw.model_index)?;
+                let mut vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(tmd, raw);
+                // The case-5 draw's render state: scale `+0x72`, colour word
+                // `+0x74` / `+0x78` (ABE / ABR ORed into every packet).
+                if !fp.draw.draws_rest_mesh() {
+                    fp.draw.apply_render_state(&mut vmesh);
+                }
                 Some((
                     upload(&vmesh, "field-FX part")?,
                     Mat4::from_cols_array(&fp.model),
+                    fp.draw.colour.double_sided,
                 ))
             })
             .collect();

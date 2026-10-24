@@ -512,11 +512,27 @@ impl LegaiaRuntime {
         // Field move-VM stager parts resolve against the SCENE's TMD pack
         // (`model_sel` relative to the spawn base = pack slot), not the
         // effect library - the page holds that pack as its env meshes.
+        // A part with a render state of its own (scale `+0x72`, colour word
+        // `+0x74` / `+0x78`: `opdeene`'s additive light cone) bakes its pack
+        // mesh with that state applied, as the native field-FX pass uploads.
         for fp in &lists.field_parts {
+            let model = mat4_mul(&outer, &fp.model);
+            if !fp.draw.draws_rest_mesh()
+                && let Some(rtmd) = self
+                    .field
+                    .as_ref()
+                    .and_then(|f| f.env_tmds.get(fp.draw.model_index).copied())
+                    .and_then(|i| self.res()?.tmds.get(i))
+            {
+                let mut m = legaia_tmd::mesh::tmd_to_vram_mesh(&rtmd.tmd, &rtmd.raw);
+                fp.draw.apply_render_state(&mut m);
+                bake_mesh(&mut frame, &model, &m);
+                continue;
+            }
             frame.models.push(FxModelDraw {
-                tmd_index: fp.index,
+                tmd_index: fp.draw.model_index,
                 source: FxModelSource::ScenePack,
-                model: mat4_mul(&outer, &fp.model),
+                model,
             });
         }
         for n in &lists.kind4 {

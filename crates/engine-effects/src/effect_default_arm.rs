@@ -1035,6 +1035,7 @@ pub fn ground_shadow_mesh(inner: u32, outer: u32, radius: i16) -> legaia_tmd::me
         far: [0; 3],
         ir0: 1,
         split_quads: false,
+        double_sided: SHADOW_FLAG_WORD & 0x0800_0000 != 0,
     };
     vram_mesh(&decode(&b), 0x1000, &colour)
 }

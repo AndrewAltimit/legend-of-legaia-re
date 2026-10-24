@@ -85,12 +85,15 @@ impl World {
 
     /// Per-part mesh draws across all live field move-VM effects (the visual
     /// parts). The non-visual nodes (`0x4001` sound emitter) never appear here -
-    /// see [`Self::active_field_fx_render_nodes`].
+    /// see [`Self::active_field_fx_render_nodes`]. The scene's ambient tree's
+    /// mesh-bearing parts ([`Self::ambient_mesh_part_draws`]) follow: the
+    /// same case-5 model draw, the same pack-slot index.
     pub fn active_field_fx_part_draws(&self) -> Vec<legaia_engine_effects::summon::SummonPartDraw> {
         self.props
             .active_fx
             .iter()
             .flat_map(|s| s.part_draws())
+            .chain(self.ambient_mesh_part_draws())
             .collect()
     }
 
