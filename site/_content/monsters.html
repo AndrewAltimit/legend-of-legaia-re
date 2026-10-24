@@ -874,10 +874,12 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
 
   // ---- 3D mesh viewer (WebGL2, directional-lit, textured) ------------------
   // Textures come from the decoded monster texture pool (record +0x08): a 4bpp
-  // index page (uploaded as an R8 texture) + a 15x16 palette LUT (RGBA). The
-  // fragment shader does the index->palette lookup the PSX GPU does in VRAM,
-  // picking the palette by the prim's CBA (a_pal = cba & 0x3F). Falls back to
-  // flat directional shading when a slot has no texture.
+  // index page (uploaded as an R8 texture) + a palette LUT (RGBA, 16 colours
+  // per palette). The fragment shader does the index->palette lookup the PSX
+  // GPU does in VRAM, picking the palette per vertex (a_pal: the prim's
+  // cba & 0x3F, offset past the pool's 15 for a boss prim that samples the
+  // boss effect page). Falls back to flat directional shading when a slot has
+  // no texture.
 
   const MESH_VS = `#version 300 es
   in vec3 a_pos;
@@ -902,7 +904,8 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
   in vec2 v_uv;
   in float v_pal;
   uniform sampler2D u_idx;   // R8: palette index per texel (value*255)
-  uniform sampler2D u_pal;   // RGBA8: 15*16 palette LUT (one row)
+  uniform sampler2D u_pal;   // RGBA8: palette LUT, 16 colours per palette (one row)
+  uniform float u_palw;      // LUT width in colours (15*16, or 31*16 with the boss page)
   uniform bool u_textured;
   out vec4 o_col;
   void main() {
@@ -915,7 +918,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
     float amb = 0.42 + 0.18 * N.y;
     if (u_textured) {
       float idx = floor(texture(u_idx, v_uv).r * 255.0 + 0.5);
-      float u = (v_pal * 16.0 + idx + 0.5) / 240.0;
+      float u = (v_pal * 16.0 + idx + 0.5) / u_palw;
       vec4 t = texture(u_pal, vec2(u, 0.5));
       if (t.a < 0.5) discard;            // PSX index-0 transparent texel
       // PSX textures carry their own shading; modulate gently by the light.
@@ -950,6 +953,7 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
         nmat: gl.getUniformLocation(this.prog, 'u_nrm'),
         idxTex: gl.getUniformLocation(this.prog, 'u_idx'),
         palTex: gl.getUniformLocation(this.prog, 'u_pal'),
+        palW: gl.getUniformLocation(this.prog, 'u_palw'),
         textured: gl.getUniformLocation(this.prog, 'u_textured'),
       };
       this.vao = gl.createVertexArray();
@@ -959,7 +963,8 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       this.palBuf = gl.createBuffer();
       this.idxBuf = gl.createBuffer();
       this.idxTex = gl.createTexture();   // 4bpp index page (R8)
-      this.palTex = gl.createTexture();   // 15*16 palette LUT (RGBA8)
+      this.palTex = gl.createTexture();   // palette LUT (RGBA8), 16 colours per palette
+      this.palW = 240;
       this.textured = false;
       this.indexCount = 0;
       this.center = [0, 0, 0];
@@ -973,12 +978,14 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       this._raf = requestAnimationFrame(this._loop);
     }
 
-    // `tex` is { idx: Uint8Array(w*h), pal: Uint8Array(15*16*4), w, h } or null.
+    // `tex` is { idx: Uint8Array(w*h), pal: Uint8Array(palettes*16*4), w, h } or null.
     // `anim` is { objectIds: Uint32Array(nverts), partCount, frameCount,
     //   frames: Int32Array(frameCount*partCount*6) } or null. When present, the
     //   idle animation (action 0) is played by re-posing each TMD object
     //   relative to frame 0 (so frame 0 == the static rest pose).
-    setMesh(positions, normals, indices, bounds, uvs, palIdx, tex, anim) {
+    // `blend` is a per-vertex Uint8Array (0 opaque, 1 + abr for a
+    //   semi-transparent prim) or null for an all-opaque draw.
+    setMesh(positions, normals, indices, bounds, uvs, palIdx, tex, anim, blend) {
       const gl = this.gl;
       // Keep the pristine per-object local geometry so a later action switch
       // (setAnimation) can re-pose without re-uploading the whole mesh/textures.
@@ -1021,9 +1028,11 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        // Palette LUT: 15*16 = 240 RGBA colours in one row.
+        // Palette LUT in one row: the pool's 15*16 colours, then the boss
+        // effect page's 16*16 for the bosses whose prims sample it.
+        this.palW = Math.max(16, (tex.pal.length / 4) | 0);
         gl.bindTexture(gl.TEXTURE_2D, this.palTex);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 240, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, tex.pal);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.palW, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, tex.pal);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -1034,8 +1043,26 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
         gl.disableVertexAttribArray(this.loc.pal);
       }
 
+      // Opaque triangles first, then one run per PSX blend rate: a
+      // semi-transparent prim blends over what is already drawn, and the
+      // battle CLUT's STP bit makes every opaque texel of it blend.
+      const buckets = [[], [], [], [], []];
+      for (let t = 0; t + 2 < indices.length; t += 3) {
+        const m = blend && blend.length ? (blend[indices[t]] | 0) : 0;
+        const b = buckets[m < 5 ? m : 0];
+        b.push(indices[t], indices[t + 1], indices[t + 2]);
+      }
+      const ordered = new Uint32Array(indices.length);
+      this.runs = [];
+      let at = 0;
+      buckets.forEach((b, mode) => {
+        if (!b.length) return;
+        ordered.set(b, at);
+        this.runs.push({ mode, first: at, count: b.length });
+        at += b.length;
+      });
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.idxBuf);
-      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, ordered, gl.STATIC_DRAW);
       gl.bindVertexArray(null);
       this.indexCount = indices.length;
       this.center = [bounds[0], bounds[1], bounds[2]];
@@ -1231,12 +1258,41 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
           gl.activeTexture(gl.TEXTURE1);
           gl.bindTexture(gl.TEXTURE_2D, this.palTex);
           gl.uniform1i(this.loc.palTex, 1);
+          gl.uniform1f(this.loc.palW, this.palW);
         }
         gl.bindVertexArray(this.vao);
-        gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_INT, 0);
+        for (const run of (this.runs || [{ mode: 0, first: 0, count: this.indexCount }])) {
+          setBlendMode(gl, run.mode);
+          gl.drawElements(gl.TRIANGLES, run.count, gl.UNSIGNED_INT, run.first * 4);
+        }
+        setBlendMode(gl, 0);
         gl.bindVertexArray(null);
       }
       this._raf = requestAnimationFrame(this._loop);
+    }
+  }
+
+  // PSX semi-transparency for a run of triangles: mode 0 opaque, else
+  // 1 + abr - B/2+F/2, B+F, B-F, B+F/4. Blended runs test depth but do not
+  // write it, so they never hide geometry drawn after them.
+  function setBlendMode(gl, mode) {
+    if (!mode) {
+      gl.disable(gl.BLEND);
+      gl.depthMask(true);
+      gl.blendEquation(gl.FUNC_ADD);
+      return;
+    }
+    gl.enable(gl.BLEND);
+    gl.depthMask(false);
+    gl.blendEquation(mode === 3 ? gl.FUNC_REVERSE_SUBTRACT : gl.FUNC_ADD);
+    if (mode === 1) {
+      gl.blendColor(0.5, 0.5, 0.5, 0.5);
+      gl.blendFunc(gl.CONSTANT_COLOR, gl.CONSTANT_COLOR);
+    } else if (mode === 4) {
+      gl.blendColor(0.25, 0.25, 0.25, 0.25);
+      gl.blendFunc(gl.CONSTANT_COLOR, gl.ONE);
+    } else {
+      gl.blendFunc(gl.ONE, gl.ONE);
     }
   }
 
@@ -1360,7 +1416,8 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
       statsEl.innerHTML = '<span style="color:var(--text-dim)">No model for this id (filler slot).</span>';
       return;
     }
-    // Texture pool (record +0x08): 4bpp index page + 15x16 palette LUT.
+    // Texture pool (record +0x08): 4bpp index page + palette LUT, widened by
+    // the boss effect page for the ids whose prims sample it.
     const uvs = viewer.monster_mesh_uvs(id);
     const palIdx = viewer.monster_mesh_palette_index(id);
     const texIdx = viewer.monster_texture_indices(id);
@@ -1405,6 +1462,8 @@ canvas.mesh-viewer-canvas:active { cursor: grabbing; }
         palIdx.length ? Float32Array.from(palIdx) : null,
         tex,
         idleAnim,
+        // Older cached wasm builds carry no blend export: draw all opaque.
+        viewer.monster_mesh_blend_modes ? Uint8Array.from(viewer.monster_mesh_blend_modes(id)) : null,
       );
       meshView.resetView();
       const meshStats =

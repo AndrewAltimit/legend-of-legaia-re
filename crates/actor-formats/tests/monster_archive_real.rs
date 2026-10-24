@@ -902,3 +902,73 @@ fn spell_effect_targets_are_clip_morphs_over_the_monster_mesh() {
     assert!(records >= lanes, "every lane carries at least one record");
     eprintln!("[clip-morph] {lanes} lanes, {records} records");
 }
+
+/// The VRAM-free preview atlas (`MonsterMesh::preview`, what the site
+/// bestiary and the `.glb` export draw from) resolves every vertex to the
+/// same colour the battle path does: the pool uploaded and the prims
+/// relocated by `battle_render_mesh`, the boss effect page staged by
+/// `write_boss_effect_page`, then a 4bpp VRAM fetch through the relocated
+/// CBA / TSB. Songi's third form, both Cort forms and Koru draw part of their
+/// body from the boss page, which a pool-only reading paints from the wrong
+/// page and palette.
+#[test]
+fn the_preview_atlas_samples_what_battle_vram_samples() {
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let mut boss_vertices = 0usize;
+    let mut checked = 0usize;
+    for id in 1..=194u16 {
+        let Ok(Some(mesh)) = monster_archive::mesh(&entry, id) else {
+            continue;
+        };
+        let Some(preview) = mesh.preview(&entry) else {
+            continue;
+        };
+        let Some(tex) = preview.texture.as_ref() else {
+            continue;
+        };
+        let pool_width = mesh.texture().map_or(0, |t| t.width);
+        let mut vram = legaia_tim::Vram::new();
+        let battle = mesh.battle_render_mesh(0, &mut vram).expect("battle mesh");
+        monster_archive::write_boss_effect_page(&entry, id, &mut vram);
+        assert_eq!(battle.uvs.len(), preview.atlas_uvs.len(), "id {id}");
+        for (v, (&[u, vv], &[cba, tsb])) in battle.uvs.iter().zip(&battle.cba_tsb).enumerate() {
+            // 4bpp fetch: page origin from the TSB, CLUT from the CBA.
+            let page_x = usize::from(tsb & 0xF) * 64;
+            let page_y = usize::from((tsb >> 4) & 1) * 256;
+            let word = vram.pixel(page_x + usize::from(u) / 4, page_y + usize::from(vv));
+            let index = (word >> ((u as u16 % 4) * 4)) & 0xF;
+            let clut_x = usize::from(cba & 0x3F) * 16;
+            let clut_y = usize::from((cba >> 6) & 0x1FF);
+            let colour = vram.pixel(clut_x + usize::from(index), clut_y) & 0x7FFF;
+
+            let [au, av] = preview.atlas_uvs[v];
+            let p = usize::from(preview.atlas_palettes[v]);
+            // A narrow (128-texel) pool's edge vertex at `u = 128` fetches
+            // past the pool, from VRAM the monster does not own.
+            if p < monster_archive::CLUT_COUNT && usize::from(au) >= pool_width {
+                continue;
+            }
+            let a_index = tex.indices[usize::from(av) * tex.width + usize::from(au)];
+            assert_eq!(u16::from(a_index), index, "id {id} vertex {v}: texel index");
+            let rgba = tex.palettes[p][usize::from(a_index)];
+            let expect = [
+                ((colour & 0x1F) << 3) as u8,
+                (((colour >> 5) & 0x1F) << 3) as u8,
+                (((colour >> 10) & 0x1F) << 3) as u8,
+            ];
+            if colour != 0 {
+                assert_eq!(&rgba[..3], &expect, "id {id} vertex {v}: colour");
+            }
+            if p >= monster_archive::CLUT_COUNT {
+                boss_vertices += 1;
+            }
+            checked += 1;
+        }
+    }
+    assert!(checked > 100_000, "the archive's vertices were walked");
+    // 179..=186: Songi 1004, the Cort forms 35 / 2390 and copies 4 x 35, Koru 1587.
+    assert_eq!(boss_vertices, 1004 + 35 + 2390 + 1587 + 4 * 35);
+}

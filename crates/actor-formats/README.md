@@ -78,6 +78,10 @@ slot.
 - `MonsterMesh::texture()` → the decoded texture pool (record `+0x08`: fifteen
   16-colour CLUTs at `[0..0x1E0]` + a 4bpp page, layout from the loader
   `FUN_80055468`; palette = `cba & 0x3F`).
+- `MonsterMesh::preview(archive)` → the mesh resolved against one atlas for
+  readers with no VRAM (the bestiary, the `.glb` export): the pool page plus,
+  for the ids `0xB3..=0xBA` whose prims sample it, the boss effect page and
+  its 16 palettes. Per-vertex atlas UVs and palette indices.
 - `page(entry, id)` / `pages(entry)` → the same pool as an addressable,
   nameable texture row (`MonsterPage`): one LZS decode for the name, the mesh
   pointer and the pool together. `MonsterPage::ownership()` walks the embedded

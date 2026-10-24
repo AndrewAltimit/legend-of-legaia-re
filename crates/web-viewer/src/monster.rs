@@ -203,28 +203,33 @@ impl LegaiaViewer {
         self.disc.get(off..end)
     }
 
-    /// Build monster `id`'s embedded mesh (the Legaia TMD at archive-block
-    /// `+0x04`) as a [`legaia_tmd::mesh::VramMesh`]. All monster prims are
-    /// textured, so this keeps the full geometry with per-vertex UVs +
-    /// CBA/TSB; the JS side textures it from the decoded pool (see
-    /// [`Self::monster_texture_indices`]) and directional-lights it via the
-    /// per-vertex normals. Returns `None` for a filler / out-of-range id.
-    fn build_monster_mesh(&self, id: u16) -> Option<legaia_tmd::mesh::VramMesh> {
+    /// Build monster `id`'s [`legaia_actor_formats::monster_archive::MonsterPreview`]:
+    /// the embedded mesh (the Legaia TMD at archive-block `+0x04`) with every
+    /// vertex resolved against one texture atlas - the pool at `+0x08`, plus
+    /// the boss effect page for the ids whose prims sample it. The JS side
+    /// textures it from that atlas (see [`Self::monster_texture_indices`]) and
+    /// directional-lights it via the per-vertex normals. Returns `None` for a
+    /// filler / out-of-range id.
+    fn build_monster_preview(
+        &self,
+        id: u16,
+    ) -> Option<legaia_actor_formats::monster_archive::MonsterPreview> {
         let slice = self.monster_archive_slice()?;
         let mesh = legaia_actor_formats::monster_archive::mesh(slice, id).ok()??;
-        let tmd = legaia_tmd::parse(mesh.tmd_bytes()).ok()?;
-        Some(legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, mesh.tmd_bytes()))
+        mesh.preview(slice)
     }
 
-    /// Decode monster `id`'s texture pool (archive-block `+0x08`). `None` for a
-    /// filler / out-of-range id or a slot with no pool.
+    fn build_monster_mesh(&self, id: u16) -> Option<legaia_tmd::mesh::VramMesh> {
+        self.build_monster_preview(id).map(|p| p.mesh)
+    }
+
+    /// The atlas of [`Self::build_monster_preview`]. `None` for a filler /
+    /// out-of-range id or a slot with no pool.
     fn build_monster_texture(
         &self,
         id: u16,
     ) -> Option<legaia_actor_formats::monster_archive::MonsterTexture> {
-        let slice = self.monster_archive_slice()?;
-        let mesh = legaia_actor_formats::monster_archive::mesh(slice, id).ok()??;
-        mesh.texture()
+        self.build_monster_preview(id)?.texture
     }
 
     /// Per-vertex `[x, y, z]` positions for monster `id`'s mesh (flat array,
@@ -289,26 +294,54 @@ impl LegaiaViewer {
     /// [`Self::monster_mesh_positions`], 2 floats per vertex). Empty if the id
     /// has no mesh or no texture.
     pub fn monster_mesh_uvs(&self, id: u16) -> Vec<f32> {
-        let (Some(mesh), Some(tex)) = (self.build_monster_mesh(id), self.build_monster_texture(id))
-        else {
+        let Some(preview) = self.build_monster_preview(id) else {
+            return Vec::new();
+        };
+        let Some(tex) = preview.texture.as_ref() else {
             return Vec::new();
         };
         // Texel-centre offset so the JS shader's NEAREST sample lands on the
         // intended texel rather than rounding to its neighbour at edges.
         let (w, h) = (tex.width as f32, tex.height as f32);
-        let mut out = Vec::with_capacity(mesh.uvs.len() * 2);
-        for uv in &mesh.uvs {
+        let mut out = Vec::with_capacity(preview.atlas_uvs.len() * 2);
+        for uv in &preview.atlas_uvs {
             out.extend_from_slice(&[(uv[0] as f32 + 0.5) / w, (uv[1] as f32 + 0.5) / h]);
         }
         out
     }
 
-    /// Per-vertex palette index (`cba & 0x3F`) for monster `id`'s mesh, as
-    /// floats (parallel to [`Self::monster_mesh_positions`]). The JS shader
-    /// uses it to pick the row of the palette texture.
-    pub fn monster_mesh_palette_index(&self, id: u16) -> Vec<f32> {
+    /// Per-vertex blend mode for monster `id`'s mesh (parallel to
+    /// [`Self::monster_mesh_positions`]): `0` opaque, `1 + abr` for a
+    /// semi-transparent prim (the group's ABE bit, packed into TSB bit 15 by
+    /// the mesh builder), where `abr` is the TSB blend rate - `0` `B/2+F/2`,
+    /// `1` `B+F`, `2` `B-F`, `3` `B+F/4`. The battle loader sets STP on every
+    /// non-zero CLUT entry, so a semi prim blends all of its opaque texels:
+    /// the Orb's additive sphere and the slimes' and crystal's averaged bodies.
+    pub fn monster_mesh_blend_modes(&self, id: u16) -> Vec<u8> {
         self.build_monster_mesh(id)
-            .map(|m| m.cba_tsb.iter().map(|ct| (ct[0] & 0x3F) as f32).collect())
+            .map(|m| {
+                m.cba_tsb
+                    .iter()
+                    .map(|ct| {
+                        if ct[1] & legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT != 0 {
+                            1 + ((ct[1] >> 5) & 3) as u8
+                        } else {
+                            0
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Per-vertex palette index into the atlas palettes for monster `id`'s
+    /// mesh, as floats (parallel to [`Self::monster_mesh_positions`]): the
+    /// prim's `cba & 0x3F` for the pool's own palettes (`0..15`), `15 + p` for
+    /// a boss prim's boss-page palette `p`. The JS shader uses it to pick the
+    /// row of the palette texture.
+    pub fn monster_mesh_palette_index(&self, id: u16) -> Vec<f32> {
+        self.build_monster_preview(id)
+            .map(|p| p.atlas_palettes.iter().map(|&i| f32::from(i)).collect())
             .unwrap_or_default()
     }
 
@@ -322,8 +355,9 @@ impl LegaiaViewer {
             .unwrap_or_default()
     }
 
-    /// Monster `id`'s 15 palettes flattened to a `15 * 16` RGBA8 row (palette
-    /// `p`, colour `c` at pixel `p * 16 + c`). Index-0 transparent colours
+    /// Monster `id`'s atlas palettes flattened to one `palettes * 16` RGBA8 row
+    /// (palette `p`, colour `c` at pixel `p * 16 + c`): the pool's 15, then the
+    /// boss page's 16 when the mesh samples it. Index-0 transparent colours
     /// carry alpha 0. Empty if the id has no texture.
     pub fn monster_texture_palette_rgba(&self, id: u16) -> Vec<u8> {
         self.build_monster_texture(id)
@@ -331,8 +365,9 @@ impl LegaiaViewer {
             .unwrap_or_default()
     }
 
-    /// `[width, height]` of monster `id`'s texture page in texels (128 or 256
-    /// wide, always 256 tall). `[0, 0]` if the id has no texture.
+    /// `[width, height]` of monster `id`'s texture atlas in texels (the pool's
+    /// 128 or 256, plus 256 for the boss page; always 256 tall). `[0, 0]` if
+    /// the id has no texture.
     pub fn monster_texture_dims(&self, id: u16) -> Vec<u32> {
         self.build_monster_texture(id)
             .map(|t| vec![t.width as u32, t.height as u32])
