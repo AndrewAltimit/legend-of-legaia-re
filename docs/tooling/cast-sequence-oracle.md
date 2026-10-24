@@ -193,6 +193,15 @@ runs it in 2244 ticks. Guilty Cross's capture run (`0x70`, phases `1..5` at
 engine's Cort casts it in 835 ticks. A soak trace that reads a summon or a
 boss cast as "long" is reading the cast's own length.
 
+A short arm can still part the clocks a later segment pairs on. Vera's arm 3
+polls the creature stream (`FUN_8003F2B8(1)`) for four vsyncs where the
+engine's resident stream passes it in two, and PROT 0905's white rise
+(spawned in arm 2, `0x20` vsyncs) runs on through both: a phase-4 pair `into`
+frames past the arm's entry holds retail's rise older than the engine's
+(`64`, eight vsyncs in, at retail's arm-4 entry in one capture), and
+the whole arm-4 segment scores low on the brighter retail frame. The
+`vera_summon_mid_cast` still, gated on the rise's own age, matches it.
+
 ## Reading the report
 
 `report.md` opens with the mean, the minimum and the excluded counts. Then
