@@ -674,8 +674,9 @@ pub(super) fn battle_image(
     // (the gate), with the fixed tick as the deadline.
     // The capture's own frame step over its last stretch, as the headless
     // seed ran it (`RetailBattle::frame_step_seed`).
-    if let Some((step, state)) = battle.frame_step_seed() {
-        env.push(("LEGAIA_BATTLE_FRAME_STEP", format!("{step},{state}")));
+    if let Some((step, state, from)) = battle.frame_step_seed() {
+        let from = from.map_or(String::new(), |(clip, cursor)| format!(",{clip},{cursor}"));
+        env.push(("LEGAIA_BATTLE_FRAME_STEP", format!("{step},{state}{from}")));
     }
     let mut tick = crate::retail_compare_battle::BATTLE_CAPTURE_TICK
         + u64::from(engine.prompt_tick.unwrap_or(0));

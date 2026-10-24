@@ -3942,20 +3942,28 @@ every pass, so it moves with the phase of both clips):
   `battle_gimard_tail_fire_b` `.961` to `.972`, `rim_elm_gimard_victory`
   level.
 - **A frame step the replay does not run.** `battle_melee_hit_spark`'s
-  replay runs step `2` where retail ran `3`: the step seed
-  (`RetailBattle::frame_step_seed`) covers a replayed cast's summon
-  close-up only, and an action plan runs the default. The capture's own
-  history says how long the step held: Vahn's cursor history advances `12`
-  a pass for the newest eight passes and `8` before them (rate `4`, the
-  art's halving), and the frame history's entries pass `0x1FF` for nine.
-  Seeding step `3` from the pass the run began (the art clip `0x11` at
-  cursor `32`) drew the ray burst and Gimard off retail's (`image` `.884`
-  to `.849`), and over the whole state `.876`; a history that never left
-  its step measured both ways over the state
-  (`battle_noa_miracle_art_combo` step `3`, `.962` to `.972`;
-  `battle_vahn_tri_somersault_super` step `4`, `.955` to `.861`). The
-  action plans keep the default: the seats tuned on it (the ray burst's
-  lag, the numeral, the knockdown's clock) move with the step.
+  passes ran step `3` and an action plan runs the default `2`, so the
+  step seed (`RetailBattle::frame_step_seed`) also covers an action in
+  flight whose newest passes left the default inside the history. The
+  capture's own history says where the run began: Vahn's cursor history
+  advances `12` a pass for the newest eight passes and `8` before them
+  (rate `4`, the art's halving), and the frame history's entries pass
+  `0x1FF` for nine. The seed holds the step back until the acting body's
+  clip reaches the cursor the run's opening pass read
+  (`RetailBattle::step_run_start`, art clip `0x11` at cursor `24`,
+  `BattleState::frame_step_seed_from`), which lands Vahn's cursor (`104`)
+  and Gimard's reaction cursor (`36`) on retail's displayed frame. A
+  history that never left its step is not seeded: over the whole state it
+  measured both ways (`battle_noa_miracle_art_combo` step `3`, `.962` to
+  `.972`; `battle_vahn_tri_somersault_super` step `4`, `.955` to `.861`).
+  The step seed alone read `.887` to `.884`: the struck reaction's ray
+  burst (record `0x801F54B4`) drew shorter, because its lane weight is the
+  replay's own clock and the table-form parts ticked once a vsync. On the
+  battle pass's part tick ([effect-vm](../subsystems/effect-vm.md)) the
+  burst seated on the reaction's commit pass reads wait `0x60` and lane
+  `0xFFC` on the displayed frame, the clock that leaves the capture's RAM
+  at wait `0x30`, level `0x900` and a clamped lane two passes later, and
+  the state reads `.908`.
 - **A spell's damage is a draw.** `battle_gimard_tail_fire_a` / `_b` show
   Tail Fire's `16` on retail's Vahn and the engine's `7`: the
   summon-magic roll and the finisher's no-damage floor are `rand()` draws,

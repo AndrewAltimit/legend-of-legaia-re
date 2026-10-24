@@ -330,8 +330,9 @@ pub fn run_engine_battle(
     // Held through the intro transition, so the field's own draws there do
     // not re-deal the fight (`EncounterState::rng_hold`).
     session.host.world.encounters.rng_hold = Some(rng_seed);
-    if let Some((step, state)) = battle.frame_step_seed() {
+    if let Some((step, state, from)) = battle.frame_step_seed() {
         session.host.world.seed_battle_frame_step(step, state);
+        session.host.world.battle.frame_step_seed_from = from;
     }
     if !session.host.world.force_encounter(fid) {
         bail!("force_encounter({fid}) refused ({source})");

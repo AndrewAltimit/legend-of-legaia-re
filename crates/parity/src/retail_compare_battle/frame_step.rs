@@ -69,12 +69,22 @@ const FRAME_HISTORY_CLAMP: i16 = 0x2BC;
 /// ordering table's ground grid stands one step-`4` pass behind the RAM's
 /// camera, not one step-`3` pass.
 pub fn pass_steps(ram: &[u8]) -> [u8; 2] {
+    let steps = recent_pass_steps(ram);
+    [steps[0], steps[1]]
+}
+
+/// The steps of the capture's last sixteen passes, newest first, each read
+/// the way [`pass_steps`] reads the newest two: off the history entries
+/// older than the pass. An older pass sees fewer entries (the ones before
+/// them are overwritten), so the tail of the list is a floor on the step
+/// retail ran there, not the step itself.
+pub fn recent_pass_steps(ram: &[u8]) -> [u8; 16] {
     let forced = game_anchors::u32_at(ram, FORCED_STEP);
     if forced != 0 {
-        return [forced as u8; 2];
+        return [forced as u8; 16];
     }
     if game_anchors::i16_at(ram, STEP_MODE) != 0x10 {
-        return [1; 2];
+        return [1; 16];
     }
     let cursor = game_anchors::u32_at(ram, FRAME_HISTORY_CURSOR);
     let entry = |back: u32| {
@@ -100,7 +110,16 @@ pub fn pass_steps(ram: &[u8]) -> [u8; 2] {
         };
         step.max(floor)
     };
-    [step_for(0), step_for(1)]
+    std::array::from_fn(|back| step_for(back as u32))
+}
+
+/// How many of the capture's newest passes ran at the newest pass's step
+/// ([`recent_pass_steps`]): `(step, passes)`, `passes == 16` for a history
+/// that never left it.
+pub fn newest_step_run(ram: &[u8]) -> (u8, usize) {
+    let steps = recent_pass_steps(ram);
+    let n = steps.iter().take_while(|&&s| s == steps[0]).count();
+    (steps[0], n)
 }
 
 /// How many passes the displayed frame lags the RAM a capture holds: the

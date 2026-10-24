@@ -295,6 +295,14 @@ pub struct RetailBattle {
     /// The frame step the capture's frame ran at (`*(0x1F800393)`, rebuilt
     /// from the frame-time ring - [`frame_step`]).
     pub frame_step: u8,
+    /// The newest passes' common step and how many passes ran at it
+    /// ([`newest_step_run`]).
+    pub step_run: (u8, usize),
+    /// Where a run shorter than the history began, on the acting body: its
+    /// playing clip `+0x1D9` and its anim-cursor history `+0x17A` at the
+    /// pass before the run, when the run stays inside that clip (the
+    /// history ring id `+0x1FB` holds over it).
+    pub step_run_start: Option<(u8, i32)>,
     pub run_state: u8,
     pub stage_id: u8,
     pub scripted: bool,

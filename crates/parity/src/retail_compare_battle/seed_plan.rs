@@ -45,6 +45,11 @@ pub(super) const SPARRING_OPEN_TICKS: u32 = 160;
 /// `docs/subsystems/battle.md`).
 pub const OPENING_FLOWS: [u8; 6] = [0xFD, 0x00, 0x0A, 0x0B, 0x0C, 0x14];
 
+/// A replay's battle frame step seed: the step, the action state it holds
+/// in, and the acting body's `(clip, cursor)` the step waits for
+/// ([`RetailBattle::step_run_start`]), `None` to run it over the whole state.
+pub type FrameStepSeed = (u8, u8, Option<(u8, i32)>);
+
 impl RetailBattle {
     /// The battle frame step a replay of this capture runs its capture state
     /// on, and that state: the step the capture's own frame ran at, applied
@@ -69,12 +74,30 @@ impl RetailBattle {
     ///   walker lands in one step at step `3` and trails at `2`. The module
     ///   states `0x35` / `0x36` measured mixed (`gimard_burning_attack`
     ///   `image` `+.022`, `camera` `-.026`).
-    pub fn frame_step_seed(&self) -> Option<(u8, u8)> {
-        (matches!(self.seed_plan(), SeedPlan::Cast)
-            && legaia_engine_battle_vm::battle_cam_script::SUMMON_CAST_STATES
+    pub fn frame_step_seed(&self) -> Option<FrameStepSeed> {
+        let default = legaia_engine_core::world::DEFAULT_BATTLE_FRAME_STEP;
+        if matches!(self.seed_plan(), SeedPlan::Cast) {
+            return (legaia_engine_battle_vm::battle_cam_script::SUMMON_CAST_STATES
                 .contains(&self.action_state)
-            && self.frame_step != legaia_engine_core::world::DEFAULT_BATTLE_FRAME_STEP)
-            .then_some((self.frame_step, self.action_state))
+                && self.frame_step != default)
+                .then_some((self.frame_step, self.action_state, None));
+        }
+        // An action in flight: the newest passes' step, from the pass the
+        // run began on (`step_run_start`) when the history holds where it
+        // began, over the whole state when the history never left it.
+        let (step, passes) = self.step_run;
+        if !matches!(self.seed_plan(), SeedPlan::Action { .. }) || step == default {
+            return None;
+        }
+        // A history that never left the step is not seeded: over the whole
+        // state it measured `battle_vahn_tri_somersault_super` `.955` to
+        // `.861` (step 4) and `battle_noa_miracle_art_combo` `.962` to
+        // `.972` (step 3).
+        if passes >= 16 {
+            return None;
+        }
+        self.step_run_start
+            .map(|from| (step, self.action_state, Some(from)))
     }
 
     /// The slot-1 backdrop angle the **displayed** frame was drawn at. The

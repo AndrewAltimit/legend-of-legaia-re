@@ -153,6 +153,15 @@ const MORPH_SEED_OFFSETS: [u16; 2] = [0x78, 0xA0];
 /// (`0x801F6324[0]` / `[9]`, pool meshes `8` / `9`).
 const RAY_BURST_RECORDS: [u32; 2] = [0x801F_5484, 0x801F_54B4];
 
+/// The summon invoke clip's ray fan (record `0x801F5A04`), whose lane
+/// weight `+0xA0` is seeded beside its banks, taken back the display lag
+/// ([`displayed_morph_halfword`]): the lane is how far each ray reaches,
+/// and it grows `+0xB8 * DAT_1F800393` a pass from the seat, so a replay
+/// that seats the fan a pass off retail's draws every ray a pass long or
+/// short. `swordie_summon_mid_cast` holds `0xBB0` at rate `0x88` against a
+/// replay standing past the displayed `0x990`.
+const LANE_SEEDED_FANS: [u32; 1] = [0x801F_5A04];
+
 /// Only the ray bursts are seeded this way ([`is_ray_burst`]). Other
 /// morphing parts are left to the replay: seeded the same way, Ultra
 /// Charge's (`cort_evolved_ultra_charge_mid_cast`) lost half its frame.
@@ -279,11 +288,16 @@ pub(super) fn retail_action_fx_parts(
             } else {
                 ACTION_FX_SEED_OFFSETS.to_vec()
             };
+            let lane = (LANE_SEEDED_FANS.contains(&tag)
+                && game_anchors::u32_at(ram, n + 0x10) & 0x1000 != 0
+                && game_anchors::u16_at(ram, n + 0xA0) < 0x1000)
+                .then(|| (0xA0, displayed_morph_halfword(ram, n, 0xA0, lag)));
             legaia_engine_effects::summon::CastPartSeed {
                 tag,
                 pokes: offsets
                     .iter()
                     .map(|&o| (o, displayed_part_halfword(ram, n, o, lag)))
+                    .chain(lane)
                     .collect(),
             }
         })
@@ -632,6 +646,38 @@ impl RetailBattle {
             display_lag: display_lag_vsyncs(ram),
             display_pass_lag: display_pass_steps(ram).iter().map(|&s| u16::from(s)).sum(),
             frame_step: frame_step(ram),
+            step_run: newest_step_run(ram),
+            step_run_start: active.and_then(|p| {
+                let (_, n) = newest_step_run(ram);
+                let n = n as u32;
+                if !in_ram(p) || n >= 16 {
+                    return None;
+                }
+                // The body's own advances bound the run: the cursor ring
+                // advances by the same amount every pass of a run
+                // (`battle_melee_hit_spark`: eight advances of 12, then 8).
+                // A pass advances by the frame before it, so the first long
+                // frame was opened by the pass before the first long
+                // advance - the ninth step-3 entry the history holds - and
+                // that pass read the cursor one slot further back (`24`,
+                // where the first advance of 12 left `32`). The seed opens
+                // its frame on the pass whose action SM reads that cursor.
+                let id = game_anchors::u8_at(ram, p + RING_ID);
+                let at = |i: u32| i32::from(game_anchors::u16_at(ram, p + RING_CURSOR + i * 2));
+                let adv = at(0) - at(1);
+                let body = (0..n)
+                    .take_while(|&i| {
+                        at(i) - at(i + 1) == adv
+                            && game_anchors::u8_at(ram, p + RING_ID + i + 1) == id
+                    })
+                    .count() as u32;
+                let opener = body + 1;
+                (adv > 0
+                    && body > 0
+                    && opener < RING_SLOTS
+                    && game_anchors::u8_at(ram, p + RING_ID + opener) == id)
+                    .then(|| (game_anchors::u8_at(ram, p + 0x1D9), at(opener)))
+            }),
             cam_accum: game_anchors::u32_at(ram, ctx + 0x87C),
             caster_clip: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1D9)),
             walk_yaw_base: game_anchors::u16_at(ram, ctx + 0x6DA),

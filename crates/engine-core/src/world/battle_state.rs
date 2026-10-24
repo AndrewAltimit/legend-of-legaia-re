@@ -679,6 +679,9 @@ pub struct BattleState {
     /// The battle frame the actor anim tick last ran its pass on
     /// ([`crate::world::World::battle_anim_pass_vsyncs`]).
     pub anim_pass_frame: Option<u64>,
+    /// The battle frame the effect-script table parts last took their part
+    /// tick on ([`crate::world::World::action_fx_pass_vsyncs`]).
+    pub action_fx_pass_frame: Option<u64>,
     /// The vsyncs this tick's anim pass spans: the frame step on the tick
     /// that opens a battle frame, `0` on the ticks between, `1` on the
     /// per-vsync cadence.
@@ -703,6 +706,11 @@ pub struct BattleState {
     /// in. Taken at the head of each battle-cadence anim pass; empty on the
     /// per-vsync cadence, where the readout reads the live trio.
     pub readout_trios: Vec<Option<[f32; 3]>>,
+    /// A replay's seeded battle frame step (`World::seed_battle_frame_step`)
+    /// held back until the acting body plays clip `.0` at or past cursor
+    /// `.1` (sixteenths): the pass a capture's step run began on, as its
+    /// cursor history holds it. Not a retail field.
+    pub frame_step_seed_from: Option<(u8, i32)>,
     /// The action state the SM's last pass ran (its state on entry), which
     /// the camera frames on retail's cadence
     /// ([`crate::world::World::battle_camera_state`]).
@@ -1102,10 +1110,12 @@ impl BattleState {
             pass_draw_frame: None,
             sm_pass_frame: None,
             anim_pass_frame: None,
+            action_fx_pass_frame: None,
             anim_pass_vsyncs: 1,
             anim_slot_reached: false,
             hit_commit_rewalk: Vec::new(),
             readout_trios: Vec::new(),
+            frame_step_seed_from: None,
             sm_ran_state: None,
             defeat_sink_frame: None,
             vram_loads: Default::default(),
