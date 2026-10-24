@@ -8,11 +8,19 @@
 //! accent and the primary button. The light palette carries the same hues on
 //! a white ground, with the accent darkened until it reads on white.
 //!
+//! [`game_exit`] is the wording the launcher and Studio share for a game
+//! that stopped with an error.
+//!
 //! No dependencies: each consumer converts a [`Rgb`] into its toolkit's
 //! colour (`egui::Color32::from_rgb`, a `[f32; 4]` for the launcher's
 //! software canvas and the play window's text layer).
 
 #![no_std]
+
+// `game_exit` speaks in exit statuses and owned strings.
+extern crate std;
+
+pub mod game_exit;
 
 /// An sRGB colour, 8 bits per channel, opaque.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -344,6 +344,7 @@
    "bins": [],
    "lib": true,
    "modules": [
+    "game_exit",
     "spacing",
     "chrome"
    ],
@@ -2931,6 +2932,7 @@
     "raw",
     "region",
     "relayout",
+    "sniff",
     "write"
    ],
    "band": "leaves",

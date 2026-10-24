@@ -186,7 +186,8 @@ impl Game {
     }
 
     /// `None` while the game runs; its exit once it has ended (an error
-    /// reading the status counts as a failed exit). A first death in the X11
+    /// reading the status counts as a failed exit). A failure is one
+    /// sentence in the launcher's own words (`legaia_game_exit`). A first death in the X11
     /// startup race ([`EVENT_LOOP_OPEN_MARKER`]) starts the game once more
     /// and reads as still running; a second one is reported with
     /// [`STARTUP_RACE_FAILURE`].
@@ -199,11 +200,13 @@ impl Game {
         if status.success() {
             return Some(Ok(()));
         }
+        let headline = legaia_app_theme::game_exit::exit_headline(&status);
         if !died_in_startup_race(&status, self.log.as_deref()) {
-            return Some(Err(status.to_string()));
+            return Some(Err(headline));
         }
+        let headline = headline.trim_end_matches('.').to_string();
         if self.relaunched {
-            return Some(Err(format!("{status}; {STARTUP_RACE_FAILURE}")));
+            return Some(Err(format!("{headline}: {STARTUP_RACE_FAILURE}")));
         }
         self.relaunched = true;
         if let Some(log) = &self.log
@@ -221,7 +224,7 @@ impl Game {
                 self.child = child;
                 None
             }
-            Err(e) => Some(Err(format!("{status}; restarting it failed: {e:#}"))),
+            Err(e) => Some(Err(format!("{headline}; restarting it failed: {e:#}"))),
         }
     }
 }
@@ -289,18 +292,6 @@ fn died_in_startup_race(status: &std::process::ExitStatus, log: Option<&Path>) -
         let _ = (status, log);
         false
     }
-}
-
-/// The last `n` non-empty lines of a log file, for an error message.
-pub fn log_tail(path: &Path, n: usize) -> Vec<String> {
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return Vec::new();
-    };
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    lines[lines.len().saturating_sub(n)..]
-        .iter()
-        .map(|l| l.to_string())
-        .collect()
 }
 
 /// Open `dir` in the platform's file manager.
@@ -390,7 +381,7 @@ mod tests {
             }
             std::thread::sleep(std::time::Duration::from_millis(20));
         };
-        assert!(res.is_err(), "{res:?}");
+        assert_eq!(res, Err("The game quit with error code 3.".to_string()));
         let log = game.log.clone().unwrap();
         assert_eq!(log, data.join(GAME_LOG));
         let text = std::fs::read_to_string(&log).unwrap();
@@ -399,7 +390,7 @@ mod tests {
             "{text}"
         );
         assert!(text.contains(&format!("cwd {}", data.display())), "{text}");
-        assert_eq!(log_tail(&log, 1), vec!["boom".to_string()]);
+        assert!(text.trim_end().ends_with("boom"), "{text}");
     }
 
     /// Poll `game` until it ends.
@@ -478,14 +469,5 @@ mod tests {
         assert_eq!(launch_switches(&file), vec!["--retail"]);
         std::fs::write(&file, "not = = toml").unwrap();
         assert!(launch_switches(&file).is_empty());
-    }
-
-    #[test]
-    fn log_tail_keeps_the_last_lines() {
-        let dir = tempfile::tempdir().unwrap();
-        let p = dir.path().join("log");
-        std::fs::write(&p, "a\n\nb\nc\n").unwrap();
-        assert_eq!(log_tail(&p, 2), vec!["b".to_string(), "c".to_string()]);
-        assert!(log_tail(&dir.path().join("none"), 2).is_empty());
     }
 }

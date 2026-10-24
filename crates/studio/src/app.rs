@@ -967,12 +967,17 @@ impl App {
         self.game = None;
         match res {
             Ok(()) => self.studio.status = Some("The game has closed.".into()),
-            Err(status) => {
-                let mut msg = format!("The game stopped with an error ({status}).");
+            Err(headline) => {
+                // The launcher's words for the same failure: how it ended,
+                // then the reason its log gives, if it gives one.
+                let mut msg = headline;
                 if let Some(log) = &log {
-                    for line in crate::launch::log_tail(log, 3) {
-                        msg.push_str("\n  ");
-                        msg.push_str(&line);
+                    if let Some(why) = std::fs::read_to_string(log)
+                        .ok()
+                        .and_then(|t| legaia_app_theme::game_exit::failure_detail(&t))
+                    {
+                        msg.push(' ');
+                        msg.push_str(&why);
                     }
                     msg.push_str(&format!("\nFull log: {}", log.display()));
                 }
@@ -1236,8 +1241,23 @@ impl App {
             return;
         };
         let e = &lib.entries[pos];
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.heading(lib.stem(e.index));
+            // The stem is the extracted file's name, whose CDNAME label runs
+            // two entries late; the tree files the entry under the block it
+            // belongs to on the disc. Name that block beside the stem
+            // whenever the two differ, so the heading and the tree agree.
+            if let Some(retail) = lib.retail_block(e.index)
+                && lib.label(e.index) != Some(retail)
+            {
+                ui.label(RichText::new(format!("block {retail}")).color(crate::theme::accent(ui)))
+                    .on_hover_text(format!(
+                        "On the disc this entry belongs to {retail}. The file name keeps the \
+                         label legaia-extract gives it, {}, which applies the CDNAME numbers two \
+                         entries late (docs/formats/cdname.md).",
+                        lib.label(e.index).unwrap_or("-")
+                    ));
+            }
             ui.label(format!("{} - {}", a.class.name(), human_size(e.size_bytes)));
         });
         let count = |t: Tab| match t {
