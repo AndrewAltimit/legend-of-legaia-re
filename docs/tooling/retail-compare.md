@@ -987,7 +987,7 @@ true:
 | Mid-fight bars | A child on full bars has its monster AI pick from a different table | The seeded HP / MP reach the child on the same first battle tick (`LEGAIA_BATTLE_BARS`) |
 | The drive's clock | A drive presses on every other tick of its own count. Counted on the window's tick, a prompt that opened on an odd window tick put every press one tick late, and the fight dealt its draws onto other ticks | The child starts its drive where the headless seed does (past the entry sweep, on the first tick the command flow leaves `Idle`), arms the drive's world seed there, counts presses from it, and reads each press before the steer, in the seed's order |
 | The compass | The battle camera opens on the field's compass azimuth (`battle_entry_yaw`). A seed whose field camera lacked the play hosts' render bias opened the idle orbit hundreds of units round from the child's, and a menu drive's glide-landed hold parted on it | The headless seed gives its field camera the hosts' bias (`retail_compare::seat_host_camera`) |
-| Capture-frame aligns | An align the child applies between ticks is world state the seed never had | Under a drive or a gate the idle orbit's yaw (`LEGAIA_BATTLE_ORBIT_YAW`) is aligned on the captured frame alone, as the seed aligns it where it samples |
+| Capture-frame aligns | An align the child applies between ticks is world state the seed never had | The idle orbit's yaw (`LEGAIA_BATTLE_ORBIT_YAW`) is aligned on the captured frame alone, gated or fixed-tick, as the seed aligns it where it samples |
 
 Whether the halves agree is measured, not assumed. With
 `LEGAIA_DIAG_TICK_DIGEST=<path>` set, every session tick appends one line
@@ -997,10 +997,16 @@ and the parent and its child, which inherits the variable, write into the
 same file. Split on the process and on the frame counter's restarts
 (`scripts/ci/tick-digest-diff.py`), a child's lines equal one headless run's
 up to the capture, or the first unequal line names the tick and the channel
-where they parted. A child that
-differs on purpose (a prompt capture's orbit aligned every frame, a menu
-capture driven to the displayed surface, `displayed_menu_flow`, rather than
-the RAM's) parts where that choice takes effect and nowhere earlier.
+where they parted. A child that differs on purpose (a menu capture driven
+to the displayed surface, `displayed_menu_flow`, rather than the RAM's)
+parts where that choice takes effect and nowhere earlier.
+
+A prompt capture's child runs past the seed's sample on purpose. The seed
+samples sixty ticks after the first prompt (`BATTLE_SETTLE_TICKS`), while
+the intro's enemy-name banner is still up; retail's prompt frame is a
+surface the player sat on, banner gone, which the child's later fixed tick
+(`BATTLE_CAPTURE_TICK` past the prompt) shows. Taken at the seed's own tick,
+the prompt frames fell from `1.000` to `0.92`-`0.97` on that banner.
 
 ### Where the combatants stand
 
