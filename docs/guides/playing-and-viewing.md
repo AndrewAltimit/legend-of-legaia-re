@@ -166,8 +166,10 @@ moved) turns the disc card back into the picker with that reason. Otherwise
 the help box names the log, `legaia-engine-game.log` in the saves folder, and
 the reason the log gives - a panic's message, or the root of the error chain
 the engine exits with. A crash leaves no reason in the log, and none is
-invented from the lines before it. Run from a terminal, the game's output
-still prints there too.
+invented from the lines before it. A panic on any of the game's threads (the
+audio mixer inside the sound callback, the controller reader) ends the
+process, so it is reported instead of the game playing on silent or deaf to
+the pad. Run from a terminal, the game's output still prints there too.
 
 `LEGAIA_LAUNCHER_DIRECT=1` skips the screen: a remembered disc that still
 validates boots straight into the game, in the launcher's own process.
