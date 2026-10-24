@@ -599,6 +599,16 @@ impl World {
         // freshly reset window.
         self.party.retail_window = None;
         self.party.previous_scene = None;
+        // Retail's New Game party is Vahn alone (`0x80084594 = 1`, member
+        // list `[0]`). A composition left by an earlier session - the scene
+        // picker seats Vahn / Noa / Gala before the title's New Game on both
+        // hosts - would outlive the one-member roster: the save composer
+        // writes `active_party` as the card's count and member list, and the
+        // reload came back a three-member party.
+        self.party.active_party.clear();
+        self.party.party_leader_slot = None;
+        self.party.party_actor_slots.clear();
+        self.party.field_list_emptied = false;
         self.minigames.point_card = 0;
         self.party.inventory.clear();
         self.pending_scene_transition = None;
