@@ -36,6 +36,23 @@ fn the_popup_lives_37_frames_and_rises_as_it_grows() {
     assert_eq!(popup_anchor([0, -500, 0], 7), ([0, -250 - 168, 0], 64));
 }
 
+/// On a step-`3` frame the anchor reads the timer before the frame's step
+/// and the half-extent after it: `battle_melee_hit_spark`'s displayed `15`
+/// is drawn at timer `144` and sized at `192`.
+#[test]
+fn a_step_three_frame_sizes_the_square_past_its_anchor() {
+    assert_eq!(popup_timer_at_step(9, 3), 192);
+    assert_eq!(popup_timer_at_step(9, 1), popup_timer(9));
+    assert_eq!(
+        popup_anchor_at_step([0, -500, 0], 9, 3),
+        ([0, -250 - 216, 0], 96)
+    );
+    assert_eq!(
+        popup_anchor_at_step([0, -500, 0], 9, 1),
+        popup_anchor([0, -500, 0], 9)
+    );
+}
+
 #[test]
 fn combo_cluster_reproduces_the_steal_banner_packets() {
     // `player_steal_skeleton_banner`: `5 HIT` / `TOTAL 72` at rest.
