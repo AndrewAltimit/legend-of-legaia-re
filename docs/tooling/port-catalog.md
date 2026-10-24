@@ -382,7 +382,7 @@ The citation graph only has edges between *dumped* functions - an undumped helpe
 
 ## Ignore list
 
-`scripts/ci/port-catalog-ignore.toml` lists addresses the catalog treats as out of scope for engine porting - statically-linked PsyQ kernel / runtime / SDK code. The port maps these clusters to native equivalents (Rust stdlib, wgpu, cpal) rather than reimplementing the PSX wrappers.
+`scripts/ci/port-catalog-ignore.toml` lists addresses the catalog treats as out of scope for line-by-line porting. The library sections hold statically-linked PsyQ kernel / runtime / SDK code, which the port maps to native equivalents (Rust stdlib, wgpu, cpal) rather than reimplementing the PSX wrappers; most rows are not library code, and the summary says which kind each is (below).
 
 ```toml
 [bios]
@@ -396,9 +396,18 @@ The citation graph only has edges between *dumped* functions - an undumped helpe
 "80062340" = "SsSeqOpen (slot-bitmap walk + load)"
 ```
 
-Categories are organisational - one TOML table per cluster (`bios` / `libc` / `libgte` / `libgs` / `libcd` / `libapi` / `libsnd` / `libspu` / `libetc`) - and the tool treats every entry the same way.
+Every section closes a worklist row the same way, but the sections make four different claims, and `ignore_kind` in `port_catalog/rows.py` sorts them so the summary and the dashboard can report them apart:
 
-- `--missing-ports` excludes ignored entries; its summary line breaks the count down (`of which ignored / remaining port worklist`).
+| Kind | Sections | Claim |
+|---|---|---|
+| `library` | `bios`, `libc`, `libgte`, `libgs`, `libgpu`, `libcd`, `libapi`, `libsnd`, `libspu`, `libetc`, `joy_serial`, `kernel_callback`, ... | A statically-linked PsyQ / BIOS / SDK routine. |
+| `address` | every `worklist_*` section, plus the label, phantom and VA-alias sections | No portable routine begins at the VA. |
+| `scope` | everything else, including any new section | A real game routine the port covers another way; the kind whose reason a reader has to check. |
+| `unreferenced` | `unreferenced`, `unreferenced_*` | A real routine nothing on the disc reaches. |
+
+A section name is not evidence of the kind: several `library` sections also hold game-side glue (the CD-XA clip path under `libcd`, the dialog-text string copy under `libc`, the debug HUD under `libetc`) whose reasons name what in the port does that job.
+
+- `--missing-ports` excludes ignored entries; its summary line breaks the count down (`of which ignored`, by kind, then `remaining port worklist`).
 - `--include-ignored` opts back in; `--ignored-only` lists the ignore list itself.
 - **Adding an entry:** put the address in the matching table with a one-line factual reason naming the PsyQ function and, where known, the BIOS vector. The reason shows in drill-down output. Provenance citations belong in [`docs/reference/functions.md`](../reference/functions.md), not in the TOML.
 - **The list is curated, not exhaustive.** Newly dumped PsyQ helpers surface in `--missing-ports` until added. Treat unfamiliar 16-byte thunks in `0x8005xxxx` / `0x8006xxxx` as likely ignore candidates rather than ports.

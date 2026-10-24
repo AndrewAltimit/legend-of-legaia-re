@@ -5,6 +5,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from port_catalog.features import bfs_reachable, build_call_graph
+from port_catalog.rows import ignore_kind
 
 
 def render_dashboard(
@@ -56,7 +57,7 @@ def render_dashboard(
             f"- **dumped**: {n_dumped}",
             f"- **documented**: {n_documented}",
             f"- **ported** (`// PORT:` tag): {n_ported}",
-            f"- **ignored** (PsyQ / BIOS / libgte / ...): {n_ignored}",
+            f"- **ignored** (ignore-list rows; kinds in the ignore-list summary): {n_ignored}",
             f"- **port worklist** (dumped + documented, not ported, not ignored): {remaining}",
             "",
         ]
@@ -69,7 +70,7 @@ def render_dashboard(
                 "",
                 "Each feature is a BFS over the citation graph starting from `roots`, bounded by `stop_at`.",
                 "Reachable counts widen as more dumps land - feature views start tight and grow.",
-                "**In scope** = Reachable minus Ignored, and it is the Port % denominator: an ignore-list row is an address this project will never port (PsyQ / BIOS / libgte mapped to a native equivalent), so counting it would cap a finished feature below 100%. **Ported** counts in-scope rows only.",
+                "**In scope** = Reachable minus Ignored, and it is the Port % denominator: an ignore-list row is an address this project will never port line by line (library code mapped to a native equivalent, an address that starts no routine, a game routine the port covers another way, or one nothing on the disc reaches), so counting it would cap a finished feature below 100%. **Ported** counts in-scope rows only.",
                 "",
                 "| Feature | Reachable | In scope | Ported | Port % | Missing | Ignored | Description |",
                 "|---|---:|---:|---:|---:|---:|---:|---|",
@@ -191,15 +192,15 @@ def render_dashboard(
             [
                 "## Ignore-list summary",
                 "",
-                "Addresses explicitly out of scope for engine porting - statically-linked PsyQ / BIOS / SDK code mapped to native equivalents (Rust stdlib, wgpu, cpal). Source: [`scripts/ci/port-catalog-ignore.toml`](../../scripts/ci/port-catalog-ignore.toml).",
+                "Addresses explicitly out of scope for line-by-line porting. The kind column says what the row claims: `library` (statically-linked PsyQ / BIOS / SDK code mapped to native equivalents), `address` (no routine begins at the VA), `scope` (a game routine the port covers another way - the kind whose reason a reader must check) or `unreferenced` (nothing on the disc reaches it). Source: [`scripts/ci/port-catalog-ignore.toml`](../../scripts/ci/port-catalog-ignore.toml).",
                 "",
-                "| Category | Count |",
-                "|---|---:|",
+                "| Category | Kind | Count |",
+                "|---|---|---:|",
             ]
         )
         for cat in sorted(by_cat):
-            lines.append(f"| `{cat}` | {by_cat[cat]} |")
-        lines.append(f"| **total** | **{len(ignored_rows)}** |")
+            lines.append(f"| `{cat}` | {ignore_kind(cat)} | {by_cat[cat]} |")
+        lines.append(f"| **total** | | **{len(ignored_rows)}** |")
         lines.append("")
 
     # Provenance gaps - small but worth surfacing on the same page.
