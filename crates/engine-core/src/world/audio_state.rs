@@ -347,6 +347,12 @@ pub const ARENA_SIDE_BAND_REQUEST: i32 = -0x977;
 /// `0x801D6880`), which the driver settles on the next frame.
 pub const FIELD_INIT_SIDE_BAND_REQUEST: i32 = 8;
 
+/// The BGM slot's park sentinel: an op-`0x35` start of `0x1000` stores the
+/// id into `_DAT_8007BAC8` like any other, and the resolver (`0x8002454C`)
+/// loads nothing for it, so the slot keeps the track the previous scene left
+/// playing - the arrival inherits its music.
+pub const BGM_PARK_SENTINEL: u16 = 0x1000;
+
 /// The streaming slots' park sentinel: a `0x1000` request copies itself onto
 /// the acknowledge cell (`0x800244CC..0x800244F0`) and loads nothing, so the
 /// slot keeps whatever bank it held.

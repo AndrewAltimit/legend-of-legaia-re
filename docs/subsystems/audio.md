@@ -301,6 +301,29 @@ the start arm stores it, the sentinel included, and is what the retail
 comparison corpus compares against a state's `0x8007BAC8`
 (`engine-scene-host/tests/bgm_track_word_disc.rs`).
 
+#### A picked scene that parks inherits its door's track
+
+Several field entry scripts open with a park start and select their own
+track only under a story or position test: `bylon` parks, then starts `2019`
+only inside its monastery box; `retockin` and `station` park on the
+free-roam story state. On every retail path the park keeps the music the
+door brought. A scene-picker entry has no previous scene, so the park left
+it silent on a first pick and kept the previously picked scene's track on a
+later one.
+
+The port's picker seat is a door of another scene
+([`PickerSeat::Arrival`](../../crates/engine-scene-host/src/scene_host/scene_entry/entry_seat.rs)),
+and that scene's entry script names the track the door brings
+(`ArrivalCatalog::home_bgm`: the first pool start of MAN partition-1 record
+`0`, past any leading park). The seat arms
+`FieldVmState::picker_bgm_inherit`; the first park start inside the
+free-roam entry window plays it instead, and any real start before it drops
+it, so a scene that starts its own track and then parks over it (`son`)
+keeps its own. Door entries, resumes and the opening chain run the park as
+retail does. Both play hosts get it through the shared scene host; pinned by
+`engine-scene-host/tests/picker_park_bgm_disc.rs` and, over the whole picker
+list in sequence, `web-play/tests/play_scene_select_bgm.rs`.
+
 ### Which track a scene plays
 
 The track is **script-selected, not table-driven**: nothing maps a scene to a

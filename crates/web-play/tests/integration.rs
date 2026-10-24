@@ -44,6 +44,7 @@ mod play_page_presentation_parity;
 mod play_parity;
 mod play_render_state;
 mod play_ringside_still_disc;
+mod play_scene_select_bgm;
 mod play_screen_parity_disc;
 mod play_sfx_channel;
 mod point_card_toast_page;

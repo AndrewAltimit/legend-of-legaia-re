@@ -60,9 +60,9 @@ impl LegaiaRuntime {
         .to_string()
     }
 
-    /// `{ "requested": id|null, "playing": id|null }` - what the simulation's
-    /// last op-`0x35` selected versus what the audio output is actually
-    /// sounding.
+    /// `{ "requested": id|null, "playing": id|null, "sounding": bool }` -
+    /// what the simulation's last op-`0x35` selected versus the track the
+    /// audio output last started, and whether its sequencer is running.
     ///
     /// The two are the same value on a healthy frame, and their *drift* is the
     /// only external symptom of a BGM change that resolved but never reached
@@ -81,7 +81,11 @@ impl LegaiaRuntime {
             .and_then(|d| d.last_started)
             .map(serde_json::Value::from)
             .unwrap_or(serde_json::Value::Null);
-        serde_json::json!({ "requested": requested, "playing": playing })
+        // Whether the output's sequencer is actually running a track (not
+        // stopped, not paused) - `playing` is the last start, which a stop
+        // or a script pause leaves in place.
+        let sounding = self.scene_host.director().is_some_and(|d| d.is_playing());
+        serde_json::json!({ "requested": requested, "playing": playing, "sounding": sounding })
     }
 
     /// Field pause-menu model: the party (battle order) + inventory + gold the
