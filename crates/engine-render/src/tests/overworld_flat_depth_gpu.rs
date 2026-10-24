@@ -420,10 +420,10 @@ fn a_continent_cell_draws_flat_at_its_bucket_depth() {
         assert!((z - want6).abs() < 1e-5, "1x frame: {z} vs {want6}");
     }
 
-    // Off the overworld, or without the corners, the cell keeps its
-    // per-pixel depth.
+    // Without the corners the cell keeps its per-pixel depth, on the
+    // overworld and off it.
     for d in [
-        covered(&draw_cell(&device, &queue, 0.0, true)),
+        covered(&draw_cell(&device, &queue, 0.0, false)),
         covered(&draw_cell(&device, &queue, 1.0, false)),
     ] {
         let (lo, hi) = d
@@ -432,6 +432,46 @@ fn a_continent_cell_draws_flat_at_its_bucket_depth() {
         assert!(hi - lo > 1e-5, "per-pixel depth varies across the slope");
         assert!(hi < want, "and sits in front of the bucket depth");
     }
+}
+
+/// The field ground's sorted cells (`legaia_engine_scene::field_ground::
+/// flat_refs`, object-grid bit `0x8000`): retail `FUN_801F6D48` links such a
+/// cell at `(max corner SZ >> 5) + 2`, so off the overworld a cell carrying
+/// its corners (unmarked: `x0 < x1`, `z0 < z1`) draws at one depth, two
+/// buckets behind its farthest corner, with the field frame's `SZ = 6 w`.
+#[test]
+fn a_sorted_field_cell_draws_flat_two_buckets_behind_its_far_corner() {
+    let Some((device, queue)) = headless_device() else {
+        eprintln!("[skip] no GPU adapter");
+        return;
+    };
+    let field = draw_cell(&device, &queue, 0.0, true);
+    let covered = field
+        .iter()
+        .copied()
+        .filter(|&z| z < 1.0)
+        .collect::<Vec<_>>();
+    assert!(covered.len() > 20, "the cell covers the target");
+    // The farthest corner is 600 deep: SZ 3600, bucket (3600 >> 5) + 2 =
+    // 114, drawn at SZ 114 * 32 = 3648, w = 608.
+    let a = FAR / (FAR - NEAR);
+    let b = -NEAR * FAR / (FAR - NEAR);
+    let want = a + b / 608.0;
+    for z in &covered {
+        assert!(
+            (z - want).abs() < 1e-5,
+            "sorted cell depth {z}, bucket depth {want}"
+        );
+    }
+    // Behind every point of the cell: anything standing on it, or sunk
+    // below it, paints over it.
+    let plain = draw_cell(&device, &queue, 0.0, false);
+    let nearest_far = plain
+        .iter()
+        .copied()
+        .filter(|&z| z < 1.0)
+        .fold(f32::MIN, f32::max);
+    assert!(want > nearest_far, "{want} behind the cell's own depths");
 }
 
 /// The overworld ground's depth cue (`legaia_engine_field::overworld_ground_cue`,

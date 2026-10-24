@@ -156,6 +156,35 @@ fn field_far_bucket_depth(clip: vec4<f32>, fa: vec4<f32>, sz_scale: f32) -> vec4
     return clip;
 }
 
+// The field ground pass's sorted cells (`legaia_engine_scene::field_ground::
+// flat_refs`, object-grid bit `0x8000` set): `FUN_801F6D48` links such a cell
+// at `(max corner SZ >> 5) + 2` (`0x801F6FAC..0x801F6FE8`), two buckets
+// behind its farthest corner, so the whole cell draws at that bucket's depth
+// and every primitive whose own bucket is nearer paints over it - a rock or
+// a post sunk below a raised floor tier shows its buried faces, as retail's
+// ordering table draws them. `fa` / `fb` are the cell's `[x0, z0, x1, z1]` /
+// `[y00, y10, y01, y11]` (an unmarked cell has `x0 < x1` and `z0 < z1`; every
+// other mesh carries zeros and keeps its per-pixel depth). The field frame's
+// `SZ` is `clip.w` times the base matrix's scale
+// (`legaia_engine_field::camera::CUTSCENE_WORLD_SCALE`). Off the field
+// (`sz_scale > 0`, the overworld's key) nothing moves.
+const FIELD_SZ_PER_W: f32 = 6.0;
+fn field_sorted_cell_depth(clip: vec4<f32>, fa: vec4<f32>, fb: vec4<f32>, sz_scale: f32) -> vec4<f32> {
+    if (sz_scale > 0.0 || clip.w <= 0.0 || fa.z <= fa.x || fa.w <= fa.y) {
+        return clip;
+    }
+    let w0 = (u.mvp * vec4<f32>(fa.x, fb.x, fa.y, 1.0)).w;
+    let w1 = (u.mvp * vec4<f32>(fa.z, fb.y, fa.y, 1.0)).w;
+    let w2 = (u.mvp * vec4<f32>(fa.x, fb.z, fa.w, 1.0)).w;
+    let w3 = (u.mvp * vec4<f32>(fa.z, fb.w, fa.w, 1.0)).w;
+    let sz = clamp(i32(round(max(max(w0, w1), max(w2, w3)) * FIELD_SZ_PER_W)), 0, 0xFFFF);
+    let bucket = (sz >> 5u) + 2;
+    let rep_w = f32(bucket * 32) / FIELD_SZ_PER_W;
+    let ab = depth_affine(u.mvp);
+    let ndc = ab.x + ab.y / rep_w;
+    return vec4<f32>(clip.x, clip.y, ndc * clip.w, clip.w);
+}
+
 // The overworld continent's depth cue
 // (`legaia_engine_field::overworld_ground_cue`): retail's ground emitter
 // (`FUN_801F89B8`) runs each cell's packet colour through `DPCS` with
@@ -197,6 +226,7 @@ fn vs_main(
     var clip = overworld_curve_clip(u.mvp * vec4<f32>(position, 1.0), u.flags.w);
     clip = overworld_flat_depth(clip, flat_a, flat_b, u.flags.w);
     clip = field_far_bucket_depth(clip, flat_a, u.flags.w);
+    clip = field_sorted_cell_depth(clip, flat_a, flat_b, u.flags.w);
     if u.psx_params.z >= 0.5 {
         clip = psx_snap_clip(clip, u.psx_params.x, u.psx_params.y);
     }

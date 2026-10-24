@@ -446,6 +446,31 @@ vec4 overworldFlatDepth(vec4 clip, mat4 m, vec4 fa, vec4 fb) {
   return vec4(clip.x, clip.y, (ab.x + ab.y / repW) * clip.w, clip.w);
 }
 
+/* The field ground pass's sorted cells - the GLSL twin of engine-render's
+ * field_sorted_cell_depth. FUN_801F6D48 links a cell carrying the object-grid
+ * sort bit 0x8000 at (max corner SZ >> 5) + 2, two buckets behind its
+ * farthest corner, so every primitive whose own bucket is nearer paints over
+ * it (a rock sunk below a raised floor tier shows its buried faces). An
+ * unmarked cell has x0 < x1 and z0 < z1; the field frame's SZ is clip w times
+ * the base matrix's scale 6. The representative w, or -1 where the vertex
+ * keeps its per-pixel depth. Off the overworld only (u_curve 0). */
+const float FIELD_SZ_PER_W = 6.0;
+float fieldSortedCellW(mat4 m, vec4 fa, vec4 fb) {
+  if (u_curve > 0.0 || fa.z <= fa.x || fa.w <= fa.y) return -1.0;
+  float w0 = (m * vec4(fa.x, fb.x, fa.y, 1.0)).w;
+  float w1 = (m * vec4(fa.z, fb.y, fa.y, 1.0)).w;
+  float w2 = (m * vec4(fa.x, fb.z, fa.w, 1.0)).w;
+  float w3 = (m * vec4(fa.z, fb.w, fa.w, 1.0)).w;
+  int sz = clamp(int(floor(max(max(w0, w1), max(w2, w3)) * FIELD_SZ_PER_W + 0.5)), 0, 0xFFFF);
+  return float(((sz >> 5) + 2) * 32) / FIELD_SZ_PER_W;
+}
+vec4 fieldSortedCellDepth(vec4 clip, mat4 m, vec4 fa, vec4 fb) {
+  float repW = fieldSortedCellW(m, fa, fb);
+  if (repW <= 0.0 || clip.w <= 0.0) return clip;
+  vec2 ab = depthAffine(m);
+  return vec4(clip.x, clip.y, (ab.x + ab.y / repW) * clip.w, clip.w);
+}
+
 /* The continent ground's depth cue - the GLSL twin of engine-render's
  * overworld_ground_cue (legaia_engine_field::overworld_ground_cue). Retail's
  * ground emitter (FUN_801F89B8) runs each cell's packet colour through DPCS
@@ -538,6 +563,8 @@ void main() {
   }
   gl_Position = overworldFlatDepth(overworldCurve(u_mvp * world_pos), u_mvp * u_model,
                                    a_ground_ref_xz, a_ground_ref_y);
+  gl_Position = fieldSortedCellDepth(gl_Position, u_mvp * u_model,
+                                     a_ground_ref_xz, a_ground_ref_y);
   /* After the overworld bend, as native snaps after its curve: retail bends
    * SY before the packet is written. Identity while u_psx.z is 0. */
   if (u_psx.z >= 0.5) gl_Position = psxSnapClip(gl_Position, u_psx.x, u_psx.y);
@@ -552,6 +579,7 @@ void main() {
    * representative w on a continent cell, the vertex's own clip w elsewhere.
    * Perspective interpolation of w is exact. */
   float flatW = overworldFlatW(u_mvp * u_model, a_ground_ref_xz, a_ground_ref_y);
+  if (flatW <= 0.0) flatW = fieldSortedCellW(u_mvp * u_model, a_ground_ref_xz, a_ground_ref_y);
   v_depth_w = flatW > 0.0 ? flatW : gl_Position.w;
   v_far_bucket = fieldFarBucket(a_ground_ref_xz) ? 1.0
     : (fieldFlatFarBucket(a_ground_ref_xz) ? 2.0 : 0.0);

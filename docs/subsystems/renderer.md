@@ -864,6 +864,32 @@ floor.
 
 Disc-gated pin: `crates/engine-scene/tests/field_ground_far_bucket_disc.rs`.
 
+### A sorted cell draws two buckets behind its farthest corner
+
+A cell **with** the sort bit is not depth-tested either. `FUN_801F6D48`
+takes the largest of its four corner `SZ`s (the three `sub` / `bgez` /
+`move` steps at `0x801F6FAC..0x801F6FD8`) and links the packet at
+`(max SZ >> 5) + 2` (`srl 5` / `addi 2` / `sll 2` / `addu` at
+`0x801F6FDC..0x801F6FE8`), so the whole cell sits at one depth, two buckets
+behind its farthest corner, and every primitive whose own bucket is nearer
+paints over it. Field objects bucket on the same scale: in
+`door_warp_town01_to_map01` (`town0c`, a mednafen state) the ordering-table
+slots heading the chains put a rock face (mean corner `SZ` near `11060`)
+27 slots in front of the raised ground cell `(23, 46)` it is sunk into
+(farthest corner near `11845`), which is `(11845 >> 5) + 2 - (11060 >> 5)`.
+So the rock's buried lower faces show over the grass. A depth buffer hides
+them under the cell.
+
+The port gives an unmarked cell (`x0 < x1`, `z0 < z1` in its flat refs) the
+depth of that bucket: `field_sorted_cell_depth` in `engine-render`,
+`fieldSortedCellDepth` / `fieldSortedCellW` in `site/js/webgl-shaders.js`,
+with the field frame's `SZ = 6 * clip.w`
+(`legaia_engine_field::camera::CUTSCENE_WORLD_SCALE`). The overworld's
+continent cells already draw at their bucket the same way, at `+ 14`
+(`overworld_flat_depth`). GPU pin:
+`a_sorted_field_cell_draws_flat_two_buckets_behind_its_far_corner`
+(`engine-render` `tests/overworld_flat_depth_gpu.rs`).
+
 ### No draw channel is gated on object-grid bit `0x0800`
 
 Bit `0x0800` marks a **kind-2 tile-trigger** cell (the elevation override
