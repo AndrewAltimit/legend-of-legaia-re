@@ -61,6 +61,9 @@ pub struct GameplayTweaks {
     /// Bonus equipment drop (`--equipment-drops`,
     /// `WorldToggles::bonus_drop`). Off by default.
     pub bonus_drop: bool,
+    /// Save anywhere (`--save-anywhere`, `WorldToggles::save_anywhere`): the
+    /// pause menu's Save row works in every scene. Off by default.
+    pub save_anywhere: bool,
 }
 
 impl Default for GameplayTweaks {
@@ -91,6 +94,7 @@ impl GameplayTweaks {
             enemy_attack_permille: t.enemy_attack_permille,
             enemy_stat_permille: t.enemy_stat_permille,
             bonus_drop: t.bonus_drop,
+            save_anywhere: t.save_anywhere,
         }
     }
 
@@ -121,6 +125,7 @@ impl GameplayTweaks {
         toggles.enemy_attack_permille = clamp_u(self.enemy_attack_permille);
         toggles.enemy_stat_permille = clamp_u(self.enemy_stat_permille);
         toggles.bonus_drop = self.bonus_drop;
+        toggles.save_anywhere = self.save_anywhere;
     }
 
     /// The Spirit AP settings a host cycles, retail first.
@@ -251,6 +256,7 @@ mod tests {
                 enemy_attack_permille: 2000,
                 enemy_stat_permille: 1500,
                 bonus_drop: true,
+                save_anywhere: true,
             },
             retail,
         }
@@ -285,7 +291,7 @@ mod tests {
         let d = GameplayTweaks::default();
         assert_eq!(d, GameplayTweaks::from_toggles(&WorldToggles::new()));
         assert!(d.shiny_seru && d.fortress_encounter_fix && d.hp_readout_guard);
-        assert!(!d.flee_exp && !d.jewel_fix);
+        assert!(!d.flee_exp && !d.jewel_fix && !d.save_anywhere);
         assert_eq!(d.exp_rate_permille, 1000);
         assert_eq!(GameplayTweaks::exp_rate_label(1500), "1.5x");
         assert_eq!(GameplayTweaks::exp_rate_label(500), "0.5x");

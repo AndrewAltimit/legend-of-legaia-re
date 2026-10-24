@@ -163,3 +163,70 @@ fn start_is_inert_while_a_dialogue_owns_the_player() {
         "the refusal is scoped to the conversation, not permanent"
     );
 }
+
+/// The save-anywhere enhancement (`WorldToggles::save_anywhere`, default off)
+/// lifts the scene gate and nothing else: off, a field scene's Save row stays
+/// grey exactly as retail draws it; on, the same menu offers Save; and the
+/// retail switch set holds it off whatever the host asked for.
+#[test]
+fn save_anywhere_lifts_the_scene_gate_and_retail_holds_it_off() {
+    let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN").map(PathBuf::from) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    if !disc.exists() {
+        eprintln!("[skip] disc missing");
+        return;
+    }
+    let cfg = BootConfig {
+        scene: "town01".to_string(),
+        enable_audio: false,
+    };
+    let mut session = NativeSession::open_disc(&disc, &cfg).expect("open the disc");
+    session
+        .enter_field_live("town01", &FieldLiveOpts::default())
+        .expect("enter town01 live");
+    assert!(!session.host.world.party.scene_save_allowed);
+    assert!(
+        !session.host.world.toggles.save_anywhere,
+        "the enhancement defaults off"
+    );
+    let save_enabled = |s: &mut NativeSession| {
+        s.open_field_menu();
+        let menu = s.field_menu.as_ref().expect("menu");
+        let on = menu.gate().save_allowed
+            && menu.view().rows[FieldMenuRow::Save.index() as usize].enabled;
+        s.close_field_menu();
+        on
+    };
+    assert!(
+        !save_enabled(&mut session),
+        "retail: Save is grey in town01"
+    );
+
+    let t = &session.host.world.toggles;
+    let mut switches = legaia_engine_session::session_switches::SessionSwitches {
+        smart_monsters: t.smarter_monster_targeting,
+        world_map_markers: t.overworld_marker_overlay,
+        entry_pulse: t.entry_pulse_enabled,
+        battle_frame_cadence: t.battle_sm_frame_cadence,
+        arts_saved_list: t.arts_saved_list,
+        tweaks: legaia_engine_session::session_switches::GameplayTweaks {
+            save_anywhere: true,
+            ..Default::default()
+        },
+        retail: false,
+    };
+    switches.apply(&mut session.host.world.toggles);
+    assert!(
+        save_enabled(&mut session),
+        "save anywhere offers Save in town01"
+    );
+    // The scene's own bit is untouched: the camera and locomotion read it.
+    assert!(!session.host.world.party.scene_save_allowed);
+
+    switches.retail = true;
+    switches.apply(&mut session.host.world.toggles);
+    assert!(!session.host.world.toggles.save_anywhere);
+    assert!(!save_enabled(&mut session), "retail mode holds it off");
+}

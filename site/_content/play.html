@@ -574,6 +574,10 @@ div.play-vis-head { cursor: default; }
                    title="Now and then a won battle also grants one random piece of equipment, on top of the normal drop (a 5% roll; the patcher's --equipment-drops; play-window --equipment-drops). Not retail; Retail-faithful holds it off.">
               <input type="checkbox" id="play-bonus-drop"> Bonus equipment drops
             </label>
+            <label class="play-dev-menu"
+                   title="The pause menu's Save row works in every scene, not only on the world map and at save points as in the original (play-window --save-anywhere). Not retail; Retail-faithful holds it off.">
+              <input type="checkbox" id="play-save-anywhere"> Save anywhere
+            </label>
           </div>
         </details>
         <details class="play-battle-tools" id="play-battle-tuning">
@@ -2031,34 +2035,20 @@ div.play-vis-head { cursor: default; }
    * the card is - so without this a save made at a save point lived only
    * behind the title's Continue and the in-game Load row, and the bar told
    * a player who had just saved "No saves in this browser yet". */
-  const BROWSER_TILE_PREFIX = '@browser-block-';
   let browserToolsAsked = false;
   let savesWasm = null;
   function browserCardTiles() {
-    const bytes = LegaiaSaves.getBrowserCard();
-    if (!bytes) return [];
-    if (!wasm) {
+    if (!wasm && !savesWasm) {
       /* The listing needs the WASM card reader; draw the bar again once the
        * module is in (it is cached, so this pulls nothing twice). */
-      if (!browserToolsAsked) {
+      if (!browserToolsAsked && LegaiaSaves.getBrowserCard()) {
         browserToolsAsked = true;
         saveTools().then((mod) => { if (mod) { savesWasm = mod; renderSavesStrip(); } })
           .catch(() => {});
       }
-      if (!savesWasm) return [];
+      return [];
     }
-    const mod = wasm || savesWasm;
-    let listing;
-    try { listing = JSON.parse(mod.card_saves_json(bytes)); }
-    catch (e) { return []; }
-    return (listing.saves || []).filter(s => s.valid).map(s => ({
-      id: BROWSER_TILE_PREFIX + s.block,
-      kind: 'card', format: 'mcr', fixed: true, bytes,
-      block: s.block,
-      name: `${BROWSER_CARD_NAME} - block ${s.block}`,
-      party: s.party || [], level: s.level, money: s.money,
-      location: s.location || s.scene || '',
-    }));
+    return LegaiaSaves.browserCardTiles(wasm || savesWasm);
   }
 
   /* Resume a save off the browser card: the same lift the in-game Load
@@ -2641,6 +2631,7 @@ div.play-vis-head { cursor: default; }
   const jewelFixEl = document.getElementById('play-jewel-fix');
   const hpGuardEl = document.getElementById('play-hp-readout-guard');
   const bonusDropEl = document.getElementById('play-bonus-drop');
+  const saveAnywhereEl = document.getElementById('play-save-anywhere');
   /* The battle-tuning selectors: element, setter, getter. Values are the
    * engine's step lists (GameplayTweaks; a web-play test pins them). */
   const tuningSelects = [
@@ -2664,6 +2655,7 @@ div.play-vis-head { cursor: default; }
     jewelFixEl.checked = !!rtCall('jewel_fix');
     hpGuardEl.checked = !!rtCall('hp_readout_guard');
     bonusDropEl.checked = !!rtCall('bonus_drop');
+    saveAnywhereEl.checked = !!rtCall('save_anywhere');
     for (const [el, , getter] of tuningSelects) {
       const v = rtCall(getter);
       if (v !== undefined) el.value = String(v);
@@ -2705,6 +2697,7 @@ div.play-vis-head { cursor: default; }
     rtCall('set_jewel_fix', !!jewelFixEl.checked);
     rtCall('set_hp_readout_guard', !!hpGuardEl.checked);
     rtCall('set_bonus_drop', !!bonusDropEl.checked);
+    rtCall('set_save_anywhere', !!saveAnywhereEl.checked);
     for (const [el, setter] of tuningSelects) rtCall(setter, parseInt(el.value, 10));
     rtCall('set_retail_mode', !!retailModeEl.checked);
   }
@@ -2746,6 +2739,7 @@ div.play-vis-head { cursor: default; }
   jewelFixEl.addEventListener('change', () => { rtCall('set_jewel_fix', !!jewelFixEl.checked); canvas.focus(); });
   hpGuardEl.addEventListener('change', () => { rtCall('set_hp_readout_guard', !!hpGuardEl.checked); canvas.focus(); });
   bonusDropEl.addEventListener('change', () => { rtCall('set_bonus_drop', !!bonusDropEl.checked); canvas.focus(); });
+  saveAnywhereEl.addEventListener('change', () => { rtCall('set_save_anywhere', !!saveAnywhereEl.checked); canvas.focus(); });
   for (const [el, setter] of tuningSelects) {
     el.addEventListener('change', () => { rtCall(setter, parseInt(el.value, 10)); canvas.focus(); });
   }

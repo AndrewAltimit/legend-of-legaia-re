@@ -54,7 +54,9 @@ impl<S: AudioSink> BootSession<S> {
         // open is equivalent to retail's per-frame re-read.
         session.set_gate(FieldMenuGate {
             entry_context_kind: world.menu_entry_context_kind(),
-            save_allowed: world.party.scene_save_allowed,
+            // The save-anywhere enhancement lifts the scene gate; retail
+            // (the toggle off) reads the scene's own bit only.
+            save_allowed: world.party.scene_save_allowed || world.toggles.save_anywhere,
         });
         // Retail's driver picks the *starting* sub-screen off that same kind
         // byte, so a locked context opens on the notice panel rather than on

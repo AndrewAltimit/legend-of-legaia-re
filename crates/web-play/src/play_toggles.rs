@@ -243,6 +243,18 @@ impl LegaiaRuntime {
         self.page_toggles.tweaks.bonus_drop
     }
 
+    /// Save anywhere, the native `--save-anywhere`: the pause menu's Save
+    /// row works in every scene. Retail mode holds it off.
+    pub fn set_save_anywhere(&mut self, on: bool) {
+        self.page_toggles.tweaks.save_anywhere = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_save_anywhere`] is on.
+    pub fn save_anywhere(&self) -> bool {
+        self.page_toggles.tweaks.save_anywhere
+    }
+
     /// Spirit AP, the native `--spirit-ap` (retail `32`; clamped to
     /// `-100..=100` when applied). Retail mode holds `32`.
     pub fn set_spirit_ap(&mut self, ap: i16) {
@@ -530,6 +542,7 @@ mod tests {
             "set_jewel_fix",
             "set_hp_readout_guard",
             "set_bonus_drop",
+            "set_save_anywhere",
             "set_spirit_ap",
             "set_damage_ap",
             "set_seru_catch_rate",

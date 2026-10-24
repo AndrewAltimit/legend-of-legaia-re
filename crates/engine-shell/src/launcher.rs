@@ -139,6 +139,9 @@ pub struct LauncherSettings {
     /// Start with the bonus equipment drop (`play-window --equipment-drops`).
     #[serde(default, skip_serializing_if = "is_false")]
     pub equipment_drops: bool,
+    /// Start with save anywhere (`play-window --save-anywhere`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub save_anywhere: bool,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -417,6 +420,9 @@ pub fn play_args_with(info: &DiscInfo, settings: &LauncherSettings) -> Vec<std::
     if settings.equipment_drops {
         args.push("--equipment-drops".into());
     }
+    if settings.save_anywhere {
+        args.push("--save-anywhere".into());
+    }
     args
 }
 
@@ -472,6 +478,7 @@ pub enum OptionRow {
     JewelFix,
     HpReadoutGuard,
     BonusDrop,
+    SaveAnywhere,
     SpiritAp,
     DamageAp,
     SeruCatchRate,
@@ -484,7 +491,7 @@ pub enum OptionRow {
 
 /// The option rows in screen order, with the heading each group starts
 /// under (`Some` on a group's first row).
-pub const OPTION_ROWS: [(Option<&str>, OptionRow); 32] = [
+pub const OPTION_ROWS: [(Option<&str>, OptionRow); 33] = [
     (Some("Display"), OptionRow::Fullscreen),
     (None, OptionRow::WindowSize),
     (None, OptionRow::CameraDistance),
@@ -502,6 +509,7 @@ pub const OPTION_ROWS: [(Option<&str>, OptionRow); 32] = [
     (Some("Gameplay tweaks"), OptionRow::ShinySeru),
     (None, OptionRow::FleeExp),
     (None, OptionRow::BonusDrop),
+    (None, OptionRow::SaveAnywhere),
     (None, OptionRow::FortressFix),
     (None, OptionRow::JewelFix),
     (None, OptionRow::HpReadoutGuard),
@@ -564,6 +572,7 @@ impl OptionRow {
             Self::JewelFix => "Boss casts respect jewels",
             Self::HpReadoutGuard => "Battle freeze guard",
             Self::BonusDrop => "Bonus equipment drops",
+            Self::SaveAnywhere => "Save anywhere",
             Self::SpiritAp => "Spirit AP",
             Self::DamageAp => "AP from damage",
             Self::SeruCatchRate => "Seru catch rate",
@@ -653,6 +662,10 @@ impl OptionRow {
                 "Now and then a won battle also gives a random piece of equipment, on \
                  top of the normal drop."
             }
+            Self::SaveAnywhere => {
+                "The pause menu's Save works everywhere, not only on the world map \
+                 and at save points as in the original."
+            }
             Self::SpiritAp => {
                 "How much AP the Spirit command charges; 32 is the original. Negative \
                  values make Spirit drain the gauge."
@@ -708,6 +721,7 @@ impl OptionRow {
                 | Self::JewelFix
                 | Self::HpReadoutGuard
                 | Self::BonusDrop
+                | Self::SaveAnywhere
                 | Self::SpiritAp
                 | Self::DamageAp
                 | Self::SeruCatchRate
@@ -769,6 +783,7 @@ impl OptionRow {
             Self::JewelFix => on_off(s.jewel_fix),
             Self::HpReadoutGuard => on_off(!s.no_hp_readout_guard),
             Self::BonusDrop => on_off(s.equipment_drops),
+            Self::SaveAnywhere => on_off(s.save_anywhere),
             Self::SpiritAp => s.spirit_ap.unwrap_or(SPIRIT_AP_RETAIL).to_string(),
             Self::DamageAp => s.damage_ap.unwrap_or(DAMAGE_AP_RETAIL).to_string(),
             Self::SeruCatchRate => Tweaks::catch_rate_label(s.seru_catch_pct),
@@ -858,6 +873,7 @@ impl OptionRow {
             Self::JewelFix => s.jewel_fix ^= true,
             Self::HpReadoutGuard => s.no_hp_readout_guard ^= true,
             Self::BonusDrop => s.equipment_drops ^= true,
+            Self::SaveAnywhere => s.save_anywhere ^= true,
             Self::SpiritAp => step_opt(&mut s.spirit_ap, &Tweaks::SPIRIT_AP_STEPS, dir),
             Self::DamageAp => step_opt(&mut s.damage_ap, &Tweaks::DAMAGE_AP_STEPS, dir),
             Self::SeruCatchRate => {
@@ -1134,6 +1150,7 @@ mod tests {
         assert_eq!(OptionRow::SeruCatchRate.value(&o, &s), "Original");
         for row in [
             OptionRow::BonusDrop,
+            OptionRow::SaveAnywhere,
             OptionRow::SpiritAp,
             OptionRow::DamageAp,
             OptionRow::SeruCatchRate,
@@ -1161,6 +1178,7 @@ mod tests {
             "--enemy-attack-count=1.5",
             "--enemy-stat-scale=1.25",
             "--equipment-drops",
+            "--save-anywhere",
         ] {
             assert!(a.iter().any(|x| x == flag), "{flag}");
             assert!(!plain.iter().any(|x| x == flag), "{flag} off by default");

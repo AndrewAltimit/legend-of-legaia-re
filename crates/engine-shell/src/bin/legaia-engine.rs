@@ -364,6 +364,7 @@ fn main() -> Result<()> {
             enemy_attack_count,
             enemy_stat_scale,
             equipment_drops,
+            save_anywhere,
             no_occlusion_fade,
             no_volumetric_fog,
             psx_render,
@@ -455,6 +456,7 @@ fn main() -> Result<()> {
                         enemy_stat_permille: enemy_stat_scale
                             .unwrap_or(legaia_engine_core::world::SCALE_RETAIL),
                         bonus_drop: equipment_drops,
+                        save_anywhere,
                     },
                     occlusion_fade: !no_occlusion_fade,
                     volumetric_fog: !no_volumetric_fog,

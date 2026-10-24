@@ -125,6 +125,7 @@ view is, the mouse wheel scrolls it, and `Page Up` / `Page Down` / `Home` /
 | Gameplay tweaks | Boss casts respect jewels (`--jewel-fix`) | `launcher.toml` | - | off |
 | Gameplay tweaks | Battle freeze guard (off = `--no-hp-readout-guard`) | `launcher.toml` | - | on |
 | Gameplay tweaks | Bonus equipment drops (`--equipment-drops`) | `launcher.toml` | - | off |
+| Gameplay tweaks | Save anywhere (`--save-anywhere`) | `launcher.toml` | - | off |
 | Battle tuning | EXP rate (`--exp-rate`: 1x, 1.5x, 2x, 3x, 5x, 0.5x) | `launcher.toml` | - | 1x |
 | Battle tuning | Enemy strength (`--enemy-stat-scale`: 1x to 5x, 0.75x, 0.5x) | `launcher.toml` | - | 1x |
 | Battle tuning | Enemy attack count (`--enemy-attack-count`: 1x to 3x, 0.5x) | `launcher.toml` | - | 1x |

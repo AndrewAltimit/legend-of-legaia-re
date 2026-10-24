@@ -233,6 +233,11 @@ pub struct WorldToggles {
     /// roll grants one random piece of equipment. Off by default and under
     /// [`Self::pin_retail`].
     pub bonus_drop: bool,
+    /// Save anywhere: the pause menu's Save row is enabled in every scene
+    /// the menu opens in, not only where the scene's MAN permits it (retail:
+    /// the three kingdom world maps) or a save point opens the screen. Not
+    /// retail; off by default and under [`Self::pin_retail`].
+    pub save_anywhere: bool,
     /// The options screen's nine config words as the host last pushed them
     /// (`crate::options::apply_to_world`) or a save last loaded them. The
     /// rows the simulation reads have their own mirrors here and on
@@ -365,6 +370,7 @@ impl WorldToggles {
             enemy_attack_permille: SCALE_RETAIL,
             enemy_stat_permille: SCALE_RETAIL,
             bonus_drop: false,
+            save_anywhere: false,
             retail_options: legaia_save::card::RetailOptions::default(),
             loaded_options: None,
         }
@@ -405,6 +411,7 @@ impl WorldToggles {
         self.enemy_attack_permille = SCALE_RETAIL;
         self.enemy_stat_permille = SCALE_RETAIL;
         self.bonus_drop = false;
+        self.save_anywhere = false;
     }
 
     /// The fidelity toggles currently off their retail value, by field name.
@@ -477,6 +484,9 @@ impl WorldToggles {
         if self.bonus_drop {
             out.push("bonus_drop");
         }
+        if self.save_anywhere {
+            out.push("save_anywhere");
+        }
         out
     }
 }
@@ -530,7 +540,8 @@ mod fidelity_tests {
         t.enemy_attack_permille = 2000;
         t.enemy_stat_permille = 1500;
         t.bonus_drop = true;
-        assert_eq!(t.retail_deviations().len(), 22);
+        t.save_anywhere = true;
+        assert_eq!(t.retail_deviations().len(), 23);
         t.pin_retail();
         assert!(t.retail_deviations().is_empty());
     }

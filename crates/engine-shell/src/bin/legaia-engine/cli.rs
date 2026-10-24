@@ -1199,6 +1199,11 @@ pub(crate) enum Cmd {
         /// `--equipment-drops`. Not retail; `--retail` holds it off.
         #[arg(long, default_value_t = false)]
         equipment_drops: bool,
+        /// Save anywhere: the pause menu's Save row works in every scene, not
+        /// only on the world map and at save points. Not retail; `--retail`
+        /// holds it off.
+        #[arg(long, default_value_t = false)]
+        save_anywhere: bool,
         /// DEBUG affordance, not a player surface: teach the lead party
         /// member a spell id (at level 1) before the first world tick, so a
         /// capture run can open the battle Magic arm without playing to the
@@ -1329,7 +1334,7 @@ pub(crate) enum Cmd {
                 "no_entry_pulse", "no_occlusion_fade", "no_volumetric_fog", "smart_monsters",
                 "no_shiny_seru", "flee_exp", "exp_rate", "no_fortress_encounter_fix", "jewel_fix",
                 "no_hp_readout_guard", "spirit_ap", "damage_ap", "seru_catch_rate",
-                "enemy_attack_count", "enemy_stat_scale", "equipment_drops"]
+                "enemy_attack_count", "enemy_stat_scale", "equipment_drops", "save_anywhere"]
         )]
         retail: bool,
     },
