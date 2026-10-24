@@ -12,6 +12,7 @@ mod fight_kind_gates;
 mod hit_folds;
 mod module_completion;
 mod module_geometry;
+mod module_rumble;
 mod monster_casts;
 mod nighto;
 mod restore_spells;

@@ -126,6 +126,9 @@ pub struct CastFxState {
     /// (`World::run_cast_module_code`), so a settle wait after it sees the
     /// victim react.
     pub(crate) module_hit_arm: Option<u8>,
+    /// PROT 0922's rumble alternation word `0x801FA0BC`, bumped by its arms
+    /// 14 and 15 (`cast_module_rumble::RumbleStore::PueraAlternate`).
+    pub(crate) module_rumble_alternate: u32,
     /// Ticks the current arm has held on its settle wait
     /// (`cast_module_ticks::ChainSettle`), bounded by
     /// `cast_fatal_decision::SETTLE_TICK_LIMIT`.
@@ -385,6 +388,7 @@ impl CastFxState {
             module_creature_clip_kind: 0,
             module_shake: 0,
             module_hit_arm: None,
+            module_rumble_alternate: 0,
             module_settle_ticks: 0,
             module_nighto_outcome: None,
             module_stager_calls: Vec::new(),

@@ -388,6 +388,15 @@ impl World {
                 }
             }
         }
+        // The arm's controller rumble stores, on the edge each sits on.
+        let rumble_passed = direction.map_or(!capture_held, |d| !d.hold);
+        self.apply_module_rumble(
+            entry,
+            body.unwrap_or(legaia_engine_cast::cast_module_camera::SINGLE_BODY),
+            phase_in,
+            rumble_passed,
+            countdown_before,
+        );
         run.camera_follow = direction.and_then(|d| d.follow);
         run.camera_end_frame = direction.is_some_and(|d| d.end_frame);
         run.camera_nudge = direction.and_then(|d| d.nudge);
