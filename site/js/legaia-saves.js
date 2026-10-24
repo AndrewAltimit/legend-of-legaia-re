@@ -215,6 +215,36 @@
     return true;
   }
 
+  /* Id prefix of the save-bar tiles drawn for blocks of the browser card. */
+  var BROWSER_TILE_PREFIX = '@browser-block-';
+
+  /* The saves on the browser card as save-bar tile metas (`fixedTiles` of
+   * createRichBar), one per valid block, listed by the WASM module `mod`'s
+   * `card_saves_json`. A save made in game at a save point is a block of
+   * this card, not a stored session, so a bar that drew only sessions
+   * showed none of them. [] when there is no card or no module. */
+  function browserCardTiles(mod) {
+    var bytes = getBrowserCard();
+    if (!bytes || !mod || typeof mod.card_saves_json !== 'function') return [];
+    var listing;
+    try { listing = JSON.parse(mod.card_saves_json(bytes)); }
+    catch (e) { return []; }
+    return (listing.saves || []).filter(function (s) { return s.valid; }).map(function (s) {
+      return {
+        id: BROWSER_TILE_PREFIX + s.block,
+        kind: 'card', format: 'mcr', fixed: true, bytes: bytes,
+        block: s.block,
+        name: 'Browser memory card - block ' + s.block,
+        party: s.party || [], level: s.level, money: s.money, coins: s.coins,
+        location: s.location || s.scene || '',
+      };
+    });
+  }
+
+  function isBrowserTileId(id) {
+    return typeof id === 'string' && id.indexOf(BROWSER_TILE_PREFIX) === 0;
+  }
+
   /* ---------------- minigame progress ---------------- */
 
   function getMinigames() {
@@ -873,6 +903,8 @@
     deleteSession: deleteSession,
     getBrowserCard: getBrowserCard,
     putBrowserCard: putBrowserCard,
+    browserCardTiles: browserCardTiles,
+    isBrowserTileId: isBrowserTileId,
     patchSessionMeta: patchSessionMeta,
     getMinigames: getMinigames,
     putMinigame: putMinigame,
