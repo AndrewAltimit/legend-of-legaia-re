@@ -448,3 +448,30 @@ fn a_monster_draws_only_the_playing_streams_channels() {
         "only a monster's table is the bare identity"
     );
 }
+
+/// A monster ghost is bounded by its historical stream's part count like
+/// the live body; a ghost carrying a model-table answer keeps it.
+#[test]
+fn a_monster_ghost_draws_only_its_streams_channels() {
+    use legaia_engine_core::world::BattleGhostDraw;
+    let mut clip = pose_test_clip(0, 2, 0);
+    clip.variant_track.stream_parts = 15;
+    let mut player = legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(&clip).unwrap();
+    let pose = player.seat_cursor(0);
+    let ghost = |drawn, monster_parts| BattleGhostDraw {
+        actor_slot: 1,
+        pos: [0; 3],
+        pose: pose.clone(),
+        color: [0x50, 0x20, 0x20],
+        drawn,
+        monster_parts,
+    };
+    let d = ghost(None, Some(15)).drawn_objects(16).expect("bounded");
+    assert!(d[..15].iter().all(|&o| o) && !d[15]);
+    assert!(ghost(None, Some(15)).drawn_objects(15).is_none());
+    assert!(ghost(None, None).drawn_objects(16).is_none());
+    assert_eq!(
+        ghost(Some(vec![true, false]), None).drawn_objects(16),
+        Some(vec![true, false])
+    );
+}

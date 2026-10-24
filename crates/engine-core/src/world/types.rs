@@ -392,6 +392,10 @@ pub struct BattleGhostDraw {
     /// after the walk's re-run of the mesh-variant swap for the ghost's own
     /// frame. `None` draws every object (a seat with no model table).
     pub drawn: Option<Vec<bool>>,
+    /// A monster ghost's channel count: its historical stream's part count,
+    /// drawn over the registration identity table
+    /// ([`Self::drawn_objects`]). `None` for a seat with a model table.
+    pub monster_parts: Option<u8>,
 }
 
 /// Per-actor record held by the world. Composes the per-VM state structs.

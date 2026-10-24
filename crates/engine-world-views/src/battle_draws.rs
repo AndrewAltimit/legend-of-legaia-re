@@ -276,6 +276,7 @@ pub fn battle_ghost_draws(world: &World) -> Vec<BattleGhostDraw> {
                 pose: f.pose.clone(),
                 color: p.color,
                 drawn,
+                monster_parts: (monster && table.is_none()).then_some(f.variant_track.stream_parts),
             });
         }
     }

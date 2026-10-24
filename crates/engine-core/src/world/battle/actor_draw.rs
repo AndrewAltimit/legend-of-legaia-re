@@ -191,6 +191,21 @@ pub const DOUBLE_SIDED_BIT: u32 = 0x0800_0000;
 pub const BATTLE_BODY_NCLIP: u32 = 2;
 
 impl crate::world::BattleGhostDraw {
+    /// The objects this ghost draws over a mesh of `n_objects` TMD objects:
+    /// [`Self::drawn`], or for a monster the first `parts` - the walk
+    /// re-runs `FUN_80048A08` with the ghost's historical entry, whose loop
+    /// bound is that stream's part count (`0x80048B2C` / `0x80049020`), over
+    /// the identity table a monster never swaps. `None` draws every object.
+    ///
+    /// REF: FUN_80049348, FUN_80048A08
+    pub fn drawn_objects(&self, n_objects: usize) -> Option<Vec<bool>> {
+        if let Some(d) = &self.drawn {
+            return Some(d.clone());
+        }
+        let parts = usize::from(self.monster_parts?);
+        (parts != 0 && parts < n_objects).then(|| (0..n_objects).map(|o| o < parts).collect())
+    }
+
     /// The ghost's NCLIP word for the hosts' per-draw backface rule, from
     /// its draw word ([`legaia_engine_battle::battle_afterimage::ghost_draw_word`])
     /// by the live body's rule ([`BattleActorDrawPlan::nclip_mode`]):

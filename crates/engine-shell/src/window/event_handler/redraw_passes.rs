@@ -861,9 +861,8 @@ impl PlayWindowApp {
             // The ghost's own re-run of the mesh-variant swap
             // (`FUN_80049348` -> `FUN_8004CCD4`).
             let masked = g
-                .drawn
-                .as_deref()
-                .map(|d| legaia_engine_battle::battle_attach_swap::mask_tmd(tmd, d));
+                .drawn_objects(tmd.objects.len())
+                .map(|d| legaia_engine_battle::battle_attach_swap::mask_tmd(tmd, &d));
             let tmd = masked.as_ref().unwrap_or(tmd);
             let mut vmesh =
                 legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &g.pose.bone_outputs);

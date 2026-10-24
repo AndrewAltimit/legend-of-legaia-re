@@ -358,11 +358,12 @@ impl LegaiaRuntime {
         let Some(a) = br.actors.get(i as usize) else {
             return Vec::new();
         };
+        let n_objects = a.object_ids.iter().max().map_or(0, |&m| m as usize + 1);
         legaia_engine_world_views::battle_draws::battle_ghost_draws(&host.world)
             .into_iter()
             .filter(|d| d.actor_slot as usize == a.actor_idx)
             .nth(g as usize)
-            .and_then(|d| d.drawn)
+            .and_then(|d| d.drawn_objects(n_objects))
             .map(|d| legaia_engine_battle::battle_attach_swap::hidden_objects(&d))
             .unwrap_or_default()
     }
