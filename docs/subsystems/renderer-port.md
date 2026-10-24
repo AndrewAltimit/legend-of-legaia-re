@@ -153,10 +153,18 @@ mostly rise; what drops is thin geometry - a hit spark's spikes
 (`nivora_duel_mid_blazing_slash`). The host covers a pixel wherever the
 snapped triangle crosses one of its framebuffer sample points, a supersample
 of the stage pixel, while the GPU tests one point per stage pixel, so a
-primitive less than a stage pixel wide lands on different pixels. Testing
-coverage at the stage pixel's own point (the barycentric weights the texel
-row already carries reach it) is the candidate, with shared edges needing
-the GPU's top-left rule to neither crack nor double-blend.
+primitive less than a stage pixel wide lands on different pixels.
+
+The GPU's rule cannot be had by discarding fragments. A fragment can test
+the stage pixel's own point with the fill rule's tie break (the barycentric
+weights the texel row carries reach it), but the host only rasterises the
+part of a stage pixel inside each triangle: where an edge crosses a stage
+pixel, the triangle the rule gives the pixel to has fragments on its own
+side only, and the other side's fragments are the ones the test drops, so
+every diagonal shared edge cracks. The GPU's coverage needs whole stage
+pixels owned by one primitive - the 3D pass drawn at stage resolution,
+where the host's own top-left rule at pixel centres is the GPU's at the
+integer corner once the geometry moves half a pixel.
 
 Per-primitive painter order is not the answer to the opaque ordering
 residue. Drawing every owned field primitive at the depth of its corners'
