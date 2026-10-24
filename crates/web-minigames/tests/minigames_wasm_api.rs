@@ -830,3 +830,37 @@ fn the_dome_selection_runs_the_engines_command_flow() {
     );
     eprintln!("[ran] dome selection through the engine's command flow");
 }
+
+/// Every announcer line the page can start is staged off the disc at load:
+/// the duel chrome's, the cabinet's own three (FIGHT, NEXT GAME, GAME OVER)
+/// and the dome hub's Welcome plus a ROUND card line for every round index.
+/// The dome's ROUND banner starts its round's line through the staged bank
+/// (`muscle_round_card_xa`), counted as a fired hub line.
+#[test]
+fn the_announcer_bank_stages_every_line_and_the_round_card_speaks() {
+    let Some((mut mg, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let state = |mg: &LegaiaMinigames| -> serde_json::Value {
+        serde_json::from_str(&mg.baka_xa_state_json()).unwrap()
+    };
+    let s = state(&mg);
+    eprintln!("[ok] announcer bank {s}");
+    assert_eq!(s["staged"], s["lines"], "every line decodes off the disc");
+    let lines = s["lines"].as_u64().unwrap();
+    let rounds = legaia_engine_minigames::muscle_ringside::ROUND_CARD_XA_CHANNELS as u64;
+    assert!(
+        lines >= rounds + 3,
+        "the dome's ROUND lines and the cabinet's three"
+    );
+    for round in 0..3 {
+        mg.muscle_round_card_xa(round);
+    }
+    assert_eq!(mg.muscle_hub_xa_fired(), 3);
+    assert_eq!(
+        state(&mg)["fired"],
+        3,
+        "each ROUND line cut off a staged clip"
+    );
+}

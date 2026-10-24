@@ -735,3 +735,50 @@ fn duel_hud_high_score_cells_start_on_0x28() {
     assert_eq!(digits[3].x0 + 4, 0x28 + 3 * 8);
     assert_eq!(digits[0].y0 + 4, HIGH_SCORE_Y);
 }
+
+/// The cabinet's own three announcer lines - retail's `FUN_8003D53C` calls
+/// inside `FUN_801CF388` - each start once, on their arm's first frame: the
+/// FIGHT flash (`0x38`), NEXT GAME (`0x68`'s confirm on cursor `0`) and
+/// GAME OVER (`0x97`). PAY OUT starts none.
+#[test]
+fn the_cabinet_arms_start_their_announcer_lines_once() {
+    use crate::baka_fighter_chrome::{FIGHT_FLASH_XA, GAME_OVER_XA, NEXT_GAME_XA};
+    let idle = CabinetInput {
+        frame_step: 1,
+        win_target: 2,
+        ..Default::default()
+    };
+    let lines = |cab: &mut BakaCabinet, frames: usize, first: &CabinetInput| {
+        let mut out = vec![cab.tick(first).xa];
+        out.extend((1..frames).map(|_| cab.tick(&idle).xa));
+        out.into_iter().flatten().collect::<Vec<_>>()
+    };
+
+    let mut cab = BakaCabinet::new();
+    cab.state = ST_ROUND_BANNER_A;
+    assert_eq!(lines(&mut cab, 0x100, &idle), vec![FIGHT_FLASH_XA]);
+    assert_eq!(cab.state(), ST_DUEL);
+
+    let mut cab = BakaCabinet::new();
+    cab.state = ST_CHOICE;
+    let confirm = CabinetInput {
+        pad_edge: CABINET_CONFIRM,
+        ..idle
+    };
+    assert_eq!(lines(&mut cab, 0x40, &confirm), vec![NEXT_GAME_XA]);
+
+    let mut cab = BakaCabinet::new();
+    cab.state = ST_CHOICE;
+    cab.tick(&CabinetInput {
+        pad_edge: CABINET_RIGHT,
+        ..idle
+    });
+    assert!(
+        lines(&mut cab, 0x40, &confirm).is_empty(),
+        "PAY OUT is silent"
+    );
+
+    let mut cab = BakaCabinet::new();
+    cab.state = ST_LOSE;
+    assert_eq!(lines(&mut cab, 0x100, &idle), vec![GAME_OVER_XA]);
+}

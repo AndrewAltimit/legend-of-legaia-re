@@ -656,6 +656,13 @@ window.MgMuscle = (function () {
        * 0x15 / 0x16, `HubScreen::opponent_card` - not a page constant; its
        * brightness comes from the same envelope below. */
       setBanner('ROUND ' + n, null, hubEnv(2, 0).total || 70);
+      /* Arm 0x15 speaks the round as the card goes up (XA32, channel = the
+       * round index), on the first leg and every later one. This banner
+       * stands in for those arms, so it starts their line. */
+      if (api && typeof api.muscle_round_card_xa === 'function') {
+        if (window.MgSpu) MgSpu.ready(api);
+        try { api.muscle_round_card_xa(n - 1); } catch (e) { /* stale bundle */ }
+      }
     }
 
     /* The selection is the engine's command flow (`muscle_select`, the

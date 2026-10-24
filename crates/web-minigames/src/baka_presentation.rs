@@ -913,7 +913,11 @@ fn announcer_cues() -> Vec<legaia_engine_minigames::baka_fighter_chrome::XaCue> 
                 dur: c.duration_sectors,
             }),
     );
-    cues.sort_by_key(|c| (c.clip, c.chan, c.dur));
+    // One staged span per `(clip, channel)`, the longest any caller reads:
+    // a line is cut at its own read span off the staged clip
+    // (`XaClipBank::cut`), so staging the Baka banner's shorter span would
+    // clip the dome's ROUND card line, which reads the same channel longer.
+    cues.sort_by_key(|c| (c.clip, c.chan, std::cmp::Reverse(c.dur)));
     cues.dedup_by_key(|c| (c.clip, c.chan));
     cues
 }

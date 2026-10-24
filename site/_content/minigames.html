@@ -1079,6 +1079,15 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     if (MgBgm.playing() && MgBgm.playing() !== game) MgBgm.stop();
     if (game !== 'slot' && typeof slotSpinStop === 'function') slotSpinStop();
     if (api) MgBgm.prerender(game);
+    /* A tab click is a user gesture: bring the live SPU up (or resume it)
+     * here, so a game whose first sound is not a click of its own - the
+     * dome's "Welcome to the Muscle Dome!" line, spoken by the hub's first
+     * tick - is not keyed into a context the browser holds suspended. */
+    if (api && window.MgSpu) MgSpu.ready(api);
+    /* The dome's arena init (FUN_801CEA6C) starts its music with the hub,
+     * under the Welcome card - not at the first Fight press. Entering the
+     * tab is entering the arena. */
+    if (api && game === 'muscle') MgBgm.start('muscle');
   }
   tabsEl.addEventListener('click', (e) => {
     const b = e.target.closest('.mg-tab');

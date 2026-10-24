@@ -466,6 +466,23 @@ impl LegaiaMinigames {
         out
     }
 
+    /// Start the ROUND card's announcer line for the leg whose 0-based round
+    /// index is `round` - arm `0x15`'s `FUN_8003D53C(0x1F, round, 0x54)`,
+    /// [`legaia_engine_minigames::muscle_ringside::round_card_xa`]. The page
+    /// draws its own ROUND banner in place of the hub's arms `0x15` / `0x16`
+    /// (the first visit hands over as its walk reaches them, a later leg has
+    /// no hub walk at all), so the banner's line is started here, where the
+    /// banner goes up. Counted with the first visit's lines.
+    pub fn muscle_round_card_xa(&mut self, round: i32) {
+        let cue = legaia_engine_minigames::muscle_ringside::round_card_xa(round);
+        self.muscle_hub_xa_fired = self.muscle_hub_xa_fired.wrapping_add(1);
+        self.play_baka_xa(legaia_engine_minigames::baka_fighter_chrome::XaCue {
+            clip: cue.clip,
+            chan: cue.channel,
+            dur: cue.duration_sectors,
+        });
+    }
+
     /// How many announcer lines the live first visit has started.
     pub fn muscle_hub_xa_fired(&self) -> u32 {
         self.muscle_hub_xa_fired

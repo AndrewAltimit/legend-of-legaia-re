@@ -246,7 +246,10 @@ mod tests {
         let mut w = World::default();
         w.queue_xa_prestage(legaia_engine_minigames::muscle_ringside::hub_xa_prestage());
         w.queue_xa_prestage(legaia_engine_minigames::muscle_ringside::hub_xa_prestage());
-        assert_eq!(w.drain_field_xa_prestage().len(), 2);
+        assert_eq!(
+            w.drain_field_xa_prestage().len(),
+            legaia_engine_minigames::muscle_ringside::hub_xa_prestage().len()
+        );
     }
 
     /// A launcher into the dome lists the hub's lines at the request, a

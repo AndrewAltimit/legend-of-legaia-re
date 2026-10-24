@@ -873,6 +873,10 @@ Only two cue sites are `j` targets: `0x801D20D4` (from inside its own arm) and `
 
 Port: `MinigameSubId::bgm_id` names `2026`; the shared door-warp drain queues it as an op-`0x35` start, both hosts swap to it through their BGM director, and `World::restore_minigame_bgm` restores the venue's track on exit. The venue is `koin1` (PROT 543), whose casino-floor entry arm plays global BGM `2018` ([`minigame-slot-machine.md` § Sound](minigame-slot-machine.md#sound)).
 
+**Announcer lines.** The arena overlay's two `FUN_8003D53C` sites are the hub's: arm `0`'s first tick starts the Welcome line (`XA31` channel `0x0B`, span `0xA9`, `0x801CF918..0x801CF928`) and arm `0x15`'s first tick the ROUND card's (`XA32`, channel `DAT_801D1A94` = the round index, span `0x54`, `0x801CFF4C..0x801CFF70`). Arm `0x15` is the same arm on a first visit and on a hub re-entered after a leg, so every leg's card speaks its round. Port: `FirstVisitHub` starts both on a first visit; `HubTimers` starts `round_card_xa(round - 1)` when a later leg's card goes up (the re-entered hub's backdrop card or the leg-open banner). That the channel is the upcoming leg's index on a re-entered hub is inference from the first-visit value and the card's numbering.
+
+The minigames page starts the arena theme when its tab opens (the arena init's own start, under the Welcome card) and the ROUND card's line where its own ROUND banner goes up (`muscle_round_card_xa`); its first-visit walk hands over to that banner one tick before the engine's arm `0x15` would start it.
+
 <a id="the-four-turn-strip-belongs-to-koru-not-the-dome"></a>
 
 ## The Koru timed-fight strip
