@@ -186,7 +186,7 @@ Answered questions: [settled field / locomotion](re-settled-threads/field.md), [
 | Thread | Status | What would close it |
 |---|---|---|
 | What is left of the juggle window? | partial (the per-frame law is pinned; the four-slot read is narrowed) | Two residuals ([battle-formulas.md](../subsystems/battle-formulas.md#the-juggle-window---what-makes-a-monster-juggleable)): a four-slot list reads `entry[0x23 + 4k]` with `k` set by the monster block's heap address: both measured fights read `0` (the port's value); a `0xFF` slot would hold the window open ([monster-animation.md](../formats/monster-animation.md#event-frame-list-entry-0x100x13)); the measured window runs 1-2 ticks past `32 * beat / (speed * rate)` because the cursor's sub-frame carry at the commit is unmodelled. A capture of the commit's carry closes the second. |
-| Why does Zeto's idle in `zeto_big_wave_mid_cast` show one pass older than the display lag says? | open (measured) | A retail capture of Big Wave's arms 4 and 5 with the caster's cursor and ordering tables beside each frame ([detail](#zetos-big-wave-idle-one-pass-older)). |
+| Why does Zeto's idle in `zeto_big_wave_mid_cast` show one pass older than the display lag says? | open (measured) | The displayed frame is PROT 0946's arm-0 cut pass, and the two passes after it match at `1.000`; a retail film of the cut pass with its camera globals and Zeto's node matrix ([detail](#zetos-big-wave-idle-one-pass-older)). |
 
 
 ### Zeto's Big Wave idle, one pass older
@@ -263,10 +263,26 @@ best depth is thirteen units out (`.966`), at `48` the RAM's walk-back
 stays best. The near plate filling the close-up is in both ordering tables
 the RAM holds, drawn last over the chest. The other framebuffer (the draw
 area, `(0, 4)`) holds a wide shot with no HUD that matches neither table,
-so it is no witness to the lag. What is left is the draw of a surface a
-few units from the eye: a frame rasterised from the newest table in
-retail's bucket order, against the port's depth-tested draw at the same
-cursor and camera, would show whether the plate's coverage parts there.
+so it is no witness to the lag.
+
+Nor is it the draw. Both ordering tables, rasterised in retail's chain
+order against the state's own VRAM (`scripts/mednafen/ot-raster.py`), match
+the port's depth-tested frame at `1.000`: the newest table (record `1`, the
+current index) is the port at cursor `60` on the RAM's camera, the other at
+cursor `56` with the camera one pass back (TR z `52` nearer). No primitive is
+missing, extra, ordered differently or drawn with another attribute, and
+the two tables step the cursor `4` and the pan `26` a vsync, as the RAM's
+cursor ring and tween say. The residual is the displayed frame alone, and
+that frame is PROT 0946's arm-0 pass: arm 4 adds `scalar << 6` (`512`) to the
+countdown `0x801F7F20` and arm 5 drains `scalar * step` (`16`) a pass
+(`0x801F6F10..0x801F6F5C`), so the RAM's `496` is arm 5's first pass, the
+older table arm 4's, and the screen arm 0's cut, whose TR z
+`prescale(z / 2) = 2150` is the camera the image child already draws. On
+that one pass the port's frame fits only off the walk: cursor `48` with
+the camera's yaw `+6` reads `.993`, every other seat lower, against the
+`1.000` of the two passes after it. What the cut pass draws differently
+(the yaw the action SM's counter leaves before arm 0's snap lands, or a
+body matrix built ahead of the snap) needs a film of the cut itself.
 
 Answered questions: [settled battle / arts / level-up](re-settled-threads/battle.md), [settled rendering / camera](re-settled-threads/rendering-camera.md), [settled world map](re-settled-threads/world-map.md); falsified readings: [battle](re-do-not-re-walk.md#battle--arts--level-up), [rendering / camera](re-do-not-re-walk.md#rendering--camera).
 
