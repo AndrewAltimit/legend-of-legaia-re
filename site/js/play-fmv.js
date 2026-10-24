@@ -23,7 +23,8 @@
  *      engine's `MovieClock`, the pacing rule the native window runs
  *      (the picture follows the soundtrack, never a free-running timer). A
  *      page with no engine audio up falls back to `play_fmv_audio_pcm_i16`
- *      through its own context, trimmed by `LEGAIA_MASTER_TRIM`; a silent
+ *      through its own context, trimmed by `LEGAIA_MASTER_TRIM` and the play
+ *      page's own half (`PLAY_PAGE_GAIN_SCALE`, as on the engine path); a silent
  *      movie or a cursor that never moves falls back to the wall clock.
  *   3. When the clock passes the last frame, `play_fmv_finish()`. The engine
  *      releases the world on its next tick / title step and runs the
@@ -144,7 +145,11 @@
       const src = ctx.createBufferSource();
       src.buffer = buf;
       const trim = ctx.createGain();
-      trim.gain.value = (typeof window.LEGAIA_MASTER_TRIM === 'number') ? window.LEGAIA_MASTER_TRIM : 0.25;
+      /* The site trim, then the play page's own half - the level the engine
+       * path gives a movie at the slider's default 1x (web-play's
+       * `PLAY_PAGE_GAIN_SCALE`). */
+      const siteTrim = (typeof window.LEGAIA_MASTER_TRIM === 'number') ? window.LEGAIA_MASTER_TRIM : 0.25;
+      trim.gain.value = siteTrim * 0.5;
       src.connect(trim);
       trim.connect(ctx.destination);
       src.start();
