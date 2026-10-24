@@ -64,6 +64,7 @@ pub fn save_menu_rects(a: &SaveMenuAtlas) -> SaveMenuAtlasRects {
             plate_cap_r: a.band_battle_plate_cap_r(),
             separator: a.band_battle_separator(),
             digits: a.band_hud_digits(),
+            ink_digits: a.band_hud_digits_by_ink(),
             cross_out: a.band_cross_out(),
             rot_stamp: a.band_rot_stamp(),
             curse_plate: a.band_curse_plate(),

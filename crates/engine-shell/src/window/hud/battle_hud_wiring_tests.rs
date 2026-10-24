@@ -24,6 +24,7 @@ const BATTLE_MIRROR_RECTS: legaia_engine_ui::SaveMenuAtlasRects =
             plate_cap_r: (216, 0, 8, 20),
             separator: (96, 64, 8, 16),
             digits: Some(BATTLE_MIRROR_DIGITS),
+            ink_digits: None,
             cross_out: None,
             rot_stamp: None,
             curse_plate: None,

@@ -52,11 +52,11 @@ pub(crate) fn separator_glyph_draws(
     pen: (i32, i32),
     color: [f32; 4],
 ) -> Vec<TextDraw> {
-    if let Some(c) = font.sprite_cell(legaia_font::sprite_cell_ids::SEPARATOR + u16::from(glyph)) {
+    if let Some((c, tint)) = crate::menu_numeral_cell(font, true, u16::from(glyph), color) {
         return vec![TextDraw {
             dst: (pen.0, pen.1, c.w, c.h),
             src: (c.atlas_x, c.atlas_y, c.w, c.h),
-            color: crate::numeral_cell_tint(color),
+            color: tint,
         }];
     }
     match separator_glyph_char(glyph) {

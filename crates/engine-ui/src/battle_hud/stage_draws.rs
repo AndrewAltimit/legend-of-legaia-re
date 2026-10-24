@@ -61,13 +61,14 @@ pub fn numeral_cell_draws(
     color: [f32; 4],
 ) -> Vec<TextDraw> {
     if let Some(d) = ch.to_digit(10)
-        && let Some(c) = font.sprite_cell(legaia_font::sprite_cell_ids::NUMERAL + d as u16)
+        && let Some((c, tint)) = crate::menu_numeral_cell(font, false, d as u16, color)
     {
         return vec![TextDraw {
             dst: (pen.0, pen.1, c.w, c.h),
             src: (c.atlas_x, c.atlas_y, c.w, c.h),
-            // The cell is decoded under the ink-7 CLUT already.
-            color: numeral_cell_tint(color),
+            // The cell is decoded under the ink's own CLUT when the font
+            // carries it, else under the ink-7 CLUT and scaled.
+            color: tint,
         }];
     }
     text_draws_for(&font.layout_ascii(&ch.to_string()), pen, color)

@@ -245,6 +245,15 @@ pub(super) fn pinned_save_menu_rects() -> SaveMenuAtlasRects {
             plate_cap_r: (216, 0, 8, 20),
             separator: (96, 64, 8, 16),
             digits: Some((0, 244, 80, 12)),
+            // `save_menu_atlas::atlas_rect_hud_digits_ink`: tier 7 at its
+            // seat, the other nine three to a row below the 256-row plane.
+            ink_digits: Some(std::array::from_fn(|s| {
+                if s == 7 {
+                    return (0, 244, 80, 12);
+                }
+                let i = if s > 7 { s - 1 } else { s } as u32;
+                ((i % 3) * 80, 256 + (i / 3) * 12, 80, 12)
+            })),
             cross_out: None,
             rot_stamp: None,
             curse_plate: None,
@@ -787,25 +796,32 @@ fn slot_info_panel_columns_and_tiers_follow_the_summary() {
         let d = draws.iter().find(|d| d.src == face).expect("member face");
         assert_eq!((d.dst.0, d.dst.1), (16 + 96 * i as i32, 138 + 16));
     }
-    // Tier tints: HP row (y 184) - Vahn gold, Noa orange, Gala normal.
-    let strip = rects.battle.unwrap().digits.unwrap();
-    let tint_at = |x0: i32, y: i32| {
-        draws
+    // Tier picks: HP row (y 184) - Vahn gold, Noa orange, Gala normal. A
+    // tier is a CLUT pick, so each draws unmodulated from its own tier's
+    // strip (staging 6 / 9 / 7), not from the tier-7 strip scaled.
+    let strips = rects.battle.unwrap().ink_digits.unwrap();
+    let strip_of = |src: (u32, u32, u32, u32)| {
+        strips
             .iter()
-            .find(|d| d.src.1 == strip.1 && d.dst.1 == y && d.dst.0 >= x0 && d.dst.0 < x0 + 96)
-            .map(|d| d.color)
-            .unwrap()
+            .position(|s| src.1 == s.1 && src.0 >= s.0 && src.0 < s.0 + s.2)
     };
-    let normal = legaia_engine_ui::numeral_cell_tint(legaia_engine_ui::READOUT_NORMAL);
-    let gold = legaia_engine_ui::numeral_cell_tint(legaia_engine_ui::gauge_fill_color(6));
-    let orange = legaia_engine_ui::numeral_cell_tint(legaia_engine_ui::gauge_fill_color(9));
-    assert_eq!(tint_at(16, 184), gold);
-    assert_eq!(tint_at(112, 184), orange);
-    assert_eq!(tint_at(208, 184), normal);
+    let strip_at = |x0: i32, y: i32| {
+        let d = draws
+            .iter()
+            .find(|d| {
+                strip_of(d.src).is_some() && d.dst.1 == y && d.dst.0 >= x0 && d.dst.0 < x0 + 96
+            })
+            .unwrap();
+        assert_eq!(d.color, [1.0; 4]);
+        strip_of(d.src).unwrap()
+    };
+    assert_eq!(strip_at(16, 184), 6);
+    assert_eq!(strip_at(112, 184), 9);
+    assert_eq!(strip_at(208, 184), 7);
     // MP row (y 197): gold, orange, orange.
-    assert_eq!(tint_at(16, 197), gold);
-    assert_eq!(tint_at(112, 197), orange);
-    assert_eq!(tint_at(208, 197), orange);
+    assert_eq!(strip_at(16, 197), 6);
+    assert_eq!(strip_at(112, 197), 9);
+    assert_eq!(strip_at(208, 197), 9);
 }
 
 #[test]

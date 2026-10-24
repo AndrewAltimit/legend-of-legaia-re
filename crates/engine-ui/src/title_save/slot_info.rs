@@ -202,7 +202,7 @@ impl PanelPen<'_> {
     #[allow(clippy::too_many_arguments)]
     fn numerals(
         &mut self,
-        digits: Option<(u32, u32, u32, u32)>,
+        digits: Option<crate::BattleChromeRects>,
         value: i32,
         cells: i32,
         zero_pad: bool,
@@ -219,8 +219,8 @@ impl PanelPen<'_> {
         let left = x + (cells - s.len() as i32).max(0) * HUD_DIGIT_W;
         for (i, ch) in s.bytes().enumerate() {
             let cx = left + i as i32 * HUD_DIGIT_W;
-            match digits.and_then(|strip| hud_digit_rect(strip, u32::from(ch - b'0'))) {
-                Some(src) => self.sprite(src, cx, y, numeral_cell_tint(ink)),
+            match digits.and_then(|b| crate::hud_numeral_cell(&b, u32::from(ch - b'0'), ink)) {
+                Some((src, tint)) => self.sprite(src, cx, y, tint),
                 None => {
                     let g = [ch];
                     let g = std::str::from_utf8(&g).unwrap_or("0");
@@ -267,7 +267,7 @@ fn slot_info_body(
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     let text = SAVE_SELECT_TITLE_COLOR;
-    let digits = rects.and_then(|r| r.battle).and_then(|b| b.digits);
+    let digits = rects.and_then(|r| r.battle);
 
     if info.old_filename {
         pen.text(

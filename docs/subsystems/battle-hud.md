@@ -335,7 +335,8 @@ is `BattleState::module_panels_glide`.
 ### Numbers are cells, names are glyphs
 
 Every **number** on the battle screen is a run of fixed 8x12 cells - `v = 208`,
-`u = digit * 8` on the font page, sub-palette 13. Only names use the
+`u = digit * 8` on the font page, sub-palette `tier + 6` (13 on the normal
+tier). Only names use the
 proportional dialog font. The separator sprite sits four rows above the
 numerals it separates.
 
@@ -1658,8 +1659,9 @@ writes no anchor for); the panel backgrounds carry a local seat mirror, and
 **The surface samples the disc's own cells.** The 102x48 marbled panel plate,
 the blue plate 3-slice, the 8x16 `/` separator and the 8x12 numerals are baked
 into the shared sprite atlas and drawn 1:1 - the first three off the system-UI
-sheet (sub-palettes 0 / 4 / 5), the numerals off the menu-glyph atlas through
-sub-palette 13. Source rects live in
+sheet (sub-palettes 0 / 4 / 5), the numerals off the menu-glyph atlas once per
+ink-staging id, through sub-palettes 6..15 (`save_menu_atlas::atlas_rect_hud_digits_ink`;
+13 is the normal tier). Source rects live in
 [`title_pak`](../../crates/ui-formats/src/title_pak.rs) as
 `OVERLAY_SYSTEM_UI_BATTLE_*`; atlas seats in
 [`save_menu_atlas`](../../crates/engine-menus/src/save_menu_atlas.rs) as

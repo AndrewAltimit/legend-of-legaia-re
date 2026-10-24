@@ -199,6 +199,39 @@ pub const HUD_DIGIT_W: u32 = 8;
 /// Height of one HUD numeral cell.
 pub const HUD_DIGIT_H: u32 = 12;
 
+/// Ink-staging ids `0..=9` (`_DAT_8007B454`): a numeral or separator draws
+/// through the font CLUT `16 * (6 + id)` on VRAM row 510, which is
+/// sub-palette `6 + id` of the menu-glyph TIM.
+pub const NUMERAL_INK_IDS: u8 = 10;
+
+/// Atlas placement of the HUD numeral strip decoded under ink-staging id
+/// `staging` (`0..`[`NUMERAL_INK_IDS`]).
+///
+/// Retail resolves a readout tier by **selecting** that tier's font CLUT
+/// (`FUN_80034B78` passes `gp[0x13C] + 0x7F86` as the sprite's CLUT word),
+/// so each tier's cell carries its own ink *and* its own outline and
+/// mid-tone; scaling the tier-7 strip lands the ink but not the darker
+/// entries. Tier 7 is [`ATLAS_RECT_HUD_DIGITS`]; the other nine strips sit
+/// three to a row in the rows below the 256-row save-menu plane
+/// ([`ATLAS_BAKED_HEIGHT`]).
+pub const fn atlas_rect_hud_digits_ink(staging: u8) -> (u32, u32, u32, u32) {
+    if staging == 7 {
+        return ATLAS_RECT_HUD_DIGITS;
+    }
+    let i = (if staging > 7 { staging - 1 } else { staging }) as u32;
+    let w = HUD_DIGIT_W * 10;
+    (
+        (i % 3) * w,
+        ATLAS_HEIGHT + (i / 3) * HUD_DIGIT_H,
+        w,
+        HUD_DIGIT_H,
+    )
+}
+
+/// Height of the baked atlas: the 256-row save-menu plane plus the three
+/// rows of per-ink numeral strips ([`atlas_rect_hud_digits_ink`]) below it.
+pub const ATLAS_BAKED_HEIGHT: u32 = ATLAS_HEIGHT + 3 * HUD_DIGIT_H;
+
 /// Atlas placement of the **status-element badge block** - the nine 48x16
 /// word tags `FUN_8002C2E4`'s exclusive ladder selects from, sprite ids
 /// `0x18..=0x20` (`legaia_ui_formats::ui_widgets::STATUS_BADGES`).

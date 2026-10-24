@@ -353,11 +353,8 @@ pub fn field_party_hud_draws_for(
         for (i, ch) in s.bytes().enumerate() {
             let cell_x = left + i as i32 * DIGIT_W;
             let d = u32::from(ch - b'0');
-            match battle_cells
-                .and_then(|b| b.digits)
-                .and_then(|strip| crate::hud_digit_rect(strip, d))
-            {
-                Some(src) => sprites.push(SpriteDraw {
+            match battle_cells.and_then(|b| crate::hud_numeral_cell(&b, d, c)) {
+                Some((src, color)) => sprites.push(SpriteDraw {
                     dst: (
                         origin.0 + cell_x * scale,
                         origin.1 + y * scale,
@@ -365,7 +362,7 @@ pub fn field_party_hud_draws_for(
                         src.3 * scale as u32,
                     ),
                     src,
-                    color: numeral_cell_tint(c),
+                    color,
                 }),
                 None => {
                     let glyph = [ch];

@@ -150,6 +150,21 @@ pub mod sprite_cell_ids {
     /// rise / fall arrows (`4` / `5`), `/ ( ) :`.
     pub const SEPARATOR: u16 = 0x110;
     // `SEPARATOR + 13` is the last; `0x11E..` is free.
+    /// Base of the per-ink numeral and separator cells: the same 8x12
+    /// cells as [`NUMERAL`] / [`SEPARATOR`], decoded under ink-staging id
+    /// `s`'s own font CLUT (sub-palette `6 + s`) rather than tier 7's.
+    /// Address one with [`ink_numeral`] / [`ink_separator`].
+    pub const INK_CELLS: u16 = 0x300;
+    /// Id stride between two ink-staging ids' cell blocks.
+    pub const INK_CELLS_STRIDE: u16 = 0x20;
+    /// The numeral `d` decoded under ink-staging id `staging`'s CLUT.
+    pub const fn ink_numeral(staging: u8, d: u16) -> u16 {
+        INK_CELLS + staging as u16 * INK_CELLS_STRIDE + d
+    }
+    /// The separator glyph `g` decoded under ink-staging id `staging`'s CLUT.
+    pub const fn ink_separator(staging: u8, g: u16) -> u16 {
+        INK_CELLS + staging as u16 * INK_CELLS_STRIDE + 0x10 + g
+    }
     /// The list page header's "PAGE" tag (UI-icon `0x76`, 24x8).
     pub const PAGE_TAG: u16 = 0x200;
     /// The page header's 6x8 digit `d` is `PAGE_DIGIT + d` (icons

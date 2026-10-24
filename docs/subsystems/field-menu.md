@@ -2027,10 +2027,20 @@ message bar - and of the menus' body text: a retail frame shows its 5-bit `25`
 as `(206, 206, 206)`, never white. The 8x12 numeral cells and the strip's `/`
 sprite are decoded under this same CLUT (sub-palette 13), so they already
 carry its ink and its `(33, 33, 33)` outline. A tier is a CLUT pick, not a
-modulation: the port draws a cell unmodulated on the normal tier and scales
-the baked ink onto another tier's (`engine-ui::numeral_cell_tint`).
-Multiplying the cell by the ink drew it a second time, at `166` over a `27`
-outline.
+modulation: the number primitive `FUN_80034B78` and the separator primitive
+`FUN_8003C1F8` both pass the staged ink id plus `0x7F86` as the sprite's CLUT
+word (`addiu a2,a2,0x7f86` at `0x80034C80`, `addiu v1,v1,0x7f86` at
+`0x8003C260`), so each ink brings its own outline and mid-tone, not only its
+entry 15. The caution tier's outline is `(66, 66, 33)` and the danger tier's
+`(66, 49, 24)`. The port bakes the numeral and separator cells once per
+ink-staging id (`save_menu_atlas::atlas_rect_hud_digits_ink` for the HUD
+strips, `legaia_font::sprite_cell_ids::ink_numeral` / `ink_separator` for the
+menu cells) and draws a cell in the ink's own strip, unmodulated
+(`engine-ui::hud_numeral_cell` / `menu_numeral_cell`). Scaling the tier-7 cell
+onto another ink (`engine-ui::numeral_cell_tint`, now the fallback for an ink
+no font CLUT carries) landed the ink but drew the caution outline at
+`(33, 24, 0)`; multiplying the cell by the ink drew it a second time, at `166`
+over a `27` outline.
 
 ### Status-element badge on the roster panel
 

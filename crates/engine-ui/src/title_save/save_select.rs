@@ -517,6 +517,12 @@ pub struct BattleChromeRects {
     /// font glyphs seated on the same 8-px grid, so the layout survives
     /// even without the art.
     pub digits: Option<(u32, u32, u32, u32)>,
+    /// The same strip decoded under each ink-staging id's font CLUT,
+    /// indexed by staging id (`7` is [`Self::digits`]). A readout tier is
+    /// a CLUT pick in retail, so a tinted readout draws from its tier's own
+    /// strip ([`crate::hud_numeral_cell`]). `None` exactly when
+    /// [`Self::digits`] is, or for an atlas baked without them.
+    pub ink_digits: Option<[(u32, u32, u32, u32); 10]>,
     /// The red **cross-out X** (64x16) retail lays over a forbidden command
     /// chip (`FUN_801DBC30`), baked out of the battle effect page. `None`
     /// when the atlas was built without it; the chip then keeps its greyed

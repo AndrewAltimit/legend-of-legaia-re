@@ -249,7 +249,8 @@ pub(super) fn add_battle_chrome_sprites(
 }
 
 /// Stamp the battle HUD's ten 8x12 numeral cells into
-/// [`ATLAS_RECT_HUD_DIGITS`].
+/// [`ATLAS_RECT_HUD_DIGITS`], and the same strip under every other
+/// ink-staging CLUT into [`atlas_rect_hud_digits_ink`].
 ///
 /// Source is the **menu-glyph atlas** TIM, not the system-UI sheet -
 /// retail's HUD numerals come off VRAM page `(960, 256)` through CLUT
@@ -263,16 +264,17 @@ pub(super) fn add_hud_digit_strip(dst: &mut [u8], menu_glyph_tim: &[u8]) -> anyh
     let tim = mga::extract_from_tim_slice(menu_glyph_tim)?;
     let parsed = legaia_tim::parse(tim.bytes)?;
     let src_w = parsed.pixel_width() as u32;
-    let rgba =
-        legaia_tim::decode_rgba8(&parsed, title_pak::MENU_GLYPH_ATLAS_TEXT_CLUT_ROW as usize)?;
-    copy_rect(
-        dst,
-        ATLAS_WIDTH,
-        &rgba,
-        src_w,
-        mga::DIGITS_ROW,
-        ATLAS_RECT_HUD_DIGITS,
-    );
+    for staging in 0..NUMERAL_INK_IDS {
+        let rgba = legaia_tim::decode_rgba8(&parsed, 6 + staging as usize)?;
+        copy_rect(
+            dst,
+            ATLAS_WIDTH,
+            &rgba,
+            src_w,
+            mga::DIGITS_ROW,
+            atlas_rect_hud_digits_ink(staging),
+        );
+    }
     Ok(())
 }
 

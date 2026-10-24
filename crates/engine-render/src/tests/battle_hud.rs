@@ -168,6 +168,8 @@ fn chrome_rects() -> SaveMenuAtlasRects {
             plate_cap_r: PLATE_CAP_R,
             separator: SEPARATOR_SRC,
             digits: Some(DIGIT_STRIP),
+            // No per-ink strips: these tests pin the tier-7 fallback.
+            ink_digits: None,
             cross_out: None,
             rot_stamp: None,
             curse_plate: None,

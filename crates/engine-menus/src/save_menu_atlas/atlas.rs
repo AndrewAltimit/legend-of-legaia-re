@@ -216,6 +216,13 @@ impl SaveMenuAtlas {
     pub fn band_hud_digits(&self) -> Option<(u32, u32, u32, u32)> {
         self.has_hud_digits.then_some(ATLAS_RECT_HUD_DIGITS)
     }
+    /// The HUD numeral strip decoded under each ink-staging id's font CLUT
+    /// ([`atlas_rect_hud_digits_ink`]), indexed by staging id; entry `7` is
+    /// [`Self::band_hud_digits`]. `None` exactly when that is.
+    pub fn band_hud_digits_by_ink(&self) -> Option<[(u32, u32, u32, u32); 10]> {
+        self.has_hud_digits
+            .then(|| std::array::from_fn(|i| atlas_rect_hud_digits_ink(i as u8)))
+    }
     /// The red cross-out X ([`add_cross_out_mark`]), when baked.
     pub fn band_cross_out(&self) -> Option<(u32, u32, u32, u32)> {
         self.has_cross_out.then_some(ATLAS_RECT_CROSS_OUT)

@@ -324,18 +324,88 @@ pub fn gauge_fill_color(idx: u8) -> [f32; 4] {
 /// [`MENU_TEXT_WHITE`](crate::MENU_TEXT_WHITE): one CLUT.
 pub const READOUT_NORMAL: [f32; 4] = crate::MENU_TEXT_WHITE;
 
-/// The modulation that draws a **numeral cell** in `ink`.
+/// The ink-staging id (`_DAT_8007B454`, `0..=9`) whose font CLUT carries
+/// `ink` as its entry 15 - the inverse of [`crate::menu_ink_color`] over
+/// RGB (alpha is a fade, not part of the ink). Ids `7` and `8` share an
+/// ink; `7` answers. `None` for an ink no font CLUT carries.
+pub fn numeral_ink_staging(ink: [f32; 4]) -> Option<u8> {
+    [7u8, 0, 1, 2, 3, 4, 5, 6, 9]
+        .into_iter()
+        .find(|&id| crate::menu_ink_color(id)[..3] == ink[..3])
+}
+
+/// The modulation that draws a tier-7 **numeral cell** in `ink`.
 ///
 /// The 8x12 numeral cells and the battle strip's `/` are decoded under the
 /// tier-7 CLUT (sub-palette 13, `legaia_ui_formats::title_pak::MENU_GLYPH_ATLAS_TEXT_CLUT_ROW`),
 /// so their texels already carry that CLUT's ink and outline. Retail picks a
 /// tier by selecting another CLUT, not by modulating, so the normal tier
-/// draws them unmodulated; another tier scales the baked ink onto its own.
+/// draws them unmodulated - and every ink a font CLUT carries draws from
+/// that CLUT's own cells ([`hud_numeral_cell`], [`numeral_ink_staging`]),
+/// unmodulated too. This scale is the fallback for an ink no CLUT carries
+/// (and for an atlas baked without the per-ink cells): it lands the ink on
+/// the baked `206`, but not the CLUT's outline or mid-tone.
 /// Multiplying the cell by the ink itself drew the normal readout at
 /// `206 * 206 / 255 = 166` with a `27` outline where retail shows `206` / `33`.
 pub fn numeral_cell_tint(ink: [f32; 4]) -> [f32; 4] {
     let base = READOUT_NORMAL;
     [ink[0] / base[0], ink[1] / base[1], ink[2] / base[2], ink[3]]
+}
+
+/// An atlas source rect, `(x, y, w, h)`.
+pub type AtlasRect = (u32, u32, u32, u32);
+
+/// Source cell and modulation for HUD numeral `d` drawn in `ink`.
+///
+/// Retail draws a readout tier through that tier's font CLUT
+/// (`FUN_80034B78` passes `staging + 0x7F86` as the CLUT word), so when the
+/// atlas carries the strip decoded under `ink`'s CLUT
+/// ([`BattleChromeRects::ink_digits`]) the cell draws from it unmodulated -
+/// its ink, outline and mid-tone are all the CLUT's. Otherwise the tier-7
+/// strip draws under [`numeral_cell_tint`]. `None` without any strip.
+pub fn hud_numeral_cell(
+    b: &crate::BattleChromeRects,
+    d: u32,
+    ink: [f32; 4],
+) -> Option<(AtlasRect, [f32; 4])> {
+    if let (Some(strips), Some(staging)) = (b.ink_digits, numeral_ink_staging(ink))
+        && let Some(src) = crate::hud_digit_rect(strips[staging as usize], d)
+    {
+        return Some((src, [1.0, 1.0, 1.0, ink[3]]));
+    }
+    let src = b.digits.and_then(|strip| crate::hud_digit_rect(strip, d))?;
+    Some((src, numeral_cell_tint(ink)))
+}
+
+/// The font sprite cell for menu numeral (`separator == false`) or
+/// separator glyph `n` in `ink`, with the modulation it draws under: the
+/// cell decoded under `ink`'s own font CLUT, unmodulated, when the font
+/// carries it (`legaia_font::sprite_cell_ids::ink_numeral`), else the
+/// tier-7 cell under [`numeral_cell_tint`].
+pub fn menu_numeral_cell(
+    font: &legaia_font::Font,
+    separator: bool,
+    n: u16,
+    ink: [f32; 4],
+) -> Option<(legaia_font::EscapeCell, [f32; 4])> {
+    use legaia_font::sprite_cell_ids as ids;
+    if let Some(staging) = numeral_ink_staging(ink) {
+        let id = if separator {
+            ids::ink_separator(staging, n)
+        } else {
+            ids::ink_numeral(staging, n)
+        };
+        if let Some(c) = font.sprite_cell(id) {
+            return Some((c, [1.0, 1.0, 1.0, ink[3]]));
+        }
+    }
+    let base = if separator {
+        ids::SEPARATOR
+    } else {
+        ids::NUMERAL
+    };
+    font.sprite_cell(base + n)
+        .map(|c| (c, numeral_cell_tint(ink)))
 }
 
 /// Everything one battle-HUD frame draws, plus the chrome inputs the
@@ -564,6 +634,46 @@ mod ink_tests {
             assert!((t[k] * READOUT_NORMAL[k] - gold[k]).abs() < 1e-6);
         }
         assert_eq!(t[3], gold[3]);
+    }
+
+    /// Every tier ink resolves to the staging id whose font CLUT carries it,
+    /// so a tinted readout draws from that CLUT's own cells, unmodulated.
+    #[test]
+    fn tier_inks_pick_their_own_font_clut() {
+        for (tier, staging) in [(2u8, 2u8), (3, 3), (6, 6), (7, 7), (9, 9)] {
+            assert_eq!(numeral_ink_staging(gauge_fill_color(tier)), Some(staging));
+        }
+        let mut faded = gauge_fill_color(6);
+        faded[3] = 0.5;
+        assert_eq!(numeral_ink_staging(faded), Some(6));
+        assert_eq!(numeral_ink_staging([1.0, 0.0, 0.0, 1.0]), None);
+
+        let strips: [(u32, u32, u32, u32); 10] =
+            std::array::from_fn(|s| (0, 300 + 12 * s as u32, 80, 12));
+        let b = crate::BattleChromeRects {
+            digits: Some(strips[7]),
+            ink_digits: Some(strips),
+            ..Default::default()
+        };
+        assert_eq!(
+            hud_numeral_cell(&b, 3, faded),
+            Some(((24, 300 + 72, 8, 12), [1.0, 1.0, 1.0, 0.5]))
+        );
+        // An ink no CLUT carries keeps the tier-7 strip, scaled.
+        let odd = [0.5, 0.5, 0.5, 1.0];
+        assert_eq!(
+            hud_numeral_cell(&b, 3, odd),
+            Some(((24, 300 + 84, 8, 12), numeral_cell_tint(odd)))
+        );
+        // Without the per-ink strips the tier-7 strip scales.
+        let bare = crate::BattleChromeRects {
+            ink_digits: None,
+            ..b
+        };
+        assert_eq!(
+            hud_numeral_cell(&bare, 3, faded).map(|(_, t)| t),
+            Some(numeral_cell_tint(faded))
+        );
     }
 
     /// Every caption the battle builder lays out - the actor plaque and the
