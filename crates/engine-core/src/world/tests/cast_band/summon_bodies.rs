@@ -368,7 +368,10 @@ fn horn_hides_and_shows_the_party_around_the_heal() {
     assert_eq!(world.actors[9].battle.render_color, 0x3FFF_FFFF);
     assert_eq!(world.actors[9].battle.render_flag, RENDER_FLAG_HIDDEN);
     assert_eq!(
-        (world.actors[9].move_state.world_y, world.actors[9].move_state.world_z),
+        (
+            world.actors[9].move_state.world_y,
+            world.actors[9].move_state.world_z
+        ),
         (0x480, -0x200)
     );
     run_arm(&mut world, 0xB);
