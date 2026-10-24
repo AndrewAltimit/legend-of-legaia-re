@@ -160,9 +160,14 @@ what each does and which patcher features stay with the patcher.
 `--smart-monsters` or a gameplay-tweak flag when those rows ask for them) in a child
 process, and the launcher window closes. When the game exits normally the
 launcher ends with it. When it stops with an error, the launcher comes back
-with the error lines of the game's log; the whole log is
-`legaia-engine-game.log` in the saves folder. Run from a terminal, the game's
-output still prints there too.
+and says how it ended (an exit code, or a crash by signal or Windows
+exception), then checks the disc again: a disc that has gone (unplugged,
+moved) turns the disc card back into the picker with that reason. Otherwise
+the help box names the log, `legaia-engine-game.log` in the saves folder, and
+the reason the log gives - a panic's message, or the root of the error chain
+the engine exits with. A crash leaves no reason in the log, and none is
+invented from the lines before it. Run from a terminal, the game's output
+still prints there too.
 
 `LEGAIA_LAUNCHER_DIRECT=1` skips the screen: a remembered disc that still
 validates boots straight into the game, in the launcher's own process.

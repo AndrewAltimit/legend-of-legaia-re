@@ -637,12 +637,12 @@ impl OptionRow {
                  leaves still. Applies from the next scene you enter."
             }
             Self::SmartMonsters => {
-                "Monsters aim single-target attacks at your weakest party member instead \
-                 of picking at random. Harder than the original."
+                "Monsters aim single-target attacks at your weakest party member, not at \
+                 random. Harder than the original."
             }
             Self::ShinySeru => {
-                "Now and then a Seru you can capture appears shiny: stronger, and its \
-                 magic deals more damage once caught. The original has no shiny Seru."
+                "Now and then a Seru appears shiny: stronger, and its magic hits harder \
+                 once caught. Not in the original."
             }
             Self::FleeExp => {
                 "Running away from a battle still earns a little experience. The \
@@ -650,9 +650,8 @@ impl OptionRow {
             }
             Self::ExpRate => "Multiplies the experience every monster gives; 1x is the original.",
             Self::FortressFix => {
-                "Fixes a bug where Jette's fortress has no battles, and its Door of Light \
-                 does not work, if you escaped the floating castle with under a minute \
-                 left. Other saves play the same either way."
+                "Fixes Jette's fortress having no battles and a dead Door of Light after \
+                 escaping the floating castle with under a minute left."
             }
             Self::JewelFix => {
                 "Elemental jewels and guards protect against the bosses' signature \

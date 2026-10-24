@@ -582,18 +582,28 @@ impl LauncherApp {
                     evl.exit();
                     return;
                 }
-                let mut msg = vec![(format!("The game stopped with an error ({status})."), WARN)];
-                if let Some(log) = &game.log {
-                    for line in log_tail(log, 2) {
-                        msg.push((line, DIM));
-                    }
-                    msg.push((
-                        format!(
-                            "Full log: {} in the saves folder.",
-                            log.file_name().unwrap_or_default().to_string_lossy()
-                        ),
-                        FAINT,
-                    ));
+                // The disc going away under a running launcher (unplugged,
+                // moved) is the common cause, and the disc card would
+                // otherwise still say "ready": check it again.
+                let disc_problem = self
+                    .disc
+                    .as_ref()
+                    .and_then(|d| launcher::validate_disc(&d.path).err());
+                let log_text = game
+                    .log
+                    .as_deref()
+                    .and_then(|l| std::fs::read_to_string(l).ok());
+                let msg = failure_message(
+                    &status,
+                    game.log.as_deref(),
+                    log_text.as_deref(),
+                    disc_problem.as_ref(),
+                );
+                if let Some(p) = disc_problem {
+                    log::info!("launcher: after the failed start, {p}");
+                    self.disc = None;
+                    self.problem = Some(p);
+                    self.focus = Item::ChooseDisc;
                 }
                 self.status = Some(msg);
                 evl.set_control_flow(ControlFlow::Wait);
@@ -783,28 +793,17 @@ impl LauncherApp {
         }
 
         // Left column, below the buttons: help for the focused control.
-        let help_y = COLUMNS_Y + BUTTONS.len() as i32 * BUTTON_PITCH + 4;
-        let help = Rect::new(LEFT_X, help_y, LEFT_W, STAGE_H - PAD - help_y);
+        let help = help_rect();
         c.rect(help, CARD);
-        let mut y = help.y + 6;
         let lines: Vec<Message> = match &self.status {
             Some(s) => s.clone(),
             None => vec![(self.help_text(), DIM)],
         };
-        let inner = help.w - 12;
-        let wrapped: Vec<(Vec<String>, [f32; 4])> = lines
-            .iter()
-            .map(|(text, ink)| (c.wrap(text, inner), *ink))
-            .collect();
-        // The key reminder gives its line up to a message that needs it (a
-        // disc problem's reason and fix): cutting the fix off mid-sentence
-        // would leave the one line that says what to do unread.
-        let needed: i32 = wrapped.iter().map(|(l, _)| l.len() as i32 * 12 + 3).sum();
-        let footer = needed <= help.h - 6 - 14;
-        let bottom = help.y + help.h - if footer { 14 } else { 4 };
-        'outer: for (wrapped, ink) in &wrapped {
+        let hl = help_layout(c, &lines);
+        let mut y = help.y + 6;
+        'outer: for (wrapped, ink) in &hl.lines {
             for l in wrapped {
-                if y + 12 > bottom {
+                if y + 12 > hl.bottom {
                     break 'outer;
                 }
                 c.text(help.x + 6, y, l, *ink);
@@ -812,6 +811,7 @@ impl LauncherApp {
             }
             y += 3;
         }
+        let footer = hl.footer;
         if footer {
             c.text(
                 help.x + 6,
@@ -822,7 +822,7 @@ impl LauncherApp {
         }
 
         // Right column.
-        let panel = Rect::new(RIGHT_X, COLUMNS_Y, RIGHT_W, STAGE_H - PAD - COLUMNS_Y);
+        let panel = panel_rect();
         c.rect(panel, CARD);
         match self.panel {
             Panel::Options => self.options_panel(c, panel, hits),
@@ -1018,6 +1018,7 @@ impl LauncherApp {
         ] {
             rows.push((b.into(), keys(b)));
         }
+        debug_assert_eq!(rows.len() as i32 + 1, CONTROLS_ROWS);
         let mut y = panel.y + 5;
         c.text(panel.x + 8, y, "Button", GOLD);
         let kh = "Key";
@@ -1029,15 +1030,8 @@ impl LauncherApp {
             c.text(panel.x + panel.w - 10 - w, y, &k, GOLD);
             y += ROW_PITCH;
         }
-        y += 4;
-        for line in [
-            "Gamepad: bottom button Cross, right Circle, left Square, top Triangle.",
-            "Key Config in the in-game Options rebinds keys; F12 in the game lists every key.",
-        ] {
-            for l in c.wrap(line, panel.w - 20) {
-                c.text(panel.x + 10, y, &l, DIM);
-                y += 12;
-            }
+        for (i, l) in controls_note_lines(c, panel).into_iter().enumerate() {
+            c.text(panel.x + 10, y + 4 + i as i32 * 12, &l, DIM);
         }
     }
 
@@ -1070,7 +1064,7 @@ impl LauncherApp {
             Item::Opt(row) => {
                 let mut s = row.help().to_string();
                 if self.settings.retail && row.overridden_by_retail() {
-                    s.push_str(" Original game only is on, so this plays as the original for now.");
+                    s.push_str(" Off while Original game only is on.");
                 }
                 s
             }
@@ -1536,24 +1530,148 @@ fn pump<R: Read + Send + 'static>(
     })
 }
 
-/// The lines of `log` worth showing a player: its last `n` error lines (a
-/// panic, an `ERROR` record, an `Error:` exit), else its last line, each
-/// without the logger's `[time LEVEL module]` prefix.
-fn log_tail(log: &Path, n: usize) -> Vec<String> {
-    let Ok(text) = std::fs::read_to_string(log) else {
-        return Vec::new();
+/// The help-box account of a failed game: how it ended, then either what is
+/// wrong with the disc (the disc card names the problem too) or where the
+/// log is - second, so the reason after it can never push it out of the
+/// box - and the reason the log gives.
+fn failure_message(
+    status: &std::process::ExitStatus,
+    log: Option<&Path>,
+    log_text: Option<&str>,
+    disc_problem: Option<&DiscProblem>,
+) -> Vec<Message> {
+    let mut msg = vec![(exit_headline(status), WARN)];
+    if let Some(p) = disc_problem {
+        msg.extend(problem_message(p));
+        return msg;
+    }
+    if let Some(log) = log {
+        msg.push((
+            format!(
+                "{} in the saves folder.",
+                log.file_name().unwrap_or_default().to_string_lossy()
+            ),
+            FAINT,
+        ));
+    }
+    if let Some(why) = log_text.and_then(failure_detail) {
+        msg.push((why, DIM));
+    }
+    msg
+}
+
+/// The launcher's one-line account of how the game process ended.
+fn exit_headline(status: &std::process::ExitStatus) -> String {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(sig) = status.signal() {
+            let name = match sig {
+                4 => "SIGILL",
+                6 => "SIGABRT",
+                7 => "SIGBUS",
+                8 => "SIGFPE",
+                9 => "SIGKILL",
+                11 => "SIGSEGV",
+                15 => "SIGTERM",
+                _ => "",
+            };
+            return if name.is_empty() {
+                format!("The game crashed (signal {sig}).")
+            } else {
+                format!("The game crashed ({name}).")
+            };
+        }
+    }
+    match status.code() {
+        // An NTSTATUS exception code (0xC0000005 access violation, ...).
+        Some(c) if (c as u32) >= 0xC000_0000 => {
+            format!("The game crashed (exception 0x{:08X}).", c as u32)
+        }
+        Some(c) => format!("The game quit with error code {c}."),
+        None => "The game stopped unexpectedly.".into(),
+    }
+}
+
+/// The reason a failed game's log gives, phrased for the help box: a
+/// panic's message, else the root of the `Error:` chain the engine exits
+/// with, else its last `ERROR` record. Paths shrink to their file name and
+/// the line to [`DETAIL_MAX`] characters. `None` when the log holds no
+/// failure at all: a crash leaves only the chatter before it, which would
+/// read as the reason.
+fn failure_detail(log: &str) -> Option<String> {
+    let lines: Vec<&str> = log.lines().map(str::trim_end).collect();
+    let found = if let Some(i) = lines.iter().rposition(|l| l.contains("panicked at")) {
+        // Since Rust 1.73 the message is the line after "panicked at
+        // file:line:col:"; before, it followed on the same line.
+        let next = lines.get(i + 1).map(|l| l.trim()).filter(|l| {
+            !l.is_empty() && !l.starts_with("note:") && !l.starts_with("stack backtrace")
+        });
+        let msg = match next {
+            Some(m) => m.to_string(),
+            None => {
+                let l = lines[i];
+                l[l.find("panicked at").unwrap_or(0)..].to_string()
+            }
+        };
+        format!("It panicked: {msg}")
+    } else if let Some(i) = lines.iter().rposition(|l| l.starts_with("Error:")) {
+        // `Error: top`, then `Caused by:` and `    0: ...` / `    1: ...`:
+        // the last cause is the root ("No such file or directory").
+        let causes: Vec<&str> = lines[i + 1..]
+            .iter()
+            .take_while(|l| l.is_empty() || l.starts_with(' ') || l.starts_with("Caused by"))
+            .map(|l| l.trim())
+            .filter(|t| !t.is_empty() && *t != "Caused by:")
+            .map(|t| match t.split_once(": ") {
+                Some((n, rest)) if n.parse::<u32>().is_ok() => rest,
+                _ => t,
+            })
+            .collect();
+        let top = lines[i].trim_start_matches("Error:").trim();
+        match causes.last() {
+            Some(root) => format!(
+                "{}: {}",
+                capitalise_first(&shorten_paths(top)),
+                shorten_paths(root)
+            ),
+            None => capitalise_first(&shorten_paths(top)),
+        }
+    } else {
+        let l = lines.iter().rev().find(|l| l.contains(" ERROR "))?;
+        capitalise_first(&shorten_paths(strip_log_prefix(l)))
     };
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    let errors: Vec<&str> = lines
-        .iter()
-        .copied()
-        .filter(|l| l.contains(" ERROR ") || l.contains("panicked") || l.starts_with("Error"))
-        .collect();
-    let pick = if errors.is_empty() { &lines } else { &errors };
-    pick[pick.len().saturating_sub(n)..]
-        .iter()
-        .map(|l| strip_log_prefix(l).to_string())
-        .collect()
+    Some(clip(&found, DETAIL_MAX))
+}
+
+/// The most of a failure reason the help box shows.
+const DETAIL_MAX: usize = 72;
+
+fn clip(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let mut t: String = s.chars().take(max - 3).collect();
+    t.push_str("...");
+    t
+}
+
+/// Every absolute path in `s` cut to its file name (`/a/b/game.bin` ->
+/// `game.bin`): the help box is narrow, and the folder is on the disc card.
+/// A path with spaces in it shrinks from its last space-free piece.
+fn shorten_paths(s: &str) -> String {
+    s.split(' ')
+        .map(|w| {
+            let unix = w.starts_with('/') && w[1..].contains('/');
+            let win = w.len() > 3 && w.as_bytes()[1] == b':' && w[2..].starts_with('\\');
+            if unix || win {
+                w.rsplit(['/', '\\']).next().unwrap_or(w)
+            } else {
+                w
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// `[2026-01-01T00:00:00Z INFO  module] text` -> `text`.
@@ -1636,6 +1754,73 @@ fn sentence(s: &str) -> String {
         s
     } else {
         format!("{s}.")
+    }
+}
+
+/// The help box under the buttons.
+fn help_rect() -> Rect {
+    let y = COLUMNS_Y + BUTTONS.len() as i32 * BUTTON_PITCH + 4;
+    Rect::new(LEFT_X, y, LEFT_W, STAGE_H - PAD - y)
+}
+
+/// The right-hand panel (options or controls).
+fn panel_rect() -> Rect {
+    Rect::new(RIGHT_X, COLUMNS_Y, RIGHT_W, STAGE_H - PAD - COLUMNS_Y)
+}
+
+/// The controls panel's rows: the header and the D-pad, then ten buttons.
+const CONTROLS_ROWS: i32 = 12;
+
+/// The notes under the controls table, wrapped to the panel.
+const CONTROLS_NOTES: [&str; 2] = [
+    "Gamepad: bottom button Cross, right Circle, left Square, top Triangle.",
+    "Key Config in the in-game Options rebinds keys; F12 in the game lists every key.",
+];
+
+fn controls_note_lines(c: &Canvas, panel: Rect) -> Vec<String> {
+    CONTROLS_NOTES
+        .iter()
+        .flat_map(|n| c.wrap(n, panel.w - 20))
+        .collect()
+}
+
+/// The stage row just past the controls notes' last line (the fit test's
+/// measure of [`LauncherApp::controls_panel`]).
+#[cfg(test)]
+fn controls_notes_bottom(c: &Canvas, panel: Rect) -> i32 {
+    panel.y + 5 + CONTROLS_ROWS * ROW_PITCH + 4 + controls_note_lines(c, panel).len() as i32 * 12
+}
+
+/// How a help-box message lays out: its wrapped lines, whether the key
+/// reminder keeps its line, the last row text may reach, and whether every
+/// line fits.
+struct HelpLayout {
+    lines: Vec<(Vec<String>, [f32; 4])>,
+    footer: bool,
+    bottom: i32,
+    /// Read by the fit test; the window draws what fits either way.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fits: bool,
+}
+
+fn help_layout(c: &Canvas, msg: &[Message]) -> HelpLayout {
+    let help = help_rect();
+    let lines: Vec<(Vec<String>, [f32; 4])> = msg
+        .iter()
+        .map(|(text, ink)| (c.wrap(text, help.w - 12), *ink))
+        .collect();
+    // The key reminder gives its line up to a message that needs it (a disc
+    // problem's reason and fix): cutting the fix off mid-sentence would
+    // leave the one line that says what to do unread.
+    let rows: i32 = lines.iter().map(|(l, _)| l.len() as i32).sum();
+    let needed = rows * 12 + 3 * (lines.len() as i32 - 1).max(0);
+    let footer = needed <= help.h - 6 - 14;
+    let bottom = help.y + help.h - if footer { 14 } else { 4 };
+    HelpLayout {
+        fits: help.y + 6 + needed <= bottom,
+        lines,
+        footer,
+        bottom,
     }
 }
 
@@ -1898,19 +2083,198 @@ mod tests {
         assert_eq!(clean_typed_path("/plain.bin"), "/plain.bin");
     }
 
+    /// The fonts the launcher letters itself in: the built-in one (first
+    /// run, condensed) and, when a disc is known, the disc's dialog font.
+    fn fonts() -> Vec<(legaia_font::Font, bool, &'static str)> {
+        let mut v = vec![(legaia_font::Font::placeholder(), true, "built-in font")];
+        if let Some(bin) = std::env::var_os("LEGAIA_DISC_BIN")
+            && let Some(f) = launcher::disc_font(Path::new(&bin))
+        {
+            v.push((f, false, "disc font"));
+        } else {
+            eprintln!("skip: disc-font half (LEGAIA_DISC_BIN unset)");
+        }
+        v
+    }
+
+    fn canvas_for(font: &legaia_font::Font, condense: bool) -> Canvas<'_> {
+        Canvas {
+            condense,
+            ..canvas(font)
+        }
+    }
+
+    /// Every message the help box shows, in its widest form.
+    fn help_messages() -> Vec<(String, Vec<Message>)> {
+        let mut out: Vec<(String, Vec<Message>)> = Vec::new();
+        let one = |s: &str| vec![(s.to_string(), DIM)];
+        for (_, row) in OPTION_ROWS {
+            out.push((row.label().into(), one(row.help())));
+            if row.overridden_by_retail() {
+                let s = format!("{} Off while Original game only is on.", row.help());
+                out.push((format!("{} (retail)", row.label()), one(&s)));
+            }
+        }
+        let path = PathBuf::from("/home/player/Games/Legend of Legaia (USA).bin");
+        let problems = [
+            DiscProblem::NotSet,
+            DiscProblem::BadSettings("expected `=`, found newline at line 1".into()),
+            DiscProblem::Missing(path.clone()),
+            DiscProblem::Moved(path.clone()),
+            DiscProblem::WrongDisc {
+                path: path.clone(),
+                reason: "it is the Europe release (SCES_019.44); the engine runs the USA disc \
+                         (SCUS_942.54)"
+                    .into(),
+            },
+        ];
+        for p in problems {
+            out.push((format!("{p:?}"), problem_message(&p)));
+        }
+        // Every reason the disc sniffer gives.
+        let mut iso = vec![0u8; legaia_iso::sniff::SNIFF_LEN];
+        iso[16 * 2048 + 1..16 * 2048 + 6].copy_from_slice(b"CD001");
+        for (ext, head) in [
+            ("chd", &b"MComprHD"[..]),
+            ("pbp", b"\0PBP"),
+            ("ecm", b"ECM\0"),
+            ("zip", b"PK\x03\x04"),
+            ("ppf", b"PPF"),
+            ("ccd", b"[CloneCD]"),
+            ("m3u", b"x.cue"),
+            ("iso", &iso),
+            ("bin", &[1u8; 8]),
+            ("bin", &[1u8; 4096]),
+        ] {
+            let d = legaia_iso::sniff::diagnose_bytes(ext, head, head.len() as u64).unwrap();
+            let p = DiscProblem::Unreadable {
+                path: path.clone(),
+                reason: d.what,
+                fix: Some(d.fix),
+            };
+            out.push((format!("sniff {ext}"), problem_message(&p)));
+        }
+        let renamed = DiscProblem::Unreadable {
+            path: path.clone(),
+            reason: "This .cue names \"Legend of Legaia (USA) (Track 1).bin\", which is not in \
+                     its folder."
+                .into(),
+            fix: Some(
+                "If the .bin was renamed, choose \"Legend of Legaia (USA).bin\" itself.".into(),
+            ),
+        };
+        out.push(("renamed cue".into(), problem_message(&renamed)));
+        // A failed game: the longest headline, the log line and a reason at
+        // its cap; and a failure the disc explains.
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            let status = std::process::ExitStatus::from_raw(255 << 8);
+            let log = format!("Error: {}\n", "word ".repeat(40));
+            out.push((
+                "failed game".into(),
+                failure_message(
+                    &status,
+                    Some(Path::new("/d/legaia-engine-game.log")),
+                    Some(&log),
+                    None,
+                ),
+            ));
+            out.push((
+                "failed game, disc gone".into(),
+                failure_message(&status, None, None, Some(&DiscProblem::Moved(path.clone()))),
+            ));
+        }
+        out
+    }
+
+    /// Every help-box message fits whole, in both fonts: nothing the box
+    /// shows is cut off mid-sentence.
     #[test]
-    fn log_tail_skips_blank_lines() {
-        let dir = tempfile::tempdir().unwrap();
-        let p = dir.path().join("game.log");
-        std::fs::write(&p, "a\n\nb\nc\n\n").unwrap();
-        assert_eq!(log_tail(&p, 2), vec!["b", "c"]);
-        assert!(log_tail(&dir.path().join("none.log"), 2).is_empty());
-        // Error lines win over the chatter after them, prefix stripped.
-        std::fs::write(
-            &p,
-            "[t INFO  m] loading\n[t ERROR m] no VRAM\n[t INFO  m] bye\n",
-        )
-        .unwrap();
-        assert_eq!(log_tail(&p, 2), vec!["no VRAM"]);
+    fn every_help_message_fits_the_help_box() {
+        let mut cut = Vec::new();
+        for (font, condense, name) in fonts() {
+            let c = canvas_for(&font, condense);
+            for (what, msg) in help_messages() {
+                let l = help_layout(&c, &msg);
+                if !l.fits {
+                    let rows: Vec<_> = l.lines.iter().map(|(w, _)| w).collect();
+                    cut.push(format!("{name}: {what}: {rows:?}"));
+                }
+            }
+        }
+        assert!(cut.is_empty(), "the help box cuts off:\n{}", cut.join("\n"));
+    }
+
+    /// The controls table and its notes stay inside the panel, in both fonts.
+    #[test]
+    fn controls_notes_fit_the_panel() {
+        let panel = panel_rect();
+        for (font, condense, name) in fonts() {
+            let c = canvas_for(&font, condense);
+            let bottom = controls_notes_bottom(&c, panel);
+            assert!(
+                bottom <= panel.y + panel.h - 2,
+                "{name}: the controls notes end at {bottom}, past the panel's {}",
+                panel.y + panel.h
+            );
+        }
+    }
+
+    #[test]
+    fn failure_detail_reads_the_engine_error_chain() {
+        let log = "[t INFO  m] loading\n\
+                   Error: open disc image /tmp/x/disc/Legaia.bin\n\
+                   \n\
+                   Caused by:\n    \
+                   0: open disc image /tmp/x/disc/Legaia.bin\n    \
+                   1: No such file or directory (os error 2)\n";
+        assert_eq!(
+            failure_detail(log).as_deref(),
+            Some("Open disc image Legaia.bin: No such file or directory (os error 2)")
+        );
+        // A bare `Error:` with no chain.
+        assert_eq!(
+            failure_detail("Error: no adapter\n").as_deref(),
+            Some("No adapter")
+        );
+    }
+
+    #[test]
+    fn failure_detail_reads_a_panic_message() {
+        let log = "[t INFO  m] ok\n\
+                   thread 'main' panicked at crates/x/src/lib.rs:10:5:\n\
+                   index out of bounds\n\
+                   note: run with `RUST_BACKTRACE=1`\n";
+        assert_eq!(
+            failure_detail(log).as_deref(),
+            Some("It panicked: index out of bounds")
+        );
+    }
+
+    #[test]
+    fn failure_detail_is_none_for_a_crash_log() {
+        // A killed process leaves only its chatter: no reason to show.
+        let log = "[t INFO  m] light 11: pos (1, 2, 3)\n[t INFO  m] 165 meshes uploaded\n";
+        assert_eq!(failure_detail(log), None);
+        assert_eq!(
+            failure_detail("[t INFO  m] a\n[t ERROR m] no VRAM\n[t INFO  m] bye\n").as_deref(),
+            Some("No VRAM")
+        );
+        let long = format!("Error: {}\n", "x".repeat(300));
+        assert_eq!(failure_detail(&long).unwrap().chars().count(), DETAIL_MAX);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn exit_headline_names_signals_and_codes() {
+        use std::os::unix::process::ExitStatusExt;
+        let st = |raw| std::process::ExitStatus::from_raw(raw);
+        assert_eq!(exit_headline(&st(9)), "The game crashed (SIGKILL).");
+        assert_eq!(exit_headline(&st(11)), "The game crashed (SIGSEGV).");
+        assert_eq!(
+            exit_headline(&st(1 << 8)),
+            "The game quit with error code 1."
+        );
     }
 }
