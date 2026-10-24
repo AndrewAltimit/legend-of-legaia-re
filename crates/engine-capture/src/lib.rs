@@ -47,6 +47,12 @@ pub mod melee_hits;
 pub mod phase_gate;
 pub mod script_gate;
 
+/// The line `play-window` logs once its event loop exists, i.e. once the
+/// X11 startup race is behind it. The capture drivers retry a `SIGSEGV`
+/// child that died without it (`legaia_parity::window_child`); one with it on
+/// stderr is a different crash and is never retried.
+pub const EVENT_LOOP_OPEN_MARKER: &str = "play-window: event loop open";
+
 /// Engine ticks run between seeding a session from a capture and sampling
 /// it.
 pub const SETTLE_TICKS: u64 = 60;

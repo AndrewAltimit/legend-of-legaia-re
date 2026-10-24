@@ -25,15 +25,29 @@ mod launcher_window;
 use anyhow::Result;
 use clap::Parser;
 use cli::{Cli, Cmd};
+#[cfg(feature = "oracles")]
+use commands::{cmd_audio_trace, cmd_mode_trace, cmd_pcm_trace, cmd_sim_trace, cmd_vram_oracle};
 use commands::{
-    cmd_audio_trace, cmd_chain_editor, cmd_clut_trace, cmd_config, cmd_encounter, cmd_equip,
-    cmd_export_glb, cmd_gte_replay, cmd_info, cmd_inventory, cmd_list_scenes, cmd_load,
-    cmd_man_scripts, cmd_mode_trace, cmd_pcm_trace, cmd_play, cmd_replay, cmd_save,
-    cmd_save_select, cmd_scenarios, cmd_seru_capture, cmd_sim_trace, cmd_target_pick, cmd_title,
-    cmd_vram_oracle,
+    cmd_chain_editor, cmd_clut_trace, cmd_config, cmd_encounter, cmd_equip, cmd_export_glb,
+    cmd_gte_replay, cmd_info, cmd_inventory, cmd_list_scenes, cmd_load, cmd_man_scripts, cmd_play,
+    cmd_replay, cmd_save, cmd_save_select, cmd_scenarios, cmd_seru_capture, cmd_target_pick,
+    cmd_title,
 };
 use legaia_engine_shell::window::{self, cmd_play_str, cmd_play_window, cmd_record};
 use std::path::Path;
+
+/// The subcommands behind the `oracles` feature, named so a build without it
+/// says what to rebuild instead of clap's bare "unrecognized subcommand".
+#[cfg(not(feature = "oracles"))]
+const ORACLE_SUBCOMMANDS: &[&str] = &[
+    "vram-oracle",
+    "mode-trace",
+    "sim-trace",
+    "audio-trace",
+    "pcm-trace",
+    "retail-compare",
+    "cast-sequence-score",
+];
 
 /// Restore the default SIGPIPE disposition so piping stdout (JSONL traces,
 /// scene listings) into `head` terminates quietly instead of panicking with
@@ -48,6 +62,16 @@ fn reset_sigpipe() {
 fn main() -> Result<()> {
     reset_sigpipe();
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    #[cfg(not(feature = "oracles"))]
+    if let Some(name) = std::env::args()
+        .nth(1)
+        .filter(|a| ORACLE_SUBCOMMANDS.contains(&a.as_str()))
+    {
+        anyhow::bail!(
+            "`{name}` is a parity-oracle subcommand, built only with the `oracles` feature: \
+             cargo build -p legaia-engine-shell --features oracles"
+        );
+    }
     let cli = Cli::parse();
     // No subcommand (a double-click): the first-run launcher picks the disc,
     // then boots `play-window` on it - in this process when no picker window
@@ -67,7 +91,9 @@ fn main() -> Result<()> {
         fatal_panic::install();
     }
     match cmd {
+        #[cfg(feature = "oracles")]
         Cmd::RetailCompare(args) => legaia_parity::retail_compare_cli::run(args),
+        #[cfg(feature = "oracles")]
         Cmd::CastSequenceScore(args) => legaia_parity::cast_sequence::run(args),
         Cmd::Info {
             scene,
@@ -163,6 +189,7 @@ fn main() -> Result<()> {
             op49_window_census,
             p2_gates,
         ),
+        #[cfg(feature = "oracles")]
         Cmd::VramOracle {
             scene,
             extracted_root,
@@ -190,6 +217,7 @@ fn main() -> Result<()> {
             rows_csv: rows_csv.as_deref(),
             clut_regions,
         }),
+        #[cfg(feature = "oracles")]
         Cmd::ModeTrace {
             scene,
             extracted_root,
@@ -209,6 +237,7 @@ fn main() -> Result<()> {
             out: &out,
             strict,
         }),
+        #[cfg(feature = "oracles")]
         Cmd::SimTrace {
             scene,
             extracted_root,
@@ -224,6 +253,7 @@ fn main() -> Result<()> {
             !no_field_live,
             &out,
         ),
+        #[cfg(feature = "oracles")]
         Cmd::AudioTrace {
             scene,
             extracted_root,
@@ -255,6 +285,7 @@ fn main() -> Result<()> {
             pin_bgm,
             retail_keyon_owner,
         }),
+        #[cfg(feature = "oracles")]
         Cmd::PcmTrace {
             scene,
             extracted_root,
@@ -577,6 +608,7 @@ fn main() -> Result<()> {
 /// per-band overlap and per-tile (64x64) diff if `tiles` is set; writes
 /// the colour-coded diff PNG when `diff_png` is provided.
 #[allow(clippy::too_many_arguments)]
+#[cfg(feature = "oracles")]
 struct VramOracleArgs<'a> {
     scene: Option<&'a str>,
     extracted_root: &'a Path,
@@ -593,6 +625,7 @@ struct VramOracleArgs<'a> {
 }
 
 /// Phase-E3 mode-trace oracle - args struct for `cmd_mode_trace`.
+#[cfg(feature = "oracles")]
 struct ModeTraceArgs<'a> {
     scene: Option<&'a str>,
     extracted_root: &'a Path,
@@ -605,6 +638,7 @@ struct ModeTraceArgs<'a> {
 }
 
 /// Audio-trace oracle - args struct for `cmd_audio_trace`.
+#[cfg(feature = "oracles")]
 struct AudioTraceArgs<'a> {
     scene: Option<&'a str>,
     extracted_root: &'a Path,
@@ -622,6 +656,7 @@ struct AudioTraceArgs<'a> {
     retail_keyon_owner: Option<u16>,
 }
 
+#[cfg(feature = "oracles")]
 struct PcmTraceArgs<'a> {
     scene: Option<&'a str>,
     extracted_root: &'a Path,

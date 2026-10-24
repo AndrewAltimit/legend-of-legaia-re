@@ -37,6 +37,10 @@ environment and arguments, to re-run by hand), and the products: `report.md`,
 `report.json` and `strip.png`. **Every one of them carries retail pixels or
 RAM**: keep the directory out of the repo.
 
+The driver builds `legaia-engine` with `engine-shell`'s `oracles` feature:
+`cast-sequence-score` and the recorder's frame shots exist only in that build,
+and a binary built without it writes `meta.csv` but no `e_<tick>.png`.
+
 Flags worth knowing:
 
 | Flag | Effect |

@@ -284,6 +284,7 @@ fn row_has_data(blob: &[u8], x: usize, y: usize, w: usize) -> bool {
 /// before returning the sampled engine VRAM. This catches dynamic
 /// uploads (NPC palette swaps, fog ramps, per-frame CLUT mutations)
 /// that the pure pre-pass doesn't see.
+#[cfg(feature = "oracles")]
 fn resolve_vram_inputs(args: &VramOracleArgs<'_>) -> Result<ResolvedVram> {
     use legaia_ram_image::ScenarioManifest;
 
@@ -327,12 +328,14 @@ fn resolve_vram_inputs(args: &VramOracleArgs<'_>) -> Result<ResolvedVram> {
     }
 }
 
+#[cfg(feature = "oracles")]
 struct ResolvedVram {
     scene_name: String,
     runtime_bytes: Vec<u8>,
     source_label: String,
 }
 
+#[cfg(feature = "oracles")]
 pub(crate) fn cmd_vram_oracle(args: VramOracleArgs<'_>) -> Result<()> {
     let resolved = resolve_vram_inputs(&args)?;
     let engine_bytes = build_engine_vram_bytes_with_frames(
@@ -442,6 +445,7 @@ pub(crate) fn cmd_vram_oracle(args: VramOracleArgs<'_>) -> Result<()> {
 ///
 /// Each entry is `(label, y, x_start, width)`; width is in pixels (not
 /// bytes), and a CLUT row is one pixel tall by definition.
+#[cfg(feature = "oracles")]
 const VRAM_CLUT_BANDS: &[(&str, usize, usize, usize)] = &[
     // Row-479 NPC palette band (see docs/formats/npc-palette.md +
     // project_row479_global_hue_ramp memory). Scene-pack TIMs upload
@@ -459,6 +463,7 @@ const VRAM_CLUT_BANDS: &[(&str, usize, usize, usize)] = &[
     ("framebuffer scanline y=128  x=  0..640", 128, 0, 640),
 ];
 
+#[cfg(feature = "oracles")]
 fn write_vram_rows_csv(path: &Path, engine: &[u8], runtime: &[u8]) -> Result<()> {
     let mut s = String::new();
     s.push_str("y,runtime_nz,engine_nz,overlap,runtime_only,engine_only\n");
@@ -494,6 +499,7 @@ fn write_vram_rows_csv(path: &Path, engine: &[u8], runtime: &[u8]) -> Result<()>
     Ok(())
 }
 
+#[cfg(feature = "oracles")]
 fn print_vram_clut_region_report(engine: &[u8], runtime: &[u8]) {
     println!();
     println!("VRAM CLUT-region health (engine vs runtime):");

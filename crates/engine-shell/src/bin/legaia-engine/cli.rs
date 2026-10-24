@@ -262,6 +262,7 @@ pub(crate) enum Cmd {
     ///     match in the texpage region (y ≥ 256) and fails with the
     ///     first divergent (row, col).
     #[command(display_order = 23)]
+    #[cfg(feature = "oracles")]
     VramOracle {
         /// CDNAME scene name (e.g. `town01`). Required in explicit mode;
         /// derived from the scenario's `expected_active_scene` in
@@ -345,6 +346,7 @@ pub(crate) enum Cmd {
     /// See `crates/parity/src/mode_trace_oracle.rs` for the
     /// long-form rationale.
     #[command(display_order = 24)]
+    #[cfg(feature = "oracles")]
     ModeTrace {
         /// CDNAME scene name (e.g. `town01`). Required in explicit
         /// mode; derived from the scenario's `expected_active_scene`
@@ -391,6 +393,7 @@ pub(crate) enum Cmd {
     /// `scripts/recomp/trace_diff.py`. See
     /// `docs/tooling/recomp-differential.md`.
     #[command(display_order = 39)]
+    #[cfg(feature = "oracles")]
     SimTrace {
         /// CDNAME scene name (e.g. `town01`).
         #[arg(long)]
@@ -446,6 +449,7 @@ pub(crate) enum Cmd {
     /// retail engine does. `--bgm-id` is a manual boot-time override
     /// for scenes whose prescripts don't kick off audio.
     #[command(display_order = 25)]
+    #[cfg(feature = "oracles")]
     AudioTrace {
         /// CDNAME scene name (e.g. `town01`). Required in explicit
         /// mode; derived from the scenario's `expected_active_scene`
@@ -547,6 +551,7 @@ pub(crate) enum Cmd {
     /// disc-gated `pcm_oracle` test: retail audible AND engine silent
     /// → exit non-zero. Anything finer is informational.
     #[command(display_order = 26)]
+    #[cfg(feature = "oracles")]
     PcmTrace {
         /// CDNAME scene name (e.g. `town01`). Required in explicit
         /// mode; derived from the scenario's `expected_active_scene`
@@ -1544,10 +1549,12 @@ pub(crate) enum Cmd {
     },
     /// Retail comparison corpus (`docs/tooling/retail-compare.md`).
     #[command(display_order = 29)]
+    #[cfg(feature = "oracles")]
     RetailCompare(legaia_parity::retail_compare_cli::RetailCompareArgs),
     /// Score one cast against retail frame by frame
     /// (`docs/tooling/cast-sequence-oracle.md`).
     #[command(display_order = 30)]
+    #[cfg(feature = "oracles")]
     CastSequenceScore(legaia_parity::cast_sequence::CastSequenceArgs),
 }
 
@@ -1593,6 +1600,7 @@ pub(crate) enum ConfigCmd {
 }
 
 /// `--retail-keyon-owner` value: hex with or without a `0x` prefix.
+#[cfg(feature = "oracles")]
 fn parse_hex_u16(v: &str) -> Result<u16, String> {
     u16::from_str_radix(v.trim_start_matches("0x"), 16).map_err(|e| e.to_string())
 }

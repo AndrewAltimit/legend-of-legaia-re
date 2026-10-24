@@ -392,6 +392,7 @@ number, is the durable identity of a capture.
 ## The engine side: `legaia-engine sim-trace`
 
 ```bash
+cargo build -p legaia-engine-shell --release --features oracles --bin legaia-engine
 LEGAIA_DISC_BIN=... # or --disc / --extracted-root
 legaia-engine sim-trace --scene town01 --disc "$LEGAIA_DISC_BIN" \
     --frames 100 --out /tmp/scratch/engine_town01.jsonl

@@ -1,7 +1,8 @@
 //! Headless subcommand implementations: scene inspection (`info`,
 //! `list-scenes`, `clut-trace`, `man-scripts`), the parity/trace oracles
 //! (`vram-oracle`, `mode-trace`, `audio-trace`, `pcm-trace`, `replay`,
-//! `scenarios`), the save/load smoke commands, and the synthetic
+//! `scenarios`; the ones that need the parity crate build with the
+//! `oracles` feature), the save/load smoke commands, and the synthetic
 //! session drivers (`battle`, `inventory`, `equip`, `title`, ...).
 //!
 //! This module is a thin coordinator: the command families live in the
@@ -10,7 +11,9 @@
 //! helper stays here because it is used across several families.
 
 use crate::cli::ConfigCmd;
-use crate::{AudioTraceArgs, ModeTraceArgs, PcmTraceArgs, VramOracleArgs, decode_str_frame_count};
+use crate::decode_str_frame_count;
+#[cfg(feature = "oracles")]
+use crate::{AudioTraceArgs, ModeTraceArgs, PcmTraceArgs, VramOracleArgs};
 use anyhow::{Context, Result};
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_scene::scene_assets::SceneAssets;
@@ -18,22 +21,26 @@ use legaia_engine_scene::scene_resources::SceneResources;
 use legaia_engine_scene_host::scene_host::SceneTickEvent;
 use legaia_engine_session::mode_trace::ModeTraceFrame;
 use legaia_engine_shell::replay::ReplayFile;
+#[cfg(feature = "oracles")]
 use legaia_parity::audio_trace_oracle::{
     AudioTraceFrame, audio_trace_to_jsonl, engine_trace_from_paths, first_audio_trace_divergence,
     first_audio_trace_divergence_multi, load_runtime_audio_trace_from_save,
     load_runtime_audio_trace_jsonl,
 };
+#[cfg(feature = "oracles")]
 use legaia_parity::mode_trace_oracle::{
     build_engine_mode_trace, first_mode_trace_divergence, load_runtime_mode_trace_from_save,
     mode_trace_to_jsonl,
 };
+#[cfg(feature = "oracles")]
 use legaia_parity::pcm_oracle::{
     EnginePcmTrace, PcmStats, build_engine_pcm_trace, first_pcm_divergence, pcm_stats,
     retail_reference_pcm, write_wav,
 };
+#[cfg(feature = "oracles")]
 use legaia_parity::vram_oracle::{
     TexpageDivergence, build_engine_vram_bytes_with_frames, first_texpage_divergence,
-    load_runtime_vram_from_save, vram_to_le_bytes,
+    load_runtime_vram_from_save,
 };
 use legaia_prot::cdname;
 use std::path::{Path, PathBuf};

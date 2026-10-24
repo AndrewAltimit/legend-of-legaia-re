@@ -84,7 +84,7 @@ def main() -> int:
     if not a.no_build:
         subprocess.run(
             ["cargo", "build", "-p", "legaia-engine-shell", "--profile", PROFILE,
-             "--bin", "legaia-engine"],
+             "--features", "oracles", "--bin", "legaia-engine"],
             cwd=REPO, check=True,
         )
     exe = REPO / "target" / PROFILE / "legaia-engine"

@@ -86,7 +86,10 @@ The subcommand is `legaia-engine retail-compare`, which takes `--library`,
 `--extracted-root`, `--manifest`, `--out`, `--images`, `--filter`,
 `--flags-first`, `--write-baseline` (the driver's `--bless`),
 `--check-baseline` (the driver's `--check`), and `--render` / `--smoke-check`
-(the driver's `--smoke`, [below](#the-smoke-tier)).
+(the driver's `--smoke`, [below](#the-smoke-tier)). It builds only with
+`engine-shell`'s `oracles` feature, which the driver passes to its own
+`cargo build`; a binary built without it names the feature instead of
+running ([crate README](../../crates/engine-shell/README.md#parity-oracles)).
 
 ## Reading the report
 

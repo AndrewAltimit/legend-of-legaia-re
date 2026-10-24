@@ -267,6 +267,8 @@ impl PlayWindowApp {
 /// ([`PlayWindowApp::capture_cast_sequence_frame`]).
 struct CastSeqRecorder {
     dir: std::path::PathBuf,
+    /// Shot interval in ticks (read only by the `oracles` shot path).
+    #[cfg_attr(not(feature = "oracles"), allow(dead_code))]
     every: u64,
     tail: u64,
     max: u64,
@@ -315,6 +317,11 @@ impl PlayWindowApp {
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(d)
             };
+            #[cfg(not(feature = "oracles"))]
+            eprintln!(
+                "cast sequence: built without the `oracles` feature - no frame shots \
+                 (cargo build -p legaia-engine-shell --features oracles)"
+            );
             let mut meta = std::io::BufWriter::new(std::fs::File::create(dir.join("meta.csv")).ok()?);
             use std::io::Write as _;
             let _ = writeln!(
@@ -368,7 +375,14 @@ impl PlayWindowApp {
             eprintln!("cast sequence: done band at tick {tick} (state 0x{st:02X})");
             rec.done = Some(tick);
         }
+        // The shots crop and box-filter through the parity crate's compared
+        // frame (`retail_compare_image`), so they need the `oracles` feature;
+        // without it the recorder writes `meta.csv` / `cam.csv` only.
+        #[cfg_attr(not(feature = "oracles"), allow(unused_mut))]
         let mut shot = String::new();
+        #[cfg(not(feature = "oracles"))]
+        let _ = (r, target);
+        #[cfg(feature = "oracles")]
         if (tick - start).is_multiple_of(rec.every) && rec.shots < rec.max {
             let capture = r.capture_rgba_settled(target);
             match capture.and_then(|img| {

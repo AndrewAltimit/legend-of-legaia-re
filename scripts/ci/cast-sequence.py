@@ -281,7 +281,7 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     if not a.no_build and not a.retail_only:
         subprocess.run(["cargo", "build", "-p", "legaia-engine-shell", "--profile", PROFILE,
-                        "--bin", "legaia-engine"], cwd=REPO, check=True)
+                        "--features", "oracles", "--bin", "legaia-engine"], cwd=REPO, check=True)
     if not a.score_only and not a.engine_only:
         if not run_retail(a, out):
             return 0 if not os.environ.get("LEGAIA_DISC_BIN") else 1
