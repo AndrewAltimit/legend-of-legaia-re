@@ -2795,6 +2795,18 @@ own frame:
 | a monster's clip age | Tail Fire's hit rays run on the engine's own clock ([above](#the-frames-either-side-of-a-gated-capture)); both `battle_gimard_tail_fire_*` frames fell |
 | `DoneHold` | the Done band's captures part on where the replay left the bodies (`noa_levelup_fight_pre` fell) |
 
+The retake is counted in the child's ticks, and with the child in step with
+the seed ([above](#the-image-child-plays-the-same-fight)) those are the
+seed's ticks: the gate tick is the one the seed sampled, and the retake is
+`lag` ticks before it. `battle_melee_hit_spark` (frame step `3`, lag `6`)
+gates on child tick `536`, the seed's last, and retakes at `530`; a sweep of
+the capture tick over `526..536` draws one frame per three-tick pass, and the
+pass at `530..532` scores best (`0.893`, against `0.812` a pass earlier and
+`0.768` a pass later). The `0.908` this state read before the halves were in
+step was the frame of another fight: the child pressed one tick late from
+its first press, its world left the seed's within thirty ticks, and it gated
+two ticks later on a different realisation.
+
 **The camera.** A camera still closing on its framing draws the displayed
 frame well short of the RAM's pose, and the ease is fastest at its start.
 The walker `FUN_8002149C` steps each component by `increment * frame_step`
