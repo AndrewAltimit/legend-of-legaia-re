@@ -280,6 +280,11 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets --workspace -- -D warnings
 
+      # The parity-oracle subcommands build only with engine-shell's
+      # default-off `oracles` feature, so the workspace pass above skips them.
+      - name: Clippy (engine-shell oracles)
+        run: cargo clippy -p legaia-engine-shell --all-targets --features oracles -- -D warnings
+
       - name: wasm32 type-check
         run: scripts/ci/check-wasm-target.sh
 
@@ -317,6 +322,11 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --all-targets --workspace -- -D warnings
+
+      # The parity-oracle subcommands build only with engine-shell's
+      # default-off `oracles` feature, so the workspace pass above skips them.
+      - name: Clippy (engine-shell oracles)
+        run: cargo clippy -p legaia-engine-shell --all-targets --features oracles -- -D warnings
 
       # `release-test` is the release opt-level without thin LTO and with
       # 16 codegen units (Cargo.toml): the test harnesses are uncacheable by

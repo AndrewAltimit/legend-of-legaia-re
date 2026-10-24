@@ -516,6 +516,10 @@ fi
 
 printf '[pre-commit] cargo clippy --all-targets --workspace -- -D warnings\n'
 cargo clippy --all-targets --workspace -- -D warnings
+# engine-shell's parity-oracle subcommands sit behind its default-off
+# `oracles` feature, which the workspace pass does not enable.
+printf '[pre-commit] cargo clippy -p legaia-engine-shell --all-targets --features oracles -- -D warnings\n'
+cargo clippy -p legaia-engine-shell --all-targets --features oracles -- -D warnings
 
 # Port-tag drift check (warn-only). Surfaces newly-added `FUN_<addr>` citations
 # in engine-crate Rust files that lack a matching `// PORT:` or `// REF:` tag.
