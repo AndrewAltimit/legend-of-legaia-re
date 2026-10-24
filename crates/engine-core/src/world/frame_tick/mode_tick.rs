@@ -620,6 +620,10 @@ impl World {
                 // with the close-up accumulator the same pass advances.
                 // Ahead of the SM it trailed the accumulator by a frame.
                 self.tick_battle_ambient();
+                // The same pass then runs the rumble words down
+                // (`0x80047164..0x8004725C`, after the `ctx[+0x328]`
+                // accumulator), ahead of the anim tick's hit writes.
+                self.tick_battle_rumble_decay();
                 out
             }
             SceneMode::Field => {

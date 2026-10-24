@@ -4,7 +4,9 @@
 
 use super::*;
 use legaia_engine_motion_vm::ambient_motion::{Ramp, RampKind, RampScheduler};
-use legaia_engine_system::rumble::{ActuatorLayout, RumbleActuator, RumbleFrame, RumbleMotors};
+use legaia_engine_system::rumble::{
+    ActuatorLayout, BattleRumbleDecay, BattleRumbleWrite, RumbleActuator, RumbleFrame, RumbleMotors,
+};
 
 /// Ramp destination tags: the words' `gp` offsets (`gp = 0x8007B318`).
 const DEST_PULSE: u32 = 0x614;
@@ -20,8 +22,14 @@ pub struct WorldRumble {
     ramps: RampScheduler,
     /// `FUN_80018DB0`'s cadence counter.
     pub actuator: RumbleActuator,
+    /// The battle side's hold timer and decay rates, run down by the battle
+    /// frame driver (`gp+0xA1C` / `gp+0xA30` / `gp+0xA34`).
+    pub battle_decay: BattleRumbleDecay,
     /// The payload the last tick produced (`0x800915DA` / `0x800915DB`).
     pub payload: [u8; 2],
+    /// Ticks left of an encounter jolt before the battle intro starts
+    /// zeroing the words (`World::encounter_rumble`).
+    pub encounter_window: u8,
     /// The small motor's last eight pulse bits, newest in bit 0, for
     /// [`Self::frame`].
     pulse_history: u8,
@@ -63,6 +71,13 @@ impl WorldRumble {
         self.motors = RumbleMotors::default();
     }
 
+    /// A battle-side write ([`BattleRumbleWrite::apply`]). It leaves a field
+    /// ramp alone, as retail's shared ramp pool does; none outlives the
+    /// field.
+    pub fn battle_write(&mut self, w: BattleRumbleWrite) {
+        w.apply(&mut self.motors, &mut self.battle_decay);
+    }
+
     /// One frame: the ramps, then the actuator kernel.
     pub fn step(&mut self, speed: u8) {
         for w in self.ramps.tick(speed) {
@@ -93,6 +108,46 @@ impl World {
     /// (`_DAT_800845A8 != 0`), the gate on the field scripts' rumble writes.
     pub fn event_vibration_off(&self) -> bool {
         self.toggles.retail_options.vibration_events != 0
+    }
+
+    /// Whether the options screen's Battles vibration row is Off
+    /// (`0x800845C8 != 0`), the gate on every battle-side rumble write.
+    pub fn battle_vibration_off(&self) -> bool {
+        self.toggles.retail_options.vibration_battles != 0
+    }
+
+    /// Whether the Encounters vibration row is Off (`0x800845CC != 0`), the
+    /// gate on the encounter trigger's rumble.
+    pub fn encounter_vibration_off(&self) -> bool {
+        self.toggles.retail_options.vibration_encounters != 0
+    }
+
+    /// A battle-side rumble write behind the Battles vibration row, as every
+    /// gated writer tests it (`lw v0,0x45c8(..)` / `bnez` past the stores).
+    pub fn battle_rumble(&mut self, w: BattleRumbleWrite) {
+        if !self.battle_vibration_off() {
+            self.rumble.battle_write(w);
+        }
+    }
+
+    /// The battle controller's spawn seeds the decay rates and clears the
+    /// hold (`FUN_80055B6C`, `0x80055B7C..0x80055BB8`); the words themselves
+    /// carry over.
+    ///
+    /// PORT: FUN_80055B6C (`0x80055B7C..0x80055BB8`, the rumble seed only)
+    pub(crate) fn seed_battle_rumble(&mut self) {
+        self.rumble.battle_decay = BattleRumbleDecay::default();
+    }
+
+    /// One battle frame of `FUN_80046A20`'s rumble decay, on the pass's frame
+    /// step ([`BattleRumbleDecay::step`]). A vsync with no battle pass does
+    /// not run the driver at all.
+    pub(crate) fn tick_battle_rumble_decay(&mut self) {
+        let step = i32::from(self.battle.anim_pass_vsyncs);
+        if step > 0 {
+            let r = &mut self.rumble;
+            r.battle_decay.step(&mut r.motors, step);
+        }
     }
 
     /// Advance the rumble state one tick (`FUN_80018DB0` runs once a frame

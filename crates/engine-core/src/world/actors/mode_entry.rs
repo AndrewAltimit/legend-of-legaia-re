@@ -289,6 +289,8 @@ impl World {
         // exit does.
         // REF: FUN_801DE914
         self.teardown_battle_effects();
+        // The battle controller's spawn seeds the rumble decay rates.
+        self.seed_battle_rumble();
         // Sparring fight: resolve the battle-stage id exactly as retail's
         // battle-entry tail does - default 0, and raise it to the tutorial
         // stage only when the disc's one-shot arm flag is set, consuming the

@@ -882,9 +882,10 @@ impl World {
     /// (`FUN_80046A20`, `0x8004713C..0x80047160`, `DAT_1F800393 << 3` a
     /// frame); `add` is that gain since the last call.
     ///
-    /// Not ported: selector `2`'s writes to the controller rumble words
-    /// (`_DAT_8007B92C` / `_DAT_8007B930`, `World::rumble`) and their decay
-    /// rates `gp+0xA30..0xA34`, `0x8004A838..0x8004A8BC`.
+    /// Selector `2`'s puff also rumbles the controller, behind the Battles
+    /// vibration row (`0x8004A838..0x8004A8BC`): two more `rand()` draws,
+    /// only while the row is on, give the pulse and level words
+    /// ([`legaia_engine_system::rumble::burning_body_write`]).
     ///
     /// PORT: FUN_8004998C (`0x8004A5FC..0x8004A8D8`, the selector emit loop)
     pub(in crate::world) fn emit_battle_burn_sprites(&mut self, add: u16) {
@@ -944,6 +945,12 @@ impl World {
                     && let Some(fx) = ifx::burn_effect(selector, red)
                 {
                     self.try_spawn_effect(fx, p, facing & 0xFFF);
+                    if selector == 2 && !self.battle_vibration_off() {
+                        let r0 = self.next_rand();
+                        let r1 = self.next_rand();
+                        self.rumble
+                            .battle_write(legaia_engine_system::rumble::burning_body_write(r0, r1));
+                    }
                 }
             }
         }
@@ -1388,10 +1395,11 @@ impl World {
     /// scale `node[+0x58] << 1` (`sll a3,a3,0x11` / `sra a3,a3,0x10`). The
     /// angle trio at `sp+0x18` is whatever the walk's stack held (the table
     /// arm's stores); the part is a flat ring, seated unturned here. The
-    /// screen-shake stores that follow (`0x801DEF24..0x801DEF54`, under
-    /// `0x800845C8 == 0`) are not carried.
+    /// controller rumble stores that follow (`0x801DEF24..0x801DEF54`, under
+    /// `0x800845C8 == 0`) jolt both motors to `0x80`, fading at `0xC` a
+    /// frame step.
     ///
-    /// PORT: FUN_801DEA50 (`0x801DEEC0..0x801DEF08`, the floor part)
+    /// PORT: FUN_801DEA50 (`0x801DEEC0..0x801DEF54`, the floor part and its rumble)
     pub(super) fn seat_effect_floor_part(&mut self, i: usize) {
         let Some(a) = self.actors.get(i) else {
             return;
@@ -1407,6 +1415,7 @@ impl World {
             [0; 3],
             (radius << 1) as u16,
         );
+        self.battle_rumble(legaia_engine_system::rumble::battle_writes::FLOOR_PART);
     }
 
     /// `*(actor[+0x22C]) + 0x58`, the render node's size: the record size

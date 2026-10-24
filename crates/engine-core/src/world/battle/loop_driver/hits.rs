@@ -748,6 +748,16 @@ impl World {
             t.accumulate_hp_bar(i32::from(dmg));
             t.damage_accum < u32::from(t.hp)
         };
+        // The landed hit's rumble, after the Spirit accrual: a party
+        // defender takes the full jolt, a party attacker a lighter one
+        // (stored second, so it wins when both seats are party).
+        // PORT: FUN_801EC3E4 (`0x801EDCD0..0x801EDD58`, the hit's rumble)
+        self.melee_rumble(
+            attacker,
+            target,
+            legaia_engine_system::rumble::battle_writes::HIT_PARTY_STRUCK,
+            legaia_engine_system::rumble::battle_writes::HIT_PARTY_ATTACKS,
+        );
         // The kill check's Seru absorb (`0x801EE1C0..0x801EE2E8`), ahead of
         // the impact tint as in retail - its `rand()` sits between the
         // damage rolls and the tint. Retail reaches the kill compare only on
@@ -774,6 +784,12 @@ impl World {
         let class = self.attacker_impact_class(attacker_i);
         if class < legaia_engine_battle::move_power::IMPACT_CLASS_LIMIT {
             self.arm_impact_tint(target_i, class);
+        }
+        // The kind ladder's `5` arm (the Rot roll) jolts a party defender
+        // ahead of its immunity test, whether or not the roll lands.
+        // PORT: FUN_801EC3E4 (`0x801EE514..0x801EE568`, the Rot arm's rumble)
+        if class == 5 && target < self.party.party_count {
+            self.battle_rumble(legaia_engine_system::rumble::battle_writes::ROT_PARTY_STRUCK);
         }
         // The reaction this strike commits on the defender (retail's `s7`,
         // committed to the defender's `+0x1DA`); the grunt below compares it
@@ -994,6 +1010,9 @@ impl World {
     /// * a party attacker carrying ability bit `0x4000` cancels the block
     ///   after the verdict (`0x801ECAFC..0x801ECB5C`).
     ///
+    /// Both granting arms rumble the controller before that cancel
+    /// ([`Self::melee_rumble`]).
+    ///
     /// The approach terms `ctx[+0x6D2]` / `+0x6D4` are
     /// [`crate::world::BattleState::attack_ramp`] / `guard_ramp`
     /// ([`Self::track_block_approach_terms`]); the damage roll that follows
@@ -1045,8 +1064,19 @@ impl World {
                 .is_some_and(|a| a.battle.current_anim == vm::anim_vm::DYNAMIC_ART_SLOT_B),
         };
         let mut blocked = block_roll(&roll, &mut || self.next_rand());
+        // A block the roll grants jolts the controller (`0x801EC890..
+        // 0x801EC91C`), as does the juggle-window arm that forces one
+        // (`0x801EC974..0x801ECA00`) - both ahead of the block-break cancel.
+        let (defends, attacks) = (
+            legaia_engine_system::rumble::battle_writes::BLOCK_PARTY_DEFENDS,
+            legaia_engine_system::rumble::battle_writes::BLOCK_PARTY_ATTACKS,
+        );
+        if blocked {
+            self.melee_rumble(attacker, target, defends, attacks);
+        }
         if in_block && reacting {
             blocked = true;
+            self.melee_rumble(attacker, target, defends, attacks);
         } else if reacting {
             blocked = false;
         }
@@ -1059,6 +1089,27 @@ impl World {
             blocked = false;
         }
         blocked.then_some(block_entry)
+    }
+
+    /// The melee kernel's two-seat rumble shape: `party_struck` when the
+    /// defender is a party seat (`sltiu v0,<target>,3`), then
+    /// `party_attacks` when the attacker is (`andi v0,s6,0xff; sltiu`),
+    /// each behind the Battles vibration row.
+    ///
+    /// PORT: FUN_801EC3E4 (the block and hit arms' `0x800845C8`-gated stores)
+    fn melee_rumble(
+        &mut self,
+        attacker: u8,
+        target: u8,
+        party_struck: legaia_engine_system::rumble::BattleRumbleWrite,
+        party_attacks: legaia_engine_system::rumble::BattleRumbleWrite,
+    ) {
+        if target < self.party.party_count {
+            self.battle_rumble(party_struck);
+        }
+        if attacker < self.party.party_count {
+            self.battle_rumble(party_attacks);
+        }
     }
 
     /// The defender's `+0x1F7` byte - the **juggle window**. Its one writer

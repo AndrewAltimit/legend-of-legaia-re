@@ -4,6 +4,12 @@
 use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
+/// Vsyncs a retail encounter's controller jolt lasts: the game-mode-`8`
+/// window between the entity SM's `0xFF` stores and the intro overlay's
+/// first zeroing (PCSX-Redux capture of `rim_elm_queen_bee_battle`, both
+/// words `0xFF` for six vsyncs before mode `9`).
+pub const ENCOUNTER_JOLT_VSYNCS: u8 = 6;
+
 impl World {
     /// Field-step trigger. Engines call this once per "the player walked
     /// one map cell" (typically when the player actor's grid coord moves)
@@ -281,6 +287,7 @@ impl World {
         // whose length a caller set to something else (a test or tool
         // shortening the bracket) keeps its own.
         if self.battle.intro.is_none() {
+            self.encounter_rumble();
             use legaia_render_kernels::battle_intro_styles::{
                 INTRO_DURATION_FRAMES, INTRO_DURATION_FRAMES_SWIRL, intro_duration_frames,
                 select_intro_style,
@@ -307,6 +314,7 @@ impl World {
             .as_ref()
             .map(|s| s.transition_frames)
             .unwrap_or(0);
+        self.tick_intro_rumble();
         let mut entity = self.battle.intro.take().unwrap_or_default();
         // `+0x1A` counts display frames against `DAT_801D2458`; the session's
         // own countdown is the same clock read the other way round.
@@ -415,6 +423,44 @@ impl World {
         // Latching, not level-triggered: retail writes the word once, at the
         // end of the spin, and never unwrites it inside the transition.
         self.battle.intro_mode_handoff |= tick.entered_battle_mode;
+    }
+
+    /// The encounter's controller jolt. The entity SM's battle handoff
+    /// (`FUN_801DA51C`, `0x801DA6F0..0x801DA718`, the arm that also stores
+    /// game mode `8`) sets both motor words to `0xFF` unless the options
+    /// screen's Encounters vibration row is Off (`lw v1,0x45cc(v0)` /
+    /// `bnez` at `0x801DA6F8`). It stores no decay rate: nothing in the field
+    /// runs the words down, and the intro overlay zeroes them instead.
+    ///
+    /// Retail's jolt lasts the mode-`8` window, the vsyncs the intro
+    /// overlay (PROT 0979) takes to load before its init and tick zero the
+    /// words: [`ENCOUNTER_JOLT_VSYNCS`] in a retail capture of the Queen Bee
+    /// ambush. The port loads the intro at once, so the window is held
+    /// here, on the transition's first frame, for that many ticks.
+    ///
+    /// PORT: FUN_801DA51C (`0x801DA6F0..0x801DA718`, the encounter rumble)
+    fn encounter_rumble(&mut self) {
+        if !self.encounter_vibration_off() {
+            self.rumble.motors.pulse = 0xFF;
+            self.rumble.motors.level = 0xFF;
+        }
+        self.rumble.encounter_window = ENCOUNTER_JOLT_VSYNCS;
+    }
+
+    /// The intro's own rumble stores: its init (`FUN_801CE8CC`,
+    /// `0x801CF134..0x801CF144`) and every tick of `FUN_801CF5BC`
+    /// (`0x801CF5D8..0x801CF5E4`, unconditional at entry) zero both words,
+    /// so nothing rumbles through the spin. They start once the encounter
+    /// jolt's load window ([`Self::encounter_rumble`]) has run.
+    ///
+    /// PORT: FUN_801CF5BC (`0x801CF5D8..0x801CF5E4` and `0x801CF808..0x801CF844`, the rumble stores)
+    /// REF: FUN_801CE8CC (`0x801CF134..0x801CF144`, the same zeroing at init)
+    fn tick_intro_rumble(&mut self) {
+        if self.rumble.encounter_window > 0 {
+            self.rumble.encounter_window -= 1;
+        } else {
+            self.rumble.motors = Default::default();
+        }
     }
 
     /// Whether the battle-intro spin is still holding the master mode word

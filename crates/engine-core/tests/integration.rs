@@ -45,6 +45,7 @@ mod battle_reaction_stage_precedence;
 mod battle_real_data_chain;
 mod battle_reentry_after_unfinished;
 mod battle_round_retarget;
+mod battle_rumble;
 mod battle_scene_smoke;
 mod battle_shout_cue;
 mod battle_stage_cort_e2e;

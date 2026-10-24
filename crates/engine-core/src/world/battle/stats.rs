@@ -316,6 +316,28 @@ impl World {
         );
     }
 
+    /// The shared finisher's rumble, right after its Spirit stage: a struck
+    /// party seat jolts the controller hard and slow to fade, a struck
+    /// monster lighter, and a Stoned defender not at all - the stores sit
+    /// behind the finisher's `+0x16E & 0x4` test (`0x801DE2E4..0x801DE2E8`,
+    /// the Stone arm jumps past them) and the Battles vibration row.
+    ///
+    /// PORT: FUN_801DDB30 (`0x801DE2E4..0x801DE364`, the rumble stores)
+    pub(in crate::world) fn finisher_rumble(&mut self, defender_slot: u8) {
+        use legaia_engine_system::rumble::battle_writes;
+        if self.raw_status_word(defender_slot)
+            & legaia_engine_battle_vm::status_effects::display_flags::STONE
+            != 0
+        {
+            return;
+        }
+        self.battle_rumble(if defender_slot < self.party.party_count {
+            battle_writes::FINISHER_PARTY_STRUCK
+        } else {
+            battle_writes::FINISHER_MONSTER_STRUCK
+        });
+    }
+
     /// The current spirit-art gauge value (0..=100) for an actor slot, or `0`
     /// for an out-of-range slot. The HUD reads this to draw the spirit bar and
     /// the command menu reads [`Self::spirit_gauge_full`] to gate the Spirit-Art
