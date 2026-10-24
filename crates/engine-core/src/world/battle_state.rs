@@ -880,8 +880,8 @@ pub struct BattleState {
     pub last_rewards: Option<BattleRewards>,
     /// Frames left on the post-battle spoils panel. [`crate::world::World::finish_battle`]
     /// arms it on a monster wipe ([`crate::world::World::SPOILS_BANNER_FRAMES`]) and
-    /// [`crate::world::World::tick`] counts it down; a host draws
-    /// [`crate::world::World::battle_spoils_banner`] while it is non-zero. Without this the
+    /// [`crate::world::World::tick`] counts it down; the panel is up
+    /// ([`crate::world::World::battle_spoils_window_up`]) while it is non-zero. Without this the
     /// XP / gold / drops in [`crate::world::BattleState::last_rewards`] were applied with no
     /// on-screen acknowledgement at all.
     pub(crate) spoils_frames: u16,

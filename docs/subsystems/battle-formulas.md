@@ -1817,8 +1817,8 @@ monsters cannot flee.
   actor's roster id minus one into `ctx+0xAA` when the party has two or more
   members); a wipe opens the loss window `FUN_801D8DE8(0x42, 0)`
   (`0x8004F8F0..0x8004F904`). A non-zero word skips both. Port
-  `VictorySequence::window_opened`, gating `World::battle_spoils_banner` and
-  `World::battle_defeat_banner`. The two elements index the screen-element
+  `VictorySequence::window_opened`, gating `World::battle_spoils_window_up` and
+  `engine-battle-hud::battle_defeat_banner`. The two elements index the screen-element
   placement table and their records are byte-identical
   ([battle-round-loop.md](battle-round-loop.md#the-loss-window-is-the-result-windows-twin)).
 - **The `0x100` bit at battle exit** (`FUN_80046A20`, once the results phase

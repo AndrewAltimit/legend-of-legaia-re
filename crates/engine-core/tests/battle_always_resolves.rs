@@ -266,10 +266,15 @@ fn a_victory_arms_the_spoils_panel() {
         w.presentation.fade.is_none(),
         "the exit fade waits for the results hold"
     );
-    let banner = w
-        .battle_spoils_banner()
-        .expect("the result screen carries the spoils panel");
-    assert!(banner.xp > 0 || banner.gold > 0, "the panel shows the loot");
+    assert!(
+        w.battle_spoils_window_up(),
+        "the result screen carries the spoils panel"
+    );
+    let rewards = w.battle.last_rewards.as_ref().expect("the loot is banked");
+    assert!(
+        rewards.xp_share > 0 || rewards.gold > 0,
+        "the panel shows the loot"
+    );
     assert_eq!(
         w.mode,
         SceneMode::Battle,
@@ -286,7 +291,7 @@ fn a_victory_arms_the_spoils_panel() {
             break;
         }
         assert!(
-            w.battle_spoils_banner().is_some(),
+            w.battle_spoils_window_up(),
             "the panel stays up through the exit fade"
         );
         // While the phase halfword counts (`ctx[+0x6CE] >= 2`) the kind-2
@@ -319,7 +324,7 @@ fn a_victory_arms_the_spoils_panel() {
         "the fade actor dies with the battle: the teardown clears it"
     );
     assert!(
-        w.battle_spoils_banner().is_none(),
+        !w.battle_spoils_window_up(),
         "the windows come down with the battle"
     );
 }

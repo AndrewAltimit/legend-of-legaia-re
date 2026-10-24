@@ -353,7 +353,10 @@ pub fn battle_chrome_sprite_draws(
     // The battle item window's chrome (both packet-pinned 9-slice windows,
     // the breadcrumb tabs and the hand cursor) rides the same atlas layer as
     // the rest of the menu chrome.
-    if let (Some(rects), Some(model)) = (inputs.chrome, w.battle_item_menu_model()) {
+    if let (Some(rects), Some(model)) = (
+        inputs.chrome,
+        legaia_engine_battle_hud::battle_item_menu_model(w),
+    ) {
         out.extend(crate::with_battle_item_frame(&model, |frame| {
             legaia_engine_ui::battle_item_ui::battle_item_window_sprites(
                 inputs.font,
@@ -366,7 +369,10 @@ pub fn battle_chrome_sprite_draws(
     }
     // The magic window (`0x46`): the item window's two windows, the `Lv` /
     // `MP` tabs and the hand; its breadcrumb trail is the HUD's.
-    if let (Some(rects), Some(model)) = (inputs.chrome, w.battle_spell_menu_model()) {
+    if let (Some(rects), Some(model)) = (
+        inputs.chrome,
+        legaia_engine_battle_hud::battle_spell_menu_model(w),
+    ) {
         out.extend(crate::with_battle_spell_frame(&model, |frame| {
             legaia_engine_ui::battle_item_ui::battle_spell_window_sprites(
                 rects, frame, origin, scale,
@@ -703,7 +709,7 @@ pub fn battle_text_draws(
                 // Retail's magic window (state `0x46`): the windowed list,
                 // description and `Lv` / `MP` tabs, not a text column. The
                 // window chrome rides `battle_chrome_sprite_draws`.
-                if let Some(model) = w.battle_spell_menu_model() {
+                if let Some(model) = legaia_engine_battle_hud::battle_spell_menu_model(w) {
                     out.extend(crate::with_battle_spell_frame(&model, |frame| {
                         legaia_engine_ui::battle_item_ui::battle_spell_window_text(
                             font, frame, origin, scale,
@@ -720,7 +726,7 @@ pub fn battle_text_draws(
         // Retail's item window (state 0x3C): the packet-pinned list +
         // description windows with breadcrumbs and the hand cursor. Text half
         // here; the window chrome + hand ride `battle_chrome_sprite_draws`.
-        if let Some(model) = w.battle_item_menu_model() {
+        if let Some(model) = legaia_engine_battle_hud::battle_item_menu_model(w) {
             out.extend(crate::with_battle_item_frame(&model, |frame| {
                 legaia_engine_ui::battle_item_ui::battle_item_window_text(
                     font, frame, origin, scale,
@@ -793,8 +799,8 @@ pub fn battle_tutorial_stage_draws(
 }
 
 /// The post-battle report's windows this frame, with the stage transform:
-/// the loss window when `World::battle_defeat_banner` is up, else the spoils
-/// report (`World::battle_spoils_banner`), else nothing.
+/// the loss window when `legaia_engine_battle_hud::battle_defeat_banner` is
+/// up, else the spoils report (`battle_spoils_banner`), else nothing.
 fn with_battle_result_windows<T: Default>(
     world: &World,
     surface_w: u32,
@@ -807,15 +813,15 @@ fn with_battle_result_windows<T: Default>(
     ) -> T,
 ) -> T {
     let (origin, scale) = legaia_engine_ui::pause_menu::stage_transform(surface_w, surface_h);
-    if let Some(defeat) = world.battle_defeat_banner() {
+    if let Some(defeat) = legaia_engine_battle_hud::battle_defeat_banner(world) {
         let windows =
             legaia_engine_ui::battle_defeat_windows(defeat.line.as_deref(), defeat.slide_y);
         return f(&windows, None, origin, scale);
     }
-    let Some(banner) = world.battle_spoils_banner() else {
+    let Some(banner) = legaia_engine_battle_hud::battle_spoils_banner(world) else {
         return T::default();
     };
-    let leader = world.battle_spoils_leader();
+    let leader = legaia_engine_battle_hud::battle_spoils_leader(world);
     let view = legaia_engine_ui::BattleSpoilsView {
         xp: banner.xp,
         gold: banner.gold,

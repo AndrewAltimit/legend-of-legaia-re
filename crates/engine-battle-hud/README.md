@@ -21,6 +21,12 @@ screen draws this frame; none of them writes the world.
 - **Chrome** - the Begin tab, breadcrumb, panel visibility, the element badge
   table (`ELEMENT_TO_PLAQUE_BADGE`), the encounter and message banners.
 - **Actor names** - the enemy target rows and the intro name labels.
+- **Magic and Item windows** - `battle_spell_menu_model`,
+  `battle_item_menu_model`: owned projections of the open submenu sessions
+  the windowed surfaces draw.
+- **Result windows** - `battle_spoils_banner` (the win's report and level-up
+  lines, `drop_line` / `level_up_line`), `battle_spoils_leader` and
+  `battle_defeat_banner` (the loss window).
 
 The retail behaviour behind each read is in
 [`battle-hud.md`](../../docs/subsystems/battle-hud.md).
@@ -38,7 +44,9 @@ Nothing in `engine-core` names this crate, so a HUD change rebuilds only the
 crates above it. The two battle-screen facts the simulation needs for its own
 decisions stay in `engine-core` as `BattleState` methods: `raseru_forbidden`
 (the command ring refuses the Ra-Seru press) and `result_windows_dy` (the
-results banners carry the windows' raise glide). The glide arithmetic both
+results banners carry the windows' raise glide). When the spoils window is
+up at all is `World::battle_spoils_window_up`, also engine-core's: the
+end-of-battle tests there pin it without composing the window. The glide arithmetic both
 sides share is `LogLaunch::seat_dy` in `engine-battle-vm`.
 
 The battle-state fields the reads take are `pub` on `BattleState` for this

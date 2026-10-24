@@ -312,7 +312,6 @@ mod battle_intro_names_sweep;
 mod battle_item_use_cue;
 mod battle_items_magic;
 mod battle_loot_use_item;
-mod battle_loss_window;
 mod battle_outcome_flag;
 mod battle_party_hp_seed;
 mod battle_queue_gates;

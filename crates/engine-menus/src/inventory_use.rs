@@ -224,7 +224,7 @@ pub struct BattleItemTargetRow {
 
 /// Owned projection of the open **battle** item menu - what both play
 /// hosts hand to `legaia_engine_ui::battle_item_ui` (built by
-/// `World::battle_item_menu_model`, which is the single place the gating
+/// `legaia_engine_battle_hud::battle_item_menu_model`, which is the single place the gating
 /// and text resolution live).
 #[derive(Debug, Clone, Default)]
 pub struct BattleItemMenuModel {

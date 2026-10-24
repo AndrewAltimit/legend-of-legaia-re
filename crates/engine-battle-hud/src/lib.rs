@@ -27,12 +27,16 @@ pub use command_chips::*;
 
 mod actor_names;
 mod chrome;
+mod menu_windows;
 mod phase;
+mod result_windows;
 mod world_sync;
 
 pub use actor_names::*;
 pub use chrome::*;
+pub use menu_windows::*;
 pub use phase::*;
+pub use result_windows::*;
 pub use world_sync::*;
 
 #[cfg(test)]

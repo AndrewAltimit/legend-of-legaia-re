@@ -277,13 +277,13 @@ The victory text is one buffer (`ctx + 0xA9`). The second row is the overlay's `
 
 A drop appends the SCUS template `gp + 0x384` points at: a `0x7C` row break and a `0xC2` item escape that the results frame patches with the item id (`0x8004F5C4..0x8004F600`). It becomes a third row inside the same fixed `288 x 42` box.
 
-Port: `engine-ui::battle_spoils_windows` + `battle_spoils_draws_for`. The template is read off the user's executable (`legaia_ui_formats::screen_elements::drop_line_template`) and the item name spliced in by `World::drop_line`. The two window rects, the text pen and the two numeral columns come from the `noa_levelup_banner` capture at 320x240.
+Port: `engine-ui::battle_spoils_windows` + `battle_spoils_draws_for`. The template is read off the user's executable (`legaia_ui_formats::screen_elements::drop_line_template`) and the item name spliced in by `engine-battle-hud::drop_line`. The two window rects, the text pen and the two numeral columns come from the `noa_levelup_banner` capture at 320x240.
 
 ### The level-up window is one element per party mask
 
 The mask is built from the three per-character level-up bytes `ctx[+0xE..=+0x10]` (bit `k` = character `k`, `0x8004F6F8..0x8004F728`). The seven records `0x45..=0x4B` share one box - content `280 x 12`, sliding from `(16, -24)` to `(16, 14)`, so the band ends at column `302` where the report window's `288`-wide `0x41` ends at `310`. They differ only in the string their `+0x14` word points at: one line naming the masked characters through the `0xC1 k` name escape (character record `k`), or, for all three, a line that names nobody.
 
-Port: the seven strings are read off the user's executable (`legaia_ui_formats::screen_elements::payload_string`, held as `MenuTextTables::level_up_lines`), the names spliced in `World::level_up_line`, and the window drawn at `SPOILS_LEVELUP_RECT`. A disc-free host falls back to one `<name>'s level increased!` line per member.
+Port: the seven strings are read off the user's executable (`legaia_ui_formats::screen_elements::payload_string`, held as `MenuTextTables::level_up_lines`), the names spliced in `engine-battle-hud::level_up_line`, and the window drawn at `SPOILS_LEVELUP_RECT`. A disc-free host falls back to one `<name>'s level increased!` line per member.
 
 ### Window glide
 

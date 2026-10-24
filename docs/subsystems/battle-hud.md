@@ -1291,7 +1291,7 @@ re-points the bar per cursor move (step `0x18`).
 through the shared 9-slice menu-window chrome, the tab-banner 3-slice and the
 save-select hand cell. The projection (dedup row list with the cursor mapped
 into it, disc description, breadcrumb name, same-side target rows) is
-`engine-core::World::battle_item_menu_model` /
+`engine-battle-hud::battle_item_menu_model` /
 `InventoryUseSession::menu_view`, consumed by both play hosts. At target select
 the window draws only the breadcrumb trail; the strip is the HUD builder's
 party bar (`battle_readout_bar_slot` names the pointed member through
@@ -1328,7 +1328,7 @@ the screen keeps only the trail and an `All` plate.
 
 **Port.** `engine-ui::battle_item_ui::battle_spell_window_*` composes the two
 windows, the tabs and the hand through the same 9-slice, tab-banner and hand
-cells the item window uses; `World::battle_spell_menu_model` projects the open
+cells the item window uses; `engine-battle-hud::battle_spell_menu_model` projects the open
 `BattleSpellSession` (rows, hand row, the disc spell table's info lines, the
 caster's record `+0x161` level, the effective MP cost), and
 `engine-screens::with_battle_spell_frame` hands it to both play hosts. Each

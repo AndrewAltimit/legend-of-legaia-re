@@ -2122,7 +2122,7 @@ Three more surfaces sit outside every tier:
 | scene matrix for FX passes | `battle_scene_mvp`, at the stage's 4:3 |
 | labels | `engine-scene::battle_overlay_readers::battle_ui_strings_for_disc`; `SCUS_LABELS` and `OVERLAY_LABELS` share no key |
 | party wipe | `GameOverOutcome::ReturnToTitle`; the whole overlay list is empty for the hold |
-| spoils leader | `World::battle_spoils_leader` |
+| spoils leader | `engine-battle-hud::battle_spoils_leader` |
 | summon seat order | seated before the effect scene-graph tick (`tick_world_effects`) |
 
 **Body blend.** Two retail writers put a whole body into a semi-transparent

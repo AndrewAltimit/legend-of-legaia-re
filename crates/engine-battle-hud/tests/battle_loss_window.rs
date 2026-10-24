@@ -1,9 +1,16 @@
 //! The results frame's loss window (screen element `0x42`, opened by
 //! `FUN_8004E568` at `0x8004F900` on a party wipe) and the spoils window it
 //! replaces.
+//!
+//! These read the battle HUD's result-window projections; the window gate the
+//! simulation keeps (`World::battle_spoils_window_up`) is pinned in
+//! engine-core's `world::tests::battle_special_word`.
 
-use super::*;
+use legaia_engine_battle_hud::{battle_defeat_banner, battle_spoils_banner};
+use legaia_engine_battle_vm::battle_action::BattleEndCause;
 use legaia_engine_battle_vm::battle_party_panel::DefeatText;
+use legaia_engine_core::world::World;
+use legaia_engine_core::world::test_drivers::BattleTestDrivers;
 use legaia_engine_mode::mode::SceneMode;
 
 /// A battle with a named lead, `party` members and one monster.
@@ -46,13 +53,13 @@ fn wipe(world: &mut World) {
 fn a_wipe_opens_the_loss_window_naming_the_lead() {
     let mut solo = loss_world(1, 0);
     wipe(&mut solo);
-    let banner = solo.battle_defeat_banner().expect("loss window up");
+    let banner = battle_defeat_banner(&solo).expect("loss window up");
     assert_eq!(banner.line.as_deref(), Some("Lead SOLO"));
 
     let mut team = loss_world(2, 0);
     wipe(&mut team);
     assert_eq!(
-        team.battle_defeat_banner().and_then(|b| b.line).as_deref(),
+        battle_defeat_banner(&team).and_then(|b| b.line).as_deref(),
         Some("Lead TEAM")
     );
 }
@@ -61,7 +68,7 @@ fn a_wipe_opens_the_loss_window_naming_the_lead() {
 fn a_special_battle_wipe_opens_no_loss_window() {
     let mut world = loss_world(1, 0x100);
     wipe(&mut world);
-    assert!(world.battle_defeat_banner().is_none());
+    assert!(battle_defeat_banner(&world).is_none());
 }
 
 #[test]
@@ -73,7 +80,7 @@ fn a_win_opens_no_loss_window() {
         world.tick_battle_end_sequence();
     }
     assert!(world.battle.victory.expect("armed").window_opened);
-    assert!(world.battle_defeat_banner().is_none());
+    assert!(battle_defeat_banner(&world).is_none());
 }
 
 /// `last_rewards` outlives its battle; a wipe after a win must not re-show
@@ -83,8 +90,8 @@ fn a_wipe_after_a_win_does_not_reshow_the_old_spoils() {
     let mut world = loss_world(1, 0);
     world.battle.last_rewards = Some(Default::default());
     wipe(&mut world);
-    assert!(world.battle_spoils_banner().is_none());
-    assert!(world.battle_defeat_banner().is_some());
+    assert!(battle_spoils_banner(&world).is_none());
+    assert!(battle_defeat_banner(&world).is_some());
 }
 
 /// The window spawns at its seat A (`y = 236`, record `0x42`) and glides to
@@ -94,14 +101,14 @@ fn a_wipe_after_a_win_does_not_reshow_the_old_spoils() {
 fn the_loss_window_glides_up_from_below_the_screen() {
     let mut world = loss_world(1, 0);
     wipe(&mut world);
-    assert_eq!(world.battle_defeat_banner().expect("up").slide_y, 76);
+    assert_eq!(battle_defeat_banner(&world).expect("up").slide_y, 76);
     world.live_battle_tick();
-    let first = world.battle_defeat_banner().expect("up").slide_y;
+    let first = battle_defeat_banner(&world).expect("up").slide_y;
     assert!(0 < first && first < 76, "moving: {first}");
     for _ in 0..16 {
         world.live_battle_tick();
     }
-    assert_eq!(world.battle_defeat_banner().expect("up").slide_y, 0);
+    assert_eq!(battle_defeat_banner(&world).expect("up").slide_y, 0);
 }
 
 #[test]
@@ -109,5 +116,5 @@ fn without_the_disc_pool_the_window_opens_empty() {
     let mut world = loss_world(1, 0);
     world.tables.defeat_text = None;
     wipe(&mut world);
-    assert_eq!(world.battle_defeat_banner().expect("up").line, None);
+    assert_eq!(battle_defeat_banner(&world).expect("up").line, None);
 }

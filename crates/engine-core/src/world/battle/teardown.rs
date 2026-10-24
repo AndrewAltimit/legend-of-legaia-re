@@ -4,190 +4,42 @@
 use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
-/// One line of the post-battle spoils panel's variable block, already
-/// resolved against the world's item catalog / roster.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct BattleSpoilsBanner {
-    /// The per-member EXP share ([`crate::world::BattleRewards::xp_share`]) -
-    /// what retail's result window prints, not the pool.
-    pub xp: u32,
-    pub gold: u32,
-    /// The report window's drop line, one per item the loot roll surfaced
-    /// (retail's roll surfaces at most one): the executable's template with
-    /// the item name spliced in ([`World::drop_line`]), or `Got <name>` on a
-    /// host without it.
-    pub drops: Vec<String>,
-    /// The level-up window's line - empty when nobody levelled. Retail
-    /// opens one window, element `0x44 + mask` (bit `k` = character `k`),
-    /// whose string names every character that crossed a threshold in one
-    /// line, or nobody when all three did; the port reads the seven strings
-    /// off the user's executable ([`Self::level_up_line`]). Without them (a
-    /// disc-free host) it falls back to one `"<name>'s level increased!"`
-    /// line per character. The new level is not on the line (the status
-    /// screen carries it).
-    pub level_ups: Vec<String>,
-    /// Who the victory line names: the lead alone when the second party seat
-    /// is empty, else the lead's team (`FUN_801D84C0`'s two build arms).
-    pub subject: legaia_engine_battle_vm::battle_party_panel::ResultSubject,
-    /// `(level_up, report)` rows below rest - the windows' raise glide
-    /// ([`BattleState::result_windows_dy`](crate::world::BattleState::result_windows_dy)).
-    pub slide: (i32, i32),
-}
-
-/// The loss window's content ([`World::battle_defeat_banner`]).
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct BattleDefeatBanner {
-    /// The one line the window shows, or `None` without the disc pool.
-    pub line: Option<String>,
-    /// Rows below rest - the window's raise glide, the report window's.
-    pub slide_y: i32,
-}
-
 impl World {
     /// How long the post-battle spoils panel stays up, in sim ticks
     /// (~3 s at the 100 Hz sim clock).
     pub const SPOILS_BANNER_FRAMES: u16 = 300;
 
-    /// The party leader whose name opens the post-battle spoils line: the
-    /// member in party slot 0, or `Vahn` when that record carries no name
-    /// (a disc-free build's blank roster). Both hosts used to resolve it
-    /// with a copy of this lookup each.
-    pub fn battle_spoils_leader(&self) -> String {
-        self.party
-            .roster
-            .members
-            .get(self.party_roster_slot(0))
-            .map(|m| m.name())
-            .filter(|n| !n.trim().is_empty())
-            .unwrap_or_else(|| "Vahn".to_string())
-    }
-
-    /// The post-battle spoils panel a host should be drawing this frame, or
-    /// `None` when the panel is not up.
+    /// Whether the post-battle spoils panel is up this frame: from the
+    /// results frame through the exit while the end-of-battle sequence runs
+    /// (retail's windows come down with the battle), and for the aging window
+    /// a direct `finish_battle` still arms - unless the battle opened no
+    /// result window or ended in a wipe, and only with rewards to show.
     ///
-    /// Resolves drop item ids through [`crate::world::DiscTables::item_catalog`] and level-up
-    /// character slots through [`legaia_engine_menus::party_state::PartyState::roster`], so a host needs no table of
-    /// its own. Falls back to `Item <id>` / `Member <n>` when a name is
-    /// unavailable (a disc-free build's synthetic catalog).
-    pub fn battle_spoils_banner(&self) -> Option<BattleSpoilsBanner> {
-        // Up for the results frame through the exit while the end-of-battle
-        // sequence runs (retail's windows come down with the battle), and for
-        // the aging window a direct `finish_battle` still arms.
+    /// A special battle opens no result window (`FUN_8004E568` skips
+    /// `FUN_801D8DE8(0x41)` at `0x8004F614` while `_DAT_8007BAC0 != 0`), and
+    /// a wipe opens the loss window instead - `last_rewards` is never
+    /// cleared, so without the cause test a wipe after a win re-showed that
+    /// win's spoils over the loss. The panel's content is composed above the
+    /// simulation (`legaia_engine_battle_hud::battle_spoils_banner`).
+    pub fn battle_spoils_window_up(&self) -> bool {
         if self.battle.spoils_frames == 0 && !self.battle_result_screen_active() {
-            return None;
+            return false;
         }
-        // A special battle opens no result window (`FUN_8004E568` skips
-        // `FUN_801D8DE8(0x41)` at `0x8004F614` while `_DAT_8007BAC0 != 0`),
-        // and a wipe opens the loss window instead
-        // ([`Self::battle_defeat_banner`]) - `last_rewards` is never cleared,
-        // so without the cause test a wipe after a win re-showed that win's
-        // spoils over the loss.
         if self
             .battle
             .victory
             .is_some_and(|v| !v.window_opened || v.cause != BattleEndCause::MonsterWipe)
         {
-            return None;
+            return false;
         }
-        let r = self.battle.last_rewards.as_ref()?;
-        let drops = r
-            .drops
-            .iter()
-            .map(|&id| {
-                let name = self
-                    .tables
-                    .item_catalog
-                    .get(id)
-                    .map(|it| it.name.to_string())
-                    .unwrap_or_else(|| format!("Item {id}"));
-                self.drop_line(&name)
-                    .unwrap_or_else(|| format!("Got {name}"))
-            })
-            .collect();
-        let mask = r
-            .level_ups
-            .iter()
-            .filter(|lu| lu.char_id < 3)
-            .fold(0u8, |m, lu| m | (1 << lu.char_id));
-        let level_ups = if let Some(line) = self.level_up_line(mask) {
-            vec![line]
-        } else {
-            r.level_ups
-                .iter()
-                .map(|lu| {
-                    let slot = lu.char_id as usize;
-                    let name = self
-                        .party
-                        .roster
-                        .members
-                        .get(slot)
-                        .map(|m| m.name())
-                        .filter(|n| !n.trim().is_empty())
-                        .unwrap_or_else(|| format!("Member {}", slot + 1));
-                    format!("{name}\'s level increased!")
-                })
-                .collect()
-        };
-        Some(BattleSpoilsBanner {
-            xp: r.xp_share,
-            gold: r.gold,
-            drops,
-            level_ups,
-            subject: self.battle_result_subject(),
-            slide: self.battle.result_windows_dy(),
-        })
-    }
-
-    /// The report window's drop line for an item named `item`: the
-    /// executable's template (`legaia_ui_formats::screen_elements::DROP_LINE_PTR_VA`)
-    /// with its `0xC2` item escape spliced, less the leading `0x7C` break
-    /// that puts it on the window's third row (the port keeps rows as
-    /// lines). `None` without the template.
-    ///
-    /// REF: FUN_8004E568 (`0x8004F5C4..0x8004F600`)
-    pub fn drop_line(&self, item: &str) -> Option<String> {
-        let raw = self.menu.text.as_ref()?.drop_line.as_ref()?;
-        let mut out = String::new();
-        let mut i = 0;
-        while i < raw.len() {
-            let b = raw[i];
-            if (0xC0..=0xCF).contains(&b) {
-                if matches!(b, 0xC2 | 0xC4) {
-                    out.push_str(item);
-                }
-                i += 2;
-                continue;
-            }
-            if (0x20..0x7F).contains(&b) && b != 0x7C {
-                out.push(b as char);
-            }
-            i += 1;
-        }
-        Some(out)
-    }
-
-    /// The level-up window's line for `mask` (bit `k` = character `k`): the
-    /// string record `0x44 + mask` points at, its `0xC1 k` name escapes
-    /// spliced with record `k`'s name (`0x63` = the party leader). `None`
-    /// for an empty mask or without the strings.
-    ///
-    /// REF: FUN_8004E568 (`0x8004F6F8..0x8004F728`, the mask and the raise)
-    pub fn level_up_line(&self, mask: u8) -> Option<String> {
-        let raw = self
-            .menu
-            .text
-            .as_ref()?
-            .level_up_lines
-            .as_ref()?
-            .get(usize::from(mask).checked_sub(1)?)?;
-        Some(self.expand_name_escapes(raw))
+        self.battle.last_rewards.is_some()
     }
 
     /// A dialog line as display text: printable ASCII as itself, each
     /// `0xC1 k` name escape spliced with roster record `k`'s name (`0x63` =
     /// the party leader), every other `0xC0..=0xCF` escape dropped with its
     /// operand.
-    pub(in crate::world) fn expand_name_escapes(&self, raw: &[u8]) -> String {
+    pub fn expand_name_escapes(&self, raw: &[u8]) -> String {
         let mut out = String::new();
         let mut i = 0;
         while i < raw.len() {
@@ -251,57 +103,6 @@ impl World {
         }
     }
 
-    /// Who the battle-result messages name: participant ids in panel order,
-    /// `0` for an empty seat - the shape of retail's `0x8007BD10` list the
-    /// two build arms of `FUN_801D84C0` key on.
-    fn battle_result_subject(&self) -> legaia_engine_battle_vm::battle_party_panel::ResultSubject {
-        let seats: [u8; 3] = std::array::from_fn(|i| {
-            if i < usize::from(self.party.party_count) {
-                (self.party_roster_slot(i) as u8).wrapping_add(1)
-            } else {
-                0
-            }
-        });
-        legaia_engine_battle_vm::battle_party_panel::result_subject(seats)
-    }
-
-    /// The loss window a host should be drawing this frame, or `None`.
-    ///
-    /// Retail's wipe arm of the results frame opens screen element `0x42`
-    /// (`FUN_801D8DE8(0x42, 0)` at `0x8004F900`) unless the special-battle
-    /// word is set (`0x8004F8F0`) - the same gate as the win arm's result
-    /// window, carried by `VictorySequence::window_opened`. The element's
-    /// placement record is the win window's twin (same frame, same seat), and
-    /// its string is the defeat buffer `FUN_801D84C0` built at battle start:
-    /// the lead's name plus the solo suffix, or the lead's team line.
-    ///
-    /// Up from the results frame through the exit, like the win window. The
-    /// line is `None` on a disc-free host (no PROT 0898 pool), where the
-    /// window opens empty.
-    pub fn battle_defeat_banner(&self) -> Option<BattleDefeatBanner> {
-        let v = self.battle.victory?;
-        if v.cause != BattleEndCause::PartyWipe || !v.window_opened || !v.results_shown() {
-            return None;
-        }
-        let subject = self.battle_result_subject();
-        let lead = self
-            .party
-            .roster
-            .members
-            .get(self.party_roster_slot(0))
-            .map(|m| m.name())
-            .filter(|n| !n.trim().is_empty());
-        let line = self
-            .tables
-            .defeat_text
-            .as_ref()
-            .zip(lead)
-            .map(|(t, lead)| t.compose(subject, &lead));
-        Some(BattleDefeatBanner {
-            line,
-            slide_y: self.battle.result_windows_dy().1,
-        })
-    }
     /// Resolve a finished battle and return to the field.
     ///
     /// On [`BattleEndCause::MonsterWipe`] applies loot (XP / gold / drops /
@@ -671,53 +472,5 @@ impl legaia_engine_battle::battle_return_flags::FlagBank for WorldFlagBank<'_> {
     }
     fn clear(&mut self, idx: u16) {
         self.0.system_flag_clear(idx);
-    }
-}
-
-#[cfg(test)]
-mod level_up_line_tests {
-    use super::*;
-
-    /// The window's line is the mask's string with its `0xC1` name escapes
-    /// spliced: record `k` for operand `k`, the leader for `0x63`. Synthetic
-    /// strings stand in for the executable's.
-    #[test]
-    fn the_level_up_line_splices_the_mask_string() {
-        let mut w = World::default();
-        w.party.roster = legaia_save::Party::zeroed(3);
-        for (k, name) in ["Ana", "Bo", "Cy"].iter().enumerate() {
-            w.party.roster.members[k].set_name(name);
-        }
-        let mut lines = vec![b"x".to_vec(); 7];
-        lines[0] = [&[0xC1, 0x00][..], b" up"].concat();
-        lines[2] = [&[0xC1, 0x00][..], b" & ", &[0xC1, 0x01], b" up"].concat();
-        lines[6] = b"all up".to_vec();
-        w.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
-            level_up_lines: Some(lines),
-            ..Default::default()
-        });
-        assert_eq!(w.level_up_line(1).as_deref(), Some("Ana up"));
-        assert_eq!(w.level_up_line(3).as_deref(), Some("Ana & Bo up"));
-        assert_eq!(w.level_up_line(7).as_deref(), Some("all up"));
-        assert_eq!(w.level_up_line(0), None, "nobody levelled");
-        w.menu.text = None;
-        assert_eq!(
-            w.level_up_line(1),
-            None,
-            "no strings: the caller falls back"
-        );
-    }
-
-    /// The drop line is the template with its item escape spliced and the
-    /// leading row break dropped.
-    #[test]
-    fn the_drop_line_splices_the_item() {
-        let mut w = World::default();
-        assert_eq!(w.drop_line("Leaf"), None);
-        w.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
-            drop_line: Some([&b"|Got the "[..], &[0xC2, 0x01], b"."].concat()),
-            ..Default::default()
-        });
-        assert_eq!(w.drop_line("Leaf").as_deref(), Some("Got the Leaf."));
     }
 }

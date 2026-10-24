@@ -350,7 +350,7 @@
    ],
    "band": "leaves",
    "track": "tooling",
-   "scope": "The desktop programs' one palette (dark and light) and spacing values: Studio's egui theme, the game launcher, the play window's own chrome. No dependencies.",
+   "scope": "The desktop programs' one palette (dark and light) and spacing values: Studio's egui theme, the game launcher, the play window's own chrome; plus the failed-game wording (<code>game_exit</code>) the launcher and Studio share. No dependencies.",
    "dependents": [
     "engine-shell",
     "studio"
@@ -965,6 +965,7 @@
     "engine-battle-vm",
     "engine-cast",
     "engine-core",
+    "engine-menus",
     "engine-mode",
     "engine-system",
     "font",
@@ -972,7 +973,6 @@
    ],
    "dev_deps": [
     "actor-formats",
-    "engine-menus",
     "save"
    ],
    "bins": [],
@@ -980,7 +980,7 @@
    "modules": [],
    "band": "drivers",
    "track": "engine",
-   "scope": "The battle HUD's reads of a running <code>World</code>: the phase word, command chips, commit log, plaques and glides, banners, badges, and the <code>BattleHud</code> row sync both hosts and <code>engine-screens</code> draw from. Above <code>engine-core</code>.",
+   "scope": "The battle HUD's reads of a running <code>World</code>: the phase word, command chips, commit log, plaques and glides, banners, badges, the Magic / Item window models and result windows, and the <code>BattleHud</code> row sync both hosts and <code>engine-screens</code> draw from. Above <code>engine-core</code>.",
    "dependents": [
     "engine-screens",
     "engine-session",
@@ -1196,6 +1196,7 @@
     "camera_align",
     "cast_parts",
     "clip_cursors",
+    "drive_clock",
     "effect_children",
     "field_seeds",
     "formation_cell",
@@ -1795,6 +1796,7 @@
    "role": "menu and memory-card front end",
    "scope": "The <code>World</code>-free menu front end: item / equipment catalogs, inventory-use and spell-menu sessions, list-row model, window-widget host, memory-card flow, inn, item bag + equip session, save / status / pause / shop screens, the options state + screen session. The dialog layer is <code>engine-dialog</code>, the title front end <code>engine-title</code>, the battle command picker <code>engine-battle-menus</code>.",
    "dependents": [
+    "engine-battle-hud",
     "engine-cheats",
     "engine-core",
     "engine-menu-runtime",
@@ -2190,6 +2192,7 @@
    ],
    "dev_deps": [
     "disc-audit",
+    "disc-patch",
     "engine-battle-hud",
     "engine-camera",
     "font",
@@ -2198,6 +2201,7 @@
     "mdt",
     "mes",
     "seq",
+    "translate",
     "vab"
    ],
    "bins": [],
