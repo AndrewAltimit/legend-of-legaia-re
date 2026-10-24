@@ -2047,6 +2047,63 @@ expected_game_mode = 0x15
 start = 0x801C0000
 end = 0x80200000
 
+# The battle arts entry's Triangle "Hyper Arts list" window, open and slid in
+# (slide counter 0x801F4E0A at 12), one state per page. Played forward from
+# arts_bar_astral_sword_vahn / arts_bar_ideal_noa_fangs on the retail disc by
+# scripts/pcsx-redux/autorun_arts_list_capture.lua - pad only, nothing poked:
+# one Triangle press per page. LIBRARY-ONLY (slot 255).
+[[scenarios]]
+slot = 255
+label = "arts_list_vahn_page1"
+backup_fingerprint = "225332efd234096e9904d0d8655861a75ad286e8048788ac2f5be4bd83f6e78e"
+description = "In-battle arts entry, Vahn, the Triangle arts list open on its first page (row offset 0, five rows: names, AP, command arrows) with the Next page caption; game_mode 0x15"
+topics = ["arts list", "arts bar", "hyper arts", "battle", "BattleMode", "vahn"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios]]
+slot = 255
+label = "arts_list_vahn_page2"
+backup_fingerprint = "77e5192d7df0480250d2a4411a3b418c790c26d3da303a279c55b2f11ff428d8"
+description = "In-battle arts entry, Vahn, the Triangle arts list on its second page (row offset 5); game_mode 0x15"
+topics = ["arts list", "arts bar", "hyper arts", "battle", "BattleMode", "vahn"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios]]
+slot = 255
+label = "arts_list_vahn_page3"
+backup_fingerprint = "8316413ccd105f85db09505298cee8f9d92e3438e267b24a1ef4a6a9bc92850a"
+description = "In-battle arts entry, Vahn, the Triangle arts list on its third and last page (row offset 10, four rows, no caption); game_mode 0x15"
+topics = ["arts list", "arts bar", "hyper arts", "battle", "BattleMode", "vahn"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
+[[scenarios]]
+slot = 255
+label = "arts_list_noa_page1"
+backup_fingerprint = "a9f4ff60d80e26aea4a58a1fd259dbb6c1ef07d877c015b0838c865af03709fb"
+description = "In-battle arts entry, Noa, the Triangle arts list on its first page - the Miracle Art row first, its name and arrows in ink 9; game_mode 0x15"
+topics = ["arts list", "arts bar", "hyper arts", "miracle art", "battle", "BattleMode", "noa"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[scenarios.overlay_slice]
+start = 0x801C0000
+end = 0x80200000
+
 # Equip-UI before/after-class pair for the weapon-specialty mechanic: Vahn in the
 # equipment menu holding the Astral Sword (id 0xBA, not-favored / always-double
 # Arms) vs the Ra-Seru Blade (favored sword, single Arms). Same character + same

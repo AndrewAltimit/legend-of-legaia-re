@@ -523,6 +523,17 @@ pub fn arts_input_chrome_draws(
             scale,
         ));
     }
+    // The Triangle arts list's window frame, over the rest of the screen
+    // (its node is the walker's first, key `0`): the rows are text
+    // (`arts_list_draws`). Only where the rows can be drawn too - a dome
+    // leg slides the window but carries no learned list
+    // (`World::arts_list_rows`), and an empty frame is not retail's.
+    if let Some(r) = chrome
+        && entry.is_some()
+        && world.arts_list_rows().is_some()
+    {
+        out.extend(ai::arts_list_frame_draws(r, view.list_slide, origin, scale));
+    }
     out
 }
 
@@ -559,24 +570,55 @@ fn arts_list_caption_draws(
         list_pages: view.list_pages,
         phase: arts_input_screen(view.phase),
     };
+    let mut out = arts_list_draws(world, font, view.list_slide, origin, scale);
     let Some(caption) = ai::arts_list_caption(&frame) else {
-        return Vec::new();
+        return out;
     };
     let label = match caption {
         ai::ArtsListCaption::HyperArtsList => BattleUiLabel::ArtsListHelp,
         ai::ArtsListCaption::NextPage => BattleUiLabel::ArtsListNextPage,
     };
     let Some(text) = world.battle.ui_strings.get(label) else {
-        return Vec::new();
+        return out;
     };
-    ai::arts_list_caption_text_draws(
+    out.extend(ai::arts_list_caption_text_draws(
         font,
         caption,
         text,
         legaia_engine_ui::battle_command_ui::LABEL_INK,
         origin,
         scale,
-    )
+    ));
+    out
+}
+
+/// The Triangle arts list's rows (`FUN_80034358`) on the open page, at the
+/// window's slide - names, AP and command arrows
+/// ([`legaia_engine_ui::arts_input::arts_list_text_draws`] over
+/// `World::arts_list_rows`). Empty while no page is open or the arts-name
+/// table is not installed.
+fn arts_list_draws(
+    world: &World,
+    font: &legaia_font::Font,
+    slide: u8,
+    origin: (i32, i32),
+    scale: u32,
+) -> Vec<TextDraw> {
+    use legaia_engine_ui::arts_input as ai;
+    let Some(rows) = world.arts_list_rows() else {
+        return Vec::new();
+    };
+    let views: Vec<Option<ai::ArtsListRowView<'_>>> = rows
+        .iter()
+        .map(|r| {
+            r.as_ref().map(|r| ai::ArtsListRowView {
+                name: &r.name,
+                ap: r.ap,
+                glyphs: &r.glyphs,
+            })
+        })
+        .collect();
+    ai::arts_list_text_draws(font, &views, slide, origin, scale)
 }
 
 /// Left margin of the battle submenus' text stand-ins (surface pixels).

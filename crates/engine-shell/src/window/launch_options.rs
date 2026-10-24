@@ -250,6 +250,11 @@ pub struct ScreenshotConfig {
     /// frame shows them; the captured frame seats the engine's on them.
     /// Set by the retail-compare image channel.
     pub seat_spirit_gauge: Option<(i16, i16)>,
+    /// `LEGAIA_SEAT_ARTS_LIST=<page>,<slide>`: the arts entry's Triangle
+    /// list open on the retail capture's page with its window's slide
+    /// counter; the captured frame seats the engine's entry on them
+    /// (`World::seat_arts_list`). Set by the retail-compare image channel.
+    pub seat_arts_list: Option<(u8, u8)>,
     /// `LEGAIA_SCRIPT_GATE=<flat>:<head hex>:<pc>:<wait>`: the field twin of
     /// [`Self::phase_gate`] - capture the first frame the engine's context
     /// for a retail capture's running record holds its PC
@@ -700,6 +705,10 @@ impl ScreenshotConfig {
                     let (w, p) = v.split_once(',')?;
                     Some((w.trim().parse().ok()?, p.trim().parse().ok()?))
                 }),
+            seat_arts_list: std::env::var("LEGAIA_SEAT_ARTS_LIST").ok().and_then(|v| {
+                let (page, slide) = v.split_once(',')?;
+                Some((page.trim().parse().ok()?, slide.trim().parse().ok()?))
+            }),
             seat_hud_glides: std::env::var("LEGAIA_SEAT_HUD_GLIDES")
                 .map(|v| legaia_engine_capture::hud_glide::HudGlideSeat::list_from_env(&v))
                 .unwrap_or_default(),

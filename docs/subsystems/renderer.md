@@ -1612,6 +1612,12 @@ table, same name / AP / command-arrow layout) in
 [`field-menu.md`](field-menu.md#moves-list-submenu-3); the two differ in row
 pitch and host screen. See `ghidra/scripts/funcs/80034358.txt`.
 
+Its one caller is the per-frame widget walker `FUN_80031D00`, for a kind-`0xC`
+text actor. The battle arts entry registers one for its Triangle list window
+(`FUN_801DBB8C`, re-registered by the panel rebuild `FUN_801D99BC`). The pen, ink and arrow-alignment law, the window's slide, and the
+port are in
+[`minigame-muscle-dome.md`](minigame-muscle-dome.md#the-triangle-arts-list).
+
 ## TMD pointer table
 
 `FUN_80026B4C` writes registered TMDs to `*(int **)(idx * 4 + 0x8007C018)`.

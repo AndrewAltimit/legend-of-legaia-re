@@ -299,6 +299,7 @@ fn gimard_spell_def() -> legaia_engine_battle::spells::SpellDef {
 mod actor_alloc_init;
 mod battle_anim;
 mod battle_ap_carry;
+mod battle_arts_list;
 mod battle_auto_command;
 mod battle_capture_bgm;
 mod battle_capture_class_disc;

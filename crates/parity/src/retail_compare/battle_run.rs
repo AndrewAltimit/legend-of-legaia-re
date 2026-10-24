@@ -670,6 +670,11 @@ pub(super) fn battle_image(
     if let Some((width, plate)) = battle.spirit_gauge {
         env.push(("LEGAIA_SEAT_SPIRIT_GAUGE", format!("{width},{plate}")));
     }
+    // The arts entry's Triangle list, open on the capture's page with its
+    // window as far in as retail's had slid.
+    if let Some((page, slide)) = battle.arts_list {
+        env.push(("LEGAIA_SEAT_ARTS_LIST", format!("{page},{slide}")));
+    }
     // A capture taken mid-cast replays its cast and is captured on its phase
     // (the gate), with the fixed tick as the deadline.
     // The capture's own frame step over its last stretch, as the headless

@@ -182,17 +182,38 @@ pub const AP_FILL_W: i32 = 50;
 pub const AP_FILL_Y: i32 = 177;
 pub const AP_FILL_H: i32 = 6;
 
-/// Arts-list window rect (Triangle), `(x, y, w, h)` in stage px -
-/// captured `(6,28)`-`(160,188)`.
-pub const LIST_WINDOW: (i32, i32, i32, i32) = (6, 28, 154, 160);
-/// First list row's text baseline and the row pitch (`y = 36 + 30n`).
-pub const LIST_ROW_Y0: i32 = 36;
+/// The Triangle arts list's text-actor rect `(x, y, w, h)` seated, in stage
+/// px. The entry screen registers it once (`FUN_801DBB8C`:
+/// `FUN_8003541C(0, 0xC, 0, -146, 36, 138, 144, 3)`, key `0`, kind `0xC`,
+/// style `3`) and the arts-list driver `FUN_801D3444` only rewrites its `x`
+/// (node `+0x0A`); the class-0 frame around it covers `(6, 28)..(160, 188)`.
+pub const LIST_RECT: (i32, i32, i32, i32) = (14, 36, 138, 144);
+/// The list rect's `x` with the slide counter at `0`: one window left of
+/// the screen.
+pub const LIST_OFFSCREEN_X: i32 = -146;
+/// First row's pen `y` and the row pitch (`addiu s6,s6,0x1e` at
+/// `0x80034760`); the rows a page shows are `h / 28` (`0x92492493` at
+/// `0x8003435C`), five for the `144`-tall rect.
 pub const LIST_ROW_PITCH: i32 = 30;
-/// Right edge the per-row AP cost is right-aligned to end at.
-pub const LIST_COST_RIGHT_X: i32 = 152;
-/// Command-string glyph origin inside a row (`(44 + 12k, y + 14)`).
-pub const LIST_CMD_X0: i32 = 44;
-pub const LIST_CMD_PITCH: i32 = 12;
+/// The AP field's first cell, from the row pen (`addiu s3,s8,0x72` at
+/// `0x800344EC`): three 8-px numeral cells, leading zeros blank.
+pub const LIST_AP_X: i32 = 0x72;
+/// The arrows' row: `y + 14` under the name (`addiu a2,s6,0xe`).
+pub const LIST_ARROW_DY: i32 = 14;
+/// Arrow pitch.
+pub const LIST_ARROW_PITCH: i32 = 12;
+/// Where the arrow run ends, from the row pen: `x + 0x8A - 12 * arrows`
+/// (`addiu v0,v0,-0x8a` / `subu s0,s8,v0` at `0x8003460C..0x80034614`).
+/// The immediate is the list rect's width, so the run ends on the rect's
+/// right edge; the renderer does not read the node's width for it.
+pub const LIST_ARROW_RIGHT: i32 = 0x8A;
+/// The ink the arrows start in (`sw v0,0x13c(gp)` with `v0 = 1` at
+/// `0x800345F4`), before any `0xFF XX` marker restages it.
+pub const LIST_ARROW_INK: u8 = 1;
+/// The name's ink (`li v0,0x7` / `sw v0,0x13c(gp)` at `0x80034490`).
+pub const LIST_NAME_INK: u8 = 7;
+/// The AP field's ink (`li v0,0x9` at `0x800344A8`).
+pub const LIST_AP_INK: u8 = 9;
 
 /// The four entry directions, in the order the chips read on screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1011,6 +1032,221 @@ pub fn arts_list_caption_text_draws(
     out
 }
 
+// ----------------------------------------------------- Triangle arts list
+
+/// The list rect's `x` for slide counter `slide`: `slide * 160 / 12 - 146`
+/// (`FUN_801D3444`, `0x801D34E8..0x801D3524`, the `0x2AAAAAAB` divide by
+/// twelve), so `-146` closed and `14` seated at `12`.
+pub fn arts_list_window_x(slide: u8) -> i32 {
+    i32::from(slide.min(LIST_SLIDE_MAX)) * 160 / 12 + LIST_OFFSCREEN_X
+}
+
+/// The slide counter seated (`0x801D34A0..0x801D34B4`).
+pub const LIST_SLIDE_MAX: u8 = 12;
+
+/// One row of the open list page: the arts-name table record's name
+/// (substitutions spliced in, `0xCF XX` ink escapes kept), the AP it shows
+/// and its raw command-glyph entries (`0xFF XX` ink markers kept).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ArtsListRowView<'a> {
+    pub name: &'a [u8],
+    pub ap: u8,
+    pub glyphs: &'a [[u8; 2]],
+}
+
+/// The Triangle arts list's window frame: the class-0 frame of widget
+/// record `3` (the registration's style byte) around [`LIST_RECT`] at the
+/// slide's `x`. The per-frame walker `FUN_80031D00` draws a kind-`0xC` node's
+/// content (`jal 0x80034358` at `0x8003238C`) and then its frame
+/// (`0x800323C4..`); both go on one ordering-table entry, head-linked, so
+/// the frame lands under the rows. Empty while the counter is at `0` (the
+/// rect sits wholly left of the screen).
+///
+/// REF: FUN_80031D00, FUN_8002C69C
+pub fn arts_list_frame_draws(
+    rects: &crate::SaveMenuAtlasRects,
+    slide: u8,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    if slide == 0 {
+        return Vec::new();
+    }
+    let (_, y, w, h) = LIST_RECT;
+    crate::battle_hud_chrome::text_actor_frame_draws_for(
+        rects,
+        (arts_list_window_x(slide), y, w, h),
+        stage_origin,
+        stage_scale,
+    )
+}
+
+/// The direction an arrow glyph entry names, as `FUN_80034358` reads it: the
+/// entry's second byte against the four codes at `0x80073E4C` (`+1`, `+3`,
+/// `+5`, `+7`: `0xAA`, `0xAB`, `0xA8`, `0xA9`), the index it hands
+/// `FUN_8003C310` (`0` up, `1` down, `2` right, `3` left). A code matching
+/// none draws nothing but still takes its cell.
+pub fn arts_list_arrow_dir(glyph: [u8; 2]) -> Option<u8> {
+    match glyph[1] {
+        0xAA => Some(0),
+        0xAB => Some(1),
+        0xA8 => Some(2),
+        0xA9 => Some(3),
+        _ => None,
+    }
+}
+
+/// The text colour of list ink `staging` for the dialog-font name run:
+/// tier `7` is the battle labels' ink, the rest the menu inks.
+fn list_text_ink(staging: u8) -> [f32; 4] {
+    if staging == LIST_NAME_INK {
+        crate::battle_command_ui::LABEL_INK
+    } else {
+        crate::menu_ink_color(staging)
+    }
+}
+
+/// One menu-glyph sprite cell (numeral or arrow) at stage `pen`, mapped to
+/// the surface.
+fn list_cell_draw(
+    font: &legaia_font::Font,
+    id: u16,
+    pen: (i32, i32),
+    stage_origin: (i32, i32),
+    scale: i32,
+) -> Option<TextDraw> {
+    let c = font.sprite_cell(id)?;
+    Some(TextDraw {
+        dst: (
+            stage_origin.0 + pen.0 * scale,
+            stage_origin.1 + pen.1 * scale,
+            c.w * scale as u32,
+            c.h * scale as u32,
+        ),
+        src: (c.atlas_x, c.atlas_y, c.w, c.h),
+        // The cell is decoded under its ink's own CLUT; retail emits it at
+        // the neutral `0x808080`.
+        color: [1.0, 1.0, 1.0, 1.0],
+    })
+}
+
+/// One name run in `ink` on stage pen `(pen, y)`; returns the pen advance.
+fn list_name_run(
+    font: &legaia_font::Font,
+    run: &[u8],
+    ink: u8,
+    pen: (i32, i32),
+    stage_origin: (i32, i32),
+    scale: i32,
+    out: &mut Vec<TextDraw>,
+) -> i32 {
+    if run.is_empty() {
+        return 0;
+    }
+    let layout = font.layout(run);
+    for mut d in crate::text_draws_for(&layout, (0, 0), list_text_ink(ink)) {
+        d.dst = (
+            stage_origin.0 + (pen.0 + d.dst.0) * scale,
+            stage_origin.1 + (pen.1 + d.dst.1) * scale,
+            d.dst.2 * scale as u32,
+            d.dst.3 * scale as u32,
+        );
+        out.push(d);
+    }
+    layout.advance_x as i32
+}
+
+/// The Triangle arts list's rows, in surface pixels: per row `n` on the pen
+/// `(x, 36 + 30n)` (`x` the slide's, [`arts_list_window_x`]) the list
+/// renderer `FUN_80034358` draws
+///
+/// - the name through the text kernel `FUN_80036888` in ink `7`, a
+///   `0xCF XX` escape restaging the ink for the rest of the string (a
+///   Miracle Art's name reads in ink `9`);
+/// - the AP in ink `9` as three 8x12 numeral cells from `x + 0x72`, leading
+///   zeros blank (`FUN_8003C11C`, `uv = (d * 8, 0xD0)`, the place-value walk
+///   over `0x80073DCC`);
+/// - the command arrows on `y + 14`, right-aligned to the window's right
+///   edge, one 12x12 cell each (`FUN_8003C310`, `uv = (0xD0 + 12 * dir,
+///   0xD0)`) in ink `1` until a `0xFF XX` marker restages ink `XX`; a marker
+///   takes no cell.
+///
+/// Every cell draws under its ink's own font CLUT (`ink + 0x7F86`). Empty
+/// rows (an id the table lacks) keep their pitch. Cells the font does not
+/// carry are skipped.
+///
+/// PORT: FUN_80034358
+pub fn arts_list_text_draws(
+    font: &legaia_font::Font,
+    rows: &[Option<ArtsListRowView<'_>>],
+    slide: u8,
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<TextDraw> {
+    use legaia_font::sprite_cell_ids as ids;
+    let mut out = Vec::new();
+    if slide == 0 {
+        return out;
+    }
+    let scale = stage_scale.max(1) as i32;
+    let x = arts_list_window_x(slide);
+    let (_, y0, _, h) = LIST_RECT;
+    let visible = (h / 28) as usize;
+    for (n, row) in rows.iter().take(visible).enumerate() {
+        let Some(row) = row else { continue };
+        let y = y0 + n as i32 * LIST_ROW_PITCH;
+        // Name: split at the `0xCF XX` ink escapes, each run on the pen the
+        // previous one left.
+        let mut ink = LIST_NAME_INK;
+        let mut pen = x;
+        let mut run: Vec<u8> = Vec::new();
+        let mut bytes = row.name.iter().copied();
+        while let Some(b) = bytes.next() {
+            if b == 0xCF {
+                pen += list_name_run(font, &run, ink, (pen, y), stage_origin, scale, &mut out);
+                run.clear();
+                ink = bytes.next().unwrap_or(ink);
+            } else {
+                run.push(b);
+            }
+        }
+        list_name_run(font, &run, ink, (pen, y), stage_origin, scale, &mut out);
+        // AP: three cells, the value right-aligned, leading zeros blank.
+        let digits = [row.ap / 100, row.ap / 10 % 10, row.ap % 10];
+        let lead = digits.iter().position(|&d| d != 0).unwrap_or(2);
+        for (k, &d) in digits.iter().enumerate().skip(lead) {
+            out.extend(list_cell_draw(
+                font,
+                ids::ink_numeral(LIST_AP_INK, u16::from(d)),
+                (x + LIST_AP_X + k as i32 * 8, y),
+                stage_origin,
+                scale,
+            ));
+        }
+        // Arrows: right-aligned, restaged by the `0xFF XX` markers.
+        let cells = row.glyphs.iter().filter(|g| g[0] != 0xFF).count() as i32;
+        let mut ax = x + LIST_ARROW_RIGHT - LIST_ARROW_PITCH * cells;
+        let mut ink = LIST_ARROW_INK;
+        for &g in row.glyphs {
+            if g[0] == 0xFF {
+                ink = g[1];
+                continue;
+            }
+            if let Some(dir) = arts_list_arrow_dir(g) {
+                out.extend(list_cell_draw(
+                    font,
+                    ids::ink_arrow(ink, u16::from(dir)),
+                    (ax, y + LIST_ARROW_DY),
+                    stage_origin,
+                    scale,
+                ));
+            }
+            ax += LIST_ARROW_PITCH;
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1543,5 +1779,136 @@ mod tests {
         let cell = |d: u32| (rects.digits.0 + d * pitch, zero.1, zero.2, zero.3);
         assert_eq!(at(&mid, cell(3)), Some((288, 177)));
         assert_eq!(at(&mid, cell(7)), Some((294, 177)));
+    }
+
+    /// `FUN_801D3444`: `x = slide * 160 / 12 - 146`, off-screen closed and on
+    /// `14` seated; the counter clamps at twelve.
+    #[test]
+    fn the_list_window_slides_from_off_screen_to_its_seat() {
+        assert_eq!(arts_list_window_x(0), -146);
+        assert_eq!(arts_list_window_x(6), -66);
+        assert_eq!(arts_list_window_x(12), 14);
+        assert_eq!(arts_list_window_x(200), 14);
+        assert_eq!(LIST_RECT.0, arts_list_window_x(LIST_SLIDE_MAX));
+    }
+
+    fn list_font() -> legaia_font::Font {
+        use legaia_font::{SpriteCellSrc, sprite_cell_ids as ids};
+        let cell = |id, w, h| SpriteCellSrc {
+            id,
+            w,
+            h,
+            rgba: vec![255; (w * h * 4) as usize],
+        };
+        let mut cells = Vec::new();
+        for staging in 0..10u8 {
+            for d in 0..10 {
+                cells.push(cell(ids::ink_numeral(staging, d), 8, 12));
+            }
+            for dir in 0..4 {
+                cells.push(cell(ids::ink_arrow(staging, dir), 12, 12));
+            }
+        }
+        legaia_font::synthetic_for_tests().with_sprite_cells(&cells)
+    }
+
+    /// The cell a draw samples, by sprite id.
+    fn cell_of(font: &legaia_font::Font, d: &TextDraw) -> Option<u16> {
+        (0..0x500u16).find(|&id| {
+            font.sprite_cell(id)
+                .is_some_and(|c| (c.atlas_x, c.atlas_y, c.w, c.h) == d.src)
+        })
+    }
+
+    /// One row: AP in ink 9 from `x + 0x72` with its leading zero blank, and
+    /// the arrows right-aligned to the window's right edge, ink 1 until the
+    /// `0xFF 06` marker restages ink 6 (Cyclone: down up up, marker, up).
+    #[test]
+    fn a_row_lays_its_ap_and_its_arrows_out_as_the_renderer_does() {
+        use legaia_font::sprite_cell_ids as ids;
+        let font = list_font();
+        let glyphs = [
+            [0x81, 0xAB],
+            [0x81, 0xAA],
+            [0x81, 0xAA],
+            [0xFF, 0x06],
+            [0x81, 0xAA],
+        ];
+        let rows = [Some(ArtsListRowView {
+            name: b"",
+            ap: 24,
+            glyphs: &glyphs,
+        })];
+        let draws = arts_list_text_draws(&font, &rows, LIST_SLIDE_MAX, (0, 0), 1);
+        let cells: Vec<(u16, i32, i32)> = draws
+            .iter()
+            .filter_map(|d| cell_of(&font, d).map(|id| (id, d.dst.0, d.dst.1)))
+            .collect();
+        assert_eq!(
+            cells,
+            vec![
+                (ids::ink_numeral(9, 2), 14 + 0x72 + 8, 36),
+                (ids::ink_numeral(9, 4), 14 + 0x72 + 16, 36),
+                (ids::ink_arrow(1, 1), 152 - 48, 50),
+                (ids::ink_arrow(1, 0), 152 - 36, 50),
+                (ids::ink_arrow(1, 0), 152 - 24, 50),
+                (ids::ink_arrow(6, 0), 152 - 12, 50),
+            ]
+        );
+    }
+
+    /// Rows step 30 apart; an empty row keeps its pitch; a closed window
+    /// draws nothing; the page shows five rows.
+    #[test]
+    fn rows_keep_their_pitch_and_a_closed_window_draws_nothing() {
+        use legaia_font::sprite_cell_ids as ids;
+        let font = list_font();
+        let row = Some(ArtsListRowView {
+            name: b"",
+            ap: 5,
+            glyphs: &[],
+        });
+        let rows = [row, None, row, row, row, row];
+        let ys: Vec<i32> = arts_list_text_draws(&font, &rows, LIST_SLIDE_MAX, (0, 0), 1)
+            .iter()
+            .filter(|d| cell_of(&font, d) == Some(ids::ink_numeral(9, 5)))
+            .map(|d| d.dst.1)
+            .collect();
+        assert_eq!(ys, vec![36, 96, 126, 156]);
+        assert!(arts_list_text_draws(&font, &rows, 0, (0, 0), 1).is_empty());
+    }
+
+    /// A `0xCF XX` escape restages the name's ink for the rest of it: the
+    /// Miracle Art's name runs in ink 9 from its first glyph.
+    #[test]
+    fn a_name_escape_restages_its_ink() {
+        let font = list_font();
+        let plain = [Some(ArtsListRowView {
+            name: b"Ab",
+            ap: 0,
+            glyphs: &[],
+        })];
+        let miracle = [Some(ArtsListRowView {
+            name: b"\xCF\x09Ab",
+            ap: 0,
+            glyphs: &[],
+        })];
+        let ink = |rows: &[Option<ArtsListRowView<'_>>]| {
+            arts_list_text_draws(&font, rows, LIST_SLIDE_MAX, (0, 0), 1)
+                .into_iter()
+                .filter(|d| cell_of(&font, d).is_none())
+                .map(|d| (d.dst.0, d.color))
+                .collect::<Vec<_>>()
+        };
+        let p = ink(&plain);
+        let m = ink(&miracle);
+        assert_eq!(p.len(), 2);
+        assert_eq!(p[0].0, 14);
+        assert_eq!(p[0].1, crate::battle_command_ui::LABEL_INK);
+        assert_eq!(
+            m.iter().map(|d| d.0).collect::<Vec<_>>(),
+            p.iter().map(|d| d.0).collect::<Vec<_>>()
+        );
+        assert!(m.iter().all(|d| d.1 == crate::menu_ink_color(9)));
     }
 }

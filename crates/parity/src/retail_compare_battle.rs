@@ -447,6 +447,11 @@ pub struct RetailBattle {
     /// frame shows them (`spirit_gauge::retail_spirit_gauge`); `None`
     /// outside one.
     pub spirit_gauge: Option<(i16, i16)>,
+    /// The arts entry's Triangle list, open: its page (the row offset
+    /// `_DAT_8007B458` over five) and the window's slide counter
+    /// `0x801F4E0A` (`FUN_801D3444`); `None` while the list is closed or
+    /// the menu is not in the entry state `0x50`.
+    pub arts_list: Option<(u8, u8)>,
     /// The options screen's Select Attack word `0x800846C4` (Select `0` /
     /// Automatic `1` / Command `2`): whether the ring's Attack arm opens
     /// the `Auto | Command` prompt `0x78`.

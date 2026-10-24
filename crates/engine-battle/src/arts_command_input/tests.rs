@@ -333,3 +333,32 @@ fn resolver_with_no_catalog_is_all_synthetic() {
     // Empty buffer floors at one hit.
     assert_eq!(resolve_entered_commands(&[], &[]).power.len(), 1);
 }
+
+/// `FUN_801D3444`: the window slides in by the frame step while the list is
+/// open in the entry, clamps at twelve, drains when it closes, holds on a
+/// zero step, and outside the entry a drained counter closes the list.
+#[test]
+fn the_list_window_slides_by_the_frame_step() {
+    let mut s = ArtsCommandInputSession::new(0, 0, 60, [30; 4], 3).with_list_rows(14);
+    s.step_list_slide(2);
+    assert_eq!(s.list_slide, 0, "closed: nothing to slide");
+    s.input(press("t"), party3(), one_monster());
+    for want in [2, 4, 6, 8, 10, 12, 12] {
+        s.step_list_slide(2);
+        assert_eq!(s.list_slide, want);
+    }
+    s.step_list_slide(0);
+    assert_eq!(s.list_slide, 12, "between passes it holds");
+    // Paging keeps it seated.
+    s.input(press("t"), party3(), one_monster());
+    s.step_list_slide(2);
+    assert_eq!((s.list_page, s.list_slide), (Some(1), 12));
+    // Leaving the entry drains it, then closes the list.
+    s.phase = ArtsInputPhase::Review;
+    for want in [9, 6, 3] {
+        s.step_list_slide(3);
+        assert_eq!((s.list_page, s.list_slide), (Some(1), want));
+    }
+    s.step_list_slide(3);
+    assert_eq!((s.list_page, s.list_slide), (None, 0));
+}

@@ -850,6 +850,7 @@ impl RetailBattle {
             popup_cells: displayed_popup_cells(ram),
             popup_age: popup_age_seat(ram, ctx, display_lag_vsyncs(ram), frame_step(ram)),
             spirit_gauge: retail_spirit_gauge(ram, ctx, active, display_lag_vsyncs(ram)),
+            arts_list: retail_arts_list(ram, ctx),
             hud_glides_unseen: {
                 let lag = display_lag_vsyncs(ram);
                 let live: Vec<u8> = (0..HUD_GLIDE_SLOTS)
@@ -1091,4 +1092,25 @@ pub(super) fn seed_target_code(ram: &[u8], ctx: u32, actor: u32) -> u8 {
     } else {
         raw
     }
+}
+
+/// The arts list's list bits (`0x80` live, `0x01` open), its window's
+/// slide counter and the pager's row offset (`FUN_801D3444` /
+/// `FUN_801D3748`, PROT 0898).
+const ARTS_LIST_BITS: u32 = 0x801F_4E09;
+const ARTS_LIST_SLIDE: u32 = 0x801F_4E0A;
+const ARTS_LIST_ROW_OFFSET: u32 = 0x8007_B458;
+
+/// The open Triangle arts list as `(page, slide)`, while the menu is in the
+/// entry state `0x50` and the list bits read live and open.
+fn retail_arts_list(ram: &[u8], ctx: u32) -> Option<(u8, u8)> {
+    if game_anchors::u8_at(ram, ctx + 6) != 0x50 {
+        return None;
+    }
+    let bits = game_anchors::u8_at(ram, ARTS_LIST_BITS);
+    if bits & 0x81 != 0x81 {
+        return None;
+    }
+    let row = game_anchors::u8_at(ram, ARTS_LIST_ROW_OFFSET);
+    Some((row / 5, game_anchors::u8_at(ram, ARTS_LIST_SLIDE)))
 }

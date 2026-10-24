@@ -384,6 +384,9 @@ pub const SEPARATOR_GLYPHS: u32 = 14;
 /// * the fourteen 8x12 separator glyphs beside them on the same row
 ///   (`FUN_8003C1F8`, `uv = (0x50 + g * 8, 208)`): the `/` between two
 ///   counts and the stat-compare rise / fall arrows;
+/// * the four 12x12 command arrows after them (`FUN_8003C310`,
+///   `uv = (0xD0 + dir * 12, 208)`), per ink only - the battle arts list's
+///   command strings;
 /// * the list kernel `FUN_80032A44`'s pager pieces off the system-UI sheet,
 ///   at their UI-icon records (`0x800732A4 + code * 12`, `+3` CLUT byte,
 ///   `+4..+7` U/V/W/H): the "PAGE" tag (code `0x76`, CLUT 1), the 6x8 page
@@ -457,6 +460,18 @@ pub fn menu_font_cells(
                     w: 8,
                     h: 12,
                     rgba: cut(&rgba, w, (0x50 + g * 8, 208, 8, 12)),
+                });
+            }
+            // The command arrows `FUN_8003C310` draws: `uv = (dir * 12 +
+            // 0xD0, 0xD0, 12, 12)` (`addiu v0,v0,0xd0` / `li v0,0xc` at
+            // `0x8003C334..0x8003C358`), under the same `staging + 0x7F86`
+            // CLUT word.
+            for dir in (0..4u32).filter(|_| w >= 0xD0 + 4 * 12) {
+                cells.push(SpriteCellSrc {
+                    id: ids::ink_arrow(staging, dir as u16),
+                    w: 12,
+                    h: 12,
+                    rgba: cut(&rgba, w, (0xD0 + dir * 12, 208, 12, 12)),
                 });
             }
         }

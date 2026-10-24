@@ -182,3 +182,41 @@ fn captured_art_channels_are_members_of_the_real_pools_or_skips() {
         );
     }
 }
+
+/// The raw name and glyph entries the battle arts list renderer walks: the
+/// `0xFF XX` ink marker stays where the string puts it, and a Miracle Art's
+/// name keeps its `0xCF` ink and `0xC1` character-name escapes.
+#[test]
+fn keeps_the_raw_name_and_glyph_entries_or_skips() {
+    let Some(path) = scus_path() else {
+        eprintln!("extracted/SCUS_942.54 not present - skipping");
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read SCUS");
+    let arts = arts_table::parse_from_scus(&bytes).expect("parse arts table");
+    let burning_flare = find(&arts, Character::Vahn, "Burning Flare");
+    assert_eq!(burning_flare.glyphs.len(), 6);
+    assert_eq!(burning_flare.glyphs[0], [0xFF, 0x06], "marker leads");
+    let cyclone = find(&arts, Character::Vahn, "Cyclone");
+    assert_eq!(cyclone.glyphs.len(), 5);
+    assert_eq!(
+        cyclone.glyphs[3],
+        [0xFF, 0x06],
+        "marker before the last arrow"
+    );
+    let noa_miracle = arts
+        .iter()
+        .find(|a| a.character == Character::Noa && a.index == 0)
+        .expect("Noa's Miracle Art");
+    assert_eq!(&noa_miracle.name_bytes[..4], &[0xCF, 0x09, 0xC1, 0x01]);
+    assert_eq!(noa_miracle.glyphs[0], [0xFF, 0x09]);
+    let vahn_miracle = arts
+        .iter()
+        .find(|a| a.character == Character::Vahn && a.index == 0)
+        .expect("Vahn's Miracle Art");
+    assert_eq!(
+        &vahn_miracle.name_bytes[..4],
+        &[0xCF, 0x09, 0xC1, 0x00],
+        "a 0x00 operand is kept"
+    );
+}

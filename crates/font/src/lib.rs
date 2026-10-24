@@ -176,6 +176,16 @@ pub mod sprite_cell_ids {
     pub const PAGE_PREV: u16 = 0x230;
     /// The list's next-page triangle (icon `0x28`, 8x8).
     pub const PAGE_NEXT: u16 = 0x231;
+    /// Base of the 12x12 command arrows the arrow primitive `FUN_8003C310`
+    /// blits (menu-glyph page, `uv = (0xD0 + 12 * dir, 0xD0)`, `dir` `0` up,
+    /// `1` down, `2` right, `3` left), one block of four per ink-staging id.
+    /// Address one with [`ink_arrow`].
+    pub const ARROW: u16 = 0x240;
+    /// Arrow `dir` decoded under ink-staging id `staging`'s CLUT
+    /// (`staging + 0x7F86`, `0x8003C36C..0x8003C380`).
+    pub const fn ink_arrow(staging: u8, dir: u16) -> u16 {
+        ARROW + staging as u16 * 4 + dir
+    }
 }
 
 /// One sprite cell's pixels for [`Font::with_sprite_cells`].

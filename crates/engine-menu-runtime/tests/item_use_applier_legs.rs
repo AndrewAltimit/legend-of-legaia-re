@@ -419,6 +419,8 @@ fn a_pause_menu_book_use_composes_the_window_8_notice() {
         ap: 0,
         commands: Vec::new(),
         is_miracle: false,
+        name_bytes: Vec::new(),
+        glyphs: Vec::new(),
     };
 
     let mut world = world_with(&book_rows(), 3);

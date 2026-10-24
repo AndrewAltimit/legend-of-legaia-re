@@ -148,6 +148,9 @@ impl PlayWindowApp {
                 p.frames_remaining = p.frames_total.saturating_sub(age);
                 sc.popup_age_seated.set(true);
             }
+            if due && let Some((page, slide)) = sc.seat_arts_list {
+                self.session.host.world.seat_arts_list(page, slide);
+            }
             if due && let Some((width, plate)) = sc.seat_spirit_gauge {
                 let ctx = &mut self.session.host.world.battle_ctx;
                 ctx.spirit_bar_width = width;

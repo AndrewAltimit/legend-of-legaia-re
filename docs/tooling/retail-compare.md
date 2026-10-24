@@ -1167,6 +1167,17 @@ clock, which the raise does not share:
 (six on screen), and `battle_melee_hit_spark`'s cluster is twelve vsyncs into
 its slide (eight on screen), which leaves it off the right edge.
 
+### An open arts list
+
+An arts-entry capture with the Triangle list open (menu flow `0x50`, list bits
+`0x801F4E09 & 0x81 == 0x81`) seats the engine's entry on retail's page
+(`_DAT_8007B458 / 5`) and slide counter (`0x801F4E0A`):
+`LEGAIA_SEAT_ARTS_LIST=<page>,<slide>`, `World::seat_arts_list`. The drive
+reaches the entry but presses no Triangle, so without the seat the frame shows
+the list closed. The `arts_list_*` states were played forward from the
+`arts_bar_*` ones on the retail disc by
+`scripts/pcsx-redux/autorun_arts_list_capture.lua`, pad only.
+
 ### A push the capture already holds
 
 A capture inside an action stands its combatants where that action had already
