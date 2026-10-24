@@ -787,12 +787,14 @@ pub const WATER_HAZARD_75_CHAIN: ChainBody = ChainBody {
 /// victim stages it `0` with a bump, puts both actors back at rate `8` and
 /// stores `0xFF`; `0xFF` zeroes `ctx[+0x0D]`.
 ///
-/// Countdowns: `capture_countdown::MEGATON_PRESS`. Not ported: the packet
-/// and camera arms, arm `0x11`'s
-/// dead-victim branch (which forces battle state 5), and the victim's
-/// presentation rates between the hits.
+/// Countdowns: `capture_countdown::MEGATON_PRESS`. The camera arms, the
+/// seat stores (positions, heights, hides, anim rates) and the per-arm
+/// spawns are `cast_module_camera::megaton_press_camera` and its spawn
+/// tables. Not ported here: arm `0x11`'s dead-victim branch (which forces
+/// battle state 5) and arm `0x0F`'s per-pass hits (the fold lands them as
+/// one).
 ///
-/// PORT: FUN_801F69F0 (PROT 0959; phase chain + caster staging; packet arms unported)
+/// PORT: FUN_801F69F0 (PROT 0959; phase chain + caster staging)
 pub const MEGATON_PRESS_CHAIN: ChainBody = ChainBody {
     prot_entry: 959,
     body: 0x801F_69F0,

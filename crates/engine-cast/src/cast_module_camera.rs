@@ -250,6 +250,19 @@ pub struct ModuleCamState {
     /// The arm a bounded host wait (a frame or park wait) is counting,
     /// and how many passes it has held.
     pub wait: (u8, u16),
+    /// The caster's display trio `+0x3C..+0x40` and heading, fed by the host
+    /// for a capture director (PROT 0959's shots focus on it).
+    pub caster_body: Option<ModuleSeat>,
+    /// The victim's display trio and heading, fed like [`Self::caster_body`].
+    pub victim_body: Option<ModuleSeat>,
+    /// The present party's first roster id `0x8007BD10[0]`, fed by the host
+    /// (PROT 0959's arm `0x10` tests it against `1`).
+    pub lead_roster: u8,
+    /// Whether this tick opens a battle frame, fed by the host: an arm whose
+    /// state steps once a pass (PROT 0959's shake toggle) steps on it.
+    pub opens_pass: bool,
+    /// The battle frame step `*(0x1F800393)`, fed by the host.
+    pub frame_step: u8,
 }
 
 /// `FUN_801D5854(7, 6)` out of a module arm: the action SM's own case-6
@@ -531,6 +544,14 @@ pub enum SpawnAnchor {
     /// caster + 0x34`, `a1 = creature + 0x44`): PROT 0914 arm `0xB`
     /// (`0x801F7300..0x801F7324`).
     CasterCreatureRot,
+    /// The victim's display trio on the caster's angle trio (`a0 = victim +
+    /// 0x3C`, `a1 = caster + 0x44`): PROT 0959 arm `0x0D`
+    /// (`0x801F79D4..0x801F7A68`).
+    VictimBodyCasterRot,
+    /// The victim's display trio with its height zeroed (copied to the
+    /// stack, `sh zero,0x22(sp)`), on the victim's angle trio, at the scale
+    /// `a3`: PROT 0959 arm `0x0E` (`0x801F7BFC..0x801F7E18`).
+    VictimBodyGround { scale: u16 },
 }
 
 /// The seat a [`SpawnAnchor::AlongVictimHeading`] point starts from.
@@ -547,6 +568,8 @@ pub struct AnchorSeats {
     pub caster: Option<ModuleSeat>,
     /// The caster's display trio `+0x3C..+0x40`, facing its `+0x46`.
     pub caster_body: Option<ModuleSeat>,
+    /// The victim's display trio, facing its `+0x46`.
+    pub victim_body: Option<ModuleSeat>,
     pub party: [Option<ModuleSeat>; 3],
     /// The framing depth `ctx[+0x6D0]`, the scale PROT 0913 passes.
     pub depth: i16,
@@ -671,6 +694,15 @@ pub fn spawn_anchor_point_with(
             let v = victim?;
             ([v.x, v.y, v.z], [0; 3])
         }
+        SpawnAnchor::VictimBodyCasterRot => {
+            let v = seats.victim_body?;
+            let f = seats.caster.map_or(0, |c| c.facing as i16);
+            ([v.x, v.y, v.z], [0, f, 0])
+        }
+        SpawnAnchor::VictimBodyGround { .. } => {
+            let v = seats.victim_body?;
+            ([v.x, 0, v.z], [0, v.facing as i16, 0])
+        }
         SpawnAnchor::CasterCreatureRot => {
             let c = seats.caster?;
             let f = creature.map_or(0, |k| k.facing as i16);
@@ -720,6 +752,7 @@ pub fn spawn_anchor_scale(
             .map_or(0x1000, |z| z as u16),
         SpawnAnchor::LiteralScaled { scale, .. } => scale,
         SpawnAnchor::CreatureScaled { scale } => scale,
+        SpawnAnchor::VictimBodyGround { scale } => scale,
         _ => 0x1000,
     }
 }
@@ -860,6 +893,7 @@ mod gola_mushura_barra;
 mod jedo_iota_mule;
 mod juggernaut;
 mod kemaro;
+mod megaton_press;
 mod meta_terra_ozma;
 mod nighto;
 mod nova;
@@ -883,6 +917,9 @@ pub use gola_mushura_barra::*;
 pub use jedo_iota_mule::*;
 pub use juggernaut::*;
 pub use kemaro::*;
+pub use megaton_press::{
+    MEGATON_PRESS_BODY, MEGATON_PRESS_COUNTDOWN, megaton_press_camera, megaton_press_jump_height,
+};
 pub use meta_terra_ozma::*;
 pub use nighto::*;
 pub use nova::*;

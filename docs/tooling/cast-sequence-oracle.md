@@ -234,13 +234,15 @@ offset, both states, class, `within`, `mae`, both lumas) for scripts.
   steps) run `step` times longer than the pass count.
 - **Damage and RNG are not aligned.** Popups and HP readouts can differ.
 - **A forced formation is retail-only.** See the flag table.
-- **A monster cast does not inject yet.** The probe writes the monster's
-  queue on the first `0x0A`, but the monster's own turn runs its AI pick in
-  the same pass as the `0x0C` category read, which a vsync hook cannot get
-  between. The retail side then records the monster's AI action, not the
-  cast, and the run fails with no cast begin. A breakpoint on the AI pick's
-  return is the missing piece. The engine half (`LEGAIA_BATTLE_MONSTER_CAST`,
-  `--caster 3`) is wired.
+- **A monster cast injects only where the monster picks it.** The probe
+  writes the monster's queue on the first `0x0A`, but the monster's own turn
+  runs its AI pick in the same pass as the `0x0C` category read, which a
+  vsync hook cannot get between, so the retail side records the monster's AI
+  action. A state whose monster casts the spell on its own turn records it
+  (`nivora_duel_pre_megaton_press` with `--spell 0x7A --caster 3 --target 0`);
+  any other needs a breakpoint on the AI pick's return. The engine half
+  (`LEGAIA_BATTLE_MONSTER_CAST=seat,spell,p`) hands the monster the round's
+  first turn from the first prompt, so no pad drive is needed.
 - **The target has to suit the spell.** A heal aimed at a monster seat parks
   the module (Orb on seat `3` sits in its phase `9`); pass `--target 0` for an
   ally spell. The probe quits on a park (`LEGAIA_PARK`, state and module phase

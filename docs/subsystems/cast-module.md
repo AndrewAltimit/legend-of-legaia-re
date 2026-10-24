@@ -2775,8 +2775,8 @@ of the module is on screen through `0x6E` / `0x6F`
 module whose arms are not ported seats its whole record set at the caster on
 the band's first `0x70` tick, where its first arm runs
 (`CastFxState::capture_fx_pending`); seated at the pager, the records drew
-through the fade and ran out before the arms that seat them. Seven bodies
-instead seat their spawn calls on the passes their arms make them inside
+through the fade and ran out before the arms that seat them. The bodies
+below instead seat their spawn calls on the passes their arms make them inside
 `0x70` (`cast_module_camera::capture_arm_spawns`, keyed on the module and the
 body the trampoline picks, `capture_spawns_per_arm`), which also keeps a
 cell's other bodies' records off the screen:
@@ -2789,6 +2789,7 @@ cell's other bodies' records off the screen:
 | 0940 Mystic Shield (`0xAC`), `0x801F7240` | arm 1 `0x801F82D4` and arm 3 four records on the caster as each passes; arm 2 every eighth pass `0x801F8370` and every fourth an `efect.dat` effect `3`, arms 4 and 5 every eighth pass `0x801F84EC`, off the body's pass counter `0x801F8650` (`capture_arm_counted`); arm 4 the [sphere](#the-mystic-shield-effect); arm 7 flushes the pool | `FUN_801F82CC` is a bare `jr ra` |
 | 0944 Guilty Cross (`0x37`), `0x801F6A04` | arm 1 two camera-locked records on the zeroed stack trios; arm 2, after flushing the pool, three on the victim, the third `0x801F81E8` then stored `+0x16 = -0x1200`, `+0x42 = 1` (`capture_spawn_pokes`); arm 3 three on the victim as the hit lands; arm 4 flushes the pool | `FUN_801F7F2C`: arm 0 `0x801F7FE8`, arm 1 `0x801F8244` and `0x801F8290`, arm 2 `0x801F8290`, each at the caller's scale; the arm-3 record `0x801F8210` calls arms 1 and 2 |
 | 0946 Call Wave (`0x55`) / Big Wave (`0x56`), `0x801F69FC` | Call Wave's arm 0 the ray caller `0x801F78CC` on the caster's `+0x3C`; Big Wave's arm 4 the wave caller `0x801F7C44`, arm 5 nine records, arm 6 four, after halting every handle it keeps (`capture_arm_spawns_for` keys arm 0 on the action) | `FUN_801F76C4`: arm 0 three rings and eight rays `0x801F7970` with per-ray `rand()` waits, leans, lengths and rolls; arm 1 one wave `0x801F7BF8` into a sixteen-slot handle table while the phase is below `7` |
+| 0959 Megaton Press (`0x7A`), `0x801F69F0` | arm 0 `0x801F884C` on the caster; arm 8 ten records on the caster; arm `0xB` five on the caster mid-jump, after a pool flush; arm `0xD` five on the victim's body point turned to the caster; arm `0xE` eleven on the victim's body point at floor height (scales `0xC00` / `0x800` / `0x1000`), after a flush; arms 4 and `0xF` flush | `FUN_801F8250`: arms 1 and 4 two rings of twelve rocks around the origin, rolled off `rand()`; arm 3 four rolled records and a held white parked at `ctx[+0x102C]`; arm 2 a flush, the kill of that white and a `0x40`-frame fade-out ([below](#prot-0959-megaton-press)) |
 | 0961 Final Crisis / Dead End Crisis (`0xB4` / `0xA1`), `0x801F69D8` | arm 0 `0x801F7AB4` on the caster; arm 2 three records and arm 3, after flushing the pool, eleven, all on the caster's trio lowered `0x200` on height and depth in the evolved Cort's formation (`CasterShifted`, `capture_arm_spawns_in`); arms 1, 3 and 5 flush the pool on their pass | `FUN_801F78A4`: arm 0 `0x801F7AD0` and `0x801F7B1C`, arm 1 `0x801F7DB0`, arm 2 two records then four shards `0x801F7E80` with five `rand()` pokes each, arm 3 `0x801F8234` and `0x801F8278` |
 
 The ported stagers run off the parts' own calls
@@ -2878,6 +2879,7 @@ exit yaw store `ctx[+0x6DA] = 0x780` is applied as the module finishes
 | 0938 `0xB7` Mystic Circle, `0x801F69EC` | arm 0's cut behind the caster (pitch `-0x40`, TR `(0, 0x600, 0x600)`), arm 2's cut to the front (pitch `0x180`, TR `(0, 0x600, 0xC00)`); drifts on arms 1 / 2 (TR z `+4`, TR y `-1` a vsync) and 3 (`+96`, `-29`) | `0x801F8040`, **absolute**, not scalar-scaled: `0x800`, drained `8 * delta` |
 | 0946 Call Wave `0x55` / Big Wave `0x56`, `0x801F69FC` (`SINGLE_BODY`) | below | `0x801F7F20`; the director owns the phase and finishes the module at arm 8 |
 | 0953 Terio Punch, `0x801F69FC` (`SINGLE_BODY`) | below | - |
+| 0959 `0x7A` Megaton Press, `0x801F69F0` | [below](#prot-0959-megaton-press) | `0x801F9624`, seeded `scalar * 12`; the phase chain is ported (`MEGATON_PRESS_CHAIN`), so the director runs the countdown table and leaves the phase alone |
 
 - **0944** frames on the caster's facing, which the cast begin points at its
   target, so a replay is steered onto the capture's target too
@@ -2905,6 +2907,34 @@ exit yaw store `ctx[+0x6DA] = 0x780` is applied as the module finishes
   the latch is cleared and the party sweep lands through the fold at power
   `0x274`. The branches hold different caster stages (`0x5E` charge, `0x5D`
   punch).
+
+<a id="prot-0959-megaton-press"></a>
+
+**0959 Megaton Press** (`cast_module_camera::megaton_press_camera`) stages
+the whole cast on the seat axis: arm 0 stands the caster at `(0, 0x140)`
+facing `0x800` and the victim at `(0, -0x140)` facing `0`, stores yaw `0`,
+TR z `0x1000` and the focus at the origin into the globals, then arms a
+`0xC`-frame shot behind the caster at `3/4` of the framing depth. Its arms
+then walk the globals directly, with `s = scalar` per vsync: TR z `+s/2`
+through arms 1..6 (arm 3 spins the yaw `4s` a vsync, a full turn over its
+`128`-vsync dwell, and cuts back to `0x800 - caster` as it passes), three
+one-frame cuts on the caster's body point (arms 4..6, arm 4 also hiding the
+victim with `+0x04 = 0`, `+0x21C = 0xFF` and arm 6 showing it again), the
+climb of arms 7 / 8 (TR z `+16s`, TR y `-4s`, pitch `+s/8`), arm 9's shake
+(the word `0x801F9628` seeded `0x100` by arm 8, decremented by the frame
+step and added to TR y with an alternating sign once a battle frame), arm
+`0xA`'s cut onto the sinking victim, arm `0xB`'s jump (the caster's height
+`-(sin(12 w) * 1920 / 4017)` off the same word, now a clock), arm `0xD`'s
+dive (focus z `+2s`, TR z `+28s`, the caster walked `-s/4` in z), arm
+`0xE`'s rise of the victim back to the floor and arm `0xF`'s cut to its
+landing. Arm `0x11` stands the pair at `z = 0x200` / `-0x200`. The anim-rate
+stores ride the same seat writes; the director's table carries each one.
+
+Arm `0xF` lands a hit (`FUN_801DD6B4(0x30)`) on every pass the threshold word
+stands at or above the countdown, and lowers the word `scalar << 5` each
+time: with arm `0xE`'s `+ scalar << 8` that is nine hits over the arm, which
+with arms 7 and `0xD` is the eleven-hit total retail shows. The port's fold
+lands the cast's outcome as one.
 
 The rest of the measured set carries its gate as a countdown table with no camera arms
 (`cast_module_camera::capture_countdown`: per arm, the drain form and the

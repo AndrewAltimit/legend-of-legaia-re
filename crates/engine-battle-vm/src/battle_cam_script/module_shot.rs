@@ -169,6 +169,62 @@ impl BattleCamera {
         }
     }
 
+    /// A capture arm's drift of the focus z global `0x80089120` (un-negated
+    /// world units here), folded into the armed shot's target like
+    /// [`Self::drift_module`] when the shot does not move it (PROT 0959's
+    /// arms `0x0D` / `0x0E`).
+    pub fn drift_module_focus_z(&mut self, dz: i16) {
+        self.pose.focus[2] += f32::from(dz);
+        if let Some(g) = self.module_glide.as_mut().filter(|g| !g.landed())
+            && g.rate[7] == 0.0
+        {
+            g.target.focus[2] += f32::from(dz);
+        }
+    }
+
+    /// A capture arm's absolute stores into the camera globals: yaw, TR y,
+    /// TR z (the global's prescaled units) and the focus pair. A shot the
+    /// same pass arms tweens from them (PROT 0959's arm 0 stores yaw `0`,
+    /// TR z `0x1000` and the focus at the origin before its builder call).
+    /// A shot already in flight is dropped: the globals it walks have been
+    /// overwritten.
+    pub fn set_module_pose(
+        &mut self,
+        yaw: Option<f32>,
+        tr_y: Option<f32>,
+        tr_z: Option<f32>,
+        focus_xz: Option<[f32; 2]>,
+    ) {
+        if let Some(v) = yaw {
+            self.pose.yaw = v.rem_euclid(4096.0);
+        }
+        if let Some(v) = tr_y {
+            self.pose.tr[1] = v;
+        }
+        if let Some(v) = tr_z {
+            self.pose.tr[2] = v;
+        }
+        if let Some([x, z]) = focus_xz {
+            self.pose.focus[0] = x;
+            self.pose.focus[2] = z;
+        }
+        if let Some(g) = self.module_glide.as_mut().filter(|g| !g.landed()) {
+            if yaw.is_some() {
+                g.target.yaw = self.pose.yaw;
+            }
+            if tr_y.is_some() {
+                g.target.tr[1] = self.pose.tr[1];
+            }
+            if tr_z.is_some() {
+                g.target.tr[2] = self.pose.tr[2];
+            }
+            if focus_xz.is_some() {
+                g.target.focus[0] = self.pose.focus[0];
+                g.target.focus[2] = self.pose.focus[2];
+            }
+        }
+    }
+
     fn land(&mut self, g: &Glide) {
         self.pose.pitch = g.target.pitch;
         self.pose.tr = g.target.tr;

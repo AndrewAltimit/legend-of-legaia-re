@@ -1,6 +1,7 @@
 //! The op-`0x20` stagers of the capture-class cells whose parts call back
 //! into their module: PROT 0938 (Chaos Breath / Mystic Circle), PROT 0944
-//! (Guilty Cross / Curse All), PROT 0946 (Zeto's Call Wave / Big Wave) and
+//! (Guilty Cross / Curse All), PROT 0946 (Zeto's Call Wave / Big Wave), PROT
+//! 0959 (Che Delilas's Megaton Press) and
 //! PROT 0962 (the Blade Breath cell, whose
 //! `0xA5` body is Cort's Ultra Charge). Each seats more records off the
 //! calling part, the shape [`super::stager_spawns`] documents for the summon
@@ -221,9 +222,131 @@ pub fn dead_end_crisis_stager_spawns(
     }
 }
 
+/// PROT 0959's held white fade, the stager's arm 3 (`0x801F85A8..0x801F85FC`):
+/// black to white over `0x20` frames after a `0x40` delay, held (`-1`), and
+/// parked at `ctx[+0x102C]` for arm 2 to kill.
+pub const MEGATON_PRESS_HELD_WHITE: legaia_engine_battle_vm::battle_action::SummonFadeTemplate =
+    legaia_engine_battle_vm::battle_action::SummonFadeTemplate {
+        kind: 1,
+        duration: 0x20,
+        start_rgb: [0, 0, 0],
+        end_rgb: [0xFF, 0xFF, 0xFF],
+        delay: 0x40,
+        hold: -1,
+    };
+/// PROT 0959's white fade-out, the stager's arm 2 (`0x801F84A4..0x801F84D4`):
+/// white to black over `0x40` frames, after it kills the held white.
+pub const MEGATON_PRESS_WHITE_OUT: legaia_engine_battle_vm::battle_action::SummonFadeTemplate =
+    legaia_engine_battle_vm::battle_action::SummonFadeTemplate {
+        kind: 1,
+        duration: 0x40,
+        start_rgb: [0xFF, 0xFF, 0xFF],
+        end_rgb: [0, 0, 0],
+        delay: 0,
+        hold: 0,
+    };
+
+/// One of PROT 0959's twelve-rock rings (stager arms 1 and 4): rock `i` at
+/// `sin` / `cos` of entry `i * 4096 / 12 + 0xAA` of the SCUS tables over
+/// four (`lh 0x154(table + 2 idx)`, `>> 2` toward zero), each pushed
+/// `rand() % 256 - 0x80` on both axes, at height `rand() % 512 + y0`, turned
+/// by three draws `rand() % 4096`. The draw order is the three angles, `x`,
+/// `z`, then the height.
+fn megaton_press_rock_ring(
+    record: u32,
+    y0: i32,
+    rand: &mut dyn FnMut() -> u32,
+) -> Vec<StagerSpawn> {
+    (0..12i32)
+        .map(|i| {
+            let rot = [
+                (rand() % 4096) as i16,
+                (rand() % 4096) as i16,
+                (rand() % 4096) as i16,
+            ];
+            let idx = ((i << 12) / 12 + 0xAA) as u16;
+            let (sin, cos) = legaia_engine_system::trig::trig12(idx);
+            let x = i32::from(sin) / 4 + (rand() % 256) as i32 - 0x80;
+            let z = i32::from(cos) / 4 + (rand() % 256) as i32 - 0x80;
+            let y = (rand() % 512) as i32 + y0;
+            StagerSpawn {
+                record,
+                pos: [x as i16, y as i16, z as i16],
+                rot,
+                pokes: Vec::new(),
+                patches: Vec::new(),
+                halve_speed: false,
+                scale: 0x1000,
+            }
+        })
+        .collect()
+}
+
+/// PROT 0959's stager `FUN_801F8250` (Megaton Press), reached through
+/// `gp[+0x714]` from its parts' op `0x20` (`a1` the arm, the table at
+/// `0x801F69D8`):
+///
+/// | Arm | Seats |
+/// |---:|---|
+/// | 0 | `0x801F8868`, `0x801F88C4` on the caller |
+/// | 1 | a ring of twelve rocks `0x801F8C20` around the origin at height `-0x900..-0x700` ([`megaton_press_rock_ring`]), then `0x801F8940`, `0x801F89D8` on the caller |
+/// | 2 | (the host flushes the pool, kills the held white and fades white out: [`MEGATON_PRESS_WHITE_OUT`]) `0x801F8E18`, `0x801F8E60` on the caller |
+/// | 3 | four `0x801F8DD4` on the caller's position, rolled `rand() % 512 + 0x400 k + 0x100` about Z, each then stored `+0x84 = rand() % 65 - 32`; (the host parks [`MEGATON_PRESS_HELD_WHITE`]) |
+/// | 4 | a ring of twelve rocks `0x801F8E34` at height `-0x100..0x100` |
+/// | 5 | `0x801F9478`, `0x801F8AE4`, `0x801F8B30` on the caller |
+///
+/// Every call goes through `FUN_80050ED4` at `0x1000`; a caller seat is its
+/// `+0x14` / `+0x24`.
+///
+/// PORT: FUN_801F8250 (PROT 0959 stager; the fades are the host's)
+pub fn megaton_press_stager_spawns(
+    arm: u8,
+    caller: StagerCaller,
+    rand: &mut dyn FnMut() -> u32,
+) -> Vec<StagerSpawn> {
+    let at = |r: u32| on_caller(r, caller, 0x1000);
+    match arm {
+        0 => vec![at(0x801F_8868), at(0x801F_88C4)],
+        1 => {
+            let mut out = megaton_press_rock_ring(0x801F_8C20, -0x900, rand);
+            out.extend([at(0x801F_8940), at(0x801F_89D8)]);
+            out
+        }
+        2 => vec![at(0x801F_8E18), at(0x801F_8E60)],
+        3 => (0..4u16)
+            .map(|k| {
+                let mut s = at(0x801F_8DD4);
+                s.rot = [0, 0, ((rand() % 512) as u16 + (k << 10) + 0x100) as i16];
+                s.pokes = vec![(0x84, ((rand() % 65) as i32 - 32) as u16)];
+                s
+            })
+            .collect(),
+        4 => megaton_press_rock_ring(0x801F_8E34, -0x100, rand),
+        5 => vec![at(0x801F_9478), at(0x801F_8AE4), at(0x801F_8B30)],
+        _ => Vec::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn megaton_press_rock_ring_circles_the_origin() {
+        let mut n = 0u32;
+        let mut rand = || {
+            n += 1;
+            0x80
+        };
+        let s = megaton_press_stager_spawns(1, StagerCaller::default(), &mut rand);
+        assert_eq!(s.len(), 14);
+        assert_eq!(n, 72, "six draws per rock");
+        // `rand() % 256 - 0x80` is `0` here: each rock sits on the circle of
+        // radius `0x400`, rock 0 at entry `0xAA`.
+        let (sin, cos) = legaia_engine_system::trig::trig12(0xAA);
+        assert_eq!(s[0].pos, [sin / 4, (0x80 - 0x900) as i16, cos / 4]);
+        assert!(s[..12].iter().all(|r| r.record == 0x801F_8C20));
+    }
 
     #[test]
     fn dead_end_crisis_arm_two_pokes_four_shards() {

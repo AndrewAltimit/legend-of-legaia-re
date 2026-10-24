@@ -109,6 +109,8 @@ impl World {
             camera_end_frame: false,
             camera_nudge: None,
             capture_drift: None,
+            capture_pose_set: None,
+            capture_focus_z: 0,
             spawns: &[],
             every_spawns: &[],
             arm_point: None,

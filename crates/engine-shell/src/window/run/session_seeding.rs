@@ -251,13 +251,14 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
         log::info!("play-window: LEGAIA_BATTLE_INFLIGHT seeds {seed:?} at the first prompt");
         world.battle.inflight_seed = Some(seed);
     }
-    // `LEGAIA_BATTLE_MONSTER_CAST=seat,spell` (decimal or `0x..`): the
+    // `LEGAIA_BATTLE_MONSTER_CAST=seat,spell[,p]` (decimal or `0x..`): the
     // monster in engine battle `seat` casts `spell` on its next turn instead
-    // of the AI's pick (`BattleState::forced_monster_cast`, the seam the
+    // of the AI's pick (with `,p`, that turn is taken from the first command
+    // prompt, ahead of the party's commands) (`BattleState::forced_monster_cast`, the seam the
     // retail comparison corpus replays a mid-cast capture through). Pairs
     // with `--battle <ROW>` to watch one enemy special from a cold boot. A
     // debug seam.
-    if let Some((seat, spell)) = std::env::var("LEGAIA_BATTLE_MONSTER_CAST")
+    if let Some((seat, spell, at_prompt)) = std::env::var("LEGAIA_BATTLE_MONSTER_CAST")
         .ok()
         .and_then(|s| {
             let parse = |t: &str| {
@@ -265,14 +266,25 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
                 t.strip_prefix("0x")
                     .map_or_else(|| t.parse::<u8>().ok(), |h| u8::from_str_radix(h, 16).ok())
             };
-            let (a, b) = s.split_once(',')?;
-            Some((parse(a)?, parse(b)?))
+            let mut it = s.split(',');
+            let (a, b) = (it.next()?, it.next()?);
+            Some((
+                parse(a)?,
+                parse(b)?,
+                it.next().is_some_and(|t| t.trim() == "p"),
+            ))
         })
     {
         log::info!(
-            "play-window: LEGAIA_BATTLE_MONSTER_CAST seeds seat {seat} -> spell {spell:#04x}"
+            "play-window: LEGAIA_BATTLE_MONSTER_CAST seeds seat {seat} -> spell {spell:#04x}{}",
+            if at_prompt {
+                " at the first prompt"
+            } else {
+                ""
+            }
         );
         world.battle.forced_monster_cast = Some((seat, spell));
+        world.battle.forced_monster_cast_at_prompt = at_prompt;
     }
     // `LEGAIA_BATTLE_RNG_SEED=<u32>`: the world stream's state at the entry,
     // so the fight does not inherit however many field draws the boot took.

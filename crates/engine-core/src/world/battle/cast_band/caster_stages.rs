@@ -150,14 +150,41 @@ impl World {
         }
         // `0x70` frames nothing of its own: the camera is the module's.
         if let Some(cam) = self.battle.camera.as_mut() {
-            if let Some(shot) = run.camera_shot {
-                let (pose, raw_z) = shot.pose();
-                cam.arm_module_shot(pose, raw_z, u32::from(shot.frames));
-            }
-            if let Some(d) = run.capture_drift {
-                cam.drift_module(d.pitch, d.yaw, d.tr_y, d.tr_z);
-                if d.tr_x != 0 {
-                    cam.drift_module_tr_x(d.tr_x);
+            if run.capture_pose_set.is_some() || run.capture_focus_z != 0 {
+                // A director that stores into the globals runs retail's
+                // order: the arm's drift, then its pass stores, then the
+                // shot its builder tweens from them (PROT 0959).
+                if let Some(d) = run.capture_drift {
+                    cam.drift_module(d.pitch, d.yaw, d.tr_y, d.tr_z);
+                    if d.tr_x != 0 {
+                        cam.drift_module_tr_x(d.tr_x);
+                    }
+                }
+                if run.capture_focus_z != 0 {
+                    cam.drift_module_focus_z(run.capture_focus_z);
+                }
+                if let Some(set) = run.capture_pose_set {
+                    cam.set_module_pose(
+                        set.yaw.map(f32::from),
+                        set.tr_y.map(|v| v as f32),
+                        set.tr_z.map(|v| v as f32),
+                        set.focus_xz.map(|[x, z]| [f32::from(x), f32::from(z)]),
+                    );
+                }
+                if let Some(shot) = run.camera_shot {
+                    let (pose, raw_z) = shot.pose();
+                    cam.arm_module_shot(pose, raw_z, u32::from(shot.frames));
+                }
+            } else {
+                if let Some(shot) = run.camera_shot {
+                    let (pose, raw_z) = shot.pose();
+                    cam.arm_module_shot(pose, raw_z, u32::from(shot.frames));
+                }
+                if let Some(d) = run.capture_drift {
+                    cam.drift_module(d.pitch, d.yaw, d.tr_y, d.tr_z);
+                    if d.tr_x != 0 {
+                        cam.drift_module_tr_x(d.tr_x);
+                    }
                 }
             }
         }

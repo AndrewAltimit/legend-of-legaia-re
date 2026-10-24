@@ -442,6 +442,15 @@ impl World {
                     facing: self.actors.get(caster_slot)?.battle.facing_angle & 0xFFF,
                 })
             }),
+            victim_body: self.casting.module_cam.victim_slot.and_then(|v| {
+                let p = self.battle_display_trio(usize::from(v))?;
+                Some(legaia_engine_cast::cast_module_camera::ModuleSeat {
+                    x: p[0] as i16,
+                    y: p[1] as i16,
+                    z: p[2] as i16,
+                    facing: self.actors.get(usize::from(v))?.battle.facing_angle & 0xFFF,
+                })
+            }),
             party: std::array::from_fn(|n| {
                 (n < party_count && self.actors.get(n).is_some_and(|a| a.battle.hp != 0))
                     .then(|| seat_of(n))

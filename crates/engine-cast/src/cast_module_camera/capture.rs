@@ -52,6 +52,55 @@ pub struct CaptureCamArm {
     /// The arm took a branch that applies no damage: the band's fold owes
     /// this cast nothing.
     pub skips_fold: bool,
+    /// Absolute stores the arm makes into the camera globals on this pass,
+    /// applied after [`Self::drift`] and before [`Self::shot`] (whose tween
+    /// builds from them).
+    pub pose_set: Option<CapturePoseSet>,
+    /// A drift of the focus z global `0x80089120` (world units, the
+    /// un-negated focus), per tick like [`Self::drift`].
+    pub focus_z: i16,
+    /// The arm's stores into the caster seat `actor_table[ctx + 0x13]`.
+    pub caster_write: CaptureSeatWrite,
+    /// The arm's stores into the victim seat `actor_table[caster + 0x1DD]`.
+    pub victim_write: CaptureSeatWrite,
+}
+
+/// Absolute stores a capture arm makes into the camera globals: yaw
+/// `0x8007B792`, TR y / z `0x800840BC` / `0x800840C0` (TR z in the global's
+/// own prescaled units) and the focus pair `0x80089118` / `0x80089120`
+/// (world units, un-negated).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CapturePoseSet {
+    pub yaw: Option<i16>,
+    pub tr_y: Option<i32>,
+    pub tr_z: Option<i32>,
+    pub focus_xz: Option<[i16; 2]>,
+}
+
+/// A capture arm's stores into one battle seat: the live pair `+0x34` /
+/// `+0x38` (absolute, or `dz` added), the height `+0x36` (absolute, or `dy`
+/// added; an absolute store lands after the add), the heading `+0x46`, the
+/// colour word `+0x04`, the render flag `+0x21C`, the anim rate `+0x21D`
+/// and the anim node's cursor `*(+0x22C) + 0x68` zeroed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CaptureSeatWrite {
+    pub rate: Option<u8>,
+    pub x: Option<i16>,
+    pub z: Option<i16>,
+    pub dz: i16,
+    pub y: Option<i16>,
+    pub dy: i16,
+    pub facing: Option<u16>,
+    pub colour: Option<u32>,
+    pub render_flag: Option<u8>,
+    pub cursor_reset: bool,
+}
+
+impl CaptureSeatWrite {
+    /// Whether the arm writes nothing into the seat.
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 /// One capture body's camera arms, by the module phase `ctx[+0x279]` the
@@ -74,6 +123,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (938, MYSTIC_CIRCLE_BODY) => Some(mystic_circle_camera),
         (946, SINGLE_BODY) => Some(wave_camera),
         (966, SINGLE_BODY) => Some(super::evil_seru_magic_camera),
+        (959, super::MEGATON_PRESS_BODY) => Some(super::megaton_press_camera),
         _ => None,
     }
 }

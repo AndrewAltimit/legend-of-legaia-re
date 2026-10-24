@@ -445,6 +445,12 @@ pub struct BattleState {
     /// standing,
     /// instead of on a fresh roll. `None` on every ordinary fight.
     pub forced_monster_target: Option<u8>,
+    /// With [`Self::forced_monster_cast`]: dispatch that cast the moment the
+    /// battle's first command prompt opens, in place of the party's
+    /// commands, as [`Self::inflight_seed`] does for a party caster - the
+    /// cast-sequence oracle's way to record a monster cast from a prompt
+    /// with no pad drive. `false` on every ordinary fight.
+    pub forced_monster_cast_at_prompt: bool,
     /// A debug seed that makes the next party killing blow's steal roll
     /// land - the retail comparison corpus's way into a capture that shows
     /// the death-spoils caption: the capture holds the outcome of a
@@ -1073,6 +1079,7 @@ impl BattleState {
             inflight_seed: None,
             forced_monster_cast: None,
             forced_monster_target: None,
+            forced_monster_cast_at_prompt: false,
             forced_steal: false,
             forced_melee_hits: Default::default(),
             forced_melee_total: None,

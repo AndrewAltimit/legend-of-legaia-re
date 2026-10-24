@@ -384,6 +384,25 @@ impl World {
         }
     }
 
+    /// Hand monster seat `seat` the round's first turn from the command
+    /// prompt, closing the pad-owned surfaces as
+    /// [`Self::dispatch_inflight_seed`] does; its pick is the
+    /// [`BattleState::forced_monster_cast`](crate::world::BattleState::forced_monster_cast)
+    /// seed. A debug seam: retail reaches a monster's turn only through the
+    /// round's initiative order.
+    pub(in crate::world) fn dispatch_forced_monster_turn(&mut self, seat: u8) {
+        use crate::battle_round::RoundPhase;
+        self.battle.command = None;
+        self.battle.spell_menu = None;
+        self.battle.item_menu = None;
+        self.battle.arts_menu = None;
+        self.battle.arts_input = None;
+        self.battle.round_flow.phase = RoundPhase::Execute;
+        self.sweep_battle_intro_names();
+        self.set_battle_flow(legaia_engine_battle_menus::battle_flow::BattleFlowState::Idle);
+        self.take_monster_turn(seat);
+    }
+
     /// Commit `action` as `actor`'s command for this round and walk the ring
     /// on - retail's ten-site commit idiom (`0x801D16AC` and siblings):
     /// advance to the next member that still owes a command, or - once none

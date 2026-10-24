@@ -257,8 +257,15 @@ impl World {
             entry,
             body.unwrap_or(legaia_engine_cast::cast_module_camera::SINGLE_BODY),
         ) {
+            // The victim the cast latched on its first pass: a spawn on the
+            // victim seat resolves through it.
+            self.casting
+                .module_cam
+                .victim_slot
+                .get_or_insert(victim_slot);
             let seats = self.module_cam_seats(caster_slot, victim_slot);
             let mut st = self.module_cam_with_yaw_base();
+            self.feed_capture_cam(caster_slot, victim_slot, &mut st);
             let arm = direct(&mut st, ctx.phase, seats);
             self.store_module_cam(st);
             if let Some(v) = arm.latch
@@ -271,6 +278,8 @@ impl World {
             }
             run.camera_shot = arm.shot;
             run.capture_drift = arm.drift;
+            run.capture_pose_set = arm.pose_set;
+            run.capture_focus_z = arm.focus_z;
             capture_held = arm.hold;
             capture_arm = Some(arm);
         }
@@ -1267,6 +1276,12 @@ impl World {
         if entry == 908 && phase_in == ticks_a::ZENOIR_SHATTER_ARM {
             let latched = self.casting.module_cam.victim_slot.unwrap_or(victim_slot);
             self.zenoir_shatter(latched);
+        }
+        // A capture director's seat stores (PROT 0959's stand-ins, heights
+        // and hides), after the fold-back for the same reason.
+        if let Some(arm) = capture_arm {
+            self.apply_capture_seat_writes(caster_slot, arm.caster_write);
+            self.apply_capture_seat_writes(victim_slot, arm.victim_write);
         }
         // The summon-creature directors' HP and colour-word stores, after
         // the views' fold-back like PROT 0908's.

@@ -206,7 +206,7 @@ def run_engine(a, out: Path) -> bool:
         # party_count + m. The party count is the seated party slots in
         # retail's ground list.
         pc = max(1, sum(1 for g in done.get("ground", "").split(",")[:3] if g not in ("", "-")))
-        env["LEGAIA_BATTLE_MONSTER_CAST"] = f"{pc + caster - 3},{a.spell}"
+        env["LEGAIA_BATTLE_MONSTER_CAST"] = f"{pc + caster - 3},{a.spell},p"
     edir = out / "engine"
     if edir.exists():
         shutil.rmtree(edir)

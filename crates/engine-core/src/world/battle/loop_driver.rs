@@ -364,6 +364,22 @@ impl World {
         {
             self.dispatch_inflight_seed(seed);
         }
+        // The same seam for a monster caster: the forced cast's seat takes
+        // the round's first turn from the prompt.
+        if self.battle.forced_monster_cast_at_prompt
+            && self.battle.command.is_some()
+            && self.battle.flow
+                == legaia_engine_battle_menus::battle_flow::BattleFlowState::TurnPrompt
+            && self
+                .battle
+                .camera
+                .as_ref()
+                .is_none_or(|c| c.entry_sweep_counter().is_none())
+            && let Some((seat, _)) = self.battle.forced_monster_cast
+        {
+            self.battle.forced_monster_cast_at_prompt = false;
+            self.dispatch_forced_monster_turn(seat);
+        }
 
         // The menu SM's pre-dispatch gate: while a tracked widget glide is
         // in flight no command state runs, so no surface below reads the pad
