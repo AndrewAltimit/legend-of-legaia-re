@@ -8,7 +8,7 @@
 //! `legaia_engine_field::camera_ease::ease_step` encodes. Before the writer existed the
 //! kernel had no target and no accumulator, so nothing exercised either half.
 
-use super::*;
+use legaia_engine_core::world::*;
 use legaia_engine_mode::mode::SceneMode;
 
 /// A field world with a live player actor standing on the `0` floor.

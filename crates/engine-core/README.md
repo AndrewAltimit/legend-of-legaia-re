@@ -108,6 +108,12 @@ The full edge set and the gate over the kernel crates are in
 (`cargo test -p legaia-engine-core --test integration foo::`). Tests that
 read a disc skip and pass when `LEGAIA_DISC_BIN` is unset.
 
+`src/world/tests/` holds the unit tests that reach crate-private state (a
+battle-loop step, a `pub(crate)` field); a test that needs only the public
+API belongs in `tests/` instead. Moving one does not shorten the test build
+by itself: the library compiles a second time in test mode as long as any
+unit test remains in `src/`.
+
 ## Where the behaviour is documented
 
 | Topic | Page |

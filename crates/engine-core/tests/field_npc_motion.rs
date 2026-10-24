@@ -1,5 +1,8 @@
-use super::*;
+use legaia_engine_core::world::*;
+use legaia_engine_field::dialog_state::DialogRequest;
+use legaia_engine_field::field_events::FieldEvent;
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_system::input;
 
 // ---------------------------------------------------------------------------
 // Field-NPC motion (motion-VM wiring) + prop walk-touch dispatch

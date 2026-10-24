@@ -3,7 +3,6 @@
 use super::*;
 use legaia_engine_battle_vm::battle_action::BattleActionHost;
 use legaia_engine_mode::mode::SceneMode;
-use vm::Insn;
 
 /// Take `Begin` on the party's commit-confirm screen (`0x6E`) when the last
 /// commit raised it, so the round plays out. Returns whether it was up.
@@ -298,15 +297,11 @@ fn gimard_spell_def() -> legaia_engine_battle::spells::SpellDef {
 }
 
 mod actor_alloc_init;
-mod actor_cadence;
-mod ambient_cell_cycler;
-mod ambient_collision_exempt;
 mod battle_anim;
 mod battle_ap_carry;
 mod battle_auto_command;
 mod battle_capture_bgm;
 mod battle_capture_class_disc;
-mod battle_clip_ladder;
 mod battle_dead_target;
 mod battle_intro_names_sweep;
 mod battle_item_use_cue;
@@ -327,23 +322,17 @@ mod battle_turns_items;
 mod battle_tutorial_flow;
 mod battle_ui_cue_routing;
 mod battle_xp_attack;
-mod camera_offset_ease;
 mod cast_band;
 mod cast_presentation_disc;
 mod commit_confirm;
-mod core;
 mod counterattack;
 mod dialogue_runner_fx;
-mod effect_playback;
 mod effects_actors;
 mod encounters;
 mod fatal_decision;
 mod field_events;
 mod field_grid;
 mod field_interaction;
-mod field_kernels;
-mod field_npc_motion;
-mod field_records;
 mod field_timer_actors;
 mod flash_limiter;
 mod fog_region_reset;
@@ -367,20 +356,15 @@ mod player_clip_pick;
 mod player_scale;
 mod round_prompt_gate;
 mod rumble_field_ops;
-mod save_state;
 mod script_teleport;
-mod scripted_menu_press;
 mod seru_absorb;
 mod seru_side_effect_live_disc;
-mod set_equip_slot;
 mod shiny;
 mod slide;
 mod sound_stream_gates;
 mod sparring_solo;
 mod spirit_gauge;
 mod summon_final_heal;
-mod system_bbox_target;
-mod take_item;
 mod tile_board;
 mod worldmap;
 

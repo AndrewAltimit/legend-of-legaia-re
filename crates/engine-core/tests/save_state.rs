@@ -1,4 +1,5 @@
-use super::*;
+use legaia_engine_core::world::*;
+use legaia_engine_vm::MAX_ACTORS;
 
 // --- Save / load round-trip ----------------------------------------
 

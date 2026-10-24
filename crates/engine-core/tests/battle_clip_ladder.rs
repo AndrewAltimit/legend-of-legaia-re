@@ -2,8 +2,9 @@
 //! (`world::battle::clip_ladder`, `FUN_8004AD80` `0x8004BE30..0x8004BF4C`
 //! and the monster-death arm `0x8004B094..0x8004B6A0`).
 
-use super::*;
+use legaia_actor_formats::monster_archive::MonsterAnimation;
 use legaia_engine_battle_vm::battle_action::ActorFlags;
+use legaia_engine_core::world::*;
 
 fn clip(action_id: u8) -> MonsterAnimation {
     use legaia_actor_formats::monster_archive::PartPose;

@@ -1,5 +1,10 @@
-use super::*;
+use legaia_engine_battle_vm::battle_action::{BattleEndCause, StepOutcome};
+use legaia_engine_core::world::*;
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_vm as vm;
+use legaia_engine_vm::MAX_ACTORS;
+use vm::Insn;
+use vm::Position as ActorVmPosition;
 
 #[test]
 fn world_starts_with_inactive_actors() {

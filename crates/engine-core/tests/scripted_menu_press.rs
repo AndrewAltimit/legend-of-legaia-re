@@ -10,7 +10,7 @@
 //! `0x801F16AC` from the dispatcher's retire arm, after which the park stays
 //! clear.
 
-use super::*;
+use legaia_engine_core::world::*;
 use legaia_engine_mode::mode::SceneMode;
 
 use legaia_engine_field::man_field_scripts::OP49_PARK_PRESERVING_SUB_OPS;

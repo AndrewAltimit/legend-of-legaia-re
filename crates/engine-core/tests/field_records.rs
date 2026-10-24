@@ -1,4 +1,4 @@
-use super::*;
+use legaia_engine_core::world::*;
 use legaia_engine_mode::mode::SceneMode;
 
 #[test]
