@@ -588,7 +588,9 @@ impl World {
             };
             scene.channel_delta = fx_delta;
             scene.tick(&mut host, fx_delta);
-            self.queue_battle_part_scrolls(&mut scene.parts);
+            // The mode-3 HSV adds and the mode-4 countdown take the pass's
+            // span like the rest of the part tick.
+            self.queue_battle_part_scrolls_over(&mut scene.parts, pass);
             // The morph-lane ramp envelope `FUN_80020740`, which the part
             // tick runs on a part whose `+0x10` word carries the op-`0x0A`
             // bit `0x1000` - the same gate the field ambient tree takes. It
