@@ -144,6 +144,31 @@ goes and the block score rises or holds within a block (`kor5_field_card_boot` `
 to `+0.17`), and the battle states it was tried on score the same in both
 modes.
 
+### What PSX mode still leaves
+
+Over the whole retail corpus PSX mode is not a uniform gain, so the
+retail-compare image child stays on the clean rasteriser. The field states
+mostly rise; what drops is thin geometry - a hit spark's spikes
+(`battle_melee_hit_spark`), a cast's ice shards
+(`nivora_duel_mid_blazing_slash`). The host covers a pixel wherever the
+snapped triangle crosses one of its framebuffer sample points, a supersample
+of the stage pixel, while the GPU tests one point per stage pixel, so a
+primitive less than a stage pixel wide lands on different pixels. Testing
+coverage at the stage pixel's own point (the barycentric weights the texel
+row already carries reach it) is the candidate, with shared edges needing
+the GPU's top-left rule to neither crack nor double-blend.
+
+Per-primitive painter order is not the answer to the opaque ordering
+residue. Drawing every owned field primitive at the depth of its corners'
+mean `w`, the `AVSZ` key the TMD handlers link their packets by
+(`mfc2 s2, OTZ` / `andi s2, s2, 0xFFFC` / `addu s2, s2, t0` in
+`FUN_80043B58`), puts `door_warp_town01_to_map01`'s rock quad over its
+neighbour as retail does, and in the same pass hides the slot cabinet's
+face in `casino_ticket_counter` and a beam and counter in
+`doman_field_card_boot`: retail's frame there is not one ordering table
+keyed by every primitive's own mean, so the per-object linking has to be
+read before an ordering rule is ported.
+
 ## Enhanced lighting (enhancement, NOT retail)
 
 `Renderer::set_dynamic_lighting(true)` shades the VRAM-mesh and colour-mesh
