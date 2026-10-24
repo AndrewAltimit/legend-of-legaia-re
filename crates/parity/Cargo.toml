@@ -3,7 +3,9 @@ name = "legaia-parity"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-# tests/integration.rs gathers every tests/*.rs into one binary.
+# tests/integration.rs gathers every tests/*.rs into one module, which
+# src/lib.rs mounts into the unit-test target (see the comment there); no
+# integration binary is built.
 autotests = false
 
 [lib]
@@ -70,7 +72,3 @@ legaia-disc-patch.workspace = true
 legaia-patcher.workspace = true
 legaia-ui-formats.workspace = true
 legaia-lzs.workspace = true
-
-[[test]]
-name = "integration"
-path = "tests/integration.rs"

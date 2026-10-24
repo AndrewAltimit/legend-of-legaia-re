@@ -348,7 +348,7 @@ cargo test --workspace --profile release-test           # CI's test profile: rel
 cargo test -p legaia-lzs                                 # single-crate
 cargo test --workspace test_name                         # single test by name
 cargo test -p legaia-engine-shell --test integration foo::  # one tests/foo.rs (a crate with several tests/*.rs builds them as one `integration` binary)
-cargo test -p legaia-engine-core --lib integration::foo::   # engine-core mounts its tests/*.rs into the unit-test target instead (crate README)
+cargo test -p legaia-engine-core --lib integration::foo::   # engine-core, engine-scene(-host), engine-session, parity, web-play mount tests/*.rs into the unit-test target instead
 ```
 
 Top-level pipeline (recommended for end-to-end runs):

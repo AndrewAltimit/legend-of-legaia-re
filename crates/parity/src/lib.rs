@@ -35,3 +35,15 @@ pub mod retail_compare_script;
 pub mod sim_trace;
 pub mod vram_oracle;
 pub mod window_child;
+
+// `tests/*.rs` compile into this crate's unit-test target rather than an
+// integration binary of their own: an integration binary links the non-test
+// library, so a `cargo test` would build the crate twice (once as the
+// library, once in test mode for the `src/` unit tests) with the two on one
+// critical path. The alias lets those files keep naming the crate as
+// `legaia_parity::`, the public paths a downstream crate sees.
+#[cfg(test)]
+extern crate self as legaia_parity;
+#[cfg(test)]
+#[path = "../tests/integration.rs"]
+mod integration;

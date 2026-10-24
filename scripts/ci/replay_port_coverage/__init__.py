@@ -139,6 +139,8 @@ Usage:
     scripts/ci/replay-port-coverage.py --list-ladders | while read -r t pkg; do
         cargo llvm-cov clean --profraw-only
         cargo llvm-cov -p "$pkg" --test integration --no-report -- "${t}::"
+        # (a crate that mounts tests/*.rs in its unit-test target instead:
+        #  `--lib --no-report -- "integration::${t}::"`; the script decides)
         cargo llvm-cov report --json --output-path "target/cov-$t.json"
     done
 

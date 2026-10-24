@@ -3,7 +3,9 @@ name = "legaia-web-play"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-# tests/integration.rs gathers every tests/*.rs into one binary.
+# tests/integration.rs gathers every tests/*.rs into one module, which
+# src/lib.rs mounts into the unit-test target (see the comment there); no
+# integration binary is built.
 autotests = false
 
 # An rlib only: the wasm bundle is `legaia-web-viewer`'s cdylib, which links
@@ -75,7 +77,3 @@ features = [
 # Named only by the disc-gated tests that read PROT.DAT directly.
 legaia-prot.workspace = true
 toml.workspace = true
-
-[[test]]
-name = "integration"
-path = "tests/integration.rs"

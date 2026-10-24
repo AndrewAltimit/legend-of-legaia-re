@@ -257,7 +257,11 @@ Gating on the directory keeps `checked >= 1` meaningful: a library that is prese
 mv saves saves.off
 for f in $(grep -rl 'saves/' crates/*/tests/); do
   pkg=$(basename "$(dirname "$(dirname "$f")")")
-  cargo test -p "legaia-$pkg" --test integration "$(basename "$f" .rs)::"
+  if grep -q '^name = "integration"' "crates/$pkg/Cargo.toml"; then
+    cargo test -p "legaia-$pkg" --test integration "$(basename "$f" .rs)::"
+  else  # tests/*.rs mounted in the unit-test target
+    cargo test -p "legaia-$pkg" --lib "integration::$(basename "$f" .rs)::"
+  fi
 done
 mv saves.off saves
 ```

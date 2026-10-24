@@ -63,8 +63,10 @@ Nothing in `engine-core` names this crate. The hosts, `engine-session`,
 
 ## Tests
 
-`tests/*.rs` build as one `integration` binary; select a file by module path
-(`cargo test -p legaia-engine-scene-host --test integration foo::`). These
+`tests/*.rs` are mounted into the library's unit-test target (`src/lib.rs`,
+`mod integration`) rather than built as an integration binary, so a test
+build compiles the crate once; select a file by module path
+(`cargo test -p legaia-engine-scene-host --lib integration::foo::`). These
 are the engine's scene-level chains, a scene entered and ticked off the disc,
 so most of them read a disc and skip and pass when `LEGAIA_DISC_BIN` is
 unset.

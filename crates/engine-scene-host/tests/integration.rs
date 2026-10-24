@@ -1,9 +1,11 @@
-//! The crate's integration tests as one test binary.
+//! The crate's public-API tests, mounted into the library's unit-test target.
 //!
 //! Each `tests/<name>.rs` is a module here rather than its own binary
-//! (`autotests = false` in Cargo.toml): one compile and one link instead of
-//! one per file. Run a single file's tests with
-//! `cargo test -p legaia-engine-scene-host --test integration <name>::`.
+//! (`autotests = false` in Cargo.toml), and `src/lib.rs` mounts this file as
+//! `#[cfg(test)] mod integration`, so the library compiles once in test mode
+//! and never a second time as a plain library to link a test binary against.
+//! Run a single file's tests with
+//! `cargo test -p legaia-engine-scene-host --lib integration::<name>::`.
 
 mod b3_menu_warp_drain;
 mod baka_duel_ladder;

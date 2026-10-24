@@ -48,7 +48,15 @@ export_one() {
     local t=$1 pkg=$2
     echo "== $t ($pkg) $(date -Is)" >>"$LOG"
     cargo llvm-cov clean --profraw-only >>"$LOG" 2>&1
-    if ! cargo llvm-cov -p "$pkg" --test integration --no-report -- "${t}::" >>"$LOG" 2>&1; then
+    # A crate that mounts its tests/*.rs into the unit-test target (no
+    # `[[test]] name = "integration"` in its Cargo.toml) runs them as
+    # `--lib integration::<file>::`.
+    local target=(--test integration) filter="${t}::"
+    if ! grep -q '^name = "integration"' "crates/${pkg#legaia-}/Cargo.toml"; then
+        target=(--lib)
+        filter="integration::${t}::"
+    fi
+    if ! cargo llvm-cov -p "$pkg" "${target[@]}" --no-report -- "$filter" >>"$LOG" 2>&1; then
         echo "FAILED $t" >>"$LOG"
         return 1
     fi

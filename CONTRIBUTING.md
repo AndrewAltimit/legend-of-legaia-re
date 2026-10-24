@@ -48,7 +48,7 @@ cargo clippy --all-targets --workspace -- -D warnings
 cargo test --workspace --profile release-test
 ```
 
-`release-test` is CI's test profile: `release`'s optimisation level without LTO, so a relink after a small change stays fast. To run one test file, select it by module path inside the crate's single `integration` test binary: `cargo test -p legaia-engine-shell --profile release-test --test integration foo::`. `engine-core` mounts its `tests/*.rs` into the library's unit-test target instead, so there it is `cargo test -p legaia-engine-core --profile release-test --lib integration::foo::`.
+`release-test` is CI's test profile: `release`'s optimisation level without LTO, so a relink after a small change stays fast. To run one test file, select it by module path inside the crate's single `integration` test binary: `cargo test -p legaia-engine-shell --profile release-test --test integration foo::`. `engine-core`, `engine-scene`, `engine-scene-host`, `engine-session`, `parity` and `web-play` mount their `tests/*.rs` into the library's unit-test target instead (one compile of the crate rather than two), so there it is `cargo test -p legaia-engine-core --profile release-test --lib integration::foo::`.
 
 **Run them yourself.** The full CI job triggers on push-to-main and manual dispatch, not on pull-request events, so opening a PR does not automatically prove your branch is green.
 
