@@ -262,10 +262,15 @@ impl World {
     /// gate), so the row stands in the underwater backdrop while the bubbles
     /// rise; arm 5's pass hides it for the creature's entrance
     /// (`+0x04 = 0`, `+0x21C = 0xFF`, `0x801F7040..`), arm 11's shows it
-    /// again for the attack (`0x801F7590..`), arm 17's hides it
-    /// (`0x801F8454..`) and the hit arm 18 shows each struck monster
-    /// (`0x801F87C4..`). The engine's shown word is its resting `0` under a
-    /// lowered flag. Each pass also halts the parts the arm kills by their
+    /// again for the attack, turned to face the party at half its render
+    /// scale (`+0x46 = 0x800`, node `+0x72 >>= 1`, `0x801F7590..0x801F75C8`;
+    /// the arm also halves `+0x21D`, `0x801F75D4..0x801F75E0`, which is not
+    /// carried: under it the engine's hit reaction ran arm 19's settle poll
+    /// `210` vsyncs against retail's `143`), arm 16's pass hides it,
+    /// doubles the scale back and drops it to the floor (`+0x36 = 0`,
+    /// `0x801F842C..0x801F8460`; arm 17 starts at `0x801F8488`), and the hit
+    /// arm 18 shows each struck monster (`0x801F87C4..`). The engine's shown
+    /// word is its resting `0` under a lowered flag. Each pass also halts the parts the arm kills by their
     /// parked handles and runs out the loops arm 16 ends
     /// ([`legaia_engine_cast::cast_module_camera::mule_arm_kills`],
     /// [`legaia_engine_cast::cast_module_camera::mule_arm_loop_ends`]).
@@ -286,9 +291,37 @@ impl World {
                 }
             }
         }
+        // The creature: arm 11's pass lifts it to `+0x36 = -0x100` facing
+        // `0` (`0x801F7668..0x801F7674`), arm 14's lights it white and holds
+        // the word (`+0x04 = 0x3FFFFFFF`, `+0x0C = 0x1000`, `+0x21C = 0xFF`,
+        // `0x801F7AB0..0x801F7AF0`, beside its clip-2 stage), and arm 16's
+        // hides it (`+0x21C = 0xFF`, `+0x04 = 0`, `0x801F83C4..0x801F83D0`).
+        if passed
+            && matches!(phase_in, 11 | 14 | 16)
+            && let Some(c) = self
+                .casting
+                .summon_actor_slot
+                .and_then(|s| self.actors.get_mut(usize::from(s)))
+        {
+            match phase_in {
+                11 => {
+                    c.move_state.world_y = -0x100;
+                    c.battle.facing_angle = 0;
+                }
+                14 => {
+                    c.battle.render_color = 0x3FFF_FFFF;
+                    c.battle.render_blend = 0x1000;
+                    c.battle.render_flag = RENDER_FLAG_HIDDEN;
+                }
+                _ => {
+                    c.battle.render_color = 0;
+                    c.battle.render_flag = RENDER_FLAG_HIDDEN;
+                }
+            }
+        }
         let hidden = match (phase_in, passed) {
             (1, _) | (11 | 18, true) => false,
-            (5 | 17, true) => true,
+            (5 | 16, true) => true,
             _ => return,
         };
         let pc = usize::from(self.party.party_count);
@@ -298,6 +331,18 @@ impl World {
             }
             a.battle.render_flag = if hidden { RENDER_FLAG_HIDDEN } else { 0 };
             a.battle.render_color = 0;
+            let scale = a.battle.render_scale.unwrap_or(0x1000);
+            match (phase_in, passed) {
+                (11, true) => {
+                    a.battle.facing_angle = 0x800;
+                    a.battle.render_scale = Some(scale >> 1);
+                }
+                (16, true) => {
+                    a.battle.render_scale = Some(scale.wrapping_shl(1));
+                    a.move_state.world_y = 0;
+                }
+                _ => {}
+            }
         }
     }
 

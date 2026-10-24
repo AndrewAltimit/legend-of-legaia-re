@@ -332,7 +332,7 @@ impl World {
                 // summon creature's clip, rate and frame.
                 if creature_diag {
                     eprintln!(
-                        "[creature-anim] slot={i} phase={} cur={} queued={} rate={} frame={after} pos={:?}",
+                        "[creature-anim] slot={i} phase={} cur={} queued={} rate={} frame={after} pos={:?} colour={:#x} tint={}",
                         module_phase,
                         actor.battle.current_anim,
                         actor.battle.queued_anim,
@@ -342,6 +342,8 @@ impl World {
                             actor.move_state.world_y,
                             actor.move_state.world_z
                         ],
+                        actor.battle.render_color,
+                        actor.battle.render_flag,
                     );
                 }
                 // The natural end's displacement: the actor steps along its

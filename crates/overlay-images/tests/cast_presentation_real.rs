@@ -118,6 +118,21 @@ fn decode_every_module() {
     // (`0x801F7C5C..0x801F7CB0`): twelve slots from `0x801FA478`, eight from
     // `0x801FA4B4`, among them the blue and yellow held fades arm 10 parked
     // at `0x801FA4C8` / `0x801FA4CC`. Its arm 4 parks a seated part.
+    // PROT 0929's switch tests `0x10` and falls onto the `beq` that takes
+    // `0x11` to `0x801F8488`; arm 17's code opens with the kill of the held
+    // white arm 15 parked at `ctx[+0x102C]` (`0x801F84C8..0x801F84E4`), read
+    // through the context register arm 16's loop reuses.
+    let mule = &by_entry[&929];
+    assert_eq!(
+        mule.dispatches.first().and_then(|d| d.exact_arms.get(&0x11)),
+        Some(&0x801F_8488)
+    );
+    assert!(mule.arm_sites(None, 17).any(|s| matches!(
+        s.call,
+        PresentationCall::ActorKill {
+            slot: cast_presentation::HandleSlot::Ctx(0x102C)
+        }
+    )));
     let gilium = &by_entry[&923];
     let kills: BTreeSet<u32> = gilium
         .arm_sites(None, 11)

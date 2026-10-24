@@ -314,9 +314,12 @@ impl World {
                         .fades
                         .iter()
                         .any(|f| f.slot == Some(slot));
+                    // A module whose fades are hand-ported kills its own
+                    // (PROT 0905's arm 4 ends its arm-2 white rise there).
                     if slot == BAND_FADE_SLOT
                         && !parked_here
                         && !self.casting.module_pres.band_fade_unparked
+                        && !FADES_PORTED_BY_HAND.contains(&entry)
                     {
                         self.presentation.fade = None;
                         self.casting.module_pres.band_fade_unparked = true;

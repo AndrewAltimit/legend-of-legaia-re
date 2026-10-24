@@ -2493,8 +2493,16 @@ phase instead, the stager's `3` dropped the stage from the cast's first
 tick. Mule's monster-row visibility is carried too
 (`World::apply_mule_writes`): arm 1 shows every living monster on each of
 its passes, held or not (`0x801F6D04`, ahead of the stream-token gate),
-arms 5 and 17 hide the row on their passes and arm 11 shows it again, and
-the hit arm 18 shows the monsters it strikes. Mule's arms 1..4 also push the
+arm 5's pass hides the row, arm 11's shows it again turned to the party at
+half its render scale (node `+0x72 >>= 1`, `0x801F75BC..0x801F75C8`), arm
+16's pass hides it and doubles the scale back (`0x801F842C..0x801F8460`;
+arm 17 opens at `0x801F8488`), and the hit arm 18 shows the monsters it
+strikes. Arm 11 also halves the row's rate `+0x21D`, which is not carried:
+under it the engine's hit reaction held arm 19's settle poll `210` vsyncs
+against retail's `143`. The creature takes three stores: arm 11's pass lifts
+it to `+0x36 = -0x100`, arm 14's lights it white and holds the word
+(`+0x04 = 0x3FFFFFFF`, `+0x21C = 0xFF`, `0x801F7AB0..0x801F7AF0`), and arm
+16's hides it (`0x801F83C4..0x801F83D0`). Mule's arms 1..4 also push the
 anchor `0x80089120` under arm 0's landed cut, which the view builder reads
 every frame, so the director re-arms that cut on the moved anchor each
 pass; without it the row filled the screen where retail frames it small in
@@ -3544,6 +3552,17 @@ slots from `0x801FA478` and eight from `0x801FA4B4`, among them the blue and
 yellow held fades its arm 10 parked at `0x801FA4C8` / `0x801FA4CC`. Read as
 one slot, those two fades stayed up as a white screen from arm 12 to the
 end of the turn.
+
+**A switch that narrows onto a test is not at the arm yet.** The decoder
+first marks an arm where its walk of the switch narrows to one value, which
+on a `beq` chain can be the chain's last test rather than the arm's code
+(PROT 0929 narrows to `0x11` on `beq v1,v0,0x801F8488` at `0x801F6B88`).
+Each site's straight-line run starts from that mark, so it crosses the
+other arms' code first; a site the run leaves unresolved is decoded again
+from the arm's own first instruction (`PhaseDispatch::exact_arms`). Mule's
+arm 17 kill of `ctx[+0x102C]` - the held white its arm 15 parks - reads
+the context register arm 16's loop zeroes, so only the second run finds it,
+and without it the white stood through arm 18's fade back to the stage.
 
 **The pool flush is a kill too.** `FUN_80050E74` walks all `0x80` words of
 the part pool at `0x801C90F0`, sets the done bit on every actor it finds and
