@@ -2716,8 +2716,8 @@ Retail's drawing area is `320 x 224` at draw offset `(0, 4)` / `(0, 244)`,
 and the display scans out from the same origin
 ([renderer](../subsystems/renderer.md#the-screen-the-gte-projects-onto-is-320x224-not-320x240)),
 so the compared frame is the top `224` rows of the display crop - the rows
-below are never drawn. A state whose display is not `320` wide (no corpus
-state's field, battle or menu frame is) is not scored. The port keeps a
+below are never drawn. A state whose display is not `320` wide is not
+scored; every seeded corpus state's is. The port keeps a
 `320 x 240` logical screen whose row `y` is retail's draw row `y` (the
 `OFY = 114` bias puts the GTE origin on the same row in both).
 
