@@ -8,6 +8,7 @@ use legaia_engine_battle_vm::battle_action::{BattleEndCause, StepOutcome};
 use legaia_engine_vm as vm;
 
 mod actor_draw;
+mod arts_voice;
 mod auto_combo;
 mod auto_command;
 mod camera_ghost;

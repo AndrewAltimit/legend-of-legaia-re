@@ -2206,24 +2206,32 @@ live battle uses - see
 
 The engine wires this end-to-end:
 
-- **Cue emission** (`engine-core`): executing arts through the live battle Arts
-  command input pushes one `BattleShoutCue { cslot, action }` **per art the turn
-  performs** (`arm_battle_art_action`, from the art constants the built queue
-  carries), each keyed on that art's own record action constant. Retail stages every art's animation separately and the materialiser
-  calls the cue selector per staging, so a three-art entry - the ordinary case,
-  since entry runs until the AP pool is spent - requests three shouts. The port
-  has no per-art animation timeline in the live loop, so the list is requested
-  together on the animation-start frame, in performed order. A Miracle / Super
-  replacement answers a single constant, its finisher: the per-constant staging
-  inside a replacement queue is not captured, so it is not expanded. Unmatched
-  directions (plain swings) and synthetic arts carry no constant and stay silent
-  - the same degradation retail applies to an art with no cue-table entry.
-  Drain: `World::drain_battle_shout_cues`.
-- **Bank staging** (`engine-session` boot): `read_arts_shout_bank` demuxes `XA2/XA4/XA6` per channel from the **raw 2352-byte sectors** (`legaia_xa::demux` - the CD-XA subheader carries the channel number, which a 2048-byte ISO view strips), decodes each channel to mono PCM, and pairs it with the `ArtsVoiceTable` pools in a `legaia_engine_audio::ArtsShoutBank`. Disc-image boots only; extracted-directory boots leave arts silent.
-- **Playback** (`engine-audio` / `engine-session`): `AudioDirector::play_art_shout` resolves the cue against the bank (`// PORT: FUN_8004C140`: a uniform draw from the art's pool, re-rolled while it equals the party-wide last pick `gp+0xA4A` - one byte for all three characters, not one each - and forced to channel `0xC` when the first formation id `gp+0x9F4` is `0x4F`, an override that is inert on both hosts, which supply no formation id) and stages the clip through `AudioOut::play_xa_shout`, which mixes decoded XA into the SPU output the way the PSX CD-input path does (never through the 24 voices).
+- **Cue emission** (`engine-core`): the anim commit's own two voice sites,
+  run on the frame a party clip installs (`World::commit_staged_battle_anim_at_boundary`,
+  kernels `legaia_engine_battle::arts_voice_cue`). The shout site calls the
+  selector when the byte before the queue cursor is the known-art starter
+  `0x19` (keyed on the constant behind it), or under the solo latch
+  `ctx[+0x243]`; a newly learned art (staged behind `0x1A`) makes no call.
+  The SpecialStarter (`0x1A`) commit dispatches its fanfare or generic line
+  through `FUN_8004FCC8`. Each selector call is recorded as a
+  `BattleShoutCue { cslot, action, resolved }` (`World::drain_battle_shout_cues`).
+  Full rules: [battle-action-helpers.md](battle-action-helpers.md#battle-voice-cues---the-xa30-grunt-vs-the-xa2xa4xa6-arts-shout).
+- **Selection** (`engine-core`): with the selector's SCUS bytes staged at
+  boot (`ArtsVoiceSelectorTables`, installed by
+  `World::install_retail_progression_tables`) the world runs `FUN_8004C140`
+  itself (`select_arts_voice`, on the world `rand()` stream, last pick
+  `gp+0xA4A` in `AudioState::arts_voice_last_channel`) and queues the clip as
+  an ordinary `(clip, channel, dur)` request on `AudioState::battle_xa_cues`,
+  holding the modelled drive busy for its read span as the starter does. The
+  cue is then `resolved`. A disc-free world has no tables: the cue goes out
+  unresolved and the director picks from its own bank
+  (`AudioDirector::play_art_shout`).
+- **Bank staging** (`engine-session` boot): `read_arts_shout_bank` demuxes `XA2/XA4/XA6` per channel from the **raw 2352-byte sectors** (`legaia_xa::demux` - the CD-XA subheader carries the channel number, which a 2048-byte ISO view strips), decodes each channel to mono PCM, and pairs it with the `ArtsVoiceTable` pools in a `legaia_engine_audio::ArtsShoutBank`. Disc-image boots only; extracted-directory boots leave arts silent. The browser play page stages the same files through the same calls.
+- **Playback** (`engine-session` / `engine-audio`): `AudioDirector::play_xa_clip` serves a request for slot `1` / `3` / `5` out of the shout bank, cut at the starter's read span, and stages it through `AudioSink::play_xa_shout`, which mixes decoded XA into the SPU output the way the PSX CD-input path does (never through the 24 voices).
 
-Two timing behaviours model the retail CD/XA sequencing contract (the recomp cross-reference established that the shout **trails** the art animation - the XA response arrives after the animation begins, never before): a fixed response-presentation delay (`SHOUT_CD_RESPONSE_DELAY`, ~150 ms of 44.1 kHz samples - the modeled seek/first-sector latency) gates the clip silent after the animation-start request; and a back-to-back request while a shout is still sounding queues behind it rather than cutting it (only the most recent pending clip is kept), so consecutive arts don't drop the later voice line.
-`OfflineMixer` exposes the same mixing core device-free; the disc-gated oracle `engine-session/tests/arts_shout_battle.rs` types an art into the live Arts command input and asserts the shout PCM lands in the mix only after the delay window, with `engine-core/tests/battle_shout_cue.rs` as the disc-free cue-emission check - one art, three arts in one entry, and the silent synthetic baseline.
+Two timing behaviours model the retail CD/XA sequencing contract: a fixed response-presentation delay (`SHOUT_CD_RESPONSE_DELAY`, ~150 ms of 44.1 kHz samples - the modelled seek / first-sector latency; the recomp cross-reference established that the shout **trails** the clip install) holds the clip silent after its request, and a request while a clip is sounding **replaces** it. There is one drive: the starter `FUN_8003D53C` mutes the CD input and re-arms the seek / filter / read sequencer for the new clip without testing the old one, so the old stream ends on the request. Callers that must not interrupt gate themselves first (the dispatcher's `FUN_8003DE7C(1)` read-span gate, the field op's busy word); the shout site does not.
+
+`OfflineMixer` exposes the same mixing core device-free. Oracles: `engine-session/tests/arts_voice_spar_disc.rs` plays the Rim Elm spar through the real boot (tables and banks) and asserts the battle's CD-XA request sequence - item voice, Spirit line, the Somersault's first-use starter line (`XA1` channel 1), its shout (`XA2` channel `0xC` under Tetsu's formation) - and, differencing a voiced run against a bank-less one, that each clip is silent through the CD delay and then reaches the mix. `engine-session/tests/arts_shout_battle.rs` covers the unresolved (bank-picked) path; `engine-core/tests/battle_shout_cue.rs` is the disc-free cue-emission check (known art, three arts in one entry, first use, a staged selector, the silent synthetic baseline).
 
 ### The second shout trigger - the animation cue track (`FUN_800508DC`)
 

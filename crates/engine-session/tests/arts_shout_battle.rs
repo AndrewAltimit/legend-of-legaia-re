@@ -90,6 +90,14 @@ fn build_world(with_record: bool) -> World {
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
     if with_record {
         stage_somersault(&mut w);
+        // Known on Vahn's learned list (`+0x186..` ids = constant less
+        // `0x1B`): the builder stages it behind `0x19`, the starter whose
+        // commit asks for the shout. A first use stages `0x1A` instead.
+        let rec = &mut w.party.roster.members[0];
+        let mut list = rec.displayed_skills();
+        list.count = 1;
+        list.ids[0] = 0x27 - 0x1B;
+        rec.set_displayed_skills(list);
     }
 
     w.player_actor_slot = Some(0);

@@ -126,14 +126,16 @@ impl<S: AudioSink> AudioDirector<S> {
     }
 
     /// Fire the Tactical-Arts shout for `(cslot, action_constant)` through
-    /// the XA mixing path. Resolves the cue against the bank's channel pools
-    /// (retail `FUN_8004C140` selection, no immediate repeat) and stages the
-    /// clip with the modeled CD-response start delay
-    /// ([`SHOUT_CD_RESPONSE_DELAY`]), so the shout starts *after* the art
-    /// animation that requested it - never before. A second shout while one
-    /// is sounding queues behind it (the back-to-back no-drop path in
-    /// [`AudioSink::play_xa_shout`]). Returns the fired channel, or `None`
-    /// when the bank is absent or the art is unvoiced.
+    /// the XA mixing path - the fallback for a shout cue the world did not
+    /// resolve (a disc-free world with no selector tables; a world that has
+    /// them resolves the call itself and queues the clip as an ordinary
+    /// [`Self::play_xa_clip`] request). Resolves the cue against the bank's
+    /// channel pools (retail `FUN_8004C140` selection, no immediate repeat)
+    /// and stages the clip with the modeled CD-response start delay
+    /// ([`SHOUT_CD_RESPONSE_DELAY`]), so the shout starts *after* the clip
+    /// install that requested it - never before. A clip that is sounding
+    /// stops for it ([`AudioSink::play_xa_shout`]). Returns the fired
+    /// channel, or `None` when the bank is absent or the art is unvoiced.
     pub fn play_art_shout(&mut self, cslot: u8, action: u8) -> Option<u8> {
         self.commands
             .push(super::AudioCommand::Shout(cslot, action));
@@ -205,6 +207,35 @@ impl<S: AudioSink> AudioDirector<S> {
         true
     }
 
+    /// Stage `(slot, channel)` out of the arts-voice shout bank when the
+    /// slot is one of its files (`XA2` / `XA4` / `XA6` = slots `1` / `3` /
+    /// `5`) and the bank holds the channel - the world's own selector
+    /// (`FUN_8004C140`) names its shout clips in the starter's raw terms, and
+    /// both hosts already decoded those banks at boot. The bank's files are
+    /// 16-channel interleaves, the width the read-span cut divides by.
+    fn stage_xa_channel_from_shout_bank(&mut self, slot: u8, channel: u8) -> bool {
+        const SHOUT_FILE_CHANNELS: u8 = 16;
+        if !matches!(slot, 1 | 3 | 5) {
+            return false;
+        }
+        let Some(clip) = self
+            .shout_bank
+            .as_ref()
+            .and_then(|b| b.clip((slot - 1) / 2, channel))
+        else {
+            return false;
+        };
+        let clip = legaia_engine_audio::XaClip {
+            pcm: clip.pcm.clone(),
+            sample_rate: clip.sample_rate,
+            stereo: false,
+        };
+        let bank = self.xa_clip_bank.get_or_insert_with(XaClipBank::new);
+        bank.insert(slot, channel, clip);
+        bank.set_channel_count(slot, SHOUT_FILE_CHANNELS);
+        true
+    }
+
     /// Queue a stage request for `(slot, channel)` when the disc carries
     /// `XA<slot + 1>.XA`: the file's first `read_span_sectors(dur)` sectors
     /// (capped at the file), the span the clip starter would have read. One
@@ -253,8 +284,8 @@ impl<S: AudioSink> AudioDirector<S> {
     /// channel, dur)`: the staged `(slot, channel)` PCM, cut at the retail
     /// read span (`XaClipBank::cut_frames`), through the same XA mixing
     /// path the arts shouts take, with the same modelled CD-response start
-    /// delay. A request while a clip is sounding queues behind it (the
-    /// mixer's back-to-back path).
+    /// delay. A request while a clip is sounding replaces it, as the retail
+    /// starter takes the one drive.
     ///
     /// A `(slot, channel)` the bank does not hold is staged first: read off
     /// the disc when a synchronous source is set
@@ -280,6 +311,7 @@ impl<S: AudioSink> AudioDirector<S> {
             return None;
         };
         if !self.xa_channel_staged(slot, ch)
+            && !self.stage_xa_channel_from_shout_bank(slot, ch)
             && !self.stage_xa_channel_lazily(slot, ch, duration_sectors)
         {
             if self.defer_xa_channel(slot, ch, duration_sectors, true) {

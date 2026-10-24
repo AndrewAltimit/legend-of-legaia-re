@@ -348,6 +348,15 @@ impl<S: AudioSink> BootSession<S> {
         bgm.enqueue_battle_cues(&cues, &self.host.index);
         bgm.set_shout_first_enemy_id(first_enemy);
         for shout in &shouts {
+            if shout.resolved {
+                // The world ran the selector; its clip is on `xa_cues`.
+                log::debug!(
+                    "arts shout cslot {} action {:#04x} resolved by the world",
+                    shout.cslot,
+                    shout.action
+                );
+                continue;
+            }
             match bgm.play_art_shout(shout.cslot, shout.action) {
                 Some(ch) => log::debug!(
                     "arts shout cslot {} action {:#04x} fired on XA channel {ch}",

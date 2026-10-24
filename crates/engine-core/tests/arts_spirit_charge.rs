@@ -128,7 +128,7 @@ fn spirit_drops_over_one_turn(w: &mut World, combo: &[PadButton]) -> (Vec<i32>, 
     let mut press = true;
     let mut turns = 0usize;
     let mut settle = 0usize;
-    let mut shouts: Vec<u8> = Vec::new();
+    let mut staged_arts: Vec<u8> = Vec::new();
 
     for _ in 0..4000 {
         let pad = if !press {
@@ -178,7 +178,19 @@ fn spirit_drops_over_one_turn(w: &mut World, combo: &[PadButton]) -> (Vec<i32>, 
         if input_was_open && !w.arts_input_active() {
             turns += 1;
         }
-        shouts.extend(w.drain_battle_shout_cues().into_iter().map(|c| c.action));
+        // The art constants the charged turn staged (`actor[+0x1DF..]` up to
+        // its terminator) - the shout itself waits for the starter clip's
+        // commit, after the approach run this loop stops short of.
+        if staged_arts.is_empty() && i32::from(w.actors[0].battle.spirit_gauge) < prev {
+            staged_arts.extend(
+                w.actors[0]
+                    .battle
+                    .params
+                    .iter()
+                    .take_while(|&&b| b != 0)
+                    .filter(|&&b| b >= 0x1B && b != 0xFF),
+            );
+        }
         // Battle teardown zeroes the gauge, so a delta sampled on the frame
         // the mode changes is the wipe, not a charge. Leave first.
         if w.mode != SceneMode::Battle {
@@ -205,7 +217,7 @@ fn spirit_drops_over_one_turn(w: &mut World, combo: &[PadButton]) -> (Vec<i32>, 
     if !combo.is_empty() {
         assert_eq!(turns, 1, "exactly one arts entry was driven");
     }
-    (drops, shouts)
+    (drops, staged_arts)
 }
 
 /// A typed art charges its body out of Spirit, once, at the builder's price.
@@ -224,10 +236,10 @@ fn a_committed_art_charges_its_body_out_of_spirit() {
         Some(SOMERSAULT_COMMANDS),
         "the staged art is the {SOMERSAULT_COMMANDS}-command one the price assumes"
     );
-    let (drops, shouts) =
+    let (drops, staged_arts) =
         spirit_drops_over_one_turn(&mut w, &[PadButton::Up, PadButton::Down, PadButton::Up]);
     assert_eq!(
-        shouts,
+        staged_arts,
         vec![SOMERSAULT],
         "the typed string must tokenize to the art, else there is no body to charge"
     );
@@ -246,10 +258,10 @@ fn a_committed_art_charges_its_body_out_of_spirit() {
 fn a_plain_attack_charges_no_spirit() {
     let mut w = build_world();
     walk_into_battle(&mut w);
-    let (drops, shouts) = spirit_drops_over_one_turn(&mut w, &[]);
+    let (drops, staged_arts) = spirit_drops_over_one_turn(&mut w, &[]);
     assert!(
-        shouts.is_empty(),
-        "the Auto arm performs no art: {shouts:?}"
+        staged_arts.is_empty(),
+        "the Auto arm performs no art: {staged_arts:?}"
     );
     assert!(
         drops.is_empty(),

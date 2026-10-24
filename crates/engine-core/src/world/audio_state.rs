@@ -84,12 +84,22 @@ pub struct AudioState {
     /// `None` on a disc-free build (a voice cue then requests no span and
     /// is dropped).
     pub xa_cue_durations: Option<Vec<u16>>,
-    /// Tactical-Arts **shout** cues queued this frame - one per executed
-    /// party art carrying a real action constant, pushed on the art's
-    /// animation-start frame (see [`legaia_engine_battle::battle_events::BattleShoutCue`]).
-    /// Cosmetic: the host resolves each against the arts-voice tables + XA
-    /// clip banks and plays the CD-XA shout; nothing here mutates gameplay
-    /// state. Drained via [`crate::world::World::drain_battle_shout_cues`]; cleared on
+    /// The raw `SCUS_942.54` bytes the arts-voice selector `FUN_8004C140`
+    /// reads (range, the three first-half pool variants, the second-half
+    /// pools, the per-channel durations); installed at boot. `None` on a
+    /// disc-free build, where a shout cue goes to the host unresolved and
+    /// the host's own bank picks the channel.
+    pub arts_voice_tables: Option<std::sync::Arc<legaia_art::arts_voice::ArtsVoiceSelectorTables>>,
+    /// The selector's party-wide last pick, `gp+0xA4A` (`0x8007BD62`): the
+    /// channel it re-rolls away from.
+    pub arts_voice_last_channel: u8,
+    /// Tactical-Arts **shout** cues queued this frame - one per call of the
+    /// arts-voice selector `FUN_8004C140`, which the anim commit makes when a
+    /// known art's `0x19` starter clip installs (see
+    /// [`legaia_engine_battle::battle_events::BattleShoutCue`]). With
+    /// [`Self::arts_voice_tables`] staged the world resolves the call itself
+    /// and the clip rides [`Self::battle_xa_cues`]; otherwise the host's bank
+    /// picks it. Cosmetic: nothing here mutates gameplay state. Drained via [`crate::world::World::drain_battle_shout_cues`]; cleared on
     /// battle exit.
     pub battle_shout_cues: Vec<legaia_engine_battle::battle_events::BattleShoutCue>,
     /// Last BGM the field VM started (op 0x35 sub-1 / sub-9). `None` until
@@ -260,6 +270,8 @@ impl AudioState {
             field_xa_prestage: Vec::new(),
             field_xa_busy_frames: 0,
             xa_cue_durations: None,
+            arts_voice_tables: None,
+            arts_voice_last_channel: 0,
             battle_shout_cues: Vec::new(),
             current_bgm: None,
             battle_bgm: None,

@@ -45,12 +45,14 @@
 //! is legal), and if the second byte is non-zero the list continues to the
 //! next `0` terminator (`FUN_8004C140` counting quirk). The retail selector
 //! keys three first-half table variants off a context byte (`ctx+0x243`,
-//! `ctx` = pointer at `0x8007BD24`) and its `flag` argument; this parser
-//! reads the `(0, 0)` variant - which is the path a **live battle art**
+//! `ctx` = pointer at `0x8007BD24`) and its `flag` argument - the queue byte
+//! after the art constant, `0` when the art ends the string. This decoded
+//! view reads the `(0, 0)` variant, the path the **last art of a string**
 //! takes: a recomp-runtime capture of an in-battle Spin Combo observed
 //! channel 14, a member only this variant's pool carries (the `ctx+0x243
-//! != 0` variant's pools stop at channel 13). The second-half (Hyper/Super
-//! constants `>= second_lo`) has a single un-varianted table.
+//! != 0` variant's pools stop at channel 13). A selector that must follow
+//! every variant reads [`ArtsVoiceSelectorTables`]. The second-half
+//! (constants `>= second_lo`) has a single un-varianted table.
 //!
 //! ## Duration
 //!
@@ -477,6 +479,67 @@ impl ArtsVoiceTable {
         let base = *row.get(channel as usize)? as u32;
         // Retail: (base * 0x3C + 99) / 100 - i.e. ceil-divide by 100.
         Some((base * 0x3C).div_ceil(100))
+    }
+}
+
+/// The first-half candidate-table bases `FUN_8004C140` picks between, per
+/// character, as `[(ctx+0x243 == 0, flag == 0), (ctx+0x243 == 0, flag != 0),
+/// (ctx+0x243 != 0, any flag)]` (`0x8004C1B4..0x8004C398`).
+pub const FIRST_HALF_VARIANT_BASES: [[u32; 3]; 3] = [
+    FIRST_HALF_BASE,
+    [0x8007_7ABC, 0x8007_7CB4, 0x8007_7EAC],
+    [0x8007_7C0C, 0x8007_7E04, 0x8007_7FFC],
+];
+
+/// First VA of the [`ArtsVoiceSelectorTables`] snapshot: the duration table,
+/// the lowest table `FUN_8004C140` reads.
+pub const SELECTOR_SPAN_START: u32 = DUR_TABLE_VA;
+/// One past the last VA of the snapshot. The second-half walk has no upper
+/// bound on the action constant (`base + (ac - second_lo) * 0x10` for any
+/// `ac >= second_lo`), so the snapshot runs far enough past Gala's base for
+/// every byte-sized constant: `0x80078154 + 0xFF * 0x10 + 0x10`.
+pub const SELECTOR_SPAN_END: u32 = 0x8007_9154;
+
+/// The bytes `FUN_8004C140` reads, kept **raw** over
+/// `[SELECTOR_SPAN_START, SELECTOR_SPAN_END)` so a selector can replicate its
+/// address arithmetic exactly - the three first-half variants, the
+/// second-half walk past a character's packed span, the membership walk past
+/// a record's 15 / 16 bytes - rather than the decoded pools
+/// [`ArtsVoiceTable`] keeps for display. A read outside the span is `0`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArtsVoiceSelectorTables {
+    bytes: Vec<u8>,
+}
+
+impl ArtsVoiceSelectorTables {
+    /// Snapshot the span out of `SCUS_942.54`. `None` when the executable is
+    /// not a PS-X EXE or does not cover the span.
+    pub fn parse_from_scus(scus: &[u8]) -> Option<Self> {
+        let start = scus_off(scus, SELECTOR_SPAN_START)?;
+        let end = start + (SELECTOR_SPAN_END - SELECTOR_SPAN_START) as usize;
+        Some(Self {
+            bytes: scus.get(start..end)?.to_vec(),
+        })
+    }
+
+    /// A snapshot over caller-supplied bytes laid out from
+    /// [`SELECTOR_SPAN_START`] (tests, a host holding the bytes already).
+    pub fn from_span_bytes(bytes: Vec<u8>) -> Self {
+        Self { bytes }
+    }
+
+    /// The byte at `va`; `0` outside the snapshot.
+    pub fn byte(&self, va: u32) -> u8 {
+        va.checked_sub(SELECTOR_SPAN_START)
+            .and_then(|o| self.bytes.get(o as usize))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// `[lo, hi, second_lo]` for a 0-based character slot (`0..3`).
+    pub fn range(&self, cslot: u8) -> [u8; 3] {
+        let base = RANGE_TABLE_VA + u32::from(cslot) * 3;
+        [self.byte(base), self.byte(base + 1), self.byte(base + 2)]
     }
 }
 

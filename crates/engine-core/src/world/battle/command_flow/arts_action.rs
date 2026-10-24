@@ -249,7 +249,7 @@ impl World {
             .collect();
         let (queue, actions, marks) = self.build_arts_action_queue(caster, &commands);
         self.charge_art_spirit(caster, &actions);
-        self.arm_battle_art_action(caster, &queue, &actions, marks, target_row, target_slot);
+        self.arm_battle_art_action(caster, &queue, marks, target_row, target_slot);
     }
 
     /// Word 1 (`+0xF8`) of a **roster** member's 4-word accessory-passive
@@ -325,7 +325,6 @@ impl World {
         &mut self,
         caster: u8,
         queue: &[u8],
-        actions: &[legaia_art::ActionConstant],
         starter_marks: [u32; legaia_engine_battle_vm::battle_action::ACTION_QUEUE_CAP],
         target_row: legaia_engine_battle::target_picker::CursorRow,
         target_slot: u8,
@@ -345,7 +344,6 @@ impl World {
         // the wrong character's table.
         let char_slot = self.party_roster_slot(caster as usize) as u8;
         let character = self.caster_character(char_slot);
-        self.push_art_shout_cues(caster, actions);
         // A freshly-armed action starts from an empty strike script - see
         // `World::clear_action_stream` for the soft-lock a carried-over byte
         // produces.

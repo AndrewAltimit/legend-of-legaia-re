@@ -112,8 +112,8 @@ pub trait AudioSink {
         self.with_core(|s| f(&mut s.spu))
     }
 
-    /// Install a streaming XA-ADPCM voice, replacing any active stream (and
-    /// any queued shout) without crossfading. The device callback mixes it
+    /// Install a streaming XA-ADPCM voice, replacing any active stream
+    /// without crossfading. The device callback mixes it
     /// into the SPU output at 44.1 kHz; a one-shot stream detaches when its
     /// cursor runs off the end (`looping = true` for BGM).
     ///
@@ -127,7 +127,6 @@ pub trait AudioSink {
         gain: u16,
     ) {
         self.with_core(|s| {
-            s.pending_xa = None;
             s.xa = Some(XaPlayback {
                 pcm,
                 sample_rate,
@@ -148,9 +147,8 @@ pub trait AudioSink {
     ///   samples) holds the shout silent before its first audible sample,
     ///   the CD controller's seek/read-to-first-sector latency, so a shout
     ///   requested on the animation-start frame trails the animation.
-    /// * **Back-to-back no-drop.** A shout requested while one is sounding is
-    ///   queued (one deep) and starts the sample the active one ends; a third
-    ///   request replaces the queued one.
+    /// * **One drive.** A clip requested while another is sounding replaces
+    ///   it, as the retail starter re-arms the drive for the new clip.
     fn play_xa_shout(
         &self,
         pcm: Vec<i16>,
@@ -195,11 +193,10 @@ pub trait AudioSink {
         Ok(())
     }
 
-    /// Detach the active XA stream and drop any queued shout.
+    /// Detach the active XA stream.
     fn stop_xa(&self) {
         self.with_core(|s| {
             s.xa = None;
-            s.pending_xa = None;
         });
     }
 

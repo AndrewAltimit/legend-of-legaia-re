@@ -387,10 +387,6 @@ pub struct StreamResampler {
     /// Optional active XA streaming voice. Mixed into the SPU output at
     /// SPU rate (44.1 kHz) before the host-rate resample.
     xa: Option<XaPlayback>,
-    /// A single queued XA shout that starts when `xa` runs off its end.
-    /// Powers the back-to-back arts-voice no-drop path (see
-    /// [`AudioOut::play_xa_shout`]); `None` for FMV/BGM.
-    pending_xa: Option<XaPlayback>,
     /// Host full-mono downmix (the engine-only `downmix_mono` option; retail
     /// has no equivalent): when set, [`Self::next_frame`] averages L/R into
     /// both channels, XA included. Not the options screen's "Sound:
@@ -434,7 +430,6 @@ impl StreamResampler {
             fade_target: 1.0,
             fade_step: 0.0,
             xa: None,
-            pending_xa: None,
             downmix: false,
             muted: false,
             master_gain: 1.0,
@@ -467,12 +462,7 @@ impl StreamResampler {
             let mut xa_sample = None;
             if let Some(xa) = self.xa.as_mut() {
                 if xa.is_done() {
-                    // Active shout exhausted: promote a queued shout (if any)
-                    // so back-to-back arts don't lose the later clip's audio.
-                    self.xa = self.pending_xa.take();
-                    if let Some(next) = self.xa.as_mut() {
-                        xa_sample = Some(next.tick_for_spu());
-                    }
+                    self.xa = None;
                 } else {
                     xa_sample = Some(xa.tick_for_spu());
                 }
@@ -665,19 +655,19 @@ impl StreamResampler {
     }
 }
 
-/// Stage a one-shot XA shout into a resampler, honoring the back-to-back
-/// no-drop queue: a shout that arrives while one is still sounding is queued
-/// behind it rather than cutting it mid-play; only the most recent pending
-/// clip is kept. Shared by [`AudioOut::play_xa_shout`] and
-/// [`OfflineMixer::play_xa_shout`].
+/// Stage a one-shot CD-XA clip into a resampler the way the retail starter
+/// `FUN_8003D53C` takes the drive: a new clip **replaces** whatever is
+/// sounding. There is one drive; the starter mutes the CD input
+/// (`FUN_8003ED04(0)` at `0x8003D5A0`) and re-arms the seek / filter / read
+/// sequencer for the new clip with no test of the old one, so the old
+/// stream ends on the request and the new one comes up after its own
+/// CD-response delay. The callers that must not interrupt a clip gate
+/// themselves before they get here (the battle dispatcher's
+/// `FUN_8003DE7C(1)` read-span gate, the field op's busy word). Shared by
+/// [`AudioOut::play_xa_shout`] and [`OfflineMixer::play_xa_shout`].
+// REF: FUN_8003D53C
 fn stage_xa_shout(s: &mut StreamResampler, shout: XaPlayback) {
-    if s.xa.as_ref().is_some_and(|x| !x.is_done()) {
-        // A shout is still sounding: queue behind it (no mid-play cut).
-        s.pending_xa = Some(shout);
-    } else {
-        s.pending_xa = None;
-        s.xa = Some(shout);
-    }
+    s.xa = Some(shout);
 }
 
 /// Device-free mixing harness over the same core the cpal callback drives
@@ -1093,40 +1083,33 @@ mod tests {
         );
     }
 
-    /// Back-to-back arts: a second shout requested while the first is still
-    /// sounding is queued, not dropped and not a mid-play cut. It begins the
-    /// sample the first runs off its end - the counterpart to the retail
-    /// back-to-back Hyper-Art fix (the later clip must still sound).
+    /// A clip requested while another is sounding takes the drive: the old
+    /// one stops on the request, the new one plays after its own delay.
     #[test]
-    fn xa_shout_back_to_back_queues_second_without_dropping_it() {
+    fn xa_shout_request_replaces_the_sounding_clip() {
         let mut r = StreamResampler::new(SPU_INTERNAL_RATE);
-        // Shout A: short, distinct amplitude. Shout B: distinct amplitude.
-        let mut a = make_mono_xa(SPU_INTERNAL_RATE, vec![4000i16; 8], false);
+        let mut a = make_mono_xa(SPU_INTERNAL_RATE, vec![4000i16; 64], false);
         a.gain = 0x4000;
-        r.xa = Some(a);
-        // Second request arrives while A is active -> queued behind it.
-        let mut b = make_mono_xa(SPU_INTERNAL_RATE, vec![9000i16; 8], false);
-        b.gain = 0x4000;
-        r.pending_xa = Some(b);
-        // Drain enough frames to exhaust A and let B promote and play.
-        let mut saw_a = false;
-        let mut saw_b = false;
-        for _ in 0..40 {
+        stage_xa_shout(&mut r, a);
+        for _ in 0..4 {
             r.phase = 1.0;
             let (l, _) = r.next_frame();
-            if (l - 4000).abs() < 400 {
-                saw_a = true;
-            }
-            if (l - 9000).abs() < 400 {
-                saw_b = true;
-            }
+            assert!(l == 0 || (l - 4000).abs() < 400);
         }
-        assert!(saw_a, "first shout should have sounded");
-        assert!(saw_b, "queued second shout must not be dropped");
-        assert!(
-            r.pending_xa.is_none(),
-            "pending slot consumed after promotion"
-        );
+        let mut b = make_mono_xa(SPU_INTERNAL_RATE, vec![9000i16; 8], false);
+        b.gain = 0x4000;
+        stage_xa_shout(&mut r, b);
+        let mut saw_a = false;
+        let mut saw_b = false;
+        for k in 0..40 {
+            r.phase = 1.0;
+            let (l, _) = r.next_frame();
+            // The first frames carry the interpolator's history.
+            saw_a |= k >= 4 && (l - 4000).abs() < 400;
+            saw_b |= (l - 9000).abs() < 400;
+        }
+        assert!(saw_b, "the new clip plays");
+        assert!(!saw_a, "the old clip stopped on the request");
     }
 
     // --- master mute gate ---
