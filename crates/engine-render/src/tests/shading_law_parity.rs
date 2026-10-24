@@ -270,6 +270,10 @@ fn run_native(m: &mut Machine<'_>, scene: &SceneState, frag: &Fragment) -> Out {
     let g = &frag.geo;
     m.gradients
         .insert("world_pos".into(), (g.dpos.0.to_vec(), g.dpos.1.to_vec()));
+    // The PSX-mode texel row (`psx_sample_uv`) reads the UV's row step; the
+    // fragments here are off PSX mode, so its value never reaches a texel.
+    m.gradients
+        .insert("uv_affine".into(), (vec![0.0; 2], vec![0.0; 2]));
     // The renderer's per-ABR blend pipelines pick the entry by the mode's
     // foreground pre-scale (`psx_blend::src_shader_scale`).
     let entry = match frag.blend {
@@ -518,6 +522,8 @@ fn run_page(m: &mut Machine<'_>, scene: &SceneState, frag: &Fragment) -> Out {
         "v_obj_pos".into(),
         (g.dpos.0.to_vec(), g.dpos.1.map(|x| -x).to_vec()),
     );
+    m.gradients
+        .insert("v_uv".into(), (vec![0.0; 2], vec![0.0; 2]));
     m.set_global("v_obj_pos", Val::f(&g.pos));
     m.set_global("v_normal", Val::f(&g.normal));
     m.set_global("v_world", Val::f(&flip(g.world)));

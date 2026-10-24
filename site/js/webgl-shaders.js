@@ -364,15 +364,16 @@ bool primNearRejected(mat4 m) {
  * that never stages it renders exactly as before. Shared by both stages. */
 uniform vec4 u_psx;
 
-/* Snap a clip-space position to the nearest integer pixel of a vp_w x vp_h
- * framebuffer - the GTE's integer screen coordinates, i.e. the "vertex
- * jitter". Twin of engine-render's psx_snap_clip; z and w are preserved. */
+/* Snap a clip-space position down to the integer pixel of the vp_w x vp_h
+ * PSX stage (320 x 240, rows top-down) - the GTE's truncated screen
+ * coordinates, i.e. the "vertex jitter". Twin of engine-render's
+ * psx_snap_clip; z and w are preserved. */
 vec4 psxSnapClip(vec4 clip, float vp_w, float vp_h) {
   if (vp_w <= 0.0 || vp_h <= 0.0 || clip.w <= 0.0) return clip;
   float px = (clip.x / clip.w * 0.5 + 0.5) * vp_w;
-  float py = (clip.y / clip.w * 0.5 + 0.5) * vp_h;
-  float nx = (floor(px + 0.5) / vp_w) * 2.0 - 1.0;
-  float ny = (floor(py + 0.5) / vp_h) * 2.0 - 1.0;
+  float py = (0.5 - clip.y / clip.w * 0.5) * vp_h;
+  float nx = (floor(px) / vp_w) * 2.0 - 1.0;
+  float ny = 1.0 - (floor(py) / vp_h) * 2.0;
   return vec4(nx * clip.w, ny * clip.w, clip.z, clip.w);
 }
 
@@ -567,7 +568,7 @@ void main() {
                                      a_ground_ref_xz, a_ground_ref_y);
   /* After the overworld bend, as native snaps after its curve: retail bends
    * SY before the packet is written. Identity while u_psx.z is 0. */
-  if (u_psx.z >= 0.5) gl_Position = psxSnapClip(gl_Position, u_psx.x, u_psx.y);
+  if (u_psx.z >= 0.5) gl_Position = psxSnapClip(gl_Position, 320.0, 240.0);
   /* A rejected primitive parks every corner on one point outside the clip
    * volume: no area, nothing rasterised. */
   if (primNearRejected(u_mvp * u_model)) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
@@ -1046,6 +1047,13 @@ vec3 apply_distance_fog_tex(vec3 lit, vec3 texel) {
 
 void main() {
   v_uv = v_uv_pw / v_affine_w;
+  /* PSX mode's texel sample row - the twin of engine-render's psx_sample_uv:
+   * the GPU takes a scanline's texels at the row itself, half a stage row
+   * above the pixel centre this rasteriser samples. GL's window y runs up,
+   * so the half row up is +dFdy; u_psx.y / 240 is framebuffer rows per stage
+   * row. Taken ahead of any discard. */
+  vec2 uv_dy = dFdy(v_uv);
+  if (u_psx.z >= 0.5) v_uv += uv_dy * (0.5 * u_psx.y / 240.0);
   v_flat_rgba = v_flat_rgba_pw / v_affine_w;
   if (u_eclip_m.w > 0.5) {
     float ey = dot(u_eclip_m.xyz, v_obj_pos);

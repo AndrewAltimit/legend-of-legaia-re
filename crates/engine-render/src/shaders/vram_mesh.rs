@@ -228,7 +228,7 @@ fn vs_main(
     clip = field_far_bucket_depth(clip, flat_a, u.flags.w);
     clip = field_sorted_cell_depth(clip, flat_a, flat_b, u.flags.w);
     if u.psx_params.z >= 0.5 {
-        clip = psx_snap_clip(clip, u.psx_params.x, u.psx_params.y);
+        clip = psx_snap_clip(clip, PSX_STAGE_W, PSX_STAGE_H);
     }
     if prim_near_rejected(u.mvp, prim_c0, prim_c1, prim_c2, prim_c3) {
         clip = PRIM_REJECTED_CLIP;
@@ -318,8 +318,25 @@ fn fetch_vram_word(uv_affine: vec2<f32>, cba: u32, tsb: u32) -> u32 {
     return textureLoad(t_vram, vec2<i32>(vx, vy), 0).r;
 }
 
+// PSX mode's texel sample row. The GPU walks a polygon one scanline at a
+// time and takes each pixel's texel at the scanline's own row: the interpolated
+// `V` of stage row `y` is the value at `y`, not at the row's centre `y + 0.5`
+// that the host rasteriser samples (along a scanline the two agree - the span
+// texel lands on the pixel centre). So in PSX mode the sample moves up half a
+// stage row, `uv_dy` being the UV's per-framebuffer-row step and
+// `psx_params.y / PSX_STAGE_H` the framebuffer rows per stage row. Identity
+// off PSX mode.
+fn psx_sample_uv(uv: vec2<f32>, uv_dy: vec2<f32>) -> vec2<f32> {
+    if u.psx_params.z < 0.5 {
+        return uv;
+    }
+    return uv - uv_dy * (0.5 * u.psx_params.y / PSX_STAGE_H);
+}
+
 @fragment
 fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
+    // Taken ahead of any discard, in uniform control flow.
+    let uv_dy = dpdy(in.uv_affine);
     // Object-effect clip of a raised `+0x42` (see EFFECT_CLIP_WGSL).
     if effect_clipped(in.world_pos) {
         discard;
@@ -350,7 +367,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     }
     let tsb = in.cba_tsb.y;
     let cba = in.cba_tsb.x;
-    var word = fetch_vram_word(in.uv_affine, cba, tsb);
+    var word = fetch_vram_word(psx_sample_uv(in.uv_affine, uv_dy), cba, tsb);
     // Prologue palette-collapse grade: retail rewrites the scene's uploaded
     // CLUTs (and TMD colour words) to the gold law at load; the engine's
     // VRAM carries the disc palettes, so the law applies per decoded texel
@@ -442,6 +459,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
 // texels, and the 5-bit blend math itself is not dithered (PSX-SPX
 // "GPU - Dithering/Color-Depth").
 fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
+    let uv_dy = dpdy(in.uv_affine);
     if effect_clipped(in.world_pos) {
         discard;
     }
@@ -466,7 +484,7 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     }
     let tsb = in.cba_tsb.y;
     let cba = in.cba_tsb.x;
-    var word = fetch_vram_word(in.uv_affine, cba, tsb);
+    var word = fetch_vram_word(psx_sample_uv(in.uv_affine, uv_dy), cba, tsb);
     // Texel 0x0000 never draws; STP=0 texels were already drawn opaque by
     // the first pass. 0x8000 (black + STP) correctly blends.
     if word == 0u || ((word >> 15u) & 1u) == 0u {

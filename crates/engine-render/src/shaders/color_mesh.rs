@@ -77,7 +77,7 @@ fn vs_main(
     // The PSX vertex snap, after the bend, as the VRAM mesh takes it: the
     // GTE hands an untextured prim integer screen coordinates too.
     if u.psx_params.z >= 0.5 {
-        out.clip_pos = psx_snap_clip(out.clip_pos, u.psx_params.x, u.psx_params.y);
+        out.clip_pos = psx_snap_clip(out.clip_pos, PSX_STAGE_W, PSX_STAGE_H);
     }
     if prim_near_rejected(u.mvp, prim_c0, prim_c1, prim_c2, prim_c3) {
         out.clip_pos = PRIM_REJECTED_CLIP;

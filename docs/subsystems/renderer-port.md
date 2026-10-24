@@ -14,8 +14,15 @@ and semi-transparency has its own switch.
   see on retail PSX surfaces with steep depth gradients. UV is
   `@interpolate(linear)` in WGSL, on every path regardless of PSX mode.
 - **Sub-pixel vertex snap ("vertex jitter").** Clip-space `x`/`y` are
-  snapped to the nearest integer pixel before rasterisation, giving the
-  GTE's characteristic per-vertex shimmer on slow-moving geometry.
+  truncated onto the 320 x 240 stage's pixel grid (rows top-down), whatever
+  scale the host draws the stage at - the GTE's `SX` / `SY` are an
+  arithmetic-shift floor ([renderer](renderer.md)). That gives the
+  characteristic per-vertex shimmer on slow-moving geometry and puts each
+  edge on retail's pixel boundary.
+- **The scanline's texel row.** In PSX mode the texel lookup moves up half
+  a stage row (`psx_sample_uv`, the page's `uv_dy` term): the GPU takes a
+  scanline's texels at the row itself, while the host rasteriser samples
+  the pixel centre. Along the scanline the two already agree.
 - **15-bit ordered dithering.** The shaded colour is dithered with the
   PSX GPU's 4x4 offset matrix and quantized to 5 bits per channel (BGR555
   framebuffer depth) - the cross-hatch gradients of retail output. The
@@ -103,6 +110,27 @@ which is how the GPU hands the modulated texel to the blend
 
 In the `legaia-engine play-window` binary PSX mode (vertex snap + dither)
 is opt-in via the `LEGAIA_PSX_RENDER=1` environment variable.
+
+### What the clean rasteriser leaves on a retail frame
+
+Off PSX mode the engine draws every vertex at its exact sub-pixel position.
+Retail's are truncated, so against a capture the clean frame's texture
+content sits about half a stage pixel right, and its rows match. The vertex
+positions themselves agree to the census: matched against the packets on a
+state's own ordering tables (`draw-family-diff.py`'s per-triangle file), the
+engine's corners sit `+0.5` from retail's integer ones on both axes, the
+truncation's mean, on a card-boot state and a played-forward one alike, and
+the HUD lines up exactly. The horizontal half pixel is what is left once the
+scanline's texel row is accounted for: a reference rasteriser over the
+retail packets matches both emulators' frames with coverage on the integer
+pixel and the texel taken at the pixel centre along the row and at the row
+itself across it.
+
+PSX mode removes it. On the retail field states it was tried on the offset
+goes and the block score rises or holds within a block (`kor5_field_card_boot` `x +0.56` to `+0.04` stage pixels,
+`doman_field_card_boot` `+1.39` to `+0.23`, `conc_field_card_boot` `+1.00`
+to `+0.17`), and the battle states it was tried on score the same in both
+modes.
 
 ## Enhanced lighting (enhancement, NOT retail)
 

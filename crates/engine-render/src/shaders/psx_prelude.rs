@@ -73,11 +73,18 @@ fn psx_dither(rgb: vec3<f32>, frag: vec2<f32>, dither_on: f32) -> vec3<f32> {
     return outc;
 }
 
-// Snap a clip-space x/y to the nearest integer pixel of a viewport sized
-// (vp_w, vp_h). Returns the snapped clip position with z/w preserved. This
-// is the GTE-style "vertex jitter" that gives PSX rendering its
-// characteristic shimmer on slow-moving geometry. Shared by the VRAM-mesh and
-// colour-mesh vertex stages: retail snaps every vertex, textured or not.
+// The PSX screen the GTE projects onto, in stage pixels: the vertex snap's
+// grid, whatever scale the host draws the stage at.
+const PSX_STAGE_W: f32 = 320.0;
+const PSX_STAGE_H: f32 = 240.0;
+
+// Snap a clip-space x/y down to the integer pixel of a (vp_w, vp_h) stage the
+// GTE would have written (`PSX_STAGE_W` x `PSX_STAGE_H`). Returns the snapped
+// clip position with z/w preserved. This is the GTE-style "vertex jitter"
+// that gives PSX rendering its characteristic shimmer on slow-moving
+// geometry, and the truncation puts each edge on the pixel boundary retail's
+// does. Shared by the VRAM-mesh and colour-mesh vertex stages: retail snaps
+// every vertex, textured or not.
 fn psx_snap_clip(clip: vec4<f32>, vp_w: f32, vp_h: f32) -> vec4<f32> {
     // A vertex on or behind the camera plane has no screen pixel to snap
     // to: dividing by its `w` would fold it through the eye (or produce
@@ -89,15 +96,20 @@ fn psx_snap_clip(clip: vec4<f32>, vp_w: f32, vp_h: f32) -> vec4<f32> {
     // NDC after perspective divide.
     let ndc_x = clip.x / clip.w;
     let ndc_y = clip.y / clip.w;
-    // Pixel coords (NDC -> [0, vp]).
+    // Stage pixel coords, rows top-down as retail's: the scene viewport is
+    // the `vp_w x vp_h` stage (the 320 x 240 PSX screen the GTE projects
+    // onto, whatever integer scale the host draws it at).
     let px = (ndc_x * 0.5 + 0.5) * vp_w;
-    let py = (ndc_y * 0.5 + 0.5) * vp_h;
-    // Snap to nearest integer pixel.
-    let snapped_x = floor(px + 0.5);
-    let snapped_y = floor(py + 0.5);
+    let py = (0.5 - ndc_y * 0.5) * vp_h;
+    // Truncate, as the GTE's `SX` / `SY` are: `(IR * (H / SZ)) >> 16` is an
+    // arithmetic (floor) shift. A vertex on integer `SX` covers the pixel
+    // whose left edge it is, which is where the rasteriser's pixel centres
+    // put the same floor.
+    let snapped_x = floor(px);
+    let snapped_y = floor(py);
     // Back to NDC.
     let nx = (snapped_x / vp_w) * 2.0 - 1.0;
-    let ny = (snapped_y / vp_h) * 2.0 - 1.0;
+    let ny = 1.0 - (snapped_y / vp_h) * 2.0;
     // Re-multiply by w to rebuild clip space.
     return vec4<f32>(nx * clip.w, ny * clip.w, clip.z, clip.w);
 }
