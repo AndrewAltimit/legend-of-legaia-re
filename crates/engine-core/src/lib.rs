@@ -5,6 +5,18 @@
 //! Engine-agnostic. No wgpu / windowing / audio dependencies - the asset
 //! crates talk to this layer, the render and audio crates read from it.
 
+// The `tests/*.rs` files compile into this crate's unit-test target rather
+// than an integration binary of their own: an integration binary links the
+// non-test library, so a `cargo test` would build all of `World` twice (once
+// as the library, once in test mode for the `src/` unit tests) with the two
+// on one critical path. The alias lets those files keep naming the crate as
+// `legaia_engine_core::`, the public paths a downstream crate sees.
+#[cfg(test)]
+extern crate self as legaia_engine_core;
+#[cfg(test)]
+#[path = "../tests/integration.rs"]
+mod integration;
+
 pub mod actor_alloc_host;
 pub mod battle_cam_inputs;
 pub mod battle_party_form;

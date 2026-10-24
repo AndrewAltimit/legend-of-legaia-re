@@ -148,7 +148,7 @@ cargo test --workspace --profile release-test     # CI's test profile: release o
 cargo test -p <crate> --test integration foo::    # one tests/foo.rs of a crate
 ```
 
-Each crate's `tests/*.rs` build as one `integration` binary, which is why a single file is selected by module path. Disc-gated tests skip when `LEGAIA_DISC_BIN` is unset - see [`tooling/extraction.md`](tooling/extraction.md).
+Each crate's `tests/*.rs` build as one `integration` binary, which is why a single file is selected by module path. `engine-core` is the exception: it mounts them into its unit-test target, so there a file is `--lib integration::foo::` ([crate README](../crates/engine-core/README.md#tests)). Disc-gated tests skip when `LEGAIA_DISC_BIN` is unset - see [`tooling/extraction.md`](tooling/extraction.md).
 
 ## Public docs vs operational state
 
