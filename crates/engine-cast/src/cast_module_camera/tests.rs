@@ -1125,6 +1125,20 @@ fn mule_arm_kills_follow_the_parked_handles() {
     assert!(mule_arm_kills(15).is_empty());
 }
 
+/// Gilium's arm `0xB` halts the bowl and arm 8's first eleven slots, and
+/// keeps its last three (`0x801F9564`, `0x801F95CC`, `0x801F94FC`).
+#[test]
+fn gilium_arm_kills_follow_the_handle_slots() {
+    let b = gilium_arm_kills(0xB);
+    assert!(b.contains(&crate::cast_module_ticks::GILIUM_BOWL_RECORD));
+    assert!(b.contains(&0x801F_9084) && b.contains(&0x801F_93B0));
+    for kept in [0x801F_9564, 0x801F_95CC, 0x801F_94FC] {
+        assert!(!b.contains(&kept));
+    }
+    assert_eq!(gilium_arm_kills(5), &[0x801F_928C]);
+    assert!(gilium_arm_kills(0xC).is_empty());
+}
+
 /// Palma's arm 3 drops the stage once its word passes `scalar << 7`.
 /// Arm 4's exit pass stores TR x `-0x2000` and TR z `0x2000` straight
 /// before its `0x160`-frame pan: the drift lands the live globals there.

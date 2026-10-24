@@ -329,7 +329,7 @@ impl PlayWindowApp {
                 "tick,st7,phase,acting,frames,c6d8,cd,yaw,c87c,fade_white,fade_age,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot"
             );
             let mut cam = std::io::BufWriter::new(std::fs::File::create(dir.join("cam.csv")).ok()?);
-            let _ = writeln!(cam, "tick,st7,phase,pitch,yaw,trx,try,trz");
+            let _ = writeln!(cam, "tick,st7,phase,pitch,yaw,trx,try,trz,fx,fy,fz");
             Some(std::sync::Mutex::new(CastSeqRecorder {
                 cam,
                 every: num("LEGAIA_DIAG_CAST_SEQ_EVERY", 1).max(1),
@@ -456,13 +456,16 @@ impl PlayWindowApp {
             let p = w.battle_cam_pose();
             let _ = writeln!(
                 rec.cam,
-                "{tick},{st},{},{},{},{},{},{}",
+                "{tick},{st},{},{},{},{},{},{},{},{},{}",
                 w.casting.module_phase,
                 (p.pitch as i32).rem_euclid(4096),
                 (p.yaw as i32).rem_euclid(4096),
                 p.tr[0] as i32,
                 p.tr[1] as i32,
                 p.tr[2] as i32,
+                p.focus[0] as i32,
+                p.focus[1] as i32,
+                p.focus[2] as i32,
             );
         }
         if rec.done.is_some_and(|d| tick >= d + rec.tail) || rec.shots >= rec.max {

@@ -87,13 +87,12 @@ pub fn puera_stager(ctx: &mut CastModuleCtx, arm: u8) {
 ///   allocate a screen prim through `FUN_80024E80`;
 /// * arm `2` - `FUN_80021B04(actor+0x14, actor+0x24, 0x801FA414, actor[+0x72])`.
 ///
-/// The spawn calls are the DATA layer the pool already stages; the only
-/// simulation write in the routine is arm 0's `ctx[+0x278]`.
+/// This is the state half, arm 0's `ctx[+0x278]`; the seats of arms 0 and 2
+/// are [`super::gilium_stager_spawns`].
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
-/// PORT: FUN_801F8B90 (state half; the three spawn sites are
-/// `legaia_overlay_images::cast_effect_pool`'s records)
+/// PORT: FUN_801F8B90 (state half)
 pub fn gilium_stager(ctx: &mut CastModuleCtx, arm: u8) {
     if arm == 0 {
         ctx.ctx_278 = 3;

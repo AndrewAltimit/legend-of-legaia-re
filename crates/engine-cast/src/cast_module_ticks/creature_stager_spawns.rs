@@ -147,6 +147,31 @@ pub fn iota_stager_spawns(
 /// PROT 0921's two records its stager seats on every call.
 pub const IOTA_VOLLEY_RECORDS: [u32; 2] = [0x801F_8448, 0x801F_8498];
 
+/// The bowl PROT 0923's stager arm `0` seats (`addiu a2,a2,-0x6BB0` at
+/// `0x801F8BE0`): an op-`0x13` ring in the ground plane rising from radius
+/// `0x800` at the floor to `0x1000` at height `-0x400`, the fire basin the
+/// creature performs in from its arm 5 on.
+pub const GILIUM_BOWL_RECORD: u32 = 0x801F_9450;
+
+/// PROT 0923 (Gilium) - the stager `FUN_801F8B90`, three arms behind a
+/// `beq` / `slti` chain, reached only through its parts' op-`0x20` calls:
+///
+/// | arm | seats |
+/// |---:|---|
+/// | 0 | [`GILIUM_BOWL_RECORD`] on the caller at `0x1000` (`0x801F8BD8..0x801F8BE8`), its handle kept at `0x801FA4D0`; then the stage byte `3` ([`super::gilium_stager`]) |
+/// | 1 | nothing: the halt bit `8` ORed into the `+0x10` word of three handles (`0x801FA4A8..0x801FA4B0`) and a screen prim through `FUN_80024E80` (`0x801F8C08..0x801F8C84`) |
+/// | 2 | `0x801FA414` on the caller at the caller's own `+0x72` (`lhu a3,0x72(v1)` at `0x801F8C94`) |
+///
+/// PORT: FUN_801F8B90 (PROT 0923 stager; the seats of arms 0 and 2 - arm
+/// 1's halts and screen prim not carried)
+pub fn gilium_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<StagerSpawn> {
+    match arm {
+        0 => vec![on(GILIUM_BOWL_RECORD, caller, 0x1000)],
+        2 => vec![on(0x801F_A414, caller, caller.scale)],
+        _ => Vec::new(),
+    }
+}
+
 /// PROT 0928 (Palma) - the stager `0x801F8E68`, seven arms (jump table
 /// `0x801F69D8`):
 ///

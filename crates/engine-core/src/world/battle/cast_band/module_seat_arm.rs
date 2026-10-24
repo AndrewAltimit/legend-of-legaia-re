@@ -43,6 +43,10 @@ pub(in crate::world) struct SeatArmWrite {
     /// `(+0x21B, +0x176)`: a loop counter and hold budget armed on the
     /// installer's clip, which the installer itself leaves unseeded.
     pub loop_hold: Option<(u8, u16)>,
+    /// `+0x04`, the colour word.
+    pub colour: Option<u32>,
+    /// The render node's `+0x72`, the render scale.
+    pub render_scale: Option<u16>,
 }
 
 const fn seat(x: SeatCoord, z: SeatCoord, facing: u16) -> SeatArmWrite {
@@ -53,6 +57,8 @@ const fn seat(x: SeatCoord, z: SeatCoord, facing: u16) -> SeatArmWrite {
         facing: Some(facing),
         rate: None,
         loop_hold: None,
+        colour: None,
+        render_scale: None,
     }
 }
 
@@ -64,6 +70,16 @@ impl SeatArmWrite {
 
     const fn rate(mut self, rate: u8) -> Self {
         self.rate = Some(rate);
+        self
+    }
+
+    const fn colour(mut self, colour: u32) -> Self {
+        self.colour = Some(colour);
+        self
+    }
+
+    const fn render_scale(mut self, scale: u16) -> Self {
+        self.render_scale = Some(scale);
         self
     }
 }
@@ -89,6 +105,8 @@ pub(in crate::world) fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> 
             facing: None,
             rate: None,
             loop_hold: Some((8, 0x80)),
+            colour: None,
+            render_scale: None,
         },
         // `0x801F6C54`: the facing only.
         912 => SeatArmWrite {
@@ -98,6 +116,8 @@ pub(in crate::world) fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> 
             facing: Some(0),
             rate: None,
             loop_hold: None,
+            colour: None,
+            render_scale: None,
         },
         // `0x801F6CC0..0x801F6CE0`: `0x400` across and `0x267` back off
         // the installer's seat.
@@ -117,13 +137,21 @@ pub(in crate::world) fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> 
             facing: None,
             rate: None,
             loop_hold: None,
+            colour: None,
+            render_scale: None,
         },
         // `0x801F6FC0..0x801F6FC8`.
         921 => seat(Lit(0), Lit(0), 0),
         // `0x801F6E04..0x801F6E14`: frozen (`+0x21D = 0`) until arm 5.
         922 => seat(Lit(0), Lit(-0x80), 0).rate(0),
-        // `0x801F6DC0..0x801F6DD4`.
-        923 => seat(Lit(0), Lit(-0x800), 0).y(-0x100),
+        // `0x801F6DC0..0x801F6DD4`; and the colour word and the render
+        // node's scale zeroed (`sw zero,0x4(s6)` / `sh zero,0x72(v1)` at
+        // `0x801F6DD8` / `0x801F6DDC`), which arm 4 eases and grows back: the
+        // creature fades and swells in through the portal.
+        923 => seat(Lit(0), Lit(-0x800), 0)
+            .y(-0x100)
+            .colour(0)
+            .render_scale(0),
         // `0x801F6D2C..0x801F6D54`.
         924 => seat(Lit(0), Lit(0x2000), 0x800).rate(8),
         // `0x801F6DC0..0x801F6DEC`.
@@ -196,6 +224,12 @@ impl World {
         }
         if let Some(r) = w.rate {
             a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(r);
+        }
+        if let Some(c) = w.colour {
+            a.battle.render_color = c;
+        }
+        if let Some(sc) = w.render_scale {
+            a.battle.render_scale = Some(sc);
         }
         if let Some((count, timer)) = w.loop_hold {
             a.battle.hit_count_bound = count;

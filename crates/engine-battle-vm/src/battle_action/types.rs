@@ -483,6 +483,15 @@ pub struct BattleActor {
     /// spin and push. The Jette hook stages `Some(2)` and clears to
     /// `Some(0)`.
     pub shatter_row: Option<u8>,
+    /// The render node's `+0x72` - the body's **render scale** (4.12). The
+    /// battle draw callback `FUN_80048A08` scales the body's matrix by it
+    /// on all three axes when it is not `0x1000` (`0x80048ABC..0x80048AF8`,
+    /// `ScaleMatrix` `0x8005B4E8`), so `0` draws nothing and a growing word
+    /// grows the body about its origin. The actor allocator seats `0x1000`
+    /// (`FUN_80020DE0`); `None` is that unity. Its writers are cast
+    /// modules: PROT 0923 (Gilium) zeroes its creature's on arm 3 and grows
+    /// it through arm 4 ([`Self::render_scale_q12`]).
+    pub render_scale: Option<u16>,
     /// `+0x21B` - hit-count bound (script-defined; loop exits at
     /// `ctx.hit_counter >= hit_count_bound`).
     pub hit_count_bound: u8,
@@ -692,6 +701,12 @@ pub struct BattleActor {
 impl BattleActor {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// [`Self::render_scale`] as the draw's `scale / 0x1000` factor: `1.0`
+    /// at the allocator's unity.
+    pub fn render_scale_q12(&self) -> f32 {
+        self.render_scale.map_or(1.0, |s| f32::from(s) / 4096.0)
     }
 
     /// Read a parameter byte at `strike_index + offset`.

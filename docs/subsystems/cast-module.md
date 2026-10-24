@@ -2462,13 +2462,29 @@ node halfwords `+0x26` / `+0x68` arms `0xE` and `0x10` write.
 Gilium's creature flight is carried (`World::apply_gilium_writes`): arm 3's
 pass seats the creature at `(0, -0x100, -0x800)`, each held pass of arm 4
 flies it `24` a frame delta along `+0x38` and `2` down `+0x36`
-(`0x801F6E30..0x801F6E58`), and arm 4's pass stands it at `+0x38 = 0x400`
-(`0x801F718C`), the point a retail capture holds from arm 5 on. Arm 3 also
-zeroes the creature's colour word (`sw zero,0x4(s6)` at `0x801F6DD8`), which
-the tint pass's decay arm eases back up to neutral: the fade-in. The render
-scale `+0x72` it zeroes beside it (`0x801F6DDC`), which arm 4 grows `32 *
-delta` a draining pass and stands at `0x1000` on its exit (`0x801F71A4`), is
-not carried: the battle body draw reads no render scale. Its stage
+(`0x801F6E30..0x801F6E58`), the draining pass included, so it lands at
+height `0`; and arm 4's pass stands it at `+0x38 = 0x400` (`0x801F718C`),
+the point a retail cast holds from arm 5 on. Arm 3 also zeroes the
+creature's colour word (`sw zero,0x4(s6)` at `0x801F6DD8`), which the tint
+pass's decay arm eases back up to neutral, and its render node's scale
+`+0x72` (`0x801F6DDC`), which arm 4 grows `32 * delta` a draining pass and
+stands at `0x1000` on its exit (`0x801F71A4`): the creature fades and swells
+in through the portal. The battle draw `FUN_80048A08` scales a body's matrix
+by that word (`0x80048ABC..0x80048AF8`), and both hosts carry it
+(`BattleActor::render_scale`). Arm 3's stores run on the pass that seats the
+creature, after the installer, so the engine makes them in the seat arm
+(`module_seat_arm`). Arm 4's creature-anchored spawns
+(`0x801F7118..0x801F7168`) seat on the landed height `0`, and arm `0xB`'s
+pass hides the creature for the rest of the cast (`0x801F7D38..0x801F7D40`).
+The stager's arm 0 seats the fire bowl `0x801F9450` on its caller, the ring
+rising from radius `0x800` at the floor to `0x1000` at height `-0x400` that
+fills the frame from arm 5 on, and its arm 2 seats `0x801FA414` at the
+caller's scale (`cast_module_ticks::gilium_stager_spawns`). The module parks
+its parts' handles in a table at `0x801FA478` and halts them by slot on the
+passes of arms 5, `0xB`, `0x11` and `0x14`
+(`cast_module_camera::gilium_arm_kills`); arm `0xB`'s halt takes the bowl and
+the ring with the arm-8 and arm-`0xA` parts, which returns the frame to the
+stage. Its stage
 byte is carried by hand (`cast_module_camera::gilium_stage_byte`): `0` in
 arm 0, `2` on the passes of arms 3, 4 and `0x11`, and the stager's arm 0
 (`FUN_801F8B90`) stores `3` on the op-`0x20` call of the part that reaches

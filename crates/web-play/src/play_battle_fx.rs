@@ -766,10 +766,11 @@ impl LegaiaRuntime {
     /// resolved engine-side so both hosts saturate the same depth-cue ramp:
     /// the pointed-at monster pulses bright (`far = white`, phase from the
     /// world's own frame counter), the rest sit dim (`far = black`,
-    /// `max_ir0 = 0.55`). The `model_scale` channel is retained for layout
-    /// compatibility and is always `1.0`: the actor `+0xC` word is the
-    /// render packet's `+0x78` tint-blend weight (`FUN_8004A908`), not a
-    /// mesh scale - it weights the cue-group flash strength below instead.
+    /// `max_ir0 = 0.55`). The `model_scale` channel is the body's render
+    /// node scale `+0x72` (`BattleActor::render_scale`, `1.0` but on a cast
+    /// module's creature), never the actor `+0xC` word: that is the render
+    /// packet's `+0x78` tint-blend weight (`FUN_8004A908`), not a mesh
+    /// scale - it weights the cue-group flash strength below instead.
     ///
     /// REF: FUN_801DA6B4
     pub fn play_battle_actor_cursor(&self) -> Vec<f32> {
@@ -798,6 +799,10 @@ impl LegaiaRuntime {
             // Tint word first, else the cursor's pulse: the one precedence
             // (`BattleActorDrawPlan::body_cue`) the native draw pass stages.
             let plan = self.battle_draw_plan(actor_idx);
+            // The model-scale lane: the render node's `+0x72`
+            // (`BattleActor::render_scale`), which `FUN_80048A08` scales the
+            // body's matrix by - the native window's `actor_model` twin.
+            let scale = b.map_or(1.0, |b| b.render_scale_q12());
             match b.and_then(|b| {
                 legaia_engine_core::world::BattleActorDrawPlan::body_cue(
                     plan.as_ref(),
@@ -806,9 +811,9 @@ impl LegaiaRuntime {
                 )
             }) {
                 Some((far, max_ir0)) => {
-                    out.extend_from_slice(&[1.0, far[0], far[1], far[2], max_ir0, 1.0]);
+                    out.extend_from_slice(&[1.0, far[0], far[1], far[2], max_ir0, scale]);
                 }
-                None => out.extend_from_slice(&[0.0, 0.0, 0.0, 0.0, 0.0, 1.0]),
+                None => out.extend_from_slice(&[0.0, 0.0, 0.0, 0.0, 0.0, scale]),
             }
         }
         out

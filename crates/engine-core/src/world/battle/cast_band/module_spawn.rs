@@ -84,6 +84,11 @@ impl World {
         // own creature), which the draw copies to the node's `+0x7A` and
         // turns into the shatter renderer.
         a.battle.shatter = 0;
+        // The node is built fresh (`FUN_80024C88` at `0x801F1D4C`), at the
+        // allocator's unity render scale `+0x72 = 0x1000`: a previous
+        // creature's scale (PROT 0923 zeroes and grows its own) does not
+        // carry over.
+        a.battle.render_scale = None;
         // `sb zero,0x1fb(v0)` over 32 bytes (`0x801F1E98..0x801F1EB0`): the
         // committed-anim-id ring `FUN_80047430` shifts each frame and the
         // after-image walk `FUN_80049348` gates on (`0x10 < id`). Only the id

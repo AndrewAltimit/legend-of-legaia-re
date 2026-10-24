@@ -76,9 +76,14 @@ impl World {
             // `ctx[+0x278] = 2` through arms 4 and 5's head and `3` only
             // later in arm 5; run off the phase, arm 0 dropped the stage
             // from the cast's first tick.
+            // Arms 0 and 2 also seat a record on their caller: arm 0 the
+            // fire bowl the creature stands in from arm 5 on.
             923 => {
-                for (call_arm, _) in std::mem::take(&mut self.casting.module_stager_calls) {
+                for (call_arm, caller) in std::mem::take(&mut self.casting.module_stager_calls) {
                     ticks::gilium_stager(&mut ctx, call_arm);
+                    for s in &ticks::gilium_stager_spawns(call_arm, caller) {
+                        self.seat_stager_spawn(entry, s);
+                    }
                 }
             }
             949 => ticks::water_crystals_stager(&mut victim, arm),

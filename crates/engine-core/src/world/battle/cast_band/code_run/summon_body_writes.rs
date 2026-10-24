@@ -498,17 +498,27 @@ impl World {
     /// the camera, and drew no creature from the portal on.
     ///
     /// Arm 3 also zeroes the creature's colour word, which the tint pass's
-    /// decay arm eases back to neutral (the fade-in). Not carried: the
-    /// render-node scale `+0x72` arm 3 zeroes (`sh zero,0x72(v1)` at
-    /// `0x801F6DDC`), each draining pass of arm 4 grows by `32 * delta`
-    /// (`0x801F6E00..0x801F6E1C`) and arm 4's exit stands at `0x1000`
-    /// (`0x801F71A4`) - the battle body draw reads no render scale.
+    /// decay arm eases back to neutral (the fade-in), and its render-node
+    /// scale `+0x72` (`sh zero,0x72(v1)` at `0x801F6DDC`), which each
+    /// draining pass of arm 4 grows by `32 * delta`
+    /// (`0x801F6E00..0x801F6E1C`, ahead of the countdown test) and arm 4's
+    /// exit stands at `0x1000` (`0x801F71A4`): the creature swells out of
+    /// the portal from nothing, the draw `FUN_80048A08` scaling its matrix
+    /// by the word.
     pub(in crate::world::battle::cast_band) fn apply_gilium_writes(
         &mut self,
         phase_in: u8,
         passed: bool,
     ) {
         let d = legaia_engine_cast::cast_module_camera::DELTA_PER_TICK as i16;
+        if passed && let Some(scene) = self.casting.active_summon.as_mut() {
+            let kills = legaia_engine_cast::cast_module_camera::gilium_arm_kills(phase_in);
+            for part in &mut scene.parts {
+                if part.tag.is_some_and(|t| kills.contains(&t)) {
+                    part.finished = true;
+                }
+            }
+        }
         let Some(a) = self
             .casting
             .summon_actor_slot
@@ -526,12 +536,32 @@ impl World {
                 // eases back up to neutral `8` lanes a vsync - its fade-in
                 // through the portal.
                 a.battle.render_color = 0;
+                a.battle.render_scale = Some(0);
             }
             (4, false) => {
                 m.world_z = m.world_z.wrapping_add(24 * d);
                 m.world_y = m.world_y.wrapping_add(2 * d);
+                if let Some(s) = a.battle.render_scale.as_mut() {
+                    *s = s.wrapping_add(32 * d as u16);
+                }
             }
-            (4, true) => m.world_z = 0x400,
+            // Arm `0xB`'s pass hides the creature for the rest of the cast
+            // (`sw zero,0x4(s6)` / `sb 0xFF,0x21C(s6)` at
+            // `0x801F7D38..0x801F7D40`; no later arm stores either).
+            (0xB, true) => {
+                a.battle.render_color = 0;
+                a.battle.render_flag =
+                    legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN;
+            }
+            (4, true) => {
+                // The pass that drains the countdown still flies before it
+                // falls into the exit (`bgtz a1` at `0x801F6E6C` falls
+                // through to `0x801F6E74`), which stands Z but not the
+                // height: the creature lands at `+0x36 = 0`.
+                m.world_y = m.world_y.wrapping_add(2 * d);
+                m.world_z = 0x400;
+                a.battle.render_scale = Some(0x1000);
+            }
             _ => {}
         }
     }
