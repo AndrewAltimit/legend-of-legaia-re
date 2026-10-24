@@ -56,6 +56,9 @@ pub struct World {
     pub party: PartyState,
     /// Full-screen presentation state: fades, tints, the screen-effect widget host and the cinematic bars.
     pub presentation: ScreenFxState,
+    /// DualShock rumble: the two motor words, their script ramps and the
+    /// actuator payload this tick produced.
+    pub rumble: WorldRumble,
     /// Story / system flag words: the retail flag arrays and the story-flag bit image the scripts test and set.
     pub flags: StoryFlagState,
     /// The field fog-particle pool (`_DAT_8007B7E0`) the ambient emitter
@@ -384,6 +387,7 @@ impl World {
             toggles: WorldToggles::new(),
             party: PartyState::new(),
             presentation: ScreenFxState::new(),
+            rumble: WorldRumble::default(),
             flags: StoryFlagState::new(),
             fog: legaia_engine_field::fog_particles::FogPool::new(),
             fog_volume: legaia_render_kernels::fog_volume::FogVolume::new(),

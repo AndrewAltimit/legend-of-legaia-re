@@ -44,6 +44,13 @@
         this.pulse.clear();
         this._repack();
       }
+      /* The frame's controller rumble (`BootSession::rumble_frame`). */
+      if (window.legaiaSetRumble && typeof rt.play_rumble_levels === 'function') {
+        try {
+          const lv = rt.play_rumble_levels();
+          window.legaiaSetRumble(lv[0] || 0, lv[1] || 0);
+        } catch (e) { /* no rumble this frame */ }
+      }
       if (r.menu_opened) this._ensureMenuBlitters();
       if (r.name_committed) this._nameCommitted();
       this._serveXaStage(rt);

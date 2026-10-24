@@ -28,7 +28,13 @@ pub fn apply_to_world(opts: &OptionsState, world: &mut World) {
     world.terrain.static_window.retail_windowing = opts.retail_static_window;
     world.toggles.view_window_crop = opts.retail_view_window;
     world.toggles.volumetric_fog = opts.volumetric_fog;
+    let events_was_on = world.toggles.retail_options.vibration_events == 0;
     world.toggles.retail_options = opts.retail_options();
+    // Committing Events vibration Off zeroes the live rumble words
+    // (the options screen's popup commit, `docs/subsystems/field-menu.md`).
+    if events_was_on && world.event_vibration_off() {
+        world.rumble.clear();
+    }
 }
 
 #[cfg(test)]

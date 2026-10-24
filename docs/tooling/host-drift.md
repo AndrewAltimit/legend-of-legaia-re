@@ -1678,6 +1678,7 @@ reaches it. One layout, the W3C standard mapping, lives in
 | button order, stick dead zone, trigger threshold | `gamepad::STANDARD_BUTTONS`, `STICK_DEAD_ZONE`, `BUTTON_PRESS_THRESHOLD` | gilrs buttons renamed to standard indices (`window::gamepad::standard_index`) | `gamepad_layout_json`, adopted by `pad-bindings.js` |
 | press / release edges, focus-loss reset | `StandardGamepad::update`, `reset` | `poll_gamepad` once per redraw, ahead of the ticks; `Focused(false)` | `legaiaPollGamepad` (play page, title card), `legaiaGamepadEdges` (minigames page) |
 | where the word lands | the tick's pad word | `gamepad_held`, ORed with the keyboard's held word each tick; a press since the last poll goes through `PadTapLatch` | `Gamepad:<Button>` entries in the `held` / `pulse` sets; on the minigames page an edge event naming its button through the key handlers |
+| rumble | `legaia_engine_system::rumble` over `World::rumble`, read through `BootSession::rumble_frame` (a `SIM_PAIRS` row) | `GamepadHost::set_rumble`: two endless gilrs force-feedback effects whose gains are the levels, once per redraw after its ticks | `legaiaSetRumble` (`pad-bindings.js`): a `dual-rumble` effect on every pad with a `vibrationActuator`, re-sent while a level holds |
 
 Scripted and headless native runs open no controller: the pad word there is
 the script's. Two native surfaces read the pad outside the tick's word and

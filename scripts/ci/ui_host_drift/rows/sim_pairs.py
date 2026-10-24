@@ -1525,6 +1525,22 @@ SIM_PAIRS: list[dict[str, object]] = [
         "mode": "symbols_all",
         "symbols": ["step_field_fog"],
     },
+    {
+        "what": "controller rumble, native vs play page - both hand their "
+        "gamepad the motor levels the session's frame left "
+        "(`BootSession::rumble_frame` over `World::rumble`, the "
+        "`FUN_80018DB0` actuator kernel); a host reading the world's motor "
+        "words or payload itself would be a second mapping",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/window/event_handler/redraw_tick.rs",
+                "run_frame_ticks",
+            ),
+            "web": ("crates/web-play/src/play_rumble.rs", "play_rumble_levels"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["rumble_frame"],
+    },
 ]
 
 

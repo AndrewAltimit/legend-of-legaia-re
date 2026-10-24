@@ -882,8 +882,9 @@ impl World {
     /// (`FUN_80046A20`, `0x8004713C..0x80047160`, `DAT_1F800393 << 3` a
     /// frame); `add` is that gain since the last call.
     ///
-    /// Not ported: selector `2`'s screen-shake globals (`_DAT_8007B92C` /
-    /// `_DAT_8007B930`, `gp+0xA30..0xA34`, `0x8004A838..0x8004A8BC`).
+    /// Not ported: selector `2`'s writes to the controller rumble words
+    /// (`_DAT_8007B92C` / `_DAT_8007B930`, `World::rumble`) and their decay
+    /// rates `gp+0xA30..0xA34`, `0x8004A838..0x8004A8BC`.
     ///
     /// PORT: FUN_8004998C (`0x8004A5FC..0x8004A8D8`, the selector emit loop)
     pub(in crate::world) fn emit_battle_burn_sprites(&mut self, add: u16) {

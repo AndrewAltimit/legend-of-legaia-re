@@ -25,6 +25,10 @@ impl PlayWindowApp {
         let ticks = if self.screenshot.is_some() { 1 } else { ticks };
         self.poll_gamepad();
         self.run_sim_ticks(ticks);
+        // The frame's rumble, after its ticks (`BootSession::rumble_frame`).
+        if let Some(gp) = self.gamepad.as_mut() {
+            gp.set_rumble(self.session.rumble_frame());
+        }
     }
 
     /// The `--simple-dialogue` panel's option picker, on this tick's bound pad

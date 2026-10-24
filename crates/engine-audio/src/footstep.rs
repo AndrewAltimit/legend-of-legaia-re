@@ -206,8 +206,12 @@ impl FootstepCadence {
     /// the countdown has reached the `-1` sentinel; firing reloads the
     /// countdown with the interval. Above the gate the countdown is parked
     /// at [`STALL_RELOAD`], so resuming a walk costs at most two frames.
-    // PORT: FUN_80018db0 - retail's per-frame rumble cadence tick (see the
+    // REF: FUN_80018db0 - retail's per-frame rumble cadence tick (see the
     // module header: the "footstep / ambient" naming here is falsified).
+    // The port that drives the controller from retail's own inputs (the
+    // motor words `_DAT_8007B92C` / `_DAT_8007B930`) is
+    // `legaia_engine_system::rumble::RumbleActuator::step`; this copy is fed
+    // a stand-in walking speed and drives nothing.
     // Countdown reload (0x4B0) + its CdControl(CdlPause) action, the pulse
     // countdown floored at the -1 sentinel, the free-running uptime counter,
     // and the two branches over DAT_8007B79C that derive the pulse interval

@@ -367,6 +367,7 @@ mod placement_heading;
 mod player_clip_pick;
 mod player_scale;
 mod round_prompt_gate;
+mod rumble_field_ops;
 mod save_state;
 mod script_teleport;
 mod scripted_menu_press;

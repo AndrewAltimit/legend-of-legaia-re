@@ -1424,6 +1424,28 @@ cadence, not an audio one - see the
 [`80018DB0` row](../reference/functions/audio.md) and
 [`re-settled-threads.md`](../reference/re-settled-threads/audio.md#fun_80018db0-is-a-rumble-cadence-not-an-audio-one).
 
+Its two inputs `gp+0x614` / `gp+0x618` (`gp = 0x8007B318`) are the absolute
+words `_DAT_8007B92C` / `_DAT_8007B930`, the game's **rumble state**:
+
+| Writer | What it does |
+|---|---|
+| field-VM op `0x4C` nibble-4 subs `6` / `7` | write or ramp either word; gated by the Events vibration word `_DAT_800845A8`, which clears both instead (215 sites in 40 scenes) |
+| the options screen | committing Events Off zeroes both |
+| the battle overlay (PROT 0898), the field-to-battle intro (0979), the summon and cast modules | store a level on hits, quakes and casts |
+| `FUN_80046A20` (battle frame driver) | after the hold timer `gp+0xA1C` runs out, decays each word by `gp+0xA30` / `gp+0xA34` a frame, held to `0..=0xFF` |
+
+The kernel paces the small motor's one-frame pulse by `gp+0x614` (period
+`15 - (clamp(word + 0x20, 0, 0xFA) >> 4)`, pulsing below `11`) and hands the
+large motor the low byte of `gp+0x618`.
+
+Port: `legaia_engine_system::rumble` (the kernel), `World::rumble` (the two
+words, the field writes and their ramps, the Events commit), and
+`BootSession::rumble_frame`, which both play hosts give their controller -
+gilrs force feedback natively, the Gamepad API's `vibrationActuator` on the
+page. The small motor's pulse reaches a host as its duty over the last eight
+ticks, the level a DualShock motor's inertia averages it to. The battle-side
+writers and decay are not ported, so a fight does not rumble yet.
+
 Provenance: `see ghidra/scripts/funcs/8006e2b4.txt`, `8006ce30.txt`,
 `8006d7b4.txt`, `8006cdb0.txt`, `8006ca7c.txt`, `8006cb3c.txt`, `8006d1e0.txt`,
 `8006d2ac.txt`, `8006e600.txt`, `8006e46c.txt`, `8006daac.txt`, `8001d230.txt`,

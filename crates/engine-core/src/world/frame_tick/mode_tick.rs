@@ -61,6 +61,7 @@ impl World {
         // The volumetric ground-fog enhancement steps on the tick this frame
         // settled, after every actor moved (`legaia_render_kernels::fog_volume`).
         self.tick_fog_volume();
+        self.tick_rumble();
         outcome
     }
 

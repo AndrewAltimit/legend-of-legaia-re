@@ -4,7 +4,12 @@ use super::*;
 
 impl<'a> FieldScreenHost for FieldHostImpl<'a> {
     fn write_or_ramp_global_slot(&mut self, sub: u8, target: i32, ticks: u16) {
-        let _ = ticks;
+        // Subs 6 / 7: the rumble motor words (`_DAT_8007B92C` /
+        // `_DAT_8007B930`), written or ramped from their live value.
+        if matches!(sub, 6 | 7) {
+            self.world.rumble.write_or_ramp(sub, target, ticks);
+            return;
+        }
         // Sub-D: the audio duck `_DAT_8007B910 = (value * _DAT_8008457C) >>
         // 12`, a fraction of the configured level in `1/0x1000` - handed to
         // the session's duck as a percentage. The director ramps it its own
@@ -24,6 +29,14 @@ impl<'a> FieldScreenHost for FieldHostImpl<'a> {
             0xC => ctrl.horizon_params.2 = v,
             _ => {}
         }
+    }
+
+    fn event_vibration_off(&self) -> bool {
+        self.world.event_vibration_off()
+    }
+
+    fn clear_rumble(&mut self) {
+        self.world.rumble.clear();
     }
 
     // Op-0x43 screen-effect widget sub-ops (the PROT-0900 mask / sprite /

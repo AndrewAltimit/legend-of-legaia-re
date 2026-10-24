@@ -92,6 +92,13 @@ enum Source {
 pub(crate) struct GamepadHost {
     source: Source,
     tracker: StandardGamepad,
+    /// The two force-feedback effects (`[strong, weak]`) playing at full
+    /// magnitude on every rumble-capable controller, their gains the motors'
+    /// levels (`Self::set_rumble`). Built on the first rumble.
+    #[cfg(feature = "gamepad")]
+    rumble: Option<[gilrs::ff::Effect; 2]>,
+    /// The levels last handed to the effects.
+    rumble_last: legaia_engine_system::rumble::RumbleFrame,
 }
 
 impl GamepadHost {
@@ -109,6 +116,8 @@ impl GamepadHost {
                     Some(Self {
                         source: Source::Gilrs(Box::new(gilrs)),
                         tracker: StandardGamepad::default(),
+                        rumble: None,
+                        rumble_last: Default::default(),
                     })
                 }
                 Err(e) => {
@@ -129,6 +138,9 @@ impl GamepadHost {
         Self {
             source: Source::Scripted(0),
             tracker: StandardGamepad::default(),
+            #[cfg(feature = "gamepad")]
+            rumble: None,
+            rumble_last: Default::default(),
         }
     }
 
@@ -155,11 +167,81 @@ impl GamepadHost {
         }
     }
 
+    /// Drive the controllers' motors at `frame`'s levels (the session's
+    /// `BootSession::rumble_frame`, once per redraw after its ticks). A
+    /// scripted controller has no motors; it only records the levels.
+    pub(crate) fn set_rumble(&mut self, frame: legaia_engine_system::rumble::RumbleFrame) {
+        let close = |a: f32, b: f32| (a - b).abs() < 1.0 / 64.0;
+        if close(frame.strong, self.rumble_last.strong) && close(frame.weak, self.rumble_last.weak)
+        {
+            return;
+        }
+        self.rumble_last = frame;
+        #[cfg(feature = "gamepad")]
+        if let Source::Gilrs(gilrs) = &mut self.source {
+            if self.rumble.is_none() && frame.is_active() {
+                self.rumble = rumble_effects(gilrs);
+            }
+            if let Some([strong, weak]) = &self.rumble {
+                let _ = strong.set_gain(frame.strong);
+                let _ = weak.set_gain(frame.weak);
+            }
+        }
+    }
+
+    /// The levels [`Self::set_rumble`] last applied.
+    #[cfg(test)]
+    pub(crate) fn rumble_levels(&self) -> legaia_engine_system::rumble::RumbleFrame {
+        self.rumble_last
+    }
+
     /// Focus loss: forget the held word, so a button still held re-enters
     /// as a fresh press (the pages' `legaiaResetGamepad`).
     pub(crate) fn reset(&mut self) {
         self.tracker.reset();
     }
+}
+
+/// The `[strong, weak]` pair of endless full-magnitude effects on every
+/// connected controller that supports force feedback, playing at gain `0`
+/// until [`GamepadHost::set_rumble`] raises them. `None` when no controller
+/// can rumble (logged once by gilrs' own refusal).
+#[cfg(feature = "gamepad")]
+fn rumble_effects(gilrs: &mut gilrs::Gilrs) -> Option<[gilrs::ff::Effect; 2]> {
+    use gilrs::ff::{BaseEffect, BaseEffectType, EffectBuilder, Replay, Ticks};
+    let ids: Vec<gilrs::GamepadId> = gilrs
+        .gamepads()
+        .filter(|(_, gp)| gp.is_connected() && gp.is_ff_supported())
+        .map(|(id, _)| id)
+        .collect();
+    if ids.is_empty() {
+        return None;
+    }
+    let mut build = |kind| {
+        let effect = EffectBuilder::new()
+            .add_effect(BaseEffect {
+                kind,
+                scheduling: Replay {
+                    play_for: Ticks::from_ms(1000),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .gamepads(&ids)
+            .finish(gilrs)
+            .map_err(|e| log::warn!("gamepad: rumble unavailable ({e})"))
+            .ok()?;
+        let _ = effect.set_gain(0.0);
+        effect.play().ok()?;
+        Some(effect)
+    };
+    let strong = build(BaseEffectType::Strong {
+        magnitude: u16::MAX,
+    })?;
+    let weak = build(BaseEffectType::Weak {
+        magnitude: u16::MAX,
+    })?;
+    Some([strong, weak])
 }
 
 /// One gilrs poll: the folded word every connected controller holds, and
@@ -229,5 +311,31 @@ mod tests {
         assert_eq!(psx(gilrs::Button::West), Some(PadButton::Square));
         assert_eq!(psx(gilrs::Button::North), Some(PadButton::Triangle));
         assert_eq!(psx(gilrs::Button::Mode), None);
+    }
+}
+
+#[cfg(test)]
+mod rumble_tests {
+    use super::*;
+    use legaia_engine_system::rumble::RumbleFrame;
+
+    /// The window hands every frame's levels on, and skips a frame whose
+    /// levels have not moved.
+    #[test]
+    fn the_host_takes_the_session_rumble_levels() {
+        let mut gp = GamepadHost::scripted();
+        let on = RumbleFrame {
+            strong: 0.75,
+            weak: 0.5,
+        };
+        gp.set_rumble(on);
+        assert_eq!(gp.rumble_levels(), on);
+        gp.set_rumble(RumbleFrame {
+            strong: 0.751,
+            ..on
+        });
+        assert_eq!(gp.rumble_levels(), on, "a sub-step change is not re-sent");
+        gp.set_rumble(RumbleFrame::default());
+        assert!(!gp.rumble_levels().is_active());
     }
 }
