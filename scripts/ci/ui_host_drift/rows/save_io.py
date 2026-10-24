@@ -31,16 +31,18 @@ SAVE_IO_ROUTES = [
         "primitives": {
             "read_slot_save": {"import_legacy_slots"},
             "write_save_into_card": {"write_save_commit", "import_legacy_slots"},
-            "save_at": {"apply_card_save_commit"},
+            # The screen addresses a card by save number, not block.
+            "write_save_into_cell": {"write_save_commit"},
+            "save_numbered": {"apply_card_save_commit"},
         },
     },
     {
         "host": "web",
         "root": "crates/web-play/src",
         "primitives": {
-            "write_session_into_card": {"apply_card_outcome", "service_card_save"},
+            "write_session_into_cell": {"apply_card_outcome", "service_card_save"},
             "load_session_from_card": {"apply_card_outcome"},
-            "write_save_into_card": {"write_session_into_card"},
+            "write_save_into_cell": {"write_session_into_cell"},
             "save_at": {"load_session_from_card"},
         },
     },
