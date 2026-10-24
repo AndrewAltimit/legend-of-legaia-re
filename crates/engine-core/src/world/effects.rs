@@ -5,7 +5,6 @@ use super::*;
 mod clut_fx;
 mod effect_pool;
 mod field_stagers;
-mod map_markers;
 mod move_fx;
 mod summon;
 mod vm_entry;

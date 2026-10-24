@@ -32,8 +32,10 @@ Each module is named for the kernel module whose types it fills in.
   draw-kind-4 nodes, battle ground shadows and field stager parts with
   their placements composed (`effect_model_draws`). Each host resolves the
   meshes and adds its own outer frame.
-- **`world_map_markers`** - which overworld marker segments the frame owes
-  and the screen quads they become; the marker model is
+- **`world_map_markers`** - the placed-entity and player marker reads
+  (`world_map_entity_markers`, `world_map_player_marker`), which overworld
+  marker segments the frame owes and the screen quads they become; the
+  marker model is
   `engine-field::world_map_markers`.
 - **`world_map_sky`** - the overworld sky band's sprites off the world map
   state (`render-kernels::world_map_sky`).
