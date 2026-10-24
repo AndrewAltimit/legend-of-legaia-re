@@ -36,13 +36,14 @@ fn builds_real_save_menu_atlas_when_disc_extracted() {
     // come along; `build_atlas` splits that leading TIM back off.
     let hud_slice = &prot_dat[SYSTEM_UI_CLUT_EXT_TIM_OFFSET..end];
     // The menu font's sprite cells: ten numerals, fourteen separator glyphs,
-    // the PAGE tag, ten page digits, the slash and two triangles - every one
-    // carrying ink.
+    // the PAGE tag, ten page digits, the slash and two triangles, and per ink
+    // the numerals, separators and four command arrows - every one carrying
+    // ink.
     let cells = menu_font_cells(hud_slice, Some(glyph_tim));
     assert_eq!(
         cells.len(),
         24 + SEPARATOR_GLYPHS as usize
-            + NUMERAL_INK_IDS as usize * (10 + SEPARATOR_GLYPHS as usize),
+            + NUMERAL_INK_IDS as usize * (10 + SEPARATOR_GLYPHS as usize + 4),
         "every menu sprite cell decodes"
     );
     for c in &cells {
