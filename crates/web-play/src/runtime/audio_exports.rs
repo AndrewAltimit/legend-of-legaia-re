@@ -56,7 +56,7 @@ impl LegaiaRuntime {
             }
             match WebAudioOut::new() {
                 Ok(out) => {
-                    out.set_gain(BGM_DEFAULT_GAIN);
+                    out.set_gain(super::play_page_gain(BGM_DEFAULT_GAIN));
                     #[allow(clippy::arc_with_non_send_sync)]
                     let out = std::sync::Arc::new(out);
                     self.audio_out = Some(out);
@@ -127,10 +127,14 @@ impl LegaiaRuntime {
     /// factor first, applying the site trim TWICE and leaving the play page a
     /// factor of four - about 12 dB - under the minigames page, whose
     /// `site/js/minigame-bgm.js` output stage applies it once.
+    ///
+    /// The page's own level ([`super::PLAY_PAGE_GAIN_SCALE`], one half) is
+    /// applied here, under the slider: each slider value sounds at half the
+    /// gain it names.
     #[cfg(target_arch = "wasm32")]
     pub fn audio_set_gain(&self, gain: f32) {
         if let Some(out) = self.audio_out.as_ref() {
-            out.set_gain(gain);
+            out.set_gain(super::play_page_gain(gain));
         }
     }
 

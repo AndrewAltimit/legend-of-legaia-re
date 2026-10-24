@@ -1942,7 +1942,7 @@ mod tests {
         // A group's first row brings its heading with it.
         let sound = lines
             .iter()
-            .position(|l| *l == Line::Row(OptionRow::MusicVolume))
+            .position(|l| *l == Line::Row(OptionRow::MasterVolume))
             .unwrap();
         assert_eq!(lines[sound - 1], Line::Heading("Sound"));
         assert_eq!(scroll_to_reveal(&lines, max, sound), (sound - 1).min(max));

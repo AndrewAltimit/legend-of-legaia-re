@@ -1778,6 +1778,16 @@ linear, level 8 = unity) set the two gains through
 `AudioSink::set_bus_volumes` on both play hosts. At the default the mix is
 bit-identical to the single-bus one; XA streams ride neither bus.
 
+**Master volume (engine-only, desktop hosts).** `AudioSink::set_master_volume`
+scales the finished frame - voices, reverb and XA alike - after the downmix,
+`0..=100` percent of the mixer output. An output that never sets it renders at
+unity, bit-identical, which is the level every parity oracle measures. The
+native play window applies the options file's `master_volume` (default
+`25`, `DESKTOP_MASTER_VOLUME_DEFAULT`); Legaia Studio and the asset viewer
+start their previews at the same default. The browser outputs do not use it:
+`WebAudioOut` carries the site trim `WEB_MASTER_TRIM` on its gain node, and the
+play page halves its slider value on top (`PLAY_PAGE_GAIN_SCALE`).
+
 **Timebase.** The production path ticks the sequencer once per SPU sample
 (`tick_sample`), so the music clock is locked to the audio clock. Under
 `set_exact_tempo(true)` timing is an **exact integer accumulator** (units of

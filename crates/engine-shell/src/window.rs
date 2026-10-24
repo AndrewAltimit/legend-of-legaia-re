@@ -188,6 +188,9 @@ impl PlayWindowApp {
             // Engine-only BGM / SFX bus levels (config file only); the
             // default level is unity, the retail mix.
             audio.set_bus_volumes(self.options_state.bgm_volume, self.options_state.sfx_volume);
+            // Engine-only master volume (config file and launcher row), a
+            // quarter of the full mix by default.
+            audio.set_master_volume(self.options_state.master_volume);
             // Engine-only full-mono downmix (`downmix_mono`, config file and
             // launcher row), separate from the retail Monaural row above.
             audio.set_downmix(self.options_state.downmix_mono);

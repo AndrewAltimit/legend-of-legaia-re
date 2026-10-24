@@ -67,7 +67,10 @@ pub use sfx::{
 };
 pub use sfx_ring::{CueDrainState, CueSlot, CueVoice, CueVoicePlan, SfxCueRing, plan_cue_voices};
 pub use shout::{ArtsShoutBank, SHOUT_CD_RESPONSE_DELAY, ShoutClip};
-pub use sink::{AudioSink, VOLUME_LEVEL_UNITY, volume_level_gain};
+pub use sink::{
+    AudioSink, DESKTOP_MASTER_VOLUME_DEFAULT, VOLUME_LEVEL_UNITY, master_volume_gain,
+    volume_level_gain,
+};
 pub use spu::Spu;
 pub use spu::adpcm::{AdpcmDecoder, BLOCK_BYTES, SAMPLES_PER_BLOCK};
 pub use spu::adsr::{AdsrConfig, AdsrState, Phase};
@@ -399,6 +402,12 @@ pub struct StreamResampler {
     /// engine, and any XA stream all keep ticking, so unmuting resumes
     /// exactly where playback would have been - no state is torn down.
     muted: bool,
+    /// Host master volume (engine-only; retail has no equivalent): the
+    /// finished frame, XA included, is scaled by this after the downmix.
+    /// `1.0` (the default) leaves the mix bit-identical - the level every
+    /// parity oracle measures at. Desktop hosts set it from their volume
+    /// setting ([`AudioSink::set_master_volume`]).
+    master_gain: f32,
     /// Cached previous sample (one frame, stereo).
     prev: (i16, i16),
     /// Cached current sample (the SPU output we'll interpolate against).
@@ -428,6 +437,7 @@ impl StreamResampler {
             pending_xa: None,
             downmix: false,
             muted: false,
+            master_gain: 1.0,
             prev: (0, 0),
             cur: (0, 0),
             phase: 0.0,
@@ -498,6 +508,19 @@ impl StreamResampler {
             (m, m)
         } else {
             (l, r)
+        };
+        // Host master volume; unity skips the multiply so the default output
+        // is bit-identical.
+        let (l, r) = if self.master_gain == 1.0 {
+            (l, r)
+        } else {
+            let g = self.master_gain;
+            let scale = |v: i16| {
+                (v as f32 * g)
+                    .round()
+                    .clamp(i16::MIN as f32, i16::MAX as f32) as i16
+            };
+            (scale(l), scale(r))
         };
         // Master mute: everything above still ran (sequencer, SPU, XA
         // cursor, fades), so unmute picks up mid-stream with no state loss.

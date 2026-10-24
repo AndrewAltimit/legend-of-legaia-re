@@ -397,6 +397,8 @@ fn step_opt<T: PartialEq + Copy>(v: &mut Option<T>, steps: &[T], dir: i8) {
 
 /// The EXP rate the launcher starts from and never passes: retail's `1x`.
 const EXP_RATE_RETAIL: u16 = legaia_engine_core::world::EXP_RATE_RETAIL;
+/// One press of the Master volume row, in percent.
+const MASTER_VOLUME_STEP: u8 = 5;
 
 /// The game's options file, cwd-relative the way `play-window` reads it; the
 /// launcher runs in [`data_dir`], so this is the per-user one.
@@ -423,6 +425,7 @@ pub enum OptionRow {
     CameraDistance,
     PreciseMovement,
     ReduceFlashing,
+    MasterVolume,
     MusicVolume,
     SfxVolume,
     MonoDownmix,
@@ -448,7 +451,7 @@ pub enum OptionRow {
 
 /// The option rows in screen order, with the heading each group starts
 /// under (`Some` on a group's first row).
-pub const OPTION_ROWS: [(Option<&str>, OptionRow); 33] = [
+pub const OPTION_ROWS: [(Option<&str>, OptionRow); 34] = [
     (Some("Display"), OptionRow::Fullscreen),
     (None, OptionRow::WindowSize),
     (None, OptionRow::CameraDistance),
@@ -476,7 +479,8 @@ pub const OPTION_ROWS: [(Option<&str>, OptionRow); 33] = [
     (None, OptionRow::SpiritAp),
     (None, OptionRow::DamageAp),
     (None, OptionRow::SeruCatchRate),
-    (Some("Sound"), OptionRow::MusicVolume),
+    (Some("Sound"), OptionRow::MasterVolume),
+    (None, OptionRow::MusicVolume),
     (None, OptionRow::SfxVolume),
     (None, OptionRow::MonoDownmix),
     (Some("Original game"), OptionRow::RetailTileCrop),
@@ -517,6 +521,7 @@ impl OptionRow {
             Self::CameraDistance => "Camera distance",
             Self::PreciseMovement => "Free-angle movement",
             Self::ReduceFlashing => "Reduce flashing",
+            Self::MasterVolume => "Master volume",
             Self::MusicVolume => "Music volume",
             Self::SfxVolume => "Sound effects volume",
             Self::MonoDownmix => "Mono output",
@@ -582,6 +587,7 @@ impl OptionRow {
                 "Softens fast-flashing light effects (a photosensitivity guard). Off shows \
                  them exactly as the original does."
             }
+            Self::MasterVolume => "Overall output level, 0 to 100%; 100% is the full mix.",
             Self::MusicVolume => "Music level, 0 to 10; 8 is the original mix.",
             Self::SfxVolume => "Sound effect level, 0 to 10; 8 is the original mix.",
             Self::MonoDownmix => {
@@ -693,6 +699,7 @@ impl OptionRow {
             self,
             Self::Retail
                 | Self::PsxRender
+                | Self::MasterVolume
                 | Self::MusicVolume
                 | Self::SfxVolume
                 | Self::MonoDownmix
@@ -723,6 +730,7 @@ impl OptionRow {
             Self::CameraDistance => capitalise(opts.camera_distance.label()),
             Self::PreciseMovement => on_off(opts.precise_movement),
             Self::ReduceFlashing => on_off(opts.reduce_flashing),
+            Self::MasterVolume => format!("{}%", opts.master_volume),
             Self::MusicVolume => opts.bgm_volume.to_string(),
             Self::SfxVolume => opts.sfx_volume.to_string(),
             Self::MonoDownmix => on_off(opts.downmix_mono),
@@ -811,6 +819,15 @@ impl OptionRow {
             }
             Self::PreciseMovement => opts.precise_movement ^= true,
             Self::ReduceFlashing => opts.reduce_flashing ^= true,
+            Self::MasterVolume => {
+                use legaia_engine_menus::options::MASTER_VOLUME_MAX;
+                let v = opts.master_volume.min(MASTER_VOLUME_MAX);
+                opts.master_volume = if dir < 0 {
+                    v.saturating_sub(MASTER_VOLUME_STEP)
+                } else {
+                    v.saturating_add(MASTER_VOLUME_STEP).min(MASTER_VOLUME_MAX)
+                };
+            }
             Self::MusicVolume => opts.bgm_volume = step(opts.bgm_volume),
             Self::SfxVolume => opts.sfx_volume = step(opts.sfx_volume),
             Self::MonoDownmix => opts.downmix_mono ^= true,
@@ -1215,6 +1232,7 @@ mod tests {
             CameraDistance => "play-camera-distance",
             PreciseMovement => "play-precise-move",
             ReduceFlashing => "play-reduce-flashing",
+            MasterVolume => "play-volume",
             MusicVolume => "play-bgm-volume",
             SfxVolume => "play-sfx-volume",
             MonoDownmix => "play-downmix-mono",
@@ -1270,6 +1288,16 @@ mod tests {
         }
     }
 
+    /// The options file's master-volume default is the audio crate's
+    /// desktop default (the two crates do not share a dependency edge).
+    #[test]
+    fn master_volume_default_matches_the_audio_crate() {
+        assert_eq!(
+            legaia_engine_menus::options::MASTER_VOLUME_DEFAULT,
+            legaia_engine_audio::DESKTOP_MASTER_VOLUME_DEFAULT
+        );
+    }
+
     #[test]
     fn option_rows_step_and_wrap() {
         use legaia_engine_camera::camera_distance::CameraDistance;
@@ -1297,6 +1325,13 @@ mod tests {
         o.sfx_volume = 0;
         OptionRow::SfxVolume.adjust(&mut o, &mut s, -1);
         assert_eq!(o.sfx_volume, 0);
+        o.master_volume = 100;
+        OptionRow::MasterVolume.adjust(&mut o, &mut s, 1);
+        assert_eq!(o.master_volume, 100);
+        o.master_volume = 0;
+        OptionRow::MasterVolume.adjust(&mut o, &mut s, -1);
+        assert_eq!(o.master_volume, 0);
+        o.master_volume = legaia_engine_menus::options::MASTER_VOLUME_DEFAULT;
         // The two launch switches live in the launcher's file, not the game's.
         assert!(!OptionRow::PsxRender.is_game_option());
         assert!(!OptionRow::Retail.is_game_option());

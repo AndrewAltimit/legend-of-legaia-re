@@ -55,6 +55,22 @@ pub(crate) use options::load_persisted_options;
 #[cfg(target_arch = "wasm32")]
 const BGM_DEFAULT_GAIN: f32 = 1.0;
 
+/// The play page's output level under its volume slider: every slider
+/// position sounds at this fraction of the gain it names, on top of the
+/// site trim [`legaia_engine_audio::webaudio::WEB_MASTER_TRIM`]. The slider
+/// keeps its range and labels; the page was simply too loud at "1x". Only
+/// this page's output node carries it - the parity oracles never open a
+/// `WebAudioOut`, and the minigames page and viewer keep the site trim alone.
+#[cfg_attr(not(any(target_arch = "wasm32", test)), allow(dead_code))]
+pub(crate) const PLAY_PAGE_GAIN_SCALE: f32 = 0.5;
+
+/// The output-node gain for a page-slider value ([`PLAY_PAGE_GAIN_SCALE`]
+/// applied; the site trim follows inside `WebAudioOut::set_gain`).
+#[cfg_attr(not(any(target_arch = "wasm32", test)), allow(dead_code))]
+pub(crate) fn play_page_gain(slider: f32) -> f32 {
+    slider * PLAY_PAGE_GAIN_SCALE
+}
+
 /// Bridge object the play page instantiates once. Holds a `World` +
 /// `MenuRuntime` for the disc-free path, and - once `load_disc` has run - a
 /// `SceneHost` plus the render state for the scene it is running.
@@ -660,5 +676,16 @@ impl LegaiaRuntime {
     /// up from the first frame. Not a wasm export.
     pub fn debug_attach_audio(&mut self) -> bool {
         self.audio_director().is_some()
+    }
+}
+
+#[cfg(test)]
+mod play_gain_tests {
+    /// Every slider value sounds at half the gain it names; mute stays mute.
+    #[test]
+    fn slider_values_play_at_half_gain() {
+        assert_eq!(super::play_page_gain(0.0), 0.0);
+        assert_eq!(super::play_page_gain(1.0), 0.5);
+        assert_eq!(super::play_page_gain(10.0), 5.0);
     }
 }

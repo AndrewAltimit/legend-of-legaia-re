@@ -27,6 +27,19 @@ pub const fn volume_level_gain(level: u8) -> u16 {
     (level * crate::spu::BUS_GAIN_UNITY as u32 / VOLUME_LEVEL_UNITY as u32) as u16
 }
 
+/// The desktop hosts' default master volume, percent of the full mixer
+/// output ([`AudioSink::set_master_volume`]): the native play window, the
+/// game launcher and Legaia Studio start here unless the user's saved setting
+/// says otherwise. The full mix at 100% was far too loud through a desktop
+/// output; the parity oracles never apply a master volume and stay at unity.
+pub const DESKTOP_MASTER_VOLUME_DEFAULT: u8 = 25;
+
+/// The master gain for a `0..=100` percent volume (above 100 clamps to 100,
+/// the unscaled mix).
+pub fn master_volume_gain(percent: u8) -> f32 {
+    f32::from(percent.min(100)) / 100.0
+}
+
 /// An audio output: anything that owns a [`StreamResampler`] and feeds a
 /// device from it. Implementors provide [`Self::with_core`]; every control
 /// method is provided on top of it.
@@ -70,6 +83,15 @@ pub trait AudioSink {
         self.with_core(|s| {
             s.spu.bus_gain = [volume_level_gain(bgm_level), volume_level_gain(sfx_level)];
         });
+    }
+
+    /// The host master volume, `0..=100` percent of the full mix: scales the
+    /// finished output, XA voice / FMV audio included, after the downmix.
+    /// 100 is the unscaled mix (the output's own default); the desktop hosts
+    /// start at [`DESKTOP_MASTER_VOLUME_DEFAULT`].
+    fn set_master_volume(&self, percent: u8) {
+        let g = master_volume_gain(percent);
+        self.with_core(|s| s.master_gain = g);
     }
 
     /// Route the CD input (the XA stream) into the reverb send - `SPUCNT`

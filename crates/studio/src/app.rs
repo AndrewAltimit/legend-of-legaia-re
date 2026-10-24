@@ -246,6 +246,8 @@ pub struct App {
 impl App {
     pub fn new(studio: Studio, initial: Option<PathBuf>, auto: Automation) -> Self {
         let mut studio = studio;
+        let mut player = Player::default();
+        player.set_volume(studio.settings.volume_percent());
         // Recent entries whose disc or folder has gone are dropped at start.
         if studio.settings.prune_recent() {
             studio.save_settings();
@@ -313,7 +315,7 @@ impl App {
             reveal: None,
             vab_sel: 0,
             seq_loop: false,
-            player: Player::default(),
+            player,
             out_text,
             job: None,
             log_warnings_only: false,
@@ -838,6 +840,19 @@ impl App {
         ui.separator();
         ui.label(RichText::new(format!("Zoom ({:.0}%)", ui.ctx().zoom_factor() * 100.0)).strong());
         egui::gui_zoom::zoom_menu_buttons(ui);
+        ui.separator();
+        ui.label(RichText::new("Audio volume").strong());
+        let mut vol = self.player.volume();
+        let resp = ui
+            .add(egui::Slider::new(&mut vol, 0..=100).suffix("%"))
+            .on_hover_text("Sample, music and movie previews; 100% is the full mixer output");
+        if resp.changed() {
+            self.player.set_volume(vol);
+            self.studio.settings.volume = Some(vol);
+        }
+        if (resp.changed() && !resp.dragged()) || resp.drag_stopped() {
+            self.studio.save_settings();
+        }
     }
 
     /// Push the remembered theme and zoom into egui once, then keep the

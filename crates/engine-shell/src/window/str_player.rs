@@ -74,7 +74,15 @@ pub(crate) fn play_str_in(
     // failure (CI / headless) degrades to wall-clock-paced video, not an error.
     let audio_out = if audio.is_some() {
         match legaia_engine_audio::AudioOut::new() {
-            Ok(a) => Some(a),
+            Ok(a) => {
+                // The play window's master volume (the options file, a
+                // quarter of the full mix by default).
+                let opts = legaia_engine_menus::options::OptionsState::load_or_default(
+                    std::path::Path::new(OPTIONS_CONFIG_FILE),
+                );
+                a.set_master_volume(opts.master_volume);
+                Some(a)
+            }
             Err(e) => {
                 log::warn!("play-str: audio device unavailable ({e:#}); playing video only");
                 None

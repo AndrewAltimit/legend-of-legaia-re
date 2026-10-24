@@ -13,14 +13,35 @@ pub struct Player {
     out: Option<AudioOut>,
     /// What is playing, for the UI ("sample 3", "SEQ @ 0x1234").
     pub now_playing: Option<String>,
+    /// Output volume in percent; `None` is the desktop default
+    /// ([`legaia_engine_audio::DESKTOP_MASTER_VOLUME_DEFAULT`]).
+    volume: Option<u8>,
 }
 
 impl Player {
     fn out(&mut self) -> Result<&AudioOut> {
         if self.out.is_none() {
-            self.out = Some(AudioOut::new().context("opening the audio output device")?);
+            let out = AudioOut::new().context("opening the audio output device")?;
+            out.set_master_volume(self.volume());
+            self.out = Some(out);
         }
         Ok(self.out.as_ref().expect("just opened"))
+    }
+
+    /// The output volume in percent of the full mix.
+    pub fn volume(&self) -> u8 {
+        self.volume
+            .unwrap_or(legaia_engine_audio::DESKTOP_MASTER_VOLUME_DEFAULT)
+    }
+
+    /// Set the output volume (percent of the full mix), live if the output
+    /// is already open.
+    pub fn set_volume(&mut self, percent: u8) {
+        let percent = percent.min(100);
+        self.volume = Some(percent);
+        if let Some(out) = &self.out {
+            out.set_master_volume(percent);
+        }
     }
 
     pub fn play_pcm(&mut self, pcm: Vec<i16>, rate: u32, label: String) -> Result<()> {
