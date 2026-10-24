@@ -1024,6 +1024,13 @@ still in the same second keeps its ticks), and unnamed words at `0x300..0x308`,
 `0x324`, `0x480`, `0x4A4..0x4D1`, `0x4E4..0x4EC`, `0x564..0x568` and
 `0x590..0x59C`. Which of those a resumed retail game reads is open.
 
+Retail loads both kinds. A cold-booted retail disc in PCSX-Redux
+([`autorun_boot_continue.lua`](../../scripts/pcsx-redux/autorun_boot_continue.lua),
+the card in slot 1) Continues a block the native window wrote from a
+Continued retail save (identical to the source block but for the play clock)
+and one it composed for a session with no window, and reaches field-run in
+the saved scene with the card's gold, party and clock in RAM.
+
 The **resume point** has its own writer,
 `SaveResume::write_into_retail_sc_block` (`card::write_retail_resume`): the
 CDNAME label NUL-padded to `0x10` bytes at `0x408` and the banner name to
