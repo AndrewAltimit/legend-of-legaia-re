@@ -3967,8 +3967,10 @@ every pass, so it moves with the phase of both clips):
   (`RetailBattle::step_run_start`, art clip `0x11` at cursor `24`,
   `BattleState::frame_step_seed_from`), which lands Vahn's cursor (`104`)
   and Gimard's reaction cursor (`36`) on retail's displayed frame. A
-  history that never left its step is not seeded: over the whole state it
-  measured both ways (`battle_noa_miracle_art_combo` step `3`, `.962` to
+  history that never left its step is not seeded, nor a run on the base
+  clip `0`, which names no swing (`cort_evil_seru_magic_mid_cast`'s
+  state-`0x6F` run read `image` `1.000` to `.967`); over the whole state a
+  never-left history measured both ways (`battle_noa_miracle_art_combo` step `3`, `.962` to
   `.972`; `battle_vahn_tri_somersault_super` step `4`, `.955` to `.861`).
   The step seed alone read `.887` to `.884`: the struck reaction's ray
   burst (record `0x801F54B4`) drew shorter, because its lane weight is the

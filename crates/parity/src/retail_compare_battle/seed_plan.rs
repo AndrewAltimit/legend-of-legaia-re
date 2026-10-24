@@ -50,6 +50,10 @@ pub const OPENING_FLOWS: [u8; 6] = [0xFD, 0x00, 0x0A, 0x0B, 0x0C, 0x14];
 /// ([`RetailBattle::step_run_start`]), `None` to run it over the whole state.
 pub type FrameStepSeed = (u8, u8, Option<(u8, i32)>);
 
+/// The first committed dynamic animation slot (`+0x1D9`), where a party art
+/// materialises (`docs/subsystems/battle-actor-rendering.md`).
+const DYNAMIC_SLOT_ART: u8 = 0x10;
+
 impl RetailBattle {
     /// The battle frame step a replay of this capture runs its capture state
     /// on, and that state: the step the capture's own frame ran at, applied
@@ -96,7 +100,13 @@ impl RetailBattle {
         if passes >= 16 {
             return None;
         }
+        // Only a run inside a committed dynamic slot (an art, ring id
+        // `0x10` and up): a run on the base clip `0` names no swing to
+        // hold the step for. `cort_evil_seru_magic_mid_cast` (Cort's base
+        // clip at cursor `56`, state `0x6F`) seeded that way read `image`
+        // `1.000` to `.967` and `camera` `1.000` to `.987`.
         self.step_run_start
+            .filter(|&(clip, _)| clip >= DYNAMIC_SLOT_ART)
             .map(|from| (step, self.action_state, Some(from)))
     }
 
