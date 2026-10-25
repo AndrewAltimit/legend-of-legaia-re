@@ -292,7 +292,9 @@ A page shows **three rows** (`_DAT_801F2740 = 3`, stored at `0x801D90F0`). Rows 
 
 Option labels in a picker box draw at `box_x + 0x10` (`0x801D9B6C`), also at pad `1`, so they have **228 px**.
 
-A party name spliced in by `0xC1` is bounded at entry: the name-entry screen `FUN_801F03F0` keeps a typed glyph only while `FUN_80035F04` of the name stays below `0x39` (`0x801F064C..0x801F0654`), so a player-chosen name measures at most **56 px** at pad `0` - up to one more pixel per glyph inside dialogue. The default names are whatever the new-game template and the translation pack carry, and nothing re-checks them.
+A party name spliced in by `0xC1` is bounded at entry: the name-entry screen `FUN_801F03F0` keeps a typed glyph only while the name before it holds fewer than nine glyphs (`slti v0,s1,0x9` at `0x801F05F8`) and `FUN_80035F04` of the name with it stays below `0x39` (`0x801F064C..0x801F0654`), so a player-chosen name is at most **nine glyphs** and measures at most **56 px** at pad `0` - up to one more pixel per glyph inside dialogue.
+
+The pad is `0` because `FUN_80036888` clears `DAT_800740E8` on every exit (`0x80036C18`). The narrowest grid glyphs (`I`, `i`, `l`, `.`, `,`, `'`) advance 4 px, so nine of them fit in 36 px and the glyph bound decides; the widest (`W`, `~`) advance 10 px, so five of them are the most that fit. The port applies both bounds (`legaia_engine_menus::name_entry`, the width table read by `legaia_font::scus_width_table`). The default names are whatever the new-game template and the translation pack carry, and nothing re-checks them.
 
 ### Menu, shop and battle columns
 
@@ -325,7 +327,18 @@ The pinned budgets are the table `legaia_font::limits::TEXT_LIMITS`, one `TextLi
 
 ### Limits of the measurement
 
-Speaker names, the world-map place-name labels, the title and save screens and the minigame HUDs are outside what this page measures. One edge inside it is a live hunt on [open-rev-eng-threads.md](../reference/open-rev-eng-threads.md#field--locomotion): the end of the expansion buffer at `0x800740EC`. The expander `FUN_80036514` carries no destination bound (its only compares are the token-class tests, the `0x40` arts-index divide at `0x80036734..0x80036748` and the arts-table walk at `0x8003675C..0x80036798`), so the buffer is as long as the longest expansion a drawn string produces; the zero-initialised run reaches `0x800742F2`, `0x206` bytes, an upper bound by inference.
+Speaker names, the world-map place-name labels, the title and save screens and the minigame HUDs are outside what this page measures.
+
+### The expansion buffer
+
+`FUN_80036888` expands every string it draws into the buffer at `0x800740EC` before walking it, and the expander `FUN_80036514` carries no destination bound: its only compares are the token-class tests, the `0x40` arts-index divide at `0x80036734..0x80036748` and the arts-table walk at `0x8003675C..0x80036798`. The zero-initialised run after the buffer reaches the next initialised data at `0x800742F2`, `0x206` bytes, so the question is how much of that run a shipped string fills.
+
+- **One call expands one string.** The first pass walks the source to its `NUL`, counting units; the second copies until it reads the `NUL` (`beq v1,zero` at `0x800365FC`) and terminates the output (`0x80036870`). A dialog row is `1F <glyphs> 00`, so a row expands alone, never its page.
+- **Only the renderer writes it.** Across all 88 code images the address is formed once, by the `lui` / `addiu` at `0x800368D8` in `FUN_80036888`, and the expander has two `jal` sites: that one, and `FUN_80035F04`, which expands into a 256-byte stack buffer instead. The renderer passes `a2 = 1` (`0x800368EC`), so `0xCF` colour pairs are copied (`0x80036610..0x8003662C`); the measurer passes `0` and drops them.
+- **The longest string is a tutorial line, not dialogue.** Expanding each of the 31333 strings a `translate export` carries, each with its own substitution operand and a party name at its nine-glyph maximum, the longest is the sparring tutorial's lesson line at PROT 0967 `0x801F7CA8`: 178 bytes with no substitutions. `FUN_801F747C` seats it as a text widget through `FUN_8003541C`, which stores the string at widget `+0x18` (`0x80035590`), and the widget list `FUN_80031D00` draws that pointer with `FUN_80036888` (`0x800321E0`). It fills `0xB3` bytes, `NUL` included, to `0x8007419E`. The next four are lines of the same overlay (155, 114, 112, 100).
+- **Dialogue stays short.** The longest scene-dialog row expands to 43 bytes with its own operands, and to 103 with every substitution at its table's longest entry.
+
+Strings the game joins at run time - the `FUN_8003CAC4` concatenation sites, 14 in PROT 0898, 8 across the steal, Fatal Decision, Nighto and Aluru modules and 2 in SCUS - are concatenations of census strings and names, so they are bounded by their parts rather than measured. The shipped game never needs more than `0xB3` of the run; the buffer overrun in [the Spikefish Flute escape freeze](../reference/glitches/field-oddities.md#spikefish-flute-escape-can-freeze-the-game) comes from a source string with no terminator, not from a long one.
 
 The text-actor walker `FUN_80031D00` has no escape ops of its own: it walks the drawable list and reads no glyph stream ([falsified](../reference/re-do-not-re-walk.md#menus--ui)).
 

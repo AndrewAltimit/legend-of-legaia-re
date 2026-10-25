@@ -143,6 +143,8 @@ runtime form afterwards; drawing it again is the same.
 
 Then it walks the input and inlines `0xC1..0xC5` / `0xC7` substitutions: each substitution opcode is replaced by the bytes of the substituted name, copied character-by-character.
 
+The second pass stops at the source's `NUL` (`0x800365FC`) and terminates the output (`0x80036870`), so one call expands one string. Its third argument decides the colour escape: non-zero copies the `0xCF` pair (`0x80036610..0x8003662C`), zero drops it. The renderer `FUN_80036888` passes `1` into its buffer at `0x800740EC`; the width measurer `FUN_80035F04` passes `0` into a stack buffer. How much of `0x800740EC` a shipped string fills is in [`dialog-font.md`](dialog-font.md#the-expansion-buffer).
+
 ## Dialog window pager - `FUN_801D84D0`
 
 Lives in the dialog overlay. Distinct from the byte-level interpreter - this is the per-frame state machine that pages text on input. 26 outer states (`_DAT_801F2734`, range `0..0x19`) covering load / scroll / drain / wait-for-input / done. Stores per-line bytecode pointers in `_DAT_801F3540[line]` (16-line buffer at `0x801F3580`). Test `(byte & 0x7F) < 0x20` is used to detect line terminators (catches both `0x00..0x1F` and `0x80..0x9F`).

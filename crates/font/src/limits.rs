@@ -97,7 +97,8 @@ pub const TEXT_LIMITS: &[TextLimit] = &[
         wraps: false,
         glyph_pad: 0,
         provenance: "FUN_801F03F0 (field overlay 0897): a typed glyph is kept \
-                     only while FUN_80035F04(name) < 0x39 (0x801F064C..0x801F0654); \
+                     only while the name before it holds < 9 glyphs (0x801F05F8) \
+                     and FUN_80035F04(name) < 0x39 (0x801F064C..0x801F0654); \
                      name field record +0x2A7, 9 bytes",
     },
     TextLimit {

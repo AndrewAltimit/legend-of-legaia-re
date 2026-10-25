@@ -178,7 +178,7 @@
   <ul class="bullets">
     <li><strong>The fresh-state seed.</strong> Gold is set to a hard-coded 500, a story-flag region is zeroed, and the executable&rsquo;s <a href="../formats/new-game-table.html">starting-party template</a> is expanded into the live <code>0x414</code>-byte character records, default names included.</li>
     <li><strong>The intro skip.</strong> Once <code>opdeene</code>&rsquo;s timeline raises a scratchpad flag bit, a confirm press fades out, sets the <code>town01</code> entry coordinates and issues a name-based scene change to <code>town01</code>. The target name is a literal in the field overlay, which is why <code>opdeene</code>&rsquo;s own data holds no <code>town01</code> string.</li>
-    <li><strong>Name entry</strong> opens from <code>town01</code>&rsquo;s opening timeline (field-VM op <code>0x49</code> sub-op 3): a 6&times;17 letter grid plus a Backspace / Space / End row, and a Yes/No commit. The name lands in the character record at <code>+0x2A7</code>.</li>
+    <li><strong>Name entry</strong> opens from <code>town01</code>&rsquo;s opening timeline (field-VM op <code>0x49</code> sub-op 3): a 6&times;17 letter grid plus a Backspace / Default / End row, and a Yes/No commit. A name holds at most nine letters and 57 pixels. The name lands in the character record at <code>+0x2A7</code>.</li>
   </ul>
   <p>Skip conditions, the scene-change packet and the name-entry grid&rsquo;s addresses: <a href="boot-internals.html#new-game-detail">internals</a>.</p>
 </section>

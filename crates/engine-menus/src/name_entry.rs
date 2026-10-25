@@ -34,9 +34,14 @@
 //! deltas are `-17` (up), `+17` (down), `+1` (right), `-1` (left); after each
 //! move the cursor skips any non-selectable cell in the same direction, and a
 //! move that lands in the control row snaps to the action group's anchor
-//! cell. The retail name length is bounded by the proportional-font pixel
-//! width (57 px); this port bounds it by glyph count ([`NAME_MAX`], derived
-//! from the template's 10-byte name field).
+//! cell. A typed glyph is kept only under two bounds, both in the append arm
+//! of `FUN_801F03F0`: the name before it holds fewer than nine glyphs
+//! (`slti v0,s1,0x9` at `0x801F05F8`, [`NAME_MAX`]), and the name with it
+//! measures under `0x39` px (`FUN_80035F04` then `slti v0,v0,0x39` at
+//! `0x801F064C..0x801F0654`, [`NAME_WIDTH_CAP`]). The glyph is stored and
+//! terminated first and taken back when it measures too wide, so a rejected
+//! press changes nothing. The width bound applies when the entry carries the
+//! disc's advance table ([`NameEntry::glyph_widths`]).
 
 /// Columns in the character grid (the retail grid is 17 wide).
 pub const GRID_COLS: usize = 17;
@@ -53,6 +58,23 @@ pub const NAV_CELLS: usize = NAV_ROWS * GRID_COLS;
 /// bytes NUL-padded ([`legaia_game_tables::new_game::NAME_LEN`]), so nine glyphs fit
 /// with the terminator.
 pub const NAME_MAX: usize = legaia_game_tables::new_game::NAME_LEN - 1;
+
+/// The append arm keeps a glyph only while the name measures below this
+/// many pixels (`slti v0,v0,0x39` at `0x801F0654`).
+pub const NAME_WIDTH_CAP: u32 = 0x39;
+
+/// A name's width in pixels as the append arm measures it: `FUN_80035F04`
+/// over the name, each glyph advancing `widths[c] + DAT_800740E8 + 1`.
+/// The pad word is `0` here - `FUN_80036888` clears it on every exit
+/// (`sw zero,0x40e8(v1)` at `0x80036C18`) and nothing on the screen sets
+/// it, so a glyph costs `widths[c] + 1`. A name holds no `0x7C` break or
+/// escape (the grid selects neither), so the widest line is the whole name.
+// REF: FUN_80035F04
+pub fn name_width_px(widths: &[u8; 256], name: &str) -> u32 {
+    name.bytes()
+        .map(|b| u32::from(widths[usize::from(b)]) + 1)
+        .sum()
+}
 
 /// The six selectable glyph rows, exactly as laid out in the retail charset
 /// grid at `0x801F29F0`. `|` marks a non-selectable group separator (the
@@ -166,6 +188,10 @@ pub struct NameEntry {
     /// writes the saved word back (`0x801F09A0`); see
     /// `legaia_engine_core::world::World::open_name_entry`.
     pub saved_frame_step_floor: Option<u8>,
+    /// The disc's per-character advance table (`0x80073F1C`) the append
+    /// arm measures a name with ([`name_width_px`]); `None` on a disc-free
+    /// build, where only the nine-glyph bound applies.
+    pub glyph_widths: Option<[u8; 256]>,
 }
 
 impl NameEntry {
@@ -186,6 +212,31 @@ impl NameEntry {
             state: NameEntryState::Editing,
             confirm_yes: false,
             saved_frame_step_floor: None,
+            glyph_widths: None,
+        }
+    }
+
+    /// Install the advance table read from `scus` (`SCUS_942.54`), so the
+    /// append arm applies retail's width cap. A `None` or unreadable
+    /// executable leaves the entry on the glyph-count bound alone.
+    pub fn with_scus_widths(mut self, scus: Option<&[u8]>) -> Self {
+        self.glyph_widths = scus.and_then(legaia_font::scus_width_table);
+        self
+    }
+
+    /// Whether appending `g` keeps the name inside both of the append arm's
+    /// bounds (`0x801F05F8` and `0x801F0654`).
+    fn accepts(&self, g: char) -> bool {
+        if self.name.chars().count() >= NAME_MAX {
+            return false;
+        }
+        match &self.glyph_widths {
+            Some(widths) => {
+                let mut trial = self.name.clone();
+                trial.push(g);
+                name_width_px(widths, &trial) < NAME_WIDTH_CAP
+            }
+            None => true,
         }
     }
 
@@ -328,7 +379,7 @@ impl NameEntry {
 
         if input.confirm {
             if let Some(g) = self.glyph_at(self.cursor) {
-                if self.name.chars().count() < NAME_MAX {
+                if self.accepts(g) {
                     self.name.push(g);
                 }
             } else if let Some(c) = self.control_at(self.cursor) {
@@ -603,6 +654,53 @@ mod tests {
                 ..Default::default()
             });
         }
+        assert_eq!(e.name.chars().count(), NAME_MAX);
+    }
+
+    /// Press confirm `n` times on the grid cell holding `g`.
+    fn type_glyph(e: &mut NameEntry, g: char, n: usize) {
+        e.cursor = (0..CHAR_CELLS)
+            .find(|&c| e.glyph_at(c) == Some(g))
+            .expect("glyph on the grid");
+        for _ in 0..n {
+            e.step(NameEntryInput {
+                confirm: true,
+                ..Default::default()
+            });
+        }
+    }
+
+    /// With the advance table installed, the width cap decides for wide
+    /// glyphs and the nine-glyph bound for narrow ones - the two tests of
+    /// the append arm (`0x801F05F8`, `0x801F0654`).
+    #[test]
+    fn width_cap_and_glyph_bound_both_apply() {
+        let mut widths = [6u8; 256];
+        widths[usize::from(b'W')] = 11; // advance 12: four fit in 48, five need 60
+        widths[usize::from(b'i')] = 3; // advance 4: nine need only 36
+        let mut wide = NameEntry::new(0, "");
+        wide.glyph_widths = Some(widths);
+        type_glyph(&mut wide, 'W', 8);
+        assert_eq!(wide.name, "WWWW");
+        assert!(name_width_px(&widths, &wide.name) < NAME_WIDTH_CAP);
+
+        let mut narrow = NameEntry::new(0, "");
+        narrow.glyph_widths = Some(widths);
+        type_glyph(&mut narrow, 'i', 12);
+        assert_eq!(narrow.name.chars().count(), NAME_MAX);
+
+        // A rejected glyph leaves room for a narrower one: retail takes the
+        // too-wide glyph back and keeps editing.
+        type_glyph(&mut wide, 'i', 1);
+        assert_eq!(wide.name, "WWWWi");
+    }
+
+    /// Without a table (a disc-free build) only the glyph bound applies.
+    #[test]
+    fn no_table_keeps_the_glyph_bound_alone() {
+        let mut e = NameEntry::new(0, "").with_scus_widths(None);
+        assert!(e.glyph_widths.is_none());
+        type_glyph(&mut e, 'W', 12);
         assert_eq!(e.name.chars().count(), NAME_MAX);
     }
 }

@@ -133,6 +133,7 @@ mod monster_special_anim_sweep_disc;
 mod motion_flag_runtime_disc;
 mod move_fx_render_disc;
 mod muscle_contest_world;
+mod name_entry_width_cap_disc;
 mod op49_menu_context_park_disc;
 mod opdeene_prologue_arm;
 mod overworld_puff_column_disc;

@@ -54,7 +54,10 @@ impl World {
     /// ([`legaia_engine_menus::name_entry::NameEntry::saved_frame_step_floor`]).
     pub fn open_name_entry(&mut self, slot: usize) {
         let initial = self.party_name(slot).to_string();
-        let mut entry = legaia_engine_menus::name_entry::NameEntry::new(slot, &initial);
+        // The disc's advance table rides in so the append arm applies
+        // retail's 57 px width cap as well as its nine-glyph bound.
+        let mut entry = legaia_engine_menus::name_entry::NameEntry::new(slot, &initial)
+            .with_scus_widths(self.tables.scus.as_deref());
         entry.saved_frame_step_floor = Some(self.clock.frame_step_floor);
         self.set_frame_step_floor(1);
         self.party.name_entry = Some(entry);

@@ -1196,6 +1196,7 @@
     "battle_drive",
     "camera_align",
     "cast_parts",
+    "cast_rand",
     "clip_cursors",
     "drive_clock",
     "effect_children",

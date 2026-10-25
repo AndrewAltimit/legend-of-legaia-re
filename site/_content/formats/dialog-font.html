@@ -150,7 +150,7 @@ V = (c &amp; 0xF0) - 0x20</code></pre>
     <tbody>
       <tr><td>Field dialog box row</td><td>1</td><td>244 px</td><td>Three rows per page; the page-advance hand covers the last two rows from 228 px in</td></tr>
       <tr><td>Picker option label</td><td>1</td><td>228 px</td><td>Drawn 16 px in from the box edge</td></tr>
-      <tr><td>Player-chosen name</td><td>0</td><td>56 px</td><td>Bounded by the name-entry screen</td></tr>
+      <tr><td>Player-chosen name</td><td>0</td><td>56 px</td><td>Bounded by the name-entry screen, which also stops at nine letters</td></tr>
       <tr><td>Item list / shop buy list / status magic</td><td>0</td><td>104 px</td><td>Stops at the next column (count, price, level)</td></tr>
       <tr><td>Item info window</td><td>0</td><td>124 px</td><td></td></tr>
       <tr><td>Item / spell description line</td><td>0</td><td>144 px</td><td>Drawn in full from the info window's left edge; <code>FUN_8003CD00</code> keeps the widest line but never wraps, and no retail description starts below <code>0x20</code>, so every description is one draw. A spell description has two rows above &quot;MP Used&quot;</td></tr>
@@ -291,9 +291,9 @@ V = (c &amp; 0xF0) - 0x20</code></pre>
     <div class="disclosure-body">
       <ul class="bullets">
         <li><strong>The upload routine.</strong> The font TIM sits in the unindexed gap of <code>PROT.DAT</code> ahead of the first entry, with the other boot-resident UI pages; the routine that uploads that gap to VRAM is not named.</li>
-        <li><strong>The expansion buffer's end.</strong> The expander <code>FUN_80036514</code> writes to <code>0x800740EC</code> with no length test, so the buffer is as long as the longest expansion a drawn string produces; it can run at most <code>0x206</code> bytes to the next initialised data, an upper bound by inference.</li>
       </ul>
-      <p>Both are tracked on <a href="../reference/open-rev-eng-threads.html">open RE threads</a>. The text-actor walker <code>FUN_80031D00</code> has no escape ops of its own - it walks the drawable list and reads no glyph stream.</p>
+      <p>The expansion buffer's end is settled: the expander <code>FUN_80036514</code> writes to <code>0x800740EC</code> with no length test and expands one string per call, and of every string the game ships the longest is a 178-byte line of the sparring tutorial, which fills <code>0xB3</code> bytes of the <code>0x206</code>-byte zero run. Dialogue rows stay under 110 bytes even with every name at its longest.</p>
+      <p>Live questions are tracked on <a href="../reference/open-rev-eng-threads.html">open RE threads</a>. The text-actor walker <code>FUN_80031D00</code> has no escape ops of its own - it walks the drawable list and reads no glyph stream.</p>
     </div>
   </details>
   <p>Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/dialog-font.md" target="_blank" rel="noopener"><code>docs/formats/dialog-font.md</code></a>.</p>
