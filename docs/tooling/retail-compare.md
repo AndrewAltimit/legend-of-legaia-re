@@ -2832,7 +2832,15 @@ are timing and effect content, not rasterisation:
   narrow on its right edge, which is the sphere and camera three ticks after
   the frame retail shows. Taken at `LEGAIA_DIAG_CAPTURE_TICK` three ticks
   before the drive's frame, the edge matches retail's to the pixel and the
-  frame scores `0.988`.
+  frame scores `0.988` (`0.965` / `0.988` / `0.974` / `0.947` at twelve / nine
+  / six / three ticks before the gate tick). It is not a display-lag law: retaking
+  every arm-gated capture-band state one pass further back costs the rest
+  (`zeto_big_wave_mid_cast` `1.000` to `0.451`,
+  `cort_evolved_ultra_charge_mid_cast` `0.997` to `0.966`,
+  `cort_mystic_shield_mid_cast` `0.999` to `0.983`). It is this state's own
+  clock: at the gate tick the engine's camera already stands two vsyncs of
+  arm 1's TR z drift past the RAM's (glide target `3428` against `3420`), so
+  the engine reaches the arm-1 countdown a pass after its camera matched.
 - `zeto_call_wave_mid_cast`: the engine draws one Call Wave ray horizontal
   across the left of the frame where retail has none; the failing blocks are
   that ray's.
