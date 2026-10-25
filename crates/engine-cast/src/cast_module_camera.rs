@@ -227,6 +227,13 @@ pub struct ModuleCamState {
     /// a dead victim's playing clip back to `0`, a living one's tint word
     /// `+0x04` cleared.
     pub victim_settled: bool,
+    /// Every party seat's `+0x1D9` back on idle (a downed one on clip `8`),
+    /// fed by the host for a capture director's row settle (PROT 0965's arm
+    /// `0x0C`).
+    pub party_settled: bool,
+    /// The party seats' pairs and headings as a line-up arm found them
+    /// ([`capture::CaptureCamArm::party_line_up`]), for the restore.
+    pub party_saved: [Option<(i16, i16, u16)>; 3],
     /// The caster's target code `+0x1DD` as the host last read it: a seat
     /// below `8`, a group code from `8` (PROT 0914 and 0929 frame a group
     /// through `FUN_801DCEAC` and a seat otherwise). `None` where the host
@@ -924,6 +931,7 @@ pub mod capture_countdown;
 mod capture_spawns;
 pub mod creature;
 mod creature_spawns;
+mod doomsday;
 mod evil_seru_magic;
 mod freed;
 mod gilium_palma_horn;
@@ -955,6 +963,7 @@ pub use capture_countdown::{ArmCountdown, CountdownWrite, arm_countdown, capture
 pub use capture_spawns::*;
 pub use creature::*;
 pub use creature_spawns::*;
+pub use doomsday::{DOOMSDAY_BODY, DOOMSDAY_LINE_UP_X, doomsday_camera};
 pub use evil_seru_magic::*;
 pub use freed::*;
 pub use gilium_palma_horn::*;

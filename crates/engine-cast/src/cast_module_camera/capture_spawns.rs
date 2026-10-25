@@ -688,6 +688,7 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
             Some(super::PLASMA_STRIKE_BODY | super::NEO_STAR_SLASH_BODY)
         ),
         961 => true,
+        965 => body == Some(super::DOOMSDAY_BODY),
         962 => matches!(
             body,
             Some(
@@ -724,6 +725,7 @@ pub fn capture_arm_flushes_pool(prot_entry: u32, phase: u8) -> bool {
             | (959, 4 | 0x0B | 0x0E | 0x0F)
             | (960, 4)
             | (962, 3)
+            | (965, 3 | 8 | 9 | 0x0B)
             | (961, 1 | 3 | 5)
     )
 }
@@ -803,6 +805,11 @@ pub fn capture_arm_spawns(prot_entry: u32, phase: u8) -> &'static [ModuleSpawn] 
         (961, 2) => &E961_2,
         (961, 3) => &E961_3,
         (962, 0) => &E962_0,
+        (965, 3) => &super::doomsday::E965_3,
+        (965, 6) => &super::doomsday::E965_6,
+        (965, 8) => &super::doomsday::E965_8,
+        (965, 9) => &super::doomsday::E965_9,
+        (965, 0x0A) => &super::doomsday::E965_A,
         (966, 2) => &E966_2,
         (966, 4) => &E966_4,
         (966, 10) => &E966_10,

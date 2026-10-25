@@ -92,6 +92,13 @@ pub struct CaptureCamArm {
     /// The arm's stores into every party seat `actor_table[0 .. ctx[+0]]`
     /// (PROT 0960 `0xA6`'s hide and show).
     pub party_write: CaptureSeatWrite,
+    /// The arm stores `0x800` into both backdrop records' `+0x78`, the
+    /// indoor ceiling: the pair back on the draw (PROT 0965 arms 7, `0x0B`).
+    pub backdrop_on: bool,
+    /// The arm lines the party seats up for a row sweep (PROT 0965 arm
+    /// `0x0B`, [`super::DOOMSDAY_LINE_UP_X`]), the host keeping each seat's
+    /// pair and heading for the body's `0xFF` arm to restore.
+    pub party_line_up: bool,
 }
 
 /// Absolute stores a capture arm makes into the camera globals: yaw
@@ -166,6 +173,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (962, super::BLADE_BREATH_BODY) => Some(super::blade_breath_camera),
         (962, super::THUNDER_NEEDLE_BODY) => Some(super::thunder_needle_camera),
         (962, super::GIGATON_PRESS_BODY) => Some(super::gigaton_press_camera),
+        (965, super::DOOMSDAY_BODY) => Some(super::doomsday_camera),
         _ => None,
     }
 }

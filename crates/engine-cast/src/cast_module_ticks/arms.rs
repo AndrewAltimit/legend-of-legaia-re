@@ -448,6 +448,9 @@ pub fn bloody_horns_tick(
 /// (`addiu a0,zero,0x600` at `0x801F77A8`, in the `beqz` delay slot).
 pub const DOOMSDAY_POWER: u16 = 0x600;
 
+/// PROT 0965's last arm before `0xFF` (`0x801F78E0`).
+pub const DOOMSDAY_LAST_ARM: u8 = 0x0C;
+
 /// PROT 0965 (Doomsday) tick body - action id `0xB6`, and the whole image:
 /// the function opens at the module's own load base `0x801F69D8` and runs
 /// `0x1144` bytes to `0x801F7B1C`, where the trampoline begins.
@@ -482,6 +485,14 @@ pub fn doomsday_tick(
         if c.phase == CHOREOGRAPHY_DONE_PHASE {
             c.ctx_0d = 0;
             return CastArmStep::Finish;
+        }
+        // Arm `0x0C` (`0x801F78E0`) is the last: once its word and the row
+        // settle (gates the host's camera director answers) it stores `0xFF`
+        // (`0x801F79FC`). Advancing past it walked the phase into arms the
+        // body does not have.
+        if c.phase == DOOMSDAY_LAST_ARM {
+            c.phase = CHOREOGRAPHY_DONE_PHASE;
+            return CastArmStep::Hold;
         }
         if damage_arm {
             for seat in 0..c.party_count {

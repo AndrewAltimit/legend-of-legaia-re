@@ -29,6 +29,8 @@ impl World {
         // The victim's `+0x1D9` back on idle (or a downed seat on clip `8`),
         // the poll a body's settle arm makes (PROT 0962 `0xA2` arm 4).
         st.victim_settled = self.chain_seat_settled(usize::from(victim_slot), false);
+        st.party_settled =
+            (0..usize::from(self.party.party_count)).all(|s| self.chain_seat_settled(s, false));
         // The caster's clip state, for the bodies that wait on it.
         let caster = self
             .actors
@@ -131,6 +133,57 @@ impl World {
             {
                 self.commit_staged_battle_anim_at_boundary(i);
             }
+        }
+    }
+
+    /// PROT 0965 arm `0x0B`'s line-up: each party seat's pair and heading
+    /// kept for the restore, then the seat stood at half the seat table's x
+    /// for the party count (`DOOMSDAY_LINE_UP_X`), `z = 0`, heading `0x800`.
+    pub(in crate::world::battle::cast_band) fn line_up_party_for_sweep(&mut self) {
+        let pc = usize::from(self.party.party_count).clamp(1, 3);
+        for i in 0..pc {
+            let Some(a) = self.actors.get_mut(i) else {
+                continue;
+            };
+            self.casting.module_cam.party_saved[i] = Some((
+                a.move_state.world_x,
+                a.move_state.world_z,
+                a.battle.facing_angle,
+            ));
+            let x = legaia_engine_cast::cast_module_camera::DOOMSDAY_LINE_UP_X[pc - 1][i];
+            let (dx, dz) = (
+                x.wrapping_sub(a.move_state.world_x),
+                0i16.wrapping_sub(a.move_state.world_z),
+            );
+            a.move_state.world_x = x;
+            a.move_state.world_z = 0;
+            if let Some((bx, bz)) = a.battle.seat {
+                a.battle.seat = Some((bx.wrapping_add(dx), bz.wrapping_add(dz)));
+            }
+            a.battle.facing_angle = 0x800;
+        }
+    }
+
+    /// PROT 0965's `0xFF` arm: the seats [`Self::line_up_party_for_sweep`]
+    /// moved, back where it found them.
+    pub(in crate::world::battle::cast_band) fn restore_lined_up_party(&mut self) {
+        for i in 0..3 {
+            let Some((x, z, facing)) = self.casting.module_cam.party_saved[i].take() else {
+                continue;
+            };
+            let Some(a) = self.actors.get_mut(i) else {
+                continue;
+            };
+            let (dx, dz) = (
+                x.wrapping_sub(a.move_state.world_x),
+                z.wrapping_sub(a.move_state.world_z),
+            );
+            a.move_state.world_x = x;
+            a.move_state.world_z = z;
+            if let Some((bx, bz)) = a.battle.seat {
+                a.battle.seat = Some((bx.wrapping_add(dx), bz.wrapping_add(dz)));
+            }
+            a.battle.facing_angle = facing;
         }
     }
 }

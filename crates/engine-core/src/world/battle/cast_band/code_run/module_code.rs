@@ -1356,6 +1356,18 @@ impl World {
                     self.apply_capture_seat_writes(slot, arm.party_write);
                 }
             }
+            // PROT 0965 arm `0x0B` lines the party up for its sweep and its
+            // `0xFF` arm puts each seat back (`0x801F76E4..0x801F7790`,
+            // `0x801F7A30..0x801F7A7C`).
+            if arm.party_line_up {
+                self.line_up_party_for_sweep();
+            }
+            if entry == 965 && phase_in == ticks::CHOREOGRAPHY_DONE_PHASE {
+                self.restore_lined_up_party();
+            }
+            if arm.backdrop_on {
+                self.battle.backdrop_cue = 0x800;
+            }
             // A director that lands the module's wrapper hits itself (PROT
             // 0959's three sites, arm `0x0F`'s many times over): each is
             // `FUN_801DD6B4(power, ctx[+0x13], 0)` aimed at `0x801C9370[0]`,

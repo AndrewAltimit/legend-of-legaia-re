@@ -69,10 +69,20 @@ fn overlay_0898() -> Option<Vec<u8>> {
 const EVIL_SERU_MAGIC_TICKS: u32 = 3268;
 /// PROT 0966's owning entry.
 const EVIL_SERU_MAGIC_ENTRY: u32 = 966;
+/// PROT 0965 (the evolved Cort's Doomsday) by its own countdown too: the word
+/// `0x801F8370` seeded `0x20` by arm 0 and re-armed `0x40` x3, `0x100`,
+/// `0xC0`, `0x100` x3, `0x80`, `0x40`, `0x80` by arms 1..=11, each drained by
+/// the bare frame step, and arm `0x0C` drains the last `0x80` before its row
+/// settle - 1888 ticks of choreography.
+const DOOMSDAY_TICKS: u32 = 1888;
+/// PROT 0965's owning entry.
+const DOOMSDAY_ENTRY: u32 = 965;
 
 fn band_limit(t: &CastTrace) -> u32 {
     if t.evil_seru_magic {
         EVIL_SERU_MAGIC_TICKS + u32::from(CASTER_STAGE_TICK_LIMIT)
+    } else if t.doomsday {
+        DOOMSDAY_TICKS + u32::from(CASTER_STAGE_TICK_LIMIT)
     } else if t.owns_band {
         3 * u32::from(CASTER_STAGE_TICK_LIMIT)
     } else {
@@ -110,6 +120,8 @@ struct CastTrace {
     owns_band: bool,
     /// The cast pages PROT 0966 (Evil Seru Magic).
     evil_seru_magic: bool,
+    /// The cast pages PROT 0965 (Doomsday).
+    doomsday: bool,
     /// The cast runs a capture-class body that stages no caster clip in
     /// retail either (`capture_body_idles_caster`).
     idles_in_retail: bool,
@@ -336,6 +348,7 @@ fn cast(
                 .is_none()
         });
     t.evil_seru_magic = w.cast_module_for(spell) == Some(EVIL_SERU_MAGIC_ENTRY);
+    t.doomsday = w.cast_module_for(spell) == Some(DOOMSDAY_ENTRY);
     // PROT 0954's roulette, and every body whose arms the band paces on
     // the module's own countdown table (`capture_arm_countdowns`): their
     // band is the choreography's retail length, which runs past the guard
