@@ -97,6 +97,7 @@ pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon
                     || ROLLED_STAGER_RECORDS.contains(&rec)
                     || ULTRA_CHARGE_SHOT_DISCS.contains(&rec)
                     || VERA_OPEN_GLOWS.contains(&rec))
+                && !length_restarted_inside_lag(ram, n, lag)
         })
         .map(|n| {
             let tag = game_anchors::u32_at(ram, n + 0x48);
@@ -512,6 +513,26 @@ fn is_burst_child(record: u32) -> bool {
 /// - the wait `+0x54`, drained by the same product (`8` a vsync).
 ///
 /// A word the part's program rewrote inside the lag is not recovered.
+/// Whether part `node`'s length channel `+0xC8` rewinds past zero over the
+/// display lag: the channel grows from zero off op `0x1C`'s rate, so such a
+/// part was (re)started inside the lag and the displayed frame did not draw
+/// it at the length a seed could carry. Seated at `0` it drew whole, since
+/// the ring builder reads a zero length as the full ray -
+/// `zeto_call_wave_mid_cast`'s spent second volley put a horizontal ray
+/// (roll `3059`) across a frame that shows none. The seed leaves such a
+/// part out, and the seat retires the replay's part of the record it would
+/// have landed on.
+fn length_restarted_inside_lag(ram: &[u8], node: u32, lag: i32) -> bool {
+    let h = |o: u32| i32::from(game_anchors::u16_at(ram, node + o) as i16);
+    let per_vsync = if matches!(h(0x5A), 2 | 6) {
+        h(0xCA) >> 3
+    } else {
+        0
+    };
+    let now = h(0xC8);
+    now >= 0 && per_vsync > 0 && now - per_vsync * lag < 0
+}
+
 pub(super) fn displayed_part_halfword(ram: &[u8], node: u32, off: u16, lag: i32) -> u16 {
     let h = |o: u32| i32::from(game_anchors::u16_at(ram, node + o) as i16);
     let now = h(u32::from(off));
