@@ -382,6 +382,15 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
                     PadButton::Left.mask()
                 }
             }
+            // A Delilas special is due this round: the stance ahead of any
+            // heal. Unguarded it outweighs the member's whole bar, so a heal
+            // spent on this round is spent on a member about to drop; guarded
+            // it costs about a quarter.
+            CommandPhase::Menu { .. }
+                if lesson.is_none() && solo_duel(w) && delilas_special_due(w) =>
+            {
+                PadButton::Down.mask()
+            }
             // The foe's heavy round is due: the Spirit stance halves it.
             CommandPhase::Menu { .. } if lesson.is_none() && wants_guard(w, cmd.actor) => {
                 PadButton::Down.mask()
