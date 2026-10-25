@@ -238,6 +238,9 @@ pub struct App {
     // Automation.
     auto: Automation,
     auto_selected: bool,
+    /// The remembered Browse entry ([`crate::settings::Settings::entry`]) has been restored
+    /// (or there was none to restore) for the start-up source.
+    entry_restored: bool,
     auto_extract_started: bool,
     settle_since: Option<std::time::Instant>,
     screenshot_requested: bool,
@@ -328,6 +331,7 @@ impl App {
             appearance_applied: false,
             auto,
             auto_selected: false,
+            entry_restored: false,
             auto_extract_started: false,
             settle_since: None,
             screenshot_requested: false,
@@ -412,6 +416,28 @@ impl App {
                 };
             }
             Err(e) => self.studio.error = Some(format!("{what} export failed: {e:#}")),
+        }
+    }
+
+    /// Select the entry Browse had open when the app last closed, once,
+    /// when the start-up source has loaded. A scripted `select` wins.
+    fn restore_entry(&mut self) {
+        if self.entry_restored {
+            return;
+        }
+        let Some(lib) = self.studio.library.clone() else {
+            // Nothing loading means the start-up source is absent or failed:
+            // a disc opened later starts with nothing selected.
+            self.entry_restored = self.studio.loading().is_none();
+            return;
+        };
+        self.entry_restored = true;
+        if self.auto.select.is_some() || self.studio.selected.is_some() {
+            return;
+        }
+        if let Some(pos) = self.studio.settings.entry.and_then(|i| lib.position_of(i)) {
+            self.select(pos);
+            self.reveal = Some(pos);
         }
     }
 
@@ -2242,6 +2268,7 @@ impl eframe::App for App {
         if let Some(p) = dropped.first() {
             self.open_path(p);
         }
+        self.restore_entry();
         self.run_automation(ctx);
         self.announce_extraction();
         if self.job.as_ref().is_some_and(|j| j.outcome().is_none()) {
@@ -2302,6 +2329,9 @@ impl eframe::App for App {
         let s = &mut self.studio.settings;
         s.mode = Some(self.mode.key().to_string());
         s.tab = Some(self.tab.key().to_string());
+        if let (Some(lib), Some(pos)) = (&self.studio.library, self.studio.selected) {
+            s.entry = lib.entries.get(pos).map(|e| e.index);
+        }
         if let Some(size) = self.window_size {
             s.window_size = Some(size);
         }

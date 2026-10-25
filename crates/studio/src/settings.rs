@@ -32,6 +32,9 @@ pub struct Settings {
     /// (`overview`, `textures`, ...) open when the app last closed.
     pub mode: Option<String>,
     pub tab: Option<String>,
+    /// The PROT index selected in Browse when the app last closed, selected
+    /// again (and scrolled to) when the next start reopens a disc.
+    pub entry: Option<u32>,
     /// Disc images and extracted folders opened recently, newest first, at
     /// most [`RECENT_MAX`] ([`Settings::remember_recent`]).
     pub recent: Vec<PathBuf>,
