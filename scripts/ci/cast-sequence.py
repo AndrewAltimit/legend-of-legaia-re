@@ -261,6 +261,16 @@ def score(a, out: Path) -> int:
     return r.returncode
 
 
+def resident_patch_of(label: str) -> str | None:
+    """The scenario's `resident_patch` in scripts/scenarios.toml, if any."""
+    import tomllib
+    manifest = tomllib.loads((REPO / "scripts" / "scenarios.toml").read_text())
+    for sc in manifest.get("scenarios", []):
+        if sc.get("label") == label:
+            return sc.get("resident_patch")
+    return None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--spell", type=num, required=True, help="action id to inject (0x81..)")
@@ -272,6 +282,8 @@ def main() -> int:
                     help="retail: a monster caster (--caster 3..7) gets the cast written where the AI "
                          "pick FUN_801E9FD4 returns (breakpoint core), so any battle state that reaches "
                          "its turn records any spell the monster owns a clip for")
+    ap.add_argument("--allow-patched", action="store_true",
+                    help="measure a state whose manifest entry carries resident_patch")
     ap.add_argument("--save-inject", action="store_true",
                     help="retail: keep the emulator state one vsync past the inject "
                          "(retail/state_inject.rawsstate), a pre-cast state for the save library")
@@ -296,6 +308,15 @@ def main() -> int:
     ap.add_argument("--score-only", action="store_true")
     ap.add_argument("--no-build", action="store_true")
     a = ap.parse_args()
+    # The user's rule is retail states only. A state made on a patched disc
+    # keeps the patched executable resident through every later load, and a
+    # state saved from it (`--save-inject`) inherits it: the manifest's
+    # `resident_patch` names those, and the driver refuses them unless told.
+    patch = resident_patch_of(a.state)
+    if patch and not a.allow_patched:
+        print(f"[refuse] {a.state} holds a patched resident executable ({patch}); "
+              "retail states only (--allow-patched to measure it anyway)")
+        return 2
 
     out = Path(a.out) if a.out else REPO / "captures" / "cast-sequence" / f"{a.state}_{a.spell:02x}"
     out = out.resolve()

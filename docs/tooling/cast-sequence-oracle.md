@@ -53,6 +53,7 @@ Flags worth knowing:
 | `--engine-env K=V` | Extra environment for the engine child |
 | `--guard <seats>` | Engine: party seats in the Spirit stance when the cast starts (`LEGAIA_BATTLE_GUARD`), for a capture whose victim guarded (`+0x1DE == 4`): `nivora_duel_pre_megaton_press` needs `--guard 0` for its damage to match |
 | `--monster-pick` | Retail: with `--caster 3..7`, the cast is written where the monster AI's pick returns (a breakpoint on `0x801DAF50`, see [below](#a-monster-cast-from-any-battle-state)), so any battle state that reaches the monster's turn records any spell the monster owns a clip for. Runs on the breakpoint core, several times slower |
+| `--allow-patched` | Measure a state whose manifest entry carries `resident_patch` (refused by default: retail states only) |
 | `--save-inject` | Retail: keep the whole emulator state one vsync past the inject (`retail/state_inject.rawsstate`), a pre-cast state that replays the cast on the fast core with a plain `--caster` |
 | `LEGAIA_CAST_SEQ_EXE=<path>` (environment) | Score another `legaia-engine` build (a before / after pair) without rebuilding the tree's |
 | `LEGAIA_PRESS_UNTIL=<vsync>` (environment) | Retail: tap CROSS through the party's command input until this vsync (default `600`). A three-member party or a long opening needs more before the monster's turn comes round |
@@ -286,11 +287,18 @@ the fast core with a plain `--caster`:
 | State | Cast |
 |---|---|
 | `koru_pre_blade_breath` / `koru_pre_thunder_needle` / `koru_pre_gigaton_press` | Koru's `0xA2` / `0xA3` / `0xA4` (PROT 0962), on `koru_strip_forced`'s synthetic formation |
-| `gaza2_pre_neo_star_slash` | the Sim-Seru Gaza's `0xA6` (PROT 0960) |
-| `cort_evolved_pre_doomsday` | the evolved Cort's `0xB6` (PROT 0965) |
+| `gaza2_pre_neo_star_slash` | the Sim-Seru Gaza's `0xA6` (PROT 0960); **patched resident executable** |
+| `cort_evolved_pre_doomsday` | the evolved Cort's `0xB6` (PROT 0965); **patched resident executable** |
 
 The action in each is the probe's, not the AI's: a capture is a statement
 about the cast, not about when the monster would have chosen it.
+
+A saved state keeps the executable its source state held. The Gaza 2 and
+evolved-Cort fights exist in the library only as states made on patched
+discs (`battle_gaza2_prompt`, `cort_evolved_battle_first_menu`), so the two
+states saved from them carry the same `resident_patch` and are not retail
+references; the driver refuses a `resident_patch` state unless given
+`--allow-patched`.
 
 ## Waits the engine does not run
 

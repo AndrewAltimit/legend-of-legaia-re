@@ -3080,7 +3080,8 @@ expected_game_mode = 0x15
 [[scenarios]]
 label = "gaza2_pre_neo_star_slash"
 backup_fingerprint = "579228e8c00ea385b14fbe22e8154683eab18458ae72ef1fd9b07c176e631f16"
-description = "RETAIL disc, probe-poked: battle_gaza2_prompt played forward until Sim-Seru Gaza (seat 3)'s turn, where the monster-pick probe (autorun_cast_sequence.lua, LEGAIA_MONSTER_PICK) rewrote the AI pick's queue at 0x801DAF50 to cat=2 spell=0xA6 (Neo Star Slash, PROT 0960); saved one vsync later (LEGAIA_SAVE_INJECT). Load and wait: the cast fires on its own. The action is the probe's, not the AI's; everything else is retail."
+resident_patch = "arts AP override (SCUS arena 1 routines)"
+description = "PATCHED resident SCUS, inherited from battle_gaza2_prompt (resident_patch arts AP override (SCUS arena 1 routines)); captured on the retail disc, probe-poked: battle_gaza2_prompt played forward until Sim-Seru Gaza (seat 3)'s turn, where the monster-pick probe (autorun_cast_sequence.lua, LEGAIA_MONSTER_PICK) rewrote the AI pick's queue at 0x801DAF50 to cat=2 spell=0xA6 (Neo Star Slash, PROT 0960); saved one vsync later (LEGAIA_SAVE_INJECT). Load and wait: the cast fires on its own. The action is the probe's, not the AI's; the slot-B module paged in from the retail disc at the cast; the resident executable is the source state's patched one. The override's routines run only on the party's arts input, not on the monster's cast, but this is not a retail state: re-capture from a retail Gaza 2 fight before trusting its oracle scores."
 topics = ["battle", "boss", "cast module", "monster pick", "Gaza", "Neo Star Slash", "spell 0xA6"]
 phase = "battle"
 expected_game_mode = 0x15
@@ -3088,7 +3089,8 @@ expected_game_mode = 0x15
 [[scenarios]]
 label = "cort_evolved_pre_doomsday"
 backup_fingerprint = "b9b98907ca6a940a53fa94a4b8a7d56798963c1eb4d1890511d65fcd95b1f107"
-description = "RETAIL disc, probe-poked: cort_evolved_battle_first_menu played forward until the evolved Cort (seat 3)'s turn, where the monster-pick probe (autorun_cast_sequence.lua, LEGAIA_MONSTER_PICK) rewrote the AI pick's queue at 0x801DAF50 to cat=2 spell=0xB6 (Doomsday, PROT 0965); saved one vsync later (LEGAIA_SAVE_INJECT). Load and wait: the cast fires on its own. The action is the probe's, not the AI's; everything else is retail."
+resident_patch = "location rename (quick-travel names)"
+description = "PATCHED resident SCUS, inherited from cort_evolved_battle_first_menu (resident_patch location rename (quick-travel names)); captured on the retail disc, probe-poked: cort_evolved_battle_first_menu played forward until the evolved Cort (seat 3)'s turn, where the monster-pick probe (autorun_cast_sequence.lua, LEGAIA_MONSTER_PICK) rewrote the AI pick's queue at 0x801DAF50 to cat=2 spell=0xB6 (Doomsday, PROT 0965); saved one vsync later (LEGAIA_SAVE_INJECT). Load and wait: the cast fires on its own. The action is the probe's, not the AI's; the slot-B module paged in from the retail disc at the cast; the resident executable is the source state's patched one. The rename touches only the world map's quick-travel name cells, but this is not a retail state: re-capture from a retail evolved-Cort fight before trusting its oracle scores."
 topics = ["battle", "boss", "cast module", "monster pick", "Cort", "evolved Cort", "Doomsday", "spell 0xB6"]
 phase = "battle"
 expected_game_mode = 0x15
