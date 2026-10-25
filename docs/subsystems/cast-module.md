@@ -600,8 +600,8 @@ frame step of `4` (see [measured arm timing](#measured-arm-timing)).
 | 8 | gate; spawns the breath | 15 |
 | 9 | gate; sets the creature's render flag and tint word (`+0x21C = 3`, red) | 8 |
 | 10 | gate; stores depth `ctx[+0x6D0] = 0x800` and yaw base `ctx[+0x6DA] = 0x200`; its exit queues the walk clip | 24 |
-| 11 | walk-in: `FUN_801D5854(7, 6)` every pass, holds on the range poll `FUN_8004E2F0(7, victim)`; lands the hit; adds `scalar * 192` to the countdown | 16 |
-| 12 | drains that countdown, then waits for the victim to settle | 87 |
+| 11 | walk-in: `FUN_801D5854(7, 6)` every pass, holds on the range poll `FUN_8004E2F0(7, victim)`; lands the hit, re-runs the target-size framing `FUN_801F0348` and scales `ctx[+0x6D0]` by `3/2` while the victim stands (`0x801F75A0..0x801F75DC`); adds `scalar * 192` to the countdown | 16 |
+| 12 | drains that countdown, then waits for the victim to settle; case 8 on the caster every pass, at that depth | 87 |
 | `0xFF` | Done | - |
 
 The run from arm 1 to the hit is about 500 display frames, so the module, not

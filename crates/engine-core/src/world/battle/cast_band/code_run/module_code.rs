@@ -1317,6 +1317,51 @@ impl World {
             live.fold_writes(orig, view);
             self.write_cast_view(slot, &live);
         }
+        // PROT 0903's depth stores: arm 10's pass parks the walk-in's
+        // `ctx[+0x6D0] = 0x800` (`0x801F7380`), and arm 11's pass - the hit -
+        // re-runs the target-size framing `FUN_801F0348` (`jal` at
+        // `0x801F75A0`) and, while the victim still stands, scales it by
+        // `3/2` toward zero (`0x801F75A8..0x801F75DC`). Arm 12's case-8 calls
+        // frame off that depth: a victim the breath killed at the `0x0C00`
+        // floor, a living one a half again further out.
+        if entry == 903 && ctx.phase != phase_entry {
+            let depth = match phase_entry {
+                10 => Some(legaia_engine_cast::cast_module_camera::GIMARD_WALK_DEPTH as i16),
+                11 => {
+                    let target = self
+                        .actors
+                        .get(usize::from(caster_slot))
+                        .map_or(8, |a| a.battle.active_target);
+                    let size_of = |slot: u8| {
+                        self.actors
+                            .get(usize::from(slot))
+                            .and_then(|a| a.battle_monster_id)
+                            .and_then(|id| self.tables.monster_catalog.get(id))
+                            .map_or(0, |d| d.size_class)
+                    };
+                    let h = legaia_engine_battle_vm::battle_formulas::camera_height_for_frame(
+                        caster_slot,
+                        target,
+                        self.party.party_count,
+                        size_of,
+                    );
+                    let alive = self
+                        .actors
+                        .get(usize::from(victim_slot))
+                        .is_some_and(|a| a.battle.hp != 0);
+                    Some(if alive {
+                        ((i32::from(h) * 3) / 2) as i16
+                    } else {
+                        h
+                    })
+                }
+                _ => None,
+            };
+            if let Some(d) = depth {
+                self.battle.camera_frame_height = d;
+                self.battle_ctx.camera_frame_height = d;
+            }
+        }
         // The `0xFF` arm of eight player-Seru modules leaves the creature
         // seat's loop counter clear for the next cast's installer, which
         // seeds none (`sb zero,0x21b` / `sh zero,0x176`; PROT 0904

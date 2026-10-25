@@ -101,8 +101,9 @@ pub const GIMARD_SETTLE_ANIM_RATE: u8 = ANIM_RATE_NORMAL >> 1;
 ///
 /// Not ported: the packet arms (1..8 are almost entirely
 /// `FUN_801D829C` / `FUN_80021B04` emission), the `FUN_8004E2F0` animation
-/// poll arm 11 holds on, the camera magnitude `ctx+0x6D0` the landed hit
-/// scales by `3/2`, and `ctx+0x243`.
+/// poll arm 11 holds on, and `ctx+0x243`. The depth stores - arm 10's
+/// `ctx+0x6D0 = 0x800`, arm 11's `FUN_801F0348` re-frame and its `3/2` for a
+/// surviving victim - are the band's (`World::run_cast_module_code`).
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
