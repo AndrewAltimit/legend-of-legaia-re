@@ -17,7 +17,11 @@
 //!   from 7 and loops; retail stops it from the battle anim commit
 //!   (`FUN_8004AD80` -> `FUN_80017910` at `0x8004AE68`) once an actor's staged
 //!   clip differs from its latched one. The fight must key one and key it
-//!   off again, and no cue voice may sound for longer than any clip.
+//!   off again, and no cue voice may sound for longer than any clip. A
+//!   looping clip re-fires its cue track every cycle (each natural-end
+//!   re-commit zeroes the cue cursor `+0x1F6`), so a sustained cue on one
+//!   is re-keyed in between: the drainer releases the held run and keys it
+//!   again on the same tick.
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
@@ -246,6 +250,7 @@ fn a_sustained_battle_cue_is_keyed_off_when_its_clip_gives_way() {
     // round's Begin) until a sustained cue keys from voice 7.
     let mut keyed: Option<(u32, Vec<i16>)> = None;
     let mut released: Option<u32> = None;
+    let mut rekeys = 0u32;
     while rig.world().mode == SceneMode::Battle && rig.t < start + 6000 {
         let rel = rig.t - start;
         let tick = rig.step(if rel % 30 < 2 { CROSS } else { 0 });
@@ -268,11 +273,20 @@ fn a_sustained_battle_cue_is_keyed_off_when_its_clip_gives_way() {
                 .iter()
                 .any(|e| e.ev == NoteEventKind::Off && e.voice == 7)
         {
-            assert!(
-                tick.cmds.contains(&AudioCommand::SfxReleaseSustained),
-                "the key-off is the sustained teardown's"
-            );
-            released = Some(rig.t);
+            if tick.cmds.contains(&AudioCommand::SfxReleaseSustained) {
+                released = Some(rig.t);
+            } else {
+                // A looping clip re-arms its cue track on every cycle's
+                // re-commit, so a sustained cue on it comes due again, and
+                // the drainer's sustained arm releases the held run before
+                // it re-keys voices from 7 (`FUN_80016B6C`). That key-off
+                // belongs to a re-key on the same tick, not to a teardown.
+                assert!(
+                    tick.keyed_on(|v| v == 7),
+                    "a voice-7 key-off is the sustained teardown's or a re-key's"
+                );
+                rekeys += 1;
+            }
         }
     }
     let (on_at, rings) = keyed.expect("the fight keyed a sustained cue");
@@ -280,8 +294,8 @@ fn a_sustained_battle_cue_is_keyed_off_when_its_clip_gives_way() {
         panic!("the sustained cue keyed at t={on_at} (rings {rings:x?}) was never keyed off")
     });
     eprintln!(
-        "[ran] sustained cue (rings {rings:x?}) keyed t={on_at}, released t={off_at}; \
-         longest cue voice {} ticks (voice {})",
+        "[ran] sustained cue (rings {rings:x?}) keyed t={on_at}, re-keyed {rekeys}x, \
+         released t={off_at}; longest cue voice {} ticks (voice {})",
         rig.longest.0, rig.longest.1
     );
     assert!(off_at - on_at < STUCK_TICKS);
