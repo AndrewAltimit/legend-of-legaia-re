@@ -265,9 +265,9 @@ impl World {
     /// (`+0x04 = 0`, `+0x21C = 0xFF`, `0x801F7040..`), arm 11's shows it
     /// again for the attack, turned to face the party at half its render
     /// scale (`+0x46 = 0x800`, node `+0x72 >>= 1`, `0x801F7590..0x801F75C8`;
-    /// the arm also halves `+0x21D`, `0x801F75D4..0x801F75E0`, which is not
-    /// carried: under it the engine's hit reaction ran arm 19's settle poll
-    /// `210` vsyncs against retail's `143`), arm 16's pass hides it,
+    /// the arm also halves `+0x21D`, `0x801F75D4..0x801F75E0`, and the hit
+    /// arm 18 doubles it back on each monster it strikes,
+    /// `0x801F888C..0x801F8898`), arm 16's pass hides it,
     /// doubles the scale back and drops it to the floor (`+0x36 = 0`,
     /// `0x801F842C..0x801F8460`; arm 17 starts at `0x801F8488`), and the hit
     /// arm 18 shows each struck monster (`0x801F87C4..`). The engine's shown
@@ -399,6 +399,17 @@ impl World {
                 (11, true) => {
                     a.battle.facing_angle = 0x800;
                     a.battle.render_scale = Some(scale >> 1);
+                    // `+0x21D >>= 1` (`0x801F75D4..0x801F75E0`).
+                    a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(
+                        a.battle.anim_rate.get() >> 1,
+                    );
+                }
+                // The hit arm doubles each struck monster's rate back
+                // (`+0x21D <<= 1`, `0x801F888C..0x801F8898`).
+                (18, true) => {
+                    a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(
+                        a.battle.anim_rate.get().wrapping_shl(1),
+                    );
                 }
                 (16, true) => {
                     a.battle.render_scale = Some(scale.wrapping_shl(1));
@@ -562,7 +573,15 @@ impl World {
             });
         let mut v = self.cast_view(s);
         legaia_engine_cast::seru_magic_ticks::summon_pre_hit(&mut v, hit);
-        // Arm 16 always ORs both restage bits (`ori v0,v0,0x5`).
+        // Arm 16 stages `+0x1EF`, else `+0x1F0` (`0x801F8058..0x801F8078`),
+        // with no `+0x1F2` knockdown test, and always ORs both restage bits
+        // (`ori v0,v0,0x5`): a struck monster flinches, it is not knocked
+        // down.
+        v.staged_anim = if v.reaction_alt != 0 {
+            v.reaction_alt
+        } else {
+            v.reaction_alt2
+        };
         v.restage |= 0x05;
         self.write_cast_view(s, &v);
     }

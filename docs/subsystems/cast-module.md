@@ -2511,13 +2511,16 @@ and strikes each idle one it has passed on every pass: a third of the
 summon roll (`rand() % 16 + 16` when that is zero) plus `rand() % (hit / 8 +
 1)`, clamped to `HP - 1`, its popup up and its reaction staged, with the
 readout flag `0x8007B64C` cleared so the combo cluster stays shut
-(`World::mule_wave_hit`, `0x801F7DD8..0x801F80A8`); arm 5's pass hides the row, arm 11's shows it again turned to the party at
-half its render scale (node `+0x72 >>= 1`, `0x801F75BC..0x801F75C8`), arm
-16's pass hides it and doubles the scale back (`0x801F842C..0x801F8460`;
-arm 17 opens at `0x801F8488`), and the hit arm 18 shows the monsters it
-strikes. Arm 11 also halves the row's rate `+0x21D`, which is not carried:
-under it the engine's hit reaction held arm 19's settle poll `210` vsyncs
-against retail's `143`. The creature takes three stores: arm 11's pass lifts
+(`World::mule_wave_hit`, `0x801F7DD8..0x801F80A8`). The wave stages each
+struck monster's `+0x1EF` (else `+0x1F0`) with no `+0x1F2` test, so the row
+flinches rather than falls; with the knockdown clip the port staged before,
+the monster's root motion carried it twice as far as retail's. Arm 5's pass
+hides the row, arm 11's shows it again turned to the party at half its
+render scale and half its rate (node `+0x72 >>= 1`, `+0x21D >>= 1`,
+`0x801F75BC..0x801F75E0`), arm 16's pass hides it and doubles the scale back
+(`0x801F842C..0x801F8460`; arm 17 opens at `0x801F8488`), and the hit arm 18
+shows the monsters it strikes and doubles their rate back
+(`0x801F888C..0x801F8898`). The creature takes three stores: arm 11's pass lifts
 it to `+0x36 = -0x100`, arm 14's lights it white and holds the word
 (`+0x04 = 0x3FFFFFFF`, `+0x21C = 0xFF`, `0x801F7AB0..0x801F7AF0`), and arm
 16's hides it (`0x801F83C4..0x801F83D0`). Mule's arms 1..4 also push the
