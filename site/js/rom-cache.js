@@ -169,7 +169,7 @@
       'border-radius:50%;background:#5b8;}',
       '.rom-cache-chip button{cursor:pointer;border:1px solid var(--border,#334);',
       'background:transparent;color:inherit;border-radius:4px;padding:.1rem .5rem;',
-      'font:inherit;}',
+      'font:inherit;flex:0 0 auto;white-space:nowrap;}',
       '.rom-cache-chip button:hover{background:rgba(200,90,90,.18);color:#fff;}',
     ].join('');
     document.head.appendChild(s);

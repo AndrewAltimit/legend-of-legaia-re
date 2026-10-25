@@ -355,7 +355,10 @@
       var t = tidy(runs[i]);
       if (t.length >= 12 && /Sony|Licensed/i.test(t) && hits.indexOf(t) < 0) hits.push(t);
     }
-    return hits.length ? hits.join(' ') : null;
+    if (!hits.length) return null;
+    /* The licence text is laid out around the console's logo, so the area
+       names reach the sector split mid-word ("Amer  ica", "Euro pe"). */
+    return hits.join(' ').replace(/\bAmer ica\b/g, 'America').replace(/\bEuro pe\b/g, 'Europe');
   }
 
   function identify(reader) {
