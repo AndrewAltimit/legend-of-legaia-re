@@ -1459,7 +1459,11 @@ Buffs consume no RNG. Negative-magnitude buffs keep a saturating additive
 model - retail's only stat debuffs are the
 [Seru side-effects](#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch),
 which run on their own path. Accuracy / Evasion / Speed have no live-loop
-scalar, so a buff on them only runs the turn timer.
+scalar on the spell path, so a buff spell on them only runs the turn timer.
+Selector 7 (the Elixirs) does not share this path: `World::apply_buff_item`
+ramps both halves of each pair in the table above on every use, SPD
+included, and a repeat compounds as the handler's does - see
+[item-effect-table.md](../formats/item-effect-table.md#stat-up--buff-items-class-567).
 
 ### Other arms
 

@@ -247,7 +247,12 @@ a live maximum of `573`.
 
 **Class 7 - one-battle buff** (battle-use, flag byte `0x84`). Multiplies the
 **battle-actor** stat halfwords by `6/5` (+20%, the handler's `uVar + uVar/5`),
-clamped to `0xFFFF`, for the rest of the battle. `param_2` = `tier`:
+clamped to `0xFFFF`, for the rest of the battle. Each arm is an unconditional
+`lhu` / multiply / `sh` on both halves of each pair, gated on nothing but the
+target's HP (`lhu v0,0(v0)` / `beq v0,zero` ahead of the arm; Power Elixir at
+`0x8004175C..0x800417EC`): no record of an earlier Elixir is kept, so a repeat
+compounds (two Power Elixirs are `x36/25`). The clamp is unsigned (`sltu`
+against `0xFFFF`), not a signed wrap. `param_2` = `tier`:
 
 | `param_2` | Stat(s) buffed | Item |
 |---|---|---|
@@ -344,13 +349,16 @@ raises Max HP +16, the single-stat Waters raise their stat by +4, and Honey
 raises all stats.
 
 The **class-7 one-battle buff Elixirs** are seeded by `ItemCatalog::apply_buff_items`
-(battle-only) and applied in `World::use_item` through the shared buff path
-(`apply_battle_buff`, the same `×6/5` ramp + revert-on-expiry / revert-at-battle-end
-bookkeeping as buff *spells*): Power/Shield/Speed Elixir ramp ATK / DEF / SPD,
-Wonder Elixir ramps all four (SPD + DEF + ATK + INT). The disc-gated
-`elixir_battle_buffs_seed_and_ramp_from_disc` test pins that Power Elixir ramps a
-100 ATK scalar to 120 and Wonder Elixir installs four buff trackers without
-compounding.
+(battle-only) and applied in `World::use_item` by the handler's own arithmetic
+(`apply_buff_item`): both halves of each buffed pair - `attack` / `attack_base`,
+the `defense_split` / `defense_base` facets, `speed` / `speed_base`, `accuracy` /
+`accuracy_base` - take `buff_ramp` on every use, with nothing reverted at battle
+end (the next battle's setup reseeds the actor, as retail's does). Power / Shield
+/ Speed Elixir ramp ATK / DEF / SPD, Wonder Elixir all four. The disc-gated
+`elixir_battle_buffs_seed_and_ramp_from_disc` test pins a Power Elixir ramping a
+100 ATK to 120, a second one compounding to 144, the Speed Elixir moving the SPD
+the initiative roll reads, and a target at 0 HP taking no ramp. Buff *spells*
+keep their own path (`apply_battle_buff`: a turn timer, revert on expiry).
 
 **Fury Boost** (class 5) is seeded by `ItemCatalog::apply_action_gauge_items`
 (battle-only) and extends the target's action gauge for the battle. Retail sets

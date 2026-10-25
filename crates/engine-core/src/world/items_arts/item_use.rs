@@ -473,28 +473,38 @@ impl World {
     }
 
     /// Apply a one-battle stat buff ([`legaia_engine_menus::items::ItemEffect::BattleBuff`],
-    /// the class-7 Elixirs) to `target_slot`. The buffed stats are resolved from
-    /// the installed on-disc item-effect table; each is ramped ×6/5 for the rest
-    /// of the battle through the shared buff path ([`Self::apply_battle_buff`],
-    /// the same machinery as buff *spells*) - so it reuses the precise
-    /// revert-on-expiry / revert-at-battle-end bookkeeping. `Defense` ramps the
-    /// single defence scalar; `Agility` maps to the accuracy/evasion proxy (no
-    /// live scalar yet, so it only runs the turn timer, like a buff spell on
-    /// Speed). Returns [`legaia_engine_menus::items::ItemOutcome::NoEffect`] when no table is
+    /// the class-7 Elixirs) to `target_slot`, the way retail's handler does it
+    /// (`FUN_800402F4` `case 7`): every battle-actor halfword of each buffed
+    /// stat, working and base half alike, becomes `v + v/5` clamped to
+    /// `0xFFFF` ([`legaia_engine_battle_vm::battle_formulas::buff_ramp`]), on
+    /// every use, with no check of what an earlier Elixir did - so a second
+    /// Power Elixir compounds to `x36/25`. The only gate is the target's HP
+    /// (`lhu v0,0(v0)` / `beq v0,zero` ahead of each arm).
+    ///
+    /// | Tier | Halfwords | Port | Item |
+    /// |---|---|---|---|
+    /// | 1 | `+0x164/+0x166` (`0x8004150C..0x80041568`) | `speed` / `speed_base` | Speed Elixir |
+    /// | 2 | `+0x15C..+0x162` (`0x800415F4..0x80041700`) | `defense_split` / `defense_base` | Shield Elixir |
+    /// | 3 | `+0x158/+0x15A` (`0x80041790..0x800417EC`) | `attack` / `attack_base` | Power Elixir |
+    /// | 4 | all of the above + `+0x168/+0x16A` (`0x80041870..0x80041B8C`) | + `accuracy` / `accuracy_base` | Wonder Elixir |
+    ///
+    /// Nothing reverts it: retail rebuilds the actor's stats at the next
+    /// battle's setup, as [`Self::seed_party_battle_stats`] does here. A
+    /// zero-delta [`crate::world::BattleBuff`] entry per stat records that the
+    /// ramp is on for the battle (readers ask the buff list), and reverts
+    /// nothing at battle end. Returns
+    /// [`legaia_engine_menus::items::ItemOutcome::NoEffect`] when no table is
     /// installed or the id isn't a one-battle buff.
+    ///
+    /// PORT: FUN_800402F4 (case 7, `0x8004150C..0x80041B8C`)
     fn apply_buff_item(
         &mut self,
         item_id: u8,
         target_slot: u8,
     ) -> legaia_engine_menus::items::ItemOutcome {
         use legaia_engine_battle::spells::BuffStat;
+        use legaia_engine_battle_vm::battle_formulas::buff_ramp;
         use legaia_game_tables::item_effect::{StatItemEffect, StatTarget};
-        // "One battle": a turn count large enough to outlast the encounter; the
-        // buff is reverted wholesale at battle end (`finish_battle`).
-        const ONE_BATTLE: u8 = u8::MAX;
-        // Positive magnitude selects the retail ×6/5 multiplicative ramp in
-        // `apply_battle_buff` (the value itself is only a sign hint there).
-        const BUFF_SIGN: i16 = 1;
 
         let resolved = self
             .tables
@@ -504,20 +514,62 @@ impl World {
         let Some(StatItemEffect::BuffOneBattle(stats)) = resolved else {
             return legaia_engine_menus::items::ItemOutcome::NoEffect;
         };
+        let i = usize::from(target_slot);
+        let alive = self.actors.get(i).is_some_and(|a| a.battle.hp != 0);
         let mut count = 0u8;
         for stat in stats {
             let buff_stat = match stat {
                 StatTarget::Attack => BuffStat::Attack,
                 StatTarget::Defense => BuffStat::Defense,
                 StatTarget::Speed => BuffStat::Speed,
-                // AGL drives accuracy + evasion (both proxy it); one entry
-                // models the AGL buff.
+                // The `+0x168` pair (the INT line the accuracy / evasion
+                // rolls read; the parser names it Agility).
                 StatTarget::Agility => BuffStat::Accuracy,
                 // The permanent-only stats never appear in a class-7 buff; skip
                 // defensively rather than fabricate a battle scalar for them.
                 StatTarget::MaxHp | StatTarget::MaxMp | StatTarget::Intelligence => continue,
             };
-            self.apply_battle_buff(target_slot, buff_stat, BUFF_SIGN, ONE_BATTLE);
+            if alive && i < self.battle.attack.len() {
+                let b = &mut self.battle;
+                match buff_stat {
+                    BuffStat::Attack => {
+                        b.attack[i] = buff_ramp(b.attack[i]);
+                        b.attack_base[i] = buff_ramp(b.attack_base[i]);
+                    }
+                    BuffStat::Defense => match b.defense_split[i] {
+                        Some((udf, ldf)) => {
+                            b.defense_split[i] = Some((buff_ramp(udf), buff_ramp(ldf)));
+                            b.defense_base[i] =
+                                b.defense_base[i].map(|(ub, lb)| (buff_ramp(ub), buff_ramp(lb)));
+                        }
+                        // A slot with no split defends with the scalar alone.
+                        None => b.defense[i] = buff_ramp(b.defense[i]),
+                    },
+                    BuffStat::Speed => {
+                        b.speed[i] = buff_ramp(b.speed[i]);
+                        b.speed_base[i] = buff_ramp(b.speed_base[i]);
+                    }
+                    _ => {
+                        b.accuracy[i] = buff_ramp(b.accuracy[i]);
+                        b.accuracy_base[i] = buff_ramp(b.accuracy_base[i]);
+                        // The port's second name for the same halfword.
+                        b.evasion[i] = b.accuracy[i];
+                    }
+                }
+            }
+            if !self
+                .battle
+                .buffs
+                .iter()
+                .any(|b| b.slot == target_slot && b.stat == buff_stat)
+            {
+                self.battle.buffs.push(crate::world::BattleBuff {
+                    slot: target_slot,
+                    stat: buff_stat,
+                    applied_delta: 0,
+                    turns: u8::MAX,
+                });
+            }
             count = count.saturating_add(1);
         }
         if count == 0 {

@@ -1646,9 +1646,10 @@ the bag and its own spell list give it:
   drinks the one-battle Elixirs whose ramp it lacks - defence, attack, speed
   - taking first the one that covers the most of them: a Wonder Elixir (all
   four stats) is the three single-stat ramps for one turn of the foe's
-  swings instead of three. Each ramp is drunk once: the port reverts a
-  ramp's earlier delta before it applies a repeat (`apply_battle_buff`), so
-  a second Power Elixir buys nothing. A member whose Miracle string the
+  swings instead of three. Each ramp is drunk once, though a repeat
+  compounds as in retail ([`item-effect-table.md`](../formats/item-effect-table.md#stat-up--buff-items-class-567)):
+  a turn spent on a second ramp is a turn of the foe's swings with no Arts
+  in it. A member whose Miracle string the
   boosted pool pays for drinks a Fury Boost instead. Outside a duel the
   Fury Boost and the attack Elixir wait for a foe of ten times the party's
   largest HP, or for a race against a timed finisher (Koru) whatever that
