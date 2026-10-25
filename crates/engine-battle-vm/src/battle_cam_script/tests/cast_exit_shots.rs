@@ -417,8 +417,53 @@ fn a_module_shot_walks_the_builders_per_vsync_increments() {
         cam.step_module_shot();
     }
     assert_eq!(cam.pose.pitch, -96.0);
+    // The pitch's arc (`96`) is spent exactly, and a lane lands only once its
+    // arc goes negative (`bgez` at `0x8002151C`): one more pass overshoots
+    // and stores the endpoint, and the task ends there.
+    assert!(!cam.module_glide.is_some_and(|g| g.landed()));
+    cam.step_module_shot();
+    assert_eq!(cam.pose.pitch, -96.0);
     assert!(
         cam.module_glide.is_some_and(|g| g.landed()),
         "every component home"
     );
+}
+
+/// The walker lands an angle lane off its remaining arc, not off the live
+/// angle (`FUN_8002149C` `0x800214C0..0x80021534`, the arc seeded by
+/// `FUN_80021248`). PROT 0962's arm-2 shot turns the yaw from `2484` across
+/// the wrap onto `0x011` over `0xC` frames while arm 3 drifts TR z every
+/// pass: the drift re-masks the live yaw to 12 bits once it passes `0x1000`,
+/// and the turn must still end there - `koru_pre_gigaton_press` holds yaw
+/// `17` through arm 3 - rather than walking a second full turn up to an
+/// endpoint the masked value now sits below.
+#[test]
+fn a_module_shot_lands_its_yaw_across_the_wrap_under_a_drift() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Action, 0);
+    let cut = ModuleShot {
+        angles: [6, 2484, 0],
+        tr: [0, 0x4D6, 0x1000],
+        focus: [0, 0, 0],
+        frames: 1,
+    };
+    let (pose, raw_z) = cut.pose();
+    cam.arm_module_shot(pose, raw_z, u32::from(cut.frames));
+    let shot = ModuleShot {
+        angles: [0x20, 0x011, 0],
+        tr: [0, 0x400, 0x800],
+        focus: [0, 0, 0],
+        frames: 0xC,
+    };
+    let (target, raw_z) = shot.pose();
+    cam.arm_module_shot(target, raw_z, u32::from(shot.frames));
+    for _ in 0..40 {
+        cam.step_module_shot();
+        cam.drift_module(0, 0, 0, 8);
+        assert!(
+            cam.pose.yaw.rem_euclid(4096.0) >= 2484.0 || cam.pose.yaw.rem_euclid(4096.0) <= 17.0,
+            "the yaw only walks the short arc: {}",
+            cam.pose.yaw
+        );
+    }
+    assert_eq!(cam.pose.yaw.rem_euclid(4096.0), 17.0);
 }

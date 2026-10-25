@@ -2736,7 +2736,15 @@ is the module's, moved with two kernels:
   lives until every component has landed, so the shot ends on its own
   endpoint. A component the shot leaves alone has increment `0`, which the
   walker skips, and keeps the drift; so does every component once the shot
-  has landed (`BattleCamera::drift_module`).
+  has landed (`BattleCamera::drift_module`). The two angle lanes land
+  differently from the translation and focus lanes: the arming routine
+  `FUN_80021248` stores each one's shortest arc to the endpoint
+  (`0x80021330..0x80021364`), the walker takes the increment off that arc
+  every pass and stores the endpoint the pass the arc goes negative
+  (`0x80021510..0x80021534`). The live angle is never compared, so a turn
+  across the `0x1000` wrap ends after its own arc whatever the live word
+  reads: PROT 0962's arm-2 shot turns the yaw from `2484` onto `0x011`
+  under arm 3's TR z drift and holds there.
 
 Port: `cast_module_camera` (`ModuleCountdown`, `ModuleFollow`; the shot itself,
 `ModuleShot`, is `battle_cam_script`'s) with one director per module. A director runs on the phase the body is about

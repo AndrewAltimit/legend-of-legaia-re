@@ -323,15 +323,45 @@ impl BattleCamera {
                 for r in &mut walk.rate {
                     *r *= step;
                 }
+                let angles = [self.pose.pitch, self.pose.yaw];
                 self.step_components(&walk);
+                // The angle lanes count down their remaining arc instead
+                // (`0x800214C0..0x80021534`): the live angle takes the signed
+                // increment, the arc the increment's size, and the lane lands
+                // on its endpoint the pass the arc goes negative - whatever
+                // the live angle reads, so a drift or a 12-bit wrap of it
+                // neither delays nor repeats the turn.
+                let mut left = g.angle_left;
+                let mut angles_landed = true;
+                for (k, live) in angles.into_iter().enumerate() {
+                    let inc = walk.rate[k];
+                    if inc == 0.0 || (k == 1 && !g.yaw_glides) {
+                        continue;
+                    }
+                    let (mut v, end) = (
+                        live + inc * g.angle_dir[k],
+                        [g.target.pitch, g.target.yaw][k],
+                    );
+                    left[k] -= inc;
+                    if left[k] < 0.0 {
+                        v = end;
+                        left[k] = 0.0;
+                    } else {
+                        angles_landed = false;
+                    }
+                    if k == 0 {
+                        self.pose.pitch = v;
+                    } else {
+                        self.pose.yaw = v;
+                    }
+                }
+                if let Some(m) = self.module_glide.as_mut() {
+                    m.angle_left = left;
+                }
                 // Every component on its endpoint: the walker task ends, and
                 // a drift after it survives.
                 let p = &self.pose;
-                if p.pitch == g.target.pitch
-                    && p.yaw == g.target.yaw
-                    && p.tr == g.target.tr
-                    && p.focus == g.target.focus
-                {
+                if angles_landed && p.tr == g.target.tr && p.focus == g.target.focus {
                     self.land(&g);
                     if let Some(m) = self.module_glide.as_mut() {
                         m.steps_left = Some(0);
