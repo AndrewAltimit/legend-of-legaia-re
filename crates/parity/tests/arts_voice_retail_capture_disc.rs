@@ -16,6 +16,10 @@
 //! | clip starts `FUN_8003D53C` | slot 3 (`XA4.XA`) each, channel / `dur` `(4, 0x36)` then `(0xF, 0x21)` |
 //! | Noa's committed clip `+0x1D9`, vsyncs after the first `0x0F` | `0x0E` +18, `0x10` +35 (call), `0x11` +68, `0x0F` +129, `0x0E` +149, `0x10` +166 (call), `0x11` +198 |
 //!
+//! The cue router `FUN_8004FE5C` took, in order, `0x11` x3 (the approach
+//! walk's footfalls), `5F 1A 08 AB 1A`, `1A 4C`, `5F 1A 08 AB 1A`, `1A 4C`
+//! (category `1`, Noa) and the monster's `0x15` (category `3`).
+//!
 //! The channel is a `rand()` pick, so the engine is held to the pool and the
 //! duration law rather than to retail's two draws; the two retail picks are
 //! checked to be members of the pools the engine reads.
@@ -110,6 +114,22 @@ fn hand(session: &NativeSession, typed: &mut usize) -> u16 {
     }
 }
 
+/// The cue router's per-call debug line (`battle_cue_route`), collected so
+/// the SFX side of the turn can be laid against the retail router calls.
+static ROUTES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+struct RouteLog;
+impl log::Log for RouteLog {
+    fn enabled(&self, m: &log::Metadata) -> bool {
+        m.target() == "battle_cue_route"
+    }
+    fn log(&self, r: &log::Record) {
+        if self.enabled(r.metadata()) {
+            ROUTES.lock().unwrap().push(r.args().to_string());
+        }
+    }
+    fn flush(&self) {}
+}
+
 #[test]
 fn noa_lizard_tail_acrobatic_blitz_voices_as_retail() {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
@@ -174,6 +194,7 @@ fn noa_lizard_tail_acrobatic_blitz_voices_as_retail() {
         .expect("register the capture's formation");
     assert!(session.host.world.force_encounter(fid));
 
+    let _ = log::set_logger(&RouteLog).map(|()| log::set_max_level(log::LevelFilter::Debug));
     let mut typed = 0usize;
     let mut prev = 0u16;
     let mut in_battle = false;
@@ -184,6 +205,7 @@ fn noa_lizard_tail_acrobatic_blitz_voices_as_retail() {
     let mut calls = Vec::new();
     // `(tick, clip slot, channel, dur)` per CD-XA request.
     let mut clips = Vec::new();
+    let mut sfx = Vec::new();
     for tick in 0..20_000u32 {
         // Edge-triggered sessions: a press frame, then a release frame.
         let pad = if prev == 0 && session.host.world.mode == SceneMode::Battle {
@@ -232,6 +254,9 @@ fn noa_lizard_tail_acrobatic_blitz_voices_as_retail() {
                 "the world resolves the call off the disc tables"
             );
         }
+        if typed == NOA_ENTRY.len() {
+            sfx.extend(ROUTES.lock().unwrap().drain(..).map(|m| (tick, m)));
+        }
         for c in w.drain_battle_xa_cues() {
             clips.push((tick, c.clip, c.channel, c.duration_sectors));
         }
@@ -240,6 +265,43 @@ fn noa_lizard_tail_acrobatic_blitz_voices_as_retail() {
     eprintln!("[ran] Noa clip timeline {timeline:02X?}");
     eprintln!("[ran] selector calls {calls:02X?}");
     eprintln!("[ran] CD-XA requests {clips:02X?}");
+    eprintln!("[ran] cue routes {sfx:?}");
+
+    // The SFX side: every cue router call `FUN_8004FE5C(id, category)` from
+    // the approach walk to the monster's reaction, in retail's order. The
+    // walk's three footfalls (`0x11`) need the looping walk's re-commit to
+    // re-arm its cue track each cycle.
+    const RETAIL_ROUTES: [(u16, u8); 18] = [
+        (0x11, 1),
+        (0x11, 1),
+        (0x11, 1),
+        (0x5F, 1),
+        (0x1A, 1),
+        (0x08, 1),
+        (0xAB, 1),
+        (0x1A, 1),
+        (0x1A, 1),
+        (0x4C, 1),
+        (0x5F, 1),
+        (0x1A, 1),
+        (0x08, 1),
+        (0xAB, 1),
+        (0x1A, 1),
+        (0x1A, 1),
+        (0x4C, 1),
+        (0x15, 3),
+    ];
+    let routes: Vec<(u16, u8)> = sfx
+        .iter()
+        .filter_map(|(_, m)| {
+            let mut w = m.split_whitespace();
+            let id = u16::from_str_radix(w.nth(1)?.trim_start_matches("0x"), 16).ok()?;
+            let cat = w.nth(1)?.parse().ok()?;
+            Some((id, cat))
+        })
+        .take(RETAIL_ROUTES.len())
+        .collect();
+    assert_eq!(routes, RETAIL_ROUTES, "the turn's cue router calls");
 
     // The queue the builder made and the two calls retail made, with the
     // solo latch clear at both.

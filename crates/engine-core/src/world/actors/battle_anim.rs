@@ -474,6 +474,29 @@ impl World {
             // looping clip)
             if looped_recommit {
                 self.actors[i].battle.input_cursor = 0;
+                // The commit's cue-track cursor seed (`sb zero,0x1f6` at
+                // `0x8004AFD0`, then the juggled re-hit's `1`): a walk's
+                // second and later cycles re-fire their footfall cues. The
+                // juggle byte is still the last pass's here, as at retail's
+                // commit (`+0x1F7` is written after it, `0x80047E28`).
+                let cue_cursor = self.battle_reaction_map(i).map_or(0, |map| {
+                    let a = &self.actors[i];
+                    let entry = self.battle_current_anim(i);
+                    let first_cue = a
+                        .battle_effect_script
+                        .as_ref()
+                        .and_then(|s| s.get(0x56..0x58))
+                        .map_or(0, |b| u16::from_le_bytes([b[0], b[1]]));
+                    crate::world::battle::clip_ladder::recommit_cue_cursor(
+                        map,
+                        entry,
+                        entry,
+                        a.battle_juggle_window,
+                        a.battle_monster_id.is_none(),
+                        first_cue,
+                    )
+                });
+                self.actors[i].battle_anim_cue_cursor = cue_cursor;
                 self.note_active_clip_commit(i);
                 // The natural-end commit installs whatever `+0x1DA` holds:
                 // a byte staged over the summon creature's loop waits here

@@ -2269,6 +2269,14 @@ called per animation frame by `World::step_actor_anim_cues` beside the
 effect-script stepper - retail's `FUN_80047430` makes the two calls with the
 same `(slot, entry, frame)` arguments (`0x800478B8` / `0x800478E4`).
 
+A looping clip's cue track runs again every cycle. The loop is not a wrap
+inside the player: at the clip's natural end the tick re-commits the
+still-queued `+0x1DA` through `FUN_8004AD80`, and every commit stores `0` to
+`+0x1F6` (`sb zero,0x1f6` in the delay slot at `0x8004AFD0`; a re-hit inside
+the juggle window then stores `1`, so its first cue is skipped). A party
+member's approach walk therefore steps once a cycle: a retail capture of Noa's
+walk-in fires `0x11` three times in 33 vsyncs, on the cycle's fifth vsync.
+
 The shout band is the smallest part of the track. Most of what a fight sounds
 like rides it: a party swing's entry carries `(0, 0xA7)` / `(0, 0x51)`,
 `(3, 0x1A)`, `(7, 0x08)`, a walk cycle `(5, 0x12)` / `(0xB, 0x12)`, a

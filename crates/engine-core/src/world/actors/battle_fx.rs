@@ -310,6 +310,12 @@ impl World {
         let mut ring = legaia_engine_battle::sfx_cue::SfxCueRing::default();
         let out =
             legaia_engine_battle::sfx_cue::route_sfx_cue(&mut ring, u32::from(id), category, &src);
+        log::debug!(
+            target: "battle_cue_route",
+            "route {id:#x} cat {category} -> ring {:?} xa {:?}",
+            out.enqueued,
+            out.xa.map(|x| (x.clip, x.channel))
+        );
         if let Some(xa) = out.xa
             && xa.duration_sectors > 0
         {

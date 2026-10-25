@@ -10,6 +10,7 @@
 --   * FUN_8004C140  arts-voice selector (char_id a0, action a1, flag a2)
 --   * FUN_8003D53C  CD-XA clip start (clip slot a0, channel a1, dur a2)
 --   * FUN_8004FCC8  cue dispatcher (id a0)
+--   * FUN_8004FE5C  cue router (id a0, category a1) - the hit / anim-cue SFX
 -- plus one `seat` row per change of a party actor's committed clip `+0x1D9`,
 -- so a cue can be placed on the clip timeline the engine commits on.
 --
@@ -143,6 +144,10 @@ local function arm_bps()
     probe.arm_breakpoint(0x8003D53C, "Exec", 4, "xa_clip", function()
         local r = PCSX.getRegisters()
         row("clip", n32(r.GPR.n.a0), n32(r.GPR.n.a1), n32(r.GPR.n.a2))
+    end)
+    probe.arm_breakpoint(0x8004FE5C, "Exec", 4, "route", function()
+        local r = PCSX.getRegisters()
+        row("route", n32(r.GPR.n.a0), n32(r.GPR.n.a1), 0)
     end)
     probe.arm_breakpoint(0x8004FCC8, "Exec", 4, "cue", function()
         local r = PCSX.getRegisters()
