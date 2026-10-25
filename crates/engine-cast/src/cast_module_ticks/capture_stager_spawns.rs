@@ -78,6 +78,29 @@ pub fn blade_breath_cell_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<Sta
     }
 }
 
+/// PROT 0965's stager `FUN_801F7B74` (Doomsday), reached through
+/// `gp[+0x714]` from its parts' op `0x20`:
+///
+/// | Arm | Seats |
+/// |---:|---|
+/// | 0 | `0x801F7CD4`, then `0x801F7D24` (`0x801F7BC0..0x801F7BEC`) |
+/// | 1 | `0x801F7E0C` (`0x801F7BF0..0x801F7C00`): the ring arm 6's `0x801F7DF0` calls every twenty-four frames, each widening off its own `+0xB4` / `+0xB6` rates |
+/// | 2 | `0x801F7EE4` (`0x801F7C04..0x801F7C0C`) |
+///
+/// Each through `FUN_80050ED4` on the caller's `+0x14` / `+0x24` at
+/// `0x1000`.
+///
+/// PORT: FUN_801F7B74 (PROT 0965 stager)
+pub fn doomsday_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<StagerSpawn> {
+    let seat = |r: u32| on_caller(r, caller, 0x1000);
+    match arm {
+        0 => vec![seat(0x801F_7CD4), seat(0x801F_7D24)],
+        1 => vec![seat(0x801F_7E0C)],
+        2 => vec![seat(0x801F_7EE4)],
+        _ => Vec::new(),
+    }
+}
+
 /// PROT 0944's stager `FUN_801F7F2C`, reached through `gp[+0x714]` from its
 /// parts' op `0x20`:
 ///
@@ -352,6 +375,24 @@ pub fn plasma_strike_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<StagerS
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn doomsday_stager_arm_one_seats_the_ring_on_its_caller() {
+        let caller = StagerCaller {
+            pos: [1, 2, 3],
+            rot: [4, 5, 6],
+            ..Default::default()
+        };
+        let s = doomsday_stager_spawns(1, caller);
+        assert_eq!(s.len(), 1);
+        assert_eq!(
+            (s[0].record, s[0].pos, s[0].rot, s[0].scale),
+            (0x801F_7E0C, [1, 2, 3], [4, 5, 6], 0x1000)
+        );
+        assert_eq!(doomsday_stager_spawns(0, caller).len(), 2);
+        assert!(doomsday_stager_spawns(3, caller).is_empty());
+    }
+
     use super::*;
 
     #[test]

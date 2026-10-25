@@ -2007,7 +2007,6 @@
 "801f86b0" = "PROT 0960 (`cast_plasma_strike`) move-VM spawn stager, the 0x801F6734 row for that entry. 2 spawn calls, no damage wrapper and no write to simulation state, so its whole output is spawn records - staged by legaia_overlay_images::cast_effect_pool through World::spawn_cast_module_fx. A byte-identical copy sits at the same VA in PROT 961, inherited mastering residue rather than a second call site."
 "801f81a0" = "PROT 0963 (`cast_genocidal_cannon`) move-VM spawn stager, the 0x801F6734 row for that entry. 4 spawn calls, no damage wrapper and no write to simulation state, so its whole output is spawn records - staged by legaia_overlay_images::cast_effect_pool through World::spawn_cast_module_fx."
 "801f8bf8" = "PROT 0964 (`cast_element_change`) move-VM spawn stager, the 0x801F6734 row for that entry. 2 spawn calls, no damage wrapper and no write to simulation state, so its whole output is spawn records - staged by legaia_overlay_images::cast_effect_pool through World::spawn_cast_module_fx."
-"801f7b74" = "PROT 0965 (`cast_doomsday`) move-VM spawn stager, the 0x801F6734 row for that entry. 2 spawn calls, no damage wrapper and no write to simulation state, so its whole output is spawn records - staged by legaia_overlay_images::cast_effect_pool through World::spawn_cast_module_fx."
 
 
 # PROT 0896, the foreign-build Japanese options / character-status image (base

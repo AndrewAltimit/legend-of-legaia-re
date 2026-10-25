@@ -1102,7 +1102,7 @@ image, its spawn count is the one below, and it calls no damage wrapper.
 | `801F7AB8` | 938 (`cast_chaos_breath`) | spawn stager, 3 spawn calls | PORT (spawn-only) |
 | `801F7AE8` | 925 (`summon_spikefish`) | spawn stager, 3 spawn calls | PORT (spawn-only) |
 | `801F7AF4` | 909 (`summon_viguro`) | spawn stager, `sltiu a1, 7`, 2 spawn calls; writes `+0x0C`, `+0x1DA`, target `+0x1DD`, `ctx+0x279` | PORT |
-| `801F7B74` | 965 (`cast_doomsday`) | spawn stager, 2 spawn calls | DATA |
+| `801F7B74` | 965 (`cast_doomsday`) | spawn stager, 2 spawn calls | PORT (spawn-only) |
 | `801F7BA0` | 952 (`cast_bloody_horns`) | null stager | SCOPE-IGNORE |
 | `801F7BD0` | 936 (`cast_hyper_crush`) | spawn stager, 4 spawn calls | DATA |
 | `801F7DB0` | 941 (`cast_steal`) | spawn stager, `sltiu a1, 5`, 2 spawn calls | DATA |
@@ -3132,7 +3132,13 @@ the caster's negated pair `(-x, 0, -z)` and the angles `(-0x200, 0x800 -
 facing, 0)`, not the origin, and the loop stores ring words into each part
 it seats, `+0xB6 = 0x240 k`, `+0xB4 = 0x300 k` and the level
 `+0x78 = 0x180 k` for `k = 1..10` (`0x801F73C4..0x801F73F8`,
-`doomsday_ring_part_words`): ten nested rings. The tick stores `0xFF` on arm
+`doomsday_ring_part_words`): ten nested rings. Arm 6's `0x801F7DF0` is
+the other ring source: its program calls the stager `FUN_801F7B74` (op
+`0x20`, arm 1) every twenty-four frames, and each call seats one
+`0x801F7E0C` on it, a ring that widens off its own `+0xB4` / `+0xB6` rates
+- the expanding rings behind arms 7 and 8 (`doomsday_stager_spawns`; a
+retail state 120 vsyncs into arm 8 holds eight of them, `+0xB4`
+stepped `0x300` apart). The tick stores `0xFF` on arm
 `0x0C`'s pass (`DOOMSDAY_LAST_ARM`); it used to walk the phase past the
 body's last arm.
 

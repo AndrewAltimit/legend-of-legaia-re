@@ -2,7 +2,7 @@
 //! modules whose stager arms only seat more records: PROT 0905 (Vera), 0906
 //! (Gizam), 0907 (Nighto), 0908 (Zenoir), 0910 (Swordie), 0911 (Orb), 0912
 //! (Freed), 0913 (Nova), the summon-creature modules 0914, 0915, 0917, 0921,
-//! 0928..0933, and the capture cells PROT 0938, 0944, 0946, 0961 and 0962
+//! 0928..0933, and the capture cells PROT 0938, 0944, 0946, 0961, 0962 and 0965
 //! (PROT 0940's stager is a bare `jr ra`). PROT 0909's stager also steps the
 //! module's phase and runs through [`World::run_viguro_stager_calls`].
 
@@ -10,9 +10,10 @@ use super::*;
 use legaia_engine_cast::cast_module_ticks::{
     CALL_WAVE_WAVE_RECORD, FREED_STAGER_FADE, MULE_STAGER_FADE_ARM, MULE_STAGER_FADES, StagerSpawn,
     blade_breath_cell_stager_spawns, call_wave_stager_spawns, chaos_breath_cell_stager_spawns,
-    dead_end_crisis_stager_spawns, freed_stager_spawns, gizam_stager_spawns,
-    guilty_cross_cell_stager_spawns, horn_stager_spawns, nighto_stager_spawns, nova_stager_spawns,
-    orb_stager_spawns, swordie_stager_spawns, vera_stager_spawns, zenoir_stager_spawns,
+    dead_end_crisis_stager_spawns, doomsday_stager_spawns, freed_stager_spawns,
+    gizam_stager_spawns, guilty_cross_cell_stager_spawns, horn_stager_spawns, nighto_stager_spawns,
+    nova_stager_spawns, orb_stager_spawns, swordie_stager_spawns, vera_stager_spawns,
+    zenoir_stager_spawns,
 };
 use legaia_engine_cast::cast_module_ticks::{
     MEGATON_PRESS_HELD_WHITE, MEGATON_PRESS_WHITE_OUT, megaton_press_stager_spawns,
@@ -67,6 +68,7 @@ impl World {
                 | 960
                 | 961
                 | 962
+                | 965
         )
     }
 
@@ -197,6 +199,7 @@ impl World {
                 946 => call_wave_stager_spawns(arm, caller, phase, waves, &mut rand),
                 961 => dead_end_crisis_stager_spawns(arm, caller, &mut rand),
                 962 => blade_breath_cell_stager_spawns(arm, caller),
+                965 => doomsday_stager_spawns(arm, caller),
                 _ => Vec::new(),
             };
             self.casting.module_barra_counter = barra_counter;
