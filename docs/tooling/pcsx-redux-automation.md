@@ -997,6 +997,10 @@ dungeon's cutscene and boss), the `minigame_*_pcsx` load transitions, the
 `battle_gaza2_*` park states, and the mednafen `overworld_battle_bg_angle_*`
 states (PCSX-Redux cannot write a mednafen state). None of their field-only
 claims reads a patched site ([above](#resident-patch-families-in-the-save-state-library)).
+The two boss fights have retail states of their own since: `korb2` and
+`jouind` card boots walked into the Gaza 2 and evolved-Cort fights' scripted
+entries (`gaza2_card_*`, `cort_evolved_card_*`;
+[cast-sequence-oracle.md](cast-sequence-oracle.md#a-monster-cast-from-any-battle-state)).
 
 ## Catalogue
 

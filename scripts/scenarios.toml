@@ -3094,3 +3094,83 @@ description = "PATCHED resident SCUS, inherited from cort_evolved_battle_first_m
 topics = ["battle", "boss", "cast module", "monster pick", "Cort", "evolved Cort", "Doomsday", "spell 0xB6"]
 phase = "battle"
 expected_game_mode = 0x15
+
+# ----------------------------------------------------------------------
+# Retail boss-fight anchors for the cast-sequence oracle. The Gaza 2 and
+# evolved-Cort states above (`battle_gaza2_*`, `cort_evolved_*`) were made
+# on patched discs and keep the patched executable; these are cold boots
+# of a staged, unpatched image + a memory-card CONTINUE, walked into each
+# fight's own scripted entry, so the formation, the stage and the loader
+# are retail's. `patch_taint_audit.py states` and `scan` read all of them
+# retail.
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+slot = 255
+label = "jouind_field_card_boot"
+backup_fingerprint = "509b9f2eb06409e4a46ece8b3e9e1a492359b129b85b5117a202f923d1116641"
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "jouind"
+description = "Bio Castle (jouind) free field run from the endgame card (playthrough-endgame-7saves block 6, PRO-10, restamped to -00 by isolate_card_save.py), cold boot of a staged, unpatched image + memory-card load (autorun_boot_continue.lua under --fast, the calibrated CONTINUE ladder, LEGAIA_SETTLE=400). Player at world (5878, 8560). The jouind P2[4] door into jouine (walk-on tiles (10, 98) / (11, 98)) is the evolved-Cort fight's entry."
+topics = ["field", "jouind", "Bio Castle", "card boot", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "cort_evolved_card_battle_init"
+backup_fingerprint = "d4c09a94ddaab912beca09209356079132bad0579d54b8e20679cb1875a5c172"
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jouine"
+ram_poked = ["*(0x8007C364)+0x14/+0x18 = (1344, 12480) (player set one tile north of the jouind P2[4] door, then walked onto it with the pad)"]
+description = "Evolved-Cort fight (scene jouine, formation cell 0x8007BD0C = [0xB5]) in battle main at the command flow's init (ctx[+6] = 0, before the 0x0A intro and the PROT 0968 arrival baton at 0x0C), retail executable. From jouind_field_card_boot: the player set one tile north of the P2[4] door and walked onto it, CROSS through jouind P2[4]'s cutscene and jouine's arrival record, which commits the fight itself (master mode 8 at about 6800 vsyncs into jouine); checkpointed 20 vsyncs into flow 0. The party's first command input comes about 3300 vsyncs later, once 0968 hands the flow back (battle-command-flow.md, flow 0x0C), so a probe that drives it needs LEGAIA_PRESS_UNTIL past that. The retail reference for the evolved Cort's casts; cort_evolved_battle_first_menu is the same fight on a location-rename image."
+topics = ["battle", "boss", "Cort", "evolved Cort", "jouine", "card boot", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "gaza2_card_battle_init"
+backup_fingerprint = "4386ae877a4deb95b3ea6ca5ef3f7a0c3110fc5daf57620f01c71441f3ea28e9"
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb3"
+ram_poked = ["*(0x8007C364)+0x14/+0x18 = (10176, 12608) in korb2 and (4800, 3008) in korb3 (player set one tile beside each walk-on band, then walked onto it with the pad)"]
+description = "Gaza 2 fight (scene korb3, Sim-Seru Gaza, formation cell 0x8007BD0C = [0xA6]) in battle main at the command flow's init (ctx[+6] = 0, before the 0x0A intro timer), retail executable. From korb2_field_card_boot: the player set beside the korb2 P2[1] door (tile (79, 99)) and walked into korb3, then beside korb3 P2[2] (tiles (36..38, 22), the record whose 3E FF 0F commits the fight) and walked onto it, CROSS through its cutscene; checkpointed 20 vsyncs into flow 0. The retail reference for Gaza 2's casts; the battle_gaza2_* states are the same fight on an arts-AP-override image."
+topics = ["battle", "boss", "Gaza", "korb3", "card boot", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "cort_evolved_card_first_menu"
+backup_fingerprint = "5562a88a39d000ae98c21d1f2e68940e83e6bb7b109beb51482bffb5b4ec6d04"
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jouine"
+description = "Evolved-Cort fight (scene jouine, formation [0xB5]) at the first command input (flow ctx[+6] = 0x1E), retail executable: cort_evolved_card_battle_init run on with no input until PROT 0968's arrival hands the flow back (0x0C -> 0x14 -> 0x1E about 3200 vsyncs in; loader-B tracker 0x8007BC4C = 0x49), checkpointed 10 vsyncs into 0x1E. The retail twin of cort_evolved_battle_first_menu (a location-rename image)."
+topics = ["battle", "boss", "Cort", "evolved Cort", "jouine", "PROT 0968", "card boot", "probe state"]
+
+[[scenarios]]
+slot = 255
+label = "gaza2_card_first_menu"
+backup_fingerprint = "40d6a9ac5b396a8678009a2c7bca061ef3c6f8cd5a856d2ca155efc9026ff6d7"
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb3"
+description = "Gaza 2 fight (scene korb3, formation [0xA6]) at the first command input (flow ctx[+6] = 0x1E), retail executable: gaza2_card_battle_init run on with no input through the intro (0x0A -> 0x0B -> 0x14 -> 0x1E about 140 vsyncs in), checkpointed 10 vsyncs into 0x1E. The retail twin of battle_gaza2_prompt (an arts-AP-override image)."
+topics = ["battle", "boss", "Gaza", "korb3", "card boot", "probe state"]
+
+[[scenarios]]
+label = "gaza2_card_pre_neo_star_slash"
+backup_fingerprint = "26619335f5edfc23a7770b8a951fdf9a396e92e752bab417b8195f5bb45e3460"
+description = "RETAIL executable, probe-poked: gaza2_card_first_menu played forward until Sim-Seru Gaza (seat 3)'s turn, where the monster-pick probe (autorun_cast_sequence.lua, LEGAIA_MONSTER_PICK, LEGAIA_PRESS_UNTIL=3000) rewrote the AI pick's queue at 0x801DAF50 to cat=2 spell=0xA6 (Neo Star Slash, PROT 0960) with the party-wide target +0x1DD = 8; saved one vsync later (LEGAIA_SAVE_INJECT). Load and wait: the cast fires on its own. The action is the probe's, not the AI's; everything else is retail. The retail replacement for gaza2_pre_neo_star_slash."
+topics = ["battle", "boss", "cast module", "monster pick", "Gaza", "Neo Star Slash", "spell 0xA6", "card boot"]
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb3"
+
+[[scenarios]]
+label = "cort_evolved_card_pre_doomsday"
+backup_fingerprint = "32000e2881e67919c63e4667b6c9d49b6382644a9da81679a1ad56250b9a53a8"
+description = "RETAIL executable, probe-poked: cort_evolved_card_first_menu played forward until the evolved Cort (seat 3)'s turn, where the monster-pick probe (autorun_cast_sequence.lua, LEGAIA_MONSTER_PICK, LEGAIA_PRESS_UNTIL=3000) rewrote the AI pick's queue at 0x801DAF50 to cat=2 spell=0xB6 (Doomsday, PROT 0965) with the party-wide target +0x1DD = 8; saved one vsync later (LEGAIA_SAVE_INJECT). Load and wait: the cast fires on its own. The action is the probe's, not the AI's; everything else is retail. The retail replacement for cort_evolved_pre_doomsday."
+topics = ["battle", "boss", "cast module", "monster pick", "Cort", "evolved Cort", "Doomsday", "spell 0xB6", "card boot"]
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jouine"

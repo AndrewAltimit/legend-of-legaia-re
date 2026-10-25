@@ -310,18 +310,40 @@ the fast core with a plain `--caster`:
 | State | Cast |
 |---|---|
 | `koru_pre_blade_breath` / `koru_pre_thunder_needle` / `koru_pre_gigaton_press` | Koru's `0xA2` / `0xA3` / `0xA4` (PROT 0962), on `koru_strip_forced`'s synthetic formation |
-| `gaza2_pre_neo_star_slash` | the Sim-Seru Gaza's `0xA6` (PROT 0960); **patched resident executable** |
-| `cort_evolved_pre_doomsday` | the evolved Cort's `0xB6` (PROT 0965); **patched resident executable** |
+| `gaza2_card_pre_neo_star_slash` | the Sim-Seru Gaza's `0xA6` (PROT 0960), party-wide target |
+| `cort_evolved_card_pre_doomsday` | the evolved Cort's `0xB6` (PROT 0965), party-wide target |
+| `gaza2_pre_neo_star_slash` / `cort_evolved_pre_doomsday` | the same two casts; **patched resident executable** |
 
 The action in each is the probe's, not the AI's: a capture is a statement
 about the cast, not about when the monster would have chosen it.
 
-A saved state keeps the executable its source state held. The Gaza 2 and
-evolved-Cort fights exist in the library only as states made on patched
-discs (`battle_gaza2_prompt`, `cort_evolved_battle_first_menu`), so the two
-states saved from them carry the same `resident_patch` and are not retail
-references; the driver refuses a `resident_patch` state unless given
-`--allow-patched`.
+A saved state keeps the executable its source state held. The first Gaza 2
+and evolved-Cort states were made on patched discs (`battle_gaza2_prompt`,
+`cort_evolved_battle_first_menu`), so the two casts saved from them carry
+the same `resident_patch`; the driver refuses a `resident_patch` state
+unless given `--allow-patched`. The `*_card_*` states are their retail
+replacements: a cold boot of a staged image, a memory-card CONTINUE
+(`playthrough-ladder-pro00-14` block 11 for Sol Tower, `playthrough-endgame-7saves`
+block 6 for Bio Castle), the player set beside each fight's walk-on band
+and walked onto it, and the fight's own scripted entry (`korb3` P2[2]'s
+`3E FF 0F`, `jouine`'s arrival record). `gaza2_card_first_menu` and
+`cort_evolved_card_first_menu` stand at the first command input; the
+evolved Cort's arrival holds the flow on `0x0C` for about 3200 vsyncs
+([battle-command-flow.md](../subsystems/battle-command-flow.md#flow-0x0c-is-the-boss-stage-modules-baton)),
+so a probe run from the fight's opening needs `LEGAIA_PRESS_UNTIL` past it.
+
+### The target has to be the engine's
+
+The engine half dispatches the monster's cast with the target class its
+spell table gives (`World::pick_monster_action`): a party-wide spell aims
+at `+0x1DD = 8`. The battle HUD keys on that byte: a party-wide action
+keeps the three party panels up through the cast
+([battle-hud.md](../subsystems/battle-hud.md)), a single target shows one
+plate. A capture injected with `--target 0` for a party-wide spell records
+retail's one-plate HUD against the engine's three panels in every frame:
+Neo Star Slash scores `0.566` that way and `0.789` with `--target 8`,
+Doomsday `0.567` and `0.770`, with the same engine. Inject the target the
+monster's own pick would write.
 
 ## Waits the engine does not run
 
