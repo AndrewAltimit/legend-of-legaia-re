@@ -759,11 +759,24 @@ fn every_creature_arm_spawn_names_a_record_of_its_module() {
         let mut named = std::collections::BTreeSet::new();
         for phase in 0..=u8::MAX {
             for timing in [cmc::SpawnTiming::Pass, cmc::SpawnTiming::Every] {
+                // PROT 0962's charge bodies (`0xA2..=0xA4`) and PROT 0960's Neo Star
+                // Slash (`0xA6`) seat per body.
+                let blade: Vec<cmc::ModuleSpawn> = if timing == cmc::SpawnTiming::Pass
+                    && matches!(entry, 960 | 962)
+                {
+                    [0xA2, 0xA3, 0xA4, 0xA6]
+                        .into_iter()
+                        .flat_map(|a| cmc::capture_arm_spawns_for(entry, phase, a).iter().copied())
+                        .collect()
+                } else {
+                    Vec::new()
+                };
                 let capture = if timing == cmc::SpawnTiming::Pass {
                     cmc::capture_arm_spawns(entry, phase)
                 } else {
-                    cmc::capture_arm_spawns_every(entry, phase)
+                    cmc::capture_arm_spawns_every(entry, phase, 0xA5)
                 };
+                let capture = capture.iter().chain(blade.iter());
                 for s in cmc::creature_arm_spawns(entry, phase, timing)
                     .iter()
                     .chain(capture)

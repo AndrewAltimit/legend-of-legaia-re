@@ -77,6 +77,21 @@ pub struct CaptureCamArm {
     /// ([`crate::cast_module_ticks::damage_shape_for`]); the module then
     /// owns the cast's outcome and the band's fold is waived.
     pub hit_site: Option<u8>,
+    /// The arm framed the caster through the action SM's **case 6**
+    /// (`FUN_801D5854(ctx[+0x13], 6)`) on this pass: the follow framing on
+    /// the live yaw ladder `ctx[+0x6DA]` and depth `ctx[+0x6D0]`.
+    pub follow_caster: bool,
+    /// The arm framed the caster through the action SM's **case 8**
+    /// (`FUN_801D5854(ctx[+0x13], 8)`) on this pass: the post-action
+    /// framing on the caster and its target.
+    pub end_frame: bool,
+    /// The arm calls the damage wrapper on this pass (a bespoke tick port
+    /// whose hit the band's fold carries): the owed cast folds here, mid-band,
+    /// rather than at the band's exit.
+    pub folds_hit: bool,
+    /// The arm's stores into every party seat `actor_table[0 .. ctx[+0]]`
+    /// (PROT 0960 `0xA6`'s hide and show).
+    pub party_write: CaptureSeatWrite,
 }
 
 /// Absolute stores a capture arm makes into the camera globals: yaw
@@ -147,6 +162,10 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (966, SINGLE_BODY) => Some(super::evil_seru_magic_camera),
         (959, super::MEGATON_PRESS_BODY) => Some(super::megaton_press_camera),
         (960, super::PLASMA_STRIKE_BODY) => Some(super::plasma_strike_camera),
+        (960, super::NEO_STAR_SLASH_BODY) => Some(super::neo_star_slash_camera),
+        (962, super::BLADE_BREATH_BODY) => Some(super::blade_breath_camera),
+        (962, super::THUNDER_NEEDLE_BODY) => Some(super::thunder_needle_camera),
+        (962, super::GIGATON_PRESS_BODY) => Some(super::gigaton_press_camera),
         _ => None,
     }
 }

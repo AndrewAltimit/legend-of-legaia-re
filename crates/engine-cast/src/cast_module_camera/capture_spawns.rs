@@ -683,9 +683,20 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
         944 => body == Some(0x801F_6A04),
         946 => true,
         959 => body == Some(super::MEGATON_PRESS_BODY),
-        960 => body == Some(super::PLASMA_STRIKE_BODY),
+        960 => matches!(
+            body,
+            Some(super::PLASMA_STRIKE_BODY | super::NEO_STAR_SLASH_BODY)
+        ),
         961 => true,
-        962 => body == Some(0x801F_69D8),
+        962 => matches!(
+            body,
+            Some(
+                0x801F_69D8
+                    | super::BLADE_BREATH_BODY
+                    | super::THUNDER_NEEDLE_BODY
+                    | super::GIGATON_PRESS_BODY
+            )
+        ),
         966 => true,
         _ => false,
     }
@@ -712,6 +723,7 @@ pub fn capture_arm_flushes_pool(prot_entry: u32, phase: u8) -> bool {
             | (946, 6)
             | (959, 4 | 0x0B | 0x0E | 0x0F)
             | (960, 4)
+            | (962, 3)
             | (961, 1 | 3 | 5)
     )
 }
@@ -719,9 +731,9 @@ pub fn capture_arm_flushes_pool(prot_entry: u32, phase: u8) -> bool {
 /// The spawn calls capture-class module `prot_entry`'s arm `phase` makes on
 /// **every** pass it runs, held or not; empty for an arm that makes none.
 /// PROT 0962's arm 1 (Ultra Charge's rays).
-pub fn capture_arm_spawns_every(prot_entry: u32, phase: u8) -> &'static [ModuleSpawn] {
+pub fn capture_arm_spawns_every(prot_entry: u32, phase: u8, action: u8) -> &'static [ModuleSpawn] {
     match (prot_entry, phase) {
-        (962, 1) => &E962_1_EVERY,
+        (962, 1) if action == 0xA5 => &E962_1_EVERY,
         _ => &[],
     }
 }
@@ -737,6 +749,18 @@ pub const CAPTURE_PER_PASS_SPAWNS: &[&[ModuleSpawn]] = &[&E962_1_EVERY];
 pub fn capture_arm_spawns_for(prot_entry: u32, phase: u8, action: u8) -> &'static [ModuleSpawn] {
     match (prot_entry, phase) {
         (946, 0) if action == 0x56 => &[],
+        // PROT 0962's arms are per body: Ultra Charge (`0xA5`) seats on
+        // arms 0 and 1, the three charge bodies on arm 3.
+        (962, 3) if action == 0xA2 => &super::blade_breath::E962_A2_3,
+        (962, 3) if action == 0xA3 => &super::blade_breath::E962_A3_3,
+        (962, 3) if action == 0xA4 => &super::blade_breath::E962_A4_3,
+        (962, _) if action != 0xA5 => &[],
+        // PROT 0960's two bodies: Plasma Strike (`0x7B`) and Neo Star Slash
+        // (`0xA6`) seat on different arms.
+        (960, 2) if action == 0xA6 => &super::plasma_strike::E960_A6_2,
+        (960, 4) if action == 0xA6 => &super::plasma_strike::E960_A6_4,
+        (960, 5) if action == 0xA6 => &super::plasma_strike::E960_A6_5,
+        (960, _) if action == 0xA6 => &[],
         _ => capture_arm_spawns(prot_entry, phase),
     }
 }

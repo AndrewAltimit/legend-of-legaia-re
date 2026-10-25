@@ -563,6 +563,13 @@ pub enum SpawnAnchor {
     /// [`Self::VictimBodyGround`] on the caster's angle trio at `0x1000`:
     /// PROT 0960 arm `0x0D` (`0x801F8284..0x801F82EC`).
     VictimBodyGroundCasterRot,
+    /// Point `index` of a ring of `count` about the caster's plane pair, at
+    /// angle `a = (index << 12) / count`: `x + trunc(cos(a) / div)`,
+    /// `z + trunc(sin(a) / div)` off the SCUS tables `*0x8007B7F8` /
+    /// `*0x8007B81C`, on the floor, turned to `a`. PROT 0960 `0xA6` arm 5's
+    /// ten points (`0x801F70F4..0x801F71D8`, `/ 3` by the `0x55555556`
+    /// multiply-high).
+    CasterRing { index: u8, count: u8, div: i16 },
 }
 
 /// The seat a [`SpawnAnchor::AlongVictimHeading`] point starts from.
@@ -634,6 +641,20 @@ pub fn spawn_anchor_point_with(
             )
         }
         SpawnAnchor::PartySeat(n) => seat_at((*seats.party.get(usize::from(n))?)?),
+        SpawnAnchor::CasterRing { index, count, div } => {
+            let c = seats.caster?;
+            let a = ((u32::from(index) << 12) / u32::from(count.max(1))) as u16;
+            let (sin, cos) = trig12(a);
+            let d = i32::from(div);
+            (
+                [
+                    (i32::from(c.x) + i32::from(cos) / d) as i16,
+                    0,
+                    (i32::from(c.z) + i32::from(sin) / d) as i16,
+                ],
+                [0, a as i16, 0],
+            )
+        }
         SpawnAnchor::LiteralScaled { pos, rot, .. } => (pos, rot),
         SpawnAnchor::CasterUnturned { y } => {
             let c = seats.caster?;
@@ -895,6 +916,7 @@ pub(super) fn focus_on(seat: ModuleSeat) -> [i16; 3] {
 }
 
 mod aluru;
+mod blade_breath;
 mod body_kit;
 mod body_paced;
 pub mod capture;
@@ -922,6 +944,12 @@ mod swordie;
 mod theeder_gizam;
 mod viguro;
 pub use aluru::*;
+pub use blade_breath::{
+    BLADE_BREATH_BODY, BLADE_BREATH_STRIKE_CURSOR, GIGATON_PRESS_BODY, GIGATON_PRESS_STRIKE_CURSOR,
+    THUNDER_NEEDLE_BODY, THUNDER_NEEDLE_STRIKE_CURSOR, THUNDER_NEEDLE_TAIL_CURSOR,
+    blade_breath_camera, capture_approach_follows, gigaton_press_camera, gigaton_press_jump_height,
+    thunder_needle_camera,
+};
 pub use capture::*;
 pub use capture_countdown::{ArmCountdown, CountdownWrite, arm_countdown, capture_arm_countdowns};
 pub use capture_spawns::*;
@@ -942,8 +970,8 @@ pub use nighto::*;
 pub use nova::*;
 pub use orb::*;
 pub use plasma_strike::{
-    PLASMA_STRIKE_ARM5_CURSOR, PLASMA_STRIKE_BODY, PLASMA_STRIKE_BURST_CURSOR,
-    PLASMA_STRIKE_COUNTDOWN, plasma_strike_camera,
+    NEO_STAR_SLASH_BODY, PLASMA_STRIKE_ARM5_CURSOR, PLASMA_STRIKE_BODY, PLASMA_STRIKE_BURST_CURSOR,
+    PLASMA_STRIKE_COUNTDOWN, neo_star_slash_camera, plasma_strike_camera,
 };
 pub use puera::*;
 pub use seru::*;

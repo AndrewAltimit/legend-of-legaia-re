@@ -36,7 +36,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 PROFILE = "release-test"
-EXE = REPO / "target" / PROFILE / "legaia-engine"
+# `LEGAIA_CAST_SEQ_EXE` scores another build (a before / after pair) without
+# rebuilding over the one in the tree.
+EXE = Path(os.environ.get("LEGAIA_CAST_SEQ_EXE") or REPO / "target" / PROFILE / "legaia-engine")
 PROBE = "scripts/pcsx-redux/autorun_cast_sequence.lua"
 # Env the retail-compare child carries that would steer the fight somewhere
 # else than the injected cast: its own capture gate, pad drive and replay.
@@ -118,12 +120,16 @@ def run_retail(a, out: Path) -> bool:
         env["LEGAIA_FORCE_ROW"] = a.formation
     if a.party_spd:
         env["LEGAIA_PARTY_SPD"] = str(a.party_spd)
+    if a.monster_pick:
+        env["LEGAIA_MONSTER_PICK"] = "1"
+    if a.save_inject:
+        env["LEGAIA_SAVE_INJECT"] = "1"
     cmd = ["timeout", "--kill-after=10", str(a.retail_timeout), "bash",
            "scripts/pcsx-redux/run_probe.sh", "--lua", PROBE, "--scenario", a.state,
            "--iso", disc, "--out-dir", str(rdir), "--frames", str(a.frames)]
-    # A forced formation row needs the breakpoint core; everything else runs
-    # on the recompiler (vsync hooks only).
-    if not a.formation:
+    # A forced formation row and the monster-pick rewrite need the breakpoint
+    # core; everything else runs on the recompiler (vsync hooks only).
+    if not a.formation and not a.monster_pick:
         cmd.insert(5, "--fast")
     print(f"[retail] capturing {a.state} spell 0x{a.spell:02X} (an emulator run, minutes)")
     with open(rdir / "stdout.txt", "w") as log:
@@ -258,6 +264,13 @@ def main() -> int:
     ap.add_argument("--caster", type=num, default=0, help="seat whose action is rewritten (255 = any party seat)")
     ap.add_argument("--target", type=num, default=3, help="target seat")
     ap.add_argument("--formation", help="retail only: formation row bytes forced at FUN_801DA600 (comma list)")
+    ap.add_argument("--monster-pick", action="store_true",
+                    help="retail: a monster caster (--caster 3..7) gets the cast written where the AI "
+                         "pick FUN_801E9FD4 returns (breakpoint core), so any battle state that reaches "
+                         "its turn records any spell the monster owns a clip for")
+    ap.add_argument("--save-inject", action="store_true",
+                    help="retail: keep the emulator state one vsync past the inject "
+                         "(retail/state_inject.rawsstate), a pre-cast state for the save library")
     ap.add_argument("--party-spd", type=int, default=0, help="retail: write this SPD into the party seats")
     ap.add_argument("--every", type=int, default=2, help="retail vsyncs between frames")
     ap.add_argument("--tail", type=int, default=60, help="vsyncs / ticks past the Done band")

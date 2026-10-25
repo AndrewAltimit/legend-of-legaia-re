@@ -274,6 +274,107 @@ pub fn plasma_strike_camera(
     arm
 }
 
+/// PROT 0960's `0xA6` tick body (Neo Star Slash, the Sim-Seru Gaza).
+pub const NEO_STAR_SLASH_BODY: u32 = 0x801F_69D8;
+
+/// The camera, countdown and seat half of **Neo Star Slash** (PROT 0960,
+/// body `0x801F69D8`, a `beq` / `slti` chain over `0..=6` and `0xFF`; its
+/// phase chain is [`crate::cast_module_ticks::NEO_STAR_SLASH_CHAIN`]). The
+/// countdown is the word `0x801F8E50`, drained `s * d` a pass and re-armed by
+/// each passing arm; `depth` is `ctx[+0x6D0]`. Every shot is on the caster:
+///
+/// | arm | every pass | gate | as it passes |
+/// |---|---|---|---|
+/// | 0 (`0x801F6AC4`) | - | - | cue `0x15D`; shot pitch `0`, yaw `0x800 - facing`, TR `(0, 0x800, depth / 2)`, `0xC` frames; `= s << 5` |
+/// | 1 (`0x801F6B48`) | TR z `+s/2` | word | (clip `0x0A`, rate `4`: the chain); `= 0x60 s` |
+/// | 2 (`0x801F6BCC`) | caster rate `4`; TR z `+s/2` | word | cut pitch `0xC0`, yaw `0x800 - facing`, TR `(0, 0, 3 depth)`; seven records on the caster; `+ 0xC0 s` |
+/// | 3 (`0x801F6D5C`) | caster rate `4`; TR z `-s/2` | word | the caster's loop released, rate `8`; cut pitch `0x60`, yaw `0x800 - facing`, TR `(0, 0x300, 3 depth / 4)`; the party seats hidden (`+0x04 = 0`, `+0x21C = 0xFF`); `+ 0x1C s` |
+/// | 4 (`0x801F6EB4`) | caster rate `4`; TR z `+8s` | word | pool flush; the white and red fades; the party shown; two records on the caster; `+ (s << 7)` (its caster rate `0` is left out, as the chain leaves it) |
+/// | 5 (`0x801F7048`) | TR z `+8s` | word | two records on the caster, three on each point of a ten-point ring about it and three on each live party seat; (the `0x2C6` party sweep: the chain); `+ 0xA0 s` |
+/// | 6 (`0x801F73A8`) | TR z `+4s` | word | (the party row's settle: the chain) |
+///
+/// PORT: FUN_801F69D8 (PROT 0960 `0xA6`; the camera arms, the countdown gates
+/// and the caster / party stores)
+pub fn neo_star_slash_camera(
+    st: &mut ModuleCamState,
+    phase: u8,
+    seats: ModuleCamSeats,
+) -> CaptureCamArm {
+    let s = SPEED_SCALAR as i16;
+    let c = seats.caster;
+    let depth = seats.depth_raw;
+    let shot = |pitch: i16, tr: [i16; 3], frames: u16| ModuleShot {
+        angles: [pitch, yaw_from(0x800, c.facing), 0],
+        tr,
+        focus: focus_on(c),
+        frames,
+    };
+    let tr_z = |k: i16| CaptureDrift {
+        tr_z: k,
+        ..Default::default()
+    };
+    let mut arm = CaptureCamArm {
+        drift_first: true,
+        ..Default::default()
+    };
+    match phase {
+        0 => {
+            st.countdown.0 = SPEED_SCALAR << 5;
+            // `depth / 2` toward zero (`srl 0x1f; addu; sra 1`).
+            arm.shot = Some(shot(0, [0, 0x800, (depth / 2) as i16], 0xC));
+        }
+        1..=6 => {
+            if (2..=4).contains(&phase) {
+                arm.caster_write.rate = Some(4);
+            }
+            arm.drift = Some(tr_z(match phase {
+                1 | 2 => s >> 1,
+                3 => -(s >> 1),
+                6 => 4 * s,
+                _ => 8 * s,
+            }));
+            arm.hold = st.countdown.drain_above(0);
+            if !arm.hold {
+                match phase {
+                    1 => st.countdown.0 = SPEED_SCALAR * 0x60,
+                    2 => {
+                        st.countdown.add(0xC0);
+                        arm.shot = Some(shot(0xC0, [0, 0, (3 * depth) as i16], 1));
+                    }
+                    3 => {
+                        st.countdown.add(0x1C);
+                        arm.caster_write.loop_release = true;
+                        arm.caster_write.rate = Some(8);
+                        // `(3 * depth) / 4` toward zero (`bgez; addiu 3; sra 2`).
+                        arm.shot = Some(shot(0x60, [0, 0x300, ((3 * depth) / 4) as i16], 1));
+                        arm.party_write = CaptureSeatWrite {
+                            colour: Some(0),
+                            render_flag: Some(0xFF),
+                            ..Default::default()
+                        };
+                    }
+                    4 => {
+                        st.countdown.add(1 << 7);
+                        // Arm 4's `sb zero,0x21d(s4)` (`0x801F6F8C`) is left
+                        // out under the module's rate rule: nothing in the
+                        // body restores it, and a frozen caster would hold
+                        // the band's close on a clip that never ends.
+                        arm.party_write = CaptureSeatWrite {
+                            colour: Some(0x2008_0200),
+                            render_flag: Some(0),
+                            ..Default::default()
+                        };
+                    }
+                    5 => st.countdown.add(0xA0),
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
+    }
+    arm
+}
+
 const fn spawn(record: u32, anchor: SpawnAnchor) -> ModuleSpawn {
     ModuleSpawn {
         record: SpawnRecord::Module(record),
@@ -292,6 +393,278 @@ pub(super) const E960_D: [ModuleSpawn; 4] = [
     spawn(0x801F_88A4, SpawnAnchor::VictimBodyGroundCasterRot),
     spawn(0x801F_88E4, SpawnAnchor::VictimBodyGroundCasterRot),
     spawn(0x801F_8924, SpawnAnchor::VictimBodyGroundCasterRot),
+];
+
+/// `0x801F6C78..0x801F6D24`, `0xA6`'s arm 2: seven records on the caster.
+pub(super) const E960_A6_2: [ModuleSpawn; 7] = [
+    spawn(0x801F_8980, SpawnAnchor::CasterShifted { dy: 0, dz: 0 }),
+    spawn(0x801F_89CC, SpawnAnchor::CasterShifted { dy: 0, dz: 0 }),
+    spawn(0x801F_8A18, SpawnAnchor::CasterShifted { dy: 0, dz: 0 }),
+    spawn(0x801F_8A64, SpawnAnchor::CasterShifted { dy: 0, dz: 0 }),
+    spawn(0x801F_8AB0, SpawnAnchor::CasterShifted { dy: 0, dz: 0 }),
+    spawn(0x801F_8B04, SpawnAnchor::CasterShifted { dy: 0, dz: 0 }),
+    spawn(0x801F_8B90, SpawnAnchor::CasterShifted { dy: 0, dz: 0 }),
+];
+/// `0x801F7000..0x801F7034`, `0xA6`'s arm 4: two records on the caster.
+pub(super) const E960_A6_4: [ModuleSpawn; 2] = [
+    spawn(0x801F_8BF4, SpawnAnchor::CasterShifted { dy: 0, dz: 0 }),
+    spawn(0x801F_8C58, SpawnAnchor::CasterShifted { dy: 0, dz: 0 }),
+];
+/// `0x801F7094..0x801F7268`, `0xA6`'s arm 5: two records on the caster,
+/// then three on each point of a ten-point ring about it (radius `0x1000 /
+/// 3`), then the same three on every live party seat ahead of its hit.
+pub(super) const E960_A6_5: [ModuleSpawn; 41] = [
+    spawn(0x801F_8D44, SpawnAnchor::CasterShifted { dy: 0, dz: 0 }),
+    spawn(0x801F_8DA8, SpawnAnchor::CasterShifted { dy: 0, dz: 0 }),
+    spawn(
+        0x801F_8CB8,
+        SpawnAnchor::CasterRing {
+            index: 0,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8CF0,
+        SpawnAnchor::CasterRing {
+            index: 0,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8E0C,
+        SpawnAnchor::CasterRing {
+            index: 0,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8CB8,
+        SpawnAnchor::CasterRing {
+            index: 1,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8CF0,
+        SpawnAnchor::CasterRing {
+            index: 1,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8E0C,
+        SpawnAnchor::CasterRing {
+            index: 1,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8CB8,
+        SpawnAnchor::CasterRing {
+            index: 2,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8CF0,
+        SpawnAnchor::CasterRing {
+            index: 2,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8E0C,
+        SpawnAnchor::CasterRing {
+            index: 2,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8CB8,
+        SpawnAnchor::CasterRing {
+            index: 3,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8CF0,
+        SpawnAnchor::CasterRing {
+            index: 3,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8E0C,
+        SpawnAnchor::CasterRing {
+            index: 3,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8CB8,
+        SpawnAnchor::CasterRing {
+            index: 4,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8CF0,
+        SpawnAnchor::CasterRing {
+            index: 4,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8E0C,
+        SpawnAnchor::CasterRing {
+            index: 4,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8CB8,
+        SpawnAnchor::CasterRing {
+            index: 5,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8CF0,
+        SpawnAnchor::CasterRing {
+            index: 5,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8E0C,
+        SpawnAnchor::CasterRing {
+            index: 5,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8CB8,
+        SpawnAnchor::CasterRing {
+            index: 6,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8CF0,
+        SpawnAnchor::CasterRing {
+            index: 6,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8E0C,
+        SpawnAnchor::CasterRing {
+            index: 6,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8CB8,
+        SpawnAnchor::CasterRing {
+            index: 7,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8CF0,
+        SpawnAnchor::CasterRing {
+            index: 7,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8E0C,
+        SpawnAnchor::CasterRing {
+            index: 7,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8CB8,
+        SpawnAnchor::CasterRing {
+            index: 8,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8CF0,
+        SpawnAnchor::CasterRing {
+            index: 8,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8E0C,
+        SpawnAnchor::CasterRing {
+            index: 8,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8CB8,
+        SpawnAnchor::CasterRing {
+            index: 9,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8CF0,
+        SpawnAnchor::CasterRing {
+            index: 9,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(
+        0x801F_8E0C,
+        SpawnAnchor::CasterRing {
+            index: 9,
+            count: 10,
+            div: 3,
+        },
+    ),
+    spawn(0x801F_8CB8, SpawnAnchor::PartySeat(0)),
+    spawn(0x801F_8CF0, SpawnAnchor::PartySeat(0)),
+    spawn(0x801F_8E0C, SpawnAnchor::PartySeat(0)),
+    spawn(0x801F_8CB8, SpawnAnchor::PartySeat(1)),
+    spawn(0x801F_8CF0, SpawnAnchor::PartySeat(1)),
+    spawn(0x801F_8E0C, SpawnAnchor::PartySeat(1)),
+    spawn(0x801F_8CB8, SpawnAnchor::PartySeat(2)),
+    spawn(0x801F_8CF0, SpawnAnchor::PartySeat(2)),
+    spawn(0x801F_8E0C, SpawnAnchor::PartySeat(2)),
 ];
 
 #[cfg(test)]
@@ -325,5 +698,29 @@ mod tests {
         st.caster_loops = Some(0);
         assert!(!plasma_strike_camera(&mut st, 6, seats).hold);
         assert_eq!(dwell(&mut st, 7), 32);
+    }
+
+    #[test]
+    fn neo_star_slash_paces_on_its_word_and_hides_the_party() {
+        let seats = ModuleCamSeats {
+            depth_raw: 0x1000,
+            ..Default::default()
+        };
+        let mut st = ModuleCamState::default();
+        let a = neo_star_slash_camera(&mut st, 0, seats);
+        assert_eq!(a.shot.unwrap().tr, [0, 0x800, 0x800]);
+        let dwell = |st: &mut ModuleCamState, phase: u8| {
+            (1..)
+                .find(|_| !neo_star_slash_camera(st, phase, seats).hold)
+                .unwrap()
+        };
+        assert_eq!(dwell(&mut st, 1), 32);
+        assert_eq!(dwell(&mut st, 2), 96);
+        assert_eq!(dwell(&mut st, 3), 192);
+        let a = (0..)
+            .map(|_| neo_star_slash_camera(&mut st, 4, seats))
+            .find(|a| !a.hold)
+            .unwrap();
+        assert_eq!(a.party_write.render_flag, Some(0));
     }
 }

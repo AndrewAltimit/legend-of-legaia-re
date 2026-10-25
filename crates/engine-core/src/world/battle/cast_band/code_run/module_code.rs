@@ -321,6 +321,22 @@ impl World {
             capture_held = arm.hold;
             capture_arm = Some(arm);
         }
+        // A director arm that names the body's damage-wrapper call folds the
+        // owed cast on the pass it makes it (PROT 0962 `0xA2` arm 3), so the
+        // victim's reaction - which the body's next arm waits out - starts
+        // there, as retail's does.
+        if let Some(arm) = capture_arm
+            && arm.folds_hit
+            && !arm.hold
+            && self.casting.module_hit_arm != Some(phase_in)
+        {
+            self.casting.module_hit_arm = Some(phase_in);
+            self.fold_pending_cast();
+            caster = self.cast_view(caster_slot);
+            victim = self.cast_view(victim_slot);
+            seat = self.cast_view(seat_slot);
+            (caster_orig, victim_orig, seat_orig) = (caster, victim, seat);
+        }
         // PROT 0966 (Evil Seru Magic) has no other port: its seat half rides
         // the director's gate, on the phase the director is answering for.
         if entry == 966
@@ -456,6 +472,21 @@ impl World {
         );
         run.camera_follow = direction.and_then(|d| d.follow);
         run.camera_end_frame = direction.is_some_and(|d| d.end_frame);
+        // A capture director's framing-case calls (PROT 0962 `0xA2`): case 6
+        // follows the caster on the live yaw ladder and depth, case 8 is the
+        // post-action framing.
+        if let Some(arm) = capture_arm {
+            run.camera_end_frame |= arm.end_frame;
+            if arm.follow_caster {
+                let st = self.module_cam_with_yaw_base();
+                let seats = self.module_cam_seats(caster_slot, victim_slot);
+                run.camera_follow = Some(legaia_engine_cast::cast_module_camera::ModuleFollow {
+                    seat: seats.caster,
+                    yaw_base: st.yaw_base,
+                    depth_raw: seats.depth_raw,
+                });
+            }
+        }
         run.camera_nudge = direction.and_then(|d| d.nudge);
         run.spawns = direction.map_or(&[], |d| d.spawns);
         run.arm_point = direction.and_then(|d| d.arm_point);
@@ -1320,6 +1351,11 @@ impl World {
         if let Some(arm) = capture_arm {
             self.apply_capture_seat_writes(caster_slot, arm.caster_write);
             self.apply_capture_seat_writes(victim_slot, arm.victim_write);
+            if !arm.party_write.is_empty() {
+                for slot in 0..self.party.party_count {
+                    self.apply_capture_seat_writes(slot, arm.party_write);
+                }
+            }
             // A director that lands the module's wrapper hits itself (PROT
             // 0959's three sites, arm `0x0F`'s many times over): each is
             // `FUN_801DD6B4(power, ctx[+0x13], 0)` aimed at `0x801C9370[0]`,

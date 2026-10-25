@@ -26,6 +26,9 @@ impl World {
         st.caster_body = body(self, caster_slot);
         st.victim_body = body(self, victim_slot);
         st.lead_roster = (self.party_roster_slot(0) + 1) as u8;
+        // The victim's `+0x1D9` back on idle (or a downed seat on clip `8`),
+        // the poll a body's settle arm makes (PROT 0962 `0xA2` arm 4).
+        st.victim_settled = self.chain_seat_settled(usize::from(victim_slot), false);
         // The caster's clip state, for the bodies that wait on it.
         let caster = self
             .actors

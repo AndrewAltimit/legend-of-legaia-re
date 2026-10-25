@@ -94,7 +94,7 @@ impl World {
             // display tick, so the call is made on the tick that opens a
             // battle frame. Seated per tick, `cort_evolved_ultra_charge_mid_cast`
             // held 127 live rays against retail's 33.
-            let every = cmc::capture_arm_spawns_every(run.prot_entry, arm);
+            let every = cmc::capture_arm_spawns_every(run.prot_entry, arm, spell_id);
             let opens_pass = self
                 .battle
                 .frame_clock
@@ -187,6 +187,23 @@ impl World {
                         cam.drift_module_tr_x(d.tr_x);
                     }
                 }
+            }
+            // The arm's framing-case calls come last in its pass (PROT 0962
+            // `0xA2`: case 6 on the walk, case 8 from the strike on).
+            if let Some(f) = run.camera_follow {
+                let actor = legaia_engine_battle_vm::battle_cam_script::BattleCamActor {
+                    facing: i32::from(f.seat.facing),
+                    world: [
+                        f32::from(f.seat.x),
+                        f32::from(f.seat.y),
+                        f32::from(f.seat.z),
+                    ],
+                    height: None,
+                };
+                cam.arm_module_follow(actor, f.yaw_base, f.depth_raw);
+            }
+            if run.camera_end_frame {
+                cam.arm_module_end_frame();
             }
         }
         if run.tick_ported && run.busy {
@@ -343,6 +360,31 @@ impl World {
                 );
                 a.battle.facing_angle = bearing.wrapping_add(0x800) & 0xFFF;
                 a.battle.queued_anim = CAPTURE_WALK_ENTRY;
+                // A body whose walk arms frame the caster through the action
+                // SM's case 6 every pass (PROT 0962 `0xA2`, `jal 0x801D5854`
+                // with `a1 = 6` at `0x801F7C70` / `0x801F7CEC`).
+                if let Some(spell) = self.casting.capture_spell
+                    && let Some(e) = self.cast_module_for(spell)
+                    && legaia_engine_cast::cast_module_camera::capture_approach_follows(
+                        e,
+                        legaia_engine_cast::cast_module_ticks::capture_tick_body(e, spell),
+                    )
+                {
+                    let seats = self.module_cam_seats(run.slot, victim);
+                    if let Some(cam) = self.battle.camera.as_mut() {
+                        let yaw_base = cam.action_yaw_base();
+                        let actor = legaia_engine_battle_vm::battle_cam_script::BattleCamActor {
+                            facing: i32::from(seats.caster.facing),
+                            world: [
+                                f32::from(seats.caster.x),
+                                f32::from(seats.caster.y),
+                                f32::from(seats.caster.z),
+                            ],
+                            height: None,
+                        };
+                        cam.arm_module_follow(actor, yaw_base, seats.depth_raw);
+                    }
+                }
                 CasterStageGate::Hold
             }
             CasterStagePhase::Staging => {
