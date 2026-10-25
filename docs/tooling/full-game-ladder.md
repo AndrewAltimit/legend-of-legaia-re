@@ -1620,10 +1620,30 @@ the bag and its own spell list give it:
 - **The stance waits on a heal that can come.** The hold below five eighths
   lasts only while the bag holds a restorative; with none left the member
   goes on alternating Spirit and Arts rounds.
-- **An attack Elixir first.** The member drinks a Power Elixir on itself
-  before its first Arts round (the `x6/5` attack ramp lasts the battle), or a
-  Fury Boost when its Miracle string is armed and the boosted pool pays for
-  it. Outside a duel these wait for a foe of ten times the party's HP.
+- **The duellists wear the bag's best Goods.** The upkeep only fills an
+  empty Goods slot, so a run keeps on whatever its first chests held: the
+  continuous run met Che with Gala in a Rot Guard and AP Boost 1 while the
+  bag held a Power Ring, a War Soul and a Life Ring. Before the walk onto
+  the duel band (and before any staged fight of the stretch to
+  `nivora_late`), each duellist in the order the duels take them - Gala,
+  Noa, Vahn - trades its least wanted worn accessory for the bag's most
+  wanted one it does not already wear, while the bag holds one worth more
+  (the upkeep's own ranking of passives); what comes off goes back to the
+  bag for the next duellist. Gala then fights Che with ATK +20%, Arts Power
+  and Max HP +10% (1891 to 2080).
+- **Elixirs first, one turn each.** Before its first Arts round the member
+  drinks the one-battle Elixirs whose ramp it lacks - defence, attack, speed
+  - taking first the one that covers the most of them: a Wonder Elixir (all
+  four stats) is the three single-stat ramps for one turn of the foe's
+  swings instead of three. Each ramp is drunk once: the port reverts a
+  ramp's earlier delta before it applies a repeat (`apply_battle_buff`), so
+  a second Power Elixir buys nothing. A member whose Miracle string the
+  boosted pool pays for drinks a Fury Boost instead. Outside a duel the
+  Fury Boost and the attack Elixir wait for a foe of ten times the party's
+  largest HP, or for a race against a timed finisher (Koru) whatever that
+  HP is: Koru's 20000 is ten times a 1891-HP Gala but not a 2080-HP one in
+  a Life Ring, and a party that measured the race by HP alone typed short
+  strings into it and lost six times.
 - **Spells once the bag is dry.** Under three fifths of its HP with no
   restorative left, it casts the healing spell it knows that restores the
   most and that it can pay for (Spoon, 270 HP for 45 MP, for all three

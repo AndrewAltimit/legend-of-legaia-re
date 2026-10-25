@@ -389,8 +389,13 @@ pub(super) fn wanted_fury_item(
         .unwrap_or(1)
         .max(1);
     // A solo duel ([`solo_duel`]) is such a fight too: its member's Arts are
-    // all the damage the fight gets.
+    // all the damage the fight gets. So is a race against a timed finisher
+    // ([`racing_a_finisher`]) whatever the party's HP: Koru's 20000 is ten
+    // times a 1891-HP Gala but not a 2080-HP one, and a Gala in a Life Ring
+    // left Vahn and Noa typing short strings into a race they lost six
+    // times at about a third of its HP.
     if !solo_duel(w)
+        && !racing_a_finisher(w)
         && !(n..w.actors.len()).any(|k| {
             let a = &w.actors[k].battle;
             a.hp > 0 && u32::from(a.max_hp) >= ours * 10
@@ -483,42 +488,30 @@ pub(super) fn wanted_power_item(
                 .any(|b| b.slot == actor && b.stat == stat)
         };
         let ids: Vec<u8> = ids.collect();
-        // A Shield Elixir first, once: the duel's foe swings every round and
-        // its specials land on the member whatever it does, so a defence
-        // ramp for the whole fight is every heal it would otherwise drink.
-        // Gala met Che Delilas at level 30 with four in the bag and took
-        // 370..740 a round unguarded; the Flowers' 800 could not keep up.
-        if !has(BuffStat::Defense)
-            && let Some(id) = ids
-                .iter()
-                .copied()
-                .filter(|&id| {
-                    w.tables
-                        .item_catalog
-                        .get(id)
-                        .is_some_and(|e| e.usable_in_battle)
-                        && matches!(table.stat_effect(id),
-                            Some(StatItemEffect::BuffOneBattle(stats)) if stats.contains(&StatTarget::Defense))
-                })
-                .min_by_key(|&id| match table.stat_effect(id) {
-                    Some(StatItemEffect::BuffOneBattle(stats)) => stats.len(),
-                    _ => usize::MAX,
-                })
-        {
-            return Some((id, actor));
-        }
-        if !has(BuffStat::Attack)
-            && let Some(id) = attack_elixir(&mut ids.iter().copied())
-        {
-            return Some((id, actor));
-        }
-        // Then a Speed Elixir, once: a member that acts ahead of the foe
-        // lands its heal before the swing that would have dropped it (Gala
-        // left Che's special at 314 and fell to the next round's first blow,
-        // her Flower still queued behind it).
-        if has(BuffStat::Speed) {
-            return None;
-        }
+        // The ramps it wants, each once: defence first (the duel's foe swings
+        // every round and its specials land on the member whatever it does,
+        // so a defence ramp for the whole fight is every heal it would
+        // otherwise drink - Gala met Che Delilas at level 30 with four Shield
+        // Elixirs in the bag and took 370..740 a round unguarded), then
+        // attack, then speed (a member that acts ahead of the foe lands its
+        // heal before the swing that would have dropped it: Gala left Che's
+        // special at 314 and fell to the next round's first blow, her Flower
+        // still queued behind it).
+        let missing: Vec<StatTarget> = [
+            (StatTarget::Defense, BuffStat::Defense),
+            (StatTarget::Attack, BuffStat::Attack),
+            (StatTarget::Speed, BuffStat::Speed),
+        ]
+        .into_iter()
+        .filter(|&(_, b)| !has(b))
+        .map(|(t, _)| t)
+        .collect();
+        // Every turn spent drinking is a round of the foe's swings with no
+        // Arts in it, so the Elixir that covers the most of what is missing
+        // goes first: one Wonder Elixir (all four stats) is the three
+        // single-stat Elixirs' ramps for one turn instead of three. Among
+        // equals, the one that covers the earliest missing stat, then the
+        // one with the fewest stats (the single-stat Elixir is the cheaper).
         return ids
             .iter()
             .copied()
@@ -527,14 +520,17 @@ pub(super) fn wanted_power_item(
                     .item_catalog
                     .get(id)
                     .is_some_and(|e| e.usable_in_battle)
-                    && matches!(table.stat_effect(id),
-                        Some(StatItemEffect::BuffOneBattle(stats)) if stats.contains(&StatTarget::Speed))
             })
-            .min_by_key(|&id| match table.stat_effect(id) {
-                Some(StatItemEffect::BuffOneBattle(stats)) => stats.len(),
-                _ => usize::MAX,
+            .filter_map(|id| match table.stat_effect(id) {
+                Some(StatItemEffect::BuffOneBattle(stats)) => {
+                    let covered = missing.iter().filter(|t| stats.contains(t)).count();
+                    let first = missing.iter().position(|t| stats.contains(t))?;
+                    Some(((std::cmp::Reverse(covered), first, stats.len()), id))
+                }
+                _ => None,
             })
-            .map(|id| (id, actor));
+            .min()
+            .map(|(_, id)| (id, actor));
     }
     if usize::from(actor) >= n || miracle_ready(w, actor) || miracle_armed_fury(w, actor) {
         return None;
@@ -544,10 +540,12 @@ pub(super) fn wanted_power_item(
         .max()
         .unwrap_or(1)
         .max(1);
-    if !(n..w.actors.len()).any(|k| {
-        let a = &w.actors[k].battle;
-        a.hp > 0 && u32::from(a.max_hp) >= ours * 10
-    }) {
+    if !racing_a_finisher(w)
+        && !(n..w.actors.len()).any(|k| {
+            let a = &w.actors[k].battle;
+            a.hp > 0 && u32::from(a.max_hp) >= ours * 10
+        })
+    {
         return None;
     }
     let target = (0..n as u8).find(|&m| {
