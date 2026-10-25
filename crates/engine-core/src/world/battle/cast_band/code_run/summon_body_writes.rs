@@ -143,8 +143,9 @@ impl World {
     ///
     /// Not carried: the per-seat tallies `0x801F6978` / `0x801F6980` the
     /// quartered roll is checked against, the first argument's `0x10` /
-    /// `0x12` mode (the predamage port has one summon branch), and PROT 0929
-    /// arm 16's and PROT 0934 arm `0x18`'s per-pass ladders.
+    /// `0x12` mode (the predamage port has one summon branch), and PROT 0934
+    /// arm `0x18`'s per-pass ladder. PROT 0929 arm 16's is
+    /// [`Self::mule_wave_hit`].
     pub(in crate::world::battle::cast_band) fn apply_summon_pre_hits(
         &mut self,
         entry: u32,
@@ -279,9 +280,11 @@ impl World {
         phase_in: u8,
         passed: bool,
         monster_count: u8,
+        caster: u8,
+        spell_id: u8,
     ) {
         use legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN;
-        self.mule_row_seat(phase_in, passed, monster_count);
+        self.mule_row_seat(phase_in, passed, monster_count, caster, spell_id);
         if passed && let Some(scene) = self.casting.active_summon.as_mut() {
             let kills = legaia_engine_cast::cast_module_camera::mule_arm_kills(phase_in);
             let ends = legaia_engine_cast::cast_module_camera::mule_arm_loop_ends(phase_in);
@@ -342,6 +345,8 @@ impl World {
                 (16, true) => {
                     a.battle.render_scale = Some(scale.wrapping_shl(1));
                     a.move_state.world_y = 0;
+                    // `sh zero,0x48` (`0x801F8444`): the roll back to rest.
+                    a.battle.render_roll = 0;
                 }
                 _ => {}
             }
@@ -357,11 +362,17 @@ impl World {
     /// Arm 16's every pass walks the row's wave front `0x801F9AC8` (from
     /// arm 15's `-0x100`, `+ step * scalar / 2` a pass) and lifts each
     /// monster it has passed `4 * step * scalar` a pass up to `+0x36 = -0x100`
-    /// (`0x801F7D9C..0x801F8108`). Not carried: the same pass's roll
-    /// `+0x48 += 16 * step * scalar` (`0x801F8110..0x801F8164`), which the
-    /// battle body draw does not read, and the clip it stages on each struck
-    /// monster.
-    fn mule_row_seat(&mut self, phase: u8, passed: bool, monster_count: u8) {
+    /// (`0x801F7D9C..0x801F8108`) and rolls it `+0x48 += 16 * step *
+    /// scalar` while the Mystic Shield is down (`0x801F8110..0x801F8164`);
+    /// the strike on each passed monster is [`Self::mule_wave_hit`].
+    fn mule_row_seat(
+        &mut self,
+        phase: u8,
+        passed: bool,
+        monster_count: u8,
+        caster: u8,
+        spell_id: u8,
+    ) {
         let monsters = usize::from(monster_count);
         let map = self.cast_seat_map();
         let slots: Vec<(usize, usize)> = (0..monsters)
@@ -391,16 +402,34 @@ impl World {
                 }
             }
             (15, true) => self.casting.module_mule_front = -0x100,
+            (18, _) => self.battle.combo_cluster_held = false,
             (16, _) => {
+                // The wave's popups go up without opening the combo cluster:
+                // each hit clears the readout flag the damage kernel raised
+                // (`sb zero,0x8007B64C` at `0x801F7E60`), as PROT 0959's
+                // wrapper hits do. The hit arm 18's own kernel call raises it
+                // again, so the hold ends there.
+                self.battle.combo_cluster_held = true;
                 self.casting.module_mule_front += t / 2;
                 let front = self.casting.module_mule_front;
+                let shield = self.mystic_shield_up();
                 for &(_, e) in &slots {
+                    self.mule_wave_hit(e, front, shield, caster, spell_id);
                     let Some(a) = self.actors.get_mut(e) else {
                         continue;
                     };
                     let m = &mut a.move_state;
-                    if i32::from(m.world_z) < front && m.world_y >= -0xFF {
+                    if i32::from(m.world_z) >= front {
+                        continue;
+                    }
+                    if m.world_y >= -0xFF {
                         m.world_y = m.world_y.wrapping_sub((4 * t) as i16);
+                    }
+                    // The roll `+0x48 += 16 * step * scalar` (`0x801F8110..
+                    // 0x801F8164`), skipped while the Mystic Shield is up.
+                    if !shield {
+                        a.battle.render_roll =
+                            a.battle.render_roll.wrapping_add((16 * t) as u16) & 0xFFF;
                     }
                 }
             }
@@ -421,6 +450,63 @@ impl World {
             }
             _ => {}
         }
+    }
+
+    /// One pass of PROT 0929 arm 16's wave hit on monster slot `slot`
+    /// (`0x801F7DD8..0x801F80A8`). A living, targetable monster with no clip
+    /// playing (`+0x1D9 == 0`) that the wave front `front` has passed, with
+    /// the Mystic Shield down, takes a third of the summon roll
+    /// `FUN_801DD0AC(0x10, 7, seat)` - `rand() % 16 + 16` when that comes to
+    /// zero - plus `rand() % (hit / 8 + 1)`, its popup pushed with that
+    /// amount (`FUN_801F44A0`), the HP write clamped to `HP - 1` (the wave
+    /// cannot kill) and its reaction clip `+0x1EF` (else `+0x1F0`) staged with
+    /// the restage bits `5`. A living monster the wave does not hit this pass
+    /// has its staged clip cleared (`sb zero,0x1DA`, `0x801F809C..0x801F80A8`).
+    ///
+    /// Not carried: the damage tallies the roll is booked against
+    /// (`0x8007BD14`, or `0x801F6980 + seat * 2` under a group target), and
+    /// the byte `0x8007B64C` the hit clears.
+    fn mule_wave_hit(&mut self, slot: usize, front: i32, shield: bool, caster: u8, spell_id: u8) {
+        use legaia_engine_cast::cast_module_ticks::FLAG_NON_TARGETABLE;
+        let s = slot as u8;
+        let v = self.cast_view(s);
+        if v.hp == 0 {
+            return;
+        }
+        let z = self
+            .actors
+            .get(slot)
+            .map_or(0, |a| i32::from(a.move_state.world_z));
+        // `+0x1D9 == 0`: no clip playing - the engine's reaction channel
+        // included, where a staged reaction plays (`battle_current_anim`).
+        let hittable = v.flags & FLAG_NON_TARGETABLE == 0 && self.battle_current_anim(slot) == 0;
+        if !hittable || z >= front || shield {
+            let mut v = v;
+            v.staged_anim = 0;
+            self.write_cast_view(s, &v);
+            return;
+        }
+        let Some(roll) = self.player_summon_predamage(caster, s, spell_id) else {
+            return;
+        };
+        let mut hit = u32::from(roll) / 3;
+        if hit == 0 {
+            hit = self.next_rand() % 16 + 16;
+        }
+        hit += self.next_rand() % (hit / 8 + 1);
+        self.battle
+            .hit_fx
+            .push(legaia_engine_battle::battle_events::BattleHitFx {
+                target_slot: s,
+                amount: hit.min(u32::from(u16::MAX)) as u16,
+                is_heal: false,
+                is_crit: false,
+            });
+        let mut v = self.cast_view(s);
+        legaia_engine_cast::seru_magic_ticks::summon_pre_hit(&mut v, hit);
+        // Arm 16 always ORs both restage bits (`ori v0,v0,0x5`).
+        v.restage |= 0x05;
+        self.write_cast_view(s, &v);
     }
 
     /// PROT 0915's (Mushura) arms 0 and 1 show the latched victim on every

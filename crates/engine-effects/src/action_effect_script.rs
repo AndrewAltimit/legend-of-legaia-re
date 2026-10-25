@@ -377,14 +377,13 @@ impl FacingBias {
 ///
 /// PORT: FUN_801DEA50 (`0x801ded0c..0x801ded38` and siblings).
 ///
-/// `scale` is the `u16` at the actor's mesh header `+0x72`. The product is
+/// `scale` is the `u16` at the actor's render node `+0x72`. The product is
 /// biased by `0xFFF` when negative before the `>> 12`, i.e. it truncates
 /// toward zero rather than flooring.
 ///
-/// Input caveat (narrower than a missing caller): engine battle actors carry
-/// a typed pose and no mesh-header pointer, so the live tick substitutes the
-/// q12 unit (`0x1000`) for the retail `actor[+0x22C][+0x72]` word - offsets
-/// are unscaled until the per-actor render-node scale is modeled.
+/// The live tick feeds the actor's render-node scale
+/// (`BattleActor::render_scale`, the allocator's `0x1000` unless a cast
+/// module resized the body).
 pub fn scale_offset(off: i16, scale: u16) -> i32 {
     let p = i32::from(off) * i32::from(scale);
     let p = if p < 0 { p + 0xFFF } else { p };

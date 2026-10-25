@@ -2505,8 +2505,13 @@ its passes, held or not (`0x801F6D04`, ahead of the stream-token gate),
 arm 0 re-seats the row on the alternate-family seat at half `x` and half
 `z` less `0x226`, facing `0x800`, and the last arm puts it back
 (`World::mule_row_seat`); arm 16 lifts each monster its wave front has
-passed to `+0x36 = -0x100` (its roll `+0x48` and per-pass wave hits are not
-carried); arm 5's pass hides the row, arm 11's shows it again turned to the party at
+passed to `+0x36 = -0x100` and rolls it `16 * step * scalar` a pass about
+its forward axis (`+0x48`, which both hosts draw as `BattleActor::render_roll`),
+and strikes each idle one it has passed on every pass: a third of the
+summon roll (`rand() % 16 + 16` when that is zero) plus `rand() % (hit / 8 +
+1)`, clamped to `HP - 1`, its popup up and its reaction staged, with the
+readout flag `0x8007B64C` cleared so the combo cluster stays shut
+(`World::mule_wave_hit`, `0x801F7DD8..0x801F80A8`); arm 5's pass hides the row, arm 11's shows it again turned to the party at
 half its render scale (node `+0x72 >>= 1`, `0x801F75BC..0x801F75C8`), arm
 16's pass hides it and doubles the scale back (`0x801F842C..0x801F8460`;
 arm 17 opens at `0x801F8488`), and the hit arm 18 shows the monsters it

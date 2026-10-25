@@ -492,6 +492,12 @@ pub struct BattleActor {
     /// modules: PROT 0923 (Gilium) zeroes its creature's on arm 3 and grows
     /// it through arm 4 ([`Self::render_scale_q12`]).
     pub render_scale: Option<u16>,
+    /// `+0x48` - the body's **roll** (12-bit angle). The draw builds the
+    /// body's matrix from the trio `(0, +0x46, +0x48)` in retail's
+    /// `Rx * Ry * Rz` order, so a non-zero word turns the body about its
+    /// forward axis. Zero on every body but the ones a cast module tips:
+    /// PROT 0929 (Mule) rolls the monsters its arm-16 wave front has passed.
+    pub render_roll: u16,
     /// `+0x21B` - hit-count bound (script-defined; loop exits at
     /// `ctx.hit_counter >= hit_count_bound`).
     pub hit_count_bound: u8,
@@ -707,6 +713,11 @@ impl BattleActor {
     /// at the allocator's unity.
     pub fn render_scale_q12(&self) -> f32 {
         self.render_scale.map_or(1.0, |s| f32::from(s) / 4096.0)
+    }
+
+    /// [`Self::render_roll`] in radians (`0` at rest).
+    pub fn render_roll_radians(&self) -> f32 {
+        f32::from(self.render_roll & 0xFFF) / 4096.0 * std::f32::consts::TAU
     }
 
     /// Read a parameter byte at `strike_index + offset`.

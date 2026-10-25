@@ -45,10 +45,11 @@ impl World {
                 i32::from(actor.move_state.world_y),
                 i32::from(actor.move_state.world_z),
             ),
-            // Retail scales offsets by the render node's mesh-header scale
-            // (`actor[+0x22C][+0x72]`); the engine actor carries no render
-            // node, so the q12 unit stands in (see `fx::scale_offset`).
-            scale: 1 << 12,
+            // Retail scales offsets by the render node's scale
+            // (`actor[+0x22C][+0x72]`, `BattleActor::render_scale`): unity on
+            // every body but one a cast module resizes (PROT 0929's and
+            // 0927's half-scale monster row).
+            scale: actor.battle.render_scale.unwrap_or(1 << 12),
             scope: actor.battle.active_target,
             action: actor.battle.params.first().copied().unwrap_or(0),
             suppressed: actor

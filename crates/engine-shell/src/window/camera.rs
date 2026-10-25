@@ -532,8 +532,19 @@ impl PlayWindowApp {
             // origin - unity for every body but a cast module's creature
             // (`BattleActor::render_scale`). The browser page composes the
             // same factor from `play_battle_actor_cursor`'s scale lane.
-            Self::battle_body_model(pos, a.battle.facing_angle)
-                * Mat4::from_scale(Vec3::splat(a.battle.render_scale_q12()))
+            //
+            // A rolled body (`+0x48`, `BattleActor::render_roll`) turns about
+            // its own forward axis first: retail's `Rx * Ry * Rz` with the
+            // mesh's raw vertices on the right, so the roll is the factor
+            // nearest them. The browser page composes the same factor from
+            // `play_battle_actor_rolls`.
+            let model = Self::battle_body_model(pos, a.battle.facing_angle);
+            let model = if a.battle.render_roll & 0xFFF != 0 {
+                model * Mat4::from_rotation_z(a.battle.render_roll_radians())
+            } else {
+                model
+            };
+            model * Mat4::from_scale(Vec3::splat(a.battle.render_scale_q12()))
         } else {
             let yaw = std::f32::consts::PI
                 + (a.move_state.render_26 as f32) / 4096.0 * std::f32::consts::TAU;

@@ -1426,7 +1426,13 @@ impl World {
                 self.apply_mushura_writes(phase_in, victim_slot);
             }
             if entry == 929 {
-                self.apply_mule_writes(phase_in, ctx.phase != phase_in, ctx.monster_count);
+                self.apply_mule_writes(
+                    phase_in,
+                    ctx.phase != phase_in,
+                    ctx.monster_count,
+                    caster_slot,
+                    spell_id,
+                );
             }
             if entry == 928 {
                 self.apply_palma_writes(phase_in, ctx.phase != phase_in);
