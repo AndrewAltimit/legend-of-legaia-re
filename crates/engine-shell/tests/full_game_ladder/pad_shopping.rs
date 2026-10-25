@@ -305,7 +305,13 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
     // are cast, and a counter whose heals the hand bought alone left Zora's
     // party (`son`'s nineteen Healing Berries, its Magic Fruit row untouched)
     // with no way to pay for the Spoons its party-wide hits called for.
-    if let Some(want) = mp_want(session, w, members * MP_RESERVE) {
+    // Not on the way into Nivora's three solo duels: each duellist fights
+    // with Arts, which cost no MP, out of one shared bag of heals, and the
+    // purse is the bag. A run that came to `doman` with 18329 spent 10000 of
+    // it on two Magic Fruit beside two Healing Berries, and Gala fell to Che
+    // Delilas with the bag dry and Che at 1611..6243 of 12000.
+    let into_duels = continuous::STRETCH_TO.with(|s| s.borrow().as_str() == "nivora");
+    if !into_duels && let Some(want) = mp_want(session, w, members * MP_RESERVE) {
         return Some(want);
     }
     // Equipment. At a counter with no healing row, a bag short of its

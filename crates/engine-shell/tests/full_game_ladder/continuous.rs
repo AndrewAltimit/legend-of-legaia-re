@@ -44,6 +44,9 @@ thread_local! {
     /// staged fight on a walk-on band: [`worth_fighting`] then takes no
     /// random encounter.
     pub(super) static SAVING_FOR_BOSS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// The milestone the current stretch heads for (its spine id).
+    pub(super) static STRETCH_TO: std::cell::RefCell<String> =
+        const { std::cell::RefCell::new(String::new()) };
     /// The scenes the current stretch's `continuous_via` names: story the
     /// spine asks the run to finish there, so a story talk in another room
     /// of one is crossed to ([`pad_far_talks`]), not only an errand's.
@@ -528,6 +531,7 @@ fn part_c_continuous_run() {
             );
         }
         ERRANDS.with(|e| *e.borrow_mut() = errands);
+        STRETCH_TO.with(|s| *s.borrow_mut() = to.id.clone());
         LEARNED_CADENCE.with(|l| l.set(None));
         // The furthest anchor in reach that records a party: the spine's
         // last milestones (the ending's debug-credits anchors) carry none,
@@ -693,6 +697,7 @@ fn part_c_continuous_run() {
     STORY_WAYPOINTS.with(|w| w.borrow_mut().clear());
     STRETCH_FRAMES.with(|f| f.set(PAD_SEGMENT_FRAMES));
     TARGET_LEVELS.with(|t| t.borrow_mut().clear());
+    STRETCH_TO.with(|s| s.borrow_mut().clear());
     PLAYED_AHEAD.with(|a| *a.borrow_mut() = None);
     CHESTS_AHEAD.with(|c| c.borrow_mut().clear());
     reset_errands();

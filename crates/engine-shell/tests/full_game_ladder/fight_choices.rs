@@ -473,16 +473,68 @@ pub(super) fn wanted_power_item(
     // Che Delilas duel (`nilboa`) is about thirty Arts rounds against a
     // 12000-HP foe out of one bag that has to last two more duels.
     if solo_duel(w) {
-        let mine = w
-            .battle
-            .buffs
-            .iter()
-            .any(|b| b.slot == actor && b.stat == BuffStat::Attack);
-        if mine || usize::from(actor) >= n || miracle_armed_fury(w, actor) {
+        if usize::from(actor) >= n || miracle_armed_fury(w, actor) {
             return None;
         }
-        let mut ids = ids;
-        return attack_elixir(&mut ids).map(|id| (id, actor));
+        let has = |stat: BuffStat| {
+            w.battle
+                .buffs
+                .iter()
+                .any(|b| b.slot == actor && b.stat == stat)
+        };
+        let ids: Vec<u8> = ids.collect();
+        // A Shield Elixir first, once: the duel's foe swings every round and
+        // its specials land on the member whatever it does, so a defence
+        // ramp for the whole fight is every heal it would otherwise drink.
+        // Gala met Che Delilas at level 30 with four in the bag and took
+        // 370..740 a round unguarded; the Flowers' 800 could not keep up.
+        if !has(BuffStat::Defense)
+            && let Some(id) = ids
+                .iter()
+                .copied()
+                .filter(|&id| {
+                    w.tables
+                        .item_catalog
+                        .get(id)
+                        .is_some_and(|e| e.usable_in_battle)
+                        && matches!(table.stat_effect(id),
+                            Some(StatItemEffect::BuffOneBattle(stats)) if stats.contains(&StatTarget::Defense))
+                })
+                .min_by_key(|&id| match table.stat_effect(id) {
+                    Some(StatItemEffect::BuffOneBattle(stats)) => stats.len(),
+                    _ => usize::MAX,
+                })
+        {
+            return Some((id, actor));
+        }
+        if !has(BuffStat::Attack)
+            && let Some(id) = attack_elixir(&mut ids.iter().copied())
+        {
+            return Some((id, actor));
+        }
+        // Then a Speed Elixir, once: a member that acts ahead of the foe
+        // lands its heal before the swing that would have dropped it (Gala
+        // left Che's special at 314 and fell to the next round's first blow,
+        // her Flower still queued behind it).
+        if has(BuffStat::Speed) {
+            return None;
+        }
+        return ids
+            .iter()
+            .copied()
+            .filter(|&id| {
+                w.tables
+                    .item_catalog
+                    .get(id)
+                    .is_some_and(|e| e.usable_in_battle)
+                    && matches!(table.stat_effect(id),
+                        Some(StatItemEffect::BuffOneBattle(stats)) if stats.contains(&StatTarget::Speed))
+            })
+            .min_by_key(|&id| match table.stat_effect(id) {
+                Some(StatItemEffect::BuffOneBattle(stats)) => stats.len(),
+                _ => usize::MAX,
+            })
+            .map(|id| (id, actor));
     }
     if usize::from(actor) >= n || miracle_ready(w, actor) || miracle_armed_fury(w, actor) {
         return None;
