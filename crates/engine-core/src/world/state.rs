@@ -640,11 +640,7 @@ impl World {
         self.game_over = false;
         self.game_over_hold = false;
         self.clock.play_time_seconds = 0;
-        // The play clock restarts from the New Game: the next
-        // `tick_play_clock` sets a fresh origin and a zero mark.
-        self.clock.play_clock_origin = None;
-        self.clock.play_clock_high_water = 0;
-        self.clock.play_clock_last = None;
+        self.clock.play_tick_phase = 0;
         self.cutscene.timeline = None;
         self.field_vm.helper_contexts.clear();
         self.cutscene.narration = None;

@@ -138,15 +138,6 @@ const OPTIONS_CONFIG_FILE: &str = "legaia-options.toml";
 pub(super) const INPUT_CONFIG_FILE: &str = "legaia-input.toml";
 
 impl PlayWindowApp {
-    /// Advance `World::clock.play_time_seconds` off the window's wall clock,
-    /// through the engine's one play-clock law (`World::tick_play_clock`) -
-    /// the browser page's `tick_play_clock` calls the same kernel. The origin
-    /// and high-water mark live on the world, so New Game restarts them.
-    pub(super) fn tick_play_clock(&mut self) {
-        let now = f64::from(self.win.elapsed_secs());
-        self.session.host.world.tick_play_clock(now);
-    }
-
     /// Apply the live side-effects of [`Self::options_state`] (currently
     /// the Sound Stereo/Monaural downmix on the audio output) and persist
     /// the state to [`OPTIONS_CONFIG_FILE`]. Called when an options

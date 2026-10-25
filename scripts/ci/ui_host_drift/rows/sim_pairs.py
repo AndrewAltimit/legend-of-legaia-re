@@ -1440,12 +1440,13 @@ SIM_PAIRS: list[dict[str, object]] = [
     },
     {
         "what": "play clock - the H:MM:SS box the pause menu draws reads "
-        "`World::play_time_seconds`, and that counter only moves if a host "
-        "drives `advance_play_time`. The browser substituted `world.frame / 60` "
-        "at the draw site instead, which reset on every page load, ignored a "
-        "loaded save's hours, and - because the *save* writes the world's "
-        "counter, not the drawn proxy - recorded the LOADED play time in every "
-        "save taken from the browser. Asserted across the two "
+        "`World::play_time_seconds`, which only `BootSession::claim_tick` "
+        "advances (one count per claimed tick, retail's vsync counter). The "
+        "browser once substituted `world.frame / 60` at the draw site, which "
+        "reset on every page load, ignored a loaded save's hours, and - "
+        "because the *save* writes the world's counter, not the drawn proxy - "
+        "recorded the LOADED play time in every save taken from the browser. "
+        "Neither draw site may advance it. Asserted across the two "
         "`field_menu_draws_for` call sites, so the reader and the writer are "
         "pinned together",
         "sites": {

@@ -348,6 +348,7 @@ impl LoadFullTail for World {
         // records inside `load_party`.)
         // V2 ext block - repopulate engine-side trackers.
         self.clock.play_time_seconds = sf.ext_v2.play_time_seconds;
+        self.clock.play_tick_phase = 0;
         self.party.saved_chains = sf.ext_v2.saved_chains.clone();
         self.party.per_char_ext = sf.ext_v2.per_char.clone();
         // Reset trackers so reloads don't accumulate stale state.

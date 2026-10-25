@@ -94,6 +94,14 @@ impl LegaiaRuntime {
                         continue;
                     }
                     for g in s..steps {
+                        // The hold spends the frame's remaining ticks without
+                        // claiming them; each is still a vsync on retail's
+                        // play counter (game over is a counting mode).
+                        if g > s
+                            && let Some(session) = self.scene_host.session_mut()
+                        {
+                            session.count_play_tick();
+                        }
                         self.tick_field_party_hud();
                         let picked = self.game_over_input(if g == s { edge } else { 0 });
                         if picked == "quit" {

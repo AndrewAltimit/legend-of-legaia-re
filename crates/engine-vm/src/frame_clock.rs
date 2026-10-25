@@ -5,11 +5,22 @@
 
 /// Frame clock: the adaptive frame-step factor and its telemetry, the vsync accumulators, the sim-tick / display-frame counters and play time.
 pub struct FrameClock {
-    /// Total game time in wall-clock seconds since the world was
-    /// instantiated or loaded. Engines tick this independently of
-    /// `frame` (which can pause-skip during dialogs / cutscenes).
-    /// Persisted in [`legaia_save::SaveExtV2::play_time_seconds`].
+    /// Whole seconds of the retail play counter (`0x80084570`, in the save
+    /// block at `+0x430`), which counts **vsyncs the game ran**: the frame
+    /// pacer adds the frame step `DAT_1F800393` once per game frame while
+    /// bit `0x800` of `_DAT_1F800394` is up (`0x80016ED0..0x80016EFC` in
+    /// `FUN_80016B6C`). One `World::tick` is one vsync, so the port adds one
+    /// tick per sim tick (`World::count_play_tick`) and carries the
+    /// sub-second remainder in [`Self::play_tick_phase`]. Persisted in
+    /// [`legaia_save::SaveExtV2::play_time_seconds`].
+    ///
+    /// REF: FUN_80016B6C
     pub play_time_seconds: u32,
+    /// Ticks (vsyncs) of the play counter not yet folded into
+    /// [`Self::play_time_seconds`], `0..60`. Retail keeps the counter in
+    /// vsyncs and divides at display time; the port keeps seconds plus this
+    /// remainder, which is the same count.
+    pub play_tick_phase: u8,
     /// Adaptive frame-step factor `dt` - the retail scratchpad byte
     /// `DAT_1F800393`, the number of *vsyncs per game tick*. The frame-flip
     /// path (`FUN_80016B6C`, see `ghidra/scripts/funcs/80016b6c.txt`) rewrites
@@ -125,18 +136,6 @@ pub struct FrameClock {
     /// marker, not a throttle - a host that re-introduced oversampling would
     /// make it selective again without any of those call sites changing.
     pub display_frame_step: u16,
-    /// Host wall-clock reading (seconds) the play clock measures from, set by
-    /// the first `World::tick_play_clock` and dropped by
-    /// `World::begin_new_game`. Only ever used as a delta
-    /// origin, so its epoch is the host's own.
-    pub play_clock_origin: Option<f64>,
-    /// Whole seconds since [`Self::play_clock_origin`] already folded into
-    /// [`Self::play_time_seconds`] - the high-water mark
-    /// `World::tick_play_clock` deltas against.
-    pub play_clock_high_water: u32,
-    /// The previous `World::tick_play_clock` reading, which a
-    /// stalled host's gap is measured against.
-    pub play_clock_last: Option<f64>,
     /// A replay's retail battle frame step and the action-SM state it takes
     /// effect in (`World::seed_battle_frame_step`): `(step, state)`. Not a
     /// retail field - retail measures its step per frame
@@ -149,6 +148,7 @@ impl FrameClock {
     pub fn new() -> Self {
         Self {
             play_time_seconds: 0,
+            play_tick_phase: 0,
             // Field/town baseline; scene entry re-pins (`mapNN` -> 3).
             frame_step: 2,
             frame_step_floor: 2,
@@ -164,9 +164,6 @@ impl FrameClock {
             sim_ticks: 0,
             display_frame_step: 0,
             display_frames: 0,
-            play_clock_origin: None,
-            play_clock_high_water: 0,
-            play_clock_last: None,
             battle_frame_step_seed: None,
         }
     }

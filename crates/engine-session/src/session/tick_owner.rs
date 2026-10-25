@@ -71,6 +71,10 @@ impl<S: AudioSink> BootSession<S> {
     /// share. `edge` is the tick's just-pressed pad bits.
     // REF: FUN_801D1344, FUN_801D01B0
     pub fn claim_tick(&mut self, claims: TickClaims, edge: u16) -> TickOwner {
+        // Every tick handed out is a vsync the game ran, whoever owns it:
+        // retail's play counter runs under the pause menu, the title and a
+        // movie as it does on the field (`count_play_tick`).
+        self.count_play_tick();
         // A host-held screen first: the player has not entered the world, or
         // has paused out of it.
         if claims.host_screen {
@@ -114,6 +118,16 @@ impl<S: AudioSink> BootSession<S> {
             return TickOwner::OverlayScreen;
         }
         TickOwner::Field(self.field_pad_neutral(claims))
+    }
+
+    /// Count one tick on the world's play clock when the mode word's flag
+    /// bit says retail's counter runs (`GameMode::play_counter_runs`). Called
+    /// by [`Self::claim_tick`]; a host that spends further ticks without
+    /// claiming them (the page's party-wipe hold) calls it for each.
+    pub fn count_play_tick(&mut self) {
+        if self.mode_seat.game_mode().play_counter_runs() {
+            self.host.world.count_play_tick();
+        }
     }
 
     /// Whether the field ticks on a neutral pad: the narration crawl or

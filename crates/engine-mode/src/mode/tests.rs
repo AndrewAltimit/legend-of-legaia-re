@@ -480,3 +480,46 @@ fn jump_to_same_mode_is_idempotent() {
     // Same mode -> frame counter NOT reset (a self-jump should be a no-op).
     assert_eq!(d.frames_in_mode, 100);
 }
+
+/// The play counter runs in every mode a player reaches - field, battle, game
+/// over, the `CARD` pair (title and pause menu), the minigames, movies and the
+/// map display (whose init seeds no flag word) - and in none of the debug or
+/// boot `READ` pairs.
+#[test]
+fn the_play_counter_runs_in_every_player_mode() {
+    use GameMode::*;
+    for m in [
+        MainInit,
+        MainMode,
+        BattleInit,
+        BattleMode,
+        GameOverInit,
+        GameOverMode,
+        CardInit,
+        CardMode,
+        OtherInit,
+        OtherMode,
+        StrInit,
+        StrMode,
+        MapdispInit,
+        MapdispMode,
+    ] {
+        assert!(m.play_counter_runs(), "{m:?}");
+    }
+    for m in [
+        ConfigInit,
+        ConfigMode,
+        MonsterTest,
+        MonsterMode,
+        TmdTest,
+        TmdMode,
+        TestTest,
+        TestMode,
+        MapTest,
+        MapMode,
+        ReadInit,
+        ReadMode,
+    ] {
+        assert!(!m.play_counter_runs(), "{m:?}");
+    }
+}

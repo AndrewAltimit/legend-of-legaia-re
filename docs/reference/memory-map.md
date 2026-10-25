@@ -308,7 +308,7 @@ The live game state a save is composed from: the save write copies `0x1A18` byte
 | `0x8008446C` |  | Fishing: persistent **purchased** bitmask of the point exchange - bit `row + venue * 8`. |
 | `0x80084540` | u16 | The loaded scene's **raw CDNAME define** (the raw in-RAM TOC index of its block) - two above the extraction-frame `Scene::start`: `town01` `3`, `town0b` `0x0C`, `town0c` `0x15`, `map01` `0x55`, across 98 catalogued states. The battle formation roll's map arms key on it. Also the cheat database's "Map Modifier". Cheat: `View Credits` writes `0x030C` (the credits scene). |
 | `0x80084548` | char[] | Current scene-name buffer; `FUN_8001FD44` copies the name it loads into it. |
-| `0x80084570` | u32 | Game-time play counter - advances ~per-frame (≈60/s), NOT per-second (the save screen divides it down for the `HH:MM:SS` display); a maxed save reads ~10.4M ≈ 48 h at 60/s. Cheat: `Game Time 0:00:00` zeroes it. |
+| `0x80084570` | u32 | Game-time play counter - counts vsyncs (`+= DAT_1F800393` per game frame while `_DAT_1F800394 & 0x800`, `FUN_80016B6C`), 60/s, NOT per-second (the save screen divides it down for the `HH:MM:SS` display); a maxed save reads ~10.4M ≈ 48 h at 60/s. Cheat: `Game Time 0:00:00` zeroes it. |
 | `0x80084594` | u8 | Party member count; `FUN_8004313C` sizes the item bag's active window off it. Cheat: `Character Activator` writes `0x03`. |
 | `0x80084598` | u8[] | Party member IDs (sorted insertion, cap 4). |
 | `0x80084599` | u8 | Noa "join the party" gate. Cheat: `Noa Activator` writes `0x01`. |

@@ -86,9 +86,6 @@ impl LegaiaRuntime {
         if matches!(event, SceneTickEvent::SceneEntered { .. }) || !fmv_handoff_scene.is_empty() {
             self.cutscene_glide.reset();
         }
-        // Advance the world's play clock off the page's wall clock, the same
-        // delta-against-a-high-water-mark the native window runs.
-        self.tick_play_clock();
         // A field-VM op-0x49 sub-0 merchant (or sub-7 prize counter) armed a
         // screen this tick: hand it to the menu runtime so the page can open
         // it, where the native window polls - after the session tick, ahead
@@ -294,23 +291,6 @@ impl LegaiaRuntime {
     }
 }
 
-/// Milliseconds since a fixed origin, from whatever clock this target has.
-/// Only ever consumed as a delta ([`LegaiaRuntime::tick_play_clock`]), so the
-/// origin itself is irrelevant.
-fn wall_clock_ms() -> f64 {
-    #[cfg(target_arch = "wasm32")]
-    {
-        js_sys::Date::now()
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs_f64() * 1000.0)
-            .unwrap_or(0.0)
-    }
-}
-
 impl LegaiaRuntime {
     /// The tick's effect step, the native window's `tick_world_effects` leg
     /// for leg: seat a cast's summon creature, then the session's move-FX
@@ -343,31 +323,6 @@ impl LegaiaRuntime {
         // Counted for the page's readout whether or not a director heard it.
         if cue.is_some() {
             self.sfx.queued += 1;
-        }
-    }
-
-    /// Advance the world's play clock off the page's wall clock - the browser
-    /// twin of the native window's `tick_play_clock`, called once per
-    /// [`LegaiaRuntime::tick_frame`].
-    ///
-    /// Whole seconds only, and by delta rather than absolutely, so a loaded
-    /// save keeps its accumulated total. The page used to substitute
-    /// `world.frame / 60` at the one place the clock was *drawn*, which left
-    /// [`legaia_engine_vm::frame_clock::FrameClock::play_time_seconds`] frozen at
-    /// whatever a load put there - so the H:MM:SS box reset on every page
-    /// load, ignored a loaded save's hours, and, worse, a save written from
-    /// the browser recorded the *loaded* play time rather than the played one.
-    ///
-    /// The origin and high-water mark are the world's
-    /// ([`legaia_engine_core::world::World::tick_play_clock`], the kernel the
-    /// native window calls too), so New Game restarts both. This page used to
-    /// keep them itself and reset only the origin on New Game, which froze
-    /// play time after a second New Game until the wall clock caught up with
-    /// the old mark.
-    pub(crate) fn tick_play_clock(&mut self) {
-        let now_secs = wall_clock_ms() / 1000.0;
-        if let Some(host) = self.scene_host.host_mut() {
-            host.world.tick_play_clock(now_secs);
         }
     }
 }

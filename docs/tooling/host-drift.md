@@ -394,10 +394,10 @@ slot was exactly that, drawn from a pinned literal pair on one host and from a
 live cursor on the other: two pictures of a menu retail never shows.
 
 **Play clock.** The H:MM:SS box reads `World::clock.play_time_seconds`, and that
-counter only moves if a host drives `advance_play_time`. Substituting a frame
-count at the *draw* site looks identical on screen and is not: the save writes
-the world's counter, so a save taken from a host that never advanced it
-records the play time it was loaded with.
+counter moves only in `BootSession::claim_tick`, one count per claimed tick.
+Substituting a frame count at the *draw* site looks identical on screen and is
+not: the save writes the world's counter, so a save taken from a host that never
+advanced it records the play time it was loaded with.
 
 ## Tier 4 - trait-override symmetry
 
@@ -1318,7 +1318,7 @@ Traps, each of which has produced a false drift report:
 | multi-save `.mcr` | The page's import raises a block picker in `#save-status`; until one is clicked no card session exists and CONTINUE stays dim by design. |
 | persisted options | Each host persists the camera-distance preset itself (`legaia-options.toml` in the working directory; `localStorage`). Pin it on both. Scripted native runs write neither options nor bindings. |
 | `--seed-party` | Resets story flags to a fresh New Game, which changes a scene's entry script; the page's picker has no such seed. |
-| play clock | `World::tick_play_clock` is wall time, so a tick-stepped page and a free-running window show different `TIME` values. |
+| play clock | Counted per claimed tick (`World::count_play_tick`), so two hosts paired by engine frame show one `TIME`; a free-running host is ahead by the ticks it ran. |
 | battle backdrop | `SceneHost::battle_stage_entry` picks the stage variant the region reader stored on the last field step (`_DAT_8007BD60`), else the scene default. Compare two hosts' battles only from the same region state (`LEGAIA_BATTLE_STAGE` forces one natively). |
 | headless GPU | `--use-angle=swiftshader` runs a few frames a second; `--use-angle=vulkan` keeps a run to minutes. |
 | startup `SIGSEGV` | A native child killed by `SIGSEGV` with empty stdout and stderr died in libXi before its event loop opened; spawn it through `legaia_parity::window_child`, which retries exactly that death once ([below](#a-native-child-that-dies-before-its-event-loop-opens)). |
@@ -1559,7 +1559,7 @@ The frame model is in [`engine.md`](../subsystems/engine.md#the-frame-model).
 | party-wipe probe | `BootSession::take_party_wipe` |
 | scheduler under a frozen field | `BootSession::step_overlay_sfx` |
 | NPC clip playheads | `World::field_npc_clips_advance`, `tick_npc_clips` (a world cursor under each actor's `+0x62`), `sync_npc_clip` |
-| play clock | `World::tick_play_clock`, reset by `begin_new_game` |
+| play clock | `BootSession::claim_tick` -> `World::count_play_tick` under `GameMode::play_counter_runs`, reset by `begin_new_game` ([below](#the-play-clock-counts-ticks)) |
 | field HUD suppression | `world_map_panel_host::field_hud_suppressed`, asked on the tick *and* the draw path; includes `field_battle_transition_active` |
 | sub-frame key taps | `input::PadTapLatch` |
 | movie clock | `cutscene::MovieClock` (page: `play_fmv_due_frame`); skip edge `cutscene::fmv_skip_edge_hit`, which only `fmv_id 0` passes |
@@ -1576,6 +1576,24 @@ runs the cue drainer `FUN_80016B6C`
 A suppressed `FieldPartyHud::tick` stores nothing but its cached decision, so
 stepping it under an overlay or not leaves the same picture
 (`a_suppressed_tick_changes_no_state`).
+
+#### The play clock counts ticks
+
+Retail's play counter (`0x80084570`, save block `+0x430`) counts vsyncs the
+game ran: the frame pacer `FUN_80016B6C` adds the frame step `DAT_1F800393`
+once per game frame while bit `0x800` of `_DAT_1F800394` is up
+(`0x80016ED0..0x80016EFC`). One `World::tick` is one vsync, so the session
+counts one per tick it claims, whichever owner takes it - the pause menu and
+the title run under `CARD`, a counting mode. `GameMode::play_counter_runs`
+holds the gate (the INIT row's `param`, which the mode init `FUN_8001DCF8`
+seeds into the word; the map display seeds nothing and keeps the field's).
+The page's party-wipe hold spends a frame's remaining ticks unclaimed and
+counts each through `BootSession::count_play_tick`.
+
+Both hosts once read their wall clock instead, behind a stall guard for a
+backgrounded tab. A host that runs no ticks now counts nothing by
+construction, and the window's pause menu - whose arm skipped the old
+wall-clock step - counts as retail's does.
 
 <a id="the-steps-around-the-tick"></a>
 
