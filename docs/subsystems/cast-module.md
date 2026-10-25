@@ -3445,7 +3445,7 @@ director carries it. Several arms also set their own rate: PROT 0922, 0927 and
 0966 freeze the creature (`0`), 0931, 0933 and 0934 seat it at `4`, 0924 and
 0925 at `8`, 0932 at `0x10`. PROT 0929 stores `-(0x80089120)`, the world
 anchor's Z, which the port keeps no twin of. Where the arm drains a countdown
-ahead of the call (PROT 0907, 0911, 0915, 0923, 0932, 0934), or holds until a
+ahead of the call (PROT 0907, 0911, 0915, 0923, 0929, 0932, 0934), or holds until a
 sweep word reaches its end (PROT 0928, `bne t0,v0` at `0x801F73B0`), the
 creature is seated on the arm's pass rather than as it is entered, and the
 port does so for all of them. PROT 0928's arm seats its five parts on the

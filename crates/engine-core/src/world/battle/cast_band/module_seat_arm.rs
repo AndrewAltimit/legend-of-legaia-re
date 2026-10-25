@@ -308,13 +308,15 @@ impl World {
 /// (`0x801F6D9C`) and 0932 (`0x801F6EA4`). PROT 0928's arm 4 returns on
 /// every pass its sweep word has not reached its end (`bne t0,v0` at
 /// `0x801F73B0`), and only the passing one cuts the camera and calls the
-/// installer (`0x801F7444` / `0x801F744C`). Their seat arm is
+/// installer (`0x801F7444` / `0x801F744C`). PROT 0929's arm 5 drains its
+/// countdown (`bgtz` at `0x801F6FFC`) ahead of `jal 0x801F19EC` at
+/// `0x801F7080`. Their seat arm is
 /// [`legaia_engine_cast::cast_module_camera::module_seat_arm`]; the
 /// summon-hold modules already name the arm after theirs. PROT 0915
 /// (`0x801F6E54`) and 0934 (`0x801F7028`) seat on the pass too, but their
 /// camera-only directors park on that arm, so the port seats them as it is
 /// entered.
-const SEATS_ON_PASS: [u32; 5] = [907, 911, 923, 928, 932];
+const SEATS_ON_PASS: [u32; 6] = [907, 911, 923, 928, 929, 932];
 
 /// Whether PROT `prot_entry`'s owed seat is due at module phase `phase`,
 /// given its seat arm `arm`.
