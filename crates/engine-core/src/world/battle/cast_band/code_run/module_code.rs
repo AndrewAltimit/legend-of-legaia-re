@@ -331,6 +331,24 @@ impl World {
             && self.casting.module_hit_arm != Some(phase_in)
         {
             self.casting.module_hit_arm = Some(phase_in);
+            // Gigaton Press seats its debris ring - sixteen `rand() % 4`
+            // picks - ahead of its `FUN_801DD4B0` (`0x801F717C..0x801F72B4`),
+            // so the ring draws first.
+            if entry == 962
+                && body == Some(legaia_engine_cast::cast_module_camera::GIGATON_PRESS_BODY)
+                && let Some(v) = self.actors.get(usize::from(victim_slot))
+            {
+                let victim = legaia_engine_cast::cast_module_camera::ModuleSeat {
+                    x: v.move_state.world_x,
+                    y: v.move_state.world_y,
+                    z: v.move_state.world_z,
+                    facing: v.battle.facing_angle & 0xFFF,
+                };
+                self.casting.module_debris =
+                    legaia_engine_cast::cast_module_camera::gigaton_press_debris(victim, || {
+                        self.next_rand()
+                    });
+            }
             self.fold_pending_cast();
             caster = self.cast_view(caster_slot);
             victim = self.cast_view(victim_slot);

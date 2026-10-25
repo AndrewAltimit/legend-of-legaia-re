@@ -220,7 +220,8 @@ pub fn gigaton_press_jump_height(w: i32) -> i16 {
 /// | 4 (`0x801F738C`) | TR z `+2s`; TR y `+-` the shake word, the sign flipping a pass; the word `- s d / 2` (floor `0`); victim rate `4`; case 8 is **not** called | the victim's `+0x1D9` at `0` or `8` | pool flush |
 ///
 /// Arm 3's sixteen debris records (`rand() % 4` of four, on a ring of
-/// radius `0x400` about the victim) are not carried.
+/// radius `0x400` about the victim) are [`gigaton_press_debris`], which the
+/// host seats on the arm's pass.
 ///
 /// PORT: FUN_801F6D54 (PROT 0962 `0xA4`; the camera arms, the cursor and
 /// settle gates, the jump arc, the shake and the rate stores)
@@ -362,6 +363,32 @@ pub(super) const E962_A4_3: [ModuleSpawn; 5] = [
     },
 ];
 
+/// `0xA4` arm 3's debris, the four records `rand() % 4` picks from
+/// (`0x801F7240..0x801F7280`).
+pub const GIGATON_PRESS_DEBRIS: [u32; 4] = [0x801F_8588, 0x801F_85D4, 0x801F_8620, 0x801F_866C];
+
+/// `0xA4` arm 3's sixteen debris spawns (`0x801F717C..0x801F7294`), in call
+/// order: point `i` at the victim's plane pair plus `trunc(sin(a) / 4)` on X
+/// and `trunc(cos(a) / 4)` on Z for `a = i << 8` (the SCUS tables
+/// `*0x8007B81C` / `*0x8007B7F8` read at `i << 9` bytes), on the floor with no
+/// rotation, each record picked by its own `rand() % 4` (`FUN_80056798`).
+pub fn gigaton_press_debris(victim: ModuleSeat, mut rand: impl FnMut() -> u32) -> Vec<ModuleSpawn> {
+    (0..16u16)
+        .map(|i| {
+            let (sin, cos) = trig12(i << 8);
+            let pos = [
+                (i32::from(victim.x) + i32::from(sin) / 4) as i16,
+                0,
+                (i32::from(victim.z) + i32::from(cos) / 4) as i16,
+            ];
+            ModuleSpawn {
+                record: SpawnRecord::Module(GIGATON_PRESS_DEBRIS[(rand() % 4) as usize]),
+                anchor: SpawnAnchor::Literal { pos, rot: [0; 3] },
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -423,5 +450,40 @@ mod tests {
         assert_eq!(a.drift.unwrap().tr_y, -0x100);
         let a = gigaton_press_camera(&mut st, 4, seats);
         assert_eq!(a.drift.unwrap().tr_y, 0x100 - 4);
+    }
+
+    /// The sixteen rocks sit on a `0x400` ring round the victim, one record
+    /// per `rand() % 4` in call order. The picks are a retail RAM read of a
+    /// `koru_strip_forced` cast's rocks on the arm's pass, the victim's
+    /// ground pair `(-192, -564)`: point 0 straight down `+z`, point 4 on
+    /// `+x`.
+    #[test]
+    fn gigaton_debris_rings_the_victim_one_pick_per_rock() {
+        let victim = ModuleSeat {
+            x: -192,
+            y: 0,
+            z: -564,
+            facing: 0,
+        };
+        let picks = [0u32, 2, 2, 0, 2, 2, 1, 3, 0, 3, 2, 3, 1, 1, 0, 0];
+        let mut k = 0;
+        let rocks = gigaton_press_debris(victim, || {
+            k += 1;
+            picks[k - 1] + 4 * k as u32
+        });
+        assert_eq!(rocks.len(), 16);
+        for (i, r) in rocks.iter().enumerate() {
+            assert_eq!(
+                r.record,
+                SpawnRecord::Module(GIGATON_PRESS_DEBRIS[picks[i] as usize])
+            );
+        }
+        let at = |i: usize| match rocks[i].anchor {
+            SpawnAnchor::Literal { pos, rot } => (pos, rot),
+            _ => panic!("literal"),
+        };
+        assert_eq!(at(0), ([-192, 0, 460], [0; 3]));
+        assert_eq!(at(4), ([-192 + 1024, 0, -564], [0; 3]));
+        assert_eq!(at(8), ([-192, 0, -564 - 1024], [0; 3]));
     }
 }

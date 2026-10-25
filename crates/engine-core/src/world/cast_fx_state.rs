@@ -126,6 +126,9 @@ pub struct CastFxState {
     /// (`World::run_cast_module_code`), so a settle wait after it sees the
     /// victim react.
     pub(crate) module_hit_arm: Option<u8>,
+    /// PROT 0962 `0xA4`'s debris ring, drawn ahead of the arm's hit as
+    /// retail draws its sixteen `rand()`s, for the band to seat on the pass.
+    pub(crate) module_debris: Vec<legaia_engine_cast::cast_module_camera::ModuleSpawn>,
     /// PROT 0922's rumble alternation word `0x801FA0BC`, bumped by its arms
     /// 14 and 15 (`cast_module_rumble::RumbleStore::PueraAlternate`).
     pub(crate) module_rumble_alternate: u32,
@@ -407,6 +410,7 @@ impl CastFxState {
             module_creature_clip_kind: 0,
             module_shake: 0,
             module_hit_arm: None,
+            module_debris: Vec::new(),
             module_rumble_alternate: 0,
             module_mule_backdrop_follow: false,
             module_settle_ticks: 0,

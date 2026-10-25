@@ -146,6 +146,12 @@ impl World {
                 if !spawns.is_empty() {
                     self.stage_module_arm_spawns(run.prot_entry, spawns, run.camera_shot, None);
                 }
+                // Gigaton Press's debris ring follows its five caster records
+                // on the same pass (drawn ahead of the arm's hit).
+                let debris = std::mem::take(&mut self.casting.module_debris);
+                if !debris.is_empty() {
+                    self.stage_module_arm_spawns(run.prot_entry, &debris, run.camera_shot, None);
+                }
             }
         }
         // `0x70` frames nothing of its own: the camera is the module's.

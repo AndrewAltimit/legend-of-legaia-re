@@ -3061,8 +3061,16 @@ two; TR `(0, 0x400, 0x800)` for all three. From there:
   for cursor `0x100`; its pass grounds the caster, seats five records on it and
   lands the hit. Arm 4 shakes TR y by a word seeded `0x100`, its sign flipping
   a pass and the word falling `s d / 2`, until the victim settles. Arm 3's
-  sixteen debris records (a `rand() % 4` pick on a ring round the victim) are
-  not carried.
+  pass also seats sixteen falling rocks after the five caster records and
+  before the hit (`0x801F717C..0x801F7294`, `gigaton_press_debris`): point
+  `i` on a ring of radius `0x400` round the victim's ground pair at angle
+  `i << 8`, on the floor, unturned, each one of four records
+  (`0x801F8588..0x801F866C`) by its own `rand() % 4`. The four differ only
+  in their start height (`-0x500` to `-0xB00`) and in how long they fall, so
+  which rock comes down where, and when, is the rand stream's. A retail RAM
+  read on the arm's pass holds the BIOS seed (`0x80009010`) one draw ahead
+  of the picks; the cast-sequence oracle does not align the engine's stream
+  to it, so its frames carry another fall pattern.
 
 The hit lands on the arm's pass, mid-band (`CaptureCamArm::folds_hit` folds
 the owed cast there), so the victim's reaction plays out under arm 4 as
