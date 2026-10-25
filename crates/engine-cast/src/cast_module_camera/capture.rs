@@ -99,6 +99,19 @@ pub struct CaptureCamArm {
     /// `0x0B`, [`super::DOOMSDAY_LINE_UP_X`]), the host keeping each seat's
     /// pair and heading for the body's `0xFF` arm to restore.
     pub party_line_up: bool,
+    /// The chained streak ribbons (`FUN_801E1D98`) the arm draws on this
+    /// pass, ahead of its gate: PROT 0962 `0xA3`'s arm-4 ring
+    /// ([`super::thunder_needle_ring`]). A per-pass call in retail, so the
+    /// host keeps it for this tick only.
+    pub ribbons: Option<CastRibbonRing>,
+}
+
+/// One pass's streak-ribbon calls from a module arm: each point is a
+/// battle-world ground point handed to `FUN_801E1D98` with `trail_id`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CastRibbonRing {
+    pub points: [[i16; 3]; 16],
+    pub trail_id: u8,
 }
 
 /// Absolute stores a capture arm makes into the camera globals: yaw

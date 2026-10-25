@@ -965,16 +965,21 @@ mod viguro;
 pub use aluru::*;
 pub use blade_breath::{
     BLADE_BREATH_BODY, BLADE_BREATH_STRIKE_CURSOR, GIGATON_PRESS_BODY, GIGATON_PRESS_DEBRIS,
-    GIGATON_PRESS_STRIKE_CURSOR, THUNDER_NEEDLE_BODY, THUNDER_NEEDLE_STRIKE_CURSOR,
+    GIGATON_PRESS_STRIKE_CURSOR, THUNDER_NEEDLE_BODY, THUNDER_NEEDLE_RING_SPAN,
+    THUNDER_NEEDLE_RING_STREAKS, THUNDER_NEEDLE_RING_TRAIL, THUNDER_NEEDLE_STRIKE_CURSOR,
     THUNDER_NEEDLE_TAIL_CURSOR, blade_breath_camera, capture_approach_follows,
     gigaton_press_camera, gigaton_press_debris, gigaton_press_jump_height, thunder_needle_camera,
+    thunder_needle_ring,
 };
 pub use capture::*;
 pub use capture_countdown::{ArmCountdown, CountdownWrite, arm_countdown, capture_arm_countdowns};
 pub use capture_spawns::*;
 pub use creature::*;
 pub use creature_spawns::*;
-pub use doomsday::{DOOMSDAY_BODY, DOOMSDAY_LINE_UP_X, doomsday_camera};
+pub use doomsday::{
+    DOOMSDAY_BODY, DOOMSDAY_LINE_UP_X, DOOMSDAY_RING_COUNT, DOOMSDAY_RING_RECORD, doomsday_camera,
+    doomsday_ring_part_words,
+};
 pub use evil_seru_magic::*;
 pub use freed::*;
 pub use gilium_palma_horn::*;

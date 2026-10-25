@@ -135,6 +135,7 @@ impl SummonPartRuntime {
             0x42 => s.field_42 = value,
             0x54 => s.wait_timer = value as i16,
             0x72 => s.field_72 = value,
+            0x78 => s.field_78 = value,
             0x80 => s.anim_80 = value as i16,
             0x82 => s.anim_82 = value as i16,
             0x84 => s.anim_84 = value as i16,

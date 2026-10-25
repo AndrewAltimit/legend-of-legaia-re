@@ -1364,6 +1364,9 @@ impl World {
             let latched = self.casting.module_cam.victim_slot.unwrap_or(victim_slot);
             self.zenoir_shatter(latched);
         }
+        // A capture arm's streak-ribbon calls are per pass: this tick's, or
+        // none.
+        self.battle.cast_ribbons = capture_arm.as_ref().and_then(|a| a.ribbons);
         // A capture director's seat stores (PROT 0959's stand-ins, heights
         // and hides), after the fold-back for the same reason.
         if let Some(arm) = capture_arm {

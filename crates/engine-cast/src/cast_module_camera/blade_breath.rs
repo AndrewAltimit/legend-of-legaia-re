@@ -11,7 +11,7 @@
 //! See `ghidra/scripts/funcs/overlay_cast_blade_breath_0962_801f7ae4.txt`,
 //! `..._801f74a0.txt` and `..._801f6d54.txt`.
 
-use super::capture::{CaptureCamArm, CaptureDrift, CaptureSeatWrite};
+use super::capture::{CaptureCamArm, CaptureDrift, CaptureSeatWrite, CastRibbonRing};
 use super::*;
 
 /// PROT 0962's `0xA2` tick body.
@@ -25,6 +25,39 @@ pub const GIGATON_PRESS_BODY: u32 = 0x801F_6D54;
 pub const THUNDER_NEEDLE_STRIKE_CURSOR: u16 = 0xF0;
 /// The cursor `0xA3`'s arm 4 waits for (`slti v0,v0,0x1c0` at `0x801F7A7C`).
 pub const THUNDER_NEEDLE_TAIL_CURSOR: u16 = 0x1C0;
+/// The span of `0xA3`'s arm-4 streak ring: the ring word `0x801F89B0`
+/// draws while it is under `0x41` (`slti v0,v0,0x41` at `0x801F7980`).
+pub const THUNDER_NEEDLE_RING_SPAN: i32 = 0x40;
+/// The streaks `0xA3`'s arm 4 draws a pass (`sltiu v0,s0,0x10` at
+/// `0x801F7A20`).
+pub const THUNDER_NEEDLE_RING_STREAKS: usize = 16;
+/// The trail id each streak passes the ribbon (`li a1,0xc` at `0x801F7A04`).
+pub const THUNDER_NEEDLE_RING_TRAIL: u8 = 0xC;
+
+/// The sixteen ground points `0xA3`'s arm 4 hands the chained streak ribbon
+/// `FUN_801E1D98` on a pass whose ring word is `w` (`0x801F798C..0x801F7A24`):
+/// streak `i` sits at angle `(i << 8) + (w & 0xFF)` and radius `w` (each lane
+/// `table[angle] * w >> 7`, rounded toward zero, the sine view `*0x8007B81C`
+/// on `x` and the cosine view `*0x8007B7F8` on `z`) about the **caster's**
+/// live pair `+0x34` / `+0x38`, at height `0` (the stack vector's `y` is the
+/// prologue's zero). The ring widens and turns as the word climbs.
+pub fn thunder_needle_ring(
+    caster_x: i16,
+    caster_z: i16,
+    w: i32,
+) -> [[i16; 3]; THUNDER_NEEDLE_RING_STREAKS] {
+    let lane = |t: i16| (i32::from(t) * w) / 128;
+    std::array::from_fn(|i| {
+        let angle = ((i as i32) << 8) + (w & 0xFF);
+        let (sin, cos) = legaia_engine_system::trig::trig12(angle as u16);
+        [
+            (i32::from(caster_x) + lane(sin)) as i16,
+            0,
+            (i32::from(caster_z) + lane(cos)) as i16,
+        ]
+    })
+}
+
 /// The cursor `0xA4`'s arm 3 waits for (`slti v0,v0,0x100` at `0x801F70EC`).
 pub const GIGATON_PRESS_STRIKE_CURSOR: u16 = 0x100;
 
@@ -144,12 +177,13 @@ pub fn blade_breath_camera(
 /// | 3 (`0x801F77D4`) | caster stage `0`, rate `3`; TR z `+s` | caster cursor `0xF0` | pool flush; three records on the victim; the `0x200` hit; victim colour `0x3FF00000`, rate `4` |
 /// | 4 (`0x801F7964`) | TR z `+s`; caster rate `2`, victim `4` | caster cursor `0x1C0` | the caster's `+0x1DC` bump |
 ///
-/// Arm 4's streaks (`FUN_801E1D98` sixteen times while its word is under
-/// `0x41`) are not carried. Unlike the other two bodies it frames nothing
-/// through case 8.
+/// Arm 4 also widens a ring of sixteen streaks about the caster every pass,
+/// ahead of its gate, while its word (stepped by the frame step from arm 2's
+/// `0`) is under `0x41` ([`thunder_needle_ring`], [`CaptureCamArm::ribbons`]).
+/// Unlike the other two bodies it frames nothing through case 8.
 ///
 /// PORT: FUN_801F74A0 (PROT 0962 `0xA3`; the camera arms, the two cursor
-/// gates, the facings and the seat colour / rate stores)
+/// gates, the facings, the seat colour / rate stores and the streak ring)
 pub fn thunder_needle_camera(
     st: &mut ModuleCamState,
     phase: u8,
@@ -171,6 +205,8 @@ pub fn thunder_needle_camera(
         2 => {
             arm.caster_write.facing = Some(caster_facing);
             st.countdown.0 = SPEED_SCALAR << 7;
+            // `sw zero,-0x7650(v0)` at `0x801F77B8`: the ring word.
+            st.module_words[0] = 0;
             arm.shot = Some(wind_up_shot(0x20, 0x800, caster_facing, seats.victim));
         }
         3 => {
@@ -189,6 +225,17 @@ pub fn thunder_needle_camera(
             }
         }
         4 => {
+            // The word climbs by the frame step a pass (`lbu 0x393` / `addu`
+            // at `0x801F796C..0x801F7978`), one a tick on the engine's
+            // vsync clock, and the ring draws ahead of the cursor gate.
+            let w = st.module_words[0] + 1;
+            st.module_words[0] = w;
+            if w <= THUNDER_NEEDLE_RING_SPAN {
+                arm.ribbons = Some(CastRibbonRing {
+                    points: thunder_needle_ring(seats.caster.x, seats.caster.z, w),
+                    trail_id: THUNDER_NEEDLE_RING_TRAIL,
+                });
+            }
             arm.drift = Some(tr_z);
             arm.caster_write.rate = Some(2);
             arm.victim_write.rate = Some(4);
@@ -391,6 +438,45 @@ pub fn gigaton_press_debris(victim: ModuleSeat, mut rand: impl FnMut() -> u32) -
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn thunder_needle_ring_widens_and_turns_about_the_caster() {
+        // Word 64: radius `4096 * 64 / 128 = 2048`, streak 0 at angle 64.
+        let r = thunder_needle_ring(100, -200, 0x40);
+        let (s0, c0) = legaia_engine_system::trig::trig12(0x40);
+        assert_eq!(
+            r[0],
+            [
+                100 + (i32::from(s0) * 64 / 128) as i16,
+                0,
+                -200 + (i32::from(c0) * 64 / 128) as i16
+            ]
+        );
+        // Streak 4 sits a quarter turn on: `x` from the cosine side.
+        let (s4, c4) = legaia_engine_system::trig::trig12(0x440);
+        assert_eq!(
+            r[4],
+            [
+                100 + (i32::from(s4) * 64 / 128) as i16,
+                0,
+                -200 + (i32::from(c4) * 64 / 128) as i16
+            ]
+        );
+        // Word 0: every streak on the caster.
+        assert!(thunder_needle_ring(5, 6, 0).iter().all(|p| *p == [5, 0, 6]));
+    }
+
+    #[test]
+    fn thunder_needle_arm_four_draws_the_ring_for_its_span_only() {
+        let seats = ModuleCamSeats::default();
+        let mut st = ModuleCamState::default();
+        thunder_needle_camera(&mut st, 2, seats);
+        let drawn = (0..100)
+            .filter(|_| thunder_needle_camera(&mut st, 4, seats).ribbons.is_some())
+            .count();
+        assert_eq!(drawn, THUNDER_NEEDLE_RING_SPAN as usize);
+    }
+
     use super::*;
 
     #[test]

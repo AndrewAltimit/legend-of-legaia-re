@@ -1426,8 +1426,14 @@ fn scan_range(
     let mut out = Vec::new();
     let mut va = from;
     let mut pending_call: Option<Ins> = None;
+    // A forward `j` whose target the walk still wants and which skips no
+    // wanted site is taken after its delay slot: the arm runs on at the
+    // target, not through the sibling arms laid out below it, whose stores
+    // would otherwise fold into the sites past the target.
+    let mut pending_jump: Option<u32> = None;
     while va <= to {
         let Some(i) = img.ins(va) else { break };
+        let jump_now = pending_jump.take();
         let before = t.clone();
         // Clamp window: a branch on a value tainted by a wash field arms it
         // for the next few instructions.
@@ -1468,6 +1474,16 @@ fn scan_range(
                 t.r[2] = V::PartHandle(rec);
             }
         }
+        if i.is_j() {
+            let target = i.jump_target();
+            if target > va + 4
+                && target <= to
+                && want.iter().any(|&w| w >= target)
+                && !want.iter().any(|&w| w > va + 4 && w < target)
+            {
+                pending_jump = Some(target);
+            }
+        }
         if i.is_jal() || i.is_jalr() {
             pending_call = Some(i);
         } else if want.contains(&va)
@@ -1483,7 +1499,7 @@ fn scan_range(
                 }
             }
         }
-        va += 4;
+        va = jump_now.unwrap_or(va + 4);
     }
     out
 }
@@ -1566,7 +1582,11 @@ pub fn decode(bytes: &[u8], own_end: usize) -> CastPresentation {
         .collect();
     let mut out = CastPresentation::default();
     // Per function: its arms' reach sets.
-    let mut placed: BTreeMap<u32, (u32, u8, SiteTiming)> = BTreeMap::new();
+    // A site may sit in code several arms run: an arm that ends on a `j`
+    // into a sibling arm's tail runs that tail's calls as its own (PROT
+    // 0965's arm 2 jumps into arm 10's fade spawn at `0x801F7620`, with its
+    // own template words already stored).
+    let mut placed: BTreeMap<u32, Vec<(u32, u8, SiteTiming)>> = BTreeMap::new();
     // Own-function calls made from a placed arm: callee entry -> (body, arm, timing).
     let mut callee_arm: BTreeMap<u32, Vec<(u32, u8, SiteTiming)>> = BTreeMap::new();
     let mut seeds: BTreeMap<u32, Tracker> = BTreeMap::new();
@@ -1649,8 +1669,36 @@ pub fn decode(bytes: &[u8], own_end: usize) -> CastPresentation {
                     _ => SiteTiming::Every,
                 }
             };
+            // The arm laid out over the site: the greatest arm entry at or
+            // below it.
+            let physical = |s: u32| entries.range(..=s).next_back() == Some(&entry);
+            // A `j` of this arm that lands in the site's straight block: no
+            // branch, jump or return between the target and the site.
+            let jumps_into = |s: u32| {
+                reach.iter().any(|&v| {
+                    img.ins(v).is_some_and(|i| {
+                        if !i.is_j() {
+                            return false;
+                        }
+                        let t = i.jump_target();
+                        t <= s
+                            && (t..s).step_by(4).all(|w| {
+                                img.ins(w).is_some_and(|k| {
+                                    !k.is_branch() && !k.is_j() && !k.is_jr() && !k.is_jalr()
+                                })
+                            })
+                    })
+                })
+            };
             for &s in cands.iter().filter(|s| reach.contains(s)) {
-                placed.entry(s).or_insert((lo, phase, timing_of(s)));
+                let arms = placed.entry(s).or_default();
+                // The first arm to reach a site keeps it; the arm laid out
+                // over it and an arm that jumps into its block run it too.
+                if (arms.is_empty() || physical(s) || jumps_into(s))
+                    && !arms.iter().any(|&(b, p, _)| b == lo && p == phase)
+                {
+                    arms.push((lo, phase, timing_of(s)));
+                }
             }
             // Own-image calls made from this arm.
             for &v in &reach {
@@ -1671,9 +1719,15 @@ pub fn decode(bytes: &[u8], own_end: usize) -> CastPresentation {
         for (&phase, &entry) in &d.arms {
             let want: BTreeSet<u32> = placed
                 .iter()
-                .filter(|(_, (b, p, _))| *b == lo && *p == phase)
+                .filter(|(_, arms)| arms.iter().any(|&(b, p, _)| b == lo && p == phase))
                 .map(|(v, _)| *v)
                 .collect();
+            let timing_at = |va: u32| {
+                placed[&va]
+                    .iter()
+                    .find(|&&(b, p, _)| b == lo && p == phase)
+                    .map_or(SiteTiming::Every, |&(_, _, t)| t)
+            };
             if want.is_empty() {
                 continue;
             }
@@ -1710,7 +1764,7 @@ pub fn decode(bytes: &[u8], own_end: usize) -> CastPresentation {
             let entry_seed = seed.clone();
             let mut decoded = BTreeSet::new();
             for (va, call) in scan_range(&img, from, last + 4, &seed, &want) {
-                let (_, _, timing) = placed[&va];
+                let timing = timing_at(va);
                 decoded.insert(va);
                 out.sites.push(PresentationSite {
                     va,
@@ -1729,7 +1783,7 @@ pub fn decode(bytes: &[u8], own_end: usize) -> CastPresentation {
                 && missing.iter().all(|&m| m >= exact)
             {
                 for (va, call) in scan_range(&img, exact, last + 4, &entry_seed, &missing) {
-                    let (_, _, timing) = placed[&va];
+                    let timing = timing_at(va);
                     out.sites.push(PresentationSite {
                         va,
                         body: lo,

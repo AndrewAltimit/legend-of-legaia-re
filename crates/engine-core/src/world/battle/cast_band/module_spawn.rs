@@ -572,10 +572,17 @@ impl World {
                 let drift = (prot_entry == 930)
                     .then(|| legaia_engine_cast::cast_module_camera::horn_ring_drift(va, n))
                     .flatten();
+                // PROT 0965 arm 8's ring loop writes each part's ring words.
+                let ring = (prot_entry == 965)
+                    .then(|| {
+                        legaia_engine_cast::cast_module_camera::doomsday_ring_part_words(va, n)
+                    })
+                    .flatten();
                 for part in &mut scene.parts[first..] {
                     part.tag.get_or_insert(va);
                     part.seat_pokes.extend_from_slice(pokes);
                     part.seat_pokes.extend(drift.iter().flatten());
+                    part.seat_pokes.extend(ring.iter().flatten());
                 }
                 // A seated stager-calling record makes its own call, so the
                 // clock kept in its place stops.

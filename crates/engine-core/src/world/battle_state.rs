@@ -940,6 +940,12 @@ pub struct BattleState {
     /// as the retail per-frame call does. Hosts draw it through
     /// `legaia_render_kernels::streak_pass::clip_ribbon_quads`.
     pub clip_ribbon: Option<ClipRibbon>,
+    /// This tick's streak ribbons from a cast module arm
+    /// (`legaia_engine_cast::cast_module_camera::CaptureCamArm::ribbons`,
+    /// PROT 0962 `0xA3`'s arm-4 ring): retail calls `FUN_801E1D98` once per
+    /// point on the arm's pass, so the band rewrites it on every module tick
+    /// and clears it when the arm has none. Drawn beside [`Self::clip_ribbon`].
+    pub cast_ribbons: Option<legaia_engine_cast::cast_module_camera::CastRibbonRing>,
     /// The part-emit accumulator `ctx[+0x328]`: the frame driver keeps its
     /// low nibble and adds `DAT_1F800393 << 3` every battle frame
     /// (`FUN_80046A20`, `0x8004713C..0x80047160`), and every body the anim
@@ -1173,6 +1179,7 @@ impl BattleState {
             return_mode: SceneMode::Field,
             field_camera_reseat: false,
             clip_ribbon: None,
+            cast_ribbons: None,
             burn_emit_accum: 0,
             ambient_stored: legaia_engine_battle_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL,
             backdrop_cue: 0,

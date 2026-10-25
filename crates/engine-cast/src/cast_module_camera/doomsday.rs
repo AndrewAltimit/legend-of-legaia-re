@@ -40,16 +40,14 @@ fn vsyncs(n: i32) -> i32 {
 /// | 4, 5 (`0x801F6ED0`, `0x801F6F4C`) | (the wash ramps) | `w` | `+ 0x100` / `+ 0xC0` |
 /// | 6 (`0x801F6FE0`) | - | `w` | two records at the origin; `+ 0x100` |
 /// | 7 (`0x801F70A8`) | - | `w` | `+ 0x100`; stage byte `0`, the backdrop back (`0x800`); the party shown; cut pitch `0x100`, yaw `-facing`, TR `(0, 0, 0x4650)` on the origin |
-/// | 8 (`0x801F7250`) | yaw `+2d` | `w` | pool flush; the party hidden, the caster shown; cut pitch `-0x200`, yaw `0x800 - facing`, TR `(0, 0x2C00, 0x1000)` on the caster; two records at the origin; stage byte `3`, the backdrop off; `+ 0x100` |
+/// | 8 (`0x801F7250`) | yaw `+2d` | `w` | pool flush; the party hidden, the caster shown; cut pitch `-0x200`, yaw `0x800 - facing`, TR `(0, 0x2C00, 0x1000)` on the caster; two records and the ten-ring loop on the cut's trios ([`doomsday_ring_part_words`]); stage byte `3`, the backdrop off; `+ 0x100` |
 /// | 9 (`0x801F7408`) | - | `w` | pool flush; the caster hidden; four records at the origin; cut TR `(-0x100, 0x100, -0x1964)` on the origin; `+ 0x80` |
 /// | `0x0A` (`0x801F74EC`) | a `0x20`-frame shot TR `(0x200, 0, -0xA8C)` on the origin | `w` | seven records at the origin; `+ 0x40` |
 /// | `0x0B` (`0x801F7648`) | - | `w` | pool flush; the party shown and lined up ([`DOOMSDAY_LINE_UP_X`], the host); (the `0x600` sweep: the phase port); cut TR `(0, 0x300, 0xC00)` on the origin; stage byte `0`, the backdrop back; `+ 0x80` |
 /// | `0x0C` (`0x801F78E0`) | TR z `+4d` | `w`, then the target row's settle | (`0xFF`) |
 /// | `0xFF` (`0x801F7A08`) | - | - | the party's seats restored (the host); caster height `0`; cut pitch `0`, yaw `0x800 - facing`, TR `(0, 0x800, 0x800)` on the caster |
 ///
-/// Arm 8's ten records whose part words it writes after each spawn
-/// (`0x801F73C4..0x801F73F8`) and the part-flag stores on held handles are
-/// not carried.
+/// The part-flag stores on held handles are not carried.
 ///
 /// PORT: FUN_801F69D8 (PROT 0965; the camera arms, the countdown and settle
 /// gates, the hides, the stage byte and backdrop stores, the spawns)
@@ -234,8 +232,52 @@ pub(super) const E965_3: [ModuleSpawn; 3] = [
 ];
 /// `0x801F7014..0x801F704C`, arm 6.
 pub(super) const E965_6: [ModuleSpawn; 2] = [at_origin(0x801F_7D74), at_origin(0x801F_7DF0)];
-/// `0x801F7364..0x801F7390`, arm 8 (its looped ten are not carried).
-pub(super) const E965_8: [ModuleSpawn; 2] = [at_origin(0x801F_7E58), at_origin(0x801F_7EC8)];
+const fn on_shot(record: u32) -> ModuleSpawn {
+    ModuleSpawn {
+        record: SpawnRecord::Module(record),
+        anchor: SpawnAnchor::ShotFocus,
+    }
+}
+
+/// The record arm 8's loop seats ten times (`addiu a2,s3,0x7ee4` at
+/// `0x801F73CC`).
+pub const DOOMSDAY_RING_RECORD: u32 = 0x801F_7EE4;
+/// How many times arm 8's loop seats [`DOOMSDAY_RING_RECORD`]: `s2` runs
+/// `0xC, 0x18, .. 0x78` (`sltiu v0,s2,0x80` at `0x801F73F4`).
+pub const DOOMSDAY_RING_COUNT: usize = 10;
+
+/// `0x801F7364..0x801F7400`, arm 8: two records, then the loop's ten, every
+/// one on the trios the arm's cut was built from - the caster's negated
+/// pair `(-x, 0, -z)` at `sp+0x20` and the angles `(-0x200, 0x800 -
+/// facing, 0)` at `sp+0x10` ([`SpawnAnchor::ShotFocus`]), not the origin:
+/// arm 8 is the one arm whose stack holds its shot when it spawns.
+pub(super) const E965_8: [ModuleSpawn; 12] = [
+    on_shot(0x801F_7E58),
+    on_shot(0x801F_7EC8),
+    on_shot(DOOMSDAY_RING_RECORD),
+    on_shot(DOOMSDAY_RING_RECORD),
+    on_shot(DOOMSDAY_RING_RECORD),
+    on_shot(DOOMSDAY_RING_RECORD),
+    on_shot(DOOMSDAY_RING_RECORD),
+    on_shot(DOOMSDAY_RING_RECORD),
+    on_shot(DOOMSDAY_RING_RECORD),
+    on_shot(DOOMSDAY_RING_RECORD),
+    on_shot(DOOMSDAY_RING_RECORD),
+    on_shot(DOOMSDAY_RING_RECORD),
+];
+
+/// The part words arm 8 stores into the `n`-th part its loop seats
+/// (`0x801F73D8..0x801F73F0`, `k = n + 1`): `+0xB6 = 0x240 k` and
+/// `+0xB4 = 0x300 k` (`sh` through `a1 = part + 0x80`, `+0x36` / `+0x34`)
+/// and the level `+0x78 = 0x180 k` - ten nested rings, each wider and
+/// brighter than the last. `None` past the loop or for any other record.
+pub fn doomsday_ring_part_words(record: u32, n: usize) -> Option<[(u16, u16); 3]> {
+    if record != DOOMSDAY_RING_RECORD || n >= DOOMSDAY_RING_COUNT {
+        return None;
+    }
+    let k = n as u16 + 1;
+    Some([(0xB6, 0x240 * k), (0xB4, 0x300 * k), (0x78, 0x180 * k)])
+}
 /// `0x801F7430..0x801F74A8`, arm 9.
 pub(super) const E965_9: [ModuleSpawn; 4] = [
     at_origin(0x801F_7F3C),
@@ -257,6 +299,27 @@ pub(super) const E965_A: [ModuleSpawn; 7] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn arm_eight_seats_ten_nested_rings_on_its_cut() {
+        // Every arm-8 record sits on the cut's trios, not the origin.
+        assert!(E965_8.iter().all(|s| s.anchor == SpawnAnchor::ShotFocus));
+        let rings = E965_8
+            .iter()
+            .filter(|s| s.record == SpawnRecord::Module(DOOMSDAY_RING_RECORD))
+            .count();
+        assert_eq!(rings, DOOMSDAY_RING_COUNT);
+        assert_eq!(
+            doomsday_ring_part_words(DOOMSDAY_RING_RECORD, 0),
+            Some([(0xB6, 0x240), (0xB4, 0x300), (0x78, 0x180)])
+        );
+        assert_eq!(
+            doomsday_ring_part_words(DOOMSDAY_RING_RECORD, 9),
+            Some([(0xB6, 0x1680), (0xB4, 0x1E00), (0x78, 0xF00)])
+        );
+        assert_eq!(doomsday_ring_part_words(DOOMSDAY_RING_RECORD, 10), None);
+        assert_eq!(doomsday_ring_part_words(0x801F_7E58, 0), None);
+    }
 
     #[test]
     fn the_word_counts_vsyncs_and_the_last_arm_waits_on_the_row() {

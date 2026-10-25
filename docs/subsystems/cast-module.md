@@ -3069,8 +3069,13 @@ two; TR `(0, 0x400, 0x800)` for all three. From there:
 - **`0xA3` Thunder Needle** (`0x801F74A0`): TR z `+s` on arms 3 and 4; arm 3
   waits for cursor `0xF0` (three records on the victim, the hit, victim colour
   `0x3FF00000`), arm 4 for cursor `0x1C0`, then bumps the caster's `+0x1DC`.
-  It calls no case 8, and arm 4's sixteen streaks (`FUN_801E1D98`) are not
-  carried.
+  It calls no case 8. Arm 4 also draws sixteen streaks (`FUN_801E1D98`,
+  trail `0xC`) on every pass, ahead of its gate, while its word `0x801F89B0`
+  (zeroed on arm 2, stepped by the frame step) is under `0x41`: streak `i`
+  stands on the ground at angle `(i << 8) + (w & 0xFF)` and radius `w`
+  about the caster's live pair (each lane `table * w >> 7` off the sine and
+  cosine views), a ring of lightning that widens and turns for 64 vsyncs
+  (`thunder_needle_ring`; the hosts draw it beside the clip-tag ribbon).
 - **`0xA4` Gigaton Press** (`0x801F6D54`): arm 3 drifts TR z `+2s` and lifts
   the caster on `-sin(16 w) / 8` off a word stepped by the frame step, waiting
   for cursor `0x100`; its pass grounds the caster, seats five records on it and
@@ -3121,9 +3126,27 @@ and shown and the stage byte with them. Arm `0x0B` shows the party, lines it
 up at half of the seat table `0x800775E0`'s x for the party count with
 `z = 0` and heading `0x800` (`DOOMSDAY_LINE_UP_X`), and lands the `0x600`
 sweep; the `0xFF` arm puts every seat back. The spawns are at the origin.
-Arm 8's ten records whose part words it writes after each spawn are not
-carried. The tick stores `0xFF` on arm `0x0C`'s pass (`DOOMSDAY_LAST_ARM`);
-it used to walk the phase past the body's last arm.
+Arm 8 is the one arm whose stack still holds its cut when it spawns: its
+two records and the ten its loop seats (`0x801F7EE4`) take the cut's trios,
+the caster's negated pair `(-x, 0, -z)` and the angles `(-0x200, 0x800 -
+facing, 0)`, not the origin, and the loop stores ring words into each part
+it seats, `+0xB6 = 0x240 k`, `+0xB4 = 0x300 k` and the level
+`+0x78 = 0x180 k` for `k = 1..10` (`0x801F73C4..0x801F73F8`,
+`doomsday_ring_part_words`): ten nested rings. The tick stores `0xFF` on arm
+`0x0C`'s pass (`DOOMSDAY_LAST_ARM`); it used to walk the phase past the
+body's last arm.
+
+Three arms spawn their fade through one call site, `0x801F7624`, laid out
+in arm `0x0A`. Arm `0x0A` falls into it with its own words (kind `1`, a
+`0x20`-frame white rise after a `0x20` delay, held); arm 2 stores kind `1`,
+`0x40` frames, no delay, held, and jumps to `0x801F7620`; arm 6 stores
+kind `2` (subtractive), `0x20` frames after a `0xE0` delay, held, and jumps
+to `0x801F7624` - the fade to black that closes arm 7, `0xE0` vsyncs into
+its `0x100`. The presentation decoder
+([`cast_presentation`](../../crates/overlay-images/src/cast_presentation.rs))
+places a site in every arm laid out over it or jumping into its straight
+block, and follows such a forward `j` when it folds the template, so each
+arm spawns its own fade.
 
 The rest of the measured set carries its gate as a countdown table with no camera arms
 (`cast_module_camera::capture_countdown`: per arm, the drain form and the
