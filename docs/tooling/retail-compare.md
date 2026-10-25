@@ -2137,7 +2137,14 @@ walk, run from a default state). Mystic Shield's arm-0 shot
 yaw from where `0x6F` left it, so held to the capture's whole counter the
 engine opened the shot `42` units further round (yaw `56` against retail's
 `14`, camera `.986`); held short, it reads `22` (camera `1.000`, image `.993`
-to `.999`).
+to `.999`). The eight units left are the counter rate, not the shot: the
+capture's own tween table (pitch `288` of `0x200` at `8` a vsync, yaw `14`
+at `2` a vsync onto `0`) puts retail's arm-0 shot `36` vsyncs in, opening
+from yaw `86`. The replay opens from `94` because the hold stands the counter
+`35` band ticks short, and retail's counter climbed `43` units over those
+vsyncs. The counter gains `4 * step / 3` a pass, more per vsync at steps `3`
+and `4` than at `2`, and the band ran part of that span at a higher step
+than the replay's `2`.
 
 The engine's side of the accumulator test is its clip age
 (`BattleCamera::clip_age`): the accumulator with a looping clip's natural-end
@@ -2849,8 +2856,18 @@ are timing and effect content, not rasterisation:
   `cort_evolved_ultra_charge_mid_cast` `0.997` to `0.966`,
   `cort_mystic_shield_mid_cast` `0.999` to `0.983`). It is this state's own
   clock: at the gate tick the engine's camera already stands two vsyncs of
-  arm 1's TR z drift past the RAM's (glide target `3428` against `3420`), so
-  the engine reaches the arm-1 countdown a pass after its camera matched.
+  arm 1's TR z drift past the RAM's (glide target `3428` against `3420`). The
+  drift is not early; arm 0's shot lands early. Arm 1 drifts TR z `4 * step`
+  and drains its word `scalar * step` on every pass (`0x801F6CC4..0x801F6D0C`),
+  so the two stay locked, and the drift only stays put once the shot has
+  landed (the walker stores TR z back on its endpoint until then). Retail's
+  tween table holds the shot's TR z increment at `33` (endpoint `3276`), so
+  retail's arm 0 started the shot under `4333`. The replay's `0x6F` pull-in
+  hands arm 0 TR z `4333`, so its increment is `34` and it lands one pass
+  sooner against the drift: at word `760` where retail's lands at `744`.
+  Re-running the replay's walk with retail's increment of `33` lands it on
+  `744`, so the whole residual is the `0x6F` pose arm 0 starts from, not
+  arm 1's own clocks.
 - `zeto_call_wave_mid_cast`: the engine draws one Call Wave ray horizontal
   across the left of the frame where retail has none; the failing blocks are
   that ray's.

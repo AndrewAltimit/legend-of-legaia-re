@@ -2556,7 +2556,12 @@ and `0x20` (`sh` into the node's `+0x68`), and arm 9's bare `+0x1DA`
 decrement leaves clip `0` to the swim-in's natural end, deep in arm 11. The
 host seats the creature after the tick that asks for it, so the director's
 creature writes wait for the seat rather than land on the installer's resets
-(`World::apply_seru_seat_writes`). Otherwise not carried by any of them:
+(`World::apply_seru_seat_writes`). Arm 15's `0x801F9398` is a VRAM-rect
+scroller (op `0x1E`, rect `(0x2C0, 0, 0x3F, 0xFF)`, one halfword a step):
+it rolls page `0x2B`, the swirl texture the caustic nodes sample. Through arm 15
+the replay's rect matches retail VRAM reads exactly. In arm 16, where retail's
+frames overrun their step most, it stands `9` and then `12` halfwords off,
+which is most of that arm's low score. Otherwise not carried by any of them:
 the writes to the other seats (the monster row's hiding, orbits and
 restore, Mushura's walk and steering, Barra's seat swaps and arcs), the
 other modules' stage words `ctx[+0x27A..+0x286]` beyond what the
