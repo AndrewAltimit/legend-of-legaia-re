@@ -925,6 +925,7 @@ fn orb_anchors_resolve_like_the_arms_build_them() {
         caster: Some(caster),
         caster_body: None,
         victim_body: None,
+        creature_body: None,
         party: [Some(caster), None, None],
         depth: 0xC00,
     };
@@ -1216,4 +1217,51 @@ fn horn_arm_6_seats_sixteen_spokes_of_glows_at_two_speeds() {
     );
     assert_eq!(horn_ring_drift(0x801F_8C44, 32), None);
     assert_eq!(horn_ring_drift(0x801F_8BEC, 0), None);
+}
+
+/// PROT 0929's tail points the scanline backdrop at the live camera. Four
+/// retail RAM reads of a Mule cast (arms 15 and 16) hold `ctx[+0x285]` /
+/// `+0x286` at exactly what the formula gives for the camera globals beside
+/// them.
+#[test]
+fn mule_backdrop_origin_follows_the_live_camera() {
+    assert_eq!(mule_backdrop_origin(0, 2504, 248, 2140), (0xBD, 0));
+    assert_eq!(mule_backdrop_origin(0, 2840, -88, 1972), (0xA0, 0));
+    assert_eq!(mule_backdrop_origin(0, 3072, 192, 1792), (0x78, 0));
+    assert_eq!(mule_backdrop_origin(0, 3072, 3648, 1360), (0xE8, 0));
+    // The row: pitch over 16 less the height over 48, held in `0..=0x20`;
+    // a pitch past `0x800` reads negative and truncates toward zero.
+    assert_eq!(mule_backdrop_origin(0x100, 0, 0, 0x400), (0, 0x10));
+    assert_eq!(mule_backdrop_origin(0x1000 - 0x11, 0, 0, 0x400), (0, 0));
+    assert_eq!(mule_backdrop_origin(0, 0, 0, 0x400 - 48 * 40), (0, 0x20));
+}
+
+/// A creature-body anchor seats the record on the creature's display trio
+/// with the arm's zeroed stack angles (PROT 0929 arm 14).
+#[test]
+fn a_creature_body_anchor_takes_the_display_trio_unturned() {
+    let body = ModuleSeat {
+        x: 0,
+        y: -458,
+        z: -1034,
+        facing: 0x800,
+    };
+    let seats = AnchorSeats {
+        creature_body: Some(body),
+        ..Default::default()
+    };
+    assert_eq!(
+        spawn_anchor_point_with(SpawnAnchor::CreatureBody, None, None, None, seats),
+        Some(([0, -458, -1034], [0; 3]))
+    );
+    assert_eq!(
+        spawn_anchor_point_with(
+            SpawnAnchor::CreatureBody,
+            None,
+            None,
+            None,
+            AnchorSeats::default()
+        ),
+        None
+    );
 }

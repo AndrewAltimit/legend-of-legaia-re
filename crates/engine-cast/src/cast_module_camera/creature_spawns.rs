@@ -1535,57 +1535,17 @@ const S929_14: [ModuleSpawn; 6] = [
         },
     ),
     // 0x801F7A00
-    spawn(
-        0x801F9498,
-        CreatureOffset {
-            dx: 0,
-            y: 0,
-            dz: 0,
-            rot: [0, 0, 0],
-        },
-    ),
+    spawn(0x801F9498, CreatureBody),
     // 0x801F7A1C
-    spawn(
-        0x801F94E0,
-        CreatureOffset {
-            dx: 0,
-            y: 0,
-            dz: 0,
-            rot: [0, 0, 0],
-        },
-    ),
+    spawn(0x801F94E0, CreatureBody),
     // 0x801F7A38
-    spawn(
-        0x801F9528,
-        CreatureOffset {
-            dx: 0,
-            y: 0,
-            dz: 0,
-            rot: [0, 0, 0],
-        },
-    ),
+    spawn(0x801F9528, CreatureBody),
     // 0x801F7A54
-    spawn(
-        0x801F95A8,
-        CreatureOffset {
-            dx: 0,
-            y: 0,
-            dz: 0,
-            rot: [0, 0, 0],
-        },
-    ),
+    spawn(0x801F95A8, CreatureBody),
 ];
 const S929_15: [ModuleSpawn; 4] = [
     // 0x801F7C40
-    spawn(
-        0x801F99EC,
-        CreatureOffset {
-            dx: 0,
-            y: 0,
-            dz: 0,
-            rot: [0, 0, 0],
-        },
-    ),
+    spawn(0x801F99EC, CreatureBody),
     // 0x801F7C80
     spawn(
         0x801F9344,

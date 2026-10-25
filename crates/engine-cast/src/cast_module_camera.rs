@@ -472,6 +472,11 @@ pub enum SpawnAnchor {
     /// pose centroid) on its angle trio `+0x44`: `a0 = caster + 0x3C`,
     /// `a1 = caster + 0x44`. PROT 0946's Call Wave arm 0 (`0x801F6C38`).
     CasterBody,
+    /// The creature seat's display trio `+0x3C..+0x40` on the arm's zeroed
+    /// stack angles: `a0 = creature + 0x3C`, `a1 = sp+0x20`. PROT 0929 arm
+    /// 14's last four calls (`0x801F79E8..0x801F7A54`) and arm 15's first
+    /// (`0x801F7C00..0x801F7C40`).
+    CreatureBody,
     /// The caster seat's `+0x34..+0x3B` copied to the stack (`lwl` / `lwr`)
     /// with `dy` / `dz` added to its height and depth halfwords, on the
     /// caster's angle trio `+0x44`: PROT 0961 arms 2 and 3
@@ -595,6 +600,8 @@ pub struct AnchorSeats {
     pub caster_body: Option<ModuleSeat>,
     /// The victim's display trio, facing its `+0x46`.
     pub victim_body: Option<ModuleSeat>,
+    /// The creature seat's display trio `+0x3C..+0x40`.
+    pub creature_body: Option<ModuleSeat>,
     pub party: [Option<ModuleSeat>; 3],
     /// The framing depth `ctx[+0x6D0]`, the scale PROT 0913 passes.
     pub depth: i16,
@@ -632,6 +639,10 @@ pub fn spawn_anchor_point_with(
             ([c.x, y, c.z], [0, c.facing as i16, 0])
         }
         SpawnAnchor::CasterBody => seat_at(seats.caster_body?),
+        SpawnAnchor::CreatureBody => {
+            let c = seats.creature_body?;
+            ([c.x, c.y, c.z], [0; 3])
+        }
         SpawnAnchor::CasterShifted { dy, dz } => {
             let c = seats.caster?;
             (

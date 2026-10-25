@@ -129,6 +129,10 @@ pub struct CastFxState {
     /// PROT 0922's rumble alternation word `0x801FA0BC`, bumped by its arms
     /// 14 and 15 (`cast_module_rumble::RumbleStore::PueraAlternate`).
     pub(crate) module_rumble_alternate: u32,
+    /// PROT 0929's word `0x801F9A84`: set on arm 9's pass, it turns on the
+    /// tail that pans the scanline backdrop with the camera
+    /// ([`legaia_engine_cast::cast_module_camera::mule_backdrop_origin`]).
+    pub(crate) module_mule_backdrop_follow: bool,
     /// Ticks the current arm has held on its settle wait
     /// (`cast_module_ticks::ChainSettle`), bounded by
     /// `cast_fatal_decision::SETTLE_TICK_LIMIT`.
@@ -404,6 +408,7 @@ impl CastFxState {
             module_shake: 0,
             module_hit_arm: None,
             module_rumble_alternate: 0,
+            module_mule_backdrop_follow: false,
             module_settle_ticks: 0,
             module_nighto_outcome: None,
             module_stager_calls: Vec::new(),

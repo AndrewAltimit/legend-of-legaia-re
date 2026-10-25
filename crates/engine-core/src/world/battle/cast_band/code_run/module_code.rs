@@ -1556,6 +1556,9 @@ impl World {
             ctx.phase,
             run.tick_ported && !run.busy,
         );
+        if entry == 929 {
+            self.mule_backdrop_follow(phase_in, ctx.phase != phase_in);
+        }
         Some(run)
     }
 }

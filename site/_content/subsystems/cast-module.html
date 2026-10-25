@@ -166,7 +166,7 @@
     </svg>
     <figcaption>Band mode shades colour bands; the scanline modes resample texture page <code>0xA8</code> (VRAM <code>(512, 0)</code>) through CLUT <code>(0, 488)</code>, one 256-texel row per screen line wrapped across the 320-pixel line. Mode 2 mirrors the second strip.</figcaption>
   </figure>
-  <p>Both modes are ported whole in <code>render-kernels::cast_colour_wash</code> (<code>scanline_prims</code> for the textured one). Both hosts composite screen primitives after their 3D pass, so they draw the wash as a far-plane primitive ahead of the scene instead. The scanline mode is Mule&rsquo;s underwater backdrop: before it was ported the creature&rsquo;s whole performance played over black. Two per-line offset arrays the emitter also adds have no writer anywhere on the disc, so the port reads them as zero.</p>
+  <p>Both modes are ported whole in <code>render-kernels::cast_colour_wash</code> (<code>scanline_prims</code> for the textured one). Both hosts composite screen primitives after their 3D pass, so they draw the wash as a far-plane primitive ahead of the scene instead. The scanline mode is Mule&rsquo;s underwater backdrop: before it was ported the creature&rsquo;s whole performance played over black. From its ninth arm on, Mule&rsquo;s module also ends every pass by pointing the backdrop&rsquo;s sample origin at the live camera (the start column from the yaw and the sideways eye offset, the start row from the pitch and the eye height), so the backdrop pans as the shots turn. Two per-line offset arrays the emitter also adds have no writer anywhere on the disc, so the port reads them as zero.</p>
 </section>
 
 <section class="doc-section" id="port">

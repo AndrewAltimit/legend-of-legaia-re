@@ -275,6 +275,41 @@ impl World {
     /// parked handles and runs out the loops arm 16 ends
     /// ([`legaia_engine_cast::cast_module_camera::mule_arm_kills`],
     /// [`legaia_engine_cast::cast_module_camera::mule_arm_loop_ends`]).
+    /// PROT 0929's per-pass tail (`0x801F8B08..0x801F8BF8`): arm 0 clears
+    /// the follow word and arm 9's pass sets it; while it is set every pass
+    /// ends by pointing the scanline backdrop's sample origin
+    /// (`ctx[+0x285]` / `+0x286`) at the live camera, after the arm's own
+    /// stores ([`legaia_engine_cast::cast_module_camera::mule_backdrop_origin`]).
+    pub(in crate::world::battle::cast_band) fn mule_backdrop_follow(
+        &mut self,
+        phase_in: u8,
+        passed: bool,
+    ) {
+        use legaia_engine_cast::cast_module_camera::{
+            MULE_BACKDROP_FOLLOW_ARM, mule_backdrop_origin,
+        };
+        if phase_in == 0 {
+            self.casting.module_mule_backdrop_follow = false;
+            return;
+        }
+        if phase_in == MULE_BACKDROP_FOLLOW_ARM && passed {
+            self.casting.module_mule_backdrop_follow = true;
+        }
+        if !self.casting.module_mule_backdrop_follow {
+            return;
+        }
+        let pose = self.battle_cam_pose();
+        let (u, v) = mule_backdrop_origin(
+            pose.pitch as i32,
+            pose.yaw as i32,
+            pose.tr[0] as i32,
+            pose.tr[1] as i32,
+        );
+        let wash = &mut self.casting.module_pres.wash;
+        wash.u_base = u;
+        wash.v_base = v;
+    }
+
     pub(in crate::world::battle::cast_band) fn apply_mule_writes(
         &mut self,
         phase_in: u8,
@@ -285,6 +320,29 @@ impl World {
     ) {
         use legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN;
         self.mule_row_seat(phase_in, passed, monster_count, caster, spell_id);
+        // Arms 15 and 16 copy the creature's display trio over the position
+        // of two of arm 14's parked parts on every pass, held or not
+        // (`lwl` / `lwr` of `+0x3C..+0x43` into `+0x14..+0x1B` through the
+        // handles at `0x801F9A98` / `0x801F9A9C`; `0x801F7BD8..0x801F7C20`,
+        // `0x801F81BC..0x801F820C`), so they ride with the creature.
+        if matches!(phase_in, 15 | 16)
+            && let Some(body) = self
+                .casting
+                .summon_actor_slot
+                .and_then(|c| self.battle_display_trio(usize::from(c)))
+            && let Some(scene) = self.casting.active_summon.as_mut()
+        {
+            for part in scene.parts.iter_mut().filter(|p| {
+                !p.finished
+                    && p.tag.is_some_and(|t| {
+                        legaia_engine_cast::cast_module_camera::MULE_CREATURE_RIDERS.contains(&t)
+                    })
+            }) {
+                part.state.world_x = body[0] as i16;
+                part.state.world_y = body[1] as i16;
+                part.state.world_z = body[2] as i16;
+            }
+        }
         if passed && let Some(scene) = self.casting.active_summon.as_mut() {
             let kills = legaia_engine_cast::cast_module_camera::mule_arm_kills(phase_in);
             let ends = legaia_engine_cast::cast_module_camera::mule_arm_loop_ends(phase_in);

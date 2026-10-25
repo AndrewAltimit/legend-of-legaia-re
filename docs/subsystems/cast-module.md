@@ -2535,10 +2535,22 @@ arm 14's glows, arm 19 arm 17's spray, and arm 16 zeroes the loop counters
 of arm 14's two CLUT-cell cyclers so each runs out its loop and halts
 (`0x801F82A8..0x801F82C0`). Arm 16's exit frames a lone target on its own
 `+0x34` / `+0x38`, unnegated, at ten times its body radius (at most
-`0x1800`). Otherwise not carried by any of them: the writes to the other
-seats (the monster row's hiding, orbits and restore, Mushura's walk
-and steering, Barra's seat swaps and arcs), the stage words `ctx[+0x27A..+0x286]` and the camera
-block `0x80083FF8`, and pad rumble. Jedo's kill is the host's
+`0x1800`). Mule's per-pass tail (`0x801F8B08..0x801F8BF8`) points the
+scanline backdrop's sample origin at the live camera once arm 9's pass has
+set the word `0x801F9A84`: `ctx[+0x285] = -((yaw & 0xFFF) / 8 + TR x / 24)`
+and `ctx[+0x286] = pitch / 16 - (TR y - 0x400) / 48`, clamped to
+`0..=0x20`, so the underwater backdrop pans as the shots turn
+(`cast_module_camera::mule_backdrop_origin`; four retail RAM reads in arms
+15 and 16 hold exactly those values). Arm 14 seats its last four parts on
+the creature's display trio `+0x3C` (`SpawnAnchor::CreatureBody`), and arms
+15 and 16 copy that trio over two of them on every pass
+(`MULE_CREATURE_RIDERS`), so the two camera-facing domes ride with the
+creature: seated on its floor point instead, they sat low in the frame and
+the backdrop read dark under them. Otherwise not carried by any of them:
+the writes to the other seats (the monster row's hiding, orbits and
+restore, Mushura's walk and steering, Barra's seat swaps and arcs), the
+other modules' stage words `ctx[+0x27A..+0x286]` beyond what the
+presentation hook decodes, the camera block `0x80083FF8`, and pad rumble. Jedo's kill is the host's
 (`World::apply_summon_body_writes`): on a fight that is not scripted arm 29
 makes no damage call and arm 30 breaks every living monster up and kills it.
 
