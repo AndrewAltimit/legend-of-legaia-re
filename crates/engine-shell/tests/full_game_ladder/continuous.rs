@@ -406,6 +406,7 @@ fn part_c_continuous_run() {
         );
     });
     reset_shopping();
+    reset_duel_dress();
     let mut session = open_session(&inp.extracted);
     // `LEGAIA_FGL_CONTINUOUS_FROM=<milestone>` starts the run at a later
     // milestone, seeded once from that milestone's retail anchor and never
@@ -701,6 +702,7 @@ fn part_c_continuous_run() {
     PLAYED_AHEAD.with(|a| *a.borrow_mut() = None);
     CHESTS_AHEAD.with(|c| c.borrow_mut().clear());
     reset_errands();
+    reset_duel_dress();
     let denom = spine.len() - 1 - start;
     eprintln!();
     eprintln!(

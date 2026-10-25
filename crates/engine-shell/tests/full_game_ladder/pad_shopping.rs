@@ -171,7 +171,16 @@ fn heal_sale_gear(session: &NativeSession, sells_heal: bool) -> BTreeSet<u8> {
     {
         return BTreeSet::new();
     }
-    outgrown_gear(session, true)
+    let mut sale = outgrown_gear(session, true);
+    // Into Nivora's three solo duels the counter at `doman` is the last, and
+    // the duellists fight out of its heals alone: the accessories the hand
+    // never wears go over it too. The run came to it with a Golden Book
+    // (40000) in the bag and 18329 gold, and Gala lost Che Delilas's duel
+    // with the bag dry and Che under 2000.
+    if continuous::STRETCH_TO.with(|s| s.borrow().as_str() == "nivora") {
+        sale.extend(never_worn_goods(session));
+    }
+    sale
 }
 
 /// The worth of a piece of equipment to the hand: the sum of its stat

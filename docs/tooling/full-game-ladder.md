@@ -258,7 +258,11 @@ one upkeep pass, in this order:
    duels, sells no other restorative. At a counter that sells a heal, a bag
    under its fifteen a member first sells the armament no member who has
    joined (present or not) is better off wearing, whole stacks, as the
-   errand rule below does for gold. A sale the screen does not complete is
+   errand rule below does for gold. On the way into Nivora's duels, which
+   are fought out of `doman`'s heals alone, it also sells the accessories it
+   never wears (a Golden Book, a Zero Defense; guards are kept): a run that
+   came to the counter with 18329 gold bought six Healing Berries, and with
+   the Golden Book sold fourteen. A sale the screen does not complete is
    struck off that visit's list rather than ending the visit: ending it
    there left `rayman2`'s item counter with a purse of 20000 and two
    Healing Flowers bought.
@@ -1620,17 +1624,24 @@ the bag and its own spell list give it:
 - **The stance waits on a heal that can come.** The hold below five eighths
   lasts only while the bag holds a restorative; with none left the member
   goes on alternating Spirit and Arts rounds.
-- **The duellists wear the bag's best Goods.** The upkeep only fills an
-  empty Goods slot, so a run keeps on whatever its first chests held: the
+- **The first duellist wears the bag's best Goods.** The upkeep only fills
+  an empty Goods slot, so a run keeps on whatever its first chests held: the
   continuous run met Che with Gala in a Rot Guard and AP Boost 1 while the
   bag held a Power Ring, a War Soul and a Life Ring. Before the walk onto
   the duel band (and before any staged fight of the stretch to
-  `nivora_late`), each duellist in the order the duels take them - Gala,
-  Noa, Vahn - trades its least wanted worn accessory for the bag's most
-  wanted one it does not already wear, while the bag holds one worth more
-  (the upkeep's own ranking of passives); what comes off goes back to the
-  bag for the next duellist. Gala then fights Che with ATK +20%, Arts Power
-  and Max HP +10% (1891 to 2080).
+  `nivora_late`), Gala trades her least wanted worn accessory for the bag's
+  most wanted one she does not already wear, while the bag holds one worth
+  more (the upkeep's own ranking of passives), and fights Che with ATK
+  +20%, Arts Power and Max HP +10% (1891 to 2080). Only Gala: Che's duel is
+  the one the bag runs out on, and Noa's and Vahn's are won out of an empty
+  bag. An element guard stays on, since the damage finisher halves a monster
+  special of the guarded element
+  ([`battle-formulas.md`](../subsystems/battle-formulas.md#finisher---fun_801ddb30)):
+  a dress that took Noa's Wind Guard and Vahn's Fire Guard off lost Lu's
+  duel six times on one stream. What came off goes back on before the first
+  staged fight past the duels: Koru and the road to Zora are met in the
+  Goods the run chose for itself; a party that kept the dress lost Cort
+  (`chitei2`) six times on two streams.
 - **Elixirs first, one turn each.** Before its first Arts round the member
   drinks the one-battle Elixirs whose ramp it lacks - defence, attack, speed
   - taking first the one that covers the most of them: a Wonder Elixir (all

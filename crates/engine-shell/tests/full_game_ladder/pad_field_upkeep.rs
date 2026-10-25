@@ -1152,6 +1152,37 @@ fn goods_score(passive: u8) -> u32 {
     }
 }
 
+/// The accessories in the bag the hand never puts on ([`goods_score`] `0`:
+/// Gold Boost, Magic Boost, Zero Defense, the encounter bells and the like),
+/// guards aside, and none that [`pad_undress_after_duels`] still owes a
+/// slot. What a counter may take for heals before Nivora's duels
+/// (`pad_shopping`'s heal sale).
+pub(super) fn never_worn_goods(session: &NativeSession) -> BTreeSet<u8> {
+    let w = &session.host.world;
+    let owed: Vec<u8> = DUEL_UNDRESS.with(|u| u.borrow().iter().map(|&(_, _, id)| id).collect());
+    let Some(prices) = w.shops.item_shop_data.as_ref() else {
+        return BTreeSet::new();
+    };
+    w.party
+        .inventory
+        .iter()
+        .filter(|&(&id, &n)| {
+            n > 0
+                && prices.price(id) > 0
+                && !owed.contains(&id)
+                && session
+                    .equip_restrictions
+                    .as_ref()
+                    .is_none_or(|info| info.entry(id).is_none())
+                && w.tables
+                    .accessory_passives
+                    .passive_index(id)
+                    .is_some_and(|p| goods_score(p) == 0 && !(0x16..=0x24).contains(&p))
+        })
+        .map(|(&id, _)| id)
+        .collect()
+}
+
 /// The Goods slots of the equipment record (engine slots 5..=7).
 const GOODS_SLOTS: [u8; 3] = [5, 6, 7];
 
@@ -1209,17 +1240,31 @@ fn worn_passives(w: &legaia_engine_core::world::World, m: u8) -> Vec<u8> {
         .unwrap_or_default()
 }
 
-/// The characters Nivora's three solo duels (`nilboa`, the stretch to
-/// `nivora_late`) send out, in the order they fight: Gala against Che
-/// Delilas, Noa against Lu, Vahn against Gi.
-const DUEL_ORDER: [u8; 3] = [2, 1, 0];
+/// The duellist Nivora's first solo duel (`nilboa`, the stretch to
+/// `nivora_late`) sends out: Gala, against Che Delilas (12000 HP). The
+/// three duels are fought back to back out of one bag, and Che's is the one
+/// it runs out on: Noa's (Lu) and Vahn's (Gi) are won out of an empty bag on
+/// every stream measured.
+const FIRST_DUELLIST: u8 = 2;
 
-/// The Goods swaps that dress the duellists from the bag before Nivora's
-/// solo duels, as `(member, Goods slot, item)` in the order the pad makes
-/// them. Each duellist, in the order the duels take them, trades its least
-/// wanted worn accessory ([`goods_score`]) for the bag's most wanted one it
-/// does not already wear, while the bag holds one worth more; what it takes
-/// off goes back to the bag for the next duellist.
+thread_local! {
+    /// What [`pad_dress_for_duels`] took off, `(member, Goods slot, item)`:
+    /// put back once the duel stretch is behind the run
+    /// ([`pad_undress_after_duels`]).
+    static DUEL_UNDRESS: std::cell::RefCell<Vec<(u8, u8, u8)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Forget the duel dress (a new continuous run).
+pub(super) fn reset_duel_dress() {
+    DUEL_UNDRESS.with(|u| u.borrow_mut().clear());
+}
+
+/// The Goods swaps that dress the first duellist ([`FIRST_DUELLIST`]) from
+/// the bag before Nivora's solo duels, as `(member, Goods slot, item)` in
+/// the order the pad makes them: it trades its least wanted worn accessory
+/// ([`goods_score`]) for the bag's most wanted one it does not already wear,
+/// while the bag holds one worth more.
 ///
 /// [`pad_equip_goods`] only fills an empty slot, so a run that put on what
 /// its first chests held keeps it: the continuous run met Che Delilas with
@@ -1236,7 +1281,7 @@ pub(super) fn duel_goods_plan(w: &legaia_engine_core::world::World) -> Vec<(u8, 
         .collect();
     let present = w.present_party_list();
     let mut plan = Vec::new();
-    for ch in DUEL_ORDER {
+    for ch in [FIRST_DUELLIST] {
         if !present.contains(&ch) {
             continue;
         }
@@ -1253,10 +1298,21 @@ pub(super) fn duel_goods_plan(w: &legaia_engine_core::world::World) -> Vec<(u8, 
                 .filter(|&&id| id != 0)
                 .filter_map(|&id| w.tables.accessory_passives.passive_index(id))
                 .collect();
-            // The least wanted slot (an empty one first).
+            // The least wanted slot (an empty one first). An element guard
+            // stays on: the damage finisher halves a monster special of the
+            // guarded element (`FUN_801DDB30`'s resist ladder), and a guard
+            // is worn for some fight's element. A dress that took Noa's Wind
+            // Guard and Vahn's Fire Guard off for an INT Boost and an AP
+            // Boost lost Lu's duel six times on one stream.
             let Some((k, low)) = worn
                 .iter()
                 .enumerate()
+                .filter(|&(_, &id)| {
+                    !w.tables
+                        .accessory_passives
+                        .passive_index(id)
+                        .is_some_and(|p| (0x1D..=0x24).contains(&p))
+                })
                 .map(|(k, &id)| (k, if id == 0 { 0 } else { goods_value(w, id) }))
                 .min_by_key(|&(k, v)| (v, k))
             else {
@@ -1295,20 +1351,75 @@ pub(super) fn duel_goods_plan(w: &legaia_engine_core::world::World) -> Vec<(u8, 
     plan
 }
 
-/// Make the [`duel_goods_plan`] swaps with the pad: Start, Equip, the
-/// member, its Goods row, the accessory, Yes, for each in turn, and Circle
-/// back to the field. Each confirm commits through the menu's own applier,
-/// so the bag gives up the item and takes back the one it replaced. A swap
-/// whose candidate list does not offer the item is skipped. Returns how
-/// many it made.
+/// Dress the first duellist for Nivora's duels ([`duel_goods_plan`]) with
+/// the pad, remembering what came off for [`pad_undress_after_duels`].
+/// Returns how many swaps it made.
 pub(super) fn pad_dress_for_duels(session: &mut NativeSession) -> usize {
-    use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
-    use legaia_engine_menus::equip_session::{EquipState, browse_row_for_slot};
-    use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
     let plan = duel_goods_plan(&session.host.world);
     if plan.is_empty() || !walking(session) || !released(session) {
         return 0;
     }
+    let worn = |w: &legaia_engine_core::world::World, m: u8, slot: u8| {
+        w.party
+            .roster
+            .members
+            .get(usize::from(m))
+            .map_or(0, |r| r.equipment().slots[usize::from(slot)])
+    };
+    DUEL_UNDRESS.with(|u| {
+        let mut u = u.borrow_mut();
+        for &(m, slot, _) in &plan {
+            if !u.iter().any(|&(um, us, _)| (um, us) == (m, slot)) {
+                u.push((m, slot, worn(&session.host.world, m, slot)));
+            }
+        }
+    });
+    pad_swap_goods(session, &plan, "duel goods")
+}
+
+/// Put back what [`pad_dress_for_duels`] took off, once the duel stretch is
+/// behind the run: the dress is for the duels, and the fights after them
+/// (Koru, then the road to Zora) are met in the Goods the run chose for
+/// itself. A slot already back or whose item the bag no longer holds is
+/// left. Returns how many swaps it made.
+pub(super) fn pad_undress_after_duels(session: &mut NativeSession) -> usize {
+    let saved = DUEL_UNDRESS.with(|u| u.borrow().clone());
+    if saved.is_empty() || !walking(session) || !released(session) {
+        return 0;
+    }
+    let w = &session.host.world;
+    let plan: Vec<(u8, u8, u8)> = saved
+        .iter()
+        .copied()
+        .filter(|&(m, slot, item)| {
+            item != 0
+                && w.party.inventory.get(&item).copied().unwrap_or(0) > 0
+                && w.party
+                    .roster
+                    .members
+                    .get(usize::from(m))
+                    .is_some_and(|r| r.equipment().slots[usize::from(slot)] != item)
+        })
+        .collect();
+    // The list is kept: a reload of a save from before the swap back (Koru
+    // lost, the stretch replayed from the post-duel save) wears the dress
+    // again.
+    if plan.is_empty() {
+        return 0;
+    }
+    pad_swap_goods(session, &plan, "duel goods back")
+}
+
+/// Make Goods swaps with the pad, `(member, Goods slot, item)` each: Start,
+/// Equip, the member, its Goods row, the accessory, Yes, for each in turn,
+/// and Circle back to the field. Each confirm commits through the menu's
+/// own applier, so the bag gives up the item and takes back the one it
+/// replaced. A swap whose candidate list does not offer the item is
+/// skipped. Returns how many it made.
+fn pad_swap_goods(session: &mut NativeSession, plan: &[(u8, u8, u8)], what: &str) -> usize {
+    use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_menus::equip_session::{EquipState, browse_row_for_slot};
+    use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
     let wears = |s: &NativeSession, (m, slot, item): (u8, u8, u8)| {
         s.host
             .world
@@ -1423,7 +1534,7 @@ pub(super) fn pad_dress_for_duels(session: &mut NativeSession) -> usize {
             })
             .collect();
         eprintln!(
-            "    [equip] duel goods: plan {plan:02X?}, {made} made; worn {worn:02X?}; menu {}",
+            "    [equip] {what}: plan {plan:02X?}, {made} made; worn {worn:02X?}; menu {}",
             if session.field_menu.is_some() {
                 "STILL OPEN"
             } else {
@@ -1618,10 +1729,13 @@ pub(super) fn pad_ready(session: &mut NativeSession) -> Result<Option<String>, S
     let _door = Door(AT_BOSS_DOOR.with(|d| d.replace(true)));
     // What the last chest held goes on first.
     pad_equip_best(session);
-    // Nivora's solo duels are fought in the bag's best Goods
-    // ([`duel_goods_plan`]).
+    // Nivora's first solo duel is fought in the bag's best Goods
+    // ([`duel_goods_plan`]), and the fights after the duels in the Goods
+    // the run wore before them.
     if continuous::STRETCH_TO.with(|t| t.borrow().as_str() == "nivora_late") {
         pad_dress_for_duels(session);
+    } else {
+        pad_undress_after_duels(session);
     }
     // A party that spent its MP on the way tops it up from the bag: the
     // casts are half of what a boss fight is won with.
