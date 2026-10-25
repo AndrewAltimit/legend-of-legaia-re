@@ -278,8 +278,10 @@ impl World {
         &mut self,
         phase_in: u8,
         passed: bool,
+        monster_count: u8,
     ) {
         use legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN;
+        self.mule_row_seat(phase_in, passed, monster_count);
         if passed && let Some(scene) = self.casting.active_summon.as_mut() {
             let kills = legaia_engine_cast::cast_module_camera::mule_arm_kills(phase_in);
             let ends = legaia_engine_cast::cast_module_camera::mule_arm_loop_ends(phase_in);
@@ -343,6 +345,81 @@ impl World {
                 }
                 _ => {}
             }
+        }
+    }
+
+    /// PROT 0929's (Mule) monster-row seat. Arm 0 parks each living
+    /// monster's ground trio and facing (`0x801F9A58` / `0x801F9A78`) and
+    /// stands it on the alternate-family seat `0x80077628 + (count + 3) *
+    /// 0x20` at half its `x` and half its `z` less `0x226`, facing `0x800`
+    /// (`0x801F6C04..0x801F6CF0`); the last arm `0xFF` puts every living
+    /// monster back on its parked trio and facing (`0x801F8A70..0x801F8AE8`).
+    /// Arm 16's every pass walks the row's wave front `0x801F9AC8` (from
+    /// arm 15's `-0x100`, `+ step * scalar / 2` a pass) and lifts each
+    /// monster it has passed `4 * step * scalar` a pass up to `+0x36 = -0x100`
+    /// (`0x801F7D9C..0x801F8108`). Not carried: the same pass's roll
+    /// `+0x48 += 16 * step * scalar` (`0x801F8110..0x801F8164`), which the
+    /// battle body draw does not read, and the clip it stages on each struck
+    /// monster.
+    fn mule_row_seat(&mut self, phase: u8, passed: bool, monster_count: u8) {
+        let monsters = usize::from(monster_count);
+        let map = self.cast_seat_map();
+        let slots: Vec<(usize, usize)> = (0..monsters)
+            .filter_map(|i| map.engine(3 + i as u8).map(|e| (i, usize::from(e))))
+            .filter(|&(_, e)| self.actors.get(e).is_some_and(|a| a.battle.hp != 0))
+            .collect();
+        let d = legaia_engine_cast::cast_module_camera::DELTA_PER_TICK;
+        let t = d * legaia_engine_cast::cast_module_camera::SPEED_SCALAR;
+        match (phase, passed) {
+            (0, true) => {
+                self.casting.module_saved_poses.clear();
+                for &(i, e) in &slots {
+                    let seat =
+                        legaia_engine_battle::battle_seats::monster_seat(monsters as u8, i, true);
+                    let Some(a) = self.actors.get_mut(e) else {
+                        continue;
+                    };
+                    let m = &mut a.move_state;
+                    self.casting.module_saved_poses.push((
+                        e,
+                        [m.world_x, m.world_y, m.world_z],
+                        a.battle.facing_angle,
+                    ));
+                    m.world_x = seat.x / 2;
+                    m.world_z = seat.z / 2 - 0x226;
+                    a.battle.facing_angle = 0x800;
+                }
+            }
+            (15, true) => self.casting.module_mule_front = -0x100,
+            (16, _) => {
+                self.casting.module_mule_front += t / 2;
+                let front = self.casting.module_mule_front;
+                for &(_, e) in &slots {
+                    let Some(a) = self.actors.get_mut(e) else {
+                        continue;
+                    };
+                    let m = &mut a.move_state;
+                    if i32::from(m.world_z) < front && m.world_y >= -0xFF {
+                        m.world_y = m.world_y.wrapping_sub((4 * t) as i16);
+                    }
+                }
+            }
+            (0xFF, _) => {
+                for &(e, pos, facing) in &self.casting.module_saved_poses {
+                    if !slots.iter().any(|&(_, s)| s == e) {
+                        continue;
+                    }
+                    if let Some(a) = self.actors.get_mut(e) {
+                        [
+                            a.move_state.world_x,
+                            a.move_state.world_y,
+                            a.move_state.world_z,
+                        ] = pos;
+                        a.battle.facing_angle = facing;
+                    }
+                }
+            }
+            _ => {}
         }
     }
 

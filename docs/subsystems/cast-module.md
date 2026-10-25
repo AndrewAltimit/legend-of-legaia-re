@@ -2196,8 +2196,9 @@ which is the black stage of Juggernaut's summoning.
 Not carried: Kemaro's arm-4 and Puera's arms-14 / 15 TR y shakes (absolute
 stores on alternate passes), Kemaro's arm-12 absolute pose store and the
 heights its arms 13..17 walk the arm-9 parts through, Puera's arm-19 `rand()`
-scatter, the monsters' half render scale under 0927 (`+0x72 = 0x800`), and
-0927's second, kill-capable hit at arm 26: the band folds the cast once.
+scatter, and 0927's second, kill-capable hit at arm 26: the band folds the
+cast once. The monsters' half render scale under 0927 (`+0x72 = 0x800` on
+arm 0, back to `0x1000` on arm 27) is carried (`BattleActor::render_scale`).
 
 ### Summon-creature directors
 
@@ -2496,7 +2497,11 @@ phase instead, the stager's `3` dropped the stage from the cast's first
 tick. Mule's monster-row visibility is carried too
 (`World::apply_mule_writes`): arm 1 shows every living monster on each of
 its passes, held or not (`0x801F6D04`, ahead of the stream-token gate),
-arm 5's pass hides the row, arm 11's shows it again turned to the party at
+arm 0 re-seats the row on the alternate-family seat at half `x` and half
+`z` less `0x226`, facing `0x800`, and the last arm puts it back
+(`World::mule_row_seat`); arm 16 lifts each monster its wave front has
+passed to `+0x36 = -0x100` (its roll `+0x48` and per-pass wave hits are not
+carried); arm 5's pass hides the row, arm 11's shows it again turned to the party at
 half its render scale (node `+0x72 >>= 1`, `0x801F75BC..0x801F75C8`), arm
 16's pass hides it and doubles the scale back (`0x801F842C..0x801F8460`;
 arm 17 opens at `0x801F8488`), and the hit arm 18 shows the monsters it
@@ -2521,7 +2526,7 @@ of arm 14's two CLUT-cell cyclers so each runs out its loop and halts
 (`0x801F82A8..0x801F82C0`). Arm 16's exit frames a lone target on its own
 `+0x34` / `+0x38`, unnegated, at ten times its body radius (at most
 `0x1800`). Otherwise not carried by any of them: the writes to the other
-seats (the monster row's re-seat, hiding, orbits and restore, Mushura's walk
+seats (the monster row's hiding, orbits and restore, Mushura's walk
 and steering, Barra's seat swaps and arcs), the stage words `ctx[+0x27A..+0x286]` and the camera
 block `0x80083FF8`, and pad rumble. Jedo's kill is the host's
 (`World::apply_summon_body_writes`): on a fight that is not scripted arm 29

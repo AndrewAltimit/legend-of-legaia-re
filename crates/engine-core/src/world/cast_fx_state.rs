@@ -172,6 +172,9 @@ pub struct CastFxState {
     /// PROT 0934's stager word `0x801FA410`
     /// ([`legaia_engine_cast::cast_module_ticks::OZMA_STAGER_WORD`]).
     pub(crate) module_ozma_word: i32,
+    /// PROT 0929's row wave front `0x801F9AC8`: arm 15's pass seats it at
+    /// `-0x100` and arm 16 walks it toward the row.
+    pub(crate) module_mule_front: i32,
     /// Seats a stager arm run inside its caller's op-`0x20` step decided
     /// (PROT 0925's, which writes into its caller), for the band to seat on
     /// the module's next tick.
@@ -409,6 +412,7 @@ impl CastFxState {
             module_running_entry: None,
             module_spikefish_words: Default::default(),
             module_ozma_word: 0,
+            module_mule_front: 0,
             module_stager_seats: Vec::new(),
             module_record_clocks: Vec::new(),
             module_split_saved_target: None,
