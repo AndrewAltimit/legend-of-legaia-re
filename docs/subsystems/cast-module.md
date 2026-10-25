@@ -3384,9 +3384,12 @@ under the floor inside the planet those parts draw, and holds the red word
 `+0x04 = 0x3FF` under tint state `0xFF` at blend `0x1000`
 (`0x801F74F0..0x801F750C`); arm 5's pass lowers the state
 (`0x801F75DC`), so the creature rises out of the planet red and eases to its
-own colour. The arm's rate `8` and arm 5's `4` are not carried: under them
-the engine's clip staging runs the creature's first clip out, and arm 7's
-wait for clip 2 never lands.
+own colour. The arm also sets rate `8` and bumps the restage byte
+`+0x1DC`, which recommits clip 0 and seeds its window; arm 5's pass sets
+rate `4` and releases that window (`sb zero,0x21B` / `sh zero,0x176` at
+`0x801F75E0..0x801F75E4`), so clip 0 runs on to its natural end and arm 7's
+wait for clip 2 lands. Without the release the window rewound clip 0 on
+frames 0..1 for some two thousand vsyncs.
 
 The creature's clips are the cast record's own, not its archive twin's: the
 installer hands the record's part table to the node (`0x801F1DCC`) and scans

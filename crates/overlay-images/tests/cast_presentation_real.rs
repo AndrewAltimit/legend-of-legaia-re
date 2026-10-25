@@ -124,7 +124,9 @@ fn decode_every_module() {
     // through the context register arm 16's loop reuses.
     let mule = &by_entry[&929];
     assert_eq!(
-        mule.dispatches.first().and_then(|d| d.exact_arms.get(&0x11)),
+        mule.dispatches
+            .first()
+            .and_then(|d| d.exact_arms.get(&0x11)),
         Some(&0x801F_8488)
     );
     assert!(mule.arm_sites(None, 17).any(|s| matches!(

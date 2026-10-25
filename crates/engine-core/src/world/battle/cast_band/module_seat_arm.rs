@@ -174,15 +174,14 @@ pub(in crate::world) fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> 
         // `+0x36 = 0x300` (`0x801F74F4`), below the floor inside the planet
         // the arm's parts draw; with it the red word `+0x04 = 0x3FF` held
         // under tint state `0xFF` at blend `0x1000`, rate `8`
-        // (`0x801F74F8..0x801F7518`). Arm 5's pass lowers the state and the
-        // word eases back to neutral (`World::apply_palma_writes`). Not
-        // carried: the arm's rate `8` (`0x801F7518`) and arm 5's `4`, which
-        // the engine's clip staging for this creature does not survive (its
-        // clip 0 runs out under them and arm 7's clip-2 wait never lands).
+        // (`0x801F74F8..0x801F7518`). Arm 5's pass lowers the state, sets
+        // rate `4` and releases the clip window arm 4's restage seeded
+        // (`World::apply_palma_writes`).
         928 => seat(Lit(0), Lit(0), 0)
             .y(0x300)
             .colour(0x3FF)
-            .tint(0xFF, 0x1000),
+            .tint(0xFF, 0x1000)
+            .rate(8),
         // `0x801F70A0..0x801F70CC` (Z: see above).
         929 => seat(Lit(0), Keep, 0x800),
         // `0x801F6EA0..0x801F6EB4`.

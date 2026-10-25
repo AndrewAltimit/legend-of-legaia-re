@@ -439,6 +439,8 @@ impl World {
             // Arm 5's pass lowers the creature's tint state
             // (`sb zero,0x21C(s4)` at `0x801F75DC`): the red word arm 4 held
             // eases back to neutral as the creature rises out of the planet.
+            // The rate drops to the `4` the dispatch left in `a3`
+            // (`li a3,0x4` at `0x801F6A7C`, `sb a3,0x21D(s4)` at `0x801F75E8`).
             (5, true) => {
                 if let Some(a) = self
                     .casting
@@ -446,6 +448,15 @@ impl World {
                     .and_then(|s| self.actors.get_mut(usize::from(s)))
                 {
                     a.battle.render_flag = 0;
+                    a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(4);
+                    // `sb zero,0x21B` / `sh zero,0x176` (`0x801F75E0..0x801F75E4`):
+                    // the window arm 4's restage seeded on clip 0 is released,
+                    // so the clip runs on to its natural end and commits the
+                    // clip 1 this pass stages.
+                    a.battle.hit_count_bound = 0;
+                    if let Some(p) = a.battle_animation.as_mut() {
+                        p.release_loop_window();
+                    }
                 }
             }
             (1, _) | (4, true) => {
