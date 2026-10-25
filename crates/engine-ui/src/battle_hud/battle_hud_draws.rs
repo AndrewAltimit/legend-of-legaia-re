@@ -827,7 +827,14 @@ pub fn battle_hud_draws_for(
         let name_w = font.layout_ascii(name).advance_x as i32;
         let lead = name.as_bytes()[0];
         let x = i32::from(crate::battle_name_banner::banner_x(name_w, lead, 0));
-        stage_text(&mut text, font, name, x, MOVE_NAME_Y, ink);
+        // A module's own line (`FUN_8003541C(.., 0x96, ..)`) puts its pen on
+        // the row it is given, two rows under the label's.
+        let y = if frame.move_name_module_line {
+            MOVE_NAME_Y + 2
+        } else {
+            MOVE_NAME_Y
+        };
+        stage_text(&mut text, font, name, x, y, ink);
     }
 
     // ---- The target plaque ----

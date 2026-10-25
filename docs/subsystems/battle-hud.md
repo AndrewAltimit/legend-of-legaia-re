@@ -1395,6 +1395,12 @@ measurement every name banner runs on, and its callers store the return in
 `+0x06`. The SCUS site at `0x8004AF44..0x8004AF88` shows the idiom in the
 clear: it measures one string, writes `0xA0 - width/2` into both seats' x of
 records 76 and 77, and writes the string pointer into both records' `+0x14`.
+The label's glyphs stand with their top row at `150`. A summon module that
+prints its own line at the label's place calls `FUN_8003541C` itself with
+`y = 0x96` (PROT 0923, `0x801F7240..0x801F7270`), and its glyphs stand two
+rows lower, top row `152` (`gimard_burning_attack`'s `Burning Attack`,
+Gilium's `Space Cannon`); the port draws that line two rows under the label
+(`BattleHudFrame::move_name_module_line`).
 
 **Which seat is the parked one is per record.** Record 68, the actor-name
 plaque, ships `(16, -24)` at A against `(16, 14)` at B, and record 8, a command

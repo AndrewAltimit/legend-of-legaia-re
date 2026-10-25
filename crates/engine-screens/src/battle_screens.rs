@@ -298,6 +298,7 @@ pub fn battle_hud_frame_draws(
             begin_tab_offset: bh::battle_begin_tab_offset(w),
             third_tab: third_tab.as_deref(),
             move_name: move_name.as_deref(),
+            move_name_module_line: bh::battle_move_name_is_module_line(w),
             target_plaque: target_plaque.as_ref().map(|(n, b)| (n.as_str(), *b)),
             plaque_dy: bh::battle_action_plaque_dy(w),
             target_plaque_dy: bh::battle_target_plaque_dy(w),
