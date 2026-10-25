@@ -102,6 +102,7 @@ mod muscle_contest_real;
 mod muscle_dome_choreo_real;
 // --- end lane D2 ---
 mod muscle_dome_lead_max_hp_disc;
+mod muscle_dome_learned_list_disc;
 mod muscle_dome_minigame_real;
 mod muscle_dome_scene_real;
 mod muscle_hub_tally_cues_disc;

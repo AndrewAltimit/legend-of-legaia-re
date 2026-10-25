@@ -141,13 +141,15 @@ impl MuscleDomeSession {
         costs
     }
 
-    /// Pages of the entry screen's Triangle arts list - the fighter's
-    /// learned normal arts, five rows a page.
+    /// Pages of the entry screen's Triangle arts list, five rows a page:
+    /// the fighter's learned arts when the host named them
+    /// ([`Self::set_arts_list_owner`]), else its art catalog.
     pub fn arts_list_pages(&self) -> u8 {
-        self.art_catalog[0]
-            .len()
-            .div_ceil(ARTS_LIST_ROWS_PER_PAGE)
-            .min(u8::MAX as usize) as u8
+        let rows = match self.list_owner {
+            Some((_, learned)) => usize::from(learned),
+            None => self.art_catalog[0].len(),
+        };
+        rows.div_ceil(ARTS_LIST_ROWS_PER_PAGE).min(u8::MAX as usize) as u8
     }
 
     /// Open the direction entry over the fighter's live budget, preseeded
@@ -155,14 +157,18 @@ impl MuscleDomeSession {
     /// (`0x801D1734`): its pennants stand on the bar until the first press,
     /// and a bare confirm replays it.
     fn open_entry(&self) -> ArtsCommandInputSession {
-        ArtsCommandInputSession::new(
+        let entry = ArtsCommandInputSession::new(
             0,
             0,
             self.f[0].budget,
             self.entry_costs(),
             self.arts_list_pages(),
         )
-        .with_preseed(self.auto_preseed())
+        .with_preseed(self.auto_preseed());
+        match self.list_owner {
+            Some((_, learned)) => entry.with_list_rows(learned),
+            None => entry,
+        }
     }
 
     /// Mirror the entry session's buffer into the fighter's queue / budget /

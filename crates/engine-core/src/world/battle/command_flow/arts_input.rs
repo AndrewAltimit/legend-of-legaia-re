@@ -226,18 +226,37 @@ impl World {
     /// The Triangle arts list's window while it is on screen: `(actor, row
     /// page, slide)` off the open entry, else off the window an ended entry
     /// left sliding out ([`crate::world::BattleState::arts_list_window`]).
-    /// `None` at slide `0`, and on a dome leg (no learned list there).
+    /// `None` at slide `0`. On a dome leg it is the dome entry's window
+    /// (actor `0`, the player's fighter), and only once the host has named
+    /// whose learned list it pages over
+    /// (`MuscleDomeSession::set_arts_list_owner`).
     pub fn arts_list_window(&self) -> Option<(u8, u8, u8)> {
+        self.arts_list_source()
+            .map(|(_, actor, page, slide)| (actor, page, slide))
+    }
+
+    /// [`Self::arts_list_window`] with the roster slot whose record the rows
+    /// read: `(char slot, actor, row page, slide)`.
+    fn arts_list_source(&self) -> Option<(usize, u8, u8, u8)> {
         if self.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
-            return None;
+            let dome = self.minigames.muscle_dome.as_ref()?;
+            let owner = dome.arts_list_owner()?;
+            let (page, slide) = dome.arts_list_window()?;
+            return Some((usize::from(owner), 0, page, slide));
         }
-        match self.battle.arts_input.as_ref() {
+        let (actor, page, slide) = match self.battle.arts_input.as_ref() {
             Some(s) => s.list_window().map(|(page, slide)| (s.actor, page, slide)),
             None => self
                 .battle
                 .arts_list_window
                 .map(|w| (w.actor, w.row_page, w.slide)),
-        }
+        }?;
+        Some((
+            self.party_roster_slot(usize::from(actor)),
+            actor,
+            page,
+            slide,
+        ))
     }
 
     /// Step the window an ended entry left on screen one command-flow frame
@@ -268,9 +287,8 @@ impl World {
         &self,
     ) -> Option<Vec<Option<legaia_engine_battle::arts_command_input::ArtsListRow>>> {
         use legaia_engine_battle::arts_command_input::{ARTS_LIST_ROWS_PER_PAGE, ArtsListRow};
-        let (actor, page, _) = self.arts_list_window()?;
+        let (char_slot, _, page, _) = self.arts_list_source()?;
         let table = self.menu.text.as_ref()?.arts.as_ref()?;
-        let char_slot = self.party_roster_slot(actor as usize);
         let record = self.party.roster.members.get(char_slot)?;
         let skills = record.displayed_skills();
         let count = usize::from(skills.count).min(skills.ids.len());

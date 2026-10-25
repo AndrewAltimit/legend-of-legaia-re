@@ -451,10 +451,10 @@ pub fn arts_input_chrome_draws(
     }
     // The Triangle arts list's window frame, over the rest of the screen
     // (its node is the walker's first, key `0`): the rows are text
-    // (`arts_list_draws`). Only where the rows can be drawn too - a dome
-    // leg slides the window but carries no learned list
-    // (`World::arts_list_rows`), and an empty frame is not retail's. The
-    // window outlives its entry: an ended entry's list slides out.
+    // (`arts_list_draws`). Only where the rows can be drawn too (a dome leg
+    // whose host named no learned list, or no arts-name table: an empty
+    // frame is not retail's). The window outlives its entry: an ended
+    // entry's list slides out.
     let list_frame = match (chrome, world.arts_list_window()) {
         (Some(r), Some((_, _, slide))) if world.arts_list_rows().is_some() => {
             ai::arts_list_frame_draws(r, slide, origin, scale)
