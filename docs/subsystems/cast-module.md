@@ -2919,6 +2919,8 @@ exit yaw store `ctx[+0x6DA] = 0x780` is applied as the module finishes
 | 0953 Terio Punch, `0x801F69FC` (`SINGLE_BODY`) | below | - |
 | 0960 `0x7B` Plasma Strike, `0x801F74E4` | [below](#prot-0960-plasma-strike) | `0x801F8E50`, seeded `scalar * 12`; arms 5, 6 and `0xD` gate on the caster's clip instead, arms 7..`0xF` re-arm by storing |
 | 0959 `0x7A` Megaton Press, `0x801F69F0` | [below](#prot-0959-megaton-press) | `0x801F9624`, seeded `scalar * 12`; the phase chain is ported (`MEGATON_PRESS_CHAIN`), so the director runs the countdown table and leaves the phase alone |
+| 0962 `0xA2` / `0xA3` / `0xA4` Blade Breath / Thunder Needle / Gigaton Press | [below](#prot-0962-koru-charge-bodies) | none: each strike waits on the caster's node cursor, each tail on the cursor or the victim's settle |
+| 0960 `0xA6` Neo Star Slash, `0x801F69D8` | [below](#prot-0960-neo-star-slash) | `0x801F8E50`, seeded `scalar << 5`; the chain (`NEO_STAR_SLASH_CHAIN`) carries the phase, so the director carries the countdown |
 
 - **0944** frames on the caster's facing, which the cast begin points at its
   target, so a replay is steered onto the capture's target too
@@ -2981,7 +2983,11 @@ it to `0x78`, so the cluster opens once, already reading `11 HIT`
 ([battle-hud.md](battle-hud.md)). In the captured duel Gala stands in the
 Spirit stance (`+0x1DE == 4`): the defender roll doubles in `FUN_801DD864`
 and the finisher halves the net, which puts the `0x80` hits at `67` / `71`
-and the `0x30` hits at `24..30`, `378` in all.
+and the `0x30` hits at `24..30`, `378` in all. Unguarded the cast is the
+fight: from `nivora_duel_che_vs_gala_start` (the monster-pick probe) it lands
+`218`, `238` and nine hits of `~145` on a full `1446`-HP Gala and drops her.
+Che casts it on every round whose mode counter `ctx[+0x28A]` reads `2` mod 3
+(the monster AI's `0xA2..=0xA4` arm), so a player guards that round.
 
 <a id="prot-0960-plasma-strike"></a>
 
@@ -3001,14 +3007,63 @@ point; arm `0xE` hides the victim and cuts to TR `(-0x80, 0x200, 0x340)` on
 Lu. The decoder reads arm 4's stage byte as `0` (its `s6` is loaded by the
 phase switch ahead of the arm), so the director stores it.
 
+<a id="prot-0962-koru-charge-bodies"></a>
+
+**0962's charge bodies** (`blade_breath_camera`, `thunder_needle_camera`,
+`gigaton_press_camera`) share the walk-in: arms 0 and 1 turn the caster onto
+the victim's body pair (`FUN_80019B28`, `+ 0x800`; arm 0 also turns the victim
+back) and frame it through the action SM's case 6 every pass (`jal
+0x801D5854` with `a1 = 6`). The port's approach leg holds the module while
+the caster walks, so it makes that call on the body's behalf
+(`capture_approach_follows`). Arm 2 cues the voice, stages the wind-up clip
+and arms one `0xC`-frame shot on the victim's live pair: pitch `-0x20`, yaw
+`0x500 - facing` for `0xA2`; pitch `0x20`, yaw `0x800 - facing` for the other
+two; TR `(0, 0x400, 0x800)` for all three. From there:
+
+- **`0xA2` Blade Breath** (`0x801F7AE4`): arm 3 drifts TR z `-s/2`, pitch
+  `-s/8` and yaw `-s/4` every pass and waits for the caster's cursor `0x300`;
+  its pass flushes the pool, seats four records on the victim, lands the
+  `0x200` hit, colours the victim `0x3FF` and frames through case 8. Arm 4
+  holds case 8 until the victim's `+0x1D9` reads `0` or `8`.
+- **`0xA3` Thunder Needle** (`0x801F74A0`): TR z `+s` on arms 3 and 4; arm 3
+  waits for cursor `0xF0` (three records on the victim, the hit, victim colour
+  `0x3FF00000`), arm 4 for cursor `0x1C0`, then bumps the caster's `+0x1DC`.
+  It calls no case 8, and arm 4's sixteen streaks (`FUN_801E1D98`) are not
+  carried.
+- **`0xA4` Gigaton Press** (`0x801F6D54`): arm 3 drifts TR z `+2s` and lifts
+  the caster on `-sin(16 w) / 8` off a word stepped by the frame step, waiting
+  for cursor `0x100`; its pass grounds the caster, seats five records on it and
+  lands the hit. Arm 4 shakes TR y by a word seeded `0x100`, its sign flipping
+  a pass and the word falling `s d / 2`, until the victim settles. Arm 3's
+  sixteen debris records (a `rand() % 4` pick on a ring round the victim) are
+  not carried.
+
+The hit lands on the arm's pass, mid-band (`CaptureCamArm::folds_hit` folds
+the owed cast there), so the victim's reaction plays out under arm 4 as
+retail's does.
+
+<a id="prot-0960-neo-star-slash"></a>
+
+**0960 Neo Star Slash** (`neo_star_slash_camera`, the Sim-Seru Gaza's `0xA6`)
+frames the caster throughout: arm 0's `0xC`-frame shot at TR
+`(0, 0x800, depth / 2)`, arm 2's low cut (pitch `0xC0`, TR z `3 depth`) with
+seven records on the caster, arm 3's cut (pitch `0x60`, TR
+`(0, 0x300, 3 depth / 4)`) that also hides every party seat (`+0x04 = 0`,
+`+0x21C = 0xFF`), and arm 4's flush, white and red fades and the party shown
+again. TR z drifts `+s/2` (arms 1, 2), `-s/2` (3), `+8s` (4, 5) and `+4s` (6).
+Arm 5 seats two records on the caster, three on each point of a ten-point
+ring about it (`SpawnAnchor::CasterRing`: angle `(i << 12) / 10`, radius
+`0x1000 / 3`) and three on every live party seat. Arm 4's caster rate `0` is
+left out, as the chain leaves it.
+
 The rest of the measured set carries its gate as a countdown table with no camera arms
 (`cast_module_camera::capture_countdown`: per arm, the drain form and the
 re-arm store): PROT 0940's `0x50` / `0xAE`, 0941's `0x51` and `0xB9`, 0943's
 `0x40` and `0xB5`, 0944's `0x53`, 0950's `0x5A` and `0xAB`, and 0956's `0x71`.
 Dividing each seed by the capture's per-tick drain reproduces the
 [measured dwells](#capture-class-walks) arm for arm. PROT 0962's `0xA2` /
-`0xA3` / `0xA4` stay ungated: no arm of theirs drains a module word on that
-shape (`0xA3` counts one **up** to `0x41`, the others wait on the scene).
+`0xA3` / `0xA4` drain no module word: their gates are the caster's cursor and
+the victim's settle, which their directors carry.
 
 ## The cast voice (CD-XA)
 

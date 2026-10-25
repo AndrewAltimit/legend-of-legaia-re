@@ -83,8 +83,10 @@ pub const BLADE_BREATH_POWER: u16 = 0x0200;
 ///   `ctx[+0x279] = 0xFF`;
 /// * arm `0xFF` - clears the busy register.
 ///
-/// Not ported: the walk itself, the facing, the cue, the `FUN_80050ED4`
-/// spawns, the screen-prim wash and the countdown at `0x801F89AC`.
+/// The facings, shots, drifts, cursor gates and `FUN_80050ED4` spawns are
+/// the camera half (`cast_module_camera::blade_breath_camera` and its two
+/// siblings), whose gates hold this chain; the walk is the host's approach
+/// leg. Not ported: the cue and the screen-prim wash.
 ///
 /// PORT: FUN_801F7AE4, FUN_801F74A0, FUN_801F6D54 (PROT 0962 actions 0xA2 /
 /// 0xA3 / 0xA4; chain phase machine + the 0x200 hit; walk / packet arms

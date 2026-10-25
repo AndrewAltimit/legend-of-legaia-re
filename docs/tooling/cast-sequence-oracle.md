@@ -52,6 +52,10 @@ Flags worth knowing:
 | `--formation <bytes>` | Retail only: overwrite the formation row `FUN_801DA600` returns. The engine has no seam to seat the same monsters, so a forced formation compares different fights |
 | `--engine-env K=V` | Extra environment for the engine child |
 | `--guard <seats>` | Engine: party seats in the Spirit stance when the cast starts (`LEGAIA_BATTLE_GUARD`), for a capture whose victim guarded (`+0x1DE == 4`): `nivora_duel_pre_megaton_press` needs `--guard 0` for its damage to match |
+| `--monster-pick` | Retail: with `--caster 3..7`, the cast is written where the monster AI's pick returns (a breakpoint on `0x801DAF50`, see [below](#a-monster-cast-from-any-battle-state)), so any battle state that reaches the monster's turn records any spell the monster owns a clip for. Runs on the breakpoint core, several times slower |
+| `--save-inject` | Retail: keep the whole emulator state one vsync past the inject (`retail/state_inject.rawsstate`), a pre-cast state that replays the cast on the fast core with a plain `--caster` |
+| `LEGAIA_CAST_SEQ_EXE=<path>` (environment) | Score another `legaia-engine` build (a before / after pair) without rebuilding the tree's |
+| `LEGAIA_PRESS_UNTIL=<vsync>` (environment) | Retail: tap CROSS through the party's command input until this vsync (default `600`). A three-member party or a long opening needs more before the monster's turn comes round |
 | `LEGAIA_POKE32=addr=value,...` (environment) | Retail only: words the probe writes at the inject. A capture-class module that forks its choreography off RAM rather than the action id needs it: PROT 0946's arm 0 takes Big Wave's branch only while the caster's latch `0x801C8FE0 + (seat + 1) * 4` is set, so a seat-0 cast of `0x56` needs `0x801C8FE4=1` and otherwise records Call Wave |
 
 ## What each side records
@@ -239,15 +243,13 @@ offset, both states, class, `within`, `mae`, both lumas) for scripts.
   steps) run `step` times longer than the pass count.
 - **Damage and RNG are not aligned.** Popups and HP readouts can differ.
 - **A forced formation is retail-only.** See the flag table.
-- **A monster cast injects only where the monster picks it.** The probe
-  writes the monster's queue on the first `0x0A`, but the monster's own turn
-  runs its AI pick in the same pass as the `0x0C` category read, which a
-  vsync hook cannot get between, so the retail side records the monster's AI
-  action. A state whose monster casts the spell on its own turn records it
-  (`nivora_duel_pre_megaton_press` with `--spell 0x7A --caster 3 --target 0`);
-  any other needs a breakpoint on the AI pick's return. The engine half
-  (`LEGAIA_BATTLE_MONSTER_CAST=seat,spell,p`) hands the monster the round's
-  first turn from the first prompt, so no pad drive is needed.
+- **A monster cast needs `--monster-pick` unless the state queued it.**
+  Without it the probe writes the monster's queue on the first `0x0A`, which
+  the monster's own AI pick overwrites in the pass that reads it (below). A
+  state that already holds the queued cast (`nivora_duel_pre_megaton_press`,
+  the `*_pre_*` states the pick probe saved) records it either way. The
+  engine half (`LEGAIA_BATTLE_MONSTER_CAST=seat,spell,p`) hands the monster
+  the round's first turn from the first prompt, so no pad drive is needed.
 - **The target has to suit the spell.** A heal aimed at a monster seat parks
   the module (Orb on seat `3` sits in its phase `9`); pass `--target 0` for an
   ally spell. The probe quits on a park (`LEGAIA_PARK`, state and module phase
@@ -260,6 +262,32 @@ enough to read the engine's own segment lengths for a cast in the fight the
 corpus scores it in.
 - **An item cast (the flutes) is not injectable.** The probe writes category
   `2` (Magic). An item summon needs the item category and its own id space.
+
+## A monster cast from any battle state
+
+A monster's turn runs its AI pick `FUN_801E9FD4` inside `FUN_801DABA4`
+(`jal 0x801E9FD4` at `0x801DAF48`, `a0 = ctx[+0x274] - 3`) and calls
+`FUN_801DB124` straight after (`0x801DAF50`), in the same pass as the
+category read, so no vsync hook can get between the pick and its use. With
+`--monster-pick` the probe arms a breakpoint on `0x801DAF50`: the seat is
+`ctx[+0x274]`, and the queue the pick has just written is final and unread
+there. It writes `+0x1DE = 2`, `+0x1DF = spell`, `+0x1DD = target` - the same
+two stores the AI's own cast arms make (`0x801EB7C0..0x801EB81C`), plus the
+target - and tops the seat's MP up. The rest of the turn is retail's.
+
+`--save-inject` then keeps the state one vsync later, the cast queued and
+nothing else changed, for the save library. The states saved this way are
+labelled `<fight>_pre_<spell>` in `scripts/scenarios.toml` and replay on
+the fast core with a plain `--caster`:
+
+| State | Cast |
+|---|---|
+| `koru_pre_blade_breath` / `koru_pre_thunder_needle` / `koru_pre_gigaton_press` | Koru's `0xA2` / `0xA3` / `0xA4` (PROT 0962), on `koru_strip_forced`'s synthetic formation |
+| `gaza2_pre_neo_star_slash` | the Sim-Seru Gaza's `0xA6` (PROT 0960) |
+| `cort_evolved_pre_doomsday` | the evolved Cort's `0xB6` (PROT 0965) |
+
+The action in each is the probe's, not the AI's: a capture is a statement
+about the cast, not about when the monster would have chosen it.
 
 ## Waits the engine does not run
 

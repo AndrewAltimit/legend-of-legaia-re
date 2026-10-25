@@ -3052,3 +3052,43 @@ expected_game_mode = 0x03
 expected_active_scene = "tunnelb"
 description = "tunnelb free field run from the story-ladder card (playthrough-ladder-pro00-14 block 4, restamped to -00 by isolate_card_save.py), cold boot + memory-card load (autorun_boot_continue.lua, the calibrated CONTINUE ladder, LEGAIA_SETTLE=200). Player at world (5286, 11830). The nearest card block to rayman: tunnelb P2[35] (tile (12, 105)) and P2[38] (tile (17, 71)) are its doors into rayman, rayman2 once flag 0x1D5 is set."
 topics = ["field", "tunnelb", "rayman", "story flags", "card boot", "probe state"]
+
+[[scenarios]]
+label = "koru_pre_blade_breath"
+backup_fingerprint = "a0055c369a0d95edfb28b9832a283652384711d8b3fad45a1df2e0b1fc4e4569"
+description = "RETAIL disc, probe-poked: koru_strip_forced played forward until Koru's turn, where the monster-pick probe (autorun_cast_sequence.lua, LEGAIA_MONSTER_PICK) rewrote the AI pick's queue at 0x801DAF50 to cat=2 spell=0xA2 (Blade Breath, PROT 0962); saved one vsync later (LEGAIA_SAVE_INJECT). Load and wait: the cast fires on its own. The action is the probe's, not the AI's; everything else is retail."
+topics = ["battle", "boss", "cast module", "monster pick", "Koru", "Blade Breath", "spell 0xA2"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[[scenarios]]
+label = "koru_pre_thunder_needle"
+backup_fingerprint = "d0eb589a1ccf0d38b698cc45cbeb46b723987c4c2bd0131245e3e5fc3261144d"
+description = "RETAIL disc, probe-poked: koru_strip_forced played forward until Koru's turn, where the monster-pick probe (autorun_cast_sequence.lua, LEGAIA_MONSTER_PICK) rewrote the AI pick's queue at 0x801DAF50 to cat=2 spell=0xA3 (Thunder Needle, PROT 0962); saved one vsync later (LEGAIA_SAVE_INJECT). Load and wait: the cast fires on its own. The action is the probe's, not the AI's; everything else is retail."
+topics = ["battle", "boss", "cast module", "monster pick", "Koru", "Thunder Needle", "spell 0xA3"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[[scenarios]]
+label = "koru_pre_gigaton_press"
+backup_fingerprint = "dea089980c615eae73f05f93a6d16dbde0487718c4724feee888d07e9f66b290"
+description = "RETAIL disc, probe-poked: koru_strip_forced played forward until Koru's turn, where the monster-pick probe (autorun_cast_sequence.lua, LEGAIA_MONSTER_PICK) rewrote the AI pick's queue at 0x801DAF50 to cat=2 spell=0xA4 (Gigaton Press, PROT 0962); saved one vsync later (LEGAIA_SAVE_INJECT). Load and wait: the cast fires on its own. The action is the probe's, not the AI's; everything else is retail."
+topics = ["battle", "boss", "cast module", "monster pick", "Koru", "Gigaton Press", "spell 0xA4"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[[scenarios]]
+label = "gaza2_pre_neo_star_slash"
+backup_fingerprint = "579228e8c00ea385b14fbe22e8154683eab18458ae72ef1fd9b07c176e631f16"
+description = "RETAIL disc, probe-poked: battle_gaza2_prompt played forward until Sim-Seru Gaza (seat 3)'s turn, where the monster-pick probe (autorun_cast_sequence.lua, LEGAIA_MONSTER_PICK) rewrote the AI pick's queue at 0x801DAF50 to cat=2 spell=0xA6 (Neo Star Slash, PROT 0960); saved one vsync later (LEGAIA_SAVE_INJECT). Load and wait: the cast fires on its own. The action is the probe's, not the AI's; everything else is retail."
+topics = ["battle", "boss", "cast module", "monster pick", "Gaza", "Neo Star Slash", "spell 0xA6"]
+phase = "battle"
+expected_game_mode = 0x15
+
+[[scenarios]]
+label = "cort_evolved_pre_doomsday"
+backup_fingerprint = "b9b98907ca6a940a53fa94a4b8a7d56798963c1eb4d1890511d65fcd95b1f107"
+description = "RETAIL disc, probe-poked: cort_evolved_battle_first_menu played forward until the evolved Cort (seat 3)'s turn, where the monster-pick probe (autorun_cast_sequence.lua, LEGAIA_MONSTER_PICK) rewrote the AI pick's queue at 0x801DAF50 to cat=2 spell=0xB6 (Doomsday, PROT 0965); saved one vsync later (LEGAIA_SAVE_INJECT). Load and wait: the cast fires on its own. The action is the probe's, not the AI's; everything else is retail."
+topics = ["battle", "boss", "cast module", "monster pick", "Cort", "evolved Cort", "Doomsday", "spell 0xB6"]
+phase = "battle"
+expected_game_mode = 0x15
