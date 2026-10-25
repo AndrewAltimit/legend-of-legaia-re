@@ -720,6 +720,16 @@ by `BattleState::combo_cluster_held`. A cast that lands more than one hit
 reads `HIT` / `TOTAL` as that capture does; a one-hit cast keeps `DAMAGE`
 (`battle_gimard_tail_fire_a`).
 
+**A party-wide cast opens nothing.** The flag a cast hit raises is the
+finisher's: `FUN_801DDB30` stores `0x78` and adds the hit to the damage word
+`_DAT_8007BD14` only when the attacker's `+0x1DD` is a slot (`sltiu v0,v1,7`
+at `0x801DE370`), or the every-enemy code `9` with a party or creature
+attacker (`0x801DE3B8..0x801DE428`). The party-wide code `8` falls past
+both, so a monster's party sweep (Neo Star Slash, Doomsday) lands every hit
+with the cluster shut and the `0x51` close finds no damage to re-open it on.
+Port: `battle_combo_style` returns `None` for a party-wide Magic or Item
+action.
+
 **The `0x51` fade-down closes it in reverse.** The band's teardown - countdown
 under `0xC`, once per action (`0x801E6158..0x801E6214`) - wipes the element
 list (`FUN_801D99BC` at `0x801E6170`) and, when the action landed damage

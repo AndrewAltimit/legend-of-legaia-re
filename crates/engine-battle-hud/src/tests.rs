@@ -787,3 +787,22 @@ fn action_bands_in_flight_exclude_the_holds() {
         assert!(battle_action_in_flight(s), "{s:#x}");
     }
 }
+
+#[test]
+fn a_party_wide_cast_opens_no_combo_cluster() {
+    // `FUN_801DDB30` raises the readout flag for a slot target (and the
+    // every-enemy code from a party / creature attacker) only: a monster's
+    // party sweep lands its hits with the cluster shut.
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_cue_group::TARGET_PARTY_WIDE;
+    let mut w = battle_world(1);
+    arm_action(
+        &mut w,
+        1,
+        ActionCategory::Magic.as_byte(),
+        TARGET_PARTY_WIDE,
+    );
+    assert_eq!(battle_combo_style(&w), None);
+    arm_action(&mut w, 1, ActionCategory::Magic.as_byte(), 0);
+    assert_eq!(battle_combo_style(&w), Some(ComboStyle::Damage));
+}
