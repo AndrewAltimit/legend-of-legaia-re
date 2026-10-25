@@ -2925,6 +2925,7 @@ exit yaw store `ctx[+0x6DA] = 0x780` is applied as the module finishes
 | 0960 `0x7B` Plasma Strike, `0x801F74E4` | [below](#prot-0960-plasma-strike) | `0x801F8E50`, seeded `scalar * 12`; arms 5, 6 and `0xD` gate on the caster's clip instead, arms 7..`0xF` re-arm by storing |
 | 0959 `0x7A` Megaton Press, `0x801F69F0` | [below](#prot-0959-megaton-press) | `0x801F9624`, seeded `scalar * 12`; the phase chain is ported (`MEGATON_PRESS_CHAIN`), so the director runs the countdown table and leaves the phase alone |
 | 0962 `0xA2` / `0xA3` / `0xA4` Blade Breath / Thunder Needle / Gigaton Press | [below](#prot-0962-koru-charge-bodies) | none: each strike waits on the caster's node cursor, each tail on the cursor or the victim's settle |
+| 0965 `0xB6` Doomsday, `0x801F69D8` | [below](#prot-0965-doomsday) | `0x801F8370`, counted in **vsyncs** (drained by the bare frame step), seeded `0x20`; arm `0x0C` then waits on the target row's settle |
 | 0960 `0xA6` Neo Star Slash, `0x801F69D8` | [below](#prot-0960-neo-star-slash) | `0x801F8E50`, seeded `scalar << 5`; the chain (`NEO_STAR_SLASH_CHAIN`) carries the phase, so the director carries the countdown |
 
 - **0944** frames on the caster's facing, which the cast begin points at its
@@ -3060,6 +3061,25 @@ Arm 5 seats two records on the caster, three on each point of a ten-point
 ring about it (`SpawnAnchor::CasterRing`: angle `(i << 12) / 10`, radius
 `0x1000 / 3`) and three on every live party seat. Arm 4's caster rate `0` is
 left out, as the chain leaves it.
+
+<a id="prot-0965-doomsday"></a>
+
+**0965 Doomsday** (`doomsday_camera`, the evolved Cort's `0xB6`) is the
+longest capture body, about 1900 vsyncs. Arm 0 stages Cort's clip `7` and
+arms a `0x20`-frame shot behind it (pitch `0x100`, TR `(0, 0x200, 0x1800)`);
+arms 2 and 3 pull out (pitch `-12d`, TR y `+192d`, TR z `-224d` a pass) while
+arm 2 lifts Cort on `-sin(lift) / 2` and fades to white. Arm 3 flushes the
+pool, stores the stage byte `3`, takes the backdrop off and hides the party
+and Cort; arms 7..`0x0A` cut between the origin and Cort (TR z `0x4650`, the
+`0x2C00` overhead, the `-0x1964` and `-0xA8C` reverse shots, the last
+re-armed every pass over `0x20` frames), toggling the party and Cort hidden
+and shown and the stage byte with them. Arm `0x0B` shows the party, lines it
+up at half of the seat table `0x800775E0`'s x for the party count with
+`z = 0` and heading `0x800` (`DOOMSDAY_LINE_UP_X`), and lands the `0x600`
+sweep; the `0xFF` arm puts every seat back. The spawns are at the origin.
+Arm 8's ten records whose part words it writes after each spawn are not
+carried. The tick stores `0xFF` on arm `0x0C`'s pass (`DOOMSDAY_LAST_ARM`);
+it used to walk the phase past the body's last arm.
 
 The rest of the measured set carries its gate as a countdown table with no camera arms
 (`cast_module_camera::capture_countdown`: per arm, the drain form and the

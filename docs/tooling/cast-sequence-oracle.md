@@ -94,7 +94,7 @@ seeded, and the recorder on:
 | Variable | Value |
 |---|---|
 | `LEGAIA_BATTLE_INFLIGHT` | `caster,spell,target;ground` - dispatched at the first prompt, every combatant seated on retail's ground pair at cast begin; the ground list is re-keyed from pool slots to engine slots (monster `m` at `party_count + m`) |
-| `LEGAIA_BATTLE_MONSTER_CAST` | `seat,spell` instead, for a monster caster |
+| `LEGAIA_BATTLE_MONSTER_CAST` | `seat,spell,p;ground` instead, for a monster caster |
 | `LEGAIA_DIAG_CAST_SEQ` | the recording directory |
 | `LEGAIA_DIAG_CAST_SEQ_SEAT` | only a cast by this seat (retail numbering) starts the recording |
 | `LEGAIA_DIAG_CAST_SEQ_EVERY` / `_TAIL` / `_MAX` | frame cadence in ticks (`1`), ticks past the Done band before exit (`60`), frame cap (`2000`; the driver passes `4000`, past the retail side's span) |
@@ -248,8 +248,11 @@ offset, both states, class, `within`, `mae`, both lumas) for scripts.
   the monster's own AI pick overwrites in the pass that reads it (below). A
   state that already holds the queued cast (`nivora_duel_pre_megaton_press`,
   the `*_pre_*` states the pick probe saved) records it either way. The
-  engine half (`LEGAIA_BATTLE_MONSTER_CAST=seat,spell,p`) hands the monster
-  the round's first turn from the first prompt, so no pad drive is needed.
+  engine half (`LEGAIA_BATTLE_MONSTER_CAST=seat,spell,p;ground`) hands the
+  monster the round's first turn from the first prompt, so no pad drive is
+  needed, and stands each slot on the ground retail's earlier actions left: a
+  walk-in body walks from there (Koru's walked 840 units from its authored
+  seat against retail's 432 before the ground was carried).
 - **The target has to suit the spell.** A heal aimed at a monster seat parks
   the module (Orb on seat `3` sits in its phase `9`); pass `--target 0` for an
   ally spell. The probe quits on a park (`LEGAIA_PARK`, state and module phase
