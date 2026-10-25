@@ -12,6 +12,7 @@
 //! sides and lives above both.
 
 mod arts_randomizer_runtime_e2e;
+mod arts_voice_retail_capture_disc;
 mod attached_light_cave01_retail_capture_disc;
 mod attached_light_retail_capture_disc;
 mod audio_trace;

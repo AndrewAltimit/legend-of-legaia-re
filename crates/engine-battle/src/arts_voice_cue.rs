@@ -127,8 +127,36 @@ fn pick_from_record(
     channel
 }
 
+/// The members of the first-half candidate record a call picks from - the
+/// record [`select_arts_voice`] walks for `call` - or `None` when the
+/// action is outside the character's first-half range. Membership is the
+/// pick loop's: byte `+0` alone on a one-member record, else the run up to
+/// the next `0` from index `2`.
+pub fn first_half_pool(t: &ArtsVoiceSelectorTables, call: &ArtsVoiceCall) -> Option<Vec<u8>> {
+    let cslot = call.char_id.checked_sub(1).filter(|&c| c < 3)?;
+    let [lo, hi, _] = t.range(cslot);
+    if call.action < lo || call.action > hi {
+        return None;
+    }
+    let variant = if call.solo_latch != 0 {
+        2
+    } else if call.flag != 0 {
+        1
+    } else {
+        0
+    };
+    let rec =
+        FIRST_HALF_VARIANT_BASES[variant][usize::from(cslot)] + u32::from(hi - call.action) * 0x0F;
+    let count = if t.byte(rec + 1) == 0 {
+        1u32
+    } else {
+        (2..).find(|&k| t.byte(rec + k) == 0).unwrap_or(2)
+    };
+    Some((0..count).map(|k| t.byte(rec + k)).collect())
+}
+
 /// `dur = (dur_table[cslot * 0x10 + channel] * 0x3C + 99) / 100`.
-fn shout_dur(t: &ArtsVoiceSelectorTables, cslot: u8, channel: u8) -> u32 {
+pub fn shout_dur(t: &ArtsVoiceSelectorTables, cslot: u8, channel: u8) -> u32 {
     let raw = u32::from(t.byte(DUR_TABLE_VA + u32::from(cslot) * 0x10 + u32::from(channel)));
     (raw * 0x3C).div_ceil(100)
 }

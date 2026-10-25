@@ -228,6 +228,7 @@ FAIL iff  not forced  and  (roll_p &lt; roll_e  or  ctx[+0x287] != 0)</code></pr
   <ul class="bullets">
     <li><code>_DAT_8007B910</code> is the <strong>live audio level</strong>, not screen brightness. The summon and capture arms ramp it down and back; two of those duck arms sit behind the scripted-fight flag and never run in an ordinary encounter.</li>
     <li>Battle voices are CD-XA clips played through <code>FUN_8003D53C</code>: a grunt per normal move, a shout per Tactical Art chosen by <code>FUN_8004C140</code>, and a fanfare per Hyper Art.</li>
+    <li>A retail capture of Noa's Lizard Tail into Acrobatic Blitz pins the shout: one selector call per art, on the commit of the art's starter clip, the first art on the "more follows" table and the last on the plain one. The port makes the same calls on the same commits. While a shout streams, retail's own frames stretch to 6-10 vsyncs, so its arts play slower than their animation data; the port does not copy that load.</li>
     <li><code>FUN_801F3990</code> fires the item and Spirit voice cue from the wait state <code>0x3D</code>.</li>
   </ul>
   <p>The overlay also carries its own small PRNG (<code>FUN_801D0290</code>). It is a shape hash for the lightning ribbon emitter and feeds no gameplay roll - those draw the BIOS <code>rand</code>.</p>

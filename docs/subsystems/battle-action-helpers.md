@@ -984,6 +984,21 @@ The selector runs no busy gate: a call always takes the drive.
 - Each record is a channel list: byte `+0` is always a member (channel 0 is legal) and, when `+1 != 0`, the list runs to the next `0`.
 - Duration check: Vahn `ch0` -> `0x2D`, `ch6` -> `0x3D`, and every recomp-captured cue's `dur` reproduces the arithmetic for its observed channel.
 
+**Retail capture of a known string.** On the `arts_bar_ideal_noa_fangs` state (retail executable), Noa types Lizard Tail then Acrobatic Blitz (`Up Down Up Up Down Down`, both on her learned list) and Cross ([`autorun_arts_voice_parity.lua`](../../scripts/pcsx-redux/autorun_arts_voice_parity.lua)):
+
+| What | Retail |
+|---|---|
+| built queue `+0x1DF` | `0F 0E 19 2B 0F 0E 19 2A` |
+| selector calls | `(2, 0x2B, 0x0F)` at cursor `3`, `(2, 0x2A, 0x00)` at cursor `7`, each on the commit of the starter's clip (dynamic slot `0x10`) |
+| `ctx[+0x243]` at each call | `0` |
+| clip starts | slot `3` (`XA4.XA`), channel / `dur` `(4, 0x36)` then `(0xF, 0x21)` |
+
+So the first art of a two-art string takes the `flag != 0` variant and the closing art the plain one, and neither art's clip raises the latch. The engine reproduces every row, picking its channels from the same pools (`parity` test `arts_voice_retail_capture_disc`, which seeds the party and formation from the same state and types the same string).
+
+The latch is the committed clip's `+0x87` byte (`FUN_8004E13C`), not a property of the party's size: a one-member party reaches the latched variant only through a clip that carries a non-zero `+0x87`, as the Rim Elm spar's `0x1A` entry does.
+
+**Retail frames stretch while a shout streams.** From the frame the clip starts until about its read span ends, the main loop's frames take 6 to 10 vsyncs where the rest of the turn takes 3, and the frame step `DAT_1F800393` reads `4`, its clamp. Sampled at each vsync, the CPU sits in the libcd command and interrupt paths (`0x8005C000..0x8005D000`, the BIOS exception vector). The animation clock advances by the step, so the art clips play about a third slower than their data says: Lizard Tail's starter clip runs 32 vsyncs and the art clip 61, where the frame-step law gives about 22 and 40. The interpreter and recompiler cores measure the same frames. The engine does not model this CPU load: its arts run at the rate law's pace, with the same cues on the same commits.
+
 **Evidence.** A live PCSX-Redux trace of Vahn's Tri-Somersault fires `FUN_8003D53C(0x01=XA2, chan 0/6, ...)` and Noa's Miracle fires `(0x03=XA4, ...)`, both from `FUN_8004C140` (`ra = 0x8004C464`; scenarios `battle_vahn_tri_somersault_super` / `battle_noa_miracle_art_combo`, probe `scripts/pcsx-redux/autorun_arts_voice_cue.lua`).
 
 Parser: `legaia_art::arts_voice`; the capture-witnessed per-art picks are `arts_voice::CAPTURED_ART_CHANNELS`; the raw bytes the selector reads, for a byte-exact port, are `arts_voice::ArtsVoiceSelectorTables`.
