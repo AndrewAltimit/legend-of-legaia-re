@@ -1265,3 +1265,28 @@ fn a_creature_body_anchor_takes_the_display_trio_unturned() {
         None
     );
 }
+
+/// Mule's swim-in: arm 5's pass stages clip 1 as an at-once cut (`+0x1DA`
+/// and `+0x1DC` bumped together), and the cuts of arms 6 and 7 set the
+/// creature's clip cursor to `0x78` and `0x20` - the frames a retail RAM
+/// read of the cast holds the swim-in at after each cut.
+#[test]
+fn mule_arms_5_to_7_stage_and_seek_the_swim_in() {
+    let s = seats();
+    let mut st = ModuleCamState::default();
+    st.countdown.0 = 0;
+    assert!(!mule_direct(&mut st, 5, s).hold);
+    assert_eq!(st.creature_stage, Some(1));
+    assert!(st.creature_restage);
+    st.countdown.0 = 0;
+    assert!(!mule_direct(&mut st, 6, s).hold);
+    assert_eq!(st.creature_seek.take(), Some(0x78));
+    st.countdown.0 = 0;
+    assert!(!mule_direct(&mut st, 7, s).hold);
+    assert_eq!(st.creature_seek.take(), Some(0x20));
+    st.creature_restage = false;
+    st.countdown.0 = 0;
+    assert!(!mule_direct(&mut st, 9, s).hold);
+    assert_eq!(st.creature_stage, Some(0));
+    assert!(!st.creature_restage, "arm 9's store is bare");
+}

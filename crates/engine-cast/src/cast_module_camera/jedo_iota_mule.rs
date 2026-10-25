@@ -492,7 +492,7 @@ pub fn mule_backdrop_origin(pitch: i32, yaw: i32, tr_x: i32, tr_y: i32) -> (u8, 
 /// | 1, 2 | the side-band applier stage `ctx[+0x276]` (1); the band timer (2) | the anchor `+= p / 2` while the band timer runs, arm 0's cut following it |
 /// | 3, 4 | the stage word (4) | the anchor `+= p / 2` a pass, arm 0's cut following it |
 /// | 5 | word | a `0x7E`-frame shot, the creature seated at `(0, -a)` facing `0x800`, clip `1`; `+= scalar * 126` |
-/// | 6..8 | word | cuts; `+= scalar * 150` / `150` / `240` |
+/// | 6..8 | word | cuts, the creature's clip cursor set to `0x78` (6) / `0x20` (7); `+= scalar * 150` / `150` / `240` |
 /// | 9 | word | a `0x3C`-frame shot, the spell name, clip `0`; `+= scalar * 60` |
 /// | 10 | word | a `0xB4`-frame shot; `+= scalar * 300` |
 /// | 11 | word | a cut, the attack name, the creature at `y = -0x100` facing `0`; `+= scalar * 208` |
@@ -566,19 +566,27 @@ pub fn mule_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
                 z: (-a) as i16,
                 facing: 0x800,
             });
+            // `+0x1DA += 1` with the `+0x1DC` bump (`0x801F7094..0x801F70B8`):
+            // clip 1 cuts in at once on the seating pass.
             st.creature_stage = Some(1);
+            st.creature_restage = true;
             cut([-0x100, 0], [0, 0x460, 0x800], at, 0x7E)
         }
         6 => {
             if gated(st, 150 * S) {
                 return ArmDirection::HOLD;
             }
+            // `sh 0x78, 0x68` on the creature's node (`0x801F7158..0x801F7164`):
+            // each cut restarts the swim-in partway, at frame 7.5.
+            st.creature_seek = Some(0x78);
             cut([0, 0x400], [-0xE00, 0xD00, 0x400], at, 1)
         }
         7 => {
             if gated(st, 150 * S) {
                 return ArmDirection::HOLD;
             }
+            // `sh 0x20, 0x68` (`0x801F7224..0x801F722C`): frame 2.
+            st.creature_seek = Some(0x20);
             cut([0, 0x800], [0, 0xB00, 0xC00], at, 1)
         }
         8 => {
@@ -636,7 +644,9 @@ pub fn mule_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             if gated(st, 320 * S) {
                 return held(d);
             }
+            // `+0x1DA = 2` with the `+0x1DC` bump (`0x801F7AE4..0x801F7AF8`).
             st.creature_stage = Some(2);
+            st.creature_restage = true;
             with_drift(cut([0, 0x980], [0x140, 0x880, 0x200], on(creature), 1), d)
         }
         15 => {

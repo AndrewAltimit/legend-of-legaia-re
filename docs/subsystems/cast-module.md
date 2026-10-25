@@ -2546,7 +2546,14 @@ the creature's display trio `+0x3C` (`SpawnAnchor::CreatureBody`), and arms
 15 and 16 copy that trio over two of them on every pass
 (`MULE_CREATURE_RIDERS`), so the two camera-facing domes ride with the
 creature: seated on its floor point instead, they sat low in the frame and
-the backdrop read dark under them. Otherwise not carried by any of them:
+the backdrop read dark under them. Mule's creature swims in on clip `1`:
+arm 5 calls the seat installer `FUN_801F19EC` and then bumps `+0x1DA` and
+`+0x1DC` on the same pass, the cuts of arms 6 and 7 set its cursor to `0x78`
+and `0x20` (`sh` into the node's `+0x68`), and arm 9's bare `+0x1DA`
+decrement leaves clip `0` to the swim-in's natural end, deep in arm 11. The
+host seats the creature after the tick that asks for it, so the director's
+creature writes wait for the seat rather than land on the installer's resets
+(`World::apply_seru_seat_writes`). Otherwise not carried by any of them:
 the writes to the other seats (the monster row's hiding, orbits and
 restore, Mushura's walk and steering, Barra's seat swaps and arcs), the
 other modules' stage words `ctx[+0x27A..+0x286]` beyond what the
