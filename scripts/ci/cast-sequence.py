@@ -212,7 +212,11 @@ def run_engine(a, out: Path) -> bool:
         # party_count + m. The party count is the seated party slots in
         # retail's ground list.
         pc = max(1, sum(1 for g in done.get("ground", "").split(",")[:3] if g not in ("", "-")))
-        env["LEGAIA_BATTLE_MONSTER_CAST"] = f"{pc + caster - 3},{a.spell},p"
+        # The ground retail's earlier actions left (a party member's swing
+        # walks it in, a knockback pushes the monster back): a walk-in body
+        # walks from there, so its length is the capture's.
+        ground = engine_ground(done.get("ground", "")) if not a.no_ground else ""
+        env["LEGAIA_BATTLE_MONSTER_CAST"] = f"{pc + caster - 3},{a.spell},p" + (f";{ground}" if ground else "")
     edir = out / "engine"
     if edir.exists():
         shutil.rmtree(edir)

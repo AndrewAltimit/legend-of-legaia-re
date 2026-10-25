@@ -370,6 +370,10 @@ impl World {
                         legaia_engine_cast::cast_module_ticks::capture_tick_body(e, spell),
                     )
                 {
+                    // Their arm 0 stores phase `1` outright on its first pass
+                    // (`sb s8,0x279(s5)` at `0x801F7BC8`) and arm 1 polls the
+                    // walk from there, so the walk runs on phase `1`.
+                    self.casting.module_phase = 1;
                     let seats = self.module_cam_seats(run.slot, victim);
                     if let Some(cam) = self.battle.camera.as_mut() {
                         let yaw_base = cam.action_yaw_base();

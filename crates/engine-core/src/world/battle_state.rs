@@ -451,6 +451,11 @@ pub struct BattleState {
     /// cast-sequence oracle's way to record a monster cast from a prompt
     /// with no pad drive. `false` on every ordinary fight.
     pub forced_monster_cast_at_prompt: bool,
+    /// With [`Self::forced_monster_cast_at_prompt`]: each battle slot's live
+    /// pair when the forced turn is dispatched (`None` keeps the seat), the
+    /// ground a capture's earlier actions left - as
+    /// [`InflightCastSeed::ground`] does for a party caster.
+    pub forced_monster_ground: [Option<[i16; 2]>; INFLIGHT_GROUND_SLOTS],
     /// Party seats a debug seed stands in the Spirit stance when the forced
     /// monster turn is dispatched from the prompt
     /// ([`Self::forced_monster_cast_at_prompt`]).
@@ -1088,6 +1093,7 @@ impl BattleState {
             forced_monster_cast: None,
             forced_monster_target: None,
             forced_monster_cast_at_prompt: false,
+            forced_monster_ground: [None; INFLIGHT_GROUND_SLOTS],
             forced_guard: [false; 3],
             combo_cluster_held: false,
             forced_steal: false,

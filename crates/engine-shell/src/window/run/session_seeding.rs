@@ -251,14 +251,15 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
         log::info!("play-window: LEGAIA_BATTLE_INFLIGHT seeds {seed:?} at the first prompt");
         world.battle.inflight_seed = Some(seed);
     }
-    // `LEGAIA_BATTLE_MONSTER_CAST=seat,spell[,p]` (decimal or `0x..`): the
-    // monster in engine battle `seat` casts `spell` on its next turn instead
-    // of the AI's pick (with `,p`, that turn is taken from the first command
-    // prompt, ahead of the party's commands) (`BattleState::forced_monster_cast`, the seam the
+    // `LEGAIA_BATTLE_MONSTER_CAST=seat,spell[,p][;x:z,...]` (decimal or
+    // `0x..`): the monster in engine battle `seat` casts `spell` on its next
+    // turn instead of the AI's pick (with `,p`, that turn is taken from the
+    // first command prompt, ahead of the party's commands, each battle slot
+    // first stood at its listed ground, `-` keeping the seat) (`BattleState::forced_monster_cast`, the seam the
     // retail comparison corpus replays a mid-cast capture through). Pairs
     // with `--battle <ROW>` to watch one enemy special from a cold boot. A
     // debug seam.
-    if let Some((seat, spell, at_prompt)) = std::env::var("LEGAIA_BATTLE_MONSTER_CAST")
+    if let Some((seat, spell, at_prompt, ground)) = std::env::var("LEGAIA_BATTLE_MONSTER_CAST")
         .ok()
         .and_then(|s| {
             let parse = |t: &str| {
@@ -266,12 +267,20 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
                 t.strip_prefix("0x")
                     .map_or_else(|| t.parse::<u8>().ok(), |h| u8::from_str_radix(h, 16).ok())
             };
-            let mut it = s.split(',');
+            let (head, ground_s) = s.split_once(';').unwrap_or((s.as_str(), ""));
+            let mut it = head.split(',');
             let (a, b) = (it.next()?, it.next()?);
+            let mut ground = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+            for (g, tok) in ground.iter_mut().zip(ground_s.split(',')) {
+                *g = tok.split_once(':').and_then(|(x, z)| {
+                    Some([x.trim().parse::<i16>().ok()?, z.trim().parse::<i16>().ok()?])
+                });
+            }
             Some((
                 parse(a)?,
                 parse(b)?,
                 it.next().is_some_and(|t| t.trim() == "p"),
+                ground,
             ))
         })
     {
@@ -285,6 +294,7 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
         );
         world.battle.forced_monster_cast = Some((seat, spell));
         world.battle.forced_monster_cast_at_prompt = at_prompt;
+        world.battle.forced_monster_ground = ground;
     }
     // `LEGAIA_BATTLE_GUARD=seat[,seat..]`: party seats that stand in the
     // Spirit stance (`+0x1DE == 4`) when the fight opens - a capture's
