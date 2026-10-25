@@ -373,6 +373,9 @@ pub struct ArmDirection {
     /// included, folded into a shot in flight like a capture arm's
     /// ([`CaptureDrift`]): added every pass, held or not.
     pub drift: Option<CaptureDrift>,
+    /// The chained streak ribbons (`FUN_801E1D98`) the arm draws on this
+    /// pass (PROT 0909's arm-11 bolt and arm-12 ring), for this tick only.
+    pub ribbons: Option<capture::CastRibbonRing>,
 }
 
 /// A line of text a module arm prints through `FUN_8003541C(0, 0, str, x,
@@ -876,6 +879,7 @@ impl ArmDirection {
         kills_fades: false,
         jump: None,
         drift: None,
+        ribbons: None,
     };
     pub(super) const PASS: Self = Self {
         hold: false,
@@ -891,6 +895,7 @@ impl ArmDirection {
         kills_fades: false,
         jump: None,
         drift: None,
+        ribbons: None,
     };
     pub(super) fn shot(shot: ModuleShot) -> Self {
         Self {

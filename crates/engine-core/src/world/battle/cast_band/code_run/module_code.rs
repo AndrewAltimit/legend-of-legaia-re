@@ -1411,7 +1411,10 @@ impl World {
         }
         // A capture arm's streak-ribbon calls are per pass: this tick's, or
         // none.
-        self.battle.cast_ribbons = capture_arm.as_ref().and_then(|a| a.ribbons);
+        self.battle.cast_ribbons = capture_arm
+            .as_ref()
+            .and_then(|a| a.ribbons)
+            .or(direction.and_then(|d| d.ribbons));
         // A capture director's seat stores (PROT 0959's stand-ins, heights
         // and hides), after the fold-back for the same reason.
         if let Some(arm) = capture_arm {

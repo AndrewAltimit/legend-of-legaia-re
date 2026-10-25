@@ -231,6 +231,15 @@ impl World {
     /// Spawn one of PROT 0959's stager fades into the presentation hook's
     /// fade list, parked at `slot` (which the module's arm `0x0F` and the
     /// stager's arm 2 kill).
+    pub(in crate::world::battle::cast_band) fn push_stager_fade(
+        &mut self,
+        t: &legaia_engine_battle_vm::battle_action::SummonFadeTemplate,
+        site: u32,
+        slot: Option<legaia_overlay_images::cast_presentation::HandleSlot>,
+    ) {
+        self.push_megaton_press_fade(t, site, slot);
+    }
+
     fn push_megaton_press_fade(
         &mut self,
         t: &legaia_engine_battle_vm::battle_action::SummonFadeTemplate,

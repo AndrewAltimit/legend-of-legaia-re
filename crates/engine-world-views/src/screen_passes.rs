@@ -305,7 +305,7 @@ pub fn move_fx_streak_quads(world: &World, mvp: &glam::Mat4) -> Vec<AfterimageQu
     // per point, each drawing its own run of BIOS `rand` - so each point
     // takes its own seed off the frame.
     if let Some(ring) = world.battle.cast_ribbons {
-        for (i, p) in ring.points.iter().enumerate() {
+        for (i, p) in ring.points.iter().take(usize::from(ring.count)).enumerate() {
             out.extend(clip_ribbon_quads(
                 p.map(f32::from),
                 ring.trail_id,

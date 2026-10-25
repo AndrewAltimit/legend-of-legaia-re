@@ -314,3 +314,18 @@ pub fn evil_seru_magic_stager(
     }
     hits
 }
+
+/// PROT 0909 stager arm `1`'s fade (`0x801F7BFC..0x801F7C4C`): additive,
+/// black to `(0xC0, 0xC0, 0xFF)` over `0x1E` frames, no delay, held (`-1`),
+/// id `1`, parked at `ctx[+0x102C]` - the pale blue the screen rises to
+/// while the tick's arm 9 counts down, and which arm 9's pass kills before
+/// its own fade-out (`0x801F6FFC`).
+pub const VIGURO_STAGER_FADE: legaia_engine_battle_vm::battle_action::SummonFadeTemplate =
+    legaia_engine_battle_vm::battle_action::SummonFadeTemplate {
+        kind: 1,
+        duration: 0x1E,
+        start_rgb: [0, 0, 0],
+        end_rgb: [0xC0, 0xC0, 0xFF],
+        delay: 0,
+        hold: -1,
+    };

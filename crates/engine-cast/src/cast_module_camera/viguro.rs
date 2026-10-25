@@ -51,6 +51,52 @@ pub const VIGURO_CREATURE_SPAWNS: [ModuleSpawn; 1] = [ModuleSpawn {
 pub const VIGURO_STAGER_CALLERS: [(u32, u8, u16); 2] =
     [(0x801F_7E18, 0, 0x7F), (0x801F_7F20, 1, 0x13 + 6 * 0x14)];
 
+/// PROT 0909 arm 11's three records, seated on the camera's own focus on
+/// the arm's pass: `a0 = sp+0x30` holds the negated focus pair
+/// `0x80089118` / `0x80089120` at height `0`, `a1 = sp+0x20` the
+/// prologue's zeroed angles (`jal 0x80021B04` at `0x801F7204` /
+/// `0x801F721C` / `0x801F7234`) - the ring and the column of light the
+/// charge stands in.
+pub const VIGURO_CHARGE_SPAWNS: [ModuleSpawn; 3] = [
+    ModuleSpawn {
+        record: SpawnRecord::Module(0x801F_7FE0),
+        anchor: SpawnAnchor::ArmPoint,
+    },
+    ModuleSpawn {
+        record: SpawnRecord::Module(0x801F_8094),
+        anchor: SpawnAnchor::ArmPoint,
+    },
+    ModuleSpawn {
+        record: SpawnRecord::Module(0x801F_8158),
+        anchor: SpawnAnchor::ArmPoint,
+    },
+];
+
+/// The trail id PROT 0909's streaks pass the ribbon (`li a1,0x5` at
+/// `0x801F71C8` / `0x801F748C`).
+pub const VIGURO_STREAK_TRAIL: u8 = 5;
+
+/// The sixteen ground points PROT 0909's arm 12 hands `FUN_801E1D98` on a
+/// pass whose climbing word `ctx[+0x6D8]` reads `w` (`0x801F73C4..
+/// 0x801F7498`): with `h = w / 2` toward zero, streak `i` stands at angle
+/// `(i << 8) + (h & 0xFF)` and radius `h + 0x200` about `centre`, each lane
+/// `table * r >> 11` toward zero (the sine view on `x`, the cosine view on
+/// `z`), at height `0`: a ring of world radius `2r`, widening from `0x400`
+/// to `0x600` as the charge climbs.
+pub fn viguro_charge_ring(centre: [i16; 2], w: i32) -> [[i16; 3]; 16] {
+    let h = w / 2;
+    let r = h + 0x200;
+    std::array::from_fn(|i| {
+        let angle = ((i as i32) << 8) + (h & 0xFF);
+        let (sin, cos) = legaia_engine_system::trig::trig12(angle as u16);
+        [
+            (i32::from(centre[0]) + i32::from(sin) * r / 2048) as i16,
+            0,
+            (i32::from(centre[1]) + i32::from(cos) * r / 2048) as i16,
+        ]
+    })
+}
+
 /// The `ctx[+0x6D8]` gate the counted arms share: drain by the frame
 /// product, store the halfword, and hold while it reads non-negative
 /// (`subu; sh; sll 0x10; bgez`).
@@ -88,13 +134,14 @@ fn row_focus(st: &ModuleCamState) -> [i16; 3] {
 /// | 8 | - | the rendezvous: the body parks until the stager's arm `1` steps the phase |
 /// | 9 | drain, hold while non-negative | snap: pitch `0x100`, yaw `-f`, TR z `0x800`, focus the enemy row (`FUN_801DCEAC(9)`); `ctx[+0x6D8] = scalar * 60` |
 /// | 10 | - | the same framing pulled to TR z `0x2000` over `0x13C` frames |
-/// | 11 | drift yaw `+P/2`; drain, hold while non-negative | `ctx[+0x6D8] = 0` |
-/// | 12 | drift yaw `+P/2`; the word **climbs** by `P/4`, hold while below [`VIGURO_CHARGE_TOP`] | - |
+/// | 11 | drift yaw `+P/2`; drain, hold while non-negative | `ctx[+0x6D8] = 0`; one streak and [`VIGURO_CHARGE_SPAWNS`] on the focus |
+/// | 12 | drift yaw `+P/2`; the word **climbs** by `P/4`, sixteen streaks ([`viguro_charge_ring`]); hold while below [`VIGURO_CHARGE_TOP`] | - |
 /// | 13 | drift yaw `+P/4` | the sweep (the body's); pitch `0xC0`, the live yaw, TR z `0x1800`, focus the enemy row, over `0x100` frames |
 /// | 14 | drift yaw `+P/4` | the settle (the body's) |
 ///
-/// Arm 12's sixteen-ray ring (`FUN_801E1D98` per pass) and arm 11's three
-/// spawns on the camera's own focus are not ported. Arm 13's shot keeps the
+/// Arm 11's pass draws one streak and seats [`VIGURO_CHARGE_SPAWNS`] on the
+/// camera's focus; arm 12 draws [`viguro_charge_ring`] on every pass, ahead
+/// of its gate ([`ArmDirection::ribbons`]). Arm 13's shot keeps the
 /// live yaw the arms have been drifting, which the host feeds in
 /// ([`ModuleCamState::live_yaw`]).
 ///
@@ -194,12 +241,38 @@ pub fn viguro_direct(st: &mut ModuleCamState, phase: u8, _: ModuleCamSeats) -> A
                 return ArmDirection::HOLD.drifted(d);
             }
             st.countdown.0 = 0;
-            ArmDirection::PASS.drifted(d)
+            // The pass: one streak and three records on the focus.
+            let [cx, _, cz] = row_focus(st);
+            let at = [cx.wrapping_neg(), 0, cz.wrapping_neg()];
+            let points = [at; 16];
+            ArmDirection {
+                spawns: &VIGURO_CHARGE_SPAWNS,
+                arm_point: Some((at, [0; 3])),
+                ribbons: Some(super::capture::CastRibbonRing {
+                    points,
+                    trail_id: VIGURO_STREAK_TRAIL,
+                    count: 1,
+                }),
+                ..ArmDirection::PASS
+            }
+            .drifted(d)
         }
         12 => {
             st.countdown.0 += p / 4;
             st.countdown.0 = i32::from(st.countdown.0 as i16);
-            gate(st.countdown.0 < VIGURO_CHARGE_TOP).drifted(drift(p / 2))
+            let [cx, _, cz] = row_focus(st);
+            ArmDirection {
+                ribbons: Some(super::capture::CastRibbonRing {
+                    points: viguro_charge_ring(
+                        [cx.wrapping_neg(), cz.wrapping_neg()],
+                        st.countdown.0,
+                    ),
+                    trail_id: VIGURO_STREAK_TRAIL,
+                    count: 16,
+                }),
+                ..gate(st.countdown.0 < VIGURO_CHARGE_TOP)
+            }
+            .drifted(drift(p / 2))
         }
         // `FUN_801DCEAC(9)` again after the sweep, then pitch `0xC0`, the
         // live yaw the arm has just added to, TR z `0x1800` on the row over

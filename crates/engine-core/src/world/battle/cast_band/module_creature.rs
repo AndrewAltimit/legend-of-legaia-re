@@ -261,6 +261,18 @@ impl World {
         for (arm, caller) in calls {
             let (pos, rot) = (caller.pos, caller.rot);
             legaia_engine_cast::cast_module_ticks::viguro_stager(ctx, seat, arm);
+            // Arm 1 spawns its held pale-blue rise and parks it at
+            // `ctx[+0x102C]` (`sw v0,0x102c(a0)` at `0x801F7C4C`), where the
+            // tick's arm 9 kills it.
+            if arm == 1 {
+                self.push_stager_fade(
+                    &legaia_engine_cast::cast_module_ticks::VIGURO_STAGER_FADE,
+                    0x801F_7C34,
+                    Some(legaia_overlay_images::cast_presentation::HandleSlot::Ctx(
+                        0x102C,
+                    )),
+                );
+            }
             if arm == 0 {
                 self.casting.module_cam.creature = Some(ModuleSeat {
                     x: 0,

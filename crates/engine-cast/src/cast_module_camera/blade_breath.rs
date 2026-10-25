@@ -234,6 +234,7 @@ pub fn thunder_needle_camera(
                 arm.ribbons = Some(CastRibbonRing {
                     points: thunder_needle_ring(seats.caster.x, seats.caster.z, w),
                     trail_id: THUNDER_NEEDLE_RING_TRAIL,
+                    count: THUNDER_NEEDLE_RING_STREAKS as u8,
                 });
             }
             arm.drift = Some(tr_z);

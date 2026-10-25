@@ -112,6 +112,8 @@ pub struct CaptureCamArm {
 pub struct CastRibbonRing {
     pub points: [[i16; 3]; 16],
     pub trail_id: u8,
+    /// How many of [`Self::points`] the pass draws.
+    pub count: u8,
 }
 
 /// Absolute stores a capture arm makes into the camera globals: yaw

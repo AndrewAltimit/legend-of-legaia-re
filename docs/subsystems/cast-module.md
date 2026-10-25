@@ -1701,6 +1701,17 @@ while the creature's `+0x38` is at or past `0x200`; arms 5, 7, 9 and 11 drain
 the countdown; arm 12 **climbs** it by a quarter of the frame product until
 it reaches `0x201`; arms 11..14 add to the yaw global every pass.
 
+Stager arm 1 also spawns a held additive fade, black to `(0xC0, 0xC0, 0xFF)`
+over `0x1E` frames, and parks it at `ctx[+0x102C]` (`0x801F7BFC..0x801F7C4C`):
+the pale blue the screen rises to while arm 9 counts down, which arm 9's
+pass kills before its own fade-out. Arm 11's pass draws one streak
+(`FUN_801E1D98`, trail `5`) and seats `0x801F7FE0`, `0x801F8094` and
+`0x801F8158` on the camera's focus negated back to a ground point - the
+ring and the column of light; arm 12 draws sixteen streaks every pass, ahead
+of its gate, about the same point (`viguro_charge_ring`: angle
+`(i << 8) + (w/2 & 0xFF)`, each lane `table * (w/2 + 0x200) >> 11` off the
+climbing word `w`).
+
 ### PROT 0910 (Swordie)
 
 <a id="prot-0910-swordie"></a>

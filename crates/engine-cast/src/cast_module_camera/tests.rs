@@ -1290,3 +1290,32 @@ fn mule_arms_5_to_7_stage_and_seek_the_swim_in() {
     assert_eq!(st.creature_stage, Some(0));
     assert!(!st.creature_restage, "arm 9's store is bare");
 }
+
+#[test]
+fn viguro_charge_ring_widens_with_the_charge_about_the_row() {
+    // Word 0: `r = 0x200`, each lane `table * r >> 11` - streak 0 at
+    // `4096 * 0x200 >> 11 = 0x400` along +z (sine 0, cosine 4096).
+    let r = viguro_charge_ring([100, -50], 0);
+    assert_eq!(r[0], [100, 0, -50 + 0x400]);
+    // Word 0x201 (the gate): `r = 0x300`; `h = 0x100` turns streak 0 by
+    // `h & 0xFF = 0`, streak 1 sits at `0x100`.
+    let r = viguro_charge_ring([0, 0], 0x201);
+    assert_eq!(r[0], [0, 0, (4096 * 0x300 / 2048) as i16]);
+    let (s, c) = legaia_engine_system::trig::trig12(0x100);
+    assert_eq!(
+        r[1],
+        [
+            (i32::from(s) * 0x300 / 2048) as i16,
+            0,
+            (i32::from(c) * 0x300 / 2048) as i16
+        ]
+    );
+}
+
+#[test]
+fn viguro_arm_twelve_draws_sixteen_streaks_every_pass() {
+    let mut st = ModuleCamState::default();
+    let d = viguro_direct(&mut st, 12, ModuleCamSeats::default());
+    assert_eq!(d.ribbons.map(|r| r.count), Some(16));
+    assert!(d.hold);
+}
