@@ -117,3 +117,53 @@ fn a_seated_list_stands_on_the_captures_page() {
         "no third page"
     );
 }
+
+/// Backing out of the entry with the list open: the session is gone, but its
+/// window keeps sliding out on its page across the command ring (the arts-list
+/// driver runs every command-flow frame) until it is off-screen.
+#[test]
+fn an_ended_entry_leaves_its_list_sliding_out() {
+    let mut w = list_world(&[1, 2, 3, 4, 5, 6, 7], false);
+    tick(&mut w, Some(PadButton::Triangle));
+    tick(&mut w, Some(PadButton::Triangle));
+    for _ in 0..6 {
+        tick(&mut w, None);
+    }
+    assert_eq!(w.arts_list_window(), Some((0, 1, 12)));
+    tick(&mut w, Some(PadButton::Circle));
+    assert!(
+        w.battle.arts_input.is_none(),
+        "Circle on an empty entry backs out"
+    );
+    assert_eq!(
+        w.arts_list_window(),
+        Some((0, 1, 10)),
+        "its window is still up"
+    );
+    assert_eq!(w.arts_list_rows().map(|r| r.len()), Some(2), "on page 1");
+    for want in [8, 6, 4, 2] {
+        w.step_arts_list_window();
+        assert_eq!(w.arts_list_window().map(|l| l.2), Some(want));
+    }
+    w.step_arts_list_window();
+    assert_eq!(w.arts_list_window(), None);
+    assert_eq!(w.arts_list_rows(), None);
+}
+
+/// A new entry's window registration resets the counter: a window still
+/// sliding out is gone the moment the next entry opens.
+#[test]
+fn the_next_entry_drops_a_window_still_sliding_out() {
+    let mut w = list_world(&[1, 2, 3], false);
+    tick(&mut w, Some(PadButton::Triangle));
+    tick(&mut w, None);
+    tick(&mut w, Some(PadButton::Circle));
+    assert!(w.battle.arts_list_window.is_some());
+    w.open_arts_command_input(0);
+    assert_eq!(w.battle.arts_list_window, None);
+    assert_eq!(
+        w.arts_list_window(),
+        None,
+        "the fresh entry's list is closed"
+    );
+}

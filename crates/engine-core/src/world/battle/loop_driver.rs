@@ -327,6 +327,10 @@ impl World {
         self.step_commit_log_launch();
         self.step_action_plate_glides();
         self.step_battle_intro_names();
+        // The arts-list driver `FUN_801D3444` runs at the top of every
+        // command-flow frame (`0x801D0B24`, ahead of the box park): a list
+        // window its entry left on screen keeps sliding out.
+        self.step_arts_list_window();
 
         // A message box on screen parks the entire battle - retail's
         // `FUN_801D0748` returns before it reads the flow state when

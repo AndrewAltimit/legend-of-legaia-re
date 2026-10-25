@@ -405,6 +405,9 @@ pub struct BattleState {
     /// meanwhile. The saved-chain list ([`crate::world::BattleState::arts_menu`]) is the
     /// legacy path, kept reachable via `WorldToggles::arts_saved_list`.
     pub arts_input: Option<legaia_engine_battle::arts_command_input::ArtsCommandInputSession>,
+    /// The Triangle arts list's window after its entry ended, sliding out
+    /// ([`legaia_engine_battle::arts_command_input::ArtsListWindow`]).
+    pub arts_list_window: Option<legaia_engine_battle::arts_command_input::ArtsListWindow>,
     /// Per-party-slot **swing costs** for the Arts command gauge: the four
     /// `+0x74` AP prices (Left / Right / Down / Up = runtime action slots
     /// `0xC..=0xF`) the input session charges per directional press, for
@@ -1086,6 +1089,7 @@ impl BattleState {
             spell_menu: None,
             arts_menu: None,
             arts_input: None,
+            arts_list_window: None,
             swing_costs: [[legaia_engine_battle::arts_command_input::FAVORED_COST; 4]; 3],
             flow: legaia_engine_battle_menus::battle_flow::BattleFlowState::Idle,
             round_flow: crate::battle_round::RoundFlow::default(),

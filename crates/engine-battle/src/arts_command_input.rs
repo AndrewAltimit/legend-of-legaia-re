@@ -170,6 +170,11 @@ pub struct ArtsCommandInputSession {
     pub list_pages: u8,
     /// Open arts-list page (`None` = closed).
     pub list_page: Option<u8>,
+    /// The page the list window draws: the pager's row offset
+    /// `_DAT_8007B458` over five rows. The pager writes it on every open and
+    /// page step and leaves it on close (`FUN_801D3748`), so a window
+    /// sliding out after the list closed still shows the page it closed on.
+    pub list_row_page: u8,
     /// The character's learned-arts count (`record[+0x185]`, the byte
     /// `FUN_801D3748` reads at `0x80084140 + char * 0x414 + 0x74D`), when the
     /// host supplies it. `Some` routes Triangle through the retail pager
@@ -278,7 +283,54 @@ pub struct ArtsListRow {
 /// `li v0,0xc` at `0x801D34A0..0x801D34B4`).
 pub const ARTS_LIST_SLIDE_MAX: u8 = 12;
 
+/// The Triangle list window once its entry session has ended: the text
+/// node stays registered, and the arts-list driver `FUN_801D3444` (called
+/// every frame of the command flow, `0x801D0B24`) keeps draining its slide
+/// counter outside the entry state `0x50` until it reaches `0`, so a list
+/// left open slides out across the target cursor and into the round rather
+/// than vanishing with the entry. The next entry's registration
+/// (`FUN_801DBB8C`) resets the counter, ending it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ArtsListWindow {
+    /// The party actor whose learned list the window shows.
+    pub actor: u8,
+    /// The pager's row page ([`ArtsCommandInputSession::list_row_page`]).
+    pub row_page: u8,
+    /// The slide counter `0x801F4E0A`.
+    pub slide: u8,
+}
+
+impl ArtsListWindow {
+    /// The window a finished session leaves on screen, `None` when it was
+    /// already off-screen.
+    pub fn left_by(s: &ArtsCommandInputSession) -> Option<Self> {
+        s.list_window().map(|(row_page, slide)| Self {
+            actor: s.actor,
+            row_page,
+            slide,
+        })
+    }
+
+    /// One battle frame of `frame_step` vsyncs outside the entry: drain by
+    /// the step. `false` once the window is off-screen.
+    ///
+    /// PORT: overlay_battle_action_0898_801d3444 (the drain arm,
+    /// `0x801D34B8..0x801D34E4`)
+    pub fn step(&mut self, frame_step: u8) -> bool {
+        self.slide = self.slide.saturating_sub(frame_step);
+        self.slide > 0
+    }
+}
+
 impl ArtsCommandInputSession {
+    /// The list window while it is on screen: `(row page, slide)`, `None`
+    /// at slide `0` (the window's `x` is `-146` there and its right edge
+    /// `-8`, so nothing of it shows). The window outlives the open bit: it
+    /// slides out on the page it closed on.
+    pub fn list_window(&self) -> Option<(u8, u8)> {
+        (self.list_slide > 0).then_some((self.list_row_page, self.list_slide))
+    }
+
     /// Step the Triangle list window's slide one battle frame of
     /// `frame_step` vsyncs, as the arts-list driver `FUN_801D3444` does after
     /// the frame's input: the counter climbs by the frame step
@@ -332,6 +384,7 @@ impl ArtsCommandInputSession {
             spent: Vec::new(),
             list_pages,
             list_page: None,
+            list_row_page: 0,
             list_rows: None,
             list_slide: 0,
             preseed: Vec::new(),
@@ -483,6 +536,9 @@ impl ArtsCommandInputSession {
                     Some(_) => None,
                 },
             };
+            if let Some(p) = self.list_page {
+                self.list_row_page = p;
+            }
             return;
         }
         match std::mem::replace(&mut self.phase, ArtsInputPhase::Aborted) {

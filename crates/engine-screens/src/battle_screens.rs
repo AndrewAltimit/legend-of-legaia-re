@@ -449,6 +449,18 @@ pub fn arts_input_chrome_draws(
     if world.mode == SceneMode::MuscleDome && !dome_battle_chrome_up(world) {
         return Vec::new();
     }
+    // The Triangle arts list's window frame, over the rest of the screen
+    // (its node is the walker's first, key `0`): the rows are text
+    // (`arts_list_draws`). Only where the rows can be drawn too - a dome
+    // leg slides the window but carries no learned list
+    // (`World::arts_list_rows`), and an empty frame is not retail's. The
+    // window outlives its entry: an ended entry's list slides out.
+    let list_frame = match (chrome, world.arts_list_window()) {
+        (Some(r), Some((_, _, slide))) if world.arts_list_rows().is_some() => {
+            ai::arts_list_frame_draws(r, slide, origin, scale)
+        }
+        _ => Vec::new(),
+    };
     let entry = world.arts_input_view();
     // A Spirit turn's bar and plate glide in on their raise; the entry
     // session's draw at rest.
@@ -458,7 +470,7 @@ pub fn arts_input_chrome_draws(
         (0, 0)
     };
     let Some(view) = entry.or_else(|| world.spirit_gauge_view()) else {
-        return Vec::new();
+        return list_frame;
     };
     let s = scale.max(1) as i32;
     let bar_origin = (origin.0, origin.1 + bar_dy * s);
@@ -524,17 +536,7 @@ pub fn arts_input_chrome_draws(
             scale,
         ));
     }
-    // The Triangle arts list's window frame, over the rest of the screen
-    // (its node is the walker's first, key `0`): the rows are text
-    // (`arts_list_draws`). Only where the rows can be drawn too - a dome
-    // leg slides the window but carries no learned list
-    // (`World::arts_list_rows`), and an empty frame is not retail's.
-    if let Some(r) = chrome
-        && entry.is_some()
-        && world.arts_list_rows().is_some()
-    {
-        out.extend(ai::arts_list_frame_draws(r, view.list_slide, origin, scale));
-    }
+    out.extend(list_frame);
     out
 }
 
@@ -554,8 +556,9 @@ fn arts_list_caption_draws(
     if world.dialogue_owns_input() {
         return Vec::new();
     }
+    let mut out = arts_list_draws(world, font, origin, scale);
     let Some(view) = world.arts_input_view() else {
-        return Vec::new();
+        return out;
     };
     let frame = ai::ArtsInputFrame {
         glides: &[],
@@ -571,7 +574,6 @@ fn arts_list_caption_draws(
         list_pages: view.list_pages,
         phase: arts_input_screen(view.phase),
     };
-    let mut out = arts_list_draws(world, font, view.list_slide, origin, scale);
     let Some(caption) = ai::arts_list_caption(&frame) else {
         return out;
     };
@@ -593,20 +595,21 @@ fn arts_list_caption_draws(
     out
 }
 
-/// The Triangle arts list's rows (`FUN_80034358`) on the open page, at the
-/// window's slide - names, AP and command arrows
+/// The Triangle arts list's rows (`FUN_80034358`) on the window's page, at
+/// its slide - names, AP and command arrows
 /// ([`legaia_engine_ui::arts_input::arts_list_text_draws`] over
-/// `World::arts_list_rows`). Empty while no page is open or the arts-name
-/// table is not installed.
+/// `World::arts_list_rows`) - including while the window slides out after
+/// the list closed or its entry ended. Empty while the window is off-screen
+/// or the arts-name table is not installed.
 fn arts_list_draws(
     world: &World,
     font: &legaia_font::Font,
-    slide: u8,
     origin: (i32, i32),
     scale: u32,
 ) -> Vec<TextDraw> {
     use legaia_engine_ui::arts_input as ai;
-    let Some(rows) = world.arts_list_rows() else {
+    let (Some((_, _, slide)), Some(rows)) = (world.arts_list_window(), world.arts_list_rows())
+    else {
         return Vec::new();
     };
     let views: Vec<Option<ai::ArtsListRowView<'_>>> = rows
@@ -748,13 +751,15 @@ pub fn battle_text_draws(
     if w.dialogue_owns_input() {
         return out;
     }
+    // The Triangle list's rows, and with an entry open its help caption.
+    // The rows outlive the entry while its window slides out.
+    out.extend(arts_list_caption_draws(w, font, origin, scale));
     if w.arts_input_view().is_some() {
         // Retail-model arts entry: the chips, bar and pennants are baked
         // art, drawn in the sprite layer by `arts_input_chrome_draws`; the
         // one line of text is the Triangle list's help caption. The
         // Begin | Reselect pick is the party's commit confirm (the
         // command-chip cluster), not a line of this screen.
-        out.extend(arts_list_caption_draws(w, font, origin, scale));
         return out;
     }
     if let Some(arts) = &w.battle.arts_menu {
