@@ -318,3 +318,42 @@ reason = "minigame_dance_pcsx is seeded on a resident patched disc (a mod row, n
 changes = [
   ["states/minigame_dance_pcsx/image", 0.847, 0.829],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The image channel now renders on the native 320x240 PSX target (truncated vertex snap, 15-bit dither) instead of the upscaled clean rasteriser, and PCSX-Redux captures are scored with that emulator's raster rule. Over the retail-disc states the corpus mean rose (37 up, 20 down); every drop here is at most 0.014 and sits on sub-pixel edge and dither placement against the capture, recorded state by state when the target switched. The patched-disc drops are outside the ratchet."
+changes = [
+  ["states/arts_bar_ideal_noa_fangs/image", 0.998, 0.996],
+  ["states/battle_gaza2_park_0x19_target_vahn/image", 0.955, 0.954],
+  ["states/battle_gaza2_prompt/image", 0.998, 0.997],
+  ["states/battle_noa_miracle_art_combo/image", 0.962, 0.958],
+  ["states/battle_vahn_tri_somersault_super/image", 0.955, 0.953],
+  ["states/casino_ticket_counter/image", 0.997, 0.994],
+  ["states/chapter2_garmel_pre_zeto/image", 1.0, 0.999],
+  ["states/chitei2_field_card_boot/image", 1.0, 0.998],
+  ["states/cort_evolved_battle_first_menu/image", 0.988, 0.979],
+  ["states/cort_guilty_cross_mid_cast/image", 0.98, 0.974],
+  ["states/delilas_gi_move_hand_gap_v2/image", 0.993, 0.991],
+  ["states/delilas_gi_spirit_artifact/image", 0.955, 0.954],
+  ["states/delilas_gi_spirit_distortion_v3/image", 0.917, 0.903],
+  ["states/ending_panel_corner/image", 1.0, 0.999],
+  ["states/flute_spikefish_midcast/image", 0.991, 0.99],
+  ["states/gimard_burning_attack/image", 0.871, 0.863],
+  ["states/gizam_summon_mid_cast/image", 1.0, 0.999],
+  ["states/karisto_sol_pre_encounter/image", 0.993, 0.989],
+  ["states/kor5_post_436_organic/image", 0.993, 0.992],
+  ["states/nivora_duel_mid_blazing_slash/image", 0.996, 0.988],
+  ["states/palma_summon_mid_cast/image", 0.999, 0.998],
+  ["states/retock_field_card_boot/image", 0.998, 0.997],
+  ["states/rim_elm_zoom_intro/image", 1.0, 0.999],
+  ["states/rugi_field_card_boot/image", 0.995, 0.99],
+  ["states/shiny_refactor_gimard_plus35/image", 0.939, 0.928],
+  ["states/shiny_refactor_gimard_precast/image", 0.964, 0.96],
+  ["states/sol_to_karisto_worldmap/image", 0.991, 0.985],
+  ["states/super_queue_replace_gala_back_punch/image", 0.998, 0.996],
+  ["states/super_queue_replace_noa_triple_lizard/image", 0.998, 0.996],
+  ["states/super_queue_replace_vahn_rolling_combo/image", 0.998, 0.996],
+  ["states/vell_fog_field/image", 1.0, 0.999],
+  ["states/vozz_field_card_boot/image", 0.997, 0.995],
+  ["states/zeto_call_wave_mid_cast/image", 1.0, 0.998],
+]
