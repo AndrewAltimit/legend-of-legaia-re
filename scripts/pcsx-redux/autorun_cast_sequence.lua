@@ -24,8 +24,9 @@
 --                capture gates use, every seat's HP, and the main loop's
 --                frame counter `frame` (gp+0x480), the side-band applier
 --                stage `c276` (ctx[+0x276]), and the read-span poll's words
---                `xaspan` / `cdbusy` / `cdmode` / `cdread`. `shot` names the frame
---                taken on that vsync, if any.
+--                `xaspan` / `cdbusy` / `cdmode` / `cdread`, and the BIOS
+--                `rand()` seed word 0x80009010 (`rand`, the state A(2Fh)
+--                steps). `shot` names the frame taken on that vsync, if any.
 --   r_<vsync>.raw  PCSX.GPU.takeScreenShot() pixels (BGR555, or BGR888 when
 --                `bpp` says 24); width / height / bpp are on the meta row.
 --   manifest.txt the run's knobs.
@@ -133,6 +134,9 @@ local XA_SPAN = 0x8007BC34
 local CD_BUSY = 0x8007BA70
 local CD_MODE = 0x8007B83C
 local CD_READ = 0x8007B8C2
+-- The BIOS rand() seed (A(2Fh): seed = seed * 0x41C64E6D + 0x3039, returns
+-- (seed >> 16) & 0x7FFF): the one stream SCUS and every overlay draw from.
+local RAND_SEED = 0x80009010
 local function s16(a)
     local v = probe.read_u16(a) or 0
     if v >= 0x8000 then v = v - 0x10000 end
@@ -218,7 +222,7 @@ probe.run({
         })
         meta = probe.csv_open(probe.out_path("meta.csv"),
             "vsync,st7,phase,acting,step,flow,c6d8,c6da,c87c,cd7960,loader," ..
-            "hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,w,h,bpp,frame,c276,xaspan,cdbusy,cdmode,cdread")
+            "hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,w,h,bpp,frame,c276,xaspan,cdbusy,cdmode,cdread,rand")
         -- The acting seat's body against the camera that frames it: clip,
         -- node cursor, live pair +0x34/+0x38, body pair +0x3C/+0x40, and the
         -- camera focus (stored negated) with its tween endpoints.
@@ -372,12 +376,12 @@ probe.run({
             local a = actor(s)
             hp[#hp + 1] = a and u16(a + 0x14C) or -1
         end
-        meta:row("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d",
+        meta:row("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
             elapsed, st7, u8(cx + 0x279), acting, probe.read_scratch_u8(0x1F800393),
             u8(cx + 6), u16(cx + 0x6D8), u16(cx + 0x6DA), u32(cx + 0x87C), s32(GIMARD_CD),
             u8(LOADER_ID), hp[1], hp[2], hp[3], hp[4], hp[5], hp[6], hp[7], hp[8],
             shot, w, h, bpp, u32(FRAME_COUNTER), u8(cx + 0x276),
-            s32(XA_SPAN), s16(CD_BUSY), u16(CD_MODE), s16(CD_READ))
+            s32(XA_SPAN), s16(CD_BUSY), u16(CD_MODE), s16(CD_READ), u32(RAND_SEED))
         local function sh(a)
             local v = u16(a)
             if v >= 0x8000 then v = v - 0x10000 end

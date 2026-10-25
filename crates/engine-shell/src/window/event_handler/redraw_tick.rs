@@ -504,6 +504,14 @@ impl PlayWindowApp {
     /// The session tick, a scene transition's render rebuild, the battle
     /// drive's hold counter, and the per-tick battle-render / NPC-model edges.
     fn tick_session_step(&mut self) {
+        // A recorded cast's `rand()` seed, held on its key so the arm that
+        // leaves it draws as retail's did (`LEGAIA_CAST_RAND_SEED`).
+        if let Some(seed) = self.screenshot.as_ref().and_then(|sc| sc.cast_rand_seed) {
+            legaia_engine_capture::cast_rand::apply_cast_rand_seed(
+                &mut self.session.host.world,
+                &seed,
+            );
+        }
         match self.session.tick() {
             // Door transition: the host loaded a new scene under
             // the window (field-VM op 0x3E/0x3F or a walk-touch

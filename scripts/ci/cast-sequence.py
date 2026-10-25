@@ -26,6 +26,7 @@ The outputs hold retail pixels and RAM: they live under the gitignored
 """
 
 import argparse
+import csv
 import json
 import os
 import shlex
@@ -172,6 +173,20 @@ def child_cmd(a, out: Path) -> Path | None:
     return kept
 
 
+def retail_rand_seed(out: Path, key: str) -> str | None:
+    """`st7:phase:seed` for `LEGAIA_CAST_RAND_SEED`: the BIOS rand() seed
+    word (`rand` in the probe's meta.csv) on retail's last vsync under the
+    cast key `st7:phase` (each a number, `0x` allowed). A recording made
+    before the probe logged the word has no `rand` column."""
+    st7, phase = (int(v, 0) for v in key.split(":"))
+    seed = None
+    with open(out / "retail" / "meta.csv") as f:
+        for r in csv.DictReader(f):
+            if r.get("rand") and int(r["st7"]) == st7 and int(r["phase"]) == phase:
+                seed = int(r["rand"])
+    return None if seed is None else f"{st7}:{phase}:{seed}"
+
+
 def run_engine(a, out: Path) -> bool:
     kept = child_cmd(a, out)
     if kept is None:
@@ -231,6 +246,12 @@ def run_engine(a, out: Path) -> bool:
     })
     if a.guard:
         env["LEGAIA_BATTLE_GUARD"] = a.guard
+    if a.rand_at:
+        seed = retail_rand_seed(out, a.rand_at)
+        if seed is None:
+            print(f"[engine] --rand-at {a.rand_at}: the retail recording has no rand seed under that key")
+            return False
+        env["LEGAIA_CAST_RAND_SEED"] = seed
     env.update(dict(kv.split("=", 1) for kv in a.engine_env))
     (out / "engine-cmd.txt").write_text(
         " ".join(f"{k}={shlex.quote(v)}" for k, v in sorted(env.items()) if k.startswith("LEGAIA_"))
@@ -298,6 +319,9 @@ def main() -> int:
     ap.add_argument("--no-ground", action="store_true", help="do not seat the combatants on retail's ground pairs")
     ap.add_argument("--guard", default="", metavar="SEATS",
                     help="engine: party seats in the Spirit stance at the cast (comma list; retail's +0x1DE == 4)")
+    ap.add_argument("--rand-at", metavar="ST7:PHASE",
+                    help="engine: hold the world rand() stream on retail's seed word under this cast key "
+                         "(its last vsync there), so the arm that leaves it draws as retail's did")
     ap.add_argument("--engine-env", action="append", default=[], metavar="K=V",
                     help="extra environment for the engine child (repeatable)")
     ap.add_argument("--out", help="output dir (default captures/cast-sequence/<state>_<spell>)")

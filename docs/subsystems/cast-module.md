@@ -3069,8 +3069,9 @@ two; TR `(0, 0x400, 0x800)` for all three. From there:
   in their start height (`-0x500` to `-0xB00`) and in how long they fall, so
   which rock comes down where, and when, is the rand stream's. A retail RAM
   read on the arm's pass holds the BIOS seed (`0x80009010`) one draw ahead
-  of the picks; the cast-sequence oracle does not align the engine's stream
-  to it, so its frames carry another fall pattern.
+  of the picks; the cast-sequence oracle's `--rand-at 0x70:3` holds the
+  engine's stream on that word, and without it the engine's frames carry
+  another fall pattern.
 
 The hit lands on the arm's pass, mid-band (`CaptureCamArm::folds_hit` folds
 the owed cast there), so the victim's reaction plays out under arm 4 as

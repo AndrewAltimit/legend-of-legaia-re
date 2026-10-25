@@ -53,6 +53,7 @@ Flags worth knowing:
 | `--engine-env K=V` | Extra environment for the engine child |
 | `--guard <seats>` | Engine: party seats in the Spirit stance when the cast starts (`LEGAIA_BATTLE_GUARD`), for a capture whose victim guarded (`+0x1DE == 4`): `nivora_duel_pre_megaton_press` needs `--guard 0` for its damage to match |
 | `--monster-pick` | Retail: with `--caster 3..7`, the cast is written where the monster AI's pick returns (a breakpoint on `0x801DAF50`, see [below](#a-monster-cast-from-any-battle-state)), so any battle state that reaches the monster's turn records any spell the monster owns a clip for. Runs on the breakpoint core, several times slower |
+| `--rand-at <st7>:<phase>` | Engine: hold the world `rand()` stream on retail's seed word under this cast key (`LEGAIA_CAST_RAND_SEED`, [below](#the-rand-stream)). `--rand-at 0x70:3` on Gigaton Press gives arm 3's pass retail's sixteen rock picks |
 | `--allow-patched` | Measure a state whose manifest entry carries `resident_patch` (refused by default: retail states only) |
 | `--save-inject` | Retail: keep the whole emulator state one vsync past the inject (`retail/state_inject.rawsstate`), a pre-cast state that replays the cast on the fast core with a plain `--caster` |
 | `LEGAIA_CAST_SEQ_EXE=<path>` (environment) | Score another `legaia-engine` build (a before / after pair) without rebuilding the tree's |
@@ -75,7 +76,8 @@ seat's HP, the main loop's frame counter `gp+0x480` (`frame`, read at
 `0x8007B798`), the side-band applier stage `ctx[+0x276]` (`c276`, the
 token a module's stream-wait arm polls) and the words the read-span poll
 `FUN_8003DE7C(1)` reads (`xaspan` `gp+0x91C`, `cdbusy` `0x8007BA70`,
-`cdmode` `0x8007B83C`, `cdread` `0x8007B8C2`). A second file, `body.csv`, holds
+`cdmode` `0x8007B83C`, `cdread` `0x8007B8C2`) and the BIOS `rand()` seed word
+`0x80009010` (`rand`). A second file, `body.csv`, holds
 per vsync the acting seat's clip `+0x1D9`, node cursor `+0x68`, live pair,
 body pair `+0x3C` / `+0x40` and the camera focus with its tween endpoints:
 the series a summon close-up's framing is read off. A third, `cam.csv`, holds
@@ -147,6 +149,25 @@ blocks within `24` per channel; [The image channel](retail-compare.md#the-image-
 A pair whose retail frame has mean luma above `230` (a white flash) or below
 `8` (a fade) goes into its own count and stays out of the mean. The cast's
 number is the **mean `within` over the remaining scene pairs**.
+
+## The rand stream
+
+Retail draws every `rand()` (BIOS `A(2Fh)`, `jal 0x80056798`) from one seed
+word, `0x80009010`: `seed = seed * 0x41C64E6D + 0x3039`, the draw
+`(seed >> 16) & 0x7FFF`. The engine's world stream is the same generator,
+but it reaches a cast's arms after another number of draws, so an arm whose
+look is its draws plays another pattern. PROT 0962 `0xA4` arm 3 picks each
+of its sixteen falling rocks by `rand() % 4`: on the engine's own stream
+Gigaton Press scores its arm-4 segment below the run without rocks.
+
+The probe logs the seed word on every vsync. `--rand-at <st7>:<phase>` takes
+the word retail held on its last vsync under that key and has the engine
+child set its world stream to it before every tick it opens under the same
+key (`engine-capture::cast_rand`), so the pass that leaves the key draws as
+retail's did. In a `koru_strip_forced` capture the word on arm 3's last vsync
+makes one draw and then the sixteen picks a RAM read of the rocks holds; the
+engine, seeded there, makes the same draws. Measured on that capture, the
+arm-4 segment scores `.770` with the option and `.649` without.
 
 ## The game clock
 
@@ -242,7 +263,9 @@ offset, both states, class, `within`, `mae`, both lumas) for scripts.
   machine is not on retail's frame step, so a segment's length is compared in
   vsyncs of game time. Retail's arms that count in passes (not in drained
   steps) run `step` times longer than the pass count.
-- **Damage and RNG are not aligned.** Popups and HP readouts can differ.
+- **Damage and RNG are not aligned** unless `--rand-at` holds the stream
+  on one key ([The rand stream](#the-rand-stream)). Popups and HP readouts
+  can differ.
 - **A forced formation is retail-only.** See the flag table.
 - **A monster cast needs `--monster-pick` unless the state queued it.**
   Without it the probe writes the monster's queue on the first `0x0A`, which
