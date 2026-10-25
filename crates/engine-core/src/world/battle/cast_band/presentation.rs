@@ -142,6 +142,28 @@ impl World {
     /// Park a part a module seated outside its tick body (a stager arm's
     /// seat) in handle slot `slot`, as a tick-body `PartStore` would, so the
     /// module's later kill of the slot halts it.
+    /// Halt the part a module parked in handle slot `slot`, as a tick-body
+    /// `ActorKill` of the slot does: a stager arm's halt (PROT 0923's arm 1).
+    pub(in crate::world::battle::cast_band) fn kill_parked_module_part(
+        &mut self,
+        slot: legaia_overlay_images::cast_presentation::HandleSlot,
+    ) {
+        let mut killed = Vec::new();
+        self.casting.module_pres.part_slots.retain(|&(s, rec)| {
+            if s == slot {
+                killed.push(rec);
+            }
+            s != slot
+        });
+        if let Some(scene) = self.casting.active_summon.as_mut() {
+            for part in &mut scene.parts {
+                if part.tag.is_some_and(|t| killed.contains(&t)) {
+                    part.finished = true;
+                }
+            }
+        }
+    }
+
     pub(in crate::world::battle::cast_band) fn park_module_part(
         &mut self,
         slot: legaia_overlay_images::cast_presentation::HandleSlot,

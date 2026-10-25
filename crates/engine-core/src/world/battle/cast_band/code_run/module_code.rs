@@ -81,6 +81,24 @@ impl World {
             923 => {
                 for (call_arm, caller) in std::mem::take(&mut self.casting.module_stager_calls) {
                     ticks::gilium_stager(&mut ctx, call_arm);
+                    // Arm 1 halts arm 8's last three parts and spawns its
+                    // grey flash fade.
+                    if call_arm == 1 {
+                        for slot in ticks::GILIUM_STAGER_HALTS {
+                            self.kill_parked_module_part(
+                                legaia_overlay_images::cast_presentation::HandleSlot::Abs(slot),
+                            );
+                        }
+                        let mut fade = None;
+                        legaia_engine_system::fade::spawn_fade(
+                            &mut fade,
+                            &legaia_engine_battle_vm::battle_action::summon_fade_template(
+                                &ticks::GILIUM_STAGER_FADE,
+                            ),
+                            1,
+                        );
+                        self.presentation.module_fades.extend(fade);
+                    }
                     for s in &ticks::gilium_stager_spawns(call_arm, caller) {
                         self.seat_stager_spawn(entry, s);
                         // Arm 0 parks the bowl's handle where the module's
