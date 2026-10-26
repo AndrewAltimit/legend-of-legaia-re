@@ -420,7 +420,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         <div class="mg-row">
           <label for="baka-char"><strong>Fight as:</strong></label>
           <select id="baka-char" class="mg-select" style="min-width: 8rem;">
-            <option value="0" selected>Vahn</option>
+            <option value="0" selected>Vahn (retail)</option>
             <option value="1">Noa</option>
             <option value="2">Gala</option>
           </select>
@@ -710,9 +710,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           the arts damage roll, the element-affinity matrix and the damage finisher.
         </p>
         <div class="mg-row">
-          <label for="muscle-char"><strong>Fight as:</strong></label>
+          <label for="muscle-char" title="Retail's arena always fields Vahn - its hub pins the party to him. Noa and Gala are this port's option."><strong>Fight as:</strong></label>
           <select id="muscle-char" class="mg-select" style="min-width: 7rem;">
-            <option value="0" selected>Vahn</option>
+            <option value="0" selected>Vahn (retail)</option>
             <option value="1">Noa</option>
             <option value="2">Gala</option>
           </select>
@@ -2977,7 +2977,8 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     if (!frame) return;
     const o = muscleOpts();
     const q = new URLSearchParams({
-      minigame: '5', course: String(o.course), level: String(o.level), embed: '1',
+      minigame: '5', course: String(o.course), level: String(o.level),
+      lead: String(o.char), embed: '1',
     });
     frame.src = 'play.html?' + q.toString();
     frame.addEventListener('load', () => { try { frame.focus(); } catch (e) {} }, { once: true });

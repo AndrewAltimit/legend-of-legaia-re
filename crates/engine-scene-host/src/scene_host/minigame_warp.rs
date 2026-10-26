@@ -348,6 +348,9 @@ impl SceneHost {
         // The lead fighter - swing costs, HP, AP pool, stat profile - through
         // the one builder the native window's launcher uses too.
         let lead = self.dome_lead_fighter(&commands);
+        // The record the legs seat: retail's Vahn unless the host picked
+        // another (`World::set_muscle_fighter`).
+        let fighter_slot = self.world.minigames.fighter_index() as u32;
         let hand: [MuscleCard; legaia_engine_minigames::muscle_dome::HAND_SLOTS] =
             std::array::from_fn(|i| MuscleCard {
                 command_id: commands[i],
@@ -454,13 +457,7 @@ impl SceneHost {
         // inputs the round's `FUN_801F0450` rebuild reads - the same
         // per-character inputs the field scene staged for the regular
         // battle's Auto.
-        if let Some(rec) = self
-            .world
-            .party
-            .roster
-            .members
-            .get(DOME_LEAD_CHAR_SLOT as usize)
-        {
+        if let Some(rec) = self.world.party.roster.members.get(fighter_slot as usize) {
             use legaia_save::AutoCommandBand;
             session.set_auto_command_strings(
                 rec.auto_command_string(AutoCommandBand::Primary),
@@ -469,12 +466,12 @@ impl SceneHost {
                 // so `sltu` reads false: the secondary band.
                 AutoCommandBand::for_gauge(lead.budget, lead.budget),
             );
-            let staged = &self.world.battle.auto_combo.inputs[DOME_LEAD_CHAR_SLOT as usize];
+            let staged = &self.world.battle.auto_combo.inputs[fighter_slot as usize];
             let skills = rec.displayed_skills();
             let n = (skills.count as usize).min(skills.ids.len());
             // The entry's Triangle list pages over the same record's learned
             // arts, as the arena's copy of the battle pager reads it.
-            session.set_arts_list_owner(DOME_LEAD_CHAR_SLOT as u8, n as u8);
+            session.set_arts_list_owner(fighter_slot as u8, n as u8);
             let bits = rec.ability_bits();
             session.install_auto_inputs(
                 legaia_engine_battle_menus::muscle_dome_session::DomeAutoInputs {
@@ -483,7 +480,7 @@ impl SceneHost {
                     art_records: staged.art_records.clone(),
                     art_count: staged.art_count,
                     learned: skills.ids[..n].to_vec(),
-                    char_id: DOME_LEAD_CHAR_SLOT as u8 + 1,
+                    char_id: fighter_slot as u8 + 1,
                     ability_high: u32::from_le_bytes([bits[4], bits[5], bits[6], bits[7]]),
                     opponent_swing_class: opponent_record.as_ref().map_or(0, |r| r.swing_class),
                 },
@@ -522,7 +519,7 @@ impl SceneHost {
         // seated monster, with the clips, reach and size class the battle's
         // approach and reactions read.
         let monster_id = opponent_record.as_ref().map(|r| r.id);
-        if let Some(bodies) = self.dome_choreo_bodies(DOME_LEAD_CHAR_SLOT, monster_id) {
+        if let Some(bodies) = self.dome_choreo_bodies(fighter_slot, monster_id) {
             session.install_choreo(bodies);
         }
         self.world.enter_muscle_dome(session);
@@ -622,10 +619,6 @@ impl SceneHost {
     }
 }
 
-/// The dome fighter's player battle file slot: the lead's (`0` = PROT 0863,
-/// the file [`SceneHost::lead_swing_costs`] reads), which is also the body
-/// both play hosts draw.
-pub const DOME_LEAD_CHAR_SLOT: u32 = 0;
 /// Flat favored-class swing cost: the opponent's every card, and a lead card
 /// whose swing record does not resolve.
 pub const DOME_FAVORED_COST: u16 = 0x1E;
@@ -680,7 +673,12 @@ impl SceneHost {
         &self,
         commands: &[u8; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
     ) -> DomeLeadFighter {
-        let lead = self.world.party.roster.members.first();
+        let lead = self
+            .world
+            .party
+            .roster
+            .members
+            .get(self.world.minigames.fighter_index());
         let swing = self.lead_swing_costs();
         let costs = std::array::from_fn(|i| {
             swing
@@ -725,14 +723,21 @@ impl SceneHost {
     /// the lead's equipped sections of the player battle file (PROT 0863).
     /// `None` when the file or its equipped sections do not decode.
     pub fn lead_swing_costs(&self) -> Option<[u8; 4]> {
-        let raw = self.index.entry_bytes_extended(863).ok()?;
+        let fighter = self.world.minigames.fighter_index();
+        let raw = self
+            .index
+            .entry_bytes_extended(
+                legaia_actor_formats::battle_texture_catalog::PLAYER_FILE_ENTRIES[0]
+                    + fighter.min(2) as u32,
+            )
+            .ok()?;
         let pack = legaia_actor_formats::battle_data_pack::parse(&raw).ok()?;
         let equipped: [u8; 5] = self
             .world
             .party
             .roster
             .members
-            .first()
+            .get(fighter)
             .map(|rec| {
                 let slots = rec.equipment().slots;
                 [slots[0], slots[1], slots[2], slots[3], slots[4]]

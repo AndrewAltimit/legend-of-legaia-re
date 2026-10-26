@@ -585,6 +585,17 @@ impl LegaiaRuntime {
         true
     }
 
+    /// Seat roster record `record` (`0` Vahn, `1` Noa, `2` Gala) in the
+    /// Muscle Dome's legs (`World::set_muscle_fighter`) - a host option:
+    /// retail's hub pins the party to Vahn. The minigames page's "Fight as"
+    /// picker passes through this. `false` when the record is not filled.
+    pub fn play_mg_set_muscle_fighter(&mut self, record: u32) -> bool {
+        let Some(host) = self.scene_host.host_mut() else {
+            return false;
+        };
+        record <= 2 && host.world.set_muscle_fighter(record as u8)
+    }
+
     /// Developer / test affordance: arm the mode-24 door warp for `sub_id`
     /// exactly as the field-VM `0x3E` arm does (`3` = slot machine, `4` =
     /// Baka Fighter, `5` = Muscle Dome, `6` = dance, `0` = fishing). The

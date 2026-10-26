@@ -21,9 +21,11 @@ use legaia_engine_mode::mode::SceneMode;
 /// arena data block `other6` (`li v0,0x4c6` at `0x801D1554`).
 pub(crate) const ARENA_MAP_ID: u32 = 0x4C6;
 
-/// The roster record that fights a leg: the lead record the contest's start
-/// restore and the leg session both read.
-const DOME_FIGHTER_ROSTER_SLOT: u8 = 0;
+/// The roster record retail seats in every leg: the hub's prologue stores
+/// the present-party list `DAT_8007BD10 = [1, 0, 0]` every frame
+/// (`0x801CF884..0x801CF8A0`, `FUN_801CF870`) - character id `1`, Vahn's
+/// record `0x80084708` - so the arena offers no fighter pick.
+pub(crate) const RETAIL_DOME_FIGHTER_RECORD: u8 = 0;
 
 /// The flag every course arm of the `koin1` course menu (`P1[9]`) sets ahead
 /// of its warp, beside the chosen course's own flag (`55 09` at `+0xB22` /
@@ -76,6 +78,31 @@ impl World {
             .rposition(|&(flag, _)| self.system_flag_test(flag))
     }
 
+    /// The roster record a leg seats: retail's Vahn
+    /// ([`RETAIL_DOME_FIGHTER_RECORD`]) unless a host picked another
+    /// ([`Self::set_muscle_fighter`]).
+    pub fn muscle_fighter_record(&self) -> u8 {
+        self.minigames.fighter_index() as u8
+    }
+
+    /// Seat roster record `record` (`0` Vahn, `1` Noa, `2` Gala) in every
+    /// leg instead of retail's Vahn - a host option, not a retail one: the
+    /// hub pins the party list to character `1`. A record the roster does not
+    /// fill (no maximum HP) is refused and the pick left as it was.
+    pub fn set_muscle_fighter(&mut self, record: u8) -> bool {
+        let filled = self
+            .party
+            .roster
+            .members
+            .get(usize::from(record))
+            .is_some_and(|r| r.hp_mp_sp().hp_max > 0);
+        if filled {
+            self.minigames.muscle_fighter =
+                (record != RETAIL_DOME_FIGHTER_RECORD).then_some(record);
+        }
+        filled
+    }
+
     /// Whether the current battle is a Muscle Dome leg.
     pub fn muscle_leg_in_battle(&self) -> bool {
         self.minigames.muscle_leg_in_battle
@@ -100,7 +127,7 @@ impl World {
         // One fighter: the contest's lead record, alone.
         self.battle.solo_spar_restore = Some(std::mem::replace(
             &mut self.party.active_party,
-            vec![DOME_FIGHTER_ROSTER_SLOT],
+            vec![self.minigames.fighter_index() as u8],
         ));
         self.party.party_count = 1;
         self.battle.return_mode = SceneMode::MuscleDome;
@@ -141,7 +168,7 @@ impl World {
             .party
             .roster
             .members
-            .get(usize::from(DOME_FIGHTER_ROSTER_SLOT))
+            .get(usize::from(self.muscle_fighter_record()))
             .map(|r| i32::from(r.hp_mp_sp().hp_cur));
         let turns = u32::from(self.battle_mode());
         match end {

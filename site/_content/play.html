@@ -1871,12 +1871,14 @@ div.play-vis-head { cursor: default; }
    * is the ordinary battle this runtime fights (`World::start_muscle_battle_leg`)
    * rather than a presentation of its own. `course` makes the koin1 course
    * menu's pick (`play_mg_choose_muscle_course`); `level` sets the party's
-   * level. `embed=1` shows the game picture alone. */
+   * level; `lead` seats another record than retail's Vahn
+   * (`play_mg_set_muscle_fighter`). `embed=1` shows the game picture alone. */
   const embedQuery = new URLSearchParams(location.search);
   let minigamePending = embedQuery.has('minigame') ? {
     sub: parseInt(embedQuery.get('minigame'), 10),
     course: embedQuery.has('course') ? parseInt(embedQuery.get('course'), 10) : null,
     level: embedQuery.has('level') ? parseInt(embedQuery.get('level'), 10) : null,
+    lead: embedQuery.has('lead') ? parseInt(embedQuery.get('lead'), 10) : null,
   } : null;
   if (embedQuery.get('embed') === '1') {
     /* Only the picture: lift the screen out of the page chrome (the shared
@@ -1902,6 +1904,11 @@ div.play-vis-head { cursor: default; }
     try {
       if (req.level && typeof rt.cheat_set_party_level === 'function') {
         rt.cheat_set_party_level(Math.max(1, Math.min(99, req.level)));
+      }
+      /* `lead`: the roster record the legs seat (retail's is always Vahn). */
+      if (req.lead != null && typeof rt.play_mg_set_muscle_fighter === 'function'
+          && !rt.play_mg_set_muscle_fighter(req.lead)) {
+        console.warn('minigame launch: record ' + req.lead + ' is not in the party');
       }
       if (req.course != null && typeof rt.play_mg_choose_muscle_course === 'function') {
         rt.play_mg_choose_muscle_course(req.course);

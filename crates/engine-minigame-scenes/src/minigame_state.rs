@@ -176,6 +176,9 @@ pub struct MinigameState {
     /// The leg's battle took a Run round: retail's `0xFE` arm stored the
     /// give-up outcome `_DAT_80084448 = 4` (`0x801D328C`).
     pub muscle_leg_ran: bool,
+    /// A host's fighter pick for the arena's legs (`World::set_muscle_fighter`);
+    /// `None` seats retail's Vahn.
+    pub muscle_fighter: Option<u8>,
     /// The arena hub's screen timers - the first visit, the leg-open ROUND
     /// card, the INTERVAL tally and the re-entered hub's backdrop - ticked by
     /// `World::tick_muscle_hub`; both play hosts draw from
@@ -288,6 +291,13 @@ pub struct MinigameState {
 }
 
 impl MinigameState {
+    /// The roster index a Muscle Dome leg seats: the host's pick
+    /// ([`Self::muscle_fighter`]) or retail's Vahn, record `0` (the hub pins
+    /// the party list to character `1`, `FUN_801CF870` `0x801CF884`).
+    pub fn fighter_index(&self) -> usize {
+        usize::from(self.muscle_fighter.unwrap_or(0))
+    }
+
     /// Whether the dance's **status readout** (score / groove gauge / lane,
     /// the called arrow, the last judgement, the scrolling beat track) is on
     /// screen this frame.
@@ -361,6 +371,7 @@ impl MinigameState {
             muscle_saved_map_id: None,
             muscle_leg_fresh: false,
             muscle_leg_ran: false,
+            muscle_fighter: None,
             muscle_hub: Default::default(),
             muscle_hub_sounds: Default::default(),
             casino_coins: 0,

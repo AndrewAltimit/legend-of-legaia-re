@@ -31,7 +31,11 @@ impl World {
             .muscle_contest
             .as_mut()
             .and_then(|c| c.take_start_restore())
-            && let Some(rec) = self.party.roster.members.first_mut()
+            && let Some(rec) = self
+                .party
+                .roster
+                .members
+                .get_mut(self.minigames.fighter_index())
         {
             legaia_engine_minigames::muscle_dome::apply_contest_start_restore(rec, restore);
         }
@@ -137,7 +141,12 @@ impl World {
         // `+0x104` (`FUN_801F6B24`, `0x801F6B8C..0x801F6BAC`).
         if let Some(s) = session.as_ref() {
             let fought = s.hp(0).clamp(0, i32::from(u16::MAX)) as u16;
-            let (hp_cur, hp_max) = match self.party.roster.members.first_mut() {
+            let (hp_cur, hp_max) = match self
+                .party
+                .roster
+                .members
+                .get_mut(self.minigames.fighter_index())
+            {
                 Some(rec) => {
                     // The two saved command strings live in the record:
                     // the review confirm's `FUN_801DA59C` wrote the leg's
@@ -184,10 +193,11 @@ impl World {
             .party
             .roster
             .members
-            .first()
+            .get(self.minigames.fighter_index())
             .map(|r| r.hp_mp_sp().hp_max)
             .filter(|&hp| hp > 0)
             .unwrap_or(500);
+        let fighter = self.minigames.fighter_index();
         let contest = self.minigames.muscle_contest.as_mut()?;
         contest.finish_leg(report, hp_max, &flags);
         // The three recovery lanes drain, then the restore state hands the
@@ -203,7 +213,7 @@ impl World {
                 // `+0x6CE` pair, which is the lead party record's own
                 // `+0x104` / `+0x106` HP pair (`0x80084708 - 0x80084140 =
                 // 0x5C8`).
-                let mut hms = match self.party.roster.members.first() {
+                let mut hms = match self.party.roster.members.get(fighter) {
                     Some(r) => r.hp_mp_sp(),
                     None => break,
                 };
@@ -212,7 +222,7 @@ impl World {
                     .muscle_contest
                     .as_mut()?
                     .take_hp_restore(hms.hp_cur, hp_max);
-                if let Some(rec) = self.party.roster.members.first_mut() {
+                if let Some(rec) = self.party.roster.members.get_mut(fighter) {
                     rec.set_hp_mp_sp(hms);
                 }
                 return Some(self.minigames.muscle_contest.as_ref()?.state());

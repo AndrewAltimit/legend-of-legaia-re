@@ -203,3 +203,51 @@ fn run_from_a_battle_leg_gives_the_contest_up() {
     assert_eq!(settled.score, 0, "a give-up voids the tally");
     eprintln!("[ok] run settled {settled:?}");
 }
+
+/// Retail fields Vahn (the hub pins `DAT_8007BD10 = [1, 0, 0]`); a host may
+/// seat Noa or Gala instead (`World::set_muscle_fighter`), and the leg's
+/// battle then seats that record alone, with its own HP.
+#[test]
+fn a_host_pick_seats_another_record_in_the_battle() {
+    let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    };
+    let mut host = match SceneHost::open_disc(&disc) {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("[skip] open_disc failed: {e:#}");
+            return;
+        }
+    };
+    let mut party = legaia_save::Party::zeroed(3);
+    for (i, hp) in [(0usize, 300u16), (1, 222), (2, 0)] {
+        let mut hms = party.members[i].hp_mp_sp();
+        hms.hp_max = hp;
+        hms.hp_cur = hp;
+        party.members[i].set_hp_mp_sp(hms);
+    }
+    host.world.load_party(party);
+    assert_eq!(host.world.muscle_fighter_record(), 0, "retail seats Vahn");
+    assert!(
+        !host.world.set_muscle_fighter(2),
+        "an unfilled record is refused"
+    );
+    assert!(host.world.set_muscle_fighter(1), "Noa can be picked");
+
+    host.world
+        .request_host_minigame_warp(MinigameSubId::MuscleDome.sub_id());
+    assert!(matches!(
+        host.drain_minigame_warp(),
+        Some(MinigameWarpOutcome::Entered(MinigameSubId::MuscleDome))
+    ));
+    for _ in 0..3000 {
+        let _ = host.tick();
+        if host.world.mode == SceneMode::Battle {
+            break;
+        }
+    }
+    assert!(host.world.muscle_leg_in_battle(), "the leg's battle opened");
+    assert_eq!(host.world.party.active_party, vec![1u8], "Noa alone");
+    assert_eq!(host.world.actors[0].battle.max_hp, 222, "with her own HP");
+}

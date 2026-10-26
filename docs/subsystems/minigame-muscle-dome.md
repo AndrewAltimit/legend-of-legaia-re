@@ -1101,7 +1101,9 @@ The port models the same two layers and shares every rule between the native `pl
 | `_DAT_80084540 = 0x4C6` (`other6`) | `0x801D1558` | `battle.map_id`; `SceneHost::battle_stage_entry` names `other6`'s stage stream (variant `0x80 & 0x1F = 0`), extraction **1225** |
 | game mode `0x14` | `0x801D15B8` | `SceneMode::Battle`, `battle.return_mode = SceneMode::MuscleDome` |
 
-The leg's fighter is the lead record alone (the party list is swapped for one member and put back at the exit), the special-battle word is the arena's (`dome_special_word`, so the battle's own ring crosses out Item / Ra-Seru and its spoils gates read non-zero), and the door adds the rung's PROT 867 record to the monster catalog.
+The leg's fighter is Vahn alone: the hub's prologue stores the present-party list `DAT_8007BD10 = [1, 0, 0]` every frame (`0x801CF884..0x801CF8A0`), so retail offers no fighter pick *(disassembly)*. The port swaps the party list for one record and puts it back at the exit; the record is `World::muscle_fighter_record`, retail's Vahn unless a host picks Noa or Gala (`World::set_muscle_fighter`, the minigames page's "Fight as" through `play_mg_set_muscle_fighter`) - a port option, refused for a record the roster does not fill.
+
+The special-battle word is the arena's (`dome_special_word`, so the battle's own ring crosses out Item / Ra-Seru and its spoils gates read non-zero), and the door adds the rung's PROT 867 record to the monster catalog.
 
 Everything else - the command ring, the arts input, the monster AI, the hit sparks and numerals, the victory pose, the battle camera, the arena backdrop through the shared stage resolver (`engine-session::battle_stage::resolve_battle_stage`) - is the battle's, on both play hosts. `World::finish_battle` routes a `MuscleDome` return the way the exit selector `FUN_80046A20` does (`0x80046E50`): no back-from-battle story-flag stores, no game-over gate and no escape-clock penalty (those are the field's `FUN_8003AEB0`), then `World::finish_muscle_battle_leg` closes the session on the outcome - a knockout either way reports the leg, an escape is the give-up arm.
 
