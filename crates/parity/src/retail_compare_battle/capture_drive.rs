@@ -522,6 +522,9 @@ impl RetailBattle {
                 style: Some(self.cam_style),
                 steer: ActionSteer {
                     park: seat >= 3 && self.parked_approach(),
+                    // A frame-time history that never left one step names the
+                    // rate retail's yaw counter drifted at.
+                    drift_step: (self.step_run.1 >= 16).then_some(self.step_run.0),
                     // A party killing blow on its victim, or a monster
                     // action (a cast or a strike) on the party seat it
                     // aimed at: the monster's pick is a draw, and a run on

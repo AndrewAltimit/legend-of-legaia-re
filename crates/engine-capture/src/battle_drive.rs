@@ -208,6 +208,14 @@ pub struct ActionSteer {
     /// through the park for as long as retail sat in it, takes the capture's
     /// word outright rather than only within the clock's slack.
     pub park: bool,
+    /// The frame step every pass of the capture's frame-time history ran at
+    /// (`RetailBattle::step_run` over all sixteen entries), when that is one
+    /// step. The yaw counter drifts `max(1, 4 * step / 3)` a pass
+    /// (`0x801E29E4..0x801E2A24`), so over the same vsyncs a steady step `3`
+    /// carries it four units in three where the engine's step `2` carries
+    /// it one a vsync; [`BattleDrive::steer`] rescales the engine's drift by
+    /// that ratio before testing the counter against retail's.
+    pub drift_step: Option<u8>,
 }
 
 /// Where inside a state that spans many frames a capture sits.
@@ -371,6 +379,23 @@ pub(crate) fn capture_accum_done(
     let want = accum.saturating_sub(capture_ramp_left(world, height) / 2);
     active_clip_age(world) >= u32::from(want)
 }
+
+/// The engine's yaw counter `counter` with its drift since the last outright
+/// store (`drift`, run at the engine's step `engine_step`) rescaled to the
+/// rate a steady `retail_step` drifts it at over the same vsyncs:
+/// `inc(s) / s` a vsync, `inc(s) = max(1, 4 * s / 3)` a pass
+/// ([`legaia_engine_battle_vm::battle_cam_script::action_yaw_pass_increment`]).
+/// The rung the drift started from stays the engine's.
+pub fn rescaled_yaw_counter(counter: i32, drift: i32, engine_step: u8, retail_step: u8) -> i32 {
+    use legaia_engine_battle_vm::battle_cam_script::action_yaw_pass_increment as inc;
+    let (se, sr) = (i32::from(engine_step.max(1)), i32::from(retail_step.max(1)));
+    let scaled = drift * i32::from(inc(sr as u8)) * se / (i32::from(inc(se as u8)) * sr);
+    counter - drift + scaled
+}
+
+/// The action SM's Done arm and the fade-down it hands to.
+const ACTION_DONE_STATE: u8 = 0x50;
+const ACTION_DONE_FADE_STATE: u8 = 0x51;
 
 /// How far apart the engine's yaw counter `ctx[+0x6DA]` and a capture's may
 /// stand and still be the same rung of the per-action ladder read at another
@@ -640,6 +665,9 @@ impl BattleDrive {
                 if steer.park {
                     s.push_str(",h");
                 }
+                if let Some(r) = steer.drift_step {
+                    s.push_str(&format!(",r{r}"));
+                }
                 if let Some(q) = steer.queue {
                     s.push_str(",q");
                     for b in q {
@@ -695,6 +723,8 @@ impl BattleDrive {
                 steer.spoils = true;
             } else if last == "h" {
                 steer.park = true;
+            } else if let Some(r) = last.strip_prefix('r') {
+                steer.drift_step = Some(r.parse().ok()?);
             } else if let Some(g) = last.strip_prefix('g') {
                 steer.gauge = Some(g.parse().ok()?);
             } else if let Some(k) = last.strip_prefix('k') {
@@ -1098,9 +1128,27 @@ impl BattleDrive {
                 // reads retail's; a wrong rung of the ladder (they stand
                 // `0x80` apart at the nearest) stays the engine's. The
                 // capture band gates on the counter instead.
-                if state == want && !matches!(end, SpanGate::CaptureFade { .. }) {
-                    let d = (cam.action_yaw_base() - i32::from(yaw)).rem_euclid(0x1000);
-                    if steer.park || d.min(0x1000 - d) <= YAW_CLOCK_SLACK {
+                // The Done band's fade-down `0x51` arms case 8 from the
+                // counter on its first pass, which a DoneHold capture's own
+                // first tick already shows: the rescaled pin runs from the
+                // Done arm `0x50` that hands over to it.
+                let done_entry = matches!(end, SpanGate::DoneHold { .. })
+                    && want == ACTION_DONE_FADE_STATE
+                    && state == ACTION_DONE_STATE;
+                if (state == want || done_entry) && !matches!(end, SpanGate::CaptureFade { .. }) {
+                    let near = |c: i32| {
+                        let d = (c - i32::from(yaw)).rem_euclid(0x1000);
+                        d.min(0x1000 - d) <= YAW_CLOCK_SLACK
+                    };
+                    let rescaled = steer.drift_step.is_some_and(|sr| {
+                        near(rescaled_yaw_counter(
+                            cam.action_yaw_base(),
+                            cam.action_yaw_drift(),
+                            step,
+                            sr,
+                        ))
+                    });
+                    if (state == want && (steer.park || near(cam.action_yaw_base()))) || rescaled {
                         // Retail's word is the one its last pass left, after
                         // that pass's prologue drift. On retail's cadence the
                         // pin lands ahead of a tick whose pass adds the drift

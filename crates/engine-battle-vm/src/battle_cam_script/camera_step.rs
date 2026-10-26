@@ -85,6 +85,7 @@ impl BattleCamera {
             target: None,
             action,
             action_yaw: 0,
+            action_yaw_drift: 0,
             last_action_state: 0,
             acting_body: None,
             spell_cam: None,
@@ -226,6 +227,7 @@ impl BattleCamera {
         }
         if state == 0x00 {
             self.action_yaw = 0;
+            self.action_yaw_drift = 0;
             return;
         }
         // The seed pass `0x0C` opens every category's band; `0x50` (Done)
@@ -237,8 +239,10 @@ impl BattleCamera {
         let via_seed = !in_action(prev) || prev < ATTACK_BAND_FIRST;
         if in_attack(state) && via_seed {
             self.action_yaw = 0x200;
+            self.action_yaw_drift = 0;
         } else if in_action(state) && !in_action(prev) {
             self.action_yaw = 0x800;
+            self.action_yaw_drift = 0;
         }
     }
 
@@ -269,6 +273,7 @@ impl BattleCamera {
         let prev = self.last_swing_seeds.replace(count);
         if prev.is_some_and(|p| p != count) {
             self.action_yaw = i32::from(coin & 1) * 0x800 + 0x280;
+            self.action_yaw_drift = 0;
         }
     }
 
@@ -284,6 +289,14 @@ impl BattleCamera {
     /// Done band's case 6 reads whatever they left there.
     pub fn set_action_yaw_base(&mut self, yaw: i32) {
         self.action_yaw = yaw & 0xFFFF;
+        self.action_yaw_drift = 0;
+    }
+
+    /// How far the prologue drift has carried the yaw counter since it was
+    /// last stored outright ([`Self::action_yaw_base`] less this is the rung
+    /// it stands on).
+    pub fn action_yaw_drift(&self) -> i32 {
+        self.action_yaw_drift
     }
 
     /// Put the yaw counter on the half-turn nearer `yaw`: keep it, or flip
@@ -524,6 +537,7 @@ impl BattleCamera {
         // The death re-frame owns the yaw ladder too: `sh zero,0x4(t0)` with
         // `t0 = ctx + 0x6D6` zeroes `ctx[+0x6DA]` before the fork.
         self.action_yaw = 0;
+        self.action_yaw_drift = 0;
         let ramp = self.attack.ctx.death_ramp;
         if apply_death_reframe(&mut pose, f.depth_raw, ramp, t.world[1]) {
             self.attack.ctx.death_ramp = 0;
@@ -1096,6 +1110,7 @@ impl BattleCamera {
                 d as i32
             };
             self.action_yaw = self.action_yaw.wrapping_add(d) & 0xFFFF;
+            self.action_yaw_drift += d;
         }
         // `FUN_801D5854`'s prologue ramps `ctx[+0x26E]` / `ctx[+0x87C]` by
         // `8 * frame_step` on EVERY call (`lbu v0,0x7f(a2)` off `0x1F800314`,

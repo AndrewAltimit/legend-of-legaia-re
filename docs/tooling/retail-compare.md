@@ -3952,6 +3952,21 @@ clip five passes later than retail's (`27` over the seed's `0x800` against
 alignment's tolerance, and the channel read the start of the ease instead
 of the framing.
 
+A capture whose whole frame-time ring sat at one step drifted the counter at
+that step's rate, `inc(s) / s` a vsync, where the engine's step `2` drifts it
+one a vsync. The drive carries that step (`r<step>`, `ActionSteer::drift_step`,
+from `RetailBattle::step_run` over all sixteen entries), rescales the drift the
+engine's counter has run since its last outright store
+(`BattleCamera::action_yaw_drift`, `rescaled_yaw_counter`) and pins retail's word
+when the rescaled counter is within the same `0x3F`; the rung stays the engine's.
+`koru_pre_*` is the case: Gala's Lightning Storm ran its `362` units from the
+`0x200` rung at step `2`, retail's ring reads step `3` throughout (`447..584`
+hblanks, over `0x1FF`), and `512 + 362 * 4/3` lands `994` beside retail's `997`
+where the engine's own `874` stood `123` off. A Done-band capture (`0x51`) is
+pinned from the Done arm `0x50`, since `0x51`'s first pass arms case 8 off the
+counter and the gate tick is that pass (`camera` `.973` to `1.0`, `image` `.635`
+to `.669`).
+
 Replayed
 casts are left out but for the summon invoke `0x32`: their close-ups and
 module shots measured worse aligned (`shiny_refactor_gimard_precast` `.904`

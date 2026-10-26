@@ -242,3 +242,17 @@ fn a_park_steer_holds_the_walk_and_stages_idle_in_the_poll() {
     assert_eq!(hold, None);
     assert_eq!(queued, 1);
 }
+
+/// The yaw counter's drift rescaled to a steady retail step: `koru_pre_*`'s
+/// engine counter `874` (rung `0x200`, `362` units drifted at step `2`)
+/// reads `994` at retail's step `3`, beside the capture's `997`; the rung
+/// itself is not scaled, and equal steps leave the counter alone.
+#[test]
+fn the_yaw_counter_drift_rescales_to_retails_step() {
+    assert_eq!(rescaled_yaw_counter(874, 362, 2, 3), 994);
+    assert_eq!(rescaled_yaw_counter(874, 362, 2, 2), 874);
+    assert_eq!(rescaled_yaw_counter(0x200, 0, 2, 3), 0x200);
+    let d = BattleDrive::from_env("action,0,81,3,26,0,0,4,60,0,y997,r3").unwrap();
+    assert_eq!(d.steering().and_then(|s| s.drift_step), Some(3));
+    assert_eq!(BattleDrive::from_env(&d.to_env()), Some(d));
+}
