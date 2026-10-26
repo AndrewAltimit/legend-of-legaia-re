@@ -4,6 +4,9 @@
 //!
 //! What it pins, host-side:
 //!
+//! The leg is fought as the ordinary battle it is in retail; its exit returns
+//! to the arena.
+//!
 //! 1. The leg's end leaves a still resident - the engine's leg close runs
 //!    the battle end's pick (`FUN_801F6B24`'s `0x4C7 + s0`, extraction
 //!    `1221` / `1222`) - and the arena keeps the frame between legs.
@@ -54,6 +57,21 @@ fn play_one_leg(rt: &mut LegaiaRuntime) -> String {
     step(rt, 0);
     assert_eq!(rt.scene_mode(), "MuscleDome");
     for frame in 0..40_000u32 {
+        // Once the hub hands over, the leg is the ordinary battle
+        // (`FUN_801D1510`): Cross walks its command flow, and the battle's
+        // own exit routes back to the arena - between legs on a win, out to
+        // the field when the contest ends.
+        if rt.scene_mode() == "Battle" {
+            for f in 0..40_000u32 {
+                step(rt, if f % 12 == 0 { CROSS } else { 0 });
+                match rt.scene_mode().as_str() {
+                    "Battle" => continue,
+                    "MuscleDome" => return "won".into(),
+                    _ => return "lost".into(),
+                }
+            }
+            panic!("the leg's battle never ended");
+        }
         let st = json(&rt.play_mg_muscle_state_json());
         let phase = st["phase"].as_str().unwrap_or("").to_string();
         if phase == "won" || phase == "lost" {
@@ -157,6 +175,11 @@ fn a_won_leg_reenters_the_hub_over_the_ringside_still() {
     let mut next = false;
     for _ in 0..3000 {
         step(&mut rt, 0);
+        // The next leg is its battle, opened straight from the arena.
+        if rt.scene_mode() == "Battle" {
+            next = true;
+            break;
+        }
         assert_eq!(rt.scene_mode(), "MuscleDome", "never back to the field");
         let st = json(&rt.play_mg_muscle_state_json());
         if st["phase"].as_str() == Some("select") {

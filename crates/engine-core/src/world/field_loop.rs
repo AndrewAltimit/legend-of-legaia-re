@@ -261,6 +261,43 @@ impl World {
         });
     }
 
+    /// Stop the music for a minigame that keys its own track later than its
+    /// entry, remembering the scene's track for
+    /// [`Self::restore_minigame_bgm`] the way [`Self::swap_to_minigame_bgm`]
+    /// does.
+    ///
+    /// The Muscle Dome's arena init (`FUN_801CEA6C`) releases both BGM
+    /// sound sources (`FUN_800266E0` / `FUN_80026520` on `0x8007052C` and
+    /// `0x8007056C`, `0x801CEFBC..0x801CEFDC`) before it loads the battle
+    /// theme, and it runs on the door and again after every leg - so the
+    /// Welcome card, the INTERVAL tally and the ROUND card all play with no
+    /// music under them.
+    pub fn silence_for_minigame_bgm(&mut self) {
+        if !self.audio.minigame_bgm_active {
+            self.audio.minigame_bgm_resume = self.audio.current_bgm;
+            self.audio.minigame_bgm_active = true;
+        }
+        self.pending_field_events.push(FieldEvent::Bgm {
+            text_id: 0,
+            sub_op: crate::world::BGM_SUB_OP_ENGINE_STOP,
+        });
+    }
+
+    /// Start a minigame's own track now, whether or not the scene's music
+    /// was already displaced ([`Self::silence_for_minigame_bgm`] or an
+    /// earlier [`Self::swap_to_minigame_bgm`]); the scene's track still
+    /// comes back through [`Self::restore_minigame_bgm`].
+    pub fn start_minigame_track(&mut self, bgm_id: u16) {
+        if !self.audio.minigame_bgm_active {
+            self.swap_to_minigame_bgm(bgm_id);
+            return;
+        }
+        self.pending_field_events.push(FieldEvent::Bgm {
+            text_id: bgm_id,
+            sub_op: 1,
+        });
+    }
+
     /// Resume the field track a minigame's own music displaced, on the
     /// mode-24 return warp. No-op unless [`Self::swap_to_minigame_bgm`] armed
     /// the swap. A scene that had no track at entry gets a stop

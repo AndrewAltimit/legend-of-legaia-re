@@ -36,7 +36,7 @@ impl SceneHost {
     /// footprint - the archive lives in the entry's trailing-gap sectors,
     /// not the small indexed payload, so `entry_bytes` would truncate it).
     /// Returns `None` if the entry can't be read.
-    pub(super) fn monster_archive_bytes(&mut self) -> Option<Arc<Vec<u8>>> {
+    pub(crate) fn monster_archive_bytes(&mut self) -> Option<Arc<Vec<u8>>> {
         if self.monster_archive_cache.is_none() {
             match self.index.entry_bytes_extended(MONSTER_ARCHIVE_PROT_ENTRY) {
                 Ok(b) => self.monster_archive_cache = Some(Arc::new(b)),

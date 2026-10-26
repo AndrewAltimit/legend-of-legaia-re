@@ -93,8 +93,18 @@ impl SceneHost {
             // launchers call `BootSession::start_global_bgm` directly, which
             // is the same track through the same director - this is the
             // *player-reachable* caller that was missing on both hosts.
-            if let Some(bgm) = slot.bgm_id() {
-                self.world.swap_to_minigame_bgm(bgm);
+            //
+            // The arena is the exception: its init only loads the battle
+            // theme and silences the scene's music; the play waits for the
+            // fight start (`FUN_801D1510`'s `jal 0x80026478` at
+            // `0x801D1548`), which the world's dome tick answers.
+            match (slot, slot.bgm_id()) {
+                (MinigameSubId::MuscleDome, Some(bgm)) => {
+                    self.world.silence_for_minigame_bgm();
+                    self.world.minigames.muscle_leg_bgm = Some(bgm);
+                }
+                (_, Some(bgm)) => self.world.swap_to_minigame_bgm(bgm),
+                (_, None) => {}
             }
             log::info!("minigame warp: entered {}", slot.label());
             Some(MinigameWarpOutcome::Entered(slot))
@@ -516,6 +526,22 @@ impl SceneHost {
             session.install_choreo(bodies);
         }
         self.world.enter_muscle_dome(session);
+        // The leg itself is an ordinary battle against the rung's monster
+        // (`FUN_801D1510`: formation cell `DAT_8007BD0C`, mode `0x14`), staged
+        // here and opened by the dome tick when the hub hands over. The
+        // battle loader seats the monster off the catalog, which holds only
+        // the departure scene's own formations, so the rung's record joins it.
+        self.world.minigames.muscle_battle_monster = None;
+        if let (Some(id), Some(archive)) = (monster_id, self.monster_archive_bytes()) {
+            let cat = legaia_engine_battle::monster_catalog::catalog_from_monster_archive(
+                &archive,
+                &[id],
+            );
+            if let Some(def) = cat.by_id.into_values().next() {
+                self.world.tables.monster_catalog.insert(def);
+                self.world.minigames.muscle_battle_monster = Some(id);
+            }
+        }
         true
     }
 

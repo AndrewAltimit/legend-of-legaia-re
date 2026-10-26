@@ -278,6 +278,14 @@ impl MuscleDomeSession {
         f.max_hp = hp_max.max(f.hp).max(1);
     }
 
+    /// Set fighter `slot`'s live HP (clamped to `0..=max`) - the leg's
+    /// battle hands its outcome back through this when the leg was fought
+    /// as an ordinary battle.
+    pub fn set_hp(&mut self, slot: usize, hp: i32) {
+        let f = &mut self.f[slot];
+        f.hp = hp.clamp(0, f.max_hp.max(hp.max(0)));
+    }
+
     /// A fighter's dealt directions.
     pub fn hand(&self, slot: usize) -> &[MuscleCard; HAND_SLOTS] {
         &self.f[slot].hand

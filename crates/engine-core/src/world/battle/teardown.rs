@@ -144,6 +144,17 @@ impl World {
         // rewards on the results frame (`world::battle::victory`); a direct
         // caller (the runner path, tests) credits them here and arms the
         // aging spoils window instead.
+        // A Muscle Dome leg returns to the arena: the exit selector
+        // `FUN_80046A20` stores mode `0x18` for a word carrying `0x100`
+        // (`0x80046E50`) instead of the field's `0x2`, so the field's
+        // back-from-battle arm (`FUN_8003AEB0`: the story-flag stores, the
+        // game-over gate, the escape-clock penalty) never runs for it.
+        let dome_leg = self.battle.return_mode == SceneMode::MuscleDome;
+        let dome_end = if self.battle.escaped {
+            Some(BattleEndCause::Escaped)
+        } else {
+            self.battle.end
+        };
         let loot_done = std::mem::replace(&mut self.battle.loot_applied, false);
         if !loot_done
             && self.battle.end == Some(BattleEndCause::MonsterWipe)
@@ -179,17 +190,21 @@ impl World {
         // is the game over. `wipe_to_title` is `true` only on that arm; a
         // wipe under the latch takes the ordinary field return below.
         let survived = self.battle.end != Some(BattleEndCause::PartyWipe);
-        let ret = legaia_engine_battle::battle_return_flags::apply_battle_return_flags(
-            &mut WorldFlagBank(self),
-            survived,
-        );
-        let wipe_to_title = ret.game_over;
+        let wipe_to_title = !dome_leg && {
+            let ret = legaia_engine_battle::battle_return_flags::apply_battle_return_flags(
+                &mut WorldFlagBank(self),
+                survived,
+            );
+            ret.game_over
+        };
         if wipe_to_title {
             self.game_over = true;
         }
         // The same arm takes twenty seconds off a running escape clock
         // (`0x8003B62C..0x8003B648`), on every arm of it.
-        self.battle.escape_timer.field_return_penalty();
+        if !dome_leg {
+            self.battle.escape_timer.field_return_penalty();
+        }
         self.battle.active_formation = None;
         self.battle.end = None;
         // Drop the battle seat anchors - the next battle's setup re-seats
@@ -321,6 +336,9 @@ impl World {
         // step on the next field tick.
         self.terrain.last_tile = None;
         self.terrain.step_tile = None;
+        if dome_leg {
+            self.finish_muscle_battle_leg(dome_end);
+        }
         // The field init the battle exit re-enters (`FUN_801D6704`) re-centres
         // the camera window on the saved player tile on the back-from-battle
         // word (`_DAT_8007B8B8 == 2`, `0x801D6E0C..0x801D6ECC`, `FUN_80017DD4`
@@ -430,6 +448,15 @@ impl World {
         }
         for a in self.actors.iter_mut() {
             a.battle.seat = None;
+        }
+        if self.battle.return_mode == SceneMode::MuscleDome {
+            // An abandoned dome leg leaves the arena with its leg undecided;
+            // the arena's own exit reports it.
+            self.minigames.muscle_leg_in_battle = false;
+            self.battle.special_word = 0;
+            if let Some(id) = self.minigames.muscle_saved_map_id.take() {
+                self.battle.map_id = id;
+            }
         }
         self.mode = self.battle.return_mode;
         self.battle.return_mode = SceneMode::Field;

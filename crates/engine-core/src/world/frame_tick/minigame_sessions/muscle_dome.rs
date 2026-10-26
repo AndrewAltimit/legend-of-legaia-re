@@ -38,6 +38,7 @@ impl World {
         let mut session = session;
         session.arm_intro();
         self.minigames.muscle_dome = Some(session);
+        self.minigames.muscle_leg_fresh = true;
         self.minigames.muscle_hub_between_legs = false;
         self.mode = SceneMode::MuscleDome;
         // The hub's announcer lines, staged ahead of the first visit's arms.
@@ -114,6 +115,7 @@ impl World {
     /// venue's own music, and no between-legs hub left open.
     pub(in crate::world::frame_tick) fn leave_muscle_arena(&mut self) {
         self.minigames.muscle_hub_between_legs = false;
+        self.minigames.muscle_leg_bgm = None;
         if self.mode == SceneMode::MuscleDome {
             self.mode = self.minigames.muscle_return_mode;
         }
@@ -393,11 +395,29 @@ impl World {
         // The battle-open hold runs once the hub's own screens (the first
         // visit, the leg-open ROUND card) have handed the leg over - retail
         // starts the battle only past the hub's arm `0x16`.
-        if !self.minigames.muscle_hub.covers_leg() {
+        // The hub must have seen the leg open first: on the tick the warp
+        // installs the session its first visit is not up yet, and nothing
+        // may start under it.
+        let fresh = std::mem::take(&mut self.minigames.muscle_leg_fresh);
+        if !fresh && !self.minigames.muscle_hub.covers_leg() {
             // `ctx[+0x6D6] -= 0x1F800393` per battle pass, one a vsync tick.
             let step = u16::from(super::super::battle::BATTLE_PASS_STEP_PER_TICK);
             if let Some(s) = self.minigames.muscle_dome.as_mut() {
                 s.tick_intro(step);
+            }
+            // The fight start: `FUN_801D1510` plays the battle theme the
+            // arena init loaded (`jal 0x80026478` on the slot-5 source
+            // `0x8007056C`, `0x801D1544..0x801D154C`) on the tick the hub
+            // hands the leg over - never under the announcer's cards.
+            if let Some(bgm) = self.minigames.muscle_leg_bgm.take() {
+                self.start_minigame_track(bgm);
+            }
+            // The same call stages the leg as an ordinary battle: formation
+            // cell `DAT_8007BD0C` = the rung's monster, `DAT_8007BD60 =
+            // 0x80`, game mode `0x14` (`0x801D1550..0x801D15BC`).
+            if let Some(id) = self.minigames.muscle_battle_monster.take() {
+                self.start_muscle_battle_leg(id);
+                return;
             }
         }
         // The play-out choreography steps every tick: the bodies idle
@@ -469,33 +489,43 @@ impl World {
             }
             MusclePhase::Won | MusclePhase::Lost => {
                 if confirm {
-                    let report = legaia_engine_minigames::muscle_dome::LegReport {
+                    let turns = self.minigames.muscle_dome.as_ref().map_or(0, |s| s.turn());
+                    self.end_muscle_leg();
+                    self.close_muscle_leg(legaia_engine_minigames::muscle_dome::LegReport {
                         survived: phase == MusclePhase::Won,
                         outcome: 0,
-                        turns_taken: self.minigames.muscle_dome.as_ref().map_or(0, |s| s.turn()),
-                    };
-                    self.end_muscle_leg();
-                    self.report_muscle_leg(report);
-                    // A contest that has run out settles on the spot: the
-                    // payout is the contest's, not the leg's.
-                    self.settle_muscle_contest();
-                    // A survived leg with the course not exhausted re-enters
-                    // the arena hub (state `0x0A`), which plays the INTERVAL
-                    // tally and the ROUND card and then starts the next fight
-                    // itself (`FUN_801D1510` past arm `0x16`): the player
-                    // never leaves the arena between legs. Every other leg
-                    // settles and hands the field back.
-                    let continues =
-                        legaia_engine_minigames::muscle_dome::leg_boundary_raises_interval(
-                            self.minigames.muscle_contest.as_ref().map(|c| c.state()),
-                        );
-                    if continues {
-                        self.minigames.muscle_hub_between_legs = true;
-                    } else {
-                        self.leave_muscle_arena();
-                    }
+                        turns_taken: turns,
+                    });
                 }
             }
+        }
+    }
+
+    /// Report a finished leg and route the arena: a contest that has run out
+    /// settles on the spot (the payout is the contest's, not the leg's); a
+    /// survived leg with the course not exhausted re-enters the arena hub
+    /// (state `0x0A`), which plays the INTERVAL tally and the ROUND card and
+    /// then starts the next fight itself (`FUN_801D1510` past arm `0x16`), so
+    /// the player never leaves the arena between legs. Every other leg
+    /// settles and hands the field back. The leg's session must already be
+    /// closed ([`Self::end_muscle_leg`]).
+    pub(in crate::world) fn close_muscle_leg(
+        &mut self,
+        report: legaia_engine_minigames::muscle_dome::LegReport,
+    ) {
+        self.report_muscle_leg(report);
+        self.settle_muscle_contest();
+        let continues = legaia_engine_minigames::muscle_dome::leg_boundary_raises_interval(
+            self.minigames.muscle_contest.as_ref().map(|c| c.state()),
+        );
+        if continues {
+            self.minigames.muscle_hub_between_legs = true;
+            // The re-entered arena init releases the BGM sources before
+            // anything else, so the INTERVAL tally and the next ROUND card
+            // play in silence.
+            self.silence_for_minigame_bgm();
+        } else {
+            self.leave_muscle_arena();
         }
     }
 

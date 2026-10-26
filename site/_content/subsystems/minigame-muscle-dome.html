@@ -156,9 +156,16 @@
   </div>
 </section>
 
+<section class="doc-section" id="fight-start">
+  <h2>The fight start is a battle start</h2>
+  <p>The arena&rsquo;s fight start <code>FUN_801D1510</code> writes the ladder rung&rsquo;s monster into the shared formation cell, sets the map id to the arena&rsquo;s data block <code>other6</code> (whose one stage stream is the arena backdrop) and sets game mode <code>0x14</code>: a battle. The battle exit sends a fight carrying the arena bit back to the arena instead of the field. On both play hosts a leg is that battle - the command ring, the monster&rsquo;s own attacks, hit sparks and numerals, the victory pose and the battle camera are the ones every fight uses - and its end returns to the hub.</p>
+  <p><strong>The music starts with the fight.</strong> The arena init stops both BGM sound sources and only loads and opens the battle theme; the play is the fight start&rsquo;s <code>jal 0x80026478</code> at <code>0x801D1548</code>. The Welcome card, the course card, every ROUND card and the INTERVAL tally play in silence, and each fight starts the theme again.</p>
+  <p>The site&rsquo;s Minigames page has no world to run a battle in, so its leg is still the dome session&rsquo;s own presentation; moving it onto the play page&rsquo;s runtime is the open step.</p>
+</section>
+
 <section class="doc-section" id="play-out">
   <h2>A leg plays out as a battle</h2>
-  <p>Nothing about a leg&rsquo;s choreography is the dome&rsquo;s own: a turn acts out on the battle&rsquo;s animation and locomotion code, and the port plays it on the same kernels its battles use.</p>
+  <p>Nothing about a leg&rsquo;s choreography is the dome&rsquo;s own: a turn acts out on the battle&rsquo;s animation and locomotion code. Where the dome session still runs the leg, it plays it on the same kernels its battles use.</p>
   <div class="table-wrap">
   <table>
     <thead><tr><th>Piece</th><th>What decides it</th></tr></thead>

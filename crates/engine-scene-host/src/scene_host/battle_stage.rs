@@ -166,6 +166,11 @@ pub fn backdrop_shell_nclip(second: SecondCopy) -> u32 {
     backdrop_copy_nclip(second, false)
 }
 
+/// The CDNAME block a Muscle Dome leg's battle stage comes from: the arena
+/// data file `data\field\other6.lzs`, whose only `scene_tmd_stream` is the
+/// arena backdrop.
+pub const ARENA_STAGE_SCENE: &str = "other6";
+
 impl SceneHost {
     /// The battle-stage backdrop entry for a fight starting now: the entry the
     /// last region setup's stage variant names in the loaded scene, falling
@@ -175,6 +180,16 @@ impl SceneHost {
     ///
     /// REF: FUN_800513F0, FUN_801D9E1C
     pub fn battle_stage_entry(&self) -> Option<u32> {
+        // A Muscle Dome leg's battle: the arena's fight start leaves the map
+        // id at `other6` (`_DAT_80084540 = 0x4C6`) and the stage variant at
+        // `DAT_8007BD60 & 0x1F = 0` (`0x80`), so the loader's
+        // `scene_index + variant` names the arena backdrop.
+        if self.world.muscle_leg_in_battle() {
+            return self
+                .index
+                .battle_stage_entry_for_region(ARENA_STAGE_SCENE, 0)
+                .or_else(|| self.index.battle_stage_entry_for_scene(ARENA_STAGE_SCENE));
+        }
         let scene = self.scene.as_ref()?;
         self.world
             .encounters
