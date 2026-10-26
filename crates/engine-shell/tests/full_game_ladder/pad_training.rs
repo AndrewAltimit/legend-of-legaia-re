@@ -20,7 +20,12 @@ thread_local! {
 /// Milestones ahead whose anchors set the level target: a party is trained
 /// before the stretch that needs it, where the rests are, not inside the
 /// dungeon the anchor was saved in.
-pub(super) const LEVEL_LOOKAHEAD: usize = 5;
+///
+/// Six, not five: the stretch into `cave01` is where Noa trains while
+/// Terra's rest still works, and five milestones from it the anchors held
+/// her at level 6, where the next stretch's held her at 9 - by then the rest
+/// had gone dry and a bag-less Noa met `rikuroa`'s row 16 at level 5.
+pub(super) const LEVEL_LOOKAHEAD: usize = 6;
 
 /// Outings one training session takes before the hand moves on regardless.
 const TRAIN_ROUNDS: usize = 24;

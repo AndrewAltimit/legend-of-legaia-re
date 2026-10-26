@@ -670,7 +670,10 @@ that band (P2[47]'s C2 is P2[46]'s `0x283`): fought, they took Noa to 272 of
 423 before row 16 on a stream whose bag held one heal. And a member who stands
 alone trains to the target level itself rather than one under it
 (`pad_training::under_levelled`), since every hit lands on her; level 8 won
-row 16 only on streams whose drops had left heals in the bag.
+row 16 only on streams whose drops had left heals in the bag. The level
+target looks six milestones ahead (`LEVEL_LOOKAHEAD`): at five, the stretch
+into `cave01` aimed Noa at the level-6 anchors while Terra's rest still
+worked, and the next stretch's level-9 target came after it had gone dry.
 
 ### A counter the story has closed
 
