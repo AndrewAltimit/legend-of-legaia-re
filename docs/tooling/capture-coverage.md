@@ -100,6 +100,31 @@ Each dimension's uncovered items are listed most valuable first:
 
 The report closes with every held item and the states that hold it.
 
+## Filling the worklist
+
+The enemy-attack rows are filled by
+[`autorun_battle_harvest.lua`](../../scripts/pcsx-redux/autorun_battle_harvest.lua)
+([catalogue](pcsx-redux-automation.md#battle-flow-camera-ui-and-animation)):
+from a retail field state it walks until an encounter, plays the rounds with
+Spirit so the monsters act, and saves a raw state whenever a monster's action
+is mid-way. A dungeon state the worklist names (its "where to capture"
+column) is the source to start from; a town has no encounters. From a
+probe-poked pre-cast state (`koru_pre_*`) it saves the forced cast mid-module
+instead, and the new state inherits that state's poke.
+
+A harvested state is a candidate, not a corpus state, until:
+
+1. its census row (`retail-compare --census` over a scratch manifest naming
+   it) shows the acting seat, category and queued id its label will claim;
+2. its retail frame, from a scratch `retail-compare --images` run, shows that
+   attacker and, for a cast, the spell's name banner;
+3. it is backed up with `manage-states.py backup` and its `[[scenarios]]`
+   block names the source state, the probe and the vsync, and any poke it
+   inherits.
+
+The scores of that scratch run are what the state adds to the corpus; the
+baseline takes them at the next reviewed bless.
+
 ## See also
 
 - [retail-compare](retail-compare.md) - the corpus this report measures.

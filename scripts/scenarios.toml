@@ -3344,3 +3344,120 @@ phase = "battle"
 expected_game_mode = 0x15
 expected_active_scene = "vozz"
 topics = ["battle", "enemy attack", "Gizam", "vozz", "harvest"]
+
+[[scenarios]]
+label = "battle_map01_gobu_gobu_strike"
+backup_fingerprint = "7e0dd919ad756d11832094cd9c7e8904b969bb38b42c5acc21de47a88026c02c"
+description = "map01 battle, formation [0x04, 0x01]: Gobu Gobu (seat 3, monster id 4) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: cave01_attached_light played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack; the walk can leave the source scene first), saved 2440 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map01"
+topics = ["battle", "enemy attack", "Gobu Gobu", "map01", "harvest"]
+
+[[scenarios]]
+label = "battle_chitei2_gilium_thunder_storm_mid_cast"
+backup_fingerprint = "387391845c741f7abdc1472fe60474ed8bd20707074f55c9dab36d3d2e42c8dd"
+description = "chitei2 battle, formation [0x9F, 0x9F]: Gilium (seat 3, monster id 159) mid-cast Thunder Storm (spell 0x77, module 0957): category 2, action state 0x70. RETAIL disc, pad only, no pokes: chitei2_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack; the walk can leave the source scene first), saved 7172 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "chitei2"
+topics = ["battle", "enemy cast", "Gilium", "Thunder Storm", "chitei2", "harvest"]
+
+[[scenarios]]
+label = "battle_chitei2_gilium_strike"
+backup_fingerprint = "d711ac6f1685aebb1d36d2adfe779dad26fa7b969344af422b449aa21872eaf2"
+description = "chitei2 battle, formation [0x9F, 0x9F]: Gilium (seat 4, monster id 159) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: chitei2_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack; the walk can leave the source scene first), saved 1859 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "chitei2"
+topics = ["battle", "enemy attack", "Gilium", "chitei2", "harvest"]
+
+[[scenarios]]
+label = "cort_evolved_card_doomsday_mid_cast"
+backup_fingerprint = "6d8169fd9fad94ad9b6da951b1bc4183407dc767936cd96429485b75240e773b"
+description = "jouine battle, formation [0xB5]: evolved Cort (seat 3, monster id 181) mid-cast Doomsday (spell 0xB6, module 0965): category 2, action state 0x70. From cort_evolved_card_pre_doomsday (RETAIL executable, probe-poked: its queue was rewritten to the cast it names; see that scenario) played forward with no further RAM writes by autorun_battle_harvest.lua, saved 156 vsyncs in. Inherits that state's poke; everything after it is retail."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jouine"
+topics = ["battle", "enemy cast", "evolved Cort", "Doomsday", "jouine", "harvest"]
+
+[[scenarios]]
+label = "battle_doman_killer_wolf_terror_scream_mid_cast"
+backup_fingerprint = "fd58748864568406a9d11908abd0244ed09448ba2763618c1330931e6927aa3e"
+description = "doman battle, formation [0x5D, 0x29]: Killer Wolf (seat 4, monster id 41) mid-cast Terror Scream (spell 0x70, module 0955): category 2, action state 0x70. RETAIL disc, pad only, no pokes: doman_arrival_from_korb2 played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack; the walk can leave the source scene first), saved 6996 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "doman"
+topics = ["battle", "enemy cast", "Killer Wolf", "Terror Scream", "doman", "harvest"]
+
+[[scenarios]]
+label = "battle_doman_killer_wolf_strike"
+backup_fingerprint = "c9b49fc8716d2b3ec2ff4e10cba612a7675b8108d1cb54a0739940d5bc2576c2"
+description = "doman battle, formation [0x5D, 0x29]: Killer Wolf (seat 4, monster id 41) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: doman_arrival_from_korb2 played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack; the walk can leave the source scene first), saved 1809 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "doman"
+topics = ["battle", "enemy attack", "Killer Wolf", "doman", "harvest"]
+
+[[scenarios]]
+label = "battle_doman_freed_water_crystals_mid_cast"
+backup_fingerprint = "9df7e63f070f688f075365fe3564f9b3c36046bb067ab38700c20729db620535"
+description = "doman battle, formation [0x5D, 0x29]: Freed Lv2 (seat 3, monster id 93) mid-cast Water Crystals (spell 0x59, module 0949): category 2, action state 0x70. RETAIL disc, pad only, no pokes: doman_arrival_from_korb2 played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack; the walk can leave the source scene first), saved 7597 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "doman"
+topics = ["battle", "enemy cast", "Freed Lv2", "Water Crystals", "doman", "harvest"]
+
+[[scenarios]]
+label = "battle_doman_freed_strike"
+backup_fingerprint = "f8289ae39c5cccecc7c3bc9476ed4aaccd638af15a23821c292f7c1121263c99"
+description = "doman battle, formation [0x5D, 0x29]: Freed Lv2 (seat 3, monster id 93) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: doman_arrival_from_korb2 played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack; the walk can leave the source scene first), saved 2398 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "doman"
+topics = ["battle", "enemy attack", "Freed Lv2", "doman", "harvest"]
+
+[[scenarios]]
+label = "gaza2_card_neo_star_slash_mid_cast"
+backup_fingerprint = "29d87f34b14b42cd175b4b11891294b6b26c6530d47e5e21146e5f1a0c48a0f2"
+description = "korb3 battle, formation [0xA6]: Gaza (seat 3, monster id 166) mid-cast Neo Star Slash (spell 0xA6, module 0960): category 2, action state 0x70. From gaza2_card_pre_neo_star_slash (RETAIL executable, probe-poked: its queue was rewritten to the cast it names; see that scenario) played forward with no further RAM writes by autorun_battle_harvest.lua, saved 156 vsyncs in. Inherits that state's poke; everything after it is retail."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb3"
+topics = ["battle", "enemy cast", "Gaza", "Neo Star Slash", "korb3", "harvest"]
+
+[[scenarios]]
+label = "battle_jouind_gilium_lv3_thunder_storm_mid_cast"
+backup_fingerprint = "c95c8b27f50481fa467d726e16b7aacb7d266bc97d28c82f8d8dabe00af2a3f7"
+description = "jouind battle, formation [0xA1, 0xA1, 0xA1]: Gilium Lv3 (seat 4, monster id 161) mid-cast Thunder Storm (spell 0x77, module 0957): category 2, action state 0x70. RETAIL disc, pad only, no pokes: jouind_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack; the walk can leave the source scene first), saved 3453 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jouind"
+topics = ["battle", "enemy cast", "Gilium Lv3", "Thunder Storm", "jouind", "harvest"]
+
+[[scenarios]]
+label = "battle_jouind_gilium_lv3_strike"
+backup_fingerprint = "d3d909977727e80110772536cffeba66c7bd8a2452c082fd14ff2559e466d736"
+description = "jouind battle, formation [0xA1, 0xA1, 0xA1]: Gilium Lv3 (seat 5, monster id 161) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: jouind_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack; the walk can leave the source scene first), saved 4912 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jouind"
+topics = ["battle", "enemy attack", "Gilium Lv3", "jouind", "harvest"]
+
+[[scenarios]]
+label = "battle_map03_grude_strike"
+backup_fingerprint = "bb7c6003c1620dbf1296ad781a1d94387daf113257b472d9b81a3ba201ff4b4a"
+description = "map03 battle, formation [0x68, 0x68]: Grude (seat 3, monster id 104) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: uru_field_run played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack; the walk can leave the source scene first), saved 2001 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map03"
+topics = ["battle", "enemy attack", "Grude", "map03", "harvest"]
+
+[[scenarios]]
+label = "battle_map01_lippian_kiss_of_death_mid_cast"
+backup_fingerprint = "32b4da03e9ad06142b13aec20bc78acec5d41e74dc072b3e9381d6818a5c625e"
+description = "map01 battle, formation [0x25, 0x1F, 0x1F]: Lippian (seat 5, monster id 31) mid-cast Kiss of Death (spell 0x6E, module 0955): category 2, action state 0x70. RETAIL disc, pad only, no pokes: vell_fog_field played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack; the walk can leave the source scene first), saved 1615 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map01"
+topics = ["battle", "enemy cast", "Lippian", "Kiss of Death", "map01", "harvest"]
