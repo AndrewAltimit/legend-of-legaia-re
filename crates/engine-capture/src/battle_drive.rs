@@ -282,7 +282,10 @@ pub enum SpanGate {
     /// ([`legaia_engine_cast::cast_module_camera::capture_countdown_va`]): the
     /// phase is held until the engine's module sits in that arm with its
     /// countdown run down at least as far - the module's own clock, which
-    /// places a camera shot or drift in flight.
+    /// places a camera shot or drift in flight. A body that gates on no
+    /// module word carries [`PHASE_ONLY`]: the engine's directed module is
+    /// held to the capture's arm alone (`koru_blade_breath_mid_cast` sits in
+    /// arm 3; without the arm the replay was filmed on `0x70`'s first tick).
     ///
     /// `yaw` is retail's yaw counter `ctx[+0x6DA]` (`None` under the Far
     /// option, which stops it): the action seed `0x0C` stores `0x800` and
@@ -319,6 +322,11 @@ pub enum SpanGate {
     /// until its own glide lands ([`BattleDrive::steer`]).
     Landed,
 }
+
+/// The countdown half of a `0x70` capture's arm gate when the body gates on
+/// no module word ([`SpanGate::CaptureFade`]): the gate is the phase alone,
+/// and only for a body the engine directs.
+pub const PHASE_ONLY: i32 = i32::MAX;
 
 /// The capture band `0x6E..=0x71`. `0x70` pins the style to `1`
 /// (`sb v0,0xd(v1)` at `0x801E50CC`) without re-arming a framing, so a
@@ -448,18 +456,9 @@ pub(crate) fn capture_band_ticks_to_arm(
     arm: (u8, i32),
 ) -> u16 {
     use legaia_engine_cast::cast_module_camera as cmc;
-    let Some(action) = world
-        .actors
-        .get(usize::from(seat))
-        .map(|a| a.battle.params[0])
-    else {
+    let Some((entry, body)) = capture_body(world, seat) else {
         return 0;
     };
-    let Some(entry) = world.cast_module_for(action) else {
-        return 0;
-    };
-    let body = legaia_engine_cast::cast_module_ticks::capture_tick_body(entry, action)
-        .unwrap_or(cmc::SINGLE_BODY);
     let director = cmc::capture_camera_director(entry, body);
     let table = cmc::capture_arm_countdowns(entry, body);
     if director.is_none() && table.is_none() {
@@ -490,6 +489,29 @@ pub(crate) fn capture_band_ticks_to_arm(
         }
     }
     0
+}
+
+/// The `(PROT entry, tick body)` of the capture-class cast `seat` has
+/// queued, keyed as [`legaia_engine_cast::cast_module_camera::capture_camera_director`]
+/// takes it.
+fn capture_body(world: &legaia_engine_core::world::World, seat: u8) -> Option<(u32, u32)> {
+    let action = world
+        .actors
+        .get(usize::from(seat))
+        .map(|a| a.battle.params[0])?;
+    let entry = world.cast_module_for(action)?;
+    let body = legaia_engine_cast::cast_module_ticks::capture_tick_body(entry, action)
+        .unwrap_or(legaia_engine_cast::cast_module_camera::SINGLE_BODY);
+    Some((entry, body))
+}
+
+/// Whether the engine walks the phase of the capture-class cast `seat` has
+/// queued on retail's arms: a body with a camera director. Only those place
+/// a [`PHASE_ONLY`] gate; another body's engine phase is not retail's clock.
+fn capture_phase_directed(world: &legaia_engine_core::world::World, seat: u8) -> bool {
+    capture_body(world, seat).is_some_and(|(entry, body)| {
+        legaia_engine_cast::cast_module_camera::capture_camera_director(entry, body).is_some()
+    })
 }
 
 /// Whether the engine's `0x6F` pull-in has come down at least as far as
@@ -1004,6 +1026,13 @@ impl BattleDrive {
                     && match end {
                         SpanGate::DoneHold { timer } => world.battle_ctx.frame_timer <= timer,
                         SpanGate::CaptureFade {
+                            arm: Some((phase, PHASE_ONLY)),
+                            ..
+                        } if state == 0x70 => {
+                            !capture_phase_directed(world, engine_seat(seat, pc))
+                                || world.casting.module_phase >= phase
+                        }
+                        SpanGate::CaptureFade {
                             arm: Some((phase, countdown)),
                             ..
                         } if state == 0x70 => {
@@ -1248,6 +1277,7 @@ impl BattleDrive {
         // then lands on retail's word, and the display lag's frame two passes
         // back on retail's displayed one.
         if let Some((phase, countdown)) = arm
+            && countdown != PHASE_ONLY
             && ours
             && want == 0x70
             && state == 0x70

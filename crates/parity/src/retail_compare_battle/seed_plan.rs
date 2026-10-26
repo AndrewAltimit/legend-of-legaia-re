@@ -182,12 +182,18 @@ pub(super) fn span_gate(ram: &[u8], ctx: u32) -> SpanGate {
                     } else {
                         0
                     };
-                    legaia_engine_cast::cast_module_camera::capture_countdown_va(action).map(|va| {
-                        (
-                            game_anchors::u8_at(ram, ctx + 0x279),
-                            game_anchors::u32_at(ram, va) as i32,
-                        )
-                    })
+                    let phase = game_anchors::u8_at(ram, ctx + 0x279);
+                    // A body that gates on no module word (PROT 0962's
+                    // charge bodies wait on the caster's cursor, Neo Star
+                    // Slash and Doomsday carry their countdown in the
+                    // director) still places the capture by its phase.
+                    Some(
+                        legaia_engine_cast::cast_module_camera::capture_countdown_va(action)
+                            .map_or(
+                                (phase, legaia_engine_capture::battle_drive::PHASE_ONLY),
+                                |va| (phase, game_anchors::u32_at(ram, va) as i32),
+                            ),
+                    )
                 })
                 .flatten();
             // The yaw counter is a clock only while the action SM drifts it

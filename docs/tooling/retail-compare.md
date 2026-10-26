@@ -2099,7 +2099,19 @@ inside its state by retail's own clocks (`SpanGate`):
 | Done band `0x51` / `0x52` | `SpanGate::DoneHold` | countdown `ctx[+0x6D8]` |
 | Capture band `0x6E` / `0x6F` / `0x70` | `SpanGate::CaptureFade`, `BattleDrive::steer` | `ctx[+0x87C]`, `ctx[+0x6D0]`, `ctx[+0x6DA]` |
 | `0x00` / `0x0A` / `0x0B` | `SpanGate::Landed` | tween table `ctx[+0x118C]`, seat from `ctx[+0x274]` |
-| `0x70` under a directed module | module arm + countdown | `ctx[+0x279]`, [`capture_countdown_va`](../subsystems/cast-module.md#a-capture-class-module-owns-the-camera-in-0x70) |
+| `0x70` under a directed module | module arm + countdown, or the arm alone (`PHASE_ONLY`) for a body that gates on no module word | `ctx[+0x279]`, [`capture_countdown_va`](../subsystems/cast-module.md#a-capture-class-module-owns-the-camera-in-0x70) |
+
+**A directed body with no module word.** PROT 0962's charge bodies wait on
+the caster's cursor, and Neo Star Slash and Doomsday carry their countdown in
+the director, so `capture_countdown_va` names no word for them. Their `0x70`
+captures are still held to the capture's arm
+(`battle_drive::PHASE_ONLY`), for a body the engine directs only; without it
+the replay was filmed on the band's first tick. `koru_blade_breath_mid_cast`
+sits in arm 3, and the gate took its `camera` from `.763` to `.862`, Neo Star
+Slash's from `.757` to `.780` and Doomsday's from `.718` to `.734`. The Koru
+image stays where it was: the capture's seat is the end of Koru's walk-in,
+so the replay's arms 0 and 1 pass at once, and the frame the display lag
+takes back is the band's opening shot rather than retail's arm-1 glide.
 
 **How far into the state (`SpanGate::Age`).** The acting actor's clip commit
 zeroes `ctx[+0x87C]` and every framing call adds `8 * frame_step`. The drive

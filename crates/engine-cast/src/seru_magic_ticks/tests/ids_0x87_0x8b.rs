@@ -111,6 +111,24 @@ fn viguro_arm_zero_writes_both_context_bytes() {
     assert!(sweep.hits.is_empty());
 }
 
+/// Arm 9 hides the creature: `+0x21C = 0xFF` **and** a zero prim word,
+/// the pair the draw gates read; the live enemy seats take the neutral word.
+#[test]
+fn viguro_arm_nine_hides_the_creature() {
+    let mut ctx = ctx_at(VIGURO_HIDE_PHASE);
+    let mut s = seats(8);
+    for v in s.iter_mut() {
+        v.present_04 = 0x3FC0_0000;
+    }
+    s[5].hp = 0;
+    viguro_tick(&mut ctx, &mut s, 0, 7, &mut 0, |_| 0);
+    assert_eq!((s[7].render_flag, s[7].present_04), (0xFF, 0));
+    assert_eq!(s[3].present_04, VIGURO_ROW_NEUTRAL_COLOUR);
+    assert_eq!(s[5].present_04, 0x3FC0_0000, "a dead seat keeps its word");
+    assert_eq!(s[0].present_04, 0x3FC0_0000, "the party is not touched");
+    assert_eq!(ctx.phase, VIGURO_HIDE_PHASE + 1);
+}
+
 /// The rendezvous: phases 3 and 8 report busy and do **not** advance, so
 /// the choreography waits for the stager's own `ctx[+0x279] += 1`.
 #[test]

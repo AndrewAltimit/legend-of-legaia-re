@@ -1701,6 +1701,13 @@ while the creature's `+0x38` is at or past `0x200`; arms 5, 7, 9 and 11 drain
 the countdown; arm 12 **climbs** it by a quarter of the frame product until
 it reaches `0x201`; arms 11..14 add to the yaw global every pass.
 
+Arm 9's pass hides the creature: `+0x21C = 0xFF` **and** its colour word
+`+0x04 = 0` (`0x801F6FD0..0x801F6FE4`), the pair the hosts' draw gates read,
+then stores the neutral word `0x20080200` on every enemy seat with HP left
+(`0x801F705C..0x801F7084`). With the flag alone the creature stayed drawn on
+its arm-7 blue tint through arms 10..14, over the enemy-row shots retail
+frames without it.
+
 Stager arm 1 also spawns a held additive fade, black to `(0xC0, 0xC0, 0xFF)`
 over `0x1E` frames, and parks it at `ctx[+0x102C]` (`0x801F7BFC..0x801F7C4C`):
 the pale blue the screen rises to while arm 9 counts down, which arm 9's
@@ -2196,7 +2203,7 @@ Beside the directors an engine-side pass applies each arm's seat writes
 | PROT | Writes |
 |---|---|
 | 0918 | the victim moved to `(0, -0x800)` and back, hidden and re-shown; the creature's spin as it grows (`facing = +0x72 * 6`), its landing at `z = 0x400`; `ctx[+0x278] = 2` on arm 4, `3` on arm 16 |
-| 0922 | the monsters re-formed at half their alternate-family seats and restored on arm 24; the creature's sink, its ring pose `(0, -0x1100, -0x1100)` and rise; the part halts each arm makes by handle; `ctx[+0x278]` `0` / `2` / `0` on arms 0 / 11 / 12, and `3` from the stager, which only its parts' op-`0x20` calls reach |
+| 0922 | the monsters re-formed at half their alternate-family seats and restored on arm 24; the creature's sink, its ring pose `(0, -0x1100, -0x1100)` and rise; the part halts each arm makes by handle; `ctx[+0x278]` `0` / `2` / `0` on arms 0 / 11 / 12, `3` from the stager, which only its parts' op-`0x20` calls reach, and `0` with `ctx[+0x27A]` on arm 23's pass, which puts the stage back under arm 24 |
 | 0927 | `ctx[+0x278] = 3` and the backdrop pair dropped on arm 0; the monster row re-formed off `0x80077628` and restored; party and monsters hidden and re-shown; the creature's clips and rates; its emergence clipped by object-effect row 1 (`+0x42 = 2`); the pool flushes of arms 26 / 27; its stager run off the parts' calls (spawn arms, the salmon fades, the shake word `0x801F9C90` the epilogue runs down on TR y, and arm 4's sweep, which lands the outcome) |
 
 `ctx[+0x278]` bit 0 with the stage ambient on its floor also takes the

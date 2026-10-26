@@ -78,8 +78,14 @@ fn battle_world() -> World {
 }
 
 /// One id's walk. Returns `(phases observed, frames a ported body ran,
-/// reached Done, the values ctx+0x278 took in order)`.
-fn walk(world: &mut World, id: u8) -> (Vec<u8>, usize, bool, Vec<u8>) {
+/// reached Done, the values ctx+0x278 took in order)`, and fills `hidden`
+/// with the phases on which the summon seat was off the draw
+/// (`World::battle_body_hidden`).
+fn walk(
+    world: &mut World,
+    id: u8,
+    hidden: &mut std::collections::BTreeSet<u8>,
+) -> (Vec<u8>, usize, bool, Vec<u8>) {
     world.casting.module_phase = 0;
     world.casting.module_ctx_278 = 0;
     let mut phases = vec![0u8];
@@ -97,6 +103,9 @@ fn walk(world: &mut World, id: u8) -> (Vec<u8>, usize, bool, Vec<u8>) {
         };
         if run.tick_ported {
             ported += 1;
+        }
+        if world.battle_body_hidden(SUMMON_SLOT) {
+            hidden.insert(world.casting.module_phase);
         }
         if world.casting.module_phase != phase {
             phases.push(world.casting.module_phase);
@@ -150,7 +159,8 @@ fn every_player_seru_tick_body_walks_its_phase_chain() {
             "id {id:#04x} must seat PROT {entry} against the disc's own spell table"
         );
 
-        let (phases, ported, done, ctx_278) = walk(&mut world, id);
+        let mut hidden = std::collections::BTreeSet::new();
+        let (phases, ported, done, ctx_278) = walk(&mut world, id, &mut hidden);
         assert!(
             ported > 0,
             "id {id:#04x} (PROT {entry}) never entered a ported tick body"
@@ -176,6 +186,13 @@ fn every_player_seru_tick_body_walks_its_phase_chain() {
                     world.actors[SUMMON_SLOT].battle.render_flag,
                     seru::VIGURO_DONE_RENDER_FLAG,
                     "PROT 0909's terminal arm leaves the summon seat on 2"
+                );
+                // Arm 9's pass zeroes the creature's prim word beside its
+                // `0xFF` flag (`0x801F6FD0..0x801F6FE4`): off the draw
+                // through the enemy-row arms that follow.
+                assert!(
+                    (10..=12).all(|p| hidden.contains(&p)),
+                    "PROT 0909's creature is drawn after arm 9: hidden on {hidden:?}"
                 );
             }
             910 => {
