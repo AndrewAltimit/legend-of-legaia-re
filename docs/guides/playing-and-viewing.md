@@ -400,11 +400,14 @@ bit that crosses the Ra-Seru chip out of the command ring
 ([`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md)).
 
 ```bash
-# `M` opens the dome from any field scene; the ring is drawn with the
-# Ra-Seru chip crossed out because flag 0x538 seeded the word to 0x321.
+# `M` opens the dome from any field scene; the round is an ordinary battle,
+# and its command ring has the Ra-Seru chip crossed out because flag 0x538
+# seeded the word to 0x321 (Item is crossed out on every unlocked course).
+# Cross skips the announcer cards; the last one opens the ring.
 ./legaia-engine play-window --disc "$DISC" --scene town01 --seed-party \
     --set-flag 0x538 --key-script "60:M" \
-    --screenshot /tmp/dome-ban.png --screenshot-tick 200
+    --pad-script "300:Cross,400:Cross,500:Cross,600:Cross,1000:Cross" \
+    --screenshot /tmp/dome-ban.png --screenshot-tick 1060
 ```
 
 The older `LEGAIA_LEARN_SPELLS=0x81,0x9e` environment variable still works and
