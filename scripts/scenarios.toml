@@ -3641,3 +3641,48 @@ phase = "field"
 expected_game_mode = 0x03
 expected_active_scene = "noaru"
 topics = ["field", "noaru", "scene coverage", "harvest"]
+
+[[scenarios]]
+label = "battle_tower_guardian_windhash_mid_cast"
+backup_fingerprint = "f89bc15ac0214ab72d3ae1ac3d372f94022e3653118e5dd47dc88b896764aa76"
+description = "tower battle, formation [0x46, 0x11]: Guardian (seat 4, monster id 17) mid-cast Windhash (spell 0x34): category 2, action state 0x2B. RETAIL disc, pad only, no pokes: teien_field_run, which the walk left through a door into tower, LEGAIA_WALK_SEED=7, played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 14783 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tower"
+topics = ["battle", "enemy cast", "Guardian", "Windhash", "tower", "harvest"]
+
+[[scenarios]]
+label = "battle_tower_guardian_v_windhash_mid_cast"
+backup_fingerprint = "9e638a1d63e9a4157a11d988e8e72934da09d4f746dbcd0e4c647e9bc142cb5f"
+description = "tower battle, formation [0x46, 0x11]: Guardian (seat 4, monster id 17) mid-cast V-Windhash (spell 0x57, module 0947): category 2, action state 0x70. RETAIL disc, pad only, no pokes: teien_field_run, which the walk left through a door into tower, LEGAIA_WALK_SEED=7, played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 12769 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tower"
+topics = ["battle", "enemy cast", "Guardian", "V-Windhash", "tower", "harvest"]
+
+[[scenarios]]
+label = "battle_tower_guardian_strike"
+backup_fingerprint = "76e1659dde212c57f46434bd61500d20fc18e28db72c58162a693b44e6f34bfa"
+description = "tower battle, formation [0x46, 0x11]: Guardian (seat 4, monster id 17) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: teien_field_run, which the walk left through a door into tower, LEGAIA_WALK_SEED=7, played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 11206 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tower"
+topics = ["battle", "enemy attack", "Guardian", "tower", "harvest"]
+
+[[scenarios]]
+label = "battle_tower_swordie_strike"
+backup_fingerprint = "245e702dde1a377421de6300fbfc8ecb6d06ed211db44b0bde1cdcc586500b04"
+description = "tower battle, formation [0x46, 0x56]: Swordie (seat 4, monster id 86) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: teien_field_run, which the walk left through a door into tower, LEGAIA_WALK_SEED=7, played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 3703 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tower"
+topics = ["battle", "enemy attack", "Swordie", "tower", "harvest"]
+
+[[scenarios]]
+label = "tower_field_walk"
+backup_fingerprint = "35a957cdfff6191cdeebfebedcd000600fad0e1cc15987d9d96b5c7a3005b4a6"
+description = "tower (Sky Gardens Tower) free field run, player in control. RETAIL disc, pad only, no pokes: teien_field_run (LEGAIA_WALK_SEED=7), then autorun_battle_harvest.lua with LEGAIA_SCENES=1 (random walk) saved it 1106 vsyncs in, once the scene had settled and the player had moved (reached by the walk through a door)."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "tower"
+topics = ["field", "tower", "scene coverage", "harvest"]
