@@ -208,11 +208,12 @@ impl World {
             self.field_vm.eased_moves = records;
             // Drop the `+0x8E` latch once the last mirrored player move has
             // retired. Retail's byte is sticky and its reader gates on the
-            // actor flag `+0x10 & 0x20000000` instead, which a script clears;
-            // the engine has no writer for that bit on a pool actor, so a
-            // sticky latch here would pin the player's Y for the rest of the
-            // scene - a softlock class, not a fidelity gain. The armed window
-            // is otherwise identical: every frame of the move, and no other.
+            // actor flag `+0x10 & 0x20000000` instead, which a script clears.
+            // The eased move's latch stays scoped to the move: the script-held
+            // height (the bit with `World::locomotion.player_8e`) is the
+            // height arm's other input and outlives it on its own terms, so a
+            // sticky copy here would only re-pin the move's last Y. The armed
+            // window is otherwise identical: every frame of the move.
             if !self
                 .field_vm
                 .eased_moves

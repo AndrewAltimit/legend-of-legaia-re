@@ -3,6 +3,10 @@
 use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
+/// The actor-tick flag that pins a field actor's Y to `-(+0x8E)` - here,
+/// the player's.
+pub(crate) const PLAYER_Y_FROM_8E: u32 = 0x2000_0000;
+
 impl World {
     // --- live gameplay loop: Field <-> Battle round trip ------------------
 
@@ -699,6 +703,14 @@ impl World {
         // Scene entry resets the ramp pool (`FUN_8003CDA8`): a ramp the last
         // scene left running must not resize the player on this one.
         self.locomotion.player_scale_ramps.reset_pool();
+        // The player's height law and its slot tweens start clear on every
+        // scene: a held height the last scene's script raised must not pin
+        // the player on this one.
+        self.locomotion.player_slot_ramps.reset_pool();
+        self.locomotion.player_8e = 0;
+        if let Some(actor) = self.actors.get_mut(slot as usize) {
+            actor.move_state.flags &= !PLAYER_Y_FROM_8E;
+        }
         // Every side buffer is fresh on a scene entry (`+0x9A = -1`).
         self.npcs.looks.clear();
         if self.move_vm.ramp_ratio == 0 {

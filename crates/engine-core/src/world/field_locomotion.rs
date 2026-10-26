@@ -153,6 +153,14 @@ pub struct FieldLocomotion {
     /// ([`crate::world::World::player_render_scale`]). Cleared at scene entry
     /// with the rest of the pool (`FUN_8003CDA8`).
     pub(crate) player_scale_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler,
+    /// The player's `+0x8E` height slot: what op `4C 42` / `4C D9` aimed at
+    /// `0xF8` writes, and what the height arm mirrors into Y while the
+    /// player's `+0x10` carries `0x20000000` (`B1 F8 1D` / `4C D9`).
+    pub(crate) player_8e: i16,
+    /// The player's `4C 42` / `4C 43` / `4C 44` tweens (`+0x8E`, `+0x24`,
+    /// `+0x28`; `FUN_8003C5F0` kind 2), stepped by
+    /// [`crate::world::World::tick_player_scale_ramp`].
+    pub(crate) player_slot_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler,
     /// Last frame's field position for every actor the motion detector
     /// tracks - the player (from its [`crate::vm::ActorMoveState`]) and every
     /// entry of [`crate::world::FieldNpcState::positions`]. Rewritten each field tick by
@@ -351,6 +359,8 @@ impl FieldLocomotion {
             forced_slow: false,
             precise_move_carry: (0.0, 0.0),
             player_scale_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler::new(),
+            player_8e: 0,
+            player_slot_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler::new(),
             motion_prev: std::collections::HashMap::new(),
             actor_moving: std::collections::HashSet::new(),
             last_move_dir_bits: 0,

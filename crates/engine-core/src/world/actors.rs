@@ -395,16 +395,23 @@ impl World {
                 }
             }
         }
-        if self.npcs.height_ramps.active() != 0 {
-            for w in self.npcs.height_ramps.tick(speed) {
+        if self.npcs.slot_ramps.active() != 0 {
+            for w in self.npcs.slot_ramps.tick(speed) {
                 if let Some(c) = self
                     .field_vm
                     .channels
                     .iter_mut()
                     .find(|c| !c.object_bind && c.placement_index == w.owner as usize)
                 {
-                    // `kind 2`: an `sh` into `+0x8E`.
-                    c.ctx.field_8e = w.value as i16;
+                    // `kind 2`: an `sh` into the tweened word.
+                    use legaia_engine_motion_vm::ambient_motion::{
+                        RAMP_DEST_PITCH, RAMP_DEST_ROLL,
+                    };
+                    match w.dest {
+                        RAMP_DEST_PITCH => c.ctx.field_24 = w.value as i16,
+                        RAMP_DEST_ROLL => c.ctx.field_28 = w.value as i16,
+                        _ => c.ctx.field_8e = w.value as i16,
+                    }
                 }
             }
         }
@@ -421,10 +428,29 @@ impl World {
     }
 
     pub(crate) fn tick_player_scale_ramp(&mut self) {
+        let speed = self.move_vm.ramp_ratio.max(1);
+        if self.locomotion.player_slot_ramps.active() != 0 {
+            use legaia_engine_motion_vm::ambient_motion::{RAMP_DEST_PITCH, RAMP_DEST_ROLL};
+            let writes = self.locomotion.player_slot_ramps.tick(speed);
+            let slot = self.player_actor_slot.map(usize::from);
+            for w in writes {
+                match w.dest {
+                    RAMP_DEST_PITCH | RAMP_DEST_ROLL => {
+                        if let Some(a) = slot.and_then(|s| self.actors.get_mut(s)) {
+                            if w.dest == RAMP_DEST_PITCH {
+                                a.move_state.render_24 = w.value as i16;
+                            } else {
+                                a.move_state.render_28 = w.value as i16;
+                            }
+                        }
+                    }
+                    _ => self.locomotion.player_8e = w.value as i16,
+                }
+            }
+        }
         if self.locomotion.player_scale_ramps.active() == 0 {
             return;
         }
-        let speed = self.move_vm.ramp_ratio.max(1);
         let writes = self.locomotion.player_scale_ramps.tick(speed);
         let Some(slot) = self.player_actor_slot.map(usize::from) else {
             return;

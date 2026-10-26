@@ -155,5 +155,132 @@ fn a_ramped_height_write_drops_a_held_height_placement() {
     }
     w.tick_field_npc_heights();
     assert_eq!(y(&w), 768);
-    assert_eq!(w.npcs.height_ramps.active(), 0);
+    assert_eq!(w.npcs.slot_ramps.active(), 0);
+}
+
+fn plank_channel(placement_index: usize) -> legaia_engine_field::field_channels::FieldChannel {
+    legaia_engine_field::field_channels::FieldChannel {
+        placement_index,
+        ctx: FieldCtx {
+            script_id: 0x1E,
+            ..Default::default()
+        },
+        record_offset: 0,
+        pc: 0,
+        done: false,
+        object_bind: false,
+    }
+}
+
+/// Op `4C 43 <value> <ticks>` on a placement: the X-angle tween
+/// (`0x801E124C..0x801E1268`) lands in the placement context's `+0x24` and
+/// draws as the NPC's tilt; `4C 44` does the same for `+0x28`.
+#[test]
+fn a_ramped_pitch_write_tilts_the_placement() {
+    let mut w = world_with_placement();
+    let mut c = plank_channel(4);
+    let mut host = FieldHostImpl { world: &mut w };
+    // `+0x24`: 0 -> 0x400 over 40 frames; `+0x28`: 0 -> -0x200 at once.
+    field_step_routed(
+        &mut host,
+        &mut c.ctx,
+        &[0x4C, 0x43, 0x00, 0x04, 0x28, 0x00],
+        0,
+    );
+    field_step_routed(
+        &mut host,
+        &mut c.ctx,
+        &[0x4C, 0x44, 0x00, 0xFE, 0x00, 0x00],
+        0,
+    );
+    assert_eq!(c.ctx.field_24, 0, "the ramp arm writes nothing at once");
+    assert_eq!(c.ctx.field_28, -0x200);
+    w.field_vm.channels.push(c);
+    w.move_vm.ramp_ratio = 1;
+    for _ in 0..20 {
+        w.tick_npc_heading_ramps();
+    }
+    assert_eq!(w.field_npc_tilt(4), Some((0x200, -0x200)));
+    for _ in 0..20 {
+        w.tick_npc_heading_ramps();
+    }
+    assert_eq!(w.field_npc_tilt(4), Some((0x400, -0x200)));
+}
+
+/// The height arm's mirror lands in the placement's own `+0x16`: a context
+/// reader sees the held height (`kor5` `P2[5]` raises `0x20000000` after
+/// writing `+0x8E = 480`, so only the arm puts the figure at `Y = -480`).
+#[test]
+fn the_held_height_reaches_the_placement_context() {
+    let mut w = world_with_placement();
+    let mut c = plank_channel(4);
+    c.ctx.flags = 0x2000_0000;
+    c.ctx.field_8e = 480;
+    w.field_vm.channels.push(c);
+    w.tick_field_npc_heights();
+    assert_eq!(w.field_vm.channels[0].ctx.world_y as i16, -480);
+}
+
+/// The player's held height: `B1 F8 1D` raises its `0x20000000`, and a
+/// `CC F8 42 <value> <ticks>` tween of its `+0x8E` then carries its Y on the
+/// scheduler law; `CC F8 DA` drops the law and snaps it back to the floor.
+#[test]
+fn a_player_height_tween_lifts_the_player() {
+    let mut w = world_with_placement();
+    w.field_vm.executing_channel = None;
+    let slot = w.player_actor_slot.unwrap() as usize;
+    let mut caller = FieldCtx::default();
+    let mut host = FieldHostImpl { world: &mut w };
+    field_step_routed(&mut host, &mut caller, &[0xB1, 0xF8, 0x1D], 0);
+    // 0 -> 400 over 50 frames.
+    field_step_routed(
+        &mut host,
+        &mut caller,
+        &[0xCC, 0xF8, 0x42, 0x90, 0x01, 0x32, 0x00],
+        0,
+    );
+    assert_eq!(caller.flags, 0, "the caller's own word stays untouched");
+    assert_ne!(w.actors[slot].move_state.flags & 0x2000_0000, 0);
+    w.move_vm.ramp_ratio = 1;
+    for _ in 0..25 {
+        w.tick_player_scale_ramp();
+    }
+    assert_eq!(w.locomotion.player_8e, 200);
+    assert_eq!(w.field_actor_mirrored_y(slot), Some(-200));
+    for _ in 0..25 {
+        w.tick_player_scale_ramp();
+    }
+    assert_eq!(w.field_actor_mirrored_y(slot), Some(-400));
+    let mut host = FieldHostImpl { world: &mut w };
+    field_step_routed(&mut host, &mut caller, &[0xCC, 0xF8, 0xDA], 0);
+    assert_eq!(w.field_actor_mirrored_y(slot), None);
+    assert_eq!(w.actors[slot].move_state.world_y, 0, "back on the floor");
+}
+
+/// `4C 44 <value> <ticks>` on a placed object's actor: the `+0x28` tween
+/// turns the object's draw (`object_draw_turns`), as `4C 42` lowers it.
+#[test]
+fn a_ramped_roll_write_turns_a_placed_object() {
+    let mut w = world_with_placement();
+    w.field_vm.executing_channel = None;
+    w.field_vm.executing_object = Some(0x12);
+    let mut c = plank_channel(9);
+    c.object_bind = true;
+    c.ctx.script_id = 0x12;
+    w.field_vm.object_channel_rots.insert(9, [0, 0, 0]);
+    let mut host = FieldHostImpl { world: &mut w };
+    // `+0x28`: 0 -> 0x300 over 3 actor ticks.
+    field_step_routed(
+        &mut host,
+        &mut c.ctx,
+        &[0x4C, 0x44, 0x00, 0x03, 0x03, 0x00],
+        0,
+    );
+    w.field_vm.executing_object = None;
+    w.field_vm.channels.push(c);
+    w.tick_object_actor_heights();
+    assert_eq!(w.object_draw_turns().get(&9), Some(&[0, 0, 0x100]));
+    w.tick_object_actor_heights();
+    w.tick_object_actor_heights();
+    assert_eq!(w.object_draw_turns().get(&9), Some(&[0, 0, 0x300]));
 }

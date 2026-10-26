@@ -57,23 +57,6 @@ impl World {
         });
     }
 
-    /// Schedule an op-`4C 42` tween of object-bind actor `record`'s `+0x8E`.
-    pub(crate) fn schedule_object_slot_ramp(
-        &mut self,
-        record: u16,
-        start: i16,
-        end: i16,
-        ticks: u16,
-    ) {
-        self.schedule_object_ramp(
-            record,
-            ObjectRampSlot::Height8E,
-            i32::from(start),
-            i32::from(end),
-            ticks,
-        );
-    }
-
     /// One actor tick of the object words a script tweens: step every live
     /// tween, then pin each object actor carrying `0x20000000` to
     /// `-(+0x8E)` (the height arm's first branch).
@@ -91,6 +74,8 @@ impl World {
             {
                 match r.slot {
                     ObjectRampSlot::Height8E => c.ctx.field_8e = v as i16,
+                    ObjectRampSlot::Pitch24 => c.ctx.field_24 = v as i16,
+                    ObjectRampSlot::Roll28 => c.ctx.field_28 = v as i16,
                     ObjectRampSlot::TintColour => {
                         c.ctx.field_74 = (c.ctx.field_74 & 0xFF00_0000) | (v as u32 & 0x00FF_FFFF)
                     }

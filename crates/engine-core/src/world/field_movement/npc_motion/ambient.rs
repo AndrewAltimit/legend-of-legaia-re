@@ -573,7 +573,18 @@ impl World {
     ///
     /// REF: FUN_8001ADA4, FUN_80026988
     pub fn field_npc_tilt(&self, slot: u8) -> Option<(i16, i16)> {
-        self.npcs.tilts.get(&slot).copied()
+        if let Some(&t) = self.npcs.tilts.get(&slot) {
+            return Some(t);
+        }
+        // The field VM writes the same two words (`4C 43` / `4C 44`, written
+        // or tweened, `0x801E1234..0x801E12A0`) on the placement's context.
+        // Retail has one actor record, so either writer's angles draw.
+        self.field_vm
+            .channels
+            .iter()
+            .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
+            .map(|c| (c.ctx.field_24, c.ctx.field_28))
+            .filter(|&t| t != (0, 0))
     }
 
     /// Publish an ambient channel's `actor+0x72` write into the field-VM

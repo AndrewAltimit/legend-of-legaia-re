@@ -396,11 +396,19 @@ impl World {
     ///
     /// PORT: FUN_8003BC08 (`0x8003BC4C..0x8003BC64` + `0x8003BCF4`, the
     /// mirror arm of the height dispatch)
-    pub(super) fn field_actor_mirrored_y(&self, slot: usize) -> Option<i16> {
+    pub(crate) fn field_actor_mirrored_y(&self, slot: usize) -> Option<i16> {
         if self.player_actor_slot? as usize != slot {
             return None;
         }
-        self.locomotion.eased_mirror_y.map(|m| m.wrapping_neg())
+        if let Some(m) = self.locomotion.eased_mirror_y {
+            return Some(m.wrapping_neg());
+        }
+        // A script-held height: `B1 F8 1D` / `4C D9` raised the player's
+        // `0x20000000` and `4C 42` / `4C D9` wrote (or a tween is stepping)
+        // its `+0x8E`.
+        let flags = self.actors.get(slot)?.move_state.flags;
+        (flags & crate::world::field_loop::PLAYER_Y_FROM_8E != 0)
+            .then(|| self.locomotion.player_8e.wrapping_neg())
     }
 
     /// The height retail's ledge classifier measures its rise **from**: the
@@ -1002,7 +1010,24 @@ impl World {
     ///
     /// REF: FUN_801DE840 (ops `0x31` / `0x32`), FUN_8003C83C (the `0xF8` arm)
     pub fn field_player_cflag(&mut self, bit: u8, set: bool) -> bool {
-        if 1u32 << (bit & 0x1F) != legaia_engine_field::field_player_clip::PARTY_BANK_FLAG {
+        let mask = 1u32 << (bit & 0x1F);
+        // `B1 F8 1D` / `B2 F8 1D`: the player's height-law bit, which the
+        // height arm reads (`0x8003BC4C`, see `Self::field_actor_mirrored_y`).
+        if mask == crate::world::field_loop::PLAYER_Y_FROM_8E {
+            let Some(slot) = self.player_actor_slot.map(usize::from) else {
+                return false;
+            };
+            let Some(actor) = self.actors.get_mut(slot) else {
+                return false;
+            };
+            if set {
+                actor.move_state.flags |= mask;
+            } else {
+                actor.move_state.flags &= !mask;
+            }
+            return true;
+        }
+        if mask != legaia_engine_field::field_player_clip::PARTY_BANK_FLAG {
             return false;
         }
         self.locomotion.player_party_bank = set;

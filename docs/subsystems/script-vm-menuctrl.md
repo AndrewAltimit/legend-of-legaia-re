@@ -510,6 +510,8 @@ Jump table at `0x801CEFC8`.
 | 6 | `[4C D6 b1]` | `ctx.field_74`: `b1 == 4` clears the top bit only, else sets `0x80000000` and shifts `b1` into the top byte - the draw's blend argument ([`field-locomotion.md`](field-locomotion.md)). PC += 3 (arm `0x801E2D64`). `chitei2` P2[0]/[1] and P2[9]/[10] run it over the corridor lights. |
 | 7 | `[4C D7]` | Retire every cutscene camera mover `FUN_801DC0BC` on actor list 0 via `FUN_8003CF40`; PC += 2 (arm `0x801E2DB4`). |
 | 8 | 9 bytes | Synchronous morph-actor spawn - [below](#what-the-0x4c-0xd8-spawner-builds). |
+| 9 | `[4C D9 v:i16]` | Raise the height law: `+0x10 \|= 0x20000000`, `+0x8E = v` (`9999` takes the live `-(+0x16)`), `+0x16 = -v`; PC += 4 (`0x801E2E28..0x801E2E6C`). |
+| A | `[4C DA]` | Drop the height law: clear `0x20000000` and snap `+0x16` to the floor sample `FUN_80019278`; PC += 2 (`0x801E2E70..0x801E2E94`). |
 | B | 13 bytes | Calls `FUN_801E57F0(operand)`, then PC += 13 (`LAB_801E2EA0`). |
 | C / E | `[4C DC|DE needle skip:i16]` (5 bytes) | "Does the party hold `needle`?" Sub-C searches the bag's active window (`FUN_80042EE0`), then the eight equipment bytes (`+0x196..+0x19D`) of each present member's record; sub-E reads the equipment alone. A hit takes the [relative skip](#the-relative-skip-exit) `pc + 5 + skip - 2`, a miss advances 5. |
 
@@ -1039,8 +1041,8 @@ scheduled actor; **the script never waits on it**.
 | 0 | `ctx[+0x72]` | Plain s16 write or ramp. Speed multiplier and draw scale (`0` = not drawn); aimed at `0xF8` it lands on the player ([world-map.md](world-map.md#overworld-walk-speed-and-clip)). |
 | 1 | `ctx[+0x6A]` | Input is `(value >> 1).max(1)` (signed halve, floor 1). |
 | 2 | `ctx[+0x8E]` | When ramp == 0 and `flags & 0x20000000`, also writes `world_y = -value`. |
-| 3 | `ctx[+0x24]` | Plain s16 write or ramp (`0x801E1234`). No jump. |
-| 4 | `ctx[+0x28]` | Plain s16 write or ramp (`0x801E126C`). No jump. |
+| 3 | `ctx[+0x24]` | Plain s16 write or ramp (`0x801E1234`). No jump. The actor's X Euler angle, which the actor draw composes. |
+| 4 | `ctx[+0x28]` | Plain s16 write or ramp (`0x801E126C`). No jump. The Z Euler angle. |
 | 5 | `actor[+0x44].{0x9A,0x94,0x96,0x98}` | 11-byte instruction - [below](#4c-45-the-11-byte-form). |
 | 6 | `_DAT_8007B92C` | Gated by `_DAT_800845A8 == 0`; when set, the gate clears both 6 and 7. The rumble pulse word (`gp+0x614`): port `World::rumble`, which both play hosts hand to the controller ([audio.md](audio.md#not-ssapi-the-0x801ce628-cluster-is-libpad)). |
 | 7 | `_DAT_8007B930` | Sister of sub-6: the large motor's level (`gp+0x618`). |
@@ -1093,11 +1095,38 @@ frames while a `4C 45` look turn tips each one over, so the planks fall from
 `+0x8E` a tweened `4C 42` moves - is pinned by
 `crates/engine-scene/tests/height_tween_target_census_disc.rs`: placements are
 the commonest target, ahead of the player and placed objects. The port keeps a
-placement's tweens in `World::npcs.height_ramps` (installed by the host's
+placement's tweens in `World::npcs.slot_ramps` (installed by the host's
 `ramp_ctx_slot`, stepped on the scheduler law by
 `World::tick_npc_heading_ramps` into the context's `field_8e`); the height arm
-then carries the slot into Y on both hosts. The player's sub-2 tween is not
-carried yet.
+then carries the slot into Y on both hosts. The arm also stores the
+placement context's own `+0x16`, as retail's `sh v0,0x16(s1)` at
+`0x8003BCF4` does: `kor5` `P2[5]` writes its Genesis Tree figure's
+`+0x8E = 480` (`CC 15 42 E0 01 00 00`) *before* raising `0x20000000`
+(`B1 15 1D`), so the immediate arm's mirror does not fire and only the
+height arm lifts the figure's context to `Y = -480`, where the move-VM
+mode-7 grab anchors.
+
+Sub-3 and sub-4 tween the same way, from the resolved actor's live `+0x24`
+/ `+0x28` (`0x801E124C..0x801E1268`, `0x801E1284..0x801E12A0`): an object's
+into its context, which `World::object_draw_turns` composes; a placement's
+into `World::npcs.slot_ramps`, which `World::field_npc_tilt` draws on both
+hosts alongside the scripted-motion VM's own `0x15` / `0x16` tilts.
+
+Aimed at the player (`CC F8 42 ..`), the slot is the player's own `+0x8E`,
+and it moves the player only while the player's `+0x10` carries
+`0x20000000`: raised by `B1 F8 1D` or `4C D9`, dropped by `B2 F8 1D` or
+`4C DA`. The census counts the player's tweened sites; most sit in a record
+that raises the bit itself (`taiku`, `taiku2`, `jouinb` and `rugi` carry
+the most). The port keeps the word as `World::locomotion.player_8e` with its
+tweens in `player_slot_ramps`; the routed step (`field_step_routed`) runs
+`CC F8 42..44` / `D9` / `DA` on a stand-in seeded from and written back to
+the player, and the height arm's mirror (`World::field_actor_mirrored_y`)
+then holds the player's Y. Several records raise the bit and never drop it
+(`deroa`'s shaft platforms, `station`, `taiku`), so the port clears it, with
+`+0x8E` and the player's tweens, at scene entry (`World::install_field_player`);
+whether retail's player object carries the bit across a scene change is not
+pinned. The player's tweened `+0x24` / `+0x28` land in its move state, which
+no field host draws yet.
 
 #### `4C 45`: the 11-byte form
 
