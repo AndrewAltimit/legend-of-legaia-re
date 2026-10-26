@@ -596,10 +596,15 @@ Measured on that run against `kor5_post_436_organic`: the copy lands at
 on the figure floating above the party; the port's sits on the party's backs
 near the bottom of the frame, cut short by the display page's last row. The
 grab is placed by its part's `+0x14`, which the stager takes from the firing
-context's position (`34 30` with the cross-context prefix `B4 15`). The port's
-context `0x15` holds `world_y = 0` throughout the beat while the figure is
-drawn in the air, so the part starts at ground height. The gap is that
-context's live Y, not the grab.
+context's position (`34 30` with the cross-context prefix `B4 15`). The beat
+writes the context's `+0x8E = 480` before raising its `0x20000000`, so only
+the actor tick's height arm (`FUN_8003BC08`, store `0x8003BCF4`) lifts the
+context's own `+0x16`; the port's arm stores it too
+([`4C 42`](script-vm-menuctrl.md#0x4c-nibble-4---immediate-or-ramp-cluster)),
+and the context holds `Y = -480`, then follows the beat's 80-frame tween to
+`-250` (`engine-scene-host/tests/kor5_genesis_figure_height_disc.rs`). The
+port's copy now holds the figure on its flower; retail's library crop frames
+it a little higher, a later frame of the same beat.
 
 ### A mesh-bearing part draws its pack mesh
 
