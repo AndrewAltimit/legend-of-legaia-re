@@ -30,9 +30,11 @@
 //! `ctx[+0x243]` / `ctx[+0x278]`, the cue raises, the fade templates, the boss
 //! name banner, the hand-back to flow state `0x0B` and the battle exit.
 //!
-//! Not staged: the in-image spawn records `FUN_80050ED4` is handed (every one
-//! of them opens `model_sel = -1`, a meshless part), the render-node words
-//! (`record[+0x42]`, `+0x72`, `+0x78`) and the CD-XA stop `FUN_8003ED04(0)`.
+//! Not staged: the in-image spawn records `FUN_80050ED4` is handed, the
+//! render-node words (`record[+0x42]`, `+0x72`, `+0x78`) and the CD-XA stop
+//! `FUN_8003ED04(0)`. The records open `model_sel = -1` but are not meshless:
+//! their programs make them draw-kind-4 parts (see
+//! `docs/subsystems/battle-command-flow.md`).
 //! The hand-back's backdrop rebind (`ctx[+0x106C]` / `ctx[+0x1070]` slot 0
 //! := slot 1), its two SCUS move-VM effect trees and its `FUN_80058490` rect
 //! push are reported as [`StageEffect::RebindBackdrop`] /

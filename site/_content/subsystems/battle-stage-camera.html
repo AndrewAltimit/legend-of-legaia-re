@@ -70,6 +70,8 @@
     <li><b>Menu driver</b><span>the <a href="battle-command-flow.html">command flow</a>: far framing on the prompt, a member close-up in the ring, a target shot on the cursor</span></li>
     <li><b>Action SM</b><span>the <a href="battle-action.html">action state machine</a>: per-action framing, a post-strike two-shot, then the target</span></li>
   </ol>
+  <h3>The entry fade</h3>
+  <p>Every fight comes up through a full-screen fade of its own. Battle init holds the screen on one colour until the stage loads, four counter units into the entry sweep; the stage loader then fades the fight in over <code>0x14</code> frames. The colour is the one the <a href="#intro">transition</a> left: the spin-up and swirl styles (and the scatter style's third form) white the screen out, and their fights fade in from white; every other fight fades in from black. The same loader pass hides the evolved Cort until his arrival module drops him in, and that module itself waits for the sweep to end.</p>
   <h3>The ten framings</h3>
   <div class="table-wrap">
   <table>
@@ -92,6 +94,7 @@
   <p>Every framing is <strong>re-armed each pass</strong>: the target vectors are rebuilt from the live actor record every display frame and the step table re-emitted. The target is never frozen at the state change. Each rebuild divides the remaining gap by the duration again, so a pass covers about a sixth of what remains, and the camera is still closing in long after its nominal twelve frames. Captured step tables match that law exactly.</p>
   <h3>Idle orbit</h3>
   <p>Battle init zeroes the yaw; from there it is a clock. Two writers decrement it by twice the frame step - the battle tick while the flow byte sits on a prompt, and the action SM in its setup states. This sweep never consults the state machines, which is why a <a href="battle-action-exit-gates.html">parked battle</a> shows as an endless orbit.</p>
+  <p>At yaw 0 the camera looks straight down the seat axis and the two rows overlap on screen, so the port opens a fight on the field camera's azimuth instead, moved out of that window. That is a port judgement and a toggle: the retail-faithful mode opens every fight on retail's zero.</p>
   <h3>The per-art attack camera</h3>
   <p><code>FUN_801D71B8</code> is an override, called from the dispatcher's shared tail after whichever case has armed its tween. It therefore overrides cases 7 and 8 as well as 6 - which matters, because the strike loop where most art swings are filmed is case 7. It seeds a fresh, tighter pose from the actor, runs a per-character, per-art arm, and re-arms a much shorter tween. An art with no arm returns without arming anything and the case's framing stands. Its first test is the target's live HP, so a death re-frame is never overridden. The arm offsets come from the <a href="../formats/battle-attack-camera-table.html">attack-camera table</a>.</p>
   <h3>The Battle Camera option is not a distance</h3>

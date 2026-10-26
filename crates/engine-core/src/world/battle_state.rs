@@ -985,6 +985,17 @@ pub struct BattleState {
     /// `0x80046F74`), four counter units into the entry sweep, so the floor
     /// starts its fade there rather than at the mode flip.
     pub(crate) stage_registration_pending: bool,
+    /// `_DAT_8007B8FC`: the field-to-battle intro left the screen on white
+    /// (`legaia_render_kernels::battle_intro_styles::intro_leaves_white`).
+    /// Battle init holds the screen on that colour and the stage loader
+    /// fades the fight in from it, then clears the word (`sw zero` at
+    /// `0x80051D44`); clear, both fades are the black ones.
+    pub(crate) entry_fade_white: bool,
+    /// The stage loader's 20-frame fade-in (`FUN_800513F0`,
+    /// `0x80051C98..0x80051D2C`), its own fade actor beside the world's seat.
+    /// Until the loader runs, battle init's held fade covers the screen
+    /// ([`crate::world::World::battle_entry_fade_draw`]).
+    pub(crate) entry_fade: Option<legaia_engine_system::fade::FadeState>,
     /// Whether the stage is one of `DAT_80078C1C`'s outdoor stages - the
     /// `0x8007BDA8` byte the backdrop ramp's ceiling reads. The host that
     /// resolved the stage sets it when it enters battle rendering.
@@ -1185,6 +1196,8 @@ impl BattleState {
             backdrop_cue: 0,
             ground_grid_drawn: true,
             stage_registration_pending: false,
+            entry_fade_white: false,
+            entry_fade: None,
             stage_outdoor: false,
             message_banner: None,
             entry_serial: 0,

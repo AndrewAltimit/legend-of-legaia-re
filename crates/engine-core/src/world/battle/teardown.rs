@@ -168,6 +168,7 @@ impl World {
         // the world tick.
         self.presentation.fade = None;
         self.presentation.module_fades.clear();
+        self.battle.entry_fade = None;
         self.casting.module_pres = Default::default();
         // MAIN INIT's back-from-battle flag stores, run for every ending: the
         // party-survived bit `DAT_8007BD60 & 0x80` is clear only after a
@@ -411,6 +412,7 @@ impl World {
         self.audio.field_bgm_resume = None;
         self.presentation.fade = None;
         self.presentation.module_fades.clear();
+        self.battle.entry_fade = None;
         self.casting.module_pres = Default::default();
         let buffs = std::mem::take(&mut self.battle.buffs);
         for b in buffs {

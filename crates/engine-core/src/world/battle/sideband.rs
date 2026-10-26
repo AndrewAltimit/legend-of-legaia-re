@@ -73,6 +73,18 @@ impl World {
             self.battle.sparring_round_pending = false;
             self.begin_battle_round();
         }
+        // Cort's arrival starts after the entry sweep. Its flow byte reaches
+        // `0x0C` only in state `0x0A`'s `0xB5` arm, which the battle tick
+        // runs once the frame driver's counter has parked at `0xFF`
+        // (`0x80046EF8`), and PROT 0968 pages in only after that park; under
+        // the sweep the stage-2 arm has neither the ramp mode nor the module
+        // (`cort_evolved_card_battle_init`, flow `0x00` at counter `0x97`:
+        // the sweep's own camera, the boss still hidden). The engine's
+        // loader is synchronous, so without this hold the module would walk
+        // the camera from the first battle frame.
+        if self.battle.stage_id == sb::STAGE_ARRIVAL && self.battle_entry_sweeping() {
+            return true;
+        }
         let inputs = self.battle_sideband_inputs(None);
         let fx = sb::battle_sideband_tick(&mut self.battle.sideband, &inputs);
         self.apply_battle_sideband(&fx.effects);
@@ -302,7 +314,7 @@ impl World {
 
     /// Engine actor index of retail actor-table slot `slot` (`0..=2` party,
     /// `3..` monsters), when the engine seats one there.
-    fn retail_table_actor(&self, slot: usize) -> Option<usize> {
+    pub(in crate::world) fn retail_table_actor(&self, slot: usize) -> Option<usize> {
         let idx = usize::from(self.battle_seat_map().engine(u8::try_from(slot).ok()?)?);
         (idx < self.actors.len()).then_some(idx)
     }

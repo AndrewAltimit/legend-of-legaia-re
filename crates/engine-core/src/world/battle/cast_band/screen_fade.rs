@@ -55,7 +55,18 @@ impl World {
         self.presentation
             .module_fades
             .retain_mut(|f| f.step_vsyncs(n) || f.holds_at_end());
+        self.step_battle_entry_fade(n);
         self.step_cast_hook_fades(n);
+    }
+
+    /// Step the stage loader's entry fade-in `vsyncs` on, dropping it when
+    /// its ramp and one-frame hold have run (hold `1`).
+    pub(crate) fn step_battle_entry_fade(&mut self, vsyncs: u8) {
+        if let Some(f) = &mut self.battle.entry_fade
+            && !f.step_vsyncs(vsyncs)
+        {
+            self.battle.entry_fade = None;
+        }
     }
 
     /// Every live full-screen fade quad this frame, the world's fade first
@@ -63,13 +74,20 @@ impl World {
     /// ([`crate::world::ScreenFxState::module_fades`], and the fades the
     /// presentation hook spawned), each as
     /// [`Self::screen_fade_draw`] gives it. Both hosts composite the list.
+    ///
+    /// The battle's entry fade ([`Self::battle_entry_fade_draw`]) leads it:
+    /// battle init spawns it before any other fade actor of the fight.
     pub fn screen_fade_draws(&self) -> Vec<(u32, u8, u32)> {
-        self.presentation
-            .fade
-            .iter()
-            .chain(self.presentation.module_fades.iter())
-            .chain(self.casting.module_pres.fades.iter().map(|f| &f.state))
-            .filter_map(fade_draw)
+        self.battle_entry_fade_draw()
+            .into_iter()
+            .chain(
+                self.presentation
+                    .fade
+                    .iter()
+                    .chain(self.presentation.module_fades.iter())
+                    .chain(self.casting.module_pres.fades.iter().map(|f| &f.state))
+                    .filter_map(fade_draw),
+            )
             .collect()
     }
 }

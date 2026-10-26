@@ -822,7 +822,10 @@ axis by `battle_entry_yaw`. This is a port judgement, carried by
 `BattleCamInputs::entry_yaw`, which `battle_cam_inputs` fills from
 `World::locomotion.camera_azimuth`. The sparring fight is the exception and
 keeps retail's zero: its sweep, its name hold and its caption close-up are
-all framed on it.
+all framed on it. So does every fight in the retail-faithful mode: the
+judgement is the toggle `WorldToggles::battle_entry_off_axis`, which
+`pin_retail` lowers. Both PCSX-Redux openings (`gaza2_card_battle_init`,
+`cort_evolved_card_battle_init`) read yaw `0` under the sweep.
 
 <a id="the-battle-entry-sweep"></a>
 
@@ -864,6 +867,46 @@ start - and the battle loop with it - until both are done
 (`World::sparring_open_held`): `s5_tetsu_battle`, caught under the sweep at
 flow `0x00`, shows the bare arena, and `v0_1_battle_start_tetsu`, at `0x14`,
 the caption over the close-up.
+
+### The battle-entry fade
+
+Every fight comes up through a full-screen fade, and it is not the
+transition's. Battle init `FUN_80055B6C` spawns a fade actor holding the
+screen (`0x80055F2C..0x80055F8C`: duration `1`, `0xFF` held, hold `-1`,
+id `1`) and keeps its pointer at `gp+0xA28` (`0x8007BD40`). On the frame
+driver's stage-load pass (counter `>= 0x84`, above) the driver kills it
+(`lw v0,0xa28(gp)` / `ori v1,v1,0x8` at `0x80046F50..0x80046F64`) and the
+stage loader spawns its replacement (`0x80051C98..0x80051D2C`): a `0x14`-frame
+ramp from `0xFF` to `0`, hold `1`, id `1`.
+
+Both templates take their kind from `_DAT_8007B8FC`: `1` when it is set,
+else `2`. The intro overlay's init stores it beside each style's seeder
+(jump table `0x801CE840`): set on the spin-up and swirl arms and on the
+scatter arm when `DAT_801D2464 >= 2` (`0x801CF114`), cleared on the others
+(`0x801CED70`, `0x801CEFE8`) - exactly the styles whose
+[tail ramp](cutscene.md#the-fades-second-argument-is-a-blend-mode-not-a-depth)
+is additive. Kind `1` is `B + F` and kind `2` `B - F`, so a fight after a
+white-out holds white and fades in from white, and every other fight does
+the same from black. The loader clears the word after its spawn
+(`0x80051D44`).
+
+The new fade ticks on its spawn pass. Both PCSX-Redux openings
+(`gaza2_card_battle_init` at frame step `3`, `cort_evolved_card_battle_init`
+at `2`) hold the block 18 units into its ramp at counter `0x97` - level `25`
+in RAM, `102` and `76` on the displayed frame two passes older - which only
+a first step on the loader's own pass reaches.
+
+Port: `World::battle_entry_fade_draw`, which `World::screen_fade_draws` leads
+with, so both hosts draw it. The held fade is the stage load still pending;
+the loader's ramp is `BattleState::entry_fade`, spawned and stepped once in
+`World::run_battle_stage_load`, then stepped with the other fade actors.
+`legaia_render_kernels::battle_intro_styles::intro_leaves_white` is the
+`_DAT_8007B8FC` store, latched when the transition resolves its style.
+
+The same loader pass hides the evolved Cort: for formation `0xB5` it blanks
+actor-table slot 3 (`0x801C937C`), colour word `+0x04 = 0` and
+`+0x21C = 0xFF` (`0x80051990..0x800519BC`), the hide
+[PROT 0968](battle-command-flow.md#what-the-two-boss-stage-modules-do-overlays-968--969)'s phase 1 lifts.
 
 ### Menu framings (cases 9, 0, 1, 3)
 

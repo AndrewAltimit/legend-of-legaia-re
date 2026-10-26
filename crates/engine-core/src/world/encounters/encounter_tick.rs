@@ -292,8 +292,15 @@ impl World {
                 INTRO_DURATION_FRAMES, INTRO_DURATION_FRAMES_SWIRL, intro_duration_frames,
                 select_intro_style,
             };
-            let style =
-                select_intro_style(&self.battle_intro_style_inputs(roll.formation_id)).style;
+            let choice = select_intro_style(&self.battle_intro_style_inputs(roll.formation_id));
+            let style = choice.style;
+            // The init's `_DAT_8007B8FC` store: the battle fades in from the
+            // colour this style's tail leaves on screen.
+            self.battle.entry_fade_white =
+                legaia_render_kernels::battle_intro_styles::intro_leaves_white(
+                    style,
+                    choice.sub_style,
+                );
             let frames = intro_duration_frames(style) as u16;
             if let Some(session) = self.encounters.session.as_mut()
                 && [INTRO_DURATION_FRAMES, INTRO_DURATION_FRAMES_SWIRL]

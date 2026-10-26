@@ -425,6 +425,27 @@ pub fn intro_fade(
     })
 }
 
+/// Whether the intro leaves the screen on **white**: the word
+/// `_DAT_8007B8FC` the overlay's init stores beside each style's seeder,
+/// which battle init and the stage loader read to pick the battle's own
+/// entry fade (`FUN_80055B6C` at `0x80055F28`, `FUN_800513F0` at
+/// `0x80051C98`).
+///
+/// The init's style switch (jump table `0x801CE840`) clears the word on the
+/// scatter arm (`sw zero` at `0x801CED70`) and on the tile and curtain arms
+/// (`0x801CEFE8`), and stores `1` (`0x801CF114`) on the spin-up and swirl
+/// arms and on the scatter arm when `DAT_801D2464 >= 2` (`slti v0,v0,0x2` at
+/// `0x801CEE8C`). Those are exactly the styles whose tail ramp is additive
+/// ([`intro_fade`]'s ABR `1`), so the battle fades in from the colour the
+/// intro whited the screen out to.
+pub fn intro_leaves_white(style: IntroStyle, sub_style: i32) -> bool {
+    match style {
+        IntroStyle::ScatterParticles => sub_style >= 2,
+        IntroStyle::SpinUpParticles | IntroStyle::Swirl => true,
+        IntroStyle::TileShatter | IntroStyle::Curtain => false,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // FUN_801CFDA0 / FUN_801D0370 - the two particle-field ticks
 // ---------------------------------------------------------------------------

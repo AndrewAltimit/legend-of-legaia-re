@@ -472,3 +472,26 @@ fn the_column_pass_swaps_page_and_biases_u_past_the_split() {
         ((CURTAIN_COLS - 1 + 0x40) as u8)
     );
 }
+
+/// The white flag the init stores is the additive tail: every style whose
+/// fade ramp whites out leaves `_DAT_8007B8FC` set, and no other does.
+#[test]
+fn the_white_flag_follows_the_additive_tail() {
+    let total = 200;
+    for style in [
+        IntroStyle::ScatterParticles,
+        IntroStyle::SpinUpParticles,
+        IntroStyle::TileShatter,
+        IntroStyle::Curtain,
+        IntroStyle::Swirl,
+    ] {
+        for sub in 0..=2 {
+            let abr = intro_fade(style, sub, total, total).unwrap().abr;
+            assert_eq!(
+                intro_leaves_white(style, sub),
+                abr == 1,
+                "{style:?} sub {sub}"
+            );
+        }
+    }
+}

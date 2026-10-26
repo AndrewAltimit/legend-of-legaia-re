@@ -1094,10 +1094,29 @@ at the head of cleanup state `0x50`, and the form transition's exit runs the eng
 teardown. While a module runs it owns the frame and the camera globals
 (`World::battle_cam_pose` returns its camera to both hosts), and the arrival's
 boss-name banner is drawn by both hosts through
-`battle_hud::battle_stage_banner`. Not staged: the in-image spawn records
-(every one is a meshless `model_sel = -1` part), the two SCUS move-VM effect
-trees at the hand-back, the render-node words and the CD-XA stop; the form transition still draws its battle-RNG values, so
-the stream stays retail's.
+`battle_hud::battle_stage_banner`. Not staged: the form transition's in-image
+spawn records, the render-node words and the CD-XA stop; the form transition
+still draws its battle-RNG values, so the stream stays retail's.
+
+**The arrival's spawn records are not meshless, and they are not staged.**
+Each opens `model_sel = -1`, but its program makes it a draw-kind-4 part. The
+spawn wrapper `FUN_80050ED4` seats a record through `FUN_80021B04` on the boss
+seat's `+0x34` / `+0x44` and keeps the handle in a `0x60`-slot table at
+`0x801C90F0`, which `FUN_80050E74` flushes (`+0x10 |= 8` on each); phase 1
+flushes it (`0x801F6BB8`) before the drop's records go in, retiring phase 0's
+three. `cort_evolved_card_first_menu`, ten vsyncs into the round prompt,
+still holds the drop's three: `0x801F72D0` and `0x801F7320` at `+0x5A = 2`
+with colour words `0xDA000000` / `0xC9000000` - the additive crystal columns
+the frame shows round the boss - and the scroller `0x801F7388` at
+`+0x5A = 4`; it holds no trail part (`0x801F73A4`), and the later
+`cort_evolved_battle_first_menu` holds none of them. Seated from the PROT 0968
+image into the stage scene, the parts take retail's colour words and render
+modes, but nothing in the engine's replay retires them: the trail parts pile
+up through phases 2 and 3, and every part outlives the hand-back into the
+fight, washing the floor violet in a frame where retail's are gone. Until
+whatever retires them is found (their own programs, or a flush of the shared
+table the engine does not model outside the cast modules), the spawns stay
+unstaged.
 
 ### Flow `0x0C` is the boss stage module's baton
 
@@ -1182,3 +1201,17 @@ That is frame lag in the capture, not a different count. The port runs the same
 arithmetic at one unit a tick (`battle_stage_module::arrival_tick`), so its
 arrival hands back after about 2000 ticks where this capture took about 3400
 vsyncs from mode `0x15`.
+
+**The arrival starts after the entry sweep.** The flow byte reaches `0x0C`
+only in state `0x0A`'s `0xB5` arm, and the frame driver calls the battle tick
+only once its entry counter has parked at `0xFF`
+([the entry sweep](battle-stage-camera.md#the-battle-entry-sweep)); until
+then the stage-2 arm has neither its ramp mode nor the module. Through the
+sweep the boss seat stays as the stage loader left it, blanked
+([the entry fade](battle-stage-camera.md#the-battle-entry-fade)).
+`cort_evolved_card_battle_init` (flow `0x00`, counter `0x97`) shows exactly
+that: the sweep's own camera, the bare flesh wall, the party's backs and no
+Cort. The engine's loader is synchronous, so its side-band pass holds the
+arrival while `World::battle_entry_sweeping` reads true; run from the first
+battle frame, the module walked the camera and showed the boss under the
+sweep.
