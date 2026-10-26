@@ -16,7 +16,7 @@ default = ["cli"]
 # `cargo build` still builds every binary; library dependents take this
 # crate through [workspace.dependencies] with default features off, which
 # keeps clap out of library-only builds (the wasm bundle among them).
-cli = ["dep:clap"]
+cli = ["dep:clap", "dep:legaia-prot"]
 # Activates the WebAudio backend for wasm32 targets. Enables a
 # `WebAudioOut` struct (ScriptProcessorNode-based) that mirrors the
 # `AudioOut` cpal API. Must be initialised from a user-gesture handler.
@@ -28,7 +28,8 @@ log.workspace = true
 legaia-xa.workspace = true
 legaia-vab.workspace = true
 legaia-seq.workspace = true
-legaia-prot.workspace = true
+# PROT.DAT / CDNAME reads for the `note-trace` binary only.
+legaia-prot = { workspace = true, optional = true }
 clap = { workspace = true, optional = true }
 
 # The native output stream (`AudioOut`). The browser host plays through

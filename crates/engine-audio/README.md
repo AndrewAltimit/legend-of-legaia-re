@@ -49,8 +49,9 @@ placed next to the real key transitions, **not** off `key_on_mask` - the
 sequencer's voice path keys voices on directly through `Voice`, so a hook on
 the mask API would miss every BGM note.
 
-The `note-trace` binary (behind the default-on `cli` feature) emits a
-track's timeline as canonical JSONL:
+The `note-trace` binary (behind the default-on `cli` feature, which also
+brings in `legaia-prot` for its PROT.DAT / CDNAME reads - the library itself
+never opens the archive) emits a track's timeline as canonical JSONL:
 
 ```bash
 note-trace --extracted extracted --list
