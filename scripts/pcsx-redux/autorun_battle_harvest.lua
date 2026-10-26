@@ -67,7 +67,6 @@ local function rnd(n)
     lcg = (lcg * 1103515245 + 12345) % 2147483648
     return math.floor(lcg / 65536) % n
 end
-local DIAG = { { BTN.UP, BTN.RIGHT }, { BTN.RIGHT, BTN.DOWN }, { BTN.DOWN, BTN.LEFT }, { BTN.LEFT, BTN.UP } }
 local held2 = nil
 local SCENE_SETTLE = probe.getenv_num("LEGAIA_SCENE_SETTLE", 150)
 local LOADED_DEFINE = 0x80084540
@@ -81,6 +80,7 @@ local MONSTER_IDS  = 0x8007bd0c
 
 local BTN = probe.BTN
 local WALK = { BTN.UP, BTN.RIGHT, BTN.DOWN, BTN.LEFT }
+local DIAG = { { BTN.UP, BTN.RIGHT }, { BTN.RIGHT, BTN.DOWN }, { BTN.DOWN, BTN.LEFT }, { BTN.LEFT, BTN.UP } }
 
 local log_lines = {}
 local function logf(fmt, ...)
