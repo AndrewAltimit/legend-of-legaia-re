@@ -208,3 +208,24 @@ fn horn_arm_4_flush_ends_the_held_white() {
     );
     assert_eq!(fades.len(), 1, "arm 4's own fade-out is live");
 }
+
+/// PROT 0918's arms 18 and 19 share their code from `0x801F8698`, and the
+/// wash clear past the phase reload (`lbu v1,0x0(s6)`, `li v0,0x12`, `bne` at
+/// `0x801F878C..0x801F8794`) is arm 19's alone: arm 16's pink wash
+/// (`0x801F835C`, alpha `0x80`) stays up through arm 19 and drops on its
+/// pass (`sb zero,0x27a` at `0x801F8994`).
+#[test]
+fn kemaro_holds_arm_16s_wash_through_arm_19() {
+    let Some(mut w) = band_world() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
+        return;
+    };
+    w.fire_cast_presentation(918, None, None, 16, 17, false);
+    assert_eq!(w.casting.module_pres.wash.colour_a, [0xFF, 0x3F, 0x3F]);
+    for (a, b) in [(17, 18), (18, 18), (18, 19), (19, 19)] {
+        w.fire_cast_presentation(918, None, None, a, b, false);
+        assert_eq!(w.casting.module_pres.wash.alpha, 0x80, "{a} -> {b}");
+    }
+    w.fire_cast_presentation(918, None, None, 19, 20, false);
+    assert_eq!(w.casting.module_pres.wash.alpha, 0);
+}

@@ -3857,6 +3857,13 @@ Where the decoder could not split an arm's sites around a ported countdown
 gate, the gate's `bgtz` VA (`summon_holds::gate_va`) does: a site past it
 fires on the pass alone, as in retail (PROT 0919 arm 7's three fades, which
 otherwise flashed white a countdown early).
+Arms that share their code fork on a reload of the phase byte: PROT 0918's
+arms 18 and 19 both enter at `0x801F8698`, and only arm 19 gets past
+`lbu v1,0x0(s6)` / `li v0,0x12` / `bne` (`0x801F878C..0x801F8794`) to the
+fade kills and the wash clear `sb zero,0x27a` (`0x801F8994`). The walk takes
+such a branch the way the arm's own phase decides it; walked both ways, arm
+18's pass took arm 16's pink wash down a whole arm early and the engine
+drew Kemaro's arm 19 on black.
 
 **The colour wash.** Both cast dispatchers end by calling `FUN_801F2410` when
 `ctx[+0x27A]` (the alpha) is non-zero, so the wash draws on every frame the
