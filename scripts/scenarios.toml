@@ -3542,3 +3542,21 @@ phase = "field"
 expected_game_mode = 0x03
 expected_active_scene = "korb3"
 topics = ["field", "korb3", "scene coverage", "harvest"]
+
+[[scenarios]]
+label = "deene_field_card_walk"
+backup_fingerprint = "8c8cc3498191f034088bf74c46da291bfd51ae8a752fbb173e67337e318ffb1e"
+description = "deene (Mt. Dhini) free field run, player in control. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-endgame-7saves.mcr block 7 (isolate_card_save.py --keep 7 --restamp 0, autorun_boot_continue.lua) into deene, then autorun_battle_harvest.lua with LEGAIA_SCENES=1 (random walk) saved it 151 vsyncs in, once the scene had settled and the player had moved (the walk's first scene)."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "deene"
+topics = ["field", "deene", "scene coverage", "harvest"]
+
+[[scenarios]]
+label = "jou_field_card_walk"
+backup_fingerprint = "60879599cbddc6900a17d654bd7dc3a7bf907c7cdefc827b5c78663aed119d0c"
+description = "jou (Rim Elm (Juggernaut)) free field run, player in control. RETAIL disc, pad only, no pokes: cold boot + memory-card load of gme23958-endgame-full-spells.mcr block 1, the library card's endgame save (isolate_card_save.py --keep 1 --restamp 0, autorun_boot_continue.lua) into jou, then autorun_battle_harvest.lua with LEGAIA_SCENES=1 (random walk) saved it 151 vsyncs in, once the scene had settled and the player had moved (the walk's first scene)."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "jou"
+topics = ["field", "jou", "scene coverage", "harvest"]
