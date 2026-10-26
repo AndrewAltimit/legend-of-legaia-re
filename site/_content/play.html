@@ -94,6 +94,12 @@
 }
 
 .play-canvas-wrap { position: relative; }
+/* `?embed=1` (the minigames page's arena): the picture alone, filling the
+ * frame it is embedded in. */
+body.play-embedded { margin: 0; background: #000; overflow: hidden; }
+body.play-embedded .play-screen { max-width: calc(100vh * 4 / 3); margin: 0 auto; }
+body.play-embedded .play-canvas-wrap { max-width: none; }
+body.play-embedded .play-canvas { border: 0; }
 .play-canvas {
   width: 100%; aspect-ratio: 4 / 3; display: block;
   background: #05070c; border: 1px solid var(--border); outline: none;
@@ -1207,6 +1213,8 @@ div.play-vis-head { cursor: default; }
        * portrait faces + card icons now that WASM + disc bytes are available. */
       renderSavesStrip();
       installXaBanks();
+      /* ?minigame=<sub_id>: open that minigame once the disc is up. */
+      if (minigamePending) startPendingMinigame();
       /* ?resume=<id>: auto-resume a stored session once the disc is up. */
       if (resumePending) {
         const entry = LegaiaSaves.listSessions().find(s => s.id === resumePending);
@@ -1855,6 +1863,53 @@ div.play-vis-head { cursor: default; }
   /* Session id from a `?resume=<id>` link (the strips on pages without a
    * runtime link here). Consumed after the first successful disc load. */
   let resumePending = new URLSearchParams(location.search).get('resume');
+
+  /* `?minigame=<sub_id>[&course=N][&level=L][&embed=1]`: open a minigame
+   * straight off the disc load, through the same door warp the picker
+   * arms - from `koin1`, the casino floor whose doors open them. The
+   * minigames page embeds this for the Muscle Dome, so a dome round there
+   * is the ordinary battle this runtime fights (`World::start_muscle_battle_leg`)
+   * rather than a presentation of its own. `course` makes the koin1 course
+   * menu's pick (`play_mg_choose_muscle_course`); `level` sets the party's
+   * level. `embed=1` shows the game picture alone. */
+  const embedQuery = new URLSearchParams(location.search);
+  let minigamePending = embedQuery.has('minigame') ? {
+    sub: parseInt(embedQuery.get('minigame'), 10),
+    course: embedQuery.has('course') ? parseInt(embedQuery.get('course'), 10) : null,
+    level: embedQuery.has('level') ? parseInt(embedQuery.get('level'), 10) : null,
+  } : null;
+  if (embedQuery.get('embed') === '1') {
+    /* Only the picture: lift the screen out of the page chrome (the shared
+     * layout injects its rail and header around the content). */
+    const lift = () => {
+      const screen = document.getElementById('play-screen');
+      if (!screen) return;
+      document.body.classList.add('play-embedded');
+      if (screen.parentElement !== document.body) document.body.prepend(screen);
+      for (const el of Array.from(document.body.children)) {
+        if (el !== screen && el.tagName !== 'SCRIPT') el.style.display = 'none';
+      }
+    };
+    lift();
+    window.addEventListener('load', lift);
+  }
+  function startPendingMinigame() {
+    const req = minigamePending;
+    minigamePending = null;
+    if (!req || isNaN(req.sub) || !runtime) return;
+    enter('koin1');
+    const rt = runtime;
+    try {
+      if (req.level && typeof rt.cheat_set_party_level === 'function') {
+        rt.cheat_set_party_level(Math.max(1, Math.min(99, req.level)));
+      }
+      if (req.course != null && typeof rt.play_mg_choose_muscle_course === 'function') {
+        rt.play_mg_choose_muscle_course(req.course);
+      }
+      rt.play_mg_debug_warp(req.sub);
+    } catch (e) { console.warn('minigame launch', e); }
+    canvas.focus();
+  }
 
   function saveMsg(msg, isError) {
     saveStatusEl.textContent = msg;

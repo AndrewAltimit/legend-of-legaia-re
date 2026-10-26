@@ -1113,7 +1113,11 @@ Port: `battle_formulas::special_battle_run_forfeit` raises `MinigameState::muscl
 
 Pinned by `engine-scene-host/tests/muscle_dome_battle_leg_disc.rs` (door to battle against the rung on stage 1225, KO back to the hub one rung on; Run settles the contest as given up) and the dome rung of `engine-shell/tests/minigame_replay.rs` (a battle round closes under Cross taps).
 
-The leg session below still carries the contest's bookkeeping across the battle (the hub reads it as "a leg is open"), and it remains the whole leg where no battle can be staged: a monster with no catalog entry, a harness that ticks only the world, and the **minigames page**, which has no `World` to run a battle in. Its selection, play-out and HUD rows are the session's (next paragraphs).
+The leg session below still carries the contest's bookkeeping across the battle (the hub reads it as "a leg is open"), and it remains the whole leg where no battle can be staged: a monster with no catalog entry, a harness that ticks only the world, and the minigames page's free-play panel. Its selection, play-out and HUD rows are the session's (next paragraphs).
+
+**The minigames page runs the contest on the play page's runtime.** The page holds no `World`, so its default host ("in the game's battle") embeds `play.html?minigame=5&course=N&level=L&embed=1`: the play page opens `koin1` off its own disc cache, makes the course menu's pick (`LegaiaRuntime::play_mg_choose_muscle_course`), sets the party level, and arms the same door warp its picker does - so the contest, its hub screens and every leg's ordinary battle are the play host's, frame for frame.
+
+The dome panel stays as the other host and as the only one for a hand-picked foe (free play against any archive monster). The page's level defaults to `1`: the one retail dome capture in the library (`minigame_muscle_dome`) enters with Vahn alone (`DAT_8007BD10 = [1, 0, 0, 0]`) at level 1, and at the old default of 30 a fighter took round 1's 75-HP Red Piura out in one string, before it ever acted. Locked by `web-minigames/tests/muscle_page_battle_host.rs`.
 
 **Entry.** Both play hosts enter through the mode-24 door warp (the `koin1` arena door, or the native window's `M` key, which requests the same warp). The warp opens the contest off the party's unlock flags (`DomeContest::from_overlay`), resolves `(course, round)` through `parse_course_ladder` to a monster id, reads that monster's PROT 867 record for the stat block, and installs the lead's art catalog, magic loadout and the battle-theme swap. The minigames page fills a foe picker from the ladder (`muscle_course_ladder_json`, `muscle_start_vs`) or runs a contest (`muscle_contest_*`). Stand-in fighter / opponent constants survive only as the fallback for a disc whose ladder or archive does not decode.
 
@@ -1177,7 +1181,6 @@ The HUD kernels read the hold as an action frame (`battle_hud::battle_hud_phase`
 - The pennant's 2-px offset above the bar row and the off-class widths, by placement-table read.
 - The review screen's and the Ra-Seru list window's piece decomposition.
 - Whether live `koin1` geometry is ordered over the ringside still in a re-entered hub.
-- **The minigames page's leg is still the session's presentation**, not the battle: the page holds no `World`, so its command flow, play-out and canvas chrome are the dome session's. The plan is to run the page's leg on the browser play page's runtime (`web-play::LegaiaRuntime`, already in the same wasm bundle): warp it into the arena off a synthetic `koin1` door, draw the battle through the play page's battle renderer, and keep the page's own panel for the hub screens and the course picker. Until then the page is the one host where a leg does not look like a normal battle.
 - A retail capture of a leg's battle end (the win pose and the fade back to mode `0x18`), to pin what the port's ordinary victory sequence shows for a special battle.
 
 ## See also

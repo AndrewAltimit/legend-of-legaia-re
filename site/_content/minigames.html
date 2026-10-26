@@ -185,6 +185,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 /* Muscle Dome arena: WebGL battle scene below (player battle-form mesh vs a
  * PROT 867 monster), 2D HUD/text overlay canvas on top - the same layering
  * as the dance and Baka panels. */
+.muscle-battle-frame {
+  display: block; width: 100%; max-width: 960px; margin: 0.9rem auto;
+  aspect-ratio: 4 / 3; border: 1px solid var(--border); border-radius: 4px; background: #000;
+}
+.muscle-battle-frame[hidden] { display: none; }
 .muscle-duel {
   position: relative; width: 100%; max-width: 640px; margin: 0.9rem auto;
   aspect-ratio: 4 / 3; background: #0b0b10;
@@ -683,7 +688,16 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       <section class="mg-panel" data-game="muscle">
         <h3>Muscle Dome &mdash; the arena battle</h3>
         <p class="mg-blurb">
-          Sol Tower's arena. Retail presents it as a <b>standard Legaia battle</b> - the usual
+          Sol Tower's arena. By default the contest runs <b>in the game's battle</b>: the play
+          page's engine opens the arena and fights every round as the ordinary battle retail
+          fights it as - the battle's command ring, the monster's own attacks, its camera and
+          HUD - between the arena's own announcer, INTERVAL and ROUND screens (click the
+          picture to take the controls; Z confirms, and Run on the round prompt gives the contest up).
+          The <b>dome panel</b> below is this page's own presentation of a round, kept for
+          free play against any foe you pick.
+        </p>
+        <p class="mg-blurb" data-muscle-panel>
+          Retail presents it as a <b>standard Legaia battle</b> - the usual
           battle screen, its command chips gated by the battle's own restriction word - and
           so does this panel: the
           black <em>&ldquo;Welcome to the Muscle Dome!&rdquo;</em> intro card, the command
@@ -704,7 +718,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           </select>
           <label for="muscle-level"><strong>at level</strong></label>
           <input type="number" id="muscle-level" class="mg-select" style="min-width: 4.5rem;"
-                 min="1" max="99" value="30">
+                 min="1" max="99" value="1">
           <label for="muscle-course"><strong>on course</strong></label>
           <select id="muscle-course" class="mg-select" style="min-width: 7rem;">
             <option value="0" selected>Beginner</option>
@@ -713,14 +727,27 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           </select>
           <label for="muscle-foe"><strong>or one foe</strong></label>
           <select id="muscle-foe" class="mg-select"></select>
+          <label for="muscle-host"><strong>in</strong></label>
+          <select id="muscle-host" class="mg-select" style="min-width: 9rem;"
+                  title="The game's battle runs the contest on the play page's engine: each round is the ordinary battle retail fights it as. The dome panel is this page's own presentation of a leg, which also takes one foe of your choosing.">
+            <option value="battle" selected>the game's battle</option>
+            <option value="panel">the dome panel</option>
+          </select>
           <button class="mg-btn mg-primary" type="button" id="muscle-restart">New contest</button>
         </div>
+        <!-- The contest as the game fights it: the play page's runtime, opened
+             straight into the arena (play.html ?minigame=5&embed=1). Each round
+             is the ordinary battle - the battle's command ring, the monster's
+             own attacks, its camera and HUD - between the arena's own hub
+             screens, exactly as on the play page and the native window. -->
+        <iframe id="muscle-battle" class="muscle-battle-frame" hidden
+                allow="autoplay; fullscreen" title="Muscle Dome contest"></iframe>
         <div class="muscle-duel" id="muscle-duel">
           <canvas id="muscle-gl" width="640" height="480"></canvas>
           <canvas id="muscle-hud" class="muscle-hud-canvas" width="640" height="480"></canvas>
         </div>
         <div class="mg-verdict" id="muscle-verdict"></div>
-        <p class="mg-controls">
+        <p class="mg-controls" data-muscle-panel>
           <b>Fight until someone drops.</b> A dome round is an ordinary battle with no turn
           limit - <em>HP Left</em> is how much of your <b>opponent</b> is still standing, and
           emptying it is the whole win condition. Between <em>fights</em> the arena's
@@ -728,7 +755,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           <kbd data-pad-key="Cross">Z</kbd> stages the next one. Drag the arena to orbit,
           wheel to zoom.
         </p>
-        <ul class="bullets" style="font-size: 0.86rem;">
+        <ul class="bullets" style="font-size: 0.86rem;" data-muscle-panel>
           <li><kbd data-pad-key="Cross">Z</kbd> skips the intro card, reviews the queue, and
             confirms <b>Begin&nbsp;/&nbsp;Reselect</b> (<kbd>Esc</kbd> backs out).</li>
           <li>In the command menu <kbd>&larr;</kbd> is <b>Attack</b>, <kbd>&rarr;</kbd> is
@@ -745,10 +772,10 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
           <li>A settled turn goes straight back to the command menu - retail has no beat
             between turns.</li>
         </ul>
-        <div class="mg-row">
+        <div class="mg-row" data-muscle-panel>
           <button class="mg-btn mg-primary" type="button" id="muscle-confirm">Fight / Next<span class="mg-key" data-pad-key="Cross">Z</span></button>
         </div>
-        <div class="mg-hud">
+        <div class="mg-hud" data-muscle-panel>
           <span>Round <b id="muscle-round">1</b>/<b id="muscle-length">8</b></span>
           <span>Banked <b id="muscle-tally">0</b></span>
           <span>Coins <b id="muscle-coins">0</b></span>
@@ -1073,6 +1100,10 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       b.classList.toggle('is-active', b.dataset.game === game));
     document.querySelectorAll('.mg-panel').forEach(p =>
       p.classList.toggle('is-active', p.dataset.game === game));
+    /* Leaving the dome tab closes the arena's embedded runtime. */
+    if (game !== 'muscle' && typeof muscleBattleStop === 'function') muscleBattleStop();
+    if (game === 'muscle' && api && typeof muscleHost === 'function'
+        && muscleHost() === 'battle') muscleReset();
     /* Leaving the dance stops its BGM loop. */
     if (game !== 'dance' && typeof danceR !== 'undefined' && danceR) danceR.stopAll();
     /* Leaving the slot machine / duel stops their track (and the slot's
@@ -2442,6 +2473,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         if (!e.repeat) fishPressed |= (b === 'Left') ? 0x8000 : 0x2000;
         fishHold |= (b === 'Left') ? 0x8000 : 0x2000;
       }
+    } else if (active === 'muscle' && muscleHost() === 'battle') {
+      /* The embedded runtime takes its own keys once focused; a key on this
+       * page hands it the focus. */
+      const frame = $('muscle-battle');
+      if (frame && !frame.hidden) { try { frame.focus(); } catch (err) {} }
     } else if (active === 'muscle') {
       /* Retail pad map: D-pad drives the command menu (Left=Attack,
        * Down=Spirit), the Attack sub-menu (Left=Auto, Right=Command) and,
@@ -2902,15 +2938,61 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     const monster = parseInt($('muscle-foe').value, 10) || 0;
     return {
       char: parseInt($('muscle-char').value, 10) || 0,
-      level: Math.max(1, Math.min(99, parseInt($('muscle-level').value, 10) || 30)),
+      level: Math.max(1, Math.min(99, parseInt($('muscle-level').value, 10) || 1)),
       course: parseInt($('muscle-course').value, 10) || 0,
       monster,
       pinMonster: monster > 0,
     };
   }
 
+  /* Which host fights the leg: 'battle' = the play page's runtime in the
+   * #muscle-battle frame, 'panel' = this page's dome session. A foe picked
+   * by hand is free play, which only the panel offers. */
+  function muscleHost() {
+    const el = $('muscle-host');
+    const foe = parseInt($('muscle-foe').value, 10) || 0;
+    return (el && el.value === 'panel') || foe > 0 ? 'panel' : 'battle';
+  }
+  function muscleShowHost(host) {
+    const frame = $('muscle-battle');
+    const panel = host === 'panel';
+    if (frame) frame.hidden = panel;
+    for (const id of ['muscle-duel', 'muscle-verdict']) {
+      const el = $(id);
+      if (el) el.hidden = !panel;
+    }
+    const panelOnly = document.querySelectorAll('[data-muscle-panel]');
+    panelOnly.forEach((el) => { el.hidden = !panel; });
+    if (!panel && MgBgm.playing() === 'muscle') MgBgm.stop();
+  }
+  function muscleBattleStop() {
+    const frame = $('muscle-battle');
+    if (frame && frame.getAttribute('src')) frame.removeAttribute('src');
+  }
+  /* Open the contest in the play page's runtime: the koin1 course menu's
+   * pick and the party level go in the query, and the frame's own disc
+   * cache (the disc this page loaded) boots it. */
+  function muscleBattleStart() {
+    const frame = $('muscle-battle');
+    if (!frame) return;
+    const o = muscleOpts();
+    const q = new URLSearchParams({
+      minigame: '5', course: String(o.course), level: String(o.level), embed: '1',
+    });
+    frame.src = 'play.html?' + q.toString();
+    frame.addEventListener('load', () => { try { frame.focus(); } catch (e) {} }, { once: true });
+  }
+
   function muscleReset() {
     if (!api || !muscleR) return;
+    const host = muscleHost();
+    muscleShowHost(host);
+    if (host === 'battle') {
+      /* Only the on-screen tab runs a second engine. */
+      if (active === 'muscle') muscleBattleStart();
+      return;
+    }
+    muscleBattleStop();
     muscleLastPhase = null;
     muscleLastTurn = -1;
     verdict($('muscle-verdict'), '', '');
@@ -2947,6 +3029,8 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 
   function muscleFrame() {
     if (!api || !muscleR) return;
+    /* The frame's own runtime draws and sounds the battle host. */
+    if (muscleHost() === 'battle') return;
     muscleR.frame();
     /* The battle theme plays only while a leg is fought (the engine's
      * fight-start gate, `legMusic`); the hub's cards and the INTERVAL tally
@@ -3020,7 +3104,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     const restart = $('muscle-restart');
     if (restart) restart.addEventListener('click', () => { if (api) muscleReset(); });
     /* Re-rolling the matchup restarts the contest with the new picks. */
-    for (const id of ['muscle-char', 'muscle-level', 'muscle-foe', 'muscle-course']) {
+    for (const id of ['muscle-char', 'muscle-level', 'muscle-foe', 'muscle-course', 'muscle-host']) {
       const el = $(id);
       if (el) el.addEventListener('change', () => { if (api && muscleR) muscleReset(); });
     }

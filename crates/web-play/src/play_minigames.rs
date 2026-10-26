@@ -569,6 +569,22 @@ impl LegaiaRuntime {
         std::mem::take(&mut self.minigame_ui.vram_restore_pending)
     }
 
+    /// Pick Muscle Dome course `course` (`0` Beginner, `1` Expert, `2`
+    /// Master) the way the `koin1` course menu does, ahead of
+    /// [`Self::play_mg_debug_warp`] (`World::choose_muscle_course`). The
+    /// minigames page's embedded arena passes its course picker through
+    /// this. `false` with no scene host or an out-of-range course.
+    pub fn play_mg_choose_muscle_course(&mut self, course: u32) -> bool {
+        let Some(host) = self.scene_host.host_mut() else {
+            return false;
+        };
+        if course as usize >= legaia_engine_minigames::muscle_dome::COURSE_UNLOCK_FLAGS.len() {
+            return false;
+        }
+        host.world.choose_muscle_course(course as usize);
+        true
+    }
+
     /// Developer / test affordance: arm the mode-24 door warp for `sub_id`
     /// exactly as the field-VM `0x3E` arm does (`3` = slot machine, `4` =
     /// Baka Fighter, `5` = Muscle Dome, `6` = dance, `0` = fishing). The
