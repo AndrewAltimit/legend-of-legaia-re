@@ -1238,7 +1238,9 @@ impl RetailMenu {
         }
         if subscreen == 0 {
             return Err(format!(
-                "title / boot screen on {scene} (sub-screen 0x00); no title seeding path"
+                "title / boot screen on {scene} (sub-screen 0x00, title sub-mode 0x{:02X}); \
+                 not a title screen the seed drives to",
+                game_anchors::u32_at(ram, CARD_SCREEN_SUBMODE)
             ));
         }
         let (row, equip_depth) = match subscreen {
