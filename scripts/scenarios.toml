@@ -3461,3 +3461,48 @@ phase = "battle"
 expected_game_mode = 0x15
 expected_active_scene = "map01"
 topics = ["battle", "enemy cast", "Lippian", "Kiss of Death", "map01", "harvest"]
+
+[[scenarios]]
+label = "battle_chitei2_kemaro_lv2_lava_breath_mid_cast"
+backup_fingerprint = "c195f0d326445226eb721342349ffb8312e97bada69fc3a67eaa8aff564474fa"
+description = "chitei2 battle, formation [0x91, 0x91]: Kemaro Lv2 (seat 3, monster id 145) mid-cast Lava Breath (spell 0x46): category 2, action state 0x2B. RETAIL disc, pad only, no pokes: chitei2_field_card_boot played forward by autorun_battle_harvest.lua (LEGAIA_WALK_LEG=77: walk until an encounter, Spirit for three rounds then Attack), saved 18333 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "chitei2"
+topics = ["battle", "enemy cast", "Kemaro Lv2", "Lava Breath", "chitei2", "harvest"]
+
+[[scenarios]]
+label = "battle_chitei2_kemaro_lv2_strike"
+backup_fingerprint = "94bcb2f40249fd5e2d94228b7ac0cb8b4de28f5034114ee2ea23ab7a242f0ace"
+description = "chitei2 battle, formation [0x91, 0x91]: Kemaro Lv2 (seat 3, monster id 145) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: chitei2_field_card_boot played forward by autorun_battle_harvest.lua (LEGAIA_WALK_LEG=77: walk until an encounter, Spirit for three rounds then Attack), saved 20025 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "chitei2"
+topics = ["battle", "enemy attack", "Kemaro Lv2", "chitei2", "harvest"]
+
+[[scenarios]]
+label = "battle_korb2_mage_void_accessories_mid_cast"
+backup_fingerprint = "7c0ff7c5428930abb590bf1cca6e95138271c8e9f25eefcc7f21c0ad12c7c499"
+description = "korb2 battle, formation [0x72, 0x59]: Mage (seat 4, monster id 89) mid-cast Void Accessories (spell 0x73, module 0955): category 2, action state 0x70. RETAIL disc, pad only, no pokes: korb2_field_card_boot played forward by autorun_battle_harvest.lua (LEGAIA_WALK_LEG=77: walk until an encounter, Spirit for three rounds then Attack), saved 4788 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb2"
+topics = ["battle", "enemy cast", "Mage", "Void Accessories", "korb2", "harvest"]
+
+[[scenarios]]
+label = "battle_korb2_mage_strike"
+backup_fingerprint = "e647732b94c76ff4ae65a8942e706b0baa185a70cee692b48833d68be967dfaf"
+description = "korb2 battle, formation [0x72, 0x59]: Mage (seat 4, monster id 89) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: korb2_field_card_boot played forward by autorun_battle_harvest.lua (LEGAIA_WALK_LEG=77: walk until an encounter, Spirit for three rounds then Attack), saved 2979 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb2"
+topics = ["battle", "enemy attack", "Mage", "korb2", "harvest"]
+
+[[scenarios]]
+label = "battle_korb2_kemaro_strike"
+backup_fingerprint = "29568c682afa9939bb416895964c81c200416c08d199df336633aa620d832ead"
+description = "korb2 battle, formation [0x59, 0x90]: Kemaro (seat 4, monster id 144) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: korb2_field_card_boot played forward by autorun_battle_harvest.lua (LEGAIA_WALK_LEG=77: walk until an encounter, Spirit for three rounds then Attack), saved 13784 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb2"
+topics = ["battle", "enemy attack", "Kemaro", "korb2", "harvest"]
