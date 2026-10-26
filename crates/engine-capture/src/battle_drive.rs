@@ -1235,7 +1235,7 @@ impl BattleDrive {
         }
         if let Some(style) = style
             && ours
-            && (state == want || seat < 3 && (0x0C..=want).contains(&state))
+            && (state == want || (0x0C..=want).contains(&state))
             && !CAPTURE_BAND.contains(&state)
         {
             world.battle_ctx.camera_variant = style;
@@ -1247,8 +1247,7 @@ impl BattleDrive {
         // Pin it through the seed instead
         // (`BattleActionCtx::camera_variant_pin`), for the driven seat only.
         world.battle_ctx.camera_variant_pin = style.filter(|_| {
-            ours && seat < 3
-                && (PRE_SEED_STATES.contains(&state) || state == 0x0C)
+            ours && (PRE_SEED_STATES.contains(&state) || state == 0x0C)
                 && !CAPTURE_BAND.contains(&want)
         });
         if end == SpanGate::Landed {

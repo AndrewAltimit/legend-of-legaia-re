@@ -128,11 +128,18 @@ impl World {
     pub(in crate::world) fn seed_battle_formation_recentre(&mut self, actor: u8) {
         // Capture alignment (`BattleState::capture_reseat`, never in play):
         // the capture's own action seeds on the captured ground, which is the
-        // ground its recentre left.
+        // ground its recentre left, bar the attacker's.
         if let Some((seat, ground)) = self.battle.capture_reseat.clone()
             && seat == actor
         {
+            // The acting seat keeps its own ground: its approach to the
+            // target is the walk whose passes the action's yaw counter
+            // clocks, and the capture's pair is where that walk ended (the
+            // phase's ground snap stands it there).
             for (slot, x, z) in ground {
+                if slot == actor {
+                    continue;
+                }
                 if let Some(a) = self.actors.get_mut(usize::from(slot)) {
                     a.move_state.world_x = x;
                     a.move_state.world_z = z;

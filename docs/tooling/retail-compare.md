@@ -1265,7 +1265,8 @@ The same holds for the round start's squash and recentre (`FUN_801D388C`, `World
 
 A driven capture of a strike also replays rounds its history did not, and every walk and push in them carries the formation further off (`battle_chitei2_gilium_strike`'s drive ran four rounds and stood the party up to `2000` units from its pairs).
 Retail's own action seeded on the ground the capture holds: state `0x0C` recentres the formation so an Attack's target sits on the origin, and the capture's target reads `(0, 0)`.
-So each time the capture's acting seat seeds an action, the engine stands every combatant back on its captured pair (`BattleState::capture_reseat`, armed by `legaia_engine_capture::bar_seeds::arm_capture_reseat` on both sides; `LEGAIA_BATTLE_RESEAT` for the image child), and the action plays from there. The monster strikes then stand within a few units of retail's pairs; their remaining camera gap is the framing itself (pitch `128` against the engine's `0`).
+So each time the capture's acting seat seeds an action, the engine stands every other combatant back on its captured pair (`BattleState::capture_reseat`, armed by `legaia_engine_capture::bar_seeds::arm_capture_reseat` on both sides; `LEGAIA_BATTLE_RESEAT` for the image child), and the action plays from there.
+The attacker keeps its own ground: its approach is the walk the action's yaw counter `ctx[+0x6DA]` clocks (`battle_korb2_medusa_strike` holds `664`, `150` passes past the `0x19` rung), and stood on its strike pair it arrived at once with the counter short by the whole walk. The phase's ground snap stands it on the captured pair.
 
 ### The ground at the phase
 
@@ -4038,6 +4039,14 @@ over and one made after it lands a pass late. The drive sets
 `BattleActionCtx::camera_variant_pin` for its seat across the pre-seed states
 and the seed itself; the seed stores the pin over its roll after the draws
 (the `rand()` stream is unchanged).
+
+A monster's action takes the pin and the stamp on the same terms as a party
+member's. Its strike keeps the seed's roll too - Attack makes no store of its
+own - and the in-fight arm reads bit 1 as the shot's tilt: across the
+26 strike captures retail's pitch is `128` exactly where `ctx[+0xD]` has bit
+1 (`battle_korb2_medusa_strike` `3`, `battle_chitei2_kemaro_lv2_strike` `1`).
+Pinned for party seats alone, every monster strike framed on the replay's
+roll, and half of them stood on the other tilt.
 
 The cases that led here, each a start no word records, and what still
 separates them where an endpoint is off the engine's

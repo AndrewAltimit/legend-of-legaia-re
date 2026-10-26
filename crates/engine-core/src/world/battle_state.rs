@@ -1049,7 +1049,8 @@ pub struct BattleState {
     /// replays rounds the capture's history did not, and every walk and push
     /// in them moves the formation; each time that seat's action seeds
     /// (state `0x0C`, where retail recentred onto the ground the capture
-    /// holds), the combatants stand back on those pairs. Set by
+    /// holds), every other combatant stands back on those pairs; the
+    /// attacker keeps the ground its own walk starts from. Set by
     /// `legaia_engine_capture::bar_seeds::arm_capture_reseat`; never in play.
     pub capture_reseat: Option<CaptureReseat>,
 }
