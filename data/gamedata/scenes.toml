@@ -591,17 +591,15 @@ contributor = "Sol rooms E"
 id = "juui1"
 cdname = 587
 category = "field"
-name = "Bio Castle (F)"
-contributor = "Juggernaut F"
-note = "Inside the Juggernaut: the Rogue Fragment and the Ra-Seru farewell."
+name = "Uru Mais time travel (1)"
+note = "Part of the Uru Mais time-travel sequence, not Bio Castle: entered from conc2 and an uru2 door, its 0x3F warps lead to rugi and noaru. Dialogue on Rogue's Tower and the Ra-Seru."
 
 [[scene]]
 id = "juui2"
 cdname = 596
 category = "field"
-name = "Bio Castle (G)"
-contributor = "Juggernaut G"
-note = "Inside the Juggernaut: the Ra-Seru farewell."
+name = "Uru Mais time travel (2)"
+note = "Part of the Uru Mais time-travel sequence, not Bio Castle: its 0x3F warps lead to uru2 and noaru."
 
 [[scene]]
 id = "deroa"
