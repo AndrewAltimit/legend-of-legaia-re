@@ -104,6 +104,9 @@ impl World {
     /// `0x801D3908`; the `FUN_801D5854(0, 9)` re-frame that follows is the
     /// engine's per-pass far framing)
     pub(in crate::world) fn normalize_battle_formation(&mut self) {
+        if self.battle.seed_recentre_held {
+            return;
+        }
         self.move_battle_pool(|pos, alive| {
             // The camera-focus pair: see the module docs for why it is local.
             let (mut focus_x, mut focus_z) = (0i32, 0i32);

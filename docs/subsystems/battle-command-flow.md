@@ -1095,28 +1095,34 @@ teardown. While a module runs it owns the frame and the camera globals
 (`World::battle_cam_pose` returns its camera to both hosts), and the arrival's
 boss-name banner is drawn by both hosts through
 `battle_hud::battle_stage_banner`. Not staged: the form transition's in-image
-spawn records, the render-node words and the CD-XA stop; the form transition
+spawn records (offset by battle-RNG draws the engine does not carry into the
+record), the render-node words and the CD-XA stop; the form transition
 still draws its battle-RNG values, so the stream stays retail's.
 
-**The arrival's spawn records are not meshless, and they are not staged.**
-Each opens `model_sel = -1`, but its program makes it a draw-kind-4 part. The
-spawn wrapper `FUN_80050ED4` seats a record through `FUN_80021B04` on the boss
+**The arrival's spawn records are not meshless.** Each opens
+`model_sel = -1`, but its program makes it a draw-kind-4 part. The spawn
+wrapper `FUN_80050ED4` seats a record through `FUN_80021B04` on the boss
 seat's `+0x34` / `+0x44` and keeps the handle in a `0x60`-slot table at
 `0x801C90F0`, which `FUN_80050E74` flushes (`+0x10 |= 8` on each); phase 1
 flushes it (`0x801F6BB8`) before the drop's records go in, retiring phase 0's
-three. `cort_evolved_card_first_menu`, ten vsyncs into the round prompt,
-still holds the drop's three: `0x801F72D0` and `0x801F7320` at `+0x5A = 2`
-with colour words `0xDA000000` / `0xC9000000` - the additive crystal columns
-the frame shows round the boss - and the scroller `0x801F7388` at
-`+0x5A = 4`; it holds no trail part (`0x801F73A4`), and the later
-`cort_evolved_battle_first_menu` holds none of them. Seated from the PROT 0968
-image into the stage scene, the parts take retail's colour words and render
-modes, but nothing in the engine's replay retires them: the trail parts pile
-up through phases 2 and 3, and every part outlives the hand-back into the
-fight, washing the floor violet in a frame where retail's are gone. Until
-whatever retires them is found (their own programs, or a flush of the shared
-table the engine does not model outside the cast modules), the spawns stay
-unstaged.
+three. The arm calls the wrapper before its own seat stores, so the drop's
+records stand on the floor the boss is then lifted off.
+
+| Record | Program | Life |
+|---|---|---|
+| `0x801F72D0`, `0x801F7320` (drop) | op `0x13` default-arm node, op `0x0C` colour word `0xDA000000` / `0xC9000000`, op `0x1F`, `WAIT_SET 0x593`, op `0x0D` (`+0x90 = 0x128`), `WAIT_SET 0x6B`, `HALT` | the crystal columns round the boss, fading toward black (`+0x78` by `+0x90 >> 3` a frame) just past the hand-back |
+| `0x801F7388` (drop) | op `0x1E` scroller over `(0x1F8, 0x70, 8, 0x80)`, up 1 a frame, `WAIT_SET 0x5FF`, `HALT` | rolls the columns' texels |
+| `0x801F73A4` (trail, phases 2 / 3) | op `0x13`, op `0x0C`, op `0x1F`, op `0x14`, op `0x0D`, `WAIT_SET 0xFF`, `HALT` | gone before the hand-back |
+
+`cort_evolved_card_first_menu`, ten vsyncs into the round prompt, holds the
+two columns at `y = 0` with `+0x78 = 0x1E1` - the fade just begun - and the
+scroller; the later `cort_evolved_battle_first_menu` holds none of them. The
+scene host installs the PROT 0968 image (`World::install_stage_module_image`),
+and `World::seat_stage_module_spawn` seats the arrival's records from it into
+the stage scene the hand-back's trees join (`CastFxState::stage_fx`), whose
+draw-kind-4 parts both hosts draw (`World::active_effect_kind4_draws`). Each
+retires itself by its own program; the engine's last column halts about a
+hundred ticks past the hand-back.
 
 ### Flow `0x0C` is the boss stage module's baton
 

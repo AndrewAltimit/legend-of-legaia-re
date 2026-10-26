@@ -1261,6 +1261,8 @@ Every action's seed recentres the formation ([`FUN_801EFE44`](../subsystems/batt
 
 A seed that places ground therefore holds the seed recentre for the fight (`BattleState::seed_recentre_held`, raised by `apply_bar_seeds`, so the image child holds it too). The make-way step is a push like any other and stays with the undrift.
 
+The same holds for the round start's squash and recentre (`FUN_801D388C`, `World::normalize_battle_formation`): the capture's round began on it before the actions that left the captured ground, and replayed over that ground it boxes a formation the round's strikes have already pulled out of shape. `cort_evolved_card_pre_doomsday` (Gala's strike on Cort, Cort `425` units up the field) stood every combatant about `(-100, +360)` off its captured pair, which no undrift pass can take back since the shift depends on the shape alone. The held recentre covers both.
+
 ### The ground at the phase
 
 The undrift search gets each combatant within some units of its captured
@@ -1929,6 +1931,18 @@ since retail's battle tick opens no prompt under it, while the engine's prompt
 opens at the flip. So the seed waits the engine's sweep out before it counts
 the first prompt, the in-flight cast seed dispatches only once it is over, and
 the image child's pad drive holds until then.
+
+**The arrival's columns date a prompt capture.** A round-prompt capture of the
+evolved-Cort fight stands somewhere in the life of PROT 0968's crystal columns
+([battle-command-flow](../subsystems/battle-command-flow.md#what-the-two-boss-stage-modules-do-overlays-968--969)),
+which outlive the hand-back by their own program. The fixed settle tick cannot
+place it: `cort_evolved_card_first_menu` holds the first column early in its
+fade, ten vsyncs into the prompt, and `cort_evolved_battle_first_menu` none.
+The seed reads the column's depth-cue level `+0x78` less the display lag's
+ramp (`+0x90 >> 3` a vsync), or that it has gone (`RetailBattle::arrival_cue`),
+and the child takes the frame on the engine's own column at that level, or
+once none is live (`LEGAIA_CAPTURE_ARRIVAL=cue:<level>|gone`,
+`legaia_engine_capture::arrival_gate::ArrivalGate`).
 
 The frame under the sweep is the one two passes older than the RAM, as
 everywhere ([a drive's frame](#a-drives-frame-is-the-one-the-display-showed)),

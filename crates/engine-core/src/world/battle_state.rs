@@ -1032,11 +1032,18 @@ pub struct BattleState {
     /// captured shape lands the fight somewhere retail never stood - a
     /// summon capture whose stager has walked the party forward is thrown
     /// six hundred units back - and no undrift pass can take it back. A
-    /// fight seeded this way skips the seed recentre. Set by
+    /// fight seeded this way skips the seed recentre, and the round start's
+    /// squash + recentre (`World::normalize_battle_formation`) for the same
+    /// reason: the capture's round began on it before its strikes moved
+    /// anyone. Set by
     /// `legaia_engine_capture::bar_seeds::apply_bar_seeds` whenever a seed
     /// places ground; never in play. Reset by
     /// [`crate::world::World::enter_battle`].
     pub seed_recentre_held: bool,
+    /// The boss seat's `+0x34` / `+0x44` as the arrival module's pass found
+    /// them, before its own seat stores - where its spawn records stand
+    /// (`World::seat_stage_module_spawn`).
+    pub(crate) arrival_spawn_anchor: Option<([i16; 3], [i16; 3])>,
 }
 
 /// One frame's tag-`0x67` ribbon source: the `8`-byte seat vector the
@@ -1203,6 +1210,7 @@ impl BattleState {
             entry_serial: 0,
             empty_seat_ground: [(0, 0); 7],
             seed_recentre_held: false,
+            arrival_spawn_anchor: None,
         }
     }
 

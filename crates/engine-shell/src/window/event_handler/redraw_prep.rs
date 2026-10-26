@@ -43,8 +43,10 @@ impl PlayWindowApp {
         // installs the records and re-runs the frame's step over them
         // (`take_field_fog_prims`, `BootSession::seat_field_fog`).
         if let Some(sc) = self.screenshot.as_ref() {
-            let gated =
-                sc.phase_gate.is_some() || sc.script_gate.is_some() || sc.battle_drive.is_some();
+            let gated = sc.phase_gate.is_some()
+                || sc.arrival_gate.is_some()
+                || sc.script_gate.is_some()
+                || sc.battle_drive.is_some();
             let due = if gated {
                 self.capture_phase_met()
             } else {
@@ -219,7 +221,11 @@ impl PlayWindowApp {
         // a menu drive's glide-landed hold (`BattleDrive::reached`) parted
         // from it.
         let capture_frame = self.screenshot.as_ref().is_some_and(|sc| {
-            if sc.battle_drive.is_some() || sc.phase_gate.is_some() || sc.script_gate.is_some() {
+            if sc.battle_drive.is_some()
+                || sc.phase_gate.is_some()
+                || sc.arrival_gate.is_some()
+                || sc.script_gate.is_some()
+            {
                 self.capture_phase_met()
             } else {
                 self.tick_no >= sc.capture_tick

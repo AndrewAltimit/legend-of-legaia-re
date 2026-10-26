@@ -164,6 +164,7 @@
   </ul>
   <p>The evolved-Cort fight is the one battle whose intro leaves the flow byte on <code>0x0C</code>, a value the comparison tree has no arm for. The battle overlay never moves it off: the stage module does, from outside, handing back <code>0x0B</code> when its arrival sequence is done. A port that does not run the module parks there forever.</p>
   <p>The arrival begins only after the entry sweep: the flow byte reaches <code>0x0C</code> in a battle-tick state the frame driver does not run until its sweep is over. Until then the boss stays as the stage loader left it, blanked, and the camera is the sweep's own.</p>
+  <p>The arrival spawns its own effect parts on the boss seat, and they are not meshless: the drop's two crystal columns rise round the boss, still standing as round one opens, and fade toward black on their own program a moment later.</p>
 </section>
 
 <section class="doc-section" id="see-also">

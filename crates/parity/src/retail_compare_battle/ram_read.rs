@@ -758,6 +758,7 @@ impl RetailBattle {
             summon_fade: summon_fade(ram),
             display_lag: display_lag_vsyncs(ram),
             display_phase_lag: displayed_lag_vsyncs(ram),
+            arrival_cue: arrival_columns(ram),
             display_pass_lag: display_pass_steps(ram).iter().map(|&s| u16::from(s)).sum(),
             display_fade_lag: displayed_fade_lag_vsyncs(ram),
             frame_step: frame_step(ram),
@@ -1156,4 +1157,37 @@ fn retail_arts_list(ram: &[u8], ctx: u32) -> Option<(u8, u8)> {
     }
     let row = game_anchors::u8_at(ram, ARTS_LIST_ROW_OFFSET);
     Some((row / 5, game_anchors::u8_at(ram, ARTS_LIST_SLIDE)))
+}
+
+/// The arrival drop's first crystal column (PROT 0968 record `0x801F72D0`).
+const ARRIVAL_COLUMN_RECORD: u32 = 0x801F_72D0;
+/// The evolved Cort's formation head (`0x8007BD0C`).
+const ARRIVAL_FORMATION_HEAD: u8 = 0xB5;
+
+/// The evolved Cort's arrival columns as the displayed frame holds them,
+/// once PROT 0968 has handed the fight back: the drop's column waits out
+/// its program, then ramps its depth cue `+0x78` by `+0x90 >> 3` a vsync
+/// toward black and halts (op `0x0D`, op `0x09 0x6B`, op `0x08`), so its
+/// level dates the frame against the hand-back. `Some(Some(level))` with
+/// the display lag's ramp taken back, `Some(None)` once no column is live,
+/// `None` for any other fight or under the arrival itself.
+pub(super) fn arrival_columns(ram: &[u8]) -> Option<Option<u16>> {
+    if game_anchors::u8_at(ram, FORMATION_CELL) != ARRIVAL_FORMATION_HEAD
+        || game_anchors::u8_at(ram, STAGE_ID) != 0
+    {
+        return None;
+    }
+    let lag = i32::from(display_lag_vsyncs(ram));
+    let column = crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .find(|&n| {
+            game_anchors::u32_at(ram, n + 0x0C) == PART_TICK
+                && game_anchors::u32_at(ram, n + 0x10) & 0x8 == 0
+                && game_anchors::u32_at(ram, n + 0x48) == ARRIVAL_COLUMN_RECORD
+        });
+    Some(column.map(|n| {
+        let level = i32::from(game_anchors::u16_at(ram, n + 0x78));
+        let rate = i32::from(game_anchors::u16_at(ram, n + 0x90)) >> 3;
+        (level - rate * lag).clamp(0, 0x1000) as u16
+    }))
 }

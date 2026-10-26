@@ -537,6 +537,19 @@ pub(super) fn battle_image(
     if let Some(kv) = retail.vram_rects_env(opts.out_dir, &entry.label) {
         env.push(kv);
     }
+    // A prompt capture of the evolved-Cort fight is dated by the arrival's
+    // crystal columns: still up and fading ten vsyncs into the prompt
+    // (`cort_evolved_card_first_menu`), gone later. The child takes the
+    // frame at the same point of the engine's own columns rather than on
+    // the fixed tick ([`RetailBattle::arrival_cue`]).
+    if battle.seed_plan() == crate::retail_compare_battle::SeedPlan::Prompt
+        && let Some(cue) = battle.arrival_cue
+    {
+        env.push((
+            "LEGAIA_CAPTURE_ARRIVAL",
+            cue.map_or_else(|| "gone".to_string(), |c| format!("cue:{c}")),
+        ));
+    }
     // ... and the live mode-3 CLUT cyclers at the displayed frame's phase:
     // the evolved-Cort arena's flesh palette (record `0x80078760` on CLUT
     // `(32, 479)`) swings its hue add through `0x100` about every 130
@@ -704,6 +717,13 @@ pub(super) fn battle_image(
     }
     let mut tick = crate::retail_compare_battle::BATTLE_CAPTURE_TICK
         + u64::from(engine.prompt_tick.unwrap_or(0));
+    // The arrival gate's deadline: the columns live about a hundred ticks
+    // past the hand-back, longer than the fixed settle.
+    if battle.seed_plan() == crate::retail_compare_battle::SeedPlan::Prompt
+        && battle.arrival_cue.is_some()
+    {
+        tick += legaia_engine_capture::arrival_gate::ARRIVAL_GATE_SLACK;
+    }
     if let (Some(seed), Some(gate)) = (battle.inflight_cast(), battle.display_phase_gate()) {
         if engine.inflight == Some(None) {
             report.detail.insert(

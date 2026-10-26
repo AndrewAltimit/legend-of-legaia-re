@@ -240,6 +240,13 @@ impl SceneHost {
         }
         self.world
             .install_cast_effect_pool(std::sync::Arc::new(pool));
+        // The evolved Cort's arrival module, for the in-image records its
+        // phases spawn on the boss seat (`World::install_stage_module_image`).
+        let arrival = legaia_engine_core::world::ARRIVAL_MODULE_PROT;
+        if let Ok(bytes) = self.index.entry_bytes(arrival) {
+            self.world
+                .install_stage_module_image(arrival, std::sync::Arc::from(bytes.as_slice()));
+        }
         // The attack names the summon modules' caption arms print: each
         // player cast's `summon.dat` actor record `rec[0]` string.
         if let Ok(summon_dat) = self.index.entry_bytes(u32::from(

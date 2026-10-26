@@ -204,6 +204,7 @@ impl PlayWindowApp {
         let gated = self.screenshot.as_ref().is_some_and(|sc| {
             sc.path.is_some()
                 && (sc.phase_gate.is_some()
+                    || sc.arrival_gate.is_some()
                     || sc.script_gate.is_some()
                     || sc.battle_drive.is_some())
         });

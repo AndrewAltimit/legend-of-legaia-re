@@ -30,11 +30,12 @@
 //! `ctx[+0x243]` / `ctx[+0x278]`, the cue raises, the fade templates, the boss
 //! name banner, the hand-back to flow state `0x0B` and the battle exit.
 //!
-//! Not staged: the in-image spawn records `FUN_80050ED4` is handed, the
+//! Not staged here: the in-image spawn records `FUN_80050ED4` is handed, the
 //! render-node words (`record[+0x42]`, `+0x72`, `+0x78`) and the CD-XA stop
 //! `FUN_8003ED04(0)`. The records open `model_sel = -1` but are not meshless:
-//! their programs make them draw-kind-4 parts (see
-//! `docs/subsystems/battle-command-flow.md`).
+//! their programs make them draw-kind-4 parts, and the world seats the
+//! arrival's from PROT 0968's own image ([`StageEffect::Spawn`],
+//! [`StageEffect::KillSpawns`]).
 //! The hand-back's backdrop rebind (`ctx[+0x106C]` / `ctx[+0x1070]` slot 0
 //! := slot 1), its two SCUS move-VM effect trees and its `FUN_80058490` rect
 //! push are reported as [`StageEffect::RebindBackdrop`] /
@@ -237,8 +238,13 @@ impl StageCamera {
 pub enum StageEffect {
     /// `FUN_8004FCC8(id)` - a sound cue.
     Cue(u16),
-    /// `FUN_80050ED4(pos, rot, record, 0x1000)` - one in-image spawn record.
+    /// `FUN_80050ED4(pos, rot, record, 0x1000)` - one in-image spawn record:
+    /// `FUN_80021B04` on the boss seat's `+0x34` / `+0x44`, the handle kept
+    /// in the `0x801C90F0` spawn table.
     Spawn { record: u32 },
+    /// `FUN_80050E74` - the spawn table's flush: every part a
+    /// [`StageEffect::Spawn`] seated is retired (`+0x10 |= 8`).
+    KillSpawns,
     /// `FUN_80024E80(&DAT_801C9070)` - a fade.
     Fade(FadeTemplate),
     /// `FUN_801D99BC` - the HUD handle list's hard reset.
@@ -383,6 +389,9 @@ pub fn arrival_tick(st: &mut ArrivalState, v: &mut ArrivalView, step: u8) -> Vec
             if st.countdown > 0 {
                 return out;
             }
+            // `jal 0x80050E74` at `0x801F6BB8`: the spawn table's flush
+            // retires phase 0's three records before the drop's go in.
+            out.push(KillSpawns);
             out.extend(records::ARRIVAL_DROP.map(|record| Spawn { record }));
             out.push(Fade(ARRIVAL_RELEASE));
             v.camera.frame(

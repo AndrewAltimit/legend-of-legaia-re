@@ -235,3 +235,89 @@ fn an_ordinary_formation_never_leaves_stage_zero() {
         }
     }
 }
+
+/// Disc-gated: with PROT 0968's image installed, the arrival seats its
+/// in-image spawn records on the boss seat; the drop's records draw as
+/// draw-kind-4 parts while the module runs (the crystal columns of
+/// `cort_evolved_card_first_menu`), phase 1's flush retires phase 0's three,
+/// and every part retires itself by its own program - the drop's columns
+/// cue toward black about a dozen frames past the hand-back and halt.
+#[test]
+fn the_arrival_seats_its_in_image_records_from_the_module_image() {
+    use legaia_engine_battle::battle_stage_module::records;
+    let Some(dir) = std::env::var_os("LEGAIA_DISC_BIN").and(
+        ["extracted", "../../extracted"]
+            .into_iter()
+            .map(std::path::PathBuf::from)
+            .find(|p| p.join("PROT.DAT").is_file()),
+    ) else {
+        eprintln!("[skip] arrival spawn records: no LEGAIA_DISC_BIN / extracted/");
+        return;
+    };
+    let mut archive =
+        legaia_prot::archive::Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
+    let entry = archive.entries[legaia_engine_core::world::ARRIVAL_MODULE_PROT as usize].clone();
+    let mut bytes = Vec::new();
+    archive
+        .read_entry(&entry, &mut bytes)
+        .expect("read PROT 0968");
+    let mut w = world_before(u16::from(BOSS_TRANSITION_MONSTER_ID));
+    w.install_stage_module_image(
+        legaia_engine_core::world::ARRIVAL_MODULE_PROT,
+        std::sync::Arc::from(bytes.as_slice()),
+    );
+    walk_into_battle(&mut w);
+    let live = |w: &World| -> Vec<(u32, u16)> {
+        w.casting
+            .stage_fx
+            .iter()
+            .flat_map(|s| s.parts.iter())
+            .filter(|p| !p.finished)
+            .filter_map(|p| p.tag.map(|t| (t, p.state.field_78)))
+            .collect()
+    };
+    let (mut saw_entry, mut saw_drop, mut kind4) = (false, false, 0);
+    let mut frames = 0;
+    let step = |w: &mut World| {
+        let _ = w.tick();
+        // The hosts' frame tail: the effect scene graphs' part tick.
+        w.tick_effect_scene_graphs();
+    };
+    while w.battle_stage_id() == 2 {
+        step(&mut w);
+        frames += 1;
+        assert!(frames < 4000, "the arrival never handed the battle back");
+        let l = live(&w);
+        saw_entry |= l.iter().any(|(t, _)| records::ARRIVAL_ENTRY.contains(t));
+        if l.iter().any(|(t, _)| records::ARRIVAL_DROP.contains(t)) {
+            saw_drop = true;
+            assert!(
+                !l.iter().any(|(t, _)| records::ARRIVAL_ENTRY.contains(t)),
+                "phase 1's flush retires phase 0's records"
+            );
+        }
+        kind4 = kind4.max(w.active_effect_kind4_draws().len());
+    }
+    assert!(saw_entry, "phase 0 seats its records");
+    assert!(saw_drop, "phase 1 seats the drop's records");
+    assert!(kind4 > 0, "the drop's records draw as draw-kind-4 parts");
+    let at_hand_back = live(&w);
+    eprintln!("[arrival] live at hand-back: {at_hand_back:x?}");
+    let mut gone = None;
+    for f in 0..600 {
+        step(&mut w);
+        if live(&w).iter().all(|(t, _)| !is_arrival(*t)) {
+            gone = Some(f);
+            break;
+        }
+    }
+    eprintln!("[arrival] every arrival part retired {gone:?} frames past the hand-back");
+    assert!(gone.is_some(), "the arrival's parts retire themselves");
+}
+
+fn is_arrival(t: u32) -> bool {
+    use legaia_engine_battle::battle_stage_module::records;
+    records::ARRIVAL_ENTRY.contains(&t)
+        || records::ARRIVAL_DROP.contains(&t)
+        || t == records::ARRIVAL_TRAIL
+}

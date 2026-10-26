@@ -85,6 +85,11 @@ pub struct DiscTables {
     /// progression tables ([`crate::world::World::install_retail_progression_tables`]);
     /// `None` disc-free.
     pub scus: Option<Arc<[u8]>>,
+    /// The boss-stage module images the side-band pages into slot B (PROT
+    /// 0968, the evolved Cort's arrival), for the in-image move-VM records
+    /// the module spawns ([`crate::world::World::install_stage_module_image`]).
+    /// Empty disc-free, where the spawns stage nothing.
+    pub stage_module_images: std::collections::BTreeMap<u32, Arc<[u8]>>,
     /// The bonus equipment drop's id pool (`World::bonus_drop_pool`), built
     /// once from [`Self::scus`] on first use; `None` until then.
     pub bonus_drop_pool: Option<Vec<u8>>,
@@ -255,6 +260,7 @@ impl DiscTables {
             move_power: None,
             move_power_overlay: None,
             scus: None,
+            stage_module_images: std::collections::BTreeMap::new(),
             summon_attack_names: Default::default(),
             summon_dat: None,
             battle_vdf: None,

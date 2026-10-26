@@ -380,6 +380,11 @@ pub struct RetailBattle {
     /// own phase ([`displayed_lag_vsyncs`]): one pass for a state saved
     /// after the frame-end flip, two otherwise.
     pub display_phase_lag: u16,
+    /// The evolved Cort's arrival columns after the hand-back
+    /// ([`arrival_columns`]): `Some(Some(cue))` while the drop's column
+    /// `0x801F72D0` is still up, its depth-cue level `+0x78` on the displayed
+    /// frame; `Some(None)` once it has gone; `None` outside that fight.
+    pub arrival_cue: Option<Option<u16>>,
     /// Vsyncs the two passes the displayed frame lags by spanned, each on
     /// its own step ([`display_pass_steps`]).
     pub display_pass_lag: u16,

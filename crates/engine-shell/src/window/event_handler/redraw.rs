@@ -36,6 +36,7 @@ impl PlayWindowApp {
         let world = &self.session.host.world;
         self.screenshot.as_ref().is_some_and(|sc| {
             sc.phase_gate.as_ref().is_some_and(|g| g.met(world))
+                || sc.arrival_gate.is_some_and(|g| g.met(world))
                 || sc.script_gate.as_ref().is_some_and(|g| g.met(world))
                 || sc.battle_drive.as_ref().is_some_and(|d| {
                     d.reached(world) && sc.battle_drive_held.get() >= d.hold_ticks()
@@ -225,6 +226,7 @@ impl PlayWindowApp {
             ("summon", w.casting.active_summon.as_ref()),
             ("move_fx", w.casting.active_move_fx.as_ref()),
             ("mystic_shield", w.casting.mystic_shield_fx.as_ref()),
+            ("stage", w.casting.stage_fx.as_ref()),
         ]
         .into_iter()
         .map(|(n, s)| (n, s.into_iter().collect::<Vec<_>>()))

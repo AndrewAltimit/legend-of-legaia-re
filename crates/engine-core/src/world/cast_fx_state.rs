@@ -297,7 +297,11 @@ pub struct CastFxState {
     /// the flesh texel scroller and the CLUT `(32, 479)` hue cycler. Both
     /// programs loop, so like [`Self::mystic_shield_fx`] they have a seat of
     /// their own for the rest of the fight. Seated by
-    /// [`crate::world::World::seat_stage_effect_tree`].
+    /// [`crate::world::World::seat_stage_effect_tree`]; the arrival's own
+    /// in-image spawn records (PROT 0968's crystal columns, scroller and
+    /// trail) seat into it ahead of them and retire by their own programs,
+    /// and its draw-kind-4 parts draw with the other effect scenes'
+    /// (`World::active_effect_kind4_draws`).
     pub stage_fx: Option<legaia_engine_effects::summon::SummonScene>,
     /// The trail / afterimage GP0 texpage word (`0x7700 + id`) for the active
     /// move-FX scene, set by [`crate::world::World::spawn_move_fx`] from the move record's

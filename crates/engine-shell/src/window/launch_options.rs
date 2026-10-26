@@ -169,6 +169,11 @@ pub struct ScreenshotConfig {
     /// at a fixed tick; `capture_tick` becomes the deadline, past which the
     /// run exits without a PNG. Set by the retail-compare image channel.
     pub phase_gate: Option<legaia_engine_capture::phase_gate::PhaseGate>,
+    /// `LEGAIA_CAPTURE_ARRIVAL=cue:<level>|gone`: capture an evolved-Cort
+    /// prompt frame on the arrival columns' life
+    /// ([`legaia_engine_capture::arrival_gate::ArrivalGate`]), with
+    /// `capture_tick` the deadline. Set by the retail-compare image channel.
+    pub arrival_gate: Option<legaia_engine_capture::arrival_gate::ArrivalGate>,
     /// `LEGAIA_BATTLE_ORBIT_YAW=<yaw>`: the battle idle orbit's azimuth the
     /// capture must show, held while the orbit owns yaw
     /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::align_orbit_yaw`]).
@@ -710,6 +715,9 @@ impl ScreenshotConfig {
             hud_countdown: std::env::var("LEGAIA_HUD_COUNTDOWN")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
+            arrival_gate: std::env::var("LEGAIA_CAPTURE_ARRIVAL")
+                .ok()
+                .and_then(|v| legaia_engine_capture::arrival_gate::ArrivalGate::from_env(&v)),
             phase_gate: std::env::var("LEGAIA_CAPTURE_GATE")
                 .ok()
                 .and_then(|v| legaia_engine_capture::phase_gate::PhaseGate::from_env(&v)),

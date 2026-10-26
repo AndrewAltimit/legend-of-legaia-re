@@ -161,6 +161,7 @@ pub use cutscene_elements::{
 pub use rumble_state::WorldRumble;
 mod assets_events;
 mod battle;
+pub use battle::ARRIVAL_MODULE_PROT;
 pub use battle::{
     ABSORB_BANNER_ELEMENT, BATTLE_BODY_NCLIP, BattleActorDrawPlan, BattleFrameClock,
     BattleMessageBanner, COUNTER_MESSAGE_HOLD, COUNTER_MESSAGE_VA, DEFAULT_BATTLE_FRAME_STEP,
