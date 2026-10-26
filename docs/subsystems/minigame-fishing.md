@@ -296,7 +296,7 @@ The water class's second half, `$s4`, is callee-saved and survives from the clas
 | `rand1 % weight` | `0x801D3728` / `0x801D3750` | the water class's contribution |
 | `(*0x801D927C >> 5) + 10` | `0x801D3790` / `0x801D3794` | the line record, scaled, plus a floor |
 | `rand2 % 600` | `0x801D3780..0x801D37DC` (magic-multiply reciprocal) | a class-independent spread |
-| `100 * (rand3 % (counter + 1)) + 50 * (counter + 1)` | `0x801D376C..0x801D380C`, counter from `$s6+0x314` | a session-progress term |
+| `100 * (rand3 % (rod + 1)) + 50 * (rod + 1)` | `0x801D376C..0x801D380C`, `rod` from `$s6+0x314` with `$s6 = 0x80084140` (`0x801D35D4`), i.e. `0x80084454` | the **rod** term: a better rod (index `0..2`) raises both the floor and the spread |
 
 The sum is stored to `DAT_801D91B8` (`sw $a0,-0x6E48($v0)`, `0x801D3814`) - the fight strength the [score](#catch-scoring-and-the-result-plate) reads. `sum + 0x400` goes to `+0x72` of the object the hook just spawned (`addiu $a0,$a0,0x400`, `sh $a0,0x72($s1)` at `0x801D3818` / `0x801D381C`; `$s1` is the return of `jal 0x80024C88` at `0x801D36A8`, also parked at `DAT_801D91D0`) and to `DAT_801D9108`. Actor `+0x72` is the render scale, so a better water cell can produce a visibly larger fish. The weight touches neither the species roll nor the credit.
 
