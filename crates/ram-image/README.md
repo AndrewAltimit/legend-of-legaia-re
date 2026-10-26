@@ -18,6 +18,12 @@ emulator captured it.
 See [`mednafen-automation.md`](../../docs/tooling/mednafen-automation.md) for
 the workflow these serve.
 
+`diff`, `bisect`, `ram_slice` and `prim_pool` take any game's 2 MiB image.
+`game_anchors`, `prim_dispatch`, `source_hunt` and the `extract::ANCHORS`
+strings (the anchor search the PCSX-Redux reader locates main RAM with) are
+Legaia's; see
+[reusing for other PS1 games](../../docs/tooling/reusing-for-other-ps1-games.md#emulator-save-states-legaia-mednafen-legaia-pcsx-redux-legaia-ram-image).
+
 ## Layering
 
 A leaf: `anyhow`, `serde` and `toml` only. The two container readers,

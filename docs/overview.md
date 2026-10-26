@@ -66,6 +66,7 @@ Choose by what you are trying to do:
 | Understand the Rust port's architecture | [`subsystems/engine.md`](subsystems/engine.md) |
 | Measure the port against retail | [`tooling/retail-compare.md`](tooling/retail-compare.md), [`tooling/full-game-ladder.md`](tooling/full-game-ladder.md), [`tooling/host-drift.md`](tooling/host-drift.md) |
 | Reverse a new function in Ghidra | [`tooling/ghidra.md`](tooling/ghidra.md) |
+| Reuse the parsers or the method on another PS1 game | [`tooling/reusing-for-other-ps1-games.md`](tooling/reusing-for-other-ps1-games.md) |
 | Capture a runtime overlay | [`tooling/overlay-capture.md`](tooling/overlay-capture.md) |
 | Look up a key function or RAM address | [`reference/functions.md`](reference/functions.md), [`reference/memory-map.md`](reference/memory-map.md) |
 | Cross-reference another region's build | [`reference/builds.md`](reference/builds.md) |

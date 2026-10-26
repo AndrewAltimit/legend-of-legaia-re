@@ -16,12 +16,18 @@ shapes open; treating the format as "always gzip" silently drops most of the
 capture corpus with `invalid gzip header`.
 
 Either way the reader doesn't need the protobuf schema: it locates the 2 MiB
-main RAM **format-agnostically** by reusing the SCUS anchor search
+main RAM by reusing the SCUS anchor search
 ([`legaia_ram_image::extract::main_ram_via_anchor`]) - matching a string known to
 live in the loaded SCUS region (e.g. `h:\prot\cdname.dat`) in both the SCUS
 binary and the payload to derive the RAM base. (For the captured anchors the RAM
 happens to start at payload offset `0x27`, but the anchor search makes the reader
-robust to that.)
+robust to that.) The search is independent of the state's layout but **not of
+the game**: the anchor strings (`legaia_ram_image::extract::ANCHORS`) are
+Legaia's, and `main_ram_via_anchor_with_scus` swaps the executable they are
+matched in but not the list, so another title's state fails with "no anchor
+found". The GPU snapshot and the scratchpad below are
+found structurally and work for any game
+([reusing for other PS1 games](../../docs/tooling/reusing-for-other-ps1-games.md#emulator-save-states-legaia-mednafen-legaia-pcsx-redux-legaia-ram-image)).
 
 ```rust
 let st = legaia_pcsx_redux::SaveState::from_path(path)?;       // gunzip + anchor search

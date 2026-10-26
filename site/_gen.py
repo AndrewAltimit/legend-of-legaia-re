@@ -747,6 +747,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("tooling/retail-compare.html", "Retail comparison corpus", "tooling/retail-compare", "tooling/retail-compare.html"),
     ("tooling/full-game-ladder.html", "Full-game ladder", "tooling/full-game-ladder", "tooling/full-game-ladder.html"),
     ("tooling/soak-harness.html", "Soak harness", "tooling/soak-harness", "tooling/soak-harness.html"),
+    ("tooling/reusing-for-other-ps1-games.html", "Reusing for other PS1 games", "tooling/reusing-for-other-ps1-games", "tooling/reusing-for-other-ps1-games.html"),
     ("tooling/randomizer.html",    "Randomizer / disc patcher",     "tooling/randomizer",         "tooling/randomizer.html"),
     ("tooling/randomizer-internals.html","Randomizer: internals",   "tooling/randomizer-internals","tooling/randomizer-internals.html"),
     ("tooling/randomizer-delilas.html", "Delilas Challenge and party swap", "tooling/randomizer-delilas", "tooling/randomizer-delilas.html"),

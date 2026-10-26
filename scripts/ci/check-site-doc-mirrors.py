@@ -108,6 +108,8 @@ MIRRORS = [
      "site/_content/tooling/full-game-ladder.html"),
     ("docs/tooling/soak-harness.md",
      "site/_content/tooling/soak-harness.html"),
+    ("docs/tooling/reusing-for-other-ps1-games.md",
+     "site/_content/tooling/reusing-for-other-ps1-games.html"),
     ("docs/tooling/pal-localizations.md",
      "site/_content/tooling/pal-localizations.html"),
     ("docs/tooling/randomizer-delilas.md",

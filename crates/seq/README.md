@@ -13,9 +13,9 @@ with a 13-byte header.
 - CLI (`seq info` / `seq events` / `seq json` / `seq find`) for inspection,
   with `--offset` for SEQ data embedded at a non-zero offset.
 
-## Legaia is not stock PsyQ here
+## Legaia's SEQ against the PsyQ notes
 
-Two deviations bite anyone reading this format against the PsyQ docs:
+Two deviations bite anyone reading this format against the public PsyQ notes:
 
 - The **version field is `u32` big-endian**, not PsyQ's `u16`.
 - Meta events carry **no MIDI variable-length `length` field**: tempo is
@@ -26,6 +26,12 @@ Reading a phantom length byte swallows the first tempo override in the body,
 which leaves playback pinned to the 240 BPM placeholder in the header - roughly
 3x too fast. `ppqn` is 480. Details in
 [`docs/formats/seq.md`](../../docs/formats/seq.md).
+
+Both shapes are what the libsnd SsAPI reader statically linked into
+`SCUS_942.54` consumes, so they are most likely libsnd's on-disc format rather
+than a Legaia invention; no other title's SEQ is tested here. A file with
+SMF-style meta length bytes would misparse, so check one tempo event by hand
+before trusting a parse of another game's music.
 
 Most retail BGM is also **not** a bare SEQ file: it sits inside a
 `scene_vab_stream` entry as `[u32 chunk_header][VAB][chunk1_header][SEQ]`, so

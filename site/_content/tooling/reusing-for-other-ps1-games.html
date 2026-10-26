@@ -1,0 +1,165 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; reusing for other PS1 games</div>
+  <h1>Reusing this repo for other PS1 games</h1>
+  <p class="lede">Most of this project describes one game, but a fair share of it describes the PlayStation itself: the disc's sector layout, Sony's file formats (TIM, VAB, SEQ, XA, STR), the GTE and SPU hardware, emulator save states. This page sorts the crates and scripts by how far they carry to another title, names every Legend of Legaia assumption that would trip a second game, and points at the working method the project runs on, which transfers whole.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>Three classes</h2>
+  <p>The classification is read off each crate's source, not its README.</p>
+  <dl class="kv">
+    <dt>Generic PS1</dt><dd>Works on any PSX disc, or any file of that format.</dd>
+    <dt>Generic, Legaia quirks</dt><dd>Sony's format or hardware, but the code bakes in something Legaia does. Each quirk is named below.</dd>
+    <dt>Legaia-only</dt><dd>Legaia's own containers, data or runtime. A worked example, not a dependency.</dd>
+  </dl>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three bands of crates. Generic PS1: iso, xa, bytes. Generic with Legaia quirks: tim, vab, seq, lzs, mdec, mednafen, pcsx-redux, ram-image, engine-audio, and the gte module of render-kernels. Legaia-only: tmd, container-formats, prot, the format families and the engine crates.">
+      <rect class="dg-node-ok" x="20" y="20" width="840" height="64" rx="4"/>
+      <text class="dg-label" x="440" y="46">Generic PS1</text>
+      <text class="dg-sub" x="440" y="68">iso · xa · bytes</text>
+      <rect class="dg-node-accent" x="20" y="110" width="840" height="84" rx="4"/>
+      <text class="dg-label" x="440" y="136">Generic, with Legaia quirks</text>
+      <text class="dg-sub" x="440" y="158">tim · vab · seq · lzs · mdec</text>
+      <text class="dg-sub" x="440" y="178">mednafen · pcsx-redux · ram-image · engine-audio · render-kernels::gte</text>
+      <rect class="dg-node-warn" x="20" y="220" width="840" height="64" rx="4"/>
+      <text class="dg-label" x="440" y="246">Legaia-only</text>
+      <text class="dg-sub" x="440" y="268">tmd · container-formats · prot · format families · engine-*</text>
+    </svg>
+    <figcaption>The bottom of the crate stack splits three ways. Only the top band can be taken as-is; the middle band works once you know which helper encodes Legaia's behaviour.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="depending" data-doc="depending-on-a-crate">
+  <h2>Depending on a crate</h2>
+  <p>Nothing here is on crates.io. Take a crate as a git dependency and turn off its default <code>cli</code> feature, which adds the command-line binary and its dependencies (for some crates, other Legaia crates):</p>
+  <div class="cli"><code>legaia-tim = { git = "https://github.com/AndrewAltimit/legend-of-legaia-re", default-features = false }</code></div>
+  <p>Every crate is <code>MIT OR Unlicense</code>. The binaries build with <code>cargo build --release -p &lt;crate&gt;</code>. None embeds Sony bytes, and none needs a Legaia disc to run on another game's files unless noted.</p>
+</section>
+
+<section class="doc-section" id="crates" data-doc="the-crates-at-a-glance">
+  <h2>The crates at a glance</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Crate</th><th>Class</th><th>Entry point</th><th>CLI</th></tr></thead>
+    <tbody>
+      <tr><td><code>legaia-iso</code></td><td>Generic</td><td><code>RawDisc::open</code>, <code>iso9660::walk_files</code>, <code>write::patch_file_logical</code></td><td><code>disc-extract</code></td></tr>
+      <tr><td><code>legaia-xa</code></td><td>Generic</td><td><code>demux::demux_raw_sectors</code>, <code>decode</code>, <code>StreamingDecoder</code></td><td><code>xa</code></td></tr>
+      <tr><td><code>legaia-bytes</code></td><td>Generic</td><td><code>u16_le</code> / <code>u32_le</code> returning <code>Option</code></td><td>-</td></tr>
+      <tr><td><code>legaia-tim</code></td><td>Quirks</td><td><code>parse</code>, <code>parse_strict</code>, <code>decode_rgba8</code>, <code>encode::encode_replacement</code></td><td><code>tim</code></td></tr>
+      <tr><td><code>legaia-vab</code></td><td>Quirks</td><td><code>parse</code>, <code>find_vabs</code>, <code>decode_vag</code></td><td><code>vab</code></td></tr>
+      <tr><td><code>legaia-seq</code></td><td>Quirks</td><td><code>Seq::parse</code></td><td><code>seq</code></td></tr>
+      <tr><td><code>legaia-lzs</code></td><td>Quirks</td><td><code>decompress</code>, <code>compress</code></td><td><code>lzs-decode</code></td></tr>
+      <tr><td><code>legaia-mdec</code></td><td>Quirks</td><td><code>str_av::demux_str_av</code>, <code>MdecDecoder</code></td><td><code>mdec</code></td></tr>
+      <tr><td><code>legaia-mednafen</code></td><td>Quirks</td><td><code>SaveState::from_path</code>, <code>gpu::PsxGpu</code>, <code>spu::PsxSpu</code></td><td><code>mednafen-state</code></td></tr>
+      <tr><td><code>legaia-pcsx-redux</code></td><td>Quirks</td><td><code>gpu::PcsxGpu</code>; <code>SaveState</code> needs Legaia anchors</td><td><code>pcsxr-state</code></td></tr>
+      <tr><td><code>legaia-ram-image</code></td><td>Quirks</td><td><code>diff::diff_ram</code>, <code>bisect::bisect_first_bad</code>, <code>prim_pool::decode</code></td><td>-</td></tr>
+      <tr><td><code>legaia-engine-audio</code></td><td>Quirks</td><td><code>spu::Spu</code>, <code>Sequencer::new</code>, <code>vab_bind::VabBank::upload</code></td><td><code>note-trace</code></td></tr>
+      <tr><td><code>legaia-render-kernels</code></td><td>Generic module</td><td><code>gte::Gte</code>, <code>gte::gte_divide</code>, <code>vram_capture</code></td><td>-</td></tr>
+      <tr><td><code>legaia-tmd</code></td><td>Legaia-only</td><td><code>parse</code> (Legaia variant)</td><td><code>tmd</code></td></tr>
+      <tr><td><code>legaia-container-formats</code></td><td>Legaia-only</td><td><code>parse_streaming</code>, <code>pack</code>; <code>tim_scan</code> is generic</td><td>-</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Four more generic modules sit inside Legaia crates: the memory-card walker <code>legaia_save::card</code>, the PPF 3.0 writer and applier <code>legaia_disc_patch::ppf</code>, the R3000 encoders and small simulator <code>legaia_code_hooks::{mips, mips_sim}</code>, and the GameShark and Mednafen <code>.cht</code> parsers in <code>legaia-cheats</code>. For <code>disc-patch</code> and <code>code-hooks</code>, which depend on Legaia format crates, copying the module is lighter than depending on the crate.</p>
+</section>
+
+<section class="doc-section" id="generic" data-doc="generic-ps1-crates">
+  <h2>Generic PS1 crates</h2>
+  <h3><code>legaia-iso</code></h3>
+  <p>A raw Mode 2/2352 <code>.bin</code> (or <code>.cue</code>) reader, an ISO9660 walker that resolves names the way the console does (case-insensitive, <code>;1</code> stripped), and the write side: EDC and P/Q ECC re-encode by the ECMA-130 math, and <code>patch_file_logical</code> to rewrite bytes inside a file. Four things name Legaia:</p>
+  <ul class="bullets">
+    <li><code>extract_prot_dat</code>, <code>extract_cdname_txt</code> and <code>extract_scus</code> are shorthands for Legaia's root files; use <code>read_file_in_image</code> or <code>find_path_in_image</code>.</li>
+    <li><code>disc-extract verify</code> knows only Legaia's image hash; pass <code>--expected</code>.</li>
+    <li><code>relayout::grow_prot_dat</code> grows one file and renumbers every reference after it. Its safety rests on a fact proved for Legaia only - no executable seeks a later file by absolute LBA (<a href="../formats/disc.html#full-iso-relayout">relayout</a>). Check another game's executable first.</li>
+    <li><code>grow_prot_dat_by_name</code> looks up <code>PROT.DAT</code> by name.</li>
+  </ul>
+  <h3><code>legaia-xa</code></h3>
+  <p>CD-XA ADPCM in 4- and 8-bit, mono and stereo, decoded bit-identically to jPSXdec's reference. The one Legaia-shaped helper, <code>demux_disc_all</code>, visits only files named <code>*.XA</code>; for XA interleaved in <code>.STR</code> files or an archive, feed <code>demux_raw_sectors</code> the raw sectors.</p>
+  <h3><code>legaia-bytes</code></h3>
+  <p>Bounds-checked little-endian readers returning <code>Option</code>; no dependencies.</p>
+</section>
+
+<section class="doc-section" id="quirks" data-doc="generic-crates-with-legaia-quirks">
+  <h2>Generic crates with Legaia quirks</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Crate</th><th>The quirk</th><th>What to do on another game</th></tr></thead>
+    <tbody>
+      <tr><td><code>tim</code></td><td><code>Vram::upload_tim</code> lands a CLUT block as a linear run along row <code>fb_y</code> (palette <code>i</code> at <code>fb_x + 16*i</code>), as Legaia's loader does - not the rectangle a stock <code>LoadImage</code> writes.</td><td>Upload CLUTs with <code>Vram::write_block</code> until a capture shows the loader's layout.</td></tr>
+      <tr><td><code>vab</code></td><td>Legaia carries every VAB as two chunks of a stream, with a 4-byte header between the header part and the bodies.</td><td><code>parse</code> on a standalone VAB; concatenate split <code>.VH</code> / <code>.VB</code> files first.</td></tr>
+      <tr><td><code>seq</code></td><td><code>u32</code> big-endian version (15-byte header); meta events with no length byte (<code>FF 51 tt tt tt</code>, <code>FF 2F</code>). Both are what the statically linked libsnd reader consumes, so other libsnd titles most likely match - untested.</td><td>Check one tempo event by hand; SMF-style length bytes would misparse.</td></tr>
+      <tr><td><code>lzs</code></td><td>Common LZSS parameters (4 KB ring, cursor at <code>0xFEE</code>, 18-byte match), but the ring starts zero-filled, not with spaces; no size header; the <code>.lzs</code> container is Legaia's.</td><td>Compare the game's decompressor; magic-check decoded bytes, since junk decodes without error.</td></tr>
+      <tr><td><code>mdec</code></td><td>The decoder is the rare <b>Iki</b> bitstream. A STRv2 frame shares its <code>0x3800</code> word and comes back blank or garbage with no error. The STRv2/v3 path needs a VLC table unpacked from Legaia's STR overlay.</td><td>Reuse the sector parser and A/V demux; check <code>frame[6..8]</code> before decoding.</td></tr>
+      <tr><td><code>mednafen</code></td><td>Library generic; a Legaia string search is only the fallback. The CLI pulls in Legaia crates, and <code>identify</code>, <code>display-list</code>, <code>clut-trace</code>, <code>prim-dispatch-*</code> read Legaia structures.</td><td>Use the library, or <code>extract</code> / <code>diff</code> / <code>bisect</code> / <code>vram-dump</code> / <code>spu</code>.</td></tr>
+      <tr><td><code>pcsx-redux</code></td><td>VRAM and scratchpad are found structurally, but main RAM is found by matching Legaia's executable strings; another game's state fails with "no anchor found".</td><td>Use <code>PcsxGpu</code>; locate RAM by its own anchors or structurally.</td></tr>
+      <tr><td><code>ram-image</code></td><td><code>game_anchors</code>, <code>prim_dispatch</code>, <code>source_hunt</code> and the anchor strings are Legaia's.</td><td><code>diff</code>, <code>bisect</code>, <code>ram_slice</code>, <code>prim_pool</code> take any 2 MiB image.</td></tr>
+      <tr><td><code>engine-audio</code></td><td>The SPU has no pitch modulation, noise or FM (Legaia never enables them); battle-voice, duck and slot modules are Legaia's runtime; <code>legaia-prot</code> is a plain dependency though only <code>note-trace</code> uses it.</td><td><code>spu::Spu</code> plus <code>Sequencer</code> play any libsnd SEQ + VAB pair.</td></tr>
+      <tr><td><code>render-kernels</code></td><td><code>gte</code> is a register-level GTE (every command, FLAG bits, cycle costs, the UNR divide) inside a crate that depends on Legaia's engine.</td><td>Vendor <code>src/gte/</code> without <code>camera_relative.rs</code>.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="doc-section" id="legaia-only" data-doc="legaia-only-crates">
+  <h2>Legaia-only crates</h2>
+  <p><strong><code>legaia-tmd</code> reads Legaia's TMD variant, not Sony's.</strong> <code>parse</code> requires bit 31 of the <code>id</code> word (Legaia's <code>0x80000002</code>) and rejects a stock <code>0x00000041</code> TMD, and the primitive walker reads Legaia's grouped primitives, not stock packets (<a href="../formats/tmd.html">TMD</a>). The object table and vertex layout are shared, so it is a starting point for a stock reader, not one.</p>
+  <p><code>legaia-container-formats</code> is Legaia's container layer (DATA_FIELD streams, the pack format, sound bundles); its <code>tim_scan</code> is generic but brings the crate's dependencies. <code>prot</code>, <code>mes</code>, <code>anm</code>, the format families and every <code>engine-*</code> crate describe Legaia's own data and runtime.</p>
+</section>
+
+<section class="doc-section" id="scripts" data-doc="emulator-automation-scripts">
+  <h2>Emulator automation scripts</h2>
+  <p><strong>PCSX-Redux.</strong> <code>scripts/pcsx-redux/lib/probe/</code> is a Lua library over the emulator's Lua API, and most of it knows nothing about Legaia: RAM reads, breakpoints, pad overrides, save-state loading, the boot / arm / capture / quit driver, instruction tracing and write attribution, watchpoints, CSV output, declarative <code>.probe.toml</code> specs. The Legaia parts are the USA-build fingerprint guard, the battle-state reader, the Ghidra-generated symbol table and the <code>LEGAIA_*</code> variable names. <code>run_probe.sh</code> stages the disc image in a private directory so a <code>.ppf</code> beside it is never applied by accident. See <a href="pcsx-redux-automation.html">PCSX-Redux automation</a>.</p>
+  <p><strong>Mednafen.</strong> <code>run-mednafen.sh</code>, <code>state-diff.py</code> and <code>watchpoint-bisect.py</code> wrap the generic <code>mednafen-state</code> subcommands; the rest of <code>scripts/mednafen/</code> reads Legaia structures. See <a href="mednafen-automation.html">Mednafen automation</a>.</p>
+  <div class="callout callout-trap"><p class="callout-title">Fingerprint before you arm</p><p>A probe with hard-coded addresses, pointed at the wrong build or region, returns a CSV of plausible garbage with no error. Check a few words of always-resident code first, the way the <code>version</code> guard does.</p></div>
+</section>
+
+<section class="doc-section" id="method" data-doc="the-transferable-method">
+  <h2>The transferable method</h2>
+  <p>The parts most worth taking to another game are practices, not crates. Each page below documents one for Legaia; nothing in them depends on Legaia beyond the examples.</p>
+  <div class="card-grid">
+    <a class="card" href="retail-compare.html">
+      <div class="card-title">Measure against retail RAM and VRAM</div>
+      <div class="card-body">Seed the reimplementation from each retail save state, score every channel against the state's own RAM and displayed VRAM, and ratchet the scores. The save state is the oracle; no emulator runs.</div>
+    </a>
+    <a class="card" href="../reference/re-settled-threads.html#grades">
+      <div class="card-title">Grade every claim by its evidence</div>
+      <div class="card-body"><code>disassembly</code>, <code>capture</code>, <code>decompiled-C</code> or <code>inference</code>. The <code>decompiled-C</code> grade is a re-audit worklist: a claim nobody has confirmed against instructions.</div>
+    </a>
+    <a class="card" href="../reference/re-do-not-re-walk.html">
+      <div class="card-title">Keep the falsified readings</div>
+      <div class="card-body">Plausible readings of the bytes that turned out wrong, with the reasoning intact, so the next person does not re-derive them.</div>
+    </a>
+    <a class="card" href="disc-coverage.html">
+      <div class="card-title">Take the denominator from the disc</div>
+      <div class="card-body">Coverage of each code image's bytes, and per-entry <a href="byte-accounting.html">byte accounting</a>, so an unwalked format is a run at the top of a list. <a href="address-reference-scan.html">Reference scans</a> turn "no caller found" into "no reference exists".</div>
+    </a>
+    <a class="card" href="determinism-replay.html">
+      <div class="card-title">Make runs reproducible</div>
+      <div class="card-body">A text pad script replays to bit-identical state traces; the <a href="soak-harness.html">soak harness</a> generates such scripts from seeded random play and reduces each finding.</div>
+    </a>
+    <a class="card" href="ghidra.html#decompiler-artifacts">
+      <div class="card-title">Do not trust the decompiler's C</div>
+      <div class="card-body">Labels printed as calls, dropped register arguments, reordered stores, wrong load bases: the ways Ghidra's C has put false claims into these docs. MIPS- and Ghidra-specific, not game-specific.</div>
+    </a>
+  </div>
+  <h3>Traps any PS1 project meets</h3>
+  <ul class="bullets">
+    <li>A save state replays the RAM of the disc that booted it: a state loaded onto a patched image still runs the old code. Verify disc edits from a cold boot or a memory-card load.</li>
+    <li>PCSX-Redux silently applies a <code>.ppf</code> sitting beside the image (<a href="pcsx-redux-automation.html#patched-disc-taint">patched-disc taint</a>).</li>
+    <li>Ghidra does not resolve MIPS <code>lui</code> / <code>addiu</code> pairs as references, so xref queries miss heavily used globals.</li>
+    <li>"No static caller in the executable" means "look in the overlays", not "dead code" (<a href="overlay-capture.html">overlay capture</a>).</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="-">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/reusing-for-other-ps1-games.md" target="_blank" rel="noopener">This page's source, with per-crate detail</a>
+    <a href="../formats/index.html">Format specs</a>
+    <a href="../crates.html">Crate map</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/ratchet-integrity.md" target="_blank" rel="noopener">Ratchet integrity</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/call-target-integrity.md" target="_blank" rel="noopener">Call-target integrity</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/shell-observer-traps.md" target="_blank" rel="noopener">Shell observer traps</a>
+  </div>
+</section>

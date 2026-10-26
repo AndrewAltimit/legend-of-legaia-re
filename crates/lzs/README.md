@@ -38,6 +38,16 @@ The algorithm is a sliding-window LZSS variant:
   in-place same-size edit possible. See the
   [randomizer / disc patcher](../../docs/tooling/randomizer.md).
 
+### Against other games' LZSS
+
+The parameters are the common LZSS family's (4096-byte ring, 18-byte maximum
+match, threshold 2, cursor at `0xFEE`), so many PSX titles' compressors are
+close relatives. Three things are Legaia's: the ring starts **zero-filled**
+(the textbook decoder pre-fills spaces, `0x20`), there is no size header or end
+marker, and the `.lzs` container layout is this game's. Check a target's
+decompressor against all three before reusing the crate
+([reusing for other PS1 games](../../docs/tooling/reusing-for-other-ps1-games.md#legaia-lzs)).
+
 ### Why "decompresses without error" is not a validity signal
 
 The 4096-byte ring buffer initialises to zeros, so most random byte streams

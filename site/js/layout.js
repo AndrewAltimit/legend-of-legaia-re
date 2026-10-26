@@ -305,6 +305,8 @@ const NAV = [
       { href: 'tooling/retail-compare.html', text: 'Retail comparison corpus', key: 'tooling/retail-compare' },
       { href: 'tooling/full-game-ladder.html', text: 'Full-game ladder', key: 'tooling/full-game-ladder' },
       { href: 'tooling/soak-harness.html', text: 'Soak harness', key: 'tooling/soak-harness' },
+      { heading: 'Beyond Legaia' },
+      { href: 'tooling/reusing-for-other-ps1-games.html', text: 'Reusing for other PS1 games', key: 'tooling/reusing-for-other-ps1-games' },
     ],
   },
   {
