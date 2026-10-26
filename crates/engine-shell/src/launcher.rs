@@ -554,8 +554,7 @@ impl OptionRow {
             }
             Self::WindowSize => {
                 "The game window's size when not fullscreen, in steps of the \
-                 PlayStation's 320x240 picture. The game still draws at any size you \
-                 drag the window to."
+                 PlayStation's 320x240 picture. Dragging its edge still resizes it."
             }
             Self::EnhancedLighting => {
                 "A time-of-day mood, real light at lamps and glowing props. Off draws the \
@@ -573,8 +572,8 @@ impl OptionRow {
             Self::GroundFog => "A low drifting mist in misty and night scenes. In game: F9.",
             Self::Bloom => "Bright lights and lit windows glow softly. In game: F10.",
             Self::PsxRender => {
-                "The PlayStation's wobbling vertices and colour dithering, for a CRT-era \
-                 look. Off gives clean modern edges."
+                "The PlayStation's own 320x240 picture, magnified, with its wobbling \
+                 vertices and colour dithering. Off draws clean edges at the window's size."
             }
             Self::CameraDistance => {
                 "How far the field camera sits behind your character. Retail is the \
@@ -592,8 +591,7 @@ impl OptionRow {
             Self::SfxVolume => "Sound effect level, 0 to 10; 8 is the original mix.",
             Self::MonoDownmix => {
                 "Mix everything, voices and movies included, down to one channel for \
-                 single-speaker setups. The in-game Monaural setting is the original's own \
-                 mono mode."
+                 a single speaker. In-game Monaural is the original's own mono mode."
             }
             Self::EntryPulse => {
                 "Keeps the living-flesh ground of a few scenes rolling, which the original \
@@ -760,6 +758,72 @@ impl OptionRow {
             Self::RetailTileCrop => on_off(opts.retail_view_window),
             Self::RetailObjectWindow => on_off(opts.retail_static_window),
             Self::Retail => on_off(s.switches.retail),
+        }
+    }
+
+    /// The row's value on a first start: the game's own option default, or
+    /// the launch switch's, as [`Self::value`] shows it.
+    pub fn default_value(self) -> String {
+        self.value(
+            &legaia_engine_menus::options::OptionsState::default(),
+            &LauncherSettings::default(),
+        )
+    }
+
+    /// Whether the row shows its first-start value.
+    pub fn is_default(
+        self,
+        opts: &legaia_engine_menus::options::OptionsState,
+        s: &LauncherSettings,
+    ) -> bool {
+        self.value(opts, s) == self.default_value()
+    }
+
+    /// Put the row back on its first-start value, leaving every other row
+    /// as it is.
+    pub fn reset(
+        self,
+        opts: &mut legaia_engine_menus::options::OptionsState,
+        s: &mut LauncherSettings,
+    ) {
+        let o = legaia_engine_menus::options::OptionsState::default();
+        let d = PersistedSwitches::default();
+        let w = &mut s.switches;
+        match self {
+            Self::Fullscreen => opts.fullscreen = o.fullscreen,
+            Self::WindowSize => opts.window_scale = o.window_scale,
+            Self::EnhancedLighting => opts.enhanced_lighting = o.enhanced_lighting,
+            Self::TimeOfDay => opts.lighting_time_of_day = o.lighting_time_of_day,
+            Self::LampShadows => opts.light_shadows = o.light_shadows,
+            Self::SeeThroughWalls => opts.occlusion_fade = o.occlusion_fade,
+            Self::GroundFog => opts.volumetric_fog = o.volumetric_fog,
+            Self::Bloom => opts.bloom = o.bloom,
+            Self::PsxRender => w.psx_render = d.psx_render,
+            Self::CameraDistance => opts.camera_distance = o.camera_distance,
+            Self::PreciseMovement => opts.precise_movement = o.precise_movement,
+            Self::ReduceFlashing => opts.reduce_flashing = o.reduce_flashing,
+            Self::MasterVolume => opts.master_volume = o.master_volume,
+            Self::MusicVolume => opts.bgm_volume = o.bgm_volume,
+            Self::SfxVolume => opts.sfx_volume = o.sfx_volume,
+            Self::MonoDownmix => opts.downmix_mono = o.downmix_mono,
+            Self::EntryPulse => w.no_entry_pulse = d.no_entry_pulse,
+            Self::SmartMonsters => w.smart_monsters = d.smart_monsters,
+            Self::ShinySeru => w.no_shiny_seru = d.no_shiny_seru,
+            Self::FleeExp => w.flee_exp = d.flee_exp,
+            Self::ExpRate => w.exp_rate_permille = d.exp_rate_permille,
+            Self::FortressFix => w.no_fortress_encounter_fix = d.no_fortress_encounter_fix,
+            Self::JewelFix => w.jewel_fix = d.jewel_fix,
+            Self::HpReadoutGuard => w.no_hp_readout_guard = d.no_hp_readout_guard,
+            Self::BonusDrop => w.equipment_drops = d.equipment_drops,
+            Self::SaveAnywhere => w.save_anywhere = d.save_anywhere,
+            Self::SpiritAp => w.spirit_ap = d.spirit_ap,
+            Self::DamageAp => w.damage_ap = d.damage_ap,
+            Self::SeruCatchRate => w.seru_catch_pct = d.seru_catch_pct,
+            Self::EnemyAttacks => w.enemy_attack_permille = d.enemy_attack_permille,
+            Self::EnemyStats => w.enemy_stat_permille = d.enemy_stat_permille,
+            Self::RetailTileCrop => opts.retail_view_window = o.retail_view_window,
+            Self::RetailObjectWindow => opts.retail_static_window = o.retail_static_window,
+            Self::Retail => w.retail = d.retail,
         }
     }
 
@@ -1285,6 +1349,43 @@ mod tests {
                     row.label()
                 );
             }
+        }
+    }
+
+    /// `Delete` on a row: every row, moved off its first-start value, comes
+    /// back to it, and resetting one row leaves the others alone.
+    #[test]
+    fn every_row_resets_to_its_default_alone() {
+        use legaia_engine_menus::options::OptionsState;
+        for (_, row) in OPTION_ROWS {
+            let mut o = OptionsState::default();
+            let mut s = LauncherSettings::default();
+            assert!(row.is_default(&o, &s), "{}", row.label());
+            row.adjust(&mut o, &mut s, 1);
+            if row.is_default(&o, &s) {
+                // A volume already at its top clamps: step it down instead.
+                row.adjust(&mut o, &mut s, -1);
+            }
+            assert!(
+                !row.is_default(&o, &s),
+                "{}: one step moves it",
+                row.label()
+            );
+            // Another row moved too: the reset must not touch it.
+            let other = if row == OptionRow::Bloom {
+                OptionRow::GroundFog
+            } else {
+                OptionRow::Bloom
+            };
+            other.adjust(&mut o, &mut s, 1);
+            row.reset(&mut o, &mut s);
+            assert!(row.is_default(&o, &s), "{}: reset", row.label());
+            assert!(
+                !other.is_default(&o, &s),
+                "{}: reset {}",
+                row.label(),
+                other.label()
+            );
         }
     }
 

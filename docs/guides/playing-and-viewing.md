@@ -56,6 +56,7 @@ lettered in the game's own dialog font, read from that disc.
 | Left / Right on an option | change it (a switch flips, a list steps, a volume moves by one) |
 | Enter, Space, click | press the focused button, or step an option forward |
 | Right-click an option | step it back |
+| Delete (Backspace with nothing typed), middle-click an option | put it back on its default |
 | Ctrl+O | open the file dialog |
 | typing | enter a disc path (Enter uses it, Esc clears it) |
 | Esc | leave the controls page, or quit |
@@ -137,6 +138,10 @@ view is, the mouse wheel scrolls it, and `Page Up` / `Page Down` / `Home` /
 | Original game | Original ground culling (`retail_view_window`) | `legaia-options.toml` | - | on |
 | Original game | Original prop culling (`retail_static_window`) | `legaia-options.toml` | - | on |
 | Original game | Original game only (`--retail`) | `launcher.toml` | - | off |
+
+A row moved off its first-start value carries a small gold dot before its
+value, and the help box under the buttons names the default (*Default: Off
+(Delete)*), so a changed setting is visible without opening a file.
 
 The rows stored in `legaia-options.toml` are the game's own options: the
 launcher writes the same file the in-game keys change, so a toggle made in
@@ -257,9 +262,10 @@ In the native window each press shows the toggle's new state at the bottom
 left for a moment (*Ground fog: off*); holding a key toggles once, not
 repeatedly. A key that only acts while you walk
 around (`F3`, `T`, `R`) says so when pressed on the title screen or in a menu.
-`F12` (or `?`) opens a panel listing every toggle key with its current state,
-and under it the key each pad button is on (Cross, Circle, Start, ...), read
-from the live Key Config table; press it again to close it. A player's window says so for its first few
+`F12` (or `?`) opens a panel listing every toggle key with its current state
+(`F11` fullscreen among them), under it the key each pad button is on (Cross,
+Circle, Start, ...), read from the live Key Config table, and the mouse's
+camera controls; press it again to close it. A player's window says so for its first few
 seconds (*F12 or ? lists the keys*, bottom left) until the panel is opened. A
 `--screenshot` capture leaves that line, the toggle notices and the quit
 prompt out, so it shows only what the game draws; `--screenshot-chrome` keeps
