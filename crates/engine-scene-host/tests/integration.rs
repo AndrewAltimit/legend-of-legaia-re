@@ -135,6 +135,7 @@ mod prize_exchange_disc;
 mod prop_ride_player_walk_disc;
 mod prop_run_npc_walk_disc;
 mod raseru_cross_out_atlas_disc;
+mod rayman_bridge_collapse_disc;
 mod region_battle_setup_disc;
 mod region_encounter_disc;
 mod rim_elm_ambush_disc;

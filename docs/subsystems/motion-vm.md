@@ -158,7 +158,9 @@ placement context, not only the ones it tracks a live position for (the
 talk NPCs and whatever a script has moved): `rayman`'s plank bridges
 (`P1[70..=83]`, `31 1D` + `4C 42 40 01`) never move, and outside the pass
 they fell to the floor sample 64 units above the ledges they span instead of
-the `-320` their prologue holds. The cull is ported too
+the `-320` their prologue holds. The collapse beat (`P2[7]`) then tweens their `+0x8E`
+down to `-768`, and the same arm drops them into the chasm
+([`4C 42`](script-vm-menuctrl.md#0x4c-nibble-4---immediate-or-ramp-cluster)). The cull is ported too
 (`World::field_npc_culled`, `field_actor_culled` in
 `engine-core::world::field_npc_cull`): the glide runs behind it over the
 camera view the hosts publish, so an off-window glider keeps the Y it had, and

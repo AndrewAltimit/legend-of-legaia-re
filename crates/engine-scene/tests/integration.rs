@@ -35,6 +35,7 @@ mod field_view_window_disc;
 mod fog_ground_disc;
 mod goods_candidates_disc;
 mod growth_curve_disc;
+mod height_tween_target_census_disc;
 mod item_effect_flags_disc;
 mod man_midvisit_rearrangement_disc;
 mod man_variant_carrier_census_disc;

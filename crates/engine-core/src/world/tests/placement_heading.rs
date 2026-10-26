@@ -103,3 +103,57 @@ fn op_43_07_ramps_the_face_deformation_into_the_draw_pose() {
     assert_eq!(w.npcs.faces[&4], (0, 0));
     assert!(w.field_npc_shatter(4).is_none(), "43 08: whole again");
 }
+
+/// Op `4C 42 <value> <ticks>` on a placement (`rayman` `P2[7]`'s
+/// `CC 54 42 00 FD F0 00`, a bridge plank): the tween lands in the
+/// placement context's `+0x8E` on retail's ramp law
+/// (`end + (start - end) * remaining / total`, `FUN_80036D80`), and the
+/// height arm mirrors it into the drawn Y - the plank falls, it does not
+/// hold at the ledge.
+#[test]
+fn a_ramped_height_write_drops_a_held_height_placement() {
+    let mut w = world_with_placement();
+    let mut c = legaia_engine_field::field_channels::FieldChannel {
+        placement_index: 4,
+        ctx: FieldCtx {
+            script_id: 0x1E,
+            flags: 0x2000_0000,
+            field_8e: 320,
+            world_x: 6 * 128 + 64,
+            world_z: 2 * 128 + 64,
+            ..Default::default()
+        },
+        record_offset: 0,
+        pc: 0,
+        done: false,
+        object_bind: false,
+    };
+    let mut host = FieldHostImpl { world: &mut w };
+    // 320 -> -768 over 240 frames.
+    let r = field_step_routed(
+        &mut host,
+        &mut c.ctx,
+        &[0x4C, 0x42, 0x00, 0xFD, 0xF0, 0x00],
+        0,
+    );
+    assert!(matches!(r, FieldStepResult::Advance { next_pc: 6 }));
+    assert_eq!(c.ctx.field_8e, 320, "the ramp arm writes nothing at once");
+    w.field_vm.channels.push(c);
+    w.move_vm.ramp_ratio = 1;
+    let y = |w: &World| w.field_npc_render_y(4, 6 * 128 + 64, 2 * 128 + 64);
+    w.tick_field_npc_heights();
+    assert_eq!(y(&w), -320);
+    for _ in 0..120 {
+        w.tick_npc_heading_ramps();
+    }
+    w.tick_field_npc_heights();
+    // Halfway: -768 + (320 + 768) * 120 / 240 = -224.
+    assert_eq!(w.field_vm.channels[0].ctx.field_8e, -224);
+    assert_eq!(y(&w), 224);
+    for _ in 0..120 {
+        w.tick_npc_heading_ramps();
+    }
+    w.tick_field_npc_heights();
+    assert_eq!(y(&w), 768);
+    assert_eq!(w.npcs.height_ramps.active(), 0);
+}

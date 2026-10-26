@@ -51,6 +51,10 @@ pub const RAMP_DEST_PITCH: u32 = 0x24;
 /// `0x16`'s destination - `actor+0x28`, the Z Euler angle.
 pub const RAMP_DEST_ROLL: u32 = 0x28;
 
+/// The field VM's `4C 42` tween destination - `actor+0x8E`, the height slot
+/// the actor tick's `0x20000000` law mirrors into Y.
+pub const RAMP_DEST_HEIGHT: u32 = 0x8E;
+
 /// `0x14`'s destination - `actor+0x72`, the uniform render scale.
 pub const RAMP_DEST_SCALE: u32 = 0x72;
 

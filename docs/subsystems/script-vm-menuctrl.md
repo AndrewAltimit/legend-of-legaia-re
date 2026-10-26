@@ -1080,6 +1080,25 @@ raises the bit and parks at `540` in its prologue (`31 1D`,
 in `World::tick_field_npc_heights` from their context's flag word and `+0x8E`,
 which both play hosts read through `World::field_npc_render_y`.
 
+The ramp lands on whichever actor the op resolved: the arm passes
+`a1 = &s5+0x8E`, the live `lh +0x8E` as the start and kind 2
+(`0x801E1214..0x801E1230`), with `s5` the prefix-resolved target, so a
+placement's slot tweens as readily as an object's. `rayman`'s bridge collapse
+(`P2[7]`) is the case that shows: the fourteen planks (`P1[70..=83]`) hold
+`+0x8E = 320` from their prologue, the beat snaps `0x53` to `-768`
+(`CC 53 42 00 FD 00 00`) and tweens `0x54..=0x57` to `-768` over 240 / 260
+frames while a `4C 45` look turn tips each one over, so the planks fall from
+`Y = -320` to `+768` as they turn. The
+[field-op census](../tooling/field-op-census.md) shape of the question - whose
+`+0x8E` a tweened `4C 42` moves - is pinned by
+`crates/engine-scene/tests/height_tween_target_census_disc.rs`: placements are
+the commonest target, ahead of the player and placed objects. The port keeps a
+placement's tweens in `World::npcs.height_ramps` (installed by the host's
+`ramp_ctx_slot`, stepped on the scheduler law by
+`World::tick_npc_heading_ramps` into the context's `field_8e`); the height arm
+then carries the slot into Y on both hosts. The player's sub-2 tween is not
+carried yet.
+
 #### `4C 45`: the 11-byte form
 
 `[4C, 0x45, b1, w94_lo, w94_hi, w96_lo, w96_hi, w98_lo, w98_hi, ticks_lo, ticks_hi]`.

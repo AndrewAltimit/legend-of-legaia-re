@@ -379,6 +379,10 @@ impl World {
     /// One frame of the `4C 48` heading tweens: each lands the scheduler's
     /// retail-space value in the placement's heading (engine space,
     /// `+ 0x800`), raw, as the scheduler's `sh` does.
+    ///
+    /// The `4C 42` height tweens land the same way in the placement
+    /// context's `+0x8E`; the height arm turns the slot into Y on the next
+    /// actor tick.
     pub(crate) fn tick_npc_heading_ramps(&mut self) {
         let speed = self.move_vm.ramp_ratio.max(1);
         if self.npcs.face_ramps.active() != 0 {
@@ -388,6 +392,19 @@ impl World {
                 {
                     // `kind 2`: an `sh` of the low half.
                     face.1 = w.value as i16;
+                }
+            }
+        }
+        if self.npcs.height_ramps.active() != 0 {
+            for w in self.npcs.height_ramps.tick(speed) {
+                if let Some(c) = self
+                    .field_vm
+                    .channels
+                    .iter_mut()
+                    .find(|c| !c.object_bind && c.placement_index == w.owner as usize)
+                {
+                    // `kind 2`: an `sh` into `+0x8E`.
+                    c.ctx.field_8e = w.value as i16;
                 }
             }
         }

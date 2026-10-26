@@ -125,14 +125,31 @@ impl FieldHostImpl<'_> {
             }
             return;
         }
-        // Sub-2 on a placed object's actor: the `+0x8E` tween the actor
-        // tick's `0x20000000` height law turns into its Y (`chitei2`'s
-        // falling boulder). See `world::object_actor_height`.
-        if sub == 2
-            && let Some(record) = self.world.field_vm.executing_object
-        {
-            self.world
-                .schedule_object_slot_ramp(record, ctx.field_8e, target, ticks);
+        // Sub-2: the `+0x8E` tween the actor tick's `0x20000000` height law
+        // turns into Y. Retail schedules it on whichever actor the op
+        // resolved (`0x801E1214..0x801E1230`: `a1 = &s5+0x8E`, start
+        // `lh +0x8E`, kind 2), so a placed object's actor (`chitei2`'s
+        // falling boulder, `world::object_actor_height`) and a placement's
+        // (`rayman`'s bridge planks, `P2[7]`'s `CC 54 42 00 FD F0 00`) both
+        // move.
+        if sub == 2 {
+            if let Some(record) = self.world.field_vm.executing_object {
+                self.world
+                    .schedule_object_slot_ramp(record, ctx.field_8e, target, ticks);
+            } else if let Some(HeadingOwner::Placement(slot)) = self.world.heading_owner(ctx) {
+                use legaia_engine_motion_vm::ambient_motion::{RAMP_DEST_HEIGHT, Ramp, RampKind};
+                let total = i32::from(ticks);
+                self.world.npcs.height_ramps.free_owner(u32::from(slot));
+                self.world.npcs.height_ramps.install(Ramp {
+                    dest: RAMP_DEST_HEIGHT,
+                    owner: u32::from(slot),
+                    start: i32::from(ctx.field_8e),
+                    end: i32::from(target),
+                    total,
+                    remaining: total,
+                    kind: RampKind::U16,
+                });
+            }
             return;
         }
         if sub != 0
