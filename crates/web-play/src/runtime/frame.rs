@@ -230,6 +230,14 @@ impl LegaiaRuntime {
         // the shared frame-tail kernel the native window's
         // `apply_world_clut_fx` calls; the page presents one framebuffer
         // page, so the back-buffer bias is off.
+        // The move-VM framebuffer grabs (render mode 7) project through the
+        // camera of the frame they copy from: the last one the page drew
+        // (`play_camera_vp`'s resolved frame).
+        let grab_view = self
+            .engine_camera
+            .as_ref()
+            .and_then(|(_, f)| f.field_view());
+        let _ = host.world.queue_vram_grabs(grab_view.as_ref());
         dirty |= host.world.step_field_vram_effects(&mut res.vram, false);
         self.field_vram_dirty |= dirty;
     }

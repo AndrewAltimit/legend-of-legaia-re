@@ -1238,6 +1238,14 @@ pub(crate) enum Cmd {
         /// `0x321` and crosses the Ra-Seru chip out of the command ring.
         #[arg(long, value_name = "N")]
         set_flag: Vec<String>,
+        /// DEBUG affordance, not a player surface: once the scene is entered,
+        /// install scene MAN record `PARTITION:RECORD` (decimal) as a cutscene
+        /// timeline, the way a walk-on trigger or entry script starts one -
+        /// e.g. `--scene kor5 --play-record 2:5` runs the Genesis Tree beat
+        /// whose framebuffer grab (move-VM render mode 7) the capture runs
+        /// look at. The record runs against the launch's flags and seats.
+        #[arg(long, value_name = "P:R")]
+        play_record: Option<String>,
         /// Start from an LGSF save file (the `save` / save-screen shape,
         /// resume trailer included) instead of a door entry into `--scene`:
         /// the save lands the way a card Load does

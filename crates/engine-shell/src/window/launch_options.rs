@@ -458,6 +458,9 @@ pub struct DebugSeeds {
     pub resume_save: Option<std::path::PathBuf>,
     /// `--cheat-*`: the player cheats applied once the scene is entered.
     pub cheats: PlayCheats,
+    /// `--play-record P:R`: a scene MAN record installed as a cutscene
+    /// timeline once the scene is entered.
+    pub play_record: Option<(usize, usize)>,
 }
 
 /// The `--cheat-*` operands - the native twin of the browser play page's
@@ -530,6 +533,25 @@ impl PlayCheats {
 }
 
 impl DebugSeeds {
+    /// Attach the `--play-record P:R` operand (`partition:record`, decimal).
+    pub fn with_play_record(mut self, spec: Option<&str>) -> Result<Self> {
+        if let Some(spec) = spec {
+            let (p, r) = spec
+                .split_once(':')
+                .with_context(|| format!("--play-record '{spec}' is not PARTITION:RECORD"))?;
+            let p: usize = p
+                .trim()
+                .parse()
+                .with_context(|| format!("--play-record partition '{p}'"))?;
+            let r: usize = r
+                .trim()
+                .parse()
+                .with_context(|| format!("--play-record record '{r}'"))?;
+            self.play_record = Some((p, r));
+        }
+        Ok(self)
+    }
+
     /// Attach the `--cheat-*` operands.
     pub fn with_cheats(mut self, cheats: PlayCheats) -> Self {
         self.cheats = cheats;

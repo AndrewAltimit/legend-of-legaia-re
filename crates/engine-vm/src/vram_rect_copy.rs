@@ -48,15 +48,10 @@
 //!
 //! **The field-VM opcode is not the whole of it.** Sub-op `0x12` ships in the
 //! ten ending-vignette scenes (the photo grab of the drawn frame into
-//! `(512, 0)`, `docs/subsystems/script-vm.md`) - and a reference scan finds
-//! `FUN_800468A4` reached from two other
-//! places, and the busier one is not a script at all: the per-frame actor tick
-//! `FUN_80021DF4` calls it at `0x80022CB0` on its **kind-7** arm
-//! (`lh v1,0x5A(actor); li v0,7`), i.e. an actor whose draw *is* a VRAM
-//! rect copy, sourcing the rect from `actor[+0xCC..+0xD6]`. That tick is
-//! ported and live (`legaia_anm::player`, `crate::move_vm`), so the honest
-//! prerequisite is an actor kind that draws by rect copy, not only a renderer
-//! that implements the field-VM hook.
+//! `(512, 0)`, `docs/subsystems/script-vm.md`), and the per-frame part tick
+//! `FUN_80021DF4` is the other caller: its render-mode-7 arm calls
+//! `FUN_800468A4` at `0x80022CB0` with a rect round the part's projected
+//! point ([`crate::vram_grab`]). Both routes land on the same host queue.
 
 /// A source rectangle for a VRAM-to-VRAM copy, in VRAM pixel coordinates.
 ///
@@ -221,9 +216,9 @@ pub enum EnqueueOutcome {
 /// PORT: FUN_800468a4
 ///
 /// Wired through `World::apply_vram_rect_copies`, the drain behind the field
-/// VM's `queue_vram_rect_copies` hook on both hosts. That hook is only one of
-/// retail's two routes here; the other is the actor tick's kind-7 draw arm,
-/// which the engine still has no actor kind for.
+/// VM's `queue_vram_rect_copies` hook on both hosts, and behind the part
+/// tick's render-mode-7 grab ([`crate::vram_grab`], queued by
+/// `World::queue_vram_grabs`) - retail's two routes here.
 pub fn enqueue(call: RectCopyCall, ot_len: i32, back_buffer: bool) -> EnqueueOutcome {
     if call.ot_slot <= 0 || call.ot_slot >= ot_len {
         return EnqueueOutcome::SlotOutOfRange;

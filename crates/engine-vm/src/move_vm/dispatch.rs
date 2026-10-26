@@ -705,17 +705,20 @@ pub fn step<H: MoveHost + ?Sized>(
             state.field_6a = (read(3) as i16).wrapping_shl(3);
             size = 4;
         }
-        // 0x45 - anim_block + sub_mode = 7. size 8.
+        // 0x45 - render mode 7 (the framebuffer grab, `crate::vram_grab`)
+        // and its operand block. size 8. `0x8002409C..0x800240F8`: `+0x5A = 7`,
+        // then `+0xC4 / +0xCC / +0xCE / +0xD4 / +0xD6 / +0xD0 / +0xD2` =
+        // `v1..v7` - offsets from the `+0xAC` window base.
         0x45 => {
-            state.move_submode = 7;
+            state.move_submode = crate::vram_grab::GRAB_RENDER_MODE;
             for (n, off) in [
-                (1, 0x14u16),
-                (2, 0x18),
-                (3, 0x1A),
-                (4, 0x20),
-                (5, 0x22),
-                (6, 0x1C),
-                (7, 0x1E),
+                (1, 0x18u16),
+                (2, 0x20),
+                (3, 0x22),
+                (4, 0x28),
+                (5, 0x2A),
+                (6, 0x24),
+                (7, 0x26),
             ] {
                 state.anim_block_u16_set(off as usize, read(n));
             }

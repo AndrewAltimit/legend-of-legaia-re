@@ -7,6 +7,7 @@
 //! Run a single file's tests with
 //! `cargo test -p legaia-engine-scene-host --lib integration::<name>::`.
 
+mod ambient_grab_part_disc;
 mod b3_menu_warp_drain;
 mod baka_duel_ladder;
 mod baka_duel_scene_real;

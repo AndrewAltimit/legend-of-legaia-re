@@ -413,6 +413,7 @@ fn main() -> Result<()> {
             retail,
             learn_spell,
             set_flag,
+            play_record,
             resume_save,
             cheat_level,
             cheat_gold,
@@ -509,8 +510,9 @@ fn main() -> Result<()> {
                     window: window::WindowLaunch::from_flags(fullscreen, windowed, window_scale),
                 }
             },
-            window::DebugSeeds::from_args(&learn_spell, &set_flag, resume_save)?.with_cheats(
-                window::PlayCheats {
+            window::DebugSeeds::from_args(&learn_spell, &set_flag, resume_save)?
+                .with_play_record(play_record.as_deref())?
+                .with_cheats(window::PlayCheats {
                     level: cheat_level,
                     gold: cheat_gold,
                     coins: cheat_coins,
@@ -521,8 +523,7 @@ fn main() -> Result<()> {
                     arts: cheat_arts,
                     max_items: cheat_max_items,
                     noclip: cheat_noclip,
-                },
-            ),
+                }),
         ),
         Cmd::Save {
             extracted_root,

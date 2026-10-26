@@ -81,6 +81,42 @@ pub(super) fn seed_debug_story_flags(
     );
 }
 
+/// Install the `--play-record P:R` scene MAN record as a cutscene timeline,
+/// the way a walk-on trigger or an entry script would start it. A DEBUG
+/// affordance for reaching a scripted beat without playing up to it: the
+/// record runs against whatever flags and seats the launch left, so a beat
+/// that reads state its predecessors set may play differently than in a
+/// playthrough.
+pub(super) fn install_debug_play_record(
+    session: &mut NativeSession,
+    seeds: &super::super::DebugSeeds,
+) {
+    let Some((partition, record)) = seeds.play_record else {
+        return;
+    };
+    let man = session
+        .host
+        .scene
+        .as_ref()
+        .and_then(|s| s.field_man_payload(&session.host.index).ok().flatten());
+    let Some(man) = man else {
+        log::warn!("play-window: --play-record {partition}:{record}: the scene carries no MAN");
+        return;
+    };
+    let Ok(man_file) = legaia_scene_formats::man_section::parse(&man) else {
+        log::warn!("play-window: --play-record {partition}:{record}: the scene MAN does not parse");
+        return;
+    };
+    let ok = session
+        .host
+        .world
+        .install_cutscene_timeline_record(&man_file, &man, partition, record, false);
+    log::info!(
+        "play-window: --play-record P{partition}[{record}] {}",
+        if ok { "installed" } else { "did not resolve" }
+    );
+}
+
 /// A `--battle` operand: a scene MAN formation-row index, "the first row
 /// the scene registered that carries monsters", or a formation cell no row
 /// carries (`cell:[s:]id,...`, hex ids, `s:` = scripted), registered as a

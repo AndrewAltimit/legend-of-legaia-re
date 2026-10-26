@@ -63,6 +63,7 @@ impl PlayWindowApp {
         }
         self.sync_battle_frame();
         let cutscene_cam = self.resolve_cutscene_camera();
+        self.note_frame_field_view(cutscene_cam);
         let mut prep = self.take_frame_prep();
         // The field-to-battle transition emitter leaves `self` for the
         // render borrow (see `take_frame_prep`).
@@ -87,7 +88,8 @@ impl PlayWindowApp {
         self.apply_floor_wave();
         let _ = self.sync_field_view();
         self.sync_battle_frame();
-        let _ = self.resolve_cutscene_camera();
+        let cutscene_cam = self.resolve_cutscene_camera();
+        self.note_frame_field_view(cutscene_cam);
         let mut prep = self.take_frame_prep();
         self.battle_intro = prep.battle_intro.take();
     }

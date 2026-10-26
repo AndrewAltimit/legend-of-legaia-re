@@ -615,6 +615,9 @@ impl World {
     pub fn tick_ambient_fx(&mut self) {
         // Retail's walk frees the halted parts before ticking the rest.
         self.retire_finished_ambient_parts();
+        // This tick's framebuffer grabs replace the last tick's: a host that
+        // did not take them (no frame was drawn) has nothing to copy from.
+        self.ambient.vram_grabs.clear();
         // The wait-timer drain per game tick: retail decrements `+0x54` by
         // `DAT_1F800393 * DAT_1F80037D` (frame step x the rate byte `8`,
         // `clut_cell_fx::SPEED_SCALAR`) per tick, so `WAIT_SET v` holds `v`
@@ -668,6 +671,13 @@ impl World {
             self.tick_ambient_part(idx, 0);
             if let Some(part) = self.ambient.fx.get_mut(idx) {
                 legaia_engine_effects::part_motion::clamp_levels(&mut part.state);
+                // The render-mode-7 arm (`0x80022C20..0x80022CB8`), after the
+                // clamps: a framebuffer grab at the part's projected point.
+                // The projection needs the frame's camera, so the request
+                // waits for the host (`World::queue_vram_grabs`).
+                if let Some(r) = legaia_engine_vm::vram_grab::grab_request(&part.state) {
+                    self.ambient.vram_grabs.push(r);
+                }
             }
         }
         // The scene-entry VDF pulse (enhancement - `legaia_engine_field::vdf_pulse`) rides

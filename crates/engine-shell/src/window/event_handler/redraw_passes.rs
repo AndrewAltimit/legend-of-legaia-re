@@ -24,6 +24,16 @@ fn cutscene_view(cam: CutsceneCam) -> legaia_engine_camera::psx_camera::FieldCam
 }
 
 impl PlayWindowApp {
+    /// Record the field camera this frame is drawn through
+    /// ([`PlayWindowApp::last_frame_field_view`]), the view the next sim
+    /// tick's framebuffer grabs project through.
+    pub(in crate::window) fn note_frame_field_view(&mut self, cutscene_cam: Option<CutsceneCam>) {
+        self.last_frame_field_view = self
+            .host_view()
+            .frame(cutscene_cam.map(cutscene_view))
+            .field_view();
+    }
+
     /// The world, scene camera and scene box this frame's projections read
     /// (`legaia_engine_world_views::screen_passes::HostView`, the seam the
     /// browser play page reads through too).
