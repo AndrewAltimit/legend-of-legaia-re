@@ -587,7 +587,19 @@ ordering table, so the copy reads the whole last frame rather than the
 buckets behind the part; and a point at or behind the eye grabs nothing, where
 the GTE's divide would saturate. Disc-gated chain test:
 `engine-scene-host/tests/ambient_grab_part_disc.rs`. `legaia-engine
-play-window --scene kor5 --play-record 2:5` plays the beat.
+play-window --scene kor5 --play-record 2:5` plays the beat, and
+`LEGAIA_DIAG_CAPTURE_STATE=1 LEGAIA_DIAG_CAPTURE_VRAM=<path>` with
+`--screenshot` writes the field VRAM it left.
+
+Measured on that run against `kor5_post_436_organic`: the copy lands at
+`(832, 0)` as retail's does, but it is a different crop. Retail's is centred
+on the figure floating above the party; the port's sits on the party's backs
+near the bottom of the frame, cut short by the display page's last row. The
+grab is placed by its part's `+0x14`, which the stager takes from the firing
+context's position (`34 30` with the cross-context prefix `B4 15`). The port's
+context `0x15` holds `world_y = 0` throughout the beat while the figure is
+drawn in the air, so the part starts at ground height. The gap is that
+context's live Y, not the grab.
 
 ### A mesh-bearing part draws its pack mesh
 

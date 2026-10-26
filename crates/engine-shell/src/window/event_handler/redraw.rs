@@ -158,7 +158,7 @@ impl PlayWindowApp {
     /// heading, mode word and tint, and every live effect sprite.
     /// `LEGAIA_DIAG_CAPTURE_VRAM=<path>` beside it writes the battle VRAM
     /// (1 MiB, BGR555) for a byte comparison with `mednafen-state vram-dump
-    /// --out-bin`.
+    /// --out-bin` - or, outside a battle, the field scene's CPU VRAM.
     pub(super) fn diag_capture_state(&self) {
         if std::env::var_os("LEGAIA_DIAG_CAPTURE_STATE").is_none() {
             return;
@@ -174,7 +174,7 @@ impl PlayWindowApp {
         );
         if let (Some(path), Some(v)) = (
             std::env::var_os("LEGAIA_DIAG_CAPTURE_VRAM"),
-            self.battle_vram.as_ref(),
+            self.battle_vram.as_ref().or(self.cpu_vram_base.as_ref()),
         ) {
             let _ = std::fs::write(path, v.as_bytes());
         }
