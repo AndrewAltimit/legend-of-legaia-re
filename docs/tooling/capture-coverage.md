@@ -112,6 +112,13 @@ column) is the source to start from; a town has no encounters. From a
 probe-poked pre-cast state (`koru_pre_*`) it saves the forced cast mid-module
 instead, and the new state inherits that state's poke.
 
+The scene rows are filled the same way: with `LEGAIA_SCENES=1` the probe also
+saves one field state per scene its walk reaches, once the loaded scene has
+run a settle window and the player has moved in it. A save point in an
+uncovered scene is reached cold: `isolate_card_save.py` stages the one save
+on a scratch card, `autorun_boot_continue.lua` loads it from the title, and
+the walk starts from that state.
+
 A harvested state is a candidate, not a corpus state, until:
 
 1. its census row (`retail-compare --census` over a scratch manifest naming

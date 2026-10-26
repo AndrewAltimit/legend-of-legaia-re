@@ -36,6 +36,12 @@
 --   LEGAIA_MAX_CAPS  stop after this many captures (default 12)
 --   LEGAIA_PREFIX    capture name prefix (default "harvest")
 --   LEGAIA_SPIRIT_ROUNDS  rounds of Spirit before attacking (default 3)
+--   LEGAIA_SCENES    1 = also save one field state per scene the walk reaches:
+--                    once the loaded scene (label 0x8007050C and define
+--                    0x80084540 both stable) has run LEGAIA_SCENE_SETTLE
+--                    field vsyncs (default 150) and the player has moved
+--                    since the scene entered (the walk has control); named
+--                    <prefix>_scene_<label>_v<vsync>. The start scene counts.
 --
 -- No breakpoints are armed, so --fast (dynarec) runs are fine.
 
@@ -50,6 +56,10 @@ local PER_KEY  = probe.getenv_num("LEGAIA_PER_KEY", 1)
 local MAX_CAPS = probe.getenv_num("LEGAIA_MAX_CAPS", 12)
 local PREFIX   = probe.getenv("LEGAIA_PREFIX", "harvest")
 local SPIRIT_ROUNDS = probe.getenv_num("LEGAIA_SPIRIT_ROUNDS", 3)
+local SCENES = probe.getenv_num("LEGAIA_SCENES", 0) == 1
+local SCENE_SETTLE = probe.getenv_num("LEGAIA_SCENE_SETTLE", 150)
+local LOADED_DEFINE = 0x80084540
+local PLAYER_PTR = 0x8007c364
 
 local GAME_MODE_VA = 0x8007b83c
 local SCENE_VA     = 0x8007050c
@@ -123,6 +133,8 @@ local next_menu_press = 0
 local walk_i, walk_next = 1, 0
 local battles = 0
 local rounds = 0
+local scene_seen = {}
+local scene_key, scene_since, scene_pos, scene_moved = nil, 0, nil, false
 
 probe.run({
     sstate         = SSTATE_PATH,
@@ -148,6 +160,28 @@ probe.run({
             last_mode = mode
         end
 
+        if mode == 0x03 and SCENES and caps < MAX_CAPS then
+            local label = scene_name()
+            local key = label .. "/" .. tostring(probe.read_u16(LOADED_DEFINE) or 0)
+            local pp = probe.read_u32(PLAYER_PTR)
+            local pos = nil
+            if ok_ptr(pp) then
+                pos = string.format("%d,%d", probe.read_u16(pp + 0x14) or 0, probe.read_u16(pp + 0x18) or 0)
+            end
+            if key ~= scene_key then
+                scene_key, scene_since, scene_pos, scene_moved = key, vsync, pos, false
+            elseif pos ~= scene_pos then
+                scene_moved = true
+            end
+            if not scene_seen[label] and scene_moved and vsync - scene_since >= SCENE_SETTLE then
+                if save_checkpoint(string.format("%s_scene_%s_v%d", PREFIX, label, vsync), vsync) then
+                    scene_seen[label] = true
+                    caps = caps + 1
+                end
+            end
+        elseif mode ~= 0x03 then
+            scene_key = nil
+        end
         if mode == 0x03 then
             -- Walk: hold one direction per leg, a Cross now and then.
             if vsync >= walk_next then
