@@ -122,3 +122,84 @@ fn a_leg_is_an_ordinary_battle_that_returns_to_the_arena() {
     assert_eq!(round1, round0.map(|r| r + 1), "the ladder moved one rung");
     eprintln!("[ok] leg returned to the hub after {back:?} ticks, round {round1:?}");
 }
+
+/// Run gives the contest up. A host launch picks the course the `koin1`
+/// course menu would (Beginner, flag `0x536`, word `0x101`), so the leg's
+/// scripted battle can be fled through the escape roll's forced arm; the
+/// `0xFE` arm's `_DAT_80084448 = 4` makes the re-entered arena settle the
+/// contest as given up, on round 1 with the "ran from the first fight" flag.
+#[test]
+fn run_from_a_battle_leg_gives_the_contest_up() {
+    let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    };
+    let mut host = match SceneHost::open_disc(&disc) {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("[skip] open_disc failed: {e:#}");
+            return;
+        }
+    };
+    let mut party = legaia_save::Party::zeroed(1);
+    let mut hms = party.members[0].hp_mp_sp();
+    hms.hp_max = 999;
+    hms.hp_cur = 999;
+    party.members[0].set_hp_mp_sp(hms);
+    host.world.load_party(party);
+
+    host.world
+        .request_host_minigame_warp(MinigameSubId::MuscleDome.sub_id());
+    assert_eq!(
+        host.world.chosen_muscle_course(),
+        Some(0),
+        "Beginner picked"
+    );
+    assert!(matches!(
+        host.drain_minigame_warp(),
+        Some(MinigameWarpOutcome::Entered(MinigameSubId::MuscleDome))
+    ));
+    assert_eq!(host.world.dome_special_word() & 0x100, 0x100);
+    for _ in 0..3000 {
+        let _ = host.tick();
+        if host.world.mode == SceneMode::Battle {
+            break;
+        }
+    }
+    assert!(host.world.muscle_leg_in_battle(), "the leg's battle opened");
+    // A pad drives the fight, as on both play hosts.
+    host.world.battle.player_driven = true;
+    use legaia_engine_system::input::PadButton;
+    let tap = |host: &mut SceneHost, b: PadButton| {
+        host.world.set_pad(b.mask());
+        let _ = host.tick();
+        host.world.set_pad(0);
+        for _ in 0..6 {
+            let _ = host.tick();
+        }
+    };
+    let mut left = false;
+    for _ in 0..800 {
+        // Circle takes Run outright on the round prompt.
+        tap(&mut host, PadButton::Circle);
+        if host.world.mode != SceneMode::Battle {
+            left = true;
+            break;
+        }
+    }
+    assert!(left, "the Run round ends the battle");
+    assert_ne!(
+        host.world.mode,
+        SceneMode::MuscleDome,
+        "the contest is over"
+    );
+    let settled = host
+        .world
+        .minigames
+        .muscle_settlement
+        .as_ref()
+        .expect("the contest settled");
+    assert!(settled.set_gave_up_flag, "settled as given up: {settled:?}");
+    assert_eq!(settled.score, 0, "a give-up voids the tally");
+    eprintln!("[ok] run settled {settled:?}");
+}

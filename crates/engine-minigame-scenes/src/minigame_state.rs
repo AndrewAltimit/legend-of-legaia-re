@@ -173,6 +173,9 @@ pub struct MinigameState {
     /// The leg was installed since the dome's last tick, so the arena hub
     /// has not yet put its first visit / ROUND card over it.
     pub muscle_leg_fresh: bool,
+    /// The leg's battle took a Run round: retail's `0xFE` arm stored the
+    /// give-up outcome `_DAT_80084448 = 4` (`0x801D328C`).
+    pub muscle_leg_ran: bool,
     /// The arena hub's screen timers - the first visit, the leg-open ROUND
     /// card, the INTERVAL tally and the re-entered hub's backdrop - ticked by
     /// `World::tick_muscle_hub`; both play hosts draw from
@@ -357,6 +360,7 @@ impl MinigameState {
             muscle_leg_in_battle: false,
             muscle_saved_map_id: None,
             muscle_leg_fresh: false,
+            muscle_leg_ran: false,
             muscle_hub: Default::default(),
             muscle_hub_sounds: Default::default(),
             casino_coins: 0,

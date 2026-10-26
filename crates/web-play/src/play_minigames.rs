@@ -587,7 +587,7 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
-        host.world.request_minigame_warp(sub_id);
+        host.world.request_host_minigame_warp(sub_id);
         let lead = host.world.drain_field_xa_prestage();
         if let Some(d) = self.audio_director() {
             for xa in &lead {

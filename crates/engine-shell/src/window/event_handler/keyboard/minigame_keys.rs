@@ -240,7 +240,7 @@ impl PlayWindowApp {
                 // The round trip restores the field's music with the scene.
                 self.session.host.world.close_minigame_round_trip();
             } else {
-                self.session.host.world.request_minigame_warp(
+                self.session.host.world.request_host_minigame_warp(
                     legaia_engine_mode::minigame_entry::MinigameSubId::MuscleDome.sub_id(),
                 );
                 log::info!(

@@ -25,7 +25,57 @@ pub(crate) const ARENA_MAP_ID: u32 = 0x4C6;
 /// restore and the leg session both read.
 const DOME_FIGHTER_ROSTER_SLOT: u8 = 0;
 
+/// The flag every course arm of the `koin1` course menu (`P1[9]`) sets ahead
+/// of its warp, beside the chosen course's own flag (`55 09` at `+0xB22` /
+/// `+0xB4B` / `+0xB74`). What reads it is not pinned.
+pub(crate) const COURSE_MENU_ENTRY_FLAG: u16 = 0x509;
+
 impl World {
+    /// Pick course `course` the way the `koin1` course menu does: each of its
+    /// three arms (`P1[9]` `+0xB1D` / `+0xB46` / `+0xB6F`) debits the fee,
+    /// sets [`COURSE_MENU_ENTRY_FLAG`], sets its own course flag and clears
+    /// the other two (`55 36 / 65 37 / 65 38` for Beginner), then warps. So
+    /// the arena init's flag test always finds exactly one course flag, and
+    /// the special-battle word it seeds always carries the arena bit `0x100`,
+    /// which is what lets a leg's battle be fled (the escape roll's forced
+    /// arm, `FUN_801E791C` `0x801E7A0C`). A host entry that skips the menu
+    /// (the native `M` key, the minigames page) calls this instead. The fee
+    /// is the host's to charge.
+    pub fn choose_muscle_course(&mut self, course: usize) {
+        use legaia_engine_minigames::muscle_dome::COURSE_UNLOCK_FLAGS;
+        self.system_flag_set(COURSE_MENU_ENTRY_FLAG);
+        for (i, &(flag, _)) in COURSE_UNLOCK_FLAGS.iter().enumerate() {
+            if i == course {
+                self.system_flag_set(flag);
+            } else {
+                self.system_flag_clear(flag);
+            }
+        }
+    }
+
+    /// A host's own launch of a minigame (the native window's minigame
+    /// keys, the browser play page's picker): the mode-24 warp the door
+    /// requests, preceded for the arena by the course pick the `koin1`
+    /// course menu would have made - Beginner, unless a pick already
+    /// stands ([`Self::choose_muscle_course`]).
+    pub fn request_host_minigame_warp(&mut self, sub_id: u8) {
+        if sub_id == legaia_engine_mode::minigame_entry::MinigameSubId::MuscleDome.sub_id()
+            && self.chosen_muscle_course().is_none()
+        {
+            self.choose_muscle_course(0);
+        }
+        self.request_minigame_warp(sub_id);
+    }
+
+    /// The course the menu last picked: the one course flag set, or `None`
+    /// when no menu pick stands.
+    pub fn chosen_muscle_course(&self) -> Option<usize> {
+        use legaia_engine_minigames::muscle_dome::COURSE_UNLOCK_FLAGS;
+        COURSE_UNLOCK_FLAGS
+            .iter()
+            .rposition(|&(flag, _)| self.system_flag_test(flag))
+    }
+
     /// Whether the current battle is a Muscle Dome leg.
     pub fn muscle_leg_in_battle(&self) -> bool {
         self.minigames.muscle_leg_in_battle
@@ -80,6 +130,7 @@ impl World {
     ) {
         use legaia_engine_battle_vm::battle_action::BattleEndCause;
         self.minigames.muscle_leg_in_battle = false;
+        let ran = std::mem::take(&mut self.minigames.muscle_leg_ran);
         self.battle.special_word = 0;
         if let Some(id) = self.minigames.muscle_saved_map_id.take() {
             self.battle.map_id = id;
@@ -94,6 +145,20 @@ impl World {
             .map(|r| i32::from(r.hp_mp_sp().hp_cur));
         let turns = u32::from(self.battle_mode());
         match end {
+            // A Run round's give-up (`_DAT_80084448 = 4`) outlives the fight:
+            // the re-entered arena settles the contest as given up however
+            // the battle then ended.
+            _ if ran => {
+                if let (Some(s), Some(hp)) = (self.minigames.muscle_dome.as_mut(), hp) {
+                    s.set_hp(0, hp);
+                }
+                self.end_muscle_leg();
+                self.close_muscle_leg(legaia_engine_minigames::muscle_dome::LegReport {
+                    survived: end != Some(BattleEndCause::PartyWipe),
+                    outcome: legaia_engine_minigames::muscle_dome::LEG_OUTCOME_RAN,
+                    turns_taken: turns,
+                });
+            }
             Some(BattleEndCause::MonsterWipe) | Some(BattleEndCause::PartyWipe) => {
                 let survived = end == Some(BattleEndCause::MonsterWipe);
                 if let (Some(s), Some(hp)) = (self.minigames.muscle_dome.as_mut(), hp) {

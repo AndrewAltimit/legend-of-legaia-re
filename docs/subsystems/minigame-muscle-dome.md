@@ -153,7 +153,7 @@ On the fresh-entry side of the `bnez` at `0x801CEB58`, `FUN_801CEA6C` seeds the 
 | `0x537` | `0x111` | `0x801CEBB4` | 1 - Expert | `0x100` |
 | `0x538` | `0x321` | `0x801CEBC8` | 2 - Master | `0x100` + `0x200` (no Item, no Ra-Seru) |
 
-That `0x538` is the Master unlock is inference from the three arms' course indices; the literals are disassembly. The default `1` is `muscle_dome::CONTEST_ENTRY_WORD_DEFAULT`; the port's seed is `contest_entry_word`. The pad-driven three-column picker in `FUN_801D0CD4` is a dev screen, not the course choice.
+The three flags are the **course pick**, not unlocks: the `koin1` course menu's three arms each set their own flag and clear the other two before the warp (`P1[9]` `+0xB22..+0xB7A`, [Run gives the contest up](#a-leg-is-the-ordinary-battle)), so exactly one is set on entry and the "last one wins" order never decides anything. That `0x538` is the Master unlock is inference from the three arms' course indices; the literals are disassembly. The default `1` is `muscle_dome::CONTEST_ENTRY_WORD_DEFAULT`; the port's seed is `contest_entry_word`. The pad-driven three-column picker in `FUN_801D0CD4` is a dev screen, not the course choice.
 
 ### How long a course runs
 
@@ -1105,7 +1105,13 @@ The leg's fighter is the lead record alone (the party list is swapped for one me
 
 Everything else - the command ring, the arts input, the monster AI, the hit sparks and numerals, the victory pose, the battle camera, the arena backdrop through the shared stage resolver (`engine-session::battle_stage::resolve_battle_stage`) - is the battle's, on both play hosts. `World::finish_battle` routes a `MuscleDome` return the way the exit selector `FUN_80046A20` does (`0x80046E50`): no back-from-battle story-flag stores, no game-over gate and no escape-clock penalty (those are the field's `FUN_8003AEB0`), then `World::finish_muscle_battle_leg` closes the session on the outcome - a knockout either way reports the leg, an escape is the give-up arm.
 
-Pinned by `engine-scene-host/tests/muscle_dome_battle_leg_disc.rs` (door to battle against the rung on stage 1225, KO back to the hub one rung on) and the dome rung of `engine-shell/tests/minigame_replay.rs` (a battle round closes under Cross taps).
+**Run gives the contest up.** The fight start's `DAT_8007BD60 = 0x80` makes the leg a scripted fight (`ctx[+0x287] = 4`), and the escape roll `FUN_801E791C` flees a scripted fight only through its forced arm, the word's `0x100` bit (`0x801E7978..0x801E7A14`, then `0x801E7B14`). Every course the `koin1` menu opens carries it: each of `P1[9]`'s three arms sets `0x509`, sets its own course flag and clears the other two (`55 36 / 65 37 / 65 38` for Beginner at `+0xB22..+0xB28`) before its `3E 69`, so the arena init always seeds `0x101` / `0x111` / `0x321` *(field bytecode, through `field_disasm`)*.
+
+A Run round then meets the `0xFE` arm (`0x801D3228..0x801D328C`): with the word non-zero, the leader's category `5` and a monster outside `0xAF` / `0x3D..=0x3F`, it hands the leader the first turn (`ctx[+0x274] = 0`) and stores `_DAT_80084448 = 4`, which the re-entered arena settles as a give-up.
+
+Port: `battle_formulas::special_battle_run_forfeit` raises `MinigameState::muscle_leg_ran`, which `World::finish_muscle_battle_leg` reports as `LEG_OUTCOME_RAN`; a host's own launch (the native `M` key, the play page's picker) goes through `World::request_host_minigame_warp`, which makes the menu's Beginner pick (`World::choose_muscle_course`) when none stands.
+
+Pinned by `engine-scene-host/tests/muscle_dome_battle_leg_disc.rs` (door to battle against the rung on stage 1225, KO back to the hub one rung on; Run settles the contest as given up) and the dome rung of `engine-shell/tests/minigame_replay.rs` (a battle round closes under Cross taps).
 
 The leg session below still carries the contest's bookkeeping across the battle (the hub reads it as "a leg is open"), and it remains the whole leg where no battle can be staged: a monster with no catalog entry, a harness that ticks only the world, and the **minigames page**, which has no `World` to run a battle in. Its selection, play-out and HUD rows are the session's (next paragraphs).
 
@@ -1172,7 +1178,6 @@ The HUD kernels read the hold as an action frame (`battle_hud::battle_hud_phase`
 - The review screen's and the Ra-Seru list window's piece decomposition.
 - Whether live `koin1` geometry is ordered over the ringside still in a re-entered hub.
 - **The minigames page's leg is still the session's presentation**, not the battle: the page holds no `World`, so its command flow, play-out and canvas chrome are the dome session's. The plan is to run the page's leg on the browser play page's runtime (`web-play::LegaiaRuntime`, already in the same wasm bundle): warp it into the arena off a synthetic `koin1` door, draw the battle through the play page's battle renderer, and keep the page's own panel for the hub screens and the course picker. Until then the page is the one host where a leg does not look like a normal battle.
-- **Run in a battle leg.** The fight start's `DAT_8007BD60 = 0x80` makes the leg a scripted fight (`ctx[+0x287] = 4`), and the escape roll `FUN_801E791C` lets a scripted fight be fled only through its forced arm, the word's `0x100` bit - which every course the door opens carries (the course menu latches a course flag before its warp). So a Run escapes and the port reads the battle's `Escaped` end as the give-up. The contest-gated `0xFE` arm itself (`_DAT_80084448 = 4` and `ctx[+0x274] = 0` on action state 5, `0x801D3228..0x801D328C`) is not ported as such; a debug entry with no course flag (word `1`) cannot flee.
 - A retail capture of a leg's battle end (the win pose and the fade back to mode `0x18`), to pin what the port's ordinary victory sequence shows for a special battle.
 
 ## See also

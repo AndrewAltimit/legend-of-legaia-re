@@ -453,6 +453,7 @@ impl World {
             // An abandoned dome leg leaves the arena with its leg undecided;
             // the arena's own exit reports it.
             self.minigames.muscle_leg_in_battle = false;
+            self.minigames.muscle_leg_ran = false;
             self.battle.special_word = 0;
             if let Some(id) = self.minigames.muscle_saved_map_id.take() {
                 self.battle.map_id = id;
