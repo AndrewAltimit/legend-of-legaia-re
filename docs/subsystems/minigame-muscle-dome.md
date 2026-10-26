@@ -843,6 +843,15 @@ Port: `MuscleDomeSession::install_art_catalog` + `tokenized_queue` over `legaia_
 
 The minigames page, which holds no `World`, builds the same catalog with `muscle_dome_session::art_catalog_from_bank` over the art-animation bank in the fighter's player battle file (`record[0] +0x58`, PROT 863..865) - the records the play hosts' battle entry installs (`World::install_art_bank_records`) - through the same normal-art filter.
 
+The turn's queue itself is the builder's walk over the **whole** bank, both arms
+(`MuscleDomeSession::install_art_bank`, `legaia_art::tokenize_bank`): the dome's rounds run the
+battle overlay's `FUN_801EED1C`, whose Hyper arm the fighter's Ra-Seru gate `ctx[+0x25F + member]`
+opens, so a Hyper Art entered by a fighter carrying one collapses to `0x1A` and its constant
+([battle-action-queue](battle-action-queue.md#the-hyper-art-arm)). The bank comes from
+`muscle_dome_session::art_bank_for` (play hosts) or `art_bank_from_bank` (the minigames page); the
+gate is the installed magic loadout's `DomeRing::has_raseru`. The normal-art catalog stays the
+fallback when no bank is installed, and the arts list's page count.
+
 ## Sound
 
 **UI cues.** The round driver fires its blips through the one-arg cue funnel `FUN_8004FCC8`, whose `< 0x40` leg enqueues `id - 1` as the static descriptor row (`sltiu $s0, 0x40` at `0x8004FD94`, `addiu $a1, $s0, -1` at `0x8004FD9C`, ring append at `0x8004FE28`; [`sfx-table.md`](../formats/sfx-table.md)). `FUN_801D0748` carries **37** immediate call sites: ids `0x21` (15), `0x22` (7), `0x23` (15), i.e. static rows `0x20` / `0x21` / `0x22`, whose category routes them to the slot-0 system bank (extraction PROT **0868**).

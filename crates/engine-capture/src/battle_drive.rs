@@ -1492,13 +1492,7 @@ pub(crate) fn seed_entered_arrows(
     let roster = world.party_roster_slot(usize::from(seat));
     let character = legaia_engine_battle::battle_arts::character_for_slot(roster as u8);
     let bank = world.art_bank_rows(character);
-    let records: Vec<legaia_art::BankArt<'_>> = bank
-        .iter()
-        .map(|(cmds, sources)| legaia_art::BankArt {
-            cmds: cmds.as_slice(),
-            sources: *sources,
-        })
-        .collect();
+    let records = legaia_art::bank_view(&bank);
     let collapsed: Vec<u8> = legaia_art::hyper_queue_constants(&records)
         .into_iter()
         .flat_map(|(_, c)| c)

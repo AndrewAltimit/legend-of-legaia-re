@@ -279,6 +279,38 @@ pub struct BankTokens {
     pub miracle_matched: bool,
 }
 
+/// One owned bank row: a record's combo and its `+0x0A..+0x0D` chain bytes.
+pub type BankRow = (Vec<Command>, [u8; 4]);
+
+/// A character's bank in walk order out of `(constant, combo, chain bytes)`
+/// records in any order: one row per constant from `0x1B` up to the highest
+/// given, a missing constant an empty row (it matches nothing but still
+/// counts as a group). Constants below `0x1B` are not walked
+/// (`li s3,0xb` at `0x801EF2EC`) and are dropped.
+pub fn bank_rows(records: impl IntoIterator<Item = (u8, Vec<Command>, [u8; 4])>) -> Vec<BankRow> {
+    let mut rows: Vec<BankRow> = Vec::new();
+    for (b, cmds, sources) in records {
+        let Some(k) = (b as usize).checked_sub(0x1B) else {
+            continue;
+        };
+        if rows.len() <= k {
+            rows.resize(k + 1, (Vec::new(), [0; 4]));
+        }
+        rows[k] = (cmds, sources);
+    }
+    rows
+}
+
+/// [`BankArt`] views over owned [`BankRow`]s.
+pub fn bank_view(rows: &[BankRow]) -> Vec<BankArt<'_>> {
+    rows.iter()
+        .map(|(cmds, sources)| BankArt {
+            cmds: cmds.as_slice(),
+            sources: *sources,
+        })
+        .collect()
+}
+
 /// The constants the three Hyper-Art groups of `records` write into a queue,
 /// paired with the group's own bank constant. A plain group writes its own
 /// constant; a chained one writes the records after it

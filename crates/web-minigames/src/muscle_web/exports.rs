@@ -117,6 +117,10 @@ impl LegaiaMinigames {
         if !catalog.is_empty() {
             session.install_art_catalog(0, catalog);
         }
+        // ... and the whole bank, which the turn's queue walks with the
+        // Hyper arm open to a fighter carrying a Ra-Seru
+        // (`muscle_dome_session::art_bank_from_bank`).
+        session.install_art_bank(0, self.muscle_art_bank_rows(char_slot));
         // The Auto attack: the saved command strings the entry opens over and
         // the disc inputs the round's `FUN_801F0450` rebuild reads, through
         // the reader the session owns. This page models no arts learning, so

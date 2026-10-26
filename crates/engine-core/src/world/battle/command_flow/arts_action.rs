@@ -86,13 +86,7 @@ impl World {
         // gated on the slot's `+0x25F` Ra-Seru marker, the rest the normal
         // rewrite.
         let bank = self.art_bank_rows(character);
-        let records: Vec<legaia_art::BankArt<'_>> = bank
-            .iter()
-            .map(|(cmds, sources)| legaia_art::BankArt {
-                cmds: cmds.as_slice(),
-                sources: *sources,
-            })
-            .collect();
+        let records = legaia_art::bank_view(&bank);
         let built = legaia_art::tokenize_bank(&records, commands, miracle_armed);
         let tokens = built.queue;
         log::debug!(
@@ -382,31 +376,23 @@ impl World {
     /// its `+0x0A..+0x0D` chain bytes ([`legaia_art::ArtRecord::anim_extra`]).
     /// A constant with no installed record is an empty row, which matches
     /// nothing but still counts as a group.
-    pub fn art_bank_rows(
-        &self,
-        character: legaia_art::Character,
-    ) -> Vec<(Vec<legaia_art::Command>, [u8; 4])> {
-        let records = &self.tables.art_records;
-        let last = records
-            .keys()
-            .filter(|(ch, _)| *ch == character)
-            .map(|(_, a)| a.as_byte())
-            .max();
-        let Some(last) = last.filter(|&b| b >= 0x1B) else {
-            return Vec::new();
-        };
-        (0x1Bu8..=last)
-            .map(|b| {
-                legaia_art::ActionConstant::from_byte(b)
-                    .and_then(|a| records.get(&(character, a)))
-                    .map_or((Vec::new(), [0; 4]), |r| {
-                        let mut sources = [0u8; 4];
-                        for (d, s) in sources.iter_mut().zip(&r.anim_extra) {
-                            *d = *s;
-                        }
-                        (r.commands.clone(), sources)
-                    })
-            })
-            .collect()
+    pub fn art_bank_rows(&self, character: legaia_art::Character) -> Vec<legaia_art::BankRow> {
+        legaia_art::bank_rows(
+            self.tables
+                .art_records
+                .iter()
+                .filter(|((ch, _), _)| *ch == character)
+                .map(|((_, a), r)| (a.as_byte(), r.commands.clone(), chain_bytes(r))),
+        )
     }
+}
+
+/// An installed record's `+0x0A..+0x0D` chain bytes
+/// ([`legaia_art::ArtRecord::anim_extra`]).
+fn chain_bytes(r: &legaia_art::ArtRecord) -> [u8; 4] {
+    let mut sources = [0u8; 4];
+    for (d, s) in sources.iter_mut().zip(&r.anim_extra) {
+        *d = *s;
+    }
+    sources
 }

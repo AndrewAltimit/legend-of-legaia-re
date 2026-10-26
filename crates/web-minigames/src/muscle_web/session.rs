@@ -94,6 +94,25 @@ impl LegaiaMinigames {
         &self,
         char_slot: usize,
     ) -> Vec<(legaia_art::ActionConstant, Vec<legaia_art::Command>)> {
+        legaia_engine_battle_menus::muscle_dome_session::art_catalog_from_bank(
+            &self.muscle_art_bank_records(char_slot),
+        )
+    }
+
+    /// The fighter's whole art bank in walk order
+    /// (`muscle_dome_session::art_bank_from_bank`).
+    pub(super) fn muscle_art_bank_rows(&self, char_slot: usize) -> Vec<legaia_art::BankRow> {
+        legaia_engine_battle_menus::muscle_dome_session::art_bank_from_bank(
+            &self.muscle_art_bank_records(char_slot),
+        )
+    }
+
+    /// The character's art-animation bank records off its player battle
+    /// file; empty when the file does not decode.
+    fn muscle_art_bank_records(
+        &self,
+        char_slot: usize,
+    ) -> Vec<legaia_actor_formats::battle_char_assembly::ArtAnimRecord> {
         use legaia_actor_formats::battle_char_assembly as bca;
         let Some(raw) = entry_bytes(
             &self.prot,
@@ -105,10 +124,7 @@ impl LegaiaMinigames {
         let Ok(record0) = bca::decode_record0(raw) else {
             return Vec::new();
         };
-        let Ok(records) = bca::art_animation_bank(&record0) else {
-            return Vec::new();
-        };
-        legaia_engine_battle_menus::muscle_dome_session::art_catalog_from_bank(&records)
+        bca::art_animation_bank(&record0).unwrap_or_default()
     }
 
     /// The player fighter's record stats: SCUS new-game template leveled

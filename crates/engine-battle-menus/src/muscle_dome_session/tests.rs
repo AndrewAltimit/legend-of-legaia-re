@@ -1516,3 +1516,39 @@ fn the_dome_list_pages_over_the_learned_arts_and_slides_out_after_the_entry() {
     }
     assert_eq!(s.arts_list_window(), None, "off-screen");
 }
+
+/// The dome's rounds run the battle overlay's queue builder, so with the
+/// whole bank installed a Hyper Art collapses for a fighter carrying a
+/// Ra-Seru (`FUN_801EED1C`'s special arm, gate `ctx[+0x25F + member]`) and
+/// stays plain swings for one without.
+#[test]
+fn a_hyper_art_collapses_in_the_dome_only_with_the_ra_seru() {
+    use legaia_art::Command::{Down, Left, Right, Up};
+    // Gala's bank head: Biron Rage, Explosive Fist, Lightning Storm,
+    // Thunder Punch (`R R L`), then a normal art.
+    let bank = legaia_art::bank_rows([
+        (0x1E, vec![Right, Right, Left], [0x0A, 0, 0, 0]),
+        (
+            0x1B,
+            vec![Right, Right, Down, Up, Down, Up, Down, Left, Left],
+            [0; 4],
+        ),
+        (0x1C, vec![Right, Right, Left, Left, Left], [0x0C, 0, 0, 0]),
+        (0x1D, vec![Right, Right, Up, Left], [0x04, 0, 0, 0]),
+        (0x1F, vec![Left, Up, Right, Down, Left], [0x01, 0, 0, 0]),
+    ]);
+    let play = |raseru: bool| {
+        let mut s = session();
+        s.install_art_bank(0, bank.clone());
+        let mut m = magic(30);
+        m.ring.has_raseru = raseru;
+        s.install_magic(0, m);
+        // Right, Right, Left.
+        for card in [3usize, 3, 0] {
+            assert!(s.commit_card(0, card), "card {card} fits the budget");
+        }
+        s.tokenized_queue(0)
+    };
+    assert_eq!(play(true), vec![0x1A, 0x1E]);
+    assert_eq!(play(false), vec![0x0D, 0x0D, 0x0C]);
+}
