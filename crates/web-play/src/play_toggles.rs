@@ -15,8 +15,8 @@
 //!
 //! The switches the native launcher remembers between runs
 //! (`legaia_engine_session::session_switches::PersistedSwitches`: PSX
-//! rasterisation, retail-faithful, the entry pulse, smart monsters and the
-//! gameplay tweaks) the page remembers too, in the same serde layout, under
+//! rasterisation, retail-faithful, the entry pulse, smart monsters, the
+//! saved-chain Arts list and the gameplay tweaks) the page remembers too, in the same serde layout, under
 //! [`SWITCHES_STORAGE_KEY`]. A fresh runtime starts from what is stored, and
 //! every change is written back.
 
@@ -120,6 +120,7 @@ impl PageToggles {
     pub fn from_persisted(p: &PersistedSwitches) -> Self {
         Self {
             smart_monsters: p.smart_monsters,
+            arts_saved_list: p.arts_saved_list,
             entry_pulse: p.entry_pulse(),
             psx_render: p.psx_render,
             tweaks: p.tweaks(),
@@ -134,6 +135,7 @@ impl PageToggles {
             retail: self.retail,
             no_entry_pulse: !self.entry_pulse,
             smart_monsters: self.smart_monsters,
+            arts_saved_list: self.arts_saved_list,
             ..Default::default()
         };
         p.set_tweaks(&self.tweaks);
@@ -241,8 +243,9 @@ impl LegaiaRuntime {
     }
 
     /// Open the legacy saved-chain list from the command ring's Arts arm
-    /// instead of retail's per-press input (the native
-    /// `LEGAIA_ARTS_SAVED_LIST=1`). Retail mode holds it off.
+    /// instead of retail's per-press input (the native `--arts-saved-list`
+    /// or `LEGAIA_ARTS_SAVED_LIST=1`, the launcher's Saved-chain Arts list
+    /// row), remembered with the launch switches. Retail mode holds it off.
     pub fn set_arts_saved_list(&mut self, on: bool) {
         self.page_toggles.arts_saved_list = on;
         self.apply_page_toggles();
@@ -636,20 +639,20 @@ mod tests {
         rt.set_flee_exp(true);
         rt.set_spirit_ap(64);
         rt.set_save_anywhere(true);
+        rt.set_arts_saved_list(true);
         let p = rt.persisted_switches;
         assert!(p.smart_monsters && p.no_entry_pulse && p.psx_render && p.flee_exp);
-        assert!(p.save_anywhere);
+        assert!(p.save_anywhere && p.arts_saved_list);
         assert_eq!(p.spirit_ap, Some(64));
         assert_eq!(p, rt.page_toggles.persisted());
         // The session-only switches are not part of it, as natively.
         rt.set_world_map_markers(true);
-        rt.set_arts_saved_list(true);
         assert_eq!(rt.persisted_switches, p);
         // A fresh runtime seated from the store comes back the same.
         let mut back = LegaiaRuntime::new();
         back.restore_persisted_switches(p);
         assert!(back.smart_monsters() && !back.entry_pulse() && back.psx_render());
-        assert!(back.save_anywhere());
+        assert!(back.save_anywhere() && back.arts_saved_list());
         assert_eq!(back.page_toggles.tweaks, p.tweaks());
         assert!(!back.retail_mode());
         // A remembered Retail-faithful pins the options, as the box does.
@@ -663,7 +666,13 @@ mod tests {
             page.contains("rt.set_psx_render("),
             "play.html never stores PSX rendering"
         );
-        for call in ["psx_render", "smart_monsters", "entry_pulse", "retail_mode"] {
+        for call in [
+            "psx_render",
+            "smart_monsters",
+            "arts_saved_list",
+            "entry_pulse",
+            "retail_mode",
+        ] {
             assert!(
                 page.contains(&format!("rtCall('{call}')")),
                 "play.html never reads {call} back"

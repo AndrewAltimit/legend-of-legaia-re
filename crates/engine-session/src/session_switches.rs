@@ -215,9 +215,9 @@ fn is_false(b: &bool) -> bool {
 /// it into `play-window` flags; the play page stores it as JSON in
 /// `localStorage` (`crates/web-play/src/play_toggles.rs`) and reads it back
 /// into its boxes on the next visit. A switch added here is therefore
-/// remembered on both hosts or on neither. The world-map markers, the battle
-/// cadence and the saved-chain Arts list are not here: natively they are
-/// environment switches, which no host remembers.
+/// remembered on both hosts or on neither. The world-map markers and the
+/// battle cadence are not here: they are diagnostics, natively environment
+/// switches, which no host remembers.
 ///
 /// Each field is stored so the shipped default writes nothing: a switch that
 /// is on by default is kept inverted (`no_*`), a slider as `None` at retail,
@@ -280,6 +280,10 @@ pub struct PersistedSwitches {
     /// Save anywhere (`--save-anywhere`).
     #[serde(default, skip_serializing_if = "is_false")]
     pub save_anywhere: bool,
+    /// The saved-chain Arts list (`--arts-saved-list`, the page's
+    /// "Saved-chain Arts list" box).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub arts_saved_list: bool,
 }
 
 impl PersistedSwitches {

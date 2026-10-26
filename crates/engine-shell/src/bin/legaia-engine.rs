@@ -390,6 +390,7 @@ fn main() -> Result<()> {
             no_dyn_shadows,
             no_entry_pulse,
             smart_monsters,
+            arts_saved_list,
             no_shiny_seru,
             flee_exp,
             exp_rate,
@@ -480,6 +481,7 @@ fn main() -> Result<()> {
                     dyn_shadows: !no_dyn_shadows,
                     entry_pulse: !no_entry_pulse,
                     smart_monsters,
+                    arts_saved_list,
                     tweaks: legaia_engine_session::session_switches::GameplayTweaks {
                         shiny_seru: !no_shiny_seru,
                         flee_exp,

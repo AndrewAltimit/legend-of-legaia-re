@@ -681,7 +681,7 @@ div.play-vis-head { cursor: default; }
               <input type="checkbox" id="play-battle-frame-cadence"> Retail battle cadence
             </label>
             <label class="play-dev-menu"
-                   title="The Arts command opens the port's saved-chain list instead of retail's per-press directional input (the native LEGAIA_ARTS_SAVED_LIST=1). Not retail; Retail-faithful holds it off.">
+                   title="The Arts command opens the port's saved-chain list instead of retail's per-press directional input (the native --arts-saved-list, the launcher's Saved-chain Arts list row). Not retail; Retail-faithful holds it off. Remembered for your next visit.">
               <input type="checkbox" id="play-arts-saved-list"> Saved-chain Arts list
             </label>
             <label title="Walk straight into a minigame from this scene, through the same door warp a casino, arena or fishing-spot door arms (the native L / O / B / M / K keys). Start leaves it.">
@@ -2707,6 +2707,7 @@ div.play-vis-head { cursor: default; }
     if (r === undefined) return;
     retailModeEl.checked = !!r;
     smartEl.checked = !!rtCall('smart_monsters');
+    savedListEl.checked = !!rtCall('arts_saved_list');
     const pulse = rtCall('entry_pulse');
     if (pulse !== undefined) entryPulseEl.checked = !!pulse;
     const psx = rtCall('psx_render');

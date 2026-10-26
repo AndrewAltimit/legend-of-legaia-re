@@ -20,6 +20,9 @@ pub struct LaunchFidelity {
     /// Smarter monster targeting (`--smart-monsters`,
     /// `WorldToggles::smarter_monster_targeting`). Not retail.
     pub smart_monsters: bool,
+    /// The Arts command opens the port's saved-chain list
+    /// (`--arts-saved-list`, `WorldToggles::arts_saved_list`). Not retail.
+    pub arts_saved_list: bool,
     /// The gameplay tweaks - the patcher features graduated into engine
     /// switches (Shiny Seru, run-away EXP, the EXP rate, the Fortress
     /// encounter fix, the jewel fix) and the battle HP-readout guard:
@@ -80,6 +83,7 @@ impl LaunchFidelity {
             dyn_shadows: true,
             entry_pulse: true,
             smart_monsters: false,
+            arts_saved_list: false,
             tweaks: legaia_engine_session::session_switches::GameplayTweaks::default(),
             occlusion_fade: true,
             volumetric_fog: true,
@@ -97,6 +101,7 @@ impl LaunchFidelity {
             dyn_shadows: false,
             entry_pulse: false,
             smart_monsters: false,
+            arts_saved_list: false,
             tweaks: legaia_engine_session::session_switches::GameplayTweaks::retail(),
             occlusion_fade: false,
             volumetric_fog: false,

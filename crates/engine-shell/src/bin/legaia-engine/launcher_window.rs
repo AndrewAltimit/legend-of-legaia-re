@@ -1912,6 +1912,7 @@ mod tests {
             switches: legaia_engine_session::session_switches::PersistedSwitches {
                 no_entry_pulse: true,
                 smart_monsters: true,
+                arts_saved_list: true,
                 ..Default::default()
             },
             ..Default::default()
@@ -1922,9 +1923,10 @@ mod tests {
             Some(Cmd::PlayWindow {
                 no_entry_pulse,
                 smart_monsters,
+                arts_saved_list,
                 retail,
                 ..
-            }) => assert!(no_entry_pulse && smart_monsters && !retail),
+            }) => assert!(no_entry_pulse && smart_monsters && arts_saved_list && !retail),
             other => panic!("expected play-window, got {other:?}"),
         }
         // So do the gameplay-tweak rows.

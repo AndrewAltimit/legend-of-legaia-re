@@ -315,6 +315,9 @@ pub fn play_args_with(info: &DiscInfo, settings: &LauncherSettings) -> Vec<std::
     if settings.switches.no_entry_pulse {
         args.push("--no-entry-pulse".into());
     }
+    if settings.switches.arts_saved_list {
+        args.push("--arts-saved-list".into());
+    }
     if settings.switches.smart_monsters {
         args.push("--smart-monsters".into());
     }
@@ -431,6 +434,7 @@ pub enum OptionRow {
     MonoDownmix,
     EntryPulse,
     SmartMonsters,
+    ArtsSavedList,
     ShinySeru,
     FleeExp,
     ExpRate,
@@ -451,7 +455,7 @@ pub enum OptionRow {
 
 /// The option rows in screen order, with the heading each group starts
 /// under (`Some` on a group's first row).
-pub const OPTION_ROWS: [(Option<&str>, OptionRow); 34] = [
+pub const OPTION_ROWS: [(Option<&str>, OptionRow); 35] = [
     (Some("Display"), OptionRow::Fullscreen),
     (None, OptionRow::WindowSize),
     (None, OptionRow::CameraDistance),
@@ -465,6 +469,7 @@ pub const OPTION_ROWS: [(Option<&str>, OptionRow); 34] = [
     (None, OptionRow::EntryPulse),
     (Some("Play"), OptionRow::PreciseMovement),
     (None, OptionRow::SmartMonsters),
+    (None, OptionRow::ArtsSavedList),
     (None, OptionRow::ReduceFlashing),
     (Some("Gameplay tweaks"), OptionRow::ShinySeru),
     (None, OptionRow::FleeExp),
@@ -527,6 +532,7 @@ impl OptionRow {
             Self::MonoDownmix => "Mono output",
             Self::EntryPulse => "Living ground pulse",
             Self::SmartMonsters => "Smarter monsters",
+            Self::ArtsSavedList => "Saved-chain Arts list",
             Self::ShinySeru => "Shiny Seru",
             Self::FleeExp => "Run-away EXP",
             Self::ExpRate => "EXP rate",
@@ -601,6 +607,10 @@ impl OptionRow {
                 "Monsters aim single-target attacks at your weakest party member, not at \
                  random. Harder than the original."
             }
+            Self::ArtsSavedList => {
+                "In battle, Arts opens a list of your saved combos to pick from, \
+                 instead of entering each press. Not in the original."
+            }
             Self::ShinySeru => {
                 "Now and then a Seru appears shiny: stronger, and its magic hits harder \
                  once caught. Not in the original."
@@ -674,6 +684,7 @@ impl OptionRow {
                 | Self::Retail
                 | Self::EntryPulse
                 | Self::SmartMonsters
+                | Self::ArtsSavedList
                 | Self::ShinySeru
                 | Self::FleeExp
                 | Self::ExpRate
@@ -734,6 +745,7 @@ impl OptionRow {
             Self::MonoDownmix => on_off(opts.downmix_mono),
             Self::EntryPulse => on_off(!s.switches.no_entry_pulse),
             Self::SmartMonsters => on_off(s.switches.smart_monsters),
+            Self::ArtsSavedList => on_off(s.switches.arts_saved_list),
             Self::ShinySeru => on_off(!s.switches.no_shiny_seru),
             Self::FleeExp => on_off(s.switches.flee_exp),
             Self::ExpRate => {
@@ -808,6 +820,7 @@ impl OptionRow {
             Self::MonoDownmix => opts.downmix_mono = o.downmix_mono,
             Self::EntryPulse => w.no_entry_pulse = d.no_entry_pulse,
             Self::SmartMonsters => w.smart_monsters = d.smart_monsters,
+            Self::ArtsSavedList => w.arts_saved_list = d.arts_saved_list,
             Self::ShinySeru => w.no_shiny_seru = d.no_shiny_seru,
             Self::FleeExp => w.flee_exp = d.flee_exp,
             Self::ExpRate => w.exp_rate_permille = d.exp_rate_permille,
@@ -897,6 +910,7 @@ impl OptionRow {
             Self::MonoDownmix => opts.downmix_mono ^= true,
             Self::EntryPulse => s.switches.no_entry_pulse ^= true,
             Self::SmartMonsters => s.switches.smart_monsters ^= true,
+            Self::ArtsSavedList => s.switches.arts_saved_list ^= true,
             Self::ShinySeru => s.switches.no_shiny_seru ^= true,
             Self::FleeExp => s.switches.flee_exp ^= true,
             Self::ExpRate => {
@@ -1150,6 +1164,7 @@ mod tests {
             switches: PersistedSwitches {
                 no_entry_pulse: true,
                 smart_monsters: true,
+                arts_saved_list: true,
                 ..Default::default()
             },
             ..Default::default()
@@ -1157,6 +1172,7 @@ mod tests {
         let a = play_args_with(&info, &port);
         assert!(a.iter().any(|s| s == "--no-entry-pulse"));
         assert!(a.iter().any(|s| s == "--smart-monsters"));
+        assert!(a.iter().any(|s| s == "--arts-saved-list"));
         let a = play_args_with(
             &info,
             &LauncherSettings {
@@ -1168,10 +1184,9 @@ mod tests {
             },
         );
         assert!(a.iter().any(|s| s == "--retail"));
-        assert!(
-            !a.iter()
-                .any(|s| s == "--no-entry-pulse" || s == "--smart-monsters")
-        );
+        assert!(!a.iter().any(|s| s == "--no-entry-pulse"
+            || s == "--smart-monsters"
+            || s == "--arts-saved-list"));
     }
 
     /// The settings file holds the switches at the top level in the one
@@ -1302,6 +1317,7 @@ mod tests {
             MonoDownmix => "play-downmix-mono",
             EntryPulse => "play-entry-pulse",
             SmartMonsters => "play-smart-monsters",
+            ArtsSavedList => "play-arts-saved-list",
             ShinySeru => "play-shiny-seru",
             FleeExp => "play-flee-exp",
             ExpRate => "play-exp-rate",
