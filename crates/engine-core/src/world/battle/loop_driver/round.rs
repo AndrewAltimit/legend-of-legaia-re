@@ -756,6 +756,12 @@ impl World {
         if self.battle.flow != BattleFlowState::TurnPrompt {
             return;
         }
+        // State `0x14`'s `0x1E` write is the battle tick's, which the frame
+        // driver does not call under the battle-entry sweep (`0x80046EF8`):
+        // the prompt - and its unfold glide - opens once the sweep is over.
+        if self.battle_entry_sweeping() {
+            return;
+        }
         let no_escape = self.battle.no_escape;
         if let Some(session) = self.battle.command.as_mut()
             && matches!(session.phase, CommandPhase::Menu { .. })

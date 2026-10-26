@@ -851,10 +851,16 @@ from wherever the sweep leaves the camera: the tutorial cuts to its dialogue
 close-up, any other fight re-arms case 9.
 
 Port: `BattleCamera::start_entry_sweep`, armed on a fight's first camera frame
-(`BattleCamInputs::entry_sweep`). The port's battle tick does not wait for the
-sweep, so the round prompt opens under it, and a command surface or an action
-that opens under it (a fight that auto-acts on load) ends it early; retail
-cannot open one there at all. The enemy-name intro keeps retail's order. Its
+(`BattleCamInputs::entry_sweep`). The port's round open waits for it as
+retail's flow does: while `World::battle_entry_sweeping` reads true the round
+prompt does not arm (`World::arm_round_open_prompt`), no press reaches a command
+surface (`World::battle_command_pad_held`) and the HUD projectors report no
+handle (`battle_hud_phase` is `Idle`, `battle_command_chips` is `None`), so
+`Begin | Run` and its status windows open, and unfold, after the sweep and the
+[entry fade](#the-battle-entry-fade) it overlaps. Opening them earlier drew the
+prompt over a screen still fading in from black. The command session itself
+still opens at battle entry, a port seam retail has no counterpart for. The
+enemy-name intro keeps retail's order. Its
 labels and their `ctx[+0x6D6]` hold belong to the battle tick's flow `0x0A` /
 `0x0B`, which the frame driver reaches only past the sweep (`0x80046EF8` /
 `0x80047014`), so the port neither shows nor drains them until the sweep is

@@ -104,9 +104,21 @@ fn live_battle_overlay_draws_the_retail_party_surface_and_no_banner() {
     const PARTY_TOP: f64 = 164.0 * 3.0;
     const PARTY_BOT: f64 = 212.0 * 3.0;
 
-    // The round prompt opens on a sixteen-vsync glide (sub-draw step 0
-    // spawns the panels under the screen and the chips on the cluster
-    // centre); the packet-pinned bands are where it lands.
+    // The round prompt opens once the battle-entry sweep is over (the
+    // frame driver calls the battle tick only past it, `0x80046EF8`), on a
+    // sixteen-vsync glide (sub-draw step 0 spawns the panels under the
+    // screen and the chips on the cluster centre); the packet-pinned bands
+    // are where it lands.
+    for _ in 0..600 {
+        let sweeping = rt
+            .scene_host
+            .host()
+            .is_some_and(|h| h.world.battle_entry_sweeping());
+        if !sweeping {
+            break;
+        }
+        rt.tick_frame().expect("tick");
+    }
     for _ in 0..16 {
         rt.tick_frame().expect("tick");
     }
