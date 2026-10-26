@@ -195,7 +195,13 @@ probe.run({
         end
         if mode ~= 0x14 and mode ~= 0x15 then
             if vsync >= next_menu_press then
-                press(BTN.CROSS, vsync, 4)
+                -- A save point's menu (modes 0x16 / 0x17) is backed out of
+                -- with the cancel buttons; anything else is a box to clear.
+                if mode == 0x16 or mode == 0x17 then
+                    press(math.floor(vsync / 30) % 2 == 0 and BTN.TRIANGLE or BTN.CIRCLE, vsync, 4)
+                else
+                    press(BTN.CROSS, vsync, 4)
+                end
                 next_menu_press = vsync + 30
             end
             return

@@ -3506,3 +3506,39 @@ phase = "battle"
 expected_game_mode = 0x15
 expected_active_scene = "korb2"
 topics = ["battle", "enemy attack", "Kemaro", "korb2", "harvest"]
+
+[[scenarios]]
+label = "dohaty_field_card_walk"
+backup_fingerprint = "557e6831d36777a24f6123ece8cd0d9bd6a81a32eeaff334da1617f4ea06949f"
+description = "dohaty (Dohati's Castle) free field run, player in control. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 9 (isolate_card_save.py --keep 9 --restamp 0, autorun_boot_continue.lua) into dohaty, then autorun_battle_harvest.lua with LEGAIA_SCENES=1 (random walk) saved it 151 vsyncs in, once the scene had settled and the player had moved (the walk's first scene)."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "dohaty"
+topics = ["field", "dohaty", "scene coverage", "harvest"]
+
+[[scenarios]]
+label = "rikuroa_field_card_walk"
+backup_fingerprint = "2c884d773c4d2701a3a8d30e831ceda57495a4f829cf102511d73a08790972fc"
+description = "rikuroa (Mt. Rikuroa) free field run, player in control. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 1 (isolate_card_save.py --keep 1 --restamp 0, autorun_boot_continue.lua) into rikuroa, then autorun_battle_harvest.lua with LEGAIA_SCENES=1 (random walk) saved it 151 vsyncs in, once the scene had settled and the player had moved (the walk's first scene)."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "rikuroa"
+topics = ["field", "rikuroa", "scene coverage", "harvest"]
+
+[[scenarios]]
+label = "taiku_field_card_walk"
+backup_fingerprint = "96194364eda921e1150e77fa18de0f2bb7cab878cf1be14de05bf233d5f32c10"
+description = "taiku (Zora's Floating Castle) free field run, player in control. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 15 (isolate_card_save.py --keep 15 --restamp 0, autorun_boot_continue.lua) into taiku, then autorun_battle_harvest.lua with LEGAIA_SCENES=1 (random walk) saved it 151 vsyncs in, once the scene had settled and the player had moved (the walk's first scene)."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "taiku"
+topics = ["field", "taiku", "scene coverage", "harvest"]
+
+[[scenarios]]
+label = "korb3_field_walk"
+backup_fingerprint = "1182946da580db9daa6dbefe540dd1d2f6f929e7a9a11dcbacd985e057fd0c9f"
+description = "korb3 (Sol Tower (underground B)) free field run, player in control. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 11 (isolate_card_save.py --keep 11 --restamp 0, autorun_boot_continue.lua) into korb2, then autorun_battle_harvest.lua with LEGAIA_SCENES=1 (random walk) saved it 551 vsyncs in, once the scene had settled and the player had moved (reached by the walk through a door)."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "korb3"
+topics = ["field", "korb3", "scene coverage", "harvest"]
