@@ -158,7 +158,7 @@ pub fn project_actor(actor: &CullActor, tile_descs: &[TileDescriptor]) -> Option
 }
 
 /// Strictly-exclusive `+/-0x180` window test on both axes (step 4).
-fn in_window(v: i32, cam: i32) -> bool {
+fn in_contact_window(v: i32, cam: i32) -> bool {
     cam - CULL_WINDOW < v && v < cam + CULL_WINDOW
 }
 
@@ -180,7 +180,7 @@ pub fn build_contact_candidates(
         let Some((x, y)) = project_actor(actor, tile_descs) else {
             continue;
         };
-        if !in_window(x, cam_x) || !in_window(y, cam_y) {
+        if !in_contact_window(x, cam_x) || !in_contact_window(y, cam_y) {
             continue;
         }
         visible.push(idx);
