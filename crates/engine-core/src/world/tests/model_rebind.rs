@@ -90,3 +90,68 @@ fn an_object_stream_swaps_its_records_model() {
     w.seed_object_live_model(5, 0x1E);
     assert_eq!(w.object_live_models().get(&5), Some(&0x1E));
 }
+
+/// Scripted-motion op `0x0C` lands its `+0x74` / `+0x78` pair where both
+/// hosts read an NPC's draw tint: a zero-duration write is drawn at once, a
+/// ramped one climbs tick by tick, and a pair back at blend `0` stops drawing.
+#[test]
+fn op_0x0c_tint_reaches_the_npc_draw_tint() {
+    let mut w = World::new();
+    // `[0C, r, g, b, mode_lo, mode_hi, dur_lo, dur_hi]`: blue-grey at
+    // `0x0800` outright (bubu2's colour), then wait.
+    with_ambient(
+        &mut w,
+        7,
+        vec![0x0C, 0x50, 0x50, 0x9B, 0x00, 0x08, 0x00, 0x00, 0x05, 0x7F],
+    );
+    assert_eq!(w.field_npc_draw_tint(7), None, "nothing tinted yet");
+    w.tick_field_npc_ambient();
+    assert_eq!(w.field_npc_draw_tint(7), Some((0x009B_5050, 0x0800)));
+    assert_eq!(w.field_npc_draw_tint(6), None, "another slot is untouched");
+}
+
+#[test]
+fn a_ramped_op_0x0c_publishes_each_tick_of_the_fade() {
+    let mut w = World::new();
+    // Black at `0x1000` over 4 ticks - the `koin3` / `edbubu` fade-out shape.
+    with_ambient(
+        &mut w,
+        3,
+        vec![0x0C, 0x00, 0x00, 0x00, 0x00, 0x10, 0x04, 0x00, 0x05, 0x7F],
+    );
+    let mut seen = Vec::new();
+    for _ in 0..6 {
+        w.tick_field_npc_ambient();
+        seen.push(w.field_npc_draw_tint(3).map(|(_, b)| b));
+    }
+    let last = seen.last().copied().flatten();
+    assert_eq!(last, Some(0x1000), "the fade ends at full weight: {seen:?}");
+    let first = seen.iter().copied().flatten().next();
+    assert!(
+        first.is_some_and(|b| b < 0x1000),
+        "the fade climbs rather than snapping: {seen:?}"
+    );
+}
+
+/// The object arm: a stream bound to a partition-0 record publishes into
+/// `World::object_draw_tints`, the table both hosts' placed-object pass reads.
+#[test]
+fn an_object_stream_tints_its_record() {
+    let mut w = World::new();
+    w.npcs.object_ambient.insert(
+        9,
+        FieldNpcAmbient {
+            defers: false,
+            walks: false,
+            variants: vec![(
+                legaia_scene_formats::man_motion::SELECTOR_DEFAULT,
+                vec![0x0C, 0x00, 0x00, 0x00, 0x40, 0x06, 0x00, 0x00, 0x05, 0x7F],
+            )],
+            live: None,
+            vm: legaia_engine_motion_vm::ambient_motion::AmbientMotion::new(9, 0),
+        },
+    );
+    assert!(w.object_draw_tints().is_empty());
+    w.tick_field_npc_ambient();
+    assert_eq!(w.object_draw_tints().get(&9), Some(&(0, 0x0640)));
+}

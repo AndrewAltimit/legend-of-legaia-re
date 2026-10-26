@@ -408,6 +408,7 @@ impl World {
             // constant here. The ramp pool is its own actor and keeps
             // running either way.
             let suppressed = globals_in & legaia_engine_field::camera::CAMERA_HOLD_FLAG != 0;
+            let tint_in = (vm.tint, vm.blend);
             let plan = legaia_engine_motion_vm::motion_vm::field_actor_plan(
                 legaia_engine_motion_vm::motion_vm::FieldActorInputs {
                     lifetime: vm.move_pair.unwrap_or(0),
@@ -433,6 +434,7 @@ impl World {
             let globals_out = vm.globals;
             let scale_out = vm.scale;
             let tilt_out = (vm.pitch, vm.roll);
+            let tint_out = (vm.tint, vm.blend);
             let effects: Vec<_> = std::mem::take(&mut vm.effects);
             // A walk op's heading write is walk-direction-implied facing: it
             // only means anything alongside the step it accompanies. With the
@@ -497,7 +499,65 @@ impl World {
             if let Some(scale) = scale_out {
                 self.publish_ambient_render_scale(slot, scale);
             }
+            // The same one-record split for op `0x0C`'s `+0x74` / `+0x78`
+            // pair: publish a changed pair where both hosts read an NPC's
+            // draw tint ([`Self::field_npc_draw_tint`]).
+            if tint_out != tint_in {
+                self.publish_ambient_tint(
+                    legaia_engine_field::object_tint::ActorTintKey::Npc(usize::from(slot)),
+                    tint_out,
+                );
+            }
         }
+    }
+
+    /// Publish a scripted-motion channel's op-`0x0C` write - retail's
+    /// `actor+0x74` tint and `+0x78` draw-mode word, the two arguments the
+    /// field actor draws hand the mesh submit `FUN_80043390`
+    /// (`lw a1,0x74(s0)` / `lhu a2,0x78(s0)` at `0x8001B46C` and
+    /// `0x8001BC7C`) - into the store the hosts' draw tint accessors read.
+    ///
+    /// Retail has one actor record that the field VM's `4C 81` and this op
+    /// both write; the port keeps the field-VM pair on the channel or in
+    /// [`super::super::FieldVmState::actor_tints`] and the motion VM's on
+    /// its own channel, so the publish is last-writer-wins: it runs only on
+    /// a tick that changed the motion VM's pair. The motion VM's own ramp
+    /// pool already advances the pair, so the published value lands
+    /// outright (no second tween).
+    ///
+    /// An object's pair goes onto its object-bind channel's context when
+    /// one exists (what [`Self::object_draw_tints`] reads first), else into
+    /// the actor tint table under [`ActorTintKey::Object`].
+    ///
+    /// [`ActorTintKey::Object`]: legaia_engine_field::object_tint::ActorTintKey::Object
+    // REF: FUN_8001ADA4 (0x8001B46C..0x8001B474), FUN_8001B964 (0x8001BC7C..0x8001BC84)
+    pub(in crate::world::field_movement) fn publish_ambient_tint(
+        &mut self,
+        key: legaia_engine_field::object_tint::ActorTintKey,
+        (colour, blend): (u32, u16),
+    ) {
+        use legaia_engine_field::object_tint::{ActorTint, ActorTintKey};
+        let colour = colour & 0x00FF_FFFF;
+        if let ActorTintKey::Object(r) = key
+            && let Some(c) = self
+                .field_vm
+                .channels
+                .iter_mut()
+                .find(|c| c.object_bind && c.placement_index == usize::from(r))
+        {
+            c.ctx.field_74 = colour;
+            c.ctx.field_78 = blend;
+            self.field_vm.actor_tints.remove(&key);
+            return;
+        }
+        self.field_vm.actor_tints.insert(
+            key,
+            ActorTint {
+                colour,
+                blend,
+                ..ActorTint::default()
+            },
+        );
     }
 
     /// The live `(pitch, roll)` of a field NPC's actor draw - retail
@@ -634,8 +694,11 @@ impl World {
 
     /// Step the placed objects' scripted-motion streams
     /// ([`crate::world::FieldNpcState::object_ambient`]) one actor game tick.
-    /// Only the model swap (op `0x0E`) has a placed-object consumer; the
-    /// streams the disc binds to objects carry nothing else that draws.
+    /// Two of its writes draw: the model swap (op `0x0E`, into
+    /// [`crate::world::FieldNpcState::object_models`]) and the tint fade
+    /// (op `0x0C`, through [`Self::publish_ambient_tint`] into
+    /// [`Self::object_draw_tints`]) - the disc binds `0x0C` streams to
+    /// objects in `ropeway` / `ropeway2`, `taiku`, `koin3` and `other7`.
     ///
     /// REF: FUN_80038158, FUN_8003BC08 (the same per-actor driver as the
     /// placements' streams)
@@ -675,8 +738,19 @@ impl World {
             if suppressed {
                 continue;
             }
+            let tint_in = (vm.tint, vm.blend);
             vm.tick_with(code, speed, &probe);
-            for fx in std::mem::take(&mut vm.effects) {
+            let tint_out = (vm.tint, vm.blend);
+            let effects = std::mem::take(&mut vm.effects);
+            if tint_out != tint_in
+                && let Ok(r) = u16::try_from(record)
+            {
+                self.publish_ambient_tint(
+                    legaia_engine_field::object_tint::ActorTintKey::Object(r),
+                    tint_out,
+                );
+            }
+            for fx in effects {
                 if let legaia_engine_motion_vm::ambient_motion_ops::AmbientEffect::ModelSwap {
                     bank,
                     offset,

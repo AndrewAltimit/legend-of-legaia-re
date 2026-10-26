@@ -94,6 +94,7 @@ mod map03_conditional_walls_disc;
 mod map03_floating_castle_disc;
 mod menu_item_category_disc;
 mod model_rebind_live_disc;
+mod motion_tint_live_disc;
 mod move_ctrl52_census_disc;
 mod move_ext_strip_census_disc;
 mod move_op03_census_disc;

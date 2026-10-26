@@ -1157,6 +1157,21 @@ back with `lhu`.
 The "glide-channel install" reading is **falsified**: nothing in the arm
 touches a coordinate.
 
+The pair reaches the pixel through the field actor draws, which hand
+`+0x74` and `+0x78` straight to the mesh submit (`lw a1,0x74(s0)` /
+`lhu a2,0x78(s0)` before `jal 0x80043390` at `0x8001B46C` in `FUN_8001ADA4`
+and `0x8001BC7C` in `FUN_8001B964`). A non-zero mode word makes the submit
+load the colour's RGB as the GTE far colour (`0x800434C8..0x800434D0`), select
+the depth-cue handler bank, and park the word as the per-object `IR0` the
+leaves load before `DPCS` - so each prim's colour becomes
+`baked + (tint - baked) * mode / 0x1000`, the same rule the field VM's
+`4C 81` tint uses. The disc authors the op at 44 sites in 9 scenes, bound
+to NPCs (`taiku`, `bubu1`, `bubu2`, `garmel`, `edbubu`) and to placed objects
+(`koin3`, `other7`, `ropeway` / `ropeway2`, `taiku`); almost all fade toward
+black. Retail has one actor record that both ops write, so the port publishes
+the motion VM's pair last-writer-wins on a tick that changes it. Disc-gated
+test: `crates/engine-scene-host/tests/motion_tint_live_disc.rs`.
+
 ### Op `0x0E` - the model swap
 
 `[0E, lo, hi]`, case body `0x800393A0`. Re-binds the actor's mesh through
@@ -1369,9 +1384,9 @@ channel - but it is the thing to check before filing "op X does nothing".
 | `0x14` | published into the field-VM channel's `+0x72` so `World::field_npc_render_scale` - the accessor both hosts consult before drawing an NPC - sees it |
 | `0x02` / `0x0A` / `0x0B` | the requested-move pair reaches `carry_npc_run_anim`; the translucency bit has no consumer |
 | `0x09` | runs the same enqueue the field VM's op `0x36` sub-`0` runs - `World::audio.sfx_cue_cursor` / `sfx_parked_slot` / `sfx_cue_delays` - so a following delay write lands on the slot this op parked; the cue **id** crosses to the hosts as `SfxRingOp::Push`, which both replay into their SFX ring and play |
-| `0x0C` | tint and draw-mode ramp on the channel; no NPC tint reaches either host's draw list |
+| `0x0C` | the channel's `+0x74` / `+0x78` pair, published on every tick that changes it (`World::publish_ambient_tint`) into the tables both hosts stage as a per-draw cue: `World::field_npc_draw_tint` for an NPC, `World::object_draw_tints` for a placed object |
 | `0x0E` | `World::npcs.models`, keyed by placement slot, read back through `World::field_npc_live_model`; each host resolves the bytes through `SceneHost::model_bank` (`model_bank::SceneModelBank::tmd_bytes`, all 215 authored sites) and re-uploads that slot's mesh |
-| `0x13` | no VRAM blit is reachable from a field-actor tick; `engine-render` owns the only VRAM |
+| `0x13` | queued on `World::queue_script_vram_move`, the field VM's `4C 60` blit queue, which both hosts drain into their software VRAM |
 | `0x15` / `0x16` | `World::field_npc_tilt`, published per slot beside the heading; both hosts compose the full `Rx * Ry * Rz` when it is non-zero ([`host-drift.md`](../tooling/host-drift.md#per-actor-pitch-and-roll)) |
 
 ### Flag census

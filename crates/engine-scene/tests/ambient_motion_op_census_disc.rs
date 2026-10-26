@@ -2,12 +2,14 @@
 //! authors, per scene MAN.
 //!
 //! The port of `FUN_80038158` runs the whole 32-slot op table
-//! (`legaia_engine_motion_vm::ambient_motion_ops`), but four of its arms reach no
-//! consumer on either host - `0x0E` (model re-bind), `0x13` (`MoveImage`),
-//! `0x15` / `0x16` (the pitch / roll tweens). Wiring a consumer for an arm no
-//! authored stream ever executes is speculation dressed as parity, so this
-//! census answers the prior question from the bytes: does the disc carry the
-//! op at all, and in which scenes?
+//! (`legaia_engine_motion_vm::ambient_motion_ops`). Whether an arm's write
+//! needs a host consumer at all depends on whether any authored stream
+//! executes it - wiring one for an arm no stream runs is speculation dressed
+//! as parity - so this census answers the prior question from the bytes:
+//! does the disc carry the op at all, and in which scenes? The arms that once
+//! had no consumer (`0x0C` tint fade, `0x0E` model re-bind, `0x13`
+//! `MoveImage`, `0x15` / `0x16` pitch / roll) each have one now; see the
+//! host table in `docs/subsystems/motion-vm.md`.
 //!
 //! It walks every CDNAME scene's MAN tail-**section 1** streams (the carrier
 //! `legaia_scene_formats::man_motion` decodes, every variant of every record) and
@@ -263,17 +265,88 @@ fn scripted_motion_op_census_or_skip() {
     // clear) is the arm the sibling `motion_flag_census_disc` pins by scene,
     // so a zero here means this walk is broken, not that the disc is empty.
     assert!(count(0x08) > 0, "motion-VM flag-clear arm found nowhere");
-    // The four consumer-gap arms. Whatever these numbers are, they are the
-    // denominator any "wire it on both hosts" decision has to quote.
-    for op in [0x0E, 0x13, 0x15, 0x16] {
+    // The arms whose host consumers were wired against these counts.
+    // Whatever these numbers are, they are the denominator a "wired on both
+    // hosts" claim quotes.
+    for op in [0x0C, 0x0E, 0x13, 0x15, 0x16] {
         let names: Vec<&str> = c
             .get(&op)
             .map(|e| e.1.iter().map(String::as_str).collect())
             .unwrap_or_default();
         eprintln!(
-            "[motion ops] consumer-gap op {op:#04x}: {} sites over {} scenes {names:?}",
+            "[motion ops] wired-consumer op {op:#04x}: {} sites over {} scenes {names:?}",
             count(op),
             scenes(op)
         );
     }
+}
+
+/// Who the disc's tint-fade (`0x0C`) and translucency (`0x0A` / `0x0B`)
+/// streams drive, per scene: a placed object (bind id below `N0`), a placed
+/// NPC (`N0 + placement index`), or a special id. Retail has one actor record,
+/// so the binding is what decides which of the port's draw tables
+/// (`World::object_draw_tints` / `World::field_npc_draw_tint`) a write lands
+/// in.
+#[test]
+fn tint_fade_bindings_or_skip() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
+        return;
+    };
+    let index = ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
+    let mut tint_sites = 0usize;
+    for name in index.cdname_scene_names() {
+        let Ok(scene) = Scene::load(&index, &name) else {
+            continue;
+        };
+        for carrier in scene_man_carriers(&index, &scene) {
+            let man = &carrier.payload;
+            let Ok(man_file) = legaia_scene_formats::man_section::parse(man) else {
+                continue;
+            };
+            let n0 = man_file.partitions.first().map(|p| p.len()).unwrap_or(0);
+            for rec in legaia_scene_formats::man_motion::motion_records(man, &man_file) {
+                let binds: Vec<String> = rec
+                    .bindings
+                    .iter()
+                    .map(|b| {
+                        let id = usize::from(b.actor_id);
+                        if id < n0 {
+                            format!("obj{id}")
+                        } else if b.actor_id < legaia_scene_formats::man_motion::ACTOR_PLAYER {
+                            format!("npc{}", id - n0)
+                        } else {
+                            format!("special{:#04x}", b.actor_id)
+                        }
+                    })
+                    .collect();
+                for var in legaia_scene_formats::man_motion::stream_variants(man, &rec) {
+                    let mut pc = var.code_offset;
+                    while pc < var.code_end && pc < man.len() {
+                        let op = man[pc];
+                        let Some(w) = legaia_scene_formats::man_motion::op_width(op) else {
+                            break;
+                        };
+                        if matches!(op, 0x0A..=0x0C)
+                            && let Some(b) = man.get(pc..pc + w)
+                        {
+                            if op == 0x0C {
+                                tint_sites += 1;
+                            }
+                            eprintln!(
+                                "[tint] {name} rec{} var{} {binds:?} op {op:#04x} {:02x?}",
+                                rec.index, var.index, b
+                            );
+                        }
+                        pc += w;
+                    }
+                }
+            }
+        }
+    }
+    assert!(tint_sites > 0, "no op 0x0C site decoded");
 }
