@@ -36,6 +36,10 @@
 --   LEGAIA_MAX_CAPS  stop after this many captures (default 12)
 --   LEGAIA_PREFIX    capture name prefix (default "harvest")
 --   LEGAIA_SPIRIT_ROUNDS  rounds of Spirit before attacking (default 3)
+--   LEGAIA_WALK_SEED nonzero = pick each leg's direction (the four plus the
+--                    diagonals) and length (30..150 vsyncs) off a seeded
+--                    LCG instead of the fixed Up/Right/Down/Left cycle,
+--                    so a long walk wanders far enough to find doors
 --   LEGAIA_SCENES    1 = also save one field state per scene the walk reaches:
 --                    once the loaded scene (label 0x8007050C and define
 --                    0x80084540 both stable) has run LEGAIA_SCENE_SETTLE
@@ -57,6 +61,14 @@ local MAX_CAPS = probe.getenv_num("LEGAIA_MAX_CAPS", 12)
 local PREFIX   = probe.getenv("LEGAIA_PREFIX", "harvest")
 local SPIRIT_ROUNDS = probe.getenv_num("LEGAIA_SPIRIT_ROUNDS", 3)
 local SCENES = probe.getenv_num("LEGAIA_SCENES", 0) == 1
+local WALK_SEED = probe.getenv_num("LEGAIA_WALK_SEED", 0)
+local lcg = WALK_SEED
+local function rnd(n)
+    lcg = (lcg * 1103515245 + 12345) % 2147483648
+    return math.floor(lcg / 65536) % n
+end
+local DIAG = { { BTN.UP, BTN.RIGHT }, { BTN.RIGHT, BTN.DOWN }, { BTN.DOWN, BTN.LEFT }, { BTN.LEFT, BTN.UP } }
+local held2 = nil
 local SCENE_SETTLE = probe.getenv_num("LEGAIA_SCENE_SETTLE", 150)
 local LOADED_DEFINE = 0x80084540
 local PLAYER_PTR = 0x8007c364
@@ -182,9 +194,22 @@ probe.run({
         elseif mode ~= 0x03 then
             scene_key = nil
         end
+        if mode ~= 0x03 and held2 ~= nil then probe.pad.release(held2); held2 = nil end
         if mode == 0x03 then
             -- Walk: hold one direction per leg, a Cross now and then.
-            if vsync >= walk_next then
+            if vsync >= walk_next and WALK_SEED ~= 0 then
+                if held2 ~= nil then probe.pad.release(held2); held2 = nil end
+                local leg = 30 + rnd(121)
+                local d = rnd(8)
+                walk_next = vsync + leg
+                if d < 4 then
+                    press(WALK[d + 1], vsync, leg - 2)
+                else
+                    press(DIAG[d - 3][1], vsync, leg - 2)
+                    held2 = DIAG[d - 3][2]
+                    probe.pad.force(held2)
+                end
+            elseif vsync >= walk_next then
                 walk_i = (walk_i % #WALK) + 1
                 walk_next = vsync + WALK_LEG
                 press(WALK[walk_i], vsync, WALK_LEG - 2)
@@ -261,6 +286,7 @@ probe.run({
 
     on_done = function(_, _)
         if held ~= nil then probe.pad.release(held) end
+        if held2 ~= nil then probe.pad.release(held2) end
         logf("done: battles=%d captures=%d", battles, caps)
         local fh = io.open(probe.out_path("harvest.log"), "w")
         if fh ~= nil then
