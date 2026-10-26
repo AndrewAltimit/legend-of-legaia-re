@@ -227,6 +227,13 @@ pub struct ModuleCamState {
     /// a dead victim's playing clip back to `0`, a living one's tint word
     /// `+0x04` cleared.
     pub victim_settled: bool,
+    /// Every party seat's `+0x1D9` back on idle (a downed one on clip `8`),
+    /// fed by the host for a capture director's row settle (PROT 0965's arm
+    /// `0x0C`).
+    pub party_settled: bool,
+    /// The party seats' pairs and headings as a line-up arm found them
+    /// ([`capture::CaptureCamArm::party_line_up`]), for the restore.
+    pub party_saved: [Option<(i16, i16, u16)>; 3],
     /// The caster's target code `+0x1DD` as the host last read it: a seat
     /// below `8`, a group code from `8` (PROT 0914 and 0929 frame a group
     /// through `FUN_801DCEAC` and a seat otherwise). `None` where the host
@@ -250,6 +257,27 @@ pub struct ModuleCamState {
     /// The arm a bounded host wait (a frame or park wait) is counting,
     /// and how many passes it has held.
     pub wait: (u8, u16),
+    /// The caster's display trio `+0x3C..+0x40` and heading, fed by the host
+    /// for a capture director (PROT 0959's shots focus on it).
+    pub caster_body: Option<ModuleSeat>,
+    /// The victim's display trio and heading, fed like [`Self::caster_body`].
+    pub victim_body: Option<ModuleSeat>,
+    /// The present party's first roster id `0x8007BD10[0]`, fed by the host
+    /// (PROT 0959's arm `0x10` tests it against `1`).
+    pub lead_roster: u8,
+    /// Whether this tick opens a battle frame, fed by the host: an arm whose
+    /// state steps once a pass (PROT 0959's shake toggle) steps on it.
+    pub opens_pass: bool,
+    /// The battle frame step `*(0x1F800393)`, fed by the host.
+    pub frame_step: u8,
+    /// The caster's playing clip `+0x1D9`, fed by the host for a capture
+    /// director (PROT 0960's arm-5 wait). `None` where the host plays none.
+    pub caster_clip: Option<u8>,
+    /// The caster's anim-node cursor `+0x68` (12.4), fed like
+    /// [`Self::caster_clip`].
+    pub caster_frame: Option<u16>,
+    /// The caster's loop counter `+0x21B`, fed like [`Self::caster_clip`].
+    pub caster_loops: Option<u8>,
 }
 
 /// `FUN_801D5854(7, 6)` out of a module arm: the action SM's own case-6
@@ -345,6 +373,9 @@ pub struct ArmDirection {
     /// included, folded into a shot in flight like a capture arm's
     /// ([`CaptureDrift`]): added every pass, held or not.
     pub drift: Option<CaptureDrift>,
+    /// The chained streak ribbons (`FUN_801E1D98`) the arm draws on this
+    /// pass (PROT 0909's arm-11 bolt and arm-12 ring), for this tick only.
+    pub ribbons: Option<capture::CastRibbonRing>,
 }
 
 /// A line of text a module arm prints through `FUN_8003541C(0, 0, str, x,
@@ -444,6 +475,11 @@ pub enum SpawnAnchor {
     /// pose centroid) on its angle trio `+0x44`: `a0 = caster + 0x3C`,
     /// `a1 = caster + 0x44`. PROT 0946's Call Wave arm 0 (`0x801F6C38`).
     CasterBody,
+    /// The creature seat's display trio `+0x3C..+0x40` on the arm's zeroed
+    /// stack angles: `a0 = creature + 0x3C`, `a1 = sp+0x20`. PROT 0929 arm
+    /// 14's last four calls (`0x801F79E8..0x801F7A54`) and arm 15's first
+    /// (`0x801F7C00..0x801F7C40`).
+    CreatureBody,
     /// The caster seat's `+0x34..+0x3B` copied to the stack (`lwl` / `lwr`)
     /// with `dy` / `dz` added to its height and depth halfwords, on the
     /// caster's angle trio `+0x44`: PROT 0961 arms 2 and 3
@@ -531,6 +567,24 @@ pub enum SpawnAnchor {
     /// caster + 0x34`, `a1 = creature + 0x44`): PROT 0914 arm `0xB`
     /// (`0x801F7300..0x801F7324`).
     CasterCreatureRot,
+    /// The victim's display trio on the caster's angle trio (`a0 = victim +
+    /// 0x3C`, `a1 = caster + 0x44`): PROT 0959 arm `0x0D`
+    /// (`0x801F79D4..0x801F7A68`).
+    VictimBodyCasterRot,
+    /// The victim's display trio with its height zeroed (copied to the
+    /// stack, `sh zero,0x22(sp)`), on the victim's angle trio, at the scale
+    /// `a3`: PROT 0959 arm `0x0E` (`0x801F7BFC..0x801F7E18`).
+    VictimBodyGround { scale: u16 },
+    /// [`Self::VictimBodyGround`] on the caster's angle trio at `0x1000`:
+    /// PROT 0960 arm `0x0D` (`0x801F8284..0x801F82EC`).
+    VictimBodyGroundCasterRot,
+    /// Point `index` of a ring of `count` about the caster's plane pair, at
+    /// angle `a = (index << 12) / count`: `x + trunc(cos(a) / div)`,
+    /// `z + trunc(sin(a) / div)` off the SCUS tables `*0x8007B7F8` /
+    /// `*0x8007B81C`, on the floor, turned to `a`. PROT 0960 `0xA6` arm 5's
+    /// ten points (`0x801F70F4..0x801F71D8`, `/ 3` by the `0x55555556`
+    /// multiply-high).
+    CasterRing { index: u8, count: u8, div: i16 },
 }
 
 /// The seat a [`SpawnAnchor::AlongVictimHeading`] point starts from.
@@ -547,6 +601,10 @@ pub struct AnchorSeats {
     pub caster: Option<ModuleSeat>,
     /// The caster's display trio `+0x3C..+0x40`, facing its `+0x46`.
     pub caster_body: Option<ModuleSeat>,
+    /// The victim's display trio, facing its `+0x46`.
+    pub victim_body: Option<ModuleSeat>,
+    /// The creature seat's display trio `+0x3C..+0x40`.
+    pub creature_body: Option<ModuleSeat>,
     pub party: [Option<ModuleSeat>; 3],
     /// The framing depth `ctx[+0x6D0]`, the scale PROT 0913 passes.
     pub depth: i16,
@@ -584,6 +642,10 @@ pub fn spawn_anchor_point_with(
             ([c.x, y, c.z], [0, c.facing as i16, 0])
         }
         SpawnAnchor::CasterBody => seat_at(seats.caster_body?),
+        SpawnAnchor::CreatureBody => {
+            let c = seats.creature_body?;
+            ([c.x, c.y, c.z], [0; 3])
+        }
         SpawnAnchor::CasterShifted { dy, dz } => {
             let c = seats.caster?;
             (
@@ -600,6 +662,20 @@ pub fn spawn_anchor_point_with(
             )
         }
         SpawnAnchor::PartySeat(n) => seat_at((*seats.party.get(usize::from(n))?)?),
+        SpawnAnchor::CasterRing { index, count, div } => {
+            let c = seats.caster?;
+            let a = ((u32::from(index) << 12) / u32::from(count.max(1))) as u16;
+            let (sin, cos) = trig12(a);
+            let d = i32::from(div);
+            (
+                [
+                    (i32::from(c.x) + i32::from(cos) / d) as i16,
+                    0,
+                    (i32::from(c.z) + i32::from(sin) / d) as i16,
+                ],
+                [0, a as i16, 0],
+            )
+        }
         SpawnAnchor::LiteralScaled { pos, rot, .. } => (pos, rot),
         SpawnAnchor::CasterUnturned { y } => {
             let c = seats.caster?;
@@ -671,6 +747,20 @@ pub fn spawn_anchor_point_with(
             let v = victim?;
             ([v.x, v.y, v.z], [0; 3])
         }
+        SpawnAnchor::VictimBodyCasterRot => {
+            let v = seats.victim_body?;
+            let f = seats.caster.map_or(0, |c| c.facing as i16);
+            ([v.x, v.y, v.z], [0, f, 0])
+        }
+        SpawnAnchor::VictimBodyGroundCasterRot => {
+            let v = seats.victim_body?;
+            let f = seats.caster.map_or(0, |c| c.facing as i16);
+            ([v.x, 0, v.z], [0, f, 0])
+        }
+        SpawnAnchor::VictimBodyGround { .. } => {
+            let v = seats.victim_body?;
+            ([v.x, 0, v.z], [0, v.facing as i16, 0])
+        }
         SpawnAnchor::CasterCreatureRot => {
             let c = seats.caster?;
             let f = creature.map_or(0, |k| k.facing as i16);
@@ -720,6 +810,7 @@ pub fn spawn_anchor_scale(
             .map_or(0x1000, |z| z as u16),
         SpawnAnchor::LiteralScaled { scale, .. } => scale,
         SpawnAnchor::CreatureScaled { scale } => scale,
+        SpawnAnchor::VictimBodyGround { scale } => scale,
         _ => 0x1000,
     }
 }
@@ -788,6 +879,7 @@ impl ArmDirection {
         kills_fades: false,
         jump: None,
         drift: None,
+        ribbons: None,
     };
     pub(super) const PASS: Self = Self {
         hold: false,
@@ -803,6 +895,7 @@ impl ArmDirection {
         kills_fades: false,
         jump: None,
         drift: None,
+        ribbons: None,
     };
     pub(super) fn shot(shot: ModuleShot) -> Self {
         Self {
@@ -846,6 +939,7 @@ pub(super) fn focus_on(seat: ModuleSeat) -> [i16; 3] {
 }
 
 mod aluru;
+mod blade_breath;
 mod body_kit;
 mod body_paced;
 pub mod capture;
@@ -853,6 +947,7 @@ pub mod capture_countdown;
 mod capture_spawns;
 pub mod creature;
 mod creature_spawns;
+mod doomsday;
 mod evil_seru_magic;
 mod freed;
 mod gilium_palma_horn;
@@ -860,10 +955,12 @@ mod gola_mushura_barra;
 mod jedo_iota_mule;
 mod juggernaut;
 mod kemaro;
+mod megaton_press;
 mod meta_terra_ozma;
 mod nighto;
 mod nova;
 mod orb;
+mod plasma_strike;
 mod puera;
 mod seru;
 pub mod summon_holds;
@@ -871,11 +968,23 @@ mod swordie;
 mod theeder_gizam;
 mod viguro;
 pub use aluru::*;
+pub use blade_breath::{
+    BLADE_BREATH_BODY, BLADE_BREATH_STRIKE_CURSOR, GIGATON_PRESS_BODY, GIGATON_PRESS_DEBRIS,
+    GIGATON_PRESS_STRIKE_CURSOR, THUNDER_NEEDLE_BODY, THUNDER_NEEDLE_RING_SPAN,
+    THUNDER_NEEDLE_RING_STREAKS, THUNDER_NEEDLE_RING_TRAIL, THUNDER_NEEDLE_STRIKE_CURSOR,
+    THUNDER_NEEDLE_TAIL_CURSOR, blade_breath_camera, capture_approach_follows,
+    gigaton_press_camera, gigaton_press_debris, gigaton_press_jump_height, thunder_needle_camera,
+    thunder_needle_ring,
+};
 pub use capture::*;
 pub use capture_countdown::{ArmCountdown, CountdownWrite, arm_countdown, capture_arm_countdowns};
 pub use capture_spawns::*;
 pub use creature::*;
 pub use creature_spawns::*;
+pub use doomsday::{
+    DOOMSDAY_BODY, DOOMSDAY_LINE_UP_X, DOOMSDAY_RING_COUNT, DOOMSDAY_RING_RECORD, doomsday_camera,
+    doomsday_ring_part_words,
+};
 pub use evil_seru_magic::*;
 pub use freed::*;
 pub use gilium_palma_horn::*;
@@ -883,10 +992,17 @@ pub use gola_mushura_barra::*;
 pub use jedo_iota_mule::*;
 pub use juggernaut::*;
 pub use kemaro::*;
+pub use megaton_press::{
+    MEGATON_PRESS_BODY, MEGATON_PRESS_COUNTDOWN, megaton_press_camera, megaton_press_jump_height,
+};
 pub use meta_terra_ozma::*;
 pub use nighto::*;
 pub use nova::*;
 pub use orb::*;
+pub use plasma_strike::{
+    NEO_STAR_SLASH_BODY, PLASMA_STRIKE_ARM5_CURSOR, PLASMA_STRIKE_BODY, PLASMA_STRIKE_BURST_CURSOR,
+    PLASMA_STRIKE_COUNTDOWN, neo_star_slash_camera, plasma_strike_camera,
+};
 pub use puera::*;
 pub use seru::*;
 pub use swordie::*;

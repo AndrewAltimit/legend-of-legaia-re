@@ -105,8 +105,8 @@ impl Renderer {
         {
             use crate::occlusion_fade as of;
             let c = f.clip;
-            let vw = self.config.width as f32;
-            let vh = self.config.height as f32;
+            let vw = self.target_size().0 as f32;
+            let vh = self.target_size().1 as f32;
             let px = (c[0] / c[3] * 0.5 + 0.5) * vw;
             // WebGPU NDC y is up, framebuffer y is down.
             let py = (0.5 - c[1] / c[3] * 0.5) * vh;
@@ -304,16 +304,17 @@ impl Renderer {
         // the queue a single contiguous range.
         let total = needed * stride;
         let mut bytes = vec![0u8; total];
-        let snap = if self.psx_mode.get() { 1.0f32 } else { 0.0 };
+        let (snap, dither) = self.psx_snap_params();
         let psx_params = [
-            self.config.width as f32,
-            self.config.height as f32,
+            self.target_size().0 as f32,
+            self.target_size().1 as f32,
             snap,
-            snap, // .w = dither_enable (shares the psx_mode flag)
+            dither, // .w = dither_enable (the psx_mode flag)
         ];
         let tex_window_packed = pack_tex_window(self.tex_window.get());
         let (clips_textured, clips_color) = self.draw_clips.borrow().clone();
         let nclip_textured = self.draw_nclip.borrow().clone();
+        let nclip_color = self.color_draw_nclip.borrow().clone();
         let grade = self.color_grade.get();
         // flags[2] is set per draw below: 1.0 = environment geometry the
         // occlusion fade may dissolve, 0.0 = actor draws (player / NPCs)
@@ -431,7 +432,7 @@ impl Renderer {
                 draw.cue,
                 i < occl_env_color,
                 clips_color.get(i).copied().flatten(),
-                None,
+                nclip_color.get(i).copied().flatten(),
             );
         }
         let buf_borrow = self.scene_uniforms_buf.borrow();

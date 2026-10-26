@@ -1,9 +1,11 @@
-//! The crate's integration tests as one test binary.
+//! The crate's public-API tests, mounted into the library's unit-test target.
 //!
 //! Each `tests/<name>.rs` is a module here rather than its own binary
-//! (`autotests = false` in Cargo.toml): one compile and one link instead of
-//! one per file. Run a single file's tests with
-//! `cargo test -p legaia-engine-scene-host --test integration <name>::`.
+//! (`autotests = false` in Cargo.toml), and `src/lib.rs` mounts this file as
+//! `#[cfg(test)] mod integration`, so the library compiles once in test mode
+//! and never a second time as a plain library to link a test binary against.
+//! Run a single file's tests with
+//! `cargo test -p legaia-engine-scene-host --lib integration::<name>::`.
 
 mod b3_menu_warp_drain;
 mod baka_duel_ladder;
@@ -100,6 +102,7 @@ mod muscle_contest_real;
 mod muscle_dome_choreo_real;
 // --- end lane D2 ---
 mod muscle_dome_lead_max_hp_disc;
+mod muscle_dome_learned_list_disc;
 mod muscle_dome_minigame_real;
 mod muscle_dome_scene_real;
 mod muscle_hub_tally_cues_disc;
@@ -124,6 +127,7 @@ mod organic_zeto_encounter_disc;
 mod overworld_placed_visibility_disc;
 mod overworld_portal_branches_disc;
 mod picker_door_arrival_disc;
+mod picker_park_bgm_disc;
 mod place_name_banner_disc;
 mod prize_exchange_disc;
 mod prop_ride_player_walk_disc;

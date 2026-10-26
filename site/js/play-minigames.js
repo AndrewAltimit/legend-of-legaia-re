@@ -174,12 +174,9 @@
     /* A scene carrying an engine view-projection (the dance hall's entry
      * camera) draws through it instead of the orbit framing. */
     r.mvpOverride = sc.vp && sc.vp.length === 16 ? Float32Array.from(sc.vp) : null;
-    /* The engine projection carries the retail screen-X mirror the orbit
-     * framing does not, so its front faces wind the other way. */
-    const front = r.cullFrontFace;
-    if (r.mvpOverride) r.cullFrontFace = front === 'ccw' ? 'cw' : 'ccw';
+    /* The engine projection and the orbit framing share one parity (neither
+     * mirrors the model), so one front-face winding serves both. */
     r.render(sc.cam.yaw, sc.cam.pitch, sc.cam.distance, 0, 0, sc.center, sc.radius, sc.fov);
-    r.cullFrontFace = front;
     r.mvpOverride = null;
   }
 
@@ -325,12 +322,9 @@
     const c = r.canvas;
     const vp = rt.play_mg_fishing_scene_vp(c.width / Math.max(c.height, 1));
     r.mvpOverride = vp.length === 16 ? Float32Array.from(vp) : null;
-    /* The venue camera carries the retail screen-X mirror, so its front
-     * faces wind the other way (as the dance hall's engine camera does). */
-    const front = r.cullFrontFace;
-    if (r.mvpOverride) r.cullFrontFace = front === 'ccw' ? 'cw' : 'ccw';
+    /* The venue camera and the orbit framing share one parity (neither
+     * mirrors the model), so one front-face winding serves both. */
     r.render(0, 0, 1, 0, 0, [0, 0, 0], 1);
-    r.cullFrontFace = front;
     r.mvpOverride = null;
   }
 
@@ -567,7 +561,7 @@
       cam: { yaw: Math.PI, pitch: 0.24, distance: 2.7 },
       center: [0, -400, 0], radius: 900, fov: 0.85,
     };
-    const flags = env ? { cullBackfaces: true, cullFrontFace: 'ccw', semiTwoPass: true } : {};
+    const flags = env ? { cullBackfaces: true, cullFrontFace: 'cw', semiTwoPass: true } : {};
     if (!takeRenderer(view, rt.play_mg_dance_body_vram(), buf, flags)) return null;
     return sc;
   }

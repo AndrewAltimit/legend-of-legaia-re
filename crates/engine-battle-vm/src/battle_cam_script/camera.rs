@@ -50,6 +50,15 @@ pub(super) struct Glide {
     /// scaled by the camera step's frame step on each pass it walks (the
     /// summon module's shots, [`BattleCamera::arm_module_shot`]).
     pub(super) per_vsync: bool,
+    /// The angle lanes' remaining arcs `[pitch, yaw]`, which the arming
+    /// routine `FUN_80021248` seeds with the shortest arc from the live
+    /// angle to the endpoint (`0x80021330..0x80021364`). The walker counts
+    /// a per-vsync glide's angles down on these, not on the live value
+    /// ([`Self::per_vsync`]).
+    pub(super) angle_left: [f32; 2],
+    /// The angle lanes' directions (`+1` / `-1`), the sign the arming
+    /// routine gives each increment (`0x80021368..0x8002138C`).
+    pub(super) angle_dir: [f32; 2],
 }
 
 impl Glide {
@@ -105,6 +114,12 @@ impl Glide {
             focus: trio(target.focus),
         };
         let table = build_camera_angle_tween(&mut cur, &mut tgt, steps.max(1) as u16);
+        // The builder has wrap-adjusted both rotation ends, so the gap is
+        // the shortest arc the arming routine stores.
+        let gap = |k: usize| i32::from(tgt.rotation[k]) - i32::from(cur.rotation[k]);
+        let angle_left = [gap(0).unsigned_abs() as f32, gap(1).unsigned_abs() as f32];
+        let dir = |k: usize| if gap(k) < 0 { -1.0 } else { 1.0 };
+        let angle_dir = [dir(0), dir(1)];
         // Step 1 of the builder converted TR.z into projection units in place.
         target.tr[2] = tgt.shake[2] as f32;
         if yaw {
@@ -131,6 +146,8 @@ impl Glide {
             yaw_glides: yaw,
             steps_left: Some(steps.max(1)),
             per_vsync: false,
+            angle_left,
+            angle_dir,
         }
     }
 

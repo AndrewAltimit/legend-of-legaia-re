@@ -45,6 +45,9 @@ form in both directions.
 - [`cast_parts`](src/cast_parts.rs) - a captured cast's live effect parts
   (`LEGAIA_SEAT_CAST_PARTS`), seated over the replay's own parts on the
   capture frame.
+- [`cast_rand`](src/cast_rand.rs) - a recorded cast's `rand()` seed on one
+  cast key (`LEGAIA_CAST_RAND_SEED`), set on the world stream before every
+  tick under that key, so the arm that leaves it draws as retail's did.
 
 ## Layering
 

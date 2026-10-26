@@ -440,18 +440,16 @@ pub const PLASMA_STRIKE_ARMS: u16 = 0x11;
 ///   reaction map. `hit` is that roll; the engine folds the cast's outcome at
 ///   the band seam instead and passes `None`.
 ///
-/// The per-arm countdowns (`0x801F8E50` minus the frame scalar), arm 6's
-/// loop-window hold and the camera / packet / sound arms are not ported: an
-/// arm with no modelled write advances on its first tick. In retail those
-/// waits put arm `0x0C` past the flurry's last hit; the port instead holds
-/// arm `0x0C` while the caster's clip still has hits to fire
-/// ([`CastActorState::hits_pending`]), which keeps the same order.
+/// The per-arm countdowns (`0x801F8E50`), the clip gates of arms 5, 6 and
+/// `0x0D`, the camera arms, the seat stores and the part spawns are
+/// `cast_module_camera::plasma_strike_camera`, which holds this body off a
+/// held pass. Arm `0x0C` also holds while the caster's clip still has hits to
+/// fire ([`CastActorState::hits_pending`]).
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F74E4 (phase machine + damage/staging + the phase-5 confirm
-/// gate + the arm-`0x0C` combo landing; packet, camera and countdown arms
-/// unported)
+/// gate + the arm-`0x0C` combo landing)
 pub fn plasma_strike_tick(
     ctx: &mut CastModuleCtx,
     caster: &mut CastActorState,

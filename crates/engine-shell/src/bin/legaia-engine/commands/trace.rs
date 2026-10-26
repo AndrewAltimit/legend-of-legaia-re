@@ -429,12 +429,14 @@ pub(crate) fn cmd_man_scripts(
 
 /// Resolved input triple - `(scene_name, retail_snapshot, source_label)`.
 /// `retail_snapshot` is `None` in explicit mode (no comparison).
+#[cfg(feature = "oracles")]
 struct ResolvedModeTrace {
     scene_name: String,
     retail: Option<ModeTraceFrame>,
     source_label: String,
 }
 
+#[cfg(feature = "oracles")]
 fn resolve_mode_trace_inputs(args: &ModeTraceArgs<'_>) -> Result<ResolvedModeTrace> {
     use legaia_ram_image::ScenarioManifest;
 
@@ -476,6 +478,7 @@ fn resolve_mode_trace_inputs(args: &ModeTraceArgs<'_>) -> Result<ResolvedModeTra
 /// state-trace JSONL (`legaia_parity::sim_trace`) for `frames` sim
 /// ticks. The recomp-side pair is `scripts/recomp/trace_capture.py`; diff
 /// with `scripts/recomp/trace_diff.py`.
+#[cfg(feature = "oracles")]
 pub(crate) fn cmd_sim_trace(
     scene: &str,
     extracted_root: &Path,
@@ -506,6 +509,7 @@ pub(crate) fn cmd_sim_trace(
     Ok(())
 }
 
+#[cfg(feature = "oracles")]
 pub(crate) fn cmd_mode_trace(args: ModeTraceArgs<'_>) -> Result<()> {
     if args.strict && args.scenario.is_none() {
         anyhow::bail!(
@@ -579,6 +583,7 @@ pub(crate) fn cmd_mode_trace(args: ModeTraceArgs<'_>) -> Result<()> {
 }
 
 /// Resolved retail input for the convergence walk.
+#[cfg(feature = "oracles")]
 enum ResolvedRetail {
     /// Scenario-mode single SPU snapshot lifted from a mednafen `.mc{slot}`
     /// save. Compared via [`first_audio_trace_divergence`].
@@ -591,12 +596,14 @@ enum ResolvedRetail {
 
 /// Resolved input triple - `(scene_name, retail, source_label)`.
 /// `retail` is `None` in explicit mode (no comparison).
+#[cfg(feature = "oracles")]
 struct ResolvedAudioTrace {
     scene_name: String,
     retail: Option<ResolvedRetail>,
     source_label: String,
 }
 
+#[cfg(feature = "oracles")]
 fn resolve_audio_trace_inputs(args: &AudioTraceArgs<'_>) -> Result<ResolvedAudioTrace> {
     use legaia_ram_image::ScenarioManifest;
 
@@ -667,6 +674,7 @@ fn resolve_audio_trace_inputs(args: &AudioTraceArgs<'_>) -> Result<ResolvedAudio
     }
 }
 
+#[cfg(feature = "oracles")]
 pub(crate) fn cmd_audio_trace(args: AudioTraceArgs<'_>) -> Result<()> {
     if args.strict && args.scenario.is_none() && args.retail_jsonl.is_none() {
         anyhow::bail!(
@@ -778,6 +786,7 @@ pub(crate) fn cmd_audio_trace(args: AudioTraceArgs<'_>) -> Result<()> {
 }
 
 /// Render the exact key-on comparison for `--retail-keyon-csv`.
+#[cfg(feature = "oracles")]
 fn print_key_on_census(engine: &[AudioTraceFrame], csv: &Path, owner: Option<u16>) -> Result<()> {
     use legaia_parity::audio_trace_oracle::{compare_key_on_census, parse_keyon_census_csv_owned};
     let text = std::fs::read_to_string(csv)
@@ -804,6 +813,7 @@ fn print_key_on_census(engine: &[AudioTraceFrame], csv: &Path, owner: Option<u16
 }
 
 /// Render the per-voice allocation comparison for `--per-voice`.
+#[cfg(feature = "oracles")]
 fn print_voice_allocation(engine: &[AudioTraceFrame], retail: &[AudioTraceFrame]) {
     use legaia_parity::audio_trace_oracle::compare_voice_allocation_aligned;
     let c = compare_voice_allocation_aligned(engine, retail);
@@ -837,12 +847,14 @@ fn print_voice_allocation(engine: &[AudioTraceFrame], retail: &[AudioTraceFrame]
     );
 }
 
+#[cfg(feature = "oracles")]
 struct ResolvedPcmTrace {
     scene_name: String,
     retail_save: Option<PathBuf>,
     source_label: String,
 }
 
+#[cfg(feature = "oracles")]
 fn resolve_pcm_trace_inputs(args: &PcmTraceArgs<'_>) -> Result<ResolvedPcmTrace> {
     use legaia_ram_image::ScenarioManifest;
 
@@ -896,6 +908,7 @@ fn resolve_pcm_trace_inputs(args: &PcmTraceArgs<'_>) -> Result<ResolvedPcmTrace>
     }
 }
 
+#[cfg(feature = "oracles")]
 pub(crate) fn cmd_pcm_trace(args: PcmTraceArgs<'_>) -> Result<()> {
     if args.strict && args.scenario.is_none() && args.retail_save.is_none() {
         anyhow::bail!(

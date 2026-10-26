@@ -235,6 +235,9 @@ fn vs_main(
     if u.psx_params.z >= 0.5 {
         clip = psx_snap_clip(clip, PSX_STAGE_W, PSX_STAGE_H);
     }
+    if u.psx_params.z >= 1.5 {
+        clip = psx_native_centre(clip, PSX_STAGE_W, PSX_STAGE_H);
+    }
     if prim_near_rejected(u.mvp, prim_c0, prim_c1, prim_c2, prim_c3) {
         clip = PRIM_REJECTED_CLIP;
     }
@@ -399,11 +402,47 @@ fn psx_sample_uv(uv: vec2<f32>, uv_dy: vec2<f32>, bary: vec4<f32>, bary_dy: vec4
     return uv - uv_dy * clamp(reach - margin, 0.0, rows);
 }
 
+// PSX mode on the native target (`psx_params.z >= 1.5`,
+// `Renderer::set_native_resolution`): the frame is the 320 x 240 display and
+// the snapped geometry sits half a pixel down and right
+// (`psx_native_centre`), so the host's pixel centre is the GPU's integer
+// sample point and the interpolated UV is the GPU's at that point. The GPU
+// then takes the texel with a half-texel bias on both axes - its UV
+// interpolators start from the vertex value plus one half, so the texel is
+// the UV rounded rather than truncated. Every other mode takes
+// `psx_sample_uv`.
+fn psx_texel_uv(
+    uv: vec2<f32>,
+    uv_dx: vec2<f32>,
+    uv_dy: vec2<f32>,
+    bary: vec4<f32>,
+    bary_dx: vec4<f32>,
+    bary_dy: vec4<f32>,
+) -> vec2<f32> {
+    if u.psx_params.z < 1.5 {
+        return psx_sample_uv(uv, uv_dy, bary, bary_dy);
+    }
+    if u.psx_params.z < 2.5 {
+        return uv + vec2<f32>(0.5, 0.5);
+    }
+    // PCSX-Redux's software GPU (`PsxTexelRule::PcsxRedux`, an instrument
+    // for scoring against its captures): no texel bias - the texel at the
+    // pixel centre along the row and at the row itself, the move along the
+    // row stopping `PSX_ROW_EDGE_MARGIN` inside the fragment's triangle.
+    let cols = 0.5;
+    let margin = PSX_ROW_EDGE_MARGIN;
+    let probe = cols + margin;
+    let reach = psx_row_reach(bary, bary_dx * probe) * probe;
+    return uv + uv_dx * clamp(reach - margin, 0.0, cols);
+}
+
 @fragment
 fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
     // Taken ahead of any discard, in uniform control flow.
     let uv_dy = dpdy(in.uv_affine);
     let bary_dy = dpdy(in.prim_bary);
+    let uv_dx = dpdx(in.uv_affine);
+    let bary_dx = dpdx(in.prim_bary);
     // Object-effect clip of a raised `+0x42` (see EFFECT_CLIP_WGSL).
     if effect_clipped(in.world_pos) {
         discard;
@@ -434,7 +473,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     }
     let tsb = in.cba_tsb.y;
     let cba = in.cba_tsb.x;
-    var word = fetch_vram_word(psx_sample_uv(in.uv_affine, uv_dy, in.prim_bary, bary_dy), cba, tsb);
+    var word = fetch_vram_word(psx_texel_uv(in.uv_affine, uv_dx, uv_dy, in.prim_bary, bary_dx, bary_dy), cba, tsb);
     // Prologue palette-collapse grade: retail rewrites the scene's uploaded
     // CLUTs (and TMD colour words) to the gold law at load; the engine's
     // VRAM carries the disc palettes, so the law applies per decoded texel
@@ -528,6 +567,8 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
 fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     let uv_dy = dpdy(in.uv_affine);
     let bary_dy = dpdy(in.prim_bary);
+    let uv_dx = dpdx(in.uv_affine);
+    let bary_dx = dpdx(in.prim_bary);
     if effect_clipped(in.world_pos) {
         discard;
     }
@@ -552,7 +593,7 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     }
     let tsb = in.cba_tsb.y;
     let cba = in.cba_tsb.x;
-    var word = fetch_vram_word(psx_sample_uv(in.uv_affine, uv_dy, in.prim_bary, bary_dy), cba, tsb);
+    var word = fetch_vram_word(psx_texel_uv(in.uv_affine, uv_dx, uv_dy, in.prim_bary, bary_dx, bary_dy), cba, tsb);
     // Texel 0x0000 never draws; STP=0 texels were already drawn opaque by
     // the first pass. 0x8000 (black + STP) correctly blends.
     if word == 0u || ((word >> 15u) & 1u) == 0u {

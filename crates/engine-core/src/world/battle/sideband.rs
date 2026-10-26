@@ -474,6 +474,9 @@ impl World {
             StageEffect::RebindBackdrop => {
                 self.battle.backdrop_rebound = true;
             }
+            StageEffect::EffectTree { record } => {
+                self.seat_stage_effect_tree(record, seat_idx);
+            }
             StageEffect::MoveImage {
                 x,
                 y,

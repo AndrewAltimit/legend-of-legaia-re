@@ -26,6 +26,7 @@ The outputs hold retail pixels and RAM: they live under the gitignored
 """
 
 import argparse
+import csv
 import json
 import os
 import shlex
@@ -36,7 +37,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 PROFILE = "release-test"
-EXE = REPO / "target" / PROFILE / "legaia-engine"
+# `LEGAIA_CAST_SEQ_EXE` scores another build (a before / after pair) without
+# rebuilding over the one in the tree.
+EXE = Path(os.environ.get("LEGAIA_CAST_SEQ_EXE") or REPO / "target" / PROFILE / "legaia-engine")
 PROBE = "scripts/pcsx-redux/autorun_cast_sequence.lua"
 # Env the retail-compare child carries that would steer the fight somewhere
 # else than the injected cast: its own capture gate, pad drive and replay.
@@ -118,12 +121,16 @@ def run_retail(a, out: Path) -> bool:
         env["LEGAIA_FORCE_ROW"] = a.formation
     if a.party_spd:
         env["LEGAIA_PARTY_SPD"] = str(a.party_spd)
+    if a.monster_pick:
+        env["LEGAIA_MONSTER_PICK"] = "1"
+    if a.save_inject:
+        env["LEGAIA_SAVE_INJECT"] = "1"
     cmd = ["timeout", "--kill-after=10", str(a.retail_timeout), "bash",
            "scripts/pcsx-redux/run_probe.sh", "--lua", PROBE, "--scenario", a.state,
            "--iso", disc, "--out-dir", str(rdir), "--frames", str(a.frames)]
-    # A forced formation row needs the breakpoint core; everything else runs
-    # on the recompiler (vsync hooks only).
-    if not a.formation:
+    # A forced formation row and the monster-pick rewrite need the breakpoint
+    # core; everything else runs on the recompiler (vsync hooks only).
+    if not a.formation and not a.monster_pick:
         cmd.insert(5, "--fast")
     print(f"[retail] capturing {a.state} spell 0x{a.spell:02X} (an emulator run, minutes)")
     with open(rdir / "stdout.txt", "w") as log:
@@ -166,6 +173,20 @@ def child_cmd(a, out: Path) -> Path | None:
     return kept
 
 
+def retail_rand_seed(out: Path, key: str) -> str | None:
+    """`st7:phase:seed` for `LEGAIA_CAST_RAND_SEED`: the BIOS rand() seed
+    word (`rand` in the probe's meta.csv) on retail's last vsync under the
+    cast key `st7:phase` (each a number, `0x` allowed). A recording made
+    before the probe logged the word has no `rand` column."""
+    st7, phase = (int(v, 0) for v in key.split(":"))
+    seed = None
+    with open(out / "retail" / "meta.csv") as f:
+        for r in csv.DictReader(f):
+            if r.get("rand") and int(r["st7"]) == st7 and int(r["phase"]) == phase:
+                seed = int(r["rand"])
+    return None if seed is None else f"{st7}:{phase}:{seed}"
+
+
 def run_engine(a, out: Path) -> bool:
     kept = child_cmd(a, out)
     if kept is None:
@@ -206,7 +227,11 @@ def run_engine(a, out: Path) -> bool:
         # party_count + m. The party count is the seated party slots in
         # retail's ground list.
         pc = max(1, sum(1 for g in done.get("ground", "").split(",")[:3] if g not in ("", "-")))
-        env["LEGAIA_BATTLE_MONSTER_CAST"] = f"{pc + caster - 3},{a.spell}"
+        # The ground retail's earlier actions left (a party member's swing
+        # walks it in, a knockback pushes the monster back): a walk-in body
+        # walks from there, so its length is the capture's.
+        ground = engine_ground(done.get("ground", "")) if not a.no_ground else ""
+        env["LEGAIA_BATTLE_MONSTER_CAST"] = f"{pc + caster - 3},{a.spell},p" + (f";{ground}" if ground else "")
     edir = out / "engine"
     if edir.exists():
         shutil.rmtree(edir)
@@ -219,6 +244,14 @@ def run_engine(a, out: Path) -> bool:
         # (Mule) short of its last arms.
         "LEGAIA_DIAG_CAST_SEQ_MAX": "4000",
     })
+    if a.guard:
+        env["LEGAIA_BATTLE_GUARD"] = a.guard
+    if a.rand_at:
+        seed = retail_rand_seed(out, a.rand_at)
+        if seed is None:
+            print(f"[engine] --rand-at {a.rand_at}: the retail recording has no rand seed under that key")
+            return False
+        env["LEGAIA_CAST_RAND_SEED"] = seed
     env.update(dict(kv.split("=", 1) for kv in a.engine_env))
     (out / "engine-cmd.txt").write_text(
         " ".join(f"{k}={shlex.quote(v)}" for k, v in sorted(env.items()) if k.startswith("LEGAIA_"))
@@ -249,6 +282,16 @@ def score(a, out: Path) -> int:
     return r.returncode
 
 
+def resident_patch_of(label: str) -> str | None:
+    """The scenario's `resident_patch` in scripts/scenarios.toml, if any."""
+    import tomllib
+    manifest = tomllib.loads((REPO / "scripts" / "scenarios.toml").read_text())
+    for sc in manifest.get("scenarios", []):
+        if sc.get("label") == label:
+            return sc.get("resident_patch")
+    return None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--spell", type=num, required=True, help="action id to inject (0x81..)")
@@ -256,6 +299,15 @@ def main() -> int:
     ap.add_argument("--caster", type=num, default=0, help="seat whose action is rewritten (255 = any party seat)")
     ap.add_argument("--target", type=num, default=3, help="target seat")
     ap.add_argument("--formation", help="retail only: formation row bytes forced at FUN_801DA600 (comma list)")
+    ap.add_argument("--monster-pick", action="store_true",
+                    help="retail: a monster caster (--caster 3..7) gets the cast written where the AI "
+                         "pick FUN_801E9FD4 returns (breakpoint core), so any battle state that reaches "
+                         "its turn records any spell the monster owns a clip for")
+    ap.add_argument("--allow-patched", action="store_true",
+                    help="measure a state whose manifest entry carries resident_patch")
+    ap.add_argument("--save-inject", action="store_true",
+                    help="retail: keep the emulator state one vsync past the inject "
+                         "(retail/state_inject.rawsstate), a pre-cast state for the save library")
     ap.add_argument("--party-spd", type=int, default=0, help="retail: write this SPD into the party seats")
     ap.add_argument("--every", type=int, default=2, help="retail vsyncs between frames")
     ap.add_argument("--tail", type=int, default=60, help="vsyncs / ticks past the Done band")
@@ -265,6 +317,11 @@ def main() -> int:
     ap.add_argument("--retail-lag", help="display lag in vsyncs, or 'auto' (2 * frame step, the default)")
     ap.add_argument("--strip", type=int, default=12, help="pairs in strip.png")
     ap.add_argument("--no-ground", action="store_true", help="do not seat the combatants on retail's ground pairs")
+    ap.add_argument("--guard", default="", metavar="SEATS",
+                    help="engine: party seats in the Spirit stance at the cast (comma list; retail's +0x1DE == 4)")
+    ap.add_argument("--rand-at", metavar="ST7:PHASE",
+                    help="engine: hold the world rand() stream on retail's seed word under this cast key "
+                         "(its last vsync there), so the arm that leaves it draws as retail's did")
     ap.add_argument("--engine-env", action="append", default=[], metavar="K=V",
                     help="extra environment for the engine child (repeatable)")
     ap.add_argument("--out", help="output dir (default captures/cast-sequence/<state>_<spell>)")
@@ -275,13 +332,22 @@ def main() -> int:
     ap.add_argument("--score-only", action="store_true")
     ap.add_argument("--no-build", action="store_true")
     a = ap.parse_args()
+    # The user's rule is retail states only. A state made on a patched disc
+    # keeps the patched executable resident through every later load, and a
+    # state saved from it (`--save-inject`) inherits it: the manifest's
+    # `resident_patch` names those, and the driver refuses them unless told.
+    patch = resident_patch_of(a.state)
+    if patch and not a.allow_patched:
+        print(f"[refuse] {a.state} holds a patched resident executable ({patch}); "
+              "retail states only (--allow-patched to measure it anyway)")
+        return 2
 
     out = Path(a.out) if a.out else REPO / "captures" / "cast-sequence" / f"{a.state}_{a.spell:02x}"
     out = out.resolve()
     out.mkdir(parents=True, exist_ok=True)
     if not a.no_build and not a.retail_only:
         subprocess.run(["cargo", "build", "-p", "legaia-engine-shell", "--profile", PROFILE,
-                        "--bin", "legaia-engine"], cwd=REPO, check=True)
+                        "--features", "oracles", "--bin", "legaia-engine"], cwd=REPO, check=True)
     if not a.score_only and not a.engine_only:
         if not run_retail(a, out):
             return 0 if not os.environ.get("LEGAIA_DISC_BIN") else 1

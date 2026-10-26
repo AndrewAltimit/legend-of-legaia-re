@@ -209,7 +209,7 @@ impl World {
                     && let Some(clip) = FieldClipPlayer::from_record(bundle, id as usize - 1)
                         .filter(|c| c.bone_count() == anim.idle.bone_count())
                 {
-                    anim.push_scripted(clip);
+                    anim.bind_scripted(u16::from(id) - 1, clip);
                 }
             }
         }

@@ -238,6 +238,9 @@ pub struct App {
     // Automation.
     auto: Automation,
     auto_selected: bool,
+    /// The remembered Browse entry ([`crate::settings::Settings::entry`]) has been restored
+    /// (or there was none to restore) for the start-up source.
+    entry_restored: bool,
     auto_extract_started: bool,
     settle_since: Option<std::time::Instant>,
     screenshot_requested: bool,
@@ -246,6 +249,8 @@ pub struct App {
 impl App {
     pub fn new(studio: Studio, initial: Option<PathBuf>, auto: Automation) -> Self {
         let mut studio = studio;
+        let mut player = Player::default();
+        player.set_volume(studio.settings.volume_percent());
         // Recent entries whose disc or folder has gone are dropped at start.
         if studio.settings.prune_recent() {
             studio.save_settings();
@@ -313,7 +318,7 @@ impl App {
             reveal: None,
             vab_sel: 0,
             seq_loop: false,
-            player: Player::default(),
+            player,
             out_text,
             job: None,
             log_warnings_only: false,
@@ -326,6 +331,7 @@ impl App {
             appearance_applied: false,
             auto,
             auto_selected: false,
+            entry_restored: false,
             auto_extract_started: false,
             settle_since: None,
             screenshot_requested: false,
@@ -410,6 +416,28 @@ impl App {
                 };
             }
             Err(e) => self.studio.error = Some(format!("{what} export failed: {e:#}")),
+        }
+    }
+
+    /// Select the entry Browse had open when the app last closed, once,
+    /// when the start-up source has loaded. A scripted `select` wins.
+    fn restore_entry(&mut self) {
+        if self.entry_restored {
+            return;
+        }
+        let Some(lib) = self.studio.library.clone() else {
+            // Nothing loading means the start-up source is absent or failed:
+            // a disc opened later starts with nothing selected.
+            self.entry_restored = self.studio.loading().is_none();
+            return;
+        };
+        self.entry_restored = true;
+        if self.auto.select.is_some() || self.studio.selected.is_some() {
+            return;
+        }
+        if let Some(pos) = self.studio.settings.entry.and_then(|i| lib.position_of(i)) {
+            self.select(pos);
+            self.reveal = Some(pos);
         }
     }
 
@@ -838,6 +866,19 @@ impl App {
         ui.separator();
         ui.label(RichText::new(format!("Zoom ({:.0}%)", ui.ctx().zoom_factor() * 100.0)).strong());
         egui::gui_zoom::zoom_menu_buttons(ui);
+        ui.separator();
+        ui.label(RichText::new("Audio volume").strong());
+        let mut vol = self.player.volume();
+        let resp = ui
+            .add(egui::Slider::new(&mut vol, 0..=100).suffix("%"))
+            .on_hover_text("Sample, music and movie previews; 100% is the full mixer output");
+        if resp.changed() {
+            self.player.set_volume(vol);
+            self.studio.settings.volume = Some(vol);
+        }
+        if (resp.changed() && !resp.dragged()) || resp.drag_stopped() {
+            self.studio.save_settings();
+        }
     }
 
     /// Push the remembered theme and zoom into egui once, then keep the
@@ -1274,7 +1315,8 @@ impl App {
         } else {
             self.tab
         };
-        ui.horizontal(|ui| {
+        // Wraps, so a narrow window keeps every tab reachable.
+        ui.horizontal_wrapped(|ui| {
             for t in Tab::ALL {
                 let n = count(t);
                 let label = match n {
@@ -2226,6 +2268,7 @@ impl eframe::App for App {
         if let Some(p) = dropped.first() {
             self.open_path(p);
         }
+        self.restore_entry();
         self.run_automation(ctx);
         self.announce_extraction();
         if self.job.as_ref().is_some_and(|j| j.outcome().is_none()) {
@@ -2286,6 +2329,9 @@ impl eframe::App for App {
         let s = &mut self.studio.settings;
         s.mode = Some(self.mode.key().to_string());
         s.tab = Some(self.tab.key().to_string());
+        if let (Some(lib), Some(pos)) = (&self.studio.library, self.studio.selected) {
+            s.entry = lib.entries.get(pos).map(|e| e.index);
+        }
         if let Some(size) = self.window_size {
             s.window_size = Some(size);
         }

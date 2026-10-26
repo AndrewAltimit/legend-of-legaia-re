@@ -126,9 +126,16 @@ pub struct CastFxState {
     /// (`World::run_cast_module_code`), so a settle wait after it sees the
     /// victim react.
     pub(crate) module_hit_arm: Option<u8>,
+    /// PROT 0962 `0xA4`'s debris ring, drawn ahead of the arm's hit as
+    /// retail draws its sixteen `rand()`s, for the band to seat on the pass.
+    pub(crate) module_debris: Vec<legaia_engine_cast::cast_module_camera::ModuleSpawn>,
     /// PROT 0922's rumble alternation word `0x801FA0BC`, bumped by its arms
     /// 14 and 15 (`cast_module_rumble::RumbleStore::PueraAlternate`).
     pub(crate) module_rumble_alternate: u32,
+    /// PROT 0929's word `0x801F9A84`: set on arm 9's pass, it turns on the
+    /// tail that pans the scanline backdrop with the camera
+    /// ([`legaia_engine_cast::cast_module_camera::mule_backdrop_origin`]).
+    pub(crate) module_mule_backdrop_follow: bool,
     /// Ticks the current arm has held on its settle wait
     /// (`cast_module_ticks::ChainSettle`), bounded by
     /// `cast_fatal_decision::SETTLE_TICK_LIMIT`.
@@ -172,6 +179,9 @@ pub struct CastFxState {
     /// PROT 0934's stager word `0x801FA410`
     /// ([`legaia_engine_cast::cast_module_ticks::OZMA_STAGER_WORD`]).
     pub(crate) module_ozma_word: i32,
+    /// PROT 0929's row wave front `0x801F9AC8`: arm 15's pass seats it at
+    /// `-0x100` and arm 16 walks it toward the row.
+    pub(crate) module_mule_front: i32,
     /// Seats a stager arm run inside its caller's op-`0x20` step decided
     /// (PROT 0925's, which writes into its caller), for the band to seat on
     /// the module's next tick.
@@ -233,6 +243,11 @@ pub struct CastFxState {
     /// once a pass by the arms that spawn on it
     /// ([`legaia_engine_cast::cast_module_camera::capture_arm_counted`]).
     pub(crate) module_pass_counter: u32,
+    /// The display frame a capture director last stepped a once-a-pass
+    /// word on ([`legaia_engine_cast::cast_module_camera::ModuleCamState::opens_pass`]):
+    /// under the frame cadence the module runs a pass's ticks back to back
+    /// on one display frame, and only the first opens it.
+    pub(crate) capture_pass_mark: Option<u64>,
     /// On the per-vsync cadence: the module's last tick handed its phase
     /// over, and the next arm waits for the tick that opens the next battle
     /// frame ([`crate::world::World::module_pass`]).
@@ -277,6 +292,13 @@ pub struct CastFxState {
     /// riding [`Self::active_summon`], which the next action retires. Posed
     /// every frame and broken by [`crate::world::World::tick_mystic_shield`].
     pub mystic_shield_fx: Option<legaia_engine_effects::summon::SummonScene>,
+    /// The boss-stage arrival's two SCUS effect trees (PROT 0968's hand-back,
+    /// [`legaia_engine_battle::battle_stage_module::ARRIVAL_EFFECT_TREES`]):
+    /// the flesh texel scroller and the CLUT `(32, 479)` hue cycler. Both
+    /// programs loop, so like [`Self::mystic_shield_fx`] they have a seat of
+    /// their own for the rest of the fight. Seated by
+    /// [`crate::world::World::seat_stage_effect_tree`].
+    pub stage_fx: Option<legaia_engine_effects::summon::SummonScene>,
     /// The trail / afterimage GP0 texpage word (`0x7700 + id`) for the active
     /// move-FX scene, set by [`crate::world::World::spawn_move_fx`] from the move record's
     /// `+0x0b` field and cleared when the scene drains. Surfaced via
@@ -395,7 +417,9 @@ impl CastFxState {
             module_creature_clip_kind: 0,
             module_shake: 0,
             module_hit_arm: None,
+            module_debris: Vec::new(),
             module_rumble_alternate: 0,
+            module_mule_backdrop_follow: false,
             module_settle_ticks: 0,
             module_nighto_outcome: None,
             module_stager_calls: Vec::new(),
@@ -404,6 +428,7 @@ impl CastFxState {
             module_running_entry: None,
             module_spikefish_words: Default::default(),
             module_ozma_word: 0,
+            module_mule_front: 0,
             module_stager_seats: Vec::new(),
             module_record_clocks: Vec::new(),
             module_split_saved_target: None,
@@ -416,12 +441,14 @@ impl CastFxState {
             capture_spell: None,
             capture_fx_pending: None,
             module_pass_counter: 0,
+            capture_pass_mark: None,
             module_handover_waits: false,
             caster_stages: None,
             pending_move_fx_spawn: None,
             active_move_fx: None,
             active_action_fx: Vec::new(),
             mystic_shield_fx: None,
+            stage_fx: None,
             move_fx_trail_texpage: None,
             move_fx_streak: Default::default(),
             homing: Default::default(),

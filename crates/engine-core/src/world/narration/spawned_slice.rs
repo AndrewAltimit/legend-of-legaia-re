@@ -1057,6 +1057,31 @@ impl World {
                 }
                 if vm::field::peek_extended(&tl.bytecode, pc) == Some(0xF8) {
                     let op = opcode_byte & 0x7F;
+                    // `AB F8 <bit>` / `AC F8 <bit>`: the bit is the player's
+                    // `+0x62` - the clamp a one-shot gesture raises before its
+                    // `A2 F8 <id>` - which the player's clip tick reads. The
+                    // op still runs below as before; the end-latch wait
+                    // (`AD F8 08`) keeps its clip-length countdown.
+                    // REF: FUN_8003C83C, FUN_801DE840 (ops 0x2B / 0x2C)
+                    if matches!(op, 0x2B | 0x2C)
+                        && let Some(&bit) = tl.bytecode.get(pc + 2)
+                    {
+                        host.world.player_clip_flag_op(op == 0x2B, bit);
+                    }
+                    // `CC F8 41 <s16 rate> <u16 ticks>`: the player's clip
+                    // rate `+0x6A`, halved with a floor of 1 (the op's
+                    // nibble-4 sub-1 arm). The immediate form only; a ramp
+                    // (`ticks != 0`) is left to the generic step.
+                    // REF: FUN_801DE840 (op 0x4C nibble 4 sub 1)
+                    if op == 0x4C
+                        && tl.bytecode.get(pc + 2) == Some(&0x41)
+                        && let Some(b) = tl.bytecode.get(pc + 3..pc + 7)
+                        && b[2] == 0
+                        && b[3] == 0
+                    {
+                        let rate = i16::from_le_bytes([b[0], b[1]]);
+                        host.world.locomotion.player_clip_rate = (rate >> 1).max(1);
+                    }
                     // Halt-acquire of the player (`CC F8 85|8E|8F`): the
                     // player turns to face the op's actor bind and the record
                     // parks until the turn's terminal frame
@@ -1143,13 +1168,7 @@ impl World {
                             Some((
                                 legaia_engine_field::field_player_clip::ClipBank::Scene,
                                 record,
-                            )) => host
-                                .world
-                                .locomotion
-                                .scene_clip_ticks
-                                .get(usize::from(record))
-                                .copied()
-                                .unwrap_or(0),
+                            )) => host.world.player_scene_clip_end_ticks(record),
                             _ => 0,
                         };
                         // Cue the scripted player clip: the windowed host

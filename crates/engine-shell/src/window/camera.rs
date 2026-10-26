@@ -526,7 +526,25 @@ impl PlayWindowApp {
             // the monster's FACE - and the party's `0`; it is also what turns
             // an approaching attacker toward its target and a fleeing party
             // away from the fight.
-            Self::battle_body_model(pos, a.battle.facing_angle)
+            //
+            // The draw `FUN_80048A08` scales the body's matrix by its render
+            // node's `+0x72` (`0x80048ABC..0x80048AF8`) about the body's
+            // origin - unity for every body but a cast module's creature
+            // (`BattleActor::render_scale`). The browser page composes the
+            // same factor from `play_battle_actor_cursor`'s scale lane.
+            //
+            // A rolled body (`+0x48`, `BattleActor::render_roll`) turns about
+            // its own forward axis first: retail's `Rx * Ry * Rz` with the
+            // mesh's raw vertices on the right, so the roll is the factor
+            // nearest them. The browser page composes the same factor from
+            // `play_battle_actor_rolls`.
+            let model = Self::battle_body_model(pos, a.battle.facing_angle);
+            let model = if a.battle.render_roll & 0xFFF != 0 {
+                model * Mat4::from_rotation_z(a.battle.render_roll_radians())
+            } else {
+                model
+            };
+            model * Mat4::from_scale(Vec3::splat(a.battle.render_scale_q12()))
         } else {
             let yaw = std::f32::consts::PI
                 + (a.move_state.render_26 as f32) / 4096.0 * std::f32::consts::TAU;

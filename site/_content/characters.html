@@ -1333,7 +1333,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
       if (meshView && typeof meshView.dispose === 'function') meshView.dispose();
       // The field-form TMDs rest facing the opposite way from the battle
       // models; the default framing turns to meet the character's face.
-      const yaw = 0.4 + (curForm === 'field' ? Math.PI : 0);
+      const yaw = -0.4 + (curForm === 'field' ? Math.PI : 0);
       meshView = new window.MeshView(canvasEl, { onSpin: updateSpinLabel, cam: { yaw, distance: 2.2 } });
       _loadedBattleVramForm = null;
     }

@@ -138,15 +138,6 @@ const OPTIONS_CONFIG_FILE: &str = "legaia-options.toml";
 pub(super) const INPUT_CONFIG_FILE: &str = "legaia-input.toml";
 
 impl PlayWindowApp {
-    /// Advance `World::clock.play_time_seconds` off the window's wall clock,
-    /// through the engine's one play-clock law (`World::tick_play_clock`) -
-    /// the browser page's `tick_play_clock` calls the same kernel. The origin
-    /// and high-water mark live on the world, so New Game restarts them.
-    pub(super) fn tick_play_clock(&mut self) {
-        let now = f64::from(self.win.elapsed_secs());
-        self.session.host.world.tick_play_clock(now);
-    }
-
     /// Apply the live side-effects of [`Self::options_state`] (currently
     /// the Sound Stereo/Monaural downmix on the audio output) and persist
     /// the state to [`OPTIONS_CONFIG_FILE`]. Called when an options
@@ -188,6 +179,9 @@ impl PlayWindowApp {
             // Engine-only BGM / SFX bus levels (config file only); the
             // default level is unity, the retail mix.
             audio.set_bus_volumes(self.options_state.bgm_volume, self.options_state.sfx_volume);
+            // Engine-only master volume (config file and launcher row), a
+            // quarter of the full mix by default.
+            audio.set_master_volume(self.options_state.master_volume);
             // Engine-only full-mono downmix (`downmix_mono`, config file and
             // launcher row), separate from the retail Monaural row above.
             audio.set_downmix(self.options_state.downmix_mono);

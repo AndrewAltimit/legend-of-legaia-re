@@ -76,9 +76,43 @@ impl World {
             // `ctx[+0x278] = 2` through arms 4 and 5's head and `3` only
             // later in arm 5; run off the phase, arm 0 dropped the stage
             // from the cast's first tick.
+            // Arms 0 and 2 also seat a record on their caller: arm 0 the
+            // fire bowl the creature stands in from arm 5 on.
             923 => {
-                for (call_arm, _) in std::mem::take(&mut self.casting.module_stager_calls) {
+                for (call_arm, caller) in std::mem::take(&mut self.casting.module_stager_calls) {
                     ticks::gilium_stager(&mut ctx, call_arm);
+                    // Arm 1 halts arm 8's last three parts and spawns its
+                    // grey flash fade.
+                    if call_arm == 1 {
+                        for slot in ticks::GILIUM_STAGER_HALTS {
+                            self.kill_parked_module_part(
+                                legaia_overlay_images::cast_presentation::HandleSlot::Abs(slot),
+                            );
+                        }
+                        let mut fade = None;
+                        legaia_engine_system::fade::spawn_fade(
+                            &mut fade,
+                            &legaia_engine_battle_vm::battle_action::summon_fade_template(
+                                &ticks::GILIUM_STAGER_FADE,
+                            ),
+                            1,
+                        );
+                        self.presentation.module_fades.extend(fade);
+                    }
+                    for s in &ticks::gilium_stager_spawns(call_arm, caller) {
+                        self.seat_stager_spawn(entry, s);
+                        // Arm 0 parks the bowl's handle where the module's
+                        // halt loops find it, beside the tick body's own
+                        // parked parts.
+                        if s.record == ticks::GILIUM_BOWL_RECORD {
+                            self.park_module_part(
+                                legaia_overlay_images::cast_presentation::HandleSlot::Abs(
+                                    ticks::GILIUM_BOWL_HANDLE,
+                                ),
+                                s.record,
+                            );
+                        }
+                    }
                 }
             }
             949 => ticks::water_crystals_stager(&mut victim, arm),
@@ -257,8 +291,15 @@ impl World {
             entry,
             body.unwrap_or(legaia_engine_cast::cast_module_camera::SINGLE_BODY),
         ) {
+            // The victim the cast latched on its first pass: a spawn on the
+            // victim seat resolves through it.
+            self.casting
+                .module_cam
+                .victim_slot
+                .get_or_insert(victim_slot);
             let seats = self.module_cam_seats(caster_slot, victim_slot);
             let mut st = self.module_cam_with_yaw_base();
+            self.feed_capture_cam(caster_slot, victim_slot, &mut st);
             let arm = direct(&mut st, ctx.phase, seats);
             self.store_module_cam(st);
             if let Some(v) = arm.latch
@@ -271,8 +312,48 @@ impl World {
             }
             run.camera_shot = arm.shot;
             run.capture_drift = arm.drift;
+            run.capture_pose_set = arm.pose_set;
+            if let Some(v) = arm.ctx_278 {
+                ctx.ctx_278 = v;
+            }
+            run.capture_focus_z = arm.focus_z;
+            run.capture_drift_first = arm.drift_first;
             capture_held = arm.hold;
             capture_arm = Some(arm);
+        }
+        // A director arm that names the body's damage-wrapper call folds the
+        // owed cast on the pass it makes it (PROT 0962 `0xA2` arm 3), so the
+        // victim's reaction - which the body's next arm waits out - starts
+        // there, as retail's does.
+        if let Some(arm) = capture_arm
+            && arm.folds_hit
+            && !arm.hold
+            && self.casting.module_hit_arm != Some(phase_in)
+        {
+            self.casting.module_hit_arm = Some(phase_in);
+            // Gigaton Press seats its debris ring - sixteen `rand() % 4`
+            // picks - ahead of its `FUN_801DD4B0` (`0x801F717C..0x801F72B4`),
+            // so the ring draws first.
+            if entry == 962
+                && body == Some(legaia_engine_cast::cast_module_camera::GIGATON_PRESS_BODY)
+                && let Some(v) = self.actors.get(usize::from(victim_slot))
+            {
+                let victim = legaia_engine_cast::cast_module_camera::ModuleSeat {
+                    x: v.move_state.world_x,
+                    y: v.move_state.world_y,
+                    z: v.move_state.world_z,
+                    facing: v.battle.facing_angle & 0xFFF,
+                };
+                self.casting.module_debris =
+                    legaia_engine_cast::cast_module_camera::gigaton_press_debris(victim, || {
+                        self.next_rand()
+                    });
+            }
+            self.fold_pending_cast();
+            caster = self.cast_view(caster_slot);
+            victim = self.cast_view(victim_slot);
+            seat = self.cast_view(seat_slot);
+            (caster_orig, victim_orig, seat_orig) = (caster, victim, seat);
         }
         // PROT 0966 (Evil Seru Magic) has no other port: its seat half rides
         // the director's gate, on the phase the director is answering for.
@@ -409,6 +490,21 @@ impl World {
         );
         run.camera_follow = direction.and_then(|d| d.follow);
         run.camera_end_frame = direction.is_some_and(|d| d.end_frame);
+        // A capture director's framing-case calls (PROT 0962 `0xA2`): case 6
+        // follows the caster on the live yaw ladder and depth, case 8 is the
+        // post-action framing.
+        if let Some(arm) = capture_arm {
+            run.camera_end_frame |= arm.end_frame;
+            if arm.follow_caster {
+                let st = self.module_cam_with_yaw_base();
+                let seats = self.module_cam_seats(caster_slot, victim_slot);
+                run.camera_follow = Some(legaia_engine_cast::cast_module_camera::ModuleFollow {
+                    seat: seats.caster,
+                    yaw_base: st.yaw_base,
+                    depth_raw: seats.depth_raw,
+                });
+            }
+        }
         run.camera_nudge = direction.and_then(|d| d.nudge);
         run.spawns = direction.map_or(&[], |d| d.spawns);
         run.arm_point = direction.and_then(|d| d.arm_point);
@@ -1221,6 +1317,51 @@ impl World {
             live.fold_writes(orig, view);
             self.write_cast_view(slot, &live);
         }
+        // PROT 0903's depth stores: arm 10's pass parks the walk-in's
+        // `ctx[+0x6D0] = 0x800` (`0x801F7380`), and arm 11's pass - the hit -
+        // re-runs the target-size framing `FUN_801F0348` (`jal` at
+        // `0x801F75A0`) and, while the victim still stands, scales it by
+        // `3/2` toward zero (`0x801F75A8..0x801F75DC`). Arm 12's case-8 calls
+        // frame off that depth: a victim the breath killed at the `0x0C00`
+        // floor, a living one a half again further out.
+        if entry == 903 && ctx.phase != phase_entry {
+            let depth = match phase_entry {
+                10 => Some(legaia_engine_cast::cast_module_camera::GIMARD_WALK_DEPTH as i16),
+                11 => {
+                    let target = self
+                        .actors
+                        .get(usize::from(caster_slot))
+                        .map_or(8, |a| a.battle.active_target);
+                    let size_of = |slot: u8| {
+                        self.actors
+                            .get(usize::from(slot))
+                            .and_then(|a| a.battle_monster_id)
+                            .and_then(|id| self.tables.monster_catalog.get(id))
+                            .map_or(0, |d| d.size_class)
+                    };
+                    let h = legaia_engine_battle_vm::battle_formulas::camera_height_for_frame(
+                        caster_slot,
+                        target,
+                        self.party.party_count,
+                        size_of,
+                    );
+                    let alive = self
+                        .actors
+                        .get(usize::from(victim_slot))
+                        .is_some_and(|a| a.battle.hp != 0);
+                    Some(if alive {
+                        ((i32::from(h) * 3) / 2) as i16
+                    } else {
+                        h
+                    })
+                }
+                _ => None,
+            };
+            if let Some(d) = depth {
+                self.battle.camera_frame_height = d;
+                self.battle_ctx.camera_frame_height = d;
+            }
+        }
         // The `0xFF` arm of eight player-Seru modules leaves the creature
         // seat's loop counter clear for the next cast's installer, which
         // seeds none (`sb zero,0x21b` / `sh zero,0x176`; PROT 0904
@@ -1268,6 +1409,87 @@ impl World {
             let latched = self.casting.module_cam.victim_slot.unwrap_or(victim_slot);
             self.zenoir_shatter(latched);
         }
+        // A capture arm's streak-ribbon calls are per pass: this tick's, or
+        // none.
+        self.battle.cast_ribbons = capture_arm
+            .as_ref()
+            .and_then(|a| a.ribbons)
+            .or(direction.and_then(|d| d.ribbons));
+        // A capture director's seat stores (PROT 0959's stand-ins, heights
+        // and hides), after the fold-back for the same reason.
+        if let Some(arm) = capture_arm {
+            self.apply_capture_seat_writes(caster_slot, arm.caster_write);
+            self.apply_capture_seat_writes(victim_slot, arm.victim_write);
+            if !arm.party_write.is_empty() {
+                for slot in 0..self.party.party_count {
+                    self.apply_capture_seat_writes(slot, arm.party_write);
+                }
+            }
+            // PROT 0965 arm `0x0B` lines the party up for its sweep and its
+            // `0xFF` arm puts each seat back (`0x801F76E4..0x801F7790`,
+            // `0x801F7A30..0x801F7A7C`).
+            if arm.party_line_up {
+                self.line_up_party_for_sweep();
+            }
+            if entry == 965 && phase_in == ticks::CHOREOGRAPHY_DONE_PHASE {
+                self.restore_lined_up_party();
+            }
+            if arm.backdrop_on {
+                self.battle.backdrop_cue = 0x800;
+            }
+            // A director that lands the module's wrapper hits itself (PROT
+            // 0959's three sites, arm `0x0F`'s many times over): each is
+            // `FUN_801DD6B4(power, ctx[+0x13], 0)` aimed at `0x801C9370[0]`,
+            // its popup pushed with the raw roll (`jal 0x801F44A0` ahead of
+            // the clamp), then the shape-A clamp and the HP write. The fold
+            // owes the cast nothing.
+            if legaia_engine_cast::cast_module_ticks::damage_shape_for(entry).is_some()
+                && entry == 959
+            {
+                self.casting.module_skips_fold = true;
+            }
+            if let Some(site) = arm.hit_site
+                && let Some(shape) = legaia_engine_cast::cast_module_ticks::damage_shape_for(entry)
+                && let Some(roll) =
+                    self.capture_module_roll_site(shape, usize::from(site), caster_slot, 0)
+            {
+                // The shape-A clamp and the HP / bar writes. The two hits
+                // that strike the victim down (arms 7 and `0x0D`; arm 7
+                // stages its `+0x1F1` knockdown beside it) go through the
+                // safe-clamp hit arm the fold lands a cast with, the victim's
+                // reaction included; arm `0x0F`'s barrage restages nothing.
+                if site < 2 {
+                    self.apply_effect_child_hit(0, roll.max(0));
+                    if roll > 0 {
+                        let survives = self.actors.first().is_some_and(|a| a.battle.hp > 0);
+                        self.queue_battle_reaction(0, survives);
+                    }
+                } else {
+                    let orig = self.cast_view(0);
+                    let mut view = orig;
+                    ticks::apply_hit_floor_zero(&mut view, roll);
+                    let mut live = self.cast_view(0);
+                    live.fold_writes(&orig, &view);
+                    self.write_cast_view(0, &live);
+                }
+                self.battle
+                    .hit_fx
+                    .push(legaia_engine_battle::battle_events::BattleHitFx {
+                        target_slot: 0,
+                        amount: roll.clamp(0, i32::from(u16::MAX)) as u16,
+                        is_heal: false,
+                        is_crit: false,
+                    });
+            }
+            // PROT 0959's hits clear the readout flag and its arm `0x0F`
+            // raises it as it passes: the cluster opens on that pass.
+            self.battle.combo_cluster_held =
+                entry == 959 && (phase_in < 0x0F || (phase_in == 0x0F && arm.hold));
+            if arm.backdrop_off {
+                self.battle.backdrop_cue =
+                    legaia_engine_battle_vm::battle_ground_grid::BACKDROP_CUE_FULL;
+            }
+        }
         // The summon-creature directors' HP and colour-word stores, after
         // the views' fold-back like PROT 0908's.
         if direction.is_some() && (914..=934).contains(&entry) {
@@ -1285,7 +1507,13 @@ impl World {
                 self.apply_mushura_writes(phase_in, victim_slot);
             }
             if entry == 929 {
-                self.apply_mule_writes(phase_in, ctx.phase != phase_in);
+                self.apply_mule_writes(
+                    phase_in,
+                    ctx.phase != phase_in,
+                    ctx.monster_count,
+                    caster_slot,
+                    spell_id,
+                );
             }
             if entry == 928 {
                 self.apply_palma_writes(phase_in, ctx.phase != phase_in);
@@ -1397,6 +1625,9 @@ impl World {
             ctx.phase,
             run.tick_ported && !run.busy,
         );
+        if entry == 929 {
+            self.mule_backdrop_follow(phase_in, ctx.phase != phase_in);
+        }
         Some(run)
     }
 }

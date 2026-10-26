@@ -10,8 +10,8 @@
 //!    banner.
 //! 2. **Every layer the page draws is present**: a battle VRAM that differs
 //!    from the field VRAM (stage + flame atlas + texture bands landed), a
-//!    backdrop whose geometry carries the second copy (even index/vertex
-//!    halves - `append_scaled` doubles the shell), the ground grid, and one
+//!    backdrop whose geometry carries the second copy (`append_scaled`
+//!    doubles the shell; a both-sided mirror copy rides twice), the ground grid, and one
 //!    mesh per bound actor with index-parallel transforms (`5` floats each)
 //!    and a non-empty pose for every poseable actor (rest fallback counts).
 //! 3. **The camera export is live**: the battle opens on the far menu framing
@@ -66,12 +66,20 @@ fn battle_render_builds_backdrop_grid_actors_and_camera() {
     assert_ne!(battle_vram, field_vram, "battle VRAM differs from field");
 
     // Backdrop: town01 has a stage stream, and the shell is drawn twice -
-    // the appended second copy doubles both streams exactly.
+    // the appended second copy doubles both streams exactly, and a mirrored
+    // copy B (drawn both-sided) rides once more with its winding reversed
+    // (`backdrop_shell_mesh`), so the streams hold two or three equal runs.
     let pos = rt.play_battle_backdrop_positions();
     let idx = rt.play_battle_backdrop_indices();
     assert!(!pos.is_empty() && !idx.is_empty(), "backdrop geometry");
-    assert_eq!(pos.len() % 6, 0, "vertex stream doubled by the second copy");
-    assert_eq!(idx.len() % 6, 0, "index stream doubled by the second copy");
+    let copies = |n: usize| n.is_multiple_of(2) || n.is_multiple_of(3);
+    assert!(copies(pos.len() / 3), "vertex stream carries whole copies");
+    assert!(copies(idx.len() / 3), "index stream carries whole copies");
+    assert_ne!(
+        rt.play_battle_backdrop_nclip(),
+        0,
+        "copy A culls its back faces"
+    );
     let flat = rt.play_battle_backdrop_flat_rgba();
     assert_eq!(flat.len() * 3, pos.len() * 4, "hybrid flat RGBA per vertex");
 

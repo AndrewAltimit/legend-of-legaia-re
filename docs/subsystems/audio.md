@@ -301,6 +301,29 @@ the start arm stores it, the sentinel included, and is what the retail
 comparison corpus compares against a state's `0x8007BAC8`
 (`engine-scene-host/tests/bgm_track_word_disc.rs`).
 
+#### A picked scene that parks inherits its door's track
+
+Several field entry scripts open with a park start and select their own
+track only under a story or position test: `bylon` parks, then starts `2019`
+only inside its monastery box; `retockin` and `station` park on the
+free-roam story state. On every retail path the park keeps the music the
+door brought. A scene-picker entry has no previous scene, so the park left
+it silent on a first pick and kept the previously picked scene's track on a
+later one.
+
+The port's picker seat is a door of another scene
+([`PickerSeat::Arrival`](../../crates/engine-scene-host/src/scene_host/scene_entry/entry_seat.rs)),
+and that scene's entry script names the track the door brings
+(`ArrivalCatalog::home_bgm`: the first pool start of MAN partition-1 record
+`0`, past any leading park). The seat arms
+`FieldVmState::picker_bgm_inherit`; the first park start inside the
+free-roam entry window plays it instead, and any real start before it drops
+it, so a scene that starts its own track and then parks over it (`son`)
+keeps its own. Door entries, resumes and the opening chain run the park as
+retail does. Both play hosts get it through the shared scene host; pinned by
+`engine-scene-host/tests/picker_park_bgm_disc.rs` and, over the whole picker
+list in sequence, `web-play/tests/play_scene_select_bgm.rs`.
+
 ### Which track a scene plays
 
 The track is **script-selected, not table-driven**: nothing maps a scene to a
@@ -1778,6 +1801,16 @@ linear, level 8 = unity) set the two gains through
 `AudioSink::set_bus_volumes` on both play hosts. At the default the mix is
 bit-identical to the single-bus one; XA streams ride neither bus.
 
+**Master volume (engine-only, desktop hosts).** `AudioSink::set_master_volume`
+scales the finished frame - voices, reverb and XA alike - after the downmix,
+`0..=100` percent of the mixer output. An output that never sets it renders at
+unity, bit-identical, which is the level every parity oracle measures. The
+native play window applies the options file's `master_volume` (default
+`25`, `DESKTOP_MASTER_VOLUME_DEFAULT`); Legaia Studio and the asset viewer
+start their previews at the same default. The browser outputs do not use it:
+`WebAudioOut` carries the site trim `WEB_MASTER_TRIM` on its gain node, and the
+play page halves its slider value on top (`PLAY_PAGE_GAIN_SCALE`).
+
 **Timebase.** The production path ticks the sequencer once per SPU sample
 (`tick_sample`), so the music clock is locked to the audio clock. Under
 `set_exact_tempo(true)` timing is an **exact integer accumulator** (units of
@@ -2196,24 +2229,32 @@ live battle uses - see
 
 The engine wires this end-to-end:
 
-- **Cue emission** (`engine-core`): executing arts through the live battle Arts
-  command input pushes one `BattleShoutCue { cslot, action }` **per art the turn
-  performs** (`arm_battle_art_action`, from the art constants the built queue
-  carries), each keyed on that art's own record action constant. Retail stages every art's animation separately and the materialiser
-  calls the cue selector per staging, so a three-art entry - the ordinary case,
-  since entry runs until the AP pool is spent - requests three shouts. The port
-  has no per-art animation timeline in the live loop, so the list is requested
-  together on the animation-start frame, in performed order. A Miracle / Super
-  replacement answers a single constant, its finisher: the per-constant staging
-  inside a replacement queue is not captured, so it is not expanded. Unmatched
-  directions (plain swings) and synthetic arts carry no constant and stay silent
-  - the same degradation retail applies to an art with no cue-table entry.
-  Drain: `World::drain_battle_shout_cues`.
-- **Bank staging** (`engine-session` boot): `read_arts_shout_bank` demuxes `XA2/XA4/XA6` per channel from the **raw 2352-byte sectors** (`legaia_xa::demux` - the CD-XA subheader carries the channel number, which a 2048-byte ISO view strips), decodes each channel to mono PCM, and pairs it with the `ArtsVoiceTable` pools in a `legaia_engine_audio::ArtsShoutBank`. Disc-image boots only; extracted-directory boots leave arts silent.
-- **Playback** (`engine-audio` / `engine-session`): `AudioDirector::play_art_shout` resolves the cue against the bank (`// PORT: FUN_8004C140`: a uniform draw from the art's pool, re-rolled while it equals the party-wide last pick `gp+0xA4A` - one byte for all three characters, not one each - and forced to channel `0xC` when the first formation id `gp+0x9F4` is `0x4F`, an override that is inert on both hosts, which supply no formation id) and stages the clip through `AudioOut::play_xa_shout`, which mixes decoded XA into the SPU output the way the PSX CD-input path does (never through the 24 voices).
+- **Cue emission** (`engine-core`): the anim commit's own two voice sites,
+  run on the frame a party clip installs (`World::commit_staged_battle_anim_at_boundary`,
+  kernels `legaia_engine_battle::arts_voice_cue`). The shout site calls the
+  selector when the byte before the queue cursor is the known-art starter
+  `0x19` (keyed on the constant behind it), or under the solo latch
+  `ctx[+0x243]`; a newly learned art (staged behind `0x1A`) makes no call.
+  The SpecialStarter (`0x1A`) commit dispatches its fanfare or generic line
+  through `FUN_8004FCC8`. Each selector call is recorded as a
+  `BattleShoutCue { cslot, action, resolved }` (`World::drain_battle_shout_cues`).
+  Full rules: [battle-action-helpers.md](battle-action-helpers.md#battle-voice-cues---the-xa30-grunt-vs-the-xa2xa4xa6-arts-shout).
+- **Selection** (`engine-core`): with the selector's SCUS bytes staged at
+  boot (`ArtsVoiceSelectorTables`, installed by
+  `World::install_retail_progression_tables`) the world runs `FUN_8004C140`
+  itself (`select_arts_voice`, on the world `rand()` stream, last pick
+  `gp+0xA4A` in `AudioState::arts_voice_last_channel`) and queues the clip as
+  an ordinary `(clip, channel, dur)` request on `AudioState::battle_xa_cues`,
+  holding the modelled drive busy for its read span as the starter does. The
+  cue is then `resolved`. A disc-free world has no tables: the cue goes out
+  unresolved and the director picks from its own bank
+  (`AudioDirector::play_art_shout`).
+- **Bank staging** (`engine-session` boot): `read_arts_shout_bank` demuxes `XA2/XA4/XA6` per channel from the **raw 2352-byte sectors** (`legaia_xa::demux` - the CD-XA subheader carries the channel number, which a 2048-byte ISO view strips), decodes each channel to mono PCM, and pairs it with the `ArtsVoiceTable` pools in a `legaia_engine_audio::ArtsShoutBank`. Disc-image boots only; extracted-directory boots leave arts silent. The browser play page stages the same files through the same calls.
+- **Playback** (`engine-session` / `engine-audio`): `AudioDirector::play_xa_clip` serves a request for slot `1` / `3` / `5` out of the shout bank, cut at the starter's read span, and stages it through `AudioSink::play_xa_shout`, which mixes decoded XA into the SPU output the way the PSX CD-input path does (never through the 24 voices).
 
-Two timing behaviours model the retail CD/XA sequencing contract (the recomp cross-reference established that the shout **trails** the art animation - the XA response arrives after the animation begins, never before): a fixed response-presentation delay (`SHOUT_CD_RESPONSE_DELAY`, ~150 ms of 44.1 kHz samples - the modeled seek/first-sector latency) gates the clip silent after the animation-start request; and a back-to-back request while a shout is still sounding queues behind it rather than cutting it (only the most recent pending clip is kept), so consecutive arts don't drop the later voice line.
-`OfflineMixer` exposes the same mixing core device-free; the disc-gated oracle `engine-session/tests/arts_shout_battle.rs` types an art into the live Arts command input and asserts the shout PCM lands in the mix only after the delay window, with `engine-core/tests/battle_shout_cue.rs` as the disc-free cue-emission check - one art, three arts in one entry, and the silent synthetic baseline.
+Two timing behaviours model the retail CD/XA sequencing contract: a fixed response-presentation delay (`SHOUT_CD_RESPONSE_DELAY`, ~150 ms of 44.1 kHz samples - the modelled seek / first-sector latency; the recomp cross-reference established that the shout **trails** the clip install) holds the clip silent after its request, and a request while a clip is sounding **replaces** it. There is one drive: the starter `FUN_8003D53C` mutes the CD input and re-arms the seek / filter / read sequencer for the new clip without testing the old one, so the old stream ends on the request. Callers that must not interrupt gate themselves first (the dispatcher's `FUN_8003DE7C(1)` read-span gate, the field op's busy word); the shout site does not.
+
+`OfflineMixer` exposes the same mixing core device-free. Oracles: `engine-session/tests/arts_voice_spar_disc.rs` plays the Rim Elm spar through the real boot (tables and banks) and asserts the battle's CD-XA request sequence - item voice, Spirit line, the Somersault's first-use starter line (`XA1` channel 1), its shout (`XA2` channel `0xC` under Tetsu's formation) - and, differencing a voiced run against a bank-less one, that each clip is silent through the CD delay and then reaches the mix. `engine-session/tests/arts_shout_battle.rs` covers the unresolved (bank-picked) path; `engine-core/tests/battle_shout_cue.rs` is the disc-free cue-emission check (known art, three arts in one entry, first use, a staged selector, the silent synthetic baseline).
 
 ### The second shout trigger - the animation cue track (`FUN_800508DC`)
 
@@ -2227,6 +2268,14 @@ parks on the first it has not. Everything it fires goes out through the cue rout
 called per animation frame by `World::step_actor_anim_cues` beside the
 effect-script stepper - retail's `FUN_80047430` makes the two calls with the
 same `(slot, entry, frame)` arguments (`0x800478B8` / `0x800478E4`).
+
+A looping clip's cue track runs again every cycle. The loop is not a wrap
+inside the player: at the clip's natural end the tick re-commits the
+still-queued `+0x1DA` through `FUN_8004AD80`, and every commit stores `0` to
+`+0x1F6` (`sb zero,0x1f6` in the delay slot at `0x8004AFD0`; a re-hit inside
+the juggle window then stores `1`, so its first cue is skipped). A party
+member's approach walk therefore steps once a cycle: a retail capture of Noa's
+walk-in fires `0x11` three times in 33 vsyncs, on the cycle's fifth vsync.
 
 The shout band is the smallest part of the track. Most of what a fight sounds
 like rides it: a party swing's entry carries `(0, 0xA7)` / `(0, 0x51)`,
@@ -2653,7 +2702,7 @@ produces `frames + 1` records either way.
 Entry points:
 
 - Library: [`legaia_parity::audio_trace_oracle`](../../crates/parity/src/audio_trace_oracle.rs) - `build_engine_audio_trace`, `load_runtime_audio_trace_from_save`, `load_runtime_audio_trace_jsonl`, `first_audio_trace_divergence`, `first_audio_trace_divergence_multi`, JSONL round-trip.
-- CLI: `legaia-engine audio-trace --scene NAME` (explicit), `--scenario LABEL` (single-snapshot vs `.mc{slot}` SPU), `--retail-jsonl PATH` (multi-frame vs PCSX-Redux capture), `--per-voice`, `--retail-keyon-csv`.
+- CLI (an `oracles` feature build of `legaia-engine`): `legaia-engine audio-trace --scene NAME` (explicit), `--scenario LABEL` (single-snapshot vs `.mc{slot}` SPU), `--retail-jsonl PATH` (multi-frame vs PCSX-Redux capture), `--per-voice`, `--retail-keyon-csv`.
 - Disc-gated tests:
   - [`audio_trace`](../../crates/parity/tests/audio_trace.rs) - auto-discovers scenarios with both `expected_active_scene` and an on-disk `.mc{slot}` save.
   - [`audio_trace_multi`](../../crates/parity/tests/audio_trace_multi.rs) - same scenario walk but skips unless `LEGAIA_AUDIO_TRACE_JSONL_DIR` points at a directory containing `<label>.jsonl` files from the PCSX-Redux probe.

@@ -1,6 +1,8 @@
 """The plain-text summary every non-markdown run prints.
 """
 
+from port_catalog.rows import IGNORE_KINDS, ignore_kind
+
 
 def summarize(rows: list[dict]) -> str:
     n = len(rows)
@@ -18,6 +20,10 @@ def summarize(rows: list[dict]) -> str:
         for r in rows
         if r["dumped"] and r["documented"] and not r["ported"] and r["ignored"]
     )
+    ignored_by_kind = {k: 0 for k in IGNORE_KINDS}
+    for r in rows:
+        if r["dumped"] and r["documented"] and not r["ported"] and r["ignored"]:
+            ignored_by_kind[ignore_kind(r["ignore_category"])] += 1
     # An ignore row retires a dump-worklist row exactly as it retires a port
     # one. The `worklist_*` sections hold ADDRESS claims - "no routine begins at
     # this VA" - and an address claim is precisely a reason NOT to dump: an
@@ -89,7 +95,11 @@ def summarize(rows: list[dict]) -> str:
             f"dumped + documented           : {dd}",
             f"dumped + documented + ported  : {ddp}",
             f"dumped + documented, NOT ported                 : {dd_not_p}",
-            f"  of which ignored (PsyQ / BIOS / libgte / ...) : {dd_not_p_ignored}",
+            f"  of which ignored (ignore-list rows)           : {dd_not_p_ignored}",
+            f"    library (PsyQ / BIOS / SDK)                 : {ignored_by_kind['library']}",
+            f"    address claim (no routine at the VA)        : {ignored_by_kind['address']}",
+            f"    scope (game routine covered another way)    : {ignored_by_kind['scope']}",
+            f"    unreferenced on the disc                    : {ignored_by_kind['unreferenced']}",
             f"  remaining port worklist                       : {dd_not_p - dd_not_p_ignored}",
             "",
             f"cited but NOT dumped  (dump worklist)           : {cited_not_dumped}",

@@ -54,6 +54,10 @@ pub struct CabinetFrame {
     pub title_card: Option<i32>,
     /// Roster id the player-select pose state seated (`DAT_801DBF70`).
     pub install_player: Option<i32>,
+    /// The announcer line a cabinet arm started this frame
+    /// (`FUN_8003D53C`): the FIGHT flash, NEXT GAME, GAME OVER. The chrome's
+    /// own lines (intro, round banner, countdown, results) are the chrome's.
+    pub xa: Option<crate::baka_fighter_chrome::XaCue>,
 }
 
 /// Per-frame inputs the cabinet reads out of shared globals.

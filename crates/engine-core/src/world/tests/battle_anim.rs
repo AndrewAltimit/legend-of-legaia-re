@@ -1065,6 +1065,89 @@ fn special_starter_commit_raises_the_arts_banner_and_the_ramp_emits_quads() {
     assert!(world.battle_arts_banner_quads().is_empty());
 }
 
+/// The SpecialStarter commit's voice (`FUN_8004AD80` `0x8004B754..0x8004BB44`):
+/// with no seat flag and no starter mark, the constant behind the starter
+/// names a Hyper Art and the commit dispatches its fanfare - Vahn's Burning
+/// Flare `0x1C` is id `0x104` or `0x107` (`XA1.XA` channel 4 or 7) on one
+/// `rand()` coin. The dispatcher's read-span gate drops a second request
+/// inside the first clip's span. The known-art starter (`0x19`) commit asks
+/// the arts-voice selector instead, which a staged table resolves onto
+/// `XA2.XA`.
+#[test]
+fn starter_commits_voice_the_hyper_fanfare_and_the_arts_shout() {
+    let mut world = pose_test_world();
+    world.mode = SceneMode::Battle;
+    world.audio.xa_cue_durations = Some(vec![10; 0x200]);
+    let stage = |w: &mut World, queue: &[u8], cursor: u8, staged: u8| {
+        let b = &mut w.actors[0].battle;
+        b.params[..queue.len()].copy_from_slice(queue);
+        b.params[queue.len()] = 0;
+        b.strike_index = cursor;
+        b.starter_marks = None;
+        b.current_anim = 0;
+        b.queued_anim = staged;
+    };
+    stage(&mut world, &[0x1A, 0x1C], 1, 0x1A);
+    world.commit_staged_battle_anim_at_boundary(0);
+    let cues = world.drain_battle_xa_cues();
+    assert_eq!(cues.len(), 1, "{cues:?}");
+    assert_eq!(cues[0].clip, 0, "Vahn's fanfare bank, XA1");
+    assert!(matches!(cues[0].channel, 4 | 7), "{cues:?}");
+    assert_eq!(cues[0].duration_sectors, (10u32 * 60).div_ceil(100));
+
+    // Inside that clip's read span the dispatcher declines the next one.
+    world.battle_ctx.arts_banner_stage = 0;
+    stage(&mut world, &[0x1A, 0x1C], 1, 0x1A);
+    world.commit_staged_battle_anim_at_boundary(0);
+    assert!(world.drain_battle_xa_cues().is_empty(), "the drive is busy");
+    world.audio.battle_xa_busy_frames = 0;
+
+    // A non-Hyper constant behind the starter plays nothing.
+    world.battle_ctx.arts_banner_stage = 0;
+    stage(&mut world, &[0x1A, 0x27], 1, 0x1A);
+    world.commit_staged_battle_anim_at_boundary(0);
+    assert!(world.drain_battle_xa_cues().is_empty());
+
+    // The known-art starter: a selector call keyed on the constant behind it.
+    use legaia_art::arts_voice::{
+        ArtsVoiceSelectorTables, DUR_TABLE_VA, FIRST_HALF_VARIANT_BASES, RANGE_TABLE_VA,
+        SELECTOR_SPAN_END, SELECTOR_SPAN_START,
+    };
+    let mut b = vec![0u8; (SELECTOR_SPAN_END - SELECTOR_SPAN_START) as usize];
+    let mut put = |va: u32, bytes: &[u8]| {
+        let o = (va - SELECTOR_SPAN_START) as usize;
+        b[o..o + bytes.len()].copy_from_slice(bytes);
+    };
+    put(RANGE_TABLE_VA, &[0x1F, 0x29, 0x2B]);
+    put(FIRST_HALF_VARIANT_BASES[0][0] + 2 * 0x0F, &[3, 5]);
+    put(DUR_TABLE_VA, &[0, 0, 0, 50, 0, 70]);
+    world.audio.arts_voice_tables = Some(std::sync::Arc::new(
+        ArtsVoiceSelectorTables::from_span_bytes(b),
+    ));
+    world.battle.move_label_closed = false;
+    stage(&mut world, &[0x19, 0x27], 1, 0x19);
+    world.commit_staged_battle_anim_at_boundary(0);
+    let shouts = world.drain_battle_shout_cues();
+    assert_eq!(shouts.len(), 1);
+    assert_eq!(
+        (shouts[0].cslot, shouts[0].action, shouts[0].resolved),
+        (0, 0x27, true)
+    );
+    let cues = world.drain_battle_xa_cues();
+    assert_eq!(cues.len(), 1, "{cues:?}");
+    assert_eq!(cues[0].clip, 1, "Vahn's shout bank, XA2");
+    let want_dur = |raw: u32| (raw * 60).div_ceil(100);
+    assert!(
+        (cues[0].channel, cues[0].duration_sectors) == (3, want_dur(50))
+            || (cues[0].channel, cues[0].duration_sectors) == (5, want_dur(70)),
+        "{cues:?}"
+    );
+    // The art clip behind it (cursor now past the constant) asks for nothing.
+    stage(&mut world, &[0x19, 0x27], 2, 0x27);
+    world.commit_staged_battle_anim_at_boundary(0);
+    assert!(world.drain_battle_shout_cues().is_empty());
+}
+
 // --- the decoder's last-frame tween + the end-of-clip displacement ---------
 
 /// A two-frame one-shot whose entry head carries an end-of-clip step

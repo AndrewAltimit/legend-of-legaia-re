@@ -84,6 +84,11 @@ impl World {
         // own creature), which the draw copies to the node's `+0x7A` and
         // turns into the shatter renderer.
         a.battle.shatter = 0;
+        // The node is built fresh (`FUN_80024C88` at `0x801F1D4C`), at the
+        // allocator's unity render scale `+0x72 = 0x1000`: a previous
+        // creature's scale (PROT 0923 zeroes and grows its own) does not
+        // carry over.
+        a.battle.render_scale = None;
         // `sb zero,0x1fb(v0)` over 32 bytes (`0x801F1E98..0x801F1EB0`): the
         // committed-anim-id ring `FUN_80047430` shifts each frame and the
         // after-image walk `FUN_80049348` gates on (`0x10 < id`). Only the id
@@ -442,6 +447,24 @@ impl World {
                     facing: self.actors.get(caster_slot)?.battle.facing_angle & 0xFFF,
                 })
             }),
+            victim_body: self.casting.module_cam.victim_slot.and_then(|v| {
+                let p = self.battle_display_trio(usize::from(v))?;
+                Some(legaia_engine_cast::cast_module_camera::ModuleSeat {
+                    x: p[0] as i16,
+                    y: p[1] as i16,
+                    z: p[2] as i16,
+                    facing: self.actors.get(usize::from(v))?.battle.facing_angle & 0xFFF,
+                })
+            }),
+            creature_body: self.casting.summon_actor_slot.and_then(|c| {
+                let p = self.battle_display_trio(usize::from(c))?;
+                Some(legaia_engine_cast::cast_module_camera::ModuleSeat {
+                    x: p[0] as i16,
+                    y: p[1] as i16,
+                    z: p[2] as i16,
+                    facing: self.actors.get(usize::from(c))?.battle.facing_angle & 0xFFF,
+                })
+            }),
             party: std::array::from_fn(|n| {
                 (n < party_count && self.actors.get(n).is_some_and(|a| a.battle.hp != 0))
                     .then(|| seat_of(n))
@@ -549,10 +572,17 @@ impl World {
                 let drift = (prot_entry == 930)
                     .then(|| legaia_engine_cast::cast_module_camera::horn_ring_drift(va, n))
                     .flatten();
+                // PROT 0965 arm 8's ring loop writes each part's ring words.
+                let ring = (prot_entry == 965)
+                    .then(|| {
+                        legaia_engine_cast::cast_module_camera::doomsday_ring_part_words(va, n)
+                    })
+                    .flatten();
                 for part in &mut scene.parts[first..] {
                     part.tag.get_or_insert(va);
                     part.seat_pokes.extend_from_slice(pokes);
                     part.seat_pokes.extend(drift.iter().flatten());
+                    part.seat_pokes.extend(ring.iter().flatten());
                 }
                 // A seated stager-calling record makes its own call, so the
                 // clock kept in its place stops.

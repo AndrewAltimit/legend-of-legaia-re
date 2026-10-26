@@ -173,11 +173,7 @@ the cheapest place to look for a claim that is still wrong.
 
 ## Field / locomotion
 
-The live hunt here is the dialog font's unmeasured edge ([`dialog-font.md`](../formats/dialog-font.md)).
-
-| Thread | Status | What would close it |
-|---|---|---|
-| Where does the escape-expansion buffer at `0x800740EC` end? | partial (bounded at `0x206` bytes by inference; the code sets no bound) | The zero-initialised run reaches the next initialised data at `0x800742F2` and no dumped routine addresses inside it. The expander `FUN_80036514` has no destination-length test, so the end is a property of the strings, not the code: the longest expansion of any drawn string - a disc census of every drawn string expanded with its longest substitutions, or a write watch while the longest one draws - pins it. |
+No open threads.
 
 Answered questions: [settled field / locomotion](re-settled-threads/field.md), [settled text / dialog](re-settled-threads/text-dialog.md); falsified readings: [field / locomotion](re-do-not-re-walk.md#field--locomotion), [menus / UI](re-do-not-re-walk.md#menus--ui).
 

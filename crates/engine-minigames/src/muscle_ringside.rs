@@ -247,20 +247,35 @@ pub const ROUND_CARD_XA_CLIP: u8 = 0x1F;
 pub const ROUND_CARD_XA_DURATION: u16 = 0x54;
 /// The ROUND card line a first visit starts: channel `0`, the round index of
 /// every first-entry word ([`ROUND_CARD_XA_CLIP`]).
-pub const FIRST_VISIT_ROUND_CARD_XA: HubXaCue = HubXaCue {
-    clip: ROUND_CARD_XA_CLIP,
-    channel: 0,
-    duration_sectors: ROUND_CARD_XA_DURATION,
-};
+pub const FIRST_VISIT_ROUND_CARD_XA: HubXaCue = round_card_xa(0);
 
-/// Every CD-XA line the hub can start - the first visit's intro line and its
-/// ROUND card - for a host that stages a clip ahead of the request that
+/// The ROUND card line for the leg whose 0-based round index is `round`:
+/// arm `0x15` is the same arm on a first visit and on a hub re-entered after
+/// a leg, and its line's channel is the round index (`DAT_801D1A94`), so
+/// ROUND `n` (as the card numbers it) speaks channel `n - 1`.
+pub const fn round_card_xa(round: i32) -> HubXaCue {
+    HubXaCue {
+        clip: ROUND_CARD_XA_CLIP,
+        channel: (round & 0xF) as u8,
+        duration_sectors: ROUND_CARD_XA_DURATION,
+    }
+}
+
+/// How many round indices a ROUND card's line can name: a course holds at
+/// most [`crate::muscle_dome::MAX_ROUNDS_PER_COURSE`] rounds, the channel
+/// being the round index's low nibble.
+pub const ROUND_CARD_XA_CHANNELS: i32 = crate::muscle_dome::MAX_ROUNDS_PER_COURSE as i32;
+
+/// Every CD-XA line the hub can start - the first visit's intro line and the
+/// ROUND card's line for every round index - for a host that stages a clip ahead of the request that
 /// plays it (the browser page, which decodes a clip the bank lacks one
 /// request per frame). Queued when a leg opens
 /// (`legaia_engine_core::world::World::enter_muscle_dome`); a host that reads the span
 /// synchronously drains and drops it.
-pub fn hub_xa_prestage() -> [HubXaCue; 2] {
-    [FIRST_VISIT_INTRO_XA, FIRST_VISIT_ROUND_CARD_XA]
+pub fn hub_xa_prestage() -> Vec<HubXaCue> {
+    std::iter::once(FIRST_VISIT_INTRO_XA)
+        .chain((0..ROUND_CARD_XA_CHANNELS).map(round_card_xa))
+        .collect()
 }
 
 /// Which arm of `FUN_801CF870` a [`FirstVisitHub`] is in.
@@ -659,6 +674,8 @@ impl HubTimers {
                 self.first_visit = Some(FirstVisitHub::new());
             } else if raise {
                 self.round_banner = Some((round, crate::muscle_dome::HubScreen::opponent_card()));
+                // The card's arm `0x15` starts its line on its first tick.
+                out.xa = Some(round_card_xa(round - 1));
             }
             self.interval = None;
             self.backdrop = None;
@@ -724,6 +741,11 @@ impl HubTimers {
                 .is_some_and(|(ramp, _)| ramp.fade[0] >= crate::other_game_overlay::LANE_FADE_FULL);
             backdrop.tick(1, pad, self.interval.map(|i| i.stage()), lane0_full);
             if backdrop.card_brightness().is_some() {
+                // A re-entered hub's ROUND card is arm `0x15` too: its first
+                // tick starts the round's line (`0x801CFF4C..0x801CFF70`).
+                if self.card_round.is_none() && out.xa.is_none() {
+                    out.xa = Some(round_card_xa(round - 1));
+                }
                 self.card_round = Some(round);
             }
             if backdrop.done() {
@@ -859,7 +881,7 @@ mod tests {
                 break;
             }
         }
-        assert_eq!(started, listed.len());
+        assert_eq!(started, 2, "the intro line and the ROUND card's");
     }
 
     #[test]
@@ -1056,6 +1078,7 @@ mod tests {
         let mut t = HubTimers::default();
         let (mut visits, mut was_visit) = (0, false);
         let (mut cards, mut was_card) = (0, false);
+        let mut lines = Vec::new();
         let mut step = |t: &mut HubTimers, c: &DomeContest, leg_open: bool, between: bool| {
             let frame = t.tick(
                 HubTickInputs {
@@ -1074,6 +1097,7 @@ mod tests {
                 || t.backdrop.is_some_and(|b| b.card_brightness().is_some());
             cards += usize::from(card && !was_card);
             was_card = card;
+            lines.extend(frame.xa);
             frame.next_leg
         };
         for fight in 0..3 {
@@ -1103,6 +1127,18 @@ mod tests {
         }
         assert_eq!(visits, 1, "the Welcome intro plays once per contest");
         assert_eq!(cards, 3, "each later fight opens on one ROUND card");
+        // Every ROUND card speaks its own round - arm `0x15` on the first
+        // visit and on each re-entered hub alike.
+        assert_eq!(
+            lines,
+            vec![
+                FIRST_VISIT_INTRO_XA,
+                round_card_xa(0),
+                round_card_xa(1),
+                round_card_xa(2),
+                round_card_xa(3),
+            ]
+        );
     }
 
     #[test]

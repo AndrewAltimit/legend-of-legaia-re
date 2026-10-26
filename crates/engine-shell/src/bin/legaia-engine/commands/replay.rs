@@ -16,7 +16,12 @@ use super::*;
 pub(crate) fn cmd_replay(input: &Path, out: &Path, strict: bool) -> Result<()> {
     let replay = ReplayFile::from_path(input)?;
     let trace = synthetic_replay_trace(&replay);
-    let jsonl = mode_trace_to_jsonl(&trace);
+    // One JSON object per frame, the `mode-trace` JSONL shape.
+    let mut jsonl = String::new();
+    for f in &trace {
+        jsonl.push_str(&serde_json::to_string(f).context("serialise a mode-trace frame")?);
+        jsonl.push('\n');
+    }
     let out_label = if out.as_os_str() == "-" {
         print!("{jsonl}");
         "<stdout>".to_string()

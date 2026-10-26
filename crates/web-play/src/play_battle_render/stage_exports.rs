@@ -114,6 +114,19 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
+    /// The NCLIP word the page draws the fixed backdrop mesh under
+    /// (`legaia_engine_scene_host::scene_host::backdrop_shell_nclip`): copy A
+    /// keeps its front faces only, and the mesh carries a both-sided copy B
+    /// once per winding. `0` (no cull) outside a fight with a shell.
+    pub fn play_battle_backdrop_nclip(&self) -> u32 {
+        self.battle_render
+            .as_ref()
+            .and_then(|b| b.shell.as_ref())
+            .map_or(0, |sh| {
+                legaia_engine_scene_host::scene_host::backdrop_shell_nclip(sh.second)
+            })
+    }
+
     /// The backdrop's drawn slot 1, one copy, in the stage's scaled space -
     /// empty when the draw list has no slot 1. The page draws it once per
     /// model of [`Self::play_battle_backdrop_spun_models`].

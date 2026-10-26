@@ -538,8 +538,10 @@ pub fn write_retail_present_party(sc_block: &mut [u8], members: &[u8]) -> Result
 /// screen's time line divides it by `216000` for hours (`(c >> 6) *
 /// 0x026D60DD`, high word `>> 5`) and by `3600` for total minutes (`c *
 /// 0x91A2B3C5`, high word `>> 11`), then clamps the display at `99:59`
-/// (menu overlay, `0x801DD5C8..0x801DD618`). The New Game slate zeroes it
-/// (`FUN_8001DCF8`, `sw zero` at `0x8001DD58`).
+/// (menu overlay, `0x801DD5C8..0x801DD618`). It advances by the frame step
+/// `DAT_1F800393` once per game frame (`FUN_80016B6C`, `0x80016ED0..
+/// 0x80016EFC`), so it counts vsyncs. The New Game slate zeroes it with the
+/// rest of the live window (`FUN_8001DCF8`, byte loop at `0x8001DE6C`).
 pub const RETAIL_PLAY_COUNTER_OFFSET: usize = 0x430;
 
 /// Ticks per second of the play-time counter at [`RETAIL_PLAY_COUNTER_OFFSET`].

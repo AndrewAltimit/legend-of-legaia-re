@@ -78,6 +78,13 @@ pub struct MuscleDomeSession {
     /// The opponent's monster-AI inputs ([`super::opponent`]); `None` keeps
     /// the greedy stand-in.
     pub(super) opponent_ai: Option<super::opponent::DomeOpponentAi>,
+    /// Whose learned arts the entry's Triangle list pages over: the
+    /// fighter's roster slot and learned count (`record[+0x185]`), when the
+    /// host has the record ([`Self::set_arts_list_owner`]).
+    pub(super) list_owner: Option<(u8, u8)>,
+    /// The list window an ended entry left on screen, sliding out
+    /// ([`legaia_engine_battle::arts_command_input::ArtsListWindow`]).
+    pub(super) list_residual: Option<legaia_engine_battle::arts_command_input::ArtsListWindow>,
 }
 
 impl MuscleDomeSession {
@@ -115,6 +122,33 @@ impl MuscleDomeSession {
             choreo: super::choreo::DomeChoreo::default(),
             auto: Default::default(),
             opponent_ai: None,
+            list_owner: None,
+            list_residual: None,
+        }
+    }
+
+    /// Page the entry's Triangle list over the fighter's **learned** arts,
+    /// as retail does in the dome too: the arena runs the battle overlay's
+    /// menu SM, whose pager `FUN_801D3748` and list renderer `FUN_80034358`
+    /// read the acting character's record (`+0x185` count, `+0x186..` ids).
+    /// `char_slot` is the fighter's roster slot. Without it the list pages
+    /// over the art catalog and draws no rows.
+    pub fn set_arts_list_owner(&mut self, char_slot: u8, learned: u8) {
+        self.list_owner = Some((char_slot, learned));
+    }
+
+    /// The fighter's roster slot the list draws from
+    /// ([`Self::set_arts_list_owner`]).
+    pub fn arts_list_owner(&self) -> Option<u8> {
+        self.list_owner.map(|(slot, _)| slot)
+    }
+
+    /// The entry's list window while it is on screen: `(row page, slide)`,
+    /// off the open entry or the window an ended one left sliding out.
+    pub fn arts_list_window(&self) -> Option<(u8, u8)> {
+        match &self.menu {
+            DomeMenu::Input(s) => s.list_window(),
+            _ => self.list_residual.map(|w| (w.row_page, w.slide)),
         }
     }
 
@@ -175,10 +209,20 @@ impl MuscleDomeSession {
     /// `0x801F4E0A` climbs by the frame step while the list is open in the
     /// entry state `0x50` and drains otherwise
     /// ([`legaia_engine_battle::arts_command_input::ArtsCommandInputSession::step_list_slide`]).
-    /// A no-op while the entry is not the open menu.
+    /// Out of the entry, a window the entry left on screen keeps draining.
     pub fn tick_arts_list_slide(&mut self, dt: u8) {
         if let DomeMenu::Input(s) = &mut self.menu {
             s.step_list_slide(dt);
+            // A fresh entry's registration zeroes the counter, so this also
+            // ends a window still sliding out from the last one.
+            self.list_residual =
+                legaia_engine_battle::arts_command_input::ArtsListWindow::left_by(s);
+        } else if let Some(w) = self.list_residual.as_mut()
+            && !w.step(dt)
+        {
+            // Out of the entry the driver keeps draining the window the
+            // entry left until it is off-screen.
+            self.list_residual = None;
         }
     }
 

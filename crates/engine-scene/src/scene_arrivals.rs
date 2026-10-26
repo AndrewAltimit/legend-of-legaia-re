@@ -87,6 +87,45 @@ pub fn decode_entry_byte(b: u8) -> i16 {
 #[derive(Debug, Clone, Default)]
 pub struct ArrivalCatalog {
     by_dest: BTreeMap<String, Vec<SceneArrival>>,
+    /// Per scene, the first global-pool track its entry script (MAN
+    /// partition-1 record `0`) starts ([`entry_script_bgm`]).
+    home_bgm: BTreeMap<String, u16>,
+}
+
+/// The global-pool range a BGM start can name (`music_01`, `2000 +` the
+/// sound-test slot).
+const GLOBAL_BGM_IDS: std::ops::Range<u16> = 2000..2082;
+
+/// The first global-pool track the entry script of a decompressed scene MAN
+/// starts (op `0x35` sub-op `1` / `9` in partition-1 record `0`, the
+/// scene-entry system script, walked linearly from its first opcode). The
+/// park sentinel `0x1000` and scene-local ids are skipped, so a scene whose
+/// entry parks first and starts its own track under a story or position test
+/// still names that track. `None` when record `0` starts none.
+pub fn entry_script_bgm(man: &[u8]) -> Option<u16> {
+    use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
+    let mf = legaia_scene_formats::man_section::parse(man).ok()?;
+    let n1 = mf.header.partition_counts[1].max(0) as usize;
+    let start = mf.actor_placement_record_offset(0, man.len())?;
+    let end = (1..n1)
+        .filter_map(|i| mf.actor_placement_record_offset(i, man.len()))
+        .filter(|&o| o > start)
+        .min()
+        .unwrap_or(man.len());
+    let body = man.get(start..end)?;
+    let pc0 = 1 + usize::from(*body.first()?) * 2 + 4;
+    if pc0 >= body.len() {
+        return None;
+    }
+    LinearWalker::new(body, pc0)
+        .flatten()
+        .find_map(|insn| match insn.info {
+            InsnInfo::Bgm {
+                text_id,
+                sub_op: 1 | 9,
+            } if GLOBAL_BGM_IDS.contains(&text_id) => Some(text_id),
+            _ => None,
+        })
 }
 
 impl ArrivalCatalog {
@@ -95,6 +134,7 @@ impl ArrivalCatalog {
     /// contribute nothing. Empty when the index carries no CDNAME map.
     pub fn build(index: &ProtIndex) -> Self {
         let mut by_dest: BTreeMap<String, Vec<SceneArrival>> = BTreeMap::new();
+        let mut home_bgm: BTreeMap<String, u16> = BTreeMap::new();
         let mut seen = std::collections::BTreeSet::new();
         for name in index.cdname_scene_names() {
             if !seen.insert(name.clone()) {
@@ -106,6 +146,9 @@ impl ArrivalCatalog {
             let Ok(Some(man)) = scene.field_man_payload(index) else {
                 continue;
             };
+            if let Some(id) = entry_script_bgm(&man) {
+                home_bgm.insert(name.clone(), id);
+            }
             let sites = legaia_scene_formats::man_edit::scene_change_sites(&man);
             if sites.is_empty() {
                 continue;
@@ -139,7 +182,13 @@ impl ArrivalCatalog {
                 });
             }
         }
-        Self { by_dest }
+        Self { by_dest, home_bgm }
+    }
+
+    /// The first global-pool track `scene`'s entry script starts
+    /// ([`entry_script_bgm`]), `None` for a scene whose entry starts none.
+    pub fn home_bgm(&self, scene: &str) -> Option<u16> {
+        self.home_bgm.get(scene).copied()
     }
 
     /// Every arrival into `scene`, in disc order (unranked, duplicates kept).

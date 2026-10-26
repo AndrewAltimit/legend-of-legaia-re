@@ -143,8 +143,9 @@ impl World {
     ///
     /// Not carried: the per-seat tallies `0x801F6978` / `0x801F6980` the
     /// quartered roll is checked against, the first argument's `0x10` /
-    /// `0x12` mode (the predamage port has one summon branch), and PROT 0929
-    /// arm 16's and PROT 0934 arm `0x18`'s per-pass ladders.
+    /// `0x12` mode (the predamage port has one summon branch), and PROT 0934
+    /// arm `0x18`'s per-pass ladder. PROT 0929 arm 16's is
+    /// [`Self::mule_wave_hit`].
     pub(in crate::world::battle::cast_band) fn apply_summon_pre_hits(
         &mut self,
         entry: u32,
@@ -262,19 +263,86 @@ impl World {
     /// gate), so the row stands in the underwater backdrop while the bubbles
     /// rise; arm 5's pass hides it for the creature's entrance
     /// (`+0x04 = 0`, `+0x21C = 0xFF`, `0x801F7040..`), arm 11's shows it
-    /// again for the attack (`0x801F7590..`), arm 17's hides it
-    /// (`0x801F8454..`) and the hit arm 18 shows each struck monster
-    /// (`0x801F87C4..`). The engine's shown word is its resting `0` under a
-    /// lowered flag. Each pass also halts the parts the arm kills by their
+    /// again for the attack, turned to face the party at half its render
+    /// scale (`+0x46 = 0x800`, node `+0x72 >>= 1`, `0x801F7590..0x801F75C8`;
+    /// the arm also halves `+0x21D`, `0x801F75D4..0x801F75E0`, and the hit
+    /// arm 18 doubles it back on each monster it strikes,
+    /// `0x801F888C..0x801F8898`), arm 16's pass hides it,
+    /// doubles the scale back and drops it to the floor (`+0x36 = 0`,
+    /// `0x801F842C..0x801F8460`; arm 17 starts at `0x801F8488`), and the hit
+    /// arm 18 shows each struck monster (`0x801F87C4..`). The engine's shown
+    /// word is its resting `0` under a lowered flag. Each pass also halts the parts the arm kills by their
     /// parked handles and runs out the loops arm 16 ends
     /// ([`legaia_engine_cast::cast_module_camera::mule_arm_kills`],
     /// [`legaia_engine_cast::cast_module_camera::mule_arm_loop_ends`]).
-    pub(in crate::world::battle::cast_band) fn apply_mule_writes(
+    /// PROT 0929's per-pass tail (`0x801F8B08..0x801F8BF8`): arm 0 clears
+    /// the follow word and arm 9's pass sets it; while it is set every pass
+    /// ends by pointing the scanline backdrop's sample origin
+    /// (`ctx[+0x285]` / `+0x286`) at the live camera, after the arm's own
+    /// stores ([`legaia_engine_cast::cast_module_camera::mule_backdrop_origin`]).
+    pub(in crate::world::battle::cast_band) fn mule_backdrop_follow(
         &mut self,
         phase_in: u8,
         passed: bool,
     ) {
+        use legaia_engine_cast::cast_module_camera::{
+            MULE_BACKDROP_FOLLOW_ARM, mule_backdrop_origin,
+        };
+        if phase_in == 0 {
+            self.casting.module_mule_backdrop_follow = false;
+            return;
+        }
+        if phase_in == MULE_BACKDROP_FOLLOW_ARM && passed {
+            self.casting.module_mule_backdrop_follow = true;
+        }
+        if !self.casting.module_mule_backdrop_follow {
+            return;
+        }
+        let pose = self.battle_cam_pose();
+        let (u, v) = mule_backdrop_origin(
+            pose.pitch as i32,
+            pose.yaw as i32,
+            pose.tr[0] as i32,
+            pose.tr[1] as i32,
+        );
+        let wash = &mut self.casting.module_pres.wash;
+        wash.u_base = u;
+        wash.v_base = v;
+    }
+
+    pub(in crate::world::battle::cast_band) fn apply_mule_writes(
+        &mut self,
+        phase_in: u8,
+        passed: bool,
+        monster_count: u8,
+        caster: u8,
+        spell_id: u8,
+    ) {
         use legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN;
+        self.mule_row_seat(phase_in, passed, monster_count, caster, spell_id);
+        // Arms 15 and 16 copy the creature's display trio over the position
+        // of two of arm 14's parked parts on every pass, held or not
+        // (`lwl` / `lwr` of `+0x3C..+0x43` into `+0x14..+0x1B` through the
+        // handles at `0x801F9A98` / `0x801F9A9C`; `0x801F7BD8..0x801F7C20`,
+        // `0x801F81BC..0x801F820C`), so they ride with the creature.
+        if matches!(phase_in, 15 | 16)
+            && let Some(body) = self
+                .casting
+                .summon_actor_slot
+                .and_then(|c| self.battle_display_trio(usize::from(c)))
+            && let Some(scene) = self.casting.active_summon.as_mut()
+        {
+            for part in scene.parts.iter_mut().filter(|p| {
+                !p.finished
+                    && p.tag.is_some_and(|t| {
+                        legaia_engine_cast::cast_module_camera::MULE_CREATURE_RIDERS.contains(&t)
+                    })
+            }) {
+                part.state.world_x = body[0] as i16;
+                part.state.world_y = body[1] as i16;
+                part.state.world_z = body[2] as i16;
+            }
+        }
         if passed && let Some(scene) = self.casting.active_summon.as_mut() {
             let kills = legaia_engine_cast::cast_module_camera::mule_arm_kills(phase_in);
             let ends = legaia_engine_cast::cast_module_camera::mule_arm_loop_ends(phase_in);
@@ -286,9 +354,37 @@ impl World {
                 }
             }
         }
+        // The creature: arm 11's pass lifts it to `+0x36 = -0x100` facing
+        // `0` (`0x801F7668..0x801F7674`), arm 14's lights it white and holds
+        // the word (`+0x04 = 0x3FFFFFFF`, `+0x0C = 0x1000`, `+0x21C = 0xFF`,
+        // `0x801F7AB0..0x801F7AF0`, beside its clip-2 stage), and arm 16's
+        // hides it (`+0x21C = 0xFF`, `+0x04 = 0`, `0x801F83C4..0x801F83D0`).
+        if passed
+            && matches!(phase_in, 11 | 14 | 16)
+            && let Some(c) = self
+                .casting
+                .summon_actor_slot
+                .and_then(|s| self.actors.get_mut(usize::from(s)))
+        {
+            match phase_in {
+                11 => {
+                    c.move_state.world_y = -0x100;
+                    c.battle.facing_angle = 0;
+                }
+                14 => {
+                    c.battle.render_color = 0x3FFF_FFFF;
+                    c.battle.render_blend = 0x1000;
+                    c.battle.render_flag = RENDER_FLAG_HIDDEN;
+                }
+                _ => {
+                    c.battle.render_color = 0;
+                    c.battle.render_flag = RENDER_FLAG_HIDDEN;
+                }
+            }
+        }
         let hidden = match (phase_in, passed) {
             (1, _) | (11 | 18, true) => false,
-            (5 | 17, true) => true,
+            (5 | 16, true) => true,
             _ => return,
         };
         let pc = usize::from(self.party.party_count);
@@ -298,7 +394,196 @@ impl World {
             }
             a.battle.render_flag = if hidden { RENDER_FLAG_HIDDEN } else { 0 };
             a.battle.render_color = 0;
+            let scale = a.battle.render_scale.unwrap_or(0x1000);
+            match (phase_in, passed) {
+                (11, true) => {
+                    a.battle.facing_angle = 0x800;
+                    a.battle.render_scale = Some(scale >> 1);
+                    // `+0x21D >>= 1` (`0x801F75D4..0x801F75E0`).
+                    a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(
+                        a.battle.anim_rate.get() >> 1,
+                    );
+                }
+                // The hit arm doubles each struck monster's rate back
+                // (`+0x21D <<= 1`, `0x801F888C..0x801F8898`).
+                (18, true) => {
+                    a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(
+                        a.battle.anim_rate.get().wrapping_shl(1),
+                    );
+                }
+                (16, true) => {
+                    a.battle.render_scale = Some(scale.wrapping_shl(1));
+                    a.move_state.world_y = 0;
+                    // `sh zero,0x48` (`0x801F8444`): the roll back to rest.
+                    a.battle.render_roll = 0;
+                }
+                _ => {}
+            }
         }
+    }
+
+    /// PROT 0929's (Mule) monster-row seat. Arm 0 parks each living
+    /// monster's ground trio and facing (`0x801F9A58` / `0x801F9A78`) and
+    /// stands it on the alternate-family seat `0x80077628 + (count + 3) *
+    /// 0x20` at half its `x` and half its `z` less `0x226`, facing `0x800`
+    /// (`0x801F6C04..0x801F6CF0`); the last arm `0xFF` puts every living
+    /// monster back on its parked trio and facing (`0x801F8A70..0x801F8AE8`).
+    /// Arm 16's every pass walks the row's wave front `0x801F9AC8` (from
+    /// arm 15's `-0x100`, `+ step * scalar / 2` a pass) and lifts each
+    /// monster it has passed `4 * step * scalar` a pass up to `+0x36 = -0x100`
+    /// (`0x801F7D9C..0x801F8108`) and rolls it `+0x48 += 16 * step *
+    /// scalar` while the Mystic Shield is down (`0x801F8110..0x801F8164`);
+    /// the strike on each passed monster is [`Self::mule_wave_hit`].
+    fn mule_row_seat(
+        &mut self,
+        phase: u8,
+        passed: bool,
+        monster_count: u8,
+        caster: u8,
+        spell_id: u8,
+    ) {
+        let monsters = usize::from(monster_count);
+        let map = self.cast_seat_map();
+        let slots: Vec<(usize, usize)> = (0..monsters)
+            .filter_map(|i| map.engine(3 + i as u8).map(|e| (i, usize::from(e))))
+            .filter(|&(_, e)| self.actors.get(e).is_some_and(|a| a.battle.hp != 0))
+            .collect();
+        let d = legaia_engine_cast::cast_module_camera::DELTA_PER_TICK;
+        let t = d * legaia_engine_cast::cast_module_camera::SPEED_SCALAR;
+        match (phase, passed) {
+            (0, true) => {
+                self.casting.module_saved_poses.clear();
+                for &(i, e) in &slots {
+                    let seat =
+                        legaia_engine_battle::battle_seats::monster_seat(monsters as u8, i, true);
+                    let Some(a) = self.actors.get_mut(e) else {
+                        continue;
+                    };
+                    let m = &mut a.move_state;
+                    self.casting.module_saved_poses.push((
+                        e,
+                        [m.world_x, m.world_y, m.world_z],
+                        a.battle.facing_angle,
+                    ));
+                    m.world_x = seat.x / 2;
+                    m.world_z = seat.z / 2 - 0x226;
+                    a.battle.facing_angle = 0x800;
+                }
+            }
+            (15, true) => self.casting.module_mule_front = -0x100,
+            (18, _) => self.battle.combo_cluster_held = false,
+            (16, _) => {
+                // The wave's popups go up without opening the combo cluster:
+                // each hit clears the readout flag the damage kernel raised
+                // (`sb zero,0x8007B64C` at `0x801F7E60`), as PROT 0959's
+                // wrapper hits do. The hit arm 18's own kernel call raises it
+                // again, so the hold ends there.
+                self.battle.combo_cluster_held = true;
+                self.casting.module_mule_front += t / 2;
+                let front = self.casting.module_mule_front;
+                let shield = self.mystic_shield_up();
+                for &(_, e) in &slots {
+                    self.mule_wave_hit(e, front, shield, caster, spell_id);
+                    let Some(a) = self.actors.get_mut(e) else {
+                        continue;
+                    };
+                    let m = &mut a.move_state;
+                    if i32::from(m.world_z) >= front {
+                        continue;
+                    }
+                    if m.world_y >= -0xFF {
+                        m.world_y = m.world_y.wrapping_sub((4 * t) as i16);
+                    }
+                    // The roll `+0x48 += 16 * step * scalar` (`0x801F8110..
+                    // 0x801F8164`), skipped while the Mystic Shield is up.
+                    if !shield {
+                        a.battle.render_roll =
+                            a.battle.render_roll.wrapping_add((16 * t) as u16) & 0xFFF;
+                    }
+                }
+            }
+            (0xFF, _) => {
+                for &(e, pos, facing) in &self.casting.module_saved_poses {
+                    if !slots.iter().any(|&(_, s)| s == e) {
+                        continue;
+                    }
+                    if let Some(a) = self.actors.get_mut(e) {
+                        [
+                            a.move_state.world_x,
+                            a.move_state.world_y,
+                            a.move_state.world_z,
+                        ] = pos;
+                        a.battle.facing_angle = facing;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// One pass of PROT 0929 arm 16's wave hit on monster slot `slot`
+    /// (`0x801F7DD8..0x801F80A8`). A living, targetable monster with no clip
+    /// playing (`+0x1D9 == 0`) that the wave front `front` has passed, with
+    /// the Mystic Shield down, takes a third of the summon roll
+    /// `FUN_801DD0AC(0x10, 7, seat)` - `rand() % 16 + 16` when that comes to
+    /// zero - plus `rand() % (hit / 8 + 1)`, its popup pushed with that
+    /// amount (`FUN_801F44A0`), the HP write clamped to `HP - 1` (the wave
+    /// cannot kill) and its reaction clip `+0x1EF` (else `+0x1F0`) staged with
+    /// the restage bits `5`. A living monster the wave does not hit this pass
+    /// has its staged clip cleared (`sb zero,0x1DA`, `0x801F809C..0x801F80A8`).
+    ///
+    /// Not carried: the damage tallies the roll is booked against
+    /// (`0x8007BD14`, or `0x801F6980 + seat * 2` under a group target), and
+    /// the byte `0x8007B64C` the hit clears.
+    fn mule_wave_hit(&mut self, slot: usize, front: i32, shield: bool, caster: u8, spell_id: u8) {
+        use legaia_engine_cast::cast_module_ticks::FLAG_NON_TARGETABLE;
+        let s = slot as u8;
+        let v = self.cast_view(s);
+        if v.hp == 0 {
+            return;
+        }
+        let z = self
+            .actors
+            .get(slot)
+            .map_or(0, |a| i32::from(a.move_state.world_z));
+        // `+0x1D9 == 0`: no clip playing - the engine's reaction channel
+        // included, where a staged reaction plays (`battle_current_anim`).
+        let hittable = v.flags & FLAG_NON_TARGETABLE == 0 && self.battle_current_anim(slot) == 0;
+        if !hittable || z >= front || shield {
+            let mut v = v;
+            v.staged_anim = 0;
+            self.write_cast_view(s, &v);
+            return;
+        }
+        let Some(roll) = self.player_summon_predamage(caster, s, spell_id) else {
+            return;
+        };
+        let mut hit = u32::from(roll) / 3;
+        if hit == 0 {
+            hit = self.next_rand() % 16 + 16;
+        }
+        hit += self.next_rand() % (hit / 8 + 1);
+        self.battle
+            .hit_fx
+            .push(legaia_engine_battle::battle_events::BattleHitFx {
+                target_slot: s,
+                amount: hit.min(u32::from(u16::MAX)) as u16,
+                is_heal: false,
+                is_crit: false,
+            });
+        let mut v = self.cast_view(s);
+        legaia_engine_cast::seru_magic_ticks::summon_pre_hit(&mut v, hit);
+        // Arm 16 stages `+0x1EF`, else `+0x1F0` (`0x801F8058..0x801F8078`),
+        // with no `+0x1F2` knockdown test, and always ORs both restage bits
+        // (`ori v0,v0,0x5`): a struck monster flinches, it is not knocked
+        // down.
+        v.staged_anim = if v.reaction_alt != 0 {
+            v.reaction_alt
+        } else {
+            v.reaction_alt2
+        };
+        v.restage |= 0x05;
+        self.write_cast_view(s, &v);
     }
 
     /// PROT 0915's (Mushura) arms 0 and 1 show the latched victim on every
@@ -389,6 +674,29 @@ impl World {
                     ));
                     m.world_x /= 8;
                     m.world_z /= 8;
+                }
+            }
+            // Arm 5's pass lowers the creature's tint state
+            // (`sb zero,0x21C(s4)` at `0x801F75DC`): the red word arm 4 held
+            // eases back to neutral as the creature rises out of the planet.
+            // The rate drops to the `4` the dispatch left in `a3`
+            // (`li a3,0x4` at `0x801F6A7C`, `sb a3,0x21D(s4)` at `0x801F75E8`).
+            (5, true) => {
+                if let Some(a) = self
+                    .casting
+                    .summon_actor_slot
+                    .and_then(|s| self.actors.get_mut(usize::from(s)))
+                {
+                    a.battle.render_flag = 0;
+                    a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(4);
+                    // `sb zero,0x21B` / `sh zero,0x176` (`0x801F75E0..0x801F75E4`):
+                    // the window arm 4's restage seeded on clip 0 is released,
+                    // so the clip runs on to its natural end and commits the
+                    // clip 1 this pass stages.
+                    a.battle.hit_count_bound = 0;
+                    if let Some(p) = a.battle_animation.as_mut() {
+                        p.release_loop_window();
+                    }
                 }
             }
             (1, _) | (4, true) => {
@@ -498,11 +806,13 @@ impl World {
     /// the camera, and drew no creature from the portal on.
     ///
     /// Arm 3 also zeroes the creature's colour word, which the tint pass's
-    /// decay arm eases back to neutral (the fade-in). Not carried: the
-    /// render-node scale `+0x72` arm 3 zeroes (`sh zero,0x72(v1)` at
-    /// `0x801F6DDC`), each draining pass of arm 4 grows by `32 * delta`
-    /// (`0x801F6E00..0x801F6E1C`) and arm 4's exit stands at `0x1000`
-    /// (`0x801F71A4`) - the battle body draw reads no render scale.
+    /// decay arm eases back to neutral (the fade-in), and its render-node
+    /// scale `+0x72` (`sh zero,0x72(v1)` at `0x801F6DDC`), which each
+    /// draining pass of arm 4 grows by `32 * delta`
+    /// (`0x801F6E00..0x801F6E1C`, ahead of the countdown test) and arm 4's
+    /// exit stands at `0x1000` (`0x801F71A4`): the creature swells out of
+    /// the portal from nothing, the draw `FUN_80048A08` scaling its matrix
+    /// by the word.
     pub(in crate::world::battle::cast_band) fn apply_gilium_writes(
         &mut self,
         phase_in: u8,
@@ -526,12 +836,32 @@ impl World {
                 // eases back up to neutral `8` lanes a vsync - its fade-in
                 // through the portal.
                 a.battle.render_color = 0;
+                a.battle.render_scale = Some(0);
             }
             (4, false) => {
                 m.world_z = m.world_z.wrapping_add(24 * d);
                 m.world_y = m.world_y.wrapping_add(2 * d);
+                if let Some(s) = a.battle.render_scale.as_mut() {
+                    *s = s.wrapping_add(32 * d as u16);
+                }
             }
-            (4, true) => m.world_z = 0x400,
+            // Arm `0xB`'s pass hides the creature for the rest of the cast
+            // (`sw zero,0x4(s6)` / `sb 0xFF,0x21C(s6)` at
+            // `0x801F7D38..0x801F7D40`; no later arm stores either).
+            (0xB, true) => {
+                a.battle.render_color = 0;
+                a.battle.render_flag =
+                    legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN;
+            }
+            (4, true) => {
+                // The pass that drains the countdown still flies before it
+                // falls into the exit (`bgtz a1` at `0x801F6E6C` falls
+                // through to `0x801F6E74`), which stands Z but not the
+                // height: the creature lands at `+0x36 = 0`.
+                m.world_y = m.world_y.wrapping_add(2 * d);
+                m.world_z = 0x400;
+                a.battle.render_scale = Some(0x1000);
+            }
             _ => {}
         }
     }

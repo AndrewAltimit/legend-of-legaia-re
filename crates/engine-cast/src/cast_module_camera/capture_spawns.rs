@@ -613,7 +613,7 @@ const E961_LOWERED_FORMATION: u8 = 0xB5;
 
 /// The capture-class entries whose spawns are seated per arm instead of by
 /// the pager.
-pub const CAPTURE_SPAWN_ENTRIES: [u32; 7] = [938, 940, 944, 946, 961, 962, 966];
+pub const CAPTURE_SPAWN_ENTRIES: [u32; 9] = [938, 940, 944, 946, 959, 960, 961, 962, 966];
 
 /// Halfword stores a capture arm makes into a part it has just seated, as
 /// `(actor offset, value)`, applied after the part's seat run: PROT 0944's
@@ -682,8 +682,22 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
         940 => body == Some(0x801F_7240),
         944 => body == Some(0x801F_6A04),
         946 => true,
+        959 => body == Some(super::MEGATON_PRESS_BODY),
+        960 => matches!(
+            body,
+            Some(super::PLASMA_STRIKE_BODY | super::NEO_STAR_SLASH_BODY)
+        ),
         961 => true,
-        962 => body == Some(0x801F_69D8),
+        965 => body == Some(super::DOOMSDAY_BODY),
+        962 => matches!(
+            body,
+            Some(
+                0x801F_69D8
+                    | super::BLADE_BREATH_BODY
+                    | super::THUNDER_NEEDLE_BODY
+                    | super::GIGATON_PRESS_BODY
+            )
+        ),
         966 => true,
         _ => false,
     }
@@ -692,8 +706,10 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
 /// The capture-class arms that flush the part pool (`jal 0x80050E74`) on
 /// their pass, ahead of their own spawns: every part the module seated
 /// through `FUN_80050ED4` gets its halt bit. PROT 0938's arms 2 and 3
-/// (`0x801F6DE4`, `0x801F6FA4`), PROT 0940's arm 7 (`0x801F7870`) and
-/// PROT 0944's arms 2 and 4 (`0x801F6E50`, `0x801F7268`).
+/// (`0x801F6DE4`, `0x801F6FA4`), PROT 0940's arm 7 (`0x801F7870`),
+/// PROT 0944's arms 2 and 4 (`0x801F6E50`, `0x801F7268`) and PROT 0959's
+/// arms 4, `0x0B`, `0x0E` and `0x0F` (`0x801F6ECC`, `0x801F77CC`,
+/// `0x801F7BE4`, `0x801F7F60`) and PROT 0960's arm 4 (`0x801F79D0`).
 ///
 /// PROT 0946's arm 6 is the same reach by another route: it sets the halt
 /// bit on every word of its handle table `0x801F7F30` (`0x801F7174..
@@ -702,16 +718,24 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
 pub fn capture_arm_flushes_pool(prot_entry: u32, phase: u8) -> bool {
     matches!(
         (prot_entry, phase),
-        (938, 2 | 3) | (940, 7) | (944, 2 | 4) | (946, 6) | (961, 1 | 3 | 5)
+        (938, 2 | 3)
+            | (940, 7)
+            | (944, 2 | 4)
+            | (946, 6)
+            | (959, 4 | 0x0B | 0x0E | 0x0F)
+            | (960, 4)
+            | (962, 3)
+            | (965, 3 | 8 | 9 | 0x0B)
+            | (961, 1 | 3 | 5)
     )
 }
 
 /// The spawn calls capture-class module `prot_entry`'s arm `phase` makes on
 /// **every** pass it runs, held or not; empty for an arm that makes none.
 /// PROT 0962's arm 1 (Ultra Charge's rays).
-pub fn capture_arm_spawns_every(prot_entry: u32, phase: u8) -> &'static [ModuleSpawn] {
+pub fn capture_arm_spawns_every(prot_entry: u32, phase: u8, action: u8) -> &'static [ModuleSpawn] {
     match (prot_entry, phase) {
-        (962, 1) => &E962_1_EVERY,
+        (962, 1) if action == 0xA5 => &E962_1_EVERY,
         _ => &[],
     }
 }
@@ -727,6 +751,18 @@ pub const CAPTURE_PER_PASS_SPAWNS: &[&[ModuleSpawn]] = &[&E962_1_EVERY];
 pub fn capture_arm_spawns_for(prot_entry: u32, phase: u8, action: u8) -> &'static [ModuleSpawn] {
     match (prot_entry, phase) {
         (946, 0) if action == 0x56 => &[],
+        // PROT 0962's arms are per body: Ultra Charge (`0xA5`) seats on
+        // arms 0 and 1, the three charge bodies on arm 3.
+        (962, 3) if action == 0xA2 => &super::blade_breath::E962_A2_3,
+        (962, 3) if action == 0xA3 => &super::blade_breath::E962_A3_3,
+        (962, 3) if action == 0xA4 => &super::blade_breath::E962_A4_3,
+        (962, _) if action != 0xA5 => &[],
+        // PROT 0960's two bodies: Plasma Strike (`0x7B`) and Neo Star Slash
+        // (`0xA6`) seat on different arms.
+        (960, 2) if action == 0xA6 => &super::plasma_strike::E960_A6_2,
+        (960, 4) if action == 0xA6 => &super::plasma_strike::E960_A6_4,
+        (960, 5) if action == 0xA6 => &super::plasma_strike::E960_A6_5,
+        (960, _) if action == 0xA6 => &[],
         _ => capture_arm_spawns(prot_entry, phase),
     }
 }
@@ -769,11 +805,23 @@ pub fn capture_arm_spawns(prot_entry: u32, phase: u8) -> &'static [ModuleSpawn] 
         (961, 2) => &E961_2,
         (961, 3) => &E961_3,
         (962, 0) => &E962_0,
+        (965, 3) => &super::doomsday::E965_3,
+        (965, 6) => &super::doomsday::E965_6,
+        (965, 8) => &super::doomsday::E965_8,
+        (965, 9) => &super::doomsday::E965_9,
+        (965, 0x0A) => &super::doomsday::E965_A,
         (966, 2) => &E966_2,
         (966, 4) => &E966_4,
         (966, 10) => &E966_10,
         (966, 23) => &E966_23,
         (966, 26) => &E966_26,
+        (959, 0) => &super::megaton_press::E959_0,
+        (959, 8) => &super::megaton_press::E959_8,
+        (959, 0x0B) => &super::megaton_press::E959_B,
+        (959, 0x0D) => &super::megaton_press::E959_D,
+        (959, 0x0E) => &super::megaton_press::E959_E,
+        (960, 0) => &super::plasma_strike::E960_0,
+        (960, 0x0D) => &super::plasma_strike::E960_D,
         _ => &[],
     }
 }

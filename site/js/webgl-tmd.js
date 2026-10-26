@@ -665,9 +665,10 @@ class TmdRenderer {
     if (this.locGrade) gl.uniform4f(this.locGrade, 1, 1, 1, 0);
     if (this.locPalette) gl.uniform4f(this.locPalette, 1, 1, 1, 0);
     this._setCue(null);
-    /* buildMvp = single reflection (Y flip): a double-sided pair's visible
-     * copy is the front-facing one under this projection. */
-    gl.uniform1i(this.locPairFront, 1);
+    /* buildMvp is a rotation (X and Y flipped), the same parity as
+     * renderAssembled's Y flip + screen-X mirror, so it takes that pass's
+     * pair flag. An engine-built override keeps the flag it always had. */
+    gl.uniform1i(this.locPairFront, this.mvpOverride ? 1 : 0);
     gl.uniform1i(this.locNoDisc, 0);  /* per-mesh inspector: keep cutout discard */
     /* Single-mesh inspector: legacy single pass (no semi-transparency defer,
      * ABE prims draw opaque) - only renderAssembled runs the blend pass. */

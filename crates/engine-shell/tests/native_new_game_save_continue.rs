@@ -362,8 +362,8 @@ fn run_leg(disc: &Path, leg: &str, save_anywhere: bool) {
         }
     }
     // Marks the save carries, so the Continue's are its and not a New
-    // Game's: gold off the starting 500, and a play clock (the engine's clock
-    // follows wall time, which a headless run barely spends).
+    // Game's: gold off the starting 500, and a play clock far past what the
+    // run's own ticks reach.
     w.session_mut().host.world.party.money = SEEDED_GOLD;
     w.session_mut().host.world.clock.play_time_seconds = SEEDED_PLAY_SECONDS;
     save_into_block_one(&mut w, &mut log, &card);
@@ -382,11 +382,26 @@ fn run_leg(disc: &Path, leg: &str, save_anywhere: bool) {
     let w = relaunch_and_continue(disc, &save_dir);
     let after = snapshot(&w);
     eprintln!("[ngsc:{leg}] continued: {after:?}");
-    assert_eq!(after, before, "the Continue lands the game the Save wrote");
+    // The play clock counts every claimed tick, the save screen's and the
+    // Continue's included (retail's counter runs under the `CARD` pair), so
+    // the save holds the clock at its commit and the Continue lands a few
+    // seconds on: compare it apart, against the seeded mark.
+    let unclocked = |s: &Saved| Saved {
+        play_seconds: 0,
+        scene: s.scene.clone(),
+        name: s.name.clone(),
+        ..*s
+    };
     assert_eq!(
-        (after.money, after.play_seconds),
-        (SEEDED_GOLD, SEEDED_PLAY_SECONDS),
-        "the gold and the play clock are the save's"
+        unclocked(&after),
+        unclocked(&before),
+        "the Continue lands the game the Save wrote"
+    );
+    assert_eq!(after.money, SEEDED_GOLD, "the gold is the save's");
+    assert!(
+        (SEEDED_PLAY_SECONDS..SEEDED_PLAY_SECONDS + 60).contains(&after.play_seconds),
+        "the play clock is the save's, plus the ticks since: {} vs seeded {SEEDED_PLAY_SECONDS}",
+        after.play_seconds
     );
     assert_eq!((after.party_count, after.roster), (1, 1), "Vahn alone");
     assert!(

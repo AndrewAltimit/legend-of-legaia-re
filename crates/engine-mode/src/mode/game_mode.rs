@@ -130,9 +130,13 @@ pub struct ModeEntry {
     /// Mode to transition to on completion. `None` = self-managed (the
     /// retail i16 -1 sentinel).
     pub next: Option<GameMode>,
-    /// Flag bits at +0x14. Most have meaningful values: 0x002, 0x00A, 0x800,
-    /// 0x802, 0x80A. The 0x800 bit toggles "init handler" vs "run handler"
-    /// (Mode 2 = 0x80A is INIT, Mode 3 = 0x002 is RUN). Bits 0x008/0x002 vary.
+    /// Flag bits at +0x14: `0x002`, `0x00A`, `0x800`, `0x802`, `0x80A`. The
+    /// mode-init routine `FUN_8001DCF8` seeds the low half of the transient
+    /// flag word `_DAT_1F800394` from the row of the mode word it runs under
+    /// (`lhu v1,0x14(v0)` / `sw v1,0x394(at)`, `0x8001E14C..0x8001E17C`),
+    /// which is always an INIT row - so only the INIT rows' values reach
+    /// that word. Its bit `0x800` gates the play counter
+    /// ([`GameMode::play_counter_runs`]).
     pub param: u32,
 }
 
@@ -225,6 +229,34 @@ pub enum GameMode {
 impl GameMode {
     pub fn as_index(self) -> usize {
         self as usize
+    }
+
+    /// Whether retail's play counter (`0x80084570`) advances while this mode
+    /// holds the mode word.
+    ///
+    /// The frame pacer adds the frame's vsync count to the counter only while
+    /// bit `0x800` of `_DAT_1F800394` is up (`andi v0,v0,0x800` at
+    /// `0x80016ED8`, the add at `0x80016EF4`). The low half of that word is
+    /// the INIT row's `param`, written by the mode-init routine
+    /// `FUN_8001DCF8` (see [`ModeEntry::param`]), so a mode pair counts when
+    /// its INIT row carries `0x800`: field, battle, game over, the `CARD`
+    /// pair (title, memory card, pause menu), the minigames' `OTHER` pair,
+    /// movies, and the effect test. The debug and test pairs and the boot
+    /// `READ` pair do not.
+    ///
+    /// The map display pair is the exception the table alone gets wrong: its
+    /// INIT row reads `0x002`, but neither its init handler (`0x80025DA0`)
+    /// nor the PROT 0981 init it calls (`FUN_801CF4AC`) runs
+    /// `FUN_8001DCF8`, so the field's word stands and the counter keeps
+    /// running under the map.
+    ///
+    /// REF: FUN_80016B6C, FUN_8001DCF8
+    pub fn play_counter_runs(self) -> bool {
+        if matches!(self, GameMode::MapdispInit | GameMode::MapdispMode) {
+            return true;
+        }
+        let init = self.as_index() & !1;
+        TABLE[init].param & 0x800 != 0
     }
 
     pub fn from_index(i: usize) -> Option<Self> {

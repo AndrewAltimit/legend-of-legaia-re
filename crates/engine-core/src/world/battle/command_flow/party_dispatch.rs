@@ -81,7 +81,7 @@ impl World {
                         } else {
                             (legaia_engine_battle::target_picker::CursorRow::Ally, target)
                         };
-                        self.arm_battle_art_action(actor, &queue, &actions, marks, row, slot);
+                        self.arm_battle_art_action(actor, &queue, marks, row, slot);
                     }
                 }
                 self.battle_ctx.queued_action = 3;
@@ -220,41 +220,6 @@ impl World {
                 self.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
                 self.cycle_battle_turn();
             }
-        }
-    }
-
-    /// Arts-voice shout: one cue **per art the turn performs**, on that
-    /// art's animation-start frame, when the art carries a real action
-    /// constant (a synthetic/demo art has none and stays silent - the
-    /// retail degradation for arts with no cue-table entry). Retail
-    /// stages each art's animation separately and the materialiser
-    /// (`FUN_8004AD80`) calls the cue selector per staging, so an entry
-    /// that performs three arts requests three shouts; the mixer queues
-    /// a back-to-back request behind the sounding one rather than cutting
-    /// it. The host resolves each (character, action) pair against the
-    /// arts-voice tables + XA clip banks and plays the CD-XA shout with the
-    /// modeled CD-response delay, so the audio trails this frame rather than
-    /// leading it. REF: FUN_8004C140.
-    pub(super) fn push_art_shout_cues(
-        &mut self,
-        caster: u8,
-        actions: &[legaia_art::ActionConstant],
-    ) {
-        let character = self.caster_character(caster);
-        let cslot = legaia_art::Character::all()
-            .iter()
-            .position(|c| *c == character)
-            .unwrap_or(usize::MAX);
-        if cslot >= 3 {
-            return;
-        }
-        for action in actions {
-            self.audio.battle_shout_cues.push(
-                legaia_engine_battle::battle_events::BattleShoutCue {
-                    cslot: cslot as u8,
-                    action: action.as_byte(),
-                },
-            );
         }
     }
 }

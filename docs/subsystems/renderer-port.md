@@ -7,7 +7,9 @@ How [`legaia-engine-render`](../../crates/engine-render/README.md) draws a frame
 The 3D mesh pipelines carry the PSX rasterisation traits below. Only two of
 them - vertex snap and dithering - are gated, by
 `Renderer::set_psx_mode(true)` (off by default); the rest are unconditional,
-and semi-transparency has its own switch.
+and semi-transparency has its own switch. The hosts run PSX mode on the
+[native target](#the-native-target), the frame drawn at the display's own
+`320 x 240`.
 
 - **Affine UV interpolation.** UVs interpolate linearly in screen space
   (no perspective-correct division) - this reproduces the warping you
@@ -120,8 +122,62 @@ equation reads it (`psx_blend_foreground`, both hosts, every render mode),
 which is how the GPU hands the modulated texel to the blend
 ([shading](shading.md#step-6-semi-transparency)).
 
-In the `legaia-engine play-window` binary PSX mode (vertex snap + dither)
-is opt-in via the `LEGAIA_PSX_RENDER=1` environment variable.
+In the `legaia-engine play-window` binary PSX mode is opt-in
+(`--psx-render`, the launcher's PSX rendering row, or `LEGAIA_PSX_RENDER=1`),
+and turns on the native target with it; the play page's "PSX rasterisation"
+box is the same switch.
+
+### The native target
+
+`Renderer::set_native_resolution(Some((320, 240)))` draws every pass of a
+frame - the 3D scene, the composited screen primitives, the text and sprite
+overlays, the fades - into an offscreen texture the size of the PSX display
+([`native_target`](../../crates/engine-render/src/renderer/native_target.rs)),
+and presents it with a nearest-neighbour blit at the largest whole scale the
+window holds, black around it. While it is on, `Renderer::surface_size` is
+the native size, so every host lays its 2D out at stage scale 1 without
+knowing the window is larger (`Renderer::presented_size` is the window's), and
+`capture_rgba` reads back the native frame itself. The browser page does the
+same with its canvases: PSX rasterisation gives the GL canvas and the overlay
+canvas a `320 x 240` backing store and lets the browser magnify them with
+`image-rendering: pixelated`.
+
+At stage scale 1 PSX mode rasterises the GPU's way, which no fragment trick
+at a window-sized target could. The snapped vertices move half a stage pixel
+down and right (`psx_native_centre`, PSX mode's `psx_params.z = 2`), so the
+host's pixel centre is the integer point the GPU tests a pixel at, and the
+host's top-left rule there is the GPU's fill rule: coverage is whole stage
+pixels, each owned by one primitive, and a sliver thinner than a pixel lands
+on the pixels the GPU gives it. The UV interpolated at that point is the GPU's,
+and the texel is that UV plus half a texel on both axes (`psx_texel_uv`) - the
+GPU's interpolators start from the vertex value plus one half, so the texel is
+the UV rounded. The half-row texel move of the window-sized mode is not used
+there: the sample point is already the row's.
+
+On a texture drawn at one texel per pixel the rounding and the
+window-sized mode's reading (the texel at the pixel centre along the row and
+at the row itself) pick the same texel; they part on scaled texturing, and
+there the rounding is what Mednafen captures show: drawn the other way,
+`ending_vignette_fullscreen`'s mean pixel error is three times what the
+rounding leaves. PCSX-Redux captures are drawn by its software GPU, which
+takes the texel with no bias - at the pixel centre along the row and at the
+row itself - so scored against the console's rule a scaled texture on a
+PCSX-Redux state reads as a miss that is the capture's rasteriser, not the
+engine. `Renderer::set_psx_texel_rule(PsxTexelRule::PcsxRedux)` samples that
+rule instead; it is an instrument, not a player mode
+([retail-compare](../tooling/retail-compare.md#the-image-channel)).
+
+The composited screen primitives take the same pixel centre and texel bias
+on the native target: a sprite drawn one texel per pixel samples the same
+texels either way, and a scaled quad - an ending vignette's photo shrunk to
+a corner - samples the GPU's.
+
+The Gouraud colour is not rounded the way the UV is. Rounding the
+interpolated colour to a whole step (a half-step start, as an emulator's
+colour interpolators take) moves only shaded primitives, and on the retail
+states it touches it makes the frame brighter than the capture:
+`v0_1_battle_command_menu`'s exactly matching pixels fall by a hundredth,
+and no state's score rises. The colour stays the interpolated value.
 
 ### What the clean rasteriser leaves on a retail frame
 
@@ -146,25 +202,23 @@ modes.
 
 ### What PSX mode still leaves
 
-Over the whole retail corpus PSX mode is not a uniform gain, so the
-retail-compare image child stays on the clean rasteriser. The field states
-mostly rise; what drops is thin geometry - a hit spark's spikes
-(`battle_melee_hit_spark`), a cast's ice shards
+At a window-sized target PSX mode is not a uniform gain over the clean
+rasteriser: the field states mostly rise, while thin geometry drops - a hit
+spark's spikes (`battle_melee_hit_spark`), a cast's ice shards
 (`nivora_duel_mid_blazing_slash`). The host covers a pixel wherever the
 snapped triangle crosses one of its framebuffer sample points, a supersample
-of the stage pixel, while the GPU tests one point per stage pixel, so a
-primitive less than a stage pixel wide lands on different pixels.
+of the stage pixel, while the GPU tests one point per stage pixel. That is
+what the [native target](#the-native-target) is for, and the retail-compare
+image channel scores PSX mode only on it
+([retail-compare](../tooling/retail-compare.md#the-image-channel)).
 
-The GPU's rule cannot be had by discarding fragments. A fragment can test
-the stage pixel's own point with the fill rule's tie break (the barycentric
-weights the texel row carries reach it), but the host only rasterises the
-part of a stage pixel inside each triangle: where an edge crosses a stage
-pixel, the triangle the rule gives the pixel to has fragments on its own
-side only, and the other side's fragments are the ones the test drops, so
-every diagonal shared edge cracks. The GPU's coverage needs whole stage
-pixels owned by one primitive - the 3D pass drawn at stage resolution,
-where the host's own top-left rule at pixel centres is the GPU's at the
-integer corner once the geometry moves half a pixel.
+The GPU's rule cannot be had at the window-sized target by discarding
+fragments. A fragment can test the stage pixel's own point with the fill
+rule's tie break, but the host only rasterises the part of a stage pixel
+inside each triangle: where an edge crosses a stage pixel, the triangle the
+rule gives the pixel to has fragments on its own side only, and the other
+side's fragments are the ones the test drops, so every diagonal shared edge
+cracks.
 
 Per-primitive painter order is not the answer to the opaque ordering
 residue. Drawing every owned field primitive at the depth of its corners'

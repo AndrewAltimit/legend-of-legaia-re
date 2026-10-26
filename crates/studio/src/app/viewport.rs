@@ -33,7 +33,9 @@ impl Viewport {
         if resp.dragged() {
             let d = resp.drag_delta();
             self.cam.yaw += d.x * 0.01;
-            self.cam.pitch = (self.cam.pitch - d.y * 0.01).clamp(-1.5, 1.5);
+            // Dragging down tips the model's top toward the viewer (the eye
+            // rises), as on the site's mesh viewers.
+            self.cam.pitch = (self.cam.pitch + d.y * 0.01).clamp(-1.5, 1.5);
         }
         if resp.hovered() {
             let scroll = ui.input(|i| i.smooth_scroll_delta.y);

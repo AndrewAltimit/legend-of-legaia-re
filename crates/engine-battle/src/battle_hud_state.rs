@@ -110,6 +110,8 @@ pub struct BattleHud {
     /// The acting actor the cluster belongs to - a new actor is a new
     /// cluster even when the style repeats.
     combo_actor: Option<u8>,
+    /// Hits land without opening the cluster ([`Self::hold_combo`]).
+    combo_held: bool,
 }
 
 /// The combo counter cluster's running values.
@@ -128,6 +130,9 @@ pub struct ComboReadout {
     /// off-screen seat over the same sixteen frames
     /// ([`BattleHud::close_combo_on_fade_down`]).
     pub closing: bool,
+    /// The hits so far landed under a hold ([`BattleHud::hold_combo`]): the
+    /// cluster counts them but is not on the screen yet.
+    pub hidden: bool,
 }
 
 impl ComboReadout {
@@ -166,6 +171,7 @@ impl BattleHud {
             combo: None,
             combo_style: None,
             combo_actor: None,
+            combo_held: false,
         }
     }
 
@@ -302,18 +308,51 @@ impl BattleHud {
             && popup.amount > 0
             && let Some(style) = self.combo_style
         {
+            let held = self.combo_held;
             let c = self.combo.get_or_insert(ComboReadout {
                 style,
                 hits: 0,
                 total: 0,
                 age: 0,
                 closing: false,
+                hidden: held,
             });
-            c.style = style;
             c.hits = c.hits.saturating_add(1);
+            // A cast that lands more than one hit counts them like a chain:
+            // `nivora_duel_pre_megaton_press`'s Megaton Press (eleven
+            // wrapper hits) closes on `11 HIT` / `TOTAL 378`, where a
+            // one-hit cast (`battle_gimard_tail_fire_a`'s Tail Fire) shows
+            // `DAMAGE` alone.
+            c.style = if style == ComboStyle::Damage && c.hits > 1 {
+                ComboStyle::HitTotal
+            } else {
+                style
+            };
             c.total = c.total.saturating_add(u32::from(popup.amount));
+            if !held {
+                c.hidden = false;
+                c.age = 0;
+            }
+        }
+    }
+
+    /// Hold (or release) the cluster's opening. A hit raises the readout
+    /// flag `DAT_8007B64C = 0x78` the action SM's readout pass answers by
+    /// opening the cluster (`FUN_801E805C`); PROT 0959's wrapper hits store
+    /// `0` there instead (`sb zero,-0x49B4` at `0x801F7244` / `0x801F7AF4` /
+    /// `0x801F7F18`) and its arm `0x0F` raises it once as it passes
+    /// (`0x801F802C..0x801F8034`), so the eleven hits open the cluster on the
+    /// barrage's last pass, already counted. Releasing a held cluster opens
+    /// it then.
+    pub fn hold_combo(&mut self, held: bool) {
+        if self.combo_held
+            && !held
+            && let Some(c) = self.combo.as_mut().filter(|c| c.hidden)
+        {
+            c.hidden = false;
             c.age = 0;
         }
+        self.combo_held = held;
     }
 
     /// Arm (or tear down) the combo cluster for the action the world is in.

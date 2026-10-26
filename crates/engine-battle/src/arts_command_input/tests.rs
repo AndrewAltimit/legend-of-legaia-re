@@ -306,6 +306,52 @@ fn triangle_cycles_the_arts_list_and_is_inert_without_pages() {
     assert_eq!(none.list_page, None);
 }
 
+/// `FUN_801D3748` writes the row offset on open and on each page step and
+/// leaves it on close, and `FUN_801D3444` drains the counter once the list
+/// is closed: the window slides out on the page it closed on, then leaves.
+#[test]
+fn a_closed_list_slides_out_on_its_last_page() {
+    let mut s = ArtsCommandInputSession::new(0, 0, 60, [30; 4], 3).with_list_rows(14);
+    s.input(press("t"), party3(), one_monster());
+    s.input(press("t"), party3(), one_monster());
+    for _ in 0..6 {
+        s.step_list_slide(2);
+    }
+    assert_eq!(s.list_window(), Some((1, 12)));
+    s.input(press("t"), party3(), one_monster());
+    s.input(press("t"), party3(), one_monster());
+    assert_eq!(s.list_page, None, "the press past page 2 closes");
+    for want in [10, 8, 6, 4, 2] {
+        s.step_list_slide(2);
+        assert_eq!(s.list_window(), Some((2, want)), "page 2 slides out");
+    }
+    s.step_list_slide(2);
+    assert_eq!(s.list_window(), None, "off-screen at 0");
+    // Reopening starts over on page 0.
+    s.input(press("t"), party3(), one_monster());
+    s.step_list_slide(2);
+    assert_eq!(s.list_window(), Some((0, 2)));
+}
+
+/// The window an ended entry leaves drains by the frame step, holds between
+/// passes, and is gone at `0`.
+#[test]
+fn an_ended_entry_leaves_its_window_draining() {
+    let mut s = ArtsCommandInputSession::new(4, 0, 60, [30; 4], 3).with_list_rows(14);
+    assert_eq!(ArtsListWindow::left_by(&s), None, "closed: nothing left");
+    s.input(press("t"), party3(), one_monster());
+    for _ in 0..3 {
+        s.step_list_slide(3);
+    }
+    let mut w = ArtsListWindow::left_by(&s).expect("on screen");
+    assert_eq!((w.actor, w.row_page, w.slide), (4, 0, 9));
+    assert!(w.step(0), "between passes it holds");
+    assert!(w.step(3));
+    assert!(w.step(3));
+    assert_eq!(w.slide, 3);
+    assert!(!w.step(3), "drained");
+}
+
 #[test]
 fn resolver_matches_arts_and_leaves_swings_synthetic() {
     use Command::{Down, Up};

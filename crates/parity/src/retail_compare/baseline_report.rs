@@ -15,6 +15,10 @@ pub struct Baseline {
     pub classes: BTreeMap<String, StateClass>,
 }
 
+/// How far under the baselined accuracy score a smoke-tier frame may fall
+/// before [`Baseline::smoke_breaks`] reports it.
+pub const SMOKE_IMAGE_SLACK: f64 = 0.25;
+
 /// Slack for float round-trips through the JSON baseline.
 pub(super) const RATCHET_EPS: f64 = 0.0005;
 
@@ -93,6 +97,46 @@ impl Baseline {
                 ))
             })
             .collect()
+    }
+
+    /// The smoke tier's breaks: every baselined image channel of a
+    /// retail-disc state that a run in a non-accuracy render mode
+    /// ([`crate::retail_compare_image::FrameRender::Clean`] /
+    /// `Enhanced`) scored more than `slack` under the baseline, or did not
+    /// score at all on a state it seeded. The baseline is the accuracy
+    /// mode's, so the smoke tier has no ratchet of its own: the slack only
+    /// catches a mode that broke outright (a black frame, a missing pass,
+    /// a misplaced stage), never a raster difference.
+    pub fn smoke_breaks(&self, reports: &[StateReport], slack: f64) -> Vec<String> {
+        let mut out = Vec::new();
+        for r in reports {
+            let Some(chans) = self.states.get(&r.label) else {
+                continue;
+            };
+            if r.channels.is_empty()
+                || r.resident_patch.is_some()
+                || r.resident_disc_missing.is_some()
+            {
+                continue;
+            }
+            for ch in IMAGE_CHANNELS {
+                let Some(&want) = chans.get(*ch) else {
+                    continue;
+                };
+                match r.channels.get(*ch) {
+                    Some(&got) if got + slack < want => out.push(format!(
+                        "{}.{ch}: {got:.3} < baseline {want:.3} - {slack:.2}",
+                        r.label
+                    )),
+                    Some(_) => {}
+                    None => out.push(format!(
+                        "{}.{ch}: no frame scored (baseline {want:.3})",
+                        r.label
+                    )),
+                }
+            }
+        }
+        out
     }
 
     pub(super) fn drops(

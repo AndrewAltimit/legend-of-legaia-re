@@ -327,6 +327,10 @@ impl World {
         self.step_commit_log_launch();
         self.step_action_plate_glides();
         self.step_battle_intro_names();
+        // The arts-list driver `FUN_801D3444` runs at the top of every
+        // command-flow frame (`0x801D0B24`, ahead of the box park): a list
+        // window its entry left on screen keeps sliding out.
+        self.step_arts_list_window();
 
         // A message box on screen parks the entire battle - retail's
         // `FUN_801D0748` returns before it reads the flow state when
@@ -363,6 +367,22 @@ impl World {
             && let Some(seed) = self.battle.inflight_seed.take()
         {
             self.dispatch_inflight_seed(seed);
+        }
+        // The same seam for a monster caster: the forced cast's seat takes
+        // the round's first turn from the prompt.
+        if self.battle.forced_monster_cast_at_prompt
+            && self.battle.command.is_some()
+            && self.battle.flow
+                == legaia_engine_battle_menus::battle_flow::BattleFlowState::TurnPrompt
+            && self
+                .battle
+                .camera
+                .as_ref()
+                .is_none_or(|c| c.entry_sweep_counter().is_none())
+            && let Some((seat, _)) = self.battle.forced_monster_cast
+        {
+            self.battle.forced_monster_cast_at_prompt = false;
+            self.dispatch_forced_monster_turn(seat);
         }
 
         // The menu SM's pre-dispatch gate: while a tracked widget glide is

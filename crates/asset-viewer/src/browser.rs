@@ -491,7 +491,11 @@ impl ApplicationHandler for App {
         // Audio is best-effort: if no device is available the viewer still
         // renders images.
         match AudioOut::new() {
-            Ok(a) => self.audio = Some(a),
+            Ok(a) => {
+                use legaia_engine_audio::AudioSink;
+                a.set_master_volume(legaia_engine_audio::DESKTOP_MASTER_VOLUME_DEFAULT);
+                self.audio = Some(a);
+            }
             Err(e) => log::warn!("audio init failed (continuing without): {e:#}"),
         }
         if let Some(d) = self.pending.take() {

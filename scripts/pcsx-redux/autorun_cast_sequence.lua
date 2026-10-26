@@ -24,8 +24,9 @@
 --                capture gates use, every seat's HP, and the main loop's
 --                frame counter `frame` (gp+0x480), the side-band applier
 --                stage `c276` (ctx[+0x276]), and the read-span poll's words
---                `xaspan` / `cdbusy` / `cdmode` / `cdread`. `shot` names the frame
---                taken on that vsync, if any.
+--                `xaspan` / `cdbusy` / `cdmode` / `cdread`, and the BIOS
+--                `rand()` seed word 0x80009010 (`rand`, the state A(2Fh)
+--                steps). `shot` names the frame taken on that vsync, if any.
 --   r_<vsync>.raw  PCSX.GPU.takeScreenShot() pixels (BGR555, or BGR888 when
 --                `bpp` says 24); width / height / bpp are on the meta row.
 --   manifest.txt the run's knobs.
@@ -40,6 +41,18 @@
 --                        that acts
 --   LEGAIA_TARGET_SEAT   actor-table seat to target (3)
 --   LEGAIA_INJECT_STATE  action state to inject on (0x0A)
+--   LEGAIA_MONSTER_PICK  1 = rewrite a MONSTER caster's action where the AI
+--                        pick returns instead of at LEGAIA_INJECT_STATE: a
+--                        breakpoint on 0x801DAF50 (FUN_801DABA4's monster
+--                        arm, straight after `jal 0x801E9FD4`, before
+--                        `jal 0x801DB124` reads the queue) writes the cast
+--                        over what FUN_801E9FD4 just queued for the seat
+--                        ctx[+0x274] names. The 0x0A write cannot do this
+--                        for a monster: the pick runs in the same pass as
+--                        state 0x0C's category read and overwrites it.
+--                        Needs the BP core (not --fast); any seat 3..7 that
+--                        owns a clip for the spell can be recorded from any
+--                        battle state that reaches its turn
 --   LEGAIA_FORCE_ROW     comma list of bytes written over the formation row
 --                        FUN_801DA600 returns (needs the BP core, not --fast)
 --   LEGAIA_PRESS_UNTIL   tap CROSS until this vsync while not injected (600)
@@ -60,6 +73,11 @@
 --                        (the absolute vsync, as in meta.csv), and the whole
 --                        emulator state beside it as state_<vsync>.rawsstate
 --                        (VRAM included: sstate_vram.py); empty = none
+--   LEGAIA_SAVE_INJECT   1 = write the whole emulator state as
+--                        state_inject.rawsstate on the first vsync after the
+--                        inject: a pre-cast state with the cast already
+--                        queued, which replays on its own (back it up to the
+--                        save library with manage-states.py)
 --   LEGAIA_PARK          quit when the action state and the module phase
 --                        have not moved for this
 --                        many vsyncs after the inject (900): a cast the
@@ -75,6 +93,9 @@ local CASTER_SEAT  = probe.getenv_num("LEGAIA_CASTER_SEAT", 0)
 local TARGET_SEAT  = probe.getenv_num("LEGAIA_TARGET_SEAT", 3)
 local INJECT_STATE = probe.getenv_num("LEGAIA_INJECT_STATE", 0x0A)
 local FORCE_ROW    = probe.getenv("LEGAIA_FORCE_ROW", "")
+local MONSTER_PICK = probe.getenv_num("LEGAIA_MONSTER_PICK", 0) ~= 0
+local SAVE_INJECT  = probe.getenv_num("LEGAIA_SAVE_INJECT", 0) ~= 0
+local inject_saved = false
 local PRESS_UNTIL  = probe.getenv_num("LEGAIA_PRESS_UNTIL", 600)
 local PRESS_PERIOD = probe.getenv_num("LEGAIA_PRESS_PERIOD", 60)
 local PARTY_SPD    = probe.getenv_num("LEGAIA_PARTY_SPD", 0)
@@ -113,6 +134,9 @@ local XA_SPAN = 0x8007BC34
 local CD_BUSY = 0x8007BA70
 local CD_MODE = 0x8007B83C
 local CD_READ = 0x8007B8C2
+-- The BIOS rand() seed (A(2Fh): seed = seed * 0x41C64E6D + 0x3039, returns
+-- (seed >> 16) & 0x7FFF): the one stream SCUS and every overlay draw from.
+local RAND_SEED = 0x80009010
 local function s16(a)
     local v = probe.read_u16(a) or 0
     if v >= 0x8000 then v = v - 0x10000 end
@@ -144,6 +168,7 @@ local meta, body, cam
 local injected, cast_seen, done_seen = false, false, false
 local inject_vsync, cast_vsync, done_vsync = -1, -1, -1
 local forced_row = false
+local last_elapsed = 0
 local shots = 0
 local last_flow = -1
 local park_st7, park_since = -1, 0
@@ -193,11 +218,11 @@ probe.run({
             sstate = SSTATE_PATH, spell = string.format("0x%02X", SPELL),
             caster_seat = CASTER_SEAT, target_seat = TARGET_SEAT,
             inject_state = INJECT_STATE, force_row = FORCE_ROW,
-            party_spd = PARTY_SPD, shot_every = SHOT_EVERY, tail = TAIL,
+            party_spd = PARTY_SPD, monster_pick = MONSTER_PICK and 1 or 0, shot_every = SHOT_EVERY, tail = TAIL,
         })
         meta = probe.csv_open(probe.out_path("meta.csv"),
             "vsync,st7,phase,acting,step,flow,c6d8,c6da,c87c,cd7960,loader," ..
-            "hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,w,h,bpp,frame,c276,xaspan,cdbusy,cdmode,cdread")
+            "hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,w,h,bpp,frame,c276,xaspan,cdbusy,cdmode,cdread,rand")
         -- The acting seat's body against the camera that frames it: clip,
         -- node cursor, live pair +0x34/+0x38, body pair +0x3C/+0x40, and the
         -- camera focus (stored negated) with its tween endpoints.
@@ -223,10 +248,40 @@ probe.run({
                 PCSX.log(string.format("[forcerow] row@0x%08X forced %s", p, FORCE_ROW))
             end)
         end
+        if MONSTER_PICK then
+            -- 0x801DAF50 is the instruction after the AI pick's delay slot
+            -- in FUN_801DABA4 (`jal 0x801E9FD4` at 0x801DAF48 with
+            -- a0 = ctx[+0x274] - 3), and FUN_801DB124 is called next: the
+            -- queue the pick wrote (+0x1DE category, +0x1DF.. stream,
+            -- +0x1DD target) is final here and nothing has read it yet.
+            probe.arm_breakpoint(0x801DAF50, "Exec", 4, "monsterpick", function()
+                if injected then return end
+                local cx = ctxp()
+                if cx == nil then return end
+                local seat = u8(cx + 0x274)
+                if seat < 3 or (CASTER_SEAT >= 3 and CASTER_SEAT <= 7 and seat ~= CASTER_SEAT) then
+                    return
+                end
+                local a = actor(seat)
+                if a == nil then return end
+                local was_cat, was_id = u8(a + 0x1DE), u8(a + 0x1DF)
+                if MP_TOPUP > 0 then probe.write_u16(a + 0x150, MP_TOPUP) end
+                probe.write_u8(a + 0x1DE, 2)
+                probe.write_u8(a + 0x1DF, SPELL)
+                probe.write_u8(a + 0x1DD, TARGET_SEAT)
+                for _, pv in ipairs(POKE32) do probe.write_u32(pv[1], pv[2]) end
+                injected = true
+                inject_vsync = last_elapsed
+                PCSX.log(string.format(
+                    "[inject t%d] monster pick seat=%d was cat=%d id=0x%02X -> spell=0x%02X target=%d",
+                    last_elapsed, seat, was_cat, was_id, SPELL, TARGET_SEAT))
+            end)
+        end
         return {}
     end,
 
     on_capture = function(c, elapsed)
+        last_elapsed = elapsed
         local cx = ctxp()
         local cs = actor(CASTER_SEAT == 255 and 0 or CASTER_SEAT)
         probe.pad_release(probe.BTN.CROSS)
@@ -253,7 +308,7 @@ probe.run({
                 elapsed, u8(cx + 6), st7, acting))
             last_flow = flow
         end
-        if not injected and in_battle and st7 == INJECT_STATE
+        if not injected and not MONSTER_PICK and in_battle and st7 == INJECT_STATE
             and (CASTER_SEAT == 255 or CASTER_SEAT >= 3 or acting == CASTER_SEAT) then
             injected = true
             inject_vsync = elapsed
@@ -273,6 +328,15 @@ probe.run({
                 elapsed, SPELL, TARGET_SEAT, acting))
         end
         if not injected then return end
+        if SAVE_INJECT and not inject_saved then
+            inject_saved = true
+            pcall(function()
+                local w = PCSX.createSaveState()
+                local sh = Support.File.open(probe.out_path("state_inject.rawsstate"), "TRUNCATE")
+                sh:writeMoveSlice(w); sh:close()
+            end)
+            PCSX.log(string.format("[inject t%d] state written: state_inject.rawsstate", elapsed))
+        end
         -- Cast begin (0x28) is the state every Magic action passes through
         -- first - a party summon, a monster spell, a capture-class cast - and
         -- the engine recorder starts on the same one.
@@ -312,12 +376,12 @@ probe.run({
             local a = actor(s)
             hp[#hp + 1] = a and u16(a + 0x14C) or -1
         end
-        meta:row("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d",
+        meta:row("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
             elapsed, st7, u8(cx + 0x279), acting, probe.read_scratch_u8(0x1F800393),
             u8(cx + 6), u16(cx + 0x6D8), u16(cx + 0x6DA), u32(cx + 0x87C), s32(GIMARD_CD),
             u8(LOADER_ID), hp[1], hp[2], hp[3], hp[4], hp[5], hp[6], hp[7], hp[8],
             shot, w, h, bpp, u32(FRAME_COUNTER), u8(cx + 0x276),
-            s32(XA_SPAN), s16(CD_BUSY), u16(CD_MODE), s16(CD_READ))
+            s32(XA_SPAN), s16(CD_BUSY), u16(CD_MODE), s16(CD_READ), u32(RAND_SEED))
         local function sh(a)
             local v = u16(a)
             if v >= 0x8000 then v = v - 0x10000 end

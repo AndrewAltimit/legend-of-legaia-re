@@ -18,8 +18,9 @@ pub struct BladeBreathShape {
     /// The `+0x21F` render sub-flag arm `3` writes on the victim, `None`
     /// where it writes none.
     pub strike_sub_flag: Option<u8>,
-    /// Whose `+0x1D9` clip arm `4` waits on before latching `0xFF`: `true`
-    /// the victim's, `false` the caster's.
+    /// What arm `4` waits on before latching `0xFF`: `true` the victim's
+    /// `+0x1D9` back at `0` or `8`, `false` the caster's node cursor at
+    /// `0x1C0` (answered by the host).
     pub tail_waits_on_victim: bool,
 }
 
@@ -76,12 +77,16 @@ pub const BLADE_BREATH_POWER: u16 = 0x0200;
 ///   **unsigned** clamp, the `+0x21F` sub-flag, `victim[+0x21D] = 4`, `+0x10`
 ///   accumulate, HP write, `+0x1DA = +0x1F1` with `+0x1DC += 1`, and
 ///   `caster[+0x1DA] = 0`;
-/// * arm `4` - `victim[+0x21D] = 4`, hold until the watched actor's `+0x1D9`
-///   is `0` or `8`, then latch `ctx[+0x279] = 0xFF`;
+/// * arm `4` - `victim[+0x21D] = 4`; `0xA2` / `0xA4` hold until the victim's
+///   `+0x1D9` is `0` or `8`, `0xA3` until its caster's cursor reaches
+///   `0x1C0` (a gate the host's camera director answers); then latch
+///   `ctx[+0x279] = 0xFF`;
 /// * arm `0xFF` - clears the busy register.
 ///
-/// Not ported: the walk itself, the facing, the cue, the `FUN_80050ED4`
-/// spawns, the screen-prim wash and the countdown at `0x801F89AC`.
+/// The facings, shots, drifts, cursor gates and `FUN_80050ED4` spawns are
+/// the camera half (`cast_module_camera::blade_breath_camera` and its two
+/// siblings), whose gates hold this chain; the walk is the host's approach
+/// leg. Not ported: the cue and the screen-prim wash.
 ///
 /// PORT: FUN_801F7AE4, FUN_801F74A0, FUN_801F6D54 (PROT 0962 actions 0xA2 /
 /// 0xA3 / 0xA4; chain phase machine + the 0x200 hit; walk / packet arms
@@ -127,12 +132,12 @@ pub fn blade_breath_tick(
         }
         4 => {
             victim.anim_rate = 4;
-            let watched = if shape.tail_waits_on_victim {
-                victim.playing_anim
-            } else {
-                caster.playing_anim
-            };
-            if watched != 0 && watched != 8 {
+            // `0xA2` / `0xA4` poll the victim's `+0x1D9` for `0` or `8`;
+            // `0xA3`'s gate is the caster's node cursor reaching `0x1C0`
+            // (`slti v0,v0,0x1c0` at `0x801F7A7C`), which the host's camera
+            // director answers (`blade_breath_camera`), so the arm passes
+            // here once the host runs it.
+            if shape.tail_waits_on_victim && victim.playing_anim != 0 && victim.playing_anim != 8 {
                 return CastArmStep::Hold;
             }
             if !shape.tail_waits_on_victim {

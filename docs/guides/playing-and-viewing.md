@@ -108,7 +108,7 @@ view is, the mouse wheel scrolls it, and `Page Up` / `Page Down` / `Home` /
 | Display | Fullscreen (borderless) | `legaia-options.toml` | `F11`, `Alt+Enter` | off |
 | Display | Window size (640x480 .. 1920x1440, steps of 320x240) | `legaia-options.toml` | - | 960x720 |
 | Display | Camera distance (retail, far, farther) | `legaia-options.toml` | `T` | far |
-| Display | PlayStation pixel look (`--psx-render`) | `launcher.toml` | - | off |
+| Display | PlayStation pixel look: the native 320x240 picture, magnified (`--psx-render`) | `launcher.toml` | - | off |
 | Enhancements | Enhanced lighting | `legaia-options.toml` | `I` | on |
 | Enhancements | Time of day (auto, day, dusk, night) | `legaia-options.toml` | `F8` | auto |
 | Enhancements | Lamp shadows | `legaia-options.toml` | `Y` | on |
@@ -525,7 +525,8 @@ plays no footstep sound at all.
 The engine resolves its files against the **current directory**: key bindings
 in `legaia-input.toml`, options (camera preset, movement mode, the
 `bgm_volume` / `sfx_volume` music and sound-effect levels, `0..=10` with `8`
-the retail mix, and `downmix_mono`, the full mono downmix for a single
+the retail mix, `master_volume`, the overall output level in percent - `25`
+by default, a quarter of the full mix - and `downmix_mono`, the full mono downmix for a single
 speaker - separate from the in-game Monaural setting, which is the original's
 own mono mode and leaves voices and movies in stereo) in
 `legaia-options.toml`, and the save screen's port-1 memory

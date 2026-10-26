@@ -2423,10 +2423,15 @@ attribute, unused by the PSX CBA encoding, and the fragment shaders discard
 the away-facing copy of flagged prims only. Outside the field pass this is
 the only `NCLIP` the port applies; the field pass also runs the
 [global back-face cull](#the-field-pass-culls-back-faces). Which facing is
-"away" depends on the view chain's reflection parity: the native field frame
-and the site's `buildMvp` carry one net reflection, and the site's assembled
-views add the retail screen-X mirror. The WebGL shader takes the parity as
-the `u_pair_front` uniform; the native shader's is fixed by its field frame.
+"away" depends on the view chain's reflection parity. Every chain that draws
+a model with retail's handedness shares one parity: the native field frame,
+the native orbit cameras (`orbit_camera_mvp` ends in a Z flip that undoes the
+callers' Y-only flip), the site's assembled views (Y flip plus screen-X
+mirror) and the site's single-mesh `buildMvp` (X and Y flipped together, a
+half turn about Z). A Y-only flip draws the mirror image - Noa's Ra-Seru on
+the wrong forearm against the retail battle frame - and inverts the facing.
+The WebGL shader takes the parity as the `u_pair_front` uniform (`0` on those
+chains); the native shader's is fixed by its field frame.
 
 **Intra-mesh decals.** `separate_coplanar_prims` nudges each successive
 overlapping layer half a unit toward its visible side (the negative

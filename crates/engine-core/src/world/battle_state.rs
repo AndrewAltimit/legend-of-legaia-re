@@ -405,6 +405,9 @@ pub struct BattleState {
     /// meanwhile. The saved-chain list ([`crate::world::BattleState::arts_menu`]) is the
     /// legacy path, kept reachable via `WorldToggles::arts_saved_list`.
     pub arts_input: Option<legaia_engine_battle::arts_command_input::ArtsCommandInputSession>,
+    /// The Triangle arts list's window after its entry ended, sliding out
+    /// ([`legaia_engine_battle::arts_command_input::ArtsListWindow`]).
+    pub arts_list_window: Option<legaia_engine_battle::arts_command_input::ArtsListWindow>,
     /// Per-party-slot **swing costs** for the Arts command gauge: the four
     /// `+0x74` AP prices (Left / Right / Down / Up = runtime action slots
     /// `0xC..=0xF`) the input session charges per directional press, for
@@ -445,6 +448,25 @@ pub struct BattleState {
     /// standing,
     /// instead of on a fresh roll. `None` on every ordinary fight.
     pub forced_monster_target: Option<u8>,
+    /// With [`Self::forced_monster_cast`]: dispatch that cast the moment the
+    /// battle's first command prompt opens, in place of the party's
+    /// commands, as [`Self::inflight_seed`] does for a party caster - the
+    /// cast-sequence oracle's way to record a monster cast from a prompt
+    /// with no pad drive. `false` on every ordinary fight.
+    pub forced_monster_cast_at_prompt: bool,
+    /// With [`Self::forced_monster_cast_at_prompt`]: each battle slot's live
+    /// pair when the forced turn is dispatched (`None` keeps the seat), the
+    /// ground a capture's earlier actions left - as
+    /// [`InflightCastSeed::ground`] does for a party caster.
+    pub forced_monster_ground: [Option<[i16; 2]>; INFLIGHT_GROUND_SLOTS],
+    /// Party seats a debug seed stands in the Spirit stance when the forced
+    /// monster turn is dispatched from the prompt
+    /// ([`Self::forced_monster_cast_at_prompt`]).
+    pub forced_guard: [bool; 3],
+    /// A cast module's hits land without opening the combo cluster: the
+    /// readout flag `DAT_8007B64C` its wrapper hits clear and a later arm
+    /// raises (PROT 0959's barrage, `BattleHud::hold_combo`).
+    pub combo_cluster_held: bool,
     /// A debug seed that makes the next party killing blow's steal roll
     /// land - the retail comparison corpus's way into a capture that shows
     /// the death-spoils caption: the capture holds the outcome of a
@@ -918,6 +940,12 @@ pub struct BattleState {
     /// as the retail per-frame call does. Hosts draw it through
     /// `legaia_render_kernels::streak_pass::clip_ribbon_quads`.
     pub clip_ribbon: Option<ClipRibbon>,
+    /// This tick's streak ribbons from a cast module arm
+    /// (`legaia_engine_cast::cast_module_camera::CaptureCamArm::ribbons`,
+    /// PROT 0962 `0xA3`'s arm-4 ring): retail calls `FUN_801E1D98` once per
+    /// point on the arm's pass, so the band rewrites it on every module tick
+    /// and clears it when the arm has none. Drawn beside [`Self::clip_ribbon`].
+    pub cast_ribbons: Option<legaia_engine_cast::cast_module_camera::CastRibbonRing>,
     /// The part-emit accumulator `ctx[+0x328]`: the frame driver keeps its
     /// low nibble and adds `DAT_1F800393 << 3` every battle frame
     /// (`FUN_80046A20`, `0x8004713C..0x80047160`), and every body the anim
@@ -1067,12 +1095,17 @@ impl BattleState {
             spell_menu: None,
             arts_menu: None,
             arts_input: None,
+            arts_list_window: None,
             swing_costs: [[legaia_engine_battle::arts_command_input::FAVORED_COST; 4]; 3],
             flow: legaia_engine_battle_menus::battle_flow::BattleFlowState::Idle,
             round_flow: crate::battle_round::RoundFlow::default(),
             inflight_seed: None,
             forced_monster_cast: None,
             forced_monster_target: None,
+            forced_monster_cast_at_prompt: false,
+            forced_monster_ground: [None; INFLIGHT_GROUND_SLOTS],
+            forced_guard: [false; 3],
+            combo_cluster_held: false,
             forced_steal: false,
             forced_melee_hits: Default::default(),
             forced_melee_total: None,
@@ -1146,6 +1179,7 @@ impl BattleState {
             return_mode: SceneMode::Field,
             field_camera_reseat: false,
             clip_ribbon: None,
+            cast_ribbons: None,
             burn_emit_accum: 0,
             ambient_stored: legaia_engine_battle_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL,
             backdrop_cue: 0,

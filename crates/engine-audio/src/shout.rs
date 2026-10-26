@@ -109,6 +109,11 @@ impl ArtsShoutBank {
         }
     }
 
+    /// The decoded clip for `(cslot, channel)`, when staged.
+    pub fn clip(&self, cslot: u8, channel: u8) -> Option<&ShoutClip> {
+        self.clips.get(cslot as usize)?.get(&channel)
+    }
+
     /// Stage the candidate-channel pool for `(cslot, action_constant)`.
     pub fn set_pool(&mut self, cslot: u8, action: u8, channels: Vec<u8>) {
         if let Some(p) = self.pools.get_mut(cslot as usize)

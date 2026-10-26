@@ -34,6 +34,7 @@ pub(super) fn stage_draw_marks(
     clip_marks: Vec<(usize, legaia_engine_render::DrawClip)>,
     color_clip_marks: Vec<(usize, legaia_engine_render::DrawClip)>,
     nclip_marks: Vec<(usize, u32)>,
+    color_nclip_marks: Vec<(usize, u32)>,
 ) {
     let mut tex = vec![None; draws_len];
     for (i, c) in clip_marks {
@@ -55,6 +56,13 @@ pub(super) fn stage_draw_marks(
         }
     }
     r.set_draw_nclip(nclip);
+    let mut color_nclip = vec![None; color_draws_len];
+    for (i, m) in color_nclip_marks {
+        if let Some(slot) = color_nclip.get_mut(i) {
+            *slot = Some(m);
+        }
+    }
+    r.set_color_draw_nclip(color_nclip);
 }
 
 /// The `--screenshot-every` sweep: capture this frame into the sweep dir
@@ -267,6 +275,8 @@ impl PlayWindowApp {
 /// ([`PlayWindowApp::capture_cast_sequence_frame`]).
 struct CastSeqRecorder {
     dir: std::path::PathBuf,
+    /// Shot interval in ticks (read only by the `oracles` shot path).
+    #[cfg_attr(not(feature = "oracles"), allow(dead_code))]
     every: u64,
     tail: u64,
     max: u64,
@@ -315,6 +325,11 @@ impl PlayWindowApp {
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(d)
             };
+            #[cfg(not(feature = "oracles"))]
+            eprintln!(
+                "cast sequence: built without the `oracles` feature - no frame shots \
+                 (cargo build -p legaia-engine-shell --features oracles)"
+            );
             let mut meta = std::io::BufWriter::new(std::fs::File::create(dir.join("meta.csv")).ok()?);
             use std::io::Write as _;
             let _ = writeln!(
@@ -322,7 +337,7 @@ impl PlayWindowApp {
                 "tick,st7,phase,acting,frames,c6d8,cd,yaw,c87c,fade_white,fade_age,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot"
             );
             let mut cam = std::io::BufWriter::new(std::fs::File::create(dir.join("cam.csv")).ok()?);
-            let _ = writeln!(cam, "tick,st7,phase,pitch,yaw,trx,try,trz");
+            let _ = writeln!(cam, "tick,st7,phase,pitch,yaw,trx,try,trz,fx,fy,fz");
             Some(std::sync::Mutex::new(CastSeqRecorder {
                 cam,
                 every: num("LEGAIA_DIAG_CAST_SEQ_EVERY", 1).max(1),
@@ -368,7 +383,14 @@ impl PlayWindowApp {
             eprintln!("cast sequence: done band at tick {tick} (state 0x{st:02X})");
             rec.done = Some(tick);
         }
+        // The shots crop and box-filter through the parity crate's compared
+        // frame (`retail_compare_image`), so they need the `oracles` feature;
+        // without it the recorder writes `meta.csv` / `cam.csv` only.
+        #[cfg_attr(not(feature = "oracles"), allow(unused_mut))]
         let mut shot = String::new();
+        #[cfg(not(feature = "oracles"))]
+        let _ = (r, target);
+        #[cfg(feature = "oracles")]
         if (tick - start).is_multiple_of(rec.every) && rec.shots < rec.max {
             let capture = r.capture_rgba_settled(target);
             match capture.and_then(|img| {
@@ -442,13 +464,16 @@ impl PlayWindowApp {
             let p = w.battle_cam_pose();
             let _ = writeln!(
                 rec.cam,
-                "{tick},{st},{},{},{},{},{},{}",
+                "{tick},{st},{},{},{},{},{},{},{},{},{}",
                 w.casting.module_phase,
                 (p.pitch as i32).rem_euclid(4096),
                 (p.yaw as i32).rem_euclid(4096),
                 p.tr[0] as i32,
                 p.tr[1] as i32,
                 p.tr[2] as i32,
+                p.focus[0] as i32,
+                p.focus[1] as i32,
+                p.focus[2] as i32,
             );
         }
         if rec.done.is_some_and(|d| tick >= d + rec.tail) || rec.shots >= rec.max {

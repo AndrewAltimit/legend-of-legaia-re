@@ -146,7 +146,7 @@ impl Renderer {
     /// for scrapping the on-screen window with `scrot`. The returned image
     /// is exactly `width * height * 4` bytes, row-major, no padding.
     pub fn capture_rgba(&self, target: RenderTarget<'_>) -> Result<CaptureImage> {
-        let (width, height) = (self.config.width, self.config.height);
+        let (width, height) = self.target_size();
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("capture target"),
             size: wgpu::Extent3d {

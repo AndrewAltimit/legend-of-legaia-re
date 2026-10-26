@@ -930,9 +930,29 @@ void main() { o_color = texture(u_layer, v_uv); }
      * rasterisation (vertex snap + 15-bit dither) and the dynamic light.
      * Both default off and both are the identity when off; the page's
      * checkboxes drive them and re-apply on every view rebuild; the
-     * renderer picks them up in `_stageFrameState`. */
+     * renderer picks them up in `_stageFrameState`.
+     *
+     * PSX rasterisation also draws at the display's own size, the native
+     * window's `Renderer::set_native_resolution`: the GL canvas and the 2D
+     * overlay canvas take a 320 x 240 backing store, which every pass reads
+     * its size from (the viewport, the snap grid, the overlay layout), and
+     * the browser magnifies them nearest-neighbour. The snap, the fill rule
+     * and the dither are retail's only at stage scale 1. */
     setPsxRender(on) {
       this.psxRender = !!on;
+      this._applyNativeResolution();
+    }
+
+    _applyNativeResolution() {
+      const canvases = [this.canvas, this.menuOverlay].filter(Boolean);
+      if (!this._windowSize) {
+        this._windowSize = canvases.map((c) => [c.width, c.height]);
+      }
+      canvases.forEach((c, i) => {
+        const [w, h] = this.psxRender ? [320, 240] : this._windowSize[i];
+        if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+        c.style.imageRendering = this.psxRender ? 'pixelated' : '';
+      });
     }
 
     setDynamicLighting(on) {

@@ -996,6 +996,8 @@ impl BattleCamera {
                         yaw_glides: false,
                         steps_left: None,
                         per_vsync: false,
+                        angle_left: [0.0; 2],
+                        angle_dir: [1.0; 2],
                     });
                 } else {
                     // Submenu exit: swing up over the shoulder, then ease

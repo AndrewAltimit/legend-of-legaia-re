@@ -924,6 +924,8 @@ fn orb_anchors_resolve_like_the_arms_build_them() {
     let seats = AnchorSeats {
         caster: Some(caster),
         caster_body: None,
+        victim_body: None,
+        creature_body: None,
         party: [Some(caster), None, None],
         depth: 0xC00,
     };
@@ -1215,4 +1217,105 @@ fn horn_arm_6_seats_sixteen_spokes_of_glows_at_two_speeds() {
     );
     assert_eq!(horn_ring_drift(0x801F_8C44, 32), None);
     assert_eq!(horn_ring_drift(0x801F_8BEC, 0), None);
+}
+
+/// PROT 0929's tail points the scanline backdrop at the live camera. Four
+/// retail RAM reads of a Mule cast (arms 15 and 16) hold `ctx[+0x285]` /
+/// `+0x286` at exactly what the formula gives for the camera globals beside
+/// them.
+#[test]
+fn mule_backdrop_origin_follows_the_live_camera() {
+    assert_eq!(mule_backdrop_origin(0, 2504, 248, 2140), (0xBD, 0));
+    assert_eq!(mule_backdrop_origin(0, 2840, -88, 1972), (0xA0, 0));
+    assert_eq!(mule_backdrop_origin(0, 3072, 192, 1792), (0x78, 0));
+    assert_eq!(mule_backdrop_origin(0, 3072, 3648, 1360), (0xE8, 0));
+    // The row: pitch over 16 less the height over 48, held in `0..=0x20`;
+    // a pitch past `0x800` reads negative and truncates toward zero.
+    assert_eq!(mule_backdrop_origin(0x100, 0, 0, 0x400), (0, 0x10));
+    assert_eq!(mule_backdrop_origin(0x1000 - 0x11, 0, 0, 0x400), (0, 0));
+    assert_eq!(mule_backdrop_origin(0, 0, 0, 0x400 - 48 * 40), (0, 0x20));
+}
+
+/// A creature-body anchor seats the record on the creature's display trio
+/// with the arm's zeroed stack angles (PROT 0929 arm 14).
+#[test]
+fn a_creature_body_anchor_takes_the_display_trio_unturned() {
+    let body = ModuleSeat {
+        x: 0,
+        y: -458,
+        z: -1034,
+        facing: 0x800,
+    };
+    let seats = AnchorSeats {
+        creature_body: Some(body),
+        ..Default::default()
+    };
+    assert_eq!(
+        spawn_anchor_point_with(SpawnAnchor::CreatureBody, None, None, None, seats),
+        Some(([0, -458, -1034], [0; 3]))
+    );
+    assert_eq!(
+        spawn_anchor_point_with(
+            SpawnAnchor::CreatureBody,
+            None,
+            None,
+            None,
+            AnchorSeats::default()
+        ),
+        None
+    );
+}
+
+/// Mule's swim-in: arm 5's pass stages clip 1 as an at-once cut (`+0x1DA`
+/// and `+0x1DC` bumped together), and the cuts of arms 6 and 7 set the
+/// creature's clip cursor to `0x78` and `0x20` - the frames a retail RAM
+/// read of the cast holds the swim-in at after each cut.
+#[test]
+fn mule_arms_5_to_7_stage_and_seek_the_swim_in() {
+    let s = seats();
+    let mut st = ModuleCamState::default();
+    st.countdown.0 = 0;
+    assert!(!mule_direct(&mut st, 5, s).hold);
+    assert_eq!(st.creature_stage, Some(1));
+    assert!(st.creature_restage);
+    st.countdown.0 = 0;
+    assert!(!mule_direct(&mut st, 6, s).hold);
+    assert_eq!(st.creature_seek.take(), Some(0x78));
+    st.countdown.0 = 0;
+    assert!(!mule_direct(&mut st, 7, s).hold);
+    assert_eq!(st.creature_seek.take(), Some(0x20));
+    st.creature_restage = false;
+    st.countdown.0 = 0;
+    assert!(!mule_direct(&mut st, 9, s).hold);
+    assert_eq!(st.creature_stage, Some(0));
+    assert!(!st.creature_restage, "arm 9's store is bare");
+}
+
+#[test]
+fn viguro_charge_ring_widens_with_the_charge_about_the_row() {
+    // Word 0: `r = 0x200`, each lane `table * r >> 11` - streak 0 at
+    // `4096 * 0x200 >> 11 = 0x400` along +z (sine 0, cosine 4096).
+    let r = viguro_charge_ring([100, -50], 0);
+    assert_eq!(r[0], [100, 0, -50 + 0x400]);
+    // Word 0x201 (the gate): `r = 0x300`; `h = 0x100` turns streak 0 by
+    // `h & 0xFF = 0`, streak 1 sits at `0x100`.
+    let r = viguro_charge_ring([0, 0], 0x201);
+    assert_eq!(r[0], [0, 0, (4096 * 0x300 / 2048) as i16]);
+    let (s, c) = legaia_engine_system::trig::trig12(0x100);
+    assert_eq!(
+        r[1],
+        [
+            (i32::from(s) * 0x300 / 2048) as i16,
+            0,
+            (i32::from(c) * 0x300 / 2048) as i16
+        ]
+    );
+}
+
+#[test]
+fn viguro_arm_twelve_draws_sixteen_streaks_every_pass() {
+    let mut st = ModuleCamState::default();
+    let d = viguro_direct(&mut st, 12, ModuleCamSeats::default());
+    assert_eq!(d.ribbons.map(|r| r.count), Some(16));
+    assert!(d.hold);
 }

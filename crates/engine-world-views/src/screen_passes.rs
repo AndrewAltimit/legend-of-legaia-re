@@ -301,6 +301,19 @@ pub fn move_fx_streak_quads(world: &World, mvp: &glam::Mat4) -> Vec<AfterimageQu
             frame,
         ));
     }
+    // A cast arm's ribbon ring (PROT 0962 `0xA3` arm 4): one ribbon call
+    // per point, each drawing its own run of BIOS `rand` - so each point
+    // takes its own seed off the frame.
+    if let Some(ring) = world.battle.cast_ribbons {
+        for (i, p) in ring.points.iter().take(usize::from(ring.count)).enumerate() {
+            out.extend(clip_ribbon_quads(
+                p.map(f32::from),
+                ring.trail_id,
+                mvp,
+                frame.wrapping_mul(17).wrapping_add(i as u32 + 1),
+            ));
+        }
+    }
     out
 }
 

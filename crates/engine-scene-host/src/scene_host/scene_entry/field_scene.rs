@@ -499,11 +499,17 @@ impl SceneHost {
                 .world
                 .resolve_cold_field_spawn(&teleport_tiles, &anchors),
         };
+        // Only a picker seat at a door arms the inherited track; every other
+        // entry (a door, a resume, a cold fallback) leaves a park start as
+        // retail runs it.
+        self.world.field_vm.picker_bgm_inherit = None;
         if operand.is_none()
             && let Some(ranked) = picker_arrivals.as_deref()
         {
             self.picker_seat = Some(match &picker_arrival {
                 Some((arrival, seat, rejected)) => {
+                    self.world.field_vm.picker_bgm_inherit =
+                        self.arrival_catalog().home_bgm(&arrival.from_scene);
                     // The door's facing: armed for the entry script's
                     // `4C 3A` and applied now, as the `0x3F` arrival does.
                     self.world.face_player_sector(arrival.dir);

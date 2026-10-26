@@ -18,13 +18,9 @@
 //! drivers retry exactly that death once instead of reading it as a failed
 //! frame. `docs/tooling/host-drift.md` carries the full account.
 
+use legaia_engine_capture::EVENT_LOOP_OPEN_MARKER;
 use std::io;
 use std::process::{Command, Output};
-
-/// The line `play-window` logs once its event loop exists, i.e. once the
-/// startup race is behind it. A `SIGSEGV` with this line on stderr is a
-/// different crash and is never retried.
-pub const EVENT_LOOP_OPEN_MARKER: &str = "play-window: event loop open";
 
 /// `SIGSEGV`'s number on every platform the window runs on.
 #[cfg(unix)]

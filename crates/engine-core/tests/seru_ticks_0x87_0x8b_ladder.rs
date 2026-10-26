@@ -77,16 +77,6 @@ fn battle_world() -> World {
     world
 }
 
-/// Open the next battle frame and return the vsyncs it spans: the host's
-/// clock advance between two battle passes. The summon parts take their part
-/// tick once a battle frame (`World::summon_fx_pass_vsyncs`), so a walk that
-/// never moves the clock ticks them once and never again.
-fn battle_pass(world: &mut World) -> usize {
-    let step = world.battle_frame_step().max(1);
-    world.clock.display_frames += u64::from(step);
-    usize::from(step)
-}
-
 /// One id's walk. Returns `(phases observed, frames a ported body ran,
 /// reached Done, the values ctx+0x278 took in order)`.
 fn walk(world: &mut World, id: u8) -> (Vec<u8>, usize, bool, Vec<u8>) {
@@ -303,7 +293,7 @@ fn the_viguro_rendezvous_needs_the_stager() {
     // waits are vsyncs and `held` counts vsyncs too.
     let mut held = std::collections::BTreeMap::<u8, usize>::new();
     for _ in 0..FRAME_BOUND {
-        let step = battle_pass(&mut world);
+        let step = usize::from(world.advance_battle_pass());
         let phase = world.casting.module_phase;
         let busy = world.summon_stager_tick();
         world.tick_summon(legaia_engine_core::world::EFFECT_SCENE_GRAPH_STEP);
@@ -342,7 +332,7 @@ fn the_viguro_rendezvous_needs_the_stager() {
         "a seated record is the only caller: phase 3 holds while its part is stopped"
     );
     for _ in 0..FRAME_BOUND {
-        battle_pass(&mut world);
+        world.advance_battle_pass();
         world.summon_stager_tick();
         world.tick_summon(legaia_engine_core::world::EFFECT_SCENE_GRAPH_STEP);
         if world.casting.module_phase != 3 {

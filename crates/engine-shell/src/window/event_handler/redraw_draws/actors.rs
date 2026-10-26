@@ -213,6 +213,7 @@ impl<'m> DrawCtx<'_, 'm> {
             clip_marks,
             nclip_marks,
             color_draws,
+            color_nclip_marks,
             ..
         } = out;
         // Flat tiled ground grid (retail's func_0x801d02c0 grass)
@@ -293,6 +294,10 @@ impl<'m> DrawCtx<'_, 'm> {
                     .battle_stage_spun_color_mesh
                     .and_then(|i| store.color_meshes.get(i))
                 {
+                    color_nclip_marks.push((
+                        color_draws.len(),
+                        legaia_engine_scene_host::scene_host::backdrop_copy_nclip(*second, copy_b),
+                    ));
                     color_draws.push(ColorSceneDraw { mesh, mvp, cue });
                 }
             }

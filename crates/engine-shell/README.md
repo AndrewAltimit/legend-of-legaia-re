@@ -44,6 +44,24 @@ mode, audio and PCM oracles, the recomp differential's `sim_trace`, and the
 retail comparison corpus - live in
 [`legaia-parity`](../parity/README.md).
 
+The subcommands that call into it (`vram-oracle`, `mode-trace`, `sim-trace`,
+`audio-trace`, `pcm-trace`, `retail-compare`, `cast-sequence-score`) and the
+play window's `LEGAIA_DIAG_CAST_SEQ` frame shots build only with the
+default-off `oracles` feature:
+
+```bash
+cargo build -p legaia-engine-shell --profile release-test --features oracles --bin legaia-engine
+```
+
+Leaving parity out of the default build takes it off the host build's
+critical path (`engine-core` -> `engine-session` -> `parity` ->
+`engine-shell`), so an edit below the session relinks the play window
+without the tool crate. A build without the feature names the feature when
+asked for one of those subcommands. The capture drivers
+(`scripts/ci/retail-compare.py`, `scripts/ci/cast-sequence.py`) pass it
+themselves; the crate's tests name parity as a dev-dependency and run either
+way.
+
 ## Binary: `legaia-engine`
 
 The CLI is the user-facing entry point. Run `legaia-engine --help` for the

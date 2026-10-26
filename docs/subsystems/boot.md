@@ -1226,7 +1226,7 @@ Z    |z    |:;()~
 ```
 
 The control row (grid row 6) tiles sentinel bytes across its columns:
-`00 00 | 66×6 | 64×6 | 65×3` (filler / Backspace / Space / End).
+`00 00 | 66×6 | 64×6 | 65×3` (filler / Backspace / Default / End).
 
 Two functions carry the screen:
 
@@ -1240,10 +1240,16 @@ Two functions carry the screen:
   - `0x801F0480` **interactive** - d-pad deltas `-0x11` (up) / `+0x11` (down) /
     `+1` (right) / `-1` (left); after each move the cursor wraps modulo `0x77`
     and skips non-selectable cells (the `|` separators) in the direction of
-    travel. Confirm on a glyph cell appends its character, length-bounded by the
-    proportional-font pixel width (cap `0x39` = 57 px). Confirm on a control cell
-    runs its sentinel: `0x66` Backspace (truncate one glyph), `0x64` Space,
+    travel. Confirm on a glyph cell appends its character under two bounds:
+    the name before it holds fewer than nine glyphs (`slti v0,s1,0x9` at
+    `0x801F05F8`), and the name with it measures under `0x39` = 57 px
+    (`FUN_80035F04`, `0x801F064C..0x801F0654`; a glyph that measures too wide
+    is taken back). Confirm on a control cell runs its sentinel: `0x66`
+    Backspace (truncate one glyph), `0x64` Default (copy the template name
+    back from `0x801F2A6C + slot * 8` with `FUN_8003CA78`, `0x801F06F8`),
     `0x65` End (gated on a non-empty name via a `blez` check → confirm).
+    A nine-glyph name fills the record's 9-byte field and the append stores
+    its terminator at `+0x2B0`.
   - `0x801F095C` / `0x801F09C0` / `0x801F097C` **confirm** - the "Is this name
     okay?" Yes / No prompt; Yes commits the name to record `+0x2A7` and exits,
     No returns to interactive.

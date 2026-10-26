@@ -198,6 +198,27 @@ fn the_gilium_stager_writes_ctx_278_on_arm_zero() {
     assert_eq!(ctx.ctx_278, 3);
 }
 
+/// `FUN_801F8B90`: arm 0 seats the bowl on its caller at unit scale, arm 2
+/// `0x801FA414` at the caller's own `+0x72`, and arm 1 seats nothing.
+#[test]
+fn the_gilium_stager_seats_the_bowl_and_the_scaled_record() {
+    let caller = StagerCaller {
+        pos: [0, 0, 0x400],
+        rot: [0, 0x100, 0],
+        scale: 0x600,
+        ..Default::default()
+    };
+    let arm0 = gilium_stager_spawns(0, caller);
+    assert_eq!(arm0.len(), 1);
+    assert_eq!(
+        (arm0[0].record, arm0[0].pos, arm0[0].rot, arm0[0].scale),
+        (GILIUM_BOWL_RECORD, caller.pos, caller.rot, 0x1000)
+    );
+    assert!(gilium_stager_spawns(1, caller).is_empty());
+    let arm2 = gilium_stager_spawns(2, caller);
+    assert_eq!((arm2[0].record, arm2[0].scale), (0x801F_A414, 0x600));
+}
+
 #[test]
 fn the_gizam_stager_splits_the_pose_and_the_advance() {
     let mut ctx = CastModuleCtx::default();

@@ -177,6 +177,10 @@
         }
         this.els.stage.hidden = false;
         prog.done(`Ready - ${st.entries} PROT entries; click any art card below.`);
+        /* The progress bar fades out after done(); the status line it sits
+         * under still carried the no-disc prompt, so restate it. */
+        this.els.status.textContent =
+          `Disc loaded - ${st.entries} PROT entries. Click any art card below to play it.`;
         document.body.classList.add('arts-live');
         /* The .glb export needs an assembled character - live now. */
         if (this.els.glbBtn) this.els.glbBtn.disabled = false;
@@ -218,7 +222,7 @@
         && this.api.art_fanfare_pcm_i16) ? this.charState.fanfare : null;
       if (!this.view) {
         this.view = new window.MeshView(this.els.canvas, {
-          cam: { yaw: Math.PI / 2, pitch: 0.05, distance: 2.2, autoRotate: false },
+          cam: { yaw: -Math.PI / 2, pitch: 0.05, distance: 2.2, autoRotate: false },
           zoom: { min: 1.2, max: 6 },
         });
       }

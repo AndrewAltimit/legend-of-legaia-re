@@ -968,10 +968,17 @@ and `World::save_full` / `load_full` map them to `World::minigames`.
 
 ### The play clock
 
-`0x80084570` (SC `0x430`) is a u32 that ticks 60 times a second. The save
-screen's time line divides it by `216000` for hours and `3600` for total
-minutes, clamping the display at `99:59` (`0x801DD5C8..0x801DD618`); the New
-Game slate zeroes it (`FUN_8001DCF8`, `0x8001DD58`). The engine keeps whole
+`0x80084570` (SC `0x430`) is a u32 counting vsyncs the game ran: the frame
+pacer `FUN_80016B6C` adds the frame step `DAT_1F800393` once per game frame
+while bit `0x800` of `_DAT_1F800394` is up (`0x80016ED0..0x80016EFC`), which
+is 60 a second in every mode a player reaches. The save screen's time line
+divides it by `216000` for hours and `3600` for total minutes, clamping the
+display at `99:59` (`0x801DD5C8..0x801DD618`). The New Game slate zeroes it
+with the rest of the `0x1A18`-byte window (`FUN_8001DCF8`'s byte loop at
+`0x8001DE6C..0x8001DE88`); the `sw zero` at `0x8001DD58` in the same routine
+is `0x8007BA90` (`lui 0x8008` with offset `-0x4570`), not this counter. The
+port counts one per claimed sim tick
+([`host-drift.md`](../tooling/host-drift.md#the-play-clock-counts-ticks)). The engine keeps whole
 seconds (`SaveExtV2::play_time_seconds`): the lift takes `counter / 60` and the
 composer writes `seconds * 60`. An engine-authored block's `LGXE` tail carries
 the same seconds and wins on the lift.

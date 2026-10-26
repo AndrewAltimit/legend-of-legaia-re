@@ -302,6 +302,15 @@ pub fn battle_commit_log(world: &legaia_engine_core::world::World) -> Vec<Commit
 /// `TOTAL` (`player_steal_skeleton_banner`), a cast, item or spirit action
 /// shows `DAMAGE` (`battle_gimard_tail_fire_a`). Capture-graded: the two
 /// styles are read off those frames' display lists, not off a dispatch.
+///
+/// A cast or item aimed party-wide (`+0x1DD == 8`) opens none. The cluster
+/// opens on the readout flag `DAT_8007B64C`, and the finisher `FUN_801DDB30`
+/// raises it - and adds the hit to the damage word `_DAT_8007BD14` the
+/// `0x51` close re-opens it on - only for a slot target (`sltiu v0,v1,7` at
+/// `0x801DE370`) or the every-enemy code `9` from a party or creature
+/// attacker (`0x801DE3B8..0x801DE428`); the party-wide code falls past both.
+/// A monster's party sweep (Neo Star Slash, Doomsday) lands its hits with
+/// no cluster.
 pub fn battle_combo_style(world: &legaia_engine_core::world::World) -> Option<ComboStyle> {
     use legaia_engine_battle_vm::battle_action::ActionCategory;
     // The dome's play-out tally rides the status rows, not the battle
@@ -315,7 +324,15 @@ pub fn battle_combo_style(world: &legaia_engine_core::world::World) -> Option<Co
         return None;
     }
     let a = world.battle_ctx.active_actor;
-    let cat = world.actors.get(a as usize)?.battle.action_category;
+    let actor = world.actors.get(a as usize)?;
+    let cat = actor.battle.action_category;
+    let party_wide =
+        actor.battle.active_target == legaia_engine_battle_vm::battle_cue_group::TARGET_PARTY_WIDE;
+    if party_wide
+        && (cat == ActionCategory::Magic.as_byte() || cat == ActionCategory::Item.as_byte())
+    {
+        return None;
+    }
     if cat == ActionCategory::Attack.as_byte() || cat == ActionCategory::TacticalArts.as_byte() {
         Some(ComboStyle::HitTotal)
     } else if cat == ActionCategory::Magic.as_byte()

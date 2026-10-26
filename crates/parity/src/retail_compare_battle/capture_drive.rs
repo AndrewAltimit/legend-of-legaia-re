@@ -257,6 +257,42 @@ impl RetailBattle {
         )
     }
 
+    /// The acting party seat's live pair on the displayed frame, for the
+    /// image child to stand the body on **after** the camera is aligned
+    /// (`LEGAIA_BATTLE_DISPLAYED_SEAT`), when the seat committed a swing
+    /// between the displayed frame and the RAM's in the strike loop
+    /// ([`Self::displayed_recommit`]). The commit's range step
+    /// (`FUN_8004AD80`, `0x8004BF7C..0x8004C118`) moves the live pair in one
+    /// pass, after the frame on screen was built, so that frame drew the
+    /// body on the ring's pair. The camera stays aligned on the RAM's ground,
+    /// as for every other action drive: retail's framing read the body pair
+    /// of an earlier pass, which the RAM's ground reproduces
+    /// (`rim_elm_gimard_victory`: Vahn drawn at `(12, -217)` on the `0x0F`
+    /// swing's cursor `144`, stepped to `(3, -154)` by the `0x0E` commit).
+    pub fn engine_image_displayed_seats(
+        &self,
+    ) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
+        let pool = usize::from(self.active_actor);
+        if pool >= 3
+            || pool >= usize::from(self.party_count.clamp(1, 3))
+            || !(0x1E..=0x20).contains(&self.action_state)
+            || self.span_gate.is_end()
+            || !self.displayed_recommit.get(pool).copied().unwrap_or(false)
+        {
+            return Vec::new();
+        }
+        let Some(Some(then)) = self.displayed_ground.get(pool) else {
+            return Vec::new();
+        };
+        vec![legaia_engine_capture::ground_snap::GroundSnap {
+            slot: pool as u8,
+            x: then[0],
+            z: then[1],
+            facing: None,
+            body: None,
+        }]
+    }
+
     /// `displayed` stands every combatant on the displayed frame's pair,
     /// `displayed_struck` only a struck monster stood on its body pair.
     fn ground_snaps(

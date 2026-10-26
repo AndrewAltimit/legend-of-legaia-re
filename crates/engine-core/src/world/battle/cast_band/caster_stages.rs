@@ -94,7 +94,7 @@ impl World {
             // display tick, so the call is made on the tick that opens a
             // battle frame. Seated per tick, `cort_evolved_ultra_charge_mid_cast`
             // held 127 live rays against retail's 33.
-            let every = cmc::capture_arm_spawns_every(run.prot_entry, arm);
+            let every = cmc::capture_arm_spawns_every(run.prot_entry, arm, spell_id);
             let opens_pass = self
                 .battle
                 .frame_clock
@@ -146,19 +146,70 @@ impl World {
                 if !spawns.is_empty() {
                     self.stage_module_arm_spawns(run.prot_entry, spawns, run.camera_shot, None);
                 }
+                // Gigaton Press's debris ring follows its five caster records
+                // on the same pass (drawn ahead of the arm's hit).
+                let debris = std::mem::take(&mut self.casting.module_debris);
+                if !debris.is_empty() {
+                    self.stage_module_arm_spawns(run.prot_entry, &debris, run.camera_shot, None);
+                }
             }
         }
         // `0x70` frames nothing of its own: the camera is the module's.
         if let Some(cam) = self.battle.camera.as_mut() {
-            if let Some(shot) = run.camera_shot {
-                let (pose, raw_z) = shot.pose();
-                cam.arm_module_shot(pose, raw_z, u32::from(shot.frames));
-            }
-            if let Some(d) = run.capture_drift {
-                cam.drift_module(d.pitch, d.yaw, d.tr_y, d.tr_z);
-                if d.tr_x != 0 {
-                    cam.drift_module_tr_x(d.tr_x);
+            if run.capture_drift_first || run.capture_pose_set.is_some() || run.capture_focus_z != 0
+            {
+                // A director that stores into the globals, or says so, runs
+                // retail's order: the arm's drift, then its pass stores, then
+                // the shot its builder tweens from them (PROT 0959, 0960).
+                if let Some(d) = run.capture_drift {
+                    cam.drift_module(d.pitch, d.yaw, d.tr_y, d.tr_z);
+                    if d.tr_x != 0 {
+                        cam.drift_module_tr_x(d.tr_x);
+                    }
                 }
+                if run.capture_focus_z != 0 {
+                    cam.drift_module_focus_z(run.capture_focus_z);
+                }
+                if let Some(set) = run.capture_pose_set {
+                    cam.set_module_pose(
+                        set.yaw.map(f32::from),
+                        set.tr_y.map(|v| v as f32),
+                        set.tr_z.map(|v| v as f32),
+                        set.focus_xz.map(|[x, z]| [f32::from(x), f32::from(z)]),
+                    );
+                }
+                if let Some(shot) = run.camera_shot {
+                    let (pose, raw_z) = shot.pose();
+                    cam.arm_module_shot(pose, raw_z, u32::from(shot.frames));
+                }
+            } else {
+                if let Some(shot) = run.camera_shot {
+                    let (pose, raw_z) = shot.pose();
+                    cam.arm_module_shot(pose, raw_z, u32::from(shot.frames));
+                }
+                if let Some(d) = run.capture_drift {
+                    cam.drift_module(d.pitch, d.yaw, d.tr_y, d.tr_z);
+                    if d.tr_x != 0 {
+                        cam.drift_module_tr_x(d.tr_x);
+                    }
+                }
+            }
+            // The arm's framing-case calls come last in its pass (PROT 0962
+            // `0xA2`: case 6 on the walk, case 8 from the strike on).
+            if let Some(f) = run.camera_follow {
+                let actor = legaia_engine_battle_vm::battle_cam_script::BattleCamActor {
+                    facing: i32::from(f.seat.facing),
+                    world: [
+                        f32::from(f.seat.x),
+                        f32::from(f.seat.y),
+                        f32::from(f.seat.z),
+                    ],
+                    height: None,
+                };
+                cam.arm_module_follow(actor, f.yaw_base, f.depth_raw);
+            }
+            if run.camera_end_frame {
+                cam.arm_module_end_frame();
             }
         }
         if run.tick_ported && run.busy {
@@ -197,6 +248,7 @@ impl World {
         self.casting.module_beam_live = false;
         self.casting.module_hit_arm = None;
         self.casting.module_settle_ticks = 0;
+        self.battle.combo_cluster_held = false;
         self.casting.capture_spell = Some(spell_id);
         self.casting.caster_stages = self.caster_stage_run_for(spell_id);
         self.emit_cast_module_voice(spell_id);
@@ -314,6 +366,35 @@ impl World {
                 );
                 a.battle.facing_angle = bearing.wrapping_add(0x800) & 0xFFF;
                 a.battle.queued_anim = CAPTURE_WALK_ENTRY;
+                // A body whose walk arms frame the caster through the action
+                // SM's case 6 every pass (PROT 0962 `0xA2`, `jal 0x801D5854`
+                // with `a1 = 6` at `0x801F7C70` / `0x801F7CEC`).
+                if let Some(spell) = self.casting.capture_spell
+                    && let Some(e) = self.cast_module_for(spell)
+                    && legaia_engine_cast::cast_module_camera::capture_approach_follows(
+                        e,
+                        legaia_engine_cast::cast_module_ticks::capture_tick_body(e, spell),
+                    )
+                {
+                    // Their arm 0 stores phase `1` outright on its first pass
+                    // (`sb s8,0x279(s5)` at `0x801F7BC8`) and arm 1 polls the
+                    // walk from there, so the walk runs on phase `1`.
+                    self.casting.module_phase = 1;
+                    let seats = self.module_cam_seats(run.slot, victim);
+                    if let Some(cam) = self.battle.camera.as_mut() {
+                        let yaw_base = cam.action_yaw_base();
+                        let actor = legaia_engine_battle_vm::battle_cam_script::BattleCamActor {
+                            facing: i32::from(seats.caster.facing),
+                            world: [
+                                f32::from(seats.caster.x),
+                                f32::from(seats.caster.y),
+                                f32::from(seats.caster.z),
+                            ],
+                            height: None,
+                        };
+                        cam.arm_module_follow(actor, yaw_base, seats.depth_raw);
+                    }
+                }
                 CasterStageGate::Hold
             }
             CasterStagePhase::Staging => {

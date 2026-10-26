@@ -31,9 +31,10 @@ use crate::StreamResampler;
 /// `site/js/layout.js` - keep the two in step, or a page mixing WASM and JS
 /// sound will drift.
 ///
-/// The **native** cpal path is deliberately untouched: the desktop window
-/// mixes at the retail-nominal level and has an OS volume control in front
-/// of it, so it has no such problem to solve.
+/// The **native** cpal path does not use this trim: the desktop hosts scale
+/// the finished mix by their own user-facing master volume
+/// ([`crate::AudioSink::set_master_volume`], default
+/// [`crate::DESKTOP_MASTER_VOLUME_DEFAULT`]).
 pub const WEB_MASTER_TRIM: f32 = 0.25;
 
 /// WebAudio-backed audio output for `wasm32` targets.

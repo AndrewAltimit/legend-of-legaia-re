@@ -56,7 +56,8 @@ the gates that keep it in step with the native window,
 
 ## Tests
 
-`tests/` holds the play page ladders and parity tests (with the play page's own minigame rungs), built
-as one `integration` binary; the disc-gated ones skip without
-`LEGAIA_DISC_BIN`. Run one file with
-`cargo test -p legaia-web-play --test integration <name>::`.
+`tests/` holds the play page ladders and parity tests (with the play page's own minigame rungs), mounted
+into the library's unit-test target (`src/lib.rs`, `mod integration`) rather
+than built as an integration binary, so a test build compiles the crate once;
+the disc-gated ones skip without `LEGAIA_DISC_BIN`. Run one file with
+`cargo test -p legaia-web-play --lib integration::<name>::`.

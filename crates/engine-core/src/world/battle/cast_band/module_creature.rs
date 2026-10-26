@@ -39,8 +39,12 @@ const ZENOIR_OVER_VICTIM_ARM: u8 = 10;
 /// pass (`sb v0,0x1da(s4)` at `0x801F7590`): retail RAM through arm 9 holds
 /// `+0x1D9 = 1`, `+0x1DA = 2`, `+0x1DC = 0`, the cursor climbing `8` to
 /// `280`, so the wing-spread clip `1` is what the close-up shows, not the
-/// clip `2` an at-once commit swapped in on arm 9's first pass.
-const CLIP_GATED_MODULES: [u32; 6] = [907, 908, 909, 913, 928, 930];
+/// clip `2` an at-once commit swapped in on arm 9's first pass. PROT 0929
+/// (Mule) decrements `+0x1DA` bare on arm 9's pass (`0x801F746C..0x801F7478`):
+/// retail RAM through arms 9..11 holds `+0x1D9 = 1`, its cursor climbing
+/// `0x170` to `0x48E` past arm 11's entry, and arm 12 finds clip `0` some
+/// sixteen frames in - the swim-in plays out to its end before the idle.
+const CLIP_GATED_MODULES: [u32; 7] = [907, 908, 909, 913, 928, 929, 930];
 
 /// The animation rate `+0x21D` the creature seat installer `FUN_801F19EC`
 /// gives the creature it seats (`li s3,0x2` at `0x801F1CFC`, stored at
@@ -257,6 +261,18 @@ impl World {
         for (arm, caller) in calls {
             let (pos, rot) = (caller.pos, caller.rot);
             legaia_engine_cast::cast_module_ticks::viguro_stager(ctx, seat, arm);
+            // Arm 1 spawns its held pale-blue rise and parks it at
+            // `ctx[+0x102C]` (`sw v0,0x102c(a0)` at `0x801F7C4C`), where the
+            // tick's arm 9 kills it.
+            if arm == 1 {
+                self.push_stager_fade(
+                    &legaia_engine_cast::cast_module_ticks::VIGURO_STAGER_FADE,
+                    0x801F_7C34,
+                    Some(legaia_overlay_images::cast_presentation::HandleSlot::Ctx(
+                        0x102C,
+                    )),
+                );
+            }
             if arm == 0 {
                 self.casting.module_cam.creature = Some(ModuleSeat {
                     x: 0,

@@ -189,6 +189,12 @@ impl PlayWindowApp {
                         .world
                         .seed_object_live_model(record, model);
                 }
+                for w in &sc.seat_placements {
+                    self.session
+                        .host
+                        .world
+                        .seed_placement_seat(w.flat, w.x, w.z);
+                }
                 for w in &sc.seat_walkers {
                     self.session
                         .host
@@ -361,6 +367,21 @@ impl PlayWindowApp {
                     let _ = legaia_engine_capture::ground_snap::snap_battle_ground(world, &live);
                 }
                 world.refresh_battle_camera_ghost();
+            }
+            // A seat the displayed frame drew elsewhere than the RAM's ground
+            // (`LEGAIA_BATTLE_DISPLAYED_SEAT`): moved after the alignment, so
+            // the camera keeps the framing the RAM's ground armed.
+            let seats = self
+                .screenshot
+                .as_ref()
+                .map(|sc| sc.battle_displayed_seat.clone())
+                .unwrap_or_default();
+            if !seats.is_empty() {
+                let world = &mut self.session.host.world;
+                let _ = legaia_engine_capture::ground_snap::snap_battle_ground(world, &seats);
+                if mask == 0xFF {
+                    world.refresh_battle_camera_ghost();
+                }
             }
         }
     }

@@ -63,6 +63,30 @@ pub const COUNTDOWN_FINAL_XA: XaCue = XaCue {
     chan: 0x0D,
     dur: 0x66,
 };
+/// The "FIGHT!" flash's line: cabinet state `0x38`'s first frame
+/// (`DAT_801DC128 == 0`), `FUN_8003D53C(0x20, 1, 0x36)` at `0x801D04E4..0x801D04F0`
+/// (`a1 = s4 = 1`). The cabinet starts it, not the chrome
+/// ([`crate::baka_cabinet::CabinetFrame::xa`]).
+pub const FIGHT_FLASH_XA: XaCue = XaCue {
+    clip: 0x20,
+    chan: 0x01,
+    dur: 0x36,
+};
+/// NEXT GAME taken on the "NEXT GAME / PAY OUT" sheet: cabinet state `0x68`,
+/// the frame its latch `DAT_801DBF88` reads `1` (set by the confirm on cursor
+/// `0`), `FUN_8003D53C(0x20, 9, 0x4E)` at `0x801D0DEC..0x801D0DF8`.
+pub const NEXT_GAME_XA: XaCue = XaCue {
+    clip: 0x20,
+    chan: 0x09,
+    dur: 0x4E,
+};
+/// "GAME OVER": cabinet state `0x97`'s first frame (`DAT_801DBF88 == 0`),
+/// `FUN_8003D53C(0x20, 8, 0x4A)` at `0x801D125C..0x801D1268`.
+pub const GAME_OVER_XA: XaCue = XaCue {
+    clip: 0x20,
+    chan: 0x08,
+    dur: 0x4A,
+};
 /// Clip slot of the round banner's line (`XA32.XA`).
 pub const ROUND_BANNER_XA_CLIP: u8 = 0x1F;
 /// Read span of the round banner's line.
@@ -159,7 +183,9 @@ pub fn result_banner_spawns(r: RoundResult) -> Vec<(u16, i16, i16)> {
 /// browser page decodes a clip the bank lacks one request per frame, so a
 /// line first asked for at its frame sounds late there): the intro card's
 /// two lines, the countdown's four, and the banner lines for `round` and the
-/// round after it. The round-advance edge lists the next banner line again
+/// round after it, the four result lines and the cabinet's own three (the
+/// FIGHT flash, NEXT GAME, GAME OVER). The round-advance edge lists the next
+/// banner line again
 /// ([`crate::baka_fighter::BakaFight::take_xa_prestage`]). Deduplicated,
 /// in the order the chrome starts them.
 pub fn announcer_xa_prestage(round: i32) -> Vec<XaCue> {
@@ -176,5 +202,8 @@ pub fn announcer_xa_prestage(round: i32) -> Vec<XaCue> {
         result_xa(RoundResult::Lose),
         result_xa(RoundResult::Draw),
         result_xa(RoundResult::Perfect),
+        FIGHT_FLASH_XA,
+        NEXT_GAME_XA,
+        GAME_OVER_XA,
     ]
 }

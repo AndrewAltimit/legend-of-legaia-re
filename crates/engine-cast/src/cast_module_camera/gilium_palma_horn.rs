@@ -104,7 +104,15 @@ pub fn gilium_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats)
             }
             4 => {
                 let d = gated(st, z(-4), 0x200)?;
+                // The held passes fly the creature `2 * delta` down `+0x36`
+                // while the word drains `8 * delta` from `0x400`
+                // (`0x801F6E48..0x801F6E58`), the draining pass included:
+                // `0x100` over the arm, so it lands at height `0` - the point
+                // the pass's creature-anchored spawns (`0x801F7118..0x801F7168`)
+                // seat the floor ring on, before `+0x38 = 0x400`
+                // (`0x801F718C`).
                 if let Some(c) = st.creature.as_mut() {
+                    c.y = 0;
                     c.z = 0x400;
                 }
                 st.creature_stage = Some(1);

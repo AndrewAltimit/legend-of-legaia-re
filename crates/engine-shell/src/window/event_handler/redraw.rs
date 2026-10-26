@@ -197,11 +197,12 @@ impl PlayWindowApp {
             .filter(|(_, a)| a.active)
         {
             eprintln!(
-                "capture body {i}: pos ({}, {}) body {:?} hp {} anim {} reaction {:?} entry {:?} \
+                "capture body {i}: pos ({}, {}) body {:?} facing {} hp {} anim {} reaction {:?} entry {:?} \
                  frame {:?} tint {} colour {:08X} blend {:04X}",
                 a.move_state.world_x,
                 a.move_state.world_z,
                 a.battle.seat,
+                a.battle.facing_angle & 0xFFF,
                 a.battle.hp,
                 a.battle.current_anim,
                 a.battle_reaction,

@@ -81,6 +81,9 @@ impl World {
         self.audio.xa_cue_durations =
             legaia_game_tables::xa_cue_table::xa_cue_durations_from_scus(scus);
         got.xa_cue_durations = self.audio.xa_cue_durations.is_some();
+        self.audio.arts_voice_tables =
+            legaia_art::arts_voice::ArtsVoiceSelectorTables::parse_from_scus(scus)
+                .map(std::sync::Arc::new);
 
         got.magic_xp = self.install_magic_xp_thresholds(scus);
         // Not a progression table, but the same boot-time SCUS read both

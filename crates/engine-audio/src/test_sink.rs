@@ -578,6 +578,40 @@ mod tests {
         assert!(mono.iter().any(|&(l, r)| l != 0 && r == 0));
     }
 
+    /// The host master volume scales the finished mix, voices and XA alike;
+    /// an output that never sets it (every parity oracle) is at unity.
+    #[test]
+    fn master_volume_scales_the_whole_mix_and_defaults_to_unity() {
+        let render = |percent: Option<u8>| {
+            let sink = TestAudioSink::new(crate::SPU_INTERNAL_RATE);
+            if let Some(p) = percent {
+                sink.set_master_volume(p);
+            }
+            sink.with_spu(key_panned_voice);
+            let pcm: Vec<i16> = (0..512).flat_map(|_| [8_000i16, 0]).collect();
+            sink.play_xa(
+                pcm,
+                crate::SPU_INTERNAL_RATE,
+                legaia_xa::Channels::Stereo,
+                false,
+                0x4000,
+            );
+            (0..256).map(|_| sink.next_frame()).collect::<Vec<_>>()
+        };
+        let unset = render(None);
+        assert_eq!(render(Some(100)), unset, "100% is the unscaled mix");
+        assert!(
+            unset.iter().any(|&(l, _)| l.abs() > 1000),
+            "the fixture sounds"
+        );
+        let quarter = render(Some(crate::DESKTOP_MASTER_VOLUME_DEFAULT));
+        for (&(ul, ur), &(ql, qr)) in unset.iter().zip(&quarter) {
+            assert_eq!(ql, (ul as f32 * 0.25).round() as i16);
+            assert_eq!(qr, (ur as f32 * 0.25).round() as i16);
+        }
+        assert!(render(Some(0)).iter().all(|&f| f == (0, 0)));
+    }
+
     /// The host full-mono downmix (`downmix_mono`) averages the finished
     /// mix, voices and XA alike, into both channels - on top of, and
     /// independent of, the retail fold.

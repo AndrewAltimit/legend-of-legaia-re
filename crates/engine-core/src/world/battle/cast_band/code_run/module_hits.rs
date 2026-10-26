@@ -109,6 +109,9 @@ impl World {
             camera_end_frame: false,
             camera_nudge: None,
             capture_drift: None,
+            capture_pose_set: None,
+            capture_focus_z: 0,
+            capture_drift_first: false,
             spawns: &[],
             every_spawns: &[],
             arm_point: None,
@@ -125,6 +128,18 @@ impl World {
     pub(in crate::world::battle::cast_band) fn capture_module_roll(
         &mut self,
         shape: &legaia_engine_cast::cast_module_ticks::CastDamageShape,
+        attacker: u8,
+        target: u8,
+    ) -> Option<i32> {
+        self.capture_module_roll_site(shape, 0, attacker, target)
+    }
+
+    /// [`Self::capture_module_roll`] at the shape's baked power `site`
+    /// (PROT 0959's three wrapper sites).
+    pub(in crate::world::battle::cast_band) fn capture_module_roll_site(
+        &mut self,
+        shape: &legaia_engine_cast::cast_module_ticks::CastDamageShape,
+        site: usize,
         attacker: u8,
         target: u8,
     ) -> Option<i32> {
@@ -156,14 +171,26 @@ impl World {
             stat_a: defender.stat_a,
             stat_b: defender.stat_b,
             status: 0,
-            guard: 0,
+            // `+0x1DE == 4` (a Spirit stance) doubles the defender roll in
+            // the scale stage `FUN_801DD864`, as the finisher then halves.
+            guard: if self
+                .battle
+                .guarding
+                .get(target as usize)
+                .copied()
+                .unwrap_or(false)
+            {
+                legaia_engine_battle_vm::battle_formulas::GUARD_SPIRIT_STANCE
+            } else {
+                0
+            },
         };
         let rng = [
             self.next_rand() as u16,
             self.next_rand() as u16,
             self.next_rand() as u16,
         ];
-        let net = roll_module_hit(shape, 0, &a, &d, element_affinity_pct, rng, || {
+        let net = roll_module_hit(shape, site, &a, &d, element_affinity_pct, rng, || {
             self.next_rand() as u16
         });
         Some(self.finish_module_hit(shape, attacker, target, net))

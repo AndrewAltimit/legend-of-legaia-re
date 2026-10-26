@@ -131,18 +131,23 @@ function scaleMat(s) {
  * mat4 layout). Centers the model at origin, scales to unit radius, rotates
  * Y then X, pushes back to camera space, perspective-projects.
  *
- * PSX TMD coords have +Y pointing down, so we negate Y in the model scale
- * to bring "up" back to +Y for the rest of the pipeline.
+ * PSX TMD coords have +Y pointing down. The model scale negates Y (to bring
+ * "up" back to +Y) AND X: the pair is a half turn about Z, not a reflection,
+ * so the model is not mirrored. The GTE draws model +X on the left of a model
+ * that faces the camera (screen x right, y down, z into the screen), and so
+ * does this; a Y-only flip drew every viewer's model as its mirror image
+ * (Noa's Ra-Seru on the wrong forearm against a retail battle frame). The
+ * camera still sits on the model's +Z side at yaw 0.
  *
  * `fovY` (optional, radians) overrides the default 1.2-rad vertical field of
  * view - the dance stage passes a narrower PSX-like value so its interior
  * framing matches the retail camera's apparent scale. */
 function buildMvp(yaw, pitch, distance, panX, panY, center, radius, viewportW, viewportH, fovY) {
   const s = 1.0 / radius;
-  /* Model: translate to origin, then non-uniform scale that flips Y. */
+  /* Model: translate to origin, then a half turn about Z (flip X and Y). */
   const T = translate(-center[0], -center[1], -center[2]);
   const S = new Float32Array([
-    s,  0,  0, 0,
+   -s,  0,  0, 0,    /* flip X with Y: a rotation, so no mirror image */
     0, -s,  0, 0,    /* flip Y: PSX +Y down → screen +Y up */
     0,  0,  s, 0,
     0,  0,  0, 1,

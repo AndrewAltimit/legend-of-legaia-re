@@ -535,6 +535,29 @@ mod tests {
         assert!(!s.field_menu_is_open());
     }
 
+    /// Every claimed tick is a vsync on the play clock while the mode word
+    /// counts - a host screen (the pause menu, the title) included - and
+    /// none is under the boot `READ` mode, whose flag word has no `0x800`.
+    #[test]
+    fn each_claimed_tick_counts_on_the_play_clock_in_a_counting_mode() {
+        use legaia_engine_mode::mode::{GameMode, ModeSeat};
+        let host = TickClaims {
+            host_screen: true,
+            ..TickClaims::default()
+        };
+        let mut s = headless_session();
+        s.mode_seat = ModeSeat::new(GameMode::ReadMode);
+        for _ in 0..120 {
+            s.claim_tick(host, 0);
+        }
+        assert_eq!(s.host.world.clock.play_time_seconds, 0);
+        s.mode_seat = ModeSeat::new(GameMode::CardMode);
+        for _ in 0..120 {
+            assert_eq!(s.claim_tick(host, 0), TickOwner::HostScreen);
+        }
+        assert_eq!(s.host.world.clock.play_time_seconds, 2);
+    }
+
     /// The session's tick drains the field CD-XA queues for every host: a
     /// cue never outlives its tick, with or without a director.
     #[test]

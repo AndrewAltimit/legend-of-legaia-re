@@ -153,6 +153,11 @@ pub struct RetailObs {
     /// Ambient walkers' live seats ([`retail_walkers`]), handed to the image
     /// child as `LEGAIA_SEAT_WALKERS`.
     pub walkers: Vec<WalkerSeed>,
+    /// Placements a finished partition-2 beat left on a script-literal tile
+    /// ([`scripted_seats`]): set by the corpus run, which holds the scene's
+    /// MAN; seated, position only, by the headless seed and by the image
+    /// child (`LEGAIA_SEAT_PLACEMENTS`).
+    pub scripted_seats: Vec<WalkerSeed>,
     /// The live image-panel widget ([`retail_panel`]), handed to the image
     /// child as `LEGAIA_SEAT_PANEL`; the texels it shows ride the
     /// `LEGAIA_SEAT_VRAM_RECTS` file beside the scroller rects.
@@ -330,6 +335,7 @@ impl RetailObs {
             },
             scroll_rects: Vec::new(),
             panel: None,
+            scripted_seats: Vec::new(),
             walkers: if matches!(class, StateClass::Field) {
                 retail_walkers(ram)
             } else {
@@ -513,6 +519,9 @@ impl RetailObs {
         }
         if !self.walkers.is_empty() {
             env.push(("LEGAIA_SEAT_WALKERS", walkers_env(&self.walkers)));
+        }
+        if !self.scripted_seats.is_empty() {
+            env.push(("LEGAIA_SEAT_PLACEMENTS", walkers_env(&self.scripted_seats)));
         }
         if let Some([r, g, b]) = self.clear_rgb {
             env.push(("LEGAIA_SEAT_CLEAR", format!("{r},{g},{b}")));

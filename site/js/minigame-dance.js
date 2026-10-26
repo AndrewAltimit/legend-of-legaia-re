@@ -306,7 +306,7 @@ window.MgDance = (function () {
          * audience/crowd billboard sits right behind the retail camera spot
          * and only disappears from the shot under the same rule. */
         renderer.cullBackfaces = true;
-        renderer.cullFrontFace = 'ccw';
+        renderer.cullFrontFace = 'cw';
         /* The hall's smoke columns / spotlight glows are ABE prims; the
          * two-pass render draws them additively instead of as grey slabs. */
         renderer.semiTwoPass = true;
@@ -409,7 +409,7 @@ window.MgDance = (function () {
       renderer.uploadMesh(pos, uvs, ct, idx, flat);
       if (env) {
         renderer.cullBackfaces = true;
-        renderer.cullFrontFace = 'ccw';
+        renderer.cullFrontFace = 'cw';
         renderer.semiTwoPass = true;
       }
       const defCam = { yaw: Math.PI, pitch: 0.24, distance: 2.7 };
@@ -586,13 +586,10 @@ window.MgDance = (function () {
         ? api.dance_venue_vp(c.width / Math.max(c.height, 1)) : null;
       b.renderer.mvpOverride = vp && vp.length === 16 ? Float32Array.from(vp) : null;
       setHallIndices(b, !!b.renderer.mvpOverride);
-      /* The engine projection carries the retail screen-X mirror the orbit
-       * framing does not, so its front faces wind the other way. */
-      const front = b.renderer.cullFrontFace;
-      if (b.renderer.mvpOverride) b.renderer.cullFrontFace = front === 'ccw' ? 'cw' : 'ccw';
+      /* The engine projection and the orbit framing share one parity (neither
+       * mirrors the model), so one front-face winding serves both. */
       b.renderer.render(b.cam.yaw, b.cam.pitch, b.cam.distance,
                         0, 0, b.center, b.radius, b.fov);
-      b.renderer.cullFrontFace = front;
       b.renderer.mvpOverride = null;
     }
 

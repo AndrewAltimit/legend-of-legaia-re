@@ -87,13 +87,12 @@ pub fn puera_stager(ctx: &mut CastModuleCtx, arm: u8) {
 ///   allocate a screen prim through `FUN_80024E80`;
 /// * arm `2` - `FUN_80021B04(actor+0x14, actor+0x24, 0x801FA414, actor[+0x72])`.
 ///
-/// The spawn calls are the DATA layer the pool already stages; the only
-/// simulation write in the routine is arm 0's `ctx[+0x278]`.
+/// This is the state half, arm 0's `ctx[+0x278]`; the seats of arms 0 and 2
+/// are [`super::gilium_stager_spawns`].
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
-/// PORT: FUN_801F8B90 (state half; the three spawn sites are
-/// `legaia_overlay_images::cast_effect_pool`'s records)
+/// PORT: FUN_801F8B90 (state half)
 pub fn gilium_stager(ctx: &mut CastModuleCtx, arm: u8) {
     if arm == 0 {
         ctx.ctx_278 = 3;
@@ -315,3 +314,18 @@ pub fn evil_seru_magic_stager(
     }
     hits
 }
+
+/// PROT 0909 stager arm `1`'s fade (`0x801F7BFC..0x801F7C4C`): additive,
+/// black to `(0xC0, 0xC0, 0xFF)` over `0x1E` frames, no delay, held (`-1`),
+/// id `1`, parked at `ctx[+0x102C]` - the pale blue the screen rises to
+/// while the tick's arm 9 counts down, and which arm 9's pass kills before
+/// its own fade-out (`0x801F6FFC`).
+pub const VIGURO_STAGER_FADE: legaia_engine_battle_vm::battle_action::SummonFadeTemplate =
+    legaia_engine_battle_vm::battle_action::SummonFadeTemplate {
+        kind: 1,
+        duration: 0x1E,
+        start_rgb: [0, 0, 0],
+        end_rgb: [0xC0, 0xC0, 0xFF],
+        delay: 0,
+        hold: -1,
+    };

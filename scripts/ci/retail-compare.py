@@ -12,6 +12,7 @@ directory. See `docs/tooling/retail-compare.md`.
     scripts/ci/retail-compare.py --images        # + frames (needs a display)
     scripts/ci/retail-compare.py --check         # assert the committed ratchet
     scripts/ci/retail-compare.py --bless         # update the baseline (merges: unmeasured states/channels keep their values)
+    scripts/ci/retail-compare.py --smoke clean   # smoke tier: clean 3x frames, loose check, no ratchet
 
 Exit 0 and a `[skip]` line when the library or the extracted disc is missing,
 matching the repo's disc-gated convention.
@@ -60,7 +61,16 @@ def main() -> int:
     ap.add_argument("--filter", help="only labels containing this (comma = any of several; =label matches exactly)")
     ap.add_argument("--out", default=str(REPO / "captures" / "retail-compare"))
     ap.add_argument("--no-build", action="store_true")
+    ap.add_argument(
+        "--smoke", choices=["clean", "enhanced"],
+        help="smoke tier: render the frames in this mode and check them loosely "
+             "against the accuracy baseline (implies --images; never blesses or checks the ratchet)",
+    )
     a = ap.parse_args()
+    if a.smoke and (a.bless or a.check):
+        ap.error("--smoke is the smoke tier: it never blesses or checks the ratchet")
+    if a.smoke and a.out == str(REPO / "captures" / "retail-compare"):
+        a.out = str(REPO / "captures" / f"retail-compare-smoke-{a.smoke}")
 
     library = resolve("LEGAIA_SAVES_LIBRARY", "saves/library", Path.is_dir)
     extracted = resolve(
@@ -74,15 +84,17 @@ def main() -> int:
     if not a.no_build:
         subprocess.run(
             ["cargo", "build", "-p", "legaia-engine-shell", "--profile", PROFILE,
-             "--bin", "legaia-engine"],
+             "--features", "oracles", "--bin", "legaia-engine"],
             cwd=REPO, check=True,
         )
     exe = REPO / "target" / PROFILE / "legaia-engine"
     cmd = [str(exe), "retail-compare", "--out", a.out,
            "--library", str(library), "--extracted-root", str(extracted),
            "--manifest", str(REPO / "scripts" / "scenarios.toml")]
-    if a.images:
+    if a.images or a.smoke:
         cmd.append("--images")
+    if a.smoke:
+        cmd += ["--render", a.smoke, "--smoke-check", str(BASELINE)]
     if a.flags_first:
         cmd.append("--flags-first")
     if a.filter:

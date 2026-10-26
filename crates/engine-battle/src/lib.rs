@@ -17,6 +17,7 @@ pub mod anim_cue;
 pub mod ap_gauge;
 pub mod art_strike;
 pub mod arts_command_input;
+pub mod arts_voice_cue;
 pub mod battle_afterimage;
 pub mod battle_anim;
 pub mod battle_arts;

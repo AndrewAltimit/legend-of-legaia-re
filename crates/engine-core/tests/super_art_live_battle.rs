@@ -244,16 +244,18 @@ fn live_arts_input_types_and_fires_a_super() {
         "seven presses spend the pool, so the entry ends by itself"
     );
     assert_eq!(arts_turns, 1, "exactly one arts entry was driven");
-    // The Super replaced the recognized tail: the queue's art constants are
-    // the replace row's - the leading Somersault and Cyclone survive as the
-    // find prefix, the closing `19 27` is rewritten to `1A 2B 2B 2B` - and
-    // the shout list is one cue per art constant the queue stages, exactly
-    // as the materialiser is called once per commit. Without the Super
-    // match the same seven directions would end on a third `0x27`.
+    // The Super replaced the recognized tail: the leading Somersault and
+    // Cyclone survive as the find prefix behind their `0x19` starters, the
+    // closing `19 27` is rewritten to `1A 2B 2B 2B`. The commit asks for a
+    // shout only on a `0x19` starter row (or under the clip's solo latch,
+    // which these clip-less bodies never raise), so the Super's two
+    // components shout and the `1A` finisher does not. Without the Super
+    // match the same seven directions would end on a third `0x19 0x27` and
+    // a third shout.
     assert_eq!(
         shouts.iter().map(|s| s.action).collect::<Vec<_>>(),
-        vec![0x27, 0x1F, 0x2B, 0x2B, 0x2B],
-        "the replaced queue's constants, Tri-Somersault x3 closing: {shouts:?}"
+        vec![0x27, 0x1F],
+        "the components' shouts, none for the SpecialStarter finisher: {shouts:?}"
     );
     assert!(
         shouts.iter().all(|s| s.cslot == 0),

@@ -124,6 +124,7 @@ pub fn run_corpus(opts: &RunOptions<'_>) -> Result<Vec<StateReport>> {
         {
             continue;
         }
+        crate::retail_compare_image::set_capture_emulator(entry.emulator);
         // A state made on a known patched image runs the engine on that
         // image's files (`resident_disc`); one whose image is not on this
         // machine runs on the retail disc and says so.
@@ -263,6 +264,11 @@ pub(super) fn run_one(
             return report;
         }
         retail.memory_card = card.map(Path::to_path_buf);
+    }
+    if matches!(retail.class, StateClass::Field) {
+        retail.scripted_seats = scene_man(opts.extracted, &retail.scene)
+            .map(|man| scripted_seats(&beat_move_targets(&man), &retail.actor_facings))
+            .unwrap_or_default();
     }
     let engine = match run_engine_with(opts.extracted, &retail, opts.order) {
         Ok(e) => e,
@@ -590,4 +596,11 @@ pub(super) fn menu_image(
             None
         }
     }
+}
+
+/// A scene's decompressed MAN, for the seeds that read its scripts.
+fn scene_man(extracted: &Path, scene: &str) -> Option<Vec<u8>> {
+    let index = legaia_engine_scene::scene::ProtIndex::open_extracted(extracted).ok()?;
+    let scene = legaia_engine_scene::scene::Scene::load(&index, scene).ok()?;
+    scene.field_man_payload(&index).ok().flatten()
 }

@@ -262,6 +262,7 @@ pub(crate) enum Cmd {
     ///     match in the texpage region (y ≥ 256) and fails with the
     ///     first divergent (row, col).
     #[command(display_order = 23)]
+    #[cfg(feature = "oracles")]
     VramOracle {
         /// CDNAME scene name (e.g. `town01`). Required in explicit mode;
         /// derived from the scenario's `expected_active_scene` in
@@ -345,6 +346,7 @@ pub(crate) enum Cmd {
     /// See `crates/parity/src/mode_trace_oracle.rs` for the
     /// long-form rationale.
     #[command(display_order = 24)]
+    #[cfg(feature = "oracles")]
     ModeTrace {
         /// CDNAME scene name (e.g. `town01`). Required in explicit
         /// mode; derived from the scenario's `expected_active_scene`
@@ -391,6 +393,7 @@ pub(crate) enum Cmd {
     /// `scripts/recomp/trace_diff.py`. See
     /// `docs/tooling/recomp-differential.md`.
     #[command(display_order = 39)]
+    #[cfg(feature = "oracles")]
     SimTrace {
         /// CDNAME scene name (e.g. `town01`).
         #[arg(long)]
@@ -446,6 +449,7 @@ pub(crate) enum Cmd {
     /// retail engine does. `--bgm-id` is a manual boot-time override
     /// for scenes whose prescripts don't kick off audio.
     #[command(display_order = 25)]
+    #[cfg(feature = "oracles")]
     AudioTrace {
         /// CDNAME scene name (e.g. `town01`). Required in explicit
         /// mode; derived from the scenario's `expected_active_scene`
@@ -547,6 +551,7 @@ pub(crate) enum Cmd {
     /// disc-gated `pcm_oracle` test: retail audible AND engine silent
     /// → exit non-zero. Anything finer is informational.
     #[command(display_order = 26)]
+    #[cfg(feature = "oracles")]
     PcmTrace {
         /// CDNAME scene name (e.g. `town01`). Required in explicit
         /// mode; derived from the scenario's `expected_active_scene`
@@ -1301,10 +1306,12 @@ pub(crate) enum Cmd {
         /// with the `F9` key.
         #[arg(long, default_value_t = false)]
         no_volumetric_fog: bool,
-        /// Start in PSX-faithful rasterisation: sub-pixel vertex jitter and
-        /// 15-bit ordered dithering on the 3D mesh pipelines (the play page's
-        /// "PSX rasterisation" box; the `LEGAIA_PSX_RENDER=1` environment switch does
-        /// the same). Off by default - clean modern output.
+        /// Start in PSX-faithful rasterisation: the whole frame drawn at the
+        /// display's own 320x240 and magnified nearest-neighbour, with the
+        /// vertex snap, the GPU's fill rule and 15-bit ordered dithering (the
+        /// play page's "PSX rasterisation" box; the `LEGAIA_PSX_RENDER=1`
+        /// environment switch does the same). Off by default - clean modern
+        /// output at the window's resolution.
         #[arg(long, default_value_t = false)]
         psx_render: bool,
         /// Open borderless fullscreen for this session, whatever the options
@@ -1326,11 +1333,12 @@ pub(crate) enum Cmd {
         /// value for this session (retail camera distance, the 8-way movement
         /// decode, no photosensitivity slew, retail tile windows). The one
         /// switch a parity capture passes; nothing is written back to the
-        /// options file.
+        /// options file. `--dynamic-lighting` beside it keeps enhanced
+        /// lighting on (the retail-compare enhanced smoke tier).
         #[arg(
             long,
             default_value_t = false,
-            conflicts_with_all = ["dynamic_lighting", "no_dynamic_lighting", "no_dyn_shadows",
+            conflicts_with_all = ["no_dynamic_lighting", "no_dyn_shadows",
                 "no_entry_pulse", "no_occlusion_fade", "no_volumetric_fog", "smart_monsters",
                 "no_shiny_seru", "flee_exp", "exp_rate", "no_fortress_encounter_fix", "jewel_fix",
                 "no_hp_readout_guard", "spirit_ap", "damage_ap", "seru_catch_rate",
@@ -1541,10 +1549,12 @@ pub(crate) enum Cmd {
     },
     /// Retail comparison corpus (`docs/tooling/retail-compare.md`).
     #[command(display_order = 29)]
+    #[cfg(feature = "oracles")]
     RetailCompare(legaia_parity::retail_compare_cli::RetailCompareArgs),
     /// Score one cast against retail frame by frame
     /// (`docs/tooling/cast-sequence-oracle.md`).
     #[command(display_order = 30)]
+    #[cfg(feature = "oracles")]
     CastSequenceScore(legaia_parity::cast_sequence::CastSequenceArgs),
 }
 
@@ -1590,6 +1600,7 @@ pub(crate) enum ConfigCmd {
 }
 
 /// `--retail-keyon-owner` value: hex with or without a `0x` prefix.
+#[cfg(feature = "oracles")]
 fn parse_hex_u16(v: &str) -> Result<u16, String> {
     u16::from_str_radix(v.trim_start_matches("0x"), 16).map_err(|e| e.to_string())
 }

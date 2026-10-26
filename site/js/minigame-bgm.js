@@ -88,9 +88,17 @@
       if (!on) return false;           /* never open a context while muted */
       if (!api.minigame_audio_open()) return false;
       spuOpen = true;
-      if (typeof api.minigame_audio_resume === 'function') {
-        try { api.minigame_audio_resume(); } catch (e) {}
-      }
+    }
+    /* Resume on EVERY call, not only the opening one. The first open can
+     * run outside a gesture (the duel's cue load at disc load, a disc that
+     * auto-loaded from the cache), and the browser then parks the context
+     * `suspended` and refuses a resume until a gesture. Resuming only once
+     * left the page's whole live SPU - every minigame cue, the announcer
+     * lines, the dome tally - silent for good, while the music (a separate
+     * context `MgBgm` resumes on each start) played. A resume of a running
+     * context is a no-op. */
+    if (on && typeof api.minigame_audio_resume === 'function') {
+      try { api.minigame_audio_resume(); } catch (e) {}
     }
     if (typeof api.minigame_audio_set_muted === 'function') {
       try { api.minigame_audio_set_muted(!on); } catch (e) {}

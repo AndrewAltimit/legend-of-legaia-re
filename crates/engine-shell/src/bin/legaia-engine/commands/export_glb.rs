@@ -252,7 +252,13 @@ fn export_scene_music(index: &ProtIndex, scene: &Scene, dir: &Path) -> Option<se
     let music_dir = dir.join("music");
     std::fs::create_dir_all(&music_dir).ok()?;
     let file = format!("music/bgm_{bgm_id}.wav");
-    write_wav(&music_dir.join(format!("bgm_{bgm_id}.wav")), pcm).ok()?;
+    legaia_xa::write_wav(
+        &music_dir.join(format!("bgm_{bgm_id}.wav")),
+        pcm,
+        legaia_xa::Channels::Stereo,
+        SPU_INTERNAL_RATE,
+    )
+    .ok()?;
     let seconds = (pcm.len() / 2) as f32 / SPU_INTERNAL_RATE as f32;
     println!(
         "  [music] bgm {bgm_id}{}: {seconds:.1}s loop -> {file}",

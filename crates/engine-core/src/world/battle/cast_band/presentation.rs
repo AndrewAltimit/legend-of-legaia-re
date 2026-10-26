@@ -92,9 +92,13 @@ const VRAM_MOVES_PORTED_BY_HAND: [u32; 1] = [903];
 /// `ctx[+0x278]` themselves. The hook fires after the tick, so a decoded
 /// store would land behind a write the port orders after it in the same
 /// tick (PROT 0923's stager stores `3` once its arm 0 has stored `0`).
-const STAGE_BYTES_PORTED_BY_HAND: [u32; 21] = [
-    903, 904, 906, 907, 908, 909, 910, 911, 912, 913, 918, 922, 923, 925, 927, 942, 954, 959, 961,
-    963, 965,
+///
+/// PROT 0960's arm-4 store is `sb s6,0x278` with `s6 = 3` loaded by the phase
+/// switch ahead of the arm (`li s6,0x3` at `0x801F758C`), which the decoder's
+/// arm walk reads as `0`; its director stores the `3`.
+const STAGE_BYTES_PORTED_BY_HAND: [u32; 22] = [
+    903, 904, 906, 907, 908, 909, 910, 911, 912, 913, 918, 922, 923, 925, 927, 942, 954, 959, 960,
+    961, 963, 965,
 ];
 
 /// One fade a module arm spawned through the hook: the fade actor, the call
@@ -135,6 +139,41 @@ pub struct ModulePresentation {
 }
 
 impl World {
+    /// Park a part a module seated outside its tick body (a stager arm's
+    /// seat) in handle slot `slot`, as a tick-body `PartStore` would, so the
+    /// module's later kill of the slot halts it.
+    /// Halt the part a module parked in handle slot `slot`, as a tick-body
+    /// `ActorKill` of the slot does: a stager arm's halt (PROT 0923's arm 1).
+    pub(in crate::world::battle::cast_band) fn kill_parked_module_part(
+        &mut self,
+        slot: legaia_overlay_images::cast_presentation::HandleSlot,
+    ) {
+        let mut killed = Vec::new();
+        self.casting.module_pres.part_slots.retain(|&(s, rec)| {
+            if s == slot {
+                killed.push(rec);
+            }
+            s != slot
+        });
+        if let Some(scene) = self.casting.active_summon.as_mut() {
+            for part in &mut scene.parts {
+                if part.tag.is_some_and(|t| killed.contains(&t)) {
+                    part.finished = true;
+                }
+            }
+        }
+    }
+
+    pub(in crate::world::battle::cast_band) fn park_module_part(
+        &mut self,
+        slot: legaia_overlay_images::cast_presentation::HandleSlot,
+        record: u32,
+    ) {
+        let ps = &mut self.casting.module_pres.part_slots;
+        ps.retain(|&(s, _)| s != slot);
+        ps.push((slot, record));
+    }
+
     /// Fire the presentation calls of module `entry`'s arm `phase_in` for
     /// the tick that just ran. `body` is the trampoline-selected tick body
     /// (`None` for a module with one phase switch), `phase_out` the phase the
@@ -301,9 +340,12 @@ impl World {
                         .fades
                         .iter()
                         .any(|f| f.slot == Some(slot));
+                    // A module whose fades are hand-ported kills its own
+                    // (PROT 0905's arm 4 ends its arm-2 white rise there).
                     if slot == BAND_FADE_SLOT
                         && !parked_here
                         && !self.casting.module_pres.band_fade_unparked
+                        && !FADES_PORTED_BY_HAND.contains(&entry)
                     {
                         self.presentation.fade = None;
                         self.casting.module_pres.band_fade_unparked = true;

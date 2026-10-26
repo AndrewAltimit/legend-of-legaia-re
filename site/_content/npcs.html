@@ -89,12 +89,6 @@ canvas.npc-canvas:active { cursor: grabbing; }
 }
 .npc-controls button:hover { border-color: var(--accent); }
 .npc-controls button[disabled] { opacity: 0.4; cursor: not-allowed; }
-.npc-anm-row { display: flex; align-items: center; gap: 0.55rem; }
-.npc-anm-row input[type=range] { flex: 1; min-width: 0; }
-.npc-anm-readout {
-  font: 0.74rem/1.0 var(--font-mono, monospace);
-  color: var(--text-muted); min-width: 11ch; text-align: right;
-}
 .npc-note { color: var(--text-dim); font-size: 0.74rem; line-height: 1.5; }
 
 /* ---- conversation tree: one actor's whole dialogue, every branch ---- */
@@ -212,7 +206,7 @@ canvas.npc-canvas:active { cursor: grabbing; }
 </div>
 
 <div class="hint">
-  <strong>How to use it.</strong> Load a disc, choose a location, then click a card in the cast grid. Each card is labelled with the first line that character says to you - the game has no other name for most of them. The model panel spins the model, scrubs its idle clip frame by frame, snaps back to the rest pose, and downloads the posed model as a textured <code>.glb</code>. Beside it (below it on a phone), the <strong>Conversation</strong> panel lays out everything the character can say: each story stage's lines, the choices you can pick and where each one leads, and what talking to them again does.
+  <strong>How to use it.</strong> Load a disc, choose a location, then click a card in the cast grid. Each card is labelled with the first line that character says to you - the game has no other name for most of them. The model panel spins the model, plays or pauses its idle clip, snaps back to the rest pose, and downloads the posed model as a textured <code>.glb</code>. Beside it (below it on a phone), the <strong>Conversation</strong> panel lays out everything the character can say: each story stage's lines, the choices you can pick and where each one leads, and what talking to them again does.
 </div>
 
 <section class="doc-section">
@@ -249,10 +243,6 @@ canvas.npc-canvas:active { cursor: grabbing; }
                   <button id="npc-play-btn" type="button">&#9654; play</button>
                   <button id="npc-rest-btn" type="button">&#8634; rest pose</button>
                 </div>
-              </div>
-              <div class="npc-anm-row">
-                <input type="range" id="npc-anm-frame" min="0" max="0" value="0" aria-labelledby="npc-anm-label">
-                <span id="npc-anm-readout" class="npc-anm-readout">-</span>
               </div>
               <div class="npc-note" id="npc-anm-note"></div>
             </div>
@@ -359,8 +349,6 @@ canvas.npc-canvas:active { cursor: grabbing; }
   const resetBtn   = document.getElementById('npc-reset-btn');
   const playBtn    = document.getElementById('npc-play-btn');
   const restBtn    = document.getElementById('npc-rest-btn');
-  const frameSlider= document.getElementById('npc-anm-frame');
-  const frameOut   = document.getElementById('npc-anm-readout');
   const anmNote    = document.getElementById('npc-anm-note');
   const convoEl    = document.getElementById('npc-convo');
   const convoMeta  = document.getElementById('npc-convo-meta');
@@ -675,12 +663,8 @@ canvas.npc-canvas:active { cursor: grabbing; }
        * the default half a turn so they're introduced face-on. */
       meshView = new window.MeshView(canvasEl, {
         onSpin: updateSpinLabel,
-        cam: { yaw: Math.PI + 0.35, pitch: 0.12, distance: 2.6, autoRotate: true },
+        cam: { yaw: Math.PI - 0.35, pitch: 0.12, distance: 2.6, autoRotate: true },
       });
-      meshView.onFrame = (f) => {
-        frameSlider.value = f;
-        frameOut.textContent = `frame ${f + 1}/${(parseInt(frameSlider.max, 10) || 0) + 1}`;
-      };
       /* Headless-verification hook: lets a browser test assert the posed
        * geometry actually assembles (an unposed multi-part model collapses to
        * a point). Not used by page code. */
@@ -697,23 +681,15 @@ canvas.npc-canvas:active { cursor: grabbing; }
     const posed = r.posed;
     if (posed) {
       const frameCount = r.frameCount;
-      frameSlider.max = frameCount - 1;
-      frameSlider.value = 0;
-      frameOut.textContent = `frame 1/${frameCount}`;
       anmNote.textContent = frameCount > 1
         ? `${frameCount} frames, ${r.boneCount} moving parts - the actor's real in-game clip.`
         : 'A single-frame clip: this actor only ever holds its rest pose.';
       meshView.setPlaying(frameCount > 1);
       playBtn.textContent = frameCount > 1 ? '⏸ pause' : '▶ play';
       playBtn.disabled = frameCount < 2;
-      frameSlider.disabled = frameCount < 2;
     }
     if (!posed) {
-      frameSlider.max = 0;
-      frameSlider.value = 0;
-      frameSlider.disabled = true;
       playBtn.disabled = true;
-      frameOut.textContent = '-';
       anmNote.textContent = 'This actor is a single piece and needs no pose - it has no clip.';
     }
 
@@ -753,14 +729,6 @@ canvas.npc-canvas:active { cursor: grabbing; }
   restBtn.addEventListener('click', () => {
     if (!meshView || !meshView.anim) return;
     meshView.setFrame(0);
-    frameSlider.value = 0;
-    playBtn.textContent = '▶ play';
-  });
-  frameSlider.addEventListener('input', () => {
-    if (!meshView || !meshView.anim) return;
-    const f = parseInt(frameSlider.value, 10) || 0;
-    meshView.setFrame(f);
-    frameOut.textContent = `frame ${f + 1}/${(parseInt(frameSlider.max, 10) || 0) + 1}`;
     playBtn.textContent = '▶ play';
   });
 
@@ -833,6 +801,8 @@ canvas.npc-canvas:active { cursor: grabbing; }
       main.style.display = '';
       renderFilters();
       prog.done('Ready.');
+      /* The bar fades out; the line above it still held the no-disc prompt. */
+      status.textContent = `Disc loaded: ${f.name}. Pick a location, then click anyone in its cast.`;
 
       const start = opts.find(s => s.label === 'town01') || opts[0];
       if (start) {

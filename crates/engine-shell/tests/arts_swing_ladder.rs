@@ -69,13 +69,15 @@ fn world_with_somersault() -> World {
     // and retail's member walk (`FUN_801DB81C`) hands no ring to an HP-0
     // member - the per-slot seeding below has to come after.
     w.load_party(legaia_save::Party::zeroed(3));
-    // One learned art on Vahn's record (`+0x185` count, `+0x186` ids) - not
-    // the Somersault this ladder swings, so its learn-on-use still fires - so
-    // the entry's Triangle list has a page to open (`FUN_801D3748`).
+    // Two learned arts on Vahn's record (`+0x185` count, `+0x186` ids,
+    // ascending) - so the entry's Triangle list has a page to open
+    // (`FUN_801D3748`) - one of them the Somersault this ladder swings
+    // (`0x27 - 0x1B`): a known art is staged behind the `0x19` starter, whose
+    // commit asks for the shout; a first use stages `0x1A` and shouts nothing.
     if let Some(rec) = w.party.roster.members.get_mut(0) {
         let mut list = rec.displayed_skills();
-        list.count = 1;
-        list.ids[0] = 0x03;
+        list.count = 2;
+        list.ids[..2].copy_from_slice(&[0x03, SOMERSAULT - 0x1B]);
         rec.set_displayed_skills(list);
     }
     for i in 0..3 {
@@ -270,12 +272,12 @@ fn arts_swing_ladder() {
         swing.shouts
     );
     assert_eq!(swing.shouts[0].cslot, 0, "Vahn's clip file (XA2)");
-    // `FUN_801D3748`: with one learned art the first press opens page 0 and
+    // `FUN_801D3748`: with two learned arts the first press opens page 0 and
     // the second closes the list (fewer than six arts: no second page).
     assert_eq!(
         swing.list_pages,
         vec![Some(0), None],
-        "the Triangle list pager over one learned art"
+        "the Triangle list pager over two learned arts"
     );
     assert_eq!(swing.shouts[0].action, SOMERSAULT);
     // The clip frames are **not** asserted, and the reason is a host boundary

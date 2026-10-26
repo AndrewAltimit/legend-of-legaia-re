@@ -942,7 +942,7 @@ Each XA30 hero channel is one clean ~0.4-0.7 s vocalization. Not every swing pla
 
 #### Tactical-Arts shout (`XA2` / `XA4` / `XA6`)
 
-When the staged-anim materialiser `FUN_8004AD80` runs a party art action, it calls the arts-voice cue selector `FUN_8004C140(char_id, action_constant, flag)` (`ghidra/scripts/funcs/8004c140.txt`), which fires `FUN_8003D53C(clip_slot = (char_id-1)*2+1, channel, dur)`:
+When the staged-anim materialiser `FUN_8004AD80` installs a party clip, it may call the arts-voice cue selector `FUN_8004C140(char_id, action_constant, flag)` (`ghidra/scripts/funcs/8004c140.txt`), which fires `FUN_8003D53C(clip_slot = (char_id-1)*2+1, channel, dur)`:
 
 | Character | Clip slot | Arts-voice file |
 |---|---|---|
@@ -951,6 +951,22 @@ When the staged-anim materialiser `FUN_8004AD80` runs a party art action, it cal
 | Gala | 5 | `XA6.XA` |
 
 All are 16-channel short-mono shout banks.
+
+**When it is called.** The commit tests the queue byte before the cursor `ctx[+0x15]` for every staged id `>= 0x10` on a party seat (`0x8004BCF0..0x8004BD6C`). The cursor has already passed the staged byte, since the strike loop post-increments it.
+
+| `queue[cursor - 1]` | `ctx[+0x243]` | Call |
+|---|---|---|
+| `0x19`, the known-art starter | any | `FUN_8004C140(char, queue[cursor], queue[cursor + 1])` |
+| anything else | non-zero | `FUN_8004C140(char, queue[cursor - 1], queue[cursor])` |
+| anything else | `0` | none |
+
+- The first row is the commit of the `0x19` clip itself, keyed on the art constant behind it. That is the art's wind-up, after the approach run, once per known art in the string.
+- A newly learned art is staged behind `0x1A`, not `0x19`, so its starter commit makes no call. It plays the SpecialStarter's generic line instead ([below](#hyper-art-fanfare-xa1--xa3--xa5)). Its own clip can still call under the latch: in the Rim Elm spar the first Somersault's `0x27` commit calls with `(0x27, 0)` under the latch the `0x1A` entry raised.
+- `ctx[+0x243]` is the entry solo latch, read before this commit's own `FUN_8004E13C` store (`0x8004BE28`).
+- `flag` on the starter row is the byte after the art constant: `0` when the art ends the string, its connector or the next starter when another art follows.
+- `char_id` is `DAT_8007BD10[seat]`, the roster id.
+
+The selector runs no busy gate: a call always takes the drive.
 
 **Channel pool.** The `channel` is chosen at random, avoiding an immediate repeat via `gp+0xa4a`, from a per-art candidate pool keyed by the art's action constant `ac`. The pools are SCUS tables:
 
@@ -961,14 +977,33 @@ All are 16-channel short-mono shout banks.
 | second-half tables | bases `0x800780A4` / `0x80078104` / `0x80078154` | `base + (ac - second_lo)*0x10` for `ac >= second_lo` |
 | duration table | `0x80077A8C` | `dur = (dur_table[channel + char*0x10] * 0x3C + 99) / 100` |
 
-- Three first-half table variants exist, keyed on the context byte `ctx+0x243` and the `flag` argument. **A live battle art goes through the `(0, 0)` variant**: recomp-runtime cue captures observe in-battle fires selecting channels 14 / 15, members only that variant's pools carry (`scripts/recomp/xa_cue_capture.py`, frame-tagged reads of the `FUN_8003D53C` cue globals `0x8007BBF0` / `0x8007BC6C` / `0x8007BC30`).
+- Three first-half table variants exist. `ctx+0x243 != 0` selects bases `0x80077C0C` / `0x80077E04` / `0x80077FFC`; otherwise `flag != 0` selects `0x80077ABC` / `0x80077CB4` / `0x80077EAC`; otherwise the plain bases above. The last art of a string carries `flag == 0` and takes the plain variant: recomp-runtime cue captures observe in-battle fires selecting channels 14 / 15, members only that variant's pools carry (`scripts/recomp/xa_cue_capture.py`, frame-tagged reads of the `FUN_8003D53C` cue globals `0x8007BBF0` / `0x8007BC6C` / `0x8007BC30`).
+- The second half is reached after the first, whatever it did. With `flag == 0` it picks from its table like the first, but without the forced channel. With `flag != 0` no clip plays and a sound cue goes out instead: Vahn `FUN_8004FCC8(0x51)`, Noa `FUN_8004FE5C(0xAD, ctx[+0x13])`, Gala `FUN_8004FCC8(0x58)` (`0x8004C5D4..0x8004C628`).
+- The clip slot is formed in the selector's own `s3` only on a multi-member record (`0x8004C3B0..0x8004C3B8`). A one-member record leaves the caller's `s3` there, which `FUN_8004AD80` holds as the committing seat, so the clip plays from `XA<seat + 1>.XA`. Every record inside the decoded spans has two or more members, so no shipped art reaches this.
 - The three second-half tables are un-varianted and packed back to back (Vahn 6 records `0x2B..=0x30`, Noa 5 `0x2E..=0x32`, Gala 5 `0x2B..=0x2F`). Each character's art constants end exactly at its span, so a walk past it reads the next character's rows.
 - Each record is a channel list: byte `+0` is always a member (channel 0 is legal) and, when `+1 != 0`, the list runs to the next `0`.
 - Duration check: Vahn `ch0` -> `0x2D`, `ch6` -> `0x3D`, and every recomp-captured cue's `dur` reproduces the arithmetic for its observed channel.
 
+**Retail capture of a known string.** On the `arts_bar_ideal_noa_fangs` state (retail executable), Noa types Lizard Tail then Acrobatic Blitz (`Up Down Up Up Down Down`, both on her learned list) and Cross ([`autorun_arts_voice_parity.lua`](../../scripts/pcsx-redux/autorun_arts_voice_parity.lua)):
+
+| What | Retail |
+|---|---|
+| built queue `+0x1DF` | `0F 0E 19 2B 0F 0E 19 2A` |
+| selector calls | `(2, 0x2B, 0x0F)` at cursor `3`, `(2, 0x2A, 0x00)` at cursor `7`, each on the commit of the starter's clip (dynamic slot `0x10`) |
+| `ctx[+0x243]` at each call | `0` |
+| clip starts | slot `3` (`XA4.XA`), channel / `dur` `(4, 0x36)` then `(0xF, 0x21)` |
+
+So the first art of a two-art string takes the `flag != 0` variant and the closing art the plain one, and neither art's clip raises the latch. The engine reproduces every row, picking its channels from the same pools (`parity` test `arts_voice_retail_capture_disc`, which seeds the party and formation from the same state and types the same string).
+
+The latch is the committed clip's `+0x87` byte (`FUN_8004E13C`), not a property of the party's size: a one-member party reaches the latched variant only through a clip that carries a non-zero `+0x87`, as the Rim Elm spar's `0x1A` entry does.
+
+**Retail frames stretch while a shout streams.** From the frame the clip starts until about its read span ends, the main loop's frames take 6 to 10 vsyncs where the rest of the turn takes 3, and the frame step `DAT_1F800393` reads `4`, its clamp. Sampled at each vsync, the CPU sits in the libcd command and interrupt paths (`0x8005C000..0x8005D000`, the BIOS exception vector). The animation clock advances by the step, so the art clips play about a third slower than their data says: Lizard Tail's starter clip runs 32 vsyncs and the art clip 61, where the frame-step law gives about 22 and 40. The interpreter and recompiler cores measure the same frames. The engine does not model this CPU load: its arts run at the rate law's pace, with the same cues on the same commits.
+
 **Evidence.** A live PCSX-Redux trace of Vahn's Tri-Somersault fires `FUN_8003D53C(0x01=XA2, chan 0/6, ...)` and Noa's Miracle fires `(0x03=XA4, ...)`, both from `FUN_8004C140` (`ra = 0x8004C464`; scenarios `battle_vahn_tri_somersault_super` / `battle_noa_miracle_art_combo`, probe `scripts/pcsx-redux/autorun_arts_voice_cue.lua`).
 
-Parser: `legaia_art::arts_voice`; the capture-witnessed per-art picks are `arts_voice::CAPTURED_ART_CHANNELS`.
+Parser: `legaia_art::arts_voice`; the capture-witnessed per-art picks are `arts_voice::CAPTURED_ART_CHANNELS`; the raw bytes the selector reads, for a byte-exact port, are `arts_voice::ArtsVoiceSelectorTables`.
+
+**Port.** `legaia_engine_battle::arts_voice_cue` holds both decisions: `shout_call_args` (the call site), `select_arts_voice` (`FUN_8004C140`), `starter_commit_voice_ids` (the `0x1A` block). The world runs them from the commit body on the world `rand()` stream (`World::emit_commit_arts_shout`, `World::emit_starter_commit_voice`). A shout clip goes onto the `(clip, channel, dur)` queue both hosts play and arms the read-span busy count. A second-half sound cue goes through the dispatcher or the funnel. With no SCUS tables (a disc-free build) the call is still recorded, unresolved, and the host's bank picks the channel. Mixing: [audio.md](audio.md#battle-arts-voice-shout-path-engine).
 
 The arts shout is **not** in the art record ([art-data](../formats/art-data.md)). The record's Hit Effect Cue `0x1A` low half is an SPU SFX-descriptor id ([sfx-table](../formats/sfx-table.md)), a separate subsystem.
 
@@ -995,6 +1030,14 @@ The pairs, all capture-witnessed (witnessed members in parentheses):
 | Gala | `XA5.XA` | Thunder Punch `0x1E` | 2 / 5 (5) |
 
 **Super and Miracle** expansions take the generic branch of the same block. When the queue-builder's per-seat Super mark (`ctx[0x28D + seat]`, set by `FUN_801EED1C`) or its 16-word scratch `0x801F6990[cursor-1]` is non-zero, the id is the fixed per-character `0x101` / `0x111` / `0x121` = **channel 1** of the same bank (sites `0x8004B7D0` and `0x8004B840..68`; one-shot latch `ctx+0x28B`). Capture-witnessed on all three characters (Vahn Tri-Somersault, Noa Super Tempest, Gala Miracle).
+
+The block's order (`0x8004B74C..0x8004BB44`):
+
+1. a set seat byte: banner stage `3`, then the generic id;
+2. a non-zero scratch word: stage = its low byte, then the generic id again. The build loop writes `1` at every art it accepts, so a **newly learned** art's starter plays the generic line too, under the `NEW ARTS!!` banner;
+3. otherwise, only while the stage is still `0`: stage `2` and the Hyper coin flip, whose `rand()` is drawn only when the constant names a Hyper Art.
+
+Both generic arms dispatch when both hold; the dispatcher's read-span gate drops the second. Port: `legaia_engine_battle::arts_voice_cue::starter_commit_voice_ids`, dispatched through `World::dispatch_battle_cue` from the commit's SpecialStarter arm.
 
 A Miracle's **finisher** additionally fires its animation cue track (`FUN_800508DC`, ids `0xC8..=0xFF` re-based `+0x38`). Witnessed: Gala's Biron Rage ended on id `0x12D` = `XA29.XA` channel 5.
 

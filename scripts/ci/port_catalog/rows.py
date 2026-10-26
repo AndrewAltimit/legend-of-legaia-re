@@ -29,6 +29,57 @@ def load_ignore() -> dict[str, tuple[str, str]]:
     return out
 
 
+# What an ignore row claims, by section. The four kinds carry different
+# evidence and fail differently, so the summary reports them apart rather than
+# under one "PsyQ" label (most rows are not library code):
+#
+# - library: a statically-linked PsyQ / BIOS / SDK routine.
+# - address: no portable routine begins at the VA (interior PC, shared tail,
+#   phantom, label, data, mis-based print, VA alias). Audited against the
+#   extracted images by `classify-worklist.py --audit-ignored`.
+# - unreferenced: a real routine that nothing on the disc reaches.
+# - scope: a real game routine the port covers another way (or a foreign-build
+#   image this disc never loads). The kind a new section falls into by default,
+#   because it is the one whose reason a reader must check.
+LIBRARY_IGNORE_SECTIONS = frozenset(
+    {
+        "bios",
+        "libc",
+        "libgte",
+        "libcd",
+        "libgs",
+        "libgpu",
+        "libetc",
+        "libapi",
+        "libsnd",
+        "libsnd_seq_volume",
+        "libspu",
+        "joy_serial",
+        "kernel_callback",
+    }
+)
+ADDRESS_IGNORE_SECTIONS = frozenset(
+    {
+        "field_vm_labels",
+        "overlay_epilogue_labels",
+        "ghidra_phantoms",
+        "va_aliased_overlay_local",
+    }
+)
+IGNORE_KINDS = ("library", "address", "unreferenced", "scope")
+
+
+def ignore_kind(category: str) -> str:
+    """Classify an ignore-list section into one of `IGNORE_KINDS`."""
+    if category in LIBRARY_IGNORE_SECTIONS:
+        return "library"
+    if category.startswith("worklist_") or category in ADDRESS_IGNORE_SECTIONS:
+        return "address"
+    if category == "unreferenced" or category.startswith("unreferenced_"):
+        return "unreferenced"
+    return "scope"
+
+
 def build_rows(
     dumped: dict[str, str],
     refs: Counter,

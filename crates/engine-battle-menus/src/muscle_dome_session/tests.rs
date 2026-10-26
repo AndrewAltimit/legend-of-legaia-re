@@ -1478,3 +1478,41 @@ fn the_entry_list_window_slides_in_the_dome_as_in_battle() {
     s.tick_arts_list_slide(2);
     assert_eq!(s.arts_list_slide(), 10);
 }
+
+/// The dome's list pages over the fighter's **learned** arts once the host
+/// names the record (`FUN_801D3748` reads `record[+0x185]` in the arena as in
+/// battle), and the window the entry leaves slides out after it.
+#[test]
+fn the_dome_list_pages_over_the_learned_arts_and_slides_out_after_the_entry() {
+    use legaia_art::{ActionConstant, Command};
+    let mut s = session();
+    s.install_art_catalog(
+        0,
+        vec![(
+            ActionConstant::from_byte(0x1F).unwrap(),
+            vec![Command::Right, Command::Left],
+        )],
+    );
+    assert_eq!(s.arts_list_pages(), 1, "the catalog's one art");
+    s.set_arts_list_owner(0, 7);
+    assert_eq!(s.arts_list_pages(), 2, "seven learned arts, two pages");
+    assert_eq!(s.arts_list_owner(), Some(0));
+    s.select_input(pad(|p| p.left = true));
+    s.select_input(pad(|p| p.right = true));
+    s.select_input(pad(|p| p.triangle = true));
+    s.select_input(pad(|p| p.triangle = true));
+    for _ in 0..6 {
+        s.tick_arts_list_slide(2);
+    }
+    assert_eq!(s.arts_list_window(), Some((1, 12)), "page 2 seated");
+    // Back out of the entry: the window is no longer the session's, and it
+    // drains on its page.
+    s.select_input(pad(|p| p.cancel = true));
+    assert!(!matches!(s.menu(), DomeMenu::Input(_)), "{:?}", s.menu());
+    s.tick_arts_list_slide(2);
+    assert_eq!(s.arts_list_window(), Some((1, 10)));
+    for _ in 0..5 {
+        s.tick_arts_list_slide(2);
+    }
+    assert_eq!(s.arts_list_window(), None, "off-screen");
+}

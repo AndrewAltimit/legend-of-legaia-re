@@ -149,8 +149,8 @@ pub struct Game {
 }
 
 /// The line `play-window` logs once its event loop exists
-/// (`legaia_parity::window_child::EVENT_LOOP_OPEN_MARKER`, repeated here
-/// because Studio does not link the parity crate). A game that dies of
+/// (`legaia_engine_capture::EVENT_LOOP_OPEN_MARKER`, repeated here
+/// because Studio does not link the capture crate). A game that dies of
 /// `SIGSEGV` before writing it died inside `winit`'s `EventLoop::new`, in
 /// libXi's first-use race against XInput2 raw events: pointer motion on the
 /// display at the wrong moment (`docs/tooling/host-drift.md`). Studio starts

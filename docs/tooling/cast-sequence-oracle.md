@@ -37,6 +37,10 @@ environment and arguments, to re-run by hand), and the products: `report.md`,
 `report.json` and `strip.png`. **Every one of them carries retail pixels or
 RAM**: keep the directory out of the repo.
 
+The driver builds `legaia-engine` with `engine-shell`'s `oracles` feature:
+`cast-sequence-score` and the recorder's frame shots exist only in that build,
+and a binary built without it writes `meta.csv` but no `e_<tick>.png`.
+
 Flags worth knowing:
 
 | Flag | Effect |
@@ -47,6 +51,13 @@ Flags worth knowing:
 | `--recapture` / `--reseed` | Re-run the retail capture / the retail-compare seed instead of using the cache |
 | `--formation <bytes>` | Retail only: overwrite the formation row `FUN_801DA600` returns. The engine has no seam to seat the same monsters, so a forced formation compares different fights |
 | `--engine-env K=V` | Extra environment for the engine child |
+| `--guard <seats>` | Engine: party seats in the Spirit stance when the cast starts (`LEGAIA_BATTLE_GUARD`), for a capture whose victim guarded (`+0x1DE == 4`): `nivora_duel_pre_megaton_press` needs `--guard 0` for its damage to match |
+| `--monster-pick` | Retail: with `--caster 3..7`, the cast is written where the monster AI's pick returns (a breakpoint on `0x801DAF50`, see [below](#a-monster-cast-from-any-battle-state)), so any battle state that reaches the monster's turn records any spell the monster owns a clip for. Runs on the breakpoint core, several times slower |
+| `--rand-at <st7>:<phase>` | Engine: hold the world `rand()` stream on retail's seed word under this cast key (`LEGAIA_CAST_RAND_SEED`, [below](#the-rand-stream)). `--rand-at 0x70:3` on Gigaton Press gives arm 3's pass retail's sixteen rock picks |
+| `--allow-patched` | Measure a state whose manifest entry carries `resident_patch` (refused by default: retail states only) |
+| `--save-inject` | Retail: keep the whole emulator state one vsync past the inject (`retail/state_inject.rawsstate`), a pre-cast state that replays the cast on the fast core with a plain `--caster` |
+| `LEGAIA_CAST_SEQ_EXE=<path>` (environment) | Score another `legaia-engine` build (a before / after pair) without rebuilding the tree's |
+| `LEGAIA_PRESS_UNTIL=<vsync>` (environment) | Retail: tap CROSS through the party's command input until this vsync (default `600`). A three-member party or a long opening needs more before the monster's turn comes round |
 | `LEGAIA_POKE32=addr=value,...` (environment) | Retail only: words the probe writes at the inject. A capture-class module that forks its choreography off RAM rather than the action id needs it: PROT 0946's arm 0 takes Big Wave's branch only while the caster's latch `0x801C8FE0 + (seat + 1) * 4` is set, so a seat-0 cast of `0x56` needs `0x801C8FE4=1` and otherwise records Call Wave |
 
 ## What each side records
@@ -65,7 +76,8 @@ seat's HP, the main loop's frame counter `gp+0x480` (`frame`, read at
 `0x8007B798`), the side-band applier stage `ctx[+0x276]` (`c276`, the
 token a module's stream-wait arm polls) and the words the read-span poll
 `FUN_8003DE7C(1)` reads (`xaspan` `gp+0x91C`, `cdbusy` `0x8007BA70`,
-`cdmode` `0x8007B83C`, `cdread` `0x8007B8C2`). A second file, `body.csv`, holds
+`cdmode` `0x8007B83C`, `cdread` `0x8007B8C2`) and the BIOS `rand()` seed word
+`0x80009010` (`rand`). A second file, `body.csv`, holds
 per vsync the acting seat's clip `+0x1D9`, node cursor `+0x68`, live pair,
 body pair `+0x3C` / `+0x40` and the camera focus with its tween endpoints:
 the series a summon close-up's framing is read off. A third, `cam.csv`, holds
@@ -85,7 +97,7 @@ seeded, and the recorder on:
 | Variable | Value |
 |---|---|
 | `LEGAIA_BATTLE_INFLIGHT` | `caster,spell,target;ground` - dispatched at the first prompt, every combatant seated on retail's ground pair at cast begin; the ground list is re-keyed from pool slots to engine slots (monster `m` at `party_count + m`) |
-| `LEGAIA_BATTLE_MONSTER_CAST` | `seat,spell` instead, for a monster caster |
+| `LEGAIA_BATTLE_MONSTER_CAST` | `seat,spell,p;ground` instead, for a monster caster |
 | `LEGAIA_DIAG_CAST_SEQ` | the recording directory |
 | `LEGAIA_DIAG_CAST_SEQ_SEAT` | only a cast by this seat (retail numbering) starts the recording |
 | `LEGAIA_DIAG_CAST_SEQ_EVERY` / `_TAIL` / `_MAX` | frame cadence in ticks (`1`), ticks past the Done band before exit (`60`), frame cap (`2000`; the driver passes `4000`, past the retail side's span) |
@@ -137,6 +149,25 @@ blocks within `24` per channel; [The image channel](retail-compare.md#the-image-
 A pair whose retail frame has mean luma above `230` (a white flash) or below
 `8` (a fade) goes into its own count and stays out of the mean. The cast's
 number is the **mean `within` over the remaining scene pairs**.
+
+## The rand stream
+
+Retail draws every `rand()` (BIOS `A(2Fh)`, `jal 0x80056798`) from one seed
+word, `0x80009010`: `seed = seed * 0x41C64E6D + 0x3039`, the draw
+`(seed >> 16) & 0x7FFF`. The engine's world stream is the same generator,
+but it reaches a cast's arms after another number of draws, so an arm whose
+look is its draws plays another pattern. PROT 0962 `0xA4` arm 3 picks each
+of its sixteen falling rocks by `rand() % 4`: on the engine's own stream
+Gigaton Press scores its arm-4 segment below the run without rocks.
+
+The probe logs the seed word on every vsync. `--rand-at <st7>:<phase>` takes
+the word retail held on its last vsync under that key and has the engine
+child set its world stream to it before every tick it opens under the same
+key (`engine-capture::cast_rand`), so the pass that leaves the key draws as
+retail's did. In a `koru_strip_forced` capture the word on arm 3's last vsync
+makes one draw and then the sixteen picks a RAM read of the rocks holds; the
+engine, seeded there, makes the same draws. Measured on that capture, the
+arm-4 segment scores `.770` with the option and `.649` without.
 
 ## The game clock
 
@@ -232,15 +263,20 @@ offset, both states, class, `within`, `mae`, both lumas) for scripts.
   machine is not on retail's frame step, so a segment's length is compared in
   vsyncs of game time. Retail's arms that count in passes (not in drained
   steps) run `step` times longer than the pass count.
-- **Damage and RNG are not aligned.** Popups and HP readouts can differ.
+- **Damage and RNG are not aligned** unless `--rand-at` holds the stream
+  on one key ([The rand stream](#the-rand-stream)). Popups and HP readouts
+  can differ.
 - **A forced formation is retail-only.** See the flag table.
-- **A monster cast does not inject yet.** The probe writes the monster's
-  queue on the first `0x0A`, but the monster's own turn runs its AI pick in
-  the same pass as the `0x0C` category read, which a vsync hook cannot get
-  between. The retail side then records the monster's AI action, not the
-  cast, and the run fails with no cast begin. A breakpoint on the AI pick's
-  return is the missing piece. The engine half (`LEGAIA_BATTLE_MONSTER_CAST`,
-  `--caster 3`) is wired.
+- **A monster cast needs `--monster-pick` unless the state queued it.**
+  Without it the probe writes the monster's queue on the first `0x0A`, which
+  the monster's own AI pick overwrites in the pass that reads it (below). A
+  state that already holds the queued cast (`nivora_duel_pre_megaton_press`,
+  the `*_pre_*` states the pick probe saved) records it either way. The
+  engine half (`LEGAIA_BATTLE_MONSTER_CAST=seat,spell,p;ground`) hands the
+  monster the round's first turn from the first prompt, so no pad drive is
+  needed, and stands each slot on the ground retail's earlier actions left: a
+  walk-in body walks from there (Koru's walked 840 units from its authored
+  seat against retail's 432 before the ground was carried).
 - **The target has to suit the spell.** A heal aimed at a monster seat parks
   the module (Orb on seat `3` sits in its phase `9`); pass `--target 0` for an
   ally spell. The probe quits on a park (`LEGAIA_PARK`, state and module phase
@@ -253,6 +289,61 @@ enough to read the engine's own segment lengths for a cast in the fight the
 corpus scores it in.
 - **An item cast (the flutes) is not injectable.** The probe writes category
   `2` (Magic). An item summon needs the item category and its own id space.
+
+## A monster cast from any battle state
+
+A monster's turn runs its AI pick `FUN_801E9FD4` inside `FUN_801DABA4`
+(`jal 0x801E9FD4` at `0x801DAF48`, `a0 = ctx[+0x274] - 3`) and calls
+`FUN_801DB124` straight after (`0x801DAF50`), in the same pass as the
+category read, so no vsync hook can get between the pick and its use. With
+`--monster-pick` the probe arms a breakpoint on `0x801DAF50`: the seat is
+`ctx[+0x274]`, and the queue the pick has just written is final and unread
+there. It writes `+0x1DE = 2`, `+0x1DF = spell`, `+0x1DD = target` - the same
+two stores the AI's own cast arms make (`0x801EB7C0..0x801EB81C`), plus the
+target - and tops the seat's MP up. The rest of the turn is retail's.
+
+`--save-inject` then keeps the state one vsync later, the cast queued and
+nothing else changed, for the save library. The states saved this way are
+labelled `<fight>_pre_<spell>` in `scripts/scenarios.toml` and replay on
+the fast core with a plain `--caster`:
+
+| State | Cast |
+|---|---|
+| `koru_pre_blade_breath` / `koru_pre_thunder_needle` / `koru_pre_gigaton_press` | Koru's `0xA2` / `0xA3` / `0xA4` (PROT 0962), on `koru_strip_forced`'s synthetic formation |
+| `gaza2_card_pre_neo_star_slash` | the Sim-Seru Gaza's `0xA6` (PROT 0960), party-wide target |
+| `cort_evolved_card_pre_doomsday` | the evolved Cort's `0xB6` (PROT 0965), party-wide target |
+| `gaza2_pre_neo_star_slash` / `cort_evolved_pre_doomsday` | the same two casts; **patched resident executable** |
+
+The action in each is the probe's, not the AI's: a capture is a statement
+about the cast, not about when the monster would have chosen it.
+
+A saved state keeps the executable its source state held. The first Gaza 2
+and evolved-Cort states were made on patched discs (`battle_gaza2_prompt`,
+`cort_evolved_battle_first_menu`), so the two casts saved from them carry
+the same `resident_patch`; the driver refuses a `resident_patch` state
+unless given `--allow-patched`. The `*_card_*` states are their retail
+replacements: a cold boot of a staged image, a memory-card CONTINUE
+(`playthrough-ladder-pro00-14` block 11 for Sol Tower, `playthrough-endgame-7saves`
+block 6 for Bio Castle), the player set beside each fight's walk-on band
+and walked onto it, and the fight's own scripted entry (`korb3` P2[2]'s
+`3E FF 0F`, `jouine`'s arrival record). `gaza2_card_first_menu` and
+`cort_evolved_card_first_menu` stand at the first command input; the
+evolved Cort's arrival holds the flow on `0x0C` for about 3200 vsyncs
+([battle-command-flow.md](../subsystems/battle-command-flow.md#flow-0x0c-is-the-boss-stage-modules-baton)),
+so a probe run from the fight's opening needs `LEGAIA_PRESS_UNTIL` past it.
+
+### The target has to be the engine's
+
+The engine half dispatches the monster's cast with the target class its
+spell table gives (`World::pick_monster_action`): a party-wide spell aims
+at `+0x1DD = 8`. The battle HUD keys on that byte: a party-wide action
+keeps the three party panels up through the cast
+([battle-hud.md](../subsystems/battle-hud.md)), a single target shows one
+plate. A capture injected with `--target 0` for a party-wide spell records
+retail's one-plate HUD against the engine's three panels in every frame:
+Neo Star Slash scores `0.566` that way and `0.789` with `--target 8`,
+Doomsday `0.567` and `0.770`, with the same engine. Inject the target the
+monster's own pick would write.
 
 ## Waits the engine does not run
 

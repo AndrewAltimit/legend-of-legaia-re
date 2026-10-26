@@ -619,6 +619,15 @@ pub(super) fn battle_image(
                 },
             ),
         ));
+        if battle.displayed_camera() {
+            let seats = battle.engine_image_displayed_seats();
+            if !seats.is_empty() {
+                env.push((
+                    "LEGAIA_BATTLE_DISPLAYED_SEAT",
+                    legaia_engine_capture::ground_snap::ground_snaps_to_env(&seats),
+                ));
+            }
+        }
         if battle.displayed_camera_on_agreement() {
             env.push((
                 "LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED",

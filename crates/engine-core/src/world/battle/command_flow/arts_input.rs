@@ -219,12 +219,60 @@ impl World {
             return;
         }
         s.list_page = Some(page);
+        s.list_row_page = page;
         s.list_slide = slide.min(ARTS_LIST_SLIDE_MAX);
     }
 
-    /// The rows the Triangle arts list's open page shows, in row order, or
-    /// `None` while no list page is open or the arts-name table is not
-    /// installed ([`Self::install_menu_text`]).
+    /// The Triangle arts list's window while it is on screen: `(actor, row
+    /// page, slide)` off the open entry, else off the window an ended entry
+    /// left sliding out ([`crate::world::BattleState::arts_list_window`]).
+    /// `None` at slide `0`. On a dome leg it is the dome entry's window
+    /// (actor `0`, the player's fighter), and only once the host has named
+    /// whose learned list it pages over
+    /// (`MuscleDomeSession::set_arts_list_owner`).
+    pub fn arts_list_window(&self) -> Option<(u8, u8, u8)> {
+        self.arts_list_source()
+            .map(|(_, actor, page, slide)| (actor, page, slide))
+    }
+
+    /// [`Self::arts_list_window`] with the roster slot whose record the rows
+    /// read: `(char slot, actor, row page, slide)`.
+    fn arts_list_source(&self) -> Option<(usize, u8, u8, u8)> {
+        if self.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
+            let dome = self.minigames.muscle_dome.as_ref()?;
+            let owner = dome.arts_list_owner()?;
+            let (page, slide) = dome.arts_list_window()?;
+            return Some((usize::from(owner), 0, page, slide));
+        }
+        let (actor, page, slide) = match self.battle.arts_input.as_ref() {
+            Some(s) => s.list_window().map(|(page, slide)| (s.actor, page, slide)),
+            None => self
+                .battle
+                .arts_list_window
+                .map(|w| (w.actor, w.row_page, w.slide)),
+        }?;
+        Some((
+            self.party_roster_slot(usize::from(actor)),
+            actor,
+            page,
+            slide,
+        ))
+    }
+
+    /// Step the window an ended entry left on screen one command-flow frame
+    /// ([`legaia_engine_battle::arts_command_input::ArtsListWindow::step`]).
+    pub(in crate::world) fn step_arts_list_window(&mut self) {
+        let step = self.battle.anim_pass_vsyncs;
+        if let Some(w) = self.battle.arts_list_window.as_mut()
+            && !w.step(step)
+        {
+            self.battle.arts_list_window = None;
+        }
+    }
+
+    /// The rows the Triangle arts list's window shows, in row order, or
+    /// `None` while the window is off-screen ([`Self::arts_list_window`]) or
+    /// the arts-name table is not installed ([`Self::install_menu_text`]).
     ///
     /// The list renderer `FUN_80034358` walks the acting character's learned
     /// ids (record `+0x186..`, count `+0x185`) from the pager's row offset
@@ -239,13 +287,8 @@ impl World {
         &self,
     ) -> Option<Vec<Option<legaia_engine_battle::arts_command_input::ArtsListRow>>> {
         use legaia_engine_battle::arts_command_input::{ARTS_LIST_ROWS_PER_PAGE, ArtsListRow};
-        if self.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
-            return None;
-        }
-        let s = self.battle.arts_input.as_ref()?;
-        let page = s.list_page?;
+        let (char_slot, _, page, _) = self.arts_list_source()?;
         let table = self.menu.text.as_ref()?.arts.as_ref()?;
-        let char_slot = self.party_roster_slot(s.actor as usize);
         let record = self.party.roster.members.get(char_slot)?;
         let skills = record.displayed_skills();
         let count = usize::from(skills.count).min(skills.ids.len());
@@ -372,6 +415,9 @@ impl World {
         {
             *b = 0;
         }
+        // The entry's window registration (`FUN_801DBB8C`) zeroes the slide
+        // counter: an older window still sliding out is gone.
+        self.battle.arts_list_window = None;
         self.battle.arts_input = Some(session);
     }
 
@@ -455,6 +501,8 @@ impl World {
         // `FUN_801D0748` runs the arts-list driver `FUN_801D3444` after the
         // frame's input: the Triangle list window slides by the frame step.
         session.step_list_slide(self.battle.anim_pass_vsyncs);
+        // Whatever ends the entry this frame leaves its window on screen.
+        let left = legaia_engine_battle::arts_command_input::ArtsListWindow::left_by(&session);
         if let Some(cue) = super::ui_cues::arts_phase_cue(&phase_before, &session.phase, ev.cross) {
             self.push_battle_ui_cue(cue);
         }
@@ -498,6 +546,7 @@ impl World {
                 || (matches!(session.phase, P::Confirmed { .. }) && self.battle_tutorial_commit(3));
             if rejected {
                 let actor = session.actor;
+                self.battle.arts_list_window = left;
                 self.open_battle_command(actor);
                 return;
             }
@@ -512,10 +561,12 @@ impl World {
                 // A replayed preseed commits exactly as a typed string does
                 // - retail's bare confirm enters the same `0x5A` state.
                 let sequence = session.committed_string().to_vec();
+                self.battle.arts_list_window = left;
                 self.run_battle_art(caster, &sequence, target_row, target_slot);
             }
             Some(ArtsInputResolution::Aborted) => {
                 let actor = self.battle_ctx.active_actor;
+                self.battle.arts_list_window = left;
                 self.open_battle_command(actor);
             }
             None => {

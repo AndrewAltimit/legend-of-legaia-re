@@ -711,6 +711,25 @@ A and registers a fresh glide to seat B (`0x801D92E8..0x801D93D8`).
 `+40` every `HIT` / `TOTAL` packet of that frame shows. Port:
 `BattleHud::push_popup` restarts the cluster's `age` on each landed damage hit.
 
+**A hit that clears the flag counts without opening.** PROT 0959's wrapper
+hits store `0` into `DAT_8007B64C` beside each HP write
+(`0x801F7244` / `0x801F7AF4` / `0x801F7F18`) and its arm `0xF` raises it once
+as it passes, so Megaton Press opens the cluster on the barrage's last pass
+already reading `11 HIT` / `TOTAL 378`. Port: `BattleHud::hold_combo`, driven
+by `BattleState::combo_cluster_held`. A cast that lands more than one hit
+reads `HIT` / `TOTAL` as that capture does; a one-hit cast keeps `DAMAGE`
+(`battle_gimard_tail_fire_a`).
+
+**A party-wide cast opens nothing.** The flag a cast hit raises is the
+finisher's: `FUN_801DDB30` stores `0x78` and adds the hit to the damage word
+`_DAT_8007BD14` only when the attacker's `+0x1DD` is a slot (`sltiu v0,v1,7`
+at `0x801DE370`), or the every-enemy code `9` with a party or creature
+attacker (`0x801DE3B8..0x801DE428`). The party-wide code `8` falls past
+both, so a monster's party sweep (Neo Star Slash, Doomsday) lands every hit
+with the cluster shut and the `0x51` close finds no damage to re-open it on.
+Port: `battle_combo_style` returns `None` for a party-wide Magic or Item
+action.
+
 **The `0x51` fade-down closes it in reverse.** The band's teardown - countdown
 under `0xC`, once per action (`0x801E6158..0x801E6214`) - wipes the element
 list (`FUN_801D99BC` at `0x801E6170`) and, when the action landed damage
@@ -1386,6 +1405,12 @@ measurement every name banner runs on, and its callers store the return in
 `+0x06`. The SCUS site at `0x8004AF44..0x8004AF88` shows the idiom in the
 clear: it measures one string, writes `0xA0 - width/2` into both seats' x of
 records 76 and 77, and writes the string pointer into both records' `+0x14`.
+The label's glyphs stand with their top row at `150`. A summon module that
+prints its own line at the label's place calls `FUN_8003541C` itself with
+`y = 0x96` (PROT 0923, `0x801F7240..0x801F7270`), and its glyphs stand two
+rows lower, top row `152` (`gimard_burning_attack`'s `Burning Attack`,
+Gilium's `Space Cannon`); the port draws that line two rows under the label
+(`BattleHudFrame::move_name_module_line`).
 
 **Which seat is the parked one is per record.** Record 68, the actor-name
 plaque, ships `(16, -24)` at A against `(16, 14)` at B, and record 8, a command

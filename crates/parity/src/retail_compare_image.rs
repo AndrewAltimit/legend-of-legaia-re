@@ -9,10 +9,12 @@
 //! of two VRAM buffers and scans the display out from the same origin, so
 //! the top `224` rows of the display crop are the drawn frame and the rest
 //! is the unused tail of the `240`-line display. The engine renders the PSX
-//! screen at an integer scale with the retail viewport map
-//! (`ndc.y = 1 - 2 * screen_y / 240`, `engine-battle-vm::battle_cam_script`), so
-//! engine row `s * y` is retail row `y`: the comparison takes the engine
-//! capture's top `224 * s` rows and box-filters them down by `s`.
+//! screen with the retail viewport map (`ndc.y = 1 - 2 * screen_y / 240`,
+//! `engine-battle-vm::battle_cam_script`). The accuracy mode
+//! ([`FrameRender::Psx`]) draws it at the native `320 x 240`, so the
+//! capture's rows are retail's; a smoke-tier mode draws it at an integer
+//! scale `s`, engine row `s * y` is retail row `y`, and the comparison takes
+//! the capture's top `224 * s` rows and box-filters them down by `s`.
 //!
 //! # Metric
 //!
@@ -22,9 +24,10 @@
 //! - `within` - the fraction of `8 x 8` blocks whose mean colour is within
 //!   [`BLOCK_TOLERANCE`] of retail's on every channel.
 //!
-//! `within` is the channel score. Block means rather than pixels because the
-//! engine rasterises at its own resolution with its own filtering: a pixel
-//! test would score dither, texture filtering and sub-pixel edges, while a
+//! `within` is the channel score. Block means rather than pixels because
+//! even the native frame keeps rasteriser noise against a capture (dither
+//! phase, the capturing emulator's own texel rounding, the last sub-pixel of
+//! an edge): a pixel test would score that, while a
 //! block test scores whether the same thing is in the same place in roughly
 //! the same colour - wrong camera, missing geometry and wrong CLUTs all move
 //! it, rasteriser noise does not.
@@ -50,6 +53,70 @@ pub const BLOCK_TOLERANCE: f64 = 24.0;
 pub const DARK_LUMA: f64 = 8.0;
 /// World tick `play-window` captures at.
 pub const CAPTURE_TICK: u64 = 120;
+
+/// How the `play-window` child draws the frame it hands the image channel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, clap::ValueEnum)]
+pub enum FrameRender {
+    /// The accuracy metric: PSX mode on the native `320 x 240` target
+    /// (`--retail --psx-render`) - retail's vertex snap, fill rule and dither
+    /// at the display's own size. The only mode the ratchet scores.
+    #[default]
+    Psx,
+    /// The clean rasteriser at the window's `3x` stage (`--retail`): a
+    /// smoke-tier mode, checked only for large breaks.
+    Clean,
+    /// The clean `3x` stage with enhanced lighting on (`--retail
+    /// --dynamic-lighting`): a smoke-tier mode, checked only for large
+    /// breaks.
+    Enhanced,
+}
+
+impl FrameRender {
+    /// The child's render arguments, after `play-window`.
+    pub fn child_args(self) -> &'static [&'static str] {
+        match self {
+            Self::Psx => &["--retail", "--psx-render"],
+            Self::Clean => &["--retail"],
+            Self::Enhanced => &["--retail", "--dynamic-lighting"],
+        }
+    }
+
+    /// The capture size the child writes: the native frame, or the `3x`
+    /// window.
+    pub fn capture_size(self) -> (usize, usize) {
+        match self {
+            Self::Psx => (FRAME_W, 240),
+            Self::Clean | Self::Enhanced => (FRAME_W * 3, 720),
+        }
+    }
+}
+
+static FRAME_RENDER: std::sync::OnceLock<FrameRender> = std::sync::OnceLock::new();
+
+/// Choose the render mode of every image child this process runs; the
+/// first call wins. Unset, the children run [`FrameRender::Psx`].
+pub fn set_frame_render(mode: FrameRender) {
+    let _ = FRAME_RENDER.set(mode);
+}
+
+thread_local! {
+    static CAPTURE_EMULATOR: std::cell::Cell<&'static str> = const { std::cell::Cell::new("") };
+}
+
+/// Name the emulator that made the state the next image children score
+/// (`"mednafen"` / `"pcsx-redux"`). In the accuracy mode a PCSX-Redux
+/// capture's child samples that emulator's texel rule
+/// (`LEGAIA_PSX_CAPTURE_RASTER`, `PsxTexelRule::PcsxRedux`): its software
+/// GPU drops the console's half-texel bias, and scored against the console's
+/// rule every scaled texture on such a state reads as an engine miss.
+pub fn set_capture_emulator(emulator: &'static str) {
+    CAPTURE_EMULATOR.with(|c| c.set(emulator));
+}
+
+/// The render mode the image children run.
+pub fn frame_render() -> FrameRender {
+    FRAME_RENDER.get().copied().unwrap_or_default()
+}
 
 /// An RGB frame, `FRAME_W x FRAME_H`, 3 bytes per pixel.
 #[derive(Clone)]
@@ -369,8 +436,16 @@ pub fn engine_frame_with(
     // volumetric ground fog, enhanced lighting, the camera-occlusion fade,
     // the scene-entry VDF pulse) and the persisted options are pinned - the
     // retail vantage over the interactive `Far`, and no photosensitivity slew
-    // on the ambient CLUT cyclers. `LaunchFidelity::retail` is the list.
-    cmd.args(["play-window", "--no-audio", "--retail", "--scene", scene])
+    // on the ambient CLUT cyclers. `LaunchFidelity::retail` is the list. The
+    // accuracy mode adds `--psx-render`: the frame drawn at the display's own
+    // 320x240 with retail's snap and dither (`FrameRender`).
+    let render = frame_render();
+    if render == FrameRender::Psx && CAPTURE_EMULATOR.with(|c| c.get()) == "pcsx-redux" {
+        cmd.env("LEGAIA_PSX_CAPTURE_RASTER", "pcsx-redux");
+    }
+    cmd.args(["play-window", "--no-audio"])
+        .args(render.child_args())
+        .args(["--scene", scene])
         .args(extra)
         .arg("--extracted-root")
         .arg(&extracted)
@@ -464,8 +539,9 @@ pub fn engine_frame_with(
         );
     }
     let (rgba, w, h) = read_png_rgba(&shot)?;
-    if (w, h) != (FRAME_W * 3, 720) {
-        eprintln!("retail-compare: {label}: play-window captured at {w}x{h}, not 960x720");
+    if (w, h) != render.capture_size() {
+        let (ew, eh) = render.capture_size();
+        eprintln!("retail-compare: {label}: play-window captured at {w}x{h}, not {ew}x{eh}");
     }
     Frame::from_engine_capture(&rgba, w, h)
 }
@@ -564,6 +640,28 @@ mod tests {
         }
         let f = Frame::from_engine_capture(&rgba, w, h).unwrap();
         assert!(f.rgb.iter().all(|&v| v == 90));
+    }
+
+    /// The accuracy mode's capture is the native frame: compared pixel for
+    /// pixel, the rows under the draw area left out.
+    #[test]
+    fn a_native_capture_is_compared_one_to_one() {
+        let (w, h) = FrameRender::Psx.capture_size();
+        let mut rgba = vec![255u8; w * h * 4];
+        for (i, px) in rgba
+            .as_chunks_mut::<4>()
+            .0
+            .iter_mut()
+            .enumerate()
+            .take(FRAME_W * FRAME_H)
+        {
+            let x = (i % FRAME_W) as u8;
+            px.copy_from_slice(&[x, 7, 9, 255]);
+        }
+        let f = Frame::from_engine_capture(&rgba, w, h).unwrap();
+        assert_eq!(f.px(5, 0), [5, 7, 9]);
+        assert_eq!(f.px(200, FRAME_H - 1), [200, 7, 9]);
+        assert_eq!(FrameRender::Psx.child_args(), &["--retail", "--psx-render"]);
     }
 
     /// A surface taller than the 3x stage centres it; the band above it is

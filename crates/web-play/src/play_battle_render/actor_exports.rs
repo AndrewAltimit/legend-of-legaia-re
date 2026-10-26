@@ -119,6 +119,26 @@ impl LegaiaRuntime {
         out
     }
 
+    /// Per battle actor (mesh order, as [`Self::play_battle_actor_transforms`])
+    /// the body's roll `+0x48` in radians (`BattleActor::render_roll`), `0`
+    /// for every body a cast module has not tipped. The page multiplies a
+    /// non-zero roll onto the placement model on the mesh side - the native
+    /// window's `actor_model` twin.
+    pub fn play_battle_actor_rolls(&self) -> Vec<f32> {
+        let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.host()) else {
+            return Vec::new();
+        };
+        br.actors
+            .iter()
+            .map(|a| {
+                host.world
+                    .actors
+                    .get(a.actor_idx)
+                    .map_or(0.0, |actor| actor.battle.render_roll_radians())
+            })
+            .collect()
+    }
+
     /// Battle actor `i`'s current pose: 6 `i32` per part
     /// (`[tx, ty, tz, rx, ry, rz]`, absolute PSX 4096-unit angles) - the
     /// live `pose_frame` the engine's battle-animation tick maintains, or
@@ -162,9 +182,10 @@ impl LegaiaRuntime {
     /// the playing stream's channels (`legaia_engine_world_views::battle_draws::battle_live_drawn_objects` -
     /// the draw pass `FUN_80048A08` after the mesh-variant swap
     /// `FUN_8004CCD4`). The page collapses their vertices after posing.
-    /// Empty for an actor with no model table (monsters, summons, a
-    /// fallback form) - every object draws. The native window's twin masks
-    /// the TMD in `build_posed_actor_overrides`.
+    /// A monster draws the playing stream's channels over its identity
+    /// table (`battle_drawn_objects`); empty for a summon or a fallback form
+    /// - every object draws. The native window's twin masks the TMD in
+    /// `build_posed_actor_overrides`.
     pub fn play_battle_actor_hidden(&self, i: u32) -> Vec<u32> {
         let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.host()) else {
             return Vec::new();
@@ -175,9 +196,14 @@ impl LegaiaRuntime {
         if a.object_ids.is_empty() {
             return Vec::new();
         }
-        legaia_engine_world_views::battle_draws::battle_live_drawn_objects(&host.world, a.actor_idx)
-            .map(|d| legaia_engine_battle::battle_attach_swap::hidden_objects(&d))
-            .unwrap_or_default()
+        let n_objects = a.object_ids.iter().max().map_or(0, |&m| m as usize + 1);
+        legaia_engine_world_views::battle_draws::battle_drawn_objects(
+            &host.world,
+            a.actor_idx,
+            n_objects,
+        )
+        .map(|d| legaia_engine_battle::battle_attach_swap::hidden_objects(&d))
+        .unwrap_or_default()
     }
 
     /// Battle actor `i`'s object-local positions with the playing clip's
@@ -352,11 +378,12 @@ impl LegaiaRuntime {
         let Some(a) = br.actors.get(i as usize) else {
             return Vec::new();
         };
+        let n_objects = a.object_ids.iter().max().map_or(0, |&m| m as usize + 1);
         legaia_engine_world_views::battle_draws::battle_ghost_draws(&host.world)
             .into_iter()
             .filter(|d| d.actor_slot as usize == a.actor_idx)
             .nth(g as usize)
-            .and_then(|d| d.drawn)
+            .and_then(|d| d.drawn_objects(n_objects))
             .map(|d| legaia_engine_battle::battle_attach_swap::hidden_objects(&d))
             .unwrap_or_default()
     }

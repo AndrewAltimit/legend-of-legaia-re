@@ -150,6 +150,11 @@ impl BakaCabinet {
                 self.state = ST_ROUND_GO;
             }
             ST_ROUND_GO => {
+                // The "FIGHT!" flash's line, on the arm's first frame
+                // (`0x801D04D4..0x801D04F0`).
+                if self.scene_timer == 0 {
+                    f.xa = Some(crate::baka_fighter_chrome::FIGHT_FLASH_XA);
+                }
                 self.scene_timer += step;
                 if self.scene_timer >= 0x31 {
                     self.state = ST_DUEL;
@@ -220,6 +225,8 @@ impl BakaCabinet {
             ST_GAME_OVER => {
                 if self.state_timer == 0 {
                     self.state_timer = 1;
+                    // The game-over line (`0x801D1248..0x801D1268`).
+                    f.xa = Some(crate::baka_fighter_chrome::GAME_OVER_XA);
                     // The pot is zeroed here, not on the way out: a mid-run
                     // defeat forfeits every coin the run had accumulated.
                     if self.pot != 0 {
@@ -456,8 +463,11 @@ impl BakaCabinet {
             if edge & CABINET_CONFIRM != 0 {
                 f.cues.push(crate::baka_fighter::BAKA_CUE_CONFIRM);
                 if self.menu_cursor == 0 {
-                    // NEXT GAME: risk the pot on the next rung.
+                    // NEXT GAME: risk the pot on the next rung. The latch's
+                    // first frame at `1` starts the announcer line, the same
+                    // frame as the confirm (`0x801D0DD8..0x801D0DF8`).
                     self.state_timer = 1;
+                    f.xa = Some(crate::baka_fighter_chrome::NEXT_GAME_XA);
                 } else {
                     // PAY OUT: bank it and leave.
                     self.match_phase = 0;

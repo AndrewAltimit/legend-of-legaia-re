@@ -206,7 +206,14 @@ pub(crate) fn cmd_info(
     }
 
     if vram_png.is_some() || vram_bin.is_some() || runtime_vram.is_some() {
-        let engine_bytes = vram_to_le_bytes(&resources.vram);
+        // Row-major little-endian pixel words, the layout of a save state's
+        // VRAM blob (the same bytes as `legaia_parity::vram_oracle::vram_to_le_bytes`).
+        let engine_bytes: Vec<u8> = resources
+            .vram
+            .as_u16()
+            .iter()
+            .flat_map(|p| p.to_le_bytes())
+            .collect();
         if let Some(p) = vram_png {
             write_vram_png(p, &engine_bytes)?;
             println!("[ok] wrote engine VRAM PNG to {}", p.display());

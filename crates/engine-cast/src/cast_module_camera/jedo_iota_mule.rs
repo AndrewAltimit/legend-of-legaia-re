@@ -4,7 +4,8 @@
 //! Mule by the scalar times the delta.
 //!
 //! Not carried, as in [`super::gola_mushura_barra`]: part spawns, the
-//! writes to the other seats, the stage words `ctx[+0x27A..+0x286]` and the
+//! writes to the other seats, the stage words `ctx[+0x27A..+0x286]` (bar
+//! Mule's backdrop origin, [`mule_backdrop_origin`]) and the
 //! camera block `0x80083FF8`, and every hit beyond the one the band's fold
 //! lands on the hit arm. Jedo's instant kill and its shatter loop are the
 //! host's (`World::apply_jedo_writes`), keyed on [`JEDO_HIT_ARM`] and
@@ -431,6 +432,14 @@ pub fn mule_arm_kills(phase: u8) -> &'static [u32] {
     }
 }
 
+/// The two arm-14 parts PROT 0929's arms 15 and 16 keep on the creature:
+/// every pass of either arm copies the creature's display trio over their
+/// position through the handles parked at `0x801F9A98` / `0x801F9A9C`
+/// (`0x801F7BD8..0x801F7C20`, `0x801F81BC..0x801F820C`). Arm 14 parks each
+/// call's handle in the delay slot of the next `jal`, so those two slots
+/// hold its third and fourth spawns (`0x801F7A1C` / `0x801F7A38`).
+pub const MULE_CREATURE_RIDERS: [u32; 2] = [0x801F_9498, 0x801F_94E0];
+
 /// The parts PROT 0929's arm 16 lets run out instead of halting: it zeroes
 /// their op-`0x18` loop counter `+0x8C` (`0x801F82A8..0x801F82C0`), so each
 /// leaves its loop at the next op `0x19` and halts. They are arm 14's two
@@ -440,6 +449,34 @@ pub fn mule_arm_loop_ends(phase: u8) -> &'static [u32] {
         16 => &[0x801F_9468, 0x801F_95A8],
         _ => &[],
     }
+}
+
+/// PROT 0929's arm whose pass starts the backdrop follow: arm 9 bumps the
+/// word `0x801F9A84` (`0x801F747C..0x801F748C`), which arm 0 clears
+/// (`0x801F6D00`).
+pub const MULE_BACKDROP_FOLLOW_ARM: u8 = 9;
+
+/// PROT 0929's per-pass tail (`0x801F8B08..0x801F8BF8`): while the word
+/// `0x801F9A84` is set, the scanline backdrop's sample origin follows the
+/// live camera, so the underwater wash pans against the creature as the
+/// shots turn. From the live globals - pitch `0x8007B790`, yaw `0x8007B792`,
+/// TR x `0x800840B8`, TR y `0x800840BC`:
+///
+/// - `ctx[+0x285]` (the start `u`) `= -((yaw & 0xFFF) / 8 + tr_x / 24)`,
+///   stored as its low byte;
+/// - `ctx[+0x286]` (the start row `v`) `= pitch / 16 - (tr_y - 0x400) / 48`,
+///   pitch taken signed off its 12 bits, clamped to `0..=0x20`.
+///
+/// Each divide truncates toward zero, as the `mult 0x2AAAAAAB` / `mfhi`
+/// sequences and the `bgez` rounding do. Returns `(u, v)`.
+///
+/// PORT: overlay_summon_mule_0929_801f69fc (`0x801F8B08..0x801F8BF8`, the tail's backdrop follow)
+pub fn mule_backdrop_origin(pitch: i32, yaw: i32, tr_x: i32, tr_y: i32) -> (u8, u8) {
+    let u = -(((yaw & 0xFFF) >> 3) + tr_x / 24);
+    let p = pitch & 0xFFF;
+    let p = if p < 0x800 { p } else { p - 0x1000 };
+    let v = (p / 16 - (tr_y - 0x400) / 48).clamp(0, 0x20);
+    (u as u8, v as u8)
 }
 
 /// PROT 0929 (Mule): its word `0x801F9A80` drains by `p`. From arm 5 on its
@@ -455,7 +492,7 @@ pub fn mule_arm_loop_ends(phase: u8) -> &'static [u32] {
 /// | 1, 2 | the side-band applier stage `ctx[+0x276]` (1); the band timer (2) | the anchor `+= p / 2` while the band timer runs, arm 0's cut following it |
 /// | 3, 4 | the stage word (4) | the anchor `+= p / 2` a pass, arm 0's cut following it |
 /// | 5 | word | a `0x7E`-frame shot, the creature seated at `(0, -a)` facing `0x800`, clip `1`; `+= scalar * 126` |
-/// | 6..8 | word | cuts; `+= scalar * 150` / `150` / `240` |
+/// | 6..8 | word | cuts, the creature's clip cursor set to `0x78` (6) / `0x20` (7); `+= scalar * 150` / `150` / `240` |
 /// | 9 | word | a `0x3C`-frame shot, the spell name, clip `0`; `+= scalar * 60` |
 /// | 10 | word | a `0xB4`-frame shot; `+= scalar * 300` |
 /// | 11 | word | a cut, the attack name, the creature at `y = -0x100` facing `0`; `+= scalar * 208` |
@@ -529,19 +566,27 @@ pub fn mule_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
                 z: (-a) as i16,
                 facing: 0x800,
             });
+            // `+0x1DA += 1` with the `+0x1DC` bump (`0x801F7094..0x801F70B8`):
+            // clip 1 cuts in at once on the seating pass.
             st.creature_stage = Some(1);
+            st.creature_restage = true;
             cut([-0x100, 0], [0, 0x460, 0x800], at, 0x7E)
         }
         6 => {
             if gated(st, 150 * S) {
                 return ArmDirection::HOLD;
             }
+            // `sh 0x78, 0x68` on the creature's node (`0x801F7158..0x801F7164`):
+            // each cut restarts the swim-in partway, at frame 7.5.
+            st.creature_seek = Some(0x78);
             cut([0, 0x400], [-0xE00, 0xD00, 0x400], at, 1)
         }
         7 => {
             if gated(st, 150 * S) {
                 return ArmDirection::HOLD;
             }
+            // `sh 0x20, 0x68` (`0x801F7224..0x801F722C`): frame 2.
+            st.creature_seek = Some(0x20);
             cut([0, 0x800], [0, 0xB00, 0xC00], at, 1)
         }
         8 => {
@@ -599,7 +644,9 @@ pub fn mule_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             if gated(st, 320 * S) {
                 return held(d);
             }
+            // `+0x1DA = 2` with the `+0x1DC` bump (`0x801F7AE4..0x801F7AF8`).
             st.creature_stage = Some(2);
+            st.creature_restage = true;
             with_drift(cut([0, 0x980], [0x140, 0x880, 0x200], on(creature), 1), d)
         }
         15 => {

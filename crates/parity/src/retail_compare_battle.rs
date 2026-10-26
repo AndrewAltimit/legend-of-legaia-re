@@ -536,6 +536,14 @@ pub struct RetailBattle {
     /// game frames before the RAM's ([`display_lag_vsyncs`]), and a seat
     /// that moved inside those two frames drew where the ring says.
     pub displayed_ground: Vec<Option<[i16; 2]>>,
+    /// Each pool slot: whether its anim node committed a clip between the
+    /// displayed frame and the RAM's - the ring id `+0x1FB` changed, or the
+    /// cursor ring `+0x17A` stepped back, inside the
+    /// [`DISPLAYED_FRAMES_BACK`] newest slots. The commit's strike-loop tail
+    /// (`FUN_8004AD80`, `0x8004BF7C..0x8004C118`) steps the live pair along
+    /// the bearing to the target in one pass, so a seat that recommitted in
+    /// that window drew on the ring's pair, not on the RAM's.
+    pub displayed_recommit: Vec<bool>,
     /// Each pool slot's playing clip `+0x1D9` and the cursor of its anim
     /// node (`*(+0x22C) + 0x68`, 12.4 sixteenths of a keyframe) taken back
     /// to the **displayed** frame, two game frames before the RAM's: as

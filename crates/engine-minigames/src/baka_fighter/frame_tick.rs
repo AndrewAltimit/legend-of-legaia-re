@@ -287,6 +287,13 @@ impl BakaFight {
         };
         self.chrome_frame = self.chrome.step(&chrome_tick, (&[], &[]));
         self.tick_cabinet(frame_step);
+        // A cabinet arm's announcer line (the FIGHT flash, NEXT GAME, GAME
+        // OVER) rides the chrome frame's one XA slot, which every host
+        // already plays; the chrome's own line keeps the slot on a frame
+        // that has both, as `merge_frame` keeps the first.
+        if self.chrome_frame.xa.is_none() {
+            self.chrome_frame.xa = self.cabinet_frame.xa;
+        }
         if self.cabinet.front_end() {
             // Attract and player select: retail spawns the round SM only at
             // `0x0E`, so nothing of the fight runs yet.

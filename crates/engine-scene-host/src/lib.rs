@@ -16,3 +16,15 @@ pub mod place_name_banner;
 pub mod resume;
 pub mod scene_host;
 pub mod scene_live;
+
+// `tests/*.rs` compile into this crate's unit-test target rather than an
+// integration binary of their own: an integration binary links the non-test
+// library, so a `cargo test` would build the crate twice (once as the
+// library, once in test mode for the `src/` unit tests) with the two on one
+// critical path. The alias lets those files keep naming the crate as
+// `legaia_engine_scene_host::`, the public paths a downstream crate sees.
+#[cfg(test)]
+extern crate self as legaia_engine_scene_host;
+#[cfg(test)]
+#[path = "../tests/integration.rs"]
+mod integration;

@@ -61,6 +61,15 @@ pub struct FieldVmState {
     /// [`legaia_engine_vm::frame_clock::FrameClock::display_frames`] at the most recent free-roam staging / scene
     /// entry - the base of the entry window the pause-drop measures against.
     pub free_roam_entry_frame: u64,
+    /// The track a **scene-picker** entry inherits in place of a park start
+    /// ([`crate::world::BGM_PARK_SENTINEL`]): the entry script of the scene
+    /// whose door the picker seated the party at. Retail never cold-enters a
+    /// scene, so a park start always keeps the music the arrival brought;
+    /// a picked scene arrives from nothing, and the park left it silent (or
+    /// still playing the previously picked scene's track). Armed by the
+    /// scene host's picker seat, consumed by the first park start inside the
+    /// free-roam entry window, and dropped by any real start before it.
+    pub picker_bgm_inherit: Option<u16>,
     /// Per-actor field-VM channels: one spawned context per MAN partition-1
     /// placement record, mirroring the retail per-record spawn
     /// (`FUN_8003A1E4`). Spawned alongside a cutscene timeline
@@ -214,6 +223,7 @@ impl FieldVmState {
             helper_contexts: Vec::new(),
             free_roam_staging: false,
             free_roam_entry_frame: 0,
+            picker_bgm_inherit: None,
             channels: Vec::new(),
             stepping_view: Vec::new(),
             channels_man: None,

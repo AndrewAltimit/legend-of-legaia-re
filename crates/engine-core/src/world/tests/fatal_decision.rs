@@ -270,11 +270,8 @@ fn the_wheel_draws_its_icons_off_the_disc_records() {
     // One battle pass a step: the module tick and the summon parts' part
     // tick both run once a battle frame (`World::summon_fx_pass_vsyncs`), so
     // the clock has to open a new frame for the parts to tick again.
-    let pass = |w: &mut World| {
-        w.clock.display_frames += u64::from(w.battle_frame_step().max(1));
-    };
     for _ in 0..2_000 {
-        pass(&mut w);
+        w.advance_battle_pass();
         w.input.set_pad(0);
         w.run_fatal_decision(fd::FATAL_DECISION_ENTRY);
         w.tick_summon(1);
@@ -284,7 +281,7 @@ fn the_wheel_draws_its_icons_off_the_disc_records() {
     }
     assert_eq!(w.casting.module_phase, 6);
     assert!(w.battle.steal_caption.is_some(), "the stop prompt is up");
-    pass(&mut w);
+    w.advance_battle_pass();
     w.run_fatal_decision(fd::FATAL_DECISION_ENTRY);
     w.tick_summon(1);
     let scene = w.casting.active_summon.as_ref().expect("records seated");

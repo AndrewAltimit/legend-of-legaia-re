@@ -27,6 +27,19 @@ pub const fn volume_level_gain(level: u8) -> u16 {
     (level * crate::spu::BUS_GAIN_UNITY as u32 / VOLUME_LEVEL_UNITY as u32) as u16
 }
 
+/// The desktop hosts' default master volume, percent of the full mixer
+/// output ([`AudioSink::set_master_volume`]): the native play window, the
+/// game launcher and Legaia Studio start here unless the user's saved setting
+/// says otherwise. The full mix at 100% was far too loud through a desktop
+/// output; the parity oracles never apply a master volume and stay at unity.
+pub const DESKTOP_MASTER_VOLUME_DEFAULT: u8 = 25;
+
+/// The master gain for a `0..=100` percent volume (above 100 clamps to 100,
+/// the unscaled mix).
+pub fn master_volume_gain(percent: u8) -> f32 {
+    f32::from(percent.min(100)) / 100.0
+}
+
 /// An audio output: anything that owns a [`StreamResampler`] and feeds a
 /// device from it. Implementors provide [`Self::with_core`]; every control
 /// method is provided on top of it.
@@ -72,6 +85,15 @@ pub trait AudioSink {
         });
     }
 
+    /// The host master volume, `0..=100` percent of the full mix: scales the
+    /// finished output, XA voice / FMV audio included, after the downmix.
+    /// 100 is the unscaled mix (the output's own default); the desktop hosts
+    /// start at [`DESKTOP_MASTER_VOLUME_DEFAULT`].
+    fn set_master_volume(&self, percent: u8) {
+        let g = master_volume_gain(percent);
+        self.with_core(|s| s.master_gain = g);
+    }
+
     /// Route the CD input (the XA stream) into the reverb send - `SPUCNT`
     /// bit 2, which the Baka Fighter and Muscle Dome hub overlays raise
     /// ([`Spu::cd_reverb`]). Off is the default and the rest of the game.
@@ -90,8 +112,8 @@ pub trait AudioSink {
         self.with_core(|s| f(&mut s.spu))
     }
 
-    /// Install a streaming XA-ADPCM voice, replacing any active stream (and
-    /// any queued shout) without crossfading. The device callback mixes it
+    /// Install a streaming XA-ADPCM voice, replacing any active stream
+    /// without crossfading. The device callback mixes it
     /// into the SPU output at 44.1 kHz; a one-shot stream detaches when its
     /// cursor runs off the end (`looping = true` for BGM).
     ///
@@ -105,7 +127,6 @@ pub trait AudioSink {
         gain: u16,
     ) {
         self.with_core(|s| {
-            s.pending_xa = None;
             s.xa = Some(XaPlayback {
                 pcm,
                 sample_rate,
@@ -126,9 +147,8 @@ pub trait AudioSink {
     ///   samples) holds the shout silent before its first audible sample,
     ///   the CD controller's seek/read-to-first-sector latency, so a shout
     ///   requested on the animation-start frame trails the animation.
-    /// * **Back-to-back no-drop.** A shout requested while one is sounding is
-    ///   queued (one deep) and starts the sample the active one ends; a third
-    ///   request replaces the queued one.
+    /// * **One drive.** A clip requested while another is sounding replaces
+    ///   it, as the retail starter re-arms the drive for the new clip.
     fn play_xa_shout(
         &self,
         pcm: Vec<i16>,
@@ -173,11 +193,10 @@ pub trait AudioSink {
         Ok(())
     }
 
-    /// Detach the active XA stream and drop any queued shout.
+    /// Detach the active XA stream.
     fn stop_xa(&self) {
         self.with_core(|s| {
             s.xa = None;
-            s.pending_xa = None;
         });
     }
 

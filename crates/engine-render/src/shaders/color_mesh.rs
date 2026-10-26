@@ -79,6 +79,9 @@ fn vs_main(
     if u.psx_params.z >= 0.5 {
         out.clip_pos = psx_snap_clip(out.clip_pos, PSX_STAGE_W, PSX_STAGE_H);
     }
+    if u.psx_params.z >= 1.5 {
+        out.clip_pos = psx_native_centre(out.clip_pos, PSX_STAGE_W, PSX_STAGE_H);
+    }
     if prim_near_rejected(u.mvp, prim_c0, prim_c1, prim_c2, prim_c3) {
         out.clip_pos = PRIM_REJECTED_CLIP;
     }

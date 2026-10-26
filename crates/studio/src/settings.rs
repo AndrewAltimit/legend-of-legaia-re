@@ -32,6 +32,9 @@ pub struct Settings {
     /// (`overview`, `textures`, ...) open when the app last closed.
     pub mode: Option<String>,
     pub tab: Option<String>,
+    /// The PROT index selected in Browse when the app last closed, selected
+    /// again (and scrolled to) when the next start reopens a disc.
+    pub entry: Option<u32>,
     /// Disc images and extracted folders opened recently, newest first, at
     /// most [`RECENT_MAX`] ([`Settings::remember_recent`]).
     pub recent: Vec<PathBuf>,
@@ -39,6 +42,19 @@ pub struct Settings {
     pub theme: Theme,
     /// The UI zoom factor (`Ctrl+=` / `Ctrl+-` / `Ctrl+0`); `None` is 1.0.
     pub zoom: Option<f32>,
+    /// Audio preview volume, percent of the full mixer output (View menu);
+    /// `None` is [`legaia_engine_audio::DESKTOP_MASTER_VOLUME_DEFAULT`].
+    pub volume: Option<u8>,
+}
+
+impl Settings {
+    /// The audio preview volume in percent, `0..=100`.
+    pub fn volume_percent(&self) -> u8 {
+        self.volume
+            .map_or(legaia_engine_audio::DESKTOP_MASTER_VOLUME_DEFAULT, |v| {
+                v.min(100)
+            })
+    }
 }
 
 /// How many recent sources the open menu keeps.
@@ -173,6 +189,28 @@ mod tests {
         let gone = s.recent[0].clone();
         s.forget_recent(&gone);
         assert!(!s.recent.contains(&gone));
+    }
+
+    /// The preview volume starts at a quarter of the full mix, and a saved
+    /// value (or an old file without one) loads as written.
+    #[test]
+    fn volume_defaults_to_a_quarter_and_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        assert_eq!(Settings::default().volume_percent(), 25);
+        std::fs::write(&path, "{}").unwrap();
+        assert_eq!(Settings::load(&path).volume_percent(), 25);
+        let s = Settings {
+            volume: Some(60),
+            ..Default::default()
+        };
+        s.save(&path).unwrap();
+        assert_eq!(Settings::load(&path).volume_percent(), 60);
+        let loud = Settings {
+            volume: Some(250),
+            ..Default::default()
+        };
+        assert_eq!(loud.volume_percent(), 100);
     }
 
     #[test]

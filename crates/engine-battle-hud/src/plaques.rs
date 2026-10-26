@@ -207,6 +207,31 @@ pub fn battle_move_name(world: &legaia_engine_core::world::World) -> Option<Stri
     }
 }
 
+/// Whether [`battle_move_name`] names a summon module's own line - a party
+/// caster's Magic action under a module caption, which the module prints
+/// through `FUN_8003541C` rather than through the label's placement record
+/// (`BattleHudFrame::move_name_module_line`).
+pub fn battle_move_name_is_module_line(world: &legaia_engine_core::world::World) -> bool {
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
+    use legaia_engine_cast::cast_module_camera::ModuleCaption;
+    if battle_hud_phase(world) != BattleHudPhase::Action
+        || world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome
+        || world.casting.fatal_banner.is_some()
+    {
+        return false;
+    }
+    let a = world.battle_ctx.active_actor;
+    let Some(actor) = world.actors.get(a as usize) else {
+        return false;
+    };
+    actor.battle.action_category == ActionCategory::Magic.as_byte()
+        && a < party_count(world) as u8
+        && !matches!(
+            world.casting.module_caption,
+            None | Some(ModuleCaption::Cleared)
+        )
+}
+
 /// The full-width message bar's line (HUD element `0x5B`, placement record
 /// 91), or `None`: the death-spoils caption a slain monster raised - the
 /// Evil God Icon's steal, or a thief's loot handed back

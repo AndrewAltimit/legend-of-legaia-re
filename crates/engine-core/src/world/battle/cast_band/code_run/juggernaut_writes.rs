@@ -25,9 +25,9 @@ impl World {
     /// | 27 (`0x801F805C..0x801F8170`) | each live monster back on its saved pose; creature hidden; caster shown |
     /// | 28 (`0x801F81D8..0x801F828C`, every pass) | each live monster back on its saved pose |
     ///
-    /// Not carried: the monsters' half render scale (`+0x72 = 0x800`, and
-    /// `+0x58` halved) through arms 0..26, which the battle body draw does
-    /// not read.
+    /// Arm 0 also halves each monster's render scale (`+0x72 = 0x800`) and
+    /// arm 27 puts it back to `0x1000`; not carried: the body radius `+0x58`
+    /// arm 0 halves beside it.
     ///
     /// PORT: overlay_summon_juggernaut_0927_801f6a84 (PROT 0927; the seat, row-1 and backdrop writes of arms 0, 2, 18, 19, 21, 26, 27 and 28)
     pub(in crate::world::battle::cast_band) fn apply_juggernaut_writes(
@@ -127,6 +127,9 @@ impl World {
                     a.move_state.world_x = seat.x / 3;
                     a.move_state.world_z = seat.z / 2;
                     a.battle.facing_angle = 0;
+                    // The render node at half scale (`sh 0x800,0x72` at
+                    // `0x801F6C7C`), back to unity on arm 27 (`0x801F80F0`).
+                    a.battle.render_scale = Some(0x800);
                     a.battle.render_color = 0;
                     a.battle.render_flag = HIDDEN;
                 }
@@ -187,6 +190,11 @@ impl World {
             }
             27 => {
                 self.juggernaut_restore_monsters(&monster_slots);
+                for &(_, e) in &monster_slots {
+                    if let Some(a) = self.actors.get_mut(e) {
+                        a.battle.render_scale = Some(0x1000);
+                    }
+                }
                 if let Some(a) = creature.and_then(|c| self.actors.get_mut(c)) {
                     a.battle.render_color = 0;
                     a.battle.render_flag = HIDDEN;

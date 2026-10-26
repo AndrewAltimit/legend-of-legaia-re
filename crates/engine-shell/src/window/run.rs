@@ -355,7 +355,7 @@ pub(super) fn cmd_play_window_with_record(
     // child that dies of SIGSEGV without it died inside `EventLoop::new`
     // (libXi's first-use race) and is retried once
     // (`legaia_parity::window_child`).
-    log::info!("{}", legaia_parity::window_child::EVENT_LOOP_OPEN_MARKER);
+    log::info!("{}", legaia_engine_capture::EVENT_LOOP_OPEN_MARKER);
     play_intro_movie(
         &mut event_loop,
         scene,

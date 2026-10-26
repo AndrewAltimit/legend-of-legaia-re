@@ -2,7 +2,7 @@
 //! modules whose stager arms only seat more records: PROT 0905 (Vera), 0906
 //! (Gizam), 0907 (Nighto), 0908 (Zenoir), 0910 (Swordie), 0911 (Orb), 0912
 //! (Freed), 0913 (Nova), the summon-creature modules 0914, 0915, 0917, 0921,
-//! 0928..0933, and the capture cells PROT 0938, 0944, 0946, 0961 and 0962
+//! 0928..0933, and the capture cells PROT 0938, 0944, 0946, 0961, 0962 and 0965
 //! (PROT 0940's stager is a bare `jr ra`). PROT 0909's stager also steps the
 //! module's phase and runs through [`World::run_viguro_stager_calls`].
 
@@ -10,9 +10,14 @@ use super::*;
 use legaia_engine_cast::cast_module_ticks::{
     CALL_WAVE_WAVE_RECORD, FREED_STAGER_FADE, MULE_STAGER_FADE_ARM, MULE_STAGER_FADES, StagerSpawn,
     blade_breath_cell_stager_spawns, call_wave_stager_spawns, chaos_breath_cell_stager_spawns,
-    dead_end_crisis_stager_spawns, freed_stager_spawns, gizam_stager_spawns,
-    guilty_cross_cell_stager_spawns, horn_stager_spawns, nighto_stager_spawns, nova_stager_spawns,
-    orb_stager_spawns, swordie_stager_spawns, vera_stager_spawns, zenoir_stager_spawns,
+    dead_end_crisis_stager_spawns, doomsday_stager_spawns, freed_stager_spawns,
+    gizam_stager_spawns, guilty_cross_cell_stager_spawns, horn_stager_spawns, nighto_stager_spawns,
+    nova_stager_spawns, orb_stager_spawns, swordie_stager_spawns, vera_stager_spawns,
+    zenoir_stager_spawns,
+};
+use legaia_engine_cast::cast_module_ticks::{
+    MEGATON_PRESS_HELD_WHITE, MEGATON_PRESS_WHITE_OUT, megaton_press_stager_spawns,
+    plasma_strike_stager_spawns,
 };
 use legaia_engine_cast::cast_module_ticks::{
     barra_stager_spawns, gola_gola_stager_spawns, iota_stager_spawns, jedo_stager_spawns,
@@ -22,6 +27,11 @@ use legaia_engine_cast::cast_module_ticks::{
 use legaia_engine_cast::cast_module_ticks::{
     kemaro_stager_spawns, ozma_stager_spawns, ultimate_rave_stager_spawns,
 };
+
+/// The slot PROT 0959 parks its held white in (`sw v0,0x102C(ctx)` at
+/// `0x801F85FC`).
+const MEGATON_PRESS_FADE_SLOT: legaia_overlay_images::cast_presentation::HandleSlot =
+    legaia_overlay_images::cast_presentation::HandleSlot::Ctx(0x102C);
 
 impl World {
     /// Whether module `entry`'s stager arms are run off its parts' op-`0x20`
@@ -54,8 +64,11 @@ impl World {
                 | 940
                 | 944
                 | 946
+                | 959
+                | 960
                 | 961
                 | 962
+                | 965
         )
     }
 
@@ -85,7 +98,7 @@ impl World {
         // A capture cell's stager runs only for the body whose arms seat
         // per arm; its other bodies keep the pager's whole-set placement,
         // which already holds the records the stager would seat.
-        if matches!(entry, 938 | 940 | 944 | 962)
+        if matches!(entry, 938 | 940 | 944 | 959 | 960 | 962)
             && self
                 .casting
                 .capture_spell
@@ -181,16 +194,76 @@ impl World {
                 // PROT 0940's stager `FUN_801F82CC` is a bare `jr ra`.
                 940 => Vec::new(),
                 944 => guilty_cross_cell_stager_spawns(arm, caller),
+                959 => megaton_press_stager_spawns(arm, caller, &mut rand),
+                960 => plasma_strike_stager_spawns(arm, caller),
                 946 => call_wave_stager_spawns(arm, caller, phase, waves, &mut rand),
                 961 => dead_end_crisis_stager_spawns(arm, caller, &mut rand),
                 962 => blade_breath_cell_stager_spawns(arm, caller),
+                965 => doomsday_stager_spawns(arm, caller),
                 _ => Vec::new(),
             };
             self.casting.module_barra_counter = barra_counter;
             self.casting.module_ozma_word = ozma_word;
+            // PROT 0959's arm 2 flushes the pool, kills the held white its
+            // arm 3 parked at `ctx[+0x102C]` and fades white out before its
+            // seats (`0x801F8478..0x801F84D4`).
+            if entry == 959 && arm == 2 {
+                self.flush_module_part_pool();
+                self.casting
+                    .module_pres
+                    .fades
+                    .retain(|f| f.slot != Some(MEGATON_PRESS_FADE_SLOT));
+                self.push_megaton_press_fade(&MEGATON_PRESS_WHITE_OUT, 0x801F_84D4, None);
+            }
             for s in &spawns {
                 self.seat_stager_spawn(entry, s);
             }
+            if entry == 959 && arm == 3 {
+                self.push_megaton_press_fade(
+                    &MEGATON_PRESS_HELD_WHITE,
+                    0x801F_85E8,
+                    Some(MEGATON_PRESS_FADE_SLOT),
+                );
+            }
+        }
+    }
+
+    /// Spawn one of PROT 0959's stager fades into the presentation hook's
+    /// fade list, parked at `slot` (which the module's arm `0x0F` and the
+    /// stager's arm 2 kill).
+    pub(in crate::world::battle::cast_band) fn push_stager_fade(
+        &mut self,
+        t: &legaia_engine_battle_vm::battle_action::SummonFadeTemplate,
+        site: u32,
+        slot: Option<legaia_overlay_images::cast_presentation::HandleSlot>,
+    ) {
+        self.push_megaton_press_fade(t, site, slot);
+    }
+
+    fn push_megaton_press_fade(
+        &mut self,
+        t: &legaia_engine_battle_vm::battle_action::SummonFadeTemplate,
+        site: u32,
+        slot: Option<legaia_overlay_images::cast_presentation::HandleSlot>,
+    ) {
+        let mut seat = None;
+        legaia_engine_system::fade::spawn_fade(
+            &mut seat,
+            &legaia_engine_battle_vm::battle_action::summon_fade_template(t),
+            1,
+        );
+        if let Some(state) = seat {
+            if let Some(s) = slot {
+                for f in self.casting.module_pres.fades.iter_mut() {
+                    if f.slot == Some(s) {
+                        f.slot = None;
+                    }
+                }
+            }
+            self.casting
+                .module_pres
+                .fades
+                .push(super::presentation::HookFade { site, slot, state });
         }
     }
 

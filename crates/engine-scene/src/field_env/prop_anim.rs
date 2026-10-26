@@ -188,7 +188,6 @@ impl PropAnim {
         if self.anim_id == 0 || self.frames == 0 {
             return;
         }
-        let span = (self.frames as i32) * 16;
         // The clip's own per-frame step scaling (`clip[1] & 1` selects it,
         // `clip[6]` divides). The same bit is the frame blender's gate, so a
         // prop on this arm is also posed between keyframes. A minority of the
@@ -200,42 +199,12 @@ impl PropAnim {
             self.step_div,
         )
         .wrapping_mul(scale.max(1)) as i16;
-        if self.flags & ANIM_RESTART != 0 {
-            self.flags &= !ANIM_RESTART;
-            self.cursor = if self.flags & ANIM_REVERSE == 0 {
-                0
-            } else {
-                (span - 16).max(0) as i16
-            };
-        }
-        // Retail re-reads the flag word here, so the restart bit it just
-        // cleared is not what the hold test below sees.
-        let flags = self.flags;
-        self.flags &= !ANIM_END;
-        if flags & ANIM_HOLD == 0 {
-            self.cursor = if flags & ANIM_REVERSE == 0 {
-                self.cursor.wrapping_add(step)
-            } else {
-                self.cursor.wrapping_sub(step)
-            };
-        }
-        if self.cursor < 0 {
-            self.cursor = if self.flags & ANIM_CLAMP == 0 {
-                self.cursor.wrapping_add(span as i16)
-            } else {
-                0
-            };
-            self.flags |= ANIM_END;
-        }
-        let last = (span - 1) as i16;
-        if last <= self.cursor {
-            self.cursor = if self.flags & ANIM_CLAMP == 0 {
-                0
-            } else {
-                last
-            };
-            self.flags |= ANIM_END;
-        }
+        (self.cursor, self.flags) = legaia_engine_vm::actor_tick::clip_cursor_tick(
+            self.cursor,
+            self.flags,
+            step,
+            self.frames,
+        );
     }
 }
 

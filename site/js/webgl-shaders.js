@@ -585,6 +585,13 @@ void main() {
   /* After the overworld bend, as native snaps after its curve: retail bends
    * SY before the packet is written. Identity while u_psx.z is 0. */
   if (u_psx.z >= 0.5) gl_Position = psxSnapClip(gl_Position, 320.0, 240.0);
+  /* The native target's pixel centre (engine-render's psx_native_centre):
+   * half a stage pixel down and right, so this rasteriser's pixel centre is
+   * the GPU's integer sample point. */
+  if (u_psx.z >= 1.5 && gl_Position.w > 0.0) {
+    gl_Position.x += gl_Position.w / 320.0;
+    gl_Position.y -= gl_Position.w / 240.0;
+  }
   /* A rejected primitive parks every corner on one point outside the clip
    * volume: no area, nothing rasterised. */
   if (primNearRejected(u_mvp * u_model)) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
@@ -677,9 +684,10 @@ uniform vec4 u_palette;
  * camera-facing copy; with culling off both copies draw and z-fight. Flagged
  * fragments keep exactly one copy per view: the front-facing one when
  * u_pair_front != 0, the back-facing one otherwise. The value encodes the
- * view chain's reflection parity - buildMvp's single Y-flip projections keep
- * front (1); the assembled views add the retail screen-X mirror on top (two
- * reflections), which inverts gl_FrontFacing, so they keep back (0). */
+ * view chain's reflection parity: the assembled views (Y flip + the retail
+ * screen-X mirror) and buildMvp (X + Y flip) are both two reflections, a
+ * rotation, so they keep back (0); an engine-built single-mesh override
+ * keeps front (1). */
 uniform int u_pair_front;
 /* Retail GTE **NCLIP** winding rejection, as a fragment test. 0 (the GL
  * default) draws both sides - the engine's rasterizer pipelines do the same,
@@ -1079,6 +1087,9 @@ float psxRowReach(vec4 bary, vec4 stp) {
  * psx_sample_uv. uv_dy / bary_dy are GL's dFdy, a row up. */
 vec2 psxSampleUv(vec2 uv, vec2 uv_dy, vec4 bary, vec4 bary_dy) {
   if (u_psx.z < 0.5) return uv;
+  /* The native target (engine-render's psx_texel_uv): the UV is the GPU's at
+   * its sample point already, and the GPU rounds it to a texel. */
+  if (u_psx.z >= 1.5) return uv + vec2(0.5);
   float perRow = u_psx.y / 240.0;
   float rows = 0.5 * perRow;
   float margin = perRow / 64.0;

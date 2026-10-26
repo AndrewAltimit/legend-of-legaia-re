@@ -30,12 +30,14 @@ pub(super) fn stage_shell_meshes(
     objects: &[usize],
 ) -> (legaia_tmd::mesh::VramMesh, legaia_tmd::mesh::ColorMesh) {
     let tmd0 = legaia_scene_formats::battle_backdrop::objects_tmd(tmd, objects);
-    let mut vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd0, raw);
-    let first = vmesh.clone();
-    vmesh.append_scaled(&first, second.scale());
-    let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&tmd0, raw);
-    let cfirst = cmesh.clone();
-    cmesh.append_scaled(&cfirst, second.scale());
+    let vmesh = legaia_engine_scene_host::scene_host::backdrop_shell_mesh(
+        &legaia_tmd::mesh::tmd_to_vram_mesh(&tmd0, raw),
+        second,
+    );
+    let cmesh = legaia_engine_scene_host::scene_host::backdrop_shell_color_mesh(
+        &legaia_tmd::mesh::tmd_to_color_mesh(&tmd0, raw),
+        second,
+    );
     (vmesh, cmesh)
 }
 

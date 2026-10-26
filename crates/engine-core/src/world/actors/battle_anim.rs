@@ -332,11 +332,19 @@ impl World {
                 // summon creature's clip, rate and frame.
                 if creature_diag {
                     eprintln!(
-                        "[creature-anim] slot={i} phase={} cur={} queued={} rate={} frame={after}",
+                        "[creature-anim] slot={i} phase={} cur={} queued={} rate={} frame={after} pos={:?} colour={:#x} tint={} facing={}",
                         module_phase,
                         actor.battle.current_anim,
                         actor.battle.queued_anim,
                         rate.get(),
+                        [
+                            actor.move_state.world_x,
+                            actor.move_state.world_y,
+                            actor.move_state.world_z
+                        ],
+                        actor.battle.render_color,
+                        actor.battle.render_flag,
+                        actor.battle.facing_angle,
                     );
                 }
                 // The natural end's displacement: the actor steps along its
@@ -466,6 +474,29 @@ impl World {
             // looping clip)
             if looped_recommit {
                 self.actors[i].battle.input_cursor = 0;
+                // The commit's cue-track cursor seed (`sb zero,0x1f6` at
+                // `0x8004AFD0`, then the juggled re-hit's `1`): a walk's
+                // second and later cycles re-fire their footfall cues. The
+                // juggle byte is still the last pass's here, as at retail's
+                // commit (`+0x1F7` is written after it, `0x80047E28`).
+                let cue_cursor = self.battle_reaction_map(i).map_or(0, |map| {
+                    let a = &self.actors[i];
+                    let entry = self.battle_current_anim(i);
+                    let first_cue = a
+                        .battle_effect_script
+                        .as_ref()
+                        .and_then(|s| s.get(0x56..0x58))
+                        .map_or(0, |b| u16::from_le_bytes([b[0], b[1]]));
+                    crate::world::battle::clip_ladder::recommit_cue_cursor(
+                        map,
+                        entry,
+                        entry,
+                        a.battle_juggle_window,
+                        a.battle_monster_id.is_none(),
+                        first_cue,
+                    )
+                });
+                self.actors[i].battle_anim_cue_cursor = cue_cursor;
                 self.note_active_clip_commit(i);
                 // The natural-end commit installs whatever `+0x1DA` holds:
                 // a byte staged over the summon creature's loop waits here
@@ -829,12 +860,17 @@ impl World {
                             .checked_sub(1)
                             .and_then(|k| b.starter_marks.and_then(|m| m.get(k).copied()))
                             .map(|w| w as u8);
+                        let found_stage = self.battle_ctx.arts_banner_stage;
                         let (stage, level) =
                             legaia_engine_battle_vm::battle_action::banner_on_starter_commit(
                                 seat, pick,
                             );
                         self.battle_ctx.arts_banner_stage = stage;
                         self.battle_ctx.arts_banner_level = level;
+                        // The same block's voice: the Miracle seat's / the
+                        // starter mark's generic line, else the Hyper Art
+                        // fanfare (`0x8004B7D0` / `0x8004BB34`).
+                        self.emit_starter_commit_voice(i, found_stage);
                     }
                 }
                 rl::CommitRateEffect::StrikeSlow { rate } => {
@@ -926,6 +962,14 @@ impl World {
         // live one both hosts feed it from.
         // PORT: FUN_8004E13C (the `+0x243` store and the value-2 re-seed;
         // the `+0x21C` sweep is not modelled)
+        // The shout site (`0x8004BCF0..0x8004BD6C`): a party seat committing
+        // a staged id `>= 0x10` asks the arts-voice selector when the byte
+        // before the cursor is the known-art starter, or under the solo
+        // latch - read here, ahead of this commit's own store below.
+        if q >= 0x10 && self.actors[i].battle_monster_id.is_none() {
+            let latch = self.battle_ctx.gauge_rearm_latch;
+            self.emit_commit_arts_shout(i, latch);
+        }
         if let Some(v) = clip
             .as_ref()
             .and_then(|c| c.entry_solo_flag())

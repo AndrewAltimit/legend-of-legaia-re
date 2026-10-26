@@ -199,6 +199,17 @@ pub struct ScreenshotConfig {
     /// ([`legaia_engine_capture::ground_snap`]). Set by the retail-compare
     /// image channel on an action drive.
     pub battle_ground_snap: Vec<legaia_engine_capture::ground_snap::GroundSnap>,
+    /// `LEGAIA_CAST_RAND_SEED=st7:phase:seed`: a recorded cast's `rand()`
+    /// seed on one cast key, set on the world stream before every tick under
+    /// that key ([`legaia_engine_capture::cast_rand`]). Set by the
+    /// cast-sequence oracle's `--rand-at`.
+    pub cast_rand_seed: Option<legaia_engine_capture::cast_rand::CastRandSeed>,
+    /// `LEGAIA_BATTLE_DISPLAYED_SEAT=slot:x:z,...`: live pairs the captured
+    /// frame stands combatants on **after** the camera is aligned on
+    /// [`Self::battle_ground_snap`] - the displayed frame's ground of a seat
+    /// that moved between that frame and the RAM's. Set by the
+    /// retail-compare image channel (`RetailBattle::engine_image_displayed_seats`).
+    pub battle_displayed_seat: Vec<legaia_engine_capture::ground_snap::GroundSnap>,
     pub battle_cam_align_displayed: Option<(
         legaia_engine_camera::projection::BattleCamPose,
         legaia_engine_camera::projection::BattleCamPose,
@@ -286,6 +297,11 @@ pub struct ScreenshotConfig {
     /// live seats (`legaia_parity::retail_compare::retail_walkers`), stood
     /// on the capture frame (`World::seed_ambient_walker`).
     pub seat_walkers: Vec<legaia_engine_capture::field_seeds::WalkerSeed>,
+    /// `LEGAIA_SEAT_PLACEMENTS=<fields>`: placements a finished cutscene
+    /// beat left on a script-literal tile
+    /// (`legaia_parity::retail_compare::scripted_seats`), stood there,
+    /// position only, on the capture frame (`World::seed_placement_seat`).
+    pub seat_placements: Vec<legaia_engine_capture::field_seeds::WalkerSeed>,
     /// `LEGAIA_SEAT_PANEL=<fields>`: a retail state's live image-panel
     /// widget (`legaia_parity::retail_compare::retail_panel`), installed on
     /// the capture frame - the vignette record that spawned it ran before
@@ -679,7 +695,13 @@ impl ScreenshotConfig {
             battle_cam_align: std::env::var("LEGAIA_BATTLE_CAM_ALIGN")
                 .ok()
                 .and_then(|v| legaia_engine_capture::camera_align::cam_align_from_env(&v)),
+            cast_rand_seed: std::env::var("LEGAIA_CAST_RAND_SEED")
+                .ok()
+                .and_then(|v| legaia_engine_capture::cast_rand::cast_rand_seed_from_env(&v)),
             battle_ground_snap: std::env::var("LEGAIA_BATTLE_GROUND_SNAP")
+                .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))
+                .unwrap_or_default(),
+            battle_displayed_seat: std::env::var("LEGAIA_BATTLE_DISPLAYED_SEAT")
                 .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))
                 .unwrap_or_default(),
             battle_cam_align_displayed: std::env::var("LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED")
@@ -766,6 +788,9 @@ impl ScreenshotConfig {
                 .ok()
                 .and_then(|v| legaia_engine_capture::field_seeds::panel_from_env(&v)),
             seat_walkers: std::env::var("LEGAIA_SEAT_WALKERS")
+                .map(|v| legaia_engine_capture::field_seeds::walkers_from_env(&v))
+                .unwrap_or_default(),
+            seat_placements: std::env::var("LEGAIA_SEAT_PLACEMENTS")
                 .map(|v| legaia_engine_capture::field_seeds::walkers_from_env(&v))
                 .unwrap_or_default(),
             seat_morphs: std::env::var("LEGAIA_SEAT_MORPHS")

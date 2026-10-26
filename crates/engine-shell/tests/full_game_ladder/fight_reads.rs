@@ -511,6 +511,14 @@ pub(super) fn duel_wants_spirit(w: &legaia_engine_core::world::World, actor: u8)
     if !solo_duel(w) {
         return false;
     }
+    // The round a Delilas special is due is always a Spirit round: unguarded
+    // it is the fight (an unguarded Megaton Press lands 218 + 238 + nine
+    // ~145s on a full 1446-HP Gala, retail's `nivora_duel_che_vs_gala_start`
+    // under the monster-pick probe; guarded, ~380).
+    if delilas_special_due(w) {
+        DUEL_SPIRIT_ROUND.with(|d| d.set(Some(ROUND_HISTORY.with(|h| h.borrow().len()))));
+        return true;
+    }
     let a = &w.actors[usize::from(actor)].battle;
     // Held round after round below five eighths, or while one of the foe's
     // heaviest rounds so far (a Delilas special lands most of a member's HP
@@ -528,6 +536,14 @@ pub(super) fn duel_wants_spirit(w: &legaia_engine_core::world::World, actor: u8)
     // The choice is latched per foe round: the fighter re-reads the menu on
     // every pad poll until the press lands, and a choice that flipped under
     // it would press something else.
+    // Against a Delilas sibling the Spirit round is the special's, which
+    // the beat names; the rounds between go to Arts unless the member is low.
+    // The alternation below would spend them on Spirit too once a heal took
+    // its Arts round (special, heal, Spirit, special, ...), and the foe
+    // would never be dented.
+    if boss_monster_id(w).is_some_and(|id| (0xA2..=0xA4).contains(&id)) {
+        return low;
+    }
     let round = ROUND_HISTORY.with(|h| h.borrow().len());
     match DUEL_SPIRIT_ROUND.with(std::cell::Cell::get) {
         Some(r) if r == round => return true,
@@ -536,6 +552,15 @@ pub(super) fn duel_wants_spirit(w: &legaia_engine_core::world::World, actor: u8)
     }
     DUEL_SPIRIT_ROUND.with(|d| d.set(Some(round)));
     true
+}
+
+/// The Delilas siblings (Gi, Che, Lu: monsters `0xA2..=0xA4`) cast their
+/// special on every round whose battle-mode counter `ctx[+0x28A]` reads `2`
+/// mod 3 (`monster_ai::decide`'s `0xA2..=0xA4` arm, `0x801EB7C0..`): the
+/// third round of every three. A player who has seen one learns the beat.
+pub(super) fn delilas_special_due(w: &legaia_engine_core::world::World) -> bool {
+    boss_monster_id(w).is_some_and(|id| (0xA2..=0xA4).contains(&id))
+        && w.battle.monster_ai_state.mode_flags % 3 == 2
 }
 
 /// Does `actor` know a healing spell?

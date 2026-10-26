@@ -61,6 +61,7 @@ pub(crate) fn run_seq_playback(
     );
 
     let audio = AudioOut::new().context("open audio output")?;
+    audio.set_master_volume(legaia_engine_audio::DESKTOP_MASTER_VOLUME_DEFAULT);
 
     // Build the bank inside the AudioOut's SPU (via with_spu) so the
     // sequencer's SPU references match the playback SPU. Reserve the

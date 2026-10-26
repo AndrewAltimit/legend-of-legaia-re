@@ -267,7 +267,6 @@ skips = [
     "tick_fishing_banners",
     "tick_minigame_extras",
     "tick_muscle_arts_list_slide",
-    "tick_play_clock",
     "tick_sfx",
     "tick_world_effects",
 ]
@@ -302,7 +301,6 @@ skips = [
     "tick_fishing_banners",
     "tick_minigame_extras",
     "tick_muscle_arts_list_slide",
-    "tick_play_clock",
     "tick_sfx",
     "tick_world_effects",
 ]
@@ -335,7 +333,6 @@ skips = [
     "tick_fishing_banners",
     "tick_minigame_extras",
     "tick_muscle_arts_list_slide",
-    "tick_play_clock",
     "tick_sfx",
     "tick_world_effects",
 ]
@@ -367,7 +364,6 @@ skips = [
     "tick_fishing_banners",
     "tick_minigame_extras",
     "tick_muscle_arts_list_slide",
-    "tick_play_clock",
     "tick_sfx",
     "tick_world_effects",
 ]
@@ -400,7 +396,6 @@ skips = [
     "tick_fishing_banners",
     "tick_minigame_extras",
     "tick_muscle_arts_list_slide",
-    "tick_play_clock",
     "tick_sfx",
     "tick_world_effects",
 ]
@@ -431,7 +426,6 @@ skips = [
     "tick_minigame_ui",
     "tick_muscle_arts_list_slide",
     "tick_passive_hud",
-    "tick_play_clock",
     "tick_sfx",
     "tick_world_effects",
 ]
@@ -463,7 +457,6 @@ skips = [
     "tick_minigame_ui",
     "tick_muscle_arts_list_slide",
     "tick_passive_hud",
-    "tick_play_clock",
     "tick_sfx",
     "tick_world_effects",
 ]
@@ -493,7 +486,6 @@ skips = [
     "tick_minigame_ui",
     "tick_muscle_arts_list_slide",
     "tick_passive_hud",
-    "tick_play_clock",
     "tick_sfx",
     "tick_world_effects",
 ]
@@ -529,7 +521,6 @@ skips = [
     "tick_fishing_banners",
     "tick_minigame_extras",
     "tick_muscle_arts_list_slide",
-    "tick_play_clock",
     "tick_sfx",
     "tick_world_effects",
 ]
@@ -576,7 +567,6 @@ skips = [
     "tick_minigame_ui",
     "tick_muscle_arts_list_slide",
     "tick_passive_hud",
-    "tick_play_clock",
     "tick_sfx",
     "tick_world_effects",
 ]

@@ -131,8 +131,14 @@ pub struct Renderer {
     /// `render` API; cleared and refilled each frame, capacity persists so
     /// the per-prim sort allocates nothing in steady state.
     pub(super) blend_list: std::cell::RefCell<Vec<psx_blend::BlendListEntry>>,
-    /// Depth target - recreated on resize.
+    /// Depth target - recreated on resize, at [`Self::target_size`].
     pub(super) depth_view: wgpu::TextureView,
+    /// The native-resolution frame target ([`Self::set_native_resolution`]);
+    /// `None` draws straight onto the surface.
+    pub(super) native: Option<super::native_target::NativeTarget>,
+    /// The texel rule of PSX mode on the native target
+    /// ([`Self::set_psx_texel_rule`]).
+    pub(super) psx_texel_rule: std::cell::Cell<PsxTexelRule>,
     /// PSX-faithful rendering mode. When `true`, the VRAM-mesh shader uses
     /// affine (linear-in-screen-space) UV interpolation instead of
     /// perspective-correct, and snaps clip-space x/y to integer pixel
@@ -162,6 +168,9 @@ pub struct Renderer {
     /// entry replaces the frame's [`Renderer::set_backface_cull`] word for
     /// that draw; held until the next call.
     pub(super) draw_nclip: std::cell::RefCell<Vec<Option<u32>>>,
+    /// [`Self::draw_nclip`] for the scene's untextured `color_draws`
+    /// ([`Renderer::set_color_draw_nclip`]).
+    pub(super) color_draw_nclip: std::cell::RefCell<Vec<Option<u32>>>,
     /// Full-scene colour grade `(gold_r, gold_g, gold_b, strength)` staged
     /// into every field `MeshUniforms` (see [`super::uploaded::MeshUniforms`]).
     /// Defaults to `(1, 1, 1, 0)` = identity (no grade). Set with
@@ -349,6 +358,28 @@ impl Renderer {
     /// Read current PSX-mode flag.
     pub fn psx_mode(&self) -> bool {
         self.psx_mode.get()
+    }
+
+    /// Pick the texel rule PSX mode on the native target samples with:
+    /// [`PsxTexelRule::Gpu`] (the default, the console's) or
+    /// [`PsxTexelRule::PcsxRedux`], an instrument for scoring a frame
+    /// against a PCSX-Redux capture. No effect off the native target.
+    pub fn set_psx_texel_rule(&self, rule: PsxTexelRule) {
+        self.psx_texel_rule.set(rule);
+    }
+
+    /// `psx_params.z` / `.w` of a mesh uniform: the vertex snap (`0` off,
+    /// `1` on, `2` on with the native target's pixel centre - see
+    /// [`Self::set_native_resolution`]) and the dither enable.
+    pub(super) fn psx_snap_params(&self) -> (f32, f32) {
+        match (self.psx_mode.get(), self.native.is_some()) {
+            (false, _) => (0.0, 0.0),
+            (true, false) => (1.0, 1.0),
+            (true, true) => match self.psx_texel_rule.get() {
+                PsxTexelRule::Gpu => (2.0, 1.0),
+                PsxTexelRule::PcsxRedux => (3.0, 1.0),
+            },
+        }
     }
 
     /// Tint the 2D overlay (menus, HUD, dialogue, every text and sprite
@@ -633,6 +664,14 @@ impl Renderer {
         *self.draw_nclip.borrow_mut() = textured;
     }
 
+    /// [`Self::set_draw_nclip`] for the untextured colour pipeline:
+    /// `color[i]` for `Scene::color_draws[i]`. The battle backdrop's
+    /// untextured half takes copy A's word there, as its textured half does.
+    /// Held until the next call.
+    pub fn set_color_draw_nclip(&self, color: Vec<Option<u32>>) {
+        *self.color_draw_nclip.borrow_mut() = color;
+    }
+
     /// Read the current `(mask_x, mask_y, off_x, off_y)` texture window
     /// register state, in 8-pixel steps (0..=31). All zero means no-op.
     pub fn texture_window(&self) -> [u32; 4] {
@@ -823,10 +862,15 @@ impl Renderer {
         self.config.width = width.max(1);
         self.config.height = height.max(1);
         self.surface.configure(&self.device, &self.config);
-        self.depth_view = create_depth_view(&self.device, self.config.width, self.config.height);
+        let (w, h) = self.target_size();
+        self.depth_view = create_depth_view(&self.device, w, h);
     }
 
+    /// The size the hosts lay a frame out in: the surface's, or the native
+    /// target's while one is set ([`Self::set_native_resolution`]) - the 2D
+    /// stage then sits at scale 1 and the window only magnifies the frame.
+    /// The window's own size is [`Self::presented_size`].
     pub fn surface_size(&self) -> (u32, u32) {
-        (self.config.width, self.config.height)
+        self.target_size()
     }
 }

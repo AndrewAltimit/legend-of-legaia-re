@@ -3,7 +3,20 @@
 use super::*;
 
 impl FieldHostImpl<'_> {
-    pub(super) fn bgm(&mut self, text_id: u16, sub_op: u8) {
+    pub(super) fn bgm(&mut self, mut text_id: u16, sub_op: u8) {
+        // Free-roam picker staging: a park start inside the entry window
+        // plays the track the picked scene's arrival inherits
+        // (`FieldVmState::picker_bgm_inherit`), the music retail's own door
+        // would have brought; a real start first wins and drops it.
+        if matches!(sub_op, 1 | 9) && self.in_free_roam_entry_window() {
+            if text_id == crate::world::BGM_PARK_SENTINEL {
+                if let Some(id) = self.world.field_vm.picker_bgm_inherit.take() {
+                    text_id = id;
+                }
+            } else {
+                self.world.field_vm.picker_bgm_inherit = None;
+            }
+        }
         // Sub-ops 1 (start) and 9 (start behind a load barrier) are the only
         // writers of the track id `_DAT_8007BAC8` (`0x801E012C`,
         // `0x801E0254`). The other sub-ops are control words - pause (2, 3),
@@ -58,20 +71,25 @@ impl FieldHostImpl<'_> {
         // hold forever - the "music dies a second into the scene" report.
         // Pauses issued after the window (dialog / cutscene beats the
         // player triggers) route normally.
-        if sub_op == 2
-            && self.world.field_vm.free_roam_staging
+        if sub_op == 2 && self.in_free_roam_entry_window() {
+            return;
+        }
+        self.world
+            .pending_field_events
+            .push(FieldEvent::Bgm { text_id, sub_op });
+    }
+
+    /// A free-roam picker staging's entry window
+    /// ([`crate::world::FREE_ROAM_ENTRY_PAUSE_WINDOW`] frames from the
+    /// staging).
+    fn in_free_roam_entry_window(&self) -> bool {
+        self.world.field_vm.free_roam_staging
             && self
                 .world
                 .clock
                 .display_frames
                 .saturating_sub(self.world.field_vm.free_roam_entry_frame)
                 < crate::world::FREE_ROAM_ENTRY_PAUSE_WINDOW
-        {
-            return;
-        }
-        self.world
-            .pending_field_events
-            .push(FieldEvent::Bgm { text_id, sub_op });
     }
 
     pub(super) fn scene_fade(&mut self, op0_word: u16, op1_word: u16) -> SceneFadeResult {

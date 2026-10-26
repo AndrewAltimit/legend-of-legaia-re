@@ -395,7 +395,7 @@ impl Renderer {
         }
         let mut slot = self.bloom_pass.borrow_mut();
         let pass = slot.get_or_insert_with(|| BloomPass::new(&self.device, self.view_format));
-        let (w, h) = (self.config.width, self.config.height);
+        let (w, h) = self.target_size();
         pass.ensure_targets(&self.device, &self.queue, w, h);
         let p = BloomParams::for_frame(&self.lighting_mood.get(), self.dyn_lighting.get());
         let extract = BloomUniforms {

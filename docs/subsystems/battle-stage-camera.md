@@ -595,6 +595,25 @@ combatants - face away and drop out
 (`legaia_engine_scene_host::scene_host::backdrop_copy_nclip`, both hosts'
 per-draw NCLIP word on the spun draws).
 
+The word is per copy, not per slot, so the fixed objects follow the same
+rule. `nilboa`'s object 0 carries additive ice crystals (tpage `0x2C`, ABR
+`1`) on both sides of the arena's seam behind the monster row. The mirrored
+copy's crystal draws its front and back faces, two additive layers, and copy
+A's only the faces turned to the camera, so retail's two crystals differ in
+brightness (`koru_strip_forced`: the copy-A crystal reads a mean of about
+`58 / 66 / 100` against the mirrored one's `110 / 123 / 153`). Both hosts
+bake the fixed shell as one mesh that carries a both-sided copy B twice,
+once per winding, and draw it under copy A's word
+(`scene_host::backdrop_shell_mesh` / `backdrop_shell_nclip`): of each
+reversed pair exactly one triangle survives the cull. Drawn without a cull,
+the copy-A crystal came out as bright as the mirrored one (`image` `.945` to
+`.976`). The untextured `F*` / `G*` prims take the same rule on both hosts: the
+browser page's hybrid mesh carries them inside the one cull, and the native
+window builds its colour-pipeline half the same way
+(`backdrop_shell_color_mesh`) and draws it under the same word
+(`Renderer::set_color_draw_nclip`), the spun slot's untextured half
+included.
+
 The spin is `World::tick_battle_backdrop_spin` (once a battle frame) and
 `legaia_engine_scene_host::scene_host::backdrop_slot_1_basis`; both play hosts draw
 slot 1 as one unbaked copy, twice a frame, under that basis

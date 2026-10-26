@@ -69,6 +69,8 @@ scripts/ci/retail-compare.py --images --check # assert the baseline
 scripts/ci/retail-compare.py --images --bless # fold a reviewed rise into the baseline
 scripts/ci/retail-compare.py --filter town01  # only matching labels (a,b = either)
 scripts/ci/retail-compare.py --filter =battle_gaza2_park_0x19  # that label exactly
+scripts/ci/retail-compare.py --smoke clean    # smoke tier: clean 3x frames, loose check
+scripts/ci/retail-compare.py --smoke enhanced # smoke tier: + enhanced lighting
 
 LEGAIA_SAVES_LIBRARY=... LEGAIA_EXTRACTED_DIR=... \
   cargo test -p legaia-engine-shell --profile release-test --test integration retail_compare_corpus:: -- --nocapture
@@ -82,8 +84,12 @@ and then in the main checkout.
 
 The subcommand is `legaia-engine retail-compare`, which takes `--library`,
 `--extracted-root`, `--manifest`, `--out`, `--images`, `--filter`,
-`--flags-first`, `--write-baseline` (the driver's `--bless`) and
-`--check-baseline` (the driver's `--check`).
+`--flags-first`, `--write-baseline` (the driver's `--bless`),
+`--check-baseline` (the driver's `--check`), and `--render` / `--smoke-check`
+(the driver's `--smoke`, [below](#the-smoke-tier)). It builds only with
+`engine-shell`'s `oracles` feature, which the driver passes to its own
+`cargo build`; a binary built without it names the feature instead of
+running ([crate README](../../crates/engine-shell/README.md#parity-oracles)).
 
 ## Reading the report
 
@@ -353,7 +359,17 @@ engine verdict:
   (a camera aimed by a script that has since returned) - is the entry
   prologue's, not the retail script's.
 - **Actor state.** NPC positions, animation phases, open doors and live
-  effects are whatever the engine's own entry produces.
+  effects are whatever the engine's own entry produces. One exception is
+  seated: a placement retail holds exactly on the decoded target of a
+  partition-2 beat's cross-context `MOVE_TO` (`A3 <flat> xb zb`) aimed at
+  it. A walk-on beat runs once, and a card load spawns the placement from
+  its record head instead, so that tile is the beat's history
+  (`retail_compare::scripted_seats`, `World::seed_placement_seat`, the image
+  child's `LEGAIA_SEAT_PLACEMENTS`; position only, the heading stays the
+  engine's). `kor5_post_43a_checkpoint` was played through `kor5` `P2[3]`,
+  whose last `A3 0E 20 5D` stands Old Deez at `(4160, 11968)` where his head
+  bytes `20 DC` spawn him at `(4160, 11904)` (`npcs` `.977` to `1`, `image`
+  `.986` to `1.000`).
 - **Timing.** Retail's frame is one instant; the engine's is a fixed tick
   after entry. Two kinds of script history are held through the headless
   warm-up instead of being run as game time: the field VM's script-counter
@@ -1041,6 +1057,20 @@ case aims at those positions - case 6 on a caster, case 0 on a member, case
   capture's Gimard is pushed `+11` a frame, and his body pair `(-2, 492)`
   stands at `(-2, 470)` on the frame on screen (`image` `.814` to `.847`;
   `rim_elm_gimard_victory` `.916` to `.931`).
+- **A swing committed between the two frames.** In the strike loop
+  (`0x1E..=0x20`) each clip commit polls the range law and steps the acting
+  seat's live pair along the bearing to its target in one pass
+  (`FUN_8004AD80`, `0x8004BF7C..0x8004C118`). When the ring ids `+0x1FB` or
+  the cursor ring `+0x17A` show a commit inside the display lag
+  (`RetailBattle::displayed_recommit`), the frame on screen still shows the
+  previous swing on the pair before the step. The image child moves the
+  acting party seat onto the ring's pair **after** the camera is aligned on
+  the RAM's ground (`RetailBattle::engine_image_displayed_seats`,
+  `LEGAIA_BATTLE_DISPLAYED_SEAT`), so the framing keeps what the RAM's
+  ground arms. `rim_elm_gimard_victory`'s Vahn shows the `0x0F` swing at
+  cursor `144` on `(12, -217)`, while the RAM holds the `0x0E` commit on
+  `(3, -154)` (`image` `.922` to `.953`). Stood there before the alignment,
+  the body moved the framing too (`.870`).
 - **After-image ghosts on the displayed frame.** The ghost walk
   ([`FUN_80049348`](../subsystems/battle-actor-rendering.md#the-after-image-ghost-walk-fun_80049348))
   re-poses each ghost from the history ring's cursor `+0x17A` and live pair
@@ -2098,6 +2128,24 @@ frames further into the wait than the accumulator shows, a fifth of a turn of
 yaw. Held so, the engine lands where every such capture is framed - pitch `0`,
 `TR y = 0x500`, focus on the caster's seat.
 
+A capture past the band's start read its counter that many ticks into `0x70`
+too, so for a `0x70` gate the hold stands short of retail's counter by the
+module ticks the band takes to reach the gate's arm and countdown
+(`capture_band_ticks_to_arm`: the capture director's or countdown table's own
+walk, run from a default state). Mystic Shield's arm-0 shot
+(`cort_mystic_shield_mid_cast`, `34` vsyncs into its `0x40` frames) tweens the
+yaw from where `0x6F` left it, so held to the capture's whole counter the
+engine opened the shot `42` units further round (yaw `56` against retail's
+`14`, camera `.986`); held short, it reads `22` (camera `1.000`, image `.993`
+to `.999`). The eight units left are the counter rate, not the shot: the
+capture's own tween table (pitch `288` of `0x200` at `8` a vsync, yaw `14`
+at `2` a vsync onto `0`) puts retail's arm-0 shot `36` vsyncs in, opening
+from yaw `86`. The replay opens from `94` because the hold stands the counter
+`35` band ticks short, and retail's counter climbed `43` units over those
+vsyncs. The counter gains `4 * step / 3` a pass, more per vsync at steps `3`
+and `4` than at `2`, and the band ran part of that span at a higher step
+than the replay's `2`.
+
 The engine's side of the accumulator test is its clip age
 (`BattleCamera::clip_age`): the accumulator with a looping clip's natural-end
 re-commits left out, as the action gates read it
@@ -2702,11 +2750,25 @@ Retail's drawing area is `320 x 224` at draw offset `(0, 4)` / `(0, 244)`,
 and the display scans out from the same origin
 ([renderer](../subsystems/renderer.md#the-screen-the-gte-projects-onto-is-320x224-not-320x240)),
 so the compared frame is the top `224` rows of the display crop - the rows
-below are never drawn. The port keeps a `320 x 240` logical screen whose row
-`y` is retail's draw row `y` (the `OFY = 114` bias puts the GTE origin on the
-same row in both), rendered at an integer scale, so engine row `s * y` is
-retail row `y`: the capture's top `224 * s` rows are box-filtered down by
-`s`, and the port's bottom `16` logical rows are left out.
+below are never drawn. A state whose display is not `320` wide is not
+scored; every seeded corpus state's is. The port keeps a
+`320 x 240` logical screen whose row `y` is retail's draw row `y` (the
+`OFY = 114` bias puts the GTE origin on the same row in both).
+
+The channel is the accuracy metric, so the child draws the frame the way the
+GPU does: `--retail --psx-render`, PSX mode on the
+[native target](../subsystems/renderer-port.md#the-native-target) - every
+pass at the display's own `320 x 240`, with retail's vertex snap, fill rule,
+texel rounding and dither. Its capture is the native frame, compared pixel
+for pixel with the crop. A state made in PCSX-Redux is the one exception to
+the console's rules: that emulator's software GPU takes the texel without the
+console's half-texel bias, so its child runs with
+`LEGAIA_PSX_CAPTURE_RASTER=pcsx-redux` (`PsxTexelRule::PcsxRedux`) and the
+score measures the engine, not the capture's rasteriser. A Mednafen capture
+matches the console's rule. Any other render mode is a capture at an integer
+scale `s` of the stage (engine row `s * y` is retail row `y`), whose top
+`224 * s` rows are box-filtered down by `s`; those modes are the
+[smoke tier](#the-smoke-tier), never the score.
 
 Two numbers per state:
 
@@ -2714,11 +2776,11 @@ Two numbers per state:
 - `within` - the fraction of `8 x 8` blocks whose mean colour is within
   `24` of retail's on every channel. This is the score.
 
-Block means rather than pixels: the engine rasterises at its own resolution
-with its own filtering, so a per-pixel test would mostly score dither,
-filtering and sub-pixel edges. A block test moves on wrong camera, missing
-or extra geometry, wrong CLUTs and wrong overlays, and not on rasteriser
-noise. A retail frame whose mean luma is below `8` - a fade - is not scored:
+Block means rather than pixels: even at the native size a per-pixel test
+would mostly score dither phase, a texel rounding on one capture's emulator
+and the last sub-pixel of an edge. A block test moves on wrong camera,
+missing or extra geometry, wrong CLUTs and wrong overlays, and not on
+rasteriser noise. A retail frame whose mean luma is below `8` - a fade - is not scored:
 a dark engine frame would match it and say nothing about the scene.
 
 The engine frame comes from `play-window` run as a child in a scratch
@@ -2741,6 +2803,28 @@ The report writes `retail | engine | |diff|` side by side for every scored
 state. **Those PNGs are retail pixels**; the report directory must stay
 gitignored (`captures/` is).
 
+### The smoke tier
+
+The clean rasteriser at the window's `3x` stage, and the enhancements over
+it, are not what retail draws, so they never feed the score or the ratchet.
+They are still drawn by every player, so a run in either mode guards them
+against a break outright - a black frame, a pass that stopped drawing, a
+misplaced stage:
+
+```bash
+scripts/ci/retail-compare.py --smoke clean      # --retail
+scripts/ci/retail-compare.py --smoke enhanced   # --retail --dynamic-lighting
+```
+
+The driver runs the image corpus with `legaia-engine retail-compare --render
+<mode> --smoke-check <baseline>`, writes its report to
+`captures/retail-compare-smoke-<mode>/`, and fails a state only when its
+frame scores more than `SMOKE_IMAGE_SLACK` (`0.25`) under the accuracy
+baseline's image score, or when a state it seeded scores no frame
+(`Baseline::smoke_breaks`). It never writes or checks the ratchet:
+`--render` with `--bless` / `--check` is refused. Patched-disc states are
+left out, as they are of the ratchet.
+
 ### A box on screen while the record runs on
 
 `retock_innkeeper_talk_open` shows the innkeeper's question box with no
@@ -2753,6 +2837,40 @@ the stay offer's picker continues on `0x24`
 drop its panel on the commit, so its frame at the same PC had no box at all.
 It now keeps the dismissed box up until the next line loads, and the frame
 reads `0.994`.
+
+### Native frames show what the box filter hid
+
+At the native size a one-pixel feature counts at full strength in its block,
+where a `3x` capture box-filtered down spread it over a third of one, so a
+residual the clean child scored as a match can fail a block. Two such cases
+are timing and effect content, not rasterisation:
+
+- `cort_guilty_cross_mid_cast`: Guilty Cross's sphere draws three pixels
+  narrow on its right edge, which is the sphere and camera three ticks after
+  the frame retail shows. Taken at `LEGAIA_DIAG_CAPTURE_TICK` three ticks
+  before the drive's frame, the edge matches retail's to the pixel and the
+  frame scores `0.988` (`0.965` / `0.988` / `0.974` / `0.947` at twelve / nine
+  / six / three ticks before the gate tick). It is not a display-lag law: retaking
+  every arm-gated capture-band state one pass further back costs the rest
+  (`zeto_big_wave_mid_cast` `1.000` to `0.451`,
+  `cort_evolved_ultra_charge_mid_cast` `0.997` to `0.966`,
+  `cort_mystic_shield_mid_cast` `0.999` to `0.983`). It is this state's own
+  clock: at the gate tick the engine's camera already stands two vsyncs of
+  arm 1's TR z drift past the RAM's (glide target `3428` against `3420`). The
+  drift is not early; arm 0's shot lands early. Arm 1 drifts TR z `4 * step`
+  and drains its word `scalar * step` on every pass (`0x801F6CC4..0x801F6D0C`),
+  so the two stay locked, and the drift only stays put once the shot has
+  landed (the walker stores TR z back on its endpoint until then). Retail's
+  tween table holds the shot's TR z increment at `33` (endpoint `3276`), so
+  retail's arm 0 started the shot under `4333`. The replay's `0x6F` pull-in
+  hands arm 0 TR z `4333`, so its increment is `34` and it lands one pass
+  sooner against the drift: at word `760` where retail's lands at `744`.
+  Re-running the replay's walk with retail's increment of `33` lands it on
+  `744`, so the whole residual is the `0x6F` pose arm 0 starts from, not
+  arm 1's own clocks.
+- `zeto_call_wave_mid_cast`: the engine draws one Call Wave ray horizontal
+  across the left of the frame where retail has none; the failing blocks are
+  that ray's.
 
 ### A black band across the top is a readback race
 

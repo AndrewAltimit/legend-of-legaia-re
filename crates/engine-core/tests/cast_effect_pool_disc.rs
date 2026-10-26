@@ -524,12 +524,12 @@ fn a_live_cast_stages_its_module_records() {
         // The static scan also recovers `0x801F90B0`, the one spawn of
         // `0x801F8EAC`: PROT 0904's stager, inherited residue in this image.
         //
-        // PROT 0909 makes two calls in arm 2 and one in arm 7
+        // PROT 0909 makes two calls in arm 2, one in arm 7 and three in arm 11
         // (`viguro_direct`). Its stager `0x801F7AF4` is the one hook the band
-        // runs (`run_viguro_stager_calls`), but its arms 2, 3, 4 and 6 - each
-        // seating one record where the calling part stands - are called by
-        // no part this band seats. Arm 11's three spawns on the camera's own
-        // focus (`0x801F7FE0`, `0x801F8094`, `0x801F8158`) are not ported.
+        // runs (`run_viguro_stager_calls`); its arms 2, 3, 4 and 6 each seat
+        // one record where the calling part stands, called by the three
+        // records arm 11's pass seats on the camera's own focus
+        // (`0x801F7FE0`, `0x801F8094`, `0x801F8158`).
         //
         // PROT 0906 makes three calls in arm 4, one in arm 7 and two in arm
         // 12 (`gizam_direct`), and its stager `0x801F7740` runs off its
@@ -604,9 +604,13 @@ fn a_live_cast_stages_its_module_records() {
                 &[],
             ),
             909 => (
-                vec![&cmc::VIGURO_OPEN_SPAWNS, &cmc::VIGURO_CREATURE_SPAWNS],
+                vec![
+                    &cmc::VIGURO_OPEN_SPAWNS,
+                    &cmc::VIGURO_CREATURE_SPAWNS,
+                    &cmc::VIGURO_CHARGE_SPAWNS,
+                ],
                 &[0x801F_81F4, 0x801F_8288, 0x801F_82CC, 0x801F_8310],
-                &[0x801F_7FE0, 0x801F_8094, 0x801F_8158],
+                &[],
             ),
             // `0x801F8D0C` is stager arm 4's (called by arm 8's glow);
             // `0x801F8C7C` is the slash routine `FUN_801F81DC`'s hit spark
@@ -657,7 +661,8 @@ fn a_live_cast_stages_its_module_records() {
         // PROT 0907's and 0908's parts call their stager (op `0x20`), whose
         // arms seat more records off the calling part; every one of those
         // records is seated over the band, on top of the arms' own calls.
-        let stager_run = matches!(entry, 905 | 906 | 907 | 908 | 910 | 912);
+        // PROT 0909's arm-11 records call its stager arms 2, 3, 4 and 6.
+        let stager_run = matches!(entry, 905 | 906 | 907 | 908 | 909 | 910 | 912);
         // PROT 0911 and 0913 fold on their hit arms (9 / `0x13`), and a
         // body-paced director hands a pass's calls over on the next arm's
         // first tick, so this window closes before the later arms seat: it
@@ -759,11 +764,24 @@ fn every_creature_arm_spawn_names_a_record_of_its_module() {
         let mut named = std::collections::BTreeSet::new();
         for phase in 0..=u8::MAX {
             for timing in [cmc::SpawnTiming::Pass, cmc::SpawnTiming::Every] {
+                // PROT 0962's charge bodies (`0xA2..=0xA4`) and PROT 0960's Neo Star
+                // Slash (`0xA6`) seat per body.
+                let blade: Vec<cmc::ModuleSpawn> = if timing == cmc::SpawnTiming::Pass
+                    && matches!(entry, 960 | 962)
+                {
+                    [0xA2, 0xA3, 0xA4, 0xA6]
+                        .into_iter()
+                        .flat_map(|a| cmc::capture_arm_spawns_for(entry, phase, a).iter().copied())
+                        .collect()
+                } else {
+                    Vec::new()
+                };
                 let capture = if timing == cmc::SpawnTiming::Pass {
                     cmc::capture_arm_spawns(entry, phase)
                 } else {
-                    cmc::capture_arm_spawns_every(entry, phase)
+                    cmc::capture_arm_spawns_every(entry, phase, 0xA5)
                 };
+                let capture = capture.iter().chain(blade.iter());
                 for s in cmc::creature_arm_spawns(entry, phase, timing)
                     .iter()
                     .chain(capture)

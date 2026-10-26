@@ -455,6 +455,9 @@ impl SceneHost {
             let staged = &self.world.battle.auto_combo.inputs[DOME_LEAD_CHAR_SLOT as usize];
             let skills = rec.displayed_skills();
             let n = (skills.count as usize).min(skills.ids.len());
+            // The entry's Triangle list pages over the same record's learned
+            // arts, as the arena's copy of the battle pager reads it.
+            session.set_arts_list_owner(DOME_LEAD_CHAR_SLOT as u8, n as u8);
             let bits = rec.ability_bits();
             session.install_auto_inputs(
                 legaia_engine_battle_menus::muscle_dome_session::DomeAutoInputs {

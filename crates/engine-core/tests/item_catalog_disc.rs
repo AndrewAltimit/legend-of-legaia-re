@@ -228,9 +228,10 @@ fn water_line_stat_up_items_seed_and_apply_from_disc() {
 }
 
 /// Installing the disc table also seeds the one-battle stat-buff Elixirs (class
-/// 7, battle-only); using one ramps the target's battle-actor stat scalar by
-/// ×6/5 for the battle through the shared buff path (the same machinery as buff
-/// spells). Skips without `LEGAIA_DISC_BIN`.
+/// 7, battle-only); using one ramps both halves of each buffed battle-actor
+/// stat by ×6/5, and a repeat compounds, as retail's handler does
+/// (`FUN_800402F4` case 7: an unconditional `v + v/5` on every use, gated on
+/// the target's HP alone). Skips without `LEGAIA_DISC_BIN`.
 #[test]
 fn elixir_battle_buffs_seed_and_ramp_from_disc() {
     let Some(path) = std::env::var_os("LEGAIA_DISC_BIN").map(PathBuf::from) else {
@@ -257,6 +258,10 @@ fn elixir_battle_buffs_seed_and_ramp_from_disc() {
     world.set_item_effects(table); // seeds the Elixirs onto the catalog
     world.set_battle_attack(0, 100);
     world.set_battle_defense(0, 50);
+    world.battle.speed[0] = 50;
+    world.actors[0].battle.hp = 100;
+    world.actors[1].battle.hp = 0;
+    world.set_battle_attack(1, 100);
 
     // Power Elixir is battle-only and ramps ATK ×6/5: 100 -> 120.
     let pe = world
@@ -270,21 +275,31 @@ fn elixir_battle_buffs_seed_and_ramp_from_disc() {
     assert_eq!(world.battle.attack[0], 120);
     assert_eq!(world.battle.buffs.len(), 1);
 
+    // A second one compounds: 120 -> 144. Retail keeps no record of the
+    // first, and the buff list keeps one entry for the stat.
+    assert_eq!(world.use_item(0x8B, 0), ItemOutcome::Buffed { count: 1 });
+    assert_eq!(world.battle.attack[0], 144, "a repeat Elixir compounds");
+    assert_eq!(world.battle.buffs.len(), 1);
+
     // Shield Elixir ramps DEF ×6/5: 50 -> 60.
     assert_eq!(world.use_item(0x8C, 0), ItemOutcome::Buffed { count: 1 });
     assert_eq!(world.battle.defense[0], 60);
 
-    // Wonder Elixir buffs all four (SPD/DEF/ATK/AGL). ATK + DEF refresh (revert
-    // the prior delta, re-ramp from base, no compounding), SPD + AGL are new but
-    // have no live scalar; the buff list ends with four distinct (slot, stat)
-    // trackers.
+    // Speed Elixir ramps the SPD the initiative roll reads: 50 -> 60.
+    assert_eq!(world.use_item(0x8D, 0), ItemOutcome::Buffed { count: 1 });
+    assert_eq!(world.battle.speed[0], 60);
+
+    // Wonder Elixir ramps all four again: ATK 144 -> 172, DEF 60 -> 72,
+    // SPD 60 -> 72; four (slot, stat) entries in all.
     assert_eq!(world.use_item(0x8E, 0), ItemOutcome::Buffed { count: 4 });
-    assert_eq!(
-        world.battle.attack[0], 120,
-        "ATK refreshed from base, not compounded"
-    );
-    assert_eq!(world.battle.defense[0], 60);
+    assert_eq!(world.battle.attack[0], 172);
+    assert_eq!(world.battle.defense[0], 72);
+    assert_eq!(world.battle.speed[0], 72);
     assert_eq!(world.battle.buffs.len(), 4);
+
+    // A target at 0 HP takes no ramp: the handler's only gate.
+    assert_eq!(world.use_item(0x8B, 1), ItemOutcome::Buffed { count: 1 });
+    assert_eq!(world.battle.attack[1], 100, "a downed target is not ramped");
 }
 
 /// Installing the disc table seeds Fury Boost (class 5, the action-gauge

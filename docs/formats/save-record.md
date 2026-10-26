@@ -11,7 +11,10 @@ contiguously in main RAM at `0x80084708 + slot * 0x414`:
 | 3 | `0x80085344` | Terra (New Game template's 4th roster entry; never a savable battle-party member) |
 
 The display name sits at record offset `+0x2A7` (9 bytes, NUL-padded),
-bounded by the summon-stash table at `+0x2B0`.
+bounded by the summon-stash table at `+0x2B0`. A name may fill all nine
+bytes: the naming screen accepts up to nine glyphs (`0x801F05F8`) and
+writes the terminator after the last one, which for a nine-glyph name is
+`+0x2B0` ([`boot.md`](../subsystems/boot.md)).
 
 Slot 3's `0x414` footprint ends exactly where the fourth flag bank
 begins (`0x80085344 + 0x414 = 0x80085758`); the item bag starts further

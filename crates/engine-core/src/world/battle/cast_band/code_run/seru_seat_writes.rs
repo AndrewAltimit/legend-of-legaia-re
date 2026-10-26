@@ -30,6 +30,21 @@ impl World {
         prot_entry: u32,
         phase: u8,
     ) {
+        // The writes land on the seated creature. A host seats it after the
+        // tick that asked for it (`World::seat_summon_actor`, whose installer
+        // resets the clip bytes), so an arm that seats the creature and
+        // stages its clip on one pass - PROT 0929's arm 5 calls the installer
+        // `FUN_801F19EC` and then bumps `+0x1DA` / `+0x1DC`
+        // (`0x801F7080..0x801F70B8`) - keeps its writes until the seat is
+        // there: they land on the next pass, after the installer's resets.
+        if self
+            .casting
+            .summon_actor_slot
+            .and_then(|s| self.actors.get(usize::from(s)))
+            .is_none_or(|a| !a.active)
+        {
+            return;
+        }
         let stage = self.casting.module_cam.creature_stage.take();
         let restage = std::mem::take(&mut self.casting.module_cam.creature_restage);
         let release = std::mem::take(&mut self.casting.module_cam.creature_loop_release);

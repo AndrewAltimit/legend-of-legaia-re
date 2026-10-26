@@ -66,8 +66,8 @@ impl Renderer {
             self.text_index_capacity.set(cap);
         }
 
-        let surf_w = self.config.width.max(1) as f32;
-        let surf_h = self.config.height.max(1) as f32;
+        let surf_w = self.target_size().0.max(1) as f32;
+        let surf_h = self.target_size().1.max(1) as f32;
 
         let mut verts: Vec<TextVertex> = Vec::with_capacity(needed_v as usize);
         let mut idxs: Vec<u32> = Vec::with_capacity(needed_i as usize);
@@ -174,6 +174,22 @@ impl Renderer {
         append(&mut geo, &under);
         self.screen_overlay_under_runs.set(geo.runs.len());
         append(&mut geo, over);
+        // PSX mode on the native target: the corners take the GPU's pixel
+        // centre and the texels its half-texel bias, as the 3D pass's do
+        // (`psx_native_centre` / `psx_texel_uv`). A sprite drawn one texel
+        // per pixel samples the same texels either way; a scaled quad (an
+        // ending vignette's shrunk photo panel) samples the GPU's.
+        if self.psx_snap_params().0 >= 1.5 {
+            let (dx, dy) = (1.0 / w as f32, 1.0 / h as f32);
+            for v in &mut geo.vertices {
+                v.pos[0] += dx;
+                v.pos[1] -= dy;
+                if v.flags & legaia_render_kernels::screen_prim::FLAG_TEXTURED != 0 {
+                    v.uv[0] += 0.5;
+                    v.uv[1] += 0.5;
+                }
+            }
+        }
         self.screen_overlay_runs.borrow_mut().clone_from(&geo.runs);
         if geo.is_empty() {
             return;
@@ -230,7 +246,7 @@ impl Renderer {
             return None;
         }
         let (x, y, w, h) = self.scene_viewport.get()?;
-        let (full_w, full_h) = (self.config.width, self.config.height);
+        let (full_w, full_h) = self.target_size();
         if w == 0 || h == 0 || x + w > full_w || y + h > full_h || (w, h) == (full_w, full_h) {
             return None;
         }

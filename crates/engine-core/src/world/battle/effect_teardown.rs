@@ -57,6 +57,9 @@ impl World {
         if c.mystic_shield_fx.is_some() {
             out.push("mystic_shield_fx");
         }
+        if c.stage_fx.is_some() {
+            out.push("stage_fx");
+        }
         if c.move_fx_trail_texpage.is_some() {
             out.push("move_fx_trail_texpage");
         }
@@ -75,6 +78,9 @@ impl World {
             || c.pending_move_fx_cue.is_some()
         {
             out.push("pending_fx_request");
+        }
+        if self.battle.cast_ribbons.is_some() {
+            out.push("cast_ribbons");
         }
         if self.battle.clip_ribbon.is_some() {
             out.push("clip_ribbon");
@@ -121,6 +127,7 @@ impl World {
         self.casting = crate::world::CastFxState::new();
         self.casting.effect_pool = data_pool;
         self.battle.clip_ribbon = None;
+        self.battle.cast_ribbons = None;
         self.battle.effect_spawns.clear();
     }
 }

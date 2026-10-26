@@ -504,6 +504,14 @@ impl PlayWindowApp {
     /// The session tick, a scene transition's render rebuild, the battle
     /// drive's hold counter, and the per-tick battle-render / NPC-model edges.
     fn tick_session_step(&mut self) {
+        // A recorded cast's `rand()` seed, held on its key so the arm that
+        // leaves it draws as retail's did (`LEGAIA_CAST_RAND_SEED`).
+        if let Some(seed) = self.screenshot.as_ref().and_then(|sc| sc.cast_rand_seed) {
+            legaia_engine_capture::cast_rand::apply_cast_rand_seed(
+                &mut self.session.host.world,
+                &seed,
+            );
+        }
         match self.session.tick() {
             // Door transition: the host loaded a new scene under
             // the window (field-VM op 0x3E/0x3F or a walk-touch
@@ -590,15 +598,6 @@ impl PlayWindowApp {
         // retail scene script installs one, so this is the visual
         // trigger for the per-cell tile-actor draw pass.
         self.maybe_install_demo_tile_board();
-        // Advance the world's play clock off the window's wall clock.
-        // `World::advance_play_time` is written to be driven "from the
-        // frame loop's wall-clock delta" and no host was driving it, so
-        // every consumer of `play_time_seconds` - the save screen's
-        // play-time column, the seru-trade gate, the dev Records page -
-        // read a value that only ever changed when a save was loaded.
-        // Whole seconds only, and by delta rather than absolutely, so a
-        // loaded save keeps its accumulated total.
-        self.tick_play_clock();
         // Opt-in developer menu (`LEGAIA_DEV_MENU=1`): retail reaches its
         // dev tools from debug branches a player cannot; this is the
         // engine's equivalent entry point.

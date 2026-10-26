@@ -64,7 +64,7 @@ def render_md(rows: list[dict], out_path: Path | None, title: str) -> str:
         "- **dumped** - Ghidra decompiler output exists under `ghidra/scripts/funcs/`.",
         "- **documented** - the address is cited from at least one file under `docs/`.",
         "- **ported** - the address appears in a `// PORT: FUN_<addr>` tag in a Rust source under `crates/`.",
-        "- **ignore** - address is listed in `scripts/ci/port-catalog-ignore.toml` as non-port-site (PsyQ / BIOS / libgte / ...).",
+        "- **ignore** - address is listed in `scripts/ci/port-catalog-ignore.toml` as non-port-site (library code, an address that starts no routine, a game routine covered another way, or one nothing reaches).",
     ] + (
         [
             "- **live** - the Rust symbol carrying the `// PORT:` tag is reachable from a host entry point (`--live`).",

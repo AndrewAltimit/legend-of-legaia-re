@@ -39,17 +39,30 @@ impl Display {
     }
 }
 
-/// Camera + animation state for the TMD viewer. Keeps the model spinning
-/// at a constant angular velocity around its centroid.
+/// Camera + animation state for the TMD viewer: the orbit pose of the
+/// static site's mesh viewers and Legaia Studio (eye slightly above the
+/// model, looking down, three-quarter front), turning slowly about the
+/// model's vertical axis.
 pub(crate) struct MeshView {
-    /// World-space center of the mesh AABB; the camera looks at this point.
+    /// Centre of the mesh AABB in PSX model space (`+Y` down); the camera
+    /// looks at this point.
     center: Vec3,
-    /// Distance from the camera to `center`. Picked so the mesh fits in
-    /// the viewport with a comfortable margin.
+    /// Distance from the camera to `center`.
     distance: f32,
     /// Wall-clock origin for the rotation animation.
     started_at: Instant,
 }
+
+/// Vertical field of view, radians - the site viewers' and Studio's.
+const MESH_FOV_Y: f32 = 1.1;
+/// Eye elevation above the model, radians (positive looks down).
+const MESH_PITCH: f32 = 0.2;
+/// Starting turn past the model's front (meshes face PSX `+Z`), radians.
+const MESH_YAW: f32 = 0.5;
+/// Eye distance in bounding-sphere radii.
+const MESH_DISTANCE_RADII: f32 = 2.6;
+/// Turn rate, radians per second.
+const MESH_SPIN: f32 = 0.5;
 
 impl MeshView {
     pub(crate) fn from_aabb(lo: [f32; 3], hi: [f32; 3]) -> Self {
@@ -60,25 +73,38 @@ impl MeshView {
         );
         let extent = Vec3::new(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
         let radius = (0.5 * extent.length()).max(1.0);
-        // Frame the bounding sphere with ~30° horizontal half-angle.
-        let distance = radius / (30f32.to_radians().tan()) * 1.4;
         Self {
             center,
-            distance,
+            distance: radius * MESH_DISTANCE_RADII,
             started_at: Instant::now(),
         }
     }
 
+    /// The eye in PSX model space `secs` into the turn: above the centre
+    /// (PSX `-Y`) by [`MESH_PITCH`], on the model's front (`+Z`) side.
+    fn eye_psx(&self, secs: f32) -> Vec3 {
+        let yaw = MESH_YAW + secs * MESH_SPIN;
+        let (sp, cp) = MESH_PITCH.sin_cos();
+        self.center + self.distance * Vec3::new(-yaw.sin() * cp, -sp, yaw.cos() * cp)
+    }
+
     pub(crate) fn mvp(&self, aspect: f32) -> Mat4 {
-        let angle = self.started_at.elapsed().as_secs_f32() * 0.5; // ~28 deg/s
-        // PSX has Y-down geometry, so flip Y in the model matrix to make the
-        // mesh appear right-side-up under a Y-up camera.
-        let model = Mat4::from_rotation_y(angle) * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
-        let eye = self.center + Vec3::new(0.0, 0.0, self.distance);
-        let view = Mat4::look_at_rh(eye, self.center, Vec3::Y);
+        self.mvp_at(self.started_at.elapsed().as_secs_f32(), aspect)
+    }
+
+    fn mvp_at(&self, secs: f32, aspect: f32) -> Mat4 {
+        // PSX model space is +Y down with the GTE's screen = (x right, y
+        // down, z into the screen). Turning it half a turn about X (flip
+        // both Y and Z) maps it onto the renderer's Y-up right-handed space
+        // without mirroring the model (a Y-only flip would).
+        let flip = Vec3::new(1.0, -1.0, -1.0);
+        let model = Mat4::from_scale(flip);
+        let eye = self.eye_psx(secs) * flip;
+        let center = self.center * flip;
+        let view = Mat4::look_at_rh(eye, center, Vec3::Y);
         let near = (self.distance * 0.05).max(0.1);
         let far = self.distance * 4.0 + 100.0;
-        let proj = Mat4::perspective_rh(60f32.to_radians(), aspect.max(0.01), near, far);
+        let proj = Mat4::perspective_rh(MESH_FOV_Y, aspect.max(0.01), near, far);
         proj * view * model
     }
 }
@@ -267,4 +293,29 @@ pub(crate) fn display_for_prot_entry(
 
     // Nothing displayable.
     Some(Display::empty(title))
+}
+
+#[cfg(test)]
+mod mesh_view_tests {
+    use super::*;
+
+    /// The preview opens looking down on the model: its top (PSX `-Y`)
+    /// is nearer the eye than its feet and draws above them, and a point
+    /// off the model's right hand (PSX `+X` seen from the front) draws on
+    /// screen-left, as a front view of an unmirrored model does.
+    #[test]
+    fn opens_from_above_unmirrored() {
+        let v = MeshView::from_aabb([-50.0, -100.0, -50.0], [50.0, 0.0, 50.0]);
+        let m = v.mvp_at(0.0, 1.0);
+        let clip = |p: [f32; 3]| m * glam::Vec4::new(p[0], p[1], p[2], 1.0);
+        let head = clip([0.0, -100.0, 0.0]);
+        let feet = clip([0.0, 0.0, 0.0]);
+        assert!(head.w < feet.w, "head nearer the eye");
+        assert!(head.y / head.w > feet.y / feet.w, "head above feet");
+        // Head-on (yaw 0) a model facing +Z has its +X side on the viewer's
+        // left; at the starting three-quarter turn it still is.
+        let left = clip([40.0, -50.0, 0.0]);
+        let right = clip([-40.0, -50.0, 0.0]);
+        assert!(left.x / left.w < right.x / right.w);
+    }
 }

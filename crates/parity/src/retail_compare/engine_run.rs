@@ -169,6 +169,11 @@ pub fn run_engine_with(
             session.camera.zone.seat_focus_after_snap(focus);
         }
     }
+    // A placement a finished cutscene beat stood on a script-literal tile is
+    // history the card load does not replay ([`scripted_seats`]).
+    for w in &retail.scripted_seats {
+        session.host.world.seed_placement_seat(w.flat, w.x, w.z);
+    }
     // A capture inside a running script is compared at the script's phase,
     // not after a fixed window ([`legaia_engine_capture::script_gate::ScriptGate`]):
     // the session runs until its own context for the record holds retail's

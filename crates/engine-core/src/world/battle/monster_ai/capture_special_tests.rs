@@ -185,3 +185,72 @@ fn a_disc_free_shield_raises_the_word_only() {
     assert!(world.mystic_shield_up());
     assert!(world.casting.mystic_shield_fx.is_none());
 }
+
+/// A synthetic `SCUS_942.54` image with stand-ins for the boss-stage
+/// arrival's two effect trees at their retail addresses: a bare waiting
+/// node for the scroller, and a `0x4000` (render mode `3`) part that
+/// captures CLUT `(32, 479)` (op `0x2C`) and drives its hue and value adds
+/// at `+4` a vsync (op `0x2E 4 0 4`, `v << 3` into `+0x96..+0x9A`).
+fn scus_with_stage_trees() -> Vec<u8> {
+    use legaia_engine_battle::battle_stage_module::ARRIVAL_EFFECT_TREES;
+    const BIAS: u32 = 0x8000_F800;
+    let mut scus = vec![0u8; (0x8007_8800 - BIAS) as usize];
+    let mut put = |va: u32, words: &[u16]| {
+        let at = (va - BIAS) as usize;
+        for (i, w) in words.iter().enumerate() {
+            scus[at + 2 * i..at + 2 * i + 2].copy_from_slice(&w.to_le_bytes());
+        }
+    };
+    put(ARRIVAL_EFFECT_TREES[0], &[0xFFFF, 0, 0x09, 0x7FF]);
+    put(
+        ARRIVAL_EFFECT_TREES[1],
+        &[
+            0x4000, 0, 0x2C, 0x20, 0x1DF, 0x10, 0x01, 0x2E, 4, 0, 4, 0x09, 0x7FF,
+        ],
+    );
+    scus
+}
+
+/// The arrival's hand-back seats both trees on the boss seat
+/// (`FUN_80021B04` at `0x801F717C` / `0x801F7194` in PROT 0968), and from
+/// then on the hue cycler recolours CLUT `(32, 479)` - the palette the
+/// rebound flesh shell samples - every frame. A retail capture of the
+/// evolved-Cort fight (`cort_evolved_card_first_menu`) reads the part's hue
+/// add `+0x90` growing `0x0C` per three-vsync frame: `4` a vsync, which is
+/// the rate the engine's battle part pass integrates at frame step 1.
+#[test]
+fn the_arrival_seats_the_flesh_hue_cycler() {
+    use legaia_engine_battle::battle_stage_module::ARRIVAL_EFFECT_TREES;
+    let mut world = cort_under_shield(0xB5, 40_000);
+    world.mode = legaia_engine_mode::mode::SceneMode::Battle;
+    world.tables.scus = Some(std::sync::Arc::from(scus_with_stage_trees()));
+    world.actors[3].battle.seat = Some((0, 800));
+    for record in ARRIVAL_EFFECT_TREES {
+        world.seat_stage_effect_tree(record, 3);
+    }
+    assert_eq!(
+        world.casting.stage_fx.as_ref().map(|s| s.parts.len()),
+        Some(2),
+        "the scroller and the hue cycler"
+    );
+    let channel_delta = legaia_engine_effects::summon::RETAIL_CHANNEL_DELTA;
+    let mut adds = Vec::new();
+    for _ in 0..6 {
+        world.tick_stage_fx(channel_delta);
+        let fx = std::mem::take(&mut world.battle.cell_fx);
+        adds.extend(fx.into_iter().map(|f| {
+            assert_eq!(f.rect, (32, 479, 16, 1), "the flesh palette");
+            (f.h_add, f.s_add, f.v_add)
+        }));
+    }
+    assert!(!adds.is_empty(), "the cycler recolours the row");
+    for w in adds.windows(2) {
+        assert_eq!(w[1].0 - w[0].0, 4, "hue add steps 4 a frame: {adds:?}");
+        assert_eq!(w[1].2 - w[0].2, 4, "value add steps 4 a frame: {adds:?}");
+        assert_eq!(w[1].1, 0);
+    }
+    assert!(
+        world.battle_effect_residue().contains(&"stage_fx"),
+        "the trees outlive every action until the battle tears down"
+    );
+}

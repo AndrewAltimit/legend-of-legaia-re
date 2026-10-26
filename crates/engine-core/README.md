@@ -104,15 +104,24 @@ The full edge set and the gate over the kernel crates are in
 
 ## Tests
 
-`tests/*.rs` build as one `integration` binary; select a file by module path
-(`cargo test -p legaia-engine-core --test integration foo::`). Tests that
+`tests/*.rs` are not an integration binary: `src/lib.rs` mounts
+`tests/integration.rs` into the unit-test target as `mod integration`, so a
+`cargo test` compiles the library once, in test mode. An integration binary
+would link the plain library, which compiles the whole crate a second time
+and puts both compiles on one critical path. Select a file by module path
+(`cargo test -p legaia-engine-core --lib integration::foo::`). Tests that
 read a disc skip and pass when `LEGAIA_DISC_BIN` is unset.
 
 `src/world/tests/` holds the unit tests that reach crate-private state (a
 battle-loop step, a `pub(crate)` field); a test that needs only the public
-API belongs in `tests/` instead. Moving one does not shorten the test build
-by itself: the library compiles a second time in test mode as long as any
-unit test remains in `src/`.
+API belongs in `tests/` instead, where it names the crate as
+`legaia_engine_core::` like a downstream crate would.
+
+A test that drives a per-pass battle kernel in a loop (`tick_summon`,
+`tick_move_fx`, the battle camera, the action SM on retail's cadence) opens
+each pass with `World::advance_battle_pass`, the clock advance a host's
+`World::tick` makes between two battle passes; without it the kernel runs
+once and every later call reads as "between passes".
 
 ## Where the behaviour is documented
 

@@ -621,6 +621,7 @@ impl World {
         self.casting.active_action_fx = action_fx;
         self.flush_battle_bursts();
         self.tick_mystic_shield_fx(channel_delta);
+        self.tick_stage_fx(channel_delta);
 
         let Some(mut scene) = self.casting.active_move_fx.take() else {
             return;

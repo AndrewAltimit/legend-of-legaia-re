@@ -1237,14 +1237,15 @@ const S928_2: [ModuleSpawn; 1] = [
 const S928_4: [ModuleSpawn; 5] = [
     // 0x801F7478
     spawn(0x801F9260, Creature),
-    // 0x801F74A0
-    spawn(0x801F928C, Creature),
+    // 0x801F74A0: the four after the first seat on the creature lifted
+    // `0x40` (`sh v1,0x36(s4)` with `v1 = -0x40` at `0x801F7498`).
+    spawn(0x801F928C, CreatureRaised { dy: -0x40 }),
     // 0x801F74B8
-    spawn(0x801F92E8, Creature),
+    spawn(0x801F92E8, CreatureRaised { dy: -0x40 }),
     // 0x801F74D0
-    spawn(0x801F9330, Creature),
+    spawn(0x801F9330, CreatureRaised { dy: -0x40 }),
     // 0x801F74E8
-    spawn(0x801F9378, Creature),
+    spawn(0x801F9378, CreatureRaised { dy: -0x40 }),
 ];
 const S928_7: [ModuleSpawn; 1] = [
     // 0x801F7958
@@ -1534,57 +1535,17 @@ const S929_14: [ModuleSpawn; 6] = [
         },
     ),
     // 0x801F7A00
-    spawn(
-        0x801F9498,
-        CreatureOffset {
-            dx: 0,
-            y: 0,
-            dz: 0,
-            rot: [0, 0, 0],
-        },
-    ),
+    spawn(0x801F9498, CreatureBody),
     // 0x801F7A1C
-    spawn(
-        0x801F94E0,
-        CreatureOffset {
-            dx: 0,
-            y: 0,
-            dz: 0,
-            rot: [0, 0, 0],
-        },
-    ),
+    spawn(0x801F94E0, CreatureBody),
     // 0x801F7A38
-    spawn(
-        0x801F9528,
-        CreatureOffset {
-            dx: 0,
-            y: 0,
-            dz: 0,
-            rot: [0, 0, 0],
-        },
-    ),
+    spawn(0x801F9528, CreatureBody),
     // 0x801F7A54
-    spawn(
-        0x801F95A8,
-        CreatureOffset {
-            dx: 0,
-            y: 0,
-            dz: 0,
-            rot: [0, 0, 0],
-        },
-    ),
+    spawn(0x801F95A8, CreatureBody),
 ];
 const S929_15: [ModuleSpawn; 4] = [
     // 0x801F7C40
-    spawn(
-        0x801F99EC,
-        CreatureOffset {
-            dx: 0,
-            y: 0,
-            dz: 0,
-            rot: [0, 0, 0],
-        },
-    ),
+    spawn(0x801F99EC, CreatureBody),
     // 0x801F7C80
     spawn(
         0x801F9344,

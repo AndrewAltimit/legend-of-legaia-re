@@ -50,6 +50,14 @@ pub(crate) fn cmd_play(
         extracted_root,
         disc,
     )?;
+    if let Some(audio) = session.audio.as_ref() {
+        // The options file's master volume, as the play window applies it.
+        use legaia_engine_audio::AudioSink;
+        let opts = legaia_engine_menus::options::OptionsState::load_or_default(
+            std::path::Path::new(legaia_engine_shell::launcher::OPTIONS_FILE),
+        );
+        audio.set_master_volume(opts.master_volume);
+    }
     println!(
         "play: scene='{}' frames={} audio={} (entries={}, MES={}, VAB={}, SEQ={})",
         scene,

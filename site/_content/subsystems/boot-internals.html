@@ -204,13 +204,14 @@
     </div>
   </details>
   <h3 id="name-entry">Name entry</h3>
-  <p>Opened in <code>town01</code> by field-VM op <code>0x49</code> sub-op 3 in the opening timeline record (P2[3], body offset <code>0x02C6</code>). The grid is 6&times;17 ASCII cells in three column groups (upper / lower / digits); the cursor walks a 7&times;17 space whose last row is Backspace / Space / End, and End on a non-empty name opens a Yes/No commit. The committed name lands at record <code>+0x2A7</code>.</p>
+  <p>Opened in <code>town01</code> by field-VM op <code>0x49</code> sub-op 3 in the opening timeline record (P2[3], body offset <code>0x02C6</code>). The grid is 6&times;17 ASCII cells in three column groups (upper / lower / digits); the cursor walks a 7&times;17 space whose last row is Backspace / Default / End (Default copies the template name back), and End on a non-empty name opens a Yes/No commit. The typed name is written straight into the record at <code>+0x2A7</code>. A glyph is kept only while the name before it has fewer than nine glyphs and the name with it measures under 57 px, so the narrowest letters reach nine and the widest stop at five; a nine-glyph name stores its terminator at <code>+0x2B0</code>. The port applies both limits.</p>
   <div class="table-wrap">
   <table class="data-table">
     <thead><tr><th>Piece</th><th>Where</th></tr></thead>
     <tbody>
-      <tr><td>Grid / live buffer</td><td><code>0x801F29F0</code> / <code>0x801F2A6C</code></td></tr>
-      <tr><td>Cursor</td><td><code>0x8007BB88</code>, linear <code>0..0x77</code>; d-pad deltas &plusmn;<code>0x11</code> / &plusmn;1, separators skipped; name width capped at 57 px</td></tr>
+      <tr><td>Grid / default names</td><td><code>0x801F29F0</code> / <code>0x801F2A6C + slot * 8</code> (what Default copies back, <code>0x801F06F8</code>)</td></tr>
+      <tr><td>Cursor</td><td><code>0x8007BB88</code>, linear <code>0..0x77</code>; d-pad deltas &plusmn;<code>0x11</code> / &plusmn;1, separators skipped</td></tr>
+      <tr><td>Append limits</td><td>fewer than nine glyphs before the append (<code>0x801F05F8</code>); under <code>0x39</code> = 57 px with it (<code>FUN_80035F04</code>, <code>0x801F0654</code>)</td></tr>
       <tr><td>Renderer</td><td><code>FUN_801E6B34</code></td></tr>
       <tr><td>State machine</td><td><code>FUN_801F03F0</code>, 5-entry jump table at <code>0x801CF71C</code> (init &rarr; interactive &rarr; three confirm handlers)</td></tr>
       <tr><td>Parked op state</td><td><code>_DAT_8007B450</code> holds the op&rsquo;s RAM address + 1 while the prompt is up</td></tr>

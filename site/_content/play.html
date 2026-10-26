@@ -222,6 +222,12 @@
 
 .play-rail { display: flex; flex-direction: column; gap: 0.8rem; }
 .play-card { border: 1px solid var(--border); background: var(--bg-card); padding: 0.6rem 0.7rem; }
+/* The Controls card is a <details>: its summary is the card heading, with
+   the disclosure marker the summary draws by default. */
+.play-keys-card > summary { cursor: pointer; }
+.play-keys-card > summary h3 { display: inline; }
+.play-keys-card[open] > summary { margin-bottom: 0.5rem; }
+.play-keys-actions { margin-bottom: 0.5rem; }
 .play-card h3 {
   margin: 0 0 0.5rem; font-size: 0.78rem; text-transform: uppercase;
   letter-spacing: 0.05em; color: var(--text-dim); font-weight: 600;
@@ -403,7 +409,7 @@ div.play-vis-head { cursor: default; }
         <span class="play-mode-tag">explore</span>
         <span class="play-mode-name">Scene picker</span>
         <span class="play-mode-desc">Drop into any town or field map on the disc and walk it. The
-          best-supported mode - use the list on the right.</span>
+          best-supported mode - click here, then pick a place from the Scenes list.</span>
       </button>
     </div>
 
@@ -530,10 +536,10 @@ div.play-vis-head { cursor: default; }
               <p class="play-vis-desc"><button id="play-camera-distance" type="button">Camera: far</button>
                 How far back the follow camera sits: retail, far or farther.</p>
             </li>
-            <li class="play-vis-row" title="PSX rasterisation: snap every vertex to the framebuffer's pixel grid (the PS1's integer screen coordinates - the vertex jitter) and dither each shaded pixel down to 15-bit colour with the PSX 4x4 matrix (the native window's LEGAIA_PSX_RENDER). Off draws the clean render; presentation only.">
+            <li class="play-vis-row" title="PSX rasterisation: draw the whole frame at the PS1's own 320x240 and magnify it with square pixels, snap every vertex to that pixel grid (the PS1's integer screen coordinates - the vertex jitter) and dither each shaded pixel down to 15-bit colour with the PSX 4x4 matrix (the native window's --psx-render). Off draws the clean render at the canvas resolution; presentation only.">
               <label class="play-vis-head"><input type="checkbox" id="play-psx-render"> <span class="play-vis-name">PSX rasterisation</span>
                 <span class="play-vis-tag is-retail">Retail look</span></label>
-              <p class="play-vis-desc">The PS1&rsquo;s wobbling vertices and 15-bit colour dither. Off draws a clean image.</p>
+              <p class="play-vis-desc">The PS1&rsquo;s own 320&times;240 picture: chunky pixels, wobbling vertices and 15-bit colour dither. Off draws a clean image.</p>
             </li>
             <li class="play-vis-row" title="Retail's visible-tile crop: at retail framing, draw only the terrain tiles the PS1's camera window covers (the retail_view_window option, persisted like the native config). Off draws the whole scene.">
               <label class="play-vis-head"><input type="checkbox" id="play-retail-view-window" checked> <span class="play-vis-name">Retail tile crop</span>
@@ -786,10 +792,33 @@ div.play-vis-head { cursor: default; }
       </div>
 
       <div class="play-rail">
-        <div class="play-card">
-          <h3>Controls</h3>
-          <button type="button" id="play-keys-reset"
-                  title="Put every key back to its default binding - the way out if a Key Config rebind left you without a way into the menu (the native legaia-engine config reset).">Reset keys</button>
+        <div class="play-card" id="play-scene-card">
+          <h3>Scenes</h3>
+          <input type="search" id="play-scene-search" class="play-scene-search"
+                 placeholder="Filter…" autocomplete="off">
+          <div class="play-scene-list" id="play-scene-list"></div>
+        </div>
+
+        <div class="play-card" id="play-saves-card">
+          <h3>Saves</h3>
+          <div class="play-btn-row">
+            <button id="save-export" type="button" disabled>Export save</button>
+          </div>
+          <label class="play-save-import">Import save (.lgsf / memory card)
+            <input type="file" id="save-import" accept=".lgsf,.mcr,.mcd,.gme,.mcs" disabled>
+          </label>
+          <div class="play-save-status" id="save-status">Load a disc to export or import saves.</div>
+        </div>
+
+        <!-- Collapsed by default: the key list is long and most visitors only
+             need it once. The open / closed choice is remembered per
+             browser (`play-controls-open`). -->
+        <details class="play-card play-keys-card" id="play-keys-card">
+          <summary><h3>Controls</h3></summary>
+          <div class="play-btn-row play-keys-actions">
+            <button type="button" id="play-keys-reset"
+                    title="Put every key back to its default binding - the way out if a Key Config rebind left you without a way into the menu (the native legaia-engine config reset).">Reset keys</button>
+          </div>
           <div class="play-keys" id="play-keys">
             <kbd data-key="ArrowUp">&uarr;&darr;&larr;&rarr;</kbd><span>Walk (camera-relative)</span>
             <kbd data-key="KeyW">W A S D</kbd><span>Walk, same as the arrows</span>
@@ -809,25 +838,7 @@ div.play-vis-head { cursor: default; }
             <!-- The host hotkeys, listed from the engine's own table
                  (`host_hotkeys_json`) once a runtime is up. -->
           </div>
-        </div>
-
-        <div class="play-card" id="play-saves-card">
-          <h3>Saves</h3>
-          <div class="play-btn-row">
-            <button id="save-export" type="button" disabled>Export save</button>
-          </div>
-          <label class="play-save-import">Import save (.lgsf / memory card)
-            <input type="file" id="save-import" accept=".lgsf,.mcr,.mcd,.gme,.mcs" disabled>
-          </label>
-          <div class="play-save-status" id="save-status">Load a disc to export or import saves.</div>
-        </div>
-
-        <div class="play-card" id="play-scene-card">
-          <h3>Scenes</h3>
-          <input type="search" id="play-scene-search" class="play-scene-search"
-                 placeholder="Filter…" autocomplete="off">
-          <div class="play-scene-list" id="play-scene-list"></div>
-        </div>
+        </details>
       </div>
     </div>
   </div>
@@ -2903,6 +2914,17 @@ div.play-vis-head { cursor: default; }
     saveMsg(err ? `Party: ${err}` : `Party set to ${spec}.`, !!err);
     canvas.focus();
   });
+  /* Controls card: collapsed for a first visit, then whatever the reader
+   * last left it at. Storage can throw (private window, blocked site data);
+   * the card then just opens collapsed. */
+  (() => {
+    const card = document.getElementById('play-keys-card');
+    const KEY = 'play-controls-open';
+    try { if (localStorage.getItem(KEY) === '1') card.open = true; } catch (_) { /* default */ }
+    card.addEventListener('toggle', () => {
+      try { localStorage.setItem(KEY, card.open ? '1' : '0'); } catch (_) { /* not remembered */ }
+    });
+  })();
   /* Reset keys: the engine's default layout back over a Key Config rebind
    * (`pad_bindings_reset`, the native `legaia-engine config reset`); the
    * running view re-reads the table through its revision counter. */

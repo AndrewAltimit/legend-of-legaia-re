@@ -822,7 +822,7 @@ mod tests {
     fn run_entry_sweep_out(world: &mut World) {
         let mut over = None;
         for step in 0..64 {
-            world.clock.display_frames += 2;
+            world.advance_battle_pass();
             world.tick_battle_camera();
             if world
                 .battle
@@ -836,7 +836,7 @@ mod tests {
         }
         assert!(over.is_some(), "the entry sweep never ended");
         for _ in 0..16 {
-            world.clock.display_frames += 2;
+            world.advance_battle_pass();
             world.tick_battle_camera();
         }
     }
@@ -890,7 +890,7 @@ mod tests {
             world.battle_ctx.active_actor = member;
             world.battle.command = Some(BattleCommandSession::new(member, member));
             for _ in 0..16 {
-                world.clock.display_frames += 2;
+                world.advance_battle_pass();
                 world.tick_battle_camera();
             }
             let want = f32::from(world.actors[usize::from(member)].move_state.world_x);
@@ -959,7 +959,7 @@ mod tests {
         );
         let settle = |world: &mut World| {
             for _ in 0..16 {
-                world.clock.display_frames += 2;
+                world.advance_battle_pass();
                 world.tick_battle_camera();
             }
             world.battle_cam_pose()

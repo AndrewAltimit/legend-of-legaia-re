@@ -127,17 +127,21 @@ pub struct BattleHitFx {
 /// is the separate `FUN_8004fcc8` namespace, surfaced via
 /// `legaia_engine_core::world::World::take_pending_move_fx_cue`.) `timing_frames` is the
 /// delay after strike-start, for the host's frame-timed scheduler.
-/// One Tactical-Arts **shout** cue - the per-character CD-XA voice clip a
-/// party art fires as it begins (distinct from the VAB one-shot
-/// [`BattleSfxCue`]s the art's strikes schedule). Emitted once per executed
-/// art, on the art's animation-start frame, only when the art carries a real
-/// action constant (synthetic/demo arts stay silent, matching the retail
-/// degradation for arts with no cue-table entry).
+/// One Tactical-Arts **shout** cue - one call of the arts-voice selector
+/// `FUN_8004C140`, which the battle anim commit `FUN_8004AD80` makes when a
+/// known art's `0x19` starter clip installs (the art's wind-up, after the
+/// approach run), keyed on the art constant behind it
+/// ([`crate::arts_voice_cue::shout_call_args`]). A newly learned art (staged
+/// behind `0x1A`) makes no call.
 ///
-/// The host resolves it against the arts-voice cue tables + the demuxed
-/// XA2/XA4/XA6 clip banks (`legaia_engine_audio::ArtsShoutBank`) and plays it
-/// through the XA mixing path with the modeled CD-response start delay, so
-/// the shout **trails** the animation start rather than leading it.
+/// With the selector's SCUS tables staged the world resolves the call
+/// itself ([`crate::arts_voice_cue::select_arts_voice`], on the world's
+/// `rand()` stream) and the clip rides the world's CD-XA cue queue; the cue
+/// is then `resolved` and stays an observation. Without them (a disc-free
+/// build) the host resolves it against its own
+/// `legaia_engine_audio::ArtsShoutBank`. Either way the clip plays through
+/// the XA mixing path with the modelled CD-response start delay, so the
+/// shout trails the clip install rather than leading it.
 /// REF: FUN_8004C140 (cue select), FUN_8003D53C (CD-XA clip play).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BattleShoutCue {
@@ -147,6 +151,9 @@ pub struct BattleShoutCue {
     /// The art's action constant - the cue-table key that selects the
     /// candidate-channel pool.
     pub action: u8,
+    /// The world already resolved and queued the selector's output; the host
+    /// plays nothing for this cue.
+    pub resolved: bool,
 }
 
 /// One battle **effect-script spawn request** - a record the per-actor

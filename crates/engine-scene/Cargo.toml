@@ -3,7 +3,9 @@ name = "legaia-engine-scene"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-# tests/integration.rs gathers every tests/*.rs into one binary.
+# tests/integration.rs gathers every tests/*.rs into one module, which
+# src/lib.rs mounts into the unit-test target (see the comment there); no
+# integration binary is built.
 autotests = false
 
 [lib]
@@ -46,7 +48,3 @@ legaia-engine-battle.workspace = true
 legaia-engine-menus.workspace = true
 legaia-engine-mode.workspace = true
 legaia-minigame-formats.workspace = true
-
-[[test]]
-name = "integration"
-path = "tests/integration.rs"

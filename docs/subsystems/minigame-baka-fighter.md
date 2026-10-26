@@ -847,6 +847,16 @@ Baka Fighter fires **no** runtime-bank cue (`>= 0x200`): every cue is a **static
 
 The round-start READY / FIGHT banner, the KO, a drawn exchange's trade, the round-result banners and the victory flourish fire no cue; the only fight sound effect is the hit. Because the ring write sits at the top of `FUN_801D3B18`, a draw (which applies damage twice) queues the hit cue twice. Voice lines are separate: they are XA clips through `FUN_8003D53C`.
 
+The overlay has thirteen `FUN_8003D53C` sites. Ten belong to the chrome (the intro card's two `XA33` lines, the countdown's four, the round banner's `XA32` line, the four result lines). Three sit in the cabinet dispatcher itself, each on its arm's first frame:
+
+| Arm | Line | Site |
+|---|---|---|
+| `0x38` "FIGHT!" flash | `XA33` channel `1`, span `0x36` | `0x801D04E4..0x801D04F0` (`a1 = s4 = 1`) |
+| `0x68` NEXT GAME taken | `XA33` channel `9`, span `0x4E` | `0x801D0DEC..0x801D0DF8`, the frame the latch `DAT_801DBF88` reads `1` |
+| `0x97` GAME OVER | `XA33` channel `8`, span `0x4A` | `0x801D125C..0x801D1268` |
+
+Port: `CabinetFrame::xa` carries the cabinet's three (`FIGHT_FLASH_XA`, `NEXT_GAME_XA`, `GAME_OVER_XA`), and `BakaFight` folds it into the chrome frame's one XA slot, which every host already plays; `announcer_xa_prestage` lists them for the page's staged bank.
+
 | Asset | Entry | Loader |
 |---|---|---|
 | SFX bank (class-2 VAB) | extraction PROT 0869 (raw `0x367`) | `FUN_8001FC00(0x367, 2, ...)` + `FUN_8001E54C(2, ...)` |
@@ -855,6 +865,8 @@ The round-start READY / FIGHT banner, the KO, a drawn exchange's trade, the roun
 The SFX bank is the same one the battle scene loader `FUN_800520F0` loads (also class 2, swapping to raw `0x36D` when `DAT_8007BD11 == 4`), so it is the shared battle / minigame bank. All four cue descriptors resolve in it (programs `0` and `3`). The BGM is `music_01` sound-test #55 `M112` "Sol disco fever"; the bank map is piecewise, see [`../reference/music-tracks.md`](../reference/music-tracks.md). **Confirmed.**
 
 Port: the rules engine queues the cues itself. `BakaFight::take_cues` drains `BAKA_CUE_HIT` (queued from inside `apply_damage`, where the retail ring write sits), the cabinet's menu blips and the tally ticks. Both play hosts drain it each frame. The minigames page drains it in its per-frame calls (`baka_frame` / `baka_tick`) into the page's live SPU through the catalog path the play hosts take (`minigame_sfx_cue`, opened inside a user gesture and gated on the site-wide `LegaiaSound` toggle), and plays nothing else.
+
+The page resumes its live SPU on every `MgSpu.ready` call and on every tab click: a context first opened outside a gesture (the cue load at disc load, a cached disc) is held suspended by the browser, and resuming it only once left every cue and announcer line silent while the music, on its own context, played.
 
 ## Developer screens
 

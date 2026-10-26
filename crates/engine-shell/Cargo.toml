@@ -43,7 +43,6 @@ legaia-engine-scene.workspace = true
 legaia-engine-audio.workspace = true
 legaia-engine-session.workspace = true
 legaia-engine-screens.workspace = true
-legaia-parity.workspace = true
 legaia-engine-render.workspace = true
 legaia-prot.workspace = true
 legaia-save.workspace = true
@@ -95,9 +94,19 @@ rfd.workspace = true
 # window.
 gilrs = { workspace = true, optional = true }
 
+# The parity-oracle subcommands (`vram-oracle`, `mode-trace`, `sim-trace`,
+# `audio-trace`, `pcm-trace`, `retail-compare`, `cast-sequence-score`) and the
+# play window's `LEGAIA_DIAG_CAST_SEQ` frame shots. Off by default: the parity
+# crate is tool code, and leaving it out takes it off the host build's
+# critical path (engine-core -> session -> parity -> shell). The capture
+# drivers (`scripts/ci/retail-compare.py`, `scripts/ci/cast-sequence.py`)
+# build with `--features oracles`.
+legaia-parity = { workspace = true, optional = true }
+
 [features]
 default = ["gamepad"]
 gamepad = ["dep:gilrs"]
+oracles = ["dep:legaia-parity"]
 
 # SIGPIPE reset in the bin's main() so piping stdout into `head` exits
 # quietly instead of panicking on a broken pipe.
@@ -114,6 +123,10 @@ legaia-pcsx-redux.workspace = true
 # `legaia-web-play` never depends on this crate, so the edge is acyclic, and
 # it is dev-only: the shipped `legaia-engine` binary links none of it.
 legaia-web-play.workspace = true
+# The parity-oracle tests (retail-compare corpus, determinism, the spine and
+# minigame ladders) name the parity crate directly, with or without the
+# `oracles` feature.
+legaia-parity.workspace = true
 
 [[test]]
 name = "integration"

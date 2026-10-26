@@ -495,6 +495,12 @@ pub struct BattleHudFrame<'a> {
     /// (placement records 76 / 77): centred on `x = 0xA0` by
     /// [`crate::battle_name_banner::banner_x`], pen row `148`.
     pub move_name: Option<&'a str>,
+    /// `true` when [`Self::move_name`] is a summon module's own line, which
+    /// it prints through `FUN_8003541C` at `y = 0x96` rather than through the
+    /// label's placement record: its glyphs stand two rows lower (top row
+    /// `152` in `gimard_burning_attack` and Gilium's casts, where the
+    /// label's stand at `150`).
+    pub move_name_module_line: bool,
     /// The bottom-right target plaque (placement record 81): the monster a
     /// party member's action is aimed at and its element badge, on a blue
     /// plate whose right cap ends at `x = 312`, on the bar's row.
@@ -674,6 +680,27 @@ mod ink_tests {
             hud_numeral_cell(&bare, 3, faded).map(|(_, t)| t),
             Some(numeral_cell_tint(faded))
         );
+    }
+
+    /// A summon module's own line (`FUN_8003541C` at `y = 0x96`) stands two
+    /// rows under the label the placement record draws.
+    #[test]
+    fn a_module_line_stands_two_rows_under_the_label() {
+        let font = legaia_font::synthetic_for_tests();
+        let y_of = |module: bool| {
+            let d = battle_hud_draws_for(
+                &font,
+                &BattleHudFrame {
+                    surface: (320, 240),
+                    move_name: Some("Space Cannon"),
+                    move_name_module_line: module,
+                    ..Default::default()
+                },
+                (0, 0),
+            );
+            d.text.iter().map(|t| t.dst.1).min().unwrap_or(0)
+        };
+        assert_eq!(y_of(true) - y_of(false), 2);
     }
 
     /// Every caption the battle builder lays out - the actor plaque and the

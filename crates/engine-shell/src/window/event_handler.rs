@@ -38,11 +38,21 @@ impl ApplicationHandler for PlayWindowApp {
         // the 3D mesh pipelines. Off by default (clean modern output); enable
         // with `--psx-render` or `LEGAIA_PSX_RENDER=1` (the play page's
         // "PSX look" box is the runtime twin).
+        // PSX mode draws the whole frame at the display's own 320x240
+        // (`Renderer::set_native_resolution`) and the window magnifies it:
+        // the snap, the fill rule and the dither are retail's only at stage
+        // scale 1. The hosts lay out against the native size from here on.
         if self.psx_render
-            && let Some(r) = self.win.renderer.as_ref()
+            && let Some(r) = self.win.renderer.as_mut()
         {
             r.set_psx_mode(true);
-            log::info!("play-window: PSX-faithful render mode enabled");
+            r.set_native_resolution(Some(legaia_engine_render::PSX_DISPLAY_SIZE));
+            // Instrument: a retail-compare child scoring a PCSX-Redux capture
+            // samples that emulator's texel rule, not the console's.
+            if std::env::var("LEGAIA_PSX_CAPTURE_RASTER").as_deref() == Ok("pcsx-redux") {
+                r.set_psx_texel_rule(legaia_engine_render::PsxTexelRule::PcsxRedux);
+            }
+            log::info!("play-window: PSX-faithful render mode enabled (native 320x240)");
         }
         // Opt-in dynamic-lighting enhancement (`--dynamic-lighting`, or the
         // `I` key at runtime): soft warm directional light + screen-centred

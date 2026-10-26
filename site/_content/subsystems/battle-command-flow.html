@@ -159,7 +159,7 @@
   <h2>The Cort stage modules (overlays 968 / 969)</h2>
   <p>Both modules are one function over the whole of their own code, and each is a phase machine on <code>ctx[+0x289]</code> driving the <strong>first monster seat</strong>. Neither is a <a href="cast-module.html">cast module</a>: none of the three cast entry tables names them, and only the stage pager brings them in.</p>
   <ul>
-    <li><strong>968 - arrival.</strong> Seven phases behind a jump table at the image base, run on a countdown word in the image's own data. It re-dresses the arena for the fight.</li>
+    <li><strong>968 - arrival.</strong> Seven phases behind a jump table at the image base, run on a countdown word in the image's own data. It re-dresses the arena for the fight: the backdrop switches to its flesh shell, an empty strip blanks the floor's tile, and two looping effects start, one scrolling the flesh texture and one hue-cycling its palette (CLUT <code>(32, 479)</code>) for the rest of the battle.</li>
     <li><strong>969 - form change.</strong> The mid-fight transition to the evolved form.</li>
   </ul>
   <p>The evolved-Cort fight is the one battle whose intro leaves the flow byte on <code>0x0C</code>, a value the comparison tree has no arm for. The battle overlay never moves it off: the stage module does, from outside, handing back <code>0x0B</code> when its arrival sequence is done. A port that does not run the module parks there forever.</p>

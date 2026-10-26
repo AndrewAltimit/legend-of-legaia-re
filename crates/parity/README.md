@@ -6,7 +6,8 @@ comparison corpus. Each drives the native engine session
 against an emulator save state's own RAM, VRAM or SPU, or against a recorded
 trace. Tool code - it reads mednafen / PCSX-Redux states and links the wgpu
 renderer for frame captures - so no play host ships it: only
-`legaia-engine`'s oracle subcommands call into it. The seed vocabulary a
+`legaia-engine`'s oracle subcommands call into it, and those build only
+with `engine-shell`'s default-off `oracles` feature. The seed vocabulary a
 capture's `play-window` child reads back from its environment is
 [`legaia-engine-capture`](../engine-capture/README.md), which this crate
 fills from retail RAM.

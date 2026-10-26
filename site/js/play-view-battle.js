@@ -139,7 +139,15 @@
         } catch (e) { /* draw uncued */ }
       }
       if (b.backdrop && !backdropHidden) {
-        draws.push({ meshId: b.backdrop, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0, cue: backdropCue });
+        /* Copy A keeps its front faces only; the mesh carries a both-sided
+         * copy B once per winding (`backdrop_shell_mesh`), so the cull leaves
+         * it both-sided. Guarded against a cached WASM without the export. */
+        const shellNclip = (typeof rt.play_battle_backdrop_nclip === 'function')
+          ? rt.play_battle_backdrop_nclip() : undefined;
+        draws.push({
+          meshId: b.backdrop, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0, cue: backdropCue,
+          nclip: shellNclip,
+        });
       }
       /* The backdrop's drawn slot 1 (on a stage that keeps object 1, the
        * horizon mist ribbon) turns about Y every battle frame, so it is one
@@ -228,6 +236,17 @@
        * (its node's `+0x42`, World::battle_actor_floor_clip): six floats per
        * actor, `[m0, m1, m2, lo, hi, enable]`, all zero when unclipped.
        * Guarded against a cached WASM without the export. */
+      /* A body a cast module tipped (`+0x48`, Mule's wave front) carries a
+       * roll the yaw-only placement cannot express: the engine sends it per
+       * actor in radians and the draw composes it on the mesh side, the
+       * native actor_model twin. Guarded against a cached WASM without the
+       * export. */
+      let rolls = null;
+      try {
+        if (typeof rt.play_battle_actor_rolls === 'function') {
+          rolls = rt.play_battle_actor_rolls();
+        }
+      } catch (e) { /* unrolled */ }
       let floorClips = null;
       try {
         if (typeof rt.play_battle_actor_floor_clips === 'function') {
@@ -323,6 +342,7 @@
           }
         }
         const c = (cursor && cursor.length >= (i + 1) * 6) ? i * 6 : -1;
+        const roll = (rolls && i < rolls.length) ? rolls[i] : 0;
         draws.push({
           meshId: drawMeshId,
           /* Retail translation with the frame flip on its Y (`T(F pos)`, like
@@ -348,6 +368,14 @@
             }
             : null,
         });
+        if (roll) {
+          /* Retail's Rz (glam's from_rotation_z), nearest the raw vertices. */
+          const d = draws[draws.length - 1];
+          const cr = Math.cos(roll), sr = Math.sin(roll);
+          d.model = mulMat4(
+            placementModelScaledY(d.x, d.y, d.z, d.rotY, d.scale),
+            new Float32Array([cr, sr, 0, 0, -sr, cr, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]));
+        }
         /* Arts after-image ghosts: the engine's ghost plan (rate-scheduled
          * pose-history depths + per-character colour with the per-ghost
          * decay) drawn as additive copies behind the body - the saturated

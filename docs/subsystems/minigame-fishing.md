@@ -677,7 +677,7 @@ Each is pinned to PROT 0972 by content and reached from a fishing-overlay caller
 | `FUN_801d74b0` | `(cx, y, w, val)` | Centred bar-widget draw. Skips when `y > 0xF0`; otherwise stages widget kind `0x44` via `FUN_80034b6c` and emits through the bar-widget dispatcher `FUN_8002c69c` at `(cx - w/2 - 2, y + 6)` with width `w` and fill `val`. Called by the driver and the shop / help helpers. |
 | `FUN_801d7964` | `(x, rgb0, rgb1, y, arg4, arg5)` | Coloured screen-fade spawn. Unpacks two packed 24-bit colours and the coordinates into an on-stack fade template, then spawns the fade actor via `FUN_80024e80(template, 1)`. |
 | `FUN_801d03b0` | - | Idle sway. Samples the shared sine table `*_DAT_8007B81C` at `angle`, `angle + 0x400` and `angle + 0x800`, scales each `>> 8` rounding toward zero, biases it `-0xA`, writes the triple to `0x1F80035E/60/62` after clearing `0x1F80035C`, and advances the angle at `0x801D9118` by `DAT_1F800393 << 4`. The stored angle is unmasked; only the table index is folded into a turn. |
-| `FUN_801d7c30` | `(actor, mode)` | Ripple spawn. Non-zero mode does nothing; mode zero spawns the `0x801D899C` part at `(actor+0x14, 0, actor+0x18)` - world XZ, not a screen point. |
+| `FUN_801d7c30` | `(actor, mode)` | Ripple spawn hook. Non-zero mode does nothing; mode zero spawns the `0x801D899C` part at `(actor+0x14, 0, actor+0x18)` - world XZ, not a screen point. Installed, never called: see below. |
 | `FUN_801d7a5c` | `(.., packed)` | Splash burst: spawns the `0x801D899C` part three times and fans them apart (below). |
 
 **Splash burst forms.** `FUN_801d7a5c`'s fourth argument packs a spread in the low 12 bits and a form bit at `0x1000`:
@@ -689,7 +689,9 @@ Each is pinned to PROT 0972 by content and reached from a fishing-overlay caller
 
 Each form leaves one of the three parts unmoved as the anchor, and the two forms use different rotation-word triples.
 
-Port: `fishing_chrome` (`sway_vector`, `venue_camera_reset`, `float_actor_tick`, `ripple_spawn`, `splash_burst`, `centred_panel`, and the cadence ring reset shared with `ReelCadence`). `FUN_801d7c30` has no caller in the overlay: the lead's tick `FUN_801d2050` installs it in the slot-B hook `_DAT_8007BA2C` (`0x801D20B0..0x801D20B4`), which the move VM's op `0x20` calls from an effect script ([`move-vm.md`](move-vm.md#0x20---slot-b-module-hook)); the port runs no move VM over the venue's parts, so `ripple_spawn` is unwired.
+Port: `fishing_chrome` (`sway_vector`, `venue_camera_reset`, `float_actor_tick`, `splash_burst`, `centred_panel`, and the cadence ring reset shared with `ReelCadence`).
+
+**`FUN_801d7c30` is installed and never called.** Its one reference is the lead's tick `FUN_801d2050`, which stores it in the slot-B hook `_DAT_8007BA2C` (`0x801D20B0..0x801D20B4`), and only the move VM's op `0x20` calls that slot ([`move-vm.md`](move-vm.md#0x20---slot-b-module-hook)). No part program the overlay seats issues op `0x20`: every part record the image addresses (the spawn records of all eighteen `FUN_80021B04` sites, the splash spawner's records, both ambient-ripple records and `0x801D899C` itself) runs to its op-`0x08` halt without one. The hook is therefore dead in retail, and the port carries no body for it; the row is in the ignore list's `unreferenced` section.
 
 ## Scene geometry helpers
 

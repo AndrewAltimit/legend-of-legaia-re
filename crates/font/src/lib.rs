@@ -550,6 +550,14 @@ impl Font {
     }
 }
 
+/// The 256-byte per-character advance table (VA `0x80073F1C`) read
+/// straight out of `SCUS_942.54`, for a consumer that measures text without
+/// an atlas (the name-entry screen's width cap). `None` when the executable
+/// does not reach the table.
+pub fn scus_width_table(scus: &[u8]) -> Option<[u8; 256]> {
+    read_scus_widths(scus).ok()
+}
+
 /// Helper for tests + tooling: synthesize a deterministic font with a fixed
 /// width table and an all-white atlas. Lets crates that depend on this one
 /// run unit tests without an `extracted/font/` tree.

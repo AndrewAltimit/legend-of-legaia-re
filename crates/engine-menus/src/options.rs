@@ -80,6 +80,15 @@ use legaia_engine_system::option_values::{
 /// the bound every host's control clamps to.
 pub const VOLUME_MAX: u8 = 10;
 
+/// The default of [`OptionsState::master_volume`]: a quarter of the full
+/// mixer output. The same value as `legaia_engine_audio::
+/// DESKTOP_MASTER_VOLUME_DEFAULT` (this crate does not depend on the audio
+/// crate; `engine-shell` asserts the two agree).
+pub const MASTER_VOLUME_DEFAULT: u8 = 25;
+
+/// The top of [`OptionsState::master_volume`]'s `0..=100` percent range.
+pub const MASTER_VOLUME_MAX: u8 = 100;
+
 /// Full set of user-editable options. Engines round-trip via
 /// [`OptionsState::load_or_default`] / [`OptionsState::save`] (TOML,
 /// mirroring `input::Mapping`).
@@ -112,6 +121,15 @@ pub struct OptionsState {
     /// bus), same curve as [`Self::bgm_volume`]. XA voice / FMV audio rides
     /// neither bus.
     pub sfx_volume: u8,
+    /// 0..=100 percent master volume (engine-only output setting): scales
+    /// the finished mix, XA voice and FMV audio included
+    /// (`AudioSink::set_master_volume`), after the BGM / SFX buses. 100 is
+    /// the unscaled mixer output; the default is [`MASTER_VOLUME_DEFAULT`],
+    /// a quarter of it - the full mix is far too loud through a desktop
+    /// output. A config file written before the key existed loads the
+    /// default. The native window applies it; the browser play page has its
+    /// own output-gain slider and ignores it.
+    pub master_volume: u8,
     /// Full-mono downmix (engine-only output setting, `false` = off): the
     /// finished mix, XA voice and FMV audio included, is averaged into both
     /// channels (`AudioSink::set_downmix`). Separate from the retail
@@ -239,6 +257,7 @@ impl Default for OptionsState {
             vibration_encounters: true,
             bgm_volume: 8,
             sfx_volume: 8,
+            master_volume: MASTER_VOLUME_DEFAULT,
             downmix_mono: false,
             message_speed: 5,
             muted: false,

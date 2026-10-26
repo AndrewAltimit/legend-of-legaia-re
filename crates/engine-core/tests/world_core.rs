@@ -313,57 +313,37 @@ fn world_tick_field_mode_no_bytecode_is_noop() {
     assert_eq!(world.field_pc, 0);
 }
 
-/// The play clock is one law for every host (`World::tick_play_clock`): whole
-/// seconds by delta against a high-water mark, restarted by New Game. The
-/// browser page once reset only its origin on New Game, so after a second New
-/// Game the clock stood still until the wall clock passed the old mark.
+/// The play clock counts sim ticks, as retail's counter counts vsyncs
+/// (`FUN_80016B6C`): sixty counted ticks are one second, a loaded total is
+/// kept, and New Game restarts both the seconds and the sub-second phase.
 #[test]
-fn play_clock_counts_by_delta_and_restarts_on_new_game() {
+fn play_clock_counts_ticks_and_restarts_on_new_game() {
     let mut world = World::new();
-    world.tick_play_clock(1000.0);
+    for _ in 0..59 {
+        world.count_play_tick();
+    }
     assert_eq!(
         world.clock.play_time_seconds, 0,
-        "the first reading is the origin"
+        "59 vsyncs are not a second"
     );
-    world.tick_play_clock(1002.5);
-    assert_eq!(world.clock.play_time_seconds, 2);
-    world.tick_play_clock(1002.9);
-    assert_eq!(world.clock.play_time_seconds, 2, "whole seconds only");
-    // A loaded save's total is kept: the clock adds deltas, never assigns.
+    world.count_play_tick();
+    assert_eq!(world.clock.play_time_seconds, 1);
+    assert_eq!(world.clock.play_tick_phase, 0);
+    // A loaded save's total is kept: the clock adds, never assigns.
     world.clock.play_time_seconds = 3600;
-    world.tick_play_clock(1004.0);
+    for _ in 0..120 {
+        world.count_play_tick();
+    }
     assert_eq!(world.clock.play_time_seconds, 3602);
 
-    // New Game after a long session: the next reading is a fresh origin, and
-    // the one after it counts at once rather than waiting out the old mark.
-    world.tick_play_clock(5000.0);
+    for _ in 0..30 {
+        world.count_play_tick();
+    }
     world.begin_new_game();
     assert_eq!(world.clock.play_time_seconds, 0);
-    world.tick_play_clock(5010.0);
-    assert_eq!(world.clock.play_time_seconds, 0);
-    world.tick_play_clock(5013.0);
-    assert_eq!(world.clock.play_time_seconds, 3);
-}
-
-/// A host that stops reading - a paused or backgrounded page, a minimised
-/// window - is not playing: the gap counts nothing, and the clock picks up
-/// from where it stood.
-#[test]
-fn play_clock_does_not_count_a_stalled_host() {
-    let mut world = World::new();
-    world.tick_play_clock(100.0);
-    for i in 1..=30 {
-        world.tick_play_clock(100.0 + f64::from(i) * 0.1);
+    assert_eq!(world.clock.play_tick_phase, 0, "the half second is dropped");
+    for _ in 0..180 {
+        world.count_play_tick();
     }
     assert_eq!(world.clock.play_time_seconds, 3);
-    // An hour with no reading, then play resumes.
-    world.tick_play_clock(3703.0);
-    assert_eq!(
-        world.clock.play_time_seconds, 3,
-        "the stall is not play time"
-    );
-    for i in 1..=20 {
-        world.tick_play_clock(3703.0 + f64::from(i) * 0.1);
-    }
-    assert_eq!(world.clock.play_time_seconds, 5);
 }
