@@ -46,8 +46,8 @@ unless noted.
 | [`legaia-lzs`](../../crates/lzs/README.md) | Generic, Legaia quirks | `decompress`, `compress`, `compress_optimal` | `lzs-decode raw` / `scan` / ... |
 | [`legaia-mdec`](../../crates/mdec/README.md) | Generic, Legaia quirks | `MdecDecoder::decode_frame`, `str_sector::StrFrameAssembler`, `str_av::demux_str_av` | `mdec scan-str` / `decode-str` / ... |
 | [`legaia-mednafen`](../../crates/mednafen/README.md) | Generic, Legaia quirks | `SaveState::from_path`, `main_ram`, `gpu::PsxGpu`, `spu::PsxSpu` | `mednafen-state` |
-| [`legaia-pcsx-redux`](../../crates/pcsx-redux/README.md) | Generic, Legaia quirks | `gpu::PcsxGpu::from_path`; `SaveState` needs Legaia anchors | `pcsxr-state` |
-| [`legaia-ram-image`](../../crates/ram-image/README.md) | Generic, Legaia quirks | `diff::diff_ram`, `bisect::bisect_first_bad`, `prim_pool::decode`, `ram_slice` | - |
+| [`legaia-pcsx-redux`](../../crates/pcsx-redux/README.md) | Generic, Legaia quirks | `SaveState::from_path_structural`, `gpu::PcsxGpu::from_path`, `fixture::SyntheticState` | `pcsxr-state --game generic` |
+| [`legaia-ram-image`](../../crates/ram-image/README.md) | Generic, Legaia quirks | `diff::diff_ram`, `bisect::bisect_first_bad`, `prim_pool::decode`, `ram_slice`, `GameProfile` | - |
 | [`legaia-engine-audio`](../../crates/engine-audio/README.md) | Generic, Legaia quirks | `spu::Spu`, `Sequencer::new(seq, bank)`, `vab_bind::VabBank::upload` | `note-trace` |
 | [`legaia-render-kernels`](../../crates/render-kernels/README.md) | Generic module in a Legaia crate | `gte::Gte`, `gte::Camera`, `gte::gte_divide`, `vram_capture` | - |
 | [`legaia-tmd`](../../crates/tmd/README.md) | Legaia-only | `parse` (Legaia variant only) | `tmd` |
@@ -199,32 +199,65 @@ sector stride at the 2x CD rate. Those carry to any STR. The decoder does not:
 The three crates split into a generic reader and a Legaia anchor layer.
 
 - **Mednafen.** `SaveState::from_path` walks the `MDFNSVST` section index of
-  any PSX state; `main_ram()` returns `MAIN.MainRAM.data8`, and `PsxGpu`
-  (VRAM, display registers) and `PsxSpu` (SPU RAM, voices, reverb) read their
-  sections structurally. Only the fallback path, taken when the structured
-  entry is missing, searches for Legaia strings. The CLI binary, unlike the
-  library, pulls in `legaia-actor-formats` and `legaia-cheats`, and its
-  `identify`, `display-list`, `write-taxonomy`, `clut-trace`,
-  `prim-dispatch-*` and
-  `world-map-camera` subcommands are Legaia's; `extract`, `diff`, `bisect`,
-  `trace`, `watch`, `vram-dump`, `spu` and `prim-trace` (given an explicit
-  `--pool-base` / `--pool-end`) are not.
-- **PCSX-Redux.** `gpu::PcsxGpu` (VRAM plus the GP1 control log) and the
-  hardware blob behind `SaveState::scratchpad` are found by walking the
-  protobuf for members of known length, which works for any game. **Main RAM
-  is not**: `SaveState::from_path` locates it by matching strings from
-  Legaia's executable (`legaia_ram_image::extract::ANCHORS`, such as
-  `h:\prot\cdname.dat`) in both `SCUS_942.54` and the state, so another game's
-  state fails with "no anchor found". `main_ram_via_anchor_with_scus` swaps
-  the executable the strings are matched in, not the strings, so a second game
-  needs its own anchor list, or the 2 MiB member located structurally the way
-  `find_hardware` locates the 64 KiB one.
+  any PSX state; `main_ram_structured()` returns `MAIN.MainRAM.data8`, and
+  `PsxGpu` (VRAM, display registers) and `PsxSpu` (SPU RAM, voices, reverb)
+  read their sections structurally. `main_ram()` falls back to a search for
+  Legaia's strings when the entry is missing; `main_ram_with_anchors(exe,
+  profile)` is that fallback with another game's executable and strings. The
+  CLI binary, unlike the library, pulls in `legaia-actor-formats` and
+  `legaia-cheats`, and its `identify`, `display-list`, `write-taxonomy`,
+  `clut-trace`, `prim-dispatch-*` and `world-map-camera` subcommands are
+  Legaia's; `extract`, `diff`, `bisect`, `trace`, `watch`, `vram-dump`, `spu`
+  and `prim-trace` (given an explicit `--pool-base` / `--pool-end`) are not.
+- **PCSX-Redux.** Main RAM, the GPU snapshot (`gpu::PcsxGpu`: VRAM plus the
+  GP1 control log) and the hardware blob behind `SaveState::scratchpad` are
+  all found by walking the state's protobuf for members of known length: RAM
+  is the first member of at least 2 MiB in the one submessage that also holds
+  the 64 KiB hardware region. That reads only the emulator's layout, so any
+  game's state opens with no executable (`SaveState::from_path_structural`,
+  or `pcsxr-state --game generic`). The Legaia anchor search survives as the
+  fallback for a payload the walk does not recognise, and a disc-gated test
+  checks that the two land on the same offset for every library state.
+  `SaveState::from_sstate_bytes_with_anchors(bytes, exe, profile)` is that
+  fallback for another game. The scene / mode / player accessors read
+  Legaia's globals; `identity_with(profile)` asks a different profile.
 - **`legaia-ram-image`.** `diff::diff_ram` (the watchpoint-equivalent diff of
   two RAM images), `bisect::bisect_first_bad`, `ram_slice` and
   `prim_pool::decode` / `chain_walk` (the libgpu primitive pool and ordering
-  table) take any 2 MiB image. `game_anchors`, `prim_dispatch`, `source_hunt`
-  and the `ANCHORS` list are Legaia's; the `scenarios` manifest schema is
-  generic but its file is Legaia's catalogue.
+  table) take any 2 MiB image. What a reader needs to know about the game is
+  a `profile::GameProfile`: the anchor strings for the fallback RAM search,
+  how to identify a state from its globals, and the scenario manifest's
+  default save-file name and directory variable. `GenericGame` knows none of
+  them; `game_anchors::Legaia` is this project's, and every API that predates
+  profiles uses it, so Legaia callers see no change.
+  `extract::main_ram_via_exe_anchors(payload, exe, strings)` takes any game's
+  strings and reads the load address from the `PS-X EXE` header, and
+  `ScenarioManifest::parse_toml_for(text, profile)` fills an absent
+  `[defaults]` field from the profile (a manifest may also set
+  `mcs_dir_env` itself). `prim_dispatch` and `source_hunt` stay Legaia's.
+
+### A worked example
+
+[`crates/pcsx-redux/examples/bring_your_own_game.rs`](../../crates/pcsx-redux/examples/bring_your_own_game.rs)
+runs the generic crates on inputs built in code, none of them from a game:
+a 4-bit TIM with its CLUT through `parse_strict`, `decode_rgba8` and
+`write_png`; a SEQ through `Seq::parse`; a two-directory ISO9660 image
+mastered as Mode 2/2352 sectors with `write::encode_mode2_form1_sector` and
+read back by both the in-memory walker and `RawDisc`; and a made-up game's
+PCSX-Redux and mednafen states, opened structurally, diffed with `diff_ram`
+and bisected for the capture where a value changed. `cargo run -p
+legaia-pcsx-redux --example bring_your_own_game -- <out_dir>` writes the PNG
+and the `.bin`; the image lists and extracts under `xorriso` once its user
+data is pulled out, so it is a real ISO9660 volume, not one only this reader
+accepts. The test `tests/bring_your_own_game.rs` runs the same code in CI.
+
+The SEQ step is the one to read closely. It builds the shape `legaia-seq`
+parses (a 13-byte header with a `u16` version, meta events without a length
+byte), which is what libsnd's reader in Legaia's executable consumes. No
+other title's SEQ file is tested in this repository, so the step is not
+evidence that a second game ships this shape. It also demonstrates the trap:
+an SMF-style tempo event (`FF 51 03 tt tt tt`) does not read as the right
+tempo, so check one tempo event of your own files by hand first.
 
 ### `legaia-engine-audio`
 
@@ -306,7 +339,9 @@ of plausible garbage with no error.
 ## The transferable method
 
 The parts of this project most worth taking to another game are not crates but
-practices. Each is documented for Legaia; the pages below are the reference,
+practices. [The retail-oracle method](retail-oracle-method.md) writes them up
+engine-neutral, in the order to adopt them, with this project only as worked
+examples. Each is documented for Legaia; the pages below are the reference,
 and nothing in them depends on Legaia beyond the examples.
 
 ### Measure against retail RAM and VRAM

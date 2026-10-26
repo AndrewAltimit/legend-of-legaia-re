@@ -307,6 +307,7 @@ const NAV = [
       { href: 'tooling/soak-harness.html', text: 'Soak harness', key: 'tooling/soak-harness' },
       { heading: 'Beyond Legaia' },
       { href: 'tooling/reusing-for-other-ps1-games.html', text: 'Reusing for other PS1 games', key: 'tooling/reusing-for-other-ps1-games' },
+      { href: 'tooling/retail-oracle-method.html', text: 'The retail-oracle method', key: 'tooling/retail-oracle-method' },
     ],
   },
   {

@@ -257,7 +257,7 @@ A scene takes one path through the stack on every host: [`iso`](crates/iso/READM
 
 ## Reusable for other PS1 games
 
-Part of the stack describes the PlayStation rather than Legaia, and works on another game's disc. Take a crate as a git dependency with `default-features = false` (the default `cli` feature adds the command-line binary and its dependencies). [Reusing this repo for other PS1 games](docs/tooling/reusing-for-other-ps1-games.md) has the per-crate detail, every Legaia assumption by name, and the transferable method (the retail-compare oracle, evidence grading, the falsified-hypotheses register, disc-denominated coverage, determinism replay).
+Part of the stack describes the PlayStation rather than Legaia, and works on another game's disc. Take a crate as a git dependency with `default-features = false` (the default `cli` feature adds the command-line binary and its dependencies). [Reusing this repo for other PS1 games](docs/tooling/reusing-for-other-ps1-games.md) has the per-crate detail, every Legaia assumption by name, and the transferable method (the retail-compare oracle, evidence grading, the falsified-hypotheses register, disc-denominated coverage, determinism replay), which [the retail-oracle method](docs/tooling/retail-oracle-method.md) writes up engine-neutral. A worked example runs the generic crates on a made-up game built in code: `cargo run -p legaia-pcsx-redux --example bring_your_own_game`.
 
 | Crate | What it does | Generic? | Entry point |
 |---|---|---|---|
@@ -269,8 +269,8 @@ Part of the stack describes the PlayStation rather than Legaia, and works on ano
 | [`lzs`](crates/lzs/README.md) | LZSS (4 KB ring at `0xFEE`) decode and re-pack | Zero-filled ring, no size header, Legaia container | `decompress`, `compress` |
 | [`mdec`](crates/mdec/README.md) | STR sector assembly, A/V demux, MDEC decode | Decoder is the Iki bitstream; STRv2 needs Legaia's VLC table | `str_av::demux_str_av`, `MdecDecoder` |
 | [`mednafen`](crates/mednafen/README.md) | Mednafen state: RAM, VRAM, SPU | Library generic; several CLI subcommands are Legaia's | `SaveState::from_path` |
-| [`pcsx-redux`](crates/pcsx-redux/README.md) | PCSX-Redux state: VRAM, scratchpad, RAM | Main RAM is found by Legaia anchor strings | `gpu::PcsxGpu`, `SaveState` |
-| [`ram-image`](crates/ram-image/README.md) | RAM diff, write bisection, GPU primitive-pool decode | Generic except `game_anchors` / `prim_dispatch` | `diff::diff_ram`, `prim_pool::decode` |
+| [`pcsx-redux`](crates/pcsx-redux/README.md) | PCSX-Redux state: VRAM, scratchpad, RAM | Generic (all located structurally); the scene / mode accessors are Legaia's | `SaveState::from_path_structural`, `gpu::PcsxGpu` |
+| [`ram-image`](crates/ram-image/README.md) | RAM diff, write bisection, GPU primitive-pool decode | Generic; game knowledge is a `GameProfile` parameter | `diff::diff_ram`, `prim_pool::decode`, `GameProfile` |
 | [`engine-audio`](crates/engine-audio/README.md) | From-scratch SPU and libsnd-shaped sequencer | No pitch modulation / noise / FM; Legaia battle-audio modules beside it | `spu::Spu`, `Sequencer::new` |
 | [`render-kernels`](crates/render-kernels/README.md) | `gte`: register-level GTE with every command and the UNR divide | Module generic, crate Legaia-bound: vendor `src/gte/` | `gte::Gte` |
 | [`tmd`](crates/tmd/README.md) | Legaia's TMD variant | Legaia-only: rejects stock `0x41` TMDs | `parse` |

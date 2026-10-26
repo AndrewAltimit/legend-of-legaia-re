@@ -50,9 +50,9 @@
       <tr><td><code>legaia-seq</code></td><td>Quirks</td><td><code>Seq::parse</code></td><td><code>seq</code></td></tr>
       <tr><td><code>legaia-lzs</code></td><td>Quirks</td><td><code>decompress</code>, <code>compress</code></td><td><code>lzs-decode</code></td></tr>
       <tr><td><code>legaia-mdec</code></td><td>Quirks</td><td><code>str_av::demux_str_av</code>, <code>MdecDecoder</code></td><td><code>mdec</code></td></tr>
-      <tr><td><code>legaia-mednafen</code></td><td>Quirks</td><td><code>SaveState::from_path</code>, <code>gpu::PsxGpu</code>, <code>spu::PsxSpu</code></td><td><code>mednafen-state</code></td></tr>
-      <tr><td><code>legaia-pcsx-redux</code></td><td>Quirks</td><td><code>gpu::PcsxGpu</code>; <code>SaveState</code> needs Legaia anchors</td><td><code>pcsxr-state</code></td></tr>
-      <tr><td><code>legaia-ram-image</code></td><td>Quirks</td><td><code>diff::diff_ram</code>, <code>bisect::bisect_first_bad</code>, <code>prim_pool::decode</code></td><td>-</td></tr>
+      <tr><td><code>legaia-mednafen</code></td><td>Quirks</td><td><code>SaveState::main_ram_structured</code>, <code>gpu::PsxGpu</code>, <code>spu::PsxSpu</code></td><td><code>mednafen-state</code></td></tr>
+      <tr><td><code>legaia-pcsx-redux</code></td><td>Quirks</td><td><code>SaveState::from_path_structural</code>, <code>gpu::PcsxGpu</code>, <code>fixture::SyntheticState</code></td><td><code>pcsxr-state --game generic</code></td></tr>
+      <tr><td><code>legaia-ram-image</code></td><td>Quirks</td><td><code>diff::diff_ram</code>, <code>bisect::bisect_first_bad</code>, <code>prim_pool::decode</code>, <code>GameProfile</code></td><td>-</td></tr>
       <tr><td><code>legaia-engine-audio</code></td><td>Quirks</td><td><code>spu::Spu</code>, <code>Sequencer::new</code>, <code>vab_bind::VabBank::upload</code></td><td><code>note-trace</code></td></tr>
       <tr><td><code>legaia-render-kernels</code></td><td>Generic module</td><td><code>gte::Gte</code>, <code>gte::gte_divide</code>, <code>vram_capture</code></td><td>-</td></tr>
       <tr><td><code>legaia-tmd</code></td><td>Legaia-only</td><td><code>parse</code> (Legaia variant)</td><td><code>tmd</code></td></tr>
@@ -90,14 +90,21 @@
       <tr><td><code>seq</code></td><td><code>u32</code> big-endian version (15-byte header); meta events with no length byte (<code>FF 51 tt tt tt</code>, <code>FF 2F</code>). Both are what the statically linked libsnd reader consumes, so other libsnd titles most likely match - untested.</td><td>Check one tempo event by hand; SMF-style length bytes would misparse.</td></tr>
       <tr><td><code>lzs</code></td><td>Common LZSS parameters (4 KB ring, cursor at <code>0xFEE</code>, 18-byte match), but the ring starts zero-filled, not with spaces; no size header; the <code>.lzs</code> container is Legaia's.</td><td>Compare the game's decompressor; magic-check decoded bytes, since junk decodes without error.</td></tr>
       <tr><td><code>mdec</code></td><td>The decoder is the rare <b>Iki</b> bitstream. A STRv2 frame shares its <code>0x3800</code> word and comes back blank or garbage with no error. The STRv2/v3 path needs a VLC table unpacked from Legaia's STR overlay.</td><td>Reuse the sector parser and A/V demux; check <code>frame[6..8]</code> before decoding.</td></tr>
-      <tr><td><code>mednafen</code></td><td>Library generic; a Legaia string search is only the fallback. The CLI pulls in Legaia crates, and <code>identify</code>, <code>display-list</code>, <code>clut-trace</code>, <code>prim-dispatch-*</code> read Legaia structures.</td><td>Use the library, or <code>extract</code> / <code>diff</code> / <code>bisect</code> / <code>vram-dump</code> / <code>spu</code>.</td></tr>
-      <tr><td><code>pcsx-redux</code></td><td>VRAM and scratchpad are found structurally, but main RAM is found by matching Legaia's executable strings; another game's state fails with "no anchor found".</td><td>Use <code>PcsxGpu</code>; locate RAM by its own anchors or structurally.</td></tr>
-      <tr><td><code>ram-image</code></td><td><code>game_anchors</code>, <code>prim_dispatch</code>, <code>source_hunt</code> and the anchor strings are Legaia's.</td><td><code>diff</code>, <code>bisect</code>, <code>ram_slice</code>, <code>prim_pool</code> take any 2 MiB image.</td></tr>
+      <tr><td><code>mednafen</code></td><td>Library generic; a Legaia string search is only the fallback, and <code>main_ram_with_anchors</code> takes another game's. The CLI pulls in Legaia crates, and <code>identify</code>, <code>display-list</code>, <code>clut-trace</code>, <code>prim-dispatch-*</code> read Legaia structures.</td><td>Use the library, or <code>extract</code> / <code>diff</code> / <code>bisect</code> / <code>vram-dump</code> / <code>spu</code>.</td></tr>
+      <tr><td><code>pcsx-redux</code></td><td>Main RAM, VRAM and scratchpad are all found by walking the state's protobuf; only the scene / mode / player accessors read Legaia's globals, and Legaia's string search is the fallback for a payload the walk does not recognise.</td><td><code>SaveState::from_path_structural</code> or <code>pcsxr-state --game generic</code>; <code>identity_with</code> takes your own profile.</td></tr>
+      <tr><td><code>ram-image</code></td><td>Game knowledge enters as a <code>GameProfile</code> (anchor strings, identity globals, manifest defaults); the Legaia profile is the default of every older API. <code>prim_dispatch</code> and <code>source_hunt</code> are Legaia's.</td><td>Implement <code>GameProfile</code> or use <code>GenericGame</code>; <code>diff</code>, <code>bisect</code>, <code>ram_slice</code>, <code>prim_pool</code> take any 2 MiB image.</td></tr>
       <tr><td><code>engine-audio</code></td><td>The SPU has no pitch modulation, noise or FM (Legaia never enables them); battle-voice, duck and slot modules are Legaia's runtime; <code>legaia-prot</code> is a plain dependency though only <code>note-trace</code> uses it.</td><td><code>spu::Spu</code> plus <code>Sequencer</code> play any libsnd SEQ + VAB pair.</td></tr>
       <tr><td><code>render-kernels</code></td><td><code>gte</code> is a register-level GTE (every command, FLAG bits, cycle costs, the UNR divide) inside a crate that depends on Legaia's engine.</td><td>Vendor <code>src/gte/</code> without <code>camera_relative.rs</code>.</td></tr>
     </tbody>
   </table>
   </div>
+</section>
+
+<section class="doc-section" id="worked-example" data-doc="-">
+  <h2>A worked example</h2>
+  <p><code>crates/pcsx-redux/examples/bring_your_own_game.rs</code> runs the generic crates on inputs built in code, none of them from a game: a 4-bit TIM with its CLUT through <code>parse_strict</code>, <code>decode_rgba8</code> and <code>write_png</code>; a SEQ through <code>Seq::parse</code>; a two-directory ISO9660 image mastered as Mode 2/2352 sectors and read back by both the in-memory walker and <code>RawDisc</code> (it also lists and extracts under <code>xorriso</code>); and a made-up game's PCSX-Redux and mednafen states, opened structurally, diffed and bisected. A test runs the same code in CI, with no disc.</p>
+  <pre><code>cargo run -p legaia-pcsx-redux --example bring_your_own_game -- &lt;out_dir&gt;</code></pre>
+  <div class="callout callout-trap"><p class="callout-title">The SEQ step is not evidence about other games</p><p>It builds the shape <code>legaia-seq</code> parses: meta events without a length byte, which is what the libsnd reader in Legaia's executable consumes. No other title's SEQ is tested here. The step also shows the trap: an SMF-style tempo event (<code>FF 51 03 tt tt tt</code>) does not read as the right tempo.</p></div>
 </section>
 
 <section class="doc-section" id="legaia-only" data-doc="legaia-only-crates">
@@ -115,7 +122,7 @@
 
 <section class="doc-section" id="method" data-doc="the-transferable-method">
   <h2>The transferable method</h2>
-  <p>The parts most worth taking to another game are practices, not crates. Each page below documents one for Legaia; nothing in them depends on Legaia beyond the examples.</p>
+  <p>The parts most worth taking to another game are practices, not crates. <a href="retail-oracle-method.html">The retail-oracle method</a> writes them up engine-neutral, in the order to adopt them. Each page below documents one for Legaia; nothing in them depends on Legaia beyond the examples.</p>
   <div class="card-grid">
     <a class="card" href="retail-compare.html">
       <div class="card-title">Measure against retail RAM and VRAM</div>
