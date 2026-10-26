@@ -246,6 +246,15 @@ fn the_finishing_specials_ghosts_run_out_inside_the_round_over_hold() {
         }
     }
 
+    // Untextured ghost prims carry the same ABE + ABR 1 TSB word, which the
+    // hosts' colour-mesh draws read as their blend word.
+    let ghost_untextured = scene
+        .untextured_indices
+        .iter()
+        .filter(|&&i| (0..2).any(|p| scene.ghost_range(owner, p).contains(&(i as usize))))
+        .count();
+    eprintln!("[ok] {ghost_untextured} untextured ghost corner(s) under the colour word");
+
     // The hold: the ghosts keep moving, then run out before it ends.
     let mut last: Option<Vec<[f32; 3]>> = None;
     let mut moved = 0;

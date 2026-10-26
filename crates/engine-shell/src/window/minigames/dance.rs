@@ -424,9 +424,14 @@ impl PlayWindowApp {
             .collect();
         let untextured = (!scene.untextured_indices.is_empty())
             .then(|| {
-                r.upload_color_mesh(&scene.positions, &fill, &scene.untextured_indices)
-                    .map_err(|e| log::warn!("dance cast: untextured upload failed: {e:#}"))
-                    .ok()
+                r.upload_color_mesh_blended(
+                    &scene.positions,
+                    &fill,
+                    &scene.untextured_indices,
+                    &legaia_engine_render::psx_blend::blend_words_of_tsb(&scene.cba_tsb),
+                )
+                .map_err(|e| log::warn!("dance cast: untextured upload failed: {e:#}"))
+                .ok()
             })
             .flatten();
         self.dance_cast_gpu = Some(DanceCastGpu {
