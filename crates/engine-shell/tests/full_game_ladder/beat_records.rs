@@ -588,6 +588,30 @@ pub(super) fn record_stages_fight(
             .any(|r| fights(2, r))
 }
 
+/// Does record `(part, rec)` change the party - a `PartyAdd` / `PartyRemove`
+/// (ops `0x3C` / `0x3D`) in its own body? `rikuroa` P2[48] is the case: the
+/// cutscene band on the way in hands the party back to Vahn (`3D 00 .. 3D 02`,
+/// `3C 00`) before P1[3]'s Caruban talk adds Noa (`3C 01`).
+pub(super) fn record_sets_party(
+    mf: &legaia_scene_formats::man_section::ManFile,
+    man: &[u8],
+    part: usize,
+    rec: usize,
+) -> bool {
+    use legaia_engine_field::man_field_scripts::partition_record_span;
+    use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
+    partition_record_span(mf, man, part, rec).is_some_and(|(start, pc0, len)| {
+        LinearWalker::new(&man[start..start + len], pc0)
+            .flatten()
+            .any(|i| {
+                matches!(
+                    i.info,
+                    InsnInfo::PartyAdd { .. } | InsnInfo::PartyRemove { .. }
+                )
+            })
+    })
+}
+
 /// The formation rows record `(part, rec)` installs (op `0x3E` with
 /// `op0 == 0xFF` or `< 100`), its own and those of the partition-2 records
 /// it spawns (three levels).

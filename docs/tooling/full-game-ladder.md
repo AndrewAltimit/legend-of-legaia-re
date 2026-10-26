@@ -654,6 +654,24 @@ the first try); the eighth stalled before the fight on the mountain's
 level-6 Noa and level-5 Vahn by one or two rounds; a level-8 Noa ends the
 fight first.
 
+Two fights stand in `rikuroa`, and only the second is Caruban. The party the
+continuous run carries in is Noa alone (`cave01` P1[0] removes every member
+and adds her, `3D 00 .. 3D 02`, `3C 01`), and she meets the 640-HP formation
+row 16 alone, staged by the walk-on bands P2[46] / P2[47]. The cutscene band
+P2[48] then hands the party back to Vahn (`3D 00 .. 3D 02`, `3C 00`), and
+P1[3]'s talk adds Noa (`3C 01`) and stages Caruban, row 17, against both -
+`rikuroa_post_caruban` holds Vahn and Noa at level 6. Noa has no Ra-Seru in
+that stretch (her record's equipment slot 2 is empty), so her Hyper Arts -
+Vulture Blade and Frost Breath as well as Hurricane Kick, the bank walk's
+groups 1..3 - swing plain arrows, and the hand plans her normal arts only.
+Two hand rules carry row 16 across streams. A scene whose staging band is
+still ahead runs from its random fights even while another band's flag gates
+that band (P2[47]'s C2 is P2[46]'s `0x283`): fought, they took Noa to 272 of
+423 before row 16 on a stream whose bag held one heal. And a member who stands
+alone trains to the target level itself rather than one under it
+(`pad_training::under_levelled`), since every hit lands on her; level 8 won
+row 16 only on streams whose drops had left heals in the bag.
+
 ### A counter the story has closed
 
 A merchant's talk can run and sell nothing. `dolk2`'s Arms Dealer (P1[11])
