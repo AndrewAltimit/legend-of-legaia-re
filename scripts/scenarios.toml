@@ -3182,3 +3182,165 @@ topics = ["battle", "boss", "cast module", "monster pick", "Cort", "evolved Cort
 phase = "battle"
 expected_game_mode = 0x15
 expected_active_scene = "jouine"
+
+[[scenarios]]
+label = "battle_korb2_warhalf_strike"
+backup_fingerprint = "94bb6e5423e97fae408b7f09fbb5f754bb90b07895e7d823b3f052b82b067bbe"
+description = "korb2 battle, formation [0x72, 0x83]: Warhalf (seat 3, monster id 114) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: korb2_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit every round), saved 10125 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb2"
+topics = ["battle", "enemy attack", "Warhalf", "korb2", "harvest"]
+
+[[scenarios]]
+label = "battle_korb2_medusa_glare_mid_cast"
+backup_fingerprint = "e136cfdff887962e723a05e19b4c0fbcc4e9a00f4f2d425733adf083634bb494"
+description = "korb2 battle, formation [0x72, 0x83]: Medusa (seat 4, monster id 131) mid-cast Glare (spell 0x3C, module 0940): category 2, action state 0x70. RETAIL disc, pad only, no pokes: korb2_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit every round), saved 4425 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb2"
+topics = ["battle", "enemy cast", "Medusa", "Glare", "korb2", "harvest"]
+
+[[scenarios]]
+label = "battle_korb2_medusa_strike"
+backup_fingerprint = "3dd26bcbfae2e24d6b7328ef2ead02d4febf0cfec4e6fbbc3a3ab19f062799e2"
+description = "korb2 battle, formation [0x72, 0x83]: Medusa (seat 4, monster id 131) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: korb2_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit every round), saved 2432 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb2"
+topics = ["battle", "enemy attack", "Medusa", "korb2", "harvest"]
+
+[[scenarios]]
+label = "koru_blade_breath_mid_cast"
+backup_fingerprint = "b4640e338d09dffdac82e08c2db5ec78eef520aca5fcfc02bc0ce5dbbc067a9a"
+description = "nilboa battle, formation [0xB6]: Koru (seat 3, monster id 182) mid-cast Blade Breath (spell 0xA2, module 0962): category 2, action state 0x70. From koru_pre_blade_breath (RETAIL disc, probe-poked: its queue was rewritten to the cast it names; see that scenario) played forward with no further RAM writes by autorun_battle_harvest.lua, saved 148 vsyncs in. Inherits that state's poke; everything after it is retail."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy cast", "Koru", "Blade Breath", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "koru_gigaton_press_mid_cast"
+backup_fingerprint = "20e052a1d07e3d65378cea1e0451b22026c2ac7ca96a38adfc785270a39e28e5"
+description = "nilboa battle, formation [0xB6]: Koru (seat 3, monster id 182) mid-cast Gigaton Press (spell 0xA4, module 0962): category 2, action state 0x70. From koru_pre_gigaton_press (RETAIL disc, probe-poked: its queue was rewritten to the cast it names; see that scenario) played forward with no further RAM writes by autorun_battle_harvest.lua, saved 148 vsyncs in. Inherits that state's poke; everything after it is retail."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy cast", "Koru", "Gigaton Press", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "koru_thunder_needle_mid_cast"
+backup_fingerprint = "8c6e2184216cc2b9f5da27e9f5ed0cefca3d04870d4cfaf45ace27f2d152da83"
+description = "nilboa battle, formation [0xB6]: Koru (seat 3, monster id 182) mid-cast Thunder Needle (spell 0xA3, module 0962): category 2, action state 0x70. From koru_pre_thunder_needle (RETAIL disc, probe-poked: its queue was rewritten to the cast it names; see that scenario) played forward with no further RAM writes by autorun_battle_harvest.lua, saved 148 vsyncs in. Inherits that state's poke; everything after it is retail."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy cast", "Koru", "Thunder Needle", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "battle_retona_lip_king_kiss_of_death_mid_cast"
+backup_fingerprint = "52c8ccfa7b654b87bf6ea32e741dab99ef7511d10af0f2f931f621c71135f468"
+description = "retona battle, formation [0x21, 0x44]: Lip King (seat 3, monster id 33) mid-cast Kiss of Death (spell 0x6E, module 0955): category 2, action state 0x70. RETAIL disc, pad only, no pokes: retona_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 4280 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "retona"
+topics = ["battle", "enemy cast", "Lip King", "Kiss of Death", "retona", "harvest"]
+
+[[scenarios]]
+label = "battle_retona_hells_rat_steal_mid_cast"
+backup_fingerprint = "8fc1a09172a2cd90ab5d604906a92a62f4e41b57a895c4cf023a9171aa8985d8"
+description = "retona battle, formation [0x21, 0x44]: Hell's Rat (seat 4, monster id 68) mid-cast Steal (spell 0x51, module 0941): category 2, action state 0x70. RETAIL disc, pad only, no pokes: retona_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 6775 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "retona"
+topics = ["battle", "enemy cast", "Hell's Rat", "Steal", "retona", "harvest"]
+
+[[scenarios]]
+label = "battle_retona_hells_rat_strike"
+backup_fingerprint = "aeb0fca7de123d273820f4ef659ae60603c02ade8e2067f3e4eb0e289a11f84d"
+description = "retona battle, formation [0x21, 0x44]: Hell's Rat (seat 4, monster id 68) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: retona_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 3081 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "retona"
+topics = ["battle", "enemy attack", "Hell's Rat", "retona", "harvest"]
+
+[[scenarios]]
+label = "battle_rugi_barra_windcutter_mid_cast"
+backup_fingerprint = "5da06182626b4266e6264e6fe7e4efdffe0431d72a62e5aaa4ebd66af25f952c"
+description = "rugi battle, formation [0x8D, 0x8D, 0x96]: Barra (seat 4, monster id 141) mid-cast Windcutter (spell 0x3A): category 2, action state 0x2B. RETAIL disc, pad only, no pokes: rugi_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 9326 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "enemy cast", "Barra", "Windcutter", "rugi", "harvest"]
+
+[[scenarios]]
+label = "battle_rugi_barra_strike"
+backup_fingerprint = "0ec4d5554427d899192174c864488768da749f2279fd6879dac0953d3963eb0b"
+description = "rugi battle, formation [0x8D, 0x8D, 0x96]: Barra (seat 3, monster id 141) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: rugi_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 3029 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "enemy attack", "Barra", "rugi", "harvest"]
+
+[[scenarios]]
+label = "battle_rugi_slippery_poisonous_breath_mid_cast"
+backup_fingerprint = "bfd9386b6039ba77ee07e3424082f9446a8c06a9b118b6373cb33ee7f8c98b4c"
+description = "rugi battle, formation [0x8D, 0x8D, 0x96]: Slippery (seat 5, monster id 150) mid-cast Poisonous Breath (spell 0x67): category 2, action state 0x2B. RETAIL disc, pad only, no pokes: rugi_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 2577 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "enemy cast", "Slippery", "Poisonous Breath", "rugi", "harvest"]
+
+[[scenarios]]
+label = "battle_rugi_slippery_strike"
+backup_fingerprint = "b33ca11f0ef47d68fe139ebcf673acd0254058f733e36bcb6c7388586136f383"
+description = "rugi battle, formation [0x8D, 0x8D, 0x96]: Slippery (seat 5, monster id 150) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: rugi_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 5081 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "enemy attack", "Slippery", "rugi", "harvest"]
+
+[[scenarios]]
+label = "battle_tunnelb_mush_mush_strike"
+backup_fingerprint = "fa257d68659bb006b5cd39cec8bd5655f866af07660552634557fe2bd401476a"
+description = "tunnelb battle, formation [0x71, 0x71, 0x18]: Mush Mush (seat 5, monster id 24) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: tunnelb_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 4229 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tunnelb"
+topics = ["battle", "enemy attack", "Mush Mush", "tunnelb", "harvest"]
+
+[[scenarios]]
+label = "battle_tunnelb_warman_strike"
+backup_fingerprint = "3d2acbaebeb3df7084477305d6203e4529cf9fd1bd8cf129fbf3d2d51c82d73e"
+description = "tunnelb battle, formation [0x71, 0x71, 0x18]: Warman (seat 4, monster id 113) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: tunnelb_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 1829 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tunnelb"
+topics = ["battle", "enemy attack", "Warman", "tunnelb", "harvest"]
+
+[[scenarios]]
+label = "battle_vozz_twin_tomb_strike"
+backup_fingerprint = "b2b04a97e0c6dc17bd908dacc67d72b0ba3dcc3af405350d573896af30be2d6a"
+description = "vozz battle, formation [0x37, 0x34]: Twin Tomb (seat 4, monster id 52) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: vozz_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 2138 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "vozz"
+topics = ["battle", "enemy attack", "Twin Tomb", "vozz", "harvest"]
+
+[[scenarios]]
+label = "battle_vozz_gizam_water_column_mid_cast"
+backup_fingerprint = "24c06083124bc5984193c060e66a33d55d26976dadfe1e4618a52ecdbd7eb275"
+description = "vozz battle, formation [0x37, 0x34]: Gizam (seat 3, monster id 55) mid-cast Water Column (spell 0x54, module 0945): category 2, action state 0x70. RETAIL disc, pad only, no pokes: vozz_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 3776 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "vozz"
+topics = ["battle", "enemy cast", "Gizam", "Water Column", "vozz", "harvest"]
+
+[[scenarios]]
+label = "battle_vozz_gizam_strike"
+backup_fingerprint = "3f809ba1934db25c38891c02efce0618f7aa29f055ec89eed88890f7d249d5c0"
+description = "vozz battle, formation [0x37, 0x34]: Gizam (seat 3, monster id 55) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: vozz_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 2501 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "vozz"
+topics = ["battle", "enemy attack", "Gizam", "vozz", "harvest"]
