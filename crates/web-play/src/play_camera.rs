@@ -134,6 +134,7 @@ impl LegaiaRuntime {
             _ => ([0.0; 3], [0.0; 3]),
         };
         let vp = camera_frame::frame_vp(&frame, aabb, aspect);
+        self.last_frame_field_view = frame.field_view();
         self.engine_camera = vp.map(|m| (m, frame));
         vp.map(|m| m.to_vec()).unwrap_or_default()
     }

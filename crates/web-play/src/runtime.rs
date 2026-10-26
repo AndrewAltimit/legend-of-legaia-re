@@ -141,6 +141,11 @@ pub struct LegaiaRuntime {
     /// frame back only when the page draws through that exact matrix, so the
     /// parts' `+0x52` camera-relative bits resolve against the camera on
     /// screen and never against one the page replaced with its own orbit.
+    /// The field camera the last drawn frame went through (the
+    /// `play_camera_vp` frame's field view), or `None` under a vantage with
+    /// no retail camera. The move-VM framebuffer grabs project through it
+    /// (`World::queue_vram_grabs`), as on the native window.
+    pub(crate) last_frame_field_view: Option<legaia_engine_camera::psx_camera::FieldCameraView>,
     pub(crate) engine_camera: Option<(
         [f32; 16],
         legaia_engine_field::camera_frame::FieldCameraFrame,
@@ -478,6 +483,7 @@ impl LegaiaRuntime {
             // (`window/run.rs`), through the one shared expression.
             cutscene_glide: Default::default(),
             engine_camera: None,
+            last_frame_field_view: None,
             sim_stepper: Default::default(),
             camera_azimuth_override: None,
             scene_aabb: None,
