@@ -31,13 +31,13 @@
 //! name banner, the hand-back to flow state `0x0B` and the battle exit.
 //!
 //! Not staged: the in-image spawn records `FUN_80050ED4` is handed (every one
-//! of them opens `model_sel = -1`, a meshless part), the two SCUS move-VM
-//! effect trees `FUN_80021B04` runs at the hand-back, the render-node words
+//! of them opens `model_sel = -1`, a meshless part), the render-node words
 //! (`record[+0x42]`, `+0x72`, `+0x78`) and the CD-XA stop `FUN_8003ED04(0)`.
 //! The hand-back's backdrop rebind (`ctx[+0x106C]` / `ctx[+0x1070]` slot 0
-//! := slot 1) and its `FUN_80058490` rect push are reported as
-//! [`StageEffect::RebindBackdrop`] / [`StageEffect::MoveImage`], which the
-//! world turns into render state both hosts read. The spawns are still reported as [`StageEffect::Spawn`]
+//! := slot 1), its two SCUS move-VM effect trees and its `FUN_80058490` rect
+//! push are reported as [`StageEffect::RebindBackdrop`] /
+//! [`StageEffect::EffectTree`] / [`StageEffect::MoveImage`], which the world
+//! turns into render state both hosts read. The spawns are still reported as [`StageEffect::Spawn`]
 //! and the form transition still draws its battle-RNG values, so the RNG
 //! stream matches retail's.
 //!
@@ -97,6 +97,14 @@ pub const ARRIVAL_GROUND_BLANK: StageEffect = StageEffect::MoveImage {
     dst_x: 0x370,
     dst_y: 0xC0,
 };
+
+/// The two SCUS move-VM effect trees the arrival's hand-back runs through
+/// `FUN_80021B04(seat + 0x34, seat + 0x44, record, 0x1000)`
+/// (`0x801F7170..0x801F7198`): `0x80078740`, a render-mode-4 VRAM-rect
+/// scroller over the flesh texels `(0x340, 0, 0x3F, 0xBF)`, and `0x80078760`,
+/// a `0x4000` (render mode `3`) part that captures CLUT `(32, 479)` with op
+/// `0x2C` and hue-cycles it - the palette the rebound shell's flesh samples.
+pub const ARRIVAL_EFFECT_TREES: [u32; 2] = [0x8007_8740, 0x8007_8760];
 
 /// The in-image spawn records each module hands `FUN_80050ED4`, by VA.
 pub mod records {
@@ -241,6 +249,10 @@ pub enum StageEffect {
     /// shell draws its object 1 alone from here on
     /// ([`legaia_scene_formats::battle_backdrop::drawn_object_indices_rebound`]).
     RebindBackdrop,
+    /// `FUN_80021B04(seat + 0x34, seat + 0x44, record, 0x1000)`: one SCUS
+    /// move-VM effect tree seated on the first monster seat
+    /// ([`ARRIVAL_EFFECT_TREES`]).
+    EffectTree { record: u32 },
     /// `FUN_80058490` (`MoveImage`): VRAM rect `(x, y, w, h)` onto
     /// `(dst_x, dst_y)`.
     MoveImage {
@@ -456,6 +468,9 @@ pub fn arrival_tick(st: &mut ArrivalState, v: &mut ArrivalView, step: u8) -> Vec
             v.seat.anim_rate = 8;
             v.flow = ARRIVAL_HANDBACK_FLOW;
             out.push(RebindBackdrop);
+            for record in ARRIVAL_EFFECT_TREES {
+                out.push(EffectTree { record });
+            }
             out.push(ARRIVAL_GROUND_BLANK);
             out.push(HandBack);
         }
@@ -718,12 +733,19 @@ mod tests {
             ..Default::default()
         };
         let e = arrival_tick(&mut st, &mut v, 1);
-        // Retail order: the rebind (0x801F7148), the `MoveImage`
-        // (0x801F71CC), all inside the phase-6 arm that hands back.
+        // Retail order: the rebind (0x801F7148), the two effect trees
+        // (0x801F717C, 0x801F7194), the `MoveImage` (0x801F71CC), all inside
+        // the phase-6 arm that hands back.
         assert_eq!(
             e,
             vec![
                 StageEffect::RebindBackdrop,
+                StageEffect::EffectTree {
+                    record: 0x8007_8740
+                },
+                StageEffect::EffectTree {
+                    record: 0x8007_8760
+                },
                 ARRIVAL_GROUND_BLANK,
                 StageEffect::HandBack
             ]

@@ -16,13 +16,15 @@ pub const MYSTIC_SHIELD_BURST_RECORD: u32 = 0x8007_86C4;
 /// part rolling the rect `(0x180, 0x100, 0x20, 0xFF)` - the sphere's page.
 pub const MYSTIC_SHIELD_SCROLLER_RECORD: u32 = 0x8007_8720;
 /// The SCUS-resident records around the shield's, in address order: each
-/// record's program is bounded by the next record's start.
+/// record's program is bounded by the next record's start. The last two are
+/// the boss-stage arrival's effect trees
+/// ([`legaia_engine_battle::battle_stage_module::ARRIVAL_EFFECT_TREES`]).
 const SCUS_RECORD_RUN: [u32; 5] = [
     MYSTIC_SHIELD_SPHERE_RECORD,
     MYSTIC_SHIELD_BURST_RECORD,
     MYSTIC_SHIELD_SCROLLER_RECORD,
-    0x8007_8740,
-    0x8007_8760,
+    legaia_engine_battle::battle_stage_module::ARRIVAL_EFFECT_TREES[0],
+    legaia_engine_battle::battle_stage_module::ARRIVAL_EFFECT_TREES[1],
 ];
 /// `SCUS_942.54` is linked at `0x80010000` behind a `0x800`-byte header.
 const SCUS_FILE_BIAS: u32 = 0x8000_F800;
@@ -42,7 +44,7 @@ impl World {
 
     /// The parts of the SCUS-resident move-VM record at `va`, parsed off the
     /// disc's executable ([`crate::world::DiscTables::scus`]).
-    fn scus_record_parts(
+    pub(in crate::world) fn scus_record_parts(
         &self,
         va: u32,
     ) -> Option<(
@@ -235,6 +237,61 @@ impl World {
         self.queue_battle_part_scrolls(&mut scene.parts);
         if !scene.finished() {
             self.casting.mystic_shield_fx = Some(scene);
+        }
+    }
+
+    /// Seat one SCUS move-VM effect tree on battle seat `slot` the way the
+    /// boss-stage arrival's hand-back does:
+    /// `FUN_80021B04(seat + 0x34, seat + 0x44, record, 0x1000)`
+    /// (`0x801F7170..0x801F7198` in PROT 0968). The trees land in
+    /// [`crate::world::CastFxState::stage_fx`]; a disc-free battle (no
+    /// executable to read the records from) seats nothing.
+    ///
+    /// REF: FUN_80021B04 (the part spawner, ported by `SummonScene::spawn_parts`)
+    pub(in crate::world) fn seat_stage_effect_tree(&mut self, record: u32, slot: usize) {
+        let Some((pos, rot)) = self.shield_anchor(slot) else {
+            return;
+        };
+        let Some((bytes, parts)) = self.scus_record_parts(record) else {
+            return;
+        };
+        match self.casting.stage_fx.as_mut() {
+            Some(s) => s.push_parts_scaled(&parts, &bytes, pos, rot, SHIELD_SCALE),
+            None => {
+                let mut s = legaia_engine_effects::summon::SummonScene::spawn_parts(
+                    &parts,
+                    &bytes,
+                    crate::world::EFFECT_MODEL_LIBRARY_BASE,
+                    pos,
+                );
+                s.pose_parts(rot, SHIELD_SCALE);
+                s.retail_wait_drain = true;
+                self.casting.stage_fx = Some(s);
+            }
+        }
+    }
+
+    /// Advance the boss-stage effect trees one frame through the part tick
+    /// `FUN_80021DF4`, queueing their mode-3 recolours and mode-4 scrolls
+    /// onto the battle VRAM like every other battle part.
+    pub(in crate::world) fn tick_stage_fx(&mut self, channel_delta: u16) {
+        let Some(mut scene) = self.casting.stage_fx.take() else {
+            return;
+        };
+        {
+            let mut host = MoveVmHostImpl {
+                world: self,
+                current_slot: None,
+                deferred_writes: std::collections::BTreeMap::new(),
+                field_record_words: None,
+                child_spawns: Vec::new(),
+            };
+            scene.channel_delta = channel_delta;
+            scene.tick(&mut host, channel_delta);
+        }
+        self.queue_battle_part_scrolls(&mut scene.parts);
+        if !scene.finished() {
+            self.casting.stage_fx = Some(scene);
         }
     }
 }

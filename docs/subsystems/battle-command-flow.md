@@ -1042,8 +1042,22 @@ palette. Phase `6` changes what the arena is, in three steps:
 The engine ports the rebind and the rect push
 (`StageEffect::RebindBackdrop` / `StageEffect::MoveImage`); both hosts build
 the shell from `SceneHost::battle_stage_object_indices` and apply the move
-through `World::apply_battle_vram_moves`. The two effect trees are not staged,
-so the engine's flesh neither scrolls nor pulses.
+through `World::apply_battle_vram_moves`. The two effect trees are reported as
+`StageEffect::EffectTree` and seated on the boss seat into their own scene
+(`World::seat_stage_effect_tree`, `CastFxState::stage_fx`), which the battle
+part pass ticks every frame for the rest of the fight: the scroller rolls the
+flesh texels and the cycler recolours CLUT `(32, 479)`, both landing on the
+battle VRAM through the same queue as the stage module's `MoveImage`.
+
+A PCSX-Redux run from `cort_evolved_card_first_menu` pins both trees live in
+retail: per frame, one `MoveImage` of `(0x340, 3, 0x3F, 0xBC)` onto
+`(0x340, 0)` plus a three-row `LoadImage` at `(0x340, 0xBC)` (the scroller,
+`ra = 0x80022EAC` / `0x80022EE4`), and one `LoadImage` of `(32, 479, 16, 1)`
+from `FUN_80019D50` (`ra = 0x8001A038`). The cycler part is the record
+`0x80078760` (`+0x48`), render mode `3`, and its hue add `+0x90` climbs
+`0x0C` per three-vsync frame to `0x100` and falls back below zero: the flesh
+palette swings through a hue range of about 256 degrees roughly every
+130 vsyncs. Battle init leaves the row at its disc values.
 
 So 968 is the **arrival** staging (camera walk in, cue, banner, hand back to
 flow state `0x0B`) and 969 is the **form transition** (drop the seat to 1 HP,

@@ -292,6 +292,13 @@ pub struct CastFxState {
     /// riding [`Self::active_summon`], which the next action retires. Posed
     /// every frame and broken by [`crate::world::World::tick_mystic_shield`].
     pub mystic_shield_fx: Option<legaia_engine_effects::summon::SummonScene>,
+    /// The boss-stage arrival's two SCUS effect trees (PROT 0968's hand-back,
+    /// [`legaia_engine_battle::battle_stage_module::ARRIVAL_EFFECT_TREES`]):
+    /// the flesh texel scroller and the CLUT `(32, 479)` hue cycler. Both
+    /// programs loop, so like [`Self::mystic_shield_fx`] they have a seat of
+    /// their own for the rest of the fight. Seated by
+    /// [`crate::world::World::seat_stage_effect_tree`].
+    pub stage_fx: Option<legaia_engine_effects::summon::SummonScene>,
     /// The trail / afterimage GP0 texpage word (`0x7700 + id`) for the active
     /// move-FX scene, set by [`crate::world::World::spawn_move_fx`] from the move record's
     /// `+0x0b` field and cleared when the scene drains. Surfaced via
@@ -441,6 +448,7 @@ impl CastFxState {
             active_move_fx: None,
             active_action_fx: Vec::new(),
             mystic_shield_fx: None,
+            stage_fx: None,
             move_fx_trail_texpage: None,
             move_fx_streak: Default::default(),
             homing: Default::default(),
