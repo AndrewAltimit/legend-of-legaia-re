@@ -53,8 +53,8 @@ fn words_of(bytes: &[u8]) -> Vec<u16> {
 }
 
 /// Walk one program from `pc`, following `Wait` breaks, and return
-/// `(instructions decoded, op 0x03 count)`.
-fn walk(words: &[u16], pc: i16) -> (usize, usize) {
+/// `(instructions decoded, count of opcode `op`)`.
+fn walk(words: &[u16], pc: i16, op: u16) -> (usize, usize) {
     let mut host = NullHost;
     let mut state = ActorState::new();
     state.pc = pc;
@@ -65,7 +65,7 @@ fn walk(words: &[u16], pc: i16) -> (usize, usize) {
         if pc >= words.len() || !seen.insert(pc) {
             break;
         }
-        if words[pc] == 0x03 {
+        if words[pc] == op {
             hits += 1;
         }
         n += 1;
@@ -79,6 +79,19 @@ fn walk(words: &[u16], pc: i16) -> (usize, usize) {
 
 #[test]
 fn census_move_op_03_carriers() {
+    census(0x03);
+}
+
+/// Op `0x45` binds render mode `7` (the matrix-transform billboard arm of
+/// `FUN_80021DF4`, `+0x5A = 7`), which the port does not execute. The count
+/// is the denominator of that gap: a handful of field prescript records
+/// (`jou`, `kor5`, `korb3`, `noaru`, `uru`, `uru2`) and no summon part.
+#[test]
+fn census_move_op_45_carriers() {
+    census(0x45);
+}
+
+fn census(op: u16) {
     let Some(root) = extracted_root() else {
         return;
     };
@@ -106,11 +119,13 @@ fn census_move_op_03_carriers() {
                     continue;
                 }
                 stager_records += 1;
-                let (n, hits) = walk(&words, 2);
+                let (n, hits) = walk(&words, 2, op);
                 decoded += n;
                 if hits > 0 {
                     stager_hits += 1;
-                    carriers.push(format!("{name} prescript record {id}: {hits} x op 0x03"));
+                    carriers.push(format!(
+                        "{name} prescript record {id}: {hits} x op {op:#04x}"
+                    ));
                 }
             }
         }
@@ -138,12 +153,12 @@ fn census_move_op_03_carriers() {
                     continue;
                 };
                 summon_parts += 1;
-                let (n, hits) = walk(&words_of(b), 0);
+                let (n, hits) = walk(&words_of(b), 0, op);
                 decoded += n;
                 if hits > 0 {
                     summon_hits += 1;
                     carriers.push(format!(
-                        "summon 0x{spell:02X} (PROT {idx:04}) part {pi}: {hits} x op 0x03"
+                        "summon 0x{spell:02X} (PROT {idx:04}) part {pi}: {hits} x op {op:#04x}"
                     ));
                 }
             }
@@ -154,7 +169,7 @@ fn census_move_op_03_carriers() {
         eprintln!("  {line}");
     }
     eprintln!(
-        "[ok] op 0x03 census: {stager_hits} of {stager_records} stager records over \
+        "[ok] op {op:#04x} census: {stager_hits} of {stager_records} stager records over \
          {scenes} scenes, {summon_hits} of {summon_parts} summon parts"
     );
     assert!(

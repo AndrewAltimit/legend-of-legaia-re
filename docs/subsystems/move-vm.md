@@ -597,10 +597,16 @@ dispatch seen at two moments, and both land in
 `World::step_ambient_fx` applies their mode-3 and mode-4 VRAM writes to the
 renderer's software VRAM.
 
-Not ported as executable code: the mode-`5` positional sound emitter and the
-mode-`7` billboard arm. `SummonScene::part_draws` excludes mode-`5` parts from
-the mesh draw list and `special_render_nodes` surfaces them (with the `0x4000`
-nodes) for a host; no host consumes them. `World::spawn_field_stager` is a
+Not ported as executable code: the mode-`7` billboard arm (matrix
+`FUN_8003D368` + GP0 emit `FUN_800468A4`). Op `0x45` is its only binder, and
+the disc census (`engine-scene-host/tests/move_op03_census_disc.rs`,
+`census_move_op_45_carriers`) finds it in seven field prescript records -
+`jou`, `kor5` (two), `korb3`, `noaru`, `uru`, `uru2` - and in no summon part,
+so those parts tick and run their VM but draw nothing. The mode-`5` emitter is
+ported on the field path (table above); on the `SummonScene` path
+`SummonScene::part_draws` excludes mode-`5` parts from the mesh draw list and
+`special_render_nodes` surfaces them (with the `0x4000` nodes), and no host
+consumes them there. `World::spawn_field_stager` is a
 thinner `SummonScene`-backed port of the same `FUN_800252EC` chain with
 neither render tail. It is the `play-window` `J`-key debug exerciser (one
 prescript stager per press, cycling the table) and is on no retail path.

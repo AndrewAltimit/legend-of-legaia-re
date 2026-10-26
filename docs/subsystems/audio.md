@@ -2249,6 +2249,11 @@ The engine wires this end-to-end:
   cue is then `resolved`. A disc-free world has no tables: the cue goes out
   unresolved and the director picks from its own bank
   (`AudioDirector::play_art_shout`).
+  Both pickers carry the selector's one forced-channel exception: with the
+  first formation id `gp+0x9F4` at `0x4F` the played channel is `0xC`
+  (`0x8004C3FC..0x8004C414`). The world reads its own formation slot 0
+  (`arts_voice_cue::FORCED_SHOUT_FORMATION_ID`); the director's bank is handed
+  the same id each battle frame (`AudioDirector::set_shout_first_enemy_id`).
 - **Bank staging** (`engine-session` boot): `read_arts_shout_bank` demuxes `XA2/XA4/XA6` per channel from the **raw 2352-byte sectors** (`legaia_xa::demux` - the CD-XA subheader carries the channel number, which a 2048-byte ISO view strips), decodes each channel to mono PCM, and pairs it with the `ArtsVoiceTable` pools in a `legaia_engine_audio::ArtsShoutBank`. Disc-image boots only; extracted-directory boots leave arts silent. The browser play page stages the same files through the same calls.
 - **Playback** (`engine-session` / `engine-audio`): `AudioDirector::play_xa_clip` serves a request for slot `1` / `3` / `5` out of the shout bank, cut at the starter's read span, and stages it through `AudioSink::play_xa_shout`, which mixes decoded XA into the SPU output the way the PSX CD-input path does (never through the 24 voices).
 
@@ -2979,10 +2984,6 @@ census above covers the battle theme's notes once it is playing.
 - **Credits bank SPU layout** is pinned by
   `engine-audio/tests/credits_bank_spu_layout_disc.rs`, not by a listening
   check ([above](#where-the-credits-bank-lands-in-spu-ram)).
-- **Arts-shout forced channel.** `FUN_8004C140` forces channel `0xC` when the
-  first formation id `gp+0x9F4` is `0x4F`; the port carries the rule
-  (`shout::FORCED_CHANNEL_FORMATION_ID`) but neither host supplies the
-  formation id, so it is inert.
 - **Miracle / Super Art shouts** answer one constant, the finisher; the
   per-constant staging inside a replacement queue is not captured.
 - **Field-VM XA seek** (`FUN_80019794`, the zero-duration operand shape) has no
