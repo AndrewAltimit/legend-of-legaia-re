@@ -4454,6 +4454,9 @@ every pass, so it moves with the phase of both clips):
 
 ## See also
 
+- [capture-coverage](capture-coverage.md) - the corpus's denominator taken
+  from the disc: which scenes, monsters, enemy attacks, casts and screens a
+  retail state shows, and the ranked worklist of the rest.
 - [cast-sequence-oracle](cast-sequence-oracle.md) - one cast recorded on both
   sides and scored frame by frame, paired on the action-SM clock; the answer
   to a cast whose only state is a white-flash frame.

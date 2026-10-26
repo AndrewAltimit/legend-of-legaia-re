@@ -111,6 +111,10 @@ pub struct RetailObs {
     /// The pause-menu screen a menu-class state shows; `Err` names why the
     /// state is not one the seed can drive to.
     pub menu: Option<std::result::Result<RetailMenu, String>>,
+    /// A menu-class state's raw sub-screen word `DAT_801E46A4`, read whether
+    /// or not the seed drives to that screen (the capture-coverage census,
+    /// [`crate::retail_coverage`]).
+    pub menu_word: Option<u8>,
     /// The field-VM contexts the state holds
     /// ([`crate::retail_compare_script`]).
     pub scripts: crate::retail_compare_script::RetailScripts,
@@ -315,6 +319,8 @@ impl RetailObs {
             frame,
             battle,
             menu,
+            menu_word: (class == StateClass::Menu)
+                .then(|| game_anchors::u8_at(ram, MENU_SUBSCREEN)),
             save_allowed: game_anchors::u32_at(ram, SAVE_ALLOW) != 0,
             memory_card: None,
             scripts: crate::retail_compare_script::RetailScripts::from_ram(ram),
