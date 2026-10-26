@@ -357,3 +357,10 @@ changes = [
   ["states/vozz_field_card_boot/image", 0.997, 0.995],
   ["states/zeto_call_wave_mid_cast/image", 1.0, 0.998],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Patched-executable state, not an accuracy target. The evolved-Cort arena now runs PROT 0968's two SCUS effect trees (flesh scroll and the mode-3 hue cycler on CLUT (32,479)), as retail does; battle states do not yet seed the cycler's phase from the capture, so the flesh palette sits at a different hue than the frozen frame. The retail card-boot twin (cort_evolved_card_first_menu) improves in MAE."
+changes = [
+  ["states/cort_evolved_battle_first_menu/image", 0.988, 0.858],
+]
