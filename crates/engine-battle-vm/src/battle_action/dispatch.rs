@@ -156,13 +156,36 @@ pub fn finish_action_queue_with_trigger(
     miracle_armed: bool,
     bytes: &mut [u8; ACTION_QUEUE_CAP],
 ) -> ([u32; ACTION_QUEUE_CAP], bool) {
-    use legaia_art::MiracleMatcher;
-    let mut trigger = false;
     // The side array `0x801F6990` as the build loop leaves it. Retail writes
     // it incrementally during the build and the Miracle copy does **not**
     // touch it, so it is reconstructed here - before the copy overwrites the
     // window it describes.
-    let mut starter_marks = build_starter_marks(bytes);
+    let starter_marks = build_starter_marks(bytes);
+    finish_action_queue_with_marks(
+        character,
+        command_input,
+        miracle_armed,
+        bytes,
+        starter_marks,
+    )
+}
+
+/// [`finish_action_queue_with_trigger`] over the side array the build loop
+/// itself produced ([`legaia_art::BankTokens::marks`]) rather than one
+/// reconstructed from the window: a Hyper Art's `0x1A` carries no mark
+/// (the special arm writes none), which the reconstruction cannot tell
+/// from a newly learned art's.
+///
+/// PORT: FUN_801EED1C (the finish after the build loop)
+pub fn finish_action_queue_with_marks(
+    character: legaia_art::Character,
+    command_input: &[legaia_art::Command],
+    miracle_armed: bool,
+    bytes: &mut [u8; ACTION_QUEUE_CAP],
+    mut starter_marks: [u32; ACTION_QUEUE_CAP],
+) -> ([u32; ACTION_QUEUE_CAP], bool) {
+    use legaia_art::MiracleMatcher;
+    let mut trigger = false;
     if miracle_armed
         && MiracleMatcher::with_default_table()
             .find(character, command_input)

@@ -178,7 +178,7 @@ impl PlayWindowApp {
             let p = c.framing_pose();
             let world = &self.session.host.world;
             eprintln!(
-                "BATCAM f={} phase={:?} st=0x{:02X} act={} pitch={} yaw={} tr={:?} focus={:?}",
+                "BATCAM f={} phase={:?} st=0x{:02X} act={} pitch={} yaw={} tr={:?} focus={:?} target={:?}",
                 world.clock.display_frames,
                 c.phase(),
                 world.battle_ctx.action_state,
@@ -187,6 +187,7 @@ impl PlayWindowApp {
                 p.yaw,
                 p.tr,
                 p.focus,
+                c.glide_target(),
             );
             // The per-art attack camera's three inputs, so "the channel is
             // armed but no arm matched" reads differently from "the channel

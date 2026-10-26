@@ -428,6 +428,38 @@ The marker gates more than the Miracle: the builder routes **every** special rec
 at `0x801EF6E0`). So a party member without a Ra-Seru can enter a Hyper or Miracle string and get
 an ordinary chain out of it.
 
+### The Hyper Art arm
+
+With the marker set, a Hyper Art (ordinal `1..=3`) is the one match that **collapses** its run
+(`0x801EF5BC..0x801EF6CC`):
+
+- `0x1A` goes over the run's first arrow (`li v1,0x1a` at `0x801EF5C8`, `sb v1,0x1e0(v0)` at
+  `0x801EF5D0`, `a0 = pos - len`), whatever `FUN_801EFBFC` answered;
+- the art's constant follows it (`addiu v0,s3,0x10` at `0x801EF63C`). A record whose `+0x0B` is
+  non-zero instead writes one constant per non-zero byte of `+0x0A..+0x0D`, `s3 + 0x11 + i`
+  (`0x801EF5D4..0x801EF628`), and steps `s3` past them;
+- the queue after the run moves down behind the constants, side-array marks with it
+  (`0x801EF648..0x801EF6C4`). The bytes the move vacates keep what they held, and no mark is
+  written for the starter.
+
+Gala's Lightning Storm (`R R U L`) reads `1A 1D` (`koru_pre_*`: Gala's committed queue at the
+Done band). The walk then restarts at `start + 1`, as after a normal match.
+
+**Ordinals count record groups.** The ordinal `0x40(sp)` is zeroed per start position
+(`0x801EF300`) and bumped once per record group (`0x801EF838`), while `s3` steps past the group:
+each non-zero `+0x0B..+0x0D` read along the chain moves it one record on, and a chain found skips
+one more (`0x801EF7C8..0x801EF828`). Only Noa's bank carries a chain (record `0x1C`,
+`+0x0A..+0x0B = 04 05`: Hurricane Kick plays records `0x1D` and `0x1E`, queue `1A 1D 1E`), so her
+ordinals `2` and `3` are records `0x1F` and `0x20` - Vulture Blade and Frost Breath, which the
+walkthroughs list as Hyper Arts at the special arm's `10` AP per arrow (`li t4,0xa` at
+`0x801EF32C`; `6` per arrow for a normal art, `0xB` for the Miracle).
+
+Port: `legaia_art::tokenize_bank` (both arms over the whole bank), driven by
+`World::build_arts_action_queue` with the slot's marker; the walk's side array is handed to the
+finish (`finish_action_queue_with_marks`) instead of being reconstructed from the window, and each
+collapsed Hyper Art takes the learn check on its own record. The bank's chain bytes reach the
+engine through `ArtAnimRecord::chain_sources` and `ArtRecord::anim_extra`.
+
 The consuming side is unchanged: the strike loop reads `actor[+0x1DF + +0x15]` and the round
 driver's queue clear runs the `sb zero,0x1df(v0)` loop at `0x801D89D8` inside `FUN_801D88CC`
 (called from `FUN_801D0748` at `0x801D0E84`/`0x801D0ED0`). `FUN_801EED1C`'s non-player heads

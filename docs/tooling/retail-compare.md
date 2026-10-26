@@ -1994,8 +1994,11 @@ same state byte. Three refinements:
   where retail plays the Somersault. The drive therefore carries the committed
   queue, reads it back as entered arrows (swings as they stand, each starter +
   art pair as its art's last arrow) and, when neither band holds them, writes
-  them into both before the round. A queue the reading cannot invert (a Super
-  or Miracle tail) keeps the saved string.
+  them into both before the round. A collapsed Hyper Art pair reads as the
+  art's whole string (`koru_pre_*`: Gala's `1A 1D` is Lightning Storm's
+  `R R U L`; read as its last arrow alone, the replay struck one Arms swing and
+  the Done-band frame scored `image` `.352`). A queue the reading cannot
+  invert (a Super or Miracle tail) keeps the saved string.
 - **Strike cursor.** On a strike-loop age capture whose clip is a dynamic art
   slot (`0x10` / `0x11`) - the clips the swing-clip gate leaves open - the
   strike cursor `ctx[+0x15]` is gated too, since the age alone matches the

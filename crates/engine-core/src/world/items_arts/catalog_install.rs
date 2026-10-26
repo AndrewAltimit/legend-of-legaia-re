@@ -94,7 +94,11 @@ impl World {
                 action,
                 commands,
                 anim_index: rec.index as u8,
-                anim_extra: Vec::new(),
+                // Record `+0x0A..+0x0D`: the queue builder's chain bytes
+                // (`legaia_art::BankArt::sources`).
+                anim_extra: std::iter::once(rec.stream_source)
+                    .chain(rec.chain_sources)
+                    .collect(),
                 name: (!rec.name.is_empty()).then(|| rec.name.clone()),
                 power,
                 dmg_timing: Vec::new(),

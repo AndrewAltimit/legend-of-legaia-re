@@ -1424,31 +1424,49 @@ pub(crate) fn saved_command_string(world: &legaia_engine_core::world::World, sea
 /// The arrows a committed arts queue was entered as, as the swing bytes
 /// `0x0C..=0x0F` the record's saved band holds.
 ///
-/// The queue builder keeps a matched art's leading arrows as swings and
-/// rewrites only its last one into the starter + constant pair (`0x19` /
-/// `0x1A`, then the art), so each pair stands for its art's final arrow and
-/// every other byte is an arrow already. `combo_of` names an art's arrows;
-/// an art it does not know - a Super or Miracle replacement, whose tail the
-/// finish rewrote whole - leaves the entry unrecoverable (`None`).
+/// The queue builder keeps a matched normal art's leading arrows as swings
+/// and rewrites only its last one into the starter + constant pair (`0x19` /
+/// `0x1A`, then the art), so each such pair stands for its art's final arrow
+/// and every other byte is an arrow already. A Hyper Art's run collapses
+/// whole into `0x1A` and its constant(s) (`legaia_art::tokenize_bank`), so a
+/// pair whose constant is in `collapsed` stands for the art's every arrow,
+/// and the chained constants behind it for nothing. `combo_of` names an
+/// art's arrows; an art it does not know - a Super or Miracle replacement,
+/// whose tail the finish rewrote whole - leaves the entry unrecoverable
+/// (`None`).
 pub fn entered_arrows(
     queue: &[u8; 16],
+    collapsed: &[u8],
     combo_of: impl Fn(u8) -> Option<Vec<legaia_art::Command>>,
 ) -> Option<[u8; 16]> {
     let mut out = [0u8; 16];
     let mut n = 0;
     let mut i = 0;
     while i < queue.len() && queue[i] != 0 {
-        let arrow = match queue[i] {
-            b @ 0x0C..=0x0F => b,
+        match queue[i] {
+            b @ 0x0C..=0x0F => {
+                *out.get_mut(n)? = b;
+                n += 1;
+            }
             0x19 | 0x1A => {
                 i += 1;
-                let last = *combo_of(*queue.get(i)?)?.last()?;
-                0x0B + last as u8
+                let art = *queue.get(i)?;
+                let combo = combo_of(art)?;
+                if collapsed.contains(&art) {
+                    for c in &combo {
+                        *out.get_mut(n)? = 0x0B + *c as u8;
+                        n += 1;
+                    }
+                    while queue.get(i + 1).is_some_and(|b| collapsed.contains(b)) {
+                        i += 1;
+                    }
+                } else {
+                    *out.get_mut(n)? = 0x0B + *combo.last()? as u8;
+                    n += 1;
+                }
             }
             _ => return None,
-        };
-        *out.get_mut(n)? = arrow;
-        n += 1;
+        }
         i += 1;
     }
     (n > 0).then_some(out)
@@ -1470,7 +1488,19 @@ pub(crate) fn seed_entered_arrows(
     use legaia_save::character::AutoCommandBand;
     let roster = world.party_roster_slot(usize::from(seat));
     let character = legaia_engine_battle::battle_arts::character_for_slot(roster as u8);
-    let Some(arrows) = entered_arrows(queue, |art| {
+    let bank = world.art_bank_rows(character);
+    let records: Vec<legaia_art::BankArt<'_>> = bank
+        .iter()
+        .map(|(cmds, sources)| legaia_art::BankArt {
+            cmds: cmds.as_slice(),
+            sources: *sources,
+        })
+        .collect();
+    let collapsed: Vec<u8> = legaia_art::hyper_queue_constants(&records)
+        .into_iter()
+        .flat_map(|(_, c)| c)
+        .collect();
+    let Some(arrows) = entered_arrows(queue, &collapsed, |art| {
         let action = legaia_art::ActionConstant::from_byte(art)?;
         world
             .tables
