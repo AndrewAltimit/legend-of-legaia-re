@@ -120,20 +120,27 @@
 
 <section class="doc-section" id="heap-budget">
   <h2>The heap ledger</h2>
-  <p>Everything the loader places lives in one best-fit heap of ~1.23 MB (arena <code>0x80091800..0x801C6000</code>). The malloc wrapper returns NULL on exhaustion and the monster streamer copies through that pointer unchecked, so an over-budget formation writes a decoded block over kernel RAM and the machine locks. Neither VRAM (each seat owns its own texture column) nor the AI bounds a formation - the heap does.</p>
+  <p>Everything the loader places lives in one best-fit heap of 1,263,616 bytes (1234 KiB, arena <code>0x80091800..0x801C6000</code>). The malloc wrapper returns NULL on exhaustion and the monster streamer copies through that pointer unchecked, so an over-budget formation writes a decoded block over kernel RAM and the machine locks. Neither VRAM (each seat owns its own texture column) nor the AI bounds a formation - the heap does. Stage init re-initialises the heap at battle entry, so nothing from the field survives into the fight.</p>
+  <p>Every node resident once the fight has settled, from an allocator-breakpoint trace with each caller resolved (formation <code>[108,3]</code>, Mad Ogre + Demon Fly, on the Karisto world map, one-member party):</p>
   <table class="data-table">
-    <thead><tr><th>Allocation</th><th>Bytes</th><th>Note</th></tr></thead>
+    <thead><tr><th>Allocation</th><th>Bytes</th><th>KiB</th><th>Allocated by</th></tr></thead>
     <tbody>
-      <tr><td>Scene asset buffer</td><td><code>0x62C00</code></td><td>The resident field scene</td></tr>
-      <tr><td>GPU packet double buffer</td><td><code>0x64000</code></td><td><code>0x32000</code> &times; 2</td></tr>
-      <tr><td>Enemy stager working buffer</td><td><code>0x2E390</code></td><td>Fixed size, independent of party count</td></tr>
-      <tr><td>Battle context</td><td><code>0x7A34</code></td><td></td></tr>
-      <tr><td>Party-mesh decode temp</td><td><code>0x19000</code></td><td>Transient, freed in-loop</td></tr>
-      <tr><td>One block per distinct monster</td><td><code>block[+0x08]</code> each</td><td>Stats + name + TMD + action entries + animation streams; the texture pool decodes into GPU staging, not the heap</td></tr>
-      <tr><td>Post-monster tail</td><td>~19.5 KB</td><td><code>0x1800</code> + <code>0x3100</code> + small nodes</td></tr>
+      <tr><td>Sound resource block</td><td><code>0x6800</code></td><td>26.0</td><td><code>FUN_8001E1B4</code> at <code>0x8001E244</code></td></tr>
+      <tr><td>Scene asset buffer (holds the party battle meshes)</td><td><code>0x62C00</code></td><td>395.0</td><td><code>FUN_8001E1B4</code> at <code>0x8001E28C</code></td></tr>
+      <tr><td>GPU packet double buffer</td><td><code>0x64000</code></td><td>400.0</td><td><code>FUN_8001E3B8</code> at <code>0x8001E3D8</code></td></tr>
+      <tr><td>Ordering tables (two, depth 12)</td><td><code>0x4160</code> each</td><td>16.3 each</td><td><code>FUN_8001F690</code> at <code>0x8001F6F4</code> / <code>0x8001F714</code></td></tr>
+      <tr><td>Battle-mode extra buffer</td><td><code>0x1000</code></td><td>4.0</td><td><code>FUN_8001E3B8</code> at <code>0x8001E52C</code></td></tr>
+      <tr><td>Battle context</td><td><code>0x7A34</code></td><td>30.6</td><td><code>FUN_80055B6C</code> at <code>0x80055E98</code></td></tr>
+      <tr><td>Enemy stager working buffer</td><td><code>0x2E390</code></td><td>184.9</td><td><code>FUN_800513F0</code> at <code>0x80051740</code></td></tr>
+      <tr><td>One block per distinct monster</td><td><code>0xEF7C</code> + <code>0x101F0</code></td><td>59.9 + 64.5</td><td><code>FUN_800542C8</code> at <code>0x8005468C</code></td></tr>
+      <tr><td>Battle SFX bank (<code>bse.dat</code>)</td><td><code>0x1800</code></td><td>6.0</td><td><code>FUN_8001FA88</code> at <code>0x8001FAB4</code></td></tr>
+      <tr><td>Battle backdrop TMD</td><td><code>0x3100</code></td><td>12.3</td><td><code>FUN_8001FE70</code> at <code>0x8001FEAC</code></td></tr>
+      <tr><td>Actor render nodes (party, monsters, two backdrop copies)</td><td><code>0x9C</code> &times; 5</td><td>0.15 each</td><td><code>FUN_80020F88</code> at <code>0x80021184</code>, via <code>actor_alloc</code></td></tr>
+      <tr><td>Intro name-window text nodes</td><td><code>0x34</code> &times; 3</td><td>0.05 each</td><td><code>FUN_8003541C</code>, from the battle overlay</td></tr>
     </tbody>
   </table>
-  <p>About 164 KB remains at the first monster allocation and the tail needs ~19.5 KB, so the workable budget for distinct monster blocks is <strong>~145 KB</strong>. Retail's largest authored formation costs 124.3 KB; the three Delilas blocks cost 81-84 KB each, so any two together overshoot - which is why the Delilas Challenge fields them one per round. Instruments: <code>autorun_delilas_battle_load.lua</code> (allocator breakpoints + free-ring walk), <code>battle-heap-walk.py</code> (offline from a save-state).</p>
+  <p>Transient during the load: the party-mesh decode temp (<code>0x19000</code>) and the LZS decoder's <code>0x1014</code> ring, taken and freed around every decode. After the last allocation the free ring is one node of 17,472 bytes (17.1 KiB), and the nodes, headers and free space sum to the arena exactly.</p>
+  <p>164,412 bytes (160.6 KiB) remain when the first monster block allocates and the tail after the blocks takes 19,576 bytes (19.1 KiB), so two distinct monster blocks fit in about <strong>141.4 KiB</strong>. Retail's largest authored formations cost 124.4 KiB; the three Delilas blocks cost 81-84 KiB each, so any two together overshoot by 22-25 KiB - which is why the Delilas Challenge fields them one per round. Instruments: <code>autorun_battle_heap_ledger.lua</code> (the attributed trace) with <code>battle-heap-ledger.py</code>, <code>autorun_delilas_battle_load.lua</code> (formation install + free-ring walk), <code>battle-heap-walk.py</code> (offline from a save-state).</p>
 </section>
 
 <section class="doc-section" id="camera">
