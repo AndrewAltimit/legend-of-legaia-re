@@ -186,14 +186,34 @@ impl SaveState {
 
     /// 2 MiB of PSX main RAM - index `0` corresponds to `0x80000000`.
     /// Tries the structured `MAIN.MainRAM.data8` path first; falls back to
-    /// the SCUS-anchor heuristic if the structured path doesn't pan out.
+    /// the Legaia SCUS-anchor heuristic if the structured path doesn't pan
+    /// out. [`Self::main_ram_structured`] and
+    /// [`Self::main_ram_with_anchors`] are the game-agnostic forms.
     pub fn main_ram(&self) -> Result<&[u8]> {
-        if let Some(bytes) = self.entry_bytes("MAIN", "MainRAM.data8")
-            && bytes.len() == legaia_ram_image::extract::PSX_RAM_SIZE
-        {
+        if let Some(bytes) = self.main_ram_structured() {
             return Ok(bytes);
         }
         legaia_ram_image::extract::main_ram_via_anchor(&self.payload)
+    }
+
+    /// The `MAIN.MainRAM.data8` entry when present and exactly 2 MiB. Reads
+    /// only mednafen's own section layout, so it works for any PSX game.
+    pub fn main_ram_structured(&self) -> Option<&[u8]> {
+        self.entry_bytes("MAIN", "MainRAM.data8")
+            .filter(|b| b.len() == legaia_ram_image::extract::PSX_RAM_SIZE)
+    }
+
+    /// Structured first, then the anchor search with `profile`'s strings
+    /// matched in `exe` (the game's PSX executable, header included).
+    pub fn main_ram_with_anchors(
+        &self,
+        exe: &[u8],
+        profile: &dyn legaia_ram_image::GameProfile,
+    ) -> Result<&[u8]> {
+        if let Some(bytes) = self.main_ram_structured() {
+            return Ok(bytes);
+        }
+        legaia_ram_image::extract::main_ram_via_profile(&self.payload, exe, profile)
     }
 
     /// 1 KiB of PSX scratchpad RAM - index `0` corresponds to
@@ -357,5 +377,44 @@ mod tests {
         let payload = make_save(vec![s]);
         let parsed = SaveState::from_decompressed(payload).unwrap();
         assert!(parsed.find_section_by_name("ZZZZ").is_none());
+    }
+
+    /// A non-Legaia state: `MAIN.MainRAM.data8` is found from mednafen's own
+    /// layout, and the anchor fallback takes the caller's game profile.
+    #[test]
+    fn main_ram_is_located_for_any_game() {
+        use legaia_ram_image::{GameProfile, GenericGame, PSX_RAM_SIZE};
+        let mut ram = vec![0u8; PSX_RAM_SIZE];
+        ram[0x1_0000..0x1_0010].copy_from_slice(b"OTHER GAME v1.00");
+        let payload = make_save(vec![make_section_bytes(
+            "MAIN",
+            &[("MainRAM.data8", ram.clone())],
+        )]);
+        let st = SaveState::from_decompressed(payload).unwrap();
+        assert_eq!(st.main_ram_structured(), Some(&ram[..]));
+        assert_eq!(
+            st.main_ram_with_anchors(&[], &GenericGame).unwrap(),
+            &ram[..]
+        );
+
+        // No MAIN section: only the anchor search can find RAM, and it uses
+        // the profile's strings, not Legaia's.
+        struct Other;
+        impl GameProfile for Other {
+            fn name(&self) -> &str {
+                "other"
+            }
+            fn exe_anchor_strings(&self) -> &[&'static [u8]] {
+                &[b"OTHER GAME v1.00"]
+            }
+        }
+        let mut payload = make_save(vec![]);
+        payload.extend_from_slice(&ram);
+        let st = SaveState::from_decompressed(payload).unwrap();
+        assert_eq!(st.main_ram_structured(), None);
+        let mut exe = vec![0u8; 0x900];
+        exe[0x800..0x810].copy_from_slice(b"OTHER GAME v1.00");
+        assert_eq!(st.main_ram_with_anchors(&exe, &Other).unwrap(), &ram[..]);
+        assert!(st.main_ram_with_anchors(&exe, &GenericGame).is_err());
     }
 }

@@ -16,21 +16,30 @@ shapes open; treating the format as "always gzip" silently drops most of the
 capture corpus with `invalid gzip header`.
 
 Either way the reader doesn't need the protobuf schema: it locates the 2 MiB
-main RAM by reusing the SCUS anchor search
-([`legaia_ram_image::extract::main_ram_via_anchor`]) - matching a string known to
-live in the loaded SCUS region (e.g. `h:\prot\cdname.dat`) in both the SCUS
-binary and the payload to derive the RAM base. (For the captured anchors the RAM
-happens to start at payload offset `0x27`, but the anchor search makes the reader
-robust to that.) The search is independent of the state's layout but **not of
-the game**: the anchor strings (`legaia_ram_image::extract::ANCHORS`) are
-Legaia's, and `main_ram_via_anchor_with_scus` swaps the executable they are
-matched in but not the list, so another title's state fails with "no anchor
-found". The GPU snapshot and the scratchpad below are
-found structurally and work for any game
+main RAM **structurally**. The state's memory submessage is the one whose
+members include both a 64 KiB blob (the hardware region) and one of at least
+2 MiB; PCSX-Redux writes RAM (its 8 MiB allocation), BIOS ROM, parallel-port
+ROM and hardware in that order, and the console's RAM is the first 2 MiB of
+the first large member (`structural_ram_offset`). The rule reads only the
+emulator's layout, not the game, so any PS1 title's state opens with no
+executable: `SaveState::from_path_structural` never looks further, and
+`pcsxr-state --game generic` uses it.
+
+The older Legaia route - match a string known to live in `SCUS_942.54`'s loaded
+region (e.g. `h:\prot\cdname.dat`) in both the executable and the payload
+([`legaia_ram_image::extract::main_ram_via_anchor`]) - is now the fallback
+`SaveState::from_path` takes for a payload the walk does not recognise; it
+reads `extracted/SCUS_942.54` (or `$LEGAIA_SCUS`).
+`from_sstate_bytes_with_anchors(bytes, exe, profile)` and
+`gpu::load_with_anchors` are the same fallback with another game's executable
+and `legaia_ram_image::GameProfile`. `SaveState::ram_source()` says which
+route a state took. For the captured anchors the RAM starts at payload offset
+`0x27`, and `tests/structural_matches_anchor.rs` checks, for every state in
+the save library, that the structural offset equals the anchor offset
 ([reusing for other PS1 games](../../docs/tooling/reusing-for-other-ps1-games.md#emulator-save-states-legaia-mednafen-legaia-pcsx-redux-legaia-ram-image)).
 
 ```rust
-let st = legaia_pcsx_redux::SaveState::from_path(path)?;       // gunzip + anchor search
+let st = legaia_pcsx_redux::SaveState::from_path(path)?;       // gunzip + structural RAM
 assert_eq!(st.scene_name(), "town01");
 assert_eq!(st.game_mode(), 0x03);                          // 0x03 field, 0x15 battle
 let (x, z) = st.player_pos().unwrap();                     // player+0x14/+0x18 as i16
@@ -38,14 +47,17 @@ let (x, z) = st.player_pos().unwrap();                     // player+0x14/+0x18 
 
 `SaveState` exposes `main_ram()` + KSEG0 virtual-address readers
 (`u8_at`/`u16_at`/`i16_at`/`u32_at`) plus the convenience accessors above. The
-anchors and their readers live in `legaia_ram_image::game_anchors`, shared with
-the mednafen reader so both emulators answer "which scene is this state in?"
-identically; this crate delegates to them. The position
+scene / mode / player accessors read Legaia's globals, which live in
+`legaia_ram_image::game_anchors`, shared with the mednafen reader so both
+emulators answer "which scene is this state in?" identically; this crate
+delegates to them. `identity_with(profile)` asks another game's profile
+instead. The position
 fields are read as `i16` - the facing word at `player+0x16` sits between `+0x14`
 (X) and `+0x18` (Z), so a `u32` read would fold it into the coordinate.
 
 The **`pcsxr-state`** binary is the CLI face: `info` prints the scene /
-game-mode / player anchors, `identify` does the same for a batch (mirroring
+game-mode / player anchors (with `--game generic`, how RAM was located and
+whether the scratchpad is present, for any game), `identify` does the same for a batch (mirroring
 `mednafen-state identify`, so `scripts/mednafen/state-index.py` can sweep both
 corpora into one scene index), and `extract` mirrors `mednafen-state extract`
 (same `--start`/`--end`/`--out` flags, same KSEG0 VA semantics) so a
@@ -72,12 +84,30 @@ one (`ScratchRAM.data8`). The blob is located structurally, by walking the
 protobuf for the memory submessage's 64 KiB member, so neither the field
 numbers nor the file offset are baked in.
 
+## Synthetic states and the worked example
+
+`fixture::SyntheticState` writes a payload in exactly the shape the readers
+walk (memory submessage, GPU submessage, field numbers as PCSX-Redux writes
+them), bare or gzipped, from RAM / hardware / VRAM bytes the caller supplies.
+It is not a state the emulator can load - every other submessage is left out -
+but it lets a test exercise the readers with no game bytes at all:
+`tests/generic_state.rs` opens a made-up game's state with no executable, and
+`examples/bring_your_own_game.rs` runs the generic crates (TIM, SEQ, ISO9660,
+both emulators' state readers, RAM diff and bisect) on inputs built in code:
+
+```bash
+cargo run -p legaia-pcsx-redux --example bring_your_own_game -- <out_dir>
+```
+
+`tests/bring_your_own_game.rs` runs the same code, so the example stays true
+in CI.
+
 ## How it composes
 
 Disc-gated oracle tests load `saves/library/pcsx-redux/<fingerprint>.sstate`
 (resolved from `scripts/scenarios.toml`) through this reader and compare the
-engine's behaviour against the captured retail facts. The anchor search reads
-`extracted/SCUS_942.54` (or `$LEGAIA_SCUS`).
+engine's behaviour against the captured retail facts. Only the anchor fallback
+reads `extracted/SCUS_942.54` (or `$LEGAIA_SCUS`).
 
 - `crates/parity/tests/s4_warp_endstate_oracle.rs` - the engine's intra-town
   walk-touch warp lands where the S4 capture recorded.
@@ -85,8 +115,10 @@ engine's behaviour against the captured retail facts. The anchor search reads
   retail opening progression (scene / game-mode / player position).
 - `crates/pcsx-redux/tests/anchor_load.rs` - the reader's own oracle (reads back each
   anchor's pinned facts).
+- `crates/pcsx-redux/tests/structural_matches_anchor.rs` - the structural and
+  anchor RAM routes agree on every library state.
 
-Depends only on `legaia-ram-image` (for the anchor search), `flate2` and
+Depends only on `legaia-ram-image` (the anchor search and the profile trait), `flate2` and
 `serde_json` (plus `clap` behind the default `cli` feature); never on
 `legaia-engine-core`, so the dev-only oracle edges stay acyclic. No Sony bytes are
 committed - the `.sstate` files are gitignored, local-only under `saves/library/`.

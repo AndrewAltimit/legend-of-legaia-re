@@ -1,35 +1,73 @@
-//! Slice PSX virtual-address windows out of mednafen save-state main RAM.
+//! Locate main RAM in a save-state payload and slice PSX virtual-address
+//! windows out of it.
 //!
-//! `main_ram_via_anchor` is the legacy-compatible path that mirrors
-//! `scripts/ghidra-analysis/extract-mednafen-overlay.py` - used as a fallback when the
-//! structured section walker can't find the `MainRAM.data8` entry.
+//! The container readers find RAM structurally (mednafen's
+//! `MAIN.MainRAM.data8` entry, PCSX-Redux's memory submessage). The anchor
+//! search here is the fallback for a payload they cannot walk: it matches a
+//! string from the game's executable in both files. It is game-agnostic in
+//! [`main_ram_via_exe_anchors`] (the caller passes the strings) and
+//! Legaia-specific in [`main_ram_via_anchor`] / [`main_ram_via_anchor_with_scus`]
+//! (the legacy path mirroring
+//! `scripts/ghidra-analysis/extract-mednafen-overlay.py`).
 
 use anyhow::{Context, Result, anyhow, bail};
+
+use crate::profile::GameProfile;
 
 pub const PSX_RAM_KSEG0: u32 = 0x8000_0000;
 pub const PSX_RAM_SIZE: usize = 2 * 1024 * 1024;
 pub const SCUS_LOAD_ADDR: u32 = 0x8001_0000;
 pub const PSX_EXE_HEADER: usize = 0x800;
 
-/// Anchor strings known to live in SCUS_942.54's loaded region. The first
-/// anchor present in BOTH the SCUS binary and the save state determines the
-/// file→RAM offset.
-pub const ANCHORS: &[&[u8]] = &[
-    b"---- FIELD PROGRAM -----%d",
-    b"PSX TEST PROGRAM",
-    b"enter main loop",
-    b"main free mem%d",
-    b"h:\\prot\\cdname.dat",
-];
+/// Legaia's anchor strings, kept under their original name. The list lives
+/// with the rest of the game's knowledge in
+/// [`crate::game_anchors::EXE_ANCHORS`].
+pub const ANCHORS: &[&[u8]] = crate::game_anchors::EXE_ANCHORS;
 
-/// Locate main RAM in a decompressed save-state payload by anchor search.
+/// PSX-EXE magic at offset 0 of a console executable.
+const PSX_EXE_MAGIC: &[u8] = b"PS-X EXE";
+
+/// Load address of an executable's text: the header's `t_addr` word
+/// (`+0x18`) when the file starts with the `PS-X EXE` magic, else
+/// [`SCUS_LOAD_ADDR`] (`0x80010000`, which is what almost every title links
+/// at and what a headerless test image is taken to mean).
+pub fn exe_load_addr(exe: &[u8]) -> u32 {
+    if exe.starts_with(PSX_EXE_MAGIC)
+        && let Some(b) = exe.get(0x18..0x1C)
+    {
+        let t = u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+        if (t & 0xFFE0_0000) == PSX_RAM_KSEG0 {
+            return t;
+        }
+    }
+    SCUS_LOAD_ADDR
+}
+
+/// Locate main RAM in a decompressed save-state payload by anchor search,
+/// for any game.
 ///
-/// Returns a 2 MiB slice; index `0` corresponds to PSX virtual address
-/// `0x80000000`. Caller must supply the SCUS_942.54 binary so the anchor
-/// strings can be matched on both sides.
-pub fn main_ram_via_anchor_with_scus<'a>(payload: &'a [u8], scus: &[u8]) -> Result<&'a [u8]> {
-    for anchor in ANCHORS {
-        let scus_off = match find(scus, anchor) {
+/// `exe` is the game's PSX executable (header included) and `anchors` the
+/// strings to try, in order; each must sit in the executable's loaded image.
+/// The first anchor found in both fixes the payload offset of RAM: the
+/// anchor's file offset past the `0x800`-byte header, plus the load address
+/// ([`exe_load_addr`]), gives its RAM address. Returns the 2 MiB slice whose
+/// index `0` is `0x80000000`.
+///
+/// This is the fallback for a container no structural walker understands; a
+/// string that also occurs in the payload outside RAM (an earlier copy in a
+/// different blob) yields a wrong slice, so prefer anchors unique to the
+/// executable.
+pub fn main_ram_via_exe_anchors<'a>(
+    payload: &'a [u8],
+    exe: &[u8],
+    anchors: &[&[u8]],
+) -> Result<&'a [u8]> {
+    if anchors.is_empty() {
+        bail!("no anchor strings given; can't locate main RAM by anchor search");
+    }
+    let load = exe_load_addr(exe) as usize;
+    for anchor in anchors {
+        let exe_off = match find(exe, anchor) {
             Some(o) if o >= PSX_EXE_HEADER => o,
             _ => continue,
         };
@@ -37,7 +75,7 @@ pub fn main_ram_via_anchor_with_scus<'a>(payload: &'a [u8], scus: &[u8]) -> Resu
             Some(o) => o,
             None => continue,
         };
-        let ram_addr = SCUS_LOAD_ADDR as usize + (scus_off - PSX_EXE_HEADER);
+        let ram_addr = load + (exe_off - PSX_EXE_HEADER);
         let phys = ram_addr - PSX_RAM_KSEG0 as usize;
         let ram_offset_in_state = state_off
             .checked_sub(phys)
@@ -50,9 +88,26 @@ pub fn main_ram_via_anchor_with_scus<'a>(payload: &'a [u8], scus: &[u8]) -> Resu
     bail!("no anchor found; can't locate main RAM")
 }
 
+/// [`main_ram_via_exe_anchors`] with a [`GameProfile`]'s anchor strings.
+pub fn main_ram_via_profile<'a>(
+    payload: &'a [u8],
+    exe: &[u8],
+    profile: &dyn GameProfile,
+) -> Result<&'a [u8]> {
+    main_ram_via_exe_anchors(payload, exe, profile.exe_anchor_strings())
+}
+
+/// Locate main RAM in a decompressed save-state payload by Legaia's anchor
+/// strings ([`ANCHORS`]), matched in the supplied `SCUS_942.54` binary.
+///
+/// Returns a 2 MiB slice; index `0` corresponds to PSX virtual address
+/// `0x80000000`.
+pub fn main_ram_via_anchor_with_scus<'a>(payload: &'a [u8], scus: &[u8]) -> Result<&'a [u8]> {
+    main_ram_via_exe_anchors(payload, scus, ANCHORS)
+}
+
 /// Convenience wrapper that loads `extracted/SCUS_942.54` from `cwd` (or the
-/// path in `LEGAIA_SCUS`) on demand. Tests and CLI binaries call this; the
-/// library `SaveState::main_ram` calls `main_ram_via_anchor` directly.
+/// path in `LEGAIA_SCUS`) on demand and runs the Legaia anchor search.
 pub fn main_ram_via_anchor(payload: &[u8]) -> Result<&[u8]> {
     let scus_path =
         std::env::var("LEGAIA_SCUS").unwrap_or_else(|_| "extracted/SCUS_942.54".to_owned());
@@ -139,5 +194,30 @@ mod tests {
         // Verify the anchor lands at the expected RAM offset.
         let anchor_in_ram = ram.windows(anchor.len()).position(|w| w == anchor).unwrap();
         assert_eq!(anchor_in_ram, phys);
+    }
+
+    /// A non-Legaia executable with its own header-declared load address and
+    /// its own anchor string: the generic search uses both.
+    #[test]
+    fn generic_anchor_search_reads_the_exe_load_address() {
+        let anchor: &[u8] = b"MY GAME BUILD 1.0";
+        let load = 0x8002_0000u32;
+        let mut exe = vec![0u8; PSX_EXE_HEADER + 0x4000];
+        exe[..8].copy_from_slice(b"PS-X EXE");
+        exe[0x18..0x1C].copy_from_slice(&load.to_le_bytes());
+        let exe_pos = PSX_EXE_HEADER + 0x200;
+        exe[exe_pos..exe_pos + anchor.len()].copy_from_slice(anchor);
+        assert_eq!(exe_load_addr(&exe), load);
+
+        let ram_at = 0x40;
+        let mut payload = vec![0u8; ram_at + PSX_RAM_SIZE + 0x10];
+        let phys = (load - PSX_RAM_KSEG0) as usize + 0x200;
+        payload[ram_at + phys..ram_at + phys + anchor.len()].copy_from_slice(anchor);
+
+        let ram = main_ram_via_exe_anchors(&payload, &exe, &[anchor]).unwrap();
+        assert_eq!(ram.as_ptr(), payload[ram_at..].as_ptr());
+        // Legaia's strings are not in this game.
+        assert!(main_ram_via_anchor_with_scus(&payload, &exe).is_err());
+        assert!(main_ram_via_profile(&payload, &exe, &crate::profile::GenericGame).is_err());
     }
 }

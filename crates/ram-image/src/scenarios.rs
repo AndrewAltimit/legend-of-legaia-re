@@ -16,8 +16,15 @@
 //!   - `mednafen-state` CLI + the shell scripts under `scripts/mednafen/`,
 //!   - `run_probe.sh --scenario <label>` for PCSX-Redux probes,
 //!   - `scripts/manage-states.py` for cross-emulator state validation.
+//!
+//! The schema is game-agnostic. What a manifest leaves out of `[defaults]`
+//! is filled from a [`GameProfile`]: [`ScenarioManifest::parse_toml`] uses
+//! Legaia's ([`crate::game_anchors::SCENARIO_DEFAULTS`]), and
+//! [`ScenarioManifest::parse_toml_for`] takes any other.
 
 use anyhow::{Context, Result};
+
+use crate::profile::GameProfile;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -39,10 +46,22 @@ pub struct ScenarioDefaults {
     /// the slot index (0..9).
     #[serde(default = "default_pattern")]
     pub filename_pattern: String,
+    /// Environment variable naming the `mcs/` directory, consulted when
+    /// `mcs_dir` is unset. `None` skips straight to `~/.mednafen/mcs/`.
+    #[serde(default = "default_mcs_dir_env")]
+    pub mcs_dir_env: Option<String>,
 }
 
 fn default_pattern() -> String {
-    "Legend of Legaia (USA).788de08f9c7e652c51d8d08ee374d055.mc{slot}".to_owned()
+    crate::game_anchors::SCENARIO_DEFAULTS
+        .filename_pattern
+        .to_owned()
+}
+
+fn default_mcs_dir_env() -> Option<String> {
+    crate::game_anchors::SCENARIO_DEFAULTS
+        .mcs_dir_env
+        .map(str::to_owned)
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -176,9 +195,39 @@ impl ScenarioManifest {
         Self::parse_toml(&text)
     }
 
+    /// Parse a manifest, filling absent defaults from the Legaia profile.
     pub fn parse_toml(text: &str) -> Result<Self> {
         let m: Self = toml::from_str(text).context("parsing scenarios.toml")?;
         Ok(m)
+    }
+
+    /// [`Self::parse_toml`] for another game: a `[defaults]` field the text
+    /// leaves out takes `profile`'s value rather than Legaia's.
+    pub fn parse_toml_for(text: &str, profile: &dyn GameProfile) -> Result<Self> {
+        let mut m = Self::parse_toml(text)?;
+        let table: toml::Table = toml::from_str(text).context("parsing scenarios.toml")?;
+        let given = |key: &str| {
+            table
+                .get("defaults")
+                .and_then(|d| d.as_table())
+                .is_some_and(|d| d.contains_key(key))
+        };
+        let defaults = profile.scenario_defaults();
+        if !given("filename_pattern") {
+            m.defaults.filename_pattern = defaults.filename_pattern.to_owned();
+        }
+        if !given("mcs_dir_env") {
+            m.defaults.mcs_dir_env = defaults.mcs_dir_env.map(str::to_owned);
+        }
+        Ok(m)
+    }
+
+    /// [`Self::from_path`] with [`Self::parse_toml_for`]'s defaults.
+    pub fn from_path_for(path: impl AsRef<Path>, profile: &dyn GameProfile) -> Result<Self> {
+        let path = path.as_ref();
+        let text = std::fs::read_to_string(path)
+            .with_context(|| format!("reading scenario manifest {}", path.display()))?;
+        Self::parse_toml_for(&text, profile)
     }
 
     pub fn by_slot(&self, slot: u8) -> Option<&Scenario> {
@@ -190,12 +239,17 @@ impl ScenarioManifest {
     }
 
     /// Resolve the on-disk path for a scenario given its slot.
-    /// Honours `mcs_dir` from the manifest, then `LEGAIA_MEDNAFEN_DIR`,
-    /// then `~/.mednafen/mcs/`.
+    /// Honours `mcs_dir` from the manifest, then the `mcs_dir_env` variable
+    /// (`LEGAIA_MEDNAFEN_DIR` by default), then `~/.mednafen/mcs/`.
     pub fn save_path(&self, slot: u8) -> Result<PathBuf> {
+        let from_env = self
+            .defaults
+            .mcs_dir_env
+            .as_deref()
+            .and_then(|k| std::env::var(k).ok());
         let dir: PathBuf = if let Some(d) = &self.defaults.mcs_dir {
             d.clone()
-        } else if let Ok(d) = std::env::var("LEGAIA_MEDNAFEN_DIR") {
+        } else if let Some(d) = from_env {
             PathBuf::from(d)
         } else {
             let home = std::env::var("HOME").context("no HOME and no mcs_dir set")?;
@@ -442,5 +496,55 @@ description = "marker entry"
         unsafe {
             std::env::remove_var("LEGAIA_MEDNAFEN_DIR");
         }
+    }
+
+    #[test]
+    fn another_games_profile_fills_the_absent_defaults() {
+        struct OtherGame;
+        impl GameProfile for OtherGame {
+            fn name(&self) -> &str {
+                "other"
+            }
+            fn scenario_defaults(&self) -> crate::profile::ScenarioProfile {
+                crate::profile::ScenarioProfile {
+                    filename_pattern: "Other Game (USA).0123.mc{slot}",
+                    mcs_dir_env: Some("OTHER_GAME_MCS"),
+                }
+            }
+        }
+        let toml = r#"
+[defaults]
+mcs_dir = "/states"
+
+[[scenarios]]
+slot = 2
+label = "boss"
+description = "boss arena"
+"#;
+        let m = ScenarioManifest::parse_toml_for(toml, &OtherGame).unwrap();
+        assert_eq!(
+            m.defaults.filename_pattern,
+            "Other Game (USA).0123.mc{slot}"
+        );
+        assert_eq!(m.defaults.mcs_dir_env.as_deref(), Some("OTHER_GAME_MCS"));
+        assert_eq!(
+            m.save_path(2).unwrap(),
+            PathBuf::from("/states/Other Game (USA).0123.mc2")
+        );
+
+        // A field the manifest sets wins over the profile.
+        let m = ScenarioManifest::parse_toml_for(sample_toml(), &OtherGame).unwrap();
+        assert_eq!(m.defaults.filename_pattern, "test.{slot}");
+
+        // The legacy entry point keeps Legaia's defaults.
+        let m = ScenarioManifest::parse_toml(toml).unwrap();
+        assert_eq!(
+            m.defaults.filename_pattern,
+            crate::game_anchors::SCENARIO_DEFAULTS.filename_pattern
+        );
+        assert_eq!(
+            m.defaults.mcs_dir_env.as_deref(),
+            Some("LEGAIA_MEDNAFEN_DIR")
+        );
     }
 }

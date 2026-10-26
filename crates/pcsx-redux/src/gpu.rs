@@ -18,7 +18,6 @@
 //! identically - a RAM-and-VRAM image of a frame *is* the frame, and no
 //! emulator run is needed to see what retail displayed.
 
-use std::io::Read;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -80,32 +79,28 @@ fn members(buf: &[u8], start: usize, end: usize) -> Option<Vec<(usize, usize)>> 
     (off == end).then_some(out)
 }
 
-fn decompress(bytes: &[u8]) -> Result<std::borrow::Cow<'_, [u8]>> {
-    if bytes.starts_with(&[0x1f, 0x8b]) {
-        let mut buf = Vec::new();
-        flate2::read::GzDecoder::new(bytes)
-            .read_to_end(&mut buf)
-            .context("gunzip .sstate")?;
-        Ok(std::borrow::Cow::Owned(buf))
-    } else {
-        Ok(std::borrow::Cow::Borrowed(bytes))
-    }
-}
-
 /// Load a `.sstate` once and return both halves a frame comparison needs: the
 /// [`crate::SaveState`] (main RAM + scratchpad) and the GPU snapshot, with the
-/// SCUS bytes for the RAM anchor search passed in rather than resolved from
-/// the working directory or `LEGAIA_SCUS` - a caller that already knows where
-/// its extracted disc lives should not depend on its cwd.
+/// SCUS bytes for the fallback RAM anchor search passed in rather than
+/// resolved from the working directory or `LEGAIA_SCUS` - a caller that
+/// already knows where its extracted disc lives should not depend on its cwd.
+/// Main RAM is located structurally first, as [`crate::SaveState`] does.
 pub fn load_with_scus(path: &Path, scus: &[u8]) -> Result<(crate::SaveState, Option<PcsxGpu>)> {
+    load_with_anchors(path, scus, &legaia_ram_image::Legaia)
+}
+
+/// [`load_with_scus`] for any game: structural RAM location, falling back to
+/// `profile`'s anchor strings matched in `exe`.
+pub fn load_with_anchors(
+    path: &Path,
+    exe: &[u8],
+    profile: &dyn legaia_ram_image::GameProfile,
+) -> Result<(crate::SaveState, Option<PcsxGpu>)> {
     let raw = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-    let payload = decompress(&raw)?;
-    let ram = legaia_ram_image::extract::main_ram_via_anchor_with_scus(&payload, scus)
-        .context("locate main RAM in PCSX-Redux payload (anchor search)")?
-        .to_vec();
-    let hardware = crate::find_hardware(&payload).map(<[u8]>::to_vec);
+    let payload = crate::sstate_payload(&raw)?;
+    let st = crate::SaveState::from_payload_with_anchors(&payload, exe, profile)?;
     let gpu = PcsxGpu::from_payload(&payload);
-    Ok((crate::SaveState { ram, hardware }, gpu))
+    Ok((st, gpu))
 }
 
 impl PcsxGpu {
@@ -117,7 +112,7 @@ impl PcsxGpu {
 
     /// Same as [`Self::from_path`] from in-memory `.sstate` bytes.
     pub fn from_sstate_bytes(bytes: &[u8]) -> Result<Self> {
-        let payload = decompress(bytes)?;
+        let payload = crate::sstate_payload(bytes)?;
         Self::from_payload(&payload).context("no GPU submessage (VRAM + GP1 log) in the state")
     }
 
