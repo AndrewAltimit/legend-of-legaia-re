@@ -180,6 +180,7 @@ impl World {
         // Every empty pool seat starts the fight on the origin.
         self.battle.empty_seat_ground = [(0, 0); 7];
         self.battle.seed_recentre_held = false;
+        self.battle.capture_reseat = None;
         self.battle.monster_flee_attempted = false;
         // No pass has drawn this fight's bodies yet.
         self.battle.readout_trios.clear();

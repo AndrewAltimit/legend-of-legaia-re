@@ -397,6 +397,10 @@ pub struct ScreenshotConfig {
     /// seeded on the first battle tick as the headless seed seeds them
     /// ([`legaia_engine_capture::bar_seeds::apply_bar_seeds`]).
     pub battle_bars: Vec<legaia_engine_capture::bar_seeds::BarSeed>,
+    /// `LEGAIA_BATTLE_RESEAT=<engine slot>`: re-seat the bars' ground each
+    /// time that slot's action seeds
+    /// (`legaia_engine_capture::bar_seeds::arm_capture_reseat`).
+    pub battle_reseat: Option<u8>,
     /// Whether [`Self::battle_bars`] have been seeded.
     pub battle_bars_seeded: std::cell::Cell<bool>,
     /// `LEGAIA_BATTLE_MYSTIC_SHIELD=1`: the capture holds Cort's Mystic
@@ -861,6 +865,9 @@ impl ScreenshotConfig {
                 .and_then(|v| v.trim().parse().ok())
                 .unwrap_or(0),
             state_since: std::cell::Cell::new(None),
+            battle_reseat: std::env::var("LEGAIA_BATTLE_RESEAT")
+                .ok()
+                .and_then(|v| v.trim().parse().ok()),
             battle_bars: std::env::var("LEGAIA_BATTLE_BARS")
                 .map(|v| legaia_engine_capture::bar_seeds::bar_seeds_from_env(&v))
                 .unwrap_or_default(),

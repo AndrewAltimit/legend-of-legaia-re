@@ -503,6 +503,20 @@ impl RetailBattle {
         }
     }
 
+    /// The engine slot whose action a driven action capture holds, for the
+    /// re-seat at that action's seed (`BattleState::capture_reseat`): the
+    /// drive's rounds walk the formation where the capture's history never
+    /// did, and the strike framings aim at where the action stands. `None`
+    /// on every other plan, and on a capture past the end signal.
+    pub fn reseat_engine_seat(&self, party_count: u8) -> Option<u8> {
+        match self.seed_plan() {
+            SeedPlan::Action { seat, .. } if self.run_state != 0xFE => Some(
+                legaia_engine_capture::battle_drive::engine_seat(seat, party_count.clamp(1, 3)),
+            ),
+            _ => None,
+        }
+    }
+
     /// The pad drive that reaches this capture, when its plan has one.
     pub fn battle_drive(&self) -> Option<BattleDrive> {
         match self.seed_plan() {

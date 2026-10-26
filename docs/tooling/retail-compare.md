@@ -1263,6 +1263,10 @@ A seed that places ground therefore holds the seed recentre for the fight (`Batt
 
 The same holds for the round start's squash and recentre (`FUN_801D388C`, `World::normalize_battle_formation`): the capture's round began on it before the actions that left the captured ground, and replayed over that ground it boxes a formation the round's strikes have already pulled out of shape. `cort_evolved_card_pre_doomsday` (Gala's strike on Cort, Cort `425` units up the field) stood every combatant about `(-100, +360)` off its captured pair, which no undrift pass can take back since the shift depends on the shape alone. The held recentre covers both.
 
+A driven capture of a strike also replays rounds its history did not, and every walk and push in them carries the formation further off (`battle_chitei2_gilium_strike`'s drive ran four rounds and stood the party up to `2000` units from its pairs).
+Retail's own action seeded on the ground the capture holds: state `0x0C` recentres the formation so an Attack's target sits on the origin, and the capture's target reads `(0, 0)`.
+So each time the capture's acting seat seeds an action, the engine stands every combatant back on its captured pair (`BattleState::capture_reseat`, armed by `legaia_engine_capture::bar_seeds::arm_capture_reseat` on both sides; `LEGAIA_BATTLE_RESEAT` for the image child), and the action plays from there. The monster strikes then stand within a few units of retail's pairs; their remaining camera gap is the framing itself (pitch `128` against the engine's `0`).
+
 ### The ground at the phase
 
 The undrift search gets each combatant within some units of its captured

@@ -1044,7 +1044,19 @@ pub struct BattleState {
     /// them, before its own seat stores - where its spawn records stand
     /// (`World::seat_stage_module_spawn`).
     pub(crate) arrival_spawn_anchor: Option<([i16; 3], [i16; 3])>,
+    /// Capture alignment for a driven action capture: the engine slot whose
+    /// action the capture holds, and the captured live pairs. The drive
+    /// replays rounds the capture's history did not, and every walk and push
+    /// in them moves the formation; each time that seat's action seeds
+    /// (state `0x0C`, where retail recentred onto the ground the capture
+    /// holds), the combatants stand back on those pairs. Set by
+    /// `legaia_engine_capture::bar_seeds::arm_capture_reseat`; never in play.
+    pub capture_reseat: Option<CaptureReseat>,
 }
+
+/// [`BattleState::capture_reseat`]: the engine slot whose action seeds the
+/// re-seat, and each combatant's `(slot, x, z)` live pair.
+pub type CaptureReseat = (u8, Vec<(u8, i16, i16)>);
 
 /// One frame's tag-`0x67` ribbon source: the `8`-byte seat vector the
 /// retail call hands `FUN_801E1D98` in `$a0` (actor `+0x3C/+0x3E/+0x40`,
@@ -1211,6 +1223,7 @@ impl BattleState {
             empty_seat_ground: [(0, 0); 7],
             seed_recentre_held: false,
             arrival_spawn_anchor: None,
+            capture_reseat: None,
         }
     }
 

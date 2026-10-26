@@ -126,6 +126,20 @@ impl World {
     ///
     /// REF: FUN_801EFE44
     pub(in crate::world) fn seed_battle_formation_recentre(&mut self, actor: u8) {
+        // Capture alignment (`BattleState::capture_reseat`, never in play):
+        // the capture's own action seeds on the captured ground, which is the
+        // ground its recentre left.
+        if let Some((seat, ground)) = self.battle.capture_reseat.clone()
+            && seat == actor
+        {
+            for (slot, x, z) in ground {
+                if let Some(a) = self.actors.get_mut(usize::from(slot)) {
+                    a.move_state.world_x = x;
+                    a.move_state.world_z = z;
+                }
+            }
+            self.refresh_battle_body_pairs_now();
+        }
         if self.battle.seed_recentre_held {
             return;
         }

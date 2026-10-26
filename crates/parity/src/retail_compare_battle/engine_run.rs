@@ -438,6 +438,13 @@ pub fn run_engine_battle(
     let mut hp_seed = hp_seed;
     hp_seed.extend(battle.empty_seat_seeds());
     apply_bar_seeds(&mut session.host.world, &hp_seed);
+    if let Some(seat) = battle.reseat_engine_seat(battle.party_count) {
+        legaia_engine_capture::bar_seeds::arm_capture_reseat(
+            &mut session.host.world,
+            seat,
+            &hp_seed,
+        );
+    }
     if battle.mystic_shield {
         session.host.world.raise_mystic_shield();
     }
