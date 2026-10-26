@@ -788,7 +788,8 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
                 written not once all match, so the trim really is what retail does here -
                 and the retail match capture shows no dust. The sound is the dome's own cue set
                 (PROT&nbsp;0868 UI blips, the shared PROT&nbsp;0869 impact cue) with the battle
-                theme as BGM.
+                theme as BGM - started when the fight starts, as the arena's own fight start
+                does, and silent under the announcer cards and the INTERVAL tally.
               </p>
               <p>
                 <b>The chrome is the game's art.</b> Every chip, plate, badge, numeral and
@@ -1085,10 +1086,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
      * dome's "Welcome to the Muscle Dome!" line, spoken by the hub's first
      * tick - is not keyed into a context the browser holds suspended. */
     if (api && window.MgSpu) MgSpu.ready(api);
-    /* The dome's arena init (FUN_801CEA6C) starts its music with the hub,
-     * under the Welcome card - not at the first Fight press. Entering the
-     * tab is entering the arena. */
-    if (api && game === 'muscle') MgBgm.start('muscle');
+    /* The dome's music is not the tab's: muscleFrame starts it when a leg
+     * is handed over (FUN_801D1510, past the ROUND card) and stops it
+     * between legs. */
   }
   tabsEl.addEventListener('click', (e) => {
     const b = e.target.closest('.mg-tab');
@@ -2940,7 +2940,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
    * rematch. */
   function muscleConfirm() {
     if (!api || !muscleR) return;
-    MgBgm.start('muscle');    /* first confirm is the user gesture that lets audio play */
+    if (window.MgSpu) MgSpu.ready(api);    /* a confirm is a user gesture: let audio run */
     muscleR.confirm();
     muscleSync();
   }
@@ -2948,6 +2948,12 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   function muscleFrame() {
     if (!api || !muscleR) return;
     muscleR.frame();
+    /* The battle theme plays only while a leg is fought (the engine's
+     * fight-start gate, `legMusic`); the hub's cards and the INTERVAL tally
+     * are silent, as the re-entered arena init releases the BGM sources. */
+    const owed = !!(muscleR.legMusic && muscleR.legMusic());
+    if (owed && MgBgm.playing() !== 'muscle') MgBgm.start('muscle');
+    else if (!owed && MgBgm.playing() === 'muscle') MgBgm.stop();
     muscleSync();
   }
 

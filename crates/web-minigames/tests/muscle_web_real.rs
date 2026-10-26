@@ -110,8 +110,12 @@ fn muscle_round_resolves_through_battle_formulas_deterministically() {
     for p in plays {
         let dmg = p["damage"].as_i64().unwrap();
         assert!((0..=9999).contains(&dmg), "finisher cap: {p}");
+        // The fighter's plays are its direction commands; the opponent's
+        // are its own archive entries (the monster AI's physical branch).
         let cmd = p["cmd"].as_u64().unwrap();
-        assert!((0x0C..=0x0F).contains(&cmd));
+        if p["attacker"] == 0 {
+            assert!((0x0C..=0x0F).contains(&cmd));
+        }
     }
     let st_after: serde_json::Value = serde_json::from_str(&mg.muscle_state_json()).unwrap();
     let last = plays.last().unwrap();

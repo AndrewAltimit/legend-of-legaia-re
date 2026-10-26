@@ -13,6 +13,8 @@ mod minigames_dance_api;
 mod minigames_fishing_pond;
 mod minigames_wasm_api;
 mod muscle_first_visit_live;
+mod muscle_opponent_swing_real;
+mod muscle_page_bgm_and_blend;
 mod muscle_page_cadence;
 mod muscle_web_real;
 mod slot_bonus_marquee_ladder;

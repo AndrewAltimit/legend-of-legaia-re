@@ -20,9 +20,22 @@ window.LegaiaCanvasAbr = (function () {
    * selects (7 under 6, 9 under 8, ...), and the arena uploads those
    * STP-set, so `B - white` clamps to black under every texel - which is the
    * silhouette, exactly, at full fade. */
-  function withAbr(g, abr, draw) {
+  function withAbr(g, abr, draw, rgb) {
     if (abr == null) return draw(false);
-    if (abr === 2) return draw(true);
+    if (abr === 2) {
+      /* `B - F` with F = white * c / 128: the quad's Gouraud colour scales
+       * what it takes away, so a row the tally has not faded in yet removes
+       * nothing. Drawing the silhouette at full strength whatever the
+       * colour knocked a black box out of every row still at level 0 (the
+       * "glitched" score tally). The silhouette at alpha c / 128 is
+       * `B * (1 - c/128)`, which meets the exact `B - 255 * c/128` at both
+       * ends of the fade. */
+      const k = subtractLevel(rgb);
+      if (k <= 0) return undefined;
+      g.save();
+      g.globalAlpha *= k;
+      try { return draw(true); } finally { g.restore(); }
+    }
     g.save();
     if (abr === 0) g.globalAlpha *= 0.5;
     else {
@@ -30,6 +43,15 @@ window.LegaiaCanvasAbr = (function () {
       if (abr === 3) g.globalAlpha *= 0.25;
     }
     try { return draw(false); } finally { g.restore(); }
+  }
+
+  /* A subtractive quad's strength in 0..1 off its Gouraud colour pair
+   * `[top, bottom]` (each `[r, g, b]`, 0x80 = neutral); 1 with none. */
+  function subtractLevel(rgb) {
+    if (!rgb || !rgb[0] || !rgb[1]) return 1;
+    let sum = 0;
+    for (let k = 0; k < 3; k++) sum += rgb[0][k] + rgb[1][k];
+    return Math.max(0, Math.min(1, sum / 6 / 128));
   }
 
   /* The black silhouette of a decoded sheet (every opaque texel -> black,
@@ -51,5 +73,5 @@ window.LegaiaCanvasAbr = (function () {
     return s;
   }
 
-  return { withAbr, silhouette };
+  return { withAbr, silhouette, subtractLevel };
 })();

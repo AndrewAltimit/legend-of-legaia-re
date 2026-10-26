@@ -348,11 +348,12 @@ impl LegaiaMinigames {
             .is_some_and(|c| c.session.commit_card(0, card_slot))
     }
 
-    /// Run the opponent's greedy in-order commit (the host AI model), then
-    /// close the selection phase so the round is ready to resolve.
+    /// Run the opponent's pick (the battle's monster AI, the same call the
+    /// round prompt's Begin makes), then close the selection phase so the
+    /// round is ready to resolve.
     pub fn muscle_end_selection(&mut self) {
         if let Some(c) = self.muscle.as_mut() {
-            c.session.ai_commit_all(1);
+            c.session.opponent_commit();
             c.session.end_selection();
         }
     }
