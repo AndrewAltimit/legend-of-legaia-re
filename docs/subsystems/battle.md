@@ -453,7 +453,9 @@ Everything the loader places in RAM comes from one heap, and its arithmetic - no
 | One block per distinct monster | `block[+0x08]` | `FUN_800542C8` |
 | Post-monster tail | `0x1800` + `0x3100` + small nodes (about 19.5 KB) | - |
 
-About `0x28230` (164.4 KB) remains at the first monster allocation, so the workable distinct-monster budget is about **145 KB**. Probe-bracketed: `[162,10]` (123.3 KB) loads with 18.5 KB free; `[162,79]` (152.2 KB) seats both monsters but dies on the `0x3100` tail allocation; `[162,163]` (165.2 KB) dies on the second monster. The largest distinct-id formation on the disc costs 124.3 KB (Mad Ogre + Demon Fly `[108,3]` and Ogre + Death Wings `[107,2]`, both on the Sebucus world map `map02`). The three Delilas blocks cost `0x15030` / `0x144D0` / `0x147E8` (84.0 / 81.2 / 82.0 KB), so any two overshoot by 20-25 KB - which is why the Delilas Challenge dome course fields them one per round.
+About `0x28230` (164.4 KB) remains at the first monster allocation, so the workable distinct-monster budget is about **145 KB**. Probe-bracketed: `[162,10]` (123.3 KB) loads with 18.5 KB free; `[162,79]` (152.2 KB) seats both monsters but dies on the `0x3100` tail allocation; `[162,163]` (165.2 KB) dies on the second monster. The largest distinct-id formation on the disc costs 124.3 KB (Mad Ogre + Demon Fly `[108,3]` and Ogre + Death Wings `[107,2]`, both on the Sebucus world map `map02`).The three Delilas blocks cost `0x15030` / `0x144D0` / `0x147E8` (84.0 / 81.2 / 82.0 KB), so any two overshoot by 20-25 KB - which is why the Delilas Challenge dome course fields them one per round.
+
+Neither species of that Sebucus pair is heavy on its own (Mad Ogre 64.5 KB, Demon Fly 59.9 KB, ranks 35 and 48 of 186): the bosses are, at 77-91 KB for Cort, Zora, Xain, Songi and the Delilas trio, but a boss fights as one species, and a pair pays for both of its members.
 
 Instruments: `scripts/pcsx-redux/autorun_delilas_battle_load.lua` (formation install, allocator breakpoints, free-ring walk); offline `scripts/asset-investigation/battle-heap-walk.py`.
 
