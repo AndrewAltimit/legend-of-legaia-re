@@ -66,6 +66,18 @@ fn plank_y(host: &SceneHost, slot: u8) -> i32 {
 #[test]
 fn the_bridge_planks_fall_while_they_turn_or_skip() {
     let Some(root) = extracted_root() else { return };
+    // The beat is a walk-on: a gate-1 tile trigger on the `.MAP` names it.
+    let index = legaia_engine_scene::scene::ProtIndex::open_extracted(&root).expect("index");
+    let scene = legaia_engine_scene::scene::Scene::load(&index, "rayman").expect("rayman");
+    let (primary, fallback) = scene.field_tile_triggers(&index).expect("triggers");
+    let tiles: Vec<(u8, u8)> = primary
+        .iter()
+        .chain(&fallback)
+        .filter(|t| t.gate == 1 && t.record == COLLAPSE_BEAT - 13 - 92)
+        .map(|t| (t.tile_x, t.tile_z))
+        .collect();
+    eprintln!("[ran] P2[7] walk-on tiles: {tiles:?}");
+    assert!(!tiles.is_empty(), "a walk-on tile spawns the collapse beat");
     let mut host = SceneHost::open_extracted(&root).expect("open SceneHost");
     host.enter_field_scene("rayman", 0).expect("enter rayman");
     for _ in 0..4 {
