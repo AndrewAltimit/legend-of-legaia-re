@@ -889,7 +889,9 @@ impl BattleDrive {
         let pc = world.party.party_count.clamp(1, 3);
         match *self {
             // The first frame whose monsters are drawable: the bodies bind
-            // a few ticks after the mode flip.
+            // a few ticks after the mode flip. A body the stage loader hid
+            // (the evolved Cort, until PROT 0968 drops him in) is as ready
+            // as it will be.
             Self::Opening { swept, entry } => {
                 // A sparring capture past the intro timer also holds the
                 // side-band's caption, which the engine raises on the round
@@ -903,9 +905,10 @@ impl BattleDrive {
                         a.battle_monster_id.is_none()
                             || !a.active
                             || a.tmd_binding.is_some()
-                                && world
-                                    .battle_actor_draw_plan(i, None, 4.0, false)
-                                    .is_none_or(|p| p.drawn)
+                                && (world.battle_body_hidden(i)
+                                    || world
+                                        .battle_actor_draw_plan(i, None, 4.0, false)
+                                        .is_none_or(|p| p.drawn))
                     });
                 if std::env::var_os("LEGAIA_RC_DRIVE_TRACE").is_some() {
                     for (i, a) in world.actors.iter().enumerate().take(8) {

@@ -537,6 +537,16 @@ pub(super) fn battle_image(
     if let Some(kv) = retail.vram_rects_env(opts.out_dir, &entry.label) {
         env.push(kv);
     }
+    // ... and the live mode-3 CLUT cyclers at the displayed frame's phase:
+    // the evolved-Cort arena's flesh palette (record `0x80078760` on CLUT
+    // `(32, 479)`) swings its hue add through `0x100` about every 130
+    // vsyncs, and its phase is time since PROT 0968 seated it.
+    if !retail.cell_fx.is_empty() {
+        env.push((
+            "LEGAIA_SEAT_CLUT_FX",
+            legaia_engine_capture::field_seeds::cell_fx_env(&retail.cell_fx),
+        ));
+    }
     if !battle.entry_latches.is_empty() {
         env.push((
             "LEGAIA_BATTLE_LATCHES",

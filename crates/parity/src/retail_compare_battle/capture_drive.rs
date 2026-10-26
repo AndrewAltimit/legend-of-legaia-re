@@ -479,11 +479,25 @@ impl RetailBattle {
     }
 
     /// [`Self::battle_drive`] for the image child: a menu drive walks to the
-    /// surface the displayed frame shows ([`Self::displayed_menu_flow`]).
+    /// surface the displayed frame shows ([`Self::displayed_menu_flow`]),
+    /// and an opening under the entry sweep is taken at the counter the
+    /// displayed frame was built on - the RAM's less the double buffer's own
+    /// lag ([`displayed_lag_vsyncs`]), since the frame driver advances
+    /// `gp+0x330` by the frame step a pass. The battle's entry fade-in rides
+    /// the same passes (`gaza2_card_battle_init`: the block at `25`, `102`
+    /// on screen at step `3`, two passes back); `s5_tetsu_battle` was saved
+    /// after the flip, and its screen is one pass back.
     pub fn image_drive(&self) -> Option<BattleDrive> {
         match (self.battle_drive(), self.displayed_menu_flow()) {
             (Some(BattleDrive::Menu { seat, spirit, .. }), Some(flow)) => {
                 Some(BattleDrive::Menu { flow, seat, spirit })
+            }
+            (Some(BattleDrive::Opening { swept, entry }), _) if (0x80..=0xC0).contains(&entry) => {
+                let lag = u8::try_from(self.display_phase_lag).unwrap_or(u8::MAX);
+                Some(BattleDrive::Opening {
+                    swept,
+                    entry: entry.saturating_sub(lag).max(0x80),
+                })
             }
             (drive, _) => drive,
         }

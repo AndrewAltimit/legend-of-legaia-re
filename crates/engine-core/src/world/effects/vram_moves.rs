@@ -106,7 +106,22 @@ impl World {
     fn apply_battle_cell_fx(&mut self, vram: &mut legaia_tim::Vram) -> bool {
         use super::super::ambient::{read_rect, write_rect};
         let mut wrote = false;
-        for f in std::mem::take(&mut self.battle.cell_fx) {
+        for mut f in std::mem::take(&mut self.battle.cell_fx) {
+            // Capture alignment (empty outside a retail-compare child): a
+            // retail state's live cycler on the same rect writes its own
+            // phase, as the field's seeds do (`AmbientFxState::cell_fx_seed`).
+            // Only over a part the engine runs: written ahead of it, the
+            // seed would be re-captured as the part's source on its first
+            // armed tick.
+            if let Some(seed) = self
+                .ambient
+                .cell_fx_seed
+                .iter()
+                .rev()
+                .find(|s| s.rect == f.rect)
+            {
+                f = *seed;
+            }
             let (x, y, w, h) = f.rect;
             if w == 0 || h == 0 || w > 256 || h > 64 {
                 continue;

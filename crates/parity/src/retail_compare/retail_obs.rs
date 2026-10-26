@@ -318,7 +318,10 @@ impl RetailObs {
             save_allowed: game_anchors::u32_at(ram, SAVE_ALLOW) != 0,
             memory_card: None,
             scripts: crate::retail_compare_script::RetailScripts::from_ram(ram),
-            cell_fx: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+            cell_fx: if matches!(
+                class,
+                StateClass::Field | StateClass::WorldMap | StateClass::Battle
+            ) {
                 retail_cell_fx(ram)
             } else {
                 Vec::new()

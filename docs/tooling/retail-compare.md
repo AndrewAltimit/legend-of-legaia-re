@@ -408,6 +408,15 @@ engine verdict:
   walls hue-cycle through green, and `cort_evolved_pre_battle` had scored
   its walls by the luck of the phase.
 
+  A battle state hands the child its cyclers the same way, and the battle
+  VRAM pass writes a seed over the matching rect of a part the engine runs
+  (`World::apply_battle_vram_moves`), never ahead of one: a seed written
+  before the part's first armed tick would be re-captured as its source.
+  The evolved-Cort arena's flesh palette is one (record `0x80078760` on
+  CLUT `(32, 479)`, seated by PROT 0968's hand-back); unseeded, the
+  replay's phase drew the flesh near black where the capture's is dark
+  red.
+
   Those adds are the newest frame's, or the next one's where the move
   program re-keys them after the upload, and a strobe record re-keys them
   every frame or two. The frame on screen is two frames older and its own
@@ -1890,8 +1899,11 @@ That comparison is only as good as the engine's opening. The port does not park
 its command flow on the intro timer (`battle::intro_names` - the round prompt
 opens with the names still up, which the recorded replays pace off), so an
 ordinary fight holds its prompt already at the flip and an opening capture of
-one reads `phase` `0`. The corpus's opening captures are all the sparring
-fight, whose opening the tutorial holds back.
+one reads `phase` `0`. The sparring fight's opening the tutorial holds back;
+the evolved Cort's the arrival module holds (flow `0x0C`). `gaza2_card_battle_init`
+is the one ordinary fight caught under its sweep, and its frame shows the
+engine's round prompt and party plaques over a field retail has not opened
+yet.
 
 **The entry sweep.** An opening capture's `camera` reads the
 [battle-entry sweep](../subsystems/battle.md#the-battle-entry-sweep) the SCUS
@@ -1902,6 +1914,7 @@ says how far in each capture is:
 |---|---|---|---|---|
 | `v0_1_battle_loading_tetsu` | `0xFD` | `0x84` | `60` | `(0, 1472, 6912)` |
 | `s5_tetsu_battle` | `0x00` | `0xAF` | `16` | `(0, 2010, 3552)` |
+| `gaza2_card_battle_init`, `cort_evolved_card_battle_init` | `0x00` | `0x97` | `60` | `(0, 2384, 5696)` |
 
 An opening capture is taken once the engine's own sweep has run as far
 (`entry_sweep_reached`; the counter rides the drive as
@@ -1916,6 +1929,21 @@ since retail's battle tick opens no prompt under it, while the engine's prompt
 opens at the flip. So the seed waits the engine's sweep out before it counts
 the first prompt, the in-flight cast seed dispatches only once it is over, and
 the image child's pad drive holds until then.
+
+The frame under the sweep is the one two passes older than the RAM, as
+everywhere ([a drive's frame](#a-drives-frame-is-the-one-the-display-showed)),
+and the counter is part of what moved: the frame driver adds the frame step
+to it every pass. The image child takes an opening at the RAM's counter less
+the double buffer's own lag (`displayed_lag_vsyncs`, `RetailBattle::image_drive`):
+two passes for the PCSX-Redux boss openings, one for `s5_tetsu_battle`, saved
+after the flip. The headless channels read the RAM's own counter. The two
+differ most in the
+[battle-entry fade](../subsystems/battle-stage-camera.md#the-battle-entry-fade),
+which falls `0xFF / 0x14` a vsync: the two PCSX-Redux boss openings hold its
+block at `25` and show `102` (step `3`) and `76` (step `2`). The opening
+also waits for a monster body only while it is drawable or hidden
+(`World::battle_body_hidden`): the stage loader blanks the evolved Cort until
+his arrival.
 
 A battle state whose RAM does not describe a seedable fight (the context
 pointer not yet resident, counts out of range, an empty cell) is kept with a

@@ -376,6 +376,10 @@ pub struct RetailBattle {
     /// Vsyncs the capture's displayed frame lags its RAM
     /// ([`display_lag_vsyncs`]).
     pub display_lag: u16,
+    /// Vsyncs the displayed frame lags the RAM by on the double buffer's
+    /// own phase ([`displayed_lag_vsyncs`]): one pass for a state saved
+    /// after the frame-end flip, two otherwise.
+    pub display_phase_lag: u16,
     /// Vsyncs the two passes the displayed frame lags by spanned, each on
     /// its own step ([`display_pass_steps`]).
     pub display_pass_lag: u16,
