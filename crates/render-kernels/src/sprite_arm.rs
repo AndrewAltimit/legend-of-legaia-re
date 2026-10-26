@@ -43,9 +43,15 @@ pub struct ColourWord {
 impl ColourWord {
     /// Decode the part's `+0x74` word and `+0x78` level.
     pub fn of(st: &ActorState) -> Self {
-        let w = st.field_74;
+        Self::from_words(st.field_74, st.field_78)
+    }
+
+    /// Decode a raw `+0x74` colour word `w` and `+0x78` level `level` - for
+    /// a caller that holds the two words without a move-VM actor (the Baka
+    /// Fighter afterimage, whose spawn writes them directly).
+    pub fn from_words(w: u32, level: u16) -> Self {
         let mode = (w >> 24) as u8;
-        let mut ir0 = st.field_78;
+        let mut ir0 = level;
         if mode != 0 {
             ir0 |= 1;
         }

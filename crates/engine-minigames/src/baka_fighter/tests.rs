@@ -1166,3 +1166,59 @@ fn from_tables_runs_the_strike_clock() {
     f.tick(1);
     assert_eq!(f.last_exchange().map(|r| r.winner), Some(0));
 }
+
+/// The special's afterimage is its own pool actor (prototype `0x801D7684`,
+/// ticked by the pool walk `FUN_8002519C` every frame), not a step of the
+/// round SM: the round its last strike decides does not freeze it. Its two
+/// ghosts keep advancing through the round-over hold, run past the special
+/// clip's end one after the other, and the actor retires.
+#[test]
+fn the_finishing_specials_afterimage_runs_out_after_the_round_is_decided() {
+    use legaia_minigame_formats::baka_opponents::{ACTION_SPECIAL, ACTIONS_PER_FIGHTER};
+    let mut f = striking_fight(16, &[20], &[2]);
+    let mut hdr = [None; ACTIONS_PER_FIGHTER];
+    hdr[ACTION_SPECIAL] = Some(ClipHeader {
+        frames: 24,
+        double_step: false,
+        n: 1,
+    });
+    f.set_clip_headers(0, hdr);
+    f.f[1].hp = 1;
+    throw_special(&mut f, 0);
+    let mut guard = 0;
+    while matches!(f.phase(), MatchPhase::Fighting) {
+        f.tick(1);
+        guard += 1;
+        assert!(guard < 100, "the special decides the round");
+    }
+    assert!(matches!(f.phase(), MatchPhase::RoundOver(0)));
+    let at_decision = f.afterimages().to_vec();
+    assert_eq!(
+        at_decision.len(),
+        1,
+        "the ghosts outlive the deciding strike"
+    );
+    let mut cursors = vec![at_decision[0].1.cursor];
+    let mut drawn_per_tick = Vec::new();
+    let mut held = 0;
+    while !f.afterimages().is_empty() {
+        f.tick(1);
+        held += 1;
+        assert!(
+            matches!(f.phase(), MatchPhase::RoundOver(_)),
+            "the ghosts run out inside the round-over hold"
+        );
+        if let Some((_, fr)) = f.afterimages().first() {
+            cursors.push(fr.cursor);
+            drawn_per_tick.push(fr.passes.iter().filter(|p| p.drawn).count());
+        }
+        assert!(held < 0x100, "the afterimage retires");
+    }
+    assert!(
+        cursors.windows(2).all(|w| w[1] > w[0]),
+        "the ghost clip keeps running through the hold: {cursors:?}"
+    );
+    // The nearer ghost expires first, then the farther, then the actor goes.
+    assert!(drawn_per_tick.contains(&1), "{drawn_per_tick:?}");
+    assert_eq!(drawn_per_tick.last(), Some(&0));
+}

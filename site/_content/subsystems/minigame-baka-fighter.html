@@ -136,6 +136,15 @@ critical pending on the winner:  dmg = power &lt;&lt; 7</code></pre>
   <p>Both play hosts draw this layer through one shared builder, whether the duel opened from a Sol Tower cabinet seat or from the launcher. Before that builder existed, a seated duel showed a lone round digit: the HUD model was ported and built every frame, but neither host drew it.</p>
 </section>
 
+<section class="doc-section" id="afterimage">
+  <h2>The finishing special&rsquo;s afterimage</h2>
+  <p>The special draws two ghosts of its thrower, three and six frames behind the body. They are translucent: each is the fighter&rsquo;s own texture at half, then a quarter, of its weight, added over the frame, so the far ghost is the fainter one.</p>
+  <ul class="bullets">
+    <li><strong>The ghosts outlive the round.</strong> The afterimage is its own actor, run every frame whatever the round is doing. The special&rsquo;s last strike decides the round while the ghosts are still mid-clip, and they keep playing through the round-over pause until each runs past the end of the clip and drops out, the nearer one first.</li>
+    <li>The port once stepped them only while the round was open, so the deciding special&rsquo;s ghosts froze in place for the whole pause, drawn as solid dark copies. They now draw translucent and run out as retail&rsquo;s do, on every host.</li>
+  </ul>
+</section>
+
 <section class="doc-section" id="shared">
   <h2>Shared with the Muscle Dome</h2>
   <p>The 24-instruction tally drain scaler here and the one in the <a href="minigame-muscle-dome.html">Muscle Dome</a> hub are the same routine linked into two overlays; only the pair of instructions that loads its bypass flag differs.</p>
