@@ -451,7 +451,7 @@ Everything the loader places in RAM comes from one heap, and its arithmetic - no
 | Party-mesh decode temp | `0x19000` | `FUN_80052FA0`, freed in-loop |
 | Sound streaming chunks | `0x1014` each | - |
 | One block per distinct monster | `block[+0x08]` | `FUN_800542C8` |
-| Post-monster tail | `0x1800` + `0x3100` + small nodes (about 19.5 KB) | `0x1800`: the battle SFX descriptor bank, `FUN_8001FA88` at `0x8001FAB4` ([`bse-dat.md`](../formats/bse-dat.md)); `0x3100`: computed size, caller unattributed |
+| Post-monster tail | `0x1800` + `0x3100` + small nodes (about 19.5 KB) | `0x1800`: the battle SFX descriptor bank, `FUN_8001FA88` at `0x8001FAB4` ([`bse-dat.md`](../formats/bse-dat.md)); `0x3100`: the battle backdrop TMD, `FUN_8001FE70` at `0x8001FEAC` (the `scene_tmd_stream` chunk-0 size rounded to 32; `0x30F0` in every world-map stream, so the size is scene-dependent) |
 
 About `0x28230` (164.4 KB) remains at the first monster allocation, so the workable distinct-monster budget is about **145 KB**. Probe-bracketed: `[162,10]` (123.3 KB) loads with 18.5 KB free; `[162,79]` (152.2 KB) seats both monsters but dies on the `0x3100` tail allocation; `[162,163]` (165.2 KB) dies on the second monster. The largest distinct-id formation on the disc costs 124.3 KB (Mad Ogre + Demon Fly `[108,3]` and Ogre + Death Wings `[107,2]`, both on the Sebucus world map `map02`).The three Delilas blocks cost `0x15030` / `0x144D0` / `0x147E8` (84.0 / 81.2 / 82.0 KB), so any two overshoot by 20-25 KB - which is why the Delilas Challenge dome course fields them one per round.
 
