@@ -87,6 +87,7 @@ mod freeroam_field_channels_disc;
 mod global_bgm_owned_vab_disc;
 mod hub_tables_disc;
 mod inline_dialogue_vm_no_panic_disc;
+mod kor5_genesis_figure_height_disc;
 mod kor5_old_deez_seat_disc;
 mod map01_clut_fx_disc;
 mod map01_flyin_camera;
