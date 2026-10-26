@@ -3560,3 +3560,84 @@ phase = "field"
 expected_game_mode = 0x03
 expected_active_scene = "jou"
 topics = ["field", "jou", "scene coverage", "harvest"]
+
+[[scenarios]]
+label = "battle_noaru_gilium_lv2_thunder_storm_mid_cast"
+backup_fingerprint = "f4f40869fc4994922d24c9dee3f17e9085ebb4cb41026a7336f4f63fa4f211ee"
+description = "noaru battle, formation [0xA0, 0xA0]: Gilium Lv2 (seat 4, monster id 160) mid-cast Thunder Storm (spell 0x77, module 0957): category 2, action state 0x70. RETAIL disc, pad only, no pokes: the playthrough-endgame-7saves.mcr block 5 save cold-loaded into noaru (isolate_card_save.py + autorun_boot_continue.lua), LEGAIA_WALK_SEED=3, played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 3483 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "noaru"
+topics = ["battle", "enemy cast", "Gilium Lv2", "Thunder Storm", "noaru", "harvest"]
+
+[[scenarios]]
+label = "battle_noaru_gilium_lv2_strike"
+backup_fingerprint = "8518deda09b0ace0eeacf9faca4c530787191f2cfd58cd1776a245f6e03d1d4a"
+description = "noaru battle, formation [0xA0, 0xA0]: Gilium Lv2 (seat 3, monster id 160) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: the playthrough-endgame-7saves.mcr block 5 save cold-loaded into noaru (isolate_card_save.py + autorun_boot_continue.lua), LEGAIA_WALK_SEED=3, played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 4930 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "noaru"
+topics = ["battle", "enemy attack", "Gilium Lv2", "noaru", "harvest"]
+
+[[scenarios]]
+label = "battle_retona_king_frog_strike"
+backup_fingerprint = "9f3ccdfa1f72e057eac7f151d128850ad1ede7e1ebc30921d56c620bc4a6eb85"
+description = "retona battle, formation [0x65, 0x2D]: King Frog (seat 4, monster id 45) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: retona_field_card_boot, LEGAIA_WALK_SEED=7, played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 3733 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "retona"
+topics = ["battle", "enemy attack", "King Frog", "retona", "harvest"]
+
+[[scenarios]]
+label = "battle_retona_mushura_strike"
+backup_fingerprint = "1091a8335f6055778cc4d05a84e72d8eae1aa933986b885385eaad5f358be48b"
+description = "retona battle, formation [0x65, 0x2D]: Mushura (seat 3, monster id 101) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: retona_field_card_boot, LEGAIA_WALK_SEED=7, played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 4322 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "retona"
+topics = ["battle", "enemy attack", "Mushura", "retona", "harvest"]
+
+[[scenarios]]
+label = "battle_retona_viguro_lv2_thunder_break_mid_cast"
+backup_fingerprint = "05659287c030bd04c534e20a06afbbc751fd6d3b85697c5f9f212ebdd860220b"
+description = "retona battle, formation [0x86, 0x65]: Viguro Lv2 (seat 3, monster id 134) mid-cast Thunder Break (spell 0x30): category 2, action state 0x2B. RETAIL disc, pad only, no pokes: retona_field_card_boot, LEGAIA_WALK_SEED=7, played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 11448 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "retona"
+topics = ["battle", "enemy cast", "Viguro Lv2", "Thunder Break", "retona", "harvest"]
+
+[[scenarios]]
+label = "battle_retona_viguro_lv2_strike"
+backup_fingerprint = "9c9a1c04599f2394a7e5beb8b4b1ef38f5ddf7d7cc409cbe668af19b9193acae"
+description = "retona battle, formation [0x86, 0x65]: Viguro Lv2 (seat 3, monster id 134) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: retona_field_card_boot, LEGAIA_WALK_SEED=7, played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 13512 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "retona"
+topics = ["battle", "enemy attack", "Viguro Lv2", "retona", "harvest"]
+
+[[scenarios]]
+label = "battle_korb2_aluru_cannon_mid_cast"
+backup_fingerprint = "f1fdc715139f3fc0e78cb0945861e790616ae20a1697fea90b7de95069052c02"
+description = "korb2 battle, formation [0x90, 0x50]: Aluru (seat 4, monster id 80) mid-cast Aluru Cannon (spell 0x3F): category 2, action state 0x2B. RETAIL disc, pad only, no pokes: korb2_field_card_boot, LEGAIA_WALK_LEG=61, played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 2872 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb2"
+topics = ["battle", "enemy cast", "Aluru", "Aluru Cannon", "korb2", "harvest"]
+
+[[scenarios]]
+label = "battle_korb2_aluru_strike"
+backup_fingerprint = "02983a4606ff80652fcfed4a0adcbb888eb22091f04a217186544c2446d556e8"
+description = "korb2 battle, formation [0x90, 0x50]: Aluru (seat 4, monster id 80) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: korb2_field_card_boot, LEGAIA_WALK_LEG=61, played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 4414 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb2"
+topics = ["battle", "enemy attack", "Aluru", "korb2", "harvest"]
+
+[[scenarios]]
+label = "noaru_field_card_walk"
+backup_fingerprint = "d1699cde87d0e95a877733d3b3e23ae516c06876fe17535ec912b30a53e05211"
+description = "noaru (Noaru Valley) free field run, player in control. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-endgame-7saves.mcr block 5 (isolate_card_save.py --keep 5 --restamp 0, autorun_boot_continue.lua) into noaru, then autorun_battle_harvest.lua with LEGAIA_SCENES=1 (random walk) saved it 151 vsyncs in, once the scene had settled and the player had moved (the walk's first scene)."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "noaru"
+topics = ["field", "noaru", "scene coverage", "harvest"]
