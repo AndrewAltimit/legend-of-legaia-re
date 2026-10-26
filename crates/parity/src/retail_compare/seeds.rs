@@ -1170,7 +1170,32 @@ pub struct RetailMenu {
     /// The title's Continue screen on its grid - sub-screen clear, the card
     /// screen up over the title. Reached from the title, not from a field.
     pub title_continue: bool,
+    /// A title front-end screen short of the card grid (sub-screen clear,
+    /// [`CARD_SCREEN_SUBMODE`] on the live title menu or the pill row over
+    /// it). Reached from the title, not from a field.
+    pub title_screen: Option<TitleScreen>,
 }
+
+/// A title front-end screen the seed drives the boot front end to, read off
+/// the title overlay's sub-mode word ([`CARD_SCREEN_SUBMODE`],
+/// `engine-title::title_overlay`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TitleScreen {
+    /// `0x10` `AttractIdle`, the live title menu, with its row counter
+    /// `_DAT_8007B820` (`0` NEW GAME, `1` CONTINUE).
+    Menu { row: u8 },
+    /// `0x14` `MainMenu`, the `SLOT 1` / `SLOT 2` pill row CONTINUE opens
+    /// over the title, before any card is read.
+    Pill,
+}
+
+/// [`CARD_SCREEN_SUBMODE`] on the live title menu (`AttractIdle`).
+pub const TITLE_SUBMODE_MENU: u32 = 0x10;
+/// [`CARD_SCREEN_SUBMODE`] on the title's pill row (`MainMenu`).
+pub const TITLE_SUBMODE_PILL: u32 = 0x14;
+/// `_DAT_8007B820`, the title menu's row counter (`AttractIdle` steps it on
+/// `Up | Down` and wraps it with `andi 1`, `0x801DDB9C`).
+pub const TITLE_ROW: u32 = 0x8007_B820;
 
 impl RetailMenu {
     /// Classify a menu-class capture's sub-screen id. The pause menu runs
@@ -1189,6 +1214,26 @@ impl RetailMenu {
                 equip_depth: 0,
                 card_grid,
                 title_continue: true,
+                title_screen: None,
+            });
+        }
+        let title_screen = match game_anchors::u32_at(ram, CARD_SCREEN_SUBMODE) {
+            TITLE_SUBMODE_MENU => Some(TitleScreen::Menu {
+                row: game_anchors::u8_at(ram, TITLE_ROW) & 1,
+            }),
+            TITLE_SUBMODE_PILL => Some(TitleScreen::Pill),
+            _ => None,
+        };
+        if subscreen == 0
+            && let Some(screen) = title_screen
+        {
+            return Ok(Self {
+                subscreen,
+                row: FieldMenuRow::Load,
+                equip_depth: 0,
+                card_grid: false,
+                title_continue: false,
+                title_screen: Some(screen),
             });
         }
         if subscreen == 0 {
@@ -1215,6 +1260,7 @@ impl RetailMenu {
             // menu overlay's, and holds whatever it last held elsewhere.
             card_grid: card_grid && matches!(row, FieldMenuRow::Load | FieldMenuRow::Save),
             title_continue: false,
+            title_screen: None,
         })
     }
 }

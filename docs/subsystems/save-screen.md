@@ -1301,12 +1301,17 @@ and both catalogued states on this screen (`title_menu_idle`,
 `save_select_idle`) hold `_DAT_8007B820 = 1` and `_DAT_8007BB00 = 1`. These
 are the title's strips on the title's page, not a memory-card message page.
 
-The layout differs from the title card's: the card places each band at the
-TIM's own offset from the wordmark's `(33, 6)`, while this routine centres
-each strip, so NEW GAME / CONTINUE sit 5 px higher and the TM and copyright
-lines 16 px higher. Port: `TitleBandState::backdrop`, drawn by both hosts
-through `title_band_sprites`, composed by `engine-ui::title_strip_rows` /
-`title_strip_sprites`; it lights CONTINUE.
+The live title card holds the same rows. Placing each band at the TIM's own
+offset from the wordmark's `(33, 6)` - the reading the card once used - puts
+NEW GAME / CONTINUE 5 px and the TM and copyright lines 16 px lower than
+retail draws them: the `title_attract` and `title_menu_idle` frames (title
+sub-mode `0x10`) show the strips at exactly this routine's centres, the same
+rows as `save_select_idle` behind the Load window. The card and the backdrop
+therefore share one layout and differ in brightness only. Port:
+`TitleBandState::backdrop`, drawn by both hosts through `title_band_sprites`,
+composed by `engine-ui::title_strip_rows` / `title_strip_sprites`; it lights
+CONTINUE. The card's arm of `title_band_sprites` places its rows and legal
+lines from the same `title_strip_rows`.
 
 ### The card screen's kanji page is never sampled
 

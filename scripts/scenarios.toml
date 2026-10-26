@@ -395,6 +395,10 @@ expected_game_mode = 0x17
 # Re-shot: the label had no durable state (its live slot was reused for the
 # rim_elm_queen_bee_battle capture).
 topics = ["title overlay", "title menu", "menu glyph atlas"]
+memory_card = "playthrough-endgame-7saves.mcr"
+# The screen shows no card contents; the card is what the later grid capture
+# (load_grid_endgame_card) read from this state, and retail-compare mounts it
+# so the port's title does not grey CONTINUE on an empty rack.
 
 [[scenarios]]
 slot = 255
@@ -412,6 +416,10 @@ expected_game_mode = 0x17
 # walks it end-to-end to the confirm prompt. Capturing a state here would still
 # save ~700 vsyncs per probe run.
 topics = ["save screen", "menu overlay"]
+memory_card = "playthrough-endgame-7saves.mcr"
+# The screen shows no card contents; the card is what the later grid capture
+# (load_grid_endgame_card) read from this state, and retail-compare mounts it
+# so the port's title does not grey CONTINUE on an empty rack.
 
 [[scenarios]]
 slot = 255

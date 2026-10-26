@@ -81,11 +81,12 @@ pub const TITLE_BACKDROP_LUM: f32 = 0.45;
 /// tinted blit, because retail's own backdrop law is a modulation byte and a
 /// split at the VRAM texture-page seam. The fade alpha folds into that byte.
 ///
-/// With `state.dim` set the composition is a different routine's: the save
-/// screen's backdrop is the menu overlay's own title drawer, whose rows and
-/// strip rects differ from the card's (the TM and copyright lines sit 16 px
-/// higher, the rows 5 px higher), so the dim path returns
-/// [`title_strip_sprites`] instead.
+/// The NEW GAME / CONTINUE rows and the TM and copyright lines stand at
+/// [`title_strip_rows`]' centres on the card as on the backdrop: retail's
+/// live title menu (`title_menu_idle`, sub-mode `0x10`) and its save-select
+/// backdrop (`save_select_idle`, `0x14`) hold those strips on the same rows.
+/// With `state.dim` set the whole composition is the menu overlay's own
+/// title drawer, so the dim path returns [`title_strip_sprites`].
 pub fn title_band_sprites(
     state: TitleBandState,
     stage_origin: (i32, i32),
@@ -143,35 +144,38 @@ pub fn title_band_sprites(
         push(&mut out, ps, ps.0 as i32, ps.1 as i32, color);
     }
 
-    if let Some((cursor, has_focus)) = state.menu {
-        let row_dim = [color[0] * 0.5, color[1] * 0.5, color[2] * 0.5, color[3]];
-        let ng = title_pak::TITLE_BAND_MENU_NEW_GAME;
-        let co = title_pak::TITLE_BAND_MENU_CONTINUE;
-        // Centred inside the title-art width, so the rows land on the
-        // screen's horizontal centre (fb_x = 160) once `push` adds
-        // `TITLE_ART_POS.x`.
-        let art_w = TITLE_ART_SIZE.0 as u32;
-        let ng_x = ((art_w - ng.2) / 2) as i32;
-        let co_x = ((art_w - co.2) / 2) as i32;
-        // Between the wordmark (ends y ~141) and the copyright lines
-        // (start y ~195).
-        let ng_y: i32 = 154;
-        let co_y: i32 = ng_y + ng.3 as i32 + 4;
-        let pick = |row: u8| {
-            if has_focus && cursor == row {
-                color
-            } else {
-                row_dim
-            }
+    // The rows and the two copyright lines stand where the menu overlay's
+    // title drawer puts them ([`title_strip_rows`]): the live title card's
+    // `title_menu_idle` frame holds them at exactly the backdrop's centres,
+    // so the card and the save-screen backdrop share one layout and differ
+    // only in brightness.
+    let continue_selected = matches!(state.menu, Some((1, _)));
+    let row_dim = [color[0] * 0.5, color[1] * 0.5, color[2] * 0.5, color[3]];
+    for row in title_strip_rows(continue_selected) {
+        let tint = match row.record {
+            0 => continue,
+            3 | 4 => match state.menu {
+                None => continue,
+                Some((cursor, has_focus)) => {
+                    if has_focus && u32::from(cursor) + 3 == u32::from(row.record) {
+                        color
+                    } else {
+                        row_dim
+                    }
+                }
+            },
+            _ => color,
         };
-        push(&mut out, ng, ng_x, ng_y, pick(0));
-        push(&mut out, co, co_x, co_y, pick(1));
+        let src = TITLE_STRIP_RECORDS[row.record as usize];
+        let (_, _, w, h) = src;
+        let x0 = TITLE_STRIP_CENTRE_X - (w >> 1) as i32;
+        let y0 = row.y - (h >> 1) as i32;
+        out.push(SpriteDraw {
+            dst: (sx0 + x0 * si, sy0 + y0 * si, w * scale, h * scale),
+            src,
+            color: tint,
+        });
     }
-
-    let tm = title_pak::TITLE_BAND_TM_COPYRIGHT;
-    push(&mut out, tm, tm.0 as i32, tm.1 as i32, color);
-    let cc = title_pak::TITLE_BAND_C_COPYRIGHT;
-    push(&mut out, cc, cc.0 as i32, cc.1 as i32, color);
     out
 }
 
@@ -355,6 +359,29 @@ mod tests {
         assert_eq!(back[2].color[0], 0x39 as f32 / 128.0);
         assert_eq!(back[1].src, TITLE_STRIP_RECORDS[3]);
         assert_eq!(back[1].color[0], 0x1C as f32 / 128.0);
+    }
+
+    #[test]
+    fn the_card_rows_stand_where_the_backdrop_draws_them() {
+        // Retail's live title menu and its save-select backdrop hold the
+        // rows and the legal lines on the same rows (`title_menu_idle` /
+        // `save_select_idle`), so the card's strips are the backdrop's.
+        let mut st = TitleBandState::card(1.0);
+        st.menu = Some((1, true));
+        let card = title_band_sprites(st, (0, 0), 1);
+        let back = title_band_sprites(TitleBandState::backdrop(), (0, 0), 1);
+        let place = |v: &[SpriteDraw]| {
+            v.iter()
+                .rev()
+                .take(4)
+                .map(|d| (d.src, d.dst))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(place(&card), place(&back));
+        // Full brightness on the card, NEW GAME halved under the cursor.
+        let n = card.len();
+        assert_eq!(card[n - 3].color, [1.0, 1.0, 1.0, 1.0]);
+        assert_eq!(card[n - 4].color, [0.5, 0.5, 0.5, 1.0]);
     }
 
     #[test]

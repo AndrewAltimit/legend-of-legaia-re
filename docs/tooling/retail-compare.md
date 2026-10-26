@@ -216,7 +216,7 @@ by the game-mode word and the scene label:
 | `world_map` | mode `0x03` on a kingdom overworld (`mapNN`) | yes |
 | `field_init` | mode `0x02`, the scene mid-load | no |
 | `battle` | mode `0x14` / `0x15` | yes ([below](#battle-states)) |
-| `menu` | mode `0x17` (title, save screens, the pause menu) | the pause-menu screens ([below](#menu-states)) |
+| `menu` | mode `0x17` (title, save screens, the pause menu) | the pause-menu screens and the title front end ([below](#menu-states)) |
 | `minigame` | mode `0x19` | no |
 | `cutscene` | mode `0x1A` / `0x1B` (STR playback) | no |
 | `other` | anything else | no |
@@ -2549,10 +2549,22 @@ as `0x12` in its character picker, `0x13` on its slot list and `0x14` on its
 candidates). `mode` wants the engine in `Menu`; the field channels keep their
 meaning, since the menu opens over the seated field.
 
-A capture with the word clear is the title / boot family (the attract loop,
-the title picker, the card-boot save select) and a screen no root row routes
-to is script-entered (the casino prize exchange, `0x20`); both are kept with
-a `menu not seedable:` reason and counted as classified limits.
+A capture with the word clear is the title / boot family. Its screen is the
+title overlay's sub-mode word `0x801F0204`
+([`engine-title::title_overlay`](../../crates/engine-title/src/title_overlay.rs)):
+`0x10` the live title menu with its row counter `_DAT_8007B820`, `0x14` the
+`SLOT 1` / `SLOT 2` pill row CONTINUE opens, `0x0B` the Continue grid
+([below](#card-screens)). Those three are seeded the way the grid is - the
+child boots its own front end (`--boot-ui`) and the first edges of
+`TITLE_CONTINUE_PRESSES` drive it there (`title_screen_drive`: the menu on
+NEW GAME at tick `750`, on CONTINUE at `810`, the pill row at `890`) - and
+score the image channel only. A scenario that names a `memory_card` mounts it
+even short of the grid: no card contents show there, but the port's title
+greys CONTINUE on a rack with no save (a port guard retail does not have), so
+the drive onto CONTINUE needs one. Any other title sub-mode (the launch fade
+`0x16` a card-boot capture is caught in) and a screen no root row routes to
+(the casino prize exchange, `0x20`) are kept with a `menu not seedable:`
+reason and counted as classified limits.
 
 ### Card screens
 

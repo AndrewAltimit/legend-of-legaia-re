@@ -233,6 +233,37 @@ pub(super) fn run_one(
         report.unseeded = format!("{MENU_NOT_SEEDABLE}{why}");
         return report;
     }
+    // A title front-end screen short of the card grid: no field and no
+    // card, so the child boots its own front end and is driven to it.
+    if let Some(Ok(menu)) = &retail.menu
+        && let Some(screen) = menu.title_screen
+    {
+        let (presses, tick) = title_screen_drive(screen);
+        // No card contents show short of the grid, but the port's title
+        // greys CONTINUE on a rack with no save (a port guard retail does
+        // not have), so the drive onto CONTINUE needs the capture's card.
+        let card = match &entry.memory_card {
+            Some(Ok(p)) => Some(p.as_path()),
+            Some(Err(name)) => {
+                report.unseeded = format!(
+                    "{MENU_NOT_SEEDABLE}title screen's memory card {name} is not in the library"
+                );
+                return report;
+            }
+            None => None,
+        };
+        title_front_run(
+            opts,
+            entry,
+            &retail,
+            card,
+            &presses,
+            tick,
+            false,
+            &mut report,
+        );
+        return report;
+    }
     // A card screen shows a memory card's contents: the engine mounts the
     // card the capture ran with, or the state is not seeded.
     let mut card: Option<&Path> = None;
@@ -254,11 +285,14 @@ pub(super) fn run_one(
             }
         };
         if menu.title_continue {
-            title_continue_run(
+            title_front_run(
                 opts,
                 entry,
                 &retail,
-                card.unwrap_or(Path::new("")),
+                Some(card.unwrap_or(Path::new(""))),
+                TITLE_CONTINUE_PRESSES,
+                TITLE_CONTINUE_CAPTURE_TICK,
+                true,
                 &mut report,
             );
             return report;
@@ -446,25 +480,54 @@ pub const TITLE_CONTINUE_PRESSES: &str =
 /// then ([`TITLE_CONTINUE_PRESSES`]' last confirm plus the card read).
 pub const TITLE_CONTINUE_CAPTURE_TICK: u64 = 1200;
 
-/// A title-family card screen: the Continue grid over the title. There is no
-/// field to seed - the engine boots its own front end with the capture's
-/// card in port 1 and is driven to the grid - so the state scores the image
-/// channels only.
-fn title_continue_run(
+/// The title front-end screens short of the card grid, driven by the first
+/// edges of [`TITLE_CONTINUE_PRESSES`] and captured a beat before the next
+/// edge would leave the screen: the menu on NEW GAME (`700:Cross` past
+/// PRESS START), on CONTINUE (`760:Down`), and the pill row CONTINUE opens
+/// (`820:Cross`; `900:Cross` would read the card).
+pub fn title_screen_drive(screen: TitleScreen) -> (String, u64) {
+    const TO_MENU: &str = "100:Down,160:Cross,700:Cross";
+    match screen {
+        TitleScreen::Menu { row: 0 } => (TO_MENU.into(), 750),
+        TitleScreen::Menu { .. } => (format!("{TO_MENU},760:Down"), 810),
+        TitleScreen::Pill => (format!("{TO_MENU},760:Down,820:Cross"), 890),
+    }
+}
+
+/// A title-family screen: the menu, its pill row, or the Continue grid over
+/// the title. There is no field to seed - the engine boots its own front end
+/// (with the capture's card in port 1 for the grid, an empty save directory
+/// otherwise) and is driven to the screen - so the state scores the image
+/// channels only; the grid adds its info panel ([`CARD_PANEL_CHANNEL`]).
+#[allow(clippy::too_many_arguments)]
+fn title_front_run(
     opts: &RunOptions<'_>,
     entry: &CorpusEntry,
     retail: &RetailObs,
-    card: &Path,
+    card: Option<&Path>,
+    presses: &str,
+    tick: u64,
+    card_panel: bool,
     report: &mut StateReport,
 ) {
     let (Some(exe), Some(rf)) = (opts.engine_exe, &retail.frame) else {
         report.detail.insert(
             "image".into(),
-            "not scored: a title Continue grid scores its frame only, and this run has none".into(),
+            "not scored: a title screen scores its frame only, and this run has none".into(),
         );
         return;
     };
-    let dir = match card_save_dir(opts.out_dir, &entry.label, card) {
+    let dir = match card {
+        Some(card) => card_save_dir(opts.out_dir, &entry.label, card),
+        None => {
+            let dir = crate::retail_compare_image::work_dir(opts.out_dir)
+                .join(format!("{}-card", entry.label));
+            std::fs::create_dir_all(&dir)
+                .map(|_| dir)
+                .map_err(Into::into)
+        }
+    };
+    let dir = match dir {
         Ok(d) => d,
         Err(e) => {
             report.unseeded = format!("seeding failed: {e:#}");
@@ -476,7 +539,7 @@ fn title_continue_run(
         "--save-dir".to_string(),
         dir.display().to_string(),
         "--pad-script".to_string(),
-        TITLE_CONTINUE_PRESSES.to_string(),
+        presses.to_string(),
     ];
     match crate::retail_compare_image::engine_frame_with(
         exe,
@@ -485,7 +548,7 @@ fn title_continue_run(
         None,
         &extra,
         &[],
-        TITLE_CONTINUE_CAPTURE_TICK,
+        tick,
         opts.out_dir,
         &entry.label,
         crate::retail_compare_image::FrameEntry::Door(&[]),
@@ -499,15 +562,17 @@ fn title_continue_run(
                 );
             }
             let score = crate::retail_compare_image::score(rf, &ef);
-            let panel = crate::retail_compare_image::panel_score(
-                rf,
-                &ef,
-                crate::retail_compare_image::CARD_INFO_PANEL,
-            );
             report.channels.insert("image".into(), round3(score.within));
-            report
-                .channels
-                .insert(CARD_PANEL_CHANNEL.into(), round3(panel));
+            if card_panel {
+                let panel = crate::retail_compare_image::panel_score(
+                    rf,
+                    &ef,
+                    crate::retail_compare_image::CARD_INFO_PANEL,
+                );
+                report
+                    .channels
+                    .insert(CARD_PANEL_CHANNEL.into(), round3(panel));
+            }
             report.score = state_score(&report.channels);
             report.image = Some(score);
         }
