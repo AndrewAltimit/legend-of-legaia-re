@@ -700,7 +700,7 @@ impl World {
     fn sfx_emitter_listener(&self) -> legaia_engine_vm::sfx_emitter::EmitterListener {
         use legaia_engine_mode::mode::GameMode;
         legaia_engine_vm::sfx_emitter::EmitterListener {
-            focus_stored: self.audio.listener_focus,
+            focus_stored: (self.camera.focus_stored[0], self.camera.focus_stored[1]),
             voice_volume: self.audio.levels.voice_volume,
             mono: self.toggles.retail_options.sound != 0,
             scale: (0x80, 0x80),

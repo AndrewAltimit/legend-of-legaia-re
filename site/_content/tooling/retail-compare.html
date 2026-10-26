@@ -233,6 +233,7 @@
     <thead><tr><th>Shape</th><th>Indicates</th></tr></thead>
     <tbody>
       <tr><td>camera exact, frame smeared by stretched planes or one flat colour</td><td>a mesh retail does not draw there - back faces of a sky dome, a never-spawned actor at the origin, a prop at the wrong scale</td></tr>
+      <tr><td>engine frame black where retail shows a floor or backdrop, every other channel exact (<code>noaru_field_card_walk</code>)</td><td>a mesh-bearing ambient part seated off its anchor: noaru&rsquo;s ice floor rides the camera focus through move-VM ext <code>0x24</code>; see <a href="../subsystems/move-vm-overlay-ext.html">move VM overlay extension</a></td></tr>
       <tr><td>retail frame black beyond a rectangle, the engine&rsquo;s filled</td><td>the visible-tile window; see <a href="../subsystems/renderer.html">renderer</a></td></tr>
       <tr><td>an effect missing in the engine frame</td><td>an actor or effect the fresh entry does not spawn, or one the port does not draw</td></tr>
       <tr><td>camera and dialogue off together, phase gate not met</td><td>a script record the gate could not bring the engine to</td></tr>

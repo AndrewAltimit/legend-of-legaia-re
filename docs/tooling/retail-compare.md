@@ -3179,6 +3179,7 @@ Shapes the corpus separates, each with what it indicates:
 | Shape | Indicates |
 |---|---|
 | camera exact, frame smeared by stretched texture planes or one flat colour | a mesh retail does not draw there: a sky dome's back faces ([NCLIP](../subsystems/renderer.md#the-field-pass-culls-back-faces)), a never-spawned actor slot at the origin, a prop at the wrong [render scale](../subsystems/renderer.md#field-static-object-placement-town01), or a window-owned prop outside the region box |
+| engine frame black where retail shows a floor or backdrop, every other channel exact (`noaru_field_card_walk`) | a mesh-bearing ambient part seated off its anchor: noaru's ice floor rides the camera focus through move-VM ext `0x24` ([move-vm-overlay-ext](../subsystems/move-vm-overlay-ext.md#world-position-lerp-0x24--0x2a-and-box-gates-0x06--0x07)) |
 | retail frame black beyond a rectangle, the engine's filled | the visible-tile window (op `0x46`); the port draws the whole scene |
 | an idle status panel in the engine frame only | the engine's panel placement, or its suppress / rearm gates, against retail's - the countdown's phase is aligned |
 | effect missing in the engine frame (save-point crystals, spell glows) | an actor or effect the fresh entry does not spawn, or one the port does not draw |

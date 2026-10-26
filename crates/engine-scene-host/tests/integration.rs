@@ -111,6 +111,7 @@ mod muscle_dome_minigame_real;
 mod muscle_dome_scene_real;
 mod muscle_hub_tally_cues_disc;
 mod narration_ladder;
+mod noaru_focus_backdrop_disc;
 mod npc_morph_placement_disc;
 mod npc_morph_rikuroa_disc;
 mod object_effect_row_disc;

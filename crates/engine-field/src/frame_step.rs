@@ -50,7 +50,7 @@ pub trait FrameStepWorld: CameraWorld {
     fn set_camera_azimuth(&mut self, azimuth: u16);
     /// Install the camera focus the positional sound emitters listen from,
     /// as retail stores it (`_DAT_80089118` / `_DAT_80089120`, negated).
-    fn set_sound_listener_focus(&mut self, focus_stored_x: i32, focus_stored_z: i32);
+    fn set_camera_focus_stored(&mut self, focus_stored_x: i32, focus_stored_z: i32);
     /// Take the battle exit's camera re-seat latch: `true` once per return to
     /// the field or the overworld.
     fn take_field_camera_reseat(&mut self) -> bool;
@@ -134,10 +134,11 @@ pub fn camera_before_world_tick<W: FrameStepWorld + ?Sized>(
     camera.reset_for_free_roam(world);
     let az = azimuth_override.unwrap_or_else(|| camera.compass_azimuth_units_for(world));
     world.set_camera_azimuth(az % 4096);
-    // The positional sound emitters measure their box against the focus the
-    // camera last stored (`_DAT_80089118` / `_DAT_80089120`).
+    // The focus the camera last stored (`_DAT_80089118` / `_DAT_80089120`):
+    // the positional sound emitters measure their box against it, and move-VM
+    // ext `0x24` parts seat on it.
     let focus = camera.globals.focus_stored();
-    world.set_sound_listener_focus(focus[0], focus[2]);
+    world.set_camera_focus_stored(focus[0], focus[2]);
 }
 
 /// The camera's half of a world tick, after it: fold this tick's op-`0x45`

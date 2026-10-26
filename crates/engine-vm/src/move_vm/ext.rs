@@ -578,18 +578,19 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
 
         // 0x24 / 0x2A - fixed-point lerp on actor world coords. Both share
         // the per-axis form `actor[axis] = op[axis] + ((target - op[axis]) *
-        // op[axis_t]) >> 12`. The Y axis always lerps toward player.world_y
-        // (with operand `op_w(3)` as base, `op_w(6)` as t). The X axis and
-        // Z axis differ by sub-op:
-        //   0x24 - uses `(_DAT_80089118, _DAT_80089120)` map origin: target
-        //          = `-(op + origin)` (i.e. fixed map-relative anchor).
-        //   0x2A - uses `(player.world_x, player.world_z)`.
+        // op[axis_t]) >> 12` (`0x801D411C..0x801D420C`). The Y axis always
+        // lerps toward player.world_y (`_DAT_8007C364 + 0x16`, base
+        // `op_w(3)`, t `op_w(6)`). The X / Z targets differ by sub-op:
+        //   0x24 - the camera focus: `lw v0,-0x6ee8(0x8009)` / `negu v0,v0`
+        //          at `0x801D4130..0x801D413C` reads `_DAT_80089118` (and
+        //          `+8`, `_DAT_80089120`), the focus retail stores negated,
+        //          and un-negates it. noaru's ice-floor backdrop rides it.
+        //   0x2A - the player position (`_DAT_8007C364 + 0x14 / 0x18`).
         //
         // Operand layout: op_w(2,3,4) = base x/y/z; op_w(5)=t_x, op_w(6)=t_y,
         // op_w(7)=t_z (each scaled by `>> 12`).
         0x24 | 0x2A => {
             let player = host.move_player_world_xyz();
-            let (origin_x, origin_z) = host.move_fixed_origin_xz();
             let base_x = op_w(2) as i16 as i32;
             let base_y = op_w(3) as i16 as i32;
             let base_z = op_w(4) as i16 as i32;
@@ -598,9 +599,8 @@ pub(crate) fn ext_default_dispatch<H: MoveHost + ?Sized>(
             let t_z = op_w(7) as i16 as i32;
 
             let (target_x, target_z) = if sub_opcode == 0x24 {
-                // Fixed-origin path: the dump's `-op - origin` is the
-                // signed displacement from `-(op + origin)`.
-                (-(base_x + origin_x), -(base_z + origin_z))
+                let (stored_x, stored_z) = host.move_camera_focus_stored_xz();
+                (stored_x.wrapping_neg(), stored_z.wrapping_neg())
             } else {
                 (player[0] as i32, player[2] as i32)
             };

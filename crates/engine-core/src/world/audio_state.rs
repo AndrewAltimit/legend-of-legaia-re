@@ -231,11 +231,6 @@ pub struct AudioState {
     /// render-mode-5 arm, [`legaia_engine_vm::sfx_emitter`]), drained by
     /// [`crate::world::World::take_sfx_emitter_ops`].
     pub(crate) sfx_emitter_ops: Vec<legaia_engine_vm::sfx_emitter::EmitterOp>,
-    /// The camera focus as retail stores it (`_DAT_80089118` / `_DAT_80089120`,
-    /// X and Z negated) - the point the emitters measure their box against.
-    /// The session writes it each frame
-    /// ([`crate::world::World::set_sound_listener_focus`]).
-    pub(crate) listener_focus: (i32, i32),
     /// The two audio-level words the live-state window (and so every save)
     /// carries: the configured level `_DAT_8008457C` - the reference the MAN
     /// loader resets the live level `_DAT_8007B910` to on every scene load
@@ -305,7 +300,6 @@ impl AudioState {
             sfx_voice_stops: Vec::new(),
             sfx_voice_keys: Vec::new(),
             sfx_emitter_ops: Vec::new(),
-            listener_focus: (0, 0),
         }
     }
 }

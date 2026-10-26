@@ -70,10 +70,13 @@ the `rayman`-family carrier is the MAN-less count-4 table variant
 ## Mechanism 2 - the ambient move-VM effect tree
 
 Most ambience is a tree of small invisible actors ("stager parts") running
-move-VM bytecode out of the scene's prescript bundle. A part never draws a
-mesh of its own for these effects; instead its render tail edits VRAM every
+move-VM bytecode out of the scene's prescript bundle. For the effects below a
+part draws no mesh of its own; instead its render tail edits VRAM every
 frame - re-tinting a captured palette rect (mode 3) or rotating a texel
-rect (mode 4) - or it fires sound cues.
+rect (mode 4) - or it fires sound cues. A part whose model selector names a
+scene-pack mesh does draw it: `noaru`'s ice floor is one, a bowl the part
+keeps on the camera focus with ext `0x24`
+([move-vm-overlay-ext](move-vm-overlay-ext.md#world-position-lerp-0x24--0x2a-and-box-gates-0x06--0x07)).
 
 ### Install chain
 
