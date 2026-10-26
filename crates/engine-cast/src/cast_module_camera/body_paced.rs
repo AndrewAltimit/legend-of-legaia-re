@@ -64,8 +64,9 @@ where
 
 /// Run one tick of a body-paced director. On an arm's first tick the arm
 /// that just passed contributes its pass shot and caption; the arm's own
-/// every-pass drift runs as well, and its every-pass shot only where the
-/// pass armed none. Drifts sum.
+/// every-pass drift runs as well, after the shot is armed
+/// ([`ArmDirection::drift_after_shot`]), and its every-pass shot only where
+/// the pass armed none. Drifts sum.
 pub(super) fn run_body_paced<O, P, E>(
     st: &mut ModuleCamState,
     phase: u8,
@@ -89,6 +90,9 @@ where
                 shot: passed.shot.or(own.shot),
                 caption: passed.caption.or(own.caption),
                 drift: sum_drift(passed.drift, own.drift),
+                // Retail's pass built the shot from the globals as the passed
+                // arm left them; the new arm's drift is the next pass's.
+                drift_after_shot: passed.shot.is_some() && passed.drift.is_none(),
                 end_frame: passed.end_frame || own.end_frame,
                 spawns: if passed.spawns.is_empty() {
                     own.spawns

@@ -373,6 +373,12 @@ pub struct ArmDirection {
     /// included, folded into a shot in flight like a capture arm's
     /// ([`CaptureDrift`]): added every pass, held or not.
     pub drift: Option<CaptureDrift>,
+    /// `true` when [`Self::drift`] belongs to the pass after the one that
+    /// built [`Self::shot`]: a body-paced director's first tick in an arm
+    /// carries the passed arm's shot and the new arm's own drift
+    /// ([`body_paced`]), and retail builds that shot from the globals before
+    /// the new arm drifts them. The host arms the shot first.
+    pub drift_after_shot: bool,
     /// The chained streak ribbons (`FUN_801E1D98`) the arm draws on this
     /// pass (PROT 0909's arm-11 bolt and arm-12 ring), for this tick only.
     pub ribbons: Option<capture::CastRibbonRing>,
@@ -879,6 +885,7 @@ impl ArmDirection {
         kills_fades: false,
         jump: None,
         drift: None,
+        drift_after_shot: false,
         ribbons: None,
     };
     pub(super) const PASS: Self = Self {
@@ -895,6 +902,7 @@ impl ArmDirection {
         kills_fades: false,
         jump: None,
         drift: None,
+        drift_after_shot: false,
         ribbons: None,
     };
     pub(super) fn shot(shot: ModuleShot) -> Self {

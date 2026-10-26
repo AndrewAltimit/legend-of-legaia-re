@@ -371,6 +371,9 @@ pub struct CastModuleCodeRun {
     /// A capture-class body's drift this frame
     /// ([`legaia_engine_cast::cast_module_camera::capture_camera_director`]).
     pub capture_drift: Option<legaia_engine_cast::cast_module_camera::CaptureDrift>,
+    /// The drift is the next pass's, applied after the shot is armed
+    /// ([`legaia_engine_cast::cast_module_camera::ArmDirection::drift_after_shot`]).
+    pub capture_drift_after_shot: bool,
     /// A capture director's absolute camera stores on this pass
     /// ([`legaia_engine_cast::cast_module_camera::CaptureCamArm::pose_set`]).
     pub capture_pose_set: Option<legaia_engine_cast::cast_module_camera::CapturePoseSet>,

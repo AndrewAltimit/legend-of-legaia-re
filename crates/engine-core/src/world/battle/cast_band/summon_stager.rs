@@ -115,7 +115,10 @@ impl World {
         // module's pass while the module's budget word is set.
         self.step_module_rain();
         if let Some(r) = run.as_ref() {
-            self.apply_module_creature_writes(r.prot_entry, r.phase, r.capture_drift);
+            // A body-paced director's first tick in an arm drifts after the
+            // passed arm's shot is armed (below).
+            let drift = r.capture_drift.filter(|_| !r.capture_drift_after_shot);
+            self.apply_module_creature_writes(r.prot_entry, r.phase, drift);
             self.apply_module_seat_motion(r.prot_entry, r.phase);
         }
         // The module seats its creature itself (Gimard's arm 3); put the
@@ -193,6 +196,17 @@ impl World {
         {
             let (pose, raw_z) = shot.pose();
             cam.arm_module_shot(pose, raw_z, u32::from(shot.frames));
+        }
+        if let Some(d) = run
+            .as_ref()
+            .filter(|r| r.capture_drift_after_shot)
+            .and_then(|r| r.capture_drift)
+            && let Some(cam) = self.battle.camera.as_mut()
+        {
+            cam.drift_module(d.pitch, d.yaw, d.tr_y, d.tr_z);
+            if d.tr_x != 0 {
+                cam.drift_module_tr_x(d.tr_x);
+            }
         }
         if let Some(n) = run.as_ref().and_then(|r| r.camera_nudge)
             && let Some(cam) = self.battle.camera.as_mut()

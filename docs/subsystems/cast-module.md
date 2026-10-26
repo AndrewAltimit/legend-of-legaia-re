@@ -1837,6 +1837,15 @@ tick the body spends in the arm. The clock lives in the director's countdown
 word: `(phase + 1) << 16 | ticks in the arm`. A drift `P` below is the frame
 product `scalar * delta`, per engine tick the scalar alone.
 
+So an arm's first tick carries two retail passes' work: the passed arm's
+shot and the new arm's first drift. Retail's builder tweens from the
+globals the passed arm left, and the drift lands a pass later, so the host
+arms the shot first and drifts after it (`ArmDirection::drift_after_shot`).
+Drifted first, Freed's arm-16 yaw drift (`+2P` a pass) entered the arm-15
+shot's start (yaw `0x810` onto `0x800`): the shot walked the yaw back and
+then held it on its endpoint until it landed, and every later arm framed
+from a yaw about `0x400` short of retail's.
+
 Three inputs come from the host beside the seats
 (`World::feed_seru_cam`): the live yaw `0x8007B792`, for an arm that re-arms
 a shot on the yaw it drifts or stores a yaw straight into the global;

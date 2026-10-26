@@ -344,4 +344,20 @@ mod tests {
         assert_eq!(d.caption, Some(ModuleCaption::SpellName));
         assert!(freed_direct(&mut st, 9, seats).shot.is_none());
     }
+
+    /// Arm 15's pass shot (yaw `0x800`) lands on arm 16's first tick with
+    /// arm 16's yaw drift: retail built the shot before that drift, so the
+    /// host arms it first and the shot leaves the drifting yaw alone.
+    #[test]
+    fn freed_arm_16_drifts_after_the_arm_15_shot() {
+        let mut st = ModuleCamState::default();
+        let seats = ModuleCamSeats::default();
+        freed_direct(&mut st, 0x0F, seats);
+        let d = freed_direct(&mut st, 0x10, seats);
+        assert_eq!(d.shot.map(|s| s.frames), Some(0x40));
+        assert!(d.drift.is_some_and(|d| d.yaw != 0));
+        assert!(d.drift_after_shot);
+        let within = freed_direct(&mut st, 0x10, seats);
+        assert!(within.shot.is_none() && !within.drift_after_shot);
+    }
 }
